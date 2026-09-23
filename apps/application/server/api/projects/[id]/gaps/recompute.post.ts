@@ -5,6 +5,7 @@ import { getDatabase } from '../../../../database';
 import { projects, testRuns } from '../../../../database/schema';
 import { rebuildProjectGraph, resolveRunBranchTag } from '../../../../utils/graph-ingest';
 import { refreshOpenApiSurface } from '../../../../utils/surface-manifest';
+import { withProjectGraphLock } from '../../../../utils/project-graph-lock';
 import { computeScenarioGaps } from '#shared/handlers/scenario-gaps';
 
 defineRouteMeta({
@@ -23,26 +24,31 @@ export default eventHandler(async (event) => {
   await requireProjectAccess(event, projectId, [Role.ADMINISTRATOR, Role.REPORTER]);
 
   const db = await getDatabase();
-  const graph = await rebuildProjectGraph(db, projectId);
 
-  // Scope surface drift to the latest run's branch: canonical rows plus that
-  // branch's own, so a pull-request route never drifts onto the default branch.
-  const [latest] = await db
-    .select({ branch: testRuns.branch, metadata: testRuns.metadata })
-    .from(testRuns)
-    .where(eq(testRuns.projectId, projectId))
-    .orderBy(desc(testRuns.id))
-    .limit(1);
-  const [project] = await db
-    .select({ id: projects.id, defaultBranch: projects.defaultBranch, openApiUrl: projects.openApiUrl })
-    .from(projects)
-    .where(eq(projects.id, projectId));
-  const branch = project && latest ? await resolveRunBranchTag(db, project, latest.metadata, latest.branch) : null;
+  // Only one rebuild+recompute runs per project at a time: both walk the whole
+  // history and upsert the same rows, so overlapping calls race and waste work.
+  return withProjectGraphLock(projectId, async () => {
+    const graph = await rebuildProjectGraph(db, projectId);
 
-  // Refresh the declared surface from the project's OpenAPI URL before detectors
-  // run, so a documented-but-unreached route surfaces as a declared-never-hit gap.
-  if (project?.openApiUrl) await refreshOpenApiSurface(db, projectId, project.openApiUrl);
+    // Scope surface drift to the latest run's branch: canonical rows plus that
+    // branch's own, so a pull-request route never drifts onto the default branch.
+    const [latest] = await db
+      .select({ branch: testRuns.branch, metadata: testRuns.metadata })
+      .from(testRuns)
+      .where(eq(testRuns.projectId, projectId))
+      .orderBy(desc(testRuns.id))
+      .limit(1);
+    const [project] = await db
+      .select({ id: projects.id, defaultBranch: projects.defaultBranch, openApiUrl: projects.openApiUrl })
+      .from(projects)
+      .where(eq(projects.id, projectId));
+    const branch = project && latest ? await resolveRunBranchTag(db, project, latest.metadata, latest.branch) : null;
 
-  const gaps = await computeScenarioGaps(db, projectId, { branch });
-  return { success: true, runsProcessed: graph.runsProcessed, gapsUpserted: gaps.upserted, gapsClosed: gaps.closed };
+    // Refresh the declared surface from the project's OpenAPI URL before detectors
+    // run, so a documented-but-unreached route surfaces as a declared-never-hit gap.
+    if (project?.openApiUrl) await refreshOpenApiSurface(db, projectId, project.openApiUrl);
+
+    const gaps = await computeScenarioGaps(db, projectId, { branch });
+    return { success: true, runsProcessed: graph.runsProcessed, gapsUpserted: gaps.upserted, gapsClosed: gaps.closed };
+  });
 });

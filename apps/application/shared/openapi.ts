@@ -9,6 +9,14 @@ import type { AppManifest, ManifestRoute } from '#shared/types';
 
 const HTTP_METHODS = new Set(['get', 'post', 'put', 'patch', 'delete', 'head', 'options', 'trace']);
 
+/**
+ * Cap on declared routes taken from one OpenAPI document, so a spec with thousands
+ * of operations cannot mint an unbounded number of graph nodes. When the document
+ * has more, the manifest carries the first {@link MAX_OPENAPI_ROUTES} and the
+ * server logs that it was capped.
+ */
+export const MAX_OPENAPI_ROUTES = 2000;
+
 /** Response keys are status codes or ranges (`2XX`) or `default`; keep the numeric ones. */
 function documentedCodes(responses: unknown): number[] {
   if (!responses || typeof responses !== 'object') return [];
@@ -28,12 +36,14 @@ export function parseOpenApiSpec(spec: unknown): AppManifest {
   const routes: ManifestRoute[] = [];
   const paths = (spec as { paths?: unknown } | null)?.paths;
   if (!paths || typeof paths !== 'object') return { routes: [] };
-  for (const [pattern, pathItem] of Object.entries(paths as Record<string, unknown>)) {
+  outer: for (const [pattern, pathItem] of Object.entries(paths as Record<string, unknown>)) {
     if (!pathItem || typeof pathItem !== 'object') continue;
     for (const [method, operation] of Object.entries(pathItem as Record<string, unknown>)) {
       if (!HTTP_METHODS.has(method.toLowerCase())) continue;
       const responses = (operation as { responses?: unknown } | null)?.responses;
       routes.push({ method: method.toUpperCase(), pattern, responses: documentedCodes(responses) });
+      // Stop at the cap so a huge spec cannot mint unbounded graph nodes.
+      if (routes.length >= MAX_OPENAPI_ROUTES) break outer;
     }
   }
   return { routes };

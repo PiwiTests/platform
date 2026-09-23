@@ -1,5 +1,14 @@
-import { ScmProvider, truncatePatch, MAX_SCM_FILES, MAX_FILE_BYTES, FETCH_TIMEOUT_MS } from './ScmProvider';
+import {
+  ScmProvider,
+  truncatePatch,
+  MAX_SCM_FILES,
+  MAX_SCM_FILES_TOTAL,
+  MAX_FILE_BYTES,
+  FETCH_TIMEOUT_MS,
+} from './ScmProvider';
 import type {
+  ChangedFile,
+  ScmCommit,
   ScmCommitDetail,
   ScmCommitAuthor,
   ScmChanges,
@@ -12,6 +21,7 @@ import type {
   CreatePullRequestInput,
 } from './ScmProvider';
 import { TtlCache } from './cache';
+import { isValidGitRef, encodeGitRef, encodePathSegments } from './refs';
 import type { CiRerunSettings } from '#shared/ci-rerun';
 
 /** Turn a non-2xx GitHub response into an Error carrying the API's own message. */
@@ -98,42 +108,70 @@ export class GitHubProvider extends ScmProvider {
   }
 
   async fetchChanges(fromSha: string, toSha: string): Promise<ScmChanges | null> {
+    if (!isValidGitRef(fromSha) || !isValidGitRef(toSha)) return null;
     const key = `${this.keyPrefix}:${this.repoPath}:${fromSha}:${toSha}`;
     const hit = fetchChangesCache.get(key);
     if (hit !== undefined) return hit;
 
-    const res = await fetch(`https://api.github.com/repos/${this.repoPath}/compare/${fromSha}...${toSha}`, {
-      headers: this.makeHeaders(),
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-    });
-    if (!res.ok) return null;
-    const data = (await res.json()) as {
-      commits?: Array<{ sha: string; commit: { message: string } }>;
-      files?: Array<{ filename: string; status: string; additions: number; deletions: number; patch?: string }>;
-    };
-    const result: ScmChanges = {
-      commits: (data.commits ?? []).map((c) => ({
-        sha: c.sha.slice(0, 7),
-        message: c.commit.message.split('\n')[0] ?? '',
-      })),
-      files: (data.files ?? []).slice(0, MAX_SCM_FILES).map((f) => ({
-        filename: f.filename,
-        status: f.status,
-        additions: f.additions,
-        deletions: f.deletions,
-        patch: f.patch ? truncatePatch(f.patch) : undefined,
-      })),
-    };
+    // Page the compare endpoint's file list (100 per page) up to the total cap,
+    // so a large pull request's later files are not silently dropped at 30.
+    const base = `https://api.github.com/repos/${this.repoPath}/compare/${encodeGitRef(fromSha)}...${encodeGitRef(toSha)}`;
+    let commits: ScmCommit[] = [];
+    const files: ChangedFile[] = [];
+    let filesTruncated = false;
+    const perPage = 100;
+    for (let page = 1; files.length < MAX_SCM_FILES_TOTAL; page++) {
+      const res = await fetch(`${base}?per_page=${perPage}&page=${page}`, {
+        headers: this.makeHeaders(),
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      });
+      if (!res.ok) {
+        if (page === 1) return null;
+        break;
+      }
+      const data = (await res.json()) as {
+        commits?: Array<{ sha: string; commit: { message: string } }>;
+        files?: Array<{ filename: string; status: string; additions: number; deletions: number; patch?: string }>;
+      };
+      if (page === 1) {
+        commits = (data.commits ?? []).map((c) => ({
+          sha: c.sha.slice(0, 7),
+          message: c.commit.message.split('\n')[0] ?? '',
+        }));
+      }
+      const pageFiles = data.files ?? [];
+      for (const f of pageFiles) {
+        if (files.length >= MAX_SCM_FILES_TOTAL) {
+          filesTruncated = true;
+          break;
+        }
+        files.push({
+          filename: f.filename,
+          status: f.status,
+          additions: f.additions,
+          deletions: f.deletions,
+          patch: f.patch ? truncatePatch(f.patch) : undefined,
+        });
+      }
+      // A short page is the last page; a full page that reached the cap is truncated.
+      if (pageFiles.length < perPage) break;
+      if (files.length >= MAX_SCM_FILES_TOTAL) {
+        filesTruncated = true;
+        break;
+      }
+    }
+    const result: ScmChanges = { commits, files, filesTruncated };
     fetchChangesCache.set(key, result);
     return result;
   }
 
   async fetchCommitDiff(sha: string): Promise<ScmChanges | null> {
+    if (!isValidGitRef(sha)) return null;
     const key = `${this.keyPrefix}:${this.repoPath}:${sha}`;
     const hit = fetchCommitDiffCache.get(key);
     if (hit !== undefined) return hit;
 
-    const res = await fetch(`https://api.github.com/repos/${this.repoPath}/commits/${sha}`, {
+    const res = await fetch(`https://api.github.com/repos/${this.repoPath}/commits/${encodeGitRef(sha)}`, {
       headers: this.makeHeaders(),
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
@@ -159,13 +197,13 @@ export class GitHubProvider extends ScmProvider {
   }
 
   async getCommitAuthor(sha: string): Promise<ScmCommitAuthor | null> {
-    if (!sha) return null;
+    if (!isValidGitRef(sha)) return null;
     const key = `${this.keyPrefix}:author:${this.repoPath}:${sha}`;
     const hit = commitAuthorCache.get(key);
     if (hit !== undefined) return hit;
 
     try {
-      const res = await fetch(`https://api.github.com/repos/${this.repoPath}/commits/${sha}`, {
+      const res = await fetch(`https://api.github.com/repos/${this.repoPath}/commits/${encodeGitRef(sha)}`, {
         headers: this.makeHeaders(),
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       });
@@ -236,12 +274,13 @@ export class GitHubProvider extends ScmProvider {
   }
 
   async fetchFileAtRef(path: string, ref: string): Promise<ScmFileContent | null> {
+    if (!isValidGitRef(ref)) return null;
     const cleanPath = path.replace(/^\//, '');
     const key = `${this.keyPrefix}:file:${this.repoPath}:${ref}:${cleanPath}`;
     const hit = fetchFileCache.get(key);
     if (hit !== undefined) return hit;
 
-    const url = new URL(`https://api.github.com/repos/${this.repoPath}/contents/${cleanPath}`);
+    const url = new URL(`https://api.github.com/repos/${this.repoPath}/contents/${encodePathSegments(cleanPath)}`);
     url.searchParams.set('ref', ref);
     const res = await fetch(url.toString(), {
       headers: { ...this.makeHeaders(), Accept: 'application/vnd.github.raw' },
@@ -262,15 +301,19 @@ export class GitHubProvider extends ScmProvider {
   }
 
   async fetchTree(ref: string): Promise<string[] | null> {
+    if (!isValidGitRef(ref)) return null;
     const key = `${this.keyPrefix}:tree:${this.repoPath}:${ref}`;
     const hit = fetchTreeCache.get(key);
     if (hit !== undefined) return hit;
 
     const treePaths = async (treeish: string): Promise<string[] | null> => {
-      const res = await fetch(`https://api.github.com/repos/${this.repoPath}/git/trees/${treeish}?recursive=1`, {
-        headers: this.makeHeaders(),
-        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-      });
+      const res = await fetch(
+        `https://api.github.com/repos/${this.repoPath}/git/trees/${encodeGitRef(treeish)}?recursive=1`,
+        {
+          headers: this.makeHeaders(),
+          signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+        },
+      );
       if (!res.ok) return null;
       const data = (await res.json()) as { tree?: Array<{ path: string; type: string }> };
       return (data.tree ?? []).filter((e) => e.type === 'blob').map((e) => e.path);
@@ -280,7 +323,7 @@ export class GitHubProvider extends ScmProvider {
     // too, but when it doesn't, resolve the commit to its tree SHA and retry.
     let result = await treePaths(ref);
     if (result === null) {
-      const commitRes = await fetch(`https://api.github.com/repos/${this.repoPath}/commits/${ref}`, {
+      const commitRes = await fetch(`https://api.github.com/repos/${this.repoPath}/commits/${encodeGitRef(ref)}`, {
         headers: this.makeHeaders(),
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       });
@@ -415,7 +458,8 @@ export class GitHubProvider extends ScmProvider {
   // ── Write capability (auto-heal) ───────────────────────────────────────────
 
   override async getBranchHead(branch: string): Promise<string | null> {
-    const res = await fetch(`https://api.github.com/repos/${this.repoPath}/git/ref/heads/${branch}`, {
+    if (!isValidGitRef(branch)) return null;
+    const res = await fetch(`https://api.github.com/repos/${this.repoPath}/git/ref/heads/${encodeGitRef(branch)}`, {
       headers: this.makeHeaders(),
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
@@ -471,7 +515,7 @@ export class GitHubProvider extends ScmProvider {
     const newSha = ((await newCommitRes.json()) as { sha?: string }).sha;
     if (!newSha) throw new Error('GitHub commit failed: commit response had no sha');
 
-    const refRes = await fetch(`https://api.github.com/repos/${this.repoPath}/git/refs/heads/${branch}`, {
+    const refRes = await fetch(`https://api.github.com/repos/${this.repoPath}/git/refs/heads/${encodeGitRef(branch)}`, {
       method: 'PATCH',
       headers: { ...this.makeHeaders(), 'Content-Type': 'application/json' },
       body: JSON.stringify({ sha: newSha, force: false }),

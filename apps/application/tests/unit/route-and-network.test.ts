@@ -28,6 +28,23 @@ describe('normalizeRoute', () => {
     expect(normalizeRoute('https://api.example.com/v2/report-2024')).toBe('/v2/report-2024');
   });
 
+  test('collapses ULID, JWT and opaque-token path segments', () => {
+    expect(normalizeRoute('https://api.example.com/orders/01ARZ3NDEKTSV4RRFFQ69G5FAV')).toBe('/orders/:ulid');
+    const jwt = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTYifQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c';
+    expect(normalizeRoute(`https://api.example.com/session/${jwt}`)).toBe('/session/:jwt');
+    // Long hex token (e.g. an API key or sha256) and a long base64url token.
+    expect(normalizeRoute('https://api.example.com/keys/9f86d081884c7d659a2feaa0c55ad015a3bf4f1b')).toBe(
+      '/keys/:token',
+    );
+    expect(normalizeRoute('https://api.example.com/t/abcDEF012345_ghiJKL678901-mnoPQR234567xyz0')).toBe('/t/:token');
+  });
+
+  test('two runs with different opaque ids collapse to one route', () => {
+    const a = normalizeRoute('https://api.example.com/reset/01ARZ3NDEKTSV4RRFFQ69G5FAV');
+    const b = normalizeRoute('https://api.example.com/reset/01BX5ZZKBKACTAV9WEVGEMMVRZ');
+    expect(a).toBe(b);
+  });
+
   test('redacts query param values but keeps keys (url-encoded)', () => {
     expect(normalizeRoute('https://api.example.com/search?q=hello&page=2')).toBe(
       '/search?q=%3Credacted%3E&page=%3Credacted%3E',

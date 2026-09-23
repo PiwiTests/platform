@@ -21,6 +21,7 @@ import {
   testRunsCases,
 } from '../database/schema';
 import { deleteFileRow, deleteRunStorageDir, gcTraceBlobs } from './delete-run-files';
+import { deleteGraphRowsForRuns } from './graph-ingest';
 import { recomputeClusterOccurrences } from '#shared/handlers/failure-cluster-ops';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -176,6 +177,18 @@ export async function deleteRunsByIds(db: DbClient, runIds: number[]): Promise<D
   }
   for (const batch of batches(presentRunIds)) {
     await db.delete(testRuns).where(inArray(testRuns.id, batch));
+  }
+
+  // Graph nodes/edges whose newest evidence was a deleted run, per project, so
+  // the feature-graph tables never point at runs that no longer exist.
+  const runIdsByProject = new Map<number, number[]>();
+  for (const run of runs) {
+    const list = runIdsByProject.get(run.projectId) ?? [];
+    list.push(run.id);
+    runIdsByProject.set(run.projectId, list);
+  }
+  for (const [projectId, ids] of runIdsByProject) {
+    await deleteGraphRowsForRuns(db, projectId, ids);
   }
 
   // GC payloads no longer referenced by any surviving execution row.

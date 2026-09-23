@@ -208,6 +208,31 @@ function draftTitleFor(filePath: string): string {
 }
 
 /**
+ * The ref a run's diff is taken against: for a pull-request run, its base branch
+ * (the provider's compare then gives the merge-base … head diff — the whole PR);
+ * otherwise the commit of the last passing run on the same branch. Returns null
+ * when neither is available.
+ */
+async function resolveDiffBase(
+  db: DbClient,
+  run: { projectId: number; startTime: Date; environment: string | null },
+  meta: RunMetadata | null,
+  branch: string | null,
+  fallbackBranch: string,
+  prNumber: number | null,
+): Promise<string | null> {
+  if (prNumber != null) return fallbackBranch || null;
+  const baseline = await selectBaselineRun(db, {
+    projectId: run.projectId,
+    before: run.startTime,
+    branch,
+    environment: run.environment ?? null,
+    fallbackBranch,
+  });
+  return ((baseline?.run.metadata as RunMetadata | null)?.scm?.commit ?? null)?.trim() || null;
+}
+
+/**
  * Compute change coverage for a finished, pull-request-stamped run: resolve the
  * diff, persist `changes` edges and changed-unreached gaps, and return the data
  * the comment renders. Returns null when there is no diff to report.
@@ -233,21 +258,20 @@ export async function computeRunChangeCoverage(db: DbClient, runId: number): Pro
   const defaultBranch = await resolveDefaultBranch(db, project, meta).catch(() => FALLBACK_DEFAULT_BRANCH);
   const fallback = resolveFallbackBranch(meta, defaultBranch);
 
-  const baseline = await selectBaselineRun(db, {
-    projectId: run.projectId,
-    before: run.startTime,
-    branch,
-    environment: run.environment ?? null,
-    fallbackBranch: fallback.branch,
-  });
-  const baseSha = ((baseline?.run.metadata as RunMetadata | null)?.scm?.commit ?? null)?.trim() || null;
-  if (!baseSha || baseSha === headSha) return null;
+  // A pull request is diffed against its base branch (merge-base … head) so every
+  // push reports the whole PR, not only its latest commits — the comment, edited
+  // in place, then never drops a file an earlier push introduced. A run that is
+  // not a pull request keeps the baseline-run comparison (what changed since the
+  // last green run on its branch).
+  const baseRef = await resolveDiffBase(db, run, meta, branch, fallback.branch, prNumber);
+  if (!baseRef || baseRef === headSha) return null;
 
   const provider = await createScmProvider(repositoryUrl, db, run.projectId);
   if (!provider) return null;
 
-  const changes = await provider.fetchChanges(baseSha, headSha).catch(() => null);
+  const changes = await provider.fetchChanges(baseRef, headSha).catch(() => null);
   if (!changes || changes.files.length === 0) return null;
+  const baseSha = baseRef;
 
   const changedFiles = changes.files.map((f) => ({
     filePath: f.filename,
@@ -274,6 +298,8 @@ export async function computeRunChangeCoverage(db: DbClient, runId: number): Pro
     tickets,
     ticketKey,
     fileTickets,
+    filesTruncated: changes.filesTruncated ?? false,
+    totalChangedFiles: changes.totalChangedFiles ?? null,
     scmAvailable: true,
   });
 
@@ -363,6 +389,8 @@ export async function readChangeCoverage(
     tickets: [],
     reachedFiles: 0,
     uncoveredFiles: 0,
+    filesTruncated: false,
+    totalChangedFiles: null,
     scmAvailable,
   });
 
@@ -388,14 +416,11 @@ export async function readChangeCoverage(
       : FALLBACK_DEFAULT_BRANCH;
     const fallback = resolveFallbackBranch(meta, defaultBranch);
     baseBranch = fallback.branch;
-    const baseline = await selectBaselineRun(db, {
-      projectId,
-      before: run.startTime,
-      branch,
-      environment: run.environment ?? null,
-      fallbackBranch: fallback.branch,
-    });
-    baseSha = ((baseline?.run.metadata as RunMetadata | null)?.scm?.commit ?? null)?.trim() || null;
+    const prNumberRaw = meta?.scm?.prNumber;
+    const prNumber = prNumberRaw != null && Number.isFinite(Number(prNumberRaw)) ? Number(prNumberRaw) : null;
+    // A pull-request run is diffed against its base branch (whole PR); otherwise
+    // against the last passing run on its branch.
+    baseSha = await resolveDiffBase(db, run, meta, branch, fallback.branch, prNumber);
   } else {
     // Explicit range — resolve the repository from the latest run that carries one.
     const runs = await db
@@ -437,6 +462,8 @@ export async function readChangeCoverage(
     baseBranch,
     tickets,
     ticketKey,
+    filesTruncated: changes.filesTruncated ?? false,
+    totalChangedFiles: changes.totalChangedFiles ?? null,
     scmAvailable: true,
   });
 }
@@ -450,6 +477,7 @@ export function toPrChangeCoverage(coverage: ChangeCoverage): PrChangeCoverage {
     ticketCount: coverage.tickets.filter((t) => t.ticket).length,
     windowRuns: coverage.windowRuns,
     baseBranch: coverage.baseBranch,
+    filesTruncated: coverage.filesTruncated,
     tickets: coverage.tickets.map((group) => ({
       ticket: group.ticket,
       files: group.files.map((f) => ({

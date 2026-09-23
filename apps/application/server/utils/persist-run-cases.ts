@@ -615,58 +615,70 @@ export async function persistRunCases(
 
   // Feed the feature graph from the same rows: route nodes from the network
   // requests (own-origin only), page nodes from page state, and a `reaches` edge
-  // per test case, tagged with the run's branch. A graph failure must never
-  // break ingest, so it degrades to a warning.
-  try {
-    const [run] = await db
-      .select({ branch: testRuns.branch, metadata: testRuns.metadata })
-      .from(testRuns)
-      .where(eq(testRuns.id, testRunId));
-    const [project] = await db
-      .select({
-        id: projects.id,
-        defaultBranch: projects.defaultBranch,
-        routeOrigins: projects.routeOrigins,
-      })
-      .from(projects)
-      .where(eq(projects.id, projectId));
+  // per test case, tagged with the run's branch.
+  //
+  // Scheduled off the request path (fire-and-forget after the caller has its
+  // result), so a large run's graph write — seconds on a big upload — never
+  // blocks the ingest response; the nightly rebuild reconstructs it from the DB
+  // if a write is ever lost. A graph failure degrades to a warning and never
+  // surfaces as an ingest error.
+  //
+  // A probe run replays a passing test with an injected fault, so its statuses
+  // and network traffic are synthetic: it never feeds the canonical graph, or it
+  // would mint false orphan-test gaps and turn injected faults into evidence.
+  void (async () => {
+    try {
+      const [run] = await db
+        .select({ branch: testRuns.branch, metadata: testRuns.metadata })
+        .from(testRuns)
+        .where(eq(testRuns.id, testRunId));
+      if (isProbeRun(run?.metadata)) return;
+      const [project] = await db
+        .select({
+          id: projects.id,
+          defaultBranch: projects.defaultBranch,
+          routeOrigins: projects.routeOrigins,
+        })
+        .from(projects)
+        .where(eq(projects.id, projectId));
 
-    let origins = collectOwnOrigins(runBaseUrls(run?.metadata), projectRouteOrigins(project?.routeOrigins));
-    // Older reporters recorded no Playwright baseURL; fall back to the origins of
-    // this batch's own document requests so route nodes still form from
-    // first-party traffic instead of keeping every third-party beacon.
-    if (origins.size === 0) {
-      origins = originsFromDocumentRequests(networkRequestBuilders.flatMap((b) => b.items));
+      let origins = collectOwnOrigins(runBaseUrls(run?.metadata), projectRouteOrigins(project?.routeOrigins));
+      // Older reporters recorded no Playwright baseURL; fall back to the origins of
+      // this batch's own document requests so route nodes still form from
+      // first-party traffic instead of keeping every third-party beacon.
+      if (origins.size === 0) {
+        origins = originsFromDocumentRequests(networkRequestBuilders.flatMap((b) => b.items));
+      }
+      // Resolved from stored project fields only — no SCM call on the ingest path.
+      const branch = project ? await resolveRunBranchTagFromStored(db, project, run?.metadata, run?.branch) : null;
+
+      await ingestRunGraph(
+        db,
+        projectId,
+        testRunId,
+        collectRunGraphReaches(
+          runCasesRows.map((row) => ({ testCaseId: row.testCaseId, pageState: row.pageState })),
+          networkRequestBuilders,
+          { origins },
+        ),
+        { branch },
+      );
+      // Handler and dependency breadth: `handled-by` and `calls` edges from the
+      // server spans forwarded with each request. A no-op for uninstrumented runs.
+      await ingestRequestGraph(db, projectId, testRunId, networkRequestBuilders, origins, { branch });
+
+      // Control, link and page-load breadth from the page inventory attached on
+      // passing runs. Builders align with runCasesRows; map each back to its input
+      // case for its inventory. A no-op when no case carried an inventory.
+      const inventoryCases = runCasesRows.map((_, k) => ({
+        pageInventory: cases[rowInputIndices[k]!]?.pageInventory,
+        networkItems: networkRequestBuilders[k]?.items ?? [],
+      }));
+      await ingestPageInventoryGraph(db, projectId, testRunId, inventoryCases, origins, { branch });
+    } catch (err) {
+      console.warn('[graph-ingest] failed to update the feature graph', err);
     }
-    // Resolved from stored project fields only — no SCM call on the ingest path.
-    const branch = project ? resolveRunBranchTagFromStored(project, run?.metadata, run?.branch) : null;
-
-    await ingestRunGraph(
-      db,
-      projectId,
-      testRunId,
-      collectRunGraphReaches(
-        runCasesRows.map((row) => ({ testCaseId: row.testCaseId, pageState: row.pageState })),
-        networkRequestBuilders,
-        { origins },
-      ),
-      { branch },
-    );
-    // Handler and dependency breadth: `handled-by` and `calls` edges from the
-    // server spans forwarded with each request. A no-op for uninstrumented runs.
-    await ingestRequestGraph(db, projectId, testRunId, networkRequestBuilders, origins, { branch });
-
-    // Control, link and page-load breadth from the page inventory attached on
-    // passing runs. Builders align with runCasesRows; map each back to its input
-    // case for its inventory. A no-op when no case carried an inventory.
-    const inventoryCases = runCasesRows.map((_, k) => ({
-      pageInventory: cases[rowInputIndices[k]!]?.pageInventory,
-      networkItems: networkRequestBuilders[k]?.items ?? [],
-    }));
-    await ingestPageInventoryGraph(db, projectId, testRunId, inventoryCases, origins, { branch });
-  } catch (err) {
-    console.warn('[graph-ingest] failed to update the feature graph', err);
-  }
+  })();
 
   return result;
 }

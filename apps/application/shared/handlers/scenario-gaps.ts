@@ -1227,11 +1227,15 @@ async function loadRouteStats(
 export async function computeScenarioGaps(
   db: DrizzleDB,
   projectId: number,
-  options: { exposure?: ExposureInputs; branch?: string | null } = {},
+  options: { exposure?: ExposureInputs; branch?: string | null; closeTriaged?: boolean } = {},
 ): Promise<{ upserted: number; closed: number }> {
   if (options.branch) return { upserted: 0, closed: 0 };
   const recentIds = await loadRecentRunIds(db, projectId, HISTORY_WINDOW_RUNS);
   const latestRunId = recentIds[0] ?? null;
+  // A background recompute (the nightly sweep) never closes a gap the team
+  // deliberately snoozed or accepted: only a run that actually re-covers the
+  // subject should retire that verdict, so the sweep closes open gaps only.
+  const closeStatuses: GapStatus[] = options.closeTriaged === false ? ['open'] : ['open', 'snoozed', 'accepted'];
 
   // Wake timed snoozes whose wake time has passed before detecting, so a lapsed
   // snooze re-enters detection this run rather than hiding the gap forever.
@@ -1553,8 +1557,9 @@ export async function computeScenarioGaps(
     ],
     scored,
     latestRunId,
+    closeStatuses,
   );
-  const closedChanged = await closeReachedChangedUnreached(db, projectId, latestRunId, reachByNode);
+  const closedChanged = await closeReachedChangedUnreached(db, projectId, latestRunId, reachByNode, closeStatuses);
   return { upserted, closed: closed + closedChanged };
 }
 
@@ -1677,7 +1682,10 @@ async function closeReachedChangedUnreached(
   projectId: number,
   runId: number | null,
   reachByNode: Map<string, Set<number>>,
+  statuses: GapStatus[] = ['open', 'snoozed'],
 ): Promise<number> {
+  const closable = statuses.filter((s) => s === 'open' || s === 'snoozed');
+  if (closable.length === 0) return 0;
   const open = await db
     .select({ id: scenarioGaps.id, key: scenarioGaps.key })
     .from(scenarioGaps)
@@ -1685,7 +1693,7 @@ async function closeReachedChangedUnreached(
       and(
         eq(scenarioGaps.projectId, projectId),
         eq(scenarioGaps.detector, 'changed-unreached'),
-        inArray(scenarioGaps.status, ['open', 'snoozed']),
+        inArray(scenarioGaps.status, closable),
       ),
     );
   if (open.length === 0) return 0;
@@ -1826,6 +1834,7 @@ async function closeMissingGaps(
   detectors: string[],
   kept: ScoredGap[],
   runId: number | null,
+  statuses: GapStatus[] = ['open', 'snoozed', 'accepted'],
 ): Promise<number> {
   const keptKeys = new Set(kept.map((g) => `${g.detector}\x00${g.key}`));
   const open = await db
@@ -1835,7 +1844,7 @@ async function closeMissingGaps(
       and(
         eq(scenarioGaps.projectId, projectId),
         inArray(scenarioGaps.detector, detectors),
-        inArray(scenarioGaps.status, ['open', 'snoozed', 'accepted']),
+        inArray(scenarioGaps.status, statuses),
       ),
     );
 

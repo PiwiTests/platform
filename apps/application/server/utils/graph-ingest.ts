@@ -12,7 +12,7 @@
  * graph.
  */
 
-import { and, asc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 import {
   graphNodes,
   graphEdges,
@@ -43,8 +43,10 @@ import {
 import type { AppManifest, ManifestSource } from '#shared/types';
 import type { RunMetadata, ServerSpanEntry } from './run-json-types';
 import { resolveRunBranch } from './run-branch';
-import { resolveDefaultBranch, type DefaultBranchProject } from './scm/default-branch';
+import { resolveDefaultBranch, resolveStoredDefaultBranch, type DefaultBranchProject } from './scm/default-branch';
 import { FALLBACK_DEFAULT_BRANCH } from './scm/git-url';
+import { isProbeRun } from '#shared/handlers/probes';
+import { subjectFromGapKey } from '#shared/handlers/scenario-gaps';
 import type { DbClient as DB } from '../database';
 
 /** One test case's observed reach within a single run. */
@@ -116,7 +118,9 @@ export function collectRunGraphReaches(
       entry.routes.set(routeNodeKey(item.method, item.normalizedUrl), item);
     }
     const url = pageUrlOf(rows[i]!.pageState);
-    if (url) entry.pages.add(url);
+    // Own-origin pages only, like routes: a third-party redirect (checkout, OAuth)
+    // is not this app's surface and must not become a page node.
+    if (url && isOwnOriginRequest(url, origins)) entry.pages.add(url);
   }
 
   return [...byCase].map(([testCaseId, e]) => ({
@@ -164,6 +168,16 @@ function edgeConflict(branch: string | null) {
       };
 }
 
+/** Stable conflict key for a node, so every writer locks rows in one order. */
+function nodeSortKey(n: PendingNode): string {
+  return `${n.kind}\x00${n.key}`;
+}
+
+/** Stable conflict key for an edge, so every writer locks rows in one order. */
+function edgeSortKey(e: PendingEdge): string {
+  return `${e.fromKind}\x00${e.fromKey}\x00${e.kind}\x00${e.toKind}\x00${e.toKey}`;
+}
+
 async function chunkedUpsertNodes(
   db: DB,
   projectId: number,
@@ -174,37 +188,50 @@ async function chunkedUpsertNodes(
 ): Promise<void> {
   const CHUNK = 100;
   const conflict = nodeConflict(branch);
-  for (let i = 0; i < nodes.length; i += CHUNK) {
-    const slice = nodes.slice(i, i + CHUNK);
-    await db
-      .insert(graphNodes)
-      .values(
-        slice.map((n) => ({
-          projectId,
-          kind: n.kind,
-          key: n.key,
-          branch,
-          attrs: (n.attrs ?? null) as any,
-          origin: n.origin ?? 'observed',
-          firstSeenRunId: runId,
-          lastSeenRunId: runId,
-          lastSeenAt: now,
-        })),
-      )
-      .onConflictDoUpdate({
-        target: conflict.target,
-        targetWhere: conflict.targetWhere,
-        set: {
-          lastSeenRunId: sql`excluded.last_seen_run_id`,
-          lastSeenAt: sql`excluded.last_seen_at`,
-          // Keep the latest non-null attrs so a declared node's documented codes
-          // survive a later observed upsert (which carries null attrs for routes).
-          attrs: sql`coalesce(excluded.attrs, ${graphNodes.attrs})`,
-          // A key that was soft-deleted by the staleness sweep and now reappears
-          // is live again; first_seen is untouched, so it does not re-flag as drift.
-          prunedAt: sql`null`,
-        },
-      });
+  // Sort by conflict key so concurrent shards acquire row locks in one order:
+  // unsorted batches deadlock under parallel ingest, and the loss is silent.
+  const sorted = [...nodes].sort((a, b) =>
+    nodeSortKey(a) < nodeSortKey(b) ? -1 : nodeSortKey(a) > nodeSortKey(b) ? 1 : 0,
+  );
+  for (let i = 0; i < sorted.length; i += CHUNK) {
+    const slice = sorted.slice(i, i + CHUNK);
+    try {
+      await db
+        .insert(graphNodes)
+        .values(
+          slice.map((n) => ({
+            projectId,
+            kind: n.kind,
+            key: n.key,
+            branch,
+            attrs: (n.attrs ?? null) as any,
+            origin: n.origin ?? 'observed',
+            firstSeenRunId: runId,
+            lastSeenRunId: runId,
+            lastSeenAt: now,
+          })),
+        )
+        .onConflictDoUpdate({
+          target: conflict.target,
+          targetWhere: conflict.targetWhere,
+          // Never let last_seen move backwards: an older run re-ingested (a
+          // rebuild, or an out-of-order concurrent write) must not lower it, or
+          // the staleness sweep would misjudge the node's age.
+          setWhere: sql`excluded.last_seen_run_id >= coalesce(${graphNodes.lastSeenRunId}, -1)`,
+          set: {
+            lastSeenRunId: sql`excluded.last_seen_run_id`,
+            lastSeenAt: sql`excluded.last_seen_at`,
+            // Keep the latest non-null attrs so a declared node's documented codes
+            // survive a later observed upsert (which carries null attrs for routes).
+            attrs: sql`coalesce(excluded.attrs, ${graphNodes.attrs})`,
+            // A key that was soft-deleted by the staleness sweep and now reappears
+            // is live again; first_seen is untouched, so it does not re-flag as drift.
+            prunedAt: sql`null`,
+          },
+        });
+    } catch (err) {
+      console.error(`[graph-ingest] dropped a batch of ${slice.length} node upserts`, err);
+    }
   }
 }
 
@@ -218,37 +245,47 @@ async function chunkedUpsertEdges(
 ): Promise<void> {
   const CHUNK = 100;
   const conflict = edgeConflict(branch);
-  for (let i = 0; i < edges.length; i += CHUNK) {
-    const slice = edges.slice(i, i + CHUNK);
-    await db
-      .insert(graphEdges)
-      .values(
-        slice.map((e) => ({
-          projectId,
-          fromKind: e.fromKind,
-          fromKey: e.fromKey,
-          toKind: e.toKind,
-          toKey: e.toKey,
-          kind: e.kind,
-          branch,
-          confidence: e.confidence,
-          origin: e.origin ?? 'observed',
-          evidence: (e.evidence ?? null) as any,
-          firstSeenRunId: runId,
-          lastSeenRunId: runId,
-          lastSeenAt: now,
-        })),
-      )
-      .onConflictDoUpdate({
-        target: conflict.target,
-        targetWhere: conflict.targetWhere,
-        set: {
-          lastSeenRunId: sql`excluded.last_seen_run_id`,
-          lastSeenAt: sql`excluded.last_seen_at`,
-          confidence: sql`excluded.confidence`,
-          evidence: sql`excluded.evidence`,
-        },
-      });
+  // Sort by conflict key so concurrent shards acquire row locks in one order.
+  const sorted = [...edges].sort((a, b) =>
+    edgeSortKey(a) < edgeSortKey(b) ? -1 : edgeSortKey(a) > edgeSortKey(b) ? 1 : 0,
+  );
+  for (let i = 0; i < sorted.length; i += CHUNK) {
+    const slice = sorted.slice(i, i + CHUNK);
+    try {
+      await db
+        .insert(graphEdges)
+        .values(
+          slice.map((e) => ({
+            projectId,
+            fromKind: e.fromKind,
+            fromKey: e.fromKey,
+            toKind: e.toKind,
+            toKey: e.toKey,
+            kind: e.kind,
+            branch,
+            confidence: e.confidence,
+            origin: e.origin ?? 'observed',
+            evidence: (e.evidence ?? null) as any,
+            firstSeenRunId: runId,
+            lastSeenRunId: runId,
+            lastSeenAt: now,
+          })),
+        )
+        .onConflictDoUpdate({
+          target: conflict.target,
+          targetWhere: conflict.targetWhere,
+          // Never let last_seen move backwards (see chunkedUpsertNodes).
+          setWhere: sql`excluded.last_seen_run_id >= coalesce(${graphEdges.lastSeenRunId}, -1)`,
+          set: {
+            lastSeenRunId: sql`excluded.last_seen_run_id`,
+            lastSeenAt: sql`excluded.last_seen_at`,
+            confidence: sql`excluded.confidence`,
+            evidence: sql`excluded.evidence`,
+          },
+        });
+    } catch (err) {
+      console.error(`[graph-ingest] dropped a batch of ${slice.length} edge upserts`, err);
+    }
   }
 }
 
@@ -397,6 +434,8 @@ export function collectPageInventories(cases: PageInventoryCase[], origins: Set<
       if (!raw || typeof raw !== 'object') continue;
       const page = raw as { url?: unknown; controls?: unknown; links?: unknown; capturedAt?: unknown };
       if (typeof page.url !== 'string' || !page.url) continue;
+      // Own-origin pages only — a third-party page the test visited is not surface.
+      if (!isOwnOriginRequest(page.url, origins)) continue;
       const pageKey = pageNodeKey(page.url);
       if (!pageKey) continue;
       const controls = Array.isArray(page.controls)
@@ -642,28 +681,23 @@ export async function resolveRunBranchTag(
   return branch === defaultBranch ? null : branch;
 }
 
-/** Project fields the ingest-path branch tagger reads — all stored, no SCM call. */
-export interface StoredBranchProject {
-  defaultBranch?: string | null;
-}
-
 /**
- * The graph branch tag resolved from the project's stored default branch alone —
- * no SCM call, so it is safe on the ingest hot path and computed once per run
- * rather than per events batch. The run's branch is canonical only when it equals
- * the stored default branch; when that default is unknown the branch cannot be
- * confirmed as canonical, so it is tagged and the nightly sweep backfills once the
- * default branch resolves.
+ * The graph branch tag resolved without any SCM network call, so it is safe on
+ * the ingest hot path. The run's branch is canonical (null tag) when it equals
+ * the project's default branch, resolved through {@link resolveStoredDefaultBranch}
+ * — the project's stored default, then the most common branch among its runs,
+ * then `'main'`. That documented fallback keeps canonical rows even when the SCM
+ * default branch is unknown, so an unresolved default never empties the Test Map.
  */
-export function resolveRunBranchTagFromStored(
-  project: StoredBranchProject,
+export async function resolveRunBranchTagFromStored(
+  db: DB,
+  project: DefaultBranchProject,
   runMetadata: unknown,
   runBranch?: string | null,
-): string | null {
+): Promise<string | null> {
   const branch = (runBranch ?? resolveRunBranch(runMetadata))?.trim() || null;
   if (!branch) return null;
-  const defaultBranch = project.defaultBranch?.trim() || null;
-  if (!defaultBranch) return branch;
+  const defaultBranch = await resolveStoredDefaultBranch(db, project);
   return branch === defaultBranch ? null : branch;
 }
 
@@ -706,6 +740,9 @@ export async function rebuildProjectGraph(db: DB, projectId: number): Promise<{ 
 
   let processed = 0;
   for (const run of runs) {
+    // A probe run's statuses and traffic are synthetic, so it never feeds the
+    // canonical graph — the same rule the live ingest path applies.
+    if (isProbeRun(run.metadata)) continue;
     const cases = await db
       .select({ id: testRunsCases.id, testCaseId: testRunsCases.testCaseId, pageState: testRunsCases.pageState })
       .from(testRunsCases)
@@ -758,6 +795,14 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const CHANGES_EDGE_MAX_AGE_MS = 90 * DAY_MS;
 /** Branch-tagged rows outlive their pull request by at most thirty days. */
 const BRANCH_ROW_MAX_AGE_MS = 30 * DAY_MS;
+/**
+ * A `reaches` edge not refreshed in this long is dropped: the test no longer
+ * reaches the node, so the edge is dead weight that otherwise grows forever.
+ * Generous so a slow-cadence project's live reach is never mistaken for stale.
+ */
+const REACHES_EDGE_MAX_AGE_MS = 180 * DAY_MS;
+/** A soft-deleted (pruned) node is hard-deleted once it has been gone this long. */
+const PRUNED_NODE_GRACE_MS = 30 * DAY_MS;
 /** A canonical node unseen for this many runs is a candidate for removal. */
 const STALE_NODE_RUNS = 30;
 
@@ -806,11 +851,20 @@ export async function pruneStaleBranchGraphRows(db: DB, now: Date = new Date()):
   return nodes.length + edges.length;
 }
 
+/** How many recent canonical runs are scanned to find the window's non-probe floor. */
+const STALE_NODE_RUN_SCAN = STALE_NODE_RUNS * 10;
+
 /**
- * Soft-delete canonical nodes unseen for thirty runs whose surface-drift gap is
- * no longer open, independently of `PIWI_RETENTION_DAYS` (which is opt-in and
- * cannot be relied on). A node still carrying an open surface-drift gap is kept
- * so the triage keeps its subject.
+ * Soft-delete canonical nodes unseen for thirty canonical runs that back no live
+ * gap, independently of `PIWI_RETENTION_DAYS` (which is opt-in and cannot be
+ * relied on).
+ *
+ * The window counts canonical, non-probe runs only — the runs that actually bump
+ * a canonical node's `last_seen_run_id`. Counting pull-request and probe runs (as
+ * a naive "last 30 runs" does) lets thirty pull-request runs with no default-branch
+ * run in between prune every canonical node, wiping the graph and closing every
+ * gap built on it. A node backing any open, snoozed or accepted gap is kept so
+ * triage never loses its subject.
  *
  * The node's row is kept but stamped `pruned_at` — the bulk (its `reaches` edges)
  * is deleted, and keeping the row preserves `first_seen` so a re-appearance is
@@ -821,15 +875,25 @@ export async function pruneStaleCanonicalNodes(db: DB): Promise<number> {
   let removed = 0;
 
   for (const { projectId } of projectRows) {
-    const recent = await db
-      .select({ id: testRuns.id })
+    const [proj] = await db
+      .select({ id: projects.id, defaultBranch: projects.defaultBranch })
+      .from(projects)
+      .where(eq(projects.id, projectId));
+    const defaultBranch = proj ? await resolveStoredDefaultBranch(db, proj) : FALLBACK_DEFAULT_BRANCH;
+
+    // Canonical runs (on the default branch, so tagged null) that are not probe
+    // runs — the only runs that bump a canonical node's last-seen. Scan a bounded
+    // window and drop probe runs before taking the floor.
+    const canonicalRuns = await db
+      .select({ id: testRuns.id, metadata: testRuns.metadata })
       .from(testRuns)
-      .where(eq(testRuns.projectId, projectId))
+      .where(and(eq(testRuns.projectId, projectId), or(isNull(testRuns.branch), eq(testRuns.branch, defaultBranch))))
       .orderBy(sql`${testRuns.id} desc`)
-      .limit(STALE_NODE_RUNS);
-    // Fewer than a full window of runs — nothing has been unseen long enough.
-    if (recent.length < STALE_NODE_RUNS) continue;
-    const windowFloor = recent[recent.length - 1]!.id;
+      .limit(STALE_NODE_RUN_SCAN);
+    const canonical = canonicalRuns.filter((r) => !isProbeRun(r.metadata)).slice(0, STALE_NODE_RUNS);
+    // Fewer than a full window of canonical runs — nothing has been unseen long enough.
+    if (canonical.length < STALE_NODE_RUNS) continue;
+    const windowFloor = canonical[canonical.length - 1]!.id;
 
     const stale = await db
       .select({ id: graphNodes.id, kind: graphNodes.kind, key: graphNodes.key })
@@ -844,20 +908,21 @@ export async function pruneStaleCanonicalNodes(db: DB): Promise<number> {
       );
     if (stale.length === 0) continue;
 
-    // Keep any node whose surface-drift gap is still open.
-    const openGaps = await db
+    // Keep any node that backs a live gap — open, snoozed or accepted, any
+    // detector — so pruning never strips the subject out from under triage and
+    // lets the recompute close it.
+    const liveGaps = await db
       .select({ key: scenarioGaps.key })
       .from(scenarioGaps)
-      .where(
-        and(
-          eq(scenarioGaps.projectId, projectId),
-          eq(scenarioGaps.detector, 'surface-drift'),
-          eq(scenarioGaps.status, 'open'),
-        ),
-      );
-    const openKeys = new Set(openGaps.map((g) => g.key));
+      .where(and(eq(scenarioGaps.projectId, projectId), inArray(scenarioGaps.status, ['open', 'snoozed', 'accepted'])));
+    const keptSubjects = new Set(
+      liveGaps.map((g) => {
+        const s = subjectFromGapKey(g.key);
+        return `${s.kind}\x00${s.key}`;
+      }),
+    );
 
-    const removable = stale.filter((n) => !openKeys.has(`${n.kind}:${n.key}`));
+    const removable = stale.filter((n) => !keptSubjects.has(`${n.kind}\x00${n.key}`));
     if (removable.length === 0) continue;
 
     const now = new Date();
@@ -903,6 +968,115 @@ export async function pruneStaleCanonicalNodes(db: DB): Promise<number> {
       }
     }
     removed += removable.length;
+  }
+  return removed;
+}
+
+/**
+ * Prune `reaches` edges last seen more than {@link REACHES_EDGE_MAX_AGE_MS} ago,
+ * independent of `PIWI_RETENTION_DAYS`. A reach that a run keeps observing is
+ * bumped every run, so only a reach a test genuinely stopped making ages out;
+ * without this the edge table grows one row per (test, node) pair forever.
+ */
+export async function pruneStaleReachesEdges(db: DB, now: Date = new Date()): Promise<number> {
+  const cutoff = new Date(now.getTime() - REACHES_EDGE_MAX_AGE_MS);
+  const deleted = await db
+    .delete(graphEdges)
+    .where(and(eq(graphEdges.kind, 'reaches'), lt(graphEdges.lastSeenAt, cutoff)))
+    .returning({ id: graphEdges.id });
+  return deleted.length;
+}
+
+/**
+ * Hard-delete nodes the staleness sweep soft-deleted (`pruned_at`) more than
+ * {@link PRUNED_NODE_GRACE_MS} ago, so the vanished surface is kept only long
+ * enough to avoid re-flagging a brief reappearance as drift, not forever. A node
+ * that backs a live gap is never hard-deleted, and every remaining edge on a
+ * deleted node's endpoints goes with it.
+ */
+export async function hardDeletePrunedNodes(db: DB, now: Date = new Date()): Promise<number> {
+  const cutoff = new Date(now.getTime() - PRUNED_NODE_GRACE_MS);
+  const doomed = await db
+    .select({ id: graphNodes.id, projectId: graphNodes.projectId, kind: graphNodes.kind, key: graphNodes.key })
+    .from(graphNodes)
+    .where(and(sql`${graphNodes.prunedAt} is not null`, lt(graphNodes.prunedAt, cutoff)));
+  if (doomed.length === 0) return 0;
+
+  // Keep any node that gained a live gap while soft-deleted.
+  const byProject = new Map<number, typeof doomed>();
+  for (const n of doomed) {
+    const list = byProject.get(n.projectId) ?? [];
+    list.push(n);
+    byProject.set(n.projectId, list);
+  }
+
+  let removed = 0;
+  for (const [projectId, nodes] of byProject) {
+    const liveGaps = await db
+      .select({ key: scenarioGaps.key })
+      .from(scenarioGaps)
+      .where(and(eq(scenarioGaps.projectId, projectId), inArray(scenarioGaps.status, ['open', 'snoozed', 'accepted'])));
+    const keptSubjects = new Set(
+      liveGaps.map((g) => {
+        const s = subjectFromGapKey(g.key);
+        return `${s.kind}\x00${s.key}`;
+      }),
+    );
+    const removable = nodes.filter((n) => !keptSubjects.has(`${n.kind}\x00${n.key}`));
+    if (removable.length === 0) continue;
+
+    // Delete each doomed node's remaining edges by endpoint, then the node rows.
+    const keysByKind = new Map<string, string[]>();
+    for (const n of removable) {
+      const list = keysByKind.get(n.kind) ?? [];
+      list.push(n.key);
+      keysByKind.set(n.kind, list);
+    }
+    for (const [kind, keys] of keysByKind) {
+      for (let i = 0; i < keys.length; i += 100) {
+        const slice = keys.slice(i, i + 100);
+        await db
+          .delete(graphEdges)
+          .where(
+            and(eq(graphEdges.projectId, projectId), eq(graphEdges.toKind, kind), inArray(graphEdges.toKey, slice)),
+          );
+        await db
+          .delete(graphEdges)
+          .where(
+            and(eq(graphEdges.projectId, projectId), eq(graphEdges.fromKind, kind), inArray(graphEdges.fromKey, slice)),
+          );
+      }
+    }
+    const ids = removable.map((n) => n.id);
+    for (let i = 0; i < ids.length; i += 100) {
+      await db.delete(graphNodes).where(inArray(graphNodes.id, ids.slice(i, i + 100)));
+    }
+    removed += removable.length;
+  }
+  return removed;
+}
+
+/**
+ * Delete the graph rows whose newest evidence was a run that is being deleted, so
+ * age-based run retention does not leave the graph tables pointing at runs that
+ * no longer exist. A node or edge whose `last_seen_run_id` is in `runIds` has not
+ * been observed since — retention deletes the oldest runs, so an active row's
+ * last-seen is a surviving run — and is removed with its endpoints' edges.
+ */
+export async function deleteGraphRowsForRuns(db: DB, projectId: number, runIds: number[]): Promise<number> {
+  if (runIds.length === 0) return 0;
+  let removed = 0;
+  for (let i = 0; i < runIds.length; i += 100) {
+    const slice = runIds.slice(i, i + 100);
+    const edges = await db
+      .delete(graphEdges)
+      .where(and(eq(graphEdges.projectId, projectId), inArray(graphEdges.lastSeenRunId, slice)))
+      .returning({ id: graphEdges.id });
+    const nodes = await db
+      .delete(graphNodes)
+      .where(and(eq(graphNodes.projectId, projectId), inArray(graphNodes.lastSeenRunId, slice)))
+      .returning({ id: graphNodes.id });
+    removed += edges.length + nodes.length;
   }
   return removed;
 }

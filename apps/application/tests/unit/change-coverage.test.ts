@@ -146,6 +146,39 @@ describe('computeChangeCoverage', () => {
     expect(cc.uncoveredFiles).toBe(1);
   });
 
+  test('a skipped or did-not-run case does not count as reach', async () => {
+    const orders = await seedCase('places an order', 'tests/orders.spec.ts');
+    await seedLocator(orders, 'src/api/orders.post.ts:12:4');
+    // The reaching test was skipped this run (and every recent run), so the file
+    // is not covered even though a reaching test exists.
+    const runId = ++runSeq;
+    await db
+      .insert(schema.testRuns)
+      .values({ id: runId, projectId: 1, status: 'passed', startTime: new Date(++clock) });
+    await db
+      .insert(schema.testRunsCases)
+      .values({ testRunId: runId, testCaseId: orders, status: 'skipped', createdAt: new Date(++clock) });
+
+    const cc = await computeChangeCoverage(db, 1, {
+      changedFiles: [{ filePath: 'src/api/orders.post.ts', additions: 41, deletions: 3 }],
+      runId,
+    });
+    const file = cc.files[0]!;
+    expect(file.reachedInRun).toBe(false);
+    expect(file.reachedCountHistory).toBe(0);
+    expect(cc.uncoveredFiles).toBe(1);
+  });
+
+  test('threads the filesTruncated flag from the diff into the coverage', async () => {
+    const cc = await computeChangeCoverage(db, 1, {
+      changedFiles: [{ filePath: 'src/a.ts', additions: 1, deletions: 0 }],
+      filesTruncated: true,
+      totalChangedFiles: 500,
+    });
+    expect(cc.filesTruncated).toBe(true);
+    expect(cc.totalChangedFiles).toBe(500);
+  });
+
   test('a changed spec file reaches the tests defined in it', async () => {
     const login = await seedCase('logs in', 'tests/login.spec.ts');
     const runId = await seedRun([login]);

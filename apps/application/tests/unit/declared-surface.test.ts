@@ -75,6 +75,14 @@ describe('parseOpenApiSpec', () => {
     expect(parseOpenApiSpec(null).routes).toEqual([]);
     expect(parseOpenApiSpec({ paths: 'nope' }).routes).toEqual([]);
   });
+
+  test('caps the route count so a huge spec cannot mint unbounded nodes', async () => {
+    const { MAX_OPENAPI_ROUTES } = await import('#shared/openapi');
+    const paths: Record<string, unknown> = {};
+    for (let i = 0; i < MAX_OPENAPI_ROUTES + 50; i++) paths[`/r${i}`] = { get: { responses: { '200': {} } } };
+    const manifest = parseOpenApiSpec({ paths });
+    expect(manifest.routes).toHaveLength(MAX_OPENAPI_ROUTES);
+  });
 });
 
 describe('extractImports / buildImportEdges', () => {

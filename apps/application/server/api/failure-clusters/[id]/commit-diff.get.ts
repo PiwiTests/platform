@@ -1,6 +1,7 @@
 import { failureClusters, testRuns } from '../../../database/schema';
 import { eq } from 'drizzle-orm';
 import { normalizeGitUrl } from '../../../utils/scm/git-url';
+import { isValidGitRef } from '../../../utils/scm/refs';
 import { createScmProvider } from '../../../utils/scm';
 import { requireResolvedProjectAccess, requireRouteId, resolveClusterProjectId } from '../../../utils/project-access';
 
@@ -29,6 +30,9 @@ export default eventHandler(async (event) => {
 
   const sha = getQuery(event).sha as string | undefined;
   if (!sha) throw apiError({ statusCode: 400, message: 'Missing sha query parameter' });
+  // The sha goes into an SCM API URL with the project's token; reject a ref that
+  // could traverse out of the repository path.
+  if (!isValidGitRef(sha)) throw apiError({ statusCode: 400, message: 'Invalid sha' });
 
   const [cluster] = await db
     .select({

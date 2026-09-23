@@ -9,7 +9,7 @@
  * recent window, so a selection-narrowed run is never mistaken for a gap.
  */
 
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray, notInArray } from 'drizzle-orm';
 import { graphEdges, locatorSnapshots, testCases, testRuns, testRunsCases } from '../../server/database/schema';
 import type { DrizzleDB } from './db';
 import { parseCallsiteLocation } from '../callsite-location';
@@ -26,6 +26,9 @@ import { HISTORY_WINDOW_RUNS } from './scenario-gaps';
 function normalizePath(p: string): string {
   return p.replace(/\\/g, '/').replace(/^\.\//, '').trim();
 }
+
+/** Statuses a case can carry without having actually executed — never reach. */
+const NON_RUNNING_STATUSES = ['skipped', 'didnotrun'];
 
 /** Two repo-relative paths match when equal or one is a path-suffix of the other. */
 function pathsMatch(a: string, b: string): boolean {
@@ -158,6 +161,10 @@ export interface ChangeCoverage {
   tickets: ChangeCoverageTicket[];
   reachedFiles: number;
   uncoveredFiles: number;
+  /** True when the provider capped the changed-file list, so more files exist than shown. */
+  filesTruncated: boolean;
+  /** Total changed files the diff reported before the cap, when the provider exposes it. */
+  totalChangedFiles: number | null;
   /** False when no SCM diff was available (no token, or the fetch failed). */
   scmAvailable: boolean;
 }
@@ -174,6 +181,10 @@ export interface ChangeCoverageInput {
   ticketKey?: string | null;
   /** Per-file ticket, from the commit that changed each file — normalized path → id. */
   fileTickets?: Record<string, string>;
+  /** True when the provider capped the changed-file list before handing it in. */
+  filesTruncated?: boolean;
+  /** Total changed files the diff reported before the cap, when known. */
+  totalChangedFiles?: number | null;
   scmAvailable?: boolean;
 }
 
@@ -286,13 +297,15 @@ export async function computeChangeCoverage(
   const { byFile, caseFiles } = await loadFileReach(db, projectId);
   const { byRoute, byPage } = await loadGraphNodeReach(db, projectId);
 
-  // Which test cases ran in the inspected run, and in each recent run.
+  // Which test cases ran in the inspected run, and in each recent run. A case
+  // that was skipped or did-not-run is present in the rows but never executed, so
+  // it is not reach — counting it would report an untested change as covered.
   const ranInRun = new Set<number>();
   if (input.runId != null) {
     const rows = await db
       .select({ testCaseId: testRunsCases.testCaseId })
       .from(testRunsCases)
-      .where(eq(testRunsCases.testRunId, input.runId));
+      .where(and(eq(testRunsCases.testRunId, input.runId), notInArray(testRunsCases.status, NON_RUNNING_STATUSES)));
     for (const r of rows) ranInRun.add(r.testCaseId);
   }
 
@@ -301,7 +314,7 @@ export async function computeChangeCoverage(
     const rows = await db
       .select({ testRunId: testRunsCases.testRunId, testCaseId: testRunsCases.testCaseId })
       .from(testRunsCases)
-      .where(inArray(testRunsCases.testRunId, recentIds));
+      .where(and(inArray(testRunsCases.testRunId, recentIds), notInArray(testRunsCases.status, NON_RUNNING_STATUSES)));
     for (const r of rows) {
       const set = runsByCase.get(r.testCaseId) ?? new Set<number>();
       set.add(r.testRunId);
@@ -377,6 +390,8 @@ export async function computeChangeCoverage(
     tickets: ticketGroups,
     reachedFiles,
     uncoveredFiles: covered.length - reachedFiles,
+    filesTruncated: input.filesTruncated ?? false,
+    totalChangedFiles: input.totalChangedFiles ?? null,
     scmAvailable: input.scmAvailable ?? true,
   };
 }
