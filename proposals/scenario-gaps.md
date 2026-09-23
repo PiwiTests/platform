@@ -44,7 +44,7 @@ layered-SVG feature-graph view, the `GET /graph` endpoint and the `get_feature_g
 the tab and dropping muted rows from the PR comment first). The matrix and escaped-defect detectors and the weekly
 digest ship as pure functions with the selection tested; wiring the matrix and escaped-defect loaders, the digest
 delivery task and the locator-break-ahead healing pre-flight waits on the same per-feature/tracker/hunk data the
-change-time detectors wait on. Later items remain proposed. The first revision built two references (a reach index and a surface inventory)
+change-time detectors wait on. The Test Map is registered in the capability opt-out system as the `test-map` and `server-probes` capabilities (module `workflow`) and listed in the product feature catalog, so it can be declined per project or instance-wide. Later items remain proposed. The first revision built two references (a reach index and a surface inventory)
 and listed the difference; the second added an oracle axis, an exposure score and a feature graph after a review of
 the products and research in this area ([Prior art](#prior-art), [References](#references)); the third made the graph
 the substrate, split resilience findings from suite gaps, thinned the first milestone to a spine and put an entry

@@ -48,11 +48,11 @@ Beyond change time, detectors read the graph and history, each naming its eviden
 | **Orphan test** | a test whose every reached node has vanished from recent runs | `3 pages it reaches disappeared 40 days ago` |
 | **Fix did not hold** | a failure cluster whose fix later regressed | `Fixed in a1b2c3d · regressed 6 days later` |
 
-More detectors — phantom coverage, passed-with-errors, an uncalled catalog method, an incidental catch, assertion-light pages, and change-time ones (a new error path or control, an intent with no test) — read the same graph. Each gap names its class: **blind-spot** (nothing reaches it), **false-comfort** (reached, but a probe showed it unnoticed) and **fragile** (a single, flaky or long-skipped test).
+More detectors — phantom coverage, passed-with-errors, an uncalled catalog method, assertion-light pages, and change-time ones — read the same graph. Each gap names its class: **blind-spot** (nothing reaches it), **false-comfort** (reached, but a probe showed it unnoticed) and **fragile** (a single, flaky or long-skipped test).
 
 ## The whole suite, not just its routes
 
-The graph also holds the **controls** and **links** each page exposes and the **handler** and **dependency** each route reaches. Control names are templated — a table of five hundred orders is one control — and a page keeps at most 200. Controls and links come from a **page inventory** the reporter records on passing runs (`capturePageInventory`, on by default, names and hrefs only); handler and dependency breadth comes from server spans instrumentation forwards.
+The graph also holds the **controls** and **links** each page exposes and the **handler** and **dependency** each route reaches. Control names are templated, and a page keeps at most 200. Controls and links come from a **page inventory** the reporter records on passing runs (`capturePageInventory`, on by default, names and hrefs only); handler and dependency breadth comes from server spans instrumentation forwards.
 
 ## Declared surface
 
@@ -92,7 +92,7 @@ The graph stays proportional to your application's surface, not its data volume:
 
 ## The Gaps tab and the graph view
 
-The project page has a **Gaps** tab: gaps and findings grouped by feature and ranked, each with its class, score factors and evidence, and the inbox verbs — **accept** (copies the draft skeleton to your clipboard), **snooze** (a day, a week, or until the node changes), **dismiss** with a reason (*not worth testing*, *covered elsewhere* — which records the covering test as a manual reaches edge — or *wrong*), and **covered by** without dismissing. The Home page lists accepted-but-unwritten gaps older than a week.
+The project page has a **Gaps** tab: gaps and findings grouped by feature and ranked, each with its class, score factors and evidence, and the inbox verbs — **accept** (copies the draft skeleton to your clipboard), **snooze** (a day, a week, or until the node changes), **dismiss** with a reason (*not worth testing*, *covered elsewhere* — which records the covering test as a manual reaches edge — or *wrong*), and **covered by** without dismissing. The Home page lists accepted-but-unwritten gaps older than a week. The Test Map and its server probes are optional: [decline](/guide/getting-started#declining-a-capability) either per project or instance-wide and these surfaces disappear.
 
 Any node opens in the **feature graph** — a layered picture of tests, pages, controls, routes, handlers and dependencies, nodes colored by class and edges by kind, with a depth control; click a node to reselect it, hover to highlight its paths. Read it over the API with `GET /api/projects/{id}/graph?node=route:POST /api/orders&depth=2` or the [`get_feature_graph`](/features/mcp) MCP tool.
 
