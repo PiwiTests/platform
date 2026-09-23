@@ -16,7 +16,10 @@ describe('isBlockedAddress', () => {
       '::1',
       'fe80::1',
       'fc00::1',
-      '::ffff:127.0.0.1', // IPv4-mapped loopback
+      '::ffff:127.0.0.1', // IPv4-mapped loopback (dotted)
+      '::ffff:7f00:1', // IPv4-mapped loopback (hex hextets) — 127.0.0.1
+      '::ffff:a9fe:a9fe', // IPv4-mapped 169.254.169.254 metadata (hex)
+      '::ffff:0a00:1', // IPv4-mapped 10.0.0.1 (hex)
       'not-an-ip',
     ]) {
       expect(isBlockedAddress(ip)).toBe(true);

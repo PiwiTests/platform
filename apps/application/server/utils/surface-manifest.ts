@@ -10,7 +10,7 @@ import { desc, eq } from 'drizzle-orm';
 import { testRuns } from '../database/schema';
 import { ingestManifestGraph } from './graph-ingest';
 import { safeFetch } from './safe-fetch';
-import { parseOpenApiSpec } from '#shared/openapi';
+import { parseOpenApiSpec, MAX_OPENAPI_ROUTES } from '#shared/openapi';
 import type { AppManifest, ManifestSource } from '#shared/types';
 import type { DrizzleDB } from '#shared/handlers/db';
 import type { DbClient } from '../database';
@@ -77,7 +77,13 @@ export async function fetchOpenApiManifest(url: string): Promise<AppManifest | n
     if (!res.ok) return null;
     const text = await readBoundedText(res, OPENAPI_MAX_BYTES);
     if (text == null) return null;
-    return parseOpenApiSpec(JSON.parse(text));
+    const manifest = parseOpenApiSpec(JSON.parse(text));
+    if ((manifest.routes?.length ?? 0) >= MAX_OPENAPI_ROUTES) {
+      console.warn(
+        `[surface-manifest] OpenAPI document capped at ${MAX_OPENAPI_ROUTES} routes; remaining operations were dropped`,
+      );
+    }
+    return manifest;
   } catch {
     return null;
   }
