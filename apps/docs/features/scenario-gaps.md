@@ -48,7 +48,7 @@ Beyond change time, detectors read the graph and history, each naming its eviden
 | **Orphan test** | a test whose every reached node vanished from recent runs | `3 pages it reaches disappeared 40 days ago` |
 | **Fix did not hold** | a failure cluster whose fix later regressed | `Fixed in a1b2c3d · regressed 6 days later` |
 
-More detectors — phantom coverage, passed-with-errors, an uncalled catalog method, assertion-light pages, change-time ones — read the same graph. Each gap names its class: **blind-spot** (nothing reaches it), **false-comfort** (reached, but a probe showed it unnoticed) and **fragile** (a single, flaky or long-skipped test).
+More detectors — phantom coverage, passed-with-errors, an uncalled method, assertion-light pages, change-time ones — are implemented but **not yet wired**. Each gap names its class: **blind-spot** (nothing reaches it), **false-comfort** (a probe found it unnoticed) or **fragile** (one flaky or skipped test).
 
 ## The whole suite, not just its routes
 
@@ -80,7 +80,7 @@ The level stays behind a per-project flag that defaults **off**, honored only ou
 
 ## Exposure ranking
 
-Gaps are ranked by an explicit **exposure** score, not a raw count — a percentage over an observed surface looks complete exactly when the surface is sparse. Four factors, each in `[0.1, 1]` so a missing input never zeroes a row, all shown on the gap: **churn** (commits in the last 90 days), **age** (older components weigh *up* — where escaped defects concentrate), **escape history** (the file is in a cluster's fixing commit) and **priority**. The score is exposure × the detector's confidence.
+Gaps are ranked by an explicit **exposure** score, not a raw count — a percentage over an observed surface looks complete exactly when the surface is sparse. Four factors, each in `[0.1, 1]` so a missing input never zeroes a row, all shown on the gap: **churn** (commits in the last 90 days), **age** (older components weigh *up* — where escaped defects concentrate), **escape history** (the file is in a cluster's fixing commit) and **priority**. The score is the geometric mean of the factors, times the detector's confidence.
 
 ## What the graph includes
 
