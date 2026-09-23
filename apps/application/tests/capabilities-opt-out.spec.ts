@@ -106,8 +106,9 @@ test.describe.serial('Capabilities opt-out', () => {
 
   test('declining the Test Map hides the Gaps tab, reconsidering brings it back', async ({ page, request }) => {
     // The opt-out project reaches no routes, so no graph rows exist and the Test
-    // Map is undecided — its Gaps tab shows. (Data would win: a project with graph
-    // rows reads active and the tab stays whatever the decision.)
+    // Map is undecided — its Gaps tab shows. (A project with graph rows is covered
+    // in scenario-gaps-decline.spec.ts: the Test Map's data is passive, so a
+    // decline holds there too.)
     await request.patch(`/api/projects/${projectId}/capabilities`, { data: { decisions: { 'test-map': null } } });
     const caps = await (await request.get(`/api/projects/${projectId}/capabilities`)).json();
     const testMap = (caps.items as Array<{ id: string; state: string }>).find((i) => i.id === 'test-map');

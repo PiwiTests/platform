@@ -14,6 +14,14 @@ Everything else — analytics, notifications, the CI gate, PR feedback, MCP, the
 
 ## Recently shipped
 
+- **Scenario gaps and the Test Map** — one graph per project of what the application exposes, what the suite reaches
+  and what it would actually notice, turned into the tests that do not exist yet: ranked by exposure, each with a
+  skeleton to start from. Surfaced as a Gaps tab with a feature map and an ego graph view, a per-ticket section in the
+  pull-request comment, and MCP tools that hand an agent a draft; client probes mutate responses at the Playwright
+  route boundary to catch false comfort, and server probes (experimental, off by default) inject a fault inside the
+  server. Optional — decline the Test Map per project or instance-wide and its surfaces disappear.
+  [proposals/scenario-gaps.md](proposals/scenario-gaps.md); see
+  [scenario gaps](https://piwitests.dev/features/scenario-gaps).
 - **Issue tracking with Jira** — file a Jira issue from a failure or a failure cluster with the evidence and the fix
   plan already in the body, keep it linked as the known issue, and let Piwi keep it honest: a background sync task and
   an optional inbound webhook carry status both ways under per-project policies (comment on fix or regression,
