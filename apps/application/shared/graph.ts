@@ -68,11 +68,18 @@ export function parseRouteNodeKey(key: string): { method: string; pattern: strin
  * dropped. So `/orders/123` and `/orders/456` are one node, and the same path
  * served from staging and production lands on that one node too. Accepts both an
  * absolute `page.url()` and a bare path.
+ *
+ * Returns null for anything that is not a real navigable page: a non-`http(s)`
+ * URL (`about:blank`, `chrome-error://…`, `data:`, `blob:`) is never a page node,
+ * or it would collapse to `/` and mint junk surface.
  */
-export function pageNodeKey(url: string): string {
+export function pageNodeKey(url: string): string | null {
+  const hasScheme = /^[a-z][a-z0-9+.-]*:/i.test(url);
+  // A scheme that is present but not http(s) is not a page — drop it.
+  if (hasScheme && !/^https?:\/\//i.test(url)) return null;
   // `normalizeRoute` needs an absolute URL to parse; a bare path is anchored to
   // a placeholder origin first, which the normalization then drops anyway.
-  const absolute = /^[a-z][a-z0-9+.-]*:\/\//i.test(url)
+  const absolute = /^https?:\/\//i.test(url)
     ? url
     : `http://${PATH_ANCHOR_HOST}${url.startsWith('/') ? '' : '/'}${url}`;
   const normalized = normalizeRoute(absolute);
