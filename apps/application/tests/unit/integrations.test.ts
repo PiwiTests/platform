@@ -32,6 +32,7 @@ function jsonResponse(body: unknown, ok = true, status = 200) {
     ok,
     status,
     statusText: ok ? 'OK' : 'Error',
+    headers: new Headers(),
     json: async () => body,
     text: async () => JSON.stringify(body),
   } as unknown as Response;

@@ -154,6 +154,33 @@ export class JiraClient implements IssueTracker {
     return response;
   }
 
+  /**
+   * Turn a failed response into a JiraError that says what failed and why: the
+   * endpoint (query string dropped), whether it went through the scoped-token
+   * gateway, Atlassian's failure category header, and Jira's own error text.
+   * The request's credential is never part of any of these.
+   */
+  private async failure(response: Response, what: string, method: string, path: string): Promise<JiraError> {
+    if (response.status === 429) {
+      const header = response.headers.get('retry-after');
+      const retryAfter = header != null ? Number(header) : NaN;
+      return new JiraError(
+        429,
+        'Jira rate limited the request (429)',
+        Number.isFinite(retryAfter) ? retryAfter : undefined,
+      );
+    }
+    const endpoint = `${method.toUpperCase()} ${path.split('?')[0]}${this.cloudId ? ' via api.atlassian.com' : ''}`;
+    const details = [response.headers.get('x-failure-category'), await readJiraErrorBody(response)].filter(
+      (part): part is string => !!part,
+    );
+    const status = `${response.status}${response.statusText ? ` ${response.statusText}` : ''}`;
+    return new JiraError(
+      response.status,
+      `Jira ${what} failed (${status}) on ${endpoint}${details.length ? `: ${details.join(' — ')}` : ''}`,
+    );
+  }
+
   /** Provider config discovered while making calls (a resolved scoped-token cloud id). */
   detectedConfig(): Record<string, unknown> | null {
     return this.cloudId ? { cloudId: this.cloudId } : null;
@@ -170,18 +197,7 @@ export class JiraClient implements IssueTracker {
       },
       signal: AbortSignal.timeout(this.timeoutMs),
     }));
-    if (!response.ok) {
-      if (response.status === 429) {
-        const header = response.headers.get('retry-after');
-        const retryAfter = header != null ? Number(header) : NaN;
-        throw new JiraError(
-          429,
-          'Jira rate limited the request (429)',
-          Number.isFinite(retryAfter) ? retryAfter : undefined,
-        );
-      }
-      throw new JiraError(response.status, `Jira request failed (${response.status} ${response.statusText})`);
-    }
+    if (!response.ok) throw await this.failure(response, 'request', init?.method ?? 'GET', path);
     if (response.status === 204) return undefined as T;
     return (await response.json()) as T;
   }
@@ -339,16 +355,12 @@ export class JiraClient implements IssueTracker {
     };
     const response = await this.apiFetch(`/rest/api/3/issue/${encodeURIComponent(key)}/attachments`, build);
     if (!response.ok) {
-      if (response.status === 429) {
-        const header = response.headers.get('retry-after');
-        const retryAfter = header != null ? Number(header) : NaN;
-        throw new JiraError(
-          429,
-          'Jira rate limited the request (429)',
-          Number.isFinite(retryAfter) ? retryAfter : undefined,
-        );
-      }
-      throw new JiraError(response.status, `Jira attachment failed (${response.status} ${response.statusText})`);
+      throw await this.failure(
+        response,
+        'attachment',
+        'POST',
+        `/rest/api/3/issue/${encodeURIComponent(key)}/attachments`,
+      );
     }
   }
 
@@ -376,6 +388,49 @@ export class JiraClient implements IssueTracker {
     if (projectIssue?.[1]) return { key: projectIssue[1].toUpperCase() };
     return null;
   }
+}
+
+const MAX_ERROR_DETAIL_CHARS = 500;
+
+/**
+ * Jira's explanation of a failed request. REST errors carry
+ * `{ errorMessages: string[], errors: { field: message } }`; the api.atlassian.com
+ * gateway answers `{ code, message }`. Anything else is returned as trimmed text.
+ */
+async function readJiraErrorBody(response: Response): Promise<string | null> {
+  let text: string;
+  try {
+    text = (await response.text()).trim();
+  } catch {
+    return null;
+  }
+  if (!text) return null;
+  let detail = text;
+  try {
+    const data = JSON.parse(text) as {
+      errorMessages?: unknown;
+      errors?: unknown;
+      message?: unknown;
+      code?: unknown;
+    };
+    const parts: string[] = [];
+    if (Array.isArray(data.errorMessages)) {
+      parts.push(...data.errorMessages.filter((m): m is string => typeof m === 'string' && m.length > 0));
+    }
+    if (data.errors && typeof data.errors === 'object') {
+      for (const [field, message] of Object.entries(data.errors as Record<string, unknown>)) {
+        if (typeof message === 'string' && message.length > 0) parts.push(`${field}: ${message}`);
+      }
+    }
+    if (typeof data.message === 'string' && data.message.length > 0) {
+      parts.push(data.code != null ? `${String(data.code)} ${data.message}` : data.message);
+    }
+    if (parts.length) detail = parts.join('; ');
+  } catch {
+    // Not JSON (an HTML error page, plain text): keep the raw text.
+  }
+  detail = detail.replace(/\s+/g, ' ');
+  return detail.length > MAX_ERROR_DETAIL_CHARS ? `${detail.slice(0, MAX_ERROR_DETAIL_CHARS)}…` : detail;
 }
 
 /** Translate a neutral search into JQL: label AND text clauses, ordered by update. */

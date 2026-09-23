@@ -84,6 +84,41 @@ describe('JiraClient write methods', () => {
     });
   });
 
+  test("a 400 surfaces the endpoint and Jira's error messages", async () => {
+    fetchMock.mockResolvedValueOnce(
+      response(
+        { errorMessages: ['Bad things'], errors: { issuetype: 'Specify a valid issue type' } },
+        { ok: false, status: 400 },
+      ),
+    );
+    const err = await client.createIssue({ projectKey: 'P', issueType: 'Bug', title: 't', body }).catch((e) => e);
+    expect(err).toBeInstanceOf(JiraError);
+    expect(err.status).toBe(400);
+    expect(err.message).toBe(
+      'Jira request failed (400 Error) on POST /rest/api/3/issue: Bad things; issuetype: Specify a valid issue type',
+    );
+  });
+
+  test('a gateway failure names the gateway, the failure category and its message', async () => {
+    const scoped = new JiraClient({
+      baseUrl: 'https://acme.atlassian.net',
+      email: 'me@acme.io',
+      apiToken: 'scoped-tok',
+      cloudId: 'cloud-1',
+    });
+    fetchMock.mockResolvedValueOnce(
+      response(
+        { code: 401, message: 'Unauthorized; scope does not match' },
+        { ok: false, status: 401, headers: { 'x-failure-category': 'FAILURE_CLIENT_SCOPE_CHECK' } },
+      ),
+    );
+    const err = await scoped.listProjects().catch((e) => e);
+    expect(err.message).toBe(
+      'Jira request failed (401 Error) on GET /rest/api/3/project/search via api.atlassian.com: ' +
+        'FAILURE_CLIENT_SCOPE_CHECK — 401 Unauthorized; scope does not match',
+    );
+  });
+
   test('no error message ever contains the credential', async () => {
     fetchMock.mockResolvedValueOnce(response({}, { ok: false, status: 500 }));
     const err = await client.createIssue({ projectKey: 'P', issueType: 'Bug', title: 't', body }).catch((e) => e);
