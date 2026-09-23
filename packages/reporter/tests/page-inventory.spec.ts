@@ -1,6 +1,7 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect } from 'vitest';
 import {
   capPageInventory,
+  collectPageInventoryInPage,
   inventoryPageKey,
   PAGE_INVENTORY_MAX_ENTRIES,
   type RawPageInventory,
@@ -77,5 +78,122 @@ describe('inventoryPageKey (per-worker dedupe key)', () => {
 
   it('returns null for an unparseable URL', () => {
     expect(inventoryPageKey('not a url')).toBeNull();
+  });
+});
+
+// ── collectPageInventoryInPage: runs in the browser, so drive it against a
+// minimal fake DOM. These assert the privacy contract: field contents are never
+// read for value-bearing controls, and hrefs are stripped of query and hash. ──
+interface FakeEl {
+  tagName: string;
+  _attrs: Record<string, string>;
+  textContent: string;
+  labels?: Array<{ textContent: string }>;
+  isContentEditable: boolean;
+  getAttribute(name: string): string | null;
+  hasAttribute(name: string): boolean;
+}
+
+function el(
+  tagName: string,
+  attrs: Record<string, string> = {},
+  opts: { textContent?: string; labels?: Array<{ textContent: string }>; isContentEditable?: boolean } = {},
+): FakeEl {
+  return {
+    tagName: tagName.toUpperCase(),
+    _attrs: attrs,
+    textContent: opts.textContent ?? '',
+    labels: opts.labels,
+    isContentEditable: opts.isContentEditable ?? false,
+    getAttribute(name: string) {
+      return name in this._attrs ? this._attrs[name]! : null;
+    },
+    hasAttribute(name: string) {
+      return name in this._attrs;
+    },
+  };
+}
+
+function runCollector(opts: {
+  controls?: FakeEl[];
+  links?: FakeEl[];
+  byId?: Record<string, { textContent: string }>;
+  href?: string;
+}): RawPageInventory | null {
+  const doc = {
+    querySelectorAll(sel: string) {
+      return sel === 'a[href]' ? (opts.links ?? []) : (opts.controls ?? []);
+    },
+    getElementById(id: string) {
+      return opts.byId?.[id] ?? null;
+    },
+  };
+  const g = globalThis as any;
+  g.document = doc;
+  g.location = { href: opts.href ?? 'https://app.example.com/settings' };
+  return collectPageInventoryInPage(2000);
+}
+
+describe('collectPageInventoryInPage (privacy)', () => {
+  afterEach(() => {
+    delete (globalThis as any).document;
+    delete (globalThis as any).location;
+  });
+
+  it('never reads a textarea/contenteditable/select value as the name', () => {
+    const controls = [
+      // A textarea holding recovery codes, no label — must not leak textContent.
+      el('textarea', {}, { textContent: 'RECOVERY-CODE-1234-5678' }),
+      // A rich-text (contenteditable) editor exposed as a textbox.
+      el('div', { role: 'textbox' }, { textContent: 'draft note the user typed', isContentEditable: true }),
+      // A select whose options concatenate into textContent.
+      el('select', {}, { textContent: 'RedGreenBlue' }),
+    ];
+    const inv = runCollector({ controls })!;
+    // None produced a name (no label/aria-label), so none is shipped.
+    expect(inv.controls).toEqual([]);
+    const names = JSON.stringify(inv);
+    expect(names).not.toContain('RECOVERY-CODE');
+    expect(names).not.toContain('draft note');
+    expect(names).not.toContain('Red');
+  });
+
+  it('names value-bearing controls from labels, never their content', () => {
+    const controls = [
+      el('input', { type: 'email', 'aria-label': 'Email address' }, { textContent: 'secret@corp.test' }),
+      el('textarea', {}, { textContent: 'the note body', labels: [{ textContent: 'Notes' }] }),
+    ];
+    const inv = runCollector({ controls })!;
+    expect(inv.controls).toEqual([
+      { role: 'textbox', name: 'Email address' },
+      { role: 'textbox', name: 'Notes' },
+    ]);
+  });
+
+  it('resolves aria-labelledby against the document', () => {
+    const controls = [el('button', { 'aria-labelledby': 'lbl1 lbl2' })];
+    const inv = runCollector({
+      controls,
+      byId: { lbl1: { textContent: 'Delete' }, lbl2: { textContent: 'account' } },
+    })!;
+    expect(inv.controls).toEqual([{ role: 'button', name: 'Delete account' }]);
+  });
+
+  it('keeps a non-value control name from its textContent (a button)', () => {
+    const inv = runCollector({ controls: [el('button', {}, { textContent: 'Save changes' })] })!;
+    expect(inv.controls).toEqual([{ role: 'button', name: 'Save changes' }]);
+  });
+
+  it('strips the query and hash from a link href but keeps its visible text', () => {
+    const links = [el('a', { href: '/reset?token=SIGNED-SECRET#section' }, { textContent: 'Reset password' })];
+    const inv = runCollector({ links })!;
+    expect(inv.links).toEqual([{ name: 'Reset password', href: '/reset' }]);
+    expect(JSON.stringify(inv)).not.toContain('SIGNED-SECRET');
+  });
+
+  it('returns null when there is no document', () => {
+    (globalThis as any).document = undefined;
+    (globalThis as any).location = { href: 'https://x' };
+    expect(collectPageInventoryInPage(10)).toBeNull();
   });
 });
