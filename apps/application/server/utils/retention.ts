@@ -21,6 +21,7 @@ import {
   testRunsCases,
 } from '../database/schema';
 import { deleteFileRow, deleteRunStorageDir, gcTraceBlobs } from './delete-run-files';
+import { deleteGraphRowsForRuns } from './graph-ingest';
 import { recomputeClusterOccurrences } from '#shared/handlers/failure-cluster-ops';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -93,6 +94,7 @@ export async function deleteRunsByIds(db: DbClient, runIds: number[]): Promise<D
         ariaJson: testRunsCases.ariaSnapshotJsonPayloadId,
         source: testRunsCases.testSourcePayloadId,
         frames: testRunsCases.testSourceFramesPayloadId,
+        inventory: testRunsCases.pageInventoryPayloadId,
       })
       .from(testRunsCases)
       .where(inArray(testRunsCases.id, batch));
@@ -101,6 +103,7 @@ export async function deleteRunsByIds(db: DbClient, runIds: number[]): Promise<D
       if (ref.ariaJson != null) candidatePayloadIds.add(ref.ariaJson);
       if (ref.source != null) candidatePayloadIds.add(ref.source);
       if (ref.frames != null) candidatePayloadIds.add(ref.frames);
+      if (ref.inventory != null) candidatePayloadIds.add(ref.inventory);
     }
   }
 
@@ -176,6 +179,18 @@ export async function deleteRunsByIds(db: DbClient, runIds: number[]): Promise<D
     await db.delete(testRuns).where(inArray(testRuns.id, batch));
   }
 
+  // Graph nodes/edges whose newest evidence was a deleted run, per project, so
+  // the feature-graph tables never point at runs that no longer exist.
+  const runIdsByProject = new Map<number, number[]>();
+  for (const run of runs) {
+    const list = runIdsByProject.get(run.projectId) ?? [];
+    list.push(run.id);
+    runIdsByProject.set(run.projectId, list);
+  }
+  for (const [projectId, ids] of runIdsByProject) {
+    await deleteGraphRowsForRuns(db, projectId, ids);
+  }
+
   // GC payloads no longer referenced by any surviving execution row.
   for (const batch of batches([...candidatePayloadIds])) {
     await db.delete(casePayloads).where(and(inArray(casePayloads.id, batch), payloadUnreferenced())!);
@@ -210,7 +225,8 @@ function payloadUnreferenced(): SQL {
   return sql`NOT EXISTS (SELECT 1 FROM ${testRunsCases} WHERE ${testRunsCases.ariaSnapshotPayloadId} = ${casePayloads.id})
     AND NOT EXISTS (SELECT 1 FROM ${testRunsCases} WHERE ${testRunsCases.ariaSnapshotJsonPayloadId} = ${casePayloads.id})
     AND NOT EXISTS (SELECT 1 FROM ${testRunsCases} WHERE ${testRunsCases.testSourcePayloadId} = ${casePayloads.id})
-    AND NOT EXISTS (SELECT 1 FROM ${testRunsCases} WHERE ${testRunsCases.testSourceFramesPayloadId} = ${casePayloads.id})`;
+    AND NOT EXISTS (SELECT 1 FROM ${testRunsCases} WHERE ${testRunsCases.testSourceFramesPayloadId} = ${casePayloads.id})
+    AND NOT EXISTS (SELECT 1 FROM ${testRunsCases} WHERE ${testRunsCases.pageInventoryPayloadId} = ${casePayloads.id})`;
 }
 
 export interface OrphanSweepResult {

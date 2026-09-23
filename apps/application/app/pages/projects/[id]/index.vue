@@ -31,8 +31,8 @@ const deletingRunId = ref<number | null>(null);
 const confirmDeleteRunId = ref<number | null>(null);
 
 const { isAdmin, isReporter } = useAuth();
-// Project-level capability states gate the bell, the Quarantine segment and the
-// Timeline's add-marker control.
+// Project-level capability states gate the bell, the Quarantine segment, the
+// Gaps tab and the Timeline's add-marker control.
 const { isHidden: projCapHidden } = await useProjectCapabilities(Number(projectId));
 const runtimeConfig = useRuntimeConfig();
 const { isDesktop, openReport } = useDesktopReportLink();
@@ -200,7 +200,7 @@ function refreshFailureCounts() {
 useRunStream(() => Promise.all([refresh(), refreshFailureCounts()]));
 
 // === TABS ===
-const TABS = ['runs', 'tests', 'failures', 'performance', 'settings'] as const;
+const TABS = ['runs', 'tests', 'failures', 'gaps', 'performance', 'settings'] as const;
 type TabValue = (typeof TABS)[number];
 
 // Old ?tab= values (and the retired sub-routes) still land on the right tab.
@@ -253,8 +253,18 @@ function resolveTab(raw: unknown): TabValue | null {
   return TAB_ALIASES[raw] ?? null;
 }
 
+// The Gaps tab follows the `test-map` capability: a project that declined it
+// loses the tab, and a stale `?tab=gaps` link falls back to Runs.
+watch(
+  () => projCapHidden('test-map'),
+  (hidden) => {
+    if (hidden && activeTab.value === 'gaps') activeTab.value = 'runs';
+  },
+  { immediate: true },
+);
+
 const initialTab = resolveTab(route.query.tab);
-if (initialTab) {
+if (initialTab && !(initialTab === 'gaps' && projCapHidden('test-map'))) {
   activeTab.value = initialTab;
   if (typeof route.query.tab === 'string' && ALIAS_SEGMENT[route.query.tab])
     failureSegment.value = ALIAS_SEGMENT[route.query.tab]!;
@@ -275,21 +285,24 @@ onMounted(() => {
 
 const failuresCount = computed(() => clustersCount.value.open + (flakyCount.value ?? 0) + (quarantineCount.value ?? 0));
 
-const tabItems = computed(() => [
-  { label: `Runs (${filteredRuns.value.length})`, icon: 'i-lucide-play-circle', value: 'runs' as const },
-  {
-    label: `Tests${testCasesTotal.value != null ? ` (${testCasesTotal.value})` : ''}`,
-    icon: 'i-lucide-flask-conical',
-    value: 'tests' as const,
-  },
-  {
-    label: `Failures${failuresCount.value > 0 ? ` (${failuresCount.value})` : ''}`,
-    icon: 'i-lucide-layers',
-    value: 'failures' as const,
-  },
-  { label: 'Performance', icon: 'i-lucide-trending-up', value: 'performance' as const },
-  { label: 'Settings', icon: 'i-lucide-settings', value: 'settings' as const },
-]);
+const tabItems = computed(() =>
+  [
+    { label: `Runs (${filteredRuns.value.length})`, icon: 'i-lucide-play-circle', value: 'runs' as const },
+    {
+      label: `Tests${testCasesTotal.value != null ? ` (${testCasesTotal.value})` : ''}`,
+      icon: 'i-lucide-flask-conical',
+      value: 'tests' as const,
+    },
+    {
+      label: `Failures${failuresCount.value > 0 ? ` (${failuresCount.value})` : ''}`,
+      icon: 'i-lucide-layers',
+      value: 'failures' as const,
+    },
+    { label: 'Gaps', icon: 'i-lucide-radar', value: 'gaps' as const },
+    { label: 'Performance', icon: 'i-lucide-trending-up', value: 'performance' as const },
+    { label: 'Settings', icon: 'i-lucide-settings', value: 'settings' as const },
+  ].filter((item) => item.value !== 'gaps' || !projCapHidden('test-map')),
+);
 
 const tabNavItems = computed(() =>
   tabItems.value.map((item) => ({
@@ -590,6 +603,16 @@ const storedCiRerun = computed(
     } | null,
 );
 
+const storedServerProbes = computed(
+  () =>
+    (project.value as { serverProbes?: unknown } | null)?.serverProbes as {
+      enabled?: boolean;
+      faults?: string[];
+      routes?: string[];
+      dependencyOnStateChanging?: boolean;
+    } | null,
+);
+
 const editState = ref({
   label: '',
   description: '',
@@ -597,6 +620,8 @@ const editState = ref({
   aiLanguage: '',
   scmToken: '',
   defaultBranch: '',
+  openApiUrl: '',
+  serverProbes: { enabled: false, faults: '', routes: '', dependencyOnStateChanging: false },
   ciRerun: {
     enabled: false,
     github: { workflow: '', ref: '', inputName: '' },
@@ -620,6 +645,13 @@ watch(
       aiLanguage: (p as { aiLanguage?: string }).aiLanguage || '',
       scmToken: '',
       defaultBranch: (p as { defaultBranch?: string }).defaultBranch || '',
+      openApiUrl: (p as { openApiUrl?: string }).openApiUrl || '',
+      serverProbes: {
+        enabled: storedServerProbes.value?.enabled ?? false,
+        faults: (storedServerProbes.value?.faults ?? []).join(', '),
+        routes: (storedServerProbes.value?.routes ?? []).join(', '),
+        dependencyOnStateChanging: storedServerProbes.value?.dependencyOnStateChanging ?? false,
+      },
       ciRerun: {
         enabled: ci?.enabled ?? false,
         github: {
@@ -636,6 +668,14 @@ watch(
   { immediate: true },
 );
 
+/** Split a comma/whitespace-separated form value into a trimmed, non-empty list. */
+function splitCommaList(value: string): string[] {
+  return value
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
 async function handleSaveSettings() {
   savingSettings.value = true;
   try {
@@ -648,6 +688,13 @@ async function handleSaveSettings() {
         aiLanguage: editState.value.aiLanguage || null,
         scmToken: editState.value.scmToken || null,
         defaultBranch: editState.value.defaultBranch || null,
+        openApiUrl: editState.value.openApiUrl || null,
+        serverProbes: {
+          enabled: editState.value.serverProbes.enabled,
+          faults: splitCommaList(editState.value.serverProbes.faults),
+          routes: splitCommaList(editState.value.serverProbes.routes),
+          dependencyOnStateChanging: editState.value.serverProbes.dependencyOnStateChanging,
+        },
         ciRerun: editState.value.ciRerun,
         tagIds: selectedTags.value.map((t) => t.id),
       },
@@ -1134,6 +1181,11 @@ const moreMenuItems = computed(() => {
           />
         </div>
 
+        <!-- GAPS TAB -->
+        <div v-if="activeTab === 'gaps'">
+          <GapsPanel :project-id="Number(projectId)" />
+        </div>
+
         <!-- PERFORMANCE TAB -->
         <div v-if="activeTab === 'performance'" class="space-y-4">
           <div class="flex flex-wrap items-center gap-3">
@@ -1302,12 +1354,16 @@ const moreMenuItems = computed(() => {
                 :has-token="hasScmToken"
                 :project-id="Number(projectId)"
                 :capabilities="project?.capabilities ?? null"
+                :hide-open-api="projCapHidden('test-map')"
+                :hide-server-probes="projCapHidden('server-probes')"
                 v-model:label="editState.label"
                 v-model:description="editState.description"
                 v-model:diagnosisInstructions="editState.diagnosisInstructions"
                 v-model:aiLanguage="editState.aiLanguage"
                 v-model:scmToken="editState.scmToken"
                 v-model:defaultBranch="editState.defaultBranch"
+                v-model:openApiUrl="editState.openApiUrl"
+                v-model:serverProbes="editState.serverProbes"
                 v-model:ciRerun="editState.ciRerun"
                 v-model:tags="selectedTags"
                 :all-tags="allTags"

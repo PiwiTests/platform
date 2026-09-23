@@ -196,6 +196,7 @@ describe('feature-page word budget', () => {
     'ui-overview': 3100,
     extension: 2500,
     mcp: 2300,
+    'scenario-gaps': 1760,
     desktop: 2300,
     'locator-healing': 2000,
     notifications: 1400,

@@ -67,6 +67,40 @@ describe('resolveCapability precedence', () => {
   }
 });
 
+describe('resolveCapability with passive-data evidence', () => {
+  // The Test Map's graph nodes are written on every run, so its evidence is
+  // passive: a decline must hold over that data, or declining it does nothing on
+  // any project with history. Every other capability keeps "data always wins".
+  const testMap = CAPABILITY_BY_ID['test-map'];
+
+  test('the flag is on for test-map and off for a turned-on capability', () => {
+    expect(testMap.passiveData).toBe(true);
+    expect(CAPABILITY_BY_ID.fixtures.passiveData).toBeFalsy();
+  });
+
+  test('an instance decline holds over passive data', () => {
+    expect(resolveCapability(testMap, { evidence: true, instanceDecision: 'declined' })).toBe('declined');
+  });
+
+  test('a project decline holds over passive data', () => {
+    expect(resolveCapability(testMap, { evidence: true, projectDecision: 'declined' })).toBe('declined');
+  });
+
+  test('a project enable over an instance decline lets passive data read active', () => {
+    expect(
+      resolveCapability(testMap, { evidence: true, projectDecision: 'enabled', instanceDecision: 'declined' }),
+    ).toBe('active');
+  });
+
+  test('passive data with no decline still reads active', () => {
+    expect(resolveCapability(testMap, { evidence: true })).toBe('active');
+  });
+
+  test('a non-passive capability keeps data-wins even when declined', () => {
+    expect(resolveCapability(def, { evidence: true, instanceDecision: 'declined' })).toBe('active');
+  });
+});
+
 describe('resolveCapabilities', () => {
   test('a follower reads its target’s resolved state', () => {
     const states = resolveCapabilities({
@@ -90,6 +124,26 @@ describe('resolveCapabilities', () => {
   test('resolves every registry capability', () => {
     const states = resolveCapabilities({});
     for (const capability of CAPABILITIES) expect(states[capability.id]).toBe('undecided');
+  });
+
+  test('server-probes follows test-map: a test-map decline cascades', () => {
+    const states = resolveCapabilities({
+      'test-map': { evidence: false, instanceDecision: 'declined' },
+      'server-probes': { evidence: false },
+    });
+    expect(states['test-map']).toBe('declined');
+    expect(states['server-probes']).toBe('declined');
+  });
+
+  test('server-probes is not-applicable without a server trace, even when configured', () => {
+    const states = resolveCapabilities({
+      'test-map': { evidence: false },
+      'server-probes': { evidence: false, configured: true, applicable: false },
+    });
+    // test-map is undecided (no decline to cascade), so server-probes reaches the
+    // applicability check and reads not-applicable rather than declined.
+    expect(states['test-map']).toBe('undecided');
+    expect(states['server-probes']).toBe('not-applicable');
   });
 });
 

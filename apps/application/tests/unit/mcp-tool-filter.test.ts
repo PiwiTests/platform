@@ -22,6 +22,15 @@ describe('filterServeableTools', () => {
     expect(scmDeclined).toContain('get_cluster_diagnosis');
   });
 
+  it('drops the scenario-gap tools when test-map is declined, keeping the scm-backed one', () => {
+    const names = filterServeableTools(MCP_TOOL_DEFS, statesWith({ 'test-map': 'declined' })).map((t) => t.name);
+    for (const name of ['list_scenario_gaps', 'draft_scenario', 'get_feature_graph']) {
+      expect(names, name).not.toContain(name);
+    }
+    // get_change_coverage rides `scm`, not `test-map`, so it stays.
+    expect(names).toContain('get_change_coverage');
+  });
+
   it('keeps a tool whose capability is undecided, available or active', () => {
     for (const st of ['undecided', 'available', 'active'] as CapabilityState[]) {
       const names = filterServeableTools(MCP_TOOL_DEFS, statesWith({ ai: st })).map((t) => t.name);

@@ -94,6 +94,8 @@ export interface CollectedTestCase {
   /** Parsed from `piwi-web-vitals` attachments. */
   webVitals?: unknown;
   pageState?: unknown;
+  /** Parsed from `piwi-page-inventory`: controls and links per visited page (passing runs). */
+  pageInventory?: unknown;
   /** Parsed from the `piwi-ai-usage` manifest: committed AI-step artifacts this test replayed. */
   aiUsage?: unknown;
   /** Parsed from `piwi-console` attachments. */

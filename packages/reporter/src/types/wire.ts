@@ -63,6 +63,7 @@ export interface WireTestCase {
   networkRequests?: unknown;
   webVitals?: unknown;
   pageState?: unknown;
+  pageInventory?: unknown;
   aiUsage?: unknown;
   consoleLogs?: unknown;
   dialogs?: unknown;
@@ -132,6 +133,7 @@ export interface CompleteStreamEvent {
   networkRequests?: unknown;
   webVitals?: unknown;
   pageState?: unknown;
+  pageInventory?: unknown;
   aiUsage?: unknown;
   consoleLogs?: unknown;
   dialogs?: unknown;

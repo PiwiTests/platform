@@ -30,7 +30,9 @@ export type CapabilityId =
   | 'integrations'
   | 'quarantine'
   | 'tags'
-  | 'markers';
+  | 'markers'
+  | 'test-map'
+  | 'server-probes';
 
 export type CapabilityModule = 'core' | 'workflow' | 'healing' | 'agents';
 export type CapabilityLevel = 'instance' | 'project';
@@ -51,6 +53,14 @@ export interface CapabilityDef {
   needs: FeatureNeed[];
   /** Detection id in `setup-status.ts`, when evidence exists for it. */
   detection: SetupCapabilityId | null;
+  /**
+   * The capability's evidence arrives passively from ingest, not from a user
+   * turning it on (the Test Map's graph nodes are written on every run). For
+   * such a capability a decline holds over that data, so declining it actually
+   * turns the surface off; every other capability keeps the "data always wins"
+   * rule.
+   */
+  passiveData?: boolean;
   /** A capability that is declined whenever this one is (rides on it). */
   follows?: CapabilityId;
   /** Release that introduced it; the Setup ladder marks entries newer than the instance's first run. */
@@ -187,6 +197,26 @@ export const CAPABILITIES: CapabilityDef[] = [
     since: '0.15.0',
     doc: 'features/timeline-markers',
   },
+  {
+    id: 'test-map',
+    module: 'workflow',
+    levels: ['instance', 'project'],
+    needs: [],
+    detection: 'test-map',
+    passiveData: true,
+    since: '0.36.0',
+    doc: 'features/scenario-gaps',
+  },
+  {
+    id: 'server-probes',
+    module: 'workflow',
+    levels: ['project'],
+    needs: ['backend'],
+    detection: 'server-probes',
+    follows: 'test-map',
+    since: '0.36.0',
+    doc: 'features/scenario-gaps#server-probes-level-two',
+  },
 ];
 
 /** The registry keyed by id, for a direct lookup. */
@@ -222,7 +252,7 @@ export const CAPABILITY_PRESETS: CapabilityPreset[] = [
   {
     module: 'workflow',
     label: 'Triage as a team',
-    description: 'Notifications, quarantine, pull-request feedback and issue tracking.',
+    description: 'Notifications, quarantine, pull-request feedback, issue tracking and the Test Map.',
   },
   { module: 'healing', label: 'Fix faster', description: 'Locator healing and auto-heal pull requests.' },
   { module: 'agents', label: 'Let agents in', description: 'AI diagnosis over your real diff.' },
@@ -251,13 +281,23 @@ export interface CapabilityInput {
  * checklist.
  *
  * Precedence, in order: data always wins (a declined capability that starts
- * receiving data reads active); a project decline; a project enable, which
- * overrides the instance decline and the followed capability; an instance
- * decline or a declined capability this one follows; not-applicable; and
- * finally configured-but-empty (available) versus nothing at all (undecided).
+ * receiving data reads active) — except a `passiveData` capability, whose data
+ * arrives from ingest rather than from being turned on, where a decline holds
+ * over the data; a project decline; a project enable, which overrides the
+ * instance decline and the followed capability; an instance decline or a
+ * declined capability this one follows; not-applicable; and finally
+ * configured-but-empty (available) versus nothing at all (undecided).
  */
 export function resolveCapability(def: CapabilityDef, input: CapabilityInput): CapabilityState {
-  if (input.evidence) return 'active';
+  // A decline reached through the decision hierarchy, evidence aside: a project
+  // decline, or — absent a project enable — an instance decline or a declined
+  // followed capability. A project enable always overrides an instance decline.
+  const declinedByDecision =
+    input.projectDecision === 'declined' ||
+    (input.projectDecision !== 'enabled' &&
+      (input.instanceDecision === 'declined' || input.followedState === 'declined'));
+
+  if (input.evidence && !(def.passiveData && declinedByDecision)) return 'active';
   if (input.projectDecision === 'declined') return 'declined';
   if (input.projectDecision === 'enabled') {
     return input.configured ? 'available' : 'undecided';
@@ -273,8 +313,9 @@ export type CapabilityFacts = Omit<CapabilityInput, 'followedState'>;
 /**
  * Resolve every capability at once, filling each follower's `followedState`
  * from its target's already-resolved state. A `follows` target must not itself
- * follow another capability (the registry has one such target, `fixtures`),
- * which lets a single pass over the non-followers precede the followers.
+ * follow another capability (the registry's targets, `fixtures` and `test-map`,
+ * are both non-followers), which lets a single pass over the non-followers
+ * precede the followers.
  */
 export function resolveCapabilities(
   facts: Partial<Record<CapabilityId, CapabilityFacts>>,

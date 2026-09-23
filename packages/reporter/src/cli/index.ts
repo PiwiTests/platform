@@ -11,6 +11,7 @@ import { runAi } from './ai.js';
 import { runGate } from './gate.js';
 import { runInit } from './init.js';
 import { runSelect, runRun } from './select.js';
+import { runProbe } from './probe.js';
 import { findTemplatesDir, runSkills } from './skills.js';
 
 const USAGE = `
@@ -25,6 +26,7 @@ Commands:
   gate      Fail a CI job on the dashboard's analysis of a run
   select    Print the Playwright args for a saved test selection
   run       Run a saved test selection with playwright test
+  probe     Run the dashboard's probe plan and record what the suite noticed
   ai        Manage committed natural-language AI-step artifacts
 
 Run \`npx @piwitests/reporter <command> --help\` for a command's options.
@@ -46,6 +48,8 @@ async function main(): Promise<number> {
       return runSelect(rest);
     case 'run':
       return runRun(rest);
+    case 'probe':
+      return runProbe(rest);
     case 'ai':
       return runAi(rest);
     case undefined:

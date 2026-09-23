@@ -7,7 +7,7 @@ lang: en-US
 
 <Needs reporter />
 
-Piwi Dashboard exposes a built-in **Model Context Protocol (MCP) server** at `/mcp`, served from the same Nitro process as the dashboard — nothing extra to install or run. Any MCP-compatible AI client (Claude Code, Cursor, VS Code Copilot, Claude Desktop, Gemini CLI, Windsurf, Continue, …) can connect to it and query your test results, failure clusters, and AI diagnoses directly.
+Piwi Dashboard exposes a built-in **Model Context Protocol (MCP) server** at `/mcp`, served from the dashboard's own Nitro process — nothing extra to install. Any MCP-compatible client (Claude Code, Cursor, VS Code Copilot, Claude Desktop, Gemini CLI, Windsurf, Continue, …) can query your test results, failure clusters and AI diagnoses.
 
 > **In-app setup page:** open the **MCP server** page (sidebar → MCP server) for a live setup guide with auto-filled snippets.
 
@@ -15,7 +15,7 @@ Piwi Dashboard exposes a built-in **Model Context Protocol (MCP) server** at `/m
 
 ## What it provides
 
-The server exposes 46 tools — mostly read-only, plus a few write/triage tools — that cover the full diagnostic workflow, from browsing projects to inspecting the exact evidence behind a failure and closing the loop after a fix.
+The server exposes 50 tools — mostly read-only, plus a few write/triage tools — across the diagnostic workflow, from browsing projects to a failure's evidence.
 
 **Projects & activity**
 
@@ -61,7 +61,11 @@ The server exposes 46 tools — mostly read-only, plus a few write/triage tools 
 | `resolve_selection` | Resolve a saved (or built-in) selection to its matching tests and a ready-to-run `playwright test` command — the verify command after a fix |
 | `preview_selection` | Resolve an ad-hoc selection definition without saving it — the builder's dry-run |
 | `suggest_selections` | Suggested `slow`/`feature` tags and a mined smoke suite, each with its evidence |
-| `analyze_selections` | Per-selection health and drift, plus the tests no selection covers |
+| `analyze_selections` | Per-selection health and drift, plus the uncovered tests |
+| `get_change_coverage` | Changed files joined to the tests reaching them |
+| `list_scenario_gaps` | Ranked scenario gaps with class, evidence and score; filter by class, feature or PR |
+| `draft_scenario` | A deterministic test skeleton for a gap: title, annotations, graph path, catalog methods, TODO assertion |
+| `get_feature_graph` | A node's feature-graph neighborhood, with gap class and reaching tests |
 
 **Failure clusters**
 
@@ -70,9 +74,9 @@ The server exposes 46 tools — mostly read-only, plus a few write/triage tools 
 | `list_clusters` | Failure clusters grouped by error fingerprint |
 | `list_open_clusters` | Open clusters across *all* projects, ranked by occurrences — a triage queue; an optional `queue` filter focuses one inbox queue |
 | `get_cluster` | Cluster detail with affected tests and diagnosis summary |
-| `get_fix_plan` | **One-call fix plan** for a cluster: diagnosis with its validated patch, ranked locator replacements with the file and line to edit, failing tests, owning team, the verify command, a `reproduce` recipe (bash and PowerShell), a generated `bisect` script, and `fixedBefore` — the resolved clusters this one resembles |
-| `get_cluster_diagnosis` | Full AI diagnosis: root cause, evidence, suggested fix |
-| `get_cluster_context` | Full AI evidence context (errors, steps, console logs, SCM diff) — the same data the built-in diagnosis AI receives |
+| `get_fix_plan` | **One-call fix plan** for a cluster: diagnosis with its validated patch, ranked locator replacements with file and line, failing tests, owning team, the verify command, a `reproduce` recipe (bash and PowerShell), a `bisect` script, and `fixedBefore` — the resolved clusters it resembles |
+| `get_cluster_diagnosis` | Full AI diagnosis: root cause, evidence, fix |
+| `get_cluster_context` | Full AI evidence context (errors, steps, console logs, SCM diff), as the built-in diagnosis receives it |
 
 **Triage & write** *(require reporter or admin access)*
 
@@ -98,7 +102,7 @@ A tool that fails (bad argument, missing entity, out-of-scope access) returns a 
 
 ### Tool modules
 
-Every tool belongs to one **module** — `core`, `workflow`, `healing` or `agents` — the coarse groups Setup and the Home wizard ask about. Declining a module drops its tools from `tools/list` and `tools/call`; undecided and configured capabilities keep their tools, so an upgrade never removes one. Append `?modules=core` (a comma-separated set) to the MCP URL to narrow the list for a tighter token budget:
+Every tool belongs to one **module** — `core`, `workflow`, `healing` or `agents` — the coarse groups Setup and the Home wizard ask about. Declining a module drops its tools from `tools/list` and `tools/call`; undecided and configured capabilities keep theirs, so an upgrade never removes one. Append `?modules=core` (comma-separated) to the MCP URL to narrow the list:
 
 ```
 <your-piwi-url>/mcp?modules=core
@@ -108,7 +112,7 @@ Unknown module names are ignored, and narrowing never re-enables a declined tool
 
 ### Access scope
 
-The MCP server honors the same **project-assignment** rules as the REST API. When authentication is enabled, a non-admin API key can only read the projects it is assigned to; project- and entity-scoped tools return an access error for anything out of scope, and cross-project feeds (`list_recent_activity`, `list_open_clusters`, `search`) are filtered to the caller's projects. Write/triage tools additionally require the **reporter** or **administrator** role.
+The MCP server honors the REST API's **project-assignment** rules. With authentication enabled, a non-admin API key reads only its assigned projects; scoped tools return an access error for anything else, and cross-project feeds (`list_recent_activity`, `list_open_clusters`, `search`) are filtered to the caller's projects. Write/triage tools additionally require the **reporter** or **administrator** role.
 
 ---
 
@@ -128,7 +132,7 @@ When `PIWI_AUTH_ENABLED` is not set, any request is accepted without a key.
 
 ## Transport
 
-The server implements the **MCP Streamable HTTP transport**. On `initialize` it negotiates the protocol version, echoing the client's requested version when supported (`2025-06-18`, `2025-03-26`, `2024-11-05`), else the latest it implements. Requests and responses are standard JSON-RPC 2.0 messages over `POST /mcp`. No SSE or WebSocket is required for these tools. (`GET /mcp` serves the human setup page, not a stream.)
+The server implements the **MCP Streamable HTTP transport**. On `initialize` it negotiates the protocol version, echoing the client's requested version when supported (`2025-06-18`, `2025-03-26`, `2024-11-05`) and otherwise replying with its latest. Requests and responses are JSON-RPC 2.0 messages over `POST /mcp`; no SSE or WebSocket is needed (`GET /mcp` serves the setup page, not a stream).
 
 ---
 
@@ -278,11 +282,11 @@ Alongside its tools, the server exposes an MCP **prompt** — a ready-made instr
 |--------|--------------|
 | `setup_piwi` | Generates a complete, ready-to-run setup for a Playwright project that is not yet reporting here. |
 
-`setup_piwi` is **server-aware**: the dashboard fills in *this* instance's URL, whether authentication is required, and the projects that already exist — facts a static copy-paste prompt can't know. Pick it in your MCP client (optionally passing a `projectName`), and the agent gets a personalized plan: run `npx @piwitests/reporter init` against this dashboard, handle the API key if auth is on, rewire the specs, and verify a run lands. It pairs with the `setup-piwi` skill below — the prompt needs no install but requires the MCP connection; the skill works offline once installed.
+`setup_piwi` is **server-aware**: the dashboard fills in *this* instance's URL, whether authentication is required and the existing projects — facts a static prompt can't know. Pick it in your MCP client (optionally with a `projectName`) and the agent gets a personalized plan: run `npx @piwitests/reporter init` against this dashboard, handle the API key if auth is on, rewire the specs, and verify a run lands. It pairs with the `setup-piwi` skill below: the prompt needs no install but requires MCP; the skill works offline.
 
 ## Agent skills
 
-The MCP server gives an agent read access to your results; **skills** tell it what to *do* with them. A skill is a single `SKILL.md` file — the portable open format (a small front-matter block plus Markdown instructions) that Claude Code and other agents pick up from a project's skills directory. Piwi ships five, installed with the reporter's CLI:
+The MCP server gives an agent read access to your results; **skills** tell it what to *do* with them. A skill is a single `SKILL.md` file — the portable open format (front matter plus Markdown instructions) that Claude Code and other agents read from a project's skills directory. Piwi ships five, installed with the reporter's CLI:
 
 ```bash
 npx @piwitests/reporter skills add          # install all of them into .claude/skills/
@@ -290,7 +294,7 @@ npx @piwitests/reporter skills list         # see what each one does
 npx @piwitests/reporter skills add investigate-failure --dir .cursor/skills   # a specific one, elsewhere
 ```
 
-`npx @piwitests/reporter init` installs the four workflow skills automatically as part of setup. (Invoke the CLI through the package name so npx resolves *this* package, not an unrelated `piwi` on npm; a plain `npx piwi …` works once the reporter is a project dependency.)
+`npx @piwitests/reporter init` installs the workflow skills automatically as part of setup. (Invoke the CLI through the package name so npx resolves *this* package; a plain `npx piwi …` works once the reporter is a project dependency.)
 
 | Skill | What it does |
 |------|--------------|
@@ -298,6 +302,7 @@ npx @piwitests/reporter skills add investigate-failure --dir .cursor/skills   # 
 | `investigate-failure` | Investigate a failed run and propose a fix grounded in Piwi's evidence — error, steps, console, network, and the diff since the last green run. |
 | `apply-locator-healing` | Replace a brittle locator with Piwi's ranked healed selector at its call site, then re-run to confirm. |
 | `stabilize-flaky-tests` | Fix the root cause of the highest-impact flaky tests (never by adding retries), then verify with repeated runs. |
-| `run-the-right-tests` | Pick and run the right [selection](/guide/test-selection) for the task — smoke, recently-broken, a time budget — instead of always running the whole suite. |
+| `run-the-right-tests` | Pick and run the right [selection](/guide/test-selection) for the task — smoke, recently-broken, a time budget — instead of the whole suite. |
+| `write-the-missing-test` | Take the top [scenario gap](/features/scenario-gaps) in scope, draft it from the graph, finish the assertion and open it in the same change. |
 
-The skills are agent-agnostic Markdown — only the destination directory is tool-specific, so `--dir` points the install wherever your agent reads skills from. They pair with this MCP server: each one prefers a connected Piwi MCP tool (`explain_failure`, `get_locator_healing`, `list_flaky_tests`, …) and falls back to the dashboard UI when MCP is not connected.
+The skills are agent-agnostic Markdown — only the destination is tool-specific, so `--dir` points the install wherever your agent reads skills from. Each one prefers a connected Piwi MCP tool and falls back to the dashboard UI when MCP is not connected.

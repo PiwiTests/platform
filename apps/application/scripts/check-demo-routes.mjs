@@ -34,6 +34,7 @@ const INTENTIONALLY_EXCLUDED = new Set([
   'POST /api/projects/:id/selections/impact', // impact-from-diff — needs a local git diff the browser demo cannot produce
   'GET /api/desktop/reporter-config', // desktop build only; returns null everywhere else, including the demo
   'POST /api/desktop/import-local', // desktop build only; reads local files, 404 everywhere else
+  'GET /api/desktop/live-runs', // desktop build only; reports the shell's watched runs, empty everywhere else
   'POST /api/failure-clusters/:id/bisect', // desktop build only; the shell records a bisect result, 404 everywhere else
   'GET /api/desktop/events', // desktop build only; the desktop window's run progress and page requests, read only inside the shell
   'POST /api/projects/:id/test-functions/extract', // AI code-to-pattern extraction — unlike diagnosis (a fixed, curated set of seeded clusters a scripted response can convincingly cover), this takes arbitrary pasted code with no server or real LLM to analyze it against in the demo; the "Paste from code (AI)" section is hidden client-side in demo mode instead of faking an understanding of whatever the visitor pastes
@@ -51,6 +52,14 @@ const INTENTIONALLY_EXCLUDED = new Set([
   // Inbound Jira webhook: a public receiver an external Jira posts to. There is
   // no server in the browser demo, and it only ever refreshes a link.
   'POST /api/integrations/jira/webhook/:token',
+  // Local Claude CLI session: desktop-app only, drives a `claude` binary on the
+  // host. 404 everywhere else, including the demo, with nothing to script.
+  'GET /api/ai/claude-cli/status',
+  'POST /api/ai/claude-cli/login',
+  'POST /api/ai/claude-cli/logout',
+  // DOM-snapshot picker frame: serves a sandboxed HTML document over its own
+  // CSP, not JSON — the browser demo renders snapshots through its own handler.
+  'GET /api/test-run-cases/:id/dom-snapshot-frame',
 ]);
 
 // ── Derive all server routes from the file system ────────────────────────

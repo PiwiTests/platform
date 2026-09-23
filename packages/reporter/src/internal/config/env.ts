@@ -15,8 +15,12 @@ const DEFAULTS: PiwiDashboardOptions = {
   collectPerformanceMetrics: true,
   captureLocators: true,
   capturePageState: true,
+  // Off by default: the page inventory reads control and link names from every
+  // visited page, so it stays opt-in until a project turns it on.
+  capturePageInventory: false,
   captureServerTraces: true,
   sampleAriaOnPass: true,
+  uploadManifest: true,
   defaultCapture: true,
   streaming: true,
   streamingBatchSize: 5,
@@ -55,8 +59,10 @@ export const PIWI_ENV_KEYS = {
   uploadReport: 'PIWI_UPLOAD_REPORT',
   captureLocators: 'PIWI_CAPTURE_LOCATORS',
   capturePageState: 'PIWI_CAPTURE_PAGE_STATE',
+  capturePageInventory: 'PIWI_CAPTURE_PAGE_INVENTORY',
   captureServerTraces: 'PIWI_CAPTURE_SERVER_TRACES',
   sampleAriaOnPass: 'PIWI_SAMPLE_ARIA_ON_PASS',
+  uploadManifest: 'PIWI_UPLOAD_MANIFEST',
   defaultCapture: 'PIWI_DEFAULT_CAPTURE',
   inspectOnFailure: 'PIWI_INSPECT_ON_FAIL',
   pickLocatorOnFailure: 'PIWI_PICK_LOCATOR_ON_FAIL',
@@ -97,6 +103,22 @@ export const PIWI_SELECTION_ENV = {
   version: 'PIWI_SELECTION_VERSION',
   hash: 'PIWI_SELECTION_HASH',
   count: 'PIWI_SELECTION_COUNT',
+} as const;
+
+/**
+ * Env vars a `piwi probe` run sets on the Playwright child process so the
+ * capture fixtures run in probe mode. Not options — the probe CLI writes them and
+ * the probe module reads them directly:
+ *  - `flag` marks the run as a probe run;
+ *  - `plan` / `results` point at the plan file and the JSONL outcomes file;
+ *  - `secret` is the shared HMAC secret a server-level fault signs the
+ *    `X-Piwi-Probe` header with.
+ */
+export const PIWI_PROBE_ENV = {
+  flag: 'PIWI_PROBE',
+  plan: 'PIWI_PROBE_PLAN',
+  results: 'PIWI_PROBE_RESULTS',
+  secret: 'PIWI_PROBE_SECRET',
 } as const;
 
 export function readBool(val: string | undefined): boolean | undefined {
@@ -144,8 +166,10 @@ const ENV_FALLBACK_SPECS: ReadonlyArray<{
   { option: 'uploadReport', env: PIWI_ENV_KEYS.uploadReport, kind: 'bool' },
   { option: 'captureLocators', env: PIWI_ENV_KEYS.captureLocators, kind: 'bool' },
   { option: 'capturePageState', env: PIWI_ENV_KEYS.capturePageState, kind: 'bool' },
+  { option: 'capturePageInventory', env: PIWI_ENV_KEYS.capturePageInventory, kind: 'bool' },
   { option: 'captureServerTraces', env: PIWI_ENV_KEYS.captureServerTraces, kind: 'bool' },
   { option: 'sampleAriaOnPass', env: PIWI_ENV_KEYS.sampleAriaOnPass, kind: 'bool' },
+  { option: 'uploadManifest', env: PIWI_ENV_KEYS.uploadManifest, kind: 'bool' },
   { option: 'defaultCapture', env: PIWI_ENV_KEYS.defaultCapture, kind: 'bool' },
   { option: 'inspectOnFailure', env: PIWI_ENV_KEYS.inspectOnFailure, kind: 'bool' },
   { option: 'pickLocatorOnFailure', env: PIWI_ENV_KEYS.pickLocatorOnFailure, kind: 'bool' },
@@ -243,6 +267,11 @@ export function applyOptionsToEnv(options: PiwiDashboardOptions): void {
   if (options.capturePageState === false || options.collectPerformanceMetrics === false)
     env[PIWI_ENV_KEYS.capturePageState] = 'false';
   else if (options.capturePageState === true) env[PIWI_ENV_KEYS.capturePageState] = 'true';
+  // Page-inventory capture (controls and links per visited page, passing runs
+  // only) follows the page-state bridge.
+  if (options.capturePageInventory === false || options.collectPerformanceMetrics === false)
+    env[PIWI_ENV_KEYS.capturePageInventory] = 'false';
+  else if (options.capturePageInventory === true) env[PIWI_ENV_KEYS.capturePageInventory] = 'true';
   // Server-trace capture rides the same bridge: off when either flag disables
   // it, explicit true otherwise (unset keeps the fixture's default-on).
   if (options.captureServerTraces === false || options.collectPerformanceMetrics === false)

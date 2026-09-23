@@ -12,6 +12,7 @@ export const ATTACHMENT_NAMES = {
   console: 'piwi-console',
   dialogs: 'piwi-dialogs',
   network: 'piwi-network',
+  pageInventory: 'piwi-page-inventory',
   webVitals: 'piwi-web-vitals',
   locatorSuggestion: 'piwi-locator-suggestion',
   pageState: 'piwi-page-state',

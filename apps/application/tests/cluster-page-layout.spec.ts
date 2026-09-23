@@ -172,7 +172,14 @@ test.describe('Cluster situation block on seeded clusters', () => {
     unsnooze: 'Unsnooze',
     release: 'Release',
   };
-  const norm = (s: string) => s.replace(/\s+/g, ' ').trim();
+  // Relative ages ("44 seconds ago", "since 44 seconds") keep ticking between the
+  // API read and the render, so a cluster seen seconds ago would flip a second
+  // across the two reads. Compare everything else verbatim and an age by its unit.
+  const norm = (s: string) =>
+    s
+      .replace(/\s+/g, ' ')
+      .replace(/\b\d+ (second|minute|hour|day|week|month|year)s?\b/g, 'N $1s')
+      .trim();
 
   let hasSeed = false;
   test.beforeAll(async ({ request }) => {

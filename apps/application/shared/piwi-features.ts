@@ -246,6 +246,30 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         where: 'Reporter config',
         doc: 'guide/ai-steps',
       },
+      {
+        title: 'Scenario gaps & the Test Map',
+        summary:
+          'Routes and pages your runs reach but no test checks, ranked by exposure, each with a skeleton to start from.',
+        needs: [],
+        where: 'Project → Gaps',
+        doc: 'features/scenario-gaps',
+      },
+      {
+        title: 'Uncovered changes in pull requests',
+        summary:
+          'The files a pull request changed that no test observably reaches, posted back to the PR with a commit status.',
+        needs: ['scm'],
+        where: 'Pull request comment',
+        doc: 'features/scenario-gaps#uncovered-changes-on-a-pull-request',
+      },
+      {
+        title: 'Probes',
+        summary:
+          'Whether a passing test would notice a fault behind a request: client probes ride the reporter alone; server probes inject the fault inside the server, needing a backend package.',
+        needs: ['backend'],
+        where: 'Project → Gaps; reporter (`piwi probe`)',
+        doc: 'features/scenario-gaps#probing-what-a-test-would-notice',
+      },
     ],
   },
   {

@@ -48,6 +48,10 @@ export const {
   testFunctions,
   testSelections,
   shareLinks,
+  graphNodes,
+  graphEdges,
+  scenarioGaps,
+  probes,
 } = schema;
 
 // TypeScript type exports – always based on SQLite schema (the canonical reference)
@@ -122,4 +126,12 @@ export type {
   NewTestSelection,
   ShareLink,
   NewShareLink,
+  GraphNode,
+  NewGraphNode,
+  GraphEdge,
+  NewGraphEdge,
+  ScenarioGap,
+  NewScenarioGap,
+  Probe,
+  NewProbe,
 } from './schema.sqlite';

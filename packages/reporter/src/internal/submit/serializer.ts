@@ -64,6 +64,7 @@ export function toWireTestCase(tc: CollectedTestCase): WireTestCase {
     networkRequests: rest.networkRequests || null,
     webVitals: rest.webVitals || null,
     pageState: rest.pageState || null,
+    pageInventory: rest.pageInventory || null,
     aiUsage: rest.aiUsage || null,
     consoleLogs: rest.consoleLogs || null,
     dialogs: rest.dialogs || null,
@@ -185,6 +186,8 @@ export function serializeRun(payload: RunPayload, opts: SerializeRunOptions): Re
     didNotRunTests: payload.didNotRunTests ?? 0,
     environment: payload.environment ?? null,
     label: payload.label ?? null,
+    // A probe run is stamped in `onBegin` (see the reporter), so the marker
+    // already rides in `payload.metadata` here and on every other submit path.
     metadata: payload.metadata,
     instanceId: payload.instanceId,
     playwrightVersion: payload.playwrightVersion,

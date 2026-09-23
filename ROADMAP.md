@@ -14,6 +14,14 @@ Everything else — analytics, notifications, the CI gate, PR feedback, MCP, the
 
 ## Recently shipped
 
+- **Scenario gaps and the Test Map** — one graph per project of what the application exposes, what the suite reaches
+  and what it would actually notice, turned into the tests that do not exist yet: ranked by exposure, each with a
+  skeleton to start from. Surfaced as a Gaps tab with a feature map and an ego graph view, a per-ticket section in the
+  pull-request comment, and MCP tools that hand an agent a draft; client probes mutate responses at the Playwright
+  route boundary to catch false comfort, and server probes (experimental, off by default) inject a fault inside the
+  server. Optional — decline the Test Map per project or instance-wide and its surfaces disappear.
+  [proposals/scenario-gaps.md](proposals/scenario-gaps.md); see
+  [scenario gaps](https://piwitests.dev/features/scenario-gaps).
 - **Issue tracking with Jira** — file a Jira issue from a failure or a failure cluster with the evidence and the fix
   plan already in the body, keep it linked as the known issue, and let Piwi keep it honest: a background sync task and
   an optional inbound webhook carry status both ways under per-project policies (comment on fix or regression,
@@ -104,7 +112,7 @@ Everything else — analytics, notifications, the CI gate, PR feedback, MCP, the
 - **Automatic data retention & storage efficiency** — opt-in nightly pruning of old runs (`PIWI_RETENTION_DAYS`), notification-outbox and diagnosis-history housekeeping, ingest size caps, and content-addressed dedup of per-failure evidence payloads.
 - **AI diagnosis, grounded** — failure-cluster analysis fed by your actual SCM diff, with suggested patches validated server-side against your source; optional two-stage (research → final) pipeline; works with Anthropic, OpenAI, or any OpenAI-compatible endpoint including local models.
 - **Locator healing** — element attributes captured on passing runs power ranked replacement locators when a selector breaks.
-- **MCP server** — 46 tools so AI agents can query runs, flaky tests, clusters, diagnoses, traces, and test selections.
+- **MCP server** — 50 tools so AI agents can query runs, flaky tests, clusters, diagnoses, traces, and test selections.
 - **Notifications** — email, Slack, webhook (HMAC-signed), and browser channels with per-project subscriptions and digests.
 - **Sharding & live streaming** — shards merge automatically via CI run detection; runs stream into the dashboard while CI executes.
 - **Ops hardening** — `/api/health` endpoint, Docker `HEALTHCHECK`, committed `docker-compose.yml`, backup & reverse-proxy guides; bounded memory on large runs (trace ingestion and the reporter's stream buffer are capped, case-file uploads stream to disk); `PIWI_OAUTH_*` honored by the published image and `npx @piwitests/server`.

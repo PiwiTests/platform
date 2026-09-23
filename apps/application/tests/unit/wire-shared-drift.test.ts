@@ -38,6 +38,9 @@ const testCasePayloadFixture = {
   networkRequests: null,
   webVitals: null,
   pageState: { url: 'https://app.example.com/checkout', localStorage: [{ key: 'cart', length: 42 }] },
+  pageInventory: [
+    { url: 'https://app.example.com/checkout', controls: [{ role: 'button', name: 'Place order' }], links: [] },
+  ],
   aiUsage: null,
   consoleLogs: null,
   dialogs: null,
@@ -82,6 +85,9 @@ const streamEventPayloadFixture = {
   networkRequests: null,
   webVitals: null,
   pageState: { url: 'https://app.example.com/checkout', localStorage: [{ key: 'cart', length: 42 }] },
+  pageInventory: [
+    { url: 'https://app.example.com/checkout', controls: [{ role: 'button', name: 'Place order' }], links: [] },
+  ],
   aiUsage: null,
   consoleLogs: null,
   dialogs: null,
@@ -121,6 +127,9 @@ const wireTestCaseFixture = {
   networkRequests: null,
   webVitals: null,
   pageState: { url: 'https://app.example.com/checkout', localStorage: [{ key: 'cart', length: 42 }] },
+  pageInventory: [
+    { url: 'https://app.example.com/checkout', controls: [{ role: 'button', name: 'Place order' }], links: [] },
+  ],
   aiUsage: null,
   consoleLogs: null,
   dialogs: null,

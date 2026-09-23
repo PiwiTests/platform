@@ -842,6 +842,76 @@ export const MCP_TOOL_DEFS = [
       required: ['projectId', 'name', 'kind', 'module', 'params', 'steps'],
     },
   },
+  {
+    name: 'get_change_coverage',
+    module: 'core',
+    capability: 'scm',
+    description:
+      'Change coverage for a pull request: the files a change touched joined to the tests that observably reach them, grouped by ticket, with the uncovered files that need a scenario. Pass a run id to diff it against its baseline, or an explicit base and head commit. Reach is observed reach, never instrumented coverage; "no test in this run" is paired with the count from recent history. Returns an empty result when no SCM token or diff is available.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        projectId: { type: 'number', description: 'Project ID from list_projects' },
+        run: { type: 'number', description: 'Diff this run against its baseline (from get_project)' },
+        base: { type: 'string', description: 'Base commit SHA (use with head instead of run)' },
+        head: { type: 'string', description: 'Head commit SHA (use with base instead of run)' },
+      },
+      required: ['projectId'],
+    },
+  },
+  {
+    name: 'list_scenario_gaps',
+    module: 'workflow',
+    capability: 'test-map',
+    description:
+      'Ranked scenario gaps for a project: tests that do not exist yet, each with its class (blind-spot, false-comfort, fragile), evidence lines and exposure score. Filter by class, feature, a minimum score, or a pull-request number. Every line is observed reach, never instrumented coverage. Pair with draft_scenario to turn a gap into a test skeleton.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        projectId: { type: 'number', description: 'Project ID from list_projects' },
+        class: {
+          type: 'string',
+          description: 'Filter by gap class: blind-spot | false-comfort | fragile | unhandled | degraded',
+        },
+        feature: { type: 'string', description: 'Filter to a feature (the piwi:feature tag)' },
+        minScore: { type: 'number', description: 'Only gaps at or above this exposure score' },
+        pr: { type: 'number', description: 'Only gaps reported on this pull request' },
+        limit: { type: 'number', description: 'Max gaps to return (default 20)' },
+      },
+      required: ['projectId'],
+    },
+  },
+  {
+    name: 'draft_scenario',
+    module: 'workflow',
+    capability: 'test-map',
+    description:
+      'A deterministic test skeleton for a scenario gap: a title from the gap, piwi: annotations from the nearest test, the graph path from a reached page to the gap as the step list, catalog page-object methods where they match, and a TODO assertion naming what to check. Delivered as text to paste or hand to an agent — nothing is committed. Pass the gap id from list_scenario_gaps.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        projectId: { type: 'number', description: 'Project ID from list_projects' },
+        gapId: { type: 'number', description: 'The gap id from list_scenario_gaps' },
+      },
+      required: ['projectId', 'gapId'],
+    },
+  },
+  {
+    name: 'get_feature_graph',
+    module: 'workflow',
+    capability: 'test-map',
+    description:
+      'The feature-graph neighborhood around a node: walk the typed graph (tests, pages, controls, routes, handlers, dependencies) outward from `node` to `depth` hops (capped at six), returning each node with its gap class and the tests that reach it, and the edges between them. Use it to see the blast radius of a change or what a test protects. `node` is "kind:key", e.g. route:POST /api/orders.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        projectId: { type: 'number', description: 'Project ID from list_projects' },
+        node: { type: 'string', description: 'Seed node as kind:key, e.g. route:POST /api/orders or page:/checkout' },
+        depth: { type: 'number', description: 'Hops to walk outward (default 2, max 6)' },
+      },
+      required: ['projectId', 'node'],
+    },
+  },
 ] as const satisfies readonly McpToolDef[];
 
 /**

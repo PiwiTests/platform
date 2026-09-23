@@ -37,6 +37,10 @@ export interface SetupCapabilityCopy {
   /** How to switch it on, when inactive. */
   how: string;
   icon: string;
+  /** Marks a capability that ships behind a flag and is not yet validated. */
+  experimental?: boolean;
+  /** A one-line caveat rendered when `experimental`, e.g. what is not measured yet. */
+  experimentalNote?: string;
   /** Docs page (+ optional `#anchor`), passed through `DocLink`. */
   doc?: string;
   /** In-app route that configures it, when there is one. */
@@ -198,5 +202,26 @@ export const SETUP_CAPABILITIES: SetupCapabilityCopy[] = [
     how: "Quarantine a test from its test-case page, or from the project's Quarantine tab.",
     icon: 'i-lucide-shield-alert',
     doc: 'features/flaky-tests',
+  },
+  {
+    id: 'test-map',
+    title: 'Scenario gaps',
+    summary:
+      'The tests you have not written yet: routes and pages your runs reach but nothing checks, ranked by exposure, each with a skeleton to start from.',
+    how: "Automatic — the map builds from your runs, and gaps appear on a project's Gaps tab as reach accrues.",
+    icon: 'i-lucide-map',
+    doc: 'features/scenario-gaps',
+  },
+  {
+    id: 'server-probes',
+    title: 'Server probes',
+    summary:
+      'A fault injected inside the server for one signed request, to check whether a passing test would notice a 500, a dropped field or a slow dependency.',
+    how: 'Needs a backend package in the app under test; available today for Nitro and ASP.NET Core. Turn it on per project once client probes report not-noticed.',
+    icon: 'i-lucide-radar',
+    experimental: true,
+    experimentalNote:
+      'Experimental — the entry condition (client probes reporting not-noticed on at least one pair in ten) has not been measured yet.',
+    doc: 'features/scenario-gaps#server-probes-level-two',
   },
 ];

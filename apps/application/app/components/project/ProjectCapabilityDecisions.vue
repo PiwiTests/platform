@@ -25,6 +25,8 @@ const CAPABILITY_LABELS: Partial<Record<CapabilityId, string>> = {
   scm: 'Source control',
   quarantine: 'Quarantine',
   markers: 'Timeline markers',
+  'test-map': 'Scenario gaps & the Test Map',
+  'server-probes': 'Server probes',
 };
 
 /** Every capability a project can override, with a plain label. */

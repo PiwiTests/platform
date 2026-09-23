@@ -124,6 +124,61 @@ Playwright test
                                 └─ visible in test-case detail + AI diagnosis
 ```
 
+## Server probes — the `X-Piwi-Probe` header
+
+The middleware accepts a signed fault instruction from a Piwi probe run (Test
+Map, level two). A verified header is recorded on `HttpContext.Items["PiwiProbe"]`;
+a fault is **applied** only once a project turns server probes on
+(`PIWI_SERVER_PROBES=true`), which stays off by default. The middleware runs only
+in Development and Test environments (the same guard as log capture).
+
+| Variable             | Effect                                                             |
+|----------------------|-------------------------------------------------------------------|
+| `PIWI_PROBE_SECRET`  | Shared HMAC secret. When unset, the probe header is ignored.      |
+| `PIWI_SERVER_PROBES` | `true` to apply verified faults to the signed request.            |
+
+**Faults applied — the honest subset for ASP.NET Core** (`PiwiProbeFaults`):
+handler-level faults only — `throw`, `status`/`auth` (500/401), `delay`/`slow`/
+`slow-first` (+5s) and `extreme` (empty 200), matched to the target route. The
+reporter picks the Nth match and signs that one request, so the fault applies to
+any request the header matches and the single-use nonce keeps it from repeating.
+Data mutation before serialization and dependency faults on outbound
+`HttpClient` calls are the Nitro package's fuller subset; they need response
+buffering and a delegating handler this package does not yet wire, so they are
+**not applied here and never marked applied** — a probe naming one records as
+inconclusive rather than a false gap. A fault is marked applied
+(`HttpContext.Items["PiwiProbeApplied"]`) only once it actually takes effect, and
+that label is reported to the reporter on the response's `X-Piwi-Trace` root span
+(`piwi.probe.applied`), which the reporter compares with the fault it asked for.
+
+**Header format.** `X-Piwi-Probe` carries a base64-encoded JSON envelope, the
+same scheme as the Nitro package:
+
+```jsonc
+{
+  "nonce": "<hex, single use>",
+  "ts": 1700000000000,            // issued-at, Unix ms; honored within 60s
+  "specJson": "{\"route\":\"POST /api/orders\",\"fault\":\"status-500\",\"nth\":1}",
+  "sig": "<hex HMAC-SHA256>"      // over `${nonce}.${ts}.${specJson}` with PIWI_PROBE_SECRET
+}
+```
+
+A verified spec is stored in `HttpContext.Items["PiwiProbe"]`. Verification lives
+in `PiwiProbe.Verify`; `PiwiProbe.Sign` produces a matching signature.
+
+> **Single-use nonces are tracked per process** (`ProbeNonceCache`), so the replay
+> guard is exact only against one server instance — a header replayed to a
+> different instance behind a load balancer, or after a restart, is bounded only
+> by the signature and the 60s TTL. Probe runs target a single instance, so this
+> is not a concern in practice.
+
+> **Scope note.** For a verified probe request this package emits an `X-Piwi-Trace`
+> header whose root span names the applied fault (`piwi.probe.applied`), alongside
+> `X-Piwi-Logs`. It does not yet apply data mutation or dependency faults (see the
+> honest subset above). The middleware and `X-Piwi-Probe` verification are authored
+> but **not compiled in this environment** (no .NET SDK available); build with
+> `dotnet build` before release.
+
 ## License
 
 MIT

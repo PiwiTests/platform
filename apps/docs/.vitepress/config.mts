@@ -146,6 +146,7 @@ export default defineConfig({
             { text: 'AI diagnosis & clustering', link: '/features/ai-diagnosis' },
             { text: 'Fix plans, reproduce & bisect', link: '/features/fix-plans' },
             { text: 'What changed in a run', link: '/features/run-changes' },
+            { text: 'Scenario gaps', link: '/features/scenario-gaps' },
             { text: 'Flaky tests', link: '/features/flaky-tests' },
             { text: 'Slow tests & wasted time', link: '/features/slow-tests' },
             { text: 'Branches', link: '/features/branches' },

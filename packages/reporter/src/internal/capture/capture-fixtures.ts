@@ -39,6 +39,21 @@ import {
   type FailedLocatorInfo,
 } from './locator-healing.js';
 import { ATTACHMENT_NAMES, LOCATOR_SUGGESTION_ANNOTATION, USER_PICK_ANNOTATION } from './attachments.js';
+import {
+  capPageInventory,
+  collectPageInventoryInPage,
+  inventoryPageKey,
+  type RawPageInventory,
+} from './page-inventory.js';
+import {
+  isProbeMode,
+  probeItemForTest,
+  recordProbeOutcome,
+  outcomeFromStatus,
+  classifyProbeHandled,
+} from '../probe/mode.js';
+import { installProbeInterception, type ProbeInterception } from '../probe/interception.js';
+import type { ProbePlanItem } from '../probe/plan.js';
 import { environmentalSkipReason, inspectionGateFromTestInfo, shouldInspectOnFailure } from './inspect-on-failure.js';
 import { applyPickToSnapshots, deriveFailedLocator, runLocatorPicker, type UserPickResult } from './pick-on-failure.js';
 import { isDueForAriaSample } from '../support/aria-sampling.js';
@@ -185,6 +200,15 @@ interface CaptureSink {
   // the healing, clue and page-diff paths that read a tree; the YAML above feeds
   // the ARIA card.
   stashedAriaJson: string | null;
+  // One window per URL the test navigated to, each stamped with its settle time,
+  // so the dashboard can attribute a request to the page that was current when it
+  // started rather than to the end-of-test page. Controls/links are filled at
+  // most once per page key per worker; revisits keep a content-less window.
+  pageInventories: RawPageInventory[];
+  // The probe plan item for this test (probe mode only), and the interception
+  // handle once installed, so the outcome can be recorded at teardown.
+  probeItem: ProbePlanItem | null;
+  probeInterception: ProbeInterception | null;
   // The failure-time overlay was already offered once this test — several
   // close wrappers can fire for the same teardown.
   pickOffered: boolean;
@@ -208,6 +232,9 @@ function createSink(): CaptureSink {
     stashedPageState: null,
     stashedAria: null,
     stashedAriaJson: null,
+    pageInventories: [],
+    probeItem: null,
+    probeInterception: null,
     pickOffered: false,
     userPick: null,
   };
@@ -484,6 +511,102 @@ async function readPageState(page: Page): Promise<PageState | null> {
 }
 
 /**
+ * Page keys this worker has already inventoried this run, so a URL visited by
+ * many tests is inventoried once. Module-scoped: a worker process serves one
+ * run, and the set is a pure de-duplication cache.
+ */
+const inventoriedPageKeys = new Set<string>();
+
+/**
+ * The in-page safety bound: a pathological page cannot serialize more than this
+ * many entries. The authoritative per-page cap ({@link capPageInventory}) is
+ * applied on the Node side before the attachment is written.
+ */
+const PAGE_INVENTORY_IN_PAGE_CAP = 2000;
+
+/** How long the in-page inventory read may run before it is abandoned. */
+const PAGE_INVENTORY_EVAL_TIMEOUT_MS = 2000;
+
+/**
+ * The most page windows kept per test. Windows are recorded on every URL change,
+ * so a navigation-heavy SPA test cannot grow the attachment without bound.
+ */
+const MAX_PAGE_INVENTORY_WINDOWS = 64;
+
+/** Reject a promise after `ms` so a hung in-page read never wedges the capture. */
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('page inventory read timed out')), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
+/**
+ * Read the interactive controls (role + accessible name) and links (name +
+ * href) on the page. Values are never read — only names and hrefs (see
+ * {@link collectPageInventoryInPage}). Runs a single in-page pass with a shared
+ * entry budget and a timeout, so a table of hundreds of rows or a hung page
+ * cannot blow up or stall the capture. Returns null when the page cannot be read.
+ */
+async function readPageInventory(page: Page): Promise<RawPageInventory | null> {
+  try {
+    const inventory = await withTimeout(
+      page.evaluate(collectPageInventoryInPage, PAGE_INVENTORY_IN_PAGE_CAP),
+      PAGE_INVENTORY_EVAL_TIMEOUT_MS,
+    );
+    // Stamp the settle time so a request can be attributed to the page current
+    // when it started, rather than to whichever page the test ended on.
+    return inventory ? { ...inventory, capturedAt: Date.now() } : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Record the page current on a URL change as an attribution window. The window's
+ * settle time is always kept, so a request can be attributed to the page current
+ * when it started. The expensive controls/links read runs at most once per page
+ * key per worker ({@link inventoriedPageKeys}); a revisited or already-inventoried
+ * page records a content-less window, which still cuts the attribution boundary.
+ */
+async function recordPageWindow(sink: CaptureSink, page: Page): Promise<void> {
+  if (sink.pageInventories.length >= MAX_PAGE_INVENTORY_WINDOWS) return;
+  let url: string;
+  try {
+    url = page.url();
+  } catch {
+    return;
+  }
+  if (!url || url.startsWith('about:')) return;
+  const key = inventoryPageKey(url);
+  const capturedAt = Date.now();
+
+  if (sink.pageInventories.length >= MAX_PAGE_INVENTORY_WINDOWS) return;
+  if (key && !inventoriedPageKeys.has(key)) {
+    inventoriedPageKeys.add(key);
+    const content = await readPageInventory(page);
+    if (sink.pageInventories.length >= MAX_PAGE_INVENTORY_WINDOWS) return;
+    sink.pageInventories.push({
+      url: content?.url ?? url,
+      controls: content?.controls ?? [],
+      links: content?.links ?? [],
+      capturedAt,
+    });
+    return;
+  }
+  sink.pageInventories.push({ url, controls: [], links: [], capturedAt });
+}
+
+/**
  * Take the page-dependent teardown reads (web vitals; page state; ARIA
  * snapshot when the test failed) while the last active page is still open.
  * Called by the close wrappers just before a close that would take that page
@@ -523,6 +646,12 @@ async function stashPageState(sink: CaptureSink, closing: { page?: Page; context
     // Sample the green page while it is still open, for the tests the server
     // flagged as due a fresh snapshot this run.
     await sampleAria();
+  }
+
+  // Record the passing page as a final attribution window while it is still open,
+  // in case the test closed it before teardown could read it.
+  if (status === 'passed' && process.env.PIWI_CAPTURE_PAGE_INVENTORY === 'true') {
+    await recordPageWindow(sink, page);
   }
 }
 
@@ -966,6 +1095,20 @@ function instrumentPage(page: Page): void {
   if (!page || INSTRUMENTED_PAGES.has(page)) return;
   INSTRUMENTED_PAGES.add(page);
 
+  // Probe mode: install the fault interception for this test's plan item on the
+  // first page, before the test navigates. Fire-and-forget — page.route
+  // registration resolves before the first request in practice.
+  const probeSink = currentSink;
+  if (probeSink?.probeItem && !probeSink.probeInterception) {
+    void installProbeInterception(page, probeSink.probeItem)
+      .then((interception) => {
+        probeSink.probeInterception = interception;
+      })
+      .catch(() => {
+        /* interception failed to install — the probe is recorded as not applied */
+      });
+  }
+
   // A page reached through the `page` fixture safety net may live in a context
   // the browser patch never saw — instrument it so its close is wrapped too.
   const ctx = pageContext(page);
@@ -1026,6 +1169,22 @@ function instrumentPage(page: Page): void {
     if (typeof page.on === 'function') {
       page.on('framenavigated', () => PROBE_UNSEEDED_PAGES.delete(page));
     }
+  }
+
+  // Cut an attribution window on every URL change, so the graph can attribute a
+  // request to the page current when it started. `framenavigated` fires on both
+  // full loads and same-document (SPA) navigations, where the `load` event never
+  // fires — so a client-routed page still gets its own window. Off by default:
+  // the reporter opts in via PIWI_CAPTURE_PAGE_INVENTORY=true. Best-effort: a
+  // failed read is skipped, and only passing runs keep the inventory (teardown).
+  if (typeof page.on === 'function' && process.env.PIWI_CAPTURE_PAGE_INVENTORY === 'true') {
+    page.on('framenavigated', (frame) => {
+      const sink = currentSink;
+      if (!sink || frame !== page.mainFrame()) return;
+      void recordPageWindow(sink, page).catch(() => {
+        /* an inventory read failure must never affect the test */
+      });
+    });
   }
 
   page.on('console', (msg: ConsoleMessage) => {
@@ -1400,6 +1559,24 @@ async function flushSink(sink: CaptureSink, testInfo: TestInfo): Promise<void> {
       });
     }
   }
+
+  // Page inventory (controls and links) on passing runs only. Every window the
+  // test recorded is attached in settle order, each with its settle time, so the
+  // dashboard can attribute a request to the page current when it started — a
+  // revisited page keeps its own window rather than being deduped away. The
+  // still-open end page is recorded once more so a no-navigation test (and the
+  // final page state) is captured; its controls/links are read at most once per
+  // page key per worker.
+  if (testInfo.status === 'passed' && process.env.PIWI_CAPTURE_PAGE_INVENTORY === 'true') {
+    if (pageReadable) await recordPageWindow(sink, page);
+    const windows = sink.pageInventories.slice(0, MAX_PAGE_INVENTORY_WINDOWS).map((inv) => capPageInventory(inv));
+    if (windows.length > 0) {
+      await testInfo.attach(ATTACHMENT_NAMES.pageInventory, {
+        contentType: 'application/json',
+        body: Buffer.from(JSON.stringify(windows)),
+      });
+    }
+  }
 }
 
 /**
@@ -1454,11 +1631,45 @@ export const piwiFixtures: Fixtures<
     async ({}, use: UseFn<void>, testInfo: TestInfo) => {
       const sink = createSink();
       sink.testInfo = testInfo;
+      if (isProbeMode())
+        sink.probeItem = probeItemForTest({
+          title: testInfo.title,
+          file: testInfo.file,
+          titlePath: testInfo.titlePath,
+        });
       currentSink = sink;
       try {
         await use();
       } finally {
         currentSink = null;
+        // Record the probe outcome (this test noticed the fault iff it failed)
+        // before flushing the rest of the capture.
+        if (sink.probeItem) {
+          const applied = sink.probeInterception?.applied() ?? false;
+          const level = sink.probeItem.level ?? 'client';
+          // `handled` classifies a server fault for the resilience findings, from
+          // the console/dialog signals this test collected plus the backend error
+          // the probe response's trace carried. Client faults never reach the
+          // server, so they record `n/a`.
+          const handled =
+            level === 'server'
+              ? classifyProbeHandled({
+                  consoleErrors: sink.consoleEntries.filter((e) => e.type === 'error').length,
+                  dialogs: sink.dialogs.length,
+                  backendError: sink.probeInterception?.serverError() ?? false,
+                })
+              : 'n/a';
+          recordProbeOutcome({
+            testCaseId: sink.probeItem.testCaseId,
+            routeKey: sink.probeItem.routeKey,
+            fault: sink.probeItem.fault,
+            applied,
+            outcome: outcomeFromStatus(testInfo.status, applied),
+            level,
+            dependency: sink.probeItem.dependency ?? null,
+            handled,
+          });
+        }
         await flushSink(sink, testInfo);
       }
     },

@@ -338,6 +338,9 @@ export default defineNuxtConfig({
       [integrationsSyncCron]: ['integrations:sync'],
       // Nightly data retention: run pruning (opt-in), outbox pruning, orphan sweep
       '17 3 * * *': ['retention:sweep'],
+      // Nightly feature-graph sweep: prune stale changes edges, branch-tagged
+      // rows and canonical nodes unseen for thirty runs (independent of retention).
+      '23 3 * * *': ['graph:sweep'],
     },
   },
 

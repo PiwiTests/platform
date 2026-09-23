@@ -4,9 +4,9 @@ Nitro / Nuxt server plugin for [Piwi Dashboard](https://piwitests.dev) — captu
 
 During a Playwright test run, the reporter reads this header from every response and stores the entries alongside the network request. The entries are then available in the Piwi Dashboard test-case view and are included in the AI diagnosis context.
 
-**Active outside production by default.** Capture is controlled by the `PIWI_TEST_LOGS_DISABLED` environment variable:
+**Active in development and test only, by default.** Capture and probe verification run only outside production, using the same Development/Test allow-list as the ASP.NET package. Controlled by the `PIWI_TEST_LOGS_DISABLED` environment variable:
 
-- unset — capture is on, except when `NODE_ENV === 'production'`
+- unset — capture is on when `NODE_ENV` is unset, `development`, or `test`; off for any other value (`production`, `staging`, `prod`, …)
 - `PIWI_TEST_LOGS_DISABLED=true` — capture is off everywhere
 - `PIWI_TEST_LOGS_DISABLED=false` — capture is on even in production builds (useful for a production-mode test deployment)
 
@@ -70,6 +70,65 @@ The plugin wraps Nitro's root H3 handler and uses three mechanisms:
 1. **`event.context._piwiLogs`** — a plain per-request array attached to the H3 event as the wrapped handler starts; everything captured for the request accumulates here.
 2. **`AsyncLocalStorage.run()`** — scopes that buffer around the entire downstream chain (hooks, middleware, route handlers), so the process-global `consola` reporter always appends to the correct request's buffer.
 3. **A patched `res.end`** — the header is written just before the response goes out, which covers **every** response, including H3 error responses that bypass Nitro's `beforeResponse` hook. Right before writing, unhandled errors are drained from `event.context.nitro.errors`, so thrown errors appear even when nothing logged via consola.
+
+## Server probes — the `X-Piwi-Probe` header
+
+The plugin accepts a signed fault instruction from a Piwi probe run (Test Map,
+level two), so a passing test can be checked against the server's real error
+path. A verified header is always recorded on the request scope
+(`event.context._piwiProbe`); a fault is **applied** only once a project turns
+server probes on (`PIWI_SERVER_PROBES=true`), which stays off by default.
+
+The header is honored only outside production, under the **same guard as log
+capture** (`PIWI_TEST_LOGS_DISABLED`), and only when a shared secret is set:
+
+| Variable             | Effect                                                             |
+|----------------------|-------------------------------------------------------------------|
+| `PIWI_PROBE_SECRET`  | Shared HMAC secret. When unset, the probe header is ignored.      |
+| `PIWI_SERVER_PROBES` | `true` to apply verified faults to the signed request.            |
+
+**Faults applied** (to the one request the probe run signs — the reporter picks
+the Nth match and signs that request, so the plugin applies the fault to any
+request the header matches and the single-use nonce keeps it from repeating;
+gated per project on the dashboard side): `throw`, `status`/`auth` (run the
+server's error path with a
+500/401), `delay`/`slow`/`slow-first` (+5s), `extreme` (empty default),
+`data`/`drop-field`/`empty-body` (mutate the response before serialization), and
+`dependency` (fail one outbound `$fetch` whose URL names the targeted
+dependency; when no call matches, nothing is applied). The plugin reports
+the fault it actually applied in `X-Piwi-Trace` (root-span `piwi.probe.applied`),
+so a probe the server did not honor is recorded as **inconclusive**, never a pass.
+
+**Entry condition.** Turn this on when the client probes (level one) report
+"not-noticed" on at least one in ten probed pairs across your pilot projects —
+that is the signal the suite has false comfort the network boundary cannot reveal.
+
+**Header format.** `X-Piwi-Probe` carries a base64-encoded JSON envelope:
+
+```jsonc
+{
+  "nonce": "<hex, single use>",
+  "ts": 1700000000000,            // issued-at, Unix ms; honored within 60s
+  "specJson": "{\"route\":\"POST /api/orders\",\"fault\":\"status-500\",\"nth\":1}",
+  "sig": "<hex HMAC-SHA256>"      // over `${nonce}.${ts}.${specJson}` with PIWI_PROBE_SECRET
+}
+```
+
+`specJson` is the exact JSON string that was signed (the plugin re-parses it
+after the signature check, so no canonicalization is needed). A verified spec is
+exposed on `event.context._piwiProbe` for future handler use. The signing and
+verification helpers are exported (`signProbeMessage`, `verifyProbeHeader`).
+
+> **Single-use nonces are tracked per process.** The plugin remembers honored
+> nonces in memory to reject replays within the 60s TTL, so a header replayed to a
+> *different* instance behind a load balancer — or after a restart — is not
+> caught by the nonce check (the TTL and signature still bound it). Probe runs
+> target a single instance, so this is not a concern in practice; run the probed
+> server as one instance if you need the replay guard to be exact.
+
+The root request span also carries the matched handler's source file as
+`attrs['piwi.handler']` when Nitro exposes it, so the dashboard can attribute a
+route to its handler by observation rather than by convention.
 
 ## Peer dependencies
 
