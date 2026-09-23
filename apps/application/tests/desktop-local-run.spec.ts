@@ -219,7 +219,7 @@ test.describe('Desktop local run', () => {
     expect(stops).toBe(0);
   });
 
-  test('stopping is explicit, from the tray', async ({ page }) => {
+  test('stopping is explicit, from the tray, and waits for the run to wind down', async ({ page }) => {
     await installFakeBridge(page, { linked: true, autoExit: false });
     await page.goto(`/test-runs/${runId}`);
     await waitForHydration(page);
@@ -227,13 +227,33 @@ test.describe('Desktop local run', () => {
     await page.getByRole('button', { name: 'Run locally' }).click();
     await expect(tray(page).getByText('Running 0/1…', { exact: true })).toBeVisible();
 
-    await tray(page).getByRole('button', { name: 'Stop' }).click();
+    await tray(page).getByRole('button', { name: 'Stop', exact: true }).click();
+    // The shell asked Playwright to stop; the run ends when its process exits.
+    await expect(tray(page).getByText('Stopping…', { exact: true })).toBeVisible();
+    await expect(tray(page).getByRole('button', { name: 'Force stop' })).toBeVisible();
+
+    await page.evaluate(() => window.__piwiFakeTauri.finish(130));
     await expect(tray(page).getByText('Stopped', { exact: true })).toBeVisible();
 
-    const stopped = await page.evaluate(() =>
-      window.__piwiFakeTauri.invocations.find((i) => i.cmd === 'desktop_stop_local_tests'),
+    const stops = await page.evaluate(
+      () => window.__piwiFakeTauri.invocations.filter((i) => i.cmd === 'desktop_stop_local_tests').length,
     );
-    expect(stopped).toBeTruthy();
+    expect(stops).toBe(1);
+  });
+
+  test('a second stop forces the run to end', async ({ page }) => {
+    await installFakeBridge(page, { linked: true, autoExit: false });
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+
+    await page.getByRole('button', { name: 'Run locally' }).click();
+    await tray(page).getByRole('button', { name: 'Stop', exact: true }).click();
+    await tray(page).getByRole('button', { name: 'Force stop' }).click();
+
+    const stops = await page.evaluate(() =>
+      window.__piwiFakeTauri.invocations.filter((i) => i.cmd === 'desktop_stop_local_tests').map((i) => i.args),
+    );
+    expect(stops).toEqual([{ runId: 7 }, { runId: 7 }]);
   });
 
   test('run presets from the dropdown run immediately and persist per project', async ({ page }) => {

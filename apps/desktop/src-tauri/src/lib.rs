@@ -11,6 +11,7 @@
 // network.
 
 mod inspect;
+mod interrupt;
 mod mcp_clients;
 mod mcp_stdio;
 mod runner;
@@ -240,14 +241,17 @@ fn progress_bar_status(state: &str) -> Option<ProgressBarStatus> {
 /// The colour of the status dot drawn on the tray icon (all platforms) and the
 /// taskbar overlay icon (Windows) for a run state, or `None` when the run is
 /// idle and the app's own icon should show instead. A determinate `normal` at
-/// 100% is the finished-pass flash (green); a running `normal` is blue.
-fn status_dot_color(state: &str, fraction: Option<f64>) -> Option<(u8, u8, u8)> {
+/// 100% is the finished-pass flash (green); a running `normal` is blue, or red
+/// while `failing` (a test has failed so far).
+fn status_dot_color(state: &str, fraction: Option<f64>, failing: bool) -> Option<(u8, u8, u8)> {
+    const RED: (u8, u8, u8) = (220, 38, 38); // red-600 — failed / failing
     match state {
-        "error" => Some((220, 38, 38)),   // red-600 — failed
-        "paused" => Some((217, 119, 6)),  // amber-600 — paused
+        "error" => Some(RED),
+        "paused" => Some((217, 119, 6)), // amber-600 — paused / interrupted
+        "normal" | "indeterminate" if failing => Some(RED),
         "normal" if fraction.is_some_and(|f| f >= 1.0) => Some((22, 163, 74)), // green-600 — passed
         "normal" | "indeterminate" => Some((37, 99, 235)), // blue-600 — running
-        _ => None,                        // none / unknown — restore the app icon
+        _ => None, // none / unknown — restore the app icon
     }
 }
 
@@ -285,21 +289,22 @@ fn render_status_dot(color: (u8, u8, u8), size: u32) -> Vec<u8> {
 /// bar, the window title (which the Windows taskbar shows on hover) and the tray
 /// tooltip. Driven by the dashboard, which aggregates its active runs into one
 /// `state` (`normal`/`indeterminate`/`paused`/`error`/`none`), an optional 0–1
-/// `fraction` and a `label`. `state = "none"` clears the bar and restores the
-/// resting title; run progress leaves the tooltip while the unread count (if any)
-/// stays.
+/// `fraction`, a `label` and whether any of them is `failing`, which turns the
+/// status dot red. `state = "none"` clears the bar and restores the resting
+/// title; run progress leaves the tooltip while the unread count (if any) stays.
 #[tauri::command]
 fn desktop_set_run_progress(
     app: tauri::AppHandle,
     state: String,
     fraction: Option<f64>,
     label: Option<String>,
+    failing: Option<bool>,
 ) {
     let handle = app.clone();
     let _ = app.run_on_main_thread(move || {
         let status = progress_bar_status(&state);
         let active = status.is_some();
-        let glyph = status_dot_color(&state, fraction);
+        let glyph = status_dot_color(&state, fraction, failing.unwrap_or(false));
         if let Some(w) = handle.get_webview_window("main") {
             // A determinate bar carries the fraction as 0–100; an indeterminate
             // one (a countless phase such as install/checkout) carries none.
@@ -1080,9 +1085,20 @@ const E2E_PLAYWRIGHT_CAPABILITY: &str = r#"{
 }"#;
 
 pub fn run() {
+    // Windows: a stop request for a local run starts a short-lived copy of this
+    // binary to deliver the Ctrl+C (see interrupt.rs). Handled first — it never
+    // opens a window or reaches the running instance.
+    #[cfg(windows)]
+    {
+        let args: Vec<String> = std::env::args().skip(1).collect();
+        if args.first().map(String::as_str) == Some(interrupt::HELPER_ARG) {
+            interrupt::run_helper(args.get(1).map(String::as_str));
+        }
+    }
+
     // Claude Desktop only loads stdio MCP servers, so its one-click setup points
     // it at this same binary in bridge mode: it proxies MCP over stdin/stdout to
-    // the running app's /mcp endpoint. Handled before anything else — no window,
+    // the running app's /mcp endpoint. Handled before the app starts — no window,
     // no tray icon, no second server, and no hand-off to the running instance.
     if std::env::args().skip(1).any(|a| mcp_stdio::is_bridge_arg(&a)) {
         mcp_stdio::run_bridge();
@@ -1596,15 +1612,29 @@ mod tests {
 
     #[test]
     fn status_dot_color_maps_states_to_colours() {
-        assert_eq!(status_dot_color("error", None), Some((220, 38, 38)));
-        assert_eq!(status_dot_color("paused", None), Some((217, 119, 6)));
+        assert_eq!(status_dot_color("error", None, false), Some((220, 38, 38)));
+        assert_eq!(status_dot_color("paused", None, false), Some((217, 119, 6)));
         // Running is blue; the finished-pass flash (normal at 100%) is green.
-        assert_eq!(status_dot_color("normal", Some(0.5)), Some((37, 99, 235)));
-        assert_eq!(status_dot_color("indeterminate", None), Some((37, 99, 235)));
-        assert_eq!(status_dot_color("normal", Some(1.0)), Some((22, 163, 74)));
+        assert_eq!(status_dot_color("normal", Some(0.5), false), Some((37, 99, 235)));
+        assert_eq!(status_dot_color("indeterminate", None, false), Some((37, 99, 235)));
+        assert_eq!(status_dot_color("normal", Some(1.0), false), Some((22, 163, 74)));
         // Idle / unknown clears the dot so the app icon shows through.
-        assert_eq!(status_dot_color("none", None), None);
-        assert_eq!(status_dot_color("bogus", Some(1.0)), None);
+        assert_eq!(status_dot_color("none", None, false), None);
+        assert_eq!(status_dot_color("bogus", Some(1.0), false), None);
+    }
+
+    #[test]
+    fn a_run_with_failures_shows_a_red_dot_while_it_runs() {
+        let red = Some((220, 38, 38));
+        assert_eq!(status_dot_color("normal", Some(0.5), true), red);
+        assert_eq!(status_dot_color("indeterminate", None, true), red);
+        assert_eq!(status_dot_color("normal", Some(1.0), true), red);
+        // Failing never lights up an idle icon or recolours an interrupted run.
+        assert_eq!(status_dot_color("none", None, true), None);
+        assert_eq!(
+            status_dot_color("paused", Some(1.0), true),
+            Some((217, 119, 6))
+        );
     }
 
     #[test]

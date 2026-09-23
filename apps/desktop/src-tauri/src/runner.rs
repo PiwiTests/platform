@@ -54,15 +54,23 @@ const ALLOWED_FLAGS: [&str; 12] = [
     "--last-failed",
 ];
 
-/// A long-running reproduce/bisect job: its stop flag, the pid of the child
-/// currently spawned (install / browser / test — tree-killed on stop), and how
-/// to tear the throwaway worktree down. The job owns the worktree for its life.
-/// A pid rather than a handle so the same stop path kills a Tauri sidecar child
-/// and a plain `npm`/`git` child alike, together with the process tree each
-/// spawned.
+/// The child a reproduce/bisect job is running right now. A pid rather than a
+/// handle so the same stop path reaches a Tauri sidecar child and a plain
+/// `npm`/`git` child alike, together with the process tree each spawned.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct JobChild {
+    pub pid: u32,
+    /// A Node process (the test, or a browser install) that winds down on
+    /// Ctrl+C; a git or package-manager step is killed at once.
+    pub interruptible: bool,
+}
+
+/// A long-running reproduce/bisect job: its stop flag, the child currently
+/// spawned (checkout / install / browser / test), and how to tear the
+/// throwaway worktree down. The job owns the worktree for its life.
 pub struct Job {
     pub stop: Arc<AtomicBool>,
-    pub pid: Arc<Mutex<Option<u32>>>,
+    pub child: Arc<Mutex<Option<JobChild>>>,
     pub cleanup: crate::worktree::Cleanup,
     pub cleaned: Arc<std::sync::atomic::AtomicBool>,
 }
@@ -74,6 +82,8 @@ pub struct Job {
 pub struct LocalRuns {
     next_id: AtomicU32,
     children: Mutex<HashMap<u32, CommandChild>>,
+    /// Plain runs already asked to stop gracefully — a second stop kills them.
+    stopping: Mutex<HashSet<u32>>,
     jobs: Mutex<HashMap<u32, Job>>,
 }
 
@@ -99,11 +109,36 @@ impl LocalRuns {
         self.jobs.lock().unwrap().remove(&id);
     }
 
-    /// Record (or clear) the pid of the child currently running for a job, so a
-    /// stop or app-quit tree-kills exactly what is live.
-    pub(crate) fn set_job_pid(&self, id: u32, pid: Option<u32>) {
+    /// Record (or clear) the child currently running for a job, so a stop or
+    /// app-quit reaches exactly what is live.
+    pub(crate) fn set_job_child(&self, id: u32, child: Option<JobChild>) {
         if let Some(job) = self.jobs.lock().unwrap().get(&id) {
-            *job.pid.lock().unwrap() = pid;
+            *job.child.lock().unwrap() = child;
+        }
+    }
+
+    /// Forget a plain run once its process has exited.
+    fn drop_child(&self, id: u32) {
+        self.children.lock().unwrap().remove(&id);
+        self.stopping.lock().unwrap().remove(&id);
+    }
+
+    /// Kill a plain run's process tree now, if it is still running.
+    fn kill_child(&self, id: u32) {
+        let child = self.children.lock().unwrap().remove(&id);
+        self.stopping.lock().unwrap().remove(&id);
+        if let Some(child) = child {
+            crate::worktree::kill_child_tree(child.pid());
+            let _ = child.kill();
+        }
+    }
+
+    /// Kill a job's current child tree now, if it is still the one running.
+    fn kill_job_child(&self, id: u32, pid: u32) {
+        if let Some(job) = self.jobs.lock().unwrap().get(&id) {
+            if job.child.lock().unwrap().is_some_and(|c| c.pid == pid) {
+                crate::worktree::kill_child_tree(pid);
+            }
         }
     }
 
@@ -114,10 +149,11 @@ impl LocalRuns {
         for (_, child) in self.children.lock().unwrap().drain() {
             let _ = child.kill();
         }
+        self.stopping.lock().unwrap().clear();
         for (_, job) in self.jobs.lock().unwrap().drain() {
             job.stop.store(true, Ordering::SeqCst);
-            if let Some(pid) = *job.pid.lock().unwrap() {
-                crate::worktree::kill_child_tree(pid);
+            if let Some(child) = *job.child.lock().unwrap() {
+                crate::worktree::kill_child_tree(child.pid);
             }
             crate::worktree::perform_cleanup(&job.cleanup, &job.cleaned);
         }
@@ -579,7 +615,7 @@ pub async fn desktop_run_local_tests(
                 CommandEvent::Error(err) => RunEventPayload::line(id, "error", err),
                 CommandEvent::Terminated(status) => {
                     if let Some(runs) = emit_app.try_state::<LocalRuns>() {
-                        runs.children.lock().unwrap().remove(&id);
+                        runs.drop_child(id);
                     }
                     RunEventPayload::exit(id, status.code)
                 }
@@ -592,26 +628,59 @@ pub async fn desktop_run_local_tests(
     Ok(id)
 }
 
-/// Stop a running local process. For a plain test run this kills the process;
-/// for a reproduce/bisect job it raises the job's stop flag and kills the child
-/// currently running (with its process tree — the test may have spawned browsers
-/// or a webServer), and the job's own driver then resets any bisect and removes
-/// the worktree. A run that already exited is a no-op.
+/// Stop a running local process as Ctrl+C would in a terminal (see
+/// `interrupt.rs`): Playwright stops its workers and the reporter still sends
+/// the run's end. A process still running `STOP_GRACE` later — or asked to stop
+/// a second time, or one that cannot be interrupted — is killed with its process
+/// tree (the test may have spawned browsers or a webServer).
+///
+/// For a reproduce/bisect job the stop flag is raised first, so its driver
+/// starts no further step once the current child exits, then resets any bisect
+/// and removes the worktree. A run that already exited is a no-op.
 #[tauri::command]
-pub fn desktop_stop_local_tests(app: AppHandle, run_id: u32) -> Result<(), String> {
+pub async fn desktop_stop_local_tests(app: AppHandle, run_id: u32) -> Result<(), String> {
     let state = app.state::<LocalRuns>();
-    if let Some(job) = state.jobs.lock().unwrap().get(&run_id) {
-        job.stop.store(true, Ordering::SeqCst);
-        if let Some(pid) = *job.pid.lock().unwrap() {
-            crate::worktree::kill_child_tree(pid);
+    let job = state.jobs.lock().unwrap().get(&run_id).map(|job| {
+        (
+            job.stop.swap(true, Ordering::SeqCst),
+            *job.child.lock().unwrap(),
+        )
+    });
+    if let Some((already_stopping, child)) = job {
+        let Some(child) = child else {
+            return Ok(());
+        };
+        if already_stopping || !child.interruptible || !crate::interrupt::interrupt(child.pid) {
+            state.kill_job_child(run_id, child.pid);
+        } else {
+            after_grace(&app, move |runs| runs.kill_job_child(run_id, child.pid));
         }
         return Ok(());
     }
-    let child = state.children.lock().unwrap().remove(&run_id);
-    match child {
-        Some(c) => c.kill().map_err(|e| e.to_string()),
-        None => Ok(()),
+
+    let pid = state.children.lock().unwrap().get(&run_id).map(|c| c.pid());
+    let Some(pid) = pid else {
+        return Ok(());
+    };
+    let already_stopping = !state.stopping.lock().unwrap().insert(run_id);
+    if already_stopping || !crate::interrupt::interrupt(pid) {
+        state.kill_child(run_id);
+    } else {
+        after_grace(&app, move |runs| runs.kill_child(run_id));
     }
+    Ok(())
+}
+
+/// Run `force` once `STOP_GRACE` has passed — on a plain thread, since the wait
+/// must not hold up the async runtime.
+fn after_grace(app: &AppHandle, force: impl FnOnce(&LocalRuns) + Send + 'static) {
+    let app = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(crate::interrupt::STOP_GRACE);
+        if let Some(runs) = app.try_state::<LocalRuns>() {
+            force(&runs);
+        }
+    });
 }
 
 #[cfg(test)]
