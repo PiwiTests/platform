@@ -157,10 +157,14 @@ const ciRerun = defineModel<CiRerunForm>('ciRerun', {
 
       <UFormField
         v-if="!hideServerProbes"
-        label="Server probes"
         name="serverProbes"
-        description="Level-two probes inject a fault inside the server for one signed request, to check whether a passing test would notice. Off by default; turn it on once client probes report not-noticed on at least one in ten pairs. Needs a shared probe secret on the app under test and the probe runner, and a non-production target."
+        description="Level-two probes inject a fault inside the server for one signed request, to check whether a passing test would notice. Experimental and off by default: the entry condition (client probes reporting not-noticed on at least one in ten pairs) has not been measured yet. Needs a shared probe secret on the app under test and the probe runner, and a non-production target."
       >
+        <template #label>
+          <span class="inline-flex items-center gap-1"
+            >Server probes <UBadge color="neutral" variant="subtle" size="xs">Experimental</UBadge></span
+          >
+        </template>
         <div class="space-y-3">
           <USwitch v-model="serverProbes.enabled" label="Enable server probes for this project" />
           <div v-if="serverProbes.enabled" class="space-y-3">

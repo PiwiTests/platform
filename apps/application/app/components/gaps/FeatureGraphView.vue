@@ -10,6 +10,7 @@
  * open gap and edges by kind; clicking a node recenters. Plain SVG, no library.
  */
 import { compareBySeverity, gapClassBadgeColor, gapClassFill, graphEdgeStroke } from '~/utils/gap-classes';
+import { errorMessage } from '~/utils';
 
 interface GraphNode {
   kind: string;
@@ -38,6 +39,7 @@ const emit = defineEmits<{ (e: 'select', node: { kind: string; key: string }): v
 
 const graph = ref<FeatureGraph | null>(null);
 const loading = ref(false);
+const loadError = ref<string | null>(null);
 const hovered = ref<string | null>(null);
 
 // A monotonic token so an out-of-order response never overwrites the current graph.
@@ -52,8 +54,13 @@ async function load() {
     });
     if (token !== requestToken) return; // superseded by a newer request
     graph.value = result;
-  } catch {
-    if (token === requestToken) graph.value = null;
+    loadError.value = null;
+  } catch (err) {
+    // A failed fetch is an error, not an empty graph.
+    if (token === requestToken) {
+      graph.value = null;
+      loadError.value = errorMessage(err);
+    }
   } finally {
     if (token === requestToken) loading.value = false;
   }
@@ -262,7 +269,12 @@ function select(node: { kind: string; key: string }) {
 
 <template>
   <div class="w-full space-y-4" data-shot="feature-graph">
-    <LoadingState v-if="loading && !graph" />
+    <ErrorState v-if="loadError" :text="`Couldn't load the graph: ${loadError}`">
+      <template #action>
+        <UButton size="xs" color="neutral" variant="outline" label="Retry" @click="load" />
+      </template>
+    </ErrorState>
+    <LoadingState v-else-if="loading && !graph" />
     <EmptyState v-else-if="!graph || !seed" icon="i-lucide-radar" text="No graph for this node" />
     <template v-else>
       <div class="flex flex-wrap items-center gap-2">

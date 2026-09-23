@@ -53,6 +53,14 @@ export interface CapabilityDef {
   needs: FeatureNeed[];
   /** Detection id in `setup-status.ts`, when evidence exists for it. */
   detection: SetupCapabilityId | null;
+  /**
+   * The capability's evidence arrives passively from ingest, not from a user
+   * turning it on (the Test Map's graph nodes are written on every run). For
+   * such a capability a decline holds over that data, so declining it actually
+   * turns the surface off; every other capability keeps the "data always wins"
+   * rule.
+   */
+  passiveData?: boolean;
   /** A capability that is declined whenever this one is (rides on it). */
   follows?: CapabilityId;
   /** Release that introduced it; the Setup ladder marks entries newer than the instance's first run. */
@@ -195,6 +203,7 @@ export const CAPABILITIES: CapabilityDef[] = [
     levels: ['instance', 'project'],
     needs: [],
     detection: 'test-map',
+    passiveData: true,
     since: '0.36.0',
     doc: 'features/scenario-gaps',
   },
@@ -272,13 +281,23 @@ export interface CapabilityInput {
  * checklist.
  *
  * Precedence, in order: data always wins (a declined capability that starts
- * receiving data reads active); a project decline; a project enable, which
- * overrides the instance decline and the followed capability; an instance
- * decline or a declined capability this one follows; not-applicable; and
- * finally configured-but-empty (available) versus nothing at all (undecided).
+ * receiving data reads active) — except a `passiveData` capability, whose data
+ * arrives from ingest rather than from being turned on, where a decline holds
+ * over the data; a project decline; a project enable, which overrides the
+ * instance decline and the followed capability; an instance decline or a
+ * declined capability this one follows; not-applicable; and finally
+ * configured-but-empty (available) versus nothing at all (undecided).
  */
 export function resolveCapability(def: CapabilityDef, input: CapabilityInput): CapabilityState {
-  if (input.evidence) return 'active';
+  // A decline reached through the decision hierarchy, evidence aside: a project
+  // decline, or — absent a project enable — an instance decline or a declined
+  // followed capability. A project enable always overrides an instance decline.
+  const declinedByDecision =
+    input.projectDecision === 'declined' ||
+    (input.projectDecision !== 'enabled' &&
+      (input.instanceDecision === 'declined' || input.followedState === 'declined'));
+
+  if (input.evidence && !(def.passiveData && declinedByDecision)) return 'active';
   if (input.projectDecision === 'declined') return 'declined';
   if (input.projectDecision === 'enabled') {
     return input.configured ? 'available' : 'undecided';

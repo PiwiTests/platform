@@ -3,11 +3,15 @@
  * The Gaps tab: a project's scenario gaps and resilience findings, grouped by
  * feature and ranked, each with its class, exposure factors and evidence lines,
  * and the inbox verbs — accept (opens the draft), snooze, dismiss with a reason,
- * covered-by. Above the list sits the feature map — the project graph folded per
- * feature — and any feature or gap node opens in the feature-graph view under it.
+ * covered-by. A status filter switches between the open queue and the accepted
+ * (or every) gap, so the Home inbox can link straight to the accepted ones.
+ * Above the list sits the feature map — the project graph folded per feature —
+ * and any feature or gap node opens in the feature-graph view under it.
  * Self-contained: fetches its own data with watch + $fetch so it fires only when
  * the tab mounts.
  */
+import { errorMessage } from '~/utils';
+
 interface GapFactors {
   churn: number;
   age: number;
@@ -31,9 +35,29 @@ interface Gap {
 
 const props = defineProps<{ projectId: number }>();
 const toast = useToast();
+const route = useRoute();
+
+/** The statuses the filter offers; the tab opens on the open queue. */
+const STATUS_OPTIONS = [
+  { label: 'Open', value: 'open' },
+  { label: 'Accepted', value: 'accepted' },
+  { label: 'Snoozed', value: 'snoozed' },
+  { label: 'Dismissed', value: 'dismissed' },
+  { label: 'All', value: 'all' },
+];
+const STATUS_VALUES = new Set(STATUS_OPTIONS.map((o) => o.value));
+const initialStatus =
+  typeof route.query.gapStatus === 'string' && STATUS_VALUES.has(route.query.gapStatus)
+    ? route.query.gapStatus
+    : 'open';
+const statusFilter = ref<string>(initialStatus);
+
+/** The most gaps one request returns; the server caps here, so a full page is truncated. */
+const PAGE_LIMIT = 200;
 
 const gaps = ref<Gap[]>([]);
 const loading = ref(false);
+const loadError = ref<string | null>(null);
 const recomputing = ref(false);
 const graphSeed = ref<string | null>(null);
 const mutedDetectors = ref<string[]>([]);
@@ -49,10 +73,16 @@ function openInGraph(node: { kind: string; key: string }) {
 async function load() {
   loading.value = true;
   try {
-    const res = await $fetch<{ items: Gap[] }>(`/api/projects/${props.projectId}/gaps` as `/api/projects/:id/gaps`);
+    const res = await $fetch<{ items: Gap[] }>(`/api/projects/${props.projectId}/gaps` as `/api/projects/:id/gaps`, {
+      query: { status: statusFilter.value, limit: PAGE_LIMIT },
+    });
     gaps.value = res.items ?? [];
-  } catch {
+    loadError.value = null;
+  } catch (err) {
+    // A failed fetch is an error, not an empty queue: keep it distinct from
+    // "nothing here" so the surface shows why rather than a misleading empty state.
     gaps.value = [];
+    loadError.value = errorMessage(err);
   } finally {
     loading.value = false;
   }
@@ -67,7 +97,10 @@ async function load() {
   }
 }
 
-watch(() => props.projectId, load, { immediate: true });
+watch([() => props.projectId, statusFilter], load, { immediate: true });
+
+/** True once a full page came back — the server capped the list, so some are hidden. */
+const capped = computed(() => gaps.value.length >= PAGE_LIMIT);
 
 /** Gaps grouped by feature, features ordered by their top gap's score. */
 const grouped = computed(() => {
@@ -96,7 +129,8 @@ function factorLine(f: GapFactors | null): string {
   return `churn ${f.churn.toFixed(1)} · age ${f.age.toFixed(1)} · escape ${f.escapeHistory.toFixed(1)} · priority ${f.priority.toFixed(1)}`;
 }
 
-async function triage(gap: Gap, body: Record<string, unknown>) {
+/** Run a triage verb; returns whether it succeeded so callers show one outcome. */
+async function triage(gap: Gap, body: Record<string, unknown>): Promise<boolean> {
   try {
     await $fetch(`/api/projects/${props.projectId}/gaps/${gap.id}/triage` as `/api/projects/:id/gaps/:gapId/triage`, {
       method: 'POST',
@@ -105,13 +139,17 @@ async function triage(gap: Gap, body: Record<string, unknown>) {
     await load();
     // The map counts open gaps, so a verdict changes it too.
     await mapView.value?.reload();
+    return true;
   } catch {
     toast.add({ title: 'Triage failed', color: 'error' });
+    return false;
   }
 }
 
 async function accept(gap: Gap) {
-  await triage(gap, { verb: 'accept' });
+  // One outcome, one toast: a failed triage stops here with its own error toast,
+  // so accept never reports both "Triage failed" and "draft copied".
+  if (!(await triage(gap, { verb: 'accept' }))) return;
   try {
     const draft = await $fetch<{ text: string }>(
       `/api/projects/${props.projectId}/gaps/${gap.id}/draft` as `/api/projects/:id/gaps/:gapId/draft`,
@@ -133,28 +171,33 @@ const coveredOpen = ref(false);
 const coveredGap = ref<Gap | null>(null);
 const coveredTestId = ref<string>('');
 const coveredDismiss = ref(false);
+const coveredError = ref<string | null>(null);
 
 function openCovered(gap: Gap, alsoDismiss: boolean) {
   coveredGap.value = gap;
   coveredTestId.value = '';
   coveredDismiss.value = alsoDismiss;
+  coveredError.value = null;
   coveredOpen.value = true;
 }
 
 async function submitCovered() {
   const gap = coveredGap.value;
-  const id = Number(coveredTestId.value);
-  if (!gap || !Number.isFinite(id)) {
-    coveredOpen.value = false;
+  const raw = coveredTestId.value.trim();
+  const id = Number(raw);
+  // Validate before sending: an empty box is `Number('') === 0`, which would
+  // otherwise submit test case id 0.
+  if (!gap || raw === '' || !Number.isInteger(id) || id <= 0) {
+    coveredError.value = 'Enter a positive test case id.';
     return;
   }
-  await triage(
+  const ok = await triage(
     gap,
     coveredDismiss.value
       ? { verb: 'dismiss', reason: 'covered-elsewhere', coveringTestCaseId: id }
       : { verb: 'covered-by', coveringTestCaseId: id },
   );
-  coveredOpen.value = false;
+  if (ok) coveredOpen.value = false;
 }
 
 function snoozeItems(gap: Gap) {
@@ -195,24 +238,40 @@ async function recompute() {
     recomputing.value = false;
   }
 }
+
+/** The empty-state line, worded for the status being shown. */
+const emptyText = computed(() =>
+  statusFilter.value === 'open'
+    ? 'No open gaps — recompute to look against the latest graph.'
+    : `No ${statusFilter.value === 'all' ? '' : `${statusFilter.value} `}gaps here.`,
+);
 </script>
 
 <template>
   <div class="space-y-4" data-shot="gaps-panel">
-    <div class="flex items-center justify-between gap-3">
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <p class="text-sm text-highlighted leading-relaxed">
         Proposed tests that do not exist yet, ranked by exposure. Every line is observed reach, never instrumented
         coverage.
       </p>
-      <UButton
-        size="xs"
-        color="neutral"
-        variant="outline"
-        icon="i-lucide-refresh-cw"
-        :loading="recomputing"
-        label="Recompute"
-        @click="recompute"
-      />
+      <div class="flex items-center gap-2 shrink-0">
+        <USelect
+          v-model="statusFilter"
+          :items="STATUS_OPTIONS"
+          size="xs"
+          class="w-32"
+          :aria-label="'Filter gaps by status'"
+        />
+        <UButton
+          size="xs"
+          color="neutral"
+          variant="outline"
+          icon="i-lucide-refresh-cw"
+          :loading="recomputing"
+          label="Recompute"
+          @click="recompute"
+        />
+      </div>
     </div>
 
     <p v-if="mutedDetectors.length > 0" class="text-xs text-muted">
@@ -243,24 +302,26 @@ async function recompute() {
       </SectionCard>
     </div>
 
-    <LoadingState v-if="loading && gaps.length === 0" />
-    <EmptyState
-      v-else-if="gaps.length === 0"
-      icon="i-lucide-radar"
-      text="No open gaps — recompute to look against the latest graph."
-    />
+    <ErrorState v-if="loadError" :text="`Couldn't load gaps: ${loadError}`">
+      <template #action>
+        <UButton size="xs" color="neutral" variant="outline" label="Retry" @click="load" />
+      </template>
+    </ErrorState>
+    <LoadingState v-else-if="loading && gaps.length === 0" />
+    <EmptyState v-else-if="gaps.length === 0" icon="i-lucide-radar" :text="emptyText" />
 
     <template v-else>
       <SectionCard v-for="group in grouped" :key="group.feature" :title="group.feature">
         <div class="divide-y divide-default">
           <div v-for="gap in group.items" :key="gap.id" class="py-3 space-y-2" :data-shot="`gap-${gap.id}`">
-            <div class="flex items-start justify-between gap-3">
+            <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
               <div class="min-w-0">
-                <div class="flex items-center gap-2">
+                <div class="flex flex-wrap items-center gap-2">
                   <UBadge :color="(CLASS_COLOR[gap.class] as any) ?? 'neutral'" variant="subtle" size="sm">{{
                     gap.class
                   }}</UBadge>
                   <span v-if="gap.kind === 'finding'" class="text-xs text-muted">finding</span>
+                  <span v-if="statusFilter !== 'open'" class="text-xs text-muted">{{ gap.status }}</span>
                   <span class="text-xs text-muted font-mono">{{ gap.detector }}</span>
                 </div>
                 <p class="mt-1 text-sm text-highlighted leading-relaxed">{{ gap.title }}</p>
@@ -272,7 +333,7 @@ async function recompute() {
                   }}<span v-if="gap.factors"> · {{ factorLine(gap.factors) }}</span>
                 </p>
               </div>
-              <div class="shrink-0 flex items-center gap-1">
+              <div class="flex flex-wrap items-center gap-1 sm:shrink-0">
                 <UButton size="xs" color="primary" label="Accept" @click="accept(gap)" />
                 <UDropdownMenu :items="snoozeItems(gap)">
                   <UButton
@@ -312,6 +373,10 @@ async function recompute() {
           </div>
         </div>
       </SectionCard>
+
+      <p v-if="capped" class="text-xs text-muted">
+        Showing the top {{ PAGE_LIMIT }} gaps by exposure — narrow with a status filter or on a feature to see the rest.
+      </p>
     </template>
 
     <UModal v-model:open="coveredOpen" :title="coveredDismiss ? 'Covered elsewhere' : 'Covered by a test'">
@@ -321,7 +386,7 @@ async function recompute() {
             Enter the test case id that covers this. A manual reaches edge is written so the gap closes on the next
             recompute<span v-if="coveredDismiss"> and the gap is dismissed</span>.
           </p>
-          <UFormField label="Covering test case id">
+          <UFormField label="Covering test case id" :error="coveredError ?? undefined">
             <UInput v-model="coveredTestId" type="number" placeholder="test case id" class="w-full" />
           </UFormField>
           <div class="flex justify-end gap-2">
