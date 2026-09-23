@@ -24,6 +24,7 @@ npx @piwitests/reporter <command> [options]
 | [`gate`](#gate) | Fail a CI job on the dashboard's analysis of a run |
 | [`select`](#select-run) | Print the Playwright args for a saved test selection |
 | [`run`](#select-run) | Run a saved test selection with `playwright test` |
+| [`probe`](#probe) | Run the dashboard's probe plan and record what the suite noticed |
 | [`ai`](#ai) | Manage committed natural-language AI-step artifacts |
 
 Several commands read connection settings from the environment as a fallback: `PIWI_DASHBOARD_URL` (dashboard URL), `PIWI_API_KEY` (API key), and `PIWI_PROJECT_NAME` (project). A flag always wins over its environment variable.
@@ -95,6 +96,7 @@ npx @piwitests/reporter gate --max-new-regressions 0 --fail-on-flaky
 | `--fail-on-new-cluster` | Fail when this run introduced a new failure cluster |
 | `--fail-on-flaky` | Fail when this run contains any flaky test |
 | `--require-selection <key>` | Fail when a test the named selection matches did not run or failed |
+| `--max-uncovered-changes <n>` | Warn when more than *n* changed files have no observed test reach (warn-only — never fails the gate) |
 | `--json` | Print the raw result as JSON instead of a summary |
 | `-h`, `--help` | Show help |
 
@@ -130,6 +132,24 @@ npx @piwitests/reporter run impact --base origin/main
 Pass extra Playwright arguments after `--`: `piwi run smoke -- --headed --workers=1`.
 
 When `run` spawns Playwright and the target config has **no Piwi reporter**, it appends `--add-reporter @piwitests/reporter` so the run still reaches the dashboard — provided the installed Playwright is **1.63 or later** (the version that added the flag; it appends to the configured reporters rather than replacing them). It logs one line naming what it added. On older Playwright it logs that the reporter is not configured and runs as before. This trial append gives you results, traces and screenshots but not the [capture fixtures](/guide/capture-fixtures) or [`wrapConfig`](/guide/reporter#installing-via-wrapconfig) defaults — wire the reporter into the config (via [`init`](#init)) for the full set. A config that already lists the reporter is left untouched.
+
+## `probe`
+
+Run the dashboard's [probe plan](/features/scenario-gaps) and record what the suite noticed. `probe` fetches the (test, route, fault) pairs the dashboard wants checked, runs `playwright test` with the [capture fixtures](/guide/capture-fixtures) in probe mode — each fault injected at the network boundary, one per test — and posts the outcomes back. The run is stamped as a probe run, so the dashboard never counts it as a real run (no clusters, regression signals, notifications or PR feedback), and retries are forced off.
+
+```bash
+npx @piwitests/reporter probe --project my-app
+```
+
+| Flag | Description |
+|---|---|
+| `--server-url <url>` | Dashboard URL (env `PIWI_DASHBOARD_URL`) |
+| `--api-key <key>` | API key (env `PIWI_API_KEY`) |
+| `--project <name\|id>` | Project name or id (env `PIWI_PROJECT_NAME`) |
+| `--budget <n>` | Max pairs to probe this run (default the server's) |
+| `-h`, `--help` | Show help |
+
+Everything after `--` is passed to `playwright test`. A probed test fails by design when it notices the injected fault, so a non-zero Playwright exit is expected and is not a command error.
 
 ## `ai`
 
