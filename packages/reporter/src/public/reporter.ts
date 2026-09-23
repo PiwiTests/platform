@@ -22,6 +22,8 @@ import { isListMode } from '../internal/support/run-mode.js';
 import { createGlobalSetup } from './global-setup.js';
 import { wrapConfig } from './config-wrapper.js';
 import { toWireTestCase } from '../internal/submit/serializer.js';
+import { isProbeMode } from '../internal/probe/mode.js';
+import { probeRunMetadata } from '../internal/probe/plan.js';
 import {
   mergeAnnotations,
   classifyStatus,
@@ -211,6 +213,13 @@ export class PiwiDashboardReporter {
     }
 
     this.metadata = this.metadataCollector.collect(config, suite, this.options);
+
+    // Stamp a probe run at the source, before any run body is sent. The
+    // streaming start/begin and finish calls carry this same metadata object, so
+    // stamping it here (rather than only at serialize time) marks the run on
+    // every submit path — the dashboard then routes it to its silent path (no
+    // clusters, regression signals, notifications or pull-request feedback).
+    if (isProbeMode()) this.metadata = probeRunMetadata(this.metadata);
 
     // Snapshot the planned test list so `onEnd` can materialize tests that
     // never ran (e.g. cut short by `maxFailures`) as `didnotrun` cases. The
