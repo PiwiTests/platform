@@ -43,6 +43,7 @@ import { computeRunChangeCoverage } from './change-coverage';
 import { computeScenarioGaps } from '#shared/handlers/scenario-gaps';
 import { resolveProjectStates } from '#shared/handlers/capabilities';
 import { resolveRunBranchTagFromStored } from '../graph-ingest';
+import { withProjectGraphLock } from '../project-graph-lock';
 import type { VerifiedFix } from '../fix-verification';
 import type { RunMetadata } from '../run-json-types';
 import type { DbClient } from '../../database';
@@ -430,9 +431,11 @@ async function computeScenarioGapsForRun(db: DbClient, runId: number): Promise<v
     .where(eq(testRuns.id, runId));
   if (!run) return;
   const [project] = await db
-    .select({ defaultBranch: projects.defaultBranch })
+    .select({ id: projects.id, defaultBranch: projects.defaultBranch })
     .from(projects)
     .where(eq(projects.id, run.projectId));
-  const branch = project ? resolveRunBranchTagFromStored(project, run.metadata, run.branch) : null;
-  await computeScenarioGaps(db, run.projectId, { branch });
+  const branch = project ? await resolveRunBranchTagFromStored(db, project, run.metadata, run.branch) : null;
+  // Serialize per project so a run finishing while a manual recompute (or another
+  // run) is mid-flight does not race its graph and gap writes.
+  await withProjectGraphLock(run.projectId, () => computeScenarioGaps(db, run.projectId, { branch }));
 }

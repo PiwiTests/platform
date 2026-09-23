@@ -51,3 +51,30 @@ describe('runFinalizeSideEffects', () => {
     for (const fn of allEffects) expect(fn).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('every complete-run ingest path routes finalize through the shared helper', () => {
+  // Pins the deliberate unification: a batch upload (and submit, and finish) fires
+  // the full probe-aware finalize set — regression signals, markers, diagnosis,
+  // notifications, PR feedback and heal — not just AI diagnosis. Reverting any
+  // path to call an effect directly (bypassing the helper) breaks this.
+  const read = async (rel: string) => {
+    const { readFile } = await import('node:fs/promises');
+    const { fileURLToPath } = await import('node:url');
+    return readFile(fileURLToPath(new URL(rel, import.meta.url)), 'utf8');
+  };
+  const paths = [
+    '../../server/api/test-runs/upload.post.ts',
+    '../../server/api/test-runs/submit.post.ts',
+    '../../server/api/test-runs/[id]/finish.post.ts',
+  ];
+  for (const rel of paths) {
+    test(`${rel} calls runFinalizeSideEffects and no side effect directly`, async () => {
+      const src = await read(rel);
+      expect(src).toContain('runFinalizeSideEffects');
+      // The individual effects must only reach these endpoints through the helper.
+      expect(src).not.toContain('autoDiagnoseRun(');
+      expect(src).not.toContain('emitRunNotifications(');
+      expect(src).not.toContain('postRunPrFeedbackInBackground(');
+    });
+  }
+});
