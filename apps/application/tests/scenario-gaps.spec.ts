@@ -77,9 +77,12 @@ test.describe('Scenario gaps tab', () => {
     const gap = page.locator(`[data-shot="gap-${id}"]`);
     await expect(gap).toBeVisible();
 
-    // Open the graph view from the gap's graph button, and expect the SVG.
+    // Open the graph view from the gap's graph button: the ego picture draws the
+    // route in the middle and the reaching test beside it, over the inspector list.
     await gap.getByRole('button', { name: 'View', exact: false }).click();
-    await expect(page.locator('svg').last()).toBeVisible();
+    const graph = page.locator('[data-shot="feature-graph"]');
+    await expect(graph.locator('svg').first()).toBeVisible();
+    await expect(graph.locator('[data-shot="node-inspector"]')).toContainText(ROUTE.graph);
   });
 
   test('accepting a gap removes it from the open list', async ({ page, request }) => {

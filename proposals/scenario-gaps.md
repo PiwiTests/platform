@@ -39,7 +39,10 @@ Nitro plugin applies handler, dependency, data and pipeline faults and reports t
 ASP.NET Core package applies the honest handler-level subset, an un-honored probe records inconclusive), resilience
 findings (`kind = finding`, class `unhandled`/`degraded`, ranked exposure × severity) and the `unprobed dependency` and
 `not handled` detectors; the Gaps tab grouped by feature with the inbox verbs, the gaps inbox queue on Home, the
-layered-SVG feature-graph view, the `GET /graph` endpoint and the `get_feature_graph` MCP tool; and the precision loop
+graph view — the feature map (`GET /feature-map`, one circle per feature colored by its worst gap and linked where
+features share nodes) opening into a depth-one ego picture over an inspector list, which replaced the first layered
+walk once a review found a layered picture of a real application unreadable — the `GET /graph` endpoint and the
+`get_feature_graph` MCP tool; and the precision loop
 (per-detector precision from triage verdicts with self-muting below 60% over 20+ verdicts, shown on the admin page and
 the tab and dropping muted rows from the PR comment first). The matrix and escaped-defect detectors and the weekly
 digest ship as pure functions with the selection tested; wiring the matrix and escaped-defect loaders, the digest
@@ -612,6 +615,7 @@ POST           /api/projects/:id/gaps/:gapId/triage          # accept | snooze |
 POST           /api/projects/:id/gaps/:gapId/draft           # skeleton, optionally AI-filled → clipboard | pr
 GET            /api/projects/:id/gaps/change-coverage        # ?run= | ?base=&head=          (M1)
 GET            /api/projects/:id/graph                       # ?node=kind:key&depth=          (M3)
+GET            /api/projects/:id/feature-map                 # the graph folded per feature   (M3)
 POST           /api/projects/:id/gaps/recompute
 GET/PUT        /api/projects/:id/surface/manifest            # declared routes/pages (openapi url | json)
 GET            /api/projects/:id/probes/plan                 # what `piwi probe` runs tonight (reporter API key)

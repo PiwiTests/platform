@@ -3,8 +3,10 @@
  * The Gaps tab: a project's scenario gaps and resilience findings, grouped by
  * feature and ranked, each with its class, exposure factors and evidence lines,
  * and the inbox verbs — accept (opens the draft), snooze, dismiss with a reason,
- * covered-by. A node can be opened in the feature-graph view. Self-contained:
- * fetches its own data with watch + $fetch so it fires only when the tab mounts.
+ * covered-by. Above the list sits the feature map — the project graph folded per
+ * feature — and any feature or gap node opens in the feature-graph view under it.
+ * Self-contained: fetches its own data with watch + $fetch so it fires only when
+ * the tab mounts.
  */
 interface GapFactors {
   churn: number;
@@ -35,6 +37,14 @@ const loading = ref(false);
 const recomputing = ref(false);
 const graphSeed = ref<string | null>(null);
 const mutedDetectors = ref<string[]>([]);
+const mapView = ref<{ reload: () => Promise<void> } | null>(null);
+const graphCard = ref<HTMLElement | null>(null);
+
+/** Open a node in the graph view and bring the view into sight. */
+function openInGraph(node: { kind: string; key: string }) {
+  graphSeed.value = `${node.kind}:${node.key}`;
+  nextTick(() => graphCard.value?.scrollIntoView?.({ behavior: 'smooth', block: 'start' }));
+}
 
 async function load() {
   loading.value = true;
@@ -93,6 +103,8 @@ async function triage(gap: Gap, body: Record<string, unknown>) {
       body,
     });
     await load();
+    // The map counts open gaps, so a verdict changes it too.
+    await mapView.value?.reload();
   } catch {
     toast.add({ title: 'Triage failed', color: 'error' });
   }
@@ -175,6 +187,7 @@ async function recompute() {
       method: 'POST',
     });
     await load();
+    await mapView.value?.reload();
     toast.add({ title: 'Gaps recomputed', color: 'success' });
   } catch {
     toast.add({ title: 'Recompute failed', color: 'error' });
@@ -206,6 +219,29 @@ async function recompute() {
       Muted on this project (below 60% precision over 20+ verdicts, dropped from the PR comment):
       <span class="font-mono">{{ mutedDetectors.join(', ') }}</span>
     </p>
+
+    <SectionCard
+      title="Feature map"
+      subtitle="The project graph folded per feature — click one to open it in the graph"
+    >
+      <FeatureMapView ref="mapView" :project-id="projectId" :selected="graphSeed" @select="openInGraph" />
+    </SectionCard>
+
+    <div v-if="graphSeed" ref="graphCard" class="scroll-mt-4">
+      <SectionCard title="Feature graph">
+        <template #actions>
+          <UButton
+            size="xs"
+            color="neutral"
+            variant="ghost"
+            icon="i-lucide-x"
+            aria-label="Close feature graph"
+            @click="graphSeed = null"
+          />
+        </template>
+        <FeatureGraphView :project-id="projectId" :seed-node="graphSeed" @select="openInGraph" />
+      </SectionCard>
+    </div>
 
     <LoadingState v-if="loading && gaps.length === 0" />
     <EmptyState
@@ -269,7 +305,7 @@ async function recompute() {
                   variant="ghost"
                   icon="i-lucide-radar"
                   :title="`View ${gap.subject.kind}:${gap.subject.key} in the graph`"
-                  @click="graphSeed = `${gap.subject.kind}:${gap.subject.key}`"
+                  @click="openInGraph(gap.subject)"
                 />
               </div>
             </div>
@@ -277,24 +313,6 @@ async function recompute() {
         </div>
       </SectionCard>
     </template>
-
-    <SectionCard v-if="graphSeed" title="Feature graph">
-      <template #actions>
-        <UButton
-          size="xs"
-          color="neutral"
-          variant="ghost"
-          icon="i-lucide-x"
-          aria-label="Close feature graph"
-          @click="graphSeed = null"
-        />
-      </template>
-      <FeatureGraphView
-        :project-id="projectId"
-        :seed-node="graphSeed"
-        @select="(n) => (graphSeed = `${n.kind}:${n.key}`)"
-      />
-    </SectionCard>
 
     <UModal v-model:open="coveredOpen" :title="coveredDismiss ? 'Covered elsewhere' : 'Covered by a test'">
       <template #body>

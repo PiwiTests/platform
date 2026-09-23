@@ -15,7 +15,7 @@ const {
   reopenExpiredSnoozes,
   upsertScenarioGaps,
 } = await import('../../shared/handlers/scenario-gaps');
-const { getFeatureGraph } = await import('../../server/utils/feature-graph');
+const { getFeatureGraph, getFeatureMap } = await import('../../server/utils/feature-graph');
 
 let db: ReturnType<typeof drizzle<typeof schema>>;
 
@@ -301,5 +301,139 @@ describe('getFeatureGraph', () => {
   test('depth is capped at six', async () => {
     const graph = await getFeatureGraph(db, 1, { kind: 'route', key: 'POST /api/orders' }, 99);
     expect(graph.depth).toBe(6);
+  });
+
+  test('a neighbor at the edge of the walk still carries its reaching tests', async () => {
+    await db.insert(schema.graphEdges).values({
+      projectId: 1,
+      branch: null,
+      confidence: null,
+      origin: 'observed',
+      lastSeenAt: new Date(),
+      fromKind: 'feature',
+      fromKey: 'Checkout',
+      toKind: 'route',
+      toKey: 'POST /api/orders',
+      kind: 'groups',
+    });
+    const graph = await getFeatureGraph(db, 1, { kind: 'feature', key: 'Checkout' }, 1);
+    const route = graph.nodes.find((n) => n.kind === 'route');
+    expect(route!.depth).toBe(1);
+    expect(route!.tests.map((t) => t.title)).toEqual(['checkout happy path']);
+    // The test endpoint itself is two hops away and stays out of a depth-one walk.
+    expect(graph.nodes.map((n) => n.kind)).not.toContain('test');
+  });
+});
+
+describe('getFeatureMap', () => {
+  const edge = (fromKind: string, fromKey: string, toKind: string, toKey: string, kind: string) => ({
+    projectId: 1,
+    branch: null as string | null,
+    confidence: null as number | null,
+    origin: 'observed' as const,
+    lastSeenAt: new Date(),
+    fromKind,
+    fromKey,
+    toKind,
+    toKey,
+    kind,
+  });
+
+  beforeEach(async () => {
+    await db.insert(schema.graphEdges).values([
+      // Checkout groups two routes and a page; Catalog groups one route it shares with Checkout.
+      edge('feature', 'Checkout', 'route', 'POST /api/orders', 'groups'),
+      edge('feature', 'Checkout', 'route', 'GET /api/cart', 'groups'),
+      edge('feature', 'Checkout', 'page', '/checkout', 'groups'),
+      edge('feature', 'Catalog', 'route', 'GET /api/cart', 'groups'),
+      edge('feature', 'Catalog', 'control', 'button:Add to cart', 'groups'),
+      // Tests reaching the nodes: 1 and 2 reach Checkout's routes, 2 also reaches the shared one.
+      edge('test', '1', 'route', 'POST /api/orders', 'reaches'),
+      edge('test', '2', 'route', 'GET /api/cart', 'reaches'),
+      edge('test', '2', 'page', '/checkout', 'reaches'),
+      // A branch row never counts.
+      { ...edge('feature', 'Branch-only', 'route', 'GET /api/x', 'groups'), branch: 'pr-1' },
+    ]);
+    await upsertScenarioGaps(
+      db,
+      1,
+      [
+        {
+          detector: 'success-only',
+          kind: 'gap',
+          class: 'blind-spot',
+          key: 'GET /api/cart',
+          title: 'GET /api/cart: no error path under test',
+          evidence: ['seen'],
+          confidence: 0.5,
+          factors: { churn: 0.5, age: 0.5, escapeHistory: 0.1, priority: 0.4 },
+          score: 0.01,
+        },
+        {
+          detector: 'not-handled',
+          kind: 'finding',
+          class: 'unhandled',
+          key: 'route:POST /api/orders',
+          title: 'POST /api/orders: unhandled failure',
+          evidence: ['x'],
+          confidence: 1,
+          factors: null as never,
+          score: 0.5,
+        },
+        {
+          detector: 'single-covering-test',
+          kind: 'gap',
+          class: 'fragile',
+          key: 'route:GET /api/orphan',
+          title: 'Only one test reaches route GET /api/orphan',
+          evidence: ['x'],
+          confidence: 0.5,
+          factors: { churn: 0.1, age: 0.1, escapeHistory: 0.1, priority: 0.1 },
+          score: 0.001,
+        },
+      ],
+      {},
+    );
+  });
+
+  test('folds members, tests and open gaps per feature, worst class first', async () => {
+    const map = await getFeatureMap(db, 1);
+    expect(map.features.map((f) => f.key)).toEqual(['Checkout', 'Catalog']);
+    const checkout = map.features[0]!;
+    expect(checkout.members).toEqual({ routes: 2, pages: 1, controls: 0 });
+    expect(checkout.tests).toBe(2);
+    expect(checkout.gaps).toEqual({ unhandled: 1, 'blind-spot': 1 });
+    expect(checkout.worstClass).toBe('unhandled');
+    const catalog = map.features[1]!;
+    expect(catalog.members).toEqual({ routes: 1, pages: 0, controls: 1 });
+    expect(catalog.tests).toBe(1);
+    expect(catalog.worstClass).toBe('blind-spot');
+  });
+
+  test('links features by the nodes they share and reports the ungrouped gaps', async () => {
+    const map = await getFeatureMap(db, 1);
+    expect(map.links).toEqual([{ from: 'Catalog', to: 'Checkout', weight: 1 }]);
+    expect(map.ungrouped).toEqual({ gaps: { fragile: 1 }, worstClass: 'fragile' });
+  });
+
+  test('a snoozed gap no longer counts', async () => {
+    const [orders] = await db
+      .select({ id: schema.scenarioGaps.id })
+      .from(schema.scenarioGaps)
+      .where(eq(schema.scenarioGaps.detector, 'not-handled'));
+    await triageGap(db, 1, orders!.id, { verb: 'snooze', snooze: '1-week' });
+    const map = await getFeatureMap(db, 1);
+    const checkout = map.features.find((f) => f.key === 'Checkout')!;
+    expect(checkout.worstClass).toBe('blind-spot');
+    expect(checkout.gaps).toEqual({ 'blind-spot': 1 });
+  });
+
+  test('an empty project maps to no features', async () => {
+    await db.insert(schema.projects).values({ id: 2, name: 'empty' });
+    expect(await getFeatureMap(db, 2)).toEqual({
+      features: [],
+      links: [],
+      ungrouped: { gaps: {}, worstClass: null },
+    });
   });
 });

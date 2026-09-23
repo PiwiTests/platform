@@ -98,7 +98,7 @@ import {
   draftScenario,
   listAcceptedUnwritten,
 } from '#shared/handlers/scenario-gaps';
-import { getFeatureGraph, MAX_GRAPH_DEPTH } from '~~/server/utils/feature-graph';
+import { getFeatureGraph, getFeatureMap, MAX_GRAPH_DEPTH } from '~~/server/utils/feature-graph';
 import { loadDetectorPrecision } from '#shared/handlers/detector-precision';
 import { parseRouteNodeKey } from '#shared/graph';
 import { ingestProjectManifest } from '~~/server/utils/surface-manifest';
@@ -1652,6 +1652,14 @@ const routes: RouteEntry[] = [
         { kind: nodeParam.slice(0, sep), key: nodeParam.slice(sep + 1) },
         depth,
       );
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/feature-map$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      return getFeatureMap(await getDemoDb(), +m[1]!);
     },
   },
   {

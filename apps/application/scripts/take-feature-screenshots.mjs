@@ -300,8 +300,23 @@ const SCENES = [
     },
   },
   {
+    name: 'scenario-gaps-feature-map',
+    description:
+      'Feature map: the project graph folded per feature, colored by worst gap, linked where features share nodes',
+    route: '/projects/1?tab=gaps',
+    viewport: { width: 1280, height: 1100 },
+    async run({ page, shoot, settle }) {
+      await page
+        .locator('[data-shot="feature-map"] svg')
+        .waitFor({ timeout: 15000 })
+        .catch(() => {});
+      await settle();
+      await shoot(undefined, { of: '[data-shot="feature-map"]', pad: 12 });
+    },
+  },
+  {
     name: 'scenario-gaps-graph',
-    description: 'Feature-graph view: the neighborhood around a gap node, colored by class, edges by kind',
+    description: 'Feature-graph view: the ego picture around a gap node over the inspector list of its neighbors',
     route: '/projects/1?tab=gaps',
     viewport: { width: 1280, height: 1100 },
     async run({ page, shoot, settle }) {
