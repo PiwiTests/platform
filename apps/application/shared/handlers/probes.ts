@@ -10,7 +10,15 @@
  */
 
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
-import { graphEdges, graphNodes, probes, projects, testCases } from '../../server/database/schema';
+import {
+  graphEdges,
+  graphNodes,
+  probes,
+  projects,
+  quarantinedTests,
+  testCases,
+  testRunsCases,
+} from '../../server/database/schema';
 import type { DrizzleDB } from './db';
 import { detectNotHandled, rankFinding, upsertScenarioGaps, type ResilienceSignal } from './scenario-gaps';
 import { resolveProjectStates } from './capabilities';
@@ -32,6 +40,12 @@ export type ProbeLevel = 'client' | 'server';
 
 /** Default per-project probes per run. */
 export const DEFAULT_PROBE_BUDGET = 50;
+
+/** An inconclusive (test, route) pair is eligible to be re-probed after this cooldown. */
+export const PROBE_INCONCLUSIVE_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** The fraction of the budget reserved for server (level-two) items when enabled. */
+export const SERVER_PROBE_BUDGET_SHARE = 0.5;
 
 /** The run-metadata flag that stamps a run as a probe run (never a real run). */
 export const PROBE_RUN_METADATA_KEY = 'piwiProbe';
@@ -322,27 +336,44 @@ export async function buildProbePlan(
     }
   }
 
-  // Existing probes: (test, route) → last probedAt.
+  // Existing probes: (test, route) → last probedAt and last outcome.
   const existing = await db
-    .select({ testCaseId: probes.testCaseId, routeKey: probes.routeKey, probedAt: probes.probedAt })
+    .select({
+      testCaseId: probes.testCaseId,
+      routeKey: probes.routeKey,
+      probedAt: probes.probedAt,
+      outcome: probes.outcome,
+    })
     .from(probes)
     .where(eq(probes.projectId, projectId));
-  const probedAt = new Map<string, number>();
+  const lastProbe = new Map<string, { at: number; outcome: string }>();
   for (const p of existing) {
     if (p.testCaseId == null || !p.routeKey) continue;
     const at = p.probedAt instanceof Date ? p.probedAt.getTime() : Number(p.probedAt) || 0;
     const key = `${p.testCaseId}\x00${p.routeKey}`;
-    probedAt.set(key, Math.max(probedAt.get(key) ?? 0, at));
+    const prev = lastProbe.get(key);
+    if (!prev || at > prev.at) lastProbe.set(key, { at, outcome: p.outcome });
   }
 
+  // Tests never probed: a failing or quarantined test replays as a false
+  // "noticed", so it is dropped from the plan rather than probed.
+  const excludedTests = await loadUnprobableTestIds(db, projectId, testIds);
+
+  const now = Date.now();
   const candidates: ProbeCandidate[] = [];
   for (const r of reachRows) {
     const testCaseId = Number(r.fromKey);
     if (!Number.isFinite(testCaseId)) continue;
+    if (excludedTests.has(testCaseId)) continue;
     const meta = testMeta.get(testCaseId);
     if (!meta) continue;
     const pairKey = `${testCaseId}\x00${r.routeKey}`;
-    const lastProbe = probedAt.get(pairKey);
+    const prior = lastProbe.get(pairKey);
+    // An inconclusive probe does not block the pair forever: after a cooldown the
+    // pair is eligible again, so a fault the server never honored is retried.
+    const inconclusiveExpired =
+      prior != null && prior.outcome === 'inconclusive' && now - prior.at > PROBE_INCONCLUSIVE_COOLDOWN_MS;
+    const probed = prior != null && !inconclusiveExpired;
     candidates.push({
       testCaseId,
       testTitle: meta.title,
@@ -350,21 +381,25 @@ export async function buildProbePlan(
       suitePath: meta.suitePath,
       routeKey: r.routeKey,
       exposure: routeReach.get(r.routeKey)?.size ?? 1,
-      probed: lastProbe != null,
+      probed,
       // Re-probe when the test's source changed after the last probe.
-      changed: lastProbe != null && meta.updatedAt > lastProbe,
+      changed: prior != null && meta.updatedAt > prior.at,
     });
   }
 
-  const clientPlan = selectProbePlan(candidates, options);
-
-  // When the project has server probes enabled, add server-level items for tests
-  // the client plan did not claim, within the same budget.
+  const budget = Math.max(0, options.budget ?? DEFAULT_PROBE_BUDGET);
   const settings = resolveServerProbeSettings(options.serverProbes);
-  if (!settings.enabled) return clientPlan;
+
+  // When server probes are enabled, reserve a share of the budget for the
+  // level-two items, so a full client plan can never starve them; any client
+  // budget the client plan leaves unused still spills over to the server items.
+  const serverShare = settings.enabled ? Math.floor(budget * SERVER_PROBE_BUDGET_SHARE) : 0;
+  const clientPlan = selectProbePlan(candidates, { budget: budget - serverShare });
+  if (!settings.enabled) return { budget, items: clientPlan.items };
+
   const claimed = new Set(clientPlan.items.map((i) => i.testCaseId));
   const serverItems = selectServerProbeItems(candidates, settings, {
-    budget: clientPlan.budget - clientPlan.items.length,
+    budget: budget - clientPlan.items.length,
     exclude: claimed,
   });
 
@@ -373,11 +408,53 @@ export async function buildProbePlan(
   const routeDependencies = await loadRouteDependencies(db, projectId);
   const alreadyClaimed = new Set([...claimed, ...serverItems.map((i) => i.testCaseId)]);
   const dependencyItems = selectDependencyProbeItems(candidates, routeDependencies, settings, {
-    budget: clientPlan.budget - clientPlan.items.length - serverItems.length,
+    budget: budget - clientPlan.items.length - serverItems.length,
     exclude: alreadyClaimed,
   });
 
-  return { budget: clientPlan.budget, items: [...clientPlan.items, ...serverItems, ...dependencyItems] };
+  return { budget, items: [...clientPlan.items, ...serverItems, ...dependencyItems] };
+}
+
+/**
+ * Test cases that must not be probed: a currently-quarantined test, or one whose
+ * most recent execution failed or timed out. A probe replays a *passing* test, so
+ * probing one of these records a false "noticed".
+ */
+async function loadUnprobableTestIds(db: DrizzleDB, projectId: number, ids: number[]): Promise<Set<number>> {
+  const excluded = new Set<number>();
+  if (ids.length === 0) return excluded;
+  for (let i = 0; i < ids.length; i += 200) {
+    const slice = ids.slice(i, i + 200);
+    const quarantined = await db
+      .select({ id: quarantinedTests.testCaseId })
+      .from(quarantinedTests)
+      .where(
+        and(
+          eq(quarantinedTests.projectId, projectId),
+          inArray(quarantinedTests.testCaseId, slice),
+          isNull(quarantinedTests.releasedAt),
+        ),
+      );
+    for (const r of quarantined) excluded.add(r.id);
+
+    const maxRows = await db
+      .select({ testCaseId: testRunsCases.testCaseId, maxId: sql<number>`max(${testRunsCases.id})` })
+      .from(testRunsCases)
+      .where(inArray(testRunsCases.testCaseId, slice))
+      .groupBy(testRunsCases.testCaseId);
+    const maxIds = maxRows.map((r) => Number(r.maxId)).filter((n) => Number.isFinite(n));
+    if (maxIds.length === 0) continue;
+    const statuses = await db
+      .select({ testCaseId: testRunsCases.testCaseId, status: testRunsCases.status })
+      .from(testRunsCases)
+      .where(inArray(testRunsCases.id, maxIds));
+    for (const r of statuses) {
+      if (r.testCaseId == null) continue;
+      const s = r.status.toLowerCase();
+      if (s === 'failed' || s === 'timedout') excluded.add(r.testCaseId);
+    }
+  }
+  return excluded;
 }
 
 /**
@@ -459,6 +536,34 @@ export async function recordProbeResults(
   runId: number | null,
   results: ProbeResultInput[],
 ): Promise<{ recorded: number }> {
+  if (results.length === 0) return { recorded: 0 };
+
+  // Only this project's own test cases may be recorded: a reporter key for
+  // project A must never write a probe row (or, through it, surface a title) for
+  // project B's test.
+  const candidateTestIds = [...new Set(results.map((r) => r.testCaseId).filter((n) => Number.isFinite(n)))];
+  const ownTestIds = new Set<number>();
+  for (let i = 0; i < candidateTestIds.length; i += 200) {
+    const rows = await db
+      .select({ id: testCases.id })
+      .from(testCases)
+      .where(and(eq(testCases.projectId, projectId), inArray(testCases.id, candidateTestIds.slice(i, i + 200))));
+    for (const r of rows) ownTestIds.add(r.id);
+  }
+
+  // The per-project fault allow-list is enforced here too, not only in the
+  // planner: a server-level result whose fault the project did not allow-list is
+  // dropped, so a crafted result body cannot record an un-allowed server fault.
+  const [project] = await db
+    .select({ serverProbes: projects.serverProbes })
+    .from(projects)
+    .where(eq(projects.id, projectId));
+  const settings = resolveServerProbeSettings(project?.serverProbes);
+  results = results.filter((r) => {
+    if (!ownTestIds.has(r.testCaseId)) return false;
+    if (r.level === 'server' && !serverProbeAllowed(settings, r.routeKey, r.fault as ServerProbeFault)) return false;
+    return true;
+  });
   if (results.length === 0) return { recorded: 0 };
 
   // Resolve route node ids for the checks edges and the ledger's node_id.

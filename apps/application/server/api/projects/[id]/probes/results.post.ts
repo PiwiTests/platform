@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { Role } from '#shared/types';
 import { requireProjectAccess, requireRouteId } from '../../../../utils/project-access';
 import { getDatabase } from '../../../../database';
@@ -14,20 +15,43 @@ defineRouteMeta({
   },
 });
 
+/** At most this many probe outcomes per request — a probe run's plan is budget-capped well below this. */
+const MAX_RESULTS = 500;
+
+const resultSchema = z.object({
+  testCaseId: z.number().int(),
+  routeKey: z.string().min(1).max(512),
+  fault: z.string().min(1).max(64),
+  outcome: z.enum(['noticed', 'not-noticed', 'inconclusive']).optional(),
+  level: z.enum(['client', 'server']).optional(),
+  applied: z.boolean().optional(),
+  handled: z.string().max(32).optional(),
+  dependency: z.string().max(256).nullable().optional(),
+  testTitle: z.string().max(1024).optional(),
+  evidence: z.unknown().optional(),
+});
+
+const bodySchema = z.object({
+  runId: z.number().int().nullable().optional(),
+  results: z.array(resultSchema).max(MAX_RESULTS).default([]),
+});
+
 export default eventHandler(async (event) => {
   const projectId = requireRouteId(event, 'id', 'project ID');
   await requireProjectAccess(event, projectId, [Role.ADMINISTRATOR, Role.REPORTER]);
 
-  const body = await readBody<{ runId?: number | null; results?: ProbeResultInput[] }>(event);
-  const results = Array.isArray(body?.results) ? body.results : [];
-  const runId = typeof body?.runId === 'number' ? body.runId : null;
-
-  const clean = results.filter(
-    (r): r is ProbeResultInput =>
-      !!r && typeof r.testCaseId === 'number' && typeof r.routeKey === 'string' && typeof r.fault === 'string',
-  );
+  const validation = bodySchema.safeParse(await readBody(event));
+  if (!validation.success) {
+    throw apiError({ statusCode: 400, message: 'Invalid probe results', data: validation.error.issues });
+  }
+  const { runId = null, results } = validation.data;
 
   const db = await getDatabase();
-  const { recorded } = await recordProbeResults(db, projectId, runId, clean);
+  // All-or-nothing: the ledger rows, checks edges and resilience findings from one
+  // probe run land together or not at all.
+  let recorded = 0;
+  await db.transaction(async (tx) => {
+    ({ recorded } = await recordProbeResults(tx, projectId, runId ?? null, results as ProbeResultInput[]));
+  });
   return { success: true, recorded };
 });
