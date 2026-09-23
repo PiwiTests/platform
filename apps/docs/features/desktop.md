@@ -10,9 +10,7 @@ lang: en-US
 The Piwi Dashboard desktop app runs the **entire dashboard on your machine** — no
 Docker, no `npx`, no server to set up. It bundles the same server that ships as
 the Docker image, wraps it in a native window, and keeps your data in a local
-folder. It's ideal for a single developer who runs Playwright locally and wants
-permanent history, flaky scoring, failure clustering, and locator healing without
-standing up a server.
+folder. It suits a single developer running Playwright locally.
 
 > Everything binds to `127.0.0.1` — the app is local-only and nothing is exposed
 > to the network.
@@ -113,6 +111,12 @@ committing it. The app uses port **3000** by default (another local port if
 > accepts results from other machines; run the [Docker image](/operate/deployment)
 > for a shared, always-on server.
 
+### Dashboard links open in the app
+
+A dashboard link opened in your browser, such as the reporter's `View run:`
+line, shows in the app, which comes to the front; the tab only says
+**Opened in Piwi Dashboard**. Website links never drive the app.
+
 ## Projects from local folders
 
 Runs create projects automatically, but the desktop app can also start from
@@ -138,16 +142,14 @@ and offers to import the runs already there. On the
 
 ## Running tests from the app
 
-A failing run is one click from a local retry. On a run page (or a single
-execution page), **Run locally** re-runs the failed tests on this machine —
+On a run page (or a single execution page), **Run locally** re-runs the failed tests on this machine —
 immediately, with the options you used last time. The app executes the folder's
 *own* Playwright with the app's bundled Node — nothing extra to install — and
 the output streams into the **Local runs** tray.
 
 - **First use:** a dialog asks you to link the Piwi project to its checkout —
   the folder that contains the tests. Link it any time under
-  [**Edit → Local folder**](#projects-from-local-folders). The link stays on
-  this machine; it is never sent anywhere.
+  [**Edit → Local folder**](#projects-from-local-folders).
 - **The arrow next to the button** holds everything else: run headless, headed,
   under the Playwright inspector or in UI mode; select tests by `file:line`,
   title or file; force trace recording; `--repeat-each` up to 1000× for flake
