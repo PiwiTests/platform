@@ -3,14 +3,15 @@ import { getDatabase } from '../../database';
 import { getProjectScope, scopeAllows } from '../../utils/project-access';
 import { runEventBus } from '../../utils/run-events';
 import { createSSEEndpoint } from '../../utils/sse';
+import { subscribeDesktopOpenRequests } from '../../utils/desktop-handoff';
 import { getActiveTestRuns } from '#shared/handlers/test-runs';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Stream'],
-    summary: 'Live in-flight runs stream (desktop shell)',
+    summary: 'Desktop window event stream (desktop shell)',
     description:
-      'Server-sent events for the desktop shell to render OS-level run progress (taskbar/Dock/tray). On connect it sends a `snapshot` of the currently-active runs with their counts, then streams run lifecycle events and live progress tallies for every run in the caller scope — so a run the user is only watching (reported from CI or a terminal), not just one launched from the app, drives the progress. Scoped to the caller like the global run stream; in the desktop build (auth off) that is the whole instance.',
+      'Server-sent events for the desktop app window. Run progress, for the OS-level display (taskbar/Dock/tray): on connect a `snapshot` of the currently-active runs with their counts, then run lifecycle events and live progress tallies for every run in the caller scope — so a run the user is only watching (reported from CI or a terminal), not just one launched from the app, drives the progress. Page requests: an `open-page` message with the app-relative `path` of a dashboard link the user opened in the system browser, which the window shows. Run events are scoped to the caller like the global run stream; in the desktop build (auth off) that is the whole instance.',
     'x-required-roles': ['administrator', 'reporter', 'user'],
   },
 });
@@ -39,6 +40,9 @@ export default eventHandler(async (event) => {
       if (!scopeAllows(scope, progress.projectId)) return;
       send({ type: 'run-progress', ...progress });
     });
+    const unsubscribeOpenRequests = subscribeDesktopOpenRequests((path) => {
+      send({ type: 'open-page', path });
+    });
 
     // Initial catch-up: the runs already in flight when the shell connects.
     void (async () => {
@@ -53,6 +57,7 @@ export default eventHandler(async (event) => {
     return () => {
       unsubscribeLifecycle();
       unsubscribeProgress();
+      unsubscribeOpenRequests();
     };
   });
 });
