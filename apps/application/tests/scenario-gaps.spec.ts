@@ -12,7 +12,9 @@ test.describe('Scenario gaps tab', () => {
   test.describe.configure({ mode: 'serial' });
   test.setTimeout(90000);
 
-  // One distinct route per test, so each test triages its own gap.
+  // One distinct route per test, so each test triages its own gap. The verb
+  // buttons are matched exactly: the route key carries the verb, and the gap's
+  // graph button names the route in its title, so a substring match would hit both.
   const ROUTE = {
     graph: 'POST /api/orders-graph',
     accept: 'POST /api/orders-accept',
@@ -88,7 +90,7 @@ test.describe('Scenario gaps tab', () => {
 
     const gap = page.locator(`[data-shot="gap-${id}"]`);
     await expect(gap).toBeVisible();
-    await gap.getByRole('button', { name: 'Accept' }).click();
+    await gap.getByRole('button', { name: 'Accept', exact: true }).click();
     await expect(gap).toBeHidden({ timeout: 10000 });
   });
 
@@ -100,7 +102,7 @@ test.describe('Scenario gaps tab', () => {
 
     const gap = page.locator(`[data-shot="gap-${id}"]`);
     await expect(gap).toBeVisible();
-    await gap.getByRole('button', { name: 'Snooze' }).click();
+    await gap.getByRole('button', { name: 'Snooze', exact: true }).click();
     await page.getByRole('menuitem', { name: 'For 1 week' }).click();
     await expect(gap).toBeHidden({ timeout: 10000 });
   });
