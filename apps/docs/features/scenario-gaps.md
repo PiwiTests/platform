@@ -9,7 +9,7 @@ lang: en-US
 
 The catalog lists the tests you have. **Scenario gaps** describe the ones you don't — the routes no test requests, the pages nothing visits, the changed file no test reaches. Each gap is a suggestion with its evidence and a next step, never a verdict.
 
-Everything here is built from what the reporter already captures — the routes tests hit, the pages they end on, the controls they touch — joined into **one graph per project**. With history and an SCM token, it works with zero setup.
+Everything here is built from what the reporter already captures, joined into **one graph per project**. With history and an SCM token, it works with zero setup.
 
 > **Observed reach, not coverage.** A gap says a test *observably reached* something, or that nothing did — measured from real runs, never from instrumented code coverage. "No edge" means "no evidence", not "proof of absence".
 
@@ -52,7 +52,7 @@ More detectors — phantom coverage, passed-with-errors, an uncalled catalog met
 
 ## The whole suite, not just its routes
 
-The graph also holds the **controls** and **links** each page exposes (templated names, at most 200 per page, from the **page inventory** the reporter records on passing runs — `capturePageInventory`, on by default, names and hrefs only) and the **handler** and **dependency** each route reaches, from the server spans instrumentation forwards.
+The graph also holds the **controls** and **links** each page exposes (templated names, at most 200 per page, from the **page inventory** the reporter records on passing runs — `capturePageInventory`, **off by default**, names and hrefs only) and the **handler** and **dependency** each route reaches, from the server spans instrumentation forwards. Control and link nodes, and the detectors that read them, appear only once `capturePageInventory` is enabled.
 
 ## Declared surface
 
@@ -70,29 +70,31 @@ Reach says a test touched a route, not that it would fail if the route returned 
 npx @piwitests/reporter probe --project my-project
 ```
 
-It fetches the plan the dashboard ranked by exposure — never-probed pairs first, one fault per test, a budget — applies the faults and posts the outcomes. A probe run never counts as a real run; a route that stays green under a fault becomes a **not noticed** gap.
+It fetches the exposure-ranked plan — never-probed pairs first, one fault per test, a budget — applies the faults and posts the outcomes. A probe run never counts as a real run; a route that stays green under a fault becomes a **not noticed** gap.
 
 ### Server probes (level two)
 
+**Experimental and unreleased.** The entry condition below is not yet measured, so this level stays off by default.
+
 A client probe rewrites the response in the browser, so the server never runs its error path. A **server probe** signs a fault onto one request (`X-Piwi-Probe`, HMAC-signed with `PIWI_PROBE_SECRET`) and the instrumentation applies it inside the server — a thrown error, a status, a delay, a mutated response, or a failed dependency call — reporting the fault it applied, so an un-honored probe records as *inconclusive*, never a pass. Two signals come back: whether the test noticed (a `checks` edge) and whether the application degraded — a **resilience finding** (class `unhandled` or `degraded`, ranked by exposure × severity), plus the **unprobed dependency** and **not handled** detectors.
 
-The level stays behind a per-project flag that defaults **off**, honored only outside production, with fault classes and routes allow-listed per project and dependency faults on state-changing routes off by default. Turn it on once client probes report *not noticed* on one in ten probed pairs — the sign of false comfort the network boundary cannot reveal.
+The level stays behind a per-project flag, honored only outside production, with fault classes and routes allow-listed and dependency faults on state-changing routes off by default. Turn it on once client probes report *not noticed* on one in ten probed pairs — the sign of false comfort the network boundary cannot reveal.
 
 ## Exposure ranking
 
-Gaps are ranked by an explicit **exposure** score, not a raw count — a percentage over an observed surface looks complete exactly when the surface is sparse. Four factors, each in `[0.1, 1]` so a missing input never zeroes a row, all shown on the gap: **churn** (commits in the last 90 days), **age** (older components weigh *up* — where escaped defects concentrate), **escape history** (the file is in a cluster's fixing commit) and **priority**. The score is exposure × the detector's confidence.
+Gaps are ranked by an explicit **exposure** score, not a raw count — a percentage over an observed surface looks complete exactly when the surface is sparse. Four factors, each in `[0.1, 1]` so a missing input never zeroes a row, all shown on the gap: **churn** (commits in the last 90 days), **age** (older components weigh *up*, where escaped defects concentrate), **escape history** (the file is in a cluster's fixing commit) and **priority**. The score is exposure × the detector's confidence.
 
 ## What the graph includes
 
 The graph stays proportional to the application's surface, not its data volume:
 
-- **Your own origin only.** Route nodes come from requests to the run's Playwright `baseURL` — analytics beacons and CDN assets never become nodes. Extra first-party origins go on the project's route-origin allowlist.
+- **Your own origin only.** Route nodes come from requests to the run's Playwright `baseURL` — analytics beacons and CDN assets never become nodes.
 - **Pages are path patterns.** `/orders/123` and `/orders/456` are one node, as is the same path from staging and production.
 - **Branches stay separate.** A default-branch run writes the canonical graph; any other branch writes rows tagged with it, so a route added on a pull request never shows as drift on the default branch. Those rows drop when the pull request closes.
 
 ## The Gaps tab and the graph view
 
-The project page has a **Gaps** tab: gaps and findings grouped by feature and ranked, each with its class, score factors and evidence, and the inbox verbs — **accept** (copies the draft skeleton to your clipboard), **snooze** (a day, a week, or until the node changes), **dismiss** with a reason (*not worth testing*, *covered elsewhere* — recording the covering test as a manual reaches edge — or *wrong*), and **covered by** without dismissing. Home lists accepted-but-unwritten gaps older than a week. The Test Map and its server probes are optional: [decline](/guide/getting-started#declining-a-capability) either per project or instance-wide and these surfaces disappear.
+The project page has a **Gaps** tab: gaps and findings grouped by feature and ranked, each with its class, score factors and evidence, and the inbox verbs — **accept** (copies a draft skeleton to your clipboard), **snooze** (a day, a week, or until the node changes), **dismiss** with a reason (*not worth testing*, *covered elsewhere* — recording the covering test as a manual reaches edge — or *wrong*), and **covered by** without dismissing. Home lists accepted-but-unwritten gaps older than a week. The Test Map and its server probes are optional: [decline](/guide/getting-started#declining-a-capability) either per project or instance-wide and these surfaces disappear.
 
 The tab opens on the **feature map**: one circle per feature (from the `piwi:feature` tag), sized by the routes, pages and controls it groups, colored by its worst open gap, linked to the features it shares nodes with. The ranked list beside it carries every feature, however many. API: `GET /api/projects/{id}/feature-map`.
 
