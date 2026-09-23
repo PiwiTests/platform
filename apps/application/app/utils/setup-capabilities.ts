@@ -199,4 +199,22 @@ export const SETUP_CAPABILITIES: SetupCapabilityCopy[] = [
     icon: 'i-lucide-shield-alert',
     doc: 'features/flaky-tests',
   },
+  {
+    id: 'test-map',
+    title: 'Scenario gaps',
+    summary:
+      'The tests you have not written yet: routes and pages your runs reach but nothing checks, ranked by exposure, each with a skeleton to start from.',
+    how: "Automatic — the map builds from your runs, and gaps appear on a project's Gaps tab as reach accrues.",
+    icon: 'i-lucide-map',
+    doc: 'features/scenario-gaps',
+  },
+  {
+    id: 'server-probes',
+    title: 'Server probes',
+    summary:
+      'A fault injected inside the server for one signed request, to check whether a passing test would notice a 500, a dropped field or a slow dependency.',
+    how: 'Needs a backend package in the app under test; available today for Nitro and ASP.NET Core. Turn it on per project once client probes report not-noticed.',
+    icon: 'i-lucide-radar',
+    doc: 'features/scenario-gaps#server-probes-level-two',
+  },
 ];

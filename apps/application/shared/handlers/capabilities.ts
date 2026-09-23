@@ -11,6 +11,7 @@
 import { eq } from 'drizzle-orm';
 import { projects } from '../../server/database/schema';
 import { setAppSetting } from '../../server/utils/app-settings';
+import { resolveServerProbeSettings } from '#shared/server-probes';
 import {
   CAPABILITIES,
   CAPABILITIES_SETTING_KEY,
@@ -69,19 +70,29 @@ export async function resolveProjectStates(
   db: DrizzleDB,
   projectId: number,
 ): Promise<Record<CapabilityId, CapabilityState>> {
-  const [evidence, instanceDecisions, projectDecisions] = await Promise.all([
+  const [evidence, instanceDecisions, projectDecisions, projectRow] = await Promise.all([
     getCapabilityEvidence(db, projectId),
     getInstanceDecisions(db),
     getProjectDecisions(db, projectId),
+    db
+      .select({ serverProbes: projects.serverProbes })
+      .from(projects)
+      .where(eq(projects.id, projectId))
+      .then((rows) => rows[0]),
   ]);
+
+  // Server probes need a server trace to be applicable (same gate as backend
+  // logs) and read as configured when the project's settings enable the level.
+  const hasServerTrace = (evidence as Record<string, boolean>)['backend-logs'] ?? false;
+  const serverProbesConfigured = resolveServerProbeSettings(projectRow?.serverProbes ?? null).enabled;
 
   const facts: Partial<Record<CapabilityId, CapabilityFacts>> = {};
   for (const def of CAPABILITIES) {
     const has = (evidence as Record<string, boolean>)[def.id] ?? false;
     facts[def.id] = {
       evidence: has,
-      configured: def.id === 'mcp' ? true : undefined,
-      applicable: def.id === 'backend-logs' ? has : true,
+      configured: def.id === 'mcp' ? true : def.id === 'server-probes' ? serverProbesConfigured : undefined,
+      applicable: def.id === 'backend-logs' ? has : def.id === 'server-probes' ? hasServerTrace : true,
       projectDecision: def.levels.includes('project') ? projectDecisions[def.id] : undefined,
       instanceDecision: instanceDecisions[def.id],
     };

@@ -30,7 +30,9 @@ export type CapabilityId =
   | 'integrations'
   | 'quarantine'
   | 'tags'
-  | 'markers';
+  | 'markers'
+  | 'test-map'
+  | 'server-probes';
 
 export type CapabilityModule = 'core' | 'workflow' | 'healing' | 'agents';
 export type CapabilityLevel = 'instance' | 'project';
@@ -187,6 +189,25 @@ export const CAPABILITIES: CapabilityDef[] = [
     since: '0.15.0',
     doc: 'features/timeline-markers',
   },
+  {
+    id: 'test-map',
+    module: 'workflow',
+    levels: ['instance', 'project'],
+    needs: [],
+    detection: 'test-map',
+    since: '0.36.0',
+    doc: 'features/scenario-gaps',
+  },
+  {
+    id: 'server-probes',
+    module: 'workflow',
+    levels: ['project'],
+    needs: ['backend'],
+    detection: 'server-probes',
+    follows: 'test-map',
+    since: '0.36.0',
+    doc: 'features/scenario-gaps#server-probes-level-two',
+  },
 ];
 
 /** The registry keyed by id, for a direct lookup. */
@@ -222,7 +243,7 @@ export const CAPABILITY_PRESETS: CapabilityPreset[] = [
   {
     module: 'workflow',
     label: 'Triage as a team',
-    description: 'Notifications, quarantine, pull-request feedback and issue tracking.',
+    description: 'Notifications, quarantine, pull-request feedback, issue tracking and the Test Map.',
   },
   { module: 'healing', label: 'Fix faster', description: 'Locator healing and auto-heal pull requests.' },
   { module: 'agents', label: 'Let agents in', description: 'AI diagnosis over your real diff.' },
@@ -273,8 +294,9 @@ export type CapabilityFacts = Omit<CapabilityInput, 'followedState'>;
 /**
  * Resolve every capability at once, filling each follower's `followedState`
  * from its target's already-resolved state. A `follows` target must not itself
- * follow another capability (the registry has one such target, `fixtures`),
- * which lets a single pass over the non-followers precede the followers.
+ * follow another capability (the registry's targets, `fixtures` and `test-map`,
+ * are both non-followers), which lets a single pass over the non-followers
+ * precede the followers.
  */
 export function resolveCapabilities(
   facts: Partial<Record<CapabilityId, CapabilityFacts>>,

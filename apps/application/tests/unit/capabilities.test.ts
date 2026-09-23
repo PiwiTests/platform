@@ -91,6 +91,26 @@ describe('resolveCapabilities', () => {
     const states = resolveCapabilities({});
     for (const capability of CAPABILITIES) expect(states[capability.id]).toBe('undecided');
   });
+
+  test('server-probes follows test-map: a test-map decline cascades', () => {
+    const states = resolveCapabilities({
+      'test-map': { evidence: false, instanceDecision: 'declined' },
+      'server-probes': { evidence: false },
+    });
+    expect(states['test-map']).toBe('declined');
+    expect(states['server-probes']).toBe('declined');
+  });
+
+  test('server-probes is not-applicable without a server trace, even when configured', () => {
+    const states = resolveCapabilities({
+      'test-map': { evidence: false },
+      'server-probes': { evidence: false, configured: true, applicable: false },
+    });
+    // test-map is undecided (no decline to cascade), so server-probes reaches the
+    // applicability check and reads not-applicable rather than declined.
+    expect(states['test-map']).toBe('undecided');
+    expect(states['server-probes']).toBe('not-applicable');
+  });
 });
 
 describe('registry consistency', () => {
