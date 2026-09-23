@@ -10,18 +10,11 @@ const {
   refresh,
 } = await useAnalyticsWidget<AnalyticsPortfolioRow[]>('portfolio', () => props.query);
 
-function passRateClass(rate: number | null): string {
-  if (rate === null) return 'text-gray-400';
-  if (rate >= 90) return 'text-green-600 dark:text-green-400';
-  if (rate >= 50) return 'text-yellow-600 dark:text-yellow-400';
-  return 'text-red-600 dark:text-red-400';
-}
-
 function deltaMeta(delta: number | null): { icon: string; class: string } | null {
   if (delta === null || Math.abs(delta) < 1) return null;
   return delta > 0
-    ? { icon: 'i-lucide-trending-up', class: 'text-green-600 dark:text-green-400' }
-    : { icon: 'i-lucide-trending-down', class: 'text-red-600 dark:text-red-400' };
+    ? { icon: 'i-lucide-trending-up', class: PASS_RATE_TONES.good.text }
+    : { icon: 'i-lucide-trending-down', class: PASS_RATE_TONES.poor.text };
 }
 </script>
 
@@ -53,7 +46,7 @@ function deltaMeta(delta: number | null): { icon: string; class: string } | null
             <NuxtLink :to="`/projects/${row.projectId}`" class="font-medium truncate hover:text-primary">
               {{ row.label || row.name }}
             </NuxtLink>
-            <span class="tabular-nums font-semibold shrink-0" :class="passRateClass(row.passRate)">
+            <span class="tabular-nums font-semibold shrink-0" :class="passRateTextClass(row.passRate)">
               {{ row.passRate !== null ? `${row.passRate}%` : '—' }}
             </span>
           </div>
@@ -101,7 +94,7 @@ function deltaMeta(delta: number | null): { icon: string; class: string } | null
                 <td class="py-2.5 pr-4 text-right">
                   <span
                     class="inline-flex items-center gap-1 tabular-nums font-semibold"
-                    :class="passRateClass(row.passRate)"
+                    :class="passRateTextClass(row.passRate)"
                   >
                     {{ row.passRate !== null ? `${row.passRate}%` : '—' }}
                     <UIcon
@@ -125,7 +118,7 @@ function deltaMeta(delta: number | null): { icon: string; class: string } | null
                 </td>
                 <td
                   class="py-2.5 pr-4 text-right tabular-nums"
-                  :class="row.openClusters > 0 ? 'text-red-600 dark:text-red-400' : ''"
+                  :class="row.openClusters > 0 ? STATUS_PALETTE.failed.text : ''"
                 >
                   {{ row.openClusters }}
                 </td>

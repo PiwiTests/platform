@@ -52,14 +52,7 @@ const clusterColor = (status: string) => {
   return status === 'open' ? 'error' : status === 'resolved' ? 'success' : 'neutral';
 };
 
-const passRateClass = computed(() => {
-  const r = passRate.value ?? 0;
-  return r >= 80
-    ? 'text-green-600 dark:text-green-400'
-    : r >= 50
-      ? 'text-yellow-600 dark:text-yellow-400'
-      : 'text-red-600 dark:text-red-400';
-});
+const passRateClass = computed(() => passRateTextClass(passRate.value));
 </script>
 
 <template>

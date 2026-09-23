@@ -228,6 +228,10 @@ cell, timeline bar or filter chip: use `STATUS_PALETTE` / `statusPalette(status,
 `StatusFilterChip`, and `getStatusColor` for badges (`flaky` is a registered Nuxt UI color). A new outcome view that
 needs another shade adds it to the palette entry, not to the component.
 
+Pass rates follow the same rule with one scale: `app/utils/pass-rate.ts` (`passRateTone`, `passRateTextClass`,
+`PASS_RATE_TONES`, and `passRateStep` for heatmap-style cells) — good at 90% or more, fair from 50%, poor below, in
+emerald / amber / rose. Never write a pass-rate threshold or color at a call site.
+
 ### Other UI rules
 
 - Sentence case headings and labels ("Test runs"), relative dates via date-fns (full timestamp on hover), human-readable

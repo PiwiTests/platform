@@ -11,13 +11,7 @@ const {
 } = await useAnalyticsWidget<AnalyticsHeatmap>('pass-rate-heatmap', () => props.query);
 
 function cellStyle(rate: number | null): Record<string, string> {
-  if (rate === null) return {};
-  // Green (high) → amber → red (low), with alpha rising as it worsens.
-  if (rate >= 99.5) return { backgroundColor: 'rgba(34, 197, 94, 0.85)' };
-  if (rate >= 90) return { backgroundColor: 'rgba(34, 197, 94, 0.5)' };
-  if (rate >= 75) return { backgroundColor: 'rgba(245, 158, 11, 0.55)' };
-  if (rate >= 50) return { backgroundColor: 'rgba(249, 115, 22, 0.65)' };
-  return { backgroundColor: 'rgba(239, 68, 68, 0.75)' };
+  return rate === null ? {} : { backgroundColor: passRateStep(rate).color };
 }
 
 function cellTitle(row: { name: string; label: string | null }, index: number, rate: number | null): string {
@@ -26,13 +20,7 @@ function cellTitle(row: { name: string; label: string | null }, index: number, r
   return `${row.label || row.name} · ${date}${span}: ${rate !== null ? `${rate}% passed` : 'no runs'}`;
 }
 
-const legendItems = [
-  { color: 'rgba(34, 197, 94, 0.85)', label: '100%' },
-  { color: 'rgba(34, 197, 94, 0.5)', label: '≥ 90%' },
-  { color: 'rgba(245, 158, 11, 0.55)', label: '≥ 75%' },
-  { color: 'rgba(249, 115, 22, 0.65)', label: '≥ 50%' },
-  { color: 'rgba(239, 68, 68, 0.75)', label: '< 50%' },
-];
+const legendItems = PASS_RATE_STEPS.map(({ color, label }) => ({ color, label }));
 
 const subtitle = computed(() => {
   const bucketDays = heatmap.value?.bucketDays ?? 1;

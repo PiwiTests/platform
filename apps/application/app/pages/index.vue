@@ -203,14 +203,7 @@ function showPartialRuns(): void {
   filters.value = { ...filters.value, fullRunsOnly: false };
 }
 
-// ── Pass rate helper (for activity list) ─────────────────────────────────────
-
-function passRateClass(run: { passedTests: number; totalTests: number }): string {
-  const rate = passRate(run);
-  if (rate >= 90) return 'text-green-600 dark:text-green-400';
-  if (rate >= 50) return 'text-yellow-600 dark:text-yellow-400';
-  return 'text-red-600 dark:text-red-400';
-}
+// ── Activity list ────────────────────────────────────────────────────────────
 
 function statusBorderClass(status: string): string {
   switch (statusPaletteKey(status)) {
@@ -327,8 +320,14 @@ function statusBorderClass(status: string): string {
           </NuxtLink>
 
           <div v-if="overviewStats.avgPassRate !== null" class="flex items-center gap-1.5">
-            <UIcon name="i-lucide-check-circle" class="size-4 text-green-500 shrink-0" />
-            <span class="font-semibold tabular-nums">{{ overviewStats.avgPassRate }}%</span>
+            <UIcon
+              name="i-lucide-check-circle"
+              class="size-4 shrink-0"
+              :class="passRateTextClass(overviewStats.avgPassRate)"
+            />
+            <span class="font-semibold tabular-nums" :class="passRateTextClass(overviewStats.avgPassRate)"
+              >{{ overviewStats.avgPassRate }}%</span
+            >
             <span class="text-gray-500">avg pass rate</span>
           </div>
 
@@ -409,7 +408,7 @@ function statusBorderClass(status: string): string {
                   <div class="text-xs text-gray-400">Run #{{ run.id }} · {{ formatRelativeTime(run.startTime) }}</div>
                 </div>
                 <div class="text-right tabular-nums shrink-0">
-                  <div :class="passRateClass(run)">{{ passRate(run) }}%</div>
+                  <div :class="passRateTextClass(passRate(run))">{{ passRate(run) }}%</div>
                   <DurationValue v-if="run.duration" :ms="run.duration" class="block text-xs text-gray-400" />
                 </div>
               </NuxtLink>

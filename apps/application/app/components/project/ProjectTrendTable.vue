@@ -28,12 +28,6 @@ const sortedProjects = computed(() => {
   return tableExpanded.value ? sorted : sorted.slice(0, props.limit);
 });
 
-function passRateColorClass(rate: number): string {
-  if (rate >= 90) return 'text-green-600 dark:text-green-400';
-  if (rate >= 50) return 'text-yellow-600 dark:text-yellow-400';
-  return 'text-red-600 dark:text-red-400';
-}
-
 function tendencyStyle(t: Row['tendency']): string {
   switch (t) {
     case 'failing':
@@ -145,7 +139,7 @@ const columns: TableColumn<Row>[] = [
           <span
             v-if="row.original.latestFullRun"
             class="font-semibold tabular-nums text-sm"
-            :class="passRateColorClass(passRate(row.original.latestFullRun))"
+            :class="passRateTextClass(passRate(row.original.latestFullRun))"
           >
             {{ passRate(row.original.latestFullRun) }}%
           </span>
@@ -214,7 +208,7 @@ const columns: TableColumn<Row>[] = [
           <span v-else class="text-gray-400">No full runs</span>
 
           <span v-if="row.latestFullRun" class="shrink-0 tabular-nums text-gray-500 dark:text-gray-400">
-            <span class="font-semibold" :class="passRateColorClass(passRate(row.latestFullRun))">
+            <span class="font-semibold" :class="passRateTextClass(passRate(row.latestFullRun))">
               {{ passRate(row.latestFullRun) }}%
             </span>
             · {{ row.latestFullRun.passedTests }}/{{ row.latestFullRun.totalTests }}

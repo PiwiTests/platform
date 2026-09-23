@@ -239,16 +239,17 @@ const fileGroups = computed(() => {
             {
               label: 'Pass',
               value: `${Math.round(health.passRate * 100)}%`,
-              tone: (health.passRate >= 0.9 ? 'good' : health.passRate > 0 ? 'bad' : 'muted') as
-                | 'good'
-                | 'bad'
-                | 'muted',
+              // A file whose executions were all skipped has no pass rate to judge.
+              tone:
+                health.passRate > 0 || health.failureCount > 0
+                  ? passRateTone(health.passRate * 100)
+                  : ('muted' as const),
             },
             { label: 'Flaky', value: `${Math.round(health.flakyRate * 100)}%`, tone: 'muted' as const },
             {
               label: 'Failures',
               value: String(health.failureCount),
-              tone: (health.failureCount > 0 ? 'bad' : 'muted') as 'bad' | 'muted',
+              tone: health.failureCount > 0 ? ('poor' as const) : ('muted' as const),
             },
             { label: 'Tests', value: String(health.testCount), tone: 'muted' as const },
             { label: 'Avg', value: formatMs(health.avgDuration), tone: 'muted' as const },

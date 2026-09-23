@@ -198,7 +198,8 @@ shared mode for every copy button on the page), IDE preferences (`useOpenInIde`)
 `formatRelativeTime`, `createSortHeader`, `formatBytes`, `errorMessage`, patch/commit helpers, cluster colour maps),
 `performance-hints.ts`, `ide-links.ts`, `help-content.ts`, `settings-metadata.ts`, `openapi.ts` / `openapi-console.ts`,
 `status-palette.ts` (`STATUS_PALETTE` / `statusPalette` — the test outcome colors every bar, chart, history cell,
-timeline bar and filter chip uses, backed by the `--color-status-*` tokens in `assets/css/main.css`), `chart.ts` (the
+timeline bar and filter chip uses, backed by the `--color-status-*` tokens in `assets/css/main.css`), `pass-rate.ts`
+(the one threshold set and color scale for every colored pass rate, heatmap cells included), `chart.ts` (the
 per-chart series definitions the plots and their legends share, and the tick/stack/bar geometry behind the SVG
 charts). `retry-command.ts` (`buildRetryCommand` — `file-line` / `grep` / `file` modes,
 shell-escaped, capped at 4096 chars) and `locator-edit.ts` (`buildLocatorEdit` — rewrite the failing locator call on a
