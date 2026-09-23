@@ -3,7 +3,7 @@ import { computed } from 'vue';
 import type { TimelineItem } from '~/composables/useTimelineModel';
 import {
   TIMELINE_WAIT_COLORS,
-  timelineStatusHex,
+  timelineStatusColor,
   timelineHookFill,
   timelineHookStroke,
   timelineStepColor,
@@ -20,7 +20,7 @@ const props = defineProps<{
 const swatchStyle = computed(() => {
   const item = props.item;
   if (!item) return {};
-  if (item.kind === 'test') return { backgroundColor: timelineStatusHex(item.status) };
+  if (item.kind === 'test') return { backgroundColor: timelineStatusColor(item.status, item.retries) };
   if (item.kind === 'step')
     return { backgroundColor: timelineStepColor(item.category ?? 'other', item.status === 'failed') };
   if (item.kind === 'wait') {
@@ -74,7 +74,7 @@ const positionStyle = computed(() => {
         {{ item.subtitle }}
       </div>
       <div class="flex items-center gap-3 text-gray-500">
-        <span class="capitalize">{{ formatStatusLabel(item.status) }}</span>
+        <span class="capitalize">{{ formatExecutionStatus(item.status, item.retries) }}</span>
         <span>{{ formatTimelineTime(item.duration) }}</span>
         <span>Worker {{ item.workerIndex }}</span>
         <span v-if="item.parentTitle" class="italic truncate max-w-48"> for {{ item.parentTitle }} </span>

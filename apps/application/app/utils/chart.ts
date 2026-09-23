@@ -1,12 +1,5 @@
 /** Shared geometry helpers, palette and series definitions for the SVG trend charts. */
-
-/** Series colors for run-status stacks and their legends. */
-export const CHART_STATUS_COLORS = {
-  passed: 'rgb(34, 197, 94)',
-  failed: 'rgb(239, 68, 68)',
-  skipped: 'rgb(245, 158, 11)',
-  flaky: 'rgb(147, 51, 234)',
-} as const;
+import { STATUS_PALETTE } from './status-palette';
 
 /** One plotted series: how it is drawn and how the legend names it. */
 export interface ChartSeries<K extends string = string> {
@@ -20,10 +13,11 @@ export interface ChartSeries<K extends string = string> {
  * comparable across bars, and passed carries the bulk on top.
  */
 export const RUN_STATUS_SERIES = [
-  { key: 'failed', color: CHART_STATUS_COLORS.failed, label: 'Failed' },
-  { key: 'flaky', color: CHART_STATUS_COLORS.flaky, label: 'Flaky' },
-  { key: 'skipped', color: CHART_STATUS_COLORS.skipped, label: 'Skipped' },
-  { key: 'passed', color: CHART_STATUS_COLORS.passed, label: 'Passed' },
+  { key: 'failed', color: STATUS_PALETTE.failed.color, label: 'Failed' },
+  { key: 'flaky', color: STATUS_PALETTE.flaky.color, label: 'Flaky' },
+  { key: 'skipped', color: STATUS_PALETTE.skipped.color, label: 'Skipped' },
+  { key: 'didNotRun', color: STATUS_PALETTE.didnotrun.color, label: "Didn't run" },
+  { key: 'passed', color: STATUS_PALETTE.passed.color, label: 'Passed' },
 ] as const satisfies readonly ChartSeries[];
 
 /** Duration series of the project performance trend. */
@@ -35,9 +29,11 @@ export const RUN_DURATION_SERIES = [
 
 /** Per-execution outcomes coloring the test-case history bars. */
 export const CASE_STATUS_SERIES = [
-  { key: 'passed', color: CHART_STATUS_COLORS.passed, label: 'Passed' },
-  { key: 'failed', color: CHART_STATUS_COLORS.failed, label: 'Failed' },
-  { key: 'skipped', color: 'rgb(156, 163, 175)', label: 'Skipped' },
+  { key: 'passed', color: STATUS_PALETTE.passed.color, label: 'Passed' },
+  { key: 'flaky', color: STATUS_PALETTE.flaky.color, label: 'Passed on retry' },
+  { key: 'failed', color: STATUS_PALETTE.failed.color, label: 'Failed' },
+  { key: 'skipped', color: STATUS_PALETTE.skipped.color, label: 'Skipped' },
+  { key: 'didnotrun', color: STATUS_PALETTE.didnotrun.color, label: "Didn't run" },
 ] as const satisfies readonly ChartSeries[];
 
 /**

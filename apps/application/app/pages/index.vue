@@ -213,10 +213,16 @@ function passRateClass(run: { passedTests: number; totalTests: number }): string
 }
 
 function statusBorderClass(status: string): string {
-  if (RUNNING_STATUSES.has(status)) return 'border-l-blue-400';
-  if (status === 'passed') return 'border-l-green-500';
-  if (status === 'failed' || status === 'timedout' || status === 'interrupted') return 'border-l-red-500';
-  return 'border-l-gray-300 dark:border-l-gray-600';
+  switch (statusPaletteKey(status)) {
+    case 'passed':
+      return 'border-l-status-passed';
+    case 'failed':
+      return 'border-l-status-failed';
+    case 'running':
+      return 'border-l-status-running';
+    default:
+      return 'border-l-status-skipped';
+  }
 }
 </script>
 
@@ -297,11 +303,11 @@ function statusBorderClass(status: string): string {
           >
             <div
               class="w-2 h-2 rounded-full shrink-0"
-              :class="overviewStats.failingNow > 0 ? 'bg-red-500' : 'bg-green-500'"
+              :class="overviewStats.failingNow > 0 ? STATUS_PALETTE.failed.bg : STATUS_PALETTE.passed.bg"
             />
             <span
               class="font-semibold tabular-nums"
-              :class="overviewStats.failingNow > 0 ? 'text-red-600 dark:text-red-400' : ''"
+              :class="overviewStats.failingNow > 0 ? STATUS_PALETTE.failed.text : ''"
               >{{ overviewStats.failingNow }}</span
             >
             <span class="text-gray-500">failing now</span>
@@ -310,11 +316,11 @@ function statusBorderClass(status: string): string {
           <NuxtLink to="/analytics" class="flex items-center gap-1.5 hover:underline">
             <div
               class="w-2 h-2 rounded-full shrink-0"
-              :class="overviewStats.flakyNow > 0 ? 'bg-amber-400' : 'bg-gray-300 dark:bg-gray-600'"
+              :class="overviewStats.flakyNow > 0 ? STATUS_PALETTE.flaky.bg : 'bg-gray-300 dark:bg-gray-600'"
             />
             <span
               class="font-semibold tabular-nums"
-              :class="overviewStats.flakyNow > 0 ? 'text-amber-600 dark:text-amber-400' : ''"
+              :class="overviewStats.flakyNow > 0 ? STATUS_PALETTE.flaky.text : ''"
               >{{ overviewStats.flakyNow }}</span
             >
             <span class="text-gray-500">flaky</span>

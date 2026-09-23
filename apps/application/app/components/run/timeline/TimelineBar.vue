@@ -4,7 +4,7 @@ import type { TimelineItem } from '~/composables/useTimelineModel';
 import {
   TIMELINE_LAYOUT,
   TIMELINE_WAIT_COLORS,
-  timelineStatusHex,
+  timelineStatusColor,
   timelineHookFill,
   timelineHookStroke,
   timelineStepColor,
@@ -92,8 +92,7 @@ function onTestClick(): void {
         :height="barHeight"
         :rx="3"
         :ry="3"
-        :fill="timelineHookFill(item.status)"
-        :stroke="timelineHookStroke(item.status)"
+        :style="{ fill: timelineHookFill(item.status), stroke: timelineHookStroke(item.status) }"
         stroke-width="1"
         stroke-dasharray="3,2"
         class="timeline-bar-shape transition-opacity duration-100 opacity-80"
@@ -162,7 +161,7 @@ function onTestClick(): void {
         :cx="x + 6"
         :cy="y + barHeight / 2"
         r="3"
-        fill="#2563eb"
+        :style="{ fill: STATUS_PALETTE.running.color }"
         filter="url(#glow)"
         class="timeline-bar-shape transition-opacity duration-100 cursor-pointer opacity-90"
         @click="onClick"
@@ -172,7 +171,7 @@ function onTestClick(): void {
         :cy="y + barHeight / 2"
         r="5"
         fill="none"
-        stroke="#2563eb"
+        :style="{ stroke: STATUS_PALETTE.running.color }"
         stroke-width="1.5"
         stroke-opacity="0.4"
         filter="url(#glow)"
@@ -188,7 +187,7 @@ function onTestClick(): void {
         :height="barHeight"
         :rx="3"
         :ry="3"
-        :fill="timelineStatusHex(item.status)"
+        :style="{ fill: timelineStatusColor(item.status, item.retries) }"
         class="timeline-bar-shape transition-opacity duration-100 cursor-pointer opacity-90"
         @click="onTestClick"
       />

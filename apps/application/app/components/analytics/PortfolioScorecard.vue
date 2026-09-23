@@ -116,7 +116,7 @@ function deltaMeta(delta: number | null): { icon: string; class: string } | null
                 <td class="py-2.5 pr-4 text-right tabular-nums">{{ row.runCount }}</td>
                 <td
                   class="py-2.5 pr-4 text-right tabular-nums"
-                  :class="row.flakyTests > 0 ? 'text-amber-600 dark:text-amber-400' : ''"
+                  :class="row.flakyTests > 0 ? STATUS_PALETTE.flaky.text : ''"
                 >
                   {{ row.flakyTests }}
                 </td>

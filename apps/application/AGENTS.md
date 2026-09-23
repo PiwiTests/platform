@@ -218,6 +218,16 @@ hover:decoration-solid`. `text-primary` links belong in navigation lists and tab
 - **Measure it.** `npm run app:measure -- --json` reports `distinctTextStyles` inside the situation block. Keep it at
   or under 15 on the execution page and 12 on the cluster page; a change that raises it needs a reason in the PR.
 
+### Test outcome colors (MUST follow)
+
+Passed, failed, flaky, skipped, didn't run and running each have **one** color, everywhere: the `--color-status-*`
+tokens in `app/assets/css/main.css` (emerald, rose, purple, zinc, amber, blue). Timed-out and interrupted count as
+failed; a pass that needed a retry counts as flaky. Never hardcode a status color in a bar, chart, legend, dot, history
+cell, timeline bar or filter chip: use `STATUS_PALETTE` / `statusPalette(status, retries?)` from
+`app/utils/status-palette.ts` (`bg-status-*` classes for HTML, `var(--color-status-*)` in SVG `style`), the shared
+`StatusFilterChip`, and `getStatusColor` for badges (`flaky` is a registered Nuxt UI color). A new outcome view that
+needs another shade adds it to the palette entry, not to the component.
+
 ### Other UI rules
 
 - Sentence case headings and labels ("Test runs"), relative dates via date-fns (full timestamp on hover), human-readable

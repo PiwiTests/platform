@@ -15,6 +15,21 @@
   --color-green-800: #016538;
   --color-green-900: #0a5331;
   --color-green-950: #052e16;
+
+  /*
+   * Test outcome palette: the one set of colors for every mark that shows a
+   * test or run outcome (bar segments, chart series, history cells, legend and
+   * filter dots, timeline bars). Use the generated utilities (`bg-status-passed`,
+   * `fill-status-failed`, `ring-status-flaky`…) in templates and
+   * `var(--color-status-*)` in SVG styles; `app/utils/status-palette.ts` maps a
+   * status string to them. Timed-out and interrupted tests count as failed.
+   */
+  --color-status-passed: var(--color-emerald-500);
+  --color-status-failed: var(--color-rose-500);
+  --color-status-flaky: var(--color-purple-500);
+  --color-status-skipped: var(--color-zinc-400);
+  --color-status-didnotrun: var(--color-amber-500);
+  --color-status-running: var(--color-blue-500);
 }
 
 /*

@@ -148,11 +148,11 @@ td.num { font-family:var(--mono); white-space:nowrap; }
   display:inline-block; padding:0 .4rem; border-radius:3px; font-size:.7rem;
   font-weight:650; border:1px solid currentColor; vertical-align:.15em;
 }
-.s-failed, .s-error, .s-open { color:var(--fail); }
+/* Matches getStatusColor in app/utils: timed-out and interrupted read as failed, didn't run as a warning. */
+.s-failed, .s-timedout, .s-interrupted, .s-error, .s-open { color:var(--fail); }
 .s-passed, .s-resolved { color:var(--pass); }
 .s-skipped, .s-log, .s-debug, .s-ignored { color:var(--skip); }
-/* Matches getStatusColor in app/utils: a timeout is a warning, not a failure. */
-.s-timedout, .s-timedout_, .s-interrupted, .s-warning, .s-warn { color:var(--warn); }
+.s-didnotrun, .s-warning, .s-warn { color:var(--warn); }
 .s-info { color:var(--info); }
 .tag { font-weight:650; }
 

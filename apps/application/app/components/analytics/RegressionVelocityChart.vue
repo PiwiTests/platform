@@ -24,7 +24,7 @@ const chartData = computed<DataPoint[]>(
 
 const hasData = computed(() => chartData.value.some((p) => p.regressions > 0 || p.newFlaky > 0));
 
-const barColors = ['rgb(239, 68, 68)', 'rgb(147, 51, 234)'] as const;
+const barColors = [STATUS_PALETTE.failed.color, STATUS_PALETTE.flaky.color] as const;
 
 const yMax = computed(() => Math.max(1, ...chartData.value.map((d) => d.regressions + d.newFlaky)));
 
@@ -113,7 +113,7 @@ const subtitle = computed(() => {
             :y="segment.y"
             :width="bar.barWidth"
             :height="segment.height"
-            :fill="segment.color"
+            :style="{ fill: segment.color }"
           />
         </template>
 
@@ -146,8 +146,8 @@ const subtitle = computed(() => {
         <div class="font-semibold mb-1">
           {{ tooltipData.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) }}
         </div>
-        <div><span class="text-red-500">&#9679;</span> New regressions: {{ tooltipData.regressions }}</div>
-        <div><span class="text-purple-500">&#9679;</span> Newly flaky: {{ tooltipData.newFlaky }}</div>
+        <div><span :style="{ color: barColors[0] }">&#9679;</span> New regressions: {{ tooltipData.regressions }}</div>
+        <div><span :style="{ color: barColors[1] }">&#9679;</span> Newly flaky: {{ tooltipData.newFlaky }}</div>
       </ChartTooltip>
     </div>
   </ChartCard>

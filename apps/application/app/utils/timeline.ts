@@ -3,6 +3,7 @@
  * and SVG layout constants). Kept dependency-free so the timeline composables
  * and the presentational sub-components can all share one source of truth.
  */
+import { statusPalette } from './status-palette';
 
 /** Fixed pixel geometry for the timeline SVG. */
 export const TIMELINE_LAYOUT = {
@@ -44,18 +45,6 @@ export function timelineStepColor(category: string, failed: boolean): string {
   return STEP_CATEGORY_HEX[category] ?? STEP_CATEGORY_HEX.other!;
 }
 
-const STATUS_HEX: Record<string, string> = {
-  passed: '#16a34a',
-  failed: '#dc2626',
-  timedOut: '#ea580c',
-  running: '#2563eb',
-  initializing: '#2563eb',
-  skipped: '#9ca3af',
-  cancelled: '#a1a1aa',
-  interrupted: '#ea580c',
-  flaky: '#ca8a04',
-};
-
 /**
  * Amber palette for wasted-wait bars, shared by the bar renderer and the
  * tooltip swatch.
@@ -67,19 +56,20 @@ export const TIMELINE_WAIT_COLORS = {
 } as const;
 
 /**
- * Distinct colors for lock lanes/brackets, chosen to sit apart from the status
- * palette (green/red/orange/blue/gray/amber) so a lock never reads as a result.
+ * Distinct colors for lock lanes/brackets, chosen to sit apart from the test
+ * outcome palette (emerald/rose/purple/zinc/amber/blue) and the amber of wasted
+ * waits, so a lock never reads as a result.
  * Assigned by index in the run's sorted lock order and reused past the end.
  */
 export const TIMELINE_LOCK_COLORS = [
-  '#8b5cf6',
+  '#0369a1',
   '#0891b2',
   '#db2777',
   '#0d9488',
   '#c026d3',
   '#4f46e5',
   '#65a30d',
-  '#e11d48',
+  '#c2410c',
 ] as const;
 
 /** Color for the lock at `index` in the run's sorted lock order. */
@@ -89,19 +79,19 @@ export function lockColorHex(index: number): string {
   ]!;
 }
 
-/** Bar fill color for a test-case status (falls back to neutral gray). */
-export function timelineStatusHex(status: string): string {
-  return STATUS_HEX[status] || '#a1a1aa';
+/** Bar fill color for a test-case status, from the test outcome palette (a pass after a retry is flaky). */
+export function timelineStatusColor(status: string, retries?: number | null): string {
+  return statusPalette(status, retries).color;
 }
 
 /** Fill for a hook/fixture bar: the status color at 40% alpha. */
 export function timelineHookFill(status: string): string {
-  return timelineStatusHex(status) + '66';
+  return `color-mix(in oklab, ${timelineStatusColor(status)} 40%, transparent)`;
 }
 
 /** Stroke for a hook/fixture bar's dashed outline: the full status color. */
 export function timelineHookStroke(status: string): string {
-  return timelineStatusHex(status);
+  return timelineStatusColor(status);
 }
 
 /** Human-readable duration used for timeline ticks, bar labels and tooltips. */
