@@ -5,7 +5,7 @@ the application exposes, what the suite touches, what the suite would actually n
 about. A gap is always a suggestion with evidence and a next step — a draft spec, an MCP call, a line in the
 pull-request comment — never a verdict.
 
-**Status.** Third revision; **M1 is implemented** on the `claude/test-map-m1` branch. M1 ships the graph substrate
+**Status.** Third revision; all three milestones have shipped. **M1 has shipped.** M1 ships the graph substrate
 (`graph_nodes`, `graph_edges`, `scenario_gaps`) with route and page nodes and `reaches`/`changes` edges populated on
 every ingest, the four M1 detectors (changed-unreached, success-only, single-covering-test, surface-drift), exposure
 ranking over churn, age, escape history and priority, the uncovered-changes section and commit status in pull-request
@@ -17,7 +17,7 @@ ones so a pull-request route never drifts onto the default branch, and a nightly
 edges past ninety days, branch-tagged rows past thirty, and canonical nodes unseen for thirty runs once their
 surface-drift gap has closed.
 
-**M2 is implemented** on the `claude/test-map-m2` branch. M2 broadens the graph with `control`, `link`, `handler` and
+**M2 has shipped.** M2 broadens the graph with `control`, `link`, `handler` and
 `dependency` nodes and the `contains`, `links`, `triggers`, `loads`, `handled-by` and `calls` edges (size rule 3 —
 templated control names and the 200-per-page cap — applied on ingest); the page inventory the reporter records on
 passing runs (`piwi-page-inventory`, stored through `case_payloads`); one instrumentation release carrying the root
@@ -30,7 +30,7 @@ warn-only. The change-time detectors (new error path, new control, intent withou
 as pure detectors pending the change-coverage path carrying hunk and title data, and the desktop local-diff command
 stays the M1 TODO.
 
-**M3 is implemented** on the `claude/test-map-m3` branch. M3 adds the declared surface (route/page nodes with origin
+**M3 has shipped.** M3 adds the declared surface (route/page nodes with origin
 `manifest` or `openapi` from the instrumentation `/__piwi/manifest`, a committed `piwi.manifest.json` and a per-project
 OpenAPI URL, with the `AppManifest` shape in `shared/types.ts` and the `PUT/GET surface/manifest` endpoints), the
 `declared, never hit` detector, success-only strengthened by documented codes, and `imports` edges from a shallow SCM
