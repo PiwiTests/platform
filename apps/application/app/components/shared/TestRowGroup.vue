@@ -22,7 +22,7 @@ interface GroupStats {
 interface GroupMetric {
   label: string;
   value: string;
-  tone?: 'good' | 'bad' | 'muted';
+  tone?: PassRateTone | 'muted';
 }
 
 const props = withDefaults(
@@ -58,8 +58,9 @@ const props = withDefaults(
 );
 
 const metricToneClass: Record<NonNullable<GroupMetric['tone']>, string> = {
-  good: 'text-green-600 dark:text-green-400',
-  bad: 'text-red-600 dark:text-red-400',
+  good: PASS_RATE_TONES.good.text,
+  fair: PASS_RATE_TONES.fair.text,
+  poor: PASS_RATE_TONES.poor.text,
   muted: 'text-muted',
 };
 

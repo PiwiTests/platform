@@ -90,6 +90,10 @@ export async function sendEmail(opts: SendEmailOptions): Promise<void> {
 
 const siteUrl = () => process.env.PIWI_SITE_URL?.replace(/\/$/, '') || 'http://localhost:3000';
 
+/** Passed and failed text colors: the emerald and rose of the dashboard, as in the HTML export. */
+const PASSED_COLOR = '#047857';
+const FAILED_COLOR = '#be123c';
+
 /** Escape user-controlled text (test titles, error messages) for HTML emails. */
 function escapeHtml(text: string): string {
   return text
@@ -189,7 +193,7 @@ export function renderRunNotificationEmail(opts: {
   topFailures?: TopFailure[];
 }): { html: string; text: string } {
   const url = `${siteUrl()}/test-runs/${opts.runId}`;
-  const statusColor = opts.status === 'passed' ? '#22c55e' : '#ef4444';
+  const statusColor = opts.status === 'passed' ? PASSED_COLOR : FAILED_COLOR;
 
   const failures = opts.topFailures ?? [];
   let failuresHtml = '';
@@ -230,7 +234,7 @@ export function renderRunNotificationEmail(opts: {
         <td style="padding:8px 16px;background:#f4f4f5;border-radius:6px;font-size:14px;">
           Status: <strong style="color:${statusColor};">${opts.status}</strong>
           &nbsp;·&nbsp; ${opts.totalTests} tests
-          ${opts.failedTests > 0 ? `&nbsp;·&nbsp; <strong style="color:#ef4444;">${opts.failedTests} failed</strong>` : ''}
+          ${opts.failedTests > 0 ? `&nbsp;·&nbsp; <strong style="color:${FAILED_COLOR};">${opts.failedTests} failed</strong>` : ''}
         </td>
       </tr>
     </table>
@@ -302,7 +306,7 @@ export function renderDigestEmail(items: DigestItem[]): { subject: string; html:
       const run = payload as RunFinishedPayload;
       const stats =
         event.startsWith('run.') && run.totalTests != null
-          ? `<div style="color:#71717a;font-size:12px;">${run.totalTests} tests${run.failedTests ? ` · <span style="color:#ef4444;">${run.failedTests} failed</span>` : ''}</div>`
+          ? `<div style="color:#71717a;font-size:12px;">${run.totalTests} tests${run.failedTests ? ` · <span style="color:${FAILED_COLOR};">${run.failedTests} failed</span>` : ''}</div>`
           : '';
       const title = url
         ? `<a href="${url}" style="color:#18181b;font-weight:600;text-decoration:none;">${escapeHtml(line)}</a>`

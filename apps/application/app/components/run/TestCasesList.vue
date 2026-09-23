@@ -62,11 +62,11 @@ const testCaseLockOptions = computed(() => {
 const hasAnyLocks = computed(() => props.testCases.some((tc) => (tc.locks?.length ?? 0) > 0));
 
 const STATUS_OPTIONS = [
-  { label: 'Passed', value: 'passed', color: 'green' },
-  { label: 'Failed', value: 'failed', color: 'red' },
-  { label: 'Passed on retry', value: 'flaky', color: 'orange' },
-  { label: 'Skipped', value: 'skipped', color: 'gray' },
-  { label: "Didn't run", value: 'didnotrun', color: 'amber' },
+  { label: 'Passed', value: 'passed' },
+  { label: 'Failed', value: 'failed' },
+  { label: 'Passed on retry', value: 'flaky' },
+  { label: 'Skipped', value: 'skipped' },
+  { label: "Didn't run", value: 'didnotrun' },
 ] as const;
 
 function toggleStatus(value: string) {
@@ -659,67 +659,31 @@ defineExpose({ scrollToCase });
         class="min-w-48 max-sm:flex-1"
       />
       <div class="flex flex-wrap items-center gap-1">
-        <button
+        <StatusFilterChip
           v-for="opt in STATUS_OPTIONS"
           :key="opt.value"
-          class="inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap"
-          :class="
-            activeStatuses.includes(opt.value)
-              ? opt.color === 'green'
-                ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
-                : opt.color === 'red'
-                  ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400'
-                  : opt.color === 'orange'
-                    ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'
-                    : 'bg-zinc-200 text-zinc-700 dark:bg-zinc-700 dark:text-zinc-300'
-              : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
-          "
-          :aria-pressed="activeStatuses.includes(opt.value)"
+          :status="opt.value"
+          :label="opt.label"
+          :pressed="activeStatuses.includes(opt.value)"
           @click="toggleStatus(opt.value)"
-        >
-          <span
-            class="size-2 rounded-full shrink-0"
-            :class="
-              opt.color === 'green'
-                ? 'bg-emerald-500'
-                : opt.color === 'red'
-                  ? 'bg-rose-500'
-                  : opt.color === 'orange'
-                    ? 'bg-orange-500'
-                    : 'bg-zinc-400'
-            "
-          />
-          {{ opt.label }}
-        </button>
+        />
         <!-- The two signals join the status chips as toggles, not checkboxes. -->
-        <button
+        <StatusFilterChip
           v-if="!isLive"
-          class="inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap"
-          :class="
-            showNewRegressionsOnly
-              ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400'
-              : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
-          "
-          :aria-pressed="showNewRegressionsOnly"
+          status="failed"
+          label="New regressions"
+          icon="i-lucide-flame"
+          :pressed="showNewRegressionsOnly"
           @click="showNewRegressionsOnly = !showNewRegressionsOnly"
-        >
-          <UIcon name="i-lucide-flame" class="size-3 shrink-0" />
-          New regressions
-        </button>
-        <button
+        />
+        <StatusFilterChip
           v-if="!isLive"
-          class="inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap"
-          :class="
-            showNewFlakyOnly
-              ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
-              : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
-          "
-          :aria-pressed="showNewFlakyOnly"
+          status="flaky"
+          label="Newly flaky"
+          icon="i-lucide-shuffle"
+          :pressed="showNewFlakyOnly"
           @click="showNewFlakyOnly = !showNewFlakyOnly"
-        >
-          <UIcon name="i-lucide-shuffle" class="size-3 shrink-0" />
-          Newly flaky
-        </button>
+        />
       </div>
       <USelect
         v-model="testCaseBrowserFilter"

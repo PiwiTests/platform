@@ -6,6 +6,7 @@ import { formatDistanceToNow, formatDuration as formatDurationLib, intervalToDur
 import { TEST_PRIORITIES, type TestPriority } from '@piwitests/core/test-meta';
 import { formatAbsolute } from '#shared/i18n/locale-format';
 import { activeLocalePrefs } from './locale-format';
+import { statusPalette, statusPaletteKey } from './status-palette';
 
 /**
  * A link that lives inside a sentence keeps the sentence's color and carries a
@@ -197,25 +198,21 @@ export function getBrowserHexColor(browserName?: string | null): string {
   return '#6b7280';
 }
 
-export function getStatusColor(status: string) {
-  switch (status) {
+/**
+ * Badge color for a test or run status, on the same hues as the test outcome
+ * palette (`status-palette.ts`): timed-out and interrupted read as failed.
+ */
+export function getStatusColor(status: string): BadgeColor {
+  switch (statusPaletteKey(status)) {
     case 'passed':
       return 'success';
     case 'failed':
       return 'error';
-    case 'timedout':
+    case 'flaky':
+      return 'flaky';
+    case 'didnotrun':
       return 'warning';
-    case 'timedOut':
-      return 'warning';
-    case 'interrupted':
-      return 'warning';
-    case 'cancelled':
-      return 'neutral';
-    case 'initializing':
-      return 'info';
     case 'running':
-      return 'info';
-    case 'finalizing':
       return 'info';
     default:
       return 'neutral';
@@ -237,7 +234,10 @@ export function getStatusIcon(status: string): string {
       return 'i-lucide-check-circle-2';
     case 'failed':
     case 'timedout':
+    case 'interrupted':
       return 'i-lucide-x-circle';
+    case 'flaky':
+      return 'i-lucide-shuffle';
     case 'didnotrun':
       return 'i-lucide-circle-slash';
     case 'running':
@@ -251,21 +251,7 @@ export function getStatusIcon(status: string): string {
 
 /** Text colour classes matching `getStatusIcon`, for an icon drawn without a chip. */
 export function getStatusTextClass(status: string): string {
-  switch (normalizeStatusKey(status)) {
-    case 'passed':
-      return 'text-emerald-600 dark:text-emerald-400';
-    case 'failed':
-    case 'timedout':
-      return 'text-rose-600 dark:text-rose-400';
-    case 'didnotrun':
-      return 'text-amber-600 dark:text-amber-400';
-    case 'running':
-    case 'initializing':
-    case 'finalizing':
-      return 'text-blue-600 dark:text-blue-400';
-    default:
-      return 'text-zinc-400 dark:text-zinc-500';
-  }
+  return statusPalette(status).text;
 }
 
 /** Whether a status icon should spin (the run is still in flight). */
@@ -284,6 +270,11 @@ export function formatStatusLabel(status: string): string {
   if (status === 'didnotrun') return "didn't run";
   if (status === 'never-run') return 'never run';
   return status;
+}
+
+/** Status label for one execution: a pass that needed a retry reads "passed on retry". */
+export function formatExecutionStatus(status: string, retries?: number | null): string {
+  return statusPaletteKey(status, retries) === 'flaky' ? 'passed on retry' : formatStatusLabel(status);
 }
 
 /**
@@ -682,24 +673,12 @@ export function copyPreview(text: string | null | undefined, max = 120): string 
   return singleLine.length <= max ? singleLine : singleLine.slice(0, max) + '…';
 }
 
-/** Nuxt UI `color` union shared by `UBadge` / `UButton` call sites. */
-export type BadgeColor = 'error' | 'neutral' | 'primary' | 'success' | 'warning' | 'secondary' | 'info';
+/** Nuxt UI `color` union shared by `UBadge` / `UButton` call sites (`flaky` is registered in nuxt.config.ts). */
+export type BadgeColor = 'error' | 'neutral' | 'primary' | 'success' | 'warning' | 'secondary' | 'info' | 'flaky';
 
 /** Pass rate (0–100) for a single run, guarding against divide-by-zero. */
 export function passRate(run: { passedTests: number; totalTests: number }): number {
   return run.totalTests > 0 ? Math.round((run.passedTests / run.totalTests) * 100) : 0;
-}
-
-/**
- * Badge color for a test case's derived status category (the server-computed
- * `status` on `TestCaseWithStats`: flaky wins, timeouts fold into failed,
- * `never-run` for cases without executions).
- */
-export function testCaseCategoryColor(category: string): BadgeColor {
-  if (category === 'flaky') return 'warning';
-  if (category === 'never-run') return 'neutral';
-  if (category === 'didnotrun') return 'warning';
-  return getStatusColor(category) as BadgeColor;
 }
 
 /** Badge color for an HTTP method (network request rows). */

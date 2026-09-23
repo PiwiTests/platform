@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { AnalyticsWastedTime } from '#shared/analytics/types';
 import { barGeometry, dayTickIndices, formatTickDate, stackSegments } from '~/utils/chart';
+import { TIMELINE_WAIT_COLORS } from '~/utils/timeline';
 
 const props = defineProps<{ query: Record<string, string> }>();
 
@@ -24,7 +25,7 @@ const chartData = computed<DataPoint[]>(
 
 const hasData = computed(() => chartData.value.some((p) => p.waitMinutes > 0 || p.failedExecMinutes > 0));
 
-const areaColors = ['rgb(245, 158, 11)', 'rgb(239, 68, 68)'] as const;
+const areaColors = [TIMELINE_WAIT_COLORS.swatch, STATUS_PALETTE.failed.color] as const;
 
 const yMax = computed(() => Math.max(1, ...chartData.value.map((d) => d.waitMinutes + d.failedExecMinutes)));
 
@@ -110,7 +111,7 @@ const reclaimLabel = computed(() => {
             :y="segment.y"
             :width="bar.barWidth"
             :height="segment.height"
-            :fill="segment.color"
+            :style="{ fill: segment.color }"
           />
         </template>
 
@@ -143,8 +144,11 @@ const reclaimLabel = computed(() => {
         <div class="font-semibold mb-1">
           {{ tooltipData.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) }}
         </div>
-        <div><span class="text-amber-500">&#9679;</span> Wait steps: {{ tooltipData.waitMinutes }} min</div>
-        <div><span class="text-red-500">&#9679;</span> Failed attempts: {{ tooltipData.failedExecMinutes }} min</div>
+        <div><span :style="{ color: areaColors[0] }">&#9679;</span> Wait steps: {{ tooltipData.waitMinutes }} min</div>
+        <div>
+          <span :style="{ color: areaColors[1] }">&#9679;</span> Failed attempts:
+          {{ tooltipData.failedExecMinutes }} min
+        </div>
       </ChartTooltip>
 
       <div

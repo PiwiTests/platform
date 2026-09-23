@@ -203,20 +203,19 @@ function showPartialRuns(): void {
   filters.value = { ...filters.value, fullRunsOnly: false };
 }
 
-// ── Pass rate helper (for activity list) ─────────────────────────────────────
-
-function passRateClass(run: { passedTests: number; totalTests: number }): string {
-  const rate = passRate(run);
-  if (rate >= 90) return 'text-green-600 dark:text-green-400';
-  if (rate >= 50) return 'text-yellow-600 dark:text-yellow-400';
-  return 'text-red-600 dark:text-red-400';
-}
+// ── Activity list ────────────────────────────────────────────────────────────
 
 function statusBorderClass(status: string): string {
-  if (RUNNING_STATUSES.has(status)) return 'border-l-blue-400';
-  if (status === 'passed') return 'border-l-green-500';
-  if (status === 'failed' || status === 'timedout' || status === 'interrupted') return 'border-l-red-500';
-  return 'border-l-gray-300 dark:border-l-gray-600';
+  switch (statusPaletteKey(status)) {
+    case 'passed':
+      return 'border-l-status-passed';
+    case 'failed':
+      return 'border-l-status-failed';
+    case 'running':
+      return 'border-l-status-running';
+    default:
+      return 'border-l-status-skipped';
+  }
 }
 </script>
 
@@ -297,11 +296,11 @@ function statusBorderClass(status: string): string {
           >
             <div
               class="w-2 h-2 rounded-full shrink-0"
-              :class="overviewStats.failingNow > 0 ? 'bg-red-500' : 'bg-green-500'"
+              :class="overviewStats.failingNow > 0 ? STATUS_PALETTE.failed.bg : STATUS_PALETTE.passed.bg"
             />
             <span
               class="font-semibold tabular-nums"
-              :class="overviewStats.failingNow > 0 ? 'text-red-600 dark:text-red-400' : ''"
+              :class="overviewStats.failingNow > 0 ? STATUS_PALETTE.failed.text : ''"
               >{{ overviewStats.failingNow }}</span
             >
             <span class="text-gray-500">failing now</span>
@@ -310,19 +309,25 @@ function statusBorderClass(status: string): string {
           <NuxtLink to="/analytics" class="flex items-center gap-1.5 hover:underline">
             <div
               class="w-2 h-2 rounded-full shrink-0"
-              :class="overviewStats.flakyNow > 0 ? 'bg-amber-400' : 'bg-gray-300 dark:bg-gray-600'"
+              :class="overviewStats.flakyNow > 0 ? STATUS_PALETTE.flaky.bg : 'bg-gray-300 dark:bg-gray-600'"
             />
             <span
               class="font-semibold tabular-nums"
-              :class="overviewStats.flakyNow > 0 ? 'text-amber-600 dark:text-amber-400' : ''"
+              :class="overviewStats.flakyNow > 0 ? STATUS_PALETTE.flaky.text : ''"
               >{{ overviewStats.flakyNow }}</span
             >
             <span class="text-gray-500">flaky</span>
           </NuxtLink>
 
           <div v-if="overviewStats.avgPassRate !== null" class="flex items-center gap-1.5">
-            <UIcon name="i-lucide-check-circle" class="size-4 text-green-500 shrink-0" />
-            <span class="font-semibold tabular-nums">{{ overviewStats.avgPassRate }}%</span>
+            <UIcon
+              name="i-lucide-check-circle"
+              class="size-4 shrink-0"
+              :class="passRateTextClass(overviewStats.avgPassRate)"
+            />
+            <span class="font-semibold tabular-nums" :class="passRateTextClass(overviewStats.avgPassRate)"
+              >{{ overviewStats.avgPassRate }}%</span
+            >
             <span class="text-gray-500">avg pass rate</span>
           </div>
 
@@ -403,7 +408,7 @@ function statusBorderClass(status: string): string {
                   <div class="text-xs text-gray-400">Run #{{ run.id }} · {{ formatRelativeTime(run.startTime) }}</div>
                 </div>
                 <div class="text-right tabular-nums shrink-0">
-                  <div :class="passRateClass(run)">{{ passRate(run) }}%</div>
+                  <div :class="passRateTextClass(passRate(run))">{{ passRate(run) }}%</div>
                   <DurationValue v-if="run.duration" :ms="run.duration" class="block text-xs text-gray-400" />
                 </div>
               </NuxtLink>

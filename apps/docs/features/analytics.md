@@ -39,6 +39,10 @@ flaky volume, open failure clusters, average run duration, and latest run. Worst
 **Pass rate heatmap** — projects × time, colored by daily (or weekly, over longer periods) pass rate.
 This is the fastest way to answer *when* something started degrading.
 
+Every pass rate in the dashboard is colored on the same scale: green at 90% or more, amber from 50%, red
+below 50%. The heatmap and the browser matrix split the green and amber bands into two shades each, so a
+perfect period and a nearly failing one stand out.
+
 **CI time** and **Wasted CI time** — total minutes your runs consumed, and how many of those produced
 no signal: time spent inside wait steps plus time spent executing attempts that ended failed or timed
 out. Because a timed-out test burns its entire (often oversized) budget, the widget also calls out how

@@ -39,11 +39,11 @@ const AGE_OPTIONS = [
   { label: 'All time', value: 0 },
 ];
 const STATUS_OPTIONS = [
-  { label: 'Passed', value: 'passed', color: 'green' },
-  { label: 'Failed', value: 'failed', color: 'red' },
-  { label: 'Flaky', value: 'flaky', color: 'orange' },
-  { label: 'Skipped', value: 'skipped', color: 'gray' },
-  { label: "Didn't run", value: 'didnotrun', color: 'amber' },
+  { label: 'Passed', value: 'passed' },
+  { label: 'Failed', value: 'failed' },
+  { label: 'Flaky', value: 'flaky' },
+  { label: 'Skipped', value: 'skipped' },
+  { label: "Didn't run", value: 'didnotrun' },
 ] as const;
 
 // The public demo's seed data is anchored at a fixed past date, so an age
@@ -239,16 +239,17 @@ const fileGroups = computed(() => {
             {
               label: 'Pass',
               value: `${Math.round(health.passRate * 100)}%`,
-              tone: (health.passRate >= 0.9 ? 'good' : health.passRate > 0 ? 'bad' : 'muted') as
-                | 'good'
-                | 'bad'
-                | 'muted',
+              // A file whose executions were all skipped has no pass rate to judge.
+              tone:
+                health.passRate > 0 || health.failureCount > 0
+                  ? passRateTone(health.passRate * 100)
+                  : ('muted' as const),
             },
             { label: 'Flaky', value: `${Math.round(health.flakyRate * 100)}%`, tone: 'muted' as const },
             {
               label: 'Failures',
               value: String(health.failureCount),
-              tone: (health.failureCount > 0 ? 'bad' : 'muted') as 'bad' | 'muted',
+              tone: health.failureCount > 0 ? ('poor' as const) : ('muted' as const),
             },
             { label: 'Tests', value: String(health.testCount), tone: 'muted' as const },
             { label: 'Avg', value: formatMs(health.avgDuration), tone: 'muted' as const },
@@ -352,43 +353,14 @@ defineExpose({ refresh });
         title="Show only cases carrying every listed lock name."
       />
       <div class="flex flex-wrap items-center gap-1">
-        <button
+        <StatusFilterChip
           v-for="opt in STATUS_OPTIONS"
           :key="opt.value"
-          type="button"
-          class="inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap"
-          :aria-pressed="statuses.includes(opt.value)"
-          :class="
-            statuses.includes(opt.value)
-              ? opt.color === 'green'
-                ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                : opt.color === 'red'
-                  ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-                  : opt.color === 'orange'
-                    ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'
-                    : opt.color === 'amber'
-                      ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
-                      : 'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300'
-              : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
-          "
+          :status="opt.value"
+          :label="opt.label"
+          :pressed="statuses.includes(opt.value)"
           @click="toggleStatus(opt.value)"
-        >
-          <span
-            class="size-2 rounded-full shrink-0"
-            :class="
-              opt.color === 'green'
-                ? 'bg-green-500'
-                : opt.color === 'red'
-                  ? 'bg-red-500'
-                  : opt.color === 'orange'
-                    ? 'bg-orange-500'
-                    : opt.color === 'amber'
-                      ? 'bg-amber-500'
-                      : 'bg-gray-400'
-            "
-          />
-          {{ opt.label }}
-        </button>
+        />
       </div>
       <USelect v-model="age" :items="AGE_OPTIONS" size="sm" class="w-36" aria-label="Last run age filter" />
       <div class="flex items-center gap-1">

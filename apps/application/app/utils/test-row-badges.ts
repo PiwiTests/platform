@@ -9,7 +9,7 @@ import type { TestCaseResult } from '~~/types/api';
 export interface TestRowBadge {
   key: string;
   label: string;
-  color: 'error' | 'warning' | 'info' | 'success' | 'neutral' | 'primary';
+  color: 'error' | 'warning' | 'info' | 'success' | 'neutral' | 'primary' | 'flaky';
   variant: 'solid' | 'subtle' | 'soft' | 'outline';
   icon?: string;
   title?: string;
@@ -84,7 +84,7 @@ export function buildTestRowBadges(input: TestRowBadgeInput): TestRowBadge[] {
     badges.push({
       key: 'newly-flaky',
       label: 'Newly flaky',
-      color: 'info',
+      color: 'flaky',
       variant: 'solid',
       icon: 'i-lucide-shuffle',
       title: 'First run in which this test was flaky',
@@ -94,7 +94,7 @@ export function buildTestRowBadges(input: TestRowBadgeInput): TestRowBadge[] {
     badges.push({
       key: 'passed-on-retry',
       label: 'Passed on retry',
-      color: 'warning',
+      color: 'flaky',
       variant: 'subtle',
       icon: 'i-lucide-rotate-cw',
       title: 'Failed at least once in this run, then passed',

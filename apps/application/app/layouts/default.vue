@@ -106,10 +106,14 @@ const projectItems = computed<NavigationMenuItem[]>(() => {
     const isActive = currentProjectId.value !== null && currentProjectId.value === project.id;
     const isRunning = project.latestRun?.status === 'running' || project.latestRun?.status === 'initializing';
     const status = project.latestRun?.status || 'unknown';
+    const outcome = statusPaletteKey(status);
     const statusIcon =
-      status === 'passed' ? 'i-lucide-circle-check-big' : status === 'failed' ? 'i-lucide-circle-x' : 'i-lucide-circle';
-    const statusColor =
-      status === 'passed' ? 'success' : status === 'failed' ? 'error' : isRunning ? 'info' : 'neutral';
+      outcome === 'passed'
+        ? 'i-lucide-circle-check-big'
+        : outcome === 'failed'
+          ? 'i-lucide-circle-x'
+          : 'i-lucide-circle';
+    const statusColor = getStatusColor(status);
     const displayLabel = project.label || project.name;
 
     return {
@@ -118,7 +122,7 @@ const projectItems = computed<NavigationMenuItem[]>(() => {
       ui: isRunning ? { linkLeadingIcon: 'animate-spin' } : undefined,
       badge: {
         icon: statusIcon,
-        color: statusColor as 'success' | 'error' | 'info' | 'neutral',
+        color: statusColor,
       },
       value: `project-${project.id}`,
       type: 'link' as const,

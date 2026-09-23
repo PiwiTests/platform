@@ -157,8 +157,6 @@ function flakyBadges(test: FlakyTest) {
         :href="`/test-cases/${test.testCaseId}`"
         :title="test.title"
         status="flaky"
-        icon="i-lucide-shuffle"
-        icon-class="text-amber-600 dark:text-amber-400"
         :file-path="test.filePath"
         :badges="flakyBadges(test)"
         :project-key="projectId"

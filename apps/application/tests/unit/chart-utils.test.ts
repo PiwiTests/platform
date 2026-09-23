@@ -82,14 +82,26 @@ describe('timeToOrdinalX', () => {
 describe('legendOf', () => {
   test('keeps series order and drops everything but color and label', () => {
     expect(legendOf(CASE_STATUS_SERIES)).toEqual([
-      { color: 'rgb(34, 197, 94)', label: 'Passed' },
-      { color: 'rgb(239, 68, 68)', label: 'Failed' },
-      { color: 'rgb(156, 163, 175)', label: 'Skipped' },
+      { color: 'var(--color-status-passed)', label: 'Passed' },
+      { color: 'var(--color-status-flaky)', label: 'Passed on retry' },
+      { color: 'var(--color-status-failed)', label: 'Failed' },
+      { color: 'var(--color-status-skipped)', label: 'Skipped' },
+      { color: 'var(--color-status-didnotrun)', label: "Didn't run" },
     ]);
   });
 
   test('run-status series stack with failed on the baseline', () => {
-    expect(RUN_STATUS_SERIES.map((s) => s.key)).toEqual(['failed', 'flaky', 'skipped', 'passed']);
+    expect(RUN_STATUS_SERIES.map((s) => s.key)).toEqual(['failed', 'flaky', 'skipped', 'didNotRun', 'passed']);
+  });
+
+  test('run-status series take the test outcome palette colors', () => {
+    expect(RUN_STATUS_SERIES.map((s) => s.color)).toEqual([
+      'var(--color-status-failed)',
+      'var(--color-status-flaky)',
+      'var(--color-status-skipped)',
+      'var(--color-status-didnotrun)',
+      'var(--color-status-passed)',
+    ]);
   });
 });
 

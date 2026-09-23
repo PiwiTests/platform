@@ -75,7 +75,7 @@ export const HELP_TOPICS = {
   },
   'analytics.heatmap': {
     title: 'Pass rate heatmap',
-    text: 'Each cell is the aggregate pass rate of one project over one time bucket — green is healthy, red is broken, gray means no runs. Longer periods use wider buckets.',
+    text: 'Each cell is the aggregate pass rate of one project over one time bucket — green at 90% or more, amber from 50%, red below 50%, gray means no runs. Longer periods use wider buckets.',
   },
   'analytics.ci-time': {
     title: 'CI time',

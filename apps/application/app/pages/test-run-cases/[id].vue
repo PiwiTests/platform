@@ -319,7 +319,7 @@ const headerBadges = computed(() => {
   const tc = testCase.value;
   type Badge = {
     label: string;
-    color?: 'error' | 'warning' | 'neutral';
+    color?: 'error' | 'flaky' | 'neutral';
     icon?: string;
     title?: string;
     mono?: boolean;
@@ -337,14 +337,14 @@ const headerBadges = computed(() => {
     if (tc.status === 'passed' && (tc.retries ?? 0) > 0)
       out.push({
         label: 'Passed on retry',
-        color: 'warning',
+        color: 'flaky',
         icon: 'i-lucide-refresh-cw',
         title: 'This test failed then passed on a retry',
       });
     if (tc.isNewFlaky)
       out.push({
         label: 'Newly flaky',
-        color: 'warning',
+        color: 'flaky',
         icon: 'i-lucide-shuffle',
         title: 'Newly started passing only on retry',
       });

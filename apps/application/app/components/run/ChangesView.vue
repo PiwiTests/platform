@@ -408,7 +408,7 @@ function clusterName(tc: TestCaseResult): string | null {
       <SectionCard
         v-if="newFailureRows.length > 0"
         icon="i-lucide-alert-circle"
-        icon-class="text-red-500"
+        :icon-class="STATUS_PALETTE.failed.text"
         title="New failures"
         :count="data.newFailures"
         subtitle="Passed in the baseline, failing here"
@@ -429,7 +429,7 @@ function clusterName(tc: TestCaseResult): string | null {
       <SectionCard
         v-if="fixedRows.length > 0"
         icon="i-lucide-check-circle"
-        icon-class="text-green-500"
+        :icon-class="STATUS_PALETTE.passed.text"
         title="Fixed"
         :count="fixedRows.length"
         subtitle="Failed in the baseline, passing here"
@@ -450,7 +450,7 @@ function clusterName(tc: TestCaseResult): string | null {
       <SectionCard
         v-if="stillFailingRows.length > 0"
         icon="i-lucide-refresh-cw"
-        icon-class="text-amber-500"
+        :icon-class="STATUS_PALETTE.failed.text"
         title="Still failing"
         :count="stillFailingRows.length"
         subtitle="Failing in both the baseline and this run"
@@ -471,7 +471,7 @@ function clusterName(tc: TestCaseResult): string | null {
       <SectionCard
         v-if="flakyRows.length > 0"
         icon="i-lucide-flask-conical"
-        icon-class="text-purple-500"
+        :icon-class="STATUS_PALETTE.flaky.text"
         title="Newly flaky / passed on retry"
         :count="flakyRows.length"
         subtitle="Passed, but needed a retry"
