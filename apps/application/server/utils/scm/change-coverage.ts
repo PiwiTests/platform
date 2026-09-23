@@ -78,7 +78,8 @@ function exposureCacheSet(key: string, value: Map<string, FileExposure>): void {
 
 export interface RunChangeCoverage {
   coverage: ChangeCoverage;
-  pr: PrChangeCoverage;
+  /** Null when the changed-unreached detector muted itself: rows are still persisted, but the pull-request section is withheld. */
+  pr: PrChangeCoverage | null;
 }
 
 /** Two repo-relative paths match when equal or one is a path-suffix of the other. */
@@ -324,12 +325,11 @@ export async function computeRunChangeCoverage(db: DbClient, runId: number): Pro
     reachBasis: f.reachBasis,
     ticket: f.ticket,
   }));
-  // A detector that has muted itself on this project drops out of the pull-request
-  // comment first: its changed-unreached rows are neither persisted nor shown.
+  // A muted detector keeps writing its ledger rows — so it still collects triage
+  // verdicts on the Gaps tab and can climb back above the threshold — but drops
+  // out of the pull-request comment (see the return below).
   const muted = await loadMutedDetectors(db, run.projectId).catch(() => new Set<string>());
-  const gaps = detectChangedUnreached(reaches, runId, coverage.windowRuns)
-    .filter((g) => !muted.has(g.detector))
-    .map((g) => rankGap(g, exposure));
+  const gaps = detectChangedUnreached(reaches, runId, coverage.windowRuns).map((g) => rankGap(g, exposure));
   await upsertScenarioGaps(db, run.projectId, gaps, { runId, prNumber }).catch(() => {});
 
   // Import edges for the changed files no test reached, from a shallow scan at the
@@ -338,7 +338,9 @@ export async function computeRunChangeCoverage(db: DbClient, runId: number): Pro
   const importPairs = await scanImportEdges(provider, headSha, unreached).catch(() => []);
   await ingestImportEdges(db, run.projectId, runId, importPairs, { branch: branchTag }).catch(() => {});
 
-  return { coverage, pr: toPrChangeCoverage(coverage) };
+  // Withhold the pull-request "Uncovered changes" section when its detector is
+  // muted; the rows are already persisted above so the detector can still recover.
+  return { coverage, pr: muted.has('changed-unreached') ? null : toPrChangeCoverage(coverage) };
 }
 
 /**

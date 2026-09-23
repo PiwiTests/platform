@@ -156,14 +156,28 @@ describe('reopenExpiredSnoozes / listAcceptedUnwritten', () => {
 });
 
 describe('computeScenarioGaps snooze + accepted lifecycle', () => {
-  test('an "until the node changes" snooze reopens once the node is seen in a later run', async () => {
-    // A finding on a route node last seen in run 5.
+  test('an "until the node changes" snooze reopens only when the node\'s edge shape changes', async () => {
+    // A finding on a route node with one incident edge, so it has a shape to fingerprint.
     await db.insert(schema.graphNodes).values({
       projectId: 1,
       kind: 'route',
       key: 'GET /api/cart',
       origin: 'observed',
       lastSeenRunId: 5,
+      lastSeenAt: new Date(),
+    });
+    await db.insert(schema.testCases).values([
+      { id: 1, projectId: 1, title: 'reaches cart', filePath: 'cart.spec.ts' },
+      { id: 2, projectId: 1, title: 'also reaches cart', filePath: 'cart2.spec.ts' },
+    ]);
+    await db.insert(schema.graphEdges).values({
+      projectId: 1,
+      fromKind: 'test',
+      fromKey: '1',
+      toKind: 'route',
+      toKey: 'GET /api/cart',
+      kind: 'reaches',
+      confidence: 1,
       lastSeenAt: new Date(),
     });
     await upsertScenarioGaps(
@@ -191,17 +205,65 @@ describe('computeScenarioGaps snooze + accepted lifecycle', () => {
     await triageGap(db, 1, gap!.id, { verb: 'snooze', snooze: 'until-node-changes' });
     let [row] = await db.select().from(schema.scenarioGaps).where(eq(schema.scenarioGaps.id, gap!.id));
     expect(row!.status).toBe('snoozed');
-    expect(row!.snoozedAtRunId).toBe(5);
+    expect(row!.snoozedUntil).toBeNull();
+    expect(row!.snoozedAtSignature).not.toBeNull();
 
-    // The node is exercised again in a later run.
+    // Re-observing the node in a later run without changing its edges does not wake it.
     await db
       .update(schema.graphNodes)
       .set({ lastSeenRunId: 6 })
       .where(and(eq(schema.graphNodes.kind, 'route'), eq(schema.graphNodes.key, 'GET /api/cart')));
     await computeScenarioGaps(db, 1);
     [row] = await db.select().from(schema.scenarioGaps).where(eq(schema.scenarioGaps.id, gap!.id));
+    expect(row!.status).toBe('snoozed');
+
+    // A second test now reaches the route — the node's edge shape changed, so it wakes.
+    await db.insert(schema.graphEdges).values({
+      projectId: 1,
+      fromKind: 'test',
+      fromKey: '2',
+      toKind: 'route',
+      toKey: 'GET /api/cart',
+      kind: 'reaches',
+      confidence: 1,
+      lastSeenAt: new Date(),
+    });
+    await computeScenarioGaps(db, 1);
+    [row] = await db.select().from(schema.scenarioGaps).where(eq(schema.scenarioGaps.id, gap!.id));
     expect(row!.status).toBe('open');
-    expect(row!.snoozedAtRunId).toBeNull();
+    expect(row!.snoozedAtSignature).toBeNull();
+  });
+
+  test('an "until the node changes" snooze on a non-node subject falls back to a fixed length', async () => {
+    // A test:-subject gap is not a trackable graph node, so it must not snooze forever.
+    await upsertScenarioGaps(
+      db,
+      1,
+      [
+        {
+          detector: 'orphan-test',
+          kind: 'gap',
+          class: 'fragile',
+          key: 'test:42',
+          title: 'orphan',
+          evidence: ['x'],
+          confidence: 0.4,
+          factors: null as never,
+          score: 0.1,
+        },
+      ],
+      {},
+    );
+    const [gap] = await db
+      .select({ id: schema.scenarioGaps.id })
+      .from(schema.scenarioGaps)
+      .where(eq(schema.scenarioGaps.detector, 'orphan-test'));
+    await triageGap(db, 1, gap!.id, { verb: 'snooze', snooze: 'until-node-changes' });
+    const [row] = await db.select().from(schema.scenarioGaps).where(eq(schema.scenarioGaps.id, gap!.id));
+    expect(row!.status).toBe('snoozed');
+    expect(row!.snoozedAtSignature).toBeNull();
+    // A fixed wake time, not a snooze that could never wake.
+    expect(row!.snoozedUntil!.getTime()).toBeGreaterThan(Date.now());
   });
 
   test('an accepted gap no longer detected closes so the inbox drains', async () => {

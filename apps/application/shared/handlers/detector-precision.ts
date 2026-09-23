@@ -9,9 +9,8 @@
  * gaps and the manual reaches edges a covered-by wrote.
  */
 
-import { and, eq, isNull } from 'drizzle-orm';
-import { graphEdges, scenarioGaps } from '../../server/database/schema';
-import { subjectFromGapKey } from './scenario-gaps';
+import { eq } from 'drizzle-orm';
+import { scenarioGaps } from '../../server/database/schema';
 import type { DrizzleDB } from './db';
 
 /** A detector mutes itself below this precision, once it has enough verdicts. */
@@ -62,46 +61,31 @@ export function computeDetectorPrecision(verdicts: DetectorVerdict[]): DetectorP
 }
 
 /**
- * Load a project's per-detector precision from its triage verdicts: accepted
- * gaps and covered-by gaps (a manual reaches edge into the subject, not
- * dismissed) count for; dismissed-as-wrong counts against.
+ * Load a project's per-detector precision from its triage verdicts. A verdict is
+ * the action a human took, recorded durably on the gap, not a reading of its
+ * current status: a gap that was **accepted** or marked **covered-by** counts
+ * *for* its detector even after it later closes, and a gap **dismissed as wrong**
+ * counts *against*. A covered-by credits only the gap it was given on (its own
+ * `covered_at`), never every detector that happens to share the subject node.
  */
 export async function loadDetectorPrecision(db: DrizzleDB, projectId: number): Promise<DetectorPrecision[]> {
   const rows = await db
     .select({
       detector: scenarioGaps.detector,
-      key: scenarioGaps.key,
       status: scenarioGaps.status,
       dismissReason: scenarioGaps.dismissReason,
+      acceptedAt: scenarioGaps.acceptedAt,
+      coveredAt: scenarioGaps.coveredAt,
     })
     .from(scenarioGaps)
     .where(eq(scenarioGaps.projectId, projectId));
 
-  // Subjects a covered-by manual reaches edge points at — the covered-by "for" signal.
-  const manualEdges = await db
-    .select({ toKind: graphEdges.toKind, toKey: graphEdges.toKey })
-    .from(graphEdges)
-    .where(
-      and(
-        eq(graphEdges.projectId, projectId),
-        eq(graphEdges.kind, 'reaches'),
-        eq(graphEdges.origin, 'manual'),
-        isNull(graphEdges.branch),
-      ),
-    );
-  const coveredNodes = new Set(manualEdges.map((e) => `${e.toKind}\x00${e.toKey}`));
-
   const verdicts: DetectorVerdict[] = [];
   for (const r of rows) {
-    if (r.status === 'accepted') {
-      verdicts.push({ detector: r.detector, verdict: 'for' });
-    } else if (r.status === 'dismissed' && r.dismissReason === 'wrong') {
+    if (r.status === 'dismissed' && r.dismissReason === 'wrong') {
       verdicts.push({ detector: r.detector, verdict: 'against' });
-    } else if (r.status !== 'dismissed') {
-      const subject = subjectFromGapKey(r.key);
-      if (coveredNodes.has(`${subject.kind}\x00${subject.key}`)) {
-        verdicts.push({ detector: r.detector, verdict: 'for' });
-      }
+    } else if (r.status === 'accepted' || r.acceptedAt != null || r.coveredAt != null) {
+      verdicts.push({ detector: r.detector, verdict: 'for' });
     }
   }
   return computeDetectorPrecision(verdicts);

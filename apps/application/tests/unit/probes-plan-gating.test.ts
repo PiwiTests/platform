@@ -66,17 +66,34 @@ beforeEach(async () => {
 });
 
 describe('buildProbePlanForProject server-probes gating', () => {
-  test('passes the project settings through when server-probes is applicable and undeclined', async () => {
+  test('passes the project settings through, and server items get a real share of the budget', async () => {
     await seedProject(1, { serverTrace: true });
+    // A few more reaching tests so the client plan cannot claim the whole budget.
+    for (let i = 10; i < 14; i++) {
+      await db.insert(schema.testCases).values({ id: i, projectId: 1, filePath: `t${i}.spec.ts`, title: `t${i}` });
+      await db.insert(schema.graphEdges).values({
+        projectId: 1,
+        fromKind: 'test',
+        fromKey: String(i),
+        toKind: 'route',
+        toKey: 'GET /api/orders',
+        kind: 'reaches',
+      });
+    }
 
     // A server trace makes the capability applicable; enabled settings, no
     // decline and no evidence yet resolve to `available`.
     expect((await resolveProjectStates(db, 1))['server-probes']).toBe('available');
 
     // The gated plan is exactly the plan built with the project's own settings.
-    const gated = await buildProbePlanForProject(db, 1);
-    const withSettings = await buildProbePlan(db, 1, { serverProbes: ENABLED });
+    const gated = await buildProbePlanForProject(db, 1, { budget: 4 });
+    const withSettings = await buildProbePlan(db, 1, { serverProbes: ENABLED, budget: 4 });
     expect(gated.items).toEqual(withSettings.items);
+
+    // With server probes enabled and enough candidates, the plan carries level-two
+    // items — they are not starved by a full client plan.
+    expect(gated.items.some((i) => i.level === 'server')).toBe(true);
+    expect(gated.items.length).toBeLessThanOrEqual(4);
   });
 
   test('drops the server settings when the project declined server-probes', async () => {
