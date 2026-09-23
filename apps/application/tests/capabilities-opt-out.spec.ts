@@ -113,21 +113,27 @@ test.describe.serial('Capabilities opt-out', () => {
     const testMap = (caps.items as Array<{ id: string; state: string }>).find((i) => i.id === 'test-map');
     expect(testMap?.state).toBe('undecided');
 
+    // The tab strip renders the item as a button (onSelect, no `to`); match a
+    // link too in case Nuxt UI changes that, so the assertion tracks the tab.
+    const gapsTab = page
+      .getByRole('button', { name: 'Gaps', exact: true })
+      .or(page.getByRole('link', { name: 'Gaps', exact: true }));
+
     await page.goto(`/projects/${projectId}?tab=runs`);
     await waitForHydration(page);
-    await expect(page.getByRole('button', { name: 'Gaps', exact: true })).toBeVisible();
+    await expect(gapsTab).toBeVisible();
 
     // Decline at project level → the tab disappears.
     await request.patch(`/api/projects/${projectId}/capabilities`, { data: { decisions: { 'test-map': 'declined' } } });
     await page.reload();
     await waitForHydration(page);
-    await expect(page.getByRole('button', { name: 'Gaps', exact: true })).toHaveCount(0);
+    await expect(gapsTab).toHaveCount(0);
 
     // Reconsider (clear the decision) → the tab returns.
     await request.patch(`/api/projects/${projectId}/capabilities`, { data: { decisions: { 'test-map': null } } });
     await page.reload();
     await waitForHydration(page);
-    await expect(page.getByRole('button', { name: 'Gaps', exact: true })).toBeVisible();
+    await expect(gapsTab).toBeVisible();
   });
 
   test('a stored project decision is preselected in the edit form', async ({ page, request }) => {
