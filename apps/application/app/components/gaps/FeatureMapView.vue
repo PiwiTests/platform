@@ -10,6 +10,7 @@
  */
 import { gapClassSeverity } from '#shared/gap-classes';
 import { gapClassBadgeColor, gapClassFill } from '~/utils/gap-classes';
+import { errorMessage } from '~/utils';
 
 interface MapFeature {
   key: string;
@@ -34,6 +35,7 @@ const emit = defineEmits<{ (e: 'select', node: { kind: string; key: string }): v
 
 const map = ref<FeatureMap | null>(null);
 const loading = ref(false);
+const loadError = ref<string | null>(null);
 const hovered = ref<string | null>(null);
 
 let requestToken = 0;
@@ -46,8 +48,13 @@ async function load() {
     );
     if (token !== requestToken) return;
     map.value = result;
-  } catch {
-    if (token === requestToken) map.value = null;
+    loadError.value = null;
+  } catch (err) {
+    // A failed fetch is an error, not an empty map — show why, not "no features yet".
+    if (token === requestToken) {
+      map.value = null;
+      loadError.value = errorMessage(err);
+    }
   } finally {
     if (token === requestToken) loading.value = false;
   }
@@ -152,7 +159,12 @@ const legend = computed(() => {
 
 <template>
   <div class="w-full" data-shot="feature-map">
-    <LoadingState v-if="loading && !map" />
+    <ErrorState v-if="loadError" :text="`Couldn't load the feature map: ${loadError}`">
+      <template #action>
+        <UButton size="xs" color="neutral" variant="outline" label="Retry" @click="load" />
+      </template>
+    </ErrorState>
+    <LoadingState v-else-if="loading && !map" />
     <EmptyState
       v-else-if="!map || map.features.length === 0"
       icon="i-lucide-map"

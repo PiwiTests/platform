@@ -377,7 +377,7 @@ function statusBorderClass(status: string): string {
             <NuxtLink
               v-for="gap in inboxGaps"
               :key="gap.id"
-              :to="`/projects/${gap.projectId}?tab=gaps`"
+              :to="`/projects/${gap.projectId}?tab=gaps&gapStatus=accepted`"
               class="flex items-center gap-3 py-3 hover:bg-gray-50 dark:hover:bg-gray-800/60 rounded transition-colors"
             >
               <UBadge color="neutral" variant="subtle" size="sm">{{ gap.class }}</UBadge>
