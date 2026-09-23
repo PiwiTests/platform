@@ -519,6 +519,13 @@
       "when": 1790063153501,
       "tag": "0073_cynical_dazzler",
       "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1790183811733,
+      "tag": "0074_quiet_professor_monster",
+      "breakpoints": true
     }
   ]
 }

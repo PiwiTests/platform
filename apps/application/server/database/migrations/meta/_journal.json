@@ -512,6 +512,13 @@
       "when": 1790063152448,
       "tag": "0072_complete_captain_stacy",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "6",
+      "when": 1790183810712,
+      "tag": "0073_ancient_makkari",
+      "breakpoints": true
     }
   ]
 }
