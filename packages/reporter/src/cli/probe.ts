@@ -12,6 +12,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { resolveProjectId } from '../internal/support/selection-client.js';
+import { PIWI_ENV_KEYS, PIWI_PROBE_ENV } from '../internal/config/env.js';
 import type { ProbePlan } from '../internal/probe/plan.js';
 import type { ProbeOutcomeLine } from '../internal/probe/mode.js';
 
@@ -119,6 +120,7 @@ export async function runProbe(argv: string[]): Promise<number> {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-probe-'));
   const planFile = path.join(dir, 'plan.json');
   const resultsFile = path.join(dir, 'results.jsonl');
+  const runOutputFile = path.join(dir, 'run.json');
   fs.writeFileSync(planFile, JSON.stringify(plan));
   fs.writeFileSync(resultsFile, '');
 
@@ -134,9 +136,12 @@ export async function runProbe(argv: string[]): Promise<number> {
 
   const childEnv: NodeJS.ProcessEnv = {
     ...env,
-    PIWI_PROBE: '1',
-    PIWI_PROBE_PLAN: planFile,
-    PIWI_PROBE_RESULTS: resultsFile,
+    [PIWI_PROBE_ENV.flag]: '1',
+    [PIWI_PROBE_ENV.plan]: planFile,
+    [PIWI_PROBE_ENV.results]: resultsFile,
+    // The reporter creates the probe run and knows its server-assigned id; have
+    // it write the run output here so the results POST can name the run.
+    [PIWI_ENV_KEYS.outputFile]: runOutputFile,
   };
   // A probe run's tests fail by design when they notice the fault, so Playwright
   // exiting non-zero is expected and is not treated as a command error.
@@ -156,11 +161,21 @@ export async function runProbe(argv: string[]): Promise<number> {
     return EXIT_OK;
   }
 
+  // The reporter wrote the run's server-assigned id to the output file; pass it
+  // so the dashboard links the outcomes (and their ledger) to the probe run.
+  let runId: number | null = null;
+  try {
+    const out = JSON.parse(fs.readFileSync(runOutputFile, 'utf8')) as { runId?: unknown };
+    if (typeof out.runId === 'number') runId = out.runId;
+  } catch {
+    // No output file (the run never registered) — post without a runId.
+  }
+
   try {
     const res = await fetch(`${serverUrl}/api/projects/${projectId}/probes/results`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...authHeaders },
-      body: JSON.stringify({ results }),
+      body: JSON.stringify({ runId, results }),
     });
     if (!res.ok) throw new Error(`dashboard returned ${res.status}`);
     const body = (await res.json()) as { recorded?: number };
