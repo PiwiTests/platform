@@ -151,6 +151,8 @@ export interface PrChangeCoverage {
   windowRuns: number;
   baseBranch: string | null;
   tickets: PrChangeCoverageTicket[];
+  /** True when the diff had more changed files than the provider cap returned. */
+  filesTruncated?: boolean;
 }
 
 /** Max uncovered files listed in the pull-request comment. */
@@ -163,7 +165,7 @@ const MAX_UNCOVERED_LISTED = 10;
  */
 export function renderChangeCoverage(cc: PrChangeCoverage): string | null {
   if (cc.totalFiles === 0) return null;
-  const base = cc.baseBranch ? `\`${escapeCell(cc.baseBranch)}\`` : 'the default branch';
+  const base = cc.baseBranch ? codeSpan(cc.baseBranch) : 'the default branch';
   const preface = `Observed reach, not instrumented coverage. Numbers from this run and the last ${cc.windowRuns} on ${base}.`;
 
   if (cc.uncoveredFiles === 0) {
@@ -187,7 +189,7 @@ export function renderChangeCoverage(cc: PrChangeCoverage): string | null {
       }
       if (listed >= MAX_UNCOVERED_LISTED) continue;
       listed++;
-      let line = `- \`${escapeCell(file.filePath)}\` · changed (+${file.additions} −${file.deletions}) · 0 tests in ${cc.windowRuns} runs`;
+      let line = `- ${codeSpan(file.filePath)} · changed (+${file.additions} −${file.deletions}) · 0 tests in ${cc.windowRuns} runs`;
       if (file.draftTitle) line += `\n  → *${escapeInline(file.draftTitle)}* · draft`;
       lines.push(line);
     }
@@ -198,6 +200,9 @@ export function renderChangeCoverage(cc: PrChangeCoverage): string | null {
 
   const hidden = cc.uncoveredFiles - listed;
   if (hidden > 0) blocks.push(`…and ${hidden} more`);
+  if (cc.filesTruncated) {
+    blocks.push('The diff was capped, so more files changed than are counted here.');
+  }
   if (historyOnly > 0) {
     blocks.push(
       `${historyOnly} ${historyOnly === 1 ? 'file' : 'files'} reached only in the last ${cc.windowRuns} runs, not this run.`,
@@ -222,6 +227,21 @@ export const PR_EXCERPT_MAX = 200;
 /** Escape the characters that would break out of a markdown table cell. */
 function escapeCell(text: string): string {
   return text.replace(/\|/g, '\\|').replace(/\r?\n/g, ' ').trim();
+}
+
+/**
+ * Wrap arbitrary text as an inline code span that no backtick run can break out
+ * of. A backtick inside the text (a file path or branch name may carry one) would
+ * otherwise close the span and inject markdown into the comment; the CommonMark
+ * rule is a fence one backtick longer than the longest run inside, padded with a
+ * space so a leading/trailing backtick is not eaten.
+ */
+function codeSpan(text: string): string {
+  const clean = escapeCell(text);
+  const longest = Math.max(0, ...(clean.match(/`+/g) ?? []).map((run) => run.length));
+  const fence = '`'.repeat(longest + 1);
+  const pad = longest > 0 ? ' ' : '';
+  return `${fence}${pad}${clean}${pad}${fence}`;
 }
 
 /** Escape inline markdown so a headline's locator quotes and underscores render literally. */
@@ -259,9 +279,9 @@ function renderFailureList(entries: PrFailureEntry[], runUrl: string): string {
     const link = origin
       ? `[${escapeCell(entry.title)}](${origin}/test-run-cases/${entry.executionId})`
       : escapeCell(entry.title);
-    const parts = [`- ${link} — \`${escapeCell(entry.filePath)}\``];
+    const parts = [`- ${link} — ${codeSpan(entry.filePath)}`];
     if (entry.owner) parts.push(`_owner: ${escapeCell(entry.owner)}_`);
-    if (entry.tags?.length) parts.push(entry.tags.map((tag) => `\`@${escapeCell(tag)}\``).join(' '));
+    if (entry.tags?.length) parts.push(entry.tags.map((tag) => codeSpan(`@${tag}`)).join(' '));
     let line = parts.join(' · ');
     if (entry.headline) line += `\n  **${escapeInline(entry.headline)}**`;
     if (entry.errorExcerpt) line += `\n  \`\`\`\n  ${escapeCell(entry.errorExcerpt)}\n  \`\`\``;
@@ -269,11 +289,11 @@ function renderFailureList(entries: PrFailureEntry[], runUrl: string): string {
       const pr = entry.healPrUrl ? `[#${entry.healPrNumber}](${entry.healPrUrl})` : `#${entry.healPrNumber}`;
       line += `\n  🩹 Piwi opened ${pr} to heal this locator.`;
     } else if (entry.suggestedLocator) {
-      line += `\n  💡 Try \`${escapeCell(entry.suggestedLocator)}\` instead.`;
+      line += `\n  💡 Try ${codeSpan(entry.suggestedLocator)} instead.`;
     }
     if (entry.flakyOnDefaultBranch) {
       const pct = Math.round(entry.flakyOnDefaultBranch.flakinessRate * 100);
-      line += `\n  🎲 Also flaky on \`${escapeCell(entry.flakyOnDefaultBranch.branch)}\` (~${pct}% of recent runs) — likely not yours.`;
+      line += `\n  🎲 Also flaky on ${codeSpan(entry.flakyOnDefaultBranch.branch)} (~${pct}% of recent runs) — likely not yours.`;
     }
     if (entry.issue) {
       line += `\n  🎫 Tracked in [${escapeCell(entry.issue.key)}](${entry.issue.url}).`;
@@ -322,7 +342,7 @@ export function buildPrComment(input: PrSummaryInput): string {
   }
 
   if (input.splitLocks && input.splitLocks.length > 0) {
-    const names = input.splitLocks.map((lock) => `\`${escapeCell(lock)}\``).join(', ');
+    const names = input.splitLocks.map((lock) => codeSpan(lock)).join(', ');
     const plural = input.splitLocks.length === 1 ? 'Lock' : 'Locks';
     sections.push(
       `🔓 ${plural} ${names} held on two shards at once — locks serialize only within one \`playwright test\` process, so sharded runs don't coordinate. Shard with \`piwi run --shard\` (lock-aware) to keep each lock in one shard.`,

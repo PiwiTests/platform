@@ -372,6 +372,39 @@ describe('change coverage section', () => {
     expect(section).toContain('All 7 changed files have observed reach');
   });
 
+  test('a backtick in a file path cannot break out of the code span', () => {
+    const section = renderChangeCoverage(
+      coverage({
+        totalFiles: 1,
+        uncoveredFiles: 1,
+        reachedFiles: 0,
+        ticketCount: 0,
+        tickets: [
+          {
+            ticket: null,
+            files: [
+              {
+                filePath: 'src/`rm -rf`/x.ts',
+                additions: 1,
+                deletions: 0,
+                reachedInRun: false,
+                reachedCountHistory: 0,
+              },
+            ],
+          },
+        ],
+      }),
+    )!;
+    // The path is fenced by a two-backtick run and padded, so the inner single
+    // backticks render literally instead of closing the span and injecting markdown.
+    expect(section).toContain('`` src/`rm -rf`/x.ts ``');
+  });
+
+  test('notes when the diff file list was truncated', () => {
+    const section = renderChangeCoverage(coverage({ filesTruncated: true }))!;
+    expect(section).toContain('more files changed than are counted here');
+  });
+
   test('caps the uncovered list across ticket groups and reports the remainder', () => {
     const files = Array.from({ length: 40 }, (_, i) => ({
       filePath: `src/file-${i}.ts`,
