@@ -1,0 +1,324 @@
+/**
+ * Locator chains: the Playwright locator expressions the test runner prints for
+ * every locator step (`getByRole('form', { name: 'Shipping' }).getByLabel('Country')`),
+ * parsed into calls without `eval` and rendered back in one canonical form.
+ *
+ * The grammar is the JavaScript form Playwright's own `asLocator` produces:
+ * method calls joined by `.`, with string, regex, number, boolean, object and
+ * nested-locator arguments (`filter({ has: getByRole('combobox') })`). Methods
+ * outside {@link LOCATOR_CHAIN_METHODS} are refused, so a parsed chain can be
+ * rebuilt against a real page through a fixed list of calls.
+ */
+
+/** One argument of a locator call. */
+export type LocatorArg =
+  | { type: 'string'; value: string }
+  | { type: 'regex'; source: string; flags: string }
+  | { type: 'number'; value: number }
+  | { type: 'boolean'; value: boolean }
+  | { type: 'object'; entries: Array<[string, LocatorArg]> }
+  | { type: 'chain'; chain: LocatorChain };
+
+export interface LocatorCall {
+  method: string;
+  args: LocatorArg[];
+}
+
+export interface LocatorChain {
+  calls: LocatorCall[];
+}
+
+/** Calls that locate elements. Each one starts a new scope inside the previous link. */
+export const LOCATING_METHODS: ReadonlySet<string> = new Set([
+  'getByRole',
+  'getByTestId',
+  'getByText',
+  'getByLabel',
+  'getByPlaceholder',
+  'getByAltText',
+  'getByTitle',
+  'locator',
+  'frameLocator',
+]);
+
+/** Calls that narrow, combine or re-root the current link without locating anew. */
+export const NARROWING_METHODS: ReadonlySet<string> = new Set([
+  'filter',
+  'first',
+  'last',
+  'nth',
+  'and',
+  'or',
+  'visible',
+  'contentFrame',
+  'owner',
+]);
+
+/** Every method a chain may contain. */
+export const LOCATOR_CHAIN_METHODS: ReadonlySet<string> = new Set([...LOCATING_METHODS, ...NARROWING_METHODS]);
+
+/** Raised for any expression outside the supported grammar; the message says where. */
+export class LocatorParseError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'LocatorParseError';
+  }
+}
+
+class Parser {
+  private i = 0;
+
+  constructor(private readonly src: string) {}
+
+  parseTopLevel(): LocatorChain {
+    const chain = this.parseChain();
+    this.skipSpace();
+    if (this.i < this.src.length) this.fail('unexpected text');
+    return chain;
+  }
+
+  private fail(message: string): never {
+    throw new LocatorParseError(`${message} at "${this.src.slice(this.i, this.i + 20)}"`);
+  }
+
+  private skipSpace(): void {
+    while (this.i < this.src.length && /\s/.test(this.src[this.i]!)) this.i++;
+  }
+
+  private peek(): string | undefined {
+    return this.src[this.i];
+  }
+
+  private expect(ch: string): void {
+    this.skipSpace();
+    if (this.src[this.i] !== ch) this.fail(`expected "${ch}"`);
+    this.i++;
+  }
+
+  private identifier(): string {
+    const m = /^[A-Za-z_$][\w$]*/.exec(this.src.slice(this.i));
+    if (!m) this.fail('expected a name');
+    this.i += m[0].length;
+    return m[0];
+  }
+
+  parseChain(): LocatorChain {
+    this.skipSpace();
+    const calls: LocatorCall[] = [];
+    for (;;) {
+      calls.push(this.parseCall(calls.length === 0));
+      this.skipSpace();
+      if (this.peek() !== '.') break;
+      this.i++;
+    }
+    return { calls };
+  }
+
+  private parseCall(first: boolean): LocatorCall {
+    this.skipSpace();
+    const method = this.identifier();
+    if (!LOCATOR_CHAIN_METHODS.has(method)) this.fail(`unsupported method ${method}()`);
+    if (first && !LOCATING_METHODS.has(method)) this.fail(`${method}() needs a locator before it`);
+    this.expect('(');
+    const args: LocatorArg[] = [];
+    this.skipSpace();
+    if (this.peek() === ')') {
+      this.i++;
+      return { method, args };
+    }
+    for (;;) {
+      args.push(this.parseValue());
+      this.skipSpace();
+      if (this.peek() === ',') {
+        this.i++;
+        this.skipSpace();
+        if (this.peek() === ')') {
+          this.i++;
+          break;
+        }
+        continue;
+      }
+      this.expect(')');
+      break;
+    }
+    return { method, args };
+  }
+
+  private parseValue(): LocatorArg {
+    this.skipSpace();
+    const ch = this.peek();
+    if (ch === "'" || ch === '"' || ch === '`') return { type: 'string', value: this.parseString() };
+    if (ch === '/') return this.parseRegex();
+    if (ch === '{') return this.parseObject();
+    if (ch !== undefined && /[-\d]/.test(ch)) {
+      const m = /^-?\d+(?:\.\d+)?/.exec(this.src.slice(this.i));
+      if (!m) this.fail('expected a number');
+      this.i += m[0].length;
+      return { type: 'number', value: Number(m[0]) };
+    }
+    const rest = this.src.slice(this.i);
+    if (/^true\b/.test(rest)) {
+      this.i += 4;
+      return { type: 'boolean', value: true };
+    }
+    if (/^false\b/.test(rest)) {
+      this.i += 5;
+      return { type: 'boolean', value: false };
+    }
+    if (/^[A-Za-z_$]/.test(rest)) return { type: 'chain', chain: this.parseChain() };
+    return this.fail('expected a value');
+  }
+
+  private parseString(): string {
+    const quote = this.src[this.i]!;
+    let out = '';
+    this.i++;
+    while (this.i < this.src.length) {
+      const c = this.src[this.i]!;
+      if (c === '\\') {
+        const next = this.src[this.i + 1];
+        if (next === undefined) break;
+        out += next === 'n' ? '\n' : next === 't' ? '\t' : next;
+        this.i += 2;
+        continue;
+      }
+      if (c === quote) {
+        this.i++;
+        return out;
+      }
+      out += c;
+      this.i++;
+    }
+    return this.fail('unterminated string');
+  }
+
+  private parseRegex(): LocatorArg {
+    let j = this.i + 1;
+    let inClass = false;
+    while (j < this.src.length) {
+      const c = this.src[j]!;
+      if (c === '\\') {
+        j += 2;
+        continue;
+      }
+      if (c === '[') inClass = true;
+      else if (c === ']') inClass = false;
+      else if (c === '/' && !inClass) break;
+      j++;
+    }
+    if (j >= this.src.length) this.fail('unterminated regex');
+    const source = this.src.slice(this.i + 1, j);
+    const flags = /^[a-z]*/.exec(this.src.slice(j + 1))![0];
+    this.i = j + 1 + flags.length;
+    return { type: 'regex', source, flags };
+  }
+
+  private parseObject(): LocatorArg {
+    this.expect('{');
+    const entries: Array<[string, LocatorArg]> = [];
+    for (;;) {
+      this.skipSpace();
+      if (this.peek() === '}') {
+        this.i++;
+        break;
+      }
+      const ch = this.peek();
+      const key = ch === "'" || ch === '"' ? this.parseString() : this.identifier();
+      this.expect(':');
+      entries.push([key, this.parseValue()]);
+      this.skipSpace();
+      if (this.peek() === ',') {
+        this.i++;
+        continue;
+      }
+      this.expect('}');
+      break;
+    }
+    return { type: 'object', entries };
+  }
+}
+
+/**
+ * Parse a locator expression. A leading `page.` / `await page.` is ignored.
+ * Throws {@link LocatorParseError} on anything outside the grammar.
+ */
+export function parseLocatorChain(expr: string): LocatorChain {
+  const trimmed = expr.trim().replace(/^(?:await\s+)?(?:this\.)?page\./, '');
+  if (!trimmed) throw new LocatorParseError('empty expression');
+  return new Parser(trimmed).parseTopLevel();
+}
+
+/** {@link parseLocatorChain}, returning null instead of throwing. */
+export function tryParseLocatorChain(expr: string): LocatorChain | null {
+  try {
+    return parseLocatorChain(expr);
+  } catch {
+    return null;
+  }
+}
+
+function quote(value: string): string {
+  return `'${value.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n')}'`;
+}
+
+function renderArg(arg: LocatorArg): string {
+  switch (arg.type) {
+    case 'string':
+      return quote(arg.value);
+    case 'regex':
+      return `/${arg.source}/${arg.flags}`;
+    case 'number':
+    case 'boolean':
+      return String(arg.value);
+    case 'object':
+      return arg.entries.length === 0
+        ? '{}'
+        : `{ ${arg.entries.map(([k, v]) => `${/^[A-Za-z_$][\w$]*$/.test(k) ? k : quote(k)}: ${renderArg(v)}`).join(', ')} }`;
+    case 'chain':
+      return renderLocatorChain(arg.chain);
+  }
+}
+
+/** Render a call in canonical form: single quotes, `{ key: value }` objects. */
+export function renderLocatorCall(call: LocatorCall): string {
+  return `${call.method}(${call.args.map(renderArg).join(', ')})`;
+}
+
+/** Render a chain in canonical form, the same text Playwright prints for it. */
+export function renderLocatorChain(chain: LocatorChain): string {
+  return chain.calls.map(renderLocatorCall).join('.');
+}
+
+/** Canonical text of an expression, or null when it does not parse. */
+export function canonicalLocator(expr: string): string | null {
+  const chain = tryParseLocatorChain(expr);
+  return chain ? renderLocatorChain(chain) : null;
+}
+
+/**
+ * The call that picks the final element: the last locating call. Two chains
+ * with the same target call but different containers
+ * (`getByRole('form').getByLabel('Country')` and `getByLabel('Country')`)
+ * aim at the same kind of element.
+ */
+export function locatorTarget(chain: LocatorChain): string {
+  for (let i = chain.calls.length - 1; i >= 0; i--) {
+    if (LOCATING_METHODS.has(chain.calls[i]!.method)) return renderLocatorCall(chain.calls[i]!);
+  }
+  return renderLocatorCall(chain.calls[0]!);
+}
+
+/**
+ * The containers a chain searches inside: every prefix that ends right before
+ * a locating call. `locator('.field').filter({ hasText: 'Country' }).locator('select')`
+ * has one scope, `locator('.field').filter({ hasText: 'Country' })`.
+ */
+export function locatorScopes(chain: LocatorChain): string[] {
+  const out: string[] = [];
+  for (let i = 1; i < chain.calls.length; i++) {
+    if (LOCATING_METHODS.has(chain.calls[i]!.method)) {
+      out.push(renderLocatorChain({ calls: chain.calls.slice(0, i) }));
+    }
+  }
+  return out;
+}
