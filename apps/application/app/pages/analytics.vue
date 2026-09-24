@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { Component } from 'vue';
 import { ANALYTICS_WIDGETS, ANALYTICS_BANDS, type AnalyticsWidgetId } from '#shared/analytics/registry';
-import { MAX_ANALYTICS_DAYS } from '#shared/analytics/scope';
+import { hasTestFilter } from '#shared/analytics/scope';
 import type { ProjectMenuItem, TestRunForChart } from '~~/types/api';
 import {
   InsightsFeed,
@@ -18,7 +18,13 @@ import {
 
 useHead({ title: 'Analytics - Piwi Dashboard' });
 
-const { state, scopeQuery } = useAnalyticsScope();
+const { state, scope, scopeQuery } = useAnalyticsScope();
+const testFilterActive = computed(() => hasTestFilter(scope.value));
+
+// How the scope resolves: period dates, notes, markers for the trends, and the
+// options of the Tests filter. The trend charts read it through inject.
+const { data: scopeSummary } = await useAnalyticsScopeSummary(() => scopeQuery.value);
+provide(ANALYTICS_SCOPE_SUMMARY, scopeSummary);
 
 // Project options for the scope bar (slim list, same source as the sidebar menu).
 const { data: availableProjects } = await useFetch('/api/projects/menu', {
@@ -63,13 +69,14 @@ const newestRunTime = computed(() => {
 
 const windowHidesData = computed(() => {
   if (newestRunTime.value === null) return false; // no runs at all — a genuine empty state
-  if (state.value.days >= MAX_ANALYTICS_DAYS) return false; // already showing everything
-  const windowStart = Date.now() - state.value.days * 24 * 60 * 60 * 1000;
-  return newestRunTime.value < windowStart;
+  if (state.value.period === 'all') return false; // already showing everything
+  const period = scopeSummary.value?.period;
+  if (!period) return false;
+  return newestRunTime.value < new Date(period.from).getTime();
 });
 
 function widenToAllTime() {
-  state.value = { ...state.value, days: MAX_ANALYTICS_DAYS };
+  state.value = { ...state.value, period: 'all' };
 }
 
 /**
@@ -117,6 +124,7 @@ const bands = computed(() =>
             :available-projects="availableProjects"
             :available-environments="availableEnvironments"
             :available-branches="availableBranches"
+            :summary="scopeSummary"
           />
         </FilterToolbar>
 
@@ -125,7 +133,7 @@ const bands = computed(() =>
           icon="i-lucide-calendar-off"
           color="warning"
           variant="subtle"
-          :title="`No test runs in the last ${state.days} days`"
+          :title="`No test runs in the selected period (${scopeSummary?.period.label ?? state.period})`"
           :description="`Your most recent run was ${formatRelativeTime(newestRunTime)} — the widgets below look empty because the selected range excludes it.`"
           :actions="[
             { label: 'Show all time', color: 'warning', variant: 'solid', size: 'xs', onClick: widenToAllTime },
@@ -140,6 +148,9 @@ const bands = computed(() =>
 
           <div class="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
             <div v-for="widget in band.widgets" :key="widget.id" :class="widget.size === 'full' ? 'xl:col-span-2' : ''">
+              <p v-if="testFilterActive && !widget.testFilters" class="text-xs text-muted mb-1">
+                {{ widget.title }} is not narrowed by the test filter.
+              </p>
               <component :is="WIDGET_COMPONENTS[widget.id]" :query="scopeQuery" />
             </div>
           </div>

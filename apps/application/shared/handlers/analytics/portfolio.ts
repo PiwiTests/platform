@@ -4,34 +4,43 @@ import type { DrizzleDB } from '../db';
 import type { AnalyticsScope } from '../../analytics/scope';
 import type { AnalyticsPortfolioRow } from '../../analytics/types';
 import {
-  fetchScopedProjects,
-  fetchScopedRuns,
+  fetchContextProjects,
+  fetchContextRuns,
   fetchTagsByProject,
-  periodStart,
+  getAnalyticsContext,
   roundRate,
   FAILING_RUN_STATUSES,
   type ProjectAccess,
   type ScopedRun,
 } from './common';
+import { groupRows, loadScalarRows } from './scalar-rows';
 
 const SPARKLINE_RUNS = 20;
 
 /**
- * Per-project health over the period: pass rate (+ delta vs the previous
- * equal-length period), flaky volume, open clusters, failing streak, and the
- * recent-run bars — one row per project the caller can see.
+ * Per-project health over the period: pass rate (+ delta vs the comparison
+ * period), flaky volume, open clusters, failing streak, and the recent-run
+ * bars — one row per project the caller can see. The numbers come from the
+ * scalar rows (rollups, or executions under a test filter); the streak, the
+ * latest run and the bars are the stored runs of the period.
  */
 export async function getAnalyticsPortfolio(
   db: DrizzleDB,
   scope: AnalyticsScope,
   access: ProjectAccess = 'all',
 ): Promise<AnalyticsPortfolioRow[]> {
-  const scopedProjects = await fetchScopedProjects(db, scope, access);
+  const ctx = await getAnalyticsContext(db, scope, access);
+  const scopedProjects = await fetchContextProjects(db, ctx);
   if (scopedProjects.length === 0) return [];
   const projectIds = scopedProjects.map((p) => p.id);
+  const { from, to } = ctx.period;
 
-  const [runs, tagsByProject, clusterRows] = await Promise.all([
-    fetchScopedRuns(db, scope, access, scope.days * 2),
+  const [currentRows, previousRows, runs, tagsByProject, clusterRows] = await Promise.all([
+    loadScalarRows(db, ctx, from.getTime(), to.getTime()),
+    ctx.comparison
+      ? loadScalarRows(db, ctx, ctx.comparison.from.getTime(), ctx.comparison.to.getTime())
+      : Promise.resolve([]),
+    fetchContextRuns(db, ctx, from.getTime(), to.getTime()),
     fetchTagsByProject(db, projectIds),
     db
       .select({ projectId: failureClusters.projectId, openCount: count() })
@@ -50,51 +59,49 @@ export async function getAnalyticsPortfolio(
   const openClustersByProject = new Map<number, number>();
   for (const row of clusterRows) openClustersByProject.set(row.projectId, Number(row.openCount));
 
-  const cutoff = periodStart(scope.days);
-  const currentByProject = new Map<number, ScopedRun[]>();
-  const previousByProject = new Map<number, ScopedRun[]>();
+  const current = groupRows(currentRows, (row) => row.projectId);
+  const previous = groupRows(previousRows, (row) => row.projectId);
+  const runsByProject = new Map<number, ScopedRun[]>();
   for (const run of runs) {
-    const target = run.startTime.getTime() >= cutoff ? currentByProject : previousByProject;
-    const list = target.get(run.projectId) ?? [];
+    const list = runsByProject.get(run.projectId) ?? [];
     list.push(run);
-    target.set(run.projectId, list);
+    runsByProject.set(run.projectId, list);
   }
 
   const rows = scopedProjects.map((project): AnalyticsPortfolioRow => {
-    const current = currentByProject.get(project.id) ?? [];
-    const previous = previousByProject.get(project.id) ?? [];
+    const totals = current.get(project.id);
+    const prevTotals = previous.get(project.id);
+    const projectRuns = runsByProject.get(project.id) ?? [];
 
-    const passRate = sumPassRate(current);
-    const prevPassRate = sumPassRate(previous);
+    const passRate = totals ? roundRate(totals.passedTests, totals.totalTests) : null;
+    const prevPassRate = prevTotals ? roundRate(prevTotals.passedTests, prevTotals.totalTests) : null;
     const passRateDelta =
       passRate !== null && prevPassRate !== null ? Math.round((passRate - prevPassRate) * 10) / 10 : null;
 
-    const durations = current.map((r) => r.duration).filter((d): d is number => d != null && d > 0);
-    const avgRunDurationMs =
-      durations.length > 0 ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length) : null;
-
     let failingStreak = 0;
-    for (let i = current.length - 1; i >= 0; i--) {
-      if (!FAILING_RUN_STATUSES.includes(current[i]!.status)) break;
+    for (let i = projectRuns.length - 1; i >= 0; i--) {
+      if (!FAILING_RUN_STATUSES.includes(projectRuns[i]!.status)) break;
       failingStreak++;
     }
 
-    const latest = current.length > 0 ? current[current.length - 1]! : null;
+    const latest = projectRuns.length > 0 ? projectRuns[projectRuns.length - 1]! : null;
+    const runCount = totals?.runs ?? 0;
 
     return {
       projectId: project.id,
       name: project.name,
       label: project.label,
       tags: tagsByProject.get(project.id) ?? [],
-      runCount: current.length,
+      runCount,
       passRate,
       passRateDelta,
-      flakyTests: current.reduce((sum, r) => sum + (r.flakyTests ?? 0), 0),
-      avgRunDurationMs,
+      flakyTests: totals?.flakyTests ?? 0,
+      avgRunDurationMs:
+        totals && runCount > 0 && totals.durationMs > 0 ? Math.round(totals.durationMs / runCount) : null,
       openClusters: openClustersByProject.get(project.id) ?? 0,
       failingStreak,
       latestRun: latest ? { id: latest.id, status: latest.status, startTime: latest.startTime } : null,
-      recentRuns: current.slice(-SPARKLINE_RUNS).map((r) => ({
+      recentRuns: projectRuns.slice(-SPARKLINE_RUNS).map((r) => ({
         id: r.id,
         status: r.status,
         passedTests: r.passedTests ?? 0,
@@ -112,14 +119,4 @@ export async function getAnalyticsPortfolio(
     if (b.failingStreak !== a.failingStreak) return b.failingStreak - a.failingStreak;
     return (a.passRate ?? 101) - (b.passRate ?? 101);
   });
-}
-
-function sumPassRate(runs: ScopedRun[]): number | null {
-  let passed = 0;
-  let total = 0;
-  for (const run of runs) {
-    passed += run.passedTests ?? 0;
-    total += run.totalTests ?? 0;
-  }
-  return roundRate(passed, total);
 }

@@ -18,6 +18,7 @@ const { getProjectsOverview, getProjectPerformance, getProjectSlowTests } =
 const { getRecentTestRuns } = await import('../../shared/handlers/test-runs');
 const { parseAnalyticsScope } = await import('../../shared/analytics/scope');
 const { PROBE_RUN_METADATA_KEY } = await import('../../shared/handlers/probes');
+const { backfillDailyRollups } = await import('../../shared/handlers/analytics/rollups');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -79,6 +80,7 @@ beforeAll(async () => {
       isNewRegression: 1,
     },
   ]);
+  await backfillDailyRollups(db as any);
 });
 
 describe('probe runs are left out of analytics and project numbers', () => {

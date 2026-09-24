@@ -75,11 +75,11 @@ export const HELP_TOPICS = {
   },
   'analytics.heatmap': {
     title: 'Pass rate heatmap',
-    text: 'Each cell is the aggregate pass rate of one project over one time bucket — green at 90% or more, amber from 50%, red below 50%, gray means no runs. Longer periods use wider buckets.',
+    text: 'Each cell is the aggregate pass rate of one project over one time bucket — green at 90% or more, amber from 50%, red below 50%, gray means no runs. A cell is one UTC day, or a wider bucket on long periods.',
   },
   'analytics.ci-time': {
     title: 'CI time',
-    text: 'Total minutes your test runs consumed, over time, with the change vs the previous equal-length period. Steady growth here is a capacity conversation.',
+    text: 'Total minutes your test runs consumed, over time, with the change against the comparison period. Steady growth here is a capacity conversation.',
   },
   'analytics.wasted-time': {
     title: 'Wasted CI time',
@@ -103,6 +103,31 @@ export const HELP_TOPICS = {
   'analytics.browser-matrix': {
     title: 'Browser matrix',
     text: 'Pass rate per project × browser, so a suite that is green on one browser but failing on another (a browser-specific bug) stands out immediately.',
+  },
+  'analytics.period': {
+    title: 'Period',
+    text: 'Which days the page covers: a rolling window, a calendar week, month, quarter or year, a custom range, the time since a timeline marker, a release cycle (between two release markers) or a sprint. Rolling periods count whole UTC days; calendar periods follow your time zone.',
+    doc: 'features/analytics#periods',
+  },
+  'analytics.comparison': {
+    title: 'Compare with',
+    text: 'The reference every change on the page is measured against: the previous period of the same length, the previous calendar unit, release cycle or sprint, the same period a year earlier, or nothing.',
+    doc: 'features/analytics#comparison-and-buckets',
+  },
+  'analytics.granularity': {
+    title: 'Buckets',
+    text: 'How the trends and the heatmap cut the period: automatic (about 31 buckets), daily, weekly or monthly. Buckets start at UTC midnight.',
+    doc: 'features/analytics#comparison-and-buckets',
+  },
+  'analytics.branch-policy': {
+    title: 'Branch policy',
+    text: 'Default branch counts runs on each project’s default branch, plus runs whose branch is unknown, so a broken feature branch does not move the trends. All branches counts everything; picking branches by hand overrides both.',
+    doc: 'features/analytics#branch-policy',
+  },
+  'analytics.test-filter': {
+    title: 'Test filter',
+    text: 'Narrow every number to some tests: a selection (resolved by key in each project), test tags, or browsers. It means the tests that match today, with their whole history, and it counts from stored executions, so it reaches back only as far as retention keeps runs.',
+    doc: 'features/analytics#test-filter',
   },
   'analytics.slow-endpoints': {
     title: 'Slow endpoints',

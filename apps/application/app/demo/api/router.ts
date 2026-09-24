@@ -215,6 +215,7 @@ import {
 import { computeRunInsights } from '#shared/handlers/run-insights';
 import { isAnalyticsWidgetId, runAnalyticsWidget } from '#shared/handlers/analytics';
 import { parseAnalyticsScope } from '#shared/analytics/scope';
+import { getAnalyticsScopeSummary } from '#shared/handlers/analytics/scope-summary';
 import { classifyAndPersistFlakyRootCause } from '#shared/handlers/flaky-classify';
 import {
   listUsers,
@@ -364,7 +365,13 @@ async function assertDemoEntityScope(
 }
 
 const routes: RouteEntry[] = [
-  // Analytics — one generic entry; widgets dispatch through the shared handler map
+  // Analytics — the scope summary, then one generic entry; widgets dispatch through the shared handler map
+  {
+    method: 'GET',
+    pattern: /^\/api\/analytics\/scope$/,
+    handler: async (_m, _, q, ctx) =>
+      getAnalyticsScopeSummary(await getDemoDb(), parseAnalyticsScope(q), ctx?.scope ?? 'all'),
+  },
   {
     method: 'GET',
     pattern: /^\/api\/analytics\/([\w-]+)$/,

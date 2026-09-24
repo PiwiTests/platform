@@ -34,6 +34,11 @@ export interface AnalyticsWidgetMeta {
   size: 'full' | 'half';
   /** Which band the widget belongs to — decides where it renders. */
   band: AnalyticsBandId;
+  /**
+   * Whether the widget narrows to a test filter (a selection, test predicates,
+   * browsers). One that cannot says so in its subtitle when a test filter is set.
+   */
+  testFilters: boolean;
 }
 
 export const ANALYTICS_WIDGETS = [
@@ -43,6 +48,7 @@ export const ANALYTICS_WIDGETS = [
     icon: 'i-lucide-table-properties',
     size: 'full',
     band: 'health',
+    testFilters: true,
   },
   {
     id: 'insights',
@@ -50,6 +56,7 @@ export const ANALYTICS_WIDGETS = [
     icon: 'i-lucide-lightbulb',
     size: 'half',
     band: 'health',
+    testFilters: true,
   },
   {
     id: 'pass-rate-heatmap',
@@ -57,6 +64,7 @@ export const ANALYTICS_WIDGETS = [
     icon: 'i-lucide-grid-3x3',
     size: 'half',
     band: 'health',
+    testFilters: true,
   },
   {
     id: 'cluster-landscape',
@@ -64,6 +72,7 @@ export const ANALYTICS_WIDGETS = [
     icon: 'i-lucide-layers',
     size: 'half',
     band: 'pain',
+    testFilters: false,
   },
   {
     id: 'flaky-leaderboard',
@@ -71,6 +80,7 @@ export const ANALYTICS_WIDGETS = [
     icon: 'i-lucide-repeat',
     size: 'half',
     band: 'pain',
+    testFilters: true,
   },
   {
     id: 'wasted-time',
@@ -78,6 +88,7 @@ export const ANALYTICS_WIDGETS = [
     icon: 'i-lucide-hourglass',
     size: 'half',
     band: 'pain',
+    testFilters: true,
   },
   {
     id: 'regression-velocity',
@@ -85,6 +96,7 @@ export const ANALYTICS_WIDGETS = [
     icon: 'i-lucide-git-pull-request-arrow',
     size: 'half',
     band: 'trends',
+    testFilters: true,
   },
   {
     id: 'ci-time-trend',
@@ -92,6 +104,7 @@ export const ANALYTICS_WIDGETS = [
     icon: 'i-lucide-timer',
     size: 'half',
     band: 'trends',
+    testFilters: true,
   },
   {
     id: 'browser-matrix',
@@ -99,6 +112,7 @@ export const ANALYTICS_WIDGETS = [
     icon: 'i-lucide-monitor-smartphone',
     size: 'half',
     band: 'detail',
+    testFilters: true,
   },
   {
     id: 'slow-endpoints',
@@ -106,6 +120,7 @@ export const ANALYTICS_WIDGETS = [
     icon: 'i-lucide-gauge',
     size: 'full',
     band: 'detail',
+    testFilters: true,
   },
 ] as const satisfies readonly AnalyticsWidgetMeta[];
 

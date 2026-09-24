@@ -2,7 +2,7 @@ import type { DrizzleDB } from '../db';
 import type { AnalyticsScope } from '../../analytics/scope';
 import type { AnalyticsFlakyRow } from '../../analytics/types';
 import { getProjectFlakyTests } from '../projects';
-import { fetchScopedProjects, type ProjectAccess } from './common';
+import { fetchContextProjects, getAnalyticsContext, type ProjectAccess } from './common';
 
 const RUNS_PER_PROJECT = 50;
 const TOP_TESTS = 20;
@@ -18,7 +18,10 @@ export async function getAnalyticsFlakyLeaderboard(
   scope: AnalyticsScope,
   access: ProjectAccess = 'all',
 ): Promise<AnalyticsFlakyRow[]> {
-  const scopedProjects = (await fetchScopedProjects(db, scope, access)).slice(0, MAX_PROJECTS);
+  const ctx = await getAnalyticsContext(db, scope, access);
+  const scopedProjects = (await fetchContextProjects(db, ctx)).slice(0, MAX_PROJECTS);
+  const inFilter = (projectId: number, testCaseId: number) =>
+    !ctx.testFilter?.testCaseIds || !!ctx.testFilter.testCaseIds.get(projectId)?.has(testCaseId);
 
   const perProject = await Promise.all(
     scopedProjects.map(async (project) => {
@@ -30,25 +33,27 @@ export async function getAnalyticsFlakyLeaderboard(
         undefined,
         scope.branches?.length === 1 ? scope.branches[0] : undefined,
       );
-      return flaky.map(
-        (test): AnalyticsFlakyRow => ({
-          projectId: project.id,
-          projectName: project.name,
-          projectLabel: project.label,
-          testCaseId: test.testCaseId,
-          latestRunsCaseId: test.latestRunsCaseId,
-          title: test.title,
-          filePath: test.filePath,
-          totalRuns: test.totalRuns,
-          retryPassRuns: test.retryPassRuns,
-          alternations: test.alternations,
-          score: test.score,
-          rootCause: test.rootCause,
-          impact: test.impact,
-          wastedCiMinutes: test.wastedCiMinutes,
-          lastFlakeAt: test.lastFlakeAt,
-        }),
-      );
+      return flaky
+        .filter((test) => inFilter(project.id, test.testCaseId))
+        .map(
+          (test): AnalyticsFlakyRow => ({
+            projectId: project.id,
+            projectName: project.name,
+            projectLabel: project.label,
+            testCaseId: test.testCaseId,
+            latestRunsCaseId: test.latestRunsCaseId,
+            title: test.title,
+            filePath: test.filePath,
+            totalRuns: test.totalRuns,
+            retryPassRuns: test.retryPassRuns,
+            alternations: test.alternations,
+            score: test.score,
+            rootCause: test.rootCause,
+            impact: test.impact,
+            wastedCiMinutes: test.wastedCiMinutes,
+            lastFlakeAt: test.lastFlakeAt,
+          }),
+        );
     }),
   );
 

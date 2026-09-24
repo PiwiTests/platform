@@ -403,8 +403,8 @@ the URL carries it.
 
 | Kind | Examples | Resolves to |
 |---|---|---|
-| Rolling | last 7, 14, 30 or 90 days; last 6 weeks; last 12 months | the span, ending now |
-| Calendar | this week, month, quarter or year so far; last week, month, quarter or year | calendar boundaries in the instance time zone; a week starts on the locale's first day (`Intl.Locale` week info, Monday when unknown) |
+| Rolling | last 7, 14, 30 or 90 days; last 6 weeks; last 12 months | the last N whole UTC days, today included, ending now (whole days, so the rollups and the live queries cover the same cells) |
+| Calendar | this week, month, quarter or year so far; last week, month, quarter or year | calendar boundaries in the viewer's time zone (the page sends its effective zone as `tz`, since the instance zone defaults to the browser's and the server cannot know it; UTC when absent); a week starts on the locale's first day (`Intl.Locale` week info, Monday when unknown) |
 | Custom range | 2026-08-01 to 2026-08-31 | the two dates, inclusive |
 | Since a marker | since "Migrated CI to ARM runners" | the marker's `occurredAt`, to now |
 | Between markers | from "Release 2.3" to "Release 2.4" | the two markers' times |
@@ -1002,6 +1002,7 @@ migrations.
 | Route | Roles | Purpose |
 |---|---|---|
 | `GET /api/analytics/[widget]` | any signed-in | unchanged; the scope gains the run filters, test filters, period, comparison and granularity of Layer 1 |
+| `GET /api/analytics/scope` | any signed-in, scoped | how a scope resolves: the period and comparison as dates, notes, the markers to draw, the markers a period can anchor on, the selection keys and browsers of the *Tests* filter, where the rollup data starts. Served by the `[widget]` route under the reserved name `scope`, because one more route file pushes Nitro's typed-route union past TypeScript's depth limit |
 | `GET /api/analytics/rollups` | any signed-in | rollup rows for the scope, `format=json\|csv` |
 | `GET /api/analytics/dashboards`, `POST /api/analytics/dashboards` | any signed-in; sharing needs administrator or reporter, checked in the handler | list (built-in, shared, own), create |
 | `GET/PATCH/DELETE /api/analytics/dashboards/[id]`, `POST …/[id]/duplicate` | reading: anyone who can see it; changing: its owner or an administrator | read, save (with the `updatedAt` precondition), delete, duplicate; `[id]` is a saved id or a built-in key |
@@ -1021,7 +1022,7 @@ migrations.
 `PIWI_RETENTION_REPORT_DAYS`, `PIWI_METRICS_ENABLED`. Neither reports nor dashboards need a flag: with no schedule, no
 saved dashboard and no click, nothing runs but the rollup hook.
 
-**Registries**: `ANALYTICS_WIDGETS` gains `options`, `requires`, `testFilters` and `document` on every entry;
+**Registries**: `ANALYTICS_WIDGETS` gains `options`, `requires`, `testFilters` and `document` on every entry (`testFilters` already in milestone 1, where a widget first has to declare it);
 `CAPABILITIES` gains `quality-reports`; `SetupCapabilityId` and `SETUP_LADDER_ORDER` gain its detection;
 `PIWI_FEATURE_GROUPS` gains *Quality reports*, *Trends over time* and *Custom dashboards*; every new MCP tool carries
 `module` and `capability`. `tests/mcp.spec.ts` compares the served list with `MCP_TOOL_DEFS`, so no count is
@@ -1231,19 +1232,19 @@ Grouped by milestone. Paths are under `apps/application/` unless noted.
 - [x] `server/utils/retention.ts`: `deleteRunsByIds` recomputes the retained rows; `deleteRunsOlderThan` passes `archiveRollups`, which adds the deleted runs' numbers to the archived rows in the same transaction (kept runs and the newest runs stay in the retained rows)
 - [x] `server/tasks/retention/sweep.ts`: reconcile step before pruning, recomputing the retained rows of the last `min(7, PIWI_RETENTION_DAYS)` days, never an archived row
 - [x] `server/database/index.ts`: non-blocking backfill, `analytics_rollups_backfilled_at` app setting
-- [ ] `shared/analytics/period.ts`: `PeriodSpec`, `ComparisonSpec`, `resolvePeriod`, `encodePeriod`, `parsePeriod`
-- [ ] `shared/analytics/scope.ts`: project tags, `defaultBranchOnly`, test filters (`selection`, `tests` as a `SelectionPredicateGroup`, `browsers`), `period`, `comparison`, `granularity`; `parseAnalyticsScope` keeps accepting today's keys, `analyticsScopeToQuery` writes the new ones
-- [ ] `shared/handlers/analytics/common.ts`: `makeTimeBuckets(start, end, granularity)` aligned to UTC midnight, `resolveComparisonPeriod`, `resolveBranchPolicy`, `resolveTestFilter` (a selection key per project through `resolveSelectionDefinition`), the filtered-counts path through `distinctRunCountsFromAttempts`
-- [ ] `shared/handlers/analytics/{portfolio,pass-rate-heatmap,ci-time-trend,wasted-time,regression-velocity}.ts`: rollups for run-filtered scalar series, executions for test-filtered ones; every other widget handler honors test filters or declares it cannot
-- [ ] `app/composables/useAnalyticsScope.ts`: the URL first, the cookie as the per-browser default, today's `piwi-analytics-scope` cookie still read (`days` becomes a rolling period, saved branches keep the branch policy off); `app/components/analytics/AnalyticsScopeBar.vue`: period, comparison and granularity pickers, the *Tests* filter, *Save as selection*, the branch policy toggle
-- [ ] `app/components/analytics/*Chart.vue`: markers overlay (reuse the project chart's marker rendering)
-- [ ] `server/api/analytics/[widget].get.ts`, `app/demo/api/router.ts`: OpenAPI parameters for the new scope keys
-- [ ] `app/utils/help-content.ts`: topics for the pickers, the *Tests* filter and the branch policy
+- [x] `shared/analytics/period.ts`: `PeriodSpec`, `ComparisonSpec`, `resolvePeriod`, `encodePeriod`, `parsePeriod`
+- [x] `shared/analytics/scope.ts`: project tags, `defaultBranchOnly`, test filters (`selection`, `tests` as a `SelectionPredicateGroup`, `browsers`), `period`, `comparison`, `granularity`; `parseAnalyticsScope` keeps accepting today's keys, `analyticsScopeToQuery` writes the new ones
+- [x] `shared/handlers/analytics/common.ts`: `makeTimeBuckets(start, end, granularity)` aligned to UTC midnight, `resolveComparisonPeriod`, `resolveBranchPolicy`, `resolveTestFilter` (a selection key per project through `resolveSelectionDefinition`), the filtered-counts path through `distinctRunCountsFromAttempts`
+- [x] `shared/handlers/analytics/{portfolio,pass-rate-heatmap,ci-time-trend,wasted-time,regression-velocity}.ts`: rollups for run-filtered scalar series, executions for test-filtered ones; every other widget handler honors test filters or declares it cannot
+- [x] `app/composables/useAnalyticsScope.ts`: the URL first, the cookie as the per-browser default, today's `piwi-analytics-scope` cookie still read (`days` becomes a rolling period, saved branches keep the branch policy off); `app/components/analytics/AnalyticsScopeBar.vue`: period, comparison and granularity pickers, the *Tests* filter, *Save as selection*, the branch policy toggle
+- [x] `app/components/analytics/*Chart.vue`: markers overlay (reuse the project chart's marker rendering)
+- [x] `server/api/analytics/[widget].get.ts`, `app/demo/api/router.ts`: OpenAPI parameters for the new scope keys
+- [x] `app/utils/help-content.ts`: topics for the pickers, the *Tests* filter and the branch policy
 - [ ] `tests/unit/analytics-rollups.test.ts` (with a pruned day holding a kept run: retained plus archived equals the day before the prune, and deleting the released run removes only its numbers), `analytics-period.test.ts`, `analytics-scope.test.ts` (today's cookie and URL keys), extend `analytics-handlers.test.ts`; `apps/docs/features/analytics.md`, `apps/docs/guide/test-selection.md`
 
 **2. The quality report**
 
-- [ ] `shared/analytics/registry.ts`: `options` (zod), `requires`, `testFilters` and `document` on every widget; new widgets `stats`, `verdict`, `progress`, `risks`, `metric` (line and stat displays) with their components in `app/components/analytics/`
+- [ ] `shared/analytics/registry.ts`: `options` (zod), `requires` and `document` on every widget (`testFilters` shipped in milestone 1); new widgets `stats`, `verdict`, `progress`, `risks`, `metric` (line and stat displays) with their components in `app/components/analytics/`
 - [ ] `shared/analytics/dashboards.ts`: `DashboardDefinition`; the built-in Overview ([The default dashboard](#the-default-dashboard-overview)) and the executive, engineering, team and gaps digest dashboards; `app/pages/analytics.vue` renders Overview from its definition instead of the hard-coded bands
 - [ ] `shared/reports/types.ts`, `collect.ts` (a dashboard and a scope make a bundle), `verdict.ts`, `sentences.en.ts`, `sentences.fr.ts`
 - [ ] `shared/reports/render-html.ts`, `render-pdf.ts`, `render-markdown.ts`, `render-csv.ts`, `build.ts` (file name, content type, format switch)

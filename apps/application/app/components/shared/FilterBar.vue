@@ -24,8 +24,10 @@ const props = withDefaults(
     availableBranches: string[];
     /** Hide the built-in reset button when the caller supplies its own via #trailing. */
     showReset?: boolean;
+    /** What the branch select reads with nothing picked (the caller's branch policy). */
+    branchPlaceholder?: string;
   }>(),
-  { showReset: true },
+  { showReset: true, branchPlaceholder: 'All branches' },
 );
 
 const emit = defineEmits<{
@@ -90,7 +92,7 @@ function reset() {
       :items="availableBranches"
       multiple
       searchable
-      placeholder="All branches"
+      :placeholder="branchPlaceholder"
       size="sm"
       class="min-w-[160px] max-w-[16rem]"
     >
@@ -101,7 +103,7 @@ function reset() {
             class="size-3.5 shrink-0"
             :class="(selected as string[]).length ? 'text-primary' : 'text-gray-400'"
           />
-          <span v-if="!(selected as string[]).length" class="text-gray-500">All branches</span>
+          <span v-if="!(selected as string[]).length" class="text-gray-500">{{ branchPlaceholder }}</span>
           <span v-else-if="(selected as string[]).length === 1" class="truncate">{{ (selected as string[])[0] }}</span>
           <span v-else>{{ (selected as string[]).length }} branches</span>
         </div>

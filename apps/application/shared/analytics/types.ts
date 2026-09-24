@@ -49,8 +49,10 @@ export interface AnalyticsPortfolioRow {
 export interface AnalyticsHeatmap {
   /** Bucket start dates (ISO `YYYY-MM-DD`), oldest → newest. */
   buckets: string[];
-  /** Days covered by one bucket (1 = daily, 7 = weekly, …). */
+  /** Days covered by one bucket (1 = daily, 7 = weekly, 30 = monthly). */
   bucketDays: number;
+  /** True when a cell is a calendar month. */
+  monthly?: boolean;
   rows: Array<{
     projectId: number;
     name: string;
@@ -262,4 +264,49 @@ export interface AnalyticsTimeoutHygiene {
   totalEstimatedSavingMs: number;
   /** Project of the highest-impact opportunity (for a deep link). */
   topProjectId: number | null;
+}
+
+// ── Scope summary ────────────────────────────────────────────────────────────
+
+/** A timeline marker drawn on a trend, labeled with its project across projects. */
+export interface AnalyticsMarker {
+  id: number;
+  projectId: number;
+  projectName: string | null;
+  occurredAt: string | Date;
+  label: string;
+  description: string | null;
+  category: string;
+  environment: string | null;
+  source: string;
+  runId: number | null;
+  createdAt: string | Date;
+  updatedAt: string | Date;
+}
+
+export interface AnalyticsResolvedPeriod {
+  /** ISO instants; `to` is exclusive. */
+  from: string;
+  to: string;
+  label: string;
+  /** Why the definition could not be used and the default period was shown instead. */
+  fallback: string | null;
+}
+
+/** How a scope resolved: what the scope bar and the trend charts show around the widgets. */
+export interface AnalyticsScopeSummary {
+  period: AnalyticsResolvedPeriod;
+  comparison: AnalyticsResolvedPeriod | null;
+  notes: string[];
+  /** Markers inside the period: every marker with one project in scope, else releases, infra and incidents. */
+  markers: AnalyticsMarker[];
+  /** Recent markers of the projects in scope, for the periods anchored on a marker. */
+  anchors: AnalyticsMarker[];
+  /** Selection keys known in the projects in scope, built-ins included. */
+  selections: Array<{ key: string; name: string }>;
+  /** Browsers the recent runs in scope ran on. */
+  browsers: string[];
+  /** Oldest UTC day of rollup data inside the period, null when there is none. */
+  dataStartsAt: string | null;
+  projectCount: number;
 }

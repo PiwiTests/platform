@@ -111,6 +111,18 @@ export function timeToOrdinalX(dates: Date[], centers: number[], time: number): 
 }
 
 /**
+ * {@link timeToOrdinalX} for charts whose points are bucket starts: a time
+ * after the newest bucket's start but before `endMs` (the end of the period)
+ * sits on the newest bucket instead of falling off the axis.
+ */
+export function bucketTimeToX(dates: Date[], centers: number[], time: number, endMs: number): number | null {
+  const x = timeToOrdinalX(dates, centers, time);
+  if (x !== null) return x;
+  const last = dates[dates.length - 1]?.getTime();
+  return last !== undefined && time >= last && time < endMs ? (centers[centers.length - 1] ?? null) : null;
+}
+
+/**
  * Per-index slot layout for ordinal charts: `centerOf` positions points and
  * hover columns, `xOf`/`barWidth` position the bars themselves.
  */

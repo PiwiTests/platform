@@ -1,53 +1,68 @@
-import { analyticsScopeToQuery, DEFAULT_ANALYTICS_DAYS, type AnalyticsScope } from '#shared/analytics/scope';
+import { analyticsScopeToQuery, type AnalyticsScope } from '#shared/analytics/scope';
+import {
+  DEFAULT_ANALYTICS_SCOPE_STATE,
+  decodeScopeCookie,
+  queryHasScope,
+  queryWithoutScope,
+  scopeFromState,
+  stateFromScope,
+  type AnalyticsScopeState,
+} from '#shared/analytics/scope-state';
+import { parseAnalyticsScope } from '#shared/analytics/scope';
+import type { AnalyticsScopeSummary } from '#shared/analytics/types';
 import type { AnalyticsWidgetId } from '#shared/analytics/registry';
+import type { InjectionKey, Ref } from 'vue';
 
-export interface AnalyticsScopeState {
-  days: number;
-  /** Selected project ids; empty = every project the caller can see. */
-  projectIds: number[];
-  /** Selected environments; empty = every environment. */
-  environments: string[];
-  /** Selected branches; empty = every branch. */
-  branches: string[];
-  fullRunsOnly: boolean;
+export { DEFAULT_ANALYTICS_SCOPE_STATE, type AnalyticsScopeState };
+
+/** The viewer's effective time zone and locale, sent with every widget request for calendar periods. */
+function viewerContext(): { tz?: string; locale?: string } {
+  if (!import.meta.client) return {};
+  const prefs = activeLocalePrefs();
+  const tz = prefs.timeZone === 'auto' ? Intl.DateTimeFormat().resolvedOptions().timeZone : prefs.timeZone;
+  const locale = prefs.locale === 'auto' ? navigator.language : prefs.locale;
+  return { ...(tz ? { tz } : {}), ...(locale ? { locale } : {}) };
 }
 
-export const DEFAULT_ANALYTICS_SCOPE_STATE: AnalyticsScopeState = {
-  days: DEFAULT_ANALYTICS_DAYS,
-  projectIds: [],
-  environments: [],
-  branches: [],
-  fullRunsOnly: true,
-};
-
 /**
- * The `/analytics` page's global filter state (persisted per user in a
- * cookie, SSR-safe) plus the query object every widget fetch derives from.
+ * The `/analytics` page's scope: the URL first, so a copied link shows what
+ * its sender saw, then the `piwi-analytics-scope` cookie as the per-browser
+ * default (today's cookie shape still reads). Every change writes both.
+ * `scopeQuery` is what every widget request sends.
  */
 export function useAnalyticsScope() {
-  const state = useCookie<AnalyticsScopeState>('piwi-analytics-scope', {
+  const cookie = useCookie<AnalyticsScopeState>('piwi-analytics-scope', {
     default: () => ({ ...DEFAULT_ANALYTICS_SCOPE_STATE }),
     encode: (v) => JSON.stringify(v),
-    decode: (v) => {
-      try {
-        return v
-          ? { ...DEFAULT_ANALYTICS_SCOPE_STATE, ...(JSON.parse(v) as Partial<AnalyticsScopeState>) }
-          : { ...DEFAULT_ANALYTICS_SCOPE_STATE };
-      } catch {
-        return { ...DEFAULT_ANALYTICS_SCOPE_STATE };
-      }
-    },
+    decode: (v) => decodeScopeCookie(v),
   });
+  const route = useRoute();
+  const router = useRouter();
 
-  const scope = computed<AnalyticsScope>(() => ({
-    days: state.value.days,
-    projectIds: state.value.projectIds.length > 0 ? state.value.projectIds : undefined,
-    environments: state.value.environments.length > 0 ? state.value.environments : undefined,
-    branches: state.value.branches.length > 0 ? state.value.branches : undefined,
-    fullRunsOnly: state.value.fullRunsOnly,
-  }));
+  const initial = queryHasScope(route.query)
+    ? stateFromScope(parseAnalyticsScope(route.query as Record<string, unknown>))
+    : decodeScopeCookie(cookie.value);
+  const state = ref<AnalyticsScopeState>(initial);
 
-  const scopeQuery = computed(() => analyticsScopeToQuery(scope.value));
+  const scope = computed<AnalyticsScope>(() => scopeFromState(state.value));
+  const urlQuery = computed(() => analyticsScopeToQuery(scope.value));
+  const scopeQuery = computed(() => ({ ...urlQuery.value, ...viewerContext() }));
+
+  function syncUrl() {
+    if (!import.meta.client) return;
+    const next = { ...queryWithoutScope(route.query as Record<string, unknown>), ...urlQuery.value };
+    if (JSON.stringify(next) !== JSON.stringify(route.query)) router.replace({ query: next as any });
+  }
+
+  watch(
+    state,
+    (value) => {
+      cookie.value = value;
+      syncUrl();
+    },
+    { deep: true },
+  );
+  onMounted(syncUrl);
 
   return { state, scope, scopeQuery };
 }
@@ -62,4 +77,22 @@ export function useAnalyticsWidget<T>(widget: AnalyticsWidgetId, query: () => Re
     lazy: true,
     server: false,
   });
+}
+
+/** The page's resolved scope summary, provided to the widgets that draw markers or name the comparison. */
+export const ANALYTICS_SCOPE_SUMMARY: InjectionKey<Ref<AnalyticsScopeSummary | null | undefined>> =
+  Symbol('analytics-scope-summary');
+
+/** Fetch how the scope resolves (period dates, notes, markers, test filter options). */
+export function useAnalyticsScopeSummary(query: () => Record<string, string>) {
+  return useFetch<AnalyticsScopeSummary>('/api/analytics/scope', {
+    query: computed(query),
+    lazy: true,
+    server: false,
+  });
+}
+
+/** The provided scope summary, or an empty ref outside the analytics page. */
+export function injectAnalyticsScopeSummary(): Ref<AnalyticsScopeSummary | null | undefined> {
+  return inject(ANALYTICS_SCOPE_SUMMARY, ref(null));
 }

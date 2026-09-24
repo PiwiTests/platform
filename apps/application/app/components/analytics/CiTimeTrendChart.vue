@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { AnalyticsCiTimeTrend } from '#shared/analytics/types';
-import { barGeometry, dayTickIndices, formatTickDate } from '~/utils/chart';
+import { barGeometry, bucketTimeToX, dayTickIndices, formatTickDate } from '~/utils/chart';
 
 const props = defineProps<{ query: Record<string, string> }>();
 
@@ -69,6 +69,19 @@ const subtitle = computed(() => {
   const label = total < 60 ? `${Math.round(total)} min` : `${Math.round((total / 60) * 10) / 10} h`;
   return `${label} across ${trend.value.runCount} runs`;
 });
+// Timeline markers of the period, drawn over the bars (provided by the analytics page).
+const scopeSummary = injectAnalyticsScopeSummary();
+const markers = computed(() => scopeSummary.value?.markers ?? []);
+function markerX(plotWidth: number, occurredAt: string | Date): number | null {
+  const { centerOf } = barGeometry(chartData.value.length, plotWidth);
+  const end = scopeSummary.value ? new Date(scopeSummary.value.period.to).getTime() : Date.now();
+  return bucketTimeToX(
+    chartData.value.map((d) => d.date),
+    chartData.value.map((_, i) => centerOf(i)),
+    new Date(occurredAt).getTime(),
+    end,
+  );
+}
 </script>
 
 <template>
@@ -120,6 +133,11 @@ const subtitle = computed(() => {
           @mouseenter="show($event, d)"
           @mousemove="move($event)"
           @mouseleave="hide()"
+        />
+        <ChartMarkerLines
+          :markers="markers"
+          :x-of="(occurredAt) => markerX(plotWidth, occurredAt)"
+          :plot-height="plotHeight"
         />
       </ChartFrame>
 

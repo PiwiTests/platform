@@ -16,15 +16,20 @@ function cellStyle(rate: number | null): Record<string, string> {
 
 function cellTitle(row: { name: string; label: string | null }, index: number, rate: number | null): string {
   const date = heatmap.value?.buckets[index] ?? '';
-  const span = (heatmap.value?.bucketDays ?? 1) > 1 ? ` (${heatmap.value!.bucketDays} days)` : '';
+  const span = heatmap.value?.monthly
+    ? ' (month)'
+    : (heatmap.value?.bucketDays ?? 1) > 1
+      ? ` (${heatmap.value!.bucketDays} days)`
+      : '';
   return `${row.label || row.name} · ${date}${span}: ${rate !== null ? `${rate}% passed` : 'no runs'}`;
 }
 
 const legendItems = PASS_RATE_STEPS.map(({ color, label }) => ({ color, label }));
 
 const subtitle = computed(() => {
+  if (heatmap.value?.monthly) return 'One cell = one month (UTC)';
   const bucketDays = heatmap.value?.bucketDays ?? 1;
-  return bucketDays > 1 ? `One cell = ${bucketDays} days` : 'One cell = one day';
+  return bucketDays > 1 ? `One cell = ${bucketDays} days (UTC)` : 'One cell = one day (UTC)';
 });
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];

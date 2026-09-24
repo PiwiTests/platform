@@ -1,18 +1,8 @@
-import { and, eq, sql } from 'drizzle-orm';
-import { testRuns, testRunsCases } from '../../../server/database/schema';
 import type { DrizzleDB } from '../db';
 import type { AnalyticsScope } from '../../analytics/scope';
 import type { AnalyticsWastedTime } from '../../analytics/types';
-import {
-  fetchScopedProjects,
-  firstNonEmptyIndex,
-  makeTimeBuckets,
-  minutes,
-  periodStart,
-  resolveAllowedProjects,
-  scopedRunConditions,
-  type ProjectAccess,
-} from './common';
+import { fetchContextProjects, firstNonEmptyIndex, getAnalyticsContext, minutes, type ProjectAccess } from './common';
+import { groupRows, loadScalarRows } from './scalar-rows';
 import { getAnalyticsTimeoutHygiene } from './timeout-hygiene';
 
 const TOP_PROJECTS = 8;
@@ -27,7 +17,8 @@ export async function getAnalyticsWastedTime(
   scope: AnalyticsScope,
   access: ProjectAccess = 'all',
 ): Promise<AnalyticsWastedTime> {
-  const buckets = makeTimeBuckets(scope.days);
+  const ctx = await getAnalyticsContext(db, scope, access);
+  const buckets = ctx.buckets;
   const empty: AnalyticsWastedTime = {
     points: buckets.keys.map((date) => ({ date, waitMinutes: 0, failedExecMinutes: 0 })),
     bucketDays: buckets.bucketDays,
@@ -37,52 +28,18 @@ export async function getAnalyticsWastedTime(
     timeoutReclaimable: null,
   };
 
-  const allowed = resolveAllowedProjects(scope, access);
-  if (allowed !== 'all' && allowed.length === 0) return empty;
-
-  const conditions = scopedRunConditions(scope, allowed, periodStart(scope.days));
-
-  // One aggregated row per run — cheap in SQL on both dialects, bucketed in JS.
-  const rows: any[] = await db
-    .select({
-      projectId: testRuns.projectId,
-      startTime: testRuns.startTime,
-      waitMs: sql<number>`COALESCE(SUM(COALESCE(${testRunsCases.wastedTimeMs}, 0)), 0)`,
-      failedMs: sql<number>`COALESCE(SUM(CASE WHEN ${testRunsCases.status} IN ('failed', 'timedout', 'timedOut') THEN COALESCE(${testRunsCases.duration}, 0) ELSE 0 END), 0)`,
-    })
-    .from(testRunsCases)
-    .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
-    .where(and(...conditions))
-    .groupBy(testRunsCases.testRunId, testRuns.projectId, testRuns.startTime);
-
+  const rows = await loadScalarRows(db, ctx, ctx.period.from.getTime(), ctx.period.to.getTime());
   if (rows.length === 0) return empty;
 
-  const byBucket = new Map<string, { waitMs: number; failedMs: number }>();
-  const byProject = new Map<number, { waitMs: number; failedMs: number }>();
-  let totalWaitMs = 0;
-  let totalFailedMs = 0;
+  const byBucket = groupRows(rows, (row) => buckets.keyFor(row.day));
+  const byProjectTotals = groupRows(rows, (row) => row.projectId);
+  const totalWaitMs = rows.reduce((sum, row) => sum + row.waitMs, 0);
+  const totalFailedMs = rows.reduce((sum, row) => sum + row.failedExecMs, 0);
+  const byProject = new Map(
+    [...byProjectTotals].map(([projectId, t]) => [projectId, { waitMs: t.waitMs, failedMs: t.failedExecMs }]),
+  );
 
-  for (const row of rows) {
-    const waitMs = Number(row.waitMs) || 0;
-    const failedMs = Number(row.failedMs) || 0;
-    totalWaitMs += waitMs;
-    totalFailedMs += failedMs;
-
-    const key = buckets.keyFor(row.startTime);
-    if (key) {
-      const bucket = byBucket.get(key) ?? { waitMs: 0, failedMs: 0 };
-      bucket.waitMs += waitMs;
-      bucket.failedMs += failedMs;
-      byBucket.set(key, bucket);
-    }
-
-    const project = byProject.get(row.projectId) ?? { waitMs: 0, failedMs: 0 };
-    project.waitMs += waitMs;
-    project.failedMs += failedMs;
-    byProject.set(row.projectId, project);
-  }
-
-  const scopedProjects = await fetchScopedProjects(db, scope, access);
+  const scopedProjects = await fetchContextProjects(db, ctx);
   const projectById = new Map(scopedProjects.map((p) => [p.id, p]));
 
   const points = buckets.keys.map((date) => {
@@ -90,7 +47,7 @@ export async function getAnalyticsWastedTime(
     return {
       date,
       waitMinutes: minutes(bucket?.waitMs ?? 0),
-      failedExecMinutes: minutes(bucket?.failedMs ?? 0),
+      failedExecMinutes: minutes(bucket?.failedExecMs ?? 0),
     };
   });
 
@@ -114,6 +71,7 @@ export async function getAnalyticsWastedTime(
     totalWaitMinutes: minutes(totalWaitMs),
     totalFailedExecMinutes: minutes(totalFailedMs),
     byProject: [...byProject.entries()]
+      .filter(([, sums]) => sums.waitMs > 0 || sums.failedMs > 0)
       .map(([projectId, sums]) => ({
         projectId,
         name: projectById.get(projectId)?.name ?? `Project ${projectId}`,

@@ -41,6 +41,20 @@ const SEVERITY_ORDER: Record<AnalyticsInsight['severity'], number> = {
   positive: 3,
 };
 
+/** How an insight names the period a change is measured against. */
+export function comparisonPhrase(scope: AnalyticsScope): string {
+  const { period, comparison } = scope;
+  if (comparison.kind === 'year') return 'the same period a year earlier';
+  if (comparison.kind === 'range') return `${comparison.from} to ${comparison.to}`;
+  if (comparison.kind === 'previous-unit') {
+    if (period.kind === 'calendar') return `the previous ${period.unit}`;
+    if (period.kind === 'release') return 'the previous release cycle';
+    if (period.kind === 'sprint') return 'the previous sprint';
+  }
+  if (period.kind === 'rolling') return `the previous ${period.days} days`;
+  return 'the previous period';
+}
+
 function projectDisplay(row: { name: string; label: string | null }): string {
   return row.label || row.name;
 }
@@ -54,7 +68,7 @@ const passRateDrop: InsightRule = {
         id: `pass-rate-drop:${p.projectId}`,
         ruleId: 'pass-rate-drop',
         severity: p.passRateDelta! <= -15 ? ('critical' as const) : ('warning' as const),
-        message: `${projectDisplay(p)} pass rate dropped ${Math.abs(p.passRateDelta!)} pts vs the previous ${scope.days} days`,
+        message: `${projectDisplay(p)} pass rate dropped ${Math.abs(p.passRateDelta!)} pts vs ${comparisonPhrase(scope)}`,
         detail: `Now at ${p.passRate}% over ${p.runCount} runs.`,
         to: `/projects/${p.projectId}`,
         projectId: p.projectId,
@@ -70,7 +84,7 @@ const passRateRecovery: InsightRule = {
         id: `pass-rate-recovery:${p.projectId}`,
         ruleId: 'pass-rate-recovery',
         severity: 'positive' as const,
-        message: `${projectDisplay(p)} pass rate improved ${p.passRateDelta} pts vs the previous ${scope.days} days`,
+        message: `${projectDisplay(p)} pass rate improved ${p.passRateDelta} pts vs ${comparisonPhrase(scope)}`,
         detail: `Now at ${p.passRate}% over ${p.runCount} runs.`,
         to: `/projects/${p.projectId}`,
         projectId: p.projectId,
@@ -119,7 +133,7 @@ const ciTimeGrowth: InsightRule = {
         id: 'ci-time-growth',
         ruleId: 'ci-time-growth',
         severity: ciTime.deltaPct >= 50 ? 'warning' : 'info',
-        message: `CI time grew ${ciTime.deltaPct}% vs the previous ${scope.days} days`,
+        message: `CI time grew ${ciTime.deltaPct}% vs ${comparisonPhrase(scope)}`,
         detail: `${Math.round(ciTime.totalMinutes)} minutes across ${ciTime.runCount} runs this period.`,
       },
     ];
@@ -176,7 +190,7 @@ const regressionSurge: InsightRule = {
         id: 'regression-surge',
         ruleId: 'regression-surge',
         severity: deltaPct >= 100 ? 'warning' : 'info',
-        message: `New regressions rose ${deltaPct}% vs the previous ${scope.days} days`,
+        message: `New regressions rose ${deltaPct}% vs ${comparisonPhrase(scope)}`,
         detail: `${totalRegressions} this period, up from ${prevRegressions}.`,
       },
     ];

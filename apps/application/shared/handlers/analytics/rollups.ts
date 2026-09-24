@@ -12,11 +12,12 @@
  * `shared/`.
  */
 
-import { and, eq, gte, inArray, lt, lte, or, sql, type SQL } from 'drizzle-orm';
+import { and, eq, gte, inArray, lt, lte, sql, type SQL } from 'drizzle-orm';
 import { analyticsDailyRollups, projects, testRuns, testRunsCases } from '../../../server/database/schema';
 import type { DrizzleDB } from '../db';
 import { notProbeRun } from '../probes';
 import { dayKey, DAY_MS, FAILING_RUN_STATUSES, TERMINAL_RUN_STATUSES } from './common';
+import { branchPolicyCondition, type BranchPolicy } from './branch-policy';
 
 export type RollupPart = 'retained' | 'archived';
 
@@ -455,13 +456,7 @@ export interface RollupFilter {
   fromDay: string;
   toDay: string;
   environments?: string[];
-  /**
-   * Branches per project; `''` is the unknown branch. A project missing from
-   * the map is read on every branch.
-   */
-  branchesByProject?: Map<number, string[]>;
-  /** The same branch list for every project. */
-  branches?: string[];
+  branchPolicy?: BranchPolicy;
   fullRunsOnly: boolean;
 }
 
@@ -478,20 +473,10 @@ function rollupConditions(filter: RollupFilter): SQL[] | null {
   if (filter.fullRunsOnly) conditions.push(eq(t.fullRun, 1));
   if (filter.environments && filter.environments.length > 0)
     conditions.push(inArray(t.environment, filter.environments));
-  if (filter.branches && filter.branches.length > 0) conditions.push(inArray(t.branch, filter.branches));
-  if (filter.branchesByProject && filter.branchesByProject.size > 0) {
-    const perProject = [...filter.branchesByProject].map(([projectId, list]) =>
-      and(eq(t.projectId, projectId), inArray(t.branch, list))!,
-    );
-    const unlisted =
-      filter.projectIds === 'all'
-        ? sql`${t.projectId} NOT IN (${sql.join(
-            [...filter.branchesByProject.keys()].map((id) => sql`${id}`),
-            sql`, `,
-          )})`
-        : null;
-    conditions.push(or(...perProject, ...(unlisted ? [unlisted] : []))!);
-  }
+  const branch = filter.branchPolicy
+    ? branchPolicyCondition(filter.branchPolicy, { branch: t.branch, projectId: t.projectId }, 'empty')
+    : null;
+  if (branch) conditions.push(branch);
   return conditions;
 }
 

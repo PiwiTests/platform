@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { AnalyticsRegressionVelocity } from '#shared/analytics/types';
-import { barGeometry, dayTickIndices, formatTickDate, stackSegments } from '~/utils/chart';
+import { barGeometry, bucketTimeToX, dayTickIndices, formatTickDate, stackSegments } from '~/utils/chart';
 
 const props = defineProps<{ query: Record<string, string> }>();
 
@@ -78,6 +78,19 @@ const subtitle = computed(() => {
   if (!velocity.value) return undefined;
   return `${velocity.value.totalRegressions} new regressions, ${velocity.value.totalNewFlaky} newly flaky`;
 });
+// Timeline markers of the period, drawn over the bars (provided by the analytics page).
+const scopeSummary = injectAnalyticsScopeSummary();
+const markers = computed(() => scopeSummary.value?.markers ?? []);
+function markerX(plotWidth: number, occurredAt: string | Date): number | null {
+  const { centerOf } = barGeometry(chartData.value.length, plotWidth);
+  const end = scopeSummary.value ? new Date(scopeSummary.value.period.to).getTime() : Date.now();
+  return bucketTimeToX(
+    chartData.value.map((d) => d.date),
+    chartData.value.map((_, i) => centerOf(i)),
+    new Date(occurredAt).getTime(),
+    end,
+  );
+}
 </script>
 
 <template>
@@ -139,6 +152,11 @@ const subtitle = computed(() => {
           @mouseenter="show($event, bar.d)"
           @mousemove="move($event)"
           @mouseleave="hide()"
+        />
+        <ChartMarkerLines
+          :markers="markers"
+          :x-of="(occurredAt) => markerX(plotWidth, occurredAt)"
+          :plot-height="plotHeight"
         />
       </ChartFrame>
 
