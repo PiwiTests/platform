@@ -274,16 +274,6 @@ startup.
 downloads it in the background, and applies it when you restart the app.
 
 On Windows, the **`.exe`** updates without admin; the **`.msi`** prompts for it.
-There the app closes as soon as the download finishes and the installer takes
-over, reopening it when done.
-
-**"Error opening file for writing" while updating on Windows.** Up to version
-0.37, an in-app update could leave the app's bundled server running — a
-`node.exe` in the install folder, `%LOCALAPPDATA%\Piwi Dashboard` for the `.exe` —
-and the installer could not replace the files it holds. Installers from later
-versions stop it first. If you hit it, don't choose **Ignore**, which leaves an old
-file behind: in Task Manager's **Details** tab, end the `node.exe` whose
-**Open file location** is that folder, then choose **Retry**.
 
 Updates work only in releases built with the project's signing key; the app
 verifies every download against the public key before installing. A build

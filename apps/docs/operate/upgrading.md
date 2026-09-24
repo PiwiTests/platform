@@ -101,6 +101,8 @@ npm install --save-dev @piwitests/reporter@latest
 The [desktop build](/features/desktop) bundles its own server, so installing a newer build upgrades both. Its
 database lives outside the app bundle and is migrated on first launch, exactly as the server does —
 which means the same forward-only rule applies. Back up its data directory before a major jump.
+On Windows an in-app update closes the app as soon as the download finishes and hands over to the
+installer, which reopens it when done.
 
 ## If an upgrade goes wrong
 
@@ -110,6 +112,13 @@ mid-flight or incompatible; restore your backup and open an
 
 **The dashboard loads but data looks wrong.** Don't downgrade — restore the backup instead, then
 report what you saw. Downgrading on a migrated database compounds the problem.
+
+**The Windows desktop installer says "Error opening file for writing".** Up to version 0.37, an
+in-app update could leave the app's bundled server running — a `node.exe` in the install folder,
+`%LOCALAPPDATA%\Piwi Dashboard` for the `.exe` — and the installer could not replace the files it
+holds. Installers from later versions stop it first. If you hit it, don't choose **Ignore**, which
+leaves an old file behind: in Task Manager's **Details** tab, end the `node.exe` whose
+**Open file location** is that folder, then choose **Retry**.
 
 **Failure clusters look reorganized.** Expected after a fingerprint-algorithm change: clusters that now
 share a root cause have merged. Triage state is carried across the merge.
