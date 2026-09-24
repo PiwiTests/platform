@@ -1081,6 +1081,44 @@ const SCENES = [
     },
   },
   {
+    name: 'timeline-type-filter',
+    description: 'Timeline tab: the type chips with Network hidden, and the line naming the failed request it hides',
+    // Execution 241 (the login API test) interleaves four requests with its
+    // steps, the login a 500 — hiding Network names that failed request.
+    route: '/test-run-cases/241',
+    viewport: { width: 1280, height: 1200 },
+    of: '[data-shot="evidence-card"]',
+    pad: 12,
+    async run({ page, openTab, settle, shoot }) {
+      await openTab('Timeline');
+      await page
+        .getByRole('group', { name: 'Show on the timeline' })
+        .getByRole('button', { name: /^Network/ })
+        .click();
+      await page.getByTestId('timeline-hidden-summary').waitFor({ state: 'visible', timeout: 10_000 });
+      await settle();
+      await shoot();
+    },
+  },
+  {
+    name: 'timeline-type-filter-mobile',
+    description: 'Timeline tab at phone width: the type chips wrap, Network hidden, the hidden line under them',
+    route: '/test-run-cases/241',
+    viewport: { width: 375, height: 1800 },
+    of: '[data-shot="evidence-card"]',
+    pad: 12,
+    async run({ page, openTab, settle, shoot }) {
+      await openTab('Timeline');
+      await page
+        .getByRole('group', { name: 'Show on the timeline' })
+        .getByRole('button', { name: /^Network/ })
+        .click();
+      await page.getByTestId('timeline-hidden-summary').waitFor({ state: 'visible', timeout: 10_000 });
+      await settle();
+      await shoot();
+    },
+  },
+  {
     name: 'setup-companion-tools',
     description: 'Setup page: the companion-tools card below the capability ladder',
     route: '/setup',

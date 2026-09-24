@@ -287,7 +287,7 @@ export const HELP_TOPICS = {
   },
   'case.timeline': {
     title: 'Failure timeline',
-    text: 'One time axis that places this execution’s steps, console entries, network requests and backend log entries on the same clock, with a marker at the moment of failure. The default view is the window around the failed step (10s before, 2s after); switch to “Whole test” to see everything. The list below reads it chronologically — click a line to jump to that step, console entry or request. When a run’s reporter recorded no step start times, positions are estimated from durations and the card says so.',
+    text: 'One time axis that places this execution’s steps, console entries, network requests and backend log entries on the same clock, with a marker at the moment of failure. The default view is the window around the failed step (10s before, 2s after); switch to “Whole test” to see everything. The type chips hide or show the steps, requests, console entries, dialogs and backend logs in the window (“Only” or Alt-click shows just one type; the failing step and the last shown type always stay), and the line beside them says what is hidden; the choice is remembered in this browser. The list below reads it chronologically — click a line to jump to that step, console entry or request. When a run’s reporter recorded no step start times, positions are estimated from durations and the card says so.',
     doc: 'features/evidence#one-execution-diagnosis-first',
   },
   'case.web-vitals': {
