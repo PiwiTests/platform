@@ -441,7 +441,7 @@ export default eventHandler(async (event) => {
         status: finalStatus,
       });
 
-      runFinalizeSideEffects(db, existingTestRunId!, {
+      await runFinalizeSideEffects(db, existingTestRunId!, {
         projectId: testRun.projectId,
         metadata: existingRunMetadata,
       });
@@ -668,7 +668,7 @@ export default eventHandler(async (event) => {
   // For new (non-streaming) runs, fire the finalize side effects after cases are
   // persisted — probe-aware, so a probe-stamped upload stays silent.
   if (!attachingToExistingRun) {
-    runFinalizeSideEffects(db, testRun.id, { projectId: project.id, metadata: testRunData?.metadata });
+    await runFinalizeSideEffects(db, testRun.id, { projectId: project.id, metadata: testRunData?.metadata });
   }
 
   return {
