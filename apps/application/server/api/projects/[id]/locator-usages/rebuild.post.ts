@@ -7,7 +7,7 @@ defineRouteMeta({
     tags: ['Projects'],
     summary: 'Rebuild a project’s locator index from stored runs',
     description:
-      'Reads the latest stored execution of each test case (up to 5000) and indexes the locator chains its steps used. Idempotent. New runs are indexed on ingest, so this is only needed for history stored before the index existed.',
+      'Reads one stored execution per test case and Playwright project (the latest passed one, else the latest; up to 5000) and indexes the locator chains its steps used. Idempotent. New runs are indexed on ingest, and the server builds each project’s index from its history once at startup, so this is only needed to refresh it.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-roles': ['administrator', 'reporter'],
   },

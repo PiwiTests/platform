@@ -1,5 +1,5 @@
 {
-  "id": "205c5e02-e317-465d-87f1-74605fd416be",
+  "id": "7e8fc94e-9548-4404-b457-52cfb7990092",
   "prevId": "32ec8f65-7fa0-42f1-b115-dbe0dbd1a437",
   "version": "7",
   "dialect": "postgresql",
@@ -2936,6 +2936,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "browser_name": {
+          "name": "browser_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
         "call_site": {
           "name": "call_site",
           "type": "text",
@@ -2967,6 +2973,12 @@
           "columns": [
             {
               "expression": "test_case_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "browser_name",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -4365,6 +4377,12 @@
         "capabilities": {
           "name": "capabilities",
           "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "locator_index_built_at": {
+          "name": "locator_index_built_at",
+          "type": "timestamp",
           "primaryKey": false,
           "notNull": false
         },

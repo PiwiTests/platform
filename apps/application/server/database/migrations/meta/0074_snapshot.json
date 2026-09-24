@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "0c06905a-b019-4cb8-8ad4-32c6937243ef",
+  "id": "7417762a-a448-4aa6-a6ba-32b134e5f750",
   "prevId": "f1d46d6c-99cc-49f2-97ae-c012ec2a40b2",
   "tables": {
     "account_tokens": {
@@ -2369,6 +2369,13 @@
           "notNull": true,
           "autoincrement": false
         },
+        "browser_name": {
+          "name": "browser_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
         "call_site": {
           "name": "call_site",
           "type": "text",
@@ -2401,7 +2408,7 @@
       "indexes": {
         "idx_locator_usages_use": {
           "name": "idx_locator_usages_use",
-          "columns": ["test_case_id", "call_site", "action", "locator"],
+          "columns": ["test_case_id", "browser_name", "call_site", "action", "locator"],
           "isUnique": true
         },
         "idx_locator_usages_project_locator": {
@@ -3499,6 +3506,13 @@
         "capabilities": {
           "name": "capabilities",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "locator_index_built_at": {
+          "name": "locator_index_built_at",
+          "type": "integer",
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false

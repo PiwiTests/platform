@@ -10,7 +10,7 @@ defineRouteMeta({
     tags: ['Test Run Cases'],
     summary: 'List the locators an execution used',
     description:
-      'Returns every locator chain the execution used, in step order, read from its stored steps: the action, the call site, the containers the chain searches inside, and how many tests in the project use the same chain or the same target. Builds the project’s locator index from stored runs on first use.',
+      'Returns every locator chain the execution used, in step order, read from its stored steps: the action, the call site, the containers the chain searches inside, and how many tests in the project use the same chain or the same target.',
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' }, description: 'Test run case id' },
     ],

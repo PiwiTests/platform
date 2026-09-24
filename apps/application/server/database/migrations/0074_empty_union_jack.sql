@@ -5,6 +5,7 @@ CREATE TABLE `locator_usages` (
 	`locator` text NOT NULL,
 	`target` text NOT NULL,
 	`action` text NOT NULL,
+	`browser_name` text NOT NULL,
 	`call_site` text NOT NULL,
 	`first_seen_run_id` integer,
 	`last_seen_run_id` integer,
@@ -15,8 +16,9 @@ CREATE TABLE `locator_usages` (
 	FOREIGN KEY (`last_seen_run_id`) REFERENCES `test_runs`(`id`) ON UPDATE no action ON DELETE set null
 );
 --> statement-breakpoint
-CREATE UNIQUE INDEX `idx_locator_usages_use` ON `locator_usages` (`test_case_id`,`call_site`,`action`,`locator`);--> statement-breakpoint
+CREATE UNIQUE INDEX `idx_locator_usages_use` ON `locator_usages` (`test_case_id`,`browser_name`,`call_site`,`action`,`locator`);--> statement-breakpoint
 CREATE INDEX `idx_locator_usages_project_locator` ON `locator_usages` (`project_id`,`locator`);--> statement-breakpoint
 CREATE INDEX `idx_locator_usages_project_target` ON `locator_usages` (`project_id`,`target`);--> statement-breakpoint
 CREATE INDEX `idx_locator_usages_last_seen_run` ON `locator_usages` (`last_seen_run_id`);--> statement-breakpoint
-CREATE INDEX `idx_locator_usages_first_seen_run` ON `locator_usages` (`first_seen_run_id`);
+CREATE INDEX `idx_locator_usages_first_seen_run` ON `locator_usages` (`first_seen_run_id`);--> statement-breakpoint
+ALTER TABLE `projects` ADD `locator_index_built_at` integer;

@@ -290,6 +290,14 @@ async function initialize(): Promise<void> {
     },
     { schema },
   );
+
+  // The server builds each project's locator index from its stored runs at
+  // startup; the demo does the same when its database opens. Projects already
+  // built are marked, so a reopened database skips them.
+  const { backfillUnindexedProjects } = await import('~~/server/utils/locator-usages');
+  await backfillUnindexedProjects(drizzleDb).catch((e) =>
+    console.warn('[Demo DB] could not build the locator index', e),
+  );
 }
 
 /**

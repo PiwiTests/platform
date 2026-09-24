@@ -476,6 +476,7 @@ export async function persistRunCases(
     const cappedSteps = capSteps(c.steps, limits);
     perCaseUsages.push({
       caseId,
+      browserName: resolveBrowserName(c.browser),
       steps: cappedSteps,
       filePath: c.filePath,
       runId: testRunId,
