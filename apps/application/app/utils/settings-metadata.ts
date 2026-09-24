@@ -275,6 +275,17 @@ export function getSettingsPage(id: SettingsPageId): SettingsPageMeta {
   return page;
 }
 
+/**
+ * Whether a signed-in user with `role` may open `path`. Only role-restricted
+ * settings pages are refused; any other path (including non-settings routes)
+ * is allowed. Used by the auth middleware so a direct URL cannot reach a page
+ * the nav hides — the server still enforces the roles on each page's endpoints.
+ */
+export function canOpenSettingsPath(path: string, role: Role | undefined): boolean {
+  const page = SETTINGS_PAGES.find((p) => p.to === path.replace(/\/+$/, ''));
+  return !page?.roles || (role !== undefined && page.roles.includes(role));
+}
+
 // ── Nav construction ───────────────────────────────────────────────────────
 
 /**

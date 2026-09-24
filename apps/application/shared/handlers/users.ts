@@ -111,9 +111,12 @@ export async function updateUserRecord(
 ) {
   const userResults = await db.select().from(users).where(eq(users.id, id));
   if (!userResults[0]) throw new Error('User not found');
+  // A new address has not been proven yet: drop the verified flag so it is not
+  // carried over from the old one (the personal email channel reads it).
+  const emailChanged = data.email !== undefined && data.email !== userResults[0].email;
   await db
     .update(users)
-    .set({ ...data, updatedAt: new Date() })
+    .set({ ...data, ...(emailChanged ? { emailVerified: false } : {}), updatedAt: new Date() })
     .where(eq(users.id, id));
   const updated = await db.select().from(users).where(eq(users.id, id));
   return updated[0] ?? null;
