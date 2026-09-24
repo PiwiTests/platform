@@ -31,6 +31,7 @@ import {
 import { upsertLocatorSnapshots } from '~~/server/utils/locator-healing';
 import { upsertLocatorUsages, type LocatorUsageCase } from '~~/server/utils/locator-usages';
 import { resolveRunBranch } from '~~/server/utils/run-branch';
+import { applyReporterKeep } from '#shared/handlers/run-keep';
 import type { LocatorSnapshot } from '#shared/locator-healing.types';
 import {
   capArray,
@@ -224,6 +225,7 @@ export async function apiSetupTestRun(body: TestRunStartPayload) {
       const tokens = demoShardTokens.get(existingShardedRun.id) ?? new Set();
       tokens.add(setupToken);
       demoShardTokens.set(existingShardedRun.id, tokens);
+      await applyReporterKeep(db, existingShardedRun.id, body.keep);
       return { success: true, runId: existingShardedRun.id, projectId: project.id, setupToken };
     }
 
@@ -259,6 +261,7 @@ export async function apiSetupTestRun(body: TestRunStartPayload) {
 
     const testRun = testRunResult[0];
     if (!testRun) throw new Error('Failed to create test run');
+    await applyReporterKeep(db, testRun.id, body.keep);
     publishDemoGlobalEvent({ type: 'run-initializing', runId: testRun.id, projectId: project.id });
     return { success: true, runId: testRun.id, projectId: project.id, setupToken };
   }
@@ -295,6 +298,7 @@ export async function apiSetupTestRun(body: TestRunStartPayload) {
   if (!testRun) {
     throw new Error('Failed to create test run');
   }
+  await applyReporterKeep(db, testRun.id, body.keep);
 
   publishDemoGlobalEvent({ type: 'run-initializing', runId: testRun.id, projectId: project.id });
 
@@ -943,6 +947,7 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
   const shardTokenSet = demoShardTokens.get(id) ?? readShardTokensFromMeta(testRun.metadata);
   const isValidShardToken = streamToken ? shardTokenSet?.has(streamToken) : false;
   await validateAndReviveDemoRun(db, testRun, streamToken, !!isValidShardToken);
+  await applyReporterKeep(db, id, body.keep);
 
   const isSharded = !!(testRun.shardTotal && testRun.shardTotal > 1);
 

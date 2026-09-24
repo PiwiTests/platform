@@ -6,6 +6,7 @@ import {
   pruneIntegrationActions,
   pruneNotificationDeliveries,
   reclaimSpace,
+  retentionMinRuns,
   sweepOrphans,
 } from '../../utils/retention';
 import { reclaimOrphanTraceResources } from '../../utils/delete-run-files';
@@ -21,18 +22,23 @@ export default defineTask({
   meta: {
     name: 'retention:sweep',
     description:
-      'Prune old test runs (opt-in via PIWI_RETENTION_DAYS), settled notification deliveries, and excess diagnosis versions',
+      'Prune old test runs (opt-in via PIWI_RETENTION_DAYS; kept runs and the newest PIWI_RETENTION_MIN_RUNS per project stay), settled notification deliveries, and excess diagnosis versions',
   },
   async run() {
     const db = await getDatabase();
     const result: Record<string, unknown> = {};
 
     // Destructive run pruning is strictly opt-in: unset or 0 = keep everything.
+    // Kept runs and each project's newest runs are never pruned.
     const retentionDays = envInt('PIWI_RETENTION_DAYS');
     if (retentionDays && retentionDays > 0) {
-      const { deletedRuns, deletedCases } = await deleteRunsOlderThan(db, retentionDays);
+      const { deletedRuns, deletedCases, skippedKept, skippedNewest } = await deleteRunsOlderThan(db, retentionDays, {
+        keepNewestPerProject: retentionMinRuns(),
+      });
       result.deletedRuns = deletedRuns;
       result.deletedCases = deletedCases;
+      if (skippedKept > 0) result.keptRunsSkipped = skippedKept;
+      if (skippedNewest > 0) result.newestRunsSkipped = skippedNewest;
     }
 
     const orphans = await sweepOrphans(db);

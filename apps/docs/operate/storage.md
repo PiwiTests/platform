@@ -104,23 +104,45 @@ PIWI_S3_SECRET_ACCESS_KEY=your-r2-secret-key
 The **Settings › Storage** page (`/settings/storage`) provides administrators with:
 
 - **Storage analysis** — total storage used and file count, the projects that consume the most space, a breakdown by file kind (traces, screenshots, videos, reports, attachments, visual diffs), storage growth over time, and the actual on-disk storage size (local only) — which also surfaces any untracked files lingering on disk.
-- **Cleanup** — permanently delete all test runs older than a configurable number of days (7, 14, 30, 60, 90, 180, or 365 days). A confirmation dialog is shown before any data is deleted.
+- **Cleanup** — permanently delete all test runs older than a configurable number of days (7, 14, 30, 60, 90, 180, or 365 days). [Kept runs](#keeping-runs-forever) are skipped, and so are each project's newest runs when `PIWI_RETENTION_MIN_RUNS` is set. A confirmation dialog is shown before any data is deleted, and the result says how many runs were skipped.
 
 You can also delete individual test runs:
 
-- From the **test run detail page** — click the red **Delete** button in the page header.
-- From the **project detail page** — click the **Delete** button in the Actions column of the test runs table.
+- From the **test run detail page** — **Delete run** in the page's **⋮** menu.
+- From the **project detail page** — **Delete run** in a run's **⋮** menu in the runs table.
+
+A kept run cannot be deleted until it is released.
 
 ### Data retention
 
 A nightly sweep (03:17 server time) handles recurring cleanup:
 
-- **Test-run pruning** — deletes runs older than `PIWI_RETENTION_DAYS` days, including their files, traces, and reports. **Off by default**: deleting history is opt-in, so nothing is pruned until you set the variable.
+- **Test-run pruning** — deletes runs older than `PIWI_RETENTION_DAYS` days, including their files, traces, and reports. **Off by default**: deleting history is opt-in, so nothing is pruned until you set the variable. [Kept runs](#keeping-runs-forever) are never pruned, and `PIWI_RETENTION_MIN_RUNS` keeps each project's newest runs whatever their age, so a project that stops reporting keeps its last runs instead of emptying.
 - **Notification outbox pruning** — removes sent/failed delivery rows older than `PIWI_RETENTION_NOTIFICATION_DAYS` days (default 30).
 - **Diagnosis history capping** — keeps the newest `PIWI_RETENTION_DIAGNOSIS_VERSIONS` versions per AI diagnosis (default 20).
 - **Orphan sweep** — removes rows whose parent records were deleted by older versions.
 
 The manual **Settings › Storage** cleanup remains available for one-off bulk deletes and uses the same deletion logic.
+
+### Keeping runs forever
+
+Some runs are worth more than the rest — a release build, the run that proved a fix, the last green run before a migration. A **kept** run is exempt from retention: neither the nightly sweep nor the manual cleanup deletes it, however old it gets. Its traces, reports and attachments stay with it.
+
+There are three ways to keep a run:
+
+- **From the dashboard** — **Keep forever…** in the run page's **⋮** menu, or in the run's **⋮** menu on the project's runs table. You can add a reason (e.g. _v2.3.1 release_). Any signed-in user with access to the project can keep a run.
+- **From the reporter** — set [`keep: true`](/guide/reporter#configuration-options) in the reporter options, or `PIWI_KEEP=true` in the environment, and the run is kept as it arrives. In CI, set it only for the builds worth keeping — on GitHub Actions, for example, only for tag builds (see below).
+- **With a release marker** — a [`release` marker linked to the run](/features/timeline-markers#release-markers-keep-their-run) keeps it for as long as the marker exists.
+
+```yaml
+- run: npx playwright test
+  env:
+    PIWI_KEEP: ${{ startsWith(github.ref, 'refs/tags/') }}
+```
+
+A kept run shows a lock next to its number in the runs table and a **Kept** mark in its header; its **Details** say who kept it, when and why. The runs table's **Kept runs only** box lists every kept run of the project, however far back. **Settings › Storage** shows how many runs are kept and how much storage their own files hold.
+
+Only an administrator can **release** a run (**Release keep** in the same menus), which puts it back under retention. A kept run cannot be deleted until it is released. The API equivalent is `PATCH /api/test-runs/:id` with `{ "keep": true, "keepReason": "…" }` or `{ "keep": false }` — see the [API docs](https://piwitests.dev/demo/docs).
 
 ### Space reclamation
 

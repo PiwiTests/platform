@@ -1,4 +1,4 @@
-import { users, apiKeys } from '../../server/database/schema';
+import { users, apiKeys, testRuns } from '../../server/database/schema';
 import { eq, and, ne, sql } from 'drizzle-orm';
 
 import type { DrizzleDB } from './db';
@@ -70,6 +70,9 @@ export async function deleteUserRecord(db: DrizzleDB, id: number) {
   const userResults = await db.select().from(users).where(eq(users.id, id));
   if (!userResults[0]) throw new Error('User not found');
   await db.delete(apiKeys).where(eq(apiKeys.userId, id));
+  // A kept run outlives the user who kept it. The SQLite `kept_by` column has no
+  // ON DELETE action, so the reference is cleared before the user row goes.
+  await db.update(testRuns).set({ keptBy: null }).where(eq(testRuns.keptBy, id));
   await db.delete(users).where(eq(users.id, id));
   return { success: true };
 }

@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "b86fe993-658e-41d3-b115-fb2eecf5c390",
-  "prevId": "f1d46d6c-99cc-49f2-97ae-c012ec2a40b2",
+  "id": "26258e4a-f67f-4fb3-8580-72cee5f352d3",
+  "prevId": "b86fe993-658e-41d3-b115-fb2eecf5c390",
   "tables": {
     "account_tokens": {
       "name": "account_tokens",
@@ -2324,6 +2324,156 @@
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
+    "locator_usages": {
+      "name": "locator_usages",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "test_case_id": {
+          "name": "test_case_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "locator": {
+          "name": "locator",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "target": {
+          "name": "target",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "action": {
+          "name": "action",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "browser_name": {
+          "name": "browser_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "call_site": {
+          "name": "call_site",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "first_seen_run_id": {
+          "name": "first_seen_run_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "last_seen_run_id": {
+          "name": "last_seen_run_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "last_seen_at": {
+          "name": "last_seen_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "idx_locator_usages_use": {
+          "name": "idx_locator_usages_use",
+          "columns": ["test_case_id", "browser_name", "call_site", "action", "locator"],
+          "isUnique": true
+        },
+        "idx_locator_usages_project_locator": {
+          "name": "idx_locator_usages_project_locator",
+          "columns": ["project_id", "locator"],
+          "isUnique": false
+        },
+        "idx_locator_usages_project_target": {
+          "name": "idx_locator_usages_project_target",
+          "columns": ["project_id", "target"],
+          "isUnique": false
+        },
+        "idx_locator_usages_last_seen_run": {
+          "name": "idx_locator_usages_last_seen_run",
+          "columns": ["last_seen_run_id"],
+          "isUnique": false
+        },
+        "idx_locator_usages_first_seen_run": {
+          "name": "idx_locator_usages_first_seen_run",
+          "columns": ["first_seen_run_id"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "locator_usages_project_id_projects_id_fk": {
+          "name": "locator_usages_project_id_projects_id_fk",
+          "tableFrom": "locator_usages",
+          "tableTo": "projects",
+          "columnsFrom": ["project_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "locator_usages_test_case_id_test_cases_id_fk": {
+          "name": "locator_usages_test_case_id_test_cases_id_fk",
+          "tableFrom": "locator_usages",
+          "tableTo": "test_cases",
+          "columnsFrom": ["test_case_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "locator_usages_first_seen_run_id_test_runs_id_fk": {
+          "name": "locator_usages_first_seen_run_id_test_runs_id_fk",
+          "tableFrom": "locator_usages",
+          "tableTo": "test_runs",
+          "columnsFrom": ["first_seen_run_id"],
+          "columnsTo": ["id"],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "locator_usages_last_seen_run_id_test_runs_id_fk": {
+          "name": "locator_usages_last_seen_run_id_test_runs_id_fk",
+          "tableFrom": "locator_usages",
+          "tableTo": "test_runs",
+          "columnsFrom": ["last_seen_run_id"],
+          "columnsTo": ["id"],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
     "markers": {
       "name": "markers",
       "columns": {
@@ -3356,6 +3506,13 @@
         "capabilities": {
           "name": "capabilities",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "locator_index_built_at": {
+          "name": "locator_index_built_at",
+          "type": "integer",
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false

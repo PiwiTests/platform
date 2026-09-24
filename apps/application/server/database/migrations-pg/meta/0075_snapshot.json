@@ -1,5 +1,5 @@
 {
-  "id": "7e8fc94e-9548-4404-b457-52cfb7990092",
+  "id": "43cb9633-14b3-4cf3-9cba-ec483494271e",
   "prevId": "32ec8f65-7fa0-42f1-b115-dbe0dbd1a437",
   "version": "7",
   "dialect": "postgresql",
@@ -2896,234 +2896,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.locator_usages": {
-      "name": "locator_usages",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "serial",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "project_id": {
-          "name": "project_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "test_case_id": {
-          "name": "test_case_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "locator": {
-          "name": "locator",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "target": {
-          "name": "target",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "action": {
-          "name": "action",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "browser_name": {
-          "name": "browser_name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "call_site": {
-          "name": "call_site",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "first_seen_run_id": {
-          "name": "first_seen_run_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "last_seen_run_id": {
-          "name": "last_seen_run_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "last_seen_at": {
-          "name": "last_seen_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {
-        "idx_locator_usages_use": {
-          "name": "idx_locator_usages_use",
-          "columns": [
-            {
-              "expression": "test_case_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "browser_name",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "call_site",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "action",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "locator",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_locator_usages_project_locator": {
-          "name": "idx_locator_usages_project_locator",
-          "columns": [
-            {
-              "expression": "project_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "locator",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_locator_usages_project_target": {
-          "name": "idx_locator_usages_project_target",
-          "columns": [
-            {
-              "expression": "project_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "target",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_locator_usages_last_seen_run": {
-          "name": "idx_locator_usages_last_seen_run",
-          "columns": [
-            {
-              "expression": "last_seen_run_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_locator_usages_first_seen_run": {
-          "name": "idx_locator_usages_first_seen_run",
-          "columns": [
-            {
-              "expression": "first_seen_run_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "locator_usages_project_id_projects_id_fk": {
-          "name": "locator_usages_project_id_projects_id_fk",
-          "tableFrom": "locator_usages",
-          "tableTo": "projects",
-          "columnsFrom": ["project_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "locator_usages_test_case_id_test_cases_id_fk": {
-          "name": "locator_usages_test_case_id_test_cases_id_fk",
-          "tableFrom": "locator_usages",
-          "tableTo": "test_cases",
-          "columnsFrom": ["test_case_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "locator_usages_first_seen_run_id_test_runs_id_fk": {
-          "name": "locator_usages_first_seen_run_id_test_runs_id_fk",
-          "tableFrom": "locator_usages",
-          "tableTo": "test_runs",
-          "columnsFrom": ["first_seen_run_id"],
-          "columnsTo": ["id"],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "locator_usages_last_seen_run_id_test_runs_id_fk": {
-          "name": "locator_usages_last_seen_run_id_test_runs_id_fk",
-          "tableFrom": "locator_usages",
-          "tableTo": "test_runs",
-          "columnsFrom": ["last_seen_run_id"],
-          "columnsTo": ["id"],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.markers": {
       "name": "markers",
       "schema": "",
@@ -4377,12 +4149,6 @@
         "capabilities": {
           "name": "capabilities",
           "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "locator_index_built_at": {
-          "name": "locator_index_built_at",
-          "type": "timestamp",
           "primaryKey": false,
           "notNull": false
         },
@@ -5913,6 +5679,30 @@
           "primaryKey": false,
           "notNull": false
         },
+        "kept_at": {
+          "name": "kept_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "kept_by": {
+          "name": "kept_by",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "keep_source": {
+          "name": "keep_source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "keep_reason": {
+          "name": "keep_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp",
@@ -6040,6 +5830,42 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "idx_test_runs_project_kept": {
+          "name": "idx_test_runs_project_kept",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "kept_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_test_runs_kept_by": {
+          "name": "idx_test_runs_kept_by",
+          "columns": [
+            {
+              "expression": "kept_by",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -6050,6 +5876,15 @@
           "columnsFrom": ["project_id"],
           "columnsTo": ["id"],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "test_runs_kept_by_users_id_fk": {
+          "name": "test_runs_kept_by_users_id_fk",
+          "tableFrom": "test_runs",
+          "tableTo": "users",
+          "columnsFrom": ["kept_by"],
+          "columnsTo": ["id"],
+          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },

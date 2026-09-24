@@ -324,11 +324,21 @@ export const PIWI_ENV_VARS = {
   },
   PIWI_RETENTION_DAYS: {
     description:
-      'Days of test-run history the nightly retention sweep keeps. Unset or 0 disables automatic run pruning (the default — pruning is opt-in).',
+      'Days of test-run history the nightly retention sweep keeps. Unset or 0 disables automatic run pruning (the default — pruning is opt-in). Kept runs are never pruned.',
     category: 'database',
     type: 'number',
     min: 0,
     docs: 'operate/storage#data-retention',
+  },
+  PIWI_RETENTION_MIN_RUNS: {
+    description:
+      'Newest runs of each project that age-based pruning (the nightly sweep and the manual cleanup) always leaves in place, however old — so a project that stops reporting keeps its last runs. Unset or 0 sets no floor.',
+    category: 'database',
+    type: 'number',
+    default: '0',
+    min: 0,
+    docs: 'operate/storage#data-retention',
+    since: '0.38.0',
   },
   PIWI_RETENTION_NOTIFICATION_DAYS: {
     description:

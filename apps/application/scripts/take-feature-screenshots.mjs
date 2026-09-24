@@ -722,6 +722,69 @@ const SCENES = [
 
   // ── Feature states (report artifacts) ─────────────────────────────────────
   {
+    name: 'run-kept',
+    description: 'Run page of a kept run: the Kept mark in the header and who kept it, in Details',
+    // Seeded run #1 is the v2.4.0 release run, kept by its release marker.
+    route: '/test-runs/1',
+    viewport: { width: 1280, height: 520 },
+    async run({ page, shoot, settle }) {
+      await page.locator('[data-shot="run-kept"]').waitFor();
+      await shoot('header', { of: '[data-shot="run-header"]', pad: 8 });
+      await page.getByRole('button', { name: 'Details' }).click();
+      await settle();
+      await shoot('details');
+    },
+  },
+  {
+    name: 'run-keep-modal',
+    description: 'Run page menu: Keep forever… asks for an optional reason',
+    route: '/test-runs/2',
+    viewport: { width: 1280, height: 720 },
+    async run({ page, shoot, settle }) {
+      await page.getByRole('button', { name: 'More actions' }).click();
+      await page.getByRole('menuitem', { name: 'Keep forever…' }).click();
+      await page.getByRole('dialog', { name: 'Keep run #2 forever' }).waitFor();
+      await settle();
+      await shoot();
+    },
+  },
+  {
+    name: 'kept-runs-table',
+    description: 'Project runs table: lock on kept runs, and the Kept runs only view reaching past the loaded window',
+    route: '/projects/1',
+    viewport: { width: 1280, height: 1400 },
+    async run({ page, shoot, settle }) {
+      await page.locator('[data-shot="kept-runs-toggle"]').waitFor();
+      await shoot('all', { of: '[data-shot="runs-table"]', pad: 8 });
+      await page.locator('[data-shot="kept-runs-toggle"]').click();
+      await settle();
+      await shoot('kept-only', { of: '[data-shot="runs-table"]', pad: 8 });
+    },
+  },
+  {
+    name: 'kept-runs-table-mobile',
+    description: 'Project runs cards at phone width: the lock on kept runs and the Kept runs only toggle',
+    route: '/projects/1',
+    viewport: { width: 390, height: 1400 },
+    async run({ page, shoot, settle }) {
+      await page.locator('[data-shot="kept-runs-toggle"]').waitFor();
+      await page.locator('[data-shot="kept-runs-toggle"]').click();
+      await settle();
+      await shoot(undefined, { of: '[data-shot="runs-table"]', pad: 4 });
+    },
+  },
+  {
+    name: 'kept-runs-storage',
+    description: 'Settings › Storage cleanup card: how many runs are kept and what their files hold',
+    route: '/settings/storage',
+    viewport: { width: 1280, height: 1600 },
+    async run({ page, shoot }) {
+      await page.locator('[data-shot="kept-runs-note"]').waitFor();
+      await shoot(undefined, { of: '[data-shot="cleanup-card"]', pad: 8 });
+    },
+  },
+
+  {
     name: 'attempt-diff',
     description: 'Attempts tab: every attempt, and what differed between the failing and passing attempt',
     // Execution 21 is a flaky test that passed on retry, so the Attempts tab holds a diff.
