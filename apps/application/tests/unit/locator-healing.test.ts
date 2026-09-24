@@ -348,6 +348,14 @@ describe('computeNarrowingSuggestion', () => {
 });
 
 describe('parseLocatorExpression', () => {
+  test('a name containing a parenthesis survives the trip out of the error text', async () => {
+    const leaf = extractLeafSelector("waiting for getByRole('button', { name: 'Save :)' })")!;
+    expect(parseLocatorExpression(leaf)).toEqual({ method: 'getByRole', args: { role: 'button', name: 'Save :)' } });
+    expect(await locatorSignatureFromExpression(leaf)).toBe(
+      await locatorSignature('getByRole', ['button', { name: 'Save :)' }]),
+    );
+  });
+
   test('keys the positional argument and keeps getByRole options except exact', () => {
     expect(parseLocatorExpression(`getByRole('button', { name: 'Submit', exact: true, level: 2 })`)).toEqual({
       method: 'getByRole',

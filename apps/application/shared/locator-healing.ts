@@ -150,45 +150,22 @@ export function locatorArgStrings(args: unknown[]): string[] {
 }
 
 /**
- * Extract the leading method name from a locator expression
+ * The method of a locator expression's leaf — its last locating call
  * (`getByRole('button')` → `getByRole`, `page.locator('.x')` → `locator`).
+ * Null when the expression does not parse.
  */
 export function locatorExpressionMethod(expr: string): string | null {
-  const m = expr.match(/(\w+)\s*\(/);
-  return m ? m[1]! : null;
+  return parseLeafLocatorCall(expr)?.method ?? null;
 }
 
 /**
- * Extract the quoted string literals from a locator expression, in order,
- * honoring `\` escapes and both quote styles. Object keys and booleans are
- * unquoted in Playwright's rendering, so only string values are captured —
- * mirroring {@link locatorArgStrings} on the capture side.
+ * The string values of a locator expression's leaf call, in order, read with
+ * the shared parser — mirroring {@link locatorArgStrings} on the capture side.
+ * Empty when the expression does not parse.
  */
 export function locatorExpressionStrings(expr: string): string[] {
-  const out: string[] = [];
-  const open = expr.indexOf('(');
-  let i = open === -1 ? 0 : open + 1;
-  while (i < expr.length) {
-    const ch = expr[i];
-    if (ch === "'" || ch === '"') {
-      let s = '';
-      i++;
-      while (i < expr.length && expr[i] !== ch) {
-        if (expr[i] === '\\') {
-          s += expr[i + 1] ?? '';
-          i += 2;
-          continue;
-        }
-        s += expr[i];
-        i++;
-      }
-      out.push(s);
-      i++; // skip the closing quote
-      continue;
-    }
-    i++;
-  }
-  return out;
+  const leaf = parseLeafLocatorCall(expr);
+  return leaf ? locatorArgStrings(locatorCallValues(leaf)) : [];
 }
 
 /**

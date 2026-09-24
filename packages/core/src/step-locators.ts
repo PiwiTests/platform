@@ -9,6 +9,7 @@
  * expected values never leave the step.
  */
 import { renderLocatorChain, tryParseLocatorChain, type LocatorChain } from './locator-chain';
+import { MAX_STEP_PARAM_VALUE_CHARS } from './step-analysis';
 
 /** The subset of a stored step this module reads. */
 export interface LocatorStepLike {
@@ -93,8 +94,10 @@ function readTitle(title: string): { action: string; end: number } | null {
   for (const [prefix, action] of ACTION_TITLES) {
     if (!title.startsWith(prefix)) continue;
     if (prefix.endsWith('"')) {
+      // Titles print the value raw, so a value ending in `\` hides its closing
+      // quote; the chain is then found after the verb all the same.
       const end = endOfQuoted(title, prefix.length - 1);
-      return end < 0 ? null : { action, end };
+      return { action, end: end < 0 ? prefix.length : end };
     }
     const next = title[prefix.length];
     if (next === undefined || next === ' ') return { action, end: prefix.length };
@@ -125,9 +128,15 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
 }
 
-/** A chain from a 1.63 `params.locator` or subtitle, unless the runner cut it short. */
+/**
+ * A chain from a 1.63 `params.locator` or subtitle, unless it was cut short: a
+ * cut value ends in `…`, and one exactly at the default cap was cut by a
+ * reporter that added no marker. A cut chain can still parse, as a shorter one.
+ */
 function chainFromText(value: unknown): LocatorChain | null {
-  if (typeof value !== 'string' || !value || value.endsWith('…')) return null;
+  if (typeof value !== 'string' || !value || value.endsWith('…') || value.length === MAX_STEP_PARAM_VALUE_CHARS) {
+    return null;
+  }
   return tryParseLocatorChain(value);
 }
 
@@ -190,4 +199,15 @@ export function findLocationRoot(locations: string[], testFilePath: string | nul
 export function stripLocationRoot(location: string, root: string | null): string {
   const normalized = location.replace(/\\/g, '/');
   return root && normalized.startsWith(root) ? normalized.slice(root.length) : normalized;
+}
+
+/** A directory as a location root: forward slashes and one trailing `/`. Null when empty. */
+export function locationRootOf(dir: unknown): string | null {
+  if (typeof dir !== 'string' || !dir.trim()) return null;
+  return `${dir.trim().replace(/\\/g, '/').replace(/\/+$/, '')}/`;
+}
+
+/** Whether a location is a machine path (`/home/…`, `C:/…`) rather than project-relative. */
+export function isAbsoluteLocation(location: string): boolean {
+  return /^(?:[A-Za-z]:)?[\\/]/.test(location);
 }

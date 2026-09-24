@@ -7,6 +7,7 @@ import {
   locatorTarget,
   parseLocatorChain,
   renderLocatorChain,
+  scanLocatorChain,
   tryParseLocatorChain,
 } from '../src/locator-chain';
 
@@ -44,6 +45,28 @@ describe('parseLocatorChain', () => {
   });
 
   test.each([
+    ['a CR LF pair', 'a\r\nb'],
+    ['a tab', 'a\tb'],
+    ['an escape character', '\u001b[31m'],
+    ['a backspace and a form feed', '\b\f'],
+    ['quotes of both kinds and a backslash', `it's "done" \\ ok`],
+    ['an emoji', 'Save 💾'],
+  ])('renders and reads back %s as Playwright prints it', (_label, text) => {
+    // Playwright quotes with JSON.stringify inside single quotes.
+    const printed = `getByText('${JSON.stringify(text).slice(1, -1).replace(/\\"/g, '"').replace(/'/g, "\\'")}')`;
+    const chain = parseLocatorChain(printed);
+    expect(chain.calls[0]!.args[0]).toEqual({ type: 'string', value: text });
+    expect(renderLocatorChain(chain)).toBe(printed);
+  });
+
+  test('decodes \\x, \\u{…} and \\v escapes', () => {
+    expect(parseLocatorChain("getByText('\\x41\\u{1F4BE}\\v')").calls[0]!.args[0]).toEqual({
+      type: 'string',
+      value: 'A💾\v',
+    });
+  });
+
+  test.each([
     ['an unknown method', "getByRole('button').click()"],
     ['a narrowing call first', 'first()'],
     ['trailing text', "getByText('a') and more"],
@@ -51,6 +74,25 @@ describe('parseLocatorChain', () => {
     ['arbitrary code', "locator(eval('1'))"],
   ])('refuses %s', (_label, expr) => {
     expect(tryParseLocatorChain(expr)).toBeNull();
+  });
+});
+
+describe('scanLocatorChain', () => {
+  test('reads the chain at the start of the text and stops where it ends', () => {
+    const text = "getByRole('row', { name: 'A (b)' }).getByRole('button').first().click() to be visible";
+    const scanned = scanLocatorChain(text)!;
+    expect(renderLocatorChain(scanned.chain)).toBe("getByRole('row', { name: 'A (b)' }).getByRole('button').first()");
+    expect(scanned.spans.map((s) => text.slice(s.start, s.end))).toEqual([
+      "getByRole('row', { name: 'A (b)' })",
+      "getByRole('button')",
+      'first()',
+    ]);
+    expect(text.slice(scanned.end)).toBe('.click() to be visible');
+  });
+
+  test('null when the text does not start with a locator call', () => {
+    expect(scanLocatorChain("getByRole('button")).toBeNull();
+    expect(scanLocatorChain('waiting for')).toBeNull();
   });
 });
 

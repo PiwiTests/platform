@@ -17,6 +17,7 @@
  */
 
 /** The locator-builder methods whose innermost call identifies the resolved element. */
+import { scanLocatorChain } from './locator-chain';
 import { LOCATOR_BUILDER_METHODS } from './locator-methods';
 
 export type ParsedErrorKind =
@@ -196,10 +197,44 @@ export function extractLeafSelector(text: string): string | null {
   const nl = text.indexOf('\n', first.index);
   const region = text.slice(first.index, nl === -1 ? undefined : nl);
 
+  const scanned = readChain(region);
+  if (scanned) {
+    for (let k = scanned.chain.calls.length - 1; k >= 0; k--) {
+      if (LEAF_METHODS.has(scanned.chain.calls[k]!.method)) {
+        return region.slice(scanned.spans[k]!.start, scanned.spans[k]!.end);
+      }
+    }
+    return null;
+  }
+  return lenientLeaf(region);
+}
+
+const LEAF_METHODS: ReadonlySet<string> = new Set(LOCATOR_BUILDER_METHODS);
+
+/** Index just past the string literal opening at `i`, or the end of `text` when it is cut short. */
+function skipQuoted(text: string, i: number): number {
+  const quote = text[i];
+  for (let j = i + 1; j < text.length; j++) {
+    if (text[j] === '\\') j++;
+    else if (text[j] === quote) return j + 1;
+  }
+  return text.length;
+}
+
+/**
+ * The leaf of a chain the parser can't read — cut short in the error text. The
+ * last top-level builder call, found by counting parentheses outside string
+ * literals, up to its closing parenthesis or a stable 80-character prefix.
+ */
+function lenientLeaf(region: string): string | null {
   let depth = 0;
   let leafStart = -1;
   for (let i = 0; i < region.length; i++) {
-    const ch = region[i];
+    const ch = region[i]!;
+    if (ch === "'" || ch === '"' || ch === '`') {
+      i = skipQuoted(region, i) - 1;
+      continue;
+    }
     if (ch === '(') {
       depth++;
       continue;
@@ -222,8 +257,10 @@ export function extractLeafSelector(text: string): string | null {
 
   depth = 0;
   for (let i = leafStart; i < region.length; i++) {
-    const ch = region[i];
-    if (ch === '(') {
+    const ch = region[i]!;
+    if (ch === "'" || ch === '"' || ch === '`') {
+      i = skipQuoted(region, i) - 1;
+    } else if (ch === '(') {
       depth++;
     } else if (ch === ')') {
       depth--;
@@ -245,11 +282,18 @@ export function extractLocatorChain(text: string): string | null {
   const nl = text.indexOf('\n', first.index);
   const region = text.slice(first.index, nl === -1 ? undefined : nl);
 
+  const scanned = readChain(region);
+  if (scanned) return region.slice(0, scanned.end);
+
+  // Text the parser can't read (cut short): balanced calls outside string
+  // literals, continuing only through chained locator links.
   let depth = 0;
   let end = -1;
   for (let i = 0; i < region.length; i++) {
-    const ch = region[i];
-    if (ch === '(') {
+    const ch = region[i]!;
+    if (ch === "'" || ch === '"' || ch === '`') {
+      i = skipQuoted(region, i) - 1;
+    } else if (ch === '(') {
       depth++;
     } else if (ch === ')') {
       if (depth > 0) depth--;
@@ -264,6 +308,19 @@ export function extractLocatorChain(text: string): string | null {
   }
   if (end === -1) return region.slice(0, 80);
   return region.slice(0, end);
+}
+
+/**
+ * The chain at the start of `region`, read with the shared parser — null when
+ * it doesn't parse, or when it stops right before another chain link (one cut
+ * short in the error text, or one the parser doesn't know): the caller then
+ * reads the region leniently.
+ */
+function readChain(region: string): ReturnType<typeof scanLocatorChain> {
+  const scanned = scanLocatorChain(region);
+  if (!scanned) return null;
+  const link = /^\s*\.\s*(\w+)\(/.exec(region.slice(scanned.end));
+  return link && CHAIN_LINK_METHODS.has(link[1]!) ? null : scanned;
 }
 
 /** The first stack frame outside node_modules and Node internals. */

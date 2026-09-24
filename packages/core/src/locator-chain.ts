@@ -65,6 +65,23 @@ export class LocatorParseError extends Error {
   }
 }
 
+/** Where one top-level call of a chain starts and ends in the parsed text. */
+export interface CallSpan {
+  start: number;
+  end: number;
+}
+
+/** Single-character escapes and what they stand for. */
+const SIMPLE_ESCAPES: Readonly<Record<string, string>> = {
+  n: '\n',
+  t: '\t',
+  r: '\r',
+  b: '\b',
+  f: '\f',
+  v: '\v',
+  '0': '\0',
+};
+
 class Parser {
   private i = 0;
 
@@ -102,16 +119,41 @@ class Parser {
     return m[0];
   }
 
-  parseChain(): LocatorChain {
+  /**
+   * A chain of calls joined by `.`. With `lenient`, parsing stops before the
+   * first link that doesn't parse instead of failing, so a chain followed by
+   * other text (an error message) is read up to where it ends. `spans` receives
+   * where each top-level call starts and ends.
+   */
+  parseChain(opts: { lenient?: boolean; spans?: CallSpan[] } = {}): LocatorChain {
     this.skipSpace();
     const calls: LocatorCall[] = [];
     for (;;) {
-      calls.push(this.parseCall(calls.length === 0));
+      const before = this.i;
+      if (calls.length > 0) this.i++; // the `.`
       this.skipSpace();
-      if (this.peek() !== '.') break;
-      this.i++;
+      const start = this.i;
+      try {
+        calls.push(this.parseCall(calls.length === 0));
+      } catch (error) {
+        if (!opts.lenient || calls.length === 0) throw error;
+        this.i = before;
+        break;
+      }
+      opts.spans?.push({ start, end: this.i });
+      const end = this.i;
+      this.skipSpace();
+      if (this.peek() !== '.') {
+        this.i = end;
+        break;
+      }
     }
     return { calls };
+  }
+
+  /** Where the parser stopped. */
+  get position(): number {
+    return this.i;
   }
 
   private parseCall(first: boolean): LocatorCall {
@@ -169,25 +211,47 @@ class Parser {
     return this.fail('expected a value');
   }
 
+  /** A quoted string, decoding the escapes `JSON.stringify` and JavaScript produce. */
   private parseString(): string {
     const quote = this.src[this.i]!;
     let out = '';
     this.i++;
     while (this.i < this.src.length) {
       const c = this.src[this.i]!;
-      if (c === '\\') {
-        const next = this.src[this.i + 1];
-        if (next === undefined) break;
-        out += next === 'n' ? '\n' : next === 't' ? '\t' : next;
-        this.i += 2;
-        continue;
-      }
       if (c === quote) {
         this.i++;
         return out;
       }
-      out += c;
-      this.i++;
+      if (c !== '\\') {
+        out += c;
+        this.i++;
+        continue;
+      }
+      const next = this.src[this.i + 1];
+      if (next === undefined) break;
+      const simple = SIMPLE_ESCAPES[next];
+      if (simple !== undefined) {
+        out += simple;
+        this.i += 2;
+        continue;
+      }
+      const hex =
+        next === 'u' && this.src[this.i + 2] === '{'
+          ? /^u\{([0-9a-fA-F]{1,6})\}/.exec(this.src.slice(this.i + 1))
+          : next === 'u'
+            ? /^u([0-9a-fA-F]{4})/.exec(this.src.slice(this.i + 1))
+            : next === 'x'
+              ? /^x([0-9a-fA-F]{2})/.exec(this.src.slice(this.i + 1))
+              : null;
+      if (hex) {
+        out += String.fromCodePoint(parseInt(hex[1]!, 16));
+        this.i += 1 + hex[0].length;
+        continue;
+      }
+      if (next === 'u' || next === 'x') this.fail('malformed escape');
+      // `\\`, `\'`, `\"`, `\/` and any other escaped character stand for themselves.
+      out += next;
+      this.i += 2;
     }
     return this.fail('unterminated string');
   }
@@ -248,6 +312,23 @@ export function parseLocatorChain(expr: string): LocatorChain {
   return new Parser(trimmed).parseTopLevel();
 }
 
+/**
+ * Read the chain at the start of `text`, stopping where it ends — before any
+ * following text or link that doesn't parse. Returns the chain, each top-level
+ * call's span in `text`, and where the chain ends; null when `text` does not
+ * start with a locator call.
+ */
+export function scanLocatorChain(text: string): { chain: LocatorChain; spans: CallSpan[]; end: number } | null {
+  const parser = new Parser(text);
+  const spans: CallSpan[] = [];
+  try {
+    const chain = parser.parseChain({ lenient: true, spans });
+    return { chain, spans, end: parser.position };
+  } catch {
+    return null;
+  }
+}
+
 /** {@link parseLocatorChain}, returning null instead of throwing. */
 export function tryParseLocatorChain(expr: string): LocatorChain | null {
   try {
@@ -257,8 +338,13 @@ export function tryParseLocatorChain(expr: string): LocatorChain | null {
   }
 }
 
+/**
+ * Quote a string the way Playwright prints it: `JSON.stringify`'s escapes
+ * (control characters as `\n`, `\r`, `\u001b`, …) inside single quotes.
+ */
 function quote(value: string): string {
-  return `'${value.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n')}'`;
+  const json = JSON.stringify(value);
+  return `'${json.slice(1, -1).replace(/\\"/g, '"').replace(/'/g, "\\'")}'`;
 }
 
 function renderArg(arg: LocatorArg): string {

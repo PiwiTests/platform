@@ -3,6 +3,8 @@ import {
   extractStepLocatorUse,
   extractStepLocatorUses,
   findLocationRoot,
+  isAbsoluteLocation,
+  locationRootOf,
   stepLocations,
   stripLocationRoot,
 } from '../src/step-locators';
@@ -97,9 +99,32 @@ describe('extractStepLocatorUse — Playwright 1.61 titles', () => {
     expect(extractStepLocatorUse({ title })).toMatchObject({ action, locator });
   });
 
+  test('a value ending in a backslash keeps the action', () => {
+    expect(extractStepLocatorUse({ title: 'Fill "C:\\" getByLabel(\'Path\')' })).toMatchObject({
+      action: 'fill',
+      locator: "getByLabel('Path')",
+    });
+  });
+
   test('a typed value that looks like a locator does not win', () => {
     const use = extractStepLocatorUse({ title: "Fill \"use getByText('x') here\" getByLabel('Notes')" });
     expect(use).toMatchObject({ action: 'fill', locator: "getByLabel('Notes')" });
+  });
+});
+
+describe('extractStepLocatorUse — cut values', () => {
+  const chain =
+    "getByRole('dialog', { name: 'Edit shipping address' }).getByRole('group', { name: 'Address details' }).getByLabel('Country')";
+
+  test('a chain cut with a marker is skipped, even when the cut part parses', () => {
+    const cut = `${chain.slice(0, chain.indexOf('.getByLabel'))}…`;
+    expect(extractStepLocatorUse({ title: 'Select option', params: { locator: cut }, subtitle: cut })).toBeNull();
+  });
+
+  test('a chain exactly at the default cap is skipped: an older reporter cut it without a marker', () => {
+    const cut = `getByTestId('${'x'.repeat(200 - "getByTestId('')".length)}')`;
+    expect(cut).toHaveLength(200);
+    expect(extractStepLocatorUse({ title: 'Click', params: { locator: cut } })).toBeNull();
   });
 });
 
@@ -119,6 +144,24 @@ describe('extractStepLocatorUses', () => {
 
   test('tolerates a non-array', () => {
     expect(extractStepLocatorUses(null)).toEqual([]);
+  });
+});
+
+describe('locationRootOf and isAbsoluteLocation', () => {
+  test('a working directory becomes a root with one trailing slash', () => {
+    expect(locationRootOf('/work/shop')).toBe('/work/shop/');
+    expect(locationRootOf('C:\\work\\shop\\')).toBe('C:/work/shop/');
+    expect(locationRootOf('')).toBeNull();
+    expect(locationRootOf(undefined)).toBeNull();
+  });
+
+  test.each([
+    ['/work/shop/pages/p.ts:1:1', true],
+    ['C:/work/p.ts:1:1', true],
+    ['pages/p.ts:1:1', false],
+    ['../shared/p.ts:1:1', false],
+  ])('%s is absolute: %s', (location, absolute) => {
+    expect(isAbsoluteLocation(location)).toBe(absolute);
   });
 });
 
