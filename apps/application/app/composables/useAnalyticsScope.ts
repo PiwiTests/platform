@@ -63,10 +63,13 @@ export function useAnalyticsScope() {
     },
     { deep: true },
   );
-  // A default scope keeps the bare `/analytics` address; any other scope is written on arrival.
-  onMounted(() => {
-    if (!isDefaultScopeState(state.value)) syncUrl();
-  });
+  // A default scope keeps the bare `/analytics` address; any other scope is
+  // written on arrival, once the app has hydrated and the router settled.
+  if (import.meta.client) {
+    onNuxtReady(() => {
+      if (!isDefaultScopeState(state.value)) syncUrl();
+    });
+  }
 
   return { state, scope, scopeQuery };
 }

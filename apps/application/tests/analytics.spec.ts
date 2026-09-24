@@ -168,15 +168,17 @@ test.describe('Analytics page', () => {
     ]);
     await page.goto('/analytics');
     await expect(page.getByTestId('analytics-period')).toHaveText(/Last 90 days/);
-    await expect(page).toHaveURL(new RegExp(`period=last-90d.*projects=${projectIdForPage}`));
-    await expect(page.getByRole('heading', { name: /Portfolio health \(1\)/ })).toBeVisible();
+    // The address is written once the page hydrated, which a dev server under parallel workers can take a while to do.
+    await expect(page).toHaveURL(new RegExp(`period=last-90d.*projects=${projectIdForPage}`), { timeout: 20_000 });
+    await expect(page.getByRole('heading', { name: /Portfolio health \(1\)/ })).toBeVisible({ timeout: 20_000 });
   });
 
   test('a copied link opens on the scope it carries', async ({ page }) => {
     await page.goto('/analytics?period=last-month&allBranches=true');
     await expect(page.getByTestId('analytics-period')).toHaveText(/Last month/);
     await expect(page.getByTestId('analytics-branch-policy')).toHaveText(/All branches/);
-    await expect(page.getByTestId('analytics-scope-line')).toContainText('compared with');
+    // The scope line comes from a client-side fetch, after hydration.
+    await expect(page.getByTestId('analytics-scope-line')).toContainText('compared with', { timeout: 20_000 });
   });
 
   test('is reachable from the sidebar', async ({ page }) => {
