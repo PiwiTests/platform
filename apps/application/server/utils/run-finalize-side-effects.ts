@@ -6,10 +6,12 @@ import { postRunPrFeedbackInBackground } from './scm/pr-feedback';
 import { maybeEnqueueHealActionInBackground } from './heal/policy';
 import { syncAutoMarkersForRun } from '#shared/handlers/markers';
 import { isProbeRun } from '#shared/handlers/probes';
+import { upsertDailyRollup } from '#shared/handlers/analytics/rollups';
 
 /**
- * The finalize side effects for a finished run: regression signals, auto
- * markers, AI diagnosis, notifications, pull-request feedback and auto-heal.
+ * The finalize side effects for a finished run: regression signals, the daily
+ * rollup of its cell, auto markers, AI diagnosis, notifications, pull-request
+ * feedback and auto-heal.
  *
  * Every ingest path (finish, upload, submit) routes its finalization through
  * this one helper so the probe stamp is honored everywhere: a probe run replays
@@ -18,9 +20,11 @@ import { isProbeRun } from '#shared/handlers/probes';
  */
 export function runFinalizeSideEffects(db: DbClient, id: number, run: { projectId: number; metadata?: unknown }): void {
   if (isProbeRun(run.metadata)) return;
-  computeRegressionSignals(db, id).catch((e) =>
-    console.error('[regression-signals] computeRegressionSignals failed', e),
-  );
+  // The rollup counts the regression signals, so it waits for them.
+  computeRegressionSignals(db, id)
+    .catch((e) => console.error('[regression-signals] computeRegressionSignals failed', e))
+    .then(() => upsertDailyRollup(db, id))
+    .catch((e) => console.error('[analytics] upsertDailyRollup failed', e));
   syncAutoMarkersForRun(db, id).catch((e) => console.error('[markers] syncAutoMarkersForRun failed', e));
   autoDiagnoseRun(db, run.projectId, id).catch((e) => console.error('[ai-diagnosis] autoDiagnoseRun failed', e));
   emitRunNotifications(db, id).catch((e) => console.error('[notifications] emitRunNotifications failed', e));

@@ -23,6 +23,9 @@ import {
 import { deleteFileRow, deleteRunStorageDir, gcTraceBlobs } from './delete-run-files';
 import { deleteGraphRowsForRuns } from './graph-ingest';
 import { recomputeClusterOccurrences } from '#shared/handlers/failure-cluster-ops';
+import { archiveRunsIntoRollups, recomputeRollupCells } from '#shared/handlers/analytics/rollups';
+import { dayKey } from '#shared/handlers/analytics/common';
+import type { DrizzleDB } from '#shared/handlers/db';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -56,15 +59,25 @@ export interface DeleteRunsResult {
  * gone, so a blob shared by several deleted rows (or by another run) is counted
  * correctly — a per-row refcount taken before deletion sees the not-yet-deleted
  * siblings and leaks the blob.
+ *
+ * The daily rollups follow in the transaction that deletes the run rows: the
+ * retained rows of the touched days are recomputed from the runs that stay.
+ * With `archiveRollups` (age-based deletion) the deleted runs' numbers are
+ * first added to their cells' archived rows, so the day keeps them; without it
+ * (deleting a run by hand) the run's numbers leave the day.
  */
-export async function deleteRunsByIds(db: DbClient, runIds: number[]): Promise<DeleteRunsResult> {
+export async function deleteRunsByIds(
+  db: DbClient,
+  runIds: number[],
+  options: { archiveRollups?: boolean } = {},
+): Promise<DeleteRunsResult> {
   if (runIds.length === 0) return { deletedRuns: 0, deletedCases: 0 };
 
-  const runs: { id: number; projectId: number }[] = [];
+  const runs: { id: number; projectId: number; startTime: Date }[] = [];
   for (const batch of batches(runIds)) {
     runs.push(
       ...(await db
-        .select({ id: testRuns.id, projectId: testRuns.projectId })
+        .select({ id: testRuns.id, projectId: testRuns.projectId, startTime: testRuns.startTime })
         .from(testRuns)
         .where(inArray(testRuns.id, batch))),
     );
@@ -172,12 +185,18 @@ export async function deleteRunsByIds(db: DbClient, runIds: number[]): Promise<D
       .where(inArray(locatorSnapshots.lastSeenRunId, batch));
   }
 
-  for (const batch of batches(presentRunIds)) {
-    await db.delete(testRunsCases).where(inArray(testRunsCases.testRunId, batch));
-  }
-  for (const batch of batches(presentRunIds)) {
-    await db.delete(testRuns).where(inArray(testRuns.id, batch));
-  }
+  const touchedDays = runs.map((run) => ({ projectId: run.projectId, day: dayKey(run.startTime) }));
+  await db.transaction(async (tx) => {
+    const txDb = tx as unknown as DrizzleDB;
+    if (options.archiveRollups) await archiveRunsIntoRollups(txDb, presentRunIds);
+    for (const batch of batches(presentRunIds)) {
+      await tx.delete(testRunsCases).where(inArray(testRunsCases.testRunId, batch));
+    }
+    for (const batch of batches(presentRunIds)) {
+      await tx.delete(testRuns).where(inArray(testRuns.id, batch));
+    }
+    await recomputeRollupCells(txDb, touchedDays);
+  });
 
   // Graph nodes/edges whose newest evidence was a deleted run, per project, so
   // the feature-graph tables never point at runs that no longer exist.
@@ -241,7 +260,8 @@ function notAmongNewest(keep: number): SQL {
  * protected when it is kept forever (`kept_at` set), or when it is among the
  * newest `keepNewestPerProject` runs of its project — so a project that stops
  * reporting keeps its last runs instead of emptying. Thin wrapper over
- * {@link deleteRunsByIds}, which owns the full deletion.
+ * {@link deleteRunsByIds}, which owns the full deletion; age-based deletion is
+ * archival, so the deleted runs' numbers move to the rollups' archived rows.
  */
 export async function deleteRunsOlderThan(
   db: DbClient,
@@ -270,6 +290,7 @@ export async function deleteRunsOlderThan(
   const deleted = await deleteRunsByIds(
     db,
     doomed.map((r) => r.id),
+    { archiveRollups: true },
   );
   return { ...deleted, skippedKept, skippedNewest };
 }

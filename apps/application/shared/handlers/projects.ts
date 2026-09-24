@@ -10,6 +10,7 @@ import {
   failureDiagnoses,
   casePayloads,
   entityLinks,
+  analyticsDailyRollups,
 } from '../../server/database/schema';
 import { asc, desc, eq, exists, sql, and, or, inArray, gte, lte, isNull, isNotNull, count } from 'drizzle-orm';
 import { jsonArrayContainsAll, parseLockFilter, parseTagFilter } from '../utils/tag-filter';
@@ -468,6 +469,8 @@ export async function deleteProjectData(db: DrizzleDB, projectId: number) {
   if (projectClusterIds.length > 0) {
     await db.delete(entityLinks).where(inArray(entityLinks.failureClusterId, projectClusterIds));
   }
+
+  await db.delete(analyticsDailyRollups).where(eq(analyticsDailyRollups.projectId, projectId));
 
   // Deleting the project row cascades to: projectTags, failureClusters,
   // failureDiagnoses, traceBlobs, traceResources

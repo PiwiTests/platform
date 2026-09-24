@@ -24,6 +24,7 @@ import { sumFailedAndTimedOut } from '../utils/test-counts';
 import { joinSuitePath } from '../utils/suites';
 import { formatBytes } from '../utils/format-bytes';
 import type { ImportCheckResult, ImportRunResponse } from '../import.types';
+import { upsertDailyRollup } from './analytics/rollups';
 
 /** A file the host stored, as it should be recorded in `files`. */
 export interface StoredImportFile {
@@ -338,6 +339,7 @@ export async function importBlobReportRun(
       .where(eq(testRuns.id, run.id));
   }
 
+  await upsertDailyRollup(db, run.id).catch((e) => console.error('[analytics] upsertDailyRollup failed', e));
   port.publishRunSubmitted({ runId: run.id, projectId, status: parsed.status });
 
   return {
@@ -486,6 +488,7 @@ export async function importTraceRun(
   await rollUpTraceRun(db, run.id, new Date(parsed.startedAt));
 
   const updated = await reloadRun(db, run.id);
+  await upsertDailyRollup(db, run.id).catch((e) => console.error('[analytics] upsertDailyRollup failed', e));
   port.publishRunSubmitted({ runId: run.id, projectId, status: updated.status });
 
   return summarizeRun(
