@@ -469,9 +469,13 @@ test.describe.serial('Reporter with authentication enabled', () => {
     });
     expect(loginRes.ok()).toBeTruthy();
 
+    // The user list is admin-only (it exposes every account's email and role),
+    // so a non-admin resolves its own id from the session instead.
     const usersRes = await request.get(`${AUTH_SERVER_URL}/api/users`);
-    const usersData = await usersRes.json();
-    const reporterUser = usersData.items.find((u: { username: string }) => u.username === 'ci-reporter');
+    expect(usersRes.status()).toBe(403);
+    const meRes = await request.get(`${AUTH_SERVER_URL}/api/auth/me`);
+    const reporterUser = (await meRes.json()).user;
+    expect(reporterUser.username).toBe('ci-reporter');
 
     const keysRes = await request.get(`${AUTH_SERVER_URL}/api/users/${reporterUser.id}/api-keys`);
     expect(keysRes.ok()).toBeTruthy();

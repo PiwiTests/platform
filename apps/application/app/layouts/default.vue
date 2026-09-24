@@ -3,6 +3,7 @@ import type { CommandPaletteGroup, CommandPaletteItem, NavigationMenuItem } from
 import type { ProjectWithStats } from '~~/types/api';
 import ProjectsMenu from '~/components/layout/ProjectsMenu.vue';
 import { getStoredDemoVersion } from '~/demo/db.client';
+import { DOCS_BASE_URL } from '#shared/docs';
 
 const route = useRoute();
 const toast = useToast();
@@ -155,9 +156,9 @@ const projectItems = computed<NavigationMenuItem[]>(() => {
 const links = computed(() => {
   const bottomLinks: NavigationMenuItem[] = [
     {
-      label: 'GitHub',
-      icon: 'i-lucide-github',
-      to: 'https://github.com/piwitests/platform',
+      label: 'Documentation',
+      icon: 'i-lucide-book-marked',
+      to: DOCS_BASE_URL,
       target: '_blank',
     },
   ];

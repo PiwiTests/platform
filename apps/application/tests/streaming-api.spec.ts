@@ -292,7 +292,7 @@ test.describe.serial('Streaming API Tests', () => {
               type: 'step-begin',
               title: 'expect(locator).toBeVisible()',
               location: 'tests/streaming.spec.ts:8:5',
-              stepCategory: 'pw:expect',
+              stepCategory: 'expect',
               parentTitle: 'streaming test 1',
               workerIndex: 0,
               startedAt: 1700000000000,
@@ -310,7 +310,7 @@ test.describe.serial('Streaming API Tests', () => {
               type: 'step-end',
               title: 'expect(locator).toBeVisible()',
               location: 'tests/streaming.spec.ts:8:5',
-              stepCategory: 'pw:expect',
+              stepCategory: 'expect',
               status: 'passed',
               duration: 40,
               parentTitle: 'streaming test 1',
@@ -358,6 +358,79 @@ test.describe.serial('Streaming API Tests', () => {
     // Suite-level hooks keep the timeline shape (test-begin/test-completed, filePath 'hooks').
     expect(sawHookBegin).toBeTruthy();
     expect(sawHookEnd).toBeTruthy();
+  });
+
+  test('GET /api/test-runs/:id/stream keeps the posted order of step events within one batch', async ({
+    request,
+    baseURL,
+  }) => {
+    // Subscribe first — the in-memory bus only delivers to live subscribers.
+    const controller = new AbortController();
+    const response = await fetch(`${baseURL}/api/test-runs/${runId}/stream`, {
+      signal: controller.signal,
+    });
+    expect(response.ok).toBeTruthy();
+
+    const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let bytesRead = 0;
+    const received: string[] = [];
+
+    // One step ends and the next begins on the same worker, in a single batch —
+    // the way the reporter's batching usually delivers them.
+    const onWorker = { parentTitle: 'streaming test 1', workerIndex: 0 };
+    const wait = { title: 'Wait for timeout', location: 'tests/streaming.spec.ts:9:5', stepCategory: 'pw:api' };
+    const assertion = {
+      title: 'Expect "toHaveValue"',
+      location: 'tests/streaming.spec.ts:10:5',
+      stepCategory: 'expect',
+    };
+    const titles = new Set([wait.title, assertion.title]);
+
+    try {
+      const res = await request.post(`/api/test-runs/${runId}/events`, {
+        data: {
+          streamToken,
+          testCases: [
+            { type: 'step-begin', ...wait, ...onWorker, startedAt: 1700000000200 },
+            { type: 'step-end', ...wait, ...onWorker, startedAt: 1700000000200, status: 'passed', duration: 500 },
+            { type: 'step-begin', ...assertion, ...onWorker, startedAt: 1700000000700 },
+          ],
+        },
+      });
+      expect(res.ok()).toBeTruthy();
+
+      while (received.length < 3) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        bytesRead += chunk.length;
+        // Parse only complete SSE messages; a partial one waits for the next chunk.
+        const messages = (buffer + chunk).split('\n\n');
+        buffer = messages.pop()!;
+        for (const message of messages) {
+          const line = message.split('\n').find((l) => l.startsWith('data:'));
+          if (!line) continue;
+          const parsed = JSON.parse(line.slice('data:'.length).trim());
+          if ((parsed.type === 'step-begin' || parsed.type === 'step-end') && titles.has(parsed.data?.title)) {
+            received.push(`${parsed.type} ${parsed.data.title}`);
+          }
+        }
+        // Hard cap so a regression cannot hang the suite
+        if (bytesRead > 65536) break;
+      }
+    } finally {
+      reader.releaseLock();
+      controller.abort();
+    }
+
+    // The run page keeps the last step event per worker, so the running assertion must arrive last.
+    expect(received).toEqual([
+      'step-begin Wait for timeout',
+      'step-end Wait for timeout',
+      'step-begin Expect "toHaveValue"',
+    ]);
   });
 
   // ── /finish ──────────────────────────────────────────────────────────────────

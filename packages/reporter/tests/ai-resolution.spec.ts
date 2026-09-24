@@ -308,7 +308,7 @@ describe('readMaskedSnapshot', () => {
 
 describe('ServerStepResolver', () => {
   it('posts the request to the endpoint with the API key and returns the decision', async () => {
-    const fetchMock = vi.fn(async () => ({
+    const fetchMock = vi.fn(async (_url: string, _init: { headers: Record<string, string> }) => ({
       ok: true,
       json: async () => ({ element: { role: 'button', name: 'Go' } }),
     }));
@@ -317,7 +317,7 @@ describe('ServerStepResolver', () => {
       const resolver = new ServerStepResolver('https://dash.example/', 'pd_key');
       const res = await resolver.resolveStep({ kind: 'locator', template: 'x', paramNames: [], ariaSnapshot: '', history: [] });
       expect(res.element).toEqual({ role: 'button', name: 'Go' });
-      const [url, opts] = fetchMock.mock.calls[0] as [string, { headers: Record<string, string> }];
+      const [url, opts] = fetchMock.mock.calls[0];
       expect(url).toBe('https://dash.example/api/ai/step-resolution');
       expect(opts.headers['X-API-Key']).toBe('pd_key');
     } finally {

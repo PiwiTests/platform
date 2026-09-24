@@ -22,6 +22,7 @@ import {
 } from '~~/server/database/schema.sqlite';
 import { parseLocation } from '~~/server/utils/parse-location';
 import { mapCompleteEventToRunCase } from '~~/server/utils/map-complete-event';
+import { mapStepEventsToRunEvents } from '~~/server/utils/map-step-events';
 import {
   buildNetworkRequestItems,
   buildNetworkRequestInsertValues,
@@ -792,9 +793,8 @@ export async function apiPostRunEvents(
   const validEvents = testCaseEvents.filter((tc): tc is StreamEventPayload => Boolean(tc && tc.title));
 
   const beginEvents = validEvents.filter((tc) => tc.type === 'begin');
-  const stepBeginEvents = validEvents.filter((tc) => tc.type === 'step-begin');
-  const stepEndEvents = validEvents.filter((tc) => tc.type === 'step-end');
   const completeEvents = validEvents.filter((tc) => tc.type === 'complete');
+  const stepRunEvents = mapStepEventsToRunEvents(validEvents);
 
   for (const tc of beginEvents) {
     const loc = tc.location ? parseLocation(tc.location) : { filePath: 'unknown', line: null, column: null };
@@ -814,75 +814,14 @@ export async function apiPostRunEvents(
     });
   }
 
-  // Test-attached steps stream as step-begin/step-end so the run page can show
-  // what each worker is doing; suite-level hooks keep the timeline shape. Mirrors
-  // the server's events handler (server/api/test-runs/[id]/events.post.ts).
-  for (const tc of stepBeginEvents) {
-    if (tc.parentTitle != null) {
-      publishDemoRunEvent(id, {
-        type: 'step-begin',
-        data: {
-          title: tc.title,
-          subtitle: tc.subtitle ?? null,
-          parentTitle: tc.parentTitle,
-          stepCategory: tc.stepCategory ?? null,
-          location: tc.location,
-          workerIndex: tc.workerIndex ?? null,
-          startedAt: tc.startedAt ?? null,
-        },
-      });
-    } else {
-      publishDemoRunEvent(id, {
-        type: 'test-begin',
-        data: {
-          title: tc.title,
-          filePath: 'hooks',
-          parentTitle: null,
-          stepCategory: tc.stepCategory ?? null,
-          location: tc.location,
-          workerIndex: tc.workerIndex ?? null,
-          startedAt: tc.startedAt ?? null,
-        },
-      });
-    }
-  }
-
-  for (const tc of stepEndEvents) {
-    if (tc.parentTitle != null) {
-      publishDemoRunEvent(id, {
-        type: 'step-end',
-        data: {
-          title: tc.title,
-          subtitle: tc.subtitle ?? null,
-          parentTitle: tc.parentTitle,
-          stepCategory: tc.stepCategory ?? null,
-          status: tc.status,
-          duration: tc.duration,
-          location: tc.location,
-          workerIndex: tc.workerIndex ?? null,
-          startedAt: tc.startedAt ?? null,
-        },
-      });
-    } else {
-      publishDemoRunEvent(id, {
-        type: 'test-completed',
-        data: {
-          title: tc.title,
-          filePath: 'hooks',
-          parentTitle: null,
-          stepCategory: tc.stepCategory ?? null,
-          status: tc.status,
-          duration: tc.duration,
-          location: tc.location,
-          workerIndex: tc.workerIndex ?? null,
-          startedAt: tc.startedAt ?? null,
-        },
-      });
-    }
+  // Step events publish in batch order through the helper the server's events
+  // handler (server/api/test-runs/[id]/events.post.ts) uses.
+  for (const stepEvent of stepRunEvents) {
+    publishDemoRunEvent(id, stepEvent);
   }
 
   if (completeEvents.length === 0) {
-    return { success: true, processed: beginEvents.length + stepBeginEvents.length + stepEndEvents.length };
+    return { success: true, processed: beginEvents.length + stepRunEvents.length };
   }
 
   const parsedEvents = completeEvents.map((tc) => {
