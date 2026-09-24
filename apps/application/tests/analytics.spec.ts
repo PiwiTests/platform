@@ -96,9 +96,47 @@ test.describe.serial('Analytics API', () => {
       expect(response.ok(), `widget ${widget.id} should respond`).toBeTruthy();
     }
   });
+
+  test('GET /api/analytics/scope resolves the period, and new keys filter the widgets', async ({ request }) => {
+    const scope = await (await request.get(`/api/analytics/scope?period=last-7d&projects=${projectId}`)).json();
+    expect(scope.period.label).toBe('Last 7 days');
+    expect(scope.comparison.label).toBe('The previous period');
+    expect(scope.projectCount).toBe(1);
+
+    // Runs without a branch count under the default-branch policy and under All branches.
+    for (const branchKey of ['', '&allBranches=true']) {
+      const rows = await (await request.get(`/api/analytics/portfolio?period=last-7d${branchKey}`)).json();
+      expect(rows.find((r: { projectId: number }) => r.projectId === projectId).runCount).toBe(2);
+    }
+
+    // A branch picked by hand that no run carries empties the project.
+    const onBranch = await (
+      await request.get('/api/analytics/portfolio?period=last-7d&branches=no-such-branch')
+    ).json();
+    expect(onBranch.find((r: { projectId: number }) => r.projectId === projectId)?.runCount ?? 0).toBe(0);
+  });
 });
 
 test.describe('Analytics page', () => {
+  let projectIdForPage: number;
+
+  test.beforeAll(async ({ request }) => {
+    const response = await request.post('/api/test-runs/submit', {
+      data: {
+        projectName: PROJECT.ANALYTICS_SCOPE_TEST,
+        status: 'passed',
+        startTime: new Date().toISOString(),
+        duration: 10_000,
+        totalTests: 1,
+        passedTests: 1,
+        failedTests: 0,
+        skippedTests: 0,
+        testCases: [{ title: 'stable test', status: 'passed', duration: 500, location: 'tests/a.spec.ts:1:1' }],
+      },
+    });
+    projectIdForPage = (await response.json()).projectId;
+  });
+
   test('renders every registered widget card', async ({ page }) => {
     await page.goto('/analytics');
 
@@ -112,6 +150,33 @@ test.describe('Analytics page', () => {
     await expect(page.getByRole('heading', { name: 'Regression velocity' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Browser matrix' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Slow endpoints' })).toBeVisible();
+  });
+
+  test('opens on the scope of an existing piwi-analytics-scope cookie', async ({ page, context, baseURL }) => {
+    await context.addCookies([
+      {
+        name: 'piwi-analytics-scope',
+        value: JSON.stringify({
+          days: 90,
+          projectIds: [projectIdForPage],
+          environments: [],
+          branches: [],
+          fullRunsOnly: true,
+        }),
+        url: baseURL!,
+      },
+    ]);
+    await page.goto('/analytics');
+    await expect(page.getByTestId('analytics-period')).toHaveText(/Last 90 days/);
+    await expect(page).toHaveURL(new RegExp(`period=last-90d.*projects=${projectIdForPage}`));
+    await expect(page.getByRole('heading', { name: /Portfolio health \(1\)/ })).toBeVisible();
+  });
+
+  test('a copied link opens on the scope it carries', async ({ page }) => {
+    await page.goto('/analytics?period=last-month&allBranches=true');
+    await expect(page.getByTestId('analytics-period')).toHaveText(/Last month/);
+    await expect(page.getByTestId('analytics-branch-policy')).toHaveText(/All branches/);
+    await expect(page.getByTestId('analytics-scope-line')).toContainText('compared with');
   });
 
   test('is reachable from the sidebar', async ({ page }) => {

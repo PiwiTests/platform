@@ -14,6 +14,7 @@
 
 export const PROJECT = {
   ANALYTICS_TEST: 'analytics-widgets-test',
+  ANALYTICS_SCOPE_TEST: 'analytics-scope-test',
   API_CREATED: 'api-created-project',
   API_KEY_SUBMIT: 'api-key-submit-test',
   AUTH_ROLE_CHECKS: 'auth-role-checks-test',

@@ -2,6 +2,7 @@ import { analyticsScopeToQuery, type AnalyticsScope } from '#shared/analytics/sc
 import {
   DEFAULT_ANALYTICS_SCOPE_STATE,
   decodeScopeCookie,
+  isDefaultScopeState,
   queryHasScope,
   queryWithoutScope,
   scopeFromState,
@@ -62,7 +63,10 @@ export function useAnalyticsScope() {
     },
     { deep: true },
   );
-  onMounted(syncUrl);
+  // A default scope keeps the bare `/analytics` address; any other scope is written on arrival.
+  onMounted(() => {
+    if (!isDefaultScopeState(state.value)) syncUrl();
+  });
 
   return { state, scope, scopeQuery };
 }

@@ -55,6 +55,8 @@ export interface ResolvedTestFilter {
  */
 export interface AnalyticsContext {
   scope: AnalyticsScope;
+  /** The instant the scope was resolved at. */
+  now: number;
   /** Allowed project ids after project access, the project filter and project tags. */
   allowed: 'all' | number[];
   period: ResolvedPeriod;
@@ -123,6 +125,7 @@ async function resolveAnalyticsContext(
 
   return {
     scope,
+    now,
     allowed,
     period,
     comparison,
@@ -271,11 +274,12 @@ export async function resolveTestFilter(
 
 /**
  * The `test_runs` conditions every live query shares: terminal runs starting
- * inside `[fromMs, toMs)`, in the allowed projects, matching the scope's run
+ * inside `[fromMs, toMs)` (open-ended when the range ends now), in the allowed projects, matching the scope's run
  * filters and branch policy, and never a probe run.
  */
 export function contextRunConditions(ctx: AnalyticsContext, fromMs: number, toMs: number): SQL[] {
-  return runConditions(ctx.scope, ctx.allowed, ctx.branchPolicy, fromMs, toMs);
+  // A range that ends now has no upper bound: a run stamped this very second counts.
+  return runConditions(ctx.scope, ctx.allowed, ctx.branchPolicy, fromMs, toMs >= ctx.now ? null : toMs);
 }
 
 function runConditions(
