@@ -106,6 +106,8 @@ onMounted(() => {
       'missing-code': 'Authentication failed (missing code)',
       'oauth-failed': 'OAuth authentication failed',
       'account-exists': 'This email is already linked to a different sign-in method. Sign in with that method instead.',
+      'email-unverified':
+        'An account with this email has not verified it yet, so it was not linked. Sign in with its password (or accept your invite first), then connect this provider from Account settings.',
       'domain-not-allowed': 'Your email domain is not allowed to sign in here.',
       'org-not-allowed': 'You are not a member of an allowed organization.',
       'link-requires-login': 'Please sign in before connecting a provider.',

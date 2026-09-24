@@ -54,3 +54,29 @@ describe('updateUserRecord — email verification', () => {
     expect(await verifiedFlag(1)).toBe(true);
   });
 });
+
+describe('updateUserRecord — email ownership', () => {
+  beforeEach(async () => {
+    await db
+      .insert(schema.users)
+      .values({ id: 2, username: 'bob', password: 'x', role: 'user', email: 'bob@example.com' });
+  });
+
+  test('refuses an address another account already uses, ignoring case', async () => {
+    await expect(updateUserRecord(db as any, 1, { email: 'BOB@example.com' })).rejects.toThrow('Email already in use');
+    const [alice] = await db.select().from(schema.users).where(eq(schema.users.id, 1));
+    expect(alice?.email).toBe('alice@example.com');
+    expect(alice?.emailVerified).toBe(true);
+  });
+
+  test('re-casing its own address is allowed', async () => {
+    const updated = await updateUserRecord(db as any, 1, { email: 'Alice@Example.com' });
+    expect(updated?.email).toBe('Alice@Example.com');
+  });
+
+  test('clearing the email never collides with another account', async () => {
+    await updateUserRecord(db as any, 2, { email: null });
+    const updated = await updateUserRecord(db as any, 1, { email: null });
+    expect(updated?.email).toBeNull();
+  });
+});

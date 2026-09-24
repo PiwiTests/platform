@@ -1,5 +1,5 @@
 import { users, apiKeys } from '../../server/database/schema';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, ne, sql } from 'drizzle-orm';
 
 import type { DrizzleDB } from './db';
 
@@ -111,9 +111,19 @@ export async function updateUserRecord(
 ) {
   const userResults = await db.select().from(users).where(eq(users.id, id));
   if (!userResults[0]) throw new Error('User not found');
-  // A new address has not been proven yet: drop the verified flag so it is not
-  // carried over from the old one (the personal email channel reads it).
   const emailChanged = data.email !== undefined && data.email !== userResults[0].email;
+  // One account per address, ignoring case: OAuth sign-in links by email.
+  if (emailChanged && data.email) {
+    const taken = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(and(sql`lower(${users.email}) = lower(${data.email})`, ne(users.id, id)))
+      .limit(1);
+    if (taken.length > 0) throw new Error('Email already in use');
+  }
+  // A new address has not been proven yet: drop the verified flag so it is not
+  // carried over from the old one (the personal email channel and OAuth
+  // linking read it).
   await db
     .update(users)
     .set({ ...data, ...(emailChanged ? { emailVerified: false } : {}), updatedAt: new Date() })
