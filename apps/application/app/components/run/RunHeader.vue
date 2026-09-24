@@ -4,7 +4,7 @@ import type { RetryMode } from '~/utils/retry-command';
 
 /**
  * The run page's detail header (the run variant of `DetailHeader`): status,
- * Run #N, the label editor and the marker chip on the first line with the
+ * Run #N, the label editor, the kept mark and the marker chip on the first line with the
  * primary action, one facts line with a Details popover for the rest, and one
  * count bar whose segments filter the Tests tab.
  */
@@ -121,7 +121,7 @@ function onLabelKeydown(e: KeyboardEvent) {
 </script>
 
 <template>
-  <DetailHeader :status="testRun?.status ?? ''" :title="`Run #${testRun?.id}`">
+  <DetailHeader :status="testRun?.status ?? ''" :title="`Run #${testRun?.id}`" data-shot="run-header">
     <template #badges-extra>
       <!-- The label editor sits right after the title. -->
       <template v-if="editingLabel">
@@ -155,6 +155,13 @@ function onLabelKeydown(e: KeyboardEvent) {
           + label
         </button>
       </template>
+
+      <UTooltip v-if="testRun?.keptAt" :text="describeKeep(testRun)">
+        <span class="shrink-0 inline-flex items-center gap-1 text-xs text-muted" data-shot="run-kept">
+          <UIcon name="i-lucide-lock" class="size-3.5" />
+          Kept
+        </span>
+      </UTooltip>
 
       <UTooltip v-if="testRun?.precedingMarker" :text="`This run started after: ${testRun.precedingMarker.label}`">
         <NuxtLink :to="`/projects/${testRun.projectId}?tab=timeline`" class="shrink-0 inline-flex items-center gap-1">
@@ -277,6 +284,18 @@ function onLabelKeydown(e: KeyboardEvent) {
           <span class="text-muted">Wasted</span>
           <DurationValue :ms="totalWastedTime" class="font-medium text-amber-600 dark:text-amber-400" />
         </span>
+      </div>
+      <div class="flex items-start gap-1.5">
+        <span class="text-muted shrink-0 inline-flex items-center gap-1">Retention <HelpHint topic="run.keep" /></span>
+        <span v-if="testRun?.keptAt">
+          {{ describeKeep(testRun) }}
+          <ClientOnly>
+            <span class="text-muted" :title="prettyDateFormat(testRun.keptAt)">
+              · {{ formatRelativeTime(testRun.keptAt) }}</span
+            >
+          </ClientOnly>
+        </span>
+        <span v-else>Not kept — retention deletes it once it is old enough</span>
       </div>
       <div v-if="showStorage" class="flex items-center gap-1.5">
         <span class="text-muted">Storage</span>

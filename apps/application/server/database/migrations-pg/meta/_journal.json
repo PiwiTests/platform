@@ -526,6 +526,13 @@
       "when": 1790183811733,
       "tag": "0074_quiet_professor_monster",
       "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1790276751174,
+      "tag": "0075_nostalgic_living_mummy",
+      "breakpoints": true
     }
   ]
 }

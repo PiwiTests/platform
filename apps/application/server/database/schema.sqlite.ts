@@ -65,6 +65,10 @@ export const testRuns = sqliteTable(
     playwrightVersion: text('playwright_version'), // Playwright framework version used for this run
     reporterVersion: text('reporter_version'), // Piwi reporter package version that produced this run
     importHash: text('import_hash'), // SHA-256 of the imported archive; null for reported runs. Makes re-importing a no-op.
+    keptAt: integer('kept_at', { mode: 'timestamp' }), // Set = kept forever: retention never deletes the run
+    keptBy: integer('kept_by').references(() => users.id, { onDelete: 'set null' }), // User who kept the run; null for reporter/marker keeps or with auth off
+    keepSource: text('keep_source'), // 'user' | 'reporter' | 'marker' — who asked for the keep; null when not kept
+    keepReason: text('keep_reason'), // Optional free-text reason shown next to the keep
     createdAt: integer('created_at', { mode: 'timestamp' })
       .notNull()
       .$defaultFn(() => new Date()),
@@ -81,6 +85,8 @@ export const testRuns = sqliteTable(
     startTimeIdx: index('idx_test_runs_start_time').on(table.startTime),
     statusIdx: index('idx_test_runs_status').on(table.status),
     importHashIdx: uniqueIndex('idx_test_runs_import_hash').on(table.projectId, table.importHash),
+    projectKeptIdx: index('idx_test_runs_project_kept').on(table.projectId, table.keptAt),
+    keptByIdx: index('idx_test_runs_kept_by').on(table.keptBy),
   }),
 );
 

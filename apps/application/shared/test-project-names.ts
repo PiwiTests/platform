@@ -128,6 +128,8 @@ export const PROJECT = {
   REPORTS_DETAILS: 'reports-details-project',
   REVOKED_KEY: 'revoked-key-test',
   RUN_COMPARE: 'run-compare',
+  RUN_KEEP_OTHER: 'run-keep-other-test',
+  RUN_KEEP: 'run-keep-test',
   RUN_LABEL: 'run-label-test',
   RUN_LOCATE: 'run-locate-test',
   RUN_PAGE_FILTERS: 'run-page-filters-test',
