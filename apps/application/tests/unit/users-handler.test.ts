@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach } from 'vitest';
 import { fileURLToPath } from 'node:url';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/libsql';
 import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
@@ -9,7 +9,7 @@ import * as schema from '../../server/database/schema.sqlite';
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set,
 // so clear it before the handler module (which imports the barrel) loads.
 delete process.env.PIWI_DATABASE_URL;
-const { updateUserRecord } = await import('../../shared/handlers/users');
+const { updateUserRecord, deleteUserRecord } = await import('../../shared/handlers/users');
 
 let db: ReturnType<typeof drizzle<typeof schema>>;
 
@@ -78,5 +78,36 @@ describe('updateUserRecord — email ownership', () => {
     await updateUserRecord(db as any, 2, { email: null });
     const updated = await updateUserRecord(db as any, 1, { email: null });
     expect(updated?.email).toBeNull();
+  });
+});
+
+describe('deleteUserRecord', () => {
+  beforeEach(async () => {
+    // The server enables FK enforcement per connection; mirror it so a
+    // dangling reference fails here the way it does in production.
+    await db.run(sql`PRAGMA foreign_keys = ON`);
+    await db.insert(schema.projects).values({ id: 1, name: 'gaps-project' });
+  });
+
+  test('deletes a user who triaged a scenario gap and clears the reference', async () => {
+    // `triaged_by` was added by ALTER TABLE, which cannot carry ON DELETE SET
+    // NULL on SQLite, so the handler has to clear it before the delete.
+    const [gap] = await db
+      .insert(schema.scenarioGaps)
+      .values({
+        projectId: 1,
+        detector: 'success-only',
+        class: 'blind-spot',
+        key: 'GET /api/cart',
+        title: 'gap',
+        triagedBy: 1,
+      })
+      .returning({ id: schema.scenarioGaps.id });
+
+    await expect(deleteUserRecord(db as any, 1)).resolves.toEqual({ success: true });
+
+    expect(await db.select().from(schema.users).where(eq(schema.users.id, 1))).toHaveLength(0);
+    const [row] = await db.select().from(schema.scenarioGaps).where(eq(schema.scenarioGaps.id, gap!.id));
+    expect(row?.triagedBy).toBeNull();
   });
 });
