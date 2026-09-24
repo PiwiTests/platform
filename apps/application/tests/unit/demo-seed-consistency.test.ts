@@ -20,6 +20,9 @@ interface Row {
 }
 
 let db: import('sql.js').Database;
+// The seed's newest generation-time timestamp (seconds), which the load-time
+// rebase maps to "now". Read back from the rebase statement itself.
+let anchorSec: number;
 
 function q(sql: string): Row[] {
   const res = db.exec(sql);
@@ -50,6 +53,7 @@ function tempOutDir(): string {
 
 beforeAll(async () => {
   const seedSql = regenerate(tempOutDir());
+  anchorSec = Number(/AS INTEGER\) - (\d+)\) AS delta_sec/.exec(seedSql)![1]);
 
   const initSqlJs = (await import('sql.js')).default;
   const SQL = await initSqlJs();
@@ -484,7 +488,7 @@ describe('cluster 9 (assertion-captured healing) coherence', () => {
   });
 });
 
-describe('step timing survives the load-time rebase', () => {
+describe('evidence timing survives the load-time rebase', () => {
   interface StepRow {
     id: number;
     started_at: number;
@@ -541,6 +545,74 @@ describe('step timing survives the load-time rebase', () => {
       for (const s of steps) maxFraction = Math.max(maxFraction, (s.startTime! - start) / duration);
     }
     expect(maxFraction).toBeGreaterThan(0.5);
+  });
+
+  // The failure timeline takes its origin from the earliest timestamp of any
+  // lane, so a dialog left on generation time drags the origin ~months back and
+  // squashes every other item against the right edge.
+  test('every seeded dialog closes within its execution window', () => {
+    const rows = q(`
+      select id, started_at, duration, dialogs from test_runs_cases
+      where dialogs is not null and json_valid(dialogs) and json_array_length(dialogs) > 0
+    `);
+    expect(rows.length).toBeGreaterThan(0);
+
+    for (const r of rows) {
+      const start = Number(r.started_at);
+      const end = start + Number(r.duration);
+      for (const d of JSON.parse(String(r.dialogs)) as Array<{ closedAt?: number }>) {
+        expect(typeof d.closedAt, `trc ${r.id}: dialog without closedAt`).toBe('number');
+        expect(d.closedAt!, `trc ${r.id}: dialog closedAt before window`).toBeGreaterThanOrEqual(start);
+        expect(d.closedAt!, `trc ${r.id}: dialog closedAt past window`).toBeLessThanOrEqual(end);
+      }
+    }
+  });
+
+  // Catches a timestamp column (or JSON field) added to the generator without a
+  // matching rebase statement: after the rebase every timestamp sits near load
+  // time, so a value still inside the generation era was never shifted.
+  test('no generation-time timestamp survives the rebase', () => {
+    const minSec = anchorSec - 2 * 365 * 86_400;
+    const isGenerationEra = (n: number) =>
+      (n >= minSec && n <= anchorSec) || (n >= minSec * 1000 && n <= anchorSec * 1000 + 999);
+    const tables = q(`select name from sqlite_master where type = 'table' and name not like 'sqlite_%'`).map((r) =>
+      String(r.name),
+    );
+    const stale = new Map<string, string>();
+    for (const table of tables) {
+      for (const row of q(`select * from "${table}"`)) {
+        for (const [column, value] of Object.entries(row)) {
+          // Integer columns, and digit runs embedded in JSON/text (bounded so a
+          // hex SHA or an identifier never contributes a false match).
+          const candidates =
+            typeof value === 'number'
+              ? [value]
+              : typeof value === 'string'
+                ? (value.match(/(?<![\w.])\d{10}(?:\d{3})?(?![\w.])/g) ?? []).map(Number)
+                : [];
+          const hit = candidates.find(isGenerationEra);
+          if (hit !== undefined && !stale.has(`${table}.${column}`)) stale.set(`${table}.${column}`, String(hit));
+        }
+      }
+    }
+    expect(Object.fromEntries(stale)).toEqual({});
+  });
+
+  test('every backend log entry sits within its request span', () => {
+    const rows = q(`
+      select id, start_time, duration, server_logs from network_requests
+      where server_logs is not null and json_valid(server_logs) and json_array_length(server_logs) > 0
+    `);
+    expect(rows.length).toBeGreaterThan(0);
+
+    for (const r of rows) {
+      const start = Number(r.start_time);
+      const end = start + Number(r.duration);
+      for (const log of JSON.parse(String(r.server_logs)) as Array<{ timestamp: number }>) {
+        expect(log.timestamp, `request ${r.id}: backend log before request`).toBeGreaterThanOrEqual(start);
+        expect(log.timestamp, `request ${r.id}: backend log after response`).toBeLessThanOrEqual(end);
+      }
+    }
   });
 });
 
