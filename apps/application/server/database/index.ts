@@ -49,6 +49,26 @@ function backfillTraceResourceLinks(): void {
   })();
 }
 
+/**
+ * Compute the daily rollups of the runs already stored, once per instance,
+ * without blocking startup. Recomputing is idempotent, so an interrupted
+ * backfill simply runs again at the next start.
+ */
+function backfillAnalyticsRollups(): void {
+  void (async () => {
+    try {
+      const { getAppSetting, setAppSetting } = await import('../utils/app-settings');
+      const { backfillDailyRollups, ROLLUPS_BACKFILLED_SETTING } = await import('#shared/handlers/analytics/rollups');
+      if (await getAppSetting(db as any, ROLLUPS_BACKFILLED_SETTING)) return;
+      const cells = await backfillDailyRollups(db as any);
+      await setAppSetting(db as any, ROLLUPS_BACKFILLED_SETTING, new Date().toISOString());
+      if (cells > 0) console.log(`[Database] Analytics rollup backfill computed ${cells} cell(s)`);
+    } catch (err) {
+      console.error('[Database] Analytics rollup backfill failed:', err);
+    }
+  })();
+}
+
 export async function initDatabase() {
   if (!db) {
     if (databaseUrl) {
@@ -84,6 +104,7 @@ export async function initDatabase() {
             console.error('[Database] Failure-cluster re-fingerprinting failed:', rcErr);
           }
           backfillTraceResourceLinks();
+          backfillAnalyticsRollups();
         } catch (error) {
           console.error('[Database] Migration error:', error);
           throw error;
@@ -142,6 +163,7 @@ export async function initDatabase() {
             console.error('[Database] Failure-cluster re-fingerprinting failed:', rcErr);
           }
           backfillTraceResourceLinks();
+          backfillAnalyticsRollups();
         } catch (error) {
           console.error('[Database] Migration error:', error);
           throw error;

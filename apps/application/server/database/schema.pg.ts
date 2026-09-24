@@ -1455,7 +1455,59 @@ export const probes = pgTable(
   }),
 );
 
+// Daily rollups: the precomputed aggregates of one cell (a project, a UTC day,
+// an environment, a branch and a run kind). A cell has a retained row,
+// recomputed from the runs still stored, and an archived row holding the
+// numbers of the runs age-based deletion removed, added in the transaction that
+// deletes them. Reads sum the two parts.
+export const analyticsDailyRollups = pgTable(
+  'analytics_daily_rollups',
+  {
+    id: serial('id').primaryKey(),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    day: text('day').notNull(), // 'YYYY-MM-DD', UTC
+    environment: text('environment').notNull().default(''), // '' when the run had none
+    branch: text('branch').notNull().default(''), // '' when unknown
+    fullRun: integer('full_run').notNull(), // 1 = full suite, 0 = partial
+    part: text('part').notNull(), // 'retained' | 'archived'
+    runs: integer('runs').notNull().default(0),
+    passedRuns: integer('passed_runs').notNull().default(0),
+    failedRuns: integer('failed_runs').notNull().default(0), // failed, timedout, interrupted
+    totalTests: integer('total_tests').notNull().default(0),
+    passedTests: integer('passed_tests').notNull().default(0),
+    failedTests: integer('failed_tests').notNull().default(0),
+    skippedTests: integer('skipped_tests').notNull().default(0),
+    didNotRunTests: integer('did_not_run_tests').notNull().default(0),
+    flakyTests: integer('flaky_tests').notNull().default(0),
+    maxTotalTests: integer('max_total_tests').notNull().default(0),
+    durationMs: bigint('duration_ms', { mode: 'number' }).notNull().default(0),
+    avgTestDurationSumMs: bigint('avg_test_duration_sum_ms', { mode: 'number' }).notNull().default(0),
+    p90TestDurationSumMs: bigint('p90_test_duration_sum_ms', { mode: 'number' }).notNull().default(0),
+    waitMs: bigint('wait_ms', { mode: 'number' }).notNull().default(0),
+    failedExecMs: bigint('failed_exec_ms', { mode: 'number' }).notNull().default(0),
+    newRegressions: integer('new_regressions').notNull().default(0),
+    newFlaky: integer('new_flaky').notNull().default(0),
+    computedAt: timestamp('computed_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => ({
+    cellIdx: uniqueIndex('idx_analytics_daily_rollups_cell').on(
+      table.projectId,
+      table.day,
+      table.environment,
+      table.branch,
+      table.fullRun,
+      table.part,
+    ),
+    projectDayIdx: index('idx_analytics_daily_rollups_project_day').on(table.projectId, table.day),
+  }),
+);
+
 // Type exports for TypeScript
+export type AnalyticsDailyRollup = typeof analyticsDailyRollups.$inferSelect;
 export type TestSuite = typeof testSuites.$inferSelect;
 export type NewTestSuite = typeof testSuites.$inferInsert;
 export type Project = typeof projects.$inferSelect;

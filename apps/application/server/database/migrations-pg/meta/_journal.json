@@ -540,6 +540,13 @@
       "when": 1790279695607,
       "tag": "0076_violet_switch",
       "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1790281918660,
+      "tag": "0077_volatile_warhawk",
+      "breakpoints": true
     }
   ]
 }
