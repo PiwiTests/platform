@@ -130,7 +130,8 @@ Everything else — analytics, notifications, the CI gate, PR feedback, MCP, the
   page shows, downloadable as HTML, PDF, Markdown or CSV, delivered on a schedule by email, Slack or webhook, and
   readable by agents through MCP. Underneath: daily rollups that keep long-term trends after retention prunes the
   runs, custom periods and period comparison, the default branch as the default scope, per-project targets, and
-  trend widgets for suite growth, flaky debt, time to fix and ownership. Design record in
+  trend widgets for suite growth, flaky debt, time to fix and ownership. The same schedules give the Test Map's
+  weekly gaps digest, whose selection shipped in 0.37.0, its delivery route. Design record in
   [proposals/analytics-and-reporting.md](proposals/analytics-and-reporting.md).
 - **Scenario gaps** — the tests that are missing, from one model of what the application exposes, what the suite
   touches, what the suite would actually notice (probe runs that mutate responses at the Playwright route boundary)

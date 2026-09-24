@@ -5,10 +5,13 @@ never opens the dashboard and does not read stack traces), and **trends and anal
 better or worse, since when, and is what we do about it working). It argues that both are one program with three
 layers, stages the work so each stage pays for itself, and records the alternatives and open questions.
 
-**Status.** Proposal, not started. Nothing in this document has shipped. · **Date:** 2026-09-22 · **Builds on:** the
-`/analytics` page and its widget registry, the notification outbox and digests, the offline export pipeline, share
-links, timeline markers, and the Confluence section of
-[issue-tracker-integrations.md](issue-tracker-integrations.md).
+**Status.** Proposal, not started. Nothing in this document has shipped. Written 2026-09-22 against 0.36.0 and
+refreshed 2026-09-24 against 0.37.0, which shipped the Test Map, the capability opt-out system and one status color
+scale; what that changed here is listed in [What 0.37.0 changed](#3-what-0370-changed-for-this-design). ·
+**Date:** 2026-09-24 · **Builds on:** the `/analytics` page and its widget registry, the notification outbox and
+digests, the offline export pipeline, share links, timeline markers, the Confluence section of
+[issue-tracker-integrations.md](issue-tracker-integrations.md), the Test Map's ledger and its unwired weekly digest
+([scenario-gaps.md](scenario-gaps.md)), and the capability registry ([capabilities-opt-out.md](capabilities-opt-out.md)).
 
 **Summary.** Piwi computes good numbers and shows them to people who are logged in and looking. It has no way to
 *send* a number to someone, no way to keep a number after retention deletes the runs behind it, and no vocabulary a
@@ -17,8 +20,9 @@ manager understands (money, days to fix, targets met). The proposal adds, in ord
 cheap; (2) a **quality report**, a periodic document built from those metrics through one `ReportBundle`, rendered as
 an in-app page, HTML, PDF, Markdown, JSON and CSV, in an executive and an engineering template; (3) **report
 schedules**, saved recurring deliveries by email, Slack and webhook through the outbox the notifications already use,
-with every generated report kept as a **snapshot**. On top of that base the analytics page gains what "over time" is
-missing today: custom periods and period comparison, default-branch scoping by default, per-project **targets**,
+with every generated report kept as a **snapshot**; the same schedules carry the Test Map's weekly gaps digest, which
+shipped as a selection function without a delivery task, and the whole feature is one declinable capability. On top
+of that base the analytics page gains what "over time" is missing today: custom periods and period comparison, default-branch scoping by default, per-project **targets**,
 markers on every trend, and widgets for suite growth, flaky debt, time to fix, quarantine debt and ownership. The last
 milestone extends the reach: report share links and a status badge, publish-in-place to Confluence, a `piwi report`
 CLI command, MCP tools, a CSV and OpenMetrics export for BI tools, and an optional AI-written narrative.
@@ -40,6 +44,9 @@ Every surface that carries numbers is shaped for an engineer with a session:
 - **Offline export** and **share links** (`apps/application/shared/export/`, `server/routes/share/[token].get.ts`)
   cover one execution or one failure cluster, with evidence. Right for an investigation, wrong for "how is the
   checkout suite doing".
+- The **weekly gaps digest** of the Test Map is the newest example: `selectWeeklyDigest` and `renderDigest`
+  (`shared/handlers/gap-digest.ts`) shipped in 0.37.0, and the docs mark delivery as planned, because Piwi has no
+  time-triggered delivery to plug a selection into. Every "send this every week" feature meets the same wall.
 
 Users answer the question by hand today: screenshots of widgets pasted into a slide or a Confluence page, numbers
 retyped into a weekly mail. The [issue-tracker proposal](issue-tracker-integrations.md#confluence) already names the
@@ -67,9 +74,34 @@ access, scope.days * 2)` in `shared/handlers/analytics/common.ts`), and bucket a
   (`test_cases.owner` and `failure_clusters.assignee` exist, no view groups by them). There is no notion of a target,
   so a number is never "met" or "missed". Wasted CI minutes are minutes, never money. The per-test stability trend
   exists only as an experimental endpoint for MCP (`server/api/test-cases/[id]/stability-trend.get.ts`) with no page.
+- **Probe runs count as real runs in the widgets.** A probe run (the Test Map's `piwi probe`) replays a passing
+  test with an injected fault, so it fails on purpose. It is stamped `metadata.piwiProbe`, and `isProbeRun()` keeps
+  it out of spec health, flaky scoring, test history and the gaps ledger, but not out of `fetchScopedRuns`,
+  `getProjectsOverview`, `getProjectPerformance`, `getProjectSlowTests` or `getRecentTestRuns`. The default *Full
+  runs only* hides it (a probe run is a filtered run), so the numbers go wrong exactly when someone unticks it.
 - **The default branch is not the default.** [first-class-branches.md](first-class-branches.md) shipped the branch
   filter and left open "scoping flakiness and trends to the default branch *by default*". Until then, a noisy feature
   branch moves every trend line.
+
+### 3. What 0.37.0 changed for this design
+
+Four things landed on 2026-09-23 that this record now builds on or must obey:
+
+- **The Test Map shipped** (`scenario_gaps`, `probes`, `graph_nodes`, `graph_edges`; the Gaps tab, the feature map,
+  change coverage on pull requests, detector precision, a gaps queue on Home). It brings the first metrics about the
+  application rather than the suite, and its own rule for them: counts per class and per feature and the trend of
+  gaps closed, never a coverage percentage. Its weekly digest is a pure selection with no delivery. This record adds
+  the gaps metrics to the catalog behind the `test-map` capability, gives the engineering template a scenario-gaps
+  section, and makes the report schedule the digest's delivery route.
+- **The capability opt-out system is now the rule for optional features.** Every optional capability is one entry in
+  `shared/capabilities.ts`, resolved once, hidden everywhere when declined, tagged on its MCP tools and listed in the
+  product feature catalog. Quality reports register as the `quality-reports` capability; the analytics page stays
+  core and is never gated.
+- **One color per outcome and one pass-rate scale** became a MUST-follow rule (`app/utils/status-palette.ts`,
+  `app/utils/pass-rate.ts`). A quality report is drawn outside the Vue app, so the report work moves the literal
+  colors and the two thresholds into `shared/` where documents and emails can read them too.
+- **One finalize helper per complete run.** `runFinalizeSideEffects` is what `finish`, `submit` and `upload` call, and
+  it returns early for a probe run. The rollup hook goes there, and probe runs are excluded from every metric.
 
 ## What exists to build on
 
@@ -82,7 +114,7 @@ registry that exists.
 | One filter object every aggregation receives, parsed identically on server and demo | `AnalyticsScope`, `parseAnalyticsScope` | `shared/analytics/scope.ts`, `server/api/analytics/[widget].get.ts`, `app/demo/api/router.ts` |
 | Period buckets and previous-period comparison | `makeTimeBuckets`, `periodStart`, `fetchScopedRuns` (fetches twice the period) | `shared/handlers/analytics/common.ts` |
 | Deterministic "what changed" sentences over aggregates | `INSIGHT_RULES`, `evaluateInsightRules` (pure functions, unit-tested) | `shared/analytics/insight-rules.ts` |
-| Per-execution signals already precomputed at ingest | `isNewRegression`, `isNewFlaky`, `wastedTimeMs`, `attempts` | `test_runs_cases` columns, `computeRegressionSignals()` called from `finish.post.ts` and `upload.post.ts` |
+| Per-execution signals already precomputed at ingest | `isNewRegression`, `isNewFlaky`, `wastedTimeMs`, `attempts` | `test_runs_cases` columns; `computeRegressionSignals()` fired by `runFinalizeSideEffects` (`server/utils/run-finalize-side-effects.ts`), the one finalize helper `finish`, `submit` and `upload` call, which skips probe runs |
 | Per-cluster fix data | `createdAt`, `fixLandedAt`, `timeToResolutionMs`, `fixVerification`, `assignee` | `failure_clusters` |
 | Per-project analyses | `getProjectsOverview` (tendency), `getProjectPerformance`, `getProjectSpecHealth`, `getProjectFlakyTests` (impact, wasted minutes), `getProjectSlowTests`, `getProjectTimeoutOpportunities`, `listQuarantine` | `shared/handlers/projects.ts`, `shared/handlers/quarantine.ts` |
 | Per-test time series | `getTestCaseStabilityTrend` (bucketed by run count, MCP only) | `shared/handlers/test-cases.ts` |
@@ -91,10 +123,15 @@ registry that exists.
 | Email layout and Slack block rendering | `emailLayout`, `renderDigestEmail`, `sendSlackDigest`, HMAC-signed webhooks | `server/utils/email.ts`, `server/utils/notifications/dispatch.ts` |
 | One data object rendered to five formats, with size budgets | `ExportBundle`, `collect*Bundle`, `buildExport`, `renderExportHtml` / `renderExportPdf` (pdf-lib, no browser) / `renderExportMarkdown`, `ExportBudget` | `shared/export/*`, `server/utils/export-request.ts`, `server/utils/export-assets.ts` |
 | Read-only access without an account | `share_links` (hashed 256-bit token, expiry, revoke, view count), `GET /share/<token>` rendering the export HTML live | `server/utils/share-links.ts`, `server/routes/share/[token].get.ts` |
-| A scheduler | Nitro `scheduledTasks` (cron strings) | `nuxt.config.ts` |
+| A scheduler | Nitro `scheduledTasks` (cron strings): the three outbox sweepers every minute, `integrations:sync`, the nightly `retention:sweep` and `graph:sweep` | `nuxt.config.ts`, `server/tasks/` |
 | Startup backfill of a derived table, non-blocking and idempotent | `backfillTraceBlobResources`, `reclusterFailureFingerprints` | `server/database/index.ts` |
 | Image processing on the server | `sharp` (already a dependency; reads SVG, writes PNG) | `server/utils/visual-diff.ts`, `server/utils/ai-images.ts` |
-| Hand-drawn SVG charts | `barGeometry`, `niceTicks`, `dayTickIndices`, the series palettes | `app/utils/chart.ts`, `app/components/analytics/*.vue` |
+| Hand-drawn SVG charts | `barGeometry`, `niceTicks`, `dayTickIndices`, the series lists | `app/utils/chart.ts`, `app/components/analytics/*.vue` |
+| One color per test outcome and one pass-rate scale (a MUST-follow rule since 0.37.0) | `STATUS_PALETTE`, `statusPalette()`, the `--color-status-*` tokens; `passRateTone`, `PASS_RATE_GOOD`, `PASS_RATE_FAIR`, `passRateStep` | `app/utils/status-palette.ts`, `app/utils/pass-rate.ts`, `app/assets/css/main.css` |
+| Optional features a team can decline once, everywhere | `CAPABILITIES`, `resolveCapability`, `getInstanceCapabilities`, `useInstanceCapabilities().isHidden()`, MCP tools tagged `module` and `capability`, the Setup ladder's detection ids | `shared/capabilities.ts`, `shared/handlers/capabilities.ts`, `shared/handlers/setup-status.ts`, `app/composables/useInstanceCapabilities.ts` |
+| The product feature catalog behind the generated feature map | `PIWI_FEATURE_GROUPS` (`docs:gen` renders it; `docs-drift.test.ts` resolves every `doc` anchor) | `shared/piwi-features.ts` |
+| The Test Map: gaps, findings, probes, change coverage, precision | `scenario_gaps`, `probes`, `graph_nodes`, `graph_edges`; `listScenarioGaps`, `listAcceptedUnwritten`, `getFeatureMap` (open gaps by class per feature), `computeChangeCoverage`, `loadDetectorPrecision`, `isProbeRun` | `shared/handlers/scenario-gaps.ts`, `change-coverage.ts`, `detector-precision.ts`, `probes.ts`, `server/utils/feature-graph.ts` |
+| A weekly digest selection with no delivery | `selectWeeklyDigest(gaps, since)` (the top five new gaps per project), `renderDigest` (Markdown) | `shared/handlers/gap-digest.ts` |
 | Instance locale and time zone | `resolveLocaleSettings`, `PIWI_LOCALE`, `PIWI_TIME_ZONE`, `formatAbsolute` | `server/utils/locale-settings.ts`, `shared/i18n/locale-format.ts` |
 | Ticket language (English or French) | the comment-language resolution of the tracker integration (binding, then connection default, then English) | `server/utils/integrations/policies.ts` |
 | Access control for anything cross-project | `getProjectScope`, `resolveAllowedProjects`, subscriptions re-check access at delivery | `server/utils/project-access.ts`, `shared/handlers/analytics/common.ts`, `server/utils/notifications/match.ts` |
@@ -125,6 +162,8 @@ Playwright HTML report a run carries (`RunReports.vue`), so the new document is 
   whether a target is met.
 - **Period comparison**: the reference period a metric's change is measured against: the previous period of the
   same length (today's behavior), the same period a year earlier, or a period chosen by hand.
+- **Probe run**: a run the Test Map's `piwi probe` command produces by replaying a passing test with an injected
+  fault, stamped `metadata.piwiProbe`. Never a real run: excluded from every metric in this record.
 
 ## Design in one page
 
@@ -200,10 +239,19 @@ named.
 | Fixes that held | Clusters fixed in the period and not regressed since, over clusters fixed. New | %, higher | live |
 | Quarantine debt | Quarantined tests, tests ready to release, age of the oldest (`listQuarantine`). New as a trend | count, lower | live |
 | Median run duration, p90 test duration | From `test_runs.duration` and `p90TestDuration` | ms, lower | rollup |
+| Open scenario gaps, by class | Open `scenario_gaps` rows (`kind = gap`) per class: blind-spot, false-comfort, fragile. Only where the `test-map` capability is active. New | count, lower | live |
+| Gaps closed | Gaps whose `closedAt` falls inside the period. The Test Map's rule applies: counts and the trend of gaps closed, never a coverage percentage. New | count, higher | live |
+| Accepted but unwritten | Gaps accepted more than a week ago whose node still has no trusted test (`listAcceptedUnwritten`, the Home queue). New | count, lower | live |
+| Open resilience findings | `kind = finding` rows in the unhandled and degraded classes, from server probes. New | count, lower | live |
 
 `source: 'live'` metrics read the tables that already exist. Clusters and quarantine rows are not deleted by
 retention, so their trends are complete regardless of the raw-data window; only test-identity metrics (flaky tests,
-top lists) are bounded by it, and the report footer says so when a window exceeds it.
+top lists) are bounded by it, and the report footer says so when a window exceeds it. Every live query filters probe
+runs with `isProbeRun()`.
+
+Two Test Map numbers stay out of the catalog for now: escaped defects (the detector shipped as a pure function; its
+tracker loader has not) and the *protected* count the Test Map record defines but no handler exposes. Both join the
+catalog the day the code exposes them; escaped defects in particular is the number a quality manager asks for first.
 
 ### Daily rollups
 
@@ -235,11 +283,14 @@ small: a project produces one row per distinct (environment, branch, run kind) p
 **Write path.** `upsertDailyRollup(db, runId)` in `shared/handlers/analytics/rollups.ts` recomputes the run's whole
 cell from the raw rows (`SELECT … FROM test_runs WHERE project_id = ? AND start_time BETWEEN day AND day+1 AND
 environment = ? …`) and upserts it. Recomputing the cell instead of adding the run's numbers makes the call
-idempotent by construction: a retry, a re-import or a double call cannot double-count. It is called wherever a run
-becomes terminal with final counts: `finish.post.ts` (after `computeRegressionSignals`, and for sharded runs only
-when `shardsFinished === shardTotal`), `submit.post.ts`, `upload.post.ts`, `shared/handlers/import-runs.ts`, and the
-demo mirror `app/demo/api/reporter.ts`, which is why the helper lives under `shared/` and not `server/utils/` (the
-rule "never duplicate logic between server and demo").
+idempotent by construction: a retry, a re-import or a double call cannot double-count. It is called from three
+places: `runFinalizeSideEffects` (`server/utils/run-finalize-side-effects.ts`), the one helper `finish`, `submit` and
+`upload` already route through, after its probe-run early return, so a probe run never reaches a rollup and a sharded
+run is counted once, when the helper fires for the last shard; `shared/handlers/import-runs.ts`, because imports are
+silent and bypass the helper; and the demo mirror `app/demo/api/reporter.ts`. The recompute itself drops
+`isProbeRun()` rows from the raw set, so a cell is right even for a run that reached the table another way. The
+helper lives under `shared/` and not `server/utils/` because the demo calls it too (the rule "never duplicate logic
+between server and demo").
 
 **Deletes.** `deleteRunsByIds` recomputes the cells of the runs it deletes, so a manual delete inside the raw
 window is reflected. `deleteRunsOlderThan` (the retention sweep) calls it with `{ preserveRollups: true }` so
@@ -282,6 +333,10 @@ live: flaky leaderboard, cluster landscape, browser matrix, slow endpoints, and 
 sparkline and `latestRun`. The rule is one code path per number: a scalar series is always read from the rollups,
 never "rollup for long windows, live for short ones", and a unit test seeds runs, runs the hook, and asserts the
 rollup sums equal the live sums (`analytics-handlers.test.ts` already has the seeding helpers).
+
+The same milestone adds the `isProbeRun()` filter to `fetchScopedRuns`, `getProjectsOverview`, `getProjectPerformance`,
+`getProjectSlowTests` and `getRecentTestRuns`, so the live widgets and the rollups agree on which runs exist. It is
+one line per handler and ships first, on its own, as a fix.
 
 ## Layer 2: the quality report
 
@@ -339,11 +394,20 @@ one collector, one component, exactly the widget pattern.
 
 **Engineering** (the team template): everything above, then the flaky leaderboard with owners and wasted minutes,
 new and stale clusters with ticket keys, movers (newly flaky, fixed, slower by more than 25 %), timeout
-opportunities, the browser matrix, slow shared endpoints. It is the analytics page as a document, in reading order.
+opportunities, the browser matrix, slow shared endpoints, and, where the `test-map` capability is active for the
+projects in scope, a **scenario gaps** section: open gaps by class and by feature (from `getFeatureMap`), gaps closed
+in the period, accepted-but-unwritten gaps, open resilience findings. It is the analytics page as a document, in
+reading order.
 
 **Team**: the engineering template filtered by owner (`test_cases.owner`, `failure_clusters.assignee`), so a
 schedule per team sends each team its own report. It needs no new collector, only an `owners` filter on the scope,
 the one the notification filters already have (`filters.owners`).
+
+**Gaps digest**: the Test Map's weekly digest, delivered at last. One section, the top five new gaps per project since
+the previous delivery, straight from `selectWeeklyDigest`, then the counts per class and the gaps closed. The Test Map
+record deferred "the digest delivery task"; a report schedule with this template is that task, with the snapshot,
+the channels and the retries it would otherwise have had to grow. Off by default, like every schedule, and gated by
+the `test-map` capability.
 
 ### Renderers
 
@@ -361,6 +425,16 @@ One bundle, rendered by:
 | Slack | blocks: the verdict, the tiles as a two-column field list, the text sparkline, the changes as bullets, a button to the snapshot | Incoming webhooks cannot upload files; an image block needs a public URL, so a chart image is offered only when share links are enabled (the snapshot's share link serves `chart.png`) |
 | Webhook | the bundle JSON, HMAC-signed like every webhook | Bridges to Teams, n8n, Zapier, a data warehouse |
 | Browser | a notification "Your weekly quality report is ready" linking to the snapshot | Existing browser channel |
+
+**Colors.** Since 0.37.0 every outcome has one color and every pass rate one scale (`STATUS_PALETTE` and
+`PASS_RATE_GOOD` / `PASS_RATE_FAIR` in `app/utils/`, the `--color-status-*` tokens in `app/assets/css/main.css`), and
+the rule forbids a threshold or a color at a call site. The renderers here run in `shared/` (server, demo, browser)
+and cannot import `app/utils/*`; the export renderers and `email.ts` still carry their own literals (`--pass` and
+`--fail`, `COLORS`, `PASSED_COLOR` and `FAILED_COLOR`). The report work moves the literal values and the two
+thresholds into `shared/status-colors.ts`: one hex per outcome, the two pass-rate thresholds, the five heatmap steps.
+`status-palette.ts` and `pass-rate.ts` keep the Tailwind utilities and read the literals from it; the export
+renderers, `email.ts` and the report renderers read it too; a unit test pins the `main.css` tokens to the shared
+literals, so a document, an email and the dashboard cannot paint one outcome three ways.
 
 ### Money
 
@@ -385,6 +459,30 @@ default, per project when bound, else the instance default. No other translation
 - The **project page** gets the same button scoped to the project.
 - A **`/reports` page**, under Analytics in the sidebar: the snapshots (newest first, with template, scope, period,
   how it was delivered) and the schedules. `/reports/:id` shows one snapshot.
+
+### Capability and feature catalog
+
+Quality reports are optional, so they follow the opt-out system rather than adding a flag:
+
+- One entry in `CAPABILITIES` (`shared/capabilities.ts`): `id: 'quality-reports'`, `module: 'workflow'`,
+  `levels: ['instance']`, `needs: []`, `detection: 'quality-reports'`, `since` the release that ships it,
+  `doc: 'features/quality-reports'`. Not `passiveData`: a schedule or a snapshot exists because someone made it, so
+  the "data always wins" rule applies, as it does for notifications.
+- The detection id joins `SetupCapabilityId` and `SETUP_LADDER_ORDER` (`shared/handlers/setup-status.ts`): evidence
+  is one `report_schedules` or `report_snapshots` row. The Setup ladder then shows the entry with a *New* marker on
+  instances older than the release, with no extra code.
+- The `/reports` sidebar entry, the Report buttons and the snapshot cards read the resolved state through
+  `useInstanceCapabilities().isHidden('quality-reports')`, as the Home gaps queue reads `test-map`. Declined means none
+  of them render and the MCP tools drop out of the list; the REST endpoints stay callable, as the scenario-gap
+  endpoints do, because a decline is a display decision, not an access rule.
+- MCP report tools carry `module: 'workflow'` and `capability: 'quality-reports'`, so the route drops them when the
+  capability is declined; the metric trend tools carry `module: 'core'` and no capability, because analytics is core
+  and never gated.
+- Two entries in `PIWI_FEATURE_GROUPS` (`shared/piwi-features.ts`), "Quality reports" and "Trends over time", under
+  the job they serve, with `doc` anchors that exist before the entry does (`docs-drift.test.ts` resolves them);
+  `npm run docs:gen` regenerates the feature map.
+- The scenario-gaps section of a report follows the `test-map` state of each project in scope, per project, so a
+  report over five projects of which one declined the Test Map has gaps for four.
 
 ## Layer 3: schedules and delivery
 
@@ -499,8 +597,9 @@ Once a snapshot exists, several routes become one file each.
   `packages/reporter/src/cli/quality-report.ts` (the existing `report.ts` is the init step-result printer).
 - **MCP.** `get_quality_report(scope, period, template)` returns the bundle; `get_metric_trend(metric, scope)`
   returns one series with its definition; `compare_periods(scope, a, b)` returns the tile row. Registered in
-  `shared/mcp-tools.ts`, enforced by `ctx.scope`, documented in `apps/docs/features/mcp.md` (the docs drift test
-  checks every tool is listed and that no page states a stale tool count).
+  `shared/mcp-tools.ts` with `module: 'workflow'` and `capability: 'quality-reports'` for the report tools and
+  `module: 'core'` for the metric tools, enforced by `ctx.scope`, documented in `apps/docs/features/mcp.md` (the docs
+  drift test checks every tool is listed and that no page states a stale tool count).
 - **BI tools.** `GET /api/analytics/rollups?format=csv` streams the rollup rows for the caller's scope (Power BI,
   Metabase, a spreadsheet), and an optional `GET /api/metrics` in OpenMetrics text format exposes the catalog's
   current values per project for a Grafana or Prometheus the operator already runs, behind `PIWI_METRICS_ENABLED`
@@ -533,6 +632,10 @@ Once a snapshot exists, several routes become one file each.
 | D14 | CSV cells that could be formulas are quoted defensively | Trusting spreadsheet import: test titles are attacker-influenced |
 | D15 | English and French narratives from sentence templates, reusing the ticket language setting | A translation framework: two languages do not justify one |
 | D16 | The Confluence channel waits for the wiki connection of the tracker proposal; this proposal ships the schedule, the snapshot and the bundle it will publish | Building a second Confluence client here |
+| D17 | The outcome colors and pass-rate thresholds move to `shared/status-colors.ts`; the app palette, the export renderers, the emails and the report renderers all read it | Report-local color constants: a fourth copy of the palette, and a breach of the 0.37.0 rule the day one drifts |
+| D18 | Quality reports are one `workflow` capability, instance level, detected from a schedule or a snapshot; analytics stays core | A `PIWI_REPORTS_ENABLED` flag: the opt-out system exists exactly so that optional features stop growing flags |
+| D19 | The Test Map's weekly gaps digest is a report template delivered by report schedules; `selectWeeklyDigest` stays where it is and becomes the section's collector | A separate `gaps:digest` task, as its record sketched: a second time-triggered delivery path with its own schedule and channel semantics |
+| D20 | Probe runs are excluded from every metric: the rollup recompute, the live widget queries and the project overview | Relying on *Full runs only* to hide them: it is a toggle, and the moment it is off the pass rate is wrong |
 
 ## Storage and API
 
@@ -557,6 +660,12 @@ Once a snapshot exists, several routes become one file each.
 **Environment variables** (all registered in `shared/piwi-env-vars.ts` with `since`): `PIWI_CI_MINUTE_COST`,
 `PIWI_RETENTION_REPORT_DAYS`, `PIWI_METRICS_ENABLED`. The reports feature itself needs no flag: with no schedule and
 no click, nothing runs but the rollup hook.
+
+**Registries**: `CAPABILITIES` gains `quality-reports`; `SetupCapabilityId` and `SETUP_LADDER_ORDER` gain its
+detection; `PIWI_FEATURE_GROUPS` gains its entries; every new MCP tool carries `module` and `capability`.
+`tests/mcp.spec.ts` compares the served list with `MCP_TOOL_DEFS`, so no count is hard-coded there, but
+`apps/docs/features/mcp.md` must list each new tool and every "N tools" sentence in the docs and `ROADMAP.md` must
+move to the new total (`docs-drift.test.ts` pins them).
 
 **Settings surface**: `SETTINGS_PAGES` gains the cost field under *Performance*; schedules live on `/reports`, not
 in Settings, because they are a workflow, not a configuration. Help topics (`HELP_TOPICS`) for the report button,
@@ -583,6 +692,8 @@ applies.
   today.
 - The seed generator (`scripts/generate-demo-seed.mjs`) seeds `targets` on two projects, one met and one missed, so
   the demo report has a "Risks" section worth reading. `npm run app:seed:demo` afterwards.
+- The demo already seeds a project that declined the Test Map (0.37.0). A report preview on that project shows no
+  scenario-gaps section, which is the visible check that capability gating reaches documents, not only pages.
 - The desktop app bundles the server, so schedules run while the app is open; the Reports page states that a
   schedule fires when the app is running.
 
@@ -592,8 +703,10 @@ applies.
 channels, share links, the CLI, limits), sidebar entry after *Analytics*; `analytics.md` gains the period picker,
 comparison, branch policy, targets, markers and the new widgets; `notifications.md` gains the `report.ready`
 delivery row; `timeline-markers.md` mentions the analytics page; `concepts.md` gains *Metric*, *Target*, *Quality
-report*; `mcp.md` lists the new tools; the configuration reference regenerates from the registry. Screenshot scenes
-for the report page, the preview dialog and each new widget, with `data-shot` attributes.
+report*, *Probe run*; `mcp.md` lists the new tools; `scenario-gaps.md` replaces its "a weekly digest is planned"
+paragraph with a link to the gaps digest template; the configuration reference and the feature map regenerate from
+their registries (`docs:gen`). Screenshot scenes for the report page, the preview dialog and each new widget, with
+`data-shot` attributes.
 
 **Unit tests** (Vitest): rollup equals live on seeded data (property test over random seeds); idempotence of the
 hook; the prune flag preserves cells; the metric catalog covers every metric a section uses; comparison arithmetic
@@ -625,6 +738,11 @@ names from `shared/test-project-names.ts`.
 6. **AI-written reports as the product.** Rejected as the default (D11); kept as an optional labeled section.
 7. **Snapshot-free reports, regenerated on open.** Rejected (D9): a stakeholder must be able to reopen the mail from
    March and see March.
+8. **A separate `gaps:digest` task** for the Test Map's weekly digest, as its record sketched. Rejected (D19): it
+   would be a second time-triggered delivery path with its own schedule, snapshot and channel semantics; a report
+   schedule with the gaps digest template is that task with none of the duplication.
+9. **A `PIWI_REPORTS_ENABLED` flag.** Rejected (D18): 0.37.0 made the capability registry the way an optional feature
+   is switched off, and a flag would be the one feature the Setup ladder and the MCP list could not see.
 
 ## Open questions
 
@@ -649,26 +767,33 @@ Each with the default the design assumes.
    says so; subsequent runs cover full cadences.*
 10. **Microsoft Teams.** In the first delivery milestone or later? *Default: later, on demand; the webhook channel
     bridges it meanwhile.*
+11. **The gaps digest.** Its own template, a section of the engineering template, or both? *Default: both; teams that
+    want only the Test Map's five lines a week get the template, everyone else gets the section.*
+12. **Capability level.** `quality-reports` at instance level only, or per project too? *Default: instance; a
+    schedule spans projects, so a per-project decline would have nothing to attach to.*
 
 ## Rollout sketch
 
 Each step is a separately mergeable pull request that leaves the app green and useful on its own. Effort is a
 rough size for one developer.
 
-1. **Metrics foundation** (M). The metric catalog; `analytics_daily_rollups` in both schemas; the hook on every
-   ingest path and the demo mirror; recompute-on-delete and preserve-on-prune; nightly reconcile; startup backfill;
+1. **Metrics foundation** (M). First, as its own small fix: the `isProbeRun()` filter on the analytics widgets and
+   the project handlers. Then the metric catalog; `analytics_daily_rollups` in both schemas; the hook in
+   `runFinalizeSideEffects`, the import handler and the demo mirror; recompute-on-delete and preserve-on-prune; nightly reconcile; startup backfill;
    scalar widgets switched to rollups with the equality test; `defaultBranchOnly` with its toggle; `from` / `to` and
    `compare` in the scope with the calendar presets and the date picker; markers drawn on the analytics trends.
    *Outcome: long windows are correct and fast, the default branch is the default, and "August against July" works.*
 2. **The quality report** (L). `ReportBundle`, the section registry, the executive and engineering templates, the
    rule-based verdict, the renderers (Vue, HTML, PDF, Markdown, JSON, CSV), `GET /api/reports/preview`, the Report
    button on the analytics and project pages, the cost setting, English and French sentences, the `get_quality_report`
-   and `get_metric_trend` MCP tools, the `piwi report` CLI command, the docs page. *Outcome: the headline feature; a
+   and `get_metric_trend` MCP tools with their capability tags, the `quality-reports` capability with its detection
+   and feature-catalog entries, `shared/status-colors.ts`, the `piwi report` CLI command, the docs page. *Outcome: the headline feature; a
    stakeholder gets a PDF today, and a CI job can post the Markdown weekly without waiting for step 3.*
 3. **Schedules and snapshots** (M). The two tables, the `reports:schedule` task, the outbox reuse with
    `report.ready`, email with the inline chart, Slack blocks, webhook body, browser notification, the `/reports`
-   page and `/reports/:id`, snapshot retention, the team template with the owners filter. *Outcome: the report
-   arrives on Monday morning by itself.*
+   page and `/reports/:id`, snapshot retention, the team template with the owners filter, the gaps digest template
+   that closes the Test Map's deferred delivery. *Outcome: the report arrives on Monday morning by itself, and so
+   does the Test Map's digest.*
 4. **Trend depth** (L, in independent pieces). Targets with their insight rule and portfolio column; the suite
    growth, flaky debt, time to fix, ownership scorecard, environment comparison and movers widgets; the per-test and
    per-cluster trend tabs; drill-down links; widget export (PNG, CSV). Each widget is its own pull request.
@@ -685,7 +810,8 @@ Grouped by milestone. Paths are under `apps/application/` unless noted.
 - [ ] `shared/analytics/metrics.ts`: `MetricDef`, `METRICS`, `MetricId`
 - [ ] `server/database/schema.sqlite.ts` and `schema.pg.ts`: `analytics_daily_rollups`; `npm run db:generate && npm run db:generate:pg`
 - [ ] `shared/handlers/analytics/rollups.ts`: `upsertDailyRollup`, `recomputeRollupCells`, `readRollupSeries`, `backfillDailyRollups`
-- [ ] `server/api/test-runs/[id]/finish.post.ts`, `submit.post.ts`, `upload.post.ts`, `shared/handlers/import-runs.ts`, `app/demo/api/reporter.ts`: call the hook when a run is terminal
+- [ ] `shared/handlers/analytics/common.ts` (`fetchScopedRuns`), `shared/handlers/projects.ts` (`getProjectsOverview`, `getProjectPerformance`, `getProjectSlowTests`), `shared/handlers/test-runs.ts` (`getRecentTestRuns`): filter `isProbeRun()`; unit test with a seeded probe run
+- [ ] `server/utils/run-finalize-side-effects.ts` (after the probe early return), `shared/handlers/import-runs.ts`, `app/demo/api/reporter.ts`: call the hook when a run is terminal
 - [ ] `server/utils/retention.ts`: `deleteRunsByIds` recomputes; `deleteRunsOlderThan` passes `preserveRollups`
 - [ ] `server/tasks/retention/sweep.ts`: seven-day reconcile step
 - [ ] `server/database/index.ts`: non-blocking backfill, `analytics_rollups_backfilled_at` app setting
@@ -707,7 +833,9 @@ Grouped by milestone. Paths are under `apps/application/` unless noted.
 - [ ] `server/api/settings/ci-cost.get.ts`, `ci-cost.put.ts`; `shared/piwi-env-vars.ts` (`PIWI_CI_MINUTE_COST`); `app/utils/settings-metadata.ts`; `app/pages/settings/performance.vue`
 - [ ] `app/components/reports/ReportPreviewModal.vue`, `ReportView.vue`, `ReportStatsRow.vue`, `ReportSeries.vue`, `ReportTable.vue`, `ReportVerdict.vue`
 - [ ] `app/pages/analytics.vue`, `app/pages/projects/[id]/index.vue`: the Report button
-- [ ] `shared/mcp-tools.ts`, `server/utils/mcp/tools.ts`: `get_quality_report`, `get_metric_trend`; `apps/docs/features/mcp.md`
+- [ ] `shared/status-colors.ts`; `app/utils/status-palette.ts`, `app/utils/pass-rate.ts`, `shared/export/render-html.ts`, `render-pdf.ts`, `server/utils/email.ts` read it; `tests/unit/status-colors.test.ts` pins `app/assets/css/main.css`
+- [ ] `shared/capabilities.ts` (`quality-reports`), `shared/handlers/setup-status.ts` (detection id, ladder order, evidence probe), `shared/piwi-features.ts` (two entries); `app/layouts/default.vue` and the Report buttons read `isHidden('quality-reports')`
+- [ ] `shared/mcp-tools.ts`, `server/utils/mcp/tools.ts`: `get_quality_report`, `get_metric_trend` with `module` and `capability`; `apps/docs/features/mcp.md`; the "N tools" sentences in the docs and `ROADMAP.md`
 - [ ] `packages/reporter/src/cli/quality-report.ts`, `cli/index.ts`; `packages/reporter/tests/`
 - [ ] `tests/unit/report-bundle.test.ts`, `report-render-parity.test.ts`, `report-csv.test.ts`; `tests/quality-reports.spec.ts`
 - [ ] `apps/docs/features/quality-reports.md`, `.vitepress/config.mts` sidebar, `guide/concepts.md`
@@ -722,7 +850,8 @@ Grouped by milestone. Paths are under `apps/application/` unless noted.
 - [ ] `server/api/reports/schedules/*.ts`, `snapshots/*.ts`; demo mirrors
 - [ ] `server/utils/retention.ts`, `server/tasks/retention/sweep.ts`: `PIWI_RETENTION_REPORT_DAYS`; `shared/piwi-env-vars.ts`
 - [ ] `app/pages/reports/index.vue`, `reports/[id].vue`; `app/components/reports/ScheduleForm.vue`, `ScheduleList.vue`, `SnapshotList.vue`; `app/layouts/default.vue` nav entry
-- [ ] `tests/unit/report-schedules.test.ts` (next run, DST, dedupe keys); `tests/quality-report-schedules.spec.ts`; `apps/docs/features/quality-reports.md`, `notifications.md`
+- [ ] `shared/reports/registry.ts`: the `scenario-gaps` section over `listScenarioGaps`, `listAcceptedUnwritten`, `getFeatureMap`; the `gaps-digest` template over `selectWeeklyDigest`; both gated on the project's `test-map` state
+- [ ] `tests/unit/report-schedules.test.ts` (next run, DST, dedupe keys); `tests/quality-report-schedules.spec.ts`; `apps/docs/features/quality-reports.md`, `notifications.md`, `scenario-gaps.md` (the digest paragraph)
 
 **4. Trend depth**
 
@@ -783,6 +912,9 @@ Grouped by milestone. Paths are under `apps/application/` unless noted.
 - **Email size**: one inline PNG of the trend, under 100 kB; no evidence images. The HTML body stays under the
   common 102 kB clipping threshold of Gmail by design (tables and inline styles, no embedded SVG).
 - **Vocabulary in the UI**: "quality report" everywhere; never "report" alone next to the Playwright run report.
+- **A decline with schedules present.** The resolver's "data always wins" rule means declining `quality-reports`
+  while schedules exist leaves it active, exactly as declining notifications with channels present does. The Reports
+  page says so and offers to delete the schedules first.
 - **The AI narrative** must never be the only text: rendering falls back to the rule-based verdict when the provider
   fails or is unset, and the section is marked generated.
 - **Scope creep**: a per-test trend, a widget, an export format is each one registry entry; the milestones are cut
