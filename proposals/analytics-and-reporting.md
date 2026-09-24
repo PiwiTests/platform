@@ -6,14 +6,18 @@ better or worse, since when, and is what we do about it working), plus the one t
 dashboards** with their own filters and periods. It argues that the three are one program with four layers, stages the
 work so each stage pays for itself, and records the alternatives and open questions.
 
-**Status.** Proposal, not started. Nothing in this document has shipped. Written 2026-09-22 against 0.36.0; refreshed
-2026-09-24 against 0.37.0, which shipped the Test Map, the capability opt-out system and one status color scale ([What
-0.37.0 changed](#3-what-0370-changed-for-this-design)); extended the same day with custom dashboards, filters and
-periods ([Layer 2](#layer-2-dashboards), [Filters and periods](#filters-and-periods)). · **Date:** 2026-09-24 ·
-**Builds on:** the `/analytics` page and its widget registry, test selections, the notification outbox and digests,
-the offline export pipeline, share links, timeline markers, the Confluence section of
-[issue-tracker-integrations.md](issue-tracker-integrations.md), the Test Map's ledger and its unwired weekly digest
-([scenario-gaps.md](scenario-gaps.md)), and the capability registry
+**Status.** Accepted and being built, milestone by milestone; nothing has shipped yet. Written 2026-09-22 against
+0.36.0; refreshed 2026-09-24 against 0.37.0, which shipped the Test Map, the capability opt-out system and one status
+color scale ([What 0.37.0 changed](#3-what-0370-changed-for-this-design)); extended the same day with custom
+dashboards, filters and periods ([Layer 2](#layer-2-dashboards), [Filters and periods](#filters-and-periods)); decided
+the same day: the four open questions on rollout order, dashboard sharing, test filters over time and live links took
+their defaults (D30 to D33), the default dashboard is fixed ([The default dashboard:
+Overview](#the-default-dashboard-overview), D34), and the daily rollups account for runs kept forever (D35). Each
+milestone is built on a branch stacked on the previous one, in the order of the [Rollout sketch](#rollout-sketch). ·
+**Date:** 2026-09-24 · **Builds on:** the `/analytics` page and its widget registry, test selections, the notification
+outbox and digests, the offline export pipeline, share links, timeline markers, runs kept forever, the Confluence
+section of [issue-tracker-integrations.md](issue-tracker-integrations.md), the Test Map's ledger and its unwired
+weekly digest ([scenario-gaps.md](scenario-gaps.md)), and the capability registry
 ([capabilities-opt-out.md](capabilities-opt-out.md)).
 
 **Summary.** Piwi computes good numbers and shows them to people who are logged in and looking. It has no way to
@@ -197,8 +201,10 @@ Playwright HTML report a run carries (`RunReports.vue`), so the new document is 
   hand. Snapshots have a page, can be downloaded again and can be shared.
 - **Metric**: a named, defined number (pass rate, wasted CI minutes, median time to fix). The **metric catalog** is
   the list of metric definitions the widgets, reports, MCP tools and exports all read.
-- **Daily rollup**: one precomputed aggregate row per project, UTC day, environment, branch and run kind (full or
-  partial). Rollups are what long windows read, and what survives retention.
+- **Daily rollup**: the precomputed aggregates of one **cell**: a project, a UTC day, an environment, a branch and a
+  run kind (full or partial). A cell has a **retained row**, recomputed from the runs still stored, and, once
+  retention has deleted some of its runs, an **archived row** holding their numbers; reads sum the two (D35). Rollups
+  are what long windows read, and what survives retention.
 - **Target**: a per-project goal on a metric ("test pass rate on the default branch at least 98 %"). A report says
   whether a target is met.
 - **Probe run**: a run the Test Map's `piwi probe` command produces by replaying a passing test with an injected
@@ -303,6 +309,7 @@ A new table in both `schema.sqlite.ts` and `schema.pg.ts`, migrations generated 
 | `environment` | text, `''` when the run had none |
 | `branch` | text, `''` when unknown |
 | `full_run` | 0 / 1, the `is_full_run` dimension |
+| `part` | `'retained'`: the runs still stored, recomputed from them; `'archived'`: the numbers of the runs retention deleted, written in the transaction that deletes them (D35) |
 | `runs`, `passed_runs`, `failed_runs` | terminal runs; `failed_runs` counts `failed`, `timedout`, `interrupted` |
 | `total_tests`, `passed_tests`, `failed_tests`, `skipped_tests`, `did_not_run_tests`, `flaky_tests` | sums over the cell's runs |
 | `max_total_tests` | suite size proxy |
@@ -311,38 +318,43 @@ A new table in both `schema.sqlite.ts` and `schema.pg.ts`, migrations generated 
 | `new_regressions`, `new_flaky` | from `test_runs_cases` |
 | `computed_at` | timestamp |
 
-Unique index on `(project_id, day, environment, branch, full_run)`, plus an index on `(project_id, day)`. Every
+Unique index on `(project_id, day, environment, branch, full_run, part)`, plus an index on `(project_id, day)`. Every
 filter the scope supports is a dimension, so any scope is a `SUM … GROUP BY day` over matching rows, with two
-exceptions the read helper owns: `max_total_tests` is read with `MAX`, and the `*_sum_ms` columns are divided by the
-summed `runs` after aggregation, never per row. Rows are small: a project produces one row per distinct
-(environment, branch, run kind) per day, bounded by its run count.
+exceptions the read helper owns: `max_total_tests` is read with `MAX` (over both parts of a cell), and the `*_sum_ms`
+columns are divided by the summed `runs` after aggregation, never per row. Rows are small: a project produces at most
+two rows (retained and archived) per distinct (environment, branch, run kind) per day, bounded by its run count.
 
-**Write path.** `upsertDailyRollup(db, runId)` in `shared/handlers/analytics/rollups.ts` recomputes the run's whole
-cell from the raw rows (`SELECT … FROM test_runs WHERE project_id = ? AND start_time BETWEEN day AND day+1 AND
-environment = ? …`) and upserts it. Recomputing the cell instead of adding the run's numbers makes the call
-idempotent by construction: a retry, a re-import or a double call cannot double-count. It is called from three
-places: `runFinalizeSideEffects` (`server/utils/run-finalize-side-effects.ts`), the one helper `finish`, `submit` and
-`upload` already route through, after its probe-run early return, so a probe run never reaches a rollup and a sharded
-run is counted once, when the helper fires for the last shard; `shared/handlers/import-runs.ts`, because imports are
-silent and bypass the helper; and the demo mirror `app/demo/api/reporter.ts`. The recompute itself drops
-`isProbeRun()` rows from the raw set, so a cell is right even for a run that reached the table another way. The
-helper lives under `shared/` and not `server/utils/` because the demo calls it too (the rule "never duplicate logic
-between server and demo").
+**Write path.** `upsertDailyRollup(db, runId)` in `shared/handlers/analytics/rollups.ts` recomputes the retained row
+of the run's cell from the raw rows (`SELECT … FROM test_runs WHERE project_id = ? AND start_time BETWEEN day AND
+day+1 AND environment = ? …`) and upserts it. Recomputing the cell instead of adding the run's numbers makes the call
+idempotent by construction: a retry, a re-import or a double call cannot double-count. It is called from three places:
+`runFinalizeSideEffects` (`server/utils/run-finalize-side-effects.ts`), the one helper `finish`, `submit` and `upload`
+already route through, after its probe-run early return, so a probe run never reaches a rollup and a sharded run is
+counted once, when the helper fires for the last shard; `shared/handlers/import-runs.ts`, because imports are silent
+and bypass the helper; and the demo mirror `app/demo/api/reporter.ts`. The recompute itself drops `isProbeRun()` rows
+from the raw set, so a cell is right even for a run that reached the table another way. The helper lives under
+`shared/` and not `server/utils/` because the demo calls it too (the rule "never duplicate logic between server and
+demo").
 
-**Deletes.** `deleteRunsByIds` recomputes the cells of the runs it deletes, so deleting one run from its page is
-reflected. `deleteRunsOlderThan` calls it with `{ preserveRollups: true }`, so an age-based deletion never recomputes
-a cell from a now-empty raw set. Both age-based paths go through that function, the nightly retention sweep and the
-*Cleanup old test runs* action in Settings → Storage (`server/api/admin/cleanup.delete.ts`), so both keep the
-rollups: deleting history by age is archival, deleting one run is a correction. That single flag is what makes the
-rollup the memory of the instance: the raw rows go, the day's numbers stay.
+**Deletes.** Age-based deletion goes through `deleteRunsOlderThan`, from the nightly retention sweep and from the
+*Cleanup old test runs* action in Settings → Storage (`server/api/admin/cleanup.delete.ts`). It calls
+`deleteRunsByIds` with `{ archiveRollups: true }`: in the transaction that deletes the runs, their numbers are first
+added to their cells' archived rows, then the retained rows are recomputed from the runs that stay. Deleting history
+by age is archival, and that flag is what makes the rollup the memory of the instance: the raw rows go, the day's
+numbers stay. Runs kept forever and the newest runs `PIWI_RETENTION_MIN_RUNS` protects stay in the retained row, so a
+pruned day can hold both rows, and recomputing it stays exact (D35). Deleting one run by hand is a correction:
+`deleteRunsByIds` recomputes the retained row of its cell, and the run's numbers leave the day. The archived row is
+the only one ever incremented, and only inside the transaction that deletes its runs, so a retried sweep finds nothing
+left to add.
 
 **Reconcile and backfill.** The nightly `retention:sweep` gains a reconcile step that runs **before** pruning and
-recomputes the cells of the last seven days, or fewer when `PIWI_RETENTION_DAYS` is shorter, so it catches a write
-path that forgot the hook without ever touching a day whose raw rows are gone. A reconcile never writes a cell from
-an empty raw set; only the explicit per-run delete may zero one. At startup, `initDatabase` kicks off a non-blocking
-backfill on the pattern of `backfillTraceBlobResources`: every day with runs and no rollup row is computed in
-batches, with an app setting (`analytics_rollups_backfilled_at`) recording completion so it runs once. Imported
-history (blob reports, traces) is covered by the ingest hook and by the backfill alike.
+recomputes the retained rows of the last seven days, or fewer when `PIWI_RETENTION_DAYS` is shorter, so it catches a
+write path that forgot the hook. It never touches an archived row. At startup, `initDatabase` kicks off a non-blocking
+backfill on the pattern of `backfillTraceBlobResources`: every day with runs and no rollup row is computed in batches,
+with an app setting (`analytics_rollups_backfilled_at`) recording completion so it runs once. Imported history (blob
+reports, traces) is covered by the ingest hook and by the backfill alike. History that retention deleted before the
+rollups existed cannot be recovered: the backfill computes what the stored runs, kept ones included, still hold, and
+the widgets say where their data starts.
 
 **Day boundary.** UTC, as `dayKey()` already is, so the heatmap and the rollups agree cell for cell. A run at 23:30
 Paris time on the 3rd lands on the 3rd in UTC terms and on the 4th in the reader's calendar; the report labels every
@@ -381,7 +393,7 @@ the URL carries it.
   in scope, *Save as selection* turns it into a selection the CLI can run (`piwi run <key>`).
 - **Browsers**: the Playwright project (`test_runs_cases.browserName`), a filter on executions.
 - A test filter means the tests that match **today**, with their whole history, which is the selection resolver's own
-  semantics (open question 16).
+  semantics (D32).
 - With a test filter a widget counts from the matching executions, final attempt per test and browser
   (`distinctRunCountsFromAttempts`), not from the run counters: a pass rate "for `@critical`" is critical tests passed
   over critical tests run. Executions go back only as far as retention keeps them, and the widget says where its data
@@ -521,11 +533,84 @@ occurrences by project tag" are each one widget. There is no query language (D28
 
 - `/analytics` opens the viewer's default dashboard: the one they picked (a per-browser preference, like the analytics
   scope and the locale override today), else the instance default an administrator set, else the built-in Overview,
-  which is exactly today's page.
+  which keeps everything today's page shows ([The default dashboard: Overview](#the-default-dashboard-overview)).
 - A switcher in the page header lists built-in, shared and personal dashboards, with a search and an *Unused* group;
   `/analytics/d/<id>` opens one; `/analytics/dashboards` lists and manages them. No sidebar entry is added.
 - Every dashboard header carries *Edit* (or *Duplicate* when you cannot edit it), *Copy link*, *Export* and *Schedule*
   (Layers 3 and 4, following the `quality-reports` capability) and *TV mode*.
+
+### The default dashboard: Overview
+
+Overview is what `/analytics` shows everyone who has not picked another default, so it is built from today's page:
+the same four bands with their titles and descriptions, and the same ten widgets in the same order and widths.
+Nothing a current user looks at moves or disappears. Its definition, in `shared/analytics/dashboards.ts`:
+
+```ts
+export const OVERVIEW_DASHBOARD: DashboardDefinition = {
+  v: 1,
+  scope: {
+    period: { kind: 'rolling', days: 30 },  // today's default
+    comparison: { kind: 'previous' },        // today's deltas, now also drawn on the trends
+    granularity: 'auto',
+    defaultBranchOnly: true,                 // new default (D5); "All branches" is one click away
+    fullRunsOnly: true,                      // today's default
+  },
+  bands: [
+    { title: 'Where things stand', description: 'The state of every project right now.', widgets: [
+      { key: 'headline', type: 'stats', size: 'full', options: { metrics: [ // new
+        'test-pass-rate', 'run-success-rate', 'flaky-tests', 'wasted-ci-minutes', 'open-failure-causes',
+        'median-time-to-fix'] } },
+      { key: 'portfolio', type: 'portfolio', size: 'full' },
+      { key: 'insights', type: 'insights', size: 'half' },
+      { key: 'heatmap', type: 'pass-rate-heatmap', size: 'half' },
+    ] },
+    { title: 'Where the pain is', description: 'What is costing you the most time and attention.', widgets: [
+      { key: 'clusters', type: 'cluster-landscape', size: 'half' },
+      { key: 'flaky', type: 'flaky-leaderboard', size: 'half' },
+      { key: 'wasted', type: 'wasted-time', size: 'half' },
+    ] },
+    { title: 'Which way it is going', description: 'Movement over the selected period.', widgets: [
+      { key: 'pass-rate-trend', type: 'metric', size: 'full', title: 'Pass rate over time', // new
+        options: { metric: 'test-pass-rate', display: 'line' } },
+      { key: 'regressions', type: 'regression-velocity', size: 'half' },
+      { key: 'ci-time', type: 'ci-time-trend', size: 'half' },
+    ] },
+    { title: 'Detail', description: 'Breakdowns to reach for once you know what you are chasing.', widgets: [
+      { key: 'browsers', type: 'browser-matrix', size: 'half' },
+      { key: 'endpoints', type: 'slow-endpoints', size: 'full' },
+    ] },
+  ],
+};
+```
+
+**What current users keep.**
+
+- `/analytics` stays the address and opens Overview until the viewer or an administrator picks another default.
+  Overview stays in the switcher and cannot be edited or deleted, only duplicated.
+- The `piwi-analytics-scope` cookie is read as before: `days` becomes a rolling period of that many days (3650 stays
+  *All time*), and projects, environments, branches and *Full runs only* carry over. A cookie that names branches
+  keeps them, so the new branch default never overrides a choice someone made.
+- Today's URL keys (`days`, `projects`, `environments`, `branches`, `fullRunsOnly`), `GET /api/analytics/[widget]` and
+  the MCP tools that read analytics keep working (D27).
+- The "No test runs in the last N days" alert and its *Show all time* action stay, for any period.
+- Every band keeps its title and description, and every widget its card title.
+
+**What gets better by default.** Each change shows on the page and can be undone from the scope bar.
+
+- Only the default branch counts, with *All branches* one click away (D5): a broken feature branch no longer moves the
+  trends.
+- Probe runs are never counted (D20).
+- A row of headline tiles opens the page: six numbers across every project in scope, each with its change against the
+  previous period.
+- *Which way it is going* opens with the pass rate over time, the previous period drawn as a faint line and markers on
+  it: the cross-project trend the page does not have today.
+- Markers appear on every trend, and the heatmap's cells become calendar days (UTC), as its description already says.
+- When milestone 5 adds widgets, three join Overview where they answer its band's question: *Time to fix* beside
+  *Wasted CI time*, *Suite growth* and *Flaky debt* in *Which way it is going*. The others (ownership, environment
+  comparison, movers) go to the engineering dashboard and the widget picker.
+
+Milestone 1 carries the cookie and the URL keys over, milestone 2 renders the page from this definition, and
+milestone 4 adds the switcher and the choice of another default.
 
 ### Editing
 
@@ -739,7 +824,7 @@ Quality reports are optional, so they follow the opt-out system rather than addi
 | `name` | as shown in the list |
 | `user_id` | FK → `users`, nullable; null = global (administrator-managed), same convention as channels and subscriptions |
 | `scope` | JSON `AnalyticsScope` changes applied over the dashboard's scope (projects, environments, branch policy, test filters, owners); the period comes from the cadence |
-| `dashboard_id` | FK to `analytics_dashboards`, ON DELETE SET NULL: the saved dashboard to render |
+| `dashboard_id` | FK to `analytics_dashboards`, ON DELETE SET NULL: the saved dashboard to render; added by milestone 4, which creates that table (D30) |
 | `builtin_dashboard` | `'executive'` \| `'engineering'` \| `'team'` \| `'gaps-digest'` \| `'overview'` \| null: set when `dashboard_id` is not |
 | `cadence` | `'daily'` \| `'weekly'` \| `'biweekly'` \| `'monthly'` |
 | `anchor` | weekday (weekly, biweekly) or day of month (monthly) |
@@ -785,9 +870,9 @@ something to subscribe to. Only the task writes the event, and `dispatch.ts` bra
 `renderEventSubject`.
 
 A schedule whose period contains no run still sends: "No runs were recorded for this scope this week" is information a
-stakeholder wants (the pipeline is off). A schedule can be muted like a subscription. A schedule whose saved dashboard
-is deleted is deactivated: deleting a dashboard that schedules use asks first and names them, and the Reports page
-shows each one as inactive, with the reason, until its owner points it at another dashboard.
+stakeholder wants (the pipeline is off). A schedule can be muted like a subscription. From milestone 4, a schedule
+whose saved dashboard is deleted is deactivated: deleting a dashboard that schedules use asks first and names them,
+and the Reports page shows each one as inactive, with the reason, until its owner points it at another dashboard.
 
 ### Who may do what
 
@@ -871,8 +956,8 @@ Once a snapshot or a saved dashboard exists, several routes become one file each
 | # | Decision | Alternative rejected |
 |---|---|---|
 | D1 | Run-filtered scalar metrics are read from daily rollups for every window; identities (which tests, which clusters) and test-filtered numbers are read from the stored runs, and the page says how far back those go | Reading live for short windows and rollups for long ones: two code paths that disagree by a rounding |
-| D2 | A rollup cell is recomputed from raw rows, never incremented | Incrementing: fast, but a retried `finish` or a re-import double-counts |
-| D3 | Age-based deletion (the retention sweep and the Storage cleanup action) preserves rollups; deleting one run recomputes its cell | Recomputing on prune would zero the history the rollups exist to keep |
+| D2 | A cell's retained row is recomputed from raw rows, never incremented | Incrementing: fast, but a retried `finish` or a re-import double-counts |
+| D3 | Age-based deletion (the retention sweep and the Storage cleanup action) moves the deleted runs' numbers into the archived row, in the same transaction; deleting one run by hand recomputes the retained row | Recomputing on prune would zero the history the rollups exist to keep |
 | D4 | Rollup days are UTC, like `dayKey()`; labels render in the instance time zone | Instance-time-zone days: right for one-site teams, but a time zone change forces a full recompute |
 | D5 | The default branch is the default scope of analytics and reports; unknown-branch runs are included | Excluding unknown-branch runs empties the page on instances without SCM data |
 | D6 | One `ReportBundle`, many renderers, exactly the `ExportBundle` shape; a parity test between the in-app view and the HTML | Rendering the in-app page from a different data path than the download |
@@ -899,6 +984,12 @@ Once a snapshot or a saved dashboard exists, several routes become one file each
 | D27 | The URL carries the scope; saving writes it into the definition; the cookie stays the per-browser default | Cookie-only state: a copied link does not show what its sender saw |
 | D28 | No query language: the configurable widget is a metric, a display and a breakdown over the catalog | A SQL or query-builder widget: the schema is internal, a query's cost is unbounded, and the rollup CSV export serves that need |
 | D29 | Saved dashboards are core, not a declinable capability | A capability entry: an unused dashboards feature adds one switcher, less than a decline control would |
+| D30 | Quality reports and their schedules (milestones 2 and 3) ship before saved dashboards (milestone 4); filters and periods ship first, in milestone 1. Milestone 4 adds `report_schedules.dashboard_id` | Saved dashboards first: dashboards were the follow-up question, reports the first request, and both rest on milestone 1 either way |
+| D31 | Sharing a dashboard needs the reporter or administrator role; any signed-in user keeps private dashboards | Any signed-in user shares: safe, since sharing grants no access (D26), and possible later without a migration |
+| D32 | A test filter means the tests that match it today, with their whole history (the selection resolver's semantics) | The tags each execution carried then (`test_runs_cases.tags`): a trend of `smoke` would compare a different set of tests from one bucket to the next |
+| D33 | Live dashboard links work for viewers who are not signed in, behind the share-link flag, with the expiry and revocation of every share link | Snapshot links only: a wall screen would need a signed-in session kept open |
+| D34 | The built-in Overview keeps everything today's analytics page shows, in the same bands, order and widths, reads the existing scope cookie and URL keys, and adds a few better defaults | A redesigned default layout: current users would lose their bearings, with no toggle to get the old page back |
+| D35 | A cell is two rows: the retained row, recomputed from the runs still stored, and the archived row, the numbers of the runs retention deleted, added in the transaction that deletes them; reads sum both | Freezing a cell after its first prune: runs kept forever and `PIWI_RETENTION_MIN_RUNS` leave runs on a pruned day, and a frozen cell could take a correction or an import only through deltas that a retry would apply twice |
 
 ## Storage and API
 
@@ -1047,10 +1138,14 @@ opened without a session; the CLI against the test server. Project names from `s
     more cookie stays consistent with them.
 15. **Dashboards as a declinable capability.** Rejected (D29): the Overview dashboard is the analytics page, which is
     core.
+16. **Freezing a rollup cell after its first prune.** Rejected (D35): since runs can be kept forever, a pruned day
+    still holds runs, and a frozen cell could take a later correction or import only through deltas; the archived row
+    keeps every recompute exact instead.
 
 ## Open questions
 
-Each with the default the design assumes.
+Each with the default the design assumes. Questions 13, 15, 16 and 17 of the first draft were decided with their
+defaults and are D30 to D33.
 
 1. **Headline pass rate.** Test pass rate (tests passed over tests run) or run success rate (share of green runs)?
    *Default: both tiles; the verdict sentence uses test pass rate on the default branch, because it is what the
@@ -1077,54 +1172,47 @@ Each with the default the design assumes.
     widget.*
 12. **Capability level.** `quality-reports` at instance level only, or per project too? *Default: instance; a schedule
     spans projects, so a per-project decline would have nothing to attach to.*
-13. **Dashboards before reports.** Should saved dashboards come before the quality report in the rollout? *Default:
-    reports first, the first thing users asked for; custom filters and periods arrive in milestone 1 either way, and
-    moving saved dashboards ahead costs nothing, since both rest on milestone 1 and the widget registry.*
-14. **A dashboard on the project page.** Should a project get a *Dashboard* tab showing a dashboard pinned to it?
+13. **A dashboard on the project page.** Should a project get a *Dashboard* tab showing a dashboard pinned to it?
     *Default: not in the first cut; a dashboard scoped to one project is one switch away.*
-15. **Who may share a dashboard.** Reporters and administrators, or any signed-in user? *Default: reporters and
-    administrators; sharing grants no access, so opening it to every user later is safe.*
-16. **What a test filter means over time.** The tests that match today with their whole history (the selection
-    resolver's semantics), or the tags each execution carried then (`test_runs_cases.tags`)? *Default: today's
-    membership, so a trend of `smoke` compares like with like; selection drift analytics already shows when membership
-    moved.*
-17. **Live anonymous dashboard links.** Worth having beside snapshot links? *Default: yes, behind the same flag and
-    expiry as every share link; a wall screen with nobody signed in needs one.*
 
 ## Rollout sketch
 
 Each step is a separately mergeable pull request that leaves the app green and useful on its own. Effort is a rough
-size for one developer.
+size for one developer. The steps are built in this order (D30), each on a branch stacked on the previous one, so
+every step starts from the code it needs and the generated migrations stay in sequence.
 
 1. **Metrics, filters and periods** (L). First, as its own small fix: the `isProbeRun()` filter on the analytics
    widgets and the project handlers. Then the metric catalog; `analytics_daily_rollups` in both schemas; the hook in
-   `runFinalizeSideEffects`, the import handler and the demo mirror; recompute-on-delete and preserve-on-prune; the
-   bounded nightly reconcile; the startup backfill; calendar-aligned buckets; scalar widgets switched to rollups with
-   the equality test; the period definitions, comparison and granularity; test filters through selections, and
-   browsers; the URL carrying the scope; `defaultBranchOnly` with its toggle; markers drawn on the analytics trends.
-   *Outcome: long windows are correct and fast, the default branch is the default, and "the smoke tests, August
-   against July" is one link.*
+   `runFinalizeSideEffects`, the import handler and the demo mirror; recompute-on-delete, and archived rows written by
+   the prune (D35); the bounded nightly reconcile; the startup backfill; calendar-aligned buckets; scalar widgets
+   switched to rollups with the equality test; the period definitions, comparison and granularity; test filters
+   through selections, and browsers; the URL carrying the scope, with today's cookie and URL keys still read;
+   `defaultBranchOnly` with its toggle; markers drawn on the analytics trends. *Outcome: long windows are correct and
+   fast, the default branch is the default, and "the smoke tests, August against July" is one link.*
 2. **The quality report** (L). `ReportBundle`; the widget `document` mapping and options; the built-in dashboards in
-   `shared/analytics/dashboards.ts` (Overview, executive, engineering, team, gaps digest) and the widgets they need
+   `shared/analytics/dashboards.ts` (Overview as [defined above](#the-default-dashboard-overview), executive,
+   engineering, team, gaps digest), with the analytics page rendered from Overview, and the widgets they need
    (`stats`, `verdict`, `progress`, `risks`, `metric`); the rule-based verdict; the renderers (Vue, HTML, PDF,
    Markdown, JSON, CSV); `GET /api/reports/preview`; *Export* and *Schedule* on the analytics and project pages; the
    cost setting; English and French sentences; the `get_quality_report`, `get_metric_trend` and `compare_periods` MCP
    tools with their capability tags; the `quality-reports` capability with its detection and feature-catalog entries;
    `shared/status-colors.ts`; the `piwi report` CLI command; the docs page. *Outcome: the headline feature; a
    stakeholder gets a PDF today, and a CI job can post the Markdown weekly without waiting for step 3.*
-3. **Schedules and snapshots** (M). The two tables, the `reports:schedule` task, the outbox reuse with `report.ready`,
-   email with the inline chart, Slack blocks, webhook body, browser notification, the `/reports` page and
-   `/reports/:id`, snapshot retention, the team dashboard with the owners filter, the gaps digest dashboard that
-   closes the Test Map's deferred delivery. *Outcome: the report arrives on Monday morning by itself, and so does the
-   Test Map's digest.*
-4. **Saved dashboards** (L). `analytics_dashboards`; the switcher and the default dashboard; edit mode with widget
-   options, scope overrides, bands and the breakdowns of the `metric` widget; the `list`, `markers` and `text`
+3. **Schedules and snapshots** (M). The two tables (`report_schedules` without `dashboard_id`, which step 4 adds), the
+   `reports:schedule` task, the outbox reuse with `report.ready`, email with the inline chart, Slack blocks, webhook
+   body, browser notification, the `/reports` page and `/reports/:id`, snapshot retention, the team dashboard with the
+   owners filter, the gaps digest dashboard that closes the Test Map's deferred delivery. *Outcome: the report arrives
+   on Monday morning by itself, and so does the Test Map's digest.*
+4. **Saved dashboards** (L). `analytics_dashboards`; `report_schedules.dashboard_id` and the deactivation of a
+   schedule whose dashboard is deleted; the switcher, the viewer's and the instance default dashboard; edit mode with
+   widget options, scope overrides, bands and the breakdowns of the `metric` widget; the `list`, `markers` and `text`
    widgets; sharing and the instance default; live refresh on `run-finished`; TV mode; the widget cache;
    `list_dashboards` and `get_dashboard`; the docs page. *Outcome: every team keeps its own view, a link shows it to
    anyone who can open its projects, and any saved dashboard can be exported and scheduled.*
 5. **Trend depth** (L, in independent pieces). Targets with their insight rule and portfolio column; the suite growth,
    flaky debt, time to fix, ownership scorecard, environment comparison and movers widgets; the per-test and
-   per-cluster trend tabs; drill-down links; widget export (PNG, CSV). Each widget is its own pull request.
+   per-cluster trend tabs; drill-down links; widget export (PNG, CSV); *Time to fix*, *Suite growth* and *Flaky debt*
+   added to Overview. Each widget is its own pull request.
 6. **Reach** (M each, independent). Report and dashboard share links, `chart.png` and the badge; the Confluence
    channel once the wiki connection exists; `GET /api/analytics/rollups?format=csv` and the optional OpenMetrics
    endpoint; Microsoft Teams; the optional AI narrative widget.
@@ -1140,23 +1228,23 @@ Grouped by milestone. Paths are under `apps/application/` unless noted.
 - [ ] `shared/handlers/analytics/rollups.ts`: `upsertDailyRollup`, `recomputeRollupCells`, `readRollupSeries`, `backfillDailyRollups`
 - [ ] `shared/handlers/analytics/common.ts` (`fetchScopedRuns`), `shared/handlers/projects.ts` (`getProjectsOverview`, `getProjectPerformance`, `getProjectSlowTests`), `shared/handlers/test-runs.ts` (`getRecentTestRuns`): filter `isProbeRun()`; unit test with a seeded probe run
 - [ ] `server/utils/run-finalize-side-effects.ts` (after the probe early return), `shared/handlers/import-runs.ts`, `app/demo/api/reporter.ts`: call the hook when a run is terminal
-- [ ] `server/utils/retention.ts`: `deleteRunsByIds` recomputes; `deleteRunsOlderThan` passes `preserveRollups`
-- [ ] `server/tasks/retention/sweep.ts`: reconcile step before pruning, bounded by `min(7, PIWI_RETENTION_DAYS)`, never writing from an empty raw set
+- [ ] `server/utils/retention.ts`: `deleteRunsByIds` recomputes the retained rows; `deleteRunsOlderThan` passes `archiveRollups`, which adds the deleted runs' numbers to the archived rows in the same transaction (kept runs and the newest runs stay in the retained rows)
+- [ ] `server/tasks/retention/sweep.ts`: reconcile step before pruning, recomputing the retained rows of the last `min(7, PIWI_RETENTION_DAYS)` days, never an archived row
 - [ ] `server/database/index.ts`: non-blocking backfill, `analytics_rollups_backfilled_at` app setting
 - [ ] `shared/analytics/period.ts`: `PeriodSpec`, `ComparisonSpec`, `resolvePeriod`, `encodePeriod`, `parsePeriod`
 - [ ] `shared/analytics/scope.ts`: project tags, `defaultBranchOnly`, test filters (`selection`, `tests` as a `SelectionPredicateGroup`, `browsers`), `period`, `comparison`, `granularity`; `parseAnalyticsScope` keeps accepting today's keys, `analyticsScopeToQuery` writes the new ones
 - [ ] `shared/handlers/analytics/common.ts`: `makeTimeBuckets(start, end, granularity)` aligned to UTC midnight, `resolveComparisonPeriod`, `resolveBranchPolicy`, `resolveTestFilter` (a selection key per project through `resolveSelectionDefinition`), the filtered-counts path through `distinctRunCountsFromAttempts`
 - [ ] `shared/handlers/analytics/{portfolio,pass-rate-heatmap,ci-time-trend,wasted-time,regression-velocity}.ts`: rollups for run-filtered scalar series, executions for test-filtered ones; every other widget handler honors test filters or declares it cannot
-- [ ] `app/composables/useAnalyticsScope.ts`: the URL first, the cookie as the per-browser default; `app/components/analytics/AnalyticsScopeBar.vue`: period, comparison and granularity pickers, the *Tests* filter, *Save as selection*, the branch policy toggle
+- [ ] `app/composables/useAnalyticsScope.ts`: the URL first, the cookie as the per-browser default, today's `piwi-analytics-scope` cookie still read (`days` becomes a rolling period, saved branches keep the branch policy off); `app/components/analytics/AnalyticsScopeBar.vue`: period, comparison and granularity pickers, the *Tests* filter, *Save as selection*, the branch policy toggle
 - [ ] `app/components/analytics/*Chart.vue`: markers overlay (reuse the project chart's marker rendering)
 - [ ] `server/api/analytics/[widget].get.ts`, `app/demo/api/router.ts`: OpenAPI parameters for the new scope keys
 - [ ] `app/utils/help-content.ts`: topics for the pickers, the *Tests* filter and the branch policy
-- [ ] `tests/unit/analytics-rollups.test.ts`, `analytics-period.test.ts`, extend `analytics-handlers.test.ts`; `apps/docs/features/analytics.md`, `apps/docs/guide/test-selection.md`
+- [ ] `tests/unit/analytics-rollups.test.ts` (with a pruned day holding a kept run: retained plus archived equals the day before the prune, and deleting the released run removes only its numbers), `analytics-period.test.ts`, `analytics-scope.test.ts` (today's cookie and URL keys), extend `analytics-handlers.test.ts`; `apps/docs/features/analytics.md`, `apps/docs/guide/test-selection.md`
 
 **2. The quality report**
 
 - [ ] `shared/analytics/registry.ts`: `options` (zod), `requires`, `testFilters` and `document` on every widget; new widgets `stats`, `verdict`, `progress`, `risks`, `metric` (line and stat displays) with their components in `app/components/analytics/`
-- [ ] `shared/analytics/dashboards.ts`: `DashboardDefinition`; the built-in Overview (today's page) and the executive, engineering, team and gaps digest dashboards; `app/pages/analytics.vue` renders Overview from its definition instead of the hard-coded bands
+- [ ] `shared/analytics/dashboards.ts`: `DashboardDefinition`; the built-in Overview ([The default dashboard](#the-default-dashboard-overview)) and the executive, engineering, team and gaps digest dashboards; `app/pages/analytics.vue` renders Overview from its definition instead of the hard-coded bands
 - [ ] `shared/reports/types.ts`, `collect.ts` (a dashboard and a scope make a bundle), `verdict.ts`, `sentences.en.ts`, `sentences.fr.ts`
 - [ ] `shared/reports/render-html.ts`, `render-pdf.ts`, `render-markdown.ts`, `render-csv.ts`, `build.ts` (file name, content type, format switch)
 - [ ] `shared/analytics/insight-rules.ts`: target-aware rule
@@ -1173,8 +1261,8 @@ Grouped by milestone. Paths are under `apps/application/` unless noted.
 
 **3. Schedules and snapshots**
 
-- [ ] Both schemas: `report_schedules` (with `dashboard_id` and `builtin_dashboard`), `report_snapshots`; migrations
-- [ ] `shared/handlers/reports.ts`: schedules CRUD, `nextRunAt(schedule, now, timeZone)`, `periodFor(schedule, now)`, snapshots CRUD, access check, deactivation when the dashboard is deleted
+- [ ] Both schemas: `report_schedules` (with `builtin_dashboard`; milestone 4 adds `dashboard_id`), `report_snapshots`; migrations
+- [ ] `shared/handlers/reports.ts`: schedules CRUD, `nextRunAt(schedule, now, timeZone)`, `periodFor(schedule, now)`, snapshots CRUD, access check
 - [ ] `server/tasks/reports/schedule.ts`; `nuxt.config.ts` `scheduledTasks` (every five minutes)
 - [ ] `shared/notification-events.ts`: `REPORT_READY_EVENT` as its own constant outside `NOTIFICATION_EVENTS`; `server/utils/notifications/dispatch.ts`: email, Slack, webhook, browser branches ahead of `renderEventSubject`
 - [ ] `server/utils/email.ts`: `attachments` on `SendEmailOptions`, `renderQualityReportEmail`; `server/utils/reports/chart-png.ts` (`sharp` from SVG)
@@ -1187,6 +1275,7 @@ Grouped by milestone. Paths are under `apps/application/` unless noted.
 **4. Saved dashboards**
 
 - [ ] Both schemas: `analytics_dashboards`; migrations; `server/utils/retention.ts` (`sweepOrphans`): private dashboards without an owner
+- [ ] Both schemas: `report_schedules.dashboard_id` (FK, ON DELETE SET NULL); `shared/handlers/reports.ts`: schedules on a saved dashboard, deactivated when it is deleted, the delete dialog naming them
 - [ ] `shared/handlers/dashboards.ts`: list (built-in, shared, own), get, create, save with the `updatedAt` precondition, delete, duplicate; validation against each widget's `options` schema with defaults; narrowing-only overrides; the hidden-project count
 - [ ] `server/api/analytics/dashboards/*.ts`, `server/api/analytics/dashboards/[id]/widgets/[key].get.ts`, `server/api/analytics/widgets/preview.post.ts`, `server/api/settings/analytics-default-dashboard.put.ts`; demo mirrors in `app/demo/api/`
 - [ ] `app/pages/analytics.vue` becomes `app/pages/analytics/index.vue` (the default dashboard), beside `analytics/d/[id].vue` and `analytics/dashboards.vue`
@@ -1206,6 +1295,7 @@ Grouped by milestone. Paths are under `apps/application/` unless noted.
 - [ ] `shared/analytics/insight-rules.ts`: `target-missed`, `time-to-fix-growth`, `suite-shrank`, `quarantine-debt-growth`, `owner-load`
 - [ ] `app/pages/test-cases/[id].vue`: Trend tab over `getTestCaseStabilityTrend` (time buckets); `app/pages/failure-clusters/[id].vue`: occurrences over time
 - [ ] `app/components/shared/ChartCard.vue`: export menu (PNG, CSV)
+- [ ] `shared/analytics/dashboards.ts`: *Time to fix*, *Suite growth* and *Flaky debt* join Overview; the other new widgets join the engineering dashboard
 - [ ] The scope's URL keys on the runs, flaky and clusters lists (drill-down)
 - [ ] Scenes in `scripts/take-feature-screenshots.mjs`; `apps/docs/features/analytics.md`
 
@@ -1223,10 +1313,13 @@ Grouped by milestone. Paths are under `apps/application/` unless noted.
    "Default branch"; the period picker offers rolling, calendar, custom, marker, release-cycle and sprint periods;
    "compare with" offers its modes; the *Tests* filter takes a selection or tags; and the pass-rate heatmap shows the
    same cells before and after the rollup switch (compare a screenshot of the seeded page taken before the change).
-   Copy the URL into a private window: the same page opens with the same filters and period.
+   Copy the URL into a private window: the same page opens with the same filters and period. The page shows today's
+   four bands and ten widgets, plus the headline tiles and the pass-rate trend; a browser whose `piwi-analytics-scope`
+   cookie held `days: 90` and two projects opens on the last 90 days and those two projects.
 2. Delete one run from the run page: the day's tiles change accordingly. Run *Cleanup old test runs* in Settings →
    Storage, then set `PIWI_RETENTION_DAYS=1` and run the retention task by hand: old runs disappear both times, the
-   one-year pass-rate line does not.
+   one-year pass-rate line does not. Keep one old run forever before the retention run: that day's numbers do not
+   change; release it and delete it by hand: only its numbers leave the day.
 3. Click **Export** on the analytics page and pick the executive dashboard: the preview shows a verdict, six tiles,
    the trend with a marker, changes, "what is being done", risks, a footer with definitions. Download each format;
    open the PDF, paste the Markdown into a Confluence page, open the CSV in a spreadsheet and confirm a test titled
@@ -1261,6 +1354,9 @@ Grouped by milestone. Paths are under `apps/application/` unless noted.
 - **Rollups can drift from raw data** if a write path is missed. The reconcile step and the equality unit test bound
   the damage; the analytics page shows a small `rollups reconciled <date>` line in the footer of the CI time widget so
   an operator can see it works.
+- **Archived rows cannot be recomputed.** They are written once, in the transaction that deletes their runs, so a bug
+  there is permanent for that day. The unit test compares a day's numbers before and after a prune, kept runs
+  included, and the archived write shares the recompute's aggregation code.
 - **Sharded runs** reach `finish` several times; the hook runs only on the terminal call, and recompute-on-write makes
   an extra call harmless.
 - **Time zones and DST** are the classic scheduler bug. `nextRunAt` is unit-tested across the DST changes of the
