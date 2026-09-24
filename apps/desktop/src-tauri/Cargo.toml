@@ -38,8 +38,10 @@ tauri-plugin-playwright = { version = "0.4", optional = true }
 
 # Windows-only: the taskbar thumbnail toolbar (Stop/Open buttons under the
 # taskbar-button thumbnail) needs ITaskbarList3 plus a window subclass to receive
-# the button clicks, and the graceful stop of a local run raises Ctrl+C on the
-# run's console (Win32_System_Console, see src/interrupt.rs). Pinned to the same `windows` version Tauri already resolves
+# the button clicks, the graceful stop of a local run raises Ctrl+C on the
+# run's console (Win32_System_Console, see src/interrupt.rs), and an update waits
+# for the server sidecar to exit before the installer runs (Win32_System_Threading,
+# see `kill_server` in src/lib.rs). Pinned to the same `windows` version Tauri already resolves
 # so the `HWND` returned by `WebviewWindow::hwnd()` is the same type (one shared
 # copy of the crate), and so nothing extra is pulled in.
 [target.'cfg(windows)'.dependencies]
@@ -47,6 +49,7 @@ windows = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_System_Com",
     "Win32_System_Console",
+    "Win32_System_Threading",
     "Win32_Graphics_Gdi",
     "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging",

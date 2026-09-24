@@ -125,17 +125,26 @@ export type ProvisioningAction =
   | { kind: 'refresh'; userId: number; set: Record<string, unknown> }
   | { kind: 'link'; userId: number; set: Record<string, unknown> }
   | { kind: 'conflict' }
+  | { kind: 'unverified' }
   | { kind: 'create'; values: Record<string, unknown> };
 
 /**
  * Decide how to provision a sign-in given the user (if any) already linked to
  * this provider identity and the user (if any) owning the verified email.
  *
- * - `refresh`  — identity already linked → keep profile + email in sync.
- * - `link`     — verified email matches a local account not yet linked.
- * - `conflict` — verified email matches an account linked to a *different*
- *                provider identity (single-provider schema can't hold both).
- * - `create`   — no match → make a new OAuth-only account.
+ * Linking by email needs proof on both sides: the provider verified the
+ * address for this identity, and the local account verified it too (email
+ * link, accepted invite, or an earlier provider sign-in). Anyone can type an
+ * address into their own account, so an unproven local claim is never linked.
+ *
+ * - `refresh`    — identity already linked → keep profile + email in sync.
+ * - `link`       — verified email matches a local account that also verified
+ *                  it and is not yet linked.
+ * - `conflict`   — verified email matches an account linked to a *different*
+ *                  provider identity (single-provider schema can't hold both).
+ * - `unverified` — verified email matches a local account that never verified
+ *                  the address → refuse; its owner links from their settings.
+ * - `create`     — no match → make a new OAuth-only account.
  */
 export function resolveProvisioningAction(
   profile: OAuthProfile,
@@ -145,6 +154,9 @@ export function resolveProvisioningAction(
   const { provider, providerId, email, emailVerified, name, avatar } = profile;
 
   if (identityMatch) {
+    // The verified flag belongs to an address: a changed address carries only
+    // the provider's verdict, never the one earned by the previous address.
+    const sameEmail = !email || email === identityMatch.email;
     return {
       kind: 'refresh',
       userId: identityMatch.id,
@@ -152,7 +164,7 @@ export function resolveProvisioningAction(
         avatarUrl: avatar || null,
         name: name || null,
         email: email || identityMatch.email,
-        emailVerified: emailVerified || identityMatch.emailVerified,
+        emailVerified: sameEmail ? emailVerified || identityMatch.emailVerified : emailVerified,
       },
     };
   }
@@ -165,6 +177,10 @@ export function resolveProvisioningAction(
 
     if (linkedElsewhere) {
       return { kind: 'conflict' };
+    }
+
+    if (!emailMatch.emailVerified) {
+      return { kind: 'unverified' };
     }
 
     return {

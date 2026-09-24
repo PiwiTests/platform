@@ -1,4 +1,5 @@
 import { Role } from '#shared/types';
+import { canOpenSettingsPath } from '~/utils/settings-metadata';
 
 // Pages that must work without a session: signing in, and the account-recovery
 // pages reached from emailed links.
@@ -46,5 +47,13 @@ export default defineNuxtRouteMiddleware(async (to) => {
   // a virtual admin, which is what keeps Setup reachable on a default install.
   if (to.path === '/setup' && !isAdmin) {
     return navigateTo('/');
+  }
+
+  // Role-restricted settings pages (Users, Tags, Storage, AI…) follow the same
+  // rule: the nav hides them, and this stops a direct URL rendering a page whose
+  // every API call would 403. The server enforces the roles on those endpoints;
+  // `/settings` itself redirects to the first page the viewer may open.
+  if (!canOpenSettingsPath(to.path, authState.value.user?.role as Role | undefined)) {
+    return navigateTo('/settings');
   }
 });

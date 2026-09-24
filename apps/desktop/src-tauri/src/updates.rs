@@ -11,12 +11,26 @@
 // Flow: `desktop_check_update` asks the endpoint and parks the found update in
 // state; `desktop_install_update` downloads + installs it, streaming progress
 // as `piwi:update-progress` events; the dashboard then calls
-// `desktop_restart_app` to relaunch into the new version.
+// `desktop_restart_app` to relaunch into the new version. On Windows the
+// install step never returns: the plugin launches the installer and exits the
+// app itself (see `SERVER_STOP_WAIT`).
 
 use std::sync::Mutex;
+use std::time::Duration;
 
 use tauri::{AppHandle, Emitter as _, Manager as _};
 use tauri_plugin_updater::UpdaterExt as _;
+
+/// How long the Windows install waits for the server sidecar to be gone.
+///
+/// There the plugin hands over to the installer and leaves through
+/// `std::process::exit`, which skips `RunEvent::ExitRequested` and with it the
+/// quit cleanup — so the updater's pre-exit hook runs it instead. Left running,
+/// the Node sidecar outlives the app with the bundled native modules loaded
+/// (sharp's libvips DLLs), and the installer fails on them with "Error opening
+/// file for writing". The installer stops a stray sidecar as well
+/// (`windows/installer-hooks.nsh`), for updates started by builds without this.
+const SERVER_STOP_WAIT: Duration = Duration::from_secs(5);
 
 /// Whether this build carries updater config (set at startup from the
 /// compiled Tauri config).
@@ -56,7 +70,17 @@ pub async fn desktop_check_update(app: AppHandle) -> Result<UpdateStatus, String
         return Ok(UpdateStatus::bare("unsupported"));
     }
 
-    let updater = app.updater().map_err(|e| e.to_string())?;
+    let hook_app = app.clone();
+    let updater = app
+        .updater_builder()
+        // Setting a hook drops the plugin's default one (`cleanup_before_exit`),
+        // so this calls it too.
+        .on_before_exit(move || {
+            crate::shut_down(&hook_app, Some(SERVER_STOP_WAIT));
+            hook_app.cleanup_before_exit();
+        })
+        .build()
+        .map_err(|e| e.to_string())?;
     match updater.check().await.map_err(|e| e.to_string())? {
         Some(update) => {
             let status = UpdateStatus {
@@ -77,8 +101,9 @@ pub async fn desktop_check_update(app: AppHandle) -> Result<UpdateStatus, String
 }
 
 /// Download and install the update found by the last check. Progress streams
-/// as `piwi:update-progress` events; the app keeps running until the
-/// dashboard asks for the restart.
+/// as `piwi:update-progress` events; on macOS and Linux the app keeps running
+/// until the dashboard asks for the restart, on Windows it quits into the
+/// installer.
 #[tauri::command]
 pub async fn desktop_install_update(app: AppHandle) -> Result<(), String> {
     let update = app

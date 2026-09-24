@@ -21,7 +21,7 @@ export type RouteHandler = (req: RecordedReq, res: http.ServerResponse) => void;
  * Start a fake HTTP server that records every request. The `handler` is called
  * for each request; route on `req.url`. Use `jsonRes` to write JSON responses.
  */
-export function startServer(handler: RouteHandler): FakeServer {
+export function startServer(handler: RouteHandler): Promise<FakeServer> {
   const requests: RecordedReq[] = [];
   const server = http.createServer((req, res) => {
     let body = '';

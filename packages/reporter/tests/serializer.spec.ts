@@ -6,7 +6,7 @@ import {
   serializeRun,
 } from '../src/internal/submit/serializer.js';
 import type { RunPayload } from '../src/internal/submit/uploader.js';
-import type { CollectedTestCase } from '../src/types.js';
+import type { CollectedPerformanceMetrics, CollectedTestCase, TestStepEvent, WireTestCase } from '../src/types.js';
 
 describe('computeDistinctRunCounts', () => {
   it('counts one test regardless of how many attempts it took', () => {
@@ -96,6 +96,19 @@ describe('resolveOverallStatus', () => {
 });
 
 describe('toWireTestCase', () => {
+  function perfMetrics(overrides: Partial<CollectedPerformanceMetrics>): CollectedPerformanceMetrics {
+    return {
+      steps: [],
+      totalStepDuration: 0,
+      slowestStep: null,
+      navigationCount: 0,
+      navigationTotalDuration: 0,
+      waitTotalDuration: 0,
+      waitCount: 0,
+      ...overrides,
+    };
+  }
+
   it('carries the type discriminant through', () => {
     const out = toWireTestCase({ type: 'begin', title: 't', location: 'l' });
     expect(out.type).toBe('begin');
@@ -145,7 +158,7 @@ describe('toWireTestCase', () => {
       type: 'complete',
       title: 't',
       location: 'l',
-      performanceMetrics: { slowestStep: { title: 's', duration: 0 } },
+      performanceMetrics: perfMetrics({ slowestStep: { title: 's', duration: 0 } }),
     });
     expect(out.slowestStepDuration).toBe(null);
     expect(out.slowestStep).toBe('s');
@@ -156,7 +169,7 @@ describe('toWireTestCase', () => {
       type: 'complete',
       title: 't',
       location: 'l',
-      performanceMetrics: { steps: [] },
+      performanceMetrics: perfMetrics({ steps: [] }),
     });
     expect(out.steps).toEqual([]);
   });
@@ -167,24 +180,25 @@ describe('toWireTestCase', () => {
       type: 'complete',
       title: 't',
       location: 'l',
-      performanceMetrics: { steps },
+      performanceMetrics: perfMetrics({ steps }),
     });
     expect(out.steps).toBe(steps);
   });
 
   it('exposes stepEvents, networkRequests, webVitals, consoleLogs, ariaSnapshot, testSource when present', () => {
+    const stepEvents: TestStepEvent[] = [{ title: 's', category: 'hook', startedAt: 1, duration: 1, status: 'passed' }];
     const out = toWireTestCase({
       type: 'complete',
       title: 't',
       location: 'l',
-      stepEvents: [{ t: 1 }],
+      stepEvents,
       networkRequests: [{ url: 'u' }],
       webVitals: { navigation: {} },
       consoleLogs: [{ type: 'error' }],
       ariaSnapshot: 'snapshot',
       testSource: 'src',
     });
-    expect(out.stepEvents).toEqual([{ t: 1 }]);
+    expect(out.stepEvents).toEqual(stepEvents);
     expect(out.networkRequests).toEqual([{ url: 'u' }]);
     expect(out.webVitals).toEqual({ navigation: {} });
     expect(out.consoleLogs).toEqual([{ type: 'error' }]);
@@ -204,13 +218,14 @@ describe('toWireTestCase', () => {
   });
 
   it('drops unknown/internal fields (only listed fields are emitted)', () => {
-    const out = toWireTestCase({
+    const collected: CollectedTestCase & { _filesUploaded: boolean } = {
       type: 'complete',
       title: 't',
       location: 'l',
       attachments: [{ name: 'trace' }], // raw attachment — must NOT appear on the wire
       _filesUploaded: true, // bookkeeping — must NOT appear on the wire
-    });
+    };
+    const out = toWireTestCase(collected);
     expect('attachments' in out).toBe(false);
     expect('_filesUploaded' in out).toBe(false);
   });
@@ -329,10 +344,11 @@ describe('serializeRun', () => {
     } as any;
     const body = serializeRun(makePayload([collected]), { includeTestCases: true });
     expect(Array.isArray(body.testCases)).toBeTruthy();
-    expect(body.testCases.length).toBe(1);
+    const testCases = body.testCases as WireTestCase[];
+    expect(testCases.length).toBe(1);
     // attachments are stripped on the wire
-    expect('attachments' in body.testCases[0]).toBe(false);
-    expect(body.testCases[0].title).toBe('t');
+    expect('attachments' in testCases[0]).toBe(false);
+    expect(testCases[0].title).toBe('t');
   });
 
   it('coerces environment/label to null when absent', () => {
