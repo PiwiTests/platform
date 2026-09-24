@@ -782,7 +782,7 @@ const SCENES = [
           type: 'step-begin',
           title: 'waiting for the result count to be visible',
           location: 'tests/catalog.spec.ts:13:5',
-          stepCategory: 'pw:expect',
+          stepCategory: 'expect',
           parentTitle: 'filters apply to the product grid',
           workerIndex: 1,
           startedAt: Date.now(),
