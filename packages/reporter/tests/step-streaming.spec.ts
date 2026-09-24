@@ -106,7 +106,7 @@ describe('PiwiDashboardReporter live step streaming', () => {
   });
 
   it('suite-level hooks keep parentTitle null and land in setupSteps', async () => {
-    let finishBody: { setupSteps?: unknown[] } | null = null;
+    let finishBody = null as { setupSteps?: unknown[] } | null;
     server = await startServer((req, res) => {
       if (req.url === '/api/test-runs/start') {
         jsonRes(res, 200, { runId: 1, streamToken: 'tok' });

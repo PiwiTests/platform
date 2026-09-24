@@ -7,6 +7,7 @@ import { StreamBuffer } from '../src/internal/streaming/stream-buffer.js';
 import { CrashRecovery } from '../src/internal/streaming/crash-recovery.js';
 import { FileHandler } from '../src/internal/files/file-handler.js';
 import type { PiwiDashboardOptions } from '../src/public/options.js';
+import type { CompleteStreamEvent } from '../src/types/wire.js';
 
 const projectName = 'piwi-stream-test-' + process.pid;
 
@@ -35,6 +36,21 @@ function makeOptions(overrides: Partial<PiwiDashboardOptions> = {}): PiwiDashboa
     verbose: false,
     ...overrides,
   } as PiwiDashboardOptions;
+}
+
+function completeEvent(title: string): CompleteStreamEvent {
+  return {
+    type: 'complete',
+    title,
+    location: 'test.spec.ts:1:1',
+    status: 'passed',
+    duration: 0,
+    error: null,
+    retries: 0,
+    workerIndex: 0,
+    shardIndex: null,
+    startedAt: null,
+  };
 }
 
 describe('StreamManager batching & drain', () => {
@@ -66,10 +82,10 @@ describe('StreamManager batching & drain', () => {
     (sm as any)._runId = 1;
     (sm as any)._token = 'tok';
 
-    sm.queueEvent({ type: 'complete', title: 'a' });
-    sm.queueEvent({ type: 'complete', title: 'b' });
+    sm.queueEvent(completeEvent('a'));
+    sm.queueEvent(completeEvent('b'));
     expect(calls.length, 'no flush before batchSize').toBe(0);
-    sm.queueEvent({ type: 'complete', title: 'c' });
+    sm.queueEvent(completeEvent('c'));
     expect(calls.length, 'flush at batchSize').toBe(1);
     // wait for the in-flight flush to settle
     await sm.drain();
@@ -100,8 +116,8 @@ describe('StreamManager batching & drain', () => {
     (sm as any)._runId = 1;
     (sm as any)._token = 'tok';
 
-    sm.queueEvent({ type: 'complete', title: 'a' });
-    sm.queueEvent({ type: 'complete', title: 'b' });
+    sm.queueEvent(completeEvent('a'));
+    sm.queueEvent(completeEvent('b'));
     // batchSize not reached and no timer fired yet → drain must flush
     await sm.drain();
     expect(calls.length).toBe(1);
@@ -132,7 +148,7 @@ describe('StreamManager batching & drain', () => {
     (sm as any)._runId = 1;
     (sm as any)._token = 'tok';
 
-    sm.queueEvent({ type: 'complete', title: 'a' });
+    sm.queueEvent(completeEvent('a'));
     await sm.drain();
     expect(attempts, `expected at least 2 attempts, got ${attempts}`).toBeGreaterThanOrEqual(2);
   });
@@ -157,7 +173,7 @@ describe('StreamManager batching & drain', () => {
       makeOptions(),
     );
     (sm as any)._enabled = false;
-    (sm as any).pendingEvents.enqueue({ type: 'complete', title: 'x' });
+    (sm as any).pendingEvents.enqueue(completeEvent('x'));
     await sm.drain();
     expect(calls.length).toBe(0);
   });
@@ -167,7 +183,7 @@ describe('StreamManager batching & drain', () => {
     // On the next drain, after a failed flush + retry, the buffered events
     // should be loaded back and re-sent.
     const buffer = new StreamBuffer(projectName);
-    buffer.append([{ type: 'complete', title: 'buffered-1' }]);
+    buffer.append([completeEvent('buffered-1')]);
 
     let seen: any[] = [];
     let attempt = 0;
@@ -198,7 +214,7 @@ describe('StreamManager batching & drain', () => {
     (sm as any)._runId = 1;
     (sm as any)._token = 'tok';
 
-    sm.queueEvent({ type: 'complete', title: 'queued-1' });
+    sm.queueEvent(completeEvent('queued-1'));
     await sm.drain();
     // After retry, the buffered event should be among those sent.
     expect(seen.some((e: any) => e.title === 'buffered-1'), `seen: ${JSON.stringify(seen)}`).toBeTruthy();

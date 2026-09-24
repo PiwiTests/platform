@@ -511,7 +511,7 @@ describe('seeded in-page probe', () => {
         return savedButton;
       },
     };
-    const factory = () => fakeLocator;
+    const factory = (..._args: unknown[]) => fakeLocator;
     const fakePage = {
       getByRole: factory,
       getByTestId: factory,
@@ -566,7 +566,7 @@ describe('seeded in-page probe', () => {
         return savedButton;
       },
     };
-    const factory = () => fakeLocator;
+    const factory = (..._args: unknown[]) => fakeLocator;
     const listeners = new Map<string, Array<() => void>>();
     const fakePage = {
       getByRole: factory,
@@ -647,7 +647,7 @@ describe('locator capture teardown race', () => {
           rejectProbe = reject;
         }),
     };
-    const locatorFactory = () => fakeLocator;
+    const locatorFactory = (..._args: unknown[]) => fakeLocator;
     const fakePage = {
       getByRole: locatorFactory,
       getByTestId: locatorFactory,
@@ -811,7 +811,7 @@ describe('probeElementAttrs — structural probe (rolePosition + ancestors)', ()
     const el = fakeStructuralElement({ tagName: 'button', parent });
     el.ownerDocument.querySelectorAll = (sel: string) => (sel.startsWith('[role],') ? [el] : []);
     const probed = probe(el, []);
-    expect(probed.ancestors.map((a: any) => a.id)).toEqual(['panel1', 'panel2', 'panel3', 'panel4']);
+    expect(probed.ancestors?.map((a: any) => a.id)).toEqual(['panel1', 'panel2', 'panel3', 'panel4']);
   });
 
   it('yields no structural data for a role-less element', () => {
@@ -1115,7 +1115,11 @@ describe('visible() and frameLocator() chains', () => {
       evaluate: async () => null,
       ...fakePageExtras,
     };
-    const testInfo = { status: 'passed', attach: vi.fn(async () => {}), annotations: [] };
+    const testInfo = {
+      status: 'passed',
+      attach: vi.fn(async (_name: string, _body: { body: Buffer }) => {}),
+      annotations: [],
+    };
 
     const pageFixture = piwiFixtures.page as unknown as (
       args: { page: unknown },
@@ -1135,7 +1139,7 @@ describe('visible() and frameLocator() chains', () => {
     );
 
     const call = testInfo.attach.mock.calls.find((c) => c[0] === ATTACHMENT_NAMES.locators);
-    return call ? (JSON.parse((call[1] as { body: Buffer }).body.toString()) as LocatorSnapshot[]) : null;
+    return call ? (JSON.parse(call[1].body.toString()) as LocatorSnapshot[]) : null;
   }
 
   it('keeps the origin locator when the chain goes through visible()', async () => {
@@ -1206,7 +1210,11 @@ describe('dialog capture (dialogclosed)', () => {
       evaluate: async () => null,
     };
     const emit = (event: string, dialog?: unknown) => (handlers.get(event) ?? []).forEach((h) => h(dialog));
-    const testInfo = { status: 'failed', attach: vi.fn(async () => {}), annotations: [] };
+    const testInfo = {
+      status: 'failed',
+      attach: vi.fn(async (_name: string, _body: { body: Buffer }) => {}),
+      annotations: [],
+    };
 
     const pageFixture = piwiFixtures.page as unknown as (
       args: { page: unknown },
@@ -1226,7 +1234,7 @@ describe('dialog capture (dialogclosed)', () => {
     );
 
     const call = testInfo.attach.mock.calls.find((c) => c[0] === ATTACHMENT_NAMES.dialogs);
-    return call ? (JSON.parse((call[1] as { body: Buffer }).body.toString()) as Array<Record<string, unknown>>) : null;
+    return call ? (JSON.parse(call[1].body.toString()) as Array<Record<string, unknown>>) : null;
   }
 
   const fakeDialog = (type: string, message: string) => ({
