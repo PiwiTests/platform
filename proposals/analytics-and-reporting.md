@@ -6,7 +6,7 @@ better or worse, since when, and is what we do about it working), plus the one t
 dashboards** with their own filters and periods. It argues that the three are one program with four layers, stages the
 work so each stage pays for itself, and records the alternatives and open questions.
 
-**Status.** Accepted and being built, milestone by milestone; nothing has shipped yet. Written 2026-09-22 against
+**Status.** Accepted and being built, milestone by milestone; nothing has shipped yet. Milestone 1 (metrics, filters and periods) is built on `claude/analytics-m1-metrics-filters-periods`, not merged yet; its probe-run fix is the branch's first commit, so it can go out alone. Written 2026-09-22 against
 0.36.0; refreshed 2026-09-24 against 0.37.0, which shipped the Test Map, the capability opt-out system and one status
 color scale ([What 0.37.0 changed](#3-what-0370-changed-for-this-design)); extended the same day with custom
 dashboards, filters and periods ([Layer 2](#layer-2-dashboards), [Filters and periods](#filters-and-periods)); decided
@@ -331,7 +331,8 @@ idempotent by construction: a retry, a re-import or a double call cannot double-
 `runFinalizeSideEffects` (`server/utils/run-finalize-side-effects.ts`), the one helper `finish`, `submit` and `upload`
 already route through, after its probe-run early return, so a probe run never reaches a rollup and a sharded run is
 counted once, when the helper fires for the last shard; `shared/handlers/import-runs.ts`, because imports are silent
-and bypass the helper; and the demo mirror `app/demo/api/reporter.ts`. The recompute itself drops `isProbeRun()` rows
+and bypass the helper; and the demo mirror `app/demo/api/reporter.ts`. The helper returns the promise of the first recompute and `finish`, `submit` and `upload` await it, so a run is
+counted when the reporter gets its answer; a second recompute follows once the regression signals are written. The recompute itself drops `isProbeRun()` rows
 from the raw set, so a cell is right even for a run that reached the table another way. The helper lives under
 `shared/` and not `server/utils/` because the demo calls it too (the rule "never duplicate logic between server and
 demo").
@@ -429,7 +430,9 @@ cookie stays the per-browser default and the URL wins over it, so a copied link 
 `encodePeriod` and `parsePeriod` round-trip every kind.
 
 The scope bar gains the period, comparison and granularity pickers and a *Tests* filter (a selection or predicates,
-and browsers), built on the shared `FilterBar`, so Home and the project pages can adopt the same test filter later.
+and browsers), built on the shared `FilterBar`, so Home and the project pages can adopt the same test filter later. In milestone 1 the *Tests* filter edits a selection, test tags and browsers; the other predicates (owner, priority,
+feature, files, text, quarantined) are read from the URL and kept, not yet editable, since the selection builder is
+the place that edits them today.
 
 ### Which widgets move to the rollups
 
