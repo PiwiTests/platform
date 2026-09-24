@@ -286,6 +286,26 @@ let footerExecId = 0;
 const SCENES = [
   // ── Report artifacts (gitignored `.screens/`) ─────────────────────────────
   {
+    name: 'locator-usage-drawer',
+    description: 'Who uses this? drawer: the call sites and tests that use a locator, with the command that runs them',
+    route: '/test-run-cases/711',
+    viewport: { width: 1280, height: 1000 },
+    async run({ page, shoot, settle, openTab }) {
+      await openTab('Locators');
+      const card = page.locator('[data-shot="execution-locators"]');
+      await card
+        .getByRole('button', { name: /tests?$/ })
+        .first()
+        .click();
+      const drawer = page.locator('[data-shot="locator-usage-drawer"]');
+      await drawer.getByText(/ call sites?$/).waitFor({ timeout: 15000 });
+      await page.getByRole('button', { name: /^Run these/ }).click();
+      await drawer.getByText('Run them').waitFor({ timeout: 15000 });
+      await settle();
+      await shoot();
+    },
+  },
+  {
     name: 'scenario-gaps-tab',
     description: 'Gaps tab: gaps and findings grouped by feature, ranked, with class, factors and inbox verbs',
     route: '/projects/1?tab=gaps',
@@ -399,6 +419,23 @@ const SCENES = [
   },
 
   // ── Docs illustrations (committed) ────────────────────────────────────────
+  {
+    name: 'execution-locators',
+    description: 'Execution Locators tab: every locator the test used, in order, with how many tests share each chain',
+    tags: ['docs'],
+    out: 'docs',
+    route: '/test-run-cases/711',
+    viewport: { width: 1280, height: 1400 },
+    async run({ page, shoot, settle, openTab }) {
+      await openTab('Locators');
+      await page
+        .locator('[data-shot="execution-locators"] ol')
+        .waitFor({ timeout: 15000 })
+        .catch(() => {});
+      await settle();
+      await shoot(undefined, { of: '[data-shot="evidence-card"]', pad: 12 });
+    },
+  },
   {
     name: 'integrations-settings',
     description: 'Settings → Integrations: the Jira card with a connected system and a test button',

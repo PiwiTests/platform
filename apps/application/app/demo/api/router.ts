@@ -30,6 +30,8 @@ import {
 } from '#shared/handlers/project-assignments';
 import { getDemoDb } from '../db.client';
 import { getLocatorHealing, saveLocatorPick } from '~~/server/utils/locator-healing';
+import { backfillLocatorUsages, getExecutionLocators, getLocatorUsages } from '~~/server/utils/locator-usages';
+import type { LocatorUsageMatch } from '#shared/locator-usages.types';
 import { buildFixPlan } from '~~/server/utils/fix-plan';
 import { findFixedBefore } from '~~/server/utils/cluster-memory';
 import { fixPlanToMarkdown } from '#shared/fix-plan-markdown';
@@ -1097,6 +1099,16 @@ const routes: RouteEntry[] = [
     },
   },
   {
+    method: 'GET',
+    pattern: /^\/api\/test-run-cases\/(\d+)\/locators$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'execution', +m[1]!);
+      const result = await getExecutionLocators(await getDemoDb(), +m[1]!);
+      if (!result) throw demoHttpError(404, 'Test run case not found');
+      return result;
+    },
+  },
+  {
     method: 'POST',
     pattern: /^\/api\/test-run-cases\/(\d+)\/locator-pick$/,
     handler: async (m, body, _q, ctx) => {
@@ -1319,6 +1331,32 @@ const routes: RouteEntry[] = [
     method: 'DELETE',
     pattern: /^\/api\/markers\/(\d+)$/,
     handler: async (m) => deleteMarker(await getDemoDb(), +m[1]!),
+  },
+
+  // Locator index: which tests use a locator
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/locator-usages$/,
+    handler: async (m, _b, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const match = (q?.get('match') ?? '') as LocatorUsageMatch;
+      const value = (q?.get('value') ?? '').trim();
+      if (!['locator', 'target', 'scope', 'search'].includes(match) || !value || value.length > 2000) {
+        throw demoHttpError(
+          400,
+          'match must be locator, target, scope or search, with a value of 1 to 2000 characters',
+        );
+      }
+      return getLocatorUsages(await getDemoDb(), +m[1]!, match, value);
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/projects\/(\d+)\/locator-usages\/rebuild$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      return backfillLocatorUsages(await getDemoDb(), +m[1]!);
+    },
   },
 
   // Test function catalog (recorder codegen matching)

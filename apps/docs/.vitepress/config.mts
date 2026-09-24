@@ -155,6 +155,7 @@ export default defineConfig({
             { text: 'Notifications & alerts', link: '/features/notifications' },
             { text: 'Issue tracking (Jira)', link: '/features/issue-tracking' },
             { text: 'Locator healing', link: '/features/locator-healing' },
+            { text: 'Who uses a locator', link: '/features/locator-usage' },
             { text: 'Auto-heal PRs', link: '/features/auto-heal' },
             { text: 'Offline export', link: '/features/offline-export' },
             { text: 'Share links', link: '/features/share-links' },
