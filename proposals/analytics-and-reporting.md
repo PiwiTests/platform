@@ -1,4 +1,4 @@
-# Quality reports and trends over time
+# Quality reports, dashboards and trends over time
 
 A design record for two requests that keep coming back from users: **reports a stakeholder can read** (someone who
 never opens the dashboard and does not read stack traces), and **trends and analytics over time** (does the suite get
@@ -1259,7 +1259,7 @@ Grouped by milestone. Paths are under `apps/application/` unless noted.
 ## Risks and notes
 
 - **Rollups can drift from raw data** if a write path is missed. The reconcile step and the equality unit test bound
-  the damage; the analytics page shows a small "rollups reconciled <date>" line in the footer of the CI time widget so
+  the damage; the analytics page shows a small `rollups reconciled <date>` line in the footer of the CI time widget so
   an operator can see it works.
 - **Sharded runs** reach `finish` several times; the hook runs only on the terminal call, and recompute-on-write makes
   an extra call harmless.
