@@ -186,6 +186,7 @@ export function serializeRun(payload: RunPayload, opts: SerializeRunOptions): Re
     didNotRunTests: payload.didNotRunTests ?? 0,
     environment: payload.environment ?? null,
     label: payload.label ?? null,
+    keep: payload.keep === true,
     // A probe run is stamped in `onBegin` (see the reporter), so the marker
     // already rides in `payload.metadata` here and on every other submit path.
     metadata: payload.metadata,

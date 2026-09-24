@@ -165,6 +165,7 @@ The feature degrades safely: an older server without the endpoint, or any failur
 | `projectDescription`        | string   | —                         | Description of the project                                                                  |
 | `environment`               | string   | —                         | Deployment environment for this run, e.g. `"production"`, `"staging"`, `"integration"`      |
 | `label`                     | string   | —                         | Display label for this run, e.g. `"v2.3.1 release"`                                         |
+| `keep`                      | boolean  | `false`                   | Keep this run forever: [data retention](/operate/storage#keeping-runs-forever) never deletes it. Set it for release or tag builds |
 | `relatedIssue`              | string   | —                         | Related issue reference, e.g. `"JIRA-123"`                                                  |
 | `ciInfo`                    | string   | —                         | CI job information                                                                          |
 | `tags`                      | string[] | —                         | Tags to categorize the test run                                                             |
@@ -203,6 +204,7 @@ The options in the table below can also be set via a `PIWI_*` environment variab
 | `PIWI_ENVIRONMENT`              | `environment`           | string          |
 | `PIWI_LABEL`                    | `label`                 | string          |
 | `PIWI_RUN_LABEL`                | `runLabel`              | string          |
+| `PIWI_KEEP`                     | `keep`                  | `true`/`false`  |
 | `PIWI_STREAMING`                | `streaming`             | `true`/`false`  |
 | `PIWI_STREAMING_BATCH_SIZE`     | `streamingBatchSize`    | number          |
 | `PIWI_STREAMING_BATCH_DELAY`    | `streamingBatchDelay`   | number          |

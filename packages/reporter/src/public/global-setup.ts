@@ -126,6 +126,7 @@ export function createGlobalSetup(
           projectDescription: opts.projectDescription,
           environment: opts.environment || null,
           label: opts.label || null,
+          keep: opts.keep === true,
           startTime: new Date().toISOString(),
           instanceId: computeInstanceId(opts.projectName!, runLabel),
           shardIndex,
