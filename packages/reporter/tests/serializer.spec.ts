@@ -309,6 +309,7 @@ describe('serializeRun', () => {
       'filterDetails',
       'instanceId',
       'isFullRun',
+      'keep',
       'label',
       'metadata',
       'passedTests',
@@ -324,6 +325,11 @@ describe('serializeRun', () => {
       'timedOutTests',
       'totalTests',
     ]);
+  });
+
+  it('sends keep: true only when the run asked to be kept', () => {
+    expect(serializeRun(makePayload(), { includeTestCases: false }).keep).toBe(false);
+    expect(serializeRun({ ...makePayload(), keep: true }, { includeTestCases: false }).keep).toBe(true);
   });
 
   it('omits testCases when includeTestCases is false', () => {

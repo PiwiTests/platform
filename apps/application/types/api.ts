@@ -3,7 +3,7 @@
  * These types are used by both the server API and the app frontend
  */
 
-import type { Role, FilterDetails, TestMetadata, TestSourceFrame } from '#shared/types';
+import type { Role, FilterDetails, KeepSource, TestMetadata, TestSourceFrame } from '#shared/types';
 import type { ScmProviderName } from '#shared/scm-urls';
 import type { PageDiffSummary, PageDiffHunk } from '#shared/page-diff';
 import type { ClusterState } from '#shared/cluster-state';
@@ -410,6 +410,10 @@ export interface TestRunSummary {
   metadata?: any | null;
   isFullRun?: boolean;
   filterDetails?: FilterDetails | null;
+  /** Set when the run is kept forever: retention never deletes it. */
+  keptAt?: string | Date | null;
+  keepSource?: KeepSource | null;
+  keepReason?: string | null;
   createdAt: Date;
 }
 
@@ -443,6 +447,13 @@ export interface TestRunDetails {
   label?: string | null;
   playwrightVersion?: string | null;
   reporterVersion?: string | null;
+  /** Set when the run is kept forever: retention never deletes it. */
+  keptAt?: string | Date | null;
+  /** Who asked for the keep: a person, the reporter at ingest, or a release marker. */
+  keepSource?: KeepSource | null;
+  keepReason?: string | null;
+  /** Display name of the person who kept the run, when one did and still exists. */
+  keptByName?: string | null;
   createdAt: Date;
   project?: {
     id: number;
@@ -1268,6 +1279,12 @@ export interface StorageAnalysisData {
   overTime: StorageTimeBucket[];
   /** Width of each `overTime` bucket, in days. */
   bucketDays: number;
+  /**
+   * Runs kept forever (never pruned by retention) and the files they hold.
+   * `bytes` counts their own files only — a deduplicated trace is shared, so
+   * it is not attributed to any one run.
+   */
+  kept: { runs: number; files: number; bytes: number };
   /** When the analysis was computed (ISO). */
   generatedAt: string;
 }

@@ -10,6 +10,7 @@ import { getDemoDb } from '../db.client';
 import { testRuns, testRunsCases, files } from '~~/server/database/schema.sqlite';
 import { recomputeClusterOccurrences } from '#shared/handlers/failure-cluster-ops';
 import { demoHttpError } from './http-error';
+import { isRunKept, keptRunDeleteMessage } from '#shared/handlers/run-keep';
 
 /** DELETE /api/test-runs/:id */
 export async function apiDeleteTestRun(id: number) {
@@ -17,6 +18,7 @@ export async function apiDeleteTestRun(id: number) {
 
   const runRows = await db.select({ id: testRuns.id }).from(testRuns).where(eq(testRuns.id, id));
   if (!runRows[0]) throw demoHttpError(404, 'Test run not found');
+  if (await isRunKept(db, id)) throw demoHttpError(409, keptRunDeleteMessage(id));
 
   // Remember the clusters this run contributed to; their occurrence counters
   // must be recomputed after the cases are gone (mirrors the server route).

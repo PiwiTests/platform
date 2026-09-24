@@ -13,6 +13,7 @@ const PIWI_KEYS = [
   'PIWI_ENVIRONMENT',
   'PIWI_LABEL',
   'PIWI_RUN_LABEL',
+  'PIWI_KEEP',
   'PIWI_STREAMING',
   'PIWI_STREAMING_BATCH_SIZE',
   'PIWI_STREAMING_BATCH_DELAY',
@@ -121,6 +122,15 @@ describe('resolveOptions', () => {
     expect(opts.environment).toBe('staging');
     expect(opts.label).toBe('v2');
     expect(opts.runLabel).toBe('run-1');
+  });
+
+  it('reads PIWI_KEEP from env, and an explicit option wins', () => {
+    expect(resolveOptions({}).keep).toBeUndefined();
+    process.env.PIWI_KEEP = 'true';
+    expect(resolveOptions({}).keep).toBe(true);
+    expect(resolveOptions({ keep: false }).keep).toBe(false);
+    process.env.PIWI_KEEP = 'false';
+    expect(resolveOptions({}).keep).toBe(false);
   });
 
   it('reads PIWI_STREAMING=false and numeric batch params from env', () => {
