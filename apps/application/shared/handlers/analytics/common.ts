@@ -1,5 +1,6 @@
-import { and, eq, gte, inArray } from 'drizzle-orm';
+import { and, eq, gte, inArray, type SQL } from 'drizzle-orm';
 import { projects, testRuns, projectTags, tags } from '../../../server/database/schema';
+import { notProbeRun } from '../probes';
 import type { DrizzleDB } from '../db';
 import type { AnalyticsScope } from '../../analytics/scope';
 import type { AnalyticsTagInfo } from '../../analytics/types';
@@ -76,6 +77,25 @@ export interface ScopedRun {
 }
 
 /**
+ * The `test_runs` conditions every scoped query shares: terminal runs since
+ * `sinceMs`, in the allowed projects, matching the scope's run filters, and
+ * never a probe run.
+ */
+export function scopedRunConditions(scope: AnalyticsScope, allowed: 'all' | number[], sinceMs: number): SQL[] {
+  const conditions: SQL[] = [
+    gte(testRuns.startTime, new Date(sinceMs)),
+    inArray(testRuns.status, TERMINAL_RUN_STATUSES),
+    notProbeRun(testRuns.metadata),
+  ];
+  if (allowed !== 'all') conditions.push(inArray(testRuns.projectId, allowed));
+  if (scope.fullRunsOnly) conditions.push(eq(testRuns.isFullRun, 1));
+  if (scope.environments && scope.environments.length > 0)
+    conditions.push(inArray(testRuns.environment, scope.environments));
+  if (scope.branches && scope.branches.length > 0) conditions.push(inArray(testRuns.branch, scope.branches));
+  return conditions;
+}
+
+/**
  * Terminal runs matching the scope, starting `sinceDays` ago (ordered oldest →
  * newest). Most widgets fetch twice the period so they can compare against the
  * previous equal-length window.
@@ -89,15 +109,7 @@ export async function fetchScopedRuns(
   const allowed = resolveAllowedProjects(scope, access);
   if (allowed !== 'all' && allowed.length === 0) return [];
 
-  const conditions = [
-    gte(testRuns.startTime, new Date(Date.now() - sinceDays * DAY_MS)),
-    inArray(testRuns.status, TERMINAL_RUN_STATUSES),
-  ];
-  if (allowed !== 'all') conditions.push(inArray(testRuns.projectId, allowed));
-  if (scope.fullRunsOnly) conditions.push(eq(testRuns.isFullRun, 1));
-  if (scope.environments && scope.environments.length > 0)
-    conditions.push(inArray(testRuns.environment, scope.environments));
-  if (scope.branches && scope.branches.length > 0) conditions.push(inArray(testRuns.branch, scope.branches));
+  const conditions = scopedRunConditions(scope, allowed, Date.now() - sinceDays * DAY_MS);
 
   const rows: any[] = await db
     .select({

@@ -1,10 +1,10 @@
-import { and, eq, gte, inArray, isNotNull } from 'drizzle-orm';
+import { and, eq, isNotNull } from 'drizzle-orm';
 import { networkRequests, testRuns } from '../../../server/database/schema';
 import type { DrizzleDB } from '../db';
 import type { AnalyticsScope } from '../../analytics/scope';
 import type { AnalyticsSlowEndpoints, AnalyticsSlowEndpointRow } from '../../analytics/types';
 import { percentile } from '../../utils/stats';
-import { periodStart, resolveAllowedProjects, TERMINAL_RUN_STATUSES, type ProjectAccess } from './common';
+import { periodStart, resolveAllowedProjects, scopedRunConditions, type ProjectAccess } from './common';
 
 const TOP_ENDPOINTS = 20;
 const MIN_REQUESTS = 3;
@@ -24,15 +24,9 @@ export async function getAnalyticsSlowEndpoints(
   if (allowed !== 'all' && allowed.length === 0) return { endpoints: [], totalRequests: 0 };
 
   const conditions = [
-    gte(testRuns.startTime, new Date(periodStart(scope.days))),
-    inArray(testRuns.status, TERMINAL_RUN_STATUSES),
+    ...scopedRunConditions(scope, allowed, periodStart(scope.days)),
     isNotNull(networkRequests.duration),
   ];
-  if (allowed !== 'all') conditions.push(inArray(testRuns.projectId, allowed));
-  if (scope.fullRunsOnly) conditions.push(eq(testRuns.isFullRun, 1));
-  if (scope.environments && scope.environments.length > 0)
-    conditions.push(inArray(testRuns.environment, scope.environments));
-  if (scope.branches && scope.branches.length > 0) conditions.push(inArray(testRuns.branch, scope.branches));
 
   const rows: any[] = await db
     .select({

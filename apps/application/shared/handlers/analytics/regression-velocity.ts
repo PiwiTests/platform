@@ -1,4 +1,4 @@
-import { and, eq, gte, inArray, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { testRuns, testRunsCases } from '../../../server/database/schema';
 import type { DrizzleDB } from '../db';
 import type { AnalyticsScope } from '../../analytics/scope';
@@ -8,7 +8,7 @@ import {
   makeTimeBuckets,
   periodStart,
   resolveAllowedProjects,
-  TERMINAL_RUN_STATUSES,
+  scopedRunConditions,
   type ProjectAccess,
 } from './common';
 
@@ -35,15 +35,7 @@ export async function getAnalyticsRegressionVelocity(
   const allowed = resolveAllowedProjects(scope, access);
   if (allowed !== 'all' && allowed.length === 0) return empty;
 
-  const conditions = [
-    gte(testRuns.startTime, new Date(periodStart(scope.days * 2))),
-    inArray(testRuns.status, TERMINAL_RUN_STATUSES),
-  ];
-  if (allowed !== 'all') conditions.push(inArray(testRuns.projectId, allowed));
-  if (scope.fullRunsOnly) conditions.push(eq(testRuns.isFullRun, 1));
-  if (scope.environments && scope.environments.length > 0)
-    conditions.push(inArray(testRuns.environment, scope.environments));
-  if (scope.branches && scope.branches.length > 0) conditions.push(inArray(testRuns.branch, scope.branches));
+  const conditions = scopedRunConditions(scope, allowed, periodStart(scope.days * 2));
 
   // One aggregated row per run; bucketed and split into current/previous in JS.
   const rows: any[] = await db

@@ -1226,7 +1226,7 @@ Grouped by milestone. Paths are under `apps/application/` unless noted.
 - [ ] `shared/analytics/metrics.ts`: `MetricDef` (with `grain` and `dimensions`), `METRICS`, `MetricId`, `DIMENSIONS`
 - [ ] `server/database/schema.sqlite.ts` and `schema.pg.ts`: `analytics_daily_rollups`; `npm run db:generate && npm run db:generate:pg`
 - [ ] `shared/handlers/analytics/rollups.ts`: `upsertDailyRollup`, `recomputeRollupCells`, `readRollupSeries`, `backfillDailyRollups`
-- [ ] `shared/handlers/analytics/common.ts` (`fetchScopedRuns`), `shared/handlers/projects.ts` (`getProjectsOverview`, `getProjectPerformance`, `getProjectSlowTests`), `shared/handlers/test-runs.ts` (`getRecentTestRuns`): filter `isProbeRun()`; unit test with a seeded probe run
+- [x] `shared/handlers/analytics/common.ts` (`fetchScopedRuns`), `shared/handlers/projects.ts` (`getProjectsOverview`, `getProjectPerformance`, `getProjectSlowTests`), `shared/handlers/test-runs.ts` (`getRecentTestRuns`): filter `isProbeRun()`; unit test with a seeded probe run
 - [ ] `server/utils/run-finalize-side-effects.ts` (after the probe early return), `shared/handlers/import-runs.ts`, `app/demo/api/reporter.ts`: call the hook when a run is terminal
 - [ ] `server/utils/retention.ts`: `deleteRunsByIds` recomputes the retained rows; `deleteRunsOlderThan` passes `archiveRollups`, which adds the deleted runs' numbers to the archived rows in the same transaction (kept runs and the newest runs stay in the retained rows)
 - [ ] `server/tasks/retention/sweep.ts`: reconcile step before pruning, recomputing the retained rows of the last `min(7, PIWI_RETENTION_DAYS)` days, never an archived row
