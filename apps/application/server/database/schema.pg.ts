@@ -576,6 +576,34 @@ export const locatorSnapshots = pgTable(
   }),
 );
 
+// Locator usages — which locator chain each test used, from which call site, for which action.
+export const locatorUsages = pgTable(
+  'locator_usages',
+  {
+    id: serial('id').primaryKey(),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    testCaseId: integer('test_case_id')
+      .notNull()
+      .references(() => testCases.id, { onDelete: 'cascade' }),
+    locator: text('locator').notNull(),
+    target: text('target').notNull(),
+    action: text('action').notNull(),
+    callSite: text('call_site').notNull(),
+    firstSeenRunId: integer('first_seen_run_id').references(() => testRuns.id, { onDelete: 'set null' }),
+    lastSeenRunId: integer('last_seen_run_id').references(() => testRuns.id, { onDelete: 'set null' }),
+    lastSeenAt: timestamp('last_seen_at', { mode: 'date' }).notNull(),
+  },
+  (table) => ({
+    uniqueUse: uniqueIndex('idx_locator_usages_use').on(table.testCaseId, table.callSite, table.action, table.locator),
+    projectLocatorIdx: index('idx_locator_usages_project_locator').on(table.projectId, table.locator),
+    projectTargetIdx: index('idx_locator_usages_project_target').on(table.projectId, table.target),
+    lastSeenRunIdx: index('idx_locator_usages_last_seen_run').on(table.lastSeenRunId),
+    firstSeenRunIdx: index('idx_locator_usages_first_seen_run').on(table.firstSeenRunId),
+  }),
+);
+
 // Network requests table - normalized child table of test_runs_cases
 export const networkRequests = pgTable(
   'network_requests',
