@@ -124,14 +124,16 @@ Everything else — analytics, notifications, the CI gate, PR feedback, MCP, the
 
 ## Exploring
 
-- **Quality reports and trends over time** — a periodic, plain-language report of a suite's health for people who
-  do not open the dashboard (pass rate and its movement, wasted CI time and what it costs, open failure causes and
-  how long they take to fix, what changed and what is being done), generated from the same numbers the Analytics
-  page shows, downloadable as HTML, PDF, Markdown or CSV, delivered on a schedule by email, Slack or webhook, and
-  readable by agents through MCP. Underneath: daily rollups that keep long-term trends after retention prunes the
-  runs, custom periods and period comparison, the default branch as the default scope, per-project targets, and
-  trend widgets for suite growth, flaky debt, time to fix and ownership. The same schedules give the Test Map's
-  weekly gaps digest, whose selection shipped in 0.37.0, its delivery route. Design record in
+- **Quality reports, dashboards and trends over time** — a periodic, plain-language report of a suite's health for
+  people who do not open the dashboard (pass rate and its movement, wasted CI time and what it costs, open failure
+  causes and how long they take to fix, what changed and what is being done), generated from the same numbers the
+  Analytics page shows, downloadable as HTML, PDF, Markdown or CSV, delivered on a schedule by email, Slack or
+  webhook, and readable by agents through MCP. Underneath: daily rollups that keep long-term trends after retention
+  prunes the runs; custom filters (test selections, tags, owners, browsers) and periods (calendar periods, custom
+  ranges, release cycles, sprints) carried by the URL; saved and shared dashboards any team can shape and put on a
+  wall screen; the default branch as the default scope, per-project targets, and trend widgets for suite growth, flaky
+  debt, time to fix and ownership. The same schedules give the Test Map's weekly gaps digest, whose selection shipped
+  in 0.37.0, its delivery route. Design record in
   [proposals/analytics-and-reporting.md](proposals/analytics-and-reporting.md).
 - **Scenario gaps** — the tests that are missing, from one model of what the application exposes, what the suite
   touches, what the suite would actually notice (probe runs that mutate responses at the Playwright route boundary)
