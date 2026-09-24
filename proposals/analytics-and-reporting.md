@@ -58,7 +58,7 @@ missing object, "a per-project *Quality digest* page updated in place on a sched
 
 The widgets compare the selected period with the previous period of the same length (`fetchScopedRuns(db, scope,
 access, scope.days * 2)` in `shared/handlers/analytics/common.ts`), and bucket a series over the period
-(`makeTimeBuckets`). That is a good start, and it has four limits:
+(`makeTimeBuckets`). That is a good start, and it has six limits:
 
 - **Retention erases the trend.** Every widget aggregates `test_runs` and `test_runs_cases` at request time. When
   `PIWI_RETENTION_DAYS` is set, the nightly sweep (`server/tasks/retention/sweep.ts`, `deleteRunsOlderThan`) deletes
