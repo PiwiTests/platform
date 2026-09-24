@@ -74,22 +74,38 @@ export function isTimelineItemShown(item: FilterableItem, hidden: ReadonlySet<Ti
   return !hidden.has(item.lane) || (item.lane === 'steps' && item.failed === true);
 }
 
-/** Hide a shown type, or show a hidden one; the other types keep their state. */
-export function toggleHiddenType(hidden: readonly TimelineLane[], type: TimelineLane): TimelineLane[] {
-  return hidden.includes(type) ? hidden.filter((t) => t !== type) : parseHiddenTypes([...hidden, type]);
+/**
+ * The stored hidden types that apply where `present` types are on screen: those
+ * among them, or none when they would hide every one. The stored choice is
+ * shared by every execution, so it may name types this one lacks.
+ */
+export function effectiveHiddenTypes(
+  stored: readonly TimelineLane[],
+  present: readonly TimelineLane[],
+): TimelineLane[] {
+  const hidden = present.filter((type) => stored.includes(type));
+  return hidden.length === present.length ? [] : hidden;
 }
 
 /**
- * Show only `type`. Asked again while it is already the only one of the
- * `present` types shown, it shows every type.
+ * Hide a shown type, or show a hidden one, among the `present` types. The
+ * stored choice for types not present is kept, and the last shown type stays
+ * shown.
  */
-export function soloHiddenType(
-  hidden: readonly TimelineLane[],
+export function toggleHiddenType(
+  stored: readonly TimelineLane[],
   type: TimelineLane,
   present: readonly TimelineLane[],
 ): TimelineLane[] {
-  const alreadyAlone = !hidden.includes(type) && present.every((t) => t === type || hidden.includes(t));
-  return alreadyAlone ? [] : TIMELINE_TYPES.filter((t) => t !== type);
+  const hidden = effectiveHiddenTypes(stored, present);
+  const next = hidden.includes(type) ? hidden.filter((t) => t !== type) : [...hidden, type];
+  if (next.length >= present.length) return parseHiddenTypes(stored);
+  return parseHiddenTypes([...stored.filter((t) => !present.includes(t)), ...next]);
+}
+
+/** Show only `type`, on every execution that has it. */
+export function onlyHiddenTypes(type: TimelineLane): TimelineLane[] {
+  return TIMELINE_TYPES.filter((t) => t !== type);
 }
 
 /** How many of `items` each type has. */

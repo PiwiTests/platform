@@ -1104,7 +1104,7 @@ const SCENES = [
     name: 'timeline-type-filter-mobile',
     description: 'Timeline tab at phone width: the type chips wrap, Network hidden, the hidden line under them',
     route: '/test-run-cases/241',
-    viewport: { width: 390, height: 1800 },
+    viewport: { width: 375, height: 1800 },
     of: '[data-shot="evidence-card"]',
     pad: 12,
     async run({ page, openTab, settle, shoot }) {

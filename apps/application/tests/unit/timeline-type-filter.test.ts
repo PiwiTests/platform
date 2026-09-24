@@ -4,10 +4,11 @@ import {
   TIMELINE_TYPES,
   TIMELINE_TYPE_META,
   countTimelineTypes,
+  effectiveHiddenTypes,
   hiddenSummaryRuns,
   isTimelineItemShown,
+  onlyHiddenTypes,
   parseHiddenTypes,
-  soloHiddenType,
   summarizeHiddenItems,
   timelineItemSeverity,
   toggleHiddenType,
@@ -106,27 +107,46 @@ describe('isTimelineItemShown', () => {
   });
 });
 
-describe('toggleHiddenType', () => {
-  test('hides a shown type in lane order and shows a hidden one, leaving the others alone', () => {
-    expect(toggleHiddenType(['backend'], 'network')).toEqual(['network', 'backend']);
-    expect(toggleHiddenType(['network', 'backend'], 'network')).toEqual(['backend']);
+describe('effectiveHiddenTypes', () => {
+  const present: TimelineLane[] = ['steps', 'network', 'console'];
+
+  test('keeps the stored types among those present, in lane order', () => {
+    expect(effectiveHiddenTypes(['backend', 'network'], present)).toEqual(['network']);
+    expect(effectiveHiddenTypes([], present)).toEqual([]);
+  });
+
+  test('hides nothing when the stored types would hide every present one', () => {
+    // Showing only requests on another execution stores every other type.
+    expect(effectiveHiddenTypes(['steps', 'console', 'dialogs', 'backend'], ['steps', 'console'])).toEqual([]);
+    expect(effectiveHiddenTypes(['steps', 'network', 'console'], present)).toEqual([]);
   });
 });
 
-describe('soloHiddenType', () => {
+describe('toggleHiddenType', () => {
   const present: TimelineLane[] = ['steps', 'network', 'console'];
 
+  test('hides a shown type in lane order and shows a hidden one, keeping the stored types not present', () => {
+    expect(toggleHiddenType(['backend'], 'network', present)).toEqual(['network', 'backend']);
+    expect(toggleHiddenType(['network', 'backend'], 'network', present)).toEqual(['backend']);
+  });
+
+  test('never hides the last shown type', () => {
+    expect(toggleHiddenType(['steps', 'network'], 'console', present)).toEqual(['steps', 'network']);
+  });
+
+  test('acts on what is on screen when the stored types would hide every present one', () => {
+    // Every chip shows pressed here, so a click hides the one clicked.
+    expect(toggleHiddenType(['steps', 'console', 'dialogs', 'backend'], 'console', ['steps', 'console'])).toEqual([
+      'console',
+      'dialogs',
+      'backend',
+    ]);
+  });
+});
+
+describe('onlyHiddenTypes', () => {
   test('hides every other type, including ones this execution does not have', () => {
-    expect(soloHiddenType([], 'console', present)).toEqual(['steps', 'network', 'dialogs', 'backend']);
-  });
-
-  test('shows a hidden type when asked to show only it', () => {
-    expect(soloHiddenType(['console'], 'console', present)).toEqual(['steps', 'network', 'dialogs', 'backend']);
-  });
-
-  test('shows everything when the type already is the only one of those present', () => {
-    expect(soloHiddenType(['steps', 'network'], 'console', present)).toEqual([]);
-    expect(soloHiddenType(['steps', 'network', 'dialogs', 'backend'], 'console', present)).toEqual([]);
+    expect(onlyHiddenTypes('console')).toEqual(['steps', 'network', 'dialogs', 'backend']);
   });
 });
 

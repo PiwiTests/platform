@@ -8,8 +8,9 @@
  * duration with its share of the test and a bar; network, console and backend
  * items in the same window are interleaved as their own rows in time order. The
  * *Around the failure* / *Whole test* toggle drives both the axis and the table,
- * and so does the type filter under it: one chip per item type, doubling as the
- * axis legend, its choice kept per browser. The failing step always shows.
+ * and so does the type filter under it: one chip per item type in the window,
+ * keying its lane, the choice kept per browser. The axis draws only the items
+ * in the window, and the failing step always shows.
  *
  * A passing execution has no failure moment: the axis is hidden and the table
  * lists every step without offsets.
@@ -23,7 +24,13 @@ import type { FailureTimeline, TimelineItem, TimelineLane, TimelineLanes } from 
 import type { AttachmentInfo, PerformanceStep } from '~~/types/api';
 import { useClusterSectionLocator } from '~/composables/useClusterSectionLocator';
 import { useTimelineTypeFilter } from '~/composables/useTimelineTypeFilter';
-import { TIMELINE_TYPES, TIMELINE_TYPE_META, isTimelineItemShown } from '~/utils/timeline-type-filter';
+import {
+  TIMELINE_TYPES,
+  TIMELINE_TYPE_META,
+  effectiveHiddenTypes,
+  isTimelineItemShown,
+  timelineItemSeverity,
+} from '~/utils/timeline-type-filter';
 import SectionCard from '../shared/SectionCard.vue';
 import ChartTooltip from '../shared/ChartTooltip.vue';
 import ChartLegend from '../shared/ChartLegend.vue';
@@ -42,7 +49,7 @@ const props = defineProps<{
   hasError?: boolean;
   /** Execution status — a did-not-run row shows a neutral step marker. */
   status?: string | null;
-  /** Whether a trace exists — enables the "View trace" affordance in the header. */
+  /** Whether a trace exists — enables the "View trace" button beside the window controls. */
   hasTrace?: boolean;
   /** Piwi project id/name — passed to the open-in-IDE links for call sites. */
   projectKey?: string | number | null;
@@ -88,40 +95,6 @@ const placedCount = computed(() => allItems.value.length);
 const hasFailure = computed(() => Boolean(props.hasError) && Boolean(data.value?.failedStep));
 const showAxis = computed(() => hasFailure.value && placedCount.value >= 2);
 
-// ── Type filter ──────────────────────────────────────────────────────────────
-// The chips show once the axis has two types to choose between. With one, a
-// stored choice could hide the only type there is, so the stored choice applies
-// only while the chips are on screen.
-const {
-  hidden: storedHiddenTypes,
-  toggle: toggleType,
-  solo: soloType,
-  showAll: showAllTypes,
-} = useTimelineTypeFilter();
-const presentTypes = computed<TimelineLane[]>(() =>
-  data.value ? TIMELINE_TYPES.filter((lane) => data.value!.lanes[lane].length > 0) : [],
-);
-const showTypeFilter = computed(() => showAxis.value && presentTypes.value.length >= 2);
-const hiddenTypes = computed<TimelineLane[]>(() => (showTypeFilter.value ? storedHiddenTypes.value : []));
-const hiddenTypeSet = computed(() => new Set(hiddenTypes.value));
-
-function isShown(item: TimelineItem): boolean {
-  return isTimelineItemShown(item, hiddenTypeSet.value);
-}
-
-/** Each lane's items that pass the type filter — what the axis draws. */
-const shownLanes = computed<TimelineLanes>(() => {
-  const lanes = data.value?.lanes;
-  return {
-    steps: lanes?.steps.filter(isShown) ?? [],
-    network: lanes?.network.filter(isShown) ?? [],
-    console: lanes?.console.filter(isShown) ?? [],
-    dialogs: lanes?.dialogs.filter(isShown) ?? [],
-    backend: lanes?.backend.filter(isShown) ?? [],
-  };
-});
-const visibleLanes = computed<TimelineLane[]>(() => TIMELINE_TYPES.filter((lane) => shownLanes.value[lane].length > 0));
-
 // ── Window mode ──────────────────────────────────────────────────────────────
 type WindowMode = 'around' | 'whole';
 const mode = ref<WindowMode>('around');
@@ -134,6 +107,57 @@ const domain = computed<{ start: number; end: number }>(() => {
   const w = tl.window;
   return w.end > w.start ? { start: w.start, end: w.end } : { start: 0, end: span.value };
 });
+
+/** Whether an item overlaps the window — only those are drawn, listed and counted. */
+function inWindow(item: TimelineItem): boolean {
+  const { start, end } = domain.value;
+  return item.at + (item.duration ?? 0) >= start && item.at <= end;
+}
+
+/** Every item in the window, in time order, whatever the type filter hides. */
+const windowItems = computed<TimelineItem[]>(() =>
+  allItems.value.filter(inWindow).sort((a, b) => a.at - b.at || (a.failed ? -1 : 0)),
+);
+
+// ── Type filter ──────────────────────────────────────────────────────────────
+// One chip per type with items in the window, once there are two to choose
+// between. The stored choice applies only while the chips are on screen, and
+// only to the types they show.
+const {
+  hidden: storedHiddenTypes,
+  toggle: toggleType,
+  only: onlyType,
+  showAll: showAllTypes,
+} = useTimelineTypeFilter();
+const windowTypes = computed<TimelineLane[]>(() =>
+  TIMELINE_TYPES.filter((lane) => windowItems.value.some((item) => item.lane === lane)),
+);
+const showTypeFilter = computed(() => showAxis.value && windowTypes.value.length >= 2);
+const hiddenTypes = computed<TimelineLane[]>(() =>
+  showTypeFilter.value ? effectiveHiddenTypes(storedHiddenTypes.value, windowTypes.value) : [],
+);
+const hiddenTypeSet = computed(() => new Set(hiddenTypes.value));
+
+function isShown(item: TimelineItem): boolean {
+  return isTimelineItemShown(item, hiddenTypeSet.value);
+}
+
+/** The window's items that pass the type filter — the table's rows. */
+const shownWindowItems = computed<TimelineItem[]>(() => windowItems.value.filter(isShown));
+
+/** Each lane's items in the window that pass the type filter — what the axis draws. */
+const shownLanes = computed<TimelineLanes>(() => {
+  const lanes = data.value?.lanes;
+  const keep = (items: TimelineItem[] | undefined) => (items ?? []).filter((item) => inWindow(item) && isShown(item));
+  return {
+    steps: keep(lanes?.steps),
+    network: keep(lanes?.network),
+    console: keep(lanes?.console),
+    dialogs: keep(lanes?.dialogs),
+    backend: keep(lanes?.backend),
+  };
+});
+const visibleLanes = computed<TimelineLane[]>(() => TIMELINE_TYPES.filter((lane) => shownLanes.value[lane].length > 0));
 
 // ── SVG geometry ─────────────────────────────────────────────────────────────
 const LABEL_W = 62;
@@ -239,25 +263,23 @@ const legendItems = computed(() => {
   return items;
 });
 
+// Beside the type chips, which key the lanes, the key keeps what they do not
+// say: the Calls band, the red of a failure or error, the amber of a warning.
+const markKeyItems = computed(() => {
+  const items: { color: string; label: string }[] = [];
+  if (hasCallBand.value) items.push({ color: 'rgb(129, 140, 248)', label: 'Calls' });
+  items.push({ color: 'rgb(239, 68, 68)', label: 'Failed or error' });
+  if (shownWindowItems.value.some((item) => timelineItemSeverity(item) === 'warning')) {
+    items.push({ color: 'rgb(245, 158, 11)', label: 'Warning' });
+  }
+  return items;
+});
+
 // ── Tooltip ──────────────────────────────────────────────────────────────────
 const { data: hovered, pos, show, move, hide } = useChartTooltip<TimelineItem>();
 
 // A mark the type filter removes fires no mouseleave, so its tooltip goes with it.
 watch(hiddenTypeSet, () => hide());
-
-// ── "What happened in this window" list ──────────────────────────────────────
-// Every item in the window, whatever the type filter hides — the chip counts
-// and the hidden line read it; the table reads the shown subset.
-const windowItems = computed<TimelineItem[]>(() => {
-  const { start, end } = domain.value;
-  return allItems.value
-    .filter((item) => {
-      const itemEnd = item.at + (item.duration ?? 0);
-      return itemEnd >= start && item.at <= end;
-    })
-    .sort((a, b) => a.at - b.at || (a.failed ? -1 : 0));
-});
-const shownWindowItems = computed<TimelineItem[]>(() => windowItems.value.filter(isShown));
 
 function kindTag(item: TimelineItem): string {
   if (item.kind === 'console') return `console ${item.status ?? ''}`.trim();
@@ -465,8 +487,9 @@ function onViewTrace() {
   >
     <div class="space-y-3">
       <!-- The window and the type filter: both drive the axis and the table
-           below. The type chips are the axis legend; a single-type timeline
-           has nothing to filter and keeps the plain legend. -->
+           below. The type chips key the lanes and a small key beside the
+           window keys the other marks; a window with a single type has
+           nothing to filter and keeps the full legend. -->
       <div v-if="showAxis" class="space-y-2">
         <div class="flex flex-wrap items-center gap-1">
           <UButton
@@ -483,24 +506,26 @@ function onViewTrace() {
             label="Whole test"
             @click="mode = 'whole'"
           />
-          <UButton
-            v-if="hasTrace"
-            size="xs"
-            variant="ghost"
-            color="neutral"
-            icon="i-lucide-film"
-            label="View trace"
-            class="ml-auto"
-            @click="onViewTrace"
-          />
+          <div class="ml-auto flex flex-wrap items-center gap-x-3 gap-y-1">
+            <ChartLegend v-if="showTypeFilter" :items="markKeyItems" />
+            <UButton
+              v-if="hasTrace"
+              size="xs"
+              variant="ghost"
+              color="neutral"
+              icon="i-lucide-film"
+              label="View trace"
+              @click="onViewTrace"
+            />
+          </div>
         </div>
         <TimelineTypeFilter
           v-if="showTypeFilter"
-          :types="presentTypes"
+          :types="windowTypes"
           :items="windowItems"
           :hidden="hiddenTypes"
-          @toggle="toggleType"
-          @solo="soloType($event, presentTypes)"
+          @toggle="toggleType($event, windowTypes)"
+          @only="onlyType"
           @show-all="showAllTypes"
         />
         <ChartLegend v-else :items="legendItems" />
