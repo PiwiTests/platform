@@ -78,21 +78,30 @@ const failed = ref(false);
 
 watch(
   () => [props.open, props.projectId, reading.value?.match, reading.value?.value] as const,
-  async ([open, projectId]) => {
+  async ([open, projectId], _old, onCleanup) => {
     const r = reading.value;
     if (!open || !projectId || !r) return;
+    // Switching readings quickly must not let a slower, older answer win.
+    let stale = false;
+    onCleanup(() => (stale = true));
     pending.value = true;
     failed.value = false;
     command.value = null;
     try {
-      result.value = await $fetch<LocatorUsagesResult>(`/api/projects/${projectId}/locator-usages`, {
+      const found = await $fetch<LocatorUsagesResult>(`/api/projects/${projectId}/locator-usages`, {
         query: { match: r.match, value: r.value },
       });
+      if (!stale) {
+        result.value = found;
+        command.value = null;
+      }
     } catch {
-      failed.value = true;
-      result.value = null;
+      if (!stale) {
+        failed.value = true;
+        result.value = null;
+      }
     } finally {
-      pending.value = false;
+      if (!stale) pending.value = false;
     }
   },
   { immediate: true },
@@ -115,15 +124,17 @@ const toast = useToast();
 
 async function buildCommand() {
   if (!props.projectId || testIds.value.length === 0) return;
+  // The command belongs to the result it was built from; a newer result drops it.
+  const forResult = result.value;
   commandPending.value = true;
   try {
     const resolved = await $fetch<{ materialization: { command: string } }>(
       `/api/projects/${props.projectId}/selections/preview`,
       { method: 'POST', body: { definition: { include: [{ ids: testIds.value }] }, format: 'args' } },
     );
-    command.value = resolved.materialization.command || null;
+    if (result.value === forResult) command.value = resolved.materialization.command || null;
   } catch {
-    toast.add({ title: 'Could not build the run command', color: 'error' });
+    if (result.value === forResult) toast.add({ title: 'Could not build the run command', color: 'error' });
   } finally {
     commandPending.value = false;
   }

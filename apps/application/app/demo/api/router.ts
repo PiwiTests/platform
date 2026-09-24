@@ -31,7 +31,7 @@ import {
 import { getDemoDb } from '../db.client';
 import { getLocatorHealing, saveLocatorPick } from '~~/server/utils/locator-healing';
 import { backfillLocatorUsages, getExecutionLocators, getLocatorUsages } from '~~/server/utils/locator-usages';
-import type { LocatorUsageMatch } from '#shared/locator-usages.types';
+import { parseLocatorUsageQuery } from '#shared/locator-usages.types';
 import { buildFixPlan } from '~~/server/utils/fix-plan';
 import { findFixedBefore } from '~~/server/utils/cluster-memory';
 import { fixPlanToMarkdown } from '#shared/fix-plan-markdown';
@@ -1339,15 +1339,9 @@ const routes: RouteEntry[] = [
     pattern: /^\/api\/projects\/(\d+)\/locator-usages$/,
     handler: async (m, _b, q, ctx) => {
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
-      const match = (q?.get('match') ?? '') as LocatorUsageMatch;
-      const value = (q?.get('value') ?? '').trim();
-      if (!['locator', 'target', 'scope', 'search'].includes(match) || !value || value.length > 2000) {
-        throw demoHttpError(
-          400,
-          'match must be locator, target, scope or search, with a value of 1 to 2000 characters',
-        );
-      }
-      return getLocatorUsages(await getDemoDb(), +m[1]!, match, value);
+      const parsed = parseLocatorUsageQuery(q?.get('match'), q?.get('value'));
+      if ('error' in parsed) throw demoHttpError(400, parsed.error);
+      return getLocatorUsages(await getDemoDb(), +m[1]!, parsed.match, parsed.value);
     },
   },
   {

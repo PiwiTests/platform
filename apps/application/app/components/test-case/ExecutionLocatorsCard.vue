@@ -20,16 +20,20 @@ const failed = ref(false);
 
 watch(
   () => props.testRunsCaseId,
-  async (id) => {
+  async (id, _old, onCleanup) => {
     if (!id) return;
+    // A response for an execution no longer shown is dropped.
+    let stale = false;
+    onCleanup(() => (stale = true));
     pending.value = true;
     failed.value = false;
     try {
-      data.value = await $fetch<ExecutionLocatorsResult>(`/api/test-run-cases/${id}/locators`);
+      const result = await $fetch<ExecutionLocatorsResult>(`/api/test-run-cases/${id}/locators`);
+      if (!stale) data.value = result;
     } catch {
-      failed.value = true;
+      if (!stale) failed.value = true;
     } finally {
-      pending.value = false;
+      if (!stale) pending.value = false;
     }
   },
   { immediate: true },

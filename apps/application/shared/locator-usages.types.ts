@@ -59,3 +59,23 @@ export interface LocatorUsagesResult {
   /** True when more rows matched than were returned. */
   truncated: boolean;
 }
+
+export const LOCATOR_USAGE_MATCHES: readonly LocatorUsageMatch[] = ['locator', 'target', 'scope', 'search'];
+export const LOCATOR_USAGE_VALUE_MAX_CHARS = 2000;
+
+/**
+ * Validate a usage query's `match` and `value`, shared by the endpoint and the
+ * demo mirror. Returns the parsed query, or the message to answer with a 400.
+ */
+export function parseLocatorUsageQuery(
+  match: unknown,
+  value: unknown,
+): { match: LocatorUsageMatch; value: string } | { error: string } {
+  const m = String(match ?? '') as LocatorUsageMatch;
+  const v = typeof value === 'string' ? value.trim() : '';
+  if (!LOCATOR_USAGE_MATCHES.includes(m)) return { error: 'match must be locator, target, scope or search' };
+  if (!v || v.length > LOCATOR_USAGE_VALUE_MAX_CHARS) {
+    return { error: `value must be 1 to ${LOCATOR_USAGE_VALUE_MAX_CHARS} characters` };
+  }
+  return { match: m, value: v };
+}

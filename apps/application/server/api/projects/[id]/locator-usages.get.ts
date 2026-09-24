@@ -1,9 +1,7 @@
 import { getDatabase } from '../../../database';
 import { getLocatorUsages } from '../../../utils/locator-usages';
 import { requireProjectAccess, requireRouteId } from '../../../utils/project-access';
-import type { LocatorUsageMatch } from '#shared/locator-usages.types';
-
-const MATCHES: ReadonlySet<LocatorUsageMatch> = new Set(['locator', 'target', 'scope', 'search']);
+import { parseLocatorUsageQuery } from '#shared/locator-usages.types';
 
 defineRouteMeta({
   openAPI: {
@@ -36,12 +34,9 @@ export default eventHandler(async (event) => {
   await requireProjectAccess(event, id);
 
   const query = getQuery(event);
-  const match = String(query.match ?? '') as LocatorUsageMatch;
-  const value = typeof query.value === 'string' ? query.value.trim() : '';
-  if (!MATCHES.has(match))
-    throw apiError({ statusCode: 400, message: 'match must be locator, target, scope or search' });
-  if (!value || value.length > 2000) throw apiError({ statusCode: 400, message: 'value must be 1 to 2000 characters' });
+  const parsed = parseLocatorUsageQuery(query.match, query.value);
+  if ('error' in parsed) throw apiError({ statusCode: 400, message: parsed.error });
 
   const db = await getDatabase();
-  return getLocatorUsages(db, id, match, value);
+  return getLocatorUsages(db, id, parsed.match, parsed.value);
 });
