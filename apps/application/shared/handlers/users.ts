@@ -1,4 +1,4 @@
-import { users, apiKeys, scenarioGaps } from '../../server/database/schema';
+import { users, apiKeys, scenarioGaps, testRuns } from '../../server/database/schema';
 import { eq, and, ne, sql } from 'drizzle-orm';
 
 import type { DrizzleDB } from './db';
@@ -70,6 +70,9 @@ export async function deleteUserRecord(db: DrizzleDB, id: number) {
   const userResults = await db.select().from(users).where(eq(users.id, id));
   if (!userResults[0]) throw new Error('User not found');
   await db.delete(apiKeys).where(eq(apiKeys.userId, id));
+  // A kept run outlives the user who kept it. The SQLite `kept_by` column has no
+  // ON DELETE action, so the reference is cleared before the user row goes.
+  await db.update(testRuns).set({ keptBy: null }).where(eq(testRuns.keptBy, id));
   // `scenario_gaps.triaged_by` was added by ALTER TABLE, which cannot carry the
   // schema's ON DELETE SET NULL on SQLite — clear it by hand or the delete
   // fails the FK check.

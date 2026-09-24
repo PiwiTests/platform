@@ -9,6 +9,7 @@ import { resolveRunBranch } from '../../utils/run-branch';
 import { runEventBus } from '../../utils/run-events';
 import { persistShardToken } from '../../utils/shard-tokens';
 import { getProjectScope, scopeAllows } from '../../utils/project-access';
+import { applyReporterKeep } from '#shared/handlers/run-keep';
 
 defineRouteMeta({
   openAPI: {
@@ -123,6 +124,7 @@ export default eventHandler(async (event) => {
           .set({ totalTests: sql`${testRuns.totalTests} + ${body.totalTests}` })
           .where(eq(testRuns.id, existingShardedRun.id));
       }
+      await applyReporterKeep(db, existingShardedRun.id, body.keep);
 
       return {
         success: true,
@@ -177,6 +179,7 @@ export default eventHandler(async (event) => {
       });
     }
 
+    await applyReporterKeep(db, testRun.id, body.keep);
     runEventBus.publishGlobal({ type: 'run-started', runId: testRun.id, projectId: project.id });
     runEventBus.cacheRunState(testRun.id, { streamToken, projectId: project.id, shardTokens: new Set() });
 
@@ -227,6 +230,7 @@ export default eventHandler(async (event) => {
     });
   }
 
+  await applyReporterKeep(db, testRun.id, body.keep);
   runEventBus.publishGlobal({ type: 'run-started', runId: testRun.id, projectId: project.id });
   runEventBus.cacheRunState(testRun.id, { streamToken, projectId: project.id });
 

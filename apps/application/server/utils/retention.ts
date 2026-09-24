@@ -1,4 +1,4 @@
-import { and, inArray, lt, sql } from 'drizzle-orm';
+import { and, count, inArray, isNotNull, isNull, lt, sql } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
 import type { SQLiteTable } from 'drizzle-orm/sqlite-core';
 import { getDialect } from '../database';
@@ -204,16 +204,74 @@ export async function deleteRunsByIds(db: DbClient, runIds: number[]): Promise<D
 }
 
 /**
- * Delete all test runs older than the cutoff. Thin wrapper over
+ * Newest runs per project that age-based pruning always leaves in place
+ * (`PIWI_RETENTION_MIN_RUNS`); 0 means no floor.
+ */
+export function retentionMinRuns(): number {
+  const n = Number(process.env.PIWI_RETENTION_MIN_RUNS);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+}
+
+export interface AgedRunsResult extends DeleteRunsResult {
+  /** Runs past the cutoff left in place because they are kept forever. */
+  skippedKept: number;
+  /** Runs past the cutoff left in place because they are among their project's newest. */
+  skippedNewest: number;
+}
+
+/**
+ * Predicate: the run is not among the newest `keep` runs of its project, by
+ * start time. Ranked over every run of the project, kept or not.
+ */
+function notAmongNewest(keep: number): SQL {
+  return sql`${testRuns.id} NOT IN (
+    SELECT id FROM (
+      SELECT ${sql.identifier('id')} AS id,
+        row_number() OVER (
+          PARTITION BY ${sql.identifier('project_id')}
+          ORDER BY ${sql.identifier('start_time')} DESC, ${sql.identifier('id')} DESC
+        ) AS rn
+      FROM ${testRuns}
+    ) ranked WHERE rn <= ${keep}
+  )`;
+}
+
+/**
+ * Delete the test runs older than the cutoff that nothing protects. A run is
+ * protected when it is kept forever (`kept_at` set), or when it is among the
+ * newest `keepNewestPerProject` runs of its project — so a project that stops
+ * reporting keeps its last runs instead of emptying. Thin wrapper over
  * {@link deleteRunsByIds}, which owns the full deletion.
  */
-export async function deleteRunsOlderThan(db: DbClient, olderThanDays: number): Promise<DeleteRunsResult> {
+export async function deleteRunsOlderThan(
+  db: DbClient,
+  olderThanDays: number,
+  options: { keepNewestPerProject?: number } = {},
+): Promise<AgedRunsResult> {
   const cutoffDate = new Date(Date.now() - olderThanDays * MS_PER_DAY);
-  const oldRuns = await db.select({ id: testRuns.id }).from(testRuns).where(lt(testRuns.startTime, cutoffDate));
-  return deleteRunsByIds(
+  const keepNewest = Math.max(0, Math.floor(options.keepNewestPerProject ?? 0));
+  const aged = lt(testRuns.startTime, cutoffDate);
+
+  const conditions = [aged, isNull(testRuns.keptAt)];
+  if (keepNewest > 0) conditions.push(notAmongNewest(keepNewest));
+  const doomed = await db
+    .select({ id: testRuns.id })
+    .from(testRuns)
+    .where(and(...conditions));
+
+  const [agedTotal] = await db.select({ n: count() }).from(testRuns).where(aged);
+  const [agedKept] = await db
+    .select({ n: count() })
+    .from(testRuns)
+    .where(and(aged, isNotNull(testRuns.keptAt)));
+  const skippedKept = Number(agedKept?.n ?? 0);
+  const skippedNewest = Number(agedTotal?.n ?? 0) - skippedKept - doomed.length;
+
+  const deleted = await deleteRunsByIds(
     db,
-    oldRuns.map((r) => r.id),
+    doomed.map((r) => r.id),
   );
+  return { ...deleted, skippedKept, skippedNewest };
 }
 
 /**

@@ -7,6 +7,7 @@ import { cancelInstanceRuns } from '../../utils/cancel-instance-runs';
 import { runEventBus } from '../../utils/run-events';
 import { persistShardToken } from '../../utils/shard-tokens';
 import { getProjectScope, scopeAllows } from '../../utils/project-access';
+import { applyReporterKeep } from '#shared/handlers/run-keep';
 import { resolveRunBranch } from '../../utils/run-branch';
 
 defineRouteMeta({
@@ -112,6 +113,7 @@ export default eventHandler(async (event) => {
         setupToken,
         existingShardedRun.metadata as Record<string, unknown> | null,
       );
+      await applyReporterKeep(db, existingShardedRun.id, body.keep);
 
       return {
         success: true,
@@ -163,6 +165,7 @@ export default eventHandler(async (event) => {
       });
     }
 
+    await applyReporterKeep(db, testRun.id, body.keep);
     runEventBus.publishGlobal({ type: 'run-initializing', runId: testRun.id, projectId: project.id });
     runEventBus.cacheRunState(testRun.id, { streamToken: setupToken, projectId: project.id, shardTokens: new Set() });
 
@@ -213,6 +216,7 @@ export default eventHandler(async (event) => {
     });
   }
 
+  await applyReporterKeep(db, testRun.id, body.keep);
   runEventBus.publishGlobal({ type: 'run-initializing', runId: testRun.id, projectId: project.id });
 
   return {

@@ -51,6 +51,8 @@ const toast = useToast();
 const { copy } = useCopy();
 const isDeleteConfirmOpen = ref(false);
 const deleting = ref(false);
+const isKeepOpen = ref(false);
+const { release: releaseKeep, canRelease } = useRunKeep();
 
 // Live streaming state
 const isLive = computed(() => testRun.value?.status === 'running' || testRun.value?.status === 'finalizing');
@@ -701,18 +703,32 @@ function handleSelectTestCase(id: number) {
 
 // ── Navbar More menu ────────────────────────────────────────────────────────
 const moreMenuItems = computed(() => {
-  const items: { label: string; icon: string; color?: 'error'; onSelect: () => void }[] = [];
+  const items: { label: string; icon: string; color?: 'error'; disabled?: boolean; onSelect: () => void }[] = [];
   items.push({
     label: 'Copy run summary',
     icon: 'i-lucide-clipboard',
     onSelect: () => copy(buildRunSummary(), { toast: 'Run summary copied' }),
   });
   items.push({ label: 'Refresh', icon: 'i-lucide-refresh-cw', onSelect: () => refresh() });
-  if (canSeeAdmin.value) {
+  const kept = !!testRun.value?.keptAt;
+  if (!kept) {
+    items.push({ label: 'Keep forever…', icon: 'i-lucide-lock', onSelect: () => (isKeepOpen.value = true) });
+  } else if (canRelease.value) {
     items.push({
-      label: 'Delete run',
+      label: 'Release keep',
+      icon: 'i-lucide-lock-open',
+      onSelect: async () => {
+        if (await releaseKeep(Number(runId))) refresh();
+      },
+    });
+  }
+  if (canSeeAdmin.value) {
+    // A kept run cannot be deleted until it is released.
+    items.push({
+      label: kept ? 'Delete run (release it first)' : 'Delete run',
       icon: 'i-lucide-trash-2',
       color: 'error',
+      disabled: kept,
       onSelect: () => (isDeleteConfirmOpen.value = true),
     });
   }
@@ -850,6 +866,10 @@ const moreMenuItems = computed(() => {
       </DetailPageLayout>
     </template>
   </UDashboardPanel>
+
+  <ClientOnly>
+    <RunKeepModal v-model:open="isKeepOpen" :run-id="Number(runId)" @kept="refresh" />
+  </ClientOnly>
 
   <!-- Delete Confirm Dialog -->
   <ClientOnly>

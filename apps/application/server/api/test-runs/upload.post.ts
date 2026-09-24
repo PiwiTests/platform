@@ -22,6 +22,7 @@ import { getProjectScope, scopeAllows } from '../../utils/project-access';
 import { resolveMaxUploadBytes } from '../../utils/upload-limits';
 import { sumFailedAndTimedOut } from '#shared/utils/test-counts';
 import { formatBytes } from '#shared/utils/format-bytes';
+import { applyReporterKeep } from '#shared/handlers/run-keep';
 
 defineRouteMeta({
   openAPI: {
@@ -349,6 +350,7 @@ export default eventHandler(async (event) => {
   if (attachingToExistingRun && existingTestRunId) {
     // Attach reports to an already-created streaming run — do not create a new run
     testRun = { id: existingTestRunId, projectId: project.id };
+    await applyReporterKeep(db, existingTestRunId, testRunData.keep);
   } else {
     // Create a new test run (standard batch upload)
     const testRunResult = await db
@@ -391,6 +393,7 @@ export default eventHandler(async (event) => {
       id: resultTestRun.id,
       projectId: resultTestRun.projectId,
     };
+    await applyReporterKeep(db, resultTestRun.id, testRunData.keep);
 
     runEventBus.publishGlobal({
       type: 'run-submitted',

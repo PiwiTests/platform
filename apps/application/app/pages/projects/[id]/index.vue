@@ -67,7 +67,7 @@ async function handleDeleteRun(runId: number) {
   try {
     await $fetch(`/api/test-runs/${runId}`, { method: 'DELETE' });
     toast.add({ title: 'Test run deleted', color: 'success' });
-    await refresh();
+    await Promise.all([refresh(), refreshKeptRuns()]);
   } catch (error: unknown) {
     const message =
       error && typeof error === 'object' && 'data' in error ? (error.data as { message?: string })?.message : undefined;
@@ -111,18 +111,40 @@ const availableBranches = computed(() => {
   return [...branches].sort();
 });
 
-const filteredRuns = computed(() => {
-  let runs = project.value?.testRuns || [];
-  if (filters.value.fullRunsOnly) runs = runs.filter((r) => r.isFullRun !== false);
-  if (filters.value.environments.length > 0)
-    runs = runs.filter((r) => r.environment && filters.value.environments.includes(r.environment));
-  if (filters.value.branches.length > 0)
-    runs = runs.filter((r) => {
-      const b = runBranch(r);
-      return b !== null && filters.value.branches.includes(b);
-    });
-  return runs;
-});
+function matchesFilters(run: TestRunSummary): boolean {
+  if (filters.value.fullRunsOnly && run.isFullRun === false) return false;
+  if (
+    filters.value.environments.length > 0 &&
+    !(run.environment && filters.value.environments.includes(run.environment))
+  )
+    return false;
+  if (filters.value.branches.length > 0) {
+    const b = runBranch(run);
+    if (b === null || !filters.value.branches.includes(b)) return false;
+  }
+  return true;
+}
+
+const filteredRuns = computed(() => (project.value?.testRuns || []).filter(matchesFilters));
+
+// === RUNS TAB: kept runs ===
+// Kept runs are mostly old, past the recent window the project loads, so the
+// "Kept runs only" view reads them from their own endpoint.
+const keptOnly = ref(false);
+const { data: keptRunsData, refresh: refreshKeptRuns } = useFetch<{ items: TestRunSummary[]; total: number }>(
+  `/api/projects/${projectId}/kept-runs`,
+  { lazy: true, server: false, default: () => ({ items: [], total: 0 }) },
+);
+const filteredKeptRuns = computed(() => (keptRunsData.value?.items ?? []).filter(matchesFilters));
+const tableRuns = computed(() => (keptOnly.value ? filteredKeptRuns.value : filteredRuns.value));
+
+const keepRunId = ref<number | null>(null);
+const isKeepOpen = ref(false);
+const { release: releaseKeep, canRelease } = useRunKeep();
+
+async function refreshAfterKeepChange() {
+  await Promise.all([refresh(), refreshKeptRuns()]);
+}
 
 // A single selected environment / branch scopes the server-side flaky and
 // performance analysis so one environment or feature branch can be compared.
@@ -404,10 +426,30 @@ function runMenuItems(run: TestRunSummary) {
         },
   );
   if (items.length) items.push({ type: 'separator' });
+  if (!run.keptAt) {
+    items.push({
+      label: 'Keep forever…',
+      icon: 'i-lucide-lock',
+      onSelect: () => {
+        keepRunId.value = run.id;
+        isKeepOpen.value = true;
+      },
+    });
+  } else if (canRelease.value) {
+    items.push({
+      label: 'Release keep',
+      icon: 'i-lucide-lock-open',
+      onSelect: async () => {
+        if (await releaseKeep(run.id)) await refreshAfterKeepChange();
+      },
+    });
+  }
+  // A kept run cannot be deleted until it is released.
   items.push({
-    label: 'Delete run',
+    label: run.keptAt ? 'Delete run (release it first)' : 'Delete run',
     icon: 'i-lucide-trash-2',
     color: 'error',
+    disabled: !!run.keptAt,
     onSelect: () => {
       confirmDeleteRunId.value = run.id;
     },
@@ -895,7 +937,7 @@ const moreMenuItems = computed(() => {
             <TestRunsChart :test-runs="filteredRuns" :markers="visibleMarkers" @marker-click="handleMarkerClick" />
           </ChartCard>
 
-          <UCard class="mt-4">
+          <UCard class="mt-4" data-shot="runs-table">
             <div
               v-if="selectedRunIds.length > 0"
               class="flex items-center gap-3 px-3 py-2 mb-3 rounded-lg bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800"
@@ -922,11 +964,22 @@ const moreMenuItems = computed(() => {
               />
             </div>
 
+            <div v-if="keptRunsData.total > 0" class="flex items-center justify-end gap-1.5 mb-3">
+              <label
+                class="flex items-center gap-1.5 cursor-pointer select-none text-sm text-muted hover:text-default transition-colors"
+                data-shot="kept-runs-toggle"
+              >
+                <UCheckbox v-model="keptOnly" size="sm" />
+                Kept runs only ({{ filteredKeptRuns.length }})
+              </label>
+              <HelpHint topic="run.keep" />
+            </div>
+
             <!-- md+ : the runs table; below md a card list keeps it scroll-free -->
             <div class="hidden md:block">
               <UTable
-                v-if="filteredRuns.length > 0"
-                :data="filteredRuns"
+                v-if="tableRuns.length > 0"
+                :data="tableRuns"
                 :columns="runsColumns"
                 :ui="{
                   base: 'w-full border-separate border-spacing-0',
@@ -954,6 +1007,13 @@ const moreMenuItems = computed(() => {
                     >
                       Run #{{ row.original.id }}
                     </a>
+                    <UTooltip v-if="row.original.keptAt" :text="describeKeep(row.original)">
+                      <UIcon
+                        name="i-lucide-lock"
+                        class="size-3.5 shrink-0 text-muted"
+                        :aria-label="`Run #${row.original.id} is kept forever`"
+                      />
+                    </UTooltip>
                     <span v-if="row.original.label" class="text-xs text-gray-500 dark:text-gray-400 truncate max-w-32">
                       {{ row.original.label }}
                     </span>
@@ -1046,8 +1106,8 @@ const moreMenuItems = computed(() => {
             </div>
 
             <!-- Below md: one card per run -->
-            <div v-if="filteredRuns.length > 0" class="space-y-2 md:hidden">
-              <div v-for="run in filteredRuns" :key="run.id" class="rounded-lg border border-default p-3 space-y-2">
+            <div v-if="tableRuns.length > 0" class="space-y-2 md:hidden">
+              <div v-for="run in tableRuns" :key="run.id" class="rounded-lg border border-default p-3 space-y-2">
                 <div class="flex items-start gap-2">
                   <input
                     type="checkbox"
@@ -1060,6 +1120,12 @@ const moreMenuItems = computed(() => {
                     <div class="flex items-center gap-2 flex-wrap">
                       <RunStatusBadge :status="run.status" />
                       <span class="font-medium text-primary">Run #{{ run.id }}</span>
+                      <UIcon
+                        v-if="run.keptAt"
+                        name="i-lucide-lock"
+                        class="size-3.5 shrink-0 text-muted"
+                        :aria-label="`Run #${run.id} is kept forever`"
+                      />
                       <EnvironmentBadge v-if="run.environment" :name="run.environment" class="text-xs text-muted" />
                     </div>
                     <TestStatusBar
@@ -1091,10 +1157,10 @@ const moreMenuItems = computed(() => {
             </div>
 
             <div
-              v-if="filteredRuns.length === 0 && project?.testRuns && project.testRuns.length > 0"
+              v-if="tableRuns.length === 0 && project?.testRuns && project.testRuns.length > 0"
               class="text-center py-8 text-gray-500"
             >
-              No test runs match the current filters.
+              {{ keptOnly ? 'No kept runs match the current filters.' : 'No test runs match the current filters.' }}
             </div>
 
             <EmptyState
@@ -1400,6 +1466,10 @@ const moreMenuItems = computed(() => {
         />
       </template>
     </USlideover>
+  </ClientOnly>
+
+  <ClientOnly>
+    <RunKeepModal v-model:open="isKeepOpen" :run-id="keepRunId" @kept="refreshAfterKeepChange" />
   </ClientOnly>
 
   <!-- Delete Project Modal -->

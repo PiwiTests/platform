@@ -199,6 +199,12 @@ export interface PiwiDashboardOptions {
   environment?: string;
   /** Optional display label for the test run (e.g. "v2.3.1 release") */
   label?: string;
+  /**
+   * Keep this run forever: the dashboard's retention never deletes it. Set it
+   * for the runs worth keeping, such as release or tag builds. Can also be set
+   * with `PIWI_KEEP=true`.
+   */
+  keep?: boolean;
   /** Related issue reference, e.g. `"JIRA-123"` */
   relatedIssue?: string;
   /** CI job information */

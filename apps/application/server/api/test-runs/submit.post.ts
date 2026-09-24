@@ -12,6 +12,7 @@ import { cancelInstanceRuns } from '../../utils/cancel-instance-runs';
 import { runFinalizeSideEffects } from '../../utils/run-finalize-side-effects';
 import { getProjectScope, scopeAllows } from '../../utils/project-access';
 import { sumFailedAndTimedOut } from '#shared/utils/test-counts';
+import { applyReporterKeep } from '#shared/handlers/run-keep';
 
 defineRouteMeta({
   openAPI: {
@@ -131,6 +132,7 @@ export default eventHandler(async (event) => {
           duration: sql`CASE WHEN coalesce(${testRuns.duration}, 0) > ${body.duration ?? 0} THEN coalesce(${testRuns.duration}, 0) ELSE ${body.duration ?? 0} END`,
         })
         .where(eq(testRuns.id, existingRun.id));
+      await applyReporterKeep(db, existingRun.id, body.keep);
 
       // Insert test cases if provided
       if (body.testCases && Array.isArray(body.testCases) && body.testCases.length > 0) {
@@ -264,6 +266,7 @@ export default eventHandler(async (event) => {
       message: 'Failed to create test run',
     });
   }
+  await applyReporterKeep(db, testRun.id, body.keep);
 
   // Insert test cases if provided and calculate flaky tests
   let flakyTestCount = 0;
