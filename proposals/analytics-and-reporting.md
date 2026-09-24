@@ -1240,7 +1240,7 @@ Grouped by milestone. Paths are under `apps/application/` unless noted.
 - [x] `app/components/analytics/*Chart.vue`: markers overlay (reuse the project chart's marker rendering)
 - [x] `server/api/analytics/[widget].get.ts`, `app/demo/api/router.ts`: OpenAPI parameters for the new scope keys
 - [x] `app/utils/help-content.ts`: topics for the pickers, the *Tests* filter and the branch policy
-- [ ] `tests/unit/analytics-rollups.test.ts` (with a pruned day holding a kept run: retained plus archived equals the day before the prune, and deleting the released run removes only its numbers), `analytics-period.test.ts`, `analytics-scope.test.ts` (today's cookie and URL keys), extend `analytics-handlers.test.ts`; `apps/docs/features/analytics.md`, `apps/docs/guide/test-selection.md`
+- [x] `tests/unit/analytics-rollups.test.ts` (with a pruned day holding a kept run: retained plus archived equals the day before the prune, and deleting the released run removes only its numbers), `analytics-period.test.ts`, `analytics-scope.test.ts` (today's cookie and URL keys), extend `analytics-handlers.test.ts`; `apps/docs/features/analytics.md`, `apps/docs/guide/test-selection.md`
 
 **2. The quality report**
 

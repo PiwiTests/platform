@@ -224,6 +224,16 @@ Honest about what it is: coverage here means the routes a test was _seen_ to hit
 coverage — an approximation, and a good one for smoke's job, which is breadth over entry points. A test must be stable
 (high pass rate, not flaky, not quarantined) to be mined into a smoke suite.
 
+## Filter analytics by a selection
+
+The [Analytics](/features/analytics#test-filter) page's *Tests* filter takes a selection key: `smoke`
+resolves in each project to that project's selection with that key, so a convention shared across
+projects gives one cross-project view of "the smoke tests". A project without the key is left out and
+named under the scope bar. The filter follows the resolver's own meaning: the tests that match the
+selection today, with their whole history. The address carries it (`/analytics?sel=smoke&period=last-month`),
+so the view can be shared as a link, and with one project in scope the page's test tags can be saved as a
+new selection.
+
 ## What selections are not
 
 - **Not instrumented test-impact analysis.** Predicates read _observed_ history — durations, pass rates, statuses — not
