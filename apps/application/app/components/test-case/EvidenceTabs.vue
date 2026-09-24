@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * One evidence card with content-level tabs — Timeline, Screen, Source,
- * Network, Console, State, Performance — each wrapping the evidence captured for
+ * Locators, Network, Console, State, Performance — each wrapping the evidence captured for
  * an execution. A tab shows a count or a dot when it holds data and is dimmed
  * when empty; a dimmed tab still opens and states why it is empty. The default
  * tab is the one the strongest clue cites, else Timeline when it can place two
@@ -14,6 +14,7 @@ import { resolveEvidenceState, type EvidenceState } from '#shared/evidence-state
 import type { CapabilityState } from '#shared/capabilities';
 import type { HelpTopicKey } from '~/utils/help-content';
 import { EVIDENCE_SECTION_TAB, type EvidenceTabValue } from '~/utils/evidence-sections';
+import { extractStepLocatorUses } from '#shared/locator-chain';
 
 const props = defineProps<{
   /** The fetched execution — every tab reads its evidence off this object. */
@@ -128,6 +129,11 @@ const sourceHasData = computed(() => Boolean(testSourceFrames.value?.length || t
 const stateHasData = computed(() => Boolean(pageState.value));
 const performanceHasData = computed(() => Boolean(webVitals.value) || performanceHints.value.length > 0);
 const timelineHasData = computed(() => steps.value.length > 0);
+// Distinct locator uses in the stored steps — the same count the Locators tab lists.
+const locatorCount = computed(
+  () =>
+    new Set(extractStepLocatorUses(steps.value).map((u) => `${u.location ?? ''}\x00${u.action}\x00${u.locator}`)).size,
+);
 
 // Every attempt of this execution (each retry is its own row), already fetched.
 const attemptsList = computed<
@@ -173,6 +179,13 @@ const tabs = computed<TabDef[]>(() =>
       { value: 'screen', label: 'Screen', icon: 'i-lucide-camera', hasData: screenHasData.value, count: null },
       { value: 'source', label: 'Source', icon: 'i-lucide-file-code-2', hasData: sourceHasData.value, count: null },
       {
+        value: 'locators',
+        label: 'Locators',
+        icon: 'i-lucide-crosshair',
+        hasData: locatorCount.value > 0,
+        count: locatorCount.value || null,
+      },
+      {
         value: 'network',
         label: 'Network',
         icon: 'i-lucide-arrow-left-right',
@@ -195,7 +208,7 @@ const tabs = computed<TabDef[]>(() =>
         count: null,
       },
     ] satisfies TabDef[]
-  ).filter((tab) => tabShown(tab.value)),
+  ).filter((tab) => tabShown(tab.value) && (tab.value !== 'locators' || tab.hasData)),
 );
 
 // The footer names the sources the capture fixtures would add, shown only while
@@ -529,6 +542,16 @@ defineExpose({ canLocate, revealSection, selectTab: (t: TabValue) => (activeTab.
         <div ref="envDiffWrap" class="scroll-mt-4">
           <EnvironmentDiffCard v-if="runId" embedded :run-id="runId" :test-runs-case-id="testRunsCaseId" />
         </div>
+      </div>
+
+      <!-- ── Locators ─────────────────────────────────────────────── -->
+      <!-- Lazy: fetched when the tab opens. -->
+      <div v-else-if="activeTab === 'locators'" class="scroll-mt-4">
+        <ExecutionLocatorsCard
+          :test-runs-case-id="testRunsCaseId"
+          :project-key="projectKey"
+          :project-name="projectName"
+        />
       </div>
 
       <!-- ── Performance ──────────────────────────────────────────── -->

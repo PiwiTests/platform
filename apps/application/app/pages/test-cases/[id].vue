@@ -207,6 +207,21 @@ const passRateClass = computed(() => passRateTextClass(passRate.value));
           <EmptyState v-else icon="i-lucide-inbox" text="No executions yet" />
         </SectionCard>
 
+        <!-- Locators of the latest execution, each with who else uses it -->
+        <SectionCard
+          v-if="testCase?.lastExecutionId"
+          icon="i-lucide-crosshair"
+          title="Locators"
+          subtitle="From the latest execution"
+          data-shot="test-case-locators"
+        >
+          <ExecutionLocatorsCard
+            :test-runs-case-id="testCase.lastExecutionId"
+            :project-key="testCase?.project?.id"
+            :project-name="testCase?.project?.name"
+          />
+        </SectionCard>
+
         <!-- Failure clusters -->
         <SectionCard
           v-if="testCase?.failureClusters?.length"

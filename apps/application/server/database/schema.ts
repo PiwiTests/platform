@@ -44,6 +44,7 @@ export const {
   healActions,
   projectAssignments,
   locatorSnapshots,
+  locatorUsages,
   casePayloads,
   testFunctions,
   testSelections,

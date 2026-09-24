@@ -18,6 +18,7 @@ export const projects = sqliteTable(
     routeOrigins: text('route_origins', { mode: 'json' }), // string[] — extra own origins whose requests become graph route nodes, beyond the run's Playwright baseURL
     ciRerun: text('ci_rerun', { mode: 'json' }), // CiRerunSettings — provider-specific "re-run from the dashboard" target (off by default)
     capabilities: text('capabilities', { mode: 'json' }), // Partial<Record<CapabilityId, 'declined' | 'enabled'>> — per-project capability decisions
+    locatorIndexBuiltAt: integer('locator_index_built_at', { mode: 'timestamp' }), // when locator_usages was first built from stored executions; null = not yet
     createdAt: integer('created_at', { mode: 'timestamp' })
       .notNull()
       .$defaultFn(() => new Date()),
@@ -547,6 +548,45 @@ export const locatorSnapshots = sqliteTable(
     // Cross-test healing looks a signature up across all of a project's cases.
     argsFpIdx: index('idx_locator_snapshots_args_fp').on(table.usedArgsFp),
     lastSeenRunIdx: index('idx_locator_snapshots_last_seen_run').on(table.lastSeenRunId),
+  }),
+);
+
+// Locator usages — which locator chain each test used, from which call site, for
+// which action. Built at ingest from the stored steps (Playwright reports the full
+// chain on every locator step), one row per (test case, call site, action, chain),
+// with first/last seen runs. Answers "which tests use this locator" without any
+// capture beyond the steps.
+export const locatorUsages = sqliteTable(
+  'locator_usages',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    testCaseId: integer('test_case_id')
+      .notNull()
+      .references(() => testCases.id, { onDelete: 'cascade' }),
+    locator: text('locator').notNull(), // canonical chain, e.g. getByRole('form', { name: 'Shipping' }).getByLabel('Country')
+    target: text('target').notNull(), // the last locating call of the chain, e.g. getByLabel('Country')
+    action: text('action').notNull(), // click, fill, selectOption, expect.toHaveValue, …
+    browserName: text('browser_name').notNull(), // Playwright project name of the execution, '' when unknown
+    callSite: text('call_site').notNull(), // project-relative file:line:col, '' when unknown
+    firstSeenRunId: integer('first_seen_run_id').references(() => testRuns.id, { onDelete: 'set null' }),
+    lastSeenRunId: integer('last_seen_run_id').references(() => testRuns.id, { onDelete: 'set null' }),
+    lastSeenAt: integer('last_seen_at', { mode: 'timestamp_ms' }).notNull(),
+  },
+  (table) => ({
+    uniqueUse: uniqueIndex('idx_locator_usages_use').on(
+      table.testCaseId,
+      table.browserName,
+      table.callSite,
+      table.action,
+      table.locator,
+    ),
+    projectLocatorIdx: index('idx_locator_usages_project_locator').on(table.projectId, table.locator),
+    projectTargetIdx: index('idx_locator_usages_project_target').on(table.projectId, table.target),
+    lastSeenRunIdx: index('idx_locator_usages_last_seen_run').on(table.lastSeenRunId),
+    firstSeenRunIdx: index('idx_locator_usages_first_seen_run').on(table.firstSeenRunId),
   }),
 );
 

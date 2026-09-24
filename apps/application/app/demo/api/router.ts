@@ -30,6 +30,8 @@ import {
 } from '#shared/handlers/project-assignments';
 import { getDemoDb } from '../db.client';
 import { getLocatorHealing, saveLocatorPick } from '~~/server/utils/locator-healing';
+import { backfillLocatorUsages, getExecutionLocators, getLocatorUsages } from '~~/server/utils/locator-usages';
+import { parseLocatorUsageQuery } from '#shared/locator-usages.types';
 import { buildFixPlan } from '~~/server/utils/fix-plan';
 import { findFixedBefore } from '~~/server/utils/cluster-memory';
 import { fixPlanToMarkdown } from '#shared/fix-plan-markdown';
@@ -1121,6 +1123,16 @@ const routes: RouteEntry[] = [
     },
   },
   {
+    method: 'GET',
+    pattern: /^\/api\/test-run-cases\/(\d+)\/locators$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'execution', +m[1]!);
+      const result = await getExecutionLocators(await getDemoDb(), +m[1]!);
+      if (!result) throw demoHttpError(404, 'Test run case not found');
+      return result;
+    },
+  },
+  {
     method: 'POST',
     pattern: /^\/api\/test-run-cases\/(\d+)\/locator-pick$/,
     handler: async (m, body, _q, ctx) => {
@@ -1363,6 +1375,26 @@ const routes: RouteEntry[] = [
     method: 'DELETE',
     pattern: /^\/api\/markers\/(\d+)$/,
     handler: async (m) => deleteMarker(await getDemoDb(), +m[1]!),
+  },
+
+  // Locator index: which tests use a locator
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/locator-usages$/,
+    handler: async (m, _b, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const parsed = parseLocatorUsageQuery(q?.get('match'), q?.get('value'));
+      if ('error' in parsed) throw demoHttpError(400, parsed.error);
+      return getLocatorUsages(await getDemoDb(), +m[1]!, parsed.match, parsed.value);
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/projects\/(\d+)\/locator-usages\/rebuild$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      return backfillLocatorUsages(await getDemoDb(), +m[1]!);
+    },
   },
 
   // Test function catalog (recorder codegen matching)
