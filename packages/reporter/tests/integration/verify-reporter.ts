@@ -167,7 +167,7 @@ export default class VerifyCaptureReporter implements Reporter {
     this.sawMainCapture = true;
   }
 
-  onEnd(_result: FullResult): { status: 'failed' } | void {
+  async onEnd(_result: FullResult): Promise<{ status: 'failed' } | void> {
     if (!this.sawMainCapture) this.fail('the main capture test did not run — nothing verified its attachments');
     if (!this.sawFailureCapture) this.fail('the failure-capture test did not run — ARIA/suggestion unverified');
     if (!this.sawAssertionCapture) this.fail('the assertion-capture test did not run — _expect capture unverified');
