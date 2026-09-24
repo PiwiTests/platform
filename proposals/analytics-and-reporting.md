@@ -269,7 +269,7 @@ named.
 | Flaky occurrences | Sum of `flakyTests` over runs (what the portfolio's "flaky" column is) | count, lower | rollup |
 | Flaky tests | Distinct tests that passed only on a retry at least once in the period | count, lower | live |
 | Wasted CI minutes | Minutes inside wait steps plus minutes executing attempts that ended failed or timed out (`getAnalyticsWastedTime`) | minutes, lower | rollup |
-| Wasted CI cost | Wasted CI minutes multiplied by the configured cost per minute. New, shown only when a cost is configured | money, lower | rollup |
+| Wasted CI cost | Wasted CI minutes multiplied by the configured cost per minute. New, shown only when a cost is configured; it joins `METRICS` in milestone 2 with the cost setting, since a metric without its setting could never be shown | money, lower | rollup |
 | CI time | Sum of run durations (`getAnalyticsCiTimeTrend`) | minutes, lower | rollup |
 | New regressions | Executions marked `isNewRegression` (`getAnalyticsRegressionVelocity`) | count, lower | rollup |
 | Newly flaky | Executions marked `isNewFlaky` | count, lower | rollup |
@@ -1223,7 +1223,7 @@ Grouped by milestone. Paths are under `apps/application/` unless noted.
 
 **1. Metrics, filters and periods**
 
-- [ ] `shared/analytics/metrics.ts`: `MetricDef` (with `grain` and `dimensions`), `METRICS`, `MetricId`, `DIMENSIONS`
+- [x] `shared/analytics/metrics.ts`: `MetricDef` (with `grain` and `dimensions`), `METRICS`, `MetricId`, `DIMENSIONS`
 - [ ] `server/database/schema.sqlite.ts` and `schema.pg.ts`: `analytics_daily_rollups`; `npm run db:generate && npm run db:generate:pg`
 - [ ] `shared/handlers/analytics/rollups.ts`: `upsertDailyRollup`, `recomputeRollupCells`, `readRollupSeries`, `backfillDailyRollups`
 - [x] `shared/handlers/analytics/common.ts` (`fetchScopedRuns`), `shared/handlers/projects.ts` (`getProjectsOverview`, `getProjectPerformance`, `getProjectSlowTests`), `shared/handlers/test-runs.ts` (`getRecentTestRuns`): filter `isProbeRun()`; unit test with a seeded probe run
