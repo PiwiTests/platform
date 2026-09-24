@@ -5,6 +5,7 @@
 import type { RankedLocator, LocatorFixRecommendation, NarrowingSuggestion } from './locator-healing.types';
 import { sha256Hex } from './utils/hash';
 import { compareVersions } from './piwi-env-vars';
+import { locatorCallValues, parseLeafLocatorCall } from '#shared/locator-chain';
 
 /** Playwright's first release with `locator.visible()`. */
 const VISIBLE_MIN_VERSION = '1.63';
@@ -149,45 +150,22 @@ export function locatorArgStrings(args: unknown[]): string[] {
 }
 
 /**
- * Extract the leading method name from a locator expression
+ * The method of a locator expression's leaf — its last locating call
  * (`getByRole('button')` → `getByRole`, `page.locator('.x')` → `locator`).
+ * Null when the expression does not parse.
  */
 export function locatorExpressionMethod(expr: string): string | null {
-  const m = expr.match(/(\w+)\s*\(/);
-  return m ? m[1]! : null;
+  return parseLeafLocatorCall(expr)?.method ?? null;
 }
 
 /**
- * Extract the quoted string literals from a locator expression, in order,
- * honoring `\` escapes and both quote styles. Object keys and booleans are
- * unquoted in Playwright's rendering, so only string values are captured —
- * mirroring {@link locatorArgStrings} on the capture side.
+ * The string values of a locator expression's leaf call, in order, read with
+ * the shared parser — mirroring {@link locatorArgStrings} on the capture side.
+ * Empty when the expression does not parse.
  */
 export function locatorExpressionStrings(expr: string): string[] {
-  const out: string[] = [];
-  const open = expr.indexOf('(');
-  let i = open === -1 ? 0 : open + 1;
-  while (i < expr.length) {
-    const ch = expr[i];
-    if (ch === "'" || ch === '"') {
-      let s = '';
-      i++;
-      while (i < expr.length && expr[i] !== ch) {
-        if (expr[i] === '\\') {
-          s += expr[i + 1] ?? '';
-          i += 2;
-          continue;
-        }
-        s += expr[i];
-        i++;
-      }
-      out.push(s);
-      i++; // skip the closing quote
-      continue;
-    }
-    i++;
-  }
-  return out;
+  const leaf = parseLeafLocatorCall(expr);
+  return leaf ? locatorArgStrings(locatorCallValues(leaf)) : [];
 }
 
 /**
@@ -245,6 +223,35 @@ const LOCATOR_PRIMARY_ARG: Record<string, string> = {
   locator: 'selector',
   'page.locator': 'selector',
 };
+
+/**
+ * Parse a locator expression into the failing locator's `{ method, args }`,
+ * keyed as {@link locatorExpression} renders it back: the positional argument
+ * under its primary key (`testId`, `role`, `text`, …) and, for `getByRole`, the
+ * options other than `exact`. A chained expression yields its leaf — the last
+ * locating call. Regexes are kept as their `/source/flags` text, for display
+ * only: matching uses the locator signature, not these args. Null when the
+ * expression does not parse.
+ *
+ *   getByRole('button', { name: 'Submit' }) → { method: 'getByRole', args: { role: 'button', name: 'Submit' } }
+ */
+export function parseLocatorExpression(expr: string): { method: string; args: Record<string, unknown> } | null {
+  const leaf = parseLeafLocatorCall(expr);
+  if (!leaf) return null;
+  const values = locatorCallValues(leaf, { regexAsText: true });
+  const primary = LOCATOR_PRIMARY_ARG[leaf.method];
+  if (!primary) return { method: leaf.method, args: { args: values } };
+
+  const args: Record<string, unknown> = {};
+  if (values[0] !== undefined && typeof values[0] !== 'object') args[primary] = values[0];
+  const options = values.find((v): v is Record<string, unknown> => typeof v === 'object' && v !== null);
+  if (leaf.method === 'getByRole' && options) {
+    for (const [key, value] of Object.entries(options)) {
+      if (key !== 'exact') args[key] = value;
+    }
+  }
+  return { method: leaf.method, args };
+}
 
 /** A parsed arg value as Playwright source: quoted string, bare literal, or regex text as-is. */
 function locatorArgLiteral(value: unknown): string {

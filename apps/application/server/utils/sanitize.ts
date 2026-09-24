@@ -1,5 +1,6 @@
 import { filterAndCapNetworkRequests } from '#shared/utils/filter-network-requests';
 import { maskTokenLike } from '@piwitests/core/mask';
+import { capStepValue } from '@piwitests/core/step-analysis';
 import type { IngestLimits } from '#shared/ingest-limits';
 
 /**
@@ -276,11 +277,11 @@ function capStepParams(
       out[key] = value;
       count++;
     } else if (typeof value === 'string') {
-      out[key] = maskTokenLike(value).slice(0, limits.stepParamValueChars);
+      out[key] = capStepValue(maskTokenLike(value), limits.stepParamValueChars);
       count++;
     } else if (value != null) {
       try {
-        out[key] = maskTokenLike(JSON.stringify(value)).slice(0, limits.stepParamValueChars);
+        out[key] = capStepValue(maskTokenLike(JSON.stringify(value)), limits.stepParamValueChars);
         count++;
       } catch {
         // Non-serializable (circular) values are dropped.
@@ -302,7 +303,7 @@ export function capSteps(value: unknown, limits: IngestLimits): unknown {
     const s = step as Record<string, unknown>;
     const out: Record<string, unknown> = { ...s };
     if (typeof s.subtitle === 'string') {
-      out.subtitle = maskTokenLike(s.subtitle).slice(0, limits.stepParamValueChars);
+      out.subtitle = capStepValue(maskTokenLike(s.subtitle), limits.stepParamValueChars);
     }
     if (s.params && typeof s.params === 'object' && !Array.isArray(s.params)) {
       const params = capStepParams(s.params as Record<string, unknown>, limits);

@@ -218,6 +218,26 @@ const APP_SETTINGS = [
     updated_at: ts('2025-04-20T09:00:00'),
   },
 ];
+// Runs kept forever: the v2.4.0 release run (by the release marker linked to
+// it below), one older run kept by hand, and one the reporter kept at ingest.
+function keepColumnsFor(projectId, runIndex, startTime) {
+  if (projectId === 1 && runIndex === 0) {
+    return { kept_at: startTime, kept_by: null, keep_source: 'marker', keep_reason: 'v2.4.0' };
+  }
+  if (projectId === 1 && runIndex === 17) {
+    return {
+      kept_at: startTime + 7200,
+      kept_by: null,
+      keep_source: 'user',
+      keep_reason: 'Reference run for the Q2 audit',
+    };
+  }
+  if (projectId === 2 && runIndex === 10) {
+    return { kept_at: startTime, kept_by: null, keep_source: 'reporter', keep_reason: null };
+  }
+  return { kept_at: null, kept_by: null, keep_source: null, keep_reason: null };
+}
+
 const MARKERS = [
   {
     id: 1,
@@ -750,6 +770,7 @@ for (const proj of DEMO_PROJECTS) {
       reporter_version: '0.7.0',
       is_full_run: i % 5 !== 4 ? 1 : 0,
       filter_details: i % 5 === 4 ? JSON.stringify({ grep: RUN_GREPS[proj.id] }) : null,
+      ...keepColumnsFor(proj.id, i, startTime),
       created_at: startTime,
       updated_at: startTime + Math.floor(duration / 1000),
     });
@@ -2665,6 +2686,7 @@ function collectAnchorSec() {
     bump(r.start_time, 's');
     bump(r.created_at, 's');
     bump(r.updated_at, 's');
+    bump(r.kept_at, 's');
   }
   for (const r of REPORTS) bump(r.created_at, 's');
   for (const r of ATTACHMENTS) bump(r.created_at, 's');
@@ -2719,7 +2741,8 @@ const REBASE_SQL = [
   `UPDATE app_settings SET updated_at = updated_at + ${D};`,
   `UPDATE test_suites SET created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
   `UPDATE test_cases SET created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
-  `UPDATE test_runs SET start_time = start_time + ${D}, created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
+  // kept_at is nullable; NULL + delta stays NULL.
+  `UPDATE test_runs SET start_time = start_time + ${D}, created_at = created_at + ${D}, updated_at = updated_at + ${D}, kept_at = kept_at + ${D};`,
   `UPDATE files SET created_at = created_at + ${D};`,
   // fix_landed_at is nullable; NULL + delta stays NULL, so no guard is needed.
   `UPDATE failure_clusters SET created_at = created_at + ${D}, updated_at = updated_at + ${D}, fix_landed_at = fix_landed_at + ${D};`,
@@ -3354,6 +3377,26 @@ const SCENARIO_GAPS = [
   },
 ];
 
+// The v2.4.0 release marker, linked to the run it keeps.
+const releaseRun = TEST_RUNS.find((r) => r.keep_source === 'marker');
+const RELEASE_MARKERS = releaseRun
+  ? [
+      {
+        id: MARKERS.length + 1,
+        project_id: releaseRun.project_id,
+        occurred_at: releaseRun.start_time,
+        label: releaseRun.keep_reason,
+        description: 'Tagged and shipped from this run.',
+        category: 'release',
+        environment: null,
+        source: 'manual',
+        run_id: releaseRun.id,
+        created_at: releaseRun.start_time,
+        updated_at: releaseRun.start_time,
+      },
+    ]
+  : [];
+
 // ── Assemble SQL ───────────────────────────────────────────────────────────
 const lines = [
   '-- Piwi Dashboard demo seed',
@@ -3395,6 +3438,9 @@ const lines = [
   '',
   '-- Test runs',
   insert('test_runs', TEST_RUNS),
+  '',
+  '-- Release markers linked to a run (they keep that run forever)',
+  insert('markers', RELEASE_MARKERS),
   '',
   '-- Files (reports)',
   insert('files', REPORTS),

@@ -119,7 +119,9 @@ export class MetadataCollector {
 
   /** Collect all available metadata from the environment, config, and suite */
   collect(config: FullConfig, suite: Suite, options: any): Record<string, unknown> {
-    const metadata: Record<string, unknown> = {};
+    // The directory spec paths are made relative to (see `testFile` in the reporter); the
+    // dashboard strips it from the absolute locations Playwright gives steps.
+    const metadata: Record<string, unknown> = { workingDir: process.cwd() };
 
     if (options.projectDescription) metadata.projectDescription = options.projectDescription;
     if (options.relatedIssue) metadata.relatedIssue = options.relatedIssue;

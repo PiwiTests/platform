@@ -29,7 +29,9 @@ import {
   type NetworkRequestBuilder,
 } from '~~/server/utils/network-request-helpers';
 import { upsertLocatorSnapshots } from '~~/server/utils/locator-healing';
+import { upsertLocatorUsages, type LocatorUsageCase } from '~~/server/utils/locator-usages';
 import { resolveRunBranch } from '~~/server/utils/run-branch';
+import { applyReporterKeep } from '#shared/handlers/run-keep';
 import type { LocatorSnapshot } from '#shared/locator-healing.types';
 import {
   capArray,
@@ -223,6 +225,7 @@ export async function apiSetupTestRun(body: TestRunStartPayload) {
       const tokens = demoShardTokens.get(existingShardedRun.id) ?? new Set();
       tokens.add(setupToken);
       demoShardTokens.set(existingShardedRun.id, tokens);
+      await applyReporterKeep(db, existingShardedRun.id, body.keep);
       return { success: true, runId: existingShardedRun.id, projectId: project.id, setupToken };
     }
 
@@ -258,6 +261,7 @@ export async function apiSetupTestRun(body: TestRunStartPayload) {
 
     const testRun = testRunResult[0];
     if (!testRun) throw new Error('Failed to create test run');
+    await applyReporterKeep(db, testRun.id, body.keep);
     publishDemoGlobalEvent({ type: 'run-initializing', runId: testRun.id, projectId: project.id });
     return { success: true, runId: testRun.id, projectId: project.id, setupToken };
   }
@@ -294,6 +298,7 @@ export async function apiSetupTestRun(body: TestRunStartPayload) {
   if (!testRun) {
     throw new Error('Failed to create test run');
   }
+  await applyReporterKeep(db, testRun.id, body.keep);
 
   publishDemoGlobalEvent({ type: 'run-initializing', runId: testRun.id, projectId: project.id });
 
@@ -602,6 +607,7 @@ export async function persistRunCases(
     snapshots: LocatorSnapshot[] | null | undefined;
     purge?: boolean;
   }> = [];
+  const perCaseUsages: LocatorUsageCase[] = [];
   const caseMetaSnapshots = new Map<number, CaseMetaSnapshot>();
 
   for (let i = 0; i < cases.length; i++) {
@@ -658,6 +664,16 @@ export async function persistRunCases(
     }
     rowFingerprints.push(fingerprint);
 
+    const cappedSteps = capSteps(c.steps, DEFAULT_INGEST_LIMITS);
+    perCaseUsages.push({
+      caseId: shared.id,
+      browserName: resolveBrowserName(c.browser),
+      steps: cappedSteps,
+      filePath: c.filePath,
+      runId: testRunId,
+      complete: c.status === 'passed' && Array.isArray(c.steps) && c.steps.length <= DEFAULT_INGEST_LIMITS.steps,
+    });
+
     if (Array.isArray(c.locatorSnapshots) && c.locatorSnapshots.length)
       perCaseLocators.push({
         caseId: shared.id,
@@ -675,7 +691,7 @@ export async function persistRunCases(
       attempts: capArray(c.attempts, 30),
       line: c.line,
       column: c.column,
-      steps: capSteps(c.steps, DEFAULT_INGEST_LIMITS),
+      steps: cappedSteps,
       stepEvents: capArray(c.stepEvents, DEFAULT_INGEST_LIMITS.stepEvents),
       slowestStep: c.slowestStep ?? null,
       slowestStepDuration: c.slowestStepDuration ?? null,
@@ -757,6 +773,7 @@ export async function persistRunCases(
   }
 
   await upsertLocatorSnapshots(db, perCaseLocators, testRunId);
+  await upsertLocatorUsages(db, projectId, perCaseUsages).catch(() => {});
   await syncTestCaseMetadata(db, caseMetaSnapshots);
 
   return result;
@@ -930,6 +947,7 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
   const shardTokenSet = demoShardTokens.get(id) ?? readShardTokensFromMeta(testRun.metadata);
   const isValidShardToken = streamToken ? shardTokenSet?.has(streamToken) : false;
   await validateAndReviveDemoRun(db, testRun, streamToken, !!isValidShardToken);
+  await applyReporterKeep(db, id, body.keep);
 
   const isSharded = !!(testRun.shardTotal && testRun.shardTotal > 1);
 

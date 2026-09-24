@@ -110,6 +110,7 @@ Everything else — analytics, notifications, the CI gate, PR feedback, MCP, the
   plain Markdown/JSON — readable with no network and no Piwi server, and bounded so one download cannot exhaust the
   instance.
 - **Automatic data retention & storage efficiency** — opt-in nightly pruning of old runs (`PIWI_RETENTION_DAYS`), notification-outbox and diagnosis-history housekeeping, ingest size caps, and content-addressed dedup of per-failure evidence payloads.
+- **Runs kept forever** — keep a run from the dashboard, from the reporter (`keep: true` / `PIWI_KEEP`) or with a linked `release` marker, and retention never deletes it; `PIWI_RETENTION_MIN_RUNS` also keeps each project's newest runs whatever their age.
 - **AI diagnosis, grounded** — failure-cluster analysis fed by your actual SCM diff, with suggested patches validated server-side against your source; optional two-stage (research → final) pipeline; works with Anthropic, OpenAI, or any OpenAI-compatible endpoint including local models.
 - **Locator healing** — element attributes captured on passing runs power ranked replacement locators when a selector breaks.
 - **MCP server** — 50 tools so AI agents can query runs, flaky tests, clusters, diagnoses, traces, and test selections.

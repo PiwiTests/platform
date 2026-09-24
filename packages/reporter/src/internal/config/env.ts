@@ -49,6 +49,7 @@ export const PIWI_ENV_KEYS = {
   environment: 'PIWI_ENVIRONMENT',
   label: 'PIWI_LABEL',
   runLabel: 'PIWI_RUN_LABEL',
+  keep: 'PIWI_KEEP',
   streaming: 'PIWI_STREAMING',
   streamingBatchSize: 'PIWI_STREAMING_BATCH_SIZE',
   streamingBatchDelay: 'PIWI_STREAMING_BATCH_DELAY',
@@ -156,6 +157,7 @@ const ENV_FALLBACK_SPECS: ReadonlyArray<{
   { option: 'environment', env: PIWI_ENV_KEYS.environment, kind: 'string' },
   { option: 'label', env: PIWI_ENV_KEYS.label, kind: 'string' },
   { option: 'runLabel', env: PIWI_ENV_KEYS.runLabel, kind: 'string' },
+  { option: 'keep', env: PIWI_ENV_KEYS.keep, kind: 'bool' },
   { option: 'streaming', env: PIWI_ENV_KEYS.streaming, kind: 'bool' },
   { option: 'streamingBatchSize', env: PIWI_ENV_KEYS.streamingBatchSize, kind: 'number' },
   { option: 'streamingBatchDelay', env: PIWI_ENV_KEYS.streamingBatchDelay, kind: 'number' },
@@ -256,6 +258,7 @@ export function applyOptionsToEnv(options: PiwiDashboardOptions): void {
   if (options.environment) env[PIWI_ENV_KEYS.environment] = options.environment;
   if (options.label) env[PIWI_ENV_KEYS.label] = options.label;
   if (options.runLabel) env[PIWI_ENV_KEYS.runLabel] = options.runLabel;
+  if (options.keep) env[PIWI_ENV_KEYS.keep] = 'true';
   // Locator capture is part of performance-metric collection; switch it off in
   // the worker when either flag is disabled so the fixture skips the per-action
   // cost. Only an explicit `true` overrides the unset (default-on) state.

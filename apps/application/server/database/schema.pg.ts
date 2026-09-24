@@ -58,6 +58,7 @@ export const projects = pgTable(
     routeOrigins: jsonb('route_origins'), // string[] — extra own origins whose requests become graph route nodes, beyond the run's Playwright baseURL
     ciRerun: jsonb('ci_rerun'), // CiRerunSettings — provider-specific "re-run from the dashboard" target (off by default)
     capabilities: jsonb('capabilities'), // Partial<Record<CapabilityId, 'declined' | 'enabled'>> — per-project capability decisions
+    locatorIndexBuiltAt: timestamp('locator_index_built_at', { mode: 'date' }),
     createdAt: timestamp('created_at', { mode: 'date' })
       .notNull()
       .$defaultFn(() => new Date()),
@@ -105,6 +106,10 @@ export const testRuns = pgTable(
     playwrightVersion: text('playwright_version'), // Playwright framework version used for this run
     reporterVersion: text('reporter_version'), // Piwi reporter package version that produced this run
     importHash: text('import_hash'), // SHA-256 of the imported archive; null for reported runs. Makes re-importing a no-op.
+    keptAt: timestamp('kept_at', { mode: 'date' }), // Set = kept forever: retention never deletes the run
+    keptBy: integer('kept_by').references(() => users.id, { onDelete: 'set null' }), // User who kept the run; null for reporter/marker keeps or with auth off
+    keepSource: text('keep_source'), // 'user' | 'reporter' | 'marker' — who asked for the keep; null when not kept
+    keepReason: text('keep_reason'), // Optional free-text reason shown next to the keep
     createdAt: timestamp('created_at', { mode: 'date' })
       .notNull()
       .$defaultFn(() => new Date()),
@@ -121,6 +126,8 @@ export const testRuns = pgTable(
     startTimeIdx: index('idx_test_runs_start_time').on(table.startTime),
     statusIdx: index('idx_test_runs_status').on(table.status),
     importHashIdx: uniqueIndex('idx_test_runs_import_hash').on(table.projectId, table.importHash),
+    projectKeptIdx: index('idx_test_runs_project_kept').on(table.projectId, table.keptAt),
+    keptByIdx: index('idx_test_runs_kept_by').on(table.keptBy),
   }),
 );
 
@@ -573,6 +580,41 @@ export const locatorSnapshots = pgTable(
     lastSeenRunIdx: index('idx_locator_snapshots_last_seen_run').on(table.lastSeenRunId),
     // Cross-test healing looks a signature up across all of a project's cases.
     argsFpIdx: index('idx_locator_snapshots_args_fp').on(table.usedArgsFp),
+  }),
+);
+
+// Locator usages — which locator chain each test used, from which call site, for which action.
+export const locatorUsages = pgTable(
+  'locator_usages',
+  {
+    id: serial('id').primaryKey(),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    testCaseId: integer('test_case_id')
+      .notNull()
+      .references(() => testCases.id, { onDelete: 'cascade' }),
+    locator: text('locator').notNull(),
+    target: text('target').notNull(),
+    action: text('action').notNull(),
+    browserName: text('browser_name').notNull(),
+    callSite: text('call_site').notNull(),
+    firstSeenRunId: integer('first_seen_run_id').references(() => testRuns.id, { onDelete: 'set null' }),
+    lastSeenRunId: integer('last_seen_run_id').references(() => testRuns.id, { onDelete: 'set null' }),
+    lastSeenAt: timestamp('last_seen_at', { mode: 'date' }).notNull(),
+  },
+  (table) => ({
+    uniqueUse: uniqueIndex('idx_locator_usages_use').on(
+      table.testCaseId,
+      table.browserName,
+      table.callSite,
+      table.action,
+      table.locator,
+    ),
+    projectLocatorIdx: index('idx_locator_usages_project_locator').on(table.projectId, table.locator),
+    projectTargetIdx: index('idx_locator_usages_project_target').on(table.projectId, table.target),
+    lastSeenRunIdx: index('idx_locator_usages_last_seen_run').on(table.lastSeenRunId),
+    firstSeenRunIdx: index('idx_locator_usages_first_seen_run').on(table.firstSeenRunId),
   }),
 );
 

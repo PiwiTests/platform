@@ -9,13 +9,13 @@ how to run and verify things, and the conventions that apply everywhere.
 
 **Area guides — read the one covering the directory you are editing, in addition to this file:**
 
-| Editing… | Read first |
-|---|---|
-| `apps/application/` — the Nuxt dashboard (app, server, demo, MCP) | [`apps/application/AGENTS.md`](apps/application/AGENTS.md) |
-| `packages/reporter/` — the Playwright reporter package | [`packages/reporter/AGENTS.md`](packages/reporter/AGENTS.md) |
-| `apps/desktop/` — the Tauri desktop shell | [`apps/desktop/AGENTS.md`](apps/desktop/AGENTS.md) |
-| `apps/extension/` — the browser extension (Manifest V3) | [`apps/extension/AGENTS.md`](apps/extension/AGENTS.md) |
-| `apps/docs/` — the VitePress documentation site | [`apps/docs/AGENTS.md`](apps/docs/AGENTS.md) |
+| Editing…                                                          | Read first                                                   |
+| ----------------------------------------------------------------- | ------------------------------------------------------------ |
+| `apps/application/` — the Nuxt dashboard (app, server, demo, MCP) | [`apps/application/AGENTS.md`](apps/application/AGENTS.md)   |
+| `packages/reporter/` — the Playwright reporter package            | [`packages/reporter/AGENTS.md`](packages/reporter/AGENTS.md) |
+| `apps/desktop/` — the Tauri desktop shell                         | [`apps/desktop/AGENTS.md`](apps/desktop/AGENTS.md)           |
+| `apps/extension/` — the browser extension (Manifest V3)           | [`apps/extension/AGENTS.md`](apps/extension/AGENTS.md)       |
+| `apps/docs/` — the VitePress documentation site                   | [`apps/docs/AGENTS.md`](apps/docs/AGENTS.md)                 |
 
 Reference material worth opening when you need the map rather than the rules:
 [`apps/application/ARCHITECTURE.md`](apps/application/ARCHITECTURE.md) (dashboard) and
@@ -54,7 +54,7 @@ plans/                     Local working docs — gitignored, never committed
 
 - `apps/*` — a deployable surface: something you run, install, download or read (the dashboard, the desktop app, the
   extension, the docs site).
-- `packages/*` — a package consumed *by name* (`@piwitests/*`): either published to npm (`reporter`, `server`) or
+- `packages/*` — a package consumed _by name_ (`@piwitests/*`): either published to npm (`reporter`, `server`) or
   imported by another workspace (`core`, `picker-dom`).
 - `integrations/*` — a framework-specific instrumentation adapter, one directory per framework.
 
@@ -65,12 +65,12 @@ toolchains (Tauri, VitePress) rather than through the root install, and `example
 would symlink the local copies and defeat the example.
 
 **Adding a workspace takes two entries in [`release-please-config.json`](release-please-config.json)**, not one: its
-`package.json` `$.version`, *and* its `package-lock.json` `$.packages['<dir>'].version`. release-please natively bumps
+`package.json` `$.version`, _and_ its `package-lock.json` `$.packages['<dir>'].version`. release-please natively bumps
 only the root package (and the lockfile's root entries); every other workspace is a plain JSON substitution it has no
 npm awareness of, so a missing lockfile entry leaves that workspace a release behind and makes `npm install` rewrite
 the lockfile on every checkout.
 
-`plans/` is local-only (gitignored); `plans/README.md` explains the layout: `roadmap.md` (ranked *Build next* table and
+`plans/` is local-only (gitignored); `plans/README.md` explains the layout: `roadmap.md` (ranked _Build next_ table and
 plan tables), `shipped.md` (ledger), `exploration-findings.md` (bugs, tech debt, gaps), `rejected-ideas.md`, and the
 `active/` · `later/` · `research/` · `archive/` plan folders. Public direction lives in the committed
 [`ROADMAP.md`](ROADMAP.md); design records for shipped programs live in [`proposals/`](proposals/) — when work ships
@@ -92,27 +92,27 @@ The SQLite database and `.data/` storage are created automatically on the first 
 
 From `apps/application/`:
 
-| Command | Purpose |
-|---|---|
-| `npm run app:dev` | Dev server |
-| `npm run app:build` / `app:preview` | Production build / preview it |
-| `npm run app:typecheck` | TypeScript check |
-| `npm run app:lint` / `app:lint:fix` | oxlint |
-| `npm run app:format` / `app:format:check` | oxfmt |
-| `npm run app:test:unit` | Unit tests (Vitest) — add `:coverage` for coverage |
-| `npm run app:test` | E2E tests (Playwright) — add `:ui` / `:report`; `:desktop` runs the suite against the locally running desktop app |
-| `npm run app:test:ai:live` | Diagnosis E2E against a **real** model (`tests/live/`) — needs `OPENCODE_API_KEY`, spends tokens |
-| `npm test` | Everything: unit first, then E2E |
-| `npm run db:generate` / `db:migrate` / `db:push` / `db:studio` | Drizzle, SQLite — append `:pg` for PostgreSQL |
-| `npm run app:seed:demo` | Regenerate demo seed data (`public/demo/seed.sql`) |
-| `npm run app:seed:dev` | Load the demo sample data into the local dev SQLite DB |
-| `npm run app:generate:demo` / `app:check:demo` | Build the demo SPA / verify every server route has a demo handler |
-| `npm run app:check:demo:runtime` | Drive the **built** demo from its real `/demo/` sub-path in a browser (run `app:generate:demo` first) |
-| `npm run app:screens -- <scene>` | Capture a feature screenshot — `app:screens:docs` for every committed docs illustration, `app:screens:check` to verify they all still have a scene |
+| Command                                                         | Purpose                                                                                                                                                                                      |
+| --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run app:dev`                                               | Dev server                                                                                                                                                                                   |
+| `npm run app:build` / `app:preview`                             | Production build / preview it                                                                                                                                                                |
+| `npm run app:typecheck`                                         | TypeScript check                                                                                                                                                                             |
+| `npm run app:lint` / `app:lint:fix`                             | oxlint                                                                                                                                                                                       |
+| `npm run app:format` / `app:format:check`                       | oxfmt                                                                                                                                                                                        |
+| `npm run app:test:unit`                                         | Unit tests (Vitest) — add `:coverage` for coverage                                                                                                                                           |
+| `npm run app:test`                                              | E2E tests (Playwright) — add `:ui` / `:report`; `:desktop` runs the suite against the locally running desktop app                                                                            |
+| `npm run app:test:ai:live`                                      | Diagnosis E2E against a **real** model (`tests/live/`) — needs `OPENCODE_API_KEY`, spends tokens                                                                                             |
+| `npm test`                                                      | Everything: unit first, then E2E                                                                                                                                                             |
+| `npm run db:generate` / `db:migrate` / `db:push` / `db:studio`  | Drizzle, SQLite — append `:pg` for PostgreSQL                                                                                                                                                |
+| `npm run app:seed:demo`                                         | Regenerate demo seed data (`public/demo/seed.sql`)                                                                                                                                           |
+| `npm run app:seed:dev`                                          | Load the demo sample data into the local dev SQLite DB                                                                                                                                       |
+| `npm run app:generate:demo` / `app:check:demo`                  | Build the demo SPA / verify every server route has a demo handler                                                                                                                            |
+| `npm run app:check:demo:runtime`                                | Drive the **built** demo from its real `/demo/` sub-path in a browser (run `app:generate:demo` first)                                                                                        |
+| `npm run app:screens -- <scene>`                                | Capture a feature screenshot — `app:screens:docs` for every committed docs illustration, `app:screens:check` to verify they all still have a scene                                           |
 | `npm run app:screens -- --route <path> [--expand] [--height N]` | Screenshot any page without registering a scene — boots and seeds its own server; the `run-app` skill (`.claude/skills/run-app/SKILL.md`) is the full recipe for running and driving the app |
-| `npm run app:measure [-- --url <base>] [--routes …] [--json]` | Measure the execution and failure-cluster pages' legibility (block offsets, scroll height, above-the-fold controls and hints, open code, words); boots its own server without `--url` |
-| `npm run app:generate:deploy` | Regenerate the one-click deploy manifests (`render.yaml`, `fly.toml`, `deploy/`) |
-| `node scripts/db-query.mjs "<sql>" [--json]` | Query the local SQLite DB directly |
+| `npm run app:measure [-- --url <base>] [--routes …] [--json]`   | Measure the execution and failure-cluster pages' legibility (block offsets, scroll height, above-the-fold controls and hints, open code, words); boots its own server without `--url`        |
+| `npm run app:generate:deploy`                                   | Regenerate the one-click deploy manifests (`render.yaml`, `fly.toml`, `deploy/`)                                                                                                             |
+| `node scripts/db-query.mjs "<sql>" [--json]`                    | Query the local SQLite DB directly                                                                                                                                                           |
 
 From `packages/reporter/`: `reporter:build`, `reporter:dev` (watch), `reporter:typecheck`, `reporter:lint[:fix]`,
 `reporter:format[:check]`, `reporter:test[:watch|:coverage|:integration]`, `reporter:bench[:micro]`.
@@ -127,6 +127,11 @@ Run typecheck, lint and tests **once at the end** before the final commit — no
 - Full TypeScript; Nuxt 4 conventions and Nuxt UI components in the app.
 - **American English** spelling throughout ("initialize", "organize", "color").
 - **Extract a shared component/helper** when the same block exceeds ~10 lines and appears more than once.
+- **One locator parser.** Playwright locator expressions (`getByRole('form').getByLabel('Country')`) are parsed
+  only by `@piwitests/core/locator-chain` — the app, the reporter and the extension all build on it. Adapt its output
+  to a local shape; never hand-write another parser. Two exceptions, both in `core/src/error-parse.ts`: `extractSelector`
+  keeps its own scan because failure fingerprints hash its output (a change regroups existing failures), and the
+  error-text readers fall back to a lenient scan for a chain cut short, which no parser can read.
 
 ### Comments
 
@@ -174,8 +179,8 @@ single command — `npm`/`npx`/`docker`/`git` behave the same everywhere, and
 `node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"` replaces `openssl rand -hex 32`. Avoid
 bash `\` line continuations; write one line.
 
-When no portable form exists, show both: in VitePress use `::: code-group` with ```bash [Linux / macOS] +
-```powershell [Windows (PowerShell)] tabs; in GitHub-rendered `*.md` use two consecutive labeled fenced blocks.
+When no portable form exists, show both: in VitePress use `::: code-group` with `bash [Linux / macOS] +
+`powershell [Windows (PowerShell)] tabs; in GitHub-rendered `*.md` use two consecutive labeled fenced blocks.
 Mappings: `$(pwd)` → `${PWD}`; `VAR=val cmd` → `$env:VAR='val'; cmd`; `rm -rf X` → `Remove-Item -Recurse -Force X`;
 `\` → backtick. Linux-only Docker host operations (`chmod`/`chown` on bind mounts) need no PowerShell form — just note
 they apply to Linux hosts. Convert first-touch `curl` examples (submit, auth setup/login) to an `Invoke-RestMethod` tab;
@@ -202,15 +207,15 @@ itself the same way everywhere:
 
 Seven surfaces carry it, and they drift the moment one changes alone. Update them **in the same commit**:
 
-| Surface | Where |
-|---|---|
-| README subtitle | `README.md` |
-| Docs hero (`text` + `tagline`) | `apps/docs/index.md` frontmatter |
-| Site description (meta + search index) | `apps/docs/.vitepress/config.mts` → `description` |
-| Social cards | `apps/docs/.vitepress/config.mts` → `og:`/`twitter:` title + description |
-| Docker Hub overview | `DOCKER_HUB.md` first paragraph |
-| npm package descriptions | `packages/server/package.json`, `packages/reporter/package.json` |
-| GitHub repo description + topics | Repository settings — not in the repo, so check it by hand |
+| Surface                                | Where                                                                    |
+| -------------------------------------- | ------------------------------------------------------------------------ |
+| README subtitle                        | `README.md`                                                              |
+| Docs hero (`text` + `tagline`)         | `apps/docs/index.md` frontmatter                                         |
+| Site description (meta + search index) | `apps/docs/.vitepress/config.mts` → `description`                        |
+| Social cards                           | `apps/docs/.vitepress/config.mts` → `og:`/`twitter:` title + description |
+| Docker Hub overview                    | `DOCKER_HUB.md` first paragraph                                          |
+| npm package descriptions               | `packages/server/package.json`, `packages/reporter/package.json`         |
+| GitHub repo description + topics       | Repository settings — not in the repo, so check it by hand               |
 
 The four surfaces that live in the repository are guarded by
 `apps/application/tests/unit/docs-drift.test.ts`, clause by clause — it also checks the documented MCP
@@ -239,13 +244,14 @@ Voice rules for all of them, and for `apps/docs/`: see [`apps/docs/AGENTS.md`](a
   ## [Date] — [Exploration type/area]
 
   ### Finding: [Brief title]
+
   - **File/Component**: location in codebase
   - **Issue**: what is wrong
   - **Impact**: severity and effect
   - **Suggested fix**: recommended action (omit if obvious)
   ```
 
-  Promote notable findings to `plans/roadmap.md` → *Quick fixes* when they affect priorities; move fixed ones to the *Resolved* log with the date.
+  Promote notable findings to `plans/roadmap.md` → _Quick fixes_ when they affect priorities; move fixed ones to the _Resolved_ log with the date.
 
 ## Troubleshooting
 

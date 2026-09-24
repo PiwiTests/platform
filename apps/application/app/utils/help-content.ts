@@ -220,6 +220,12 @@ export const HELP_TOPICS = {
     text: 'HTML reports, traces and attachments uploaded with this run. A run can carry several reports (e.g. per shard).',
     doc: 'guide/reporter#multiple-reports',
   },
+  'run.keep': {
+    title: 'Kept runs',
+    text: 'Retention (the nightly sweep and the storage cleanup) never deletes a kept run. Keep one from the run menu, or have the reporter keep it at ingest with keep: true. Only an administrator can release it.',
+    doc: 'operate/storage#keeping-runs-forever',
+    envVars: ['PIWI_RETENTION_DAYS'],
+  },
   'run.metadata': {
     title: 'Tags, links & custom data',
     text: 'Extra context attached to the run: tags for grouping, links to external issues, and any custom key/value data your reporter sent.',
@@ -382,8 +388,9 @@ export const HELP_TOPICS = {
   },
   'settings.cleanup': {
     title: 'Cleanup old runs',
-    text: 'Delete runs (and their reports, traces and attachments) older than a chosen age to reclaim storage. This cannot be undone.',
+    text: 'Delete runs (and their reports, traces and attachments) older than a chosen age to reclaim storage. Kept runs, and the newest runs of each project when a floor is set, are skipped. This cannot be undone.',
     doc: 'operate/storage#storage-management',
+    envVars: ['PIWI_RETENTION_DAYS', 'PIWI_RETENTION_MIN_RUNS'],
   },
   'account.email': {
     title: 'Email & verification',

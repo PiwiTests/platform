@@ -30,6 +30,8 @@ import {
 } from '#shared/handlers/project-assignments';
 import { getDemoDb } from '../db.client';
 import { getLocatorHealing, saveLocatorPick } from '~~/server/utils/locator-healing';
+import { backfillLocatorUsages, getExecutionLocators, getLocatorUsages } from '~~/server/utils/locator-usages';
+import { parseLocatorUsageQuery } from '#shared/locator-usages.types';
 import { buildFixPlan } from '~~/server/utils/fix-plan';
 import { findFixedBefore } from '~~/server/utils/cluster-memory';
 import { fixPlanToMarkdown } from '#shared/fix-plan-markdown';
@@ -49,6 +51,7 @@ import {
 import {
   listProjects,
   getProject,
+  listKeptRuns,
   getProjectAiStepCoverage,
   getProjectPerformance,
   getProjectTestCases,
@@ -65,7 +68,13 @@ import {
   getProjectSpecHealth,
 } from '#shared/handlers/projects';
 import { listTags, createTag, updateTag, deleteTag } from '#shared/handlers/tags';
-import { listProjectMarkers, createMarker, updateMarker, deleteMarker } from '#shared/handlers/markers';
+import {
+  listProjectMarkers,
+  createMarker,
+  updateMarker,
+  deleteMarker,
+  markerRunBelongsToProject,
+} from '#shared/handlers/markers';
 import {
   listProjectTestFunctions,
   createTestFunction,
@@ -197,6 +206,7 @@ import {
   getRecentTestRuns,
   getTestRunSummary,
   patchTestRun,
+  parseTestRunPatch,
   getNetworkRequests,
   getFailureGroups,
   computeRegressionContextForRun,
@@ -281,6 +291,13 @@ interface RouteEntry {
   method: HttpMethod;
   pattern: RegExp;
   handler: (matches: RegExpMatchArray, body?: unknown, query?: URLSearchParams, ctx?: DemoCtx) => Promise<unknown>;
+}
+
+/** Mirrors the server's role check: no acting user means auth is off, which acts as an administrator. */
+async function demoActingUserIsAdmin(db: Awaited<ReturnType<typeof getDemoDb>>, ctx?: DemoCtx): Promise<boolean> {
+  if (!ctx?.actingUserId) return true;
+  const rows = await db.select({ role: users.role }).from(users).where(eq(users.id, ctx.actingUserId));
+  return !rows[0] || rows[0].role === Role.ADMINISTRATOR;
 }
 
 /**
@@ -654,9 +671,18 @@ const routes: RouteEntry[] = [
     pattern: /^\/api\/test-runs\/(\d+)$/,
     handler: async (m, body, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'run', +m[1]!);
-      const b = body as { label?: string | null };
-      if (b.label === undefined) throw demoHttpError(400, 'No fields to update');
-      return patchTestRun(await getDemoDb(), +m[1]!, b.label);
+      const patch = parseTestRunPatch(body);
+      if (typeof patch === 'string') throw demoHttpError(400, patch);
+      const db = await getDemoDb();
+      if (patch.keep === false && !(await demoActingUserIsAdmin(db, ctx))) {
+        throw demoHttpError(403, 'Only an administrator can release a kept run');
+      }
+      try {
+        return await patchTestRun(db, +m[1]!, patch, { userId: ctx?.actingUserId ?? null });
+      } catch (err) {
+        if (err instanceof Error && err.message === 'Test run not found') throw demoHttpError(404, err.message);
+        throw err;
+      }
     },
   },
   {
@@ -1097,6 +1123,16 @@ const routes: RouteEntry[] = [
     },
   },
   {
+    method: 'GET',
+    pattern: /^\/api\/test-run-cases\/(\d+)\/locators$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'execution', +m[1]!);
+      const result = await getExecutionLocators(await getDemoDb(), +m[1]!);
+      if (!result) throw demoHttpError(404, 'Test run case not found');
+      return result;
+    },
+  },
+  {
     method: 'POST',
     pattern: /^\/api\/test-run-cases\/(\d+)\/locator-pick$/,
     handler: async (m, body, _q, ctx) => {
@@ -1259,6 +1295,16 @@ const routes: RouteEntry[] = [
   },
   { method: 'DELETE', pattern: /^\/api\/tags\/(\d+)$/, handler: async (m) => deleteTag(await getDemoDb(), +m[1]!) },
 
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/kept-runs$/,
+    handler: async (m, _b, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const limit = Number(q?.get('limit')) || undefined;
+      return listKeptRuns(await getDemoDb(), +m[1]!, { limit });
+    },
+  },
+
   // Markers (project timeline)
   {
     method: 'GET',
@@ -1279,6 +1325,7 @@ const routes: RouteEntry[] = [
         category?: string;
         environment?: string | null;
         description?: string | null;
+        runId?: number | string | null;
       };
       const label = typeof b.label === 'string' ? b.label : '';
       if (label.length < 1 || label.length > 120)
@@ -1291,12 +1338,21 @@ const routes: RouteEntry[] = [
       if (b.description != null && b.description.length > 2000) {
         throw demoHttpError(400, 'description must be at most 2000 characters');
       }
-      return createMarker(await getDemoDb(), +m[1]!, {
+      const runId = b.runId == null || b.runId === '' ? null : Number(b.runId);
+      if (runId !== null && (!Number.isInteger(runId) || runId <= 0)) {
+        throw demoHttpError(400, 'runId must be a positive integer');
+      }
+      const db = await getDemoDb();
+      if (runId && !(await markerRunBelongsToProject(db, +m[1]!, runId))) {
+        throw demoHttpError(400, 'runId must be a run of this project');
+      }
+      return createMarker(db, +m[1]!, {
         label,
         occurredAt,
         category: b.category,
         environment: b.environment ?? null,
         description: b.description ?? null,
+        runId,
       });
     },
   },
@@ -1319,6 +1375,26 @@ const routes: RouteEntry[] = [
     method: 'DELETE',
     pattern: /^\/api\/markers\/(\d+)$/,
     handler: async (m) => deleteMarker(await getDemoDb(), +m[1]!),
+  },
+
+  // Locator index: which tests use a locator
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/locator-usages$/,
+    handler: async (m, _b, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const parsed = parseLocatorUsageQuery(q?.get('match'), q?.get('value'));
+      if ('error' in parsed) throw demoHttpError(400, parsed.error);
+      return getLocatorUsages(await getDemoDb(), +m[1]!, parsed.match, parsed.value);
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/projects\/(\d+)\/locator-usages\/rebuild$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      return backfillLocatorUsages(await getDemoDb(), +m[1]!);
+    },
   },
 
   // Test function catalog (recorder codegen matching)
@@ -2091,7 +2167,8 @@ const routes: RouteEntry[] = [
     // Mirror the server response keys (deletedRuns/spaceReclaim) — the storage
     // page reads deletedRuns for its toast; there is nothing to reclaim in a
     // browser demo.
-    handler: () => Promise.resolve({ success: true, deletedRuns: 0, spaceReclaim: null }),
+    handler: () =>
+      Promise.resolve({ success: true, deletedRuns: 0, keptRunsSkipped: 0, newestRunsSkipped: 0, spaceReclaim: null }),
   },
 ];
 

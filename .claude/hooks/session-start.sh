@@ -24,11 +24,13 @@ npm install --no-audit --fund=false
 echo "[session-start] building the reporter (playwright.config.ts imports it)"
 npm run reporter:build --workspace packages/reporter
 
-# Prefer the browser Playwright pins. When the download is unavailable, fall
-# back to whatever Chromium the image already provides and tell Playwright
-# about it via the repo's PLAYWRIGHT_CHROMIUM_EXECUTABLE hook.
+# Prefer the browser Playwright pins: the full Chromium as well as the headless
+# shell, because the extension's specs load an unpacked extension, which only a
+# full browser can. When the download is unavailable, fall back to whatever
+# Chromium the image already provides and tell Playwright about it via the
+# repo's PLAYWRIGHT_CHROMIUM_EXECUTABLE hook.
 echo "[session-start] resolving a Chromium for Playwright"
-if npx --yes playwright install chromium --only-shell >/dev/null 2>&1; then
+if npx --yes playwright install chromium >/dev/null 2>&1; then
   echo "[session-start] using the pinned Playwright Chromium"
 else
   found=""

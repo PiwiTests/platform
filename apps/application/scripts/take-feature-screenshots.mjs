@@ -286,6 +286,41 @@ let footerExecId = 0;
 const SCENES = [
   // ── Report artifacts (gitignored `.screens/`) ─────────────────────────────
   {
+    name: 'test-case-locators',
+    description:
+      'Test case page: the Locators section, from the latest execution, with how many tests share each chain',
+    route: '/test-cases/1',
+    viewport: { width: 1280, height: 1800 },
+    async run({ page, shoot, settle }) {
+      await page
+        .locator('[data-shot="execution-locators"] ol')
+        .waitFor({ timeout: 15000 })
+        .catch(() => {});
+      await settle();
+      await shoot(undefined, { of: '[data-shot="test-case-locators"]', pad: 12 });
+    },
+  },
+  {
+    name: 'locator-usage-drawer',
+    description: 'Who uses this? drawer: the call sites and tests that use a locator, with the command that runs them',
+    route: '/test-run-cases/711',
+    viewport: { width: 1280, height: 1000 },
+    async run({ page, shoot, settle, openTab }) {
+      await openTab('Locators');
+      const card = page.locator('[data-shot="execution-locators"]');
+      await card
+        .getByRole('button', { name: /tests?$/ })
+        .first()
+        .click();
+      const drawer = page.locator('[data-shot="locator-usage-drawer"]');
+      await drawer.getByText(/ call sites?$/).waitFor({ timeout: 15000 });
+      await page.getByRole('button', { name: /^Run these/ }).click();
+      await drawer.getByText('Run them').waitFor({ timeout: 15000 });
+      await settle();
+      await shoot();
+    },
+  },
+  {
     name: 'scenario-gaps-tab',
     description: 'Gaps tab: gaps and findings grouped by feature, ranked, with class, factors and inbox verbs',
     route: '/projects/1?tab=gaps',
@@ -399,6 +434,23 @@ const SCENES = [
   },
 
   // ── Docs illustrations (committed) ────────────────────────────────────────
+  {
+    name: 'execution-locators',
+    description: 'Execution Locators tab: every locator the test used, in order, with how many tests share each chain',
+    tags: ['docs'],
+    out: 'docs',
+    route: '/test-run-cases/711',
+    viewport: { width: 1280, height: 1400 },
+    async run({ page, shoot, settle, openTab }) {
+      await openTab('Locators');
+      await page
+        .locator('[data-shot="execution-locators"] ol')
+        .waitFor({ timeout: 15000 })
+        .catch(() => {});
+      await settle();
+      await shoot(undefined, { of: '[data-shot="evidence-card"]', pad: 12 });
+    },
+  },
   {
     name: 'integrations-settings',
     description: 'Settings → Integrations: the Jira card with a connected system and a test button',
@@ -669,6 +721,69 @@ const SCENES = [
   },
 
   // ── Feature states (report artifacts) ─────────────────────────────────────
+  {
+    name: 'run-kept',
+    description: 'Run page of a kept run: the Kept mark in the header and who kept it, in Details',
+    // Seeded run #1 is the v2.4.0 release run, kept by its release marker.
+    route: '/test-runs/1',
+    viewport: { width: 1280, height: 520 },
+    async run({ page, shoot, settle }) {
+      await page.locator('[data-shot="run-kept"]').waitFor();
+      await shoot('header', { of: '[data-shot="run-header"]', pad: 8 });
+      await page.getByRole('button', { name: 'Details' }).click();
+      await settle();
+      await shoot('details');
+    },
+  },
+  {
+    name: 'run-keep-modal',
+    description: 'Run page menu: Keep forever… asks for an optional reason',
+    route: '/test-runs/2',
+    viewport: { width: 1280, height: 720 },
+    async run({ page, shoot, settle }) {
+      await page.getByRole('button', { name: 'More actions' }).click();
+      await page.getByRole('menuitem', { name: 'Keep forever…' }).click();
+      await page.getByRole('dialog', { name: 'Keep run #2 forever' }).waitFor();
+      await settle();
+      await shoot();
+    },
+  },
+  {
+    name: 'kept-runs-table',
+    description: 'Project runs table: lock on kept runs, and the Kept runs only view reaching past the loaded window',
+    route: '/projects/1',
+    viewport: { width: 1280, height: 1400 },
+    async run({ page, shoot, settle }) {
+      await page.locator('[data-shot="kept-runs-toggle"]').waitFor();
+      await shoot('all', { of: '[data-shot="runs-table"]', pad: 8 });
+      await page.locator('[data-shot="kept-runs-toggle"]').click();
+      await settle();
+      await shoot('kept-only', { of: '[data-shot="runs-table"]', pad: 8 });
+    },
+  },
+  {
+    name: 'kept-runs-table-mobile',
+    description: 'Project runs cards at phone width: the lock on kept runs and the Kept runs only toggle',
+    route: '/projects/1',
+    viewport: { width: 390, height: 1400 },
+    async run({ page, shoot, settle }) {
+      await page.locator('[data-shot="kept-runs-toggle"]').waitFor();
+      await page.locator('[data-shot="kept-runs-toggle"]').click();
+      await settle();
+      await shoot(undefined, { of: '[data-shot="runs-table"]', pad: 4 });
+    },
+  },
+  {
+    name: 'kept-runs-storage',
+    description: 'Settings › Storage cleanup card: how many runs are kept and what their files hold',
+    route: '/settings/storage',
+    viewport: { width: 1280, height: 1600 },
+    async run({ page, shoot }) {
+      await page.locator('[data-shot="kept-runs-note"]').waitFor();
+      await shoot(undefined, { of: '[data-shot="cleanup-card"]', pad: 8 });
+    },
+  },
+
   {
     name: 'attempt-diff',
     description: 'Attempts tab: every attempt, and what differed between the failing and passing attempt',

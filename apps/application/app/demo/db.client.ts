@@ -19,6 +19,7 @@ import type { Database as SqlJsDatabase, SqlJsStatic } from 'sql.js';
 import * as initSqlJsLib from 'sql.js';
 import { drizzle } from 'drizzle-orm/sqlite-proxy';
 import * as schema from '~~/server/database/schema.sqlite';
+import { backfillUnindexedProjects } from '~~/server/utils/locator-usages';
 
 const initSqlJs = initSqlJsLib.default || initSqlJsLib;
 
@@ -289,6 +290,13 @@ async function initialize(): Promise<void> {
       }
     },
     { schema },
+  );
+
+  // The server builds each project's locator index from its stored runs at
+  // startup; the demo does the same when its database opens. Projects already
+  // built are marked, so a reopened database skips them.
+  await backfillUnindexedProjects(drizzleDb).catch((e) =>
+    console.warn('[Demo DB] could not build the locator index', e),
   );
 }
 

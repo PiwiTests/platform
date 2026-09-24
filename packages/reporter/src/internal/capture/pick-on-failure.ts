@@ -1,4 +1,5 @@
 import * as path from 'node:path';
+import { locatorCallValues, parseLeafLocatorCall } from '@piwitests/core/locator-chain';
 import type { Page, TestInfo } from '@playwright/test';
 import {
   installPickerOverlay,
@@ -96,101 +97,14 @@ export interface UserPickResult {
 
 const ANSI_RE = /\[[0-9;]*m/g;
 
-/** Skip a single- or double-quoted string starting at `start`; returns the closing-quote index. */
-function endOfString(s: string, start: number): number {
-  const q = s[start];
-  for (let i = start + 1; i < s.length; i++) {
-    if (s[i] === '\\') {
-      i++;
-      continue;
-    }
-    if (s[i] === q) return i;
-  }
-  return s.length - 1;
-}
-
-/** Index of the brace matching the `{` at `start`. */
-function matchBrace(s: string, start: number): number {
-  let depth = 0;
-  for (let i = start; i < s.length; i++) {
-    if (s[i] === '{') depth++;
-    else if (s[i] === '}' && --depth === 0) return i;
-  }
-  return s.length - 1;
-}
-
-/** Parse a Playwright option object literal (`{ name: 'x', level: 2, exact: true }`). */
-function parseOptions(src: string): Record<string, unknown> {
-  const obj: Record<string, unknown> = {};
-  const re = /(\w+)\s*:\s*('(?:\\.|[^'])*'|"(?:\\.|[^"])*"|true|false|-?\d+)/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(src)) !== null) {
-    const key = m[1]!;
-    const raw = m[2]!;
-    if (raw === 'true') obj[key] = true;
-    else if (raw === 'false') obj[key] = false;
-    else if (/^-?\d+$/.test(raw)) obj[key] = Number(raw);
-    else obj[key] = raw.slice(1, -1).replace(/\\(.)/g, '$1');
-  }
-  return obj;
-}
-
-/** Parse the argument list of a single locator call into its ordered args. */
-function parseArgs(inner: string): unknown[] {
-  const args: unknown[] = [];
-  let i = 0;
-  while (i < inner.length) {
-    const c = inner[i]!;
-    if (c === ' ' || c === ',') {
-      i++;
-      continue;
-    }
-    if (c === "'" || c === '"') {
-      const end = endOfString(inner, i);
-      args.push(inner.slice(i + 1, end).replace(/\\(.)/g, '$1'));
-      i = end + 1;
-      continue;
-    }
-    if (c === '{') {
-      const end = matchBrace(inner, i);
-      args.push(parseOptions(inner.slice(i, end + 1)));
-      i = end + 1;
-      continue;
-    }
-    i++; // regex or other token — not needed for identity
-  }
-  return args;
-}
-
 /**
- * The leaf call of a (possibly chained) locator expression — the innermost
- * call identifies the resolved element, mirroring the server's
- * `extractLeafSelector`. Splits on top-level `).`, quote-aware.
+ * Parse a Playwright locator expression into `{ method, args }` for its leaf —
+ * the last locating call, which identifies the resolved element, mirroring the
+ * server's `extractLeafSelector`. Exported for tests.
  */
-function leafExpression(expr: string): string {
-  let depth = 0;
-  let leafStart = 0;
-  for (let i = 0; i < expr.length - 1; i++) {
-    const c = expr[i]!;
-    if (c === "'" || c === '"') {
-      i = endOfString(expr, i);
-      continue;
-    }
-    if (c === '(') depth++;
-    else if (c === ')') {
-      depth--;
-      if (depth === 0 && expr[i + 1] === '.') leafStart = i + 2;
-    }
-  }
-  return expr.slice(leafStart);
-}
-
-/** Parse a Playwright locator expression into `{ method, args }` (leaf of any chain). Exported for tests. */
 export function parseLeafLocatorExpression(rawExpr: string): { method: string; args: unknown[] } | null {
-  const expr = leafExpression(rawExpr.trim());
-  const m = /^([A-Za-z]+)\((.*)\)$/s.exec(expr);
-  if (!m) return null;
-  return { method: m[1]!, args: parseArgs(m[2]!.trim()) };
+  const leaf = parseLeafLocatorCall(rawExpr);
+  return leaf ? { method: leaf.method, args: locatorCallValues(leaf) } : null;
 }
 
 /**

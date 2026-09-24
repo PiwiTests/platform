@@ -1,13 +1,13 @@
 import { getDatabase } from '../../database';
 import { requireAuth } from '../../utils/auth';
-import { deleteRunsOlderThan, reclaimSpace, sweepOrphans } from '../../utils/retention';
+import { deleteRunsOlderThan, reclaimSpace, retentionMinRuns, sweepOrphans } from '../../utils/retention';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Admin'],
     summary: 'Cleanup old test data',
     description:
-      'Deletes test runs older than a specified number of days, including associated files, traces, and reports. Optionally runs a full VACUUM (SQLite) to return freed space to the filesystem. Requires administrator role.',
+      'Deletes test runs older than a specified number of days, including associated files, traces, and reports. Kept runs and the newest PIWI_RETENTION_MIN_RUNS runs of each project are left in place and counted in the response. Optionally runs a full VACUUM (SQLite) to return freed space to the filesystem. Requires administrator role.',
     'x-required-roles': ['administrator'],
     requestBody: {
       content: {
@@ -45,9 +45,17 @@ export default eventHandler(async (event) => {
 
   const db = await getDatabase();
 
-  const { deletedRuns } = await deleteRunsOlderThan(db, olderThanDays);
+  const { deletedRuns, skippedKept, skippedNewest } = await deleteRunsOlderThan(db, olderThanDays, {
+    keepNewestPerProject: retentionMinRuns(),
+  });
   await sweepOrphans(db);
   const space = await reclaimSpace(db, { full: body?.vacuum === true });
 
-  return { success: true, deletedRuns, spaceReclaim: space.note };
+  return {
+    success: true,
+    deletedRuns,
+    keptRunsSkipped: skippedKept,
+    newestRunsSkipped: skippedNewest,
+    spaceReclaim: space.note,
+  };
 });

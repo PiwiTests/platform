@@ -160,51 +160,49 @@ export async function listProjects(db: DrizzleDB, scope: ProjectScope = 'all') {
 
 // ─── getProject ──────────────────────────────────────────────────
 
-export async function getProject(db: DrizzleDB, id: number, options?: { runLimit?: number }) {
-  // Bounds the run list (and the charts derived from it) — projects grow
-  // unboundedly, so an uncapped select scales with total history.
-  const runLimit = Math.min(Math.max(options?.runLimit ?? 200, 1), 1000);
+/** The run-list columns: everything the table shows, no wide JSON besides the metadata it slims. */
+const RUN_SUMMARY_COLUMNS = {
+  id: testRuns.id,
+  projectId: testRuns.projectId,
+  status: testRuns.status,
+  startTime: testRuns.startTime,
+  duration: testRuns.duration,
+  totalTests: testRuns.totalTests,
+  passedTests: testRuns.passedTests,
+  failedTests: testRuns.failedTests,
+  skippedTests: testRuns.skippedTests,
+  didNotRunTests: testRuns.didNotRunTests,
+  flakyTests: testRuns.flakyTests,
+  avgTestDuration: testRuns.avgTestDuration,
+  p90TestDuration: testRuns.p90TestDuration,
+  shardTotal: testRuns.shardTotal,
+  shardsFinished: testRuns.shardsFinished,
+  environment: testRuns.environment,
+  branch: testRuns.branch,
+  label: testRuns.label,
+  instanceId: testRuns.instanceId,
+  playwrightVersion: testRuns.playwrightVersion,
+  reporterVersion: testRuns.reporterVersion,
+  isFullRun: testRuns.isFullRun,
+  filterDetails: testRuns.filterDetails,
+  metadata: testRuns.metadata,
+  keptAt: testRuns.keptAt,
+  keepSource: testRuns.keepSource,
+  keepReason: testRuns.keepReason,
+  createdAt: testRuns.createdAt,
+  updatedAt: testRuns.updatedAt,
+};
 
-  const projectResults: any[] = await db.select().from(projects).where(eq(projects.id, id));
-  const project = projectResults[0];
+/** Clamp a requested run-list size to 1–1000, 200 by default. */
+function clampRunLimit(limit: number | undefined): number {
+  return Math.min(Math.max(limit ?? 200, 1), 1000);
+}
 
-  if (!project) throw new Error('Project not found');
-
-  // Select only the columns needed for the run list — omit wide JSON columns
-  const runs: any[] = await db
-    .select({
-      id: testRuns.id,
-      projectId: testRuns.projectId,
-      status: testRuns.status,
-      startTime: testRuns.startTime,
-      duration: testRuns.duration,
-      totalTests: testRuns.totalTests,
-      passedTests: testRuns.passedTests,
-      failedTests: testRuns.failedTests,
-      skippedTests: testRuns.skippedTests,
-      didNotRunTests: testRuns.didNotRunTests,
-      flakyTests: testRuns.flakyTests,
-      avgTestDuration: testRuns.avgTestDuration,
-      p90TestDuration: testRuns.p90TestDuration,
-      shardTotal: testRuns.shardTotal,
-      shardsFinished: testRuns.shardsFinished,
-      environment: testRuns.environment,
-      branch: testRuns.branch,
-      label: testRuns.label,
-      instanceId: testRuns.instanceId,
-      playwrightVersion: testRuns.playwrightVersion,
-      reporterVersion: testRuns.reporterVersion,
-      isFullRun: testRuns.isFullRun,
-      filterDetails: testRuns.filterDetails,
-      metadata: testRuns.metadata,
-      createdAt: testRuns.createdAt,
-      updatedAt: testRuns.updatedAt,
-    })
-    .from(testRuns)
-    .where(eq(testRuns.projectId, id))
-    .orderBy(desc(testRuns.startTime))
-    .limit(runLimit);
-
+/**
+ * Shape run-list rows for the runs table: attach each run's reports and
+ * browsers, and slim the metadata JSON down to the SCM branch and commit.
+ */
+async function toRunSummaries(db: DrizzleDB, runs: any[]) {
   // Fetch reports for all runs in a single query
   const runIds: number[] = runs.map((r: any) => r.id);
   const reportResults: any[] =
@@ -244,6 +242,37 @@ export async function getProject(db: DrizzleDB, id: number, options?: { runLimit
     browsersByRunId.set(row.testRunId, list);
   }
 
+  return runs.map((r: any) => {
+    // Slim the wide metadata JSON down to just the SCM branch/commit shown in the run list
+    const scm = (r.metadata as { scm?: { branch?: string | null; commit?: string | null } } | null)?.scm;
+    return {
+      ...r,
+      isFullRun: r.isFullRun === 1,
+      metadata: scm?.branch || scm?.commit ? { scm: { branch: scm.branch ?? null, commit: scm.commit ?? null } } : null,
+      reports: reportsByRunId.get(r.id) ?? [],
+      browsers: browsersByRunId.get(r.id) ?? [],
+    };
+  });
+}
+
+export async function getProject(db: DrizzleDB, id: number, options?: { runLimit?: number }) {
+  // Bounds the run list (and the charts derived from it) — projects grow
+  // unboundedly, so an uncapped select scales with total history.
+  const runLimit = clampRunLimit(options?.runLimit);
+
+  const projectResults: any[] = await db.select().from(projects).where(eq(projects.id, id));
+  const project = projectResults[0];
+
+  if (!project) throw new Error('Project not found');
+
+  // Select only the columns needed for the run list — omit wide JSON columns
+  const runs: any[] = await db
+    .select(RUN_SUMMARY_COLUMNS)
+    .from(testRuns)
+    .where(eq(testRuns.projectId, id))
+    .orderBy(desc(testRuns.startTime))
+    .limit(runLimit);
+
   // Get tags for this project
   const projectTagRows: any[] = await db
     .select({ tag: tags })
@@ -258,19 +287,26 @@ export async function getProject(db: DrizzleDB, id: number, options?: { runLimit
     // stored "declined"/"enabled" rather than always reading "instance default".
     capabilities: parseProjectDecisions(project.capabilities ?? null),
     tags: projectTagRows.map((r: any) => r.tag),
-    testRuns: runs.map((r: any) => {
-      // Slim the wide metadata JSON down to just the SCM branch/commit shown in the run list
-      const scm = (r.metadata as { scm?: { branch?: string | null; commit?: string | null } } | null)?.scm;
-      return {
-        ...r,
-        isFullRun: r.isFullRun === 1,
-        metadata:
-          scm?.branch || scm?.commit ? { scm: { branch: scm.branch ?? null, commit: scm.commit ?? null } } : null,
-        reports: reportsByRunId.get(r.id) ?? [],
-        browsers: browsersByRunId.get(r.id) ?? [],
-      };
-    }),
+    testRuns: await toRunSummaries(db, runs),
   };
+}
+
+// ─── listKeptRuns ────────────────────────────────────────────────
+
+/**
+ * A project's kept runs, newest first, in the run-list shape. Kept runs are
+ * mostly old ones, past the window `getProject` loads, so they list on their own.
+ */
+export async function listKeptRuns(db: DrizzleDB, projectId: number, options?: { limit?: number }) {
+  const where = and(eq(testRuns.projectId, projectId), isNotNull(testRuns.keptAt));
+  const runs: any[] = await db
+    .select(RUN_SUMMARY_COLUMNS)
+    .from(testRuns)
+    .where(where)
+    .orderBy(desc(testRuns.startTime))
+    .limit(clampRunLimit(options?.limit));
+  const [total] = await db.select({ n: count() }).from(testRuns).where(where);
+  return { items: await toRunSummaries(db, runs), total: Number(total?.n ?? 0) };
 }
 
 // ─── createProject ───────────────────────────────────────────────

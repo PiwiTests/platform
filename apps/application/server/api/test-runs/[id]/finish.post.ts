@@ -9,6 +9,7 @@ import { validateAndReviveRun } from '../../../utils/revive-run';
 import { readShardTokensFromMeta, removeStoredShardToken } from '../../../utils/shard-tokens';
 import { runFinalizeSideEffects } from '../../../utils/run-finalize-side-effects';
 import { sumFailedAndTimedOut } from '#shared/utils/test-counts';
+import { applyReporterKeep } from '#shared/handlers/run-keep';
 
 defineRouteMeta({
   openAPI: {
@@ -78,6 +79,7 @@ export default eventHandler(async (event) => {
   const shardTokens = isSharded ? readShardTokensFromMeta(testRun.metadata) : undefined;
   const isShardToken = shardTokens ? (token: string) => shardTokens.has(token) : undefined;
   await validateAndReviveRun(db, id, testRun, body.streamToken, isShardToken);
+  await applyReporterKeep(db, id, body.keep);
 
   // Determine final status
   const status = body.status ?? 'failed';
