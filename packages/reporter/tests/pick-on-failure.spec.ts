@@ -140,6 +140,13 @@ describe('parseLeafLocatorExpression', () => {
     ).toEqual({ method: 'getByRole', args: ['button', { name: 'Delete' }] });
   });
 
+  it('skips narrowing calls: the leaf is the last locating call', () => {
+    expect(parseLeafLocatorExpression(`getByRole('row', { name: 'Acme' }).getByRole('button').first()`)).toEqual({
+      method: 'getByRole',
+      args: ['button'],
+    });
+  });
+
   it('unescapes quotes inside string args', () => {
     expect(parseLeafLocatorExpression(`getByText('It\\'s here')`)).toEqual({ method: 'getByText', args: ["It's here"] });
   });

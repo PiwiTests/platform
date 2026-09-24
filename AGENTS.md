@@ -127,6 +127,9 @@ Run typecheck, lint and tests **once at the end** before the final commit — no
 - Full TypeScript; Nuxt 4 conventions and Nuxt UI components in the app.
 - **American English** spelling throughout ("initialize", "organize", "color").
 - **Extract a shared component/helper** when the same block exceeds ~10 lines and appears more than once.
+- **One locator parser.** Playwright locator expressions (`getByRole('form').getByLabel('Country')`) are parsed
+  only by `@piwitests/core/locator-chain` — the app, the reporter and the extension all build on it. Adapt its output
+  to a local shape; never hand-write another parser.
 
 ### Comments
 

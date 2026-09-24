@@ -7,6 +7,7 @@ import {
   alternativeUsesName,
   CONVENTION_STABILITY_FLOOR,
   locatorExpression,
+  parseLocatorExpression,
   computeNarrowingSuggestion,
 } from '#shared/locator-healing';
 import type { RankedLocator } from '#shared/locator-healing.types';
@@ -343,5 +344,39 @@ describe('computeNarrowingSuggestion', () => {
     expect(computeNarrowingSuggestion({ ...base, visibleMatchCount: 2 })).toBeNull();
     expect(computeNarrowingSuggestion({ ...base, visibleMatchCount: 0 })).toBeNull();
     expect(computeNarrowingSuggestion({ ...base, visibleMatchCount: null })).toBeNull();
+  });
+});
+
+describe('parseLocatorExpression', () => {
+  test('keys the positional argument and keeps getByRole options except exact', () => {
+    expect(parseLocatorExpression(`getByRole('button', { name: 'Submit', exact: true, level: 2 })`)).toEqual({
+      method: 'getByRole',
+      args: { role: 'button', name: 'Submit', level: 2 },
+    });
+    expect(parseLocatorExpression(`getByTestId('submit-btn')`)).toEqual({
+      method: 'getByTestId',
+      args: { testId: 'submit-btn' },
+    });
+    expect(parseLocatorExpression(`locator('.my-class')`)).toEqual({
+      method: 'locator',
+      args: { selector: '.my-class' },
+    });
+  });
+
+  test('takes the leaf of a chain and keeps regexes as text', () => {
+    expect(parseLocatorExpression(`getByRole('row', { name: 'Acme' }).getByText(/total/i).first()`)).toEqual({
+      method: 'getByText',
+      args: { text: '/total/i' },
+    });
+  });
+
+  test('round-trips through locatorExpression', () => {
+    const expr = `getByRole('heading', { name: 'Orders', level: 2 })`;
+    const parsed = parseLocatorExpression(expr)!;
+    expect(locatorExpression(parsed.method, parsed.args)).toBe(expr);
+  });
+
+  test('null for text that is not a locator', () => {
+    expect(parseLocatorExpression('not a locator')).toBeNull();
   });
 });

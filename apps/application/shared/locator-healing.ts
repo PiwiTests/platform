@@ -5,6 +5,7 @@
 import type { RankedLocator, LocatorFixRecommendation, NarrowingSuggestion } from './locator-healing.types';
 import { sha256Hex } from './utils/hash';
 import { compareVersions } from './piwi-env-vars';
+import { locatorCallValues, parseLeafLocatorCall } from '#shared/locator-chain';
 
 /** Playwright's first release with `locator.visible()`. */
 const VISIBLE_MIN_VERSION = '1.63';
@@ -245,6 +246,35 @@ const LOCATOR_PRIMARY_ARG: Record<string, string> = {
   locator: 'selector',
   'page.locator': 'selector',
 };
+
+/**
+ * Parse a locator expression into the failing locator's `{ method, args }`,
+ * keyed as {@link locatorExpression} renders it back: the positional argument
+ * under its primary key (`testId`, `role`, `text`, …) and, for `getByRole`, the
+ * options other than `exact`. A chained expression yields its leaf — the last
+ * locating call. Regexes are kept as their `/source/flags` text, for display
+ * only: matching uses the locator signature, not these args. Null when the
+ * expression does not parse.
+ *
+ *   getByRole('button', { name: 'Submit' }) → { method: 'getByRole', args: { role: 'button', name: 'Submit' } }
+ */
+export function parseLocatorExpression(expr: string): { method: string; args: Record<string, unknown> } | null {
+  const leaf = parseLeafLocatorCall(expr);
+  if (!leaf) return null;
+  const values = locatorCallValues(leaf, { regexAsText: true });
+  const primary = LOCATOR_PRIMARY_ARG[leaf.method];
+  if (!primary) return { method: leaf.method, args: { args: values } };
+
+  const args: Record<string, unknown> = {};
+  if (values[0] !== undefined && typeof values[0] !== 'object') args[primary] = values[0];
+  const options = values.find((v): v is Record<string, unknown> => typeof v === 'object' && v !== null);
+  if (leaf.method === 'getByRole' && options) {
+    for (const [key, value] of Object.entries(options)) {
+      if (key !== 'exact') args[key] = value;
+    }
+  }
+  return { method: leaf.method, args };
+}
 
 /** A parsed arg value as Playwright source: quoted string, bare literal, or regex text as-is. */
 function locatorArgLiteral(value: unknown): string {

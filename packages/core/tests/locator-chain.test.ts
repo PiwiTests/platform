@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'vitest';
 import {
   canonicalLocator,
+  locatorCallValues,
+  parseLeafLocatorCall,
   locatorScopes,
   locatorTarget,
   parseLocatorChain,
@@ -69,5 +71,30 @@ describe('locatorTarget and locatorScopes', () => {
     const chain = parseLocatorChain("getByTestId('order-total').first()");
     expect(locatorTarget(chain)).toBe("getByTestId('order-total')");
     expect(locatorScopes(chain)).toEqual([]);
+  });
+});
+
+describe('parseLeafLocatorCall and locatorCallValues', () => {
+  test('the leaf is the last locating call, past narrowing calls', () => {
+    const leaf = parseLeafLocatorCall(
+      "getByRole('row', { name: 'Acme' }).getByRole('button', { name: 'Delete' }).first()",
+    );
+    expect(leaf && locatorCallValues(leaf)).toEqual(['button', { name: 'Delete' }]);
+    expect(leaf?.method).toBe('getByRole');
+  });
+
+  test('values keep options and drop nested locators', () => {
+    const leaf = parseLeafLocatorCall("locator('.field', { has: getByRole('combobox'), hasText: 'Country' })");
+    expect(leaf && locatorCallValues(leaf)).toEqual(['.field', { hasText: 'Country' }]);
+  });
+
+  test('regexes are dropped, or kept as text for display', () => {
+    const leaf = parseLeafLocatorCall("getByRole('button', { name: /pay/i })")!;
+    expect(locatorCallValues(leaf)).toEqual(['button', {}]);
+    expect(locatorCallValues(leaf, { regexAsText: true })).toEqual(['button', { name: '/pay/i' }]);
+  });
+
+  test('null for text that is not a locator', () => {
+    expect(parseLeafLocatorCall('not a locator')).toBeNull();
   });
 });

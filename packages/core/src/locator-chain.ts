@@ -322,3 +322,47 @@ export function locatorScopes(chain: LocatorChain): string[] {
   }
   return out;
 }
+
+/**
+ * The call that picks the final element of an expression — its last locating
+ * call, so `getByRole('row', { name: 'Acme' }).getByRole('button').first()` gives
+ * `getByRole('button')`. Null when the expression does not parse.
+ */
+export function parseLeafLocatorCall(expr: string): LocatorCall | null {
+  const chain = tryParseLocatorChain(expr);
+  if (!chain) return null;
+  for (let i = chain.calls.length - 1; i >= 0; i--) {
+    if (LOCATING_METHODS.has(chain.calls[i]!.method)) return chain.calls[i]!;
+  }
+  return null;
+}
+
+/**
+ * A call's arguments as the plain values a test passes: strings, numbers,
+ * booleans and option objects, so `getByRole('button', { name: 'Pay' })` gives
+ * `['button', { name: 'Pay' }]`. Nested locators are left out. Regexes are left
+ * out too, or kept as their `/source/flags` text with `regexAsText`, for display.
+ */
+export function locatorCallValues(call: LocatorCall, opts: { regexAsText?: boolean } = {}): unknown[] {
+  const value = (arg: LocatorArg): unknown => {
+    switch (arg.type) {
+      case 'string':
+      case 'number':
+      case 'boolean':
+        return arg.value;
+      case 'regex':
+        return opts.regexAsText ? `/${arg.source}/${arg.flags}` : undefined;
+      case 'object': {
+        const out: Record<string, unknown> = {};
+        for (const [key, v] of arg.entries) {
+          const plain = value(v);
+          if (plain !== undefined) out[key] = plain;
+        }
+        return out;
+      }
+      case 'chain':
+        return undefined;
+    }
+  };
+  return call.args.map(value).filter((v) => v !== undefined);
+}
