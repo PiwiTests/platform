@@ -69,7 +69,8 @@
         "language": "en-US"
       },
       "nsis": {
-        "installMode": "currentUser"
+        "installMode": "currentUser",
+        "installerHooks": "windows/installer-hooks.nsh"
       }
     }
   }
