@@ -286,6 +286,31 @@ let footerExecId = 0;
 const SCENES = [
   // ── Report artifacts (gitignored `.screens/`) ─────────────────────────────
   {
+    name: 'analytics-scope-bar',
+    description:
+      'Analytics scope bar: the period picker open, with comparison and buckets, the branch policy and the Tests filter',
+    route: '/analytics?period=last-90d',
+    viewport: { width: 1280, height: 1000 },
+    async run({ page, shoot, settle }) {
+      await page.getByTestId('analytics-period').waitFor({ timeout: 60000 });
+      await settle();
+      await page.getByTestId('analytics-period').click();
+      await page.getByText('Compare with').waitFor({ timeout: 15000 });
+      await shoot();
+    },
+  },
+  {
+    name: 'analytics-scope-bar-mobile',
+    description: 'Analytics scope bar at 375 px: every control wraps, no horizontal scroll',
+    route: '/analytics',
+    viewport: { width: 375, height: 900 },
+    async run({ page, shoot, settle }) {
+      await page.getByTestId('analytics-scope-line').waitFor({ timeout: 60000 });
+      await settle();
+      await shoot(undefined, { of: '[data-shot="analytics-scope-bar"]', pad: 8 });
+    },
+  },
+  {
     name: 'test-case-locators',
     description:
       'Test case page: the Locators section, from the latest execution, with how many tests share each chain',

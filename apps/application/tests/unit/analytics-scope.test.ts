@@ -117,6 +117,11 @@ describe('the piwi-analytics-scope cookie', () => {
     });
   });
 
+  test('a URI-encoded cookie decodes too', () => {
+    const encoded = encodeURIComponent(JSON.stringify({ days: 7, projectIds: [3] }));
+    expect(decodeScopeCookie(encoded)).toMatchObject({ period: 'last-7d', projectIds: [3] });
+  });
+
   test('All time and garbage', () => {
     expect(decodeScopeCookie(JSON.stringify({ days: 3650 })).period).toBe('all');
     expect(decodeScopeCookie('not json')).toEqual(DEFAULT_ANALYTICS_SCOPE_STATE);

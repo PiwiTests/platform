@@ -77,7 +77,8 @@ export function decodeScopeCookie(raw: unknown): AnalyticsScopeState {
   let value: Record<string, unknown> | null = null;
   if (typeof raw === 'string' && raw) {
     try {
-      value = JSON.parse(raw) as Record<string, unknown>;
+      const text = raw.startsWith('%') ? decodeURIComponent(raw) : raw;
+      value = JSON.parse(text) as Record<string, unknown>;
     } catch {
       value = null;
     }

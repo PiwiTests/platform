@@ -83,12 +83,12 @@ function periodRange(summary: AnalyticsScopeSummary): string {
 </script>
 
 <template>
-  <div class="space-y-2">
+  <div class="space-y-2" data-shot="analytics-scope-bar">
     <FilterBar
       v-model="filterBar"
       :available-environments="availableEnvironments"
       :available-branches="availableBranches ?? []"
-      :branch-placeholder="modelValue.allBranches ? 'All branches' : 'Default branch'"
+      branch-placeholder="Pick branches"
       :show-reset="false"
     >
       <template #leading>
