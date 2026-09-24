@@ -515,6 +515,20 @@ function buildSteps(proj, caseDuration, caseStartMs) {
   return out;
 }
 
+/**
+ * Re-anchor a story's backend log entries onto the request that produced them.
+ * The stories carry one illustrative epoch clock shared by every run, so used
+ * verbatim the entries land wherever that clock sits relative to each run
+ * (minutes to days away from the request). Keep their spacing and put the first
+ * one mid-request, so the timeline's backend lane lines up with its request.
+ */
+function anchorServerLogs(logs, requestStartMs, requestDurationMs) {
+  if (!logs?.length) return null;
+  const first = Math.min(...logs.map((l) => l.timestamp));
+  const at = requestStartMs + Math.round((requestDurationMs ?? 0) / 2);
+  return logs.map((l) => ({ ...l, timestamp: at + (l.timestamp - first) }));
+}
+
 /** Themed network requests for one case (jittered durations; story overrides on failures). */
 function buildNetwork(proj, storyEntry) {
   const base = proj.network.map((req) => ({
@@ -985,7 +999,7 @@ for (const proj of DEMO_PROJECTS) {
             start_time: startTime,
             resource_type: req.resourceType ?? null,
             content_type: req.contentType ?? (req.resourceType === 'document' ? 'text/html' : 'application/json'),
-            server_logs: req.serverLogs ?? null,
+            server_logs: anchorServerLogs(req.serverLogs, startTime, req.duration),
             server_traces: req.serverTraces ?? null,
           });
         }
@@ -2704,6 +2718,8 @@ function collectAnchorSec() {
     for (const e of r.steps || []) bump(e.startTime, 'ms');
     for (const e of r.step_events || []) bump(e.startedAt, 'ms');
     for (const e of r.console_logs || []) bump(e.timestamp, 'ms');
+    for (const e of r.dialogs || []) bump(e.closedAt, 'ms');
+    for (const e of JSON.parse(r.attempts ?? '[]')) bump(e.startedAt, 'ms');
   }
   for (const r of NETWORK_REQUESTS) {
     for (const e of r.server_logs || []) bump(e.timestamp, 'ms');
@@ -2757,11 +2773,20 @@ const REBASE_SQL = [
   `UPDATE project_assignments SET created_at = created_at + ${D_MS};`,
   `UPDATE entity_links SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS};`,
   `UPDATE locator_snapshots SET last_seen_at = last_seen_at + ${D_MS};`,
+  // Test Map tables are defined after ANCHOR_SEC is computed, so they add no
+  // candidates to it; they are all stamped at BASE_START_MS, which the run
+  // timestamps already bound. Nullable columns stay NULL.
+  `UPDATE probes SET probed_at = probed_at + ${D_MS};`,
+  `UPDATE graph_nodes SET last_seen_at = last_seen_at + ${D_MS}, created_at = created_at + ${D_MS}, pruned_at = pruned_at + ${D_MS};`,
+  `UPDATE graph_edges SET last_seen_at = last_seen_at + ${D_MS}, created_at = created_at + ${D_MS};`,
+  `UPDATE scenario_gaps SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS}, accepted_at = accepted_at + ${D_MS}, covered_at = covered_at + ${D_MS}, closed_at = closed_at + ${D_MS};`,
   '',
   '-- Millisecond timestamps embedded in JSON columns',
   shiftJsonMs('test_runs_cases', 'steps', 'startTime'),
   shiftJsonMs('test_runs_cases', 'step_events', 'startedAt'),
   shiftJsonMs('test_runs_cases', 'console_logs', 'timestamp'),
+  shiftJsonMs('test_runs_cases', 'dialogs', 'closedAt'),
+  shiftJsonMs('test_runs_cases', 'attempts', 'startedAt'),
   shiftJsonMs('network_requests', 'server_logs', 'timestamp'),
   '',
   'DROP TABLE _rebase;',
