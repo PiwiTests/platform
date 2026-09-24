@@ -6,7 +6,7 @@
  * RegExp patterns – the same routes the Nuxt server exposes.
  */
 
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import {
   users,
   files,
@@ -17,6 +17,7 @@ import {
   testRunsCases,
   failureClusters,
   failureDiagnoses,
+  graphNodes,
 } from '~~/server/database/schema.sqlite';
 import { Role } from '#shared/types';
 import { NOTIFICATION_EVENTS } from '#shared/notification-events';
@@ -90,6 +91,25 @@ import {
 } from '#shared/handlers/selections';
 import { getSelectionSuggestions } from '#shared/handlers/selection-suggestions';
 import { getSelectionAnalytics } from '#shared/handlers/selection-analytics';
+import {
+  computeScenarioGaps,
+  listScenarioGaps,
+  triageGap,
+  draftScenario,
+  listAcceptedUnwritten,
+} from '#shared/handlers/scenario-gaps';
+import { getFeatureGraph, getFeatureMap, MAX_GRAPH_DEPTH } from '~~/server/utils/feature-graph';
+import { loadDetectorPrecision } from '#shared/handlers/detector-precision';
+import { parseRouteNodeKey } from '#shared/graph';
+import { ingestProjectManifest } from '~~/server/utils/surface-manifest';
+import type { AppManifest, ManifestSource } from '#shared/types';
+import {
+  buildProbePlan,
+  recordProbeResults,
+  DEFAULT_PROBE_BUDGET,
+  type ProbeResultInput,
+} from '#shared/handlers/probes';
+import { computeChangeCoverage } from '#shared/handlers/change-coverage';
 import {
   isBuiltinKey,
   parseRankBy,
@@ -1474,6 +1494,203 @@ const routes: RouteEntry[] = [
       const selection = await getSelection(await getDemoDb(), +m[1]!, decodeURIComponent(m[2]!));
       if (!selection) throw demoHttpError(404, `No selection "${decodeURIComponent(m[2]!)}" in this project`);
       return selection;
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/gaps\/change-coverage$/,
+    handler: async (m, _b, query, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      // An absent `run` means "no run under inspection", not run 0 — parse it to
+      // null so the join reports history reach instead of marking every file
+      // uncovered against a run that never existed.
+      const runRaw = query?.get('run');
+      const runNum = runRaw != null && runRaw !== '' ? Number(runRaw) : null;
+      const runId = runNum != null && Number.isFinite(runNum) ? runNum : null;
+      // The demo has no SCM provider; show a small representative diff so the
+      // uncovered-changes join renders against the seeded reach.
+      return computeChangeCoverage(await getDemoDb(), +m[1]!, {
+        changedFiles: [
+          { filePath: 'src/api/orders.post.ts', additions: 41, deletions: 3 },
+          { filePath: 'src/components/OrderRow.vue', additions: 8, deletions: 2 },
+          { filePath: 'src/utils/rounding.ts', additions: 5, deletions: 1 },
+        ],
+        runId,
+        baseBranch: 'main',
+        tickets: ['PROJ-418'],
+        scmAvailable: true,
+      });
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/projects\/(\d+)\/gaps\/recompute$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const gaps = await computeScenarioGaps(await getDemoDb(), +m[1]!);
+      return { success: true, runsProcessed: 0, gapsUpserted: gaps.upserted, gapsClosed: gaps.closed };
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/surface\/manifest$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const db = await getDemoDb();
+      const nodes = await db
+        .select({ kind: graphNodes.kind, key: graphNodes.key, origin: graphNodes.origin, attrs: graphNodes.attrs })
+        .from(graphNodes)
+        .where(and(eq(graphNodes.projectId, +m[1]!), inArray(graphNodes.origin, ['manifest', 'openapi'])));
+      const routes = nodes
+        .filter((n) => n.kind === 'route')
+        .map((n) => {
+          const { method, pattern } = parseRouteNodeKey(n.key);
+          return {
+            method,
+            pattern,
+            origin: n.origin,
+            responses: (n.attrs as { responses?: number[] } | null)?.responses ?? [],
+          };
+        });
+      const pages = nodes
+        .filter((n) => n.kind === 'page')
+        .map((n) => ({ pattern: n.key, origin: n.origin, name: (n.attrs as { name?: string } | null)?.name ?? null }));
+      return { openApiUrl: null, routes, pages };
+    },
+  },
+  {
+    method: 'PUT',
+    pattern: /^\/api\/projects\/(\d+)\/surface\/manifest$/,
+    handler: async (m, body, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const payload = (body ?? {}) as { source?: ManifestSource; manifest?: AppManifest };
+      const source: ManifestSource = payload.source ?? 'committed';
+      const manifest: AppManifest = payload.manifest ?? {};
+      const ingested = await ingestProjectManifest(await getDemoDb(), +m[1]!, manifest, source);
+      return {
+        success: ingested,
+        routes: manifest.routes?.length ?? 0,
+        pages: manifest.pages?.length ?? 0,
+      };
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/probes\/plan$/,
+    handler: async (m, _b, query, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const rawBudget = query?.get('budget');
+      const budget = rawBudget != null && Number.isFinite(Number(rawBudget)) ? Number(rawBudget) : DEFAULT_PROBE_BUDGET;
+      return buildProbePlan(await getDemoDb(), +m[1]!, { budget });
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/projects\/(\d+)\/probes\/results$/,
+    handler: async (m, body, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const payload = (body ?? {}) as { runId?: number | null; results?: ProbeResultInput[] };
+      const results = Array.isArray(payload.results) ? payload.results : [];
+      const runId = typeof payload.runId === 'number' ? payload.runId : null;
+      const { recorded } = await recordProbeResults(await getDemoDb(), +m[1]!, runId, results);
+      return { success: true, recorded };
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/gaps\/inbox$/,
+    handler: async () => ({ items: await listAcceptedUnwritten(await getDemoDb(), 'all') }),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/gaps\/precision$/,
+    handler: async () => {
+      const db = await getDemoDb();
+      const rows = await db.select({ id: projects.id, name: projects.name }).from(projects);
+      const items = [];
+      for (const p of rows) {
+        const detectors = await loadDetectorPrecision(db, p.id);
+        if (detectors.length > 0) items.push({ projectId: p.id, projectName: p.name, detectors });
+      }
+      return { items };
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/gaps\/precision$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      return { items: await loadDetectorPrecision(await getDemoDb(), +m[1]!) };
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/projects\/(\d+)\/gaps\/(\d+)\/triage$/,
+    handler: async (m, body, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const result = await triageGap(await getDemoDb(), +m[1]!, +m[2]!, (body ?? {}) as any);
+      if ('error' in result) {
+        if (result.error === 'gap-not-found') throw demoHttpError(404, 'Gap not found');
+        throw demoHttpError(400, 'Covering test not found in this project');
+      }
+      return { success: true, status: result.status };
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/projects\/(\d+)\/gaps\/(\d+)\/draft$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const draft = await draftScenario(await getDemoDb(), +m[1]!, +m[2]!);
+      if (!draft) throw demoHttpError(404, 'Gap not found');
+      return draft;
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/graph$/,
+    handler: async (m, _b, query, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const nodeParam = (query?.get('node') ?? '').trim();
+      const sep = nodeParam.indexOf(':');
+      if (sep <= 0) throw demoHttpError(400, 'node must be "kind:key"');
+      const rawDepth = Number(query?.get('depth'));
+      const depth = Number.isFinite(rawDepth) ? Math.min(MAX_GRAPH_DEPTH, Math.max(1, rawDepth)) : 2;
+      return getFeatureGraph(
+        await getDemoDb(),
+        +m[1]!,
+        { kind: nodeParam.slice(0, sep), key: nodeParam.slice(sep + 1) },
+        depth,
+      );
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/feature-map$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      return getFeatureMap(await getDemoDb(), +m[1]!);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/gaps$/,
+    handler: async (m, _b, query, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const num = (v: string | null | undefined) => {
+        const n = Number(v);
+        return Number.isFinite(n) ? n : undefined;
+      };
+      return {
+        items: await listScenarioGaps(await getDemoDb(), +m[1]!, {
+          kind: query?.get('kind') ?? undefined,
+          class: query?.get('class') ?? undefined,
+          detector: query?.get('detector') ?? undefined,
+          status: query?.get('status') ?? undefined,
+          prNumber: num(query?.get('pr')),
+          limit: num(query?.get('limit')),
+        }),
+      };
     },
   },
   {

@@ -69,6 +69,17 @@ export interface PiwiDashboardOptions {
    */
   capturePageState?: boolean;
   /**
+   * Capture a lightweight inventory of each visited page on *passing* runs — the
+   * interactive controls (role + accessible name) and links (name, with the query
+   * and hash stripped from the href) present as the test navigates — so the
+   * dashboard can tell which controls and links the suite exposes but never
+   * exercises. Only names and hrefs are captured, never field values; a page's
+   * controls are read at most once per worker per run. **Defaults to `false`** —
+   * opt in with `capturePageInventory: true` (or `PIWI_CAPTURE_PAGE_INVENTORY=true`).
+   * Automatically disabled when `collectPerformanceMetrics` is `false`.
+   */
+  capturePageInventory?: boolean;
+  /**
    * Capture server-side spans for each API/document request the test makes,
    * read from the `X-Piwi-Trace` response header emitted by a Piwi
    * instrumentation plugin (e.g. `@piwitests/instrumentation-nitro`). The spans show
@@ -88,6 +99,15 @@ export interface PiwiDashboardOptions {
    * Set to `false` (or `PIWI_SAMPLE_ARIA_ON_PASS=false`) to never sample on pass.
    */
   sampleAriaOnPass?: boolean;
+  /**
+   * Upload the application's declared surface at run start: a committed
+   * `piwi.manifest.json` next to the Playwright config, and — when the base URL's
+   * first response carries an instrumentation header — the instrumentation
+   * package's `/__piwi/manifest`. A route or page the manifest declares that no
+   * test reaches becomes a "declared, never hit" gap. Defaults to `true`; set to
+   * `false` (or `PIWI_UPLOAD_MANIFEST=false`) to never upload.
+   */
+  uploadManifest?: boolean;
   /**
    * When installed via `wrapConfig`, default Playwright's own `screenshot` and
    * `trace` options on the top-level `use` block so a failing test keeps a

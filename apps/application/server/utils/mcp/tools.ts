@@ -49,7 +49,15 @@ import {
   type SelectionDefinition,
   type SelectionFormat,
 } from '#shared/selection';
-import { projects, testRuns, testRunsCases, testCases, failureClusters, failureDiagnoses } from '../../database/schema';
+import {
+  projects,
+  testRuns,
+  testRunsCases,
+  testCases,
+  failureClusters,
+  failureDiagnoses,
+  graphEdges,
+} from '../../database/schema';
 import { buildDiagnosisContext, buildClusterDiagnosisContext } from '../ai-context';
 import { stripAnsi } from '#shared/error-fingerprint';
 import { caseHeadline } from '#shared/failure-verdict';
@@ -70,6 +78,10 @@ import { describePageDiff, formatPageDiffSummary } from '#shared/page-diff';
 import { inlineCasePayloads } from '../case-payloads';
 import { selectCaseScreenshots } from '../case-screenshots';
 import { createScmProvider } from '../scm';
+import { readChangeCoverage } from '../scm/change-coverage';
+import { isValidGitRef } from '../scm/refs';
+import { listScenarioGaps, draftScenario } from '#shared/handlers/scenario-gaps';
+import { getFeatureGraph } from '../feature-graph';
 import { resolveAiConfig } from '../ai-provider';
 import { runClusterDiagnosis, isDiagnosisRunning } from '../ai-diagnosis';
 import {
@@ -1992,6 +2004,145 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
         message.toLowerCase().includes('unique') ? 'A function with this name already exists in this module' : message,
       );
     }
+  },
+
+  async get_change_coverage(db, params, ctx) {
+    const projectId = numericParam(params.projectId, 'projectId');
+    assertProject(ctx, projectId);
+    const runId = params.run != null ? numericParam(params.run, 'run') : null;
+    const base = typeof params.base === 'string' ? params.base : null;
+    const head = typeof params.head === 'string' ? params.head : null;
+    // Refs reach SCM API URLs with the project's token — reject traversal.
+    if ((base != null && !isValidGitRef(base)) || (head != null && !isValidGitRef(head))) {
+      throw new Error('Invalid base or head ref');
+    }
+
+    const coverage = await readChangeCoverage(db, projectId, { runId, baseSha: base, headSha: head });
+    return dropNulls({
+      runId: coverage.runId,
+      baseSha: coverage.baseSha,
+      headSha: coverage.headSha,
+      baseBranch: coverage.baseBranch,
+      windowRuns: coverage.windowRuns,
+      scmAvailable: coverage.scmAvailable,
+      totalFiles: coverage.files.length,
+      reachedFiles: coverage.reachedFiles,
+      uncoveredFiles: coverage.uncoveredFiles,
+      tickets: coverage.tickets.map((t) =>
+        dropNulls({
+          ticket: t.ticket,
+          files: t.files.map((f) =>
+            dropNulls({
+              filePath: f.filePath,
+              additions: f.additions,
+              deletions: f.deletions,
+              reachedInRun: f.reachedInRun,
+              reachedCountHistory: f.reachedCountHistory,
+              reachingTestCount: f.reachingTestCount,
+            }),
+          ),
+        }),
+      ),
+    });
+  },
+
+  async list_scenario_gaps(db, params, ctx) {
+    const projectId = numericParam(params.projectId, 'projectId');
+    assertProject(ctx, projectId);
+    const gapClass = typeof params.class === 'string' ? params.class : undefined;
+    const feature = typeof params.feature === 'string' ? params.feature : undefined;
+    const minScore = params.minScore != null ? numericParam(params.minScore, 'minScore') : undefined;
+    const pr = params.pr != null ? numericParam(params.pr, 'pr') : undefined;
+    const limit = params.limit != null ? clampPageSize(params.limit) : 20;
+
+    let gaps = await listScenarioGaps(db, projectId, {
+      class: gapClass,
+      minScore,
+      prNumber: pr,
+      limit: feature ? 200 : limit,
+    });
+
+    // Feature filter: keep gaps whose subject node is grouped under the feature.
+    if (feature) {
+      const grouped = await db
+        .select({ toKind: graphEdges.toKind, toKey: graphEdges.toKey })
+        .from(graphEdges)
+        .where(
+          and(
+            eq(graphEdges.projectId, projectId),
+            eq(graphEdges.kind, 'groups'),
+            eq(graphEdges.fromKind, 'feature'),
+            eq(graphEdges.fromKey, feature),
+          ),
+        );
+      const groupedKeys = new Set(grouped.map((g) => `${g.toKind}:${g.toKey}`));
+      // Match on the gap's typed subject, not its raw dedupe key: a success-only
+      // gap keys on a bare route key, so comparing the key directly drops it.
+      gaps = gaps.filter((g) => groupedKeys.has(`${g.subject.kind}:${g.subject.key}`)).slice(0, limit);
+    }
+
+    return {
+      items: gaps.map((g) =>
+        dropNulls({
+          id: g.id,
+          detector: g.detector,
+          class: g.class,
+          title: g.title,
+          evidence: g.evidence,
+          score: g.score,
+          status: g.status,
+          ticket: g.ticket,
+          prNumber: g.prNumber,
+          testCaseId: g.testCaseId,
+        }),
+      ),
+    };
+  },
+
+  async draft_scenario(db, params, ctx) {
+    const projectId = numericParam(params.projectId, 'projectId');
+    assertProject(ctx, projectId);
+    const gapId = numericParam(params.gapId, 'gapId');
+    const draft = await draftScenario(db, projectId, gapId);
+    if (!draft) return { error: `No gap #${gapId} in project ${projectId}` };
+    return {
+      title: draft.gapTitle,
+      class: draft.gapClass,
+      annotations: draft.annotations,
+      path: draft.path,
+      catalogMethods: draft.catalogMethods.map((m) => `${m.module}#${m.name}`),
+      draft: draft.text,
+    };
+  },
+
+  async get_feature_graph(db, params, ctx) {
+    const projectId = numericParam(params.projectId, 'projectId');
+    assertProject(ctx, projectId);
+    const nodeParam = typeof params.node === 'string' ? params.node.trim() : '';
+    const sep = nodeParam.indexOf(':');
+    if (sep <= 0) return { error: 'node must be "kind:key", e.g. route:POST /api/orders' };
+    const depth = params.depth != null ? numericParam(params.depth, 'depth') : 2;
+    const graph = await getFeatureGraph(
+      db,
+      projectId,
+      { kind: nodeParam.slice(0, sep), key: nodeParam.slice(sep + 1) },
+      depth,
+    );
+    return {
+      seed: `${graph.seed.kind}:${graph.seed.key}`,
+      depth: graph.depth,
+      nodes: graph.nodes.map((n) => ({
+        node: `${n.kind}:${n.key}`,
+        class: n.class,
+        depth: n.depth,
+        tests: n.tests.map((t) => t.title),
+      })),
+      edges: graph.edges.map((e) => ({
+        from: `${e.fromKind}:${e.fromKey}`,
+        to: `${e.toKind}:${e.toKey}`,
+        kind: e.kind,
+      })),
+    };
   },
 };
 

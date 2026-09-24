@@ -7,12 +7,7 @@ const props = defineProps<{ rate: number | null }>();
 
 const percent = computed(() => (props.rate == null ? null : Math.round(props.rate * 100)));
 
-const fillClass = computed(() => {
-  if (percent.value == null) return '';
-  if (percent.value >= 80) return 'bg-green-500';
-  if (percent.value >= 50) return 'bg-amber-500';
-  return 'bg-red-500';
-});
+const fillClass = computed(() => (percent.value == null ? '' : PASS_RATE_TONES[passRateTone(percent.value)].bg));
 </script>
 
 <template>

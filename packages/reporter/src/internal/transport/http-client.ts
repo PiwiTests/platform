@@ -192,6 +192,28 @@ export class HttpClient {
     }
   }
 
+  /** Send a JSON PUT request. Used for the declared-surface manifest upload. */
+  async putJSON(pathname: string, payload: unknown, auth?: string | null): Promise<any> {
+    const body = JSON.stringify(payload);
+    const res = await this.request('PUT', pathname, {
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(body),
+      },
+      body,
+      auth,
+    });
+    if (res.status < 200 || res.status >= 300) {
+      this.logger.debugError(`Response: ${res.text}`);
+      throw new HttpError(res.status);
+    }
+    try {
+      return JSON.parse(res.text);
+    } catch {
+      return {};
+    }
+  }
+
   /** Send a multipart form-data POST request. Used for report and trace uploads. */
   async postFormData(pathname: string, form: FormData, auth?: string | null): Promise<any> {
     const headers = form.getHeaders() as Record<string, string>;

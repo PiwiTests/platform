@@ -151,7 +151,7 @@ function statusColor(value: unknown): Color {
     .toLowerCase()
     .replace(/[^a-z]/g, '');
   if (v === 'passed' || v === 'resolved') return COLORS.pass;
-  if (v === 'timedout' || v === 'interrupted' || v === 'warning' || v === 'warn') return COLORS.warn;
+  if (v === 'didnotrun' || v === 'warning' || v === 'warn') return COLORS.warn;
   if (v === 'skipped' || v === 'log' || v === 'debug' || v === 'ignored') return COLORS.muted;
   if (v === 'info') return COLORS.info;
   return COLORS.fail;

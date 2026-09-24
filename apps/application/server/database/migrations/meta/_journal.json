@@ -491,6 +491,34 @@
       "when": 1790019414122,
       "tag": "0069_lush_runaways",
       "breakpoints": true
+    },
+    {
+      "idx": 70,
+      "version": "6",
+      "when": 1790058856517,
+      "tag": "0070_majestic_bill_hollister",
+      "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "6",
+      "when": 1790059356797,
+      "tag": "0071_thankful_nitro",
+      "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "6",
+      "when": 1790063152448,
+      "tag": "0072_complete_captain_stacy",
+      "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "6",
+      "when": 1790183810712,
+      "tag": "0073_ancient_makkari",
+      "breakpoints": true
     }
   ]
 }

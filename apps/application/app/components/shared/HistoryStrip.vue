@@ -55,13 +55,6 @@ const streak = computed(() => {
 });
 
 const stripLabelId = useId();
-
-const squareClass = (status: string) => ({
-  'bg-red-500 hover:bg-red-600': isFail(status),
-  'bg-green-500 hover:bg-green-600': status === 'passed',
-  'bg-yellow-500 hover:bg-yellow-600': status === 'skipped',
-  'bg-gray-400 hover:bg-gray-500': !isFail(status) && !['passed', 'skipped'].includes(status),
-});
 </script>
 
 <template>
@@ -76,13 +69,20 @@ const squareClass = (status: string) => ({
         :aria-labelledby="compact ? undefined : stripLabelId"
         :aria-label="compact ? 'Recent executions of this test, oldest to newest' : undefined"
       >
-        <UTooltip v-for="point in strip" :key="point.id" :text="`Execution in run #${point.runId}: ${point.status}`">
+        <UTooltip
+          v-for="point in strip"
+          :key="point.id"
+          :text="`Execution in run #${point.runId}: ${formatExecutionStatus(point.status, point.retries)}`"
+        >
           <NuxtLink
             :to="`/test-run-cases/${point.id}`"
-            :aria-label="`Execution in run #${point.runId}: ${formatStatusLabel(point.status)}`"
+            :aria-label="`Execution in run #${point.runId}: ${formatExecutionStatus(point.status, point.retries)}`"
             :aria-current="point.id === currentId ? 'true' : undefined"
-            class="size-3.5 rounded-sm inline-block transition-colors outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-            :class="[squareClass(point.status), point.id === currentId ? 'ring-2 ring-offset-1 ring-primary' : '']"
+            class="size-3.5 rounded-sm inline-block transition-opacity hover:opacity-80 outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+            :class="[
+              statusPalette(point.status, point.retries).bg,
+              point.id === currentId ? 'ring-2 ring-offset-1 ring-primary' : '',
+            ]"
           />
         </UTooltip>
       </div>

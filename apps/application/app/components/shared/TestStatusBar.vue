@@ -16,11 +16,11 @@ const segments = computed(() => {
   const passedCount = props.passed - props.flaky;
 
   return [
-    { key: 'passed', label: 'Passed', count: passedCount, color: 'bg-emerald-500' },
-    { key: 'failed', label: 'Failed', count: props.failed, color: 'bg-rose-500' },
-    { key: 'flaky', label: 'Flaky', count: props.flaky, color: 'bg-purple-500' },
-    { key: 'skipped', label: 'Skipped', count: props.skipped, color: 'bg-zinc-400' },
-    { key: 'didNotRun', label: "Didn't run", count: props.didNotRun ?? 0, color: 'bg-amber-300 dark:bg-amber-700' },
+    { key: 'passed', label: 'Passed', count: passedCount, color: STATUS_PALETTE.passed.bg },
+    { key: 'failed', label: 'Failed', count: props.failed, color: STATUS_PALETTE.failed.bg },
+    { key: 'flaky', label: 'Flaky', count: props.flaky, color: STATUS_PALETTE.flaky.bg },
+    { key: 'skipped', label: 'Skipped', count: props.skipped, color: STATUS_PALETTE.skipped.bg },
+    { key: 'didNotRun', label: "Didn't run", count: props.didNotRun ?? 0, color: STATUS_PALETTE.didnotrun.bg },
   ]
     .filter((s) => s.count > 0)
     .map((s) => ({

@@ -40,6 +40,14 @@ channel, so a per-user install pulls a per-user update.
 7. Native notifications shown while the window is hidden bump an unread badge
    on the dock icon and the tray tooltip (`desktop_set_activity`), cleared
    when the window regains focus.
+8. A dashboard link opened in the system browser (the reporter's `View run:`
+   URL clicked in a terminal) shows in the app window instead: the server
+   answers the tab with a notice and forwards the page as an `open-page`
+   message on `/api/desktop/events`
+   (`apps/application/server/middleware/desktop-handoff.ts`); the window
+   navigates to it and calls `desktop_bring_to_front`, which restores, shows
+   and focuses it. Only navigations the browser marks `Sec-Fetch-Site: none`
+   qualify, so a web page cannot drive the window.
 
 Local access is gated by a per-launch token (see
 `apps/application/server/middleware/desktop-guard.ts`), so only the app — not other

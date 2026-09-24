@@ -132,6 +132,8 @@ export const PROJECT = {
   RUN_LOCATE: 'run-locate-test',
   RUN_PAGE_FILTERS: 'run-page-filters-test',
   RUN_SUMMARY_TEST: 'run-summary-test',
+  SCENARIO_GAPS: 'scenario-gaps-e2e-test',
+  SCENARIO_GAPS_DECLINE: 'scenario-gaps-decline-test',
   SHARDING_TEST: 'sharding-test',
   SHARE_LINKS: 'share-links-e2e-test',
   STATS_TEST: 'stats-test-project',

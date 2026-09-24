@@ -37,6 +37,25 @@ const { data: openClusters, refresh: refreshOpenClusters } = useFetch('/api/fail
   transform: (r: { items: OpenFailureCluster[] }) => r.items,
 });
 
+// Accepted-but-unwritten scenario gaps older than a week — the Home gaps queue.
+// The queue follows the instance `test-map` state: an instance that declined it
+// hides the card and never fetches it.
+const { isHidden: instCapHidden } = await useInstanceCapabilities();
+const gapsHidden = computed(() => instCapHidden('test-map'));
+interface InboxGap {
+  id: number;
+  projectId: number;
+  title: string;
+  class: string;
+  score: number | null;
+}
+const { data: inboxGaps } = useFetch('/api/gaps/inbox', {
+  lazy: true,
+  immediate: !gapsHidden.value,
+  default: () => [] as InboxGap[],
+  transform: (r: { items: InboxGap[] }) => r.items,
+});
+
 useRunStream(() => Promise.all([refreshOverview(), refreshRecentRuns(), refreshOpenClusters()]));
 
 // True only before the first project-overview load resolves — drives the skeleton.
@@ -203,20 +222,19 @@ function showPartialRuns(): void {
   filters.value = { ...filters.value, fullRunsOnly: false };
 }
 
-// ── Pass rate helper (for activity list) ─────────────────────────────────────
-
-function passRateClass(run: { passedTests: number; totalTests: number }): string {
-  const rate = passRate(run);
-  if (rate >= 90) return 'text-green-600 dark:text-green-400';
-  if (rate >= 50) return 'text-yellow-600 dark:text-yellow-400';
-  return 'text-red-600 dark:text-red-400';
-}
+// ── Activity list ────────────────────────────────────────────────────────────
 
 function statusBorderClass(status: string): string {
-  if (RUNNING_STATUSES.has(status)) return 'border-l-blue-400';
-  if (status === 'passed') return 'border-l-green-500';
-  if (status === 'failed' || status === 'timedout' || status === 'interrupted') return 'border-l-red-500';
-  return 'border-l-gray-300 dark:border-l-gray-600';
+  switch (statusPaletteKey(status)) {
+    case 'passed':
+      return 'border-l-status-passed';
+    case 'failed':
+      return 'border-l-status-failed';
+    case 'running':
+      return 'border-l-status-running';
+    default:
+      return 'border-l-status-skipped';
+  }
 }
 </script>
 
@@ -297,11 +315,11 @@ function statusBorderClass(status: string): string {
           >
             <div
               class="w-2 h-2 rounded-full shrink-0"
-              :class="overviewStats.failingNow > 0 ? 'bg-red-500' : 'bg-green-500'"
+              :class="overviewStats.failingNow > 0 ? STATUS_PALETTE.failed.bg : STATUS_PALETTE.passed.bg"
             />
             <span
               class="font-semibold tabular-nums"
-              :class="overviewStats.failingNow > 0 ? 'text-red-600 dark:text-red-400' : ''"
+              :class="overviewStats.failingNow > 0 ? STATUS_PALETTE.failed.text : ''"
               >{{ overviewStats.failingNow }}</span
             >
             <span class="text-gray-500">failing now</span>
@@ -310,19 +328,25 @@ function statusBorderClass(status: string): string {
           <NuxtLink to="/analytics" class="flex items-center gap-1.5 hover:underline">
             <div
               class="w-2 h-2 rounded-full shrink-0"
-              :class="overviewStats.flakyNow > 0 ? 'bg-amber-400' : 'bg-gray-300 dark:bg-gray-600'"
+              :class="overviewStats.flakyNow > 0 ? STATUS_PALETTE.flaky.bg : 'bg-gray-300 dark:bg-gray-600'"
             />
             <span
               class="font-semibold tabular-nums"
-              :class="overviewStats.flakyNow > 0 ? 'text-amber-600 dark:text-amber-400' : ''"
+              :class="overviewStats.flakyNow > 0 ? STATUS_PALETTE.flaky.text : ''"
               >{{ overviewStats.flakyNow }}</span
             >
             <span class="text-gray-500">flaky</span>
           </NuxtLink>
 
           <div v-if="overviewStats.avgPassRate !== null" class="flex items-center gap-1.5">
-            <UIcon name="i-lucide-check-circle" class="size-4 text-green-500 shrink-0" />
-            <span class="font-semibold tabular-nums">{{ overviewStats.avgPassRate }}%</span>
+            <UIcon
+              name="i-lucide-check-circle"
+              class="size-4 shrink-0"
+              :class="passRateTextClass(overviewStats.avgPassRate)"
+            />
+            <span class="font-semibold tabular-nums" :class="passRateTextClass(overviewStats.avgPassRate)"
+              >{{ overviewStats.avgPassRate }}%</span
+            >
             <span class="text-gray-500">avg pass rate</span>
           </div>
 
@@ -346,6 +370,27 @@ function statusBorderClass(status: string): string {
           :can-write="canWrite"
           @changed="refreshOpenClusters"
         />
+
+        <!-- Accepted-but-unwritten scenario gaps — the gaps inbox queue -->
+        <SectionCard
+          v-if="!gapsHidden && inboxGaps.length > 0"
+          data-shot="gaps-inbox"
+          icon="i-lucide-radar"
+          title="Accepted gaps not yet written"
+        >
+          <div class="divide-y divide-default text-sm">
+            <NuxtLink
+              v-for="gap in inboxGaps"
+              :key="gap.id"
+              :to="`/projects/${gap.projectId}?tab=gaps&gapStatus=accepted`"
+              class="flex items-center gap-3 py-3 hover:bg-gray-50 dark:hover:bg-gray-800/60 rounded transition-colors"
+            >
+              <UBadge color="neutral" variant="subtle" size="sm">{{ gap.class }}</UBadge>
+              <span class="flex-1 min-w-0 truncate text-highlighted">{{ gap.title }}</span>
+              <span class="text-xs text-muted tabular-nums shrink-0">{{ (gap.score ?? 0).toFixed(3) }}</span>
+            </NuxtLink>
+          </div>
+        </SectionCard>
 
         <!-- Per-project trend table + Recent activity side by side on wide screens -->
         <div v-if="hasProjects || hasActivity" class="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
@@ -403,7 +448,7 @@ function statusBorderClass(status: string): string {
                   <div class="text-xs text-gray-400">Run #{{ run.id }} · {{ formatRelativeTime(run.startTime) }}</div>
                 </div>
                 <div class="text-right tabular-nums shrink-0">
-                  <div :class="passRateClass(run)">{{ passRate(run) }}%</div>
+                  <div :class="passRateTextClass(passRate(run))">{{ passRate(run) }}%</div>
                   <DurationValue v-if="run.duration" :ms="run.duration" class="block text-xs text-gray-400" />
                 </div>
               </NuxtLink>

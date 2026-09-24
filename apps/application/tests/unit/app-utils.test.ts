@@ -14,7 +14,6 @@ import {
   formatStatusLabel,
   isFailedStatus,
   failureFirstCompare,
-  testCaseCategoryColor,
   clusterStatusColor,
   clusterErrorTypeColor,
   fixVerificationBadge,
@@ -143,10 +142,18 @@ describe('getStatusColor', () => {
   test('maps known statuses to badge colors', () => {
     expect(getStatusColor('passed')).toBe('success');
     expect(getStatusColor('failed')).toBe('error');
-    expect(getStatusColor('timedout')).toBe('warning');
-    expect(getStatusColor('timedOut')).toBe('warning');
+    expect(getStatusColor('flaky')).toBe('flaky');
+    expect(getStatusColor('didnotrun')).toBe('warning');
     expect(getStatusColor('running')).toBe('info');
+    expect(getStatusColor('finalizing')).toBe('info');
     expect(getStatusColor('cancelled')).toBe('neutral');
+    expect(getStatusColor('never-run')).toBe('neutral');
+  });
+
+  test('reads timed-out and interrupted as failed, like the run counters', () => {
+    expect(getStatusColor('timedout')).toBe('error');
+    expect(getStatusColor('timedOut')).toBe('error');
+    expect(getStatusColor('interrupted')).toBe('error');
   });
 
   test('falls back to neutral for unknown statuses', () => {
@@ -203,6 +210,7 @@ describe('status icon helpers', () => {
   test('gives each outcome its own icon', () => {
     expect(getStatusIcon('passed')).toBe('i-lucide-check-circle-2');
     expect(getStatusIcon('failed')).toBe('i-lucide-x-circle');
+    expect(getStatusIcon('flaky')).toBe('i-lucide-shuffle');
     expect(getStatusIcon('didnotrun')).toBe('i-lucide-circle-slash');
     expect(getStatusIcon('running')).toBe('i-lucide-loader-circle');
     expect(getStatusIcon('skipped')).toBe('i-lucide-minus-circle');
@@ -211,6 +219,7 @@ describe('status icon helpers', () => {
   test('gives each outcome its own colour, and one colour to the in-flight three', () => {
     expect(getStatusTextClass('passed')).toContain('emerald');
     expect(getStatusTextClass('failed')).toContain('rose');
+    expect(getStatusTextClass('flaky')).toContain('purple');
     expect(getStatusTextClass('didnotrun')).toContain('amber');
     expect(getStatusTextClass('running')).toContain('blue');
     expect(getStatusTextClass('initializing')).toBe(getStatusTextClass('running'));
@@ -235,16 +244,6 @@ describe('toTestPriority', () => {
     expect(toTestPriority('')).toBeUndefined();
     expect(toTestPriority(null)).toBeUndefined();
     expect(toTestPriority(undefined)).toBeUndefined();
-  });
-});
-
-describe('testCaseCategoryColor', () => {
-  test('maps derived catalog categories to badge colors', () => {
-    expect(testCaseCategoryColor('flaky')).toBe('warning');
-    expect(testCaseCategoryColor('never-run')).toBe('neutral');
-    expect(testCaseCategoryColor('didnotrun')).toBe('warning');
-    expect(testCaseCategoryColor('passed')).toBe('success');
-    expect(testCaseCategoryColor('failed')).toBe('error');
   });
 });
 

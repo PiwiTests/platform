@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
@@ -10,28 +12,132 @@ namespace PiwiTests.Instrumentation.AspNetCore;
 public sealed class PiwiTestLogHeaderMiddleware(RequestDelegate next)
 {
     private const string HeaderName = "X-Piwi-Logs";
+    private const string TraceHeaderName = "X-Piwi-Trace";
+    private const string ProbeHeaderName = "X-Piwi-Probe";
+
+    // The shared secret a probe run signs the X-Piwi-Probe header with. Server
+    // probes stay off unless a project opts in (PIWI_SERVER_PROBES=true); off is
+    // the default in this milestone, so a verified probe is recorded but no fault
+    // is applied — only the client-safe subset would ever be, and only once on.
+    private static readonly string? ProbeSecret = Environment.GetEnvironmentVariable("PIWI_PROBE_SECRET");
+    private static readonly bool ServerProbesEnabled =
+        string.Equals(Environment.GetEnvironmentVariable("PIWI_SERVER_PROBES"), "true", StringComparison.Ordinal);
 
     public async Task InvokeAsync(HttpContext context)
     {
+        // Verify a signed probe header (this middleware runs only in Development
+        // and Test environments — the same guard as log capture). The verified
+        // spec is recorded on the request for handlers to read; nothing is
+        // applied while server probes are off.
+        var startMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var probe = PiwiProbe.Verify(
+            context.Request.Headers[ProbeHeaderName],
+            ProbeSecret,
+            DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        if (probe is not null)
+            context.Items["PiwiProbe"] = probe;
+
         PiwiTestLogCapture.Begin();
+        var faultEndedResponse = false;
         try
         {
-            await next(context);
+            if (probe is not null && ServerProbesEnabled &&
+                PiwiProbeFaults.ShouldApply(probe.Route, context.Request.Method, context.Request.Path.Value ?? ""))
+            {
+                // A fault is marked applied (context.Items["PiwiProbeApplied"]) only
+                // at the point it actually takes effect, so an unimplemented fault
+                // (data/dependency/replay) is never marked applied and records as
+                // inconclusive rather than a false gap. The applied label rides back
+                // to the reporter on the X-Piwi-Trace root span below.
+                var delay = PiwiProbeFaults.FaultDelayMs(probe.Fault);
+                if (delay > 0)
+                {
+                    await Task.Delay(delay);
+                    context.Items["PiwiProbeApplied"] = PiwiProbeFaults.AppliedLabel(probe);
+                }
+
+                if (PiwiProbeFaults.IsThrowFault(probe.Fault))
+                {
+                    context.Items["PiwiProbeApplied"] = PiwiProbeFaults.AppliedLabel(probe);
+                    throw new InvalidOperationException("Piwi probe: injected error");
+                }
+
+                var status = PiwiProbeFaults.FaultStatus(probe.Fault);
+                if (status is not null)
+                {
+                    context.Items["PiwiProbeApplied"] = PiwiProbeFaults.AppliedLabel(probe);
+                    context.Response.StatusCode = status.Value;
+                    faultEndedResponse = true;
+                }
+                else if (PiwiProbeFaults.IsExtremeFault(probe.Fault))
+                {
+                    context.Items["PiwiProbeApplied"] = PiwiProbeFaults.AppliedLabel(probe);
+                    context.Response.StatusCode = 200;
+                    faultEndedResponse = true;
+                }
+            }
+
+            if (!faultEndedResponse)
+                await next(context);
         }
         finally
         {
-            // The level filter, entry cap and message truncation are applied by PiwiTestLogCapture.TryAdd.
-            var logs = PiwiTestLogCapture.Stop();
-            if (logs is { Count: > 0 } && !context.Response.HasStarted)
-            {
-                var json = JsonSerializer.SerializeToUtf8Bytes(logs);
-
-                using var ms = new MemoryStream();
-                await using (var gz = new GZipStream(ms, CompressionLevel.Fastest, leaveOpen: true))
-                    gz.Write(json);
-
-                context.Response.Headers[HeaderName] = Convert.ToBase64String(ms.ToArray());
-            }
+            WriteInstrumentationHeaders(context, probe, startMs);
         }
+    }
+
+    /// <summary>
+    /// Write the X-Piwi-Logs and (for a verified probe request) X-Piwi-Trace
+    /// headers before the response starts. The trace's root span names the fault
+    /// the server actually applied (<c>piwi.probe.applied</c>), or omits it when
+    /// none was, so the reporter records an unhonored probe as inconclusive.
+    /// </summary>
+    private static void WriteInstrumentationHeaders(HttpContext context, PiwiProbeSpec? probe, long startMs)
+    {
+        // Always end capture for this request's async context, even when the
+        // response already started and no header can be written.
+        var logs = PiwiTestLogCapture.Stop();
+        if (context.Response.HasStarted)
+            return;
+
+        // The level filter, entry cap and message truncation are applied by PiwiTestLogCapture.TryAdd.
+        if (logs is { Count: > 0 })
+            context.Response.Headers[HeaderName] = GzipBase64(JsonSerializer.SerializeToUtf8Bytes(logs));
+
+        if (probe is null)
+            return;
+
+        var applied = context.Items.TryGetValue("PiwiProbeApplied", out var a) && a is string label ? label : null;
+        var statusCode = context.Response.StatusCode;
+        var attrs = new Dictionary<string, object>
+        {
+            ["http.method"] = context.Request.Method,
+            ["http.route"] = context.Request.Path.Value ?? "",
+            ["http.status_code"] = statusCode,
+            ["piwi.probe"] = probe.Fault,
+        };
+        if (applied is not null)
+            attrs["piwi.probe.applied"] = applied;
+
+        var span = new
+        {
+            id = Convert.ToHexString(RandomNumberGenerator.GetBytes(8)).ToLowerInvariant(),
+            name = $"{context.Request.Method} {context.Request.Path.Value}".Trim(),
+            kind = "server",
+            startMs,
+            durMs = Math.Max(0, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - startMs),
+            status = statusCode >= 500 ? "error" : "ok",
+            attrs,
+        };
+        context.Response.Headers[TraceHeaderName] = GzipBase64(JsonSerializer.SerializeToUtf8Bytes(new[] { span }));
+    }
+
+    /// <summary>Gzip then base64-encode a payload, matching the reporter's decode.</summary>
+    private static string GzipBase64(byte[] json)
+    {
+        using var ms = new MemoryStream();
+        using (var gz = new GZipStream(ms, CompressionLevel.Fastest, leaveOpen: true))
+            gz.Write(json);
+        return Convert.ToBase64String(ms.ToArray());
     }
 }

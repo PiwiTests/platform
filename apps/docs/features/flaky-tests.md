@@ -87,8 +87,12 @@ Manage it from the **Quarantine** view of the project's **Failures** tab, or ove
 
 Individual test cases in a run carry at-a-glance badges:
 
-- **`NEW`** (red) — a new regression
-- **`FLAKY`** (purple) — newly flaky
+- **New regression** (red) — the first run in which the test failed
+- **Newly flaky** (purple) — the first run in which the test was flaky
+- **Passed on retry** (purple) — failed at least once in this run, then passed
+
+Purple is the flaky color everywhere in the dashboard: the flaky segment of every run bar and trend chart, flaky
+counts, and the history cells of executions that passed on retry.
 
 Toggle filters on the run's test-case list to show only new regressions or new flaky tests.
 

@@ -7,13 +7,14 @@ import { evaluateGatePolicy, isEmptyPolicy, type GateFacts, type GatePolicy } fr
 import { parseTagFilter } from '#shared/utils/tag-filter';
 import { getQuarantinedCaseIds } from '#shared/handlers/quarantine';
 import { getSelection, resolveSelectionDefinition } from '#shared/handlers/selections';
+import { readChangeCoverage } from '../../../utils/scm/change-coverage';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Test Runs'],
     summary: 'Evaluate a CI gate policy against a finished run',
     description:
-      'Applies a pass/fail policy to a run and returns every violation, so a pipeline can block a merge on the analysis rather than on the raw exit code of `playwright test`. Rules: `requireTags` (every test carrying the tag must pass), `maxFailed`, `maxNewRegressions`, `maxNewFlaky`, `failOnNewCluster`, `failOnFlaky` (any flaky test in the run), and `requireSelection` (re-resolves a named selection and fails if any test it currently matches did not run, or ran and failed — catching a silently shrunk smoke job). A required tag that matches no test in the run is itself a violation, so a typo cannot silently pass. Evaluation is read-only — the run is not modified.',
+      'Applies a pass/fail policy to a run and returns every violation, so a pipeline can block a merge on the analysis rather than on the raw exit code of `playwright test`. Rules: `requireTags` (every test carrying the tag must pass), `maxFailed`, `maxNewRegressions`, `maxNewFlaky`, `failOnNewCluster`, `failOnFlaky` (any flaky test in the run), and `requireSelection` (re-resolves a named selection and fails if any test it currently matches did not run, or ran and failed — catching a silently shrunk smoke job). A required tag that matches no test in the run is itself a violation, so a typo cannot silently pass. `maxUncoveredChanges` is warn-only in its first release: it reports the run’s uncovered changed files without changing the verdict. Evaluation is read-only — the run is not modified.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-roles': ['administrator', 'reporter', 'user'],
     requestBody: {
@@ -30,6 +31,7 @@ defineRouteMeta({
               maxQuarantined: { type: 'integer', minimum: 0 },
               failOnFlaky: { type: 'boolean' },
               requireSelection: { type: 'string' },
+              maxUncoveredChanges: { type: 'integer', minimum: 0 },
             },
           },
         },
@@ -72,11 +74,16 @@ export default eventHandler(async (event) => {
         : undefined,
   };
 
-  if (isEmptyPolicy(policy)) {
+  // `maxUncoveredChanges` is warn-only in its first release: it is reported but
+  // never changes the verdict, so a project can watch the number before a
+  // blocking mode ships. Off by default; a value (including 0) turns it on.
+  const maxUncoveredChanges = optionalCount(body?.maxUncoveredChanges);
+
+  if (isEmptyPolicy(policy) && maxUncoveredChanges == null) {
     throw apiError({
       statusCode: 400,
       message:
-        'Gate policy is empty — pass at least one of requireTags, maxFailed, maxNewRegressions, maxNewFlaky, maxQuarantined, failOnNewCluster or failOnFlaky',
+        'Gate policy is empty — pass at least one of requireTags, maxFailed, maxNewRegressions, maxNewFlaky, maxQuarantined, failOnNewCluster, failOnFlaky or maxUncoveredChanges',
     });
   }
 
@@ -215,5 +222,23 @@ export default eventHandler(async (event) => {
     selection: selectionFacts,
   };
 
-  return evaluateGatePolicy(facts, policy);
+  const result = evaluateGatePolicy(facts, policy);
+
+  // Warn-only uncovered-changes reporting: compute the run's uncovered changed
+  // files and surface a warning when they exceed the threshold, without touching
+  // the pass/fail verdict.
+  const warnings: string[] = [];
+  if (maxUncoveredChanges != null) {
+    const coverage = await readChangeCoverage(db, run.projectId, { runId: id }).catch(() => null);
+    if (coverage?.scmAvailable) {
+      if (coverage.uncoveredFiles > maxUncoveredChanges) {
+        warnings.push(
+          `${coverage.uncoveredFiles} uncovered changed file${coverage.uncoveredFiles === 1 ? '' : 's'} ` +
+            `(threshold ${maxUncoveredChanges}) — observed reach, warn-only. See the change-coverage report.`,
+        );
+      }
+    }
+  }
+
+  return warnings.length > 0 ? { ...result, warnings } : result;
 });

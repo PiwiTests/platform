@@ -22,12 +22,32 @@ function isBlockedIpv4(ip: string): boolean {
   return false;
 }
 
+/**
+ * The IPv4 address embedded in an IPv4-mapped/-compatible IPv6, or null. Handles
+ * both the dotted-quad tail (`::ffff:127.0.0.1`) and the hex-hextet form
+ * (`::ffff:7f00:1`) — the latter is what a raw `::ffff:7f00:1` literal or a
+ * canonicalized address looks like, and matching only the dotted form let it slip
+ * through as "public".
+ */
+function embeddedIpv4(host: string): string | null {
+  const dotted = host.match(/(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/);
+  if (dotted) return dotted[1]!;
+  // ::ffff:HHHH:HHHH or the ::ffff:0:HHHH:HHHH ("IPv4-compatible") spelling.
+  const hex = host.match(/^::ffff:(?:0:)?([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
+  if (hex) {
+    const hi = parseInt(hex[1]!, 16);
+    const lo = parseInt(hex[2]!, 16);
+    return `${(hi >> 8) & 0xff}.${hi & 0xff}.${(lo >> 8) & 0xff}.${lo & 0xff}`;
+  }
+  return null;
+}
+
 function isBlockedIpv6(ip: string): boolean {
   const host = ip.toLowerCase().replace(/^\[|\]$/g, '');
   if (host === '::1' || host === '::') return true; // loopback / unspecified
   if (host.startsWith('fe80') || host.startsWith('fc') || host.startsWith('fd')) return true; // link-local / ULA
-  const mapped = host.match(/(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/); // ::ffff:127.0.0.1 etc.
-  if (mapped) return isBlockedIpv4(mapped[1]!);
+  const v4 = embeddedIpv4(host); // IPv4-mapped/-compatible (dotted or hex form)
+  if (v4) return isBlockedIpv4(v4);
   return false;
 }
 

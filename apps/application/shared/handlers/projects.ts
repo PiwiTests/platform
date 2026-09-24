@@ -13,6 +13,7 @@ import {
 } from '../../server/database/schema';
 import { asc, desc, eq, exists, sql, and, or, inArray, gte, lte, isNull, isNotNull, count } from 'drizzle-orm';
 import { jsonArrayContainsAll, parseLockFilter, parseTagFilter } from '../utils/tag-filter';
+import { isProbeRun } from './probes';
 import { FAILED_STATUS_KEYS } from '../utils/test-counts';
 import { TEST_PRIORITIES } from '@piwitests/core/test-meta';
 
@@ -311,6 +312,8 @@ export async function updateProject(
     aiLanguage?: string | null;
     scmToken?: string | null;
     defaultBranch?: string | null;
+    openApiUrl?: string | null;
+    serverProbes?: unknown;
     ciRerun?: unknown;
     tagIds?: number[];
   },
@@ -325,6 +328,8 @@ export async function updateProject(
     aiLanguage,
     scmToken,
     defaultBranch,
+    openApiUrl,
+    serverProbes,
     ciRerun,
     tagIds: dataTagIds,
   } = data;
@@ -339,6 +344,8 @@ export async function updateProject(
       aiLanguage: aiLanguage !== undefined ? aiLanguage?.trim() || null : undefined,
       scmToken: scmToken !== undefined ? scmToken : undefined,
       defaultBranch: defaultBranch !== undefined ? defaultBranch : undefined,
+      openApiUrl: openApiUrl !== undefined ? openApiUrl : undefined,
+      serverProbes: serverProbes !== undefined ? (serverProbes as any) : undefined,
       ciRerun: ciRerun !== undefined ? (ciRerun as any) : undefined,
       updatedAt: new Date(),
     })
@@ -754,14 +761,16 @@ export async function getProjectSpecHealth(db: DrizzleDB, projectId: number, day
   if (projRows.length === 0) throw new Error('Project not found');
 
   const recentRuns: any[] = await db
-    .select({ id: testRuns.id })
+    .select({ id: testRuns.id, metadata: testRuns.metadata })
     .from(testRuns)
     .where(and(eq(testRuns.projectId, projectId), gte(testRuns.startTime, since)))
     .orderBy(desc(testRuns.startTime))
     .limit(100);
   if (recentRuns.length === 0) return { specs: [] };
 
-  const runIds: number[] = recentRuns.map((r: any) => r.id);
+  // Probe runs inject faults, so their executions never count toward spec health.
+  const runIds: number[] = recentRuns.filter((r: any) => !isProbeRun(r.metadata)).map((r: any) => r.id);
+  if (runIds.length === 0) return { specs: [] };
   const rows: any[] = await db
     .select({
       filePath: testCases.filePath,
@@ -1300,12 +1309,15 @@ export async function getProjectFlakyTests(
 
   const runIds: number[] = recentRuns.map((r: any) => r.id);
 
-  // Re-fetch with status filter
+  // Re-fetch with status filter. Probe runs inject faults, so their executions
+  // never enter the flaky leaderboard.
   const runsWithStatus: any[] = await db
-    .select({ id: testRuns.id, startTime: testRuns.startTime, status: testRuns.status })
+    .select({ id: testRuns.id, startTime: testRuns.startTime, status: testRuns.status, metadata: testRuns.metadata })
     .from(testRuns)
     .where(inArray(testRuns.id, runIds));
-  const filteredRuns: any[] = runsWithStatus.filter((r: any) => TERMINAL_STATUSES.includes(r.status));
+  const filteredRuns: any[] = runsWithStatus.filter(
+    (r: any) => TERMINAL_STATUSES.includes(r.status) && !isProbeRun(r.metadata),
+  );
 
   if (filteredRuns.length === 0) return [];
   const filteredRunIds: number[] = filteredRuns.map((r: any) => r.id);

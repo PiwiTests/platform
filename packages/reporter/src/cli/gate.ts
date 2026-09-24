@@ -27,6 +27,8 @@ interface GateArgs {
   apiKey: string | null;
   runId: number;
   policy: GatePolicy;
+  /** Warn-only: report (never fail on) more than n uncovered changed files. */
+  maxUncoveredChanges?: number;
 }
 
 const USAGE = `
@@ -54,6 +56,9 @@ Policy (at least one is required):
   --fail-on-new-cluster    Fail when this run introduced a new failure cluster
   --fail-on-flaky          Fail when this run contains any flaky test
   --require-selection <key>  Fail when a test the named selection matches did not run or failed
+
+Warn-only (reported, never fails the build):
+  --max-uncovered-changes <n>  Warn when more than n changed files have no observed test reach
 
 Other:
   --json                   Print the raw result as JSON instead of a summary
@@ -122,17 +127,25 @@ export function parseGateArgs(argv: string[], env: NodeJS.ProcessEnv): GateArgs 
     requireSelection: readOption(argv, '--require-selection'),
   };
 
-  return { serverUrl, apiKey: readOption(argv, '--api-key') ?? env.PIWI_API_KEY ?? null, runId, policy };
+  return {
+    serverUrl,
+    apiKey: readOption(argv, '--api-key') ?? env.PIWI_API_KEY ?? null,
+    runId,
+    policy,
+    maxUncoveredChanges: readCount(argv, '--max-uncovered-changes'),
+  };
 }
 
 async function requestGate(args: GateArgs): Promise<GateResult> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (args.apiKey) headers['X-API-Key'] = args.apiKey;
 
+  // `maxUncoveredChanges` is a warn-only body field the server reads outside the
+  // policy; JSON.stringify drops it when it is undefined.
   const res = await fetch(`${args.serverUrl}/api/test-runs/${args.runId}/gate`, {
     method: 'POST',
     headers,
-    body: JSON.stringify(args.policy),
+    body: JSON.stringify({ ...args.policy, maxUncoveredChanges: args.maxUncoveredChanges }),
   });
 
   if (!res.ok) {

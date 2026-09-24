@@ -218,6 +218,20 @@ hover:decoration-solid`. `text-primary` links belong in navigation lists and tab
 - **Measure it.** `npm run app:measure -- --json` reports `distinctTextStyles` inside the situation block. Keep it at
   or under 15 on the execution page and 12 on the cluster page; a change that raises it needs a reason in the PR.
 
+### Test outcome colors (MUST follow)
+
+Passed, failed, flaky, skipped, didn't run and running each have **one** color, everywhere: the `--color-status-*`
+tokens in `app/assets/css/main.css` (emerald, rose, purple, zinc, amber, blue). Timed-out and interrupted count as
+failed; a pass that needed a retry counts as flaky. Never hardcode a status color in a bar, chart, legend, dot, history
+cell, timeline bar or filter chip: use `STATUS_PALETTE` / `statusPalette(status, retries?)` from
+`app/utils/status-palette.ts` (`bg-status-*` classes for HTML, `var(--color-status-*)` in SVG `style`), the shared
+`StatusFilterChip`, and `getStatusColor` for badges (`flaky` is a registered Nuxt UI color). A new outcome view that
+needs another shade adds it to the palette entry, not to the component.
+
+Pass rates follow the same rule with one scale: `app/utils/pass-rate.ts` (`passRateTone`, `passRateTextClass`,
+`PASS_RATE_TONES`, and `passRateStep` for heatmap-style cells) — good at 90% or more, fair from 50%, poor below, in
+emerald / amber / rose. Never write a pass-rate threshold or color at a call site.
+
 ### Other UI rules
 
 - Sentence case headings and labels ("Test runs"), relative dates via date-fns (full timestamp on hover), human-readable
@@ -312,15 +326,16 @@ same files load unchanged in Vite, Vitest and plain Node (the generator script r
 
 Where to add things in subsystems whose wiring spans several files:
 
-| Change                        | Touch                                                                                                                                                                                                                                                                    |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Flaky root-cause category     | `classifyFlakyRootCause()` + keyword arrays in `server/utils/flaky-classify.ts`; `rootCause` on `FlakyTest` (`types/api.ts`); `FlakyTestsList.vue` colour map                                                                                                            |
-| Flaky impact scoring          | `getProjectFlakyTests` (`shared/handlers/projects.ts`) — sorts by impact desc; `impact`, `wastedCiMinutes`, `avgFailedDurationMs` on `FlakyTest`                                                                                                                         |
-| Regression signals            | `computeRegressionSignals()` (`server/utils/compute-regression-signals.ts`), called from `finish.post.ts`; surfaced by `getTestRun` / `getTestRunCase` mappers                                                                                                           |
-| A computed AI-context section | Update the `SectionId` union (`ai-context.types.ts`), `DIAGNOSIS_SECTIONS` (`diagnosis-sections.ts`) and `DiagnosisContextCoverage` (`types/api.ts`) **in one batch** before writing the section builder                                                                 |
-| Sharding behaviour            | See the sharding invariants below                                                                                                                                                                                                                                        |
-| Blob-report import            | `server/utils/blob-report.ts` (parse) + `import-evidence.ts` (recovered evidence); everything after parsing in `shared/handlers/import-runs.ts`; endpoints `test-runs/import[.post]` and `import/check.post.ts`; page `projects/[id]/import.vue` + `useBlobReportImport` |
-| Trace-file import             | `server/utils/trace-import.ts` — reconstructs an execution from a trace's `context-options`/`error` events; grouped into one run by the `importGroup` field on `test-runs/import.post.ts`                                                                                |
+| Change                        | Touch                                                                                                                                                                                                                                                                                                                                   |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Flaky root-cause category     | `classifyFlakyRootCause()` + keyword arrays in `server/utils/flaky-classify.ts`; `rootCause` on `FlakyTest` (`types/api.ts`); `FlakyTestsList.vue` colour map                                                                                                                                                                           |
+| Flaky impact scoring          | `getProjectFlakyTests` (`shared/handlers/projects.ts`) — sorts by impact desc; `impact`, `wastedCiMinutes`, `avgFailedDurationMs` on `FlakyTest`                                                                                                                                                                                        |
+| Regression signals            | `computeRegressionSignals()` (`server/utils/compute-regression-signals.ts`), fired by the shared finalize helper `runFinalizeSideEffects` (`server/utils/run-finalize-side-effects.ts`); surfaced by `getTestRun` / `getTestRunCase` mappers                                                                                            |
+| Finish-time side effects      | Every complete-run ingest path (`finish`, `upload` new-and-attach, `submit`) routes finalization through the one probe-aware `runFinalizeSideEffects` (`server/utils/run-finalize-side-effects.ts`): regression signals, auto markers, AI diagnosis, notifications, PR feedback, auto-heal. A probe-stamped run stays silent everywhere |
+| A computed AI-context section | Update the `SectionId` union (`ai-context.types.ts`), `DIAGNOSIS_SECTIONS` (`diagnosis-sections.ts`) and `DiagnosisContextCoverage` (`types/api.ts`) **in one batch** before writing the section builder                                                                                                                                |
+| Sharding behaviour            | See the sharding invariants below                                                                                                                                                                                                                                                                                                       |
+| Blob-report import            | `server/utils/blob-report.ts` (parse) + `import-evidence.ts` (recovered evidence); everything after parsing in `shared/handlers/import-runs.ts`; endpoints `test-runs/import[.post]` and `import/check.post.ts`; page `projects/[id]/import.vue` + `useBlobReportImport`                                                                |
+| Trace-file import             | `server/utils/trace-import.ts` — reconstructs an execution from a trace's `context-options`/`error` events; grouped into one run by the `importGroup` field on `test-runs/import.post.ts`                                                                                                                                               |
 
 ## Subsystem invariants
 

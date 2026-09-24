@@ -1,6 +1,6 @@
 {
   "name": "@piwitests/instrumentation-nitro",
-  "version": "0.36.0",
+  "version": "0.37.0",
   "description": "Nitro/Nuxt server plugin for sending backend logs to Piwi Dashboard via the X-Piwi-Logs response header",
   "homepage": "https://piwitests.dev",
   "repository": {
@@ -32,6 +32,8 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
     "prepublishOnly": "npm run build"
   },
   "files": [

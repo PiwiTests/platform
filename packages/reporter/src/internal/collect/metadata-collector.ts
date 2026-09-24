@@ -333,6 +333,9 @@ export class MetadataCollector {
         testDir: p.testDir,
         use: {
           browserName: p.use?.browserName || p.name,
+          // The origin of `baseURL` is what the graph treats as the run's own
+          // surface, so only requests to it become route nodes.
+          baseURL: p.use?.baseURL,
           viewport: p.use?.viewport,
           deviceScaleFactor: p.use?.deviceScaleFactor,
         },

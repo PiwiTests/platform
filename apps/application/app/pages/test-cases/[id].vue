@@ -52,14 +52,7 @@ const clusterColor = (status: string) => {
   return status === 'open' ? 'error' : status === 'resolved' ? 'success' : 'neutral';
 };
 
-const passRateClass = computed(() => {
-  const r = passRate.value ?? 0;
-  return r >= 80
-    ? 'text-green-600 dark:text-green-400'
-    : r >= 50
-      ? 'text-yellow-600 dark:text-yellow-400'
-      : 'text-red-600 dark:text-red-400';
-});
+const passRateClass = computed(() => passRateTextClass(passRate.value));
 </script>
 
 <template>
@@ -124,7 +117,7 @@ const passRateClass = computed(() => {
               </span>
               <span aria-hidden class="opacity-40">·</span>
               <span class="tabular-nums">
-                <strong class="text-red-600 dark:text-red-400">{{ testCase?.failedRuns ?? 0 }}</strong> failed
+                <strong :class="STATUS_PALETTE.failed.text">{{ testCase?.failedRuns ?? 0 }}</strong> failed
               </span>
               <span aria-hidden class="opacity-40">·</span>
               <span class="inline-flex items-center gap-1">
@@ -132,9 +125,7 @@ const passRateClass = computed(() => {
               </span>
               <span aria-hidden class="opacity-40">·</span>
               <span class="tabular-nums">
-                <strong
-                  :class="(testCase?.flakyRuns ?? 0) > 0 ? 'text-purple-600 dark:text-purple-400' : 'text-highlighted'"
-                >
+                <strong :class="(testCase?.flakyRuns ?? 0) > 0 ? STATUS_PALETTE.flaky.text : 'text-highlighted'">
                   {{ testCase?.flakyRuns ?? 0 }}
                 </strong>
                 flaky

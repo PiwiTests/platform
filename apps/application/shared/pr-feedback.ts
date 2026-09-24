@@ -120,6 +120,102 @@ export interface PrSummaryInput {
   splitLocks?: string[] | null;
   /** True when no previous green run existed to compare against. */
   hasBaseline: boolean;
+  /** Uncovered-changes section, when the run was pull-request-stamped with a diff. */
+  changeCoverage?: PrChangeCoverage | null;
+}
+
+// ── Change coverage ──────────────────────────────────────────────────────────
+
+/** One changed file in the uncovered-changes section. */
+export interface PrChangeCoverageFile {
+  filePath: string;
+  additions: number;
+  deletions: number;
+  reachedInRun: boolean;
+  reachedCountHistory: number;
+  /** A one-line suggestion for the scenario to write, when there is one. */
+  draftTitle?: string | null;
+}
+
+export interface PrChangeCoverageTicket {
+  ticket: string | null;
+  files: PrChangeCoverageFile[];
+}
+
+/** The pre-shaped uncovered-changes data the comment renders. */
+export interface PrChangeCoverage {
+  totalFiles: number;
+  uncoveredFiles: number;
+  reachedFiles: number;
+  ticketCount: number;
+  windowRuns: number;
+  baseBranch: string | null;
+  tickets: PrChangeCoverageTicket[];
+  /** True when the diff had more changed files than the provider cap returned. */
+  filesTruncated?: boolean;
+}
+
+/** Max uncovered files listed in the pull-request comment. */
+const MAX_UNCOVERED_LISTED = 10;
+
+/**
+ * Render the uncovered-changes section: the files this change touched that no
+ * test reaches, grouped by ticket, each with a draft suggestion. Returns null
+ * when there is nothing worth a section (no diff, or every file is reached).
+ */
+export function renderChangeCoverage(cc: PrChangeCoverage): string | null {
+  if (cc.totalFiles === 0) return null;
+  const base = cc.baseBranch ? codeSpan(cc.baseBranch) : 'the default branch';
+  const preface = `Observed reach, not instrumented coverage. Numbers from this run and the last ${cc.windowRuns} on ${base}.`;
+
+  if (cc.uncoveredFiles === 0) {
+    return `#### 🟣 Uncovered changes · 0 of ${cc.totalFiles} files\n${preface}\n\nAll ${cc.totalFiles} changed ${cc.totalFiles === 1 ? 'file has' : 'files have'} observed reach.`;
+  }
+
+  const header = `#### 🟣 Uncovered changes · ${cc.uncoveredFiles} of ${cc.totalFiles} files · ${cc.ticketCount} ${cc.ticketCount === 1 ? 'ticket' : 'tickets'}`;
+  const blocks: string[] = [header, preface];
+
+  // One definition of "uncovered" everywhere: no reach in this run and none in
+  // the recent window. A file reached only in history is a separate, lower line.
+  let listed = 0;
+  let historyOnly = 0;
+  for (const group of cc.tickets) {
+    const lines: string[] = [];
+    for (const file of group.files) {
+      if (file.reachedInRun) continue;
+      if (file.reachedCountHistory > 0) {
+        historyOnly++;
+        continue;
+      }
+      if (listed >= MAX_UNCOVERED_LISTED) continue;
+      listed++;
+      let line = `- ${codeSpan(file.filePath)} · changed (+${file.additions} −${file.deletions}) · 0 tests in ${cc.windowRuns} runs`;
+      if (file.draftTitle) line += `\n  → *${escapeInline(file.draftTitle)}* · draft`;
+      lines.push(line);
+    }
+    if (lines.length === 0) continue;
+    const label = group.ticket ? `**${escapeCell(group.ticket)}**` : '**No ticket**';
+    blocks.push([label, ...lines].join('\n'));
+  }
+
+  const hidden = cc.uncoveredFiles - listed;
+  if (hidden > 0) blocks.push(`…and ${hidden} more`);
+  if (cc.filesTruncated) {
+    blocks.push('The diff was capped, so more files changed than are counted here.');
+  }
+  if (historyOnly > 0) {
+    blocks.push(
+      `${historyOnly} ${historyOnly === 1 ? 'file' : 'files'} reached only in the last ${cc.windowRuns} runs, not this run.`,
+    );
+  }
+  if (cc.reachedFiles > 0) {
+    blocks.push(
+      `${cc.reachedFiles} ${cc.reachedFiles === 1 ? 'file' : 'files'} reached. Gate \`maxUncoveredChanges\`: warn.`,
+    );
+  } else {
+    blocks.push('Gate `maxUncoveredChanges`: warn.');
+  }
+  return blocks.join('\n\n');
 }
 
 // ── Rendering ────────────────────────────────────────────────────────────────
@@ -131,6 +227,21 @@ export const PR_EXCERPT_MAX = 200;
 /** Escape the characters that would break out of a markdown table cell. */
 function escapeCell(text: string): string {
   return text.replace(/\|/g, '\\|').replace(/\r?\n/g, ' ').trim();
+}
+
+/**
+ * Wrap arbitrary text as an inline code span that no backtick run can break out
+ * of. A backtick inside the text (a file path or branch name may carry one) would
+ * otherwise close the span and inject markdown into the comment; the CommonMark
+ * rule is a fence one backtick longer than the longest run inside, padded with a
+ * space so a leading/trailing backtick is not eaten.
+ */
+function codeSpan(text: string): string {
+  const clean = escapeCell(text);
+  const longest = Math.max(0, ...(clean.match(/`+/g) ?? []).map((run) => run.length));
+  const fence = '`'.repeat(longest + 1);
+  const pad = longest > 0 ? ' ' : '';
+  return `${fence}${pad}${clean}${pad}${fence}`;
 }
 
 /** Escape inline markdown so a headline's locator quotes and underscores render literally. */
@@ -168,9 +279,9 @@ function renderFailureList(entries: PrFailureEntry[], runUrl: string): string {
     const link = origin
       ? `[${escapeCell(entry.title)}](${origin}/test-run-cases/${entry.executionId})`
       : escapeCell(entry.title);
-    const parts = [`- ${link} — \`${escapeCell(entry.filePath)}\``];
+    const parts = [`- ${link} — ${codeSpan(entry.filePath)}`];
     if (entry.owner) parts.push(`_owner: ${escapeCell(entry.owner)}_`);
-    if (entry.tags?.length) parts.push(entry.tags.map((tag) => `\`@${escapeCell(tag)}\``).join(' '));
+    if (entry.tags?.length) parts.push(entry.tags.map((tag) => codeSpan(`@${tag}`)).join(' '));
     let line = parts.join(' · ');
     if (entry.headline) line += `\n  **${escapeInline(entry.headline)}**`;
     if (entry.errorExcerpt) line += `\n  \`\`\`\n  ${escapeCell(entry.errorExcerpt)}\n  \`\`\``;
@@ -178,11 +289,11 @@ function renderFailureList(entries: PrFailureEntry[], runUrl: string): string {
       const pr = entry.healPrUrl ? `[#${entry.healPrNumber}](${entry.healPrUrl})` : `#${entry.healPrNumber}`;
       line += `\n  🩹 Piwi opened ${pr} to heal this locator.`;
     } else if (entry.suggestedLocator) {
-      line += `\n  💡 Try \`${escapeCell(entry.suggestedLocator)}\` instead.`;
+      line += `\n  💡 Try ${codeSpan(entry.suggestedLocator)} instead.`;
     }
     if (entry.flakyOnDefaultBranch) {
       const pct = Math.round(entry.flakyOnDefaultBranch.flakinessRate * 100);
-      line += `\n  🎲 Also flaky on \`${escapeCell(entry.flakyOnDefaultBranch.branch)}\` (~${pct}% of recent runs) — likely not yours.`;
+      line += `\n  🎲 Also flaky on ${codeSpan(entry.flakyOnDefaultBranch.branch)} (~${pct}% of recent runs) — likely not yours.`;
     }
     if (entry.issue) {
       line += `\n  🎫 Tracked in [${escapeCell(entry.issue.key)}](${entry.issue.url}).`;
@@ -231,7 +342,7 @@ export function buildPrComment(input: PrSummaryInput): string {
   }
 
   if (input.splitLocks && input.splitLocks.length > 0) {
-    const names = input.splitLocks.map((lock) => `\`${escapeCell(lock)}\``).join(', ');
+    const names = input.splitLocks.map((lock) => codeSpan(lock)).join(', ');
     const plural = input.splitLocks.length === 1 ? 'Lock' : 'Locks';
     sections.push(
       `🔓 ${plural} ${names} held on two shards at once — locks serialize only within one \`playwright test\` process, so sharded runs don't coordinate. Shard with \`piwi run --shard\` (lock-aware) to keep each lock in one shard.`,
@@ -286,6 +397,11 @@ export function buildPrComment(input: PrSummaryInput): string {
     sections.push(`#### 🟢 Fixed by this change (${fixedClusters.length})\n${list}`);
   }
 
+  if (input.changeCoverage) {
+    const section = renderChangeCoverage(input.changeCoverage);
+    if (section) sections.push(section);
+  }
+
   if (!input.hasBaseline && input.failedTests > 0) {
     sections.push(
       '> No previous green run for this project, so failures could not be split into new and pre-existing.',
@@ -325,6 +441,23 @@ export function buildCommitStatus(input: PrSummaryInput, context: string): Commi
     state: failing ? 'failure' : 'success',
     description: parts.join(', ').slice(0, 140),
     targetUrl: input.runUrl,
+    context,
+  };
+}
+
+/**
+ * Build the informational commit status for change coverage. Warn-only in this
+ * release, so the state is always `success` — it reports, it never blocks.
+ */
+export function buildChangeCoverageStatus(cc: PrChangeCoverage, targetUrl: string, context: string): CommitStatusInput {
+  const description =
+    cc.uncoveredFiles > 0
+      ? `${cc.uncoveredFiles} of ${cc.totalFiles} changed files have no observed reach`
+      : `all ${cc.totalFiles} changed files have observed reach`;
+  return {
+    state: 'success',
+    description: description.slice(0, 140),
+    targetUrl,
     context,
   };
 }

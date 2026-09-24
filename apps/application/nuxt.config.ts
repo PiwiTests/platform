@@ -68,6 +68,14 @@ export default defineNuxtConfig({
   modules: ['@nuxt/ui', '@vueuse/nuxt', '@vite-pwa/nuxt'],
   ssr: isDemo ? false : undefined,
 
+  // `flaky` joins the default semantic colors so a flaky badge can carry the
+  // test outcome palette's purple (mapped in app.config.ts).
+  ui: {
+    theme: {
+      colors: ['primary', 'secondary', 'success', 'info', 'warning', 'error', 'flaky'],
+    },
+  },
+
   components: {
     dirs: [{ path: '~/components', pathPrefix: false }],
   },
@@ -330,6 +338,9 @@ export default defineNuxtConfig({
       [integrationsSyncCron]: ['integrations:sync'],
       // Nightly data retention: run pruning (opt-in), outbox pruning, orphan sweep
       '17 3 * * *': ['retention:sweep'],
+      // Nightly feature-graph sweep: prune stale changes edges, branch-tagged
+      // rows and canonical nodes unseen for thirty runs (independent of retention).
+      '23 3 * * *': ['graph:sweep'],
     },
   },
 
