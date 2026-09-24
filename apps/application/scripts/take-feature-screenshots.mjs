@@ -286,6 +286,21 @@ let footerExecId = 0;
 const SCENES = [
   // ── Report artifacts (gitignored `.screens/`) ─────────────────────────────
   {
+    name: 'test-case-locators',
+    description:
+      'Test case page: the Locators section, from the latest execution, with how many tests share each chain',
+    route: '/test-cases/1',
+    viewport: { width: 1280, height: 1800 },
+    async run({ page, shoot, settle }) {
+      await page
+        .locator('[data-shot="execution-locators"] ol')
+        .waitFor({ timeout: 15000 })
+        .catch(() => {});
+      await settle();
+      await shoot(undefined, { of: '[data-shot="test-case-locators"]', pad: 12 });
+    },
+  },
+  {
     name: 'locator-usage-drawer',
     description: 'Who uses this? drawer: the call sites and tests that use a locator, with the command that runs them',
     route: '/test-run-cases/711',

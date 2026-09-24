@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * One evidence card with content-level tabs — Timeline, Screen, Source,
- * Network, Console, State, Performance, Locators — each wrapping the evidence captured for
+ * Locators, Network, Console, State, Performance — each wrapping the evidence captured for
  * an execution. A tab shows a count or a dot when it holds data and is dimmed
  * when empty; a dimmed tab still opens and states why it is empty. The default
  * tab is the one the strongest clue cites, else Timeline when it can place two
@@ -179,6 +179,13 @@ const tabs = computed<TabDef[]>(() =>
       { value: 'screen', label: 'Screen', icon: 'i-lucide-camera', hasData: screenHasData.value, count: null },
       { value: 'source', label: 'Source', icon: 'i-lucide-file-code-2', hasData: sourceHasData.value, count: null },
       {
+        value: 'locators',
+        label: 'Locators',
+        icon: 'i-lucide-crosshair',
+        hasData: locatorCount.value > 0,
+        count: locatorCount.value || null,
+      },
+      {
         value: 'network',
         label: 'Network',
         icon: 'i-lucide-arrow-left-right',
@@ -199,13 +206,6 @@ const tabs = computed<TabDef[]>(() =>
         icon: 'i-lucide-gauge',
         hasData: performanceHasData.value,
         count: null,
-      },
-      {
-        value: 'locators',
-        label: 'Locators',
-        icon: 'i-lucide-crosshair',
-        hasData: locatorCount.value > 0,
-        count: locatorCount.value || null,
       },
     ] satisfies TabDef[]
   ).filter((tab) => tabShown(tab.value) && (tab.value !== 'locators' || tab.hasData)),

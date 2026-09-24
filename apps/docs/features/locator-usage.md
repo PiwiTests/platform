@@ -11,7 +11,7 @@ Playwright reports the full locator chain on every locator step: `getByRole('for
 
 ## The Locators tab
 
-An execution's evidence card has a **Locators** tab listing every locator the test used, in order, with the action and the call site. The count beside each one is how many tests in the project use the same chain.
+An execution's evidence card has a **Locators** tab listing every locator the test used, in order, with the action and the call site. The count beside each one is how many tests in the project use the same chain. A test case's page shows the same list for its latest execution.
 
 <figure>
   <img src="/screenshots/execution-locators.png" alt="The Locators tab of an execution: each locator the test used, numbered in step order, with its action above it and a button giving how many tests use the same chain">
