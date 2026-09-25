@@ -103,6 +103,12 @@ function markerX(plotWidth: number, occurredAt: string | Date): number | null {
     end,
   );
 }
+
+/** With one project in scope, a bucket opens that project's runs of those days. */
+const drill = computed(() => (wasted.value ? bucketDrill(props.query, wasted.value.bucketDays) : null));
+function isoDay(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
 </script>
 
 <template>
@@ -161,6 +167,8 @@ function markerX(plotWidth: number, occurredAt: string | Date): number | null {
           :width="bar.slotWidth"
           :height="plotHeight"
           :fill="tooltipData === bar.d ? 'rgb(148 163 184 / 0.15)' : 'transparent'"
+          :class="drill ? 'cursor-pointer' : ''"
+          @click="drill && navigateTo(drill(isoDay(bar.d.date)))"
           @mouseenter="show($event, bar.d)"
           @mousemove="move($event)"
           @mouseleave="hide()"

@@ -92,6 +92,13 @@ is*; the pass rate over time, regression velocity, CI time, suite growth and fla
 is going*; browsers and slow endpoints in *Detail*. [Analytics widgets](./analytics-widgets) describes
 each one, and the widgets the other dashboards add.
 
+## From a number to its rows
+
+A number links to the list behind it, opened with the same period and filters. In the portfolio, a
+project's runs, flaky tests and open failure clusters open that project's lists; each heatmap cell opens
+the project's runs of that day. With one project in scope, the headline tiles and every bucket of a chart
+do the same. The project page says the list came from Analytics and offers **Show every run**.
+
 ## Exporting a chart
 
 Every chart carries a menu in its header. **Copy as PNG** puts the chart, with its title, on the clipboard

@@ -52,6 +52,13 @@ const exportData = computed(() => {
   };
 });
 
+/** With one project in scope, a bucket opens the list behind the metric for those days. */
+const drill = computed(() => {
+  const w = widget.value;
+  const list = w ? metricDrillList(w.value.metric) : null;
+  return w && list ? bucketDrill(props.query, w.bucketDays, list) : null;
+});
+
 const LINE_COLOR = 'var(--ui-primary)';
 const PREVIOUS_COLOR = 'var(--ui-text-dimmed)';
 
@@ -233,6 +240,8 @@ const { data: tooltipData, pos: tooltipPos, show, move, hide } = useChartTooltip
           :width="plotWidth / points.length"
           :height="plotHeight"
           :fill="tooltipData?.i === i ? 'rgb(148 163 184 / 0.15)' : 'transparent'"
+          :class="drill ? 'cursor-pointer' : ''"
+          @click="drill && navigateTo(drill(p.date))"
           @mouseenter="show($event, { i })"
           @mousemove="move($event)"
           @mouseleave="hide()"

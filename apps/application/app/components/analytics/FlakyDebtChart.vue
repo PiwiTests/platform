@@ -95,7 +95,11 @@ const exportData = computed(() =>
     </ErrorState>
     <EmptyState v-else-if="!hasData" icon="i-lucide-shield-check" text="No flakiness in this period." />
     <div v-else class="space-y-2">
-      <TrendLinesChart :series="perRunLines" :height="150" />
+      <TrendLinesChart
+        :series="perRunLines"
+        :height="150"
+        :bucket-href="bucketDrill(query, debt!.bucketDays, 'flaky')"
+      />
       <div>
         <p class="text-xs font-medium text-muted">Flaky tests and quarantine</p>
         <TrendLinesChart :series="countLines" :height="120" :markers="false" />

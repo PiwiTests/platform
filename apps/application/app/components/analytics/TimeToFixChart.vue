@@ -91,7 +91,7 @@ const exportData = computed(() =>
         <StatTile label="Fixes that held" :value="f.value(ttf.fixesHeldPct, 'percent', 1)" />
         <StatTile label="Opened / fixed" :value="`${ttf.opened} / ${ttf.fixed}`" />
       </StatTileGrid>
-      <TrendLinesChart :series="lines" :height="150" />
+      <TrendLinesChart :series="lines" :height="150" :bucket-href="bucketDrill(query, ttf.bucketDays, 'clusters')" />
       <div v-if="openTotal > 0" class="space-y-1">
         <p class="text-xs font-medium text-muted">Open failure causes by age</p>
         <ul class="space-y-1">

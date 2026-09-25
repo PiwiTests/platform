@@ -21,6 +21,8 @@ const props = withDefaults(
     markers?: boolean;
     /** Timeline markers to draw instead of the analytics page's (a project's, on a test page). */
     timelineMarkers?: MarkerInfo[] | null;
+    /** The list behind a bucket, opened on click; unset leaves buckets unlinked. */
+    bucketHref?: ((date: string) => string) | null;
     /** Extra marks (a fix, a regression) drawn as labeled vertical lines. */
     marks?: Array<{ date: string; label: string; color: string }>;
   }>(),
@@ -31,6 +33,7 @@ const props = withDefaults(
     valueFormat: (value: number | null) => (value === null ? '—' : String(value)),
     markers: true,
     timelineMarkers: null,
+    bucketHref: null,
     marks: () => [],
   },
 );
@@ -140,6 +143,8 @@ const f = computed(() => metricFormatter());
         :width="plotWidth / dates.length"
         :height="plotHeight"
         :fill="tooltipData?.i === i ? 'rgb(148 163 184 / 0.15)' : 'transparent'"
+        :class="bucketHref ? 'cursor-pointer' : ''"
+        @click="bucketHref && navigateTo(bucketHref(series[0]!.points[i]!.date))"
         @mouseenter="show($event, { i })"
         @mousemove="move($event)"
         @mouseleave="hide()"

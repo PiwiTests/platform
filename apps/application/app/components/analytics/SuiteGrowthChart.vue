@@ -94,7 +94,11 @@ const exportData = computed(() =>
     </ErrorState>
     <EmptyState v-else-if="!hasData" text="No runs in this period." />
     <div v-else class="space-y-2">
-      <TrendLinesChart :series="sizeLines" :height="170" />
+      <TrendLinesChart
+        :series="sizeLines"
+        :height="170"
+        :bucket-href="bucketDrill(query, growth!.bucketDays, 'runs')"
+      />
       <div>
         <p class="text-xs font-medium text-muted">Share of the suite skipped or not run</p>
         <TrendLinesChart

@@ -116,12 +116,24 @@ function deltaMeta(delta: number | null): { icon: string; class: string } | null
                     />
                   </span>
                 </td>
-                <td class="py-2.5 pr-4 text-right tabular-nums">{{ row.runCount }}</td>
+                <td class="py-2.5 pr-4 text-right tabular-nums">
+                  <NuxtLink
+                    :to="drillDownHref('runs', row.projectId, query)"
+                    class="hover:text-primary"
+                    title="The runs behind this number"
+                    >{{ row.runCount }}</NuxtLink
+                  >
+                </td>
                 <td
                   class="py-2.5 pr-4 text-right tabular-nums"
                   :class="row.flakyTests > 0 ? STATUS_PALETTE.flaky.text : ''"
                 >
-                  {{ row.flakyTests }}
+                  <NuxtLink
+                    :to="drillDownHref('flaky', row.projectId, query)"
+                    class="hover:text-primary"
+                    title="The flaky tests behind this number"
+                    >{{ row.flakyTests }}</NuxtLink
+                  >
                 </td>
                 <td class="py-2.5 pr-4 text-right tabular-nums text-gray-500 dark:text-gray-400">
                   <DurationValue :ms="row.avgRunDurationMs" />
@@ -130,7 +142,12 @@ function deltaMeta(delta: number | null): { icon: string; class: string } | null
                   class="py-2.5 pr-4 text-right tabular-nums"
                   :class="row.openClusters > 0 ? STATUS_PALETTE.failed.text : ''"
                 >
-                  {{ row.openClusters }}
+                  <NuxtLink
+                    :to="drillDownHref('clusters', row.projectId, query, { status: 'open' })"
+                    class="hover:text-primary"
+                    title="The open failure clusters behind this number"
+                    >{{ row.openClusters }}</NuxtLink
+                  >
                 </td>
                 <td class="py-2.5 pr-4 text-right tabular-nums" data-testid="portfolio-targets">
                   <span

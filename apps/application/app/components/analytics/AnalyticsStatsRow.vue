@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { AnalyticsStats } from '#shared/analytics/types';
+import type { MetricId } from '#shared/analytics/metrics';
 
 const props = defineProps<{ query: Record<string, string>; options?: Record<string, unknown>; title?: string }>();
 
@@ -15,6 +16,15 @@ const {
 );
 
 const f = computed(() => metricFormatter());
+
+/** With one project in scope, a tile opens the list behind its number. */
+function tileHref(metric: MetricId): string | undefined {
+  const projectId = singleProjectOf(props.query);
+  const list = metricDrillList(metric);
+  if (projectId === null || !list) return undefined;
+  return drillDownHref(list, projectId, props.query, list === 'clusters' ? { status: 'open' } : {});
+}
+const NuxtLink = resolveComponent('NuxtLink');
 </script>
 
 <template>
@@ -35,31 +45,38 @@ const f = computed(() => metricFormatter());
       </template>
     </ErrorState>
     <StatTileGrid v-else-if="stats">
-      <StatTile
+      <component
+        :is="tileHref(tile.metric) ? NuxtLink : 'div'"
         v-for="tile in stats.tiles"
         :key="tile.metric"
-        :label="tile.label"
-        :value="formatMetric(tile, f)"
-        :value-class="metricValueClass(tile)"
-        :title="tile.definition"
-        :data-testid="`stat-${tile.metric}`"
+        :to="tileHref(tile.metric)"
+        class="block min-w-0 rounded-lg"
+        :class="tileHref(tile.metric) ? 'hover:ring-1 hover:ring-default' : ''"
       >
-        <template #hint>
-          <span v-if="f.delta(tile)" :class="metricTrendClass(tile.trend)">{{ f.delta(tile) }}</span>
-          <span v-if="tile.companion">
-            <template v-if="f.delta(tile)"> · </template
-            >{{ tile.companion.unit === 'money' ? '' : `${tile.companion.label}: `
-            }}{{ formatMetric(tile.companion, f) }}
-          </span>
-          <span
-            v-if="tile.target"
-            class="block"
-            :class="targetClass(tileTargetMet(tile))"
-            :data-testid="`stat-target-${tile.metric}`"
-            >{{ tileTargetText(tile, f) }}</span
-          >
-        </template>
-      </StatTile>
+        <StatTile
+          :label="tile.label"
+          :value="formatMetric(tile, f)"
+          :value-class="metricValueClass(tile)"
+          :title="tile.definition"
+          :data-testid="`stat-${tile.metric}`"
+        >
+          <template #hint>
+            <span v-if="f.delta(tile)" :class="metricTrendClass(tile.trend)">{{ f.delta(tile) }}</span>
+            <span v-if="tile.companion">
+              <template v-if="f.delta(tile)"> · </template
+              >{{ tile.companion.unit === 'money' ? '' : `${tile.companion.label}: `
+              }}{{ formatMetric(tile.companion, f) }}
+            </span>
+            <span
+              v-if="tile.target"
+              class="block"
+              :class="targetClass(tileTargetMet(tile))"
+              :data-testid="`stat-target-${tile.metric}`"
+              >{{ tileTargetText(tile, f) }}</span
+            >
+          </template>
+        </StatTile>
+      </component>
     </StatTileGrid>
   </section>
 </template>

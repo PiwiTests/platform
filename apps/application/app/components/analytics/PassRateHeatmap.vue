@@ -24,6 +24,16 @@ function cellTitle(row: { name: string; label: string | null }, index: number, r
   return `${row.label || row.name} · ${date}${span}: ${rate !== null ? `${rate}% passed` : 'no runs'}`;
 }
 
+const NuxtLink = resolveComponent('NuxtLink');
+
+/** The runs behind a cell: that project's runs of that bucket, with the same scope. */
+function cellHref(projectId: number, index: number): string | undefined {
+  const date = heatmap.value?.buckets[index];
+  if (!date || !heatmap.value) return undefined;
+  const days = heatmap.value.monthly ? 30 : heatmap.value.bucketDays;
+  return drillDownHref('runs', projectId, props.query, { range: bucketRange(date, days) });
+}
+
 const legendItems = PASS_RATE_STEPS.map(({ color, label }) => ({ color, label }));
 
 const exportData = computed(() =>
@@ -117,12 +127,14 @@ const axisTicks = computed(() => {
             {{ row.label || row.name }}
           </NuxtLink>
           <div class="flex gap-px">
-            <div
+            <component
+              :is="rate === null ? 'div' : NuxtLink"
               v-for="(rate, index) in row.cells"
               :key="index"
               class="h-6 flex-1 rounded-sm min-w-1 bg-gray-100 dark:bg-gray-800"
               :style="cellStyle(rate)"
               :title="cellTitle(row, index, rate)"
+              :to="rate === null ? undefined : cellHref(row.projectId, index)"
             />
           </div>
         </div>
