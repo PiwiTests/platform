@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { describeCluster } from '#shared/describe-cluster';
-import type { TestCaseHistoryPoint, MarkerInfo, MarkersResponse } from '~~/types/api';
+import type { ApiResponse, TestCaseHistoryPoint, MarkerInfo, MarkersResponse } from '~~/types/api';
 import { CASE_STATUS_SERIES, legendOf } from '~/utils/chart';
 
 const route = useRoute();
 const testCaseId = route.params.id;
 
-const { data: testCase, refresh } = await useFetch(`/api/test-cases/${testCaseId}`);
+const { data: testCase, refresh } = await useFetch<
+  ApiResponse<typeof import('~~/server/api/test-cases/[id].get').default>
+>(`/api/test-cases/${testCaseId}`);
 const { data: historyData } = await useFetch(`/api/test-cases/${testCaseId}/history`, {
   transform: (r: { items: TestCaseHistoryPoint[] }) => r.items,
 });

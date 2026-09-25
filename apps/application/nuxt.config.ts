@@ -249,6 +249,16 @@ export default defineNuxtConfig({
   compatibilityDate: '2025-02-23',
 
   nitro: {
+    hooks: {
+      // The app's `$fetch` and `useFetch` carry no typed route map. With one,
+      // every call on a URL built at run time is matched against every server
+      // route at type level, and past about 220 routes TypeScript gives up
+      // ("excessive stack depth"). A call site names its response type instead,
+      // with `ApiResponse<typeof handler>` or a type from `types/api.ts`.
+      'types:extend'(types) {
+        types.routes = {};
+      },
+    },
     // In demo mode, override the "internal:nuxt:prerender" storage driver with the
     // built-in memory driver. On Windows, @nuxt/nitro-server registers this driver
     // using pathToFileURL() which produces a "file:///C:/..." URL that Rollup cannot

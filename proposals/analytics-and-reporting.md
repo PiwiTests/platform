@@ -1018,6 +1018,7 @@ Once a snapshot or a saved dashboard exists, several routes become one file each
 | D33 | Live dashboard links work for viewers who are not signed in, behind the share-link flag, with the expiry and revocation of every share link | Snapshot links only: a wall screen would need a signed-in session kept open |
 | D34 | The built-in Overview keeps everything today's analytics page shows, in the same bands, order and widths, reads the existing scope cookie and URL keys, and adds a few better defaults | A redesigned default layout: current users would lose their bearings, with no toggle to get the old page back |
 | D35 | A cell is two rows: the retained row, recomputed from the runs still stored, and the archived row, the numbers of the runs retention deleted, added in the transaction that deletes them; reads sum both | Freezing a cell after its first prune: runs kept forever and `PIWI_RETENTION_MIN_RUNS` leave runs on a pruned day, and a frozen cell could take a correction or an import only through deltas that a retry would apply twice |
+| D36 | The app's `$fetch` and `useFetch` carry no typed route map: a `types:extend` hook in `nuxt.config.ts` empties Nitro's generated `InternalApi`, and a call site names its response type (`ApiResponse<typeof handler>` in `types/api.ts`, or a type of that file). Milestone 3 met the depth limit again at 221 routes, on a `$fetch` whose URL is built at run time, and only three pages relied on the inferred types | Serving more names under one route, as milestone 1 did for `/api/analytics/scope`: every new route file brings the limit back, on whichever call site overflows first |
 
 ## Storage and API
 
@@ -1030,7 +1031,7 @@ migrations.
 | Route | Roles | Purpose |
 |---|---|---|
 | `GET /api/analytics/[widget]` | any signed-in | unchanged; the scope gains the run filters, test filters, period, comparison and granularity of Layer 1 |
-| `GET /api/analytics/scope` | any signed-in, scoped | how a scope resolves: the period and comparison as dates, notes, the markers to draw, the markers a period can anchor on, the selection keys and browsers of the *Tests* filter, where the rollup data starts. Served by the `[widget]` route under the reserved name `scope`, because one more route file pushes Nitro's typed-route union past TypeScript's depth limit |
+| `GET /api/analytics/scope` | any signed-in, scoped | how a scope resolves: the period and comparison as dates, notes, the markers to draw, the markers a period can anchor on, the selection keys and browsers of the *Tests* filter, where the rollup data starts. Served by the `[widget]` route under the reserved name `scope`, because one more route file pushed Nitro's typed-route union past TypeScript's depth limit; since D36 the limit no longer applies, so it can move to its own file |
 | `GET /api/analytics/rollups` | any signed-in | rollup rows for the scope, `format=json\|csv` |
 | `GET /api/analytics/dashboards`, `POST /api/analytics/dashboards` | any signed-in; sharing needs administrator or reporter, checked in the handler | list (built-in, shared, own), create |
 | `GET/PATCH/DELETE /api/analytics/dashboards/[id]`, `POST …/[id]/duplicate` | reading: anyone who can see it; changing: its owner or an administrator | read, save (with the `updatedAt` precondition), delete, duplicate; `[id]` is a saved id or a built-in key |

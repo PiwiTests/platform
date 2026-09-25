@@ -1,3 +1,4 @@
+import type { Serialize, Simplify } from 'nitropack/types';
 /**
  * Shared types for API responses and requests
  * These types are used by both the server API and the app frontend
@@ -1824,3 +1825,12 @@ export interface PageDiff {
   summary?: import('#shared/page-diff').PageDiffSummary;
   hunks?: import('#shared/page-diff').PageDiffHunk[];
 }
+
+/**
+ * The JSON response type of a server route handler, as the client receives it
+ * (dates serialized to strings): `ApiResponse<typeof import('~~/server/api/version.get').default>`.
+ * The app's `$fetch` and `useFetch` carry no route map (see the `types:extend`
+ * hook in `nuxt.config.ts`), so a call site names its response type, with this
+ * helper or with a type from this file.
+ */
+export type ApiResponse<H extends (...args: any[]) => unknown> = Simplify<Serialize<Awaited<ReturnType<H>>>>;
