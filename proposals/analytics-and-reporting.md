@@ -8,8 +8,10 @@ work so each stage pays for itself, and records the alternatives and open questi
 
 **Status.** Accepted and being built, milestone by milestone; nothing has shipped yet. Milestone 1 (metrics, filters
 and periods) is built on `claude/analytics-m1-metrics-filters-periods`, not merged yet; its probe-run fix is the
-branch's first commit, so it can go out alone. Written 2026-09-22 against 0.36.0; refreshed 2026-09-24 against 0.37.0,
-which shipped the Test Map, the capability opt-out system and one status color scale ([What 0.37.0
+branch's first commit, so it can go out alone. Milestone 2 (the quality report) is built on
+`claude/analytics-m2-quality-report`, stacked on milestone 1, not merged yet; its three new routes did not reach the
+typed-route depth limit milestone 1 met. Written 2026-09-22 against 0.36.0; refreshed 2026-09-24 against 0.37.0, which
+shipped the Test Map, the capability opt-out system and one status color scale ([What 0.37.0
 changed](#3-what-0370-changed-for-this-design)); extended the same day with custom dashboards, filters and periods
 ([Layer 2](#layer-2-dashboards), [Filters and periods](#filters-and-periods)); decided the same day: the four open
 questions on rollout order, dashboard sharing, test filters over time and live links took their defaults (D30 to D33),
