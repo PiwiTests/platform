@@ -1,7 +1,7 @@
 /**
  * Tests for the cross-project analytics platform:
  *   GET /api/analytics/:widget — generic widget dispatch (registry-driven)
- *   /analytics                 — the Overview dashboard: scope bar and widget bands
+ *   /analytics                 — the Overview dashboard: the Filters block and widget bands
  */
 import { test, expect } from './fixtures';
 import { PROJECT } from '#shared/test-project-names';
@@ -184,6 +184,23 @@ test.describe('Analytics page', () => {
     await expect(page.getByTestId('analytics-branch-policy')).toHaveText(/All branches/);
     // The scope line comes from a client-side fetch, after hydration.
     await expect(page.getByTestId('analytics-scope-line')).toContainText('compared with', { timeout: 20_000 });
+  });
+
+  test('the Filters block folds to a summary of the active filters at 375 px', async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 800 });
+    await page.goto('/analytics?period=last-month&allBranches=true');
+    const toggle = page.getByTestId('analytics-filters-toggle');
+    // The comparison comes from a client-side fetch, so the page has hydrated once it shows.
+    await expect(page.getByTestId('analytics-filters-summary')).toContainText(/Last month · vs .* · all branches/, {
+      timeout: 20_000,
+    });
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(page.getByTestId('analytics-period')).toBeHidden();
+    await toggle.click();
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.getByTestId('analytics-period')).toHaveText(/Last month/);
+    await expect(page.getByTestId('analytics-filters-summary')).toBeHidden();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
   });
 
   test('is reachable from the sidebar', async ({ page }) => {
