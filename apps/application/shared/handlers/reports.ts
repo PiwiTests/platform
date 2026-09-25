@@ -44,6 +44,7 @@ import { makeFormatter, type ReportLanguage } from '../reports/format';
 import { assertDashboardScope, ReportRequestError } from '../reports/request';
 import { sentencesFor } from '../reports/sentences';
 import type { ReportBundle } from '../reports/types';
+import { applyNarrative, type GeneratedNarrative } from '../reports/narrative';
 import {
   lastCompletePeriod,
   latestDueRun,
@@ -108,6 +109,8 @@ export const reportScheduleInputSchema = z.object({
   channelIds: z.array(z.number().int().positive()).min(1).max(20),
   /** Mint a share link per snapshot, carried by the email and Slack messages (when share links are enabled). */
   includeShareLink: z.boolean().optional(),
+  /** Add the AI narrative (three paragraphs by the configured model); the rule-based verdict when none can be written. */
+  includeNarrative: z.boolean().optional(),
   /** Administrator only: an instance-wide schedule, sent to global channels. */
   global: z.boolean().optional(),
   active: z.boolean().optional(),
@@ -176,6 +179,7 @@ export interface ReportScheduleView {
   comparison: ScheduleComparison;
   language: ReportLanguage | null;
   includeShareLink: boolean;
+  includeNarrative: boolean;
   channels: Array<{ id: number; name: string; type: string }>;
   active: boolean;
   mutedUntil: string | null;
@@ -237,6 +241,7 @@ function toView(
     comparison: row.comparison as ScheduleComparison,
     language: (row.language as ReportLanguage | null) ?? null,
     includeShareLink: row.includeShareLink,
+    includeNarrative: row.includeNarrative,
     channels: ids.map((id) => {
       const c = byId.get(id);
       return { id, name: c?.name ?? `Channel #${id}`, type: c?.type ?? 'unknown' };
@@ -434,6 +439,7 @@ export async function createReportSchedule(
       comparison: input.comparison,
       language: input.language ?? null,
       includeShareLink: input.includeShareLink ?? false,
+      includeNarrative: input.includeNarrative ?? false,
       channelIds: [...new Set(input.channelIds)],
       active: input.active ?? true,
       mutedUntil: input.mutedUntil ? new Date(input.mutedUntil) : null,
@@ -495,6 +501,7 @@ export async function updateReportSchedule(
       comparison: patch.comparison ?? row.comparison,
       language: patch.language !== undefined ? patch.language : row.language,
       includeShareLink: patch.includeShareLink ?? row.includeShareLink,
+      includeNarrative: patch.includeNarrative ?? row.includeNarrative,
       channelIds,
       active: repointed ? true : (patch.active ?? row.active),
       mutedUntil:
@@ -530,6 +537,11 @@ export interface GenerateContext {
    * its messages without one.
    */
   mintShareLink?: (snapshotId: number, expiresAt: Date, createdBy: number | null) => Promise<string>;
+  /**
+   * Write the AI narrative of a bundle, or answer null (no provider, a
+   * failure, an ungrounded answer). Absent in the demo, which has no model.
+   */
+  narrative?: (bundle: ReportBundle) => Promise<GeneratedNarrative | null>;
   now?: number;
 }
 
@@ -643,6 +655,7 @@ export async function runReportSchedule(
     now,
   });
   bundle.title = `${schedule.name}: ${bundle.title}`;
+  if (schedule.includeNarrative) applyNarrative(bundle, ctx.narrative ? await ctx.narrative(bundle) : null);
   if (period.firstRun) {
     const f = makeFormatter(bundle.language, bundle.locale);
     bundle.limits.unshift(sentencesFor(bundle.language).firstRunLimit(f.date(period.from)));

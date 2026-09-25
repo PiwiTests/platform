@@ -280,6 +280,10 @@ export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
   ],
 
   verdict: (data: AnalyticsVerdict, ctx) => [{ kind: 'text', text: ctx.s.verdict(data.facts, ctx.f), tone: data.tone }],
+  // The rule-based verdict; a schedule that turns the narrative on replaces it (`applyNarrative`).
+  narrative: (data: AnalyticsVerdict, ctx) => [
+    { kind: 'text', text: ctx.s.verdict(data.facts, ctx.f), tone: data.tone },
+  ],
 
   metric: (data: AnalyticsMetricWidget, ctx, options) => {
     const v = data.value;
@@ -911,7 +915,8 @@ export function widgetMetrics(type: AnalyticsWidgetId, options: Record<string, u
     return [...metrics, ...companions];
   }
   if (type === 'metric') return [(options.metric as MetricId | undefined) ?? 'test-pass-rate'];
-  if (type === 'verdict') return ['test-pass-rate', 'failure-causes-fixed', 'open-failure-causes', 'wasted-ci-minutes'];
+  if (type === 'verdict' || type === 'narrative')
+    return ['test-pass-rate', 'failure-causes-fixed', 'open-failure-causes', 'wasted-ci-minutes'];
   if (type === 'wasted-time') return ['wasted-ci-minutes'];
   if (type === 'ci-time-trend') return ['ci-time'];
   if (type === 'suite-growth') return ['suite-size'];

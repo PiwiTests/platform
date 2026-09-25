@@ -205,6 +205,16 @@ export const ANALYTICS_WIDGETS = [
     testFilters: true,
   },
   {
+    id: 'narrative',
+    title: 'Narrative',
+    description:
+      'Three paragraphs written by the configured AI model from the report’s numbers, in scheduled quality reports that turn it on; the rule-based verdict elsewhere.',
+    icon: 'i-lucide-sparkles',
+    size: 'full',
+    band: 'health',
+    testFilters: true,
+  },
+  {
     id: 'metric',
     title: 'Metric',
     description: 'One metric as a number, a line, bars, a table or a heatmap, optionally broken down.',

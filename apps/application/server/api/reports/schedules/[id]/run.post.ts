@@ -1,6 +1,7 @@
 import { getDatabase } from '../../../../database';
 import { requireAuth } from '../../../../utils/auth';
 import { requireRouteId } from '../../../../utils/project-access';
+import { generateReportNarrative } from '../../../../utils/reports/ai-narrative';
 import { sweepOutbox } from '../../../../utils/notifications/dispatch';
 import {
   reportActor,
@@ -43,6 +44,7 @@ export default eventHandler(async (event) => {
       piwiVersion: reportPiwiVersion(),
       deliver: true,
       mintShareLink: scheduledShareLinkMinter(db),
+      narrative: (bundle) => generateReportNarrative(db, bundle),
     }),
   );
   if (result.queued > 0) sweepOutbox(db).catch((e) => console.error('[reports] sweep after run failed', e));

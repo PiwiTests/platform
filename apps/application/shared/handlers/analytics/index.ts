@@ -53,6 +53,7 @@ const ANALYTICS_WIDGET_HANDLERS: Record<AnalyticsWidgetId, AnalyticsWidgetHandle
   stats: getAnalyticsStats,
   metric: getAnalyticsMetric,
   verdict: getAnalyticsVerdict,
+  narrative: getAnalyticsVerdict,
   progress: getAnalyticsProgress,
   risks: getAnalyticsRisks,
   insights: getAnalyticsInsights,
