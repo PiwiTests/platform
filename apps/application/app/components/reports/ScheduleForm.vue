@@ -195,6 +195,7 @@ const channelItems = computed(() =>
 function channelTypeLabel(type: string): string {
   if (type === 'email' || type === 'personal_email') return 'email';
   if (type === 'slack') return 'Slack';
+  if (type === 'teams') return 'Microsoft Teams';
   if (type === 'webhook') return 'webhook';
   if (type === 'browser') return 'browser';
   return type;

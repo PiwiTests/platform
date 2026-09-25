@@ -230,6 +230,11 @@ export const HELP_TOPICS = {
     doc: 'features/quality-reports#report-schedules',
     envVars: ['PIWI_TIME_ZONE'],
   },
+  'notifications.teams': {
+    title: 'Microsoft Teams channel',
+    text: 'Posts an Adaptive Card to a Teams channel. In Teams, add the Workflows template "Post to a channel when a webhook request is received" (or a legacy incoming webhook) to the channel and paste its URL here. Events, digests and quality reports all get a card.',
+    doc: 'features/notifications#microsoft-teams',
+  },
   'reports.share-link': {
     title: 'Share link per report',
     text: 'Each report this schedule generates gets its own read-only share link, which the email and the Slack message carry, so a reader without an account opens the report in one click. The link expires a week after the next report arrives. Slack also shows the trend as an image through it. Needs share links enabled on the instance.',
@@ -607,7 +612,7 @@ export const HELP_TOPICS = {
   },
   'notifications.channels': {
     title: 'Channels',
-    text: 'Destinations an alert can go to — browser, email, Slack or webhook. Create a channel, then subscribe events to it. Administrators can make a channel global (usable by everyone); without authentication every channel is global.',
+    text: 'Destinations an alert can go to — browser, email, Slack, Microsoft Teams or webhook. Create a channel, then subscribe events to it. Administrators can make a channel global (usable by everyone); without authentication every channel is global.',
     doc: 'features/notifications#channels',
   },
   'notifications.subscriptions': {
