@@ -96,14 +96,17 @@ export function rowsFromExecutions(
     row.didNotRunTests += counts.didNotRunTests;
     row.flakyTests += counts.flakyTests;
     row.maxTotalTests = Math.max(row.maxTotalTests, counts.totalTests);
+    let runDurationMs = 0;
     for (const execution of matching) {
       const duration = execution.duration ?? 0;
-      row.durationMs += duration;
+      runDurationMs += duration;
       row.waitMs += execution.wastedTimeMs ?? 0;
       if (FAILED_EXECUTION_STATUSES.has(execution.status)) row.failedExecMs += duration;
       if (execution.isNewRegression === 1) row.newRegressions += 1;
       if (execution.isNewFlaky === 1) row.newFlaky += 1;
     }
+    row.durationMs += runDurationMs;
+    if (runDurationMs > 0) row.durationRuns += 1;
   }
   return [...rows.values()].sort((a, b) => a.day.localeCompare(b.day));
 }

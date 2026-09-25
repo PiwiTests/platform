@@ -1485,6 +1485,8 @@ export const analyticsDailyRollups = pgTable(
     durationMs: bigint('duration_ms', { mode: 'number' }).notNull().default(0),
     avgTestDurationSumMs: bigint('avg_test_duration_sum_ms', { mode: 'number' }).notNull().default(0),
     p90TestDurationSumMs: bigint('p90_test_duration_sum_ms', { mode: 'number' }).notNull().default(0),
+    durationRuns: integer('duration_runs').notNull().default(0), // runs with a duration: divides duration_ms
+    testDurationRuns: integer('test_duration_runs').notNull().default(0), // runs with test durations: divides the two sums
     waitMs: bigint('wait_ms', { mode: 'number' }).notNull().default(0),
     failedExecMs: bigint('failed_exec_ms', { mode: 'number' }).notNull().default(0),
     newRegressions: integer('new_regressions').notNull().default(0),

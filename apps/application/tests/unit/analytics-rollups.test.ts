@@ -25,6 +25,7 @@ const { deleteRunsByIds, deleteRunsOlderThan } = await import('../../server/util
 const { releaseRun, keepRun } = await import('../../shared/handlers/run-keep');
 const { dayKey } = await import('../../shared/handlers/analytics/common');
 const { PROBE_RUN_METADATA_KEY } = await import('../../shared/handlers/probes');
+const { rollupMetricValue } = await import('../../shared/handlers/analytics/metric-values');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -64,7 +65,10 @@ interface RunSeed {
   passedTests?: number;
   failedTests?: number;
   flakyTests?: number;
-  duration?: number;
+  /** Null for a run that never reported one (an interrupted run). */
+  duration?: number | null;
+  /** Null for a run with no measured test durations. */
+  p90TestDuration?: number | null;
   environment?: string | null;
   branch?: string | null;
   isFullRun?: number;
@@ -82,7 +86,7 @@ async function seedRun(seed: RunSeed): Promise<number> {
       projectId: seed.projectId ?? 1,
       status: seed.status ?? 'passed',
       startTime: day,
-      duration: seed.duration ?? 60_000,
+      duration: seed.duration === undefined ? 60_000 : seed.duration,
       totalTests: seed.totalTests ?? 10,
       passedTests: seed.passedTests ?? 10,
       failedTests: seed.failedTests ?? 0,
@@ -91,8 +95,8 @@ async function seedRun(seed: RunSeed): Promise<number> {
       branch: seed.branch ?? null,
       isFullRun: seed.isFullRun ?? 1,
       metadata: seed.metadata,
-      avgTestDuration: 1_000,
-      p90TestDuration: 2_000,
+      avgTestDuration: seed.p90TestDuration === null ? null : 1_000,
+      p90TestDuration: seed.p90TestDuration === undefined ? 2_000 : seed.p90TestDuration,
     })
     .returning({ id: schema.testRuns.id });
   if (seed.cases?.length) {
@@ -159,6 +163,22 @@ describe('the ingest hook', () => {
       durationMs: 60_000,
     });
     expect({ ...second[0], computedAt: null }).toEqual({ ...first[0], computedAt: null });
+  });
+
+  test('an average divides by the runs that have the value, so runs without one do not pull it down', async () => {
+    // Ten 10-minute runs, then ten interrupted runs that reported no duration and no test durations.
+    for (let i = 0; i < 10; i++) await seedRun({ daysAgo: 1, duration: 600_000 });
+    for (let i = 0; i < 10; i++)
+      await seedRun({ daysAgo: 1, status: 'interrupted', duration: null, p90TestDuration: null });
+    await rollups.backfillDailyRollups(db as any);
+
+    const totals = await dayTotals(1);
+    expect(totals).toMatchObject({ runs: 20, durationRuns: 10, testDurationRuns: 10, durationMs: 6_000_000 });
+    expect(rollupMetricValue('average-run-duration', totals, null)).toBe(600_000);
+    expect(rollupMetricValue('average-p90-test-duration', totals, null)).toBe(2_000);
+    // A day with no measured duration has no average, rather than 0.
+    const none = { ...rollups.emptyRollupTotals(), runs: 3 };
+    expect(rollupMetricValue('average-run-duration', none, null)).toBeNull();
   });
 
   test('splits cells by environment, branch and run kind, and leaves probe and unfinished runs out', async () => {

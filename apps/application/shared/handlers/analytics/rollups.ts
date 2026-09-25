@@ -35,8 +35,12 @@ export interface RollupTotals {
   /** Highest `totalTests` of one run: read with MAX, never summed. */
   maxTotalTests: number;
   durationMs: number;
+  /** Runs with a duration: the divisor of `durationMs`, since a run without one (interrupted, imported) adds 0. */
+  durationRuns: number;
   avgTestDurationSumMs: number;
   p90TestDurationSumMs: number;
+  /** Runs with measured test durations: the divisor of the two test duration sums. */
+  testDurationRuns: number;
   waitMs: number;
   failedExecMs: number;
   newRegressions: number;
@@ -54,8 +58,10 @@ const SUMMED_FIELDS = [
   'didNotRunTests',
   'flakyTests',
   'durationMs',
+  'durationRuns',
   'avgTestDurationSumMs',
   'p90TestDurationSumMs',
+  'testDurationRuns',
   'waitMs',
   'failedExecMs',
   'newRegressions',
@@ -75,8 +81,10 @@ export function emptyRollupTotals(): RollupTotals {
     flakyTests: 0,
     maxTotalTests: 0,
     durationMs: 0,
+    durationRuns: 0,
     avgTestDurationSumMs: 0,
     p90TestDurationSumMs: 0,
+    testDurationRuns: 0,
     waitMs: 0,
     failedExecMs: 0,
     newRegressions: 0,
@@ -234,9 +242,16 @@ async function aggregateRuns(db: DrizzleDB, runs: RawRun[]) {
     t.didNotRunTests += run.didNotRunTests ?? 0;
     t.flakyTests += run.flakyTests ?? 0;
     t.maxTotalTests = Math.max(t.maxTotalTests, run.totalTests ?? 0);
-    t.durationMs += run.duration ?? 0;
-    t.avgTestDurationSumMs += run.avgTestDuration ?? 0;
-    t.p90TestDurationSumMs += run.p90TestDuration ?? 0;
+    // An average divides by the runs that have the value, so a run without one does not pull it down.
+    if (run.duration != null && run.duration > 0) {
+      t.durationMs += run.duration;
+      t.durationRuns += 1;
+    }
+    if (run.p90TestDuration != null && run.p90TestDuration > 0) {
+      t.avgTestDurationSumMs += run.avgTestDuration ?? 0;
+      t.p90TestDurationSumMs += run.p90TestDuration;
+      t.testDurationRuns += 1;
+    }
     t.waitMs += s?.waitMs ?? 0;
     t.failedExecMs += s?.failedExecMs ?? 0;
     t.newRegressions += s?.newRegressions ?? 0;

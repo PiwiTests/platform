@@ -48,8 +48,8 @@ UTC day, environment, branch and run kind, with the history retention deleted st
   `{ "items": [...] }`.
 - The scope keys of the analytics page narrow it: `period` (30 days by default; `all` for everything kept),
   `projects`, `projectTags`, `environments`, `branches`, `allBranches`, `fullRunsOnly`.
-- The `*SumMs` columns are sums over the cell's runs: divide by `runs` for an average. `maxTotalTests` is the
-  largest suite one run reported.
+- For an average, divide `durationMs` by `durationRuns` (the runs with a duration) and the two
+  `*TestDurationSumMs` columns by `testDurationRuns`. `maxTotalTests` is the largest suite one run reported.
 - A cell that could run as a spreadsheet formula (a branch named `=…`) is prefixed with `'`.
 
 ```bash

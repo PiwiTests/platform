@@ -1468,6 +1468,8 @@ export const analyticsDailyRollups = sqliteTable(
     durationMs: integer('duration_ms').notNull().default(0),
     avgTestDurationSumMs: integer('avg_test_duration_sum_ms').notNull().default(0),
     p90TestDurationSumMs: integer('p90_test_duration_sum_ms').notNull().default(0),
+    durationRuns: integer('duration_runs').notNull().default(0), // runs with a duration: divides duration_ms
+    testDurationRuns: integer('test_duration_runs').notNull().default(0), // runs with test durations: divides the two sums
     waitMs: integer('wait_ms').notNull().default(0),
     failedExecMs: integer('failed_exec_ms').notNull().default(0),
     newRegressions: integer('new_regressions').notNull().default(0),
