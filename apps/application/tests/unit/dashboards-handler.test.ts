@@ -248,6 +248,21 @@ describe('saved dashboards', () => {
     expect(all.hiddenProjects).toBe(2);
   });
 
+  test('a new dashboard answers with the projects its creator cannot open', async () => {
+    const source = await dashboards.createDashboard(
+      db as any,
+      { name: 'Wide', visibility: 'shared', definition: definition([metricWidget('pass')], { projectIds: [1, 2, 3] }) },
+      admin,
+    );
+    const copy = await dashboards.createDashboard(
+      db as any,
+      { name: 'My copy', visibility: 'private', from: source.id },
+      user,
+      new Set([1]),
+    );
+    expect(copy.hiddenProjects).toBe(2);
+  });
+
   test('a widget is computed for the viewer only', async () => {
     const d = await dashboards.createDashboard(
       db as any,

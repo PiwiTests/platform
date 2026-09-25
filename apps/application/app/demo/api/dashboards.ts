@@ -55,9 +55,14 @@ export async function apiListDashboards(actingUserId: number | null) {
 }
 
 /** POST /api/analytics/dashboards */
-export async function apiCreateDashboard(body: unknown, actingUserId: number | null) {
+export async function apiCreateDashboard(body: unknown, actingUserId: number | null, access: ProjectAccess) {
   return demoDashboard(async () =>
-    createDashboard(await getDemoDb(), parseDashboardBody(dashboardInputSchema, body), await demoActor(actingUserId)),
+    createDashboard(
+      await getDemoDb(),
+      parseDashboardBody(dashboardInputSchema, body),
+      await demoActor(actingUserId),
+      access,
+    ),
   );
 }
 

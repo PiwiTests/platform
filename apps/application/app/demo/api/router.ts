@@ -435,7 +435,7 @@ const routes: RouteEntry[] = [
   {
     method: 'POST',
     pattern: /^\/api\/analytics\/dashboards$/,
-    handler: async (_m, body, _q, ctx) => apiCreateDashboard(body, ctx?.actingUserId ?? null),
+    handler: async (_m, body, _q, ctx) => apiCreateDashboard(body, ctx?.actingUserId ?? null, ctx?.scope ?? 'all'),
   },
   {
     method: 'GET',

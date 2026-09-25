@@ -1,5 +1,6 @@
 import { getDatabase } from '../../../database';
 import { requireAuth } from '../../../utils/auth';
+import { getProjectScope } from '../../../utils/project-access';
 import { dashboardActor, dashboardRoute } from '../../../utils/dashboards';
 import { createDashboard, dashboardInputSchema, parseDashboardBody } from '#shared/handlers/dashboards';
 
@@ -17,7 +18,10 @@ export default eventHandler(async (event) => {
   const user = await requireAuth(event);
   const db = await getDatabase();
   const input = await dashboardRoute(async () => parseDashboardBody(dashboardInputSchema, await readBody(event)));
-  const created = await dashboardRoute(() => createDashboard(db as any, input, dashboardActor(event, user as any)));
+  const access = await getProjectScope(db, user as any);
+  const created = await dashboardRoute(() =>
+    createDashboard(db as any, input, dashboardActor(event, user as any), access),
+  );
   setResponseStatus(event, 201);
   return created;
 });

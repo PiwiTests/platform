@@ -461,6 +461,8 @@ export async function createDashboard(
   db: DrizzleDB,
   input: DashboardInput,
   actor: DashboardActor,
+  /** The creator's project access, so the answer counts the projects of its scope they cannot open. */
+  access: ProjectAccess = 'all',
   now = Date.now(),
 ): Promise<DashboardView> {
   const definition =
@@ -483,7 +485,7 @@ export async function createDashboard(
       updatedBy: actor.id,
     })
     .returning();
-  return getDashboard(db, row!.id, actor, 'all', { now });
+  return getDashboard(db, row!.id, actor, access, { now });
 }
 
 /**
