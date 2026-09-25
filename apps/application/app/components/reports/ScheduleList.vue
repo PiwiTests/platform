@@ -19,6 +19,7 @@ function isMuted(s: ReportScheduleView): boolean {
 }
 
 function stateLabel(s: ReportScheduleView): string | null {
+  if (s.inactiveReason) return 'Inactive';
   if (!s.active) return 'Paused';
   if (isMuted(s)) return 'Muted';
   return null;
@@ -80,10 +81,12 @@ function menu(s: ReportScheduleView) {
             icon: 'i-lucide-bell-off',
             onSelect: () => patch(s, { mutedUntil: week }, 'Muted for a week'),
           },
-      s.active
-        ? { label: 'Pause', icon: 'i-lucide-pause', onSelect: () => patch(s, { active: false }, 'Paused') }
-        : { label: 'Resume', icon: 'i-lucide-play', onSelect: () => patch(s, { active: true }, 'Resumed') },
-    ],
+      s.inactiveReason
+        ? null
+        : s.active
+          ? { label: 'Pause', icon: 'i-lucide-pause', onSelect: () => patch(s, { active: false }, 'Paused') }
+          : { label: 'Resume', icon: 'i-lucide-play', onSelect: () => patch(s, { active: true }, 'Resumed') },
+    ].filter((item) => item !== null),
     [{ label: 'Delete', icon: 'i-lucide-trash-2', color: 'error' as const, onSelect: () => remove(s) }],
   ];
 }
@@ -107,6 +110,9 @@ const sorted = computed(() => [...props.schedules].sort((a, b) => a.name.localeC
         <p class="text-xs text-muted">
           {{ s.dashboardName }} · {{ describeCadence(s) }}<template v-if="s.global"> · global</template>
         </p>
+        <p v-if="s.inactiveReason" class="text-xs text-muted" data-testid="schedule-inactive-reason">
+          {{ s.inactiveReason }}
+        </p>
         <p class="text-xs text-muted break-words">To {{ s.channels.map((c) => c.name).join(', ') || 'no channel' }}</p>
         <p v-if="s.active && s.nextRunAt" class="text-xs text-muted">
           Next: <ClientDate :date="s.nextRunAt" />
@@ -115,6 +121,18 @@ const sorted = computed(() => [...props.schedules].sort((a, b) => a.name.localeC
       </div>
       <div v-if="s.canEdit" class="flex items-center gap-1 shrink-0">
         <UButton
+          v-if="s.inactiveReason"
+          size="sm"
+          color="neutral"
+          variant="outline"
+          icon="i-lucide-layout-dashboard"
+          :data-testid="`schedule-repoint-${s.id}`"
+          @click="emit('edit', s)"
+        >
+          Pick a dashboard
+        </UButton>
+        <UButton
+          v-else
           size="sm"
           color="neutral"
           variant="outline"

@@ -13,6 +13,7 @@
 import { and, desc, eq, gte, inArray, isNotNull, lte } from 'drizzle-orm';
 import { z } from 'zod';
 import {
+  analyticsDashboards,
   notificationDeliveries,
   notificationChannels,
   projects,
@@ -33,9 +34,12 @@ import {
   getBuiltinDashboard,
   isBuiltinDashboardKey,
   type BuiltinDashboardKey,
+  type DashboardDefinition,
 } from '../analytics/dashboards';
+import { Role } from '../types';
+import { DashboardError, loadDashboardDefinition, type DashboardActor } from './dashboards';
 import type { ComparisonSpec } from '../analytics/period';
-import { collectReportBundle } from '../reports/collect';
+import { collectReportBundle, type ReportDashboard } from '../reports/collect';
 import { makeFormatter, type ReportLanguage } from '../reports/format';
 import { assertDashboardScope, ReportRequestError } from '../reports/request';
 import { sentencesFor } from '../reports/sentences';
@@ -85,9 +89,15 @@ export interface ReportChannel {
 
 const BUILTIN_KEYS = BUILTIN_DASHBOARDS.map((d) => d.key) as [BuiltinDashboardKey, ...BuiltinDashboardKey[]];
 
+/** A built-in dashboard key or a saved dashboard's id. */
+const dashboardRefSchema = z.union([
+  z.enum(BUILTIN_KEYS),
+  z.union([z.string().regex(/^\d+$/), z.number().int().positive()]).transform((v) => String(v)),
+]);
+
 export const reportScheduleInputSchema = z.object({
   name: z.string().trim().min(1).max(120),
-  dashboard: z.enum(BUILTIN_KEYS),
+  dashboard: dashboardRefSchema,
   /** The analytics scope keys (`projects`, `environments`, `allBranches`, `sel`, `owner`, …); the period is ignored. */
   scope: z.record(z.string(), z.string()).default({}),
   cadence: z.enum(REPORT_CADENCES),
@@ -151,8 +161,11 @@ export interface ReportScheduleView {
   /** Instance-wide, managed by administrators. */
   global: boolean;
   ownerId: number | null;
-  dashboard: BuiltinDashboardKey;
+  /** A built-in key or a saved dashboard's id; null once its saved dashboard was deleted. */
+  dashboard: string | null;
   dashboardName: string;
+  /** Why an inactive schedule does not fire, when it is not a choice (its saved dashboard was deleted). */
+  inactiveReason: string | null;
   /** The scope query keys of the schedule's filters, as the analytics page reads them. */
   scope: Record<string, string>;
   cadence: ReportCadence;
@@ -184,8 +197,26 @@ function canEdit(row: Pick<ScheduleRow, 'userId'>, actor: ReportActor): boolean 
   return row.userId !== null && row.userId === actor.id;
 }
 
-function toView(row: ScheduleRow, channels: ReportChannel[], actor: ReportActor): ReportScheduleView {
-  const dashboard = isBuiltinDashboardKey(row.builtinDashboard) ? row.builtinDashboard : 'executive';
+export const DASHBOARD_DELETED_REASON = 'Its saved dashboard was deleted. Pick another dashboard to reactivate it.';
+
+function toView(
+  row: ScheduleRow,
+  channels: ReportChannel[],
+  actor: ReportActor,
+  dashboardNames: Map<number, string>,
+): ReportScheduleView {
+  const dashboard =
+    row.dashboardId !== null && row.dashboardId !== undefined
+      ? String(row.dashboardId)
+      : isBuiltinDashboardKey(row.builtinDashboard)
+        ? row.builtinDashboard
+        : null;
+  const dashboardName =
+    row.dashboardId != null
+      ? (dashboardNames.get(row.dashboardId) ?? `Dashboard #${row.dashboardId}`)
+      : dashboard
+        ? getBuiltinDashboard(dashboard as BuiltinDashboardKey).name
+        : 'Deleted dashboard';
   const ids = (row.channelIds as number[] | null) ?? [];
   const byId = new Map(channels.map((c) => [c.id, c]));
   return {
@@ -194,7 +225,8 @@ function toView(row: ScheduleRow, channels: ReportChannel[], actor: ReportActor)
     global: row.userId === null,
     ownerId: row.userId,
     dashboard,
-    dashboardName: getBuiltinDashboard(dashboard).name,
+    dashboardName,
+    inactiveReason: dashboard === null ? DASHBOARD_DELETED_REASON : null,
     scope: filtersQuery(row.scope as Partial<AnalyticsScope> | null),
     cadence: row.cadence as ReportCadence,
     anchor: row.anchor ?? null,
@@ -213,6 +245,20 @@ function toView(row: ScheduleRow, channels: ReportChannel[], actor: ReportActor)
     updatedAt: iso(row.updatedAt)!,
     canEdit: canEdit(row, actor),
   };
+}
+
+async function savedDashboardNames(db: DrizzleDB, rows: ScheduleRow[]): Promise<Map<number, string>> {
+  const ids = [...new Set(rows.map((r) => r.dashboardId).filter((id): id is number => id != null))];
+  if (ids.length === 0) return new Map();
+  const found = await db
+    .select({ id: analyticsDashboards.id, name: analyticsDashboards.name })
+    .from(analyticsDashboards)
+    .where(inArray(analyticsDashboards.id, ids));
+  return new Map(found.map((r) => [r.id, r.name]));
+}
+
+async function viewOf(db: DrizzleDB, row: ScheduleRow, channels: ReportChannel[], actor: ReportActor) {
+  return toView(row, channels, actor, await savedDashboardNames(db, [row]));
 }
 
 // ── Schedules ────────────────────────────────────────────────────────────────
@@ -241,7 +287,8 @@ export async function listReportSchedules(
   const rows = await db.select().from(reportSchedules).orderBy(desc(reportSchedules.createdAt));
   const visible =
     actor.isAdmin || !actor.authEnabled ? rows : rows.filter((r) => r.userId === null || r.userId === actor.id);
-  return visible.map((r) => toView(r, channels, actor));
+  const names = await savedDashboardNames(db, visible);
+  return visible.map((r) => toView(r, channels, actor, names));
 }
 
 async function loadSchedule(db: DrizzleDB, id: number): Promise<ScheduleRow> {
@@ -260,7 +307,7 @@ export async function getReportSchedule(
   const row = await loadSchedule(db, id);
   const visible = actor.isAdmin || !actor.authEnabled || row.userId === null || row.userId === actor.id;
   if (!visible) throw new ReportScheduleError(404, 'Report schedule not found');
-  return toView(row, channels, actor);
+  return viewOf(db, row, channels, actor);
 }
 
 async function editableSchedule(db: DrizzleDB, id: number, actor: ReportActor): Promise<ScheduleRow> {
@@ -284,23 +331,54 @@ export interface ScheduleWriteContext {
   now?: number;
 }
 
+/** The dashboard actor a schedule's actor stands for: what saved dashboards it may open. */
+function dashboardActorOf(actor: ReportActor): DashboardActor {
+  return { id: actor.id, role: actor.isAdmin ? Role.ADMINISTRATOR : Role.REPORTER, authEnabled: actor.authEnabled };
+}
+
+/** The dashboard a schedule renders: a built-in key, or a saved dashboard the actor may open. */
+async function scheduleDashboard(
+  db: DrizzleDB,
+  ref: string,
+  actor: ReportActor,
+  global: boolean,
+): Promise<{ builtin: BuiltinDashboardKey | null; savedId: number | null; definition: DashboardDefinition }> {
+  if (isBuiltinDashboardKey(ref)) {
+    return { builtin: ref, savedId: null, definition: getBuiltinDashboard(ref).definition };
+  }
+  let loaded;
+  try {
+    loaded = await loadDashboardDefinition(db, ref, dashboardActorOf(actor));
+  } catch (error) {
+    if (error instanceof DashboardError) throw new ReportScheduleError(error.statusCode, error.message);
+    throw error;
+  }
+  // A global schedule reports to everyone its channels reach, so its dashboard must be one everyone can open.
+  if (global && actor.authEnabled && loaded.row?.visibility !== 'shared') {
+    throw new ReportScheduleError(400, 'A global schedule needs a built-in or a shared dashboard');
+  }
+  return { builtin: null, savedId: loaded.row!.id, definition: loaded.definition };
+}
+
 function checkSchedule(
   values: {
-    dashboard: BuiltinDashboardKey;
+    dashboard: { builtin: BuiltinDashboardKey | null; definition: DashboardDefinition };
     filters: Partial<AnalyticsScope>;
     channelIds: number[];
     global: boolean;
   },
   ctx: ScheduleWriteContext,
 ): void {
-  try {
-    assertDashboardScope(values.dashboard, {
-      ...dashboardScope(getBuiltinDashboard(values.dashboard).definition),
-      ...values.filters,
-    });
-  } catch (error) {
-    if (error instanceof ReportRequestError) throw new ReportScheduleError(400, error.message);
-    throw error;
+  if (values.dashboard.builtin) {
+    try {
+      assertDashboardScope(values.dashboard.builtin, {
+        ...dashboardScope(values.dashboard.definition),
+        ...values.filters,
+      });
+    } catch (error) {
+      if (error instanceof ReportRequestError) throw new ReportScheduleError(400, error.message);
+      throw error;
+    }
   }
   if (values.global && ctx.actor.authEnabled && !ctx.actor.isAdmin) {
     throw new ReportScheduleError(403, 'Only administrators can create global schedules');
@@ -333,7 +411,8 @@ export async function createReportSchedule(
   const now = ctx.now ?? Date.now();
   const global = input.global === true || !ctx.actor.authEnabled;
   const filters = scheduleFilters(input.scope);
-  checkSchedule({ dashboard: input.dashboard, filters, channelIds: input.channelIds, global }, ctx);
+  const dashboard = await scheduleDashboard(db, input.dashboard, ctx.actor, global);
+  checkSchedule({ dashboard, filters, channelIds: input.channelIds, global }, ctx);
   const anchor = anchorFor(input.cadence, input.anchor);
   const at = normalizeScheduleTime(input.at);
   const createdAt = new Date(now);
@@ -343,7 +422,8 @@ export async function createReportSchedule(
       name: input.name,
       userId: global ? null : ctx.actor.id,
       scope: filters,
-      builtinDashboard: input.dashboard,
+      builtinDashboard: dashboard.builtin,
+      dashboardId: dashboard.savedId,
       cadence: input.cadence,
       anchor,
       at,
@@ -357,7 +437,7 @@ export async function createReportSchedule(
       updatedAt: createdAt,
     })
     .returning();
-  return toView(row!, ctx.channels, ctx.actor);
+  return viewOf(db, row!, ctx.channels, ctx.actor);
 }
 
 /** Change a schedule; a new cadence, anchor or time moves its next firing. */
@@ -370,8 +450,16 @@ export async function updateReportSchedule(
   const now = ctx.now ?? Date.now();
   const row = await editableSchedule(db, id, ctx.actor);
   const global = patch.global !== undefined ? patch.global || !ctx.actor.authEnabled : row.userId === null;
-  const dashboard =
-    patch.dashboard ?? (isBuiltinDashboardKey(row.builtinDashboard) ? row.builtinDashboard : 'executive');
+  const currentRef =
+    row.dashboardId != null
+      ? String(row.dashboardId)
+      : isBuiltinDashboardKey(row.builtinDashboard)
+        ? row.builtinDashboard
+        : null;
+  const ref = patch.dashboard ?? currentRef;
+  if (ref === null)
+    throw new ReportScheduleError(400, 'Pick a dashboard for this schedule: its saved dashboard was deleted');
+  const dashboard = await scheduleDashboard(db, ref, ctx.actor, global);
   const filters = patch.scope ? scheduleFilters(patch.scope) : ((row.scope as Partial<AnalyticsScope> | null) ?? {});
   const channelIds = patch.channelIds ? [...new Set(patch.channelIds)] : ((row.channelIds as number[] | null) ?? []);
   checkSchedule({ dashboard, filters, channelIds, global }, ctx);
@@ -380,7 +468,9 @@ export async function updateReportSchedule(
   const anchor = anchorFor(cadence, patch.anchor !== undefined ? patch.anchor : row.anchor);
   const at = patch.at ? normalizeScheduleTime(patch.at) : row.at;
   const timingChanged = cadence !== row.cadence || anchor !== row.anchor || at !== row.at;
-  const reactivated = patch.active === true && !row.active;
+  // Pointing a schedule whose dashboard was deleted at another one reactivates it.
+  const repointed = currentRef === null && patch.dashboard !== undefined && patch.active !== false;
+  const reactivated = (patch.active === true || repointed) && !row.active;
   const next =
     timingChanged || reactivated || !row.nextRunAt
       ? nextRunAt({ cadence, anchor, at, createdAt: row.createdAt }, now, ctx.timeZone)
@@ -392,14 +482,15 @@ export async function updateReportSchedule(
       name: patch.name ?? row.name,
       userId: global ? null : (row.userId ?? ctx.actor.id),
       scope: filters,
-      builtinDashboard: dashboard,
+      builtinDashboard: dashboard.builtin,
+      dashboardId: dashboard.savedId,
       cadence,
       anchor,
       at,
       comparison: patch.comparison ?? row.comparison,
       language: patch.language !== undefined ? patch.language : row.language,
       channelIds,
-      active: patch.active ?? row.active,
+      active: repointed ? true : (patch.active ?? row.active),
       mutedUntil:
         patch.mutedUntil !== undefined ? (patch.mutedUntil ? new Date(patch.mutedUntil) : null) : row.mutedUntil,
       nextRunAt: next,
@@ -407,7 +498,7 @@ export async function updateReportSchedule(
     })
     .where(eq(reportSchedules.id, id))
     .returning();
-  return toView(updated!, ctx.channels, ctx.actor);
+  return viewOf(db, updated!, ctx.channels, ctx.actor);
 }
 
 /** Delete a schedule; its snapshots stay, as reports generated by hand. */
@@ -435,6 +526,17 @@ export interface ScheduleRunResult {
   /** Outbox rows queued (0 when muted or not delivering). */
   queued: number;
   muted: boolean;
+}
+
+/** The dashboard a firing renders; a schedule whose saved dashboard was deleted cannot fire. */
+async function runDashboard(db: DrizzleDB, schedule: ScheduleRow): Promise<BuiltinDashboardKey | ReportDashboard> {
+  if (schedule.dashboardId != null) {
+    const [row] = await db.select().from(analyticsDashboards).where(eq(analyticsDashboards.id, schedule.dashboardId));
+    if (row) return { ref: String(row.id), name: row.name, definition: row.definition as DashboardDefinition };
+  } else if (isBuiltinDashboardKey(schedule.builtinDashboard)) {
+    return schedule.builtinDashboard;
+  }
+  throw new ReportScheduleError(409, DASHBOARD_DELETED_REASON);
 }
 
 const COMPARISONS: Record<ScheduleComparison, ComparisonSpec> = {
@@ -504,9 +606,10 @@ export async function runReportSchedule(
   };
   const manual = ctx.runAt === undefined;
   const period = manual ? lastCompletePeriod(timing, now, ctx.timeZone) : periodFor(timing, ctx.runAt!, ctx.timeZone);
-  const dashboard = isBuiltinDashboardKey(schedule.builtinDashboard) ? schedule.builtinDashboard : 'executive';
+  const dashboard = await runDashboard(db, schedule);
+  const definition = typeof dashboard === 'string' ? getBuiltinDashboard(dashboard).definition : dashboard.definition;
   const scope: AnalyticsScope = {
-    ...dashboardScope(getBuiltinDashboard(dashboard).definition),
+    ...dashboardScope(definition),
     ...((schedule.scope as Partial<AnalyticsScope> | null) ?? {}),
     period: { kind: 'range', from: period.from, to: period.to },
     comparison: COMPARISONS[schedule.comparison as ScheduleComparison] ?? { kind: 'previous' },
@@ -654,7 +757,7 @@ export async function rescheduleReportSchedules(db: DrizzleDB, timeZone: string,
 /** Generate a quality report by hand and keep it as a snapshot. */
 export async function createReportSnapshot(
   db: DrizzleDB,
-  request: { dashboard: BuiltinDashboardKey; scope: AnalyticsScope; language?: ReportLanguage },
+  request: { dashboard: BuiltinDashboardKey | ReportDashboard; scope: AnalyticsScope; language?: ReportLanguage },
   ctx: Omit<GenerateContext, 'deliver'> & { createdBy: number | null },
 ): Promise<{ id: number }> {
   const bundle = await collectReportBundle(db, {

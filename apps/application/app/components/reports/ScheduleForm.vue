@@ -9,13 +9,15 @@
 import { offeredDashboards, type BuiltinDashboardKey } from '#shared/analytics/dashboards';
 import { WEEKDAY_NAMES, type ReportCadence, type ScheduleComparison } from '#shared/reports/schedule';
 import type { ReportScheduleView } from '#shared/handlers/reports';
+import type { DashboardList } from '#shared/handlers/dashboards';
 import type { ProjectMenuItem } from '~~/types/api';
 
 const props = withDefaults(
   defineProps<{
     /** The scope query keys a new schedule starts from. */
     scope?: Record<string, string>;
-    dashboard?: BuiltinDashboardKey;
+    /** A built-in dashboard key or a saved dashboard's id. */
+    dashboard?: BuiltinDashboardKey | string;
     /** The schedule being edited; a new one when absent. */
     schedule?: ReportScheduleView | null;
   }>(),
@@ -56,6 +58,11 @@ const { data: scheduleData, execute: loadScheduleOptions } = useFetch<{
   immediate: false,
   default: () => ({ timeZone: 'UTC', owners: [] }),
 });
+const { data: dashboardList, execute: loadDashboards } = useFetch<DashboardList>('/api/analytics/dashboards', {
+  server: false,
+  lazy: true,
+  immediate: false,
+});
 const { data: projectMenu, execute: loadProjects } = useFetch('/api/projects/menu', {
   server: false,
   lazy: true,
@@ -66,7 +73,7 @@ const { data: projectMenu, execute: loadProjects } = useFetch('/api/projects/men
 let loaded = false;
 
 const name = ref('');
-const dashboardKey = ref<BuiltinDashboardKey>('executive');
+const dashboardKey = ref<string | undefined>('executive');
 const cadence = ref<ReportCadence>('weekly');
 const weekday = ref(1);
 const dayOfMonth = ref(1);
@@ -86,7 +93,11 @@ function reset() {
   delete filters.value.tz;
   delete filters.value.locale;
   owner.value = filters.value.owner;
-  dashboardKey.value = s?.dashboard ?? (props.dashboard === 'team' && !owner.value ? 'engineering' : props.dashboard);
+  dashboardKey.value = s
+    ? (s.dashboard ?? undefined)
+    : props.dashboard === 'team' && !owner.value
+      ? 'engineering'
+      : props.dashboard;
   name.value = s?.name ?? '';
   cadence.value = s?.cadence ?? 'weekly';
   weekday.value = s && s.cadence !== 'monthly' && s.anchor ? s.anchor : 1;
@@ -106,6 +117,7 @@ watch(
       loaded = true;
       void loadChannels();
       void loadScheduleOptions();
+      void loadDashboards();
       void loadProjects();
     }
   },
@@ -128,13 +140,23 @@ const owners = computed(() => {
     .map((o) => o.owner);
 });
 
-const dashboardItems = computed(() =>
-  offeredDashboards({ hasOwner: owners.value.length > 0, testMapHidden: isHidden('test-map') }).map((d) => ({
-    label: d.name,
-    value: d.key,
-    description: d.description,
-  })),
-);
+/** The built-in report dashboards, then the saved dashboards the reader can open (a global schedule needs a shared one). */
+const dashboardItems = computed(() => {
+  const builtins = offeredDashboards({ hasOwner: owners.value.length > 0, testMapHidden: isHidden('test-map') }).map(
+    (d) => ({ label: d.name, value: d.key as string, description: d.description }),
+  );
+  const saved = (dashboardList.value?.items ?? [])
+    .filter((d) => d.kind === 'saved' && (!global.value || d.visibility === 'shared' || !authEnabled))
+    .map((d) => ({ label: d.name, value: d.id, description: d.description ?? undefined }));
+  return saved.length > 0
+    ? [
+        { type: 'label' as const, label: 'Built-in' },
+        ...builtins,
+        { type: 'label' as const, label: 'Saved dashboards' },
+        ...saved,
+      ]
+    : builtins;
+});
 
 const cadenceItems = [
   { label: 'Daily', value: 'daily' },
@@ -205,7 +227,11 @@ const timeZoneNote = computed(() => {
 
 const needsOwner = computed(() => dashboardKey.value === 'team');
 const valid = computed(
-  () => name.value.trim().length > 0 && channelIds.value.length > 0 && (!needsOwner.value || !!owner.value),
+  () =>
+    name.value.trim().length > 0 &&
+    !!dashboardKey.value &&
+    channelIds.value.length > 0 &&
+    (!needsOwner.value || !!owner.value),
 );
 
 async function save() {
@@ -272,11 +298,20 @@ async function save() {
           </UFormField>
 
           <UFormField label="Dashboard">
+            <UAlert
+              v-if="schedule?.inactiveReason"
+              icon="i-lucide-info"
+              color="neutral"
+              variant="subtle"
+              class="mb-2"
+              :description="schedule.inactiveReason"
+            />
             <div class="flex items-center gap-2">
               <USelect
                 v-model="dashboardKey"
                 :items="dashboardItems"
                 class="w-full"
+                placeholder="Pick a dashboard"
                 aria-label="Report dashboard"
                 data-testid="schedule-dashboard"
               />

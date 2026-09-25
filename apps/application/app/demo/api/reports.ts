@@ -10,6 +10,8 @@ import { buildReport } from '#shared/reports/build';
 import { parseReportRequest, ReportRequestError } from '#shared/reports/request';
 import type { ProjectAccess } from '#shared/handlers/analytics/common';
 import { demoHttpError } from './http-error';
+import { demoActor, demoDashboard } from './dashboards';
+import { reportDashboardFor } from '#shared/handlers/dashboards';
 import { apiGetLocale } from './settings';
 import { isReportFormat } from '#shared/reports/types';
 import { scheduleTimeZone } from '#shared/reports/schedule';
@@ -45,7 +47,11 @@ function demoBaseUrl(): string | null {
 }
 
 /** GET /api/reports/preview */
-export async function apiReportPreview(query: URLSearchParams | undefined, access: ProjectAccess): Promise<unknown> {
+export async function apiReportPreview(
+  query: URLSearchParams | undefined,
+  access: ProjectAccess,
+  actingUserId: number | null = null,
+): Promise<unknown> {
   let request;
   try {
     request = parseReportRequest(query);
@@ -53,8 +59,12 @@ export async function apiReportPreview(query: URLSearchParams | undefined, acces
     if (error instanceof ReportRequestError) throw demoHttpError(400, error.message);
     throw error;
   }
-  const bundle = await collectReportBundle(await getDemoDb(), {
-    dashboard: request.dashboard,
+  const db = await getDemoDb();
+  const dashboard = await demoDashboard(async () =>
+    reportDashboardFor(db, request.dashboard, await demoActor(actingUserId)),
+  );
+  const bundle = await collectReportBundle(db, {
+    dashboard,
     scope: request.scope,
     access,
     language: request.language,
@@ -169,12 +179,20 @@ export async function apiListReportSnapshots(query: URLSearchParams | undefined,
 }
 
 /** POST /api/reports/snapshots */
-export async function apiCreateReportSnapshot(body: unknown, access: ProjectAccess) {
+export async function apiCreateReportSnapshot(
+  body: unknown,
+  access: ProjectAccess,
+  actingUserId: number | null = null,
+) {
   return demoReport(async () => {
     const request = parseReportRequest((body ?? {}) as Record<string, unknown>);
+    const db = await getDemoDb();
+    const dashboard = await demoDashboard(async () =>
+      reportDashboardFor(db, request.dashboard, await demoActor(actingUserId)),
+    );
     return createReportSnapshot(
-      await getDemoDb(),
-      { dashboard: request.dashboard, scope: request.scope, language: request.language },
+      db,
+      { dashboard, scope: request.scope, language: request.language },
       {
         access,
         timeZone: request.scope.timeZone ?? (await demoTimeZone()),

@@ -6,6 +6,8 @@ import { exportPiwiVersion, exportSourceUrl } from '../../utils/export-request';
 import { collectReportBundle } from '#shared/reports/collect';
 import { buildReport } from '#shared/reports/build';
 import { parseReportRequest, ReportRequestError } from '#shared/reports/request';
+import { reportDashboardFor } from '#shared/handlers/dashboards';
+import { dashboardActor, dashboardRoute } from '../../utils/dashboards';
 
 defineRouteMeta({
   openAPI: {
@@ -20,9 +22,10 @@ defineRouteMeta({
         required: false,
         schema: {
           type: 'string',
-          enum: ['overview', 'executive', 'engineering', 'team', 'gaps-digest'],
           default: 'executive',
         },
+        description:
+          'A built-in dashboard (`overview`, `executive`, `engineering`, `team`, `gaps-digest`) or a saved dashboard id the caller may open',
       },
       {
         name: 'format',
@@ -62,8 +65,11 @@ export default eventHandler(async (event) => {
   }
   const db = await getDatabase();
   const access = await getProjectScope(db, user as any);
+  const dashboard = await dashboardRoute(() =>
+    reportDashboardFor(db as any, request.dashboard, dashboardActor(event, user as any)),
+  );
   const bundle = await collectReportBundle(db, {
-    dashboard: request.dashboard,
+    dashboard,
     scope: request.scope,
     access,
     language: request.language,

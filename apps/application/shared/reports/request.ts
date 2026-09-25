@@ -16,7 +16,8 @@ import { isReportFormat, REPORT_FORMATS, type ReportFormat } from './types';
 export class ReportRequestError extends Error {}
 
 export interface ReportRequest {
-  dashboard: BuiltinDashboardKey;
+  /** A built-in dashboard key, or a saved dashboard's id the route loads with the caller's access check. */
+  dashboard: BuiltinDashboardKey | `${number}`;
   format: ReportFormat;
   language?: ReportLanguage;
   scope: AnalyticsScope;
@@ -35,9 +36,10 @@ function pick(query: QueryLike, key: string): string | null {
 
 export function parseReportRequest(query: QueryLike): ReportRequest {
   const dashboard = pick(query, 'dashboard') ?? DEFAULT_REPORT_DASHBOARD;
-  if (!isBuiltinDashboardKey(dashboard)) {
+  const saved = /^\d+$/.test(dashboard);
+  if (!isBuiltinDashboardKey(dashboard) && !saved) {
     const keys = BUILTIN_DASHBOARDS.map((d) => d.key).join(', ');
-    throw new ReportRequestError(`Unknown dashboard '${dashboard}'. Use one of: ${keys}.`);
+    throw new ReportRequestError(`Unknown dashboard '${dashboard}'. Use one of: ${keys}, or a saved dashboard id.`);
   }
   const format = (pick(query, 'format') ?? 'json').toLowerCase();
   if (!isReportFormat(format)) {
@@ -47,8 +49,8 @@ export function parseReportRequest(query: QueryLike): ReportRequest {
   if (lang !== null && !isReportLanguage(lang))
     throw new ReportRequestError(`Unsupported language '${lang}'. Use en or fr.`);
   const scope = parseAnalyticsScope(query);
-  assertDashboardScope(dashboard, scope);
-  return { dashboard, format, ...(lang ? { language: lang } : {}), scope };
+  if (isBuiltinDashboardKey(dashboard)) assertDashboardScope(dashboard, scope);
+  return { dashboard: dashboard as ReportRequest['dashboard'], format, ...(lang ? { language: lang } : {}), scope };
 }
 
 /** The team dashboard reports on one team's tests, so its scope must name an owner. */

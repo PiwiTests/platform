@@ -322,3 +322,78 @@ describe('saved dashboards', () => {
     expect(left.map((r) => String(r.id))).not.toContain(priv.id);
   });
 });
+
+describe('report schedules on a saved dashboard', () => {
+  const reports = import('../../shared/handlers/reports');
+  const reportAdmin = { id: 10, isAdmin: true, authEnabled: true };
+  const writeCtx = { actor: reportAdmin, channels: [], access: 'all' as const, timeZone: 'UTC' };
+
+  test('render the dashboard, and go inactive with the reason when it is deleted, until pointed at another', async () => {
+    const r = await reports;
+    await db
+      .insert(schema.notificationChannels)
+      .values({ id: 50, name: 'Team mail', type: 'email', config: { address: 'a@example.test' }, userId: null });
+    const channels = await r.loadReportChannels(db as any);
+    const d = await dashboards.createDashboard(
+      db as any,
+      { name: 'Checkout weekly', visibility: 'shared', definition: definition([metricWidget('pass')]) },
+      admin,
+    );
+    const schedule = await r.createReportSchedule(
+      db as any,
+      r.parseScheduleBody(r.reportScheduleInputSchema, {
+        name: 'Weekly checkout',
+        dashboard: d.id,
+        cadence: 'weekly',
+        anchor: 1,
+        at: '08:00',
+        channelIds: [50],
+      }),
+      { ...writeCtx, channels },
+    );
+    expect(schedule).toMatchObject({ dashboard: d.id, dashboardName: 'Checkout weekly', inactiveReason: null });
+
+    const [row] = await db.select().from(schema.reportSchedules).where(eq(schema.reportSchedules.id, schedule.id));
+    const run = await r.runReportSchedule(db as any, row!, { access: 'all', timeZone: 'UTC', deliver: false });
+    const [snapshot] = await db
+      .select()
+      .from(schema.reportSnapshots)
+      .where(eq(schema.reportSnapshots.id, run.snapshotId));
+    expect(snapshot!.dashboardRef).toBe(d.id);
+    expect(snapshot!.dashboardName).toBe('Checkout weekly');
+
+    await dashboards.deleteDashboard(db as any, d.id, admin);
+    const inactive = await r.getReportSchedule(db as any, schedule.id, reportAdmin, channels);
+    expect(inactive).toMatchObject({ active: false, dashboard: null, inactiveReason: r.DASHBOARD_DELETED_REASON });
+
+    const repointed = await r.updateReportSchedule(
+      db as any,
+      schedule.id,
+      { dashboard: 'executive' },
+      {
+        ...writeCtx,
+        channels,
+      },
+    );
+    expect(repointed).toMatchObject({ active: true, dashboard: 'executive', inactiveReason: null });
+  });
+
+  test('a global schedule needs a shared dashboard', async () => {
+    const r = await reports;
+    const priv = await dashboards.createDashboard(db as any, { name: 'Private', visibility: 'private' }, admin);
+    await expect(
+      r.createReportSchedule(
+        db as any,
+        r.parseScheduleBody(r.reportScheduleInputSchema, {
+          name: 'Global',
+          dashboard: priv.id,
+          cadence: 'daily',
+          at: '08:00',
+          channelIds: [50],
+          global: true,
+        }),
+        { ...writeCtx, channels: await r.loadReportChannels(db as any) },
+      ),
+    ).rejects.toMatchObject({ statusCode: 400 });
+  });
+});

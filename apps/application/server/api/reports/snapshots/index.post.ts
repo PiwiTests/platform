@@ -4,6 +4,8 @@ import { getProjectScope } from '../../../utils/project-access';
 import { reportBaseUrl, reportPiwiVersion, reportRoute, reportScheduleTimeZone } from '../../../utils/reports/context';
 import { createReportSnapshot } from '#shared/handlers/reports';
 import { parseReportRequest } from '#shared/reports/request';
+import { reportDashboardFor } from '#shared/handlers/dashboards';
+import { dashboardActor, dashboardRoute } from '../../../utils/dashboards';
 
 defineRouteMeta({
   openAPI: {
@@ -23,7 +25,13 @@ export default eventHandler(async (event) => {
   const snapshot = await reportRoute(async () =>
     createReportSnapshot(
       db as any,
-      { dashboard: request.dashboard, scope: request.scope, language: request.language },
+      {
+        dashboard: await dashboardRoute(() =>
+          reportDashboardFor(db as any, request.dashboard, dashboardActor(event, user as any)),
+        ),
+        scope: request.scope,
+        language: request.language,
+      },
       {
         access: await getProjectScope(db, user as any),
         timeZone: request.scope.timeZone ?? (await reportScheduleTimeZone(db)),

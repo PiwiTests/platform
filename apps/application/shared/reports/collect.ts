@@ -14,6 +14,7 @@ import {
   getBuiltinDashboard,
   resolveDashboard,
   type BuiltinDashboardKey,
+  type DashboardDefinition,
 } from '../analytics/dashboards';
 import { getAnalyticsWidget } from '../analytics/registry';
 import type { AnalyticsVerdict } from '../analytics/types';
@@ -27,8 +28,16 @@ import { sentencesFor, type ReportSentences } from './sentences';
 import type { ReportBand, ReportBundle, ReportPeriod } from './types';
 import { IDENTITY_WIDGETS, WIDGET_DOCUMENTS, widgetMetrics } from './widget-documents';
 
+/** A saved dashboard as a report renders it: its reference, its name and its definition. */
+export interface ReportDashboard {
+  ref: string;
+  name: string;
+  definition: DashboardDefinition;
+}
+
 export interface CollectReportOptions {
-  dashboard: BuiltinDashboardKey;
+  /** A built-in dashboard, or a saved one the caller loaded with its access check. */
+  dashboard: BuiltinDashboardKey | ReportDashboard;
   /** The scope the reader asked for; the dashboard's default scope when omitted. */
   scope?: AnalyticsScope;
   access?: ProjectAccess;
@@ -112,9 +121,12 @@ async function scopeText(
   };
 }
 
-/** Collect the report bundle of a built-in dashboard over a scope. */
+/** Collect the report bundle of a dashboard over a scope. */
 export async function collectReportBundle(db: DrizzleDB, opts: CollectReportOptions): Promise<ReportBundle> {
-  const dashboard = getBuiltinDashboard(opts.dashboard);
+  const dashboard: ReportDashboard =
+    typeof opts.dashboard === 'string'
+      ? (({ key, name, definition }) => ({ ref: key, name, definition }))(getBuiltinDashboard(opts.dashboard))
+      : opts.dashboard;
   const scope = opts.scope ?? dashboard.definition.scope;
   const access = opts.access ?? 'all';
   const ctx = await getAnalyticsContext(db, scope, access, opts.now);
@@ -188,7 +200,9 @@ export async function collectReportBundle(db: DrizzleDB, opts: CollectReportOpti
   return {
     generatedAt: new Date(opts.now ?? Date.now()).toISOString(),
     piwiVersion: opts.piwiVersion ?? null,
-    sourceUrl: baseUrl ? `${baseUrl}/analytics${query ? `?${query}` : ''}` : null,
+    sourceUrl: baseUrl
+      ? `${baseUrl}/analytics${/^\d+$/.test(dashboard.ref) ? `/d/${dashboard.ref}` : ''}${query ? `?${query}` : ''}`
+      : null,
     title: s.reportTitle(text.projects, language === 'en' && !rangeOnly ? ctx.period.label : period.label),
     language,
     locale: f.locale,
@@ -197,7 +211,7 @@ export async function collectReportBundle(db: DrizzleDB, opts: CollectReportOpti
     scopeText: text,
     period,
     comparison: ctx.comparison ? periodText(ctx.comparison, f, timeZone, language, true) : null,
-    dashboard: { ref: dashboard.key, name: dashboard.name },
+    dashboard: { ref: dashboard.ref, name: dashboard.name },
     verdict: { tone: verdict.tone, sentence: s.verdict(verdict.facts, f) },
     bands,
     targets: [],
