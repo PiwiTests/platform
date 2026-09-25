@@ -1,9 +1,20 @@
 <script setup lang="ts">
 import type { Component } from 'vue';
-import { ANALYTICS_WIDGETS, ANALYTICS_BANDS, type AnalyticsWidgetId } from '#shared/analytics/registry';
-import { hasTestFilter } from '#shared/analytics/scope';
+import { getAnalyticsWidget, type AnalyticsWidgetId } from '#shared/analytics/registry';
+import { analyticsScopeToQuery, hasTestFilter } from '#shared/analytics/scope';
+import {
+  applyWidgetScope,
+  OVERVIEW_DASHBOARD,
+  resolveDashboard,
+  type ResolvedDashboardWidget,
+} from '#shared/analytics/dashboards';
 import type { ProjectMenuItem, TestRunForChart } from '~~/types/api';
 import {
+  AnalyticsStatsRow,
+  AnalyticsVerdict,
+  AnalyticsProgress,
+  AnalyticsRisks,
+  MetricTrendChart,
   InsightsFeed,
   PortfolioScorecard,
   PassRateHeatmap,
@@ -84,6 +95,11 @@ function widenToAllTime() {
  * without wiring its component (or vice versa) is a compile error.
  */
 const WIDGET_COMPONENTS: Record<AnalyticsWidgetId, Component> = {
+  stats: AnalyticsStatsRow,
+  verdict: AnalyticsVerdict,
+  metric: MetricTrendChart,
+  progress: AnalyticsProgress,
+  risks: AnalyticsRisks,
   insights: InsightsFeed,
   portfolio: PortfolioScorecard,
   'pass-rate-heatmap': PassRateHeatmap,
@@ -96,13 +112,32 @@ const WIDGET_COMPONENTS: Record<AnalyticsWidgetId, Component> = {
   'slow-endpoints': SlowEndpointsTable,
 };
 
-/** Widgets grouped into their bands, in registry order, empty bands dropped. */
-const bands = computed(() =>
-  ANALYTICS_BANDS.map((band) => ({
-    ...band,
-    widgets: ANALYTICS_WIDGETS.filter((w) => w.band === band.id),
-  })).filter((band) => band.widgets.length > 0),
-);
+/** The widgets that take their options and title from the dashboard; the others carry their own title. */
+const CONFIGURABLE = new Set<AnalyticsWidgetId>(['stats', 'verdict', 'metric', 'progress', 'risks']);
+
+/** The page is the built-in Overview dashboard: its bands and widgets, in order. */
+const bands = resolveDashboard(OVERVIEW_DASHBOARD);
+
+/** A widget's request: the page scope, narrowed or re-perioded by the widget's own scope. */
+function widgetQuery(widget: ResolvedDashboardWidget): Record<string, string> {
+  if (!widget.available || !widget.scope) return scopeQuery.value;
+  const { tz, locale } = scopeQuery.value;
+  return {
+    ...analyticsScopeToQuery(applyWidgetScope(scope.value, widget.scope)),
+    ...(tz ? { tz } : {}),
+    ...(locale ? { locale } : {}),
+  };
+}
+
+function widgetProps(widget: ResolvedDashboardWidget & { available: true }) {
+  return CONFIGURABLE.has(widget.type)
+    ? { query: widgetQuery(widget), options: widget.options, title: widget.title }
+    : { query: widgetQuery(widget) };
+}
+
+function ignoresTestFilter(widget: ResolvedDashboardWidget & { available: true }): boolean {
+  return testFilterActive.value && !getAnalyticsWidget(widget.type).testFilters;
+}
 </script>
 
 <template>
@@ -140,18 +175,25 @@ const bands = computed(() =>
           ]"
         />
 
-        <section v-for="band in bands" :key="band.id" class="space-y-3">
+        <section v-for="band in bands" :key="band.title" class="space-y-3">
           <div>
-            <h2 class="text-sm font-semibold uppercase tracking-wide text-dimmed">{{ band.label }}</h2>
-            <p class="text-sm text-muted">{{ band.description }}</p>
+            <h2 class="text-sm font-semibold uppercase tracking-wide text-dimmed">{{ band.title }}</h2>
+            <p v-if="band.description" class="text-sm text-muted">{{ band.description }}</p>
           </div>
 
           <div class="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
-            <div v-for="widget in band.widgets" :key="widget.id" :class="widget.size === 'full' ? 'xl:col-span-2' : ''">
-              <p v-if="testFilterActive && !widget.testFilters" class="text-xs text-muted mb-1">
-                {{ widget.title }} is not narrowed by the test filter.
-              </p>
-              <component :is="WIDGET_COMPONENTS[widget.id]" :query="scopeQuery" />
+            <div
+              v-for="widget in band.widgets"
+              :key="widget.key"
+              :class="widget.size === 'full' ? 'xl:col-span-2' : ''"
+            >
+              <template v-if="widget.available">
+                <p v-if="ignoresTestFilter(widget)" class="text-xs text-muted mb-1">
+                  {{ widget.title }} is not narrowed by the test filter.
+                </p>
+                <component :is="WIDGET_COMPONENTS[widget.type]" v-bind="widgetProps(widget)" />
+              </template>
+              <EmptyState v-else icon="i-lucide-circle-slash" :text="widget.reason" />
             </div>
           </div>
         </section>

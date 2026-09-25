@@ -104,6 +104,26 @@ export const HELP_TOPICS = {
     title: 'Browser matrix',
     text: 'Pass rate per project × browser, so a suite that is green on one browser but failing on another (a browser-specific bug) stands out immediately.',
   },
+  'analytics.stats': {
+    title: 'Headline numbers',
+    text: 'Numbers from the metric catalog across every project in scope, each with its change against the comparison period. Green and red say whether the change is good news for that number, not whether it went up.',
+  },
+  'analytics.metric': {
+    title: 'Metric over time',
+    text: 'One metric from the catalog bucketed over the period. The faint line is the comparison period, bucket for bucket; the vertical lines are timeline markers.',
+  },
+  'analytics.verdict': {
+    title: 'Verdict',
+    text: 'One or two sentences built by fixed rules from the pass rate, its change, the failure causes fixed and still open, and the wasted CI time. Never written by a model, so it only repeats numbers shown elsewhere on the page.',
+  },
+  'analytics.progress': {
+    title: 'What is being done',
+    text: 'Failure causes fixed in the period and whether the fixes held, open causes assigned or linked to a ticket, tests quarantined and released, and auto-heal pull requests opened.',
+  },
+  'analytics.risks': {
+    title: 'Risks',
+    text: 'Metrics that moved the wrong way against the comparison period, projects failing run after run, the oldest open failure causes, and the tests waiting in quarantine.',
+  },
   'analytics.period': {
     title: 'Period',
     text: 'Which days the page covers: a rolling window, a calendar week, month, quarter or year, a custom range, the time since a timeline marker, a release cycle (between two release markers) or a sprint. Rolling periods count whole UTC days; calendar periods follow your time zone.',

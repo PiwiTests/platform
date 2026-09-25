@@ -4,6 +4,8 @@
  * components, so there is exactly one definition per widget payload.
  */
 
+import type { MetricId, MetricUnit } from './metrics';
+
 export interface AnalyticsTagInfo {
   id: number;
   text: string;
@@ -314,4 +316,132 @@ export interface AnalyticsScopeSummary {
   /** Oldest UTC day of rollup data inside the period, null when there is none. */
   dataStartsAt: string | null;
   projectCount: number;
+}
+
+// ── Metric values (stats, metric, verdict) ───────────────────────────────────
+
+/** One point of a metric series; null = nothing to count in that bucket. */
+export interface AnalyticsSeriesPoint {
+  /** Bucket start date (ISO `YYYY-MM-DD`). */
+  date: string;
+  value: number | null;
+}
+
+/** A metric's value over the period, with its comparison. */
+export interface AnalyticsMetricValue {
+  metric: MetricId;
+  label: string;
+  unit: MetricUnit;
+  betterWhen: 'higher' | 'lower' | 'neutral';
+  definition: string;
+  precision: number;
+  source: 'rollup' | 'live';
+  value: number | null;
+  /** The value over the comparison period. Null without a comparison or a baseline. */
+  previous: number | null;
+  /** `value - previous`, in points for a percentage. */
+  delta: number | null;
+  /** Relative change in percent, for units other than a percentage. */
+  deltaPct: number | null;
+  /** Whether the change reads as better or worse given the metric's direction. */
+  trend: 'better' | 'worse' | 'same' | null;
+  /** Currency of a money metric. */
+  currency: string | null;
+}
+
+export interface AnalyticsStatTile extends AnalyticsMetricValue {
+  /** A second number shown under the tile (the cost of wasted minutes, the median time to fix). */
+  companion: AnalyticsMetricValue | null;
+}
+
+export interface AnalyticsStats {
+  tiles: AnalyticsStatTile[];
+  /** Label of the comparison period; null when the scope compares with nothing. */
+  comparisonLabel: string | null;
+}
+
+export interface AnalyticsMetricWidget {
+  display: 'line' | 'stat';
+  value: AnalyticsMetricValue;
+  bucketDays: number;
+  /** The series over the period; empty for the stat display or a metric with no series. */
+  points: AnalyticsSeriesPoint[];
+  /** The comparison period's series, aligned bucket for bucket; null when off or absent. */
+  previousPoints: AnalyticsSeriesPoint[] | null;
+  comparisonLabel: string | null;
+}
+
+// ── Verdict, progress, risks ────────────────────────────────────────────────
+
+export type VerdictTone = 'good' | 'mixed' | 'bad';
+
+/** The numbers the rule-based verdict is built from. */
+export interface VerdictFacts {
+  runs: number;
+  passRate: number | null;
+  previousPassRate: number | null;
+  /** Change in percentage points against the comparison period. */
+  passRateDelta: number | null;
+  fixed: number;
+  opened: number;
+  open: number;
+  wastedMinutes: number;
+  wastedCost: { amount: number; currency: string } | null;
+  /** Which runs count: each project's default branch (named), every branch, or branches chosen by hand. */
+  branch: { kind: 'default' | 'any' | 'list'; branches: string[] };
+  comparison: 'previous' | 'previous-unit' | 'year' | 'custom' | 'none';
+}
+
+export interface AnalyticsVerdict {
+  tone: VerdictTone;
+  facts: VerdictFacts;
+}
+
+export interface AnalyticsClusterItem {
+  id: number;
+  projectId: number;
+  projectName: string;
+  title: string;
+  /** Days since the cluster was first seen. */
+  ageDays: number;
+  assignee: string | null;
+  occurrences: number;
+}
+
+export interface AnalyticsProgress {
+  /** Failure causes whose fix landed in the period. */
+  fixed: number;
+  /** Of those, the ones that have not failed again. */
+  held: number;
+  /** Open failure causes someone is assigned to. */
+  assigned: number;
+  /** Open failure causes linked to a tracker ticket. */
+  withTicket: number;
+  releasedFromQuarantine: number;
+  quarantined: number;
+  /** Auto-heal pull requests opened in the period. */
+  healPullRequests: number;
+  /** The fixes of the period, newest first. */
+  recentFixes: Array<AnalyticsClusterItem & { fixedAt: string; held: boolean }>;
+}
+
+export interface AnalyticsRiskMetric {
+  metric: MetricId;
+  label: string;
+  unit: MetricUnit;
+  value: number | null;
+  previous: number | null;
+  delta: number | null;
+  deltaPct: number | null;
+}
+
+export interface AnalyticsRisks {
+  /** Metrics that moved the wrong way by more than their threshold. */
+  worsening: AnalyticsRiskMetric[];
+  /** Projects whose latest runs failed in a row, longest streak first. */
+  failingProjects: Array<{ projectId: number; name: string; streak: number }>;
+  /** The oldest open failure causes. */
+  oldestOpen: AnalyticsClusterItem[];
+  openCount: number;
+  quarantine: { count: number; oldestDays: number | null };
 }

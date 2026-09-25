@@ -215,6 +215,7 @@ import {
 import { computeRunInsights } from '#shared/handlers/run-insights';
 import { isAnalyticsWidgetId, runAnalyticsWidget } from '#shared/handlers/analytics';
 import { parseAnalyticsScope } from '#shared/analytics/scope';
+import { WidgetOptionsError, widgetOptionsFromQuery } from '#shared/analytics/registry';
 import { getAnalyticsScopeSummary } from '#shared/handlers/analytics/scope-summary';
 import { classifyAndPersistFlakyRootCause } from '#shared/handlers/flaky-classify';
 import {
@@ -380,7 +381,19 @@ const routes: RouteEntry[] = [
     handler: async (m, _, q, ctx) => {
       const widget = m[1]!;
       if (!isAnalyticsWidgetId(widget)) throw demoHttpError(400, 'Unknown analytics widget');
-      return runAnalyticsWidget(await getDemoDb(), widget, parseAnalyticsScope(q), ctx?.scope ?? 'all');
+      try {
+        const options = widgetOptionsFromQuery(q?.get('options'));
+        return await runAnalyticsWidget(
+          await getDemoDb(),
+          widget,
+          parseAnalyticsScope(q),
+          ctx?.scope ?? 'all',
+          options,
+        );
+      } catch (error) {
+        if (error instanceof WidgetOptionsError) throw demoHttpError(400, error.message);
+        throw error;
+      }
     },
   },
   // Projects

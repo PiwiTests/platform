@@ -3,6 +3,7 @@ import { getProjectScope } from '../../utils/project-access';
 import { getDatabase } from '../../database';
 import { isAnalyticsWidgetId, runAnalyticsWidget } from '#shared/handlers/analytics';
 import { parseAnalyticsScope } from '#shared/analytics/scope';
+import { WidgetOptionsError, widgetOptionsFromQuery } from '#shared/analytics/registry';
 import { getAnalyticsScopeSummary } from '#shared/handlers/analytics/scope-summary';
 
 defineRouteMeta({
@@ -10,9 +11,17 @@ defineRouteMeta({
     tags: ['Analytics'],
     summary: 'Cross-project analytics widget data',
     description:
-      'Returns the data for one analytics widget (see the widget registry: insights, portfolio, pass-rate-heatmap, ci-time-trend, wasted-time, flaky-leaderboard, cluster-landscape, regression-velocity, browser-matrix, slow-endpoints), aggregated across every project the caller can see. Scalar series read the daily rollups; with a test filter they are counted from the matching executions. Probe runs are never counted. The reserved name `scope` returns how the scope resolves instead: the period and comparison as dates, notes (a selection missing in a project, a deleted marker), the markers to draw inside the period, recent markers a period can anchor on, the selection keys and browsers the test filter offers, and where the rollup data starts.',
+      'Returns the data for one analytics widget (see the widget registry: stats, verdict, metric, progress, risks, insights, portfolio, pass-rate-heatmap, ci-time-trend, wasted-time, flaky-leaderboard, cluster-landscape, regression-velocity, browser-matrix, slow-endpoints), aggregated across every project the caller can see. Scalar series read the daily rollups; with a test filter they are counted from the matching executions. Probe runs are never counted. The reserved name `scope` returns how the scope resolves instead: the period and comparison as dates, notes (a selection missing in a project, a deleted marker), the markers to draw inside the period, recent markers a period can anchor on, the selection keys and browsers the test filter offers, and where the rollup data starts.',
     parameters: [
       { name: 'widget', in: 'path', required: true, schema: { type: 'string' } },
+      {
+        name: 'options',
+        in: 'query',
+        required: false,
+        schema: { type: 'string' },
+        description:
+          'The widget’s options as JSON, checked against its schema with defaults filled in: `stats` takes `{"metrics":["test-pass-rate",…],"companions":{"open-failure-causes":"median-time-to-fix"}}`, `metric` takes `{"metric":"test-pass-rate","display":"line"|"stat","comparison":true,"markers":true}`. A 400 names the refused option',
+      },
       {
         name: 'period',
         in: 'query',
@@ -187,6 +196,17 @@ export default eventHandler(async (event) => {
 
   const db = await getDatabase();
   const access = await getProjectScope(db, user as any);
-  const scope = parseAnalyticsScope(getQuery(event));
-  return runAnalyticsWidget(db, widget, scope, access);
+  const query = getQuery(event);
+  try {
+    return await runAnalyticsWidget(
+      db,
+      widget,
+      parseAnalyticsScope(query),
+      access,
+      widgetOptionsFromQuery(query.options),
+    );
+  } catch (error) {
+    if (error instanceof WidgetOptionsError) throw apiError({ statusCode: 400, message: error.message });
+    throw error;
+  }
 });

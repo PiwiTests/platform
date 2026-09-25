@@ -22,6 +22,15 @@ const { evaluateInsightRules } = await import('../../shared/analytics/insight-ru
 const { parseAnalyticsScope, MAX_ANALYTICS_DAYS } = await import('../../shared/analytics/scope');
 const { ANALYTICS_WIDGETS, ANALYTICS_BANDS } = await import('../../shared/analytics/registry');
 const { backfillDailyRollups } = await import('../../shared/handlers/analytics/rollups');
+const { getAnalyticsStats } = await import('../../shared/handlers/analytics/stats');
+const { getAnalyticsMetric } = await import('../../shared/handlers/analytics/metric');
+const { getAnalyticsVerdict } = await import('../../shared/handlers/analytics/verdict');
+const { getAnalyticsRisks } = await import('../../shared/handlers/analytics/risks');
+const { getAnalyticsProgress } = await import('../../shared/handlers/analytics/progress');
+const { WidgetOptionsError, WIDGET_METRIC_IDS } = await import('../../shared/analytics/registry');
+const { isEvaluatedMetric } = await import('../../shared/handlers/analytics/metric-values');
+const { sentencesFor } = await import('../../shared/reports/sentences');
+const { makeFormatter } = await import('../../shared/reports/format');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const daysAgo = (days: number) => new Date(Date.now() - days * DAY_MS);
@@ -638,5 +647,70 @@ describe('branch policy and test filters', () => {
     const trend = await getAnalyticsCiTimeTrend(fdb, parseAnalyticsScope({ days: '30', allBranches: 'true' }));
     expect(trend.runCount).toBe(4);
     expect(trend.totalMinutes).toBe(4);
+  });
+});
+
+describe('metric widgets', () => {
+  test('every metric a widget can show has an evaluator', () => {
+    for (const id of WIDGET_METRIC_IDS) expect(isEvaluatedMetric(id), id).toBe(true);
+  });
+
+  test('stats: values over the period with their change against the previous one', async () => {
+    const stats = await getAnalyticsStats(db, DEFAULT_SCOPE, 'all', {
+      metrics: ['test-pass-rate', 'run-success-rate', 'flaky-tests', 'open-failure-causes', 'wasted-ci-minutes'],
+    });
+    const tile = (id: string) => stats.tiles.find((t) => t.metric === id)!;
+    // 22/30 on checkout + 20/20 on search = 42/50; the previous period was 20/20.
+    expect(tile('test-pass-rate')).toMatchObject({ value: 84, previous: 100, delta: -16, trend: 'worse' });
+    expect(tile('run-success-rate')).toMatchObject({ value: 40, previous: 100, trend: 'worse' });
+    expect(tile('flaky-tests').value).toBe(1);
+    expect(tile('open-failure-causes').value).toBe(2);
+    // No cost of a CI minute is configured, so the wasted minutes carry no cost.
+    expect(tile('wasted-ci-minutes').companion).toBeNull();
+    expect(stats.comparisonLabel).toBe('The previous period');
+  });
+
+  test('metric: a line with the comparison aligned bucket for bucket, or a single value', async () => {
+    const line = await getAnalyticsMetric(db, DEFAULT_SCOPE, 'all', { metric: 'test-pass-rate', display: 'line' });
+    expect(line.display).toBe('line');
+    expect(line.points.length).toBeGreaterThan(0);
+    expect(line.previousPoints).toHaveLength(line.points.length);
+    expect(line.points.some((p) => p.value !== null)).toBe(true);
+    const stat = await getAnalyticsMetric(db, DEFAULT_SCOPE, 'all', { metric: 'open-failure-causes', display: 'line' });
+    expect(stat.display).toBe('stat');
+    expect(stat.value.value).toBe(2);
+  });
+
+  test('widget options are checked against the schema', async () => {
+    await expect(runAnalyticsWidget(db, 'metric', DEFAULT_SCOPE, 'all', { metric: 'nope' })).rejects.toBeInstanceOf(
+      WidgetOptionsError,
+    );
+  });
+
+  test('verdict: a sharp drop reads as bad, in English and in French', async () => {
+    const verdict = await getAnalyticsVerdict(db, DEFAULT_SCOPE, 'all');
+    expect(verdict.tone).toBe('bad');
+    expect(verdict.facts).toMatchObject({ runs: 5, passRate: 84, passRateDelta: -16, open: 2 });
+    const en = sentencesFor('en').verdict(verdict.facts, makeFormatter('en'));
+    expect(en).toContain('fell 16 points to 84%');
+    expect(en).toContain('2 failure causes are still open.');
+    const fr = sentencesFor('fr').verdict(verdict.facts, makeFormatter('fr'));
+    expect(fr).toContain('a perdu 16 points');
+  });
+
+  test('risks: the pass-rate drop, the failing streak and the oldest open cause', async () => {
+    const risks = await getAnalyticsRisks(db, DEFAULT_SCOPE, 'all');
+    expect(risks.worsening.map((w) => w.metric)).toContain('test-pass-rate');
+    expect(risks.failingProjects).toEqual([{ projectId: 1, name: 'checkout', streak: 3 }]);
+    expect(risks.oldestOpen[0]).toMatchObject({ projectName: 'checkout', ageDays: 40 });
+    expect(risks.openCount).toBe(2);
+  });
+
+  test('progress: nothing fixed in the period says so', async () => {
+    const progress = await getAnalyticsProgress(db, DEFAULT_SCOPE, 'all');
+    expect(progress.fixed).toBe(0);
+    expect(sentencesFor('en').progress(progress, makeFormatter('en'))[0]).toBe(
+      'No failure cause was fixed in the period.',
+    );
   });
 });

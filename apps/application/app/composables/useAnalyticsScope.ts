@@ -76,11 +76,19 @@ export function useAnalyticsScope() {
 
 /**
  * Fetch one analytics widget's data. The query is reactive — changing the
- * scope refetches every mounted widget.
+ * scope refetches every mounted widget. `options` are the widget's options
+ * from the dashboard definition, sent as JSON.
  */
-export function useAnalyticsWidget<T>(widget: AnalyticsWidgetId, query: () => Record<string, string>) {
+export function useAnalyticsWidget<T>(
+  widget: AnalyticsWidgetId,
+  query: () => Record<string, string>,
+  options?: () => Record<string, unknown> | undefined,
+) {
   return useFetch<T>(`/api/analytics/${widget}`, {
-    query: computed(query),
+    query: computed(() => {
+      const value = options?.();
+      return value && Object.keys(value).length > 0 ? { ...query(), options: JSON.stringify(value) } : query();
+    }),
     lazy: true,
     server: false,
   });

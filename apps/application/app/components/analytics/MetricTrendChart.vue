@@ -1,0 +1,198 @@
+<script setup lang="ts">
+import type { AnalyticsMetricWidget, AnalyticsSeriesPoint } from '#shared/analytics/types';
+import { barGeometry, bucketTimeToX, dayTickIndices, formatTickDate } from '~/utils/chart';
+
+const props = defineProps<{ query: Record<string, string>; options?: Record<string, unknown>; title?: string }>();
+
+const {
+  data: widget,
+  pending,
+  error,
+  refresh,
+} = await useAnalyticsWidget<AnalyticsMetricWidget>(
+  'metric',
+  () => props.query,
+  () => props.options,
+);
+
+const f = computed(() => metricFormatter());
+const cardTitle = computed(() => props.title ?? widget.value?.value.label ?? 'Metric');
+const showMarkers = computed(() => props.options?.markers !== false);
+
+const LINE_COLOR = 'var(--ui-primary)';
+const PREVIOUS_COLOR = 'var(--ui-text-dimmed)';
+
+const points = computed(() => widget.value?.points ?? []);
+const previous = computed(() => {
+  const series = widget.value?.previousPoints ?? null;
+  return series && series.some((p) => p.value !== null) ? series : null;
+});
+const dates = computed(() => points.value.map((p) => new Date(`${p.date}T00:00:00Z`)));
+const hasData = computed(() => points.value.some((p) => p.value !== null));
+
+const yMax = computed(() => {
+  if (widget.value?.value.unit === 'percent') return 100;
+  const values = [...points.value, ...(previous.value ?? [])].map((p) => p.value ?? 0);
+  return Math.max(1, ...values);
+});
+
+const legend = computed(() =>
+  previous.value
+    ? [
+        { color: LINE_COLOR, label: 'This period' },
+        { color: PREVIOUS_COLOR, label: widget.value?.comparisonLabel ?? 'Comparison' },
+      ]
+    : [],
+);
+
+/** A path through the non-null points; a gap in the data is a gap in the line. */
+function pathOf(series: AnalyticsSeriesPoint[], plotWidth: number, yScale: (v: number) => number): string {
+  const { centerOf } = barGeometry(series.length, plotWidth);
+  let d = '';
+  let pen = false;
+  series.forEach((p, i) => {
+    if (p.value === null) {
+      pen = false;
+      return;
+    }
+    d += `${pen ? 'L' : 'M'}${centerOf(i)},${yScale(p.value)}`;
+    pen = true;
+  });
+  return d;
+}
+
+function dots(plotWidth: number, yScale: (v: number) => number) {
+  const { centerOf } = barGeometry(points.value.length, plotWidth);
+  return points.value.flatMap((p, i) => (p.value === null ? [] : [{ x: centerOf(i), y: yScale(p.value), p }]));
+}
+
+function xTicks(plotWidth: number) {
+  const { centerOf } = barGeometry(points.value.length, plotWidth);
+  return dayTickIndices(dates.value, Math.max(2, Math.floor(plotWidth / 80))).map((i) => ({
+    x: centerOf(i),
+    label: formatTickDate(dates.value[i] as Date),
+  }));
+}
+
+function yFormat(value: number): string {
+  const unit = widget.value?.value.unit;
+  return unit === 'percent' ? `${value}%` : unit === 'minutes' ? `${value}m` : String(value);
+}
+
+const scopeSummary = injectAnalyticsScopeSummary();
+const markers = computed(() => (showMarkers.value ? (scopeSummary.value?.markers ?? []) : []));
+function markerX(plotWidth: number, occurredAt: string | Date): number | null {
+  const { centerOf } = barGeometry(points.value.length, plotWidth);
+  const end = scopeSummary.value ? new Date(scopeSummary.value.period.to).getTime() : Date.now();
+  return bucketTimeToX(
+    dates.value,
+    points.value.map((_, i) => centerOf(i)),
+    new Date(occurredAt).getTime(),
+    end,
+  );
+}
+
+const { data: tooltipData, pos: tooltipPos, show, move, hide } = useChartTooltip<{ i: number }>(240);
+</script>
+
+<template>
+  <ChartCard
+    icon="i-lucide-chart-spline"
+    :title="cardTitle"
+    :legend="legend"
+    help="analytics.metric"
+    data-shot="analytics-metric"
+  >
+    <template v-if="widget" #actions>
+      <span class="text-sm font-semibold tabular-nums" :class="metricValueClass(widget.value)">
+        {{ formatMetric(widget.value, f) }}
+      </span>
+      <span v-if="f.delta(widget.value)" class="text-xs tabular-nums" :class="metricTrendClass(widget.value.trend)">
+        {{ f.delta(widget.value) }}
+      </span>
+    </template>
+
+    <LoadingState v-if="pending" />
+    <ErrorState v-else-if="error" :text="`Couldn't load ${cardTitle.toLowerCase()}: ${errorMessage(error)}`">
+      <template #action>
+        <UButton size="sm" color="neutral" variant="outline" icon="i-lucide-refresh-cw" @click="refresh()">
+          Retry
+        </UButton>
+      </template>
+    </ErrorState>
+    <div v-else-if="widget && widget.display === 'stat'" class="py-2">
+      <p class="text-2xl font-semibold tabular-nums" :class="metricValueClass(widget.value)">
+        {{ formatMetric(widget.value, f) }}
+      </p>
+      <p class="text-xs text-muted">{{ widget.value.definition }}</p>
+    </div>
+    <EmptyState v-else-if="!hasData" text="No runs in this period." />
+    <div v-else class="w-full">
+      <ChartFrame v-slot="{ plotWidth, plotHeight, yScale }" :height="220" :y-max="yMax" :y-format="yFormat">
+        <path
+          v-if="previous"
+          :d="pathOf(previous, plotWidth, yScale)"
+          fill="none"
+          :stroke="PREVIOUS_COLOR"
+          stroke-width="1.5"
+          stroke-dasharray="4 3"
+          opacity="0.7"
+        />
+        <path :d="pathOf(points, plotWidth, yScale)" fill="none" :stroke="LINE_COLOR" stroke-width="2" />
+        <circle
+          v-for="dot in dots(plotWidth, yScale)"
+          :key="dot.p.date"
+          :cx="dot.x"
+          :cy="dot.y"
+          r="2.5"
+          :fill="LINE_COLOR"
+        />
+        <text
+          v-for="tick in xTicks(plotWidth)"
+          :key="tick.x"
+          :x="tick.x"
+          :y="plotHeight + 14"
+          text-anchor="middle"
+          class="fill-gray-400 dark:fill-gray-500 text-[10px]"
+        >
+          {{ tick.label }}
+        </text>
+        <rect
+          v-for="(p, i) in points"
+          :key="`hover-${p.date}`"
+          :x="i * (plotWidth / points.length)"
+          :y="0"
+          :width="plotWidth / points.length"
+          :height="plotHeight"
+          :fill="tooltipData?.i === i ? 'rgb(148 163 184 / 0.15)' : 'transparent'"
+          @mouseenter="show($event, { i })"
+          @mousemove="move($event)"
+          @mouseleave="hide()"
+        />
+        <ChartMarkerLines
+          :markers="markers"
+          :x-of="(occurredAt) => markerX(plotWidth, occurredAt)"
+          :plot-height="plotHeight"
+        />
+      </ChartFrame>
+
+      <ChartTooltip v-if="tooltipData && widget" :pos="tooltipPos">
+        <div class="font-semibold mb-1">{{ f.date(points[tooltipData.i]!.date) }}</div>
+        <div>
+          {{ f.value(points[tooltipData.i]!.value, widget.value.unit, widget.value.precision, widget.value.currency) }}
+        </div>
+        <div v-if="previous" class="text-gray-400 text-xs">
+          {{ widget.comparisonLabel }}:
+          {{
+            f.value(
+              previous[tooltipData.i]?.value ?? null,
+              widget.value.unit,
+              widget.value.precision,
+              widget.value.currency,
+            )
+          }}
+        </div>
+      </ChartTooltip>
+    </div>
+  </ChartCard>
+</template>

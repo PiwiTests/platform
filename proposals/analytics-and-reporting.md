@@ -1254,7 +1254,7 @@ Grouped by milestone. Paths are under `apps/application/` unless noted.
 **2. The quality report**
 
 - [ ] `shared/analytics/registry.ts`: `options` (zod), `requires` and `document` on every widget (`testFilters` shipped in milestone 1); new widgets `stats`, `verdict`, `progress`, `risks`, `metric` (line and stat displays) with their components in `app/components/analytics/`
-- [ ] `shared/analytics/dashboards.ts`: `DashboardDefinition`; the built-in Overview ([The default dashboard](#the-default-dashboard-overview)) and the executive and engineering dashboards (team and gaps digest come with milestone 3); `app/pages/analytics.vue` renders Overview from its definition instead of the hard-coded bands
+- [x] `shared/analytics/dashboards.ts`: `DashboardDefinition`; the built-in Overview ([The default dashboard](#the-default-dashboard-overview)) and the executive and engineering dashboards (team and gaps digest come with milestone 3); `app/pages/analytics.vue` renders Overview from its definition instead of the hard-coded bands
 - [ ] `shared/reports/types.ts`, `collect.ts` (a dashboard and a scope make a bundle), `verdict.ts`, `sentences.en.ts`, `sentences.fr.ts`
 - [ ] `shared/reports/render-html.ts`, `render-pdf.ts`, `render-markdown.ts`, `render-csv.ts`, `build.ts` (file name, content type, format switch)
 - [ ] `shared/analytics/insight-rules.ts`: target-aware rule
