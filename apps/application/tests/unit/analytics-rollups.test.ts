@@ -266,6 +266,70 @@ describe('the rollups agree with the stored runs', () => {
   });
 });
 
+/**
+ * A database whose first read of the raw runs (the recompute's) resolves, then
+ * holds the recompute until `gate` opens, so a second recompute can run whole
+ * in between. `read` settles once that first read is done.
+ */
+function pauseAfterRunsRead(target: typeof db, gate: Promise<void>) {
+  let armed = true;
+  let markRead!: () => void;
+  const read = new Promise<void>((resolve) => (markRead = resolve));
+  const hold = (builder: any): any =>
+    new Proxy(builder, {
+      get(obj, prop) {
+        const value = Reflect.get(obj, prop);
+        if (prop === 'then')
+          return (resolve: (v: unknown) => void, reject: (e: unknown) => void) =>
+            obj
+              .then((rows: unknown) => {
+                markRead();
+                return gate.then(() => rows);
+              })
+              .then(resolve, reject);
+        return typeof value === 'function' ? (...args: unknown[]) => hold(value.apply(obj, args)) : value;
+      },
+    });
+  const paused = new Proxy(target, {
+    get(obj, prop) {
+      const value = Reflect.get(obj, prop);
+      if (prop !== 'select') return typeof value === 'function' ? value.bind(obj) : value;
+      return (fields?: Record<string, unknown>) => {
+        const builder = (value as any).call(obj, fields);
+        if (!armed || !fields || !('isFullRun' in fields)) return builder;
+        armed = false;
+        return hold(builder);
+      };
+    },
+  });
+  return { paused, read };
+}
+
+describe('overlapping recomputes', () => {
+  test('a recompute never deletes a cell another one wrote after it read the runs', async () => {
+    await seedRun({ daysAgo: 1, environment: 'staging' });
+    const late = await seedRun({ daysAgo: 1, environment: 'prod', status: 'running' });
+    await rollups.backfillDailyRollups(db as any);
+    const day = dayKey(Date.now() - DAY_MS);
+
+    // Recompute A reads the day's runs while the prod run is still running, then waits.
+    let open!: () => void;
+    const gate = new Promise<void>((resolve) => (open = resolve));
+    const { paused, read } = pauseAfterRunsRead(db, gate);
+    const a = rollups.recomputeRollupCells(paused as any, [{ projectId: 1, day }]);
+    await read;
+
+    // The prod run finishes and recompute B writes its cell.
+    await db.update(schema.testRuns).set({ status: 'passed' }).where(eq(schema.testRuns.id, late));
+    await rollups.upsertDailyRollup(db as any, late);
+    open();
+    await a;
+
+    const retained = (await rollupRows()).filter((r) => r.part === 'retained');
+    expect(retained.map((r) => r.environment).sort()).toEqual(['prod', 'staging']);
+  });
+});
+
 describe('deleting runs', () => {
   test('age-based deletion moves the numbers to the archived row; a kept run stays retained', async () => {
     const kept = await seedRun({ daysAgo: 100, passedTests: 7, failedTests: 3, status: 'failed' });
