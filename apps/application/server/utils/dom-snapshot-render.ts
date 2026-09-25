@@ -212,15 +212,55 @@ export function maskSensitiveText(text: string): string {
     .replace(LONG_HEX_RE, '[masked-hex]');
 }
 
+// Stands in for a `data:` URI set aside while the text around it is masked. NUL
+// never survives into rendered HTML or CSS, so a marker can't collide with text.
+const SET_ASIDE_RE = /\u0000(\d+)\u0000/g;
+
+/**
+ * Set aside the `data:` URIs `keep` accepts behind markers, so masking (and a
+ * cap) runs on the text around them and never inside one — a run of zero bytes
+ * encodes as `AAAA…`, which the hex mask would shred. `restore` puts them back
+ * and drops a marker the cap cut in half.
+ */
+function setAsideDataUris(text: string, keep: (uri: string) => boolean) {
+  const kept: string[] = [];
+  const marked = text.replace(DATA_URI_RE, (uri) => {
+    if (!keep(uri)) return uri;
+    kept.push(uri);
+    return `\u0000${kept.length - 1}\u0000`;
+  });
+  const restore = (masked: string): string =>
+    kept.length ? masked.replace(SET_ASIDE_RE, (_, i: string) => kept[Number(i)]!).replace(/\u0000\d*/g, '') : masked;
+  return { marked, restore };
+}
+
 /**
  * Mask secrets in a CSS body destined for an inlined `<style>`, but leave
  * `data:` URIs alone — unlike {@link maskSensitiveText}. The picker deliberately
  * embeds fonts/images as base64 data URIs, so blanket data-URI masking would
- * wipe them out; token-shaped secrets (JWTs, long hex) are still scrubbed. Run
- * this AFTER assets are inlined so the fresh data URIs survive. Pure.
+ * wipe them out; token-shaped secrets (JWTs, long hex) are still scrubbed around
+ * them. Run this AFTER assets are inlined so the fresh data URIs survive. Pure.
  */
 export function maskCssText(css: string): string {
-  return css.replace(JWT_RE, '[masked-token]').replace(LONG_HEX_RE, '[masked-hex]');
+  const { marked, restore } = setAsideDataUris(css, () => true);
+  return restore(marked.replace(JWT_RE, '[masked-token]').replace(LONG_HEX_RE, '[masked-hex]'));
+}
+
+// The largest inline `data:image/*` URI a rendered page keeps, and the most all
+// of them may add up to — in characters.
+const MAX_INLINE_IMAGE_CHARS = 200_000;
+const INLINE_IMAGES_MAX_CHARS = 2_000_000;
+
+/** Options for {@link sanitizeDomSnapshot}. */
+export interface SanitizeOptions {
+  /**
+   * Keep inline `data:image/*` URIs — within `MAX_INLINE_IMAGE_CHARS` each and
+   * `INLINE_IMAGES_MAX_CHARS` in all — for the rendered page views, where an
+   * image is content rather than a blob of text. Every other `data:` URI and
+   * token-shaped string is still masked, and kept images don't count against
+   * the cap.
+   */
+  keepInlineImages?: boolean;
 }
 
 /**
@@ -228,14 +268,28 @@ export function maskCssText(css: string): string {
  * The renderer already drops `__playwright_*` values, inline handlers, and
  * script bodies — this pass handles secrets baked into ordinary markup.
  */
-export function sanitizeDomSnapshot(html: string, capChars: number): { html: string; truncated: boolean } {
-  let out = maskSensitiveText(html);
+export function sanitizeDomSnapshot(
+  html: string,
+  capChars: number,
+  options: SanitizeOptions = {},
+): { html: string; truncated: boolean } {
+  let budget = INLINE_IMAGES_MAX_CHARS;
+  const { marked, restore } = setAsideDataUris(html, (uri) => {
+    const keep =
+      !!options.keepInlineImages &&
+      /^data:image\//i.test(uri) &&
+      uri.length <= MAX_INLINE_IMAGE_CHARS &&
+      uri.length <= budget;
+    if (keep) budget -= uri.length;
+    return keep;
+  });
+  let out = maskSensitiveText(marked);
   let truncated = false;
   if (capChars > 0 && out.length > capChars) {
     out = out.slice(0, capChars) + '\n<!-- [truncated] -->';
     truncated = true;
   }
-  return { html: out, truncated };
+  return { html: restore(out), truncated };
 }
 
 /**
@@ -404,7 +458,11 @@ export interface DomSnapshotResult {
  * action's before-snapshot, falling back to its after-snapshot and finally the
  * frame's last recorded snapshot (final page state).
  */
-export function extractDomSnapshot(data: ParsedTraceData, capChars: number): DomSnapshotResult {
+export function extractDomSnapshot(
+  data: ParsedTraceData,
+  capChars: number,
+  options: SanitizeOptions = {},
+): DomSnapshotResult {
   if (data.frameSnapshots.length === 0) return { status: 'no-snapshot' };
 
   const fa = data.failingAction;
@@ -420,10 +478,10 @@ export function extractDomSnapshot(data: ParsedTraceData, capChars: number): Dom
     // CSS dropped) — that reliably fits and preserves the whole DOM.
     const styled = renderSnapshotHtml(data.frameSnapshots, name);
     if (!styled) continue;
-    let result = sanitizeDomSnapshot(styled, capChars);
+    let result = sanitizeDomSnapshot(styled, capChars, options);
     if (result.truncated) {
       const lean = renderSnapshotHtml(data.frameSnapshots, name, { dropStyles: true });
-      if (lean) result = sanitizeDomSnapshot(lean, capChars);
+      if (lean) result = sanitizeDomSnapshot(lean, capChars, options);
     }
     // The viewport of the snapshot we rendered (main frame preferred, mirroring
     // renderSnapshotHtml) so the client can render it at its true proportions.

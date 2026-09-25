@@ -221,7 +221,8 @@ export async function getTraceDomSnapshot(
     .map((e) => e.data.toString('utf8'));
   if (traceTexts.length === 0) return { status: 'no-trace' };
 
-  const result = extractDomSnapshot(parseTraceTexts(traceTexts), capChars);
+  // The rendered page views keep the page's inline images; text consumers get them masked.
+  const result = extractDomSnapshot(parseTraceTexts(traceTexts), capChars, { keepInlineImages: options.inlineStyles });
   if (!options.inlineStyles) return result;
   try {
     return await inlineTraceAssets(blobPath, entries, result);

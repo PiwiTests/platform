@@ -144,6 +144,15 @@ describe('getTraceDomSnapshot — image inlining', () => {
     expect(res.html!.match(/<img src="\/img\/huge.png">/g)).toHaveLength(10);
   });
 
+  test("keeps the page's own inline data: images, which text consumers get masked", async () => {
+    const inline = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB';
+    storageFiles.set(BLOB, buildTraceZip([], [['IMG', { src: inline, alt: 'QR' }]]));
+    const rendered = await getTraceDomSnapshot(BLOB, 1_000_000, { inlineStyles: true });
+    expect(rendered.html).toContain(`<img src="${inline}" alt="QR">`);
+    const text = await getTraceDomSnapshot(BLOB, 1_000_000);
+    expect(text.html).toContain('<img src="data:[masked]" alt="QR">');
+  });
+
   test('leaves images alone when inlineStyles is off (the AI-context path)', async () => {
     storageFiles.set(BLOB, buildTraceZip([], [['IMG', { src: '/img/logo.png' }]]));
     const res = await getTraceDomSnapshot(BLOB, 1_000_000);

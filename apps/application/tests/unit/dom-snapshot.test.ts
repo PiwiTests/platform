@@ -382,6 +382,15 @@ describe('maskCssText', () => {
     expect(out).toContain('[masked-hex]');
     expect(out).toContain('data:image/png;base64,iVBORw0KGgoAAAA=='); // asset preserved
   });
+
+  test('never masks inside an embedded data: URI — a zero run reads as long hex', () => {
+    // 30 zero bytes encode as forty 'A's, which the case-insensitive hex mask matches.
+    const b64 = Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.alloc(30), Buffer.from([0xfb, 0xff])]).toString(
+      'base64',
+    );
+    const css = `@font-face{src:url("data:font/woff2;base64,${b64}")}`;
+    expect(maskCssText(css)).toBe(css);
+  });
 });
 
 describe('sanitizeDomSnapshot', () => {
@@ -404,6 +413,41 @@ describe('sanitizeDomSnapshot', () => {
     expect(truncated).toBe(true);
     expect(html.length).toBeLessThan(150);
     expect(html).toContain('<!-- [truncated] -->');
+  });
+
+  describe('keepInlineImages (the rendered page views)', () => {
+    const zeroRun = Buffer.concat([Buffer.from([0x89, 0x50]), Buffer.alloc(30), Buffer.from([0x4e, 0x47])]).toString(
+      'base64',
+    );
+    const png = `data:image/png;base64,${zeroRun}`;
+
+    test('keeps inline data:image URIs intact, masking everything else as usual', () => {
+      const input =
+        `<img src="${png}"><div style="background:url(${png})"></div>` +
+        '<a href="data:application/pdf;base64,JVBERi0xLjQK">pdf</a>' +
+        '<span>4a7d1ed414474e4033ac29ccb8653d9b4a7d1ed414474e40</span>';
+      const { html } = sanitizeDomSnapshot(input, 10_000, { keepInlineImages: true });
+      expect(html).toBe(
+        `<img src="${png}"><div style="background:url(${png})"></div>` +
+          '<a href="data:[masked]">pdf</a><span>[masked-hex]</span>',
+      );
+    });
+
+    test('masks an inline image over the per-image limit', () => {
+      const huge = `data:image/png;base64,${'Q'.repeat(250_000)}`;
+      const { html } = sanitizeDomSnapshot(`<img src="${huge}">`, 1_000_000, { keepInlineImages: true });
+      expect(html).toBe('<img src="data:[masked]">');
+    });
+
+    test('kept images do not count against the cap, and one the cap cuts off is dropped', () => {
+      const big = `data:image/png;base64,${'Q'.repeat(150_000)}`;
+      const fits = sanitizeDomSnapshot(`<p>a</p><img src="${big}">`, 100, { keepInlineImages: true });
+      expect(fits.truncated).toBe(false);
+      expect(fits.html).toContain(big);
+      const cut = sanitizeDomSnapshot(`<p>${'x'.repeat(200)}</p><img src="${big}">`, 100, { keepInlineImages: true });
+      expect(cut.truncated).toBe(true);
+      expect(cut.html).not.toContain('\u0000');
+    });
   });
 });
 
