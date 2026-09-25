@@ -47,3 +47,10 @@ export function setActiveLocalePrefs(prefs: ActiveLocalePrefs): void {
   active.timeZone = prefs.timeZone;
   active.dateFnsLocale = prefs.dateFnsLocale;
 }
+
+/** The viewer's effective BCP-47 locale for number formatting: the browser's when set to follow it. */
+export function viewerLocale(): string {
+  const locale = active.locale;
+  if (locale !== AUTO) return locale;
+  return typeof navigator !== 'undefined' && navigator.language ? navigator.language : BUILTIN_LOCALE;
+}

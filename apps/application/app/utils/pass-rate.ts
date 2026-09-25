@@ -6,15 +6,25 @@
  * and failed tests.
  */
 import {
-  PASS_RATE_FAIR,
-  PASS_RATE_GOOD,
+  PASS_RATE_FAIR as SHARED_PASS_RATE_FAIR,
+  PASS_RATE_GOOD as SHARED_PASS_RATE_GOOD,
   PASS_RATE_STEP_DEFS,
-  passRateTone,
-  type PassRateTone,
+  passRateTone as sharedPassRateTone,
+  type PassRateTone as SharedPassRateTone,
 } from '#shared/status-colors';
 import { STATUS_PALETTE } from './status-palette';
 
-export { PASS_RATE_FAIR, PASS_RATE_GOOD, passRateTone, type PassRateTone };
+/** Lowest percentage that reads as good. */
+export const PASS_RATE_GOOD = SHARED_PASS_RATE_GOOD;
+/** Lowest percentage that reads as fair; anything below is poor. */
+export const PASS_RATE_FAIR = SHARED_PASS_RATE_FAIR;
+
+export type PassRateTone = SharedPassRateTone;
+
+/** Band of a pass rate given as a percentage (0–100). */
+export function passRateTone(percent: number): PassRateTone {
+  return sharedPassRateTone(percent);
+}
 
 export interface PassRateToneEntry {
   /** Text utility for a percentage in this band. */

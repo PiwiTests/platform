@@ -267,6 +267,8 @@ import {
   apiPutWastedWaits,
   apiGetTimeoutHygiene,
   apiPutTimeoutHygiene,
+  apiGetCiCost,
+  apiPutCiCost,
   apiGetPrFeedback,
   apiGetAutoHeal,
   apiPutAutoHeal,
@@ -2257,6 +2259,12 @@ routes.push(
     method: 'PUT',
     pattern: /^\/api\/settings\/timeout-hygiene$/,
     handler: (_, body) => apiPutTimeoutHygiene(body as Parameters<typeof apiPutTimeoutHygiene>[0]),
+  },
+  { method: 'GET', pattern: /^\/api\/settings\/ci-cost$/, handler: () => apiGetCiCost() },
+  {
+    method: 'PUT',
+    pattern: /^\/api\/settings\/ci-cost$/,
+    handler: (_, body) => apiPutCiCost(body as Parameters<typeof apiPutCiCost>[0]),
   },
   { method: 'GET', pattern: /^\/api\/settings\/pr-feedback$/, handler: () => apiGetPrFeedback() },
   {

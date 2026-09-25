@@ -106,7 +106,8 @@ perfect period and a nearly failing one stand out.
 **CI time** and **Wasted CI time** — total minutes your runs consumed, and how many of those produced
 no signal: time spent inside wait steps plus time spent executing attempts that ended failed or timed
 out. Because a timed-out test burns its entire (often oversized) budget, the widget also calls out how
-much is reclaimable by tightening timeouts and removing stale `test.slow()` marks.
+much is reclaimable by tightening timeouts and removing stale `test.slow()` marks. With a [cost of a CI
+minute](./quality-reports#cost-of-a-ci-minute) set, it shows the money too.
 
 **Flakiest tests** — the global flaky leaderboard, using the same [scoring and impact
 ranking](./flaky-tests#impact-ranking) as each project's Flaky tests tab.
@@ -115,11 +116,10 @@ ranking](./flaky-tests#impact-ranking) as each project's Flaky tests tab.
 with the oldest unresolved cluster highlighted.
 
 **Regression velocity** — new regressions and newly-flaky tests introduced per period, stacked, with
-the change vs the previous period. Rising bars mean quality debt is accumulating faster than it's paid
-down.
+the change vs the previous period.
 
 **Browser matrix** — pass rate per project × browser, so a suite that's green on Chromium and failing
-on WebKit stands out without opening a single run.
+on WebKit stands out.
 
 **Slow endpoints** — backend calls captured during tests, aggregated across all projects by normalized
 route: p50/p90 latency, error rate, and how many projects hit each one. A shared endpoint regressing

@@ -2,6 +2,7 @@
 import type { AnalyticsWastedTime } from '#shared/analytics/types';
 import { barGeometry, bucketTimeToX, dayTickIndices, formatTickDate, stackSegments } from '~/utils/chart';
 import { TIMELINE_WAIT_COLORS } from '~/utils/timeline';
+import { formatMoney } from '#shared/ci-cost';
 
 const props = defineProps<{ query: Record<string, string> }>();
 
@@ -69,7 +70,9 @@ const subtitle = computed(() => {
   if (!wasted.value) return undefined;
   const total = wasted.value.totalWaitMinutes + wasted.value.totalFailedExecMinutes;
   const label = total < 60 ? `${Math.round(total)} min` : `${Math.round((total / 60) * 10) / 10} h`;
-  return `${label} of CI time produced no signal`;
+  const cost = wasted.value.cost;
+  const money = cost ? ` (${formatMoney(cost.amount, cost.currency, viewerLocale())})` : '';
+  return `${label}${money} of CI time produced no signal`;
 });
 
 const reclaim = computed(() => wasted.value?.timeoutReclaimable ?? null);

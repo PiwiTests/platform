@@ -190,6 +190,7 @@ export const SETTINGS_PAGES: SettingsPageMeta[] = [
     fields: [
       { id: 'wasted-time.patterns', label: 'Wasted-time patterns', help: 'settings.wasted-time' },
       { id: 'timeout-hygiene.thresholds', label: 'Detection thresholds', help: 'settings.timeout-hygiene' },
+      { id: 'ci-cost', label: 'Cost of a CI minute', help: 'settings.ci-cost' },
     ],
   },
   {

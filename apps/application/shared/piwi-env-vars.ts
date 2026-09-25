@@ -1164,6 +1164,15 @@ export const PIWI_ENV_VARS = {
       'Case-insensitive globs (`*` and `?`) matched against a wait step’s title or source location. Use `*` to count every wait.',
   },
 
+  PIWI_CI_MINUTE_COST: {
+    description:
+      'Cost of one CI minute as an amount and an ISO 4217 currency code (e.g. "0.008 USD"). When set, every wasted-time number in the analytics widgets and quality reports is followed by its cost, and the setting in Settings → Performance is read-only. Unset shows minutes only.',
+    category: 'wasted-time',
+    example: '0.008 USD',
+    since: '0.38.0',
+    docs: 'features/quality-reports#cost-of-a-ci-minute',
+  },
+
   // ── Demo / build mode ────────────────────────────────────────────────────
   PIWI_DEMO_MODE: {
     description: 'Set to "true" to build the standalone client-side demo SPA (no server).',

@@ -1259,7 +1259,7 @@ Grouped by milestone. Paths are under `apps/application/` unless noted.
 - [ ] `shared/reports/render-html.ts`, `render-pdf.ts`, `render-markdown.ts`, `render-csv.ts`, `build.ts` (file name, content type, format switch)
 - [ ] `shared/analytics/insight-rules.ts`: target-aware rule
 - [ ] `server/api/reports/preview.get.ts`; `app/demo/api/reports.ts`
-- [ ] `server/api/settings/ci-cost.get.ts`, `ci-cost.put.ts`; `shared/piwi-env-vars.ts` (`PIWI_CI_MINUTE_COST`); `app/utils/settings-metadata.ts`; `app/pages/settings/performance.vue`
+- [x] `server/api/settings/ci-cost.get.ts`, `ci-cost.put.ts`; `shared/piwi-env-vars.ts` (`PIWI_CI_MINUTE_COST`); `app/utils/settings-metadata.ts`; `app/pages/settings/performance.vue`
 - [ ] `app/components/reports/ReportPreviewModal.vue`, `ReportView.vue`
 - [ ] `app/pages/analytics.vue`, `app/pages/projects/[id]/index.vue`: the *Export* action (*Schedule* comes with milestone 3)
 - [x] `shared/status-colors.ts`; `app/utils/status-palette.ts`, `app/utils/pass-rate.ts`, `shared/export/render-html.ts`, `render-pdf.ts`, `server/utils/email.ts` read it; `tests/unit/status-colors.test.ts` pins `app/assets/css/main.css`

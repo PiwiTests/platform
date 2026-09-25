@@ -37,6 +37,7 @@ import {
   resolveInstanceTimeZone,
 } from '#shared/i18n/locale-format';
 import { demoHttpError } from './http-error';
+import { CiCostError, resolveCiCost, saveCiCost } from '#shared/handlers/ci-cost';
 
 /** GET /api/settings/wasted-waits */
 export async function apiGetWastedWaits() {
@@ -210,4 +211,19 @@ export async function apiPutLocale(body: { locale?: string | null; timeZone?: st
   }
 
   return readLocaleSettings();
+}
+
+/** GET /api/settings/ci-cost — the stored setting only; the browser has no `PIWI_CI_MINUTE_COST`. */
+export async function apiGetCiCost() {
+  return resolveCiCost(await getDemoDb());
+}
+
+/** PUT /api/settings/ci-cost */
+export async function apiPutCiCost(body: { cost?: unknown }) {
+  try {
+    return await saveCiCost(await getDemoDb(), body ?? {});
+  } catch (error) {
+    if (error instanceof CiCostError) throw demoHttpError(error.statusCode, error.message);
+    throw error;
+  }
 }

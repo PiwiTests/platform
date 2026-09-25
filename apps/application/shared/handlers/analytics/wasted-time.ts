@@ -4,13 +4,16 @@ import type { AnalyticsWastedTime } from '../../analytics/types';
 import { fetchContextProjects, firstNonEmptyIndex, getAnalyticsContext, minutes, type ProjectAccess } from './common';
 import { groupRows, loadScalarRows } from './scalar-rows';
 import { getAnalyticsTimeoutHygiene } from './timeout-hygiene';
+import { resolveCiCost } from '../ci-cost';
+import { costOfMinutes } from '../../ci-cost';
 
 const TOP_PROJECTS = 8;
 
 /**
  * CI time that produced no signal: minutes spent inside wait steps plus
  * minutes spent executing attempts that ended failed or timed out — the
- * "money" argument for fixing slow waits and flaky tests.
+ * "money" argument for fixing slow waits and flaky tests, priced when a cost
+ * of a CI minute is configured.
  */
 export async function getAnalyticsWastedTime(
   db: DrizzleDB,
@@ -25,10 +28,14 @@ export async function getAnalyticsWastedTime(
     totalWaitMinutes: 0,
     totalFailedExecMinutes: 0,
     byProject: [],
+    cost: null,
     timeoutReclaimable: null,
   };
 
-  const rows = await loadScalarRows(db, ctx, ctx.period.from.getTime(), ctx.period.to.getTime());
+  const [rows, { cost: ciCost }] = await Promise.all([
+    loadScalarRows(db, ctx, ctx.period.from.getTime(), ctx.period.to.getTime()),
+    resolveCiCost(db),
+  ]);
   if (rows.length === 0) return empty;
 
   const byBucket = groupRows(rows, (row) => buckets.keyFor(row.day));
@@ -81,6 +88,9 @@ export async function getAnalyticsWastedTime(
       }))
       .sort((a, b) => b.waitMinutes + b.failedExecMinutes - (a.waitMinutes + a.failedExecMinutes))
       .slice(0, TOP_PROJECTS),
+    cost: ciCost
+      ? { amount: costOfMinutes(minutes(totalWaitMs + totalFailedMs), ciCost), currency: ciCost.currency }
+      : null,
     timeoutReclaimable,
   };
 }

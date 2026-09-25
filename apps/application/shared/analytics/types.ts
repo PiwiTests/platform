@@ -112,6 +112,11 @@ export interface AnalyticsWastedTime {
    * tightening oversized timeouts and removing stale `test.slow()` marks in
    * scope. Null when no opportunities were found.
    */
+  /**
+   * The wasted minutes as money, when a cost of a CI minute is configured
+   * (Settings → Performance, `PIWI_CI_MINUTE_COST`); null otherwise.
+   */
+  cost: { amount: number; currency: string } | null;
   timeoutReclaimable: {
     /** Sum of per-failure savings across opportunities, in minutes. */
     estimatedMinutes: number;

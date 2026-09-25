@@ -529,6 +529,12 @@ export const HELP_TOPICS = {
     doc: 'features/slow-tests',
     envVars: ['PIWI_WASTED_WAIT_PATTERNS'],
   },
+  'settings.ci-cost': {
+    title: 'Cost of a CI minute',
+    text: 'What one CI minute costs you. When set, wasted CI time is also shown as money in the analytics widgets and quality reports; leave it empty to show minutes only.',
+    doc: 'features/quality-reports#cost-of-a-ci-minute',
+    envVars: ['PIWI_CI_MINUTE_COST'],
+  },
   'settings.timeout-hygiene': {
     title: 'Timeout hygiene',
     text: 'Thresholds for flagging oversized per-test timeouts and stale test.slow() marks. Opportunities are recomputed at read time, so changes apply to existing runs immediately.',

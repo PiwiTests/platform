@@ -145,6 +145,17 @@ export const METRICS = [
     precision: 1,
   },
   {
+    id: 'wasted-ci-cost',
+    label: 'Wasted CI cost',
+    unit: 'money',
+    betterWhen: 'lower',
+    definition: 'Wasted CI minutes multiplied by the configured cost of a CI minute; shown only when a cost is set.',
+    source: 'rollup',
+    grain: 'test',
+    dimensions: TEST_DIMENSIONS,
+    precision: 2,
+  },
+  {
     id: 'ci-time',
     label: 'CI time',
     unit: 'minutes',
