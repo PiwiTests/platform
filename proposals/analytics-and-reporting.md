@@ -13,10 +13,12 @@ branch's first commit, so it can go out alone. Milestone 2 (the quality report) 
 typed-route depth limit milestone 1 met. Milestone 3 (schedules and snapshots) is built on
 `claude/analytics-m3-schedules-snapshots`, stacked on milestone 2, not merged yet; it met the depth limit again and
 removed its cause (D36). Milestone 4 (saved dashboards) is built on `claude/analytics-m4-saved-dashboards`,
-stacked on milestone 3, not merged yet. Written 2026-09-22 against 0.36.0; refreshed 2026-09-24 against 0.37.0, which
-shipped the Test Map, the capability opt-out system and one status color scale ([What 0.37.0
-changed](#3-what-0370-changed-for-this-design)); extended the same day with custom dashboards, filters and periods
-([Layer 2](#layer-2-dashboards), [Filters and periods](#filters-and-periods)); decided the same day: the four open
+stacked on milestone 3, not merged yet. Milestone 5 (trend depth) is built on `claude/analytics-m5-trend-depth`,
+stacked on milestone 4, not merged yet; its deviations are in the checklist of group 5. Written 2026-09-22
+against 0.36.0; refreshed 2026-09-24 against 0.37.0, which shipped the Test Map, the capability opt-out system
+and one status color scale ([What 0.37.0 changed](#3-what-0370-changed-for-this-design)); extended the same
+day with custom dashboards, filters and periods ([Layer 2](#layer-2-dashboards), [Filters and
+periods](#filters-and-periods)); decided the same day: the four open
 questions on rollout order, dashboard sharing, test filters over time and live links took their defaults (D30 to D33),
 the default dashboard is fixed ([The default dashboard: Overview](#the-default-dashboard-overview), D34), and the
 daily rollups account for runs kept forever (D35). Each milestone is built on a branch stacked on the previous one, in
@@ -1330,14 +1332,14 @@ Grouped by milestone. Paths are under `apps/application/` unless noted.
 
 **5. Trend depth**
 
-- [ ] `projects.targets` JSON column (both schemas); `shared/handlers/projects.ts` (`updateProject`); `app/pages/projects/[id]/edit.vue`
-- [ ] `shared/analytics/registry.ts` + handlers + components: `suite-growth`, `flaky-debt`, `time-to-fix`, `ownership`, `environment-comparison`, `movers`
-- [ ] `shared/analytics/insight-rules.ts`: `target-missed`, `time-to-fix-growth`, `suite-shrank`, `quarantine-debt-growth`, `owner-load`
-- [ ] `app/pages/test-cases/[id].vue`: Trend tab over `getTestCaseStabilityTrend` (time buckets); `app/pages/failure-clusters/[id].vue`: occurrences over time
-- [ ] `app/components/shared/ChartCard.vue`: export menu (PNG, CSV)
-- [ ] `shared/analytics/dashboards.ts`: *Time to fix*, *Suite growth* and *Flaky debt* join Overview; the other new widgets join the engineering dashboard
-- [ ] The scope's URL keys on the runs, flaky and clusters lists (drill-down)
-- [ ] Scenes in `scripts/take-feature-screenshots.mjs`; `apps/docs/features/analytics.md`
+- [x] `projects.targets` JSON column (both schemas); `shared/handlers/projects.ts` (`updateProject`, normalizing through `shared/analytics/targets.ts`); the form is a *Targets* card in the project's Settings tab (`ProjectTargetsForm.vue`), since `app/pages/projects/[id]/edit.vue` only redirects there; `shared/handlers/analytics/targets.ts` (`evaluateTargets`) reads them for the tiles, the portfolio's *Targets* column, the metric widget's target switch, the risks, the insights and `ReportBundle.targets`, whose `TargetVerdict` gained the project and a sentence, since a report spans projects; a weekly target is scaled to the period, and across projects a tile counts the projects that meet it
+- [x] `shared/analytics/registry.ts` + handlers + components: `suite-growth`, `flaky-debt`, `time-to-fix`, `ownership`, `environment-comparison`, `movers` (their catalog is `apps/docs/features/analytics-widgets.md`, split from `analytics.md` to keep it under the page word budget); `ownership` reads open causes by `failure_clusters.assignee` and tests by the stored `test_cases.owner` (the `piwi:owner` annotation), since CODEOWNERS owners are derived per page and never stored
+- [x] `shared/analytics/insight-rules.ts`: `target-missed`, `time-to-fix-growth`, `suite-shrank`, `quarantine-debt-growth`, `owner-load`
+- [x] `app/pages/test-cases/[id].vue`: Trend tab over `getTestCaseStabilityTrend` (time buckets over `days`, the endpoint no longer experimental, and the MCP tool takes `days` instead of `buckets`); `app/pages/failure-clusters/[id].vue`: occurrences over time (`getClusterOccurrenceTrend`, `GET /api/failure-clusters/[id]/occurrence-trend`), the regression mark being the first occurrence after the fix, since no column stores when a fix regressed
+- [x] `app/components/shared/ChartCard.vue`: export menu (PNG, CSV); per-section CSV files of a quality report from each section's *CSV* button in `ReportView.vue` (`renderWidgetCsv`)
+- [x] `shared/analytics/dashboards.ts`: *Time to fix*, *Suite growth* and *Flaky debt* join Overview; the other new widgets join the engineering dashboard
+- [x] The scope's URL keys on the runs, flaky and clusters lists (drill-down): no cross-project list page exists, so a number opens the project page's lists (`source=analytics`, `app/utils/analytics-drilldown.ts`); the portfolio's counts and the heatmap's cells always link, the tiles and chart buckets with one project in scope
+- [x] Scenes in `scripts/take-feature-screenshots.mjs`; `apps/docs/features/analytics.md`, `analytics-widgets.md`, `dashboards.md`, `flaky-tests.md`, `failure-clusters.md`, `quality-reports.md`
 
 **6. Reach**
 
