@@ -261,6 +261,8 @@ describe('saved dashboards', () => {
       new Set([1]),
     );
     expect(copy.hiddenProjects).toBe(2);
+    const duplicate = await dashboards.duplicateDashboard(db as any, source.id, user, { access: new Set([1]) });
+    expect(duplicate.hiddenProjects).toBe(2);
   });
 
   test('a widget is computed for the viewer only', async () => {

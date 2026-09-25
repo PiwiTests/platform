@@ -455,7 +455,8 @@ const routes: RouteEntry[] = [
   {
     method: 'POST',
     pattern: /^\/api\/dashboards\/([\w-]+)\/duplicate$/,
-    handler: async (m, body, _q, ctx) => apiDuplicateDashboard(m[1]!, body, ctx?.actingUserId ?? null),
+    handler: async (m, body, _q, ctx) =>
+      apiDuplicateDashboard(m[1]!, body, ctx?.actingUserId ?? null, ctx?.scope ?? 'all'),
   },
   {
     method: 'GET',

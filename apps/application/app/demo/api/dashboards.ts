@@ -100,14 +100,17 @@ export async function apiDeleteDashboard(id: string, actingUserId: number | null
 }
 
 /** POST /api/dashboards/:id/duplicate */
-export async function apiDuplicateDashboard(id: string, body: unknown, actingUserId: number | null) {
+export async function apiDuplicateDashboard(
+  id: string,
+  body: unknown,
+  actingUserId: number | null,
+  access: ProjectAccess,
+) {
   return demoDashboard(async () =>
-    duplicateDashboard(
-      await getDemoDb(),
-      id,
-      await demoActor(actingUserId),
-      parseDashboardBody(dashboardDuplicateSchema, body),
-    ),
+    duplicateDashboard(await getDemoDb(), id, await demoActor(actingUserId), {
+      ...parseDashboardBody(dashboardDuplicateSchema, body),
+      access,
+    }),
   );
 }
 

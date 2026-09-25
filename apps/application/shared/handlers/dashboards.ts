@@ -533,7 +533,8 @@ export async function duplicateDashboard(
   db: DrizzleDB,
   rawRef: unknown,
   actor: DashboardActor,
-  opts: { name?: string; now?: number } = {},
+  /** `access`: the viewer's project access, so the copy counts the projects of its scope they cannot open. */
+  opts: { name?: string; now?: number; access?: ProjectAccess } = {},
 ): Promise<DashboardView> {
   const source = await loadDashboardDefinition(db, rawRef, actor);
   const name = (opts.name ?? `Copy of ${source.name}`).slice(0, DASHBOARD_LIMITS.name);
@@ -541,6 +542,7 @@ export async function duplicateDashboard(
     db,
     { name, description: source.row?.description ?? null, visibility: 'private', from: source.ref },
     actor,
+    opts.access ?? 'all',
     opts.now,
   );
 }
