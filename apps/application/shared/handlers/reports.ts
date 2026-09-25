@@ -96,15 +96,17 @@ const dashboardRefSchema = z.union([
   z.union([z.string().regex(/^\d+$/), z.number().int().positive()]).transform((v) => String(v)),
 ]);
 
-export const reportScheduleInputSchema = z.object({
+// The fields without their creation defaults: `.partial()` keeps a field's `.default()`, so a PATCH
+// built from the create schema would reset `scope` and `comparison` on every partial update.
+const reportScheduleFields = z.object({
   name: z.string().trim().min(1).max(120),
   dashboard: dashboardRefSchema,
   /** The analytics scope keys (`projects`, `environments`, `allBranches`, `sel`, `owner`, …); the period is ignored. */
-  scope: z.record(z.string(), z.string()).default({}),
+  scope: z.record(z.string(), z.string()),
   cadence: z.enum(REPORT_CADENCES),
   anchor: z.number().int().min(1).max(MONTHLY_ANCHOR_MAX).nullable().optional(),
   at: z.string().regex(/^([01]?\d|2[0-3]):[0-5]\d$/, 'at must be HH:mm'),
-  comparison: z.enum(SCHEDULE_COMPARISONS).default('previous'),
+  comparison: z.enum(SCHEDULE_COMPARISONS),
   language: z.enum(['en', 'fr']).nullable().optional(),
   channelIds: z.array(z.number().int().positive()).min(1).max(20),
   /** Mint a share link per snapshot, carried by the email and Slack messages (when share links are enabled). */
@@ -118,7 +120,13 @@ export const reportScheduleInputSchema = z.object({
   mutedUntil: z.string().datetime().nullable().optional(),
 });
 
-export const reportSchedulePatchSchema = reportScheduleInputSchema.partial();
+export const reportScheduleInputSchema = reportScheduleFields.extend({
+  scope: reportScheduleFields.shape.scope.default({}),
+  comparison: reportScheduleFields.shape.comparison.default('previous'),
+});
+
+/** Only the keys the body carries: a PATCH of `{ active }` leaves the scope and the comparison as they are. */
+export const reportSchedulePatchSchema = reportScheduleFields.partial();
 
 export type ReportScheduleInput = z.infer<typeof reportScheduleInputSchema>;
 export type ReportSchedulePatch = z.infer<typeof reportSchedulePatchSchema>;

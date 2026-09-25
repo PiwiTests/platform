@@ -109,6 +109,33 @@ describe('report schedules', () => {
     expect(view.channels.map((c) => c.name)).toEqual(['Team mail', 'Slack']);
   });
 
+  test('a partial update keeps the scope and the comparison it does not name', async () => {
+    // `.partial()` keeps a field's `.default()`: the PATCH schema must not bring `scope` or `comparison` back.
+    expect(reports.reportSchedulePatchSchema.parse({ active: false })).toEqual({ active: false });
+
+    const view = await createWeekly({ scope: { projects: '1', environments: 'ci' }, comparison: 'year-ago' });
+    const ctx = { actor: admin, channels: await channels(), access: 'all' as const, timeZone: 'UTC', now: NOW };
+    const paused = await reports.updateReportSchedule(
+      db as any,
+      view.id,
+      reports.parseScheduleBody(reports.reportSchedulePatchSchema, { active: false }),
+      ctx,
+    );
+    expect(paused.active).toBe(false);
+    expect(paused.scope).toEqual(view.scope);
+    expect(paused.scope.projects).toBe('1');
+    expect(paused.comparison).toBe('year-ago');
+
+    const muted = await reports.updateReportSchedule(
+      db as any,
+      view.id,
+      reports.parseScheduleBody(reports.reportSchedulePatchSchema, { mutedUntil: '2026-10-01T00:00:00.000Z' }),
+      ctx,
+    );
+    expect(muted.scope).toEqual(view.scope);
+    expect(muted.comparison).toBe('year-ago');
+  });
+
   test('the sweep stores a snapshot and queues one report.ready row per channel, once', async () => {
     const view = await createWeekly();
     const runAt = Date.parse('2026-09-21T08:00:00Z');
