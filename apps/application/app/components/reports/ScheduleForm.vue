@@ -70,6 +70,11 @@ const { data: projectMenu, execute: loadProjects } = useFetch('/api/projects/men
   default: () => [] as ProjectMenuItem[],
   transform: (r: { items: ProjectMenuItem[] }) => r.items,
 });
+// Share links need the server; the demo has none, so the switch stays hidden there.
+const { data: shareSettings, execute: loadShareSettings } = useFetch<{ enabled: boolean; maxTtlDays: number }>(
+  '/api/share-links/settings',
+  { server: false, lazy: true, immediate: false },
+);
 let loaded = false;
 
 const name = ref('');
@@ -81,6 +86,7 @@ const at = ref('08:00');
 const comparison = ref<ScheduleComparison>('previous');
 const language = ref<'auto' | 'en' | 'fr'>('auto');
 const channelIds = ref<number[]>([]);
+const includeShareLink = ref(false);
 const global = ref(false);
 const owner = ref<string | undefined>(undefined);
 const filters = ref<Record<string, string>>({});
@@ -106,6 +112,7 @@ function reset() {
   comparison.value = s?.comparison ?? 'previous';
   language.value = s?.language ?? 'auto';
   channelIds.value = s ? s.channels.map((c) => c.id) : [];
+  includeShareLink.value = s?.includeShareLink ?? false;
   global.value = s ? s.global : false;
 }
 watch(
@@ -118,6 +125,7 @@ watch(
       void loadChannels();
       void loadScheduleOptions();
       void loadDashboards();
+      if (!demoMode) void loadShareSettings();
       void loadProjects();
     }
   },
@@ -250,6 +258,7 @@ async function save() {
     comparison: comparison.value,
     language: language.value === 'auto' ? null : language.value,
     channelIds: channelIds.value,
+    includeShareLink: includeShareLink.value,
     ...(authEnabled && canSeeAdmin.value ? { global: global.value } : {}),
   };
   try {
@@ -388,6 +397,16 @@ async function save() {
                 Settings › Notifications</NuxtLink
               >.
             </p>
+          </UFormField>
+
+          <UFormField v-if="shareSettings?.enabled">
+            <template #label>
+              <span class="inline-flex items-center gap-1">Share link <HelpHint topic="reports.share-link" /></span>
+            </template>
+            <div class="flex items-center gap-2">
+              <USwitch v-model="includeShareLink" data-testid="schedule-share-link" />
+              <span class="text-xs text-muted">Each report carries a link that opens it without an account.</span>
+            </div>
           </UFormField>
 
           <div>

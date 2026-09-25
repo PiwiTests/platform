@@ -230,6 +230,23 @@ export const HELP_TOPICS = {
     doc: 'features/quality-reports#report-schedules',
     envVars: ['PIWI_TIME_ZONE'],
   },
+  'reports.share-link': {
+    title: 'Share link per report',
+    text: 'Each report this schedule generates gets its own read-only share link, which the email and the Slack message carry, so a reader without an account opens the report in one click. The link expires a week after the next report arrives. Slack also shows the trend as an image through it. Needs share links enabled on the instance.',
+    doc: 'features/share-links#report-share-links',
+    envVars: ['PIWI_SHARE_LINKS_ENABLED', 'PIWI_SHARE_LINK_MAX_TTL_DAYS'],
+  },
+  'share-links.badge': {
+    title: 'Status badge',
+    text: 'An SVG image of the test pass rate, the branch policy and the period ("tests on main · 97.8% · 7 d") that rides on this share link, for a README or a wiki page. It stops resolving with the link.',
+    doc: 'features/share-links#status-badge',
+  },
+  'dashboards.live-links': {
+    title: 'Live dashboard links',
+    text: 'A read-only page of this dashboard for a wall screen or a bookmark, with nobody signed in. It is computed at every view with your project access and reloads every minute; it dies when it expires, is revoked, or you lose access to the dashboard or its projects. It never serves evidence files.',
+    doc: 'features/share-links#live-dashboard-links',
+    envVars: ['PIWI_SHARE_LINKS_ENABLED'],
+  },
   'reports.snapshots': {
     title: 'Report snapshots',
     text: 'Every quality report generated, scheduled or by hand, stored with its numbers as they were, so a report received months ago reads the same today whatever retention deleted since. You see the snapshots whose every project you can open.',
