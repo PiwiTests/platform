@@ -117,6 +117,7 @@ export const PROJECT = {
   PAGE_DIFF: 'page-diff-test',
   PERFETTO_EXPORT: 'perfetto-export-test',
   PERF_TEST: 'perf-test-project',
+  PERMISSION_GRID: 'permission-grid-test',
   PG_CONCURRENT: 'pg-concurrent-project',
   PG_TEST: 'pg-test-project',
   PROJECT_MEMBERS: 'project-members-test',

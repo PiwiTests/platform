@@ -29,7 +29,7 @@ defineRouteMeta({
         required: false,
         schema: { type: 'string', enum: ['1', 'true'] },
         description:
-          "Inline external stylesheets from the trace's resources so the DOM renders styled (used by the locator picker)",
+          "Inline the trace's stylesheets and images so the returned HTML renders as recorded on its own; the rendered page views load `dom-snapshot-frame`, which always does",
       },
     ],
     'x-required-roles': ['administrator', 'reporter', 'user'],
@@ -46,8 +46,8 @@ export default eventHandler(async (event) => {
   const query = getQuery(event);
   const sourceParam = query.source;
   const source = sourceParam === 'aria' || sourceParam === 'dom' ? sourceParam : undefined;
-  // The interactive picker asks to inline external CSS so its iframe renders
-  // styled; the read-only card omits it and gets the HTML-as-text view.
+  // Inlining makes the returned HTML self-contained; without it the HTML stays
+  // lean, as the rendered views (served by `dom-snapshot-frame`) and text readers want.
   const inlineStyles = query.inlineStyles === '1' || query.inlineStyles === 'true';
 
   const [traceRows, caseRows] = await Promise.all([

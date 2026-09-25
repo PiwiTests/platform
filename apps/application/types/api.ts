@@ -9,6 +9,7 @@ import type { ScmProviderName } from '#shared/scm-urls';
 import type { PageDiffSummary, PageDiffHunk } from '#shared/page-diff';
 import type { ClusterState } from '#shared/cluster-state';
 import type { NextStep } from '#shared/next-step';
+import type { ProjectAccessGrid, ProjectAccessUser } from '#shared/project-access';
 export type { TestMetadata, TestSourceFrame };
 export type { ClusterState } from '#shared/cluster-state';
 export type { NextStep } from '#shared/next-step';
@@ -1211,6 +1212,20 @@ export interface ProjectMemberEntry {
  */
 export interface ProjectMembersResponse {
   items: ProjectMemberEntry[];
+}
+
+/**
+ * Permission grid (GET /api/project-access)
+ */
+export interface ProjectAccessResponse extends ProjectAccessGrid {
+  authEnabled: boolean;
+}
+
+/**
+ * One grid cell changed (PUT /api/project-access) — the user's updated row
+ */
+export interface ProjectAccessUpdateResponse {
+  user: ProjectAccessUser;
 }
 
 // ============================================================================

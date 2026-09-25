@@ -7,6 +7,9 @@ import {
   inlineStylesheets,
   collectCssUrls,
   inlineCssUrls,
+  collectImageSources,
+  inlineImageSources,
+  mediaMatchesViewport,
   maskCssText,
 } from '~~/server/utils/dom-snapshot-render';
 import { resolveCaseDomSnapshot } from '~~/server/utils/dom-snapshot';
@@ -78,12 +81,69 @@ describe('renderSnapshotHtml', () => {
     expect(html).not.toContain('onclick');
   });
 
+  test('drops tag and attribute names that would spill into the markup', () => {
+    const html = renderSnapshotHtml(
+      [
+        snap({
+          snapshotName: 's1',
+          html: [
+            'HTML',
+            {},
+            ['BODY', {}, ['DIV', { 'x onerror': 'alert(1)', id: 'ok' }], ['IMG SRC=X ONERROR=alert(1)', {}]],
+          ],
+        }),
+      ],
+      's1',
+    );
+    expect(html).toBe('<html><body><div id="ok"></div></body></html>');
+  });
+
   test('drops script bodies but keeps the tag as a marker', () => {
     const html = renderSnapshotHtml(
       [snap({ snapshotName: 's1', html: ['HTML', {}, ['SCRIPT', {}, 'window.secret = "abc";']] })],
       's1',
     );
     expect(html).toBe('<html><script></script></html>');
+  });
+
+  test('empties an SVG <script> (recorded lower case) and drops its attributes', () => {
+    const html = renderSnapshotHtml(
+      [
+        snap({
+          snapshotName: 's1',
+          html: ['HTML', {}, ['svg', {}, ['script', { href: '/evil.js' }, 'parent.postMessage("x", "*")']]],
+        }),
+      ],
+      's1',
+    );
+    expect(html).toBe('<html><svg><script></script></svg></html>');
+  });
+
+  test('drops resource-hint links (modulepreload, preload, prefetch…) but keeps stylesheets and icons', () => {
+    const html = renderSnapshotHtml(
+      [
+        snap({
+          snapshotName: 's1',
+          html: [
+            'HTML',
+            {},
+            [
+              'HEAD',
+              {},
+              ['LINK', { rel: 'modulepreload', crossorigin: '', href: '/dist/assets/chunk-a1.js' }],
+              ['LINK', { rel: 'preload', as: 'font', href: '/font.woff2' }],
+              ['LINK', { rel: 'dns-prefetch', href: '//cdn.example.com' }],
+              ['LINK', { rel: 'stylesheet', crossorigin: '', href: '/dist/assets/index.css' }],
+              ['LINK', { rel: 'icon', href: '/favicon.ico' }],
+            ],
+          ],
+        }),
+      ],
+      's1',
+    );
+    expect(html).toBe(
+      '<html><head><link rel="stylesheet" crossorigin="" href="/dist/assets/index.css"><link rel="icon" href="/favicon.ico"></head></html>',
+    );
   });
 
   const styleHeavy = (): Parameters<typeof renderSnapshotHtml>[0] => [
@@ -169,11 +229,48 @@ describe('collectStylesheetLinks', () => {
       '<link rel="stylesheet" href="/a.css">' + // dupe
       '<link rel="stylesheet">' + // no href
       '</head>';
-    expect(collectStylesheetLinks(html)).toEqual(['/a.css', '/b.css']);
+    expect(collectStylesheetLinks(html)).toEqual([
+      { href: '/a.css', media: null },
+      { href: '/b.css', media: null },
+    ]);
   });
 
   test('matches a stylesheet token among several rel values and a bare href', () => {
-    expect(collectStylesheetLinks('<link rel="preload stylesheet" href=bare.css>')).toEqual(['bare.css']);
+    expect(collectStylesheetLinks('<link rel="preload stylesheet" href=bare.css>')).toEqual([
+      { href: 'bare.css', media: null },
+    ]);
+  });
+
+  test('carries each link media query', () => {
+    expect(
+      collectStylesheetLinks('<link href="/m.css" rel="stylesheet" media="screen and (max-width: 599px)">'),
+    ).toEqual([{ href: '/m.css', media: 'screen and (max-width: 599px)' }]);
+  });
+});
+
+describe('mediaMatchesViewport', () => {
+  const desktop = { width: 1280, height: 800 };
+
+  test('reads min/max width and height bounds against the recorded viewport', () => {
+    expect(mediaMatchesViewport('screen and (max-width: 599px)', desktop)).toBe(false);
+    expect(mediaMatchesViewport('screen and (min-width: 600px) and (max-width: 1199px)', desktop)).toBe(false);
+    expect(mediaMatchesViewport('screen and (min-width: 1200px)', desktop)).toBe(true);
+    expect(mediaMatchesViewport('(min-width: 75em)', desktop)).toBe(true); // 1200px
+    expect(mediaMatchesViewport('(max-height: 700px)', desktop)).toBe(false);
+  });
+
+  test('handles media types, comma lists, not and only', () => {
+    expect(mediaMatchesViewport('print', desktop)).toBe(false);
+    expect(mediaMatchesViewport('all', desktop)).toBe(true);
+    expect(mediaMatchesViewport('print, (min-width: 1000px)', desktop)).toBe(true);
+    expect(mediaMatchesViewport('not print', desktop)).toBe(true);
+    expect(mediaMatchesViewport('only screen and (max-width: 600px)', desktop)).toBe(false);
+  });
+
+  test('counts a query it cannot read, or an unknown viewport, as applying', () => {
+    expect(mediaMatchesViewport('(orientation: portrait)', desktop)).toBe(true);
+    expect(mediaMatchesViewport('(width >= 2000px)', desktop)).toBe(true);
+    expect(mediaMatchesViewport('screen and (max-width: 599px)')).toBe(true);
   });
 });
 
@@ -274,7 +371,7 @@ describe('parseResourceSnapshots', () => {
 });
 
 describe('collectCssUrls / inlineCssUrls', () => {
-  test('collects distinct url() targets, skipping data:, #fragment and fragment-addressed refs', () => {
+  test('counts each url() target, skipping data:, #fragment and fragment-addressed refs', () => {
     const css =
       '@font-face{src:url("/f/inter.woff2") format("woff2")}' +
       '.a{background:url(/img/bg.png)}' +
@@ -282,7 +379,10 @@ describe('collectCssUrls / inlineCssUrls', () => {
       '.c{background:url(data:image/gif;base64,AAAA)}' + // already inline
       '.d{filter:url(#blur)}' + // in-document ref
       '.e{background:url(/img/sprite.svg#star)}'; // fragment-addressed — can't inline faithfully
-    expect(collectCssUrls(css)).toEqual(['/f/inter.woff2', '/img/bg.png']);
+    expect([...collectCssUrls(css)]).toEqual([
+      ['/f/inter.woff2', 1],
+      ['/img/bg.png', 2],
+    ]);
   });
 
   test('rewrites only the targets present in the replacement map, double-quoting them', () => {
@@ -290,6 +390,25 @@ describe('collectCssUrls / inlineCssUrls', () => {
     const out = inlineCssUrls(css, { '/img/bg.png': 'data:image/png;base64,PNG' });
     expect(out).toContain('url("data:image/png;base64,PNG")');
     expect(out).toContain("url('/f/x.woff2')"); // untouched — no replacement supplied
+  });
+});
+
+describe('collectImageSources / inlineImageSources', () => {
+  const html =
+    '<img src="/a.png" alt="A"><img alt="x > y" src="/q.png?w=1&amp;h=2">' +
+    '<img src="/a.png"><img src="data:image/gif;base64,AAAA"><p src="/not-an-img.png"></p>';
+
+  test('counts each <img src> URL, unescaped, skipping data: URIs and other tags', () => {
+    expect([...collectImageSources(html)]).toEqual([
+      ['/a.png', 2],
+      ['/q.png?w=1&h=2', 1],
+    ]);
+  });
+
+  test('rewrites only the sources present in the replacement map', () => {
+    const out = inlineImageSources(html, { '/q.png?w=1&h=2': 'data:image/png;base64,Q' });
+    expect(out).toContain('<img alt="x > y" src="data:image/png;base64,Q">');
+    expect(out).toContain('<img src="/a.png" alt="A">');
   });
 });
 
@@ -303,6 +422,15 @@ describe('maskCssText', () => {
     expect(out).toContain('[masked-token]');
     expect(out).toContain('[masked-hex]');
     expect(out).toContain('data:image/png;base64,iVBORw0KGgoAAAA=='); // asset preserved
+  });
+
+  test('never masks inside an embedded data: URI — a zero run reads as long hex', () => {
+    // 30 zero bytes encode as forty 'A's, which the case-insensitive hex mask matches.
+    const b64 = Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.alloc(30), Buffer.from([0xfb, 0xff])]).toString(
+      'base64',
+    );
+    const css = `@font-face{src:url("data:font/woff2;base64,${b64}")}`;
+    expect(maskCssText(css)).toBe(css);
   });
 });
 
@@ -326,6 +454,41 @@ describe('sanitizeDomSnapshot', () => {
     expect(truncated).toBe(true);
     expect(html.length).toBeLessThan(150);
     expect(html).toContain('<!-- [truncated] -->');
+  });
+
+  describe('keepInlineImages (the rendered page views)', () => {
+    const zeroRun = Buffer.concat([Buffer.from([0x89, 0x50]), Buffer.alloc(30), Buffer.from([0x4e, 0x47])]).toString(
+      'base64',
+    );
+    const png = `data:image/png;base64,${zeroRun}`;
+
+    test('keeps inline data:image URIs intact, masking everything else as usual', () => {
+      const input =
+        `<img src="${png}"><div style="background:url(${png})"></div>` +
+        '<a href="data:application/pdf;base64,JVBERi0xLjQK">pdf</a>' +
+        '<span>4a7d1ed414474e4033ac29ccb8653d9b4a7d1ed414474e40</span>';
+      const { html } = sanitizeDomSnapshot(input, 10_000, { keepInlineImages: true });
+      expect(html).toBe(
+        `<img src="${png}"><div style="background:url(${png})"></div>` +
+          '<a href="data:[masked]">pdf</a><span>[masked-hex]</span>',
+      );
+    });
+
+    test('masks an inline image over the per-image limit', () => {
+      const huge = `data:image/png;base64,${'Q'.repeat(250_000)}`;
+      const { html } = sanitizeDomSnapshot(`<img src="${huge}">`, 1_000_000, { keepInlineImages: true });
+      expect(html).toBe('<img src="data:[masked]">');
+    });
+
+    test('kept images do not count against the cap, and one the cap cuts off is dropped', () => {
+      const big = `data:image/png;base64,${'Q'.repeat(150_000)}`;
+      const fits = sanitizeDomSnapshot(`<p>a</p><img src="${big}">`, 100, { keepInlineImages: true });
+      expect(fits.truncated).toBe(false);
+      expect(fits.html).toContain(big);
+      const cut = sanitizeDomSnapshot(`<p>${'x'.repeat(200)}</p><img src="${big}">`, 100, { keepInlineImages: true });
+      expect(cut.truncated).toBe(true);
+      expect(cut.html).not.toContain('\u0000');
+    });
   });
 });
 

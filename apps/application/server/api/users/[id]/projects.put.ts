@@ -57,7 +57,8 @@ export default eventHandler(async (event) => {
     }
   }
 
-  await setUserAssignments(db, id, parsed.data, currentUser.id);
+  // With authentication off the caller is a virtual administrator with no users row.
+  await setUserAssignments(db, id, parsed.data, currentUser.id || undefined);
 
   return { success: true };
 });

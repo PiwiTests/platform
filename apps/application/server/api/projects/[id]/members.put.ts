@@ -45,7 +45,8 @@ export default eventHandler(async (event) => {
     }
   }
 
-  await setProjectMembers(db, id, parsed.data.userIds, currentUser.id);
+  // With authentication off the caller is a virtual administrator with no users row.
+  await setProjectMembers(db, id, parsed.data.userIds, currentUser.id || undefined);
 
   return { success: true };
 });

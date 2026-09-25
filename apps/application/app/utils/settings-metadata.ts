@@ -23,6 +23,7 @@ export type SettingsPageId =
   | 'account'
   | 'localization'
   | 'users'
+  | 'permissions'
   | 'notifications'
   | 'tags'
   | 'storage'
@@ -127,6 +128,17 @@ export const SETTINGS_PAGES: SettingsPageMeta[] = [
       { id: 'users.list', label: 'Users & roles', help: 'settings.users' },
       { id: 'users.api-keys', label: 'API keys', help: 'settings.api-keys' },
     ],
+  },
+  {
+    id: 'permissions',
+    label: 'Permissions',
+    icon: 'i-lucide-shield-check',
+    to: '/settings/permissions',
+    group: 'instance',
+    roles: [Role.ADMINISTRATOR],
+    authOnly: true,
+    introHelp: 'settings.permissions',
+    fields: [{ id: 'permissions.grid', label: 'Project access', help: 'settings.permissions' }],
   },
   {
     id: 'notifications',

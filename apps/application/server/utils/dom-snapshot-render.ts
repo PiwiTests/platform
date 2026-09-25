@@ -41,6 +41,25 @@ const VOID_ELEMENTS = new Set([
   'WBR',
 ]);
 
+// A tag or attribute name holding whitespace, a quote, `<`, `>`, `/` or `=`
+// can't be written back as markup without spilling into it.
+const UNSAFE_NAME_RE = /[\s"'<>/=]/;
+
+/**
+ * `<link rel>` tokens that only ask the browser to fetch ahead — Vite's
+ * `modulepreload` chunks, `preload`, `prefetch`, … Playwright's recorder drops
+ * plain `preload`/`prefetch` links and keeps the rest; none is page content.
+ */
+const RESOURCE_HINT_RELS = new Set(['modulepreload', 'preload', 'prefetch', 'prerender', 'preconnect', 'dns-prefetch']);
+
+/** A `<link>` whose `rel` is a resource hint and not also a stylesheet. */
+function isResourceHint(attrs: unknown): boolean {
+  if (!attrs || typeof attrs !== 'object' || Array.isArray(attrs)) return false;
+  const rel = (attrs as Record<string, unknown>).rel;
+  const tokens = typeof rel === 'string' ? rel.toLowerCase().split(/\s+/) : [];
+  return !tokens.includes('stylesheet') && tokens.some((token) => RESOURCE_HINT_RELS.has(token));
+}
+
 /** Options controlling how much of the DOM survives rendering. */
 export interface RenderOptions {
   /**
@@ -132,28 +151,35 @@ export function renderSnapshotHtml(
       return render(refNodes[nodeIndex], refSnapshotIndex);
     }
 
-    if (typeof n[0] !== 'string') return '';
-    const tagUpper = n[0] as string;
+    if (typeof n[0] !== 'string' || !n[0] || UNSAFE_NAME_RE.test(n[0])) return '';
+    // HTML tags are recorded upper case, SVG ones as authored (`svg`, `script`).
+    const tagUpper = (n[0] as string).toUpperCase();
     const tag = tagUpper.toLowerCase();
+    const attrs = n[1];
+
+    // A script is an empty marker — no `src`, no body — so nothing the page
+    // shipped ever runs in the rendered frame. Playwright drops HTML scripts when
+    // recording but keeps SVG ones, whose tag is lower case.
+    if (tagUpper === 'SCRIPT') return '<script></script>';
+    if (tagUpper === 'LINK' && isResourceHint(attrs)) return '';
 
     let out = `<${tag}`;
-    const attrs = n[1];
     if (attrs && typeof attrs === 'object' && !Array.isArray(attrs)) {
       for (const [name, value] of Object.entries(attrs as Record<string, unknown>)) {
         // __playwright_* bookkeeping attrs carry live input values and
         // scroll/selection state — never surfaced (secret-leak posture).
         if (name.startsWith('__playwright')) continue;
         // Inline handlers are noise for diagnosis and unsafe to re-emit.
-        if (/^on[a-z]/i.test(name)) continue;
+        if (/^on[a-z]/i.test(name) || UNSAFE_NAME_RE.test(name)) continue;
         out += ` ${name}="${escapeAttr(String(value))}"`;
       }
     }
     out += '>';
     if (VOID_ELEMENTS.has(tagUpper)) return out;
 
-    // `<script>` bodies are always dropped (unsafe to re-emit); `<style>` bodies
-    // are dropped only under the lean fallback. The tag stays as a marker.
-    const dropBody = tagUpper === 'SCRIPT' || (dropStyles && tagUpper === 'STYLE');
+    // `<style>` bodies are dropped only under the lean fallback; the tag stays
+    // as a marker.
+    const dropBody = dropStyles && tagUpper === 'STYLE';
     if (!dropBody) {
       for (let i = 2; i < n.length; i++) out += render(n[i], snapshotIndex);
     }
@@ -186,15 +212,55 @@ export function maskSensitiveText(text: string): string {
     .replace(LONG_HEX_RE, '[masked-hex]');
 }
 
+// Stands in for a `data:` URI set aside while the text around it is masked. NUL
+// never survives into rendered HTML or CSS, so a marker can't collide with text.
+const SET_ASIDE_RE = /\u0000(\d+)\u0000/g;
+
+/**
+ * Set aside the `data:` URIs `keep` accepts behind markers, so masking (and a
+ * cap) runs on the text around them and never inside one — a run of zero bytes
+ * encodes as `AAAA…`, which the hex mask would shred. `restore` puts them back
+ * and drops a marker the cap cut in half.
+ */
+function setAsideDataUris(text: string, keep: (uri: string) => boolean) {
+  const kept: string[] = [];
+  const marked = text.replace(DATA_URI_RE, (uri) => {
+    if (!keep(uri)) return uri;
+    kept.push(uri);
+    return `\u0000${kept.length - 1}\u0000`;
+  });
+  const restore = (masked: string): string =>
+    kept.length ? masked.replace(SET_ASIDE_RE, (_, i: string) => kept[Number(i)]!).replace(/\u0000\d*/g, '') : masked;
+  return { marked, restore };
+}
+
 /**
  * Mask secrets in a CSS body destined for an inlined `<style>`, but leave
  * `data:` URIs alone — unlike {@link maskSensitiveText}. The picker deliberately
  * embeds fonts/images as base64 data URIs, so blanket data-URI masking would
- * wipe them out; token-shaped secrets (JWTs, long hex) are still scrubbed. Run
- * this AFTER assets are inlined so the fresh data URIs survive. Pure.
+ * wipe them out; token-shaped secrets (JWTs, long hex) are still scrubbed around
+ * them. Run this AFTER assets are inlined so the fresh data URIs survive. Pure.
  */
 export function maskCssText(css: string): string {
-  return css.replace(JWT_RE, '[masked-token]').replace(LONG_HEX_RE, '[masked-hex]');
+  const { marked, restore } = setAsideDataUris(css, () => true);
+  return restore(marked.replace(JWT_RE, '[masked-token]').replace(LONG_HEX_RE, '[masked-hex]'));
+}
+
+// The largest inline `data:image/*` URI a rendered page keeps, and the most all
+// of them may add up to — in characters.
+const MAX_INLINE_IMAGE_CHARS = 200_000;
+const INLINE_IMAGES_MAX_CHARS = 2_000_000;
+
+/** Options for {@link sanitizeDomSnapshot}. */
+export interface SanitizeOptions {
+  /**
+   * Keep inline `data:image/*` URIs — within `MAX_INLINE_IMAGE_CHARS` each and
+   * `INLINE_IMAGES_MAX_CHARS` in all — for the rendered page views, where an
+   * image is content rather than a blob of text. Every other `data:` URI and
+   * token-shaped string is still masked, and kept images don't count against
+   * the cap.
+   */
+  keepInlineImages?: boolean;
 }
 
 /**
@@ -202,14 +268,67 @@ export function maskCssText(css: string): string {
  * The renderer already drops `__playwright_*` values, inline handlers, and
  * script bodies — this pass handles secrets baked into ordinary markup.
  */
-export function sanitizeDomSnapshot(html: string, capChars: number): { html: string; truncated: boolean } {
-  let out = maskSensitiveText(html);
+export function sanitizeDomSnapshot(
+  html: string,
+  capChars: number,
+  options: SanitizeOptions = {},
+): { html: string; truncated: boolean } {
+  let budget = INLINE_IMAGES_MAX_CHARS;
+  const { marked, restore } = setAsideDataUris(html, (uri) => {
+    const keep =
+      !!options.keepInlineImages &&
+      /^data:image\//i.test(uri) &&
+      uri.length <= MAX_INLINE_IMAGE_CHARS &&
+      uri.length <= budget;
+    if (keep) budget -= uri.length;
+    return keep;
+  });
+  let out = maskSensitiveText(marked);
   let truncated = false;
   if (capChars > 0 && out.length > capChars) {
     out = out.slice(0, capChars) + '\n<!-- [truncated] -->';
     truncated = true;
   }
-  return { html: out, truncated };
+  return { html: restore(out), truncated };
+}
+
+// One media feature real stylesheets split on: `(min-width: 700px)`, `(max-height: 40em)`.
+const MEDIA_BOUND_RE = /^\(\s*(min|max)-(width|height)\s*:\s*([\d.]+)(px|r?em)?\s*\)$/;
+
+/**
+ * Whether one media query (no commas) can apply at `viewport`: `null` when it
+ * uses anything beyond media types and min/max width/height bounds.
+ */
+function mediaQueryMatches(query: string, viewport: { width: number; height: number }): boolean | null {
+  let q = query.trim().toLowerCase();
+  const negate = q.startsWith('not ');
+  q = q.replace(/^(not|only)\s+/, '');
+  let matches = true;
+  for (const part of q.split(/\s+and\s+/)) {
+    if (part === 'screen' || part === 'all') continue;
+    if (part === 'print' || part === 'speech') {
+      matches = false;
+      continue;
+    }
+    const bound = MEDIA_BOUND_RE.exec(part);
+    if (!bound) return null;
+    const px = Number(bound[3]) * (bound[4]?.endsWith('em') ? 16 : 1);
+    const actual = bound[2] === 'width' ? viewport.width : viewport.height;
+    if (bound[1] === 'min' ? actual < px : actual > px) matches = false;
+  }
+  return negate ? !matches : matches;
+}
+
+/**
+ * Whether a stylesheet's `media` attribute can apply to a page rendered at
+ * `viewport` — the rendered frame always has the recorded viewport's width, so
+ * a sheet for another viewport never applies there. Reads media types and
+ * min/max width/height bounds; a query it can't read counts as applying, as
+ * does any query when the viewport is unknown. Pure.
+ */
+export function mediaMatchesViewport(media: string, viewport?: { width: number; height: number }): boolean {
+  if (!viewport || !media.trim()) return true;
+  return media.split(',').some((query) => mediaQueryMatches(query, viewport) ?? true);
 }
 
 /**
@@ -226,9 +345,9 @@ function parseStylesheetLink(tag: string): { href: string; media: string | null 
   return { href, media };
 }
 
-/** Unique original hrefs of every `<link rel="stylesheet">` in the HTML. Pure. */
-export function collectStylesheetLinks(html: string): string[] {
-  const out: string[] = [];
+/** Every `<link rel="stylesheet">` in the HTML, unique by original `href`, with its `media`. Pure. */
+export function collectStylesheetLinks(html: string): { href: string; media: string | null }[] {
+  const out: { href: string; media: string | null }[] = [];
   const seen = new Set<string>();
   const re = /<link\b[^>]*>/gi;
   let m: RegExpExecArray | null;
@@ -236,7 +355,7 @@ export function collectStylesheetLinks(html: string): string[] {
     const link = parseStylesheetLink(m[0]);
     if (link && !seen.has(link.href)) {
       seen.add(link.href);
-      out.push(link.href);
+      out.push(link);
     }
   }
   return out;
@@ -277,13 +396,13 @@ export function inlineStylesheets(html: string, cssByHref: Record<string, string
 const CSS_URL_RE = /url\(\s*(?:(['"])(.*?)\1|([^)\s'"]+))\s*\)/gi;
 
 /**
- * Every distinct `url(...)` target in a CSS body worth resolving — quotes
- * stripped, and already-inline (`data:`) / in-document (`#id`) refs skipped.
- * Pure; the caller resolves each against the stylesheet's own URL.
+ * Every `url(...)` target in a CSS body worth resolving — quotes stripped, and
+ * already-inline (`data:`) / in-document (`#id`) refs skipped — with how many
+ * times the CSS uses it: each use embeds its own copy. Pure; the caller
+ * resolves each against the stylesheet's own URL.
  */
-export function collectCssUrls(css: string): string[] {
-  const out: string[] = [];
-  const seen = new Set<string>();
+export function collectCssUrls(css: string): Map<string, number> {
+  const uses = new Map<string, number>();
   const re = new RegExp(CSS_URL_RE.source, 'gi');
   let m: RegExpExecArray | null;
   while ((m = re.exec(css)) !== null) {
@@ -292,12 +411,9 @@ export function collectCssUrls(css: string): string[] {
     // `sprite.svg#icon`) — a data: URI can't carry the fragment that addresses
     // the resource, so inlining would break them; leaving them alone is safer.
     if (!raw || raw.startsWith('data:') || raw.includes('#')) continue;
-    if (!seen.has(raw)) {
-      seen.add(raw);
-      out.push(raw);
-    }
+    uses.set(raw, (uses.get(raw) ?? 0) + 1);
   }
-  return out;
+  return uses;
 }
 
 /**
@@ -312,6 +428,40 @@ export function inlineCssUrls(css: string, replacements: Record<string, string>)
     const raw = (quoted ?? bare ?? '').trim();
     const repl = replacements[raw];
     return repl ? `url("${repl}")` : full;
+  });
+}
+
+// The `src` of an `<img>` start tag as the renderer writes it (double-quoted).
+// Quoted values are skipped whole, so a `>` inside one never ends the tag early.
+const IMG_SRC_RE = /(<img(?=[\s/>])(?:[^>"']|"[^"]*"|'[^']*')*?\ssrc=")([^"]*)(")/gi;
+
+function unescapeAttr(value: string): string {
+  return value.replace(/&quot;/g, '"').replace(/&amp;/g, '&');
+}
+
+/**
+ * Every `<img src>` URL in rendered snapshot HTML (`data:` URIs skipped), with
+ * how many images use it — each use embeds its own copy. Pure.
+ */
+export function collectImageSources(html: string): Map<string, number> {
+  const uses = new Map<string, number>();
+  for (const m of html.matchAll(IMG_SRC_RE)) {
+    const src = unescapeAttr(m[2]!).trim();
+    if (src && !/^data:/i.test(src)) uses.set(src, (uses.get(src) ?? 0) + 1);
+  }
+  return uses;
+}
+
+/**
+ * Point every `<img src>` whose URL appears in `replacements` at its
+ * replacement — a `data:` URI of the image captured in the trace. Others are
+ * left untouched. Pure.
+ */
+export function inlineImageSources(html: string, replacements: Record<string, string>): string {
+  if (!html || Object.keys(replacements).length === 0) return html;
+  return html.replace(IMG_SRC_RE, (full, open: string, value: string, close: string) => {
+    const repl = replacements[unescapeAttr(value).trim()];
+    return repl ? `${open}${escapeAttr(repl)}${close}` : full;
   });
 }
 
@@ -344,7 +494,11 @@ export interface DomSnapshotResult {
  * action's before-snapshot, falling back to its after-snapshot and finally the
  * frame's last recorded snapshot (final page state).
  */
-export function extractDomSnapshot(data: ParsedTraceData, capChars: number): DomSnapshotResult {
+export function extractDomSnapshot(
+  data: ParsedTraceData,
+  capChars: number,
+  options: SanitizeOptions = {},
+): DomSnapshotResult {
   if (data.frameSnapshots.length === 0) return { status: 'no-snapshot' };
 
   const fa = data.failingAction;
@@ -360,10 +514,10 @@ export function extractDomSnapshot(data: ParsedTraceData, capChars: number): Dom
     // CSS dropped) — that reliably fits and preserves the whole DOM.
     const styled = renderSnapshotHtml(data.frameSnapshots, name);
     if (!styled) continue;
-    let result = sanitizeDomSnapshot(styled, capChars);
+    let result = sanitizeDomSnapshot(styled, capChars, options);
     if (result.truncated) {
       const lean = renderSnapshotHtml(data.frameSnapshots, name, { dropStyles: true });
-      if (lean) result = sanitizeDomSnapshot(lean, capChars);
+      if (lean) result = sanitizeDomSnapshot(lean, capChars, options);
     }
     // The viewport of the snapshot we rendered (main frame preferred, mirroring
     // renderSnapshotHtml) so the client can render it at its true proportions.
