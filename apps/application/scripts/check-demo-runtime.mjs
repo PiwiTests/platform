@@ -229,6 +229,25 @@ async function main() {
       `${reportBytes.length} bytes as ${reportPdf.suggestedFilename()}`,
     );
 
+    // The Reports page lists the two report snapshots the demo seeds when its
+    // database opens, and one opens on its own page.
+    await page.goto(`${ORIGIN}${BASE}reports`, { waitUntil: 'domcontentloaded' });
+    const snapshots = page.getByTestId('snapshot-list').locator('li');
+    await snapshots
+      .first()
+      .waitFor({ timeout: 60000 })
+      .catch(() => {});
+    check(
+      (await snapshots.count()) === 2,
+      'the Reports page lists the two seeded snapshots',
+      `${await snapshots.count()}`,
+    );
+    check(await page.getByTestId('schedule-list').isVisible(), 'the Reports page lists the seeded schedule');
+    await page.getByTestId('snapshot-list').getByRole('link').first().click();
+    const snapshotView = page.getByTestId('report-view');
+    await snapshotView.waitFor({ timeout: 60000 }).catch(() => {});
+    check(await snapshotView.isVisible(), 'a report snapshot opens on its page');
+
     check(
       escapedApiUrls.size === 0,
       'every API request stays inside the demo base path',
@@ -249,7 +268,9 @@ async function main() {
     for (const f of failures) console.error(`  - ${f}`);
     process.exit(1);
   }
-  console.log('✓ The built demo runs: service worker, in-browser API, export download and quality report all work.');
+  console.log(
+    '✓ The built demo runs: service worker, in-browser API, export download, quality report and report snapshots all work.',
+  );
 }
 
 await main();
