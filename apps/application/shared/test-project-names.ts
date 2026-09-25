@@ -117,6 +117,7 @@ export const PROJECT = {
   PG_CONCURRENT: 'pg-concurrent-project',
   PG_TEST: 'pg-test-project',
   PROJECT_MEMBERS: 'project-members-test',
+  QUALITY_REPORT_SCHEDULES: 'quality-report-schedules-test',
   QUALITY_REPORT: 'quality-report-test',
   QUARANTINE: 'quarantine-test',
   REGRESSION_CONTEXT: 'regression-context-test',
