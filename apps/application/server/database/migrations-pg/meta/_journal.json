@@ -547,6 +547,13 @@
       "when": 1790281918660,
       "tag": "0077_volatile_warhawk",
       "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1790314946412,
+      "tag": "0078_crazy_zaran",
+      "breakpoints": true
     }
   ]
 }

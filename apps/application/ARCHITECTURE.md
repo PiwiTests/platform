@@ -51,6 +51,7 @@ Tables, by area:
 | Metadata           | `tags`, `project_tags`, `markers`, `entity_links`, `app_settings`, `test_functions`, `test_selections`                        |
 | Identity           | `users`, `api_keys`, `account_tokens`, `project_assignments`                                                                  |
 | Notifications      | `notification_channels`, `subscriptions`, `notification_deliveries`                                                           |
+| Analytics          | `analytics_daily_rollups`, `report_schedules`, `report_snapshots`                                                             |
 
 Non-obvious ones:
 

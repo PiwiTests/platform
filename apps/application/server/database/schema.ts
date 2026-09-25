@@ -54,6 +54,8 @@ export const {
   scenarioGaps,
   probes,
   analyticsDailyRollups,
+  reportSchedules,
+  reportSnapshots,
 } = schema;
 
 // TypeScript type exports – always based on SQLite schema (the canonical reference)
@@ -136,4 +138,6 @@ export type {
   NewScenarioGap,
   Probe,
   NewProbe,
+  ReportSchedule,
+  ReportSnapshot,
 } from './schema.sqlite';
