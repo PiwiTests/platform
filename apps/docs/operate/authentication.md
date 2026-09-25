@@ -197,7 +197,7 @@ What scoping affects for a non-admin user:
 - Runs, test cases, and clusters that belong to an unassigned project return **403**.
 - A reporter can submit results to an assigned project. Creating a **new** project on first submission requires **global** access — a per-project reporter can't invent projects.
 
-> **Default is no access.** A freshly created Reporter/User has no assignments and sees an empty dashboard until you grant some. (When authentication is first enabled, existing accounts are automatically backfilled with global access so nothing breaks on upgrade.)
+> **Default is no access.** A freshly created Reporter/User has no assignments and sees an empty dashboard until you grant some — and so does an account whose last project you revoke. (Once, on a database with no assignments yet, existing Reporter/User accounts are given global access, so upgrading from a version without project access changes nothing for them.)
 
 ### Managing assignments
 
