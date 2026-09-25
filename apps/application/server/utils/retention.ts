@@ -1,9 +1,10 @@
-import { and, count, inArray, isNotNull, isNull, lt, sql } from 'drizzle-orm';
+import { and, count, eq, inArray, isNotNull, isNull, lt, sql } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
 import type { SQLiteTable } from 'drizzle-orm/sqlite-core';
 import { getDialect } from '../database';
 import type { DbClient } from '../database';
 import {
+  analyticsDashboards,
   casePayloads,
   entityLinks,
   failureClusters,
@@ -27,6 +28,7 @@ import { recomputeClusterOccurrences } from '#shared/handlers/failure-cluster-op
 import { archiveRunsIntoRollups, recomputeRollupCells } from '#shared/handlers/analytics/rollups';
 import { dayKey } from '#shared/handlers/analytics/common';
 import type { DrizzleDB } from '#shared/handlers/db';
+import { deleteDashboardRows } from '#shared/handlers/dashboards';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -317,6 +319,7 @@ export interface OrphanSweepResult {
   notificationDeliveries: number;
   casePayloads: number;
   shareLinks: number;
+  dashboards: number;
 }
 
 async function countWhere(db: DbClient, table: SQLiteTable, where: SQL): Promise<number> {
@@ -348,6 +351,8 @@ export async function sweepOrphans(db: DbClient): Promise<OrphanSweepResult> {
   // so a link whose entity was pruned lingers until this sweep removes it.
   const orphanedShareLinks = sql`(${shareLinks.entityKind} = 'execution' AND NOT EXISTS (SELECT 1 FROM ${testRunsCases} WHERE ${testRunsCases.id} = ${shareLinks.entityId}))
     OR (${shareLinks.entityKind} = 'cluster' AND NOT EXISTS (SELECT 1 FROM ${failureClusters} WHERE ${failureClusters.id} = ${shareLinks.entityId}))`;
+  // A private dashboard whose owner was deleted has no one left who can open it; a shared one stays.
+  const orphanedDashboards = and(eq(analyticsDashboards.visibility, 'private'), isNull(analyticsDashboards.ownerId))!;
 
   const result: OrphanSweepResult = {
     networkRequests: await countWhere(db, networkRequests, orphanedNetworkRequests),
@@ -358,6 +363,7 @@ export async function sweepOrphans(db: DbClient): Promise<OrphanSweepResult> {
     notificationDeliveries: await countWhere(db, notificationDeliveries, orphanedDeliveries),
     casePayloads: await countWhere(db, casePayloads, orphanedPayloads),
     shareLinks: await countWhere(db, shareLinks, orphanedShareLinks),
+    dashboards: await countWhere(db, analyticsDashboards, orphanedDashboards),
   };
 
   await db.delete(networkRequests).where(orphanedNetworkRequests);
@@ -370,6 +376,7 @@ export async function sweepOrphans(db: DbClient): Promise<OrphanSweepResult> {
   await db.delete(notificationDeliveries).where(orphanedDeliveries);
   await db.delete(casePayloads).where(orphanedPayloads);
   await db.delete(shareLinks).where(orphanedShareLinks);
+  if (result.dashboards > 0) await deleteDashboardRows(db as unknown as DrizzleDB, orphanedDashboards);
 
   return result;
 }

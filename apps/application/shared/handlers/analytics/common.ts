@@ -142,7 +142,11 @@ async function allowedProjectIds(db: DrizzleDB, allowed: 'all' | number[]): Prom
   return rows.map((r) => r.id);
 }
 
-async function filterByProjectTags(db: DrizzleDB, allowed: 'all' | number[], tagTexts: string[]): Promise<number[]> {
+export async function filterByProjectTags(
+  db: DrizzleDB,
+  allowed: 'all' | number[],
+  tagTexts: string[],
+): Promise<number[]> {
   if (allowed !== 'all' && allowed.length === 0) return [];
   const rows: { projectId: number }[] = await db
     .select({ projectId: projectTags.projectId })

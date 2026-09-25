@@ -7,8 +7,10 @@
  * here in code and can only be duplicated; saved dashboards reuse the same
  * definition shape.
  */
+import { z } from 'zod';
 import type { AnalyticsScope } from './scope';
-import { DEFAULT_ANALYTICS_SCOPE } from './scope';
+import { analyticsScopeToQuery, DEFAULT_ANALYTICS_SCOPE, parseAnalyticsScope } from './scope';
+import { encodePeriod, type PeriodSpec } from './period';
 import {
   getAnalyticsWidget,
   isAnalyticsWidgetId,
@@ -367,10 +369,17 @@ export function resolveDashboard(definition: DashboardDefinition): ResolvedDashb
   }));
 }
 
-function narrowList<T>(base: T[] | undefined, override: T[] | undefined): T[] | undefined {
+/** A project id no project carries: a filter narrowed to nothing still filters. */
+const NO_PROJECT = 0;
+/** A value no environment, branch, tag or browser carries. */
+const NO_VALUE = '\u0000';
+
+function narrowList<T>(base: T[] | undefined, override: T[] | undefined, none: T): T[] | undefined {
   if (!override || override.length === 0) return base;
   if (!base || base.length === 0) return override;
-  return base.filter((v) => override.includes(v));
+  const both = base.filter((v) => override.includes(v));
+  // Disjoint lists match nothing: an empty list would read as "no filter", which widens.
+  return both.length > 0 ? both : [none];
 }
 
 /**
@@ -389,10 +398,17 @@ export function applyWidgetScope(base: AnalyticsScope, override: Partial<Analyti
     defaultBranchOnly: base.defaultBranchOnly || override.defaultBranchOnly === true,
     fullRunsOnly: base.fullRunsOnly || override.fullRunsOnly === true,
   };
-  const lists = ['projectIds', 'projectTags', 'environments', 'branches', 'browsers'] as const;
+  if (override.projectIds) scope.projectIds = narrowList(base.projectIds, override.projectIds, NO_PROJECT);
+  const lists = ['projectTags', 'environments', 'browsers'] as const;
   for (const key of lists) {
-    const value = narrowList<any>(base[key], override[key]);
-    if (value) (scope as any)[key] = value;
+    const value = narrowList(base[key], override[key], NO_VALUE);
+    if (value) scope[key] = value;
+  }
+  // A branch list narrows an explicit branch list or every branch, never the default-branch policy.
+  const basePolicy = !base.branches?.length && base.defaultBranchOnly;
+  if (override.branches?.length && !basePolicy) {
+    scope.branches = narrowList(base.branches, override.branches, NO_VALUE);
+    scope.defaultBranchOnly = false;
   }
   if (!base.selection && override.selection) scope.selection = override.selection;
   if (!base.tests && override.tests) scope.tests = override.tests;
@@ -402,4 +418,167 @@ export function applyWidgetScope(base: AnalyticsScope, override: Partial<Analyti
 /** The default scope of a dashboard, falling back to the analytics default. */
 export function dashboardScope(definition: DashboardDefinition): AnalyticsScope {
   return { ...DEFAULT_ANALYTICS_SCOPE, ...definition.scope };
+}
+
+// ── Checking a definition from outside ───────────────────────────────────────
+
+export class DashboardDefinitionError extends Error {}
+
+/** The scope keys a dashboard stores; the viewer's time zone and locale are request context, never stored. */
+const STORED_SCOPE_KEYS = [
+  'period',
+  'comparison',
+  'granularity',
+  'projectIds',
+  'projectTags',
+  'environments',
+  'branches',
+  'defaultBranchOnly',
+  'fullRunsOnly',
+  'selection',
+  'tests',
+  'browsers',
+] as const satisfies readonly (keyof AnalyticsScope)[];
+
+function roundTripScope(raw: Record<string, unknown>, where: string): AnalyticsScope {
+  const known: Record<string, unknown> = {};
+  for (const key of STORED_SCOPE_KEYS) if (raw[key] !== undefined) known[key] = raw[key];
+  let parsed: AnalyticsScope;
+  try {
+    parsed = parseAnalyticsScope(analyticsScopeToQuery({ ...DEFAULT_ANALYTICS_SCOPE, ...known } as AnalyticsScope));
+  } catch {
+    throw new DashboardDefinitionError(`${where}: the scope is not valid`);
+  }
+  if (known.period !== undefined && encodePeriod(parsed.period) !== encodePeriod(known.period as PeriodSpec)) {
+    throw new DashboardDefinitionError(`${where}: the period is not valid`);
+  }
+  delete parsed.timeZone;
+  delete parsed.locale;
+  return parsed;
+}
+
+function asRecord(raw: unknown, where: string): Record<string, unknown> {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new DashboardDefinitionError(`${where}: the scope must be an object`);
+  }
+  return raw as Record<string, unknown>;
+}
+
+/** A dashboard's default scope, checked, with the defaults filled in. */
+export function normalizeDashboardScope(raw: unknown, where = 'Dashboard'): AnalyticsScope {
+  return roundTripScope(asRecord(raw ?? {}, where), where);
+}
+
+/** A widget's scope override, checked: only the keys it sets are kept. */
+export function normalizeScopeOverride(raw: unknown, where: string): Partial<AnalyticsScope> | undefined {
+  if (raw == null) return undefined;
+  const record = asRecord(raw, where);
+  const parsed = roundTripScope(record, where);
+  const out: Partial<AnalyticsScope> = {};
+  for (const key of STORED_SCOPE_KEYS) {
+    if (record[key] === undefined) continue;
+    (out as Record<string, unknown>)[key] = parsed[key];
+  }
+  if (record.branches !== undefined) out.defaultBranchOnly = parsed.defaultBranchOnly;
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+export const DASHBOARD_LIMITS = { bands: 12, widgets: 40, name: 80, description: 280, title: 80 } as const;
+
+const WIDGET_KEY_PATTERN = /^[a-z0-9][a-z0-9-]{0,39}$/;
+
+const definitionShape = z.object({
+  v: z.literal(1),
+  scope: z.unknown().optional(),
+  bands: z
+    .array(
+      z.object({
+        title: z.string().trim().min(1).max(DASHBOARD_LIMITS.title),
+        description: z.string().trim().max(DASHBOARD_LIMITS.description).optional(),
+        widgets: z.array(
+          z.object({
+            key: z.string().regex(WIDGET_KEY_PATTERN, 'lower-case letters, digits and dashes'),
+            type: z.string(),
+            title: z.string().trim().min(1).max(DASHBOARD_LIMITS.title).optional(),
+            size: z.enum(['full', 'half']),
+            options: z.record(z.string(), z.unknown()).optional(),
+            scope: z.unknown().optional(),
+          }),
+        ),
+      }),
+    )
+    .max(DASHBOARD_LIMITS.bands),
+});
+
+/** One widget from outside, checked against the registry and its options schema, defaults filled in. */
+export function parseDashboardWidget(raw: unknown, where = 'Widget'): DashboardWidget {
+  const shape = definitionShape.shape.bands.element.shape.widgets.element.safeParse(raw);
+  if (!shape.success) {
+    const issue = shape.error.issues[0];
+    throw new DashboardDefinitionError(`${where}: ${issue?.path.join('.') || 'widget'} ${issue?.message ?? ''}`.trim());
+  }
+  const widget = shape.data;
+  if (!isAnalyticsWidgetId(widget.type)) {
+    throw new DashboardDefinitionError(`${where}: unknown widget type '${widget.type}'`);
+  }
+  let options: Record<string, unknown>;
+  try {
+    options = parseWidgetOptions(widget.type, widget.options ?? {});
+  } catch (error) {
+    if (error instanceof WidgetOptionsError) throw new DashboardDefinitionError(`${where}: ${error.message}`);
+    throw error;
+  }
+  const scope = normalizeScopeOverride(widget.scope, where);
+  return {
+    key: widget.key,
+    type: widget.type,
+    ...(widget.title ? { title: widget.title } : {}),
+    size: widget.size,
+    ...(Object.keys(options).length > 0 ? { options } : {}),
+    ...(scope ? { scope } : {}),
+  };
+}
+
+/**
+ * A definition from outside (a save, an import), checked: the structure, the
+ * scope, every widget against the registry and its options schema. Widget
+ * keys are unique inside the dashboard. Throws `DashboardDefinitionError`.
+ */
+export function parseDashboardDefinition(raw: unknown): DashboardDefinition {
+  const shape = definitionShape.safeParse(raw);
+  if (!shape.success) {
+    const issue = shape.error.issues[0];
+    throw new DashboardDefinitionError(
+      `Invalid dashboard: ${issue?.path.join('.') || 'definition'} ${issue?.message ?? ''}`.trim(),
+    );
+  }
+  const total = shape.data.bands.reduce((n, b) => n + b.widgets.length, 0);
+  if (total > DASHBOARD_LIMITS.widgets) {
+    throw new DashboardDefinitionError(`A dashboard holds at most ${DASHBOARD_LIMITS.widgets} widgets`);
+  }
+  const keys = new Set<string>();
+  const bands = shape.data.bands.map((band, b) => ({
+    title: band.title,
+    ...(band.description ? { description: band.description } : {}),
+    widgets: band.widgets.map((w, i) => {
+      const widget = parseDashboardWidget(w, `Band ${b + 1}, widget ${i + 1}`);
+      if (keys.has(widget.key)) throw new DashboardDefinitionError(`The widget key '${widget.key}' is used twice`);
+      keys.add(widget.key);
+      return widget;
+    }),
+  }));
+  return { v: 1, scope: normalizeDashboardScope(shape.data.scope ?? {}), bands };
+}
+
+/** Every widget of a definition, in order. */
+export function dashboardWidgets(definition: DashboardDefinition): DashboardWidget[] {
+  return definition.bands.flatMap((b) => b.widgets);
+}
+
+/** A widget key not used in the definition yet, derived from the widget type. */
+export function nextWidgetKey(definition: DashboardDefinition, type: string): string {
+  const used = new Set(dashboardWidgets(definition).map((w) => w.key));
+  const base = type.slice(0, 36);
+  if (!used.has(base)) return base;
+  for (let n = 2; ; n++) if (!used.has(`${base}-${n}`)) return `${base}-${n}`;
 }
