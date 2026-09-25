@@ -7,13 +7,11 @@ lang: en-US
 
 <Needs reporter />
 
-A run gives you a list of failures. The same root cause usually breaks several tests, and the same break
-comes back run after run — so a list of failures is really a shorter list of *problems*, repeated.
-Piwi groups failures by that root cause into **failure clusters**, and Home turns those clusters
-into a **failure inbox**: a queue of the problems you still owe a decision.
+One root cause usually breaks several tests, run after run, so a list of failures is really a shorter
+list of *problems*. Piwi groups failures by root cause into **failure clusters**, and Home turns them
+into a **failure inbox**: the problems you still owe a decision.
 
-For how clusters are formed (the error fingerprint) and diagnosed, see
-[AI diagnosis & clustering](./ai-diagnosis#failure-clustering).
+How clusters form and get diagnosed: [AI diagnosis & clustering](./ai-diagnosis#failure-clustering).
 
 ## The failure inbox
 
@@ -104,7 +102,7 @@ Two menus sit beside it:
 ### Occurrences over time
 
 A chart under the evidence counts the cluster's failures per day, week or month, marking when its **fix
-landed** and any failure after it: did the fix hold.
+landed** and any failure after it.
 
 ## Snoozing
 
