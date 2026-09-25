@@ -418,6 +418,45 @@ const SCENES = [
       await shoot();
     },
   })),
+  // The share scenes need share links on: run them with PIWI_SHARE_LINKS_ENABLED=true (the harness's own
+  // server inherits the environment), or against a --url server that has it.
+  ...[
+    { name: 'report-share-link', width: 1280, height: 900 },
+    { name: 'report-share-link-mobile', width: 375, height: 1000 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `A report snapshot's share dialog with a minted link and its badge, at ${width} px`,
+    prepare: prepareReportSchedule,
+    route: '/reports',
+    viewport: { width, height },
+    async run({ page, shoot, settle }) {
+      await page.getByTestId('snapshot-list').getByRole('link').first().click({ timeout: 60000 });
+      await page.getByTestId('report-view').locator('svg').first().waitFor({ timeout: 60000 });
+      await page.getByRole('button', { name: 'Share', exact: true }).click();
+      await page.getByRole('button', { name: 'Create link' }).click({ timeout: 30000 });
+      await page.getByTestId('minted-badge').getByRole('img').waitFor({ timeout: 30000 });
+      await settle();
+      await shoot();
+    },
+  })),
+  ...[
+    { name: 'live-dashboard-link', width: 1280, height: 900 },
+    { name: 'live-dashboard-link-mobile', width: 375, height: 1000 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `The live dashboard links dialog of the seeded Checkout team dashboard, at ${width} px`,
+    route: '/analytics/d/1',
+    viewport: { width, height },
+    async run({ page, shoot, settle }) {
+      await page.locator('[data-shot="dashboard"]').waitFor({ timeout: 60000 });
+      await page.getByRole('button', { name: 'More dashboard actions' }).click();
+      await page.getByRole('menuitem', { name: 'Live dashboard links' }).click();
+      await page.getByRole('button', { name: 'Create link' }).click({ timeout: 30000 });
+      await page.getByTestId('minted-badge').getByRole('img').waitFor({ timeout: 30000 });
+      await settle();
+      await shoot();
+    },
+  })),
   ...[
     { name: 'saved-dashboard', width: 1280, height: 1500, docs: true },
     { name: 'saved-dashboard-mobile', width: 375, height: 1600, docs: false },

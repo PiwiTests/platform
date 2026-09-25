@@ -17,6 +17,8 @@ import type { ReportLanguage } from './format';
 export type ReportTone = 'good' | 'bad' | 'neutral';
 
 export interface ReportTile {
+  /** The catalog metric the tile shows; absent on snapshots generated before tiles named it. */
+  metric?: string;
   label: string;
   value: string;
   /** The change against the comparison period, formatted; null without one. */
@@ -131,9 +133,14 @@ export function isReportFormat(value: unknown): value is ReportFormat {
   return typeof value === 'string' && (REPORT_FORMATS as readonly string[]).includes(value);
 }
 
-/** Whether the verdict is one of the widgets; otherwise renderers put it under the title. */
+/** Whether a widget shows the verdict; otherwise renderers put it under the title. */
 export function hasVerdictWidget(bundle: Pick<ReportBundle, 'bands'>): boolean {
-  return reportWidgets(bundle).some((w) => w.type === 'verdict');
+  return reportWidgets(bundle).some(
+    (w) =>
+      w.type === 'verdict' ||
+      // A narrative that fell back to the rule-based verdict carries it, toned.
+      (w.type === 'narrative' && w.blocks.some((b) => b.kind === 'text' && b.tone)),
+  );
 }
 
 /** Every widget of a bundle, in document order. */

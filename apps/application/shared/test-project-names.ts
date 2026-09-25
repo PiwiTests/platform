@@ -132,6 +132,7 @@ export const PROJECT = {
   REPORTER_FULL_AUTH: 'reporter-full-auth-test',
   REPORTER_LIVE_UPLOAD: 'reporter-live-upload-test',
   REPORTER_NO_AUTH: 'reporter-no-auth-test',
+  REPORT_SHARE_LINKS: 'report-share-links-test',
   REPORTS_DETAILS: 'reports-details-project',
   REVOKED_KEY: 'revoked-key-test',
   RUN_COMPARE: 'run-compare',

@@ -376,7 +376,7 @@ const TONE_COLORS: Record<ReportTone, string> = {
  */
 export function renderQualityReportEmail(
   bundle: ReportBundle,
-  opts: { url: string; chartCid: string | null },
+  opts: { url: string; chartCid: string | null; shareUrl?: string | null },
 ): { subject: string; html: string; text: string } {
   const s = sentencesFor(bundle.language);
   const subject = `${s.labels.qualityReport}: ${bundle.title}`;
@@ -446,7 +446,11 @@ export function renderQualityReportEmail(
   }
 
   parts.push(
-    `<p style="margin:16px 0;"><a href="${escapeHtml(opts.url)}" style="display:inline-block;background:#18181b;color:#ffffff;padding:10px 16px;border-radius:6px;font-size:14px;text-decoration:none;">${escapeHtml(s.labels.openInPiwi)}</a></p>`,
+    `<p style="margin:16px 0;"><a href="${escapeHtml(opts.url)}" style="display:inline-block;background:#18181b;color:#ffffff;padding:10px 16px;border-radius:6px;font-size:14px;text-decoration:none;">${escapeHtml(s.labels.openInPiwi)}</a>${
+      opts.shareUrl
+        ? ` <a href="${escapeHtml(opts.shareUrl)}" style="display:inline-block;margin-left:8px;font-size:14px;color:#18181b;">${escapeHtml(s.labels.readWithoutAccount)}</a>`
+        : ''
+    }</p>`,
     p(
       meta(
         [bundle.scopeText.projects, bundle.scopeText.branches, bundle.scopeText.runs, bundle.scopeText.tests]
@@ -457,6 +461,7 @@ export function renderQualityReportEmail(
     ),
   );
   textParts.push(`${s.labels.openInPiwi}: ${opts.url}`);
+  if (opts.shareUrl) textParts.push(`${s.labels.readWithoutAccount}: ${opts.shareUrl}`);
 
   const { html } = emailLayout(escapeHtml(subject), parts.join('\n'));
   return { subject, html, text: textParts.join('\n') };

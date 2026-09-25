@@ -247,6 +247,7 @@ import {
 import { computeRunInsights } from '#shared/handlers/run-insights';
 import { isAnalyticsWidgetId, runAnalyticsWidget } from '#shared/handlers/analytics';
 import { parseAnalyticsScope } from '#shared/analytics/scope';
+import { collectRollupExport, rollupCsvHeader, rollupCsvRows } from '#shared/handlers/analytics/rollup-export';
 import { WidgetOptionsError, widgetOptionsFromQuery } from '#shared/analytics/registry';
 import { getAnalyticsScopeSummary } from '#shared/handlers/analytics/scope-summary';
 import { classifyAndPersistFlakyRootCause } from '#shared/handlers/flaky-classify';
@@ -406,6 +407,24 @@ const routes: RouteEntry[] = [
     pattern: /^\/api\/analytics\/scope$/,
     handler: async (_m, _, q, ctx) =>
       getAnalyticsScopeSummary(await getDemoDb(), parseAnalyticsScope(q), ctx?.scope ?? 'all'),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/analytics\/rollups$/,
+    handler: async (_m, _, q, ctx) => {
+      const format = (q?.get('format') ?? 'json').toLowerCase();
+      if (format !== 'json' && format !== 'csv')
+        throw demoHttpError(400, `Unsupported format '${format}'. Use json or csv.`);
+      const items = await collectRollupExport(await getDemoDb(), parseAnalyticsScope(q), ctx?.scope ?? 'all');
+      if (format === 'json') return { items };
+      return new Response(`\uFEFF${rollupCsvHeader()}${rollupCsvRows(items)}`, {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/csv; charset=utf-8',
+          'Content-Disposition': `attachment; filename="piwi-rollups-${new Date().toISOString().slice(0, 10)}.csv"`,
+        },
+      });
+    },
   },
   // Dashboards — saved dashboards, one widget of a dashboard and the editor's preview
   {

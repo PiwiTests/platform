@@ -174,8 +174,15 @@ function renderBlock(block: ReportBlock, dateLabel: (d: string) => string): RawH
   }
 }
 
+export interface RenderReportHtmlOptions {
+  /** Reload the page on this cadence (a live dashboard link on a wall screen). */
+  refreshSeconds?: number;
+  /** A line under the header (a live dashboard link says it is live). */
+  banner?: string;
+}
+
 /** The report as a self-contained HTML document. */
-export function renderReportHtml(bundle: ReportBundle): string {
+export function renderReportHtml(bundle: ReportBundle, opts: RenderReportHtmlOptions = {}): string {
   const s = sentencesFor(bundle.language);
   const f = makeFormatter(bundle.language, bundle.locale);
   const dateLabel = (d: string) => f.day(d);
@@ -218,6 +225,9 @@ export function renderReportHtml(bundle: ReportBundle): string {
         )}
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <meta name="generator" content="Piwi" />
+        ${opts.refreshSeconds
+          ? raw(`<meta http-equiv="refresh" content="${Math.max(15, Math.floor(opts.refreshSeconds))}">`)
+          : ''}
         <title>${L.qualityReport}: ${bundle.title}</title>
         ${raw(`<style>${STYLES}</style>`)}
       </head>
@@ -231,6 +241,7 @@ export function renderReportHtml(bundle: ReportBundle): string {
                 ? html` · ${L.comparedWith.toLowerCase()} ${bundle.comparison.label}`
                 : ''}
             </p>
+            ${opts.banner ? html`<p class="meta" data-banner>${opts.banner}</p>` : ''}
           </header>
           ${hasVerdictWidget(bundle)
             ? ''

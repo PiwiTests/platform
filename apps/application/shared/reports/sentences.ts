@@ -44,6 +44,10 @@ export interface ReportLabels {
   score: string;
   count: string;
   targets: string;
+  /** Under the title of a live dashboard link. */
+  liveDashboard: string;
+  /** Beside the link to the report a share link opens without an account. */
+  readWithoutAccount: string;
 }
 
 export interface ReportSentences {
@@ -76,6 +80,10 @@ export interface ReportSentences {
   gapClass(cls: string): string;
   /** The limit line of a schedule's first quality report, which covers only the days since it was created. */
   firstRunLimit(since: string): string;
+  /** The label under an AI-written narrative. */
+  narrativeGenerated(model: string): string;
+  /** The note of a narrative that fell back to the rule-based verdict. */
+  narrativeFallback: string;
 }
 
 export function sentencesFor(language: ReportLanguage): ReportSentences {

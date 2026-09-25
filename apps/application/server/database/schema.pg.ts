@@ -1225,11 +1225,10 @@ export const shareLinks = pgTable(
   'share_links',
   {
     id: serial('id').primaryKey(),
-    projectId: integer('project_id')
-      .notNull()
-      .references(() => projects.id, { onDelete: 'cascade' }),
-    entityKind: text('entity_kind').notNull(), // 'execution' | 'cluster' (ExportKind)
-    entityId: integer('entity_id').notNull(), // test_runs_cases.id or failure_clusters.id
+    // null for a report or a dashboard link, which can span several projects
+    projectId: integer('project_id').references(() => projects.id, { onDelete: 'cascade' }),
+    entityKind: text('entity_kind').notNull(), // 'execution' | 'cluster' | 'report' | 'dashboard' (ShareLinkKind)
+    entityId: integer('entity_id').notNull(), // test_runs_cases.id, failure_clusters.id, report_snapshots.id or analytics_dashboards.id
     tokenHash: text('token_hash').notNull().unique(), // SHA-256 hash of the full psl_ token
     tokenPrefix: text('token_prefix').notNull(), // First 8 chars after "psl_" — shown in UI
     createdBy: integer('created_by').references(() => users.id, { onDelete: 'set null' }),
@@ -1554,6 +1553,7 @@ export const reportSchedules = pgTable(
     at: text('at').notNull(), // 'HH:mm' in the instance time zone (UTC when that setting is auto)
     comparison: text('comparison').notNull().default('previous'), // 'previous' | 'year-ago' | 'none'
     includeShareLink: intBoolean('include_share_link').notNull().default(INT_BOOLEAN_FALSE),
+    includeNarrative: intBoolean('include_narrative').notNull().default(INT_BOOLEAN_FALSE), // the AI narrative, off by default
     language: text('language'), // 'en' | 'fr' | null (project or instance default)
     channelIds: jsonb('channel_ids'), // number[] of notification_channels
     active: intBoolean('active').notNull().default(INT_BOOLEAN_TRUE),

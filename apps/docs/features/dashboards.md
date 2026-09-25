@@ -26,8 +26,6 @@ The switcher in the page header lists every dashboard you can open, with a searc
 - **Unused**: shared dashboards nobody opened for 90 days, where their owner or an administrator can
   delete them.
 
-Under the dashboard's name, a line gives its description, shared or private, and its owner.
-
 `/analytics/d/<id>` opens one dashboard; *Manage dashboards* (`/analytics/dashboards`) lists them all,
 with *New dashboard* (empty, or a copy of any dashboard you can open), *Duplicate* and *Delete*.
 
@@ -115,12 +113,12 @@ covers can be read off its **Filters** block.
 ## Live refresh and TV mode
 
 An open dashboard refreshes a widget when a run of one of its projects finishes, at most once every 30
-seconds per widget. A saved dashboard's widget answers are cached on the server for 60 seconds, and a
-finished run drops its project's answers.
+seconds per widget. Widget answers are cached on the server for 60 seconds.
 
 **TV mode** (*TV mode* in the menu, or `?tv=1`) is for a wall screen: no navigation, larger type, and a full refresh every five minutes on top of the live one. Add `?cycle=12,15&every=60`
-to rotate through several dashboards, one every 60 seconds (15 at least). A wall screen needs a
-signed-in session.
+to rotate through several dashboards, one every 60 seconds (15 at least). TV mode needs a signed-in
+session; a wall screen with nobody signed in opens a [live dashboard link](./share-links#live-dashboard-links)
+instead.
 
 ## Scheduling and exporting a dashboard
 

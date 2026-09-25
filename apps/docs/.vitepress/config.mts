@@ -125,6 +125,7 @@ export default defineConfig({
             { text: 'Database', link: '/operate/database' },
             { text: 'Storage configuration', link: '/operate/storage' },
             { text: 'Localization', link: '/operate/localization' },
+            { text: 'Metrics and rollup export', link: '/operate/metrics' },
             { text: 'Integrations', link: '/operate/integrations' },
             { text: 'Backup & restore', link: '/operate/backup-restore' },
             { text: 'Upgrading', link: '/operate/upgrading' },

@@ -294,6 +294,9 @@ export const FR_SENTENCES: ReportSentences = {
     generated: 'Généré le',
     generatedBy: 'Généré par Piwi',
     openInPiwi: 'Ouvrir dans Piwi',
+    liveDashboard:
+      'Tableau de bord en direct : les chiffres sont calculés à chaque affichage, et la page se recharge chaque minute.',
+    readWithoutAccount: 'Lire sans compte',
     dashboard: 'Tableau de bord',
     noData: 'Rien à montrer sur cette période.',
     previous: 'Précédent',
@@ -336,4 +339,7 @@ export const FR_SENTENCES: ReportSentences = {
   gapClass: (cls) => GAP_CLASS_LABELS[cls] ?? cls,
   firstRunLimit: (since) =>
     `Ce premier rapport qualité planifié ne couvre que les jours écoulés depuis la création de la planification, le ${since}.`,
+  narrativeGenerated: (model) =>
+    `Généré par un modèle d’IA (${model}) à partir des seuls chiffres de ce rapport. Les tuiles et le verdict ci-dessus sont calculés par des règles ; fiez-vous à eux plutôt qu’à ce texte.`,
+  narrativeFallback: 'Aucun récit IA n’a pu être généré pour ce rapport ; le verdict fondé sur des règles le remplace.',
 };

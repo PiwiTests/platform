@@ -1,10 +1,12 @@
 import { getDatabase } from '../../database';
 import { sweepReportSchedules } from '#shared/handlers/reports';
+import { generateReportNarrative } from '../../utils/reports/ai-narrative';
 import { sweepOutbox } from '../../utils/notifications/dispatch';
 import {
   reportBaseUrl,
   reportPiwiVersion,
   reportScheduleTimeZone,
+  scheduledShareLinkMinter,
   scheduleOwnerAccess,
 } from '../../utils/reports/context';
 
@@ -21,6 +23,8 @@ export default defineTask({
       baseUrl: reportBaseUrl(),
       piwiVersion: reportPiwiVersion(),
       deliver: true,
+      mintShareLink: scheduledShareLinkMinter(db),
+      narrative: (bundle) => generateReportNarrative(db, bundle),
       accessFor: (userId) => scheduleOwnerAccess(db, userId),
     });
     if (fired > 0 || failed > 0) {

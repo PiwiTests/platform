@@ -151,6 +151,16 @@ export const HELP_TOPICS = {
     title: 'Verdict',
     text: 'One or two sentences built by fixed rules from the pass rate, its change, the failure causes fixed and still open, and the wasted CI time. Never written by a model, so it only repeats numbers shown elsewhere on the page.',
   },
+  'analytics.narrative': {
+    title: 'Narrative',
+    text: 'In a scheduled quality report with the AI narrative on, the configured diagnosis model writes three paragraphs here from the report’s numbers only, labeled as generated; an answer citing a number the report lacks is refused. Everywhere else, and whenever the model fails or none is configured, this shows the rule-based verdict.',
+    doc: 'features/analytics-widgets#where-things-stand',
+  },
+  'reports.narrative': {
+    title: 'AI narrative',
+    text: 'Adds three paragraphs written by the configured diagnosis model at the top of each report, from the report’s numbers only and labeled as generated. The rule-based verdict and tiles stay; without a model, or when its answer cites a number the report lacks, the verdict stands in. Spends tokens once per report.',
+    doc: 'features/analytics-widgets#where-things-stand',
+  },
   'analytics.progress': {
     title: 'What is being done',
     text: 'Failure causes fixed in the period and whether the fixes held, open causes assigned or linked to a ticket, tests quarantined and released, and auto-heal pull requests opened.',
@@ -229,6 +239,28 @@ export const HELP_TOPICS = {
     text: 'A quality report sent on a schedule, daily, weekly, every other week or monthly, to email, Slack, webhook or browser channels. Each firing covers the whole days since the previous one, compared with the period before or a year earlier, and is kept as a snapshot. A period with no run still sends, so a stopped pipeline shows. Team sends the engineering report for one owner’s tests; Gaps digest is the Test Map’s weekly digest.',
     doc: 'features/quality-reports#report-schedules',
     envVars: ['PIWI_TIME_ZONE'],
+  },
+  'notifications.teams': {
+    title: 'Microsoft Teams channel',
+    text: 'Posts an Adaptive Card to a Teams channel. In Teams, add the Workflows template "Post to a channel when a webhook request is received" (or a legacy incoming webhook) to the channel and paste its URL here. Events, digests and quality reports all get a card.',
+    doc: 'features/notifications#microsoft-teams',
+  },
+  'reports.share-link': {
+    title: 'Share link per report',
+    text: 'Each report this schedule generates gets its own read-only share link, which the email and the Slack message carry, so a reader without an account opens the report in one click. The link expires a week after the next report arrives. Slack also shows the trend as an image through it. Needs share links enabled on the instance.',
+    doc: 'features/share-links#report-share-links',
+    envVars: ['PIWI_SHARE_LINKS_ENABLED', 'PIWI_SHARE_LINK_MAX_TTL_DAYS'],
+  },
+  'share-links.badge': {
+    title: 'Status badge',
+    text: 'An SVG image of the test pass rate, the branch policy and the period ("tests on main · 97.8% · 7 d") that rides on this share link, for a README or a wiki page. It stops resolving with the link.',
+    doc: 'features/share-links#status-badge',
+  },
+  'dashboards.live-links': {
+    title: 'Live dashboard links',
+    text: 'A read-only page of this dashboard for a wall screen or a bookmark, with nobody signed in. It is computed at every view with your project access and reloads every minute; it dies when it expires, is revoked, or you lose access to the dashboard or its projects. It never serves evidence files.',
+    doc: 'features/share-links#live-dashboard-links',
+    envVars: ['PIWI_SHARE_LINKS_ENABLED'],
   },
   'reports.snapshots': {
     title: 'Report snapshots',
@@ -590,7 +622,7 @@ export const HELP_TOPICS = {
   },
   'notifications.channels': {
     title: 'Channels',
-    text: 'Destinations an alert can go to — browser, email, Slack or webhook. Create a channel, then subscribe events to it. Administrators can make a channel global (usable by everyone); without authentication every channel is global.',
+    text: 'Destinations an alert can go to — browser, email, Slack, Microsoft Teams or webhook. Create a channel, then subscribe events to it. Administrators can make a channel global (usable by everyone); without authentication every channel is global.',
     doc: 'features/notifications#channels',
   },
   'notifications.subscriptions': {

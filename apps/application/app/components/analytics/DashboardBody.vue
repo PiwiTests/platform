@@ -35,6 +35,9 @@ const { state, scope, scopeQuery, reset } = useAnalyticsScope(
 const { isHidden } = await useInstanceCapabilities();
 const { canWrite } = useAuth();
 const reportOpen = ref(false);
+const liveLinksOpen = ref(false);
+// Share links need the server; the public demo has no share-link routes.
+const isDemoMode = Boolean(useRuntimeConfig().public.demoMode);
 const scheduleOpen = ref(false);
 const testFilterActive = computed(() => hasTestFilter(scope.value));
 
@@ -485,6 +488,13 @@ const moreItems = computed(() => {
   const manage: Array<Record<string, any>> = [
     { label: 'Manage dashboards', icon: 'i-lucide-layout-dashboard', to: '/analytics/dashboards' },
   ];
+  if (isSaved && !isDemoMode) {
+    manage.unshift({
+      label: 'Live dashboard links',
+      icon: 'i-lucide-cast',
+      onSelect: () => (liveLinksOpen.value = true),
+    });
+  }
   if (isSaved && view.canEdit && props.list?.canShare) {
     manage.unshift(
       view.visibility === 'shared'
@@ -874,6 +884,13 @@ function exitTvMode() {
       </UModal>
 
       <DeleteDashboardModal v-model:open="deleteOpen" :dashboard="view" @confirm="confirmDelete" />
+      <ShareLinksModal
+        v-if="isSaved && !isDemoMode"
+        v-model:open="liveLinksOpen"
+        kind="dashboard"
+        :trigger="false"
+        :endpoint="`/api/analytics/dashboards/${view.id}/share-links`"
+      />
     </template>
   </UDashboardPanel>
 </template>

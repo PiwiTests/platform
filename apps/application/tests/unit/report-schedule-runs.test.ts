@@ -167,6 +167,57 @@ describe('report schedules', () => {
     expect(await db.select().from(schema.reportSnapshots)).toHaveLength(1);
   });
 
+  test('a schedule with a share link mints one per snapshot and seals it into every delivery', async () => {
+    const view = await createWeekly({ includeShareLink: true });
+    const [row] = await db.select().from(schema.reportSchedules).where(eq(schema.reportSchedules.id, view.id));
+    const minted: Array<{ snapshotId: number; expiresAt: Date }> = [];
+    const runAt = Date.parse('2026-09-21T08:00:00Z');
+    const result = await reports.runReportSchedule(db as any, row!, {
+      access: 'all',
+      timeZone: 'UTC',
+      deliver: true,
+      now: NOW,
+      runAt,
+      mintShareLink: async (snapshotId, expiresAt) => {
+        minted.push({ snapshotId, expiresAt });
+        return 'sealed';
+      },
+    });
+    expect(minted).toEqual([{ snapshotId: result.snapshotId, expiresAt: expect.any(Date) }]);
+    // A week after the next firing (2026-09-28 08:00).
+    expect(minted[0]!.expiresAt.toISOString()).toBe('2026-10-05T08:00:00.000Z');
+    const rows = await db.select().from(schema.notificationDeliveries);
+    expect(rows.map((r) => (r.payload as { shareToken?: string }).shareToken)).toEqual(['sealed', 'sealed']);
+  });
+
+  test('a schedule with the AI narrative adds it, or falls back to the verdict', async () => {
+    const view = await createWeekly({ includeNarrative: true });
+    expect(view.includeNarrative).toBe(true);
+    const [row] = await db.select().from(schema.reportSchedules).where(eq(schema.reportSchedules.id, view.id));
+    const written = await reports.runReportSchedule(db as any, row!, {
+      access: 'all',
+      timeZone: 'UTC',
+      deliver: false,
+      now: NOW,
+      narrative: async () => ({ paragraphs: ['One.', 'Two.', 'Three.'], model: 'm' }),
+    });
+    const withText = await reports.getReportSnapshot(db as any, written.snapshotId, 'all');
+    const narrative = withText.bundle.bands[0]!.widgets[0]!;
+    expect(narrative.type).toBe('narrative');
+    expect(narrative.blocks.map((b) => (b.kind === 'text' ? b.text : ''))).toEqual(['One.', 'Two.', 'Three.']);
+
+    const fallback = await reports.runReportSchedule(db as any, row!, {
+      access: 'all',
+      timeZone: 'UTC',
+      deliver: false,
+      now: NOW,
+      narrative: async () => null,
+    });
+    const withVerdict = await reports.getReportSnapshot(db as any, fallback.snapshotId, 'all');
+    const verdictBlock = withVerdict.bundle.bands[0]!.widgets[0]!.blocks[0]!;
+    expect(verdictBlock).toMatchObject({ kind: 'text', tone: withVerdict.bundle.verdict.tone });
+  });
+
   test('run now delivers each click once, keyed by its snapshot', async () => {
     const view = await createWeekly();
     const ctx = { access: 'all' as const, timeZone: 'UTC', deliver: true, now: NOW };

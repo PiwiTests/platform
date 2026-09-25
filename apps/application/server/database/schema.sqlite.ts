@@ -1207,11 +1207,10 @@ export const shareLinks = sqliteTable(
   'share_links',
   {
     id: integer('id').primaryKey({ autoIncrement: true }),
-    projectId: integer('project_id')
-      .notNull()
-      .references(() => projects.id, { onDelete: 'cascade' }),
-    entityKind: text('entity_kind').notNull(), // 'execution' | 'cluster' (ExportKind)
-    entityId: integer('entity_id').notNull(), // test_runs_cases.id or failure_clusters.id
+    // null for a report or a dashboard link, which can span several projects
+    projectId: integer('project_id').references(() => projects.id, { onDelete: 'cascade' }),
+    entityKind: text('entity_kind').notNull(), // 'execution' | 'cluster' | 'report' | 'dashboard' (ShareLinkKind)
+    entityId: integer('entity_id').notNull(), // test_runs_cases.id, failure_clusters.id, report_snapshots.id or analytics_dashboards.id
     tokenHash: text('token_hash').notNull().unique(), // SHA-256 hash of the full psl_ token
     tokenPrefix: text('token_prefix').notNull(), // First 8 chars after "psl_" — shown in UI
     createdBy: integer('created_by').references(() => users.id, { onDelete: 'set null' }),
@@ -1537,6 +1536,7 @@ export const reportSchedules = sqliteTable(
     at: text('at').notNull(), // 'HH:mm' in the instance time zone (UTC when that setting is auto)
     comparison: text('comparison').notNull().default('previous'), // 'previous' | 'year-ago' | 'none'
     includeShareLink: integer('include_share_link', { mode: 'boolean' }).notNull().default(false),
+    includeNarrative: integer('include_narrative', { mode: 'boolean' }).notNull().default(false), // the AI narrative, off by default
     language: text('language'), // 'en' | 'fr' | null (project or instance default)
     channelIds: text('channel_ids', { mode: 'json' }), // number[] of notification_channels
     active: integer('active', { mode: 'boolean' }).notNull().default(true),
