@@ -1,5 +1,6 @@
 import nodemailer from 'nodemailer';
 import type { Transporter } from 'nodemailer';
+import { STATUS_COLORS } from '#shared/status-colors';
 import { renderEventSubject, notificationTargetPath, failureTargetPath } from '#shared/notification-events';
 import type {
   NotificationEvent,
@@ -90,9 +91,9 @@ export async function sendEmail(opts: SendEmailOptions): Promise<void> {
 
 const siteUrl = () => process.env.PIWI_SITE_URL?.replace(/\/$/, '') || 'http://localhost:3000';
 
-/** Passed and failed text colors: the emerald and rose of the dashboard, as in the HTML export. */
-const PASSED_COLOR = '#047857';
-const FAILED_COLOR = '#be123c';
+/** Passed and failed text colors: the dashboard's outcome colors, as in the HTML export. */
+const PASSED_COLOR = STATUS_COLORS.passed.text;
+const FAILED_COLOR = STATUS_COLORS.failed.text;
 
 /** Escape user-controlled text (test titles, error messages) for HTML emails. */
 function escapeHtml(text: string): string {

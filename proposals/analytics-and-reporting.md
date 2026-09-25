@@ -1262,7 +1262,7 @@ Grouped by milestone. Paths are under `apps/application/` unless noted.
 - [ ] `server/api/settings/ci-cost.get.ts`, `ci-cost.put.ts`; `shared/piwi-env-vars.ts` (`PIWI_CI_MINUTE_COST`); `app/utils/settings-metadata.ts`; `app/pages/settings/performance.vue`
 - [ ] `app/components/reports/ReportPreviewModal.vue`, `ReportView.vue`
 - [ ] `app/pages/analytics.vue`, `app/pages/projects/[id]/index.vue`: the *Export* action (*Schedule* comes with milestone 3)
-- [ ] `shared/status-colors.ts`; `app/utils/status-palette.ts`, `app/utils/pass-rate.ts`, `shared/export/render-html.ts`, `render-pdf.ts`, `server/utils/email.ts` read it; `tests/unit/status-colors.test.ts` pins `app/assets/css/main.css`
+- [x] `shared/status-colors.ts`; `app/utils/status-palette.ts`, `app/utils/pass-rate.ts`, `shared/export/render-html.ts`, `render-pdf.ts`, `server/utils/email.ts` read it; `tests/unit/status-colors.test.ts` pins `app/assets/css/main.css`
 - [ ] `shared/capabilities.ts` (`quality-reports`), `shared/handlers/setup-status.ts` (detection id and ladder order; the evidence probe comes with milestone 3), `shared/piwi-features.ts` (*Quality reports*, *Trends over time*); `app/layouts/default.vue` and the *Export* action read `isHidden('quality-reports')`
 - [ ] `shared/mcp-tools.ts`, `server/utils/mcp/tools.ts`: `get_quality_report`, `get_metric_trend`, `compare_periods` with `module` and `capability`; `apps/docs/features/mcp.md`; the "N tools" sentences in the docs and `ROADMAP.md`
 - [ ] `packages/reporter/src/cli/quality-report.ts`, `cli/index.ts`; `packages/reporter/tests/`

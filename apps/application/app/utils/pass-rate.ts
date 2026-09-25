@@ -5,14 +5,16 @@
  * warning, error), so good and poor are the same emerald and rose as passed
  * and failed tests.
  */
+import {
+  PASS_RATE_FAIR,
+  PASS_RATE_GOOD,
+  PASS_RATE_STEP_DEFS,
+  passRateTone,
+  type PassRateTone,
+} from '#shared/status-colors';
 import { STATUS_PALETTE } from './status-palette';
 
-/** Lowest percentage that reads as good. */
-export const PASS_RATE_GOOD = 90;
-/** Lowest percentage that reads as fair; anything below is poor. */
-export const PASS_RATE_FAIR = 50;
-
-export type PassRateTone = 'good' | 'fair' | 'poor';
+export { PASS_RATE_FAIR, PASS_RATE_GOOD, passRateTone, type PassRateTone };
 
 export interface PassRateToneEntry {
   /** Text utility for a percentage in this band. */
@@ -28,13 +30,6 @@ export const PASS_RATE_TONES: Record<PassRateTone, PassRateToneEntry> = {
   fair: { text: 'text-amber-700 dark:text-amber-400', bg: 'bg-amber-500', color: 'var(--color-amber-500)' },
   poor: { text: STATUS_PALETTE.failed.text, bg: STATUS_PALETTE.failed.bg, color: STATUS_PALETTE.failed.color },
 };
-
-/** Band of a pass rate given as a percentage (0–100). */
-export function passRateTone(percent: number): PassRateTone {
-  if (percent >= PASS_RATE_GOOD) return 'good';
-  if (percent >= PASS_RATE_FAIR) return 'fair';
-  return 'poor';
-}
 
 /** Text utility for a percentage; muted when there is no rate. */
 export function passRateTextClass(percent: number | null | undefined): string {
@@ -60,15 +55,16 @@ function mix(tone: PassRateTone, strength: number): string {
 /**
  * The five cell shades of the heatmap and the browser matrix, best first: each
  * band split in two so a perfect period and a near-failing one stand out. The
- * band edges are `PASS_RATE_GOOD` and `PASS_RATE_FAIR`.
+ * band edges are `PASS_RATE_GOOD` and `PASS_RATE_FAIR`; the steps themselves live in
+ * `shared/status-colors.ts`, which documents and emails read too.
  */
-export const PASS_RATE_STEPS: readonly PassRateStep[] = [
-  { min: 99.5, tone: 'good', label: '100%', color: mix('good', 85), text: 'text-white' },
-  { min: PASS_RATE_GOOD, tone: 'good', label: `≥ ${PASS_RATE_GOOD}%`, color: mix('good', 45), text: '' },
-  { min: 75, tone: 'fair', label: '≥ 75%', color: mix('fair', 45), text: '' },
-  { min: PASS_RATE_FAIR, tone: 'fair', label: `≥ ${PASS_RATE_FAIR}%`, color: mix('fair', 75), text: '' },
-  { min: -Infinity, tone: 'poor', label: `< ${PASS_RATE_FAIR}%`, color: mix('poor', 75), text: 'text-white' },
-];
+export const PASS_RATE_STEPS: readonly PassRateStep[] = PASS_RATE_STEP_DEFS.map((step, i) => ({
+  min: step.min,
+  tone: step.tone,
+  label: i === 0 ? '100%' : step.min === -Infinity ? `< ${PASS_RATE_FAIR}%` : `≥ ${step.min}%`,
+  color: mix(step.tone, step.strength),
+  text: step.strong ? 'text-white' : '',
+}));
 
 /** Cell shade for a percentage (0–100). */
 export function passRateStep(percent: number): PassRateStep {
