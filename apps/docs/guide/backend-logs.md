@@ -9,7 +9,7 @@ Piwi Dashboard can capture server-side Warning and Error log entries during a Pl
 
 The mechanism is straightforward: the backend integration adds a `X-Piwi-Logs` response header (gzip-compressed, Base64-encoded JSON) to every HTTP response. The Piwi Dashboard reporter reads this header from each captured network request and stores the entries as `serverLogs` on that request.
 
-**Active only in non-production environments by default.** The ASP.NET Core integration emits the header only in Development/Test environments. The Nitro/Nuxt integration additionally honors `PIWI_TEST_LOGS_DISABLED`: set it to `true` to turn capture off anywhere, or to `false` to force capture on in a production-mode test deployment.
+**Active only in non-production environments by default.** The ASP.NET Core integration emits the header in the Development and Test environments unless you [choose others](#choosing-the-environments); the Nitro/Nuxt integration whenever `NODE_ENV` is unset, `development` or `test`. Both honor `PIWI_TEST_LOGS_DISABLED`: set it to `true` to turn capture off anywhere, or to `false` to force capture on in a production-mode test deployment.
 
 ## How it looks in the dashboard
 
@@ -44,9 +44,26 @@ app.Run();
 
 `AddPiwiTestLogs()` registers an `ILoggerProvider` that feeds Warning and Error log entries into a per-request capture buffer (`PiwiTestLogCapture`, `AsyncLocal<T>`-scoped).
 
-`UsePiwiTestLogs()` adds middleware that writes the buffer to the `X-Piwi-Logs` response header before the response is sent, only when the environment is Development or Test.
+`UsePiwiTestLogs()` adds middleware that writes the buffer to the `X-Piwi-Logs` response header as the response starts, only in the active environments — Development and Test by default.
 
 The capture buffer is decoupled from the logging front-end, so it also works outside minimal hosting. Apps on the classic **Generic Host + `Startup`** model use the hosting-agnostic overloads (`services.AddPiwiTestLogs()` or `ILoggingBuilder.AddPiwiTestLogs()`, and `app.UsePiwiTestLogs()` on `IApplicationBuilder`). Apps that route logging through **Serilog** feed the same buffer from a small `ILogEventSink` that calls `PiwiTestLogCapture.TryAdd(...)`; see the [package README](https://github.com/PiwiTests/platform/tree/main/integrations/aspnetcore/PiwiTests.Instrumentation.AspNetCore#serilog-or-the-classic-generic-host--startup-model) for the sink. `TryAdd` self-guards the level (Warning and above), so no feeding path over-captures.
+
+#### Choosing the environments
+
+Test tiers often run under their own environment names (`Podman`, `Integration`, …). Only the middleware needs to know them — outside a request it brackets, capture does nothing — so pick where it is active in one of three ways:
+
+```csharp
+// A predicate, for full control
+app.UsePiwiTestLogs(env, e => e.IsDevelopment() || e.IsEnvironment("Podman") || e.IsEnvironment("Integration"));
+
+// Environment names (case-insensitive)
+app.UsePiwiTestLogs(env, "Development", "Podman", "Integration");
+
+// Options, set once in ConfigureServices
+services.AddPiwiTestLogs(o => o.IsActive = e => e.IsDevelopment() || e.IsEnvironment("Integration"));
+```
+
+Or, without touching code, set `PIWI_TEST_LOGS_ENVIRONMENTS=Development,Podman,Integration` on the backend. The first setting present wins: a predicate passed to `UsePiwiTestLogs`, then names passed to it, then `PiwiTestLogsOptions.IsActive`, then `PiwiTestLogsOptions.Environments`, then `PIWI_TEST_LOGS_ENVIRONMENTS`, then the Development/Test default. `PIWI_TEST_LOGS_DISABLED` overrides all of them.
 
 **Requirements:** .NET 8, 9, or 10.
 

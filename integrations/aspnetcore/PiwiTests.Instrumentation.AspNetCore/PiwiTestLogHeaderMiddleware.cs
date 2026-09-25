@@ -25,8 +25,9 @@ public sealed class PiwiTestLogHeaderMiddleware(RequestDelegate next)
 
     public async Task InvokeAsync(HttpContext context)
     {
-        // Verify a signed probe header (this middleware runs only in Development
-        // and Test environments — the same guard as log capture). The verified
+        // Verify a signed probe header (this middleware joins the pipeline only
+        // in the environments UsePiwiTestLogs allows, Development and Test by
+        // default — the same guard as log capture). The verified
         // spec is recorded on the request for handlers to read; nothing is
         // applied while server probes are off.
         var startMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();

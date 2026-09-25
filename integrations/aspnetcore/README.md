@@ -4,7 +4,7 @@ ASP.NET Core integration for [Piwi Dashboard](https://piwitests.dev) — capture
 
 During a Playwright test run, the reporter reads this header from every response and stores the entries alongside the network request. The entries are then available in the Piwi Dashboard test-case view and are included in the AI diagnosis context.
 
-**Active only in Development and Test environments.** No header is emitted in Production.
+**Active in Development and Test by default.** No header is emitted in Production unless you opt in — see [Choosing the environments](#choosing-the-environments) for recette tiers with their own environment names.
 
 ## Installation
 
@@ -30,7 +30,7 @@ app.Run();
 
 `AddPiwiTestLogs()` registers an `ILoggerProvider` that feeds Warning and Error entries into a per-request capture buffer (`PiwiTestLogCapture`, from the [`PiwiTests.Instrumentation.Core`](https://www.nuget.org/packages/PiwiTests.Instrumentation.Core) package this one depends on), scoped to the current HTTP request with `AsyncLocal`.
 
-`UsePiwiTestLogs()` adds middleware that serializes the buffer to JSON, gzip-compresses it, and writes the result (Base64-encoded) to the `X-Piwi-Logs` response header as the response starts, but only when the environment is Development or Test. Entries logged after that point (while a body is still streaming) can no longer ride on the response.
+`UsePiwiTestLogs()` adds middleware that serializes the buffer to JSON, gzip-compresses it, and writes the result (Base64-encoded) to the `X-Piwi-Logs` response header as the response starts, but only in the active environments (Development and Test by default). Entries logged after that point (while a body is still streaming) can no longer ride on the response.
 
 ## Serilog or the classic Generic Host + `Startup` model
 
@@ -46,7 +46,7 @@ public void ConfigureServices(IServiceCollection services)
 
 public void Configure(IApplicationBuilder app, IHostEnvironment env)
 {
-    app.UsePiwiTestLogs();        // environment auto-resolved from services, or pass it explicitly
+    app.UsePiwiTestLogs(env);     // or pass the environments to activate, see below
 }
 ```
 
@@ -82,6 +82,43 @@ app.UsePiwiTestLogs();
 ```
 
 `TryAdd` centralizes the level filter (Warning and above), the 50-entry cap, and the 500-character message truncation, so no feeding path can over-capture, even one that bypasses `IsEnabled`.
+
+## Choosing the environments
+
+Test tiers often run under their own environment names (`Podman`, `Integration`, …). Only the middleware needs to know them: outside a request it brackets, the capture buffer is inert, so the log provider and the Serilog sink can stay registered everywhere at no cost.
+
+Pick where the middleware is active in one of three ways:
+
+```csharp
+// 1. A predicate, for full control
+app.UsePiwiTestLogs(env, e => e.IsDevelopment() || e.IsEnvironment("Podman") || e.IsEnvironment("Integration"));
+
+// 2. Environment names (case-insensitive)
+app.UsePiwiTestLogs(env, "Development", "Podman", "Integration");
+
+// 3. Options, set once in ConfigureServices (or builder.AddPiwiTestLogs(o => ...))
+services.AddPiwiTestLogs(o => o.IsActive = e => e.IsDevelopment() || e.IsEnvironment("Integration"));
+services.AddPiwiTestLogs(o => o.Environments.Add("Integration"));   // replaces the Development/Test default
+```
+
+Or leave the code alone and set the variables on the backend:
+
+| Variable                      | Effect                                                                                  |
+|-------------------------------|-----------------------------------------------------------------------------------------|
+| `PIWI_TEST_LOGS_ENVIRONMENTS` | Comma-separated environment names, e.g. `Development,Podman,Integration`                |
+| `PIWI_TEST_LOGS_DISABLED`     | `true` turns the middleware off everywhere; `false` turns it on in any environment      |
+
+The first setting present wins:
+
+1. `PIWI_TEST_LOGS_DISABLED` (`true` or `false`) — overrides everything below
+2. the predicate passed to `UsePiwiTestLogs`
+3. the environment names passed to `UsePiwiTestLogs`
+4. `PiwiTestLogsOptions.IsActive`
+5. `PiwiTestLogsOptions.Environments`
+6. `PIWI_TEST_LOGS_ENVIRONMENTS`
+7. the default: Development and Test
+
+The decision is made once, when the pipeline is built.
 
 ## What gets captured
 
@@ -130,7 +167,8 @@ The middleware accepts a signed fault instruction from a Piwi probe run (Test
 Map, level two). A verified header is recorded on `HttpContext.Items["PiwiProbe"]`;
 a fault is **applied** only once a project turns server probes on
 (`PIWI_SERVER_PROBES=true`), which stays off by default. The middleware runs only
-in Development and Test environments (the same guard as log capture).
+in the environments it is active in, Development and Test by default (the same
+guard as log capture).
 
 | Variable             | Effect                                                             |
 |----------------------|-------------------------------------------------------------------|
