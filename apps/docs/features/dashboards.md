@@ -16,7 +16,7 @@ as a [quality report](./quality-reports), and put them on a wall screen.
 
 ## Built-in and saved dashboards
 
-The switcher in the page header lists every dashboard you can open, with a search:
+The header's switcher lists every dashboard you can open, with a search:
 
 - **Built-in**: Overview (the analytics page, four bands and fifteen widgets), and the report dashboards
   Executive, Engineering and Gaps digest (the last one only where the [Test Map](./scenario-gaps) is not
@@ -130,7 +130,7 @@ reason on the Reports page, until their owner picks another dashboard.
 ## From an agent
 
 The [MCP server](./mcp) has `list_dashboards` and `get_dashboard`, which returns every widget's data,
-the JSON the page renders, over the dashboard's scope or one you pass.
+the JSON the page renders, over the dashboard's scope; each key you pass replaces the dashboard's.
 
 ## See also
 

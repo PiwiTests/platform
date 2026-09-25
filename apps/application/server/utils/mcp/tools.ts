@@ -72,10 +72,10 @@ import { analyticsScopeToQuery, parseAnalyticsScope } from '#shared/analytics/sc
 import { applyWidgetScope } from '#shared/analytics/dashboards';
 import {
   DashboardError,
+  dashboardScopeWith,
   getDashboard,
   listDashboards,
   loadDashboardDefinition,
-  viewerScope,
   type DashboardActor,
 } from '#shared/handlers/dashboards';
 import { isAuthEnabled } from '../auth';
@@ -2209,7 +2209,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     const id = String(params.id ?? '');
     try {
       const { definition } = await loadDashboardDefinition(db, id, actor);
-      const scope = viewerScope(definition, toolScopeQuery(params));
+      const scope = dashboardScopeWith(definition, toolScopeQuery(params));
       const view = await getDashboard(db, id, actor, ctx.scope, { scope });
       const bands = [];
       for (const band of view.bands) {

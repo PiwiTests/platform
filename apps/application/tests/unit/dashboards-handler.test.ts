@@ -124,6 +124,31 @@ describe('widget overrides only narrow', () => {
   });
 });
 
+describe('a scope laid over the dashboard scope', () => {
+  const def = {
+    ...definition([], { projectIds: [3], environments: ['ci'], period: { kind: 'rolling', days: 30 } }),
+  } as any;
+
+  test('a period alone keeps the projects and filters of the dashboard', () => {
+    const scope = dashboards.dashboardScopeWith(def, { period: 'last-7d' });
+    expect(scope.period).toEqual({ kind: 'rolling', days: 7 });
+    expect(scope.projectIds).toEqual([3]);
+    expect(scope.environments).toEqual(['ci']);
+  });
+
+  test('a key the caller names replaces the dashboard one, and nothing else', () => {
+    const scope = dashboards.dashboardScopeWith(def, { projects: '1,2' });
+    expect(scope.projectIds).toEqual([1, 2]);
+    expect(scope.environments).toEqual(['ci']);
+    expect(scope.period).toEqual({ kind: 'rolling', days: 30 });
+  });
+
+  test('the page URL, which carries the whole scope, still replaces it', () => {
+    const scope = dashboards.viewerScope(def, { period: 'last-7d' });
+    expect(scope.projectIds).toBeUndefined();
+  });
+});
+
 describe('saved dashboards', () => {
   test('a user keeps a private dashboard nobody else sees', async () => {
     const mine = await dashboards.createDashboard(db as any, { name: 'Mine', visibility: 'private' }, user);

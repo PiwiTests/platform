@@ -16,7 +16,7 @@ import { analyticsDashboards, projects, reportSchedules, users } from '../../ser
 import { deleteAppSetting, getAppSetting, setAppSetting } from '../../server/utils/app-settings';
 import type { DrizzleDB } from './db';
 import { Role } from '../types';
-import { parseAnalyticsScope, type AnalyticsScope } from '../analytics/scope';
+import { analyticsScopeToQuery, parseAnalyticsScope, type AnalyticsScope } from '../analytics/scope';
 import { queryHasScope } from '../analytics/scope-state';
 import {
   applyWidgetScope,
@@ -635,6 +635,16 @@ export function viewerScope(definition: DashboardDefinition, query: QueryLike): 
   if (parsed.timeZone) scope.timeZone = parsed.timeZone;
   if (parsed.locale) scope.locale = parsed.locale;
   return scope;
+}
+
+/**
+ * The dashboard's own scope with the keys a caller names laid over it, key by
+ * key: an agent asking about "this sprint" keeps the dashboard's projects and
+ * filters. The page's URL always carries the whole scope, so it goes through
+ * `viewerScope` instead.
+ */
+export function dashboardScopeWith(definition: DashboardDefinition, query: QueryLike): AnalyticsScope {
+  return parseAnalyticsScope({ ...analyticsScopeToQuery(dashboardScope(definition)), ...queryRecord(query) });
 }
 
 export interface DashboardWidgetRequest {
