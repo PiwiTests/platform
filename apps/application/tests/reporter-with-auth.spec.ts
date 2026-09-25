@@ -893,6 +893,60 @@ test.describe.serial('Reporter with authentication enabled', () => {
   });
 
   // ---------------------------------------------------------------------------
+  // Permission grid API — administrator-only, and a grant changes what the user sees
+  // ---------------------------------------------------------------------------
+
+  test('the permission grid API is rejected for non-admin roles', async ({ request }) => {
+    const loginRes = await request.post(`${AUTH_SERVER_URL}/api/auth/login`, {
+      data: { username: 'ci-reporter', password: 'reporterpassword123' },
+    });
+    expect(loginRes.ok()).toBeTruthy();
+
+    expect((await request.get(`${AUTH_SERVER_URL}/api/project-access`)).status()).toBe(403);
+    const put = await request.put(`${AUTH_SERVER_URL}/api/project-access`, {
+      data: { userId: ciReporterId, projectId: null, granted: true },
+    });
+    expect(put.status()).toBe(403);
+  });
+
+  test('admin grants and revokes all-projects access through the permission grid', async ({ request }) => {
+    const projectIdsSeenBy = async (username: string, password: string) => {
+      const login = await request.post(`${AUTH_SERVER_URL}/api/auth/login`, { data: { username, password } });
+      expect(login.ok()).toBeTruthy();
+      const res = await request.get(`${AUTH_SERVER_URL}/api/projects`);
+      expect(res.ok()).toBeTruthy();
+      return ((await res.json()) as { items: { id: number }[] }).items.map((p) => p.id);
+    };
+    const setAccessAsAdmin = async (granted: boolean) => {
+      const login = await request.post(`${AUTH_SERVER_URL}/api/auth/login`, {
+        data: { username: 'admin', password: 'adminpassword123' },
+      });
+      expect(login.ok()).toBeTruthy();
+      const res = await request.put(`${AUTH_SERVER_URL}/api/project-access`, {
+        data: { userId: ciUserId, projectId: null, granted },
+      });
+      expect(res.ok()).toBeTruthy();
+      return ((await res.json()) as { user: { global: boolean; projectIds: number[] } }).user;
+    };
+
+    // ci-user is an explicit member of the members-check project only.
+    expect(await projectIdsSeenBy('ci-user', 'userpassword123')).toEqual([membersProjectId]);
+
+    expect(await setAccessAsAdmin(true)).toEqual(
+      expect.objectContaining({ global: true, projectIds: [membersProjectId] }),
+    );
+    const seenWithAll = await projectIdsSeenBy('ci-user', 'userpassword123');
+    expect(seenWithAll).toContain(membersProjectId);
+    expect(seenWithAll.length).toBeGreaterThan(1);
+
+    // Revoking all-projects falls back to the projects granted one by one.
+    expect(await setAccessAsAdmin(false)).toEqual(
+      expect.objectContaining({ global: false, projectIds: [membersProjectId] }),
+    );
+    expect(await projectIdsSeenBy('ci-user', 'userpassword123')).toEqual([membersProjectId]);
+  });
+
+  // ---------------------------------------------------------------------------
   // Capability endpoints — reads open to any signed-in user with access, writes
   // administrator-only, and a project decision overriding the instance default.
   // ---------------------------------------------------------------------------
