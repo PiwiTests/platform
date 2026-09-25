@@ -63,3 +63,39 @@ describe('the Slack and webhook bodies', () => {
     expect(JSON.stringify(body)).toContain(HOSTILE.slice(0, 4));
   });
 });
+
+describe('a scheduled report with a share link', () => {
+  const share = 'https://piwi.example/share/psl_' + 'a'.repeat(64);
+
+  it('email: a second link opens the report without an account', () => {
+    const { html, text } = renderQualityReportEmail(fixtureBundle(), {
+      url: 'https://piwi.example/reports/7',
+      chartCid: 'trend',
+      shareUrl: share,
+    });
+    expect(html).toContain(share);
+    expect(html).toContain('Read without an account');
+    expect(text).toContain(`Read without an account: ${share}`);
+  });
+
+  it("Slack: the trend is an image block over the link's chart.png, with a button to the link", () => {
+    const message = reportSlackMessage(fixtureBundle(), 'https://piwi.example/reports/7', share) as any;
+    const image = message.blocks.find((b: any) => b.type === 'image');
+    expect(image.image_url).toBe(`${share}/chart.png`);
+    const buttons = message.blocks.find((b: any) => b.type === 'actions').elements;
+    expect(buttons.map((b: any) => b.url)).toEqual(['https://piwi.example/reports/7', share]);
+    expect(JSON.stringify(message)).not.toMatch(/[▁▂▃▄▅▆▇█]/);
+  });
+
+  it('webhook: carries the share link, never the sealed token', () => {
+    const body = JSON.parse(
+      reportWebhookBody(
+        fixtureBundle(),
+        { snapshotId: 7, scheduleId: 3, periodEnd: '2026-09-20', shareToken: 'sealed-secret' },
+        share,
+      ),
+    );
+    expect(body.payload.shareUrl).toBe(share);
+    expect(JSON.stringify(body)).not.toContain('sealed-secret');
+  });
+});

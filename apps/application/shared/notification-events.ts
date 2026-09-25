@@ -30,6 +30,8 @@ export interface ReportReadyPayload {
   scheduleId: number;
   /** The last day the report covers, `YYYY-MM-DD` in the schedule's time zone. */
   periodEnd: string;
+  /** The snapshot's share link token, encrypted at rest; set when the schedule includes a share link. */
+  shareToken?: string;
 }
 
 /** How many failing tests to embed in a run notification. */

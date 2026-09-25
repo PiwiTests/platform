@@ -16,6 +16,9 @@ import { ReportScheduleError, type ReportActor } from '#shared/handlers/reports'
 import { ReportRequestError } from '#shared/reports/request';
 import { apiError } from '../api-error';
 import { Role } from '#shared/types';
+import type { GenerateContext } from '#shared/handlers/reports';
+import { decryptSecret, encryptSecret, getEncryptionKey } from '../crypto';
+import { mintShareLink, shareLinksEnabled } from '../share-links';
 
 /** The instance time zone, or UTC when the instance leaves it to each browser. */
 export async function reportScheduleTimeZone(db: DbClient): Promise<string> {
@@ -57,5 +60,34 @@ export async function reportRoute<T>(fn: () => Promise<T>): Promise<T> {
     if (error instanceof ReportScheduleError) throw apiError({ statusCode: error.statusCode, message: error.message });
     if (error instanceof ReportRequestError) throw apiError({ statusCode: 400, message: error.message });
     throw error;
+  }
+}
+
+/**
+ * How a firing mints its snapshot's share link: the token, shown to nobody,
+ * travels encrypted in the outbox payload to the email and Slack senders.
+ * Undefined while share links are off.
+ */
+export function scheduledShareLinkMinter(db: DbClient): GenerateContext['mintShareLink'] {
+  if (!shareLinksEnabled()) return undefined;
+  return async (snapshotId, expiresAt, createdBy) => {
+    const minted = await mintShareLink(db, {
+      projectId: null,
+      entityKind: 'report',
+      entityId: snapshotId,
+      createdBy,
+      expiresAt,
+    });
+    return encryptSecret(minted.token, getEncryptionKey());
+  };
+}
+
+/** The share link a delivery carries, or null (none minted, share links off since, or a key that changed). */
+export function deliveredShareUrl(sealed: string | undefined): string | null {
+  if (!sealed || !shareLinksEnabled()) return null;
+  try {
+    return `${reportBaseUrl()}/share/${decryptSecret(sealed, getEncryptionKey())}`;
+  } catch {
+    return null;
   }
 }

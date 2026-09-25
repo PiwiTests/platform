@@ -106,6 +106,8 @@ export const reportScheduleInputSchema = z.object({
   comparison: z.enum(SCHEDULE_COMPARISONS).default('previous'),
   language: z.enum(['en', 'fr']).nullable().optional(),
   channelIds: z.array(z.number().int().positive()).min(1).max(20),
+  /** Mint a share link per snapshot, carried by the email and Slack messages (when share links are enabled). */
+  includeShareLink: z.boolean().optional(),
   /** Administrator only: an instance-wide schedule, sent to global channels. */
   global: z.boolean().optional(),
   active: z.boolean().optional(),
@@ -173,6 +175,7 @@ export interface ReportScheduleView {
   at: string;
   comparison: ScheduleComparison;
   language: ReportLanguage | null;
+  includeShareLink: boolean;
   channels: Array<{ id: number; name: string; type: string }>;
   active: boolean;
   mutedUntil: string | null;
@@ -233,6 +236,7 @@ function toView(
     at: row.at,
     comparison: row.comparison as ScheduleComparison,
     language: (row.language as ReportLanguage | null) ?? null,
+    includeShareLink: row.includeShareLink,
     channels: ids.map((id) => {
       const c = byId.get(id);
       return { id, name: c?.name ?? `Channel #${id}`, type: c?.type ?? 'unknown' };
@@ -429,6 +433,7 @@ export async function createReportSchedule(
       at,
       comparison: input.comparison,
       language: input.language ?? null,
+      includeShareLink: input.includeShareLink ?? false,
       channelIds: [...new Set(input.channelIds)],
       active: input.active ?? true,
       mutedUntil: input.mutedUntil ? new Date(input.mutedUntil) : null,
@@ -489,6 +494,7 @@ export async function updateReportSchedule(
       at,
       comparison: patch.comparison ?? row.comparison,
       language: patch.language !== undefined ? patch.language : row.language,
+      includeShareLink: patch.includeShareLink ?? row.includeShareLink,
       channelIds,
       active: repointed ? true : (patch.active ?? row.active),
       mutedUntil:
@@ -517,6 +523,13 @@ export interface GenerateContext {
   piwiVersion?: string | null;
   /** Queue one outbox row per channel; the demo has no outbox. */
   deliver: boolean;
+  /**
+   * Mint a share link to a snapshot that expires at the given instant, and
+   * return its token sealed for the outbox payload. Absent where share links
+   * are off (and in the demo); a schedule with `includeShareLink` then sends
+   * its messages without one.
+   */
+  mintShareLink?: (snapshotId: number, expiresAt: Date, createdBy: number | null) => Promise<string>;
   now?: number;
 }
 
@@ -538,6 +551,9 @@ async function runDashboard(db: DrizzleDB, schedule: ScheduleRow): Promise<Built
   }
   throw new ReportScheduleError(409, DASHBOARD_DELETED_REASON);
 }
+
+/** How long a scheduled report's share link outlives the next report of its schedule. */
+export const SHARE_LINK_GRACE_MS = 7 * 24 * 60 * 60 * 1000;
 
 const COMPARISONS: Record<ScheduleComparison, ComparisonSpec> = {
   previous: { kind: 'previous' },
@@ -655,6 +671,12 @@ export async function runReportSchedule(
             .where(inArray(notificationChannels.id, wanted))
         : [];
     const payload: ReportReadyPayload = { snapshotId, scheduleId: schedule.id, periodEnd: period.to };
+    if (schedule.includeShareLink && ctx.mintShareLink && existing.length > 0) {
+      // The link outlives the next report by a grace, so a reader can still open this one when the next arrives.
+      const next = nextRunAt(timing, ctx.runAt ?? now, ctx.timeZone);
+      const expiresAt = new Date(next.getTime() + SHARE_LINK_GRACE_MS);
+      payload.shareToken = await ctx.mintShareLink(snapshotId, expiresAt, schedule.userId);
+    }
     for (const { id: channelId } of existing) {
       const inserted = await db
         .insert(notificationDeliveries)

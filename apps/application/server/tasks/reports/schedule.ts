@@ -5,6 +5,7 @@ import {
   reportBaseUrl,
   reportPiwiVersion,
   reportScheduleTimeZone,
+  scheduledShareLinkMinter,
   scheduleOwnerAccess,
 } from '../../utils/reports/context';
 
@@ -21,6 +22,7 @@ export default defineTask({
       baseUrl: reportBaseUrl(),
       piwiVersion: reportPiwiVersion(),
       deliver: true,
+      mintShareLink: scheduledShareLinkMinter(db),
       accessFor: (userId) => scheduleOwnerAccess(db, userId),
     });
     if (fired > 0 || failed > 0) {

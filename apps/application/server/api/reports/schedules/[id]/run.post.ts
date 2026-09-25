@@ -8,6 +8,7 @@ import {
   reportPiwiVersion,
   reportRoute,
   reportScheduleTimeZone,
+  scheduledShareLinkMinter,
   scheduleOwnerAccess,
 } from '../../../../utils/reports/context';
 import { runReportScheduleNow } from '#shared/handlers/reports';
@@ -41,6 +42,7 @@ export default eventHandler(async (event) => {
       baseUrl: reportBaseUrl(),
       piwiVersion: reportPiwiVersion(),
       deliver: true,
+      mintShareLink: scheduledShareLinkMinter(db),
     }),
   );
   if (result.queued > 0) sweepOutbox(db).catch((e) => console.error('[reports] sweep after run failed', e));

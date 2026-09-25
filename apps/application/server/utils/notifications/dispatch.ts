@@ -30,6 +30,7 @@ import {
   sendReportEmail,
   snapshotUrl,
 } from '../reports/deliver';
+import { deliveredShareUrl } from '../reports/context';
 
 const MAX_ATTEMPTS = OUTBOX_MAX_ATTEMPTS;
 /** Slack digest messages list at most this many items; the rest are counted. */
@@ -225,14 +226,15 @@ async function sendQualityReport(db: Db, d: DeliveryRow, c: ChannelRow) {
   const config = (c.config ?? {}) as Record<string, unknown>;
   const payload = (d.payload ?? {}) as ReportReadyPayload;
   const { bundle, projectIds } = await loadReportForDelivery(db as any, payload);
+  const shareUrl = deliveredShareUrl(payload.shareToken);
   if (c.type === 'personal_email' || c.type === 'email') {
-    await sendReportEmail(await resolveEmailAddress(db, c), bundle, payload);
+    await sendReportEmail(await resolveEmailAddress(db, c), bundle, payload, shareUrl);
   } else if (c.type === 'slack') {
     const webhookUrl = config.webhookUrl as string;
     if (!webhookUrl) throw new Error('No Slack webhook URL configured');
-    await postToSlack(webhookUrl, reportSlackMessage(bundle, snapshotUrl(payload.snapshotId)));
+    await postToSlack(webhookUrl, reportSlackMessage(bundle, snapshotUrl(payload.snapshotId), shareUrl));
   } else if (c.type === 'webhook') {
-    await postSignedWebhook(config, reportWebhookBody(bundle, payload));
+    await postSignedWebhook(config, reportWebhookBody(bundle, payload, shareUrl));
   } else if (c.type === 'browser') {
     publishReportNotification(bundle, payload, c.userId, projectIds);
   } else throw new Error(`Unknown channel type: ${c.type}`);

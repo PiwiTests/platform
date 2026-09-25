@@ -39,7 +39,12 @@ export async function loadReportForDelivery(
   return snapshot;
 }
 
-export async function sendReportEmail(to: string, bundle: ReportBundle, payload: ReportReadyPayload): Promise<void> {
+export async function sendReportEmail(
+  to: string,
+  bundle: ReportBundle,
+  payload: ReportReadyPayload,
+  shareUrl: string | null = null,
+): Promise<void> {
   if (!isEmailConfigured()) throw new Error('SMTP not configured');
   const trend = emailTrendBlock(bundle);
   const attachments: EmailAttachment[] = [];
@@ -49,6 +54,7 @@ export async function sendReportEmail(to: string, bundle: ReportBundle, payload:
   const { subject, html, text } = renderQualityReportEmail(bundle, {
     url: snapshotUrl(payload.snapshotId),
     chartCid: trend ? 'trend' : null,
+    shareUrl,
   });
   await sendEmail({ to, subject, html, text, attachments });
 }
@@ -56,8 +62,18 @@ export async function sendReportEmail(to: string, bundle: ReportBundle, payload:
 const slackEscape = (text: string) => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const clip = (text: string) => (text.length > SLACK_TEXT_MAX ? `${text.slice(0, SLACK_TEXT_MAX)}…` : text);
 
-/** Slack blocks: the verdict, the tiles as fields, the trend as a text sparkline, the changes, a button to the snapshot. */
-export function reportSlackMessage(bundle: ReportBundle, url: string): Record<string, unknown> {
+/**
+ * Slack blocks: the verdict, the tiles as fields, the trend, the changes, a
+ * button to the snapshot. With a share link the trend is an image block over
+ * the link's `chart.png` (an incoming webhook cannot upload a file, and the
+ * image needs a public address) and a second button opens the report without
+ * an account; without one the trend is a text sparkline.
+ */
+export function reportSlackMessage(
+  bundle: ReportBundle,
+  url: string,
+  shareUrl: string | null = null,
+): Record<string, unknown> {
   const s = sentencesFor(bundle.language);
   const widgets = reportWidgets(bundle);
   const blocks: Record<string, unknown>[] = [
@@ -76,7 +92,11 @@ export function reportSlackMessage(bundle: ReportBundle, url: string): Record<st
   }
   const trend = emailTrendBlock(bundle);
   const line = trend?.series[0];
-  if (trend && line) {
+  if (trend && line && shareUrl) {
+    const summary = trend.summary ?? line.label;
+    blocks.push({ type: 'section', text: { type: 'mrkdwn', text: slackEscape(summary) } });
+    blocks.push({ type: 'image', image_url: `${shareUrl}/chart.png`, alt_text: clip(summary).slice(0, 2000) });
+  } else if (trend && line) {
     const spark = sparkline(line.points);
     if (spark) {
       blocks.push({
@@ -103,18 +123,28 @@ export function reportSlackMessage(bundle: ReportBundle, url: string): Record<st
   blocks.push(
     {
       type: 'actions',
-      elements: [{ type: 'button', text: { type: 'plain_text', text: s.labels.openInPiwi }, url }],
+      elements: [
+        { type: 'button', text: { type: 'plain_text', text: s.labels.openInPiwi }, url },
+        ...(shareUrl
+          ? [{ type: 'button', text: { type: 'plain_text', text: s.labels.readWithoutAccount }, url: shareUrl }]
+          : []),
+      ],
     },
     { type: 'context', elements: [{ type: 'mrkdwn', text: slackEscape(bundle.period.label) }] },
   );
   return { text: `${s.labels.qualityReport}: ${bundle.title}`, blocks };
 }
 
-/** The webhook body of a quality report: the event, its payload with the snapshot link, and the bundle. */
-export function reportWebhookBody(bundle: ReportBundle, payload: ReportReadyPayload): string {
+/** The webhook body of a quality report: the event, its payload with the snapshot link (and share link), and the bundle. */
+export function reportWebhookBody(
+  bundle: ReportBundle,
+  payload: ReportReadyPayload,
+  shareUrl: string | null = null,
+): string {
+  const { shareToken: _sealed, ...fields } = payload;
   return JSON.stringify({
     event: REPORT_READY_EVENT,
-    payload: { ...payload, url: snapshotUrl(payload.snapshotId) },
+    payload: { ...fields, url: snapshotUrl(payload.snapshotId), ...(shareUrl ? { shareUrl } : {}) },
     bundle,
     timestamp: new Date().toISOString(),
   });
