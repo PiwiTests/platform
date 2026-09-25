@@ -11,7 +11,7 @@ delete process.env.PIWI_DATABASE_URL;
 const dashboards = await import('../../shared/handlers/dashboards');
 const defs = await import('../../shared/analytics/dashboards');
 const { backfillDailyRollups } = await import('../../shared/handlers/analytics/rollups');
-const { sweepOrphans } = await import('../../server/utils/retention');
+const { sweepOrphans, pruneReportSnapshots } = await import('../../server/utils/retention');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 let db: ReturnType<typeof drizzle<typeof schema>>;
@@ -345,6 +345,51 @@ describe('saved dashboards', () => {
     const left = await db.select({ id: schema.analyticsDashboards.id }).from(schema.analyticsDashboards);
     expect(left.map((r) => String(r.id))).toContain(shared.id);
     expect(left.map((r) => String(r.id))).not.toContain(priv.id);
+  });
+
+  test('report and dashboard links go with their snapshot or dashboard, and the sweep removes any left behind', async () => {
+    const linkIds = async () =>
+      (await db.select({ id: schema.shareLinks.id }).from(schema.shareLinks)).map((r) => r.id);
+    const link = (id: number, entityKind: string, entityId: number) => ({
+      id,
+      entityKind,
+      entityId,
+      tokenHash: `hash-${id}`,
+      tokenPrefix: 'abcd1234',
+    });
+    const d = await dashboards.createDashboard(db as any, { name: 'Linked', visibility: 'shared' }, reporter);
+    const [old] = await db
+      .insert(schema.reportSnapshots)
+      .values({
+        dashboardRef: 'executive',
+        dashboardName: 'Executive',
+        projectIds: [1],
+        periodFrom: new Date('2020-01-01'),
+        periodTo: new Date('2020-01-08'),
+        bundle: {},
+        generatedAt: new Date('2020-01-08'),
+      })
+      .returning({ id: schema.reportSnapshots.id });
+    await db
+      .insert(schema.shareLinks)
+      .values([
+        link(900, 'dashboard', +d.id),
+        link(901, 'report', old!.id),
+        link(902, 'dashboard', 99_999),
+        link(903, 'report', 99_999),
+      ]);
+
+    await dashboards.deleteDashboardRows(db as any, eq(schema.analyticsDashboards.id, +d.id));
+    expect(await linkIds()).not.toContain(900);
+    expect(await pruneReportSnapshots(db as any, 365)).toBe(1);
+    expect(await linkIds()).not.toContain(901);
+
+    // Links whose entity went another way (an older build, a direct delete) are the sweep's.
+    const result = await sweepOrphans(db as any);
+    expect(result.shareLinks).toBe(2);
+    const left = await linkIds();
+    expect(left).not.toContain(902);
+    expect(left).not.toContain(903);
   });
 });
 

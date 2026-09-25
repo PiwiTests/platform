@@ -347,10 +347,13 @@ export async function sweepOrphans(db: DbClient): Promise<OrphanSweepResult> {
   // so a concurrent sweep must not reap rows from an in-flight ingest batch.
   const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
   const orphanedPayloads = and(lt(casePayloads.createdAt, oneHourAgo), payloadUnreferenced())!;
-  // `share_links.entity_id` is polymorphic over two tables and carries no FK,
-  // so a link whose entity was pruned lingers until this sweep removes it.
+  // `share_links.entity_id` is polymorphic over four tables and carries no FK,
+  // so a link whose entity was pruned or deleted lingers until this sweep removes
+  // it (a snapshot's and a dashboard's links go with them; this is the safety net).
   const orphanedShareLinks = sql`(${shareLinks.entityKind} = 'execution' AND NOT EXISTS (SELECT 1 FROM ${testRunsCases} WHERE ${testRunsCases.id} = ${shareLinks.entityId}))
-    OR (${shareLinks.entityKind} = 'cluster' AND NOT EXISTS (SELECT 1 FROM ${failureClusters} WHERE ${failureClusters.id} = ${shareLinks.entityId}))`;
+    OR (${shareLinks.entityKind} = 'cluster' AND NOT EXISTS (SELECT 1 FROM ${failureClusters} WHERE ${failureClusters.id} = ${shareLinks.entityId}))
+    OR (${shareLinks.entityKind} = 'report' AND NOT EXISTS (SELECT 1 FROM ${reportSnapshots} WHERE ${reportSnapshots.id} = ${shareLinks.entityId}))
+    OR (${shareLinks.entityKind} = 'dashboard' AND NOT EXISTS (SELECT 1 FROM ${analyticsDashboards} WHERE ${analyticsDashboards.id} = ${shareLinks.entityId}))`;
   // A private dashboard whose owner was deleted has no one left who can open it; a shared one stays.
   const orphanedDashboards = and(eq(analyticsDashboards.visibility, 'private'), isNull(analyticsDashboards.ownerId))!;
 
@@ -409,7 +412,18 @@ export const DEFAULT_REPORT_RETENTION_DAYS = 365;
 export async function pruneReportSnapshots(db: DbClient, olderThanDays: number): Promise<number> {
   const old = lt(reportSnapshots.generatedAt, new Date(Date.now() - olderThanDays * MS_PER_DAY));
   const pruned = await countWhere(db, reportSnapshots, old);
-  if (pruned > 0) await db.delete(reportSnapshots).where(old);
+  if (pruned > 0) {
+    // A report link has no FK to its snapshot: it goes with it.
+    await db
+      .delete(shareLinks)
+      .where(
+        and(
+          eq(shareLinks.entityKind, 'report'),
+          inArray(shareLinks.entityId, db.select({ id: reportSnapshots.id }).from(reportSnapshots).where(old)),
+        ),
+      );
+    await db.delete(reportSnapshots).where(old);
+  }
   return pruned;
 }
 

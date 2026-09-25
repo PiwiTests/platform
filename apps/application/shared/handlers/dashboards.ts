@@ -12,7 +12,7 @@
  */
 import { and, desc, eq, inArray, or, type SQL } from 'drizzle-orm';
 import { z } from 'zod';
-import { analyticsDashboards, projects, reportSchedules, users } from '../../server/database/schema';
+import { analyticsDashboards, projects, reportSchedules, shareLinks, users } from '../../server/database/schema';
 import { deleteAppSetting, getAppSetting, setAppSetting } from '../../server/utils/app-settings';
 import type { DrizzleDB } from './db';
 import { Role } from '../types';
@@ -570,6 +570,8 @@ export async function deleteDashboardRows(db: DrizzleDB, where: SQL): Promise<nu
   const instanceDefault = await getInstanceDefaultDashboard(db);
   if (instanceDefault && ids.map(String).includes(instanceDefault))
     await deleteAppSetting(db, DEFAULT_DASHBOARD_SETTING);
+  // A live link has no FK to its dashboard: it goes with it.
+  await db.delete(shareLinks).where(and(eq(shareLinks.entityKind, 'dashboard'), inArray(shareLinks.entityId, ids)));
   await db.delete(analyticsDashboards).where(inArray(analyticsDashboards.id, ids));
   return schedules.map((s) => s.id);
 }
