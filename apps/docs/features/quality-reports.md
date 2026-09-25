@@ -59,9 +59,6 @@ days). The dialog previews the report; pick another dashboard or the language, t
 | CSV | Every table and series in one file, each row led by its widget. A cell starting with `=`, `+`, `-` or `@` is prefixed with `'`, so a spreadsheet never runs a test title as a formula. Each section is also its own CSV, from its **CSV** button |
 | JSON | The report bundle itself, for scripts and BI tools |
 
-In the preview and on a report snapshot's page, the **CSV** button beside a section downloads that
-section alone as its own file, with the same formula protection.
-
 A report grants no access: it covers only the projects its reader can open.
 
 ## Report schedules
@@ -79,7 +76,8 @@ reports** page starts an empty one. Reporters and administrators create schedule
   sent, because a stopped pipeline is news.
 - **Where**: [notification channels](./notifications). Email carries the verdict, the numbers and the
   trend as an image; Slack the same as blocks; a webhook the whole bundle as signed JSON; a browser
-  channel a notification.
+  channel a notification. With **Share link** on, each report carries a
+  [share link](./share-links#report-share-links) that opens it without an account.
 
 **Run now** sends the last complete period straight away. **Mute** keeps the snapshots and sends
 nothing; **Pause** stops the schedule. Each firing uses its owner's current project access. A **global**
@@ -93,7 +91,8 @@ has no scheduler.
 
 Every report sent is kept as a **report snapshot** with its numbers as they were: a report received in
 March reads the same in June, whatever [retention](/operate/storage#data-retention) deleted since. The
-**Quality reports** page lists them with how each was delivered, to read or download. You see a snapshot
+**Quality reports** page lists them with how each was delivered, to read, download or
+[share](./share-links#report-share-links). You see a snapshot
 when you can open every project it covers. Snapshots go after `PIWI_RETENTION_REPORT_DAYS` days (365; 0
 keeps them).
 
