@@ -1568,7 +1568,7 @@ const QUARANTINED_TESTS = [];
       source: spec.streakState === 'ready' ? 'proposed' : 'manual',
       quarantined_at_run_id: anchorRunId,
       created_by: null,
-      created_at: ts('2025-05-02T09:00:00'),
+      created_at: ts('2025-04-20T09:00:00'),
       released_at: null,
       released_reason: null,
     });
@@ -1590,7 +1590,7 @@ const QUARANTINED_TESTS = [];
         source: 'manual',
         quarantined_at_run_id: newestRunByProject[story.projectId] ?? null,
         created_by: null,
-        created_at: ts('2025-05-02T09:00:00'),
+        created_at: ts('2025-04-20T09:00:00'),
         released_at: null,
         released_reason: null,
       });

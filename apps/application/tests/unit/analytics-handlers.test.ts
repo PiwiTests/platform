@@ -1,5 +1,6 @@
 import { describe, test, expect, beforeAll } from 'vitest';
 import { fileURLToPath } from 'node:url';
+import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/libsql';
 import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
@@ -704,6 +705,19 @@ describe('metric widgets', () => {
     expect(risks.failingProjects).toEqual([{ projectId: 1, name: 'checkout', streak: 3 }]);
     expect(risks.oldestOpen[0]).toMatchObject({ projectName: 'checkout', ageDays: 40 });
     expect(risks.openCount).toBe(2);
+  });
+
+  test('risks: a quarantine dated after now reads as today, never a negative age', async () => {
+    const [row] = await db
+      .insert(schema.quarantinedTests)
+      .values({ projectId: 1, testCaseId: 1, createdAt: daysAgo(-7) })
+      .returning({ id: schema.quarantinedTests.id });
+    try {
+      const risks = await getAnalyticsRisks(db, DEFAULT_SCOPE, 'all');
+      expect(risks.quarantine).toEqual({ count: 1, oldestDays: 0 });
+    } finally {
+      await db.delete(schema.quarantinedTests).where(eq(schema.quarantinedTests.id, row!.id));
+    }
   });
 
   test('progress: nothing fixed in the period says so', async () => {
