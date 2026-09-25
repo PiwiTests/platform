@@ -367,6 +367,20 @@ describe('deleting runs', () => {
     expect((await rollupRows()).map((r) => r.part)).toEqual(['archived']);
   });
 
+  test('a purge in slices, one transaction each, keeps every day exact', async () => {
+    const ids: number[] = [];
+    for (let i = 0; i < 5; i++)
+      ids.push(await seedRun({ daysAgo: 100, hour: 8 + i, passedTests: 10 - i, failedTests: i }));
+    for (let i = 0; i < 3; i++) ids.push(await seedRun({ daysAgo: 101, hour: 9 + i, duration: 30_000 }));
+    await rollups.backfillDailyRollups(db as any);
+    const before = [await dayTotals(100), await dayTotals(101)];
+
+    // Slices of two runs: day 100 spans three transactions, and each commit leaves it exact.
+    await deleteRunsByIds(dbc, ids, { archiveRollups: true, sliceRuns: 2 });
+    expect([await dayTotals(100), await dayTotals(101)]).toEqual(before);
+    expect((await rollupRows()).every((r) => r.part === 'archived')).toBe(true);
+  });
+
   test('deleting one run by hand is a correction: its numbers leave the day', async () => {
     const a = await seedRun({ daysAgo: 3, passedTests: 10 });
     await seedRun({ daysAgo: 3, passedTests: 4, failedTests: 6, status: 'failed' });

@@ -35,11 +35,18 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
 /** Max ids per IN (...) list — stays well under SQLite's bound-variable limit. */
 const ID_BATCH_SIZE = 500;
 
-function* batches<T>(items: T[]): Generator<T[]> {
-  for (let i = 0; i < items.length; i += ID_BATCH_SIZE) {
-    yield items.slice(i, i + ID_BATCH_SIZE);
+function* batches<T>(items: T[], size = ID_BATCH_SIZE): Generator<T[]> {
+  for (let i = 0; i < items.length; i += size) {
+    yield items.slice(i, i + size);
   }
 }
+
+/**
+ * Runs deleted per transaction: each slice archives, deletes and recomputes its own runs, so the rollups
+ * are exact at every commit, and a first purge of years of history never holds SQLite's write lock (or a
+ * long PostgreSQL transaction) for the whole aggregation while runs keep arriving.
+ */
+const PURGE_SLICE_RUNS = 100;
 
 export interface DeleteRunsResult {
   deletedRuns: number;
@@ -72,7 +79,7 @@ export interface DeleteRunsResult {
 export async function deleteRunsByIds(
   db: DbClient,
   runIds: number[],
-  options: { archiveRollups?: boolean } = {},
+  options: { archiveRollups?: boolean; sliceRuns?: number } = {},
 ): Promise<DeleteRunsResult> {
   if (runIds.length === 0) return { deletedRuns: 0, deletedCases: 0 };
 
@@ -188,18 +195,25 @@ export async function deleteRunsByIds(
       .where(inArray(locatorSnapshots.lastSeenRunId, batch));
   }
 
-  const touchedDays = runs.map((run) => ({ projectId: run.projectId, day: dayKey(run.startTime) }));
-  await db.transaction(async (tx) => {
-    const txDb = tx as unknown as DrizzleDB;
-    if (options.archiveRollups) await archiveRunsIntoRollups(txDb, presentRunIds);
-    for (const batch of batches(presentRunIds)) {
-      await tx.delete(testRunsCases).where(inArray(testRunsCases.testRunId, batch));
-    }
-    for (const batch of batches(presentRunIds)) {
-      await tx.delete(testRuns).where(inArray(testRuns.id, batch));
-    }
-    await recomputeRollupCells(txDb, touchedDays);
-  });
+  // A project's day in as few slices as possible, so each day is recomputed about once.
+  const ordered = [...runs].sort(
+    (a, b) => a.projectId - b.projectId || new Date(a.startTime).getTime() - new Date(b.startTime).getTime(),
+  );
+  for (const slice of batches(ordered, options.sliceRuns ?? PURGE_SLICE_RUNS)) {
+    const sliceIds = slice.map((run) => run.id);
+    const touchedDays = slice.map((run) => ({ projectId: run.projectId, day: dayKey(run.startTime) }));
+    await db.transaction(async (tx) => {
+      const txDb = tx as unknown as DrizzleDB;
+      if (options.archiveRollups) await archiveRunsIntoRollups(txDb, sliceIds);
+      for (const batch of batches(sliceIds)) {
+        await tx.delete(testRunsCases).where(inArray(testRunsCases.testRunId, batch));
+      }
+      for (const batch of batches(sliceIds)) {
+        await tx.delete(testRuns).where(inArray(testRuns.id, batch));
+      }
+      await recomputeRollupCells(txDb, touchedDays);
+    });
+  }
 
   // Graph nodes/edges whose newest evidence was a deleted run, per project, so
   // the feature-graph tables never point at runs that no longer exist.
