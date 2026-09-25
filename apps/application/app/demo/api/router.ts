@@ -53,6 +53,7 @@ import {
   apiRunReportSchedule,
   apiUpdateReportSchedule,
 } from './reports';
+import { DEMO_CHANNEL } from './demo-channel';
 import { apiPerfettoTestRun, apiPerfettoTestRunCase } from './perfetto';
 import {
   apiGetDemoTraceStacks,
@@ -2314,17 +2315,6 @@ routes.push(
 );
 
 // ── Demo notification channels & subscriptions (stateful in-memory) ───────────
-
-const DEMO_CHANNEL = {
-  id: 1,
-  name: 'Account email',
-  type: 'personal_email',
-  userId: null as number | null,
-  verified: true,
-  config: { address: 'demo@example.com' },
-  createdAt: new Date().toISOString(),
-  updatedAt: new Date().toISOString(),
-};
 
 interface DemoSubscription {
   id: number;

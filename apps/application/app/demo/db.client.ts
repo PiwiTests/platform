@@ -22,6 +22,7 @@ import * as schema from '~~/server/database/schema.sqlite';
 import { backfillUnindexedProjects } from '~~/server/utils/locator-usages';
 import { getAppSetting, setAppSetting } from '~~/server/utils/app-settings';
 import { backfillDailyRollups, ROLLUPS_BACKFILLED_SETTING } from '#shared/handlers/analytics/rollups';
+import { seedDemoReports } from './report-seed';
 
 const initSqlJs = initSqlJsLib.default || initSqlJsLib;
 
@@ -307,7 +308,11 @@ async function initialize(): Promise<void> {
     if (await getAppSetting(drizzleDb as any, ROLLUPS_BACKFILLED_SETTING)) return;
     await backfillDailyRollups(drizzleDb as any);
     await setAppSetting(drizzleDb as any, ROLLUPS_BACKFILLED_SETTING, new Date().toISOString());
-  })().catch((e) => console.warn('[Demo DB] could not compute the daily rollups', e));
+  })()
+    .catch((e) => console.warn('[Demo DB] could not compute the daily rollups', e))
+    // The seeded report schedule and snapshots are rendered from the rollups, so they come after.
+    .then(() => seedDemoReports(drizzleDb as any))
+    .catch((e) => console.warn('[Demo DB] could not seed the report snapshots', e));
 }
 
 /**
