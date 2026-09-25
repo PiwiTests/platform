@@ -56,8 +56,11 @@ days). The dialog previews the report; pick another dashboard or the language, t
 | PDF | Vector text and charts, one band per page so pages drop into a slide deck |
 | HTML | One self-contained file: inline charts, no script, no remote resource |
 | Markdown | Tables, and a text sparkline (`▁▂▃▅▇`) under each series; pastes into Confluence, Jira or a pull request |
-| CSV | Every table and series in one file, each row led by its widget. A cell starting with `=`, `+`, `-` or `@` is prefixed with `'`, so a spreadsheet never runs a test title as a formula |
+| CSV | Every table and series in one file, each row led by its widget. A cell starting with `=`, `+`, `-` or `@` is prefixed with `'`, so a spreadsheet never runs a test title as a formula. Each section is also its own CSV, from its **CSV** button |
 | JSON | The report bundle itself, for scripts and BI tools |
+
+In the preview and on a report snapshot's page, the **CSV** button beside a section downloads that
+section alone as its own file, with the same formula protection.
 
 A report grants no access: it covers only the projects its reader can open.
 

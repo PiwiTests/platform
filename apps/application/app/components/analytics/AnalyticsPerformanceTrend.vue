@@ -11,6 +11,17 @@ const { data, pending, error, refresh } = await useAnalyticsWidget<AnalyticsProj
   () => props.query,
 );
 const points = computed(() => (data.value?.project ? (data.value.data as unknown as PerformanceTrendPoint[]) : []));
+const exportData = computed(() => ({
+  name: 'performance-trend',
+  header: ['run', 'started at', 'duration ms', 'average test ms', 'p90 test ms'],
+  rows: points.value.map((p) => [
+    p.id,
+    new Date(p.startTime).toISOString(),
+    p.duration ?? null,
+    p.avgTestDuration ?? null,
+    p.p90TestDuration ?? null,
+  ]),
+}));
 </script>
 
 <template>
@@ -20,6 +31,7 @@ const points = computed(() => (data.value?.project ? (data.value.data as unknown
     :subtitle="data?.project?.name"
     :legend="legendOf(RUN_DURATION_SERIES)"
     help="analytics.performance-trend"
+    :export-data="exportData"
   >
     <LoadingState v-if="pending" />
     <ErrorState v-else-if="error" :text="`Couldn't load the performance trend: ${errorMessage(error)}`">

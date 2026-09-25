@@ -63,6 +63,16 @@ const deltaBadge = computed(() => {
   };
 });
 
+const exportData = computed(() =>
+  trend.value
+    ? {
+        name: 'ci-time',
+        header: ['date', 'CI minutes', 'runs'],
+        rows: trend.value.points.map((p) => [p.date, p.totalMinutes, p.runCount]),
+      }
+    : null,
+);
+
 const subtitle = computed(() => {
   if (!trend.value) return undefined;
   const total = trend.value.totalMinutes;
@@ -85,7 +95,13 @@ function markerX(plotWidth: number, occurredAt: string | Date): number | null {
 </script>
 
 <template>
-  <ChartCard icon="i-lucide-timer" title="CI time" :subtitle="subtitle" help="analytics.ci-time">
+  <ChartCard
+    icon="i-lucide-timer"
+    title="CI time"
+    :subtitle="subtitle"
+    help="analytics.ci-time"
+    :export-data="exportData"
+  >
     <template #actions>
       <span v-if="deltaBadge" class="text-xs font-medium tabular-nums" :class="deltaBadge.class">
         {{ deltaBadge.label }}

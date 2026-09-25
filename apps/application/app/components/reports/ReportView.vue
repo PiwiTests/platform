@@ -7,6 +7,9 @@
 import { seriesGeometry } from '#shared/reports/chart';
 import { makeFormatter } from '#shared/reports/format';
 import { sentencesFor } from '#shared/reports/sentences';
+import { renderWidgetCsv } from '#shared/reports/render-csv';
+import { reportSectionFileName } from '#shared/reports/build';
+import { downloadBlob } from '~/utils/chart-export';
 import { hasVerdictWidget, type ReportBlock, type ReportBundle, type ReportTone } from '#shared/reports/types';
 import type { VerdictTone } from '#shared/analytics/types';
 
@@ -27,6 +30,25 @@ const VERDICT_DOT: Record<VerdictTone, string> = {
   mixed: PASS_RATE_TONES.fair.bg,
   bad: PASS_RATE_TONES.poor.bg,
 };
+
+/** The widgets with a table or a series, as their own CSV file. */
+const sectionCsv = computed(() => {
+  const out = new Map<string, string>();
+  for (const widget of props.bundle.bands.flatMap((b) => b.widgets)) {
+    const csv = renderWidgetCsv(widget);
+    if (csv) out.set(widget.key, csv);
+  }
+  return out;
+});
+
+function downloadSection(key: string) {
+  const csv = sectionCsv.value.get(key);
+  if (!csv) return;
+  downloadBlob(
+    new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' }),
+    reportSectionFileName(props.bundle, key),
+  );
+}
 
 const CHART = { width: 600, height: 150, left: 40, bottom: 18 };
 type SeriesBlock = Extract<ReportBlock, { kind: 'series' }>;
@@ -63,7 +85,19 @@ function tickLabel(block: SeriesBlock, value: number) {
       </div>
 
       <div v-for="widget in band.widgets" :key="widget.key" class="space-y-2" :data-report-widget="widget.key">
-        <h4 class="text-xs font-medium text-muted">{{ widget.title }}</h4>
+        <div class="flex items-center justify-between gap-2">
+          <h4 class="text-xs font-medium text-muted">{{ widget.title }}</h4>
+          <UButton
+            v-if="sectionCsv.has(widget.key)"
+            label="CSV"
+            size="xs"
+            color="neutral"
+            variant="ghost"
+            :title="`Download ${widget.title} as CSV`"
+            :data-testid="`report-section-csv-${widget.key}`"
+            @click="downloadSection(widget.key)"
+          />
+        </div>
         <p v-for="note in widget.notes" :key="note" class="text-xs text-muted">{{ note }}</p>
 
         <template v-for="(block, i) in widget.blocks" :key="i">

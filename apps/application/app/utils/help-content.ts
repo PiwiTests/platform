@@ -104,6 +104,11 @@ export const HELP_TOPICS = {
     title: 'Browser matrix',
     text: 'Pass rate per project × browser, so a suite that is green on one browser but failing on another (a browser-specific bug) stands out immediately.',
   },
+  'chart.export': {
+    title: 'Chart export',
+    text: 'Copy as PNG puts the chart, with its title, on the clipboard as an image to paste into a slide or a document; a browser that cannot copy images downloads the PNG instead. Download CSV saves the numbers behind the chart, one row per bucket or group, with any cell that could run as a spreadsheet formula quoted.',
+    doc: 'features/analytics#exporting-a-chart',
+  },
   'analytics.stats': {
     title: 'Headline numbers',
     text: 'Numbers from the metric catalog across every project in scope, each with its change against the comparison period. Green and red say whether the change is good news for that number, not whether it went up.',

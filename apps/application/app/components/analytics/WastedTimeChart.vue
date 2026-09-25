@@ -66,6 +66,16 @@ const legendItems = [
   { color: areaColors[1], label: 'Failed attempts' },
 ];
 
+const exportData = computed(() =>
+  wasted.value
+    ? {
+        name: 'wasted-ci-time',
+        header: ['date', 'wait minutes', 'failed attempt minutes'],
+        rows: wasted.value.points.map((p) => [p.date, p.waitMinutes, p.failedExecMinutes]),
+      }
+    : null,
+);
+
 const subtitle = computed(() => {
   if (!wasted.value) return undefined;
   const total = wasted.value.totalWaitMinutes + wasted.value.totalFailedExecMinutes;
@@ -102,6 +112,7 @@ function markerX(plotWidth: number, occurredAt: string | Date): number | null {
     :subtitle="subtitle"
     help="analytics.wasted-time"
     :legend="legendItems"
+    :export-data="exportData"
   >
     <LoadingState v-if="pending" />
     <ErrorState v-else-if="error" :text="`Couldn't load wasted time: ${errorMessage(error)}`">

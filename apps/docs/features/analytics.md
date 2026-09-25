@@ -128,6 +128,14 @@ route: p50/p90 latency, error rate, and how many projects hit each one. A shared
 shows up here before it's obvious in any single suite. Requires the
 [capture fixtures](/guide/capture-fixtures).
 
+## Exporting a chart
+
+Every chart carries a menu in its header. **Copy as PNG** puts the chart, with its title, on the clipboard
+as an image, ready to paste into a slide; a browser that cannot copy images downloads the PNG instead.
+**Download CSV** saves the numbers behind the chart, one row per bucket or group, with the same
+protection against spreadsheet formulas as the [quality report's CSV](./quality-reports). To send a
+whole dashboard, export it as a [quality report](./quality-reports) instead.
+
 ## Targets
 
 A project can carry **targets**, set in its **Settings** tab: a test pass rate to reach, and limits on

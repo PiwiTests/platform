@@ -74,6 +74,16 @@ const deltaBadge = computed(() => {
   };
 });
 
+const exportData = computed(() =>
+  velocity.value
+    ? {
+        name: 'regression-velocity',
+        header: ['date', 'new regressions', 'newly flaky'],
+        rows: velocity.value.points.map((p) => [p.date, p.regressions, p.newFlaky]),
+      }
+    : null,
+);
+
 const subtitle = computed(() => {
   if (!velocity.value) return undefined;
   return `${velocity.value.totalRegressions} new regressions, ${velocity.value.totalNewFlaky} newly flaky`;
@@ -100,6 +110,7 @@ function markerX(plotWidth: number, occurredAt: string | Date): number | null {
     :subtitle="subtitle"
     help="analytics.regression-velocity"
     :legend="legendItems"
+    :export-data="exportData"
   >
     <template #actions>
       <span v-if="deltaBadge" class="text-xs font-medium tabular-nums" :class="deltaBadge.class">

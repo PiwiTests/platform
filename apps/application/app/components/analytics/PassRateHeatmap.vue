@@ -26,6 +26,16 @@ function cellTitle(row: { name: string; label: string | null }, index: number, r
 
 const legendItems = PASS_RATE_STEPS.map(({ color, label }) => ({ color, label }));
 
+const exportData = computed(() =>
+  heatmap.value
+    ? {
+        name: 'pass-rate-heatmap',
+        header: ['project', ...heatmap.value.buckets],
+        rows: heatmap.value.rows.map((row) => [row.label || row.name, ...row.cells]),
+      }
+    : null,
+);
+
 const subtitle = computed(() => {
   if (heatmap.value?.monthly) return 'One cell = one month (UTC)';
   const bucketDays = heatmap.value?.bucketDays ?? 1;
@@ -79,6 +89,8 @@ const axisTicks = computed(() => {
     :subtitle="subtitle"
     help="analytics.heatmap"
     :legend="legendItems"
+    :export-data="exportData"
+    :png="false"
   >
     <LoadingState v-if="pending" />
     <ErrorState v-else-if="error" :text="`Couldn't load the heatmap: ${errorMessage(error)}`">

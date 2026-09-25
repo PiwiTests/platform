@@ -24,6 +24,34 @@ const cardTitle = computed(() => {
 });
 const showMarkers = computed(() => props.options?.markers !== false);
 
+/** The drawn numbers as a table: one row per bucket, or per group of a breakdown. */
+const exportData = computed(() => {
+  const w = widget.value;
+  if (!w) return null;
+  if (w.breakdown) {
+    const withPoints = w.breakdown.groups.filter((g) => g.points);
+    if (withPoints.length > 0 && (w.display === 'line' || w.display === 'heatmap')) {
+      const dates = withPoints[0]!.points!.map((p) => p.date);
+      return {
+        name: cardTitle.value,
+        header: ['date', ...withPoints.map((g) => g.label)],
+        rows: dates.map((date, i) => [date, ...withPoints.map((g) => g.points![i]?.value ?? null)]),
+      };
+    }
+    return {
+      name: cardTitle.value,
+      header: [w.breakdown.label, w.value.label, 'change'],
+      rows: w.breakdown.groups.map((g) => [g.label, g.value.value, g.value.delta]),
+    };
+  }
+  if (w.points.length === 0) return { name: cardTitle.value, header: [w.value.label], rows: [[w.value.value]] };
+  return {
+    name: cardTitle.value,
+    header: ['date', w.value.label, ...(w.previousPoints ? [w.comparisonLabel ?? 'comparison'] : [])],
+    rows: w.points.map((p, i) => [p.date, p.value, ...(w.previousPoints ? [w.previousPoints[i]?.value ?? null] : [])]),
+  };
+});
+
 const LINE_COLOR = 'var(--ui-primary)';
 const PREVIOUS_COLOR = 'var(--ui-text-dimmed)';
 
@@ -121,6 +149,7 @@ const { data: tooltipData, pos: tooltipPos, show, move, hide } = useChartTooltip
     :title="cardTitle"
     :legend="legend"
     help="analytics.metric"
+    :export-data="exportData"
     data-shot="analytics-metric"
   >
     <template v-if="widget" #actions>

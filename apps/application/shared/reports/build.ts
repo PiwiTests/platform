@@ -33,6 +33,11 @@ function slug(value: string): string {
   );
 }
 
+/** `piwi-quality-report-executive-2026-09-25-wasted.csv`: one section of a quality report as a CSV. */
+export function reportSectionFileName(bundle: ReportBundle, widgetKey: string): string {
+  return `piwi-quality-report-${slug(bundle.dashboard.ref)}-${bundle.generatedAt.slice(0, 10)}-${slug(widgetKey)}.csv`;
+}
+
 /** `piwi-quality-report-executive-2026-09-25.pdf` */
 export function reportFileName(bundle: ReportBundle, format: ReportFormat): string {
   return `piwi-quality-report-${slug(bundle.dashboard.ref)}-${bundle.generatedAt.slice(0, 10)}.${format}`;
