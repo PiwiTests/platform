@@ -33,6 +33,7 @@ import {
   AnalyticsSelectionHealth,
   SuiteGrowthChart,
   FlakyDebtChart,
+  TimeToFixChart,
 } from '#components';
 
 export const WIDGET_COMPONENTS: Record<AnalyticsWidgetId, Component> = {
@@ -53,6 +54,7 @@ export const WIDGET_COMPONENTS: Record<AnalyticsWidgetId, Component> = {
   'slow-endpoints': SlowEndpointsTable,
   'suite-growth': SuiteGrowthChart,
   'flaky-debt': FlakyDebtChart,
+  'time-to-fix': TimeToFixChart,
   'scenario-gaps': ScenarioGapsSummary,
   'new-gaps': NewScenarioGaps,
   list: AnalyticsItemList,

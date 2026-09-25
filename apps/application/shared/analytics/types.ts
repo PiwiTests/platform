@@ -598,3 +598,25 @@ export interface AnalyticsFlakyDebt {
   quarantined: number;
   previousQuarantined: number | null;
 }
+
+export interface AnalyticsTimeToFixPoint {
+  date: string;
+  opened: number;
+  fixed: number;
+}
+
+export interface AnalyticsTimeToFix {
+  points: AnalyticsTimeToFixPoint[];
+  bucketDays: number;
+  opened: number;
+  fixed: number;
+  /** Median and 90th percentile of the time to fix over the causes fixed in the period, in days. */
+  medianDays: number | null;
+  p90Days: number | null;
+  /** The median over the comparison period. */
+  previousMedianDays: number | null;
+  /** Fixes of the period that have not regressed, 0–100. */
+  fixesHeldPct: number | null;
+  /** Open failure causes by age, youngest first. */
+  openByAge: Array<{ label: string; count: number }>;
+}

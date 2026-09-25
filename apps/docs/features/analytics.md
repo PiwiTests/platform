@@ -119,6 +119,11 @@ suite that grows while its skipped share grows too is adding tests nobody runs.
 in each bucket, the distinct flaky tests of each bucket (from the stored runs, so as far back as
 retention keeps them) and the tests in quarantine at the end of each bucket.
 
+**Time to fix** — how fast you react: failure causes opened and fixed per bucket, the median and p90
+time from first failure to fix over the causes fixed in the period, the share of those fixes that held,
+and the open causes by age. Failure clusters outlive run retention, so this reaches back as far as they
+do.
+
 **Flakiest tests** — the global flaky leaderboard, using the same [scoring and impact
 ranking](./flaky-tests#impact-ranking) as each project's Flaky tests tab.
 

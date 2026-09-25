@@ -110,6 +110,11 @@ export const HELP_TOPICS = {
     text: 'Whether flakiness is going down: flaky occurrences per run in each bucket (from the daily rollups, so over any window), the distinct tests that passed only on a retry (from the stored runs, so only as far back as retention keeps them) and the tests in quarantine at the end of each bucket.',
     doc: 'features/analytics#widgets',
   },
+  'analytics.time-to-fix': {
+    title: 'Time to fix',
+    text: 'How fast failures get fixed: failure causes opened and fixed per bucket, the median and 90th-percentile time from first failure to fix over the causes fixed in the period, the share of those fixes that held, and the open causes by age. Failure clusters outlive run retention, so this reaches as far back as they do.',
+    doc: 'features/analytics#widgets',
+  },
   'analytics.browser-matrix': {
     title: 'Browser matrix',
     text: 'Pass rate per project × browser, so a suite that is green on one browser but failing on another (a browser-specific bug) stands out immediately.',

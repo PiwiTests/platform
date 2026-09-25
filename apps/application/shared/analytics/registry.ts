@@ -323,6 +323,15 @@ export const ANALYTICS_WIDGETS = [
     testFilters: true,
   },
   {
+    id: 'time-to-fix',
+    title: 'Time to fix',
+    description: 'Failure causes opened and fixed, the median time to fix, fixes that held, open causes by age.',
+    icon: 'i-lucide-wrench',
+    size: 'half',
+    band: 'pain',
+    testFilters: false,
+  },
+  {
     id: 'scenario-gaps',
     title: 'Scenario gaps',
     description: 'Open Test Map gaps by class and feature, gaps closed, accepted but unwritten.',

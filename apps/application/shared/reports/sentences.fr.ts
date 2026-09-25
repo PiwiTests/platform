@@ -127,6 +127,13 @@ const TITLES: Record<string, string> = {
   Skipped: 'Ignorés',
   'Did not run': 'Non exécutés',
   'Flaky debt': 'Dette d’instabilité',
+  'Time to fix': 'Délai de correction',
+  'p90 time to fix': 'Délai de correction p90',
+  'Under a day': 'Moins d’un jour',
+  '1 to 7 days': '1 à 7 jours',
+  '7 to 30 days': '7 à 30 jours',
+  '30 to 90 days': '30 à 90 jours',
+  'Over 90 days': 'Plus de 90 jours',
   'Flaky occurrences per run': 'Occurrences instables par exécution',
   'Open gaps by class and by feature, and the gaps closed.':
     'Les lacunes ouvertes par classe et par fonctionnalité, et les lacunes fermées.',

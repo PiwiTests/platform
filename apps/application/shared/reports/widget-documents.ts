@@ -25,6 +25,7 @@ import type {
   AnalyticsStats,
   AnalyticsSuiteGrowth,
   AnalyticsFlakyDebt,
+  AnalyticsTimeToFix,
   AnalyticsTileTarget,
   AnalyticsVerdict,
   AnalyticsWastedTime,
@@ -668,6 +669,59 @@ export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
     ];
   },
 
+  'time-to-fix': (data: AnalyticsTimeToFix, ctx) => {
+    const open = data.openByAge.reduce((sum, g) => sum + g.count, 0);
+    if (data.opened === 0 && data.fixed === 0 && open === 0) return [{ kind: 'text', text: ctx.s.labels.noData }];
+    const blocks: ReportBlock[] = [
+      {
+        kind: 'stats',
+        tiles: [
+          plainTile(
+            ctx.s.metricLabel('median-time-to-fix', 'Median time to fix'),
+            ctx.f.value(data.medianDays, 'days', 1),
+          ),
+          plainTile(ctx.s.title('p90 time to fix'), ctx.f.value(data.p90Days, 'days', 1)),
+          plainTile(
+            ctx.s.metricLabel('fixes-that-held', 'Fixes that held'),
+            ctx.f.value(data.fixesHeldPct, 'percent', 1),
+          ),
+          plainTile(ctx.s.metricLabel('failure-causes-opened', 'Failure causes opened'), ctx.f.number(data.opened)),
+          plainTile(ctx.s.metricLabel('failure-causes-fixed', 'Failure causes fixed'), ctx.f.number(data.fixed)),
+        ],
+      },
+      seriesBlock(
+        'count',
+        null,
+        [
+          {
+            label: ctx.s.metricLabel('failure-causes-opened', 'Failure causes opened'),
+            points: data.points.map((p) => ({ date: p.date, value: p.opened })),
+            color: 'failed',
+          },
+          {
+            label: ctx.s.metricLabel('failure-causes-fixed', 'Failure causes fixed'),
+            points: data.points.map((p) => ({ date: p.date, value: p.fixed })),
+            color: 'passed',
+          },
+        ],
+        (value) => (value === null ? '—' : ctx.f.number(value)),
+        ctx,
+        null,
+      ),
+    ];
+    if (open > 0) {
+      blocks.push({
+        kind: 'table',
+        columns: [
+          { key: 'age', label: ctx.s.title('Age') },
+          { key: 'count', label: ctx.s.metricLabel('open-failure-causes', 'Open failure causes'), align: 'right' },
+        ],
+        rows: data.openByAge.map((g) => ({ cells: { age: ctx.s.title(g.label), count: ctx.f.number(g.count) } })),
+      });
+    }
+    return blocks;
+  },
+
   'scenario-gaps': (data: AnalyticsScenarioGaps, ctx) => {
     if (data.projects === 0) return [];
     const open = data.byClass.reduce((sum, c) => sum + c.count, 0);
@@ -772,6 +826,15 @@ export function widgetMetrics(type: AnalyticsWidgetId, options: Record<string, u
   if (type === 'wasted-time') return ['wasted-ci-minutes'];
   if (type === 'ci-time-trend') return ['ci-time'];
   if (type === 'suite-growth') return ['suite-size'];
+  if (type === 'time-to-fix') {
+    return [
+      'median-time-to-fix',
+      'fixes-that-held',
+      'failure-causes-opened',
+      'failure-causes-fixed',
+      'open-failure-causes',
+    ];
+  }
   if (type === 'flaky-debt') return ['flaky-occurrences', 'flaky-tests', 'quarantine-debt'];
   if (type === 'regression-velocity') return ['new-regressions', 'newly-flaky'];
   if (type === 'portfolio' || type === 'pass-rate-heatmap' || type === 'browser-matrix') return ['test-pass-rate'];

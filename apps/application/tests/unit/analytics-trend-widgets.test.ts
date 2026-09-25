@@ -92,6 +92,46 @@ beforeAll(async () => {
     { projectId: 1, testCaseId: 3, createdAt: daysAgo(10) },
     { projectId: 1, testCaseId: 2, createdAt: daysAgo(25), releasedAt: daysAgo(12) },
   ]);
+  const cluster = (id: number, over: Partial<typeof schema.failureClusters.$inferInsert>) => ({
+    id,
+    projectId: 1,
+    fingerprint: `fp-${id}`,
+    signature: `Error ${id}`,
+    firstSeenRunId: previousRun,
+    lastSeenRunId: currentRun,
+    ...over,
+  });
+  await db.insert(schema.failureClusters).values([
+    // Fixed in the period after 2 and 4 days; one regressed since.
+    cluster(1, {
+      status: 'resolved',
+      createdAt: daysAgo(8),
+      updatedAt: daysAgo(6),
+      fixLandedAt: daysAgo(6),
+      timeToResolutionMs: 2 * DAY_MS,
+      assignee: 'team-pay',
+    }),
+    cluster(2, {
+      status: 'resolved',
+      createdAt: daysAgo(9),
+      updatedAt: daysAgo(5),
+      fixLandedAt: daysAgo(5),
+      timeToResolutionMs: 4 * DAY_MS,
+      fixVerification: 'regressed',
+      assignee: 'team-pay',
+    }),
+    // Fixed in the comparison period after 1 day.
+    cluster(3, {
+      status: 'resolved',
+      createdAt: daysAgo(22),
+      updatedAt: daysAgo(21),
+      fixLandedAt: daysAgo(21),
+      timeToResolutionMs: DAY_MS,
+    }),
+    // Still open: one 40 days old and assigned, one opened in the period and unassigned.
+    cluster(4, { status: 'open', createdAt: daysAgo(40), updatedAt: daysAgo(1), assignee: 'team-cart' }),
+    cluster(5, { status: 'open', createdAt: daysAgo(3), updatedAt: daysAgo(1) }),
+  ]);
   await backfillDailyRollups(db as any);
 });
 
@@ -138,5 +178,24 @@ describe('flaky debt', () => {
   test('maps to two series in a report', async () => {
     const data = await runAnalyticsWidget(db as any, 'flaky-debt', scope({ projects: '1' }));
     expect(WIDGET_DOCUMENTS['flaky-debt'](data, docCtx, {}).map((b) => b.kind)).toEqual(['series', 'series']);
+  });
+});
+
+describe('time to fix', () => {
+  test('counts opened and fixed causes, the median, p90 and held share, and open causes by age', async () => {
+    const data = (await runAnalyticsWidget(db as any, 'time-to-fix', scope({ projects: '1' }))) as any;
+    expect(data.opened).toBe(3);
+    expect(data.fixed).toBe(2);
+    expect(data.medianDays).toBe(3);
+    expect(data.p90Days).toBe(4);
+    expect(data.previousMedianDays).toBe(1);
+    expect(data.fixesHeldPct).toBe(50);
+    expect(data.openByAge.map((g: any) => g.count)).toEqual([0, 1, 0, 1, 0]);
+    expect(data.points.reduce((n: number, p: any) => n + p.fixed, 0)).toBe(2);
+  });
+
+  test('maps to tiles, a series and the age table in a report', async () => {
+    const data = await runAnalyticsWidget(db as any, 'time-to-fix', scope({ projects: '1' }));
+    expect(WIDGET_DOCUMENTS['time-to-fix'](data, docCtx, {}).map((b) => b.kind)).toEqual(['stats', 'series', 'table']);
   });
 });
