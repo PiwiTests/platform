@@ -1169,7 +1169,7 @@ export const PIWI_ENV_VARS = {
       'Cost of one CI minute as an amount and an ISO 4217 currency code (e.g. "0.008 USD"). When set, every wasted-time number in the analytics widgets and quality reports is followed by its cost, and the setting in Settings → Performance is read-only. Unset shows minutes only.',
     category: 'wasted-time',
     example: '0.008 USD',
-    since: '0.38.0',
+    since: '0.39.0',
     docs: 'features/quality-reports#cost-of-a-ci-minute',
   },
 

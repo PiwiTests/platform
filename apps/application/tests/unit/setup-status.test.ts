@@ -161,12 +161,12 @@ describe('setup capability copy', () => {
 
 describe('first-run version and the New marker', () => {
   test('records the running version on first read and marks nothing new', async () => {
-    const first = await getSetupStatus(db, '0.38.0');
+    const first = await getSetupStatus(db, '0.39.0');
     expect(first.capabilities.every((c) => c.isNew === false)).toBe(true);
 
     // The recorded version sticks: a later, higher version does not re-anchor it.
     const recorded = await getAppSetting<string>(db, 'first-run-version');
-    expect(recorded).toBe('0.38.0');
+    expect(recorded).toBe('0.39.0');
     const again = await getSetupStatus(db, '0.99.0');
     expect(again.capabilities.every((c) => c.isNew === false)).toBe(true);
   });
@@ -176,7 +176,7 @@ describe('first-run version and the New marker', () => {
     const { capabilities } = await getSetupStatus(db, '0.36.0');
     const newIds = new Set(capabilities.filter((c) => c.isNew).map((c) => c.id));
     // auto-heal (0.26), integrations (0.29), the Test Map (0.36) and quality
-    // reports (0.38) landed after 0.20; pr-feedback (0.19) did not.
+    // reports (0.39) landed after 0.20; pr-feedback (0.19) did not.
     expect(newIds).toEqual(new Set(['auto-heal', 'integrations', 'test-map', 'server-probes', 'quality-reports']));
   });
 

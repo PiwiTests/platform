@@ -150,7 +150,7 @@ export const CAPABILITIES: CapabilityDef[] = [
     levels: ['instance'],
     needs: [],
     detection: 'quality-reports',
-    since: '0.38.0',
+    since: '0.39.0',
     doc: 'features/quality-reports',
   },
   {
