@@ -158,11 +158,13 @@ import {
   getTestCaseHistory,
   getTestRunCaseTraces,
   getTestCaseStabilityTrend,
+  STABILITY_TREND_DEFAULT_DAYS,
   getFailureTimeline,
   getExecutionSteps,
   getFailureClues,
   getAttemptDiff,
 } from '#shared/handlers/test-cases';
+import { parseGranularity } from '#shared/analytics/period';
 import { buildExecutionReproduce } from '#shared/handlers/reproduce';
 import {
   getFailureCluster,
@@ -1146,8 +1148,9 @@ const routes: RouteEntry[] = [
     pattern: /^\/api\/test-cases\/(\d+)\/stability-trend$/,
     handler: async (m, _, q, ctx) => {
       await assertDemoEntityScope(ctx, 'case', +m[1]!);
-      const buckets = parseInt(q?.get('buckets') || '20');
-      return getTestCaseStabilityTrend(await getDemoDb(), +m[1]!, buckets);
+      const days = parseInt(q?.get('days') || String(STABILITY_TREND_DEFAULT_DAYS));
+      const granularity = parseGranularity(q?.get('by')) ?? 'auto';
+      return getTestCaseStabilityTrend(await getDemoDb(), +m[1]!, { days, granularity });
     },
   },
 

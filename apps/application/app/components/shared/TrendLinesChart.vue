@@ -6,6 +6,7 @@
  * value in the hovered bucket. Place inside a `ChartCard`.
  */
 import { barGeometry, bucketTimeToX, dayTickIndices, formatTickDate, type TrendLine } from '~/utils/chart';
+import type { MarkerInfo } from '~~/types/api';
 
 const props = withDefaults(
   defineProps<{
@@ -18,6 +19,8 @@ const props = withDefaults(
     valueFormat?: (value: number | null, line: TrendLine) => string;
     /** Draw the analytics page's timeline markers. */
     markers?: boolean;
+    /** Timeline markers to draw instead of the analytics page's (a project's, on a test page). */
+    timelineMarkers?: MarkerInfo[] | null;
     /** Extra marks (a fix, a regression) drawn as labeled vertical lines. */
     marks?: Array<{ date: string; label: string; color: string }>;
   }>(),
@@ -27,6 +30,7 @@ const props = withDefaults(
     yFormat: (value: number) => String(value),
     valueFormat: (value: number | null) => (value === null ? '—' : String(value)),
     markers: true,
+    timelineMarkers: null,
     marks: () => [],
   },
 );
@@ -65,10 +69,13 @@ function xTicks(plotWidth: number) {
 }
 
 const scopeSummary = injectAnalyticsScopeSummary();
-const markerList = computed(() => (props.markers ? (scopeSummary.value?.markers ?? []) : []));
+const markerList = computed<MarkerInfo[]>(() =>
+  !props.markers ? [] : (props.timelineMarkers ?? (scopeSummary.value?.markers as MarkerInfo[] | undefined) ?? []),
+);
 function timeX(plotWidth: number, at: string | Date): number | null {
   const { centerOf } = barGeometry(dates.value.length, plotWidth);
-  const end = scopeSummary.value ? new Date(scopeSummary.value.period.to).getTime() : Date.now();
+  const end =
+    scopeSummary.value && !props.timelineMarkers ? new Date(scopeSummary.value.period.to).getTime() : Date.now();
   return bucketTimeToX(
     dates.value,
     dates.value.map((_, i) => centerOf(i)),

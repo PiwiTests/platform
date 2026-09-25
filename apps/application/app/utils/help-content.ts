@@ -355,6 +355,11 @@ export const HELP_TOPICS = {
     text: 'A read-only Git host token lets diagnosis pull the actual commit diffs behind a failure for SCM-grounded analysis. Stored encrypted.',
     doc: 'features/ai-diagnosis#scm-grounded-context',
   },
+  'case.stability-trend': {
+    title: 'Stability trend',
+    text: 'This test’s pass rate, flaky rate (passed only on a retry) and average duration over time, one point per day, week or month in UTC, with the project’s timeline markers. Probe runs are left out. A gap is a bucket where the test did not run.',
+    doc: 'features/flaky-tests#per-test-stability-trend',
+  },
   'project.targets': {
     title: 'Targets',
     text: 'Goals this project is checked against over the period a dashboard or a quality report shows: a pass rate to reach, and limits on flaky tests, wasted CI minutes per week, the age of the oldest open failure cause and the median time to fix. Each is optional; a met or missed target shows on the headline tiles, in the portfolio, in the insights and in the report.',

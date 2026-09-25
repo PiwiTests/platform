@@ -1348,8 +1348,8 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
   async get_test_stability_trend(db, params, ctx) {
     const testCaseId = numericParam(params.testCaseId, 'testCaseId');
     if ((await checkEntityScope(db, ctx, testCaseId, resolveCaseProjectId)) === 'not-found') return null;
-    const buckets = params.buckets != null ? numericParam(params.buckets, 'buckets') : 20;
-    return getTestCaseStabilityTrend(db, testCaseId, buckets);
+    const days = params.days != null ? numericParam(params.days, 'days') : undefined;
+    return getTestCaseStabilityTrend(db, testCaseId, { days });
   },
 
   // ── get_network_requests ───────────────────────────────────────────────────

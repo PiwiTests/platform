@@ -405,3 +405,19 @@ describe('the trend insight rules', () => {
     expect(Array.isArray(insights)).toBe(true);
   });
 });
+
+describe('the stability trend of a test case', () => {
+  test('buckets its executions by time, a bucket without an execution a gap', async () => {
+    const { getTestCaseStabilityTrend } = await import('../../shared/handlers/test-cases');
+    const trend = await getTestCaseStabilityTrend(db as any, 1, { days: 30, granularity: 'day' });
+    expect(trend.bucketDays).toBe(1);
+    expect(trend.buckets).toHaveLength(30);
+    const ran = trend.buckets.filter((b) => b.totalRuns > 0);
+    expect(ran.map((b) => [b.totalRuns, b.passRate, b.flakyRate, b.avgDuration])).toEqual([
+      [1, 1, 0, 1000],
+      [1, 1, 1, 3000],
+    ]);
+    expect(trend.buckets.find((b) => b.totalRuns === 0)!.passRate).toBeNull();
+    await expect(getTestCaseStabilityTrend(db as any, 999)).rejects.toThrow('Test case not found');
+  });
+});

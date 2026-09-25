@@ -443,12 +443,12 @@ export const MCP_TOOL_DEFS = [
     name: 'get_test_stability_trend',
     module: 'core',
     description:
-      'Time-series stability for a single test case: flaky rate, pass rate, and average duration bucketed over its recent execution history. Use to answer "is this test getting flakier?".',
+      'Time-series stability for a single test case: flaky rate, pass rate, and average duration in UTC time buckets (about 31 of them) over the last N days. Use to answer "is this test getting flakier?".',
     inputSchema: {
       type: 'object',
       properties: {
         testCaseId: { type: 'number', description: 'Test case ID (stable testCaseId)' },
-        buckets: { type: 'number', description: 'Number of time buckets (default 20, 5–50)' },
+        days: { type: 'number', description: 'How many days back the trend reaches (default 90, 1–3650)' },
       },
       required: ['testCaseId'],
     },
