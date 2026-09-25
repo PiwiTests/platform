@@ -32,6 +32,8 @@ export interface ValueFormatter {
   minutes(value: number): string;
   /** A date (`YYYY-MM-DD` or an instant) in the locale: `Sep 25, 2026`. */
   date(value: string | Date, timeZone?: string): string;
+  /** A bucket day on a chart axis, without the year: `Sep 25`. */
+  day(value: string): string;
 }
 
 export function makeFormatter(language: ReportLanguage, locale?: string): ValueFormatter {
@@ -80,6 +82,15 @@ export function makeFormatter(language: ReportLanguage, locale?: string): ValueF
       }
       if (metric.deltaPct !== null) return `${sign(metric.deltaPct)}${number(Math.abs(metric.deltaPct))}${percentSign}`;
       return `${sign(metric.delta)}${number(Math.abs(metric.delta), metric.precision)}`;
+    },
+    day(value) {
+      try {
+        return new Intl.DateTimeFormat(loc, { month: 'short', day: 'numeric', timeZone: 'UTC' }).format(
+          new Date(`${value.slice(0, 10)}T12:00:00Z`),
+        );
+      } catch {
+        return value.slice(5, 10);
+      }
     },
     date(value, timeZone) {
       const d =

@@ -40,6 +40,7 @@ import { getEnvironmentDiff } from '~~/server/utils/environment-diff';
 import { getPageDiff } from '~~/server/utils/page-diff';
 import { apiGetDemoDomSnapshot } from './dom-snapshot';
 import { apiExportTestRunCase, apiExportFailureCluster } from './export';
+import { apiReportPreview } from './reports';
 import { apiPerfettoTestRun, apiPerfettoTestRunCase } from './perfetto';
 import {
   apiGetDemoTraceStacks,
@@ -395,6 +396,12 @@ const routes: RouteEntry[] = [
         throw error;
       }
     },
+  },
+  // Quality reports — the preview and downloads, from the shared bundle and renderers
+  {
+    method: 'GET',
+    pattern: /^\/api\/reports\/preview$/,
+    handler: async (_m, _, q, ctx) => apiReportPreview(q, ctx?.scope ?? 'all'),
   },
   // Projects
   {

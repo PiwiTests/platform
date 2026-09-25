@@ -1,0 +1,404 @@
+/**
+ * Each widget's mapping from its data to document blocks: what a widget
+ * becomes in a quality report. Keyed by the registry union, so registering a
+ * widget without its mapping is a compile error, the way the handler map and
+ * the page's component map are.
+ */
+import type { AnalyticsWidgetId } from '#shared/analytics/registry';
+import type {
+  AnalyticsBrowserMatrix,
+  AnalyticsCiTimeTrend,
+  AnalyticsClusterLandscape,
+  AnalyticsFlakyRow,
+  AnalyticsHeatmap,
+  AnalyticsInsight,
+  AnalyticsMarker,
+  AnalyticsMetricValue,
+  AnalyticsMetricWidget,
+  AnalyticsPortfolioRow,
+  AnalyticsProgress,
+  AnalyticsRegressionVelocity,
+  AnalyticsRisks,
+  AnalyticsSlowEndpoints,
+  AnalyticsStats,
+  AnalyticsVerdict,
+  AnalyticsWastedTime,
+} from '#shared/analytics/types';
+import type { MetricId } from '#shared/analytics/metrics';
+import type { ValueFormatter } from './format';
+import type { ReportSentences } from './sentences';
+import type { ReportBlock, ReportSeries, ReportTile, ReportTone } from './types';
+
+export interface DocumentContext {
+  f: ValueFormatter;
+  s: ReportSentences;
+  /** Absolute base of the dashboard, for links; null leaves rows unlinked. */
+  baseUrl: string | null;
+  /** The period's timeline markers. */
+  markers: AnalyticsMarker[];
+  /** Whether trend widgets draw the markers. */
+  drawMarkers: boolean;
+}
+
+type Mapper = (data: any, ctx: DocumentContext, options: Record<string, unknown>) => ReportBlock[];
+
+const TOP_ROWS = 10;
+const HEATMAP_COLUMNS = 8;
+
+function link(ctx: DocumentContext, path: string | null | undefined): string | null {
+  return ctx.baseUrl && path ? `${ctx.baseUrl}${path}` : null;
+}
+
+function toneOf(trend: AnalyticsMetricValue['trend']): ReportTone {
+  return trend === 'better' ? 'good' : trend === 'worse' ? 'bad' : 'neutral';
+}
+
+function metricText(v: AnalyticsMetricValue, ctx: DocumentContext): string {
+  return ctx.f.value(v.value, v.unit, v.precision, v.currency);
+}
+
+function tile(v: AnalyticsMetricValue, ctx: DocumentContext, companion?: AnalyticsMetricValue | null): ReportTile {
+  const label = ctx.s.metricLabel(v.metric, v.label);
+  let note: string | null = null;
+  if (companion) {
+    const value = metricText(companion, ctx);
+    note = companion.unit === 'money' ? value : `${ctx.s.metricLabel(companion.metric, companion.label)}: ${value}`;
+  }
+  return {
+    label,
+    value: metricText(v, ctx),
+    change: ctx.f.delta(v),
+    tone: toneOf(v.trend),
+    note,
+    definition: ctx.s.metricDefinition(v.metric, v.definition),
+  };
+}
+
+function markersOf(ctx: DocumentContext): Array<{ date: string; label: string }> {
+  if (!ctx.drawMarkers) return [];
+  return ctx.markers.map((m) => ({ date: new Date(m.occurredAt).toISOString().slice(0, 10), label: m.label }));
+}
+
+function seriesBlock(
+  unit: string,
+  max: number | null,
+  series: ReportSeries[],
+  format: (value: number | null) => string,
+  ctx: DocumentContext,
+  summary: string | null,
+): ReportBlock {
+  return {
+    kind: 'series',
+    unit,
+    max,
+    series: series.map((s) => ({ ...s, formatted: s.points.map((p) => format(p.value)) })),
+    markers: markersOf(ctx),
+    summary,
+  };
+}
+
+function name(row: { name?: string; label?: string | null; projectName?: string; projectLabel?: string | null }) {
+  return row.label || row.projectLabel || row.name || row.projectName || '';
+}
+
+export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
+  stats: (data: AnalyticsStats, ctx) => [{ kind: 'stats', tiles: data.tiles.map((t) => tile(t, ctx, t.companion)) }],
+
+  verdict: (data: AnalyticsVerdict, ctx) => [{ kind: 'text', text: ctx.s.verdict(data.facts, ctx.f), tone: data.tone }],
+
+  metric: (data: AnalyticsMetricWidget, ctx, options) => {
+    const v = data.value;
+    if (data.display === 'stat') return [{ kind: 'stats', tiles: [tile(v, ctx)] }];
+    const label = ctx.s.metricLabel(v.metric, v.label);
+    const series: ReportSeries[] = [{ label, points: data.points, color: 'accent' }];
+    if (data.previousPoints?.some((p) => p.value !== null)) {
+      series.push({ label: data.comparisonLabel ?? ctx.s.labels.previous, points: data.previousPoints, faint: true });
+    }
+    const change = ctx.f.delta(v);
+    return [
+      seriesBlock(
+        v.unit,
+        v.unit === 'percent' ? 100 : null,
+        series,
+        (value) => ctx.f.value(value, v.unit, v.precision, v.currency),
+        { ...ctx, drawMarkers: ctx.drawMarkers && options.markers !== false },
+        `${label}: ${metricText(v, ctx)}${change ? ` (${change})` : ''}`,
+      ),
+    ];
+  },
+
+  progress: (data: AnalyticsProgress, ctx) => {
+    const blocks: ReportBlock[] = [{ kind: 'list', items: ctx.s.progress(data, ctx.f).map((text) => ({ text })) }];
+    if (data.recentFixes.length > 0) {
+      blocks.push({
+        kind: 'table',
+        columns: [
+          { key: 'cause', label: ctx.s.title('Failure cause') },
+          { key: 'project', label: ctx.s.labels.projects },
+          { key: 'fixed', label: ctx.s.labels.date, align: 'right' },
+        ],
+        rows: data.recentFixes.map((fix) => ({
+          cells: { cause: fix.title, project: fix.projectName, fixed: ctx.f.date(fix.fixedAt) },
+          link: link(ctx, `/failure-clusters/${fix.id}`),
+        })),
+      });
+    }
+    return blocks;
+  },
+
+  risks: (data: AnalyticsRisks, ctx) => {
+    const lines = ctx.s.risks(data, ctx.f);
+    if (lines.length === 0) return [{ kind: 'text', text: ctx.s.labels.noData }];
+    return [{ kind: 'list', items: lines.map((text) => ({ text, tone: 'bad' as const })) }];
+  },
+
+  insights: (data: AnalyticsInsight[], ctx) => {
+    if (data.length === 0) return [{ kind: 'text', text: ctx.s.labels.noData }];
+    return [
+      {
+        kind: 'list',
+        items: data.map((i) => ({
+          text: i.message,
+          detail: i.detail ?? null,
+          tone: i.severity === 'positive' ? 'good' : i.severity === 'info' ? 'neutral' : 'bad',
+          link: link(ctx, i.to),
+        })),
+      },
+    ];
+  },
+
+  portfolio: (data: AnalyticsPortfolioRow[], ctx) => [
+    {
+      kind: 'table',
+      columns: [
+        { key: 'project', label: ctx.s.labels.projects },
+        { key: 'passRate', label: ctx.s.metricLabel('test-pass-rate', 'Test pass rate'), align: 'right' },
+        { key: 'change', label: ctx.s.labels.change, align: 'right' },
+        { key: 'runs', label: ctx.s.metricLabel('runs', 'Runs'), align: 'right' },
+        { key: 'flaky', label: ctx.s.metricLabel('flaky-occurrences', 'Flaky occurrences'), align: 'right' },
+        { key: 'open', label: ctx.s.metricLabel('open-failure-causes', 'Open failure causes'), align: 'right' },
+      ],
+      rows: data.map((row) => ({
+        cells: {
+          project: name(row),
+          passRate: ctx.f.value(row.passRate, 'percent', 1),
+          change: ctx.f.delta({ unit: 'percent', delta: row.passRateDelta, deltaPct: null, precision: 1 }) ?? '—',
+          runs: ctx.f.number(row.runCount),
+          flaky: ctx.f.number(row.flakyTests),
+          open: ctx.f.number(row.openClusters),
+        },
+        link: link(ctx, `/projects/${row.projectId}`),
+      })),
+    },
+  ],
+
+  'pass-rate-heatmap': (data: AnalyticsHeatmap, ctx) => {
+    const start = Math.max(0, data.buckets.length - HEATMAP_COLUMNS);
+    const buckets = data.buckets.slice(start);
+    return [
+      {
+        kind: 'table',
+        columns: [
+          { key: 'project', label: ctx.s.labels.projects },
+          ...buckets.map((b, i) => ({ key: `b${i}`, label: ctx.f.date(b), align: 'right' as const })),
+        ],
+        rows: data.rows.map((row) => ({
+          cells: {
+            project: name(row),
+            ...Object.fromEntries(row.cells.slice(start).map((cell, i) => [`b${i}`, ctx.f.value(cell, 'percent', 0)])),
+          },
+        })),
+      },
+    ];
+  },
+
+  'cluster-landscape': (data: AnalyticsClusterLandscape, ctx) => [
+    {
+      kind: 'stats',
+      tiles: [
+        plainTile(ctx.s.metricLabel('open-failure-causes', 'Open failure causes'), ctx.f.number(data.totalOpen)),
+        plainTile(
+          ctx.s.metricLabel('failure-causes-fixed', 'Failure causes fixed'),
+          ctx.f.number(data.resolvedInPeriod),
+        ),
+      ],
+    },
+    {
+      kind: 'table',
+      columns: [
+        { key: 'cause', label: ctx.s.title('Failure cause') },
+        { key: 'project', label: ctx.s.labels.projects },
+        { key: 'occurrences', label: '#', align: 'right' },
+        { key: 'age', label: ctx.s.title('Age'), align: 'right' },
+      ],
+      rows: data.clusters.slice(0, TOP_ROWS).map((c) => ({
+        cells: {
+          cause: c.title || c.signature,
+          project: name(c),
+          occurrences: ctx.f.number(c.occurrences),
+          age: ctx.f.value(c.ageDays, 'days', 0),
+        },
+        link: link(ctx, `/failure-clusters/${c.id}`),
+      })),
+    },
+  ],
+
+  'flaky-leaderboard': (data: AnalyticsFlakyRow[], ctx) => [
+    {
+      kind: 'table',
+      columns: [
+        { key: 'test', label: ctx.s.labels.testFilter },
+        { key: 'project', label: ctx.s.labels.projects },
+        { key: 'flips', label: ctx.s.title('Status flips'), align: 'right' },
+        { key: 'wasted', label: ctx.s.metricLabel('wasted-ci-minutes', 'Wasted CI minutes'), align: 'right' },
+      ],
+      rows: data.slice(0, TOP_ROWS).map((t) => ({
+        cells: {
+          test: t.title,
+          project: name(t),
+          flips: `${ctx.f.number(t.alternations)} / ${ctx.f.number(t.totalRuns)}`,
+          wasted: ctx.f.minutes(t.wastedCiMinutes),
+        },
+        link: link(ctx, `/test-cases/${t.testCaseId}`),
+      })),
+    },
+  ],
+
+  'wasted-time': (data: AnalyticsWastedTime, ctx) => {
+    const total = data.totalWaitMinutes + data.totalFailedExecMinutes;
+    const cost = data.cost ? ` (${ctx.f.value(data.cost.amount, 'money', 2, data.cost.currency)})` : '';
+    const blocks: ReportBlock[] = [
+      seriesBlock(
+        'minutes',
+        null,
+        [
+          {
+            label: ctx.s.title('Wait steps'),
+            points: data.points.map((p) => ({ date: p.date, value: p.waitMinutes })),
+            color: 'didnotrun',
+          },
+          {
+            label: ctx.s.title('Failed attempts'),
+            points: data.points.map((p) => ({ date: p.date, value: p.failedExecMinutes })),
+            color: 'failed',
+          },
+        ],
+        (value) => (value === null ? '—' : ctx.f.minutes(value)),
+        { ...ctx, drawMarkers: false },
+        `${ctx.s.metricLabel('wasted-ci-minutes', 'Wasted CI minutes')}: ${ctx.f.minutes(total)}${cost}`,
+      ),
+    ];
+    if (data.byProject.length > 0) {
+      blocks.push({
+        kind: 'table',
+        columns: [
+          { key: 'project', label: ctx.s.labels.projects },
+          { key: 'wasted', label: ctx.s.metricLabel('wasted-ci-minutes', 'Wasted CI minutes'), align: 'right' },
+        ],
+        rows: data.byProject.map((p) => ({
+          cells: { project: name(p), wasted: ctx.f.minutes(p.waitMinutes + p.failedExecMinutes) },
+          link: link(ctx, `/projects/${p.projectId}`),
+        })),
+      });
+    }
+    return blocks;
+  },
+
+  'regression-velocity': (data: AnalyticsRegressionVelocity, ctx) => [
+    seriesBlock(
+      'count',
+      null,
+      [
+        {
+          label: ctx.s.metricLabel('new-regressions', 'New regressions'),
+          points: data.points.map((p) => ({ date: p.date, value: p.regressions })),
+          color: 'failed',
+        },
+        {
+          label: ctx.s.metricLabel('newly-flaky', 'Newly flaky'),
+          points: data.points.map((p) => ({ date: p.date, value: p.newFlaky })),
+          color: 'flaky',
+        },
+      ],
+      (value) => (value === null ? '—' : ctx.f.number(value)),
+      ctx,
+      `${ctx.s.metricLabel('new-regressions', 'New regressions')}: ${ctx.f.number(data.totalRegressions)}, ${ctx.s.metricLabel('newly-flaky', 'Newly flaky')}: ${ctx.f.number(data.totalNewFlaky)}`,
+    ),
+  ],
+
+  'ci-time-trend': (data: AnalyticsCiTimeTrend, ctx) => [
+    seriesBlock(
+      'minutes',
+      null,
+      [
+        {
+          label: ctx.s.metricLabel('ci-time', 'CI time'),
+          points: data.points.map((p) => ({ date: p.date, value: p.totalMinutes })),
+          color: 'running',
+        },
+      ],
+      (value) => (value === null ? '—' : ctx.f.minutes(value)),
+      ctx,
+      `${ctx.s.metricLabel('ci-time', 'CI time')}: ${ctx.f.minutes(data.totalMinutes)}, ${ctx.f.number(data.runCount)} ${ctx.s.metricLabel('runs', 'Runs').toLowerCase()}`,
+    ),
+  ],
+
+  'browser-matrix': (data: AnalyticsBrowserMatrix, ctx) => [
+    {
+      kind: 'table',
+      columns: [
+        { key: 'project', label: ctx.s.labels.projects },
+        ...data.browsers.map((b, i) => ({ key: `b${i}`, label: b, align: 'right' as const })),
+      ],
+      rows: data.rows.map((row) => ({
+        cells: {
+          project: name(row),
+          ...Object.fromEntries(row.cells.map((cell, i) => [`b${i}`, ctx.f.value(cell, 'percent', 0)])),
+        },
+      })),
+    },
+  ],
+
+  'slow-endpoints': (data: AnalyticsSlowEndpoints, ctx) => [
+    {
+      kind: 'table',
+      columns: [
+        { key: 'route', label: ctx.s.title('Endpoint') },
+        { key: 'p90', label: 'p90', align: 'right' },
+        { key: 'requests', label: '#', align: 'right' },
+        { key: 'errors', label: ctx.s.title('Errors'), align: 'right' },
+      ],
+      rows: data.endpoints.slice(0, TOP_ROWS).map((e) => ({
+        cells: {
+          route: `${e.method} ${e.route}`,
+          p90: ctx.f.value(e.p90Ms, 'ms', 0),
+          requests: ctx.f.number(e.requests),
+          errors: ctx.f.value(e.errorRate, 'percent', 1),
+        },
+      })),
+    },
+  ],
+};
+
+function plainTile(label: string, value: string): ReportTile {
+  return { label, value, change: null, tone: 'neutral', note: null, definition: null };
+}
+
+/** The metrics a widget's blocks define, for the report footer. */
+export function widgetMetrics(type: AnalyticsWidgetId, options: Record<string, unknown>): MetricId[] {
+  if (type === 'stats') {
+    const metrics = (options.metrics as MetricId[] | undefined) ?? [];
+    const companions = Object.values((options.companions as Record<string, MetricId> | undefined) ?? {});
+    return [...metrics, ...companions];
+  }
+  if (type === 'metric') return [(options.metric as MetricId | undefined) ?? 'test-pass-rate'];
+  if (type === 'verdict') return ['test-pass-rate', 'failure-causes-fixed', 'open-failure-causes', 'wasted-ci-minutes'];
+  if (type === 'wasted-time') return ['wasted-ci-minutes'];
+  if (type === 'ci-time-trend') return ['ci-time'];
+  if (type === 'regression-velocity') return ['new-regressions', 'newly-flaky'];
+  if (type === 'portfolio' || type === 'pass-rate-heatmap' || type === 'browser-matrix') return ['test-pass-rate'];
+  return [];
+}
+
+/** Widgets whose lists name tests, so they reach back only as far as retention keeps runs. */
+export const IDENTITY_WIDGETS = new Set<AnalyticsWidgetId>(['flaky-leaderboard', 'stats', 'browser-matrix']);

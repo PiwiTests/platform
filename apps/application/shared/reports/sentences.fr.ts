@@ -95,6 +95,13 @@ const TITLES: Record<string, string> = {
   'CI time': 'Temps de CI',
   'Browser matrix': 'Matrice des navigateurs',
   'Slow endpoints': 'Points de terminaison lents',
+  'Wait steps': 'Étapes d’attente',
+  'Failed attempts': 'Tentatives en échec',
+  Endpoint: 'Point de terminaison',
+  Errors: 'Erreurs',
+  'Status flips': 'Changements de statut',
+  Age: 'Âge',
+  'Failure cause': 'Cause d’échec',
 };
 
 function branchText(facts: VerdictFacts): string {

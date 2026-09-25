@@ -34,6 +34,10 @@ const { isAdmin, isReporter } = useAuth();
 // Project-level capability states gate the bell, the Quarantine segment, the
 // Gaps tab and the Timeline's add-marker control.
 const { isHidden: projCapHidden } = await useProjectCapabilities(Number(projectId));
+
+// *Export*: this project as a quality report over the last 30 days, the project page's own window.
+const reportOpen = ref(false);
+const reportQuery = computed(() => ({ projects: String(projectId), period: 'last-30d' }));
 const runtimeConfig = useRuntimeConfig();
 const { isDesktop, openReport } = useDesktopReportLink();
 const authEnabled = computed(() => Boolean(runtimeConfig.public.authEnabled));
@@ -804,6 +808,16 @@ const moreMenuItems = computed(() => {
               :project-label="project?.label || project?.name"
             />
             <UButton
+              v-if="!projCapHidden('quality-reports')"
+              label="Export"
+              icon="i-lucide-file-down"
+              size="sm"
+              color="neutral"
+              variant="outline"
+              title="Export this project as a quality report"
+              @click="reportOpen = true"
+            />
+            <UButton
               v-if="canManage"
               label="Import"
               icon="i-lucide-import"
@@ -823,6 +837,7 @@ const moreMenuItems = computed(() => {
           </div>
         </template>
       </UDashboardNavbar>
+      <ReportPreviewModal v-model:open="reportOpen" :query="reportQuery" />
     </template>
 
     <template #body>

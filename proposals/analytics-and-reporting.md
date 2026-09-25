@@ -685,17 +685,25 @@ interface ReportBundle {
   comparison: { from: string; to: string; label: string } | null;
   dashboard: { ref: string; name: string };  // 'executive', 'engineering', … or a saved dashboard id
   verdict: { tone: 'good' | 'mixed' | 'bad'; sentence: string };
-  widgets: ReportWidget[];             // in dashboard order, each { key, title, blocks[], notes[] }
+  scopeText: { projects: string; branches: string; runs: string; tests: string | null };  // the scope in words
+  bands: ReportBand[];                 // in dashboard order, each { title, description, widgets[] }; a widget
+                                       // is { key, type, title, blocks[], notes[] }
   targets: TargetVerdict[];            // metric, target, actual, met
   definitions: MetricDef[];            // the catalog entries the report used, for the footer
   limits: string[];                    // "flaky-test lists cover the last 90 days (retention)"
 }
 ```
 
+Milestone 2 groups the widgets by band (`bands` rather than a flat `widgets` list), because a band is the section a
+document is read in, and states the scope in words beside the structured scope (`scopeText`).
+
 Each widget maps its data to one or more blocks through its `document` function, and blocks are typed by `kind` so
 every renderer knows how to draw them: `stats` (a row of metric tiles with deltas and target marks), `series` (one or
 several time series with markers), `table` (rows with links), `list` (insight sentences), `text` (the narrative, a
-note). Renderers draw blocks, never widgets, so a new widget is reportable without a renderer change. Every value that
+note). The `document` functions live in `shared/reports/widget-documents.ts` as `WIDGET_DOCUMENTS`, a
+`Record<AnalyticsWidgetId, …>` beside the handler and component maps, rather than on the registry entries, so the
+analytics page's bundle does not carry the document code. Renderers draw blocks, never widgets, so a new widget is
+reportable without a renderer change. Every value that
 comes from a test run (titles, error excerpts, branch names) is data and is escaped by the renderer, as the export
 renderers do.
 
@@ -718,7 +726,8 @@ page, and a team that wants a different report duplicates a built-in and edits i
    vertical lines with their labels ("Playwright 1.63", "Migrated runners").
 4. **What changed** (`insights`): three to six sentences from the insight rules (`evaluateInsightRules`), positive
    ones included, each with a link. The rules gain a target-aware entry ("pass rate is 1.2 points under the 98 %
-   target").
+   target"), the `target-missed` rule of milestone 5, since a rule over targets needs the targets that milestone
+   adds.
 5. **What is being done** (`progress`): clusters fixed and whether the fixes held, clusters assigned or with a ticket,
    tests released from quarantine, auto-heal pull requests opened. Stakeholders ask this second.
 6. **Risks** (`risks`): targets missed or at risk, the oldest open failure causes with age and owner, quarantine debt.
@@ -748,12 +757,12 @@ One bundle, rendered by:
 
 | Output | Renderer | Notes |
 |---|---|---|
-| In-app page `/reports/:id` and the preview | the widgets' own page components, laid out as a document | A parity unit test asserts the same facts appear in the Vue and HTML renderings, on the model of `export-parity.test.ts` |
+| In-app page `/reports/:id` and the preview | `ReportView.vue`, the bundle's blocks laid out as a document with the charts from the shared `shared/reports/chart.ts` geometry | A parity unit test asserts the same facts (`reportFacts`) appear in the HTML and Markdown renderings, on the model of `export-parity.test.ts`; the Vue view is checked against the JSON bundle in `tests/quality-reports.spec.ts`, because unit tests do not mount Nuxt components |
 | HTML (one file) | `shared/reports/render-html.ts`, the `html` tagged template from `shared/export/html.ts`, inline SVG charts, the export CSP | Also what the share route and the email body use |
 | PDF | `shared/reports/render-pdf.ts` with pdf-lib; charts drawn as vector rectangles and lines (`drawRectangle`, `drawLine`), one section per page so pages drop into a slide deck | No browser, identical on server, desktop and demo, like the export PDF |
 | Markdown | `shared/reports/render-markdown.ts`; tables, a text sparkline (`▁▂▃▅▇`) under each series | Pastes into Confluence, Jira, a pull request, Slack |
 | JSON | the bundle itself | Agents, scripts, BI ingestion |
-| CSV | `shared/reports/render-csv.ts`: one file per `series` or `table` section, or a ZIP of all | Cells starting with `=`, `+`, `-`, `@` are prefixed with `'` so a spreadsheet never executes a test title (CSV injection) |
+| CSV | `shared/reports/render-csv.ts`: every `series` and `table` block in one file, each row led by its widget, so it opens straight in a spreadsheet (per-section files come with widget export in milestone 5) | Cells starting with `=`, `+`, `-`, `@` are prefixed with `'` so a spreadsheet never executes a test title (CSV injection) |
 | Email | `renderQualityReportEmail`: the HTML body with the trend as an inline PNG (`sharp` rasterizes the SVG, attached by content id). The PNG carries only the marks (bars, lines, gridlines); axis labels and the legend are HTML text beside it, because the production image (`node:*-alpine`) ships no fonts for the rasterizer | `SendEmailOptions` gains `attachments`; nodemailer supports `cid` |
 | Slack | blocks: the verdict, the tiles as a two-column field list, the text sparkline, the changes as bullets, a button to the snapshot | Incoming webhooks cannot upload files; an image block needs a public URL, so a chart image is offered only when share links are enabled (the snapshot's share link serves `chart.png`) |
 | Webhook | the bundle JSON, HMAC-signed like every webhook | Bridges to Teams, n8n, Zapier, a data warehouse |
@@ -782,7 +791,10 @@ Dates, numbers and durations format through `formatAbsolute` and the instance lo
 already does. The narrative is generated from sentence templates keyed by language; English and French ship, on the
 model of the tracker integration's comment language (`server/utils/integrations/policies.ts` resolves it from the
 project binding, then the connection default, then English); that resolution is reused as the report language
-default, per project when bound, else the instance default. No other translation layer is introduced.
+default, per project when bound, else the instance default. No other translation layer is introduced. The instance
+default is the instance locale (`PIWI_LOCALE`, then Settings → Localization) when it is French, else English. In
+milestone 2 the insight sentences (`evaluateInsightRules`) stay English in a French report, since the rules build
+their messages in English; every other line and label is translated.
 
 ### Entry points
 
@@ -1253,15 +1265,15 @@ Grouped by milestone. Paths are under `apps/application/` unless noted.
 
 **2. The quality report**
 
-- [ ] `shared/analytics/registry.ts`: `options` (zod), `requires` and `document` on every widget (`testFilters` shipped in milestone 1); new widgets `stats`, `verdict`, `progress`, `risks`, `metric` (line and stat displays) with their components in `app/components/analytics/`
+- [x] `shared/analytics/registry.ts`: `options` (zod), `requires` and `document` on every widget (`testFilters` shipped in milestone 1); new widgets `stats`, `verdict`, `progress`, `risks`, `metric` (line and stat displays) with their components in `app/components/analytics/`
 - [x] `shared/analytics/dashboards.ts`: `DashboardDefinition`; the built-in Overview ([The default dashboard](#the-default-dashboard-overview)) and the executive and engineering dashboards (team and gaps digest come with milestone 3); `app/pages/analytics.vue` renders Overview from its definition instead of the hard-coded bands
-- [ ] `shared/reports/types.ts`, `collect.ts` (a dashboard and a scope make a bundle), `verdict.ts`, `sentences.en.ts`, `sentences.fr.ts`
-- [ ] `shared/reports/render-html.ts`, `render-pdf.ts`, `render-markdown.ts`, `render-csv.ts`, `build.ts` (file name, content type, format switch)
-- [ ] `shared/analytics/insight-rules.ts`: target-aware rule
-- [ ] `server/api/reports/preview.get.ts`; `app/demo/api/reports.ts`
+- [x] `shared/reports/types.ts`, `collect.ts` (a dashboard and a scope make a bundle), `verdict.ts`, `sentences.en.ts`, `sentences.fr.ts`
+- [x] `shared/reports/render-html.ts`, `render-pdf.ts`, `render-markdown.ts`, `render-csv.ts`, `build.ts` (file name, content type, format switch)
+- [x] `shared/analytics/insight-rules.ts`: target-aware rule: moved to milestone 5, where it is the `target-missed` rule over the targets that milestone adds
+- [x] `server/api/reports/preview.get.ts`; `app/demo/api/reports.ts`
 - [x] `server/api/settings/ci-cost.get.ts`, `ci-cost.put.ts`; `shared/piwi-env-vars.ts` (`PIWI_CI_MINUTE_COST`); `app/utils/settings-metadata.ts`; `app/pages/settings/performance.vue`
-- [ ] `app/components/reports/ReportPreviewModal.vue`, `ReportView.vue`
-- [ ] `app/pages/analytics.vue`, `app/pages/projects/[id]/index.vue`: the *Export* action (*Schedule* comes with milestone 3)
+- [x] `app/components/reports/ReportPreviewModal.vue`, `ReportView.vue`
+- [x] `app/pages/analytics.vue`, `app/pages/projects/[id]/index.vue`: the *Export* action (*Schedule* comes with milestone 3)
 - [x] `shared/status-colors.ts`; `app/utils/status-palette.ts`, `app/utils/pass-rate.ts`, `shared/export/render-html.ts`, `render-pdf.ts`, `server/utils/email.ts` read it; `tests/unit/status-colors.test.ts` pins `app/assets/css/main.css`
 - [ ] `shared/capabilities.ts` (`quality-reports`), `shared/handlers/setup-status.ts` (detection id and ladder order; the evidence probe comes with milestone 3), `shared/piwi-features.ts` (*Quality reports*, *Trends over time*); `app/layouts/default.vue` and the *Export* action read `isHidden('quality-reports')`
 - [ ] `shared/mcp-tools.ts`, `server/utils/mcp/tools.ts`: `get_quality_report`, `get_metric_trend`, `compare_periods` with `module` and `capability`; `apps/docs/features/mcp.md`; the "N tools" sentences in the docs and `ROADMAP.md`

@@ -124,6 +124,11 @@ export const HELP_TOPICS = {
     title: 'Risks',
     text: 'Metrics that moved the wrong way against the comparison period, projects failing run after run, the oldest open failure causes, and the tests waiting in quarantine.',
   },
+  'reports.export': {
+    title: 'Quality report',
+    text: 'The scope on screen as a document for someone who does not open the dashboard: a rule-based verdict, headline numbers, the trend, what is being done and the risks. Executive keeps to plain words; Engineering adds flaky tests, clusters and detail; Overview is this page. Download it as PDF, HTML, Markdown, CSV or JSON.',
+    doc: 'features/quality-reports',
+  },
   'analytics.period': {
     title: 'Period',
     text: 'Which days the page covers: a rolling window, a calendar week, month, quarter or year, a custom range, the time since a timeline marker, a release cycle (between two release markers) or a sprint. Rolling periods count whole UTC days; calendar periods follow your time zone.',

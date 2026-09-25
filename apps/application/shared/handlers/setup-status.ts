@@ -61,6 +61,7 @@ export type SetupCapabilityId =
   | 'ai'
   | 'mcp'
   | 'notifications'
+  | 'quality-reports'
   | 'pr-feedback'
   | 'auto-heal'
   | 'integrations'
@@ -281,6 +282,9 @@ export async function getCapabilityEvidence(db: DrizzleDB, projectId?: number): 
     // it configured rather than active.
     mcp: false,
     notifications: hasChannels,
+    // Evidence is a report schedule or snapshot; those tables arrive with the
+    // schedules, so until then a quality report leaves nothing behind to detect.
+    'quality-reports': false,
     'pr-feedback': hasPrFeedback,
     'auto-heal': hasAutoHeal,
     integrations: hasIntegrations,
@@ -311,6 +315,7 @@ const SETUP_LADDER_ORDER: SetupCapabilityId[] = [
   'ai',
   'mcp',
   'notifications',
+  'quality-reports',
   'pr-feedback',
   'auto-heal',
   'integrations',

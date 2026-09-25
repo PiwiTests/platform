@@ -30,6 +30,8 @@ import {
 useHead({ title: 'Analytics - Piwi Dashboard' });
 
 const { state, scope, scopeQuery } = useAnalyticsScope();
+const { isHidden } = await useInstanceCapabilities();
+const reportOpen = ref(false);
 const testFilterActive = computed(() => hasTestFilter(scope.value));
 
 // How the scope resolves: period dates, notes, markers for the trends, and the
@@ -147,6 +149,21 @@ function ignoresTestFilter(widget: ResolvedDashboardWidget & { available: true }
         <template #leading>
           <UDashboardSidebarCollapse />
           <UBreadcrumb :items="[{ label: 'Analytics', icon: 'i-lucide-chart-line', to: '/analytics' }]" />
+        </template>
+        <template v-if="!isHidden('quality-reports')" #right>
+          <NavbarActions
+            :actions="[
+              {
+                label: 'Export',
+                icon: 'i-lucide-file-down',
+                variant: 'outline',
+                color: 'neutral',
+                title: 'Export this scope as a quality report',
+                onClick: () => (reportOpen = true),
+              },
+            ]"
+          />
+          <ReportPreviewModal v-model:open="reportOpen" :query="scopeQuery" />
         </template>
       </UDashboardNavbar>
     </template>

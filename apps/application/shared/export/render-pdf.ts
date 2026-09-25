@@ -134,7 +134,7 @@ const REPLACEMENTS: Record<string, string> = {
  * and everything else replaced. Control characters — newlines included — become
  * a space, so callers split on newlines first to keep line breaks.
  */
-function winAnsiSafe(text: string): string {
+export function winAnsiSafe(text: string): string {
   let out = '';
   for (const ch of text) {
     const code = ch.codePointAt(0) ?? 0;

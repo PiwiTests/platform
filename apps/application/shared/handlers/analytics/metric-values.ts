@@ -234,7 +234,8 @@ export async function computeMetricValues(
 ): Promise<Map<MetricId, number | null>> {
   const out = new Map<MetricId, number | null>();
   const wanted = [...new Set(ids)];
-  const needsRows = wanted.some((id) => id in ROLLUP_VALUE);
+  // Flaky tests need the rows too: with no run in the range there is nothing to compare, not zero.
+  const needsRows = wanted.some((id) => id in ROLLUP_VALUE || id === 'flaky-tests');
   const needsClusters = wanted.some((id) => CLUSTER_METRICS.has(id));
 
   const [rows, clusters, flaky, quarantine] = await Promise.all([
@@ -247,7 +248,8 @@ export async function computeMetricValues(
 
   for (const id of wanted) {
     const rollup = ROLLUP_VALUE[id];
-    if (rollup) out.set(id, rollup(totals, options.cost));
+    if (rollup) out.set(id, totals.runs === 0 && id !== 'runs' ? null : rollup(totals, options.cost));
+    else if (id === 'flaky-tests' && totals.runs === 0) out.set(id, null);
     else if (CLUSTER_METRICS.has(id)) out.set(id, clusterValue(id, clusters, fromMs, toMs, ctx.now));
     else if (id === 'flaky-tests') out.set(id, flaky);
     else if (id === 'quarantine-debt') out.set(id, quarantine);

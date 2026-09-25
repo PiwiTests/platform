@@ -134,6 +134,15 @@ export const SETUP_CAPABILITIES: SetupCapabilityCopy[] = [
     toLabel: 'Add a channel',
   },
   {
+    id: 'quality-reports',
+    title: 'Quality reports',
+    summary:
+      'The analytics page as a document for someone who never opens the dashboard: a verdict, headline numbers, the trend, what is being done and the risks, as PDF, HTML, Markdown, CSV or JSON.',
+    how: 'Click Export on the Analytics page or on a project page, pick a dashboard and download the format you need.',
+    icon: 'i-lucide-file-chart-column',
+    doc: 'features/quality-reports',
+  },
+  {
     id: 'pr-feedback',
     title: 'Pull-request feedback',
     summary: 'When a run finishes on a branch with an open pull request, the result posted back to it.',
