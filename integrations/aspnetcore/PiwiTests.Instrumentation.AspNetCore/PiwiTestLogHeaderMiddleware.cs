@@ -38,6 +38,20 @@ public sealed class PiwiTestLogHeaderMiddleware(RequestDelegate next)
             context.Items["PiwiProbe"] = probe;
 
         PiwiTestLogCapture.Begin();
+
+        // The headers are written when the response starts, the last moment they can still be
+        // added. A handler that writes a body starts the response inside this capture, so the
+        // entries are read from it there; a response that starts after this middleware returns
+        // (no body, or an error page an outer handler writes) uses the entries kept at the end.
+        List<PiwiTestLogEntry>? endedLogs = null;
+        var captureEnded = false;
+        context.Response.OnStarting(() =>
+        {
+            var logs = captureEnded ? endedLogs : PiwiTestLogCapture.Stop();
+            WriteInstrumentationHeaders(context, probe, startMs, logs);
+            return Task.CompletedTask;
+        });
+
         var faultEndedResponse = false;
         try
         {
@@ -82,24 +96,21 @@ public sealed class PiwiTestLogHeaderMiddleware(RequestDelegate next)
         }
         finally
         {
-            WriteInstrumentationHeaders(context, probe, startMs);
+            // Always end capture for this request's async context.
+            endedLogs = PiwiTestLogCapture.Stop();
+            captureEnded = true;
         }
     }
 
     /// <summary>
     /// Write the X-Piwi-Logs and (for a verified probe request) X-Piwi-Trace
-    /// headers before the response starts. The trace's root span names the fault
+    /// headers as the response starts. The trace's root span names the fault
     /// the server actually applied (<c>piwi.probe.applied</c>), or omits it when
     /// none was, so the reporter records an unhonored probe as inconclusive.
     /// </summary>
-    private static void WriteInstrumentationHeaders(HttpContext context, PiwiProbeSpec? probe, long startMs)
+    private static void WriteInstrumentationHeaders(
+        HttpContext context, PiwiProbeSpec? probe, long startMs, List<PiwiTestLogEntry>? logs)
     {
-        // Always end capture for this request's async context, even when the
-        // response already started and no header can be written.
-        var logs = PiwiTestLogCapture.Stop();
-        if (context.Response.HasStarted)
-            return;
-
         // The level filter, entry cap and message truncation are applied by PiwiTestLogCapture.TryAdd.
         if (logs is { Count: > 0 })
             context.Response.Headers[HeaderName] = GzipBase64(JsonSerializer.SerializeToUtf8Bytes(logs));

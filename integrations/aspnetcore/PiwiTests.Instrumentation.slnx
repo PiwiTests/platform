@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="PiwiTests.Instrumentation.AspNetCore/PiwiTests.Instrumentation.AspNetCore.csproj" />
+  <Project Path="PiwiTests.Instrumentation.Tests/PiwiTests.Instrumentation.Tests.csproj" />
+</Solution>

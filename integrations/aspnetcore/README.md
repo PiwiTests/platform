@@ -30,7 +30,7 @@ app.Run();
 
 `AddPiwiTestLogs()` registers an `ILoggerProvider` that feeds Warning and Error entries into a per-request capture buffer (`PiwiTestLogCapture`), scoped to the current HTTP request with `AsyncLocal`.
 
-`UsePiwiTestLogs()` adds middleware that serializes the buffer to JSON, gzip-compresses it, and writes the result (Base64-encoded) to the `X-Piwi-Logs` response header before the response is sent, but only when the environment is Development or Test.
+`UsePiwiTestLogs()` adds middleware that serializes the buffer to JSON, gzip-compresses it, and writes the result (Base64-encoded) to the `X-Piwi-Logs` response header as the response starts, but only when the environment is Development or Test. Entries logged after that point (while a body is still streaming) can no longer ride on the response.
 
 ## Serilog or the classic Generic Host + `Startup` model
 
@@ -175,9 +175,15 @@ in `PiwiProbe.Verify`; `PiwiProbe.Sign` produces a matching signature.
 > **Scope note.** For a verified probe request this package emits an `X-Piwi-Trace`
 > header whose root span names the applied fault (`piwi.probe.applied`), alongside
 > `X-Piwi-Logs`. It does not yet apply data mutation or dependency faults (see the
-> honest subset above). The middleware and `X-Piwi-Probe` verification are authored
-> but **not compiled in this environment** (no .NET SDK available); build with
-> `dotnet build` before release.
+> honest subset above).
+
+## Development
+
+The packages and their tests build from one solution, the same command CI runs:
+
+```bash
+dotnet test integrations/aspnetcore/PiwiTests.Instrumentation.slnx
+```
 
 ## License
 
