@@ -15,6 +15,7 @@ type DB = ReturnType<typeof sqliteDrizzle<typeof sqliteSchema>>;
 export type DbClient = Awaited<ReturnType<typeof getDatabase>>;
 
 let db: DB;
+let initPromise: Promise<DB> | null = null;
 let migrationPromise: Promise<void> | null = null;
 
 // Detect which database backend to use
@@ -69,7 +70,17 @@ function backfillAnalyticsRollups(): void {
   })();
 }
 
-export async function initDatabase() {
+/**
+ * Open the database and bring its schema up to date, once per process: the
+ * callers that arrive while it is still opening (the startup plugins, the first
+ * requests) share the same connection and the same migration run.
+ */
+export function initDatabase(): Promise<DB> {
+  initPromise ??= openDatabase();
+  return initPromise;
+}
+
+async function openDatabase(): Promise<DB> {
   if (!db) {
     if (databaseUrl) {
       // PostgreSQL path
