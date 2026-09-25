@@ -44,7 +44,9 @@ packages/                  Packages consumed by name (`@piwitests/*`) — publis
   server/                  @piwitests/server — published npm run-option (`npx @piwitests/server`)
 integrations/              Framework-specific instrumentation adapters.
   nitro/                   @piwitests/instrumentation-nitro — backend-log instrumentation for Nitro apps
-  aspnetcore/              PiwiTests.Instrumentation.AspNetCore — the same for ASP.NET Core (NuGet)
+  aspnetcore/              PiwiTests.Instrumentation.AspNetCore — the same for ASP.NET Core (NuGet), plus the
+                           shared .Core capture buffer, the .NET tests and PiwiTests.Instrumentation.slnx
+  serilog/                 PiwiTests.Instrumentation.Serilog — a Serilog sink feeding the same capture (NuGet)
 examples/                  Standalone usage examples (Playwright fixtures)
 shared/                    Base oxlint/oxfmt configs extended by every workspace
 plans/                     Local working docs — gitignored, never committed
@@ -116,6 +118,9 @@ From `apps/application/`:
 
 From `packages/reporter/`: `reporter:build`, `reporter:dev` (watch), `reporter:typecheck`, `reporter:lint[:fix]`,
 `reporter:format[:check]`, `reporter:test[:watch|:coverage|:integration]`, `reporter:bench[:micro]`.
+
+From `integrations/aspnetcore/`: `dotnet test PiwiTests.Instrumentation.slnx` builds every .NET instrumentation package
+for each target framework and runs their tests (needs the .NET 10 SDK).
 
 Run typecheck, lint and tests **once at the end** before the final commit — not after every edit.
 

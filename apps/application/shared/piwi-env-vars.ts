@@ -1045,7 +1045,18 @@ export const PIWI_ENV_VARS = {
     type: 'boolean',
     docs: 'guide/backend-logs',
     notes:
-      'Unset: capture is on in development and off in production builds; `true` forces it off everywhere, `false` forces it on even in production.',
+      'Set on the instrumented backend (Nitro or ASP.NET Core). Unset: capture is on in development and off in production builds; `true` forces it off everywhere, `false` forces it on even in production. Overrides every other environment setting.',
+  },
+  PIWI_TEST_LOGS_ENVIRONMENTS: {
+    description:
+      'Comma-separated ASP.NET Core environment names the X-Piwi-Logs middleware is active in (default: Development,Test).',
+    category: 'testing',
+    type: 'list',
+    example: 'Development,Podman,Integration',
+    docs: 'guide/backend-logs#choosing-the-environments',
+    since: '0.39.0',
+    notes:
+      'Set on the ASP.NET Core backend. Used only when the app configures no environments itself (a `UsePiwiTestLogs` argument or `PiwiTestLogsOptions`). Names match case-insensitively.',
   },
 
   // ── Failure clustering ───────────────────────────────────────────────────
