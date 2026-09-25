@@ -7,6 +7,8 @@ import {
   inlineStylesheets,
   collectCssUrls,
   inlineCssUrls,
+  collectImageSources,
+  inlineImageSources,
   maskCssText,
 } from '~~/server/utils/dom-snapshot-render';
 import { resolveCaseDomSnapshot } from '~~/server/utils/dom-snapshot';
@@ -78,12 +80,69 @@ describe('renderSnapshotHtml', () => {
     expect(html).not.toContain('onclick');
   });
 
+  test('drops tag and attribute names that would spill into the markup', () => {
+    const html = renderSnapshotHtml(
+      [
+        snap({
+          snapshotName: 's1',
+          html: [
+            'HTML',
+            {},
+            ['BODY', {}, ['DIV', { 'x onerror': 'alert(1)', id: 'ok' }], ['IMG SRC=X ONERROR=alert(1)', {}]],
+          ],
+        }),
+      ],
+      's1',
+    );
+    expect(html).toBe('<html><body><div id="ok"></div></body></html>');
+  });
+
   test('drops script bodies but keeps the tag as a marker', () => {
     const html = renderSnapshotHtml(
       [snap({ snapshotName: 's1', html: ['HTML', {}, ['SCRIPT', {}, 'window.secret = "abc";']] })],
       's1',
     );
     expect(html).toBe('<html><script></script></html>');
+  });
+
+  test('empties an SVG <script> (recorded lower case) and drops its attributes', () => {
+    const html = renderSnapshotHtml(
+      [
+        snap({
+          snapshotName: 's1',
+          html: ['HTML', {}, ['svg', {}, ['script', { href: '/evil.js' }, 'parent.postMessage("x", "*")']]],
+        }),
+      ],
+      's1',
+    );
+    expect(html).toBe('<html><svg><script></script></svg></html>');
+  });
+
+  test('drops resource-hint links (modulepreload, preload, prefetch…) but keeps stylesheets and icons', () => {
+    const html = renderSnapshotHtml(
+      [
+        snap({
+          snapshotName: 's1',
+          html: [
+            'HTML',
+            {},
+            [
+              'HEAD',
+              {},
+              ['LINK', { rel: 'modulepreload', crossorigin: '', href: '/dist/assets/chunk-a1.js' }],
+              ['LINK', { rel: 'preload', as: 'font', href: '/font.woff2' }],
+              ['LINK', { rel: 'dns-prefetch', href: '//cdn.example.com' }],
+              ['LINK', { rel: 'stylesheet', crossorigin: '', href: '/dist/assets/index.css' }],
+              ['LINK', { rel: 'icon', href: '/favicon.ico' }],
+            ],
+          ],
+        }),
+      ],
+      's1',
+    );
+    expect(html).toBe(
+      '<html><head><link rel="stylesheet" crossorigin="" href="/dist/assets/index.css"><link rel="icon" href="/favicon.ico"></head></html>',
+    );
   });
 
   const styleHeavy = (): Parameters<typeof renderSnapshotHtml>[0] => [
@@ -290,6 +349,25 @@ describe('collectCssUrls / inlineCssUrls', () => {
     const out = inlineCssUrls(css, { '/img/bg.png': 'data:image/png;base64,PNG' });
     expect(out).toContain('url("data:image/png;base64,PNG")');
     expect(out).toContain("url('/f/x.woff2')"); // untouched — no replacement supplied
+  });
+});
+
+describe('collectImageSources / inlineImageSources', () => {
+  const html =
+    '<img src="/a.png" alt="A"><img alt="x > y" src="/q.png?w=1&amp;h=2">' +
+    '<img src="/a.png"><img src="data:image/gif;base64,AAAA"><p src="/not-an-img.png"></p>';
+
+  test('counts each <img src> URL, unescaped, skipping data: URIs and other tags', () => {
+    expect([...collectImageSources(html)]).toEqual([
+      ['/a.png', 2],
+      ['/q.png?w=1&h=2', 1],
+    ]);
+  });
+
+  test('rewrites only the sources present in the replacement map', () => {
+    const out = inlineImageSources(html, { '/q.png?w=1&h=2': 'data:image/png;base64,Q' });
+    expect(out).toContain('<img alt="x > y" src="data:image/png;base64,Q">');
+    expect(out).toContain('<img src="/a.png" alt="A">');
   });
 });
 

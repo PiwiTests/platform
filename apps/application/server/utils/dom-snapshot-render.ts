@@ -41,6 +41,25 @@ const VOID_ELEMENTS = new Set([
   'WBR',
 ]);
 
+// A tag or attribute name holding whitespace, a quote, `<`, `>`, `/` or `=`
+// can't be written back as markup without spilling into it.
+const UNSAFE_NAME_RE = /[\s"'<>/=]/;
+
+/**
+ * `<link rel>` tokens that only ask the browser to fetch ahead — Vite's
+ * `modulepreload` chunks, `preload`, `prefetch`, … Playwright's recorder drops
+ * plain `preload`/`prefetch` links and keeps the rest; none is page content.
+ */
+const RESOURCE_HINT_RELS = new Set(['modulepreload', 'preload', 'prefetch', 'prerender', 'preconnect', 'dns-prefetch']);
+
+/** A `<link>` whose `rel` is a resource hint and not also a stylesheet. */
+function isResourceHint(attrs: unknown): boolean {
+  if (!attrs || typeof attrs !== 'object' || Array.isArray(attrs)) return false;
+  const rel = (attrs as Record<string, unknown>).rel;
+  const tokens = typeof rel === 'string' ? rel.toLowerCase().split(/\s+/) : [];
+  return !tokens.includes('stylesheet') && tokens.some((token) => RESOURCE_HINT_RELS.has(token));
+}
+
 /** Options controlling how much of the DOM survives rendering. */
 export interface RenderOptions {
   /**
@@ -132,28 +151,35 @@ export function renderSnapshotHtml(
       return render(refNodes[nodeIndex], refSnapshotIndex);
     }
 
-    if (typeof n[0] !== 'string') return '';
-    const tagUpper = n[0] as string;
+    if (typeof n[0] !== 'string' || !n[0] || UNSAFE_NAME_RE.test(n[0])) return '';
+    // HTML tags are recorded upper case, SVG ones as authored (`svg`, `script`).
+    const tagUpper = (n[0] as string).toUpperCase();
     const tag = tagUpper.toLowerCase();
+    const attrs = n[1];
+
+    // A script is an empty marker — no `src`, no body — so nothing the page
+    // shipped ever runs in the rendered frame. Playwright drops HTML scripts when
+    // recording but keeps SVG ones, whose tag is lower case.
+    if (tagUpper === 'SCRIPT') return '<script></script>';
+    if (tagUpper === 'LINK' && isResourceHint(attrs)) return '';
 
     let out = `<${tag}`;
-    const attrs = n[1];
     if (attrs && typeof attrs === 'object' && !Array.isArray(attrs)) {
       for (const [name, value] of Object.entries(attrs as Record<string, unknown>)) {
         // __playwright_* bookkeeping attrs carry live input values and
         // scroll/selection state — never surfaced (secret-leak posture).
         if (name.startsWith('__playwright')) continue;
         // Inline handlers are noise for diagnosis and unsafe to re-emit.
-        if (/^on[a-z]/i.test(name)) continue;
+        if (/^on[a-z]/i.test(name) || UNSAFE_NAME_RE.test(name)) continue;
         out += ` ${name}="${escapeAttr(String(value))}"`;
       }
     }
     out += '>';
     if (VOID_ELEMENTS.has(tagUpper)) return out;
 
-    // `<script>` bodies are always dropped (unsafe to re-emit); `<style>` bodies
-    // are dropped only under the lean fallback. The tag stays as a marker.
-    const dropBody = tagUpper === 'SCRIPT' || (dropStyles && tagUpper === 'STYLE');
+    // `<style>` bodies are dropped only under the lean fallback; the tag stays
+    // as a marker.
+    const dropBody = dropStyles && tagUpper === 'STYLE';
     if (!dropBody) {
       for (let i = 2; i < n.length; i++) out += render(n[i], snapshotIndex);
     }
@@ -312,6 +338,40 @@ export function inlineCssUrls(css: string, replacements: Record<string, string>)
     const raw = (quoted ?? bare ?? '').trim();
     const repl = replacements[raw];
     return repl ? `url("${repl}")` : full;
+  });
+}
+
+// The `src` of an `<img>` start tag as the renderer writes it (double-quoted).
+// Quoted values are skipped whole, so a `>` inside one never ends the tag early.
+const IMG_SRC_RE = /(<img(?=[\s/>])(?:[^>"']|"[^"]*"|'[^']*')*?\ssrc=")([^"]*)(")/gi;
+
+function unescapeAttr(value: string): string {
+  return value.replace(/&quot;/g, '"').replace(/&amp;/g, '&');
+}
+
+/**
+ * Every `<img src>` URL in rendered snapshot HTML (`data:` URIs skipped), with
+ * how many images use it — each use embeds its own copy. Pure.
+ */
+export function collectImageSources(html: string): Map<string, number> {
+  const uses = new Map<string, number>();
+  for (const m of html.matchAll(IMG_SRC_RE)) {
+    const src = unescapeAttr(m[2]!).trim();
+    if (src && !/^data:/i.test(src)) uses.set(src, (uses.get(src) ?? 0) + 1);
+  }
+  return uses;
+}
+
+/**
+ * Point every `<img src>` whose URL appears in `replacements` at its
+ * replacement — a `data:` URI of the image captured in the trace. Others are
+ * left untouched. Pure.
+ */
+export function inlineImageSources(html: string, replacements: Record<string, string>): string {
+  if (!html || Object.keys(replacements).length === 0) return html;
+  return html.replace(IMG_SRC_RE, (full, open: string, value: string, close: string) => {
+    const repl = replacements[unescapeAttr(value).trim()];
+    return repl ? `${open}${escapeAttr(repl)}${close}` : full;
   });
 }
 

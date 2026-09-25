@@ -21,8 +21,12 @@ import { buildZip } from '~~/server/utils/trace-zip';
  * A minimal slim trace ZIP: one main-frame snapshot linking an external
  * stylesheet, and a `.network` stream mapping that stylesheet and its
  * background image to stored resources — the exact shape the picker inlines.
+ * `head`/`body` replace the snapshot's children for tests about other elements.
  */
-function buildTraceZip(): Buffer {
+function buildTraceZip(
+  head: unknown[] = [['LINK', { rel: 'stylesheet', href: '/app.css' }]],
+  body: unknown[] = [['DIV', { class: 'logo' }, 'hi']],
+): Buffer {
   const frameSnapshot = {
     type: 'frame-snapshot',
     snapshot: {
@@ -32,12 +36,7 @@ function buildTraceZip(): Buffer {
       frameUrl: 'http://app.local/page',
       doctype: 'html',
       viewport: { width: 800, height: 600 },
-      html: [
-        'HTML',
-        {},
-        ['HEAD', {}, ['LINK', { rel: 'stylesheet', href: '/app.css' }]],
-        ['BODY', {}, ['DIV', { class: 'logo' }, 'hi']],
-      ],
+      html: ['HTML', {}, ['HEAD', {}, ...head], ['BODY', {}, ...body]],
     },
   };
   const resourceSnap = (url: string, sha1: string, mimeType: string) => ({
@@ -47,6 +46,7 @@ function buildTraceZip(): Buffer {
   const network = [
     resourceSnap('http://app.local/app.css', 'css1', 'text/css'),
     resourceSnap('http://app.local/img/logo.png', 'img1', 'image/png'),
+    resourceSnap('http://app.local/img/huge.png', 'img2', 'image/png'),
   ]
     .map((e) => JSON.stringify(e))
     .join('\n');
@@ -85,7 +85,7 @@ describe('getTraceDomSnapshot — stylesheet + asset inlining', () => {
     expect(res.html).not.toContain(HEX_SECRET);
   });
 
-  test('leaves the external <link> untouched when inlineStyles is off (the read-only card path)', async () => {
+  test('leaves the external <link> untouched when inlineStyles is off (the AI-context path)', async () => {
     const res = await getTraceDomSnapshot(BLOB, 1_000_000);
     expect(res.status).toBe('ok');
     expect(res.html).toContain('<link rel="stylesheet" href="/app.css">');
@@ -97,6 +97,57 @@ describe('getTraceDomSnapshot — stylesheet + asset inlining', () => {
     const res = await getTraceDomSnapshot(BLOB, 1_000_000, { inlineStyles: true });
     expect(res.status).toBe('ok');
     expect(res.html).toContain('<link rel="stylesheet" href="/app.css">');
+  });
+});
+
+describe('getTraceDomSnapshot — image inlining', () => {
+  const PNG_URI = `data:image/png;base64,${PNG.toString('base64')}`;
+
+  test('embeds each <img src> the trace captured, resolved against the frame URL', async () => {
+    storageFiles.set(
+      BLOB,
+      buildTraceZip(undefined, [
+        ['IMG', { alt: 'a > b', src: '/img/logo.png' }],
+        ['IMG', { src: 'img/logo.png', class: 'relative' }],
+        ['IMG', { src: '/img/missing.png', alt: 'gone' }],
+      ]),
+    );
+    const res = await getTraceDomSnapshot(BLOB, 1_000_000, { inlineStyles: true });
+    expect(res.status).toBe('ok');
+    // Root-relative and document-relative refs both resolve to the captured image.
+    expect(res.html).toContain(`<img alt="a > b" src="${PNG_URI}">`);
+    expect(res.html).toContain(`<img src="${PNG_URI}" class="relative">`);
+    // An image the trace never captured keeps its src.
+    expect(res.html).toContain('<img src="/img/missing.png" alt="gone">');
+  });
+
+  test('embeds images on a page that links no stylesheet', async () => {
+    storageFiles.set(BLOB, buildTraceZip([], [['IMG', { src: '/img/logo.png' }]]));
+    const res = await getTraceDomSnapshot(BLOB, 1_000_000, { inlineStyles: true });
+    expect(res.html).toContain(`<img src="${PNG_URI}">`);
+  });
+
+  test('keeps the src of an image over the per-asset cap', async () => {
+    storageFiles.set('project-7/trace-resources/img2', Buffer.alloc(600_000, 1));
+    storageFiles.set(BLOB, buildTraceZip([], [['IMG', { src: '/img/huge.png' }]]));
+    const res = await getTraceDomSnapshot(BLOB, 1_000_000, { inlineStyles: true });
+    expect(res.html).toContain('<img src="/img/huge.png">');
+  });
+
+  test('charges the budget per use, so a much-repeated image stays a plain src', async () => {
+    // 400 KB fits one embed, but ten uses would embed 4 MB — past the budget.
+    storageFiles.set('project-7/trace-resources/img2', Buffer.alloc(400_000, 1));
+    const rows = Array.from({ length: 10 }, () => ['IMG', { src: '/img/huge.png' }]);
+    storageFiles.set(BLOB, buildTraceZip([], rows));
+    const res = await getTraceDomSnapshot(BLOB, 1_000_000, { inlineStyles: true });
+    expect(res.html).not.toContain('data:image/png');
+    expect(res.html!.match(/<img src="\/img\/huge.png">/g)).toHaveLength(10);
+  });
+
+  test('leaves images alone when inlineStyles is off (the AI-context path)', async () => {
+    storageFiles.set(BLOB, buildTraceZip([], [['IMG', { src: '/img/logo.png' }]]));
+    const res = await getTraceDomSnapshot(BLOB, 1_000_000);
+    expect(res.html).toContain('<img src="/img/logo.png">');
   });
 });
 

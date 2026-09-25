@@ -1,9 +1,10 @@
 import { describe, test, expect } from 'vitest';
 import {
   deriveHighlightHints,
-  stripBaseTag,
+  stripNetworkReferences,
   snapshotPickerScriptTag,
   buildPickerDocument,
+  buildReadonlyDocument,
 } from '../../app/utils/snapshot-picker-script';
 import type { RankedLocator } from '#shared/locator-healing.types';
 
@@ -43,13 +44,80 @@ describe('deriveHighlightHints', () => {
   });
 });
 
-describe('stripBaseTag', () => {
-  test('removes <base> so relative subresources are not redirected', () => {
-    expect(stripBaseTag('<head><base href="https://tested.app/"><title>x</title></head>')).toBe(
+describe('stripNetworkReferences', () => {
+  const PNG = 'data:image/png;base64,iVBORw0KGgo=';
+
+  test('removes <base>, every leftover <link> and <meta http-equiv>', () => {
+    expect(stripNetworkReferences('<head><base href="https://tested.app/"><title>x</title></head>')).toBe(
       '<head><title>x</title></head>',
     );
-    expect(stripBaseTag('<BASE target="_blank">keep')).toBe('keep');
-    expect(stripBaseTag('<p>no base here</p>')).toBe('<p>no base here</p>');
+    expect(stripNetworkReferences('<BASE target="_blank">keep')).toBe('keep');
+    expect(
+      stripNetworkReferences(
+        '<head><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=/login">' +
+          '<link rel="stylesheet" crossorigin="" href="/dist/assets/index.css"><link rel="icon" href="/favicon.ico"></head>',
+      ),
+    ).toBe('<head><meta charset="utf-8"></head>');
+    expect(stripNetworkReferences('<p>no references here</p>')).toBe('<p>no references here</p>');
+  });
+
+  test('empties nested frames, plugins and script sources', () => {
+    expect(stripNetworkReferences('<iframe src="/snapshot/frame@x" title="Map"></iframe>')).toBe(
+      '<iframe  title="Map"></iframe>',
+    );
+    expect(stripNetworkReferences('<iframe srcdoc="<p>hi</p>"></iframe>')).toBe('<iframe ></iframe>');
+    expect(stripNetworkReferences('<object data="/doc.pdf"></object><embed src="/a.swf">')).toBe(
+      '<object ></object><embed >',
+    );
+    expect(stripNetworkReferences(`<script src="${PNG}"></script>`)).toBe('<script ></script>');
+  });
+
+  test('keeps data: media, drops media that would fetch — a masked data: URI is malformed', () => {
+    const out = stripNetworkReferences(
+      `<img class="logo" src="/dist/assets/logo.png" alt="Logo"><img src="${PNG}" alt="inline">` +
+        '<img src="data:[masked]" alt="QR"><img srcset="/a.png 1x, /b.png 2x" src="https://cdn.example/a.png">' +
+        '<video poster="/p.jpg"><source src="/v.mp4"></video><table background="/bg.gif"></table>',
+    );
+    expect(out).toBe(
+      `<img class="logo"  alt="Logo"><img src="${PNG}" alt="inline">` +
+        '<img  alt="QR"><img  >' +
+        '<video ><source ></video><table ></table>',
+    );
+  });
+
+  test('keeps in-document and link references, drops external SVG references', () => {
+    const out = stripNetworkReferences(
+      '<svg><use href="#icon"/><use xlink:href="/sprite.svg#icon"/><image href="/i.png"/>' +
+        '<a href="/next">n</a></svg><a href="/logout">Déconnexion</a><map><area href="/x"></map>',
+    );
+    expect(out).toBe(
+      '<svg><use href="#icon"/><use /><image /><a href="/next">n</a></svg>' +
+        '<a href="/logout">Déconnexion</a><map><area href="/x"></map>',
+    );
+  });
+
+  test('rewrites CSS that would fetch — in <style> bodies and style attributes — keeping inline refs', () => {
+    const out = stripNetworkReferences(
+      '<style media="screen">@import url("/theme.css"); @import \'/print.css\' print;' +
+        `.a{background:url(/bg.png)}.b{background:url("${PNG}")}.c{filter:url(#blur)}` +
+        '.d::after{content:"<img src=/x.png>"}</style>' +
+        '<div style="background-image:url(&quot;/hero.jpg&quot;);color:red">x</div>' +
+        `<div style="background:url(&quot;${PNG}&quot;)">y</div>`,
+    );
+    expect(out).toBe(
+      '<style media="screen"> ' +
+        `.a{background:none}.b{background:url("${PNG}")}.c{filter:url(#blur)}` +
+        '.d::after{content:"<img src=/x.png>"}</style>' +
+        '<div style="background-image:none;color:red">x</div>' +
+        `<div style="background:url(&quot;${PNG}&quot;)">y</div>`,
+    );
+  });
+
+  test('a quoted ">" never ends a tag, and a truncated <style> at the end is still CSS', () => {
+    expect(stripNetworkReferences('<img alt="a > b" src="/x.png"><p>ok</p>')).toBe('<img alt="a > b" ><p>ok</p>');
+    expect(stripNetworkReferences('<p>x</p><style>.a{background:url(/bg.png)}')).toBe(
+      '<p>x</p><style>.a{background:none}',
+    );
   });
 });
 
@@ -94,9 +162,20 @@ describe('snapshotPickerScriptTag / buildPickerDocument', () => {
     expect(tag).toContain('Analyzing element');
   });
 
-  test('buildPickerDocument strips <base> and appends the script after the HTML', () => {
-    const doc = buildPickerDocument('<body><base href="http://x/"><button>Go</button></body>', { probedAttrs: [] });
+  test('buildPickerDocument strips network references and appends the script after the HTML', () => {
+    const doc = buildPickerDocument(
+      '<body><base href="http://x/"><link rel="modulepreload" href="/a.js"><button>Go</button></body>',
+      { probedAttrs: [] },
+    );
     expect(doc).not.toContain('<base');
+    expect(doc).not.toContain('<link');
     expect(doc.indexOf('<button>Go</button>')).toBeLessThan(doc.indexOf('<script>'));
+  });
+
+  test('marks the appended script with the CSP nonce when one is given', () => {
+    expect(snapshotPickerScriptTag({ probedAttrs: [] }, 'n0nce').startsWith('<script nonce="n0nce">')).toBe(true);
+    expect(buildPickerDocument('<p>x</p>', { probedAttrs: [] }, 'n0nce')).toContain('<script nonce="n0nce">');
+    expect(buildReadonlyDocument('<p>x</p>', 'n0nce')).toContain('<script nonce="n0nce">');
+    expect(buildReadonlyDocument('<link href="/a.css"><p>x</p>')).toMatch(/^<p>x<\/p><script>/);
   });
 });

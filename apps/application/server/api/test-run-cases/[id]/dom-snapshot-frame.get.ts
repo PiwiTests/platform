@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
 import { files, testRunsCases } from '../../../database/schema';
 import { resolveCaseDomSnapshot } from '../../../utils/dom-snapshot';
@@ -15,7 +16,7 @@ defineRouteMeta({
     tags: ['Test Run Cases'],
     summary: 'Serve the failure-time DOM snapshot as a sandboxed picker/readonly frame',
     description:
-      'Returns the failure-time DOM snapshot wrapped as a self-contained HTML document — the interactive locator picker (`mode=pick`, the default) or the read-only render (`mode=readonly`) — served with `Content-Security-Policy: sandbox allow-scripts`. It is loaded via an iframe `src` (not `srcdoc`) so the frame carries its own CSP instead of inheriting the dashboard page policy, which in the desktop shell blocks the inline picker script. Same snapshot resolution as `dom-snapshot`; input values, inline handlers and script bodies are never included, and token-shaped strings are masked.',
+      'Returns the failure-time DOM snapshot wrapped as a self-contained HTML document — the interactive locator picker (`mode=pick`, the default) or the read-only render (`mode=readonly`) — served with a `Content-Security-Policy` that sandboxes it (`sandbox allow-scripts`), runs only its own nonce-marked script and loads nothing from the network: the stylesheets and images captured in the trace are embedded as `data:` URIs and every other subresource reference is removed. It is loaded via an iframe `src` (not `srcdoc`) so the frame carries its own CSP instead of inheriting the dashboard page policy, which in the desktop shell blocks the inline picker script. Same snapshot resolution as `dom-snapshot`; input values, inline handlers and script bodies are never included, and token-shaped strings are masked.',
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' }, description: 'Test run case id' },
       {
@@ -75,25 +76,43 @@ export default eventHandler(async (event) => {
     caseRows[0]?.aria ??
     null;
 
-  // Both the picker and the read-only card render the styled page here, so inline
-  // the trace's external CSS for the opaque-origin frame.
+  // Both the picker and the read-only card render the page here, so embed the
+  // trace's stylesheets and images for the opaque-origin, offline frame.
   const result = await resolveCaseDomSnapshot(traceRows[0]?.path ?? null, aria, undefined, {
     source,
     inlineStyles: true,
   });
 
   // Sandbox the untrusted snapshot HTML: an opaque origin with scripts allowed,
-  // matching the iframe's own `sandbox="allow-scripts"`. Because this is served
-  // over HTTP (not `srcdoc`), the frame carries THIS policy instead of inheriting
-  // the dashboard page's `strict-dynamic` CSP — which would block the inline
-  // picker script (the desktop-only failure this endpoint exists to fix).
-  setResponseHeader(event, 'Content-Security-Policy', 'sandbox allow-scripts');
+  // matching the iframe's own `sandbox="allow-scripts"`. Only the nonce-marked
+  // builder script runs, and nothing loads from the network — the document
+  // carries its stylesheets and images inline, so any fetch left in the snapshot
+  // is blocked rather than sent to this origin or the tested app. Because this
+  // is served over HTTP (not `srcdoc`), the frame carries THIS policy instead of
+  // inheriting the dashboard page's `strict-dynamic` CSP — which would block the
+  // inline picker script (the desktop-only failure this endpoint exists to fix).
+  const nonce = randomBytes(16).toString('base64');
+  setResponseHeader(
+    event,
+    'Content-Security-Policy',
+    [
+      'sandbox allow-scripts',
+      "default-src 'none'",
+      `script-src 'nonce-${nonce}'`,
+      "style-src 'unsafe-inline'",
+      'img-src data:',
+      'font-src data:',
+      'media-src data:',
+      "base-uri 'none'",
+      "form-action 'none'",
+    ].join('; '),
+  );
   setResponseHeader(event, 'Content-Type', 'text/html; charset=utf-8');
   setResponseHeader(event, 'X-Content-Type-Options', 'nosniff');
   setResponseHeader(event, 'Cache-Control', 'no-store');
 
   if (result.status !== 'ok' || !result.html) return EMPTY_DOC;
   return mode === 'readonly'
-    ? buildReadonlyDocument(result.html)
-    : buildPickerDocument(result.html, { probedAttrs: CAPTURED_ATTRIBUTES });
+    ? buildReadonlyDocument(result.html, nonce)
+    : buildPickerDocument(result.html, { probedAttrs: CAPTURED_ATTRIBUTES }, nonce);
 });

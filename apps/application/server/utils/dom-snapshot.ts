@@ -18,6 +18,8 @@ import {
   inlineStylesheets,
   collectCssUrls,
   inlineCssUrls,
+  collectImageSources,
+  inlineImageSources,
   maskCssText,
   type DomSnapshotResult,
   type DomSnapshotSource,
@@ -75,59 +77,88 @@ function assetMimeType(res: TraceResource, ref: string): string | null {
   return (ext && EXT_MIME[ext]) || null;
 }
 
+/** Where the snapshot's captured resources live, and the binary budget they share. */
+interface AssetSource {
+  urlToRes: Map<string, TraceResource>;
+  resourcesDir: string;
+  budget: { value: number };
+}
+
+/**
+ * A captured asset (font, image) as a base64 `data:` URI, charged to the shared
+ * budget once per use — every use embeds its own copy. `ref` resolves against
+ * `baseUrl`, then looks up the stored body. Null when the trace didn't capture
+ * it, its type is unknown, it is too large for what's left of the budget, or it
+ * can't be read.
+ */
+async function assetDataUri(
+  ref: string,
+  baseUrl: string | undefined,
+  assets: AssetSource,
+  uses = 1,
+): Promise<string | null> {
+  const abs = resolveResourceUrl(ref, baseUrl);
+  const res = (abs ? assets.urlToRes.get(abs) : undefined) ?? assets.urlToRes.get(ref);
+  if (!res) return null;
+  const mime = assetMimeType(res, ref);
+  if (!mime) return null;
+  try {
+    const bytes = decodeResource(await getStorage().readFile(`${assets.resourcesDir}/${res.sha1}`));
+    const cost = bytes.length * uses;
+    if (bytes.length === 0 || bytes.length > MAX_ASSET_BYTES || cost > assets.budget.value) return null;
+    assets.budget.value -= cost;
+    return `data:${mime};base64,${bytes.toString('base64')}`;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Embed a stylesheet's own `url(...)` assets (fonts, background images) as
  * base64 `data:` URIs so they render in the offline, opaque-origin iframe. Each
- * ref resolves against the stylesheet's URL (not the document's), then the same
- * resource lookup the stylesheets use. Shares one binary budget across the whole
- * snapshot. Returns the CSS with resolvable refs rewritten; the rest untouched.
+ * ref resolves against the stylesheet's URL (not the document's). Returns the
+ * CSS with resolvable refs rewritten; the rest untouched.
  */
-async function inlineCssAssets(
-  css: string,
-  styleBaseUrl: string,
-  urlToRes: Map<string, TraceResource>,
-  resourcesDir: string,
-  budget: { value: number },
-): Promise<string> {
-  if (budget.value <= 0) return css;
-  const refs = collectCssUrls(css);
-  if (refs.length === 0) return css;
-  const storage = getStorage();
+async function inlineCssAssets(css: string, styleBaseUrl: string, assets: AssetSource): Promise<string> {
+  if (assets.budget.value <= 0) return css;
   const replacements: Record<string, string> = {};
-  for (const ref of refs) {
-    if (budget.value <= 0) break;
-    const abs = resolveResourceUrl(ref, styleBaseUrl);
-    const res = (abs ? urlToRes.get(abs) : undefined) ?? urlToRes.get(ref);
-    if (!res) continue;
-    const mime = assetMimeType(res, ref);
-    if (!mime) continue;
-    try {
-      const bytes = decodeResource(await storage.readFile(`${resourcesDir}/${res.sha1}`));
-      if (bytes.length === 0 || bytes.length > MAX_ASSET_BYTES || bytes.length > budget.value) continue;
-      replacements[ref] = `data:${mime};base64,${bytes.toString('base64')}`;
-      budget.value -= bytes.length;
-    } catch {
-      // Missing/unreadable asset — leave the url() as-is.
-    }
+  for (const ref of collectCssUrls(css)) {
+    if (assets.budget.value <= 0) break;
+    const dataUri = await assetDataUri(ref, styleBaseUrl, assets);
+    if (dataUri) replacements[ref] = dataUri;
   }
   return Object.keys(replacements).length ? inlineCssUrls(css, replacements) : css;
 }
 
 /**
- * Inline the snapshot's external stylesheets from the trace's stored resources.
- * Maps each `<link href>` → absolute URL (via the frame's base) → content hash
- * (from the `.network` stream) → the CSS body stored under the project's
- * `trace-resources` pool. Purely additive: any missing piece leaves the `<link>`
- * untouched, so a page with unreachable CSS is no worse off than before.
+ * Embed every `<img src>` the trace captured as a `data:` URI, resolved against
+ * the frame's URL, so the page's images render in the offline iframe. Images
+ * the trace lacks keep their `src`.
  */
-async function inlineTraceStylesheets(
+async function inlineImages(html: string, frameUrl: string | undefined, assets: AssetSource): Promise<string> {
+  const replacements: Record<string, string> = {};
+  for (const [src, uses] of collectImageSources(html)) {
+    if (assets.budget.value <= 0) break;
+    const dataUri = await assetDataUri(src, frameUrl, assets, uses);
+    if (dataUri) replacements[src] = dataUri;
+  }
+  return inlineImageSources(html, replacements);
+}
+
+/**
+ * Inline the snapshot's external stylesheets, then its images, from the trace's
+ * stored resources. Each reference maps → absolute URL (via the frame's base) →
+ * content hash (from the `.network` stream) → the body stored under the
+ * project's `trace-resources` pool. Stylesheets go first, so their fonts and
+ * backgrounds take the shared budget before images do. Purely additive: any
+ * missing piece leaves that `<link>` or `<img>` untouched.
+ */
+async function inlineTraceAssets(
   blobPath: string,
   entries: ZipEntry[],
   result: DomSnapshotResult,
 ): Promise<DomSnapshotResult> {
   if (result.status !== 'ok' || !result.html) return result;
-  const hrefs = collectStylesheetLinks(result.html);
-  if (hrefs.length === 0) return result;
 
   const networkTexts = entries.filter((e) => e.name.endsWith('.network')).map((e) => e.data.toString('utf8'));
   const urlToRes = parseResourceSnapshots(networkTexts);
@@ -137,39 +168,41 @@ async function inlineTraceStylesheets(
   // (`project-<id>/blobs/<hash>.zip`).
   const projectId = /^project-(\d+)\//.exec(blobPath)?.[1];
   if (!projectId) return result;
-  const resourcesDir = `project-${projectId}/trace-resources`;
-  const storage = getStorage();
+  const assets: AssetSource = {
+    urlToRes,
+    resourcesDir: `project-${projectId}/trace-resources`,
+    budget: { value: INLINE_ASSET_BUDGET },
+  };
 
   const cssByHref: Record<string, string> = {};
-  const assetBudget = { value: INLINE_ASSET_BUDGET };
-  for (const href of hrefs) {
+  for (const href of collectStylesheetLinks(result.html)) {
     const abs = resolveResourceUrl(href, result.frameUrl);
     const res = (abs ? urlToRes.get(abs) : undefined) ?? urlToRes.get(href);
     if (!res) continue;
     try {
-      const bytes = decodeResource(await storage.readFile(`${resourcesDir}/${res.sha1}`));
+      const bytes = decodeResource(await getStorage().readFile(`${assets.resourcesDir}/${res.sha1}`));
       if (bytes.length === 0 || bytes.length > MAX_STYLESHEET_BYTES) continue;
       // Embed the sheet's own url() assets first, THEN mask token-shaped secrets
       // — masking last leaves the fresh base64 data URIs (and this sheet's
-      // content-hashed filenames) intact. url() refs resolve against the
-      // stylesheet's own URL, not the document's.
-      const css = await inlineCssAssets(bytes.toString('utf8'), abs ?? href, urlToRes, resourcesDir, assetBudget);
+      // content-hashed filenames) intact.
+      const css = await inlineCssAssets(bytes.toString('utf8'), abs ?? href, assets);
       cssByHref[href] = maskCssText(css);
     } catch {
       // Resource missing/unreadable — leave the <link> as-is.
     }
   }
-  if (Object.keys(cssByHref).length === 0) return result;
-  return { ...result, html: inlineStylesheets(result.html, cssByHref, INLINE_STYLES_MAX_CHARS) };
+  const styled = inlineStylesheets(result.html, cssByHref, INLINE_STYLES_MAX_CHARS);
+  const html = await inlineImages(styled, result.frameUrl, assets);
+  return html === result.html ? result : { ...result, html };
 }
 
 /** Options for {@link getTraceDomSnapshot}. */
 export interface TraceDomSnapshotOptions {
-  /** Inline external stylesheets from the trace's resources (the interactive picker only). */
+  /** Inline external stylesheets and images from the trace's resources (the rendered page only). */
   inlineStyles?: boolean;
 }
 
-/** `extractDomSnapshot` over a stored (slim) trace blob, optionally inlining external CSS. */
+/** `extractDomSnapshot` over a stored (slim) trace blob, optionally inlining its stylesheets and images. */
 export async function getTraceDomSnapshot(
   blobPath: string,
   capChars: number,
@@ -191,7 +224,7 @@ export async function getTraceDomSnapshot(
   const result = extractDomSnapshot(parseTraceTexts(traceTexts), capChars);
   if (!options.inlineStyles) return result;
   try {
-    return await inlineTraceStylesheets(blobPath, entries, result);
+    return await inlineTraceAssets(blobPath, entries, result);
   } catch {
     // Inlining is best-effort decoration — never fail the snapshot over it.
     return result;
@@ -207,9 +240,9 @@ export interface ResolveCaseDomSnapshotOptions {
    */
   source?: DomSnapshotSource;
   /**
-   * Inline external stylesheets from the trace so the snapshot renders styled.
-   * Only the interactive picker requests this — the read-only DOM card shows the
-   * HTML as text, where inlined bundles would just be noise.
+   * Inline the trace's stylesheets and images so the snapshot renders as
+   * recorded. The rendered page views (picker, page-structure card) request it;
+   * the AI context does not, where inlined bundles would just be noise.
    */
   inlineStyles?: boolean;
 }
