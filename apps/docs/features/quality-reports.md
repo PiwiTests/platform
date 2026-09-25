@@ -78,6 +78,7 @@ reports** page starts an empty one. Reporters and administrators create schedule
   trend as an image; Slack and Microsoft Teams the same as a message; a webhook the whole bundle as signed JSON; a browser
   channel a notification. With **Share link** on, each report carries a
   [share link](./share-links#report-share-links) that opens it without an account.
+  **AI narrative** adds the [narrative](./analytics-widgets#where-things-stand) the AI model writes.
 
 **Run now** sends the last complete period straight away. **Mute** keeps the snapshots and sends
 nothing; **Pause** stops the schedule. Each firing uses its owner's current project access. A **global**

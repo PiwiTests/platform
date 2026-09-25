@@ -32,6 +32,13 @@ what is behind it.
 longer periods).
 This is the fastest way to answer *when* something started degrading.
 
+**Narrative** — off by default; add it to a dashboard, or turn on **AI narrative** in a
+[report schedule](./quality-reports#report-schedules), which puts it at the top of each report. In a
+scheduled quality report, the configured [AI diagnosis](./ai-diagnosis) model writes three paragraphs in
+the report language from the report's numbers alone, labeled as generated. An answer that cites a number
+the report does not hold is refused. Everywhere else, and whenever no model is configured or it fails,
+the widget shows the rule-based verdict. The verdict and the tiles stay the report's spine.
+
 Every pass rate in the dashboard is colored on the same scale: green at 90% or more, amber from 50%, red
 below 50%. The heatmap and the browser matrix split the green and amber bands into two shades each, so a
 perfect period and a nearly failing one stand out.
