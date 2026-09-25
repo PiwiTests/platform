@@ -12,17 +12,16 @@ project over a period you choose, to show where the suite as a whole is drifting
 
 ## Scope
 
-A scope bar at the top sets what every widget counts; the line under it states the resolved dates, the
-comparison, and any note (a project without the chosen selection, a deleted marker).
+The **Filters** block at the top sets what every widget counts, with *Reset* in its header. On a phone
+it folds to a one-line summary.
 
-- **Period**, with the comparison and the buckets (below).
-- **Projects**: optional, intersected with the ones you can see.
+- **Period**, with the comparison and the buckets (below). The line under it states the resolved dates,
+  the comparison and any note (a project without the chosen selection, a deleted marker).
+- **Runs**: the projects (intersected with the ones you can see), environments and branches (optional
+  multi-select, see [Environment](/guide/concepts#environment)), the branch policy (*Default branch* or
+  *All branches*, below) and *Full runs only*, which excludes partial runs. All but the projects and
+  the policy are the **filter bar** Home and project pages use.
 - **Tests**: optional; a selection, test tags or browsers (below).
-- **Environments** and **branches**: optional multi-select; restrict to runs labeled `production`,
-  `staging`, … or reported on the chosen branches (see [Environment](/guide/concepts#environment)). These
-  and the full-runs toggle are the same **filter bar** Home and each project page use.
-- **Branch policy**: *Default branch* or *All branches* (below).
-- **Full runs only**: exclude partial runs, which otherwise skew pass rates.
 
 Probe runs (the fault-injected replays `piwi probe` produces) are never counted, whatever the filters.
 

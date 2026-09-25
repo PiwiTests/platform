@@ -229,7 +229,7 @@ coverage — an approximation, and a good one for smoke's job, which is breadth 
 The [Analytics](/features/analytics#test-filter) page's *Tests* filter takes a selection key: `smoke`
 resolves in each project to that project's selection with that key, so a convention shared across
 projects gives one cross-project view of "the smoke tests". A project without the key is left out and
-named under the scope bar. The filter follows the resolver's own meaning: the tests that match the
+named in the Filters block, under the period. The filter follows the resolver's own meaning: the tests that match the
 selection today, with their whole history. The address carries it (`/analytics?sel=smoke&period=last-month`),
 so the view can be shared as a link, and with one project in scope the page's test tags can be saved as a
 new selection.

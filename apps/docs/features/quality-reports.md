@@ -15,7 +15,7 @@ into something you can send.
 ## What a report contains
 
 A report renders a **dashboard**, an arrangement of analytics widgets in bands, over a **scope**: the
-projects, branches, environments, test filter and period of the analytics scope bar. Any
+projects, branches, environments, test filter and period of the analytics **Filters** block. Any
 [saved dashboard](./dashboards) can be exported and scheduled; two built-in dashboards exist for
 reports:
 

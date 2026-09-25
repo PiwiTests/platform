@@ -26,6 +26,8 @@ The switcher next to *Analytics* in the page header lists every dashboard you ca
 - **Unused**: shared dashboards nobody opened for 90 days, where their owner or an administrator can
   delete them.
 
+Under the dashboard's name, a line gives its description, shared or private, and its owner.
+
 `/analytics/d/<id>` opens one dashboard; *Manage dashboards* (`/analytics/dashboards`) lists them all,
 with *New dashboard* (empty, or a copy of any dashboard you can open), *Duplicate* and *Delete*.
 
@@ -46,7 +48,7 @@ saw.
 - Each widget gets a menu: *Configure*, *Half width* or *Full width*, *Move up*, *Move down*, *Move to
   band*, *Duplicate*, *Remove*. Moves are buttons, so the editor works on a phone and from a keyboard.
   Below the `xl` breakpoint every widget is full width.
-- The scope bar sets the dashboard's default scope.
+- The **Filters** block, titled *Default filters*, sets the scope the dashboard opens with.
 - Widgets preview from your unsaved changes. *Save* writes them; *Save as…* writes a new dashboard.
 
 ![The dashboard editor: band title and description, Add widget, and a widget's menu](/screenshots/dashboard-editor.png)
@@ -96,7 +98,7 @@ the stored executions, as far back as retention keeps them.
 *Configure* also sets a widget's own scope: a period that replaces the dashboard's (a *Last 7 days*
 number on a quarterly dashboard), and filters that **narrow** the dashboard's (only some projects, a
 selection, test tags, browsers). A widget never widens the dashboard's filters, so what a dashboard
-covers can be read off its scope bar.
+covers can be read off its **Filters** block.
 
 ## Sharing and access
 
@@ -105,8 +107,8 @@ covers can be read off its scope bar.
 - A shared dashboard is changed by its owner or an administrator; everyone else duplicates it.
 - With authentication off, every dashboard is shared.
 - **A dashboard grants no access.** Every widget is computed for the projects you can open, and the line
-  under the scope bar says how many projects of the dashboard's scope are hidden from you ("1 project
-  hidden (no access)").
+  under the dashboard's name says how many projects of the dashboard's scope are hidden from you
+  ("1 project hidden (no access)").
 - A private dashboard whose owner is deleted goes with the nightly orphan sweep; a shared one stays,
   editable by administrators.
 

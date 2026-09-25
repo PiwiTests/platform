@@ -183,6 +183,7 @@ test.describe('Dashboards UI', () => {
     const id = page.url().match(/\/analytics\/d\/(\d+)/)![1]!;
     createdDashboards.push(id);
     await expect(page.getByText('Editing this dashboard')).toBeVisible();
+    await expect(page.getByTestId('analytics-filters-toggle')).toHaveText('Default filters');
 
     await page.getByTestId('add-widget-button-0').click();
     await page.getByTestId('add-widget-metric').click();

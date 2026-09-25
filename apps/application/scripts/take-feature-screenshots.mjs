@@ -315,11 +315,12 @@ const SCENES = [
   {
     name: 'analytics-scope-bar',
     description:
-      'Analytics scope bar: the period picker open, with comparison and buckets, the branch policy and the Tests filter',
+      'The Filters block on Analytics: Period, Runs and Tests groups, the period picker open with comparison and buckets',
     route: '/analytics?period=last-90d',
     viewport: { width: 1280, height: 1000 },
     async run({ page, shoot, settle }) {
       await page.getByTestId('analytics-period').waitFor({ timeout: 60000 });
+      await page.getByTestId('analytics-scope-line').waitFor({ timeout: 60000 });
       await settle();
       await page.getByTestId('analytics-period').click();
       await page.getByText('Compare with').waitFor({ timeout: 15000 });
@@ -328,14 +329,22 @@ const SCENES = [
   },
   {
     name: 'analytics-scope-bar-mobile',
-    description: 'Analytics scope bar at 375 px: every control wraps, no horizontal scroll',
+    description:
+      'The Filters block at 375 px: folded to a summary of the active filters, then open, no horizontal scroll',
     route: '/analytics',
     viewport: { width: 375, height: 900 },
     async run({ page, shoot, settle }) {
-      await page.getByTestId('analytics-scope-line').waitFor({ timeout: 60000 });
+      const summary = page.getByTestId('analytics-filters-summary');
+      // The comparison in the summary comes from a client-side fetch, so the page has hydrated once it shows.
+      await summary.filter({ hasText: ' vs ' }).waitFor({ timeout: 60000 });
       await settle();
-      await shoot(undefined, { of: '[data-shot="analytics-scope-bar"]', pad: 8 });
+      await shoot('folded', { of: '[data-shot="analytics-scope-bar"]', pad: 8 });
+      await page.getByTestId('analytics-filters-toggle').click();
+      await page.getByTestId('analytics-period').waitFor({ timeout: 15000 });
+      await settle();
+      await shoot('open', { of: '[data-shot="analytics-scope-bar"]', pad: 8 });
     },
+    outputs: ['analytics-scope-bar-mobile-folded.png', 'analytics-scope-bar-mobile-open.png'],
   },
   {
     name: 'analytics-headline',

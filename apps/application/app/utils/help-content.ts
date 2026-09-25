@@ -181,17 +181,17 @@ export const HELP_TOPICS = {
   },
   'analytics.spec-health': {
     title: 'Spec health',
-    text: 'Pass and flaky rates per spec directory of one project, over the period (at most the last 90 days), worst first. Pick a single project in the scope bar.',
+    text: 'Pass and flaky rates per spec directory of one project, over the period (at most the last 90 days), worst first. Pick a single project under Filters.',
     doc: 'features/dashboards#widgets',
   },
   'analytics.slow-tests': {
     title: 'Slowest tests',
-    text: 'The tests with the longest average duration over one project’s last 20 runs. Pick a single project in the scope bar.',
+    text: 'The tests with the longest average duration over one project’s last 20 runs. Pick a single project under Filters.',
     doc: 'features/dashboards#widgets',
   },
   'analytics.performance-trend': {
     title: 'Performance trend',
-    text: 'Total run duration, average and p90 test duration of one project’s runs over the period. Pick a single project in the scope bar.',
+    text: 'Total run duration, average and p90 test duration of one project’s runs over the period. Pick a single project under Filters.',
     doc: 'features/dashboards#widgets',
   },
   'analytics.timeout-opportunities': {
@@ -206,7 +206,7 @@ export const HELP_TOPICS = {
   },
   'dashboards.widget-scope': {
     title: 'Widget scope',
-    text: 'A widget can replace the dashboard’s period (a Last 7 days number on a quarterly dashboard) and narrow its filters (only some projects, a selection, test tags, browsers). It never widens them, so what a dashboard covers can be read off its scope bar.',
+    text: 'A widget can replace the dashboard’s period (a Last 7 days number on a quarterly dashboard) and narrow its filters (only some projects, a selection, test tags, browsers). It never widens them, so what a dashboard covers can be read off its Filters block.',
     doc: 'features/dashboards#periods-and-filters-per-widget',
   },
   'dashboards.hidden-projects': {
