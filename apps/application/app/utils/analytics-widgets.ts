@@ -35,6 +35,7 @@ import {
   FlakyDebtChart,
   TimeToFixChart,
   OwnershipTable,
+  EnvironmentComparison,
 } from '#components';
 
 export const WIDGET_COMPONENTS: Record<AnalyticsWidgetId, Component> = {
@@ -57,6 +58,7 @@ export const WIDGET_COMPONENTS: Record<AnalyticsWidgetId, Component> = {
   'flaky-debt': FlakyDebtChart,
   'time-to-fix': TimeToFixChart,
   ownership: OwnershipTable,
+  'environment-comparison': EnvironmentComparison,
   'scenario-gaps': ScenarioGapsSummary,
   'new-gaps': NewScenarioGaps,
   list: AnalyticsItemList,
@@ -88,4 +90,5 @@ export const CONFIGURABLE_WIDGETS = new Set<AnalyticsWidgetId>([
   'flaky-debt',
   'time-to-fix',
   'ownership',
+  'environment-comparison',
 ]);

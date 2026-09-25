@@ -27,6 +27,7 @@ import type {
   AnalyticsFlakyDebt,
   AnalyticsTimeToFix,
   AnalyticsOwnership,
+  AnalyticsEnvironmentComparison,
   AnalyticsTileTarget,
   AnalyticsVerdict,
   AnalyticsWastedTime,
@@ -748,6 +749,45 @@ export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
           },
         ],
 
+  'environment-comparison': (data: AnalyticsEnvironmentComparison, ctx) => {
+    if (data.rows.length === 0) return [{ kind: 'text', text: ctx.s.labels.noData }];
+    const passRate = ctx.s.metricLabel('test-pass-rate', 'Test pass rate');
+    const blocks: ReportBlock[] = [
+      {
+        kind: 'table',
+        columns: [
+          { key: 'environment', label: ctx.s.title('Environment') },
+          { key: 'passRate', label: passRate, align: 'right' },
+          { key: 'change', label: ctx.s.labels.change, align: 'right' },
+          { key: 'success', label: ctx.s.metricLabel('run-success-rate', 'Run success rate'), align: 'right' },
+          { key: 'runs', label: ctx.s.metricLabel('runs', 'Runs'), align: 'right' },
+        ],
+        rows: data.rows.map((r) => ({
+          cells: {
+            environment: r.label,
+            passRate: metricText(r.passRate, ctx),
+            change: ctx.f.delta(r.passRate) ?? '—',
+            success: metricText(r.runSuccessRate, ctx),
+            runs: ctx.f.number(r.runs),
+          },
+        })),
+      },
+    ];
+    if (data.rows.length > 1) {
+      blocks.unshift(
+        seriesBlock(
+          'percent',
+          100,
+          data.rows.map((r) => ({ label: r.label, points: r.points })),
+          (value) => ctx.f.value(value, 'percent', 1),
+          ctx,
+          null,
+        ),
+      );
+    }
+    return blocks;
+  },
+
   'scenario-gaps': (data: AnalyticsScenarioGaps, ctx) => {
     if (data.projects === 0) return [];
     const open = data.byClass.reduce((sum, c) => sum + c.count, 0);
@@ -862,6 +902,7 @@ export function widgetMetrics(type: AnalyticsWidgetId, options: Record<string, u
     ];
   }
   if (type === 'ownership') return ['open-failure-causes', 'flaky-tests', 'wasted-ci-minutes', 'median-time-to-fix'];
+  if (type === 'environment-comparison') return ['test-pass-rate', 'run-success-rate', 'runs'];
   if (type === 'flaky-debt') return ['flaky-occurrences', 'flaky-tests', 'quarantine-debt'];
   if (type === 'regression-velocity') return ['new-regressions', 'newly-flaky'];
   if (type === 'portfolio' || type === 'pass-rate-heatmap' || type === 'browser-matrix') return ['test-pass-rate'];

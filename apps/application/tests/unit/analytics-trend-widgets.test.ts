@@ -74,6 +74,8 @@ beforeAll(async () => {
     flakyTests: 2,
   });
   await seedRun({ projectId: 2, daysAgo: 3, totalTests: 8, passedTests: 8 });
+  await seedRun({ projectId: 2, daysAgo: 2, totalTests: 8, passedTests: 6, failedTests: 2, environment: 'staging' });
+  await seedRun({ projectId: 2, daysAgo: 1, totalTests: 8, passedTests: 8, environment: 'staging' });
 
   await db.insert(schema.testCases).values([
     { id: 1, projectId: 1, filePath: 'pay.spec.ts', title: 'pays', owner: 'team-pay' },
@@ -224,5 +226,26 @@ describe('ownership', () => {
     const [block] = WIDGET_DOCUMENTS.ownership(data, docCtx, {}) as any[];
     expect(block.kind).toBe('table');
     expect(block.rows.map((r: any) => r.cells.owner)).toEqual(['team-cart', 'team-pay', 'Unowned']);
+  });
+});
+
+describe('environment comparison', () => {
+  test('one row per environment with its pass rate, run success and runs', async () => {
+    const data = (await runAnalyticsWidget(db as any, 'environment-comparison', scope({ projects: '2' }))) as any;
+    const byEnv = Object.fromEntries(data.rows.map((r: any) => [r.environment, r]));
+    expect(byEnv.staging.passRate.value).toBe(87.5);
+    expect(byEnv.staging.runSuccessRate.value).toBe(50);
+    expect(byEnv.staging.runs).toBe(2);
+    expect(byEnv[''].label).toBe('No environment');
+    expect(byEnv[''].passRate.value).toBe(100);
+    expect(byEnv.staging.points.some((p: any) => p.value !== null)).toBe(true);
+  });
+
+  test('maps to a series and a table in a report', async () => {
+    const data = await runAnalyticsWidget(db as any, 'environment-comparison', scope({ projects: '2' }));
+    expect(WIDGET_DOCUMENTS['environment-comparison'](data, docCtx, {}).map((b) => b.kind)).toEqual([
+      'series',
+      'table',
+    ]);
   });
 });

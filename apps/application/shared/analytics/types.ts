@@ -639,3 +639,19 @@ export interface AnalyticsOwnership {
   /** Open failure causes in scope, for the share each owner holds. */
   totalOpenClusters: number;
 }
+
+export interface AnalyticsEnvironmentRow {
+  /** The environment; empty for runs that named none. */
+  environment: string;
+  label: string;
+  passRate: AnalyticsMetricValue;
+  runSuccessRate: AnalyticsMetricValue;
+  runs: number;
+  /** Pass rate per bucket. */
+  points: AnalyticsSeriesPoint[];
+}
+
+export interface AnalyticsEnvironmentComparison {
+  rows: AnalyticsEnvironmentRow[];
+  bucketDays: number;
+}

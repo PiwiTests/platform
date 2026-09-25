@@ -164,6 +164,11 @@ export const ownershipOptionsSchema = z.object({
   limit: z.number().int().min(5).max(25).default(10),
 });
 
+export const environmentComparisonOptionsSchema = z.object({
+  /** How many environments are compared, the least healthy first. */
+  limit: z.number().int().min(2).max(25).default(8),
+});
+
 export type StatsOptions = z.infer<typeof statsOptionsSchema>;
 export type ListOptions = z.infer<typeof listOptionsSchema>;
 export type MarkersOptions = z.infer<typeof markersOptionsSchema>;
@@ -345,6 +350,16 @@ export const ANALYTICS_WIDGETS = [
     band: 'pain',
     testFilters: false,
     options: ownershipOptionsSchema,
+  },
+  {
+    id: 'environment-comparison',
+    title: 'Environment comparison',
+    description: 'Pass rate and run success per environment, side by side and over time.',
+    icon: 'i-lucide-server',
+    size: 'full',
+    band: 'detail',
+    testFilters: true,
+    options: environmentComparisonOptionsSchema,
   },
   {
     id: 'scenario-gaps',

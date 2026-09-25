@@ -129,6 +129,8 @@ const TITLES: Record<string, string> = {
   'Flaky debt': 'Dette d’instabilité',
   'Time to fix': 'Délai de correction',
   Ownership: 'Responsables',
+  'Environment comparison': 'Comparaison des environnements',
+  Environment: 'Environnement',
   Owner: 'Responsable',
   Unowned: 'Sans responsable',
   'p90 time to fix': 'Délai de correction p90',

@@ -138,6 +138,10 @@ with the oldest unresolved cluster highlighted.
 **Regression velocity** — new regressions and newly-flaky tests introduced per period, stacked, with
 the change vs the previous period.
 
+**Environment comparison** — test pass rate and run success per environment, side by side with their
+change against the comparison period, and each environment's pass rate over time: "staging is green and
+production is not".
+
 **Browser matrix** — pass rate per project × browser, so a suite that's green on Chromium and failing
 on WebKit stands out.
 
