@@ -8,6 +8,7 @@ import type { AnalyticsWidgetId } from '#shared/analytics/registry';
 import {
   AnalyticsStatsRow,
   AnalyticsVerdict,
+  AnalyticsNarrative,
   AnalyticsProgress,
   AnalyticsRisks,
   MetricTrendChart,
@@ -42,6 +43,7 @@ import {
 export const WIDGET_COMPONENTS: Record<AnalyticsWidgetId, Component> = {
   stats: AnalyticsStatsRow,
   verdict: AnalyticsVerdict,
+  narrative: AnalyticsNarrative,
   metric: MetricTrendChart,
   progress: AnalyticsProgress,
   risks: AnalyticsRisks,
@@ -77,6 +79,7 @@ export const WIDGET_COMPONENTS: Record<AnalyticsWidgetId, Component> = {
 export const CONFIGURABLE_WIDGETS = new Set<AnalyticsWidgetId>([
   'stats',
   'verdict',
+  'narrative',
   'metric',
   'progress',
   'risks',

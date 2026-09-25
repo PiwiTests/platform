@@ -151,6 +151,16 @@ export const HELP_TOPICS = {
     title: 'Verdict',
     text: 'One or two sentences built by fixed rules from the pass rate, its change, the failure causes fixed and still open, and the wasted CI time. Never written by a model, so it only repeats numbers shown elsewhere on the page.',
   },
+  'analytics.narrative': {
+    title: 'Narrative',
+    text: 'In a scheduled quality report with the AI narrative on, the configured diagnosis model writes three paragraphs here from the report’s numbers only, labeled as generated; an answer citing a number the report lacks is refused. Everywhere else, and whenever the model fails or none is configured, this shows the rule-based verdict.',
+    doc: 'features/analytics-widgets#where-things-stand',
+  },
+  'reports.narrative': {
+    title: 'AI narrative',
+    text: 'Adds three paragraphs written by the configured diagnosis model at the top of each report, from the report’s numbers only and labeled as generated. The rule-based verdict and tiles stay; without a model, or when its answer cites a number the report lacks, the verdict stands in. Spends tokens once per report.',
+    doc: 'features/analytics-widgets#where-things-stand',
+  },
   'analytics.progress': {
     title: 'What is being done',
     text: 'Failure causes fixed in the period and whether the fixes held, open causes assigned or linked to a ticket, tests quarantined and released, and auto-heal pull requests opened.',
