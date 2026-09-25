@@ -57,13 +57,11 @@ async function fetchSnapshot() {
   snapshotError.value = null;
   try {
     // Same endpoint as the read-only DOM snapshot card — trace-derived DOM with
-    // an ARIA-tree fallback (or ?source=aria on demand). The picker adds its own
-    // interactive overlay and asks the server to inline external stylesheets, so
-    // the opaque-origin iframe (which can never fetch the tested app's CSS)
-    // renders styled instead of as bare markup.
-    const params = new URLSearchParams({ inlineStyles: '1' });
-    if (viewSource.value) params.set('source', viewSource.value);
-    const query = `?${params.toString()}`;
+    // an ARIA-tree fallback (or ?source=aria on demand) — for the status, the
+    // viewport and the available views. The served frame comes from
+    // `dom-snapshot-frame`, which embeds the trace's stylesheets and images
+    // itself; only the demo builds the frame from this HTML.
+    const query = viewSource.value ? `?source=${viewSource.value}` : '';
     snapshot.value = await $fetch<DomSnapshotResponse>(
       `/api/test-run-cases/${props.testRunsCaseId}/dom-snapshot${query}`,
     );
@@ -94,27 +92,6 @@ function selectSource(src: SnapshotSource) {
   searchIndex.value = -1;
   fetchSnapshot();
 }
-
-watch(isOpen, (open) => {
-  if (open) {
-    snapshot.value = null;
-    iframeReady.value = false;
-    step.value = 'pick-element';
-    contentHeight.value = 0;
-    userZoomed.value = false;
-    // Let the server choose the default view again on each open.
-    viewSource.value = undefined;
-    // A previous session's pick must not leak into this one — Confirm would
-    // otherwise already be enabled with a stale selection.
-    pickedAttrs.value = null;
-    alternatives.value = [];
-    selectedAlt.value = null;
-    searchQuery.value = '';
-    searchCount.value = 0;
-    searchIndex.value = -1;
-    fetchSnapshot();
-  }
-});
 
 const PICKER_STEP = { PICK_ELEMENT: 'pick-element', REVIEW: 'review' } as const;
 type PickerStep = (typeof PICKER_STEP)[keyof typeof PICKER_STEP];
@@ -401,6 +378,32 @@ onBeforeUnmount(() => {
 
 const selectedAlt = ref<RankedLocator | null>(null);
 const saving = ref(false);
+
+// Every open starts a fresh session. `immediate` also starts one when the host
+// mounts the picker already open, as the page-structure card does.
+watch(
+  isOpen,
+  (open) => {
+    if (!open) return;
+    snapshot.value = null;
+    iframeReady.value = false;
+    step.value = 'pick-element';
+    contentHeight.value = 0;
+    userZoomed.value = false;
+    // Let the server choose the default view again on each open.
+    viewSource.value = undefined;
+    // A previous session's pick must not leak into this one — Confirm would
+    // otherwise already be enabled with a stale selection.
+    pickedAttrs.value = null;
+    alternatives.value = [];
+    selectedAlt.value = null;
+    searchQuery.value = '';
+    searchCount.value = 0;
+    searchIndex.value = -1;
+    fetchSnapshot();
+  },
+  { immediate: true },
+);
 
 function selectAlternative(alt: RankedLocator) {
   selectedAlt.value = alt;

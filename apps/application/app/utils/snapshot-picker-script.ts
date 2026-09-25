@@ -12,7 +12,7 @@
 import type { RankedLocator } from '#shared/locator-healing.types';
 
 export {
-  stripBaseTag,
+  stripNetworkReferences,
   snapshotPickerScriptTag,
   buildPickerDocument,
   buildReadonlyDocument,

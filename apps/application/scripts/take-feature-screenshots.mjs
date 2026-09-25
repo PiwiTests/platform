@@ -301,6 +301,22 @@ const SCENES = [
     },
   },
   {
+    name: 'page-structure-picker',
+    description: 'Screen tab: Page structure → Open in picker, the locator picker over the failure-time page',
+    route: '/test-run-cases/37',
+    viewport: { width: 1280, height: 1000 },
+    async run({ page, shoot, settle, openTab }) {
+      await openTab(/^Screen/);
+      await page.getByRole('button', { name: /Page structure/ }).click();
+      await page.locator('iframe[title="Failure-time page"]').waitFor({ timeout: 15000 });
+      await page.getByRole('button', { name: 'Open in picker' }).click();
+      await page.getByText('Rendered from the failure-time DOM snapshot').waitFor({ timeout: 15000 });
+      await page.getByText('Initializing picker').waitFor({ state: 'detached', timeout: 15000 });
+      await settle();
+      await shoot();
+    },
+  },
+  {
     name: 'locator-usage-drawer',
     description: 'Who uses this? drawer: the call sites and tests that use a locator, with the command that runs them',
     route: '/test-run-cases/711',
