@@ -6,19 +6,14 @@ better or worse, since when, and is what we do about it working), plus the one t
 dashboards** with their own filters and periods. It argues that the three are one program with four layers, stages the
 work so each stage pays for itself, and records the alternatives and open questions.
 
-**Status.** Accepted and being built, milestone by milestone; nothing has shipped yet. Milestone 1 (metrics, filters
-and periods) is built on `claude/analytics-m1-metrics-filters-periods`, not merged yet; its probe-run fix is the
-branch's first commit, so it can go out alone. Milestone 2 (the quality report) is built on
-`claude/analytics-m2-quality-report`, stacked on milestone 1, not merged yet; its three new routes did not reach the
-typed-route depth limit milestone 1 met. Milestone 3 (schedules and snapshots) is built on
-`claude/analytics-m3-schedules-snapshots`, stacked on milestone 2, not merged yet; it met the depth limit again and
-removed its cause (D36). Milestone 4 (saved dashboards) is built on `claude/analytics-m4-saved-dashboards`,
-stacked on milestone 3, not merged yet. Milestone 5 (trend depth) is built on `claude/analytics-m5-trend-depth`,
-stacked on milestone 4, not merged yet; its deviations are in the checklist of group 5. Written 2026-09-22
-against 0.36.0; refreshed 2026-09-24 against 0.37.0, which shipped the Test Map, the capability opt-out system
-and one status color scale ([What 0.37.0 changed](#3-what-0370-changed-for-this-design)); extended the same
-day with custom dashboards, filters and periods ([Layer 2](#layer-2-dashboards), [Filters and
-periods](#filters-and-periods)); decided the same day: the four open
+**Status.** Accepted and built, milestone by milestone; nothing has shipped yet. All six milestones are built and
+gathered in draft pull request #637, not merged yet. Milestone 6 (reach) is built on `claude/analytics-m6-reach`:
+report and live dashboard share links with their trend image and status badge, the rollup export, the OpenMetrics
+endpoint, Microsoft Teams and the AI narrative; the Confluence channel stays open, waiting for the wiki connection
+(D16). Each milestone's deviations are in its checklist group. Written 2026-09-22 against 0.36.0; refreshed 2026-09-24
+against 0.37.0, which shipped the Test Map, the capability opt-out system and one status color scale ([What 0.37.0
+changed](#3-what-0370-changed-for-this-design)); extended the same day with custom dashboards, filters and periods
+([Layer 2](#layer-2-dashboards), [Filters and periods](#filters-and-periods)); decided the same day: the four open
 questions on rollout order, dashboard sharing, test filters over time and live links took their defaults (D30 to D33),
 the default dashboard is fixed ([The default dashboard: Overview](#the-default-dashboard-overview), D34), and the
 daily rollups account for runs kept forever (D35). Each milestone is built on a branch stacked on the previous one, in
@@ -1352,7 +1347,7 @@ Grouped by milestone. Paths are under `apps/application/` unless noted.
 
 - [x] `share_links.entity_kind` `'report'` and `'dashboard'`, and `share_links.project_id` nullable, since a snapshot or a dashboard can span several projects (both schemas, generated migrations); `server/utils/share-links.ts`, `server/utils/share-view.ts` (the view checks, the minter's access, a 60-second bundle cache per live link); `server/api/reports/snapshots/[id]/share-links.get.ts` and `.post.ts`, `server/api/analytics/dashboards/[id]/share-links.get.ts` and `.post.ts` (saved dashboards only; a built-in is duplicated first); `server/routes/share/[token].get.ts`, `[token]/chart.png.get.ts`, `[token]/badge.svg.get.ts` (`shared/reports/badge.ts`, reading the pass-rate tile, which now names its metric); `include_share_link` in the schedule form, its token sealed with `PIWI_SECRET_KEY` in the outbox payload, carried by email, Slack (with the `chart.png` image block) and webhook; `ShareLinksModal.vue` on the snapshot page and in the dashboard menu; `tests/unit/report-badge.test.ts`, `tests/report-share-links.spec.ts`; `apps/docs/features/share-links.md`
 - [x] `server/api/analytics/rollups.get.ts` (`format=json|csv`, streamed in chunks of 31 days by `shared/handlers/analytics/rollup-export.ts`, with its demo mirror); `server/api/metrics.get.ts` behind `PIWI_METRICS_ENABLED` (`shared/handlers/analytics/open-metrics.ts`: one gauge per evaluated catalog metric and project over the last 7 days, cached 60 seconds; with authentication on it takes an API key only, and its user's project access; no demo handler, since the demo has no server to scrape); `apps/docs/operate/metrics.md`
-- [ ] Confluence channel branch in `dispatch.ts` (after the wiki connection ships)
+- [ ] Confluence channel branch in `dispatch.ts` (after the wiki connection ships): left open by milestone 6, since the code has no Confluence client yet (only Jira is a tracker provider; Confluence appears as a link unfurl and a binding field), and D16 keeps that client in [issue-tracker-integrations.md](issue-tracker-integrations.md#confluence)
 - [x] Teams channel type: `dispatch.ts` over `server/utils/notifications/teams.ts` (an Adaptive Card per event, per digest and per quality report, the trend through the share link's `chart.png` when there is one), the `teams` type in the channel form and its test button, `tests/unit/teams-cards.test.ts`, `tests/teams-channel.spec.ts`, `apps/docs/features/notifications.md`
 - [x] `shared/reports/narrative.ts` + `server/utils/reports/ai-narrative.ts` (the optional `narrative` widget): the prompt over the bundle without its links, and a grounding check that refuses an answer citing a number the bundle does not hold; `report_schedules.include_narrative` (both schemas, generated migrations) turns it on per schedule and puts the widget at the top of each report when the dashboard has none; on a page, and whenever the model fails or none is configured, the widget shows the rule-based verdict; `tests/unit/report-narrative.test.ts`; documented in `apps/docs/features/analytics-widgets.md`, the widget catalog, since `quality-reports.md` is at its word budget
 
