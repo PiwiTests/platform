@@ -6,18 +6,20 @@ better or worse, since when, and is what we do about it working), plus the one t
 dashboards** with their own filters and periods. It argues that the three are one program with four layers, stages the
 work so each stage pays for itself, and records the alternatives and open questions.
 
-**Status.** Accepted and being built, milestone by milestone; nothing has shipped yet. Milestone 1 (metrics, filters and periods) is built on `claude/analytics-m1-metrics-filters-periods`, not merged yet; its probe-run fix is the branch's first commit, so it can go out alone. Written 2026-09-22 against
-0.36.0; refreshed 2026-09-24 against 0.37.0, which shipped the Test Map, the capability opt-out system and one status
-color scale ([What 0.37.0 changed](#3-what-0370-changed-for-this-design)); extended the same day with custom
-dashboards, filters and periods ([Layer 2](#layer-2-dashboards), [Filters and periods](#filters-and-periods)); decided
-the same day: the four open questions on rollout order, dashboard sharing, test filters over time and live links took
-their defaults (D30 to D33), the default dashboard is fixed ([The default dashboard:
-Overview](#the-default-dashboard-overview), D34), and the daily rollups account for runs kept forever (D35). Each
-milestone is built on a branch stacked on the previous one, in the order of the [Rollout sketch](#rollout-sketch). ·
-**Date:** 2026-09-24 · **Builds on:** the `/analytics` page and its widget registry, test selections, the notification
-outbox and digests, the offline export pipeline, share links, timeline markers, runs kept forever, the Confluence
-section of [issue-tracker-integrations.md](issue-tracker-integrations.md), the Test Map's ledger and its unwired
-weekly digest ([scenario-gaps.md](scenario-gaps.md)), and the capability registry
+**Status.** Accepted and being built, milestone by milestone; nothing has shipped yet. Milestone 1 (metrics, filters
+and periods) is built on `claude/analytics-m1-metrics-filters-periods`, not merged yet; its probe-run fix is the
+branch's first commit, so it can go out alone. Written 2026-09-22 against 0.36.0; refreshed 2026-09-24 against 0.37.0,
+which shipped the Test Map, the capability opt-out system and one status color scale ([What 0.37.0
+changed](#3-what-0370-changed-for-this-design)); extended the same day with custom dashboards, filters and periods
+([Layer 2](#layer-2-dashboards), [Filters and periods](#filters-and-periods)); decided the same day: the four open
+questions on rollout order, dashboard sharing, test filters over time and live links took their defaults (D30 to D33),
+the default dashboard is fixed ([The default dashboard: Overview](#the-default-dashboard-overview), D34), and the
+daily rollups account for runs kept forever (D35). Each milestone is built on a branch stacked on the previous one, in
+the order of the [Rollout sketch](#rollout-sketch). · **Date:** 2026-09-24 · **Builds on:** the `/analytics` page and
+its widget registry, test selections, the notification outbox and digests, the offline export pipeline, share links,
+timeline markers, runs kept forever, the Confluence section of
+[issue-tracker-integrations.md](issue-tracker-integrations.md), the Test Map's ledger and its unwired weekly digest
+([scenario-gaps.md](scenario-gaps.md)), and the capability registry
 ([capabilities-opt-out.md](capabilities-opt-out.md)).
 
 **Summary.** Piwi computes good numbers and shows them to people who are logged in and looking. It has no way to
@@ -331,11 +333,11 @@ idempotent by construction: a retry, a re-import or a double call cannot double-
 `runFinalizeSideEffects` (`server/utils/run-finalize-side-effects.ts`), the one helper `finish`, `submit` and `upload`
 already route through, after its probe-run early return, so a probe run never reaches a rollup and a sharded run is
 counted once, when the helper fires for the last shard; `shared/handlers/import-runs.ts`, because imports are silent
-and bypass the helper; and the demo mirror `app/demo/api/reporter.ts`. The helper returns the promise of the first recompute and `finish`, `submit` and `upload` await it, so a run is
-counted when the reporter gets its answer; a second recompute follows once the regression signals are written. The recompute itself drops `isProbeRun()` rows
-from the raw set, so a cell is right even for a run that reached the table another way. The helper lives under
-`shared/` and not `server/utils/` because the demo calls it too (the rule "never duplicate logic between server and
-demo").
+and bypass the helper; and the demo mirror `app/demo/api/reporter.ts`. The helper returns the promise of the first
+recompute and `finish`, `submit` and `upload` await it, so a run is counted when the reporter gets its answer; a
+second recompute follows once the regression signals are written. The recompute itself drops `isProbeRun()` rows from
+the raw set, so a cell is right even for a run that reached the table another way. The helper lives under `shared/`
+and not `server/utils/` because the demo calls it too (the rule "never duplicate logic between server and demo").
 
 **Deletes.** Age-based deletion goes through `deleteRunsOlderThan`, from the nightly retention sweep and from the
 *Cleanup old test runs* action in Settings → Storage (`server/api/admin/cleanup.delete.ts`). It calls
@@ -430,7 +432,8 @@ cookie stays the per-browser default and the URL wins over it, so a copied link 
 `encodePeriod` and `parsePeriod` round-trip every kind.
 
 The scope bar gains the period, comparison and granularity pickers and a *Tests* filter (a selection or predicates,
-and browsers), built on the shared `FilterBar`, so Home and the project pages can adopt the same test filter later. In milestone 1 the *Tests* filter edits a selection, test tags and browsers; the other predicates (owner, priority,
+and browsers), built on the shared `FilterBar`, so Home and the project pages can adopt the same test filter later. In
+milestone 1 the *Tests* filter edits a selection, test tags and browsers; the other predicates (owner, priority,
 feature, files, text, quarantined) are read from the URL and kept, not yet editable, since the selection builder is
 the place that edits them today.
 
@@ -784,9 +787,9 @@ default, per project when bound, else the instance default. No other translation
 ### Entry points
 
 - Every dashboard, Overview included, gets **Export**: a preview of the dashboard as a document, with *Download*
-  (HTML, PDF, Markdown, JSON, CSV), *Share* (when share links are enabled) and the four built-in report dashboards one
-  click away over the same scope. It also gets **Schedule…**, which creates a schedule pre-filled with the dashboard
-  and its current scope.
+  (HTML, PDF, Markdown, JSON, CSV), *Share* (when share links are enabled) and the built-in report dashboards one
+  click away over the same scope. From milestone 3 it also gets **Schedule…**, which creates a schedule pre-filled
+  with the dashboard and its current scope.
 - The **project page** gets the same two actions, scoped to the project.
 - A **`/reports` page**, under Analytics in the sidebar: the snapshots (newest first, with dashboard, scope, period,
   how it was delivered) and the schedules. `/reports/:id` shows one snapshot.
@@ -799,9 +802,9 @@ Quality reports are optional, so they follow the opt-out system rather than addi
   `levels: ['instance']`, `needs: []`, `detection: 'quality-reports'`, `since` the release that ships it,
   `doc: 'features/quality-reports'`. Not `passiveData`: a schedule or a snapshot exists because someone made it, so
   the "data always wins" rule applies, as it does for notifications.
-- The detection id joins `SetupCapabilityId` and `SETUP_LADDER_ORDER` (`shared/handlers/setup-status.ts`): evidence
-  is one `report_schedules` or `report_snapshots` row. The Setup ladder then shows the entry with a *New* marker on
-  instances older than the release, with no extra code.
+- The detection id joins `SetupCapabilityId` and `SETUP_LADDER_ORDER` (`shared/handlers/setup-status.ts`): evidence is
+  one `report_schedules` or `report_snapshots` row, probed from milestone 3, when the tables exist. The Setup ladder
+  then shows the entry with a *New* marker on instances older than the release, with no extra code.
 - The `/reports` sidebar entry, the *Export* and *Schedule* actions and the snapshot cards read the resolved state
   through `useInstanceCapabilities().isHidden('quality-reports')`, as the Home gaps queue reads `test-map`. Declined
   means none of them render and the MCP tools drop out of the list; the REST endpoints stay callable, as the
@@ -1025,12 +1028,13 @@ migrations.
 `PIWI_RETENTION_REPORT_DAYS`, `PIWI_METRICS_ENABLED`. Neither reports nor dashboards need a flag: with no schedule, no
 saved dashboard and no click, nothing runs but the rollup hook.
 
-**Registries**: `ANALYTICS_WIDGETS` gains `options`, `requires`, `testFilters` and `document` on every entry (`testFilters` already in milestone 1, where a widget first has to declare it);
-`CAPABILITIES` gains `quality-reports`; `SetupCapabilityId` and `SETUP_LADDER_ORDER` gain its detection;
-`PIWI_FEATURE_GROUPS` gains *Quality reports*, *Trends over time* and *Custom dashboards*; every new MCP tool carries
-`module` and `capability`. `tests/mcp.spec.ts` compares the served list with `MCP_TOOL_DEFS`, so no count is
-hard-coded there, but `apps/docs/features/mcp.md` must list each new tool and every "N tools" sentence in the docs and
-`ROADMAP.md` must move to the new total (`docs-drift.test.ts` pins them).
+**Registries**: `ANALYTICS_WIDGETS` gains `options`, `requires`, `testFilters` and `document` on every entry
+(`testFilters` already in milestone 1, where a widget first has to declare it); `CAPABILITIES` gains
+`quality-reports`; `SetupCapabilityId` and `SETUP_LADDER_ORDER` gain its detection; `PIWI_FEATURE_GROUPS` gains
+*Quality reports*, *Trends over time* and *Custom dashboards*; every new MCP tool carries `module` and `capability`.
+`tests/mcp.spec.ts` compares the served list with `MCP_TOOL_DEFS`, so no count is hard-coded there, but
+`apps/docs/features/mcp.md` must list each new tool and every "N tools" sentence in the docs and `ROADMAP.md` must
+move to the new total (`docs-drift.test.ts` pins them).
 
 **Settings surface**: `SETTINGS_PAGES` gains the cost field under *Performance*. Schedules live on `/reports` and
 dashboards on `/analytics/dashboards`, not in Settings, because they are workflows, not configuration; an
@@ -1194,19 +1198,21 @@ every step starts from the code it needs and the generated migrations stay in se
    `defaultBranchOnly` with its toggle; markers drawn on the analytics trends. *Outcome: long windows are correct and
    fast, the default branch is the default, and "the smoke tests, August against July" is one link.*
 2. **The quality report** (L). `ReportBundle`; the widget `document` mapping and options; the built-in dashboards in
-   `shared/analytics/dashboards.ts` (Overview as [defined above](#the-default-dashboard-overview), executive,
-   engineering, team, gaps digest), with the analytics page rendered from Overview, and the widgets they need
-   (`stats`, `verdict`, `progress`, `risks`, `metric`); the rule-based verdict; the renderers (Vue, HTML, PDF,
-   Markdown, JSON, CSV); `GET /api/reports/preview`; *Export* and *Schedule* on the analytics and project pages; the
-   cost setting; English and French sentences; the `get_quality_report`, `get_metric_trend` and `compare_periods` MCP
-   tools with their capability tags; the `quality-reports` capability with its detection and feature-catalog entries;
-   `shared/status-colors.ts`; the `piwi report` CLI command; the docs page. *Outcome: the headline feature; a
-   stakeholder gets a PDF today, and a CI job can post the Markdown weekly without waiting for step 3.*
+   `shared/analytics/dashboards.ts` (Overview as [defined above](#the-default-dashboard-overview), executive and
+   engineering), with the analytics page rendered from Overview, and the widgets they need (`stats`, `verdict`,
+   `progress`, `risks`, `metric`); the rule-based verdict; the renderers (Vue, HTML, PDF, Markdown, JSON, CSV);
+   `GET /api/reports/preview`; *Export* on the analytics and project pages; the cost setting; English and French
+   sentences; the `get_quality_report`, `get_metric_trend` and `compare_periods` MCP tools with their capability tags;
+   the `quality-reports` capability with its feature-catalog entries and detection id (its evidence probe comes with
+   the tables in step 3); `shared/status-colors.ts`; the `piwi report` CLI command; the docs page. *Outcome: the
+   headline feature; a stakeholder gets a PDF today, and a CI job can post the Markdown weekly without waiting for
+   step 3.*
 3. **Schedules and snapshots** (M). The two tables (`report_schedules` without `dashboard_id`, which step 4 adds), the
    `reports:schedule` task, the outbox reuse with `report.ready`, email with the inline chart, Slack blocks, webhook
-   body, browser notification, the `/reports` page and `/reports/:id`, snapshot retention, the team dashboard with the
-   owners filter, the gaps digest dashboard that closes the Test Map's deferred delivery. *Outcome: the report arrives
-   on Monday morning by itself, and so does the Test Map's digest.*
+   body, browser notification, the `/reports` page and `/reports/:id`, *Schedule…* on the analytics and project pages,
+   the `quality-reports` evidence probe, snapshot retention, the team dashboard with the owners filter, the gaps
+   digest dashboard that closes the Test Map's deferred delivery. *Outcome: the report arrives on Monday morning by
+   itself, and so does the Test Map's digest.*
 4. **Saved dashboards** (L). `analytics_dashboards`; `report_schedules.dashboard_id` and the deactivation of a
    schedule whose dashboard is deleted; the switcher, the viewer's and the instance default dashboard; edit mode with
    widget options, scope overrides, bands and the breakdowns of the `metric` widget; the `list`, `markers` and `text`
@@ -1248,16 +1254,16 @@ Grouped by milestone. Paths are under `apps/application/` unless noted.
 **2. The quality report**
 
 - [ ] `shared/analytics/registry.ts`: `options` (zod), `requires` and `document` on every widget (`testFilters` shipped in milestone 1); new widgets `stats`, `verdict`, `progress`, `risks`, `metric` (line and stat displays) with their components in `app/components/analytics/`
-- [ ] `shared/analytics/dashboards.ts`: `DashboardDefinition`; the built-in Overview ([The default dashboard](#the-default-dashboard-overview)) and the executive, engineering, team and gaps digest dashboards; `app/pages/analytics.vue` renders Overview from its definition instead of the hard-coded bands
+- [ ] `shared/analytics/dashboards.ts`: `DashboardDefinition`; the built-in Overview ([The default dashboard](#the-default-dashboard-overview)) and the executive and engineering dashboards (team and gaps digest come with milestone 3); `app/pages/analytics.vue` renders Overview from its definition instead of the hard-coded bands
 - [ ] `shared/reports/types.ts`, `collect.ts` (a dashboard and a scope make a bundle), `verdict.ts`, `sentences.en.ts`, `sentences.fr.ts`
 - [ ] `shared/reports/render-html.ts`, `render-pdf.ts`, `render-markdown.ts`, `render-csv.ts`, `build.ts` (file name, content type, format switch)
 - [ ] `shared/analytics/insight-rules.ts`: target-aware rule
 - [ ] `server/api/reports/preview.get.ts`; `app/demo/api/reports.ts`
 - [ ] `server/api/settings/ci-cost.get.ts`, `ci-cost.put.ts`; `shared/piwi-env-vars.ts` (`PIWI_CI_MINUTE_COST`); `app/utils/settings-metadata.ts`; `app/pages/settings/performance.vue`
 - [ ] `app/components/reports/ReportPreviewModal.vue`, `ReportView.vue`
-- [ ] `app/pages/analytics.vue`, `app/pages/projects/[id]/index.vue`: the *Export* and *Schedule* actions
+- [ ] `app/pages/analytics.vue`, `app/pages/projects/[id]/index.vue`: the *Export* action (*Schedule* comes with milestone 3)
 - [ ] `shared/status-colors.ts`; `app/utils/status-palette.ts`, `app/utils/pass-rate.ts`, `shared/export/render-html.ts`, `render-pdf.ts`, `server/utils/email.ts` read it; `tests/unit/status-colors.test.ts` pins `app/assets/css/main.css`
-- [ ] `shared/capabilities.ts` (`quality-reports`), `shared/handlers/setup-status.ts` (detection id, ladder order, evidence probe), `shared/piwi-features.ts` (*Quality reports*, *Trends over time*); `app/layouts/default.vue` and the *Export* and *Schedule* actions read `isHidden('quality-reports')`
+- [ ] `shared/capabilities.ts` (`quality-reports`), `shared/handlers/setup-status.ts` (detection id and ladder order; the evidence probe comes with milestone 3), `shared/piwi-features.ts` (*Quality reports*, *Trends over time*); `app/layouts/default.vue` and the *Export* action read `isHidden('quality-reports')`
 - [ ] `shared/mcp-tools.ts`, `server/utils/mcp/tools.ts`: `get_quality_report`, `get_metric_trend`, `compare_periods` with `module` and `capability`; `apps/docs/features/mcp.md`; the "N tools" sentences in the docs and `ROADMAP.md`
 - [ ] `packages/reporter/src/cli/quality-report.ts`, `cli/index.ts`; `packages/reporter/tests/`
 - [ ] `tests/unit/report-bundle.test.ts`, `report-render-parity.test.ts`, `report-csv.test.ts`; `tests/quality-reports.spec.ts`
@@ -1273,7 +1279,8 @@ Grouped by milestone. Paths are under `apps/application/` unless noted.
 - [ ] `server/api/reports/schedules/*.ts`, `snapshots/*.ts`; demo mirrors
 - [ ] `server/utils/retention.ts`, `server/tasks/retention/sweep.ts`: `PIWI_RETENTION_REPORT_DAYS`; `shared/piwi-env-vars.ts`
 - [ ] `app/pages/reports/index.vue`, `reports/[id].vue`; `app/components/reports/ScheduleForm.vue`, `ScheduleList.vue`, `SnapshotList.vue`; `app/layouts/default.vue` nav entry
-- [ ] `shared/analytics/registry.ts` and `dashboards.ts`: the `scenario-gaps` widget over `listScenarioGaps`, `listAcceptedUnwritten`, `getFeatureMap`; the gaps digest dashboard over `selectWeeklyDigest`; both gated on the project's `test-map` state
+- [ ] The *Schedule…* action on `app/pages/analytics.vue` and `app/pages/projects/[id]/index.vue`, reading `isHidden('quality-reports')`; `shared/handlers/setup-status.ts`: the `quality-reports` evidence probe (one `report_schedules` or `report_snapshots` row)
+- [ ] `shared/analytics/registry.ts` and `dashboards.ts`: the `scenario-gaps` widget over `listScenarioGaps`, `listAcceptedUnwritten`, `getFeatureMap`; the gaps digest dashboard over `selectWeeklyDigest`, both gated on the project's `test-map` state; the team dashboard (the engineering dashboard filtered by owner)
 - [ ] `tests/unit/report-schedules.test.ts` (next run, DST, dedupe keys); `tests/quality-report-schedules.spec.ts`; `apps/docs/features/quality-reports.md`, `notifications.md`, `scenario-gaps.md` (the digest paragraph)
 
 **4. Saved dashboards**
