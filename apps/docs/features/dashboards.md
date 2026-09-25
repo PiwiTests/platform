@@ -64,7 +64,7 @@ widgets (ownership, environment comparison, movers; see [Analytics widgets](./an
   (below).
 - **List**: the latest runs of the period, the open failure causes with the most occurrences, the
   flakiest tests, or the highest-scored open scenario gaps, top 5 to 25, each linking to its page.
-- **Events**: the [timeline markers](./timeline-markers) of the period, optionally of some categories.
+- **Timeline markers**: the [timeline markers](./timeline-markers) of the period, optionally of some categories.
 - **Note**: text in Markdown. Raw HTML is shown as text, so a shared dashboard cannot carry a script.
 - **One project**: spec health, slowest tests, performance trend, timeout opportunities and selection
   health, the analyses of the project page. They need a scope with exactly one project and say so

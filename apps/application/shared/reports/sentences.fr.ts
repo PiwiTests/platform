@@ -133,6 +133,7 @@ const TITLES: Record<string, string> = {
   'Environment comparison': 'Comparaison des environnements',
   Environment: 'Environnement',
   Movers: 'Évolutions',
+  'Timeline markers': 'Repères de chronologie',
   Now: 'Maintenant',
   'Became flaky': 'Devenus instables',
   'Stopped being flaky': 'Redevenus stables',

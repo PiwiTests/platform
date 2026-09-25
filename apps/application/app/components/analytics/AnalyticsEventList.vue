@@ -11,7 +11,12 @@ const { data, pending, error, refresh } = await useAnalyticsWidget<AnalyticsEven
 </script>
 
 <template>
-  <SectionCard icon="i-lucide-flag" :title="title ?? 'Events'" help="analytics.markers" data-shot="analytics-events">
+  <SectionCard
+    icon="i-lucide-flag"
+    :title="title ?? 'Timeline markers'"
+    help="analytics.markers"
+    data-shot="analytics-events"
+  >
     <LoadingState v-if="pending" />
     <ErrorState v-else-if="error" :text="`Couldn't load the events: ${errorMessage(error)}`">
       <template #action>

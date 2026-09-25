@@ -411,7 +411,7 @@ export const ANALYTICS_WIDGETS = [
   },
   {
     id: 'markers',
-    title: 'Events',
+    title: 'Timeline markers',
     description: 'The timeline markers of the period: releases, deploys, incidents.',
     icon: 'i-lucide-flag',
     size: 'half',

@@ -175,7 +175,7 @@ export const HELP_TOPICS = {
     doc: 'features/dashboards#widgets',
   },
   'analytics.markers': {
-    title: 'Events',
+    title: 'Timeline markers',
     text: 'The timeline markers of the period, the ones the trends draw: every marker when one project is in scope, across projects only releases, infrastructure changes and incidents.',
     doc: 'features/timeline-markers',
   },
