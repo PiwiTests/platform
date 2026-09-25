@@ -87,6 +87,7 @@ export const OVERVIEW_DASHBOARD: DashboardDefinition = {
         { key: 'clusters', type: 'cluster-landscape', size: 'half' },
         { key: 'flaky', type: 'flaky-leaderboard', size: 'half' },
         { key: 'wasted', type: 'wasted-time', size: 'half' },
+        { key: 'time-to-fix', type: 'time-to-fix', size: 'half' },
       ],
     },
     {
@@ -102,6 +103,8 @@ export const OVERVIEW_DASHBOARD: DashboardDefinition = {
         },
         { key: 'regressions', type: 'regression-velocity', size: 'half' },
         { key: 'ci-time', type: 'ci-time-trend', size: 'half' },
+        { key: 'suite-growth', type: 'suite-growth', size: 'half' },
+        { key: 'flaky-debt', type: 'flaky-debt', size: 'half' },
       ],
     },
     {
@@ -184,20 +187,23 @@ export const ENGINEERING_DASHBOARD: DashboardDefinition = {
         { key: 'flaky', type: 'flaky-leaderboard', size: 'full' },
         { key: 'clusters', type: 'cluster-landscape', size: 'full' },
         { key: 'wasted', type: 'wasted-time', size: 'full' },
+        { key: 'ownership', type: 'ownership', size: 'full' },
       ],
     },
     {
       title: 'Trends',
-      description: 'Regressions and CI time over the period.',
+      description: 'Regressions, CI time and the tests that moved over the period.',
       widgets: [
         { key: 'regressions', type: 'regression-velocity', size: 'half' },
         { key: 'ci-time', type: 'ci-time-trend', size: 'half' },
+        { key: 'movers', type: 'movers', size: 'full' },
       ],
     },
     {
       title: 'Detail',
-      description: 'Browsers and shared endpoints.',
+      description: 'Environments, browsers and shared endpoints.',
       widgets: [
+        { key: 'environments', type: 'environment-comparison', size: 'full' },
         { key: 'browsers', type: 'browser-matrix', size: 'full' },
         { key: 'endpoints', type: 'slow-endpoints', size: 'full' },
       ],
@@ -269,7 +275,8 @@ export const BUILTIN_DASHBOARDS: readonly BuiltinDashboard[] = [
   {
     key: 'engineering',
     name: 'Engineering',
-    description: 'For the team that owns the suite: the executive report, then flaky tests, clusters and detail.',
+    description:
+      'For the team that owns the suite: the executive report, then flaky tests, clusters, ownership, movers and detail.',
     definition: ENGINEERING_DASHBOARD,
   },
   {

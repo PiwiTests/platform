@@ -88,8 +88,9 @@ const TITLES: Record<string, string> = {
   'Movement over the period.': 'L’évolution sur la période.',
   'Fixes, triage and the risks still open.': 'Correctifs, tri et risques encore ouverts.',
   'What is costing the most time and attention.': 'Ce qui coûte le plus de temps et d’attention.',
-  'Regressions and CI time over the period.': 'Régressions et temps de CI sur la période.',
-  'Browsers and shared endpoints.': 'Navigateurs et points de terminaison partagés.',
+  'Regressions, CI time and the tests that moved over the period.':
+    'Régressions, temps de CI et tests qui ont évolué sur la période.',
+  'Environments, browsers and shared endpoints.': 'Environnements, navigateurs et points de terminaison partagés.',
   'The state of every project right now.': 'L’état de chaque projet en ce moment.',
   'What is costing you the most time and attention.': 'Ce qui vous coûte le plus de temps et d’attention.',
   'Movement over the selected period.': 'L’évolution sur la période choisie.',

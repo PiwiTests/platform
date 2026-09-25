@@ -18,7 +18,7 @@ as a [quality report](./quality-reports), and put them on a wall screen.
 
 The switcher next to *Analytics* in the page header lists every dashboard you can open, with a search:
 
-- **Built-in**: Overview (the analytics page, four bands and twelve widgets), and the report dashboards
+- **Built-in**: Overview (the analytics page, four bands and fifteen widgets), and the report dashboards
   Executive, Engineering and Gaps digest (the last one only where the [Test Map](./scenario-gaps) is not
   declined). A built-in dashboard cannot be changed, only duplicated.
 - **Shared**: saved dashboards someone shared with every signed-in user.
@@ -56,8 +56,9 @@ version or save yours as a copy; nothing is overwritten.
 
 ### Widgets
 
-*Add widget* lists every widget, grouped by the band it usually belongs to, with a search: the twelve of
-Overview, the report widgets (verdict, what is being done, risks, scenario gaps), and:
+*Add widget* lists every widget, grouped by the band it usually belongs to, with a search: the fifteen of
+Overview, the report widgets (verdict, what is being done, risks, scenario gaps), the engineering
+widgets (ownership, environment comparison, movers; see [Analytics widgets](./analytics-widgets)), and:
 
 - **Metric**: one number of the metric catalog, drawn as a number, a line, bars, a table or a heatmap
   (below).

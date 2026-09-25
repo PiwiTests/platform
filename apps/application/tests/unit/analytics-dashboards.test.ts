@@ -31,7 +31,7 @@ describe('the Overview dashboard', () => {
     );
   });
 
-  test('keeps the ten widgets in the same order, bands and widths, and adds the tiles and the trend', () => {
+  test('keeps the ten widgets in the same order, bands and widths, and adds the tiles, the trend and three trend widgets', () => {
     const placed = OVERVIEW_DASHBOARD.bands.flatMap((band, i) =>
       band.widgets.map((w) => ({ type: w.type, size: w.size, band: ANALYTICS_BANDS[i]!.id })),
     );
@@ -41,7 +41,13 @@ describe('the Overview dashboard', () => {
       const meta = ANALYTICS_WIDGETS.find((m) => m.id === w.type)!;
       expect([w.size, w.band], w.type).toEqual([meta.size, meta.band]);
     }
-    expect(placed.filter((w) => !LEGACY_WIDGETS.includes(w.type)).map((w) => w.type)).toEqual(['stats', 'metric']);
+    expect(placed.filter((w) => !LEGACY_WIDGETS.includes(w.type)).map((w) => w.type)).toEqual([
+      'stats',
+      'time-to-fix',
+      'metric',
+      'suite-growth',
+      'flaky-debt',
+    ]);
   });
 
   test('uses the analytics default scope', () => {
