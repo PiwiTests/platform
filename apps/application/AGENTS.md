@@ -32,6 +32,14 @@ imported by both. Exceptions only where the implementations genuinely differ (er
   **both** `schema.sqlite.ts` and `schema.pg.ts`, then `npm run db:generate && npm run db:generate:pg`.
 - ⚠ **Never hand-write a migration file or edit `_journal.json`** — always generate. A hand-made migration is silently
   skipped by the migrator.
+- **A branch's migrations must be dated after the base branch's.** After merging the base branch into a branch that
+  adds migrations, delete the branch's migrations and snapshots and generate them again, so their journal dates come
+  last; `tests/unit/migration-history.test.ts` fails on a journal whose dates do not strictly increase.
+- Startup migrates through `applyMigrations` (`server/database/migration-history.ts`), which compares
+  `__drizzle_migrations` with the journal first. A matching history goes through the Drizzle migrator; a diverged one
+  (rows from another branch, a migration dated before the latest applied one, a file changed after it ran) is
+  repaired in one transaction and checked against the latest `meta/NNNN_snapshot.json`. The snapshot is the reference,
+  so a fresh database must match it — a unit test checks this for SQLite.
 - Dates are stored as Unix timestamps in SQLite.
 - **Large per-case text payloads MUST go through `case_payloads`** (content-addressed, deduped per project):
   `upsertCasePayloads` on write, `inlineCasePayloads` / `resolveCasePayloadContents` on read (`server/utils/case-payloads.ts`).

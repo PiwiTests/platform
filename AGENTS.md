@@ -266,6 +266,9 @@ Voice rules for all of them, and for `apps/docs/`: see [`apps/docs/AGENTS.md`](a
 - **Reporter not found?** `npm link` in `packages/reporter/`, then in the target project.
 - **Migration not applying?** A hand-written migration file or `_journal.json` edit makes the Drizzle migrator skip it
   silently. Delete it, revert the journal entry, and re-run `npm run db:generate` (or `db:generate:pg`).
+- **`table … already exists` or a missing table after switching branches?** The local database ran migrations from
+  another branch. The next startup repairs it (`Migration history repaired` in the log); if it logs
+  `Migration history repair failed`, stop the server, delete `.data/piwi.db` and run `npm run app:seed:dev`.
 - **Command appears frozen?** It probably opened an interactive pager. Use `git --no-pager <cmd>` for `diff`/`log`/`show`
   and avoid anything that waits for input — non-interactive shells hang on them.
 - **Never start the dev server in the foreground of a tool call.** `npm run app:dev` blocks until timeout. Playwright

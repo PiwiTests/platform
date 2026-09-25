@@ -5,6 +5,8 @@ import { drizzle as sqliteDrizzle } from 'drizzle-orm/libsql/sqlite3';
 import * as sqliteSchema from './schema.sqlite';
 import { backfillProjectAssignments } from '#shared/handlers/project-assignments';
 import { reclusterFailureFingerprints } from '#shared/handlers/failure-cluster-recluster';
+import { applyMigrations } from './migration-history';
+import { postgresMigrationTarget, sqliteMigrationTarget } from './migration-targets';
 import { existsSync, mkdirSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -97,7 +99,10 @@ async function openDatabase(): Promise<DB> {
         try {
           const migrationsFolder = await resolveMigrationsFolder('migrations-pg');
           console.log(`[Database] Running PostgreSQL migrations from ${migrationsFolder}`);
-          await migrate(pgDb, { migrationsFolder });
+          await applyMigrations(
+            postgresMigrationTarget(client, () => migrate(pgDb, { migrationsFolder })),
+            migrationsFolder,
+          );
           console.log('[Database] PostgreSQL migrations completed successfully');
           // Backfill project assignments for existing users (idempotent)
           try {
@@ -156,7 +161,10 @@ async function openDatabase(): Promise<DB> {
         try {
           const migrationsFolder = await resolveMigrationsFolder('migrations');
           console.log(`[Database] Running SQLite migrations from ${migrationsFolder}`);
-          await migrate(db, { migrationsFolder });
+          await applyMigrations(
+            sqliteMigrationTarget(client, () => migrate(db, { migrationsFolder })),
+            migrationsFolder,
+          );
           console.log('[Database] SQLite migrations completed successfully');
           // Backfill project assignments for existing users (idempotent)
           try {
