@@ -204,6 +204,31 @@ async function main() {
     check(pdfDownload.suggestedFilename().endsWith('.pdf'), 'the download is named as a PDF');
     check(pdfBytes.subarray(0, 5).toString('latin1') === '%PDF-', 'the PDF is a real vector document');
 
+    // The analytics page is the Overview dashboard; its Export previews a quality
+    // report built in the service worker and downloads it as a PDF.
+    await page.goto(`${ORIGIN}${BASE}analytics`, { waitUntil: 'domcontentloaded' });
+    const tile = page.getByTestId('stat-test-pass-rate');
+    await tile.waitFor({ timeout: 60000 }).catch(() => {});
+    check(await tile.isVisible(), 'the analytics page shows the headline tiles');
+    const preview = page.getByTestId('report-view');
+    for (let attempt = 0; attempt < 20 && !(await preview.isVisible()); attempt++) {
+      await page.getByRole('button', { name: 'Export', exact: true }).first().click();
+      await preview.waitFor({ timeout: 3000 }).catch(() => {});
+    }
+    check(await preview.isVisible(), 'Export previews the quality report');
+    await page.getByTestId('report-download').click();
+    const [reportPdf] = await Promise.all([
+      page.waitForEvent('download', { timeout: 30000 }),
+      page.getByRole('menuitem', { name: 'PDF' }).click(),
+    ]);
+    const reportPath = await reportPdf.path();
+    const reportBytes = reportPath ? await readFile(reportPath) : Buffer.alloc(0);
+    check(
+      reportBytes.subarray(0, 5).toString('latin1') === '%PDF-',
+      'the quality report downloads as a PDF',
+      `${reportBytes.length} bytes as ${reportPdf.suggestedFilename()}`,
+    );
+
     check(
       escapedApiUrls.size === 0,
       'every API request stays inside the demo base path',
@@ -224,7 +249,7 @@ async function main() {
     for (const f of failures) console.error(`  - ${f}`);
     process.exit(1);
   }
-  console.log('✓ The built demo runs: service worker, in-browser API and export download all work.');
+  console.log('✓ The built demo runs: service worker, in-browser API, export download and quality report all work.');
 }
 
 await main();

@@ -152,7 +152,8 @@ test.describe('Analytics page', () => {
     await expect(page.getByRole('heading', { name: 'Slow endpoints' })).toBeVisible();
     // The Overview dashboard adds the headline tiles and the pass rate over time.
     await expect(page.getByRole('heading', { name: 'Headline numbers' })).toBeVisible();
-    await expect(page.getByTestId('stat-test-pass-rate')).toBeVisible();
+    // The tiles arrive from a client-side fetch, which a dev server under parallel workers can take a while to answer.
+    await expect(page.getByTestId('stat-test-pass-rate')).toBeVisible({ timeout: 30_000 });
     await expect(page.getByRole('heading', { name: 'Pass rate over time' })).toBeVisible();
   });
 
