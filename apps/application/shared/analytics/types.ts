@@ -551,3 +551,28 @@ export interface AnalyticsNote {
 export type AnalyticsProjectAnalysis<T> =
   | { project: { id: number; name: string }; data: T }
   | { project: null; reason: string };
+
+// ── Suite growth ─────────────────────────────────────────────────────────────
+
+export interface AnalyticsSuiteGrowthPoint {
+  /** Bucket start date (ISO `YYYY-MM-DD`). */
+  date: string;
+  /** Highest number of tests one run of the bucket reported; null without a run. */
+  suiteSize: number | null;
+  /** Skipped tests over tests reported, 0–100. */
+  skippedPct: number | null;
+  /** Tests that did not run over tests reported, 0–100. */
+  didNotRunPct: number | null;
+}
+
+export interface AnalyticsSuiteGrowth {
+  points: AnalyticsSuiteGrowthPoint[];
+  bucketDays: number;
+  /** Suite size over the period and over the comparison period. */
+  suiteSize: number | null;
+  previousSuiteSize: number | null;
+  /** Tests gained (positive) or lost (negative) against the comparison period. */
+  delta: number | null;
+  skippedPct: number | null;
+  didNotRunPct: number | null;
+}

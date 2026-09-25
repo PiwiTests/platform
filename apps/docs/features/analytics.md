@@ -111,6 +111,10 @@ out. Because a timed-out test burns its entire (often oversized) budget, the wid
 much is reclaimable by tightening timeouts and removing stale `test.slow()` marks. With a [cost of a CI
 minute](./quality-reports#cost-of-a-ci-minute) set, it shows the money too.
 
+**Suite growth** — how many tests the suite has over time (the highest test count one run reported in
+each bucket), its change against the comparison period, and the share of tests skipped or not run. A
+suite that grows while its skipped share grows too is adding tests nobody runs.
+
 **Flakiest tests** — the global flaky leaderboard, using the same [scoring and impact
 ranking](./flaky-tests#impact-ranking) as each project's Flaky tests tab.
 

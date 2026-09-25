@@ -187,3 +187,13 @@ export function stackSegments(
   }
   return segments;
 }
+
+/** One series of `TrendLinesChart`: a line over time buckets. */
+export interface TrendLine {
+  label: string;
+  /** A CSS color: a palette entry's `color`, or one of `GROUP_SERIES_COLORS`. */
+  color: string;
+  /** Bucket start dates (`YYYY-MM-DD`), the same for every series. */
+  points: Array<{ date: string; value: number | null }>;
+  dashed?: boolean;
+}

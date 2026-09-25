@@ -157,7 +157,7 @@ function openAt(cluster: ClusterRow, atMs: number, now: number): boolean {
   return (ms(cluster.updatedAt) ?? 0) >= atMs;
 }
 
-function median(values: number[]): number | null {
+export function median(values: number[]): number | null {
   if (values.length === 0) return null;
   const sorted = [...values].sort((a, b) => a - b);
   const mid = sorted.length >> 1;

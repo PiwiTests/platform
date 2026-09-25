@@ -100,6 +100,11 @@ export const HELP_TOPICS = {
     text: 'How much new breakage each period introduces: tests that passed in a baseline and now fail (regressions), plus tests that turned flaky. Rising bars mean quality debt is accumulating.',
     doc: 'features/flaky-tests#regression-signals',
   },
+  'analytics.suite-growth': {
+    title: 'Suite growth',
+    text: 'How many tests the suite has over time (the highest test count one run reported in each bucket), and the share of them skipped or not run. A growing suite whose skipped share grows too is adding tests nobody runs.',
+    doc: 'features/analytics#widgets',
+  },
   'analytics.browser-matrix': {
     title: 'Browser matrix',
     text: 'Pass rate per project × browser, so a suite that is green on one browser but failing on another (a browser-specific bug) stands out immediately.',

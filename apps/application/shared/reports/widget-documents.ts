@@ -23,6 +23,7 @@ import type {
   AnalyticsScenarioGaps,
   AnalyticsSlowEndpoints,
   AnalyticsStats,
+  AnalyticsSuiteGrowth,
   AnalyticsTileTarget,
   AnalyticsVerdict,
   AnalyticsWastedTime,
@@ -592,6 +593,41 @@ export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
     },
   ],
 
+  'suite-growth': (data: AnalyticsSuiteGrowth, ctx) => {
+    if (data.suiteSize === null) return [{ kind: 'text', text: ctx.s.labels.noData }];
+    const size = ctx.s.metricLabel('suite-size', 'Suite size');
+    const delta = data.delta === null ? '' : ` (${data.delta > 0 ? '+' : ''}${ctx.f.number(data.delta)})`;
+    return [
+      seriesBlock(
+        'count',
+        null,
+        [{ label: size, points: data.points.map((p) => ({ date: p.date, value: p.suiteSize })), color: 'accent' }],
+        (value) => (value === null ? '—' : ctx.f.number(value)),
+        ctx,
+        `${size}: ${ctx.f.number(data.suiteSize)}${delta}`,
+      ),
+      seriesBlock(
+        'percent',
+        null,
+        [
+          {
+            label: ctx.s.title('Skipped'),
+            points: data.points.map((p) => ({ date: p.date, value: p.skippedPct })),
+            color: 'skipped',
+          },
+          {
+            label: ctx.s.title('Did not run'),
+            points: data.points.map((p) => ({ date: p.date, value: p.didNotRunPct })),
+            color: 'didnotrun',
+          },
+        ],
+        (value) => ctx.f.value(value, 'percent', 1),
+        { ...ctx, drawMarkers: false },
+        `${ctx.s.title('Skipped')}: ${ctx.f.value(data.skippedPct, 'percent', 1)}, ${ctx.s.title('Did not run')}: ${ctx.f.value(data.didNotRunPct, 'percent', 1)}`,
+      ),
+    ];
+  },
+
   'scenario-gaps': (data: AnalyticsScenarioGaps, ctx) => {
     if (data.projects === 0) return [];
     const open = data.byClass.reduce((sum, c) => sum + c.count, 0);
@@ -695,6 +731,7 @@ export function widgetMetrics(type: AnalyticsWidgetId, options: Record<string, u
   if (type === 'verdict') return ['test-pass-rate', 'failure-causes-fixed', 'open-failure-causes', 'wasted-ci-minutes'];
   if (type === 'wasted-time') return ['wasted-ci-minutes'];
   if (type === 'ci-time-trend') return ['ci-time'];
+  if (type === 'suite-growth') return ['suite-size'];
   if (type === 'regression-velocity') return ['new-regressions', 'newly-flaky'];
   if (type === 'portfolio' || type === 'pass-rate-heatmap' || type === 'browser-matrix') return ['test-pass-rate'];
   if (type === 'scenario-gaps') {

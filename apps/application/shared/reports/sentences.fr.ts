@@ -123,6 +123,9 @@ const TITLES: Record<string, string> = {
   'The top new gaps of each project in the period.':
     'Les principales nouvelles lacunes de chaque projet sur la période.',
   'Where the gaps stand': 'Où en sont les lacunes',
+  'Suite growth': 'Croissance de la suite',
+  Skipped: 'Ignorés',
+  'Did not run': 'Non exécutés',
   'Open gaps by class and by feature, and the gaps closed.':
     'Les lacunes ouvertes par classe et par fonctionnalité, et les lacunes fermées.',
 };

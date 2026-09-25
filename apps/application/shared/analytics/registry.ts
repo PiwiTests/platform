@@ -305,6 +305,15 @@ export const ANALYTICS_WIDGETS = [
     testFilters: true,
   },
   {
+    id: 'suite-growth',
+    title: 'Suite growth',
+    description: 'How many tests the suite has over time, and the share skipped or not run.',
+    icon: 'i-lucide-sprout',
+    size: 'half',
+    band: 'trends',
+    testFilters: true,
+  },
+  {
     id: 'scenario-gaps',
     title: 'Scenario gaps',
     description: 'Open Test Map gaps by class and feature, gaps closed, accepted but unwritten.',

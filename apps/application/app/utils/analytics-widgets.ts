@@ -31,6 +31,7 @@ import {
   AnalyticsPerformanceTrend,
   AnalyticsTimeoutOpportunities,
   AnalyticsSelectionHealth,
+  SuiteGrowthChart,
 } from '#components';
 
 export const WIDGET_COMPONENTS: Record<AnalyticsWidgetId, Component> = {
@@ -49,6 +50,7 @@ export const WIDGET_COMPONENTS: Record<AnalyticsWidgetId, Component> = {
   'regression-velocity': RegressionVelocityChart,
   'browser-matrix': BrowserMatrix,
   'slow-endpoints': SlowEndpointsTable,
+  'suite-growth': SuiteGrowthChart,
   'scenario-gaps': ScenarioGapsSummary,
   'new-gaps': NewScenarioGaps,
   list: AnalyticsItemList,
