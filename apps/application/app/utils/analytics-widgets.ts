@@ -82,4 +82,7 @@ export const CONFIGURABLE_WIDGETS = new Set<AnalyticsWidgetId>([
   'performance-trend',
   'timeout-opportunities',
   'selection-health',
+  'suite-growth',
+  'flaky-debt',
+  'time-to-fix',
 ]);

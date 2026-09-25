@@ -2,7 +2,7 @@
 import type { AnalyticsFlakyDebt } from '#shared/analytics/types';
 import { GROUP_SERIES_COLORS, type TrendLine } from '~/utils/chart';
 
-const props = defineProps<{ query: Record<string, string>; title?: string }>();
+const props = defineProps<{ query: Record<string, string>; options?: Record<string, unknown>; title?: string }>();
 
 const {
   data: debt,
