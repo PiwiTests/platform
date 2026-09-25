@@ -25,6 +25,7 @@ The sidebar gives access to the top-level sections:
 |---------|------|---------|
 | Home | `/` | Aggregate stats and activity across all projects |
 | Analytics | `/analytics` | Cross-project trends, portfolio health, and insights over a chosen time window (see [Analytics](./analytics)) |
+| Quality reports | `/reports` | The report snapshots kept and the report schedules that send them; `/reports/:id` opens one snapshot (see [Quality reports](./quality-reports#report-schedules)) |
 | Projects | `/projects` | Full project listing with search and tag filters |
 | Settings | `/settings` | Configuration, in two groups — **Instance** (account, users, notifications, storage) and **Analysis** (AI diagnosis, wasted time, timeout hygiene, tags, pull requests) |
 | Setup *(admins)* | `/setup` | Connect the reporter, and a checklist of which optional capabilities are actually active on this instance |

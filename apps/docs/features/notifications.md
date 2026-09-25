@@ -33,6 +33,8 @@ Manage both from **Settings → Notifications**, and subscribe to a single proje
 | `perf.regression` | A run is at least 20% slower than the median of the previous five completed runs on the same branch in the same environment — raise the bar per subscription with the regression-% filter |
 | `diagnosis.completed` | An AI diagnosis finishes (requires an AI provider) |
 
+**`report.ready`** needs no subscription: a [report schedule](./quality-reports#report-schedules) sends it to the channels it names, through the same outbox. Its webhook body adds the whole report: `{ "event", "payload": { "snapshotId", "scheduleId", "periodEnd", "url" }, "bundle", "timestamp" }`.
+
 ## Channels
 
 ### Browser
@@ -142,4 +144,5 @@ Send a test email from **Settings → Notifications** to confirm delivery.
 - [CI & sharding](/guide/ci) — the alternative: pull the run URL into your pipeline instead
 - [Authentication](/operate/authentication) — per-user channels and subscriptions
 - [Configuration reference](/reference/configuration) — all environment variables
+- [Quality reports](./quality-reports#report-schedules) — scheduled quality reports sent to these channels
 - [AI diagnosis & failure clustering](./ai-diagnosis) — what triggers `cluster.new`, `cluster.fixed`, `cluster.regressed` and `diagnosis.completed`

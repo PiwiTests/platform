@@ -10,7 +10,9 @@ work so each stage pays for itself, and records the alternatives and open questi
 and periods) is built on `claude/analytics-m1-metrics-filters-periods`, not merged yet; its probe-run fix is the
 branch's first commit, so it can go out alone. Milestone 2 (the quality report) is built on
 `claude/analytics-m2-quality-report`, stacked on milestone 1, not merged yet; its three new routes did not reach the
-typed-route depth limit milestone 1 met. Written 2026-09-22 against 0.36.0; refreshed 2026-09-24 against 0.37.0, which
+typed-route depth limit milestone 1 met. Milestone 3 (schedules and snapshots) is built on
+`claude/analytics-m3-schedules-snapshots`, stacked on milestone 2, not merged yet; it met the depth limit again and
+removed its cause (D36). Written 2026-09-22 against 0.36.0; refreshed 2026-09-24 against 0.37.0, which
 shipped the Test Map, the capability opt-out system and one status color scale ([What 0.37.0
 changed](#3-what-0370-changed-for-this-design)); extended the same day with custom dashboards, filters and periods
 ([Layer 2](#layer-2-dashboards), [Filters and periods](#filters-and-periods)); decided the same day: the four open
@@ -1304,7 +1306,7 @@ Grouped by milestone. Paths are under `apps/application/` unless noted.
 - [x] `app/pages/reports/index.vue`, `reports/[id].vue`; `app/components/reports/ScheduleForm.vue`, `ScheduleList.vue`, `SnapshotList.vue`; `app/layouts/default.vue` nav entry (*Quality reports*, below *Analytics*); screenshot scenes `report-schedules`, `report-snapshot`, `report-schedule-form`, each at 1280 and 375 px
 - [x] The *Schedule…* action on `app/pages/analytics.vue` and `app/pages/projects/[id]/index.vue` (in the project page's *More actions* menu, since its header has no room left at 375 px), reading `isHidden('quality-reports')`; `shared/handlers/setup-status.ts`: the `quality-reports` evidence probe (one `report_schedules` or `report_snapshots` row)
 - [x] `shared/analytics/registry.ts` and `dashboards.ts`: the `scenario-gaps` widget over `listAcceptedUnwritten`, `getFeatureMap` and a count of open gaps per class (a grouped count, since `listScenarioGaps` caps at 200 rows and wakes snoozes as it reads); the gaps digest dashboard over a `new-gaps` widget whose handler is `selectWeeklyDigest`, then `scenario-gaps`; both widgets gated on each project's `test-map` state, and left out of a report when no project of the scope has it; the team dashboard (the engineering dashboard, which now ends with `scenario-gaps`, with an owner test filter the request must carry)
-- [ ] `tests/unit/report-schedules.test.ts` (next run, DST, dedupe keys); `tests/quality-report-schedules.spec.ts`; `apps/docs/features/quality-reports.md`, `notifications.md`, `scenario-gaps.md` (the digest paragraph)
+- [x] `tests/unit/report-schedules.test.ts` (next run, DST, dedupe keys), `report-schedule-runs.test.ts` (runs, access, the Test Map widgets); `tests/quality-report-schedules.spec.ts` and the scheduled email in `email-notifications.spec.ts` (the Slack body is unit-tested, since `safeFetch` refuses the test server's loopback address); `apps/docs/features/quality-reports.md`, `notifications.md`, `scenario-gaps.md` (the digest paragraph), `guide/concepts.md`, `ui-overview.md`; the demo's schedule and two snapshots are made through the shared handlers when its database opens (`app/demo/report-seed.ts`), since the seed script cannot render a quality report
 
 **4. Saved dashboards**
 
