@@ -8,9 +8,9 @@ import type {
   RunFinishedPayload,
   TopFailure,
 } from '#shared/notification-events';
-import { reportWidgets, type ReportBlock, type ReportBundle, type ReportTone } from '#shared/reports/types';
-import { seriesColor } from '#shared/reports/chart';
-import { sentencesFor } from '#shared/reports/sentences';
+import type { ReportBundle } from '#shared/reports/types';
+import { renderReportEmail } from '#shared/reports/render-email';
+import { emailLayout as layoutEmail, escapeHtml } from '#shared/email-layout';
 
 export interface SmtpConfig {
   host: string;
@@ -114,37 +114,8 @@ const siteUrl = () => process.env.PIWI_SITE_URL?.replace(/\/$/, '') || 'http://l
 const PASSED_COLOR = STATUS_COLORS.passed.text;
 const FAILED_COLOR = STATUS_COLORS.failed.text;
 
-/** Escape user-controlled text (test titles, error messages) for HTML emails. */
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
 function emailLayout(title: string, body: string): { html: string; text: string } {
-  const html = `<!DOCTYPE html>
-<html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title></head>
-<body style="margin:0;padding:0;background:#f4f4f5;font-family:system-ui,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:32px 0;">
-    <tr><td align="center">
-      <table width="560" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.1);">
-        <tr><td style="background:#18181b;padding:20px 32px;">
-          <span style="color:#fff;font-size:18px;font-weight:700;">Piwi Dashboard</span>
-        </td></tr>
-        <tr><td style="padding:32px;">${body}</td></tr>
-        <tr><td style="padding:16px 32px;background:#f4f4f5;font-size:12px;color:#71717a;text-align:center;">
-          This is an automated message from <a href="${siteUrl()}" style="color:#18181b;">${siteUrl()}</a>
-        </td></tr>
-      </table>
-    </td></tr>
-  </table>
-</body>
-</html>`;
-  return { html, text: title };
+  return { html: layoutEmail(title, body, siteUrl()), text: title };
 }
 
 export function renderPasswordResetEmail(token: string): { html: string; text: string } {
@@ -351,118 +322,15 @@ export function renderDigestEmail(items: DigestItem[]): { subject: string; html:
 
 // ── Quality report ────────────────────────────────────────────────────────────
 
-type SeriesBlock = Extract<ReportBlock, { kind: 'series' }>;
-
-/** The trend a quality report email draws: the first series of the report, the pass rate over time on the built-ins. */
-export function emailTrendBlock(bundle: ReportBundle): SeriesBlock | null {
-  for (const widget of reportWidgets(bundle)) {
-    for (const block of widget.blocks) if (block.kind === 'series') return block;
-  }
-  return null;
-}
-
-const TONE_COLORS: Record<ReportTone, string> = {
-  good: PASSED_COLOR,
-  bad: FAILED_COLOR,
-  neutral: '#71717a',
-};
-
-/**
- * A quality report as an email: the verdict, the headline numbers, the trend
- * as an inline PNG (`cid:trend`, attached by the caller) with its labels as
- * HTML text, what changed, and a link to the snapshot. Tables and inline
- * styles only, so the body stays well under the clipping size of common
- * mail clients.
- */
+/** The quality report email as sent: the chart attached by content id, the footer naming this instance. */
 export function renderQualityReportEmail(
   bundle: ReportBundle,
   opts: { url: string; chartCid: string | null; shareUrl?: string | null },
 ): { subject: string; html: string; text: string } {
-  const s = sentencesFor(bundle.language);
-  const subject = `${s.labels.qualityReport}: ${bundle.title}`;
-  const widgets = reportWidgets(bundle);
-  const tiles = widgets.flatMap((w) => w.blocks).find((b) => b.kind === 'stats');
-  const trend = emailTrendBlock(bundle);
-  const changes = widgets.find((w) => w.type === 'insights')?.blocks.find((b) => b.kind === 'list');
-  const p = (text: string, style = '') =>
-    `<p style="margin:0 0 12px;font-size:14px;line-height:1.5;color:#18181b;${style}">${text}</p>`;
-  const meta = (text: string) => `<span style="font-size:12px;color:#71717a;">${text}</span>`;
-
-  const parts: string[] = [
-    `<h2 style="margin:0 0 4px;font-size:20px;color:#18181b;">${escapeHtml(bundle.title)}</h2>`,
-    p(meta(escapeHtml(bundle.period.label))),
-    p(escapeHtml(bundle.verdict.sentence)),
-  ];
-  const textParts: string[] = [bundle.title, bundle.period.label, '', bundle.verdict.sentence, ''];
-
-  if (tiles && tiles.kind === 'stats') {
-    const cells = tiles.tiles.map((t) => {
-      const change = t.change
-        ? ` <span style="font-size:12px;color:${TONE_COLORS[t.tone]};">${escapeHtml(t.change)}</span>`
-        : '';
-      const note = t.note ? `<br>${meta(escapeHtml(t.note))}` : '';
-      return `<td width="50%" valign="top" style="padding:8px 8px 8px 0;">${meta(escapeHtml(t.label))}<br><span style="font-size:18px;font-weight:700;color:#18181b;">${escapeHtml(t.value)}</span>${change}${note}</td>`;
-    });
-    const rows: string[] = [];
-    for (let i = 0; i < cells.length; i += 2) rows.push(`<tr>${cells[i]}${cells[i + 1] ?? '<td></td>'}</tr>`);
-    parts.push(`<table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 16px;">${rows.join('')}</table>`);
-    for (const t of tiles.tiles) textParts.push(`${t.label}: ${t.value}${t.change ? ` (${t.change})` : ''}`);
-    textParts.push('');
-  }
-
-  if (trend && opts.chartCid) {
-    const dates = trend.series[0]?.points.map((pt) => pt.date) ?? [];
-    const legend = trend.series
-      .map(
-        (series) =>
-          `<span style="display:inline-block;margin-right:12px;font-size:12px;color:#71717a;"><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${seriesColor(series.color, series.faint)};margin-right:4px;"></span>${escapeHtml(series.label)}</span>`,
-      )
-      .join('');
-    parts.push(
-      `<table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 4px;"><tr><td><img src="cid:${opts.chartCid}" width="496" height="140" alt="${escapeHtml(trend.summary ?? '')}" style="display:block;width:100%;max-width:496px;height:auto;border:0;"></td></tr>`,
-      `<tr><td style="padding-top:4px;"><table width="100%" cellpadding="0" cellspacing="0"><tr><td align="left">${meta(escapeHtml(dates[0] ?? ''))}</td><td align="right">${meta(escapeHtml(dates[dates.length - 1] ?? ''))}</td></tr></table></td></tr></table>`,
-      p(`${legend}`, 'margin-bottom:4px;'),
-    );
-    if (trend.summary) parts.push(p(meta(escapeHtml(trend.summary))));
-    if (trend.markers.length > 0) {
-      parts.push(p(meta(trend.markers.map((m) => `${escapeHtml(m.date)}: ${escapeHtml(m.label)}`).join(' · '))));
-    }
-    if (trend.summary) textParts.push(trend.summary, '');
-  }
-
-  if (changes && changes.kind === 'list' && changes.items.length > 0) {
-    const items = changes.items
-      .slice(0, 6)
-      .map(
-        (item) =>
-          `<li style="margin:0 0 6px;font-size:14px;line-height:1.5;color:#18181b;">${escapeHtml(item.text)}</li>`,
-      )
-      .join('');
-    parts.push(
-      `<h3 style="margin:16px 0 8px;font-size:15px;color:#18181b;">${escapeHtml(s.title('What changed'))}</h3><ul style="margin:0 0 16px;padding-left:18px;">${items}</ul>`,
-    );
-    for (const item of changes.items.slice(0, 6)) textParts.push(`- ${item.text}`);
-    textParts.push('');
-  }
-
-  parts.push(
-    `<p style="margin:16px 0;"><a href="${escapeHtml(opts.url)}" style="display:inline-block;background:#18181b;color:#ffffff;padding:10px 16px;border-radius:6px;font-size:14px;text-decoration:none;">${escapeHtml(s.labels.openInPiwi)}</a>${
-      opts.shareUrl
-        ? ` <a href="${escapeHtml(opts.shareUrl)}" style="display:inline-block;margin-left:8px;font-size:14px;color:#18181b;">${escapeHtml(s.labels.readWithoutAccount)}</a>`
-        : ''
-    }</p>`,
-    p(
-      meta(
-        [bundle.scopeText.projects, bundle.scopeText.branches, bundle.scopeText.runs, bundle.scopeText.tests]
-          .filter(Boolean)
-          .map((v) => escapeHtml(v!))
-          .join(' · '),
-      ),
-    ),
-  );
-  textParts.push(`${s.labels.openInPiwi}: ${opts.url}`);
-  if (opts.shareUrl) textParts.push(`${s.labels.readWithoutAccount}: ${opts.shareUrl}`);
-
-  const { html } = emailLayout(escapeHtml(subject), parts.join('\n'));
-  return { subject, html, text: textParts.join('\n') };
+  return renderReportEmail(bundle, {
+    url: opts.url,
+    chartSrc: opts.chartCid ? `cid:${opts.chartCid}` : null,
+    shareUrl: opts.shareUrl,
+    siteUrl: siteUrl(),
+  });
 }

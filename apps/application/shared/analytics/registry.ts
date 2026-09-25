@@ -226,7 +226,7 @@ export const ANALYTICS_WIDGETS = [
   },
   {
     id: 'progress',
-    title: 'What is being done',
+    title: 'Fixes and triage',
     description: 'Failure causes fixed, assigned and ticketed, quarantine releases, auto-heal pull requests.',
     icon: 'i-lucide-list-checks',
     size: 'half',

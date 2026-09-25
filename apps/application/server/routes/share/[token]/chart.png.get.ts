@@ -1,4 +1,4 @@
-import { emailTrendBlock } from '../../../utils/email';
+import { emailTrendBlock } from '#shared/reports/render-email';
 import { chartPng } from '../../../utils/reports/chart-png';
 import { openShareLink, shareLinkReport } from '../../../utils/share-view';
 

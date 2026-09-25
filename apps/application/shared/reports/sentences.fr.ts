@@ -99,6 +99,7 @@ const TITLES: Record<string, string> = {
   'Headline numbers': 'Chiffres clés',
   'Pass rate over time': 'Taux de réussite dans le temps',
   'What changed': 'Ce qui a changé',
+  'Fixes and triage': 'Correctifs et tri',
   Insights: 'Constats',
   Risks: 'Risques',
   'Portfolio health': 'Santé du portefeuille',

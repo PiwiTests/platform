@@ -10,7 +10,7 @@
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from 'pdf-lib';
 import { winAnsiSafe } from '#shared/export/render-pdf';
 import { STATUS_COLORS, PASS_RATE_COLORS, hexToRgb } from '#shared/status-colors';
-import { seriesGeometry } from './chart';
+import { chartLabelAnchor, chartTickLabel, seriesGeometry } from './chart';
 import { makeFormatter } from './format';
 import { sentencesFor } from './sentences';
 import { hasVerdictWidget, type ReportBlock, type ReportBundle, type ReportTone } from './types';
@@ -171,7 +171,7 @@ function drawSeries(l: Layout, block: Extract<ReportBlock, { kind: 'series' }>, 
       color: LINE,
       dashArray: t.value === 0 ? undefined : [2, 2],
     });
-    const label = block.unit === 'percent' ? `${t.value}%` : String(t.value);
+    const label = chartTickLabel(block, t.value);
     l.page.drawText(label, {
       x: X(0) - 4 - l.font.widthOfTextAtSize(label, 7),
       y: Y(t.y) - 2,
@@ -209,8 +209,9 @@ function drawSeries(l: Layout, block: Extract<ReportBlock, { kind: 'series' }>, 
   }
   for (const lab of g.labels) {
     const text = winAnsiSafe(dateLabel(lab.date));
+    const width = l.font.widthOfTextAtSize(text, 7);
     l.page.drawText(text, {
-      x: X(lab.x) - l.font.widthOfTextAtSize(text, 7) / 2,
+      x: X(lab.x) - (chartLabelAnchor(lab.x, g.width) === 'end' ? width : width / 2),
       y: Y(g.height) - 10,
       size: 7,
       font: l.font,

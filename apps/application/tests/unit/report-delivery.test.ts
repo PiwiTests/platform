@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import sharp from 'sharp';
-import { chartMarksSvg, chartPng } from '../../server/utils/reports/chart-png';
-import { emailTrendBlock, renderQualityReportEmail } from '../../server/utils/email';
+import { chartMarksSvg } from '../../shared/reports/chart';
+import { chartPng } from '../../server/utils/reports/chart-png';
+import { EMAIL_CHART, emailTrendBlock, renderReportEmail } from '../../shared/reports/render-email';
+import { renderQualityReportEmail } from '../../server/utils/email';
 import { reportSlackMessage, reportWebhookBody } from '../../server/utils/reports/deliver';
 import { fixtureBundle, HOSTILE } from './report-fixture';
 
@@ -9,7 +11,7 @@ describe('the email chart', () => {
   it('draws marks only: the production image has no fonts, so the SVG holds no text', () => {
     const trend = emailTrendBlock(fixtureBundle());
     expect(trend).not.toBeNull();
-    const svg = chartMarksSvg(trend!);
+    const svg = chartMarksSvg(trend!, EMAIL_CHART.width, EMAIL_CHART.height);
     expect(svg).not.toMatch(/<text[\s>]/);
     expect(svg).toMatch(/<(path|circle)[\s>]/);
   });
@@ -20,6 +22,10 @@ describe('the email chart', () => {
     expect(meta.format).toBe('png');
     expect(meta.width).toBe(992);
     expect(png.length).toBeLessThan(100_000);
+    const email = await sharp(
+      await chartPng(emailTrendBlock(fixtureBundle())!, EMAIL_CHART.width, EMAIL_CHART.height),
+    ).metadata();
+    expect(email.width).toBe(EMAIL_CHART.width * 2);
   });
 });
 
@@ -37,6 +43,44 @@ describe('the quality report email', () => {
     expect(html).toContain('https://piwi.example/reports/7');
     expect(text).toContain(bundle.verdict.sentence);
     expect(new TextEncoder().encode(html).length).toBeLessThan(102_000);
+  });
+});
+
+describe('the email chart labels', () => {
+  const email = () =>
+    renderQualityReportEmail(fixtureBundle(), { url: 'https://piwi.example/reports/7', chartCid: 'trend' }).html;
+
+  it('prints each axis value beside the image, on its gridline, in rows as tall as the image', () => {
+    const html = email();
+    const axis = html.match(new RegExp(`<table width="${EMAIL_CHART.axis}"[^>]*>(.*?)</table>`))?.[1] ?? '';
+    const cells = [...axis.matchAll(/<td height="(\d+)"[^>]*>(.*?)<\/td>/g)].map((m) => [Number(m[1]), m[2]] as const);
+    // 100% at the top edge, 50% centered on the middle gridline, 0% at the bottom edge.
+    expect(cells).toEqual([
+      [12, '100%'],
+      [52, '&nbsp;'],
+      [12, '50%'],
+      [52, '&nbsp;'],
+      [12, '0%'],
+    ]);
+    expect(cells.reduce((sum, [h]) => sum + h, 0)).toBe(EMAIL_CHART.height);
+  });
+
+  it('names the days and the markers as the report does, never as ISO dates', () => {
+    const html = email();
+    for (const day of ['Sep 23', 'Sep 24', 'Sep 25']) expect(html).toContain(`>${day}</td>`);
+    expect(html).toContain('Sep 24: ');
+    expect(html).not.toContain('2026-09-24:');
+    expect(html).not.toContain('>2026-09-23<');
+  });
+
+  it('shows the chart from any address: a data address in the schedule preview', () => {
+    const { html } = renderReportEmail(fixtureBundle(), {
+      url: 'https://piwi.example/reports',
+      chartSrc: 'data:image/svg+xml;base64,PHN2Zz4=',
+      siteUrl: 'https://piwi.example',
+    });
+    expect(html).toContain('src="data:image/svg+xml;base64,PHN2Zz4="');
+    expect(html).toContain('This is an automated message from <a href="https://piwi.example"');
   });
 });
 

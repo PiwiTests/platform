@@ -6,7 +6,7 @@
  */
 import { html, joinHtml, raw, toHtmlString, type RawHtml } from '#shared/export/html';
 import { STATUS_COLORS as C, PASS_RATE_COLORS } from '#shared/status-colors';
-import { REPORT_ACCENT, REPORT_GRID, REPORT_MARKER, seriesGeometry } from './chart';
+import { chartLabelAnchor, chartTickLabel, REPORT_ACCENT, REPORT_GRID, REPORT_MARKER, seriesGeometry } from './chart';
 import { makeFormatter } from './format';
 import { sentencesFor } from './sentences';
 import { hasVerdictWidget, type ReportBlock, type ReportBundle, type ReportTone } from './types';
@@ -60,7 +60,6 @@ const PAD = { left: 44, right: 8, top: 8, bottom: 22 };
 
 function chartSvg(block: Extract<ReportBlock, { kind: 'series' }>, dateLabel: (d: string) => string): RawHtml {
   const g = seriesGeometry(block, CHART_W - PAD.left - PAD.right, CHART_H - PAD.top - PAD.bottom);
-  const tickFormat = (v: number) => (block.unit === 'percent' ? `${v}%` : String(v));
   const grid = g.ticks.map(
     (t) =>
       html`<line
@@ -70,7 +69,9 @@ function chartSvg(block: Extract<ReportBlock, { kind: 'series' }>, dateLabel: (d
           y2="${t.y}"
           stroke="${REPORT_GRID}"
           stroke-dasharray="${t.value === 0 ? '' : '3 3'}"
-        /><text x="-6" y="${t.y + 3}" text-anchor="end" font-size="10" fill="#71717a">${tickFormat(t.value)}</text>`,
+        /><text x="-6" y="${t.y + 3}" text-anchor="end" font-size="10" fill="#71717a"
+          >${chartTickLabel(block, t.value)}</text
+        >`,
   );
   const lines = g.lines.flatMap((line) =>
     line.runs.map((run) =>
@@ -93,7 +94,12 @@ function chartSvg(block: Extract<ReportBlock, { kind: 'series' }>, dateLabel: (d
   );
   const labels = g.labels.map(
     (l) =>
-      html`<text x="${l.x}" y="${g.height + 15}" text-anchor="middle" font-size="10" fill="#71717a"
+      html`<text
+        x="${l.x}"
+        y="${g.height + 15}"
+        text-anchor="${chartLabelAnchor(l.x, g.width)}"
+        font-size="10"
+        fill="#71717a"
         >${dateLabel(l.date)}</text
       >`,
   );

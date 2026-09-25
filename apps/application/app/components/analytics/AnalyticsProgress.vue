@@ -18,7 +18,7 @@ const f = computed(() => metricFormatter());
 <template>
   <SectionCard
     icon="i-lucide-list-checks"
-    :title="title ?? 'What is being done'"
+    :title="title ?? 'Fixes and triage'"
     help="analytics.progress"
     data-shot="analytics-progress"
   >

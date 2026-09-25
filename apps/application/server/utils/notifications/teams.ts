@@ -16,7 +16,7 @@ import { sparkline } from '#shared/reports/chart';
 import { sentencesFor } from '#shared/reports/sentences';
 import { reportWidgets, type ReportBundle } from '#shared/reports/types';
 import type { DigestItem } from '../email';
-import { emailTrendBlock } from '../email';
+import { emailTrendBlock } from '#shared/reports/render-email';
 
 /** Cards list at most this many items; the rest are counted. */
 const MAX_ITEMS = 20;
