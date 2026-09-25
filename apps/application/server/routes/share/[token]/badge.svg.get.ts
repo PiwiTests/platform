@@ -7,7 +7,7 @@ import { openShareLink, shareLinkReport } from '../../../utils/share-view';
  * escaped, and the SVG is served under a CSP that runs nothing.
  */
 export default eventHandler(async (event) => {
-  const opened = await openShareLink(event, { gonePage: false });
+  const opened = await openShareLink(event, { gonePage: false, image: true });
   if ('gone' in opened) return opened.gone;
   const report = await shareLinkReport(opened.db, opened.link);
   if (!report) throw apiError({ statusCode: 404, message: 'Not found' });

@@ -84,7 +84,9 @@ A report link and a live dashboard link each carry two images, shown when the li
 - `/share/<token>/chart.png`: the report's trend. A scheduled report's Slack message draws it as an image, since
   Slack needs a public address to show one.
 
-Both stop resolving with their link.
+Both stop resolving with their link. An image proxy (GitHub's for a README, Slack's) may keep showing its copy
+for up to five minutes, the time the images may be cached. Images count against their link's request limit, not
+the reader's address, since such a proxy fetches for many readers.
 
 ## Security properties
 
@@ -94,8 +96,8 @@ Both stop resolving with their link.
   cluster, every project of the snapshot, or the dashboard, so a link is a narrower delegation of an existing
   member's read access, never an escalation.
 - The rendered page is sandboxed into a unique origin and served with `noindex` and `Referrer-Policy: no-referrer`,
-  so it cannot read dashboard cookies, call the API with credentials, or leak the URL through outbound links. Share
-  responses are never cached.
+  so it cannot read dashboard cookies, call the API with credentials, or leak the URL through outbound links. The
+  page is never cached; the two images may be, for five minutes.
 - A share URL is a capability: anyone holding it can view the page, and it can end up in browser history or proxy
   logs like any URL. Prefer short expiries, and revoke links when an investigation closes.
 

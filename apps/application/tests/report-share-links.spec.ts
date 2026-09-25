@@ -88,16 +88,20 @@ test.describe('Report share links', () => {
     const response = await page.goto(minted.url);
     expect(response?.status()).toBe(200);
     expect(response?.headers()['content-security-policy']).toContain('sandbox');
+    expect(response?.headers()['cache-control']).toBe('no-store');
     await expect(page.getByRole('heading', { level: 1 })).toContainText(PROJECT.REPORT_SHARE_LINKS);
 
     const badge = await anon.request.get(minted.badgeUrl);
     expect(badge.status()).toBe(200);
     expect(badge.headers()['content-type']).toContain('image/svg+xml');
+    // Image proxies (GitHub's, Slack's) may cache an image for a few minutes; the page never.
+    expect(badge.headers()['cache-control']).toBe('public, max-age=300');
     expect(await badge.text()).toMatch(/tests on default branch/);
 
     const chart = await anon.request.get(minted.chartUrl);
     expect(chart.status()).toBe(200);
     expect(chart.headers()['content-type']).toBe('image/png');
+    expect(chart.headers()['cache-control']).toBe('public, max-age=300');
 
     const revoke = await request.delete(`/api/share-links/${minted.link.id}`);
     expect(revoke.ok()).toBeTruthy();

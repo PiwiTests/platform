@@ -29,6 +29,16 @@ import type { Role } from '#shared/types';
 const LOOKUP_LIMIT = 120;
 const LOOKUP_WINDOW_MS = 15 * 60 * 1000;
 
+/**
+ * Image requests (`badge.svg`, `chart.png`) per link per window. Image proxies (GitHub's for a README
+ * badge, Slack's for an unfurled chart) fetch from few addresses for many readers, so an image counts
+ * against its link, not the address; only a token that resolves to no link counts against the address.
+ */
+const IMAGE_LINK_LIMIT = 600;
+
+/** How long an image proxy may keep a badge or a chart: a revoked link's image can outlive it that long. */
+export const SHARE_IMAGE_MAX_AGE_SECONDS = 300;
+
 /** A live dashboard link reloads on this cadence, and its bundle is reused for as long. */
 export const LIVE_DASHBOARD_REFRESH_SECONDS = 60;
 
@@ -40,21 +50,33 @@ export type OpenedShareLink = { db: DbClient; link: ShareLink } | { gone: string
 /**
  * Run the checks of a share view and resolve its token. A revoked or expired
  * link answers a short HTML page when `gonePage` is set (the holder once had
- * the real link), else a bare 404, like an unknown token.
+ * the real link), else a bare 404, like an unknown token. An `image` request
+ * is limited per link and may be cached for a few minutes (see
+ * `IMAGE_LINK_LIMIT`); a page is limited per address and never cached.
  */
-export async function openShareLink(event: H3Event, opts: { gonePage: boolean }): Promise<OpenedShareLink> {
-  // Every branch is uncacheable and uninteresting to crawlers, valid or not.
+export async function openShareLink(
+  event: H3Event,
+  opts: { gonePage: boolean; image?: boolean },
+): Promise<OpenedShareLink> {
+  // Uncacheable until the link is known, and uninteresting to crawlers, valid or not.
   setResponseHeader(event, 'Cache-Control', 'no-store');
   setResponseHeader(event, 'X-Robots-Tag', 'noindex, nofollow');
 
   if (!shareLinksEnabled()) throw apiError({ statusCode: 404, message: 'Not found' });
 
-  const rateKey = `share:${rateLimitClientIp(event)}`;
-  if (!checkRateLimit(rateKey, LOOKUP_LIMIT, LOOKUP_WINDOW_MS)) throw rateLimitedError(event, [rateKey]);
+  const addressKey = `${opts.image ? 'share-img' : 'share'}:${rateLimitClientIp(event)}`;
+  if (!opts.image && !checkRateLimit(addressKey, LOOKUP_LIMIT, LOOKUP_WINDOW_MS)) {
+    throw rateLimitedError(event, [addressKey]);
+  }
 
   const token = String(getRouterParam(event, 'token') ?? '');
   const db = await getDatabase();
   const resolved = await resolveShareToken(db, token);
+  if (opts.image && resolved.state !== 'live') {
+    // Only a miss counts against the address, so an image proxy's misses never block its valid links.
+    if (!checkRateLimit(addressKey, LOOKUP_LIMIT, LOOKUP_WINDOW_MS)) throw rateLimitedError(event, [addressKey]);
+    throw apiError({ statusCode: 404, message: 'Not found' });
+  }
   if (resolved.state === 'missing') throw apiError({ statusCode: 404, message: 'Not found' });
   if (resolved.state === 'gone') {
     if (!opts.gonePage) throw apiError({ statusCode: 404, message: 'Not found' });
@@ -62,6 +84,11 @@ export async function openShareLink(event: H3Event, opts: { gonePage: boolean })
     setResponseHeader(event, 'Content-Type', 'text/html; charset=utf-8');
     setResponseHeader(event, 'Content-Security-Policy', 'sandbox');
     return { gone: GONE_PAGE };
+  }
+  if (opts.image) {
+    const linkKey = `share-img-link:${resolved.link.id}`;
+    if (!checkRateLimit(linkKey, IMAGE_LINK_LIMIT, LOOKUP_WINDOW_MS)) throw rateLimitedError(event, [linkKey]);
+    setResponseHeader(event, 'Cache-Control', `public, max-age=${SHARE_IMAGE_MAX_AGE_SECONDS}`);
   }
   return { db, link: resolved.link };
 }
