@@ -94,6 +94,7 @@ function tile(
   }
   const note = notes.length > 0 ? notes.join(' · ') : null;
   return {
+    metric: v.metric,
     label,
     value: metricText(v, ctx),
     change: ctx.f.delta(v),

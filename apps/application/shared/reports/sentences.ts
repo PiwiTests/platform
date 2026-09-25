@@ -44,6 +44,10 @@ export interface ReportLabels {
   score: string;
   count: string;
   targets: string;
+  /** Under the title of a live dashboard link. */
+  liveDashboard: string;
+  /** Beside the link to the report a share link opens without an account. */
+  readWithoutAccount: string;
 }
 
 export interface ReportSentences {

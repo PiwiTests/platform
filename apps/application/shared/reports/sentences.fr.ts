@@ -294,6 +294,9 @@ export const FR_SENTENCES: ReportSentences = {
     generated: 'Généré le',
     generatedBy: 'Généré par Piwi',
     openInPiwi: 'Ouvrir dans Piwi',
+    liveDashboard:
+      'Tableau de bord en direct : les chiffres sont calculés à chaque affichage, et la page se recharge chaque minute.',
+    readWithoutAccount: 'Lire sans compte',
     dashboard: 'Tableau de bord',
     noData: 'Rien à montrer sur cette période.',
     previous: 'Précédent',

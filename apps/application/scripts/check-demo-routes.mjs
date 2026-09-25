@@ -49,6 +49,10 @@ const INTENTIONALLY_EXCLUDED = new Set([
   'DELETE /api/share-links/:id',
   'GET /api/share-links/settings',
   'GET /api/projects/:id/share-links',
+  'POST /api/reports/snapshots/:id/share-links',
+  'GET /api/reports/snapshots/:id/share-links',
+  'POST /api/analytics/dashboards/:id/share-links',
+  'GET /api/analytics/dashboards/:id/share-links',
   // Inbound Jira webhook: a public receiver an external Jira posts to. There is
   // no server in the browser demo, and it only ever refreshes a link.
   'POST /api/integrations/jira/webhook/:token',

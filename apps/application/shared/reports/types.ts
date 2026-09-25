@@ -17,6 +17,8 @@ import type { ReportLanguage } from './format';
 export type ReportTone = 'good' | 'bad' | 'neutral';
 
 export interface ReportTile {
+  /** The catalog metric the tile shows; absent on snapshots generated before tiles named it. */
+  metric?: string;
   label: string;
   value: string;
   /** The change against the comparison period, formatted; null without one. */
