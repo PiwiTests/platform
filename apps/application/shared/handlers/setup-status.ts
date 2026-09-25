@@ -21,6 +21,8 @@ import {
   networkRequests,
   locatorSnapshots,
   notificationChannels,
+  reportSchedules,
+  reportSnapshots,
   tags,
   markers,
   projects,
@@ -106,7 +108,7 @@ async function exists(db: DrizzleDB, query: Promise<unknown[]>): Promise<boolean
  * with one, the project-level detections (fixtures, backend logs, locator
  * healing, green samples, quarantine, markers, the SCM token, and the reporter
  * and clustering rows) are scoped through the project's runs and cases. The
- * instance-shaped detections (AI, notifications, tags) stay instance-wide
+ * instance-shaped detections (AI, notifications, tags, quality reports) stay instance-wide
  * because they carry no project dimension.
  */
 export async function getCapabilityEvidence(db: DrizzleDB, projectId?: number): Promise<CapabilityEvidence> {
@@ -131,6 +133,8 @@ export async function getCapabilityEvidence(db: DrizzleDB, projectId?: number): 
     hasIntegrations,
     hasGraphNodes,
     hasServerProbes,
+    hasReportSchedules,
+    hasReportSnapshots,
   ] = await Promise.all([
     exists(
       db,
@@ -263,6 +267,10 @@ export async function getCapabilityEvidence(db: DrizzleDB, projectId?: number): 
             .limit(1)
         : db.select({ id: probes.id }).from(probes).where(eq(probes.level, 'server')).limit(1),
     ),
+    // Quality reports are active once a report schedule or snapshot exists; a
+    // schedule spans projects, so this stays instance-wide.
+    exists(db, db.select({ id: reportSchedules.id }).from(reportSchedules).limit(1)),
+    exists(db, db.select({ id: reportSnapshots.id }).from(reportSnapshots).limit(1)),
   ]);
 
   // AI also counts as active when pinned by environment — an env-configured
@@ -282,9 +290,7 @@ export async function getCapabilityEvidence(db: DrizzleDB, projectId?: number): 
     // it configured rather than active.
     mcp: false,
     notifications: hasChannels,
-    // Evidence is a report schedule or snapshot; those tables arrive with the
-    // schedules, so until then a quality report leaves nothing behind to detect.
-    'quality-reports': false,
+    'quality-reports': hasReportSchedules || hasReportSnapshots,
     'pr-feedback': hasPrFeedback,
     'auto-heal': hasAutoHeal,
     integrations: hasIntegrations,

@@ -15,6 +15,7 @@ import {
   locatorSnapshots,
   networkRequests,
   notificationDeliveries,
+  reportSnapshots,
   shareLinks,
   subscriptions,
   testRuns,
@@ -388,6 +389,20 @@ export async function pruneNotificationDeliveries(db: DbClient, olderThanDays: n
   )!;
   const pruned = await countWhere(db, notificationDeliveries, settled);
   if (pruned > 0) await db.delete(notificationDeliveries).where(settled);
+  return pruned;
+}
+
+/** Days a report snapshot is kept when `PIWI_RETENTION_REPORT_DAYS` is unset. */
+export const DEFAULT_REPORT_RETENTION_DAYS = 365;
+
+/**
+ * Delete report snapshots generated before the cutoff. A snapshot is a frozen
+ * quality report of a few tens of kilobytes; its schedule stays.
+ */
+export async function pruneReportSnapshots(db: DbClient, olderThanDays: number): Promise<number> {
+  const old = lt(reportSnapshots.generatedAt, new Date(Date.now() - olderThanDays * MS_PER_DAY));
+  const pruned = await countWhere(db, reportSnapshots, old);
+  if (pruned > 0) await db.delete(reportSnapshots).where(old);
   return pruned;
 }
 

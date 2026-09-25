@@ -12,7 +12,9 @@ import { isAuthEnabled } from '../auth';
 import { resolveLocaleSettings } from '../locale-settings';
 import { scheduleTimeZone } from '#shared/reports/schedule';
 import type { ProjectAccess } from '#shared/handlers/analytics/common';
-import type { ReportActor } from '#shared/handlers/reports';
+import { ReportScheduleError, type ReportActor } from '#shared/handlers/reports';
+import { ReportRequestError } from '#shared/reports/request';
+import { apiError } from '../api-error';
 import { Role } from '#shared/types';
 
 /** The instance time zone, or UTC when the instance leaves it to each browser. */
@@ -45,4 +47,15 @@ export function reportActor(event: H3Event, user: User): ReportActor {
     isAdmin: !authEnabled || (user.role as Role) === Role.ADMINISTRATOR,
     authEnabled,
   };
+}
+
+/** Run a report-schedule handler, turning its refusals into API errors. */
+export async function reportRoute<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (error) {
+    if (error instanceof ReportScheduleError) throw apiError({ statusCode: error.statusCode, message: error.message });
+    if (error instanceof ReportRequestError) throw apiError({ statusCode: 400, message: error.message });
+    throw error;
+  }
 }

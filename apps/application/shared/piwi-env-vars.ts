@@ -348,6 +348,16 @@ export const PIWI_ENV_VARS = {
     default: '30',
     min: 0,
   },
+  PIWI_RETENTION_REPORT_DAYS: {
+    description:
+      'Days to keep report snapshots (the stored quality reports on the Reports page) before the nightly sweep prunes them (default 365; 0 keeps them forever).',
+    category: 'database',
+    type: 'number',
+    default: '365',
+    min: 0,
+    since: '0.39.0',
+    docs: 'features/quality-reports#report-schedules',
+  },
   PIWI_RETENTION_DIAGNOSIS_VERSIONS: {
     description:
       'AI-diagnosis history versions kept per diagnosis by the nightly sweep (default 20; 0 disables capping).',

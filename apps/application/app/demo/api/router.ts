@@ -40,7 +40,19 @@ import { getEnvironmentDiff } from '~~/server/utils/environment-diff';
 import { getPageDiff } from '~~/server/utils/page-diff';
 import { apiGetDemoDomSnapshot } from './dom-snapshot';
 import { apiExportTestRunCase, apiExportFailureCluster } from './export';
-import { apiReportPreview } from './reports';
+import {
+  apiCreateReportSchedule,
+  apiCreateReportSnapshot,
+  apiDeleteReportSchedule,
+  apiExportReportSnapshot,
+  apiGetReportSchedule,
+  apiGetReportSnapshot,
+  apiListReportSchedules,
+  apiListReportSnapshots,
+  apiReportPreview,
+  apiRunReportSchedule,
+  apiUpdateReportSchedule,
+} from './reports';
 import { apiPerfettoTestRun, apiPerfettoTestRunCase } from './perfetto';
 import {
   apiGetDemoTraceStacks,
@@ -2430,6 +2442,65 @@ routes.push(
       if (idx >= 0) _demoSubs.splice(idx, 1);
       return Promise.resolve({ success: true });
     },
+  },
+);
+
+// Report schedules and snapshots — stored in the in-browser database; the demo
+// has no scheduler, so a schedule never fires by itself.
+const demoReportChannels = () => [
+  { id: DEMO_CHANNEL.id, name: DEMO_CHANNEL.name, type: DEMO_CHANNEL.type, userId: DEMO_CHANNEL.userId },
+];
+
+routes.push(
+  {
+    method: 'GET',
+    pattern: /^\/api\/reports\/schedules$/,
+    handler: (_m, _b, _q, ctx) => apiListReportSchedules(demoReportChannels(), ctx?.scope ?? 'all'),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/reports\/schedules$/,
+    handler: (_m, body, _q, ctx) => apiCreateReportSchedule(body, demoReportChannels(), ctx?.scope ?? 'all'),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/reports\/schedules\/(\d+)$/,
+    handler: (m) => apiGetReportSchedule(+m[1]!, demoReportChannels()),
+  },
+  {
+    method: 'PATCH',
+    pattern: /^\/api\/reports\/schedules\/(\d+)$/,
+    handler: (m, body, _q, ctx) => apiUpdateReportSchedule(+m[1]!, body, demoReportChannels(), ctx?.scope ?? 'all'),
+  },
+  {
+    method: 'DELETE',
+    pattern: /^\/api\/reports\/schedules\/(\d+)$/,
+    handler: (m) => apiDeleteReportSchedule(+m[1]!),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/reports\/schedules\/(\d+)\/run$/,
+    handler: (m) => apiRunReportSchedule(+m[1]!),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/reports\/snapshots$/,
+    handler: (_m, _b, q, ctx) => apiListReportSnapshots(q, ctx?.scope ?? 'all'),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/reports\/snapshots$/,
+    handler: (_m, body, _q, ctx) => apiCreateReportSnapshot(body, ctx?.scope ?? 'all'),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/reports\/snapshots\/(\d+)$/,
+    handler: (m, _b, _q, ctx) => apiGetReportSnapshot(+m[1]!, ctx?.scope ?? 'all'),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/reports\/snapshots\/(\d+)\/export$/,
+    handler: (m, _b, q, ctx) => apiExportReportSnapshot(+m[1]!, q, ctx?.scope ?? 'all'),
   },
 );
 

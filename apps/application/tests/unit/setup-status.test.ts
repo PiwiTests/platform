@@ -122,6 +122,21 @@ describe('getSetupStatus', () => {
     expect((await activeIds(db)).has('server-probes')).toBe(true);
   });
 
+  test('a report schedule or a report snapshot activates the quality-reports capability', async () => {
+    expect((await activeIds(db)).has('quality-reports')).toBe(false);
+    await db.insert(schema.reportSnapshots).values({
+      dashboardRef: 'executive',
+      dashboardName: 'Executive',
+      periodFrom: new Date('2026-09-14T00:00:00Z'),
+      periodTo: new Date('2026-09-21T00:00:00Z'),
+      bundle: {},
+    });
+    expect((await activeIds(db)).has('quality-reports')).toBe(true);
+    await db.delete(schema.reportSnapshots);
+    await db.insert(schema.reportSchedules).values({ name: 'Weekly', cadence: 'weekly', anchor: 1, at: '08:00' });
+    expect((await activeIds(db)).has('quality-reports')).toBe(true);
+  });
+
   test('detection is evidence-based, not config-based: a defined tag activates tags', async () => {
     await db.insert(schema.tags).values({ text: 'smoke' });
 
