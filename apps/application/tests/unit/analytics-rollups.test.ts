@@ -295,3 +295,34 @@ describe('deleting runs', () => {
     expect((await rollupRows()).every((r) => r.part === 'retained')).toBe(true);
   });
 });
+
+const exporter = await import('../../shared/handlers/analytics/rollup-export');
+const { parseAnalyticsScope } = await import('../../shared/analytics/scope');
+
+describe('the rollup export', () => {
+  test('one row per cell over the period, across chunks of days, only for projects the caller can open', async () => {
+    const first = await seedRun({ daysAgo: 80, environment: 'staging', branch: '=HYPERLINK("x")' });
+    const second = await seedRun({ daysAgo: 2, projectId: 2 });
+    await rollups.upsertDailyRollup(db as any, first);
+    await rollups.upsertDailyRollup(db as any, second);
+    const scope = parseAnalyticsScope({ period: 'last-90d', allBranches: 'true', fullRunsOnly: 'false' });
+
+    const all = await exporter.collectRollupExport(db as any, scope, 'all');
+    expect(all.map((r) => [r.project, r.environment])).toEqual([
+      ['checkout', 'staging'],
+      ['search', ''],
+    ]);
+    expect(all[0]!.runs).toBe(1);
+
+    const restricted = await exporter.collectRollupExport(db as any, scope, new Set([2]));
+    expect(restricted.map((r) => r.projectId)).toEqual([2]);
+    expect(await exporter.collectRollupExport(db as any, scope, new Set())).toEqual([]);
+
+    const csv = exporter.rollupCsvHeader() + exporter.rollupCsvRows(all);
+    const lines = csv.trim().split('\r\n');
+    expect(lines[0]).toBe(exporter.ROLLUP_EXPORT_COLUMNS.join(','));
+    expect(lines).toHaveLength(3);
+    // A branch name is run-derived: a spreadsheet must never run it as a formula.
+    expect(lines[1]).toContain(`"'=HYPERLINK(""x"")"`);
+  });
+});
