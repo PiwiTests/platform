@@ -36,6 +36,7 @@ import {
   TimeToFixChart,
   OwnershipTable,
   EnvironmentComparison,
+  MoversList,
 } from '#components';
 
 export const WIDGET_COMPONENTS: Record<AnalyticsWidgetId, Component> = {
@@ -59,6 +60,7 @@ export const WIDGET_COMPONENTS: Record<AnalyticsWidgetId, Component> = {
   'time-to-fix': TimeToFixChart,
   ownership: OwnershipTable,
   'environment-comparison': EnvironmentComparison,
+  movers: MoversList,
   'scenario-gaps': ScenarioGapsSummary,
   'new-gaps': NewScenarioGaps,
   list: AnalyticsItemList,
@@ -91,4 +93,5 @@ export const CONFIGURABLE_WIDGETS = new Set<AnalyticsWidgetId>([
   'time-to-fix',
   'ownership',
   'environment-comparison',
+  'movers',
 ]);

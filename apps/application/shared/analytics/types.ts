@@ -655,3 +655,24 @@ export interface AnalyticsEnvironmentComparison {
   rows: AnalyticsEnvironmentRow[];
   bucketDays: number;
 }
+
+export type AnalyticsMoverKind = 'became-flaky' | 'stopped-flaky' | 'slower' | 'faster';
+
+export interface AnalyticsMover {
+  testCaseId: number;
+  projectId: number;
+  projectName: string;
+  title: string;
+  filePath: string;
+  /** Flaky executions over executions, or the average passed duration in ms, in each period. */
+  before: number;
+  after: number;
+  /** Relative change in percent (durations), or null (flakiness). */
+  changePct: number | null;
+}
+
+export interface AnalyticsMovers {
+  groups: Array<{ kind: AnalyticsMoverKind; label: string; items: AnalyticsMover[] }>;
+  /** Null when the scope compares with nothing, so there is nothing to move against. */
+  comparisonLabel: string | null;
+}

@@ -169,6 +169,14 @@ export const environmentComparisonOptionsSchema = z.object({
   limit: z.number().int().min(2).max(25).default(8),
 });
 
+/** The most tests a movers direction lists. */
+export const MOVERS_MAX_ROWS = 25;
+
+export const moversOptionsSchema = z.object({
+  /** How many tests each direction lists (became flaky, stopped being flaky, slower, faster). */
+  limit: z.number().int().min(5).max(MOVERS_MAX_ROWS).default(10),
+});
+
 export type StatsOptions = z.infer<typeof statsOptionsSchema>;
 export type ListOptions = z.infer<typeof listOptionsSchema>;
 export type MarkersOptions = z.infer<typeof markersOptionsSchema>;
@@ -360,6 +368,16 @@ export const ANALYTICS_WIDGETS = [
     band: 'detail',
     testFilters: true,
     options: environmentComparisonOptionsSchema,
+  },
+  {
+    id: 'movers',
+    title: 'Movers',
+    description: 'Tests that became flaky, stopped being flaky, or got slower or faster by more than 25 %.',
+    icon: 'i-lucide-arrow-up-down',
+    size: 'full',
+    band: 'detail',
+    testFilters: true,
+    options: moversOptionsSchema,
   },
   {
     id: 'scenario-gaps',

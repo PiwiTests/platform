@@ -11,6 +11,7 @@ const { parseAnalyticsScope } = await import('../../shared/analytics/scope');
 const { backfillDailyRollups } = await import('../../shared/handlers/analytics/rollups');
 const { WIDGET_DOCUMENTS } = await import('../../shared/reports/widget-documents');
 const { makeFormatter } = await import('../../shared/reports/format');
+const { findMovers } = await import('../../shared/handlers/analytics/movers');
 const { sentencesFor } = await import('../../shared/reports/sentences');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -247,5 +248,49 @@ describe('environment comparison', () => {
       'series',
       'table',
     ]);
+  });
+});
+
+describe('movers', () => {
+  test('finds the tests that became flaky and stopped being flaky against the comparison period', async () => {
+    const data = (await runAnalyticsWidget(db as any, 'movers', scope({ projects: '1' }))) as any;
+    expect(data.comparisonLabel).not.toBeNull();
+    const kinds = Object.fromEntries(data.groups.map((g: any) => [g.kind, g.items.map((i: any) => i.title)]));
+    expect(kinds).toEqual({ 'became-flaky': ['pays'], 'stopped-flaky': ['adds to cart'] });
+  });
+
+  test('without a comparison there is nothing to move against', async () => {
+    const data = (await runAnalyticsWidget(db as any, 'movers', scope({ projects: '1', compare: 'none' }))) as any;
+    expect(data).toEqual({ groups: [], comparisonLabel: null });
+  });
+
+  test('a duration moves past 25 %, with enough executions and above the noise floor', () => {
+    const stat = (avg: number, executions = 3, flaky = 0) => ({
+      projectId: 1,
+      testCaseId: avg,
+      executions,
+      flaky,
+      avgPassedMs: avg,
+    });
+    const key = (s: { testCaseId: number }) => `1:${s.testCaseId}`;
+    const pairs = [
+      [stat(1000), stat(1300)], // +30 % → slower
+      [stat(2000), stat(1400)], // −30 % → faster
+      [stat(3000), stat(3600)], // +20 % → no move
+      [stat(50), stat(150)], // under the noise floor
+      [stat(4000, 1), stat(8000, 1)], // too few executions
+    ] as const;
+    const previous = new Map(pairs.map(([a]) => [key(a), a]));
+    const current = new Map(pairs.map(([a, b]) => [key(a), { ...b, testCaseId: a.testCaseId }]));
+    const moves = findMovers(current, previous);
+    expect(moves.map((m) => [m.testCaseId, m.kind, m.changePct])).toEqual([
+      [1000, 'slower', 30],
+      [2000, 'faster', -30],
+    ]);
+  });
+
+  test('maps to one table per direction in a report', async () => {
+    const data = await runAnalyticsWidget(db as any, 'movers', scope({ projects: '1' }));
+    expect(WIDGET_DOCUMENTS.movers(data, docCtx, {}).map((b) => b.kind)).toEqual(['table', 'table']);
   });
 });

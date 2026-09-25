@@ -28,6 +28,7 @@ import type {
   AnalyticsTimeToFix,
   AnalyticsOwnership,
   AnalyticsEnvironmentComparison,
+  AnalyticsMovers,
   AnalyticsTileTarget,
   AnalyticsVerdict,
   AnalyticsWastedTime,
@@ -788,6 +789,27 @@ export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
     return blocks;
   },
 
+  movers: (data: AnalyticsMovers, ctx) => {
+    if (!data.comparisonLabel || data.groups.length === 0) return [{ kind: 'text', text: ctx.s.labels.noData }];
+    return data.groups.map((group) => ({
+      kind: 'table' as const,
+      columns: [
+        { key: 'test', label: ctx.s.title(group.label) },
+        { key: 'project', label: ctx.s.labels.projects },
+        { key: 'before', label: ctx.s.labels.previous, align: 'right' as const },
+        { key: 'after', label: ctx.s.title('Now'), align: 'right' as const },
+      ],
+      rows: group.items.map((m) => {
+        const duration = group.kind === 'slower' || group.kind === 'faster';
+        const show = (v: number) => (duration ? ctx.f.value(v, 'ms', 0) : ctx.f.value(v * 100, 'percent', 0));
+        return {
+          cells: { test: m.title, project: m.projectName, before: show(m.before), after: show(m.after) },
+          link: link(ctx, `/test-cases/${m.testCaseId}`),
+        };
+      }),
+    }));
+  },
+
   'scenario-gaps': (data: AnalyticsScenarioGaps, ctx) => {
     if (data.projects === 0) return [];
     const open = data.byClass.reduce((sum, c) => sum + c.count, 0);
@@ -913,4 +935,11 @@ export function widgetMetrics(type: AnalyticsWidgetId, options: Record<string, u
 }
 
 /** Widgets whose lists name tests, so they reach back only as far as retention keeps runs. */
-export const IDENTITY_WIDGETS = new Set<AnalyticsWidgetId>(['flaky-leaderboard', 'stats', 'browser-matrix']);
+export const IDENTITY_WIDGETS = new Set<AnalyticsWidgetId>([
+  'flaky-leaderboard',
+  'stats',
+  'browser-matrix',
+  'movers',
+  'ownership',
+  'flaky-debt',
+]);

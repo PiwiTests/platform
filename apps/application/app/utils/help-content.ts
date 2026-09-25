@@ -125,6 +125,11 @@ export const HELP_TOPICS = {
     text: 'Test pass rate and run success per environment (the `environment` your runs report), side by side with their change against the comparison period, and the pass rate of each over time, so a staging that is green while production is not stands out.',
     doc: 'features/analytics#widgets',
   },
+  'analytics.movers': {
+    title: 'Movers',
+    text: 'The tests that changed against the comparison period: those that became flaky or stopped being flaky, and those whose average passing duration grew or shrank by more than 25 %. Read from the stored runs, so both periods reach back only as far as retention keeps them; each direction lists its top tests, at most 25.',
+    doc: 'features/analytics#widgets',
+  },
   'analytics.browser-matrix': {
     title: 'Browser matrix',
     text: 'Pass rate per project × browser, so a suite that is green on one browser but failing on another (a browser-specific bug) stands out immediately.',

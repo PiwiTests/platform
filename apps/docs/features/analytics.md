@@ -142,6 +142,11 @@ the change vs the previous period.
 change against the comparison period, and each environment's pass rate over time: "staging is green and
 production is not".
 
+**Movers** — the test-level "what changed": tests that became flaky or stopped being flaky, and tests
+whose average passing duration grew or shrank by more than 25 %, against the comparison period. It reads
+the stored runs, so both periods reach back only as far as retention keeps them, and each direction lists
+its top tests, at most 25.
+
 **Browser matrix** — pass rate per project × browser, so a suite that's green on Chromium and failing
 on WebKit stands out.
 
