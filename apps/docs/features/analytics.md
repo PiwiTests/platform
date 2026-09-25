@@ -115,6 +115,10 @@ minute](./quality-reports#cost-of-a-ci-minute) set, it shows the money too.
 each bucket), its change against the comparison period, and the share of tests skipped or not run. A
 suite that grows while its skipped share grows too is adding tests nobody runs.
 
+**Flaky debt** — whether flakiness is going down since you started fixing it: flaky occurrences per run
+in each bucket, the distinct flaky tests of each bucket (from the stored runs, so as far back as
+retention keeps them) and the tests in quarantine at the end of each bucket.
+
 **Flakiest tests** — the global flaky leaderboard, using the same [scoring and impact
 ranking](./flaky-tests#impact-ranking) as each project's Flaky tests tab.
 

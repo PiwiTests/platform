@@ -126,6 +126,8 @@ const TITLES: Record<string, string> = {
   'Suite growth': 'Croissance de la suite',
   Skipped: 'Ignorés',
   'Did not run': 'Non exécutés',
+  'Flaky debt': 'Dette d’instabilité',
+  'Flaky occurrences per run': 'Occurrences instables par exécution',
   'Open gaps by class and by feature, and the gaps closed.':
     'Les lacunes ouvertes par classe et par fonctionnalité, et les lacunes fermées.',
 };

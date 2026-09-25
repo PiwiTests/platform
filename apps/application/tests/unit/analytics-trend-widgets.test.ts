@@ -63,9 +63,35 @@ beforeAll(async () => {
     { id: 2, name: 'search' },
   ]);
   // Previous period: a 10-test suite. Current period: it grows to 12, with skipped and not-run tests.
-  await seedRun({ projectId: 1, daysAgo: 20, totalTests: 10, passedTests: 10 });
-  await seedRun({ projectId: 1, daysAgo: 5, totalTests: 12, passedTests: 10, skippedTests: 1, didNotRunTests: 1 });
+  const previousRun = await seedRun({ projectId: 1, daysAgo: 20, totalTests: 10, passedTests: 10 });
+  const currentRun = await seedRun({
+    projectId: 1,
+    daysAgo: 5,
+    totalTests: 12,
+    passedTests: 10,
+    skippedTests: 1,
+    didNotRunTests: 1,
+    flakyTests: 2,
+  });
   await seedRun({ projectId: 2, daysAgo: 3, totalTests: 8, passedTests: 8 });
+
+  await db.insert(schema.testCases).values([
+    { id: 1, projectId: 1, filePath: 'pay.spec.ts', title: 'pays', owner: 'team-pay' },
+    { id: 2, projectId: 1, filePath: 'cart.spec.ts', title: 'adds to cart', owner: 'team-cart' },
+    { id: 3, projectId: 1, filePath: 'search.spec.ts', title: 'searches' },
+  ]);
+  await db.insert(schema.testRunsCases).values([
+    // Test 1: stable before, flaky now and slower. Test 2: flaky before, stable now and faster.
+    { testRunId: previousRun, testCaseId: 1, status: 'passed', duration: 1000, retries: 0 },
+    { testRunId: previousRun, testCaseId: 2, status: 'passed', duration: 4000, retries: 1 },
+    { testRunId: currentRun, testCaseId: 1, status: 'passed', duration: 3000, retries: 1, wastedTimeMs: 60_000 },
+    { testRunId: currentRun, testCaseId: 2, status: 'passed', duration: 1000, retries: 0 },
+    { testRunId: currentRun, testCaseId: 3, status: 'failed', duration: 120_000, retries: 0 },
+  ]);
+  await db.insert(schema.quarantinedTests).values([
+    { projectId: 1, testCaseId: 3, createdAt: daysAgo(10) },
+    { projectId: 1, testCaseId: 2, createdAt: daysAgo(25), releasedAt: daysAgo(12) },
+  ]);
   await backfillDailyRollups(db as any);
 });
 
@@ -85,5 +111,32 @@ describe('suite growth', () => {
     const blocks = WIDGET_DOCUMENTS['suite-growth'](data, docCtx, {});
     expect(blocks.map((b) => b.kind)).toEqual(['series', 'series']);
     expect((blocks[0] as any).summary).toBe('Suite size: 12 (+2)');
+  });
+});
+
+describe('flaky debt', () => {
+  test('reads flaky occurrences per run, distinct flaky tests and the quarantine over time', async () => {
+    const data = (await runAnalyticsWidget(db as any, 'flaky-debt', scope({ projects: '1' }))) as any;
+    expect(data.flakyPerRun).toBe(2);
+    expect(data.previousFlakyPerRun).toBe(0);
+    expect(data.flakyTests).toBe(1);
+    expect(data.quarantined).toBe(1);
+    expect(data.previousQuarantined).toBe(1);
+    const last = data.points[data.points.length - 1];
+    expect(last.quarantined).toBe(1);
+  });
+
+  test('narrows to a test filter', async () => {
+    const data = (await runAnalyticsWidget(
+      db as any,
+      'flaky-debt',
+      scope({ projects: '1', browser: 'webkit' }),
+    )) as any;
+    expect(data.flakyTests).toBe(0);
+  });
+
+  test('maps to two series in a report', async () => {
+    const data = await runAnalyticsWidget(db as any, 'flaky-debt', scope({ projects: '1' }));
+    expect(WIDGET_DOCUMENTS['flaky-debt'](data, docCtx, {}).map((b) => b.kind)).toEqual(['series', 'series']);
   });
 });

@@ -24,6 +24,7 @@ import type {
   AnalyticsSlowEndpoints,
   AnalyticsStats,
   AnalyticsSuiteGrowth,
+  AnalyticsFlakyDebt,
   AnalyticsTileTarget,
   AnalyticsVerdict,
   AnalyticsWastedTime,
@@ -628,6 +629,45 @@ export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
     ];
   },
 
+  'flaky-debt': (data: AnalyticsFlakyDebt, ctx) => {
+    if (data.points.length === 0) return [{ kind: 'text', text: ctx.s.labels.noData }];
+    const perRun = ctx.s.title('Flaky occurrences per run');
+    const change =
+      data.flakyPerRun !== null && data.previousFlakyPerRun !== null
+        ? ` (${ctx.f.delta({ unit: 'count', delta: Math.round((data.flakyPerRun - data.previousFlakyPerRun) * 10) / 10, deltaPct: null, precision: 1 }) ?? ''})`
+        : '';
+    return [
+      seriesBlock(
+        'count',
+        null,
+        [{ label: perRun, points: data.points.map((p) => ({ date: p.date, value: p.flakyPerRun })), color: 'flaky' }],
+        (value) => (value === null ? '—' : ctx.f.number(value, 1)),
+        ctx,
+        `${perRun}: ${data.flakyPerRun === null ? '—' : ctx.f.number(data.flakyPerRun, 1)}${change}`,
+      ),
+      seriesBlock(
+        'count',
+        null,
+        [
+          {
+            label: ctx.s.metricLabel('flaky-tests', 'Flaky tests'),
+            points: data.points.map((p) => ({ date: p.date, value: p.flakyTests })),
+            color: 'flaky',
+            faint: true,
+          },
+          {
+            label: ctx.s.metricLabel('quarantine-debt', 'Quarantine debt'),
+            points: data.points.map((p) => ({ date: p.date, value: p.quarantined })),
+            color: 'accent',
+          },
+        ],
+        (value) => (value === null ? '—' : ctx.f.number(value)),
+        { ...ctx, drawMarkers: false },
+        `${ctx.s.metricLabel('flaky-tests', 'Flaky tests')}: ${ctx.f.number(data.flakyTests)}, ${ctx.s.metricLabel('quarantine-debt', 'Quarantine debt')}: ${ctx.f.number(data.quarantined)}`,
+      ),
+    ];
+  },
+
   'scenario-gaps': (data: AnalyticsScenarioGaps, ctx) => {
     if (data.projects === 0) return [];
     const open = data.byClass.reduce((sum, c) => sum + c.count, 0);
@@ -732,6 +772,7 @@ export function widgetMetrics(type: AnalyticsWidgetId, options: Record<string, u
   if (type === 'wasted-time') return ['wasted-ci-minutes'];
   if (type === 'ci-time-trend') return ['ci-time'];
   if (type === 'suite-growth') return ['suite-size'];
+  if (type === 'flaky-debt') return ['flaky-occurrences', 'flaky-tests', 'quarantine-debt'];
   if (type === 'regression-velocity') return ['new-regressions', 'newly-flaky'];
   if (type === 'portfolio' || type === 'pass-rate-heatmap' || type === 'browser-matrix') return ['test-pass-rate'];
   if (type === 'scenario-gaps') {

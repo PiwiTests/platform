@@ -576,3 +576,25 @@ export interface AnalyticsSuiteGrowth {
   skippedPct: number | null;
   didNotRunPct: number | null;
 }
+
+export interface AnalyticsFlakyDebtPoint {
+  date: string;
+  /** Flaky occurrences per run in the bucket; null without a run. */
+  flakyPerRun: number | null;
+  /** Distinct tests that passed only on a retry in the bucket (stored runs only). */
+  flakyTests: number;
+  /** Tests in quarantine at the end of the bucket. */
+  quarantined: number;
+}
+
+export interface AnalyticsFlakyDebt {
+  points: AnalyticsFlakyDebtPoint[];
+  bucketDays: number;
+  flakyPerRun: number | null;
+  previousFlakyPerRun: number | null;
+  /** Distinct flaky tests over the period. */
+  flakyTests: number;
+  /** Tests in quarantine at the end of the period, and at the end of the comparison period. */
+  quarantined: number;
+  previousQuarantined: number | null;
+}

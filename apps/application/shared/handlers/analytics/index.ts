@@ -22,6 +22,7 @@ import { getAnalyticsList } from './list';
 import { getAnalyticsEvents } from './events';
 import { getAnalyticsNote } from './note';
 import { getAnalyticsSuiteGrowth } from './suite-growth';
+import { getAnalyticsFlakyDebt } from './flaky-debt';
 import {
   getAnalyticsPerformanceTrend,
   getAnalyticsSelectionHealth,
@@ -61,6 +62,7 @@ const ANALYTICS_WIDGET_HANDLERS: Record<AnalyticsWidgetId, AnalyticsWidgetHandle
   'browser-matrix': getAnalyticsBrowserMatrix,
   'slow-endpoints': getAnalyticsSlowEndpoints,
   'suite-growth': getAnalyticsSuiteGrowth,
+  'flaky-debt': getAnalyticsFlakyDebt,
   'scenario-gaps': getAnalyticsScenarioGaps,
   'new-gaps': getAnalyticsNewGaps,
   list: getAnalyticsList,

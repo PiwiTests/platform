@@ -314,6 +314,15 @@ export const ANALYTICS_WIDGETS = [
     testFilters: true,
   },
   {
+    id: 'flaky-debt',
+    title: 'Flaky debt',
+    description: 'Flaky occurrences per run, distinct flaky tests and the quarantine, over time.',
+    icon: 'i-lucide-repeat-2',
+    size: 'half',
+    band: 'trends',
+    testFilters: true,
+  },
+  {
     id: 'scenario-gaps',
     title: 'Scenario gaps',
     description: 'Open Test Map gaps by class and feature, gaps closed, accepted but unwritten.',
