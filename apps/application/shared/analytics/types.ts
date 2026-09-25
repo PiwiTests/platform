@@ -360,8 +360,20 @@ export interface AnalyticsStats {
   comparisonLabel: string | null;
 }
 
+/** One group of a metric breakdown, with its value and change like the whole metric's. */
+export interface AnalyticsBreakdownGroup {
+  key: string;
+  label: string;
+  value: AnalyticsMetricValue;
+  /** The group's series over the period (line, bar over time and heatmap displays); null otherwise. */
+  points: AnalyticsSeriesPoint[] | null;
+  /** The group of everything outside the top groups. */
+  other: boolean;
+}
+
 export interface AnalyticsMetricWidget {
-  display: 'line' | 'stat';
+  /** The display drawn: `stat` when the metric has no series to draw the one asked for. */
+  display: 'line' | 'stat' | 'bar' | 'table' | 'heatmap';
   value: AnalyticsMetricValue;
   bucketDays: number;
   /** The series over the period; empty for the stat display or a metric with no series. */
@@ -369,6 +381,8 @@ export interface AnalyticsMetricWidget {
   /** The comparison period's series, aligned bucket for bucket; null when off or absent. */
   previousPoints: AnalyticsSeriesPoint[] | null;
   comparisonLabel: string | null;
+  /** The metric cut by a dimension, top groups first; null without a breakdown. */
+  breakdown: { dimension: string; label: string; groups: AnalyticsBreakdownGroup[] } | null;
 }
 
 // ── Verdict, progress, risks ────────────────────────────────────────────────
@@ -479,3 +493,39 @@ export interface AnalyticsNewGaps {
     gaps: Array<{ id: number; title: string; class: string; score: number | null; createdAt: number }>;
   }>;
 }
+
+// ── List, events, note and the single-project analyses ──────────────────────
+
+export interface AnalyticsListItem {
+  id: number;
+  title: string;
+  /** One line of facts (status, counts, age), plain text. */
+  detail: string;
+  projectName: string;
+  /** When the item happened or was last seen (ISO). */
+  at: string | null;
+  /** Where the item opens in the app. */
+  href: string;
+}
+
+export interface AnalyticsList {
+  source: 'runs' | 'failure-clusters' | 'flaky-tests' | 'scenario-gaps';
+  items: AnalyticsListItem[];
+  /** Projects left out because they declined the Test Map (scenario gaps only). */
+  declined: number;
+}
+
+export interface AnalyticsEvents {
+  markers: AnalyticsMarker[];
+}
+
+export interface AnalyticsNote {
+  /** The note rendered from Markdown, raw HTML escaped. */
+  html: string;
+  markdown: string;
+}
+
+/** The single-project analyses answer only when the scope resolves to one project. */
+export type AnalyticsProjectAnalysis<T> =
+  | { project: { id: number; name: string }; data: T }
+  | { project: null; reason: string };

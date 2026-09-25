@@ -18,6 +18,16 @@ import { getAnalyticsVerdict } from './verdict';
 import { getAnalyticsProgress } from './progress';
 import { getAnalyticsRisks } from './risks';
 import { getAnalyticsNewGaps, getAnalyticsScenarioGaps } from './scenario-gaps';
+import { getAnalyticsList } from './list';
+import { getAnalyticsEvents } from './events';
+import { getAnalyticsNote } from './note';
+import {
+  getAnalyticsPerformanceTrend,
+  getAnalyticsSelectionHealth,
+  getAnalyticsSlowTests,
+  getAnalyticsSpecHealth,
+  getAnalyticsTimeoutOpportunities,
+} from './project-analyses';
 
 export { isAnalyticsWidgetId };
 export type { AnalyticsWidgetId, ProjectAccess };
@@ -51,6 +61,14 @@ const ANALYTICS_WIDGET_HANDLERS: Record<AnalyticsWidgetId, AnalyticsWidgetHandle
   'slow-endpoints': getAnalyticsSlowEndpoints,
   'scenario-gaps': getAnalyticsScenarioGaps,
   'new-gaps': getAnalyticsNewGaps,
+  list: getAnalyticsList,
+  markers: getAnalyticsEvents,
+  text: getAnalyticsNote,
+  'spec-health': getAnalyticsSpecHealth,
+  'slow-tests': getAnalyticsSlowTests,
+  'performance-trend': getAnalyticsPerformanceTrend,
+  'timeout-opportunities': getAnalyticsTimeoutOpportunities,
+  'selection-health': getAnalyticsSelectionHealth,
 };
 
 /**

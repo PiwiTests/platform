@@ -25,7 +25,14 @@ import type {
   AnalyticsStats,
   AnalyticsVerdict,
   AnalyticsWastedTime,
+  AnalyticsEvents,
+  AnalyticsList,
+  AnalyticsNote,
+  AnalyticsProjectAnalysis,
 } from '#shared/analytics/types';
+import type { TimeoutOpportunity } from '#shared/analytics/timeout-hygiene';
+import type { SelectionAnalytics } from '#shared/handlers/selection-analytics';
+import type { PerformanceTrendData, SlowTestsData, SpecHealthData } from '#shared/handlers/analytics/project-analyses';
 import type { MetricId } from '#shared/analytics/metrics';
 import type { ValueFormatter } from './format';
 import type { ReportSentences } from './sentences';
@@ -104,7 +111,150 @@ function name(row: { name?: string; label?: string | null; projectName?: string;
   return row.label || row.projectLabel || row.name || row.projectName || '';
 }
 
+/** A single-project analysis answers nothing outside one project, and the report leaves it out. */
+function analysed<T>(data: AnalyticsProjectAnalysis<T>, map: (value: T) => ReportBlock[]): ReportBlock[] {
+  return data.project ? map(data.data) : [];
+}
+
 export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
+  list: (data: AnalyticsList, ctx) =>
+    data.items.length === 0
+      ? []
+      : [
+          {
+            kind: 'table',
+            columns: [
+              { key: 'title', label: ctx.s.title('Name') },
+              { key: 'project', label: ctx.s.labels.projects },
+              { key: 'detail', label: ctx.s.title('Detail') },
+            ],
+            rows: data.items.map((item) => ({
+              cells: { title: item.title, project: item.projectName, detail: item.detail },
+              link: link(ctx, item.href),
+            })),
+          },
+        ],
+
+  markers: (data: AnalyticsEvents, ctx) =>
+    data.markers.length === 0
+      ? []
+      : [
+          {
+            kind: 'list',
+            items: data.markers.map((m) => ({
+              text: `${ctx.f.date(new Date(m.occurredAt).toISOString())} · ${m.label}`,
+              detail: m.description,
+            })),
+          },
+        ],
+
+  text: (data: AnalyticsNote) => (data.markdown.trim() ? [{ kind: 'text', text: data.markdown }] : []),
+
+  'spec-health': (data: AnalyticsProjectAnalysis<SpecHealthData>, ctx) =>
+    analysed(data, (health) => [
+      {
+        kind: 'table',
+        columns: [
+          { key: 'spec', label: ctx.s.title('Spec directory') },
+          { key: 'pass', label: ctx.s.metricLabel('test-pass-rate', 'Test pass rate'), align: 'right' },
+          { key: 'flaky', label: ctx.s.title('Flaky'), align: 'right' },
+          { key: 'tests', label: '#', align: 'right' },
+        ],
+        rows: health.specs.map((spec) => ({
+          cells: {
+            spec: spec.prefix,
+            pass: ctx.f.value(spec.passRate * 100, 'percent', 0),
+            flaky: ctx.f.value(spec.flakyRate * 100, 'percent', 0),
+            tests: ctx.f.number(spec.testCount),
+          },
+        })),
+      },
+    ]),
+
+  'slow-tests': (data: AnalyticsProjectAnalysis<SlowTestsData>, ctx) =>
+    analysed(data, (tests) => [
+      {
+        kind: 'table',
+        columns: [
+          { key: 'title', label: ctx.s.title('Test') },
+          { key: 'avg', label: ctx.s.title('Average'), align: 'right' },
+        ],
+        rows: tests.map((t) => ({
+          cells: { title: t.title, avg: ctx.f.value(t.avgDuration, 'ms', 0) },
+          link: link(ctx, `/test-cases/${t.id}`),
+        })),
+      },
+    ]),
+
+  'performance-trend': (data: AnalyticsProjectAnalysis<PerformanceTrendData>, ctx) =>
+    analysed(data, (runs) =>
+      runs.length === 0
+        ? []
+        : [
+            seriesBlock(
+              'ms',
+              null,
+              [
+                {
+                  label: ctx.s.metricLabel('average-run-duration', 'Run duration'),
+                  points: runs.map((r) => ({
+                    date: new Date(r.startTime).toISOString().slice(0, 10),
+                    value: r.duration ?? null,
+                  })),
+                  color: 'accent',
+                },
+              ],
+              (value) => ctx.f.value(value, 'ms', 0),
+              ctx,
+              null,
+            ),
+          ],
+    ),
+
+  'timeout-opportunities': (data: AnalyticsProjectAnalysis<TimeoutOpportunity[]>, ctx) =>
+    analysed(data, (rows) =>
+      rows.length === 0
+        ? []
+        : [
+            {
+              kind: 'table',
+              columns: [
+                { key: 'title', label: ctx.s.title('Test') },
+                { key: 'timeout', label: ctx.s.title('Timeout'), align: 'right' },
+                { key: 'p95', label: 'p95', align: 'right' },
+                { key: 'recommended', label: ctx.s.title('Suggested'), align: 'right' },
+              ],
+              rows: rows.map((r) => ({
+                cells: {
+                  title: r.title,
+                  timeout: ctx.f.value(r.timeout, 'ms', 0),
+                  p95: ctx.f.value(r.p95, 'ms', 0),
+                  recommended: ctx.f.value(r.recommendedTimeout, 'ms', 0),
+                },
+              })),
+            },
+          ],
+    ),
+
+  'selection-health': (data: AnalyticsProjectAnalysis<SelectionAnalytics>, ctx) =>
+    analysed(data, (health) => [
+      {
+        kind: 'table',
+        columns: [
+          { key: 'name', label: ctx.s.title('Selection') },
+          { key: 'tests', label: '#', align: 'right' },
+          { key: 'warnings', label: ctx.s.title('Warnings'), align: 'right' },
+        ],
+        rows: health.selections.map((sel) => ({
+          cells: {
+            name: `${sel.name} (${sel.key})`,
+            tests: ctx.f.number(sel.resolvedCount),
+            warnings: ctx.f.number(sel.warnings.length),
+          },
+        })),
+      },
+    ]),
+
   stats: (data: AnalyticsStats, ctx) => [{ kind: 'stats', tiles: data.tiles.map((t) => tile(t, ctx, t.companion)) }],
 
   verdict: (data: AnalyticsVerdict, ctx) => [{ kind: 'text', text: ctx.s.verdict(data.facts, ctx.f), tone: data.tone }],
@@ -113,6 +263,47 @@ export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
     const v = data.value;
     if (data.display === 'stat') return [{ kind: 'stats', tiles: [tile(v, ctx)] }];
     const label = ctx.s.metricLabel(v.metric, v.label);
+    const format = (value: number | null) => ctx.f.value(value, v.unit, v.precision, v.currency);
+    if (data.breakdown) {
+      const blocks: ReportBlock[] = [];
+      const lines = data.breakdown.groups.filter((g) => g.points && !g.other);
+      if (data.display === 'line' && lines.length > 0) {
+        blocks.push(
+          seriesBlock(
+            v.unit,
+            v.unit === 'percent' ? 100 : null,
+            lines.map((g) => ({ label: g.label, points: g.points! })),
+            format,
+            { ...ctx, drawMarkers: ctx.drawMarkers && options.markers !== false },
+            null,
+          ),
+        );
+      }
+      blocks.push({
+        kind: 'table',
+        columns: [
+          { key: 'group', label: ctx.s.title(data.breakdown.label) },
+          { key: 'value', label, align: 'right' },
+          { key: 'change', label: ctx.s.title('Change'), align: 'right' },
+        ],
+        rows: data.breakdown.groups.map((g) => ({
+          cells: { group: g.label, value: metricText(g.value, ctx), change: ctx.f.delta(g.value) ?? '' },
+        })),
+      });
+      return blocks;
+    }
+    if (data.display === 'table') {
+      return [
+        {
+          kind: 'table',
+          columns: [
+            { key: 'date', label: ctx.s.title('Date') },
+            { key: 'value', label, align: 'right' },
+          ],
+          rows: data.points.map((p) => ({ cells: { date: ctx.f.day(p.date), value: format(p.value) } })),
+        },
+      ];
+    }
     const series: ReportSeries[] = [{ label, points: data.points, color: 'accent' }];
     if (data.previousPoints?.some((p) => p.value !== null)) {
       series.push({ label: data.comparisonLabel ?? ctx.s.labels.previous, points: data.previousPoints, faint: true });

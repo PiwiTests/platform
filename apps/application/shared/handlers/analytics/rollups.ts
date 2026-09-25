@@ -506,6 +506,51 @@ export async function readRollupSeries(db: DrizzleDB, filter: RollupFilter): Pro
   });
 }
 
+export interface RollupCellRow extends RollupDayRow {
+  environment: string;
+  branch: string;
+  fullRun: boolean;
+}
+
+/**
+ * The rollup rows matching a filter, summed per cell (project, day,
+ * environment, branch and run kind) over the retained and archived parts:
+ * what a breakdown by environment, branch or run kind groups.
+ */
+export async function readRollupCells(db: DrizzleDB, filter: RollupFilter): Promise<RollupCellRow[]> {
+  const conditions = rollupConditions(filter);
+  if (!conditions) return [];
+  const t = analyticsDailyRollups;
+  const sums: Record<string, SQL> = {};
+  for (const field of SUMMED_FIELDS) sums[field] = sql`COALESCE(SUM(${t[field]}), 0)`;
+  const rows: any[] = await db
+    .select({
+      projectId: t.projectId,
+      day: t.day,
+      environment: t.environment,
+      branch: t.branch,
+      fullRun: t.fullRun,
+      ...sums,
+      maxTotalTests: sql`COALESCE(MAX(${t.maxTotalTests}), 0)`,
+    })
+    .from(t)
+    .where(and(...conditions))
+    .groupBy(t.projectId, t.day, t.environment, t.branch, t.fullRun)
+    .orderBy(t.day);
+  return rows.map((row) => {
+    const out = {
+      projectId: Number(row.projectId),
+      day: String(row.day),
+      environment: String(row.environment ?? ''),
+      branch: String(row.branch ?? ''),
+      fullRun: Number(row.fullRun) === 1,
+    } as RollupCellRow;
+    for (const field of SUMMED_FIELDS) out[field] = Number(row[field]) || 0;
+    out.maxTotalTests = Number(row.maxTotalTests) || 0;
+    return out;
+  });
+}
+
 /** The day of the oldest rollup row a filter covers, for "data starts on" notes. */
 export async function firstRollupDay(db: DrizzleDB, filter: RollupFilter): Promise<string | null> {
   const conditions = rollupConditions(filter);

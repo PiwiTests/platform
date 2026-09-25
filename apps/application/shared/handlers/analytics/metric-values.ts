@@ -69,11 +69,30 @@ export function isEvaluatedMetric(id: MetricId): boolean {
   return EVALUATED_METRIC_IDS.includes(id);
 }
 
+/** A metric summed from the scalar rows (the rollups, or the matching executions). */
+export function isRollupMetric(id: MetricId): boolean {
+  return id in ROLLUP_VALUE;
+}
+
+export function isClusterMetric(id: MetricId): boolean {
+  return CLUSTER_METRICS.has(id);
+}
+
+/** A rollup metric's value over summed totals; null over no run (the run count excepted). */
+export function rollupMetricValue(id: MetricId, totals: RollupTotals, cost: CiCost | null): number | null {
+  const rollup = ROLLUP_VALUE[id];
+  if (!rollup) return null;
+  return totals.runs === 0 && id !== 'runs' ? null : rollup(totals, cost);
+}
+
 export function hasMetricSeries(id: MetricId): boolean {
   return SERIES_METRICS.has(id);
 }
 
-interface ClusterRow {
+export interface ClusterRow {
+  projectId: number;
+  errorType: string | null;
+  assignee: string | null;
   status: string;
   createdAt: Date;
   updatedAt: Date;
@@ -90,7 +109,7 @@ function ms(value: Date | number | string | null | undefined): number | null {
 }
 
 /** Clusters that could matter to a period starting at `fromMs`: open ones, and any touched since. */
-async function loadClusters(db: DrizzleDB, ctx: AnalyticsContext, fromMs: number): Promise<ClusterRow[]> {
+export async function loadClusters(db: DrizzleDB, ctx: AnalyticsContext, fromMs: number): Promise<ClusterRow[]> {
   if (ctx.allowed !== 'all' && ctx.allowed.length === 0) return [];
   const since = new Date(fromMs);
   const conditions: SQL[] = [
@@ -104,6 +123,9 @@ async function loadClusters(db: DrizzleDB, ctx: AnalyticsContext, fromMs: number
   if (ctx.allowed !== 'all') conditions.push(inArray(failureClusters.projectId, ctx.allowed));
   return db
     .select({
+      projectId: failureClusters.projectId,
+      errorType: failureClusters.errorType,
+      assignee: failureClusters.assignee,
       status: failureClusters.status,
       createdAt: failureClusters.createdAt,
       updatedAt: failureClusters.updatedAt,
@@ -147,7 +169,7 @@ function round(value: number, precision: number): number {
   return Math.round(value * f) / f;
 }
 
-function clusterValue(id: MetricId, clusters: ClusterRow[], fromMs: number, toMs: number, now: number) {
+export function clusterValue(id: MetricId, clusters: ClusterRow[], fromMs: number, toMs: number, now: number) {
   const inPeriod = (t: number | null) => t !== null && t >= fromMs && t < toMs;
   const fixed = clusters.filter((c) => inPeriod(ms(c.fixLandedAt)));
   switch (id) {

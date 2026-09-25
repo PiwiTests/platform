@@ -16,6 +16,7 @@ import {
   fetchContextRuns,
   fetchFilteredExecutions,
   type AnalyticsContext,
+  type FilteredExecution,
 } from './common';
 import { emptyRollupTotals, readRollupSeries, type RollupDayRow } from './rollups';
 
@@ -54,8 +55,18 @@ async function countFromExecutions(
   const dayStart = Date.parse(`${fromDay}T00:00:00Z`);
   const dayEnd = Date.parse(`${toDay}T00:00:00Z`) + 24 * 60 * 60 * 1000;
   const runs = await fetchContextRuns(db, ctx, dayStart, dayEnd);
-  const executions = await fetchFilteredExecutions(db, ctx, runs);
-  const byRun = new Map<number, typeof executions>();
+  return rowsFromExecutions(runs, await fetchFilteredExecutions(db, ctx, runs));
+}
+
+/**
+ * Per project and day totals of executions, final attempt per test and
+ * browser: a run counts once, and passed when none of its executions failed.
+ */
+export function rowsFromExecutions(
+  runs: Array<{ id: number; projectId: number; startTime: Date | string | number }>,
+  executions: FilteredExecution[],
+): RollupDayRow[] {
+  const byRun = new Map<number, FilteredExecution[]>();
   for (const execution of executions) {
     const list = byRun.get(execution.testRunId) ?? [];
     list.push(execution);

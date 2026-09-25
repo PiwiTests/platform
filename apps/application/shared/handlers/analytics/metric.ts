@@ -1,15 +1,18 @@
 import type { DrizzleDB } from '../db';
 import type { AnalyticsScope } from '../../analytics/scope';
 import type { AnalyticsMetricWidget } from '../../analytics/types';
-import { metricOptionsSchema, type MetricOptions } from '../../analytics/registry';
+import { metricBreakdowns, metricOptionsSchema, type MetricOptions } from '../../analytics/registry';
 import { resolveCiCost } from '../ci-cost';
 import { getAnalyticsContext, type ProjectAccess } from './common';
 import { computeMetricSeries, computeMetricValues, hasMetricSeries, metricValue } from './metric-values';
+import { computeMetricBreakdown, dimensionLabel } from './metric-breakdown';
 
 /**
  * One metric from the catalog over the period: its value and change, and for
- * the line display its series, with the comparison period's series aligned
- * bucket for bucket so it can be drawn as a faint line behind it.
+ * the displays over time its series, with the comparison period's series
+ * aligned bucket for bucket so it can be drawn as a faint line behind it.
+ * With a breakdown, the metric is cut by a dimension: the top groups, then
+ * *Other*. A display the metric cannot draw falls back to `stat`.
  */
 export async function getAnalyticsMetric(
   db: DrizzleDB,
@@ -24,22 +27,43 @@ export async function getAnalyticsMetric(
   const compare = options.comparison ? ctx.comparison : null;
   const from = ctx.period.from.getTime();
   const to = ctx.period.to.getTime();
-  const line = options.display === 'line' && hasMetricSeries(id);
+  const breakdown =
+    options.display !== 'stat' && options.breakdown && metricBreakdowns(id).includes(options.breakdown)
+      ? options.breakdown
+      : null;
+  const hasSeries = hasMetricSeries(id);
+  // Grouped, a bar or a table row per group needs no series; a line or heatmap per group does.
+  let display: AnalyticsMetricWidget['display'] = options.display;
+  if (display !== 'stat' && !hasSeries) display = breakdown ? (display === 'table' ? 'table' : 'bar') : 'stat';
+  const overTime = hasSeries && display !== 'stat' && (!breakdown || display === 'line' || display === 'heatmap');
+  const wholeSeries = overTime && !breakdown;
 
-  const [current, previous, points, previousPoints] = await Promise.all([
+  const [current, previous, points, previousPoints, groups] = await Promise.all([
     computeMetricValues(db, ctx, [id], from, to, { cost }),
     compare
       ? computeMetricValues(db, ctx, [id], compare.from.getTime(), compare.to.getTime(), { cost })
       : Promise.resolve(null),
-    line ? computeMetricSeries(db, ctx, id, from, to, { cost }) : Promise.resolve(null),
-    line && compare
+    wholeSeries ? computeMetricSeries(db, ctx, id, from, to, { cost }) : Promise.resolve(null),
+    wholeSeries && compare
       ? computeMetricSeries(db, ctx, id, compare.from.getTime(), compare.to.getTime(), { cost })
+      : Promise.resolve(null),
+    breakdown
+      ? computeMetricBreakdown(db, ctx, {
+          metric: id,
+          dimension: breakdown,
+          from,
+          to,
+          compare: compare ? { from: compare.from.getTime(), to: compare.to.getTime() } : null,
+          top: options.top,
+          series: overTime,
+          cost,
+        })
       : Promise.resolve(null),
   ]);
 
   const series = points ?? [];
   return {
-    display: line ? 'line' : 'stat',
+    display,
     value: metricValue(id, current.get(id) ?? null, previous?.get(id) ?? null, cost),
     bucketDays: ctx.buckets.bucketDays,
     points: series,
@@ -48,5 +72,19 @@ export async function getAnalyticsMetric(
       ? series.map((p, i) => ({ date: p.date, value: previousPoints[i]?.value ?? null }))
       : null,
     comparisonLabel: compare?.label ?? null,
+    breakdown:
+      breakdown && groups
+        ? {
+            dimension: breakdown,
+            label: dimensionLabel(breakdown),
+            groups: groups.map((g) => ({
+              key: g.key,
+              label: g.label,
+              value: metricValue(id, g.value, g.previous, cost),
+              points: g.points,
+              other: g.other,
+            })),
+          }
+        : null,
   };
 }

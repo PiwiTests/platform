@@ -381,6 +381,9 @@ export interface ScopedRun {
   passedTests: number;
   failedTests: number;
   flakyTests: number;
+  environment: string | null;
+  branch: string | null;
+  isFullRun: number | null;
 }
 
 const SCOPED_RUN_FIELDS = {
@@ -393,6 +396,9 @@ const SCOPED_RUN_FIELDS = {
   passedTests: testRuns.passedTests,
   failedTests: testRuns.failedTests,
   flakyTests: testRuns.flakyTests,
+  environment: testRuns.environment,
+  branch: testRuns.branch,
+  isFullRun: testRuns.isFullRun,
 };
 
 /** Terminal runs of the context inside `[fromMs, toMs)`, oldest → newest. */

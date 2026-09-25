@@ -13,7 +13,7 @@
  * belongs to, and the group it is listed under when a widget is picked.
  */
 import { z } from 'zod';
-import { METRICS, type MetricId } from './metrics';
+import { DIMENSIONS, getMetric, METRICS, type DimensionId, type MetricId } from './metrics';
 
 export type AnalyticsBandId = 'health' | 'pain' | 'trends' | 'detail';
 
@@ -79,16 +79,87 @@ export const statsOptionsSchema = z.object({
   companions: z.partialRecord(metricIdSchema, metricIdSchema).default({}),
 });
 
+export const METRIC_DISPLAYS = ['stat', 'line', 'bar', 'table', 'heatmap'] as const;
+export type MetricDisplay = (typeof METRIC_DISPLAYS)[number];
+
+const DIMENSION_IDS = DIMENSIONS.map((d) => d.id) as [DimensionId, ...DimensionId[]];
+
+const RUN_BREAKDOWNS: DimensionId[] = ['project', 'project-tag', 'environment', 'branch', 'run-kind'];
+const EXECUTION_BREAKDOWNS: DimensionId[] = [
+  ...RUN_BREAKDOWNS,
+  'browser',
+  'test-tag',
+  'owner',
+  'priority',
+  'feature',
+  'spec-directory',
+];
+const CLUSTER_BREAKDOWNS: DimensionId[] = ['project', 'project-tag', 'error-type', 'cluster-status', 'assignee'];
+const QUARANTINE_BREAKDOWNS: DimensionId[] = ['project', 'project-tag', 'owner', 'test-tag'];
+
+/**
+ * The breakdowns the metric widget can compute for a metric: the ones its
+ * catalog entry lists that its source can cut (run and test dimensions for the
+ * scalar metrics and flaky tests, cluster dimensions for the failure-cause
+ * metrics, test owners and tags for the quarantine).
+ */
+export function metricBreakdowns(id: MetricId): DimensionId[] {
+  const def = getMetric(id);
+  const supported =
+    def.grain === 'cluster'
+      ? CLUSTER_BREAKDOWNS
+      : id === 'quarantine-debt'
+        ? QUARANTINE_BREAKDOWNS
+        : def.source === 'rollup' || id === 'flaky-tests'
+          ? EXECUTION_BREAKDOWNS
+          : [];
+  return def.dimensions.filter((d) => supported.includes(d));
+}
+
 export const metricOptionsSchema = z.object({
   metric: metricIdSchema.default('test-pass-rate'),
-  display: z.enum(['line', 'stat']).default('line'),
+  /** `stat` one number; `line` and `bar` over time, or one bar per group with a breakdown; `table`; `heatmap` groups by buckets. */
+  display: z.enum(METRIC_DISPLAYS).default('line'),
+  /** Cut the metric by a dimension of the catalog; the top groups are shown, the rest as *Other*. */
+  breakdown: z.enum(DIMENSION_IDS).optional(),
+  /** How many groups a breakdown shows before *Other*. */
+  top: z.number().int().min(5).max(25).default(10),
   /** Draw the comparison period as a faint line, and show the change. */
   comparison: z.boolean().default(true),
   /** Draw the period's timeline markers on the line. */
   markers: z.boolean().default(true),
 });
 
+export const LIST_SOURCES = ['runs', 'failure-clusters', 'flaky-tests', 'scenario-gaps'] as const;
+export type ListSource = (typeof LIST_SOURCES)[number];
+
+export const listOptionsSchema = z.object({
+  /** What the list shows, matching the scope: runs, failure causes, flaky tests or scenario gaps. */
+  source: z.enum(LIST_SOURCES).default('runs'),
+  limit: z.number().int().min(5).max(25).default(10),
+});
+
+export const markersOptionsSchema = z.object({
+  /** Marker categories to show; empty shows every category the period draws. */
+  categories: z.array(z.string().max(40)).max(20).default([]),
+});
+
+export const TEXT_MAX_LENGTH = 10_000;
+
+export const textOptionsSchema = z.object({
+  /** A note in Markdown; raw HTML is escaped. */
+  markdown: z.string().max(TEXT_MAX_LENGTH).default(''),
+});
+
+export const singleProjectOptionsSchema = z.object({
+  limit: z.number().int().min(5).max(25).default(10),
+});
+
 export type StatsOptions = z.infer<typeof statsOptionsSchema>;
+export type ListOptions = z.infer<typeof listOptionsSchema>;
+export type MarkersOptions = z.infer<typeof markersOptionsSchema>;
+export type TextOptions = z.infer<typeof textOptionsSchema>;
+export type SingleProjectOptions = z.infer<typeof singleProjectOptionsSchema>;
 export type MetricOptions = z.infer<typeof metricOptionsSchema>;
 
 export const ANALYTICS_WIDGETS = [
@@ -231,6 +302,81 @@ export const ANALYTICS_WIDGETS = [
     band: 'detail',
     testFilters: false,
     capability: 'test-map',
+  },
+  {
+    id: 'list',
+    title: 'List',
+    icon: 'i-lucide-list',
+    size: 'half',
+    band: 'detail',
+    testFilters: false,
+    options: listOptionsSchema,
+  },
+  {
+    id: 'markers',
+    title: 'Events',
+    icon: 'i-lucide-flag',
+    size: 'half',
+    band: 'trends',
+    testFilters: false,
+    options: markersOptionsSchema,
+  },
+  {
+    id: 'text',
+    title: 'Note',
+    icon: 'i-lucide-text',
+    size: 'full',
+    band: 'health',
+    testFilters: false,
+    options: textOptionsSchema,
+  },
+  {
+    id: 'spec-health',
+    title: 'Spec health',
+    icon: 'i-lucide-heart-pulse',
+    size: 'full',
+    band: 'detail',
+    testFilters: false,
+    requires: 'single-project',
+    options: singleProjectOptionsSchema,
+  },
+  {
+    id: 'slow-tests',
+    title: 'Slowest tests',
+    icon: 'i-lucide-snail',
+    size: 'half',
+    band: 'detail',
+    testFilters: false,
+    requires: 'single-project',
+    options: singleProjectOptionsSchema,
+  },
+  {
+    id: 'performance-trend',
+    title: 'Performance trend',
+    icon: 'i-lucide-trending-up',
+    size: 'full',
+    band: 'trends',
+    testFilters: false,
+    requires: 'single-project',
+  },
+  {
+    id: 'timeout-opportunities',
+    title: 'Timeout opportunities',
+    icon: 'i-lucide-alarm-clock',
+    size: 'full',
+    band: 'detail',
+    testFilters: false,
+    requires: 'single-project',
+    options: singleProjectOptionsSchema,
+  },
+  {
+    id: 'selection-health',
+    title: 'Selection health',
+    icon: 'i-lucide-list-filter',
+    size: 'full',
+    band: 'detail',
+    testFilters: false,
+    requires: 'single-project',
   },
 ] as const satisfies readonly AnalyticsWidgetMeta[];
 
