@@ -9,14 +9,14 @@ lang: en-US
 
 A **dashboard** is a named arrangement of [analytics](./analytics) widgets in bands, with a default
 [scope](./analytics#scope): its projects, filters and period. The analytics page is the built-in
-**Overview** dashboard; anyone can keep dashboards of their own, share them with the team, schedule them
+**Overview** dashboard; anyone can keep their own dashboards, share them with the team, schedule them
 as a [quality report](./quality-reports), and put them on a wall screen.
 
 ![A shared dashboard: the checkout smoke tests over the current sprint, with a list, the period's releases and a note](/screenshots/saved-dashboard.png)
 
 ## Built-in and saved dashboards
 
-The switcher next to *Analytics* in the page header lists every dashboard you can open, with a search:
+The switcher in the page header lists every dashboard you can open, with a search:
 
 - **Built-in**: Overview (the analytics page, four bands and fifteen widgets), and the report dashboards
   Executive, Engineering and Gaps digest (the last one only where the [Test Map](./scenario-gaps) is not
@@ -89,7 +89,7 @@ counts:
 
 With a breakdown, *Bars* and *Table* show one row per group for the period, *Line* one line per group
 (the first eight), *Heatmap* one row of buckets per group. Groups are sorted worst first; the top 5 to 25
-are shown and the rest are grouped as *Other*. Breakdowns by project, environment, branch or run kind
+are shown, the rest grouped as *Other*. Breakdowns by project, environment, branch or run kind
 read the daily rollups, so they reach as far back as the rollups do; breakdowns by test or browser read
 the stored executions, as far back as retention keeps them.
 
@@ -118,8 +118,7 @@ An open dashboard refreshes a widget when a run of one of its projects finishes,
 seconds per widget. A saved dashboard's widget answers are cached on the server for 60 seconds, and a
 finished run drops its project's answers.
 
-**TV mode** (*TV mode* in the menu, or `?tv=1`) is for a wall screen: no navigation, larger type on a
-large screen, and a full refresh every five minutes on top of the live one. Add `?cycle=12,15&every=60`
+**TV mode** (*TV mode* in the menu, or `?tv=1`) is for a wall screen: no navigation, larger type, and a full refresh every five minutes on top of the live one. Add `?cycle=12,15&every=60`
 to rotate through several dashboards, one every 60 seconds (15 at least). A wall screen needs a
 signed-in session.
 

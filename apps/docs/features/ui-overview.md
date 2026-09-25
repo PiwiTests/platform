@@ -59,17 +59,13 @@ A quick health check across all projects: a **stat strip** whose every number is
 
 A cross-project decision view — where Home answers *"what's happening now"*, Analytics answers *"across projects, over time"*. A **Filters** block at the top sets the scope: **Period** (the period, its comparison and its buckets), **Runs** (the projects, then the same **filter bar** Home and each project use — environments and branches (multi-select) and a full-runs-only toggle) and **Tests**; every widget re-aggregates against that scope.
 
-Widgets are grouped into four bands, in reading order:
-
-- **Where things stand** — portfolio health, the insights feed, the pass-rate heatmap.
-- **Where the pain is** — open failure clusters, the flakiest-tests leaderboard, wasted CI time.
-- **Which way it is going** — regression velocity, CI time.
-- **Detail** — the browser matrix, cross-project slow endpoints.
+Widgets are grouped into four bands, in reading order: **Where things stand**, **Where the pain is**,
+**Which way it is going** and **Detail**; [Analytics widgets](./analytics-widgets) describes each one.
 
 [Timeline markers](./timeline-markers) overlay your deploys and infrastructure changes on the trend charts.
 
-The page is the built-in *Overview* dashboard: the switcher in the header opens the other built-in,
-shared and personal dashboards, and *Manage dashboards* lists them (see [Dashboards](./dashboards)).
+The page is the built-in *Overview* [dashboard](./dashboards); the switcher in the header opens the
+others.
 
 See [Analytics](./analytics) for what each widget answers and how the periods are compared.
 
