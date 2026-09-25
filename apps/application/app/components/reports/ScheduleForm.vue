@@ -40,21 +40,30 @@ interface ChannelItem {
   userId: number | null;
 }
 
-const { data: channelData } = useFetch<{ items: ChannelItem[] }>('/api/channels', {
+// Loaded when the form first opens: the pages render it closed for every reader.
+const { data: channelData, execute: loadChannels } = useFetch<{ items: ChannelItem[] }>('/api/channels', {
   server: false,
   lazy: true,
+  immediate: false,
   default: () => ({ items: [] }),
 });
-const { data: scheduleData } = useFetch<{ timeZone: string; owners: Array<{ owner: string; projectIds: number[] }> }>(
-  '/api/reports/schedules',
-  { server: false, lazy: true, default: () => ({ timeZone: 'UTC', owners: [] }) },
-);
-const { data: projectMenu } = useFetch('/api/projects/menu', {
+const { data: scheduleData, execute: loadScheduleOptions } = useFetch<{
+  timeZone: string;
+  owners: Array<{ owner: string; projectIds: number[] }>;
+}>('/api/reports/schedules', {
   server: false,
   lazy: true,
+  immediate: false,
+  default: () => ({ timeZone: 'UTC', owners: [] }),
+});
+const { data: projectMenu, execute: loadProjects } = useFetch('/api/projects/menu', {
+  server: false,
+  lazy: true,
+  immediate: false,
   default: () => [] as ProjectMenuItem[],
   transform: (r: { items: ProjectMenuItem[] }) => r.items,
 });
+let loaded = false;
 
 const name = ref('');
 const dashboardKey = ref<BuiltinDashboardKey>('executive');
@@ -88,7 +97,20 @@ function reset() {
   channelIds.value = s ? s.channels.map((c) => c.id) : [];
   global.value = s ? s.global : false;
 }
-watch(open, (isOpen) => isOpen && reset(), { immediate: true });
+watch(
+  open,
+  (isOpen) => {
+    if (!isOpen) return;
+    reset();
+    if (!loaded) {
+      loaded = true;
+      void loadChannels();
+      void loadScheduleOptions();
+      void loadProjects();
+    }
+  },
+  { immediate: true },
+);
 
 const scopeProjects = computed(() =>
   (filters.value.projects ?? '')
