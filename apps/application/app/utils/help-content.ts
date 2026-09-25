@@ -134,6 +134,61 @@ export const HELP_TOPICS = {
     text: 'The Test Map’s weekly digest: the top five new open gaps of each project created in the period, highest exposure first.',
     doc: 'features/scenario-gaps',
   },
+  'analytics.list': {
+    title: 'List',
+    text: 'The top items matching the scope: the latest runs of the period, the open failure causes with the most occurrences, the flakiest tests, or the highest-scored open scenario gaps. Each one opens its page.',
+    doc: 'features/dashboards#widgets',
+  },
+  'analytics.markers': {
+    title: 'Events',
+    text: 'The timeline markers of the period, the ones the trends draw: every marker when one project is in scope, across projects only releases, infrastructure changes and incidents.',
+    doc: 'features/timeline-markers',
+  },
+  'analytics.spec-health': {
+    title: 'Spec health',
+    text: 'Pass and flaky rates per spec directory of one project, over the period (at most the last 90 days), worst first. Pick a single project in the scope bar.',
+    doc: 'features/dashboards#widgets',
+  },
+  'analytics.slow-tests': {
+    title: 'Slowest tests',
+    text: 'The tests with the longest average duration over one project’s last 20 runs. Pick a single project in the scope bar.',
+    doc: 'features/dashboards#widgets',
+  },
+  'analytics.performance-trend': {
+    title: 'Performance trend',
+    text: 'Total run duration, average and p90 test duration of one project’s runs over the period. Pick a single project in the scope bar.',
+    doc: 'features/dashboards#widgets',
+  },
+  'analytics.timeout-opportunities': {
+    title: 'Timeout opportunities',
+    text: 'Tests of one project whose timeout is far above what they really take, so a hang wastes minutes, or that keep a test.slow() mark they no longer need.',
+    doc: 'features/dashboards#widgets',
+  },
+  'analytics.selection-health': {
+    title: 'Selection health',
+    text: 'How each selection of one project resolves today, its warnings and drift since its last run, and how many tests no selection picks.',
+    doc: 'guide/test-selection',
+  },
+  'dashboards.widget-scope': {
+    title: 'Widget scope',
+    text: 'A widget can replace the dashboard’s period (a Last 7 days number on a quarterly dashboard) and narrow its filters (only some projects, a selection, test tags, browsers). It never widens them, so what a dashboard covers can be read off its scope bar.',
+    doc: 'features/dashboards#periods-and-filters-per-widget',
+  },
+  'dashboards.hidden-projects': {
+    title: 'Hidden projects',
+    text: 'A dashboard grants no access: every widget is computed for the projects you can open. The projects of this dashboard’s scope you cannot open are counted here and never shown.',
+    doc: 'features/dashboards#sharing-and-access',
+  },
+  'dashboards.default': {
+    title: 'Default dashboard',
+    text: 'Analytics opens the dashboard you picked in this browser, else the one an administrator set for everyone, else Overview. A saved dashboard must be shared to be the default for everyone.',
+    doc: 'features/dashboards#your-default-dashboard',
+  },
+  'dashboards.sharing': {
+    title: 'Sharing a dashboard',
+    text: 'A shared dashboard is listed for every signed-in user; only its owner and administrators change it, everyone else duplicates it. Sharing needs the reporter or administrator role, and shows nobody a project they cannot open.',
+    doc: 'features/dashboards#sharing-and-access',
+  },
   'reports.schedule': {
     title: 'Report schedule',
     text: 'A quality report sent on a schedule, daily, weekly, every other week or monthly, to email, Slack, webhook or browser channels. Each firing covers the whole days since the previous one, compared with the period before or a year earlier, and is kept as a snapshot. A period with no run still sends, so a stopped pipeline shows. Team sends the engineering report for one owner’s tests; Gaps digest is the Test Map’s weekly digest.',

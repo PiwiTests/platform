@@ -2,7 +2,6 @@ import { analyticsScopeToQuery, type AnalyticsScope } from '#shared/analytics/sc
 import {
   DEFAULT_ANALYTICS_SCOPE_STATE,
   decodeScopeCookie,
-  isDefaultScopeState,
   queryHasScope,
   queryWithoutScope,
   scopeFromState,
@@ -25,13 +24,23 @@ function viewerContext(): { tz?: string; locale?: string } {
   return { ...(tz ? { tz } : {}), ...(locale ? { locale } : {}) };
 }
 
+export interface AnalyticsScopeOptions {
+  /**
+   * The dashboard's default scope. Omitted for Overview, whose per-browser
+   * default is the `piwi-analytics-scope` cookie; a saved dashboard starts
+   * from its own scope and leaves the cookie alone.
+   */
+  defaultState?: AnalyticsScopeState;
+}
+
 /**
- * The `/analytics` page's scope: the URL first, so a copied link shows what
- * its sender saw, then the `piwi-analytics-scope` cookie as the per-browser
- * default (today's cookie shape still reads). Every change writes both.
- * `scopeQuery` is what every widget request sends.
+ * A dashboard page's scope: the URL first, so a copied link shows what its
+ * sender saw, then the default: for Overview the `piwi-analytics-scope`
+ * cookie, the per-browser default (today's cookie shape still reads), which
+ * every change writes; for another dashboard its own scope. `scopeQuery` is
+ * what every widget request sends.
  */
-export function useAnalyticsScope() {
+export function useAnalyticsScope(opts: AnalyticsScopeOptions = {}) {
   const cookie = useCookie<AnalyticsScopeState>('piwi-analytics-scope', {
     default: () => ({ ...DEFAULT_ANALYTICS_SCOPE_STATE }),
     encode: (v) => JSON.stringify(v),
@@ -40,9 +49,13 @@ export function useAnalyticsScope() {
   const route = useRoute();
   const router = useRouter();
 
+  const usesCookie = !opts.defaultState;
+  const defaultState = opts.defaultState ?? DEFAULT_ANALYTICS_SCOPE_STATE;
   const initial = queryHasScope(route.query)
     ? stateFromScope(parseAnalyticsScope(route.query as Record<string, unknown>))
-    : decodeScopeCookie(cookie.value);
+    : usesCookie
+      ? decodeScopeCookie(cookie.value)
+      : { ...defaultState };
   const state = ref<AnalyticsScopeState>(initial);
 
   const scope = computed<AnalyticsScope>(() => scopeFromState(state.value));
@@ -58,7 +71,7 @@ export function useAnalyticsScope() {
   watch(
     state,
     (value) => {
-      cookie.value = value;
+      if (usesCookie) cookie.value = value;
       syncUrl();
     },
     { deep: true },
@@ -67,22 +80,83 @@ export function useAnalyticsScope() {
   // written on arrival, once the app has hydrated and the router settled.
   if (import.meta.client) {
     onNuxtReady(() => {
-      if (!isDefaultScopeState(state.value)) syncUrl();
+      if (JSON.stringify(state.value) !== JSON.stringify(defaultState)) syncUrl();
     });
   }
 
-  return { state, scope, scopeQuery };
+  /** Back to the dashboard's default scope. */
+  function reset() {
+    state.value = { ...defaultState };
+  }
+
+  return { state, scope, scopeQuery, defaultState, reset };
 }
+
+/**
+ * Where a widget reads its data, provided by the dashboard around it: a saved
+ * dashboard's widget (`GET /api/analytics/dashboards/[id]/widgets/[key]`,
+ * the definition stays on the server) or the editor's unsaved widget
+ * (`POST /api/analytics/widgets/preview`). Without one, the widget reads
+ * `GET /api/analytics/[widget]`, as on the built-in dashboards.
+ */
+export type AnalyticsWidgetSource =
+  | { mode: 'dashboard'; dashboardId: string; widgetKey: string; refresh: Ref<number> }
+  | {
+      mode: 'preview';
+      widgetKey: string;
+      /** The unsaved widget: type, options and scope override. */
+      widget: () => { type: string; options?: Record<string, unknown>; scope?: Record<string, unknown> };
+      refresh: Ref<number>;
+    }
+  | { mode: 'type'; widgetKey: string; refresh: Ref<number> };
+
+export const ANALYTICS_WIDGET_SOURCE: InjectionKey<AnalyticsWidgetSource> = Symbol('analytics-widget-source');
 
 /**
  * Fetch one analytics widget's data. The query is reactive — changing the
  * scope refetches every mounted widget. `options` are the widget's options
- * from the dashboard definition, sent as JSON.
+ * from the dashboard definition, sent as JSON. A dashboard around the widget
+ * decides where the data comes from and when it refreshes.
  */
 export function useAnalyticsWidget<T>(
   widget: AnalyticsWidgetId,
   query: () => Record<string, string>,
   options?: () => Record<string, unknown> | undefined,
+) {
+  const source = inject(ANALYTICS_WIDGET_SOURCE, null);
+  // One shape whichever route answers: the widget's data, typed by the caller.
+  const result = (
+    source?.mode === 'dashboard'
+      ? useFetch<T>(`/api/analytics/dashboards/${source.dashboardId}/widgets/${source.widgetKey}`, {
+          key: `dashboard-widget-${source.dashboardId}-${source.widgetKey}`,
+          query: computed(query),
+          lazy: true,
+          server: false,
+        })
+      : source?.mode === 'preview'
+        ? useAsyncData<T>(
+            `preview-widget-${source.widgetKey}`,
+            () =>
+              $fetch<T>('/api/analytics/widgets/preview', {
+                method: 'POST',
+                body: { widget: source.widget(), scope: query() },
+              }),
+            {
+              watch: [computed(() => JSON.stringify([source.widget(), query()]))],
+              lazy: true,
+              server: false,
+            },
+          )
+        : useTypeWidget<T>(widget, query, options)
+  ) as ReturnType<typeof useTypeWidget<T>>;
+  if (source) watch(source.refresh, () => void result.refresh());
+  return result;
+}
+
+function useTypeWidget<T>(
+  widget: AnalyticsWidgetId,
+  query: () => Record<string, string>,
+  options: (() => Record<string, unknown> | undefined) | undefined,
 ) {
   return useFetch<T>(`/api/analytics/${widget}`, {
     query: computed(() => {

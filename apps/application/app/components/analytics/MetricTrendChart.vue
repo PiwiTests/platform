@@ -16,7 +16,12 @@ const {
 );
 
 const f = computed(() => metricFormatter());
-const cardTitle = computed(() => props.title ?? widget.value?.value.label ?? 'Metric');
+const cardTitle = computed(() => {
+  if (props.title) return props.title;
+  const w = widget.value;
+  if (!w) return 'Metric';
+  return w.breakdown ? `${w.value.label} by ${w.breakdown.label.toLowerCase()}` : w.value.label;
+});
 const showMarkers = computed(() => props.options?.markers !== false);
 
 const LINE_COLOR = 'var(--ui-primary)';
@@ -37,7 +42,7 @@ const yMax = computed(() => {
 });
 
 const legend = computed(() =>
-  previous.value
+  previous.value && widget.value?.display === 'line' && !widget.value.breakdown
     ? [
         { color: LINE_COLOR, label: 'This period' },
         { color: PREVIOUS_COLOR, label: widget.value?.comparisonLabel ?? 'Comparison' },
@@ -126,6 +131,7 @@ const { data: tooltipData, pos: tooltipPos, show, move, hide } = useChartTooltip
       </p>
       <p class="text-xs text-muted">{{ widget.value.definition }}</p>
     </div>
+    <MetricDisplay v-else-if="widget && (widget.breakdown || widget.display !== 'line')" :widget="widget" />
     <EmptyState v-else-if="!hasData" text="No runs in this period." />
     <div v-else class="w-full">
       <ChartFrame v-slot="{ plotWidth, plotHeight, yScale }" :height="220" :y-max="yMax" :y-format="yFormat">

@@ -211,6 +211,7 @@ const links = computed(() => {
         label: 'Analytics',
         icon: 'i-lucide-chart-line',
         to: '/analytics',
+        active: route.path === '/analytics' || route.path.startsWith('/analytics/'),
         onSelect: () => {
           open.value = false;
         },

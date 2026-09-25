@@ -13,24 +13,29 @@ const props = withDefaults(
     /** The scope query of the page (the analytics scope keys, `tz`, `locale`). */
     query: Record<string, string>;
     /** Dashboard the preview opens on. */
-    dashboard?: BuiltinDashboardKey;
+    dashboard?: BuiltinDashboardKey | string;
+    /** The saved dashboard on screen, offered first and rendered as it is. */
+    savedDashboard?: { id: string; name: string } | null;
   }>(),
-  { dashboard: 'executive' },
+  { dashboard: 'executive', savedDashboard: null },
 );
 
 const open = defineModel<boolean>('open', { default: false });
 
-const dashboard = ref<BuiltinDashboardKey>(props.dashboard);
+const dashboard = ref<string>(props.savedDashboard?.id ?? props.dashboard);
 const language = ref<'auto' | 'en' | 'fr'>('auto');
 
 const { isHidden } = await useInstanceCapabilities();
-const dashboardItems = computed(() =>
-  offeredDashboards({ hasOwner: !!props.query.owner, testMapHidden: isHidden('test-map') }).map((d) => ({
+const dashboardItems = computed(() => [
+  ...(props.savedDashboard
+    ? [{ label: props.savedDashboard.name, value: props.savedDashboard.id, description: 'This dashboard' }]
+    : []),
+  ...offeredDashboards({ hasOwner: !!props.query.owner, testMapHidden: isHidden('test-map') }).map((d) => ({
     label: d.name,
-    value: d.key,
+    value: d.key as string,
     description: d.description,
   })),
-);
+]);
 const languageItems = [
   { label: 'Default language', value: 'auto' },
   { label: 'English', value: 'en' },

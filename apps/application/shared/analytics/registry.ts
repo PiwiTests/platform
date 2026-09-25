@@ -28,6 +28,8 @@ export interface AnalyticsWidgetMeta {
   id: string;
   /** Card title (sentence case). */
   title: string;
+  /** One sentence on what the widget shows, for the widget picker. */
+  description: string;
   /** Lucide icon for the card header. */
   icon: string;
   /** Layout hint: `full` spans the grid, `half` shares a row on wide screens. */
@@ -166,6 +168,7 @@ export const ANALYTICS_WIDGETS = [
   {
     id: 'stats',
     title: 'Headline numbers',
+    description: 'A row of numbers from the metric catalog, each with its change.',
     icon: 'i-lucide-gauge',
     size: 'full',
     band: 'health',
@@ -175,6 +178,7 @@ export const ANALYTICS_WIDGETS = [
   {
     id: 'verdict',
     title: 'Verdict',
+    description: 'One sentence on how things stand, built by rules from the numbers.',
     icon: 'i-lucide-scale',
     size: 'full',
     band: 'health',
@@ -183,6 +187,7 @@ export const ANALYTICS_WIDGETS = [
   {
     id: 'metric',
     title: 'Metric',
+    description: 'One metric as a number, a line, bars, a table or a heatmap, optionally broken down.',
     icon: 'i-lucide-chart-spline',
     size: 'full',
     band: 'trends',
@@ -192,6 +197,7 @@ export const ANALYTICS_WIDGETS = [
   {
     id: 'progress',
     title: 'What is being done',
+    description: 'Failure causes fixed, assigned and ticketed, quarantine releases, auto-heal pull requests.',
     icon: 'i-lucide-list-checks',
     size: 'half',
     band: 'pain',
@@ -200,6 +206,7 @@ export const ANALYTICS_WIDGETS = [
   {
     id: 'risks',
     title: 'Risks',
+    description: 'Metrics moving the wrong way, failing projects, old failure causes, quarantine debt.',
     icon: 'i-lucide-triangle-alert',
     size: 'half',
     band: 'pain',
@@ -208,6 +215,7 @@ export const ANALYTICS_WIDGETS = [
   {
     id: 'portfolio',
     title: 'Portfolio health',
+    description: 'Every project: pass rate and its change, flaky volume, open failure causes, latest run.',
     icon: 'i-lucide-table-properties',
     size: 'full',
     band: 'health',
@@ -216,6 +224,7 @@ export const ANALYTICS_WIDGETS = [
   {
     id: 'insights',
     title: 'Insights',
+    description: 'Findings over the period, ranked by severity.',
     icon: 'i-lucide-lightbulb',
     size: 'half',
     band: 'health',
@@ -224,6 +233,7 @@ export const ANALYTICS_WIDGETS = [
   {
     id: 'pass-rate-heatmap',
     title: 'Pass rate heatmap',
+    description: 'Pass rate per project and day.',
     icon: 'i-lucide-grid-3x3',
     size: 'half',
     band: 'health',
@@ -232,6 +242,7 @@ export const ANALYTICS_WIDGETS = [
   {
     id: 'cluster-landscape',
     title: 'Failure clusters',
+    description: 'The biggest and oldest open failure clusters.',
     icon: 'i-lucide-layers',
     size: 'half',
     band: 'pain',
@@ -240,6 +251,7 @@ export const ANALYTICS_WIDGETS = [
   {
     id: 'flaky-leaderboard',
     title: 'Flakiest tests',
+    description: 'The flakiest tests across projects, by wasted CI impact.',
     icon: 'i-lucide-repeat',
     size: 'half',
     band: 'pain',
@@ -248,6 +260,7 @@ export const ANALYTICS_WIDGETS = [
   {
     id: 'wasted-time',
     title: 'Wasted CI time',
+    description: 'Minutes spent in waits and in failed attempts, over time and per project.',
     icon: 'i-lucide-hourglass',
     size: 'half',
     band: 'pain',
@@ -256,6 +269,7 @@ export const ANALYTICS_WIDGETS = [
   {
     id: 'regression-velocity',
     title: 'Regression velocity',
+    description: 'New regressions and newly flaky tests per bucket.',
     icon: 'i-lucide-git-pull-request-arrow',
     size: 'half',
     band: 'trends',
@@ -264,6 +278,7 @@ export const ANALYTICS_WIDGETS = [
   {
     id: 'ci-time-trend',
     title: 'CI time',
+    description: 'Minutes of CI the runs consumed, over time.',
     icon: 'i-lucide-timer',
     size: 'half',
     band: 'trends',
@@ -272,6 +287,7 @@ export const ANALYTICS_WIDGETS = [
   {
     id: 'browser-matrix',
     title: 'Browser matrix',
+    description: 'Pass rate per project and browser.',
     icon: 'i-lucide-monitor-smartphone',
     size: 'half',
     band: 'detail',
@@ -280,6 +296,7 @@ export const ANALYTICS_WIDGETS = [
   {
     id: 'slow-endpoints',
     title: 'Slow endpoints',
+    description: 'Backend calls captured during tests, by latency.',
     icon: 'i-lucide-gauge',
     size: 'full',
     band: 'detail',
@@ -288,6 +305,7 @@ export const ANALYTICS_WIDGETS = [
   {
     id: 'scenario-gaps',
     title: 'Scenario gaps',
+    description: 'Open Test Map gaps by class and feature, gaps closed, accepted but unwritten.',
     icon: 'i-lucide-map',
     size: 'full',
     band: 'detail',
@@ -297,6 +315,7 @@ export const ANALYTICS_WIDGETS = [
   {
     id: 'new-gaps',
     title: 'New scenario gaps',
+    description: 'The top new scenario gaps of each project in the period.',
     icon: 'i-lucide-map-pin-plus',
     size: 'full',
     band: 'detail',
@@ -306,6 +325,7 @@ export const ANALYTICS_WIDGETS = [
   {
     id: 'list',
     title: 'List',
+    description: 'The latest runs, open failure causes, flakiest tests or open scenario gaps.',
     icon: 'i-lucide-list',
     size: 'half',
     band: 'detail',
@@ -315,6 +335,7 @@ export const ANALYTICS_WIDGETS = [
   {
     id: 'markers',
     title: 'Events',
+    description: 'The timeline markers of the period: releases, deploys, incidents.',
     icon: 'i-lucide-flag',
     size: 'half',
     band: 'trends',
@@ -324,6 +345,7 @@ export const ANALYTICS_WIDGETS = [
   {
     id: 'text',
     title: 'Note',
+    description: 'A note in Markdown.',
     icon: 'i-lucide-text',
     size: 'full',
     band: 'health',
@@ -333,6 +355,7 @@ export const ANALYTICS_WIDGETS = [
   {
     id: 'spec-health',
     title: 'Spec health',
+    description: 'Pass and flaky rates per spec directory of one project.',
     icon: 'i-lucide-heart-pulse',
     size: 'full',
     band: 'detail',
@@ -343,6 +366,7 @@ export const ANALYTICS_WIDGETS = [
   {
     id: 'slow-tests',
     title: 'Slowest tests',
+    description: 'The slowest tests of one project’s recent runs.',
     icon: 'i-lucide-snail',
     size: 'half',
     band: 'detail',
@@ -353,6 +377,7 @@ export const ANALYTICS_WIDGETS = [
   {
     id: 'performance-trend',
     title: 'Performance trend',
+    description: 'Run and test durations of one project over the period.',
     icon: 'i-lucide-trending-up',
     size: 'full',
     band: 'trends',
@@ -362,6 +387,7 @@ export const ANALYTICS_WIDGETS = [
   {
     id: 'timeout-opportunities',
     title: 'Timeout opportunities',
+    description: 'Tests whose timeout is far above their real duration, in one project.',
     icon: 'i-lucide-alarm-clock',
     size: 'full',
     band: 'detail',
@@ -372,6 +398,7 @@ export const ANALYTICS_WIDGETS = [
   {
     id: 'selection-health',
     title: 'Selection health',
+    description: 'How one project’s selections resolve, and the tests none selects.',
     icon: 'i-lucide-list-filter',
     size: 'full',
     band: 'detail',

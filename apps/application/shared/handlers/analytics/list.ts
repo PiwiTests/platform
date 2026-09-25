@@ -117,7 +117,7 @@ export async function getAnalyticsList(
       items: rows.map((r) => ({
         id: r.testCaseId,
         title: r.title,
-        detail: `flaky score ${Math.round(r.score)} · ${r.retryPassRuns} of ${r.totalRuns} runs passed on a retry`,
+        detail: `flaky score ${Math.round(r.score)} · ${r.alternations} status flips in ${r.totalRuns} runs`,
         projectName: r.projectLabel || r.projectName,
         at: iso(r.lastFlakeAt),
         href: `/test-cases/${r.testCaseId}`,

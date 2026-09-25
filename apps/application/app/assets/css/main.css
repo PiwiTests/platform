@@ -221,3 +221,10 @@ body {
     color: #ff7b72;
   }
 }
+
+/* TV mode: a dashboard on a wall screen reads from across the room. */
+@media (min-width: 1024px) {
+  html.tv-mode {
+    font-size: 125%;
+  }
+}

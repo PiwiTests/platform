@@ -25,6 +25,21 @@ import { subscribeDemoEvents } from '~/demo/run-events';
 let sharedEventSource: EventSource | null = null;
 let demoUnsubscribe: (() => void) | null = null;
 const subscribers = new Set<() => void>();
+
+/** A global run lifecycle event, as `/api/stream` sends it. */
+export interface RunLifecycleEvent {
+  type: string;
+  runId?: number;
+  projectId?: number;
+  status?: string;
+}
+
+/** Listeners that need the event itself (which project), called at once, not debounced. */
+const eventListeners = new Set<(event: RunLifecycleEvent) => void>();
+
+function notifyEventListeners(event: RunLifecycleEvent) {
+  for (const fn of eventListeners) fn(event);
+}
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 // ── Inactivity-based debounce ─────────────────────────────────────────────────
@@ -78,6 +93,7 @@ function openEventSource() {
     try {
       const data = JSON.parse(event.data);
       notifySubscribers(data.type);
+      if (data && typeof data.type === 'string') notifyEventListeners(data);
     } catch {
       // Ignore non-JSON messages (e.g. heartbeat comments)
     }
@@ -101,7 +117,7 @@ function handleVisibilityChange() {
       clearTimeout(debounceTimer);
       debounceTimer = null;
     }
-  } else if (subscribers.size > 0) {
+  } else if (subscribers.size > 0 || eventListeners.size > 0) {
     // Tab is visible again — reconnect and immediately refresh to catch up on missed events
     openEventSource();
     for (const fn of subscribers) fn();
@@ -121,7 +137,10 @@ function ensureConnection() {
   if (useRuntimeConfig().public.demoMode) {
     if (demoUnsubscribe) return;
     demoUnsubscribe = subscribeDemoEvents((message) => {
-      if (message.scope === 'global') notifySubscribers(message.event.type);
+      if (message.scope === 'global') {
+        notifySubscribers(message.event.type);
+        notifyEventListeners(message.event);
+      }
     });
     return;
   }
@@ -133,7 +152,7 @@ function ensureConnection() {
 }
 
 function closeConnection() {
-  if (subscribers.size > 0) return;
+  if (subscribers.size > 0 || eventListeners.size > 0) return;
 
   if (sharedEventSource) {
     sharedEventSource.close();
@@ -158,6 +177,24 @@ export function useRunStream(refresh: () => Promise<unknown>) {
 
   onUnmounted(() => {
     subscribers.delete(refresh);
+    closeConnection();
+  });
+}
+
+/**
+ * Listen to the global run lifecycle events with their details (which run,
+ * which project), on the same shared connection as `useRunStream`. Called
+ * for every event as it arrives; the listener does its own throttling.
+ */
+export function useRunEvents(listener: (event: RunLifecycleEvent) => void) {
+  if (!import.meta.client) return;
+
+  ensureConnection();
+
+  eventListeners.add(listener);
+
+  onUnmounted(() => {
+    eventListeners.delete(listener);
     closeConnection();
   });
 }

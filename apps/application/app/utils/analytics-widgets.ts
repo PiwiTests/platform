@@ -1,0 +1,79 @@
+/**
+ * Widget id → the component that draws it. Keyed by the registry union, so
+ * registering a widget without wiring its component (or vice versa) is a
+ * compile error, as the handler map and the document map are.
+ */
+import type { Component } from 'vue';
+import type { AnalyticsWidgetId } from '#shared/analytics/registry';
+import {
+  AnalyticsStatsRow,
+  AnalyticsVerdict,
+  AnalyticsProgress,
+  AnalyticsRisks,
+  MetricTrendChart,
+  InsightsFeed,
+  PortfolioScorecard,
+  PassRateHeatmap,
+  CiTimeTrendChart,
+  WastedTimeChart,
+  GlobalFlakyLeaderboard,
+  ClusterLandscape,
+  RegressionVelocityChart,
+  BrowserMatrix,
+  SlowEndpointsTable,
+  ScenarioGapsSummary,
+  NewScenarioGaps,
+  AnalyticsItemList,
+  AnalyticsEventList,
+  AnalyticsNoteCard,
+  AnalyticsSpecHealth,
+  AnalyticsSlowTests,
+  AnalyticsPerformanceTrend,
+  AnalyticsTimeoutOpportunities,
+  AnalyticsSelectionHealth,
+} from '#components';
+
+export const WIDGET_COMPONENTS: Record<AnalyticsWidgetId, Component> = {
+  stats: AnalyticsStatsRow,
+  verdict: AnalyticsVerdict,
+  metric: MetricTrendChart,
+  progress: AnalyticsProgress,
+  risks: AnalyticsRisks,
+  insights: InsightsFeed,
+  portfolio: PortfolioScorecard,
+  'pass-rate-heatmap': PassRateHeatmap,
+  'ci-time-trend': CiTimeTrendChart,
+  'wasted-time': WastedTimeChart,
+  'flaky-leaderboard': GlobalFlakyLeaderboard,
+  'cluster-landscape': ClusterLandscape,
+  'regression-velocity': RegressionVelocityChart,
+  'browser-matrix': BrowserMatrix,
+  'slow-endpoints': SlowEndpointsTable,
+  'scenario-gaps': ScenarioGapsSummary,
+  'new-gaps': NewScenarioGaps,
+  list: AnalyticsItemList,
+  markers: AnalyticsEventList,
+  text: AnalyticsNoteCard,
+  'spec-health': AnalyticsSpecHealth,
+  'slow-tests': AnalyticsSlowTests,
+  'performance-trend': AnalyticsPerformanceTrend,
+  'timeout-opportunities': AnalyticsTimeoutOpportunities,
+  'selection-health': AnalyticsSelectionHealth,
+};
+
+/** The widgets that take their options and title from the dashboard; the others carry their own title. */
+export const CONFIGURABLE_WIDGETS = new Set<AnalyticsWidgetId>([
+  'stats',
+  'verdict',
+  'metric',
+  'progress',
+  'risks',
+  'list',
+  'markers',
+  'text',
+  'spec-health',
+  'slow-tests',
+  'performance-trend',
+  'timeout-opportunities',
+  'selection-health',
+]);
