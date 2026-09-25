@@ -1225,11 +1225,10 @@ export const shareLinks = pgTable(
   'share_links',
   {
     id: serial('id').primaryKey(),
-    projectId: integer('project_id')
-      .notNull()
-      .references(() => projects.id, { onDelete: 'cascade' }),
-    entityKind: text('entity_kind').notNull(), // 'execution' | 'cluster' (ExportKind)
-    entityId: integer('entity_id').notNull(), // test_runs_cases.id or failure_clusters.id
+    // null for a report or a dashboard link, which can span several projects
+    projectId: integer('project_id').references(() => projects.id, { onDelete: 'cascade' }),
+    entityKind: text('entity_kind').notNull(), // 'execution' | 'cluster' | 'report' | 'dashboard' (ShareLinkKind)
+    entityId: integer('entity_id').notNull(), // test_runs_cases.id, failure_clusters.id, report_snapshots.id or analytics_dashboards.id
     tokenHash: text('token_hash').notNull().unique(), // SHA-256 hash of the full psl_ token
     tokenPrefix: text('token_prefix').notNull(), // First 8 chars after "psl_" — shown in UI
     createdBy: integer('created_by').references(() => users.id, { onDelete: 'set null' }),
