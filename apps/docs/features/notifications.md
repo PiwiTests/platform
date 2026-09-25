@@ -39,12 +39,12 @@ Manage both from **Settings → Notifications**, and subscribe to a single proje
 
 ### Browser
 
-Sends native OS notifications to any open Piwi tab, even when the tab is in the background. Notifications fire via the [Notifications API](https://developer.mozilla.org/en-US/docs/Web/API/Notifications_API); grant permission when prompted.
+Sends native OS notifications to any open Piwi tab, even in the background, through the [Notifications API](https://developer.mozilla.org/en-US/docs/Web/API/Notifications_API); grant permission when prompted.
 
 - **With authentication**: create a channel of type `browser` in **Settings → Notifications** and subscribe it to events; the stream then delivers exactly the events and projects your subscriptions cover.
 - **Without authentication**: skip channels entirely — the **bell** on each project page stores per-browser preferences (a cookie) for which events raise notifications.
 
-Diagnosis completion notifications can be toggled on/off from the diagnosis panel without deleting the subscription.
+The diagnosis panel toggles diagnosis completion notifications without deleting the subscription.
 
 ### Email
 
@@ -53,6 +53,12 @@ Requires SMTP to be configured (see below). Sends to a destination address.
 ### Slack
 
 Create an [incoming webhook](https://api.slack.com/messaging/webhooks) in Slack and paste its URL. Messages are posted to the webhook's channel.
+
+### Microsoft Teams
+
+In the Teams channel, add the Workflows template *Post to a channel when a webhook request is received* (or a
+legacy incoming webhook) and paste its URL. Each event, digest and
+[quality report](./quality-reports#report-schedules) arrives as an Adaptive Card.
 
 ### Webhook
 
@@ -96,7 +102,7 @@ execution (`/test-run-cases/<executionId>`), falling back to the test's history 
 carries no execution id. The [pull-request comment](/guide/ci#pull-request-feedback) quotes failures the same
 way.
 
-`cluster.new` payloads similarly carry `sampleErrorExcerpt` (cut the same way) and `affectedCases`; `cluster.fixed` and `cluster.regressed` carry the cluster's `signature`, `title`, the `runId` that decided the verdict and, for a fix, the `commit` and `timeToResolutionMs`. These fields are **additive** — existing consumers keep working, but if you re-serialize the payload to re-check the HMAC, sign the exact bytes you received.
+`cluster.new` payloads similarly carry `sampleErrorExcerpt` (cut the same way) and `affectedCases`; `cluster.fixed` and `cluster.regressed` carry the cluster's `signature`, `title`, the `runId` that decided the verdict and, for a fix, the `commit` and `timeToResolutionMs`. To check the HMAC, sign the exact bytes you received, never a re-serialized payload.
 
 ### Reaching the person who fixed it
 
@@ -105,7 +111,7 @@ When an [SCM token](/guide/ci#pull-request-feedback) is configured, `cluster.fix
 - **Email**, through the same outbox, when SMTP is configured **and** the commit's email belongs to a registered Piwi user. The mail goes to that user's account email, never to the raw commit address, so a fix by an outside contributor never becomes a mail to a stranger.
 - **A browser notification** for that user, delivered even when they have no matching subscription.
 
-`fixAuthor` is absent when no token is configured, the host exposes no email, or the lookup fails — the fix outcome then reaches people through subscriptions only.
+Without a token, an exposed email or a successful lookup, `fixAuthor` is absent and subscriptions alone apply.
 
 ### Global channels & subscriptions
 

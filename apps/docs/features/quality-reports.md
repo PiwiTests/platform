@@ -75,7 +75,7 @@ reports** page starts an empty one. Reporters and administrators create schedule
   Monday to Sunday; the first one covers the days since you created it. A period with no run is still
   sent, because a stopped pipeline is news.
 - **Where**: [notification channels](./notifications). Email carries the verdict, the numbers and the
-  trend as an image; Slack the same as blocks; a webhook the whole bundle as signed JSON; a browser
+  trend as an image; Slack and Microsoft Teams the same as a message; a webhook the whole bundle as signed JSON; a browser
   channel a notification. With **Share link** on, each report carries a
   [share link](./share-links#report-share-links) that opens it without an account.
 
