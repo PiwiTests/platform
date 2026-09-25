@@ -12,6 +12,10 @@ type SeriesBlock = Extract<ReportBlock, { kind: 'series' }>;
 export const REPORT_ACCENT = '#4f46e5';
 /** The comparison line. */
 export const REPORT_FAINT = '#a1a1aa';
+/** Horizontal gridlines. */
+export const REPORT_GRID = '#e4e4e7';
+/** The vertical rule of a timeline marker. */
+export const REPORT_MARKER = '#a855f7';
 
 export interface ChartGeometry {
   width: number;

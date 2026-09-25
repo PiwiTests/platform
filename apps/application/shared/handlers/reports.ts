@@ -811,13 +811,17 @@ export async function getReportSnapshot(db: DrizzleDB, id: number, access: Proje
   return summaryOf(row.s, row.scheduleName ?? null, deliveries.get(id) ?? []);
 }
 
-/** A snapshot's bundle for a delivery, with no access check (the schedule's access was applied at generation). */
-export async function loadSnapshotBundle(db: DrizzleDB, id: number): Promise<ReportBundle | null> {
+/** A snapshot's bundle and projects for a delivery, with no access check (the schedule's access applied at generation). */
+export async function loadSnapshotForDelivery(
+  db: DrizzleDB,
+  id: number,
+): Promise<{ bundle: ReportBundle; projectIds: number[] } | null> {
   const [row] = await db
-    .select({ bundle: reportSnapshots.bundle })
+    .select({ bundle: reportSnapshots.bundle, projectIds: reportSnapshots.projectIds })
     .from(reportSnapshots)
     .where(eq(reportSnapshots.id, id));
-  return (row?.bundle as ReportBundle | undefined) ?? null;
+  if (!row) return null;
+  return { bundle: row.bundle as ReportBundle, projectIds: (row.projectIds as number[] | null) ?? [] };
 }
 
 /** The owners the tests of the reader's projects carry, for the team dashboard's owner filter. */

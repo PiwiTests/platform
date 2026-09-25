@@ -1295,9 +1295,9 @@ Grouped by milestone. Paths are under `apps/application/` unless noted.
 
 - [x] Both schemas: `report_schedules` (with `builtin_dashboard`; milestone 4 adds `dashboard_id`), `report_snapshots` (with `project_ids`, the projects the bundle covers, which the read check compares with the reader's access); migrations
 - [x] `shared/handlers/reports.ts`: schedules CRUD, the run of one firing and the sweep, snapshots, access check; the clock is pure in `shared/reports/schedule.ts` (`nextRunAt(timing, after, timeZone)`, `periodFor(timing, runAt, timeZone)`, `latestDueRun`, `lastCompletePeriod`, `reportDedupeKey`)
-- [ ] `server/tasks/reports/schedule.ts`; `nuxt.config.ts` `scheduledTasks` (every five minutes)
-- [ ] `shared/notification-events.ts`: `REPORT_READY_EVENT` as its own constant outside `NOTIFICATION_EVENTS`; `server/utils/notifications/dispatch.ts`: email, Slack, webhook, browser branches ahead of `renderEventSubject`
-- [ ] `server/utils/email.ts`: `attachments` on `SendEmailOptions`, `renderQualityReportEmail`; `server/utils/reports/chart-png.ts` (`sharp` from SVG)
+- [x] `server/tasks/reports/schedule.ts`; `nuxt.config.ts` `scheduledTasks` (every five minutes); `server/utils/reports/context.ts` (the instance zone, the owner's access at run time); a change of the instance time zone re-times every schedule
+- [x] `shared/notification-events.ts`: `REPORT_READY_EVENT` as its own constant outside `NOTIFICATION_EVENTS`; `server/utils/notifications/dispatch.ts`: email, Slack, webhook, browser branches ahead of `renderEventSubject`, rendered by `server/utils/reports/deliver.ts`; the browser stream sends a report to its personal channel's owner, or from a global channel to whoever can open every project it covers
+- [x] `server/utils/email.ts`: `attachments` on `SendEmailOptions`, `renderQualityReportEmail`; `server/utils/reports/chart-png.ts` (`sharp` from SVG); `tests/unit/report-delivery.test.ts`
 - [ ] `server/api/reports/schedules/*.ts`, `snapshots/*.ts`; demo mirrors
 - [ ] `server/utils/retention.ts`, `server/tasks/retention/sweep.ts`: `PIWI_RETENTION_REPORT_DAYS`; `shared/piwi-env-vars.ts`
 - [ ] `app/pages/reports/index.vue`, `reports/[id].vue`; `app/components/reports/ScheduleForm.vue`, `ScheduleList.vue`, `SnapshotList.vue`; `app/layouts/default.vue` nav entry

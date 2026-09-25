@@ -334,6 +334,8 @@ export default defineNuxtConfig({
     scheduledTasks: {
       // Run the notification, auto-heal and integration outbox sweepers every minute
       '* * * * *': ['notifications:sweep', 'heal:sweep', 'integrations:sweep'],
+      // Fire the report schedules that are due (a missed tick fires on the next sweep)
+      '*/5 * * * *': ['reports:schedule'],
       // Pull tracker statuses back on the configured cadence (default every 15 min).
       [integrationsSyncCron]: ['integrations:sync'],
       // Nightly data retention: run pruning (opt-in), outbox pruning, orphan sweep

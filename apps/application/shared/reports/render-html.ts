@@ -6,7 +6,7 @@
  */
 import { html, joinHtml, raw, toHtmlString, type RawHtml } from '#shared/export/html';
 import { STATUS_COLORS as C, PASS_RATE_COLORS } from '#shared/status-colors';
-import { REPORT_ACCENT, seriesGeometry } from './chart';
+import { REPORT_ACCENT, REPORT_GRID, REPORT_MARKER, seriesGeometry } from './chart';
 import { makeFormatter } from './format';
 import { sentencesFor } from './sentences';
 import { hasVerdictWidget, type ReportBlock, type ReportBundle, type ReportTone } from './types';
@@ -68,7 +68,7 @@ function chartSvg(block: Extract<ReportBlock, { kind: 'series' }>, dateLabel: (d
           x2="${g.width}"
           y1="${t.y}"
           y2="${t.y}"
-          stroke="#e4e4e7"
+          stroke="${REPORT_GRID}"
           stroke-dasharray="${t.value === 0 ? '' : '3 3'}"
         /><text x="-6" y="${t.y + 3}" text-anchor="end" font-size="10" fill="#71717a">${tickFormat(t.value)}</text>`,
   );
@@ -87,7 +87,7 @@ function chartSvg(block: Extract<ReportBlock, { kind: 'series' }>, dateLabel: (d
   );
   const markers = g.markers.map(
     (m) =>
-      html`<line x1="${m.x}" x2="${m.x}" y1="0" y2="${g.height}" stroke="#a855f7" stroke-dasharray="2 2"
+      html`<line x1="${m.x}" x2="${m.x}" y1="0" y2="${g.height}" stroke="${REPORT_MARKER}" stroke-dasharray="2 2"
         ><title>${m.label}</title></line
       >`,
   );
