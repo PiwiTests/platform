@@ -248,7 +248,8 @@ test.describe('Dashboards UI', () => {
     await expect(page).toHaveURL(/\/analytics\/dashboards/);
 
     await page.goto('/reports');
-    await expect(page.getByTestId(`schedule-${scheduleId}`)).toContainText('Inactive');
+    // The first visit compiles the page on a dev server.
+    await expect(page.getByTestId(`schedule-${scheduleId}`)).toContainText('Inactive', { timeout: 60_000 });
     await expect(page.getByTestId(`schedule-${scheduleId}`)).toContainText('saved dashboard was deleted');
   });
 });
