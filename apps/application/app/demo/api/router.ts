@@ -53,6 +53,17 @@ import {
   apiRunReportSchedule,
   apiUpdateReportSchedule,
 } from './reports';
+import {
+  apiCreateDashboard,
+  apiDeleteDashboard,
+  apiDuplicateDashboard,
+  apiGetDashboard,
+  apiGetDashboardWidget,
+  apiListDashboards,
+  apiPreviewWidget,
+  apiSaveDashboard,
+  apiSetDefaultDashboard,
+} from './dashboards';
 import { DEMO_CHANNEL } from './demo-channel';
 import { apiPerfettoTestRun, apiPerfettoTestRunCase } from './perfetto';
 import {
@@ -389,6 +400,53 @@ const routes: RouteEntry[] = [
     handler: async (_m, _, q, ctx) =>
       getAnalyticsScopeSummary(await getDemoDb(), parseAnalyticsScope(q), ctx?.scope ?? 'all'),
   },
+  // Dashboards — saved dashboards, one widget of a dashboard and the editor's preview
+  {
+    method: 'GET',
+    pattern: /^\/api\/analytics\/dashboards$/,
+    handler: async (_m, _b, _q, ctx) => apiListDashboards(ctx?.actingUserId ?? null),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/analytics\/dashboards$/,
+    handler: async (_m, body, _q, ctx) => apiCreateDashboard(body, ctx?.actingUserId ?? null),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/analytics\/dashboards\/([\w-]+)$/,
+    handler: async (m, _b, q, ctx) => apiGetDashboard(m[1]!, q, ctx?.actingUserId ?? null, ctx?.scope ?? 'all'),
+  },
+  {
+    method: 'PATCH',
+    pattern: /^\/api\/analytics\/dashboards\/([\w-]+)$/,
+    handler: async (m, body, _q, ctx) => apiSaveDashboard(m[1]!, body, ctx?.actingUserId ?? null, ctx?.scope ?? 'all'),
+  },
+  {
+    method: 'DELETE',
+    pattern: /^\/api\/analytics\/dashboards\/([\w-]+)$/,
+    handler: async (m, _b, _q, ctx) => apiDeleteDashboard(m[1]!, ctx?.actingUserId ?? null),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/analytics\/dashboards\/([\w-]+)\/duplicate$/,
+    handler: async (m, body, _q, ctx) => apiDuplicateDashboard(m[1]!, body, ctx?.actingUserId ?? null),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/analytics\/dashboards\/([\w-]+)\/widgets\/([\w-]+)$/,
+    handler: async (m, _b, q, ctx) =>
+      apiGetDashboardWidget(m[1]!, m[2]!, q, ctx?.actingUserId ?? null, ctx?.scope ?? 'all'),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/analytics\/widgets\/preview$/,
+    handler: async (_m, body, _q, ctx) => apiPreviewWidget(body, ctx?.scope ?? 'all'),
+  },
+  {
+    method: 'PUT',
+    pattern: /^\/api\/settings\/analytics-default-dashboard$/,
+    handler: async (_m, body) => apiSetDefaultDashboard(body),
+  },
   {
     method: 'GET',
     pattern: /^\/api\/analytics\/([\w-]+)$/,
@@ -414,7 +472,7 @@ const routes: RouteEntry[] = [
   {
     method: 'GET',
     pattern: /^\/api\/reports\/preview$/,
-    handler: async (_m, _, q, ctx) => apiReportPreview(q, ctx?.scope ?? 'all'),
+    handler: async (_m, _, q, ctx) => apiReportPreview(q, ctx?.scope ?? 'all', ctx?.actingUserId ?? null),
   },
   // Projects
   {
@@ -2480,7 +2538,7 @@ routes.push(
   {
     method: 'POST',
     pattern: /^\/api\/reports\/snapshots$/,
-    handler: (_m, body, _q, ctx) => apiCreateReportSnapshot(body, ctx?.scope ?? 'all'),
+    handler: (_m, body, _q, ctx) => apiCreateReportSnapshot(body, ctx?.scope ?? 'all', ctx?.actingUserId ?? null),
   },
   {
     method: 'GET',

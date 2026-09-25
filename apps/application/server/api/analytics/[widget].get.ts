@@ -4,14 +4,13 @@ import { getDatabase } from '../../database';
 import { isAnalyticsWidgetId, runAnalyticsWidget } from '#shared/handlers/analytics';
 import { parseAnalyticsScope } from '#shared/analytics/scope';
 import { WidgetOptionsError, widgetOptionsFromQuery } from '#shared/analytics/registry';
-import { getAnalyticsScopeSummary } from '#shared/handlers/analytics/scope-summary';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Analytics'],
     summary: 'Cross-project analytics widget data',
     description:
-      'Returns the data for one analytics widget (see the widget registry: stats, verdict, metric, progress, risks, insights, portfolio, pass-rate-heatmap, ci-time-trend, wasted-time, flaky-leaderboard, cluster-landscape, regression-velocity, browser-matrix, slow-endpoints), aggregated across every project the caller can see. Scalar series read the daily rollups; with a test filter they are counted from the matching executions. Probe runs are never counted. The reserved name `scope` returns how the scope resolves instead: the period and comparison as dates, notes (a selection missing in a project, a deleted marker), the markers to draw inside the period, recent markers a period can anchor on, the selection keys and browsers the test filter offers, and where the rollup data starts.',
+      'Returns the data for one analytics widget (see the widget registry: stats, verdict, metric, progress, risks, insights, portfolio, pass-rate-heatmap, ci-time-trend, wasted-time, flaky-leaderboard, cluster-landscape, regression-velocity, browser-matrix, slow-endpoints), aggregated across every project the caller can see. Scalar series read the daily rollups; with a test filter they are counted from the matching executions. Probe runs are never counted.',
     parameters: [
       { name: 'widget', in: 'path', required: true, schema: { type: 'string' } },
       {
@@ -185,11 +184,6 @@ defineRouteMeta({
 export default eventHandler(async (event) => {
   const user = await requireAuth(event);
   const widget = getRouterParam(event, 'widget');
-  if (widget === 'scope') {
-    const db = await getDatabase();
-    const access = await getProjectScope(db, user as any);
-    return getAnalyticsScopeSummary(db, parseAnalyticsScope(getQuery(event)), access);
-  }
   if (!isAnalyticsWidgetId(widget)) {
     throw apiError({ statusCode: 404, message: 'Unknown analytics widget' });
   }

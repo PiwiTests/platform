@@ -36,6 +36,7 @@ import {
   type ResolvedDashboardBand,
 } from '../analytics/dashboards';
 import { runAnalyticsWidget } from './analytics';
+import { getInstanceCapabilities } from './capabilities';
 import { filterByProjectTags, resolveAllowedProjects, type ProjectAccess } from './analytics/common';
 
 export class DashboardError extends Error {
@@ -90,6 +91,12 @@ export function parseDashboardRef(raw: unknown): DashboardRef | null {
 
 export function dashboardRefString(ref: DashboardRef): string {
   return ref.kind === 'builtin' ? ref.key : String(ref.id);
+}
+
+/** Whether the instance declined the Test Map, which hides the gaps digest dashboard. */
+export async function isTestMapHidden(db: DrizzleDB): Promise<boolean> {
+  const state = (await getInstanceCapabilities(db)).items.find((c) => c.id === 'test-map')?.state;
+  return state === 'declined' || state === 'not-applicable';
 }
 
 /** The built-in dashboards a page lists: the team dashboard needs an owner test filter, so it is a report-only one. */
@@ -239,7 +246,7 @@ export async function listDashboards(
   );
   return {
     items: [
-      ...listedBuiltins(opts.testMapHidden ?? false).map((d) => builtinSummary(d.key)),
+      ...listedBuiltins(opts.testMapHidden ?? (await isTestMapHidden(db))).map((d) => builtinSummary(d.key)),
       ...rows.map((r) => savedSummary(r, r.ownerId ? (names.get(r.ownerId) ?? null) : null, actor, now)),
     ],
     instanceDefault: await getInstanceDefaultDashboard(db),
@@ -297,6 +304,18 @@ export async function loadDashboardDefinition(
   }
   const row = await visibleRow(db, ref.id, actor);
   return { ref: String(row.id), name: row.name, definition: row.definition as DashboardDefinition, row };
+}
+
+/** The dashboard a quality report renders: a built-in key as is, a saved dashboard loaded for the viewer. */
+export async function reportDashboardFor(
+  db: DrizzleDB,
+  rawRef: unknown,
+  actor: DashboardActor,
+): Promise<BuiltinDashboardKey | { ref: string; name: string; definition: DashboardDefinition }> {
+  const ref = requireRef(rawRef);
+  if (ref.kind === 'builtin') return ref.key;
+  const { name, definition } = await loadDashboardDefinition(db, rawRef, actor);
+  return { ref: String(ref.id), name, definition };
 }
 
 /**
