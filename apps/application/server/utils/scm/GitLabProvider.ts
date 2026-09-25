@@ -18,7 +18,7 @@ import type {
   ScmFileEdit,
   CreatePullRequestInput,
 } from './ScmProvider';
-import { TtlCache } from './cache';
+import { TtlCache } from '../ttl-cache';
 import { isValidGitRef, encodeGitRef } from './refs';
 import type { CiRerunSettings } from '#shared/ci-rerun';
 

@@ -1,3 +1,8 @@
+/**
+ * A small in-memory cache whose entries expire after a fixed time to live,
+ * bounded in size: when full, an expired entry is dropped first, else the
+ * oldest one.
+ */
 export class TtlCache<V> {
   private readonly store = new Map<string, { value: V; expiry: number }>();
 
@@ -14,6 +19,26 @@ export class TtlCache<V> {
       return undefined;
     }
     return entry.value;
+  }
+
+  delete(key: string): void {
+    this.store.delete(key);
+  }
+
+  /** Drop every entry whose value matches. */
+  deleteWhere(test: (value: V, key: string) => boolean): number {
+    let dropped = 0;
+    for (const [key, entry] of this.store) {
+      if (test(entry.value, key)) {
+        this.store.delete(key);
+        dropped++;
+      }
+    }
+    return dropped;
+  }
+
+  get size(): number {
+    return this.store.size;
   }
 
   set(key: string, value: V): void {
