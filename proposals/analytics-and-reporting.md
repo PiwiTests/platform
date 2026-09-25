@@ -1275,8 +1275,8 @@ Grouped by milestone. Paths are under `apps/application/` unless noted.
 - [x] `app/components/reports/ReportPreviewModal.vue`, `ReportView.vue`
 - [x] `app/pages/analytics.vue`, `app/pages/projects/[id]/index.vue`: the *Export* action (*Schedule* comes with milestone 3)
 - [x] `shared/status-colors.ts`; `app/utils/status-palette.ts`, `app/utils/pass-rate.ts`, `shared/export/render-html.ts`, `render-pdf.ts`, `server/utils/email.ts` read it; `tests/unit/status-colors.test.ts` pins `app/assets/css/main.css`
-- [ ] `shared/capabilities.ts` (`quality-reports`), `shared/handlers/setup-status.ts` (detection id and ladder order; the evidence probe comes with milestone 3), `shared/piwi-features.ts` (*Quality reports*, *Trends over time*); `app/layouts/default.vue` and the *Export* action read `isHidden('quality-reports')`
-- [ ] `shared/mcp-tools.ts`, `server/utils/mcp/tools.ts`: `get_quality_report`, `get_metric_trend`, `compare_periods` with `module` and `capability`; `apps/docs/features/mcp.md`; the "N tools" sentences in the docs and `ROADMAP.md`
+- [x] `shared/capabilities.ts` (`quality-reports`), `shared/handlers/setup-status.ts` (detection id and ladder order; the evidence probe comes with milestone 3), `shared/piwi-features.ts` (*Quality reports*, *Trends over time*); the *Export* action reads `isHidden('quality-reports')` (`app/layouts/default.vue` reads it for the `/reports` sidebar entry, which comes with that page in milestone 3)
+- [x] `shared/mcp-tools.ts`, `server/utils/mcp/tools.ts`: `get_quality_report`, `get_metric_trend`, `compare_periods` with `module` and `capability`; `apps/docs/features/mcp.md`; the "N tools" sentences in the docs and `ROADMAP.md`
 - [ ] `packages/reporter/src/cli/quality-report.ts`, `cli/index.ts`; `packages/reporter/tests/`
 - [ ] `tests/unit/report-bundle.test.ts`, `report-render-parity.test.ts`, `report-csv.test.ts`; `tests/quality-reports.spec.ts`
 - [ ] `apps/docs/features/quality-reports.md`, `.vitepress/config.mts` sidebar, `guide/concepts.md`

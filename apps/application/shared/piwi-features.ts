@@ -103,6 +103,22 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/analytics',
       },
       {
+        title: 'Trends over time',
+        summary:
+          'Any period against any other (calendar units, sprints, release cycles, since a marker), from daily rollups that outlive retention.',
+        needs: [],
+        where: 'Analytics → scope bar',
+        doc: 'features/analytics#periods',
+      },
+      {
+        title: 'Quality reports',
+        summary:
+          'The analytics page as a document for stakeholders: a rule-based verdict, headline numbers, the trend, what is being done and the risks, as PDF, HTML, Markdown or CSV.',
+        needs: [],
+        where: 'Analytics → Export; Project → Export',
+        doc: 'features/quality-reports',
+      },
+      {
         title: 'Timeline markers',
         summary: 'Your deploys and infra changes overlaid on the trend charts, so a step change has a cause.',
         needs: ['admin'],

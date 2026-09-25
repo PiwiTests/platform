@@ -15,7 +15,7 @@ Piwi Dashboard exposes a built-in **Model Context Protocol (MCP) server** at `/m
 
 ## What it provides
 
-The server exposes 50 tools — mostly read-only, plus a few write/triage tools — across the diagnostic workflow, from browsing projects to a failure's evidence.
+The server exposes 53 tools — mostly read-only, plus a few write/triage tools — across the diagnostic workflow, from browsing projects to a failure's evidence.
 
 **Projects & activity**
 
@@ -24,7 +24,7 @@ The server exposes 50 tools — mostly read-only, plus a few write/triage tools 
 | `list_projects` | All projects with run stats and latest run status |
 | `get_project` | Project details and recent test runs |
 | `get_project_test_catalog` | Whole test-case catalog for a project with aggregated pass/fail/flaky counts |
-| `list_recent_activity` | Most recent runs across *all* projects — a cross-project CI feed (no project ID needed) |
+| `list_recent_activity` | Most recent runs across *all* projects, a cross-project CI feed |
 | `search` | Global search across projects, runs (by label or id), and test cases |
 | `list_tags` | Every tag defined on the instance (instance-wide, not per-project) |
 | `get_instance_stats` | Instance-wide counts and storage size (admin only) |
@@ -35,8 +35,8 @@ The server exposes 50 tools — mostly read-only, plus a few write/triage tools 
 |------|-------------|
 | `list_runs` | Filter runs by project, branch, or status |
 | `get_run` | Run summary and test cases (paginated) filtered by status |
-| `get_run_insights` | Run-vs-last-green comparison: regressions, recoveries, new flaky, perf deltas, worker imbalance — "did my fix work?" |
-| `get_network_requests` | A run's network calls aggregated by route with backend server logs — pin a failure on a slow/failing endpoint |
+| `get_run_insights` | Run vs last green: regressions, recoveries, new flaky, perf deltas, worker imbalance |
+| `get_network_requests` | A run's network calls by route, with backend server logs |
 | `get_failure_groups` | One run's failures grouped by cluster with worker correlation |
 | `list_failed_cases` | Failed/timed-out cases across runs for a project |
 | `list_flaky_tests` | Flaky test analysis with scores, impact ranking, and root-cause category |
@@ -45,12 +45,12 @@ The server exposes 50 tools — mostly read-only, plus a few write/triage tools 
 | `get_test_stability_trend` | Flaky/pass rate and duration over time for one test — "is it getting flakier?" |
 | `get_slow_tests` / `get_performance_trend` | Slowest tests and run-duration/p90 time series |
 | `get_spec_health` | Per-spec-file pass rate, flaky rate, and failures — find unhealthy areas |
-| `get_test_run_case` | One execution record with full (untruncated) error, steps, console, web vitals, ARIA snapshot, and its deterministic [clues](/features/evidence#clues) (use `include` to select blobs) |
-| `get_test_case_context` | Execution-scoped AI evidence for a single failure (steps, console, network, SCM diff) |
+| `get_test_run_case` | One execution with full error, steps, console, web vitals, ARIA snapshot and [clues](/features/evidence#clues) (`include` selects blobs) |
+| `get_test_case_context` | AI evidence for one failure (steps, console, network, SCM diff) |
 | `get_locator_healing` | Ranked alternative locators for a failing case — the recommended durable fix plus full alternatives |
 | `list_case_traces` | Playwright trace files for an execution, with download paths |
 | `get_case_screenshots` | Screenshots for an execution — metadata by default, or base64 image data on request |
-| `explain_failure` | **One-call evidence bundle** for a failure: headline, error, steps, console, deterministic [clues](/features/evidence#clues), locator fix, [page diff](/features/evidence#page-diff) and diagnosis context |
+| `explain_failure` | **One-call evidence bundle** for a failure: error, steps, console, [clues](/features/evidence#clues), locator fix, [page diff](/features/evidence#page-diff), diagnosis context |
 | `list_links` | External links (Jira/PR/issue) attached to a run, execution, test case, or failure cluster |
 
 **Test selections** *([named, data-driven test subsets](/guide/test-selection))*
@@ -58,7 +58,7 @@ The server exposes 50 tools — mostly read-only, plus a few write/triage tools 
 | Tool | Description |
 |------|-------------|
 | `list_selections` | A project's saved selections plus the built-in `failed` / `quarantine-free` |
-| `resolve_selection` | Resolve a saved (or built-in) selection to its matching tests and a ready-to-run `playwright test` command — the verify command after a fix |
+| `resolve_selection` | A saved or built-in selection's matching tests and its `playwright test` command |
 | `preview_selection` | Resolve an ad-hoc selection definition without saving it — the builder's dry-run |
 | `suggest_selections` | Suggested `slow`/`feature` tags and a mined smoke suite, each with its evidence |
 | `analyze_selections` | Per-selection health and drift, plus the uncovered tests |
@@ -67,6 +67,14 @@ The server exposes 50 tools — mostly read-only, plus a few write/triage tools 
 | `draft_scenario` | A deterministic test skeleton for a gap: title, annotations, graph path, catalog methods, TODO assertion |
 | `get_feature_graph` | A node's feature-graph neighborhood, with gap class and reaching tests |
 
+**Trends & quality reports**
+
+| Tool | Description |
+|------|-------------|
+| `get_metric_trend` | One catalog metric over a scope: value, change and series |
+| `compare_periods` | The headline metrics over two periods, such as this sprint against the last |
+| `get_quality_report` | A [quality report](./quality-reports) bundle for a dashboard and a scope |
+
 **Failure clusters**
 
 | Tool | Description |
@@ -74,7 +82,7 @@ The server exposes 50 tools — mostly read-only, plus a few write/triage tools 
 | `list_clusters` | Failure clusters grouped by error fingerprint |
 | `list_open_clusters` | Open clusters across *all* projects, ranked by occurrences — a triage queue; an optional `queue` filter focuses one inbox queue |
 | `get_cluster` | Cluster detail with affected tests and diagnosis summary |
-| `get_fix_plan` | **One-call fix plan** for a cluster: diagnosis with its validated patch, ranked locator replacements with file and line, failing tests, owning team, the verify command, a `reproduce` recipe (bash and PowerShell), a `bisect` script, and `fixedBefore` — the resolved clusters it resembles |
+| `get_fix_plan` | **One-call fix plan** for a cluster: validated patch, ranked locator fixes, failing tests, owner, verify command, `reproduce` and `bisect` recipes, and `fixedBefore` (similar resolved clusters) |
 | `get_cluster_diagnosis` | Full AI diagnosis: root cause, evidence, fix |
 | `get_cluster_context` | Full AI evidence context (errors, steps, console logs, SCM diff), as the built-in diagnosis receives it |
 
