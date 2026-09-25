@@ -445,3 +445,37 @@ export interface AnalyticsRisks {
   openCount: number;
   quarantine: { count: number; oldestDays: number | null };
 }
+
+/** Open scenario gaps of the projects in scope whose Test Map is active. Counts, never a coverage percentage. */
+export interface AnalyticsScenarioGaps {
+  /** Projects of the scope whose Test Map is active; the widget renders nothing when none is. */
+  projects: number;
+  /** Projects of the scope that declined the Test Map, left out. */
+  declined: number;
+  /** Open gaps (`kind = gap`), by class, most severe first. */
+  byClass: Array<{ class: string; count: number }>;
+  /** The features with the most open gaps. */
+  byFeature: Array<{
+    feature: string;
+    projectId: number;
+    projectName: string;
+    count: number;
+    worstClass: string | null;
+  }>;
+  /** Gaps closed inside the period. */
+  closed: number;
+  /** Gaps accepted more than a week ago whose test was never written. */
+  acceptedUnwritten: number;
+  /** Open resilience findings (`kind = finding`). */
+  findings: number;
+}
+
+/** The Test Map's weekly digest: the top new gaps per project since the period started. */
+export interface AnalyticsNewGaps {
+  projects: number;
+  items: Array<{
+    projectId: number;
+    projectName: string;
+    gaps: Array<{ id: number; title: string; class: string; score: number | null; createdAt: number }>;
+  }>;
+}

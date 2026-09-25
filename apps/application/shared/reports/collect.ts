@@ -159,14 +159,12 @@ export async function collectReportBundle(db: DrizzleDB, opts: CollectReportOpti
             : `${title} is not narrowed by the test filter.`,
         );
       }
-      widgets.push({
-        key: widget.key,
-        type: widget.type,
-        title,
-        blocks: WIDGET_DOCUMENTS[widget.type](data, docCtx, widget.options),
-        notes,
-      });
+      const blocks = WIDGET_DOCUMENTS[widget.type](data, docCtx, widget.options);
+      // A widget with nothing to show for the scope (the Test Map declined everywhere) is left out.
+      if (blocks.length === 0) continue;
+      widgets.push({ key: widget.key, type: widget.type, title, blocks, notes });
     }
+    if (widgets.length === 0) continue;
     bands.push({
       title: s.title(band.title),
       description: band.description ? s.title(band.description) : null,

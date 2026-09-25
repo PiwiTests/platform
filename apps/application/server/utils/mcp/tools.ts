@@ -63,6 +63,7 @@ import { stripAnsi } from '#shared/error-fingerprint';
 import { caseHeadline } from '#shared/failure-verdict';
 import { MCP_TOOL_DEFS, DESKTOP_MCP_TOOL_DEFS } from '#shared/mcp-tools';
 import { collectReportBundle } from '#shared/reports/collect';
+import { assertDashboardScope } from '#shared/reports/request';
 import { isReportLanguage } from '#shared/reports/format';
 import { isBuiltinDashboardKey } from '#shared/analytics/dashboards';
 import { getMetric, isMetricId, type MetricId } from '#shared/analytics/metrics';
@@ -2156,12 +2157,16 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
   // ── get_quality_report ─────────────────────────────────────────────────────
   async get_quality_report(db, params, ctx) {
     const dashboard = params.dashboard ?? 'executive';
-    if (!isBuiltinDashboardKey(dashboard)) throw new Error('dashboard must be executive, engineering or overview');
+    if (!isBuiltinDashboardKey(dashboard)) {
+      throw new Error('dashboard must be executive, engineering, team, gaps-digest or overview');
+    }
     const lang = params.lang ?? undefined;
     if (lang !== undefined && !isReportLanguage(lang)) throw new Error('lang must be en or fr');
+    const scope = toolScope(params);
+    assertDashboardScope(dashboard, scope);
     return collectReportBundle(db, {
       dashboard,
-      scope: toolScope(params),
+      scope,
       access: ctx.scope,
       language: lang,
       baseUrl: process.env.PIWI_SITE_URL ?? null,
@@ -2216,6 +2221,8 @@ function toolScope(params: Record<string, unknown>) {
   if (params.selection) query.sel = String(params.selection);
   const tags = list(params.tags);
   if (tags) query.tags = tags;
+  const owners = list(params.owners);
+  if (owners) query.owner = owners;
   return parseAnalyticsScope(query);
 }
 

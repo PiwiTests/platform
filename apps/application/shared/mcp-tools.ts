@@ -60,6 +60,11 @@ const ANALYTICS_SCOPE_PROPERTIES = {
   allBranches: { type: 'boolean', description: 'Count every branch instead of the default branches' },
   selection: { type: 'string', description: 'Test filter: a selection key (e.g. smoke), resolved in each project' },
   tags: { type: 'array', items: { type: 'string' }, description: 'Test filter: tests carrying all of these tags' },
+  owners: {
+    type: 'array',
+    items: { type: 'string' },
+    description: 'Test filter: tests held by any of these owners (piwi:owner or CODEOWNERS)',
+  },
 } as const;
 
 export const MCP_TOOL_DEFS = [
@@ -944,13 +949,13 @@ export const MCP_TOOL_DEFS = [
     module: 'workflow',
     capability: 'quality-reports',
     description:
-      'A quality report as its bundle: a built-in dashboard (executive: a rule-based verdict, headline numbers, the pass-rate trend, what changed, what is being done and the risks; engineering adds flaky tests, clusters, CI time and detail; overview is the analytics page) rendered over a scope, every string already formatted. Use it to answer "how did the checkout suite do this week" or to post a summary. Numbers never come from a model: the verdict is built by rules.',
+      'A quality report as its bundle: a built-in dashboard (executive: a rule-based verdict, headline numbers, the pass-rate trend, what changed, what is being done and the risks; engineering adds flaky tests, clusters, CI time, detail and scenario gaps; team is engineering for one owner and needs `owners`; gaps-digest is the Test Map’s weekly digest; overview is the analytics page) rendered over a scope, every string already formatted. Use it to answer "how did the checkout suite do this week" or to post a summary. Numbers never come from a model: the verdict is built by rules.',
     inputSchema: {
       type: 'object',
       properties: {
         dashboard: {
           type: 'string',
-          enum: ['executive', 'engineering', 'overview'],
+          enum: ['executive', 'engineering', 'team', 'gaps-digest', 'overview'],
           description: 'Built-in dashboard (default executive)',
         },
         lang: {

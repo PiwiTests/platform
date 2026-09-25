@@ -46,6 +46,11 @@ export interface AnalyticsWidgetMeta {
    * dashboard places the widget. Unset: the widget takes no options.
    */
   options?: z.ZodType;
+  /**
+   * The capability the widget follows in each project of the scope: a project
+   * that declined it is left out, and with none left the widget is not shown.
+   */
+  capability?: 'test-map';
 }
 
 /**
@@ -208,6 +213,24 @@ export const ANALYTICS_WIDGETS = [
     size: 'full',
     band: 'detail',
     testFilters: true,
+  },
+  {
+    id: 'scenario-gaps',
+    title: 'Scenario gaps',
+    icon: 'i-lucide-map',
+    size: 'full',
+    band: 'detail',
+    testFilters: false,
+    capability: 'test-map',
+  },
+  {
+    id: 'new-gaps',
+    title: 'New scenario gaps',
+    icon: 'i-lucide-map-pin-plus',
+    size: 'full',
+    band: 'detail',
+    testFilters: false,
+    capability: 'test-map',
   },
 ] as const satisfies readonly AnalyticsWidgetMeta[];
 

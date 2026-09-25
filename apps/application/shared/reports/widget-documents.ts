@@ -15,10 +15,12 @@ import type {
   AnalyticsMarker,
   AnalyticsMetricValue,
   AnalyticsMetricWidget,
+  AnalyticsNewGaps,
   AnalyticsPortfolioRow,
   AnalyticsProgress,
   AnalyticsRegressionVelocity,
   AnalyticsRisks,
+  AnalyticsScenarioGaps,
   AnalyticsSlowEndpoints,
   AnalyticsStats,
   AnalyticsVerdict,
@@ -40,6 +42,7 @@ export interface DocumentContext {
   drawMarkers: boolean;
 }
 
+/** A widget's blocks; none when the widget has nothing to show for the scope, and the report leaves it out. */
 type Mapper = (data: any, ctx: DocumentContext, options: Record<string, unknown>) => ReportBlock[];
 
 const TOP_ROWS = 10;
@@ -378,6 +381,86 @@ export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
       })),
     },
   ],
+
+  'scenario-gaps': (data: AnalyticsScenarioGaps, ctx) => {
+    if (data.projects === 0) return [];
+    const open = data.byClass.reduce((sum, c) => sum + c.count, 0);
+    const blocks: ReportBlock[] = [
+      {
+        kind: 'stats',
+        tiles: [
+          plainTile(ctx.s.metricLabel('open-scenario-gaps', 'Open scenario gaps'), ctx.f.number(open)),
+          plainTile(ctx.s.metricLabel('gaps-closed', 'Gaps closed'), ctx.f.number(data.closed)),
+          plainTile(
+            ctx.s.metricLabel('accepted-but-unwritten', 'Accepted but unwritten'),
+            ctx.f.number(data.acceptedUnwritten),
+          ),
+          plainTile(
+            ctx.s.metricLabel('open-resilience-findings', 'Open resilience findings'),
+            ctx.f.number(data.findings),
+          ),
+        ],
+      },
+    ];
+    if (data.byClass.length > 0) {
+      blocks.push({
+        kind: 'table',
+        columns: [
+          { key: 'class', label: ctx.s.labels.gapClass },
+          { key: 'count', label: ctx.s.labels.count, align: 'right' },
+        ],
+        rows: data.byClass.map((c) => ({ cells: { class: ctx.s.gapClass(c.class), count: ctx.f.number(c.count) } })),
+      });
+    }
+    if (data.byFeature.length > 0) {
+      blocks.push({
+        kind: 'table',
+        columns: [
+          { key: 'feature', label: ctx.s.labels.feature },
+          { key: 'project', label: ctx.s.labels.projects },
+          { key: 'worst', label: ctx.s.labels.gapClass },
+          { key: 'count', label: ctx.s.labels.count, align: 'right' },
+        ],
+        rows: data.byFeature.map((f) => ({
+          cells: {
+            feature: f.feature,
+            project: f.projectName,
+            worst: f.worstClass ? ctx.s.gapClass(f.worstClass) : '—',
+            count: ctx.f.number(f.count),
+          },
+          link: link(ctx, `/projects/${f.projectId}?tab=gaps`),
+        })),
+      });
+    }
+    return blocks;
+  },
+
+  'new-gaps': (data: AnalyticsNewGaps, ctx) => {
+    if (data.projects === 0) return [];
+    if (data.items.length === 0) return [{ kind: 'text', text: ctx.s.labels.noData }];
+    return [
+      {
+        kind: 'table',
+        columns: [
+          { key: 'gap', label: ctx.s.title('Scenario gaps') },
+          { key: 'project', label: ctx.s.labels.projects },
+          { key: 'class', label: ctx.s.labels.gapClass },
+          { key: 'score', label: ctx.s.labels.score, align: 'right' },
+        ],
+        rows: data.items.flatMap((p) =>
+          p.gaps.map((g) => ({
+            cells: {
+              gap: g.title,
+              project: p.projectName,
+              class: ctx.s.gapClass(g.class),
+              score: g.score === null ? '—' : ctx.f.number(g.score, 3),
+            },
+            link: link(ctx, `/projects/${p.projectId}?tab=gaps`),
+          })),
+        ),
+      },
+    ];
+  },
 };
 
 function plainTile(label: string, value: string): ReportTile {
@@ -397,6 +480,9 @@ export function widgetMetrics(type: AnalyticsWidgetId, options: Record<string, u
   if (type === 'ci-time-trend') return ['ci-time'];
   if (type === 'regression-velocity') return ['new-regressions', 'newly-flaky'];
   if (type === 'portfolio' || type === 'pass-rate-heatmap' || type === 'browser-matrix') return ['test-pass-rate'];
+  if (type === 'scenario-gaps') {
+    return ['open-scenario-gaps', 'gaps-closed', 'accepted-but-unwritten', 'open-resilience-findings'];
+  }
   return [];
 }
 

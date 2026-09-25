@@ -38,6 +38,10 @@ export interface ReportLabels {
   date: string;
   unavailable: string;
   daysAreUtc: string;
+  feature: string;
+  gapClass: string;
+  score: string;
+  count: string;
 }
 
 export interface ReportSentences {
@@ -62,6 +66,10 @@ export interface ReportSentences {
   testFilterLimit(dataStartsAt: string | null): string;
   /** The limit line of the test-identity lists. */
   identityLimit: string;
+  /** A scenario gap class in words (`blind-spot` → `Blind spot`). */
+  gapClass(cls: string): string;
+  /** The limit line of a schedule's first quality report, which covers only the days since it was created. */
+  firstRunLimit(since: string): string;
 }
 
 export function sentencesFor(language: ReportLanguage): ReportSentences {

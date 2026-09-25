@@ -60,6 +60,19 @@ const METRIC_LABELS: Partial<Record<MetricId, [label: string, definition: string
     'Groupes d’échecs corrigés dans la période et sans régression depuis, sur les groupes corrigés.',
   ],
   'quarantine-debt': ['Dette de quarantaine', 'Tests en quarantaine.'],
+  'open-scenario-gaps': [
+    'Lacunes de scénario ouvertes',
+    'Lacunes de scénario ouvertes, par classe : angle mort, fausse assurance, fragile.',
+  ],
+  'gaps-closed': ['Lacunes fermées', 'Lacunes de scénario fermées dans la période.'],
+  'accepted-but-unwritten': [
+    'Acceptées mais non écrites',
+    'Lacunes acceptées il y a plus d’une semaine dont la fonctionnalité n’a toujours pas de test fiable.',
+  ],
+  'open-resilience-findings': [
+    'Constats de résilience ouverts',
+    'Constats ouverts des sondes serveur, dans les classes non géré et dégradé.',
+  ],
 };
 
 const TITLES: Record<string, string> = {
@@ -102,6 +115,23 @@ const TITLES: Record<string, string> = {
   'Status flips': 'Changements de statut',
   Age: 'Âge',
   'Failure cause': 'Cause d’échec',
+  'Scenario gaps': 'Lacunes de scénario',
+  'New scenario gaps': 'Nouvelles lacunes de scénario',
+  'What the tests do not reach yet, from the Test Map.':
+    'Ce que les tests n’atteignent pas encore, d’après la Test Map.',
+  'The top new gaps of each project in the period.':
+    'Les principales nouvelles lacunes de chaque projet sur la période.',
+  'Where the gaps stand': 'Où en sont les lacunes',
+  'Open gaps by class and by feature, and the gaps closed.':
+    'Les lacunes ouvertes par classe et par fonctionnalité, et les lacunes fermées.',
+};
+
+const GAP_CLASS_LABELS: Record<string, string> = {
+  'blind-spot': 'Angle mort',
+  'false-comfort': 'Fausse assurance',
+  fragile: 'Fragile',
+  unhandled: 'Non géré',
+  degraded: 'Dégradé',
 };
 
 function branchText(facts: VerdictFacts): string {
@@ -237,6 +267,10 @@ export const FR_SENTENCES: ReportSentences = {
     date: 'Date',
     unavailable: 'Ce widget n’est plus disponible.',
     daysAreUtc: 'Les jours sont en UTC.',
+    feature: 'Fonctionnalité',
+    gapClass: 'Classe',
+    score: 'Score',
+    count: 'Nombre',
   },
   verdict,
   progress,
@@ -252,4 +286,7 @@ export const FR_SENTENCES: ReportSentences = {
       : 'Le filtre de tests compte les exécutions conservées, qui ne remontent pas plus loin que la rétention.',
   identityLimit:
     'Les listes de tests et le nombre de tests instables ne remontent pas plus loin que la rétention des exécutions.',
+  gapClass: (cls) => GAP_CLASS_LABELS[cls] ?? cls,
+  firstRunLimit: (since) =>
+    `Ce premier rapport qualité planifié ne couvre que les jours écoulés depuis la création de la planification, le ${since}.`,
 };

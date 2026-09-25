@@ -124,6 +124,16 @@ export const HELP_TOPICS = {
     title: 'Risks',
     text: 'Metrics that moved the wrong way against the comparison period, projects failing run after run, the oldest open failure causes, and the tests waiting in quarantine.',
   },
+  'analytics.scenario-gaps': {
+    title: 'Scenario gaps',
+    text: 'Open gaps of the Test Map by class and by feature, the gaps closed in the period, accepted gaps whose test was never written, and open resilience findings. Counts only, never a coverage percentage. A project that declined the Test Map is left out.',
+    doc: 'features/scenario-gaps',
+  },
+  'analytics.new-gaps': {
+    title: 'New scenario gaps',
+    text: 'The Test Map’s weekly digest: the top five new open gaps of each project created in the period, highest exposure first.',
+    doc: 'features/scenario-gaps',
+  },
   'reports.export': {
     title: 'Quality report',
     text: 'The scope on screen as a document for someone who does not open the dashboard: a rule-based verdict, headline numbers, the trend, what is being done and the risks. Executive keeps to plain words; Engineering adds flaky tests, clusters and detail; Overview is this page. Download it as PDF, HTML, Markdown, CSV or JSON.',

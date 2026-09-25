@@ -17,6 +17,7 @@ import { getAnalyticsMetric } from './metric';
 import { getAnalyticsVerdict } from './verdict';
 import { getAnalyticsProgress } from './progress';
 import { getAnalyticsRisks } from './risks';
+import { getAnalyticsNewGaps, getAnalyticsScenarioGaps } from './scenario-gaps';
 
 export { isAnalyticsWidgetId };
 export type { AnalyticsWidgetId, ProjectAccess };
@@ -48,6 +49,8 @@ const ANALYTICS_WIDGET_HANDLERS: Record<AnalyticsWidgetId, AnalyticsWidgetHandle
   'regression-velocity': getAnalyticsRegressionVelocity,
   'browser-matrix': getAnalyticsBrowserMatrix,
   'slow-endpoints': getAnalyticsSlowEndpoints,
+  'scenario-gaps': getAnalyticsScenarioGaps,
+  'new-gaps': getAnalyticsNewGaps,
 };
 
 /**

@@ -2,8 +2,8 @@
  * Dashboards: named arrangements of widgets in bands, with a default scope.
  *
  * The analytics page renders the built-in Overview; a quality report renders
- * any dashboard as a document (`shared/reports/collect.ts`), and the executive
- * and engineering dashboards exist for that. Built-in dashboards are defined
+ * any dashboard as a document (`shared/reports/collect.ts`), and the
+ * executive, engineering, team and gaps digest dashboards exist for that. Built-in dashboards are defined
  * here in code and can only be duplicated; saved dashboards reuse the same
  * definition shape.
  */
@@ -200,16 +200,55 @@ export const ENGINEERING_DASHBOARD: DashboardDefinition = {
         { key: 'endpoints', type: 'slow-endpoints', size: 'full' },
       ],
     },
+    {
+      title: 'Scenario gaps',
+      description: 'What the tests do not reach yet, from the Test Map.',
+      widgets: [{ key: 'gaps', type: 'scenario-gaps', size: 'full' }],
+    },
   ],
 };
 
-export type BuiltinDashboardKey = 'overview' | 'executive' | 'engineering';
+/**
+ * The engineering dashboard for one team: the same widgets, and a schedule
+ * sets the owner test filter, so each team receives the numbers of its own
+ * tests.
+ */
+export const TEAM_DASHBOARD: DashboardDefinition = {
+  v: 1,
+  scope: { ...OVERVIEW_DASHBOARD.scope },
+  bands: ENGINEERING_DASHBOARD.bands,
+};
+
+/** The Test Map's weekly digest: the top new gaps of each project, then where the gaps stand. */
+export const GAPS_DIGEST_DASHBOARD: DashboardDefinition = {
+  v: 1,
+  scope: { ...OVERVIEW_DASHBOARD.scope, period: { kind: 'rolling', days: 7 } },
+  bands: [
+    {
+      title: 'New scenario gaps',
+      description: 'The top new gaps of each project in the period.',
+      widgets: [{ key: 'new-gaps', type: 'new-gaps', size: 'full' }],
+    },
+    {
+      title: 'Where the gaps stand',
+      description: 'Open gaps by class and by feature, and the gaps closed.',
+      widgets: [{ key: 'gaps', type: 'scenario-gaps', size: 'full' }],
+    },
+  ],
+};
+
+export type BuiltinDashboardKey = 'overview' | 'executive' | 'engineering' | 'team' | 'gaps-digest';
 
 export interface BuiltinDashboard {
   key: BuiltinDashboardKey;
   name: string;
   description: string;
   definition: DashboardDefinition;
+  /**
+   * What the dashboard needs from the scope: `owner`, an owner test filter (the
+   * team dashboard); `test-map`, the Test Map active in a project of the scope.
+   */
+  requires?: 'owner' | 'test-map';
 }
 
 export const BUILTIN_DASHBOARDS: readonly BuiltinDashboard[] = [
@@ -231,7 +270,31 @@ export const BUILTIN_DASHBOARDS: readonly BuiltinDashboard[] = [
     description: 'For the team that owns the suite: the executive report, then flaky tests, clusters and detail.',
     definition: ENGINEERING_DASHBOARD,
   },
+  {
+    key: 'team',
+    name: 'Team',
+    description: 'The engineering dashboard for one team: only the tests an owner holds.',
+    definition: TEAM_DASHBOARD,
+    requires: 'owner',
+  },
+  {
+    key: 'gaps-digest',
+    name: 'Gaps digest',
+    description: 'The Test Map’s weekly digest: the top new scenario gaps of each project, then where the gaps stand.',
+    definition: GAPS_DIGEST_DASHBOARD,
+    requires: 'test-map',
+  },
 ];
+
+/**
+ * The built-in dashboards a scope can render: the team dashboard needs an
+ * owner test filter, the gaps digest a Test Map that is not declined.
+ */
+export function offeredDashboards(opts: { hasOwner: boolean; testMapHidden: boolean }): BuiltinDashboard[] {
+  return BUILTIN_DASHBOARDS.filter(
+    (d) => (d.requires !== 'owner' || opts.hasOwner) && (d.requires !== 'test-map' || !opts.testMapHidden),
+  );
+}
 
 export function isBuiltinDashboardKey(value: unknown): value is BuiltinDashboardKey {
   return typeof value === 'string' && BUILTIN_DASHBOARDS.some((d) => d.key === value);

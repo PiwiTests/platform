@@ -106,6 +106,14 @@ function risks(r: AnalyticsRisks, f: ValueFormatter): string[] {
   return lines;
 }
 
+const GAP_CLASS_LABELS: Record<string, string> = {
+  'blind-spot': 'Blind spot',
+  'false-comfort': 'False comfort',
+  fragile: 'Fragile',
+  unhandled: 'Unhandled',
+  degraded: 'Degraded',
+};
+
 export const EN_SENTENCES: ReportSentences = {
   labels: {
     qualityReport: 'Quality report',
@@ -135,6 +143,10 @@ export const EN_SENTENCES: ReportSentences = {
     date: 'Date',
     unavailable: 'This widget is no longer available.',
     daysAreUtc: 'Days are UTC.',
+    feature: 'Feature',
+    gapClass: 'Class',
+    score: 'Score',
+    count: 'Count',
   },
   verdict,
   progress,
@@ -149,4 +161,7 @@ export const EN_SENTENCES: ReportSentences = {
       ? `The test filter counts stored executions, which start on ${start}.`
       : 'The test filter counts stored executions, which reach back only as far as retention keeps runs.',
   identityLimit: 'Lists of tests and flaky-test counts reach back only as far as retention keeps runs.',
+  gapClass: (cls) => GAP_CLASS_LABELS[cls] ?? cls,
+  firstRunLimit: (since) =>
+    `This first scheduled quality report covers only the days since the schedule was created, ${since}.`,
 };

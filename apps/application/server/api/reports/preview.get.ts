@@ -12,13 +12,17 @@ defineRouteMeta({
     tags: ['Reports'],
     summary: 'Preview or download a quality report',
     description:
-      'Renders a built-in dashboard (`overview`, `executive` or `engineering`) over a scope as a quality report: the report bundle as JSON, or a download as `html` (one self-contained file), `pdf` (vector charts, no browser), `md` (tables and text sparklines) or `csv` (every table and series, formula-guarded). The scope takes the same query keys as `GET /api/analytics/[widget]` (`period`, `compare`, `projects`, `environments`, `branches`, `allBranches`, `sel`, `tags`, `browsers`, …) and is intersected with the caller’s project access. `lang` picks English or French; by default the ticket language of a single project’s tracker binding, else the instance locale, else English. Probe runs are never counted.',
+      'Renders a built-in dashboard (`overview`, `executive`, `engineering`, `team` with an `owner` test filter, or `gaps-digest`) over a scope as a quality report: the report bundle as JSON, or a download as `html` (one self-contained file), `pdf` (vector charts, no browser), `md` (tables and text sparklines) or `csv` (every table and series, formula-guarded). The scope takes the same query keys as `GET /api/analytics/[widget]` (`period`, `compare`, `projects`, `environments`, `branches`, `allBranches`, `sel`, `tags`, `browsers`, …) and is intersected with the caller’s project access. `lang` picks English or French; by default the ticket language of a single project’s tracker binding, else the instance locale, else English. Probe runs are never counted.',
     parameters: [
       {
         name: 'dashboard',
         in: 'query',
         required: false,
-        schema: { type: 'string', enum: ['overview', 'executive', 'engineering'], default: 'executive' },
+        schema: {
+          type: 'string',
+          enum: ['overview', 'executive', 'engineering', 'team', 'gaps-digest'],
+          default: 'executive',
+        },
       },
       {
         name: 'format',

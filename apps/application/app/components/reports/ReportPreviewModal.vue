@@ -5,7 +5,7 @@
  * download in every format. The preview and each download come from the same
  * `GET /api/reports/preview`, so what is previewed is what is downloaded.
  */
-import { BUILTIN_DASHBOARDS, type BuiltinDashboardKey } from '#shared/analytics/dashboards';
+import { offeredDashboards, type BuiltinDashboardKey } from '#shared/analytics/dashboards';
 import type { ReportBundle, ReportFormat } from '#shared/reports/types';
 
 const props = withDefaults(
@@ -23,7 +23,14 @@ const open = defineModel<boolean>('open', { default: false });
 const dashboard = ref<BuiltinDashboardKey>(props.dashboard);
 const language = ref<'auto' | 'en' | 'fr'>('auto');
 
-const dashboardItems = BUILTIN_DASHBOARDS.map((d) => ({ label: d.name, value: d.key, description: d.description }));
+const { isHidden } = await useInstanceCapabilities();
+const dashboardItems = computed(() =>
+  offeredDashboards({ hasOwner: !!props.query.owner, testMapHidden: isHidden('test-map') }).map((d) => ({
+    label: d.name,
+    value: d.key,
+    description: d.description,
+  })),
+);
 const languageItems = [
   { label: 'Default language', value: 'auto' },
   { label: 'English', value: 'en' },

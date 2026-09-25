@@ -25,6 +25,8 @@ import {
   RegressionVelocityChart,
   BrowserMatrix,
   SlowEndpointsTable,
+  ScenarioGapsSummary,
+  NewScenarioGaps,
 } from '#components';
 
 useHead({ title: 'Analytics - Piwi Dashboard' });
@@ -112,6 +114,8 @@ const WIDGET_COMPONENTS: Record<AnalyticsWidgetId, Component> = {
   'regression-velocity': RegressionVelocityChart,
   'browser-matrix': BrowserMatrix,
   'slow-endpoints': SlowEndpointsTable,
+  'scenario-gaps': ScenarioGapsSummary,
+  'new-gaps': NewScenarioGaps,
 };
 
 /** The widgets that take their options and title from the dashboard; the others carry their own title. */
