@@ -490,6 +490,11 @@ export const HELP_TOPICS = {
     text: 'Manage accounts and their role. Administrators control everything; reporters submit results; users have read-only access.',
     doc: 'operate/authentication#roles',
   },
+  'settings.permissions': {
+    title: 'Project access',
+    text: 'Which projects each reporter and user can open, one tick per project — every click saves at once. All projects also covers projects created later; administrators always open every project.',
+    doc: 'operate/authentication#permission-grid',
+  },
   'settings.api-keys': {
     title: 'API keys',
     text: 'Tokens (prefixed pd_) that let the reporter or scripts authenticate without a password. Shown once at creation; revoke anytime.',
