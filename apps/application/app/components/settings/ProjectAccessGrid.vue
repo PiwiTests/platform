@@ -229,9 +229,12 @@ function userMeta(user: ProjectAccessUser): string {
                 { 'border-r': column.projectId === null },
               ]"
             >
-              <span class="mx-auto block max-h-32 truncate text-xs font-medium [writing-mode:vertical-rl] rotate-180">{{
-                column.label
-              }}</span>
+              <!-- Physical `ml-auto mr-auto`: `mx-auto` is margin-inline, which a vertical
+                   label resolves to its top and bottom, leaving it flush left. -->
+              <span
+                class="ml-auto mr-auto block max-h-32 truncate text-xs font-medium [writing-mode:vertical-rl] rotate-180"
+                >{{ column.label }}</span
+              >
             </th>
           </tr>
         </thead>
