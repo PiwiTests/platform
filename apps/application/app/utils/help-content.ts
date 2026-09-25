@@ -115,6 +115,11 @@ export const HELP_TOPICS = {
     text: 'How fast failures get fixed: failure causes opened and fixed per bucket, the median and 90th-percentile time from first failure to fix over the causes fixed in the period, the share of those fixes that held, and the open causes by age. Failure clusters outlive run retention, so this reaches as far back as they do.',
     doc: 'features/analytics#widgets',
   },
+  'analytics.ownership': {
+    title: 'Ownership',
+    text: 'One row per owner: the open failure causes assigned to them, and the flaky tests and wasted CI minutes of the tests they own (their `piwi:owner` annotation), with the median time to fix of the causes they fixed. The Unowned row holds everything nobody is assigned to or owns. Test counts reach back only as far as retention keeps runs.',
+    doc: 'features/analytics#widgets',
+  },
   'analytics.browser-matrix': {
     title: 'Browser matrix',
     text: 'Pass rate per project × browser, so a suite that is green on one browser but failing on another (a browser-specific bug) stands out immediately.',

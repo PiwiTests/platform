@@ -159,6 +159,11 @@ export const singleProjectOptionsSchema = z.object({
   limit: z.number().int().min(5).max(25).default(10),
 });
 
+export const ownershipOptionsSchema = z.object({
+  /** How many owners the table lists before the *Unowned* row. */
+  limit: z.number().int().min(5).max(25).default(10),
+});
+
 export type StatsOptions = z.infer<typeof statsOptionsSchema>;
 export type ListOptions = z.infer<typeof listOptionsSchema>;
 export type MarkersOptions = z.infer<typeof markersOptionsSchema>;
@@ -330,6 +335,16 @@ export const ANALYTICS_WIDGETS = [
     size: 'half',
     band: 'pain',
     testFilters: false,
+  },
+  {
+    id: 'ownership',
+    title: 'Ownership',
+    description: 'One row per owner: open failure causes, flaky tests, wasted CI minutes, median time to fix.',
+    icon: 'i-lucide-users',
+    size: 'full',
+    band: 'pain',
+    testFilters: false,
+    options: ownershipOptionsSchema,
   },
   {
     id: 'scenario-gaps',

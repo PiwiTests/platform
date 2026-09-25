@@ -620,3 +620,22 @@ export interface AnalyticsTimeToFix {
   /** Open failure causes by age, youngest first. */
   openByAge: Array<{ label: string; count: number }>;
 }
+
+export interface AnalyticsOwnershipRow {
+  /** The owner's name; null for the *Unowned* row. */
+  owner: string | null;
+  /** Open failure causes assigned to the owner. */
+  openClusters: number;
+  /** Distinct tests owned that passed only on a retry in the period. */
+  flakyTests: number;
+  /** Wasted CI minutes of the owner's tests in the period. */
+  wastedMinutes: number;
+  /** Median time to fix, in days, over the causes the owner fixed in the period. */
+  medianTimeToFixDays: number | null;
+}
+
+export interface AnalyticsOwnership {
+  rows: AnalyticsOwnershipRow[];
+  /** Open failure causes in scope, for the share each owner holds. */
+  totalOpenClusters: number;
+}

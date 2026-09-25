@@ -124,6 +124,11 @@ time from first failure to fix over the causes fixed in the period, the share of
 and the open causes by age. Failure clusters outlive run retention, so this reaches back as far as they
 do.
 
+**Ownership** — one row per owner: the open failure causes assigned to them, the flaky tests and wasted
+CI minutes of the tests they own (their `piwi:owner` annotation), and the median time to fix of the causes
+they fixed, with an **Unowned** row for everything nobody holds. It answers "which team", and pairs with
+the owner test filter of the Team quality report.
+
 **Flakiest tests** — the global flaky leaderboard, using the same [scoring and impact
 ranking](./flaky-tests#impact-ranking) as each project's Flaky tests tab.
 

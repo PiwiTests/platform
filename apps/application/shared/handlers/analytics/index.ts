@@ -22,6 +22,7 @@ import { getAnalyticsList } from './list';
 import { getAnalyticsEvents } from './events';
 import { getAnalyticsNote } from './note';
 import { getAnalyticsSuiteGrowth } from './suite-growth';
+import { getAnalyticsOwnership } from './ownership';
 import { getAnalyticsTimeToFix } from './time-to-fix';
 import { getAnalyticsFlakyDebt } from './flaky-debt';
 import {
@@ -65,6 +66,7 @@ const ANALYTICS_WIDGET_HANDLERS: Record<AnalyticsWidgetId, AnalyticsWidgetHandle
   'suite-growth': getAnalyticsSuiteGrowth,
   'flaky-debt': getAnalyticsFlakyDebt,
   'time-to-fix': getAnalyticsTimeToFix,
+  ownership: getAnalyticsOwnership,
   'scenario-gaps': getAnalyticsScenarioGaps,
   'new-gaps': getAnalyticsNewGaps,
   list: getAnalyticsList,

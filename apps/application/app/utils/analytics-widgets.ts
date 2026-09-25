@@ -34,6 +34,7 @@ import {
   SuiteGrowthChart,
   FlakyDebtChart,
   TimeToFixChart,
+  OwnershipTable,
 } from '#components';
 
 export const WIDGET_COMPONENTS: Record<AnalyticsWidgetId, Component> = {
@@ -55,6 +56,7 @@ export const WIDGET_COMPONENTS: Record<AnalyticsWidgetId, Component> = {
   'suite-growth': SuiteGrowthChart,
   'flaky-debt': FlakyDebtChart,
   'time-to-fix': TimeToFixChart,
+  ownership: OwnershipTable,
   'scenario-gaps': ScenarioGapsSummary,
   'new-gaps': NewScenarioGaps,
   list: AnalyticsItemList,
@@ -85,4 +87,5 @@ export const CONFIGURABLE_WIDGETS = new Set<AnalyticsWidgetId>([
   'suite-growth',
   'flaky-debt',
   'time-to-fix',
+  'ownership',
 ]);

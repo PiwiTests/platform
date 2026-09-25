@@ -26,6 +26,7 @@ import type {
   AnalyticsSuiteGrowth,
   AnalyticsFlakyDebt,
   AnalyticsTimeToFix,
+  AnalyticsOwnership,
   AnalyticsTileTarget,
   AnalyticsVerdict,
   AnalyticsWastedTime,
@@ -722,6 +723,31 @@ export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
     return blocks;
   },
 
+  ownership: (data: AnalyticsOwnership, ctx) =>
+    data.rows.length === 0
+      ? [{ kind: 'text', text: ctx.s.labels.noData }]
+      : [
+          {
+            kind: 'table',
+            columns: [
+              { key: 'owner', label: ctx.s.title('Owner') },
+              { key: 'open', label: ctx.s.metricLabel('open-failure-causes', 'Open failure causes'), align: 'right' },
+              { key: 'flaky', label: ctx.s.metricLabel('flaky-tests', 'Flaky tests'), align: 'right' },
+              { key: 'wasted', label: ctx.s.metricLabel('wasted-ci-minutes', 'Wasted CI minutes'), align: 'right' },
+              { key: 'ttf', label: ctx.s.metricLabel('median-time-to-fix', 'Median time to fix'), align: 'right' },
+            ],
+            rows: data.rows.map((r) => ({
+              cells: {
+                owner: r.owner ?? ctx.s.title('Unowned'),
+                open: ctx.f.number(r.openClusters),
+                flaky: ctx.f.number(r.flakyTests),
+                wasted: ctx.f.minutes(r.wastedMinutes),
+                ttf: ctx.f.value(r.medianTimeToFixDays, 'days', 1),
+              },
+            })),
+          },
+        ],
+
   'scenario-gaps': (data: AnalyticsScenarioGaps, ctx) => {
     if (data.projects === 0) return [];
     const open = data.byClass.reduce((sum, c) => sum + c.count, 0);
@@ -835,6 +861,7 @@ export function widgetMetrics(type: AnalyticsWidgetId, options: Record<string, u
       'open-failure-causes',
     ];
   }
+  if (type === 'ownership') return ['open-failure-causes', 'flaky-tests', 'wasted-ci-minutes', 'median-time-to-fix'];
   if (type === 'flaky-debt') return ['flaky-occurrences', 'flaky-tests', 'quarantine-debt'];
   if (type === 'regression-velocity') return ['new-regressions', 'newly-flaky'];
   if (type === 'portfolio' || type === 'pass-rate-heatmap' || type === 'browser-matrix') return ['test-pass-rate'];

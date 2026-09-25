@@ -199,3 +199,30 @@ describe('time to fix', () => {
     expect(WIDGET_DOCUMENTS['time-to-fix'](data, docCtx, {}).map((b) => b.kind)).toEqual(['stats', 'series', 'table']);
   });
 });
+
+describe('ownership', () => {
+  test('one row per owner, the Unowned row last', async () => {
+    const data = (await runAnalyticsWidget(db as any, 'ownership', scope({ projects: '1' }))) as any;
+    expect(data.totalOpenClusters).toBe(2);
+    expect(data.rows.map((r: any) => r.owner)).toEqual(['team-cart', 'team-pay', null]);
+    const pay = data.rows.find((r: any) => r.owner === 'team-pay');
+    expect(pay).toMatchObject({ openClusters: 0, flakyTests: 1, wastedMinutes: 1, medianTimeToFixDays: 3 });
+    const unowned = data.rows.find((r: any) => r.owner === null);
+    // The unassigned open cause, and the failed test with no owner (two minutes of failed attempt).
+    expect(unowned).toMatchObject({ openClusters: 1, flakyTests: 0, wastedMinutes: 2 });
+  });
+
+  test('keeps the Unowned row whatever the limit', async () => {
+    const data = (await runAnalyticsWidget(db as any, 'ownership', scope({ projects: '1' }), 'all', {
+      limit: 5,
+    })) as any;
+    expect(data.rows[data.rows.length - 1].owner).toBeNull();
+  });
+
+  test('maps to a table in a report', async () => {
+    const data = await runAnalyticsWidget(db as any, 'ownership', scope({ projects: '1' }));
+    const [block] = WIDGET_DOCUMENTS.ownership(data, docCtx, {}) as any[];
+    expect(block.kind).toBe('table');
+    expect(block.rows.map((r: any) => r.cells.owner)).toEqual(['team-cart', 'team-pay', 'Unowned']);
+  });
+});
