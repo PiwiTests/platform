@@ -317,7 +317,8 @@ A new table in both `schema.sqlite.ts` and `schema.pg.ts`, migrations generated 
 | `runs`, `passed_runs`, `failed_runs` | terminal runs; `failed_runs` counts `failed`, `timedout`, `interrupted` |
 | `total_tests`, `passed_tests`, `failed_tests`, `skipped_tests`, `did_not_run_tests`, `flaky_tests` | sums over the cell's runs |
 | `max_total_tests` | suite size proxy |
-| `duration_ms`, `avg_test_duration_sum_ms`, `p90_test_duration_sum_ms` | sums; divide by `runs` for averages |
+| `duration_ms`, `duration_runs` | the duration sum and the number of runs that have a duration; an average divides one by the other, so a run without one (interrupted, imported) does not pull it down |
+| `avg_test_duration_sum_ms`, `p90_test_duration_sum_ms`, `test_duration_runs` | the test duration sums and the number of runs with measured test durations, their divisor |
 | `wait_ms`, `failed_exec_ms` | from `test_runs_cases` (`wastedTimeMs`, failed-attempt durations) |
 | `new_regressions`, `new_flaky` | from `test_runs_cases` |
 | `computed_at` | timestamp |
@@ -337,7 +338,11 @@ already route through, after its probe-run early return, so a probe run never re
 counted once, when the helper fires for the last shard; `shared/handlers/import-runs.ts`, because imports are silent
 and bypass the helper; and the demo mirror `app/demo/api/reporter.ts`. The helper returns the promise of the first
 recompute and `finish`, `submit` and `upload` await it, so a run is counted when the reporter gets its answer; a
-second recompute follows once the regression signals are written. The recompute itself drops `isProbeRun()` rows from
+second recompute follows once the regression signals are written. Each recompute publishes `rollup-updated` on the
+global stream once written, the event the widget cache and the live dashboards wait for, since `run-finished` goes
+out before the rollup counts the run. The stale-run sweep (`server/utils/stale-runs.ts`) recomputes the days of the
+runs it marks interrupted, a failing status. Two recomputes of one day can overlap: each deletes as stale only the
+rows it listed before reading the runs, and only while their `computed_at` is unchanged. The recompute itself drops `isProbeRun()` rows from
 the raw set, so a cell is right even for a run that reached the table another way. The helper lives under `shared/`
 and not `server/utils/` because the demo calls it too (the rule "never duplicate logic between server and demo").
 
@@ -654,7 +659,8 @@ milestone 4 adds the switcher and the choice of another default.
 ### Live data and TV mode
 
 - An open dashboard refreshes the widgets whose projects a finished run touches, from the global SSE stream the app
-  already holds open (`/api/stream`, the `run-finished` event), at most once per widget every 30 seconds. The demo
+  already holds open (`/api/stream`, the `rollup-updated` event that follows a run once its day's rollup counts it), at
+  most once per widget every 30 seconds. The demo
   uses its BroadcastChannel.
 - *TV mode* (`?tv=1`) is for a wall screen: no navigation, larger type, its own refresh, and an optional rotation
   through several dashboards (`?cycle=12,15&every=60`). A screen with nobody signed in uses a live dashboard link (see
@@ -665,7 +671,7 @@ milestone 4 adds the switcher and the choice of another default.
 A saved dashboard's widgets load through `GET /api/dashboards/[id]/widgets/[key]`, so the definition stays
 on the server and the URL carries only the viewer's changes. Responses are cached for 60 seconds per dashboard
 version, widget, resolved scope and viewer project access, in the `TtlCache` class of `server/utils/scm/cache.ts`
-(moved to `server/utils/`), and a project's entries are dropped on its `run-finished` event.
+(moved to `server/utils/`), and a project's entries are dropped on its `run-finished` and `rollup-updated` events.
 
 ### Agents
 
@@ -1250,7 +1256,7 @@ every step starts from the code it needs and the generated migrations stay in se
 4. **Saved dashboards** (L). `analytics_dashboards`; `report_schedules.dashboard_id` and the deactivation of a
    schedule whose dashboard is deleted; the switcher, the viewer's and the instance default dashboard; edit mode with
    widget options, scope overrides, bands and the breakdowns of the `metric` widget; the `list`, `markers` and `text`
-   widgets; sharing and the instance default; live refresh on `run-finished`; TV mode; the widget cache;
+   widgets; sharing and the instance default; live refresh on `rollup-updated`; TV mode; the widget cache;
    `list_dashboards` and `get_dashboard`; the docs page. *Outcome: every team keeps its own view, a link shows it to
    anyone who can open its projects, and any saved dashboard can be exported and scheduled.*
 5. **Trend depth** (L, in independent pieces). Targets with their insight rule and portfolio column; the suite growth,
@@ -1326,8 +1332,8 @@ Grouped by milestone. Paths are under `apps/application/` unless noted.
 - [x] `app/pages/analytics.vue` becomes `app/pages/analytics/index.vue` (the default dashboard), beside `analytics/d/[id].vue` and `analytics/dashboards.vue`
 - [x] `app/components/analytics/DashboardSwitcher.vue`, `WidgetConfigSlideover.vue`, `AddWidgetSlideover.vue`; the editor is the edit mode of `DashboardBody.vue`, the one component that renders a dashboard, so viewing and editing share their bands and widget frames (`DashboardWidgetFrame.vue`, which tells each widget which route to read)
 - [x] Widgets: the breakdowns and displays of `metric` over `DIMENSIONS` (`shared/handlers/analytics/metric-breakdown.ts`; the gap dimensions wait for the gap metrics to reach the widget, and the target switch for milestone 5's targets); `list`, `markers`, `text`; the single-project analyses (spec health, slow tests, performance trend, timeout opportunities, selection health); a `description` on every registry entry for the widget picker
-- [x] Live refresh from the `useRunStream` connection (`useRunEvents`, which passes the event's project) on `run-finished`; TV mode (`?tv=1`, `?cycle=`, `?every=`, at least 15 seconds), with a full refresh every five minutes
-- [x] `server/utils/ttl-cache.ts` (the class moved out of `server/utils/scm/cache.ts`); the widget response cache (`server/utils/dashboard-widget-cache.ts`), dropped on `run-finished` and on `run-submitted`, the event a submitted run finishes with
+- [x] Live refresh from the `useRunStream` connection (`useRunEvents`, which passes the event's project) on `rollup-updated`; TV mode (`?tv=1`, `?cycle=`, `?every=`, at least 15 seconds), with a full refresh every five minutes
+- [x] `server/utils/ttl-cache.ts` (the class moved out of `server/utils/scm/cache.ts`); the widget response cache (`server/utils/dashboard-widget-cache.ts`), dropped on `run-finished`, on `run-submitted` and on `rollup-updated`, which follows the rollup write
 - [x] The instance default (`analytics.default_dashboard` app setting, a built-in or a shared dashboard) and the per-browser default cookie (`piwi-analytics-dashboard`)
 - [x] `shared/mcp-tools.ts`, `server/utils/mcp/tools.ts`: `list_dashboards`, `get_dashboard`; `apps/docs/features/mcp.md`; the "N tools" sentences
 - [x] `shared/piwi-features.ts`: *Custom dashboards*; `apps/docs/features/dashboards.md`, sidebar; `scripts/generate-demo-seed.mjs`: the `smoke` selections, the `release` markers (v2.2.0 and v2.3.0 before the seeded v2.4.0) and two saved dashboards
@@ -1420,7 +1426,7 @@ Grouped by milestone. Paths are under `apps/application/` unless noted.
   fails or is unset, and the widget is marked generated.
 - **Saved definitions outlive widget changes.** Definitions are versioned, defaults are filled on read, and an unknown
   widget degrades to a notice; a unit test loads a fixture of every definition version.
-- **A dashboard of twenty widgets is twenty requests.** The widget cache and its eviction on `run-finished` keep a
+- **A dashboard of twenty widgets is twenty requests.** The widget cache and its eviction on `rollup-updated` keep a
   busy page cheap; one batch endpoint is the next step if a dashboard is ever slow.
 - **Test filters over long windows read executions.** The widget states where its data starts, and the cache absorbs
   repeated views of the same dashboard.
