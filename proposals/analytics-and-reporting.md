@@ -1278,8 +1278,8 @@ Grouped by milestone. Paths are under `apps/application/` unless noted.
 - [x] `shared/capabilities.ts` (`quality-reports`), `shared/handlers/setup-status.ts` (detection id and ladder order; the evidence probe comes with milestone 3), `shared/piwi-features.ts` (*Quality reports*, *Trends over time*); the *Export* action reads `isHidden('quality-reports')` (`app/layouts/default.vue` reads it for the `/reports` sidebar entry, which comes with that page in milestone 3)
 - [x] `shared/mcp-tools.ts`, `server/utils/mcp/tools.ts`: `get_quality_report`, `get_metric_trend`, `compare_periods` with `module` and `capability`; `apps/docs/features/mcp.md`; the "N tools" sentences in the docs and `ROADMAP.md`
 - [x] `packages/reporter/src/cli/quality-report.ts`, `cli/index.ts`; `packages/reporter/tests/`
-- [ ] `tests/unit/report-bundle.test.ts`, `report-render-parity.test.ts`, `report-csv.test.ts`; `tests/quality-reports.spec.ts`
-- [ ] `apps/docs/features/quality-reports.md`, `.vitepress/config.mts` sidebar, `guide/concepts.md`
+- [x] `tests/unit/report-bundle.test.ts`, `report-render-parity.test.ts`, `report-csv.test.ts`; `tests/quality-reports.spec.ts`
+- [x] `apps/docs/features/quality-reports.md`, `.vitepress/config.mts` sidebar, `guide/concepts.md`
 
 **3. Schedules and snapshots**
 

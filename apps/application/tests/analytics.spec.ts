@@ -1,7 +1,7 @@
 /**
  * Tests for the cross-project analytics platform:
  *   GET /api/analytics/:widget — generic widget dispatch (registry-driven)
- *   /analytics                 — page with scope bar and widget grid
+ *   /analytics                 — the Overview dashboard: scope bar and widget bands
  */
 import { test, expect } from './fixtures';
 import { PROJECT } from '#shared/test-project-names';
@@ -150,6 +150,10 @@ test.describe('Analytics page', () => {
     await expect(page.getByRole('heading', { name: 'Regression velocity' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Browser matrix' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Slow endpoints' })).toBeVisible();
+    // The Overview dashboard adds the headline tiles and the pass rate over time.
+    await expect(page.getByRole('heading', { name: 'Headline numbers' })).toBeVisible();
+    await expect(page.getByTestId('stat-test-pass-rate')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Pass rate over time' })).toBeVisible();
   });
 
   test('opens on the scope of an existing piwi-analytics-scope cookie', async ({ page, context, baseURL }) => {

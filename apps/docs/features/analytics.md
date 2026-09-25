@@ -7,10 +7,8 @@ lang: en-US
 
 <Needs reporter />
 
-Every other view in Piwi answers a question about one project, one run, or one test. The **Analytics**
-page (`/analytics`) is the one that steps back: it aggregates every project over a time window you
-choose, so you can see where the suite as a whole is drifting — and hand a number to someone who
-doesn't read stack traces.
+The **Analytics** page (`/analytics`) steps back from single runs and tests: it aggregates every
+project over a period you choose, to show where the suite as a whole is drifting.
 
 ## Scope
 
@@ -87,6 +85,10 @@ retention window. Lists of tests and clusters, and anything under a test filter,
 
 ## Widgets
 
+**Headline numbers** — six tiles across every project in scope (test pass rate, run success rate,
+flaky tests, wasted CI minutes, open failure causes, median time to fix), each with its change against
+the comparison. **Pass rate over time** draws the comparison period as a faint line, with markers.
+
 **Insights** — an auto-generated, severity-ranked feed of what actually changed: pass-rate drops,
 failing streaks, stale failure clusters, wasted CI time, oversized timeouts and stale `test.slow()`
 marks, regression surges, and slow shared endpoints. Each entry links to the project, run, cluster, or
@@ -128,13 +130,14 @@ shows up here before it's obvious in any single suite. Requires the
 
 ## Marking what you changed
 
-Trends are only actionable when you can line them up against events. [Timeline markers](./timeline-markers)
-let you record a deploy, a CI-runner migration, or a dependency bump against a project and see it drawn
-as a vertical line across the trend charts. On the analytics page, with one project in scope every marker
+[Timeline markers](./timeline-markers) record a deploy, a CI-runner migration or a dependency bump
+against a project, drawn as a vertical line across the trend charts. On the analytics page, with one project in scope every marker
 is drawn; across projects only `release`, `infra` and `incident` markers are, labeled with their project — so "the slowdown started the day we switched runners"
 becomes something you can see rather than remember.
 
 ## See also
+
+- [Quality reports](./quality-reports) — this page as a document, with **Export**
 
 - [Flaky tests](./flaky-tests) — the per-project analysis these widgets aggregate
 - [Timeline markers](./timeline-markers) — annotate the trends with real-world events

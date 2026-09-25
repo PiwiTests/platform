@@ -311,6 +311,43 @@ const SCENES = [
     },
   },
   {
+    name: 'analytics-headline',
+    description:
+      'Analytics, the Overview dashboard: the headline tiles above the portfolio, and the pass rate over time',
+    route: '/analytics',
+    viewport: { width: 1280, height: 2400 },
+    async run({ page, shoot, settle }) {
+      await page.getByTestId('stat-test-pass-rate').waitFor({ timeout: 60000 });
+      await page.locator('[data-shot="analytics-metric"] svg').first().waitFor({ timeout: 60000 });
+      await settle();
+      await shoot('tiles', { of: '[data-shot="analytics-headline"]', pad: 12 });
+      await shoot('trend', { of: '[data-shot="analytics-metric"]', pad: 12 });
+    },
+    outputs: ['analytics-headline-tiles.png', 'analytics-headline-trend.png'],
+  },
+  ...[
+    { name: 'quality-report-preview', width: 1280, height: 1800 },
+    { name: 'quality-report-preview-mobile', width: 375, height: 1400 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `Export on the analytics page: the executive quality report previewed, at ${width} px`,
+    route: '/analytics',
+    viewport: { width, height },
+    async run({ page, shoot, settle }) {
+      const preview = page.getByTestId('report-view');
+      await page.getByTestId('stat-test-pass-rate').waitFor({ timeout: 60000 });
+      await settle();
+      // Hydration can lag the first paint on a dev server; retry the click until the dialog opens.
+      for (let attempt = 0; attempt < 20 && !(await preview.isVisible()); attempt++) {
+        await page.getByRole('button', { name: 'Export' }).first().click();
+        await preview.waitFor({ timeout: 3000 }).catch(() => {});
+      }
+      await preview.locator('svg').first().waitFor({ timeout: 60000 });
+      await settle();
+      await shoot();
+    },
+  })),
+  {
     name: 'test-case-locators',
     description:
       'Test case page: the Locators section, from the latest execution, with how many tests share each chain',
