@@ -248,6 +248,23 @@ async function main() {
     await snapshotView.waitFor({ timeout: 60000 }).catch(() => {});
     check(await snapshotView.isVisible(), 'a report snapshot opens on its page');
 
+    // The seeded saved dashboards: the switcher lists them, and one renders its
+    // widgets through the saved dashboard's own widget route.
+    await page.goto(`${ORIGIN}${BASE}analytics/d/1`, { waitUntil: 'domcontentloaded' });
+    const switcher = page.getByTestId('dashboard-switcher');
+    await switcher.waitFor({ timeout: 60000 }).catch(() => {});
+    check((await switcher.textContent())?.includes('Checkout team') === true, 'a seeded saved dashboard opens');
+    const note = page.locator('[data-shot="analytics-note"]').getByText('Sprint goal');
+    await note.waitFor({ timeout: 60000 }).catch(() => {});
+    check(await note.isVisible(), 'the saved dashboard renders its widgets');
+    await switcher.click();
+    const switcherMenu = page.getByTestId('dashboard-switcher-menu');
+    await switcherMenu.waitFor({ timeout: 30000 }).catch(() => {});
+    check(
+      (await switcherMenu.textContent())?.includes('Wasted CI by browser') === true,
+      'the switcher lists the seeded dashboards',
+    );
+
     check(
       escapedApiUrls.size === 0,
       'every API request stays inside the demo base path',
@@ -269,7 +286,7 @@ async function main() {
     process.exit(1);
   }
   console.log(
-    '✓ The built demo runs: service worker, in-browser API, export download, quality report and report snapshots all work.',
+    '✓ The built demo runs: service worker, in-browser API, export download, quality report, report snapshots and saved dashboards all work.',
   );
 }
 
