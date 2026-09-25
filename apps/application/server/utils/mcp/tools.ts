@@ -68,7 +68,17 @@ import { isReportLanguage } from '#shared/reports/format';
 import { isBuiltinDashboardKey } from '#shared/analytics/dashboards';
 import { getMetric, isMetricId, type MetricId } from '#shared/analytics/metrics';
 import { WIDGET_METRIC_IDS } from '#shared/analytics/registry';
-import { parseAnalyticsScope } from '#shared/analytics/scope';
+import { analyticsScopeToQuery, parseAnalyticsScope } from '#shared/analytics/scope';
+import { applyWidgetScope } from '#shared/analytics/dashboards';
+import {
+  DashboardError,
+  getDashboard,
+  listDashboards,
+  loadDashboardDefinition,
+  viewerScope,
+  type DashboardActor,
+} from '#shared/handlers/dashboards';
+import { isAuthEnabled } from '../auth';
 import { runAnalyticsWidget } from '#shared/handlers/analytics';
 import { compareMetricPeriods, PeriodSpecError } from '#shared/handlers/analytics/compare-periods';
 import type {
@@ -2173,6 +2183,69 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     });
   },
 
+  // ── list_dashboards ────────────────────────────────────────────────────────
+  async list_dashboards(db, _params, ctx) {
+    const list = await listDashboards(db, mcpDashboardActor(ctx));
+    return {
+      items: list.items.map((d) =>
+        dropNulls({
+          id: d.id,
+          name: d.name,
+          description: d.description,
+          kind: d.kind,
+          visibility: d.visibility,
+          owner: d.ownerName,
+          widgets: d.widgetCount,
+          updatedAt: d.updatedAt,
+        }),
+      ),
+      instanceDefault: list.instanceDefault ?? 'overview',
+    };
+  },
+
+  // ── get_dashboard ──────────────────────────────────────────────────────────
+  async get_dashboard(db, params, ctx) {
+    const actor = mcpDashboardActor(ctx);
+    const id = String(params.id ?? '');
+    try {
+      const { definition } = await loadDashboardDefinition(db, id, actor);
+      const scope = viewerScope(definition, toolScopeQuery(params));
+      const view = await getDashboard(db, id, actor, ctx.scope, { scope });
+      const bands = [];
+      for (const band of view.bands) {
+        const widgets = [];
+        for (const widget of band.widgets) {
+          if (!widget.available) {
+            widgets.push({ key: widget.key, title: widget.title, available: false, reason: widget.reason });
+            continue;
+          }
+          const data = await runAnalyticsWidget(
+            db,
+            widget.type,
+            applyWidgetScope(scope, widget.scope),
+            ctx.scope,
+            widget.options,
+          );
+          widgets.push({ key: widget.key, type: widget.type, title: widget.title, data });
+        }
+        bands.push({ title: band.title, description: band.description ?? null, widgets });
+      }
+      return dropNulls({
+        id: view.id,
+        name: view.name,
+        description: view.description,
+        kind: view.kind,
+        visibility: view.visibility,
+        scope: analyticsScopeToQuery(scope),
+        hiddenProjects: view.hiddenProjects,
+        bands,
+      });
+    } catch (error) {
+      if (error instanceof DashboardError) throw new Error(error.message);
+      throw error;
+    }
+  },
+
   // ── get_metric_trend ───────────────────────────────────────────────────────
   async get_metric_trend(db, params, ctx) {
     const metric = params.metric;
@@ -2206,6 +2279,11 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
 
 /** The analytics scope of a report or metric tool call, from the tool's scope properties. */
 function toolScope(params: Record<string, unknown>) {
+  return parseAnalyticsScope(toolScopeQuery(params));
+}
+
+/** The analytics query keys a tool call's scope parameters stand for; empty when it passed none. */
+function toolScopeQuery(params: Record<string, unknown>): Record<string, string> {
   const list = (value: unknown) => (Array.isArray(value) && value.length > 0 ? value.map(String).join(',') : undefined);
   const query: Record<string, string> = {};
   const projects = list(params.projectIds);
@@ -2223,7 +2301,17 @@ function toolScope(params: Record<string, unknown>) {
   if (tags) query.tags = tags;
   const owners = list(params.owners);
   if (owners) query.owner = owners;
-  return parseAnalyticsScope(query);
+  return query;
+}
+
+/** Who a tool call acts as for dashboards; with authentication off every dashboard is shared. */
+function mcpDashboardActor(ctx: McpContext): DashboardActor {
+  const authEnabled = isAuthEnabled();
+  return {
+    id: authEnabled && ctx.user ? ctx.user.id : null,
+    role: authEnabled && ctx.user ? (ctx.user.role as Role) : null,
+    authEnabled,
+  };
 }
 
 async function resolveProjectRepoUrl(db: DbClient, projectId: number): Promise<string | null> {

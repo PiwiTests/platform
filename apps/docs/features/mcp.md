@@ -7,15 +7,15 @@ lang: en-US
 
 <Needs reporter />
 
-Piwi Dashboard exposes a built-in **Model Context Protocol (MCP) server** at `/mcp`, served from the dashboard's own Nitro process — nothing extra to install. Any MCP-compatible client (Claude Code, Cursor, VS Code Copilot, Claude Desktop, Gemini CLI, Windsurf, Continue, …) can query your test results, failure clusters and AI diagnoses.
+Piwi Dashboard serves a **Model Context Protocol (MCP) server** at `/mcp` from its own process, with nothing to install. Any MCP client (Claude Code, Cursor, VS Code Copilot, Claude Desktop, Gemini CLI, …) can query your test results, failure clusters and AI diagnoses.
 
-> **In-app setup page:** open the **MCP server** page (sidebar → MCP server) for a live setup guide with auto-filled snippets.
+> **In-app setup page:** the **MCP server** page in the sidebar has a live setup guide.
 
 ---
 
 ## What it provides
 
-The server exposes 53 tools — mostly read-only, plus a few write/triage tools — across the diagnostic workflow, from browsing projects to a failure's evidence.
+The server exposes 55 tools, mostly read-only plus a few triage tools, from browsing projects to a failure's evidence.
 
 **Projects & activity**
 
@@ -67,12 +67,14 @@ The server exposes 53 tools — mostly read-only, plus a few write/triage tools 
 | `draft_scenario` | A deterministic test skeleton for a gap: title, annotations, graph path, catalog methods, TODO assertion |
 | `get_feature_graph` | A node's feature-graph neighborhood, with gap class and reaching tests |
 
-**Trends & quality reports**
+**Trends, dashboards & quality reports**
 
 | Tool | Description |
 |------|-------------|
 | `get_metric_trend` | One catalog metric over a scope: value, change and series |
 | `compare_periods` | The headline metrics over two periods, such as this sprint against the last |
+| `list_dashboards` | The [dashboards](./dashboards) you can open |
+| `get_dashboard` | One dashboard with every widget's data |
 | `get_quality_report` | A [quality report](./quality-reports) bundle for a dashboard and a scope |
 
 **Failure clusters**

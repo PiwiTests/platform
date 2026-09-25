@@ -988,6 +988,35 @@ export const MCP_TOOL_DEFS = [
     },
   },
   {
+    name: 'list_dashboards',
+    module: 'core',
+    description:
+      'Every dashboard you can open: the built-in ones (overview is the analytics page; executive, engineering and gaps-digest are the report dashboards) and the saved dashboards shared with everyone or yours, each with its id, name, description, owner, visibility and widget count. Pass an id to get_dashboard.',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'get_dashboard',
+    module: 'core',
+    description:
+      'One dashboard with every widget’s data, the JSON the page renders, band by band. Use it to answer "how did the checkout dashboard do this sprint". The scope is the dashboard’s own unless you pass scope keys (period, projectIds, …), which replace it; each widget’s own period or narrower filters still apply. A dashboard grants no access: widgets are computed for your projects only, and `hiddenProjects` counts the ones of its scope you cannot open.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: {
+          type: 'string',
+          description: 'A built-in dashboard key (overview, executive, …) or a saved dashboard id',
+        },
+        by: {
+          type: 'string',
+          enum: ['auto', 'day', 'week', 'month'],
+          description: 'Bucket size of the series (default: the dashboard’s)',
+        },
+        ...ANALYTICS_SCOPE_PROPERTIES,
+      },
+      required: ['id'],
+    },
+  },
+  {
     name: 'compare_periods',
     module: 'core',
     description:

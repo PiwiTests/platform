@@ -31,7 +31,7 @@ Every tool below is good at what it targets. The honest differences:
 | Locator healing suggestions | ✅ from prior passing runs | ❌ | ❌ | ❌ | ❌ | ➖ |
 | Plain-English steps, compiled | ✅ [AI steps](./ai-steps) — resolved once, replayed with zero model calls | ❌ | ❌ | ❌ | ❌ | ❌ |
 | Web vitals & network capture | ✅ | ➖ in traces | ❌ | ❌ | ✅ | ➖ |
-| MCP server for AI agents | ✅ 53 tools | ❌ | ❌ | ❌ | ✅ | ➖ |
+| MCP server for AI agents | ✅ 55 tools | ❌ | ❌ | ❌ | ✅ | ➖ |
 | Framework support | Playwright only (by design) | Playwright | Many | Many | Playwright, Cypress, Jest… | Playwright only |
 | Price | Free, MIT | Free | Free | Free (self-host) / paid SaaS | Paid | Free, OSS |
 
