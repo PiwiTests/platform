@@ -134,6 +134,18 @@ export const HELP_TOPICS = {
     text: 'The Test Map’s weekly digest: the top five new open gaps of each project created in the period, highest exposure first.',
     doc: 'features/scenario-gaps',
   },
+  'reports.schedule': {
+    title: 'Report schedule',
+    text: 'A quality report sent on a schedule, daily, weekly, every other week or monthly, to email, Slack, webhook or browser channels. Each firing covers the whole days since the previous one, compared with the period before or a year earlier, and is kept as a snapshot. A period with no run still sends, so a stopped pipeline shows. Team sends the engineering report for one owner’s tests; Gaps digest is the Test Map’s weekly digest.',
+    doc: 'features/quality-reports#report-schedules',
+    envVars: ['PIWI_TIME_ZONE'],
+  },
+  'reports.snapshots': {
+    title: 'Report snapshots',
+    text: 'Every quality report generated, scheduled or by hand, stored with its numbers as they were, so a report received months ago reads the same today whatever retention deleted since. You see the snapshots whose every project you can open.',
+    doc: 'features/quality-reports#report-snapshots',
+    envVars: ['PIWI_RETENTION_REPORT_DAYS'],
+  },
   'reports.export': {
     title: 'Quality report',
     text: 'The scope on screen as a document for someone who does not open the dashboard: a rule-based verdict, headline numbers, the trend, what is being done and the risks. Executive keeps to plain words; Engineering adds flaky tests, clusters and detail; Overview is this page. Download it as PDF, HTML, Markdown, CSV or JSON.',

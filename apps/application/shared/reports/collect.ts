@@ -52,6 +52,8 @@ function periodText(
   timeZone: string,
   language: ReportLanguage,
   lowerFirst = false,
+  /** A date range needs no name beside its dates. */
+  rangeOnly = false,
 ): ReportPeriod {
   const last = new Date(Math.max(period.from.getTime(), period.to.getTime() - 1));
   const range =
@@ -63,7 +65,7 @@ function periodText(
   return {
     from: period.from.toISOString(),
     to: period.to.toISOString(),
-    label: language === 'en' ? `${label} (${range})` : range,
+    label: language === 'en' && !rangeOnly ? `${label} (${range})` : range,
   };
 }
 
@@ -173,7 +175,8 @@ export async function collectReportBundle(db: DrizzleDB, opts: CollectReportOpti
   }
 
   verdict ??= await getAnalyticsVerdict(db, scope, access);
-  const period = periodText(ctx.period, f, timeZone, language);
+  const rangeOnly = scope.period.kind === 'range';
+  const period = periodText(ctx.period, f, timeZone, language, false, rangeOnly);
   const text = await scopeText(db, ctx, scope, s);
 
   const limits = [...ctx.notes];
@@ -186,7 +189,7 @@ export async function collectReportBundle(db: DrizzleDB, opts: CollectReportOpti
     generatedAt: new Date(opts.now ?? Date.now()).toISOString(),
     piwiVersion: opts.piwiVersion ?? null,
     sourceUrl: baseUrl ? `${baseUrl}/analytics${query ? `?${query}` : ''}` : null,
-    title: s.reportTitle(text.projects, language === 'en' ? ctx.period.label : period.label),
+    title: s.reportTitle(text.projects, language === 'en' && !rangeOnly ? ctx.period.label : period.label),
     language,
     locale: f.locale,
     timeZone,

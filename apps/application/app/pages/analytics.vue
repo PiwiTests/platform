@@ -34,6 +34,8 @@ useHead({ title: 'Analytics - Piwi Dashboard' });
 const { state, scope, scopeQuery } = useAnalyticsScope();
 const { isHidden } = await useInstanceCapabilities();
 const reportOpen = ref(false);
+const scheduleOpen = ref(false);
+const { canWrite } = useAuth();
 const testFilterActive = computed(() => hasTestFilter(scope.value));
 
 // How the scope resolves: period dates, notes, markers for the trends, and the
@@ -165,9 +167,22 @@ function ignoresTestFilter(widget: ResolvedDashboardWidget & { available: true }
                 title: 'Export this scope as a quality report',
                 onClick: () => (reportOpen = true),
               },
+              ...(canWrite
+                ? [
+                    {
+                      label: 'Schedule…',
+                      icon: 'i-lucide-calendar-clock',
+                      variant: 'outline' as const,
+                      color: 'neutral' as const,
+                      title: 'Schedule a quality report of this scope',
+                      onClick: () => (scheduleOpen = true),
+                    },
+                  ]
+                : []),
             ]"
           />
           <ReportPreviewModal v-model:open="reportOpen" :query="scopeQuery" />
+          <ScheduleForm v-model:open="scheduleOpen" :scope="scopeQuery" />
         </template>
       </UDashboardNavbar>
     </template>

@@ -279,6 +279,33 @@ const READY_INSPECTION = {
  *   importableRuns — desktop mode: archives `desktop_find_importable_runs` reports (default [])
  *   pickedFiles — desktop mode: archives the native import picker returns (default [])
  */
+/** A global email channel, a weekly schedule on it and one *Run now*, once per server. */
+async function prepareReportSchedule({ base, request }) {
+  const schedules = await (await request.get(`${base}/api/reports/schedules`)).json();
+  if (schedules.items?.length) return;
+  const channels = await (await request.get(`${base}/api/channels`)).json();
+  let channel = channels.items?.find((c) => c.type === 'email');
+  if (!channel) {
+    const created = await request.post(`${base}/api/channels`, {
+      data: { name: 'Team mail', type: 'email', config: { address: 'team@example.com' } },
+    });
+    channel = (await created.json()).channel;
+  }
+  const schedule = await (
+    await request.post(`${base}/api/reports/schedules`, {
+      data: {
+        name: 'Weekly executive report',
+        dashboard: 'executive',
+        cadence: 'weekly',
+        anchor: 1,
+        at: '08:00',
+        channelIds: [channel.id],
+      },
+    })
+  ).json();
+  await request.post(`${base}/api/reports/schedules/${schedule.id}/run`);
+}
+
 // The evidence-footer scene seeds its own fixtures-free project; `prepare`
 // records the execution id it submits so `run` can open that page.
 let footerExecId = 0;
@@ -343,6 +370,62 @@ const SCENES = [
         await preview.waitFor({ timeout: 3000 }).catch(() => {});
       }
       await preview.locator('svg').first().waitFor({ timeout: 60000 });
+      await settle();
+      await shoot();
+    },
+  })),
+  // The Reports page and a snapshot: `prepare` makes a channel, a weekly
+  // schedule and one run of it, so the page has a snapshot to list.
+  ...[
+    { name: 'report-schedules', width: 1280, height: 860, docs: true },
+    { name: 'report-schedules-mobile', width: 375, height: 900, docs: false },
+  ].map(({ name, width, height, docs }) => ({
+    name,
+    description: `The Reports page: report snapshots and schedules, at ${width} px`,
+    ...(docs ? { tags: ['docs'], out: 'docs' } : {}),
+    prepare: prepareReportSchedule,
+    route: '/reports',
+    viewport: { width, height },
+    async run({ page, shoot, settle }) {
+      await page.getByTestId('schedule-list').waitFor({ timeout: 60000 });
+      await page.getByTestId('snapshot-list').waitFor({ timeout: 60000 });
+      await settle();
+      await shoot();
+    },
+  })),
+  ...[
+    { name: 'report-snapshot', width: 1280, height: 1600 },
+    { name: 'report-snapshot-mobile', width: 375, height: 1600 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `A report snapshot on /reports/:id, at ${width} px`,
+    prepare: prepareReportSchedule,
+    route: '/reports',
+    viewport: { width, height },
+    async run({ page, shoot, settle }) {
+      await page.getByTestId('snapshot-list').getByRole('link').first().click({ timeout: 60000 });
+      await page.getByTestId('report-view').locator('svg').first().waitFor({ timeout: 60000 });
+      await settle();
+      await shoot();
+    },
+  })),
+  ...[
+    { name: 'report-schedule-form', width: 1280, height: 900 },
+    { name: 'report-schedule-form-mobile', width: 375, height: 900 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `Schedule… on the analytics page: the schedule form, at ${width} px`,
+    route: '/analytics',
+    viewport: { width, height },
+    async run({ page, shoot, settle }) {
+      const form = page.getByTestId('schedule-form');
+      await page.getByTestId('stat-test-pass-rate').waitFor({ timeout: 60000 });
+      await settle();
+      for (let attempt = 0; attempt < 20 && !(await form.isVisible()); attempt++) {
+        await page.locator('button[title="Schedule a quality report of this scope"]').first().click();
+        await form.waitFor({ timeout: 3000 }).catch(() => {});
+      }
+      await page.getByTestId('schedule-name').fill('Weekly executive report');
       await settle();
       await shoot();
     },

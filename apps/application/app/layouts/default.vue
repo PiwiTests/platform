@@ -215,6 +215,18 @@ const links = computed(() => {
           open.value = false;
         },
       },
+      ...(capHidden('quality-reports')
+        ? []
+        : [
+            {
+              label: 'Quality reports',
+              icon: 'i-lucide-file-chart-column',
+              to: '/reports',
+              onSelect: () => {
+                open.value = false;
+              },
+            },
+          ]),
       {
         label: 'Projects',
         icon: 'i-lucide-folder',

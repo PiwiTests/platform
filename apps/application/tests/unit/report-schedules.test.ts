@@ -175,3 +175,13 @@ describe('reportDedupeKey', () => {
     expect(reportDedupeKey(4, '2026-09-20', 7, 31)).toBe('report:4:2026-09-20:7:run-31');
   });
 });
+
+describe('describeCadence', () => {
+  it('says when a schedule fires', async () => {
+    const { describeCadence } = await import('#shared/reports/schedule');
+    expect(describeCadence({ cadence: 'weekly', anchor: 1, at: '8:00' })).toBe('Weekly on Monday at 08:00');
+    expect(describeCadence({ cadence: 'biweekly', anchor: 5, at: '17:30' })).toBe('Every other Friday at 17:30');
+    expect(describeCadence({ cadence: 'monthly', anchor: 2, at: '07:00' })).toBe('Monthly on the 2nd at 07:00');
+    expect(describeCadence({ cadence: 'daily', anchor: null, at: '06:15' })).toBe('Daily at 06:15');
+  });
+});

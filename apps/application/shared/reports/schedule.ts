@@ -228,3 +228,21 @@ export function reportDedupeKey(
   const key = `report:${scheduleId}:${periodEnd}:${channelId}`;
   return manualSnapshotId ? `${key}:run-${manualSnapshotId}` : key;
 }
+
+export const WEEKDAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+function ordinal(n: number): string {
+  const rem = n % 100;
+  if (rem >= 11 && rem <= 13) return `${n}th`;
+  return `${n}${['th', 'st', 'nd', 'rd'][n % 10] ?? 'th'}`;
+}
+
+/** `Weekly on Monday at 08:00`, `Monthly on the 1st at 07:00`. */
+export function describeCadence(timing: Pick<ScheduleTiming, 'cadence' | 'anchor' | 'at'>): string {
+  const at = normalizeScheduleTime(timing.at);
+  const weekday = WEEKDAY_NAMES[Math.min(7, Math.max(1, timing.anchor ?? 1)) - 1];
+  if (timing.cadence === 'daily') return `Daily at ${at}`;
+  if (timing.cadence === 'weekly') return `Weekly on ${weekday} at ${at}`;
+  if (timing.cadence === 'biweekly') return `Every other ${weekday} at ${at}`;
+  return `Monthly on the ${ordinal(Math.min(MONTHLY_ANCHOR_MAX, Math.max(1, timing.anchor ?? 1)))} at ${at}`;
+}

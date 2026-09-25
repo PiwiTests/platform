@@ -38,6 +38,9 @@ const { isHidden: projCapHidden } = await useProjectCapabilities(Number(projectI
 // *Export*: this project as a quality report over the last 30 days, the project page's own window.
 const reportOpen = ref(false);
 const reportQuery = computed(() => ({ projects: String(projectId), period: 'last-30d' }));
+// *Schedule…*: a report schedule over this project.
+const scheduleOpen = ref(false);
+const { canWrite } = useAuth();
 const runtimeConfig = useRuntimeConfig();
 const { isDesktop, openReport } = useDesktopReportLink();
 const authEnabled = computed(() => Boolean(runtimeConfig.public.authEnabled));
@@ -771,6 +774,12 @@ const moreMenuItems = computed(() => {
     icon: 'i-lucide-list-filter',
     onSelect: () => navigateTo(`/projects/${projectId}/selections`),
   });
+  if (canWrite.value && !projCapHidden('quality-reports'))
+    items.push({
+      label: 'Schedule a quality report…',
+      icon: 'i-lucide-calendar-clock',
+      onSelect: () => (scheduleOpen.value = true),
+    });
   if (canManage.value)
     items.push({
       label: 'Delete',
@@ -838,6 +847,7 @@ const moreMenuItems = computed(() => {
         </template>
       </UDashboardNavbar>
       <ReportPreviewModal v-model:open="reportOpen" :query="reportQuery" />
+      <ScheduleForm v-model:open="scheduleOpen" :scope="reportQuery" />
     </template>
 
     <template #body>
