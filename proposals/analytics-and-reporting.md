@@ -12,7 +12,8 @@ branch's first commit, so it can go out alone. Milestone 2 (the quality report) 
 `claude/analytics-m2-quality-report`, stacked on milestone 1, not merged yet; its three new routes did not reach the
 typed-route depth limit milestone 1 met. Milestone 3 (schedules and snapshots) is built on
 `claude/analytics-m3-schedules-snapshots`, stacked on milestone 2, not merged yet; it met the depth limit again and
-removed its cause (D36). Written 2026-09-22 against 0.36.0; refreshed 2026-09-24 against 0.37.0, which
+removed its cause (D36). Milestone 4 (saved dashboards) is built on `claude/analytics-m4-saved-dashboards`,
+stacked on milestone 3, not merged yet. Written 2026-09-22 against 0.36.0; refreshed 2026-09-24 against 0.37.0, which
 shipped the Test Map, the capability opt-out system and one status color scale ([What 0.37.0
 changed](#3-what-0370-changed-for-this-design)); extended the same day with custom dashboards, filters and periods
 ([Layer 2](#layer-2-dashboards), [Filters and periods](#filters-and-periods)); decided the same day: the four open
@@ -545,9 +546,12 @@ occurrences by project tag" are each one widget. There is no query language (D28
   scope and the locale override today), else the instance default an administrator set, else the built-in Overview,
   which keeps everything today's page shows ([The default dashboard: Overview](#the-default-dashboard-overview)).
 - A switcher in the page header lists built-in, shared and personal dashboards, with a search and an *Unused* group;
-  `/analytics/d/<id>` opens one; `/analytics/dashboards` lists and manages them. No sidebar entry is added.
+  `/analytics/d/<id>` opens one; `/analytics/dashboards` lists and manages them. No sidebar entry is added. The
+  built-in Team dashboard stays out of the switcher and the default: it reads nothing without an owner test filter,
+  which only a report or a schedule carries.
 - Every dashboard header carries *Edit* (or *Duplicate* when you cannot edit it), *Copy link*, *Export* and *Schedule*
-  (Layers 3 and 4, following the `quality-reports` capability) and *TV mode*.
+  (Layers 3 and 4, following the `quality-reports` capability) and *TV mode*. Milestone 4 puts *Copy link*, *TV
+  mode*, the defaults, sharing and *Delete* in a menu beside the header's buttons, which have no room left at 375 px.
 
 ### The default dashboard: Overview
 
@@ -846,7 +850,7 @@ Quality reports are optional, so they follow the opt-out system rather than addi
 | `name` | as shown in the list |
 | `user_id` | FK → `users`, nullable; null = global (administrator-managed), same convention as channels and subscriptions |
 | `scope` | JSON `AnalyticsScope` changes applied over the dashboard's scope (projects, environments, branch policy, test filters, owners); the period comes from the cadence |
-| `dashboard_id` | FK to `analytics_dashboards`, ON DELETE SET NULL: the saved dashboard to render; added by milestone 4, which creates that table (D30) |
+| `dashboard_id` | FK to `analytics_dashboards`, ON DELETE SET NULL: the saved dashboard to render; added by milestone 4, which creates that table (D30). SQLite's generated `ALTER TABLE` cannot carry the action, so deleting a dashboard clears the column and deactivates the schedule itself, on both dialects |
 | `builtin_dashboard` | `'executive'` \| `'engineering'` \| `'team'` \| `'gaps-digest'` \| `'overview'` \| null: set when `dashboard_id` is not |
 | `cadence` | `'daily'` \| `'weekly'` \| `'biweekly'` \| `'monthly'` |
 | `anchor` | weekday (weekly, biweekly) or day of month (monthly) |
@@ -1033,7 +1037,7 @@ migrations.
 | Route | Roles | Purpose |
 |---|---|---|
 | `GET /api/analytics/[widget]` | any signed-in | unchanged; the scope gains the run filters, test filters, period, comparison and granularity of Layer 1 |
-| `GET /api/analytics/scope` | any signed-in, scoped | how a scope resolves: the period and comparison as dates, notes, the markers to draw, the markers a period can anchor on, the selection keys and browsers of the *Tests* filter, where the rollup data starts. Served by the `[widget]` route under the reserved name `scope`, because one more route file pushed Nitro's typed-route union past TypeScript's depth limit; since D36 the limit no longer applies, so it can move to its own file |
+| `GET /api/analytics/scope` | any signed-in, scoped | how a scope resolves: the period and comparison as dates, notes, the markers to draw, the markers a period can anchor on, the selection keys and browsers of the *Tests* filter, where the rollup data starts. Its own route file since milestone 4, the depth limit gone (D36); milestone 1 served it from the `[widget]` route under the reserved name `scope` |
 | `GET /api/analytics/rollups` | any signed-in | rollup rows for the scope, `format=json\|csv` |
 | `GET /api/analytics/dashboards`, `POST /api/analytics/dashboards` | any signed-in; sharing needs administrator or reporter, checked in the handler | list (built-in, shared, own), create |
 | `GET/PATCH/DELETE /api/analytics/dashboards/[id]`, `POST …/[id]/duplicate` | reading: anyone who can see it; changing: its owner or an administrator | read, save (with the `updatedAt` precondition), delete, duplicate; `[id]` is a saved id or a built-in key |
@@ -1310,19 +1314,19 @@ Grouped by milestone. Paths are under `apps/application/` unless noted.
 
 **4. Saved dashboards**
 
-- [ ] Both schemas: `analytics_dashboards`; migrations; `server/utils/retention.ts` (`sweepOrphans`): private dashboards without an owner
-- [ ] Both schemas: `report_schedules.dashboard_id` (FK, ON DELETE SET NULL); `shared/handlers/reports.ts`: schedules on a saved dashboard, deactivated when it is deleted, the delete dialog naming them
-- [ ] `shared/handlers/dashboards.ts`: list (built-in, shared, own), get, create, save with the `updatedAt` precondition, delete, duplicate; validation against each widget's `options` schema with defaults; narrowing-only overrides; the hidden-project count
-- [ ] `server/api/analytics/dashboards/*.ts`, `server/api/analytics/dashboards/[id]/widgets/[key].get.ts`, `server/api/analytics/widgets/preview.post.ts`, `server/api/settings/analytics-default-dashboard.put.ts`; demo mirrors in `app/demo/api/`
-- [ ] `app/pages/analytics.vue` becomes `app/pages/analytics/index.vue` (the default dashboard), beside `analytics/d/[id].vue` and `analytics/dashboards.vue`
-- [ ] `app/components/analytics/DashboardSwitcher.vue`, `DashboardEditor.vue`, `WidgetConfigSlideover.vue`, `AddWidgetSlideover.vue`
-- [ ] Widgets: the breakdowns and displays of `metric` over `DIMENSIONS`; `list`, `markers`, `text`; the single-project analyses (spec health, slow tests, performance trend, timeout opportunities, selection health)
-- [ ] Live refresh from `useRunStream` on `run-finished`; TV mode (`?tv=1`, `?cycle=`, `?every=`)
-- [ ] `server/utils/ttl-cache.ts` (the class moved out of `server/utils/scm/cache.ts`); the widget response cache, dropped on `run-finished`
-- [ ] The instance default (`analytics.default_dashboard` app setting) and the per-browser default cookie
-- [ ] `shared/mcp-tools.ts`, `server/utils/mcp/tools.ts`: `list_dashboards`, `get_dashboard`; `apps/docs/features/mcp.md`; the "N tools" sentences
-- [ ] `shared/piwi-features.ts`: *Custom dashboards*; `apps/docs/features/dashboards.md`, sidebar; `scripts/generate-demo-seed.mjs`: the `smoke` selections, the `release` markers and two saved dashboards
-- [ ] `tests/unit/dashboards-handler.test.ts`; `tests/dashboards.spec.ts`; screenshot scenes for a saved dashboard and the editor, at 375 px and 1280 px
+- [x] Both schemas: `analytics_dashboards`; migrations; `server/utils/retention.ts` (`sweepOrphans`): private dashboards without an owner
+- [x] Both schemas: `report_schedules.dashboard_id` (FK, ON DELETE SET NULL; on SQLite the generated `ALTER TABLE` cannot carry the action, so the delete clears the column itself); `shared/handlers/reports.ts`: schedules on a saved dashboard (a global one needs a shared dashboard), deactivated when it is deleted, the delete dialog naming them
+- [x] `shared/handlers/dashboards.ts`: list (built-in, shared, own), get, create, save with the `updatedAt` precondition, delete, duplicate; validation against each widget's `options` schema with defaults (`parseDashboardDefinition` in `shared/analytics/dashboards.ts`); narrowing-only overrides (an override disjoint from the dashboard's list matches nothing, and a branch list never widens the default-branch policy); the hidden-project count
+- [x] `server/api/analytics/dashboards/*.ts`, `server/api/analytics/dashboards/[id]/widgets/[key].get.ts`, `server/api/analytics/widgets/preview.post.ts`, `server/api/settings/analytics-default-dashboard.put.ts`, and `server/api/analytics/scope.get.ts` out of the `[widget]` route (D36); demo mirrors in `app/demo/api/dashboards.ts`; `GET /api/reports/preview` and `POST /api/reports/snapshots` take a saved dashboard id
+- [x] `app/pages/analytics.vue` becomes `app/pages/analytics/index.vue` (the default dashboard), beside `analytics/d/[id].vue` and `analytics/dashboards.vue`
+- [x] `app/components/analytics/DashboardSwitcher.vue`, `WidgetConfigSlideover.vue`, `AddWidgetSlideover.vue`; the editor is the edit mode of `DashboardBody.vue`, the one component that renders a dashboard, so viewing and editing share their bands and widget frames (`DashboardWidgetFrame.vue`, which tells each widget which route to read)
+- [x] Widgets: the breakdowns and displays of `metric` over `DIMENSIONS` (`shared/handlers/analytics/metric-breakdown.ts`; the gap dimensions wait for the gap metrics to reach the widget, and the target switch for milestone 5's targets); `list`, `markers`, `text`; the single-project analyses (spec health, slow tests, performance trend, timeout opportunities, selection health); a `description` on every registry entry for the widget picker
+- [x] Live refresh from the `useRunStream` connection (`useRunEvents`, which passes the event's project) on `run-finished`; TV mode (`?tv=1`, `?cycle=`, `?every=`, at least 15 seconds), with a full refresh every five minutes
+- [x] `server/utils/ttl-cache.ts` (the class moved out of `server/utils/scm/cache.ts`); the widget response cache (`server/utils/dashboard-widget-cache.ts`), dropped on `run-finished` and on `run-submitted`, the event a submitted run finishes with
+- [x] The instance default (`analytics.default_dashboard` app setting, a built-in or a shared dashboard) and the per-browser default cookie (`piwi-analytics-dashboard`)
+- [x] `shared/mcp-tools.ts`, `server/utils/mcp/tools.ts`: `list_dashboards`, `get_dashboard`; `apps/docs/features/mcp.md`; the "N tools" sentences
+- [x] `shared/piwi-features.ts`: *Custom dashboards*; `apps/docs/features/dashboards.md`, sidebar; `scripts/generate-demo-seed.mjs`: the `smoke` selections, the `release` markers (v2.2.0 and v2.3.0 before the seeded v2.4.0) and two saved dashboards
+- [x] `tests/unit/dashboards-handler.test.ts`, `analytics-metric-breakdown.test.ts`; `tests/dashboards.spec.ts` (the USER-role viewer runs on the CI auth server); screenshot scenes `saved-dashboard` and `dashboard-editor`, at 375 px and 1280 px
 
 **5. Trend depth**
 
