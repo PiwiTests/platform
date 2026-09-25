@@ -17,6 +17,21 @@ export const NOTIFICATION_EVENTS = [
 
 export type NotificationEvent = (typeof NOTIFICATION_EVENTS)[number];
 
+/**
+ * A report schedule's delivery: queued in the notification outbox by the
+ * `reports:schedule` task, one row per channel. Deliberately not a member of
+ * {@link NOTIFICATION_EVENTS}: a quality report arrives on its schedule's
+ * clock, so it is never something to subscribe to.
+ */
+export const REPORT_READY_EVENT = 'report.ready';
+
+export interface ReportReadyPayload {
+  snapshotId: number;
+  scheduleId: number;
+  /** The last day the report covers, `YYYY-MM-DD` in the schedule's time zone. */
+  periodEnd: string;
+}
+
 /** How many failing tests to embed in a run notification. */
 export const TOP_FAILURES_LIMIT = 3;
 /** Max characters kept from an error message embedded in a notification. */

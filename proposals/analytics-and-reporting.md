@@ -891,7 +891,14 @@ something to subscribe to. Only the task writes the event, and `dispatch.ts` bra
 `renderEventSubject`.
 
 A schedule whose period contains no run still sends: "No runs were recorded for this scope this week" is information a
-stakeholder wants (the pipeline is off). A schedule can be muted like a subscription. From milestone 4, a schedule
+stakeholder wants (the pipeline is off). A schedule can be muted like a subscription.
+
+Milestone 3 settles four details. The period is the whole days, in the schedule's time zone, from the previous
+scheduled firing's day to the day before this one (a `range` period), because the rollups count whole days. When the
+server missed several firings, the sweep fires once, for the latest one, and reports its intended period. *Run now*
+reports the last complete cadence, and its dedupe key ends with `:run-<snapshotId>`, so each click is delivered once
+and never collides with the scheduled firing of the same period. A muted schedule still stores its snapshot and
+queues no delivery, so the Reports page keeps an unbroken history. From milestone 4, a schedule
 whose saved dashboard is deleted is deactivated: deleting a dashboard that schedules use asks first and names them,
 and the Reports page shows each one as inactive, with the reason, until its owner points it at another dashboard.
 
@@ -1287,7 +1294,7 @@ Grouped by milestone. Paths are under `apps/application/` unless noted.
 **3. Schedules and snapshots**
 
 - [x] Both schemas: `report_schedules` (with `builtin_dashboard`; milestone 4 adds `dashboard_id`), `report_snapshots` (with `project_ids`, the projects the bundle covers, which the read check compares with the reader's access); migrations
-- [ ] `shared/handlers/reports.ts`: schedules CRUD, `nextRunAt(schedule, now, timeZone)`, `periodFor(schedule, now)`, snapshots CRUD, access check
+- [x] `shared/handlers/reports.ts`: schedules CRUD, the run of one firing and the sweep, snapshots, access check; the clock is pure in `shared/reports/schedule.ts` (`nextRunAt(timing, after, timeZone)`, `periodFor(timing, runAt, timeZone)`, `latestDueRun`, `lastCompletePeriod`, `reportDedupeKey`)
 - [ ] `server/tasks/reports/schedule.ts`; `nuxt.config.ts` `scheduledTasks` (every five minutes)
 - [ ] `shared/notification-events.ts`: `REPORT_READY_EVENT` as its own constant outside `NOTIFICATION_EVENTS`; `server/utils/notifications/dispatch.ts`: email, Slack, webhook, browser branches ahead of `renderEventSubject`
 - [ ] `server/utils/email.ts`: `attachments` on `SendEmailOptions`, `renderQualityReportEmail`; `server/utils/reports/chart-png.ts` (`sharp` from SVG)
