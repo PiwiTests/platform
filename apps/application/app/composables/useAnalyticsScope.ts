@@ -150,7 +150,29 @@ export function useAnalyticsWidget<T>(
         : useTypeWidget<T>(widget, query, options)
   ) as ReturnType<typeof useTypeWidget<T>>;
   if (source) watch(source.refresh, () => void result.refresh());
-  return result;
+  return loadingUntilFetched(result);
+}
+
+/**
+ * A client-only fetch reads as loading until it has answered: the server
+ * renders it `idle` and the client's first render `pending`, so treating both
+ * as loading keeps the server markup and the hydrating client identical. The
+ * result is a plain object, not the fetch's promise, so awaiting it keeps
+ * this `pending`.
+ */
+function loadingUntilFetched<T>(result: {
+  data: Ref<T | undefined>;
+  error: Ref<unknown>;
+  status: Ref<string>;
+  refresh: () => Promise<void>;
+}) {
+  return {
+    data: result.data,
+    error: result.error,
+    status: result.status,
+    refresh: result.refresh,
+    pending: computed(() => result.status.value === 'idle' || result.status.value === 'pending'),
+  };
 }
 
 function useTypeWidget<T>(
@@ -174,11 +196,13 @@ export const ANALYTICS_SCOPE_SUMMARY: InjectionKey<Ref<AnalyticsScopeSummary | n
 
 /** Fetch how the scope resolves (period dates, notes, markers, test filter options). */
 export function useAnalyticsScopeSummary(query: () => Record<string, string>) {
-  return useFetch<AnalyticsScopeSummary>('/api/analytics/scope', {
-    query: computed(query),
-    lazy: true,
-    server: false,
-  });
+  return loadingUntilFetched(
+    useFetch<AnalyticsScopeSummary>('/api/analytics/scope', {
+      query: computed(query),
+      lazy: true,
+      server: false,
+    }),
+  );
 }
 
 /** The provided scope summary, or an empty ref outside the analytics page. */
