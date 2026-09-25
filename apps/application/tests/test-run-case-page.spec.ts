@@ -376,6 +376,11 @@ test.describe('Situation block on seeded cases', () => {
     await disclosure.click();
     // Opening it renders the failure-time page — an iframe, never escaped XML.
     await expect(page.locator('iframe[title="Failure-time page"]')).toBeVisible();
+    // "Open in picker" loads the same snapshot into the locator picker.
+    await page.getByRole('button', { name: 'Open in picker' }).click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog.locator('iframe[title="DOM snapshot"]')).toBeVisible();
+    await expect(dialog.getByText('No DOM snapshot or ARIA data available')).toHaveCount(0);
   });
 
   test('#587 proposes replacing the locator and opens the Locator fix section', async ({ page }) => {
