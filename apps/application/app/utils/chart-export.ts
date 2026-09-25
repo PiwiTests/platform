@@ -56,20 +56,31 @@ function standaloneSvg(svg: SVGSVGElement): { markup: string; width: number; hei
 const SCALE = 2;
 const PADDING = 16;
 const TITLE_HEIGHT = 28;
+const GAP = 12;
 
-/** The chart as a PNG: its title above its SVG, on the card's background, at twice the screen size. */
-export async function chartPng(container: HTMLElement, title: string): Promise<Blob> {
-  const svg = container.querySelector('svg');
-  if (!svg) throw new Error('This chart has nothing to export yet.');
-  const { markup, width, height } = standaloneSvg(svg);
+async function loadImage(markup: string): Promise<{ image: HTMLImageElement; url: string }> {
   const image = new Image();
   const url = URL.createObjectURL(new Blob([markup], { type: 'image/svg+xml;charset=utf-8' }));
+  await new Promise<void>((resolve, reject) => {
+    image.onload = () => resolve();
+    image.onerror = () => reject(new Error('The chart could not be drawn as an image.'));
+    image.src = url;
+  });
+  return { image, url };
+}
+
+/**
+ * The chart as a PNG: its title above its plots (every chart SVG of the
+ * card, stacked), on the card's background, at twice the screen size.
+ */
+export async function chartPng(container: HTMLElement, title: string): Promise<Blob> {
+  const svgs = [...container.querySelectorAll<SVGSVGElement>('svg.block')];
+  if (svgs.length === 0) throw new Error('This chart has nothing to export yet.');
+  const parts = svgs.map(standaloneSvg);
+  const loaded = await Promise.all(parts.map((p) => loadImage(p.markup)));
   try {
-    await new Promise<void>((resolve, reject) => {
-      image.onload = () => resolve();
-      image.onerror = () => reject(new Error('The chart could not be drawn as an image.'));
-      image.src = url;
-    });
+    const width = Math.max(...parts.map((p) => p.width));
+    const height = parts.reduce((sum, p) => sum + p.height, 0) + (parts.length - 1) * GAP;
     const canvas = document.createElement('canvas');
     canvas.width = (width + PADDING * 2) * SCALE;
     canvas.height = (height + TITLE_HEIGHT + PADDING * 2) * SCALE;
@@ -85,7 +96,11 @@ export async function chartPng(container: HTMLElement, title: string): Promise<B
     ctx.font = `600 14px ${page.fontFamily || 'sans-serif'}`;
     ctx.textBaseline = 'top';
     ctx.fillText(title, PADDING, PADDING);
-    ctx.drawImage(image, PADDING, PADDING + TITLE_HEIGHT, width, height);
+    let y = PADDING + TITLE_HEIGHT;
+    loaded.forEach(({ image }, i) => {
+      ctx.drawImage(image, PADDING, y, parts[i]!.width, parts[i]!.height);
+      y += parts[i]!.height + GAP;
+    });
     return await new Promise<Blob>((resolve, reject) =>
       canvas.toBlob(
         (blob) => (blob ? resolve(blob) : reject(new Error('The image could not be encoded.'))),
@@ -93,7 +108,7 @@ export async function chartPng(container: HTMLElement, title: string): Promise<B
       ),
     );
   } finally {
-    URL.revokeObjectURL(url);
+    for (const { url } of loaded) URL.revokeObjectURL(url);
   }
 }
 
