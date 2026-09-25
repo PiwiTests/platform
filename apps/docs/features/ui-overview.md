@@ -68,6 +68,9 @@ Widgets are grouped into four bands, in reading order:
 
 [Timeline markers](./timeline-markers) overlay your deploys and infrastructure changes on the trend charts.
 
+The page is the built-in *Overview* dashboard: the switcher in the header opens the other built-in,
+shared and personal dashboards, and *Manage dashboards* lists them (see [Dashboards](./dashboards)).
+
 See [Analytics](./analytics) for what each widget answers and how the periods are compared.
 
 ## Projects

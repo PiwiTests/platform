@@ -410,6 +410,40 @@ const SCENES = [
     },
   })),
   ...[
+    { name: 'saved-dashboard', width: 1280, height: 1500, docs: true },
+    { name: 'saved-dashboard-mobile', width: 375, height: 1600, docs: false },
+  ].map(({ name, width, height, docs }) => ({
+    name,
+    description: `The seeded shared Checkout team dashboard on /analytics/d/1, at ${width} px`,
+    ...(docs ? { tags: ['docs'], out: 'docs' } : {}),
+    route: '/analytics/d/1',
+    viewport: { width, height },
+    async run({ page, shoot, settle }) {
+      await page.locator('[data-shot="dashboard"]').waitFor({ timeout: 60000 });
+      await page.locator('[data-shot="analytics-note"]').waitFor({ timeout: 60000 });
+      await settle();
+      await shoot();
+    },
+  })),
+  ...[
+    { name: 'dashboard-editor', width: 1280, height: 1200, docs: true },
+    { name: 'dashboard-editor-mobile', width: 375, height: 1400, docs: false },
+  ].map(({ name, width, height, docs }) => ({
+    name,
+    description: `The dashboard editor on the seeded wasted-CI dashboard, a widget menu open, at ${width} px`,
+    ...(docs ? { tags: ['docs'], out: 'docs' } : {}),
+    route: '/analytics/d/2?edit=1',
+    viewport: { width, height },
+    async run({ page, shoot, settle }) {
+      await page.getByTestId('add-widget-button-0').waitFor({ timeout: 60000 });
+      await page.locator('[data-shot="analytics-metric-display"]').first().waitFor({ timeout: 60000 });
+      await settle();
+      await page.getByTestId('widget-menu-wasted-by-browser').click();
+      await page.getByRole('menuitem', { name: 'Configure' }).waitFor();
+      await shoot();
+    },
+  })),
+  ...[
     { name: 'report-schedule-form', width: 1280, height: 900 },
     { name: 'report-schedule-form-mobile', width: 375, height: 900 },
   ].map(({ name, width, height }) => ({

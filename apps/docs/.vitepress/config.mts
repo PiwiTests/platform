@@ -151,6 +151,7 @@ export default defineConfig({
             { text: 'Slow tests & wasted time', link: '/features/slow-tests' },
             { text: 'Branches', link: '/features/branches' },
             { text: 'Analytics', link: '/features/analytics' },
+            { text: 'Dashboards', link: '/features/dashboards' },
             { text: 'Quality reports', link: '/features/quality-reports' },
             { text: 'Timeline markers', link: '/features/timeline-markers' },
             { text: 'Notifications & alerts', link: '/features/notifications' },

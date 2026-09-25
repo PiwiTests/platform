@@ -311,6 +311,10 @@ same files load unchanged in Vite, Vitest and plain Node (the generator script r
 
 - **API endpoint** — a file under `server/api/` using `eventHandler()` + `getDatabase()`, with a `defineRouteMeta`
   `openAPI` block (including `x-required-roles`) and the right access helper from the authorization rules above.
+- **Calling an endpoint from the app** — `$fetch` and `useFetch` carry no typed route map (a `types:extend` hook in
+  `nuxt.config.ts` empties Nitro's `InternalApi`), so every call site names its response type:
+  `$fetch<ApiResponse<typeof import('~~/server/api/…').default>>(…)` with `ApiResponse` from `types/api.ts`, or a
+  type of that file or of the shared handler. A call without one is `unknown`, never inferred.
 - **Page** — a Vue file in `app/pages/` built on `<UDashboardPanel>`; register it in the nav links array in
   `app/layouts/default.vue` if it belongs in the sidebar.
 - **Component** — a Vue file in the matching `app/components/` subfolder. Auto-import has no folder prefix, so the name

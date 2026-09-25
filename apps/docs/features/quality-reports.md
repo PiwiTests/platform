@@ -15,8 +15,9 @@ into something you can send.
 ## What a report contains
 
 A report renders a **dashboard**, an arrangement of analytics widgets in bands, over a **scope**: the
-projects, branches, environments, test filter and period of the analytics scope bar. Two built-in
-dashboards exist for reports:
+projects, branches, environments, test filter and period of the analytics scope bar. Any
+[saved dashboard](./dashboards) can be exported and scheduled; two built-in dashboards exist for
+reports:
 
 - **Executive**, for stakeholders, in plain words with no locators and no stack traces: a verdict,
   six headline numbers, the pass rate over time with the comparison period and your

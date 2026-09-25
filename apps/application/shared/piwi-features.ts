@@ -111,6 +111,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/analytics#periods',
       },
       {
+        title: 'Custom dashboards',
+        summary:
+          'Your own arrangement of widgets with its own filters and period, private or shared, refreshed live and shown in TV mode on a wall screen; a shared dashboard shows nobody a project they cannot open.',
+        needs: [],
+        where: 'Analytics → dashboard switcher, Edit, Duplicate; Analytics → Manage dashboards',
+        doc: 'features/dashboards',
+      },
+      {
         title: 'Quality reports',
         summary:
           'The analytics page as a document for stakeholders: a rule-based verdict, headline numbers, the trend, what is being done and the risks, as PDF, HTML, Markdown or CSV, sent on a schedule by email, Slack or webhook and kept as snapshots.',

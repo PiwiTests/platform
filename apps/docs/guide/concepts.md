@@ -212,7 +212,8 @@ it appears.
 
 A **dashboard** is a named arrangement of analytics widgets in bands, with a default scope. The
 Analytics page is the built-in *Overview* dashboard; *Executive*, *Engineering*, *Team* and *Gaps
-digest* are the built-in dashboards meant for reports.
+digest* are the built-in dashboards meant for reports. Anyone can save a dashboard of their own, private
+or shared, and a dashboard never grants access to a project. See [Dashboards](/features/dashboards).
 
 A **quality report** is a dashboard rendered as a document (PDF, HTML, Markdown, CSV or JSON) for a
 reader who does not open the dashboard. It is not the **run report**, the Playwright HTML report a run

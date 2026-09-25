@@ -73,7 +73,8 @@ With one project in scope, *Save as selection* stores the tags as a selection yo
 ### Sharing a view
 
 The address carries the scope (`?period=last-month&sel=smoke`), so a copied link opens on what its
-sender saw; without it, the page opens on the scope you used last in this browser.
+sender saw; without it, the page opens on the scope you used last in this browser. To keep your own
+view, save a [dashboard](./dashboards).
 
 ### Where the numbers come from
 
@@ -89,10 +90,9 @@ retention window. Lists of tests and clusters, and anything under a test filter,
 flaky tests, wasted CI minutes, open failure causes, median time to fix), each with its change against
 the comparison. **Pass rate over time** draws the comparison period as a faint line, with markers.
 
-**Insights** — an auto-generated, severity-ranked feed of what actually changed: pass-rate drops,
-failing streaks, stale failure clusters, wasted CI time, oversized timeouts and stale `test.slow()`
-marks, regression surges, and slow shared endpoints. Each entry links to the project, run, cluster, or
-test case behind it. Start here; the rest of the page is the evidence.
+**Insights** — a severity-ranked feed of what changed: pass-rate drops, failing streaks, stale failure
+clusters, wasted CI time, oversized timeouts and stale `test.slow()` marks, regression surges, slow shared
+endpoints. Each entry links to what is behind it.
 
 **Portfolio health** — one sortable row per project: pass rate and its change vs the previous period,
 flaky volume, open failure clusters, average run duration, and latest run. Worst health sorts first.
@@ -137,6 +137,7 @@ becomes something you can see rather than remember.
 
 ## See also
 
+- [Dashboards](./dashboards) — views of your own
 - [Quality reports](./quality-reports) — this page as a document, with **Export**
 
 - [Flaky tests](./flaky-tests) — the per-project analysis these widgets aggregate
