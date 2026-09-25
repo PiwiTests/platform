@@ -37,6 +37,8 @@ export const PROJECT = {
   // "...projects...", causing a strict-mode violation in unrelated tests.
   DASHBOARD_OVERVIEW: 'dashboard-overview-test',
   DASHBOARD_PERF: 'dashboard-perf-tracking',
+  DASHBOARDS_OPEN: 'saved-dashboards-open',
+  DASHBOARDS_RESTRICTED: 'saved-dashboards-restricted',
   DEFAULT_PROJECT: 'default-project',
   DELETE_EVIDENCE: 'delete-evidence-project',
   DELETE_PROJECT: 'delete-whole-project',
