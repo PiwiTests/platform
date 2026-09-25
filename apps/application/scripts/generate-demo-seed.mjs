@@ -2755,6 +2755,7 @@ const REBASE_SQL = [
   `UPDATE markers SET occurred_at = occurred_at + ${D}, created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
   `UPDATE users SET created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
   `UPDATE app_settings SET updated_at = updated_at + ${D};`,
+  `UPDATE test_selections SET created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
   `UPDATE test_suites SET created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
   `UPDATE test_cases SET created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
   // kept_at is nullable; NULL + delta stays NULL.
@@ -2771,6 +2772,7 @@ const REBASE_SQL = [
   `UPDATE test_runs_cases SET started_at = started_at + ${D_MS}, created_at = created_at + ${D_MS};`,
   `UPDATE network_requests SET start_time = start_time + ${D_MS};`,
   `UPDATE project_assignments SET created_at = created_at + ${D_MS};`,
+  `UPDATE analytics_dashboards SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS}, last_viewed_at = last_viewed_at + ${D_MS};`,
   `UPDATE entity_links SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS};`,
   `UPDATE locator_snapshots SET last_seen_at = last_seen_at + ${D_MS};`,
   // Test Map tables are defined after ANCHOR_SEC is computed, so they add no
@@ -3422,6 +3424,152 @@ const RELEASE_MARKERS = releaseRun
     ]
   : [];
 
+// Two earlier checkout releases, so the release-cycle periods have cycles to
+// resolve: v2.2.0 and v2.3.0 on older checkout runs (the runs go newest first).
+const checkoutRuns = TEST_RUNS.filter((r) => r.project_id === 1);
+const EARLIER_RELEASES = [
+  { index: 15, label: 'v2.2.0' },
+  { index: 7, label: 'v2.3.0' },
+]
+  .filter(({ index }) => checkoutRuns[index])
+  .map(({ index, label }, i) => ({
+    id: MARKERS.length + RELEASE_MARKERS.length + i + 1,
+    project_id: 1,
+    occurred_at: checkoutRuns[index].start_time,
+    label,
+    description: 'Tagged and shipped.',
+    category: 'release',
+    environment: null,
+    source: 'manual',
+    run_id: null,
+    created_at: checkoutRuns[index].start_time,
+    updated_at: checkoutRuns[index].start_time,
+  }));
+
+// ── Test selections ─────────────────────────────────────────────────────────
+// A `smoke` selection in every project (the first test of each spec file
+// carries the tag), so a test filter by selection key resolves across projects.
+const SELECTIONS = PROJECTS.map((project, i) => ({
+  id: i + 1,
+  project_id: project.id,
+  key: 'smoke',
+  name: 'Smoke tests',
+  description: 'The first test of every spec file, tagged @smoke.',
+  definition: JSON.stringify({ include: [{ tags: ['smoke'] }] }),
+  version: 1,
+  created_by: 1,
+  created_at: ts('2025-04-01T09:00:00Z'),
+  updated_at: ts('2025-04-01T09:00:00Z'),
+}));
+
+// ── Saved dashboards ────────────────────────────────────────────────────────
+// A shared checkout dashboard over the smoke tests and a two-week sprint, and a
+// private one breaking wasted CI minutes down by browser. Definitions follow
+// `DashboardDefinition` (shared/analytics/dashboards.ts); a sprint period is a
+// cadence from its start date, so it needs no rebase.
+const DASHBOARD_SCOPE = {
+  comparison: { kind: 'previous' },
+  granularity: 'auto',
+  defaultBranchOnly: true,
+  fullRunsOnly: true,
+};
+const SAVED_DASHBOARDS = [
+  {
+    id: 1,
+    name: 'Checkout team',
+    description: 'The checkout smoke tests, sprint by sprint.',
+    owner_id: 1,
+    visibility: 'shared',
+    definition: JSON.stringify({
+      v: 1,
+      scope: {
+        ...DASHBOARD_SCOPE,
+        period: { kind: 'sprint', offset: 0, start: '2025-01-06', lengthDays: 14 },
+        comparison: { kind: 'previous-unit' },
+        projectIds: [1],
+        selection: 'smoke',
+      },
+      bands: [
+        {
+          title: 'This sprint',
+          description: 'The smoke tests of the checkout suite against the previous sprint.',
+          widgets: [
+            {
+              key: 'headline',
+              type: 'stats',
+              size: 'full',
+              options: { metrics: ['test-pass-rate', 'flaky-tests', 'wasted-ci-minutes', 'open-failure-causes'] },
+            },
+            {
+              key: 'pass-rate',
+              type: 'metric',
+              size: 'full',
+              title: 'Smoke pass rate',
+              options: { metric: 'test-pass-rate', display: 'line' },
+            },
+            { key: 'flaky', type: 'list', size: 'half', options: { source: 'flaky-tests', limit: 5 } },
+            { key: 'releases', type: 'markers', size: 'half', options: { categories: ['release', 'deploy'] } },
+          ],
+        },
+        {
+          title: 'Notes',
+          widgets: [
+            {
+              key: 'note',
+              type: 'text',
+              size: 'full',
+              options: {
+                markdown:
+                  '**Sprint goal**: keep the smoke tests green on `main`.\n\n- Payment provider rollout: watch the PayPal flow\n- Ask in #checkout-quality before quarantining a test',
+              },
+            },
+          ],
+        },
+      ],
+    }),
+    created_at: BASE_START_MS - 10 * 24 * 60 * 60 * 1000,
+    updated_at: BASE_START_MS - 2 * 24 * 60 * 60 * 1000,
+    updated_by: 1,
+    last_viewed_at: BASE_START_MS - 60 * 60 * 1000,
+  },
+  {
+    id: 2,
+    name: 'Wasted CI by browser',
+    description: null,
+    owner_id: 1,
+    visibility: 'private',
+    definition: JSON.stringify({
+      v: 1,
+      scope: { ...DASHBOARD_SCOPE, period: { kind: 'rolling', days: 30 } },
+      bands: [
+        {
+          title: 'Where the minutes go',
+          widgets: [
+            {
+              key: 'wasted-by-browser',
+              type: 'metric',
+              size: 'full',
+              title: 'Wasted CI minutes by browser',
+              options: { metric: 'wasted-ci-minutes', display: 'bar', breakdown: 'browser', top: 5 },
+            },
+            {
+              key: 'wasted-by-project',
+              type: 'metric',
+              size: 'half',
+              options: { metric: 'wasted-ci-minutes', display: 'table', breakdown: 'project' },
+            },
+            { key: 'wasted', type: 'wasted-time', size: 'half' },
+          ],
+        },
+      ],
+    }),
+    created_at: BASE_START_MS - 5 * 24 * 60 * 60 * 1000,
+    updated_at: BASE_START_MS - 5 * 24 * 60 * 60 * 1000,
+    updated_by: 1,
+    last_viewed_at: null,
+  },
+];
+
 // ── Assemble SQL ───────────────────────────────────────────────────────────
 const lines = [
   '-- Piwi Dashboard demo seed',
@@ -3466,6 +3614,13 @@ const lines = [
   '',
   '-- Release markers linked to a run (they keep that run forever)',
   insert('markers', RELEASE_MARKERS),
+  insert('markers', EARLIER_RELEASES),
+  '',
+  '-- Test selections',
+  insert('test_selections', SELECTIONS),
+  '',
+  '-- Saved dashboards',
+  insert('analytics_dashboards', SAVED_DASHBOARDS),
   '',
   '-- Files (reports)',
   insert('files', REPORTS),
