@@ -12,6 +12,7 @@ const { backfillDailyRollups } = await import('../../shared/handlers/analytics/r
 const { WIDGET_DOCUMENTS } = await import('../../shared/reports/widget-documents');
 const { makeFormatter } = await import('../../shared/reports/format');
 const { findMovers } = await import('../../shared/handlers/analytics/movers');
+const { evaluateInsightRules } = await import('../../shared/analytics/insight-rules');
 const { sentencesFor } = await import('../../shared/reports/sentences');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -292,5 +293,115 @@ describe('movers', () => {
   test('maps to one table per direction in a report', async () => {
     const data = await runAnalyticsWidget(db as any, 'movers', scope({ projects: '1' }));
     expect(WIDGET_DOCUMENTS.movers(data, docCtx, {}).map((b) => b.kind)).toEqual(['table', 'table']);
+  });
+});
+
+describe('the trend insight rules', () => {
+  const base = {
+    scope: parseAnalyticsScope({ days: '14' }),
+    portfolio: [],
+    ciTime: {
+      points: [],
+      bucketDays: 1,
+      totalMinutes: 0,
+      runCount: 0,
+      prevTotalMinutes: null,
+      deltaPct: null,
+      avgRunMinutes: null,
+    },
+    wastedTime: {
+      points: [],
+      bucketDays: 1,
+      totalWaitMinutes: 0,
+      totalFailedExecMinutes: 0,
+      byProject: [],
+      cost: null,
+      timeoutReclaimable: null,
+    },
+    clusters: { totalOpen: 0, resolvedInPeriod: 0, byErrorType: [], clusters: [] },
+    flakyTests: [],
+    regressionVelocity: {
+      points: [],
+      bucketDays: 1,
+      totalRegressions: 0,
+      totalNewFlaky: 0,
+      prevRegressions: null,
+      deltaPct: null,
+    },
+    slowEndpoints: { endpoints: [], totalRequests: 0 },
+    timeoutHygiene: { rows: [], oversizedCount: 0, staleSlowCount: 0, totalEstimatedSavingMs: 0, topProjectId: null },
+  };
+  const ttf = (medianDays: number | null, previousMedianDays: number | null, fixed = 4) => ({
+    points: [],
+    bucketDays: 1,
+    opened: 0,
+    fixed,
+    medianDays,
+    p90Days: null,
+    previousMedianDays,
+    fixesHeldPct: null,
+    openByAge: [],
+  });
+  const ids = (ctx: object) => evaluateInsightRules({ ...base, ...ctx } as any).map((i) => i.ruleId);
+
+  test('time-to-fix-growth fires when the median is half again as long and a day longer', () => {
+    expect(ids({ timeToFix: ttf(3, 1.5) })).toEqual(['time-to-fix-growth']);
+    expect(ids({ timeToFix: ttf(2, 1.5) })).toEqual([]);
+    expect(ids({ timeToFix: ttf(6, 2, 2) })).toEqual([]);
+    const [insight] = evaluateInsightRules({ ...base, timeToFix: ttf(4, 2) } as any);
+    expect(insight!.severity).toBe('warning');
+    expect(insight!.message).toBe('Median time to fix grew to 4 days vs the previous 14 days');
+  });
+
+  test('suite-shrank fires past five tests and five percent', () => {
+    const growth = (suiteSize: number, previousSuiteSize: number) => ({
+      points: [],
+      bucketDays: 1,
+      suiteSize,
+      previousSuiteSize,
+      delta: suiteSize - previousSuiteSize,
+      skippedPct: null,
+      didNotRunPct: null,
+    });
+    expect(ids({ suiteGrowth: growth(90, 100) })).toEqual(['suite-shrank']);
+    expect(ids({ suiteGrowth: growth(96, 100) })).toEqual([]);
+    expect(ids({ suiteGrowth: growth(900, 1000) })).toEqual(['suite-shrank']);
+    expect(ids({ suiteGrowth: growth(960, 1000) })).toEqual([]);
+  });
+
+  test('quarantine-debt-growth fires on three more tests, or half again as many', () => {
+    const debt = (quarantined: number, previousQuarantined: number) => ({
+      points: [],
+      bucketDays: 1,
+      flakyPerRun: null,
+      previousFlakyPerRun: null,
+      flakyTests: 0,
+      quarantined,
+      previousQuarantined,
+    });
+    expect(ids({ flakyDebt: debt(5, 2) })).toEqual(['quarantine-debt-growth']);
+    expect(ids({ flakyDebt: debt(3, 2) })).toEqual(['quarantine-debt-growth']);
+    expect(ids({ flakyDebt: debt(11, 10) })).toEqual([]);
+  });
+
+  test('owner-load fires when one owner holds more than half the open failure causes', () => {
+    const row = (owner: string | null, openClusters: number) => ({
+      owner,
+      openClusters,
+      flakyTests: 0,
+      wastedMinutes: 0,
+      medianTimeToFixDays: null,
+    });
+    expect(ids({ ownership: { rows: [row('team-pay', 3), row(null, 2)], totalOpenClusters: 5 } })).toEqual([
+      'owner-load',
+    ]);
+    expect(ids({ ownership: { rows: [row('team-pay', 2), row('team-cart', 2)], totalOpenClusters: 4 } })).toEqual([]);
+    // The Unowned row is nobody's load.
+    expect(ids({ ownership: { rows: [row(null, 4), row('team-pay', 1)], totalOpenClusters: 5 } })).toEqual([]);
+  });
+
+  test('the insights widget evaluates them over the seeded data', async () => {
+    const insights = (await runAnalyticsWidget(db as any, 'insights', scope({ projects: '1' }))) as any[];
+    expect(Array.isArray(insights)).toBe(true);
   });
 });

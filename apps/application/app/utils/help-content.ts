@@ -67,7 +67,7 @@ export const HELP_TOPICS = {
   // ── Analytics ─────────────────────────────────────────────────────────
   'analytics.insights': {
     title: 'Insights',
-    text: 'Auto-generated findings over the selected period — pass-rate drops, failing streaks, stale clusters, wasted CI time. Ranked by severity; click one to jump to the source.',
+    text: 'Auto-generated findings over the selected period — missed targets, pass-rate drops, failing streaks, stale clusters, wasted CI time, a growing time to fix, a shrinking suite, a growing quarantine, one owner holding most open failure causes. Ranked by severity; click one to jump to the source.',
   },
   'analytics.portfolio': {
     title: 'Portfolio health',

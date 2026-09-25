@@ -7,11 +7,15 @@
 import type {
   AnalyticsCiTimeTrend,
   AnalyticsClusterLandscape,
+  AnalyticsFlakyDebt,
   AnalyticsFlakyRow,
   AnalyticsInsight,
+  AnalyticsOwnership,
   AnalyticsPortfolioRow,
   AnalyticsRegressionVelocity,
   AnalyticsSlowEndpoints,
+  AnalyticsSuiteGrowth,
+  AnalyticsTimeToFix,
   AnalyticsTimeoutHygiene,
   AnalyticsWastedTime,
 } from './types';
@@ -31,6 +35,10 @@ export interface InsightContext {
   timeoutHygiene: AnalyticsTimeoutHygiene;
   /** The targets of the projects in scope over the period, met or missed. */
   targets?: ProjectTargetVerdict[];
+  timeToFix?: AnalyticsTimeToFix;
+  suiteGrowth?: AnalyticsSuiteGrowth;
+  flakyDebt?: AnalyticsFlakyDebt;
+  ownership?: AnalyticsOwnership;
 }
 
 export interface InsightRule {
@@ -289,8 +297,93 @@ const targetMissed: InsightRule = {
       }),
 };
 
+const timeToFixGrowth: InsightRule = {
+  id: 'time-to-fix-growth',
+  evaluate: ({ timeToFix, scope }) => {
+    if (!timeToFix || timeToFix.fixed < 3) return [];
+    const { medianDays: now, previousMedianDays: before } = timeToFix;
+    // Half again as long, and at least a day longer: a fix now waits noticeably more.
+    if (now === null || before === null || before <= 0 || now < before * 1.5 || now - before < 1) return [];
+    return [
+      {
+        id: 'time-to-fix-growth',
+        ruleId: 'time-to-fix-growth',
+        severity: now >= before * 2 ? 'warning' : 'info',
+        message: `Median time to fix grew to ${now} days vs ${comparisonPhrase(scope)}`,
+        detail: `Up from ${before} days, over ${timeToFix.fixed} failure causes fixed this period.`,
+      },
+    ];
+  },
+};
+
+const suiteShrank: InsightRule = {
+  id: 'suite-shrank',
+  evaluate: ({ suiteGrowth, scope }) => {
+    if (!suiteGrowth || suiteGrowth.delta === null || suiteGrowth.previousSuiteSize === null) return [];
+    const lost = -suiteGrowth.delta;
+    // Five tests or five percent, whichever is more: a rename or two is not a shrink.
+    if (lost < Math.max(5, suiteGrowth.previousSuiteSize * 0.05)) return [];
+    return [
+      {
+        id: 'suite-shrank',
+        ruleId: 'suite-shrank',
+        severity: lost >= suiteGrowth.previousSuiteSize * 0.2 ? 'warning' : 'info',
+        message: `The suite shrank by ${lost} tests vs ${comparisonPhrase(scope)}`,
+        detail: `From ${suiteGrowth.previousSuiteSize} to ${suiteGrowth.suiteSize} tests; check nothing was skipped or deleted by mistake.`,
+      },
+    ];
+  },
+};
+
+const quarantineDebtGrowth: InsightRule = {
+  id: 'quarantine-debt-growth',
+  evaluate: ({ flakyDebt, scope }) => {
+    if (!flakyDebt || flakyDebt.previousQuarantined === null) return [];
+    const added = flakyDebt.quarantined - flakyDebt.previousQuarantined;
+    if (added < 3 && !(added > 0 && flakyDebt.previousQuarantined > 0 && added >= flakyDebt.previousQuarantined * 0.5))
+      return [];
+    return [
+      {
+        id: 'quarantine-debt-growth',
+        ruleId: 'quarantine-debt-growth',
+        severity: added >= 10 ? 'warning' : 'info',
+        message: `${added} more tests in quarantine vs ${comparisonPhrase(scope)}`,
+        detail: `${flakyDebt.quarantined} tests are in quarantine now, up from ${flakyDebt.previousQuarantined}.`,
+      },
+    ];
+  },
+};
+
+const ownerLoad: InsightRule = {
+  id: 'owner-load',
+  evaluate: ({ ownership }) => {
+    if (!ownership || ownership.totalOpenClusters < 4) return [];
+    const top = ownership.rows
+      .filter((r) => r.owner !== null)
+      .reduce<AnalyticsOwnership['rows'][number] | null>(
+        (best, r) => (best === null || r.openClusters > best.openClusters ? r : best),
+        null,
+      );
+    if (!top || top.openClusters * 2 <= ownership.totalOpenClusters) return [];
+    const share = Math.round((top.openClusters / ownership.totalOpenClusters) * 100);
+    return [
+      {
+        id: `owner-load:${top.owner}`,
+        ruleId: 'owner-load',
+        severity: 'warning',
+        message: `${top.owner} holds ${top.openClusters} of the ${ownership.totalOpenClusters} open failure causes`,
+        detail: `${share}% of the open failure causes wait on one owner.`,
+      },
+    ];
+  },
+};
+
 export const INSIGHT_RULES: InsightRule[] = [
   targetMissed,
+  ownerLoad,
+  timeToFixGrowth,
+  suiteShrank,
+  quarantineDebtGrowth,
   failingStreak,
   passRateDrop,
   staleCluster,

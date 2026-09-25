@@ -22,9 +22,11 @@ target.
 **Portfolio health** — one sortable row per project: pass rate and its change vs the previous period,
 flaky volume, open failure clusters, average run duration, and latest run. Worst health sorts first.
 
-**Insights** — a severity-ranked feed of what changed: pass-rate drops, failing streaks, stale failure
-clusters, wasted CI time, oversized timeouts and stale `test.slow()` marks, regression surges, slow shared
-endpoints. Each entry links to what is behind it.
+**Insights** — a severity-ranked feed of what changed: missed targets, pass-rate drops, failing streaks,
+stale failure clusters, wasted CI time, oversized timeouts and stale `test.slow()` marks, regression
+surges, slow shared endpoints, a median time to fix half again as long, a suite that lost tests, a
+growing quarantine, and one owner holding more than half the open failure causes. Each entry links to
+what is behind it.
 
 **Pass rate heatmap** — projects × time, colored by the pass rate of each UTC day (or wider bucket, over
 longer periods).

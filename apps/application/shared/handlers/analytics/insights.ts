@@ -12,6 +12,10 @@ import { getAnalyticsSlowEndpoints } from './slow-endpoints';
 import { getAnalyticsTimeoutHygiene } from './timeout-hygiene';
 import { getAnalyticsContext, type ProjectAccess } from './common';
 import { evaluateTargets } from './targets';
+import { getAnalyticsTimeToFix } from './time-to-fix';
+import { getAnalyticsSuiteGrowth } from './suite-growth';
+import { getAnalyticsFlakyDebt } from './flaky-debt';
+import { getAnalyticsOwnership } from './ownership';
 import { resolveCiCost } from '../ci-cost';
 
 /**
@@ -36,6 +40,10 @@ export async function getAnalyticsInsights(
     slowEndpoints,
     timeoutHygiene,
     targets,
+    timeToFix,
+    suiteGrowth,
+    flakyDebt,
+    ownership,
   ] = await Promise.all([
     getAnalyticsPortfolio(db, scope, access),
     getAnalyticsCiTimeTrend(db, scope, access),
@@ -46,6 +54,10 @@ export async function getAnalyticsInsights(
     getAnalyticsSlowEndpoints(db, scope, access),
     getAnalyticsTimeoutHygiene(db, scope, access),
     evaluateTargets(db, ctx, cost),
+    getAnalyticsTimeToFix(db, scope, access),
+    getAnalyticsSuiteGrowth(db, scope, access),
+    getAnalyticsFlakyDebt(db, scope, access),
+    getAnalyticsOwnership(db, scope, access),
   ]);
 
   return evaluateInsightRules({
@@ -59,5 +71,9 @@ export async function getAnalyticsInsights(
     slowEndpoints,
     timeoutHygiene,
     targets,
+    timeToFix,
+    suiteGrowth,
+    flakyDebt,
+    ownership,
   });
 }
