@@ -1059,6 +1059,7 @@ migrations.
 | `GET /api/reports/snapshots`, `GET /api/reports/snapshots/[id]`, `GET …/[id]/export` | any signed-in, scoped | list, read, download a snapshot |
 | `POST /api/reports/snapshots` | reporter, administrator | generate and store a snapshot by hand |
 | `GET/POST /api/reports/schedules`, `GET/PATCH/DELETE /api/reports/schedules/[id]`, `POST …/[id]/run` | reporter, administrator (global: administrator) | manage schedules; `run` generates now |
+| `POST /api/reports/schedules/preview` | reporter, administrator | the report a schedule not saved yet would send now, over its last complete cadence; stores and sends nothing, writes no AI narrative |
 | `PATCH /api/projects/[id]` | administrator (unchanged) | accepts `targets` |
 | `GET/PUT /api/settings/ci-cost` | administrator | cost of a CI minute |
 | `GET/POST /api/reports/snapshots/[id]/share-links` and `GET/POST /api/dashboards/[id]/share-links` (minted per entity, as `test-run-cases/[id]/share-links` and `failure-clusters/[id]/share-links` are; revoked through the existing `DELETE /api/share-links/[id]`), `GET /share/[token]`, `GET /share/[token]/chart.png`, `GET /share/[token]/badge.svg` | administrator, reporter to mint; anonymous to view, as share links today | read-only reach |

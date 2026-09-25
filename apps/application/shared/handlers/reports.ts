@@ -128,8 +128,23 @@ export const reportScheduleInputSchema = reportScheduleFields.extend({
 /** Only the keys the body carries: a PATCH of `{ active }` leaves the scope and the comparison as they are. */
 export const reportSchedulePatchSchema = reportScheduleFields.partial();
 
+/**
+ * What a preview reads of a schedule not saved yet: the create body without
+ * the channels, with a name that may still be empty. `createdAt`, a saved
+ * schedule's creation, sets the weeks of an every-other-week cadence.
+ */
+export const reportSchedulePreviewSchema = reportScheduleFields
+  .pick({ dashboard: true, cadence: true, anchor: true, at: true, language: true, global: true })
+  .extend({
+    name: z.string().trim().max(120).optional(),
+    scope: reportScheduleFields.shape.scope.default({}),
+    comparison: reportScheduleFields.shape.comparison.default('previous'),
+    createdAt: z.string().datetime().optional(),
+  });
+
 export type ReportScheduleInput = z.infer<typeof reportScheduleInputSchema>;
 export type ReportSchedulePatch = z.infer<typeof reportSchedulePatchSchema>;
+export type ReportSchedulePreviewInput = z.infer<typeof reportSchedulePreviewSchema>;
 
 /** Parse a request body, turning a zod refusal into a 400. */
 export function parseScheduleBody<T>(schema: z.ZodType<T>, body: unknown): T {
@@ -359,9 +374,15 @@ async function scheduleDashboard(
   ref: string,
   actor: ReportActor,
   global: boolean,
-): Promise<{ builtin: BuiltinDashboardKey | null; savedId: number | null; definition: DashboardDefinition }> {
+): Promise<{
+  builtin: BuiltinDashboardKey | null;
+  savedId: number | null;
+  name: string;
+  definition: DashboardDefinition;
+}> {
   if (isBuiltinDashboardKey(ref)) {
-    return { builtin: ref, savedId: null, definition: getBuiltinDashboard(ref).definition };
+    const builtin = getBuiltinDashboard(ref);
+    return { builtin: ref, savedId: null, name: builtin.name, definition: builtin.definition };
   }
   let loaded;
   try {
@@ -374,17 +395,16 @@ async function scheduleDashboard(
   if (global && actor.authEnabled && loaded.row?.visibility !== 'shared') {
     throw new ReportScheduleError(400, 'A global schedule needs a built-in or a shared dashboard');
   }
-  return { builtin: null, savedId: loaded.row!.id, definition: loaded.definition };
+  return { builtin: null, savedId: loaded.row!.id, name: loaded.row!.name, definition: loaded.definition };
 }
 
-function checkSchedule(
+/** What a schedule's scope needs: its built-in dashboard's filter (the team owner) and the actor's access to its projects. */
+function checkScheduleScope(
   values: {
     dashboard: { builtin: BuiltinDashboardKey | null; definition: DashboardDefinition };
     filters: Partial<AnalyticsScope>;
-    channelIds: number[];
-    global: boolean;
   },
-  ctx: ScheduleWriteContext,
+  access: ProjectAccess,
 ): void {
   if (values.dashboard.builtin) {
     try {
@@ -397,6 +417,22 @@ function checkSchedule(
       throw error;
     }
   }
+  const projectIds = values.filters.projectIds ?? [];
+  if (access !== 'all' && projectIds.some((id) => !access.has(id))) {
+    throw new ReportScheduleError(403, 'No access to a project of this schedule');
+  }
+}
+
+function checkSchedule(
+  values: {
+    dashboard: { builtin: BuiltinDashboardKey | null; definition: DashboardDefinition };
+    filters: Partial<AnalyticsScope>;
+    channelIds: number[];
+    global: boolean;
+  },
+  ctx: ScheduleWriteContext,
+): void {
+  checkScheduleScope(values, ctx.access);
   if (values.global && ctx.actor.authEnabled && !ctx.actor.isAdmin) {
     throw new ReportScheduleError(403, 'Only administrators can create global schedules');
   }
@@ -412,10 +448,6 @@ function checkSchedule(
     if (!values.global && channel.userId !== null && channel.userId !== ctx.actor.id && !ctx.actor.isAdmin) {
       throw new ReportScheduleError(403, "Cannot send to another user's channel");
     }
-  }
-  const projectIds = values.filters.projectIds ?? [];
-  if (ctx.access !== 'all' && projectIds.some((id) => !(ctx.access as Set<number>).has(id))) {
-    throw new ReportScheduleError(403, 'No access to a project of this schedule');
   }
 }
 
@@ -623,6 +655,50 @@ async function storeSnapshot(
 }
 
 /**
+ * A schedule's quality report over one period, as a firing collects it: the
+ * dashboard's scope under the schedule's filters, the period as whole days,
+ * the schedule's comparison and language, the title led by its name. A firing
+ * and the preview both go through it, so the preview shows what is sent.
+ */
+async function collectScheduleBundle(
+  db: DrizzleDB,
+  values: {
+    name: string;
+    dashboard: BuiltinDashboardKey | ReportDashboard;
+    filters: Partial<AnalyticsScope> | null;
+    comparison: ScheduleComparison;
+    language: ReportLanguage | null;
+  },
+  period: SchedulePeriod,
+  ctx: Pick<GenerateContext, 'access' | 'timeZone' | 'baseUrl' | 'piwiVersion'> & { now: number },
+): Promise<{ bundle: ReportBundle; scope: AnalyticsScope }> {
+  const definition =
+    typeof values.dashboard === 'string'
+      ? getBuiltinDashboard(values.dashboard).definition
+      : values.dashboard.definition;
+  const scope: AnalyticsScope = {
+    ...dashboardScope(definition),
+    ...(values.filters ?? {}),
+    period: { kind: 'range', from: period.from, to: period.to },
+    comparison: COMPARISONS[values.comparison] ?? { kind: 'previous' },
+    granularity: 'auto',
+    timeZone: ctx.timeZone,
+  };
+  const bundle = await collectReportBundle(db, {
+    dashboard: values.dashboard,
+    scope,
+    access: ctx.access,
+    language: values.language ?? undefined,
+    timeZone: ctx.timeZone,
+    baseUrl: ctx.baseUrl ?? null,
+    piwiVersion: ctx.piwiVersion ?? null,
+    now: ctx.now,
+  });
+  if (values.name) bundle.title = `${values.name}: ${bundle.title}`;
+  return { bundle, scope };
+}
+
+/**
  * Render one firing of a schedule into a snapshot, and queue its deliveries.
  * A scheduled firing (`runAt`) reports on the period that firing covers; *Run
  * now* (`runAt` omitted) on the last complete cadence. A muted schedule keeps
@@ -642,27 +718,18 @@ export async function runReportSchedule(
   };
   const manual = ctx.runAt === undefined;
   const period = manual ? lastCompletePeriod(timing, now, ctx.timeZone) : periodFor(timing, ctx.runAt!, ctx.timeZone);
-  const dashboard = await runDashboard(db, schedule);
-  const definition = typeof dashboard === 'string' ? getBuiltinDashboard(dashboard).definition : dashboard.definition;
-  const scope: AnalyticsScope = {
-    ...dashboardScope(definition),
-    ...((schedule.scope as Partial<AnalyticsScope> | null) ?? {}),
-    period: { kind: 'range', from: period.from, to: period.to },
-    comparison: COMPARISONS[schedule.comparison as ScheduleComparison] ?? { kind: 'previous' },
-    granularity: 'auto',
-    timeZone: ctx.timeZone,
-  };
-  const bundle = await collectReportBundle(db, {
-    dashboard,
-    scope,
-    access: ctx.access,
-    language: (schedule.language as ReportLanguage | null) ?? undefined,
-    timeZone: ctx.timeZone,
-    baseUrl: ctx.baseUrl ?? null,
-    piwiVersion: ctx.piwiVersion ?? null,
-    now,
-  });
-  bundle.title = `${schedule.name}: ${bundle.title}`;
+  const { bundle, scope } = await collectScheduleBundle(
+    db,
+    {
+      name: schedule.name,
+      dashboard: await runDashboard(db, schedule),
+      filters: schedule.scope as Partial<AnalyticsScope> | null,
+      comparison: schedule.comparison as ScheduleComparison,
+      language: (schedule.language as ReportLanguage | null) ?? null,
+    },
+    period,
+    { ...ctx, now },
+  );
   if (schedule.includeNarrative) applyNarrative(bundle, ctx.narrative ? await ctx.narrative(bundle) : null);
   if (period.firstRun) {
     const f = makeFormatter(bundle.language, bundle.locale);
@@ -731,6 +798,57 @@ export async function runReportScheduleNow(
 ): Promise<ScheduleRunResult> {
   const row = await editableSchedule(db, id, actor);
   return runReportSchedule(db, row, { ...ctx, createdBy: actor.id });
+}
+
+export interface ReportSchedulePreview {
+  bundle: ReportBundle;
+  /** The whole days the report covers: the last complete cadence, the period of *Run now*. */
+  period: SchedulePeriod;
+  /** The instance address the report's links and its email name. */
+  siteUrl: string | null;
+}
+
+/**
+ * The quality report a schedule would send now, before it is saved: the same
+ * dashboard, filters, comparison and language as a firing, over the last
+ * complete cadence (the period of *Run now*), collected with the caller's
+ * project access. Nothing is stored or sent, and no AI narrative is written:
+ * the rule-based verdict stands in its place.
+ */
+export async function previewReportSchedule(
+  db: DrizzleDB,
+  input: ReportSchedulePreviewInput,
+  ctx: Pick<GenerateContext, 'access' | 'timeZone' | 'baseUrl' | 'piwiVersion' | 'now'> & { actor: ReportActor },
+): Promise<ReportSchedulePreview> {
+  const now = ctx.now ?? Date.now();
+  const global = input.global === true || !ctx.actor.authEnabled;
+  const filters = scheduleFilters(input.scope);
+  const dashboard = await scheduleDashboard(db, input.dashboard, ctx.actor, global);
+  checkScheduleScope({ dashboard, filters }, ctx.access);
+  const timing = {
+    cadence: input.cadence,
+    anchor: anchorFor(input.cadence, input.anchor),
+    at: normalizeScheduleTime(input.at),
+    createdAt: input.createdAt ? new Date(input.createdAt) : new Date(now),
+  };
+  const period = lastCompletePeriod(timing, now, ctx.timeZone);
+  const { bundle } = await collectScheduleBundle(
+    db,
+    {
+      name: input.name ?? '',
+      dashboard: dashboard.builtin ?? {
+        ref: String(dashboard.savedId),
+        name: dashboard.name,
+        definition: dashboard.definition,
+      },
+      filters,
+      comparison: input.comparison,
+      language: input.language ?? null,
+    },
+    period,
+    { ...ctx, now },
+  );
+  return { bundle, period, siteUrl: ctx.baseUrl ? ctx.baseUrl.replace(/\/$/, '') : null };
 }
 
 /**

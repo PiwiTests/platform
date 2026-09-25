@@ -52,6 +52,7 @@ import {
   apiGetReportSnapshot,
   apiListReportSchedules,
   apiListReportSnapshots,
+  apiPreviewReportSchedule,
   apiReportPreview,
   apiRunReportSchedule,
   apiUpdateReportSchedule,
@@ -2581,6 +2582,11 @@ routes.push(
     method: 'POST',
     pattern: /^\/api\/reports\/schedules$/,
     handler: (_m, body, _q, ctx) => apiCreateReportSchedule(body, demoReportChannels(), ctx?.scope ?? 'all'),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/reports\/schedules\/preview$/,
+    handler: (_m, body, _q, ctx) => apiPreviewReportSchedule(body, ctx?.scope ?? 'all'),
   },
   {
     method: 'GET',
