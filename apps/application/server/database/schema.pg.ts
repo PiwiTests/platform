@@ -1553,6 +1553,7 @@ export const reportSchedules = pgTable(
     at: text('at').notNull(), // 'HH:mm' in the instance time zone (UTC when that setting is auto)
     comparison: text('comparison').notNull().default('previous'), // 'previous' | 'year-ago' | 'none'
     includeShareLink: intBoolean('include_share_link').notNull().default(INT_BOOLEAN_FALSE),
+    includeNarrative: intBoolean('include_narrative').notNull().default(INT_BOOLEAN_FALSE), // the AI narrative, off by default
     language: text('language'), // 'en' | 'fr' | null (project or instance default)
     channelIds: jsonb('channel_ids'), // number[] of notification_channels
     active: intBoolean('active').notNull().default(INT_BOOLEAN_TRUE),

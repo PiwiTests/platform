@@ -568,6 +568,13 @@
       "when": 1790344320772,
       "tag": "0080_keen_nitro",
       "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "6",
+      "when": 1790346265183,
+      "tag": "0081_jittery_naoko",
+      "breakpoints": true
     }
   ]
 }

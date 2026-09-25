@@ -1536,6 +1536,7 @@ export const reportSchedules = sqliteTable(
     at: text('at').notNull(), // 'HH:mm' in the instance time zone (UTC when that setting is auto)
     comparison: text('comparison').notNull().default('previous'), // 'previous' | 'year-ago' | 'none'
     includeShareLink: integer('include_share_link', { mode: 'boolean' }).notNull().default(false),
+    includeNarrative: integer('include_narrative', { mode: 'boolean' }).notNull().default(false), // the AI narrative, off by default
     language: text('language'), // 'en' | 'fr' | null (project or instance default)
     channelIds: text('channel_ids', { mode: 'json' }), // number[] of notification_channels
     active: integer('active', { mode: 'boolean' }).notNull().default(true),

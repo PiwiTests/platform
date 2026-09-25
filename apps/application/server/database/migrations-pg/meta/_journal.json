@@ -575,6 +575,13 @@
       "when": 1790344321995,
       "tag": "0081_purple_mister_sinister",
       "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1790346266521,
+      "tag": "0082_icy_squirrel_girl",
+      "breakpoints": true
     }
   ]
 }
