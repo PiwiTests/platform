@@ -1,7 +1,7 @@
-import { getDatabase } from '../../../database';
-import { requireAuth } from '../../../utils/auth';
-import { getProjectScope } from '../../../utils/project-access';
-import { dashboardActor, dashboardRoute } from '../../../utils/dashboards';
+import { getDatabase } from '../../database';
+import { requireAuth } from '../../utils/auth';
+import { getProjectScope } from '../../utils/project-access';
+import { dashboardActor, dashboardRoute } from '../../utils/dashboards';
 import { dashboardPatchSchema, parseDashboardBody, saveDashboard } from '#shared/handlers/dashboards';
 
 defineRouteMeta({

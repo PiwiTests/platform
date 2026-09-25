@@ -311,6 +311,9 @@ same files load unchanged in Vite, Vitest and plain Node (the generator script r
 
 - **API endpoint** — a file under `server/api/` using `eventHandler()` + `getDatabase()`, with a `defineRouteMeta`
   `openAPI` block (including `x-required-roles`) and the right access helper from the authorization rules above.
+  **No address the browser requests may contain `analytics`** (a route path, a query key or value): uBlock Origin and
+  other blockers refuse such requests, and the page then shows nothing. The analytics routes live under
+  `/api/widgets`, `/api/dashboards` and `/api/rollups`; `tests/unit/blocked-request-words.test.ts` checks it.
 - **Calling an endpoint from the app** — `$fetch` and `useFetch` carry no typed route map (a `types:extend` hook in
   `nuxt.config.ts` empties Nitro's `InternalApi`), so every call site names its response type:
   `$fetch<ApiResponse<typeof import('~~/server/api/…').default>>(…)` with `ApiResponse` from `types/api.ts`, or a

@@ -606,7 +606,7 @@ export const OVERVIEW_DASHBOARD: DashboardDefinition = {
 - The `piwi-analytics-scope` cookie is read as before: `days` becomes a rolling period of that many days (3650 stays
   *All time*), and projects, environments, branches and *Full runs only* carry over. A cookie that names branches
   keeps them, so the new branch default never overrides a choice someone made.
-- Today's URL keys (`days`, `projects`, `environments`, `branches`, `fullRunsOnly`), `GET /api/analytics/[widget]` and
+- Today's URL keys (`days`, `projects`, `environments`, `branches`, `fullRunsOnly`), `GET /api/widgets/[widget]` and
   the MCP tools that read analytics keep working (D27).
 - The "No test runs in the last N days" alert and its *Show all time* action stay, for any period.
 - Every band keeps its title and description, and every widget its card title.
@@ -636,7 +636,7 @@ milestone 4 adds the switcher and the choice of another default.
 - Edit mode adds *Add widget* to each band (a slideover grouped by band, with a search) and a menu to each widget:
   *Configure* (title, options, period, filters), *Width*, *Move up*, *Move down*, *Move to band*, *Duplicate*,
   *Remove*. Moves are buttons, not drag and drop: they work at 375 px and from a keyboard, and need no new dependency.
-- The editor previews from the unsaved definition through `POST /api/analytics/widgets/preview`; *Save* and *Save as*
+- The editor previews from the unsaved definition through `POST /api/widgets/preview`; *Save* and *Save as*
   write it. A save carries the `updatedAt` it started from, so a concurrent save gets a 409 and the editor offers to
   reload or save a copy.
 
@@ -662,7 +662,7 @@ milestone 4 adds the switcher and the choice of another default.
 
 ### Cost
 
-A saved dashboard's widgets load through `GET /api/analytics/dashboards/[id]/widgets/[key]`, so the definition stays
+A saved dashboard's widgets load through `GET /api/dashboards/[id]/widgets/[key]`, so the definition stays
 on the server and the URL carries only the viewer's changes. Responses are cached for 60 seconds per dashboard
 version, widget, resolved scope and viewer project access, in the `TtlCache` class of `server/utils/scm/cache.ts`
 (moved to `server/utils/`), and a project's entries are dropped on its `run-finished` event.
@@ -977,7 +977,7 @@ Once a snapshot or a saved dashboard exists, several routes become one file each
   `capability: 'quality-reports'` for the report tools and `module: 'core'` for the metric and dashboard tools,
   enforced by `ctx.scope`, documented in `apps/docs/features/mcp.md` (the docs drift test checks every tool is listed
   and that no page states a stale tool count).
-- **BI tools.** `GET /api/analytics/rollups?format=csv` streams the rollup rows of the caller's projects (Power BI,
+- **BI tools.** `GET /api/rollups?format=csv` streams the rollup rows of the caller's projects (Power BI,
   Metabase, a spreadsheet), and an optional `GET /api/metrics` in OpenMetrics text format exposes the catalog's
   current values per project for a Grafana or Prometheus the operator already runs, behind `PIWI_METRICS_ENABLED` and
   an API key. Piwi sends nothing anywhere; it lets the operator pull. An open question records the tension with "zero
@@ -1029,6 +1029,7 @@ Once a snapshot or a saved dashboard exists, several routes become one file each
 | D34 | The built-in Overview keeps everything today's analytics page shows, in the same bands, order and widths, reads the existing scope cookie and URL keys, and adds a few better defaults | A redesigned default layout: current users would lose their bearings, with no toggle to get the old page back |
 | D35 | A cell is two rows: the retained row, recomputed from the runs still stored, and the archived row, the numbers of the runs retention deleted, added in the transaction that deletes them; reads sum both | Freezing a cell after its first prune: runs kept forever and `PIWI_RETENTION_MIN_RUNS` leave runs on a pruned day, and a frozen cell could take a correction or an import only through deltas that a retry would apply twice |
 | D36 | The app's `$fetch` and `useFetch` carry no typed route map: a `types:extend` hook in `nuxt.config.ts` empties Nitro's generated `InternalApi`, and a call site names its response type (`ApiResponse<typeof handler>` in `types/api.ts`, or a type of that file). Milestone 3 met the depth limit again at 221 routes, on a `$fetch` whose URL is built at run time, and only three pages relied on the inferred types | Serving more names under one route, as milestone 1 did for `/api/analytics/scope`: every new route file brings the limit back, on whichever call site overflows first |
+| D37 | No address the browser requests contains "analytics": uBlock Origin and other blockers refuse such requests, and the widgets then show nothing. The widget and dashboard routes live under `/api/widgets`, `/api/dashboards` and `/api/rollups`, the default dashboard setting at `/api/settings/default-dashboard` and the selections overview at `/api/projects/[id]/selections/overview`. The two such routes 0.38 shipped (`/api/analytics/[widget]` and `…/selections/analytics`) stay as deprecated aliases for scripts, which blockers never see; the pages keep `/analytics`, since blockers do not refuse a page. `tests/unit/blocked-request-words.test.ts` keeps it so | Keeping the prefix and asking users to allow the instance in their blocker: each of them first meets an empty analytics page that says nothing about why |
 
 ## Storage and API
 
@@ -1040,21 +1041,21 @@ migrations.
 
 | Route | Roles | Purpose |
 |---|---|---|
-| `GET /api/analytics/[widget]` | any signed-in | unchanged; the scope gains the run filters, test filters, period, comparison and granularity of Layer 1 |
-| `GET /api/analytics/scope` | any signed-in, scoped | how a scope resolves: the period and comparison as dates, notes, the markers to draw, the markers a period can anchor on, the selection keys and browsers of the *Tests* filter, where the rollup data starts. Its own route file since milestone 4, the depth limit gone (D36); milestone 1 served it from the `[widget]` route under the reserved name `scope` |
-| `GET /api/analytics/rollups` | any signed-in | rollup rows for the scope, `format=json\|csv` |
-| `GET /api/analytics/dashboards`, `POST /api/analytics/dashboards` | any signed-in; sharing needs administrator or reporter, checked in the handler | list (built-in, shared, own), create |
-| `GET/PATCH/DELETE /api/analytics/dashboards/[id]`, `POST …/[id]/duplicate` | reading: anyone who can see it; changing: its owner or an administrator | read, save (with the `updatedAt` precondition), delete, duplicate; `[id]` is a saved id or a built-in key |
-| `GET /api/analytics/dashboards/[id]/widgets/[key]` | any signed-in, scoped | one widget's data, with the URL's changes to the scope |
-| `POST /api/analytics/widgets/preview` | any signed-in, scoped | one widget from an unsaved definition; reads only |
-| `PUT /api/settings/analytics-default-dashboard` | administrator | the instance default dashboard |
+| `GET /api/widgets/[widget]` | any signed-in | unchanged; the scope gains the run filters, test filters, period, comparison and granularity of Layer 1 |
+| `GET /api/dashboards/scope` | any signed-in, scoped | how a scope resolves: the period and comparison as dates, notes, the markers to draw, the markers a period can anchor on, the selection keys and browsers of the *Tests* filter, where the rollup data starts. Its own route file since milestone 4, the depth limit gone (D36); milestone 1 served it from the `[widget]` route under the reserved name `scope` |
+| `GET /api/rollups` | any signed-in | rollup rows for the scope, `format=json\|csv` |
+| `GET /api/dashboards`, `POST /api/dashboards` | any signed-in; sharing needs administrator or reporter, checked in the handler | list (built-in, shared, own), create |
+| `GET/PATCH/DELETE /api/dashboards/[id]`, `POST …/[id]/duplicate` | reading: anyone who can see it; changing: its owner or an administrator | read, save (with the `updatedAt` precondition), delete, duplicate; `[id]` is a saved id or a built-in key |
+| `GET /api/dashboards/[id]/widgets/[key]` | any signed-in, scoped | one widget's data, with the URL's changes to the scope |
+| `POST /api/widgets/preview` | any signed-in, scoped | one widget from an unsaved definition; reads only |
+| `PUT /api/settings/default-dashboard` | administrator | the instance default dashboard |
 | `GET /api/reports/preview` | any signed-in | a bundle for a dashboard (saved or built-in) and a scope, `format=json\|html\|pdf\|md\|csv` (download when not json) |
 | `GET /api/reports/snapshots`, `GET /api/reports/snapshots/[id]`, `GET …/[id]/export` | any signed-in, scoped | list, read, download a snapshot |
 | `POST /api/reports/snapshots` | reporter, administrator | generate and store a snapshot by hand |
 | `GET/POST /api/reports/schedules`, `GET/PATCH/DELETE /api/reports/schedules/[id]`, `POST …/[id]/run` | reporter, administrator (global: administrator) | manage schedules; `run` generates now |
 | `PATCH /api/projects/[id]` | administrator (unchanged) | accepts `targets` |
 | `GET/PUT /api/settings/ci-cost` | administrator | cost of a CI minute |
-| `GET/POST /api/reports/snapshots/[id]/share-links` and `GET/POST /api/analytics/dashboards/[id]/share-links` (minted per entity, as `test-run-cases/[id]/share-links` and `failure-clusters/[id]/share-links` are; revoked through the existing `DELETE /api/share-links/[id]`), `GET /share/[token]`, `GET /share/[token]/chart.png`, `GET /share/[token]/badge.svg` | administrator, reporter to mint; anonymous to view, as share links today | read-only reach |
+| `GET/POST /api/reports/snapshots/[id]/share-links` and `GET/POST /api/dashboards/[id]/share-links` (minted per entity, as `test-run-cases/[id]/share-links` and `failure-clusters/[id]/share-links` are; revoked through the existing `DELETE /api/share-links/[id]`), `GET /share/[token]`, `GET /share/[token]/chart.png`, `GET /share/[token]/badge.svg` | administrator, reporter to mint; anonymous to view, as share links today | read-only reach |
 | `GET /api/metrics` | API key | OpenMetrics text, behind `PIWI_METRICS_ENABLED` |
 
 **Environment variables** (all registered in `shared/piwi-env-vars.ts` with `since`): `PIWI_CI_MINUTE_COST`,
@@ -1257,7 +1258,7 @@ every step starts from the code it needs and the generated migrations stay in se
    per-cluster trend tabs; drill-down links; widget export (PNG, CSV); *Time to fix*, *Suite growth* and *Flaky debt*
    added to Overview. Each widget is its own pull request.
 6. **Reach** (M each, independent). Report and dashboard share links, `chart.png` and the badge; the Confluence
-   channel once the wiki connection exists; `GET /api/analytics/rollups?format=csv` and the optional OpenMetrics
+   channel once the wiki connection exists; `GET /api/rollups?format=csv` and the optional OpenMetrics
    endpoint; Microsoft Teams; the optional AI narrative widget.
 
 ## File-by-file checklist
@@ -1280,7 +1281,7 @@ Grouped by milestone. Paths are under `apps/application/` unless noted.
 - [x] `shared/handlers/analytics/{portfolio,pass-rate-heatmap,ci-time-trend,wasted-time,regression-velocity}.ts`: rollups for run-filtered scalar series, executions for test-filtered ones; every other widget handler honors test filters or declares it cannot
 - [x] `app/composables/useAnalyticsScope.ts`: the URL first, the cookie as the per-browser default, today's `piwi-analytics-scope` cookie still read (`days` becomes a rolling period, saved branches keep the branch policy off); `app/components/analytics/AnalyticsScopeBar.vue`: period, comparison and granularity pickers, the *Tests* filter, *Save as selection*, the branch policy toggle
 - [x] `app/components/analytics/*Chart.vue`: markers overlay (reuse the project chart's marker rendering)
-- [x] `server/api/analytics/[widget].get.ts`, `app/demo/api/router.ts`: OpenAPI parameters for the new scope keys
+- [x] `server/api/widgets/[widget].get.ts`, `app/demo/api/router.ts`: OpenAPI parameters for the new scope keys
 - [x] `app/utils/help-content.ts`: topics for the pickers, the *Tests* filter and the branch policy
 - [x] `tests/unit/analytics-rollups.test.ts` (with a pruned day holding a kept run: retained plus archived equals the day before the prune, and deleting the released run removes only its numbers), `analytics-period.test.ts`, `analytics-scope.test.ts` (today's cookie and URL keys), extend `analytics-handlers.test.ts`; `apps/docs/features/analytics.md`, `apps/docs/guide/test-selection.md`
 
@@ -1321,7 +1322,7 @@ Grouped by milestone. Paths are under `apps/application/` unless noted.
 - [x] Both schemas: `analytics_dashboards`; migrations; `server/utils/retention.ts` (`sweepOrphans`): private dashboards without an owner
 - [x] Both schemas: `report_schedules.dashboard_id` (FK, ON DELETE SET NULL; on SQLite the generated `ALTER TABLE` cannot carry the action, so the delete clears the column itself); `shared/handlers/reports.ts`: schedules on a saved dashboard (a global one needs a shared dashboard), deactivated when it is deleted, the delete dialog naming them
 - [x] `shared/handlers/dashboards.ts`: list (built-in, shared, own), get, create, save with the `updatedAt` precondition, delete, duplicate; validation against each widget's `options` schema with defaults (`parseDashboardDefinition` in `shared/analytics/dashboards.ts`); narrowing-only overrides (an override disjoint from the dashboard's list matches nothing, and a branch list never widens the default-branch policy); the hidden-project count
-- [x] `server/api/analytics/dashboards/*.ts`, `server/api/analytics/dashboards/[id]/widgets/[key].get.ts`, `server/api/analytics/widgets/preview.post.ts`, `server/api/settings/analytics-default-dashboard.put.ts`, and `server/api/analytics/scope.get.ts` out of the `[widget]` route (D36); demo mirrors in `app/demo/api/dashboards.ts`; `GET /api/reports/preview` and `POST /api/reports/snapshots` take a saved dashboard id
+- [x] `server/api/dashboards/*.ts`, `server/api/dashboards/[id]/widgets/[key].get.ts`, `server/api/widgets/preview.post.ts`, `server/api/settings/default-dashboard.put.ts`, and `server/api/dashboards/scope.get.ts` out of the `[widget]` route (D36); demo mirrors in `app/demo/api/dashboards.ts`; `GET /api/reports/preview` and `POST /api/reports/snapshots` take a saved dashboard id
 - [x] `app/pages/analytics.vue` becomes `app/pages/analytics/index.vue` (the default dashboard), beside `analytics/d/[id].vue` and `analytics/dashboards.vue`
 - [x] `app/components/analytics/DashboardSwitcher.vue`, `WidgetConfigSlideover.vue`, `AddWidgetSlideover.vue`; the editor is the edit mode of `DashboardBody.vue`, the one component that renders a dashboard, so viewing and editing share their bands and widget frames (`DashboardWidgetFrame.vue`, which tells each widget which route to read)
 - [x] Widgets: the breakdowns and displays of `metric` over `DIMENSIONS` (`shared/handlers/analytics/metric-breakdown.ts`; the gap dimensions wait for the gap metrics to reach the widget, and the target switch for milestone 5's targets); `list`, `markers`, `text`; the single-project analyses (spec health, slow tests, performance trend, timeout opportunities, selection health); a `description` on every registry entry for the widget picker
@@ -1345,8 +1346,8 @@ Grouped by milestone. Paths are under `apps/application/` unless noted.
 
 **6. Reach**
 
-- [x] `share_links.entity_kind` `'report'` and `'dashboard'`, and `share_links.project_id` nullable, since a snapshot or a dashboard can span several projects (both schemas, generated migrations); `server/utils/share-links.ts`, `server/utils/share-view.ts` (the view checks, the minter's access, a 60-second bundle cache per live link); `server/api/reports/snapshots/[id]/share-links.get.ts` and `.post.ts`, `server/api/analytics/dashboards/[id]/share-links.get.ts` and `.post.ts` (saved dashboards only; a built-in is duplicated first); `server/routes/share/[token].get.ts`, `[token]/chart.png.get.ts`, `[token]/badge.svg.get.ts` (`shared/reports/badge.ts`, reading the pass-rate tile, which now names its metric); `include_share_link` in the schedule form, its token sealed with `PIWI_SECRET_KEY` in the outbox payload, carried by email, Slack (with the `chart.png` image block) and webhook; `ShareLinksModal.vue` on the snapshot page and in the dashboard menu; `tests/unit/report-badge.test.ts`, `tests/report-share-links.spec.ts`; `apps/docs/features/share-links.md`
-- [x] `server/api/analytics/rollups.get.ts` (`format=json|csv`, streamed in chunks of 31 days by `shared/handlers/analytics/rollup-export.ts`, with its demo mirror); `server/api/metrics.get.ts` behind `PIWI_METRICS_ENABLED` (`shared/handlers/analytics/open-metrics.ts`: one gauge per evaluated catalog metric and project over the last 7 days, cached 60 seconds; with authentication on it takes an API key only, and its user's project access; no demo handler, since the demo has no server to scrape); `apps/docs/operate/metrics.md`
+- [x] `share_links.entity_kind` `'report'` and `'dashboard'`, and `share_links.project_id` nullable, since a snapshot or a dashboard can span several projects (both schemas, generated migrations); `server/utils/share-links.ts`, `server/utils/share-view.ts` (the view checks, the minter's access, a 60-second bundle cache per live link); `server/api/reports/snapshots/[id]/share-links.get.ts` and `.post.ts`, `server/api/dashboards/[id]/share-links.get.ts` and `.post.ts` (saved dashboards only; a built-in is duplicated first); `server/routes/share/[token].get.ts`, `[token]/chart.png.get.ts`, `[token]/badge.svg.get.ts` (`shared/reports/badge.ts`, reading the pass-rate tile, which now names its metric); `include_share_link` in the schedule form, its token sealed with `PIWI_SECRET_KEY` in the outbox payload, carried by email, Slack (with the `chart.png` image block) and webhook; `ShareLinksModal.vue` on the snapshot page and in the dashboard menu; `tests/unit/report-badge.test.ts`, `tests/report-share-links.spec.ts`; `apps/docs/features/share-links.md`
+- [x] `server/api/rollups.get.ts` (`format=json|csv`, streamed in chunks of 31 days by `shared/handlers/analytics/rollup-export.ts`, with its demo mirror); `server/api/metrics.get.ts` behind `PIWI_METRICS_ENABLED` (`shared/handlers/analytics/open-metrics.ts`: one gauge per evaluated catalog metric and project over the last 7 days, cached 60 seconds; with authentication on it takes an API key only, and its user's project access; no demo handler, since the demo has no server to scrape); `apps/docs/operate/metrics.md`
 - [ ] Confluence channel branch in `dispatch.ts` (after the wiki connection ships): left open by milestone 6, since the code has no Confluence client yet (only Jira is a tracker provider; Confluence appears as a link unfurl and a binding field), and D16 keeps that client in [issue-tracker-integrations.md](issue-tracker-integrations.md#confluence)
 - [x] Teams channel type: `dispatch.ts` over `server/utils/notifications/teams.ts` (an Adaptive Card per event, per digest and per quality report, the trend through the share link's `chart.png` when there is one), the `teams` type in the channel form and its test button, `tests/unit/teams-cards.test.ts`, `tests/teams-channel.spec.ts`, `apps/docs/features/notifications.md`
 - [x] `shared/reports/narrative.ts` + `server/utils/reports/ai-narrative.ts` (the optional `narrative` widget): the prompt over the bundle without its links, and a grounding check that refuses an answer citing a number the bundle does not hold; `report_schedules.include_narrative` (both schemas, generated migrations) turns it on per schedule and puts the widget at the top of each report when the dashboard has none; on a page, and whenever the model fails or none is configured, the widget shows the rule-based verdict; `tests/unit/report-narrative.test.ts`; documented in `apps/docs/features/analytics-widgets.md`, the widget catalog, since `quality-reports.md` is at its word budget

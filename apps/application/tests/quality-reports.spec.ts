@@ -69,9 +69,7 @@ test.describe('Quality report API', () => {
     expect(bundle.title).toBe(`${PROJECT.QUALITY_REPORT}, Last 7 days`);
     expect(bundle.scopeText.projects).toBe(PROJECT.QUALITY_REPORT);
     const stats = await (
-      await request.get(
-        `/api/analytics/stats?${scope()}&options=${encodeURIComponent('{"metrics":["test-pass-rate"]}')}`,
-      )
+      await request.get(`/api/widgets/stats?${scope()}&options=${encodeURIComponent('{"metrics":["test-pass-rate"]}')}`)
     ).json();
     expect(stats.tiles[0].value).toBeLessThan(100);
     expect(bundle.verdict.sentence).toContain(`${stats.tiles[0].value}%`);
@@ -188,7 +186,7 @@ test.describe.serial('Cost of a CI minute', () => {
 
     const stats = await (
       await request.get(
-        `/api/analytics/stats?${scope()}&options=${encodeURIComponent('{"metrics":["wasted-ci-minutes"]}')}`,
+        `/api/widgets/stats?${scope()}&options=${encodeURIComponent('{"metrics":["wasted-ci-minutes"]}')}`,
       )
     ).json();
     expect(stats.tiles[0].companion).toMatchObject({ metric: 'wasted-ci-cost', currency: 'EUR' });

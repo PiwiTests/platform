@@ -58,7 +58,7 @@ const { data: scheduleData, execute: loadScheduleOptions } = useFetch<{
   immediate: false,
   default: () => ({ timeZone: 'UTC', owners: [] }),
 });
-const { data: dashboardList, execute: loadDashboards } = useFetch<DashboardList>('/api/analytics/dashboards', {
+const { data: dashboardList, execute: loadDashboards } = useFetch<DashboardList>('/api/dashboards', {
   server: false,
   lazy: true,
   immediate: false,

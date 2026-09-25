@@ -1,9 +1,9 @@
 import { z } from 'zod';
-import { getDatabase } from '../../../../database';
-import { requireAuth } from '../../../../utils/auth';
-import { dashboardActor, dashboardRoute } from '../../../../utils/dashboards';
-import { mintShareLink } from '../../../../utils/share-links';
-import { mintedShareLinkResponse, requireShareLinksEnabled, savedDashboardId } from '../../../../utils/share-view';
+import { getDatabase } from '../../../database';
+import { requireAuth } from '../../../utils/auth';
+import { dashboardActor, dashboardRoute } from '../../../utils/dashboards';
+import { mintShareLink } from '../../../utils/share-links';
+import { mintedShareLinkResponse, requireShareLinksEnabled, savedDashboardId } from '../../../utils/share-view';
 import { loadDashboardDefinition } from '#shared/handlers/dashboards';
 
 defineRouteMeta({

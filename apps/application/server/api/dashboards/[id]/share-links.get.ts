@@ -1,8 +1,8 @@
-import { getDatabase } from '../../../../database';
-import { requireAuth } from '../../../../utils/auth';
-import { dashboardActor, dashboardRoute } from '../../../../utils/dashboards';
-import { listEntityShareLinks } from '../../../../utils/share-links';
-import { savedDashboardId } from '../../../../utils/share-view';
+import { getDatabase } from '../../../database';
+import { requireAuth } from '../../../utils/auth';
+import { dashboardActor, dashboardRoute } from '../../../utils/dashboards';
+import { listEntityShareLinks } from '../../../utils/share-links';
+import { savedDashboardId } from '../../../utils/share-view';
 import { loadDashboardDefinition } from '#shared/handlers/dashboards';
 
 defineRouteMeta({

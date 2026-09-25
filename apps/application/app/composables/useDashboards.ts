@@ -38,6 +38,6 @@ export function builtinDashboardView(key: string): DashboardView | null {
 export function useDashboardList() {
   const requestFetch = useRequestFetch();
   return useAsyncData<DashboardList | null>('analytics-dashboards', () =>
-    requestFetch<DashboardList>('/api/analytics/dashboards').catch(() => null),
+    requestFetch<DashboardList>('/api/dashboards').catch(() => null),
   );
 }

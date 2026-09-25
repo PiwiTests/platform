@@ -71,7 +71,7 @@ test.describe.serial('Analytics trend depth', () => {
     request,
   }) => {
     const stats = await (
-      await request.get(`/api/analytics/stats?period=last-7d&projects=${projectId}&allBranches=true`)
+      await request.get(`/api/widgets/stats?period=last-7d&projects=${projectId}&allBranches=true`)
     ).json();
     const passRate = stats.tiles.find((t: { metric: string }) => t.metric === 'test-pass-rate');
     expect(passRate.target).toEqual({ target: 99, direction: 'min', met: 0, missed: 1 });
@@ -102,12 +102,12 @@ test.describe.serial('Analytics trend depth', () => {
       'movers',
     ]) {
       const response = await request.get(
-        `/api/analytics/${widget}?period=last-7d&projects=${projectId}&allBranches=true`,
+        `/api/widgets/${widget}?period=last-7d&projects=${projectId}&allBranches=true`,
       );
       expect(response.ok(), widget).toBeTruthy();
     }
     const growth = await (
-      await request.get(`/api/analytics/suite-growth?period=last-7d&projects=${projectId}&allBranches=true`)
+      await request.get(`/api/widgets/suite-growth?period=last-7d&projects=${projectId}&allBranches=true`)
     ).json();
     expect(growth.suiteSize).toBe(2);
 

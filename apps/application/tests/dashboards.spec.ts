@@ -1,6 +1,6 @@
 /**
  * Saved dashboards:
- *   /api/analytics/dashboards …          — CRUD, duplicate, the save precondition, widget data, preview
+ *   /api/dashboards …          — CRUD, duplicate, the save precondition, widget data, preview
  *   /analytics, /analytics/d/<id>        — Overview unchanged, duplicate, edit, save, reload, TV mode
  *   deletion                              — names the schedules rendering the dashboard, which go inactive
  *   access (auth server, CI only)         — a USER-role viewer of a shared dashboard sees only their projects
@@ -55,7 +55,7 @@ test.beforeAll(async ({ request }) => {
 
 test.afterAll(async ({ request }) => {
   for (const id of createdSchedules) await request.delete(`/api/reports/schedules/${id}`);
-  for (const id of createdDashboards) await request.delete(`/api/analytics/dashboards/${id}`);
+  for (const id of createdDashboards) await request.delete(`/api/dashboards/${id}`);
   if (channelId) await request.delete(`/api/channels/${channelId}`);
 });
 
@@ -81,7 +81,7 @@ function definition(projectIds: number[]) {
 }
 
 async function createDashboard(request: import('@playwright/test').APIRequestContext, name: string) {
-  const res = await request.post('/api/analytics/dashboards', {
+  const res = await request.post('/api/dashboards', {
     data: { name, visibility: 'shared', definition: definition([openProjectId, restrictedProjectId]) },
   });
   expect(res.status(), await res.text()).toBe(201);
@@ -99,39 +99,39 @@ async function waitForDashboard(page: Page) {
 test.describe('Dashboards API', () => {
   test('the list starts with Overview, and a saved dashboard reads its widgets', async ({ request }) => {
     const view = await createDashboard(request, 'API dashboard');
-    const list = await (await request.get('/api/analytics/dashboards')).json();
+    const list = await (await request.get('/api/dashboards')).json();
     expect(list.items[0].id).toBe('overview');
     expect(list.items.map((d: { id: string }) => d.id)).toContain(view.id);
 
-    const pass = await (await request.get(`/api/analytics/dashboards/${view.id}/widgets/pass`)).json();
+    const pass = await (await request.get(`/api/dashboards/${view.id}/widgets/pass`)).json();
     expect(pass.value.value).toBe(75);
-    const byProject = await (await request.get(`/api/analytics/dashboards/${view.id}/widgets/by-project`)).json();
+    const byProject = await (await request.get(`/api/dashboards/${view.id}/widgets/by-project`)).json();
     expect(byProject.breakdown.groups).toHaveLength(2);
 
     const narrowed = await (
-      await request.get(`/api/analytics/dashboards/${view.id}/widgets/pass?period=last-30d&projects=${openProjectId}`)
+      await request.get(`/api/dashboards/${view.id}/widgets/pass?period=last-30d&projects=${openProjectId}`)
     ).json();
     expect(narrowed.value.value).toBe(100);
   });
 
   test('a save carries the updatedAt it started from; a stale one gets a 409', async ({ request }) => {
     const view = await createDashboard(request, 'Race dashboard');
-    const first = await request.patch(`/api/analytics/dashboards/${view.id}`, {
+    const first = await request.patch(`/api/dashboards/${view.id}`, {
       data: { name: 'Race dashboard, renamed', updatedAt: view.updatedAt },
     });
     expect(first.ok()).toBeTruthy();
-    const stale = await request.patch(`/api/analytics/dashboards/${view.id}`, {
+    const stale = await request.patch(`/api/dashboards/${view.id}`, {
       data: { name: 'Lost update', updatedAt: view.updatedAt },
     });
     expect(stale.status()).toBe(409);
   });
 
   test('a built-in dashboard is duplicated, never saved', async ({ request }) => {
-    const refused = await request.patch('/api/analytics/dashboards/overview', {
+    const refused = await request.patch('/api/dashboards/overview', {
       data: { name: 'Mine', updatedAt: new Date().toISOString() },
     });
     expect(refused.status()).toBe(403);
-    const copy = await request.post('/api/analytics/dashboards/overview/duplicate', { data: {} });
+    const copy = await request.post('/api/dashboards/overview/duplicate', { data: {} });
     expect(copy.status()).toBe(201);
     const view: DashboardView = await copy.json();
     createdDashboards.push(view.id);
@@ -139,7 +139,7 @@ test.describe('Dashboards API', () => {
   });
 
   test('the preview runs an unsaved widget, and refuses a bad one', async ({ request }) => {
-    const ok = await request.post('/api/analytics/widgets/preview', {
+    const ok = await request.post('/api/widgets/preview', {
       data: {
         widget: { type: 'metric', options: { display: 'stat' } },
         scope: { period: 'last-30d', projects: String(restrictedProjectId) },
@@ -147,14 +147,14 @@ test.describe('Dashboards API', () => {
     });
     expect(ok.ok()).toBeTruthy();
     expect((await ok.json()).value.value).toBe(50);
-    const bad = await request.post('/api/analytics/widgets/preview', {
+    const bad = await request.post('/api/widgets/preview', {
       data: { widget: { type: 'metric', options: { metric: 'nope' } }, scope: {} },
     });
     expect(bad.status()).toBe(400);
   });
 
   test('a text widget escapes raw HTML', async ({ request }) => {
-    const res = await request.post('/api/analytics/widgets/preview', {
+    const res = await request.post('/api/widgets/preview', {
       data: { widget: { type: 'text', options: { markdown: '**Hi** <script>alert(1)</script>' } }, scope: {} },
     });
     const note = await res.json();
@@ -207,7 +207,7 @@ test.describe('Dashboards UI', () => {
     await page.goto(`/analytics/d/${view.id}`);
     await waitForDashboard(page);
     await page.getByRole('button', { name: 'Edit', exact: true }).click();
-    const other = await request.patch(`/api/analytics/dashboards/${view.id}`, {
+    const other = await request.patch(`/api/dashboards/${view.id}`, {
       data: { name: 'Saved elsewhere', updatedAt: view.updatedAt },
     });
     expect(other.ok()).toBeTruthy();
@@ -305,7 +305,7 @@ test.describe.serial('Dashboards access', () => {
     }
     const created = await authApi(
       'POST',
-      '/api/analytics/dashboards',
+      '/api/dashboards',
       { name: 'Checkout team (access)', visibility: 'shared', definition: definition(ids) },
       admin,
     );
@@ -324,16 +324,16 @@ test.describe.serial('Dashboards access', () => {
     const viewer = await loginAs(VIEWER.username, VIEWER.password);
 
     const seen = (await (
-      await authApi('GET', `/api/analytics/dashboards/${view.id}`, undefined, viewer)
+      await authApi('GET', `/api/dashboards/${view.id}`, undefined, viewer)
     ).json()) as DashboardView;
     expect(seen.hiddenProjects).toBe(1);
     expect(seen.canEdit).toBe(false);
     const pass = (await (
-      await authApi('GET', `/api/analytics/dashboards/${view.id}/widgets/pass`, undefined, viewer)
+      await authApi('GET', `/api/dashboards/${view.id}/widgets/pass`, undefined, viewer)
     ).json()) as { value: { value: number } };
     expect(pass.value.value).toBe(100);
 
-    const share = await authApi('POST', '/api/analytics/dashboards', { name: 'Mine', visibility: 'shared' }, viewer);
+    const share = await authApi('POST', '/api/dashboards', { name: 'Mine', visibility: 'shared' }, viewer);
     expect(share.status).toBe(403);
 
     const context = await browser.newContext({ baseURL: AUTH_BASE });
@@ -346,6 +346,6 @@ test.describe.serial('Dashboards access', () => {
     });
     await expect(page.getByRole('button', { name: 'Duplicate', exact: true })).toBeVisible();
     await context.close();
-    await authApi('DELETE', `/api/analytics/dashboards/${view.id}`, undefined, admin);
+    await authApi('DELETE', `/api/dashboards/${view.id}`, undefined, admin);
   });
 });

@@ -1,6 +1,6 @@
 /**
  * Tests for the cross-project analytics platform:
- *   GET /api/analytics/:widget — generic widget dispatch (registry-driven)
+ *   GET /api/widgets/:widget — generic widget dispatch (registry-driven)
  *   /analytics                 — the Overview dashboard: the Filters block and widget bands
  */
 import { test, expect } from './fixtures';
@@ -55,8 +55,8 @@ test.describe.serial('Analytics API', () => {
     expect(failing.ok()).toBeTruthy();
   });
 
-  test('GET /api/analytics/portfolio aggregates the project over the period', async ({ request }) => {
-    const response = await request.get('/api/analytics/portfolio?days=7');
+  test('GET /api/widgets/portfolio aggregates the project over the period', async ({ request }) => {
+    const response = await request.get('/api/widgets/portfolio?days=7');
     expect(response.ok()).toBeTruthy();
     const rows = await response.json();
 
@@ -68,8 +68,8 @@ test.describe.serial('Analytics API', () => {
     expect(row.recentRuns).toHaveLength(2);
   });
 
-  test('GET /api/analytics/ci-time-trend sums run minutes', async ({ request }) => {
-    const response = await request.get('/api/analytics/ci-time-trend?days=7&projects=' + projectId);
+  test('GET /api/widgets/ci-time-trend sums run minutes', async ({ request }) => {
+    const response = await request.get('/api/widgets/ci-time-trend?days=7&projects=' + projectId);
     expect(response.ok()).toBeTruthy();
     const trend = await response.json();
     expect(trend.runCount).toBe(2);
@@ -77,42 +77,40 @@ test.describe.serial('Analytics API', () => {
   });
 
   test('scope filters apply: an environment with no runs empties the result', async ({ request }) => {
-    const response = await request.get('/api/analytics/portfolio?days=7&environment=nonexistent-env');
+    const response = await request.get('/api/widgets/portfolio?days=7&environment=nonexistent-env');
     expect(response.ok()).toBeTruthy();
     const rows = await response.json();
     const row = rows.find((r: { projectId: number }) => r.projectId === projectId);
     expect(row.runCount).toBe(0);
   });
 
-  test('GET /api/analytics/:widget 404s on an unknown widget id', async ({ request }) => {
-    const response = await request.get('/api/analytics/not-a-widget');
+  test('GET /api/widgets/:widget 404s on an unknown widget id', async ({ request }) => {
+    const response = await request.get('/api/widgets/not-a-widget');
     expect(response.status()).toBe(404);
   });
 
   test('every registered widget responds', async ({ request }) => {
     // Driven by the registry so a newly added widget is covered automatically.
     for (const widget of ANALYTICS_WIDGETS) {
-      const response = await request.get(`/api/analytics/${widget.id}?days=7`);
+      const response = await request.get(`/api/widgets/${widget.id}?days=7`);
       expect(response.ok(), `widget ${widget.id} should respond`).toBeTruthy();
     }
   });
 
-  test('GET /api/analytics/scope resolves the period, and new keys filter the widgets', async ({ request }) => {
-    const scope = await (await request.get(`/api/analytics/scope?period=last-7d&projects=${projectId}`)).json();
+  test('GET /api/dashboards/scope resolves the period, and new keys filter the widgets', async ({ request }) => {
+    const scope = await (await request.get(`/api/dashboards/scope?period=last-7d&projects=${projectId}`)).json();
     expect(scope.period.label).toBe('Last 7 days');
     expect(scope.comparison.label).toBe('The previous period');
     expect(scope.projectCount).toBe(1);
 
     // Runs without a branch count under the default-branch policy and under All branches.
     for (const branchKey of ['', '&allBranches=true']) {
-      const rows = await (await request.get(`/api/analytics/portfolio?period=last-7d${branchKey}`)).json();
+      const rows = await (await request.get(`/api/widgets/portfolio?period=last-7d${branchKey}`)).json();
       expect(rows.find((r: { projectId: number }) => r.projectId === projectId).runCount).toBe(2);
     }
 
     // A branch picked by hand that no run carries empties the project.
-    const onBranch = await (
-      await request.get('/api/analytics/portfolio?period=last-7d&branches=no-such-branch')
-    ).json();
+    const onBranch = await (await request.get('/api/widgets/portfolio?period=last-7d&branches=no-such-branch')).json();
     expect(onBranch.find((r: { projectId: number }) => r.projectId === projectId)?.runCount ?? 0).toBe(0);
   });
 });

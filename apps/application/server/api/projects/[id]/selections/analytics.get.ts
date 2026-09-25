@@ -1,22 +1,15 @@
-import { requireProjectAccess, requireRouteId } from '../../../../utils/project-access';
-import { getDatabase } from '../../../../database';
-import { getSelectionAnalytics } from '#shared/handlers/selection-analytics';
+import overviewHandler from './overview.get';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Selections'],
-    summary: 'Health and drift analytics for a project’s selections',
+    summary: 'Health and drift of a project’s selections (former path)',
     description:
-      'For every selection: what it resolves to against the current catalog (count, quarantined members, estimated duration, warnings) and whether that differs from what its most recent stamped run recorded — a silent drift. Plus suite-wide coverage: how many tests are matched by no stored selection (the "unselected" gap), with a sample. Read-only.',
+      'The former path of `GET /api/projects/{id}/selections/overview`, same answer, kept for scripts. The app calls the new path: ad blockers (uBlock Origin among them) refuse requests whose address contains "analytics".',
+    deprecated: true,
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-roles': ['administrator', 'reporter', 'user'],
   },
 });
 
-export default eventHandler(async (event) => {
-  const projectId = requireRouteId(event, 'id', 'project ID');
-  await requireProjectAccess(event, projectId);
-
-  const db = await getDatabase();
-  return getSelectionAnalytics(db, projectId);
-});
+export default overviewHandler;

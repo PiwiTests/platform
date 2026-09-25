@@ -57,7 +57,7 @@ interface SelectionAnalytics {
 }
 
 const { data: analytics, refresh: refreshAnalytics } = await useFetch<SelectionAnalytics>(
-  `/api/projects/${projectId}/selections/analytics`,
+  `/api/projects/${projectId}/selections/overview`,
   { lazy: true },
 );
 const coverage = computed(() => analytics.value?.coverage ?? null);

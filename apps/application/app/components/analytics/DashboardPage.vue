@@ -15,8 +15,7 @@ const requestFetch = useRequestFetch();
 const builtin = builtinDashboardView(props.dashboardId);
 const { data: saved, error } = await useAsyncData<DashboardView | null>(
   `analytics-dashboard-${props.dashboardId}`,
-  () =>
-    builtin ? Promise.resolve(null) : requestFetch<DashboardView>(`/api/analytics/dashboards/${props.dashboardId}`),
+  () => (builtin ? Promise.resolve(null) : requestFetch<DashboardView>(`/api/dashboards/${props.dashboardId}`)),
 );
 const view = ref<DashboardView | null>(builtin ?? saved.value ?? null);
 watch(saved, (value) => {
