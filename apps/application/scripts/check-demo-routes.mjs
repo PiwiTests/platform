@@ -53,6 +53,9 @@ const INTENTIONALLY_EXCLUDED = new Set([
   'GET /api/reports/snapshots/:id/share-links',
   'POST /api/analytics/dashboards/:id/share-links',
   'GET /api/analytics/dashboards/:id/share-links',
+  // OpenMetrics for an operator's Prometheus or Grafana to pull: there is no
+  // server in the browser demo for a scraper to reach.
+  'GET /api/metrics',
   // Inbound Jira webhook: a public receiver an external Jira posts to. There is
   // no server in the browser demo, and it only ever refreshes a link.
   'POST /api/integrations/jira/webhook/:token',

@@ -440,6 +440,15 @@ export const PIWI_ENV_VARS = {
     requiredWhen: { PIWI_AUTH_ENABLED: 'true' },
     notes: 'The server refuses to start when auth is enabled and this is unset.',
   },
+  PIWI_METRICS_ENABLED: {
+    description:
+      'Set to "true" to serve GET /api/metrics: the metric catalog\'s current values per project in the OpenMetrics text format, for a Prometheus or a Grafana you run to pull (Piwi sends nothing anywhere). Off by default. With authentication on, the scraper sends an API key, and sees the projects of its user.',
+    category: 'general',
+    type: 'boolean',
+    default: 'false',
+    since: '0.39.0',
+    docs: 'operate/metrics',
+  },
   PIWI_SHARE_LINKS_ENABLED: {
     description:
       'Set to "true" to allow minting read-only public share links for executions and failure clusters. Off by default; turning it off again immediately dead-ends every outstanding link without deleting anything.',
