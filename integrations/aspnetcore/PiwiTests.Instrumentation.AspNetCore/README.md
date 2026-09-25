@@ -28,7 +28,7 @@ app.UsePiwiTestLogs();
 app.Run();
 ```
 
-`AddPiwiTestLogs()` registers an `ILoggerProvider` that feeds Warning and Error entries into a per-request capture buffer (`PiwiTestLogCapture`), scoped to the current HTTP request with `AsyncLocal`.
+`AddPiwiTestLogs()` registers an `ILoggerProvider` that feeds Warning and Error entries into a per-request capture buffer (`PiwiTestLogCapture`, from the [`PiwiTests.Instrumentation.Core`](https://www.nuget.org/packages/PiwiTests.Instrumentation.Core) package this one depends on), scoped to the current HTTP request with `AsyncLocal`.
 
 `UsePiwiTestLogs()` adds middleware that serializes the buffer to JSON, gzip-compresses it, and writes the result (Base64-encoded) to the `X-Piwi-Logs` response header as the response starts, but only when the environment is Development or Test. Entries logged after that point (while a body is still streaming) can no longer ride on the response.
 
@@ -55,7 +55,7 @@ When logging is routed through **Serilog** (with the default `writeToProviders: 
 ```csharp
 using Serilog.Core;
 using Serilog.Events;
-using PiwiTests.Instrumentation.AspNetCore;
+using PiwiTests.Instrumentation;
 
 sealed class PiwiTestLogSink : ILogEventSink
 {

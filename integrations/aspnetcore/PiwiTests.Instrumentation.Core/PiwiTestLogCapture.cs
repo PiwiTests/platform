@@ -3,18 +3,18 @@ using System.Collections.Generic;
 using System.Threading;
 using Microsoft.Extensions.Logging;
 
-namespace PiwiTests.Instrumentation.AspNetCore;
+namespace PiwiTests.Instrumentation;
 
 /// <summary>
-/// The per-request capture buffer, decoupled from any single logging front-end.
+/// The per-request capture buffer, decoupled from any single logging front-end and from ASP.NET Core.
 ///
 /// <para>
-/// The middleware brackets each HTTP request with <see cref="Begin"/> / <see cref="Stop"/>,
-/// and any log source feeds entries through <see cref="TryAdd"/>: the built-in
-/// <see cref="PiwiTestLoggerProvider"/> (Microsoft.Extensions.Logging), a Serilog sink, or
-/// any other adapter. <see cref="TryAdd"/> centralizes the level filter
-/// (<see cref="MinimumLevel"/>), the entry cap and the message truncation, so every source
-/// captures the same way.
+/// The middleware in <c>PiwiTests.Instrumentation.AspNetCore</c> brackets each HTTP request with
+/// <see cref="Begin"/> / <see cref="Stop"/>, and any log source feeds entries through
+/// <see cref="TryAdd"/>: the Microsoft.Extensions.Logging provider registered by
+/// <c>AddPiwiTestLogs()</c>, the Serilog sink in <c>PiwiTests.Instrumentation.Serilog</c>, or any
+/// other adapter. <see cref="TryAdd"/> centralizes the level filter (<see cref="MinimumLevel"/>),
+/// the entry cap and the message truncation, so every source captures the same way.
 /// </para>
 /// </summary>
 public static class PiwiTestLogCapture
