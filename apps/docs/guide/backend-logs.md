@@ -46,7 +46,23 @@ app.Run();
 
 `UsePiwiTestLogs()` adds middleware that writes the buffer to the `X-Piwi-Logs` response header as the response starts, only in the active environments — Development and Test by default.
 
-The capture buffer is decoupled from the logging front-end, so it also works outside minimal hosting. Apps on the classic **Generic Host + `Startup`** model use the hosting-agnostic overloads (`services.AddPiwiTestLogs()` or `ILoggingBuilder.AddPiwiTestLogs()`, and `app.UsePiwiTestLogs()` on `IApplicationBuilder`). Apps that route logging through **Serilog** feed the same buffer from a small `ILogEventSink` that calls `PiwiTestLogCapture.TryAdd(...)`; see the [package README](https://github.com/PiwiTests/platform/tree/main/integrations/aspnetcore/PiwiTests.Instrumentation.AspNetCore#serilog-or-the-classic-generic-host--startup-model) for the sink. `TryAdd` self-guards the level (Warning and above), so no feeding path over-captures.
+The capture buffer is decoupled from the logging front-end, so it also works outside minimal hosting. Apps on the classic **Generic Host + `Startup`** model use the hosting-agnostic overloads: `services.AddPiwiTestLogs()` (or `ILoggingBuilder.AddPiwiTestLogs()`) in `ConfigureServices`, and `app.UsePiwiTestLogs(env)` on `IApplicationBuilder` in `Configure`.
+
+Apps that route logging through **Serilog** never call other logging providers (with Serilog's default `writeToProviders: false`), so they add the sink package instead:
+
+```bash
+dotnet add package PiwiTests.Instrumentation.Serilog
+```
+
+```csharp
+// Serilog configuration
+loggerConfiguration.WriteTo.PiwiTestLogs();
+
+// Startup.Configure(IApplicationBuilder app, IHostEnvironment env)
+app.UsePiwiTestLogs(env, e => e.IsDevelopment() || e.IsEnvironment("Podman") || e.IsEnvironment("Integration"));
+```
+
+The sink captures Warning, Error and Fatal events and does nothing outside a request the middleware brackets, so it stays registered in every environment; the middleware decides where capture runs.
 
 #### Choosing the environments
 

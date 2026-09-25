@@ -40,9 +40,12 @@ internal sealed class TestApp : IAsyncDisposable
         string environment,
         Action<IApplicationBuilder, IHostEnvironment> usePiwi,
         Action<IServiceCollection>? services = null,
-        Action<IApplicationBuilder>? outer = null)
+        Action<IApplicationBuilder>? outer = null,
+        Action<IHostBuilder>? hostBuilder = null)
     {
-        var host = await new HostBuilder()
+        var builder = new HostBuilder();
+        hostBuilder?.Invoke(builder);
+        var host = await builder
             .ConfigureWebHost(web => web
                 .UseTestServer()
                 .UseEnvironment(environment)

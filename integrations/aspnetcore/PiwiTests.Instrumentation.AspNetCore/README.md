@@ -12,6 +12,8 @@ During a Playwright test run, the reporter reads this header from every response
 dotnet add package PiwiTests.Instrumentation.AspNetCore
 ```
 
+Logging through Serilog? Add `PiwiTests.Instrumentation.Serilog` too — see [Serilog](#serilog).
+
 ## Usage
 
 ```csharp
@@ -32,11 +34,9 @@ app.Run();
 
 `UsePiwiTestLogs()` adds middleware that serializes the buffer to JSON, gzip-compresses it, and writes the result (Base64-encoded) to the `X-Piwi-Logs` response header as the response starts, but only in the active environments (Development and Test by default). Entries logged after that point (while a body is still streaming) can no longer ride on the response.
 
-## Serilog or the classic Generic Host + `Startup` model
+## Generic Host + classic `Startup`
 
-The capture buffer is decoupled from any single logging front-end, so the integration is not limited to minimal hosting or to the Microsoft.Extensions.Logging pipeline.
-
-Hosting-agnostic overloads are available for `Startup`-based apps:
+The capture buffer is decoupled from any single logging front-end, so the integration is not limited to minimal hosting or to the Microsoft.Extensions.Logging pipeline. Hosting-agnostic overloads cover `Startup`-based apps:
 
 ```csharp
 public void ConfigureServices(IServiceCollection services)
@@ -46,42 +46,31 @@ public void ConfigureServices(IServiceCollection services)
 
 public void Configure(IApplicationBuilder app, IHostEnvironment env)
 {
-    app.UsePiwiTestLogs(env);     // or pass the environments to activate, see below
+    app.UsePiwiTestLogs(env, "Development", "Podman", "Integration");
 }
 ```
 
-When logging is routed through **Serilog** (with the default `writeToProviders: false`), other `ILoggerProvider`s are never called, so `AddPiwiTestLogs()` alone captures nothing. Feed the buffer from a small Serilog sink instead. `PiwiTestLogCapture` is public and self-guards the level, so the sink only needs to map an event and call `TryAdd`:
+`app.UsePiwiTestLogs(env)` keeps the Development/Test default; [Choosing the environments](#choosing-the-environments) lists every way to set them.
 
-```csharp
-using Serilog.Core;
-using Serilog.Events;
-using PiwiTests.Instrumentation;
+## Serilog
 
-sealed class PiwiTestLogSink : ILogEventSink
-{
-    public void Emit(LogEvent e) => PiwiTestLogCapture.TryAdd(
-        level: e.Level switch
-        {
-            LogEventLevel.Warning => LogLevel.Warning,
-            LogEventLevel.Error => LogLevel.Error,
-            LogEventLevel.Fatal => LogLevel.Critical,
-            _ => LogLevel.Information, // dropped by TryAdd's level self-guard
-        },
-        category: e.Properties.TryGetValue("SourceContext", out var c) ? c.ToString().Trim('"') : "",
-        message: e.RenderMessage(),
-        exception: e.Exception);
-}
+When logging is routed through **Serilog** (with the default `writeToProviders: false`), other `ILoggerProvider`s are never called, so `AddPiwiTestLogs()` alone captures nothing. Add the [`PiwiTests.Instrumentation.Serilog`](https://www.nuget.org/packages/PiwiTests.Instrumentation.Serilog) sink instead:
+
+```bash
+dotnet add package PiwiTests.Instrumentation.Serilog
 ```
 
 ```csharp
 // Serilog configuration
-loggerConfiguration.WriteTo.Sink(new PiwiTestLogSink());
+loggerConfiguration.WriteTo.PiwiTestLogs();
 
-// Startup.Configure
-app.UsePiwiTestLogs();
+// Startup.Configure(IApplicationBuilder app, IHostEnvironment env)
+app.UsePiwiTestLogs(env, e => e.IsDevelopment() || e.IsEnvironment("Podman") || e.IsEnvironment("Integration"));
 ```
 
-`TryAdd` centralizes the level filter (Warning and above), the 50-entry cap, and the 500-character message truncation, so no feeding path can over-capture, even one that bypasses `IsEnabled`.
+The sink captures Warning, Error and Fatal events (Fatal as `Critical`), takes the category from `SourceContext`, and does nothing outside a request the middleware brackets — so register it unconditionally and let the middleware decide the environments.
+
+Any other logging front-end can feed the same buffer through `PiwiTestLogCapture.TryAdd` (namespace `PiwiTests.Instrumentation`). `TryAdd` centralizes the level filter (Warning and above), the 50-entry cap, and the 500-character message truncation, so no feeding path can over-capture, even one that bypasses `IsEnabled`.
 
 ## Choosing the environments
 

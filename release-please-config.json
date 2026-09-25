@@ -38,6 +38,10 @@
           "type": "generic",
           "path": "integrations/aspnetcore/PiwiTests.Instrumentation.Core/PiwiTests.Instrumentation.Core.csproj"
         },
+        {
+          "type": "generic",
+          "path": "integrations/serilog/PiwiTests.Instrumentation.Serilog/PiwiTests.Instrumentation.Serilog.csproj"
+        },
         { "type": "json", "path": "package-lock.json", "jsonpath": "$.packages['packages/core'].version" },
         { "type": "json", "path": "package-lock.json", "jsonpath": "$.packages['packages/picker-dom'].version" },
         { "type": "json", "path": "package-lock.json", "jsonpath": "$.packages['packages/server'].version" },

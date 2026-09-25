@@ -65,3 +65,5 @@ Nitro auto-loads it from `plugins/` (in a Nuxt app, put the same file in `server
 - Capture is on outside production; set `PIWI_TEST_LOGS_DISABLED=true` to turn it off anywhere, or `PIWI_TEST_LOGS_DISABLED=false` to force it on in a production-mode test deployment.
 
 To poke at it without the dashboard: `npm start`, then open `http://localhost:4173/backend` and watch the `X-Piwi-Logs` response header on `/api/report`.
+
+An ASP.NET Core backend sends the same header through the NuGet packages instead — including apps on the classic `Startup` model, apps that log through Serilog, and test tiers with their own environment names. See the [backend logs guide](https://piwitests.dev/guide/backend-logs).
