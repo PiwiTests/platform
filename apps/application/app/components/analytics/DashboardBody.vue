@@ -1,10 +1,10 @@
 <script setup lang="ts">
 /**
  * One dashboard on screen: its header (the switcher and the dashboard
- * actions), the scope bar, and its bands of widgets. In edit mode the same
- * page edits the definition: bands and widgets are moved with buttons, every
- * widget previews from the unsaved definition, and the scope bar sets the
- * dashboard's default scope. In TV mode (`?tv=1`) the page drops the
+ * actions), its meta line, the Filters block, and its bands of widgets. In
+ * edit mode the same page edits the definition: bands and widgets are moved
+ * with buttons, every widget previews from the unsaved definition, and the
+ * block, titled Default filters, sets the dashboard's default scope. In TV mode (`?tv=1`) the page drops the
  * navigation, refreshes itself and can rotate through several dashboards.
  */
 import { getAnalyticsWidget, type AnalyticsWidgetId } from '#shared/analytics/registry';
@@ -50,7 +50,7 @@ const { data: accessView } = useFetch<Pick<DashboardView, 'hiddenProjects'>>(
 );
 const hiddenProjects = computed(() => accessView.value?.hiddenProjects ?? props.view.hiddenProjects);
 
-// Project options for the scope bar (slim list, same source as the sidebar menu).
+// Project options for the Filters block (slim list, same source as the sidebar menu).
 const { data: availableProjects } = await useFetch('/api/projects/menu', {
   lazy: true,
   server: false,
@@ -58,7 +58,7 @@ const { data: availableProjects } = await useFetch('/api/projects/menu', {
   transform: (r: { items: ProjectMenuItem[] }) => r.items,
 });
 
-// Environment options for the scope bar (same source as the home filters).
+// Environment options for the Filters block (same source as the home filters).
 const { data: recentTestRuns } = await useFetch('/api/test-runs/recent', {
   lazy: true,
   server: false,
@@ -131,7 +131,7 @@ function cancelEditing() {
   reset();
 }
 
-/** The definition a save writes: the draft, with the scope bar as its default scope. */
+/** The definition a save writes: the draft, with the Default filters as its default scope. */
 function definitionToSave(): DashboardDefinition {
   return { ...clone(draft.value ?? props.view.definition), scope: scopeFromState(state.value) };
 }
@@ -684,38 +684,40 @@ function exitTvMode() {
 
     <template #body>
       <div class="space-y-6" data-shot="dashboard" :data-dashboard="view.id">
+        <p
+          v-if="hiddenProjects > 0 || (isSaved && (view.description || view.ownerName))"
+          class="text-xs text-muted"
+          data-testid="dashboard-meta"
+        >
+          <template v-if="isSaved && view.description">{{ view.description }}</template>
+          <template v-if="isSaved && view.ownerName">
+            <template v-if="view.description"> · </template>{{ view.visibility === 'shared' ? 'Shared' : 'Private' }},
+            by {{ view.ownerName }}</template
+          >
+          <span v-if="hiddenProjects > 0" data-testid="dashboard-hidden-projects">
+            <template v-if="isSaved && (view.description || view.ownerName)"> · </template>{{ hiddenProjects }}
+            {{ hiddenProjects === 1 ? 'project' : 'projects' }} hidden (no access)
+          </span>
+          <HelpHint v-if="hiddenProjects > 0" topic="dashboards.hidden-projects" />
+        </p>
+
         <UAlert
           v-if="editing"
           icon="i-lucide-pencil"
           color="neutral"
           variant="subtle"
           title="Editing this dashboard"
-          description="The scope bar sets the dashboard’s default scope. Widgets preview from your changes; nothing is saved until you click Save."
+          description="Default filters are the filters the dashboard opens with. Widgets preview from your changes; nothing is saved until you click Save."
         />
 
-        <div class="space-y-1">
-          <FilterToolbar>
-            <AnalyticsScopeBar
-              v-model="state"
-              :available-projects="availableProjects"
-              :available-environments="availableEnvironments"
-              :available-branches="availableBranches"
-              :summary="scopeSummary"
-            />
-          </FilterToolbar>
-          <p v-if="hiddenProjects > 0 || (isSaved && (view.description || view.ownerName))" class="text-xs text-muted">
-            <template v-if="isSaved && view.description">{{ view.description }}</template>
-            <template v-if="isSaved && view.ownerName">
-              <template v-if="view.description"> · </template>{{ view.visibility === 'shared' ? 'Shared' : 'Private' }},
-              by {{ view.ownerName }}</template
-            >
-            <span v-if="hiddenProjects > 0" data-testid="dashboard-hidden-projects">
-              <template v-if="isSaved && (view.description || view.ownerName)"> · </template>{{ hiddenProjects }}
-              {{ hiddenProjects === 1 ? 'project' : 'projects' }} hidden (no access)
-            </span>
-            <HelpHint v-if="hiddenProjects > 0" topic="dashboards.hidden-projects" />
-          </p>
-        </div>
+        <AnalyticsScopeBar
+          v-model="state"
+          :title="editing ? 'Default filters' : 'Filters'"
+          :available-projects="availableProjects"
+          :available-environments="availableEnvironments"
+          :available-branches="availableBranches"
+          :summary="scopeSummary"
+        />
 
         <UAlert
           v-if="windowHidesData"

@@ -107,7 +107,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         summary:
           'Any period against any other (calendar units, sprints, release cycles, since a marker), from daily rollups that outlive retention.',
         needs: [],
-        where: 'Analytics → scope bar',
+        where: 'Analytics → Filters',
         doc: 'features/analytics#periods',
       },
       {

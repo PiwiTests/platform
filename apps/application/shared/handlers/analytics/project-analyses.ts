@@ -22,7 +22,7 @@ import {
 import { getSelectionAnalytics, type SelectionAnalytics } from '../selection-analytics';
 import { getAnalyticsContext, type ProjectAccess } from './common';
 
-export const SINGLE_PROJECT_REASON = 'This widget analyses one project: pick a single project in the scope bar.';
+export const SINGLE_PROJECT_REASON = 'This widget analyses one project: pick a single project under Filters.';
 
 /** How many recent runs the run-count analyses read. */
 const RECENT_RUNS = 20;

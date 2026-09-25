@@ -4,8 +4,8 @@ import type { AnalyticsMarker, AnalyticsScopeSummary } from '#shared/analytics/t
 
 /**
  * The period of the analytics scope, its comparison and its granularity, in
- * one popover so the scope bar stays one row. Presets cover rolling and
- * calendar periods, release cycles and All time; a custom range, a marker and
+ * one popover, the Period group of the Filters block. Presets cover rolling
+ * and calendar periods, release cycles and All time; a custom range, a marker and
  * a sprint cadence take their own inputs.
  */
 const props = defineProps<{

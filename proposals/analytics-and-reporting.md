@@ -437,8 +437,11 @@ cookie stays the per-browser default and the URL wins over it, so a copied link 
 `encodePeriod` and `parsePeriod` round-trip every kind.
 
 The scope bar gains the period, comparison and granularity pickers and a *Tests* filter (a selection or predicates,
-and browsers), built on the shared `FilterBar`, so Home and the project pages can adopt the same test filter later. In
-milestone 1 the *Tests* filter edits a selection, test tags and browsers; the other predicates (owner, priority,
+and browsers), built on the shared `FilterBar`, so Home and the project pages can adopt the same test filter later. On
+the page it is one bordered block titled **Filters**, with *Reset* in its header and its controls grouped by what they
+filter: **Period** (period, comparison, granularity, and the line of resolved dates under them), **Runs** (projects,
+environments, branches or the branch policy, *Full runs only*) and **Tests**. At 375 px the block starts folded to a
+one-line summary of the active filters and opens on a tap; wider, it starts open. In milestone 1 the *Tests* filter edits a selection, test tags and browsers; the other predicates (owner, priority,
 feature, files, text, quarantined) are read from the URL and kept, not yet editable, since the selection builder is
 the place that edits them today.
 
@@ -546,7 +549,9 @@ occurrences by project tag" are each one widget. There is no query language (D28
   scope and the locale override today), else the instance default an administrator set, else the built-in Overview,
   which keeps everything today's page shows ([The default dashboard: Overview](#the-default-dashboard-overview)).
 - A switcher in the page header lists built-in, shared and personal dashboards, with a search and an *Unused* group;
-  `/analytics/d/<id>` opens one; `/analytics/dashboards` lists and manages them. No sidebar entry is added. The
+  `/analytics/d/<id>` opens one; `/analytics/dashboards` lists and manages them. Under the dashboard's name, a meta
+  line gives its description, shared or private, its owner and how many projects of its scope are hidden from the
+  viewer; the **Filters** block comes next, then the bands. No sidebar entry is added. The
   built-in Team dashboard stays out of the switcher and the default: it reads nothing without an owner test filter,
   which only a report or a schedule carries.
 - Every dashboard header carries *Edit* (or *Duplicate* when you cannot edit it), *Copy link*, *Export* and *Schedule*
@@ -629,6 +634,8 @@ milestone 4 adds the switcher and the choice of another default.
 ### Editing
 
 - *New dashboard* starts empty or from any dashboard; a built-in can only be duplicated.
+- In edit mode the **Filters** block is titled **Default filters**: what it holds is the scope the dashboard opens
+  with.
 - Edit mode adds *Add widget* to each band (a slideover grouped by band, with a search) and a menu to each widget:
   *Configure* (title, options, period, filters), *Width*, *Move up*, *Move down*, *Move to band*, *Duplicate*,
   *Remove*. Moves are buttons, not drag and drop: they work at 375 px and from a keyboard, and need no new dependency.

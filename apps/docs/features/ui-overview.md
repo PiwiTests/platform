@@ -57,7 +57,7 @@ A quick health check across all projects: a **stat strip** whose every number is
 
 ## Analytics
 
-A cross-project decision view — where Home answers *"what's happening now"*, Analytics answers *"across projects, over time"*. A **scope bar** at the top sets the period (last 7 / 30 / 90 days, last year, or all time) and the projects, then the same **filter bar** Home and each project use — environments and branches (multi-select) and a full-runs-only toggle; every widget re-aggregates against that scope.
+A cross-project decision view — where Home answers *"what's happening now"*, Analytics answers *"across projects, over time"*. A **Filters** block at the top sets the scope: **Period** (the period, its comparison and its buckets), **Runs** (the projects, then the same **filter bar** Home and each project use — environments and branches (multi-select) and a full-runs-only toggle) and **Tests**; every widget re-aggregates against that scope.
 
 Widgets are grouped into four bands, in reading order:
 

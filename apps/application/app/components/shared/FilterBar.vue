@@ -10,6 +10,9 @@
  * of the chosen values; a single chosen value also scopes the server-side flaky
  * analysis. A control renders only when the data offers more than nothing to
  * pick from.
+ *
+ * Slots: `leading` before the environment select, `after-branches` right after
+ * the branch select (a control that belongs with it), `trailing` at the end.
  */
 export interface FilterBarState {
   environments: string[];
@@ -109,6 +112,8 @@ function reset() {
         </div>
       </template>
     </USelectMenu>
+
+    <slot name="after-branches" />
 
     <label
       class="flex items-center gap-1.5 cursor-pointer select-none text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 transition-colors"
