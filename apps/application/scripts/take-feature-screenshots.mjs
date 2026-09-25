@@ -425,6 +425,63 @@ const SCENES = [
       await shoot();
     },
   })),
+  // Trend depth: one scene per new widget, tab and control, at 1280 and 375 px.
+  ...[
+    { shot: 'analytics-suite-growth', route: '/analytics?projects=1', what: 'the suite growth widget' },
+    { shot: 'analytics-flaky-debt', route: '/analytics?projects=1', what: 'the flaky debt widget' },
+    { shot: 'analytics-time-to-fix', route: '/analytics?projects=1', what: 'the time to fix widget' },
+    { shot: 'analytics-headline', route: '/analytics?projects=1', what: 'the headline tiles with their target marks' },
+    { shot: 'analytics-ownership', route: '/analytics/d/engineering', what: 'the ownership widget' },
+    { shot: 'analytics-movers', route: '/analytics/d/engineering', what: 'the movers widget' },
+    {
+      shot: 'analytics-environment-comparison',
+      route: '/analytics/d/engineering?projects=2',
+      what: 'the environment comparison widget',
+    },
+    { shot: 'test-case-trend', route: '/test-cases/1?tab=trend', what: 'the Trend tab of a test' },
+    {
+      shot: 'cluster-occurrence-trend',
+      route: '/failure-clusters/3',
+      what: 'a failure cluster’s occurrences over time',
+    },
+    { shot: 'project-targets', route: '/projects/1?tab=settings', what: 'the project targets form' },
+  ].flatMap(({ shot, route, what }) =>
+    [
+      { suffix: '', width: 1280 },
+      { suffix: '-mobile', width: 375 },
+    ].map(({ suffix, width }) => ({
+      name: `${shot}${suffix}`,
+      description: `${what[0].toUpperCase()}${what.slice(1)}, at ${width} px`,
+      route,
+      viewport: { width, height: 1800 },
+      of: `[data-shot="${shot}"]`,
+      async run({ page, shoot, settle }) {
+        const target = page.locator(`[data-shot="${shot}"]`).first();
+        await target.waitFor({ timeout: 90000 });
+        await target.scrollIntoViewIfNeeded();
+        await settle();
+        await shoot();
+      },
+    })),
+  ),
+  ...[
+    { name: 'chart-export-menu', width: 1280 },
+    { name: 'chart-export-menu-mobile', width: 375 },
+  ].map(({ name, width }) => ({
+    name,
+    description: `The export menu of a chart (copy as PNG, download CSV), at ${width} px`,
+    route: '/analytics?projects=1',
+    viewport: { width, height: 900 },
+    async run({ page, shoot, settle }) {
+      const card = page.locator('[data-shot="analytics-suite-growth"]');
+      await card.waitFor({ timeout: 90000 });
+      await card.scrollIntoViewIfNeeded();
+      await settle();
+      await card.getByTestId('chart-export').click();
+      await page.getByRole('menuitem', { name: 'Download CSV' }).waitFor();
+      await shoot();
+    },
+  })),
   ...[
     { name: 'dashboard-editor', width: 1280, height: 1200, docs: true },
     { name: 'dashboard-editor-mobile', width: 375, height: 1400, docs: false },

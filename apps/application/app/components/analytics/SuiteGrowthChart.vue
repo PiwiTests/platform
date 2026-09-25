@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { AnalyticsSuiteGrowth } from '#shared/analytics/types';
-import type { TrendLine } from '~/utils/chart';
+import { GROUP_SERIES_COLORS, type TrendLine } from '~/utils/chart';
 
 const props = defineProps<{ query: Record<string, string>; options?: Record<string, unknown>; title?: string }>();
 
@@ -11,7 +11,8 @@ const {
   refresh,
 } = await useAnalyticsWidget<AnalyticsSuiteGrowth>('suite-growth', () => props.query);
 
-const SIZE_COLOR = 'var(--ui-primary)';
+/** A count of tests, not an outcome: the first series color. */
+const SIZE_COLOR = GROUP_SERIES_COLORS[0];
 
 const sizeLines = computed<TrendLine[]>(() => [
   {

@@ -6,7 +6,9 @@
  */
 import type { TestCaseStabilityTrend } from '#shared/handlers/test-cases';
 import type { MarkerInfo } from '~~/types/api';
-import type { TrendLine } from '~/utils/chart';
+import { GROUP_SERIES_COLORS, type TrendLine } from '~/utils/chart';
+
+const DURATION_COLOR = GROUP_SERIES_COLORS[0];
 
 const props = defineProps<{ testCaseId: number; markers?: MarkerInfo[] }>();
 
@@ -55,14 +57,14 @@ const rateLines = computed<TrendLine[]>(() => [
 const durationLines = computed<TrendLine[]>(() => [
   {
     label: 'Average duration',
-    color: 'var(--ui-primary)',
+    color: DURATION_COLOR,
     points: buckets.value.map((b) => ({ date: b.date, value: b.avgDuration })),
   },
 ]);
 const legend = [
   { color: STATUS_PALETTE.passed.color, label: 'Pass rate' },
   { color: STATUS_PALETTE.flaky.color, label: 'Flaky rate' },
-  { color: 'var(--ui-primary)', label: 'Average duration' },
+  { color: DURATION_COLOR, label: 'Average duration' },
 ];
 const exportData = computed(() => ({
   name: `test-${props.testCaseId}-trend`,
