@@ -10,7 +10,7 @@
  * targets global channels only; a snapshot is readable by whoever can open
  * every project it covers.
  */
-import { and, desc, eq, gte, inArray, isNotNull, lte } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNotNull, lt, lte, or } from 'drizzle-orm';
 import { z } from 'zod';
 import {
   analyticsDashboards,
@@ -855,10 +855,12 @@ export interface ReportSnapshotView extends ReportSnapshotSummary {
 /** A snapshot is readable when the reader can open every project it covers. */
 export function canReadSnapshot(projectIds: unknown, access: ProjectAccess): boolean {
   if (access === 'all') return true;
-  const ids = Array.isArray(projectIds) ? (projectIds as number[]) : [];
-  return ids.every((id) => access.has(id));
+  // No list means every project: only a reader of every project may open it.
+  if (!Array.isArray(projectIds)) return false;
+  return (projectIds as number[]).every((id) => access.has(id));
 }
 
+/** Snapshots read per page while looking for the ones a reader may open. */
 const SNAPSHOT_SCAN = 200;
 
 async function deliveriesFor(
@@ -921,14 +923,44 @@ export async function listReportSnapshots(
   opts: { limit?: number; scheduleId?: number } = {},
 ): Promise<ReportSnapshotSummary[]> {
   const limit = Math.min(100, Math.max(1, opts.limit ?? 50));
-  const rows = await db
+  // Page through the snapshots, newest first, until `limit` of them are readable: the latest ones may all
+  // cover projects this reader cannot open (a global schedule's), and their own snapshots come after.
+  const ids: number[] = [];
+  let cursor: { generatedAt: Date; id: number } | null = null;
+  while (ids.length < limit) {
+    const page: Array<{ id: number; generatedAt: Date; projectIds: unknown }> = await db
+      .select({
+        id: reportSnapshots.id,
+        generatedAt: reportSnapshots.generatedAt,
+        projectIds: reportSnapshots.projectIds,
+      })
+      .from(reportSnapshots)
+      .where(
+        and(
+          opts.scheduleId ? eq(reportSnapshots.scheduleId, opts.scheduleId) : undefined,
+          cursor
+            ? or(
+                lt(reportSnapshots.generatedAt, cursor.generatedAt),
+                and(eq(reportSnapshots.generatedAt, cursor.generatedAt), lt(reportSnapshots.id, cursor.id)),
+              )
+            : undefined,
+        ),
+      )
+      .orderBy(desc(reportSnapshots.generatedAt), desc(reportSnapshots.id))
+      .limit(SNAPSHOT_SCAN);
+    for (const row of page) if (canReadSnapshot(row.projectIds, access)) ids.push(row.id);
+    if (page.length < SNAPSHOT_SCAN) break;
+    const last = page[page.length - 1]!;
+    cursor = { generatedAt: last.generatedAt, id: last.id };
+  }
+  if (ids.length === 0) return [];
+  const wanted = ids.slice(0, limit);
+  const readable = await db
     .select({ s: reportSnapshots, scheduleName: reportSchedules.name })
     .from(reportSnapshots)
     .leftJoin(reportSchedules, eq(reportSnapshots.scheduleId, reportSchedules.id))
-    .where(opts.scheduleId ? eq(reportSnapshots.scheduleId, opts.scheduleId) : undefined)
-    .orderBy(desc(reportSnapshots.generatedAt), desc(reportSnapshots.id))
-    .limit(SNAPSHOT_SCAN);
-  const readable = rows.filter((r) => canReadSnapshot(r.s.projectIds, access)).slice(0, limit);
+    .where(inArray(reportSnapshots.id, wanted))
+    .orderBy(desc(reportSnapshots.generatedAt), desc(reportSnapshots.id));
   if (readable.length === 0) return [];
   const oldest = readable[readable.length - 1]!.s.generatedAt;
   const deliveries = await deliveriesFor(

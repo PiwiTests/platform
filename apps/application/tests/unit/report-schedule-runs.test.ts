@@ -353,6 +353,33 @@ describe('who may do what', () => {
     expect(await reports.listReportSnapshots(db as any, new Set([1]))).toEqual([]);
     expect((await reports.listReportSnapshots(db as any, new Set([1, 2]))).map((s) => s.id)).toEqual([snapshotId]);
   });
+
+  test('the list finds the snapshots of a reader behind more than a page of ones they cannot open', async () => {
+    const view = await createWeekly();
+    const { snapshotId } = await reports.runReportScheduleNow(db as any, view.id, admin, {
+      access: 'all',
+      timeZone: 'UTC',
+      deliver: false,
+      now: NOW,
+    });
+    const [global] = await db.select().from(schema.reportSnapshots).where(eq(schema.reportSnapshots.id, snapshotId));
+    const { id: _id, ...row } = global!;
+    // One older snapshot of project 1 alone, then 250 newer ones over projects 1 and 2.
+    const [own] = await db
+      .insert(schema.reportSnapshots)
+      .values({ ...row, projectIds: [1], generatedAt: new Date(NOW - 10 * DAY_MS) })
+      .returning({ id: schema.reportSnapshots.id });
+    await db
+      .insert(schema.reportSnapshots)
+      .values(Array.from({ length: 250 }, (_, i) => ({ ...row, generatedAt: new Date(NOW - i * 60_000) })));
+
+    const listed = await reports.listReportSnapshots(db as any, new Set([1]), { limit: 10 });
+    expect(listed.map((s) => s.id)).toEqual([own!.id]);
+    expect(await reports.listReportSnapshots(db as any, 'all', { limit: 10 })).toHaveLength(10);
+    // A snapshot with no project list covers every project.
+    expect(reports.canReadSnapshot(null, new Set([1]))).toBe(false);
+    expect(reports.canReadSnapshot(null, 'all')).toBe(true);
+  });
 });
 
 describe('the Test Map widgets', () => {
