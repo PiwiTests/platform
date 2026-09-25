@@ -421,3 +421,27 @@ describe('the stability trend of a test case', () => {
     await expect(getTestCaseStabilityTrend(db as any, 999)).rejects.toThrow('Test case not found');
   });
 });
+
+describe('the occurrence trend of a failure cluster', () => {
+  test('buckets its failing executions and marks the fix and the first failure after it', async () => {
+    const { getClusterOccurrenceTrend } = await import('../../shared/handlers/failure-clusters');
+    const failing = await db
+      .select({ id: schema.testRunsCases.id, runId: schema.testRunsCases.testRunId })
+      .from(schema.testRunsCases);
+    // The failed execution of test 3 (5 days ago) belongs to cluster 1, fixed 6 days ago.
+    const { eq } = await import('drizzle-orm');
+    const execution = failing.find((r) => r.id === 5)!;
+    await db.update(schema.testRunsCases).set({ failureClusterId: 1 }).where(eq(schema.testRunsCases.id, execution.id));
+    const trend = await getClusterOccurrenceTrend(db as any, 1, { days: 30 });
+    expect(trend.buckets.reduce((n, b) => n + b.occurrences, 0)).toBe(1);
+    expect(trend.buckets.reduce((n, b) => n + b.tests, 0)).toBe(1);
+    expect(trend.fixLandedAt).not.toBeNull();
+    expect(trend.regressedAt).not.toBeNull();
+    expect(new Date(trend.regressedAt!).getTime()).toBeGreaterThan(new Date(trend.fixLandedAt!).getTime());
+    await db
+      .update(schema.testRunsCases)
+      .set({ failureClusterId: null })
+      .where(eq(schema.testRunsCases.id, execution.id));
+    await expect(getClusterOccurrenceTrend(db as any, 999)).rejects.toThrow('Failure cluster not found');
+  });
+});

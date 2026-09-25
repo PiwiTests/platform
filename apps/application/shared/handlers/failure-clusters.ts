@@ -9,7 +9,9 @@
   clusterMergeSuggestions,
   projectIntegrations,
 } from '../../server/database/schema';
-import { eq, and, desc, sql, inArray, or, isNull, lte } from 'drizzle-orm';
+import { eq, and, desc, gte, sql, inArray, or, isNull, lte } from 'drizzle-orm';
+import { makeTimeBuckets } from './analytics/common';
+import { isProbeRun } from './probes';
 
 import type { DrizzleDB } from './db';
 import type { OpenFailureCluster, OccurrenceSeriesPoint } from '../../types/api';
@@ -771,4 +773,74 @@ export async function getOpenFailureClusters(
       snoozeMode: c.snoozeMode ?? null,
     };
   });
+}
+
+// ─── getClusterOccurrenceTrend ───────────────────────────────────
+
+/** How far back a cluster's occurrence trend reaches by default. */
+export const CLUSTER_TREND_DEFAULT_DAYS = 90;
+
+export interface ClusterOccurrenceTrend {
+  clusterId: number;
+  /** Days one bucket spans (1 daily, 7 weekly, 30 for calendar months). */
+  bucketDays: number;
+  /** Failing executions of the cluster, and the distinct tests behind them, per UTC bucket. */
+  buckets: Array<{ date: string; occurrences: number; tests: number }>;
+  /** When the fix landed (every affected test passed again); null while none has. */
+  fixLandedAt: string | null;
+  /** The first occurrence after the fix, when the fix did not hold. */
+  regressedAt: string | null;
+}
+
+/**
+ * A cluster's occurrences over time: its failing executions per UTC day, week
+ * or month over the last `days` days (probe runs left out), with the moment
+ * its fix landed and the first occurrence after it, if the fix regressed.
+ */
+export async function getClusterOccurrenceTrend(
+  db: DrizzleDB,
+  clusterId: number,
+  options: { days?: number; now?: number } = {},
+): Promise<ClusterOccurrenceTrend> {
+  const [cluster] = await db
+    .select({ id: failureClusters.id, fixLandedAt: failureClusters.fixLandedAt })
+    .from(failureClusters)
+    .where(eq(failureClusters.id, clusterId));
+  if (!cluster) throw new Error('Failure cluster not found');
+  const days = Math.min(3650, Math.max(1, Math.round(options.days ?? CLUSTER_TREND_DEFAULT_DAYS)));
+  const now = options.now ?? Date.now();
+  const from = Date.parse(`${new Date(now - (days - 1) * 86_400_000).toISOString().slice(0, 10)}T00:00:00Z`);
+
+  const rows: Array<{ testCaseId: number; startTime: Date; metadata: unknown }> = await db
+    .select({ testCaseId: testRunsCases.testCaseId, startTime: testRuns.startTime, metadata: testRuns.metadata })
+    .from(testRunsCases)
+    .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
+    .where(and(eq(testRunsCases.failureClusterId, clusterId), gte(testRuns.startTime, new Date(from))));
+
+  const buckets = makeTimeBuckets(from, now + 1, 'auto');
+  const tally = new Map<string, { occurrences: number; tests: Set<number> }>();
+  const fixMs = cluster.fixLandedAt ? new Date(cluster.fixLandedAt).getTime() : null;
+  let regressedMs: number | null = null;
+  for (const row of rows) {
+    if (isProbeRun(row.metadata)) continue;
+    const at = new Date(row.startTime).getTime();
+    if (fixMs !== null && at > fixMs && (regressedMs === null || at < regressedMs)) regressedMs = at;
+    const key = buckets.keyFor(at);
+    if (!key) continue;
+    const t = tally.get(key) ?? { occurrences: 0, tests: new Set<number>() };
+    t.occurrences += 1;
+    t.tests.add(row.testCaseId);
+    tally.set(key, t);
+  }
+  return {
+    clusterId,
+    bucketDays: buckets.bucketDays,
+    buckets: buckets.keys.map((date) => ({
+      date,
+      occurrences: tally.get(date)?.occurrences ?? 0,
+      tests: tally.get(date)?.tests.size ?? 0,
+    })),
+    fixLandedAt: fixMs !== null ? new Date(fixMs).toISOString() : null,
+    regressedAt: regressedMs !== null ? new Date(regressedMs).toISOString() : null,
+  };
 }

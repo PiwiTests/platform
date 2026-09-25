@@ -178,6 +178,8 @@ import {
   extractClusterCases,
   getClusterDiagnosis,
   getExecutionDiagnosis,
+  getClusterOccurrenceTrend,
+  CLUSTER_TREND_DEFAULT_DAYS,
 } from '#shared/handlers/failure-clusters';
 import { parseBulkIds, isSnoozeOption } from '#shared/inbox-queues';
 import { getClusterCommits, getClusterCommitDiff, getClusterBranches } from './scm';
@@ -871,6 +873,15 @@ const routes: RouteEntry[] = [
     handler: async (m, _b, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'cluster', +m[1]!);
       return getFailureCluster(await getDemoDb(), +m[1]!);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/failure-clusters\/(\d+)\/occurrence-trend$/,
+    handler: async (m, _, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'cluster', +m[1]!);
+      const days = parseInt(q?.get('days') || String(CLUSTER_TREND_DEFAULT_DAYS));
+      return getClusterOccurrenceTrend(await getDemoDb(), +m[1]!, { days });
     },
   },
   {
