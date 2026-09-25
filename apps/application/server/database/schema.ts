@@ -54,6 +54,7 @@ export const {
   scenarioGaps,
   probes,
   analyticsDailyRollups,
+  analyticsDashboards,
   reportSchedules,
   reportSnapshots,
 } = schema;
@@ -138,6 +139,7 @@ export type {
   NewScenarioGap,
   Probe,
   NewProbe,
+  AnalyticsDashboard,
   ReportSchedule,
   ReportSnapshot,
 } from './schema.sqlite';

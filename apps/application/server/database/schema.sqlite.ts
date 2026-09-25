@@ -1489,6 +1489,35 @@ export const analyticsDailyRollups = sqliteTable(
   }),
 );
 
+// Saved dashboards — a named arrangement of widgets in bands with a default
+// scope (`DashboardDefinition` in `shared/analytics/dashboards.ts`). Private
+// dashboards belong to their owner; shared ones are listed for every signed-in
+// user. A dashboard stores filters and widget options, never data.
+export const analyticsDashboards = sqliteTable(
+  'analytics_dashboards',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    name: text('name').notNull(),
+    description: text('description'),
+    ownerId: integer('owner_id').references(() => users.id, { onDelete: 'set null' }), // null when authentication is off
+    visibility: text('visibility').notNull().default('private'), // 'private' | 'shared'
+    definition: text('definition', { mode: 'json' }).notNull(), // DashboardDefinition
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' }) // the save precondition
+      .notNull()
+      .$defaultFn(() => new Date()),
+    updatedBy: integer('updated_by').references(() => users.id, { onDelete: 'set null' }),
+    lastViewedAt: integer('last_viewed_at', { mode: 'timestamp_ms' }), // throttled; feeds the Unused group
+  },
+  (t) => ({
+    ownerIdx: index('idx_analytics_dashboards_owner').on(t.ownerId),
+    visibilityIdx: index('idx_analytics_dashboards_visibility').on(t.visibility),
+    updatedByIdx: index('idx_analytics_dashboards_updated_by').on(t.updatedBy),
+  }),
+);
+
 // Report schedules — a saved recurring delivery of a quality report: a
 // dashboard, a scope, a cadence and one or more notification channels. The
 // `reports:schedule` task renders each due schedule into a snapshot and queues
@@ -1501,6 +1530,7 @@ export const reportSchedules = sqliteTable(
     userId: integer('user_id').references(() => users.id, { onDelete: 'cascade' }), // null = global (admin-managed)
     scope: text('scope', { mode: 'json' }), // Partial<AnalyticsScope> applied over the dashboard's scope; the period comes from the cadence
     builtinDashboard: text('builtin_dashboard'), // 'overview' | 'executive' | 'engineering' | 'team' | 'gaps-digest'
+    dashboardId: integer('dashboard_id').references(() => analyticsDashboards.id, { onDelete: 'set null' }), // a saved dashboard; set when builtin_dashboard is not
     cadence: text('cadence').notNull(), // 'daily' | 'weekly' | 'biweekly' | 'monthly'
     anchor: integer('anchor'), // weekday 1-7 (weekly, biweekly) or day of month 1-28 (monthly)
     at: text('at').notNull(), // 'HH:mm' in the instance time zone (UTC when that setting is auto)
@@ -1522,6 +1552,7 @@ export const reportSchedules = sqliteTable(
   (t) => ({
     userIdx: index('idx_report_schedules_user').on(t.userId),
     dueIdx: index('idx_report_schedules_due').on(t.active, t.nextRunAt),
+    dashboardIdx: index('idx_report_schedules_dashboard').on(t.dashboardId),
   }),
 );
 
@@ -1557,6 +1588,7 @@ export const reportSnapshots = sqliteTable(
 
 // Type exports for TypeScript
 export type AnalyticsDailyRollup = typeof analyticsDailyRollups.$inferSelect;
+export type AnalyticsDashboard = typeof analyticsDashboards.$inferSelect;
 export type ReportSchedule = typeof reportSchedules.$inferSelect;
 export type ReportSnapshot = typeof reportSnapshots.$inferSelect;
 export type TestSuite = typeof testSuites.$inferSelect;
