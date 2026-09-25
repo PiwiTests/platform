@@ -35,20 +35,35 @@ const previous = computed(() => {
 const dates = computed(() => points.value.map((p) => new Date(`${p.date}T00:00:00Z`)));
 const hasData = computed(() => points.value.some((p) => p.value !== null));
 
+const target = computed(() => widget.value?.target ?? null);
+const targetColor = computed(() =>
+  target.value?.met === false ? STATUS_PALETTE.failed.color : STATUS_PALETTE.passed.color,
+);
+
 const yMax = computed(() => {
   if (widget.value?.value.unit === 'percent') return 100;
   const values = [...points.value, ...(previous.value ?? [])].map((p) => p.value ?? 0);
-  return Math.max(1, ...values);
+  return Math.max(1, target.value?.value ?? 0, ...values);
 });
 
-const legend = computed(() =>
-  previous.value && widget.value?.display === 'line' && !widget.value.breakdown
-    ? [
-        { color: LINE_COLOR, label: 'This period' },
-        { color: PREVIOUS_COLOR, label: widget.value?.comparisonLabel ?? 'Comparison' },
-      ]
-    : [],
-);
+const targetText = computed(() => {
+  const w = widget.value;
+  const t = target.value;
+  if (!w || !t) return null;
+  const outcome = t.met === null ? 'nothing to judge yet' : t.met ? 'met' : 'missed';
+  return `Target ${t.direction === 'min' ? '≥' : '≤'} ${f.value.value(t.value, w.value.unit, w.value.precision, w.value.currency)} · ${outcome}`;
+});
+
+const legend = computed(() => {
+  if (widget.value?.display !== 'line' || widget.value.breakdown) return [];
+  const items: { color: string; label: string }[] = [];
+  if (previous.value) {
+    items.push({ color: LINE_COLOR, label: 'This period' });
+    items.push({ color: PREVIOUS_COLOR, label: widget.value?.comparisonLabel ?? 'Comparison' });
+  }
+  if (target.value) items.push({ color: targetColor.value, label: 'Target' });
+  return items;
+});
 
 /** A path through the non-null points; a gap in the data is a gap in the line. */
 function pathOf(series: AnalyticsSeriesPoint[], plotWidth: number, yScale: (v: number) => number): string {
@@ -115,6 +130,13 @@ const { data: tooltipData, pos: tooltipPos, show, move, hide } = useChartTooltip
       <span v-if="f.delta(widget.value)" class="text-xs tabular-nums" :class="metricTrendClass(widget.value.trend)">
         {{ f.delta(widget.value) }}
       </span>
+      <span
+        v-if="targetText"
+        class="text-xs tabular-nums"
+        :class="targetClass(target?.met ?? null)"
+        data-testid="metric-target"
+        >{{ targetText }}</span
+      >
     </template>
 
     <LoadingState v-if="pending" />
@@ -143,6 +165,17 @@ const { data: tooltipData, pos: tooltipPos, show, move, hide } = useChartTooltip
           stroke-width="1.5"
           stroke-dasharray="4 3"
           opacity="0.7"
+        />
+        <line
+          v-if="target"
+          :x1="0"
+          :x2="plotWidth"
+          :y1="yScale(target.value)"
+          :y2="yScale(target.value)"
+          :style="{ stroke: targetColor }"
+          stroke-width="1.5"
+          stroke-dasharray="2 3"
+          data-testid="metric-target-line"
         />
         <path :d="pathOf(points, plotWidth, yScale)" fill="none" :stroke="LINE_COLOR" stroke-width="2" />
         <circle

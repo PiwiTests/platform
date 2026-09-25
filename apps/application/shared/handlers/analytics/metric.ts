@@ -3,9 +3,13 @@ import type { AnalyticsScope } from '../../analytics/scope';
 import type { AnalyticsMetricWidget } from '../../analytics/types';
 import { metricBreakdowns, metricOptionsSchema, type MetricOptions } from '../../analytics/registry';
 import { resolveCiCost } from '../ci-cost';
-import { getAnalyticsContext, type ProjectAccess } from './common';
+import { getAnalyticsContext, type AnalyticsContext, type ProjectAccess } from './common';
+import type { CiCost } from '../../ci-cost';
+import type { MetricId } from '../../analytics/metrics';
 import { computeMetricSeries, computeMetricValues, hasMetricSeries, metricValue } from './metric-values';
 import { computeMetricBreakdown, dimensionLabel } from './metric-breakdown';
+import { evaluateTargets } from './targets';
+import { targetDefForMetric, targetForPeriod } from '../../analytics/targets';
 
 /**
  * One metric from the catalog over the period: its value and change, and for
@@ -63,6 +67,7 @@ export async function getAnalyticsMetric(
 
   const series = points ?? [];
   return {
+    target: options.target ? await metricTarget(db, ctx, id, cost) : null,
     display,
     value: metricValue(id, current.get(id) ?? null, previous?.get(id) ?? null, cost),
     bucketDays: ctx.buckets.bucketDays,
@@ -86,5 +91,27 @@ export async function getAnalyticsMetric(
             })),
           }
         : null,
+  };
+}
+
+/**
+ * The target a metric widget draws: one project in scope setting a target on
+ * the metric. A weekly target reads per bucket on the line, so it is scaled
+ * to the bucket's length.
+ */
+async function metricTarget(
+  db: DrizzleDB,
+  ctx: AnalyticsContext,
+  id: MetricId,
+  cost: CiCost | null,
+): Promise<AnalyticsMetricWidget['target']> {
+  const def = targetDefForMetric(id);
+  if (!def || ctx.allowed === 'all' || ctx.allowed.length !== 1) return null;
+  const verdict = (await evaluateTargets(db, ctx, cost)).find((v) => v.metric === id);
+  if (!verdict) return null;
+  return {
+    value: def.perWeek ? targetForPeriod(def, verdict.stored, ctx.buckets.bucketDays) : verdict.target,
+    direction: verdict.direction,
+    met: verdict.met,
   };
 }

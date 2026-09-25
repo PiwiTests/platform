@@ -5,7 +5,8 @@
  * each template only repeats the numbers it is given.
  */
 import type { MetricId } from '#shared/analytics/metrics';
-import type { AnalyticsProgress, AnalyticsRisks, VerdictFacts } from '#shared/analytics/types';
+import type { AnalyticsProgress, AnalyticsRisks, AnalyticsTileTarget, VerdictFacts } from '#shared/analytics/types';
+import type { ProjectTargetVerdict } from '#shared/analytics/targets';
 import type { ReportLanguage, ValueFormatter } from './format';
 import { EN_SENTENCES } from './sentences.en';
 import { FR_SENTENCES } from './sentences.fr';
@@ -42,6 +43,7 @@ export interface ReportLabels {
   gapClass: string;
   score: string;
   count: string;
+  targets: string;
 }
 
 export interface ReportSentences {
@@ -52,6 +54,10 @@ export interface ReportSentences {
   progress(progress: AnalyticsProgress, f: ValueFormatter): string[];
   /** The risks, one line each; empty when there are none. */
   risks(risks: AnalyticsRisks, f: ValueFormatter): string[];
+  /** One target over the period, met, missed or with nothing to judge it on. */
+  target(verdict: ProjectTargetVerdict, f: ValueFormatter): string;
+  /** A tile's target mark; `target` is the formatted target for one project, null across projects. */
+  tileTarget(mark: AnalyticsTileTarget, target: string | null): string;
   /** A metric's label in the language (the catalog label in English). */
   metricLabel(id: MetricId, fallback: string): string;
   /** A metric's one-sentence definition in the language. */

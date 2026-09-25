@@ -51,6 +51,13 @@ const f = computed(() => metricFormatter());
             >{{ tile.companion.unit === 'money' ? '' : `${tile.companion.label}: `
             }}{{ formatMetric(tile.companion, f) }}
           </span>
+          <span
+            v-if="tile.target"
+            class="block"
+            :class="targetClass(tileTargetMet(tile))"
+            :data-testid="`stat-target-${tile.metric}`"
+            >{{ tileTargetText(tile, f) }}</span
+          >
         </template>
       </StatTile>
     </StatTileGrid>

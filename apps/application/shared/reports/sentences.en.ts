@@ -1,4 +1,6 @@
 import type { AnalyticsProgress, AnalyticsRisks, VerdictFacts } from '#shared/analytics/types';
+import { getMetric } from '#shared/analytics/metrics';
+import type { ProjectTargetVerdict } from '#shared/analytics/targets';
 import { passRateDirection } from './verdict';
 import type { ValueFormatter } from './format';
 import type { ReportSentences } from './sentences';
@@ -85,8 +87,17 @@ function progress(p: AnalyticsProgress): string[] {
   return lines;
 }
 
+function target(v: ProjectTargetVerdict, f: ValueFormatter): string {
+  const def = getMetric(v.metric);
+  const goal = `${v.direction === 'min' ? 'at least' : 'at most'} ${f.value(v.target, def.unit, def.precision)}`;
+  const actual = f.value(v.actual, def.unit, def.precision);
+  const outcome = v.met === null ? 'nothing to judge it on yet' : v.met ? 'met' : 'missed';
+  return `${v.projectName} · ${def.label}: ${actual} for a target of ${goal}, ${outcome}.`;
+}
+
 function risks(r: AnalyticsRisks, f: ValueFormatter): string[] {
   const lines: string[] = [];
+  for (const t of r.missedTargets) lines.push(target(t, f));
   for (const m of r.worsening) {
     const change = f.delta({ unit: m.unit, delta: m.delta, deltaPct: m.deltaPct, precision: 1 });
     lines.push(`${m.label} moved the wrong way: ${f.value(m.value, m.unit, 1)} (${change}).`);
@@ -147,10 +158,21 @@ export const EN_SENTENCES: ReportSentences = {
     gapClass: 'Class',
     score: 'Score',
     count: 'Count',
+    targets: 'Targets',
   },
   verdict,
   progress,
   risks,
+  target,
+  tileTarget: (mark, value) => {
+    const judged = mark.met + mark.missed;
+    if (value !== null) {
+      const outcome = mark.met > 0 ? 'met' : mark.missed > 0 ? 'missed' : 'nothing to judge yet';
+      return `Target ${mark.direction === 'min' ? 'at least' : 'at most'} ${value}, ${outcome}`;
+    }
+    if (judged === 0) return 'Target set, nothing to judge yet';
+    return `${mark.met} of ${judged} ${plural(judged, 'project meets', 'projects meet')} the target`;
+  },
   metricLabel: (_id, fallback) => fallback,
   metricDefinition: (_id, fallback) => fallback,
   title: (text) => text,

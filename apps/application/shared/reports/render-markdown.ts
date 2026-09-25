@@ -93,6 +93,11 @@ export function renderReportMarkdown(bundle: ReportBundle): string {
   out.push(`- ${escapeMarkdown(bundle.scopeText.runs)}`);
   if (bundle.scopeText.tests) out.push(`- **${L.testFilter}**: ${escapeMarkdown(bundle.scopeText.tests)}`);
   out.push('');
+  if (bundle.targets.length) {
+    out.push(`**${L.targets}**`, '');
+    for (const t of bundle.targets) out.push(`- ${escapeMarkdown(t.text)}`);
+    out.push('');
+  }
   if (bundle.definitions.length) {
     out.push(`**${L.definitions}**`, '');
     for (const d of bundle.definitions) out.push(`- **${escapeMarkdown(d.label)}**: ${escapeMarkdown(d.definition)}`);

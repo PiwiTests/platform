@@ -16,6 +16,8 @@ import type {
   AnalyticsWastedTime,
 } from './types';
 import type { AnalyticsScope } from './scope';
+import { getMetric } from './metrics';
+import type { ProjectTargetVerdict } from './targets';
 
 export interface InsightContext {
   scope: AnalyticsScope;
@@ -27,6 +29,8 @@ export interface InsightContext {
   regressionVelocity: AnalyticsRegressionVelocity;
   slowEndpoints: AnalyticsSlowEndpoints;
   timeoutHygiene: AnalyticsTimeoutHygiene;
+  /** The targets of the projects in scope over the period, met or missed. */
+  targets?: ProjectTargetVerdict[];
 }
 
 export interface InsightRule {
@@ -245,7 +249,48 @@ const timeoutHygiene: InsightRule = {
       })),
 };
 
+/** How far off a target a value is, in the metric's unit ("1.2 pts", "3 days"). */
+function targetGap(v: ProjectTargetVerdict): string {
+  const def = getMetric(v.metric);
+  const gap = Math.abs((v.actual ?? 0) - v.target);
+  const rounded = Math.round(gap * 10 ** def.precision) / 10 ** def.precision;
+  const unit = def.unit === 'percent' ? 'pts' : def.unit === 'days' ? 'days' : def.unit === 'minutes' ? 'min' : '';
+  return unit ? `${rounded} ${unit}` : `${rounded}`;
+}
+
+function targetValue(v: ProjectTargetVerdict, value: number): string {
+  const def = getMetric(v.metric);
+  if (def.unit === 'percent') return `${value}%`;
+  if (def.unit === 'days') return `${value} days`;
+  if (def.unit === 'minutes') return `${value} min`;
+  return String(value);
+}
+
+const targetMissed: InsightRule = {
+  id: 'target-missed',
+  evaluate: ({ targets = [] }) =>
+    targets
+      .filter((t) => t.met === false && t.actual !== null)
+      .map((t) => {
+        const label = getMetric(t.metric).label.toLowerCase();
+        const side = t.direction === 'min' ? 'under' : 'over';
+        const bound = t.direction === 'min' ? 'at least' : 'at most';
+        // A pass rate target missed by more than 5 points is critical; the rest warn.
+        const critical = t.metric === 'test-pass-rate' && t.target - (t.actual ?? 0) > 5;
+        return {
+          id: `target-missed:${t.projectId}:${t.key}`,
+          ruleId: 'target-missed',
+          severity: critical ? ('critical' as const) : ('warning' as const),
+          message: `${t.projectName} ${label} is ${targetGap(t)} ${side} its target`,
+          detail: `${targetValue(t, t.actual!)} against a target of ${bound} ${targetValue(t, t.target)}.`,
+          to: `/projects/${t.projectId}?tab=settings`,
+          projectId: t.projectId,
+        };
+      }),
+};
+
 export const INSIGHT_RULES: InsightRule[] = [
+  targetMissed,
   failingStreak,
   passRateDrop,
   staleCluster,

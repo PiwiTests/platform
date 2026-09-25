@@ -130,6 +130,8 @@ export const metricOptionsSchema = z.object({
   comparison: z.boolean().default(true),
   /** Draw the period's timeline markers on the line. */
   markers: z.boolean().default(true),
+  /** Draw the project's target on the metric, with one project in scope that sets one. */
+  target: z.boolean().default(true),
 });
 
 export const LIST_SOURCES = ['runs', 'failure-clusters', 'flaky-tests', 'scenario-gaps'] as const;
@@ -206,7 +208,7 @@ export const ANALYTICS_WIDGETS = [
   {
     id: 'risks',
     title: 'Risks',
-    description: 'Metrics moving the wrong way, failing projects, old failure causes, quarantine debt.',
+    description: 'Missed targets, metrics moving the wrong way, failing projects, old failure causes, quarantine debt.',
     icon: 'i-lucide-triangle-alert',
     size: 'half',
     band: 'pain',

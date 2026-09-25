@@ -342,6 +342,10 @@ export async function renderReportPdf(bundle: ReportBundle): Promise<Uint8Array>
     l.paragraph(k, { size: 8, font: bold, color: MUTED, gap: 0 });
     l.paragraph(v, { size: 9, gap: 4 });
   }
+  if (bundle.targets.length) {
+    l.paragraph(L.targets, { size: 11, font: bold });
+    for (const t of bundle.targets) l.paragraph(t.text, { size: 8.5 });
+  }
   if (bundle.definitions.length) {
     l.paragraph(L.definitions, { size: 11, font: bold });
     for (const d of bundle.definitions) {

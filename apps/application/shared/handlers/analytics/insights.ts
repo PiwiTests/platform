@@ -10,7 +10,9 @@ import { getAnalyticsFlakyLeaderboard } from './flaky-leaderboard';
 import { getAnalyticsRegressionVelocity } from './regression-velocity';
 import { getAnalyticsSlowEndpoints } from './slow-endpoints';
 import { getAnalyticsTimeoutHygiene } from './timeout-hygiene';
-import type { ProjectAccess } from './common';
+import { getAnalyticsContext, type ProjectAccess } from './common';
+import { evaluateTargets } from './targets';
+import { resolveCiCost } from '../ci-cost';
 
 /**
  * Ranked, human-readable findings over the scoped data — computed by the pure
@@ -22,17 +24,29 @@ export async function getAnalyticsInsights(
   scope: AnalyticsScope,
   access: ProjectAccess = 'all',
 ): Promise<AnalyticsInsight[]> {
-  const [portfolio, ciTime, wastedTime, clusters, flakyTests, regressionVelocity, slowEndpoints, timeoutHygiene] =
-    await Promise.all([
-      getAnalyticsPortfolio(db, scope, access),
-      getAnalyticsCiTimeTrend(db, scope, access),
-      getAnalyticsWastedTime(db, scope, access),
-      getAnalyticsClusterLandscape(db, scope, access),
-      getAnalyticsFlakyLeaderboard(db, scope, access),
-      getAnalyticsRegressionVelocity(db, scope, access),
-      getAnalyticsSlowEndpoints(db, scope, access),
-      getAnalyticsTimeoutHygiene(db, scope, access),
-    ]);
+  const ctx = await getAnalyticsContext(db, scope, access);
+  const { cost } = await resolveCiCost(db);
+  const [
+    portfolio,
+    ciTime,
+    wastedTime,
+    clusters,
+    flakyTests,
+    regressionVelocity,
+    slowEndpoints,
+    timeoutHygiene,
+    targets,
+  ] = await Promise.all([
+    getAnalyticsPortfolio(db, scope, access),
+    getAnalyticsCiTimeTrend(db, scope, access),
+    getAnalyticsWastedTime(db, scope, access),
+    getAnalyticsClusterLandscape(db, scope, access),
+    getAnalyticsFlakyLeaderboard(db, scope, access),
+    getAnalyticsRegressionVelocity(db, scope, access),
+    getAnalyticsSlowEndpoints(db, scope, access),
+    getAnalyticsTimeoutHygiene(db, scope, access),
+    evaluateTargets(db, ctx, cost),
+  ]);
 
   return evaluateInsightRules({
     scope,
@@ -44,5 +58,6 @@ export async function getAnalyticsInsights(
     regressionVelocity,
     slowEndpoints,
     timeoutHygiene,
+    targets,
   });
 }

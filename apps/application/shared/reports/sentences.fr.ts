@@ -1,4 +1,5 @@
-import type { MetricId } from '#shared/analytics/metrics';
+import { getMetric, type MetricId } from '#shared/analytics/metrics';
+import type { ProjectTargetVerdict } from '#shared/analytics/targets';
 import type { AnalyticsProgress, AnalyticsRisks, VerdictFacts } from '#shared/analytics/types';
 import { passRateDirection } from './verdict';
 import type { ValueFormatter } from './format';
@@ -214,8 +215,18 @@ function progress(p: AnalyticsProgress): string[] {
   return lines;
 }
 
+function target(v: ProjectTargetVerdict, f: ValueFormatter): string {
+  const def = getMetric(v.metric);
+  const label = METRIC_LABELS[v.metric]?.[0] ?? def.label;
+  const goal = `${v.direction === 'min' ? 'au moins' : 'au plus'} ${f.value(v.target, def.unit, def.precision)}`;
+  const actual = f.value(v.actual, def.unit, def.precision);
+  const outcome = v.met === null ? 'rien encore pour en juger' : v.met ? 'atteint' : 'manqué';
+  return `${v.projectName} · ${label} : ${actual} pour un objectif de ${goal}, ${outcome}.`;
+}
+
 function risks(r: AnalyticsRisks, f: ValueFormatter): string[] {
   const lines: string[] = [];
+  for (const t of r.missedTargets) lines.push(target(t, f));
   for (const m of r.worsening) {
     const change = f.delta({ unit: m.unit, delta: m.delta, deltaPct: m.deltaPct, precision: 1 });
     const label = METRIC_LABELS[m.metric]?.[0] ?? m.label;
@@ -271,10 +282,21 @@ export const FR_SENTENCES: ReportSentences = {
     gapClass: 'Classe',
     score: 'Score',
     count: 'Nombre',
+    targets: 'Objectifs',
   },
   verdict,
   progress,
   risks,
+  target,
+  tileTarget: (mark, value) => {
+    const judged = mark.met + mark.missed;
+    if (value !== null) {
+      const outcome = mark.met > 0 ? 'atteint' : mark.missed > 0 ? 'manqué' : 'rien encore pour en juger';
+      return `Objectif ${mark.direction === 'min' ? 'au moins' : 'au plus'} ${value}, ${outcome}`;
+    }
+    if (judged === 0) return 'Objectif fixé, rien encore pour en juger';
+    return `${mark.met} ${plural(mark.met, 'projet atteint', 'projets atteignent')} l’objectif sur ${judged}`;
+  },
   metricLabel: (id, fallback) => METRIC_LABELS[id]?.[0] ?? fallback,
   metricDefinition: (id, fallback) => METRIC_LABELS[id]?.[1] ?? fallback,
   title: (text) => TITLES[text] ?? text,

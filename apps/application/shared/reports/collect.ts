@@ -22,6 +22,8 @@ import { runAnalyticsWidget } from '../handlers/analytics';
 import { getAnalyticsContext, type AnalyticsContext, type ProjectAccess } from '../handlers/analytics/common';
 import { getAnalyticsScopeSummary } from '../handlers/analytics/scope-summary';
 import { getAnalyticsVerdict } from '../handlers/analytics/verdict';
+import { evaluateTargets } from '../handlers/analytics/targets';
+import { resolveCiCost } from '../handlers/ci-cost';
 import { makeFormatter, type ReportLanguage, type ValueFormatter } from './format';
 import { resolveReportLanguage } from './language';
 import { sentencesFor, type ReportSentences } from './sentences';
@@ -191,6 +193,19 @@ export async function collectReportBundle(db: DrizzleDB, opts: CollectReportOpti
   const period = periodText(ctx.period, f, timeZone, language, false, rangeOnly);
   const text = await scopeText(db, ctx, scope, s);
 
+  const { cost } = await resolveCiCost(db);
+  const verdicts = await evaluateTargets(db, ctx, cost);
+  for (const v of verdicts) definitions.add(v.metric);
+  const targets = verdicts.map((v) => ({
+    projectId: v.projectId,
+    project: v.projectName,
+    metric: v.metric,
+    target: v.target,
+    actual: v.actual,
+    met: v.met,
+    text: s.target(v, f),
+  }));
+
   const limits = [...ctx.notes];
   if (hasTestFilter(scope)) limits.push(s.testFilterLimit(summary.dataStartsAt ? f.date(summary.dataStartsAt) : null));
   if (identity) limits.push(s.identityLimit);
@@ -214,7 +229,7 @@ export async function collectReportBundle(db: DrizzleDB, opts: CollectReportOpti
     dashboard: { ref: dashboard.ref, name: dashboard.name },
     verdict: { tone: verdict.tone, sentence: s.verdict(verdict.facts, f) },
     bands,
-    targets: [],
+    targets,
     definitions: [...definitions].map((id) => {
       const def = getMetric(id);
       return { id, label: s.metricLabel(id, def.label), definition: s.metricDefinition(id, def.definition) };

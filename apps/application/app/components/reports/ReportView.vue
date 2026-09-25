@@ -228,6 +228,12 @@ function tickLabel(block: SeriesBlock, value: number) {
           <dd>{{ bundle.scopeText.tests }}</dd>
         </template>
       </dl>
+      <div v-if="bundle.targets?.length" data-testid="report-targets">
+        <p class="font-medium">{{ labels.targets }}</p>
+        <ul class="list-disc pl-4">
+          <li v-for="t in bundle.targets" :key="`${t.projectId}:${t.metric}`">{{ t.text }}</li>
+        </ul>
+      </div>
       <div v-if="bundle.definitions.length">
         <p class="font-medium">{{ labels.definitions }}</p>
         <dl class="grid grid-cols-1 sm:grid-cols-[max-content_1fr] gap-x-4 gap-y-1">

@@ -8,6 +8,7 @@ import { resolveCiCost } from '../ci-cost';
 import { DAY_MS, getAnalyticsContext, type ProjectAccess } from './common';
 import { computeMetricValues, metricValue } from './metric-values';
 import { getAnalyticsPortfolio } from './portfolio';
+import { evaluateTargets } from './targets';
 
 const OLDEST_OPEN = 5;
 /** A failing streak this long or longer is a risk. */
@@ -42,6 +43,7 @@ export async function getAnalyticsRisks(
     oldestOpen: [],
     openCount: 0,
     quarantine: { count: 0, oldestDays: null },
+    missedTargets: [],
   };
   if (ctx.allowed !== 'all' && ctx.allowed.length === 0) return empty;
   const { cost } = await resolveCiCost(db);
@@ -49,7 +51,7 @@ export async function getAnalyticsRisks(
   const now = new Date(ctx.now);
   const projectFilter = (column: any) => (ctx.allowed === 'all' ? undefined : inArray(column, ctx.allowed));
 
-  const [current, previous, portfolio, openRows, quarantineRows] = await Promise.all([
+  const [current, previous, portfolio, openRows, quarantineRows, targets] = await Promise.all([
     computeMetricValues(db, ctx, ids, ctx.period.from.getTime(), ctx.period.to.getTime(), { cost }),
     ctx.comparison
       ? computeMetricValues(db, ctx, ids, ctx.comparison.from.getTime(), ctx.comparison.to.getTime(), { cost })
@@ -82,6 +84,7 @@ export async function getAnalyticsRisks(
       .from(quarantinedTests)
       .where(and(isNull(quarantinedTests.releasedAt), projectFilter(quarantinedTests.projectId)))
       .orderBy(asc(quarantinedTests.createdAt)) as Promise<{ createdAt: Date }[]>,
+    evaluateTargets(db, ctx, cost),
   ]);
 
   const worsening: AnalyticsRiskMetric[] = [];
@@ -127,5 +130,6 @@ export async function getAnalyticsRisks(
       count: quarantineRows.length,
       oldestDays: oldestQuarantine ? Math.floor((ctx.now - new Date(oldestQuarantine).getTime()) / DAY_MS) : null,
     },
+    missedTargets: targets.filter((t) => t.met === false),
   };
 }

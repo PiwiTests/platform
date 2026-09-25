@@ -23,6 +23,7 @@ import type {
   AnalyticsScenarioGaps,
   AnalyticsSlowEndpoints,
   AnalyticsStats,
+  AnalyticsTileTarget,
   AnalyticsVerdict,
   AnalyticsWastedTime,
   AnalyticsEvents,
@@ -67,13 +68,25 @@ function metricText(v: AnalyticsMetricValue, ctx: DocumentContext): string {
   return ctx.f.value(v.value, v.unit, v.precision, v.currency);
 }
 
-function tile(v: AnalyticsMetricValue, ctx: DocumentContext, companion?: AnalyticsMetricValue | null): ReportTile {
+function tile(
+  v: AnalyticsMetricValue,
+  ctx: DocumentContext,
+  companion?: AnalyticsMetricValue | null,
+  target?: AnalyticsTileTarget | null,
+): ReportTile {
   const label = ctx.s.metricLabel(v.metric, v.label);
-  let note: string | null = null;
+  const notes: string[] = [];
   if (companion) {
     const value = metricText(companion, ctx);
-    note = companion.unit === 'money' ? value : `${ctx.s.metricLabel(companion.metric, companion.label)}: ${value}`;
+    notes.push(
+      companion.unit === 'money' ? value : `${ctx.s.metricLabel(companion.metric, companion.label)}: ${value}`,
+    );
   }
+  if (target) {
+    const value = target.target === null ? null : ctx.f.value(target.target, v.unit, v.precision, v.currency);
+    notes.push(ctx.s.tileTarget(target, value));
+  }
+  const note = notes.length > 0 ? notes.join(' · ') : null;
   return {
     label,
     value: metricText(v, ctx),
@@ -255,7 +268,9 @@ export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
       },
     ]),
 
-  stats: (data: AnalyticsStats, ctx) => [{ kind: 'stats', tiles: data.tiles.map((t) => tile(t, ctx, t.companion)) }],
+  stats: (data: AnalyticsStats, ctx) => [
+    { kind: 'stats', tiles: data.tiles.map((t) => tile(t, ctx, t.companion, t.target)) },
+  ],
 
   verdict: (data: AnalyticsVerdict, ctx) => [{ kind: 'text', text: ctx.s.verdict(data.facts, ctx.f), tone: data.tone }],
 
@@ -371,6 +386,9 @@ export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
         { key: 'runs', label: ctx.s.metricLabel('runs', 'Runs'), align: 'right' },
         { key: 'flaky', label: ctx.s.metricLabel('flaky-occurrences', 'Flaky occurrences'), align: 'right' },
         { key: 'open', label: ctx.s.metricLabel('open-failure-causes', 'Open failure causes'), align: 'right' },
+        ...(data.some((row) => row.targets?.length)
+          ? [{ key: 'targets', label: ctx.s.labels.targets, align: 'right' as const }]
+          : []),
       ],
       rows: data.map((row) => ({
         cells: {
@@ -380,6 +398,7 @@ export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
           runs: ctx.f.number(row.runCount),
           flaky: ctx.f.number(row.flakyTests),
           open: ctx.f.number(row.openClusters),
+          targets: targetCount(row.targets ?? [], ctx),
         },
         link: link(ctx, `/projects/${row.projectId}`),
       })),
@@ -653,6 +672,13 @@ export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
     ];
   },
 };
+
+/** A project's targets met over those judged ("2 / 3"); a dash without targets. */
+function targetCount(targets: AnalyticsPortfolioRow['targets'], ctx: DocumentContext): string {
+  const judged = targets.filter((t) => t.met !== null);
+  if (judged.length === 0) return '—';
+  return `${ctx.f.number(judged.filter((t) => t.met).length)} / ${ctx.f.number(judged.length)}`;
+}
 
 function plainTile(label: string, value: string): ReportTile {
   return { label, value, change: null, tone: 'neutral', note: null, definition: null };

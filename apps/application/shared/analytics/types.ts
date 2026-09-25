@@ -5,6 +5,7 @@
  */
 
 import type { MetricId, MetricUnit } from './metrics';
+import type { ProjectTargetVerdict } from './targets';
 
 export interface AnalyticsTagInfo {
   id: number;
@@ -44,6 +45,8 @@ export interface AnalyticsPortfolioRow {
   latestRun: { id: number; status: string; startTime: string | Date } | null;
   /** Last runs of the period (oldest → newest), for the trend bars. */
   recentRuns: AnalyticsSparkRun[];
+  /** The project's targets over the period, met or missed; empty when it has none. */
+  targets: ProjectTargetVerdict[];
 }
 
 // ── Pass-rate heatmap ────────────────────────────────────────────────────────
@@ -349,9 +352,21 @@ export interface AnalyticsMetricValue {
   currency: string | null;
 }
 
+/** The target mark of a tile: how many projects in scope meet the metric's target. */
+export interface AnalyticsTileTarget {
+  /** The target over the period, when one project is in scope; null across projects. */
+  target: number | null;
+  direction: 'min' | 'max';
+  /** Projects meeting and missing the target; a project with nothing to judge counts in neither. */
+  met: number;
+  missed: number;
+}
+
 export interface AnalyticsStatTile extends AnalyticsMetricValue {
   /** A second number shown under the tile (the cost of wasted minutes, the median time to fix). */
   companion: AnalyticsMetricValue | null;
+  /** The metric's target, when a project in scope sets one. */
+  target: AnalyticsTileTarget | null;
 }
 
 export interface AnalyticsStats {
@@ -383,6 +398,11 @@ export interface AnalyticsMetricWidget {
   comparisonLabel: string | null;
   /** The metric cut by a dimension, top groups first; null without a breakdown. */
   breakdown: { dimension: string; label: string; groups: AnalyticsBreakdownGroup[] } | null;
+  /**
+   * The target line, with the target switch on and one project in scope that
+   * sets a target on the metric; a weekly target is scaled to one bucket.
+   */
+  target: { value: number; direction: 'min' | 'max'; met: boolean | null } | null;
 }
 
 // ── Verdict, progress, risks ────────────────────────────────────────────────
@@ -458,6 +478,8 @@ export interface AnalyticsRisks {
   oldestOpen: AnalyticsClusterItem[];
   openCount: number;
   quarantine: { count: number; oldestDays: number | null };
+  /** Targets the projects in scope missed over the period. */
+  missedTargets: ProjectTargetVerdict[];
 }
 
 /** Open scenario gaps of the projects in scope whose Test Map is active. Counts, never a coverage percentage. */

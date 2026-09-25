@@ -181,6 +181,7 @@ function apply() {
           </UFormField>
           <USwitch v-model="options.comparison" label="Compare with the comparison period" />
           <USwitch v-model="options.markers" label="Draw timeline markers" />
+          <USwitch v-model="options.target" label="Draw the project's target" />
         </template>
 
         <UFormField v-else-if="widget.type === 'stats'" label="Metrics">

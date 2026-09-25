@@ -144,6 +144,8 @@ export interface ProjectTargetVerdict {
   key: TargetKey;
   metric: MetricId;
   direction: 'min' | 'max';
+  /** The target as the project stores it (per week for a weekly target). */
+  stored: number;
   /** The target over the period (a weekly target scaled to the period). */
   target: number;
   actual: number | null;

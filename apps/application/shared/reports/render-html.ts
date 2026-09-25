@@ -247,6 +247,12 @@ export function renderReportHtml(bundle: ReportBundle): string {
                     <dd>${v}</dd>`,
               )}
             </dl>
+            ${bundle.targets.length
+              ? html`<h3>${L.targets}</h3>
+                  <ul class="items">
+                    ${bundle.targets.map((t) => html`<li data-target-met="${String(t.met)}">${t.text}</li>`)}
+                  </ul>`
+              : ''}
             ${bundle.definitions.length
               ? html`<h3>${L.definitions}</h3>
                   <dl>

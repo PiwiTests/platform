@@ -85,10 +85,16 @@ export interface ReportPeriod {
 }
 
 export interface TargetVerdict {
+  projectId: number;
+  project: string;
   metric: string;
+  /** The target over the report's period (a weekly target scaled to it). */
   target: number;
   actual: number | null;
-  met: boolean;
+  /** Null when the period has nothing to judge the target on. */
+  met: boolean | null;
+  /** The verdict as one line in the report language. */
+  text: string;
 }
 
 export interface ReportBundle {
@@ -111,7 +117,7 @@ export interface ReportBundle {
   verdict: { tone: VerdictTone; sentence: string };
   /** In dashboard order; each band a section of the document. */
   bands: ReportBand[];
-  /** Targets met and missed; empty until projects carry targets. */
+  /** Targets met and missed, per project in scope that sets targets. */
   targets: TargetVerdict[];
   /** The catalog entries the report used, for the footer. */
   definitions: Array<Pick<MetricDef, 'id' | 'label' | 'definition'>>;

@@ -14,6 +14,8 @@ import {
   type ScopedRun,
 } from './common';
 import { groupRows, loadScalarRows } from './scalar-rows';
+import { evaluateTargets } from './targets';
+import { resolveCiCost } from '../ci-cost';
 
 const SPARKLINE_RUNS = 20;
 
@@ -35,7 +37,8 @@ export async function getAnalyticsPortfolio(
   const projectIds = scopedProjects.map((p) => p.id);
   const { from, to } = ctx.period;
 
-  const [currentRows, previousRows, runs, tagsByProject, clusterRows] = await Promise.all([
+  const { cost } = await resolveCiCost(db);
+  const [currentRows, previousRows, runs, tagsByProject, clusterRows, targets] = await Promise.all([
     loadScalarRows(db, ctx, from.getTime(), to.getTime()),
     ctx.comparison
       ? loadScalarRows(db, ctx, ctx.comparison.from.getTime(), ctx.comparison.to.getTime())
@@ -54,6 +57,7 @@ export async function getAnalyticsPortfolio(
         ),
       )
       .groupBy(failureClusters.projectId) as Promise<any[]>,
+    evaluateTargets(db, ctx, cost),
   ]);
 
   const openClustersByProject = new Map<number, number>();
@@ -110,6 +114,7 @@ export async function getAnalyticsPortfolio(
         totalTests: r.totalTests ?? 0,
         startTime: r.startTime,
       })),
+      targets: targets.filter((t) => t.projectId === project.id),
     };
   });
 
