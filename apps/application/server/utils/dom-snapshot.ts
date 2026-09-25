@@ -20,6 +20,7 @@ import {
   inlineCssUrls,
   collectImageSources,
   inlineImageSources,
+  mediaMatchesViewport,
   maskCssText,
   type DomSnapshotResult,
   type DomSnapshotSource,
@@ -30,7 +31,7 @@ import { renderAriaSnapshotHtml } from './dom-snapshot-aria';
 
 // Budgets — a broken app can ship huge bundles, and base64 inflates by a third,
 // so cap both the text and the embedded binary.
-const MAX_STYLESHEET_BYTES = 1_000_000; // per external stylesheet
+const MAX_STYLESHEET_BYTES = 4_000_000; // per external stylesheet
 const INLINE_ASSET_BUDGET = 2_500_000; // total raw bytes embedded as data: URIs across the snapshot
 const MAX_ASSET_BYTES = 512_000; // per font/image
 const INLINE_STYLES_MAX_CHARS = 8_000_000; // ceiling on total inlined CSS text (incl. data: URIs)
@@ -122,9 +123,9 @@ async function assetDataUri(
 async function inlineCssAssets(css: string, styleBaseUrl: string, assets: AssetSource): Promise<string> {
   if (assets.budget.value <= 0) return css;
   const replacements: Record<string, string> = {};
-  for (const ref of collectCssUrls(css)) {
+  for (const [ref, uses] of collectCssUrls(css)) {
     if (assets.budget.value <= 0) break;
-    const dataUri = await assetDataUri(ref, styleBaseUrl, assets);
+    const dataUri = await assetDataUri(ref, styleBaseUrl, assets, uses);
     if (dataUri) replacements[ref] = dataUri;
   }
   return Object.keys(replacements).length ? inlineCssUrls(css, replacements) : css;
@@ -175,7 +176,10 @@ async function inlineTraceAssets(
   };
 
   const cssByHref: Record<string, string> = {};
-  for (const href of collectStylesheetLinks(result.html)) {
+  for (const { href, media } of collectStylesheetLinks(result.html)) {
+    // A sheet for another viewport never applies in the frame, which renders at
+    // the recorded one.
+    if (media && !mediaMatchesViewport(media, result.viewport)) continue;
     const abs = resolveResourceUrl(href, result.frameUrl);
     const res = (abs ? urlToRes.get(abs) : undefined) ?? urlToRes.get(href);
     if (!res) continue;
@@ -242,8 +246,9 @@ export interface ResolveCaseDomSnapshotOptions {
   source?: DomSnapshotSource;
   /**
    * Inline the trace's stylesheets and images so the snapshot renders as
-   * recorded. The rendered page views (picker, page-structure card) request it;
-   * the AI context does not, where inlined bundles would just be noise.
+   * recorded. The rendered page frame (`dom-snapshot-frame`) requests it; text
+   * consumers such as the AI context do not, where inlined bundles would just
+   * be noise.
    */
   inlineStyles?: boolean;
 }

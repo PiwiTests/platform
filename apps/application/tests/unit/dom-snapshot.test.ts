@@ -9,6 +9,7 @@ import {
   inlineCssUrls,
   collectImageSources,
   inlineImageSources,
+  mediaMatchesViewport,
   maskCssText,
 } from '~~/server/utils/dom-snapshot-render';
 import { resolveCaseDomSnapshot } from '~~/server/utils/dom-snapshot';
@@ -228,11 +229,48 @@ describe('collectStylesheetLinks', () => {
       '<link rel="stylesheet" href="/a.css">' + // dupe
       '<link rel="stylesheet">' + // no href
       '</head>';
-    expect(collectStylesheetLinks(html)).toEqual(['/a.css', '/b.css']);
+    expect(collectStylesheetLinks(html)).toEqual([
+      { href: '/a.css', media: null },
+      { href: '/b.css', media: null },
+    ]);
   });
 
   test('matches a stylesheet token among several rel values and a bare href', () => {
-    expect(collectStylesheetLinks('<link rel="preload stylesheet" href=bare.css>')).toEqual(['bare.css']);
+    expect(collectStylesheetLinks('<link rel="preload stylesheet" href=bare.css>')).toEqual([
+      { href: 'bare.css', media: null },
+    ]);
+  });
+
+  test('carries each link media query', () => {
+    expect(
+      collectStylesheetLinks('<link href="/m.css" rel="stylesheet" media="screen and (max-width: 599px)">'),
+    ).toEqual([{ href: '/m.css', media: 'screen and (max-width: 599px)' }]);
+  });
+});
+
+describe('mediaMatchesViewport', () => {
+  const desktop = { width: 1280, height: 800 };
+
+  test('reads min/max width and height bounds against the recorded viewport', () => {
+    expect(mediaMatchesViewport('screen and (max-width: 599px)', desktop)).toBe(false);
+    expect(mediaMatchesViewport('screen and (min-width: 600px) and (max-width: 1199px)', desktop)).toBe(false);
+    expect(mediaMatchesViewport('screen and (min-width: 1200px)', desktop)).toBe(true);
+    expect(mediaMatchesViewport('(min-width: 75em)', desktop)).toBe(true); // 1200px
+    expect(mediaMatchesViewport('(max-height: 700px)', desktop)).toBe(false);
+  });
+
+  test('handles media types, comma lists, not and only', () => {
+    expect(mediaMatchesViewport('print', desktop)).toBe(false);
+    expect(mediaMatchesViewport('all', desktop)).toBe(true);
+    expect(mediaMatchesViewport('print, (min-width: 1000px)', desktop)).toBe(true);
+    expect(mediaMatchesViewport('not print', desktop)).toBe(true);
+    expect(mediaMatchesViewport('only screen and (max-width: 600px)', desktop)).toBe(false);
+  });
+
+  test('counts a query it cannot read, or an unknown viewport, as applying', () => {
+    expect(mediaMatchesViewport('(orientation: portrait)', desktop)).toBe(true);
+    expect(mediaMatchesViewport('(width >= 2000px)', desktop)).toBe(true);
+    expect(mediaMatchesViewport('screen and (max-width: 599px)')).toBe(true);
   });
 });
 
@@ -333,7 +371,7 @@ describe('parseResourceSnapshots', () => {
 });
 
 describe('collectCssUrls / inlineCssUrls', () => {
-  test('collects distinct url() targets, skipping data:, #fragment and fragment-addressed refs', () => {
+  test('counts each url() target, skipping data:, #fragment and fragment-addressed refs', () => {
     const css =
       '@font-face{src:url("/f/inter.woff2") format("woff2")}' +
       '.a{background:url(/img/bg.png)}' +
@@ -341,7 +379,10 @@ describe('collectCssUrls / inlineCssUrls', () => {
       '.c{background:url(data:image/gif;base64,AAAA)}' + // already inline
       '.d{filter:url(#blur)}' + // in-document ref
       '.e{background:url(/img/sprite.svg#star)}'; // fragment-addressed — can't inline faithfully
-    expect(collectCssUrls(css)).toEqual(['/f/inter.woff2', '/img/bg.png']);
+    expect([...collectCssUrls(css)]).toEqual([
+      ['/f/inter.woff2', 1],
+      ['/img/bg.png', 2],
+    ]);
   });
 
   test('rewrites only the targets present in the replacement map, double-quoting them', () => {

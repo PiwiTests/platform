@@ -47,6 +47,7 @@ function buildTraceZip(
     resourceSnap('http://app.local/app.css', 'css1', 'text/css'),
     resourceSnap('http://app.local/img/logo.png', 'img1', 'image/png'),
     resourceSnap('http://app.local/img/huge.png', 'img2', 'image/png'),
+    resourceSnap('http://app.local/app.css?desktop', 'css2', 'text/css'),
   ]
     .map((e) => JSON.stringify(e))
     .join('\n');
@@ -90,6 +91,38 @@ describe('getTraceDomSnapshot — stylesheet + asset inlining', () => {
     expect(res.status).toBe('ok');
     expect(res.html).toContain('<link rel="stylesheet" href="/app.css">');
     expect(res.html).not.toContain('data:image/png');
+  });
+
+  test("charges a stylesheet's repeated url() asset once per use", async () => {
+    // 400 KB fits the budget once, but eight @font-face uses would embed 3.2 MB.
+    storageFiles.set('project-7/trace-resources/img1', Buffer.alloc(400_000, 1));
+    const face = '@font-face{font-family:x;src:url(/img/logo.png)}';
+    storageFiles.set('project-7/trace-resources/css1', Buffer.from(face.repeat(8), 'utf8'));
+    const res = await getTraceDomSnapshot(BLOB, 1_000_000, { inlineStyles: true });
+    expect(res.html).toContain('src:url(/img/logo.png)');
+    expect(res.html).not.toContain('data:image/png');
+  });
+
+  test('inlines a multi-megabyte stylesheet', async () => {
+    storageFiles.set('project-7/trace-resources/css1', Buffer.from(`.big{color:red}${' '.repeat(1_500_000)}`, 'utf8'));
+    const res = await getTraceDomSnapshot(BLOB, 1_000_000, { inlineStyles: true });
+    expect(res.html).toContain('<style>.big{color:red}');
+    expect(res.html).not.toContain('<link rel="stylesheet"');
+  });
+
+  test("skips a stylesheet whose media query can't match the recorded viewport", async () => {
+    storageFiles.set(
+      BLOB,
+      buildTraceZip([
+        ['LINK', { rel: 'stylesheet', href: '/app.css', media: 'screen and (max-width: 599px)' }],
+        ['LINK', { rel: 'stylesheet', href: '/app.css?desktop', media: 'screen and (min-width: 600px)' }],
+      ]),
+    );
+    storageFiles.set('project-7/trace-resources/css2', Buffer.from('.desk{color:blue}', 'utf8'));
+    const res = await getTraceDomSnapshot(BLOB, 1_000_000, { inlineStyles: true });
+    // The 800px-wide recording matches only the desktop sheet.
+    expect(res.html).toContain('<link rel="stylesheet" href="/app.css" media="screen and (max-width: 599px)">');
+    expect(res.html).toContain('<style media="screen and (min-width: 600px)">.desk{color:blue}</style>');
   });
 
   test('keeps the <link> when the stylesheet resource is missing (graceful degradation)', async () => {

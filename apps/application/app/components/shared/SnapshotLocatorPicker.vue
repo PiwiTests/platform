@@ -57,13 +57,11 @@ async function fetchSnapshot() {
   snapshotError.value = null;
   try {
     // Same endpoint as the read-only DOM snapshot card — trace-derived DOM with
-    // an ARIA-tree fallback (or ?source=aria on demand). The picker adds its own
-    // interactive overlay and asks the server to inline external stylesheets, so
-    // the opaque-origin iframe (which can never fetch the tested app's CSS)
-    // renders styled instead of as bare markup.
-    const params = new URLSearchParams({ inlineStyles: '1' });
-    if (viewSource.value) params.set('source', viewSource.value);
-    const query = `?${params.toString()}`;
+    // an ARIA-tree fallback (or ?source=aria on demand) — for the status, the
+    // viewport and the available views. The served frame comes from
+    // `dom-snapshot-frame`, which embeds the trace's stylesheets and images
+    // itself; only the demo builds the frame from this HTML.
+    const query = viewSource.value ? `?source=${viewSource.value}` : '';
     snapshot.value = await $fetch<DomSnapshotResponse>(
       `/api/test-run-cases/${props.testRunsCaseId}/dom-snapshot${query}`,
     );

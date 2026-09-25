@@ -292,6 +292,45 @@ export function sanitizeDomSnapshot(
   return { html: restore(out), truncated };
 }
 
+// One media feature real stylesheets split on: `(min-width: 700px)`, `(max-height: 40em)`.
+const MEDIA_BOUND_RE = /^\(\s*(min|max)-(width|height)\s*:\s*([\d.]+)(px|r?em)?\s*\)$/;
+
+/**
+ * Whether one media query (no commas) can apply at `viewport`: `null` when it
+ * uses anything beyond media types and min/max width/height bounds.
+ */
+function mediaQueryMatches(query: string, viewport: { width: number; height: number }): boolean | null {
+  let q = query.trim().toLowerCase();
+  const negate = q.startsWith('not ');
+  q = q.replace(/^(not|only)\s+/, '');
+  let matches = true;
+  for (const part of q.split(/\s+and\s+/)) {
+    if (part === 'screen' || part === 'all') continue;
+    if (part === 'print' || part === 'speech') {
+      matches = false;
+      continue;
+    }
+    const bound = MEDIA_BOUND_RE.exec(part);
+    if (!bound) return null;
+    const px = Number(bound[3]) * (bound[4]?.endsWith('em') ? 16 : 1);
+    const actual = bound[2] === 'width' ? viewport.width : viewport.height;
+    if (bound[1] === 'min' ? actual < px : actual > px) matches = false;
+  }
+  return negate ? !matches : matches;
+}
+
+/**
+ * Whether a stylesheet's `media` attribute can apply to a page rendered at
+ * `viewport` — the rendered frame always has the recorded viewport's width, so
+ * a sheet for another viewport never applies there. Reads media types and
+ * min/max width/height bounds; a query it can't read counts as applying, as
+ * does any query when the viewport is unknown. Pure.
+ */
+export function mediaMatchesViewport(media: string, viewport?: { width: number; height: number }): boolean {
+  if (!viewport || !media.trim()) return true;
+  return media.split(',').some((query) => mediaQueryMatches(query, viewport) ?? true);
+}
+
 /**
  * A `<link rel="stylesheet">` parsed out of rendered snapshot HTML: its original
  * `href` (the key a resource map is looked up by) and any `media` attribute.
@@ -306,9 +345,9 @@ function parseStylesheetLink(tag: string): { href: string; media: string | null 
   return { href, media };
 }
 
-/** Unique original hrefs of every `<link rel="stylesheet">` in the HTML. Pure. */
-export function collectStylesheetLinks(html: string): string[] {
-  const out: string[] = [];
+/** Every `<link rel="stylesheet">` in the HTML, unique by original `href`, with its `media`. Pure. */
+export function collectStylesheetLinks(html: string): { href: string; media: string | null }[] {
+  const out: { href: string; media: string | null }[] = [];
   const seen = new Set<string>();
   const re = /<link\b[^>]*>/gi;
   let m: RegExpExecArray | null;
@@ -316,7 +355,7 @@ export function collectStylesheetLinks(html: string): string[] {
     const link = parseStylesheetLink(m[0]);
     if (link && !seen.has(link.href)) {
       seen.add(link.href);
-      out.push(link.href);
+      out.push(link);
     }
   }
   return out;
@@ -357,13 +396,13 @@ export function inlineStylesheets(html: string, cssByHref: Record<string, string
 const CSS_URL_RE = /url\(\s*(?:(['"])(.*?)\1|([^)\s'"]+))\s*\)/gi;
 
 /**
- * Every distinct `url(...)` target in a CSS body worth resolving — quotes
- * stripped, and already-inline (`data:`) / in-document (`#id`) refs skipped.
- * Pure; the caller resolves each against the stylesheet's own URL.
+ * Every `url(...)` target in a CSS body worth resolving — quotes stripped, and
+ * already-inline (`data:`) / in-document (`#id`) refs skipped — with how many
+ * times the CSS uses it: each use embeds its own copy. Pure; the caller
+ * resolves each against the stylesheet's own URL.
  */
-export function collectCssUrls(css: string): string[] {
-  const out: string[] = [];
-  const seen = new Set<string>();
+export function collectCssUrls(css: string): Map<string, number> {
+  const uses = new Map<string, number>();
   const re = new RegExp(CSS_URL_RE.source, 'gi');
   let m: RegExpExecArray | null;
   while ((m = re.exec(css)) !== null) {
@@ -372,12 +411,9 @@ export function collectCssUrls(css: string): string[] {
     // `sprite.svg#icon`) — a data: URI can't carry the fragment that addresses
     // the resource, so inlining would break them; leaving them alone is safer.
     if (!raw || raw.startsWith('data:') || raw.includes('#')) continue;
-    if (!seen.has(raw)) {
-      seen.add(raw);
-      out.push(raw);
-    }
+    uses.set(raw, (uses.get(raw) ?? 0) + 1);
   }
-  return out;
+  return uses;
 }
 
 /**
