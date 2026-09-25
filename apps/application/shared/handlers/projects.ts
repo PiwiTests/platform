@@ -26,6 +26,7 @@ import {
   type TimeoutThresholds,
 } from '../analytics/timeout-hygiene';
 import { parseProjectDecisions } from '#shared/capabilities';
+import { normalizeProjectTargets } from '#shared/analytics/targets';
 
 type ProjectScope = 'all' | Set<number>;
 
@@ -352,6 +353,8 @@ export async function updateProject(
     openApiUrl?: string | null;
     serverProbes?: unknown;
     ciRerun?: unknown;
+    /** Per-project targets (`ProjectTargets`); null clears them. */
+    targets?: unknown;
     tagIds?: number[];
   },
 ) {
@@ -368,8 +371,10 @@ export async function updateProject(
     openApiUrl,
     serverProbes,
     ciRerun,
+    targets,
     tagIds: dataTagIds,
   } = data;
+  const resolvedTargets = targets === undefined ? undefined : normalizeProjectTargets(targets);
 
   // Update project
   await db
@@ -384,6 +389,7 @@ export async function updateProject(
       openApiUrl: openApiUrl !== undefined ? openApiUrl : undefined,
       serverProbes: serverProbes !== undefined ? (serverProbes as any) : undefined,
       ciRerun: ciRerun !== undefined ? (ciRerun as any) : undefined,
+      targets: resolvedTargets,
       updatedAt: new Date(),
     })
     .where(eq(projects.id, id));

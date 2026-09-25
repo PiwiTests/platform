@@ -320,6 +320,11 @@ export const HELP_TOPICS = {
     text: 'A read-only Git host token lets diagnosis pull the actual commit diffs behind a failure for SCM-grounded analysis. Stored encrypted.',
     doc: 'features/ai-diagnosis#scm-grounded-context',
   },
+  'project.targets': {
+    title: 'Targets',
+    text: 'Goals this project is checked against over the period a dashboard or a quality report shows: a pass rate to reach, and limits on flaky tests, wasted CI minutes per week, the age of the oldest open failure cause and the median time to fix. Each is optional; a met or missed target shows on the headline tiles, in the portfolio, in the insights and in the report.',
+    doc: 'features/analytics#targets',
+  },
   'project.ci-rerun': {
     title: 'CI re-run',
     text: 'Lets a reporter or admin re-run a cluster’s affected tests in CI straight from its page — a workflow_dispatch on GitHub, a pipeline on GitLab, a custom pipeline on Bitbucket — passing the retry arguments through the input/variable you name. Uses the project’s SCM token (which needs write scope) and is off until you fill in your provider’s block.',

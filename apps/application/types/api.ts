@@ -373,6 +373,8 @@ export interface ProjectDetails {
   defaultBranch?: string | null;
   /** Provider-specific "re-run from the dashboard" config (secrets excluded). */
   ciRerun?: import('#shared/ci-rerun').CiRerunSettings | null;
+  /** Per-project targets on catalog metrics. */
+  targets?: import('#shared/analytics/targets').ProjectTargets | null;
   color?: string | null;
   tags?: TagInfo[];
   /** Stored per-project capability decisions, for the edit form's overrides. */

@@ -128,6 +128,20 @@ route: p50/p90 latency, error rate, and how many projects hit each one. A shared
 shows up here before it's obvious in any single suite. Requires the
 [capture fixtures](/guide/capture-fixtures).
 
+## Targets
+
+A project can carry **targets**, set in its **Settings** tab: a test pass rate to reach, and limits on
+flaky tests, wasted CI minutes per week, the age of the oldest open failure cause and the median time to
+fix. Each one is optional. Over the period a dashboard shows, a target is **met** or **missed**:
+
+- the headline tiles mark each number that has a target, met or missed, with one project in scope;
+- the portfolio's **Targets** column counts the targets each project meets;
+- the insights feed says which target a project missed, and by how much;
+- a quality report lists every target, met or missed, and its risks name the missed ones.
+
+A weekly target (wasted CI minutes) is scaled to the length of the period, so a 30-day period is checked
+against about four weeks of it.
+
 ## Marking what you changed
 
 [Timeline markers](./timeline-markers) record a deploy, a CI-runner migration or a dependency bump

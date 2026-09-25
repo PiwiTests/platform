@@ -1466,6 +1466,13 @@ const moreMenuItems = computed(() => {
             </UForm>
           </SectionCard>
 
+          <ProjectTargetsForm
+            v-if="canManage"
+            :project-id="Number(projectId)"
+            :targets="(project as { targets?: unknown } | null)?.targets ?? null"
+            @saved="refresh()"
+          />
+
           <!-- Issue-tracker binding: how this project's failures reach Jira. -->
           <ProjectIntegrationSettings v-if="canManage" :project-id="Number(projectId)" />
 

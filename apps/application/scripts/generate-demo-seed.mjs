@@ -142,6 +142,8 @@ const PROJECTS = [
     description: 'End-to-end tests for the checkout flow',
     created_at: ts('2025-03-01'),
     updated_at: ts('2025-04-25T08:30:00'),
+    // Targets the checkout suite misses, so the demo report has missed targets in its risks.
+    targets: { testPassRate: 99, maxFlakyTests: 2, maxMedianTimeToFixDays: 3 },
   },
   {
     id: 2,
@@ -158,6 +160,8 @@ const PROJECTS = [
     description: 'Visual regression tests for UI components',
     created_at: ts('2025-01-10'),
     updated_at: ts('2025-04-24T16:45:00'),
+    // Targets the component suite meets.
+    targets: { testPassRate: 60, maxOpenClusterAgeDays: 400 },
   },
   {
     id: 4,
