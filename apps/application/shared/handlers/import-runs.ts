@@ -100,6 +100,9 @@ export interface ImportPort {
   /** Tell the dashboard a run appeared. */
   publishRunSubmitted(event: { runId: number; projectId: number; status: string }): void;
 
+  /** Tell the analytics the run's daily rollup now counts it (the widget cache, the live dashboards). */
+  publishRollupUpdated(event: { runId: number; projectId: number }): void;
+
   /** Optional diagnostics; the server logs, the demo stays quiet. */
   warn?(message: string): void;
 }
@@ -341,6 +344,7 @@ export async function importBlobReportRun(
 
   await upsertDailyRollup(db, run.id).catch((e) => console.error('[analytics] upsertDailyRollup failed', e));
   port.publishRunSubmitted({ runId: run.id, projectId, status: parsed.status });
+  port.publishRollupUpdated({ runId: run.id, projectId });
 
   return {
     status: 'imported',
@@ -490,6 +494,7 @@ export async function importTraceRun(
   const updated = await reloadRun(db, run.id);
   await upsertDailyRollup(db, run.id).catch((e) => console.error('[analytics] upsertDailyRollup failed', e));
   port.publishRunSubmitted({ runId: run.id, projectId, status: updated.status });
+  port.publishRollupUpdated({ runId: run.id, projectId });
 
   return summarizeRun(
     updated,

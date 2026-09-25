@@ -552,8 +552,10 @@ function widgetReads(widget: { scope?: Partial<AnalyticsScope> }, projectId: num
   return !ids || ids.length === 0 || ids.includes(projectId);
 }
 
+// `rollup-updated` follows a finished or submitted run once its day's rollup counts it; a refresh on
+// the run events themselves would read the rollups before the run is in them.
 useRunEvents((event) => {
-  if (editing.value || (event.type !== 'run-finished' && event.type !== 'run-submitted')) return;
+  if (editing.value || event.type !== 'rollup-updated') return;
   if (typeof event.projectId !== 'number') return;
   for (const band of bands.value) {
     for (const widget of band.widgets) {

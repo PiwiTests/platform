@@ -1066,6 +1066,7 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
 
       await syncAutoMarkersForRun(db, id).catch(() => {});
       await upsertDailyRollup(db, id).catch(() => {});
+      publishDemoGlobalEvent({ type: 'rollup-updated', runId: id, projectId: testRun.projectId });
     } else {
       publishDemoRunEvent(id, {
         type: 'run-progress',
@@ -1149,6 +1150,7 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
 
   await syncAutoMarkersForRun(db, id).catch(() => {});
   await upsertDailyRollup(db, id).catch(() => {});
+  publishDemoGlobalEvent({ type: 'rollup-updated', runId: id, projectId: testRun.projectId });
 
   return { success: true, runId: id, status };
 }
