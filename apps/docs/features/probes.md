@@ -21,7 +21,7 @@ behind one request and records whether the test noticed. A route that stays gree
 npx @piwitests/reporter probe --project my-project
 ```
 
-It fetches the plan, runs `playwright test` on the planned tests with the [capture fixtures](/guide/capture-fixtures)
+It fetches the plan, runs `playwright test` on the tests in it with the [capture fixtures](/guide/capture-fixtures)
 in probe mode, and posts each outcome back. The fixtures apply the fault at the Playwright boundary, on the matching
 response after the page's first navigation:
 
@@ -36,7 +36,7 @@ response after the page's first navigation:
 The plan pairs each passing test with a route it reaches: pairs never probed come first, then pairs whose test
 changed since its last probe, and each test gets one fault per run, up to a budget (50 pairs by default,
 `--budget` to change it). Quarantined tests and tests whose last run failed are left out. A fault that did not change
-the response records the pair as *inconclusive*, and an inconclusive pair waits a week before it is planned again.
+the response records the pair as *inconclusive*, and an inconclusive pair waits a week before it returns to the plan.
 
 A probe run is stamped as one, with retries off. It never counts as a real run: no failure clusters, no regression
 signals, no notifications, no pull-request feedback, no metric, and nothing in the Test Map but the probe outcomes.

@@ -95,7 +95,7 @@ file tickets on its own in this release.
 There is nothing to switch on beyond the connection. The modal prefills the Jira project, issue type, labels and
 assignee from the [project binding](#the-project-binding) when one exists, else offers pickers over the connected site;
 toggles choose what the body carries (diagnosis and patch on, screenshot and [share link](/features/share-links) off).
-From an AI agent, the [`create_issue` MCP tool](/features/mcp) files the same ticket.
+From an AI agent, the [`create_issue` MCP tool](/reference/mcp-tools#create_issue) files the same ticket.
 
 ## Language
 

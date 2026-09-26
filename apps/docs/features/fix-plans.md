@@ -16,7 +16,7 @@ The same plan is reachable three ways:
 
 - **On the cluster page** — the recommended action leads as the **Next** line and the failing tests are the **Affected tests** selector; everything else lives in [**More ways to fix**](#more-ways-to-fix), the folded toolbox below the evidence: the diagnosis and its patch, the locator fix, the verify command, the reproduce recipe, and a **Copy as Markdown** action for a ticket.
 - **As Markdown** — `GET /api/failure-clusters/:id/fix-plan?format=markdown` returns the same rendering as plain text, so an export or a script can drop it straight into an issue.
-- **For agents** — the `get_fix_plan` [MCP tool](/features/mcp) returns the structured plan, so a coding agent gets in one call what a person reads on the card.
+- **For agents** — the `get_fix_plan` [MCP tool](/reference/mcp-tools#get_fix_plan) returns the structured plan, so a coding agent gets in one call what a person reads on the card.
 
 The last part makes it a loop, not a lookup: the plan names the Playwright command that runs exactly the affected tests, and Piwi records the fix once they pass — so the work is confirmed, not guessed at. Nothing leaves your machine: your dashboard, your model, and a patch validated against your own source.
 
