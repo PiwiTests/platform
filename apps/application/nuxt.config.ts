@@ -91,6 +91,15 @@ export default defineNuxtConfig({
   devtools: {
     enabled: false,
   },
+
+  // Production builds emit no server source maps. Carrying them through the Vite
+  // SSR build and the Nitro bundle added over a gigabyte to the build's peak heap
+  // (enough to run out of memory at Node's 4 GB default in the Docker image), and
+  // nothing reads them: the server runs without --enable-source-maps and the
+  // desktop staging strips every *.map. `nuxt dev` keeps them.
+  $production: {
+    sourcemap: { server: false },
+  },
   // The demo is a static SPA (ssr: false), so nothing set through
   // useHead/useSeoMeta exists until the JS bundle runs — link previews and
   // search snippets only see what is baked into the shell here.
