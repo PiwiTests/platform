@@ -59,7 +59,7 @@ The inbox is split into queues, each with a live count, shareable in the URL as 
 Every row can be triaged in place. Select a row with the mouse or `j` / `k`, then: `o` open, `r` resolve, `i` ignore,
 `q` quarantine the cluster's tests, `a` assign, `s` snooze, `l` link a known issue, `c` create a Jira issue (when a
 tracker is connected). `x` selects rows for a **bulk bar** that applies the same actions to all of them. Every action is undoable for a few
-seconds.
+seconds. [Keyboard shortcuts](/reference/keyboard-shortcuts#failure-inbox) lists every key.
 
 Linking a known issue (`l`) pins a URL; with an [issue tracker connected](/operate/integrations), Jira links unfurl
 and stay in sync, and you can **[file the issue from the failure](/features/issue-tracking)** (`c`).
