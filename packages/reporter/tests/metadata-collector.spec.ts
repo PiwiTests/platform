@@ -418,6 +418,19 @@ describe('MetadataCollector.collect — passthrough options and config metadata'
     expect((metadata.htmlReport as any).projects[0]).toMatchObject({ name: 'chromium', testDir: 'tests' });
   });
 
+  it('records each project\'s baseURL and testIdAttribute', () => {
+    const mc = new MetadataCollector();
+    const config = {
+      projects: [
+        { name: 'web', testDir: 'tests', use: { baseURL: 'https://shop.test', testIdAttribute: 'data-qa' } },
+        { name: 'api', testDir: 'tests', use: {} },
+      ],
+    } as unknown as FullConfig;
+    const projects = (mc.collect(config, undefined as any, {}).htmlReport as any).projects;
+    expect(projects[0].use).toMatchObject({ baseURL: 'https://shop.test', testIdAttribute: 'data-qa' });
+    expect(projects[1].use.testIdAttribute).toBeUndefined();
+  });
+
   it('copies config.metadata through as playwrightConfig', () => {
     const mc = new MetadataCollector();
     const config = { ...fakeConfig(), metadata: { custom: true } } as unknown as FullConfig;
