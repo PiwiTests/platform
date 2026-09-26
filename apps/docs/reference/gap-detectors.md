@@ -12,21 +12,22 @@ runs of the project, probe runs excluded.
 
 ## Detectors
 
-The Test Map is recomputed after every run, nightly, and on demand. A detector that needs an optional source stays
-silent without it.
+The Test Map is recomputed after every run, nightly, and on demand. Every detector reads the runs the
+[capture fixtures](/guide/capture-fixtures) record; **Needs** names what else it reads, and a detector stays silent
+without it.
 
 | Detector | Class | Finds | Needs | Example evidence |
 |---|---|---|---|---|
-| **Success only** | blind-spot | a route observed at least five times, always with a 2xx or 3xx status: its error paths never ran | | `Observed 412 times over the last 30 runs, always 200` |
+| **Success only** | blind-spot | a route observed at least five times, always with a 2xx or 3xx status: its error paths never ran | nothing more | `Observed 412 times over the last 30 runs, always 200` |
 | **Declared, never hit** | blind-spot | a route or page the application declares that no test reaches | a [declared surface](/features/scenario-gaps#declared-surface) | `Declared in OpenAPI · 0 tests in 30 runs · documents 200, 404` |
-| **Surface drift** | blind-spot | a route or page first seen in the latest run | | `Appeared in run #830, reached by 1 test(s) so far` |
+| **Surface drift** | blind-spot | a route or page first seen in the latest run | nothing more | `Appeared in run #830, reached by 1 test(s) so far` |
 | **Control nobody exercises** | blind-spot | a control on a page that no test reaches | the page inventory | `On 12 page(s) · no locator targets it` |
 | **Reachable, unvisited** | blind-spot | a page other pages link to that no test navigates to | the page inventory | `Linked from 7 page(s) · never navigated to` |
 | **API-only route** | blind-spot | a reached route no page loads | the page inventory; without it, every reached route qualifies | `No control triggers it and no page loads it` |
 | **Changed, unreached** | blind-spot | a changed file no test reaches, at pull-request time | an SCM token | `+41 −3 · no test in run #812 · 0 in 30 runs` |
-| **Single covering test** | fragile | a node exactly one trusted test reaches | | `Only checkout › coupon reaches this` |
-| **Orphan test** | fragile | a test whose every reached node disappeared from the last 30 runs | | `All 3 node(s) it reaches disappeared from recent runs` |
-| **Fix did not hold** | fragile | a failure cluster whose fix later regressed | | `Fixed in a1b2c3d · regressed 6 days later` |
+| **Single covering test** | fragile | a node exactly one trusted test reaches | nothing more | `Only checkout › coupon reaches this` |
+| **Orphan test** | fragile | a test whose every reached node disappeared from the last 30 runs | nothing more | `All 3 node(s) it reaches disappeared from recent runs` |
+| **Fix did not hold** | fragile | a failure cluster whose fix later regressed | nothing more | `Fixed in a1b2c3d · regressed 6 days later` |
 | **Not noticed** | false-comfort | a route a probe broke while no test noticed | [probes](/features/probes) | `A probe (status-500) on POST /api/orders did not make checkout › pay fail` |
 | **Unprobed dependency** | false-comfort | a dependency a route's handler calls that no probe has failed | server spans | `Called by 4 route(s) · no probe has checked what happens when it fails` |
 | **Not handled** | unhandled, degraded | the application did not cope with a server probe's fault; a finding, not a gap | [server probes](/features/probes#server-probes) | `A server probe made POST /api/orders fail; the application did not handle it` |
