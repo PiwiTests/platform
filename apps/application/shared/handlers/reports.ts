@@ -694,7 +694,7 @@ async function collectScheduleBundle(
     piwiVersion: ctx.piwiVersion ?? null,
     now: ctx.now,
   });
-  if (values.name) bundle.title = `${values.name}: ${bundle.title}`;
+  if (values.name) bundle.title = `${values.name}${sentencesFor(bundle.language).colon}${bundle.title}`;
   return { bundle, scope };
 }
 

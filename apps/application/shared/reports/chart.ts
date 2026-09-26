@@ -6,6 +6,7 @@
  */
 import { STATUS_COLORS, type StatusColorKey } from '#shared/status-colors';
 import type { ReportBlock } from './types';
+import type { ValueFormatter } from './format';
 
 type SeriesBlock = Extract<ReportBlock, { kind: 'series' }>;
 
@@ -37,9 +38,13 @@ export function seriesColor(color: string | undefined, faint: boolean | undefine
   return STATUS_COLORS[color as StatusColorKey]?.fill ?? REPORT_ACCENT;
 }
 
-/** A gridline's value as the axis prints it: `50%` for a percentage, the bare number otherwise. */
-export function chartTickLabel(block: Pick<SeriesBlock, 'unit'>, value: number): string {
-  return block.unit === 'percent' ? `${value}%` : String(value);
+/** A gridline's value as the axis prints it, in the report's language: `50%`, `50 %`, `1,000`, `1 000`. */
+export function chartTickLabel(
+  block: Pick<SeriesBlock, 'unit'>,
+  value: number,
+  f: Pick<ValueFormatter, 'number' | 'value'>,
+): string {
+  return block.unit === 'percent' ? f.value(value, 'percent', 0) : f.number(value);
 }
 
 /** How a date label sits on its point: centered, or ending there on the plot's right edge, so it is not cut. */

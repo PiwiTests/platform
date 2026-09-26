@@ -62,6 +62,15 @@ export async function getAnalyticsList(
           projectName: names.get(r.projectId) ?? '',
           at: iso(r.startTime),
           href: `/test-runs/${r.id}`,
+          facts: {
+            source: 'runs',
+            id: r.id,
+            status: r.status,
+            passed: r.passedTests,
+            total: r.totalTests,
+            branch: r.branch ?? null,
+            environment: r.environment ?? null,
+          },
         }),
       ),
     };
@@ -106,6 +115,14 @@ export async function getAnalyticsList(
         projectName: names.get(r.projectId) ?? '',
         at: iso(r.updatedAt),
         href: `/failure-clusters/${r.id}`,
+        facts: {
+          source: 'failure-clusters' as const,
+          id: r.id,
+          title: r.title || null,
+          occurrences: r.occurrences ?? 0,
+          errorType: r.errorType ?? null,
+          assignee: r.assignee ?? null,
+        },
       })),
     };
   }
@@ -121,6 +138,12 @@ export async function getAnalyticsList(
         projectName: r.projectLabel || r.projectName,
         at: iso(r.lastFlakeAt),
         href: `/test-cases/${r.testCaseId}`,
+        facts: {
+          source: 'flaky-tests' as const,
+          score: Math.round(r.score),
+          alternations: r.alternations,
+          totalRuns: r.totalRuns,
+        },
       })),
     };
   }
@@ -133,6 +156,7 @@ export async function getAnalyticsList(
       id: scenarioGaps.id,
       projectId: scenarioGaps.projectId,
       title: scenarioGaps.title,
+      detector: scenarioGaps.detector,
       cls: scenarioGaps.class,
       score: scenarioGaps.score,
       createdAt: scenarioGaps.createdAt,
@@ -160,6 +184,7 @@ export async function getAnalyticsList(
       projectName: names.get(g.projectId) ?? '',
       at: iso(g.createdAt),
       href: `/projects/${g.projectId}?tab=gaps`,
+      facts: { source: 'scenario-gaps' as const, detector: g.detector, gapClass: g.cls },
     })),
   };
 }

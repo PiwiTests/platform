@@ -211,7 +211,7 @@ export const ENGINEERING_DASHBOARD: DashboardDefinition = {
     {
       title: 'Scenario gaps',
       description: 'What the tests do not reach yet, from the Test Map.',
-      widgets: [{ key: 'gaps', type: 'scenario-gaps', size: 'full' }],
+      widgets: [{ key: 'gaps', type: 'scenario-gaps', size: 'full', title: 'Where the gaps stand' }],
     },
   ],
 };
@@ -235,7 +235,7 @@ export const GAPS_DIGEST_DASHBOARD: DashboardDefinition = {
     {
       title: 'New scenario gaps',
       description: 'The top new gaps of each project in the period.',
-      widgets: [{ key: 'new-gaps', type: 'new-gaps', size: 'full' }],
+      widgets: [{ key: 'new-gaps', type: 'new-gaps', size: 'full', title: 'Top new gaps by project' }],
     },
     {
       title: 'Where the gaps stand',

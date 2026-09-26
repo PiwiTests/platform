@@ -83,7 +83,21 @@ describe('collectReportBundle', () => {
     expect(bundle.language).toBe('fr');
     expect(bundle.bands[0]!.title).toBe('Où en sont les choses');
     expect(bundle.title.startsWith('Tous les projets, du ')).toBe(true);
-    expect(bundle.verdict.sentence).toContain('90 %');
+    expect(bundle.verdict.sentence).toContain('90\u202f%');
+    // A built-in dashboard is named in French, and a period by its dates.
+    expect(bundle.dashboard.name).toBe('Direction');
+    expect(bundle.period.label.startsWith('Du ')).toBe(true);
+    expect(bundle.comparison?.label.startsWith('la période du ')).toBe(true);
+  });
+
+  test('a French report says which widgets ignore the test filter', async () => {
+    const bundle = await collectReportBundle(db as any, {
+      dashboard: 'executive',
+      language: 'fr',
+      scope: parseAnalyticsScope({ owner: '@checkout-team' }),
+    });
+    const notes = bundle.bands.flatMap((b) => b.widgets.flatMap((w) => w.notes));
+    expect(notes).toContain('«\u202fRisques\u202f» ne tient pas compte du filtre de tests.');
   });
 
   test('with a cost of a CI minute, wasted minutes carry their cost', async () => {

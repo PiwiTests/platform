@@ -101,8 +101,8 @@ keeps them).
 ## Language
 
 Reports come in English and French: by default the project's
-[ticket language](./issue-tracking#language) over one project, else the instance locale. The insight
-sentences under *What changed* stay English.
+[ticket language](./issue-tracking#language) over one project, else the instance locale. Test titles
+and error messages stay as recorded.
 
 ## Cost of a CI minute
 

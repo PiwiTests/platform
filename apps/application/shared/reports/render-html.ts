@@ -7,7 +7,7 @@
 import { html, joinHtml, raw, toHtmlString, type RawHtml } from '#shared/export/html';
 import { STATUS_COLORS as C, PASS_RATE_COLORS } from '#shared/status-colors';
 import { chartLabelAnchor, chartTickLabel, REPORT_ACCENT, REPORT_GRID, REPORT_MARKER, seriesGeometry } from './chart';
-import { makeFormatter } from './format';
+import { makeFormatter, type ValueFormatter } from './format';
 import { sentencesFor } from './sentences';
 import { hasVerdictWidget, type ReportBlock, type ReportBundle, type ReportTone } from './types';
 
@@ -58,7 +58,7 @@ const CHART_W = 640;
 const CHART_H = 180;
 const PAD = { left: 44, right: 8, top: 8, bottom: 22 };
 
-function chartSvg(block: Extract<ReportBlock, { kind: 'series' }>, dateLabel: (d: string) => string): RawHtml {
+function chartSvg(block: Extract<ReportBlock, { kind: 'series' }>, f: ValueFormatter): RawHtml {
   const g = seriesGeometry(block, CHART_W - PAD.left - PAD.right, CHART_H - PAD.top - PAD.bottom);
   const grid = g.ticks.map(
     (t) =>
@@ -70,7 +70,7 @@ function chartSvg(block: Extract<ReportBlock, { kind: 'series' }>, dateLabel: (d
           stroke="${REPORT_GRID}"
           stroke-dasharray="${t.value === 0 ? '' : '3 3'}"
         /><text x="-6" y="${t.y + 3}" text-anchor="end" font-size="10" fill="#71717a"
-          >${chartTickLabel(block, t.value)}</text
+          >${chartTickLabel(block, t.value, f)}</text
         >`,
   );
   const lines = g.lines.flatMap((line) =>
@@ -100,7 +100,7 @@ function chartSvg(block: Extract<ReportBlock, { kind: 'series' }>, dateLabel: (d
         text-anchor="${chartLabelAnchor(l.x, g.width)}"
         font-size="10"
         fill="#71717a"
-        >${dateLabel(l.date)}</text
+        >${f.day(l.date)}</text
       >`,
   );
   return html`<svg viewBox="0 0 ${CHART_W} ${CHART_H}" role="img" aria-label="${block.summary ?? 'Chart'}">
@@ -112,7 +112,7 @@ function linkOrText(text: string, href: string | null | undefined): RawHtml {
   return href ? html`<a href="${href}">${text}</a>` : html`${text}`;
 }
 
-function renderBlock(block: ReportBlock, dateLabel: (d: string) => string): RawHtml {
+function renderBlock(block: ReportBlock, f: ValueFormatter): RawHtml {
   switch (block.kind) {
     case 'text':
       return block.tone
@@ -140,7 +140,7 @@ function renderBlock(block: ReportBlock, dateLabel: (d: string) => string): RawH
             return html`<span><i style="background:${color}"></i>${s.label}</span>`;
           })}
         </div>
-        ${chartSvg(block, dateLabel)}`;
+        ${chartSvg(block, f)}`;
     case 'table':
       return html`<div class="scroll">
         <table>
@@ -191,7 +191,6 @@ export interface RenderReportHtmlOptions {
 export function renderReportHtml(bundle: ReportBundle, opts: RenderReportHtmlOptions = {}): string {
   const s = sentencesFor(bundle.language);
   const f = makeFormatter(bundle.language, bundle.locale);
-  const dateLabel = (d: string) => f.day(d);
   const L = s.labels;
 
   const bands = bundle.bands.map(
@@ -201,8 +200,7 @@ export function renderReportHtml(bundle: ReportBundle, opts: RenderReportHtmlOpt
       ${band.widgets.map(
         (w) => html`<div class="widget" data-widget="${w.key}">
           <h3>${w.title}</h3>
-          ${w.notes.map((n) => html`<p class="note">${n}</p>`)}
-          ${joinHtml(w.blocks.map((b) => renderBlock(b, dateLabel)))}
+          ${w.notes.map((n) => html`<p class="note">${n}</p>`)} ${joinHtml(w.blocks.map((b) => renderBlock(b, f)))}
         </div>`,
       )}
     </section>`,
@@ -234,7 +232,7 @@ export function renderReportHtml(bundle: ReportBundle, opts: RenderReportHtmlOpt
         ${opts.refreshSeconds
           ? raw(`<meta http-equiv="refresh" content="${Math.max(15, Math.floor(opts.refreshSeconds))}">`)
           : ''}
-        <title>${L.qualityReport}: ${bundle.title}</title>
+        <title>${L.qualityReport}${s.colon}${bundle.title}</title>
         ${raw(`<style>${STYLES}</style>`)}
       </head>
       <body>

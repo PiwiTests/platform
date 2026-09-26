@@ -144,7 +144,7 @@ function chart(block: SeriesBlock) {
                     stroke-dasharray="3 3"
                   />
                   <text :x="-6" :y="tick.y + 3" text-anchor="end" class="fill-gray-400 text-[10px]">
-                    {{ chartTickLabel(block, tick.value) }}
+                    {{ chartTickLabel(block, tick.value, f) }}
                   </text>
                 </g>
                 <line

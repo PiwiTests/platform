@@ -11,6 +11,8 @@ export interface DigestGap {
   projectName: string;
   id: number;
   title: string;
+  /** The check that found the gap. */
+  detector?: string;
   class: string;
   score: number | null;
   createdAt: number;

@@ -67,6 +67,15 @@ describe('resolveDashboard', () => {
     }
   });
 
+  test('no built-in dashboard repeats a section title as the title of a widget in it', () => {
+    const repeated = BUILTIN_DASHBOARDS.flatMap((dashboard) =>
+      resolveDashboard(dashboard.definition).flatMap((band) =>
+        band.widgets.filter((w) => w.title === band.title).map((w) => `${dashboard.key}: ${band.title} / ${w.key}`),
+      ),
+    );
+    expect(repeated).toEqual([]);
+  });
+
   test('fills option defaults and the registry title', () => {
     const [band] = resolveDashboard({
       v: 1,

@@ -1,11 +1,22 @@
 import { getMetric, type MetricId } from '#shared/analytics/metrics';
 import type { ProjectTargetVerdict } from '#shared/analytics/targets';
-import type { AnalyticsProgress, AnalyticsRisks, VerdictFacts } from '#shared/analytics/types';
+import type { AnalyticsListItem, AnalyticsProgress, AnalyticsRisks, VerdictFacts } from '#shared/analytics/types';
+import {
+  targetGapValue,
+  writeInsight,
+  type InsightComparison,
+  type InsightPhrasebook,
+} from '#shared/analytics/insight-rules';
 import { passRateDirection } from './verdict';
 import type { ValueFormatter } from './format';
 import type { ReportSentences } from './sentences';
 
-const plural = (n: number, one: string, many: string) => (n <= 1 ? one : many);
+/** French agreement: the singular under two (0,5 jour, 1 test), the plural from two. */
+const plural = (n: number, one: string, many: string) => (Math.abs(n) < 2 ? one : many);
+/** Before a colon. */
+const NBSP = '\u00a0';
+/** Before a semicolon and between a number and its unit. */
+const NNBSP = '\u202f';
 
 const METRIC_LABELS: Partial<Record<MetricId, [label: string, definition: string]>> = {
   'test-pass-rate': [
@@ -63,7 +74,7 @@ const METRIC_LABELS: Partial<Record<MetricId, [label: string, definition: string
   'quarantine-debt': ['Dette de quarantaine', 'Tests en quarantaine.'],
   'open-scenario-gaps': [
     'Lacunes de scénario ouvertes',
-    'Lacunes de scénario ouvertes, par classe : angle mort, fausse assurance, fragile.',
+    'Lacunes de scénario ouvertes, par classe : angle mort, fausse assurance, fragile.',
   ],
   'gaps-closed': ['Lacunes fermées', 'Lacunes de scénario fermées dans la période.'],
   'accepted-but-unwritten': [
@@ -77,6 +88,12 @@ const METRIC_LABELS: Partial<Record<MetricId, [label: string, definition: string
 };
 
 const TITLES: Record<string, string> = {
+  // The built-in dashboards
+  Overview: 'Vue d’ensemble',
+  Executive: 'Direction',
+  Engineering: 'Ingénierie',
+  Team: 'Équipe',
+  'Gaps digest': 'Synthèse des lacunes',
   'Where things stand': 'Où en sont les choses',
   'Where the pain is': 'Où ça fait mal',
   'Which way it is going': 'Dans quelle direction',
@@ -125,6 +142,7 @@ const TITLES: Record<string, string> = {
   'The top new gaps of each project in the period.':
     'Les principales nouvelles lacunes de chaque projet sur la période.',
   'Where the gaps stand': 'Où en sont les lacunes',
+  'Top new gaps by project': 'Principales nouvelles lacunes par projet',
   'Suite growth': 'Croissance de la suite',
   Skipped: 'Ignorés',
   'Did not run': 'Non exécutés',
@@ -151,6 +169,47 @@ const TITLES: Record<string, string> = {
   'Flaky occurrences per run': 'Occurrences instables par exécution',
   'Open gaps by class and by feature, and the gaps closed.':
     'Les lacunes ouvertes par classe et par fonctionnalité, et les lacunes fermées.',
+  // Table columns
+  Name: 'Nom',
+  Change: 'Évolution',
+  Average: 'Moyenne',
+  Timeout: 'Délai d’expiration',
+  Suggested: 'Suggéré',
+  Selection: 'Sélection',
+  Warnings: 'Avertissements',
+  Flaky: 'Instables',
+  // The dimensions a metric is broken down by
+  Project: 'Projet',
+  'Project tag': 'Étiquette de projet',
+  Branch: 'Branche',
+  'Run kind': 'Type d’exécution',
+  Browser: 'Navigateur',
+  'Test tag': 'Étiquette de test',
+  Priority: 'Priorité',
+  Feature: 'Fonctionnalité',
+  'Spec directory': 'Dossier de tests',
+  'Error type': 'Type d’erreur',
+  'Failure cause status': 'Statut de la cause d’échec',
+  Assignee: 'Attribuée à',
+  'Gap class': 'Classe de lacune',
+  // The groups of a breakdown that Piwi names (the others are names from the data)
+  Other: 'Autres',
+  None: 'Aucun',
+  'No project tag': 'Sans étiquette de projet',
+  'No environment': 'Sans environnement',
+  'Unknown branch': 'Branche inconnue',
+  'Unknown browser': 'Navigateur inconnu',
+  'No tag': 'Sans étiquette',
+  'No owner': 'Sans responsable',
+  'No priority': 'Sans priorité',
+  'No feature': 'Sans fonctionnalité',
+  'Unknown error type': 'Type d’erreur inconnu',
+  Unassigned: 'Non attribuée',
+  'Full runs': 'Exécutions complètes',
+  'Partial runs': 'Exécutions partielles',
+  Open: 'Ouvertes',
+  Resolved: 'Résolues',
+  Ignored: 'Ignorées',
 };
 
 const GAP_CLASS_LABELS: Record<string, string> = {
@@ -189,11 +248,11 @@ function verdict(facts: VerdictFacts, f: ValueFormatter): string {
       : '';
   let first: string;
   if (direction === 'up') {
-    first = `La suite se porte mieux que ${comparisonText(facts)} : le taux de réussite ${where} a gagné ${points} points pour atteindre ${rate}${fixed}.`;
+    first = `La suite se porte mieux que ${comparisonText(facts)} : le taux de réussite ${where} a gagné ${points} points pour atteindre ${rate}${fixed}.`;
   } else if (direction === 'down') {
-    first = `La suite se porte moins bien que ${comparisonText(facts)} : le taux de réussite ${where} a perdu ${points} points pour tomber à ${rate}${fixed}.`;
+    first = `La suite se porte moins bien que ${comparisonText(facts)} : le taux de réussite ${where} a perdu ${points} points pour tomber à ${rate}${fixed}.`;
   } else if (facts.previousPassRate !== null) {
-    first = `La suite est stable : le taux de réussite ${where} est de ${rate}, comme ${comparisonText(facts)}${fixed}.`;
+    first = `La suite est stable : le taux de réussite ${where} est de ${rate}, comme ${comparisonText(facts)}${fixed}.`;
   } else {
     first = `Le taux de réussite ${where} est de ${rate}${fixed}.`;
   }
@@ -219,7 +278,7 @@ function progress(p: AnalyticsProgress): string[] {
           ? 'le correctif a tenu'
           : 'tous ont tenu'
         : `${p.held} ${plural(p.held, 'a tenu', 'ont tenu')}`;
-    lines.push(`${p.fixed} ${plural(p.fixed, 'cause d’échec corrigée', 'causes d’échec corrigées')} ; ${held}.`);
+    lines.push(`${p.fixed} ${plural(p.fixed, 'cause d’échec corrigée', 'causes d’échec corrigées')} ; ${held}.`);
   } else {
     lines.push('Aucune cause d’échec n’a été corrigée sur la période.');
   }
@@ -244,10 +303,10 @@ function progress(p: AnalyticsProgress): string[] {
 function target(v: ProjectTargetVerdict, f: ValueFormatter): string {
   const def = getMetric(v.metric);
   const label = METRIC_LABELS[v.metric]?.[0] ?? def.label;
-  const goal = `${v.direction === 'min' ? 'au moins' : 'au plus'} ${f.value(v.target, def.unit, def.precision)}`;
+  const goal = `${v.direction === 'min' ? 'd’au moins' : 'd’au plus'} ${f.value(v.target, def.unit, def.precision)}`;
   const actual = f.value(v.actual, def.unit, def.precision);
   const outcome = v.met === null ? 'rien encore pour en juger' : v.met ? 'atteint' : 'manqué';
-  return `${v.projectName} · ${label} : ${actual} pour un objectif de ${goal}, ${outcome}.`;
+  return `${v.projectName} · ${label} : ${actual} pour un objectif ${goal}, ${outcome}.`;
 }
 
 function risks(r: AnalyticsRisks, f: ValueFormatter): string[] {
@@ -256,14 +315,14 @@ function risks(r: AnalyticsRisks, f: ValueFormatter): string[] {
   for (const m of r.worsening) {
     const change = f.delta({ unit: m.unit, delta: m.delta, deltaPct: m.deltaPct, precision: 1 });
     const label = METRIC_LABELS[m.metric]?.[0] ?? m.label;
-    lines.push(`${label} évolue dans le mauvais sens : ${f.value(m.value, m.unit, 1)} (${change}).`);
+    lines.push(`${label} évolue dans le mauvais sens : ${f.value(m.value, m.unit, 1)} (${change}).`);
   }
   for (const p of r.failingProjects) {
     lines.push(`${p.name} a échoué à ses ${p.streak} dernières exécutions d’affilée.`);
   }
   for (const c of r.oldestOpen) {
     const owner = c.assignee ? `, attribuée à ${c.assignee}` : ', non attribuée';
-    lines.push(`« ${c.title} » (${c.projectName}) est ouverte depuis ${f.value(c.ageDays, 'days', 0)}${owner}.`);
+    lines.push(`« ${c.title} » (${c.projectName}) est ouverte depuis ${f.value(c.ageDays, 'days', 0)}${owner}.`);
   }
   if (r.quarantine.count > 0) {
     const oldest =
@@ -275,11 +334,298 @@ function risks(r: AnalyticsRisks, f: ValueFormatter): string[] {
   return lines;
 }
 
+/** "par rapport à" and the period an insight measures its change against, contracted as French needs. */
+function comparedTo(vs: InsightComparison, f: ValueFormatter): string {
+  switch (vs.kind) {
+    case 'year':
+      return 'par rapport à la même période un an plus tôt';
+    case 'range':
+      return `par rapport à la période du ${f.date(vs.from)} au ${f.date(vs.to)}`;
+    case 'previous-unit':
+      return {
+        week: 'par rapport à la semaine précédente',
+        month: 'par rapport au mois précédent',
+        quarter: 'par rapport au trimestre précédent',
+        year: 'par rapport à l’année précédente',
+      }[vs.unit];
+    case 'previous-release':
+      return 'par rapport à la version précédente';
+    case 'previous-sprint':
+      return 'par rapport au sprint précédent';
+    case 'previous-days':
+      return `par rapport aux ${vs.days} jours précédents`;
+    case 'previous-period':
+      return 'par rapport à la période précédente';
+  }
+}
+
+/** A duration in insight copy: `120 s`, `450 ms`. */
+function ms(value: number): string {
+  return value >= 1000 ? `${Math.round(value / 1000)}${NNBSP}s` : `${Math.round(value)}${NNBSP}ms`;
+}
+
+const RUN_STATUS: Record<string, string> = {
+  passed: 'réussie',
+  failed: 'en échec',
+  timedout: 'hors délai',
+  interrupted: 'interrompue',
+  running: 'en cours',
+  cancelled: 'annulée',
+  initializing: 'en préparation',
+  finalizing: 'en finalisation',
+};
+
+const count = (n: number, one: string, many: string, f: ValueFormatter) => `${f.number(n)} ${plural(n, one, many)}`;
+
+/** The insights under *Ce qui a changé*, written from the facts of each rule. */
+const FR_INSIGHTS: InsightPhrasebook<[f: ValueFormatter]> = {
+  'pass-rate-drop': (x, f) => ({
+    message: `Le taux de réussite de ${x.project} a perdu ${f.number(x.points, 1)} ${plural(x.points, 'point', 'points')} ${comparedTo(x.vs, f)}`,
+    detail: `Il est maintenant de ${f.value(x.passRate, 'percent', 1)} sur ${count(x.runs, 'exécution', 'exécutions', f)}.`,
+  }),
+  'pass-rate-recovery': (x, f) => ({
+    message: `Le taux de réussite de ${x.project} a gagné ${f.number(x.points, 1)} ${plural(x.points, 'point', 'points')} ${comparedTo(x.vs, f)}`,
+    detail: `Il est maintenant de ${f.value(x.passRate, 'percent', 1)} sur ${count(x.runs, 'exécution', 'exécutions', f)}.`,
+  }),
+  'failing-streak': (x) => ({
+    message: `${x.project} a échoué à ses ${x.streak} dernières exécutions d’affilée`,
+    detail: x.latestRun
+      ? `Dernière exécution${NBSP}: n°${NNBSP}${x.latestRun.id}, ${RUN_STATUS[x.latestRun.status] ?? x.latestRun.status}.`
+      : undefined,
+  }),
+  'stale-cluster': (x, f) => ({
+    message: `« ${x.title} » est ouverte depuis ${f.value(x.ageDays, 'days', 0)} (${count(x.occurrences, 'occurrence', 'occurrences', f)})`,
+    detail: `${x.project} · erreur de type ${x.errorType ?? 'inconnu'}.`,
+  }),
+  'ci-time-growth': (x, f) => ({
+    message: `Le temps de CI a augmenté de ${f.value(x.deltaPct, 'percent', 0)} ${comparedTo(x.vs, f)}`,
+    detail: `${count(x.minutes, 'minute', 'minutes', f)} sur ${count(x.runs, 'exécution', 'exécutions', f)} pendant la période.`,
+  }),
+  'wasted-ci-time': (x, f) => ({
+    message: `${f.number(x.hours, 1)}${NNBSP}h de CI perdues en attentes et en tentatives en échec sur la période`,
+    detail: x.worst
+      ? `${x.worst.project} en représente à lui seul ${count(x.worst.minutes, 'minute', 'minutes', f)}.`
+      : undefined,
+  }),
+  'top-flaky-impact': (x, f) => ({
+    message: `« ${x.title} » a fait perdre ${count(x.minutes, 'minute', 'minutes', f)} de CI en nouvelles tentatives`,
+    detail: `${x.project} · instable dans ${x.retryPassRuns} des ${x.totalRuns} dernières exécutions.`,
+  }),
+  'regression-surge': (x, f) => ({
+    message: `Les nouvelles régressions ont augmenté de ${f.value(x.deltaPct, 'percent', 0)} ${comparedTo(x.vs, f)}`,
+    detail: `${f.number(x.total)} sur la période, contre ${f.number(x.previous)} auparavant.`,
+  }),
+  'slow-shared-endpoint': (x, f) => ({
+    message: `${x.method} ${x.route} est lent (p90 de ${f.number(x.p90Ms)}${NNBSP}ms) dans ${x.projects} projets`,
+    detail: `${count(x.requests, 'requête', 'requêtes', f)} sur la période${x.errorRate > 0 ? ` · ${f.value(x.errorRate, 'percent', 1)} en erreur` : ''}.`,
+  }),
+  'timeout-hygiene': (x) => ({
+    message: x.staleSlow
+      ? `« ${x.title} » est encore marqué test.slow() mais reste bien sous son budget`
+      : `« ${x.title} » a un délai d’expiration surdimensionné (${ms(x.timeoutMs)} contre un p95 de ${ms(x.p95Ms)})`,
+    detail:
+      `${x.project} · ` +
+      (x.staleSlow
+        ? `retirer test.slow() ferait gagner environ ${ms(x.savingMs)} par exécution en échec.`
+        : `le ramener vers ${ms(x.recommendedMs)} ferait gagner environ ${ms(x.savingMs)} par exécution en échec.`),
+  }),
+  'target-missed': (x, f) => {
+    const def = getMetric(x.metric);
+    const gap = targetGapValue(x);
+    const gapText =
+      def.unit === 'percent'
+        ? `${f.number(gap, def.precision)} ${plural(gap, 'point', 'points')}`
+        : f.value(gap, def.unit, def.precision);
+    return {
+      message: `${x.project} · ${METRIC_LABELS[x.metric]?.[0] ?? def.label}${NBSP}: ${gapText} ${x.direction === 'min' ? 'sous' : 'au-dessus de'} l’objectif`,
+      detail: `${f.value(x.actual, def.unit, def.precision)} pour un objectif ${x.direction === 'min' ? 'd’au moins' : 'd’au plus'} ${f.value(x.target, def.unit, def.precision)}.`,
+    };
+  },
+  'time-to-fix-growth': (x, f) => ({
+    message: `Le délai médian de correction s’allonge ${comparedTo(x.vs, f)}${NBSP}: ${f.value(x.days, 'days', 1)}`,
+    detail: `Il était de ${f.value(x.previousDays, 'days', 1)}, sur ${count(x.fixed, 'cause d’échec corrigée', 'causes d’échec corrigées', f)} pendant la période.`,
+  }),
+  'suite-shrank': (x, f) => ({
+    message: `La suite a perdu ${count(x.lost, 'test', 'tests', f)} ${comparedTo(x.vs, f)}`,
+    detail: `De ${f.number(x.previous)} à ${count(x.now, 'test', 'tests', f)}${NNBSP}; vérifier que rien n’a été ignoré ou supprimé par erreur.`,
+  }),
+  'quarantine-debt-growth': (x, f) => ({
+    message: `${count(x.added, 'test de plus', 'tests de plus', f)} en quarantaine ${comparedTo(x.vs, f)}`,
+    detail: `${count(x.now, 'test est', 'tests sont', f)} en quarantaine, contre ${f.number(x.previous)} auparavant.`,
+  }),
+  'owner-load': (x, f) => ({
+    message: `${x.owner} détient ${x.open} des ${x.total} causes d’échec ouvertes`,
+    detail: `${f.value(x.share, 'percent', 0)} des causes d’échec ouvertes attendent un seul responsable.`,
+  }),
+};
+
+/** A Test Map node kind in French, and whether the noun is feminine, for the words that agree with it. */
+const NODE_KINDS: Record<string, [noun: string, feminine: boolean]> = {
+  feature: ['fonctionnalité', true],
+  page: ['page', true],
+  control: ['contrôle', false],
+  link: ['lien', false],
+  route: ['route', true],
+  handler: ['gestionnaire', false],
+  dependency: ['dépendance', true],
+  file: ['fichier', false],
+};
+const KIND = `(${Object.keys(NODE_KINDS).join('|')})`;
+const noun = (kind: string) => NODE_KINDS[kind]![0];
+const feminine = (kind: string) => NODE_KINDS[kind]![1];
+const capitalized = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
+const quoted = (text: string) => `«${NNBSP}${text}${NNBSP}»`;
+
+/**
+ * Each detector's English title template (`shared/handlers/scenario-gaps.ts`)
+ * and its French wording. A title no pattern matches keeps its English text.
+ */
+const GAP_TITLES: Record<string, Array<[pattern: RegExp, write: (...parts: string[]) => string]>> = {
+  'success-only': [
+    [
+      /^(.+): documented (\S+) never tested$/,
+      (route, codes) =>
+        codes.includes('/')
+          ? `${route}${NBSP}: ${codes} documentés mais jamais testés`
+          : `${route}${NBSP}: ${codes} documenté mais jamais testé`,
+    ],
+    [/^(.+): no error path under test$/, (route) => `${route}${NBSP}: aucun chemin d’erreur testé`],
+  ],
+  'declared-never-hit': [
+    [
+      new RegExp(`^Declared ${KIND} (.+) — never reached$`),
+      (kind, key) => `${capitalized(noun(kind))} ${key} déclarée, jamais atteinte`,
+    ],
+  ],
+  'single-covering-test': [
+    [
+      new RegExp(`^Only one test reaches ${KIND} (.+)$`),
+      (kind, key) => `Un seul test atteint ${feminine(kind) ? 'la' : 'le'} ${noun(kind)} ${key}`,
+    ],
+  ],
+  'surface-drift': [
+    [
+      new RegExp(`^New ${KIND} (.+) — confirm it is tested$`),
+      (kind, key) =>
+        feminine(kind)
+          ? `Nouvelle ${noun(kind)} ${key}${NBSP}: vérifier qu’elle est testée`
+          : `Nouveau ${noun(kind)} ${key}${NBSP}: vérifier qu’il est testé`,
+    ],
+  ],
+  'changed-unreached': [
+    [/^(.+) changed but not reached$/, (file) => `Le fichier ${file} a changé, mais aucun test ne l’atteint`],
+  ],
+  'control-nobody-exercises': [
+    [/^No test exercises control (.+)$/, (key) => `Aucun test n’utilise le contrôle ${key}`],
+  ],
+  'reachable-unvisited': [
+    [
+      /^(.+) is linked but never visited$/,
+      (page) => `La page ${page} est accessible par des liens, mais aucun test ne la visite`,
+    ],
+  ],
+  'api-only-route': [
+    [
+      /^(.+) is reached only by request fixtures$/,
+      (route) => `La route ${route} n’est atteinte que par des requêtes d’API directes`,
+    ],
+  ],
+  'not-noticed': [[/^Tests pass when (.+) breaks$/, (route) => `Les tests passent quand ${route} tombe en panne`]],
+  'unprobed-dependency': [
+    [/^(.+) is never probed$/, (dependency) => `La dépendance ${dependency} n’est jamais sondée`],
+  ],
+  'not-handled': [
+    [
+      /^(.+): (unhandled|degraded) failure$/,
+      (target, handled) =>
+        `${target}${NBSP}: ${handled === 'unhandled' ? 'défaillance non gérée' : 'fonctionnement dégradé en cas de défaillance'}`,
+    ],
+  ],
+  matrix: [[/^(.+): thin test matrix$/, (feature) => `${feature}${NBSP}: matrice de tests trop réduite`]],
+  'escaped-defect': [
+    [/^(\S+) escaped the suite: (.+)$/, (bug, title) => `${bug} a échappé à la suite de tests${NBSP}: ${title}`],
+  ],
+  'orphan-test': [
+    [/^(.+) reaches only vanished surface$/, (test) => `${test} n’atteint plus que des surfaces disparues`],
+  ],
+  'fix-did-not-hold': [[/^A fix for "(.*)" did not hold$/, (cause) => `Un correctif de ${quoted(cause)} n’a pas tenu`]],
+  'phantom-coverage': [
+    [
+      /^(.+) has not really run in (\d+) days$/,
+      (test, days) => `${test} n’a pas vraiment tourné depuis ${days} ${plural(Number(days), 'jour', 'jours')}`,
+    ],
+  ],
+  'passed-with-errors': [[/^(.+) passed with errors$/, (test) => `${test} a réussi malgré des erreurs`]],
+  'catalog-method-no-test-calls': [[/^(.+) is never called$/, (method) => `La méthode ${method} n’est jamais appelée`]],
+  'incidental-catch': [
+    [/^(.+) is caught only incidentally$/, (file) => `Les défauts de ${file} ne sont détectés que par hasard`],
+  ],
+  'assertion-light': [
+    [
+      /^(.+) is asserted only by visibility$/,
+      (page) => `La page ${page} n’est vérifiée que par des assertions de visibilité`,
+    ],
+  ],
+  'intent-without-test': [[/^No test mentions "(.*)"$/, (intent) => `Aucun test ne mentionne ${quoted(intent)}`]],
+  'new-error-path': [
+    [
+      /^(.+) gains a (\d+) nobody tests$/,
+      (route, status) => `La route ${route} renvoie désormais un ${status} qu’aucun test ne couvre`,
+    ],
+  ],
+  'new-control': [[/^New control (.+) on (.+)$/, (control, page) => `Nouveau contrôle ${control} sur ${page}`]],
+};
+
+function gapTitle(detector: string | undefined, title: string): string {
+  for (const [pattern, write] of (detector && GAP_TITLES[detector]) || []) {
+    const match = pattern.exec(title);
+    if (match) return write(...match.slice(1));
+  }
+  return title;
+}
+
+function listItem(item: AnalyticsListItem, f: ValueFormatter): { title: string; detail: string } {
+  const x = item.facts;
+  if (!x) return { title: item.title, detail: item.detail };
+  switch (x.source) {
+    case 'runs':
+      return {
+        title: `Exécution n°${NNBSP}${x.id}`,
+        detail: [
+          RUN_STATUS[x.status] ?? x.status,
+          `${f.number(x.passed)}/${f.number(x.total)} ${plural(x.passed, 'réussi', 'réussis')}`,
+          x.branch ? `sur ${x.branch}` : null,
+          x.environment ? `environnement ${x.environment}` : null,
+        ]
+          .filter(Boolean)
+          .join(' · '),
+      };
+    case 'failure-clusters':
+      return {
+        title: x.title ?? `Cause d’échec n°${NNBSP}${x.id}`,
+        detail: [
+          count(x.occurrences, 'occurrence', 'occurrences', f),
+          x.errorType,
+          x.assignee ? `attribuée à ${x.assignee}` : null,
+        ]
+          .filter(Boolean)
+          .join(' · '),
+      };
+    case 'flaky-tests':
+      return {
+        title: item.title,
+        detail: `score d’instabilité ${f.number(x.score)} · ${count(x.alternations, 'changement de statut', 'changements de statut', f)} sur ${count(x.totalRuns, 'exécution', 'exécutions', f)}`,
+      };
+    case 'scenario-gaps':
+      return { title: gapTitle(x.detector, item.title), detail: GAP_CLASS_LABELS[x.gapClass] ?? x.gapClass };
+  }
+}
+
 export const FR_SENTENCES: ReportSentences = {
   labels: {
     qualityReport: 'Rapport qualité',
     period: 'Période',
-    comparedWith: 'Comparée à',
+    comparedWith: 'Par rapport à',
     noComparison: 'Sans comparaison',
     projects: 'Projets',
     allProjects: 'Tous les projets',
@@ -296,7 +642,7 @@ export const FR_SENTENCES: ReportSentences = {
     generatedBy: 'Généré par Piwi',
     openInPiwi: 'Ouvrir dans Piwi',
     liveDashboard:
-      'Tableau de bord en direct : les chiffres sont calculés à chaque affichage, et la page se recharge chaque minute.',
+      'Tableau de bord en direct : les chiffres sont calculés à chaque affichage, et la page se recharge chaque minute.',
     readWithoutAccount: 'Lire sans compte',
     dashboard: 'Tableau de bord',
     noData: 'Rien à montrer sur cette période.',
@@ -312,6 +658,7 @@ export const FR_SENTENCES: ReportSentences = {
     score: 'Score',
     count: 'Nombre',
     targets: 'Objectifs',
+    markers: 'Repères',
   },
   verdict,
   progress,
@@ -321,11 +668,13 @@ export const FR_SENTENCES: ReportSentences = {
     const judged = mark.met + mark.missed;
     if (value !== null) {
       const outcome = mark.met > 0 ? 'atteint' : mark.missed > 0 ? 'manqué' : 'rien encore pour en juger';
-      return `Objectif ${mark.direction === 'min' ? 'au moins' : 'au plus'} ${value}, ${outcome}`;
+      return `Objectif ${mark.direction === 'min' ? 'd’au moins' : 'd’au plus'} ${value}, ${outcome}`;
     }
     if (judged === 0) return 'Objectif fixé, rien encore pour en juger';
     return `${mark.met} ${plural(mark.met, 'projet atteint', 'projets atteignent')} l’objectif sur ${judged}`;
   },
+  colon: `${NBSP}: `,
+  insight: (facts, f) => writeInsight(FR_INSIGHTS, facts, f),
   metricLabel: (id, fallback) => METRIC_LABELS[id]?.[0] ?? fallback,
   metricDefinition: (id, fallback) => METRIC_LABELS[id]?.[1] ?? fallback,
   title: (text) => TITLES[text] ?? text,
@@ -338,9 +687,11 @@ export const FR_SENTENCES: ReportSentences = {
   identityLimit:
     'Les listes de tests et le nombre de tests instables ne remontent pas plus loin que la rétention des exécutions.',
   gapClass: (cls) => GAP_CLASS_LABELS[cls] ?? cls,
+  gapTitle,
+  listItem,
   firstRunLimit: (since) =>
     `Ce premier rapport qualité planifié ne couvre que les jours écoulés depuis la création de la planification, le ${since}.`,
   narrativeGenerated: (model) =>
-    `Généré par un modèle d’IA (${model}) à partir des seuls chiffres de ce rapport. Les tuiles et le verdict ci-dessus sont calculés par des règles ; fiez-vous à eux plutôt qu’à ce texte.`,
-  narrativeFallback: 'Aucun récit IA n’a pu être généré pour ce rapport ; le verdict fondé sur des règles le remplace.',
+    `Généré par un modèle d’IA (${model}) à partir des seuls chiffres de ce rapport. Les tuiles et le verdict ci-dessus sont calculés par des règles ; fiez-vous à eux plutôt qu’à ce texte.`,
+  narrativeFallback: 'Aucun récit IA n’a pu être généré pour ce rapport ; le verdict fondé sur des règles le remplace.',
 };

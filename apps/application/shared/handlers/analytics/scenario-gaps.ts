@@ -132,6 +132,7 @@ export async function getAnalyticsNewGaps(
       id: scenarioGaps.id,
       projectId: scenarioGaps.projectId,
       title: scenarioGaps.title,
+      detector: scenarioGaps.detector,
       cls: scenarioGaps.class,
       score: scenarioGaps.score,
       createdAt: scenarioGaps.createdAt,
@@ -154,6 +155,7 @@ export async function getAnalyticsNewGaps(
     projectId: r.projectId,
     projectName: names.get(r.projectId) ?? '',
     title: r.title,
+    detector: r.detector,
     class: r.cls,
     score: r.score ?? null,
     createdAt: new Date(r.createdAt).getTime(),
@@ -164,7 +166,14 @@ export async function getAnalyticsNewGaps(
     items: digest.map((p) => ({
       projectId: p.projectId,
       projectName: p.projectName,
-      gaps: p.gaps.map((g) => ({ id: g.id, title: g.title, class: g.class, score: g.score, createdAt: g.createdAt })),
+      gaps: p.gaps.map((g) => ({
+        id: g.id,
+        title: g.title,
+        detector: g.detector,
+        class: g.class,
+        score: g.score,
+        createdAt: g.createdAt,
+      })),
     })),
   };
 }

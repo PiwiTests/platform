@@ -132,7 +132,7 @@ export function reportSlackMessage(
     },
     { type: 'context', elements: [{ type: 'mrkdwn', text: slackEscape(bundle.period.label) }] },
   );
-  return { text: `${s.labels.qualityReport}: ${bundle.title}`, blocks };
+  return { text: `${s.labels.qualityReport}${s.colon}${bundle.title}`, blocks };
 }
 
 /** The webhook body of a quality report: the event, its payload with the snapshot link (and share link), and the bundle. */

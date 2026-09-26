@@ -39,6 +39,8 @@ export interface ValueFormatter {
 export function makeFormatter(language: ReportLanguage, locale?: string): ValueFormatter {
   const loc = locale || (language === 'fr' ? 'fr-FR' : 'en-US');
   const words = UNIT_WORDS[language];
+  // English takes the singular for one; French for anything under two (0,5 jour, 1,5 jour).
+  const singular = (value: number) => (language === 'fr' ? Math.abs(value) < 2 : Math.abs(value) === 1);
   const number = (value: number, digits = 0) => {
     try {
       return new Intl.NumberFormat(loc, { maximumFractionDigits: digits, minimumFractionDigits: 0 }).format(value);
@@ -46,9 +48,13 @@ export function makeFormatter(language: ReportLanguage, locale?: string): ValueF
       return value.toFixed(digits);
     }
   };
-  const percentSign = language === 'fr' ? ' %' : '%';
+  // French keeps a unit on the line of its number: a narrow no-break space before `%`, `min`, `jours`.
+  const unitSpace = language === 'fr' ? '\u202f' : ' ';
+  const percentSign = language === 'fr' ? `${unitSpace}%` : '%';
   const minutesText = (value: number) =>
-    value < 60 ? `${number(value, value < 10 ? 1 : 0)} ${words.min}` : `${number(value / 60, 1)} ${words.h}`;
+    value < 60
+      ? `${number(value, value < 10 ? 1 : 0)}${unitSpace}${words.min}`
+      : `${number(value / 60, 1)}${unitSpace}${words.h}`;
 
   return {
     language,
@@ -63,11 +69,11 @@ export function makeFormatter(language: ReportLanguage, locale?: string): ValueF
         case 'minutes':
           return minutesText(value);
         case 'ms':
-          if (value < 1000) return `${number(value)} ms`;
-          if (value < 60_000) return `${number(value / 1000, 1)} s`;
+          if (value < 1000) return `${number(value)}${unitSpace}ms`;
+          if (value < 60_000) return `${number(value / 1000, 1)}${unitSpace}s`;
           return minutesText(value / 60_000);
         case 'days':
-          return `${number(value, precision)} ${Math.abs(value) === 1 ? words.day : words.days}`;
+          return `${number(value, precision)}${unitSpace}${singular(value) ? words.day : words.days}`;
         case 'money':
           return currency ? formatMoney(value, currency, loc) : number(value, 2);
         default:
@@ -78,7 +84,7 @@ export function makeFormatter(language: ReportLanguage, locale?: string): ValueF
       if (metric.delta === null) return null;
       const sign = (n: number) => (n > 0 ? '+' : n < 0 ? '−' : '±');
       if (metric.unit === 'percent') {
-        return `${sign(metric.delta)}${number(Math.abs(metric.delta), 1)} ${words.pts}`;
+        return `${sign(metric.delta)}${number(Math.abs(metric.delta), 1)}${unitSpace}${words.pts}`;
       }
       if (metric.deltaPct !== null) return `${sign(metric.deltaPct)}${number(Math.abs(metric.deltaPct))}${percentSign}`;
       return `${sign(metric.delta)}${number(Math.abs(metric.delta), metric.precision)}`;

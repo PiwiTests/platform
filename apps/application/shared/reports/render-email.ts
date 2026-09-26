@@ -9,7 +9,7 @@
 import { STATUS_COLORS } from '#shared/status-colors';
 import { emailLayout, escapeHtml } from '#shared/email-layout';
 import { CHART_MARKS_PAD, chartTickLabel, seriesColor, seriesGeometry } from './chart';
-import { makeFormatter } from './format';
+import { makeFormatter, type ValueFormatter } from './format';
 import { sentencesFor } from './sentences';
 import { reportWidgets, type ReportBlock, type ReportBundle, type ReportTone } from './types';
 
@@ -51,7 +51,7 @@ export interface ReportEmailOptions {
  * centered on its gridline (kept inside the image at the top and the bottom).
  * Mail clients drop positioned elements, so the rows' heights place them.
  */
-function axisRows(block: SeriesBlock): string {
+function axisRows(block: SeriesBlock, f: ValueFormatter): string {
   const { width, height } = EMAIL_CHART;
   const pad = CHART_MARKS_PAD;
   const g = seriesGeometry(block, width - pad * 2, height - pad * 2);
@@ -65,7 +65,7 @@ function axisRows(block: SeriesBlock): string {
     if (top < cursor) continue;
     if (top > cursor) rows.push(spacer(top - cursor));
     rows.push(
-      `<tr><td height="${AXIS_LINE}" align="right" style="height:${AXIS_LINE}px;line-height:${AXIS_LINE}px;font-size:10px;color:#71717a;padding-right:6px;white-space:nowrap;mso-line-height-rule:exactly;">${escapeHtml(chartTickLabel(block, tick.value))}</td></tr>`,
+      `<tr><td height="${AXIS_LINE}" align="right" style="height:${AXIS_LINE}px;line-height:${AXIS_LINE}px;font-size:10px;color:#71717a;padding-right:6px;white-space:nowrap;mso-line-height-rule:exactly;">${escapeHtml(chartTickLabel(block, tick.value, f))}</td></tr>`,
     );
     cursor = top + AXIS_LINE;
   }
@@ -97,7 +97,7 @@ export function renderReportEmail(
 ): { subject: string; html: string; text: string } {
   const s = sentencesFor(bundle.language);
   const f = makeFormatter(bundle.language, bundle.locale);
-  const subject = `${s.labels.qualityReport}: ${bundle.title}`;
+  const subject = `${s.labels.qualityReport}${s.colon}${bundle.title}`;
   const widgets = reportWidgets(bundle);
   const tiles = widgets.flatMap((w) => w.blocks).find((b) => b.kind === 'stats');
   const trend = emailTrendBlock(bundle);
@@ -124,7 +124,7 @@ export function renderReportEmail(
     const rows: string[] = [];
     for (let i = 0; i < cells.length; i += 2) rows.push(`<tr>${cells[i]}${cells[i + 1] ?? '<td></td>'}</tr>`);
     parts.push(`<table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 16px;">${rows.join('')}</table>`);
-    for (const t of tiles.tiles) textParts.push(`${t.label}: ${t.value}${t.change ? ` (${t.change})` : ''}`);
+    for (const t of tiles.tiles) textParts.push(`${t.label}${s.colon}${t.value}${t.change ? ` (${t.change})` : ''}`);
     textParts.push('');
   }
 
@@ -138,14 +138,16 @@ export function renderReportEmail(
       .join('');
     parts.push(
       `<table width="${axis + width}" cellpadding="0" cellspacing="0" style="margin:0 0 4px;">` +
-        `<tr><td width="${axis}" valign="top" style="width:${axis}px;"><table width="${axis}" cellpadding="0" cellspacing="0">${axisRows(trend)}</table></td>` +
+        `<tr><td width="${axis}" valign="top" style="width:${axis}px;"><table width="${axis}" cellpadding="0" cellspacing="0">${axisRows(trend, f)}</table></td>` +
         `<td width="${width}" valign="top"><img src="${escapeHtml(opts.chartSrc)}" width="${width}" height="${height}" alt="${escapeHtml(trend.summary ?? '')}" style="display:block;width:${width}px;height:${height}px;border:0;"></td></tr>` +
         `<tr><td></td><td style="padding-top:4px;">${axisDates(trend, (d) => f.day(d))}</td></tr></table>`,
       p(`${legend}`, 'margin-bottom:4px;'),
     );
     if (trend.summary) parts.push(p(meta(escapeHtml(trend.summary))));
     if (trend.markers.length > 0) {
-      parts.push(p(meta(trend.markers.map((m) => `${escapeHtml(f.day(m.date))}: ${escapeHtml(m.label)}`).join(' · '))));
+      parts.push(
+        p(meta(trend.markers.map((m) => `${escapeHtml(f.day(m.date))}${s.colon}${escapeHtml(m.label)}`).join(' · '))),
+      );
     }
     if (trend.summary) textParts.push(trend.summary, '');
   }
@@ -180,12 +182,12 @@ export function renderReportEmail(
       ),
     ),
   );
-  textParts.push(`${s.labels.openInPiwi}: ${opts.url}`);
-  if (opts.shareUrl) textParts.push(`${s.labels.readWithoutAccount}: ${opts.shareUrl}`);
+  textParts.push(`${s.labels.openInPiwi}${s.colon}${opts.url}`);
+  if (opts.shareUrl) textParts.push(`${s.labels.readWithoutAccount}${s.colon}${opts.shareUrl}`);
 
   return {
     subject,
-    html: emailLayout(escapeHtml(subject), parts.join('\n'), opts.siteUrl),
+    html: emailLayout(escapeHtml(subject), parts.join('\n'), opts.siteUrl, bundle.language),
     text: textParts.join('\n'),
   };
 }
