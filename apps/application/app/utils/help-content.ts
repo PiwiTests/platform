@@ -51,7 +51,7 @@ export const HELP_TOPICS = {
   'home.get-started': {
     title: 'Get started',
     text: 'Wire the Piwi reporter into your Playwright config to start sending results here. The wizard generates the snippet for you.',
-    doc: 'guide/getting-started#using-the-piwi-dashboard-reporter',
+    doc: 'guide/reporter',
   },
   'home.failure-inbox': {
     title: 'Failure inbox',
@@ -375,7 +375,7 @@ export const HELP_TOPICS = {
   'project.members': {
     title: 'Project access',
     text: 'Who can see this project. Admins always have access; reporters and users see only the projects assigned to them.',
-    doc: 'operate/authentication#user-management',
+    doc: 'operate/project-access',
   },
   'project.ai-instructions': {
     title: 'AI diagnosis instructions',
@@ -385,7 +385,7 @@ export const HELP_TOPICS = {
   'project.scm-token': {
     title: 'Repository access token',
     text: 'A read-only Git host token lets diagnosis pull the actual commit diffs behind a failure for SCM-grounded analysis. Stored encrypted.',
-    doc: 'features/ai-diagnosis#scm-grounded-context',
+    doc: 'guide/source-control',
   },
   'case.stability-trend': {
     title: 'Stability trend',
@@ -405,7 +405,7 @@ export const HELP_TOPICS = {
   'project.ci-rerun': {
     title: 'CI re-run',
     text: 'Lets a reporter or admin re-run a cluster’s affected tests in CI straight from its page — a workflow_dispatch on GitHub, a pipeline on GitLab, a custom pipeline on Bitbucket — passing the retry arguments through the input/variable you name. Uses the project’s SCM token (which needs write scope) and is off until you fill in your provider’s block.',
-    doc: 'guide/ci#re-run-from-the-dashboard',
+    doc: 'features/pr-feedback#re-run-from-the-dashboard',
   },
   'project.local-folder': {
     title: 'Linked local folder',
@@ -564,7 +564,7 @@ export const HELP_TOPICS = {
   'cluster.context-preview': {
     title: 'Context preview',
     text: 'Exactly what will be sent to the AI, including how much was trimmed to fit the token budget. Review it before spending tokens.',
-    doc: 'features/ai-diagnosis#context-limits-and-token-cost',
+    doc: 'guide/ai-provider#context-limits-and-token-cost',
   },
   'cluster.result': {
     title: 'Diagnosis',
@@ -574,12 +574,12 @@ export const HELP_TOPICS = {
   'cluster.ai-setup': {
     title: 'AI not configured',
     text: 'Diagnosis needs an AI provider and API key. Configure one in Settings → AI to enable automatic and on-demand analysis.',
-    doc: 'features/ai-diagnosis#enabling-ai-diagnosis',
+    doc: 'guide/ai-provider',
   },
   'cluster.coverage': {
     title: 'Data coverage',
     text: 'Which evidence sections were present, truncated or absent for this diagnosis — the same map the model sees. Absent or trimmed evidence lowers confidence; the quote icon marks sections the diagnosis cited.',
-    doc: 'features/ai-diagnosis#context-limits-and-token-cost',
+    doc: 'guide/ai-provider#context-limits-and-token-cost',
   },
 
   // ── Notifications / subscribe ─────────────────────────────────────────
@@ -593,7 +593,7 @@ export const HELP_TOPICS = {
   'settings.storage-stats': {
     title: 'Storage analysis',
     text: 'How much disk your reports, traces, screenshots and videos use — broken down by project, by file kind and over time, so you can see what to clean up.',
-    doc: 'operate/storage#storage-architecture',
+    doc: 'operate/storage#storage-management',
   },
   'settings.cleanup': {
     title: 'Cleanup old runs',
@@ -633,7 +633,7 @@ export const HELP_TOPICS = {
   'settings.ai-provider': {
     title: 'AI provider',
     text: 'Configure the model providers behind the three AI roles — diagnosis, research and embedding. Each role has its own provider config, or reuses another role’s provider and credentials. Keys are stored encrypted and never returned by the API.',
-    doc: 'features/ai-diagnosis#enabling-ai-diagnosis',
+    doc: 'guide/ai-provider',
     envVars: ['PIWI_AI_PROVIDER', 'PIWI_AI_MODEL', 'PIWI_AI_API_KEY', 'PIWI_AI_BASE_URL', 'PIWI_AI_TEMPERATURE'],
   },
   'settings.ai-instructions': {
@@ -644,7 +644,7 @@ export const HELP_TOPICS = {
   'settings.ai-research': {
     title: 'Research model',
     text: 'An optional cheaper/faster model that pre-analyzes the failure (on a lean view) before the main model writes the final diagnosis. It can use its own provider, and the costly SCM diff is only fetched when it flags a likely regression. It also handles cluster naming and merge adjudication, so configuring a cheap research model routes those utility calls away from the expensive diagnosis model.',
-    doc: 'features/ai-diagnosis#enabling-ai-diagnosis',
+    doc: 'guide/ai-provider#model-roles',
     envVars: [
       'PIWI_AI_RESEARCH_PROVIDER',
       'PIWI_AI_RESEARCH_MODEL',
@@ -656,7 +656,7 @@ export const HELP_TOPICS = {
   'settings.ai-limits': {
     title: 'Diagnosis context limits',
     text: 'Caps on how much evidence (and how many tokens) go into each diagnosis. Higher limits give the model more to work with but cost more. Each field can be pinned individually by its env var.',
-    doc: 'features/ai-diagnosis#context-limits-and-token-cost',
+    doc: 'guide/ai-provider#context-limits-and-token-cost',
     envVars: [
       'PIWI_AI_MAX_SAMPLE_ERROR_CHARS',
       'PIWI_AI_MAX_SCM_PATCH_BUDGET',
@@ -702,12 +702,12 @@ export const HELP_TOPICS = {
   'settings.permissions': {
     title: 'Project access',
     text: 'Which projects each reporter and user can open, one tick per project — every click saves at once. All projects also covers projects created later; administrators always open every project.',
-    doc: 'operate/authentication#permission-grid',
+    doc: 'operate/project-access#permission-grid',
   },
   'settings.api-keys': {
     title: 'API keys',
     text: 'Tokens (prefixed pd_) that let the reporter or scripts authenticate without a password. Shown once at creation; revoke anytime.',
-    doc: 'operate/authentication#api-keys',
+    doc: 'operate/api-keys',
   },
   'settings.tags': {
     text: 'Reusable labels you can attach to projects for grouping and filtering across the dashboard.',
@@ -732,7 +732,7 @@ export const HELP_TOPICS = {
   'settings.pr-feedback': {
     title: 'Pull-request feedback',
     text: 'When a run finishes on a branch with an open pull request, Piwi can post a summary comment — new failures separated from pre-existing ones, with suggested locators — and set a commit status. Needs PIWI_SITE_URL and an SCM token with write access.',
-    doc: 'guide/ci#pull-request-feedback',
+    doc: 'features/pr-feedback',
     envVars: ['PIWI_SITE_URL'],
   },
   'settings.auto-heal': {
@@ -760,7 +760,7 @@ export const HELP_TOPICS = {
   'settings.auto-diagnose': {
     title: 'Auto-diagnose',
     text: 'When a run finishes, up to 3 new failure clusters are diagnosed automatically — each diagnosis is one research call (when a research model is configured) plus one diagnosis call — and new clusters get human-readable titles in one batched call. Requires the diagnosis model to be configured.',
-    doc: 'features/ai-diagnosis#enabling-ai-diagnosis',
+    doc: 'guide/ai-provider#enabling-ai-diagnosis',
     envVars: ['PIWI_AI_AUTO_DIAGNOSE'],
   },
   'settings.ai-notifications': {
@@ -770,7 +770,7 @@ export const HELP_TOPICS = {
   'settings.embedding-model': {
     title: 'Embedding model',
     text: 'Embeds failures so semantically-similar errors group together (used by failure clustering). Can reuse another role’s provider or configure its own.',
-    doc: 'features/ai-diagnosis#enabling-ai-diagnosis',
+    doc: 'guide/ai-provider#model-roles',
     envVars: [
       'PIWI_AI_EMBEDDING_PROVIDER',
       'PIWI_AI_EMBEDDING_MODEL',

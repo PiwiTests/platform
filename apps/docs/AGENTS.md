@@ -11,12 +11,13 @@ npm run docs:gen      # regenerate the derived pages only
 
 ## Generated pages — never edit them by hand
 
-`docs:gen` writes three pages from registries. They are **gitignored** and rebuilt by `docs:dev` and `docs:build`:
+`docs:gen` writes four pages from registries. They are **gitignored** and rebuilt by `docs:dev` and `docs:build`:
 
 | Page | Source | Script |
 |---|---|---|
 | `reference/configuration.md` | the env-var registry, `apps/application/shared/piwi-env-vars.ts` | `scripts/generate-configuration.mjs` |
 | `reference/features.md` (All features) | the feature catalog, `apps/application/shared/piwi-features.ts` | `scripts/generate-features.mjs` |
+| `reference/reporter-options.md` | the reporter's options type, `packages/reporter/src/public/options.ts`, and `PIWI_ENV_KEYS` in `packages/reporter/src/internal/config/env.ts` | `scripts/generate-reporter-options.mjs` |
 | `reference/whats-new.md` | `CHANGELOG.md` | `scripts/generate-whats-new.mjs` |
 
 ### The configuration reference
@@ -120,8 +121,10 @@ exists for the long-tail searches that never contain the word "Piwi", so:
   feature needs its own page instead (`evidence` and `offline-export` were both extracted from it).
 - **Contributor material does not belong on this site.** Build steps, source layout, migration workflow and dev
   commands live in `CONTRIBUTING.md` / `AGENTS.md` / `packages/reporter/ARCHITECTURE.md`. The site is for people *using* Piwi.
-- **Every user-visible reporter option** must appear in `reporter.md`'s options table (and its `PIWI_*` var in the
-  table below it) in the same change that adds it to `packages/reporter/src/public/options.ts`.
+- **Every reporter option has a JSDoc comment** in `packages/reporter/src/public/options.ts`, under the `// ── Group ──`
+  comment it belongs to, stating its default. The Reporter options page (`reference/reporter-options.md`) is generated
+  from those comments and from `PIWI_ENV_KEYS`, and the generator fails on an option without one. `reporter.md` covers
+  setup only and links there.
 - **In-app help links point here.** `apps/application/app/utils/help-content.ts` builds docs URLs from `doc:` string
   literals, as do the capability registry, a few components via `<DocLink to="…">`, the catalog, its
   `FEATURE_NEED_DOCS` and the env-var registry's `docs` fields. `apps/application/tests/unit/docs-drift.test.ts`

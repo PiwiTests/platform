@@ -79,10 +79,10 @@ The complete history for one project. The header states the project's condition 
 Five tabs:
 
 - **Runs** — the run trend chart (timeline **Markers** open in a slide-over from the chart header, where they can be added, edited and deleted) over a table of every run with status, start time, duration, test counts, and browser badges. A row opens the run; selecting two runs and clicking **Compare** opens the newer run's **Changes** tab with the older as its baseline.
-- **Tests** — every unique test with status, executed-only pass rate, result breakdown, average duration, and last run; searchable, filterable by status, [tag](/guide/reporter#test-tags), [lock](/guide/reporter#test-locks), owner, priority and last-run age (stale cases hidden by default). **Group by File** groups the tests under each spec file and carries that file's pass rate, flaky rate, failure count, test count and average time in the group header. A row opens the test's full history.
+- **Tests** — every unique test with status, executed-only pass rate, result breakdown, average duration, and last run; searchable, filterable by status, [tag](/reference/test-metadata#test-tags), [lock](/reference/test-metadata#test-locks), owner, priority and last-run age (stale cases hidden by default). **Group by File** groups the tests under each spec file and carries that file's pass rate, flaky rate, failure count, test count and average time in the group header. A row opens the test's full history.
 - **Failures** — one place for everything broken, switched with a segmented control: the **Failure clusters** (executions that failed the same way — see [AI diagnosis & clustering](./ai-diagnosis)), the **Flaky** tests scored by a composite flakiness metric with root-cause classification and impact ranking (see [Flaky tests](./flaky-tests#flaky-test-detection)), each with a **Quarantine** action, and the **Quarantine** list — tests excluded from the [CI gate](/guide/ci#blocking-a-merge)'s verdict while still running, each with its passing streak and whether it has earned a release. See [Quarantine](./flaky-tests#quarantine-with-a-way-out).
 - **Performance** — average/P90 duration trends, a slowest-tests table, timeout opportunities, and the [slow endpoints](./slow-tests) for a selected run; the AI-step coverage card appears when the project replays committed [AI-step artifacts](/features/ai-steps).
-- **Settings** *(admins when auth is enabled, otherwise everyone)* — project [access](/operate/authentication#project-access) (members) and the edit form: label, description, tags, default branch, per-project SCM token, and **AI diagnosis instructions** (project-specific context combined with the global instructions for every diagnosis).
+- **Settings** *(admins when auth is enabled, otherwise everyone)* — project [access](/operate/project-access) (members) and the edit form: label, description, tags, default branch, per-project SCM token, and **AI diagnosis instructions** (project-specific context combined with the global instructions for every diagnosis).
 
 Project **import** (`/projects/:id/import`, admins only) backfills runs recorded before you adopted Piwi from Playwright blob reports, checking each archive against the server's size limit and the project's existing imports before uploading anything. See [Importing past runs](/guide/importing-runs).
 
@@ -105,9 +105,9 @@ The right panel is tabbed:
   headline and source path, duration, browser, retries, wasted time and its cluster). **Group by** *Cluster*
   (the default on a red run — each group header names the cluster, its test count and triage status, with an
   *Open cluster* link, and passing tests fold into a collapsed *Passed* group), *File* (with per-file tallies),
-  *File + Describe* (the file nested by its describe blocks), *Lock* (each [lock](/guide/reporter#test-locks) the run
+  *File + Describe* (the file nested by its describe blocks), *Lock* (each [lock](/reference/test-metadata#test-locks) the run
   declared, holders grouped under it, when the run has locks) or *None*. Search matches the title, path **and**
-  error text; filter by status, browser, [tags](/guide/reporter#test-tags) (all must match), lock, new regressions
+  error text; filter by status, browser, [tags](/reference/test-metadata#test-tags) (all must match), lock, new regressions
   and newly flaky. Select failing rows for bulk triage (quarantine, or set the cluster status) in any grouping.
 - **Changes** — what differs against **one baseline** (the last passing run on the same branch by default, or the
   run you pick — deep-linkable as `?baseline=<runId>`): new failures, fixed, still failing, newly flaky / passed on
@@ -115,7 +115,7 @@ The right panel is tabbed:
   "new failures" count is computed once against that baseline. Disabled until the run finishes. See
   [What changed in a run](./run-changes).
 - **Timeline** — a horizontal per-worker timeline of test execution, with a *Show hooks and waits* toggle to reveal
-  setup, hook, fixture and wasted-wait spans and, when the run declared [locks](/guide/reporter#test-locks), a *Show locks*
+  setup, hook, fixture and wasted-wait spans and, when the run declared [locks](/reference/test-metadata#test-locks), a *Show locks*
   toggle that colors each holder's bar by the lock it held (one color per lock, legend above, and the bar tooltip lists
   a test's locks); click a bar to jump to that test. Beneath it, the **slowest tests**, a **Locks** table (per lock:
   its tests, how long it was held, its share of the run's wall time, and an estimate of the time that ran serialized
@@ -171,13 +171,13 @@ opens with no network and no Piwi server. See [Offline export](./offline-export)
 |------|------|--------------|
 | General | `/settings` | Basic app configuration; a **Reset Demo** button in demo mode |
 | Account | `/settings/account` | Your display name, email, password, and **connected accounts** (link/unlink Google or GitHub — see [OAuth](/operate/authentication#oauth-google-github)) |
-| Users | `/settings/users` | User accounts, roles, project access, and API keys (shown once, stored hashed) — see [Authentication](/operate/authentication) |
-| Permissions | `/settings/permissions` | Every user against every project on one grid; each tick grants one project and saves at once — see [Permission grid](/operate/authentication#permission-grid) |
+| Users | `/settings/users` | User accounts, roles, project access, and API keys (shown once, stored hashed) — see [Authentication](/operate/authentication) and [API keys](/operate/api-keys) |
+| Permissions | `/settings/permissions` | Every user against every project on one grid; each tick grants one project and saves at once — see [Permission grid](/operate/project-access#permission-grid) |
 | Storage | `/settings/storage` | Storage analysis (by project, file kind and over time) and cleanup (bulk-delete runs older than N days) — see [Storage](/operate/storage#storage-management) |
 | Tags | `/settings/tags` | Create, color, edit, and delete the tags used to organize projects |
-| Pull requests | `/settings/pr-feedback` | What Piwi posts back to a pull request when a run finishes — see [Pull-request feedback](/guide/ci#pull-request-feedback) |
+| Pull requests | `/settings/pr-feedback` | What Piwi posts back to a pull request when a run finishes — see [Pull-request feedback](/features/pr-feedback) |
 | Performance | `/settings/performance` | Wasted-time patterns (which Playwright waits count as "wasted time") and timeout-hygiene thresholds (oversized per-test timeouts, stale `test.slow()` marks) — see [Configuration](/reference/configuration#wasted-time) |
-| AI | `/settings/ai` | Provider/model roles, auto-diagnose, global instructions, and context limits — see [AI diagnosis](./ai-diagnosis#enabling-ai-diagnosis) |
+| AI | `/settings/ai` | Provider/model roles, auto-diagnose, global instructions, and context limits — see [AI provider](/guide/ai-provider) |
 | Notifications | `/settings/notifications` | Channels, subscriptions, and SMTP — see [Notifications & alerts](./notifications) |
 
 Where an environment variable backs a setting, the field is shown read-only with a lock badge and the env var name (see [Configuration](/reference/configuration)).
@@ -195,7 +195,7 @@ The [live demo](https://piwitests.dev/demo/) runs entirely in your browser (in-m
 
 **Simulate a test run** — the demo banner replays the exact streaming protocol a Piwi reporter speaks during a real run, so you can watch one arrive live. Scenarios: a passing run, a run with failures (joining a known cluster plus a brand-new one), flaky retries, a performance regression, an interrupted run, and a cross-browser run. Each creates a real run in the in-browser database, so worker timeline, failure clusters, and history comparisons all behave exactly as they would against a server.
 
-**Acting as** — the demo runs with authentication conceptually enabled. Switch between pre-seeded identities (an admin, a CI reporter, and several project-scoped users) to see how [project access](/operate/authentication#project-access) changes what each user sees. Acting as the admin, you can change affectations live — on the [permission grid](/operate/authentication#permission-grid), for instance — and then switch users to see the effect.
+**Acting as** — the demo runs with authentication conceptually enabled. Switch between pre-seeded identities (an admin, a CI reporter, and several project-scoped users) to see how [project access](/operate/project-access) changes what each user sees. Acting as the admin, you can change affectations live — on the [permission grid](/operate/project-access#permission-grid), for instance — and then switch users to see the effect.
 
 ## Responsive & dark mode
 

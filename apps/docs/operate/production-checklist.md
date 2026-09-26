@@ -10,14 +10,14 @@ A fresh Piwi instance starts as an **open dashboard with authentication off** �
 
 ## Before you expose it
 
-1. **Turn authentication on.** Set `PIWI_AUTH_ENABLED=true` and a strong `PIWI_AUTH_SECRET` (session-cookie signing key). The server refuses to start with auth enabled and no secret, so this can't half-apply. See [Authentication](./authentication).
+1. **Turn authentication on.** Set `PIWI_AUTH_ENABLED=true` and a strong `PIWI_AUTH_SECRET` (session-cookie signing key). The server refuses to start with auth enabled and no secret, so this can't half-apply. Then create the first administrator account before you share the URL. See [Authentication](./authentication).
 2. **Set the encryption key.** Set `PIWI_SECRET_KEY` so the credentials you store in the dashboard — AI API keys, SCM tokens, webhook secrets — are encrypted with **your** key. Unset, Piwi falls back to a development key published in this repository, which is no protection at all. Generate either secret with:
 
    <<< @/snippets/secret.sh{bash}
 
 3. **Terminate TLS.** Always put the dashboard behind an HTTPS reverse proxy. Mind the two things a proxy gets wrong by default: **upload size** (trace and report uploads reach hundreds of MB) and **SSE buffering** (live runs and browser notifications use long-lived `text/event-stream` responses that must not be buffered). See [Deployment → Reverse proxy (HTTPS)](./deployment#reverse-proxy-https).
 4. **Tell Piwi it's behind a proxy.** Set `PIWI_TRUST_PROXY=true` so the per-client rate limits on the auth endpoints key on the real client address from `X-Forwarded-For` instead of pooling every request into the proxy's one address. Leave it off when clients connect directly — see the [configuration reference](/reference/configuration#authentication).
-5. **Persist and back up the data.** Mount `/app/.data` (or your configured database and storage paths) on a persistent volume, and set up a backup before you accumulate history you care about. See [Deployment → Backups](./deployment#backups).
+5. **Persist and back up the data.** Mount `/app/.data` (or your configured database and storage paths) on a persistent volume, and set up a backup before you accumulate history you care about. See [Backup & restore](./backup-restore).
 6. **Pin a version.** Running `latest` lets an unattended `docker pull` move you across a breaking change. Pin an exact tag and bump it deliberately — migrations are forward-only, so the rollback path is *restore a backup*, not "pull the old tag." See [Upgrading](./upgrading).
 
 Never leave the built-in development secrets in place on a real deployment.
@@ -40,8 +40,10 @@ The defaults are conservative, so the checklist above is short. Without any extr
 
 ## Related
 
-- [Authentication](./authentication) — roles, OAuth, API keys
-- [Deployment](./deployment) — the reverse proxy, backups and the full install
+- [Authentication](./authentication) — roles, sign-in and OAuth
+- [API keys](./api-keys) — how CI and scripts sign in once authentication is on
+- [Deployment](./deployment) — the reverse proxy and the full install
+- [Backup & restore](./backup-restore) — what to copy, and how to restore it
 - [Privacy & data flow](/guide/privacy) — what is stored, and secrets at rest
 - [Configuration reference](/reference/configuration) — every `PIWI_*` variable
 - [Security policy](https://github.com/PiwiTests/platform/blob/main/SECURITY.md) — reporting a vulnerability

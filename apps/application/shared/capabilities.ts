@@ -115,7 +115,7 @@ export const CAPABILITIES: CapabilityDef[] = [
     needs: ['scm'],
     detection: 'scm',
     since: '0.7.0',
-    doc: 'features/ai-diagnosis',
+    doc: 'guide/source-control',
   },
   {
     id: 'ai',
@@ -124,7 +124,7 @@ export const CAPABILITIES: CapabilityDef[] = [
     needs: ['llm'],
     detection: 'ai',
     since: '0.3.0',
-    doc: 'features/ai-diagnosis',
+    doc: 'guide/ai-provider',
   },
   {
     id: 'mcp',
@@ -160,7 +160,7 @@ export const CAPABILITIES: CapabilityDef[] = [
     needs: ['scm'],
     detection: null,
     since: '0.19.0',
-    doc: 'guide/ci',
+    doc: 'features/pr-feedback',
   },
   {
     id: 'auto-heal',

@@ -414,7 +414,7 @@ branch, so it can start before that PR is merged.
   moved pages are capped at their current size until PR 3 replaces the budget.
 - `apps/docs/AGENTS.md` rewritten to these rules.
 
-**PR 2: Guide** (2 days)
+**PR 2: Guide** (built)
 
 - Getting started in three steps, under 900 words, ending on Your first failure. "Choosing what you use" moves to
   `operate/capabilities.md`.
@@ -428,6 +428,23 @@ branch, so it can start before that PR is merged.
   under results, failures, analytics and Test Map.
 - What Piwi does and Why Piwi?: one statement of the limits; the FAQ answers become links.
 - About 15 in-app link updates.
+
+Where the build differs from this plan, and why:
+
+- AI diagnosis keeps a heading with a one-line pointer for each moved section ("Enabling AI diagnosis", "Response
+  language", "Context limits (and token cost)"), so old links keep an anchor while the in-app links move to AI provider.
+  The research and embedding help topics link `guide/ai-provider#model-roles` and auto-diagnose links
+  `#enabling-ai-diagnosis`, rather than the page top. The three `cluster.*` SCM topics keep
+  `features/ai-diagnosis#scm-grounded-context`: they are about the diagnosis context, not the token.
+- The Reporter options generator reads `options.ts` and `env.ts` with the TypeScript compiler API, both files, since
+  `DEFAULTS` is not exported. A default comes from the JSDoc, else from `DEFAULTS`. `apps/docs` pins `typescript@^6`,
+  the root's version: TypeScript 7 (the native port) has no compiler API. The generator fails on an option without
+  JSDoc; every option already had one.
+- Server spans and the route manifest are Nitro-only: the ASP.NET Core package sends `X-Piwi-Trace` only on probe
+  requests and serves no manifest. `scenario-gaps.md` says both packages serve `/__piwi/manifest`; PR 3 corrects it
+  with the Test Map split.
+- The branch-detection chain moved from CI & sharding to Test metadata, so CI & sharding lists what is detected and
+  links there.
 
 **PR 3: feature pages** (3 days)
 
@@ -447,13 +464,27 @@ branch, so it can start before that PR is merged.
   on endpoint paths and on planned wording, with the pages they clean.
 - About 15 in-app link updates.
 
-**PR 4: Self-hosting** (1 day)
+**PR 4: Self-hosting** (built)
 
 - `operate/one-click-deploy.md` from `deployment.md`; the security list lives only in the production checklist.
 - `operate/project-access.md` (with the permission grid) and `operate/api-keys.md` from `authentication.md`; OAuth
   internals cut.
 - Storage architecture internals cut; retention and runs kept forever stay on Storage.
 - Sidebar groups: Install, Configure, Data, Upgrade; Metrics and rollup export joins Data.
+- Built differently from the plan, and why:
+  - Storage keeps a short "Storage architecture" section (what is automatic: traces split, compressed and freed when
+    unreferenced; failure evidence stored once) rather than losing it, because the app's storage backend help links
+    `#storage-architecture`. The page is renamed **Storage & retention** (H1 and sidebar), URL kept.
+  - Deployment's Backups section goes too: it copied Backup & restore, and the four operate links to it now point
+    there. Deployment's prose is about 1,000 words; code samples take it to about 1,250.
+  - "Using the reporter with a username and password" lives on API keys, as the alternative to a key for CI.
+  - API keys gets a Self-hosting catalog entry with no need chip: every user manages their own keys under
+    Settings → Account, and administrators manage anyone's under Settings → Users. The page says so; the old
+    section only named Settings → Users. Project access's location becomes Settings → Permissions.
+  - `SECURITY.md` pointed at the old `/deployment` URL with its own three-item list; it now links the checklist.
+    The README keeps its three-line "Before you expose it" summary, which already links the checklist.
+  - The generated one-click manifests point at `/operate/one-click-deploy` instead of the old `/deployment`.
+  - Integrations and Localization gain a Related footer; Integrations links Issue tracking at the top.
 
 **PR 5: remaining reference and checks** (1 day, after PR 3)
 

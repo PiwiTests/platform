@@ -47,8 +47,8 @@ export const FEATURE_NEED_LABELS: Record<FeatureNeed, string> = {
  */
 export const FEATURE_NEED_DOCS: Record<FeatureNeed, string> = {
   fixtures: 'guide/capture-fixtures',
-  llm: 'features/ai-diagnosis#enabling-ai-diagnosis',
-  scm: 'features/ai-diagnosis#scm-grounded-context',
+  llm: 'guide/ai-provider',
+  scm: 'guide/source-control',
   backend: 'guide/backend-logs',
   desktop: 'features/desktop',
   extension: 'features/extension',
@@ -232,7 +232,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         summary: 'A summary of the failures on the branch posted to the PR, and a re-run triggered from the dashboard.',
         needs: ['scm'],
         where: 'Settings → Pull requests',
-        doc: 'guide/ci',
+        doc: 'features/pr-feedback',
       },
       {
         title: 'CI merge gate',
@@ -406,7 +406,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
     features: [
       {
         title: 'Authentication & roles',
-        summary: 'Optional sign-in with roles (admin, reporter, viewer), API keys for CI, and Google/GitHub OAuth.',
+        summary: 'Optional sign-in with roles (administrator, reporter, user) and Google/GitHub OAuth.',
         needs: ['admin'],
         where: 'Settings → Users',
         doc: 'operate/authentication',
@@ -415,8 +415,16 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         title: 'Project access',
         summary: 'Scope who can see and act on each project, for multi-team instances.',
         needs: ['admin'],
-        where: 'Settings → Users',
-        doc: 'operate/authentication#project-access',
+        where: 'Settings → Permissions; project Settings → Members',
+        doc: 'operate/project-access',
+      },
+      {
+        title: 'API keys',
+        summary:
+          'Long-lived tokens that let the reporter, CI and scripts sign in, shown once and revocable at any time.',
+        needs: [],
+        where: 'Settings → Account; Settings → Users',
+        doc: 'operate/api-keys',
       },
       {
         title: 'Data retention & cleanup',

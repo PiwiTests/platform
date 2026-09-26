@@ -53,7 +53,7 @@ npx @piwitests/reporter init --server-url http://localhost:3000 --project my-pro
 
 `init` installs the reporter, wraps your `playwright.config`, adds the capture fixtures and records the
 connection in `.env.example`; every step is safe to re-run. [Getting started](/guide/getting-started) covers
-the other install paths and the manual setup.
+the other ways to run the dashboard, and [Reporter](/guide/reporter) the manual setup.
 
 ### 3. Run your tests
 
@@ -94,7 +94,7 @@ JUnit, pytest and Cypress results, or you only ever debug on your own machine,
 
 - [Deployment](/operate/deployment): Docker, Compose, Kubernetes and one-click hosts
 - [Production checklist](/operate/production-checklist): what to set before anyone else can reach it
-- [Authentication](/operate/authentication): roles, OAuth, API keys and project access
+- [Authentication](/operate/authentication): sign-in, roles and OAuth, with [project access](/operate/project-access) and [API keys](/operate/api-keys)
 - [Upgrading](/operate/upgrading): what a version bump does, and why there is no downgrade
 
 ### I report to people who don't open Piwi
