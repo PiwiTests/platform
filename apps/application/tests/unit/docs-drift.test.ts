@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join, posix, relative } from 'node:path';
 import { CAPABILITY_MODULES } from '#shared/capabilities';
 import { MCP_TOOL_DEFS } from '#shared/mcp-tools';
+import { NOTIFICATION_EVENTS, REPORT_READY_EVENT } from '#shared/notification-events';
 import { FEATURE_NEED_DOCS, PIWI_FEATURE_GROUPS } from '#shared/piwi-features';
 import { PIWI_ENV_VARS } from '#shared/piwi-env-vars';
 import { HELP_TOPICS } from '~/utils/help-content';
@@ -305,6 +306,82 @@ describe('no endpoint paths in prose', () => {
       paths,
       `${page} names Piwi endpoints in prose: link the [API docs](https://piwitests.dev/demo/docs) instead (apps/docs/AGENTS.md, "The API reference")`,
     ).toEqual([]);
+  });
+});
+
+describe('hand-written reference pages match the code', () => {
+  // These pages list what a code list holds but are written by hand, because
+  // the code has no descriptions to generate them from. Each check fails when
+  // the code gains an entry the page does not name.
+
+  // One `## ` section of a page, found by a heading that contains `heading`.
+  const sectionOf = (page: string, heading: string) =>
+    read(page)
+      .split(/^## /m)
+      .find((part) => part.split('\n', 1)[0]!.includes(heading)) ?? '';
+
+  test('every notification event is on the Notification events page', () => {
+    const page = read('apps/docs/reference/notification-events.md');
+    for (const event of [...NOTIFICATION_EVENTS, REPORT_READY_EVENT]) {
+      expect(page, `apps/docs/reference/notification-events.md does not name \`${event}\``).toContain(`\`${event}\``);
+    }
+  });
+
+  test('every clue rule is on the Clue rules page', () => {
+    const union = /export type FailureClueRule =([^;]+);/.exec(read('apps/application/shared/failure-clues.ts'))?.[1];
+    const rules = [...(union ?? '').matchAll(/'([\w-]+)'/g)].map((m) => m[1]!);
+    expect(rules.length, 'FailureClueRule was not found in shared/failure-clues.ts').toBeGreaterThan(0);
+    const page = read('apps/docs/reference/clues.md');
+    for (const rule of rules) {
+      expect(page, `apps/docs/reference/clues.md does not show the rule id \`${rule}\``).toContain(`\`${rule}\``);
+    }
+  });
+
+  test('every shortcut the app registers is on the Keyboard shortcuts page', () => {
+    const page = 'apps/docs/reference/keyboard-shortcuts.md';
+    // The go-to chords, `'g-h': () => …` in defineShortcuts.
+    const chords = [...read('apps/application/app/composables/useDashboard.ts').matchAll(/'(\w)-(\w)':/g)];
+    expect(chords.length, 'no defineShortcuts chords found in app/composables/useDashboard.ts').toBeGreaterThan(0);
+    const anywhere = sectionOf(page, 'Anywhere');
+    for (const [, first, second] of chords) {
+      expect(anywhere, `${page} does not list the chord ${first} then ${second}`).toContain(
+        `\`${first}\` then \`${second}\``,
+      );
+    }
+    // The failure inbox's keys, the `case 'x':` branches of its keydown handler.
+    const inbox = read('apps/application/app/components/home/OpenFailuresCard.vue');
+    const handler = /function onKeydown[\s\S]*?\n}\n/.exec(inbox)?.[0] ?? '';
+    const keys = [
+      ...[...handler.matchAll(/case '(\w)':/g)].map((m) => m[1]!),
+      ...(handler.includes("'Escape'") ? ['Esc'] : []),
+    ];
+    expect(keys.length, 'no keys found in the failure inbox keydown handler').toBeGreaterThan(0);
+    const section = sectionOf(page, 'Failure inbox');
+    for (const key of keys) {
+      expect(section, `${page} does not list the failure inbox key \`${key}\``).toContain(`\`${key}\``);
+    }
+  });
+
+  // Each command's `--help` text is its USAGE constant; the page has one
+  // section per command. A flag counts as listed when the section names it.
+  const CLI_COMMANDS: Record<string, string> = {
+    init: '`init`',
+    skills: '`skills`',
+    gate: '`gate`',
+    'quality-report': '`report`',
+    select: '{#select-run}',
+    probe: '`probe`',
+    ai: '`ai`',
+  };
+
+  test.each(Object.entries(CLI_COMMANDS))('every flag of %s --help is in the Piwi CLI reference', (source, heading) => {
+    const usage = /const USAGE = `([\s\S]*?)`/.exec(read(`packages/reporter/src/cli/${source}.ts`))?.[1] ?? '';
+    const flags = [...new Set([...usage.matchAll(/(?<![\w-])--[a-z][a-z\d-]*/g)].map((m) => m[0]))];
+    expect(flags.length, `no flags found in packages/reporter/src/cli/${source}.ts`).toBeGreaterThan(0);
+    const section = sectionOf('apps/docs/reference/cli.md', heading);
+    expect(section, `apps/docs/reference/cli.md has no section headed ${heading}`).not.toBe('');
+    const missing = flags.filter((flag) => !new RegExp(`${flag}(?![a-z\\d-])`).test(section));
+    expect(missing, `apps/docs/reference/cli.md, section ${heading}, does not list these flags`).toEqual([]);
   });
 });
 
