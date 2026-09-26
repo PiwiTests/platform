@@ -21,7 +21,7 @@ The top of the page is one **situation block**. Its heading is a plain-English s
 
 > `getByRole('button', { name: 'Pay' }) never became enabled — click timed out after 30 s`
 
-The verbatim error is one click away under **Raw error** — Piwi never rewrites it, it only leads with a readable summary. That same headline names the test on the run page, in [alerts](/features/notifications), in the [pull-request comment](./ci#pull-request-feedback), and in your terminal, so you recognize it everywhere.
+The verbatim error is one click away under **Raw error** — Piwi never rewrites it, it only leads with a readable summary. That same headline names the test on the run page, in [alerts](/features/notifications), in the [pull-request comment](/features/pr-feedback), and in your terminal, so you recognize it everywhere.
 
 ## 2. Most likely — why
 

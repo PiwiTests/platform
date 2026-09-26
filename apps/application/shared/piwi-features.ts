@@ -47,8 +47,8 @@ export const FEATURE_NEED_LABELS: Record<FeatureNeed, string> = {
  */
 export const FEATURE_NEED_DOCS: Record<FeatureNeed, string> = {
   fixtures: 'guide/capture-fixtures',
-  llm: 'features/ai-diagnosis#enabling-ai-diagnosis',
-  scm: 'features/ai-diagnosis#scm-grounded-context',
+  llm: 'guide/ai-provider',
+  scm: 'guide/source-control',
   backend: 'guide/backend-logs',
   desktop: 'features/desktop',
   extension: 'features/extension',
@@ -232,7 +232,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         summary: 'A summary of the failures on the branch posted to the PR, and a re-run triggered from the dashboard.',
         needs: ['scm'],
         where: 'Settings → Pull requests',
-        doc: 'guide/ci',
+        doc: 'features/pr-feedback',
       },
       {
         title: 'CI merge gate',

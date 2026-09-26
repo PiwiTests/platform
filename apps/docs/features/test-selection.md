@@ -60,7 +60,7 @@ still covers the whole selection (so a `--require-selection` gate sees all of it
 npx @piwitests/reporter run smoke --shard 2/4 -- --shard=2/4
 ```
 
-The split is **lock-aware**: every test that shares a [lock](/guide/reporter#test-locks) is placed in the same shard, then
+The split is **lock-aware**: every test that shares a [lock](/reference/test-metadata#test-locks) is placed in the same shard, then
 the shards are balanced by duration. Playwright serializes lock holders inside one `npx playwright test` process only —
 two `--shard` runs are separate processes and can hold the same lock at once — so keeping a lock's holders together
 restores the guarantee across shards. A lock group larger than a shard's fair share still goes to one shard (the lock

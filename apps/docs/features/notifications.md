@@ -100,14 +100,14 @@ at most five, capped at 300 characters. When that head is only a bare timeout li
 `waiting for …` / `locator resolved to …` line of the call log is appended so the excerpt says what
 Playwright was waiting on. Slack and email messages lead with the headline, quote the same excerpt, and link each failure to its
 execution (`/test-run-cases/<executionId>`), falling back to the test's history page when a payload
-carries no execution id. The [pull-request comment](/guide/ci#pull-request-feedback) quotes failures the same
+carries no execution id. The [pull-request comment](/features/pr-feedback) quotes failures the same
 way.
 
 `cluster.new` payloads similarly carry `sampleErrorExcerpt` (cut the same way) and `affectedCases`; `cluster.fixed` and `cluster.regressed` carry the cluster's `signature`, `title`, the `runId` that decided the verdict and, for a fix, the `commit` and `timeToResolutionMs`. To check the HMAC, sign the exact bytes you received, never a re-serialized payload.
 
 ### Reaching the person who fixed it
 
-When an [SCM token](/guide/ci#pull-request-feedback) is configured, `cluster.fixed` and `cluster.regressed` resolve the fixing commit's author through the provider and add a `fixAuthor` object — `{ name, email }` — to the payload (`cluster.regressed` uses the author of the fix that did not hold). On top of the normal subscription routing, the event is then delivered to that person directly:
+When an [SCM token](/guide/source-control) is configured, `cluster.fixed` and `cluster.regressed` resolve the fixing commit's author through the provider and add a `fixAuthor` object — `{ name, email }` — to the payload (`cluster.regressed` uses the author of the fix that did not hold). On top of the normal subscription routing, the event is then delivered to that person directly:
 
 - **Email**, through the same outbox, when SMTP is configured **and** the commit's email belongs to a registered Piwi user. The mail goes to that user's account email, never to the raw commit address, so a fix by an outside contributor never becomes a mail to a stranger.
 - **A browser notification** for that user, delivered even when they have no matching subscription.

@@ -183,7 +183,7 @@ export const PIWI_ENV_CATEGORIES: Record<PiwiEnvVarCategory, PiwiEnvVarCategoryM
     order: 8,
     intro:
       'Cap how much evidence (and how many tokens) go into each AI diagnosis. Resolution order: defaults ← values stored from **Settings → AI** ← environment; the environment wins and locks the field in the UI. Values are clamped to the min–max range; a `0` disables a section only where the minimum is `0`.',
-    note: 'See [AI diagnosis → Context limits](/features/ai-diagnosis#context-limits-and-token-cost) for section-by-section guidance.',
+    note: 'See [AI provider → Context limits](/guide/ai-provider#context-limits-and-token-cost) for how the caps work.',
   },
   'ai-steps': {
     title: 'AI steps',
@@ -578,7 +578,7 @@ export const PIWI_ENV_VARS = {
     category: 'ai',
     example: 'French',
     since: '0.29.0',
-    docs: 'features/ai-diagnosis#response-language',
+    docs: 'guide/ai-provider#response-language',
   },
   PIWI_AI_AUTO_DIAGNOSE_MAX: {
     description: 'Max clusters auto-diagnosed per finished run (budget cap; default 3).',
