@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Locator edge cases</title>
+    <style>
+      .gone {
+        display: none;
+      }
+      .attr-content::before {
+        content: attr(data-label) ' →';
+      }
+      .counter::before {
+        content: counter(item) '. ';
+      }
+      .alt-only {
+        content: url('data:image/gif;base64,R0lGODlhAQABAAAAACw=') / 'Company logo';
+        display: inline-block;
+        width: 4px;
+        height: 4px;
+      }
+      .contents {
+        display: contents;
+      }
+      .inline-block {
+        display: inline-block;
+      }
+      .flex {
+        display: flex;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Edge cases</h1>
+
+    <!-- Names that reference hidden or embedded content -->
+    <span id="hidden-label" class="gone">Secret name</span>
+    <button type="button" aria-labelledby="hidden-label">Visible text</button>
+    <button type="button" id="self-ref" aria-labelledby="self-ref extra">Self</button>
+    <span id="extra">extra words</span>
+    <button type="button" aria-labelledby="missing-id">Fallback text</button>
+    <button type="button" aria-labelledby="missing-id" aria-label="Aria wins">Content</button>
+    <button type="button" aria-label="   ">Blank aria label</button>
+
+    <label>Quantity <input type="number" value="3" /> units</label>
+    <label
+      >Size
+      <select>
+        <option>Small</option>
+        <option selected>Large</option>
+      </select></label
+    >
+    <label for="multi">First label</label>
+    <label for="multi">Second label</label>
+    <input id="multi" />
+    <label>Hidden part <span aria-hidden="true">(ignored)</span> <input name="hidden-part" /></label>
+    <label>Button label <button type="button">Inner button</button></label>
+    <span id="combo-label">Pick a fruit</span>
+    <input role="combobox" aria-labelledby="combo-label" value="Apple" />
+
+    <!-- Roles: conflicts, inheritance, explicit tokens -->
+    <a href="/go" role="button">Link acting as button</a>
+    <button type="button" role="none">Focusable none</button>
+    <div role="presentation" aria-label="Has global aria">Presentational with aria</div>
+    <div role="none">Plain none</div>
+    <div role="invalid-role button">First valid token</div>
+    <div role="  switch  " aria-checked="false">Padded role</div>
+    <ol role="presentation">
+      <li>Inherits presentation</li>
+    </ol>
+    <ul role="none">
+      <li tabindex="0">Focusable item</li>
+    </ul>
+    <table role="none">
+      <tbody>
+        <tr>
+          <td>Cell in none table</td>
+        </tr>
+      </tbody>
+    </table>
+    <section aria-labelledby="sec-title"><h2 id="sec-title">Named section</h2></section>
+    <form><input aria-label="Nameless form field" /></form>
+    <form aria-label="Named form"><button type="submit">Go</button></form>
+    <img alt="" title="Decorative with title" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" />
+    <img alt="" tabindex="0" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" />
+    <input type="search" list="suggestions" aria-label="Search with list" />
+    <datalist id="suggestions"><option value="one"></option></datalist>
+    <select size="3" aria-label="Sized select">
+      <option>A</option>
+      <option>B</option>
+    </select>
+    <summary>Loose summary</summary>
+    <details>
+      <summary>Summary name <b>bold</b></summary>
+      <p>Body</p>
+    </details>
+
+    <table>
+      <tr>
+        <th>Lonely header</th>
+      </tr>
+    </table>
+    <table>
+      <tr>
+        <th>H1</th>
+        <th>H2</th>
+      </tr>
+      <tr>
+        <th>Row head</th>
+        <td>data</td>
+      </tr>
+      <tr>
+        <td>x</td>
+        <th>Mid header</th>
+        <td>y</td>
+      </tr>
+    </table>
+
+    <!-- CSS generated content -->
+    <button type="button" class="attr-content" data-label="Next"></button>
+    <ol>
+      <li class="counter"><button type="button">Counted</button></li>
+    </ol>
+    <span class="alt-only" role="img"></span>
+    <p class="attr-content" data-label="Para">Text</p>
+
+    <!-- display: contents and layout -->
+    <div class="contents" role="button" tabindex="0">Contents button</div>
+    <span class="contents"><span>Contents text</span></span>
+    <div class="flex"><span>Flex</span><span>items</span></div>
+    <button type="button"><span class="inline-block">Inline</span><span class="inline-block">Block</span></button>
+    <button type="button">
+      <div>Div</div>
+      <div>stack</div>
+    </button>
+
+    <!-- aria-owns and aria-describedby -->
+    <div role="list" aria-owns="owned-item" aria-label="Owner list"></div>
+    <div role="listitem" id="owned-item">Owned item</div>
+    <button type="button" aria-describedby="desc-a desc-b">Described</button>
+    <span id="desc-a">First part.</span><span id="desc-b" class="gone">Hidden second part.</span>
+
+    <!-- SVG -->
+    <svg width="20" height="20" aria-label="Chart area">
+      <a href="#x" xlink:href="#x" xlink:title="Svg link title" xmlns:xlink="http://www.w3.org/1999/xlink">
+        <rect width="5" height="5"></rect>
+      </a>
+    </svg>
+    <svg width="20" height="20">
+      <title>Svg title</title>
+      <circle r="4" cx="5" cy="5"></circle>
+    </svg>
+
+    <!-- Text engine subtleties -->
+    <p>Mixed <span>case</span> TEXT</p>
+    <div id="text-parent">
+      Outer
+      <div>Inner</div>
+      tail
+    </div>
+    <div>
+      <p>Twin</p>
+      <p>Twin</p>
+    </div>
+    <p></p>
+    <p>tab&#9;separated</p>
+    <button type="button">Padded button</button>
+    <input type="button" value="  Spaced value  " />
+    <div id="host-text"></div>
+
+    <!-- Slots with fallback -->
+    <x-fallback id="fb-empty"></x-fallback>
+    <x-fallback id="fb-filled"><span>Provided content</span></x-fallback>
+
+    <!-- Attribute matching subtleties -->
+    <input placeholder="  Spaced placeholder  " />
+    <input placeholder="MiXeD CaSe" />
+    <div title="Tooltip with ‘quotes’">Quoted title</div>
+    <img alt="Ünïcödé alt" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" />
+    <div data-testid="with space">Test id with space</div>
+    <div data-testid="quote'd">Test id with quote</div>
+
+    <script>
+      document.getElementById('host-text').attachShadow({ mode: 'open' }).innerHTML =
+        '<span>Shadow</span> <b>words</b>';
+      class XFallback extends HTMLElement {
+        constructor() {
+          super();
+          this.attachShadow({ mode: 'open' }).innerHTML = '<button type="button"><slot>Fallback label</slot></button>';
+        }
+      }
+      customElements.define('x-fallback', XFallback);
+    </script>
+  </body>
+</html>

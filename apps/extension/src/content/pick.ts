@@ -113,7 +113,7 @@ async function runPick(): Promise<void> {
     );
     if (ranked.length === 0) return;
 
-    await renderResultsPanel(ranked);
+    await renderResultsPanel(ranked, el);
   } catch (err) {
     // Without this a throw anywhere after the pick left the overlay frozen on
     // "Analyzing element…" and the rejection unhandled, so the flow looked

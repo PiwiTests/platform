@@ -27,6 +27,8 @@ export interface ExecutionLocatorUse {
 
 export interface ExecutionLocatorsResult {
   projectId: number;
+  /** The branch of the execution's run, whose view of the index the counts come from; null when the run had none. */
+  branch: string | null;
   uses: ExecutionLocatorUse[];
   /** False when the execution stored no steps, so nothing could be read. */
   hasSteps: boolean;
@@ -54,6 +56,8 @@ export interface LocatorUsageSite {
 export interface LocatorUsagesResult {
   match: LocatorUsageMatch;
   value: string;
+  /** The branch the uses come from (see `LocatorIndex.branch`); null for every branch together. */
+  branch: string | null;
   testCount: number;
   sites: LocatorUsageSite[];
   /** True when more rows matched than were returned. */
@@ -78,4 +82,18 @@ export function parseLocatorUsageQuery(
     return { error: `value must be 1 to ${LOCATOR_USAGE_VALUE_MAX_CHARS} characters` };
   }
   return { match: m, value: v };
+}
+
+export const LOCATOR_BRANCH_MAX_CHARS = 255;
+
+/**
+ * Validate the optional `branch` query of the locator index endpoints: a branch
+ * name, `*` for every branch together, or nothing for the default branch.
+ */
+export function parseLocatorBranchQuery(value: unknown): { branch: string | undefined } | { error: string } {
+  if (value === undefined || value === null || value === '') return { branch: undefined };
+  if (typeof value !== 'string' || value.trim().length === 0 || value.length > LOCATOR_BRANCH_MAX_CHARS) {
+    return { error: `branch must be a branch name of at most ${LOCATOR_BRANCH_MAX_CHARS} characters, or *` };
+  }
+  return { branch: value.trim() };
 }

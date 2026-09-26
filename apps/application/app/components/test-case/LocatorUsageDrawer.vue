@@ -8,6 +8,8 @@
  *   for a change to the container itself.
  * Call sites shared by the most tests come first — a page-object line is one
  * fix for all of them. The tests found can be turned into a run command.
+ * Answers in the view of one branch (`branch`: a name, `*` for every branch,
+ * the default branch when absent).
  */
 import type { ExecutionLocatorUse, LocatorUsageMatch, LocatorUsagesResult } from '#shared/locator-usages.types';
 
@@ -17,6 +19,7 @@ const props = defineProps<{
   projectId: number | null;
   projectKey?: string | number;
   projectName?: string;
+  branch?: string | null;
 }>();
 const emit = defineEmits<{ 'update:open': [value: boolean] }>();
 
@@ -77,7 +80,7 @@ const pending = ref(false);
 const failed = ref(false);
 
 watch(
-  () => [props.open, props.projectId, reading.value?.match, reading.value?.value] as const,
+  () => [props.open, props.projectId, reading.value?.match, reading.value?.value, props.branch] as const,
   async ([open, projectId], _old, onCleanup) => {
     const r = reading.value;
     if (!open || !projectId || !r) return;
@@ -89,7 +92,7 @@ watch(
     command.value = null;
     try {
       const found = await $fetch<LocatorUsagesResult>(`/api/projects/${projectId}/locator-usages`, {
-        query: { match: r.match, value: r.value },
+        query: { match: r.match, value: r.value, ...(props.branch ? { branch: props.branch } : {}) },
       });
       if (!stale) {
         result.value = found;
@@ -184,7 +187,9 @@ async function buildCommand() {
             <span class="tabular-nums">{{ result.testCount }}</span>
             {{ result.testCount === 1 ? 'test' : 'tests' }} ·
             <span class="tabular-nums">{{ result.sites.length }}</span>
-            {{ result.sites.length === 1 ? 'call site' : 'call sites' }}
+            {{ result.sites.length === 1 ? 'call site' : 'call sites' }} ·
+            <template v-if="result.branch">on <BranchLabel :name="result.branch" /></template>
+            <template v-else>on every branch</template>
             <template v-if="result.truncated"> · showing the most recent matches</template>
           </p>
 

@@ -835,6 +835,11 @@ const moreMenuItems = computed(() => {
     icon: 'i-lucide-list-filter',
     onSelect: () => navigateTo(`/projects/${projectId}/selections`),
   });
+  items.push({
+    label: 'Locators',
+    icon: 'i-lucide-crosshair',
+    onSelect: () => navigateTo(`/projects/${projectId}/locators`),
+  });
   if (canWrite.value && !projCapHidden('quality-reports'))
     items.push({
       label: 'Schedule a quality report…',

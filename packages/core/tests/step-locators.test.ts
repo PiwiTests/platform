@@ -4,7 +4,9 @@ import {
   extractStepLocatorUses,
   findLocationRoot,
   isAbsoluteLocation,
+  isInteractionAction,
   locationRootOf,
+  locatorActionLabel,
   stepLocations,
   stripLocationRoot,
 } from '../src/step-locators';
@@ -189,5 +191,19 @@ describe('findLocationRoot and stripLocationRoot', () => {
     expect(stepLocations([{ title: 'Navigate', location: '/a/t.spec.ts:1:1' }, { title: 'x' }, null])).toEqual([
       '/a/t.spec.ts:1:1',
     ]);
+  });
+});
+
+describe('action vocabulary', () => {
+  test('labels actions and expectations in sentence case', () => {
+    expect(locatorActionLabel('selectOption')).toBe('Select option');
+    expect(locatorActionLabel('expect.toHaveValue')).toBe('Expect toHaveValue');
+    expect(locatorActionLabel('expect.not.toBeVisible')).toBe('Expect not toBeVisible');
+    expect(locatorActionLabel('somethingNew')).toBe('somethingNew');
+  });
+
+  test('tells interactions from assertions and reads', () => {
+    expect(['click', 'fill', 'check', 'hover', 'press'].every(isInteractionAction)).toBe(true);
+    expect(['expect.toBeVisible', 'count', 'waitFor', 'evaluate', 'other'].some(isInteractionAction)).toBe(false);
   });
 });

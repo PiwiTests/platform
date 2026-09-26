@@ -49,7 +49,7 @@ Tables, by area:
 | ------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
 | Core results       | `projects`, `test_runs`, `test_suites`, `test_cases`, `test_runs_cases`, `network_requests`                                   |
 | Failure analysis   | `failure_clusters`, `failure_cluster_aliases`, `cluster_merge_suggestions`, `failure_diagnoses`, `failure_diagnosis_versions` |
-| Evidence & storage | `files`, `trace_resources`, `trace_blobs`, `case_payloads`, `locator_snapshots`                                               |
+| Evidence & storage | `files`, `trace_resources`, `trace_blobs`, `case_payloads`, `locator_snapshots`, `locator_usages`                             |
 | Metadata           | `tags`, `project_tags`, `markers`, `entity_links`, `app_settings`, `test_functions`, `test_selections`                        |
 | Identity           | `users`, `api_keys`, `account_tokens`, `project_assignments`                                                                  |
 | Notifications      | `notification_channels`, `subscriptions`, `notification_deliveries`                                                           |
@@ -63,6 +63,10 @@ Non-obvious ones:
 - **`locator_snapshots`** — one row per locator call site (`test_case_id` + `location`), upserted each run with the
   latest element attributes and pre-computed ranked alternatives. Unique index on `(test_case_id, location)`;
   `last_seen_run_id` FK is `ON DELETE set null`.
+- **`locator_usages`** — the locator index: one row per (test case, Playwright project, branch, call site, action,
+  canonical chain), read from the steps of each ingested execution; `branch` is `''` for the default branch, and a
+  view of another branch replaces the default rows of the tests that ran on it. Feeds "Who uses this?", the
+  project's Locators page and the extension's Tested elements (`GET /api/projects/:id/locator-index`).
 - **`account_tokens`** — single-use SHA-256-hashed tokens for reset/invite/verify, with a purpose enum and TTL enforced
   at query time.
 - **`notification_deliveries`** — an outbox: `dedupeKey` unique for idempotency, `status`, `attempts` + `scheduledFor`
@@ -105,6 +109,7 @@ Key server utilities (`server/utils/`):
 | `upload-limits.ts`                                            | Effective multipart ceiling (`PIWI_IMPORT_MAX_BYTES`), shared by `upload` and `import` and surfaced to the import page                                                                                                                                                                                                                                                                     |
 | `case-payloads.ts`                                            | Content-addressed payload upsert/inline/resolve                                                                                                                                                                                                                                                                                                                                            |
 | `locator-healing.ts`                                          | Shared `upsertLocatorSnapshots`, `getLocatorHealing`, `saveLocatorPick` (server + demo)                                                                                                                                                                                                                                                                                                    |
+| `locator-usages.ts`                                           | Shared locator index: step indexing on ingest, "Who uses this?", `getLocatorIndex` (server + demo)                                                                                                                                                                                                                                                                                         |
 | `project-access.ts`                                           | `getProjectScope`, `requireProjectAccess`, `requireResolvedProjectAccess`, entity resolvers                                                                                                                                                                                                                                                                                                |
 | `route-required-roles.ts`, `route-roles-match.ts`             | Read `x-required-roles` from compiled route metas; rou3 matching                                                                                                                                                                                                                                                                                                                           |
 | `ai-*.ts`                                                     | Provider abstraction, diagnosis, context building + limits, research stage, embeddings, images, system prompt, function-catalog extraction from pasted code (rules/schema/prompt-builder live in `shared/test-function-extract-prompt.ts` — one source for the AI-calling endpoint, the dashboard's no-AI-credits "copy prompt" flow, and the MCP `create_test_function` tool description) |

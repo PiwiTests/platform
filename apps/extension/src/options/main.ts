@@ -20,6 +20,8 @@ interface EditableMapping {
   urlPattern: string;
   projectId: number | null;
   projectLabel: string;
+  /** The branch deployed at those URLs; empty for the project's default branch. */
+  branch: string;
 }
 
 /** Populated by "Test connection" (or on load, if already connected) — the pool a mapping row's project `<select>` draws from. */
@@ -120,6 +122,17 @@ function renderMappings(): void {
       mappings[index]!.projectLabel = projectSelect.selectedOptions[0]?.textContent ?? '';
     });
 
+    const branchInput = document.createElement('input');
+    branchInput.type = 'text';
+    branchInput.className = 'mapping-branch';
+    branchInput.placeholder = 'default branch';
+    branchInput.title = 'The branch deployed at these URLs: Tested elements shows what its tests reach';
+    branchInput.setAttribute('aria-label', 'Branch deployed there');
+    branchInput.value = mapping.branch;
+    branchInput.addEventListener('input', () => {
+      mappings[index]!.branch = branchInput.value;
+    });
+
     const removeBtn = document.createElement('button');
     removeBtn.type = 'button';
     removeBtn.className = 'remove-mapping';
@@ -130,13 +143,13 @@ function renderMappings(): void {
       renderMappings();
     });
 
-    row.append(patternInput, projectSelect, removeBtn);
+    row.append(patternInput, projectSelect, branchInput, removeBtn);
     mappingsEl.appendChild(row);
   });
 }
 
 addMappingBtn.addEventListener('click', () => {
-  mappings.push({ urlPattern: '', projectId: null, projectLabel: '' });
+  mappings.push({ urlPattern: '', projectId: null, projectLabel: '', branch: '' });
   renderMappings();
 });
 
@@ -148,6 +161,7 @@ async function loadInitial(): Promise<void> {
     urlPattern: m.urlPattern,
     projectId: m.projectId,
     projectLabel: m.projectLabel,
+    branch: m.branch ?? '',
   }));
   renderMappings();
 
@@ -206,6 +220,7 @@ saveBtn.addEventListener('click', () => {
         urlPattern: m.urlPattern.trim(),
         projectId: m.projectId!,
         projectLabel: m.projectLabel,
+        ...(m.branch.trim() ? { branch: m.branch.trim() } : {}),
       })),
     };
     await setConnectionSettings(settings);

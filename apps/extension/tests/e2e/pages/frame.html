@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Payment frame</title>
+  </head>
+  <body>
+    <h2>Card details</h2>
+    <label for="card-number">Card number</label>
+    <input id="card-number" data-testid="card-number" placeholder="1234 5678 9012 3456" />
+    <label>Expiry <input name="expiry" placeholder="MM/YY" /></label>
+    <button type="button">Pay 42 €</button>
+    <button type="button">Cancel</button>
+    <iframe id="grandchild" title="3-D Secure" src="/grandchild.html" width="200" height="80"></iframe>
+  </body>
+</html>

@@ -33,8 +33,13 @@ import {
 } from '#shared/handlers/project-assignments';
 import { getDemoDb } from '../db.client';
 import { getLocatorHealing, saveLocatorPick } from '~~/server/utils/locator-healing';
-import { backfillLocatorUsages, getExecutionLocators, getLocatorUsages } from '~~/server/utils/locator-usages';
-import { parseLocatorUsageQuery } from '#shared/locator-usages.types';
+import {
+  backfillLocatorUsages,
+  getExecutionLocators,
+  getLocatorIndex,
+  getLocatorUsages,
+} from '~~/server/utils/locator-usages';
+import { parseLocatorBranchQuery, parseLocatorUsageQuery } from '#shared/locator-usages.types';
 import { buildFixPlan } from '~~/server/utils/fix-plan';
 import { findFixedBefore } from '~~/server/utils/cluster-memory';
 import { fixPlanToMarkdown } from '#shared/fix-plan-markdown';
@@ -1523,7 +1528,21 @@ const routes: RouteEntry[] = [
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
       const parsed = parseLocatorUsageQuery(q?.get('match'), q?.get('value'));
       if ('error' in parsed) throw demoHttpError(400, parsed.error);
-      return getLocatorUsages(await getDemoDb(), +m[1]!, parsed.match, parsed.value);
+      const branch = parseLocatorBranchQuery(q?.get('branch'));
+      if ('error' in branch) throw demoHttpError(400, branch.error);
+      return getLocatorUsages(await getDemoDb(), +m[1]!, parsed.match, parsed.value, { branch: branch.branch });
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/locator-index$/,
+    handler: async (m, _b, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const branch = parseLocatorBranchQuery(q?.get('branch'));
+      if ('error' in branch) throw demoHttpError(400, branch.error);
+      const index = await getLocatorIndex(await getDemoDb(), +m[1]!, { branch: branch.branch });
+      if (!index) throw demoHttpError(404, 'Project not found');
+      return index;
     },
   },
   {
@@ -1531,7 +1550,7 @@ const routes: RouteEntry[] = [
     pattern: /^\/api\/projects\/(\d+)\/locator-usages\/rebuild$/,
     handler: async (m, _b, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
-      return backfillLocatorUsages(await getDemoDb(), +m[1]!);
+      return backfillLocatorUsages(await getDemoDb(), +m[1]!, { reset: true });
     },
   },
 

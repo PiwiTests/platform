@@ -104,6 +104,35 @@
         background: var(--surface);
         color: inherit;
       }
+      /* Connected-mode entry, set apart from the numbered grid of standalone tools. */
+      .feature {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        width: 100%;
+        margin-bottom: 8px;
+        padding: 9px 10px;
+        border-radius: 10px;
+        border: 1px solid var(--accent);
+        background: linear-gradient(120deg, rgb(124 58 237 / 0.1), rgb(16 185 129 / 0.1));
+        color: inherit;
+        font: inherit;
+        text-align: left;
+        cursor: pointer;
+      }
+      .feature:hover,
+      .feature:focus-visible {
+        box-shadow: inset 0 0 0 1px var(--accent);
+      }
+      .feature.running {
+        box-shadow: inset 0 0 0 1px var(--accent);
+      }
+      .feature.running .label::after {
+        content: ' ·  running';
+        color: var(--accent);
+        font-weight: 500;
+        font-size: 10.5px;
+      }
       .actions {
         display: grid;
         grid-template-columns: 1fr 1fr;
@@ -150,14 +179,16 @@
       .actions button.primary.running .label::after {
         color: #fff;
       }
-      .actions .text {
+      .actions .text,
+      .feature .text {
         flex: 1;
         min-width: 0;
         display: flex;
         flex-direction: column;
         gap: 1px;
       }
-      .actions button svg {
+      .actions button svg,
+      .feature svg {
         width: 18px;
         height: 18px;
         flex-shrink: 0;
@@ -168,12 +199,14 @@
         fill: none;
         opacity: 0.9;
       }
-      .actions .label {
+      .actions .label,
+      .feature .label {
         font-size: 12.5px;
         font-weight: 600;
         line-height: 1.3;
       }
-      .actions .hint {
+      .actions .hint,
+      .feature .hint {
         color: var(--muted);
         font-size: 10.5px;
         line-height: 1.35;
@@ -181,7 +214,8 @@
       .actions button.primary .hint {
         color: #ffffffcc;
       }
-      .actions .key {
+      .actions .key,
+      .feature .key {
         flex-shrink: 0;
         font:
           10px ui-monospace,
@@ -246,6 +280,19 @@
         <label for="active-project">Active project</label>
         <select id="active-project"></select>
       </div>
+      <button id="coverage-overlay" class="feature" type="button" aria-keyshortcuts="T">
+        <span class="text">
+          <span class="label">Tested elements</span>
+          <span class="hint" id="coverage-hint">What your tests reach on this page, and what they miss</span>
+        </span>
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <rect x="3" y="3" width="8" height="8" rx="1.5" />
+          <path d="M5.3 7.2l1.5 1.5 2.7-3" />
+          <rect x="13" y="13" width="8" height="8" rx="1.5" stroke-dasharray="2.2 2" />
+          <path d="M15 3h6v6M9 21H3v-6" />
+        </svg>
+        <kbd class="key" aria-hidden="true">T</kbd>
+      </button>
       <div class="actions">
         <button id="record" type="button" aria-keyshortcuts="1">
           <span class="text">
@@ -358,7 +405,7 @@
         </button>
       </div>
       <footer>
-        Press <kbd>1</kbd>–<kbd>0</kbd> to run an action ·
+        Press <kbd>1</kbd>–<kbd>0</kbd> to run an action, <kbd>T</kbd> for tested elements ·
         <!-- Filled in from chrome.commands.getAll(): the browser may not have
              been able to assign the suggested key, and claiming one that isn't
              bound is worse than saying so. -->

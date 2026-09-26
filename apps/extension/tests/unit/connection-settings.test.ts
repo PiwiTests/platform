@@ -95,6 +95,20 @@ describe('connection settings', () => {
     expect(settings.projectMappings).toEqual([shopMapping]);
   });
 
+  it('keeps a mapping branch, trimmed, and drops an empty one', async () => {
+    await setConnectionSettings({
+      instanceUrl: 'https://piwi.example.com',
+      apiKey: '',
+      projectMappings: [
+        { ...shopMapping, branch: ' develop ' },
+        { ...shopMapping, urlPattern: 'https://b.test/**', branch: '  ' },
+      ],
+    });
+    const [staging, other] = (await getConnectionSettings()).projectMappings;
+    expect(staging!.branch).toBe('develop');
+    expect(other).not.toHaveProperty('branch');
+  });
+
   it('defaults a missing projectLabel to #<id>', async () => {
     (globalThis as any).chrome.storage.local.set({
       piwiConnection: {

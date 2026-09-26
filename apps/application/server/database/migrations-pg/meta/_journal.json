@@ -589,6 +589,13 @@
       "when": 1790366582641,
       "tag": "0083_thin_kree",
       "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1790415994624,
+      "tag": "0084_square_iron_lad",
+      "breakpoints": true
     }
   ]
 }

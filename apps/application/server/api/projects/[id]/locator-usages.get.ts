@@ -1,7 +1,7 @@
 import { getDatabase } from '../../../database';
 import { getLocatorUsages } from '../../../utils/locator-usages';
 import { requireProjectAccess, requireRouteId } from '../../../utils/project-access';
-import { parseLocatorUsageQuery } from '#shared/locator-usages.types';
+import { parseLocatorBranchQuery, parseLocatorUsageQuery } from '#shared/locator-usages.types';
 
 defineRouteMeta({
   openAPI: {
@@ -24,6 +24,14 @@ defineRouteMeta({
         schema: { type: 'string' },
         description: 'The chain, target call, container or search text (1 to 2000 characters)',
       },
+      {
+        name: 'branch',
+        in: 'query',
+        required: false,
+        schema: { type: 'string' },
+        description:
+          'The branch to describe: its tests’ uses where they ran on it, the default branch’s for the others. `*` for every branch together; the default branch when absent.',
+      },
     ],
     'x-required-roles': ['administrator', 'reporter', 'user'],
   },
@@ -36,7 +44,9 @@ export default eventHandler(async (event) => {
   const query = getQuery(event);
   const parsed = parseLocatorUsageQuery(query.match, query.value);
   if ('error' in parsed) throw apiError({ statusCode: 400, message: parsed.error });
+  const branch = parseLocatorBranchQuery(query.branch);
+  if ('error' in branch) throw apiError({ statusCode: 400, message: branch.error });
 
   const db = await getDatabase();
-  return getLocatorUsages(db, id, parsed.match, parsed.value);
+  return getLocatorUsages(db, id, parsed.match, parsed.value, { branch: branch.branch });
 });

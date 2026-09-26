@@ -31,7 +31,8 @@ export type ToolId =
   | 'assertion-panel'
   | 'session-panel'
   | 'agent-context-panel'
-  | 'test-function-panel';
+  | 'test-function-panel'
+  | 'coverage-overlay';
 
 interface ActiveTool {
   id: ToolId;

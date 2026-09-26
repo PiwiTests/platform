@@ -172,6 +172,7 @@ export default defineConfig({
             { text: 'Agent skills', link: '/features/mcp#agent-skills' },
             { text: 'Desktop app', link: '/features/desktop' },
             { text: 'Browser extension', link: '/features/extension' },
+            { text: 'Tested elements', link: '/features/tested-elements' },
             { text: 'Test functions catalog', link: '/features/test-functions' },
             { text: 'Open in IDE', link: '/features/ide-integration' },
           ],

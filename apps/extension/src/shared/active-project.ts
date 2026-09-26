@@ -4,6 +4,8 @@ import type { ConnectionSettings } from './connection-settings.js';
 export interface ActiveProject {
   projectId: number;
   projectLabel: string;
+  /** The branch the matching URL mapping names; absent for the project's default branch. */
+  branch?: string | null;
 }
 
 const OVERRIDE_KEY = 'piwiActiveProjectOverride';
@@ -44,7 +46,11 @@ export function resolveActiveProject(
   if (override) return override;
   for (const mapping of settings.projectMappings) {
     if (urlMatches(mapping.urlPattern, url))
-      return { projectId: mapping.projectId, projectLabel: mapping.projectLabel };
+      return {
+        projectId: mapping.projectId,
+        projectLabel: mapping.projectLabel,
+        ...(mapping.branch ? { branch: mapping.branch } : {}),
+      };
   }
   return null;
 }

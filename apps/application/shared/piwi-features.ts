@@ -226,6 +226,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/locator-healing',
       },
       {
+        title: 'Who uses a locator',
+        summary:
+          'Before changing an element, the tests whose steps reach it and the lines they reach it from, or check pasted locators against every run.',
+        needs: [],
+        where: 'Execution → Locators; Project → Locators',
+        doc: 'features/locator-usage',
+      },
+      {
         title: 'Fix plans, reproduce & bisect',
         summary: 'A plan to reproduce a failure locally and bisect to the commit that introduced it.',
         needs: ['desktop'],
@@ -328,6 +336,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         needs: ['extension'],
         where: 'Browser extension',
         doc: 'features/extension',
+      },
+      {
+        title: 'Tested elements',
+        summary:
+          'On a live page, the elements your tests reach and through which tests, and the buttons, links and fields none reaches.',
+        needs: ['extension'],
+        where: 'Browser extension → Tested elements',
+        doc: 'features/tested-elements',
       },
       {
         title: 'Test functions catalog',

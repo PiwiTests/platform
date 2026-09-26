@@ -70,7 +70,16 @@ function usedByTitle(use: ExecutionLocatorUse): string {
     />
     <template v-else>
       <p class="text-xs text-muted mb-2">
-        Every locator this test used, in order. The count is how many tests in the project use the same chain.
+        Every locator this test used, in order. The count is how many tests in the project use the same chain<template
+          v-if="data.branch"
+        >
+          on <BranchLabel :name="data.branch" /></template
+        >.
+        <NuxtLink
+          :to="{ path: `/projects/${data.projectId}/locators`, query: data.branch ? { branch: data.branch } : {} }"
+          :class="SENTENCE_LINK_CLASS"
+          >All the project's locators</NuxtLink
+        >
       </p>
       <ol class="divide-y divide-default">
         <li
@@ -113,6 +122,7 @@ function usedByTitle(use: ExecutionLocatorUse): string {
       :project-id="data?.projectId ?? null"
       :project-key="projectKey"
       :project-name="projectName"
+      :branch="data?.branch"
     />
   </div>
 </template>

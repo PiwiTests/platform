@@ -343,6 +343,8 @@ export class MetadataCollector {
           // The origin of `baseURL` is what the graph treats as the run's own
           // surface, so only requests to it become route nodes.
           baseURL: p.use?.baseURL,
+          // The attribute `getByTestId` reads, so the locator index can resolve those locators on a live page.
+          testIdAttribute: p.use?.testIdAttribute,
           viewport: p.use?.viewport,
           deviceScaleFactor: p.use?.deviceScaleFactor,
         },
