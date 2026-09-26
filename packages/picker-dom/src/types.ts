@@ -17,8 +17,6 @@ export interface ProbeArg {
   roleSources?: string;
   /** Compute `rolePosition` and ancestor-anchor candidates. The live picker always wants these; the snapshot picker never does (no anchors step there). */
   includeStructural: boolean;
-  /** Include the associated `<label>` text as `labelText`. The snapshot picker derives its accessible name from this client-side; the live picker doesn't need it (Node-side derives it separately). */
-  includeLabelText: boolean;
 }
 
 /** Element shape the in-page probe returns — structural view of what the picker overlays need. */
@@ -28,7 +26,8 @@ export interface ProbedAttrs {
   textContent: string;
   center: { x: number; y: number };
   hasLabel: boolean;
-  labelText?: string | null;
+  /** Text of the elements `aria-labelledby` points at, else of the first associated `<label>`. */
+  labelText: string | null;
   selectorCounts: {
     testId?: number;
     id?: number;

@@ -41,6 +41,7 @@ const PROBED: ProbedAttrs = {
   textContent: 'Open order 42',
   center: { x: 120, y: 480 },
   hasLabel: false,
+  labelText: null,
   selectorCounts: {
     testId: 1,
     name: 1,

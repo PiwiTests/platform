@@ -29,7 +29,6 @@ const PROBE_ARG = {
   inputRoles: INPUT_TYPE_TO_ROLE,
   roleSources: ROLE_SOURCES,
   includeStructural: true,
-  includeLabelText: false,
 };
 
 const PICK_GLOBALS = [

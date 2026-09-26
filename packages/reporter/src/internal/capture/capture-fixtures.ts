@@ -727,12 +727,8 @@ export const CAPTURED_ATTRS_ARG: ProbeArg = {
   // special-cased logic in the probe, so add them explicitly).
   roleSources: [...new Set(['[role]', 'input', 'select', ...Object.keys(TAG_TO_ROLE)])].join(','),
   // The reporter always wants ancestor-anchored alternatives (the picker's
-  // anchors step and generateAnchoredAlternatives both need them). `labelText`
-  // is what names a form field, and the probe reads it from `el.labels` in the
-  // same pass — so asking for it here is free and settles the accessible name
-  // of a labeled field without a second round trip (`exactAccessibleName`).
+  // anchors step and generateAnchoredAlternatives both need them).
   includeStructural: true,
-  includeLabelText: true,
 };
 
 /**

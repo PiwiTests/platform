@@ -153,6 +153,8 @@ export interface ElementAttributes {
   center: { x: number; y: number } | null;
   /** True when the element has an associated <label> — gates getByLabel. */
   hasLabel?: boolean;
+  /** Text of the elements `aria-labelledby` points at, else of the first associated `<label>` — what names a form field. Absent when the probe did not read it. */
+  labelText?: string | null;
   /** Live-page uniqueness probe results for candidate selectors. */
   selectorCounts?: SelectorCounts;
   /** Position among same-role elements — powers name-free and renamed-element healing. */

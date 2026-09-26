@@ -54,7 +54,7 @@ const nonceAttr = (nonce?: string): string => (nonce ? ` nonce="${nonce}"` : '')
  *     `transport: 'postMessage'`.
  */
 export function snapshotPickerScriptTag(config: SnapshotPickerConfig, nonce?: string): string {
-  const probeArg: ProbeArg = { keep: config.probedAttrs, includeStructural: false, includeLabelText: true };
+  const probeArg: ProbeArg = { keep: config.probedAttrs, includeStructural: false };
   const overlayArg: PickerOverlayArg = { transport: 'postMessage', probeArg };
   const probeSrc = escScriptClose(String(probeElementAttrs));
   const extrasSrc = escScriptClose(String(installSnapshotPickerExtras));

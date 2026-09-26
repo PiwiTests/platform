@@ -229,6 +229,10 @@ test.describe('coverage overlay on a page', () => {
     const row = panel.locator('li.row', { hasText: 'button "Subscribe"' });
     await expect(row.locator('code')).toHaveText("getByRole('button', { name: 'Subscribe' })");
     await expect(row.getByRole('button', { name: 'Copy locator' })).toBeVisible();
+    // A checkbox named only by the label wrapping it is suggested by that name.
+    await expect(panel.locator('li.row', { hasText: 'checkbox "Free shipping"' }).locator('code')).toHaveText(
+      "getByRole('checkbox', { name: 'Free shipping' })",
+    );
     await panel.getByLabel('Filter the list').fill('coupon');
     await expect(panel.locator('li.row')).toHaveCount(1);
   });

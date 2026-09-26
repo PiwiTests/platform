@@ -10,7 +10,6 @@ const HOST_ID = 'piwi-hover-inspect-host';
 const PROBE_ARG = {
   keep: [...CAPTURED_ATTRIBUTES],
   includeStructural: false,
-  includeLabelText: false,
 };
 
 /**

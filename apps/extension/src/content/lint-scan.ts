@@ -69,7 +69,6 @@ export function scanForLintIssues(): LintFinding[] {
     inputRoles: INPUT_TYPE_TO_ROLE,
     roleSources,
     includeStructural: true,
-    includeLabelText: true,
   };
 
   const findings: LintFinding[] = [];
@@ -89,7 +88,7 @@ export function scanForLintIssues(): LintFinding[] {
     if (bestScore >= BAD_SCORE_THRESHOLD) continue;
 
     // accessibleName is always null here: approximateAccessibleName checks
-    // aria-label/textContent/title/placeholder, and any of those being
+    // labels/aria-label/textContent/title/placeholder, and any of those being
     // truthy would already have earned a score-90 role+name alternative
     // above the threshold. Nothing to slug — number by discovery order
     // within the role instead (button-1, button-2, link-1, ...).

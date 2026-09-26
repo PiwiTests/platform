@@ -480,11 +480,26 @@ export function generateAlternatives(attrs: ElementAttributes): RankedLocator[] 
 
 // ── Accessible name ──────────────────────────────────────────────────────────
 
+/**
+ * Approximate the accessible name from probed attributes, in the order the
+ * accessible-name computation applies: `aria-labelledby` (resolved by the probe
+ * into `labelText`), `aria-label`, then — for a form field — its `<label>`, or —
+ * for anything else — its text, then `title` and `placeholder`.
+ *
+ * A form field is never named by its own text: a `<select>`'s text is its
+ * options and a `<textarea>`'s is its value.
+ */
 export function approximateAccessibleName(attrs: ElementAttributes): string | null {
   const a = attrs.attributes;
+  const labelText = attrs.labelText || null;
+  if (a['aria-labelledby'] && labelText) return labelText;
   const ariaLabel = a['aria-label'];
   if (ariaLabel) return ariaLabel;
-  if (attrs.textContent) return attrs.textContent;
+  if (['input', 'select', 'textarea'].includes(attrs.tagName)) {
+    if (labelText) return labelText;
+  } else if (attrs.textContent) {
+    return attrs.textContent;
+  }
   const title = a['title'];
   if (title) return title;
   const placeholder = a['placeholder'];
