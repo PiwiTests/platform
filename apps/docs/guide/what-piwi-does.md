@@ -39,7 +39,7 @@ Two rules run through every feature, and they're worth knowing before you adopt 
 
 ## The pieces
 
-Piwi is a reporter that uploads from your Playwright run, a server (or the [desktop app](/features/desktop)) that keeps and analyzes the results, and a set of ways to reach them — the [browser extension](/features/extension), an [MCP server](/features/mcp) and [agent skills](/features/mcp#agent-skills) for coding agents, [SCM providers](./ci#pull-request-feedback) for PR feedback and healing, and [notifications](/features/notifications).
+Piwi is a reporter that uploads from your Playwright run, a server (or the [desktop app](/features/desktop)) that keeps and analyzes the results, and a set of ways to reach them — the [browser extension](/features/extension), an [MCP server](/features/mcp) and [agent skills](/features/mcp#agent-skills) for coding agents, [SCM providers](/features/pr-feedback) for PR feedback and healing, and [notifications](/features/notifications).
 
 <figure>
   <img src="/diagrams/piwi-ecosystem.svg" alt="The Piwi pieces: a Playwright run and instrumented app feed one server or the desktop app, with the browser extension, coding agents, SCM providers and notifications arranged around it">
@@ -48,11 +48,7 @@ Piwi is a reporter that uploads from your Playwright run, a server (or the [desk
 
 ## What it isn't
 
-Trust is the point, so the limits are stated plainly, not buried:
-
-- **Playwright only, by design.** The ingest API, trace handling, step analytics and locator healing are all built around Playwright's model. If you need to aggregate many frameworks (JUnit, pytest, Cypress) into one place, [ReportPortal or Allure](./comparison) fit better.
-- **Pre-1.0.** Patch and minor releases can carry breaking changes, and the database schema moves with them — read [Upgrading](/operate/upgrading) before you bump a tag.
-- **Not an "ask AI" button.** Diagnosis is optional, grounded in your diff, and never in the write path.
+Piwi is Playwright-only by design, pre-1.0, and not an "ask AI" button. [Why Piwi?](./comparison#when-piwi-is-not-the-right-choice) states each limit and says which tool fits better when Piwi does not.
 
 ## Where to go next
 
