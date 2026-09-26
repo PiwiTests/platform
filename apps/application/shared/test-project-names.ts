@@ -100,6 +100,7 @@ export const PROJECT = {
   LABEL_OVERRIDE: 'label-override-project',
   LATEST_RUN_TEST: 'latest-run-test',
   LIST_VISIBLE: 'list-visible-project',
+  LOCATORS_PAGE: 'locators-page-test',
   MALFORMED: 'malformed-project',
   MCP_TEST: 'mcp-test-project',
   METADATA_RETRIEVAL: 'metadata-retrieval-test',

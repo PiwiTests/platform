@@ -337,6 +337,37 @@ const SCENES = [
     },
   },
   {
+    name: 'project-locators',
+    description:
+      'Project Locators page: pasted locators checked against the locator index (exact, similar, unused), the tests reaching them, the branch select',
+    route: `/projects/1/locators?q=${encodeURIComponent(
+      ["getByLabel('Email')", "getByText('Order confirmed!')", "getByTestId('coupon')"].join('\n'),
+    )}`,
+    viewport: { width: 1280, height: 1400 },
+    async run({ page, shoot, settle }) {
+      await page
+        .locator('[data-shot="locator-check-tests"]')
+        .waitFor({ timeout: 15000 })
+        .catch(() => {});
+      await settle();
+      await shoot();
+    },
+  },
+  {
+    name: 'project-locators-mobile',
+    description: 'Project Locators page at phone width',
+    route: `/projects/1/locators?q=${encodeURIComponent(["getByLabel('Email')", "getByTestId('coupon')"].join('\n'))}`,
+    viewport: { width: 390, height: 1400 },
+    async run({ page, shoot, settle }) {
+      await page
+        .locator('[data-shot="locator-check-tests"]')
+        .waitFor({ timeout: 15000 })
+        .catch(() => {});
+      await settle();
+      await shoot();
+    },
+  },
+  {
     name: 'scenario-gaps-tab',
     description: 'Gaps tab: gaps and findings grouped by feature, ranked, with class, factors and inbox verbs',
     route: '/projects/1?tab=gaps',
