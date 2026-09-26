@@ -1,5 +1,6 @@
 ---
 title: Offline export
+description: "Export a failing execution or a whole failure cluster as HTML, ZIP, PDF, Markdown or JSON that opens with no network and no Piwi server, plus a Perfetto trace of a run."
 lang: en-US
 ---
 
