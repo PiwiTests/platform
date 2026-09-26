@@ -53,7 +53,7 @@ npx @piwitests/reporter init --server-url http://localhost:3000 --project my-pro
 
 `init` installs the reporter, wraps your `playwright.config`, adds the capture fixtures and records the
 connection in `.env.example`; every step is safe to re-run. [Getting started](/guide/getting-started) covers
-the other install paths and the manual setup.
+the other ways to run the dashboard, and [Reporter](/guide/reporter) the manual setup.
 
 ### 3. Run your tests
 

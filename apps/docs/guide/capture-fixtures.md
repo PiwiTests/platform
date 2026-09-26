@@ -130,6 +130,16 @@ Capture is designed to never fail or noticeably slow down a test:
 | `inspectOnFailure: true` (or `PIWI_INSPECT_ON_FAIL=true`) | Opt-in local debugging aid — a failing test opens Piwi's own inspector overlay (not Playwright's inspector) on its still-open page (headed browsers only, never in CI). See [Inspect the failing page live](/features/locator-healing#inspect-the-failing-page-live-local-runs) |
 | `pickLocatorOnFailure: true` (or `PIWI_PICK_LOCATOR_ON_FAIL=true`) | Opt-in local debugging aid — after a locator failure, click the intended element on the still-open page and confirm a ranked replacement locator; the choice is recorded for the healing panel (headed browsers only, never in CI). See [Pick a replacement locator](/features/locator-healing#pick-a-replacement-locator-on-the-failing-page-local-runs) |
 
+## Green page sampling on pass
+
+To power the [page diff](/features/evidence#page-diff), the fixtures also sample the ARIA snapshot at the end of a *passing* test, a "last known good" of the page to diff a later failure against. The server decides what to capture:
+
+- At the start of every run the global setup makes **one extra request** for the tests whose newest green snapshot is older than 24 hours (or missing), and the reporter caches that set for the run's workers.
+- A passing test is sampled only when it is in that set, so in steady state nothing is captured.
+- The server keeps at most one green snapshot per test per day.
+
+If that request fails, the set stays empty and **nothing is sampled**. Turn it off with `sampleAriaOnPass: false` (or `PIWI_SAMPLE_ARIA_ON_PASS=false`). With the fixtures off, no snapshot is taken regardless.
+
 ## Troubleshooting
 
 - **Data missing for some specs only** — those specs import `test` from `@playwright/test` instead of your fixtures file. Capture is per-`test`-object; the import is the switch.

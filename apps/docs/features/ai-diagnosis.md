@@ -90,89 +90,17 @@ The verdict moves the triage status only when the evidence is strong: *Diagnosis
 Two [notifications](./notifications) follow the verdict: `cluster.fixed` whenever a fix is recorded (its payload says
 which verdict), and `cluster.regressed` when a fix does not hold.
 
-When [pull-request feedback](/guide/ci#pull-request-feedback) is on, the comment gains a **Fixed by this change** section
+When [pull-request feedback](/features/pr-feedback) is on, the comment gains a **Fixed by this change** section
 naming what the pull request closed. That section is worth a comment on its own, so a green run that closed a cluster
 still gets one even with *only comment on failures* set.
 
 ## Enabling AI diagnosis
 
-Configure a provider via **Settings → AI**, or with environment variables (env always takes precedence over values stored through the UI, and the UI shows env-managed fields read-only).
-
-| Variable | Description |
-|----------|-------------|
-| `PIWI_AI_PROVIDER` | `anthropic`, `openai`, or `claude-cli` |
-| `PIWI_AI_API_KEY` | Provider API key (stored encrypted when set via the UI; never returned by the API) |
-| `PIWI_AI_MODEL` | Model name (default: `claude-opus-4-8` for Anthropic) |
-| `PIWI_AI_BASE_URL` | Base URL for OpenAI-compatible providers (e.g. Ollama, LM Studio, vLLM) |
-| `PIWI_AI_AUTO_DIAGNOSE` | `true` to automatically diagnose new clusters when a run finishes |
-| `PIWI_AI_AUTO_DIAGNOSE_MAX` | Max clusters auto-diagnosed per finished run (budget cap; default `3`) |
-| `PIWI_AI_RESEARCH_MODEL` / `_PROVIDER` / `_BASE_URL` / `_API_KEY` | Optional **research** model for two-stage diagnosis; provider/base URL/key default to the main ones |
-| `PIWI_AI_EMBEDDING_PROVIDER` / `_MODEL` / `_BASE_URL` / `_API_KEY` | Optional **embedding** model for semantic failure clustering (OpenAI-compatible only — Anthropic has no embeddings API) |
-
-When a run finishes and `PIWI_AI_AUTO_DIAGNOSE` is on, the `PIWI_AI_AUTO_DIAGNOSE_MAX` budget is spent where it buys the most. The run's clusters are ordered by their representative failing execution's top [clue](./evidence#clues): a cluster whose failure carries **no deterministic clue** — the one the model has to reason about from scratch — goes first, then the ones with only a weak clue, and only then a failure a strong clue already explains, with the newest cluster breaking ties. So the budget lands on the failures that most need a model, not simply the three newest.
-
-`GET /api/ai/status` reports whether AI is configured (without ever exposing the key); the UI uses it to show or hide AI actions.
-
-### Streaming diagnosis
-
-Instead of waiting for a synchronous response, the diagnosis can be **streamed** via SSE (Server-Sent Events) — the model's reasoning tokens appear in the UI as they arrive:
-
-- **`POST /api/failure-clusters/[id]/diagnose/stream`** — same request body as the synchronous endpoint, but the response is a `text/event-stream` with `event: thinking` chunks containing incremental text, then a final `event: result` with the complete diagnosis.
-- The client uses `fetch()` with `POST` (not `EventSource`) so it can send request body params (additional context, images, base commit, etc.). The response body is read as a `ReadableStream` and parsed for SSE messages.
-- See the [API docs](https://piwitests.dev/demo/docs) for the exact protocol (the in-app API reference at `/docs` shows the same spec).
-- In the UI, the live thinking panel shows the accumulating text with a stage indicator and auto-scroll. When the stream completes, the panel transitions to the full result card.
-
-To be told when a diagnosis finishes without watching the panel, turn on **Settings → AI → Diagnosis notifications** — a per-browser preference (stored on that device only) that shows a browser notification on completion once you grant the permission.
-
-### Model roles
-
-Piwi calls models in up to three distinct roles, each with its own complete provider configuration (or a **reuse** pointer to inherit another role's provider and credentials):
-
-- **Diagnosis** — the main model that writes the final diagnosis (required to enable AI).
-- **Research** — an optional cheaper/faster model that pre-analyzes the failure first (*two-stage diagnosis*).
-- **Embedding** — an optional embeddings model that powers semantic failure clustering.
-
-Configure each role in **Settings → AI → Model providers**. A role set to *reuse* another role uses that role's provider, key, and base URL — only its model can differ — so you don't re-enter credentials for, say, a Haiku research pass on the same Anthropic key.
-
-### Providers
-
-**Anthropic (recommended)**
-
-```bash
-PIWI_AI_PROVIDER=anthropic
-PIWI_AI_API_KEY=sk-ant-...
-PIWI_AI_MODEL=claude-opus-4-8
-```
-
-**OpenAI**
-
-```bash
-PIWI_AI_PROVIDER=openai
-PIWI_AI_API_KEY=sk-...
-PIWI_AI_MODEL=gpt-4o
-```
-
-**OpenAI-compatible / local (Ollama, etc.)** — set `provider` to `openai` and point `base URL` at the local endpoint:
-
-```bash
-PIWI_AI_PROVIDER=openai
-PIWI_AI_BASE_URL=http://localhost:11434/v1
-PIWI_AI_MODEL=llama3.1
-PIWI_AI_API_KEY=ollama   # any non-empty value for local servers
-```
-
-**Claude Code CLI (local, no API key)** — in the [desktop app](/features/desktop), pick **Claude Code (local)**: it runs the local `claude` CLI with your Claude Code sign-in, so **Settings → AI** manages sign-in and shows a live usage tally. Every role but embeddings can use it; `PIWI_CLAUDE_CLI_PATH` overrides the path.
-
-Use **Settings → AI → Test** to smoke-test the configured provider.
+AI diagnosis needs an [AI provider](/guide/ai-provider): the providers, model roles, streaming and automatic diagnosis of new clusters are set up there.
 
 ## Response language
 
-Set a **response language** and every free-text field a person reads — summary, root cause, evidence, fix description and
-AI-generated cluster titles — comes back in that language, while code, locators, paths and error text stay verbatim. Set
-it instance-wide in Settings → AI (or [`PIWI_AI_LANGUAGE`](/reference/configuration), e.g. `French`, which locks the
-field), and override it per project under Project → Settings. This is what makes a French ticket's *Most likely* section
-French — the ticket's copy follows the [destination's language](/features/issue-tracking#language) and the prose follows
-this setting. Unset keeps today's English behavior.
+A diagnosis comes back in the [response language](/guide/ai-provider#response-language) set for the instance or the project.
 
 ## What a diagnosis contains
 
@@ -204,40 +132,11 @@ The real power is feeding the model the code that changed. On a cluster page you
 - **Browse and cherry-pick commits** — add the full diff of specific commits to the context for targeted analysis.
 - **Preview the exact context** that will be sent before running (`GET /api/failure-clusters/[id]/context`), so there are no surprises about what leaves your server.
 
-### Commit selection algorithm
-
-When you trigger a diagnosis, Piwi determines the commit range to diff using the following priority chain:
-
-1. **Manual override** — if you pinned a baseline commit (or the cluster has a `manualBaseCommit` saved), that commit is used as `fromSha`. This applies even in auto-diagnose and MCP-triggered diagnoses. The `Data Coverage` block in the AI context will show `baselineKind: manual`.
-
-2. **Project-wide last-green run** — Piwi looks for the most recent test run (for the same project) that finished with `status = 'passed'` *before* the **first** run in which this cluster appeared (`firstSeenRunId`, not `lastSeenRunId`). Using `firstSeenRunId` gives the tightest possible causal window: the diff covers exactly the commits introduced between when the suite was last fully-green and when the failure was first observed. `baselineKind: run-green`.
-
-3. **Per-test last-passing fallback** — if no project-wide green run exists (e.g. the project is new, or CI has been failing for a long time), Piwi falls back to the last run where *this specific test case* passed. This is less precise than a project-green baseline but still vastly better than no diff. `baselineKind: test-green`.
-
-4. **No SCM data** — if none of the above yields both a baseline commit and a current commit (from the run's SCM metadata), no diff is fetched. The `Data Coverage` block marks `scmInvestigation` absent and explains why (missing repository URL, no SCM token, or a fetch error).
-
-The `coverage.scm.baselineKind` field is available on every diagnosis response and in the context-preview endpoint, so you can always tell which path was taken. If an SCM fetch fails, `coverage.scm.error` contains the first 300 characters of the error message.
-
-#### Relevance scoring
-
-Changed files are ranked by relevance to the failing test before patch text is included in the context (the patch budget is limited). The scoring signals are:
-
-| Signal | Score |
-|--------|------:|
-| Patch removes a line containing a string the test was trying to locate (smoking gun) | +8 |
-| Patch touches (but doesn't remove) a locator-literal string | +6 |
-| Test imports this file (basename match) | +5 |
-| Changed file IS the test file | +4 |
-| Changed file shares the test file's basename | +2 |
-| Filename token overlaps with the test title or page ARIA state | +1 each |
-| File is under a source directory (`src/`, `lib/`, `app/`, …) | +1 |
-| File is a lockfile, doc, or config | −1 |
-
-Files scoring ≤ 2 are excluded from the "Top Suspected Change" callout (a low-signal hint is worse than none), but they still appear in the full changed-files list.
+The diff starts at the baseline commit you pinned, else at the last green run before the cluster first appeared, else at the last run where this test passed. The diagnosis response and the context preview name which one was used, and when the repository could not be read, why. The repository connection itself is set up on [Source control](/guide/source-control).
 
 ### Full source files
 
-A diff shows only the lines that changed. To write a patch the model needs the surrounding code too, so — when SCM is reachable — Piwi also fetches the **full current content** of the most-suspect changed files (top-ranked by the relevance score above) and the failing test's local imports (page objects, helpers, fixtures resolved one hop from the test's `import` statements), at the commit under test. These land in a `Source Files` context section with `NNNN | ` line numbers so the model can compute correct hunk headers.
+A diff shows only the lines that changed. To write a patch the model needs the surrounding code too, so — when SCM is reachable — Piwi also fetches the **full current content** of the most-suspect changed files (ranked by how closely they relate to the failing test: a removed locator string, an import of the test, a shared file name) and the failing test's local imports (page objects, helpers, fixtures resolved one hop from the test's `import` statements), at the commit under test. These land in a `Source Files` context section with `NNNN | ` line numbers so the model can compute correct hunk headers.
 
 Capped by `PIWI_AI_MAX_SOURCE_FILES` (default 4, set to 0 to disable) and `PIWI_AI_MAX_SOURCE_FILE_CHARS` (default 12000). Fetched over the same SCM provider API as the diff (GitHub/GitLab/Bitbucket), cached per commit SHA. The `coverage.sourceFiles` field on the context/diagnosis response lists which files were pulled in.
 
@@ -297,11 +196,7 @@ Tailor the analysis to your stack with **global** instructions (Settings → AI)
 
 ## Context limits (and token cost)
 
-Every piece of evidence sent to the model costs tokens. Piwi caps each input so diagnoses stay fast and affordable. Defaults live in `shared/ai-context-limits.ts`; override them in **Settings → AI** or via env (env wins; the UI then shows the field read-only).
-
-The full list of `PIWI_AI_MAX_*` limit variables, their defaults and their clamping ranges lives in the [Configuration reference → AI context limits](/reference/configuration#ai-context-limits) — generated from the same registry the server reads, so it can never drift from the code.
-
-Screenshots are the one input a provider can refuse outright: many self-hosted and gateway models are text-only and reject a request that carries images. Piwi retries that call without them, so the diagnosis still runs on the text evidence. Setting `PIWI_AI_MAX_IMAGES=0` skips the rejected first attempt.
+Each input sent to the model is capped to keep diagnoses fast and affordable; the caps are set on the [AI provider](/guide/ai-provider#context-limits-and-token-cost) page.
 
 ## Try it in the demo
 

@@ -31,7 +31,7 @@ strongest thing the dashboard does, so the posture is conservative by design.
 ## Requirements
 
 - **`PIWI_SITE_URL`** must be set, so the links in the PR body resolve.
-- An **SCM token with write scope**, resolved the same way as [PR feedback](/guide/ci#pull-request-feedback): a per-project token, falling back
+- An **SCM token with write scope**, resolved as [Source control](/guide/source-control#set-the-token) describes: a per-project token, falling back
   to the global one. It needs:
   - **GitHub** — `repo` (classic), or a fine-grained token with `contents: write` + `pull_requests: write`.
   - **GitLab** — `api`.

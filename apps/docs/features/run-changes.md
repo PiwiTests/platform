@@ -14,7 +14,7 @@ The **Changes** tab on a run compares it against **one baseline** and tells you 
 
 Every section reads the **same baseline**, so the "new failures" count is computed once and used throughout. The selector at the top says which run it is, which branch and environment that run is on, and **why it was chosen**.
 
-By default the baseline is the last passing full run **in the same environment** — on the same branch, then on the **base branch** the run's branch forked from (the pull request's target branch when the reporter captured one, else the project's default branch), then on any branch — and only when the run's environment has no passing run at all does the same ladder run again across environments (see [Branches](./branches#branch-aware-baselines) and [Core concepts](/guide/concepts#baseline-last-green-run)). The line under the selector spells out the rung that applied, for example _"No passing staging run exists on feature/x; the last passing run on the default branch main in staging."_
+By default the baseline is the last passing full run chosen by the [baseline rule](/guide/concepts#baseline-last-green-run): same environment first, then same branch, base branch, any branch. The line under the selector spells out the rung that applied, for example _"No passing staging run exists on feature/x; the last passing run on the default branch main in staging."_
 
 Two ways to compare against something else:
 

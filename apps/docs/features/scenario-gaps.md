@@ -16,7 +16,7 @@ Everything here is built from what the reporter already captures, joined into **
 
 ## Uncovered changes on a pull request
 
-When a pull-request-stamped run finishes, Piwi joins the changed files to the tests that reach them and adds an **Uncovered changes** section to the [pull-request comment](/guide/ci#pull-request-feedback), grouped by ticket:
+When a pull-request-stamped run finishes, Piwi joins the changed files to the tests that reach them and adds an **Uncovered changes** section to the [pull-request comment](/features/pr-feedback), grouped by ticket:
 
 ```md
 #### 🟣 Uncovered changes · 3 of 7 files · 2 tickets
@@ -95,7 +95,7 @@ The graph stays proportional to the application's surface, not its data volume:
 
 ## The Gaps tab and the graph view
 
-The project page has a **Gaps** tab: gaps and findings grouped by feature and ranked, each with its class, score factors and evidence, and the inbox verbs — **accept** (copies a draft skeleton to your clipboard), **snooze** (a day, a week, or until the node changes), **dismiss** with a reason (*not worth testing*, *covered elsewhere* — recording the covering test as a manual reaches edge — or *wrong*), and **covered by** without dismissing. Home lists accepted-but-unwritten gaps older than a week. The Test Map and its server probes are optional: [decline](/guide/getting-started#declining-a-capability) either per project or instance-wide and these surfaces disappear.
+The project page has a **Gaps** tab: gaps and findings grouped by feature and ranked, each with its class, score factors and evidence, and the inbox verbs — **accept** (copies a draft skeleton to your clipboard), **snooze** (a day, a week, or until the node changes), **dismiss** with a reason (*not worth testing*, *covered elsewhere* — recording the covering test as a manual reaches edge — or *wrong*), and **covered by** without dismissing. Home lists accepted-but-unwritten gaps older than a week. The Test Map and its server probes are optional: [decline](/operate/capabilities#declining-a-capability) either per project or instance-wide and these surfaces disappear.
 
 The tab opens on the **feature map**: one circle per feature (from the `piwi:feature` tag), sized by the routes, pages and controls it groups, colored by its worst open gap, linked to the features it shares nodes with. The ranked list beside it carries every feature, however many. API: `GET /api/projects/{id}/feature-map`.
 

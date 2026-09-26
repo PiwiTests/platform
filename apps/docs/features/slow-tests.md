@@ -23,7 +23,7 @@ Average and **P90** duration over time, so a few slow outliers don't hide a real
 
 Tests whose configured per-test timeout dwarfs their real p95 duration — so a hang or failure waits far longer than it needs to — plus tests still carrying a stale `test.slow()` mark they no longer need. Each row suggests a tighter timeout (or removing the mark) and the time reclaimable per failing run, ranked by impact.
 
-This reads the per-test timeout the [reporter captures](/guide/reporter#per-test-timeout); runs reported before that shipped still surface stale `test.slow()` marks from annotations and durations alone. The thresholds are tunable via `PUT /api/settings/timeout-hygiene`.
+This reads the per-test timeout the [reporter captures](/reference/test-metadata#per-test-timeout); runs reported before that shipped still surface stale `test.slow()` marks from annotations and durations alone. The thresholds are tunable via `PUT /api/settings/timeout-hygiene`.
 
 ## Network and Web Vitals
 
@@ -37,4 +37,4 @@ Both require the [capture fixtures](/guide/capture-fixtures) in your test setup 
 - [Capture fixtures](/guide/capture-fixtures) — the test-side setup behind network analysis and Web Vitals
 - [Flaky tests](./flaky-tests) — flaky scoring costs wasted CI minutes the same way
 - [Analytics](./analytics) — wasted CI minutes and slow endpoints across every project
-- [Reporter](/guide/reporter#per-test-timeout) — how the per-test timeout is captured
+- [Reporter](/reference/test-metadata#per-test-timeout) — how the per-test timeout is captured

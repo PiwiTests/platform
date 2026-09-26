@@ -100,7 +100,7 @@ Everything Playwright itself recorded comes across:
 
 What Playwright never recorded cannot be recovered. Web vitals, page state and locator healing come from
 [Piwi's own capture fixtures](./capture-fixtures), so historical runs have none — those start once the reporter is
-installed. [Test locks](./reporter#test-locks) are also absent: Playwright exposes them only to a live in-process
+installed. [Test locks](/reference/test-metadata#test-locks) are also absent: Playwright exposes them only to a live in-process
 reporter, never through the blob report, so an imported run shows no lock lanes, filters or lock clues.
 
 Imports are also deliberately **silent**: they never send notifications, never trigger AI diagnosis, and never compute

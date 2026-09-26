@@ -40,39 +40,41 @@ In the **Fault0** column, ➖ marks a capability we did not find in its public d
 
 ## When Piwi is *not* the right choice
 
-- **You aggregate many test frameworks** (JUnit, pytest, Cypress, …) into one place → ReportPortal or Allure fit better. Piwi is deliberately Playwright-only: that's what makes traces, locator healing, and step-level analytics first-class.
+- **You aggregate many test frameworks** (JUnit, pytest, Cypress, …) into one place → ReportPortal or Allure fit better. Piwi is deliberately Playwright-only: the ingest API, trace handling, step analytics and locator healing are built around Playwright's model.
 - **You want a managed service with CI orchestration** and someone else on the pager → Currents.
 - **You only debug locally** and never look back at CI history → the built-in HTML report is already great.
+- **You need a stable 1.0.** Piwi is pre-1.0: a minor release can carry breaking changes, and the database schema moves with it. Pin a version tag, keep backups, and read [Upgrading](/operate/upgrading) before you bump it.
+- **You want an "ask AI" button.** Diagnosis is optional, grounded in your diff and evidence, and never in the write path.
 
 ## FAQ
 
 ### Is my data safe? Does Piwi phone home?
 
-**Zero telemetry.** The full inventory is in [Privacy & data flow](./privacy). Piwi makes no outbound calls except the ones you explicitly configure: your AI provider (if you enable diagnosis), your SMTP server, your S3 endpoint, your Slack/webhook URLs, and your git host (if you connect a repository). No analytics, no update pings, no crash reporting. Your test results live in your SQLite file or PostgreSQL database, on your infrastructure.
+**Zero telemetry.** Piwi makes no outbound calls except the ones you configure; [Privacy & data flow](./privacy) lists each one.
 
 ### Does AI diagnosis send my code to a third party?
 
-Only if you turn it on, and only to the provider *you* configure. The diagnosis context (error messages, failing steps, the relevant git diff, screenshots) is sent to your configured endpoint — Anthropic, OpenAI, or any OpenAI-compatible URL, including a fully local model via Ollama/vLLM. You can preview the exact context before it's sent, and cap its size in Settings. With no provider configured, the feature stays off and nothing leaves your server.
+Only if you turn it on, and only to the [AI provider](./ai-provider) you configure, which can be a local model. [Privacy & data flow](./privacy) says what a diagnosis sends.
 
 ### SQLite or PostgreSQL?
 
-Start with SQLite — it's zero-config and easily handles a team's test volume. Switch to PostgreSQL (`PIWI_DATABASE_URL`) when you want concurrent write headroom, an existing backup story, or your ops standard is Postgres. Both backends are exercised by the project's CI on every commit.
+Start with SQLite; switch to PostgreSQL when you want concurrent write headroom or your ops standard is Postgres. See [Database](/operate/database).
 
 ### Which Node version does the dashboard need?
 
-**Node 22 or newer**, and only for the `npx` / from-source paths — the Docker image and the desktop app bundle their own runtime. CI runs the E2E suite on Node 22 against the published build, so the floor is tested, not aspirational. The **reporter** that runs inside your test project is much less demanding — Node 20+, the version it is built for and declares in its `engines` — so your test suite's runtime almost certainly doesn't need to change.
+Node 22 or newer, and only for `npx @piwitests/server`: the Docker image and the desktop app bundle their own runtime. The reporter in your test project needs Node 20 or later.
 
 ### Can I use it with Cypress / Jest / other frameworks?
 
-No — Piwi is Playwright-only by design. The ingest API, trace handling, step analytics, and locator healing are all built around Playwright's model. Breadth is what ReportPortal and Allure are for.
+No: Piwi is Playwright-only by design. See [when Piwi is not the right choice](#when-piwi-is-not-the-right-choice).
 
 ### Is it production-ready?
 
-Piwi is a young project under active development (pre-1.0, semver). It's exercised by a CI matrix across SQLite/PostgreSQL × local/S3 storage with a large Playwright E2E suite, and upgrades run database migrations automatically. Pin a version tag, keep backups of `.data/` ([deployment guide](/operate/deployment)), and expect occasional breaking changes between minor versions until 1.0.
+It is pre-1.0, tested across SQLite and PostgreSQL with local and S3 storage, and migrates its database on upgrade. See the [production checklist](/operate/production-checklist).
 
 ### How much disk/RAM does it need?
 
-Modest — see [resource requirements](/operate/deployment#resource-requirements). Disk is the real variable: traces and HTML reports dominate, and you can prune old runs from Settings → Storage.
+Modest; see [resource requirements](/operate/deployment#resource-requirements). Traces and reports take most of the disk.
 
 ### Where do I ask questions or propose features?
 
