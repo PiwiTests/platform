@@ -65,8 +65,8 @@ Non-obvious ones:
   `last_seen_run_id` FK is `ON DELETE set null`.
 - **`locator_usages`** — the locator index: one row per (test case, Playwright project, branch, call site, action,
   canonical chain), read from the steps of each ingested execution; `branch` is `''` for the default branch, and a
-  view of another branch replaces the default rows of the tests that ran on it. Feeds "Who uses this?", the project's Locators page and the
-  extension's Tested elements (`GET /api/projects/:id/locator-index`).
+  view of another branch replaces the default rows of the tests that ran on it. Feeds "Who uses this?", the
+  project's Locators page and the extension's Tested elements (`GET /api/projects/:id/locator-index`).
 - **`account_tokens`** — single-use SHA-256-hashed tokens for reset/invite/verify, with a purpose enum and TTL enforced
   at query time.
 - **`notification_deliveries`** — an outbox: `dedupeKey` unique for idempotency, `status`, `attempts` + `scheduledFor`
