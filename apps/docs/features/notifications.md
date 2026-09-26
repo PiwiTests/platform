@@ -29,19 +29,11 @@ their own, and administrators can add global ones shared by everyone.
 
 ## Events
 
-| Event | Fires when |
-|-------|------------|
-| `run.finished` | A run completes (any status) |
-| `run.failed` | A run completes with failures |
-| `run.failed.default_branch` | A run fails on the repository's default branch |
-| `cluster.new` | A new failure cluster appears |
-| `cluster.fixed` | A run passes every test a cluster covers: the fix landed (a filtered re-run of just those tests counts). The payload's `verification` says whether the diagnosis was corroborated (`diagnosis-verified`) or the tests merely stopped failing, and `resolved` whether the triage status was closed automatically |
-| `cluster.regressed` | A cluster with a recorded fix fails again; `reopened` says whether a *resolved* cluster was set back to open |
-| `flakiness.spike` | A completed run contains flaky tests; the flakiness-threshold filter keeps only rates above N% |
-| `perf.regression` | A run is at least 20% slower than the median of the previous five completed runs on the same branch and environment; the regression-% filter raises the bar |
-| `diagnosis.completed` | An AI diagnosis finishes (requires an AI provider) |
-
-**`report.ready`** needs no subscription: a [report schedule](./quality-reports#report-schedules) sends it to the channels it names, through the same outbox. Its webhook body adds the whole report: `{ "event", "payload": { "snapshotId", "scheduleId", "periodEnd", "url" }, "bundle", "timestamp" }`.
+Run events fire when a run finishes or fails, cluster events when a failure cluster appears, is fixed or regresses,
+and others on a flakiness spike, a performance regression, a finished AI diagnosis and an auto-heal pull request.
+Each event, when it fires and the payload it carries are in
+[Notification events & webhooks](/reference/notification-events). A
+[report schedule](./quality-reports#report-schedules) sends its report to the channels it names, with no subscription.
 
 ## Channels
 
@@ -70,52 +62,18 @@ legacy incoming webhook) and paste its URL. Each event, digest and
 
 ### Webhook
 
-Piwi `POST`s a JSON payload to your URL. Each request is signed with an HMAC-SHA256 `X-Piwi-Signature` header derived from the channel's secret, so you can verify authenticity. Webhook secrets are encrypted at rest.
-
-The body is `{ "event": "run.failed", "payload": { … }, "timestamp": "…" }`. For run events the payload includes up to three failing tests so you can act without a round-trip to the dashboard:
-
-```json
-{
-  "event": "run.failed",
-  "payload": {
-    "runId": 42,
-    "projectName": "checkout",
-    "status": "failed",
-    "totalTests": 120,
-    "failedTests": 3,
-    "branch": "main",
-    "topFailures": [
-      {
-        "title": "applies discount code",
-        "filePath": "tests/checkout.spec.ts",
-        "headline": "getByRole('button', { name: 'Pay' }) never became enabled — click timed out after 30 s",
-        "errorExcerpt": "TimeoutError: locator.click: Timeout 30000ms exceeded.\nlocator resolved to <button disabled>Pay</button>",
-        "testCaseId": 815,
-        "executionId": 9001
-      }
-    ]
-  },
-  "timestamp": "2026-07-11T10:00:00.000Z"
-}
-```
-
-`headline` is the one-line explanation the dashboard builds from the Playwright error (the locator, its last state,
-the expected and received values, the timeout; see [Failure evidence](./evidence#one-execution-diagnosis-first)),
-absent when the case carries no error. `errorExcerpt` is the error's message head: at most five lines before the call
-log and the stack trace, capped at 300 characters, plus the last `waiting for …` line when the head is only a bare
-timeout. Slack and email messages lead with the headline, quote the excerpt and link each failure to its execution.
-The [pull-request comment](/features/pr-feedback) quotes failures the same way.
-
-`cluster.new` payloads similarly carry `sampleErrorExcerpt` (cut the same way) and `affectedCases`; `cluster.fixed` and `cluster.regressed` carry the cluster's `signature`, `title`, the `runId` that decided the verdict and, for a fix, the `commit` and `timeToResolutionMs`. To check the HMAC, sign the exact bytes you received, never a re-serialized payload.
+Piwi `POST`s a JSON body to your URL, signed with an HMAC-SHA256 `X-Piwi-Signature` header derived from the channel's
+secret. The body, its fields and how to verify the signature are in
+[Notification events & webhooks](/reference/notification-events#webhook-body).
 
 ### Reaching the person who fixed it
 
-When an [SCM token](/guide/source-control) is configured, `cluster.fixed` and `cluster.regressed` resolve the fixing commit's author through the provider and add a `fixAuthor` object (`{ name, email }`) to the payload (`cluster.regressed` uses the author of the fix that did not hold). On top of the normal subscription routing, the event is then delivered to that person directly:
+When an [SCM token](/guide/source-control) is configured, `cluster.fixed` and `cluster.regressed` resolve the fixing commit's author through the provider (for a regression, the author of the fix that did not hold). On top of the normal subscription routing, the event is then delivered to that person directly:
 
 - **Email**, through the same outbox, when SMTP is configured **and** the commit's email belongs to a registered Piwi user. The mail goes to that user's account email, never to the raw commit address, so a fix by an outside contributor never becomes a mail to a stranger.
 - **A browser notification** for that user, delivered even when they have no matching subscription.
 
-Without a token, an exposed email or a successful lookup, `fixAuthor` is absent and subscriptions alone apply.
+Without a token, an exposed email or a successful lookup, subscriptions alone apply.
 
 ### Global channels & subscriptions
 
@@ -162,6 +120,6 @@ Send a test email from **Settings → Notifications** to confirm delivery.
 - [CI & sharding](/guide/ci): the alternative, pulling the run URL into your pipeline
 - [Authentication](/operate/authentication): per-user channels and subscriptions
 - [Configuration reference](/reference/configuration): every environment variable
+- [Notification events & webhooks](/reference/notification-events): every event and the webhook body
 - [Quality reports](./quality-reports#report-schedules): scheduled quality reports sent to these channels
-- [Failure clusters & the inbox](./failure-clusters): what triggers `cluster.new`, `cluster.fixed` and `cluster.regressed`
-- [AI diagnosis](./ai-diagnosis): what triggers `diagnosis.completed`
+- [Failure clusters & the inbox](./failure-clusters): what triggers the cluster events
