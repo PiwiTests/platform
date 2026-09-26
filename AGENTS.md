@@ -237,6 +237,23 @@ Voice rules for all of them, and for `apps/docs/`: see [`apps/docs/AGENTS.md`](a
 - A test that creates a project MUST use a static name from `#shared/test-project-names` (`PROJECT.YOUR_KEY`) and
   register it there alphabetically, so global-setup cleanup removes it. Never use `Date.now()` suffixes.
 
+### Merging the base branch
+
+- Bring the base branch in with a merge commit, not a rebase: a rebase rewrites commits another checkout may hold.
+- **A generated file is regenerated, never merged by hand.** Take either side of the conflict, run its generator on the
+  merged tree, and commit the output:
+
+  | File                                                        | Regenerate with                                                                      |
+  | ----------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+  | `package-lock.json`                                         | `npm install` (repo root)                                                            |
+  | `apps/application/public/demo/seed.version.json`            | `npm run app:seed:demo` (`apps/application/`)                                        |
+  | `render.yaml`, `fly.toml`, `railway.json`, `deploy/**`      | `npm run app:generate:deploy` (`apps/application/`)                                  |
+  | Drizzle migrations, `_journal.json`, `meta/*_snapshot.json` | the procedure in [`apps/application/AGENTS.md`](apps/application/AGENTS.md#database) |
+
+- A branch's migrations follow extra rules through a merge — keep them unless the base branch added migrations, never
+  edit a committed one: see the Database section of [`apps/application/AGENTS.md`](apps/application/AGENTS.md#database).
+- Run typecheck, lint and the unit tests on the merged tree before pushing.
+
 ### Working with the user's requests
 
 - **Capture global change requests**: when asked to apply a change across many files ("update all X to Y"), add the
