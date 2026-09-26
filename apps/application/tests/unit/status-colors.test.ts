@@ -18,8 +18,9 @@ const css = readFileSync(resolve(__dirname, '../../app/assets/css/main.css'), 'u
 describe('shared status colors', () => {
   test('every --color-status-* token in main.css points at the shared palette entry', () => {
     const tokens = new Map<string, string>();
+    // The first definition is the light one; `.dark` restates some tokens further down.
     for (const match of css.matchAll(/--color-status-([a-z]+):\s*var\(--color-([a-z]+-\d+)\)/g)) {
-      tokens.set(match[1]!, match[2]!);
+      if (!tokens.has(match[1]!)) tokens.set(match[1]!, match[2]!);
     }
     expect([...tokens.keys()].sort()).toEqual(Object.keys(STATUS_COLORS).sort());
     for (const [key, color] of Object.entries(STATUS_COLORS)) expect(tokens.get(key)).toBe(color.token);
