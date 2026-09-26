@@ -1,10 +1,24 @@
 import { fileURLToPath, URL } from 'node:url'
-import { defineConfig } from 'vitepress'
+import { defineConfig, type HeadConfig } from 'vitepress'
 import { landingCards, nav, sidebars } from './navigation'
+import { pageMeta } from './page-meta.mts'
 
 // https://vitepress.dev/reference/site-config
 const ogImage = 'https://piwitests.dev/og-image.png'
 const siteUrl = 'https://piwitests.dev'
+
+// Names the site in search results (the line above each result's title).
+const websiteJsonLd: HeadConfig = [
+  'script',
+  { type: 'application/ld+json' },
+  JSON.stringify({
+    '@context': 'https://schema.org',
+    '@type': 'WebSite',
+    name: 'Piwi Dashboard',
+    alternateName: ['Piwi', 'PiwiTests'],
+    url: `${siteUrl}/`,
+  }),
+]
 
 export default defineConfig({
   title: 'Piwi Dashboard',
@@ -21,6 +35,18 @@ export default defineConfig({
   sitemap: {
     hostname: siteUrl,
   },
+  transformPageData(pageData, { siteConfig }) {
+    // The landing page's cards are the catalog groups, one card each, so the
+    // landing page, the sidebar and the All features page share one grouping.
+    if (pageData.relativePath === 'index.md') pageData.frontmatter.features = landingCards()
+    const { description, head } = pageMeta(pageData, siteConfig, siteUrl)
+    pageData.frontmatter.head = [...(pageData.frontmatter.head ?? []), ...head]
+    if (pageData.frontmatter.layout === 'home') pageData.frontmatter.head.push(websiteJsonLd)
+    return description ? { description } : undefined
+  },
+  // VitePress writes the page description into the HTML unescaped; as a head
+  // tag it is escaped, so a quote in a description cannot break the markup.
+  transformHead: ({ description }) => [['meta', { name: 'description', content: description }]],
   vite: {
     // The #shared modules imported below live outside the docs root, and their
     // nearest tsconfig (application/tsconfig.json) references Nuxt-generated
@@ -39,10 +65,14 @@ export default defineConfig({
       },
     },
   },
+  // The site-wide card is the home page's; every other page replaces its
+  // title, description and URL with its own (page-meta.mts).
   head: [
-    ['link', { rel: 'icon', href: '/favicon.ico', sizes: 'any' }],
+    ['link', { rel: 'icon', href: '/favicon.ico', sizes: '16x16 32x32 48x48' }],
     ['link', { rel: 'icon', type: 'image/svg+xml', href: '/logo.svg' }],
+    ['link', { rel: 'apple-touch-icon', href: '/apple-touch-icon.png' }],
     ['meta', { property: 'og:type', content: 'website' }],
+    ['meta', { property: 'og:site_name', content: 'Piwi Dashboard' }],
     ['meta', { property: 'og:title', content: 'Piwi Dashboard — Your Playwright results, kept and explained' }],
     [
       'meta',
@@ -55,26 +85,9 @@ export default defineConfig({
     ['meta', { property: 'og:image', content: ogImage }],
     ['meta', { property: 'og:image:width', content: '1200' }],
     ['meta', { property: 'og:image:height', content: '630' }],
-    ['meta', { property: 'og:url', content: siteUrl }],
+    // X reads og:title, og:description and og:image when the twitter: ones are absent.
     ['meta', { name: 'twitter:card', content: 'summary_large_image' }],
-    ['meta', { name: 'twitter:title', content: 'Piwi Dashboard — Your Playwright results, kept and explained' }],
-    [
-      'meta',
-      {
-        name: 'twitter:description',
-        content:
-          'CI throws away every report it makes. Piwi keeps them — then groups failures by root cause, scores flaky tests, and finds the locator you should have used. Self-hosted, MIT, zero telemetry.',
-      },
-    ],
-    ['meta', { name: 'twitter:image', content: ogImage }],
   ],
-  // The landing page's cards are the catalog groups, one card each, so the
-  // landing page, the sidebar and the All features page share one grouping.
-  transformPageData(pageData) {
-    if (pageData.relativePath === 'index.md') {
-      pageData.frontmatter.features = landingCards()
-    }
-  },
   themeConfig: {
     outline: 'deep',
     search: {

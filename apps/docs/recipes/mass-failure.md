@@ -1,6 +1,6 @@
 ---
 title: Triage a run gone red
-description: "Forty tests are red: read the failure clusters instead of the tests, rule out infrastructure, triage each cause once, and confirm the fix."
+description: "When most of a Playwright run goes red, it is usually two or three causes, not forty bugs. Collapse the failures into clusters, rule out the environment, triage each cause once, then confirm the fix."
 lang: en-US
 ---
 

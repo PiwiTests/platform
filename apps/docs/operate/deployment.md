@@ -1,6 +1,6 @@
 ---
 title: Deployment
-description: "Run Piwi with Docker, Docker Compose, Kubernetes, npx or a one-click host, behind an HTTPS proxy, with health checks and troubleshooting."
+description: "Run Piwi Dashboard with Docker, Docker Compose, Kubernetes, npx or a one-click host (Railway, Render, Fly.io, Koyeb, Coolify), then add health checks, HTTPS through a reverse proxy, and backups."
 lang: en-US
 ---
 

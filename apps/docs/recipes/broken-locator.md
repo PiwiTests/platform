@@ -1,6 +1,6 @@
 ---
 title: Fix a broken locator
-description: "A locator broke after a UI change: find the replacement Piwi captured from the last passing run and change it at its call site."
+description: "A UI change broke a Playwright locator. Piwi proposes ranked replacements captured from the last run where the test passed, and points at the line to change."
 lang: en-US
 ---
 
