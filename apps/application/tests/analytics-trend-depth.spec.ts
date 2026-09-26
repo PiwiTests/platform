@@ -5,6 +5,7 @@
  */
 import { test, expect } from './fixtures';
 import { PROJECT } from '#shared/test-project-names';
+import { waitForHydration } from './utils';
 
 test.describe.serial('Analytics trend depth', () => {
   let projectId: number;
@@ -48,9 +49,10 @@ test.describe.serial('Analytics trend depth', () => {
 
   test('the Settings tab saves targets, and PATCH clears them with null', async ({ page, request }) => {
     await page.goto(`/projects/${projectId}?tab=settings`);
+    await waitForHydration(page);
     const form = page.locator('[data-shot="project-targets"]');
-    await form.getByTestId('target-testPassRate').locator('input').fill('99');
-    await form.getByTestId('target-maxFlakyTests').locator('input').fill('5');
+    await form.getByTestId('target-testPassRate').fill('99');
+    await form.getByTestId('target-maxFlakyTests').fill('5');
     const saved = page.waitForResponse(
       (r) => r.url().includes(`/api/projects/${projectId}`) && r.request().method() === 'PATCH',
     );
@@ -85,6 +87,7 @@ test.describe.serial('Analytics trend depth', () => {
     ]);
 
     await page.goto(`/analytics?period=last-7d&projects=${projectId}&allBranches=true`);
+    await waitForHydration(page);
     await expect(page.getByTestId('stat-target-test-pass-rate')).toContainText('missed', { timeout: 30_000 });
     await expect(page.getByTestId('portfolio-targets').first()).toContainText('1 of 2 met');
     await expect(page.locator('[data-widget-key="insights"]')).toContainText('under its target');
@@ -110,6 +113,7 @@ test.describe.serial('Analytics trend depth', () => {
     expect(growth.suiteSize).toBe(2);
 
     await page.goto(`/analytics?period=last-7d&projects=${projectId}&allBranches=true`);
+    await waitForHydration(page);
     for (const shot of ['analytics-suite-growth', 'analytics-flaky-debt', 'analytics-time-to-fix']) {
       await expect(page.locator(`[data-shot="${shot}"]`)).toBeVisible({ timeout: 30_000 });
     }
@@ -117,6 +121,7 @@ test.describe.serial('Analytics trend depth', () => {
 
   test('a chart downloads its series as CSV from its export menu', async ({ page }) => {
     await page.goto(`/analytics?period=last-7d&projects=${projectId}&allBranches=true`);
+    await waitForHydration(page);
     const card = page.locator('[data-shot="analytics-suite-growth"]');
     await expect(card.locator('svg.block').first()).toBeVisible({ timeout: 30_000 });
     await card.getByTestId('chart-export').click();
@@ -128,6 +133,7 @@ test.describe.serial('Analytics trend depth', () => {
 
   test('a portfolio count opens the project list with the same scope', async ({ page }) => {
     await page.goto(`/analytics?period=last-7d&projects=${projectId}&environments=ci&allBranches=true`);
+    await waitForHydration(page);
     await page.getByTitle('The runs behind this number').first().click();
     await expect(page).toHaveURL(/tab=runs/);
     await expect(page).toHaveURL(/source=analytics/);
@@ -143,11 +149,8 @@ test.describe.serial('Analytics trend depth', () => {
     expect(trend.buckets.reduce((n: number, b: { totalRuns: number }) => n + b.totalRuns, 0)).toBe(2);
 
     await page.goto(`/test-cases/${testCaseId}`);
-    await page
-      .getByRole('link', { name: 'Trend' })
-      .or(page.getByRole('menuitem', { name: 'Trend' }))
-      .first()
-      .click();
+    await waitForHydration(page);
+    await page.getByRole('navigation').getByText('Trend', { exact: true }).click();
     await expect(page).toHaveURL(/tab=trend/);
     await expect(page.locator('[data-shot="test-case-trend"] svg.block').first()).toBeVisible({ timeout: 30_000 });
   });
@@ -156,6 +159,7 @@ test.describe.serial('Analytics trend depth', () => {
     const trend = await (await request.get(`/api/failure-clusters/${clusterId}/occurrence-trend?days=7`)).json();
     expect(trend.buckets.reduce((n: number, b: { occurrences: number }) => n + b.occurrences, 0)).toBe(1);
     await page.goto(`/failure-clusters/${clusterId}`);
+    await waitForHydration(page);
     await expect(page.locator('[data-shot="cluster-occurrence-trend"]')).toContainText('1 occurrences', {
       timeout: 30_000,
     });

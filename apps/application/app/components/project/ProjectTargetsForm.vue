@@ -65,7 +65,7 @@ async function save() {
     help="project.targets"
     data-shot="project-targets"
   >
-    <UForm :state="state" class="space-y-4" @submit="save">
+    <form class="space-y-4" @submit.prevent="save">
       <div class="grid gap-4 sm:grid-cols-2">
         <UFormField
           v-for="def in TARGET_DEFS"
@@ -92,6 +92,6 @@ async function save() {
           Save targets
         </UButton>
       </div>
-    </UForm>
+    </form>
   </SectionCard>
 </template>
