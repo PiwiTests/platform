@@ -536,6 +536,9 @@ share `app/demo/db.client.ts`.
 - **No dynamic `import()` in code the service worker bundles** (`shared/`, `server/utils/`, `app/demo/`): the
   worker is a classic script and Vite's preload wrapper for a dynamic import uses `import.meta.url`, a syntax
   error there that stops the worker from installing. Import statically; `app:check:demo:runtime` catches it.
+- The first render waits on the in-browser database, so until then the static shell shows
+  `app/demo/loading-template.html` (Nuxt's `spaLoadingTemplate`, removed on `app:suspense:resolve`). It is also what
+  crawlers index: keep the demo's heading and description in it, and its status text inside `data-nosnippet`.
 - Staleness detection injects `demoDataVersion` into `runtimeConfig.public`; the layout compares it to the IndexedDB
   copy and offers a "New demo data available" reset.
 - The run simulator (`DemoSimulator.vue` + `app/demo/simulator.ts`) replays the reporter's streaming protocol against
