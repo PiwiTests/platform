@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import {
+  CARD_TEST,
   INSTANCE_URL,
   SHOP_TESTS,
   injectCoverage,
@@ -507,3 +508,129 @@ test('scans a large page against a large index without freezing it', async ({ pa
   const frames = await page.evaluate(() => (globalThis as unknown as Record<string, number>).__frames);
   expect(frames).toBeGreaterThan(3);
 });
+
+test.describe('coverage overlay limited to one element', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.setViewportSize({ width: 1400, height: 900 });
+  });
+
+  const BLUE_CARD = 'article:has-text("Blue mug")';
+
+  test('limits the view to an element chosen on the page, then widens it', async ({ page, context }) => {
+    await stubCoverageChrome(context);
+    await openShop(page, '?nodialog');
+    await injectCoverage(page);
+    const whole = await readCoverage(page);
+    const panel = page.locator(`${HOST} .panel`);
+
+    await panel.getByRole('button', { name: 'Limit to an element' }).click();
+    await expect(panel.locator('.scope-bar')).toContainText('Click a part of the page');
+    expect((await readCoverage(page)).drawn).toBe(0);
+
+    // Point at the Blue mug's Add to cart button, then widen to its card with ↑.
+    await page.hover(`${BLUE_CARD} button.primary`);
+    await expect.poll(async () => (await readCoverage(page)).choosing).toBe('button "Add to cart"');
+    await expect(page.locator(`${HOST} .frame.choosing`)).toBeVisible();
+    for (let i = 0; i < 4 && !(await readCoverage(page)).choosing?.startsWith('article'); i++) {
+      await page.keyboard.press('ArrowUp');
+    }
+    expect((await readCoverage(page)).choosing).toMatch(/^article\.card "Blue mug/);
+    await page.keyboard.press('ArrowDown');
+    expect((await readCoverage(page)).choosing).not.toMatch(/^article/);
+    await page.keyboard.press('ArrowUp');
+
+    // The click that chooses never reaches the page.
+    await page.evaluate(() => {
+      (globalThis as { __clicks?: number }).__clicks = 0;
+      document.addEventListener('click', () => (globalThis as { __clicks?: number }).__clicks!++);
+    });
+    await page.mouse.click(...(await centerOf(page, `${BLUE_CARD} button.primary`)));
+    expect(await page.evaluate(() => (globalThis as { __clicks?: number }).__clicks)).toBe(0);
+
+    const scoped = await readCoverage(page);
+    expect(scoped.scope).toMatch(/^article\.card "Blue mug/);
+    expect(scoped.choosing).toBeNull();
+    expect(scoped.covered.map((c) => c.description).sort()).toEqual(
+      ['button "4 stars"', 'button "Add to cart"', 'paragraph.price "12 €"'].sort(),
+    );
+    expect(scoped.uncovered.map((u) => u.description)).toContain('button "Add Blue mug to wishlist"');
+    expect(scoped.uncovered.map((u) => u.description)).not.toContain('button "Add Red mug to wishlist"');
+    expect(scoped.tests.map((t) => t.title).sort()).toEqual(
+      ['adds a mug to the cart', 'filters in-stock products', 'rates a product', 'shows prices'].sort(),
+    );
+    expect(scoped.coveredInteractive + scoped.uncoveredCount).toBeLessThan(
+      whole.coveredInteractive + whole.uncoveredCount,
+    );
+    await expect(panel.locator('.scope-bar')).toContainText('Inside article.card "Blue mug');
+    await expect(page.locator(`${HOST} .frame.scope`)).toBeVisible();
+    await expect(page.locator(`${HOST} .frame-tag`)).toContainText('Inside article.card');
+    await expect(panel.getByRole('button', { name: /^Tests \d+$/ })).toHaveText('Tests 4');
+
+    // Container ↑ widens to the product grid, Whole page drops the limit.
+    await panel.getByRole('button', { name: 'Container ↑' }).click();
+    const grid = await readCoverage(page);
+    expect(grid.scope).toMatch(/^div\.grid/);
+    expect(grid.covered.filter((c) => c.description === 'button "Add to cart"')).toHaveLength(4);
+    // Esc goes back to the whole page before it closes the overlay.
+    await page.keyboard.press('Escape');
+    await expect(page.locator(HOST)).toBeAttached();
+    const again = await readCoverage(page);
+    expect(again.scope).toBeNull();
+    expect(again.covered).toHaveLength(whole.covered.length);
+    await expect(page.locator(`${HOST} .frame`)).toHaveCount(0);
+  });
+
+  test('Esc cancels choosing, and a link clicked to choose it does not navigate', async ({ page, context }) => {
+    await stubCoverageChrome(context);
+    await openShop(page, '?nodialog');
+    await injectCoverage(page);
+    const panel = page.locator(`${HOST} .panel`);
+
+    await panel.getByRole('button', { name: 'Limit to an element' }).click();
+    await page.keyboard.press('Escape');
+    expect((await readCoverage(page)).choosing).toBeNull();
+    await expect(page.locator(HOST)).toBeAttached();
+    await expect(panel.locator('.scope-bar')).toContainText('Whole page');
+
+    await panel.getByRole('button', { name: 'Limit to an element' }).click();
+    const url = page.url();
+    await page.locator('nav').getByRole('link', { name: 'Deals' }).click();
+    expect(page.url()).toBe(url);
+    const scoped = await readCoverage(page);
+    expect(scoped.scope).toBe('link "Deals"');
+    expect(scoped.tests.map((t) => t.title)).toEqual(['visits the deals']);
+  });
+
+  test('opens limited to the element the pick results hand over, with the containers tests reach', async ({
+    page,
+    context,
+  }) => {
+    await stubCoverageChrome(context, { cached: shopIndex([...SHOP_TESTS, CARD_TEST]) });
+    await openShop(page, '?nodialog');
+    await page.evaluate((selector) => {
+      (globalThis as { __piwiCoverageScopeRequest?: Element }).__piwiCoverageScopeRequest =
+        document.querySelector(selector)!;
+    }, '.grid article:first-child button.primary');
+    await injectCoverage(page);
+    const coverage = await readCoverage(page);
+    expect(coverage.scope).toBe('button "Add to cart"');
+    expect(coverage.containers).toEqual([
+      { description: expect.stringMatching(/^article\.card "Blue mug/), tests: ['shows the Blue mug card'] },
+    ]);
+    const around = page.locator(`${HOST} .panel .around`);
+    await expect(around).toContainText('Around it');
+    await around.locator('li.row').first().hover();
+    await expect(page.locator(`${HOST} .frame.around`)).toBeVisible();
+    await around.locator('li.row').first().click();
+    const card = await readCoverage(page);
+    expect(card.scope).toMatch(/^article\.card "Blue mug/);
+    expect(card.tests.map((t) => t.title)).toContain('shows the Blue mug card');
+    await page.locator(`${HOST} .panel`).getByRole('button', { name: 'Whole page' }).click();
+    expect((await readCoverage(page)).scope).toBeNull();
+  });
+});
+
+async function centerOf(page: Page, selector: string): Promise<[number, number]> {
+  const box = await boxOf(page, selector);
+  return [box.x + box.width / 2, box.y + box.height / 2];
+}

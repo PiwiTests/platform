@@ -40,11 +40,23 @@ changes, so opening a menu or a dialog adds what the tests reach inside it.
 
 ## One element at a time
 
-Picking an element with the extension, while connected, shows the same answer for that element:
-under its ranked locators, the tests that reach it and the actions they run on it, with
-**Show every tested element** to open the overlay on the whole page. **Copy all** copies every
-ranked locator, one per line, for the [Locators page](./locator-usage#the-locators-page) of the
-dashboard.
+**Limit to an element**, in the panel, narrows the view to one part of the page: point at it
+and click, with `↑` to widen the outline to its container and `↓` to narrow it back. The click
+that chooses never reaches the page, so a link or a button is chosen without being followed or
+pressed. The boxes, the summary and the three tabs then count only the element and what is
+inside it: a form, a card, a menu.
+
+**Around it** lists the tested elements that contain it: a test checking that the product card
+is visible reaches the card, not the button inside it, which is a weaker answer. Clicking one
+moves the view to that container, **Container ↑** does the same one level up, and **Whole page**
+or **Esc** drops the limit.
+
+Picking an element with the extension, while connected, gives the same answer without opening
+the overlay: under its ranked locators, the tests that reach the element itself, those that
+reach only something inside it, and those that reach only a container around it, each with
+the actions they run. **Show tested elements inside it** opens the overlay limited to that
+element. **Copy all** copies every ranked locator, one per line, for the
+[Locators page](./locator-usage#the-locators-page) of the dashboard.
 
 ## Setting it up
 

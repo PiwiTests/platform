@@ -118,6 +118,15 @@ export const SHOP_TESTS: TestSpec[] = [
   },
 ];
 
+/** A test checking the Blue mug card itself, around its buttons. */
+export const CARD_TEST: TestSpec = {
+  title: 'shows the Blue mug card',
+  suite: ['catalog'],
+  file: 'tests/catalog.spec.ts',
+  status: 'passed',
+  uses: [["getByTestId('product-card').filter({ hasText: 'Blue mug' })", ['expect.toBeVisible'], 40]],
+};
+
 export function shopIndex(tests: TestSpec[] = SHOP_TESTS, extra: Partial<LocatorIndex> = {}): LocatorIndex {
   const locators = new Map<string, LocatorIndex['locators'][number]>();
   tests.forEach((test, i) => {
@@ -239,6 +248,12 @@ export interface BridgedCoverage {
   }>;
   uncovered: Array<{ description: string; eid: string | null }>;
   tests: Array<{ title: string; elements: number }>;
+  /** The element the view is limited to, as the lists describe it. */
+  scope: string | null;
+  /** While choosing that element: the one that would be chosen ('' for none yet); null otherwise. */
+  choosing: string | null;
+  /** Tested elements around the scope, nearest first. */
+  containers: Array<{ description: string; tests: string[] }>;
   coveredInteractive: number;
   uncoveredCount: number;
   unmatched: number;

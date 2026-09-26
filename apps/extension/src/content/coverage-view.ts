@@ -1,10 +1,11 @@
 import type { LocatorIndex, LocatorIndexTest, LocatorIndexTestStatus } from '@piwitests/core/locator-index';
-import type { CoverageScan, CoveredElement } from './coverage-scan.js';
+import type { CoverageScan, CoveredElement, ScopedScan } from './coverage-scan.js';
 
 /** Everything the coverage UI draws from once a scan has run. */
 export interface CoverageContext {
   index: LocatorIndex;
-  scan: CoverageScan;
+  /** The whole page's scan, or its part inside the element the reader limited the view to. */
+  scan: CoverageScan | ScopedScan;
   instanceUrl: string;
   projectId: number;
   projectLabel: string;
@@ -30,6 +31,10 @@ export interface ViewState {
   pinned: Element | null;
   collapsed: boolean;
   dock: 'right' | 'left';
+  /** The element the view is limited to, with what is inside it; null for the whole page. */
+  scope: Element | null;
+  /** The reader is choosing that element on the page. */
+  choosingScope: boolean;
 }
 
 export function initialViewState(): ViewState {
@@ -46,7 +51,13 @@ export function initialViewState(): ViewState {
     pinned: null,
     collapsed: false,
     dock: 'right',
+    scope: null,
+    choosingScope: false,
   };
+}
+
+export function isScoped(scan: CoverageScan | ScopedScan): scan is ScopedScan {
+  return 'scope' in scan;
 }
 
 /** `Suite › Sub-suite › title`. */

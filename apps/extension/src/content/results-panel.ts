@@ -11,8 +11,8 @@ import { ensureSessionAccess } from '../shared/session-access.js';
 import { getCachedLocatorIndex } from '../shared/locator-index-cache.js';
 import { requestLocatorIndex } from '../shared/locator-index-refresh.js';
 import { projectLocatorsUrl, testCaseUrl } from '../shared/piwi-client.js';
-import { scanCoverage, testsReaching } from './coverage-scan.js';
-import { statusLabel, testTitle } from './coverage-view.js';
+import { elementReach, scanCoverage, type ReachGroup } from './coverage-scan.js';
+import { plural, statusLabel, testTitle } from './coverage-view.js';
 
 const ROLE_MAPS = { tagRoles: TAG_TO_ROLE, inputRoles: INPUT_TYPE_TO_ROLE };
 
@@ -98,6 +98,7 @@ export async function renderResultsPanel(ranked: RankedLocator[], target: Elemen
       background: rgba(124,58,237,.08); font-size: 12.5px;
     }
     .piwi .lead { font-weight: 600; }
+    .piwi .group { margin-top: 6px; font-weight: 600; }
     .piwi .muted { color: #9ca3af; font-size: 12px; }
     .piwi ul { list-style: none; margin: 6px 0 0; padding: 0; }
     .piwi li { display: flex; align-items: baseline; gap: 7px; padding: 2px 0; }
@@ -260,7 +261,17 @@ export async function renderResultsPanel(ranked: RankedLocator[], target: Elemen
 
 type PickCoverage =
   | { status: 'off' | 'checking' | 'unavailable'; message?: string }
-  | { status: 'ready'; project: string; tests: string[]; locators: string[] };
+  | {
+      status: 'ready';
+      project: string;
+      /** Tests reaching the element or something inside it. */
+      tests: string[];
+      /** Of those, the ones reaching only something inside it. */
+      inside: string[];
+      /** Tests reaching only an element around it. */
+      around: string[];
+      locators: string[];
+    };
 
 function reportPickCoverage(value: PickCoverage): void {
   (globalThis as { __piwiPickCoverage?: PickCoverage }).__piwiPickCoverage = value;
@@ -344,70 +355,112 @@ async function fillPiwiSection(
     keepGoing: () => !closed(),
   });
   if (!scan || closed()) return;
-  const { tests, entries } = testsReaching(scan, index, target);
+  const reach = elementReach(scan, index, target);
+  const direct = [...reach.self.tests, ...reach.inside.tests];
 
-  const actions = document.createElement('div');
-  actions.className = 'actions';
-  actions.appendChild(findInPiwi());
-  const showAll = document.createElement('button');
-  showAll.type = 'button';
-  showAll.textContent = 'Show every tested element';
-  showAll.title = 'Open Tested elements on this page';
-  showAll.addEventListener('click', () => {
+  const openCoverage = (scoped: boolean) => {
+    if (scoped) (globalThis as { __piwiCoverageScopeRequest?: Element }).__piwiCoverageScopeRequest = target;
     void chrome.runtime.sendMessage({ type: 'piwi-open-coverage' }).catch(() => undefined);
     document.getElementById(HOST_ID)?.remove();
-  });
-  actions.appendChild(showAll);
+  };
+  const actionButton = (text: string, title: string, onClick: () => void) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = text;
+    button.title = title;
+    button.addEventListener('click', onClick);
+    return button;
+  };
+  const actions = document.createElement('div');
+  actions.className = 'actions';
+  actions.append(
+    findInPiwi(),
+    actionButton('Show tested elements inside it', 'Open Tested elements limited to this element', () =>
+      openCoverage(true),
+    ),
+    actionButton('Show every tested element', 'Open Tested elements on this page', () => openCoverage(false)),
+  );
 
-  if (tests.length === 0) {
-    const muted = document.createElement('div');
-    muted.className = 'muted';
-    muted.textContent = 'No locator of the project’s tests resolves to this element here.';
-    section.replaceChildren(lead(`Not reached by any test of ${projectLabel}`), muted, actions);
-    reportPickCoverage({ status: 'ready', project: projectLabel, tests: [], locators: [] });
-    return;
+  const muted = (text: string) => {
+    const el = document.createElement('div');
+    el.className = 'muted';
+    el.textContent = text;
+    return el;
+  };
+  const nearest = reach.containers.elements[reach.containers.elements.length - 1];
+  const groups: Array<{ label: string; group: ReachGroup }> = [
+    { label: 'This element', group: reach.self },
+    { label: `Inside it · ${plural(reach.inside.elements.length, 'element')}`, group: reach.inside },
+    {
+      label:
+        reach.containers.elements.length === 1 && nearest
+          ? `Around it · ${scan.describe(nearest)}`
+          : `Around it · ${plural(reach.containers.elements.length, 'container')}`,
+      group: reach.containers,
+    },
+  ].filter(({ group }) => group.tests.length > 0);
+
+  const children: Node[] = [];
+  if (direct.length) {
+    children.push(lead(`Reached by ${plural(direct.length, 'test')} of ${projectLabel}`));
+  } else {
+    children.push(lead(`Not reached by any test of ${projectLabel}`));
+    children.push(
+      muted(
+        reach.containers.tests.length
+          ? 'No locator resolves to it or to anything inside it; these tests reach an element around it.'
+          : 'No locator of the project’s tests resolves to this element here.',
+      ),
+    );
   }
 
-  const list = document.createElement('ul');
-  for (const t of tests.slice(0, PIWI_TESTS_SHOWN)) {
-    const test = index.tests[t]!;
-    const item = document.createElement('li');
-    const dot = document.createElement('span');
-    dot.className = `dot ${test.status ?? ''}`;
-    dot.title = statusLabel(test.status);
-    const link = document.createElement('a');
-    link.href = testCaseUrl(settings.instanceUrl, test.id);
-    link.target = '_blank';
-    link.rel = 'noopener noreferrer';
-    link.textContent = testTitle(test);
-    link.title = test.file;
-    const actionsOf = new Set<string>();
-    for (const entry of entries) {
-      for (const use of index.locators[entry]!.uses) if (use.test === t) use.actions.forEach((a) => actionsOf.add(a));
+  let shown = 0;
+  const labelled = groups.length > 1 || groups[0]?.group !== reach.self;
+  for (const { label, group } of groups) {
+    if (shown >= PIWI_TESTS_SHOWN) break;
+    if (labelled) {
+      const heading = muted(label);
+      heading.classList.add('group');
+      children.push(heading);
     }
-    const meta = document.createElement('span');
-    meta.className = 'muted';
-    meta.textContent = [...actionsOf].map(locatorActionLabel).join(', ');
-    item.append(dot, link, meta);
-    list.appendChild(item);
+    const list = document.createElement('ul');
+    for (const t of group.tests.slice(0, PIWI_TESTS_SHOWN - shown)) {
+      const test = index.tests[t]!;
+      const item = document.createElement('li');
+      const dot = document.createElement('span');
+      dot.className = `dot ${test.status ?? ''}`;
+      dot.title = statusLabel(test.status);
+      const link = document.createElement('a');
+      link.href = testCaseUrl(settings.instanceUrl, test.id);
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.textContent = testTitle(test);
+      link.title = test.file;
+      const actionsOf = new Set<string>();
+      for (const entry of group.entries) {
+        for (const use of index.locators[entry]!.uses) if (use.test === t) use.actions.forEach((a) => actionsOf.add(a));
+      }
+      const meta = document.createElement('span');
+      meta.className = 'muted';
+      meta.textContent = [...actionsOf].map(locatorActionLabel).join(', ');
+      item.append(dot, link, meta);
+      list.appendChild(item);
+      shown++;
+    }
+    children.push(list);
   }
-  const children: Node[] = [
-    lead(`Reached by ${tests.length} ${tests.length === 1 ? 'test' : 'tests'} of ${projectLabel}`),
-    list,
-  ];
-  if (tests.length > PIWI_TESTS_SHOWN) {
-    const more = document.createElement('div');
-    more.className = 'muted';
-    more.textContent = `${tests.length - PIWI_TESTS_SHOWN} more — Show every tested element lists them all.`;
-    children.push(more);
-  }
+  const total = groups.reduce((sum, { group }) => sum + group.tests.length, 0);
+  if (total > shown) children.push(muted(`${total - shown} more — Tested elements lists them all.`));
   children.push(actions);
   section.replaceChildren(...children);
+  const titles = (tests: number[]) => tests.map((t) => index!.tests[t]!.title);
   reportPickCoverage({
     status: 'ready',
     project: projectLabel,
-    tests: tests.map((t) => index!.tests[t]!.title),
-    locators: entries.map((e) => index!.locators[e]!.locator),
+    tests: titles(direct),
+    inside: titles(reach.inside.tests),
+    around: titles(reach.containers.tests),
+    locators: [...reach.self.entries, ...reach.inside.entries].map((e) => index!.locators[e]!.locator),
   });
 }
 

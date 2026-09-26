@@ -7,6 +7,11 @@
  * Injected from the popup; injecting it again toggles it off. Stays live while
  * open: page changes trigger a rescan (throttled), scrolling and resizing move
  * the boxes, and a newer index from the instance replaces the cached one.
+ *
+ * The view can be limited to one element and what is inside it — chosen on
+ * the page, or handed over by the pick results through
+ * `__piwiCoverageScopeRequest` — with the tested containers around it listed
+ * apart.
  */
 import type { LocatorIndex } from '@piwitests/core/locator-index';
 import { startTool, endTool, toolIsCurrent, installEscapeToCancel } from '../shared/tool-session.js';
@@ -15,12 +20,14 @@ import { getConnectionSettings, isConnected } from '../shared/connection-setting
 import { getActiveProjectOverride, resolveActiveProject, type ActiveProject } from '../shared/active-project.js';
 import { getCachedLocatorIndex } from '../shared/locator-index-cache.js';
 import { requestLocatorIndex } from '../shared/locator-index-refresh.js';
-import { scanCoverage, type CoverageScan } from './coverage-scan.js';
-import { CoverageLayer, type Drawable } from './coverage-layer.js';
+import { isElementNode } from './engine-aria.js';
+import { scanCoverage, scopeScan, widerScope, type CoverageScan } from './coverage-scan.js';
+import { CoverageLayer, type Drawable, type Frame } from './coverage-layer.js';
 import { CoveragePanel, type PanelStatus } from './coverage-panel.js';
 import { COVERAGE_CSS } from './coverage-style.js';
 import {
   initialViewState,
+  isScoped,
   kindShown,
   spotlightTest,
   worstStatus,
@@ -74,6 +81,10 @@ const OBSERVED_ATTRIBUTES = [
 interface CoverageGlobals {
   __piwiCoverageOff?: () => void;
   __piwiCoverage?: unknown;
+  /** Set by the pick results before asking for the overlay: open it limited to this element. */
+  __piwiCoverageScopeRequest?: unknown;
+  /** Limits an open overlay to an element. */
+  __piwiCoverageSetScope?: (element: Element) => void;
   /** Set by the test suite (page world) to render into an open shadow root it can inspect. */
   __piwiTestOpenShadow?: boolean;
 }
@@ -83,15 +94,38 @@ function isOwnElement(element: Element): boolean {
   return !!id && id.startsWith('piwi-');
 }
 
+/** Whether `inner` sits inside `outer`, across shadow roots. */
+function containsAcross(outer: Element, inner: Element): boolean {
+  for (let node: Node | null = inner; node; node = node.parentNode ?? (node as ShadowRoot).host ?? null) {
+    if (node === outer) return true;
+  }
+  return false;
+}
+
 function isOwnNode(node: Node): boolean {
   const element = node.nodeType === 1 ? (node as Element) : node.parentElement;
   return !!element?.closest('[id^="piwi-"]');
 }
 
+/** Mouse events the page must not see while the reader chooses an element. */
+const CHOOSING_BLOCKED_EVENTS = [
+  'pointerdown',
+  'pointerup',
+  'mousedown',
+  'mouseup',
+  'click',
+  'dblclick',
+  'contextmenu',
+];
+
 function startCoverageOverlay(): void {
   const g = globalThis as unknown as CoverageGlobals;
+  const requested = g.__piwiCoverageScopeRequest;
+  delete g.__piwiCoverageScopeRequest;
+  const scopeRequest = requested && isElementNode(requested as Node) ? (requested as Element) : null;
   if (g.__piwiCoverageOff) {
-    g.__piwiCoverageOff();
+    if (scopeRequest && g.__piwiCoverageSetScope) g.__piwiCoverageSetScope(scopeRequest);
+    else g.__piwiCoverageOff();
     return;
   }
 
@@ -119,7 +153,7 @@ function startCoverageOverlay(): void {
   if (canUseTopLayer) host.setAttribute('popover', 'manual');
   bringToFront();
 
-  const state: ViewState = initialViewState();
+  const state: ViewState = { ...initialViewState(), scope: scopeRequest };
   let status: PanelStatus = 'loading';
   let message: string | null = 'Loading the locator index…';
   let project: ActiveProject | null = null;
@@ -133,6 +167,11 @@ function startCoverageOverlay(): void {
   let scanning: { done: number; total: number } | null = null;
   let scanCount = 0;
   const suggestions = new WeakMap<Element, string | null>();
+  /** While choosing: the element that would be chosen, and the narrower ones ↑ walked out of. */
+  let choosingTarget: Element | null = null;
+  let choosingNarrower: Element[] = [];
+  /** A container hovered in the panel's "Around it" list. */
+  let aroundHover: Element | null = null;
 
   const suggestLocator = (element: Element): string | null => {
     if (suggestions.has(element)) return suggestions.get(element)!;
@@ -191,8 +230,26 @@ function startCoverageOverlay(): void {
       redraw();
       renderPanel();
     },
+    onChooseScope: () => startChoosing(),
+    onCancelChoosing: () => stopChoosing(),
+    onWidenScope: () => {
+      if (state.scope) setScope(widerScope(state.scope));
+    },
+    onClearScope: () => setScope(null),
+    onContainerHover: (element) => {
+      aroundHover = element;
+      layer.setFrames(frames());
+    },
+    onContainerSelect: (element) => {
+      aroundHover = null;
+      setScope(element);
+    },
     suggestLocator,
   });
+
+  function describe(element: Element): string {
+    return scan?.describe(element) ?? element.tagName.toLowerCase();
+  }
 
   function renderPanel(): void {
     panel.render({
@@ -206,6 +263,8 @@ function startCoverageOverlay(): void {
       refreshError,
       scanning,
       state,
+      scopeLabel: state.scope ? describe(state.scope) : null,
+      canWiden: !!state.scope && widerScope(state.scope) !== null,
     });
   }
 
@@ -264,11 +323,112 @@ function startCoverageOverlay(): void {
     return out.slice(0, MAX_DRAWN);
   }
 
+  function frames(): Frame[] {
+    const out: Frame[] = [];
+    if (state.scope && !state.choosingScope)
+      out.push({ element: state.scope, kind: 'scope', label: `Inside ${describe(state.scope)}` });
+    if (state.choosingScope && choosingTarget) {
+      out.push({
+        element: choosingTarget,
+        kind: 'choosing',
+        label: `${describe(choosingTarget)} · click to look inside`,
+      });
+    }
+    if (aroundHover) out.push({ element: aroundHover, kind: 'around', label: describe(aroundHover) });
+    return out;
+  }
+
   function redraw(): void {
     layer.setContext(context);
-    layer.draw(drawables());
+    layer.draw(state.choosingScope ? [] : drawables());
+    layer.setFrames(frames());
     if (state.pinned) layer.showPinned(state.pinned);
     bridge();
+  }
+
+  /** The context the panel and the boxes draw from: the scan, limited to the chosen element when there is one. */
+  function buildContext(): void {
+    if (!scan || !index || !project) {
+      context = null;
+      return;
+    }
+    if (state.scope && !state.scope.isConnected) state.scope = null;
+    context = {
+      index,
+      scan: state.scope ? scopeScan(scan, state.scope) : scan,
+      instanceUrl,
+      projectId: project.projectId,
+      projectLabel: project.projectLabel,
+    };
+  }
+
+  function setScope(element: Element | null): void {
+    state.scope = element;
+    state.focusTest = null;
+    state.hoverTest = null;
+    state.pinned = null;
+    layer.showPinned(null);
+    layer.showPreview(null);
+    buildContext();
+    redraw();
+    renderPanel();
+  }
+
+  // ── Choosing the element to look inside ───────────────────────────────
+  /** The page element under a viewport point, inside open shadow roots; null over the overlay itself. */
+  function elementAt(x: number, y: number): Element | null {
+    let element = document.elementFromPoint(x, y);
+    while (element?.shadowRoot) {
+      const inner = element.shadowRoot.elementFromPoint(x, y);
+      if (!inner || inner === element) break;
+      element = inner;
+    }
+    if (!element || element === host || isOwnElement(element)) return null;
+    if (element === document.documentElement || element === document.body) return null;
+    return element;
+  }
+
+  function startChoosing(): void {
+    state.choosingScope = true;
+    state.pinned = null;
+    choosingTarget = pointer ? elementAt(pointer.x, pointer.y) : null;
+    choosingNarrower = [];
+    layer.showPinned(null);
+    layer.showPreview(null);
+    for (const type of CHOOSING_BLOCKED_EVENTS) window.addEventListener(type, onChoosingEvent, true);
+    redraw();
+    renderPanel();
+  }
+
+  function stopChoosing(chosen: Element | null = null): void {
+    if (!state.choosingScope) return;
+    state.choosingScope = false;
+    choosingTarget = null;
+    choosingNarrower = [];
+    for (const type of CHOOSING_BLOCKED_EVENTS) window.removeEventListener(type, onChoosingEvent, true);
+    if (chosen) setScope(chosen);
+    else {
+      redraw();
+      renderPanel();
+    }
+  }
+
+  function setChoosingTarget(element: Element | null): void {
+    if (element === choosingTarget) return;
+    choosingTarget = element;
+    layer.setFrames(frames());
+    bridge();
+  }
+
+  /** Keeps the page from reacting to the click that chooses; clicks on the overlay go through. */
+  function onChoosingEvent(e: Event): void {
+    if (e.composedPath().includes(host)) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    if (e.type !== 'click') return;
+    const mouse = e as MouseEvent;
+    const target = choosingTarget ?? elementAt(mouse.clientX, mouse.clientY);
+    if (target) stopChoosing(target);
   }
 
   function pin(element: Element | null): void {
@@ -291,14 +451,24 @@ function startCoverageOverlay(): void {
   /** A structured copy of what is shown, for the test suite (it lives in the content script's world, never the page's). */
   function bridge(): void {
     const idx = index;
+    const view = context?.scan ?? scan;
     g.__piwiCoverage = {
       status,
       message,
       projectLabel: project?.projectLabel ?? null,
       scans: scanCount,
-      drawn: drawables().length,
+      drawn: state.choosingScope ? 0 : drawables().length,
+      scope: state.scope ? describe(state.scope) : null,
+      choosing: state.choosingScope ? (choosingTarget ? describe(choosingTarget) : '') : null,
+      containers:
+        view && isScoped(view)
+          ? view.containers.map((c) => ({
+              description: c.description,
+              tests: c.tests.map((t) => idx!.tests[t]!.title),
+            }))
+          : [],
       covered:
-        scan?.covered.map((c) => ({
+        view?.covered.map((c) => ({
           description: c.description,
           eid: c.element.getAttribute('data-eid'),
           kind: c.kind,
@@ -308,10 +478,10 @@ function startCoverageOverlay(): void {
           locators: c.matches.map((m) => idx!.locators[m.entry]!.locator),
         })) ?? [],
       uncovered:
-        scan?.uncovered.map((u) => ({ description: u.description, eid: u.element.getAttribute('data-eid') })) ?? [],
-      tests: scan?.tests.map((t) => ({ title: idx!.tests[t.test]!.title, elements: t.elements.length })) ?? [],
-      coveredInteractive: scan?.coveredInteractive ?? 0,
-      uncoveredCount: scan?.uncoveredCount ?? 0,
+        view?.uncovered.map((u) => ({ description: u.description, eid: u.element.getAttribute('data-eid') })) ?? [],
+      tests: view?.tests.map((t) => ({ title: idx!.tests[t.test]!.title, elements: t.elements.length })) ?? [],
+      coveredInteractive: view?.coveredInteractive ?? 0,
+      uncoveredCount: view?.uncoveredCount ?? 0,
       unmatched: scan?.unmatched ?? 0,
       errors: scan?.errors.map((e) => ({ locator: idx!.locators[e.entry]!.locator, message: e.message })) ?? [],
       durationMs: scan?.durationMs ?? null,
@@ -362,24 +532,19 @@ function startCoverageOverlay(): void {
     if (result && seq === scanSeq && scanIndex === index) {
       scan = result;
       scanCount++;
-      context = {
-        index: scanIndex,
-        scan: result,
-        instanceUrl,
-        projectId: project.projectId,
-        projectLabel: project.projectLabel,
-      };
+      buildContext();
+      const view = context!.scan;
       status = 'ready';
       message = null;
       if (
         state.pinned &&
-        !result.covered.some((c) => c.element === state.pinned) &&
-        !result.uncovered.some((u) => u.element === state.pinned)
+        !view.covered.some((c) => c.element === state.pinned) &&
+        !view.uncovered.some((u) => u.element === state.pinned)
       ) {
         state.pinned = null;
         layer.showPinned(null);
       }
-      if (state.focusTest != null && !result.tests.some((t) => t.test === state.focusTest)) state.focusTest = null;
+      if (state.focusTest != null && !view.tests.some((t) => t.test === state.focusTest)) state.focusTest = null;
       observeRoots();
       bringToFront();
       redraw();
@@ -506,6 +671,16 @@ function startCoverageOverlay(): void {
   let hovered: Element | null = null;
   function hitTest(): void {
     hoverFrame = 0;
+    if (state.choosingScope) {
+      const under = pointer ? elementAt(pointer.x, pointer.y) : null;
+      // The target follows the pointer, except inside a container ↑ widened to.
+      const widened = choosingNarrower.length > 0 && choosingTarget;
+      if (under && !(widened && containsAcross(choosingTarget!, under))) {
+        choosingNarrower = [];
+        setChoosingTarget(under);
+      }
+      return;
+    }
     const target = pointer ? layer.hitTest(pointer.x, pointer.y) : null;
     if (target === hovered) return;
     hovered = target;
@@ -523,12 +698,33 @@ function startCoverageOverlay(): void {
     pointer = null;
     if (!hoverFrame) hoverFrame = requestAnimationFrame(hitTest);
   };
-  // Window capture runs before the tool session's document-level Escape, so an open card closes first.
+  // Window capture runs before the tool session's document-level Escape: an open card closes first,
+  // then the limit to an element, then the overlay.
   const onKeyDown = (e: KeyboardEvent) => {
-    if (e.key !== 'Escape' || !state.pinned) return;
+    if (state.choosingScope) {
+      const handled = ['Escape', 'ArrowUp', 'ArrowDown', 'Enter'].includes(e.key);
+      if (!handled) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      if (e.key === 'Escape') stopChoosing();
+      else if (e.key === 'Enter') stopChoosing(choosingTarget);
+      else if (e.key === 'ArrowUp' && choosingTarget) {
+        const wider = widerScope(choosingTarget);
+        if (wider) {
+          choosingNarrower.push(choosingTarget);
+          setChoosingTarget(wider);
+        }
+      } else if (e.key === 'ArrowDown') {
+        const narrower = choosingNarrower.pop();
+        if (narrower) setChoosingTarget(narrower);
+      }
+      return;
+    }
+    if (e.key !== 'Escape' || (!state.pinned && !state.scope)) return;
     e.preventDefault();
     e.stopImmediatePropagation();
-    pin(null);
+    if (state.pinned) pin(null);
+    else setScope(null);
   };
 
   let lastUrl = location.href;
@@ -585,15 +781,21 @@ function startCoverageOverlay(): void {
     document.removeEventListener('mousemove', onPointerMove, true);
     document.removeEventListener('mouseout', onPointerOut, true);
     window.removeEventListener('keydown', onKeyDown, true);
+    for (const type of CHOOSING_BLOCKED_EVENTS) window.removeEventListener(type, onChoosingEvent, true);
     scanSeq++;
     layer.destroy();
     panel.destroy();
     host.remove();
     delete g.__piwiCoverageOff;
+    delete g.__piwiCoverageSetScope;
     g.__piwiCoverage = { status: 'closed' };
     endTool(toolEpoch);
   };
   g.__piwiCoverageOff = off;
+  g.__piwiCoverageSetScope = (element) => {
+    if (state.choosingScope) stopChoosing();
+    setScope(element);
+  };
   toolEpoch = startTool('coverage-overlay', off);
   installEscapeToCancel();
   bridge();

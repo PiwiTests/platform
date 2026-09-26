@@ -47,6 +47,12 @@ export interface UncoveredElement {
   description: string;
 }
 
+export interface InteractiveElement {
+  element: Element;
+  /** A chain reaches it, a child of it, or its label. */
+  reached: boolean;
+}
+
 export interface PageTest {
   /** Position in `LocatorIndex.tests`. */
   test: number;
@@ -71,6 +77,17 @@ export interface CoverageScan {
   errors: Array<{ entry: number; message: string }>;
   evaluated: number;
   durationMs: number;
+  /** Every visible interactive element, in page order. */
+  interactive: InteractiveElement[];
+  /** The short description the lists show for an element. */
+  describe(element: Element): string;
+}
+
+/** A scan narrowed to one element and what is inside it. */
+export interface ScopedScan extends CoverageScan {
+  scope: Element;
+  /** Tested elements containing the scope, nearest first: the card a test checks around a button. */
+  containers: CoveredElement[];
 }
 
 export interface ScanOptions {
@@ -252,18 +269,6 @@ export async function scanCoverage(
   const position = (element: Element) => order.get(element) ?? Number.MAX_SAFE_INTEGER;
   covered.sort((a, b) => position(a.element) - position(b.element));
 
-  const perTest = new Map<number, Element[]>();
-  for (const c of covered) {
-    for (const test of c.tests) {
-      let list = perTest.get(test);
-      if (!list) perTest.set(test, (list = []));
-      list.push(c.element);
-    }
-  }
-  const tests = [...perTest.entries()]
-    .map(([test, elements]) => ({ test, elements }))
-    .sort((a, b) => b.elements.length - a.elements.length || a.test - b.test);
-
   // An interactive element counts as covered when a chain reaches it, a child
   // of it (the text inside a button), or its label (Playwright acts through labels).
   const reached = new Set<Element>();
@@ -275,63 +280,184 @@ export async function scanCoverage(
     const label = element.closest('label') as HTMLLabelElement | null;
     if (label?.control) reached.add(label.control);
   }
-  const uncovered: UncoveredElement[] = [];
-  let coveredInteractive = 0;
-  let uncoveredCount = 0;
+  const interactive: InteractiveElement[] = [];
   for (const d of docs) {
     for (const element of engine.elements(d)) {
-      if (!isInteractive(element, model) || !model.isVisible(element)) continue;
-      if (reached.has(element)) {
-        coveredInteractive++;
-        continue;
+      if (isInteractive(element, model) && model.isVisible(element)) {
+        interactive.push({ element, reached: reached.has(element) });
       }
-      uncoveredCount++;
-      if (uncovered.length < MAX_UNCOVERED) uncovered.push({ element, description: describeElement(element, model) });
     }
   }
+  const describe = (element: Element) => describeElement(element, model);
 
   return {
     covered,
-    uncovered,
-    tests,
-    coveredInteractive,
-    uncoveredCount,
+    tests: testsOf(covered),
+    ...surfaceOf(interactive, describe),
     unmatched,
     errors,
     evaluated: chains.length,
     durationMs: Math.round(performance.now() - started),
+    interactive,
+    describe,
+  };
+}
+
+/** The tests reaching some covered elements, those reaching the most first. */
+function testsOf(covered: CoveredElement[]): PageTest[] {
+  const perTest = new Map<number, Element[]>();
+  for (const c of covered) {
+    for (const test of c.tests) {
+      let list = perTest.get(test);
+      if (!list) perTest.set(test, (list = []));
+      list.push(c.element);
+    }
+  }
+  return [...perTest.entries()]
+    .map(([test, elements]) => ({ test, elements }))
+    .sort((a, b) => b.elements.length - a.elements.length || a.test - b.test);
+}
+
+function surfaceOf(
+  interactive: InteractiveElement[],
+  describe: (element: Element) => string,
+): Pick<CoverageScan, 'uncovered' | 'coveredInteractive' | 'uncoveredCount'> {
+  const uncovered: UncoveredElement[] = [];
+  let coveredInteractive = 0;
+  let uncoveredCount = 0;
+  for (const { element, reached } of interactive) {
+    if (reached) {
+      coveredInteractive++;
+      continue;
+    }
+    uncoveredCount++;
+    if (uncovered.length < MAX_UNCOVERED) uncovered.push({ element, description: describe(element) });
+  }
+  return { uncovered, coveredInteractive, uncoveredCount };
+}
+
+/**
+ * An element's containers, nearest first: its parents across shadow roots,
+ * then the frame element of its document and that frame's own containers.
+ */
+export function containersOf(element: Element): Element[] {
+  const out: Element[] = [];
+  let current: Element | null = element;
+  while (current) {
+    let parent: Element | null = parentElementOrShadowHost(current) ?? null;
+    if (!parent) {
+      try {
+        parent = current.ownerDocument.defaultView?.frameElement ?? null;
+      } catch {
+        parent = null;
+      }
+    }
+    if (parent) out.push(parent);
+    current = parent;
+  }
+  return out;
+}
+
+function labelsOf(element: Element): Element[] {
+  return Array.from((element as HTMLInputElement).labels ?? []);
+}
+
+/** Whether `element` is `scope`, inside it, or inside one of its labels (Playwright acts on a field through its label). */
+function withinScope(scope: Element, labels: Element[]): (element: Element) => boolean {
+  return (element) =>
+    element === scope ||
+    labels.some((label) => label === element || label.contains(element)) ||
+    containersOf(element).includes(scope);
+}
+
+/**
+ * Narrow a scan to one element: the tested and untested elements inside it
+ * (the element itself included), the tests reaching them, and the tested
+ * elements around it.
+ */
+export function scopeScan(scan: CoverageScan, scope: Element): ScopedScan {
+  const within = withinScope(scope, labelsOf(scope));
+  const covered = scan.covered.filter((c) => within(c.element));
+  const around = containersOf(scope);
+  const depth = new Map(around.map((element, i) => [element, i]));
+  const containers = scan.covered
+    .filter((c) => depth.has(c.element))
+    .sort((a, b) => depth.get(a.element)! - depth.get(b.element)!);
+  const interactive = scan.interactive.filter((i) => within(i.element));
+  return {
+    ...scan,
+    covered,
+    tests: testsOf(covered),
+    ...surfaceOf(interactive, scan.describe),
+    interactive,
+    scope,
+    containers,
   };
 }
 
 /**
- * The tests reaching one element, from a finished scan: through chains that
- * resolve to the element itself, to something inside it (the text of a
- * button), or to one of its labels. Tests are ordered by how many of those
- * chains they use.
+ * The container a wider look at `element` would take: the nearest one whose
+ * box is larger (a wrapper of the same size would show the same thing). Null
+ * when that is the whole page.
  */
-export function testsReaching(
-  scan: CoverageScan,
-  index: LocatorIndex,
-  target: Element,
-): { tests: number[]; entries: number[] } {
-  const labels = new Set<Element>(Array.from((target as HTMLInputElement).labels ?? []));
-  const entries = new Set<number>();
+export function widerScope(element: Element): Element | null {
+  const box = element.getBoundingClientRect();
+  for (const container of containersOf(element)) {
+    const tag = tagNameOf(container);
+    if (tag === 'BODY' || tag === 'HTML') return null;
+    const r = container.getBoundingClientRect();
+    if (r.width > box.width + 1 || r.height > box.height + 1) return container;
+  }
+  return null;
+}
+
+export interface ReachGroup {
+  /** Tests reaching this way and not in a closer group, those using the most chains first. */
+  tests: number[];
+  /** Positions in `LocatorIndex.locators` of the chains reaching this way. */
+  entries: number[];
+  elements: Element[];
+}
+
+/** How the tests of a scan reach one element, closest first. */
+export interface ElementReach {
+  /** Chains resolving to the element itself, or to one of its labels. */
+  self: ReachGroup;
+  /** Chains resolving to something inside it: the text of a button, the fields of a form. */
+  inside: ReachGroup;
+  /** Chains resolving to an element containing it: a test checking the card around a button. */
+  containers: ReachGroup;
+}
+
+export function elementReach(scan: CoverageScan, index: LocatorIndex, target: Element): ElementReach {
+  const labels = labelsOf(target);
+  const around = new Set(containersOf(target));
+  const found: Record<keyof ElementReach, CoveredElement[]> = { self: [], inside: [], containers: [] };
   for (const covered of scan.covered) {
     const element = covered.element;
-    let reaches = element === target || labels.has(element) || [...labels].some((label) => label.contains(element));
-    for (
-      let parent = parentElementOrShadowHost(element);
-      !reaches && parent;
-      parent = parentElementOrShadowHost(parent)
-    ) {
-      if (parent === target) reaches = true;
+    if (element === target || labels.some((label) => label === element || label.contains(element))) {
+      found.self.push(covered);
+    } else if (around.has(element)) {
+      found.containers.push(covered);
+    } else if (containersOf(element).includes(target)) {
+      found.inside.push(covered);
     }
-    if (reaches) for (const match of covered.matches) entries.add(match.entry);
   }
-  const weight = new Map<number, number>();
-  for (const entry of entries) {
-    for (const use of index.locators[entry]!.uses) weight.set(use.test, (weight.get(use.test) ?? 0) + 1);
-  }
-  const tests = [...weight.entries()].sort((a, b) => b[1] - a[1] || a[0] - b[0]).map(([test]) => test);
-  return { tests, entries: [...entries] };
+  const seen = new Set<number>();
+  const group = (list: CoveredElement[]): ReachGroup => {
+    const entries = [...new Set(list.flatMap((c) => c.matches.map((m) => m.entry)))];
+    const weight = new Map<number, number>();
+    for (const entry of entries) {
+      for (const use of index.locators[entry]!.uses) {
+        if (!seen.has(use.test)) weight.set(use.test, (weight.get(use.test) ?? 0) + 1);
+      }
+    }
+    const tests = [...weight.entries()].sort((a, b) => b[1] - a[1] || a[0] - b[0]).map(([test]) => test);
+    tests.forEach((test) => seen.add(test));
+    return { tests, entries, elements: list.map((c) => c.element) };
+  };
+  const self = group(found.self);
+  const inside = group(found.inside);
+  const containers = group(found.containers);
+  return { self, inside, containers };
 }

@@ -44,6 +44,20 @@ export const COVERAGE_CSS = `
   }
   @media (prefers-reduced-motion: reduce) { .box.flash { animation: none; box-shadow: 0 0 0 3px #7c3aed; } }
 
+  /* The element the view is limited to, and the one being chosen. */
+  .frame {
+    position: fixed; pointer-events: none; border-radius: 6px;
+    box-shadow: 0 0 0 9999px rgb(17 24 39 / 0.28);
+  }
+  .frame.scope { border: 2px dashed #7c3aed; }
+  .frame.choosing { border: 2px solid #7c3aed; background: rgb(124 58 237 / 0.1); box-shadow: 0 0 0 9999px rgb(17 24 39 / 0.18); }
+  .frame.around { border: 2px solid #a78bfa; box-shadow: none; background: rgb(167 139 250 / 0.12); }
+  .frame-tag {
+    position: fixed; pointer-events: none; z-index: 4; max-width: 420px; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; padding: 2px 8px; border-radius: 5px; background: #7c3aed; color: #fff;
+    font: 600 11.5px/1.5 ui-sans-serif, system-ui, sans-serif; box-shadow: 0 0 0 1px rgb(255 255 255 / 0.85);
+  }
+
   .badge {
     position: fixed; pointer-events: auto; cursor: pointer; display: inline-flex; align-items: center; gap: 3px;
     min-width: 20px; height: 18px; padding: 0 6px; border: 0; border-radius: 9px;
@@ -137,6 +151,20 @@ export const COVERAGE_CSS = `
   .panel .link-button:hover { text-decoration-style: solid; }
   .panel .progress { height: 3px; background: rgb(124 58 237 / 0.25); border-radius: 2px; overflow: hidden; margin: 2px 0 8px; }
   .panel .progress > span { display: block; height: 100%; background: #a78bfa; transition: width 120ms; }
+  .panel .scope-bar {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 0 0 8px; padding: 6px 8px;
+    border-radius: 8px; background: rgb(124 58 237 / 0.16); font-size: 12px;
+  }
+  .panel .scope-bar .what { flex: 1 1 160px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .panel .scope-bar button {
+    background: rgb(128 128 128 / 0.14); color: inherit; border: 1px solid rgb(128 128 128 / 0.3); border-radius: 6px;
+    padding: 1px 8px; font: inherit; font-size: 11.5px; cursor: pointer;
+  }
+  .panel .scope-bar button:disabled { opacity: 0.45; cursor: default; }
+  .panel .scope-bar .keys { flex-basis: 100%; color: #c4b5fd; font-size: 11.5px; }
+  .panel .scope-bar kbd { font: inherit; font-size: 11px; padding: 0 4px; border-radius: 4px; border: 1px solid rgb(128 128 128 / 0.4); }
+  .panel .around { margin: -2px 0 10px; }
+  .panel .around .hint { color: #9ca3af; font-size: 11.5px; margin-bottom: 2px; }
   .panel .tabs { display: flex; gap: 3px; padding: 3px; border-radius: 8px; background: rgb(128 128 128 / 0.14); margin-bottom: 8px; }
   .panel .tab {
     flex: 1; border: 0; background: none; color: inherit; font: inherit; font-size: 12px; padding: 4px 6px;
@@ -200,5 +228,8 @@ export const COVERAGE_CSS = `
     .panel .tab[aria-pressed='true'] { background: #ffffff; box-shadow: 0 1px 2px rgb(0 0 0 / 0.12); }
     .panel details.notes code { color: #374151; }
     .panel li.row.focused { background: rgb(124 58 237 / 0.12); }
+    .panel .scope-bar { background: rgb(124 58 237 / 0.1); }
+    .panel .scope-bar .keys { color: #6d28d9; }
+    .panel .around .hint { color: #6b7280; }
   }
 `;

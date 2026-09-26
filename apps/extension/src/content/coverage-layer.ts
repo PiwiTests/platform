@@ -22,6 +22,14 @@ export interface Drawable {
   emphasis: 'normal' | 'dim' | 'strong';
 }
 
+/** An outline around a part of the page, with a label on its top edge. */
+export interface Frame {
+  element: Element;
+  /** The element the view is limited to, the one being chosen, or a container hovered in the panel. */
+  kind: 'scope' | 'choosing' | 'around';
+  label: string;
+}
+
 export interface Rect {
   left: number;
   top: number;
@@ -101,6 +109,9 @@ export interface LayerCallbacks {
 
 export class CoverageLayer {
   private readonly container: HTMLDivElement;
+  /** Before the boxes, so they paint above the frames. */
+  private readonly frameContainer: HTMLDivElement;
+  private frames: Array<{ frame: Frame; outline: HTMLDivElement; tag: HTMLDivElement }> = [];
   private readonly nodes = new Map<Element, { box: HTMLDivElement; badge: HTMLButtonElement | null }>();
   private readonly rects = new Map<Element, Rect>();
   private drawables: Drawable[] = [];
@@ -116,6 +127,8 @@ export class CoverageLayer {
     private readonly callbacks: LayerCallbacks,
   ) {
     this.container = el('div', 'layer');
+    this.frameContainer = el('div', 'frames');
+    this.container.appendChild(this.frameContainer);
     parent.appendChild(this.container);
   }
 
@@ -183,6 +196,35 @@ export class CoverageLayer {
     this.position();
   }
 
+  /** Replace the outlines drawn around parts of the page. */
+  setFrames(frames: Frame[]): void {
+    this.frameContainer.replaceChildren();
+    this.frames = frames.map((frame) => {
+      const outline = el('div', `frame ${frame.kind}`);
+      const tag = el('div', 'frame-tag', frame.label);
+      this.frameContainer.append(outline, tag);
+      return { frame, outline, tag };
+    });
+    this.positionFrames(
+      this.frames.map(({ frame }) => (frame.element.isConnected ? viewportRect(frame.element) : null)),
+    );
+  }
+
+  private positionFrames(rects: Array<Rect | null>): void {
+    this.frames.forEach(({ outline, tag }, i) => {
+      const rect = rects[i];
+      outline.style.display = rect ? '' : 'none';
+      tag.style.display = rect ? '' : 'none';
+      if (!rect) return;
+      outline.style.left = `${rect.left - 3}px`;
+      outline.style.top = `${rect.top - 3}px`;
+      outline.style.width = `${rect.width + 6}px`;
+      outline.style.height = `${rect.height + 6}px`;
+      tag.style.left = `${Math.max(rect.left - 3, 2)}px`;
+      tag.style.top = `${rect.top - 24 >= 2 ? rect.top - 24 : Math.min(rect.top + rect.height + 5, window.innerHeight - 22)}px`;
+    });
+  }
+
   /**
    * Move every box, badge and card to where its element is now. Every rect is
    * read before any style is written: interleaving the two would make the
@@ -196,6 +238,8 @@ export class CoverageLayer {
       const rect = d.element.isConnected ? viewportRect(d.element) : null;
       if (rect) this.rects.set(d.element, rect);
     }
+    const frameRects = this.frames.map(({ frame }) => (frame.element.isConnected ? viewportRect(frame.element) : null));
+    this.positionFrames(frameRects);
     for (const d of this.drawables) {
       const nodes = this.nodes.get(d.element);
       if (!nodes) continue;

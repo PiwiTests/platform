@@ -8,6 +8,7 @@ import { highlightLocator } from '@piwitests/picker-dom';
 import type { CoveredElement, UncoveredElement } from './coverage-scan.js';
 import {
   ageLabel,
+  isScoped,
   kindShown,
   plural,
   statusLabel,
@@ -33,6 +34,10 @@ export interface PanelModel {
   refreshError: string | null;
   scanning: { done: number; total: number } | null;
   state: ViewState;
+  /** How the element the view is limited to reads in the lists. */
+  scopeLabel: string | null;
+  /** The view can widen to a container of that element before reaching the whole page. */
+  canWiden: boolean;
 }
 
 export interface PanelCallbacks {
@@ -48,8 +53,17 @@ export interface PanelCallbacks {
   onElementSelect(element: Element): void;
   onTestHover(test: number | null): void;
   onTestSelect(test: number): void;
+  onChooseScope(): void;
+  onCancelChoosing(): void;
+  onWidenScope(): void;
+  onClearScope(): void;
+  onContainerHover(element: Element | null): void;
+  onContainerSelect(element: Element): void;
   suggestLocator(element: Element): string | null;
 }
+
+/** Containers listed around the element the view is limited to. */
+const AROUND_ROWS = 3;
 
 /** Rows rendered per list, so a page with thousands of matches stays fast; the search narrows the rest. */
 const MAX_ROWS = 300;
@@ -207,6 +221,8 @@ export class CoveragePanel {
       );
     }
     children.push(...this.renderSummary(model, context));
+    const around = this.renderAround(context);
+    if (around) children.push(around);
     children.push(this.renderTabs(state.tab, context));
     children.push(this.search);
     if (this.search.value !== state.query) this.search.value = state.query;
@@ -271,6 +287,9 @@ export class CoveragePanel {
       out.push(bar);
     }
 
+    out.push(this.renderScopeBar(model));
+
+    const where = isScoped(scan) ? 'inside it' : 'here';
     const total = scan.coveredInteractive + scan.uncoveredCount;
     const summary = el('div', 'summary');
     const tile = (cls: string, n: number, label: string, title: string) => {
@@ -280,13 +299,18 @@ export class CoveragePanel {
       return t;
     };
     summary.append(
-      tile('operated', scan.coveredInteractive, 'interactive tested', 'Buttons, links and fields a test reaches'),
-      tile('uncovered', scan.uncoveredCount, 'not tested', 'Visible interactive elements no test reaches'),
+      tile(
+        'operated',
+        scan.coveredInteractive,
+        'interactive tested',
+        `Buttons, links and fields ${where} a test reaches`,
+      ),
+      tile('uncovered', scan.uncoveredCount, 'not tested', `Visible interactive elements ${where} no test reaches`),
       tile(
         'tests',
         scan.tests.length,
-        scan.tests.length === 1 ? 'test here' : 'tests here',
-        'Tests whose locators resolve on this page',
+        scan.tests.length === 1 ? `test ${where}` : `tests ${where}`,
+        `Tests whose locators resolve ${where === 'here' ? 'on this page' : where}`,
       ),
     );
     out.push(summary);
@@ -304,11 +328,85 @@ export class CoveragePanel {
         'div',
         'meter-label',
         total
-          ? `${percent}% of the ${plural(total, 'interactive element')} here · ${plural(scan.covered.length, 'element')} matched, ${checkedOnly} by assertions only`
-          : `No interactive element on this page · ${plural(scan.covered.length, 'element')} matched`,
+          ? `${percent}% of the ${plural(total, 'interactive element')} ${where} · ${plural(scan.covered.length, 'element')} matched, ${checkedOnly} by assertions only`
+          : `No interactive element ${where === 'here' ? 'on this page' : where} · ${plural(scan.covered.length, 'element')} matched`,
       ),
     );
     return out;
+  }
+
+  private renderScopeBar(model: PanelModel): HTMLElement {
+    const bar = el('div', 'scope-bar');
+    const button = (text: string, title: string, onClick: () => void, disabled = false) => {
+      const b = el('button', undefined, text);
+      b.type = 'button';
+      b.title = title;
+      b.disabled = disabled;
+      b.addEventListener('click', onClick);
+      return b;
+    };
+    if (model.state.choosingScope) {
+      const keys = el('span', 'keys');
+      keys.append(
+        el('kbd', undefined, '↑'),
+        ' wider · ',
+        el('kbd', undefined, '↓'),
+        ' narrower · ',
+        el('kbd', undefined, 'Esc'),
+        ' cancels',
+      );
+      bar.append(
+        el('span', 'what', 'Click a part of the page'),
+        button('Cancel', 'Keep looking at the whole page (Esc)', () => this.callbacks.onCancelChoosing()),
+        keys,
+      );
+      bar.dataset.mode = 'choosing';
+    } else if (model.scopeLabel) {
+      const what = el('span', 'what', `Inside ${model.scopeLabel}`);
+      what.title = model.scopeLabel;
+      bar.append(
+        what,
+        button('Container ↑', 'Look at the element around it', () => this.callbacks.onWidenScope(), !model.canWiden),
+        button('Whole page', 'Look at the whole page again (Esc)', () => this.callbacks.onClearScope()),
+      );
+      bar.dataset.mode = 'scoped';
+    } else {
+      bar.append(
+        el('span', 'what', 'Whole page'),
+        button('Limit to an element', 'Pick a form, a card or a menu, and see only what is inside it', () =>
+          this.callbacks.onChooseScope(),
+        ),
+      );
+      bar.dataset.mode = 'page';
+    }
+    return bar;
+  }
+
+  /** The tested containers of the element the view is limited to: a test checking the card around a button. */
+  private renderAround(context: CoverageContext): HTMLElement | null {
+    const { scan } = context;
+    if (!isScoped(scan) || scan.containers.length === 0) return null;
+    const block = el('div', 'around');
+    block.appendChild(el('div', 'hint', 'Around it: tests reach these containers'));
+    const list = el('ul', 'rows');
+    for (const c of scan.containers.slice(0, AROUND_ROWS)) {
+      const row = this.row(
+        (on) => this.callbacks.onContainerHover(on ? c.element : null),
+        () => this.callbacks.onContainerSelect(c.element),
+      );
+      row.dataset.kind = c.kind;
+      row.title = 'Look at this container';
+      row.appendChild(el('span', `swatch ${c.kind}`));
+      const label = el('span', 'label', c.description);
+      row.appendChild(label);
+      row.appendChild(el('span', 'count', plural(c.tests.length, 'test')));
+      list.appendChild(row);
+    }
+    if (scan.containers.length > AROUND_ROWS) {
+      list.appendChild(el('li', 'empty', `${scan.containers.length - AROUND_ROWS} more further out`));
+    }
+    block.appendChild(list);
+    return block;
   }
 
   private renderTabs(tab: CoverageTab, context: CoverageContext): HTMLElement {
@@ -333,7 +431,7 @@ export class CoveragePanel {
   private renderList(state: ViewState, context: CoverageContext): HTMLElement {
     const query = state.query.trim().toLowerCase();
     if (state.tab === 'tests') return this.renderTests(state, context, query);
-    if (state.tab === 'untested') return this.renderUncovered(context.scan.uncovered, query);
+    if (state.tab === 'untested') return this.renderUncovered(context.scan.uncovered, query, isScoped(context.scan));
     return this.renderCovered(state, context, query);
   }
 
@@ -406,7 +504,9 @@ export class CoveragePanel {
     return this.rowsOrEmpty(
       rows,
       scan.covered.length === 0
-        ? 'None of the project’s locators resolve on this page. Its tests may use other pages, or this page in another state.'
+        ? isScoped(scan)
+          ? 'None of the project’s locators resolve inside it.'
+          : 'None of the project’s locators resolve on this page. Its tests may use other pages, or this page in another state.'
         : 'Nothing matches the filter.',
       shown.length,
     );
@@ -448,12 +548,16 @@ export class CoveragePanel {
     });
     return this.rowsOrEmpty(
       rows,
-      scan.tests.length === 0 ? 'No test reaches this page.' : 'Nothing matches the filter.',
+      scan.tests.length === 0
+        ? isScoped(scan)
+          ? 'No test reaches inside it.'
+          : 'No test reaches this page.'
+        : 'Nothing matches the filter.',
       shown.length,
     );
   }
 
-  private renderUncovered(uncovered: UncoveredElement[], query: string): HTMLElement {
+  private renderUncovered(uncovered: UncoveredElement[], query: string, scoped: boolean): HTMLElement {
     const shown = uncovered.filter((u) => !query || u.description.toLowerCase().includes(query));
     const rows = shown.slice(0, MAX_ROWS).map((u, i) => {
       const row = this.row(
@@ -487,7 +591,7 @@ export class CoveragePanel {
     return this.rowsOrEmpty(
       rows,
       uncovered.length === 0
-        ? 'Every visible interactive element here is reached by a test.'
+        ? `Every visible interactive element ${scoped ? 'inside it' : 'here'} is reached by a test.`
         : 'Nothing matches the filter.',
       shown.length,
     );

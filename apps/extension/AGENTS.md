@@ -143,6 +143,12 @@ The chains are evaluated by an in-page reimplementation of Playwright's selector
   covered/uncovered elements and tests. `coverage-layer.ts`/`coverage-panel.ts`/`coverage-view.ts`
   draw it; the overlay lives in a closed shadow root in the top layer (`popover="manual"`) so it
   paints above the page's own dialogs.
+- One element at a time: `scopeScan` narrows a finished scan to an element and what is inside it
+  (no rescan), and `elementReach` splits the tests reaching a picked element into the element
+  itself, inside it, and around it. The pick results hand an element to the overlay through
+  `globalThis.__piwiCoverageScopeRequest` before asking the worker to inject it: both content
+  scripts run in the extension's isolated world, so the global is shared, and an element cannot
+  travel through `chrome.runtime` messages.
 
 **`locator-engine.spec.ts` is a differential test against real Playwright**: every expression in
 `locator-cases.ts` is resolved by the engine bundle (`engine-entry.ts`) and by a real
