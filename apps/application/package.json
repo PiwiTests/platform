@@ -72,6 +72,7 @@
     "sharp": "^0.35.3",
     "sql.js": "^1.14.1",
     "vue-virtual-scroller": "^3.0.4",
+    "write-excel-file": "^4.1.1",
     "zod": "^4.1.13"
   },
   "devDependencies": {
@@ -84,6 +85,7 @@
     "drizzle-kit": "^0.31.8",
     "form-data": "^4.0.0",
     "monocart-reporter": "^2.12.2",
+    "read-excel-file": "^9.3.10",
     "vue-tsc": "^3.3.7"
   },
   "optionalDependencies": {

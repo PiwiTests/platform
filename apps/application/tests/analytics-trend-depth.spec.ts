@@ -3,6 +3,7 @@
  * the trend widgets, the Trend tab of a test, a cluster's occurrences over
  * time, drill-down to the project lists and the chart export menu.
  */
+import readXlsxFile from 'read-excel-file/node';
 import { test, expect } from './fixtures';
 import { PROJECT } from '#shared/test-project-names';
 import { waitForHydration } from './utils';
@@ -118,15 +119,22 @@ test.describe.serial('Analytics trend depth', () => {
     }
   });
 
-  test('a chart downloads its series as CSV from its export menu', async ({ page }) => {
+  test('a chart downloads its series as an Excel workbook from its export menu', async ({ page }) => {
     await page.goto(`/analytics?period=last-7d&projects=${projectId}&allBranches=true`);
     const card = page.locator('[data-shot="analytics-suite-growth"]');
     await expect(card.locator('svg.block').first()).toBeVisible({ timeout: 30_000 });
     await card.getByTestId('chart-export').click();
     await expect(page.getByRole('menuitem', { name: 'Copy as PNG' })).toBeVisible();
     const download = page.waitForEvent('download');
-    await page.getByRole('menuitem', { name: 'Download CSV' }).click();
-    expect((await download).suggestedFilename()).toBe('piwi-chart-suite-growth.csv');
+    await page.getByRole('menuitem', { name: 'Download Excel' }).click();
+    const file = await download;
+    expect(file.suggestedFilename()).toBe('piwi-chart-suite-growth.xlsx');
+    const [sheet] = await readXlsxFile(await file.path());
+    expect(sheet!.sheet).toBe('Suite growth');
+    expect(sheet!.data[0]).toEqual(['date', 'suite size', 'skipped %', 'did not run %']);
+    // A day is a date cell and the suite size a number.
+    expect(sheet!.data[1]![0]).toBeInstanceOf(Date);
+    expect(typeof sheet!.data.at(-1)![1]).toBe('number');
   });
 
   test('a portfolio count opens the project list with the same scope', async ({ page }) => {

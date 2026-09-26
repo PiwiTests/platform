@@ -4,7 +4,7 @@
  * `-`, `@`, a tab or a carriage return is prefixed with `'`, so a spreadsheet
  * never executes a test title as a formula.
  */
-import type { ReportBlock, ReportBundle, ReportWidget } from './types';
+import type { ReportBlock, ReportBundle } from './types';
 
 const FORMULA_START = /^[=+\-@\t\r]/;
 
@@ -40,18 +40,6 @@ function blockRows(block: ReportBlock): Array<Array<string | number | null>> | n
     ];
   }
   return null;
-}
-
-/** One widget's tables and series as a CSV, a blank line between blocks; null when it holds none. */
-export function renderWidgetCsv(widget: ReportWidget): string | null {
-  const lines: string[] = [];
-  for (const block of widget.blocks) {
-    const rows = blockRows(block);
-    if (!rows) continue;
-    if (lines.length > 0) lines.push('');
-    for (const row of rows) lines.push(csvLine(row));
-  }
-  return lines.length > 0 ? `${lines.join('\r\n')}\r\n` : null;
 }
 
 /** Every table and series in one CSV, each row led by its section. */

@@ -4,10 +4,10 @@
  * the standard header (icon / title / subtitle / help / actions) and renders the
  * `legend` there, so the color key reads as part of the heading instead of
  * costing a row under the plot. The export menu copies the chart as a PNG and,
- * given `exportData`, downloads its series as a CSV.
+ * given `exportData`, downloads its series as an Excel workbook.
  */
 import type { HelpTopicKey } from '~/utils/help-content';
-import { chartCsv, chartFileName, chartPng, copyPng, downloadBlob, type ChartExportData } from '~/utils/chart-export';
+import { chartFileName, chartPng, chartXlsx, copyPng, type ChartExportData } from '~/utils/chart-export';
 
 const props = withDefaults(
   defineProps<{
@@ -20,7 +20,7 @@ const props = withDefaults(
     help?: HelpTopicKey;
     /** Color key for the plotted series, rendered in the header. */
     legend?: readonly { color: string; label: string }[];
-    /** The chart's series as a table, for the CSV download; unset offers the PNG only. */
+    /** The chart's series as a table, for the Excel download; unset offers the PNG only. */
     exportData?: ChartExportData | null;
     /** Whether the chart is drawn as an SVG the PNG export can copy; a grid of cells is not. */
     png?: boolean;
@@ -30,6 +30,7 @@ const props = withDefaults(
 
 const body = ref<HTMLElement | null>(null);
 const toast = useToast();
+const { saveBlob } = useDesktopDownload();
 
 async function copyImage() {
   if (!body.value) return;
@@ -38,7 +39,7 @@ async function copyImage() {
     if (await copyPng(png)) {
       toast.add({ title: 'Chart copied as PNG', color: 'success' });
     } else {
-      downloadBlob(png, `${chartFileName(props.exportData?.name ?? props.title)}.png`);
+      await saveBlob(png, `${chartFileName(props.exportData?.name ?? props.title)}.png`);
       toast.add({ title: 'Chart downloaded as PNG', description: 'This browser does not copy images.' });
     }
   } catch (error) {
@@ -46,16 +47,20 @@ async function copyImage() {
   }
 }
 
-function downloadCsv() {
+async function downloadXlsx() {
   if (!props.exportData) return;
-  downloadBlob(chartCsv(props.exportData), `${chartFileName(props.exportData.name)}.csv`);
+  try {
+    await saveBlob(await chartXlsx(props.exportData, props.title), `${chartFileName(props.exportData.name)}.xlsx`);
+  } catch (error) {
+    toast.add({ title: 'Couldn’t export the chart', description: errorMessage(error), color: 'error' });
+  }
 }
 
 const exportItems = computed(() => [
   [
     ...(props.png ? [{ label: 'Copy as PNG', icon: 'i-lucide-image', onSelect: copyImage }] : []),
     ...(props.exportData?.rows.length
-      ? [{ label: 'Download CSV', icon: 'i-lucide-file-spreadsheet', onSelect: downloadCsv }]
+      ? [{ label: 'Download Excel', icon: 'i-lucide-file-spreadsheet', onSelect: downloadXlsx }]
       : []),
   ],
 ]);

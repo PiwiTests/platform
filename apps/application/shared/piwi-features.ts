@@ -121,7 +121,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
       {
         title: 'Quality reports',
         summary:
-          'The analytics page as a document for stakeholders: a rule-based verdict, headline numbers, the trend, what is being done and the risks, as PDF, HTML, Markdown or CSV, sent on a schedule by email, Slack or webhook and kept as snapshots.',
+          'The analytics page as a document for stakeholders: a rule-based verdict, headline numbers, the trend, what is being done and the risks, as PDF, HTML, Markdown or Excel, sent on a schedule by email, Slack or webhook and kept as snapshots.',
         needs: [],
         where: 'Analytics → Export, Schedule…; Project → Export; Quality reports',
         doc: 'features/quality-reports',

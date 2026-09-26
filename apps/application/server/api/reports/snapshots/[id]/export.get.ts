@@ -12,14 +12,14 @@ defineRouteMeta({
     tags: ['Reports'],
     summary: 'Download a report snapshot',
     description:
-      'The stored quality report as a download, rendered from its frozen bundle: `html`, `pdf`, `md`, `csv` or `json`. The numbers are the ones generated, whatever retention did since.',
+      'The stored quality report as a download, rendered from its frozen bundle: `html`, `pdf`, `md`, `csv`, `xlsx` or `json`. The numbers are the ones generated, whatever retention did since.',
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
       {
         name: 'format',
         in: 'query',
         required: false,
-        schema: { type: 'string', enum: ['json', 'html', 'pdf', 'md', 'csv'], default: 'pdf' },
+        schema: { type: 'string', enum: ['json', 'html', 'pdf', 'md', 'csv', 'xlsx'], default: 'pdf' },
       },
     ],
     'x-required-roles': ['administrator', 'reporter', 'user'],

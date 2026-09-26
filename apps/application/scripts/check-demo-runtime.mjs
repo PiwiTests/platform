@@ -229,6 +229,32 @@ async function main() {
       `${reportBytes.length} bytes as ${reportPdf.suggestedFilename()}`,
     );
 
+    // The same report as an Excel workbook, built in the service worker, and one
+    // section's workbook, built in the page: both are ZIP archives (`PK`).
+    await page.getByTestId('report-download').click();
+    const [reportXlsx] = await Promise.all([
+      page.waitForEvent('download', { timeout: 30000 }),
+      page.getByRole('menuitem', { name: 'Excel' }).click(),
+    ]);
+    const xlsxPath = await reportXlsx.path();
+    const xlsxBytes = xlsxPath ? await readFile(xlsxPath) : Buffer.alloc(0);
+    check(
+      xlsxBytes.subarray(0, 2).toString('latin1') === 'PK' && reportXlsx.suggestedFilename().endsWith('.xlsx'),
+      'the quality report downloads as an Excel workbook',
+      `${xlsxBytes.length} bytes as ${reportXlsx.suggestedFilename()}`,
+    );
+    const [sectionXlsx] = await Promise.all([
+      page.waitForEvent('download', { timeout: 30000 }),
+      preview.locator('[data-testid^="report-section-xlsx-"]').first().click(),
+    ]);
+    const sectionPath = await sectionXlsx.path();
+    const sectionBytes = sectionPath ? await readFile(sectionPath) : Buffer.alloc(0);
+    check(
+      sectionBytes.subarray(0, 2).toString('latin1') === 'PK',
+      'a report section downloads as its own Excel workbook',
+      `${sectionBytes.length} bytes as ${sectionXlsx.suggestedFilename()}`,
+    );
+
     // The Reports page lists the two report snapshots the demo seeds when its
     // database opens, and one opens on its own page.
     await page.goto(`${ORIGIN}${BASE}reports`, { waitUntil: 'domcontentloaded' });

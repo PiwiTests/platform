@@ -137,7 +137,7 @@ export const SETUP_CAPABILITIES: SetupCapabilityCopy[] = [
     id: 'quality-reports',
     title: 'Quality reports',
     summary:
-      'The analytics page as a document for someone who never opens the dashboard: a verdict, headline numbers, the trend, what is being done and the risks, as PDF, HTML, Markdown, CSV or JSON.',
+      'The analytics page as a document for someone who never opens the dashboard: a verdict, headline numbers, the trend, what is being done and the risks, as PDF, HTML, Markdown, Excel or JSON.',
     how: 'Click Export on the Analytics page or on a project page, pick a dashboard and download the format you need.',
     icon: 'i-lucide-file-chart-column',
     doc: 'features/quality-reports',
