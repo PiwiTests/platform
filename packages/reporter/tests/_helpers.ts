@@ -87,7 +87,7 @@ export function fakeSuite(opts: { projectMetadata?: Record<string, unknown> } = 
     title: '',
     parent: undefined,
     _parallelMode: 'default',
-    _annotations: [],
+    _staticAnnotations: [],
     project: () => project,
     allTests: () => [],
   };
