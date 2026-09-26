@@ -12,6 +12,16 @@
  * does not recognize fall back to the error's first line.
  */
 import { parsePlaywrightError, type ParsedPlaywrightError } from './error-parse';
+import {
+  failingStepIndex,
+  failureHookContext,
+  isCaptureStep,
+  isPhaseContainer,
+  stepParents,
+  stepPhases,
+  type FailureHookContext,
+  type TreeStepLike,
+} from './step-tree';
 
 export type HeadlinePartKind = 'text' | 'locator' | 'value';
 
@@ -38,6 +48,8 @@ export interface DescribeFailureContext {
    * where the error text names none (custom matchers, `test.step` failures).
    */
   stepParams?: Record<string, string | number | boolean> | null;
+  /** The hook or fixture the failure happened in, when it happened outside the test body. */
+  failedIn?: FailureHookContext | null;
 }
 
 /** Longest headline before the builder falls back to the leaf locator and shorter values. */
@@ -474,7 +486,40 @@ function buildCrash(parsed: ParsedPlaywrightError, opts: BuildOptions): Line {
   return line.text(what);
 }
 
+/** Longest custom `expect` message quoted in a headline. */
+const CUSTOM_MESSAGE_MAX_CHARS = 60;
+
+/**
+ * Put what the failure is about ahead of the line: the hook or fixture it
+ * happened in, then the message the author gave `expect`. The line's first word
+ * drops its capital when it follows a lead (`In beforeAll: expected …`).
+ * A test timeout that already names its hook keeps its own wording.
+ */
+function withLeads(line: Line, parsed: ParsedPlaywrightError, ctx: DescribeFailureContext | undefined): Line {
+  const hook = ctx?.failedIn && !parsed.timeoutPhase ? ctx.failedIn.hook : null;
+  const message = parsed.customMessage ? truncateValue(parsed.customMessage, CUSTOM_MESSAGE_MAX_CHARS) : null;
+  if (!hook && !message) return line;
+
+  const led = new Line();
+  if (hook) led.text(`In ${hook}${message ? ', ' : ': '}`);
+  if (message) led.text(`"${message}" failed: `);
+  line.parts.forEach((part, i) => {
+    const text =
+      i === 0 && part.kind === 'text' && /^[A-Z][a-z]/.test(part.text)
+        ? part.text[0]!.toLowerCase() + part.text.slice(1)
+        : part.text;
+    if (part.kind === 'text') led.text(text);
+    else if (part.kind === 'locator') led.locator(text);
+    else led.value(text);
+  });
+  return led;
+}
+
 function build(parsed: ParsedPlaywrightError, opts: BuildOptions, ctx: DescribeFailureContext | undefined): Line {
+  return withLeads(buildLine(parsed, opts, ctx), parsed, ctx);
+}
+
+function buildLine(parsed: ParsedPlaywrightError, opts: BuildOptions, ctx: DescribeFailureContext | undefined): Line {
   switch (parsed.kind) {
     case 'action-timeout':
       return buildActionTimeout(parsed, opts);
@@ -576,16 +621,37 @@ export function describeFailureText(
   return describeFailure(parsePlaywrightError(raw, { stepParams: ctx?.stepParams }), ctx);
 }
 
+/** A recorded step, as the headline helpers read it. */
+export interface HeadlineStepLike extends TreeStepLike {
+  title?: unknown;
+  params?: Record<string, string | number | boolean> | null;
+}
+
+/**
+ * The step a headline speaks for: the step that failed (the innermost of the
+ * failing chain), else the last step of the test body, else the last step. The
+ * capture's own steps and the hook containers are never picked.
+ */
+function headlineStep<T extends HeadlineStepLike>(steps: readonly T[] | null | undefined): T | null {
+  if (!steps || steps.length === 0) return null;
+  const parents = stepParents(steps);
+  const failed = failingStepIndex(steps, parents);
+  if (failed !== null) return steps[failed]!;
+  const phases = stepPhases(steps, parents);
+  for (let i = steps.length - 1; i >= 0; i--) {
+    const step = steps[i]!;
+    if (phases[i] === 'body' && !isCaptureStep(step) && !isPhaseContainer(step)) return step;
+  }
+  return steps[steps.length - 1]!;
+}
+
 /**
  * The failed step's title, else the last step's, from a recorded step list —
  * the `lastStepTitle` a test-timeout headline names.
  */
-export function lastStepTitle(
-  steps: ReadonlyArray<{ title: string; failed?: boolean | null }> | null | undefined,
-): string | null {
-  if (!steps || steps.length === 0) return null;
-  const failed = steps.find((s) => s.failed);
-  return (failed ?? steps[steps.length - 1])?.title ?? null;
+export function lastStepTitle(steps: readonly HeadlineStepLike[] | null | undefined): string | null {
+  const title = headlineStep(steps)?.title;
+  return typeof title === 'string' ? title : null;
 }
 
 /**
@@ -594,14 +660,25 @@ export function lastStepTitle(
  * {@link lastStepTitle}'s failed-else-last choice.
  */
 export function failingStepParams(
-  steps:
-    | ReadonlyArray<{ failed?: boolean | null; params?: Record<string, string | number | boolean> | null }>
-    | null
-    | undefined,
+  steps: readonly HeadlineStepLike[] | null | undefined,
 ): Record<string, string | number | boolean> | null {
-  if (!steps || steps.length === 0) return null;
-  const failed = steps.find((s) => s.failed);
-  return (failed ?? steps[steps.length - 1])?.params ?? null;
+  return headlineStep(steps)?.params ?? null;
+}
+
+/**
+ * Everything a headline reads from the recorded steps: the failing step's title
+ * and params, and the hook or fixture the failure happened in. The one source
+ * the dashboard and the reporter's terminal line share.
+ */
+export function stepHeadlineContext(
+  steps: readonly HeadlineStepLike[] | null | undefined,
+  error: string | null | undefined,
+): DescribeFailureContext {
+  return {
+    lastStepTitle: lastStepTitle(steps),
+    stepParams: failingStepParams(steps),
+    failedIn: steps && steps.length > 0 ? failureHookContext(steps, error ?? null) : null,
+  };
 }
 
 /** The headline as markdown: locators and values in code spans, the rest escaped. */

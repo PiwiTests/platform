@@ -925,6 +925,11 @@ export interface BlockedCaseRef {
   title: string;
   location: string;
   status: string;
+  /**
+   * On the execution that blocked this one: the hook or fixture its failure
+   * happened in (a failing `beforeAll` skips the rest of its group), or null.
+   */
+  failedIn?: import('#shared/step-tree').FailureHookContext | null;
 }
 
 /**

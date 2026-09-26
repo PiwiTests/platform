@@ -18,6 +18,7 @@
     "./status-classify": "./src/status-classify.ts",
     "./mask": "./src/mask.ts",
     "./step-analysis": "./src/step-analysis.ts",
+    "./step-tree": "./src/step-tree.ts",
     "./test-meta": "./src/test-meta.ts",
     "./wire": "./src/wire.ts",
     "./recording": "./src/recording.ts",

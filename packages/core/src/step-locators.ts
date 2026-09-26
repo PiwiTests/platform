@@ -10,6 +10,7 @@
  */
 import { renderLocatorChain, tryParseLocatorChain, type LocatorChain } from './locator-chain';
 import { MAX_STEP_PARAM_VALUE_CHARS } from './step-analysis';
+import { isCaptureStep } from './step-tree';
 
 /** The subset of a stored step this module reads. */
 export interface LocatorStepLike {
@@ -218,13 +219,13 @@ export function extractStepLocatorUse(step: LocatorStepLike, stepIndex = 0): Ste
   };
 }
 
-/** Every locator use in a stored step list, in step order. */
+/** Every locator use in a stored step list, in step order; the capture's own reads are not the test's uses. */
 export function extractStepLocatorUses(steps: unknown): StepLocatorUse[] {
   if (!Array.isArray(steps)) return [];
   const out: StepLocatorUse[] = [];
   steps.forEach((step, i) => {
     const s = asRecord(step);
-    if (!s) return;
+    if (!s || isCaptureStep(s)) return;
     const use = extractStepLocatorUse(s, i);
     if (use) out.push(use);
   });

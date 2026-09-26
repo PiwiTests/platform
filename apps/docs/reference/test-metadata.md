@@ -164,7 +164,7 @@ The reporter distinguishes two outcomes that Playwright both reports as `skipped
 
 Each `didnotrun` case also carries **`didNotRunReason`**, so the dashboard can say _why_ a test never ran rather than just that it didn't:
 
-- `previous-failure` — skipped because an earlier test (or hook) in its serial group failed. The reporter also records **`blockedBy`**, the location of the failing test that blocked it — so the did-not-run case links to its cause, and the failing test lists the downstream tests it stopped from running.
+- `previous-failure` — skipped because an earlier test (or hook) in its serial group failed, or because a `beforeAll` hook failed, which skips the rest of its group in any mode. The reporter also records **`blockedBy`**, the location of the failing test that blocked it — so the did-not-run case links to its cause, names the hook when the failure happened in one, and the failing test lists the downstream tests it stopped from running.
 - `global-timeout` — the run's `globalTimeout` elapsed before the test could start.
 - `max-failures` — the run reached its configured `maxFailures` budget.
 - `interrupted` — the run was otherwise cut short (a worker crash or a cancellation).

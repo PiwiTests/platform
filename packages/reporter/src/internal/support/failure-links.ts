@@ -1,4 +1,4 @@
-import { describeFailureText, lastStepTitle } from '@piwitests/core/describe-failure';
+import { describeFailureText, stepHeadlineContext, type HeadlineStepLike } from '@piwitests/core/describe-failure';
 import type { Logger } from './logger.js';
 
 /** A test whose final attempt failed, with what the dashboard needs to find its execution. */
@@ -15,14 +15,16 @@ export interface FailedTest {
 }
 
 /**
- * The headline for a collected failure: the parsed error, with the failed
- * step's title feeding a test-timeout line. Null when there is no error text.
+ * The headline for a collected failure: the parsed error, read with the
+ * recorded steps — the failed step's title for a test-timeout line, the hook or
+ * fixture a failure outside the test body happened in. Null when there is no
+ * error text.
  */
 export function failureHeadline(
   error: string | null | undefined,
-  steps?: ReadonlyArray<{ title: string; failed?: boolean }> | null,
+  steps?: readonly HeadlineStepLike[] | null,
 ): string | null {
-  return describeFailureText(error, { lastStepTitle: lastStepTitle(steps) })?.headline ?? null;
+  return describeFailureText(error, stepHeadlineContext(steps, error))?.headline ?? null;
 }
 
 /** A failed test paired with the dashboard link that resolves to its execution. */

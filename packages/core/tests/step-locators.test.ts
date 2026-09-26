@@ -147,6 +147,18 @@ describe('extractStepLocatorUses', () => {
   test('tolerates a non-array', () => {
     expect(extractStepLocatorUses(null)).toEqual([]);
   });
+
+  test("skips the capture's own reads of an element the test used", () => {
+    const uses = extractStepLocatorUses([
+      { title: 'Click', subtitle: "getByRole('button', { name: 'Pay' })", location: '/w/tests/pay.spec.ts:9:5' },
+      {
+        title: 'Evaluate',
+        subtitle: "getByRole('button', { name: 'Pay' })",
+        location: '/w/node_modules/@piwitests/reporter/dist/index.js:7770:17',
+      },
+    ]);
+    expect(uses.map((u) => [u.stepIndex, u.action])).toEqual([[0, 'click']]);
+  });
 });
 
 describe('locationRootOf and isAbsoluteLocation', () => {

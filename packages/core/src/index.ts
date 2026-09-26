@@ -19,6 +19,7 @@ export * from './locator-methods';
 export * from './status-classify';
 export * from './mask';
 export * from './step-analysis';
+export * from './step-tree';
 export * from './test-meta';
 export * from './wire';
 export * from './recording';

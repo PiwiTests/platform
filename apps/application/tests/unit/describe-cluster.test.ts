@@ -32,6 +32,11 @@ describe('describeCluster', () => {
     expect(describeCluster(clusterFrom(error))).toBe("toHaveCount mismatch on getByRole('row') in users.spec.ts");
   });
 
+  test('the message given to expect() names the cluster', () => {
+    const error = `Error: seeding the report fixtures\n\nexpect(received).toBe(expected) // Object.is equality\n\nExpected: true\nReceived: false\n    at tests/seed-hook.spec.ts:6:53`;
+    expect(describeCluster(clusterFrom(error))).toBe('"seeding the report fixtures" failed in seed-hook.spec.ts');
+  });
+
   test('a state matcher reads as failed, not mismatched', () => {
     const error = `Error: expect(locator).toBeVisible() failed\n\nLocator: locator('.modal.is-open')\n\n    at tests/modal.spec.ts:8:3`;
     expect(describeCluster(clusterFrom(error))).toBe(
@@ -138,6 +143,15 @@ describe('headlineAddsValue', () => {
   test('an empty or identical headline adds nothing', () => {
     expect(headlineAddsValue('Timeout on getByLabel', null)).toBe(false);
     expect(headlineAddsValue('Timeout on getByLabel', 'Timeout on getByLabel')).toBe(false);
+  });
+
+  test('the hook a failure happened in adds value', () => {
+    expect(
+      headlineAddsValue(
+        '"seeding the report fixtures" failed in seed-hook.spec.ts',
+        'In beforeAll, "seeding the report fixtures" failed: expected true, got false — toBe',
+      ),
+    ).toBe(true);
   });
 
   test('a bare count in the headline adds value', () => {

@@ -23,7 +23,7 @@ The heading is a plain-English sentence built from the Playwright error, before 
 
 > `getByRole('button', { name: 'Pay' }) never became enabled — click timed out after 30 s`
 
-It is read from the action or matcher, the locator, the expected and received values and the timeout; an unknown error shape falls back to the error's first line. The verbatim error is one click away under **Raw error**: Piwi never rewrites it, it only leads with a readable summary. The same headline names the test on the run page, in [alerts](/features/notifications), in the [pull-request comment](/features/pr-feedback), in the MCP tools and in your terminal, so you recognize it everywhere.
+It is read from the action or matcher, the locator, the expected and received values and the timeout; an unknown error shape falls back to the error's first line. A failure in a hook or fixture says where it happened (`In beforeEach: …`), and an `expect` you gave a message leads with it (`"cart shows the item" failed: …`). The verbatim error is one click away under **Raw error**: Piwi never rewrites it, it only leads with a readable summary. The same headline names the test on the run page, in [alerts](/features/notifications), in the [pull-request comment](/features/pr-feedback), in the MCP tools and in your terminal, so you recognize it everywhere.
 
 ## 2. Most likely: why
 
