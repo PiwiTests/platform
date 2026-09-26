@@ -4,9 +4,7 @@ import type { DbClient } from '../../database';
 import type { RunMetadata } from '../run-json-types';
 import { createScmProvider } from './index';
 import { normalizeGitUrl, FALLBACK_DEFAULT_BRANCH } from './git-url';
-import { mostCommonRunBranch, resolveStoredDefaultBranch, type DefaultBranchProject } from './stored-default-branch';
-
-export { mostCommonRunBranch, resolveStoredDefaultBranch, type DefaultBranchProject };
+import { mostCommonRunBranch, type DefaultBranchProject } from './stored-default-branch';
 
 /**
  * The effective default branch of a project, resolved through one chain the
@@ -23,8 +21,8 @@ export { mostCommonRunBranch, resolveStoredDefaultBranch, type DefaultBranchProj
  *   4. The most common branch among the project's runs.
  *   5. `'main'`, the documented last resort.
  *
- * Steps 4–5 are shared with {@link resolveStoredDefaultBranch}, the no-network
- * variant the ingest hot path uses, so every canonical-graph path agrees.
+ * Steps 4–5 are shared with `resolveStoredDefaultBranch` (`stored-default-branch.ts`),
+ * the no-network variant the ingest hot path uses, so every canonical-graph path agrees.
  *
  * Always returns a branch name — never null — so callers get a usable default.
  */

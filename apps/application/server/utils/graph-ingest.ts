@@ -43,7 +43,8 @@ import {
 import type { AppManifest, ManifestSource } from '#shared/types';
 import type { RunMetadata, ServerSpanEntry } from './run-json-types';
 import { resolveRunBranch } from './run-branch';
-import { resolveDefaultBranch, resolveStoredDefaultBranch, type DefaultBranchProject } from './scm/default-branch';
+import { resolveDefaultBranch } from './scm/default-branch';
+import { resolveStoredDefaultBranch, type DefaultBranchProject } from './scm/stored-default-branch';
 import { FALLBACK_DEFAULT_BRANCH } from './scm/git-url';
 import { isProbeRun } from '#shared/handlers/probes';
 import { subjectFromGapKey } from '#shared/handlers/scenario-gaps';
