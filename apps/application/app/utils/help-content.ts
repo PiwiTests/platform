@@ -851,7 +851,7 @@ export const HELP_TOPICS = {
   'mcp.skills': {
     title: 'Agent skills',
     text: 'Portable SKILL.md workflow instructions for AI coding agents — investigate a failure, apply a healed locator, stabilize flaky tests. Installed into your test project by the reporter CLI; each one prefers this MCP server and falls back to the dashboard UI.',
-    doc: 'features/mcp#agent-skills',
+    doc: 'features/agent-skills',
   },
 
   // ── Shared ────────────────────────────────────────────────────────────

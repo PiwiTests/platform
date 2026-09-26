@@ -179,6 +179,7 @@ export const referenceSidebar: SidebarGroup[] = [
       { text: 'Reporter options', link: '/reference/reporter-options' },
       { text: 'Test metadata', link: '/reference/test-metadata' },
       { text: 'Piwi CLI', link: '/reference/cli' },
+      { text: 'MCP tools', link: '/reference/mcp-tools' },
       { text: 'Analytics widgets', link: '/reference/analytics-widgets' },
       { text: 'Metrics', link: '/reference/metrics' },
       { text: 'Gap detectors & exposure', link: '/reference/gap-detectors' },

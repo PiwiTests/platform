@@ -57,7 +57,7 @@ npx @piwitests/reporter init --server-url http://localhost:3000 --project my-pro
 Every step is idempotent, so it is safe to re-run. When `init` finds a config shape it will not rewrite, or a fixtures
 file that already exists, it reports that step as `manual` with the exact change to make instead of touching the file.
 Pass `--dry-run` to preview, or `--json` for a machine-readable plan that a coding agent can follow to finish the manual
-steps. `init` also adds the [Piwi agent skills](/features/mcp#agent-skills) to the project. See
+steps. `init` also adds the [Piwi agent skills](/features/agent-skills) to the project. See
 `npx @piwitests/reporter init --help` for all options.
 
 > The package is `@piwitests/reporter` and its command is `piwi`. Invoke it through the package name,

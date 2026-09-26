@@ -39,7 +39,7 @@ Two rules run through every feature, and they're worth knowing before you adopt 
 
 ## The pieces
 
-Piwi is a reporter that uploads from your Playwright run, a server (or the [desktop app](/features/desktop)) that keeps and analyzes the results, and a set of ways to reach them — the [browser extension](/features/extension), an [MCP server](/features/mcp) and [agent skills](/features/mcp#agent-skills) for coding agents, [SCM providers](/features/pr-feedback) for PR feedback and healing, and [notifications](/features/notifications).
+Piwi is a reporter that uploads from your Playwright run, a server (or the [desktop app](/features/desktop)) that keeps and analyzes the results, and a set of ways to reach them — the [browser extension](/features/extension), an [MCP server](/features/mcp) and [agent skills](/features/agent-skills) for coding agents, [SCM providers](/features/pr-feedback) for PR feedback and healing, and [notifications](/features/notifications).
 
 <figure>
   <img src="/diagrams/piwi-ecosystem.svg" alt="The Piwi pieces: a Playwright run and instrumented app feed one server or the desktop app, with the browser extension, coding agents, SCM providers and notifications arranged around it">
