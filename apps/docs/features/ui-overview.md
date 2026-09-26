@@ -57,17 +57,15 @@ A quick health check across all projects: a **stat strip** whose every number is
 
 ## Analytics
 
-A cross-project decision view — where Home answers *"what's happening now"*, Analytics answers *"across projects, over time"*. A **Filters** block at the top sets the scope: **Period** (the period, its comparison and its buckets), **Runs** (the projects, then the same **filter bar** Home and each project use — environments and branches (multi-select) and a full-runs-only toggle) and **Tests**; every widget re-aggregates against that scope.
+A cross-project decision view — where Home answers *"what's happening now"*, Analytics answers *"across projects, over time"*. A **Filters** block at the top sets the scope — **Period**, **Runs** (projects, plus Home's **filter bar**) and **Tests** — and every widget re-aggregates against it.
 
 Widgets are grouped into four bands, in reading order: **Where things stand**, **Where the pain is**,
-**Which way it is going** and **Detail**; [Analytics widgets](./analytics-widgets) describes each one.
+**Which way it is going** and **Detail**; [Analytics widgets](./analytics-widgets) describes each one, and
+[Analytics](./analytics) the filters and how the periods are compared.
 
 [Timeline markers](./timeline-markers) overlay your deploys and infrastructure changes on the trend charts.
 
-The page is the built-in *Overview* [dashboard](./dashboards); the switcher in the header opens the
-others.
-
-See [Analytics](./analytics) for what each widget answers and how the periods are compared.
+It is the built-in *Overview* [dashboard](./dashboards); the header switcher opens the others.
 
 ## Projects
 
