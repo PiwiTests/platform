@@ -1,6 +1,8 @@
 ---
 # https://vitepress.dev/reference/default-theme-home-page
 layout: home
+title: Piwi Dashboard — Your Playwright results, kept and explained
+titleTemplate: false
 
 hero:
   name: "Piwi Dashboard"

@@ -97,6 +97,11 @@ exists for the long-tail searches that never contain the word "Piwi", so:
 ## Writing conventions
 
 - Update the affected page **in the same commit** as the code change; commit scope `docs`.
+- **Every page carries its own search description.** `.vitepress/page-meta.mts` gives each page a canonical URL,
+  `og:` tags naming the page, and a `description`: the frontmatter `description`, else a blog post's `excerpt`,
+  else the page's first prose paragraph (clipped to whole sentences, ~200 characters). Write a frontmatter
+  `description` when that paragraph does not say what the page covers on its own — a page that opens with a code
+  block or a table, or a recipe whose first line answers its question.
 - American English, sentence-case headings, and the shell-portability rule from the root guide: VitePress uses
   `::: code-group` with ```bash [Linux / macOS] + ```powershell [Windows (PowerShell)] tabs when a command has no
   portable single form.

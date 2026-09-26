@@ -1,5 +1,6 @@
 ---
 title: Getting started
+description: "Piwi Dashboard is a self-hosted server plus a Playwright reporter that keeps every test run. Pick a way to run it (demo, desktop app, Docker, npx or a one-click host), then send your first results."
 lang: en-US
 ---
 

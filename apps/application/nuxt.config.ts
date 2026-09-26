@@ -67,6 +67,10 @@ const demoPwaConfig = isDemo
 export default defineNuxtConfig({
   modules: ['@nuxt/ui', '@vueuse/nuxt', '@vite-pwa/nuxt'],
   ssr: isDemo ? false : undefined,
+  // Baked into the demo's static HTML and shown until the app first renders,
+  // which waits on the in-browser database: without it a first visit is a blank
+  // page, and crawlers that render the page find nothing describing it.
+  spaLoadingTemplate: isDemo ? 'demo/loading-template.html' : undefined,
 
   // `flaky` joins the default semantic colors so a flaky badge can carry the
   // test outcome palette's purple (mapped in app.config.ts).
@@ -107,22 +111,30 @@ export default defineNuxtConfig({
     ? {
         baseURL: '/demo/',
         head: {
-          title: 'Piwi Dashboard — live demo',
+          htmlAttrs: { lang: 'en' },
+          // Every page title the app sets gains the suffix, so the indexed
+          // entry page reads "Piwi Dashboard (live demo)".
+          title: 'Piwi Dashboard',
+          titleTemplate: '%s (live demo)',
           meta: [
             { name: 'description', content: demoDescription },
             { property: 'og:type', content: 'website' },
-            { property: 'og:title', content: 'Piwi Dashboard — live demo' },
+            { property: 'og:site_name', content: 'Piwi Dashboard' },
+            { property: 'og:title', content: 'Piwi Dashboard (live demo)' },
             { property: 'og:description', content: demoDescription },
             { property: 'og:image', content: 'https://piwitests.dev/og-image.png' },
             { property: 'og:image:width', content: '1200' },
             { property: 'og:image:height', content: '630' },
             { property: 'og:url', content: 'https://piwitests.dev/demo/' },
             { name: 'twitter:card', content: 'summary_large_image' },
-            { name: 'twitter:title', content: 'Piwi Dashboard — live demo' },
+            { name: 'twitter:title', content: 'Piwi Dashboard (live demo)' },
             { name: 'twitter:description', content: demoDescription },
             { name: 'twitter:image', content: 'https://piwitests.dev/og-image.png' },
           ],
           link: [
+            // Every demo route serves this same shell (a prerendered copy, or the site's
+            // 404 redirect), so each names the entry page as the one URL to index.
+            { rel: 'canonical', href: 'https://piwitests.dev/demo/' },
             { rel: 'icon', href: '/demo/favicon.ico', sizes: 'any' },
             { rel: 'icon', type: 'image/svg+xml', href: '/demo/logo.svg' },
           ],

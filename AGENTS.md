@@ -217,7 +217,7 @@ Seven surfaces carry it, and they drift the moment one changes alone. Update the
 | README subtitle                        | `README.md`                                                              |
 | Docs hero (`text` + `tagline`)         | `apps/docs/index.md` frontmatter                                         |
 | Site description (meta + search index) | `apps/docs/.vitepress/config.mts` → `description`                        |
-| Social cards                           | `apps/docs/.vitepress/config.mts` → `og:`/`twitter:` title + description |
+| Social cards                           | `apps/docs/.vitepress/config.mts` → `og:` title + description            |
 | Docker Hub overview                    | `DOCKER_HUB.md` first paragraph                                          |
 | npm package descriptions               | `packages/server/package.json`, `packages/reporter/package.json`         |
 | GitHub repo description + topics       | Repository settings — not in the repo, so check it by hand               |
