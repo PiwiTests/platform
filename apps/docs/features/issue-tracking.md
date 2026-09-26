@@ -34,7 +34,7 @@ none of the entry points appear.
   surfaces any issue that already tracks the failure (a pinned link, a matching label, or a *fixed-before* match) and
   leads with *link it instead*.
 - Creating an issue is a **durable outbox action**: attempted immediately, retried with backoff if Jira is down, and
-  recorded — `GET /api/integrations/actions` lists what Piwi wrote.
+  recorded, and the REST API lists what Piwi wrote (see the [API docs](https://piwitests.dev/demo/docs)).
 
 ## The key travels
 

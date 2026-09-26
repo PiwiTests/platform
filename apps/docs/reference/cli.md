@@ -107,7 +107,7 @@ The run source is resolved first-match-wins: `--run-id`, then `--from-file`, the
 ## `report`
 
 Print a [quality report](/features/quality-reports) from the dashboard, so a CI scheduler can post it every
-week. It calls `GET /api/reports/preview` with the API key; the scope and the dashboard are the ones the
+week. It calls the report endpoint with the API key; the scope and the dashboard are the ones the
 *Export* dialog offers.
 
 ```bash

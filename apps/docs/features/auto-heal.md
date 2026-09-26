@@ -52,7 +52,7 @@ Settings → Auto-heal (administrator only):
 - **Branch prefix** / **commit message** — the branch namespace (default `piwi/heal/`) and the commit subject
   (default `test: heal broken locators`, a conventional-commit subject so your commit lint accepts it).
 
-You can review what Piwi has opened per project through `GET /api/heal-actions?projectId=<id>`.
+The heal actions Piwi opened for a project are listed on the REST API; see the [API docs](https://piwitests.dev/demo/docs).
 
 ## Limits
 

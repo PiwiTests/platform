@@ -40,8 +40,8 @@ docker pull ghcr.io/piwitests/platform:latest
 
 :::
 
-GHCR additionally carries an **`edge`** tag rebuilt from every push to `main`. It's useful for trying an
-unreleased fix; don't run it in production: it has had no release testing and can change under you.
+GHCR additionally carries an **`edge`** tag rebuilt from every push to `main`. It's useful for trying a
+fix before its release; don't run it in production: it has had no release testing and can change under you.
 
 ### Available tags
 
@@ -51,7 +51,7 @@ unreleased fix; don't run it in production: it has had no release testing and ca
 | `MAJOR.MINOR.PATCH` | One exact release (e.g. `0.26.1`) | ✅ | ✅ |
 | `MAJOR.MINOR` | Latest patch of that minor (e.g. `0.25`) | ✅ | ✅ |
 | `MAJOR` | Latest release of that major (e.g. `0`) | ✅ | ✅ |
-| `edge` | Built from `main`, unreleased | — | ✅ |
+| `edge` | Built from every push to `main` | — | ✅ |
 
 Pin a specific version in production, and read [Upgrading](./upgrading) before you bump it, because
 migrations are forward-only. Browse the published tags on
@@ -239,7 +239,7 @@ isolates the environment.
 
 ## Health checks
 
-`GET /api/health` verifies database connectivity and returns `200 {"status":"ok"}` when healthy, `503` otherwise — use it for load-balancer targets, uptime monitors, and container orchestration. The Docker image ships a built-in `HEALTHCHECK` against it, so `docker ps` shows `healthy`/`unhealthy` out of the box. `GET /api/version` additionally reports the running version and database backend.
+`GET /api/health` verifies database connectivity and returns `200 {"status":"ok"}` when healthy, `503` otherwise — use it for load-balancer targets, uptime monitors, and container orchestration. The Docker image ships a built-in `HEALTHCHECK` against it, so `docker ps` shows `healthy`/`unhealthy` out of the box. The version endpoint additionally reports the running version and database backend ([Upgrading](./upgrading#verifying-the-upgrade-landed)).
 
 ## Reverse proxy (HTTPS)
 

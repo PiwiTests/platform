@@ -124,7 +124,7 @@ closed ticket stops showing as open in the dashboard. It runs **every 15 minutes
 [`PIWI_INTEGRATIONS_SYNC_MINUTES`](/reference/configuration) (1–1440) to change the cadence. Links on an open cluster
 refresh every sweep; links on a resolved or ignored cluster refresh at most once a day. A connection that fails to
 answer records the error on the connection card and does not stop the sweep. An administrator can run one sweep on
-demand with `POST /api/integrations/sync`; the response counts the links it refreshed, failed and skipped.
+demand through the REST API (see the [API docs](https://piwitests.dev/demo/docs)); the response counts the links it refreshed, failed and skipped.
 
 The two-way **policies** (comment on fix / regression, transition, resolve on close, reopen) are configured per project
 on the binding — see [Keep the ticket honest](/features/issue-tracking#keep-the-ticket-honest).

@@ -42,7 +42,7 @@ scrape_configs:
 
 ## Rollup export for BI tools
 
-`GET /api/rollups` streams the daily rollup rows of the projects you can open: one row per project,
+The rollups endpoint (in the example below) streams the daily rollup rows of the projects you can open: one row per project,
 UTC day, environment, branch and run kind, with the history retention deleted still counted. It needs no flag.
 
 - `?format=csv` downloads a CSV for a spreadsheet, Power BI or Metabase; the default `json` answers

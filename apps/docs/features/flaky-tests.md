@@ -83,8 +83,7 @@ verdict and nothing else. That single difference is what makes the exit possible
 The gate always states how many failures quarantine excluded — a green gate that silently ignored failures would be
 worthless — and `--max-quarantined` sets a ceiling so the list can't grow unbounded.
 
-Manage it from the **Quarantine** view of the project's **Failures** tab, or over the API (`GET`/`POST /api/projects/:id/quarantine`,
-`DELETE /api/projects/:id/quarantine/:testCaseId`).
+Manage it from the **Quarantine** view of the project's **Failures** tab, or over the REST API (see the [API docs](https://piwitests.dev/demo/docs)).
 
 ## Regression signals
 

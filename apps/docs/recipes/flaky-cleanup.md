@@ -78,8 +78,7 @@ across every project, including wasted CI minutes and a global flaky leaderboard
 and root-cause category; `get_test_stability_trend` answers whether one test is getting worse. Useful
 for "what should I fix this sprint?" without opening a browser.
 
-**Script it.** Quarantine is a REST resource — `GET`/`POST /api/projects/:id/quarantine` and
-`DELETE /api/projects/:id/quarantine/:testCaseId` — so promoting candidates or releasing ready tests can
+**Script it.** Quarantine is a REST resource, so promoting candidates or releasing ready tests can
 be a scheduled job. Shapes are in the [API docs](https://piwitests.dev/demo/docs).
 
 **No server at all.** If this is your own laptop suite rather than a team's, the
