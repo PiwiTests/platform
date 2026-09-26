@@ -18,23 +18,23 @@ Each rule emits at most one clue (two for a failed request), with a strength and
 came from. The **failure window** is the timeline's default view: from 10 seconds before the failed step to 2 seconds
 after it.
 
-| Rule | Id | Strength | Fires when |
-|---|---|---|---|
-| Failed request before the failure | `failed-request-before-failure` | strong | A request returned 5xx or was aborted in the 10 seconds before the moment of failure. |
-| Slow request overlapping the failure | `slow-request-overlapping-failure` | medium | A request slower than `PIWI_AI_SLOW_REQUEST_MS` (default 1,500 ms) was still in flight during the failed step. |
-| Console mentions the target | `console-mentions-target` | strong for an error, medium for a warning | A console entry in the failure window names the failing locator or route. |
-| Dialog open at the failure | `dialog-open-on-failure` | strong | A browser dialog (`alert`, `confirm`, `prompt`, `beforeunload`) closed in the failure window, so it was open when the action ran. Needs Playwright 1.63 or later. |
-| Backend error attached | `backend-error-attached` | strong | A request in the failure window carries an error-level [backend log](/guide/backend-logs). |
-| Element renamed | `element-renamed` | strong | [Locator healing](/features/locator-healing) found the element under a new identity, or flagged the stored name as stale while still recommending a fix. |
-| Page structure changed near the failing locator | `page-structure-changed` | strong when the locator never resolved, else medium | The [page diff](/features/evidence#page-diff) against the last green sample shows the element the locator names was removed or renamed. |
-| Element present but blocked | `element-present-but-blocked` | strong | The call log says the element resolved but was disabled, hidden, not visible or covered by another element, and the ARIA snapshot still shows it. |
-| Wrong page | `wrong-page` | strong | The page ended on a login, sign-in, auth, error, 404 or not-found route, or somewhere other than the last navigation the test asked for. The end URL comes from the captured app state, else from the last navigation step. |
-| Worker pollution | `worker-pollution` | medium | The previous test on the same worker failed, timed out or was interrupted. |
-| Previous lock holder failed | `lock-holder-failed` | strong | The execution that held the same [lock](/reference/test-metadata#test-locks) just before this test, in this run, failed or timed out. |
-| Lock held on two shards | `lock-cross-shard` | medium | A lock this test held overlapped in time with a holder on another shard. Locks serialize only within one `playwright test` process. |
-| Timeout budget | `timeout-budget` | medium | The failed step used at least 80 % of the test timeout, or the execution used at least 95 %. |
-| Environment changed | `environment-changed` | medium when the browser, channel, viewport, locale, timezone, base URL or environment label changed, else weak | The environment differs from the same test's last green run in the same environment. Tool versions and color scheme alone stay weak. |
-| Browser-specific | `browser-specific` | medium | The same test passed on at least one other browser in this run. |
+| Rule | Strength | Fires when |
+|---|---|---|
+| Failed request before the failure<br>`failed-request-before-failure` | strong | A request returned 5xx or was aborted in the 10 seconds before the moment of failure. |
+| Slow request overlapping the failure<br>`slow-request-overlapping-failure` | medium | A request slower than `PIWI_AI_SLOW_REQUEST_MS` (default 1,500 ms) was still in flight during the failed step. |
+| Console mentions the target<br>`console-mentions-target` | strong for an error, medium for a warning | A console entry in the failure window names the failing locator or route. |
+| Dialog open at the failure<br>`dialog-open-on-failure` | strong | A browser dialog (`alert`, `confirm`, `prompt`, `beforeunload`) closed in the failure window, so it was open when the action ran. Needs Playwright 1.63 or later. |
+| Backend error attached<br>`backend-error-attached` | strong | A request in the failure window carries an error-level [backend log](/guide/backend-logs). |
+| Element renamed<br>`element-renamed` | strong | [Locator healing](/features/locator-healing) found the element under a new identity, or flagged the stored name as stale while still recommending a fix. |
+| Page structure changed near the failing locator<br>`page-structure-changed` | strong when the locator never resolved, else medium | The [page diff](/features/evidence#page-diff) against the last green sample shows the element the locator names was removed or renamed. |
+| Element present but blocked<br>`element-present-but-blocked` | strong | The call log says the element resolved but was disabled, hidden, not visible or covered by another element, and the ARIA snapshot still shows it. |
+| Wrong page<br>`wrong-page` | strong | The page ended on a login, sign-in, auth, error, 404 or not-found route, or somewhere other than the last navigation the test asked for. The end URL comes from the captured app state, else from the last navigation step. |
+| Worker pollution<br>`worker-pollution` | medium | The previous test on the same worker failed, timed out or was interrupted. |
+| Previous lock holder failed<br>`lock-holder-failed` | strong | The execution that held the same [lock](/reference/test-metadata#test-locks) just before this test, in this run, failed or timed out. |
+| Lock held on two shards<br>`lock-cross-shard` | medium | A lock this test held overlapped in time with a holder on another shard. Locks serialize only within one `playwright test` process. |
+| Timeout budget<br>`timeout-budget` | medium | The failed step used at least 80 % of the test timeout, or the execution used at least 95 %. |
+| Environment changed<br>`environment-changed` | medium when the browser, channel, viewport, locale, timezone, base URL or environment label changed, else weak | The environment differs from the same test's last green run in the same environment. Tool versions and color scheme alone stay weak. |
+| Browser-specific<br>`browser-specific` | medium | The same test passed on at least one other browser in this run. |
 
 Clues are ranked by strength, then by membership of the story, then by how close they sit to the moment of failure, and
 the list is capped at eight. An earlier fix that regressed is not a clue: the situation sentence carries it.
