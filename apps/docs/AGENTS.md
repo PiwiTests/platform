@@ -184,10 +184,25 @@ npm run app:screens -- home
 Pair it with `deviceScaleFactor: 2` and `outputWidth` to write a crisp image at the width the page actually gives it:
 the docs gallery's featured tile spans the content column (~1152px), and anything wider is bytes the reader never sees.
 
-The gallery images that are still live-demo captures (`projects.png`, `test-run.png`, the failure-cluster set) are
-**1280×720**, taken against `https://piwitests.dev/demo/` with the `playwright-cli` skill and the demo banner
-hidden via `.demo-banner{display:none!important}`. Give them a scene when you next touch one — the harness renders
-icons offline and pins the clock, which the live demo cannot.
+The gallery images that are still live-demo captures (`projects.png`, `flaky-tests.png`, `failure-clusters-tab.png`,
+`failure-cluster-triage.png`) are **1280×720**, taken against `https://piwitests.dev/demo/` with the `playwright-cli`
+skill and the demo banner hidden via `.demo-banner{display:none!important}`. Give them a scene when you next touch one:
+the harness renders icons offline and pins the clock, which the live demo cannot.
+
+**The README's quick tour** is six scenes tagged `readme` (`tour-*.png`): whole screens at one size and in one theme,
+so the two-column grid lines up. Recapture them together, with the server started with an AI provider so the diagnosis
+panel shows its configured state (`PIWI_AI_PROVIDER=anthropic` and any `PIWI_AI_API_KEY`; the diagnosis is stored in
+the seed, so no model is called):
+
+```bash
+cd apps/application
+npm run app:screens -- --tag readme
+```
+
+**The live-run video** on the landing page (`demo-live-run.mp4`) and its poster, which the README shows in its place,
+come from `scripts/record-demo-video.mjs`: it starts the demo's run simulator, records the run page until the run
+finishes, and writes both files. It needs an ffmpeg with libx264 (`--ffmpeg <path>` or `FFMPEG`), and records the live
+demo unless `--url` points it at a local demo build (`npm run app:generate:demo`, served under `/demo/`).
 
 Demo *evidence* media (the screenshots, traces and videos shown inside the product) is a different pipeline — see
 [`../application/AGENTS.md`](../application/AGENTS.md#demo-evidence-media-committed-binaries).
@@ -213,5 +228,5 @@ A gallery image with no marketing-specific treatment (no diagonal split) belongs
 pipeline: the harness renders icons from the bundled collection and can be re-run offline, so the image stays
 reproducible as the UI moves.
 
-The hero/gallery images above are **not** produced by the harness; they are listed in its `EXTERNAL_DOCS_IMAGES` set so
-the check knows to leave them alone. `ai-diagnosis.png` stays there too — it needs a configured AI provider.
+The live-demo captures and the video poster are **not** produced by the harness; they are listed in its
+`EXTERNAL_DOCS_IMAGES` set so the check knows to leave them alone.
