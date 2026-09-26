@@ -35,6 +35,38 @@ export interface McpToolDef {
   inputSchema: { type: 'object'; properties: Record<string, unknown>; required?: readonly string[] };
 }
 
+/** The analytics scope, as the report and metric tools take it (the analytics page's URL keys). */
+const ANALYTICS_SCOPE_PROPERTIES = {
+  projectIds: {
+    type: 'array',
+    items: { type: 'number' },
+    description: 'Project IDs to cover (default: every project you can see)',
+  },
+  period: {
+    type: 'string',
+    description:
+      'Period: last-7d, last-30d (default), this-week, last-month, this-quarter, 2026-08-01..2026-08-31, since-marker-<id>, release-0 (this release cycle), all',
+  },
+  compare: {
+    type: 'string',
+    description: 'Comparison: previous (default), previous-unit, year, none, or YYYY-MM-DD..YYYY-MM-DD',
+  },
+  environments: { type: 'array', items: { type: 'string' }, description: 'Only runs reported for these environments' },
+  branches: {
+    type: 'array',
+    items: { type: 'string' },
+    description: 'Only runs on these branches (default: each project’s default branch plus runs with no known branch)',
+  },
+  allBranches: { type: 'boolean', description: 'Count every branch instead of the default branches' },
+  selection: { type: 'string', description: 'Test filter: a selection key (e.g. smoke), resolved in each project' },
+  tags: { type: 'array', items: { type: 'string' }, description: 'Test filter: tests carrying all of these tags' },
+  owners: {
+    type: 'array',
+    items: { type: 'string' },
+    description: 'Test filter: tests held by any of these owners (piwi:owner or CODEOWNERS)',
+  },
+} as const;
+
 export const MCP_TOOL_DEFS = [
   {
     name: 'list_projects',
@@ -411,12 +443,12 @@ export const MCP_TOOL_DEFS = [
     name: 'get_test_stability_trend',
     module: 'core',
     description:
-      'Time-series stability for a single test case: flaky rate, pass rate, and average duration bucketed over its recent execution history. Use to answer "is this test getting flakier?".',
+      'Time-series stability for a single test case: flaky rate, pass rate, and average duration in UTC time buckets (about 31 of them) over the last N days. Use to answer "is this test getting flakier?".',
     inputSchema: {
       type: 'object',
       properties: {
         testCaseId: { type: 'number', description: 'Test case ID (stable testCaseId)' },
-        buckets: { type: 'number', description: 'Number of time buckets (default 20, 5–50)' },
+        days: { type: 'number', description: 'How many days back the trend reaches (default 90, 1–3650)' },
       },
       required: ['testCaseId'],
     },
@@ -910,6 +942,98 @@ export const MCP_TOOL_DEFS = [
         depth: { type: 'number', description: 'Hops to walk outward (default 2, max 6)' },
       },
       required: ['projectId', 'node'],
+    },
+  },
+  {
+    name: 'get_quality_report',
+    module: 'workflow',
+    capability: 'quality-reports',
+    description:
+      'A quality report as its bundle: a built-in dashboard (executive: a rule-based verdict, headline numbers, the pass-rate trend, what changed, what is being done and the risks; engineering adds flaky tests, clusters, CI time, detail and scenario gaps; team is engineering for one owner and needs `owners`; gaps-digest is the Test Map’s weekly digest; overview is the analytics page) rendered over a scope, every string already formatted. Use it to answer "how did the checkout suite do this week" or to post a summary. Numbers never come from a model: the verdict is built by rules.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        dashboard: {
+          type: 'string',
+          enum: ['executive', 'engineering', 'team', 'gaps-digest', 'overview'],
+          description: 'Built-in dashboard (default executive)',
+        },
+        lang: {
+          type: 'string',
+          enum: ['en', 'fr'],
+          description:
+            'Report language (default: the project’s ticket language, else the instance locale, else English)',
+        },
+        ...ANALYTICS_SCOPE_PROPERTIES,
+      },
+    },
+  },
+  {
+    name: 'get_metric_trend',
+    module: 'core',
+    description:
+      'One metric from the metric catalog over a scope: its value and change against the comparison period, its definition, and its series bucketed over the period with the comparison period aligned bucket for bucket. Metrics: test-pass-rate, run-success-rate, runs, suite-size, flaky-occurrences, flaky-tests, wasted-ci-minutes, wasted-ci-cost, ci-time, new-regressions, newly-flaky, average-run-duration, average-p90-test-duration, open-failure-causes, failure-causes-opened, failure-causes-fixed, median-time-to-fix, oldest-open-failure-cause, fixes-that-held, quarantine-debt.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        metric: { type: 'string', description: 'Metric id from the catalog, e.g. test-pass-rate' },
+        by: {
+          type: 'string',
+          enum: ['auto', 'day', 'week', 'month'],
+          description: 'Bucket size (default auto, about 31 buckets)',
+        },
+        ...ANALYTICS_SCOPE_PROPERTIES,
+      },
+      required: ['metric'],
+    },
+  },
+  {
+    name: 'list_dashboards',
+    module: 'core',
+    description:
+      'Every dashboard you can open: the built-in ones (overview is the analytics page; executive, engineering and gaps-digest are the report dashboards) and the saved dashboards shared with everyone or yours, each with its id, name, description, owner, visibility and widget count. Pass an id to get_dashboard.',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'get_dashboard',
+    module: 'core',
+    description:
+      'One dashboard with every widget’s data, the JSON the page renders, band by band. Use it to answer "how did the checkout dashboard do this sprint". The scope is the dashboard’s own unless you pass scope keys (period, projectIds, …), which replace it; each widget’s own period or narrower filters still apply. A dashboard grants no access: widgets are computed for your projects only, and `hiddenProjects` counts the ones of its scope you cannot open.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: {
+          type: 'string',
+          description: 'A built-in dashboard key (overview, executive, …) or a saved dashboard id',
+        },
+        by: {
+          type: 'string',
+          enum: ['auto', 'day', 'week', 'month'],
+          description: 'Bucket size of the series (default: the dashboard’s)',
+        },
+        ...ANALYTICS_SCOPE_PROPERTIES,
+      },
+      required: ['id'],
+    },
+  },
+  {
+    name: 'compare_periods',
+    module: 'core',
+    description:
+      'The headline metrics of one scope over two periods chosen freely, e.g. this sprint against the last one, or August against July: each metric over `a`, with `b` as its previous value and the change. `a` and `b` use the period syntax of the other tools (last-7d, last-month, 2026-08-01..2026-08-31, release-1, …).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        a: { type: 'string', description: 'The period to report on' },
+        b: { type: 'string', description: 'The period to compare it with' },
+        metrics: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Metric ids (default: the six headline metrics)',
+        },
+        ...ANALYTICS_SCOPE_PROPERTIES,
+      },
+      required: ['a', 'b'],
     },
   },
 ] as const satisfies readonly McpToolDef[];

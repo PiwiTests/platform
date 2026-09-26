@@ -14,6 +14,8 @@
 
 export const PROJECT = {
   ANALYTICS_TEST: 'analytics-widgets-test',
+  ANALYTICS_SCOPE_TEST: 'analytics-scope-test',
+  ANALYTICS_TREND_DEPTH: 'analytics-trend-depth-test',
   API_CREATED: 'api-created-project',
   API_KEY_SUBMIT: 'api-key-submit-test',
   AUTH_ROLE_CHECKS: 'auth-role-checks-test',
@@ -36,6 +38,8 @@ export const PROJECT = {
   // "...projects...", causing a strict-mode violation in unrelated tests.
   DASHBOARD_OVERVIEW: 'dashboard-overview-test',
   DASHBOARD_PERF: 'dashboard-perf-tracking',
+  DASHBOARDS_OPEN: 'saved-dashboards-open',
+  DASHBOARDS_RESTRICTED: 'saved-dashboards-restricted',
   DEFAULT_PROJECT: 'default-project',
   DELETE_EVIDENCE: 'delete-evidence-project',
   DELETE_PROJECT: 'delete-whole-project',
@@ -117,6 +121,8 @@ export const PROJECT = {
   PG_CONCURRENT: 'pg-concurrent-project',
   PG_TEST: 'pg-test-project',
   PROJECT_MEMBERS: 'project-members-test',
+  QUALITY_REPORT_SCHEDULES: 'quality-report-schedules-test',
+  QUALITY_REPORT: 'quality-report-test',
   QUARANTINE: 'quarantine-test',
   REGRESSION_CONTEXT: 'regression-context-test',
   REPORTER_API_KEY_E2E: 'reporter-api-key-e2e-test',
@@ -126,6 +132,7 @@ export const PROJECT = {
   REPORTER_FULL_AUTH: 'reporter-full-auth-test',
   REPORTER_LIVE_UPLOAD: 'reporter-live-upload-test',
   REPORTER_NO_AUTH: 'reporter-no-auth-test',
+  REPORT_SHARE_LINKS: 'report-share-links-test',
   REPORTS_DETAILS: 'reports-details-project',
   REVOKED_KEY: 'revoked-key-test',
   RUN_COMPARE: 'run-compare',

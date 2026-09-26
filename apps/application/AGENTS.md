@@ -32,6 +32,35 @@ imported by both. Exceptions only where the implementations genuinely differ (er
   **both** `schema.sqlite.ts` and `schema.pg.ts`, then `npm run db:generate && npm run db:generate:pg`.
 - ⚠ **Never hand-write a migration file or edit `_journal.json`** — always generate. A hand-made migration is silently
   skipped by the migrator.
+- **Migrations across a merge of the base branch** — a local database that ran a branch's migrations keeps their
+  records, so what a merge does to them decides whether that database still starts:
+  - **The base branch added no migration: keep the branch's migrations as they are.** Regenerating gives them new names
+    and dates, and every database that ran the old ones then holds records this build does not know.
+  - **The base branch added migrations** (a conflict in `_journal.json` or a `meta/NNNN_snapshot.json`, or two files
+    with the same number): the branch's must be dated after them. From `apps/application/`, in **both** folders:
+
+    ```bash
+    git diff --relative --name-only --diff-filter=A origin/main... -- server/database/migrations server/database/migrations-pg
+    git rm <each file listed>        # the branch's own .sql files and snapshots
+    git checkout origin/main -- server/database/migrations server/database/migrations-pg
+    npm run db:generate && npm run db:generate:pg
+    ```
+
+    drizzle-kit only regenerates schema changes: recreate each custom migration (a data backfill) with
+    `npm run db:generate -- --custom --name=<name>` and `npm run db:generate:pg -- --custom --name=<name>`, then paste
+    its SQL back.
+
+  - **Never resolve a `_journal.json` or snapshot conflict by hand** — keeping both sides' entries, renumbering `idx`,
+    reordering them. The migrator applies by date: an entry dated before one a database already ran is never run there.
+  - **Never change a committed migration**, not even to fold the base branch's migration into it under the same name or
+    date: a database that already ran it never runs the added statements. A new schema change is a new migration.
+  - Check with `npx vitest run tests/unit/migration-history.test.ts`: it fails on a journal whose dates do not strictly
+    increase, and on a fresh SQLite database that no longer matches the latest snapshot.
+- Startup migrates through `applyMigrations` (`server/database/migration-history.ts`), which compares
+  `__drizzle_migrations` with the journal first. A matching history goes through the Drizzle migrator; a diverged one
+  (rows from another branch, a migration dated before the latest applied one, a file changed after it ran) is
+  repaired in one transaction and checked against the latest `meta/NNNN_snapshot.json`. The snapshot is the reference,
+  so a fresh database must match it — a unit test checks this for SQLite.
 - Dates are stored as Unix timestamps in SQLite.
 - **Large per-case text payloads MUST go through `case_payloads`** (content-addressed, deduped per project):
   `upsertCasePayloads` on write, `inlineCasePayloads` / `resolveCasePayloadContents` on read (`server/utils/case-payloads.ts`).
@@ -313,6 +342,10 @@ same files load unchanged in Vite, Vitest and plain Node (the generator script r
 
 - **API endpoint** — a file under `server/api/` using `eventHandler()` + `getDatabase()`, with a `defineRouteMeta`
   `openAPI` block (including `x-required-roles`) and the right access helper from the authorization rules above.
+- **Calling an endpoint from the app** — `$fetch` and `useFetch` carry no typed route map (a `types:extend` hook in
+  `nuxt.config.ts` empties Nitro's `InternalApi`), so every call site names its response type:
+  `$fetch<ApiResponse<typeof import('~~/server/api/…').default>>(…)` with `ApiResponse` from `types/api.ts`, or a
+  type of that file or of the shared handler. A call without one is `unknown`, never inferred.
 - **Page** — a Vue file in `app/pages/` built on `<UDashboardPanel>`; register it in the nav links array in
   `app/layouts/default.vue` if it belongs in the sidebar.
 - **Component** — a Vue file in the matching `app/components/` subfolder. Auto-import has no folder prefix, so the name

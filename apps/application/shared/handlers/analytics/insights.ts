@@ -10,7 +10,13 @@ import { getAnalyticsFlakyLeaderboard } from './flaky-leaderboard';
 import { getAnalyticsRegressionVelocity } from './regression-velocity';
 import { getAnalyticsSlowEndpoints } from './slow-endpoints';
 import { getAnalyticsTimeoutHygiene } from './timeout-hygiene';
-import type { ProjectAccess } from './common';
+import { getAnalyticsContext, type ProjectAccess } from './common';
+import { evaluateTargets } from './targets';
+import { getAnalyticsTimeToFix } from './time-to-fix';
+import { getAnalyticsSuiteGrowth } from './suite-growth';
+import { getAnalyticsFlakyDebt } from './flaky-debt';
+import { getAnalyticsOwnership } from './ownership';
+import { resolveCiCost } from '../ci-cost';
 
 /**
  * Ranked, human-readable findings over the scoped data — computed by the pure
@@ -22,17 +28,37 @@ export async function getAnalyticsInsights(
   scope: AnalyticsScope,
   access: ProjectAccess = 'all',
 ): Promise<AnalyticsInsight[]> {
-  const [portfolio, ciTime, wastedTime, clusters, flakyTests, regressionVelocity, slowEndpoints, timeoutHygiene] =
-    await Promise.all([
-      getAnalyticsPortfolio(db, scope, access),
-      getAnalyticsCiTimeTrend(db, scope, access),
-      getAnalyticsWastedTime(db, scope, access),
-      getAnalyticsClusterLandscape(db, scope, access),
-      getAnalyticsFlakyLeaderboard(db, scope, access),
-      getAnalyticsRegressionVelocity(db, scope, access),
-      getAnalyticsSlowEndpoints(db, scope, access),
-      getAnalyticsTimeoutHygiene(db, scope, access),
-    ]);
+  const ctx = await getAnalyticsContext(db, scope, access);
+  const { cost } = await resolveCiCost(db);
+  const [
+    portfolio,
+    ciTime,
+    wastedTime,
+    clusters,
+    flakyTests,
+    regressionVelocity,
+    slowEndpoints,
+    timeoutHygiene,
+    targets,
+    timeToFix,
+    suiteGrowth,
+    flakyDebt,
+    ownership,
+  ] = await Promise.all([
+    getAnalyticsPortfolio(db, scope, access),
+    getAnalyticsCiTimeTrend(db, scope, access),
+    getAnalyticsWastedTime(db, scope, access),
+    getAnalyticsClusterLandscape(db, scope, access),
+    getAnalyticsFlakyLeaderboard(db, scope, access),
+    getAnalyticsRegressionVelocity(db, scope, access),
+    getAnalyticsSlowEndpoints(db, scope, access),
+    getAnalyticsTimeoutHygiene(db, scope, access),
+    evaluateTargets(db, ctx, cost),
+    getAnalyticsTimeToFix(db, scope, access),
+    getAnalyticsSuiteGrowth(db, scope, access),
+    getAnalyticsFlakyDebt(db, scope, access),
+    getAnalyticsOwnership(db, scope, access),
+  ]);
 
   return evaluateInsightRules({
     scope,
@@ -44,5 +70,10 @@ export async function getAnalyticsInsights(
     regressionVelocity,
     slowEndpoints,
     timeoutHygiene,
+    targets,
+    timeToFix,
+    suiteGrowth,
+    flakyDebt,
+    ownership,
   });
 }

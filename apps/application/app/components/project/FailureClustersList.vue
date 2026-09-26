@@ -7,13 +7,21 @@ import type { ProjectFailureCluster } from '~~/types/api';
 
 const props = defineProps<{
   projectId: string | number;
+  /** The status the list opens on (a drill-down from Analytics); every status when unset. */
+  initialStatus?: 'open' | 'resolved' | 'ignored';
 }>();
 
 const emit = defineEmits<{ count: [total: number] }>();
 
 // 'all' is a real select value so the control shows its current choice; the API
 // takes no status param for it.
-const statusFilter = ref<'all' | 'open' | 'resolved' | 'ignored'>('all');
+const statusFilter = ref<'all' | 'open' | 'resolved' | 'ignored'>(props.initialStatus ?? 'all');
+watch(
+  () => props.initialStatus,
+  (status) => {
+    if (status) statusFilter.value = status;
+  },
+);
 const {
   data: clusters,
   pending: loading,

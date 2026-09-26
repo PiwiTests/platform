@@ -25,6 +25,7 @@ The sidebar gives access to the top-level sections:
 |---------|------|---------|
 | Home | `/` | Aggregate stats and activity across all projects |
 | Analytics | `/analytics` | Cross-project trends, portfolio health, and insights over a chosen time window (see [Analytics](./analytics)) |
+| Quality reports | `/reports` | The report snapshots kept and the report schedules that send them; `/reports/:id` opens one snapshot (see [Quality reports](./quality-reports#report-schedules)) |
 | Projects | `/projects` | Full project listing with search and tag filters |
 | Settings | `/settings` | Configuration, in two groups — **Instance** (account, users, permissions, notifications, storage) and **Analysis** (AI diagnosis, wasted time, timeout hygiene, tags, pull requests) |
 | Setup *(admins)* | `/setup` | Connect the reporter, and a checklist of which optional capabilities are actually active on this instance |
@@ -56,18 +57,15 @@ A quick health check across all projects: a **stat strip** whose every number is
 
 ## Analytics
 
-A cross-project decision view — where Home answers *"what's happening now"*, Analytics answers *"across projects, over time"*. A **scope bar** at the top sets the period (last 7 / 30 / 90 days, last year, or all time) and the projects, then the same **filter bar** Home and each project use — environments and branches (multi-select) and a full-runs-only toggle; every widget re-aggregates against that scope.
+A cross-project decision view — where Home answers *"what's happening now"*, Analytics answers *"across projects, over time"*. A **Filters** block at the top sets the scope — **Period**, **Runs** (projects, plus Home's **filter bar**) and **Tests** — and every widget re-aggregates against it.
 
-Widgets are grouped into four bands, in reading order:
-
-- **Where things stand** — portfolio health, the insights feed, the pass-rate heatmap.
-- **Where the pain is** — open failure clusters, the flakiest-tests leaderboard, wasted CI time.
-- **Which way it is going** — regression velocity, CI time.
-- **Detail** — the browser matrix, cross-project slow endpoints.
+Widgets are grouped into four bands, in reading order: **Where things stand**, **Where the pain is**,
+**Which way it is going** and **Detail**; [Analytics widgets](./analytics-widgets) describes each one, and
+[Analytics](./analytics) the filters and how the periods are compared.
 
 [Timeline markers](./timeline-markers) overlay your deploys and infrastructure changes on the trend charts.
 
-See [Analytics](./analytics) for what each widget answers and how the periods are compared.
+It is the built-in *Overview* [dashboard](./dashboards); the header switcher opens the others.
 
 ## Projects
 

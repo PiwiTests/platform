@@ -3,7 +3,7 @@ import { failureClusters } from '../../../server/database/schema';
 import type { DrizzleDB } from '../db';
 import type { AnalyticsScope } from '../../analytics/scope';
 import type { AnalyticsClusterLandscape, AnalyticsClusterRow } from '../../analytics/types';
-import { DAY_MS, fetchScopedProjects, periodStart, resolveAllowedProjects, type ProjectAccess } from './common';
+import { DAY_MS, fetchContextProjects, getAnalyticsContext, type ProjectAccess } from './common';
 
 const TOP_CLUSTERS = 15;
 
@@ -19,7 +19,8 @@ export async function getAnalyticsClusterLandscape(
 ): Promise<AnalyticsClusterLandscape> {
   const empty: AnalyticsClusterLandscape = { totalOpen: 0, resolvedInPeriod: 0, byErrorType: [], clusters: [] };
 
-  const allowed = resolveAllowedProjects(scope, access);
+  const ctx = await getAnalyticsContext(db, scope, access);
+  const allowed = ctx.allowed;
   if (allowed !== 'all' && allowed.length === 0) return empty;
 
   const rows: any[] = await db
@@ -38,7 +39,7 @@ export async function getAnalyticsClusterLandscape(
     .from(failureClusters)
     .where(allowed === 'all' ? undefined : inArray(failureClusters.projectId, allowed));
 
-  const cutoff = periodStart(scope.days);
+  const cutoff = ctx.period.from.getTime();
   const open = rows.filter((c) => c.status === 'open');
   const resolvedInPeriod = rows.filter(
     (c) => c.status === 'resolved' && c.updatedAt && new Date(c.updatedAt).getTime() >= cutoff,
@@ -50,7 +51,7 @@ export async function getAnalyticsClusterLandscape(
     byErrorType.set(type, (byErrorType.get(type) ?? 0) + 1);
   }
 
-  const scopedProjects = await fetchScopedProjects(db, scope, access);
+  const scopedProjects = await fetchContextProjects(db, ctx);
   const projectById = new Map(scopedProjects.map((p) => [p.id, p]));
   const now = Date.now();
 

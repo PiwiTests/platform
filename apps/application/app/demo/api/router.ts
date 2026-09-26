@@ -43,6 +43,31 @@ import { getEnvironmentDiff } from '~~/server/utils/environment-diff';
 import { getPageDiff } from '~~/server/utils/page-diff';
 import { apiGetDemoDomSnapshot } from './dom-snapshot';
 import { apiExportTestRunCase, apiExportFailureCluster } from './export';
+import {
+  apiCreateReportSchedule,
+  apiCreateReportSnapshot,
+  apiDeleteReportSchedule,
+  apiExportReportSnapshot,
+  apiGetReportSchedule,
+  apiGetReportSnapshot,
+  apiListReportSchedules,
+  apiListReportSnapshots,
+  apiReportPreview,
+  apiRunReportSchedule,
+  apiUpdateReportSchedule,
+} from './reports';
+import {
+  apiCreateDashboard,
+  apiDeleteDashboard,
+  apiDuplicateDashboard,
+  apiGetDashboard,
+  apiGetDashboardWidget,
+  apiListDashboards,
+  apiPreviewWidget,
+  apiSaveDashboard,
+  apiSetDefaultDashboard,
+} from './dashboards';
+import { DEMO_CHANNEL } from './demo-channel';
 import { apiPerfettoTestRun, apiPerfettoTestRunCase } from './perfetto';
 import {
   apiGetDemoTraceStacks,
@@ -136,11 +161,13 @@ import {
   getTestCaseHistory,
   getTestRunCaseTraces,
   getTestCaseStabilityTrend,
+  STABILITY_TREND_DEFAULT_DAYS,
   getFailureTimeline,
   getExecutionSteps,
   getFailureClues,
   getAttemptDiff,
 } from '#shared/handlers/test-cases';
+import { parseGranularity } from '#shared/analytics/period';
 import { buildExecutionReproduce } from '#shared/handlers/reproduce';
 import {
   getFailureCluster,
@@ -154,6 +181,8 @@ import {
   extractClusterCases,
   getClusterDiagnosis,
   getExecutionDiagnosis,
+  getClusterOccurrenceTrend,
+  CLUSTER_TREND_DEFAULT_DAYS,
 } from '#shared/handlers/failure-clusters';
 import { parseBulkIds, isSnoozeOption } from '#shared/inbox-queues';
 import { getClusterCommits, getClusterCommitDiff, getClusterBranches } from './scm';
@@ -218,6 +247,9 @@ import {
 import { computeRunInsights } from '#shared/handlers/run-insights';
 import { isAnalyticsWidgetId, runAnalyticsWidget } from '#shared/handlers/analytics';
 import { parseAnalyticsScope } from '#shared/analytics/scope';
+import { collectRollupExport, rollupCsvHeader, rollupCsvRows } from '#shared/handlers/analytics/rollup-export';
+import { WidgetOptionsError, widgetOptionsFromQuery } from '#shared/analytics/registry';
+import { getAnalyticsScopeSummary } from '#shared/handlers/analytics/scope-summary';
 import { classifyAndPersistFlakyRootCause } from '#shared/handlers/flaky-classify';
 import {
   listUsers,
@@ -269,6 +301,8 @@ import {
   apiPutWastedWaits,
   apiGetTimeoutHygiene,
   apiPutTimeoutHygiene,
+  apiGetCiCost,
+  apiPutCiCost,
   apiGetPrFeedback,
   apiGetAutoHeal,
   apiPutAutoHeal,
@@ -367,15 +401,104 @@ async function assertDemoEntityScope(
 }
 
 const routes: RouteEntry[] = [
-  // Analytics — one generic entry; widgets dispatch through the shared handler map
+  // Analytics — the scope summary, then one generic entry; widgets dispatch through the shared handler map
+  {
+    method: 'GET',
+    pattern: /^\/api\/analytics\/scope$/,
+    handler: async (_m, _, q, ctx) =>
+      getAnalyticsScopeSummary(await getDemoDb(), parseAnalyticsScope(q), ctx?.scope ?? 'all'),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/analytics\/rollups$/,
+    handler: async (_m, _, q, ctx) => {
+      const format = (q?.get('format') ?? 'json').toLowerCase();
+      if (format !== 'json' && format !== 'csv')
+        throw demoHttpError(400, `Unsupported format '${format}'. Use json or csv.`);
+      const items = await collectRollupExport(await getDemoDb(), parseAnalyticsScope(q), ctx?.scope ?? 'all');
+      if (format === 'json') return { items };
+      return new Response(`\uFEFF${rollupCsvHeader()}${rollupCsvRows(items)}`, {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/csv; charset=utf-8',
+          'Content-Disposition': `attachment; filename="piwi-rollups-${new Date().toISOString().slice(0, 10)}.csv"`,
+        },
+      });
+    },
+  },
+  // Dashboards — saved dashboards, one widget of a dashboard and the editor's preview
+  {
+    method: 'GET',
+    pattern: /^\/api\/analytics\/dashboards$/,
+    handler: async (_m, _b, _q, ctx) => apiListDashboards(ctx?.actingUserId ?? null),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/analytics\/dashboards$/,
+    handler: async (_m, body, _q, ctx) => apiCreateDashboard(body, ctx?.actingUserId ?? null),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/analytics\/dashboards\/([\w-]+)$/,
+    handler: async (m, _b, q, ctx) => apiGetDashboard(m[1]!, q, ctx?.actingUserId ?? null, ctx?.scope ?? 'all'),
+  },
+  {
+    method: 'PATCH',
+    pattern: /^\/api\/analytics\/dashboards\/([\w-]+)$/,
+    handler: async (m, body, _q, ctx) => apiSaveDashboard(m[1]!, body, ctx?.actingUserId ?? null, ctx?.scope ?? 'all'),
+  },
+  {
+    method: 'DELETE',
+    pattern: /^\/api\/analytics\/dashboards\/([\w-]+)$/,
+    handler: async (m, _b, _q, ctx) => apiDeleteDashboard(m[1]!, ctx?.actingUserId ?? null),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/analytics\/dashboards\/([\w-]+)\/duplicate$/,
+    handler: async (m, body, _q, ctx) => apiDuplicateDashboard(m[1]!, body, ctx?.actingUserId ?? null),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/analytics\/dashboards\/([\w-]+)\/widgets\/([\w-]+)$/,
+    handler: async (m, _b, q, ctx) =>
+      apiGetDashboardWidget(m[1]!, m[2]!, q, ctx?.actingUserId ?? null, ctx?.scope ?? 'all'),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/analytics\/widgets\/preview$/,
+    handler: async (_m, body, _q, ctx) => apiPreviewWidget(body, ctx?.scope ?? 'all'),
+  },
+  {
+    method: 'PUT',
+    pattern: /^\/api\/settings\/analytics-default-dashboard$/,
+    handler: async (_m, body) => apiSetDefaultDashboard(body),
+  },
   {
     method: 'GET',
     pattern: /^\/api\/analytics\/([\w-]+)$/,
     handler: async (m, _, q, ctx) => {
       const widget = m[1]!;
       if (!isAnalyticsWidgetId(widget)) throw demoHttpError(400, 'Unknown analytics widget');
-      return runAnalyticsWidget(await getDemoDb(), widget, parseAnalyticsScope(q), ctx?.scope ?? 'all');
+      try {
+        const options = widgetOptionsFromQuery(q?.get('options'));
+        return await runAnalyticsWidget(
+          await getDemoDb(),
+          widget,
+          parseAnalyticsScope(q),
+          ctx?.scope ?? 'all',
+          options,
+        );
+      } catch (error) {
+        if (error instanceof WidgetOptionsError) throw demoHttpError(400, error.message);
+        throw error;
+      }
     },
+  },
+  // Quality reports — the preview and downloads, from the shared bundle and renderers
+  {
+    method: 'GET',
+    pattern: /^\/api\/reports\/preview$/,
+    handler: async (_m, _, q, ctx) => apiReportPreview(q, ctx?.scope ?? 'all', ctx?.actingUserId ?? null),
   },
   // Projects
   {
@@ -776,6 +899,15 @@ const routes: RouteEntry[] = [
   },
   {
     method: 'GET',
+    pattern: /^\/api\/failure-clusters\/(\d+)\/occurrence-trend$/,
+    handler: async (m, _, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'cluster', +m[1]!);
+      const days = parseInt(q?.get('days') || String(CLUSTER_TREND_DEFAULT_DAYS));
+      return getClusterOccurrenceTrend(await getDemoDb(), +m[1]!, { days });
+    },
+  },
+  {
+    method: 'GET',
     pattern: /^\/api\/failure-clusters\/(\d+)\/export$/,
     handler: async (m, _, q, ctx) => {
       await assertDemoEntityScope(ctx, 'cluster', +m[1]!);
@@ -1049,8 +1181,9 @@ const routes: RouteEntry[] = [
     pattern: /^\/api\/test-cases\/(\d+)\/stability-trend$/,
     handler: async (m, _, q, ctx) => {
       await assertDemoEntityScope(ctx, 'case', +m[1]!);
-      const buckets = parseInt(q?.get('buckets') || '20');
-      return getTestCaseStabilityTrend(await getDemoDb(), +m[1]!, buckets);
+      const days = parseInt(q?.get('days') || String(STABILITY_TREND_DEFAULT_DAYS));
+      const granularity = parseGranularity(q?.get('by')) ?? 'auto';
+      return getTestCaseStabilityTrend(await getDemoDb(), +m[1]!, { days, granularity });
     },
   },
 
@@ -2289,6 +2422,12 @@ routes.push(
     pattern: /^\/api\/settings\/timeout-hygiene$/,
     handler: (_, body) => apiPutTimeoutHygiene(body as Parameters<typeof apiPutTimeoutHygiene>[0]),
   },
+  { method: 'GET', pattern: /^\/api\/settings\/ci-cost$/, handler: () => apiGetCiCost() },
+  {
+    method: 'PUT',
+    pattern: /^\/api\/settings\/ci-cost$/,
+    handler: (_, body) => apiPutCiCost(body as Parameters<typeof apiPutCiCost>[0]),
+  },
   { method: 'GET', pattern: /^\/api\/settings\/pr-feedback$/, handler: () => apiGetPrFeedback() },
   {
     method: 'PUT',
@@ -2305,17 +2444,6 @@ routes.push(
 );
 
 // ── Demo notification channels & subscriptions (stateful in-memory) ───────────
-
-const DEMO_CHANNEL = {
-  id: 1,
-  name: 'Account email',
-  type: 'personal_email',
-  userId: null as number | null,
-  verified: true,
-  config: { address: 'demo@example.com' },
-  createdAt: new Date().toISOString(),
-  updatedAt: new Date().toISOString(),
-};
 
 interface DemoSubscription {
   id: number;
@@ -2433,6 +2561,65 @@ routes.push(
       if (idx >= 0) _demoSubs.splice(idx, 1);
       return Promise.resolve({ success: true });
     },
+  },
+);
+
+// Report schedules and snapshots — stored in the in-browser database; the demo
+// has no scheduler, so a schedule never fires by itself.
+const demoReportChannels = () => [
+  { id: DEMO_CHANNEL.id, name: DEMO_CHANNEL.name, type: DEMO_CHANNEL.type, userId: DEMO_CHANNEL.userId },
+];
+
+routes.push(
+  {
+    method: 'GET',
+    pattern: /^\/api\/reports\/schedules$/,
+    handler: (_m, _b, _q, ctx) => apiListReportSchedules(demoReportChannels(), ctx?.scope ?? 'all'),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/reports\/schedules$/,
+    handler: (_m, body, _q, ctx) => apiCreateReportSchedule(body, demoReportChannels(), ctx?.scope ?? 'all'),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/reports\/schedules\/(\d+)$/,
+    handler: (m) => apiGetReportSchedule(+m[1]!, demoReportChannels()),
+  },
+  {
+    method: 'PATCH',
+    pattern: /^\/api\/reports\/schedules\/(\d+)$/,
+    handler: (m, body, _q, ctx) => apiUpdateReportSchedule(+m[1]!, body, demoReportChannels(), ctx?.scope ?? 'all'),
+  },
+  {
+    method: 'DELETE',
+    pattern: /^\/api\/reports\/schedules\/(\d+)$/,
+    handler: (m) => apiDeleteReportSchedule(+m[1]!),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/reports\/schedules\/(\d+)\/run$/,
+    handler: (m) => apiRunReportSchedule(+m[1]!),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/reports\/snapshots$/,
+    handler: (_m, _b, q, ctx) => apiListReportSnapshots(q, ctx?.scope ?? 'all'),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/reports\/snapshots$/,
+    handler: (_m, body, _q, ctx) => apiCreateReportSnapshot(body, ctx?.scope ?? 'all', ctx?.actingUserId ?? null),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/reports\/snapshots\/(\d+)$/,
+    handler: (m, _b, _q, ctx) => apiGetReportSnapshot(+m[1]!, ctx?.scope ?? 'all'),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/reports\/snapshots\/(\d+)\/export$/,
+    handler: (m, _b, q, ctx) => apiExportReportSnapshot(+m[1]!, q, ctx?.scope ?? 'all'),
   },
 );
 

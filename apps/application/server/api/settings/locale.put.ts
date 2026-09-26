@@ -2,6 +2,8 @@ import { getDatabase } from '../../database';
 import { requireAuth } from '../../utils/auth';
 import { setAppSetting, deleteAppSetting } from '../../utils/app-settings';
 import { resolveLocaleSettings } from '../../utils/locale-settings';
+import { rescheduleReportSchedules } from '#shared/handlers/reports';
+import { scheduleTimeZone } from '#shared/reports/schedule';
 import { LOCALE_SETTING_KEY, TIME_ZONE_SETTING_KEY, coerceLocale, coerceTimeZone } from '#shared/i18n/locale-format';
 
 defineRouteMeta({
@@ -50,5 +52,10 @@ export default eventHandler(async (event) => {
     }
   }
 
-  return resolveLocaleSettings(db);
+  const resolved = await resolveLocaleSettings(db);
+  // Report schedules fire in the instance time zone: move their next firings onto the new one.
+  if (body.timeZone !== undefined && resolved.timeZone !== current.timeZone) {
+    await rescheduleReportSchedules(db as any, scheduleTimeZone(resolved.timeZone));
+  }
+  return resolved;
 });

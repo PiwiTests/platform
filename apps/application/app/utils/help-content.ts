@@ -67,7 +67,7 @@ export const HELP_TOPICS = {
   // ── Analytics ─────────────────────────────────────────────────────────
   'analytics.insights': {
     title: 'Insights',
-    text: 'Auto-generated findings over the selected period — pass-rate drops, failing streaks, stale clusters, wasted CI time. Ranked by severity; click one to jump to the source.',
+    text: 'Auto-generated findings over the selected period — missed targets, pass-rate drops, failing streaks, stale clusters, wasted CI time, a growing time to fix, a shrinking suite, a growing quarantine, one owner holding most open failure causes. Ranked by severity; click one to jump to the source.',
   },
   'analytics.portfolio': {
     title: 'Portfolio health',
@@ -75,11 +75,11 @@ export const HELP_TOPICS = {
   },
   'analytics.heatmap': {
     title: 'Pass rate heatmap',
-    text: 'Each cell is the aggregate pass rate of one project over one time bucket — green at 90% or more, amber from 50%, red below 50%, gray means no runs. Longer periods use wider buckets.',
+    text: 'Each cell is the aggregate pass rate of one project over one time bucket — green at 90% or more, amber from 50%, red below 50%, gray means no runs. A cell is one UTC day, or a wider bucket on long periods.',
   },
   'analytics.ci-time': {
     title: 'CI time',
-    text: 'Total minutes your test runs consumed, over time, with the change vs the previous equal-length period. Steady growth here is a capacity conversation.',
+    text: 'Total minutes your test runs consumed, over time, with the change against the comparison period. Steady growth here is a capacity conversation.',
   },
   'analytics.wasted-time': {
     title: 'Wasted CI time',
@@ -100,9 +100,203 @@ export const HELP_TOPICS = {
     text: 'How much new breakage each period introduces: tests that passed in a baseline and now fail (regressions), plus tests that turned flaky. Rising bars mean quality debt is accumulating.',
     doc: 'features/flaky-tests#regression-signals',
   },
+  'analytics.suite-growth': {
+    title: 'Suite growth',
+    text: 'How many tests the suite has over time (the highest test count one run reported in each bucket), and the share of them skipped or not run. A growing suite whose skipped share grows too is adding tests nobody runs.',
+    doc: 'features/analytics-widgets#which-way-it-is-going',
+  },
+  'analytics.flaky-debt': {
+    title: 'Flaky debt',
+    text: 'Whether flakiness is going down: flaky occurrences per run in each bucket (from the daily rollups, so over any window), the distinct tests that passed only on a retry (from the stored runs, so only as far back as retention keeps them) and the tests in quarantine at the end of each bucket.',
+    doc: 'features/analytics-widgets#which-way-it-is-going',
+  },
+  'analytics.time-to-fix': {
+    title: 'Time to fix',
+    text: 'How fast failures get fixed: failure causes opened and fixed per bucket, the median and 90th-percentile time from first failure to fix over the causes fixed in the period, the share of those fixes that held, and the open causes by age. Failure clusters outlive run retention, so this reaches as far back as they do.',
+    doc: 'features/analytics-widgets#where-the-pain-is',
+  },
+  'analytics.ownership': {
+    title: 'Ownership',
+    text: 'One row per owner: the open failure causes assigned to them, and the flaky tests and wasted CI minutes of the tests they own (their `piwi:owner` annotation), with the median time to fix of the causes they fixed. The Unowned row holds everything nobody is assigned to or owns. Test counts reach back only as far as retention keeps runs.',
+    doc: 'features/analytics-widgets#where-the-pain-is',
+  },
+  'analytics.environment-comparison': {
+    title: 'Environment comparison',
+    text: 'Test pass rate and run success per environment (the `environment` your runs report), side by side with their change against the comparison period, and the pass rate of each over time, so a staging that is green while production is not stands out.',
+    doc: 'features/analytics-widgets#detail',
+  },
+  'analytics.movers': {
+    title: 'Movers',
+    text: 'The tests that changed against the comparison period: those that became flaky or stopped being flaky, and those whose average passing duration grew or shrank by more than 25 %. Read from the stored runs, so both periods reach back only as far as retention keeps them; each direction lists its top tests, at most 25.',
+    doc: 'features/analytics-widgets#detail',
+  },
   'analytics.browser-matrix': {
     title: 'Browser matrix',
     text: 'Pass rate per project × browser, so a suite that is green on one browser but failing on another (a browser-specific bug) stands out immediately.',
+  },
+  'chart.export': {
+    title: 'Chart export',
+    text: 'Copy as PNG puts the chart, with its title, on the clipboard as an image to paste into a slide or a document; a browser that cannot copy images downloads the PNG instead. Download CSV saves the numbers behind the chart, one row per bucket or group, with any cell that could run as a spreadsheet formula quoted.',
+    doc: 'features/analytics#exporting-a-chart',
+  },
+  'analytics.stats': {
+    title: 'Headline numbers',
+    text: 'Numbers from the metric catalog across every project in scope, each with its change against the comparison period. Green and red say whether the change is good news for that number, not whether it went up.',
+  },
+  'analytics.metric': {
+    title: 'Metric over time',
+    text: 'One metric from the catalog bucketed over the period. The faint line is the comparison period, bucket for bucket; the vertical lines are timeline markers.',
+  },
+  'analytics.verdict': {
+    title: 'Verdict',
+    text: 'One or two sentences built by fixed rules from the pass rate, its change, the failure causes fixed and still open, and the wasted CI time. Never written by a model, so it only repeats numbers shown elsewhere on the page.',
+  },
+  'analytics.narrative': {
+    title: 'Narrative',
+    text: 'In a scheduled quality report with the AI narrative on, the configured diagnosis model writes three paragraphs here from the report’s numbers only, labeled as generated; an answer citing a number the report lacks is refused. Everywhere else, and whenever the model fails or none is configured, this shows the rule-based verdict.',
+    doc: 'features/analytics-widgets#where-things-stand',
+  },
+  'reports.narrative': {
+    title: 'AI narrative',
+    text: 'Adds three paragraphs written by the configured diagnosis model at the top of each report, from the report’s numbers only and labeled as generated. The rule-based verdict and tiles stay; without a model, or when its answer cites a number the report lacks, the verdict stands in. Spends tokens once per report.',
+    doc: 'features/analytics-widgets#where-things-stand',
+  },
+  'analytics.progress': {
+    title: 'What is being done',
+    text: 'Failure causes fixed in the period and whether the fixes held, open causes assigned or linked to a ticket, tests quarantined and released, and auto-heal pull requests opened.',
+  },
+  'analytics.risks': {
+    title: 'Risks',
+    text: 'Metrics that moved the wrong way against the comparison period, projects failing run after run, the oldest open failure causes, and the tests waiting in quarantine.',
+  },
+  'analytics.scenario-gaps': {
+    title: 'Scenario gaps',
+    text: 'Open gaps of the Test Map by class and by feature, the gaps closed in the period, accepted gaps whose test was never written, and open resilience findings. Counts only, never a coverage percentage. A project that declined the Test Map is left out.',
+    doc: 'features/scenario-gaps',
+  },
+  'analytics.new-gaps': {
+    title: 'New scenario gaps',
+    text: 'The Test Map’s weekly digest: the top five new open gaps of each project created in the period, highest exposure first.',
+    doc: 'features/scenario-gaps',
+  },
+  'analytics.list': {
+    title: 'List',
+    text: 'The top items matching the scope: the latest runs of the period, the open failure causes with the most occurrences, the flakiest tests, or the highest-scored open scenario gaps. Each one opens its page.',
+    doc: 'features/dashboards#widgets',
+  },
+  'analytics.markers': {
+    title: 'Timeline markers',
+    text: 'The timeline markers of the period, the ones the trends draw: every marker when one project is in scope, across projects only releases, infrastructure changes and incidents.',
+    doc: 'features/timeline-markers',
+  },
+  'analytics.spec-health': {
+    title: 'Spec health',
+    text: 'Pass and flaky rates per spec directory of one project, over the period (at most the last 90 days), worst first. Pick a single project under Filters.',
+    doc: 'features/dashboards#widgets',
+  },
+  'analytics.slow-tests': {
+    title: 'Slowest tests',
+    text: 'The tests with the longest average duration over one project’s last 20 runs. Pick a single project under Filters.',
+    doc: 'features/dashboards#widgets',
+  },
+  'analytics.performance-trend': {
+    title: 'Performance trend',
+    text: 'Total run duration, average and p90 test duration of one project’s runs over the period. Pick a single project under Filters.',
+    doc: 'features/dashboards#widgets',
+  },
+  'analytics.timeout-opportunities': {
+    title: 'Timeout opportunities',
+    text: 'Tests of one project whose timeout is far above what they really take, so a hang wastes minutes, or that keep a test.slow() mark they no longer need.',
+    doc: 'features/dashboards#widgets',
+  },
+  'analytics.selection-health': {
+    title: 'Selection health',
+    text: 'How each selection of one project resolves today, its warnings and drift since its last run, and how many tests no selection picks.',
+    doc: 'guide/test-selection',
+  },
+  'dashboards.widget-scope': {
+    title: 'Widget scope',
+    text: 'A widget can replace the dashboard’s period (a Last 7 days number on a quarterly dashboard) and narrow its filters (only some projects, a selection, test tags, browsers). It never widens them, so what a dashboard covers can be read off its Filters block.',
+    doc: 'features/dashboards#periods-and-filters-per-widget',
+  },
+  'dashboards.hidden-projects': {
+    title: 'Hidden projects',
+    text: 'A dashboard grants no access: every widget is computed for the projects you can open. The projects of this dashboard’s scope you cannot open are counted here and never shown.',
+    doc: 'features/dashboards#sharing-and-access',
+  },
+  'dashboards.default': {
+    title: 'Default dashboard',
+    text: 'Analytics opens the dashboard you picked in this browser, else the one an administrator set for everyone, else Overview. A saved dashboard must be shared to be the default for everyone.',
+    doc: 'features/dashboards#your-default-dashboard',
+  },
+  'dashboards.sharing': {
+    title: 'Sharing a dashboard',
+    text: 'A shared dashboard is listed for every signed-in user; only its owner and administrators change it, everyone else duplicates it. Sharing needs the reporter or administrator role, and shows nobody a project they cannot open.',
+    doc: 'features/dashboards#sharing-and-access',
+  },
+  'reports.schedule': {
+    title: 'Report schedule',
+    text: 'A quality report sent on a schedule, daily, weekly, every other week or monthly, to email, Slack, webhook or browser channels. Each firing covers the whole days since the previous one, compared with the period before or a year earlier, and is kept as a snapshot. A period with no run still sends, so a stopped pipeline shows. Team sends the engineering report for one owner’s tests; Gaps digest is the Test Map’s weekly digest.',
+    doc: 'features/quality-reports#report-schedules',
+    envVars: ['PIWI_TIME_ZONE'],
+  },
+  'notifications.teams': {
+    title: 'Microsoft Teams channel',
+    text: 'Posts an Adaptive Card to a Teams channel. In Teams, add the Workflows template "Post to a channel when a webhook request is received" (or a legacy incoming webhook) to the channel and paste its URL here. Events, digests and quality reports all get a card.',
+    doc: 'features/notifications#microsoft-teams',
+  },
+  'reports.share-link': {
+    title: 'Share link per report',
+    text: 'Each report this schedule generates gets its own read-only share link, which the email and the Slack message carry, so a reader without an account opens the report in one click. The link expires a week after the next report arrives. Slack also shows the trend as an image through it. Needs share links enabled on the instance.',
+    doc: 'features/share-links#report-share-links',
+    envVars: ['PIWI_SHARE_LINKS_ENABLED', 'PIWI_SHARE_LINK_MAX_TTL_DAYS'],
+  },
+  'share-links.badge': {
+    title: 'Status badge',
+    text: 'An SVG image of the test pass rate, the branch policy and the period ("tests on main · 97.8% · 7 d") that rides on this share link, for a README or a wiki page. It stops resolving with the link.',
+    doc: 'features/share-links#status-badge',
+  },
+  'dashboards.live-links': {
+    title: 'Live dashboard links',
+    text: 'A read-only page of this dashboard for a wall screen or a bookmark, with nobody signed in. It is computed at every view with your project access and reloads every minute; it dies when it expires, is revoked, or you lose access to the dashboard or its projects. It never serves evidence files.',
+    doc: 'features/share-links#live-dashboard-links',
+    envVars: ['PIWI_SHARE_LINKS_ENABLED'],
+  },
+  'reports.snapshots': {
+    title: 'Report snapshots',
+    text: 'Every quality report generated, scheduled or by hand, stored with its numbers as they were, so a report received months ago reads the same today whatever retention deleted since. You see the snapshots whose every project you can open.',
+    doc: 'features/quality-reports#report-snapshots',
+    envVars: ['PIWI_RETENTION_REPORT_DAYS'],
+  },
+  'reports.export': {
+    title: 'Quality report',
+    text: 'The scope on screen as a document for someone who does not open the dashboard: a rule-based verdict, headline numbers, the trend, what is being done and the risks. Executive keeps to plain words; Engineering adds flaky tests, clusters and detail; Overview is this page. Download it as PDF, HTML, Markdown, CSV or JSON.',
+    doc: 'features/quality-reports',
+  },
+  'analytics.period': {
+    title: 'Period',
+    text: 'Which days the page covers: a rolling window, a calendar week, month, quarter or year, a custom range, the time since a timeline marker, a release cycle (between two release markers) or a sprint. Rolling periods count whole UTC days; calendar periods follow your time zone.',
+    doc: 'features/analytics#periods',
+  },
+  'analytics.comparison': {
+    title: 'Compare with',
+    text: 'The reference every change on the page is measured against: the previous period of the same length, the previous calendar unit, release cycle or sprint, the same period a year earlier, or nothing.',
+    doc: 'features/analytics#comparison-and-buckets',
+  },
+  'analytics.granularity': {
+    title: 'Buckets',
+    text: 'How the trends and the heatmap cut the period: automatic (about 31 buckets), daily, weekly or monthly. Buckets start at UTC midnight.',
+    doc: 'features/analytics#comparison-and-buckets',
+  },
+  'analytics.branch-policy': {
+    title: 'Branch policy',
+    text: 'Default branch counts runs on each project’s default branch, plus runs whose branch is unknown, so a broken feature branch does not move the trends. All branches counts everything; picking branches by hand overrides both.',
+    doc: 'features/analytics#branch-policy',
+  },
+  'analytics.test-filter': {
+    title: 'Test filter',
+    text: 'Narrow every number to some tests: a selection (resolved by key in each project), test tags, or browsers. It means the tests that match today, with their whole history, and it counts from stored executions, so it reaches back only as far as retention keeps runs.',
+    doc: 'features/analytics#test-filter',
   },
   'analytics.slow-endpoints': {
     title: 'Slow endpoints',
@@ -192,6 +386,21 @@ export const HELP_TOPICS = {
     title: 'Repository access token',
     text: 'A read-only Git host token lets diagnosis pull the actual commit diffs behind a failure for SCM-grounded analysis. Stored encrypted.',
     doc: 'features/ai-diagnosis#scm-grounded-context',
+  },
+  'case.stability-trend': {
+    title: 'Stability trend',
+    text: 'This test’s pass rate, flaky rate (passed only on a retry) and average duration over time, one point per day, week or month in UTC, with the project’s timeline markers. Probe runs are left out. A gap is a bucket where the test did not run.',
+    doc: 'features/flaky-tests#per-test-stability-trend',
+  },
+  'cluster.occurrence-trend': {
+    title: 'Occurrences over time',
+    text: 'How often this failure cause failed, and how many tests it failed, per day, week or month (UTC), with the moment its fix landed and, if it failed again afterwards, the first failure after the fix. Probe runs are left out.',
+    doc: 'features/failure-clusters#occurrences-over-time',
+  },
+  'project.targets': {
+    title: 'Targets',
+    text: 'Goals this project is checked against over the period a dashboard or a quality report shows: a pass rate to reach, and limits on flaky tests, wasted CI minutes per week, the age of the oldest open failure cause and the median time to fix. Each is optional; a met or missed target shows on the headline tiles, in the portfolio, in the insights and in the report.',
+    doc: 'features/analytics#targets',
   },
   'project.ci-rerun': {
     title: 'CI re-run',
@@ -413,7 +622,7 @@ export const HELP_TOPICS = {
   },
   'notifications.channels': {
     title: 'Channels',
-    text: 'Destinations an alert can go to — browser, email, Slack or webhook. Create a channel, then subscribe events to it. Administrators can make a channel global (usable by everyone); without authentication every channel is global.',
+    text: 'Destinations an alert can go to — browser, email, Slack, Microsoft Teams or webhook. Create a channel, then subscribe events to it. Administrators can make a channel global (usable by everyone); without authentication every channel is global.',
     doc: 'features/notifications#channels',
   },
   'notifications.subscriptions': {
@@ -508,6 +717,12 @@ export const HELP_TOPICS = {
     text: 'Define which wait steps count as wasted time. A wait is wasted when any pattern matches its step title or source location. Patterns are case-insensitive and support * and ? wildcards. Changes apply to existing runs immediately.',
     doc: 'features/slow-tests',
     envVars: ['PIWI_WASTED_WAIT_PATTERNS'],
+  },
+  'settings.ci-cost': {
+    title: 'Cost of a CI minute',
+    text: 'What one CI minute costs you. When set, wasted CI time is also shown as money in the analytics widgets and quality reports; leave it empty to show minutes only.',
+    doc: 'features/quality-reports#cost-of-a-ci-minute',
+    envVars: ['PIWI_CI_MINUTE_COST'],
   },
   'settings.timeout-hygiene': {
     title: 'Timeout hygiene',

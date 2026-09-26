@@ -152,6 +152,15 @@ if (skip > 0) {
 const copied = copyDemoMedia(publicDemoDir, storageDir);
 console.log(`Demo media: ${copied} file(s) copied into ${storageDir}.`);
 
+// The seeded runs bypass the ingest hook, so the next server start recomputes
+// the daily rollups of every stored run (the backfill runs once per setting).
+const rollupsTable = await db.execute(
+  "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'analytics_daily_rollups'",
+);
+if (rollupsTable.rows.length > 0) {
+  await db.execute("DELETE FROM app_settings WHERE key = 'analytics_rollups_backfilled_at'");
+}
+
 // The rebase adds a fixed delta to every timestamp, so it may only run over a
 // load that brought in the whole seed. Re-running it against rows that already
 // carry a shift would push them into the future.

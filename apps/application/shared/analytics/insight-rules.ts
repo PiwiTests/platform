@@ -7,15 +7,21 @@
 import type {
   AnalyticsCiTimeTrend,
   AnalyticsClusterLandscape,
+  AnalyticsFlakyDebt,
   AnalyticsFlakyRow,
   AnalyticsInsight,
+  AnalyticsOwnership,
   AnalyticsPortfolioRow,
   AnalyticsRegressionVelocity,
   AnalyticsSlowEndpoints,
+  AnalyticsSuiteGrowth,
+  AnalyticsTimeToFix,
   AnalyticsTimeoutHygiene,
   AnalyticsWastedTime,
 } from './types';
 import type { AnalyticsScope } from './scope';
+import { getMetric } from './metrics';
+import type { ProjectTargetVerdict } from './targets';
 
 export interface InsightContext {
   scope: AnalyticsScope;
@@ -27,6 +33,12 @@ export interface InsightContext {
   regressionVelocity: AnalyticsRegressionVelocity;
   slowEndpoints: AnalyticsSlowEndpoints;
   timeoutHygiene: AnalyticsTimeoutHygiene;
+  /** The targets of the projects in scope over the period, met or missed. */
+  targets?: ProjectTargetVerdict[];
+  timeToFix?: AnalyticsTimeToFix;
+  suiteGrowth?: AnalyticsSuiteGrowth;
+  flakyDebt?: AnalyticsFlakyDebt;
+  ownership?: AnalyticsOwnership;
 }
 
 export interface InsightRule {
@@ -41,6 +53,20 @@ const SEVERITY_ORDER: Record<AnalyticsInsight['severity'], number> = {
   positive: 3,
 };
 
+/** How an insight names the period a change is measured against. */
+export function comparisonPhrase(scope: AnalyticsScope): string {
+  const { period, comparison } = scope;
+  if (comparison.kind === 'year') return 'the same period a year earlier';
+  if (comparison.kind === 'range') return `${comparison.from} to ${comparison.to}`;
+  if (comparison.kind === 'previous-unit') {
+    if (period.kind === 'calendar') return `the previous ${period.unit}`;
+    if (period.kind === 'release') return 'the previous release cycle';
+    if (period.kind === 'sprint') return 'the previous sprint';
+  }
+  if (period.kind === 'rolling') return `the previous ${period.days} days`;
+  return 'the previous period';
+}
+
 function projectDisplay(row: { name: string; label: string | null }): string {
   return row.label || row.name;
 }
@@ -54,7 +80,7 @@ const passRateDrop: InsightRule = {
         id: `pass-rate-drop:${p.projectId}`,
         ruleId: 'pass-rate-drop',
         severity: p.passRateDelta! <= -15 ? ('critical' as const) : ('warning' as const),
-        message: `${projectDisplay(p)} pass rate dropped ${Math.abs(p.passRateDelta!)} pts vs the previous ${scope.days} days`,
+        message: `${projectDisplay(p)} pass rate dropped ${Math.abs(p.passRateDelta!)} pts vs ${comparisonPhrase(scope)}`,
         detail: `Now at ${p.passRate}% over ${p.runCount} runs.`,
         to: `/projects/${p.projectId}`,
         projectId: p.projectId,
@@ -70,7 +96,7 @@ const passRateRecovery: InsightRule = {
         id: `pass-rate-recovery:${p.projectId}`,
         ruleId: 'pass-rate-recovery',
         severity: 'positive' as const,
-        message: `${projectDisplay(p)} pass rate improved ${p.passRateDelta} pts vs the previous ${scope.days} days`,
+        message: `${projectDisplay(p)} pass rate improved ${p.passRateDelta} pts vs ${comparisonPhrase(scope)}`,
         detail: `Now at ${p.passRate}% over ${p.runCount} runs.`,
         to: `/projects/${p.projectId}`,
         projectId: p.projectId,
@@ -119,7 +145,7 @@ const ciTimeGrowth: InsightRule = {
         id: 'ci-time-growth',
         ruleId: 'ci-time-growth',
         severity: ciTime.deltaPct >= 50 ? 'warning' : 'info',
-        message: `CI time grew ${ciTime.deltaPct}% vs the previous ${scope.days} days`,
+        message: `CI time grew ${ciTime.deltaPct}% vs ${comparisonPhrase(scope)}`,
         detail: `${Math.round(ciTime.totalMinutes)} minutes across ${ciTime.runCount} runs this period.`,
       },
     ];
@@ -176,7 +202,7 @@ const regressionSurge: InsightRule = {
         id: 'regression-surge',
         ruleId: 'regression-surge',
         severity: deltaPct >= 100 ? 'warning' : 'info',
-        message: `New regressions rose ${deltaPct}% vs the previous ${scope.days} days`,
+        message: `New regressions rose ${deltaPct}% vs ${comparisonPhrase(scope)}`,
         detail: `${totalRegressions} this period, up from ${prevRegressions}.`,
       },
     ];
@@ -231,7 +257,133 @@ const timeoutHygiene: InsightRule = {
       })),
 };
 
+/** How far off a target a value is, in the metric's unit ("1.2 pts", "3 days"). */
+function targetGap(v: ProjectTargetVerdict): string {
+  const def = getMetric(v.metric);
+  const gap = Math.abs((v.actual ?? 0) - v.target);
+  const rounded = Math.round(gap * 10 ** def.precision) / 10 ** def.precision;
+  const unit = def.unit === 'percent' ? 'pts' : def.unit === 'days' ? 'days' : def.unit === 'minutes' ? 'min' : '';
+  return unit ? `${rounded} ${unit}` : `${rounded}`;
+}
+
+function targetValue(v: ProjectTargetVerdict, value: number): string {
+  const def = getMetric(v.metric);
+  if (def.unit === 'percent') return `${value}%`;
+  if (def.unit === 'days') return `${value} days`;
+  if (def.unit === 'minutes') return `${value} min`;
+  return String(value);
+}
+
+const targetMissed: InsightRule = {
+  id: 'target-missed',
+  evaluate: ({ targets = [] }) =>
+    targets
+      .filter((t) => t.met === false && t.actual !== null)
+      .map((t) => {
+        const label = getMetric(t.metric).label.toLowerCase();
+        const side = t.direction === 'min' ? 'under' : 'over';
+        const bound = t.direction === 'min' ? 'at least' : 'at most';
+        // A pass rate target missed by more than 5 points is critical; the rest warn.
+        const critical = t.metric === 'test-pass-rate' && t.target - (t.actual ?? 0) > 5;
+        return {
+          id: `target-missed:${t.projectId}:${t.key}`,
+          ruleId: 'target-missed',
+          severity: critical ? ('critical' as const) : ('warning' as const),
+          message: `${t.projectName} ${label} is ${targetGap(t)} ${side} its target`,
+          detail: `${targetValue(t, t.actual!)} against a target of ${bound} ${targetValue(t, t.target)}.`,
+          to: `/projects/${t.projectId}?tab=settings`,
+          projectId: t.projectId,
+        };
+      }),
+};
+
+const timeToFixGrowth: InsightRule = {
+  id: 'time-to-fix-growth',
+  evaluate: ({ timeToFix, scope }) => {
+    if (!timeToFix || timeToFix.fixed < 3) return [];
+    const { medianDays: now, previousMedianDays: before } = timeToFix;
+    // Half again as long, and at least a day longer: a fix now waits noticeably more.
+    if (now === null || before === null || before <= 0 || now < before * 1.5 || now - before < 1) return [];
+    return [
+      {
+        id: 'time-to-fix-growth',
+        ruleId: 'time-to-fix-growth',
+        severity: now >= before * 2 ? 'warning' : 'info',
+        message: `Median time to fix grew to ${now} days vs ${comparisonPhrase(scope)}`,
+        detail: `Up from ${before} days, over ${timeToFix.fixed} failure causes fixed this period.`,
+      },
+    ];
+  },
+};
+
+const suiteShrank: InsightRule = {
+  id: 'suite-shrank',
+  evaluate: ({ suiteGrowth, scope }) => {
+    if (!suiteGrowth || suiteGrowth.delta === null || suiteGrowth.previousSuiteSize === null) return [];
+    const lost = -suiteGrowth.delta;
+    // Five tests or five percent, whichever is more: a rename or two is not a shrink.
+    if (lost < Math.max(5, suiteGrowth.previousSuiteSize * 0.05)) return [];
+    return [
+      {
+        id: 'suite-shrank',
+        ruleId: 'suite-shrank',
+        severity: lost >= suiteGrowth.previousSuiteSize * 0.2 ? 'warning' : 'info',
+        message: `The suite shrank by ${lost} tests vs ${comparisonPhrase(scope)}`,
+        detail: `From ${suiteGrowth.previousSuiteSize} to ${suiteGrowth.suiteSize} tests; check nothing was skipped or deleted by mistake.`,
+      },
+    ];
+  },
+};
+
+const quarantineDebtGrowth: InsightRule = {
+  id: 'quarantine-debt-growth',
+  evaluate: ({ flakyDebt, scope }) => {
+    if (!flakyDebt || flakyDebt.previousQuarantined === null) return [];
+    const added = flakyDebt.quarantined - flakyDebt.previousQuarantined;
+    if (added < 3 && !(added > 0 && flakyDebt.previousQuarantined > 0 && added >= flakyDebt.previousQuarantined * 0.5))
+      return [];
+    return [
+      {
+        id: 'quarantine-debt-growth',
+        ruleId: 'quarantine-debt-growth',
+        severity: added >= 10 ? 'warning' : 'info',
+        message: `${added} more tests in quarantine vs ${comparisonPhrase(scope)}`,
+        detail: `${flakyDebt.quarantined} tests are in quarantine now, up from ${flakyDebt.previousQuarantined}.`,
+      },
+    ];
+  },
+};
+
+const ownerLoad: InsightRule = {
+  id: 'owner-load',
+  evaluate: ({ ownership }) => {
+    if (!ownership || ownership.totalOpenClusters < 4) return [];
+    const top = ownership.rows
+      .filter((r) => r.owner !== null)
+      .reduce<AnalyticsOwnership['rows'][number] | null>(
+        (best, r) => (best === null || r.openClusters > best.openClusters ? r : best),
+        null,
+      );
+    if (!top || top.openClusters * 2 <= ownership.totalOpenClusters) return [];
+    const share = Math.round((top.openClusters / ownership.totalOpenClusters) * 100);
+    return [
+      {
+        id: `owner-load:${top.owner}`,
+        ruleId: 'owner-load',
+        severity: 'warning',
+        message: `${top.owner} holds ${top.openClusters} of the ${ownership.totalOpenClusters} open failure causes`,
+        detail: `${share}% of the open failure causes wait on one owner.`,
+      },
+    ];
+  },
+};
+
 export const INSIGHT_RULES: InsightRule[] = [
+  targetMissed,
+  ownerLoad,
+  timeToFixGrowth,
+  suiteShrank,
+  quarantineDebtGrowth,
   failingStreak,
   passRateDrop,
   staleCluster,

@@ -7,9 +7,13 @@ lang: en-US
 
 <Needs reporter />
 
-A share link is a read-only URL for one execution or one failure cluster that anyone can open — no dashboard
-account, no login. It is the live counterpart of an [offline export](./offline-export): instead of a file frozen at
-export time, the link renders the investigation as it stands when it is opened.
+A share link is a read-only URL that anyone can open — no dashboard account, no login. It opens one of four
+things:
+
+- an **execution** or a **failure cluster**: the live counterpart of an [offline export](./offline-export), the
+  investigation as it stands when the link is opened;
+- a **report snapshot**: a stored [quality report](./quality-reports#report-snapshots), as it was generated;
+- a **saved dashboard**: a [live dashboard link](#live-dashboard-links), computed at every view.
 
 Share links are **off by default**. Set `PIWI_SHARE_LINKS_ENABLED=true` to allow them — see the
 [configuration reference](/reference/configuration#authentication).
@@ -19,7 +23,8 @@ button.
 
 ## Creating a link
 
-On an execution page or a failure-cluster page, open **Share** (next to **Export**):
+On an execution page, a failure-cluster page or a report snapshot page, open **Share** (next to **Export** or
+**Download**); on a saved dashboard, open *Live dashboard links* in the dashboard's menu:
 
 1. Pick an expiry. The dialog offers lifetimes up to `PIWI_SHARE_LINK_MAX_TTL_DAYS` (30 days unless configured;
    setting it to `0` lifts the cap and allows links with no expiry).
@@ -46,12 +51,48 @@ Two consequences of "live" worth knowing:
   (`PIWI_SHARE_LINKS_ENABLED` unset) dead-ends every outstanding link at once without deleting anything, so the
   variable doubles as a kill switch.
 
+## Report share links
+
+A report snapshot's link renders the stored quality report as one self-contained HTML page. It shows the numbers
+the report was generated with, whatever retention deleted since, and answers 404 once the snapshot itself is pruned
+(`PIWI_RETENTION_REPORT_DAYS`).
+
+A [report schedule](./quality-reports#report-schedules) can mint one per report: turn on **Share link** in the
+schedule form. Each report then gets its own link, which the email and the Slack message carry beside the button to
+the snapshot, so a stakeholder without an account reads the report in one click. The link expires a week after the
+schedule's next report, within `PIWI_SHARE_LINK_MAX_TTL_DAYS`. The token travels encrypted with `PIWI_SECRET_KEY`
+from the schedule to the delivery, and is shown to nobody.
+
+## Live dashboard links
+
+A live dashboard link renders a saved dashboard as a quality report computed at every view, and the page reloads
+itself every minute: a bookmark for a stakeholder, or a wall screen with nobody signed in. Built-in dashboards have
+none; duplicate one first.
+
+- The numbers are computed with the project access of the person who minted the link, checked again at every view
+  (at most a minute behind). The link dies when that access or the dashboard goes, when it expires, or when it is
+  revoked.
+- It shows the aggregates and the lists the dashboard carries, never evidence files: no screenshot, no trace, no
+  video.
+
+## Status badge
+
+A report link and a live dashboard link each carry two images, shown when the link is minted:
+
+- `/share/<token>/badge.svg`: a badge such as "tests on default branch · 97.8% · 7 d", the test pass rate on the
+  pass-rate color scale, for a README or a wiki page. The dialog copies it as Markdown.
+- `/share/<token>/chart.png`: the report's trend. A scheduled report's Slack message draws it as an image, since
+  Slack needs a public address to show one.
+
+Both stop resolving with their link.
+
 ## Security properties
 
 - The token is a 256-bit random secret (`psl_` + 64 hex characters) — unguessable at any request rate. The server
   stores only its SHA-256 hash.
-- Everything a link serves is data its creator could already see: minting requires project access, so a link is a
-  narrower delegation of an existing member's read access, never an escalation.
+- Everything a link serves is data its creator could already see: minting requires access to the execution, the
+  cluster, every project of the snapshot, or the dashboard, so a link is a narrower delegation of an existing
+  member's read access, never an escalation.
 - The rendered page is sandboxed into a unique origin and served with `noindex` and `Referrer-Policy: no-referrer`,
   so it cannot read dashboard cookies, call the API with credentials, or leak the URL through outbound links. Share
   responses are never cached.

@@ -32,6 +32,7 @@ import {
   projectLabel,
   type Fact,
 } from './fields';
+import { STATUS_COLORS, hexToRgb } from '#shared/status-colors';
 import type { ExportAsset, ExportBundle, ExportCase } from './types';
 
 export interface PdfRenderOptions {
@@ -41,6 +42,12 @@ export interface PdfRenderOptions {
 
 type Color = ReturnType<typeof rgb>;
 
+/** A `#rrggbb` literal as a pdf-lib color. */
+function hexColor(hex: string): Color {
+  const [r, g, b] = hexToRgb(hex);
+  return rgb(r / 255, g / 255, b / 255);
+}
+
 const COLORS = {
   fg: rgb(0.11, 0.11, 0.13),
   muted: rgb(0.42, 0.42, 0.46),
@@ -48,9 +55,9 @@ const COLORS = {
   line: rgb(0.89, 0.89, 0.91),
   lineStrong: rgb(0.79, 0.79, 0.82),
   accent: rgb(0.26, 0.22, 0.79),
-  fail: rgb(0.75, 0.07, 0.24),
-  pass: rgb(0.02, 0.47, 0.34),
-  warn: rgb(0.7, 0.32, 0.04),
+  fail: hexColor(STATUS_COLORS.failed.text),
+  pass: hexColor(STATUS_COLORS.passed.text),
+  warn: hexColor(STATUS_COLORS.didnotrun.text),
   info: rgb(0.11, 0.31, 0.83),
   sunken: rgb(0.96, 0.96, 0.97),
   // Syntax tokens, matching the light `--tok-*` palette of the HTML report.
@@ -127,7 +134,7 @@ const REPLACEMENTS: Record<string, string> = {
  * and everything else replaced. Control characters — newlines included — become
  * a space, so callers split on newlines first to keep line breaks.
  */
-function winAnsiSafe(text: string): string {
+export function winAnsiSafe(text: string): string {
   let out = '';
   for (const ch of text) {
     const code = ch.codePointAt(0) ?? 0;

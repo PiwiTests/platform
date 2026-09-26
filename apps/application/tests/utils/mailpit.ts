@@ -15,6 +15,8 @@ export interface MailpitMessage {
 export interface MailpitMessageDetail extends MailpitMessage {
   HTML: string;
   Text: string;
+  /** Parts shown inside the HTML by content id (`<img src="cid:…">`). */
+  Inline?: Array<{ FileName: string; ContentType: string; ContentID: string; Size: number }>;
 }
 
 export class MailpitClient {

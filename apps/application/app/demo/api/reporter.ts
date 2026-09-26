@@ -52,6 +52,7 @@ import { computeErrorFingerprint, type ErrorFingerprint } from '#shared/error-fi
 import { durationStats } from '#shared/utils/stats';
 import { countFailedFromTally, distinctRunCountsFromAttempts, sumFailedAndTimedOut } from '#shared/utils/test-counts';
 import { syncAutoMarkersForRun } from '#shared/handlers/markers';
+import { upsertDailyRollup } from '#shared/handlers/analytics/rollups';
 import { joinSuitePath, SUITE_PATH_SEP } from '#shared/utils/suites';
 import {
   normalizeTestLocks,
@@ -1064,6 +1065,7 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
       publishDemoGlobalEvent({ type: 'run-finished', runId: id, projectId: testRun.projectId, status: finalStatus });
 
       await syncAutoMarkersForRun(db, id).catch(() => {});
+      await upsertDailyRollup(db, id).catch(() => {});
     } else {
       publishDemoRunEvent(id, {
         type: 'run-progress',
@@ -1146,6 +1148,7 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
   publishDemoGlobalEvent({ type: 'run-finished', runId: id, projectId: testRun.projectId, status });
 
   await syncAutoMarkersForRun(db, id).catch(() => {});
+  await upsertDailyRollup(db, id).catch(() => {});
 
   return { success: true, runId: id, status };
 }

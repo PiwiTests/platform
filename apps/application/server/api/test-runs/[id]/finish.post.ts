@@ -211,7 +211,7 @@ export default eventHandler(async (event) => {
         status: finalStatus,
       });
 
-      runFinalizeSideEffects(db, id, testRun);
+      await runFinalizeSideEffects(db, id, testRun);
 
       runEventBus.cleanup(id);
     } else {
@@ -330,7 +330,7 @@ export default eventHandler(async (event) => {
 
     runEventBus.publishGlobal({ type: 'run-finished', runId: id, projectId: testRun.projectId, status });
 
-    runFinalizeSideEffects(db, id, testRun);
+    await runFinalizeSideEffects(db, id, testRun);
 
     runEventBus.cleanup(id);
   }

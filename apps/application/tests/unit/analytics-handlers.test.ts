@@ -21,6 +21,16 @@ const { getAnalyticsSlowEndpoints } = await import('../../shared/handlers/analyt
 const { evaluateInsightRules } = await import('../../shared/analytics/insight-rules');
 const { parseAnalyticsScope, MAX_ANALYTICS_DAYS } = await import('../../shared/analytics/scope');
 const { ANALYTICS_WIDGETS, ANALYTICS_BANDS } = await import('../../shared/analytics/registry');
+const { backfillDailyRollups } = await import('../../shared/handlers/analytics/rollups');
+const { getAnalyticsStats } = await import('../../shared/handlers/analytics/stats');
+const { getAnalyticsMetric } = await import('../../shared/handlers/analytics/metric');
+const { getAnalyticsVerdict } = await import('../../shared/handlers/analytics/verdict');
+const { getAnalyticsRisks } = await import('../../shared/handlers/analytics/risks');
+const { getAnalyticsProgress } = await import('../../shared/handlers/analytics/progress');
+const { WidgetOptionsError, WIDGET_METRIC_IDS } = await import('../../shared/analytics/registry');
+const { isEvaluatedMetric } = await import('../../shared/handlers/analytics/metric-values');
+const { sentencesFor } = await import('../../shared/reports/sentences');
+const { makeFormatter } = await import('../../shared/reports/format');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const daysAgo = (days: number) => new Date(Date.now() - days * DAY_MS);
@@ -183,6 +193,9 @@ beforeAll(async () => {
       updatedAt: daysAgo(4),
     },
   ]);
+
+  // The scalar widgets read the daily rollups: compute them from the seeded runs.
+  await backfillDailyRollups(db as any);
 });
 
 describe('analytics registry', () => {
@@ -214,24 +227,25 @@ describe('analytics registry', () => {
 });
 
 describe('analytics scope parsing', () => {
-  test('applies defaults and clamps values', () => {
+  test('applies defaults and reads the legacy keys', () => {
     expect(parseAnalyticsScope(undefined)).toEqual({
-      days: 30,
-      projectIds: undefined,
-      environments: undefined,
-      branches: undefined,
+      period: { kind: 'rolling', days: 30 },
+      comparison: { kind: 'previous' },
+      granularity: 'auto',
+      defaultBranchOnly: true,
       fullRunsOnly: true,
     });
-    expect(parseAnalyticsScope({ days: '99999' }).days).toBe(3650);
+    expect(parseAnalyticsScope({ days: '99999' }).period).toEqual({ kind: 'all' });
     expect(
       parseAnalyticsScope(
         new URLSearchParams('days=7&projects=1,2&environments=staging,prod&branches=main&fullRunsOnly=false'),
       ),
-    ).toEqual({
-      days: 7,
+    ).toMatchObject({
+      period: { kind: 'rolling', days: 7 },
       projectIds: [1, 2],
       environments: ['staging', 'prod'],
       branches: ['main'],
+      defaultBranchOnly: false,
       fullRunsOnly: false,
     });
     // The legacy singular keys still parse, folded into the multi-value form.
@@ -239,6 +253,7 @@ describe('analytics scope parsing', () => {
       environments: ['staging'],
       branches: ['main'],
     });
+    expect(MAX_ANALYTICS_DAYS).toBe(3650);
   });
 });
 
@@ -411,6 +426,7 @@ describe('insight rules', () => {
         totalWaitMinutes: 0,
         totalFailedExecMinutes: 0,
         byProject: [],
+        cost: null,
         timeoutReclaimable: null,
       },
       clusters: { totalOpen: 0, resolvedInPeriod: 0, byErrorType: [], clusters: [] },
@@ -450,6 +466,7 @@ describe('insight rules', () => {
         totalWaitMinutes: 0,
         totalFailedExecMinutes: 0,
         byProject: [],
+        cost: null,
         timeoutReclaimable: null,
       },
       clusters: { totalOpen: 0, resolvedInPeriod: 0, byErrorType: [], clusters: [] },
@@ -522,5 +539,178 @@ describe('getAnalyticsSlowEndpoints', () => {
     const slow = await getAnalyticsSlowEndpoints(db, DEFAULT_SCOPE, new Set([2]));
     expect(slow.totalRequests).toBe(0);
     expect(slow.endpoints).toEqual([]);
+  });
+});
+
+describe('branch policy and test filters', () => {
+  let fdb: ReturnType<typeof drizzle<typeof schema>>;
+
+  async function run(projectId: number, day: number, extra: Partial<typeof schema.testRuns.$inferInsert> = {}) {
+    const [row] = await fdb
+      .insert(schema.testRuns)
+      .values({
+        projectId,
+        status: 'passed',
+        startTime: daysAgo(day),
+        duration: 60_000,
+        totalTests: 2,
+        passedTests: 2,
+        isFullRun: 1,
+        ...extra,
+      })
+      .returning({ id: schema.testRuns.id });
+    return row!.id;
+  }
+
+  beforeAll(async () => {
+    fdb = drizzle(createClient({ url: ':memory:' }), { schema });
+    await migrate(fdb, {
+      migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)),
+    });
+    await fdb.insert(schema.projects).values([
+      { id: 1, name: 'shop', defaultBranch: 'main' },
+      { id: 2, name: 'admin' },
+    ]);
+    await fdb.insert(schema.testCases).values([
+      { id: 10, projectId: 1, filePath: 'pay.spec.ts', title: 'pays', tags: ['smoke'] },
+      { id: 11, projectId: 1, filePath: 'cart.spec.ts', title: 'adds to cart', tags: [] },
+      { id: 20, projectId: 2, filePath: 'login.spec.ts', title: 'logs in', tags: ['smoke'] },
+    ]);
+    await fdb.insert(schema.testSelections).values({
+      projectId: 1,
+      key: 'checkout',
+      name: 'Checkout',
+      definition: { include: [{ files: ['pay.spec.ts'] }] },
+    });
+
+    // Project 1: one run on main, one with no branch, one on a feature branch.
+    const onMain = await run(1, 3, { branch: 'main' });
+    await run(1, 2);
+    const onFeature = await run(1, 1, { branch: 'feature/x', status: 'failed', passedTests: 0, failedTests: 2 });
+    await fdb.insert(schema.testRunsCases).values([
+      { testRunId: onMain, testCaseId: 10, status: 'passed', duration: 1_000, browserName: 'chromium' },
+      { testRunId: onMain, testCaseId: 11, status: 'passed', duration: 1_000, browserName: 'webkit' },
+      { testRunId: onFeature, testCaseId: 10, status: 'failed', duration: 2_000, browserName: 'chromium' },
+      { testRunId: onFeature, testCaseId: 11, status: 'failed', duration: 2_000, browserName: 'webkit' },
+    ]);
+    // Project 2 reports no branch: its runs count under the default-branch policy.
+    const adminRun = await run(2, 2);
+    await fdb
+      .insert(schema.testRunsCases)
+      .values([{ testRunId: adminRun, testCaseId: 20, status: 'passed', duration: 500, browserName: 'chromium' }]);
+    await backfillDailyRollups(fdb as any);
+  });
+
+  const portfolioOf = async (query: Record<string, string>, projectId: number) =>
+    (await getAnalyticsPortfolio(fdb, parseAnalyticsScope({ days: '30', ...query }))).find(
+      (r) => r.projectId === projectId,
+    )!;
+
+  test('the default branch policy counts the default branch and unknown-branch runs', async () => {
+    expect((await portfolioOf({}, 1)).runCount).toBe(2);
+    expect((await portfolioOf({}, 1)).passRate).toBe(100);
+    expect((await portfolioOf({}, 2)).runCount).toBe(1);
+  });
+
+  test('All branches counts everything, and a branch picked by hand counts only it', async () => {
+    expect((await portfolioOf({ allBranches: 'true' }, 1)).runCount).toBe(3);
+    const feature = await portfolioOf({ branches: 'feature/x' }, 1);
+    expect(feature.runCount).toBe(1);
+    expect(feature.passRate).toBe(0);
+  });
+
+  test('a test tag counts from the matching executions', async () => {
+    const all = await portfolioOf({ allBranches: 'true', tags: 'smoke' }, 1);
+    // Only `pays` is tagged smoke: passed on main, failed on the feature branch.
+    expect(all.runCount).toBe(2);
+    expect(all.passRate).toBe(50);
+  });
+
+  test('a selection key resolves per project, and a project without it is left out and named', async () => {
+    const scope = parseAnalyticsScope({ days: '30', allBranches: 'true', sel: 'checkout' });
+    const rows = await getAnalyticsPortfolio(fdb, scope);
+    expect(rows.map((r) => r.projectId)).toEqual([1]);
+    expect(rows[0]!.passRate).toBe(50);
+    const { getAnalyticsContext } = await import('../../shared/handlers/analytics/common');
+    const ctx = await getAnalyticsContext(fdb as any, scope);
+    expect(ctx.notes.join(' ')).toMatch(/admin has no selection "checkout"/);
+  });
+
+  test('a browser filter narrows the executions', async () => {
+    const webkit = await portfolioOf({ allBranches: 'true', browsers: 'webkit' }, 1);
+    expect(webkit.passRate).toBe(50);
+    const matrix = await getAnalyticsBrowserMatrix(fdb, parseAnalyticsScope({ days: '30', browsers: 'webkit' }));
+    expect(matrix.browsers).toEqual(['webkit']);
+  });
+
+  test('widgets that read the rollups agree with the stored runs', async () => {
+    const trend = await getAnalyticsCiTimeTrend(fdb, parseAnalyticsScope({ days: '30', allBranches: 'true' }));
+    expect(trend.runCount).toBe(4);
+    expect(trend.totalMinutes).toBe(4);
+  });
+});
+
+describe('metric widgets', () => {
+  test('every metric a widget can show has an evaluator', () => {
+    for (const id of WIDGET_METRIC_IDS) expect(isEvaluatedMetric(id), id).toBe(true);
+  });
+
+  test('stats: values over the period with their change against the previous one', async () => {
+    const stats = await getAnalyticsStats(db, DEFAULT_SCOPE, 'all', {
+      metrics: ['test-pass-rate', 'run-success-rate', 'flaky-tests', 'open-failure-causes', 'wasted-ci-minutes'],
+    });
+    const tile = (id: string) => stats.tiles.find((t) => t.metric === id)!;
+    // 22/30 on checkout + 20/20 on search = 42/50; the previous period was 20/20.
+    expect(tile('test-pass-rate')).toMatchObject({ value: 84, previous: 100, delta: -16, trend: 'worse' });
+    expect(tile('run-success-rate')).toMatchObject({ value: 40, previous: 100, trend: 'worse' });
+    expect(tile('flaky-tests').value).toBe(1);
+    expect(tile('open-failure-causes').value).toBe(2);
+    // No cost of a CI minute is configured, so the wasted minutes carry no cost.
+    expect(tile('wasted-ci-minutes').companion).toBeNull();
+    expect(stats.comparisonLabel).toBe('The previous period');
+  });
+
+  test('metric: a line with the comparison aligned bucket for bucket, or a single value', async () => {
+    const line = await getAnalyticsMetric(db, DEFAULT_SCOPE, 'all', { metric: 'test-pass-rate', display: 'line' });
+    expect(line.display).toBe('line');
+    expect(line.points.length).toBeGreaterThan(0);
+    expect(line.previousPoints).toHaveLength(line.points.length);
+    expect(line.points.some((p) => p.value !== null)).toBe(true);
+    const stat = await getAnalyticsMetric(db, DEFAULT_SCOPE, 'all', { metric: 'open-failure-causes', display: 'line' });
+    expect(stat.display).toBe('stat');
+    expect(stat.value.value).toBe(2);
+  });
+
+  test('widget options are checked against the schema', async () => {
+    await expect(runAnalyticsWidget(db, 'metric', DEFAULT_SCOPE, 'all', { metric: 'nope' })).rejects.toBeInstanceOf(
+      WidgetOptionsError,
+    );
+  });
+
+  test('verdict: a sharp drop reads as bad, in English and in French', async () => {
+    const verdict = await getAnalyticsVerdict(db, DEFAULT_SCOPE, 'all');
+    expect(verdict.tone).toBe('bad');
+    expect(verdict.facts).toMatchObject({ runs: 5, passRate: 84, passRateDelta: -16, open: 2 });
+    const en = sentencesFor('en').verdict(verdict.facts, makeFormatter('en'));
+    expect(en).toContain('fell 16 points to 84%');
+    expect(en).toContain('2 failure causes are still open.');
+    const fr = sentencesFor('fr').verdict(verdict.facts, makeFormatter('fr'));
+    expect(fr).toContain('a perdu 16 points');
+  });
+
+  test('risks: the pass-rate drop, the failing streak and the oldest open cause', async () => {
+    const risks = await getAnalyticsRisks(db, DEFAULT_SCOPE, 'all');
+    expect(risks.worsening.map((w) => w.metric)).toContain('test-pass-rate');
+    expect(risks.failingProjects).toEqual([{ projectId: 1, name: 'checkout', streak: 3 }]);
+    expect(risks.oldestOpen[0]).toMatchObject({ projectName: 'checkout', ageDays: 40 });
+    expect(risks.openCount).toBe(2);
+  });
+
+  test('progress: nothing fixed in the period says so', async () => {
+    const progress = await getAnalyticsProgress(db, DEFAULT_SCOPE, 'all');
+    expect(progress.fixed).toBe(0);
+    expect(sentencesFor('en').progress(progress, makeFormatter('en'))[0]).toBe(
+      'No failure cause was fixed in the period.',
+    );
   });
 });

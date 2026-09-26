@@ -1,9 +1,10 @@
-import { and, count, inArray, isNotNull, isNull, lt, sql } from 'drizzle-orm';
+import { and, count, eq, inArray, isNotNull, isNull, lt, sql } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
 import type { SQLiteTable } from 'drizzle-orm/sqlite-core';
 import { getDialect } from '../database';
 import type { DbClient } from '../database';
 import {
+  analyticsDashboards,
   casePayloads,
   entityLinks,
   failureClusters,
@@ -15,6 +16,7 @@ import {
   locatorSnapshots,
   networkRequests,
   notificationDeliveries,
+  reportSnapshots,
   shareLinks,
   subscriptions,
   testRuns,
@@ -23,6 +25,10 @@ import {
 import { deleteFileRow, deleteRunStorageDir, gcTraceBlobs } from './delete-run-files';
 import { deleteGraphRowsForRuns } from './graph-ingest';
 import { recomputeClusterOccurrences } from '#shared/handlers/failure-cluster-ops';
+import { archiveRunsIntoRollups, recomputeRollupCells } from '#shared/handlers/analytics/rollups';
+import { dayKey } from '#shared/handlers/analytics/common';
+import type { DrizzleDB } from '#shared/handlers/db';
+import { deleteDashboardRows } from '#shared/handlers/dashboards';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -56,15 +62,25 @@ export interface DeleteRunsResult {
  * gone, so a blob shared by several deleted rows (or by another run) is counted
  * correctly — a per-row refcount taken before deletion sees the not-yet-deleted
  * siblings and leaks the blob.
+ *
+ * The daily rollups follow in the transaction that deletes the run rows: the
+ * retained rows of the touched days are recomputed from the runs that stay.
+ * With `archiveRollups` (age-based deletion) the deleted runs' numbers are
+ * first added to their cells' archived rows, so the day keeps them; without it
+ * (deleting a run by hand) the run's numbers leave the day.
  */
-export async function deleteRunsByIds(db: DbClient, runIds: number[]): Promise<DeleteRunsResult> {
+export async function deleteRunsByIds(
+  db: DbClient,
+  runIds: number[],
+  options: { archiveRollups?: boolean } = {},
+): Promise<DeleteRunsResult> {
   if (runIds.length === 0) return { deletedRuns: 0, deletedCases: 0 };
 
-  const runs: { id: number; projectId: number }[] = [];
+  const runs: { id: number; projectId: number; startTime: Date }[] = [];
   for (const batch of batches(runIds)) {
     runs.push(
       ...(await db
-        .select({ id: testRuns.id, projectId: testRuns.projectId })
+        .select({ id: testRuns.id, projectId: testRuns.projectId, startTime: testRuns.startTime })
         .from(testRuns)
         .where(inArray(testRuns.id, batch))),
     );
@@ -172,12 +188,18 @@ export async function deleteRunsByIds(db: DbClient, runIds: number[]): Promise<D
       .where(inArray(locatorSnapshots.lastSeenRunId, batch));
   }
 
-  for (const batch of batches(presentRunIds)) {
-    await db.delete(testRunsCases).where(inArray(testRunsCases.testRunId, batch));
-  }
-  for (const batch of batches(presentRunIds)) {
-    await db.delete(testRuns).where(inArray(testRuns.id, batch));
-  }
+  const touchedDays = runs.map((run) => ({ projectId: run.projectId, day: dayKey(run.startTime) }));
+  await db.transaction(async (tx) => {
+    const txDb = tx as unknown as DrizzleDB;
+    if (options.archiveRollups) await archiveRunsIntoRollups(txDb, presentRunIds);
+    for (const batch of batches(presentRunIds)) {
+      await tx.delete(testRunsCases).where(inArray(testRunsCases.testRunId, batch));
+    }
+    for (const batch of batches(presentRunIds)) {
+      await tx.delete(testRuns).where(inArray(testRuns.id, batch));
+    }
+    await recomputeRollupCells(txDb, touchedDays);
+  });
 
   // Graph nodes/edges whose newest evidence was a deleted run, per project, so
   // the feature-graph tables never point at runs that no longer exist.
@@ -241,7 +263,8 @@ function notAmongNewest(keep: number): SQL {
  * protected when it is kept forever (`kept_at` set), or when it is among the
  * newest `keepNewestPerProject` runs of its project — so a project that stops
  * reporting keeps its last runs instead of emptying. Thin wrapper over
- * {@link deleteRunsByIds}, which owns the full deletion.
+ * {@link deleteRunsByIds}, which owns the full deletion; age-based deletion is
+ * archival, so the deleted runs' numbers move to the rollups' archived rows.
  */
 export async function deleteRunsOlderThan(
   db: DbClient,
@@ -270,6 +293,7 @@ export async function deleteRunsOlderThan(
   const deleted = await deleteRunsByIds(
     db,
     doomed.map((r) => r.id),
+    { archiveRollups: true },
   );
   return { ...deleted, skippedKept, skippedNewest };
 }
@@ -295,6 +319,7 @@ export interface OrphanSweepResult {
   notificationDeliveries: number;
   casePayloads: number;
   shareLinks: number;
+  dashboards: number;
 }
 
 async function countWhere(db: DbClient, table: SQLiteTable, where: SQL): Promise<number> {
@@ -326,6 +351,8 @@ export async function sweepOrphans(db: DbClient): Promise<OrphanSweepResult> {
   // so a link whose entity was pruned lingers until this sweep removes it.
   const orphanedShareLinks = sql`(${shareLinks.entityKind} = 'execution' AND NOT EXISTS (SELECT 1 FROM ${testRunsCases} WHERE ${testRunsCases.id} = ${shareLinks.entityId}))
     OR (${shareLinks.entityKind} = 'cluster' AND NOT EXISTS (SELECT 1 FROM ${failureClusters} WHERE ${failureClusters.id} = ${shareLinks.entityId}))`;
+  // A private dashboard whose owner was deleted has no one left who can open it; a shared one stays.
+  const orphanedDashboards = and(eq(analyticsDashboards.visibility, 'private'), isNull(analyticsDashboards.ownerId))!;
 
   const result: OrphanSweepResult = {
     networkRequests: await countWhere(db, networkRequests, orphanedNetworkRequests),
@@ -336,6 +363,7 @@ export async function sweepOrphans(db: DbClient): Promise<OrphanSweepResult> {
     notificationDeliveries: await countWhere(db, notificationDeliveries, orphanedDeliveries),
     casePayloads: await countWhere(db, casePayloads, orphanedPayloads),
     shareLinks: await countWhere(db, shareLinks, orphanedShareLinks),
+    dashboards: await countWhere(db, analyticsDashboards, orphanedDashboards),
   };
 
   await db.delete(networkRequests).where(orphanedNetworkRequests);
@@ -348,6 +376,7 @@ export async function sweepOrphans(db: DbClient): Promise<OrphanSweepResult> {
   await db.delete(notificationDeliveries).where(orphanedDeliveries);
   await db.delete(casePayloads).where(orphanedPayloads);
   await db.delete(shareLinks).where(orphanedShareLinks);
+  if (result.dashboards > 0) await deleteDashboardRows(db as unknown as DrizzleDB, orphanedDashboards);
 
   return result;
 }
@@ -367,6 +396,20 @@ export async function pruneNotificationDeliveries(db: DbClient, olderThanDays: n
   )!;
   const pruned = await countWhere(db, notificationDeliveries, settled);
   if (pruned > 0) await db.delete(notificationDeliveries).where(settled);
+  return pruned;
+}
+
+/** Days a report snapshot is kept when `PIWI_RETENTION_REPORT_DAYS` is unset. */
+export const DEFAULT_REPORT_RETENTION_DAYS = 365;
+
+/**
+ * Delete report snapshots generated before the cutoff. A snapshot is a frozen
+ * quality report of a few tens of kilobytes; its schedule stays.
+ */
+export async function pruneReportSnapshots(db: DbClient, olderThanDays: number): Promise<number> {
+  const old = lt(reportSnapshots.generatedAt, new Date(Date.now() - olderThanDays * MS_PER_DAY));
+  const pruned = await countWhere(db, reportSnapshots, old);
+  if (pruned > 0) await db.delete(reportSnapshots).where(old);
   return pruned;
 }
 

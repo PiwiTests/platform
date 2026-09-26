@@ -348,6 +348,16 @@ export const PIWI_ENV_VARS = {
     default: '30',
     min: 0,
   },
+  PIWI_RETENTION_REPORT_DAYS: {
+    description:
+      'Days to keep report snapshots (the stored quality reports on the Reports page) before the nightly sweep prunes them (default 365; 0 keeps them forever).',
+    category: 'database',
+    type: 'number',
+    default: '365',
+    min: 0,
+    since: '0.39.0',
+    docs: 'features/quality-reports#report-schedules',
+  },
   PIWI_RETENTION_DIAGNOSIS_VERSIONS: {
     description:
       'AI-diagnosis history versions kept per diagnosis by the nightly sweep (default 20; 0 disables capping).',
@@ -429,6 +439,15 @@ export const PIWI_ENV_VARS = {
     relevantWhen: { PIWI_AUTH_ENABLED: 'true' },
     requiredWhen: { PIWI_AUTH_ENABLED: 'true' },
     notes: 'The server refuses to start when auth is enabled and this is unset.',
+  },
+  PIWI_METRICS_ENABLED: {
+    description:
+      'Set to "true" to serve GET /api/metrics: the metric catalog\'s current values per project in the OpenMetrics text format, for a Prometheus or a Grafana you run to pull (Piwi sends nothing anywhere). Off by default. With authentication on, the scraper sends an API key, and sees the projects of its user.',
+    category: 'general',
+    type: 'boolean',
+    default: 'false',
+    since: '0.39.0',
+    docs: 'operate/metrics',
   },
   PIWI_SHARE_LINKS_ENABLED: {
     description:
@@ -1173,6 +1192,15 @@ export const PIWI_ENV_VARS = {
     default: 'Wait for timeout*,*waitForTimeout*',
     notes:
       'Case-insensitive globs (`*` and `?`) matched against a wait step’s title or source location. Use `*` to count every wait.',
+  },
+
+  PIWI_CI_MINUTE_COST: {
+    description:
+      'Cost of one CI minute as an amount and an ISO 4217 currency code (e.g. "0.008 USD"). When set, every wasted-time number in the analytics widgets and quality reports is followed by its cost, and the setting in Settings → Performance is read-only. Unset shows minutes only.',
+    category: 'wasted-time',
+    example: '0.008 USD',
+    since: '0.39.0',
+    docs: 'features/quality-reports#cost-of-a-ci-minute',
   },
 
   // ── Demo / build mode ────────────────────────────────────────────────────

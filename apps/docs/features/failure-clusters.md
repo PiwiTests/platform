@@ -7,13 +7,11 @@ lang: en-US
 
 <Needs reporter />
 
-A run gives you a list of failures. The same root cause usually breaks several tests, and the same break
-comes back run after run — so a list of failures is really a shorter list of *problems*, repeated.
-Piwi groups failures by that root cause into **failure clusters**, and Home turns those clusters
-into a **failure inbox**: a queue of the problems you still owe a decision.
+One root cause usually breaks several tests, run after run, so a list of failures is really a shorter
+list of *problems*. Piwi groups failures by root cause into **failure clusters**, and Home turns them
+into a **failure inbox**: the problems you still owe a decision.
 
-For how clusters are formed (the error fingerprint) and diagnosed, see
-[AI diagnosis & clustering](./ai-diagnosis#failure-clustering).
+How clusters form and get diagnosed: [AI diagnosis & clustering](./ai-diagnosis#failure-clustering).
 
 ## The failure inbox
 
@@ -76,7 +74,7 @@ signed-in user (by name or email, best effort).
 
 ## The cluster page
 
-Open a cluster and it reads as the same three questions the [execution page](./evidence#one-execution-diagnosis-first) answers, for the failure across every test that shares it:
+Open a cluster and it answers the three questions of the [execution page](./evidence#one-execution-diagnosis-first), across every test that shares the failure:
 
 - **What broke** — the cluster's **name** as the heading (its [AI title](./ai-diagnosis) when one exists, else the deterministic fingerprint name), with the **latest occurrence's headline** as a smaller second line only when it adds a value the name doesn't.
 - **Most likely** — the one explanation: the completed [diagnosis](./ai-diagnosis) when there is one, else the [story or top clue](./evidence#clues) from the latest occurrence.
@@ -100,6 +98,11 @@ Two menus sit beside it:
 
 - **Triage** sets the status (open / resolved / ignored), an optional note, and the assignee.
 - **Snooze** hides the cluster from the inbox (see below), or brings a snoozed one back.
+
+### Occurrences over time
+
+A chart under the evidence counts the cluster's failures per day, week or month, marking when its **fix
+landed** and any failure after it.
 
 ## Snoozing
 

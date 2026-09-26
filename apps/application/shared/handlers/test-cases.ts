@@ -10,7 +10,9 @@ import {
   networkRequests,
   quarantinedTests,
 } from '../../server/database/schema';
-import { eq, and, desc, sql, isNull, isNotNull } from 'drizzle-orm';
+import { eq, and, desc, gte, sql, isNull, isNotNull } from 'drizzle-orm';
+import { makeTimeBuckets } from './analytics/common';
+import type { Granularity } from '../analytics/period';
 import { computeWastedMs, DEFAULT_WASTED_WAIT_PATTERNS } from '../utils/wasted-waits';
 import { inlineCasePayloads } from '../../server/utils/case-payloads';
 import { buildFailureVerdict } from '../failure-verdict';
@@ -1048,63 +1050,90 @@ export async function getTestRunCaseTraces(db: DrizzleDB, id: number) {
   }));
 }
 
-/**
- * Time-series stability of a single test case: the last 200 executions grouped
- * into `bucketCount` chronological buckets with flaky rate, pass rate, and
- * average duration. Shared by the REST stability-trend endpoint and the MCP
- * `get_test_stability_trend` tool.
- */
-export async function getTestCaseStabilityTrend(db: DrizzleDB, testCaseId: number, bucketCount: number) {
-  const buckets = Math.min(50, Math.max(5, bucketCount));
+/** How far back the stability trend of a test case reaches by default. */
+export const STABILITY_TREND_DEFAULT_DAYS = 90;
 
+export interface TestCaseStabilityBucket {
+  /** Bucket start (`YYYY-MM-DD`, UTC). */
+  date: string;
+  /** Executions in the bucket. */
+  totalRuns: number;
+  /** Passed executions over executions, 0–1; null without an execution. */
+  passRate: number | null;
+  /** Executions that passed only on a retry over executions, 0–1; null without an execution. */
+  flakyRate: number | null;
+  /** Average duration of the bucket's executions in ms; null without a duration. */
+  avgDuration: number | null;
+}
+
+export interface TestCaseStabilityTrend {
+  testCaseId: number;
+  /** Days one bucket spans (1 daily, 7 weekly, 30 for calendar months). */
+  bucketDays: number;
+  buckets: TestCaseStabilityBucket[];
+}
+
+/**
+ * Stability of a single test case over time: its executions of the last
+ * `days` days (probe runs left out) in UTC time buckets, each with its pass
+ * rate, flaky rate and average duration. The buckets follow the analytics
+ * granularity (`auto` keeps about 31 of them), and a bucket without an
+ * execution is a gap. Shared by the REST stability-trend endpoint, the Trend
+ * tab of the test page and the MCP `get_test_stability_trend` tool.
+ */
+export async function getTestCaseStabilityTrend(
+  db: DrizzleDB,
+  testCaseId: number,
+  options: { days?: number; granularity?: Granularity; now?: number } = {},
+): Promise<TestCaseStabilityTrend> {
+  const days = Math.min(3650, Math.max(1, Math.round(options.days ?? STABILITY_TREND_DEFAULT_DAYS)));
+  const now = options.now ?? Date.now();
   const tcRows: any[] = await db.select({ id: testCases.id }).from(testCases).where(eq(testCases.id, testCaseId));
   if (tcRows.length === 0) throw new Error('Test case not found');
 
+  const from = Date.parse(`${new Date(now - (days - 1) * 86_400_000).toISOString().slice(0, 10)}T00:00:00Z`);
   const rawRows: any[] = await db
     .select({
-      id: testRunsCases.id,
       status: testRunsCases.status,
       duration: testRunsCases.duration,
       retries: testRunsCases.retries,
-      testRunId: testRunsCases.testRunId,
       startTime: testRuns.startTime,
       runMetadata: testRuns.metadata,
     })
     .from(testRunsCases)
     .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
-    .where(eq(testRunsCases.testCaseId, testCaseId))
-    .orderBy(desc(testRuns.startTime))
-    .limit(200);
+    .where(and(eq(testRunsCases.testCaseId, testCaseId), gte(testRuns.startTime, new Date(from))));
 
-  // Probe runs replay a test with an injected fault, so they never shape the trend.
-  const rows: any[] = rawRows.filter((r) => !isProbeRun(r.runMetadata));
-  if (rows.length === 0) return { testCaseId, buckets: [] };
-
-  rows.reverse();
-
-  const bucketSize = Math.max(1, Math.floor(rows.length / buckets));
-  const result: Array<{ date: string; flakyRate: number; passRate: number; avgDuration: number; totalRuns: number }> =
-    [];
-
-  for (let i = 0; i < rows.length; i += bucketSize) {
-    const slice = rows.slice(i, i + bucketSize);
-    const totalRuns = slice.length;
-    const passedRuns = slice.filter((r: any) => r.status === 'passed').length;
-    const flakyRuns = slice.filter((r: any) => r.status === 'passed' && (r.retries ?? 0) > 0).length;
-    const durations = slice.filter((r: any) => r.duration != null).map((r: any) => r.duration);
-    const avgDuration =
-      durations.length > 0 ? Math.round(durations.reduce((a: number, b: number) => a + b, 0) / durations.length) : 0;
-    const midIndex = Math.min(slice.length - 1, Math.floor(slice.length / 2));
-    const date = slice[midIndex]?.startTime?.toISOString?.()?.slice(0, 10) ?? '';
-
-    result.push({
-      date,
-      flakyRate: Math.round((flakyRuns / totalRuns) * 100) / 100,
-      passRate: Math.round((passedRuns / totalRuns) * 100) / 100,
-      avgDuration,
-      totalRuns,
-    });
+  const buckets = makeTimeBuckets(from, now + 1, options.granularity ?? 'auto');
+  const tally = new Map<string, { total: number; passed: number; flaky: number; durations: number[] }>();
+  for (const row of rawRows) {
+    // Probe runs replay a test with an injected fault, so they never shape the trend.
+    if (isProbeRun(row.runMetadata)) continue;
+    const key = buckets.keyFor(row.startTime);
+    if (!key) continue;
+    const t = tally.get(key) ?? { total: 0, passed: 0, flaky: 0, durations: [] };
+    t.total += 1;
+    if (row.status === 'passed') {
+      t.passed += 1;
+      if ((row.retries ?? 0) > 0) t.flaky += 1;
+    }
+    if (row.duration != null) t.durations.push(row.duration);
+    tally.set(key, t);
   }
-
-  return { testCaseId, buckets: result };
+  const rate = (n: number, d: number) => (d > 0 ? Math.round((n / d) * 100) / 100 : null);
+  return {
+    testCaseId,
+    bucketDays: buckets.bucketDays,
+    buckets: buckets.keys.map((date) => {
+      const t = tally.get(date);
+      return {
+        date,
+        totalRuns: t?.total ?? 0,
+        passRate: t ? rate(t.passed, t.total) : null,
+        flakyRate: t ? rate(t.flaky, t.total) : null,
+        avgDuration:
+          t && t.durations.length > 0 ? Math.round(t.durations.reduce((a, b) => a + b, 0) / t.durations.length) : null,
+      };
+    }),
+  };
 }

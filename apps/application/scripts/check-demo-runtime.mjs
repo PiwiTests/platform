@@ -204,6 +204,67 @@ async function main() {
     check(pdfDownload.suggestedFilename().endsWith('.pdf'), 'the download is named as a PDF');
     check(pdfBytes.subarray(0, 5).toString('latin1') === '%PDF-', 'the PDF is a real vector document');
 
+    // The analytics page is the Overview dashboard; its Export previews a quality
+    // report built in the service worker and downloads it as a PDF.
+    await page.goto(`${ORIGIN}${BASE}analytics`, { waitUntil: 'domcontentloaded' });
+    const tile = page.getByTestId('stat-test-pass-rate');
+    await tile.waitFor({ timeout: 60000 }).catch(() => {});
+    check(await tile.isVisible(), 'the analytics page shows the headline tiles');
+    const preview = page.getByTestId('report-view');
+    for (let attempt = 0; attempt < 20 && !(await preview.isVisible()); attempt++) {
+      await page.getByRole('button', { name: 'Export', exact: true }).first().click();
+      await preview.waitFor({ timeout: 3000 }).catch(() => {});
+    }
+    check(await preview.isVisible(), 'Export previews the quality report');
+    await page.getByTestId('report-download').click();
+    const [reportPdf] = await Promise.all([
+      page.waitForEvent('download', { timeout: 30000 }),
+      page.getByRole('menuitem', { name: 'PDF' }).click(),
+    ]);
+    const reportPath = await reportPdf.path();
+    const reportBytes = reportPath ? await readFile(reportPath) : Buffer.alloc(0);
+    check(
+      reportBytes.subarray(0, 5).toString('latin1') === '%PDF-',
+      'the quality report downloads as a PDF',
+      `${reportBytes.length} bytes as ${reportPdf.suggestedFilename()}`,
+    );
+
+    // The Reports page lists the two report snapshots the demo seeds when its
+    // database opens, and one opens on its own page.
+    await page.goto(`${ORIGIN}${BASE}reports`, { waitUntil: 'domcontentloaded' });
+    const snapshots = page.getByTestId('snapshot-list').locator('li');
+    await snapshots
+      .first()
+      .waitFor({ timeout: 60000 })
+      .catch(() => {});
+    check(
+      (await snapshots.count()) === 2,
+      'the Reports page lists the two seeded snapshots',
+      `${await snapshots.count()}`,
+    );
+    check(await page.getByTestId('schedule-list').isVisible(), 'the Reports page lists the seeded schedule');
+    await page.getByTestId('snapshot-list').getByRole('link').first().click();
+    const snapshotView = page.getByTestId('report-view');
+    await snapshotView.waitFor({ timeout: 60000 }).catch(() => {});
+    check(await snapshotView.isVisible(), 'a report snapshot opens on its page');
+
+    // The seeded saved dashboards: the switcher lists them, and one renders its
+    // widgets through the saved dashboard's own widget route.
+    await page.goto(`${ORIGIN}${BASE}analytics/d/1`, { waitUntil: 'domcontentloaded' });
+    const switcher = page.getByTestId('dashboard-switcher');
+    await switcher.waitFor({ timeout: 60000 }).catch(() => {});
+    check((await switcher.textContent())?.includes('Checkout team') === true, 'a seeded saved dashboard opens');
+    const note = page.locator('[data-shot="analytics-note"]').getByText('Sprint goal');
+    await note.waitFor({ timeout: 60000 }).catch(() => {});
+    check(await note.isVisible(), 'the saved dashboard renders its widgets');
+    await switcher.click();
+    const switcherMenu = page.getByTestId('dashboard-switcher-menu');
+    await switcherMenu.waitFor({ timeout: 30000 }).catch(() => {});
+    check(
+      (await switcherMenu.textContent())?.includes('Wasted CI by browser') === true,
+      'the switcher lists the seeded dashboards',
+    );
+
     check(
       escapedApiUrls.size === 0,
       'every API request stays inside the demo base path',
@@ -224,7 +285,9 @@ async function main() {
     for (const f of failures) console.error(`  - ${f}`);
     process.exit(1);
   }
-  console.log('✓ The built demo runs: service worker, in-browser API and export download all work.');
+  console.log(
+    '✓ The built demo runs: service worker, in-browser API, export download, quality report, report snapshots and saved dashboards all work.',
+  );
 }
 
 await main();

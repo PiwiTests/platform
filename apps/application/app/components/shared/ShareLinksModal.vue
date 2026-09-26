@@ -11,22 +11,64 @@ interface ShareLinkSummary {
   viewCount: number;
 }
 
-const props = defineProps<{
-  /** API path the mint/list endpoints live at, e.g. `/api/failure-clusters/12/share-links`. */
-  endpoint: string;
-}>();
+const props = withDefaults(
+  defineProps<{
+    /** API path the mint/list endpoints live at, e.g. `/api/failure-clusters/12/share-links`. */
+    endpoint: string;
+    /**
+     * What the link opens: an investigation (an execution or a failure cluster), a report snapshot,
+     * or a saved dashboard rendered live. A report or a dashboard link also gets a badge and a chart image.
+     */
+    kind?: 'investigation' | 'report' | 'dashboard';
+    /** Render the Share button; without it the parent opens the modal through `v-model:open`. */
+    trigger?: boolean;
+  }>(),
+  { kind: 'investigation', trigger: true },
+);
+
+const open = defineModel<boolean>('open', { default: false });
 
 const toast = useToast();
 const { copy } = useCopy();
 const { hasRole } = useAuth();
 const config = useRuntimeConfig();
 
-const open = ref(false);
 const settings = ref<{ enabled: boolean; maxTtlDays: number } | null>(null);
 const links = ref<ShareLinkSummary[]>([]);
 const loading = ref(false);
 const minting = ref(false);
 const mintedUrl = ref<string | null>(null);
+const mintedBadgeUrl = ref<string | null>(null);
+const mintedChartUrl = ref<string | null>(null);
+
+const COPY = {
+  investigation: {
+    title: 'Share links',
+    description: 'Read-only links anyone can open — no account needed.',
+    minted: 'Anyone holding it can view this investigation until it expires or is revoked.',
+    empty: 'No share links yet for this page.',
+    footer: 'A link renders the same bounded report as an offline export, live at view time —',
+  },
+  report: {
+    title: 'Share this quality report',
+    description: 'A read-only link to this report snapshot, with a status badge. No account needed.',
+    minted: 'Anyone holding it can read this quality report until it expires or is revoked.',
+    empty: 'No share links yet for this quality report.',
+    footer: 'The link shows the report as it was generated, whatever retention did since —',
+  },
+  dashboard: {
+    title: 'Live dashboard links',
+    description: 'A read-only page for a wall screen or a bookmark, computed at every view. No account needed.',
+    minted:
+      'Anyone holding it sees this dashboard, computed with your project access, until it expires, is revoked, or you lose that access.',
+    empty: 'No live dashboard links yet.',
+    footer: 'The page reloads every minute and never serves evidence files —',
+  },
+} as const;
+const copyText = computed(() => COPY[props.kind]);
+const markdownBadge = computed(() =>
+  mintedBadgeUrl.value && mintedUrl.value ? `[![Piwi](${mintedBadgeUrl.value})](${mintedUrl.value})` : null,
+);
 
 // UI affordance only — the server enforces roles from each route's meta.
 const canManage = computed(() => !config.public.authEnabled || hasRole([Role.ADMINISTRATOR, Role.REPORTER]));
@@ -44,6 +86,8 @@ const ttlOptions = computed(() => {
 watch(open, async (isOpen) => {
   if (!isOpen) {
     mintedUrl.value = null;
+    mintedBadgeUrl.value = null;
+    mintedChartUrl.value = null;
     return;
   }
   loading.value = true;
@@ -65,11 +109,13 @@ watch(open, async (isOpen) => {
 async function mint() {
   minting.value = true;
   try {
-    const result = await $fetch<{ url: string }>(props.endpoint, {
+    const result = await $fetch<{ url: string; badgeUrl?: string; chartUrl?: string }>(props.endpoint, {
       method: 'POST',
       body: { ttlDays: ttlDays.value === 0 ? null : ttlDays.value },
     });
     mintedUrl.value = result.url;
+    mintedBadgeUrl.value = result.badgeUrl ?? null;
+    mintedChartUrl.value = result.chartUrl ?? null;
     const listData = await $fetch<{ items: ShareLinkSummary[] }>(props.endpoint);
     links.value = listData.items;
   } catch (error) {
@@ -98,6 +144,10 @@ function copyMinted() {
   copy(mintedUrl.value, { toast: 'Share link copied to clipboard' });
 }
 
+function copyValue(text: string | null, toast: string) {
+  copy(text, { toast });
+}
+
 function linkState(link: ShareLinkSummary): { label: string; color: 'success' | 'neutral' | 'warning' } {
   if (link.revokedAt) return { label: 'Revoked', color: 'neutral' };
   if (link.expiresAt && new Date(link.expiresAt).getTime() <= Date.now()) return { label: 'Expired', color: 'neutral' };
@@ -108,6 +158,7 @@ function linkState(link: ShareLinkSummary): { label: string; color: 'success' | 
 
 <template>
   <UButton
+    v-if="trigger"
     icon="i-lucide-link"
     size="xs"
     color="neutral"
@@ -119,7 +170,7 @@ function linkState(link: ShareLinkSummary): { label: string; color: 'success' | 
     <span class="hidden xl:inline">Share</span>
   </UButton>
 
-  <UModal v-model:open="open" title="Share links" description="Read-only links anyone can open — no account needed.">
+  <UModal v-model:open="open" :title="copyText.title" :description="copyText.description">
     <template #body>
       <LoadingState v-if="loading" text="Loading share links…" />
 
@@ -140,11 +191,39 @@ function linkState(link: ShareLinkSummary): { label: string; color: 'success' | 
             variant="subtle"
             icon="i-lucide-check"
             title="Link created — copy it now"
-            description="For safety, the full link is shown only once. Anyone holding it can view this investigation until it expires or is revoked."
+            :description="`For safety, the full link is shown only once. ${copyText.minted}`"
           />
           <div v-if="mintedUrl" class="flex gap-2">
-            <UInput :model-value="mintedUrl" readonly class="flex-1 font-mono" size="sm" />
+            <UInput
+              :model-value="mintedUrl"
+              readonly
+              class="flex-1 min-w-0 font-mono"
+              size="sm"
+              data-testid="minted-share-url"
+            />
             <UButton icon="i-lucide-copy" size="sm" color="neutral" variant="outline" @click="copyMinted">Copy</UButton>
+          </div>
+          <div v-if="mintedUrl && markdownBadge" class="space-y-2" data-testid="minted-badge">
+            <div class="flex items-center gap-2">
+              <p class="text-xs font-medium text-muted">Status badge</p>
+              <HelpHint topic="share-links.badge" />
+            </div>
+            <img :src="mintedBadgeUrl!" alt="Status badge" class="h-5 max-w-full" />
+            <div class="flex gap-2">
+              <UInput :model-value="markdownBadge" readonly class="flex-1 min-w-0 font-mono" size="sm" />
+              <UButton
+                icon="i-lucide-copy"
+                size="sm"
+                color="neutral"
+                variant="outline"
+                title="Copy the badge as Markdown, for a README or a wiki page"
+                @click="copyValue(markdownBadge, 'Badge Markdown copied to clipboard')"
+                >Copy</UButton
+              >
+            </div>
+            <p v-if="mintedChartUrl" class="text-xs text-muted break-all">
+              Trend image: <span class="font-mono">{{ mintedChartUrl }}</span>
+            </p>
           </div>
 
           <div v-else-if="canManage" class="flex items-end gap-2">
@@ -178,10 +257,11 @@ function linkState(link: ShareLinkSummary): { label: string; color: 'success' | 
             />
           </div>
         </div>
-        <EmptyState v-else-if="settings?.enabled" text="No share links yet for this page." />
+        <EmptyState v-else-if="settings?.enabled" :text="copyText.empty" />
 
-        <p class="text-xs text-gray-400">
-          A link renders the same bounded report as an offline export, live at view time —
+        <p class="text-xs text-muted">
+          <HelpHint v-if="kind === 'dashboard'" topic="dashboards.live-links" class="align-middle" />
+          {{ copyText.footer }}
           <DocLink to="features/share-links" no-icon class="text-primary hover:underline">how share links work</DocLink
           >.
         </p>
