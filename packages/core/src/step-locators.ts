@@ -60,6 +60,67 @@ const ACTION_TITLES: ReadonlyArray<readonly [string, string]> = [
   ['Evaluate', 'evaluate'],
 ];
 
+/** Readable names for the stored action keys, in sentence case. */
+const ACTION_LABELS: Readonly<Record<string, string>> = {
+  click: 'Click',
+  dblclick: 'Double click',
+  fill: 'Fill',
+  selectOption: 'Select option',
+  check: 'Check',
+  uncheck: 'Uncheck',
+  hover: 'Hover',
+  tap: 'Tap',
+  focus: 'Focus',
+  blur: 'Blur',
+  press: 'Press',
+  type: 'Type',
+  setInputFiles: 'Set input files',
+  dragTo: 'Drag and drop',
+  drop: 'Drop',
+  dispatchEvent: 'Dispatch event',
+  scrollIntoViewIfNeeded: 'Scroll into view',
+  waitFor: 'Wait for',
+  count: 'Count',
+  evaluate: 'Evaluate',
+  expect: 'Expect',
+  other: 'Other',
+};
+
+/** A stored action key (`selectOption`, `expect.not.toBeVisible`, …) as a sentence-case label. */
+export function locatorActionLabel(action: string): string {
+  if (action.startsWith('expect.')) {
+    const rest = action.slice('expect.'.length);
+    return rest.startsWith('not.') ? `Expect not ${rest.slice(4)}` : `Expect ${rest}`;
+  }
+  return ACTION_LABELS[action] ?? action;
+}
+
+/** Actions that operate the element, as opposed to reading or asserting on it. */
+const INTERACTIONS = new Set([
+  'click',
+  'dblclick',
+  'fill',
+  'selectOption',
+  'check',
+  'uncheck',
+  'hover',
+  'tap',
+  'focus',
+  'blur',
+  'press',
+  'type',
+  'setInputFiles',
+  'dragTo',
+  'drop',
+  'dispatchEvent',
+  'scrollIntoViewIfNeeded',
+]);
+
+/** Whether a stored action operates the element (a click, a fill, …) rather than asserting on it. */
+export function isInteractionAction(action: string): boolean {
+  return INTERACTIONS.has(action);
+}
+
 /** Index just past a quoted value opened at `open` (the index of its `"`). */
 function endOfQuoted(title: string, open: number): number {
   for (let i = open + 1; i < title.length; i++) {

@@ -3,10 +3,11 @@ import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
 import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
+import { eq } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
 
 delete process.env.PIWI_DATABASE_URL;
-const { upsertLocatorUsages, getExecutionLocators, getLocatorUsages, backfillLocatorUsages } =
+const { upsertLocatorUsages, getExecutionLocators, getLocatorUsages, backfillLocatorUsages, getLocatorIndex } =
   await import('../../server/utils/locator-usages');
 type LocatorUsageCase = import('../../server/utils/locator-usages').LocatorUsageCase;
 
@@ -349,5 +350,68 @@ describe('getLocatorUsages', () => {
 
   test('search treats LIKE wildcards literally', async () => {
     expect((await getLocatorUsages(db as never, 1, 'search', '%')).testCount).toBe(0);
+  });
+});
+
+describe('getLocatorIndex', () => {
+  test("groups uses by chain, most-used first, with each test's actions, call sites and projects", async () => {
+    await seedCase(1, 'pays by card');
+    await seedCase(2, 'pays with a voucher', 'tests/voucher.spec.ts');
+    await db.update(schema.testCases).set({ suitePath: 'Checkout\x1fPayment' }).where(eq(schema.testCases.id, 1));
+    const run = await seedRun({ metadata: { htmlReport: { projects: [{ use: { testIdAttribute: 'data-qa' } }] } } });
+    await seedExecution(run, 1, [], { status: 'passed' });
+    await seedExecution(run, 2, [], { status: 'failed' });
+    await upsertLocatorUsages(db as never, 1, [
+      exec(run, [
+        step(`Select option ${COUNTRY}`, COUNTRY, 'pages/checkout.ts:10:5'),
+        step(`Click ${PAY}`, PAY, 'pages/checkout.ts:20:5'),
+      ]),
+      exec(run, [step(`Click ${PAY}`, PAY, 'tests/voucher.spec.ts:8:3')], {
+        caseId: 2,
+        browserName: 'mobile-safari',
+        filePath: 'tests/voucher.spec.ts',
+      }),
+    ]);
+
+    const index = await getLocatorIndex(db as never, 1);
+    expect(index).toMatchObject({ projectId: 1, projectName: 'locator-usages-project', truncated: false });
+    expect(index!.testIdAttributes).toEqual(['data-qa']);
+    expect(index!.locators.map((l) => l.locator)).toEqual([PAY, COUNTRY]);
+
+    const byId = new Map(index!.tests.map((t, i) => [t.id, { ...t, i }]));
+    expect(byId.get(1)).toMatchObject({ title: 'pays by card', suite: ['Checkout', 'Payment'], status: 'passed' });
+    expect(byId.get(2)).toMatchObject({ file: 'tests/voucher.spec.ts', suite: [], status: 'failed' });
+
+    const pay = index!.locators[0]!;
+    expect(pay.uses).toHaveLength(2);
+    const voucherUse = pay.uses.find((u) => index!.tests[u.test]!.id === 2)!;
+    expect(voucherUse).toMatchObject({
+      actions: ['click'],
+      callSites: ['tests/voucher.spec.ts:8:3'],
+      projects: ['mobile-safari'],
+    });
+  });
+
+  test('marks a pass after retries flaky and says when the chains were cut off', async () => {
+    await seedCase(1, 'retried');
+    const run = await seedRun({ metadata: { workingDir: '/work/shop' } });
+    await db.insert(schema.testRunsCases).values({ testRunId: run, testCaseId: 1, status: 'passed', retries: 1 });
+    await upsertLocatorUsages(db as never, 1, [
+      exec(run, [
+        step(`Click ${PAY}`, PAY, 'pages/checkout.ts:20:5'),
+        step(`Select option ${COUNTRY}`, COUNTRY, 'pages/checkout.ts:10:5'),
+      ]),
+    ]);
+    const index = await getLocatorIndex(db as never, 1, { maxLocators: 1 });
+    expect(index!.tests[0]!.status).toBe('flaky');
+    expect(index!.locators).toHaveLength(1);
+    expect(index!.truncated).toBe(true);
+    expect(index!.testIdAttributes).toBeNull();
+  });
+
+  test('answers null for a missing project and an empty index for a project with no uses', async () => {
+    expect(await getLocatorIndex(db as never, 99)).toBeNull();
+    const index = await getLocatorIndex(db as never, 1);
+    expect(index).toMatchObject({ locators: [], tests: [], truncated: false, builtAt: null });
   });
 });

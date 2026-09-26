@@ -6,7 +6,7 @@
  *
  * Shared by the server ingest path and the demo mirror.
  */
-import { and, count, countDistinct, desc, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
+import { and, count, countDistinct, desc, eq, inArray, isNotNull, isNull, max, or, sql } from 'drizzle-orm';
 import { locatorUsages, projects, testCases, testRuns, testRunsCases } from '../database/schema';
 import {
   extractStepLocatorUses,
@@ -28,6 +28,7 @@ import type {
   LocatorUsageSite,
   LocatorUsagesResult,
 } from '#shared/locator-usages.types';
+import type { LocatorIndex, LocatorIndexEntry, LocatorIndexTest, LocatorIndexTestStatus } from '#shared/locator-index';
 
 /**
  * UTF-8 byte budgets for indexed text. A Postgres btree entry holds about
@@ -512,4 +513,164 @@ export async function getLocatorUsages(
   // Call sites shared by the most tests first: a page-object line is one fix for all of them.
   const ordered = [...sites.values()].sort((a, b) => b.tests.length - a.tests.length);
   return { match, value, testCount: tests.size, sites: ordered, truncated };
+}
+
+/** The index as one latest-outcome word per test: a pass after retries is flaky, a timeout or interruption failed. */
+function indexTestStatus(status: string | null, retries: number | null): LocatorIndexTestStatus | null {
+  if (status === 'passed') return (retries ?? 0) > 0 ? 'flaky' : 'passed';
+  if (status === 'failed' || status === 'timedout' || status === 'timedOut' || status === 'interrupted')
+    return 'failed';
+  if (status === 'skipped') return 'skipped';
+  return null;
+}
+
+/**
+ * The attributes `getByTestId` reads in a project: Playwright's `testIdAttribute`
+ * as the reporter recorded it with the most recent runs (a value may list
+ * several, comma-separated). Null when no recent run reported one.
+ */
+async function projectTestIdAttributes(db: DrizzleDB, projectId: number): Promise<string[] | null> {
+  const runs = await db
+    .select({ metadata: testRuns.metadata })
+    .from(testRuns)
+    .where(eq(testRuns.projectId, projectId))
+    .orderBy(desc(testRuns.startTime))
+    .limit(10);
+  const names = new Set<string>();
+  for (const run of runs) {
+    const projectsMeta = (
+      run.metadata as { htmlReport?: { projects?: Array<{ use?: { testIdAttribute?: unknown } }> } } | null
+    )?.htmlReport?.projects;
+    for (const project of projectsMeta ?? []) {
+      const value = project?.use?.testIdAttribute;
+      if (typeof value !== 'string') continue;
+      for (const name of value.split(',')) if (name.trim()) names.add(name.trim());
+    }
+    if (names.size > 0) break;
+  }
+  return names.size > 0 ? [...names] : null;
+}
+
+/**
+ * A project's locator index as one document: every distinct chain its tests
+ * used, with each test's actions, call sites and Playwright projects, the
+ * chains reaching the most tests first. Carries each test's latest outcome and
+ * the test id attributes the project reads, so a client can resolve the chains
+ * against a live page on its own. Null when the project does not exist.
+ */
+export async function getLocatorIndex(
+  db: DrizzleDB,
+  projectId: number,
+  opts: { maxLocators?: number; maxRows?: number } = {},
+): Promise<LocatorIndex | null> {
+  const [project] = await db
+    .select({ id: projects.id, name: projects.name, builtAt: projects.locatorIndexBuiltAt })
+    .from(projects)
+    .where(eq(projects.id, projectId));
+  if (!project) return null;
+
+  const maxRows = opts.maxRows ?? 200_000;
+  const rows = await db
+    .select({
+      testCaseId: locatorUsages.testCaseId,
+      locator: locatorUsages.locator,
+      action: locatorUsages.action,
+      browserName: locatorUsages.browserName,
+      callSite: locatorUsages.callSite,
+      lastSeenAt: locatorUsages.lastSeenAt,
+    })
+    .from(locatorUsages)
+    .where(eq(locatorUsages.projectId, projectId))
+    .orderBy(desc(locatorUsages.lastSeenAt))
+    .limit(maxRows + 1);
+  let truncated = rows.length > maxRows;
+
+  interface Draft {
+    lastSeenAt: number;
+    uses: Map<number, { actions: string[]; callSites: string[]; projects: string[] }>;
+  }
+  const drafts = new Map<string, Draft>();
+  for (const r of rows.slice(0, maxRows)) {
+    const seenAt = new Date(r.lastSeenAt).getTime();
+    let draft = drafts.get(r.locator);
+    if (!draft) drafts.set(r.locator, (draft = { lastSeenAt: seenAt, uses: new Map() }));
+    if (seenAt > draft.lastSeenAt) draft.lastSeenAt = seenAt;
+    let use = draft.uses.get(r.testCaseId);
+    if (!use) draft.uses.set(r.testCaseId, (use = { actions: [], callSites: [], projects: [] }));
+    if (!use.actions.includes(r.action)) use.actions.push(r.action);
+    if (r.callSite && !use.callSites.includes(r.callSite)) use.callSites.push(r.callSite);
+    if (r.browserName && !use.projects.includes(r.browserName)) use.projects.push(r.browserName);
+  }
+
+  const maxLocators = opts.maxLocators ?? 20_000;
+  const ranked = [...drafts.entries()].sort(
+    ([a, da], [b, db2]) =>
+      db2.uses.size - da.uses.size || db2.lastSeenAt - da.lastSeenAt || (a < b ? -1 : a > b ? 1 : 0),
+  );
+  if (ranked.length > maxLocators) truncated = true;
+  const kept = ranked.slice(0, maxLocators);
+
+  const testIds = [...new Set(kept.flatMap(([, d]) => [...d.uses.keys()]))];
+  const tests: LocatorIndexTest[] = [];
+  const position = new Map<number, number>();
+  for (let i = 0; i < testIds.length; i += 500) {
+    const chunk = testIds.slice(i, i + 500);
+    const [cases, latest] = await Promise.all([
+      db
+        .select({
+          id: testCases.id,
+          title: testCases.title,
+          filePath: testCases.filePath,
+          suitePath: testCases.suitePath,
+        })
+        .from(testCases)
+        .where(inArray(testCases.id, chunk)),
+      db
+        .select({ testCaseId: testRunsCases.testCaseId, id: max(testRunsCases.id) })
+        .from(testRunsCases)
+        .where(inArray(testRunsCases.testCaseId, chunk))
+        .groupBy(testRunsCases.testCaseId),
+    ]);
+    const latestIds = latest.map((l) => l.id).filter((id): id is number => id != null);
+    const outcomes = latestIds.length
+      ? await db
+          .select({
+            testCaseId: testRunsCases.testCaseId,
+            status: testRunsCases.status,
+            retries: testRunsCases.retries,
+          })
+          .from(testRunsCases)
+          .where(inArray(testRunsCases.id, latestIds))
+      : [];
+    const statusOf = new Map(outcomes.map((o) => [o.testCaseId, indexTestStatus(o.status, o.retries)]));
+    for (const c of cases) {
+      position.set(c.id, tests.length);
+      tests.push({
+        id: c.id,
+        title: c.title,
+        file: c.filePath,
+        suite: c.suitePath ? c.suitePath.split('\x1f').filter(Boolean) : [],
+        status: statusOf.get(c.id) ?? null,
+      });
+    }
+  }
+
+  const locators: LocatorIndexEntry[] = kept.map(([locator, draft]) => ({
+    locator,
+    lastSeenAt: new Date(draft.lastSeenAt).toISOString(),
+    uses: [...draft.uses.entries()]
+      .filter(([testCaseId]) => position.has(testCaseId))
+      .map(([testCaseId, use]) => ({ test: position.get(testCaseId)!, ...use })),
+  }));
+
+  return {
+    projectId: project.id,
+    projectName: project.name,
+    builtAt: project.builtAt ? new Date(project.builtAt).toISOString() : null,
+    generatedAt: new Date().toISOString(),
+    testIdAttributes: await projectTestIdAttributes(db, projectId),
+    tests,
+    locators,
+    truncated,
+  };
 }

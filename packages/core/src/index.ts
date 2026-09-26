@@ -26,3 +26,4 @@ export * from './function-match';
 export * from './codegen';
 export * from './locator-chain';
 export * from './step-locators';
+export * from './locator-index';

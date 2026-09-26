@@ -24,7 +24,8 @@
     "./function-match": "./src/function-match.ts",
     "./codegen": "./src/codegen.ts",
     "./locator-chain": "./src/locator-chain.ts",
-    "./step-locators": "./src/step-locators.ts"
+    "./step-locators": "./src/step-locators.ts",
+    "./locator-index": "./src/locator-index.ts"
   },
   "scripts": {
     "core:typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tests/tsconfig.json",
