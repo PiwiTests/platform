@@ -42,6 +42,7 @@ Comparing two runs is also how the [run comparison](./ui-overview#test-run-detai
 
 ## Related
 
+- [Regression or flake?](/recipes/regression-or-flaky): the Changes tab, used to decide whether one red test is new
 - [Branches](./branches#branch-aware-baselines) — why the default baseline is the same-branch run
 - [Flaky tests](./flaky-tests) — the per-project flaky, regression and spec-health signals
 - [Failure clusters & the inbox](./failure-clusters) — the failures grouped by cause

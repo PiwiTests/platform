@@ -20,9 +20,8 @@ Failures sharing an **error fingerprint** are grouped automatically, so the run 
   <figcaption>The Failure clusters tab — one row per root cause, with error type, occurrence count, and triage status.</figcaption>
 </figure>
 
-Fingerprinting masks the volatile parts of an error (timeouts and other numbers, UUIDs, URLs, the
-expected and received values of an assertion) so the same underlying failure groups across tests, spec
-files, and runs. It's always on and needs no configuration.
+The grouping is always on and needs no configuration; [How failures are
+grouped](/features/failure-clusters#how-failures-are-grouped) explains what the fingerprint masks.
 
 ## 2. Rule out the boring causes first
 
@@ -51,16 +50,10 @@ conversation over.
 
 ## 4. Confirm the fix actually landed
 
-When a later run executes every test a cluster covers and they all pass, Piwi records the fix — the run,
-the commit, and how long the cluster was open — with three separate verdicts, because they aren't the
-same claim. The run doesn't have to be a full one: re-running just the affected tests and seeing them all
-pass closes the cluster too.
-
-| Verdict | Means |
-|---|---|
-| **Stopped failing** | The tests pass again. A flaky test can manage this by accident. |
-| **Diagnosis verified** | Commits since the last failing run touched a file the [suggested patch](/features/ai-diagnosis#what-a-diagnosis-contains) named. |
-| **Regressed** | A fix was recorded and the cluster is failing again. |
+When a later run executes every test a cluster covers and they all pass, Piwi records the fix. The run doesn't have
+to be a full one: re-running just the affected tests and seeing them all pass closes the cluster too. The three
+verdicts, *stopped failing*, *diagnosis verified* and *regressed*, are explained on [Did the fix
+work?](/features/failure-clusters#did-the-fix-work).
 
 ## Optional: let a model do the first pass
 
