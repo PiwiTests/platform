@@ -6,7 +6,7 @@
  *
  * It is the one grouping of the product. The docs render three things from it:
  * the All features page (`apps/docs/reference/features.md`, built at
- * `docs:gen`), the Features sidebar (`apps/docs/.vitepress/sidebar.ts`) and the
+ * `docs:gen`), the Features sidebar (`apps/docs/.vitepress/navigation.ts`) and the
  * landing page's cards. An entry's `title` is also its page's H1 and sidebar
  * label, so a feature has one name everywhere.
  *
