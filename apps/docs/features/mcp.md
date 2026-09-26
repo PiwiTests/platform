@@ -15,7 +15,7 @@ guide for this instance.
 
 ## What it provides
 
-The server exposes 55 tools, mostly read-only, from listing projects to one failure's full evidence and a cluster's
+The server exposes tools, mostly read-only, from listing projects to one failure's full evidence and a cluster's
 fix plan; [MCP tools](/reference/mcp-tools) lists every one. They return compact JSON, list tools page with
 `{ items, nextCursor }`, and a tool that fails returns a normal result with `isError: true` and a readable message.
 
