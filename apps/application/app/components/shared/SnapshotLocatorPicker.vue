@@ -304,10 +304,10 @@ function handleMessage(event: MessageEvent) {
   }
   if (data?.type === 'elementPicked' && data.attrs) {
     // The in-page probe can't compute the browser's real accessible name —
-    // derive one (label text first, then aria-label/text/title/placeholder) so
+    // approximate one from the probed attributes and label text so
     // getByRole(name)/getByLabel alternatives are generated for picks too.
-    const { labelText, ...probed } = data.attrs as ElementAttributes & { labelText?: string | null };
-    pickedAttrs.value = { ...probed, accessibleName: labelText ?? approximateAccessibleName(probed) };
+    const { labelText, ...probed } = data.attrs as ElementAttributes;
+    pickedAttrs.value = { ...probed, accessibleName: approximateAccessibleName({ ...probed, labelText }) };
     alternatives.value = generateAlternatives(pickedAttrs.value);
     selectedAlt.value = null;
     step.value = 'review';

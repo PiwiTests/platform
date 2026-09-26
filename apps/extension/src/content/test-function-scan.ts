@@ -37,19 +37,48 @@ export function testCatalogAgainstPage(catalog: TestFunctionEntry[], maps: DomRo
     return s.replace(/\s+/g, ' ').trim();
   }
 
+  /** `root`'s text, leaving out `skip`'s subtree — a wrapping label's text without the field it wraps. */
+  function textWithout(root: Node, skip: Node): string {
+    if (root === skip) return '';
+    if (root.nodeType === 3) return root.nodeValue || '';
+    let text = '';
+    for (const child of root.childNodes) text += textWithout(child, skip);
+    return text;
+  }
+
+  /** The text of the elements `aria-labelledby` points at, else of the first `<label>` — mirrors the probe's `labelText`. */
+  function fieldLabelOf(el: Element): string | null {
+    let text = '';
+    for (const id of (el.getAttribute('aria-labelledby') || '').split(/\s+/).filter(Boolean)) {
+      const ref = el.ownerDocument.getElementById(id);
+      if (ref) text += ` ${textWithout(ref, el)}`;
+    }
+    const label = (el as HTMLInputElement).labels?.[0];
+    if (!text.trim() && label) text = textWithout(label, el);
+    return normalize(text).slice(0, 120) || null;
+  }
+
   /**
-   * Mirrors core's `approximateAccessibleName` — aria-label, then text, then
-   * title, then placeholder. Inlined rather than imported because this function
-   * is re-serialized via `Function.prototype.toString()` (see the note above),
-   * the same reason `probe.ts` keeps its own copy. Reading only `aria-label`
-   * here meant a step scored one way in "Try it" and another way during a real
-   * recording, against the claim that both use one rule.
+   * Mirrors core's `approximateAccessibleName` — aria-labelledby, aria-label,
+   * then a form field's label or anything else's text, then title, then
+   * placeholder. Inlined rather than imported because this function is
+   * re-serialized via `Function.prototype.toString()` (see the note above), the
+   * same reason `probe.ts` keeps its own copy, so a step scores the same way in
+   * "Try it" as during a real recording.
    */
   function accessibleNameOf(el: Element): string | null {
+    const labelledBy = el.hasAttribute('aria-labelledby');
+    const isField = /^(input|select|textarea)$/i.test(el.tagName);
+    const label = labelledBy || isField ? fieldLabelOf(el) : null;
+    if (label && labelledBy) return label;
     const ariaLabel = el.getAttribute('aria-label');
     if (ariaLabel) return ariaLabel;
-    const text = normalize(el.textContent || '');
-    if (text) return text;
+    if (isField) {
+      if (label) return label;
+    } else {
+      const text = normalize(el.textContent || '');
+      if (text) return text;
+    }
     return el.getAttribute('title') || el.getAttribute('placeholder') || null;
   }
 

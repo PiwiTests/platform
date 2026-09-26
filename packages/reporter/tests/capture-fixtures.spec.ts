@@ -71,7 +71,7 @@ function fakeElement(opts: {
     getBoundingClientRect: () => rect,
     textContent,
     // A real `labels` is an indexable NodeList of elements, not just a count —
-    // `includeLabelText` reads the first one's text off it.
+    // the probe reads the first one's text off it as `labelText`.
     labels: labelCount > 0 ? Array.from({ length: labelCount }, (_, i) => ({ textContent: `Label ${i}` })) : null,
     ownerDocument: opts.brokenDocument
       ? undefined

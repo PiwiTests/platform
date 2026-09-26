@@ -13,7 +13,37 @@ import type { ProbeArg, ProbedAttrs } from './types.js';
  * `el` is browser-context (no DOM lib in this package), hence `any`.
  */
 export function probeElementAttrs(el: any, arg: ProbeArg): ProbedAttrs {
-  const { keep, tagRoles, inputRoles, roleSources, includeStructural, includeLabelText } = arg;
+  const { keep, tagRoles, inputRoles, roleSources, includeStructural } = arg;
+  const FIELD_TAGS = ['input', 'select', 'textarea'];
+  /** `root`'s text, leaving out `skip`'s subtree — a wrapping label's text without the field it wraps. */
+  const textWithout = (root: any, skip: any): string => {
+    if (root === skip) return '';
+    if (root.nodeType === 3) return root.nodeValue || '';
+    let text = '';
+    const kids = root.childNodes || [];
+    for (let i = 0; i < kids.length; i++) text += textWithout(kids[i], skip);
+    return text;
+  };
+  /**
+   * The text that labels `n`: the elements its `aria-labelledby` points at,
+   * else its first `<label>` (a `for` label or a wrapping one). Best-effort
+   * like every other probe — a host whose `labels` is not indexable costs this
+   * one value, not the whole capture.
+   */
+  const labelTextOf = (n: any): string | null => {
+    try {
+      const ids = (n.getAttribute('aria-labelledby') || '').split(/\s+/).filter(Boolean);
+      let text = '';
+      for (const id of ids) {
+        const ref = n.ownerDocument.getElementById(id);
+        if (ref) text += ` ${textWithout(ref, n)}`;
+      }
+      if (!text.trim() && n.labels && n.labels.length > 0) text = textWithout(n.labels[0], n);
+      return text.replace(/\s+/g, ' ').trim().slice(0, 120) || null;
+    } catch {
+      return null;
+    }
+  };
   const attrMap: Record<string, string | null> = {};
   for (const key of keep) {
     const v = el.getAttribute(key) ?? el[key];
@@ -122,10 +152,18 @@ export function probeElementAttrs(el: any, arg: ProbeArg): ProbedAttrs {
       // function is serialized into the page by the reporter and cannot
       // reference imports. Keep the two in step.
       const nameOf = (n: any): string | null => {
+        const labelledBy = !!n.getAttribute('aria-labelledby');
+        const isField = FIELD_TAGS.indexOf((n.tagName || '').toLowerCase()) !== -1;
+        const lt = labelledBy || isField ? labelTextOf(n) : null;
+        if (lt && labelledBy) return lt;
         const al = n.getAttribute('aria-label');
         if (al) return al;
-        const txt = (n.textContent || '').replace(/\s+/g, ' ').trim();
-        if (txt) return txt;
+        if (isField) {
+          if (lt) return lt;
+        } else {
+          const txt = (n.textContent || '').replace(/\s+/g, ' ').trim();
+          if (txt) return txt;
+        }
         return n.getAttribute('title') || n.getAttribute('placeholder') || null;
       };
       const targetName = nameOf(el);
@@ -397,18 +435,7 @@ export function probeElementAttrs(el: any, arg: ProbeArg): ProbedAttrs {
   }
 
   const hasLabel = !!(el.labels && el.labels.length > 0);
-  // Reading the label is best-effort like every other probe: a host whose
-  // `labels` is not indexable must cost this one field, not the whole capture.
-  let labelText: string | null | undefined;
-  if (includeLabelText) {
-    labelText = null;
-    try {
-      const label = hasLabel ? el.labels[0] : null;
-      labelText = ((label && label.textContent) || '').replace(/\s+/g, ' ').trim().slice(0, 120) || null;
-    } catch {
-      labelText = null;
-    }
-  }
+  const labelText = labelTextOf(el);
 
   return {
     tagName: el.tagName?.toLowerCase?.() ?? 'unknown',
@@ -421,7 +448,7 @@ export function probeElementAttrs(el: any, arg: ProbeArg): ProbedAttrs {
       y: Math.round(r.y + r.height / 2),
     },
     hasLabel,
-    ...(includeLabelText ? { labelText } : {}),
+    labelText,
     selectorCounts,
     ...(includeStructural ? { rolePosition, ancestors } : {}),
   };

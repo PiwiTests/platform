@@ -94,7 +94,7 @@ test.describe('installPickerOverlay — postMessage transport (snapshot picker)'
     }, probeElementAttrs.toString());
     await install(page, {
       transport: 'postMessage',
-      probeArg: { keep: ['id', 'data-testid'], includeStructural: false, includeLabelText: false },
+      probeArg: { keep: ['id', 'data-testid'], includeStructural: false },
     });
     expect((await messagesOfType(page, 'pickerReady')).length).toBe(1);
 
@@ -116,7 +116,7 @@ test.describe('installPickerOverlay — postMessage transport (snapshot picker)'
     await recordPostMessages(page);
     await install(page, {
       transport: 'postMessage',
-      probeArg: { keep: [], includeStructural: false, includeLabelText: false },
+      probeArg: { keep: [], includeStructural: false },
     });
     await dispatchKey(page, 'Escape');
     expect((await messagesOfType(page, 'pickerClosed')).length).toBe(1);
@@ -131,7 +131,7 @@ test.describe('installPickerOverlay — postMessage transport (snapshot picker)'
     }, probeElementAttrs.toString());
     await install(page, {
       transport: 'postMessage',
-      probeArg: { keep: ['id'], includeStructural: false, includeLabelText: false },
+      probeArg: { keep: ['id'], includeStructural: false },
     });
     await page.hover('#inner');
     await expect(page.locator('#__piwi_picker_locator')).toContainText("locator('#inner')");
