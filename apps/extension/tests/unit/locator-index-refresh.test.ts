@@ -1,5 +1,6 @@
 import { describe, test, expect, beforeEach } from 'vitest';
 import { requestLocatorIndex } from '../../src/shared/locator-index-refresh.js';
+import { OUTDATED_WORKER_MESSAGE } from '../../src/shared/worker-status.js';
 
 let sent: unknown[];
 let respond: (message: unknown) => unknown;
@@ -37,7 +38,8 @@ describe('requestLocatorIndex', () => {
       throw new Error('Extension context invalidated');
     };
     expect((await requestLocatorIndex(7)).ok).toBe(false);
+    // A worker ignores the message only when its build predates it.
     respond = () => undefined;
-    expect((await requestLocatorIndex(7)).ok).toBe(false);
+    expect(await requestLocatorIndex(7)).toEqual({ ok: false, error: OUTDATED_WORKER_MESSAGE });
   });
 });

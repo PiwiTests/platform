@@ -12,6 +12,7 @@ import { setCachedCatalog, isCatalogStale } from '../shared/catalog-cache.js';
 import type { RefreshCatalogResult } from '../shared/catalog-refresh.js';
 import { isLocatorIndexStale, setCachedLocatorIndex } from '../shared/locator-index-cache.js';
 import type { LocatorIndexRefreshResult } from '../shared/locator-index-refresh.js';
+import { BUILD_ID } from '../shared/build-id.js';
 
 /**
  * Service worker: the keyboard-shortcut trigger for picking (the toolbar
@@ -255,8 +256,9 @@ async function handleRefreshLocatorIndex(
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === 'piwi-ping') {
     // Resolves only once session storage is readable from content scripts —
-    // the whole point of the ping.
-    void sessionAccessReady.then(() => sendResponse({ ok: true }));
+    // the whole point of the ping. The build lets the caller tell whether this
+    // worker predates a rebuild (see `shared/build-id.ts`).
+    void sessionAccessReady.then(() => sendResponse({ ok: true, build: BUILD_ID }));
     return true;
   }
   if (message?.type === 'piwi-start-recording') {

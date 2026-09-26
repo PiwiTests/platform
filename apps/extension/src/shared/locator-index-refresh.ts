@@ -1,4 +1,5 @@
 import type { LocatorIndex } from '@piwitests/core/locator-index';
+import { OUTDATED_WORKER_MESSAGE } from './worker-status.js';
 
 /**
  * Asks the background worker for a fresh copy of a project's locator index.
@@ -25,7 +26,7 @@ export async function requestLocatorIndex(
       force: opts.force === true,
       branch: opts.branch ?? null,
     })) as LocatorIndexRefreshResult | undefined;
-    return answer ?? { ok: false, error: 'Piwi Picker background worker did not answer.' };
+    return answer ?? { ok: false, error: OUTDATED_WORKER_MESSAGE };
   } catch {
     return { ok: false, error: 'Piwi Picker background worker is unavailable.' };
   }
