@@ -35,22 +35,27 @@ const currentIndex = ref<number | null>(null);
     :collapsible="false"
     :embedded="embedded"
   >
-    <div class="grid grid-cols-2 gap-2" :class="embedded ? '' : 'p-2 bg-gray-50 dark:bg-gray-900'">
-      <ZoomableImage
-        v-for="(img, idx) in images"
-        :key="img.src"
-        :src="img.src"
-        :alt="img.name"
-        frame-class="rounded"
-        img-class="w-full h-28 object-cover object-top"
-        @open="currentIndex = idx"
-      >
-        <p
-          class="pointer-events-none absolute bottom-0 inset-x-0 px-1.5 py-0.5 text-[10px] text-white bg-black/50 truncate"
-        >
-          {{ img.name }}
-        </p>
-      </ZoomableImage>
+    <!-- The whole page, never a crop: one screenshot shows at reading size, several
+         share a grid, each fitted into its frame with its name underneath. -->
+    <div
+      class="grid gap-3"
+      :class="[images.length > 1 ? 'sm:grid-cols-2' : '', embedded ? '' : 'p-2 bg-gray-50 dark:bg-gray-900']"
+    >
+      <figure v-for="(img, idx) in images" :key="img.src" class="min-w-0 space-y-1">
+        <ZoomableImage
+          :src="img.src"
+          :alt="img.name"
+          :inline="images.length === 1"
+          frame-class="rounded-md bg-elevated/40"
+          :img-class="
+            images.length === 1
+              ? 'max-h-[28rem] w-auto max-w-full object-contain'
+              : 'aspect-video w-full object-contain object-top'
+          "
+          @open="currentIndex = idx"
+        />
+        <figcaption class="truncate text-xs text-muted" :title="img.name">{{ img.name }}</figcaption>
+      </figure>
     </div>
     <ScreenshotLightbox v-model="currentIndex" :images="images" />
   </TestEvidenceSection>

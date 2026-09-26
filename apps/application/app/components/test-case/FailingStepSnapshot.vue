@@ -8,7 +8,8 @@
  * moment it failed, which is this step) and the recovered failure-time ARIA
  * tree, so a failing step still shows its evidence on any Playwright version.
  * Every screenshot opens full-screen in the shared lightbox, matching the Screen
- * tab. Renders nothing when neither a screenshot nor an ARIA tree is available.
+ * tab. With no screenshot it is the ARIA tree's disclosure alone; it renders
+ * nothing when neither a screenshot nor an ARIA tree is available.
  */
 import type { AttachmentInfo } from '~~/types/api';
 import { isImageFile } from '~/utils/text-format';
@@ -65,7 +66,7 @@ const ariaOpen = ref(false);
 
 <template>
   <div v-if="render" class="space-y-2.5 rounded-lg border border-default bg-elevated/40 p-3">
-    <p class="flex items-center gap-1.5 text-xs font-medium text-muted">
+    <p v-if="hasScreenshot" class="flex items-center gap-1.5 text-xs font-medium text-muted">
       <UIcon name="i-lucide-image" class="size-3.5 shrink-0" />
       Page at the failing step
     </p>

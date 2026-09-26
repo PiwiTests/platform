@@ -44,7 +44,7 @@ export default defineNuxtPlugin(() => {
   configureDemoDb(base);
 
   // Pre-register the bundled trace viewer's own service worker. Without this,
-  // the first "View trace" navigation is controlled by the demo API service
+  // the first "Open trace" navigation is controlled by the demo API service
   // worker (scope covers the whole app), which cannot answer the viewer's
   // virtual snapshot URLs — the viewer would hang until a manual reload. With
   // the viewer SW registered up front, its more specific scope takes the page

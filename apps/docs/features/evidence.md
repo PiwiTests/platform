@@ -130,8 +130,8 @@ block uses the same words.
 
 ## Trace viewer
 
-Every trace has a **View trace** button that opens the full Playwright trace viewer, the same UI as
-`npx playwright show-trace`. The viewer is served by the dashboard itself at `/trace-viewer/`, so traces never go to a
+**Open trace**, at the top of the evidence card on every tab, opens the full Playwright trace viewer, the same UI as
+`npx playwright show-trace`; the Screen tab lists each trace with **Open trace** and **Download**. The viewer is served by the dashboard itself at `/trace-viewer/`, so traces never go to a
 third party, and it works whether or not [authentication](/operate/authentication) is on. The hosted
 `trace.playwright.dev` cannot send your session cookie, so it only works against a dashboard with authentication off.
 

@@ -6,7 +6,9 @@
  * when empty; a dimmed tab still opens and states why it is empty. The default
  * tab is the one the strongest clue cites, else Timeline when it can place two
  * or more items, else Screen. A clue or diagnosis citation switches to the tab
- * that holds the evidence and scrolls to it.
+ * that holds the evidence and scrolls to it. The Playwright trace opens from the
+ * card's header, whichever tab is showing. A test that never ran and left
+ * nothing behind shows no card at all.
  */
 import type { NetworkRequest, PerformanceStep, TraceInfo, WebVitals } from '~~/types/api';
 import { getPerformanceHints } from '~/utils/performance-hints';
@@ -208,7 +210,23 @@ const tabs = computed<TabDef[]>(() =>
         count: null,
       },
     ] satisfies TabDef[]
-  ).filter((tab) => tabShown(tab.value) && (tab.value !== 'locators' || tab.hasData)),
+  ).filter(
+    (tab) =>
+      tabShown(tab.value) &&
+      // Locators and Attempts only exist when there is something to list: a
+      // single attempt has nothing to compare.
+      ((tab.value !== 'locators' && tab.value !== 'attempts') || tab.hasData),
+  ),
+);
+
+// The trace the header opens: this execution's own (one per attempt row).
+const primaryTrace = computed(() => props.traces[0] ?? null);
+const { viewUrl: traceViewUrl, onView: onViewTrace } = useTraceLinks(primaryTrace);
+
+// Nothing was captured for a test that never started — the did-not-run card above
+// says why, so the evidence card stays away rather than showing empty tabs.
+const hasNoEvidence = computed(
+  () => status.value === 'didnotrun' && !primaryTrace.value && tabs.value.every((tab) => !tab.hasData),
 );
 
 // The footer names the sources the capture fixtures would add, shown only while
@@ -345,23 +363,37 @@ defineExpose({ canLocate, revealSection, selectTab: (t: TabValue) => (activeTab.
 
 <template>
   <section
+    v-if="!hasNoEvidence"
     data-shot="evidence-card"
     class="rounded-lg border border-default bg-default max-sm:rounded-none max-sm:border-x-0"
   >
-    <!-- Header: the section title, its help, and the content-level tab strip -->
+    <!-- Header: the section title, its help, the trace, and the content-level tab strip -->
     <div class="p-3 sm:px-4 sm:py-3 border-b border-default">
       <div class="flex items-center gap-2 mb-2.5">
         <UIcon name="i-lucide-microscope" class="size-5 shrink-0 text-primary" />
         <h2 class="text-lg font-medium">Evidence</h2>
         <HelpHint v-if="help" :topic="help" />
+        <!-- The viewer URL carries the page origin, known only in the browser. -->
+        <ClientOnly v-if="primaryTrace">
+          <UButton
+            :to="traceViewUrl ?? undefined"
+            target="_blank"
+            size="xs"
+            color="neutral"
+            variant="outline"
+            label="Open trace"
+            title="Open the Playwright trace of this execution in the trace viewer"
+            class="ml-auto"
+            @click="onViewTrace"
+          />
+          <template #fallback>
+            <UButton size="xs" color="neutral" variant="outline" label="Open trace" class="ml-auto" disabled />
+          </template>
+        </ClientOnly>
       </div>
-      <!-- Below `sm` the strip wraps onto as many rows as it needs so no tab is
-           hidden off-screen; from `sm` up it stays one scrollable row. -->
-      <div
-        class="flex items-center gap-1 max-sm:flex-wrap sm:overflow-x-auto"
-        role="tablist"
-        aria-label="Evidence sections"
-      >
+      <!-- The strip wraps onto as many rows as it needs, so no tab is ever
+           hidden off the edge of the card. -->
+      <div class="flex flex-wrap items-center gap-1" role="tablist" aria-label="Evidence sections">
         <button
           v-for="tab in tabs"
           :key="tab.value"

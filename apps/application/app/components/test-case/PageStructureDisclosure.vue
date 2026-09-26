@@ -9,6 +9,7 @@
  */
 import { buildReadonlyDocument } from '~/utils/snapshot-picker-script';
 import type { EvidenceState } from '#shared/evidence-state';
+import type { LocatorHealingResult } from '#shared/locator-healing.types';
 
 const props = defineProps<{
   runId: number;
@@ -111,8 +112,18 @@ onBeforeUnmount(() => {
 
 const { copy: copyHtml, copied: htmlCopied } = useCopy();
 
-// The full locator picker over the same snapshot.
+// The full locator picker over the same snapshot. It opens on the failing
+// locator the healing data names — the same request the Locator fix section
+// makes, shared by key — or as an inspector when the failure named none.
 const pickerOpen = ref(false);
+const { data: healing, execute: loadHealing } = useFetch<LocatorHealingResult>(
+  () => `/api/test-run-cases/${props.testRunsCaseId}/locator-healing`,
+  { key: `locator-healing-${props.testRunsCaseId}`, immediate: false, lazy: true },
+);
+async function openPicker() {
+  if (!healing.value) await loadHealing().catch(() => {});
+  pickerOpen.value = true;
+}
 
 // Forward reveal so a diagnosis / clue citation can unfold + scroll to this card.
 const card = ref<{ reveal?: () => void } | null>(null);
@@ -134,9 +145,16 @@ defineExpose({ reveal: () => card.value?.reveal?.() });
       <!-- The failure-time DOM, rendered as the page — never as escaped XML. -->
       <div class="space-y-1.5">
         <div class="flex items-center justify-between gap-2">
-          <h4 class="text-xs font-medium uppercase tracking-wide text-muted">Failure-time page</h4>
+          <h4 class="text-xs font-medium text-muted">Failure-time page</h4>
           <div v-if="hasDom" class="flex items-center gap-1">
-            <UButton size="xs" variant="ghost" color="neutral" icon="i-lucide-scan-search" @click="pickerOpen = true">
+            <UButton
+              size="xs"
+              variant="ghost"
+              color="neutral"
+              icon="i-lucide-scan-search"
+              title="Click an element of this page to get the locators that target it"
+              @click="openPicker"
+            >
               Open in picker
             </UButton>
             <UButton
@@ -170,13 +188,16 @@ defineExpose({ reveal: () => card.value?.reveal?.() });
         <p v-else-if="pending" class="flex items-center gap-2 text-xs text-muted">
           <UIcon name="i-lucide-loader" class="size-4 animate-spin" /> Rendering the page…
         </p>
-        <p v-else class="text-xs text-dimmed">No page snapshot was captured for this execution.</p>
+        <p v-else class="text-xs text-muted">
+          No page snapshot for this execution. It comes from the Playwright trace — keep traces for failures with
+          <code class="font-mono">trace: 'retain-on-failure'</code>.
+        </p>
       </div>
 
       <!-- The accessibility tree. -->
       <div class="space-y-1.5">
         <div class="flex items-center justify-between gap-2">
-          <h4 class="text-xs font-medium uppercase tracking-wide text-muted">Accessibility tree</h4>
+          <h4 class="text-xs font-medium text-muted">Accessibility tree</h4>
           <TraceDerivedChip v-if="treeDerived" />
         </div>
         <div v-if="tree" class="max-h-96 overflow-y-auto">
@@ -191,7 +212,8 @@ defineExpose({ reveal: () => card.value?.reveal?.() });
       v-model:open="pickerOpen"
       :run-id="runId"
       :test-runs-case-id="testRunsCaseId"
-      :failing-locator="{ method: 'locator', args: {} }"
+      :failing-locator="healing?.failingLocator ?? null"
+      :healing="healing"
     />
   </CollapsibleSectionCard>
 </template>
