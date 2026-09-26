@@ -10,13 +10,8 @@ import { sentencesFor } from '#shared/reports/sentences';
 import { reportWidgets, type ReportBundle } from '#shared/reports/types';
 import { REPORT_READY_EVENT, type ReportReadyPayload } from '#shared/notification-events';
 import type { DrizzleDB } from '#shared/handlers/db';
-import {
-  emailTrendBlock,
-  isEmailConfigured,
-  renderQualityReportEmail,
-  sendEmail,
-  type EmailAttachment,
-} from '../email';
+import { EMAIL_CHART, emailTrendBlock } from '#shared/reports/render-email';
+import { isEmailConfigured, renderQualityReportEmail, sendEmail, type EmailAttachment } from '../email';
 import { chartPng } from './chart-png';
 import { runEventBus } from '../run-events';
 
@@ -49,7 +44,12 @@ export async function sendReportEmail(
   const trend = emailTrendBlock(bundle);
   const attachments: EmailAttachment[] = [];
   if (trend) {
-    attachments.push({ filename: 'trend.png', content: await chartPng(trend), contentType: 'image/png', cid: 'trend' });
+    attachments.push({
+      filename: 'trend.png',
+      content: await chartPng(trend, EMAIL_CHART.width, EMAIL_CHART.height),
+      contentType: 'image/png',
+      cid: 'trend',
+    });
   }
   const { subject, html, text } = renderQualityReportEmail(bundle, {
     url: snapshotUrl(payload.snapshotId),
@@ -132,7 +132,7 @@ export function reportSlackMessage(
     },
     { type: 'context', elements: [{ type: 'mrkdwn', text: slackEscape(bundle.period.label) }] },
   );
-  return { text: `${s.labels.qualityReport}: ${bundle.title}`, blocks };
+  return { text: `${s.labels.qualityReport}${s.colon}${bundle.title}`, blocks };
 }
 
 /** The webhook body of a quality report: the event, its payload with the snapshot link (and share link), and the bundle. */

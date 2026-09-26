@@ -7,6 +7,7 @@ import { maybeEnqueueHealActionInBackground } from './heal/policy';
 import { syncAutoMarkersForRun } from '#shared/handlers/markers';
 import { isProbeRun } from '#shared/handlers/probes';
 import { upsertDailyRollup } from '#shared/handlers/analytics/rollups';
+import { runEventBus } from './run-events';
 
 /**
  * The finalize side effects for a finished run: the daily rollup of its cell,
@@ -21,7 +22,9 @@ import { upsertDailyRollup } from '#shared/handlers/analytics/rollups';
  * The returned promise settles once the run's rollup cell is recomputed, so a
  * caller that awaits it answers only when the analytics already count the run;
  * everything else runs in the background. The cell is recomputed a second time
- * once the regression signals it counts are written.
+ * once the regression signals it counts are written. Each write is followed by
+ * a `rollup-updated` event: the widget cache and the live dashboards wait for it,
+ * since `run-finished` and `run-submitted` go out before the rollup counts the run.
  */
 export function runFinalizeSideEffects(
   db: DbClient,
@@ -29,11 +32,15 @@ export function runFinalizeSideEffects(
   run: { projectId: number; metadata?: unknown },
 ): Promise<void> {
   if (isProbeRun(run.metadata)) return Promise.resolve();
-  const rollup = upsertDailyRollup(db, id).catch((e) => console.error('[analytics] upsertDailyRollup failed', e));
+  const recompute = () =>
+    upsertDailyRollup(db, id).then(() =>
+      runEventBus.publishGlobal({ type: 'rollup-updated', runId: id, projectId: run.projectId }),
+    );
+  const rollup = recompute().catch((e) => console.error('[analytics] upsertDailyRollup failed', e));
   computeRegressionSignals(db, id)
     .catch((e) => console.error('[regression-signals] computeRegressionSignals failed', e))
     .then(() => rollup)
-    .then(() => upsertDailyRollup(db, id))
+    .then(recompute)
     .catch((e) => console.error('[analytics] upsertDailyRollup failed', e));
   syncAutoMarkersForRun(db, id).catch((e) => console.error('[markers] syncAutoMarkersForRun failed', e));
   autoDiagnoseRun(db, run.projectId, id).catch((e) => console.error('[ai-diagnosis] autoDiagnoseRun failed', e));

@@ -94,10 +94,10 @@ export function useAnalyticsScope(opts: AnalyticsScopeOptions = {}) {
 
 /**
  * Where a widget reads its data, provided by the dashboard around it: a saved
- * dashboard's widget (`GET /api/analytics/dashboards/[id]/widgets/[key]`,
+ * dashboard's widget (`GET /api/dashboards/[id]/widgets/[key]`,
  * the definition stays on the server) or the editor's unsaved widget
- * (`POST /api/analytics/widgets/preview`). Without one, the widget reads
- * `GET /api/analytics/[widget]`, as on the built-in dashboards.
+ * (`POST /api/widgets/preview`). Without one, the widget reads
+ * `GET /api/widgets/[widget]`, as on the built-in dashboards.
  */
 export type AnalyticsWidgetSource =
   | { mode: 'dashboard'; dashboardId: string; widgetKey: string; refresh: Ref<number> }
@@ -127,7 +127,7 @@ export function useAnalyticsWidget<T>(
   // One shape whichever route answers: the widget's data, typed by the caller.
   const result = (
     source?.mode === 'dashboard'
-      ? useFetch<T>(`/api/analytics/dashboards/${source.dashboardId}/widgets/${source.widgetKey}`, {
+      ? useFetch<T>(`/api/dashboards/${source.dashboardId}/widgets/${source.widgetKey}`, {
           key: `dashboard-widget-${source.dashboardId}-${source.widgetKey}`,
           query: computed(query),
           lazy: true,
@@ -137,7 +137,7 @@ export function useAnalyticsWidget<T>(
         ? useAsyncData<T>(
             `preview-widget-${source.widgetKey}`,
             () =>
-              $fetch<T>('/api/analytics/widgets/preview', {
+              $fetch<T>('/api/widgets/preview', {
                 method: 'POST',
                 body: { widget: source.widget(), scope: query() },
               }),
@@ -180,7 +180,7 @@ function useTypeWidget<T>(
   query: () => Record<string, string>,
   options: (() => Record<string, unknown> | undefined) | undefined,
 ) {
-  return useFetch<T>(`/api/analytics/${widget}`, {
+  return useFetch<T>(`/api/widgets/${widget}`, {
     query: computed(() => {
       const value = options?.();
       return value && Object.keys(value).length > 0 ? { ...query(), options: JSON.stringify(value) } : query();
@@ -197,7 +197,7 @@ export const ANALYTICS_SCOPE_SUMMARY: InjectionKey<Ref<AnalyticsScopeSummary | n
 /** Fetch how the scope resolves (period dates, notes, markers, test filter options). */
 export function useAnalyticsScopeSummary(query: () => Record<string, string>) {
   return loadingUntilFetched(
-    useFetch<AnalyticsScopeSummary>('/api/analytics/scope', {
+    useFetch<AnalyticsScopeSummary>('/api/dashboards/scope', {
       query: computed(query),
       lazy: true,
       server: false,

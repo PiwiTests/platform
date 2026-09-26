@@ -99,6 +99,7 @@ export async function getAnalyticsScopeSummary(
   const toMarker = (m: any): AnalyticsMarker => ({
     ...m,
     label: label(m),
+    ownLabel: m.label,
     projectName: projectName.get(m.projectId) ?? null,
   });
 

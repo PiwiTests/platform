@@ -11,7 +11,7 @@ delete process.env.PIWI_DATABASE_URL;
 const dashboards = await import('../../shared/handlers/dashboards');
 const defs = await import('../../shared/analytics/dashboards');
 const { backfillDailyRollups } = await import('../../shared/handlers/analytics/rollups');
-const { sweepOrphans } = await import('../../server/utils/retention');
+const { sweepOrphans, pruneReportSnapshots } = await import('../../server/utils/retention');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 let db: ReturnType<typeof drizzle<typeof schema>>;
@@ -124,6 +124,31 @@ describe('widget overrides only narrow', () => {
   });
 });
 
+describe('a scope laid over the dashboard scope', () => {
+  const def = {
+    ...definition([], { projectIds: [3], environments: ['ci'], period: { kind: 'rolling', days: 30 } }),
+  } as any;
+
+  test('a period alone keeps the projects and filters of the dashboard', () => {
+    const scope = dashboards.dashboardScopeWith(def, { period: 'last-7d' });
+    expect(scope.period).toEqual({ kind: 'rolling', days: 7 });
+    expect(scope.projectIds).toEqual([3]);
+    expect(scope.environments).toEqual(['ci']);
+  });
+
+  test('a key the caller names replaces the dashboard one, and nothing else', () => {
+    const scope = dashboards.dashboardScopeWith(def, { projects: '1,2' });
+    expect(scope.projectIds).toEqual([1, 2]);
+    expect(scope.environments).toEqual(['ci']);
+    expect(scope.period).toEqual({ kind: 'rolling', days: 30 });
+  });
+
+  test('the page URL, which carries the whole scope, still replaces it', () => {
+    const scope = dashboards.viewerScope(def, { period: 'last-7d' });
+    expect(scope.projectIds).toBeUndefined();
+  });
+});
+
 describe('saved dashboards', () => {
   test('a user keeps a private dashboard nobody else sees', async () => {
     const mine = await dashboards.createDashboard(db as any, { name: 'Mine', visibility: 'private' }, user);
@@ -223,6 +248,23 @@ describe('saved dashboards', () => {
     expect(all.hiddenProjects).toBe(2);
   });
 
+  test('a new dashboard answers with the projects its creator cannot open', async () => {
+    const source = await dashboards.createDashboard(
+      db as any,
+      { name: 'Wide', visibility: 'shared', definition: definition([metricWidget('pass')], { projectIds: [1, 2, 3] }) },
+      admin,
+    );
+    const copy = await dashboards.createDashboard(
+      db as any,
+      { name: 'My copy', visibility: 'private', from: source.id },
+      user,
+      new Set([1]),
+    );
+    expect(copy.hiddenProjects).toBe(2);
+    const duplicate = await dashboards.duplicateDashboard(db as any, source.id, user, { access: new Set([1]) });
+    expect(duplicate.hiddenProjects).toBe(2);
+  });
+
   test('a widget is computed for the viewer only', async () => {
     const d = await dashboards.createDashboard(
       db as any,
@@ -320,6 +362,51 @@ describe('saved dashboards', () => {
     const left = await db.select({ id: schema.analyticsDashboards.id }).from(schema.analyticsDashboards);
     expect(left.map((r) => String(r.id))).toContain(shared.id);
     expect(left.map((r) => String(r.id))).not.toContain(priv.id);
+  });
+
+  test('report and dashboard links go with their snapshot or dashboard, and the sweep removes any left behind', async () => {
+    const linkIds = async () =>
+      (await db.select({ id: schema.shareLinks.id }).from(schema.shareLinks)).map((r) => r.id);
+    const link = (id: number, entityKind: string, entityId: number) => ({
+      id,
+      entityKind,
+      entityId,
+      tokenHash: `hash-${id}`,
+      tokenPrefix: 'abcd1234',
+    });
+    const d = await dashboards.createDashboard(db as any, { name: 'Linked', visibility: 'shared' }, reporter);
+    const [old] = await db
+      .insert(schema.reportSnapshots)
+      .values({
+        dashboardRef: 'executive',
+        dashboardName: 'Executive',
+        projectIds: [1],
+        periodFrom: new Date('2020-01-01'),
+        periodTo: new Date('2020-01-08'),
+        bundle: {},
+        generatedAt: new Date('2020-01-08'),
+      })
+      .returning({ id: schema.reportSnapshots.id });
+    await db
+      .insert(schema.shareLinks)
+      .values([
+        link(900, 'dashboard', +d.id),
+        link(901, 'report', old!.id),
+        link(902, 'dashboard', 99_999),
+        link(903, 'report', 99_999),
+      ]);
+
+    await dashboards.deleteDashboardRows(db as any, eq(schema.analyticsDashboards.id, +d.id));
+    expect(await linkIds()).not.toContain(900);
+    expect(await pruneReportSnapshots(db as any, 365)).toBe(1);
+    expect(await linkIds()).not.toContain(901);
+
+    // Links whose entity went another way (an older build, a direct delete) are the sweep's.
+    const result = await sweepOrphans(db as any);
+    expect(result.shareLinks).toBe(2);
+    const left = await linkIds();
+    expect(left).not.toContain(902);
+    expect(left).not.toContain(903);
   });
 });
 

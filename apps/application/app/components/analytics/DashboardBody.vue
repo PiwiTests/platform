@@ -47,10 +47,12 @@ const { data: scopeSummary } = await useAnalyticsScopeSummary(() => scopeQuery.v
 provide(ANALYTICS_SCOPE_SUMMARY, scopeSummary);
 
 // The projects of the scope the viewer cannot open: a dashboard grants no access.
-const { data: accessView } = useFetch<Pick<DashboardView, 'hiddenProjects'>>(
-  `/api/analytics/dashboards/${props.view.id}`,
-  { query: scopeQuery, lazy: true, server: false, pick: ['hiddenProjects'] },
-);
+const { data: accessView } = useFetch<Pick<DashboardView, 'hiddenProjects'>>(`/api/dashboards/${props.view.id}`, {
+  query: scopeQuery,
+  lazy: true,
+  server: false,
+  pick: ['hiddenProjects'],
+});
 const hiddenProjects = computed(() => accessView.value?.hiddenProjects ?? props.view.hiddenProjects);
 
 // Project options for the Filters block (slim list, same source as the sidebar menu).
@@ -142,7 +144,7 @@ function definitionToSave(): DashboardDefinition {
 async function save() {
   saving.value = true;
   try {
-    const saved = await $fetch<DashboardView>(`/api/analytics/dashboards/${props.view.id}`, {
+    const saved = await $fetch<DashboardView>(`/api/dashboards/${props.view.id}`, {
       method: 'PATCH',
       body: { definition: definitionToSave(), updatedAt: props.view.updatedAt },
     });
@@ -168,7 +170,7 @@ async function saveAs() {
   if (!saveAsName.value.trim()) return;
   saving.value = true;
   try {
-    const created = await $fetch<DashboardView>('/api/analytics/dashboards', {
+    const created = await $fetch<DashboardView>('/api/dashboards', {
       method: 'POST',
       body: { name: saveAsName.value.trim(), visibility: 'private', definition: definitionToSave() },
     });
@@ -191,7 +193,7 @@ function reloadAfterConflict() {
 
 async function duplicate() {
   try {
-    const copy = await $fetch<DashboardView>(`/api/analytics/dashboards/${props.view.id}/duplicate`, {
+    const copy = await $fetch<DashboardView>(`/api/dashboards/${props.view.id}/duplicate`, {
       method: 'POST',
       body: {},
     });
@@ -365,7 +367,7 @@ function setMyDefault() {
 
 async function setInstanceDefault() {
   try {
-    await $fetch('/api/settings/analytics-default-dashboard', { method: 'PUT', body: { dashboard: props.view.id } });
+    await $fetch('/api/settings/default-dashboard', { method: 'PUT', body: { dashboard: props.view.id } });
     toast.add({ title: `${props.view.name} is the default dashboard for everyone`, color: 'success' });
   } catch (error) {
     toast.add({ title: "Couldn't set the default dashboard", description: errorMessage(error), color: 'error' });
@@ -374,7 +376,7 @@ async function setInstanceDefault() {
 
 async function setVisibility(visibility: 'private' | 'shared') {
   try {
-    const saved = await $fetch<DashboardView>(`/api/analytics/dashboards/${props.view.id}`, {
+    const saved = await $fetch<DashboardView>(`/api/dashboards/${props.view.id}`, {
       method: 'PATCH',
       body: { visibility, updatedAt: props.view.updatedAt },
     });
@@ -389,7 +391,7 @@ async function setVisibility(visibility: 'private' | 'shared') {
 const deleteOpen = ref(false);
 async function confirmDelete() {
   try {
-    await $fetch(`/api/analytics/dashboards/${props.view.id}`, { method: 'DELETE' });
+    await $fetch(`/api/dashboards/${props.view.id}`, { method: 'DELETE' });
     deleteOpen.value = false;
     toast.add({ title: 'Dashboard deleted', color: 'success' });
     if (myDefault.value === props.view.id) myDefault.value = null;
@@ -552,8 +554,10 @@ function widgetReads(widget: { scope?: Partial<AnalyticsScope> }, projectId: num
   return !ids || ids.length === 0 || ids.includes(projectId);
 }
 
+// `rollup-updated` follows a finished or submitted run once its day's rollup counts it; a refresh on
+// the run events themselves would read the rollups before the run is in them.
 useRunEvents((event) => {
-  if (editing.value || (event.type !== 'run-finished' && event.type !== 'run-submitted')) return;
+  if (editing.value || event.type !== 'rollup-updated') return;
   if (typeof event.projectId !== 'number') return;
   for (const band of bands.value) {
     for (const widget of band.widgets) {
@@ -889,7 +893,7 @@ function exitTvMode() {
         v-model:open="liveLinksOpen"
         kind="dashboard"
         :trigger="false"
-        :endpoint="`/api/analytics/dashboards/${view.id}/share-links`"
+        :endpoint="`/api/dashboards/${view.id}/share-links`"
       />
     </template>
   </UDashboardPanel>

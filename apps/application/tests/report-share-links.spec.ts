@@ -1,7 +1,7 @@
 /**
  * Report share links and live dashboard links:
  *   /api/reports/snapshots/:id/share-links    — mint and list a report share link
- *   /api/analytics/dashboards/:id/share-links — mint and list a live dashboard link
+ *   /api/dashboards/:id/share-links — mint and list a live dashboard link
  *   /share/:token, /chart.png, /badge.svg      — the anonymous views, and their 404 once revoked
  *   the snapshot page's Share button          — minting from the dialog, with the badge
  */
@@ -40,7 +40,7 @@ test.beforeAll(async ({ request }) => {
   expect(snapshot.status()).toBe(201);
   snapshotId = (await snapshot.json()).id;
 
-  const dashboard = await request.post('/api/analytics/dashboards', {
+  const dashboard = await request.post('/api/dashboards', {
     data: {
       name: 'Share links wall screen',
       visibility: 'shared',
@@ -64,7 +64,7 @@ test.beforeAll(async ({ request }) => {
 });
 
 test.afterAll(async ({ request }) => {
-  if (dashboardId) await request.delete(`/api/analytics/dashboards/${dashboardId}`);
+  if (dashboardId) await request.delete(`/api/dashboards/${dashboardId}`);
 });
 
 test.describe('Report share links', () => {
@@ -88,16 +88,20 @@ test.describe('Report share links', () => {
     const response = await page.goto(minted.url);
     expect(response?.status()).toBe(200);
     expect(response?.headers()['content-security-policy']).toContain('sandbox');
+    expect(response?.headers()['cache-control']).toBe('no-store');
     await expect(page.getByRole('heading', { level: 1 })).toContainText(PROJECT.REPORT_SHARE_LINKS);
 
     const badge = await anon.request.get(minted.badgeUrl);
     expect(badge.status()).toBe(200);
     expect(badge.headers()['content-type']).toContain('image/svg+xml');
+    // Image proxies (GitHub's, Slack's) may cache an image for a few minutes; the page never.
+    expect(badge.headers()['cache-control']).toBe('public, max-age=300');
     expect(await badge.text()).toMatch(/tests on default branch/);
 
     const chart = await anon.request.get(minted.chartUrl);
     expect(chart.status()).toBe(200);
     expect(chart.headers()['content-type']).toBe('image/png');
+    expect(chart.headers()['cache-control']).toBe('public, max-age=300');
 
     const revoke = await request.delete(`/api/share-links/${minted.link.id}`);
     expect(revoke.ok()).toBeTruthy();
@@ -159,7 +163,7 @@ test.describe('A schedule that includes a share link', () => {
 
 test.describe('Live dashboard links', () => {
   test('a dashboard link renders the dashboard live, reloading itself, until revoked', async ({ request, browser }) => {
-    const res = await request.post(`/api/analytics/dashboards/${dashboardId}/share-links`, { data: {} });
+    const res = await request.post(`/api/dashboards/${dashboardId}/share-links`, { data: {} });
     expect(res.ok(), await res.text()).toBeTruthy();
     const minted = await res.json();
 
@@ -178,7 +182,7 @@ test.describe('Live dashboard links', () => {
   });
 
   test('a built-in dashboard has no live link: it must be duplicated first', async ({ request }) => {
-    const res = await request.post('/api/analytics/dashboards/overview/share-links', { data: {} });
+    const res = await request.post('/api/dashboards/overview/share-links', { data: {} });
     expect(res.status()).toBe(400);
   });
 

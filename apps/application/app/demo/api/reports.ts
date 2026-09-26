@@ -25,8 +25,10 @@ import {
   listReportSnapshots,
   listScheduleOwners,
   parseScheduleBody,
+  previewReportSchedule,
   reportSchedulePatchSchema,
   reportScheduleInputSchema,
+  reportSchedulePreviewSchema,
   ReportScheduleError,
   runReportScheduleNow,
   updateReportSchedule,
@@ -156,6 +158,19 @@ export async function apiUpdateReportSchedule(
 export async function apiDeleteReportSchedule(id: number) {
   await demoReport(async () => deleteReportSchedule(await getDemoDb(), id, DEMO_ACTOR));
   return { success: true };
+}
+
+/** POST /api/reports/schedules/preview */
+export async function apiPreviewReportSchedule(body: unknown, access: ProjectAccess) {
+  return demoReport(async () =>
+    previewReportSchedule(await getDemoDb(), parseScheduleBody(reportSchedulePreviewSchema, body), {
+      actor: DEMO_ACTOR,
+      access,
+      timeZone: await demoTimeZone(),
+      baseUrl: demoBaseUrl(),
+      piwiVersion: 'demo',
+    }),
+  );
 }
 
 /** POST /api/reports/schedules/:id/run */

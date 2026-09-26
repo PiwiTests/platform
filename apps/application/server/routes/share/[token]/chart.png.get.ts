@@ -1,4 +1,4 @@
-import { emailTrendBlock } from '../../../utils/email';
+import { emailTrendBlock } from '#shared/reports/render-email';
 import { chartPng } from '../../../utils/reports/chart-png';
 import { openShareLink, shareLinkReport } from '../../../utils/share-view';
 
@@ -9,7 +9,7 @@ import { openShareLink, shareLinkReport } from '../../../utils/share-view';
  * or a report without a trend.
  */
 export default eventHandler(async (event) => {
-  const opened = await openShareLink(event, { gonePage: false });
+  const opened = await openShareLink(event, { gonePage: false, image: true });
   if ('gone' in opened) return opened.gone;
   const report = await shareLinkReport(opened.db, opened.link);
   const trend = report ? emailTrendBlock(report.bundle) : null;

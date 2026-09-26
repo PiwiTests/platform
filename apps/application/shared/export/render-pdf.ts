@@ -126,6 +126,11 @@ const REPLACEMENTS: Record<string, string> = {
   '├': '|',
   '└': '`',
   '▶': '>',
+  // French puts a narrow no-break space before % and between thousands; the font has the plain one.
+  '\u202f': '\u00a0',
+  '\u2009': ' ',
+  // The minus sign of a report's changes (−2.1 pts).
+  '\u2212': '-',
 };
 
 /**

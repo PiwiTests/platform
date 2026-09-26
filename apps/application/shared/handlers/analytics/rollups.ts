@@ -12,7 +12,7 @@
  * `shared/`.
  */
 
-import { and, eq, gte, inArray, lt, lte, sql, type SQL } from 'drizzle-orm';
+import { and, eq, gte, inArray, lt, lte, or, sql, type SQL } from 'drizzle-orm';
 import { analyticsDailyRollups, projects, testRuns, testRunsCases } from '../../../server/database/schema';
 import type { DrizzleDB } from '../db';
 import { notProbeRun } from '../probes';
@@ -35,8 +35,12 @@ export interface RollupTotals {
   /** Highest `totalTests` of one run: read with MAX, never summed. */
   maxTotalTests: number;
   durationMs: number;
+  /** Runs with a duration: the divisor of `durationMs`, since a run without one (interrupted, imported) adds 0. */
+  durationRuns: number;
   avgTestDurationSumMs: number;
   p90TestDurationSumMs: number;
+  /** Runs with measured test durations: the divisor of the two test duration sums. */
+  testDurationRuns: number;
   waitMs: number;
   failedExecMs: number;
   newRegressions: number;
@@ -54,8 +58,10 @@ const SUMMED_FIELDS = [
   'didNotRunTests',
   'flakyTests',
   'durationMs',
+  'durationRuns',
   'avgTestDurationSumMs',
   'p90TestDurationSumMs',
+  'testDurationRuns',
   'waitMs',
   'failedExecMs',
   'newRegressions',
@@ -75,8 +81,10 @@ export function emptyRollupTotals(): RollupTotals {
     flakyTests: 0,
     maxTotalTests: 0,
     durationMs: 0,
+    durationRuns: 0,
     avgTestDurationSumMs: 0,
     p90TestDurationSumMs: 0,
+    testDurationRuns: 0,
     waitMs: 0,
     failedExecMs: 0,
     newRegressions: 0,
@@ -106,8 +114,8 @@ function cellId(key: RollupCellKey): string {
 
 const ID_BATCH = 500;
 
-function* batches<T>(items: T[]): Generator<T[]> {
-  for (let i = 0; i < items.length; i += ID_BATCH) yield items.slice(i, i + ID_BATCH);
+function* batches<T>(items: T[], size = ID_BATCH): Generator<T[]> {
+  for (let i = 0; i < items.length; i += size) yield items.slice(i, i + size);
 }
 
 function dayStart(day: string): Date {
@@ -234,9 +242,16 @@ async function aggregateRuns(db: DrizzleDB, runs: RawRun[]) {
     t.didNotRunTests += run.didNotRunTests ?? 0;
     t.flakyTests += run.flakyTests ?? 0;
     t.maxTotalTests = Math.max(t.maxTotalTests, run.totalTests ?? 0);
-    t.durationMs += run.duration ?? 0;
-    t.avgTestDurationSumMs += run.avgTestDuration ?? 0;
-    t.p90TestDurationSumMs += run.p90TestDuration ?? 0;
+    // An average divides by the runs that have the value, so a run without one does not pull it down.
+    if (run.duration != null && run.duration > 0) {
+      t.durationMs += run.duration;
+      t.durationRuns += 1;
+    }
+    if (run.p90TestDuration != null && run.p90TestDuration > 0) {
+      t.avgTestDurationSumMs += run.avgTestDuration ?? 0;
+      t.p90TestDurationSumMs += run.p90TestDuration;
+      t.testDurationRuns += 1;
+    }
     t.waitMs += s?.waitMs ?? 0;
     t.failedExecMs += s?.failedExecMs ?? 0;
     t.newRegressions += s?.newRegressions ?? 0;
@@ -251,6 +266,11 @@ async function aggregateRuns(db: DrizzleDB, runs: RawRun[]) {
  * Recompute the retained rows of one project over `[fromDay, toDay)` from the
  * runs still stored: upsert every cell that has runs, delete every retained row
  * of the range whose runs are gone. Never touches an archived row.
+ *
+ * Two recomputes of the same day can overlap (two runs finishing together).
+ * Only a row listed before this one reads the runs, and still as listed, is
+ * taken for stale: a cell another recompute writes meanwhile, for a run that
+ * turned terminal after the read below, is never deleted.
  */
 async function recomputeRetainedRange(
   db: DrizzleDB,
@@ -258,6 +278,32 @@ async function recomputeRetainedRange(
   fromDay: string,
   toDay: string,
 ): Promise<number> {
+  const listed: Array<{ id: number; key: RollupCellKey; computedAt: Date }> = (
+    await db
+      .select({
+        id: analyticsDailyRollups.id,
+        projectId: analyticsDailyRollups.projectId,
+        day: analyticsDailyRollups.day,
+        environment: analyticsDailyRollups.environment,
+        branch: analyticsDailyRollups.branch,
+        fullRun: analyticsDailyRollups.fullRun,
+        computedAt: analyticsDailyRollups.computedAt,
+      })
+      .from(analyticsDailyRollups)
+      .where(
+        and(
+          eq(analyticsDailyRollups.projectId, projectId),
+          eq(analyticsDailyRollups.part, 'retained'),
+          gte(analyticsDailyRollups.day, fromDay),
+          lt(analyticsDailyRollups.day, toDay),
+        ),
+      )
+  ).map((row: any) => ({
+    id: row.id,
+    key: { ...row, fullRun: row.fullRun === 1 ? 1 : 0 },
+    computedAt: row.computedAt,
+  }));
+
   const runs: RawRun[] = await db
     .select(RAW_RUN_FIELDS)
     .from(testRuns)
@@ -288,30 +334,19 @@ async function recomputeRetainedRange(
       });
   }
 
-  const stale: { id: number; key: RollupCellKey }[] = (
+  // A listed row this read has no runs for is stale, unless another recompute rewrote it since the list.
+  const stale = listed.filter((row) => !cells.has(cellId(row.key)));
+  // Two parameters per row.
+  for (const batch of batches(stale, ID_BATCH / 2)) {
     await db
-      .select({
-        id: analyticsDailyRollups.id,
-        projectId: analyticsDailyRollups.projectId,
-        day: analyticsDailyRollups.day,
-        environment: analyticsDailyRollups.environment,
-        branch: analyticsDailyRollups.branch,
-        fullRun: analyticsDailyRollups.fullRun,
-      })
-      .from(analyticsDailyRollups)
+      .delete(analyticsDailyRollups)
       .where(
-        and(
-          eq(analyticsDailyRollups.projectId, projectId),
-          eq(analyticsDailyRollups.part, 'retained'),
-          gte(analyticsDailyRollups.day, fromDay),
-          lt(analyticsDailyRollups.day, toDay),
+        or(
+          ...batch.map((row) =>
+            and(eq(analyticsDailyRollups.id, row.id), eq(analyticsDailyRollups.computedAt, row.computedAt)),
+          ),
         ),
-      )
-  )
-    .map((row: any) => ({ id: row.id, key: { ...row, fullRun: row.fullRun === 1 ? 1 : 0 } }))
-    .filter((row: { key: RollupCellKey }) => !cells.has(cellId(row.key)));
-  for (const batch of batches(stale.map((row) => row.id))) {
-    await db.delete(analyticsDailyRollups).where(inArray(analyticsDailyRollups.id, batch));
+      );
   }
   return cells.size;
 }

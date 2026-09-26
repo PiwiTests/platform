@@ -1,6 +1,7 @@
-import { getDatabase } from '../../../../database';
-import { requireAuth } from '../../../../utils/auth';
-import { dashboardActor, dashboardRoute } from '../../../../utils/dashboards';
+import { getDatabase } from '../../../database';
+import { requireAuth } from '../../../utils/auth';
+import { getProjectScope } from '../../../utils/project-access';
+import { dashboardActor, dashboardRoute } from '../../../utils/dashboards';
 import { dashboardDuplicateSchema, duplicateDashboard, parseDashboardBody } from '#shared/handlers/dashboards';
 
 defineRouteMeta({
@@ -18,8 +19,12 @@ export default eventHandler(async (event) => {
   const user = await requireAuth(event);
   const db = await getDatabase();
   const input = await dashboardRoute(async () => parseDashboardBody(dashboardDuplicateSchema, await readBody(event)));
+  const access = await getProjectScope(db, user as any);
   const copy = await dashboardRoute(() =>
-    duplicateDashboard(db as any, getRouterParam(event, 'id'), dashboardActor(event, user as any), input),
+    duplicateDashboard(db as any, getRouterParam(event, 'id'), dashboardActor(event, user as any), {
+      ...input,
+      access,
+    }),
   );
   setResponseStatus(event, 201);
   return copy;

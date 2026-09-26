@@ -1,6 +1,7 @@
 import type { AnalyticsProgress, AnalyticsRisks, VerdictFacts } from '#shared/analytics/types';
 import { getMetric } from '#shared/analytics/metrics';
 import type { ProjectTargetVerdict } from '#shared/analytics/targets';
+import { EN_INSIGHTS, writeInsight } from '#shared/analytics/insight-rules';
 import { passRateDirection } from './verdict';
 import type { ValueFormatter } from './format';
 import type { ReportSentences } from './sentences';
@@ -161,6 +162,7 @@ export const EN_SENTENCES: ReportSentences = {
     score: 'Score',
     count: 'Count',
     targets: 'Targets',
+    markers: 'Markers',
   },
   verdict,
   progress,
@@ -175,6 +177,8 @@ export const EN_SENTENCES: ReportSentences = {
     if (judged === 0) return 'Target set, nothing to judge yet';
     return `${mark.met} of ${judged} ${plural(judged, 'project meets', 'projects meet')} the target`;
   },
+  colon: ': ',
+  insight: (facts) => writeInsight(EN_INSIGHTS, facts),
   metricLabel: (_id, fallback) => fallback,
   metricDefinition: (_id, fallback) => fallback,
   title: (text) => text,
@@ -186,6 +190,12 @@ export const EN_SENTENCES: ReportSentences = {
       : 'The test filter counts stored executions, which reach back only as far as retention keeps runs.',
   identityLimit: 'Lists of tests and flaky-test counts reach back only as far as retention keeps runs.',
   gapClass: (cls) => GAP_CLASS_LABELS[cls] ?? cls,
+  gapTitle: (_detector, title) => title,
+  listItem: (item) => ({
+    title: item.title,
+    detail:
+      item.facts?.source === 'scenario-gaps' ? (GAP_CLASS_LABELS[item.facts.gapClass] ?? item.detail) : item.detail,
+  }),
   firstRunLimit: (since) =>
     `This first scheduled quality report covers only the days since the schedule was created, ${since}.`,
   narrativeGenerated: (model) =>

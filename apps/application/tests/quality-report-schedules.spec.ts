@@ -1,16 +1,21 @@
 /**
  * Report schedules and report snapshots:
- *   /api/reports/schedules    — create, validate, mute, run now, delete
+ *   /api/reports/schedules    — create, validate, mute, run now, delete, preview
  *   /api/reports/snapshots    — list, read, download a snapshot
  *   /reports and /reports/:id — the Reports page, Run now, the snapshot page
- *   Schedule… on /analytics   — the schedule form, prefilled with the scope
+ *   Schedule… on /analytics   — the schedule form, prefilled with the scope, and its preview
  *
  * The email itself is checked by email-notifications.spec.ts (it needs
  * Mailpit); here the delivery row is queued and recorded on the snapshot.
  */
 import { test, expect } from './fixtures';
 import { PROJECT } from '#shared/test-project-names';
-import type { ReportScheduleView, ReportSnapshotSummary, ReportSnapshotView } from '#shared/handlers/reports';
+import type {
+  ReportSchedulePreview,
+  ReportScheduleView,
+  ReportSnapshotSummary,
+  ReportSnapshotView,
+} from '#shared/handlers/reports';
 
 // One channel and one project for the whole file.
 test.describe.configure({ mode: 'serial' });
@@ -134,6 +139,31 @@ test.describe('Report schedule API', () => {
     expect(snapshot.deliveries).toEqual([]);
   });
 
+  test('the preview is the report Run now would send, and keeps nothing', async ({ request }) => {
+    const before: { items: ReportSnapshotSummary[] } = await (await request.get('/api/reports/snapshots')).json();
+    const res = await request.post('/api/reports/schedules/preview', {
+      data: {
+        name: 'Previewed report',
+        dashboard: 'executive',
+        scope: { projects: String(projectId) },
+        cadence: 'daily',
+        at: '08:00',
+      },
+    });
+    expect(res.status(), await res.text()).toBe(200);
+    const preview: ReportSchedulePreview = await res.json();
+    expect(preview.bundle.title).toMatch(/^Previewed report: /);
+    expect(preview.period.from).toBe(preview.period.to);
+    expect(preview.bundle.scope.projectIds).toEqual([projectId]);
+    const after: { items: ReportSnapshotSummary[] } = await (await request.get('/api/reports/snapshots')).json();
+    expect(after.items.length).toBe(before.items.length);
+
+    const team = await request.post('/api/reports/schedules/preview', {
+      data: { dashboard: 'team', cadence: 'daily', at: '08:00' },
+    });
+    expect(team.status()).toBe(400);
+  });
+
   test('a report is kept by hand from the same keys as the preview', async ({ request }) => {
     const res = await request.post('/api/reports/snapshots', {
       data: { dashboard: 'engineering', projects: String(projectId), period: 'last-7d' },
@@ -148,14 +178,16 @@ test.describe('Report schedule API', () => {
 
 test.describe('The Reports page', () => {
   test('lists the schedule, runs it, and opens the snapshot', async ({ page, request }) => {
-    const schedule = await createSchedule(request, { name: 'Report page schedule' });
+    // A name of its own: a snapshot outlives its deleted schedule, so a rerun on the same server would find the last one.
+    const name = `Report page schedule ${Date.now()}`;
+    const schedule = await createSchedule(request, { name });
     await page.goto('/reports');
     const row = page.getByTestId(`schedule-${schedule.id}`);
     // The first visit compiles the page on a dev server.
     await expect(row).toContainText('Weekly on Monday at 08:00', { timeout: 60_000 });
     await expect(row).toContainText('Quality report schedules test');
     // Hydration can lag the first paint; retry the click until the snapshot shows.
-    const snapshotLink = page.getByTestId('snapshot-list').getByRole('link', { name: /Report page schedule/ });
+    const snapshotLink = page.getByTestId('snapshot-list').getByRole('link', { name: new RegExp(name) });
     await expect(async () => {
       if ((await snapshotLink.count()) === 0) await page.getByTestId(`schedule-run-${schedule.id}`).click();
       await expect(snapshotLink.first()).toBeVisible({ timeout: 5000 });
@@ -165,7 +197,7 @@ test.describe('The Reports page', () => {
     await expect(page).toHaveURL(/\/reports\/\d+$/);
     const view = page.getByTestId('report-view');
     await expect(view).toBeVisible({ timeout: 30_000 });
-    await expect(view.getByRole('heading', { name: /Report page schedule/ })).toBeVisible();
+    await expect(view.getByRole('heading', { name: new RegExp(name) })).toBeVisible();
     await expect(page.getByTestId('snapshot-delivery')).toContainText('Quality report schedules test');
   });
 
@@ -191,5 +223,36 @@ test.describe('The Reports page', () => {
     scheduleIds.push(created.id);
     expect(created.scope.projects).toBe(String(projectId));
     expect(created.cadence).toBe('weekly');
+  });
+
+  test('Preview shows the email as sent and the full report, then back to the form', async ({ page }) => {
+    await page.goto(`/analytics?projects=${projectId}&period=last-7d`);
+    const form = page.getByTestId('schedule-form');
+    await expect(async () => {
+      if (!(await form.isVisible()))
+        await page.locator('button[title="Schedule a quality report of this scope"]').first().click();
+      await expect(form).toBeVisible({ timeout: 3000 });
+    }).toPass({ timeout: 60_000 });
+    await page.getByTestId('schedule-name').fill('Previewed from the form');
+    await page.getByTestId('schedule-channels').click();
+    await page.getByRole('option', { name: /Quality report schedules test/ }).click();
+    await page.keyboard.press('Escape');
+    await page.getByTestId('schedule-preview-open').click();
+
+    await expect(page.getByTestId('schedule-preview-period')).toContainText('As it would be sent now:');
+    await expect(page.getByTestId('schedule-preview')).toContainText('Quality report schedules test: this email.');
+    await expect(page.getByTestId('schedule-preview-subject')).toContainText(
+      'Quality report: Previewed from the form: ',
+    );
+    const email = page.frameLocator('[data-testid="schedule-preview-email"]');
+    await expect(email.getByRole('link', { name: 'Open in Piwi' })).toBeVisible({ timeout: 30_000 });
+    await expect(email.getByRole('heading', { name: /^Previewed from the form: / })).toBeVisible();
+
+    await page.getByTestId('schedule-preview-view').getByRole('tab', { name: 'Full report' }).click();
+    await expect(page.getByTestId('report-view')).toBeVisible();
+    await expect(page.getByTestId('report-view').getByRole('heading', { name: 'Fixes and triage' })).toBeVisible();
+
+    await page.getByTestId('schedule-preview-back').click();
+    await expect(page.getByTestId('schedule-name')).toHaveValue('Previewed from the form');
   });
 });

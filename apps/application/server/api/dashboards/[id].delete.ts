@@ -1,6 +1,6 @@
-import { getDatabase } from '../../../database';
-import { requireAuth } from '../../../utils/auth';
-import { dashboardActor, dashboardRoute } from '../../../utils/dashboards';
+import { getDatabase } from '../../database';
+import { requireAuth } from '../../utils/auth';
+import { dashboardActor, dashboardRoute } from '../../utils/dashboards';
 import { deleteDashboard } from '#shared/handlers/dashboards';
 
 defineRouteMeta({

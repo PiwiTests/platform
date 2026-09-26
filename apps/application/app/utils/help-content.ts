@@ -162,7 +162,7 @@ export const HELP_TOPICS = {
     doc: 'features/analytics-widgets#where-things-stand',
   },
   'analytics.progress': {
-    title: 'What is being done',
+    title: 'Fixes and triage',
     text: 'Failure causes fixed in the period and whether the fixes held, open causes assigned or linked to a ticket, tests quarantined and released, and auto-heal pull requests opened.',
   },
   'analytics.risks': {

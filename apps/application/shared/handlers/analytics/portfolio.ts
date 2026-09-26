@@ -100,8 +100,7 @@ export async function getAnalyticsPortfolio(
       passRate,
       passRateDelta,
       flakyTests: totals?.flakyTests ?? 0,
-      avgRunDurationMs:
-        totals && runCount > 0 && totals.durationMs > 0 ? Math.round(totals.durationMs / runCount) : null,
+      avgRunDurationMs: totals && totals.durationRuns > 0 ? Math.round(totals.durationMs / totals.durationRuns) : null,
       openClusters: openClustersByProject.get(project.id) ?? 0,
       failingStreak,
       latestRun: latest ? { id: latest.id, status: latest.status, startTime: latest.startTime } : null,

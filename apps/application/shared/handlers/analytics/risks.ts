@@ -26,6 +26,11 @@ const WORSENING: Array<{ metric: MetricId; points?: number; pct?: number }> = [
   { metric: 'new-regressions', pct: 25 },
 ];
 
+/** Whole days from `at` to `now`; a date past `now` (clock skew, imported rows) counts as today. */
+function daysSince(at: Date | string | number, now: number): number {
+  return Math.max(0, Math.floor((now - new Date(at).getTime()) / DAY_MS));
+}
+
 /**
  * What could go wrong next: metrics moving the wrong way against the
  * comparison period, projects failing run after run, the oldest open failure
@@ -121,14 +126,14 @@ export async function getAnalyticsRisks(
       projectId: r.projectId,
       projectName: r.projectLabel || r.projectName,
       title: r.title || r.signature,
-      ageDays: Math.floor((ctx.now - new Date(r.createdAt).getTime()) / DAY_MS),
+      ageDays: daysSince(r.createdAt, ctx.now),
       assignee: r.assignee ?? null,
       occurrences: r.occurrences ?? 0,
     })),
     openCount: openRows.length,
     quarantine: {
       count: quarantineRows.length,
-      oldestDays: oldestQuarantine ? Math.floor((ctx.now - new Date(oldestQuarantine).getTime()) / DAY_MS) : null,
+      oldestDays: oldestQuarantine ? daysSince(oldestQuarantine, ctx.now) : null,
     },
     missedTargets: targets.filter((t) => t.met === false),
   };

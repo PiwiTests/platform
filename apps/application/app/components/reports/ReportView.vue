@@ -4,7 +4,7 @@
  * and blocks the HTML, PDF and Markdown renderers draw, with the charts from
  * the shared chart geometry, so the preview and a download state the same facts.
  */
-import { seriesGeometry } from '#shared/reports/chart';
+import { chartLabelAnchor, chartTickLabel, seriesGeometry } from '#shared/reports/chart';
 import { makeFormatter } from '#shared/reports/format';
 import { sentencesFor } from '#shared/reports/sentences';
 import { renderWidgetCsv } from '#shared/reports/render-csv';
@@ -54,9 +54,6 @@ const CHART = { width: 600, height: 150, left: 40, bottom: 18 };
 type SeriesBlock = Extract<ReportBlock, { kind: 'series' }>;
 function chart(block: SeriesBlock) {
   return seriesGeometry(block, CHART.width - CHART.left - 6, CHART.height - CHART.bottom - 6);
-}
-function tickLabel(block: SeriesBlock, value: number) {
-  return block.unit === 'percent' ? `${value}%` : String(value);
 }
 </script>
 
@@ -147,7 +144,7 @@ function tickLabel(block: SeriesBlock, value: number) {
                     stroke-dasharray="3 3"
                   />
                   <text :x="-6" :y="tick.y + 3" text-anchor="end" class="fill-gray-400 text-[10px]">
-                    {{ tickLabel(block, tick.value) }}
+                    {{ chartTickLabel(block, tick.value, f) }}
                   </text>
                 </g>
                 <line
@@ -178,7 +175,7 @@ function tickLabel(block: SeriesBlock, value: number) {
                   :key="lab.date"
                   :x="lab.x"
                   :y="chart(block).height + 13"
-                  text-anchor="middle"
+                  :text-anchor="chartLabelAnchor(lab.x, chart(block).width)"
                   class="fill-gray-400 text-[10px]"
                 >
                   {{ f.day(lab.date) }}

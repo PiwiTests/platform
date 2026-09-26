@@ -5,7 +5,7 @@
  * (keyed by `id`), a page component, and a mapping to the document blocks of
  * a quality report (`shared/reports/widget-documents.ts`). Dashboards
  * (`shared/analytics/dashboards.ts`) place widgets in bands; the generic
- * `GET /api/analytics/[widget]` route dispatches by `id`. Adding a widget
+ * `GET /api/widgets/[widget]` route dispatches by `id`. Adding a widget
  * means: one entry here, one handler file, one component, one document
  * mapping. No routing changes on either the server or the demo mirror.
  *
@@ -226,7 +226,7 @@ export const ANALYTICS_WIDGETS = [
   },
   {
     id: 'progress',
-    title: 'What is being done',
+    title: 'Fixes and triage',
     description: 'Failure causes fixed, assigned and ticketed, quarantine releases, auto-heal pull requests.',
     icon: 'i-lucide-list-checks',
     size: 'half',

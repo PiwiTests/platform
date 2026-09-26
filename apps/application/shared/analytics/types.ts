@@ -4,6 +4,7 @@
  * components, so there is exactly one definition per widget payload.
  */
 
+import type { InsightFacts } from './insight-rules';
 import type { MetricId, MetricUnit } from './metrics';
 import type { ProjectTargetVerdict } from './targets';
 
@@ -246,6 +247,8 @@ export interface AnalyticsInsight {
   /** In-app route the insight deep-links to. */
   to?: string;
   projectId?: number;
+  /** The values `message` and `detail` are written from, so a report can write them in its own language. */
+  facts?: InsightFacts;
 }
 
 // ── Timeout hygiene ───────────────────────────────────────────────────────────
@@ -284,7 +287,10 @@ export interface AnalyticsMarker {
   projectId: number;
   projectName: string | null;
   occurredAt: string | Date;
+  /** What the marker is, led by its project's name when the scope spans several projects. */
   label: string;
+  /** The marker's label as it was entered, without the project; a report joins the two in its own language. */
+  ownLabel?: string;
   description: string | null;
   category: string;
   environment: string | null;
@@ -384,6 +390,8 @@ export interface AnalyticsBreakdownGroup {
   points: AnalyticsSeriesPoint[] | null;
   /** The group of everything outside the top groups. */
   other: boolean;
+  /** How many groups the *Other* group holds. */
+  rest?: number;
 }
 
 export interface AnalyticsMetricWidget {
@@ -512,7 +520,15 @@ export interface AnalyticsNewGaps {
   items: Array<{
     projectId: number;
     projectName: string;
-    gaps: Array<{ id: number; title: string; class: string; score: number | null; createdAt: number }>;
+    /** `detector` names the check that found the gap, so a report can title it in its own language. */
+    gaps: Array<{
+      id: number;
+      title: string;
+      detector?: string;
+      class: string;
+      score: number | null;
+      createdAt: number;
+    }>;
   }>;
 }
 
@@ -528,7 +544,31 @@ export interface AnalyticsListItem {
   at: string | null;
   /** Where the item opens in the app. */
   href: string;
+  /** The values `title` and `detail` are written from, so a report can write them in its own language. */
+  facts?: AnalyticsListFacts;
 }
+
+/** What one list item says, by source. */
+export type AnalyticsListFacts =
+  | {
+      source: 'runs';
+      id: number;
+      status: string;
+      passed: number;
+      total: number;
+      branch: string | null;
+      environment: string | null;
+    }
+  | {
+      source: 'failure-clusters';
+      id: number;
+      title: string | null;
+      occurrences: number;
+      errorType: string | null;
+      assignee: string | null;
+    }
+  | { source: 'flaky-tests'; score: number; alternations: number; totalRuns: number }
+  | { source: 'scenario-gaps'; detector: string; gapClass: string };
 
 export interface AnalyticsList {
   source: 'runs' | 'failure-clusters' | 'flaky-tests' | 'scenario-gaps';

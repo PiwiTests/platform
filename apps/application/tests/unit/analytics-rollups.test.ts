@@ -25,6 +25,7 @@ const { deleteRunsByIds, deleteRunsOlderThan } = await import('../../server/util
 const { releaseRun, keepRun } = await import('../../shared/handlers/run-keep');
 const { dayKey } = await import('../../shared/handlers/analytics/common');
 const { PROBE_RUN_METADATA_KEY } = await import('../../shared/handlers/probes');
+const { rollupMetricValue } = await import('../../shared/handlers/analytics/metric-values');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -64,7 +65,10 @@ interface RunSeed {
   passedTests?: number;
   failedTests?: number;
   flakyTests?: number;
-  duration?: number;
+  /** Null for a run that never reported one (an interrupted run). */
+  duration?: number | null;
+  /** Null for a run with no measured test durations. */
+  p90TestDuration?: number | null;
   environment?: string | null;
   branch?: string | null;
   isFullRun?: number;
@@ -82,7 +86,7 @@ async function seedRun(seed: RunSeed): Promise<number> {
       projectId: seed.projectId ?? 1,
       status: seed.status ?? 'passed',
       startTime: day,
-      duration: seed.duration ?? 60_000,
+      duration: seed.duration === undefined ? 60_000 : seed.duration,
       totalTests: seed.totalTests ?? 10,
       passedTests: seed.passedTests ?? 10,
       failedTests: seed.failedTests ?? 0,
@@ -91,8 +95,8 @@ async function seedRun(seed: RunSeed): Promise<number> {
       branch: seed.branch ?? null,
       isFullRun: seed.isFullRun ?? 1,
       metadata: seed.metadata,
-      avgTestDuration: 1_000,
-      p90TestDuration: 2_000,
+      avgTestDuration: seed.p90TestDuration === null ? null : 1_000,
+      p90TestDuration: seed.p90TestDuration === undefined ? 2_000 : seed.p90TestDuration,
     })
     .returning({ id: schema.testRuns.id });
   if (seed.cases?.length) {
@@ -159,6 +163,22 @@ describe('the ingest hook', () => {
       durationMs: 60_000,
     });
     expect({ ...second[0], computedAt: null }).toEqual({ ...first[0], computedAt: null });
+  });
+
+  test('an average divides by the runs that have the value, so runs without one do not pull it down', async () => {
+    // Ten 10-minute runs, then ten interrupted runs that reported no duration and no test durations.
+    for (let i = 0; i < 10; i++) await seedRun({ daysAgo: 1, duration: 600_000 });
+    for (let i = 0; i < 10; i++)
+      await seedRun({ daysAgo: 1, status: 'interrupted', duration: null, p90TestDuration: null });
+    await rollups.backfillDailyRollups(db as any);
+
+    const totals = await dayTotals(1);
+    expect(totals).toMatchObject({ runs: 20, durationRuns: 10, testDurationRuns: 10, durationMs: 6_000_000 });
+    expect(rollupMetricValue('average-run-duration', totals, null)).toBe(600_000);
+    expect(rollupMetricValue('average-p90-test-duration', totals, null)).toBe(2_000);
+    // A day with no measured duration has no average, rather than 0.
+    const none = { ...rollups.emptyRollupTotals(), runs: 3 };
+    expect(rollupMetricValue('average-run-duration', none, null)).toBeNull();
   });
 
   test('splits cells by environment, branch and run kind, and leaves probe and unfinished runs out', async () => {
@@ -246,6 +266,70 @@ describe('the rollups agree with the stored runs', () => {
   });
 });
 
+/**
+ * A database whose first read of the raw runs (the recompute's) resolves, then
+ * holds the recompute until `gate` opens, so a second recompute can run whole
+ * in between. `read` settles once that first read is done.
+ */
+function pauseAfterRunsRead(target: typeof db, gate: Promise<void>) {
+  let armed = true;
+  let markRead!: () => void;
+  const read = new Promise<void>((resolve) => (markRead = resolve));
+  const hold = (builder: any): any =>
+    new Proxy(builder, {
+      get(obj, prop) {
+        const value = Reflect.get(obj, prop);
+        if (prop === 'then')
+          return (resolve: (v: unknown) => void, reject: (e: unknown) => void) =>
+            obj
+              .then((rows: unknown) => {
+                markRead();
+                return gate.then(() => rows);
+              })
+              .then(resolve, reject);
+        return typeof value === 'function' ? (...args: unknown[]) => hold(value.apply(obj, args)) : value;
+      },
+    });
+  const paused = new Proxy(target, {
+    get(obj, prop) {
+      const value = Reflect.get(obj, prop);
+      if (prop !== 'select') return typeof value === 'function' ? value.bind(obj) : value;
+      return (fields?: Record<string, unknown>) => {
+        const builder = (value as any).call(obj, fields);
+        if (!armed || !fields || !('isFullRun' in fields)) return builder;
+        armed = false;
+        return hold(builder);
+      };
+    },
+  });
+  return { paused, read };
+}
+
+describe('overlapping recomputes', () => {
+  test('a recompute never deletes a cell another one wrote after it read the runs', async () => {
+    await seedRun({ daysAgo: 1, environment: 'staging' });
+    const late = await seedRun({ daysAgo: 1, environment: 'prod', status: 'running' });
+    await rollups.backfillDailyRollups(db as any);
+    const day = dayKey(Date.now() - DAY_MS);
+
+    // Recompute A reads the day's runs while the prod run is still running, then waits.
+    let open!: () => void;
+    const gate = new Promise<void>((resolve) => (open = resolve));
+    const { paused, read } = pauseAfterRunsRead(db, gate);
+    const a = rollups.recomputeRollupCells(paused as any, [{ projectId: 1, day }]);
+    await read;
+
+    // The prod run finishes and recompute B writes its cell.
+    await db.update(schema.testRuns).set({ status: 'passed' }).where(eq(schema.testRuns.id, late));
+    await rollups.upsertDailyRollup(db as any, late);
+    open();
+    await a;
+
+    const retained = (await rollupRows()).filter((r) => r.part === 'retained');
+    expect(retained.map((r) => r.environment).sort()).toEqual(['prod', 'staging']);
+  });
+});
+
 describe('deleting runs', () => {
   test('age-based deletion moves the numbers to the archived row; a kept run stays retained', async () => {
     const kept = await seedRun({ daysAgo: 100, passedTests: 7, failedTests: 3, status: 'failed' });
@@ -281,6 +365,20 @@ describe('deleting runs', () => {
     expect(corrected.failedTests).toBe(1);
     expect(corrected.waitMs).toBe(1_000);
     expect((await rollupRows()).map((r) => r.part)).toEqual(['archived']);
+  });
+
+  test('a purge in slices, one transaction each, keeps every day exact', async () => {
+    const ids: number[] = [];
+    for (let i = 0; i < 5; i++)
+      ids.push(await seedRun({ daysAgo: 100, hour: 8 + i, passedTests: 10 - i, failedTests: i }));
+    for (let i = 0; i < 3; i++) ids.push(await seedRun({ daysAgo: 101, hour: 9 + i, duration: 30_000 }));
+    await rollups.backfillDailyRollups(db as any);
+    const before = [await dayTotals(100), await dayTotals(101)];
+
+    // Slices of two runs: day 100 spans three transactions, and each commit leaves it exact.
+    await deleteRunsByIds(dbc, ids, { archiveRollups: true, sliceRuns: 2 });
+    expect([await dayTotals(100), await dayTotals(101)]).toEqual(before);
+    expect((await rollupRows()).every((r) => r.part === 'archived')).toBe(true);
   });
 
   test('deleting one run by hand is a correction: its numbers leave the day', async () => {

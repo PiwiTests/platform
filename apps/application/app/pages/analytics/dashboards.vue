@@ -61,7 +61,7 @@ async function create() {
   if (!newName.value.trim()) return;
   creating.value = true;
   try {
-    const created = await $fetch<DashboardView>('/api/analytics/dashboards', {
+    const created = await $fetch<DashboardView>('/api/dashboards', {
       method: 'POST',
       body: {
         name: newName.value.trim(),
@@ -82,7 +82,7 @@ async function create() {
 
 async function duplicate(d: DashboardSummary) {
   try {
-    const copy = await $fetch<DashboardView>(`/api/analytics/dashboards/${d.id}/duplicate`, {
+    const copy = await $fetch<DashboardView>(`/api/dashboards/${d.id}/duplicate`, {
       method: 'POST',
       body: {},
     });
@@ -109,7 +109,7 @@ const instanceDefaultItems = computed(() =>
 
 async function setInstanceDefault(id: string) {
   try {
-    await $fetch('/api/settings/analytics-default-dashboard', {
+    await $fetch('/api/settings/default-dashboard', {
       method: 'PUT',
       body: { dashboard: id === 'overview' ? null : id },
     });
@@ -125,7 +125,7 @@ const deleteOpen = ref(false);
 
 async function askDelete(d: DashboardSummary) {
   try {
-    deleting.value = await $fetch<DashboardView>(`/api/analytics/dashboards/${d.id}`);
+    deleting.value = await $fetch<DashboardView>(`/api/dashboards/${d.id}`);
     deleteOpen.value = true;
   } catch (error) {
     toast.add({ title: "Couldn't open the dashboard", description: errorMessage(error), color: 'error' });
@@ -136,7 +136,7 @@ async function confirmDelete() {
   const d = deleting.value;
   if (!d) return;
   try {
-    await $fetch(`/api/analytics/dashboards/${d.id}`, { method: 'DELETE' });
+    await $fetch(`/api/dashboards/${d.id}`, { method: 'DELETE' });
     if (myDefault.value === d.id) myDefault.value = null;
     deleteOpen.value = false;
     await refresh();

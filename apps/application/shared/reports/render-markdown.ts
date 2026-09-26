@@ -5,7 +5,8 @@
  * emphasis characters) so a test title can never change the document's shape.
  */
 import { sparkline } from './chart';
-import { sentencesFor } from './sentences';
+import { makeFormatter, type ValueFormatter } from './format';
+import { sentencesFor, type ReportSentences } from './sentences';
 import { hasVerdictWidget, type ReportBlock, type ReportBundle } from './types';
 
 /** Escape a run-derived string for a Markdown line or table cell. */
@@ -20,7 +21,7 @@ function linked(text: string, href: string | null | undefined): string {
   return href ? `[${escapeMarkdown(text)}](${href.replace(/[()\s]/g, encodeURIComponent)})` : escapeMarkdown(text);
 }
 
-function renderBlock(block: ReportBlock): string[] {
+function renderBlock(block: ReportBlock, s: ReportSentences, f: ValueFormatter): string[] {
   switch (block.kind) {
     case 'text':
       return [escapeMarkdown(block.text), ''];
@@ -30,7 +31,10 @@ function renderBlock(block: ReportBlock): string[] {
         `|${block.tiles.map(() => ' ---: ').join('|')}|`,
         `| ${block.tiles
           .map((t) =>
-            [t.value, t.change ? `(${t.change})` : '', t.note ?? ''].filter(Boolean).map(escapeMarkdown).join(' '),
+            [[t.value, t.change ? `(${t.change})` : ''].filter(Boolean).join(' '), t.note ?? '']
+              .filter(Boolean)
+              .map(escapeMarkdown)
+              .join(' · '),
           )
           .join(' | ')} |`,
         '',
@@ -38,13 +42,19 @@ function renderBlock(block: ReportBlock): string[] {
     case 'series': {
       const lines: string[] = [];
       if (block.summary) lines.push(escapeMarkdown(block.summary), '');
-      for (const s of block.series) {
-        const values = s.formatted.filter((v, i) => s.points[i]!.value !== null);
+      for (const line of block.series) {
+        const values = line.formatted.filter((v, i) => line.points[i]!.value !== null);
         const range = values.length ? ` ${values[0]} → ${values[values.length - 1]}` : '';
-        lines.push(`${escapeMarkdown(s.label)}: \`${sparkline(s.points) || '·'}\`${escapeMarkdown(range)}`, '');
+        lines.push(
+          `${escapeMarkdown(line.label)}${s.colon}\`${sparkline(line.points) || '·'}\`${escapeMarkdown(range)}`,
+          '',
+        );
       }
       if (block.markers.length)
-        lines.push(`Markers: ${block.markers.map((m) => `${m.date} ${escapeMarkdown(m.label)}`).join('; ')}`, '');
+        lines.push(
+          `${s.labels.markers}${s.colon}${block.markers.map((m) => `${f.day(m.date)}${s.colon}${escapeMarkdown(m.label)}`).join(' · ')}`,
+          '',
+        );
       return lines;
     }
     case 'table':
@@ -61,7 +71,8 @@ function renderBlock(block: ReportBlock): string[] {
     case 'list':
       return [
         ...block.items.map(
-          (item) => `- ${linked(item.text, item.link)}${item.detail ? `: ${escapeMarkdown(item.detail)}` : ''}`,
+          // The detail on a line of its own, as in the HTML and the PDF (a hard line break inside the item).
+          (item) => `- ${linked(item.text, item.link)}${item.detail ? `  \n  ${escapeMarkdown(item.detail)}` : ''}`,
         ),
         '',
       ];
@@ -69,9 +80,11 @@ function renderBlock(block: ReportBlock): string[] {
 }
 
 export function renderReportMarkdown(bundle: ReportBundle): string {
-  const L = sentencesFor(bundle.language).labels;
+  const s = sentencesFor(bundle.language);
+  const f = makeFormatter(bundle.language, bundle.locale);
+  const L = s.labels;
   const out: string[] = [
-    `# ${L.qualityReport}: ${escapeMarkdown(bundle.title)}`,
+    `# ${L.qualityReport}${s.colon}${escapeMarkdown(bundle.title)}`,
     '',
     `${escapeMarkdown(bundle.period.label)}${bundle.comparison ? ` · ${L.comparedWith.toLowerCase()} ${escapeMarkdown(bundle.comparison.label)}` : ''}`,
     '',
@@ -83,15 +96,15 @@ export function renderReportMarkdown(bundle: ReportBundle): string {
     for (const widget of band.widgets) {
       out.push(`### ${escapeMarkdown(widget.title)}`, '');
       for (const note of widget.notes) out.push(`_${escapeMarkdown(note)}_`, '');
-      for (const block of widget.blocks) out.push(...renderBlock(block));
+      for (const block of widget.blocks) out.push(...renderBlock(block, s, f));
     }
   }
   out.push('---', '');
-  out.push(`- **${L.dashboard}**: ${escapeMarkdown(bundle.dashboard.name)}`);
-  out.push(`- **${L.projects}**: ${escapeMarkdown(bundle.scopeText.projects)}`);
-  out.push(`- **${L.branchPolicy}**: ${escapeMarkdown(bundle.scopeText.branches)}`);
+  out.push(`- **${L.dashboard}**${s.colon}${escapeMarkdown(bundle.dashboard.name)}`);
+  out.push(`- **${L.projects}**${s.colon}${escapeMarkdown(bundle.scopeText.projects)}`);
+  out.push(`- **${L.branchPolicy}**${s.colon}${escapeMarkdown(bundle.scopeText.branches)}`);
   out.push(`- ${escapeMarkdown(bundle.scopeText.runs)}`);
-  if (bundle.scopeText.tests) out.push(`- **${L.testFilter}**: ${escapeMarkdown(bundle.scopeText.tests)}`);
+  if (bundle.scopeText.tests) out.push(`- **${L.testFilter}**${s.colon}${escapeMarkdown(bundle.scopeText.tests)}`);
   out.push('');
   if (bundle.targets.length) {
     out.push(`**${L.targets}**`, '');
@@ -100,7 +113,8 @@ export function renderReportMarkdown(bundle: ReportBundle): string {
   }
   if (bundle.definitions.length) {
     out.push(`**${L.definitions}**`, '');
-    for (const d of bundle.definitions) out.push(`- **${escapeMarkdown(d.label)}**: ${escapeMarkdown(d.definition)}`);
+    for (const d of bundle.definitions)
+      out.push(`- **${escapeMarkdown(d.label)}**${s.colon}${escapeMarkdown(d.definition)}`);
     out.push('');
   }
   if (bundle.limits.length) {
@@ -109,7 +123,7 @@ export function renderReportMarkdown(bundle: ReportBundle): string {
     out.push('');
   }
   out.push(
-    `${L.generatedBy} ${bundle.generatedAt}${bundle.piwiVersion ? ` · ${bundle.piwiVersion}` : ''}${bundle.sourceUrl ? ` · [${L.openInPiwi}](${bundle.sourceUrl})` : ''}`,
+    `${L.generatedBy} · ${f.date(bundle.generatedAt, bundle.timeZone)}${bundle.piwiVersion ? ` · ${bundle.piwiVersion}` : ''}${bundle.sourceUrl ? ` · [${L.openInPiwi}](${bundle.sourceUrl})` : ''}`,
     '',
   );
   return out.join('\n');

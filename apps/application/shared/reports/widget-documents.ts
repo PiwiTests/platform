@@ -6,6 +6,7 @@
  */
 import type { AnalyticsWidgetId } from '#shared/analytics/registry';
 import type {
+  AnalyticsBreakdownGroup,
   AnalyticsBrowserMatrix,
   AnalyticsCiTimeTrend,
   AnalyticsClusterLandscape,
@@ -28,6 +29,7 @@ import type {
   AnalyticsTimeToFix,
   AnalyticsOwnership,
   AnalyticsEnvironmentComparison,
+  AnalyticsEnvironmentRow,
   AnalyticsMovers,
   AnalyticsTileTarget,
   AnalyticsVerdict,
@@ -41,6 +43,7 @@ import type { TimeoutOpportunity } from '#shared/analytics/timeout-hygiene';
 import type { SelectionAnalytics } from '#shared/handlers/selection-analytics';
 import type { PerformanceTrendData, SlowTestsData, SpecHealthData } from '#shared/handlers/analytics/project-analyses';
 import type { MetricId } from '#shared/analytics/metrics';
+import { NONE_KEY } from '#shared/handlers/analytics/metric-breakdown';
 import type { ValueFormatter } from './format';
 import type { ReportSentences } from './sentences';
 import type { ReportBlock, ReportSeries, ReportTile, ReportTone } from './types';
@@ -85,7 +88,9 @@ function tile(
   if (companion) {
     const value = metricText(companion, ctx);
     notes.push(
-      companion.unit === 'money' ? value : `${ctx.s.metricLabel(companion.metric, companion.label)}: ${value}`,
+      companion.unit === 'money'
+        ? value
+        : `${ctx.s.metricLabel(companion.metric, companion.label)}${ctx.s.colon}${value}`,
     );
   }
   if (target) {
@@ -104,9 +109,19 @@ function tile(
   };
 }
 
+/** A marker's label; across several projects it leads with the project, joined as the report's language joins them. */
+function markerLabel(m: AnalyticsMarker, ctx: DocumentContext): string {
+  return m.ownLabel !== undefined && m.label !== m.ownLabel && m.projectName
+    ? `${m.projectName}${ctx.s.colon}${m.ownLabel}`
+    : m.label;
+}
+
 function markersOf(ctx: DocumentContext): Array<{ date: string; label: string }> {
   if (!ctx.drawMarkers) return [];
-  return ctx.markers.map((m) => ({ date: new Date(m.occurredAt).toISOString().slice(0, 10), label: m.label }));
+  return ctx.markers.map((m) => ({
+    date: new Date(m.occurredAt).toISOString().slice(0, 10),
+    label: markerLabel(m, ctx),
+  }));
 }
 
 function seriesBlock(
@@ -131,6 +146,17 @@ function name(row: { name?: string; label?: string | null; projectName?: string;
   return row.label || row.projectLabel || row.name || row.projectName || '';
 }
 
+/**
+ * A breakdown group's label in the report language: the groups Piwi names
+ * (*Other*, no owner, full runs…) are translated, the names from the data kept.
+ */
+function groupLabel(g: AnalyticsBreakdownGroup, dimension: string, ctx: DocumentContext): string {
+  if (g.other) return g.rest === undefined ? g.label : `${ctx.s.title('Other')} (${ctx.f.number(g.rest)})`;
+  return g.key === NONE_KEY || dimension === 'run-kind' || dimension === 'cluster-status'
+    ? ctx.s.title(g.label)
+    : g.label;
+}
+
 /** A single-project analysis answers nothing outside one project, and the report leaves it out. */
 function analysed<T>(data: AnalyticsProjectAnalysis<T>, map: (value: T) => ReportBlock[]): ReportBlock[] {
   return data.project ? map(data.data) : [];
@@ -149,7 +175,7 @@ export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
               { key: 'detail', label: ctx.s.title('Detail') },
             ],
             rows: data.items.map((item) => ({
-              cells: { title: item.title, project: item.projectName, detail: item.detail },
+              cells: { ...ctx.s.listItem(item, ctx.f), project: item.projectName },
               link: link(ctx, item.href),
             })),
           },
@@ -162,7 +188,7 @@ export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
           {
             kind: 'list',
             items: data.markers.map((m) => ({
-              text: `${ctx.f.date(new Date(m.occurredAt).toISOString())} · ${m.label}`,
+              text: `${ctx.f.date(new Date(m.occurredAt).toISOString())} · ${markerLabel(m, ctx)}`,
               detail: m.description,
             })),
           },
@@ -298,7 +324,7 @@ export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
           seriesBlock(
             v.unit,
             v.unit === 'percent' ? 100 : null,
-            lines.map((g) => ({ label: g.label, points: g.points! })),
+            lines.map((g) => ({ label: groupLabel(g, data.breakdown!.dimension, ctx), points: g.points! })),
             format,
             { ...ctx, drawMarkers: ctx.drawMarkers && options.markers !== false },
             null,
@@ -313,7 +339,11 @@ export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
           { key: 'change', label: ctx.s.title('Change'), align: 'right' },
         ],
         rows: data.breakdown.groups.map((g) => ({
-          cells: { group: g.label, value: metricText(g.value, ctx), change: ctx.f.delta(g.value) ?? '' },
+          cells: {
+            group: groupLabel(g, data.breakdown!.dimension, ctx),
+            value: metricText(g.value, ctx),
+            change: ctx.f.delta(g.value) ?? '',
+          },
         })),
       });
       return blocks;
@@ -342,7 +372,7 @@ export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
         series,
         (value) => ctx.f.value(value, v.unit, v.precision, v.currency),
         { ...ctx, drawMarkers: ctx.drawMarkers && options.markers !== false },
-        `${label}: ${metricText(v, ctx)}${change ? ` (${change})` : ''}`,
+        `${label}${ctx.s.colon}${metricText(v, ctx)}${change ? ` (${change})` : ''}`,
       ),
     ];
   },
@@ -377,12 +407,16 @@ export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
     return [
       {
         kind: 'list',
-        items: data.map((i) => ({
-          text: i.message,
-          detail: i.detail ?? null,
-          tone: i.severity === 'positive' ? 'good' : i.severity === 'info' ? 'neutral' : 'bad',
-          link: link(ctx, i.to),
-        })),
+        items: data.map((i) => {
+          // Written again from the rule's facts in the report language; the English sentences otherwise.
+          const text = i.facts ? ctx.s.insight(i.facts, ctx.f) : { message: i.message, detail: i.detail };
+          return {
+            text: text.message,
+            detail: text.detail ?? null,
+            tone: i.severity === 'positive' ? 'good' : i.severity === 'info' ? 'neutral' : 'bad',
+            link: link(ctx, i.to),
+          };
+        }),
       },
     ];
   },
@@ -509,7 +543,7 @@ export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
         ],
         (value) => (value === null ? '—' : ctx.f.minutes(value)),
         { ...ctx, drawMarkers: false },
-        `${ctx.s.metricLabel('wasted-ci-minutes', 'Wasted CI minutes')}: ${ctx.f.minutes(total)}${cost}`,
+        `${ctx.s.metricLabel('wasted-ci-minutes', 'Wasted CI minutes')}${ctx.s.colon}${ctx.f.minutes(total)}${cost}`,
       ),
     ];
     if (data.byProject.length > 0) {
@@ -546,7 +580,7 @@ export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
       ],
       (value) => (value === null ? '—' : ctx.f.number(value)),
       ctx,
-      `${ctx.s.metricLabel('new-regressions', 'New regressions')}: ${ctx.f.number(data.totalRegressions)}, ${ctx.s.metricLabel('newly-flaky', 'Newly flaky')}: ${ctx.f.number(data.totalNewFlaky)}`,
+      `${ctx.s.metricLabel('new-regressions', 'New regressions')}${ctx.s.colon}${ctx.f.number(data.totalRegressions)}, ${ctx.s.metricLabel('newly-flaky', 'Newly flaky')}${ctx.s.colon}${ctx.f.number(data.totalNewFlaky)}`,
     ),
   ],
 
@@ -563,7 +597,7 @@ export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
       ],
       (value) => (value === null ? '—' : ctx.f.minutes(value)),
       ctx,
-      `${ctx.s.metricLabel('ci-time', 'CI time')}: ${ctx.f.minutes(data.totalMinutes)}, ${ctx.f.number(data.runCount)} ${ctx.s.metricLabel('runs', 'Runs').toLowerCase()}`,
+      `${ctx.s.metricLabel('ci-time', 'CI time')}${ctx.s.colon}${ctx.f.minutes(data.totalMinutes)}, ${ctx.f.number(data.runCount)} ${ctx.s.metricLabel('runs', 'Runs').toLowerCase()}`,
     ),
   ],
 
@@ -572,7 +606,12 @@ export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
       kind: 'table',
       columns: [
         { key: 'project', label: ctx.s.labels.projects },
-        ...data.browsers.map((b, i) => ({ key: `b${i}`, label: b, align: 'right' as const })),
+        ...data.browsers.map((b, i) => ({
+          key: `b${i}`,
+          // Executions without a browser name are counted under `unknown`.
+          label: b === 'unknown' ? ctx.s.title('Unknown browser') : b,
+          align: 'right' as const,
+        })),
       ],
       rows: data.rows.map((row) => ({
         cells: {
@@ -614,7 +653,7 @@ export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
         [{ label: size, points: data.points.map((p) => ({ date: p.date, value: p.suiteSize })), color: 'accent' }],
         (value) => (value === null ? '—' : ctx.f.number(value)),
         ctx,
-        `${size}: ${ctx.f.number(data.suiteSize)}${delta}`,
+        `${size}${ctx.s.colon}${ctx.f.number(data.suiteSize)}${delta}`,
       ),
       seriesBlock(
         'percent',
@@ -633,7 +672,7 @@ export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
         ],
         (value) => ctx.f.value(value, 'percent', 1),
         { ...ctx, drawMarkers: false },
-        `${ctx.s.title('Skipped')}: ${ctx.f.value(data.skippedPct, 'percent', 1)}, ${ctx.s.title('Did not run')}: ${ctx.f.value(data.didNotRunPct, 'percent', 1)}`,
+        `${ctx.s.title('Skipped')}${ctx.s.colon}${ctx.f.value(data.skippedPct, 'percent', 1)}, ${ctx.s.title('Did not run')}${ctx.s.colon}${ctx.f.value(data.didNotRunPct, 'percent', 1)}`,
       ),
     ];
   },
@@ -652,7 +691,7 @@ export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
         [{ label: perRun, points: data.points.map((p) => ({ date: p.date, value: p.flakyPerRun })), color: 'flaky' }],
         (value) => (value === null ? '—' : ctx.f.number(value, 1)),
         ctx,
-        `${perRun}: ${data.flakyPerRun === null ? '—' : ctx.f.number(data.flakyPerRun, 1)}${change}`,
+        `${perRun}${ctx.s.colon}${data.flakyPerRun === null ? '—' : ctx.f.number(data.flakyPerRun, 1)}${change}`,
       ),
       seriesBlock(
         'count',
@@ -672,7 +711,7 @@ export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
         ],
         (value) => (value === null ? '—' : ctx.f.number(value)),
         { ...ctx, drawMarkers: false },
-        `${ctx.s.metricLabel('flaky-tests', 'Flaky tests')}: ${ctx.f.number(data.flakyTests)}, ${ctx.s.metricLabel('quarantine-debt', 'Quarantine debt')}: ${ctx.f.number(data.quarantined)}`,
+        `${ctx.s.metricLabel('flaky-tests', 'Flaky tests')}${ctx.s.colon}${ctx.f.number(data.flakyTests)}, ${ctx.s.metricLabel('quarantine-debt', 'Quarantine debt')}${ctx.s.colon}${ctx.f.number(data.quarantined)}`,
       ),
     ];
   },
@@ -758,6 +797,8 @@ export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
   'environment-comparison': (data: AnalyticsEnvironmentComparison, ctx) => {
     if (data.rows.length === 0) return [{ kind: 'text', text: ctx.s.labels.noData }];
     const passRate = ctx.s.metricLabel('test-pass-rate', 'Test pass rate');
+    // Runs without an environment are grouped under a label Piwi writes.
+    const environment = (r: AnalyticsEnvironmentRow) => (r.environment === NONE_KEY ? ctx.s.title(r.label) : r.label);
     const blocks: ReportBlock[] = [
       {
         kind: 'table',
@@ -770,7 +811,7 @@ export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
         ],
         rows: data.rows.map((r) => ({
           cells: {
-            environment: r.label,
+            environment: environment(r),
             passRate: metricText(r.passRate, ctx),
             change: ctx.f.delta(r.passRate) ?? '—',
             success: metricText(r.runSuccessRate, ctx),
@@ -784,7 +825,7 @@ export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
         seriesBlock(
           'percent',
           100,
-          data.rows.map((r) => ({ label: r.label, points: r.points })),
+          data.rows.map((r) => ({ label: environment(r), points: r.points })),
           (value) => ctx.f.value(value, 'percent', 1),
           ctx,
           null,
@@ -883,7 +924,7 @@ export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
         rows: data.items.flatMap((p) =>
           p.gaps.map((g) => ({
             cells: {
-              gap: g.title,
+              gap: ctx.s.gapTitle(g.detector, g.title),
               project: p.projectName,
               class: ctx.s.gapClass(g.class),
               score: g.score === null ? '—' : ctx.f.number(g.score, 3),

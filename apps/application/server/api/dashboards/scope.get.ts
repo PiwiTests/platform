@@ -9,7 +9,7 @@ defineRouteMeta({
     tags: ['Analytics'],
     summary: 'How an analytics scope resolves',
     description:
-      'Takes the same query keys as `GET /api/analytics/[widget]` and returns how the scope resolves for the caller: the period and comparison as dates, notes (a selection missing in a project, a deleted marker), the markers to draw inside the period, recent markers a period can anchor on, the selection keys and browsers the test filter offers, and where the rollup data starts.',
+      'Takes the same query keys as `GET /api/widgets/[widget]` and returns how the scope resolves for the caller: the period and comparison as dates, notes (a selection missing in a project, a deleted marker), the markers to draw inside the period, recent markers a period can anchor on, the selection keys and browsers the test filter offers, and where the rollup data starts.',
     parameters: [
       {
         name: 'period',

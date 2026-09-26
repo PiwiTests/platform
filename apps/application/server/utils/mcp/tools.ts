@@ -72,10 +72,10 @@ import { analyticsScopeToQuery, parseAnalyticsScope } from '#shared/analytics/sc
 import { applyWidgetScope } from '#shared/analytics/dashboards';
 import {
   DashboardError,
+  dashboardScopeWith,
   getDashboard,
   listDashboards,
   loadDashboardDefinition,
-  viewerScope,
   type DashboardActor,
 } from '#shared/handlers/dashboards';
 import { isAuthEnabled } from '../auth';
@@ -2172,7 +2172,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     }
     const lang = params.lang ?? undefined;
     if (lang !== undefined && !isReportLanguage(lang)) throw new Error('lang must be en or fr');
-    const scope = toolScope(params);
+    const scope = toolScope(params, ctx);
     assertDashboardScope(dashboard, scope);
     return collectReportBundle(db, {
       dashboard,
@@ -2205,11 +2205,12 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
 
   // ── get_dashboard ──────────────────────────────────────────────────────────
   async get_dashboard(db, params, ctx) {
+    const query = toolScopeQuery(params, ctx);
     const actor = mcpDashboardActor(ctx);
     const id = String(params.id ?? '');
     try {
       const { definition } = await loadDashboardDefinition(db, id, actor);
-      const scope = viewerScope(definition, toolScopeQuery(params));
+      const scope = dashboardScopeWith(definition, query);
       const view = await getDashboard(db, id, actor, ctx.scope, { scope });
       const bands = [];
       for (const band of view.bands) {
@@ -2252,7 +2253,10 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     if (!isMetricId(metric) || !WIDGET_METRIC_IDS.includes(metric)) {
       throw new Error(`Unknown metric '${String(metric)}'. Use one of: ${WIDGET_METRIC_IDS.join(', ')}`);
     }
-    const trend = await runAnalyticsWidget(db, 'metric', toolScope(params), ctx.scope, { metric, display: 'line' });
+    const trend = await runAnalyticsWidget(db, 'metric', toolScope(params, ctx), ctx.scope, {
+      metric,
+      display: 'line',
+    });
     return { definition: getMetric(metric).definition, ...(trend as object) };
   },
 
@@ -2264,7 +2268,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     try {
       return await compareMetricPeriods(
         db,
-        toolScope(params),
+        toolScope(params, ctx),
         ctx.scope,
         String(params.a ?? ''),
         String(params.b ?? ''),
@@ -2278,12 +2282,16 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
 };
 
 /** The analytics scope of a report or metric tool call, from the tool's scope properties. */
-function toolScope(params: Record<string, unknown>) {
-  return parseAnalyticsScope(toolScopeQuery(params));
+function toolScope(params: Record<string, unknown>, ctx: McpContext) {
+  return parseAnalyticsScope(toolScopeQuery(params, ctx));
 }
 
-/** The analytics query keys a tool call's scope parameters stand for; empty when it passed none. */
-function toolScopeQuery(params: Record<string, unknown>): Record<string, string> {
+/**
+ * The analytics query keys a tool call's scope parameters stand for; empty when it passed none. A project
+ * out of the caller's scope is refused, as every project-scoped tool does, rather than dropped from the answer.
+ */
+function toolScopeQuery(params: Record<string, unknown>, ctx: McpContext): Record<string, string> {
+  if (Array.isArray(params.projectIds)) for (const id of params.projectIds) assertProject(ctx, Number(id));
   const list = (value: unknown) => (Array.isArray(value) && value.length > 0 ? value.map(String).join(',') : undefined);
   const query: Record<string, string> = {};
   const projects = list(params.projectIds);

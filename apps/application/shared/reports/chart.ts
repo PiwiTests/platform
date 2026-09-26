@@ -1,10 +1,12 @@
 /**
  * The geometry of a `series` block, in plot coordinates (origin top left):
- * one set of numbers the HTML renderer turns into SVG and the PDF renderer
- * into vector lines, so both documents draw the same chart.
+ * one set of numbers the HTML renderer turns into SVG, the PDF renderer into
+ * vector lines and the email into a PNG, so every document draws the same
+ * chart.
  */
 import { STATUS_COLORS, type StatusColorKey } from '#shared/status-colors';
 import type { ReportBlock } from './types';
+import type { ValueFormatter } from './format';
 
 type SeriesBlock = Extract<ReportBlock, { kind: 'series' }>;
 
@@ -34,6 +36,20 @@ export function seriesColor(color: string | undefined, faint: boolean | undefine
   if (!color || color === 'accent') return REPORT_ACCENT;
   if (color.startsWith('#')) return color;
   return STATUS_COLORS[color as StatusColorKey]?.fill ?? REPORT_ACCENT;
+}
+
+/** A gridline's value as the axis prints it, in the report's language: `50%`, `50 %`, `1,000`, `1 000`. */
+export function chartTickLabel(
+  block: Pick<SeriesBlock, 'unit'>,
+  value: number,
+  f: Pick<ValueFormatter, 'number' | 'value'>,
+): string {
+  return block.unit === 'percent' ? f.value(value, 'percent', 0) : f.number(value);
+}
+
+/** How a date label sits on its point: centered, or ending there on the plot's right edge, so it is not cut. */
+export function chartLabelAnchor(x: number, width: number): 'middle' | 'end' {
+  return x >= width - 0.5 ? 'end' : 'middle';
 }
 
 /** Round steps (1, 2, 5 × 10ⁿ) up to a top that clears `max`. */
@@ -81,6 +97,47 @@ export function seriesGeometry(block: SeriesBlock, width: number, height: number
   });
 
   return { width, height, lines, ticks: ticks.map((value) => ({ y: yOf(value), value })), labels, markers };
+}
+
+/** The padding around the plot inside a marks-only image, so a line on the top gridline is not cut. */
+export const CHART_MARKS_PAD = 4;
+
+function marksPath(run: Array<[number, number]>): string {
+  return run.map(([x, y], i) => `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
+}
+
+/**
+ * The chart's marks as a standalone SVG (gridlines, lines, marker rules) with
+ * no `<text>` element: the email and the share image rasterize it where no
+ * font is installed, and print the axis values beside the image instead.
+ */
+export function chartMarksSvg(block: SeriesBlock, width: number, height: number): string {
+  const pad = CHART_MARKS_PAD;
+  const g = seriesGeometry(block, width - pad * 2, height - pad * 2);
+  const parts: string[] = [];
+  for (const tick of g.ticks) {
+    parts.push(
+      `<line x1="0" x2="${g.width}" y1="${tick.y.toFixed(1)}" y2="${tick.y.toFixed(1)}" stroke="${REPORT_GRID}" stroke-width="1"/>`,
+    );
+  }
+  for (const marker of g.markers) {
+    parts.push(
+      `<line x1="${marker.x.toFixed(1)}" x2="${marker.x.toFixed(1)}" y1="0" y2="${g.height}" stroke="${REPORT_MARKER}" stroke-width="1" stroke-dasharray="3 3"/>`,
+    );
+  }
+  for (const line of g.lines) {
+    for (const run of line.runs) {
+      if (run.length === 1) {
+        const [x, y] = run[0]!;
+        parts.push(`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.5" fill="${line.color}"/>`);
+        continue;
+      }
+      parts.push(
+        `<path d="${marksPath(run)}" fill="none" stroke="${line.color}" stroke-width="${line.faint ? 1.5 : 2.5}"${line.faint ? ' stroke-dasharray="4 3"' : ''} stroke-linejoin="round" stroke-linecap="round"/>`,
+      );
+    }
+  }
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="${width}" height="${height}" fill="#ffffff"/><g transform="translate(${pad},${pad})">${parts.join('')}</g></svg>`;
 }
 
 /** A text sparkline of one series (`▁▂▃▅▇`), empty buckets as spaces. */

@@ -3,8 +3,9 @@
  * Create or edit a report schedule: which dashboard, when, compared with what,
  * to which channels. A new schedule takes its filters from the page it was
  * opened on (the analytics scope, or one project); the period comes from the
- * cadence. Opened from *Schedule…* on the analytics and project pages and from
- * the Reports page.
+ * cadence. *Preview* shows the report as it would be sent now, before saving.
+ * Opened from *Schedule…* on the analytics and project pages and from the
+ * Reports page.
  */
 import { offeredDashboards, type BuiltinDashboardKey } from '#shared/analytics/dashboards';
 import { WEEKDAY_NAMES, type ReportCadence, type ScheduleComparison } from '#shared/reports/schedule';
@@ -58,7 +59,7 @@ const { data: scheduleData, execute: loadScheduleOptions } = useFetch<{
   immediate: false,
   default: () => ({ timeZone: 'UTC', owners: [] }),
 });
-const { data: dashboardList, execute: loadDashboards } = useFetch<DashboardList>('/api/analytics/dashboards', {
+const { data: dashboardList, execute: loadDashboards } = useFetch<DashboardList>('/api/dashboards', {
   server: false,
   lazy: true,
   immediate: false,
@@ -92,6 +93,7 @@ const global = ref(false);
 const owner = ref<string | undefined>(undefined);
 const filters = ref<Record<string, string>>({});
 const saving = ref(false);
+const previewing = ref(false);
 
 function reset() {
   const s = props.schedule;
@@ -116,6 +118,7 @@ function reset() {
   includeShareLink.value = s?.includeShareLink ?? false;
   includeNarrative.value = s?.includeNarrative ?? false;
   global.value = s ? s.global : false;
+  previewing.value = false;
 }
 watch(
   open,
@@ -237,21 +240,16 @@ const timeZoneNote = computed(() => {
 });
 
 const needsOwner = computed(() => dashboardKey.value === 'team');
-const valid = computed(
-  () =>
-    name.value.trim().length > 0 &&
-    !!dashboardKey.value &&
-    channelIds.value.length > 0 &&
-    (!needsOwner.value || !!owner.value),
-);
+/** A preview needs what the report needs: a dashboard, and the team dashboard its owner. */
+const canPreview = computed(() => !!dashboardKey.value && (!needsOwner.value || !!owner.value));
+const valid = computed(() => name.value.trim().length > 0 && canPreview.value && channelIds.value.length > 0);
 
-async function save() {
-  if (!valid.value) return;
-  saving.value = true;
+/** The schedule as the form holds it, without its channels: the preview's request and the body saved. */
+function scheduleValues() {
   const scope = { ...filters.value };
   if (needsOwner.value && owner.value) scope.owner = owner.value;
   else delete scope.owner;
-  const body = {
+  return {
     name: name.value.trim(),
     dashboard: dashboardKey.value,
     scope,
@@ -260,10 +258,39 @@ async function save() {
     at: at.value,
     comparison: comparison.value,
     language: language.value === 'auto' ? null : language.value,
+    ...(authEnabled && canSeeAdmin.value ? { global: global.value } : {}),
+  };
+}
+
+// Taken when *Preview* is pressed: the form is hidden while it shows, so nothing changes under it.
+const previewRequest = ref<Record<string, unknown>>({});
+const selectedChannels = computed(() => {
+  const byId = new Map((channelData.value?.items ?? []).map((c) => [c.id, c]));
+  return channelIds.value.flatMap((id) => {
+    const c = byId.get(id);
+    return c ? [{ name: c.name, type: c.type }] : [];
+  });
+});
+const comparisonText = computed(() => {
+  if (comparison.value === 'none') return null;
+  const label = comparisonItems.find((c) => c.value === comparison.value)?.label ?? '';
+  return label.charAt(0).toLowerCase() + label.slice(1);
+});
+
+function openPreview() {
+  if (!canPreview.value) return;
+  previewRequest.value = { ...scheduleValues(), ...(props.schedule ? { createdAt: props.schedule.createdAt } : {}) };
+  previewing.value = true;
+}
+
+async function save() {
+  if (!valid.value) return;
+  saving.value = true;
+  const body = {
+    ...scheduleValues(),
     channelIds: channelIds.value,
     includeShareLink: includeShareLink.value,
     includeNarrative: includeNarrative.value,
-    ...(authEnabled && canSeeAdmin.value ? { global: global.value } : {}),
   };
   try {
     const saved = props.schedule
@@ -285,11 +312,23 @@ async function save() {
     <UModal
       v-model:open="open"
       :title="schedule ? 'Edit report schedule' : 'Schedule a quality report'"
-      description="A quality report delivered on a schedule, each one kept as a snapshot on the Reports page."
-      :ui="{ content: 'sm:max-w-xl' }"
+      :description="
+        previewing
+          ? 'What its recipients would get if it were sent now.'
+          : 'A quality report delivered on a schedule, each one kept as a snapshot on the Reports page.'
+      "
+      :ui="{ content: previewing ? 'sm:max-w-4xl' : 'sm:max-w-xl' }"
     >
       <template #body>
-        <form class="space-y-4" data-testid="schedule-form" @submit.prevent="save">
+        <SchedulePreview
+          v-if="previewing"
+          :request="previewRequest"
+          :channels="selectedChannels"
+          :comparison="comparisonText"
+          :include-share-link="includeShareLink && !!shareSettings?.enabled"
+          :include-narrative="includeNarrative"
+        />
+        <form v-else class="space-y-4" data-testid="schedule-form" @submit.prevent="save">
           <UAlert
             v-if="demoMode"
             icon="i-lucide-info"
@@ -436,6 +475,29 @@ async function save() {
 
       <template #footer>
         <div class="flex w-full items-center justify-end gap-2">
+          <UButton
+            v-if="previewing"
+            color="neutral"
+            variant="outline"
+            icon="i-lucide-arrow-left"
+            label="Back"
+            title="Back to the schedule's settings"
+            class="mr-auto"
+            data-testid="schedule-preview-back"
+            @click="previewing = false"
+          />
+          <UButton
+            v-else
+            color="neutral"
+            variant="outline"
+            icon="i-lucide-eye"
+            label="Preview"
+            class="mr-auto"
+            :disabled="!canPreview"
+            title="The report as it would be sent now, before saving"
+            data-testid="schedule-preview-open"
+            @click="openPreview"
+          />
           <UButton color="neutral" variant="ghost" label="Cancel" @click="open = false" />
           <UButton
             color="primary"

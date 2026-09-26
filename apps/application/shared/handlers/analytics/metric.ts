@@ -88,6 +88,7 @@ export async function getAnalyticsMetric(
               value: metricValue(id, g.value, g.previous, cost),
               points: g.points,
               other: g.other,
+              rest: g.rest,
             })),
           }
         : null,

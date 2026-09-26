@@ -1,8 +1,8 @@
-import { getDatabase } from '../../../../../database';
-import { requireAuth } from '../../../../../utils/auth';
-import { getProjectScope } from '../../../../../utils/project-access';
-import { dashboardActor, dashboardRoute } from '../../../../../utils/dashboards';
-import { cachedDashboardWidget } from '../../../../../utils/dashboard-widget-cache';
+import { getDatabase } from '../../../../database';
+import { requireAuth } from '../../../../utils/auth';
+import { getProjectScope } from '../../../../utils/project-access';
+import { dashboardActor, dashboardRoute } from '../../../../utils/dashboards';
+import { cachedDashboardWidget } from '../../../../utils/dashboard-widget-cache';
 import { prepareDashboardWidget } from '#shared/handlers/dashboards';
 
 defineRouteMeta({
@@ -10,7 +10,7 @@ defineRouteMeta({
     tags: ['Analytics'],
     summary: 'One widget of a dashboard',
     description:
-      'The data of one widget of a dashboard (`id` a built-in key or a saved id, `key` the widget’s key inside it), the JSON `GET /api/analytics/[widget]` returns for its type. The definition stays on the server: the query carries only the viewer’s scope, with the same keys as `GET /api/analytics/[widget]` (`period`, `projects`, `sel`, …), else the dashboard’s default applies; the widget’s own period or narrower filters apply over it. Computed for the caller’s project access, and kept for 60 seconds per dashboard version, widget, scope and access; a finished run drops its project’s answers.',
+      'The data of one widget of a dashboard (`id` a built-in key or a saved id, `key` the widget’s key inside it), the JSON `GET /api/widgets/[widget]` returns for its type. The definition stays on the server: the query carries only the viewer’s scope, with the same keys as `GET /api/widgets/[widget]` (`period`, `projects`, `sel`, …), else the dashboard’s default applies; the widget’s own period or narrower filters apply over it. Computed for the caller’s project access, and kept for 60 seconds per dashboard version, widget, scope and access; a finished run drops its project’s answers.',
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
       { name: 'key', in: 'path', required: true, schema: { type: 'string' } },

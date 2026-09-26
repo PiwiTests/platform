@@ -12,6 +12,7 @@ import { getMetric, type MetricId } from '../analytics/metrics';
 import {
   applyWidgetScope,
   getBuiltinDashboard,
+  isBuiltinDashboardKey,
   resolveDashboard,
   type BuiltinDashboardKey,
   type DashboardDefinition,
@@ -57,6 +58,8 @@ export interface CollectReportOptions {
 
 const MAX_NAMED_PROJECTS = 5;
 
+const lowerFirstLetter = (text: string) => text.charAt(0).toLowerCase() + text.slice(1);
+
 function periodText(
   period: { from: Date; to: Date; label: string },
   f: ValueFormatter,
@@ -73,10 +76,13 @@ function periodText(
       : `${f.date(period.from, timeZone)} to ${f.date(last, timeZone)}`;
   // A comparison label ("The previous period") reads mid-sentence, so it starts lower case.
   const label = lowerFirst ? period.label.charAt(0).toLowerCase() + period.label.slice(1) : period.label;
+  // French names a period by its dates: on a line of its own (`Du 1 sept. 2026 au …`), or as the
+  // period compared with, after « par rapport à » (`la période du 1 sept. 2026 au …`).
+  const french = lowerFirst ? `la période ${range}` : `D${range.slice(1)}`;
   return {
     from: period.from.toISOString(),
     to: period.to.toISOString(),
-    label: language === 'en' && !rangeOnly ? `${label} (${range})` : range,
+    label: language === 'fr' ? french : rangeOnly ? range : `${label} (${range})`,
   };
 }
 
@@ -171,7 +177,7 @@ export async function collectReportBundle(db: DrizzleDB, opts: CollectReportOpti
       if (hasTestFilter(widgetScope) && !getAnalyticsWidget(widget.type).testFilters) {
         notes.push(
           language === 'fr'
-            ? `${title} n’est pas restreint par le filtre de tests.`
+            ? `«\u202f${title}\u202f» ne tient pas compte du filtre de tests.`
             : `${title} is not narrowed by the test filter.`,
         );
       }
@@ -218,7 +224,12 @@ export async function collectReportBundle(db: DrizzleDB, opts: CollectReportOpti
     sourceUrl: baseUrl
       ? `${baseUrl}/analytics${/^\d+$/.test(dashboard.ref) ? `/d/${dashboard.ref}` : ''}${query ? `?${query}` : ''}`
       : null,
-    title: s.reportTitle(text.projects, language === 'en' && !rangeOnly ? ctx.period.label : period.label),
+    // English names the period (`Last 30 days`), or gives a date range as written; French gives
+    // its dates, lower case after the comma (`du 1er août …`).
+    title: s.reportTitle(
+      text.projects,
+      language === 'en' ? (rangeOnly ? period.label : ctx.period.label) : lowerFirstLetter(period.label),
+    ),
     language,
     locale: f.locale,
     timeZone,
@@ -226,7 +237,11 @@ export async function collectReportBundle(db: DrizzleDB, opts: CollectReportOpti
     scopeText: text,
     period,
     comparison: ctx.comparison ? periodText(ctx.comparison, f, timeZone, language, true) : null,
-    dashboard: { ref: dashboard.ref, name: dashboard.name },
+    // A built-in dashboard is named in the language; a saved one keeps the name its owner gave it.
+    dashboard: {
+      ref: dashboard.ref,
+      name: isBuiltinDashboardKey(dashboard.ref) ? s.title(dashboard.name) : dashboard.name,
+    },
     verdict: { tone: verdict.tone, sentence: s.verdict(verdict.facts, f) },
     bands,
     targets,

@@ -29,7 +29,18 @@ export interface RunEvent {
 }
 
 export interface GlobalRunEvent {
-  type: 'run-started' | 'run-initializing' | 'run-finalizing' | 'run-finished' | 'run-submitted' | 'run-cancelled';
+  /**
+   * `rollup-updated` follows `run-finished` and `run-submitted` once the run's daily rollup is
+   * written: analytics read the rollups, so they refresh on it, never on the run events before it.
+   */
+  type:
+    | 'run-started'
+    | 'run-initializing'
+    | 'run-finalizing'
+    | 'run-finished'
+    | 'run-submitted'
+    | 'run-cancelled'
+    | 'rollup-updated';
   runId: number;
   projectId: number;
   status?: string;

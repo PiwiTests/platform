@@ -54,6 +54,17 @@ describe('quality report parity', () => {
     expect(md).not.toMatch(/^# h/m);
   });
 
+  test("a chart's last day on the right edge ends there instead of being cut", () => {
+    const html = renderReportHtml(fixtureBundle());
+    // The fixture's three days put the last label on the plot's right edge.
+    const anchors = [...html.matchAll(/text-anchor="(middle|end)"[^>]*>(Sep \d+)</g)].map((m) => [m[2], m[1]]);
+    expect(anchors).toEqual([
+      ['Sep 23', 'middle'],
+      ['Sep 24', 'middle'],
+      ['Sep 25', 'end'],
+    ]);
+  });
+
   test('the Markdown draws a text sparkline under a series, a gap as a space', () => {
     expect(renderReportMarkdown(bundle)).toContain('`█ ▁`');
   });

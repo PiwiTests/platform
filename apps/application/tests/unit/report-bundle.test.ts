@@ -83,7 +83,29 @@ describe('collectReportBundle', () => {
     expect(bundle.language).toBe('fr');
     expect(bundle.bands[0]!.title).toBe('Où en sont les choses');
     expect(bundle.title.startsWith('Tous les projets, du ')).toBe(true);
-    expect(bundle.verdict.sentence).toContain('90 %');
+    expect(bundle.verdict.sentence).toContain('90\u202f%');
+    // A built-in dashboard is named in French, and a period by its dates.
+    expect(bundle.dashboard.name).toBe('Direction');
+    expect(bundle.period.label.startsWith('Du ')).toBe(true);
+    expect(bundle.comparison?.label.startsWith('la période du ')).toBe(true);
+  });
+
+  test('a date range titles the report with its dates, as each language writes them', async () => {
+    const scope = parseAnalyticsScope({ period: '2026-08-01..2026-08-31' });
+    const en = await collectReportBundle(db as any, { dashboard: 'executive', scope });
+    expect(en.title).toBe('All projects, Aug 1, 2026 to Aug 31, 2026');
+    const fr = await collectReportBundle(db as any, { dashboard: 'executive', scope, language: 'fr' });
+    expect(fr.title).toBe('Tous les projets, du 1er août 2026 au 31 août 2026');
+  });
+
+  test('a French report says which widgets ignore the test filter', async () => {
+    const bundle = await collectReportBundle(db as any, {
+      dashboard: 'executive',
+      language: 'fr',
+      scope: parseAnalyticsScope({ owner: '@checkout-team' }),
+    });
+    const notes = bundle.bands.flatMap((b) => b.widgets.flatMap((w) => w.notes));
+    expect(notes).toContain('«\u202fRisques\u202f» ne tient pas compte du filtre de tests.');
   });
 
   test('with a cost of a CI minute, wasted minutes carry their cost', async () => {

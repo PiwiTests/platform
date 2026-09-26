@@ -569,6 +569,37 @@ const SCENES = [
       await shoot();
     },
   })),
+  // *Preview* in the schedule form, sending to the email channel `prepare` makes.
+  ...[
+    { name: 'report-schedule-preview', width: 1280, height: 1400 },
+    { name: 'report-schedule-preview-mobile', width: 375, height: 1000 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `Schedule… then Preview: the email the schedule would send now, at ${width} px`,
+    prepare: prepareReportSchedule,
+    route: '/analytics',
+    viewport: { width, height },
+    async run({ page, shoot, settle }) {
+      const form = page.getByTestId('schedule-form');
+      await page.getByTestId('stat-test-pass-rate').waitFor({ timeout: 60000 });
+      await settle();
+      for (let attempt = 0; attempt < 20 && !(await form.isVisible()); attempt++) {
+        await page.locator('button[title="Schedule a quality report of this scope"]').first().click();
+        await form.waitFor({ timeout: 3000 }).catch(() => {});
+      }
+      await page.getByTestId('schedule-name').fill('Weekly executive report');
+      await page.getByTestId('schedule-channels').click();
+      await page
+        .getByRole('option', { name: /\(email\)/ })
+        .first()
+        .click();
+      await page.keyboard.press('Escape');
+      await page.getByTestId('schedule-preview-open').click();
+      await page.getByTestId('schedule-preview-email').waitFor({ timeout: 60000 });
+      await settle();
+      await shoot();
+    },
+  })),
   {
     name: 'test-case-locators',
     description:

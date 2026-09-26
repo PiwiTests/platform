@@ -575,6 +575,13 @@
       "when": 1790346265183,
       "tag": "0081_jittery_naoko",
       "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "6",
+      "when": 1790366581376,
+      "tag": "0082_spicy_vermin",
+      "breakpoints": true
     }
   ]
 }

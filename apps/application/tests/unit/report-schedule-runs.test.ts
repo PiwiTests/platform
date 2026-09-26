@@ -109,6 +109,33 @@ describe('report schedules', () => {
     expect(view.channels.map((c) => c.name)).toEqual(['Team mail', 'Slack']);
   });
 
+  test('a partial update keeps the scope and the comparison it does not name', async () => {
+    // `.partial()` keeps a field's `.default()`: the PATCH schema must not bring `scope` or `comparison` back.
+    expect(reports.reportSchedulePatchSchema.parse({ active: false })).toEqual({ active: false });
+
+    const view = await createWeekly({ scope: { projects: '1', environments: 'ci' }, comparison: 'year-ago' });
+    const ctx = { actor: admin, channels: await channels(), access: 'all' as const, timeZone: 'UTC', now: NOW };
+    const paused = await reports.updateReportSchedule(
+      db as any,
+      view.id,
+      reports.parseScheduleBody(reports.reportSchedulePatchSchema, { active: false }),
+      ctx,
+    );
+    expect(paused.active).toBe(false);
+    expect(paused.scope).toEqual(view.scope);
+    expect(paused.scope.projects).toBe('1');
+    expect(paused.comparison).toBe('year-ago');
+
+    const muted = await reports.updateReportSchedule(
+      db as any,
+      view.id,
+      reports.parseScheduleBody(reports.reportSchedulePatchSchema, { mutedUntil: '2026-10-01T00:00:00.000Z' }),
+      ctx,
+    );
+    expect(muted.scope).toEqual(view.scope);
+    expect(muted.comparison).toBe('year-ago');
+  });
+
   test('the sweep stores a snapshot and queues one report.ready row per channel, once', async () => {
     const view = await createWeekly();
     const runAt = Date.parse('2026-09-21T08:00:00Z');
@@ -262,6 +289,53 @@ describe('report schedules', () => {
   });
 });
 
+describe('the schedule preview', () => {
+  const body = { name: 'Weekly', dashboard: 'executive', cadence: 'weekly', anchor: 1, at: '08:00' };
+  const preview = (
+    extra: Record<string, unknown> = {},
+    ctx: Partial<Parameters<typeof reports.previewReportSchedule>[2]> = {},
+  ) =>
+    reports.previewReportSchedule(
+      db as any,
+      reports.parseScheduleBody(reports.reportSchedulePreviewSchema, { ...body, ...extra }),
+      { actor: admin, access: 'all', timeZone: 'UTC', now: NOW, ...ctx },
+    );
+
+  test('is the report Run now would send, and stores and sends nothing', async () => {
+    const view = await createWeekly();
+    const run = await reports.runReportScheduleNow(db as any, view.id, admin, {
+      access: 'all',
+      timeZone: 'UTC',
+      deliver: false,
+      now: NOW,
+    });
+    const sent = (await reports.getReportSnapshot(db as any, run.snapshotId, 'all')).bundle;
+    const result = await preview();
+    expect(result.period).toEqual(run.period);
+    expect(result.bundle).toEqual(sent);
+    expect(await db.select().from(schema.reportSnapshots)).toHaveLength(1);
+    expect(await db.select().from(schema.notificationDeliveries)).toEqual([]);
+  });
+
+  test('needs no channel and no name yet; its links name the instance', async () => {
+    const unnamed = await preview({ name: '' }, { baseUrl: 'https://piwi.example/' });
+    expect(unnamed.siteUrl).toBe('https://piwi.example');
+    const named = await preview();
+    expect(named.bundle.title).toBe(`Weekly: ${unnamed.bundle.title}`);
+    expect(named.siteUrl).toBeNull();
+  });
+
+  test('refuses what saving refuses: a project out of reach, the team dashboard without an owner', async () => {
+    const reporter = { id: 11, isAdmin: false, authEnabled: true };
+    await expect(
+      preview({ scope: { projects: '2' } }, { actor: reporter, access: new Set([1]) }),
+    ).rejects.toMatchObject({ statusCode: 403 });
+    await expect(preview({ dashboard: 'team' })).rejects.toMatchObject({ statusCode: 400 });
+    const team = await preview({ dashboard: 'team', scope: { owner: '@payments' } });
+    expect(team.bundle.dashboard.ref).toBe('team');
+  });
+});
+
 describe('who may do what', () => {
   const reporter = { id: 11, isAdmin: false, authEnabled: true };
 
@@ -325,6 +399,33 @@ describe('who may do what', () => {
     });
     expect(await reports.listReportSnapshots(db as any, new Set([1]))).toEqual([]);
     expect((await reports.listReportSnapshots(db as any, new Set([1, 2]))).map((s) => s.id)).toEqual([snapshotId]);
+  });
+
+  test('the list finds the snapshots of a reader behind more than a page of ones they cannot open', async () => {
+    const view = await createWeekly();
+    const { snapshotId } = await reports.runReportScheduleNow(db as any, view.id, admin, {
+      access: 'all',
+      timeZone: 'UTC',
+      deliver: false,
+      now: NOW,
+    });
+    const [global] = await db.select().from(schema.reportSnapshots).where(eq(schema.reportSnapshots.id, snapshotId));
+    const { id: _id, ...row } = global!;
+    // One older snapshot of project 1 alone, then 250 newer ones over projects 1 and 2.
+    const [own] = await db
+      .insert(schema.reportSnapshots)
+      .values({ ...row, projectIds: [1], generatedAt: new Date(NOW - 10 * DAY_MS) })
+      .returning({ id: schema.reportSnapshots.id });
+    await db
+      .insert(schema.reportSnapshots)
+      .values(Array.from({ length: 250 }, (_, i) => ({ ...row, generatedAt: new Date(NOW - i * 60_000) })));
+
+    const listed = await reports.listReportSnapshots(db as any, new Set([1]), { limit: 10 });
+    expect(listed.map((s) => s.id)).toEqual([own!.id]);
+    expect(await reports.listReportSnapshots(db as any, 'all', { limit: 10 })).toHaveLength(10);
+    // A snapshot with no project list covers every project.
+    expect(reports.canReadSnapshot(null, new Set([1]))).toBe(false);
+    expect(reports.canReadSnapshot(null, 'all')).toBe(true);
   });
 });
 

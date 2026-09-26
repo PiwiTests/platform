@@ -10,8 +10,8 @@
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from 'pdf-lib';
 import { winAnsiSafe } from '#shared/export/render-pdf';
 import { STATUS_COLORS, PASS_RATE_COLORS, hexToRgb } from '#shared/status-colors';
-import { seriesGeometry } from './chart';
-import { makeFormatter } from './format';
+import { chartLabelAnchor, chartTickLabel, seriesGeometry } from './chart';
+import { makeFormatter, type ValueFormatter } from './format';
 import { sentencesFor } from './sentences';
 import { hasVerdictWidget, type ReportBlock, type ReportBundle, type ReportTone } from './types';
 
@@ -143,7 +143,7 @@ function drawStats(l: Layout, block: Extract<ReportBlock, { kind: 'stats' }>) {
   l.y -= 4;
 }
 
-function drawSeries(l: Layout, block: Extract<ReportBlock, { kind: 'series' }>, dateLabel: (d: string) => string) {
+function drawSeries(l: Layout, block: Extract<ReportBlock, { kind: 'series' }>, f: ValueFormatter, colon: string) {
   if (block.summary) l.paragraph(block.summary, { size: 9, color: MUTED });
   const chartH = 140;
   const left = 36;
@@ -171,7 +171,8 @@ function drawSeries(l: Layout, block: Extract<ReportBlock, { kind: 'series' }>, 
       color: LINE,
       dashArray: t.value === 0 ? undefined : [2, 2],
     });
-    const label = block.unit === 'percent' ? `${t.value}%` : String(t.value);
+    // Folded like every other text: a French axis value carries a narrow no-break space (`100 %`, `1 500`).
+    const label = winAnsiSafe(chartTickLabel(block, t.value, f));
     l.page.drawText(label, {
       x: X(0) - 4 - l.font.widthOfTextAtSize(label, 7),
       y: Y(t.y) - 2,
@@ -208,9 +209,10 @@ function drawSeries(l: Layout, block: Extract<ReportBlock, { kind: 'series' }>, 
     }
   }
   for (const lab of g.labels) {
-    const text = winAnsiSafe(dateLabel(lab.date));
+    const text = winAnsiSafe(f.day(lab.date));
+    const width = l.font.widthOfTextAtSize(text, 7);
     l.page.drawText(text, {
-      x: X(lab.x) - l.font.widthOfTextAtSize(text, 7) / 2,
+      x: X(lab.x) - (chartLabelAnchor(lab.x, g.width) === 'end' ? width : width / 2),
       y: Y(g.height) - 10,
       size: 7,
       font: l.font,
@@ -219,7 +221,7 @@ function drawSeries(l: Layout, block: Extract<ReportBlock, { kind: 'series' }>, 
   }
   l.y = oy - g.height - 18;
   if (block.markers.length) {
-    l.paragraph(block.markers.map((m) => `${dateLabel(m.date)}: ${m.label}`).join(' · '), { size: 8, color: MUTED });
+    l.paragraph(block.markers.map((m) => `${f.day(m.date)}${colon}${m.label}`).join(' · '), { size: 8, color: MUTED });
   }
 }
 
@@ -286,10 +288,10 @@ function drawVerdict(l: Layout, text: string, tone: keyof typeof VERDICT) {
 
 export async function renderReportPdf(bundle: ReportBundle): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
-  const L = sentencesFor(bundle.language).labels;
+  const s = sentencesFor(bundle.language);
+  const L = s.labels;
   const f = makeFormatter(bundle.language, bundle.locale);
-  const dateLabel = (d: string) => f.day(d);
-  doc.setTitle(winAnsiSafe(`${L.qualityReport}: ${bundle.title}`));
+  doc.setTitle(winAnsiSafe(`${L.qualityReport}${s.colon}${bundle.title}`));
   doc.setCreator('Piwi');
   doc.setProducer('Piwi');
   doc.setCreationDate(new Date(bundle.generatedAt));
@@ -321,7 +323,7 @@ export async function renderReportPdf(bundle: ReportBundle): Promise<Uint8Array>
           if (block.tone) drawVerdict(l, block.text, block.tone);
           else l.paragraph(block.text, { size: 9.5 });
         } else if (block.kind === 'stats') drawStats(l, block);
-        else if (block.kind === 'series') drawSeries(l, block, dateLabel);
+        else if (block.kind === 'series') drawSeries(l, block, f, s.colon);
         else if (block.kind === 'table') drawTable(l, block);
         else drawList(l, block);
       }
@@ -358,7 +360,7 @@ export async function renderReportPdf(bundle: ReportBundle): Promise<Uint8Array>
     for (const limit of bundle.limits) l.paragraph(limit, { size: 8.5, color: MUTED });
   }
   l.paragraph(
-    `${L.generatedBy} · ${bundle.generatedAt}${bundle.piwiVersion ? ` · ${bundle.piwiVersion}` : ''}${bundle.sourceUrl ? ` · ${bundle.sourceUrl}` : ''}`,
+    `${L.generatedBy} · ${f.date(bundle.generatedAt, bundle.timeZone)}${bundle.piwiVersion ? ` · ${bundle.piwiVersion}` : ''}${bundle.sourceUrl ? ` · ${bundle.sourceUrl}` : ''}`,
     { size: 8, color: MUTED },
   );
 

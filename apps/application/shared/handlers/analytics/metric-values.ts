@@ -37,8 +37,9 @@ const ROLLUP_VALUE: Partial<Record<MetricId, (t: RollupTotals, cost: CiCost | nu
   'ci-time': (t) => minutes(t.durationMs),
   'new-regressions': (t) => t.newRegressions,
   'newly-flaky': (t) => t.newFlaky,
-  'average-run-duration': (t) => (t.runs > 0 ? Math.round(t.durationMs / t.runs) : null),
-  'average-p90-test-duration': (t) => (t.runs > 0 ? Math.round(t.p90TestDurationSumMs / t.runs) : null),
+  'average-run-duration': (t) => (t.durationRuns > 0 ? Math.round(t.durationMs / t.durationRuns) : null),
+  'average-p90-test-duration': (t) =>
+    t.testDurationRuns > 0 ? Math.round(t.p90TestDurationSumMs / t.testDurationRuns) : null,
 };
 
 const CLUSTER_METRICS = new Set<MetricId>([

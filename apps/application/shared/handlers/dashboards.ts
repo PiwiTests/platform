@@ -12,11 +12,11 @@
  */
 import { and, desc, eq, inArray, or, type SQL } from 'drizzle-orm';
 import { z } from 'zod';
-import { analyticsDashboards, projects, reportSchedules, users } from '../../server/database/schema';
+import { analyticsDashboards, projects, reportSchedules, shareLinks, users } from '../../server/database/schema';
 import { deleteAppSetting, getAppSetting, setAppSetting } from '../../server/utils/app-settings';
 import type { DrizzleDB } from './db';
 import { Role } from '../types';
-import { parseAnalyticsScope, type AnalyticsScope } from '../analytics/scope';
+import { analyticsScopeToQuery, parseAnalyticsScope, type AnalyticsScope } from '../analytics/scope';
 import { queryHasScope } from '../analytics/scope-state';
 import {
   applyWidgetScope,
@@ -461,6 +461,8 @@ export async function createDashboard(
   db: DrizzleDB,
   input: DashboardInput,
   actor: DashboardActor,
+  /** The creator's project access, so the answer counts the projects of its scope they cannot open. */
+  access: ProjectAccess = 'all',
   now = Date.now(),
 ): Promise<DashboardView> {
   const definition =
@@ -483,7 +485,7 @@ export async function createDashboard(
       updatedBy: actor.id,
     })
     .returning();
-  return getDashboard(db, row!.id, actor, 'all', { now });
+  return getDashboard(db, row!.id, actor, access, { now });
 }
 
 /**
@@ -531,7 +533,8 @@ export async function duplicateDashboard(
   db: DrizzleDB,
   rawRef: unknown,
   actor: DashboardActor,
-  opts: { name?: string; now?: number } = {},
+  /** `access`: the viewer's project access, so the copy counts the projects of its scope they cannot open. */
+  opts: { name?: string; now?: number; access?: ProjectAccess } = {},
 ): Promise<DashboardView> {
   const source = await loadDashboardDefinition(db, rawRef, actor);
   const name = (opts.name ?? `Copy of ${source.name}`).slice(0, DASHBOARD_LIMITS.name);
@@ -539,6 +542,7 @@ export async function duplicateDashboard(
     db,
     { name, description: source.row?.description ?? null, visibility: 'private', from: source.ref },
     actor,
+    opts.access ?? 'all',
     opts.now,
   );
 }
@@ -570,6 +574,8 @@ export async function deleteDashboardRows(db: DrizzleDB, where: SQL): Promise<nu
   const instanceDefault = await getInstanceDefaultDashboard(db);
   if (instanceDefault && ids.map(String).includes(instanceDefault))
     await deleteAppSetting(db, DEFAULT_DASHBOARD_SETTING);
+  // A live link has no FK to its dashboard: it goes with it.
+  await db.delete(shareLinks).where(and(eq(shareLinks.entityKind, 'dashboard'), inArray(shareLinks.entityId, ids)));
   await db.delete(analyticsDashboards).where(inArray(analyticsDashboards.id, ids));
   return schedules.map((s) => s.id);
 }
@@ -635,6 +641,16 @@ export function viewerScope(definition: DashboardDefinition, query: QueryLike): 
   if (parsed.timeZone) scope.timeZone = parsed.timeZone;
   if (parsed.locale) scope.locale = parsed.locale;
   return scope;
+}
+
+/**
+ * The dashboard's own scope with the keys a caller names laid over it, key by
+ * key: an agent asking about "this sprint" keeps the dashboard's projects and
+ * filters. The page's URL always carries the whole scope, so it goes through
+ * `viewerScope` instead.
+ */
+export function dashboardScopeWith(definition: DashboardDefinition, query: QueryLike): AnalyticsScope {
+  return parseAnalyticsScope({ ...analyticsScopeToQuery(dashboardScope(definition)), ...queryRecord(query) });
 }
 
 export interface DashboardWidgetRequest {

@@ -1,8 +1,8 @@
 /**
  * Client-side saved dashboards for demo mode: the dashboards CRUD, one
  * widget of a dashboard, the editor's preview and the instance default
- * (`server/api/analytics/dashboards`, `widgets/preview`,
- * `settings/analytics-default-dashboard`), through the same shared handler
+ * (`server/api/dashboards`, `widgets/preview`,
+ * `settings/default-dashboard`), through the same shared handler
  * over the in-browser database. The demo keeps no widget cache: every widget
  * request runs its handler.
  */
@@ -49,19 +49,24 @@ export async function demoDashboard<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-/** GET /api/analytics/dashboards */
+/** GET /api/dashboards */
 export async function apiListDashboards(actingUserId: number | null) {
   return demoDashboard(async () => listDashboards(await getDemoDb(), await demoActor(actingUserId)));
 }
 
-/** POST /api/analytics/dashboards */
-export async function apiCreateDashboard(body: unknown, actingUserId: number | null) {
+/** POST /api/dashboards */
+export async function apiCreateDashboard(body: unknown, actingUserId: number | null, access: ProjectAccess) {
   return demoDashboard(async () =>
-    createDashboard(await getDemoDb(), parseDashboardBody(dashboardInputSchema, body), await demoActor(actingUserId)),
+    createDashboard(
+      await getDemoDb(),
+      parseDashboardBody(dashboardInputSchema, body),
+      await demoActor(actingUserId),
+      access,
+    ),
   );
 }
 
-/** GET /api/analytics/dashboards/:id */
+/** GET /api/dashboards/:id */
 export async function apiGetDashboard(
   id: string,
   query: URLSearchParams | undefined,
@@ -76,7 +81,7 @@ export async function apiGetDashboard(
   });
 }
 
-/** PATCH /api/analytics/dashboards/:id */
+/** PATCH /api/dashboards/:id */
 export async function apiSaveDashboard(id: string, body: unknown, actingUserId: number | null, access: ProjectAccess) {
   return demoDashboard(async () =>
     saveDashboard(
@@ -89,24 +94,27 @@ export async function apiSaveDashboard(id: string, body: unknown, actingUserId: 
   );
 }
 
-/** DELETE /api/analytics/dashboards/:id */
+/** DELETE /api/dashboards/:id */
 export async function apiDeleteDashboard(id: string, actingUserId: number | null) {
   return demoDashboard(async () => deleteDashboard(await getDemoDb(), id, await demoActor(actingUserId)));
 }
 
-/** POST /api/analytics/dashboards/:id/duplicate */
-export async function apiDuplicateDashboard(id: string, body: unknown, actingUserId: number | null) {
+/** POST /api/dashboards/:id/duplicate */
+export async function apiDuplicateDashboard(
+  id: string,
+  body: unknown,
+  actingUserId: number | null,
+  access: ProjectAccess,
+) {
   return demoDashboard(async () =>
-    duplicateDashboard(
-      await getDemoDb(),
-      id,
-      await demoActor(actingUserId),
-      parseDashboardBody(dashboardDuplicateSchema, body),
-    ),
+    duplicateDashboard(await getDemoDb(), id, await demoActor(actingUserId), {
+      ...parseDashboardBody(dashboardDuplicateSchema, body),
+      access,
+    }),
   );
 }
 
-/** GET /api/analytics/dashboards/:id/widgets/:key */
+/** GET /api/dashboards/:id/widgets/:key */
 export async function apiGetDashboardWidget(
   id: string,
   key: string,
@@ -119,12 +127,12 @@ export async function apiGetDashboardWidget(
   );
 }
 
-/** POST /api/analytics/widgets/preview */
+/** POST /api/widgets/preview */
 export async function apiPreviewWidget(body: unknown, access: ProjectAccess) {
   return demoDashboard(async () => previewDashboardWidget(await getDemoDb(), body, access));
 }
 
-/** PUT /api/settings/analytics-default-dashboard */
+/** PUT /api/settings/default-dashboard */
 export async function apiSetDefaultDashboard(body: unknown) {
   const value = (body as { dashboard?: unknown } | null)?.dashboard ?? null;
   return demoDashboard(async () => setInstanceDefaultDashboard(await getDemoDb(), value));

@@ -36,7 +36,7 @@ The engineering report ends with the same gap counts. **Overview**, the analytic
 exported too.
 
 Every report ends with a footer stating the scope, the branch policy, the period and its comparison,
-the definition of every metric it used, and its limits: lists of tests reach back only as far as
+each metric's definition, and its limits: lists of tests reach back only as far as
 [retention](/operate/storage#data-retention) keeps runs, and days are UTC.
 
 ### The verdict is built by rules
@@ -80,12 +80,13 @@ reports** page starts an empty one. Reporters and administrators create schedule
   [share link](./share-links#report-share-links) that opens it without an account.
   **AI narrative** adds the [narrative](./analytics-widgets#where-things-stand) the AI model writes.
 
-**Run now** sends the last complete period straight away. **Mute** keeps the snapshots and sends
-nothing; **Pause** stops the schedule. Each firing uses its owner's current project access. A **global**
+**Run now** sends the last complete period straight away; **Preview**, in the form, shows that report
+before you save, as its email and as the full report, and sends nothing. **Mute** keeps the snapshots
+and sends nothing; **Pause** stops the schedule. Each firing uses its owner's current project access. A **global**
 schedule covers every project, goes to global channels and needs an administrator.
 
-The server checks schedules every five minutes; a firing missed while it was down happens on the next
-check, for the period it was meant for. The [desktop app](./desktop) fires them while it runs; the demo
+The server checks schedules every five minutes; a firing missed while it was down happens at the next
+check, for its own period. The [desktop app](./desktop) fires them while it runs; the demo
 has no scheduler.
 
 ### Report snapshots
@@ -100,16 +101,15 @@ keeps them).
 ## Language
 
 Reports come in English and French: by default the project's
-[ticket language](./issue-tracking#language) over one project, else the instance locale. The insight
-sentences under *What changed* stay English.
+[ticket language](./issue-tracking#language) over one project, else the instance locale. Test titles
+and error messages stay as recorded.
 
 ## Cost of a CI minute
 
 An administrator can give a CI minute a price in **Settings → Performance**: an amount and an ISO 4217
 currency, such as 0.008 USD. `PIWI_CI_MINUTE_COST` (`"0.008 USD"`) pins it and makes the setting
 read-only. Once set, every wasted-time number is followed by its cost, on the analytics page and in the
-quality report; unset, nothing changes and only minutes show. The cost is one value for the instance,
-not per project.
+quality report; unset, only minutes show. The cost is one instance-wide value.
 
 ## From CI, an agent or a script
 
@@ -120,8 +120,8 @@ not per project.
 - The [MCP server](./mcp) offers `get_quality_report` (the bundle), `get_metric_trend` (one metric over
   time) and `compare_periods` (the headline numbers over two periods).
 - `GET /api/reports/preview` takes the dashboard, the format, the language and the analytics scope keys;
-  `/api/reports/schedules` and `/api/reports/snapshots` manage schedules and read snapshots. See the
-  in-app API reference at `/docs`.
+  `/api/reports/schedules` (`POST …/preview` for an unsaved one) and `/api/reports/snapshots` manage
+  schedules and read snapshots. See the in-app API reference at `/docs`.
 
 ## Turning reports off
 

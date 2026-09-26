@@ -998,7 +998,7 @@ export const MCP_TOOL_DEFS = [
     name: 'get_dashboard',
     module: 'core',
     description:
-      'One dashboard with every widget’s data, the JSON the page renders, band by band. Use it to answer "how did the checkout dashboard do this sprint". The scope is the dashboard’s own unless you pass scope keys (period, projectIds, …), which replace it; each widget’s own period or narrower filters still apply. A dashboard grants no access: widgets are computed for your projects only, and `hiddenProjects` counts the ones of its scope you cannot open.',
+      'One dashboard with every widget’s data, the JSON the page renders, band by band. Use it to answer "how did the checkout dashboard do this sprint". The scope is the dashboard’s own: a scope key you pass (period, projectIds, …) replaces that key only, and the others keep the dashboard’s values, so a period alone keeps its projects and filters; each widget’s own period or narrower filters still apply. A dashboard grants no access: widgets are computed for your projects only, and `hiddenProjects` counts the ones of its scope you cannot open.',
     inputSchema: {
       type: 'object',
       properties: {

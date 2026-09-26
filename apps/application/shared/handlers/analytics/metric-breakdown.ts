@@ -50,6 +50,8 @@ export interface BreakdownGroup {
   /** The group's series over the period; null when not asked for, or for a metric without one. */
   points: AnalyticsSeriesPoint[] | null;
   other: boolean;
+  /** How many groups the *Other* group holds. */
+  rest?: number;
 }
 
 export interface BreakdownRequest {
@@ -77,6 +79,8 @@ const NONE_LABELS: Partial<Record<DimensionId, string>> = {
 };
 
 const RUN_KIND_LABELS: Record<string, string> = { full: 'Full runs', partial: 'Partial runs' };
+
+const CLUSTER_STATUS_LABELS: Record<string, string> = { open: 'Open', resolved: 'Resolved', ignored: 'Ignored' };
 
 // ── Items: what a group is made of ───────────────────────────────────────────
 
@@ -428,6 +432,7 @@ function labelOf(dimension: DimensionId, key: string, projectLabels: Map<number,
   if (key === NONE_KEY) return NONE_LABELS[dimension] ?? 'None';
   if (dimension === 'project') return projectLabels.get(Number(key)) ?? `Project #${key}`;
   if (dimension === 'run-kind') return RUN_KIND_LABELS[key] ?? key;
+  if (dimension === 'cluster-status') return CLUSTER_STATUS_LABELS[key] ?? key;
   if (dimension === 'test-tag') return `@${key}`;
   return key;
 }
@@ -480,6 +485,7 @@ export async function computeMetricBreakdown(
       previous: previous ? previous.value(outside(previous)) : null,
       points: req.series && current.series ? current.series(rest) : null,
       other: true,
+      rest: ranked.length - top.length,
     });
   }
   return groups;
