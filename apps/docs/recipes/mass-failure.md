@@ -36,14 +36,11 @@ or connection error. That's one cluster, one fix, and no test code involved.
 
 ## 3. Triage each cluster once
 
-A cluster page puts the whole investigation on one screen: the signature and resolution at the top, a
-**Triage** rail on the right that sets one status — open, resolved, or ignored — plus a note for the
-entire group, and collapsible evidence sections down the left. Forty tests, three decisions.
-
-<figure>
-  <img src="/screenshots/failure-cluster-triage.png" alt="A failure cluster page: signature, occurrence and affected-test counts, a resolution card marked Regressed, the triage rail with open/resolved/ignored and a note, and collapsed evidence sections for error message, alternative locators, environment diff, visual diff, DOM snapshot, test evidence and what changed">
-  <figcaption>One cluster, one screen — occurrences and affected tests up top, the resolution history beside them, triage in the right rail, and every piece of evidence one click away on the left.</figcaption>
-</figure>
+A cluster page puts the whole investigation on one screen: the situation block across every test that
+shares the failure, the occurrence sparkline, what changed since the last passing run, and a
+[state line](/features/failure-clusters#the-state-line) with **Triage** beside it, which sets one status (open,
+resolved or ignored), a note and an assignee for the entire group. The affected tests and their evidence
+follow. Forty tests, three decisions.
 
 Clusters stay open across runs, so the next red build attaches to the same row rather than starting the
 conversation over.

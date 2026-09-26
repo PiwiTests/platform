@@ -204,7 +204,6 @@ function sceneMode(scene) {
  */
 const EXTERNAL_DOCS_IMAGES = new Set([
   'demo-live-run-poster.png',
-  'failure-cluster-triage.png',
   'failure-cluster.png',
   'failure-clusters-tab.png',
   'flaky-tests.png',
