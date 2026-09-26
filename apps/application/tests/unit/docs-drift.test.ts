@@ -2,6 +2,7 @@ import { describe, test, expect } from 'vitest';
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, posix, relative } from 'node:path';
+import { CAPABILITY_MODULES } from '#shared/capabilities';
 import { MCP_TOOL_DEFS } from '#shared/mcp-tools';
 import { FEATURE_NEED_DOCS, PIWI_FEATURE_GROUPS } from '#shared/piwi-features';
 import { PIWI_ENV_VARS } from '#shared/piwi-env-vars';
@@ -13,8 +14,11 @@ const read = (relative: string) => readFileSync(join(repoRoot, relative), 'utf8'
 // Pages the docs build writes from a registry; they are gitignored, so they are
 // only on disk once `docs:gen` has run, and a check skips them rather than fail.
 const GENERATED_PAGES = new Set([
+  'reference/analytics-widgets',
   'reference/configuration',
   'reference/features',
+  'reference/mcp-tools',
+  'reference/metrics',
   'reference/reporter-options',
   'reference/whats-new',
 ]);
@@ -96,10 +100,20 @@ describe('documented counts', () => {
     }
   });
 
-  test('every registered MCP tool is documented in apps/docs/features/mcp.md', () => {
-    const contents = read('apps/docs/features/mcp.md');
+  // The MCP tools page is generated from MCP_TOOL_DEFS, one section per module,
+  // so a tool is listed by construction unless its module has no section.
+  test('every registered MCP tool is on the generated MCP tools page', () => {
+    for (const { name, module } of MCP_TOOL_DEFS) {
+      expect(
+        CAPABILITY_MODULES,
+        `MCP tool \`${name}\` is in module "${module}", which the page has no section for`,
+      ).toContain(module);
+    }
+    const page = join(repoRoot, 'apps/docs/reference/mcp-tools.md');
+    if (!existsSync(page)) return;
+    const contents = readFileSync(page, 'utf8');
     for (const { name } of MCP_TOOL_DEFS) {
-      expect(contents, `apps/docs/features/mcp.md has no entry for \`${name}\``).toContain(`\`${name}\``);
+      expect(contents, `apps/docs/reference/mcp-tools.md has no entry for \`${name}\``).toContain(`id="${name}"`);
     }
   });
 });
