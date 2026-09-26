@@ -384,7 +384,7 @@ export const HELP_TOPICS = {
   'project.members': {
     title: 'Project access',
     text: 'Who can see this project. Admins always have access; reporters and users see only the projects assigned to them.',
-    doc: 'operate/authentication#user-management',
+    doc: 'operate/project-access',
   },
   'project.ai-instructions': {
     title: 'AI diagnosis instructions',
@@ -604,7 +604,7 @@ export const HELP_TOPICS = {
   'settings.storage-stats': {
     title: 'Storage analysis',
     text: 'How much disk your reports, traces, screenshots and videos use — broken down by project, by file kind and over time, so you can see what to clean up.',
-    doc: 'operate/storage#storage-architecture',
+    doc: 'operate/storage#storage-management',
   },
   'settings.cleanup': {
     title: 'Cleanup old runs',
@@ -713,12 +713,12 @@ export const HELP_TOPICS = {
   'settings.permissions': {
     title: 'Project access',
     text: 'Which projects each reporter and user can open, one tick per project — every click saves at once. All projects also covers projects created later; administrators always open every project.',
-    doc: 'operate/authentication#permission-grid',
+    doc: 'operate/project-access#permission-grid',
   },
   'settings.api-keys': {
     title: 'API keys',
     text: 'Tokens (prefixed pd_) that let the reporter or scripts authenticate without a password. Shown once at creation; revoke anytime.',
-    doc: 'operate/authentication#api-keys',
+    doc: 'operate/api-keys',
   },
   'settings.tags': {
     text: 'Reusable labels you can attach to projects for grouping and filtering across the dashboard.',

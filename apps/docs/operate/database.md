@@ -67,13 +67,13 @@ about, or accept starting fresh. Your file storage is unaffected either way.
 - **Retention** — the nightly sweep prunes runs older than `PIWI_RETENTION_DAYS`, off by default. See
   [Data retention](./storage#data-retention).
 - **Backups** — SQLite has an online-consistent backup recipe, PostgreSQL uses `pg_dump`. Both, plus
-  what to copy alongside the database, are in [Backups](./deployment#backups).
+  what to copy alongside the database, are in [Backup & restore](./backup-restore).
 - **Upgrades apply migrations automatically and they are forward-only.** Read
   [Upgrading](./upgrading) before bumping a version tag.
 
 ## Related
 - [Configuration reference](/reference/configuration#database) — every `PIWI_DATABASE_*` and retention variable
-- [Storage configuration](./storage) — where reports, traces and attachments go
-- [Deployment](./deployment) — Compose, Kubernetes and one-click templates
+- [Storage & retention](./storage) — where reports, traces and attachments go
+- [Deployment](./deployment) — Compose and Kubernetes, and [one-click deploy](./one-click-deploy) templates
 - Changing the schema is a contributor task, not an operator one:
   [CONTRIBUTING.md](https://github.com/PiwiTests/platform/blob/main/CONTRIBUTING.md)

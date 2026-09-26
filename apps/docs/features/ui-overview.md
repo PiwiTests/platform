@@ -52,7 +52,7 @@ full runs only) scopes every list. The **More** menu holds Edit, [Test functions
   ([Scenario gaps & the Test Map](./scenario-gaps)). Hidden when the Test Map is switched off.
 - **Performance**: duration trends, the slowest tests, timeout opportunities and the slow endpoints
   ([Slow tests & wasted time](./slow-tests)).
-- **Settings**: project [access](/operate/authentication#project-access), the default branch, a per-project
+- **Settings**: project [access](/operate/project-access), the default branch, a per-project
   [SCM token](/guide/source-control) and [AI instructions](./ai-diagnosis#custom-instructions).
 
 ## Locators
@@ -96,7 +96,8 @@ actually uses, judged from the data it holds ([Choose what you use](/operate/cap
 ## Settings
 
 `/settings`: your **Account** and connected accounts ([OAuth](/operate/authentication#oauth-google-github)),
-**Users** and **Permissions** ([Authentication](/operate/authentication)), **Storage**
+**Users** ([Authentication](/operate/authentication), [API keys](/operate/api-keys)) and **Permissions**
+([Permission grid](/operate/project-access#permission-grid)), **Storage**
 ([Storage](/operate/storage#storage-management)), **Tags**, **Pull requests** ([Pull-request feedback](./pr-feedback)),
 **Auto-heal** ([Auto-heal PRs](./auto-heal)), **Integrations** ([Integrations](/operate/integrations)),
 **Performance** (wasted-time patterns and timeout hygiene), **AI** ([AI provider](/guide/ai-provider)),
@@ -111,8 +112,8 @@ instance's own OpenAPI reference.
 
 The [live demo](https://piwitests.dev/demo/) runs entirely in your browser and adds two controls. **Simulate a test
 run** replays a reporter's stream, so you can watch a run arrive. **Acting as** switches between seeded identities to
-show how [project access](/operate/authentication#project-access) changes what each one sees, including changes made on
-the [permission grid](/operate/authentication#permission-grid).
+show how [project access](/operate/project-access) changes what each one sees, including changes made on
+the [permission grid](/operate/project-access#permission-grid).
 
 ## Related
 

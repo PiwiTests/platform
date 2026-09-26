@@ -406,7 +406,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
     features: [
       {
         title: 'Authentication & roles',
-        summary: 'Optional sign-in with roles (admin, reporter, viewer), API keys for CI, and Google/GitHub OAuth.',
+        summary: 'Optional sign-in with roles (administrator, reporter, user) and Google/GitHub OAuth.',
         needs: ['admin'],
         where: 'Settings → Users',
         doc: 'operate/authentication',
@@ -415,8 +415,16 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         title: 'Project access',
         summary: 'Scope who can see and act on each project, for multi-team instances.',
         needs: ['admin'],
-        where: 'Settings → Users',
-        doc: 'operate/authentication#project-access',
+        where: 'Settings → Permissions; project Settings → Members',
+        doc: 'operate/project-access',
+      },
+      {
+        title: 'API keys',
+        summary:
+          'Long-lived tokens that let the reporter, CI and scripts sign in, shown once and revocable at any time.',
+        needs: [],
+        where: 'Settings → Account; Settings → Users',
+        doc: 'operate/api-keys',
       },
       {
         title: 'Data retention & cleanup',

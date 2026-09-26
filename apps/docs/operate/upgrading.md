@@ -14,7 +14,7 @@ what happens before you pull a new tag.
 
 1. Read the [changelog](https://github.com/PiwiTests/platform/blob/main/CHANGELOG.md) for the versions
    you're skipping, looking for **⚠ BREAKING CHANGES**.
-2. **Back up** the database and file storage ([how](./deployment#backups)).
+2. **Back up** the database and file storage ([how](./backup-restore)).
 3. Pull the new tag and restart.
 4. Check the logs for `migrations completed successfully`, then confirm the version at
    **Settings → About**.
@@ -152,6 +152,6 @@ leaves an old file behind: in Task Manager's **Details** tab, end the `node.exe`
 share a root cause have merged. Triage state is carried across the merge.
 
 ## Related
-- [Deployment → Backups](./deployment#backups) — what to back up and how
+- [Backup & restore](./backup-restore) — what to back up and how
 - [Deployment → Available tags](./deployment#available-tags) — what to pin
 - [Changelog](https://github.com/PiwiTests/platform/blob/main/CHANGELOG.md) — breaking changes per release
