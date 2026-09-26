@@ -231,16 +231,21 @@ async function handleRefreshCatalog(projectId: unknown, force: boolean): Promise
  * content script) cannot hold the API key. Answers with the index itself when
  * it re-fetched, because a large index may not fit the storage cache.
  */
-async function handleRefreshLocatorIndex(projectId: unknown, force: boolean): Promise<LocatorIndexRefreshResult> {
+async function handleRefreshLocatorIndex(
+  projectId: unknown,
+  force: boolean,
+  requestedBranch: unknown,
+): Promise<LocatorIndexRefreshResult> {
   if (typeof projectId !== 'number' || !Number.isFinite(projectId)) {
     return { ok: false, error: 'No project to refresh.' };
   }
+  const branch = typeof requestedBranch === 'string' && requestedBranch.trim() ? requestedBranch.trim() : null;
   const settings = await getConnectionSettings();
   if (!settings.instanceUrl.trim()) return { ok: false, error: 'Not connected to a Piwi instance.' };
-  if (!force && !(await isLocatorIndexStale(projectId))) return { ok: true, refreshed: false, index: null };
+  if (!force && !(await isLocatorIndexStale(projectId, branch))) return { ok: true, refreshed: false, index: null };
   try {
-    const index = await fetchLocatorIndex(settings, projectId);
-    await setCachedLocatorIndex(projectId, index);
+    const index = await fetchLocatorIndex(settings, projectId, branch);
+    await setCachedLocatorIndex(projectId, index, branch);
     return { ok: true, refreshed: true, index };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : 'Failed to fetch the locator index.' };
@@ -281,7 +286,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   if (message?.type === 'piwi-refresh-locator-index') {
-    void handleRefreshLocatorIndex(message.projectId, message.force === true).then(sendResponse);
+    void handleRefreshLocatorIndex(message.projectId, message.force === true, message.branch).then(sendResponse);
     return true;
   }
   if (message?.type === 'piwi-recording-stopped') {

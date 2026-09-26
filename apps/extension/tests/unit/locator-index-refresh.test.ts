@@ -18,12 +18,12 @@ beforeEach(() => {
 });
 
 describe('requestLocatorIndex', () => {
-  test('asks the worker, passing force through', async () => {
+  test('asks the worker, passing force and the branch through', async () => {
     expect(await requestLocatorIndex(7)).toEqual({ ok: true, refreshed: false, index: null });
-    await requestLocatorIndex(7, { force: true });
+    await requestLocatorIndex(7, { force: true, branch: 'develop' });
     expect(sent).toEqual([
-      { type: 'piwi-refresh-locator-index', projectId: 7, force: false },
-      { type: 'piwi-refresh-locator-index', projectId: 7, force: true },
+      { type: 'piwi-refresh-locator-index', projectId: 7, force: false, branch: null },
+      { type: 'piwi-refresh-locator-index', projectId: 7, force: true, branch: 'develop' },
     ]);
   });
 

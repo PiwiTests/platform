@@ -2,6 +2,7 @@ import path from 'node:path';
 import { test, expect, type Page } from '@playwright/test';
 import {
   CARD_TEST,
+  DEFAULT_CONNECTION,
   DIST,
   INSTANCE_URL,
   SHOP_TESTS,
@@ -106,6 +107,22 @@ test.describe('pick results in connected mode', () => {
       () => (globalThis as unknown as { __piwiPickCoverage: Record<string, unknown> }).__piwiPickCoverage,
     );
     expect(report).toMatchObject({ tests: ['visits the deals'], inside: ['visits the deals'], around: [] });
+  });
+
+  test('answers for the branch the URL mapping names', async ({ page, context }) => {
+    await stubCoverageChrome(context, {
+      connection: {
+        ...DEFAULT_CONNECTION,
+        projectMappings: [{ ...DEFAULT_CONNECTION.projectMappings[0]!, branch: 'develop' }],
+      },
+      cachedBranches: { develop: shopIndex(SHOP_TESTS, { branch: 'develop' }) },
+    });
+    await openShop(page, '?nodialog');
+    await pick(page, 'article:has-text("Blue mug") button.primary');
+    const section = page.locator(`${RESULTS} .piwi`);
+    await expect(section).toContainText('Reached by 2 tests of Acme Mugs on develop');
+    const find = section.getByRole('link', { name: /Find these locators in Piwi/ });
+    expect(await find.getAttribute('href')).toContain('&branch=develop');
   });
 
   test('says so when no test reaches the picked element', async ({ page, context }) => {

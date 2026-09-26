@@ -39,7 +39,7 @@ test.beforeAll(async () => {
       res.end();
       return;
     }
-    if (req.url === '/api/projects/1/locator-index') {
+    if (req.url?.split('?')[0] === '/api/projects/1/locator-index') {
       requests.push({ url: req.url, apiKey: req.headers['x-api-key'] as string | undefined });
       res.setHeader('Content-Type', 'application/json');
       res.end(JSON.stringify(locatorIndex()));
@@ -111,4 +111,37 @@ test('the worker fetches, caches and revalidates a project’s locator index', a
   expect(await cachedLocators()).toHaveLength(2);
 
   expect(await ask(false, 'x')).toMatchObject({ ok: false });
+});
+
+test('the worker asks for a branch and caches it apart from the default branch', async ({ context, extensionId }) => {
+  requests = [];
+  const page = await context.newPage();
+  await page.goto(`chrome-extension://${extensionId}/options.html`);
+  await page.evaluate(
+    (url) =>
+      chrome.storage.local.set({
+        piwiConnection: {
+          instanceUrl: url,
+          apiKey: 'pd_test',
+          projectMappings: [{ urlPattern: '**', projectId: 1, projectLabel: 'Shop', branch: 'feature/x' }],
+        },
+        piwiLocatorIndexCache: {},
+      }),
+    baseUrl,
+  );
+  const answer = await page.evaluate(
+    () =>
+      chrome.runtime.sendMessage({
+        type: 'piwi-refresh-locator-index',
+        projectId: 1,
+        force: false,
+        branch: 'feature/x',
+      }) as Promise<{ ok: boolean; refreshed?: boolean }>,
+  );
+  expect(answer).toMatchObject({ ok: true, refreshed: true });
+  expect(requests.map((r) => r.url)).toEqual(['/api/projects/1/locator-index?branch=feature%2Fx']);
+  const keys = await page.evaluate(async () =>
+    Object.keys(((await chrome.storage.local.get('piwiLocatorIndexCache')).piwiLocatorIndexCache ?? {}) as object),
+  );
+  expect(keys).toEqual(['1@feature/x']);
 });

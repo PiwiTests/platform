@@ -12,10 +12,10 @@ export type LocatorIndexRefreshResult =
   | { ok: true; refreshed: true; index: LocatorIndex }
   | { ok: false; error: string };
 
-/** `force` skips the TTL check — an explicit "refresh" from the user. */
+/** `force` skips the TTL check — an explicit "refresh" from the user. `branch` is null for the default branch. */
 export async function requestLocatorIndex(
   projectId: number | null,
-  opts: { force?: boolean } = {},
+  opts: { force?: boolean; branch?: string | null } = {},
 ): Promise<LocatorIndexRefreshResult> {
   if (projectId == null) return { ok: false, error: 'No project mapped to this page.' };
   try {
@@ -23,6 +23,7 @@ export async function requestLocatorIndex(
       type: 'piwi-refresh-locator-index',
       projectId,
       force: opts.force === true,
+      branch: opts.branch ?? null,
     })) as LocatorIndexRefreshResult | undefined;
     return answer ?? { ok: false, error: 'Piwi Picker background worker did not answer.' };
   } catch {

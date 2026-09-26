@@ -13,12 +13,13 @@
  * `__piwiCoverageScopeRequest` — with the tested containers around it listed
  * apart.
  */
-import type { LocatorIndex } from '@piwitests/core/locator-index';
+import { ALL_BRANCHES, type LocatorIndex } from '@piwitests/core/locator-index';
 import { startTool, endTool, toolIsCurrent, installEscapeToCancel } from '../shared/tool-session.js';
 import { ensureSessionAccess } from '../shared/session-access.js';
 import { getConnectionSettings, isConnected } from '../shared/connection-settings.js';
 import { getActiveProjectOverride, resolveActiveProject, type ActiveProject } from '../shared/active-project.js';
 import { getCachedLocatorIndex } from '../shared/locator-index-cache.js';
+import { getLocatorBranchOverride, resolveLocatorBranch, setLocatorBranchOverride } from '../shared/locator-branch.js';
 import { requestLocatorIndex } from '../shared/locator-index-refresh.js';
 import { isElementNode } from './engine-aria.js';
 import { scanCoverage, scopeScan, widerScope, type CoverageScan } from './coverage-scan.js';
@@ -157,6 +158,8 @@ function startCoverageOverlay(): void {
   let status: PanelStatus = 'loading';
   let message: string | null = 'Loading the locator index…';
   let project: ActiveProject | null = null;
+  /** The branch whose index is read: a name, `*` for every branch, null for the default branch. */
+  let branch: string | null = null;
   let instanceUrl = '';
   let index: LocatorIndex | null = null;
   let fetchedAt: number | null = null;
@@ -201,6 +204,7 @@ function startCoverageOverlay(): void {
       renderPanel();
     },
     onRefresh: () => void loadIndex(true),
+    onBranch: (value) => void switchBranch(value),
     onOpenSettings: () => void chrome.runtime.sendMessage({ type: 'piwi-open-options' }).catch(() => undefined),
     onTab: (tab) => {
       state.tab = tab;
@@ -263,6 +267,7 @@ function startCoverageOverlay(): void {
       refreshError,
       scanning,
       state,
+      branch,
       scopeLabel: state.scope ? describe(state.scope) : null,
       canWiden: !!state.scope && widerScope(state.scope) !== null,
     });
@@ -359,6 +364,7 @@ function startCoverageOverlay(): void {
       instanceUrl,
       projectId: project.projectId,
       projectLabel: project.projectLabel,
+      branch,
     };
   }
 
@@ -456,6 +462,7 @@ function startCoverageOverlay(): void {
       status,
       message,
       projectLabel: project?.projectLabel ?? null,
+      branch,
       scans: scanCount,
       drawn: state.choosingScope ? 0 : drawables().length,
       scope: state.scope ? describe(state.scope) : null,
@@ -567,13 +574,14 @@ function startCoverageOverlay(): void {
     refreshing = true;
     refreshError = null;
     renderPanel();
-    const answer = await requestLocatorIndex(project.projectId, { force });
-    if (!toolIsCurrent(toolEpoch)) return;
+    const asked = branch;
+    const answer = await requestLocatorIndex(project.projectId, { force, branch: asked });
+    if (!toolIsCurrent(toolEpoch) || asked !== branch) return;
     refreshing = false;
     if (answer.ok) {
       if (answer.refreshed) useIndex(answer.index, Date.now());
       else if (!index) {
-        const cached = await getCachedLocatorIndex(project.projectId);
+        const cached = await getCachedLocatorIndex(project.projectId, asked);
         if (cached) useIndex(cached.index, cached.fetchedAt);
       }
     } else if (index) {
@@ -584,6 +592,40 @@ function startCoverageOverlay(): void {
     }
     renderPanel();
     bridge();
+  }
+
+  /** Show the cached index of the current project and branch at once, then revalidate it. */
+  async function openIndex(): Promise<void> {
+    if (!project) return;
+    const asked = branch;
+    const cached = await getCachedLocatorIndex(project.projectId, asked);
+    if (!toolIsCurrent(toolEpoch) || asked !== branch) return;
+    if (cached) useIndex(cached.index, cached.fetchedAt);
+    await loadIndex(false);
+  }
+
+  function loadingMessage(): string {
+    const on = branch === ALL_BRANCHES ? ' on every branch' : branch ? ` on ${branch}` : '';
+    return `Loading the locator index of ${project?.projectLabel ?? 'the project'}${on}…`;
+  }
+
+  /** The panel's branch select: '' for the default branch, `*` for every branch, else a branch. */
+  async function switchBranch(value: string): Promise<void> {
+    if (!project) return;
+    const next = value.trim() || null;
+    if (next === branch) return;
+    await setLocatorBranchOverride(project.projectId, value).catch(() => undefined);
+    branch = next;
+    index = null;
+    scan = null;
+    context = null;
+    scanSeq++;
+    status = 'loading';
+    message = loadingMessage();
+    refreshError = null;
+    redraw();
+    renderPanel();
+    await openIndex();
   }
 
   async function boot(): Promise<void> {
@@ -612,12 +654,10 @@ function startCoverageOverlay(): void {
       bridge();
       return;
     }
-    message = `Loading the locator index of ${project.projectLabel}…`;
+    branch = resolveLocatorBranch(project, await getLocatorBranchOverride(project.projectId).catch(() => undefined));
+    message = loadingMessage();
     renderPanel();
-    const cached = await getCachedLocatorIndex(project.projectId);
-    if (!toolIsCurrent(toolEpoch)) return;
-    if (cached) useIndex(cached.index, cached.fetchedAt);
-    await loadIndex(false);
+    await openIndex();
   }
 
   // ── Live updates ───────────────────────────────────────────────────────
@@ -751,11 +791,13 @@ function startCoverageOverlay(): void {
           renderPanel();
           return;
         }
+        branch = resolveLocatorBranch(
+          project,
+          await getLocatorBranchOverride(project.projectId).catch(() => undefined),
+        );
         status = 'loading';
-        message = `Loading the locator index of ${project.projectLabel}…`;
-        const cached = await getCachedLocatorIndex(project.projectId);
-        if (cached) useIndex(cached.index, cached.fetchedAt);
-        await loadIndex(false);
+        message = loadingMessage();
+        await openIndex();
       } else {
         scanDirty = true;
         requestScan(MUTATION_DEBOUNCE_MS);

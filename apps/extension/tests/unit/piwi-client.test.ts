@@ -43,6 +43,15 @@ describe('dashboard deep links', () => {
     );
   });
 
+  test('projectLocatorsUrl names the branch when there is one', () => {
+    expect(projectLocatorsUrl('https://piwi.example.com', 3, [], 'feature/x')).toBe(
+      'https://piwi.example.com/projects/3/locators?branch=feature%2Fx',
+    );
+    expect(projectLocatorsUrl('https://piwi.example.com', 3, ["getByText('A')"], '*')).toBe(
+      `https://piwi.example.com/projects/3/locators?q=${encodeURIComponent("getByText('A')")}&branch=*`,
+    );
+  });
+
   test('testCaseUrl points at the test case page', () => {
     expect(testCaseUrl('https://piwi.example.com/', 42)).toBe('https://piwi.example.com/test-cases/42');
   });
@@ -78,12 +87,36 @@ describe('responses as the dashboard sends them', () => {
   });
 
   test('fetchLocatorIndex sends the API key and returns the index', async () => {
-    const index = { projectId: 1, locators: [], tests: [], truncated: false };
+    const index = {
+      projectId: 1,
+      branch: 'main',
+      defaultBranch: 'main',
+      branches: [],
+      locators: [],
+      tests: [],
+      truncated: false,
+    };
     answer(index);
     expect(await fetchLocatorIndex(settings, 1)).toEqual(index);
     const call = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0]!;
     expect(call[0]).toBe('https://piwi.example.com/api/projects/1/locator-index');
     expect((call[1] as RequestInit).headers).toEqual({ 'X-API-Key': 'pd_key' });
+  });
+
+  test('fetchLocatorIndex asks for a branch, and reads an index without branches as every branch', async () => {
+    answer({
+      projectId: 1,
+      locators: [
+        { locator: "getByText('A')", lastSeenAt: '', uses: [{ test: 0, actions: [], callSites: [], projects: [] }] },
+      ],
+      tests: [],
+      truncated: false,
+    });
+    const index = await fetchLocatorIndex(settings, 1, 'feature/x');
+    const call = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0]!;
+    expect(call[0]).toBe('https://piwi.example.com/api/projects/1/locator-index?branch=feature%2Fx');
+    expect(index).toMatchObject({ branch: null, defaultBranch: '', branches: [] });
+    expect(index.locators[0]!.uses[0]!.branches).toEqual([]);
   });
 
   test('fetchLocatorIndex explains a rejected key, a missing endpoint and a malformed answer', async () => {

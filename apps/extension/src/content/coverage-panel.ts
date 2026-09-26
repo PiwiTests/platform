@@ -5,6 +5,7 @@
  * display toggles. Collapses to a pill that keeps the summary in view.
  */
 import { highlightLocator } from '@piwitests/picker-dom';
+import { ALL_BRANCHES } from '@piwitests/core/locator-index';
 import type { CoveredElement, UncoveredElement } from './coverage-scan.js';
 import {
   ageLabel,
@@ -34,6 +35,8 @@ export interface PanelModel {
   refreshError: string | null;
   scanning: { done: number; total: number } | null;
   state: ViewState;
+  /** The branch asked for: a name, `*` for every branch, null for the default branch. */
+  branch: string | null;
   /** How the element the view is limited to reads in the lists. */
   scopeLabel: string | null;
   /** The view can widen to a container of that element before reaching the whole page. */
@@ -45,6 +48,8 @@ export interface PanelCallbacks {
   onCollapse(collapsed: boolean): void;
   onDock(): void;
   onRefresh(): void;
+  /** '' for the default branch, `*` for every branch, else a branch. */
+  onBranch(value: string): void;
   onOpenSettings(): void;
   onTab(tab: CoverageTab): void;
   onQuery(query: string): void;
@@ -268,6 +273,7 @@ export class CoveragePanel {
     const { scan, index } = context;
     const out: Node[] = [];
     const status = el('div', 'status-line');
+    status.append(this.renderBranchSelect(model, context));
     status.append(`${plural(index.locators.length, 'locator')} from ${plural(index.tests.length, 'test')}`);
     if (model.fetchedAt) status.append(` · updated ${ageLabel(model.fetchedAt)}`);
     const refresh = el('button', 'link-button', model.refreshing ? 'Refreshing…' : 'Refresh');
@@ -333,6 +339,26 @@ export class CoveragePanel {
       ),
     );
     return out;
+  }
+
+  private renderBranchSelect(model: PanelModel, context: CoverageContext): HTMLSelectElement {
+    const { index } = context;
+    const select = el('select', 'branch-select');
+    select.setAttribute('aria-label', 'Branch');
+    select.title = 'The branch whose tests to show: tests that ran on it count with what they did there';
+    const option = (value: string, label: string) => {
+      const o = el('option', undefined, label);
+      o.value = value;
+      select.appendChild(o);
+    };
+    option('', index.defaultBranch ? `${index.defaultBranch} (default)` : 'Default branch');
+    option(ALL_BRANCHES, 'All branches');
+    for (const b of index.branches) option(b.name, `${b.name} · ${plural(b.tests, 'test')}`);
+    const current = model.branch ?? '';
+    if (![...select.options].some((o) => o.value === current)) option(current, current);
+    select.value = current;
+    select.addEventListener('change', () => this.callbacks.onBranch(select.value));
+    return select;
   }
 
   private renderScopeBar(model: PanelModel): HTMLElement {

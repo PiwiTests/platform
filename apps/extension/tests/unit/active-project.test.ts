@@ -79,6 +79,15 @@ describe('resolveActiveProject', () => {
     expect(result).toBeNull();
   });
 
+  it('carries the branch a mapping names', () => {
+    const staging = { ...shop, urlPattern: 'https://staging.shop.test/**', branch: 'develop' };
+    expect(resolveActiveProject(settings([staging, shop]), null, 'https://staging.shop.test/cart')).toEqual({
+      projectId: 1,
+      projectLabel: 'Shop',
+      branch: 'develop',
+    });
+  });
+
   it('returns null with no mappings and no override', () => {
     expect(resolveActiveProject(settings([]), null, 'https://shop.test/')).toBeNull();
   });

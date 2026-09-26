@@ -30,6 +30,9 @@ function index(projectId: number, locators = 1): LocatorIndex {
   return {
     projectId,
     projectName: `p${projectId}`,
+    branch: 'main',
+    defaultBranch: 'main',
+    branches: [],
     builtAt: null,
     generatedAt: '2026-09-01T00:00:00.000Z',
     testIdAttributes: null,
@@ -65,6 +68,14 @@ describe('locator index cache', () => {
     await setCachedLocatorIndex(1, index(1));
     expect(await isLocatorIndexStale(1)).toBe(false);
     now += LOCATOR_INDEX_TTL_MS;
+    expect(await isLocatorIndexStale(1)).toBe(true);
+  });
+
+  it('keeps one entry per branch, the default branch under the project alone', async () => {
+    await setCachedLocatorIndex(1, index(1), 'feature/voucher');
+    expect(await getCachedLocatorIndex(1)).toBeNull();
+    expect((await getCachedLocatorIndex(1, 'feature/voucher'))?.index.projectName).toBe('p1');
+    expect(await isLocatorIndexStale(1, 'feature/voucher')).toBe(false);
     expect(await isLocatorIndexStale(1)).toBe(true);
   });
 

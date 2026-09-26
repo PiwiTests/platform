@@ -32,10 +32,22 @@ export function projectCatalogUrl(instanceUrl: string, projectId: number): strin
   return `${normalizeBaseUrl(instanceUrl)}/projects/${projectId}/test-functions`;
 }
 
-/** Deep link to a project's Locators page, with locators to check prefilled one per line. */
-export function projectLocatorsUrl(instanceUrl: string, projectId: number, locators: string[] = []): string {
+/**
+ * Deep link to a project's Locators page, with locators to check prefilled one
+ * per line, on `branch` (null for the default branch, `*` for every branch).
+ */
+export function projectLocatorsUrl(
+  instanceUrl: string,
+  projectId: number,
+  locators: string[] = [],
+  branch: string | null = null,
+): string {
   const base = `${normalizeBaseUrl(instanceUrl)}/projects/${projectId}/locators`;
-  return locators.length ? `${base}?q=${encodeURIComponent(locators.join('\n'))}` : base;
+  const query = [
+    ...(locators.length ? [`q=${encodeURIComponent(locators.join('\n'))}`] : []),
+    ...(branch ? [`branch=${encodeURIComponent(branch)}`] : []),
+  ];
+  return query.length ? `${base}?${query.join('&')}` : base;
 }
 
 /** Deep link to a test case's page in the dashboard. */
@@ -124,10 +136,20 @@ export async function fetchCatalog(settings: ConnectionSettings, projectId: numb
  */
 const LOCATOR_INDEX_TIMEOUT_MS = 30_000;
 
-/** One project's locator index: every chain its tests used, with the tests that use it. */
-export async function fetchLocatorIndex(settings: ConnectionSettings, projectId: number): Promise<LocatorIndex> {
+/**
+ * One project's locator index: every chain its tests used, with the tests that
+ * use it, as seen on `branch` (null for the default branch, `*` for every
+ * branch). An instance older than branch support answers one index mixing
+ * every branch, read as such.
+ */
+export async function fetchLocatorIndex(
+  settings: ConnectionSettings,
+  projectId: number,
+  branch: string | null = null,
+): Promise<LocatorIndex> {
   if (!settings.instanceUrl.trim()) throw new Error('Not connected to a Piwi instance.');
-  const res = await fetch(`${normalizeBaseUrl(settings.instanceUrl)}/api/projects/${projectId}/locator-index`, {
+  const query = branch ? `?branch=${encodeURIComponent(branch)}` : '';
+  const res = await fetch(`${normalizeBaseUrl(settings.instanceUrl)}/api/projects/${projectId}/locator-index${query}`, {
     headers: authHeaders(settings),
     signal: AbortSignal.timeout(LOCATOR_INDEX_TIMEOUT_MS),
   });
@@ -139,5 +161,15 @@ export async function fetchLocatorIndex(settings: ConnectionSettings, projectId:
   if (!body || !Array.isArray(body.locators) || !Array.isArray(body.tests)) {
     throw new Error('The instance answered with something that is not a locator index.');
   }
-  return body;
+  const defaultBranch = typeof body.defaultBranch === 'string' ? body.defaultBranch : '';
+  return {
+    ...body,
+    branch: typeof body.branch === 'string' ? body.branch : null,
+    defaultBranch,
+    branches: Array.isArray(body.branches) ? body.branches : [],
+    locators: body.locators.map((entry) => ({
+      ...entry,
+      uses: entry.uses.map((use) => ({ ...use, branches: Array.isArray(use.branches) ? use.branches : [] })),
+    })),
+  };
 }

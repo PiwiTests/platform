@@ -1,6 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import {
   CARD_TEST,
+  DEFAULT_CONNECTION,
   INSTANCE_URL,
   SHOP_TESTS,
   injectCoverage,
@@ -634,3 +635,67 @@ async function centerOf(page: Page, selector: string): Promise<[number, number]>
   const box = await boxOf(page, selector);
   return [box.x + box.width / 2, box.y + box.height / 2];
 }
+
+test.describe('coverage overlay on a branch', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.setViewportSize({ width: 1400, height: 900 });
+  });
+
+  /** On feature/voucher, only the search test ran; it now uses the search button alone. */
+  const featureIndex = () =>
+    shopIndex(
+      [
+        {
+          ...SHOP_TESTS[0]!,
+          uses: [["getByRole('button', { name: 'Search' })", ['click'], 6]],
+        },
+      ],
+      {
+        branch: 'feature/voucher',
+        branches: [{ name: 'feature/voucher', lastSeenAt: '2026-09-25T10:00:00.000Z', tests: 1 }],
+      },
+    );
+
+  test('reads the branch the URL mapping names, and the panel switches branches', async ({ page, context }) => {
+    await stubCoverageChrome(context, {
+      connection: {
+        ...DEFAULT_CONNECTION,
+        projectMappings: [{ ...DEFAULT_CONNECTION.projectMappings[0]!, branch: 'feature/voucher' }],
+      },
+      cachedBranches: { 'feature/voucher': featureIndex() },
+    });
+    await openShop(page, '?nodialog');
+    await injectCoverage(page);
+    const onFeature = await readCoverage(page);
+    expect(onFeature.branch).toBe('feature/voucher');
+    expect(onFeature.tests.map((t) => t.title)).toEqual(['finds a product by name']);
+    const select = page.locator(`${HOST} .panel select.branch-select`);
+    await expect(select).toHaveValue('feature/voucher');
+    const sent = () =>
+      page.evaluate(
+        () =>
+          (globalThis as unknown as { __piwiTestSent: Array<{ type: string; branch?: string | null }> }).__piwiTestSent,
+      );
+    expect((await sent()).filter((m) => m.type === 'piwi-refresh-locator-index').map((m) => m.branch)).toEqual([
+      'feature/voucher',
+    ]);
+
+    // Back to the default branch: its cached index, remembered for the session.
+    await select.selectOption('');
+    await page.waitForFunction(
+      () =>
+        (globalThis as { __piwiCoverage?: { branch?: string | null; status?: string } }).__piwiCoverage?.branch ===
+        null,
+    );
+    await expect.poll(async () => (await readCoverage(page)).status).toBe('ready');
+    expect((await readCoverage(page)).tests.length).toBeGreaterThan(1);
+    expect((await sent()).filter((m) => m.type === 'piwi-refresh-locator-index').map((m) => m.branch)).toEqual([
+      'feature/voucher',
+      null,
+    ]);
+    const remembered = await page.evaluate(async () =>
+      (globalThis as any).chrome.storage.session.get('piwiLocatorBranchOverride'),
+    );
+    expect(remembered).toEqual({ piwiLocatorBranchOverride: { '1': '' } });
+  });
+});

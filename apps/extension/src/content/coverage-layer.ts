@@ -471,7 +471,7 @@ export class CoverageLayer {
       }
       const actions = el('div', 'card-actions');
       const find = el('a', 'button', 'Find these locators in Piwi ↗');
-      find.href = projectLocatorsUrl(context.instanceUrl, context.projectId, locators);
+      find.href = projectLocatorsUrl(context.instanceUrl, context.projectId, locators, context.branch);
       find.target = '_blank';
       find.rel = 'noopener noreferrer';
       actions.appendChild(find);

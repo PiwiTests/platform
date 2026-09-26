@@ -144,6 +144,11 @@ export const COVERAGE_CSS = `
   .panel .meter > span { display: block; height: 100%; background: #10b981; }
   .panel .meter-label { color: #9ca3af; font-size: 11.5px; margin: 4px 0 10px; }
   .panel .status-line { color: #9ca3af; font-size: 11.5px; margin-bottom: 8px; display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
+  .panel .branch-select {
+    max-width: 100%; font: inherit; font-size: 11.5px; color: inherit; padding: 1px 4px; border-radius: 6px;
+    background: rgb(128 128 128 / 0.14); border: 1px solid rgb(128 128 128 / 0.35);
+  }
+  .panel .branch-select option { color: #111827; }
   .panel .link-button {
     background: none; border: 0; padding: 0; color: inherit; font: inherit; cursor: pointer;
     text-decoration: underline dotted; text-underline-offset: 2px;

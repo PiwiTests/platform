@@ -61,7 +61,10 @@ element. **Copy all** copies every ranked locator, one per line, for the
 ## Setting it up
 
 1. Connect the extension to your instance and map the application's URLs to its project: see
-   [Connecting to a Piwi instance](./extension#connecting-to-a-piwi-instance).
+   [Connecting to a Piwi instance](./extension#connecting-to-a-piwi-instance). A mapping can
+   name the branch deployed at those URLs, a staging site on `develop` for instance: the
+   overlay then shows what that branch's tests reach, as the [Locators page](./locator-usage#branches)
+   reads a branch. The branch select in the panel changes it for the rest of the browser session.
 2. Let a few runs arrive. The index fills in from the steps the reporter already sends, with
    Playwright 1.61 or later: see the [requirements](./locator-usage#requirements-and-limits).
 3. For projects that set `testIdAttribute` in their Playwright config, the reporter records it

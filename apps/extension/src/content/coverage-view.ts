@@ -9,6 +9,8 @@ export interface CoverageContext {
   instanceUrl: string;
   projectId: number;
   projectLabel: string;
+  /** The branch read: a name, `*` for every branch, null for the default branch. */
+  branch: string | null;
 }
 
 export type CoverageTab = 'elements' | 'tests' | 'untested';

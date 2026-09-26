@@ -125,8 +125,10 @@ elements none reaches. The data is `GET /api/projects/:id/locator-index`
 (`LocatorIndex` in `packages/core/src/locator-index.ts`, built by `getLocatorIndex` in
 `apps/application/server/utils/locator-usages.ts`), fetched by the worker and cached in
 `chrome.storage.local` by `locator-index-cache.ts` (TTL `LOCATOR_INDEX_TTL_MS`, the last
-`LOCATOR_INDEX_CACHE_PROJECTS` projects; an index that does not fit the quota comes back in the
-worker's reply uncached).
+`LOCATOR_INDEX_CACHE_PROJECTS` indexes; an index that does not fit the quota comes back in the
+worker's reply uncached). An index describes one branch: `locator-branch.ts` resolves it from the
+panel's choice for the session, else the URL mapping's `branch`, else the default branch, and the
+cache keeps one entry per project and branch.
 
 The chains are evaluated by an in-page reimplementation of Playwright's selector engines, not by
 `evaluateLocatorChain` (which only counts candidates it generated itself):

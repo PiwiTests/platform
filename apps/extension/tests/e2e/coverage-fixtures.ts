@@ -133,20 +133,29 @@ export function shopIndex(tests: TestSpec[] = SHOP_TESTS, extra: Partial<Locator
     for (const [locator, actions, line] of test.uses) {
       let entry = locators.get(locator);
       if (!entry) locators.set(locator, (entry = { locator, lastSeenAt: '2026-09-25T10:00:00.000Z', uses: [] }));
-      entry.uses.push({ test: i, actions, callSites: [`${test.file}:${line}:5`], projects: ['chromium'] });
+      entry.uses.push({
+        test: i,
+        actions,
+        callSites: [`${test.file}:${line}:5`],
+        projects: ['chromium'],
+        branches: ['main'],
+      });
     }
   });
-  return {
+  const base: LocatorIndex = {
     projectId: 1,
     projectName: 'acme-mugs',
+    branch: 'main',
+    defaultBranch: 'main',
+    branches: [],
     builtAt: '2026-09-20T08:00:00.000Z',
     generatedAt: '2026-09-25T10:00:00.000Z',
     testIdAttributes: null,
     tests: tests.map((t, i) => ({ id: 100 + i, title: t.title, suite: t.suite, file: t.file, status: t.status })),
     locators: [...locators.values()].sort((a, b) => b.uses.length - a.uses.length),
     truncated: false,
-    ...extra,
   };
+  return { ...base, ...extra };
 }
 
 export interface CoverageStubOptions {
@@ -154,10 +163,12 @@ export interface CoverageStubOptions {
   connection?: {
     instanceUrl: string;
     apiKey: string;
-    projectMappings: Array<{ urlPattern: string; projectId: number; projectLabel: string }>;
+    projectMappings: Array<{ urlPattern: string; projectId: number; projectLabel: string; branch?: string }>;
   } | null;
   /** The index already cached for project 1, if any. */
   cached?: LocatorIndex | null;
+  /** Indexes of project 1 cached for other branches, by branch. */
+  cachedBranches?: Record<string, LocatorIndex>;
   /** What the worker answers to `piwi-refresh-locator-index`. */
   refresh?: unknown;
 }
@@ -181,7 +192,12 @@ export async function stubCoverageChrome(context: BrowserContext, options: Cover
   const cached = options.cached === undefined ? shopIndex() : options.cached;
   const local: Record<string, unknown> = {};
   if (connection) local.piwiConnection = connection;
-  if (cached) local.piwiLocatorIndexCache = { '1': { index: cached, fetchedAt: Date.now() } };
+  const cache: Record<string, { index: LocatorIndex; fetchedAt: number }> = {};
+  if (cached) cache['1'] = { index: cached, fetchedAt: Date.now() };
+  for (const [branch, index] of Object.entries(options.cachedBranches ?? {})) {
+    cache[`1@${branch}`] = { index, fetchedAt: Date.now() };
+  }
+  if (Object.keys(cache).length) local.piwiLocatorIndexCache = cache;
   await context.addInitScript(
     ({ localSeed, refresh }) => {
       const store: Record<'local' | 'session', Record<string, unknown>> = { local: { ...localSeed }, session: {} };
@@ -252,6 +268,8 @@ export interface BridgedCoverage {
   scope: string | null;
   /** While choosing that element: the one that would be chosen ('' for none yet); null otherwise. */
   choosing: string | null;
+  /** The branch read: a name, `*` for every branch, null for the default branch. */
+  branch: string | null;
   /** Tested elements around the scope, nearest first. */
   containers: Array<{ description: string; tests: string[] }>;
   coveredInteractive: number;

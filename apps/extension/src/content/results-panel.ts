@@ -9,6 +9,8 @@ import { getConnectionSettings, isConnected } from '../shared/connection-setting
 import { getActiveProjectOverride, resolveActiveProject } from '../shared/active-project.js';
 import { ensureSessionAccess } from '../shared/session-access.js';
 import { getCachedLocatorIndex } from '../shared/locator-index-cache.js';
+import { getLocatorBranchOverride, resolveLocatorBranch } from '../shared/locator-branch.js';
+import { ALL_BRANCHES } from '@piwitests/core/locator-index';
 import { requestLocatorIndex } from '../shared/locator-index-refresh.js';
 import { projectLocatorsUrl, testCaseUrl } from '../shared/piwi-client.js';
 import { elementReach, scanCoverage, type ReachGroup } from './coverage-scan.js';
@@ -293,6 +295,7 @@ async function fillPiwiSection(
   let settings: Awaited<ReturnType<typeof getConnectionSettings>>;
   let projectId: number;
   let projectLabel: string;
+  let branch: string | null;
   try {
     await ensureSessionAccess();
     settings = await getConnectionSettings();
@@ -302,6 +305,7 @@ async function fillPiwiSection(
     if (!project) return;
     projectId = project.projectId;
     projectLabel = project.projectLabel;
+    branch = resolveLocatorBranch(project, await getLocatorBranchOverride(projectId).catch(() => undefined));
   } catch {
     return;
   }
@@ -312,6 +316,7 @@ async function fillPiwiSection(
       settings.instanceUrl,
       projectId,
       ranked.map((alt) => alt.locator),
+      branch,
     );
     link.target = '_blank';
     link.rel = 'noopener noreferrer';
@@ -325,13 +330,14 @@ async function fillPiwiSection(
     return el;
   };
 
+  const where = `${projectLabel}${branch === ALL_BRANCHES ? ' on any branch' : branch ? ` on ${branch}` : ''}`;
   section.hidden = false;
-  section.replaceChildren(lead(`Checking which tests of ${projectLabel} reach this element…`));
+  section.replaceChildren(lead(`Checking which tests of ${where} reach this element…`));
   reportPickCoverage({ status: 'checking' });
 
-  let index = (await getCachedLocatorIndex(projectId).catch(() => null))?.index ?? null;
+  let index = (await getCachedLocatorIndex(projectId, branch).catch(() => null))?.index ?? null;
   if (!index) {
-    const answer = await requestLocatorIndex(projectId);
+    const answer = await requestLocatorIndex(projectId, { branch });
     if (answer.ok && answer.refreshed) index = answer.index;
     else {
       const muted = document.createElement('div');
@@ -342,7 +348,7 @@ async function fillPiwiSection(
       const actions = document.createElement('div');
       actions.className = 'actions';
       actions.appendChild(findInPiwi());
-      section.replaceChildren(lead(`Tests of ${projectLabel}`), muted, actions);
+      section.replaceChildren(lead(`Tests of ${where}`), muted, actions);
       reportPickCoverage({ status: 'unavailable', message: muted.textContent });
       return;
     }
@@ -402,9 +408,9 @@ async function fillPiwiSection(
 
   const children: Node[] = [];
   if (direct.length) {
-    children.push(lead(`Reached by ${plural(direct.length, 'test')} of ${projectLabel}`));
+    children.push(lead(`Reached by ${plural(direct.length, 'test')} of ${where}`));
   } else {
-    children.push(lead(`Not reached by any test of ${projectLabel}`));
+    children.push(lead(`Not reached by any test of ${where}`));
     children.push(
       muted(
         reach.containers.tests.length
