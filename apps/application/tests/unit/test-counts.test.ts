@@ -87,8 +87,29 @@ describe('summarizeRunCases', () => {
       ...Array.from({ length: 3 }, () => ({ status: 'running' })),
     ];
     const s = summarizeRunCases(cases);
-    expect(s).toEqual({ total: 209, passed: 153, failed: 15, skipped: 10, didNotRun: 28, flaky: 3, running: 3 });
+    expect(s).toEqual({
+      total: 209,
+      passed: 153,
+      failed: 15,
+      skipped: 10,
+      didNotRun: 28,
+      flaky: 3,
+      fixme: 0,
+      running: 3,
+    });
     expect(s.passed + s.failed + s.skipped + s.didNotRun + s.running).toBe(s.total);
+  });
+
+  test('counts a test.fixme() skip as skipped and fixme, and ignores fixme on other statuses', () => {
+    const s = summarizeRunCases([
+      { status: 'skipped', testAnnotations: [{ type: 'skip' }] },
+      { status: 'skipped', testAnnotations: [{ type: 'fixme' }] },
+      { status: 'skipped', testAnnotations: null },
+      { status: 'failed', testAnnotations: [{ type: 'fixme' }] },
+    ]);
+    expect(s.skipped).toBe(3);
+    expect(s.fixme).toBe(1);
+    expect(s.failed).toBe(1);
   });
 
   test('treats a missing retries field as zero (not flaky)', () => {
@@ -105,6 +126,7 @@ describe('summarizeRunCases', () => {
       skipped: 0,
       didNotRun: 0,
       flaky: 0,
+      fixme: 0,
       running: 0,
     });
   });

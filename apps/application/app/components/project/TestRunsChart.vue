@@ -34,6 +34,9 @@ const chartData = computed(() => {
   return sortedRuns.map((run) => {
     const flaky = run.flakyTests || 0;
     const passed = run.passedTests || 0;
+    const skipped = run.skippedTests || 0;
+    // Fixme skips are a subset of skipped, carved out the same way.
+    const fixme = Math.min(run.fixmeTests || 0, skipped);
     return {
       id: run.id,
       date: new Date(run.startTime),
@@ -43,7 +46,8 @@ const chartData = computed(() => {
       // inflate the bar past the run's real total.
       passed: Math.max(0, passed - flaky),
       failed: run.failedTests || 0,
-      skipped: run.skippedTests || 0,
+      skipped: skipped - fixme,
+      fixme,
       didNotRun: run.didNotRunTests || 0,
       flaky,
       total: run.totalTests || 0,
@@ -55,7 +59,7 @@ const chartData = computed(() => {
 type DataPoint = (typeof chartData)['value'][number];
 
 const yMax = computed(() =>
-  Math.max(1, ...chartData.value.map((d) => d.passed + d.failed + d.skipped + d.didNotRun + d.flaky)),
+  Math.max(1, ...chartData.value.map((d) => d.passed + d.failed + d.skipped + d.fixme + d.didNotRun + d.flaky)),
 );
 
 const dates = computed(() => chartData.value.map((d) => d.date));

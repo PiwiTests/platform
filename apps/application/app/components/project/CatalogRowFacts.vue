@@ -17,6 +17,7 @@ defineProps<{ tc: TestCaseWithStats }>();
       :passed="tc.passedRuns"
       :failed="tc.failedRuns"
       :skipped="tc.skippedRuns"
+      :fixme="tc.fixmeRuns ?? 0"
       :flaky="tc.flakyRuns"
       :did-not-run="tc.didNotRunRuns"
       :total="tc.totalRuns"

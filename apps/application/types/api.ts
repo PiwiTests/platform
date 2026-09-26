@@ -244,6 +244,8 @@ export interface ProjectWithStats {
     passedTests: number;
     failedTests: number;
     skippedTests: number;
+    /** `test.fixme()` skips — a subset of `skippedTests`. */
+    fixmeTests?: number;
     didNotRunTests: number;
     flakyTests: number;
     totalTests: number;
@@ -398,6 +400,8 @@ export interface TestRunSummary {
   passedTests: number;
   failedTests: number;
   skippedTests: number;
+  /** `test.fixme()` skips — a subset of `skippedTests`. */
+  fixmeTests?: number;
   didNotRunTests: number;
   flakyTests: number;
   avgTestDuration?: number | null;
@@ -509,6 +513,8 @@ export interface TestRunForChart {
   passedTests: number;
   failedTests: number;
   skippedTests: number;
+  /** `test.fixme()` skips — a subset of `skippedTests`. */
+  fixmeTests?: number;
   didNotRunTests: number;
   flakyTests: number;
   totalTests: number;
@@ -1084,6 +1090,8 @@ export interface TestCaseWithStats {
   passedRuns: number;
   failedRuns: number;
   skippedRuns: number;
+  /** Runs skipped by `test.fixme()` — a subset of `skippedRuns`. */
+  fixmeRuns?: number;
   didNotRunRuns: number;
   flakyRuns: number;
   recentFlakyRuns?: number;

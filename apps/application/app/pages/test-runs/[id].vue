@@ -459,6 +459,7 @@ const displayProgress = computed(() => {
       passedTests: s.passed,
       failedTests: s.failed,
       skippedTests: s.skipped,
+      fixmeTests: s.fixme,
       didNotRunTests: s.didNotRun,
       flakyTests: s.flaky,
     };
@@ -468,6 +469,7 @@ const displayProgress = computed(() => {
     passedTests: testRun.value.passedTests,
     failedTests: testRun.value.failedTests,
     skippedTests: testRun.value.skippedTests,
+    fixmeTests: 0,
     didNotRunTests: testRun.value.didNotRunTests ?? 0,
     flakyTests: testRun.value.flakyTests ?? 0,
   };
@@ -504,14 +506,16 @@ function buildRunSummary(): string {
   const passed = p?.passedTests ?? run.passedTests ?? 0;
   const failed = p?.failedTests ?? run.failedTests ?? 0;
   const skipped = p?.skippedTests ?? run.skippedTests ?? 0;
+  const fixme = p?.fixmeTests ?? 0;
   const flaky = p?.flakyTests ?? run.flakyTests ?? 0;
   const didNotRun = p?.didNotRunTests ?? run.didNotRunTests ?? 0;
   const flakyPart = flaky > 0 ? ` · ${flaky} passed on retry` : '';
   const didNotRunPart = didNotRun > 0 ? ` · ${didNotRun} didn't run` : '';
+  const fixmePart = fixme > 0 ? ` (${fixme} fixme)` : '';
   return [
     `*Run #${run.id}*${label}`,
     `Status: ${statusEmoji} ${run.status} | Project: ${project}`,
-    `Tests: ${total} total · ${passed} passed · ${failed} failed · ${skipped} skipped${didNotRunPart}${flakyPart}`,
+    `Tests: ${total} total · ${passed} passed · ${failed} failed · ${skipped} skipped${fixmePart}${didNotRunPart}${flakyPart}`,
     `Duration: ${formatDuration(run.duration)}`,
   ].join('\n');
 }
@@ -520,6 +524,7 @@ function buildRunSummary(): string {
 const testCaseSearch = ref('');
 const testCaseActiveStatuses = ref<string[]>([]);
 const testCaseBrowserFilter = ref('all');
+const testCaseTagFilter = ref<string[]>([]);
 
 // The count-bar segments toggle into the same set the Tests list chips use, and
 // switch to the Tests tab so the filtered rows are on screen.
@@ -820,6 +825,7 @@ const moreMenuItems = computed(() => {
             v-model:search="testCaseSearch"
             v-model:active-statuses="testCaseActiveStatuses"
             v-model:browser-filter="testCaseBrowserFilter"
+            v-model:tag-filter="testCaseTagFilter"
             :test-cases="dedupedDisplayCases"
             :is-live="isLive"
             :total="displayProgress?.totalTests"
