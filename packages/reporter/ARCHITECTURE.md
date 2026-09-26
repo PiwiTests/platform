@@ -29,7 +29,9 @@ Two **external contracts** beyond the npm API:
   `[Piwi Dashboard]`-prefixed logs (`internal/support/logger.ts`), and the
   `__piwiProbeElement` page global the capture fixtures seed via `addInitScript`
   (`internal/capture/capture-fixtures.ts`) so a capture ships a stub call rather
-  than the probe's source.
+  than the probe's source, and the boxed stack prefix `internal/capture/quiet-capture.ts`
+  adds for this package's `dist/` in each worker (so a wrapped action is located at the
+  test's line).
 
 ## Two processes, two paths
 
@@ -80,6 +82,8 @@ src/
     collect/    metadata-collector, step-analyzer, skip-classify, error-text
     files/      file-handler, compression
     capture/    capture-fixtures, locator-healing, attachments   ← runs in the worker
+                quiet-capture (keeps the capture out of the test's own steps,
+                trace and stack locations — Playwright internals, feature-detected)
     config/     env (PIWI_* ↔ options)
     support/    logger, limiter, ci, ci-output, failure-links, run-url, instance-id,
                 cli-filters, setup-file, source-snippet, worker-index, errors,

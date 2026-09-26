@@ -119,6 +119,7 @@ Capture is designed to never fail or noticeably slow down a test:
   already settle its accessible name. Actions and passing assertions alike pay this at most once per call site per test.
 - At teardown: draining in-flight captures is capped at 2 seconds.
 - A capture that can't complete (mid-navigation, detached element) is dropped silently; it never throws into your test.
+- Capture adds no steps to the report or trace, and errors, step locations and stacks name your own call.
 
 `collectPerformanceMetrics: false` turns all fixture capture off; `captureLocators: false` turns off only the locator
 snapshots, and `capturePageState: false` only the test-end app state (URL, storage key names, cookie flags, never
