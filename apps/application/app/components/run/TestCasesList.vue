@@ -99,9 +99,10 @@ const testCaseBrowserOptions = computed(() => {
 
 function matchesStatus(tc: TestCaseResult, filter: string): boolean {
   if (filter === 'failed') return isFailedStatus(tc.status);
-  // "Passed on retry" means passed only after a retry — a subset of passed.
+  // Passed and passed on retry are disjoint here, like skipped and fixme, so
+  // each chip and bar segment lands on exactly the rows it counts.
+  if (filter === 'passed') return tc.status === 'passed' && (tc.retries ?? 0) === 0;
   if (filter === 'flaky') return tc.status === 'passed' && (tc.retries ?? 0) > 0;
-  // Skipped and fixme are disjoint here, matching their two bar segments.
   if (filter === 'fixme') return isFixmeSkip(tc);
   if (filter === 'skipped') return tc.status === 'skipped' && !isFixmeSkip(tc);
   return tc.status === filter;

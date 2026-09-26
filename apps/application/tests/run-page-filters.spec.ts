@@ -173,12 +173,12 @@ test.describe.serial('Run page Tests tab', () => {
   });
 });
 
-test.describe.serial('Run page skip kinds and tag filter', () => {
+test.describe.serial('Run page status segments and tag filter', () => {
   let runId = 0;
 
   const visibleTitles = (page: import('@playwright/test').Page) => page.locator('a[href^="/test-run-cases/"]:visible');
 
-  test('seeds a run with plain skips, fixme skips and tagged tests', async ({ request }) => {
+  test('seeds a run with a pass on retry, plain skips, fixme skips and tagged tests', async ({ request }) => {
     const response = await retryPost(request, '/api/test-runs/submit', {
       data: {
         projectName: PROJECT.RUN_SKIP_KINDS,
@@ -194,6 +194,7 @@ test.describe.serial('Run page skip kinds and tag filter', () => {
           {
             title: 'orders list',
             status: 'passed',
+            retries: 1,
             duration: 900,
             location: 'tests/orders.spec.ts:3:5',
             tags: ['api'],
@@ -247,6 +248,20 @@ test.describe.serial('Run page skip kinds and tag filter', () => {
     await expect(visibleTitles(page).first()).toHaveText('webkit only flow');
   });
 
+  test('the passed segment excludes the pass on retry, which has its own segment', async ({ page }) => {
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+
+    await page.getByRole('button', { name: '1 passed', exact: true }).first().click();
+    await expect(visibleTitles(page)).toHaveCount(1);
+    await expect(visibleTitles(page).first()).toHaveText('home loads');
+
+    await page.getByRole('button', { name: '1 passed', exact: true }).first().click();
+    await page.getByRole('button', { name: '1 passed on retry' }).first().click();
+    await expect(visibleTitles(page)).toHaveCount(1);
+    await expect(visibleTitles(page).first()).toHaveText('orders list');
+  });
+
   test('the tag filter keeps the tests carrying every selected tag', async ({ page }) => {
     await page.goto(`/test-runs/${runId}`);
     await waitForHydration(page);
@@ -273,7 +288,7 @@ test.describe.serial('Run page skip kinds and tag filter', () => {
     await page.goto(`/projects/${run.projectId}`);
     await waitForHydration(page);
     await expect(
-      page.getByRole('progressbar', { name: 'Test results: 2 passed, 1 skipped, 2 fixme' }).first(),
+      page.getByRole('progressbar', { name: 'Test results: 1 passed, 1 flaky, 1 skipped, 2 fixme' }).first(),
     ).toBeVisible();
   });
 });
