@@ -1,6 +1,6 @@
 ---
 title: Core concepts
-description: "The vocabulary the docs and the dashboard share: project, run, test case, execution, failure cluster, baseline, flakiness score and more."
+description: "The vocabulary the docs and the dashboard share: project, run, test case, execution, failure cluster, baseline, analytics dashboard, the Test Map and its gaps."
 lang: en-US
 ---
 
@@ -28,7 +28,9 @@ Read it in two directions:
 - **Across** — "how has this test behaved?" A test case holds every execution of itself, in every run,
   over time. That's the axis flakiness, pass rate, and duration trends are computed on.
 
-## Project
+## Results
+
+### Project
 
 A named container for one suite's results — usually one repository, or one suite within it. Projects
 are created automatically the first time results are submitted under a new `projectName`; you never
@@ -37,7 +39,7 @@ have to pre-register one.
 A project carries its own tags, retention, access assignments, SCM connection, and AI-diagnosis
 instructions.
 
-## Test run
+### Test run
 
 Everything one `npx playwright test` invocation produced: counts, duration, the HTML report, CI and
 git metadata, and every execution inside it.
@@ -50,7 +52,7 @@ Two things commonly surprise people:
 - **A run can be watched while it happens.** With streaming enabled (the default), the run row appears
   when the suite starts and fills in test by test, so a failure is browsable before CI finishes.
 
-## Test case
+### Test case
 
 The **identity of a test across time**, keyed by project + file path + `describe` path + title. It is
 not a row you submit — it's created and reused as results arrive, so renaming a test creates a new one
@@ -61,7 +63,7 @@ Chromium, Firefox, or all five projects in your matrix.
 
 This is the object at `/test-cases/:id` — pass rate, duration trend, and the list of every execution.
 
-## Execution
+### Execution
 
 **One attempt of one test case, in one run, on one browser.** Retries are separate executions, not a
 field on one: a test that failed twice and passed on the third attempt contributes three executions to
@@ -74,51 +76,7 @@ this is what they mean; when they say *test case*, they mean the identity above 
 The distinction matters in practice: "this test is flaky" is a statement about a **test case**, and
 "here is the stack trace" is a statement about one **execution**.
 
-## Error fingerprint & failure cluster
-
-When an execution fails, Piwi hashes a normalized form of its error — error type, message with the
-volatile parts masked out (timeouts, numbers, UUIDs, URLs, expected/received values), and the locator
-with its dynamic arguments masked. That hash is the **error fingerprint**.
-
-Every failed execution sharing a fingerprint joins one **failure cluster**. Fifty red tests caused by
-one broken endpoint become one cluster you triage once, with a status (open / resolved / ignored) and
-a note.
-
-Fingerprints deliberately **ignore the failing stack frame**, so the same root cause reached from six
-different spec files stays one cluster. Full detail:
-[Failure clustering & AI diagnosis](/features/ai-diagnosis).
-
-## Story
-
-The **one explanation** a failure page leads with. When several [clues](/features/evidence#clues)
-(deterministic, rule-based findings) form a known combination, Piwi chains them into a single sentence —
-*"the Pay button stayed disabled because POST /api/checkout/quote was still in flight"* — at the strongest
-member's strength, with every clue folded under it. When no combination matches, the story is the strongest
-clue alone; when a cluster has a completed [AI diagnosis](/features/ai-diagnosis), that leads instead.
-
-## Situation
-
-The **one sentence of context** under the explanation: since when the failure has been happening (and on
-which commit and author), how many other tests share the cause and the cluster they join, whether an earlier
-fix regressed, and who owns it. An exceptional case — a new regression, a pass on retry, an infrastructure
-blip — leads it as a badge. It reads on the execution page and, condensed, in [alerts](/features/notifications).
-
-## Next step
-
-The **one recommended action** a failure page leads with, chosen by a policy rather than offered as a menu —
-apply a diagnosed patch, replace a broken locator, reproduce locally, re-run in CI, mark a cluster resolved.
-The page shows the step, one line on why, and the button to do it; every other action lives in the toolbox.
-The policy and its ordering are on [Fix plans](/features/fix-plans#the-next-step).
-
-## Cluster state
-
-Where a **failure cluster** stands, said in one sentence with one verb next to a coloured dot: *still
-failing*, *fixed and verified — still open*, *stopped failing*, *regressed — the fix did not hold*, *resolved*,
-*ignored*, *snoozed* or *all tests quarantined*. It reconciles the human triage status with the
-machine-observed verdict; when they disagree the state line offers the one action that closes the gap. See
-[Failure clusters](/features/failure-clusters#the-state-line).
-
-## Baseline (last green run)
+### Baseline (last green run)
 
 Several views answer "what changed?" — the Changes tab and run insights, the regression signals on a
 test, the CI gate and pull-request feedback, the bisect window, the environment and visual diffs, and
@@ -153,32 +111,14 @@ Two derived flags are stored per execution:
 - **New regression** — passed in the baseline, fails now.
 - **New flaky** — didn't retry in the baseline, passed on retry now.
 
-## Flakiness score
-
-A test case's **composite score** from three independent signals — retry passes, status alternation
-across runs, and overall failure rate — plus a **root-cause class** (timing, network, assertion,
-environment, other) and an **impact ranking** in wasted CI minutes. It's a property of the test case,
-computed over its execution history, which is why a test needs a few runs of history before it can be
-called flaky. See [Flaky tests](/features/flaky-tests).
-
-## Locator snapshot
-
-When the [capture fixtures](./capture-fixtures) are installed, every successful locator call records
-what the element actually looked like — role, accessible name, test id, structural anchors — keyed by
-the **call site** (`file:line`) rather than the selector text. One row per call site, refreshed on each
-passing run.
-
-When that locator later fails, those snapshots are what Piwi ranks replacement locators from. See
-[Locator healing](/features/locator-healing).
-
-## Environment
+### Environment
 
 A free-text label on a run (`production`, `staging`, a preview URL, whatever you use), set with the
 reporter's `environment` option or `PIWI_ENVIRONMENT`. It's a **scoping** dimension, not a
 configuration one: flaky analysis, analytics, and timeline markers can all be narrowed to a single
 environment so a staging suite's noise doesn't blend into production's numbers.
 
-## Tags & ownership
+### Tags & ownership
 
 Two ways to say what a test *is*, both declared in the spec file and both read by the reporter.
 
@@ -189,34 +129,101 @@ you slice the test-case catalog and the flaky leaderboard, and what the [CI gate
 
 **Ownership metadata** comes from four `piwi:` annotations — `owner`, `priority`, `feature` and `link`. Where a tag
 groups tests, this says who answers for one. It shows as badges wherever the test is listed and is carried into
-[pull-request feedback](./ci#pull-request-feedback), so a failure comment names the team rather than leaving a reviewer
+[pull-request feedback](/features/pr-feedback), so a failure comment names the team rather than leaving a reviewer
 to guess.
 
 Both are optional and neither changes how a test runs. Details and the exact accepted values are in
-[Reporter → Test tags](./reporter#test-tags).
+[Test metadata → Test tags](/reference/test-metadata#test-tags).
 
 **When a test declares no owner, Piwi reads your repository's CODEOWNERS instead.** Asking every team to annotate every
 test is how ownership features die; the repository already records who owns which files, and Piwi can read it because it
 runs inside your network with a token it already has. So ownership works on day one with no test edits, and a
 `piwi:owner` annotation still wins wherever a team wants to be explicit.
 
-That derived owner is used in [pull-request comments](./ci#pull-request-feedback), on the flaky leaderboard, and by the
+That derived owner is used in [pull-request comments](/features/pr-feedback), on the flaky leaderboard, and by the
 `owners` [notification filter](/features/notifications#subscriptions), which routes a run only to the team whose tests broke.
-It needs an [SCM token](/features/ai-diagnosis#scm-grounded-context); without one, ownership falls back to annotations alone.
+It needs an [SCM token](./source-control); without one, ownership falls back to annotations alone.
 
-## Metric, dashboard and quality report
+## Failures
+
+### Error fingerprint & failure cluster
+
+When an execution fails, Piwi hashes a normalized form of its error — error type, message with the
+volatile parts masked out (timeouts, numbers, UUIDs, URLs, expected/received values), and the locator
+with its dynamic arguments masked. That hash is the **error fingerprint**.
+
+Every failed execution sharing a fingerprint joins one **failure cluster**. Fifty red tests caused by
+one broken endpoint become one cluster you triage once, with a status (open / resolved / ignored) and
+a note.
+
+Fingerprints deliberately **ignore the failing stack frame**, so the same root cause reached from six
+different spec files stays one cluster. Full detail:
+[Failure clustering & AI diagnosis](/features/ai-diagnosis).
+
+### Story
+
+The **one explanation** a failure page leads with. When several [clues](/features/evidence#clues)
+(deterministic, rule-based findings) form a known combination, Piwi chains them into a single sentence —
+*"the Pay button stayed disabled because POST /api/checkout/quote was still in flight"* — at the strongest
+member's strength, with every clue folded under it. When no combination matches, the story is the strongest
+clue alone; when a cluster has a completed [AI diagnosis](/features/ai-diagnosis), that leads instead.
+
+### Situation
+
+The **one sentence of context** under the explanation: since when the failure has been happening (and on
+which commit and author), how many other tests share the cause and the cluster they join, whether an earlier
+fix regressed, and who owns it. An exceptional case — a new regression, a pass on retry, an infrastructure
+blip — leads it as a badge. It reads on the execution page and, condensed, in [alerts](/features/notifications).
+
+### Next step
+
+The **one recommended action** a failure page leads with, chosen by a policy rather than offered as a menu —
+apply a diagnosed patch, replace a broken locator, reproduce locally, re-run in CI, mark a cluster resolved.
+The page shows the step, one line on why, and the button to do it; every other action lives in the toolbox.
+The policy and its ordering are on [Fix plans](/features/fix-plans#the-next-step).
+
+### Cluster state
+
+Where a **failure cluster** stands, said in one sentence with one verb next to a coloured dot: *still
+failing*, *fixed and verified — still open*, *stopped failing*, *regressed — the fix did not hold*, *resolved*,
+*ignored*, *snoozed* or *all tests quarantined*. It reconciles the human triage status with the
+machine-observed verdict; when they disagree the state line offers the one action that closes the gap. See
+[Failure clusters](/features/failure-clusters#the-state-line).
+
+### Flakiness score
+
+A test case's **composite score** from three independent signals — retry passes, status alternation
+across runs, and overall failure rate — plus a **root-cause class** (timing, network, assertion,
+environment, other) and an **impact ranking** in wasted CI minutes. It's a property of the test case,
+computed over its execution history, which is why a test needs a few runs of history before it can be
+called flaky. See [Flaky tests](/features/flaky-tests).
+
+### Locator snapshot
+
+When the [capture fixtures](./capture-fixtures) are installed, every successful locator call records
+what the element actually looked like — role, accessible name, test id, structural anchors — keyed by
+the **call site** (`file:line`) rather than the selector text. One row per call site, refreshed on each
+passing run.
+
+When that locator later fails, those snapshots are what Piwi ranks replacement locators from. See
+[Locator healing](/features/locator-healing).
+
+## Analytics
+
+### Metric, dashboard and quality report
 
 A **metric** is a named number with one definition every surface reads: test pass rate, run success
 rate, wasted CI minutes, median time to fix, and the rest of the metric catalog. The Analytics page, the
 MCP tools and quality reports all print the same definition, so a number means the same thing wherever
 it appears.
 
-A **dashboard** is a named arrangement of analytics widgets in bands, with a default scope. The
-Analytics page is the built-in *Overview* dashboard; *Executive*, *Engineering*, *Team* and *Gaps
-digest* are the built-in dashboards meant for reports. Anyone can save a dashboard of their own, private
-or shared, and a dashboard never grants access to a project. See [Dashboards](/features/dashboards).
+An **analytics dashboard** is a named arrangement of analytics widgets in bands, with a default scope.
+*The dashboard* on its own means the Piwi web app; on the Analytics pages, where the context is clear, an analytics
+dashboard is simply called a dashboard. The Analytics page is the built-in *Overview* dashboard; *Executive*,
+*Engineering*, *Team* and *Gaps digest* are the built-in dashboards meant for reports. Anyone can save a dashboard of
+their own, private or shared, and a dashboard never grants access to a project. See [Dashboards](/features/dashboards).
 
-A **quality report** is a dashboard rendered as a document (PDF, HTML, Markdown, Excel, CSV or JSON) for a
+A **quality report** is an analytics dashboard rendered as a document (PDF, HTML, Markdown, Excel, CSV or JSON) for a
 reader who does not open the dashboard. It is not the **run report**, the Playwright HTML report a run
 carries. See [Quality reports](/features/quality-reports).
 
@@ -224,8 +231,72 @@ A **report schedule** sends a quality report to notification channels on a caden
 every other week, monthly), and every quality report generated is kept as a **report snapshot**, with its
 numbers as they were when it was generated.
 
-A **probe run** is a run the Test Map's `piwi probe` produces by replaying a passing test with an
-injected fault. It fails on purpose, so no metric ever counts it.
+## Test Map
+
+The **Test Map** is one graph per project of what the application exposes (pages, controls, links, routes, the
+handlers and dependencies behind them) and which tests reach each of them. It is built from what the reporter already
+records, accumulates across runs, and keeps the rows of a non-default branch apart, so a route added on a pull
+request never shows up as missing on the default branch. See [Scenario gaps & the Test Map](/features/scenario-gaps).
+
+### Reach
+
+A test **reaches** a route, a page or a control when a real run observes it doing so: a request to the route, a
+navigation to the page, or a locator in its steps targeting the control. Reach is measured from runs, never from
+instrumented code coverage, which is why the docs and the dashboard say *observed reach* rather than *coverage*. A
+flaky, quarantined or skipped test's reach does not count as trusted.
+
+### Locator index
+
+The locator chains each test used in its steps, recorded per branch and per Playwright project. It answers which tests
+use a locator, and it feeds [Who uses a locator](/features/locator-usage) and
+[Tested elements](/features/tested-elements).
+
+### Scenario gap
+
+A test the suite does not have yet, proposed from the Test Map with its evidence and a next step: a route no test
+reaches, a control nobody exercises, a changed file no test covered. A gap is triaged like a failure cluster: accept
+it, snooze it, dismiss it with a reason, or mark it covered by an existing test.
+
+### Gap class
+
+How serious a gap is:
+
+- **blind-spot**: nothing reaches it.
+- **false-comfort**: a [probe](#probe) broke it and every test still passed.
+- **fragile**: a single trusted test reaches it, or a critical feature is exercised on only one browser, viewport or
+  environment.
+
+Server probes report **findings** rather than gaps, in two more classes: **unhandled** (the application did not handle
+the injected failure) and **degraded** (it handled it badly).
+
+### Detector
+
+A rule that reads the Test Map and the run history and reports one kind of gap, such as *declared, never hit* or
+*single covering test*. Each gap names the detector that raised it.
+
+### Exposure
+
+The score that ranks gaps: the geometric mean of four factors (how often the files involved change, how new they are,
+whether they were part of an earlier escaped failure, and the `piwi:priority` of the tests around them), multiplied by
+the detector's confidence.
+
+### Probe
+
+A re-run of a passing test with one injected fault (a 500, an empty body, a dropped field, a slow response), recording
+whether the test noticed. A client probe injects the fault at the Playwright boundary; a server probe asks the
+[backend instrumentation](./backend-logs#server-probes) to inject it inside the server. A **probe run**, the run `piwi probe` produces, fails on purpose, so no metric ever counts it.
+
+### Declared surface
+
+The routes and pages the application says it has, from the instrumentation's route manifest, a committed
+`piwi.manifest.json` or an OpenAPI document, as opposed to the ones tests reached. A declared route nothing reaches
+is a *declared, never hit* gap.
+
+### Page inventory
+
+The controls (role and accessible name) and links the reporter records on each visited page of a passing run, so the
+Test Map knows what a page offers beyond what the tests clicked. Field values are never recorded. Off by default:
+turn it on with `capturePageInventory`.
 
 ## Where each concept lives in the UI
 
