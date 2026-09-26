@@ -1,60 +1,28 @@
 ---
 title: Getting started
-description: "Pick a way to run the dashboard, connect a Playwright project with one command, and see your first run arrive."
+description: "Run the dashboard, connect a Playwright project with one command, and open your first run in three steps."
 lang: en-US
 ---
 
 # Getting started
 
-## What is Piwi Dashboard?
+Piwi is a **server plus a Playwright reporter**. The reporter runs inside `npx playwright test` and sends the results
+to the server, which keeps every run with its traces and renders the dashboard. Three steps set up both. New to the
+vocabulary (*run*, *test case*, *execution*, *cluster*)? [Core concepts](./concepts) defines each term the dashboard
+uses.
 
-Piwi Dashboard is a self-hosted home for [Playwright](https://playwright.dev) test results. Your CI
-deletes its HTML report on every build; Piwi keeps every run — with its traces, reports, and metadata —
-and then does the things a permanent history makes possible: grouping failures by root cause, scoring
-flaky tests, tracking performance, streaming runs live, and (optionally) diagnosing failures with an
-LLM you configure.
+## 1. Run the dashboard
 
-It is a **server plus a Playwright reporter**. The reporter runs inside `npx playwright test` and pushes
-results to the server; the server stores them and renders the dashboard. Two moving parts, and the rest
-of this page sets both of them up.
+The dashboard is one Node process. Pick the way to run it that fits:
 
-New to the vocabulary — *run* vs *test case* vs *execution* vs *cluster*? [Core concepts](./concepts) is
-a five-minute read that makes the rest of the docs (and the UI) click.
-
-## Pick a path
-
-The dashboard is one Node process, and there are five ways to get one running:
-
-| Path | Best for | Notes |
+| Path | Best for | Needs |
 |---|---|---|
-| [Live demo](https://piwitests.dev/demo/) | Looking around before installing anything | Seeded data, runs in your browser, no backend |
-| [Desktop app](/features/desktop) | A single developer running Playwright locally | No Docker or Node needed; Windows x64, Apple-silicon macOS and Linux x86-64, and the installers are not yet signed |
-| Docker *(below)* | A shared instance for a team | The recommended path for anything long-lived |
-| [`npx @piwitests/server`](/operate/deployment#npm-npx-quick-local-run) | A quick local run with Node 22+ already installed | Same server, no container |
-| [One-click deploy](/operate/deployment#one-click-deploy) | A shared instance with no server of your own | Railway, Render, Fly.io, Koyeb, Coolify or Dokploy — a button, plus whatever the host charges |
+| [Desktop app](/features/desktop) | One developer running Playwright locally | Nothing; the runtime is bundled. Windows x64, Apple-silicon macOS and Linux x86-64; the installers are not signed yet |
+| Docker *(below)* | A shared instance for a team, or anything long-lived | Docker; about 300 MB RAM, 1 vCPU, `linux/amd64` or `linux/arm64` |
+| [`npx @piwitests/server`](/operate/deployment#npm-npx-quick-local-run) | A quick local run | Node.js 22 or later |
+| [One-click deploy](/operate/deployment#one-click-deploy) | A shared instance with no server of your own | An account on the host |
 
-If you only want your own history, flaky scores and locator healing on a laptop, the
-[desktop app](/features/desktop) is the least setup: install it, copy its access token from **Settings →
-Storage**, and skip to [the reporter](#using-the-piwi-dashboard-reporter). Everything below about the
-reporter, CI and fixtures applies identically whichever path you pick.
-
-### Requirements
-
-Only the dashboard side has requirements — and only for some paths:
-
-| | Needs |
-|---|---|
-| Desktop app | Nothing; the runtime is bundled |
-| Docker | Docker; ~300 MB RAM, 1 vCPU, `linux/amd64` or `linux/arm64` |
-| `npx` / from source | **Node.js 22+** and npm |
-| PostgreSQL backend *(optional)* | PostgreSQL 14+ — otherwise SQLite is built in and needs no setup |
-
-Your **test project** is unaffected by all of this: it just needs a Node version Playwright supports.
-Node 22 is the dashboard's requirement, not your suite's.
-
-## Quick start with Docker
-
-The fastest way to get started is with the pre-built container image:
+With Docker:
 
 ::: code-group
 
@@ -64,233 +32,62 @@ The fastest way to get started is with the pre-built container image:
 
 :::
 
-Visit `http://localhost:3000` to access the dashboard.
+The dashboard answers at `http://localhost:3000`. On Linux hosts the container runs as the non-root UID 1001, which is
+why the snippet creates `.data` with the right owner; see
+[Permission issues with volumes](/operate/deployment#permission-issues-with-volumes) if the container cannot write to
+it. [Deployment](/operate/deployment) covers Docker Compose, PostgreSQL and Kubernetes.
 
-> **Linux hosts:** the container runs as non-root UID 1001, so without the `chown` above, Docker auto-creates `.data` owned by `root` and the container can't write to it. Windows and macOS (Docker Desktop) don't need this step. See [Permission issues with volumes](/operate/deployment#permission-issues-with-volumes) if you hit a permission error.
+With the desktop app, copy its access token from **Settings → Storage** before the next step: the reporter uses it to
+send results.
 
-See [Deployment](/operate/deployment) for detailed Docker, Docker Compose, PostgreSQL, and Kubernetes options.
+Your test project is unaffected by these requirements: Node 22 is the dashboard's requirement, not your suite's. Want
+to look around first? The [live demo](https://piwitests.dev/demo/) runs in your browser on seeded data.
 
-## Running from source
-
-```bash
-# Clone the repository
-git clone https://github.com/PiwiTests/platform.git
-cd platform/apps/application
-
-# Install dependencies
-npm install
-
-# Start the development server
-npm run app:dev
-```
-
-The dashboard will be available at `http://localhost:3000`.  
-The SQLite database is automatically created on the first API call.
-
-> The repository is an npm-workspaces monorepo, so the application scripts are prefixed `app:` (e.g. `app:dev`, `app:build`). Run them from the `apps/application/` directory.
-
-## Using the Piwi Dashboard reporter
-
-The recommended way to integrate is via the custom reporter package — it handles uploading results, HTML reports, and trace files automatically.
+## 2. Connect your suite
 
 ### Fast path: one command
 
-From your Playwright project, one command installs the reporter, wraps your `playwright.config`, creates the capture-fixtures file, and records the connection in `.env.example`:
+From your Playwright project, one command installs the reporter, wraps your `playwright.config`, creates the
+[capture fixtures](./capture-fixtures) file and records the connection in `.env.example`:
 
 ```bash
 npx @piwitests/reporter init --server-url http://localhost:3000 --project my-project
 ```
 
-Every step is idempotent, so it is safe to re-run. If it finds a config shape it will not rewrite (or a fixtures file that already exists), it reports that step as `manual` with the exact change to make instead of touching the file. Pass `--dry-run` to preview, or `--json` to get a machine-readable plan — the latter is what lets a coding agent run the setup for you and finish anything left manual. `init` also drops the [Piwi agent skills](/features/mcp#agent-skills) into the project so your agent can investigate failures, heal locators, and stabilize flaky tests. See `npx @piwitests/reporter init --help` for all options.
+Every step is idempotent, so it is safe to re-run. When `init` finds a config shape it will not rewrite, or a fixtures
+file that already exists, it reports that step as `manual` with the exact change to make instead of touching the file.
+Pass `--dry-run` to preview, or `--json` for a machine-readable plan that a coding agent can follow to finish the manual
+steps. `init` also adds the [Piwi agent skills](/features/mcp#agent-skills) to the project. See
+`npx @piwitests/reporter init --help` for all options.
 
-> The reporter is published as `@piwitests/reporter`; its command is `piwi`. Invoke it through the package name — `npx @piwitests/reporter <command>` — so npx always resolves *this* package. (`npx piwi` would fetch an unrelated `piwi` package from npm.) Once the reporter is a dependency of your project, a plain `npx piwi <command>` also works, since it resolves the local binary first.
+> The package is `@piwitests/reporter` and its command is `piwi`. Invoke it through the package name,
+> `npx @piwitests/reporter <command>`, so npx resolves this package: `npx piwi` would fetch an unrelated `piwi`
+> package from npm. Once the reporter is a dependency of your project, `npx piwi <command>` works too.
 
-Prefer to wire it up by hand? The manual steps are below.
+If authentication is on, pass an [API key](/operate/authentication) as `PIWI_API_KEY`. To wire the reporter in by
+hand, or to send one run without editing your config, see [Reporter](./reporter).
 
-### Try it without editing your config
-
-On **Playwright 1.63 or later** you can send one run to a dashboard without editing your config or installing anything. Playwright's `--add-reporter` _appends_ a reporter to the ones your config already lists (unlike `--reporter`, which replaces them), and every reporter option has a `PIWI_*` environment-variable equivalent — so point it at your dashboard with env vars and run:
-
-::: code-group
-
-```bash [Linux / macOS]
-PIWI_DASHBOARD_URL=http://localhost:3000 \
-PIWI_API_KEY=your-api-key \
-PIWI_PROJECT_NAME=my-project \
-npx playwright test --add-reporter @piwitests/reporter
-```
-
-```powershell [Windows (PowerShell)]
-$env:PIWI_DASHBOARD_URL='http://localhost:3000'; $env:PIWI_API_KEY='your-api-key'; $env:PIWI_PROJECT_NAME='my-project'; npx playwright test --add-reporter @piwitests/reporter
-```
-
-:::
-
-This is a trial path, not a full setup. You get the run with its results, traces and screenshots, but **not** the [capture fixtures](#recommended-capture-fixtures) (network timing, Web Vitals, console capture, locator healing) and **not** [`wrapConfig`](./reporter#installing-via-wrapconfig)'s failure-evidence capture defaults — for those, run the [fast path](#fast-path-one-command) or wire the reporter in by hand. On older Playwright (before 1.63) `--add-reporter` does not exist; use the manual setup below. `piwi run` makes the same append for you automatically when your config has no Piwi reporter — see the [CLI reference](/reference/cli#select-run).
-
-### Manual setup
-
-Install it:
-
-```bash
-npm install --save-dev @piwitests/reporter
-```
-
-Then add it to your `playwright.config.ts`:
-
-```typescript
-import { defineConfig } from '@playwright/test'
-
-export default defineConfig({
-  reporter: [
-    ['list'],
-    ['@piwitests/reporter', {
-      serverUrl: 'http://localhost:3000',
-      projectName: 'my-project',
-    }],
-  ],
-  use: {
-    trace: 'retain-on-failure',
-    screenshot: 'only-on-failure',
-  },
-})
-```
-
-Both `use` options are Playwright's own: `trace` records the trace the dashboard's deep views read, and `screenshot` records the failure screenshot shown as evidence. Neither is on by default in Playwright, so without them a failing test uploads its error and steps but no trace or screenshot. The [fast path](#fast-path-one-command) wraps your config with [`wrapConfig`](./reporter#installing-via-wrapconfig), which fills in both of these for you when they are unset — so if you set them by hand here you are matching what `init` would have done. Opt out of the auto-defaults with `defaultCapture: false`.
-
-Run your tests and results will appear in the dashboard:
+## 3. Run your tests
 
 ```bash
 npx playwright test
 ```
 
-See the [Reporter](./reporter) page for the full configuration reference, including live streaming, multiple report types, performance metrics, and authentication.
+The run streams into the dashboard while it executes, and the reporter prints a `View run:` link at the end. Open it.
 
-### Recommended: capture fixtures
+In CI nothing Piwi-specific is needed: the same reporter runs inside `npx playwright test`, pointed at your instance
+with `PIWI_DASHBOARD_URL` and `PIWI_API_KEY`. [CI & sharding](./ci) has the pipeline examples.
 
-One small file unlocks the dashboard's richest features — locator healing, the slow-endpoints table, Web Vitals, console capture, and failure-time ARIA snapshots:
+## Your first failure
 
-<<< @/snippets/fixtures.ts{ts}
+When a test fails, its execution page opens on what happened, the most likely cause and the next step, with the
+trace, screenshots and logs underneath. [Your first failure, explained](./first-failure) walks through one failing
+test from its headline to its evidence.
 
-Then import `test` from this file in your specs instead of `@playwright/test`:
+## Related
 
-```typescript
-import { test, expect } from './fixtures'
-```
-
-The reporter works fine without this — see the [capture fixtures guide](./capture-fixtures) for exactly what the fixtures add, composition patterns, and troubleshooting.
-
-Prefer starting from something runnable? [`examples/playwright-fixtures`](https://github.com/PiwiTests/platform/tree/main/examples/playwright-fixtures) is a complete working project — a small instrumented Nitro app plus a Playwright suite exercising every capture path, including [backend logs](./backend-logs) and an intentional failure that lights up locator healing.
-
-## Submitting via the REST API (optional)
-
-Not using Playwright, or piping results in from another tool? Submit runs directly over HTTP — this is what the reporter itself does under the hood.
-
-::: code-group
-
-```bash [Linux / macOS]
-curl -X POST http://localhost:3000/api/test-runs/submit \
-  -H "Content-Type: application/json" \
-  -d '{
-    "projectName": "my-project",
-    "status": "passed",
-    "startTime": "2024-01-01T12:00:00Z",
-    "duration": 120000,
-    "totalTests": 2,
-    "passedTests": 1,
-    "failedTests": 1,
-    "skippedTests": 0,
-    "testCases": [
-      {
-        "title": "should login successfully",
-        "status": "passed",
-        "duration": 1500,
-        "location": "tests/login.spec.ts:10:5",
-        "retries": 0
-      },
-      {
-        "title": "should handle errors",
-        "status": "failed",
-        "duration": 2300,
-        "location": "tests/errors.spec.ts:5:5",
-        "error": "Expected true but got false",
-        "retries": 1
-      }
-    ]
-  }'
-```
-
-```powershell [Windows (PowerShell)]
-$body = @{
-  projectName  = 'my-project'
-  status       = 'passed'
-  startTime    = '2024-01-01T12:00:00Z'
-  duration     = 120000
-  totalTests   = 2
-  passedTests  = 1
-  failedTests  = 1
-  skippedTests = 0
-  testCases    = @(
-    @{ title = 'should login successfully'; status = 'passed'; duration = 1500; location = 'tests/login.spec.ts:10:5'; retries = 0 }
-    @{ title = 'should handle errors'; status = 'failed'; duration = 2300; location = 'tests/errors.spec.ts:5:5'; error = 'Expected true but got false'; retries = 1 }
-  )
-} | ConvertTo-Json -Depth 5
-
-Invoke-RestMethod -Method Post -Uri http://localhost:3000/api/test-runs/submit `
-  -ContentType 'application/json' -Body $body
-```
-
-:::
-
-The project `my-project` is created automatically if it doesn't exist yet. See the [API docs](https://piwitests.dev/demo/docs) for the full endpoint reference (or `/docs` on your own instance).
-
-## Running in CI
-
-Nothing Piwi-specific is required in CI — the same reporter runs inside `npx playwright test`. Point it
-at your deployed instance and pass an API key if [authentication](/operate/authentication) is enabled:
-
-```yaml
-env:
-  PIWI_DASHBOARD_URL: https://piwi.example.com
-  PIWI_API_KEY: ${{ secrets.PIWI_API_KEY }}
-```
-
-Branch, commit, workflow, build URL and `--shard` merging are all detected automatically on GitHub
-Actions, GitLab CI, Jenkins, CircleCI, Azure DevOps and more. Full examples, sharding, and how to get
-the run URL back out into a later pipeline step: [CI & sharding](./ci).
-
-## Choosing what you use
-
-The **Setup** page (`/setup`, administrators only) is the permanent home for "how do I connect this, and what else can it do?". Above the connect steps it asks one coarse question — *What do you want Piwi for?* — with **See why tests fail** always on and three opt-out groups: **Triage as a team** (notifications, quarantine, pull-request feedback, issue tracking), **Fix faster** (locator healing, auto-heal), and **Let agents in** (AI diagnosis). Below it, a ladder lists every optional capability grouped by state: **Active** (evidence has arrived), **Available** (configured but not used yet), **Not set up**, and a folded **Declined** group.
-
-### Declining a capability
-
-Not every team uses every capability. Any optional one can be **declined** so the dashboard stops showing it everywhere — the evidence tabs, empty panels, settings page, sidebar entry, project actions and MCP tools it owns all go, rather than lingering half-visible. Decline instance-wide from the Setup ladder (*Not for this instance*) or the presets, or per project from the project's edit form and the places the capability appears (for example the execution page's evidence footer, *Not for this project*). A project override can also **enable** a capability the instance declined.
-
-Declining is administrator-only and never final: each declined capability keeps a *Reconsider* link on the Setup ladder that clears the decision, and because data always wins, a declined capability that starts receiving data reads as active again with the stored decision shown next to it. See [Why a card is empty](/features/evidence#why-a-card-is-empty) for how this reads on the execution page.
-
-## Dashboard navigation
-
-After submitting results, the dashboard provides:
-
-| Page | Purpose |
-|------|---------|
-| **Home** (`/`) | Overview stats, test trend chart, and quick access to recent projects |
-| **Projects** (`/projects`) | Searchable table of all projects with status, duration, and tag filters |
-| **Project detail** (`/projects/:id`) | Run history for a project, with Runs, Tests, Failures, Performance and Settings tabs |
-| **Test run** (`/test-runs/:id`) | Executions grouped by failure cluster, a changes tab against a baseline, and a worker timeline |
-| **Test history** (`/test-cases/:id`) | One test's behavior over time — pass rate, duration trend, and every execution |
-| **API Docs** (`/docs`) | Interactive API reference with endpoint documentation, schemas, and try-it console (auto-generated) |
-| **Settings** (`/settings`) | Account, users, storage, tags, wasted-time patterns, AI diagnosis, and notifications |
-
-See the [UI overview](/features/ui-overview) for a full map of every page and tab.
-
-## Next steps
-
-- [Core concepts](./concepts) — the vocabulary the dashboard and these docs use
-- [Reporter](./reporter) — every option, streaming, sharding, and locator healing
-- [UI overview](/features/ui-overview) — a map of every page and tab
-- [Deployment](/operate/deployment) — running it properly for a team
-- [Desktop app](/features/desktop) — the same dashboard as a local app, if you skipped it above
-- [Upgrading](/operate/upgrading) — what a version bump does before you pull a new tag
-- [Contributing](https://github.com/PiwiTests/platform/blob/main/CONTRIBUTING.md) — dev setup, tests, and commit conventions if you want to hack on Piwi itself
+- [Core concepts](./concepts): the vocabulary the dashboard and these docs use
+- [Reporter](./reporter): manual setup, options, streaming and authentication
+- [Capture fixtures](./capture-fixtures): what the fixtures file adds
+- [Choose what you use](/operate/capabilities): turn off the capabilities you do not need
+- [Deployment](/operate/deployment): running the dashboard for a team
