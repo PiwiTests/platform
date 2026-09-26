@@ -5,6 +5,7 @@ import { dirname, join, posix, relative } from 'node:path';
 import { MCP_TOOL_DEFS } from '#shared/mcp-tools';
 import { FEATURE_NEED_DOCS, PIWI_FEATURE_GROUPS } from '#shared/piwi-features';
 import { PIWI_ENV_VARS } from '#shared/piwi-env-vars';
+import { HELP_TOPICS } from '~/utils/help-content';
 import { headingAnchor, sidebars } from '../../../docs/.vitepress/navigation';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..');
@@ -385,5 +386,25 @@ describe('docs site structure', () => {
 
   test.each(handWrittenPages)('links from %s resolve to a page and heading', (page) => {
     expect(brokenLinksFrom(page)).toEqual([]);
+  });
+
+  // A recipe answers a question a reader meets on a feature page or on a screen
+  // of the dashboard, so it is linked from both: a feature page's "Related"
+  // footer and the `recipe` of an in-app help topic.
+  const recipes = docsPages
+    .filter((p) => p.startsWith('apps/docs/recipes/'))
+    .map((p) => p.replace(/^apps\/docs\//, '').replace(/\.md$/, ''));
+  const featurePageSources = docsPages.filter((p) => p.startsWith('apps/docs/features/')).map((p) => read(p));
+  const helpRecipes = new Set(
+    Object.values(HELP_TOPICS).flatMap((topic) => ('recipe' in topic ? [topic.recipe.doc] : [])),
+  );
+
+  test.each(recipes)('%s is linked from a feature page and a help topic', (recipe) => {
+    const link = new RegExp(`\\]\\((?:/|\\.\\./)${recipe}(?:#[^)]*)?\\)`);
+    expect(
+      featurePageSources.some((contents) => link.test(contents)),
+      `no features/ page links /${recipe}`,
+    ).toBe(true);
+    expect(helpRecipes.has(recipe), `no help topic in app/utils/help-content.ts has recipe.doc '${recipe}'`).toBe(true);
   });
 });
