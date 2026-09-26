@@ -12,7 +12,12 @@ const read = (relative: string) => readFileSync(join(repoRoot, relative), 'utf8'
 
 // Pages the docs build writes from a registry; they are gitignored, so they are
 // only on disk once `docs:gen` has run, and a check skips them rather than fail.
-const GENERATED_PAGES = new Set(['reference/configuration', 'reference/features', 'reference/whats-new']);
+const GENERATED_PAGES = new Set([
+  'reference/configuration',
+  'reference/features',
+  'reference/reporter-options',
+  'reference/whats-new',
+]);
 
 const FRONT_MATTER = /^---\n[\s\S]*?\n---\n/;
 const FENCED_CODE = /^(`{3,}|~{3,})[\s\S]*?^\1/gm;
