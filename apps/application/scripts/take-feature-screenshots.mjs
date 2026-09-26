@@ -537,6 +537,22 @@ const SCENES = [
     },
   },
   {
+    name: 'page-structure-picker',
+    description: 'Screen tab: Page structure → Open in picker, the locator picker over the failure-time page',
+    route: '/test-run-cases/37',
+    viewport: { width: 1280, height: 1000 },
+    async run({ page, shoot, settle, openTab }) {
+      await openTab(/^Screen/);
+      await page.getByRole('button', { name: /Page structure/ }).click();
+      await page.locator('iframe[title="Failure-time page"]').waitFor({ timeout: 15000 });
+      await page.getByRole('button', { name: 'Open in picker' }).click();
+      await page.getByText('Rendered from the failure-time DOM snapshot').waitFor({ timeout: 15000 });
+      await page.getByText('Initializing picker').waitFor({ state: 'detached', timeout: 15000 });
+      await settle();
+      await shoot();
+    },
+  },
+  {
     name: 'locator-usage-drawer',
     description: 'Who uses this? drawer: the call sites and tests that use a locator, with the command that runs them',
     route: '/test-run-cases/711',
@@ -668,6 +684,18 @@ const SCENES = [
       await shoot(undefined, { of: '[role="dialog"]', pad: 0 });
     },
   },
+  {
+    name: 'permission-grid-mobile',
+    description:
+      'Settings → Permissions at phone width: the user column stays pinned while the projects scroll sideways',
+    route: '/settings/permissions',
+    viewport: { width: 390, height: 1100 },
+    async run({ page, shoot, settle }) {
+      await page.locator('[data-shot="permission-grid"] table').waitFor({ timeout: 15000 });
+      await settle();
+      await shoot();
+    },
+  },
 
   // ── Docs illustrations (committed) ────────────────────────────────────────
   {
@@ -685,6 +713,24 @@ const SCENES = [
         .catch(() => {});
       await settle();
       await shoot(undefined, { of: '[data-shot="evidence-card"]', pad: 12 });
+    },
+  },
+  {
+    name: 'permission-grid',
+    description:
+      'Settings → Permissions: every user against every project by role, the hovered cell’s row and column highlighted',
+    tags: ['docs'],
+    out: 'docs',
+    route: '/settings/permissions',
+    viewport: { width: 1280, height: 900 },
+    async run({ page, shoot, settle }) {
+      const cell = page.getByRole('checkbox', { name: 'Priya (API & UI team) — E2E Checkout' });
+      await cell.waitFor({ timeout: 15000 });
+      await settle();
+      // The crosshair follows focus as well as the pointer. Focus survives the
+      // capture's re-layout, where a stationary pointer would land on another cell.
+      await cell.focus();
+      await shoot(undefined, { of: '[data-shot="permission-grid"]', pad: 12 });
     },
   },
   {

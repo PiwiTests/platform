@@ -186,9 +186,8 @@ test.describe.serial('User Management Page Tests', () => {
 // `server/utils/project-access.ts` for the scope model. Auth is disabled for the
 // dev/test server these tests run against, so `requireAuth` always returns a
 // synthetic system-admin user and a real 403 can't be observed here; the
-// administrator-only enforcement (and a genuine assign-then-verify round trip) is
-// covered instead in `tests/reporter-with-auth.spec.ts`, which runs against a real
-// auth-enabled server.
+// administrator-only enforcement is covered instead in
+// `tests/reporter-with-auth.spec.ts`, which runs against a real auth-enabled server.
 test.describe.serial('Project Members API Tests', () => {
   let projectId: number;
 
@@ -255,15 +254,45 @@ test.describe.serial('Project Members API Tests', () => {
   });
 
   test('PUT /api/projects/:id/members with an empty list clears explicit assignments', async ({ request }) => {
-    // An empty array takes the delete-only code path in `setProjectMembers` — it
-    // never touches `createdBy`, so it's safe to exercise on the auth-disabled
-    // server (see the file-level note above about why a real assignment can't be).
+    // An empty array takes the delete-only code path in `setProjectMembers`.
     const response = await request.put(`/api/projects/${projectId}/members`, {
       data: { userIds: [] },
     });
     expect(response.ok()).toBeTruthy();
     const body = await response.json();
     expect(body).toEqual({ success: true });
+  });
+
+  test('assignments save with authentication off, from either direction', async ({ request }) => {
+    // The caller is the virtual administrator, which has no users row to record as the grantor.
+    const username = 'members-api-user';
+    const existing = (await (await request.get('/api/users')).json()) as { items: { id: number; username: string }[] };
+    for (const user of existing.items) if (user.username === username) await request.delete(`/api/users/${user.id}`);
+    const created = await request.post('/api/users', {
+      data: { username, password: 'memberspassword123', role: 'user' },
+    });
+    expect(created.ok()).toBeTruthy();
+    const userId = ((await created.json()) as { user: { id: number } }).user.id;
+
+    try {
+      const perProject = await request.put(`/api/projects/${projectId}/members`, { data: { userIds: [userId] } });
+      expect(perProject.ok()).toBeTruthy();
+      const members = (await (await request.get(`/api/projects/${projectId}/members`)).json()) as {
+        items: { id: number; global: boolean }[];
+      };
+      expect(members.items).toContainEqual(expect.objectContaining({ id: userId, global: false }));
+
+      const perUser = await request.put(`/api/users/${userId}/projects`, {
+        data: { global: false, projectIds: [projectId] },
+      });
+      expect(perUser.ok()).toBeTruthy();
+      expect(await (await request.get(`/api/users/${userId}/projects`)).json()).toEqual({
+        global: false,
+        projectIds: [projectId],
+      });
+    } finally {
+      await request.delete(`/api/users/${userId}`);
+    }
   });
 
   test('PUT /api/projects/:id/members returns 404 for an unknown project', async ({ request }) => {

@@ -27,6 +27,9 @@ import {
   setUserAssignments,
   getProjectMembers,
   setProjectMembers,
+  getProjectAccessGrid,
+  getProjectAccessUser,
+  setProjectAccess,
 } from '#shared/handlers/project-assignments';
 import { getDemoDb } from '../db.client';
 import { getLocatorHealing, saveLocatorPick } from '~~/server/utils/locator-healing';
@@ -2060,6 +2063,41 @@ const routes: RouteEntry[] = [
       const b = body as { userIds: number[] };
       await setProjectMembers(await getDemoDb(), +m[1]!, b.userIds ?? [], ctx?.actingUserId ?? undefined);
       return { success: true };
+    },
+  },
+
+  // Project affectations — the permission grid (every user × every project)
+  {
+    method: 'GET',
+    pattern: /^\/api\/project-access$/,
+    handler: async (_m, _b, _q, ctx) => {
+      const db = await getDemoDb();
+      if (!(await demoActingUserIsAdmin(db, ctx))) throw demoHttpError(403, 'Insufficient permissions');
+      return { ...(await getProjectAccessGrid(db)), authEnabled: true };
+    },
+  },
+  {
+    method: 'PUT',
+    pattern: /^\/api\/project-access$/,
+    handler: async (_m, body, _q, ctx) => {
+      const db = await getDemoDb();
+      if (!(await demoActingUserIsAdmin(db, ctx))) throw demoHttpError(403, 'Insufficient permissions');
+      const b = (body ?? {}) as { userId?: unknown; projectId?: unknown; granted?: unknown };
+      const isId = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v > 0;
+      if (!isId(b.userId) || !(b.projectId === null || isId(b.projectId)) || typeof b.granted !== 'boolean') {
+        throw demoHttpError(400, 'Invalid request body');
+      }
+      const target = (await db.select({ role: users.role }).from(users).where(eq(users.id, b.userId)))[0];
+      if (!target) throw demoHttpError(404, 'User not found');
+      if ((target.role as Role) === Role.ADMINISTRATOR) {
+        throw demoHttpError(400, 'Administrators can open every project');
+      }
+      if (b.projectId !== null) {
+        const project = (await db.select({ id: projects.id }).from(projects).where(eq(projects.id, b.projectId)))[0];
+        if (!project) throw demoHttpError(404, 'Project not found');
+      }
+      await setProjectAccess(db, b.userId, b.projectId, b.granted, ctx?.actingUserId ?? null);
+      return { user: await getProjectAccessUser(db, b.userId) };
     },
   },
 

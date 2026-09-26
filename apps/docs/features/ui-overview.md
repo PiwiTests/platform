@@ -27,7 +27,7 @@ The sidebar gives access to the top-level sections:
 | Analytics | `/analytics` | Cross-project trends, portfolio health, and insights over a chosen time window (see [Analytics](./analytics)) |
 | Quality reports | `/reports` | The report snapshots kept and the report schedules that send them; `/reports/:id` opens one snapshot (see [Quality reports](./quality-reports#report-schedules)) |
 | Projects | `/projects` | Full project listing with search and tag filters |
-| Settings | `/settings` | Configuration, in two groups — **Instance** (account, users, notifications, storage) and **Analysis** (AI diagnosis, wasted time, timeout hygiene, tags, pull requests) |
+| Settings | `/settings` | Configuration, in two groups — **Instance** (account, users, permissions, notifications, storage) and **Analysis** (AI diagnosis, wasted time, timeout hygiene, tags, pull requests) |
 | Setup *(admins)* | `/setup` | Connect the reporter, and a checklist of which optional capabilities are actually active on this instance |
 | API docs | `/docs` | Self-contained OpenAPI 3.1 reference (no external CDN) — browse endpoints and schemas, try requests live, copy cURL / fetch snippets |
 | MCP server | `/mcp` | Setup guide for connecting AI clients (see [MCP server](/features/mcp)) |
@@ -176,6 +176,7 @@ opens with no network and no Piwi server. See [Offline export](./offline-export)
 | General | `/settings` | Basic app configuration; a **Reset Demo** button in demo mode |
 | Account | `/settings/account` | Your display name, email, password, and **connected accounts** (link/unlink Google or GitHub — see [OAuth](/operate/authentication#oauth-google-github)) |
 | Users | `/settings/users` | User accounts, roles, project access, and API keys (shown once, stored hashed) — see [Authentication](/operate/authentication) |
+| Permissions | `/settings/permissions` | Every user against every project on one grid; each tick grants one project and saves at once — see [Permission grid](/operate/authentication#permission-grid) |
 | Storage | `/settings/storage` | Storage analysis (by project, file kind and over time) and cleanup (bulk-delete runs older than N days) — see [Storage](/operate/storage#storage-management) |
 | Tags | `/settings/tags` | Create, color, edit, and delete the tags used to organize projects |
 | Pull requests | `/settings/pr-feedback` | What Piwi posts back to a pull request when a run finishes — see [Pull-request feedback](/guide/ci#pull-request-feedback) |
@@ -198,7 +199,7 @@ The [live demo](https://piwitests.dev/demo/) runs entirely in your browser (in-m
 
 **Simulate a test run** — the demo banner replays the exact streaming protocol a Piwi reporter speaks during a real run, so you can watch one arrive live. Scenarios: a passing run, a run with failures (joining a known cluster plus a brand-new one), flaky retries, a performance regression, an interrupted run, and a cross-browser run. Each creates a real run in the in-browser database, so worker timeline, failure clusters, and history comparisons all behave exactly as they would against a server.
 
-**Acting as** — the demo runs with authentication conceptually enabled. Switch between pre-seeded identities (an admin, a CI reporter, and several project-scoped users) to see how [project access](/operate/authentication#project-access) changes what each user sees. Acting as the admin, you can change affectations live and then switch users to see the effect.
+**Acting as** — the demo runs with authentication conceptually enabled. Switch between pre-seeded identities (an admin, a CI reporter, and several project-scoped users) to see how [project access](/operate/authentication#project-access) changes what each user sees. Acting as the admin, you can change affectations live — on the [permission grid](/operate/authentication#permission-grid), for instance — and then switch users to see the effect.
 
 ## Responsive & dark mode
 
