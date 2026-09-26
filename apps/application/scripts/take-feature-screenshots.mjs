@@ -1772,6 +1772,55 @@ const SCENES = [
       await shoot();
     },
   })),
+  ...['', '-mobile'].map((suffix) => ({
+    name: `what-changed-no-repository${suffix}`,
+    description: suffix
+      ? 'The cluster situation block at phone width, for runs without a repository URL'
+      : 'Cluster situation block for runs that record commits but no repository URL: the range, why, the docs, the git log',
+    route: '/projects',
+    viewport: suffix ? { width: 375, height: 1200 } : { width: 1280, height: 900 },
+    of: '[data-shot="situation-block"]',
+    pad: suffix ? 8 : 12,
+    async prepare({ request, base }) {
+      const scm = (commit, commitMessage) => ({
+        scm: { commit, branch: 'main', author: 'Ada Lovelace', commitMessage },
+      });
+      const passedAt = Date.now() - 60 * 60_000;
+      await ingestRun(request, base, {
+        projectName: 'storefront-no-remote',
+        metadata: scm('3f9c2e1a7b4d5c6e8f0a1b2c3d4e5f6a7b8c9d0e', 'feat: checkout with saved cards'),
+        testCase: {
+          ...HOOK_FAILURE_CASE,
+          status: 'passed',
+          duration: 1400,
+          steps: [],
+        },
+        startTime: passedAt,
+      });
+      const failedAt = Date.now() - 5_000;
+      const { runId } = await ingestRun(request, base, {
+        projectName: 'storefront-no-remote',
+        metadata: scm('b7e41d09c2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7', 'refactor(profile): rename the edit button'),
+        testCase: hookFailureCase(failedAt),
+        startTime: failedAt,
+      });
+      // The run's cluster is written when the run finishes; give it a moment.
+      for (let attempt = 0; attempt < 10 && !this.clusterId; attempt++) {
+        if (attempt > 0) await new Promise((r) => setTimeout(r, 1000));
+        const groups = await (await request.get(`${base}/api/test-runs/${runId}/failure-groups`)).json();
+        this.clusterId = groups.items?.[0]?.clusterId ?? null;
+      }
+      if (!this.clusterId) throw new Error(`run ${runId} has no failure cluster`);
+    },
+    async run({ page, goto, settle, shoot }) {
+      await goto(`/failure-clusters/${this.clusterId}`);
+      await page
+        .locator('[data-shot="what-changed"]', { hasText: 'since the last passing run' })
+        .waitFor({ timeout: 60_000 });
+      await settle();
+      await shoot();
+    },
+  })),
   {
     name: 'timeline-type-filter',
     description: 'Timeline tab: the type chips with Network hidden, and the line naming the failed request it hides',

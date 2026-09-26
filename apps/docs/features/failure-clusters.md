@@ -79,7 +79,11 @@ failure](/guide/first-failure)), across every test that shares the failure. The 
 
 - **The occurrence sparkline**: how often it failed across recent runs, *N occurrences in M tests over D · last X ago*.
 - **What changed**: the commits and files between the last passing run (or your baseline) and this failure, with
-  **See the changes** leading to the diff, or **Browse commits** when there is nothing to diff.
+  **See the changes** leading to the diff. When there is nothing to diff it says why and what would fix it (no passing
+  run yet, runs that record no commit or repository URL, a host Piwi does not read, or a private repository without
+  an [SCM token](/guide/source-control)), and keeps what still works: the range on the host's **Compare** page,
+  **Copy git log** for your own checkout, and **Browse commits** to pick a baseline. The same commit on both sides
+  means the change is not in the code.
 - **The state line**, below.
 
 The **Affected tests** list selects which test's latest execution the evidence shows. The diagnosis, the locator fix,

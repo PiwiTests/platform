@@ -1063,6 +1063,9 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
             patchedFilesCount: coverage.scm.patchedFilesCount || null,
             patchesOmitted: coverage.scm.patchesOmitted || null,
             baseCommitUsed: coverage.scm.baseCommitUsed || null,
+            range: coverage.scm.range ? `${coverage.scm.range.from}..${coverage.scm.range.to}` : null,
+            compareUrl: coverage.scm.compareUrl || null,
+            scmError: coverage.scm.error || null,
             alreadyGreen: coverage.alreadyGreen || null,
           })
         : null,

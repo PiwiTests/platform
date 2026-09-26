@@ -5,10 +5,13 @@
  * diff or a hand-picked commit range it sums the range up — commits, files, what
  * they are counted from — and links to the full card below the block, where the
  * baseline picker, the commits and the diff live. With nothing to diff it says
- * why (no last passing run, unsupported host, fetch failed) and offers the commit
- * browser where one can work, so a cluster without a baseline is not a dead end:
- * picking commits opens the card.
+ * why and what fills the gap (a token, the reporter's Git metadata), keeps the
+ * range usable where it is known — the host's compare page, the local `git log`
+ * — and offers the commit browser where one can work, so a cluster without a
+ * baseline is not a dead end: picking commits opens the card.
  */
+import { docsUrl } from '#shared/docs';
+
 const { clusterId, coverage, scmChanges, selectedCommitShas, autoSelectedCommits, contextLoading, hasChangesToShow } =
   useClusterDiagnosis();
 
@@ -17,29 +20,34 @@ const emit = defineEmits<{
   see: [];
 }>();
 
-const { scmStatus } = useScmStatusSummary(coverage);
+const { canSeeAdmin } = useAuth();
+const { copy, copied } = useCopy();
+const status = computed(() => describeScmStatus(coverage.value?.scm));
 const commitBrowserOpen = ref(false);
-
-// A green or blue status is a diff that resolved; every other color is a reason
-// there is none, and the status sentence names it.
-const scmHealthy = computed(
-  () => scmStatus.value.color === 'text-green-500' || scmStatus.value.color === 'text-blue-500',
-);
 
 // The browser lists the repository's commits, which needs a repository the run
 // reported and a host we support: with a last passing run the server has said
 // which; without one it has not looked, so the browser gets its chance.
 const canBrowse = computed(() => {
   const scm = coverage.value?.scm;
-  return Boolean(scm && (scm.provider || !scm.hasLastGreen));
+  if (!scm || status.value.kind === 'no-repository' || status.value.kind === 'unsupported-host') return false;
+  return Boolean(scm.provider || !scm.hasLastGreen);
 });
+
+/** Where the reporter's Git metadata is documented, when the runs lack it. */
+const metadataDocs = computed(() =>
+  status.value.kind === 'no-commit' || status.value.kind === 'no-repository'
+    ? docsUrl('reference/test-metadata#scm-information-git')
+    : null,
+);
 
 const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`;
 
-/** What the range is counted from: the last passing run, or the baseline that overrides it. */
+/** What the range is counted from: the last passing run, the test's own last pass, or the baseline picked. */
 const baseline = computed(() => {
-  const sha = coverage.value?.scm?.baseCommitUsed;
-  return sha ? `baseline ${sha.slice(0, 7)}` : 'the last passing run';
+  const scm = coverage.value?.scm;
+  if (scm?.baseCommitUsed && scm.baselineKind === 'test-green') return 'this test last passed';
+  return scm?.baseCommitUsed ? `baseline ${scm.baseCommitUsed.slice(0, 7)}` : 'the last passing run';
 });
 
 /** The range in one clause: how many commits and files, counted from where. */
@@ -69,21 +77,47 @@ const summary = computed(() => {
 
     <!-- A hand-picked range whose diff did not resolve: the card holds the picker -->
     <template v-else-if="hasChangesToShow">
-      <span>{{ scmStatus.text }}</span>
-      <span v-if="scmStatus.detail" class="text-muted">— {{ scmStatus.detail }}</span>
+      <span>
+        {{ status.text }}
+        <span v-if="status.detail" class="text-muted" :title="status.error ?? undefined">— {{ status.detail }}</span>
+      </span>
       <button type="button" :class="SENTENCE_LINK_CLASS" @click="emit('see')">Change the range</button>
     </template>
 
-    <!-- Nothing to diff: why, and the browser where it can work -->
+    <!-- Nothing to diff: why, what fills the gap, and the range where it is known -->
     <template v-else>
-      <template v-if="coverage && scmHealthy">
-        <span>No commits since {{ baseline }}</span>
-      </template>
-      <template v-else-if="coverage">
-        <span>{{ scmStatus.text }}</span>
-        <span v-if="scmStatus.detail" class="text-muted">— {{ scmStatus.detail }}</span>
-      </template>
-      <span v-else>Not available</span>
+      <span>
+        {{ status.text }}
+        <span v-if="status.detail" class="text-muted" :title="status.error ?? undefined">— {{ status.detail }}</span>
+      </span>
+      <NuxtLink v-if="status.needsToken && canSeeAdmin" to="/settings/ai" :class="SENTENCE_LINK_CLASS">
+        Add a token
+      </NuxtLink>
+      <a v-if="metadataDocs" :href="metadataDocs" target="_blank" rel="noopener" :class="SENTENCE_LINK_CLASS">
+        How runs record Git
+      </a>
+      <a
+        v-if="status.compare"
+        :href="status.compare.url"
+        target="_blank"
+        rel="noopener"
+        :class="SENTENCE_LINK_CLASS"
+        data-testid="what-changed-compare"
+      >
+        {{ status.compare.label }}
+      </a>
+      <UButton
+        v-if="status.gitCommand"
+        size="xs"
+        variant="ghost"
+        color="neutral"
+        :icon="copied ? 'i-lucide-check' : undefined"
+        :label="copied ? 'Copied' : 'Copy git log'"
+        :title="status.gitCommand"
+        class="shrink-0"
+        data-testid="what-changed-git-log"
+        @click="copy(status.gitCommand)"
+      />
       <UButton
         v-if="canBrowse"
         size="xs"

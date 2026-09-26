@@ -1497,6 +1497,16 @@ export interface DiagnosisContextCoverage {
     baselineKind?: 'run-green' | 'test-green' | 'manual';
     /** Error message when the SCM diff fetch failed. */
     error?: string | null;
+    /** The repository the runs point at, when they record one. */
+    repositoryUrl?: string | null;
+    /** The commit range compared, as short SHAs, when both ends are known. */
+    range?: { from: string; to: string } | null;
+    /** The range on the Git host's own compare page, when the host is one Piwi knows. */
+    compareUrl?: string | null;
+    /** The local command that lists the range. */
+    gitCommand?: string | null;
+    /** Whether a repository access token is set for the project or the instance. */
+    hasToken?: boolean;
   } | null;
   /** True when the last passing run is newer than the cluster's lastSeen — test may already be fixed. */
   alreadyGreen?: boolean;

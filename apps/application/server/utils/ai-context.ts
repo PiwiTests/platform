@@ -21,7 +21,8 @@ import { durationStats } from '#shared/utils/stats';
 import { computeRegressionContext } from './regression-context';
 import { normalizeGitUrl } from './scm/git-url';
 import { inlineCasePayloads } from './case-payloads';
-import { createScmProvider, detectScmProvider } from './scm';
+import { createScmProvider, detectScmProvider, resolveScmToken } from './scm';
+import { compareUrl } from '#shared/scm-urls';
 import { MAX_RAW_DIFF_BYTES } from './scm/ScmProvider';
 import type { ScmChanges, ChangedFile } from './scm/ScmProvider';
 import type {
@@ -2287,6 +2288,16 @@ async function scmInvestigationSections(
   let scmReached = false;
   let scmChanges: ScmChanges | null = null;
 
+  // The range compared, whether or not a provider can read it: the page links it
+  // on the host and offers the local `git log` when the diff cannot be fetched.
+  const setRange = (repositoryUrl: string | null, fromSha: string, toSha: string) => {
+    scmCov.repositoryUrl = repositoryUrl;
+    scmCov.range = { from: fromSha.slice(0, 7), to: toSha.slice(0, 7) };
+    scmCov.compareUrl = repositoryUrl ? compareUrl(repositoryUrl, fromSha, toSha) : null;
+    scmCov.gitCommand = `git log --oneline ${fromSha}..${toSha}`;
+  };
+  scmCov.hasToken = (await resolveScmToken(db, cluster.projectId).catch(() => null)) != null;
+
   // Anchor the diff at firstSeenRunId (the earliest run where the failure appeared) so the
   // causal window [lastGreenCommit .. firstBadCommit] is as tight as possible.
   const firstSeenRunRows = await db
@@ -2333,6 +2344,18 @@ async function scmInvestigationSections(
         }
       }
       sections.push(lines.join('\n'));
+
+      if (regression.commitRange) {
+        setRange(
+          regression.commitRange.repositoryUrl,
+          baseCommitOverride ?? regression.commitRange.fromSha,
+          regression.commitRange.toSha,
+        );
+      } else if (regression.lastGreenCommit && regression.lastGreenCommit === regression.currentCommit) {
+        // The last passing run tested the same commit: an empty range, which says
+        // the change is not in the code.
+        scmCov.range = { from: regression.currentCommit.slice(0, 7), to: regression.currentCommit.slice(0, 7) };
+      }
 
       // Fetch actual changed files from SCM API
       if (regression.commitRange?.repositoryUrl) {
@@ -2386,6 +2409,7 @@ async function scmInvestigationSections(
       const repositoryUrl = normalizeGitUrl(remoteUrl);
 
       scmCov.hasCommitRange = Boolean(currentCommit && repositoryUrl);
+      if (currentCommit) setRange(repositoryUrl, baseCommitOverride, currentCommit);
 
       if (currentCommit && repositoryUrl) {
         scmCov.provider = detectScmProvider(repositoryUrl);
@@ -2466,6 +2490,12 @@ async function scmInvestigationSections(
         const remoteUrl: string | null = currMeta?.scm?.remoteUrl ?? lastPassMeta?.scm?.remoteUrl ?? null;
         const repositoryUrl = normalizeGitUrl(remoteUrl);
 
+        if (lastPassCommit && currentCommit && lastPassCommit !== currentCommit) {
+          setRange(repositoryUrl, lastPassCommit, currentCommit);
+        } else if (lastPassCommit && lastPassCommit === currentCommit) {
+          scmCov.baselineKind = 'test-green';
+          scmCov.range = { from: currentCommit.slice(0, 7), to: currentCommit.slice(0, 7) };
+        }
         if (lastPassCommit && currentCommit && repositoryUrl && lastPassCommit !== currentCommit) {
           scmCov.baselineKind = 'test-green';
           scmCov.hasCommitRange = true;
