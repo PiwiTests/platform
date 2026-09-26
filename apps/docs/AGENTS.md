@@ -11,7 +11,7 @@ npm run docs:gen      # regenerate the derived pages only
 
 ## Generated pages — never edit them by hand
 
-`docs:gen` writes four pages from registries. They are **gitignored** and rebuilt by `docs:dev` and `docs:build`:
+`docs:gen` writes seven pages from registries. They are **gitignored** and rebuilt by `docs:dev` and `docs:build`:
 
 | Page | Source | Script |
 |---|---|---|
@@ -19,6 +19,14 @@ npm run docs:gen      # regenerate the derived pages only
 | `reference/features.md` (All features) | the feature catalog, `apps/application/shared/piwi-features.ts` | `scripts/generate-features.mjs` |
 | `reference/reporter-options.md` | the reporter's options type, `packages/reporter/src/public/options.ts`, and `PIWI_ENV_KEYS` in `packages/reporter/src/internal/config/env.ts` | `scripts/generate-reporter-options.mjs` |
 | `reference/whats-new.md` | `CHANGELOG.md` | `scripts/generate-whats-new.mjs` |
+| `reference/mcp-tools.md` | the MCP tool catalog, `MCP_TOOL_DEFS` in `apps/application/shared/mcp-tools.ts` | `scripts/generate-mcp-tools.mjs` |
+| `reference/analytics-widgets.md` | the widget registry, `ANALYTICS_WIDGETS` in `apps/application/shared/analytics/registry.ts` | `scripts/generate-analytics-widgets.mjs` |
+| `reference/metrics.md` | the metric catalog, `METRICS` in `apps/application/shared/analytics/metrics.ts` | `scripts/generate-metrics.mjs` |
+
+A generator runs with only `apps/docs` installed, since the deploy workflow installs nothing else. A package a registry
+imports at runtime, such as `zod`, is therefore a devDependency here, and the generator resolves it from here through
+a jiti alias (see `scripts/generate-mcp-tools.mjs`). The band labels in `ANALYTICS_BANDS` are the headings of the
+Analytics widgets page and the in-app help links them, so renaming one is a link change.
 
 ### The configuration reference
 
