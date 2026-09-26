@@ -58,6 +58,8 @@ export const projects = pgTable(
     routeOrigins: jsonb('route_origins'), // string[] — extra own origins whose requests become graph route nodes, beyond the run's Playwright baseURL
     ciRerun: jsonb('ci_rerun'), // CiRerunSettings — provider-specific "re-run from the dashboard" target (off by default)
     capabilities: jsonb('capabilities'), // Partial<Record<CapabilityId, 'declined' | 'enabled'>> — per-project capability decisions
+    targets: jsonb('targets'), // ProjectTargets — per-project goals on catalog metrics (shared/analytics/targets.ts)
+    locatorIndexBuiltAt: timestamp('locator_index_built_at', { mode: 'date' }),
     createdAt: timestamp('created_at', { mode: 'date' })
       .notNull()
       .$defaultFn(() => new Date()),
@@ -105,6 +107,10 @@ export const testRuns = pgTable(
     playwrightVersion: text('playwright_version'), // Playwright framework version used for this run
     reporterVersion: text('reporter_version'), // Piwi reporter package version that produced this run
     importHash: text('import_hash'), // SHA-256 of the imported archive; null for reported runs. Makes re-importing a no-op.
+    keptAt: timestamp('kept_at', { mode: 'date' }), // Set = kept forever: retention never deletes the run
+    keptBy: integer('kept_by').references(() => users.id, { onDelete: 'set null' }), // User who kept the run; null for reporter/marker keeps or with auth off
+    keepSource: text('keep_source'), // 'user' | 'reporter' | 'marker' — who asked for the keep; null when not kept
+    keepReason: text('keep_reason'), // Optional free-text reason shown next to the keep
     createdAt: timestamp('created_at', { mode: 'date' })
       .notNull()
       .$defaultFn(() => new Date()),
@@ -121,6 +127,8 @@ export const testRuns = pgTable(
     startTimeIdx: index('idx_test_runs_start_time').on(table.startTime),
     statusIdx: index('idx_test_runs_status').on(table.status),
     importHashIdx: uniqueIndex('idx_test_runs_import_hash').on(table.projectId, table.importHash),
+    projectKeptIdx: index('idx_test_runs_project_kept').on(table.projectId, table.keptAt),
+    keptByIdx: index('idx_test_runs_kept_by').on(table.keptBy),
   }),
 );
 
@@ -573,6 +581,44 @@ export const locatorSnapshots = pgTable(
     lastSeenRunIdx: index('idx_locator_snapshots_last_seen_run').on(table.lastSeenRunId),
     // Cross-test healing looks a signature up across all of a project's cases.
     argsFpIdx: index('idx_locator_snapshots_args_fp').on(table.usedArgsFp),
+  }),
+);
+
+// Locator usages — which locator chain each test used, from which call site, for which action.
+export const locatorUsages = pgTable(
+  'locator_usages',
+  {
+    id: serial('id').primaryKey(),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    testCaseId: integer('test_case_id')
+      .notNull()
+      .references(() => testCases.id, { onDelete: 'cascade' }),
+    locator: text('locator').notNull(),
+    target: text('target').notNull(),
+    action: text('action').notNull(),
+    browserName: text('browser_name').notNull(),
+    callSite: text('call_site').notNull(),
+    branch: text('branch').notNull().default(''),
+    firstSeenRunId: integer('first_seen_run_id').references(() => testRuns.id, { onDelete: 'set null' }),
+    lastSeenRunId: integer('last_seen_run_id').references(() => testRuns.id, { onDelete: 'set null' }),
+    lastSeenAt: timestamp('last_seen_at', { mode: 'date' }).notNull(),
+  },
+  (table) => ({
+    uniqueUse: uniqueIndex('idx_locator_usages_use').on(
+      table.testCaseId,
+      table.browserName,
+      table.branch,
+      table.callSite,
+      table.action,
+      table.locator,
+    ),
+    projectLocatorIdx: index('idx_locator_usages_project_locator').on(table.projectId, table.locator),
+    projectBranchIdx: index('idx_locator_usages_project_branch').on(table.projectId, table.branch),
+    projectTargetIdx: index('idx_locator_usages_project_target').on(table.projectId, table.target),
+    lastSeenRunIdx: index('idx_locator_usages_last_seen_run').on(table.lastSeenRunId),
+    firstSeenRunIdx: index('idx_locator_usages_first_seen_run').on(table.firstSeenRunId),
   }),
 );
 
@@ -1182,11 +1228,10 @@ export const shareLinks = pgTable(
   'share_links',
   {
     id: serial('id').primaryKey(),
-    projectId: integer('project_id')
-      .notNull()
-      .references(() => projects.id, { onDelete: 'cascade' }),
-    entityKind: text('entity_kind').notNull(), // 'execution' | 'cluster' (ExportKind)
-    entityId: integer('entity_id').notNull(), // test_runs_cases.id or failure_clusters.id
+    // null for a report or a dashboard link, which can span several projects
+    projectId: integer('project_id').references(() => projects.id, { onDelete: 'cascade' }),
+    entityKind: text('entity_kind').notNull(), // 'execution' | 'cluster' | 'report' | 'dashboard' (ShareLinkKind)
+    entityId: integer('entity_id').notNull(), // test_runs_cases.id, failure_clusters.id, report_snapshots.id or analytics_dashboards.id
     tokenHash: text('token_hash').notNull().unique(), // SHA-256 hash of the full psl_ token
     tokenPrefix: text('token_prefix').notNull(), // First 8 chars after "psl_" — shown in UI
     createdBy: integer('created_by').references(() => users.id, { onDelete: 'set null' }),
@@ -1413,7 +1458,162 @@ export const probes = pgTable(
   }),
 );
 
+// Daily rollups: the precomputed aggregates of one cell (a project, a UTC day,
+// an environment, a branch and a run kind). A cell has a retained row,
+// recomputed from the runs still stored, and an archived row holding the
+// numbers of the runs age-based deletion removed, added in the transaction that
+// deletes them. Reads sum the two parts.
+export const analyticsDailyRollups = pgTable(
+  'analytics_daily_rollups',
+  {
+    id: serial('id').primaryKey(),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    day: text('day').notNull(), // 'YYYY-MM-DD', UTC
+    environment: text('environment').notNull().default(''), // '' when the run had none
+    branch: text('branch').notNull().default(''), // '' when unknown
+    fullRun: integer('full_run').notNull(), // 1 = full suite, 0 = partial
+    part: text('part').notNull(), // 'retained' | 'archived'
+    runs: integer('runs').notNull().default(0),
+    passedRuns: integer('passed_runs').notNull().default(0),
+    failedRuns: integer('failed_runs').notNull().default(0), // failed, timedout, interrupted
+    totalTests: integer('total_tests').notNull().default(0),
+    passedTests: integer('passed_tests').notNull().default(0),
+    failedTests: integer('failed_tests').notNull().default(0),
+    skippedTests: integer('skipped_tests').notNull().default(0),
+    didNotRunTests: integer('did_not_run_tests').notNull().default(0),
+    flakyTests: integer('flaky_tests').notNull().default(0),
+    maxTotalTests: integer('max_total_tests').notNull().default(0),
+    durationMs: bigint('duration_ms', { mode: 'number' }).notNull().default(0),
+    avgTestDurationSumMs: bigint('avg_test_duration_sum_ms', { mode: 'number' }).notNull().default(0),
+    p90TestDurationSumMs: bigint('p90_test_duration_sum_ms', { mode: 'number' }).notNull().default(0),
+    durationRuns: integer('duration_runs').notNull().default(0), // runs with a duration: divides duration_ms
+    testDurationRuns: integer('test_duration_runs').notNull().default(0), // runs with test durations: divides the two sums
+    waitMs: bigint('wait_ms', { mode: 'number' }).notNull().default(0),
+    failedExecMs: bigint('failed_exec_ms', { mode: 'number' }).notNull().default(0),
+    newRegressions: integer('new_regressions').notNull().default(0),
+    newFlaky: integer('new_flaky').notNull().default(0),
+    computedAt: timestamp('computed_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => ({
+    cellIdx: uniqueIndex('idx_analytics_daily_rollups_cell').on(
+      table.projectId,
+      table.day,
+      table.environment,
+      table.branch,
+      table.fullRun,
+      table.part,
+    ),
+    projectDayIdx: index('idx_analytics_daily_rollups_project_day').on(table.projectId, table.day),
+  }),
+);
+
+// Saved dashboards — a named arrangement of widgets in bands with a default
+// scope (`DashboardDefinition` in `shared/analytics/dashboards.ts`). Private
+// dashboards belong to their owner; shared ones are listed for every signed-in
+// user. A dashboard stores filters and widget options, never data.
+export const analyticsDashboards = pgTable(
+  'analytics_dashboards',
+  {
+    id: serial('id').primaryKey(),
+    name: text('name').notNull(),
+    description: text('description'),
+    ownerId: integer('owner_id').references(() => users.id, { onDelete: 'set null' }), // null when authentication is off
+    visibility: text('visibility').notNull().default('private'), // 'private' | 'shared'
+    definition: jsonb('definition').notNull(), // DashboardDefinition
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    updatedAt: timestamp('updated_at', { mode: 'date' }) // the save precondition
+      .notNull()
+      .$defaultFn(() => new Date()),
+    updatedBy: integer('updated_by').references(() => users.id, { onDelete: 'set null' }),
+    lastViewedAt: timestamp('last_viewed_at', { mode: 'date' }), // throttled; feeds the Unused group
+  },
+  (t) => ({
+    ownerIdx: index('idx_analytics_dashboards_owner').on(t.ownerId),
+    visibilityIdx: index('idx_analytics_dashboards_visibility').on(t.visibility),
+    updatedByIdx: index('idx_analytics_dashboards_updated_by').on(t.updatedBy),
+  }),
+);
+
+// Report schedules — a saved recurring delivery of a quality report: a
+// dashboard, a scope, a cadence and one or more notification channels. The
+// `reports:schedule` task renders each due schedule into a snapshot and queues
+// one outbox row per channel.
+export const reportSchedules = pgTable(
+  'report_schedules',
+  {
+    id: serial('id').primaryKey(),
+    name: text('name').notNull(),
+    userId: integer('user_id').references(() => users.id, { onDelete: 'cascade' }), // null = global (admin-managed)
+    scope: jsonb('scope'), // Partial<AnalyticsScope> applied over the dashboard's scope; the period comes from the cadence
+    builtinDashboard: text('builtin_dashboard'), // 'overview' | 'executive' | 'engineering' | 'team' | 'gaps-digest'
+    dashboardId: integer('dashboard_id').references(() => analyticsDashboards.id, { onDelete: 'set null' }), // a saved dashboard; set when builtin_dashboard is not
+    cadence: text('cadence').notNull(), // 'daily' | 'weekly' | 'biweekly' | 'monthly'
+    anchor: integer('anchor'), // weekday 1-7 (weekly, biweekly) or day of month 1-28 (monthly)
+    at: text('at').notNull(), // 'HH:mm' in the instance time zone (UTC when that setting is auto)
+    comparison: text('comparison').notNull().default('previous'), // 'previous' | 'year-ago' | 'none'
+    includeShareLink: intBoolean('include_share_link').notNull().default(INT_BOOLEAN_FALSE),
+    includeNarrative: intBoolean('include_narrative').notNull().default(INT_BOOLEAN_FALSE), // the AI narrative, off by default
+    language: text('language'), // 'en' | 'fr' | null (project or instance default)
+    channelIds: jsonb('channel_ids'), // number[] of notification_channels
+    active: intBoolean('active').notNull().default(INT_BOOLEAN_TRUE),
+    mutedUntil: timestamp('muted_until', { mode: 'date' }),
+    lastRunAt: timestamp('last_run_at', { mode: 'date' }),
+    nextRunAt: timestamp('next_run_at', { mode: 'date' }),
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    updatedAt: timestamp('updated_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    userIdx: index('idx_report_schedules_user').on(t.userId),
+    dueIdx: index('idx_report_schedules_due').on(t.active, t.nextRunAt),
+    dashboardIdx: index('idx_report_schedules_dashboard').on(t.dashboardId),
+  }),
+);
+
+// Report snapshots — one generated quality report, stored with its frozen
+// bundle so a report received in March reads the same in June, whatever
+// retention did since. Pruned after PIWI_RETENTION_REPORT_DAYS.
+export const reportSnapshots = pgTable(
+  'report_snapshots',
+  {
+    id: serial('id').primaryKey(),
+    scheduleId: integer('schedule_id').references(() => reportSchedules.id, { onDelete: 'set null' }), // null = generated by hand
+    createdBy: integer('created_by').references(() => users.id, { onDelete: 'set null' }),
+    dashboardRef: text('dashboard_ref').notNull(),
+    dashboardName: text('dashboard_name').notNull(),
+    scope: jsonb('scope'), // the AnalyticsScope the bundle was collected over
+    projectIds: jsonb('project_ids'), // number[] the bundle covers; null = every project
+    periodFrom: timestamp('period_from', { mode: 'date' }).notNull(),
+    periodTo: timestamp('period_to', { mode: 'date' }).notNull(),
+    comparisonFrom: timestamp('comparison_from', { mode: 'date' }),
+    comparisonTo: timestamp('comparison_to', { mode: 'date' }),
+    bundle: jsonb('bundle').notNull(), // ReportBundle
+    sizeBytes: integer('size_bytes').notNull().default(0),
+    generatedAt: timestamp('generated_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    scheduleIdx: index('idx_report_snapshots_schedule').on(t.scheduleId),
+    generatedIdx: index('idx_report_snapshots_generated').on(t.generatedAt),
+    createdByIdx: index('idx_report_snapshots_created_by').on(t.createdBy),
+  }),
+);
+
 // Type exports for TypeScript
+export type AnalyticsDailyRollup = typeof analyticsDailyRollups.$inferSelect;
+export type AnalyticsDashboard = typeof analyticsDashboards.$inferSelect;
+export type ReportSchedule = typeof reportSchedules.$inferSelect;
+export type ReportSnapshot = typeof reportSnapshots.$inferSelect;
 export type TestSuite = typeof testSuites.$inferSelect;
 export type NewTestSuite = typeof testSuites.$inferInsert;
 export type Project = typeof projects.$inferSelect;

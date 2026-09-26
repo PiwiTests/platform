@@ -1,5 +1,5 @@
 import * as path from 'node:path';
-import type { FullConfig, Suite, TestCase, TestResult, FullResult } from '@playwright/test/reporter';
+import type { FullConfig, Suite, TestCase, TestResult, FullResult, TestStep } from '@playwright/test/reporter';
 import { resolveOptions, usedDesktopDiscovery, PIWI_DEFAULTED_CAPTURE_ENV } from '../internal/config/env.js';
 import type { PiwiDashboardOptions, ShardInfo } from './options.js';
 import { HttpClient } from '../internal/transport/http-client.js';
@@ -271,12 +271,22 @@ export class PiwiDashboardReporter {
   /** Track suite-level setup steps (beforeAll/afterAll) not tied to any test */
   private setupSteps: SetupStep[] = [];
 
+  /** Step categories streamed live while the run executes. */
+  private static readonly LIVE_STEP_CATEGORIES = new Set(['hook', 'fixture', 'pw:api', 'expect']);
+
   /**
-   * Step categories streamed live while the run executes. `pw:assert` is
-   * excluded: it is the polling noise of `expect()`, not a step a human
-   * watches; the meaningful readout is the `pw:expect` wrapper around it.
+   * Whether a step streams live: its category is in `LIVE_STEP_CATEGORIES`
+   * and no ancestor is an `expect` step. The steps inside an assertion are its
+   * polling — every `expect.poll` attempt and `toPass` retry — not a step a
+   * human watches; the meaningful readout is the assertion around them.
    */
-  private static readonly LIVE_STEP_CATEGORIES = new Set(['hook', 'fixture', 'pw:api', 'pw:expect']);
+  private static isLiveStep(step: TestStep): boolean {
+    if (!PiwiDashboardReporter.LIVE_STEP_CATEGORIES.has(step.category)) return false;
+    for (let parent = step.parent; parent; parent = parent.parent) {
+      if (parent.category === 'expect') return false;
+    }
+    return true;
+  }
 
   /** Playwright reporter hook: called when a step (including hook/fixture) begins */
   onStepBegin(test: TestCase | undefined, _result: TestResult | undefined, step: any): void {
@@ -284,8 +294,8 @@ export class PiwiDashboardReporter {
     // first fixtures and hooks run while `/start` is still in flight, and
     // `queueBeginEvent` buffers until the run id lands (same as `onTestBegin`).
     if (!this.enabled || !this.streamManager) return;
+    if (!PiwiDashboardReporter.isLiveStep(step)) return;
     const cat = step.category;
-    if (!PiwiDashboardReporter.LIVE_STEP_CATEGORIES.has(cat)) return;
 
     const event: StreamEvent = {
       type: 'step-begin',
@@ -303,8 +313,8 @@ export class PiwiDashboardReporter {
   /** Playwright reporter hook: called when a step (including hook/fixture) ends */
   onStepEnd(test: TestCase | undefined, _result: TestResult | undefined, step: any): void {
     if (!this.enabled || !this.streamManager) return;
+    if (!PiwiDashboardReporter.isLiveStep(step)) return;
     const cat = step.category;
-    if (!PiwiDashboardReporter.LIVE_STEP_CATEGORIES.has(cat)) return;
 
     const workerIndex = workerIndexOf(_result);
     const startedAt = step.startTime instanceof Date ? step.startTime.getTime() : null;

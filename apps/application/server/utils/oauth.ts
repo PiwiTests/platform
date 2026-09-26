@@ -382,6 +382,7 @@ async function findOrCreateOAuthUser(profile: OAuthProfile): Promise<User> {
   // owns this email address. Matching email on the dedicated `email` column —
   // not `username` — lets accounts created with a non-email username still link,
   // and keeps linking symmetric with the account/admin UIs and notifications.
+  // `email` is unique (`idx_users_email`), so at most one account matches.
   const identityMatch = (
     await db
       .select()
@@ -404,6 +405,15 @@ async function findOrCreateOAuthUser(profile: OAuthProfile): Promise<User> {
         statusCode: 409,
         data: { oauthError: 'account-exists' },
         message: 'This email is already linked to a different sign-in method.',
+      });
+
+    case 'unverified':
+      // The matching account never proved it owns the address, so it may not be
+      // the signer's: its owner links the provider from their account settings.
+      throw apiError({
+        statusCode: 409,
+        data: { oauthError: 'email-unverified' },
+        message: 'This email belongs to an account that has not verified it.',
       });
 
     case 'refresh':

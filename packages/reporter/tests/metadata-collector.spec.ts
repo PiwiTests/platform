@@ -59,7 +59,7 @@ function fakeSuiteChain(opts: { parallelMode?: string; annotations?: any[]; titl
     title,
     parent,
     _parallelMode: mode,
-    _annotations: annotations,
+    _staticAnnotations: annotations,
   });
   const root = make('', undefined, undefined, undefined);
   root.type = 'project'; // root is not a describe
@@ -87,10 +87,24 @@ describe('MetadataCollector.getSuiteInfo', () => {
     expect(info.suiteConfig[1].mode).toBe('parallel');
   });
 
+  it('keeps the type and description of a describe annotation and drops its location', () => {
+    const mc = new MetadataCollector();
+    const location = { file: '/repo/tests/a.spec.ts', line: 2, column: 6 };
+    const { inner } = fakeSuiteChain({
+      annotations: [
+        { type: 'issue', description: 'PAY-1', location },
+        { type: 'skip', location },
+      ],
+      titles: ['Outer', 'Inner'],
+    });
+    const info = mc.getSuiteInfo({ parent: inner } as any);
+    expect(info.suiteConfig[0].annotations).toEqual([{ type: 'issue', description: 'PAY-1' }, { type: 'skip' }]);
+  });
+
   it('defaults unknown mode to "default"', () => {
     const mc = new MetadataCollector();
     const { outer } = fakeSuiteChain({ parallelMode: undefined, titles: ['Solo'] });
-    const inner = { type: 'describe', title: 'Inner', parent: outer, _parallelMode: undefined, _annotations: [] };
+    const inner = { type: 'describe', title: 'Inner', parent: outer, _parallelMode: undefined, _staticAnnotations: [] };
     const test = { parent: inner } as any;
     const info = mc.getSuiteInfo(test);
     expect(info.suiteConfig[info.suiteConfig.length - 1].mode).toBe('default');
@@ -99,8 +113,8 @@ describe('MetadataCollector.getSuiteInfo', () => {
   it('skips suites with empty titles', () => {
     const mc = new MetadataCollector();
     const root = { type: 'project', title: '', parent: undefined };
-    const empty = { type: 'describe', title: '', parent: root, _parallelMode: 'parallel', _annotations: [] };
-    const named = { type: 'describe', title: 'Named', parent: empty, _parallelMode: 'serial', _annotations: [] };
+    const empty = { type: 'describe', title: '', parent: root, _parallelMode: 'parallel', _staticAnnotations: [] };
+    const named = { type: 'describe', title: 'Named', parent: empty, _parallelMode: 'serial', _staticAnnotations: [] };
     const test = { parent: named } as any;
     const info = mc.getSuiteInfo(test);
     expect(info.suitePath).toEqual(['Named']);
@@ -402,6 +416,19 @@ describe('MetadataCollector.collect — passthrough options and config metadata'
     const metadata = mc.collect(config, undefined as any, {});
     expect(metadata.htmlReport).toMatchObject({ workers: 4, timeout: 60_000, fullyParallel: true });
     expect((metadata.htmlReport as any).projects[0]).toMatchObject({ name: 'chromium', testDir: 'tests' });
+  });
+
+  it('records each project\'s baseURL and testIdAttribute', () => {
+    const mc = new MetadataCollector();
+    const config = {
+      projects: [
+        { name: 'web', testDir: 'tests', use: { baseURL: 'https://shop.test', testIdAttribute: 'data-qa' } },
+        { name: 'api', testDir: 'tests', use: {} },
+      ],
+    } as unknown as FullConfig;
+    const projects = (mc.collect(config, undefined as any, {}).htmlReport as any).projects;
+    expect(projects[0].use).toMatchObject({ baseURL: 'https://shop.test', testIdAttribute: 'data-qa' });
+    expect(projects[1].use.testIdAttribute).toBeUndefined();
   });
 
   it('copies config.metadata through as playwrightConfig', () => {

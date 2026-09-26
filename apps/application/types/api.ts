@@ -1,13 +1,15 @@
+import type { Serialize, Simplify } from 'nitropack/types';
 /**
  * Shared types for API responses and requests
  * These types are used by both the server API and the app frontend
  */
 
-import type { Role, FilterDetails, TestMetadata, TestSourceFrame } from '#shared/types';
+import type { Role, FilterDetails, KeepSource, TestMetadata, TestSourceFrame } from '#shared/types';
 import type { ScmProviderName } from '#shared/scm-urls';
 import type { PageDiffSummary, PageDiffHunk } from '#shared/page-diff';
 import type { ClusterState } from '#shared/cluster-state';
 import type { NextStep } from '#shared/next-step';
+import type { ProjectAccessGrid, ProjectAccessUser } from '#shared/project-access';
 export type { TestMetadata, TestSourceFrame };
 export type { ClusterState } from '#shared/cluster-state';
 export type { NextStep } from '#shared/next-step';
@@ -243,6 +245,8 @@ export interface ProjectWithStats {
     passedTests: number;
     failedTests: number;
     skippedTests: number;
+    /** `test.fixme()` skips — a subset of `skippedTests`. */
+    fixmeTests?: number;
     didNotRunTests: number;
     flakyTests: number;
     totalTests: number;
@@ -372,6 +376,8 @@ export interface ProjectDetails {
   defaultBranch?: string | null;
   /** Provider-specific "re-run from the dashboard" config (secrets excluded). */
   ciRerun?: import('#shared/ci-rerun').CiRerunSettings | null;
+  /** Per-project targets on catalog metrics. */
+  targets?: import('#shared/analytics/targets').ProjectTargets | null;
   color?: string | null;
   tags?: TagInfo[];
   /** Stored per-project capability decisions, for the edit form's overrides. */
@@ -397,6 +403,8 @@ export interface TestRunSummary {
   passedTests: number;
   failedTests: number;
   skippedTests: number;
+  /** `test.fixme()` skips — a subset of `skippedTests`. */
+  fixmeTests?: number;
   didNotRunTests: number;
   flakyTests: number;
   avgTestDuration?: number | null;
@@ -410,6 +418,10 @@ export interface TestRunSummary {
   metadata?: any | null;
   isFullRun?: boolean;
   filterDetails?: FilterDetails | null;
+  /** Set when the run is kept forever: retention never deletes it. */
+  keptAt?: string | Date | null;
+  keepSource?: KeepSource | null;
+  keepReason?: string | null;
   createdAt: Date;
 }
 
@@ -443,6 +455,13 @@ export interface TestRunDetails {
   label?: string | null;
   playwrightVersion?: string | null;
   reporterVersion?: string | null;
+  /** Set when the run is kept forever: retention never deletes it. */
+  keptAt?: string | Date | null;
+  /** Who asked for the keep: a person, the reporter at ingest, or a release marker. */
+  keepSource?: KeepSource | null;
+  keepReason?: string | null;
+  /** Display name of the person who kept the run, when one did and still exists. */
+  keptByName?: string | null;
   createdAt: Date;
   project?: {
     id: number;
@@ -497,6 +516,8 @@ export interface TestRunForChart {
   passedTests: number;
   failedTests: number;
   skippedTests: number;
+  /** `test.fixme()` skips — a subset of `skippedTests`. */
+  fixmeTests?: number;
   didNotRunTests: number;
   flakyTests: number;
   totalTests: number;
@@ -1072,6 +1093,8 @@ export interface TestCaseWithStats {
   passedRuns: number;
   failedRuns: number;
   skippedRuns: number;
+  /** Runs skipped by `test.fixme()` — a subset of `skippedRuns`. */
+  fixmeRuns?: number;
   didNotRunRuns: number;
   flakyRuns: number;
   recentFlakyRuns?: number;
@@ -1199,6 +1222,20 @@ export interface ProjectMembersResponse {
   items: ProjectMemberEntry[];
 }
 
+/**
+ * Permission grid (GET /api/project-access)
+ */
+export interface ProjectAccessResponse extends ProjectAccessGrid {
+  authEnabled: boolean;
+}
+
+/**
+ * One grid cell changed (PUT /api/project-access) — the user's updated row
+ */
+export interface ProjectAccessUpdateResponse {
+  user: ProjectAccessUser;
+}
+
 // ============================================================================
 // Admin types
 // ============================================================================
@@ -1268,6 +1305,12 @@ export interface StorageAnalysisData {
   overTime: StorageTimeBucket[];
   /** Width of each `overTime` bucket, in days. */
   bucketDays: number;
+  /**
+   * Runs kept forever (never pruned by retention) and the files they hold.
+   * `bytes` counts their own files only — a deduplicated trace is shared, so
+   * it is not attributed to any one run.
+   */
+  kept: { runs: number; files: number; bytes: number };
   /** When the analysis was computed (ISO). */
   generatedAt: string;
 }
@@ -1807,3 +1850,12 @@ export interface PageDiff {
   summary?: import('#shared/page-diff').PageDiffSummary;
   hunks?: import('#shared/page-diff').PageDiffHunk[];
 }
+
+/**
+ * The JSON response type of a server route handler, as the client receives it
+ * (dates serialized to strings): `ApiResponse<typeof import('~~/server/api/version.get').default>`.
+ * The app's `$fetch` and `useFetch` carry no route map (see the `types:extend`
+ * hook in `nuxt.config.ts`), so a call site names its response type, with this
+ * helper or with a type from this file.
+ */
+export type ApiResponse<H extends (...args: any[]) => unknown> = Simplify<Serialize<Awaited<ReturnType<H>>>>;

@@ -41,7 +41,6 @@ const PROBE_ARG: ProbeArg = {
   inputRoles: INPUT_TYPE_TO_ROLE,
   roleSources: ROLE_SOURCES,
   includeStructural: true,
-  includeLabelText: false,
 };
 
 /** The DOM shapes a click/action can reasonably land on — a click deeper inside one of these snaps up to it, same intent as the picker overlay's own snapping (not the identical algorithm — see AGENTS.md note in this file's own doc comment below). */

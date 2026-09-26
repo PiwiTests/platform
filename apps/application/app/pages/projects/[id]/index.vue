@@ -16,6 +16,7 @@ import type {
 } from '~~/types/api';
 import type { FilterBarState } from '~/components/shared/FilterBar.vue';
 import { RUN_STATUS_SERIES, legendOf } from '~/utils/chart';
+import { parseDrillQuery, type DrillScope } from '~/utils/analytics-drilldown';
 
 const route = useRoute();
 const router = useRouter();
@@ -34,6 +35,13 @@ const { isAdmin, isReporter } = useAuth();
 // Project-level capability states gate the bell, the Quarantine segment, the
 // Gaps tab and the Timeline's add-marker control.
 const { isHidden: projCapHidden } = await useProjectCapabilities(Number(projectId));
+
+// *Export*: this project as a quality report over the last 30 days, the project page's own window.
+const reportOpen = ref(false);
+const reportQuery = computed(() => ({ projects: String(projectId), period: 'last-30d' }));
+// *Schedule…*: a report schedule over this project.
+const scheduleOpen = ref(false);
+const { canWrite } = useAuth();
 const runtimeConfig = useRuntimeConfig();
 const { isDesktop, openReport } = useDesktopReportLink();
 const authEnabled = computed(() => Boolean(runtimeConfig.public.authEnabled));
@@ -67,7 +75,7 @@ async function handleDeleteRun(runId: number) {
   try {
     await $fetch(`/api/test-runs/${runId}`, { method: 'DELETE' });
     toast.add({ title: 'Test run deleted', color: 'success' });
-    await refresh();
+    await Promise.all([refresh(), refreshKeptRuns()]);
   } catch (error: unknown) {
     const message =
       error && typeof error === 'object' && 'data' in error ? (error.data as { message?: string })?.message : undefined;
@@ -88,6 +96,48 @@ const filters = useCookie<FilterBarState>(`piwi-filters-project-${projectId}`, {
       return { environments: [], branches: [], fullRunsOnly: true };
     }
   },
+});
+
+// === DRILL-DOWN FROM ANALYTICS ===
+// A number on a dashboard links here with its scope: the filters it names
+// replace the saved ones, and its period and branch policy narrow the runs
+// until cleared.
+function viewerTimeZone(): string {
+  const tz = activeLocalePrefs().timeZone;
+  return tz === 'auto' ? Intl.DateTimeFormat().resolvedOptions().timeZone : tz;
+}
+const drill = ref<DrillScope | null>(null);
+function readDrill() {
+  const parsed = parseDrillQuery(route.query as Record<string, unknown>, {
+    now: Date.now(),
+    timeZone: import.meta.client ? viewerTimeZone() : 'UTC',
+    markers: markers.value,
+  });
+  drill.value = parsed;
+  if (parsed) {
+    filters.value = {
+      environments: parsed.environments,
+      branches: parsed.branches,
+      fullRunsOnly: parsed.fullRunsOnly,
+    };
+  }
+}
+function clearDrill() {
+  drill.value = null;
+  const { source: _s, period: _p, tz: _t, status: _st, allBranches: _a, ...rest } = route.query;
+  router.replace({ query: rest });
+}
+/** The project's default branch as analytics resolves it: its setting, else `main`. */
+const projectDefaultBranch = computed(
+  () => (project.value as { defaultBranch?: string | null } | null)?.defaultBranch?.trim() || 'main',
+);
+const drillText = computed(() => {
+  const d = drill.value;
+  if (!d) return null;
+  const parts: string[] = [];
+  if (d.period) parts.push(d.period.label);
+  if (d.defaultBranchOnly) parts.push(`${projectDefaultBranch.value} and runs with no known branch`);
+  return parts.length ? parts.join(' · ') : null;
 });
 
 // A run's branch reads the scalar column, falling back to the SCM metadata for
@@ -111,18 +161,49 @@ const availableBranches = computed(() => {
   return [...branches].sort();
 });
 
-const filteredRuns = computed(() => {
-  let runs = project.value?.testRuns || [];
-  if (filters.value.fullRunsOnly) runs = runs.filter((r) => r.isFullRun !== false);
-  if (filters.value.environments.length > 0)
-    runs = runs.filter((r) => r.environment && filters.value.environments.includes(r.environment));
-  if (filters.value.branches.length > 0)
-    runs = runs.filter((r) => {
-      const b = runBranch(r);
-      return b !== null && filters.value.branches.includes(b);
-    });
-  return runs;
-});
+function matchesFilters(run: TestRunSummary): boolean {
+  if (filters.value.fullRunsOnly && run.isFullRun === false) return false;
+  if (
+    filters.value.environments.length > 0 &&
+    !(run.environment && filters.value.environments.includes(run.environment))
+  )
+    return false;
+  if (filters.value.branches.length > 0) {
+    const b = runBranch(run);
+    if (b === null || !filters.value.branches.includes(b)) return false;
+  }
+  const d = drill.value;
+  if (d?.period) {
+    const t = new Date(run.startTime).getTime();
+    if (t < d.period.from || t >= d.period.to) return false;
+  }
+  if (d?.defaultBranchOnly && filters.value.branches.length === 0) {
+    const b = runBranch(run);
+    if (b !== null && b !== projectDefaultBranch.value) return false;
+  }
+  return true;
+}
+
+const filteredRuns = computed(() => (project.value?.testRuns || []).filter(matchesFilters));
+
+// === RUNS TAB: kept runs ===
+// Kept runs are mostly old, past the recent window the project loads, so the
+// "Kept runs only" view reads them from their own endpoint.
+const keptOnly = ref(false);
+const { data: keptRunsData, refresh: refreshKeptRuns } = useFetch<{ items: TestRunSummary[]; total: number }>(
+  `/api/projects/${projectId}/kept-runs`,
+  { lazy: true, server: false, default: () => ({ items: [], total: 0 }) },
+);
+const filteredKeptRuns = computed(() => (keptRunsData.value?.items ?? []).filter(matchesFilters));
+const tableRuns = computed(() => (keptOnly.value ? filteredKeptRuns.value : filteredRuns.value));
+
+const keepRunId = ref<number | null>(null);
+const isKeepOpen = ref(false);
+const { release: releaseKeep, canRelease } = useRunKeep();
+
+async function refreshAfterKeepChange() {
+  await Promise.all([refresh(), refreshKeptRuns()]);
+}
 
 // A single selected environment / branch scopes the server-side flaky and
 // performance analysis so one environment or feature branch can be compared.
@@ -404,10 +485,30 @@ function runMenuItems(run: TestRunSummary) {
         },
   );
   if (items.length) items.push({ type: 'separator' });
+  if (!run.keptAt) {
+    items.push({
+      label: 'Keep forever…',
+      icon: 'i-lucide-lock',
+      onSelect: () => {
+        keepRunId.value = run.id;
+        isKeepOpen.value = true;
+      },
+    });
+  } else if (canRelease.value) {
+    items.push({
+      label: 'Release keep',
+      icon: 'i-lucide-lock-open',
+      onSelect: async () => {
+        if (await releaseKeep(run.id)) await refreshAfterKeepChange();
+      },
+    });
+  }
+  // A kept run cannot be deleted until it is released.
   items.push({
-    label: 'Delete run',
+    label: run.keptAt ? 'Delete run (release it first)' : 'Delete run',
     icon: 'i-lucide-trash-2',
     color: 'error',
+    disabled: !!run.keptAt,
     onSelect: () => {
       confirmDeleteRunId.value = run.id;
     },
@@ -421,6 +522,15 @@ const { data: markersData, refresh: refreshMarkers } = await useFetch<MarkersRes
   { default: () => ({ items: [] }) },
 );
 const markers = computed(() => markersData.value?.items ?? []);
+
+// The drill-down period resolves in the viewer's zone, so it applies once mounted.
+onMounted(readDrill);
+watch(
+  () => route.query.source === 'analytics' && route.fullPath,
+  (drilled, before) => {
+    if (drilled && before !== undefined) readDrill();
+  },
+);
 
 const visibleMarkers = computed(() => {
   if (filters.value.environments.length === 0) return markers.value;
@@ -725,6 +835,17 @@ const moreMenuItems = computed(() => {
     icon: 'i-lucide-list-filter',
     onSelect: () => navigateTo(`/projects/${projectId}/selections`),
   });
+  items.push({
+    label: 'Locators',
+    icon: 'i-lucide-crosshair',
+    onSelect: () => navigateTo(`/projects/${projectId}/locators`),
+  });
+  if (canWrite.value && !projCapHidden('quality-reports'))
+    items.push({
+      label: 'Schedule a quality report…',
+      icon: 'i-lucide-calendar-clock',
+      onSelect: () => (scheduleOpen.value = true),
+    });
   if (canManage.value)
     items.push({
       label: 'Delete',
@@ -762,6 +883,16 @@ const moreMenuItems = computed(() => {
               :project-label="project?.label || project?.name"
             />
             <UButton
+              v-if="!projCapHidden('quality-reports')"
+              label="Export"
+              icon="i-lucide-file-down"
+              size="sm"
+              color="neutral"
+              variant="outline"
+              title="Export this project as a quality report"
+              @click="reportOpen = true"
+            />
+            <UButton
               v-if="canManage"
               label="Import"
               icon="i-lucide-import"
@@ -781,6 +912,8 @@ const moreMenuItems = computed(() => {
           </div>
         </template>
       </UDashboardNavbar>
+      <ReportPreviewModal v-model:open="reportOpen" :query="reportQuery" />
+      <ScheduleForm v-model:open="scheduleOpen" :scope="reportQuery" />
     </template>
 
     <template #body>
@@ -873,6 +1006,16 @@ const moreMenuItems = computed(() => {
 
         <!-- RUNS TAB -->
         <div v-if="activeTab === 'runs'">
+          <p v-if="drill" class="text-xs text-muted mb-2" data-testid="analytics-drill">
+            From Analytics<template v-if="drillText">: {{ drillText }}</template> ·
+            <button
+              type="button"
+              class="underline decoration-dotted underline-offset-2 hover:decoration-solid"
+              @click="clearDrill"
+            >
+              Show every run
+            </button>
+          </p>
           <ChartCard
             v-if="filteredRuns.length > 0"
             title="Run trend"
@@ -895,7 +1038,7 @@ const moreMenuItems = computed(() => {
             <TestRunsChart :test-runs="filteredRuns" :markers="visibleMarkers" @marker-click="handleMarkerClick" />
           </ChartCard>
 
-          <UCard class="mt-4">
+          <UCard class="mt-4" data-shot="runs-table">
             <div
               v-if="selectedRunIds.length > 0"
               class="flex items-center gap-3 px-3 py-2 mb-3 rounded-lg bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800"
@@ -922,11 +1065,22 @@ const moreMenuItems = computed(() => {
               />
             </div>
 
+            <div v-if="keptRunsData.total > 0" class="flex items-center justify-end gap-1.5 mb-3">
+              <label
+                class="flex items-center gap-1.5 cursor-pointer select-none text-sm text-muted hover:text-default transition-colors"
+                data-shot="kept-runs-toggle"
+              >
+                <UCheckbox v-model="keptOnly" size="sm" />
+                Kept runs only ({{ filteredKeptRuns.length }})
+              </label>
+              <HelpHint topic="run.keep" />
+            </div>
+
             <!-- md+ : the runs table; below md a card list keeps it scroll-free -->
             <div class="hidden md:block">
               <UTable
-                v-if="filteredRuns.length > 0"
-                :data="filteredRuns"
+                v-if="tableRuns.length > 0"
+                :data="tableRuns"
                 :columns="runsColumns"
                 :ui="{
                   base: 'w-full border-separate border-spacing-0',
@@ -954,6 +1108,13 @@ const moreMenuItems = computed(() => {
                     >
                       Run #{{ row.original.id }}
                     </a>
+                    <UTooltip v-if="row.original.keptAt" :text="describeKeep(row.original)">
+                      <UIcon
+                        name="i-lucide-lock"
+                        class="size-3.5 shrink-0 text-muted"
+                        :aria-label="`Run #${row.original.id} is kept forever`"
+                      />
+                    </UTooltip>
                     <span v-if="row.original.label" class="text-xs text-gray-500 dark:text-gray-400 truncate max-w-32">
                       {{ row.original.label }}
                     </span>
@@ -1020,6 +1181,7 @@ const moreMenuItems = computed(() => {
                       :passed="row.original.passedTests"
                       :failed="row.original.failedTests"
                       :skipped="row.original.skippedTests"
+                      :fixme="row.original.fixmeTests ?? 0"
                       :flaky="row.original.flakyTests"
                       :did-not-run="row.original.didNotRunTests ?? 0"
                       :total="row.original.totalTests"
@@ -1046,8 +1208,8 @@ const moreMenuItems = computed(() => {
             </div>
 
             <!-- Below md: one card per run -->
-            <div v-if="filteredRuns.length > 0" class="space-y-2 md:hidden">
-              <div v-for="run in filteredRuns" :key="run.id" class="rounded-lg border border-default p-3 space-y-2">
+            <div v-if="tableRuns.length > 0" class="space-y-2 md:hidden">
+              <div v-for="run in tableRuns" :key="run.id" class="rounded-lg border border-default p-3 space-y-2">
                 <div class="flex items-start gap-2">
                   <input
                     type="checkbox"
@@ -1060,12 +1222,19 @@ const moreMenuItems = computed(() => {
                     <div class="flex items-center gap-2 flex-wrap">
                       <RunStatusBadge :status="run.status" />
                       <span class="font-medium text-primary">Run #{{ run.id }}</span>
+                      <UIcon
+                        v-if="run.keptAt"
+                        name="i-lucide-lock"
+                        class="size-3.5 shrink-0 text-muted"
+                        :aria-label="`Run #${run.id} is kept forever`"
+                      />
                       <EnvironmentBadge v-if="run.environment" :name="run.environment" class="text-xs text-muted" />
                     </div>
                     <TestStatusBar
                       :passed="run.passedTests"
                       :failed="run.failedTests"
                       :skipped="run.skippedTests"
+                      :fixme="run.fixmeTests ?? 0"
                       :flaky="run.flakyTests"
                       :did-not-run="run.didNotRunTests ?? 0"
                       :total="run.totalTests"
@@ -1091,10 +1260,10 @@ const moreMenuItems = computed(() => {
             </div>
 
             <div
-              v-if="filteredRuns.length === 0 && project?.testRuns && project.testRuns.length > 0"
+              v-if="tableRuns.length === 0 && project?.testRuns && project.testRuns.length > 0"
               class="text-center py-8 text-gray-500"
             >
-              No test runs match the current filters.
+              {{ keptOnly ? 'No kept runs match the current filters.' : 'No test runs match the current filters.' }}
             </div>
 
             <EmptyState
@@ -1158,6 +1327,7 @@ const moreMenuItems = computed(() => {
             <FailureClustersList
               :key="clustersRefreshKey"
               :project-id="String(projectId)"
+              :initial-status="drill?.status ?? undefined"
               @count="clustersCount.total = $event"
             />
           </template>
@@ -1375,6 +1545,13 @@ const moreMenuItems = computed(() => {
             </UForm>
           </SectionCard>
 
+          <ProjectTargetsForm
+            v-if="canManage"
+            :project-id="Number(projectId)"
+            :targets="(project as { targets?: unknown } | null)?.targets ?? null"
+            @saved="refresh()"
+          />
+
           <!-- Issue-tracker binding: how this project's failures reach Jira. -->
           <ProjectIntegrationSettings v-if="canManage" :project-id="Number(projectId)" />
 
@@ -1400,6 +1577,10 @@ const moreMenuItems = computed(() => {
         />
       </template>
     </USlideover>
+  </ClientOnly>
+
+  <ClientOnly>
+    <RunKeepModal v-model:open="isKeepOpen" :run-id="keepRunId" @kept="refreshAfterKeepChange" />
   </ClientOnly>
 
   <!-- Delete Project Modal -->

@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import type { AnalyticsWastedTime } from '#shared/analytics/types';
-import { barGeometry, dayTickIndices, formatTickDate, stackSegments } from '~/utils/chart';
+import { barGeometry, bucketTimeToX, dayTickIndices, formatTickDate, stackSegments } from '~/utils/chart';
 import { TIMELINE_WAIT_COLORS } from '~/utils/timeline';
+import { formatMoney } from '#shared/ci-cost';
 
 const props = defineProps<{ query: Record<string, string> }>();
 
@@ -65,11 +66,23 @@ const legendItems = [
   { color: areaColors[1], label: 'Failed attempts' },
 ];
 
+const exportData = computed(() =>
+  wasted.value
+    ? {
+        name: 'wasted-ci-time',
+        header: ['date', 'wait minutes', 'failed attempt minutes'],
+        rows: wasted.value.points.map((p) => [p.date, p.waitMinutes, p.failedExecMinutes]),
+      }
+    : null,
+);
+
 const subtitle = computed(() => {
   if (!wasted.value) return undefined;
   const total = wasted.value.totalWaitMinutes + wasted.value.totalFailedExecMinutes;
   const label = total < 60 ? `${Math.round(total)} min` : `${Math.round((total / 60) * 10) / 10} h`;
-  return `${label} of CI time produced no signal`;
+  const cost = wasted.value.cost;
+  const money = cost ? ` (${formatMoney(cost.amount, cost.currency, viewerLocale())})` : '';
+  return `${label}${money} of CI time produced no signal`;
 });
 
 const reclaim = computed(() => wasted.value?.timeoutReclaimable ?? null);
@@ -77,6 +90,25 @@ const reclaimLabel = computed(() => {
   const m = reclaim.value?.estimatedMinutes ?? 0;
   return m < 60 ? `${Math.round(m)} min` : `${Math.round((m / 60) * 10) / 10} h`;
 });
+// Timeline markers of the period, drawn over the bars (provided by the analytics page).
+const scopeSummary = injectAnalyticsScopeSummary();
+const markers = computed(() => scopeSummary.value?.markers ?? []);
+function markerX(plotWidth: number, occurredAt: string | Date): number | null {
+  const { centerOf } = barGeometry(chartData.value.length, plotWidth);
+  const end = scopeSummary.value ? new Date(scopeSummary.value.period.to).getTime() : Date.now();
+  return bucketTimeToX(
+    chartData.value.map((d) => d.date),
+    chartData.value.map((_, i) => centerOf(i)),
+    new Date(occurredAt).getTime(),
+    end,
+  );
+}
+
+/** With one project in scope, a bucket opens that project's runs of those days. */
+const drill = computed(() => (wasted.value ? bucketDrill(props.query, wasted.value.bucketDays) : null));
+function isoDay(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
 </script>
 
 <template>
@@ -86,6 +118,7 @@ const reclaimLabel = computed(() => {
     :subtitle="subtitle"
     help="analytics.wasted-time"
     :legend="legendItems"
+    :export-data="exportData"
   >
     <LoadingState v-if="pending" />
     <ErrorState v-else-if="error" :text="`Couldn't load wasted time: ${errorMessage(error)}`">
@@ -134,9 +167,16 @@ const reclaimLabel = computed(() => {
           :width="bar.slotWidth"
           :height="plotHeight"
           :fill="tooltipData === bar.d ? 'rgb(148 163 184 / 0.15)' : 'transparent'"
+          :class="drill ? 'cursor-pointer' : ''"
+          @click="drill && navigateTo(drill(isoDay(bar.d.date)))"
           @mouseenter="show($event, bar.d)"
           @mousemove="move($event)"
           @mouseleave="hide()"
+        />
+        <ChartMarkerLines
+          :markers="markers"
+          :x-of="(occurredAt) => markerX(plotWidth, occurredAt)"
+          :plot-height="plotHeight"
         />
       </ChartFrame>
 

@@ -5,13 +5,14 @@
  * The reporter's job is to get results into the dashboard during
  * `playwright test`; the CLI covers the things that happen around a run:
  * setting a project up in the first place (`init`, `skills`) and acting on the
- * dashboard's history once a run has landed (`gate`).
+ * dashboard's history once a run has landed (`gate`, `report`).
  */
 import { runAi } from './ai.js';
 import { runGate } from './gate.js';
 import { runInit } from './init.js';
 import { runSelect, runRun } from './select.js';
 import { runProbe } from './probe.js';
+import { runQualityReport } from './quality-report.js';
 import { findTemplatesDir, runSkills } from './skills.js';
 
 const USAGE = `
@@ -24,6 +25,7 @@ Commands:
   init      Wire a Playwright project up to a Piwi Dashboard
   skills    Install the Piwi agent skills into this project
   gate      Fail a CI job on the dashboard's analysis of a run
+  report    Print a quality report (Markdown, PDF, HTML, CSV or JSON)
   select    Print the Playwright args for a saved test selection
   run       Run a saved test selection with playwright test
   probe     Run the dashboard's probe plan and record what the suite noticed
@@ -44,6 +46,8 @@ async function main(): Promise<number> {
       return runSkills(rest, findTemplatesDir(__dirname));
     case 'gate':
       return runGate(rest);
+    case 'report':
+      return runQualityReport(rest);
     case 'select':
       return runSelect(rest);
     case 'run':

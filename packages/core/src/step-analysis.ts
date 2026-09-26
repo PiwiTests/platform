@@ -14,6 +14,15 @@ export const MAX_STEP_PARAM_KEYS = 20;
 export const MAX_STEP_PARAM_VALUE_CHARS = 200;
 
 /**
+ * Cap a stored step value to `max` characters, ending a cut value with `…` so
+ * readers can tell it is incomplete (a cut locator chain can still parse as a
+ * shorter, different chain).
+ */
+export function capStepValue(value: string, max: number): string {
+  return value.length > max ? `${value.slice(0, Math.max(0, max - 1))}…` : value;
+}
+
+/**
  * Categorise a Playwright step into `navigation`, `action`, `input`,
  * `assertion`, `wait`, `api`, `hook`, or `other`.
  *
@@ -193,11 +202,11 @@ function normalizeStepParams(raw: unknown): Record<string, string | number | boo
       out[key] = value;
       count++;
     } else if (typeof value === 'string') {
-      out[key] = maskTokenLike(value).slice(0, MAX_STEP_PARAM_VALUE_CHARS);
+      out[key] = capStepValue(maskTokenLike(value), MAX_STEP_PARAM_VALUE_CHARS);
       count++;
     } else if (value != null) {
       try {
-        out[key] = maskTokenLike(JSON.stringify(value)).slice(0, MAX_STEP_PARAM_VALUE_CHARS);
+        out[key] = capStepValue(maskTokenLike(JSON.stringify(value)), MAX_STEP_PARAM_VALUE_CHARS);
         count++;
       } catch {
         // Non-serializable (circular) values are dropped.

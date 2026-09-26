@@ -7,7 +7,10 @@
  * failure (`t-N s`), category, title (the failed step in red with its error),
  * duration with its share of the test and a bar; network, console and backend
  * items in the same window are interleaved as their own rows in time order. The
- * *Around the failure* / *Whole test* toggle drives both the axis and the table.
+ * *Around the failure* / *Whole test* toggle drives both the axis and the table,
+ * and so does the type filter under it: one chip per item type in the window,
+ * keying its lane, the choice kept per browser. The axis draws only the items
+ * in the window, and the failing step always shows.
  *
  * A passing execution has no failure moment: the axis is hidden and the table
  * lists every step without offsets.
@@ -17,15 +20,24 @@
  * shown are relative to the failure moment (`t+0`), so the axis and the table read
  * against the same anchor.
  */
-import type { FailureTimeline, TimelineItem, TimelineLane } from '#shared/failure-timeline';
+import type { FailureTimeline, TimelineItem, TimelineLane, TimelineLanes } from '#shared/failure-timeline';
 import type { AttachmentInfo, PerformanceStep } from '~~/types/api';
 import { useClusterSectionLocator } from '~/composables/useClusterSectionLocator';
+import { useTimelineTypeFilter } from '~/composables/useTimelineTypeFilter';
+import {
+  TIMELINE_TYPES,
+  TIMELINE_TYPE_META,
+  effectiveHiddenTypes,
+  isTimelineItemShown,
+  timelineItemSeverity,
+} from '~/utils/timeline-type-filter';
 import SectionCard from '../shared/SectionCard.vue';
 import ChartTooltip from '../shared/ChartTooltip.vue';
 import ChartLegend from '../shared/ChartLegend.vue';
 import OpenInIdeLink from '../shared/OpenInIdeLink.vue';
 import StepLabel from './StepLabel.vue';
 import StepParamsDisclosure from './StepParamsDisclosure.vue';
+import TimelineTypeFilter from './TimelineTypeFilter.vue';
 
 const props = defineProps<{
   testRunsCaseId: number;
@@ -37,7 +49,7 @@ const props = defineProps<{
   hasError?: boolean;
   /** Execution status — a did-not-run row shows a neutral step marker. */
   status?: string | null;
-  /** Whether a trace exists — enables the "View trace" affordance in the header. */
+  /** Whether a trace exists — enables the "View trace" button beside the window controls. */
   hasTrace?: boolean;
   /** Piwi project id/name — passed to the open-in-IDE links for call sites. */
   projectKey?: string | number | null;
@@ -69,25 +81,13 @@ const SECTION_ACTION: Record<TimelineItem['ref']['section'], string> = {
 };
 
 // ── Placed items and lanes ───────────────────────────────────────────────────
-const LANE_ORDER: TimelineLane[] = ['steps', 'network', 'console', 'dialogs', 'backend'];
-const LANE_LABEL: Record<TimelineLane, string> = {
-  steps: 'Steps',
-  network: 'Network',
-  console: 'Console',
-  dialogs: 'Dialogs',
-  backend: 'Backend',
-};
-
 const allItems = computed<TimelineItem[]>(() => {
   const tl = data.value;
   if (!tl) return [];
-  return LANE_ORDER.flatMap((lane) => tl.lanes[lane]);
+  return TIMELINE_TYPES.flatMap((lane) => tl.lanes[lane]);
 });
 
 const placedCount = computed(() => allItems.value.length);
-const visibleLanes = computed<TimelineLane[]>(() =>
-  data.value ? LANE_ORDER.filter((lane) => data.value!.lanes[lane].length > 0) : [],
-);
 
 // The axis (and the offset column) exist only when there is a failure moment to
 // anchor them and at least two items to place; a passing execution shows the
@@ -108,6 +108,57 @@ const domain = computed<{ start: number; end: number }>(() => {
   return w.end > w.start ? { start: w.start, end: w.end } : { start: 0, end: span.value };
 });
 
+/** Whether an item overlaps the window — only those are drawn, listed and counted. */
+function inWindow(item: TimelineItem): boolean {
+  const { start, end } = domain.value;
+  return item.at + (item.duration ?? 0) >= start && item.at <= end;
+}
+
+/** Every item in the window, in time order, whatever the type filter hides. */
+const windowItems = computed<TimelineItem[]>(() =>
+  allItems.value.filter(inWindow).sort((a, b) => a.at - b.at || (a.failed ? -1 : 0)),
+);
+
+// ── Type filter ──────────────────────────────────────────────────────────────
+// One chip per type with items in the window, once there are two to choose
+// between. The stored choice applies only while the chips are on screen, and
+// only to the types they show.
+const {
+  hidden: storedHiddenTypes,
+  toggle: toggleType,
+  only: onlyType,
+  showAll: showAllTypes,
+} = useTimelineTypeFilter();
+const windowTypes = computed<TimelineLane[]>(() =>
+  TIMELINE_TYPES.filter((lane) => windowItems.value.some((item) => item.lane === lane)),
+);
+const showTypeFilter = computed(() => showAxis.value && windowTypes.value.length >= 2);
+const hiddenTypes = computed<TimelineLane[]>(() =>
+  showTypeFilter.value ? effectiveHiddenTypes(storedHiddenTypes.value, windowTypes.value) : [],
+);
+const hiddenTypeSet = computed(() => new Set(hiddenTypes.value));
+
+function isShown(item: TimelineItem): boolean {
+  return isTimelineItemShown(item, hiddenTypeSet.value);
+}
+
+/** The window's items that pass the type filter — the table's rows. */
+const shownWindowItems = computed<TimelineItem[]>(() => windowItems.value.filter(isShown));
+
+/** Each lane's items in the window that pass the type filter — what the axis draws. */
+const shownLanes = computed<TimelineLanes>(() => {
+  const lanes = data.value?.lanes;
+  const keep = (items: TimelineItem[] | undefined) => (items ?? []).filter((item) => inWindow(item) && isShown(item));
+  return {
+    steps: keep(lanes?.steps),
+    network: keep(lanes?.network),
+    console: keep(lanes?.console),
+    dialogs: keep(lanes?.dialogs),
+    backend: keep(lanes?.backend),
+  };
+});
+const visibleLanes = computed<TimelineLane[]>(() => TIMELINE_TYPES.filter((lane) => shownLanes.value[lane].length > 0));
+
 // ── SVG geometry ─────────────────────────────────────────────────────────────
 const LABEL_W = 62;
 const PAD_R = 12;
@@ -123,8 +174,8 @@ const svgWidth = computed(() => Math.max(0, width.value));
 const plotLeft = LABEL_W;
 const plotRight = computed(() => Math.max(plotLeft + 1, svgWidth.value - PAD_R));
 const plotWidth = computed(() => plotRight.value - plotLeft);
-// The "Calls" band sits above the lanes when at least one step has a call site.
-const hasCallBand = computed(() => (data.value?.lanes.steps ?? []).some((s) => s.origin != null || s.group != null));
+// The "Calls" band sits above the lanes when at least one shown step has a call site.
+const hasCallBand = computed(() => shownLanes.value.steps.some((s) => s.origin != null || s.group != null));
 const bandH = computed(() => (hasCallBand.value ? CALL_BAND_H : 0));
 const lanesTop = computed(() => TOP + bandH.value);
 const lanesHeight = computed(() => visibleLanes.value.length * LANE_H);
@@ -212,19 +263,23 @@ const legendItems = computed(() => {
   return items;
 });
 
+// Beside the type chips, which key the lanes, the key keeps what they do not
+// say: the Calls band, the red of a failure or error, the amber of a warning.
+const markKeyItems = computed(() => {
+  const items: { color: string; label: string }[] = [];
+  if (hasCallBand.value) items.push({ color: 'rgb(129, 140, 248)', label: 'Calls' });
+  items.push({ color: 'rgb(239, 68, 68)', label: 'Failed or error' });
+  if (shownWindowItems.value.some((item) => timelineItemSeverity(item) === 'warning')) {
+    items.push({ color: 'rgb(245, 158, 11)', label: 'Warning' });
+  }
+  return items;
+});
+
 // ── Tooltip ──────────────────────────────────────────────────────────────────
 const { data: hovered, pos, show, move, hide } = useChartTooltip<TimelineItem>();
 
-// ── "What happened in this window" list ──────────────────────────────────────
-const windowItems = computed<TimelineItem[]>(() => {
-  const { start, end } = domain.value;
-  return allItems.value
-    .filter((item) => {
-      const itemEnd = item.at + (item.duration ?? 0);
-      return itemEnd >= start && item.at <= end;
-    })
-    .sort((a, b) => a.at - b.at || (a.failed ? -1 : 0));
-});
+// A mark the type filter removes fires no mouseleave, so its tooltip goes with it.
+watch(hiddenTypeSet, () => hide());
 
 function kindTag(item: TimelineItem): string {
   if (item.kind === 'console') return `console ${item.status ?? ''}`.trim();
@@ -245,9 +300,9 @@ function callKey(item: TimelineItem): string | null {
 function callLabel(item: TimelineItem): string {
   return item.group ?? (item.origin ? basename(item.origin.file) : '');
 }
-/** Runs of consecutive steps that share a call site, drawn as one span in the band. */
+/** Runs of consecutive shown steps that share a call site, drawn as one span in the band. */
 const callSpans = computed(() => {
-  const steps = data.value?.lanes.steps ?? [];
+  const steps = shownLanes.value.steps;
   const spans: Array<{
     id: string;
     key: string;
@@ -281,16 +336,16 @@ function bandTitle(span: { label: string; origin: TimelineItem['origin'] }): str
 
 // ── The merged steps table ───────────────────────────────────────────────────
 // One row per step, with network / console / backend items interleaved in time
-// order. A failing execution reads the rows off the axis window (so the toggle
-// drives the table too) and shows each row's offset from the failure; a passing
-// one lists every step off the prop, without offsets.
+// order. A failing execution reads the rows off the axis window and the type
+// filter (so both toggles drive the table too) and shows each row's offset from
+// the failure; a passing one lists every step off the prop, without offsets.
 type StepRow = { kind: 'step'; item: TimelineItem | null; step: PerformanceStep; index: number; failed: boolean };
 type EventRow = { kind: 'event'; item: TimelineItem };
 type MergedRow = StepRow | EventRow;
 
 const mergedRows = computed<MergedRow[]>(() => {
   if (showAxis.value) {
-    return windowItems.value.map<MergedRow>((item) => {
+    return shownWindowItems.value.map<MergedRow>((item) => {
       if (item.kind === 'step') {
         const index = item.ref.index;
         return { kind: 'step', item, step: props.steps[index]!, index, failed: Boolean(item.failed) };
@@ -396,15 +451,9 @@ function stepBarColorClass(duration: number): string {
   return duration > 2000 ? 'bg-red-500' : duration > 500 ? 'bg-orange-400' : 'bg-gray-400 dark:bg-gray-500';
 }
 
-// An interleaved event row: its own icon, a kind label and (for a request) a duration.
-const EVENT_ICON: Record<'network' | 'console' | 'backend' | 'dialogs', string> = {
-  network: 'i-lucide-arrow-left-right',
-  console: 'i-lucide-terminal',
-  backend: 'i-lucide-server',
-  dialogs: 'i-lucide-message-square',
-};
+// An interleaved event row: its type's icon, a kind label and (for a request) a duration.
 function eventIcon(item: TimelineItem): string {
-  return EVENT_ICON[item.kind as 'network' | 'console' | 'backend' | 'dialogs'] ?? 'i-lucide-dot';
+  return TIMELINE_TYPE_META[item.lane]?.icon ?? 'i-lucide-dot';
 }
 function eventIconClass(item: TimelineItem): string {
   if (item.failed || item.status === 'error' || item.status === 'fatal') return 'text-red-500';
@@ -436,36 +485,50 @@ function onViewTrace() {
     :count="embedded ? null : showAxis ? null : steps.length || null"
     :help="embedded ? undefined : 'case.timeline'"
   >
-    <template v-if="showAxis" #actions>
-      <ChartLegend :items="legendItems" class="mr-1" />
-      <UButton
-        v-if="hasTrace"
-        size="xs"
-        variant="ghost"
-        color="neutral"
-        icon="i-lucide-film"
-        label="View trace"
-        @click="onViewTrace"
-      />
-    </template>
-
     <div class="space-y-3">
-      <!-- Window controls: they drive both the axis and the table below. -->
-      <div v-if="showAxis" class="flex items-center gap-1">
-        <UButton
-          size="xs"
-          :variant="mode === 'around' ? 'solid' : 'soft'"
-          :color="mode === 'around' ? 'primary' : 'neutral'"
-          label="Around the failure"
-          @click="mode = 'around'"
+      <!-- The window and the type filter: both drive the axis and the table
+           below. The type chips key the lanes and a small key beside the
+           window keys the other marks; a window with a single type has
+           nothing to filter and keeps the full legend. -->
+      <div v-if="showAxis" class="space-y-2">
+        <div class="flex flex-wrap items-center gap-1">
+          <UButton
+            size="xs"
+            :variant="mode === 'around' ? 'solid' : 'soft'"
+            :color="mode === 'around' ? 'primary' : 'neutral'"
+            label="Around the failure"
+            @click="mode = 'around'"
+          />
+          <UButton
+            size="xs"
+            :variant="mode === 'whole' ? 'solid' : 'soft'"
+            :color="mode === 'whole' ? 'primary' : 'neutral'"
+            label="Whole test"
+            @click="mode = 'whole'"
+          />
+          <div class="ml-auto flex flex-wrap items-center gap-x-3 gap-y-1">
+            <ChartLegend v-if="showTypeFilter" :items="markKeyItems" />
+            <UButton
+              v-if="hasTrace"
+              size="xs"
+              variant="ghost"
+              color="neutral"
+              icon="i-lucide-film"
+              label="View trace"
+              @click="onViewTrace"
+            />
+          </div>
+        </div>
+        <TimelineTypeFilter
+          v-if="showTypeFilter"
+          :types="windowTypes"
+          :items="windowItems"
+          :hidden="hiddenTypes"
+          @toggle="toggleType($event, windowTypes)"
+          @only="onlyType"
+          @show-all="showAllTypes"
         />
-        <UButton
-          size="xs"
-          :variant="mode === 'whole' ? 'solid' : 'soft'"
-          :color="mode === 'whole' ? 'primary' : 'neutral'"
-          label="Whole test"
-          @click="mode = 'whole'"
-        />
+        <ChartLegend v-else :items="legendItems" />
       </div>
 
       <!-- SVG axis -->
@@ -530,7 +593,7 @@ function onViewTrace() {
               dominant-baseline="middle"
               class="fill-gray-500 dark:fill-gray-400 text-[10px]"
             >
-              {{ LANE_LABEL[lane] }}
+              {{ TIMELINE_TYPE_META[lane].label }}
             </text>
             <line
               :x1="plotLeft"
@@ -542,7 +605,7 @@ function onViewTrace() {
           </g>
 
           <!-- Step bars -->
-          <template v-for="item in data.lanes.steps" :key="item.id">
+          <template v-for="item in shownLanes.steps" :key="item.id">
             <rect
               :x="barRect(item.at, item.duration ?? 0).x"
               :y="laneY('steps') + 4"
@@ -559,7 +622,7 @@ function onViewTrace() {
           </template>
 
           <!-- Network bars -->
-          <template v-for="item in data.lanes.network" :key="item.id">
+          <template v-for="item in shownLanes.network" :key="item.id">
             <rect
               :x="barRect(item.at, item.duration ?? 0).x"
               :y="laneY('network') + 4"
@@ -576,7 +639,7 @@ function onViewTrace() {
           </template>
 
           <!-- Console marks -->
-          <template v-for="item in data.lanes.console" :key="item.id">
+          <template v-for="item in shownLanes.console" :key="item.id">
             <circle
               :cx="xOf(item.at)"
               :cy="laneY('console') + LANE_H / 2"
@@ -591,7 +654,7 @@ function onViewTrace() {
           </template>
 
           <!-- Dialog marks -->
-          <template v-for="item in data.lanes.dialogs" :key="item.id">
+          <template v-for="item in shownLanes.dialogs" :key="item.id">
             <circle
               :cx="xOf(item.at)"
               :cy="laneY('dialogs') + LANE_H / 2"
@@ -605,7 +668,7 @@ function onViewTrace() {
           </template>
 
           <!-- Backend marks -->
-          <template v-for="item in data.lanes.backend" :key="item.id">
+          <template v-for="item in shownLanes.backend" :key="item.id">
             <circle
               :cx="xOf(item.at)"
               :cy="laneY('backend') + LANE_H / 2"

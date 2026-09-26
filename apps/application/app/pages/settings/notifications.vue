@@ -72,7 +72,7 @@ const channels = computed(() => channelsData.value?.items ?? []);
 const showNewChannel = ref(false);
 const newChannel = reactive({
   name: '',
-  type: 'email' as 'email' | 'slack' | 'webhook' | 'browser',
+  type: 'email' as 'email' | 'slack' | 'teams' | 'webhook' | 'browser',
   address: '',
   webhookUrl: '',
   url: '',
@@ -87,6 +87,7 @@ const testingChannel = ref<number | null>(null);
 const channelTypeOptions = computed(() => [
   { label: 'Email', value: 'email' },
   { label: 'Slack webhook', value: 'slack' },
+  { label: 'Microsoft Teams webhook', value: 'teams' },
   { label: 'Webhook', value: 'webhook' },
   ...(authEnabled.value ? [{ label: 'Browser', value: 'browser' }] : []),
 ]);
@@ -96,7 +97,7 @@ async function saveChannel() {
   try {
     const config: Record<string, unknown> = {};
     if (newChannel.type === 'email') config.address = newChannel.address;
-    else if (newChannel.type === 'slack') config.webhookUrl = newChannel.webhookUrl;
+    else if (newChannel.type === 'slack' || newChannel.type === 'teams') config.webhookUrl = newChannel.webhookUrl;
     else if (newChannel.type === 'webhook') {
       config.url = newChannel.url;
       if (newChannel.secret) config.secret = newChannel.secret;
@@ -217,6 +218,7 @@ function channelTypeIcon(type: string) {
   if (type === 'personal_email') return 'i-lucide-user-round';
   if (type === 'email') return 'i-lucide-mail';
   if (type === 'slack') return 'i-lucide-slack';
+  if (type === 'teams') return 'i-lucide-messages-square';
   if (type === 'browser') return 'i-lucide-monitor';
   return 'i-lucide-webhook';
 }
@@ -328,6 +330,19 @@ PIWI_SMTP_PASS=secret"
           <UFormField v-else-if="newChannel.type === 'slack'" label="Slack webhook URL">
             <UInput v-model="newChannel.webhookUrl" placeholder="https://hooks.slack.com/…" class="w-full" />
           </UFormField>
+          <UFormField v-else-if="newChannel.type === 'teams'">
+            <template #label>
+              <span class="inline-flex items-center gap-1"
+                >Microsoft Teams webhook URL <HelpHint topic="notifications.teams"
+              /></span>
+            </template>
+            <UInput
+              v-model="newChannel.webhookUrl"
+              placeholder="https://….webhook.office.com/… or a Workflows URL"
+              class="w-full"
+              data-testid="teams-webhook-url"
+            />
+          </UFormField>
           <template v-else-if="newChannel.type === 'webhook'">
             <UFormField label="Endpoint URL">
               <UInput v-model="newChannel.url" placeholder="https://your-server.com/webhook" class="w-full" />
@@ -392,6 +407,7 @@ PIWI_SMTP_PASS=secret"
                   ch.config.address as string
                 }}</template>
                 <template v-else-if="ch.type === 'slack'">Slack webhook</template>
+                <template v-else-if="ch.type === 'teams'">Microsoft Teams webhook</template>
                 <template v-else-if="ch.type === 'browser'">Dashboard tabs (OS notifications)</template>
                 <template v-else>{{ ch.config.url as string }}</template>
                 <span v-if="ch.userId === null && authEnabled" class="ml-1 text-primary text-xs">(global)</span>

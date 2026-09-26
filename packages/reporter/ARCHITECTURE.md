@@ -117,7 +117,7 @@ runtime that needs Node (`captureCallerLocation`) stays in `internal/capture/loc
 
 ```bash
 npm run reporter:build      # tsup: bundles src/ + @piwitests/core → dist/ (CJS + .d.ts)
-npm run reporter:typecheck  # tsc --noEmit
+npm run reporter:typecheck  # tsc --noEmit on src/, then on tests/ (tests/tsconfig.json)
 npm run reporter:test       # vitest
 npm run reporter:bench      # capture-overhead benchmark (tests/bench/README.md)
 npm run reporter:lint

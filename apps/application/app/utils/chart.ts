@@ -10,12 +10,14 @@ export interface ChartSeries<K extends string = string> {
 
 /**
  * Run-status series, in stacking order — failed sits on the baseline so red is
- * comparable across bars, and passed carries the bulk on top.
+ * comparable across bars, and passed carries the bulk on top. `skipped` is the
+ * plain `test.skip()` share and `fixme` the `test.fixme()` one, in two greys.
  */
 export const RUN_STATUS_SERIES = [
   { key: 'failed', color: STATUS_PALETTE.failed.color, label: 'Failed' },
   { key: 'flaky', color: STATUS_PALETTE.flaky.color, label: 'Flaky' },
   { key: 'skipped', color: STATUS_PALETTE.skipped.color, label: 'Skipped' },
+  { key: 'fixme', color: STATUS_PALETTE.fixme.color, label: 'Fixme' },
   { key: 'didNotRun', color: STATUS_PALETTE.didnotrun.color, label: "Didn't run" },
   { key: 'passed', color: STATUS_PALETTE.passed.color, label: 'Passed' },
 ] as const satisfies readonly ChartSeries[];
@@ -50,6 +52,22 @@ export const STORAGE_KIND_SERIES = [
   { key: 'attachment', color: 'rgb(204, 121, 167)', label: 'Attachments' },
   { key: 'visual-diff', color: 'rgb(86, 180, 233)', label: 'Visual diffs' },
 ] as const satisfies readonly ChartSeries[];
+
+/**
+ * Colors for the groups of a metric breakdown drawn as lines, in rank order:
+ * the Okabe-Ito categorical palette (colorblind-safe), as the storage
+ * families use. A breakdown draws at most this many lines.
+ */
+export const GROUP_SERIES_COLORS = [
+  'rgb(0, 114, 178)',
+  'rgb(230, 159, 0)',
+  'rgb(0, 158, 115)',
+  'rgb(213, 94, 0)',
+  'rgb(204, 121, 167)',
+  'rgb(86, 180, 233)',
+  'rgb(240, 228, 66)',
+  'rgb(117, 117, 117)',
+] as const;
 
 /** Legend rows for a series list — the color/label pairs `ChartCard` renders. */
 export function legendOf(series: readonly ChartSeries[]): { color: string; label: string }[] {
@@ -111,6 +129,18 @@ export function timeToOrdinalX(dates: Date[], centers: number[], time: number): 
 }
 
 /**
+ * {@link timeToOrdinalX} for charts whose points are bucket starts: a time
+ * after the newest bucket's start but before `endMs` (the end of the period)
+ * sits on the newest bucket instead of falling off the axis.
+ */
+export function bucketTimeToX(dates: Date[], centers: number[], time: number, endMs: number): number | null {
+  const x = timeToOrdinalX(dates, centers, time);
+  if (x !== null) return x;
+  const last = dates[dates.length - 1]?.getTime();
+  return last !== undefined && time >= last && time < endMs ? (centers[centers.length - 1] ?? null) : null;
+}
+
+/**
  * Per-index slot layout for ordinal charts: `centerOf` positions points and
  * hover columns, `xOf`/`barWidth` position the bars themselves.
  */
@@ -158,4 +188,14 @@ export function stackSegments(
     segments.push({ color: (series[i] as { color: string }).color, y, height });
   }
   return segments;
+}
+
+/** One series of `TrendLinesChart`: a line over time buckets. */
+export interface TrendLine {
+  label: string;
+  /** A CSS color: a palette entry's `color`, or one of `GROUP_SERIES_COLORS`. */
+  color: string;
+  /** Bucket start dates (`YYYY-MM-DD`), the same for every series. */
+  points: Array<{ date: string; value: number | null }>;
+  dashed?: boolean;
 }

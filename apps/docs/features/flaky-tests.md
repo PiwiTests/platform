@@ -56,7 +56,9 @@ Not all flaky tests are equally expensive. Piwi ranks them by **impact** — der
 
 ### Per-test stability trend
 
-Each test case has a **stability trend**: a time series of pass rate, flaky rate, and average duration, bucketed over time — so you can see whether a fix actually stuck.
+The **Trend** tab of a test's page draws its pass rate, flaky rate and average duration over the last
+30, 90 or 365 days, one point per UTC day, week or month, with the project's timeline markers, so you can
+see whether a fix actually stuck. The same series is the MCP `get_test_stability_trend` tool.
 
 ## Quarantine, with a way out
 

@@ -52,7 +52,16 @@ function deltaMeta(delta: number | null): { icon: string; class: string } | null
           </div>
           <MiniRunBars :runs="row.recentRuns" :height="20" />
           <div class="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
-            <span>{{ row.runCount }} runs · {{ row.flakyTests }} flaky · {{ row.openClusters }} open clusters</span>
+            <span
+              >{{ row.runCount }} runs · {{ row.flakyTests }} flaky · {{ row.openClusters }} open clusters<template
+                v-if="projectTargetsSummary(row.targets)"
+              >
+                ·
+                <span :class="targetClass(projectTargetsSummary(row.targets)!.met)"
+                  >targets {{ projectTargetsSummary(row.targets)!.text }}</span
+                ></template
+              ></span
+            >
             <span v-if="row.latestRun">{{ formatRelativeTime(row.latestRun.startTime) }}</span>
           </div>
         </div>
@@ -60,7 +69,7 @@ function deltaMeta(delta: number | null): { icon: string; class: string } | null
 
       <!-- Desktop: table -->
       <div class="hidden md:block">
-        <TableScroller min-width="52rem">
+        <TableScroller min-width="58rem">
           <table class="w-full text-sm">
             <thead>
               <tr
@@ -73,6 +82,7 @@ function deltaMeta(delta: number | null): { icon: string; class: string } | null
                 <th class="py-2 pr-4 font-medium text-right">Flaky</th>
                 <th class="py-2 pr-4 font-medium text-right">Avg run</th>
                 <th class="py-2 pr-4 font-medium text-right">Open clusters</th>
+                <th class="py-2 pr-4 font-medium text-right">Targets</th>
                 <th class="py-2 font-medium text-right">Latest run</th>
               </tr>
             </thead>
@@ -106,12 +116,24 @@ function deltaMeta(delta: number | null): { icon: string; class: string } | null
                     />
                   </span>
                 </td>
-                <td class="py-2.5 pr-4 text-right tabular-nums">{{ row.runCount }}</td>
+                <td class="py-2.5 pr-4 text-right tabular-nums">
+                  <NuxtLink
+                    :to="drillDownHref('runs', row.projectId, query)"
+                    class="hover:text-primary"
+                    title="The runs behind this number"
+                    >{{ row.runCount }}</NuxtLink
+                  >
+                </td>
                 <td
                   class="py-2.5 pr-4 text-right tabular-nums"
                   :class="row.flakyTests > 0 ? STATUS_PALETTE.flaky.text : ''"
                 >
-                  {{ row.flakyTests }}
+                  <NuxtLink
+                    :to="drillDownHref('flaky', row.projectId, query)"
+                    class="hover:text-primary"
+                    title="The flaky tests behind this number"
+                    >{{ row.flakyTests }}</NuxtLink
+                  >
                 </td>
                 <td class="py-2.5 pr-4 text-right tabular-nums text-gray-500 dark:text-gray-400">
                   <DurationValue :ms="row.avgRunDurationMs" />
@@ -120,7 +142,21 @@ function deltaMeta(delta: number | null): { icon: string; class: string } | null
                   class="py-2.5 pr-4 text-right tabular-nums"
                   :class="row.openClusters > 0 ? STATUS_PALETTE.failed.text : ''"
                 >
-                  {{ row.openClusters }}
+                  <NuxtLink
+                    :to="drillDownHref('clusters', row.projectId, query, { status: 'open' })"
+                    class="hover:text-primary"
+                    title="The open failure clusters behind this number"
+                    >{{ row.openClusters }}</NuxtLink
+                  >
+                </td>
+                <td class="py-2.5 pr-4 text-right tabular-nums" data-testid="portfolio-targets">
+                  <span
+                    v-if="projectTargetsSummary(row.targets)"
+                    :class="targetClass(projectTargetsSummary(row.targets)!.met)"
+                    :title="projectTargetsSummary(row.targets)!.detail"
+                    >{{ projectTargetsSummary(row.targets)!.text }}</span
+                  >
+                  <span v-else class="text-xs text-muted">—</span>
                 </td>
                 <td class="py-2.5 text-right">
                   <NuxtLink

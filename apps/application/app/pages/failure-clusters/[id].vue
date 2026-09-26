@@ -657,6 +657,9 @@ const breadcrumbItems = computed(() => [
           />
         </div>
 
+        <!-- ── Occurrences over time, with the fix and a regression marked ── -->
+        <ClusterOccurrenceTrend :cluster-id="cluster.id" />
+
         <!-- ── More ways to fix ───────────────────────────────────────── -->
         <div class="scroll-mt-4">
           <Toolbox ref="toolbox" :sections="fixSections" :next-step-kind="nextStep?.kind ?? null" help="fix.toolbox">

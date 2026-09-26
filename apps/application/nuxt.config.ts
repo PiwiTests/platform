@@ -91,6 +91,15 @@ export default defineNuxtConfig({
   devtools: {
     enabled: false,
   },
+
+  // Production builds emit no server source maps. Carrying them through the Vite
+  // SSR build and the Nitro bundle added over a gigabyte to the build's peak heap
+  // (enough to run out of memory at Node's 4 GB default in the Docker image), and
+  // nothing reads them: the server runs without --enable-source-maps and the
+  // desktop staging strips every *.map. `nuxt dev` keeps them.
+  $production: {
+    sourcemap: { server: false },
+  },
   // The demo is a static SPA (ssr: false), so nothing set through
   // useHead/useSeoMeta exists until the JS bundle runs — link previews and
   // search snippets only see what is baked into the shell here.
@@ -249,6 +258,16 @@ export default defineNuxtConfig({
   compatibilityDate: '2025-02-23',
 
   nitro: {
+    hooks: {
+      // The app's `$fetch` and `useFetch` carry no typed route map. With one,
+      // every call on a URL built at run time is matched against every server
+      // route at type level, and past about 220 routes TypeScript gives up
+      // ("excessive stack depth"). A call site names its response type instead,
+      // with `ApiResponse<typeof handler>` or a type from `types/api.ts`.
+      'types:extend'(types) {
+        types.routes = {};
+      },
+    },
     // In demo mode, override the "internal:nuxt:prerender" storage driver with the
     // built-in memory driver. On Windows, @nuxt/nitro-server registers this driver
     // using pathToFileURL() which produces a "file:///C:/..." URL that Rollup cannot
@@ -334,6 +353,8 @@ export default defineNuxtConfig({
     scheduledTasks: {
       // Run the notification, auto-heal and integration outbox sweepers every minute
       '* * * * *': ['notifications:sweep', 'heal:sweep', 'integrations:sweep'],
+      // Fire the report schedules that are due (a missed tick fires on the next sweep)
+      '*/5 * * * *': ['reports:schedule'],
       // Pull tracker statuses back on the configured cadence (default every 15 min).
       [integrationsSyncCron]: ['integrations:sync'],
       // Nightly data retention: run pruning (opt-in), outbox pruning, orphan sweep

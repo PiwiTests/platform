@@ -324,11 +324,21 @@ export const PIWI_ENV_VARS = {
   },
   PIWI_RETENTION_DAYS: {
     description:
-      'Days of test-run history the nightly retention sweep keeps. Unset or 0 disables automatic run pruning (the default — pruning is opt-in).',
+      'Days of test-run history the nightly retention sweep keeps. Unset or 0 disables automatic run pruning (the default — pruning is opt-in). Kept runs are never pruned.',
     category: 'database',
     type: 'number',
     min: 0,
     docs: 'operate/storage#data-retention',
+  },
+  PIWI_RETENTION_MIN_RUNS: {
+    description:
+      'Newest runs of each project that age-based pruning (the nightly sweep and the manual cleanup) always leaves in place, however old — so a project that stops reporting keeps its last runs. Unset or 0 sets no floor.',
+    category: 'database',
+    type: 'number',
+    default: '0',
+    min: 0,
+    docs: 'operate/storage#data-retention',
+    since: '0.38.0',
   },
   PIWI_RETENTION_NOTIFICATION_DAYS: {
     description:
@@ -337,6 +347,16 @@ export const PIWI_ENV_VARS = {
     type: 'number',
     default: '30',
     min: 0,
+  },
+  PIWI_RETENTION_REPORT_DAYS: {
+    description:
+      'Days to keep report snapshots (the stored quality reports on the Reports page) before the nightly sweep prunes them (default 365; 0 keeps them forever).',
+    category: 'database',
+    type: 'number',
+    default: '365',
+    min: 0,
+    since: '0.39.0',
+    docs: 'features/quality-reports#report-schedules',
   },
   PIWI_RETENTION_DIAGNOSIS_VERSIONS: {
     description:
@@ -419,6 +439,15 @@ export const PIWI_ENV_VARS = {
     relevantWhen: { PIWI_AUTH_ENABLED: 'true' },
     requiredWhen: { PIWI_AUTH_ENABLED: 'true' },
     notes: 'The server refuses to start when auth is enabled and this is unset.',
+  },
+  PIWI_METRICS_ENABLED: {
+    description:
+      'Set to "true" to serve GET /api/metrics: the metric catalog\'s current values per project in the OpenMetrics text format, for a Prometheus or a Grafana you run to pull (Piwi sends nothing anywhere). Off by default. With authentication on, the scraper sends an API key, and sees the projects of its user.',
+    category: 'general',
+    type: 'boolean',
+    default: 'false',
+    since: '0.39.0',
+    docs: 'operate/metrics',
   },
   PIWI_SHARE_LINKS_ENABLED: {
     description:
@@ -1035,7 +1064,18 @@ export const PIWI_ENV_VARS = {
     type: 'boolean',
     docs: 'guide/backend-logs',
     notes:
-      'Unset: capture is on in development and off in production builds; `true` forces it off everywhere, `false` forces it on even in production.',
+      'Set on the instrumented backend (Nitro or ASP.NET Core). Unset: capture is on in development and off in production builds; `true` forces it off everywhere, `false` forces it on even in production. Overrides every other environment setting.',
+  },
+  PIWI_TEST_LOGS_ENVIRONMENTS: {
+    description:
+      'Comma-separated ASP.NET Core environment names the X-Piwi-Logs middleware is active in (default: Development,Test).',
+    category: 'testing',
+    type: 'list',
+    example: 'Development,Podman,Integration',
+    docs: 'guide/backend-logs#choosing-the-environments',
+    since: '0.39.0',
+    notes:
+      'Set on the ASP.NET Core backend. Used only when the app configures no environments itself (a `UsePiwiTestLogs` argument or `PiwiTestLogsOptions`). Names match case-insensitively.',
   },
 
   // ── Failure clustering ───────────────────────────────────────────────────
@@ -1152,6 +1192,15 @@ export const PIWI_ENV_VARS = {
     default: 'Wait for timeout*,*waitForTimeout*',
     notes:
       'Case-insensitive globs (`*` and `?`) matched against a wait step’s title or source location. Use `*` to count every wait.',
+  },
+
+  PIWI_CI_MINUTE_COST: {
+    description:
+      'Cost of one CI minute as an amount and an ISO 4217 currency code (e.g. "0.008 USD"). When set, every wasted-time number in the analytics widgets and quality reports is followed by its cost, and the setting in Settings → Performance is read-only. Unset shows minutes only.',
+    category: 'wasted-time',
+    example: '0.008 USD',
+    since: '0.39.0',
+    docs: 'features/quality-reports#cost-of-a-ci-minute',
   },
 
   // ── Demo / build mode ────────────────────────────────────────────────────

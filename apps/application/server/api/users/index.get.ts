@@ -6,8 +6,9 @@ defineRouteMeta({
   openAPI: {
     tags: ['Users'],
     summary: 'List all users',
-    description: 'Returns a list of all users (password fields excluded). Requires authentication.',
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    description:
+      'Returns a list of all users (password fields excluded). Administrator only, since it exposes the email and role of every account.',
+    'x-required-roles': ['administrator'],
   },
 });
 

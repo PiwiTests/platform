@@ -38,13 +38,24 @@ async function handleCleanup() {
   isConfirmOpen.value = false;
   cleaning.value = true;
   try {
-    const result = await $fetch<{ success: boolean; deletedRuns: number }>('/api/admin/cleanup', {
+    const result = await $fetch<{
+      success: boolean;
+      deletedRuns: number;
+      keptRunsSkipped?: number;
+      newestRunsSkipped?: number;
+    }>('/api/admin/cleanup', {
       method: 'DELETE',
       body: { olderThanDays: selectedPeriod.value },
     });
+    const skipped = [
+      result.keptRunsSkipped ? `${result.keptRunsSkipped} kept` : null,
+      result.newestRunsSkipped ? `${result.newestRunsSkipped} among their project's newest` : null,
+    ].filter(Boolean);
     toast.add({
       title: 'Cleanup complete',
-      description: `Deleted ${result.deletedRuns} test run(s) older than ${selectedPeriod.value} days.`,
+      description:
+        `Deleted ${result.deletedRuns} test run(s) older than ${selectedPeriod.value} days.` +
+        (skipped.length ? ` Skipped ${skipped.join(' and ')}.` : ''),
       color: 'success',
     });
     await refresh();
@@ -93,7 +104,15 @@ async function handleCleanup() {
     <StorageAnalysisDashboard :analysis="storage ?? null" :pending="pending" :error="error" @refresh="refresh()" />
 
     <!-- Cleanup Section -->
-    <SectionCard icon="i-lucide-trash-2" title="Cleanup old test runs" help="settings.cleanup">
+    <SectionCard icon="i-lucide-trash-2" title="Cleanup old test runs" help="settings.cleanup" data-shot="cleanup-card">
+      <p v-if="storage?.kept" class="text-xs text-muted mb-3" data-shot="kept-runs-note">
+        <template v-if="storage.kept.runs > 0">
+          {{ storage.kept.runs }} kept {{ storage.kept.runs === 1 ? 'run is' : 'runs are' }} never deleted — they hold
+          {{ formatBytes(storage.kept.bytes) }} in {{ storage.kept.files.toLocaleString() }}
+          {{ storage.kept.files === 1 ? 'file' : 'files' }} of their own.
+        </template>
+        <template v-else>No run is kept forever. Keep one from its run menu to exempt it from cleanup.</template>
+      </p>
       <div class="flex flex-col sm:flex-row items-start sm:items-center gap-4">
         <UFormField label="Delete runs older than" name="period">
           <USelect v-model="selectedPeriod" :items="periodOptions" />
@@ -118,7 +137,7 @@ async function handleCleanup() {
       <template #body>
         <p>
           This will permanently delete all test runs older than <strong>{{ selectedPeriod }} days</strong>, along with
-          their associated reports, traces, and test results. This action cannot be undone.
+          their associated reports, traces, and test results. Kept runs are skipped. This action cannot be undone.
         </p>
       </template>
       <template #footer>

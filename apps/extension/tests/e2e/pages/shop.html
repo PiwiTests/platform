@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Acme Mugs</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family: system-ui, sans-serif;
+        color: #1f2937;
+        background: #f8fafc;
+      }
+      header {
+        display: flex;
+        align-items: center;
+        gap: 24px;
+        padding: 12px 24px;
+        background: #fff;
+        border-bottom: 1px solid #e5e7eb;
+      }
+      header nav ul {
+        display: flex;
+        gap: 16px;
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+      header a {
+        color: #1f2937;
+        text-decoration: none;
+      }
+      .logo {
+        font-weight: 800;
+        font-size: 20px;
+      }
+      .search {
+        flex: 1;
+        display: flex;
+        gap: 6px;
+      }
+      .search input {
+        flex: 1;
+        padding: 8px 10px;
+        border: 1px solid #d1d5db;
+        border-radius: 8px;
+      }
+      button {
+        font: inherit;
+        cursor: pointer;
+        border-radius: 8px;
+        border: 1px solid #d1d5db;
+        background: #fff;
+        padding: 7px 12px;
+      }
+      .primary {
+        background: #4f46e5;
+        color: #fff;
+        border-color: #4f46e5;
+      }
+      .hero {
+        margin: 16px 24px;
+        padding: 28px;
+        border-radius: 14px;
+        background: linear-gradient(120deg, #eef2ff, #fdf2f8);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .hero h1 {
+        margin: 0 0 6px;
+      }
+      .layout {
+        display: grid;
+        grid-template-columns: 200px 1fr 260px;
+        gap: 16px;
+        padding: 0 24px 24px;
+      }
+      aside.filters,
+      aside.cart {
+        background: #fff;
+        border: 1px solid #e5e7eb;
+        border-radius: 12px;
+        padding: 14px;
+        align-self: start;
+      }
+      aside h2 {
+        font-size: 15px;
+        margin: 0 0 10px;
+      }
+      aside label {
+        display: block;
+        margin: 6px 0;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 14px;
+      }
+      .card {
+        background: #fff;
+        border: 1px solid #e5e7eb;
+        border-radius: 12px;
+        padding: 14px;
+        display: grid;
+        gap: 8px;
+      }
+      .card h3 {
+        margin: 0;
+        font-size: 16px;
+      }
+      .card .price {
+        color: #4f46e5;
+        font-weight: 700;
+        margin: 0;
+      }
+      .card .row {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      .cart ul {
+        list-style: none;
+        padding: 0;
+        margin: 0 0 10px;
+      }
+      .cart li {
+        display: flex;
+        justify-content: space-between;
+        padding: 4px 0;
+      }
+      .coupon {
+        display: flex;
+        gap: 6px;
+        margin-bottom: 10px;
+      }
+      .coupon input {
+        flex: 1;
+        min-width: 0;
+        padding: 6px 8px;
+        border: 1px solid #d1d5db;
+        border-radius: 8px;
+      }
+      .newsletter {
+        margin: 0 24px 24px;
+        padding: 16px;
+        border-radius: 12px;
+        background: #fff;
+        border: 1px solid #e5e7eb;
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      .newsletter input {
+        padding: 7px 9px;
+        border: 1px solid #d1d5db;
+        border-radius: 8px;
+      }
+      footer {
+        padding: 16px 24px;
+        display: flex;
+        gap: 16px;
+        font-size: 13px;
+      }
+      footer a {
+        color: #6b7280;
+      }
+      #chat {
+        position: fixed;
+        right: 16px;
+        bottom: 16px;
+        width: 260px;
+        height: 150px;
+        border: 1px solid #e5e7eb;
+        border-radius: 12px;
+        background: #fff;
+      }
+      dialog {
+        border: 0;
+        border-radius: 14px;
+        padding: 20px;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        max-width: 360px;
+      }
+      dialog::backdrop {
+        background: rgba(15, 23, 42, 0.35);
+      }
+      rating-stars {
+        display: inline-flex;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <a class="logo" href="/">Acme Mugs</a>
+      <nav aria-label="Main">
+        <ul>
+          <li><a href="/products">Products</a></li>
+          <li><a href="/deals">Deals</a></li>
+          <li><a href="/account">Account</a></li>
+        </ul>
+      </nav>
+      <form class="search" role="search">
+        <input type="search" placeholder="Search products" aria-label="Search products" />
+        <button type="submit">Search</button>
+      </form>
+      <button type="button" aria-label="Cart, 2 items" data-testid="cart-button">🛒 2</button>
+    </header>
+
+    <section class="hero" aria-label="Promotion">
+      <div>
+        <h1>Mugs for every morning</h1>
+        <p>Free shipping from 30 €.</p>
+      </div>
+      <a href="/deals" class="primary" style="padding: 10px 16px; border-radius: 10px">Shop now</a>
+    </section>
+
+    <div class="layout">
+      <aside class="filters">
+        <h2>Filters</h2>
+        <label><input type="checkbox" name="stock" /> In stock</label>
+        <label><input type="checkbox" name="free" /> Free shipping</label>
+        <label for="sort">Sort by</label>
+        <select id="sort">
+          <option>Popularity</option>
+          <option>Price</option>
+        </select>
+      </aside>
+
+      <main>
+        <div class="grid">
+          <article class="card" data-testid="product-card">
+            <h3>Blue mug</h3>
+            <p class="price">12 €</p>
+            <rating-stars></rating-stars>
+            <div class="row">
+              <button type="button" class="primary">Add to cart</button>
+              <button type="button" aria-label="Add Blue mug to wishlist">♡</button>
+            </div>
+          </article>
+          <article class="card" data-testid="product-card">
+            <h3>Red mug</h3>
+            <p class="price">14 €</p>
+            <div class="row">
+              <button type="button" class="primary">Add to cart</button>
+              <button type="button" aria-label="Add Red mug to wishlist">♡</button>
+            </div>
+          </article>
+          <article class="card" data-testid="product-card">
+            <h3>Green mug</h3>
+            <p class="price">16 €</p>
+            <div class="row">
+              <button type="button" class="primary">Add to cart</button>
+              <button type="button" aria-label="Add Green mug to wishlist">♡</button>
+            </div>
+          </article>
+          <article class="card" data-testid="product-card">
+            <h3>Travel mug</h3>
+            <p class="price">22 €</p>
+            <div class="row">
+              <button type="button" class="primary">Add to cart</button>
+              <button type="button" aria-label="Add Travel mug to wishlist">♡</button>
+            </div>
+          </article>
+        </div>
+      </main>
+
+      <aside class="cart">
+        <h2>Your cart</h2>
+        <ul>
+          <li><span>Blue mug</span><span>12 €</span></li>
+          <li><span>Red mug</span><span>14 €</span></li>
+        </ul>
+        <div class="coupon">
+          <input placeholder="Coupon code" aria-label="Coupon code" />
+          <button type="button">Apply</button>
+        </div>
+        <button type="button" class="primary" style="width: 100%">Checkout</button>
+      </aside>
+    </div>
+
+    <form class="newsletter" aria-label="Newsletter">
+      <span>Get new mugs first</span>
+      <input type="email" placeholder="you@example.com" aria-label="Email for the newsletter" />
+      <button type="submit">Subscribe</button>
+    </form>
+
+    <footer>
+      <a href="/legal">Legal notice</a>
+      <a href="/privacy">Privacy</a>
+      <a href="/contact">Contact</a>
+    </footer>
+
+    <iframe id="chat" title="Support chat" src="/chat.html"></iframe>
+
+    <dialog id="cookies" aria-labelledby="cookies-title">
+      <h2 id="cookies-title">We use cookies</h2>
+      <p>To keep your cart and measure visits.</p>
+      <div style="display: flex; gap: 8px; justify-content: flex-end">
+        <button type="button">Settings</button>
+        <button type="button" class="primary">Accept all</button>
+      </div>
+    </dialog>
+
+    <script>
+      class RatingStars extends HTMLElement {
+        constructor() {
+          super();
+          const root = this.attachShadow({ mode: 'open' });
+          root.innerHTML = `
+            <style>button { border: 0; background: none; font-size: 16px; padding: 0 1px; cursor: pointer; color: #f59e0b; }</style>
+            ${[1, 2, 3, 4, 5].map((n) => `<button type="button" aria-label="${n} star${n > 1 ? 's' : ''}">★</button>`).join('')}`;
+        }
+      }
+      customElements.define('rating-stars', RatingStars);
+      if (!location.search.includes('nodialog')) document.getElementById('cookies').showModal();
+    </script>
+  </body>
+</html>

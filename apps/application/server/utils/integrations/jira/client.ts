@@ -92,6 +92,54 @@ export class JiraError extends Error {
   }
 }
 
+/** The longest Jira explanation carried into an error message. */
+const JIRA_ERROR_DETAIL_MAX = 500;
+
+/**
+ * Jira's own explanation from an error body: the `errorMessages` list, the
+ * per-field `errors` map (`customfield_10042: Team is required.`) and the
+ * gateway's `message`. Null when the body is empty or not JSON (an HTML error
+ * page), so the caller falls back to the bare status line.
+ */
+async function jiraErrorDetail(response: Response): Promise<string | null> {
+  let body: { errorMessages?: unknown; errors?: unknown; message?: unknown };
+  try {
+    body = JSON.parse(await response.text());
+  } catch {
+    return null;
+  }
+  if (!body || typeof body !== 'object') return null;
+  const parts: string[] = [];
+  if (Array.isArray(body.errorMessages)) {
+    for (const message of body.errorMessages) if (typeof message === 'string' && message) parts.push(message);
+  }
+  if (body.errors && typeof body.errors === 'object') {
+    for (const [field, message] of Object.entries(body.errors)) {
+      if (typeof message === 'string' && message) parts.push(`${field}: ${message}`);
+    }
+  }
+  if (typeof body.message === 'string' && body.message) parts.push(body.message);
+  if (!parts.length) return null;
+  const detail = parts.join('; ');
+  return detail.length > JIRA_ERROR_DETAIL_MAX ? `${detail.slice(0, JIRA_ERROR_DETAIL_MAX)}…` : detail;
+}
+
+/** The `JiraError` for a failed response: its status line plus Jira's explanation. */
+async function toJiraError(response: Response, what: string): Promise<JiraError> {
+  if (response.status === 429) {
+    const header = response.headers.get('retry-after');
+    const retryAfter = header != null ? Number(header) : NaN;
+    return new JiraError(
+      429,
+      'Jira rate limited the request (429)',
+      Number.isFinite(retryAfter) ? retryAfter : undefined,
+    );
+  }
+  const detail = await jiraErrorDetail(response);
+  const statusLine = `${what} (${response.status} ${response.statusText})`;
+  return new JiraError(response.status, detail ? `${statusLine}: ${detail}` : statusLine);
+}
+
 /**
  * Jira Cloud client (REST v3, Basic `email:apiToken`). Reads and writes go
  * through the one interface every tracker implements; the base URL is
@@ -170,18 +218,7 @@ export class JiraClient implements IssueTracker {
       },
       signal: AbortSignal.timeout(this.timeoutMs),
     }));
-    if (!response.ok) {
-      if (response.status === 429) {
-        const header = response.headers.get('retry-after');
-        const retryAfter = header != null ? Number(header) : NaN;
-        throw new JiraError(
-          429,
-          'Jira rate limited the request (429)',
-          Number.isFinite(retryAfter) ? retryAfter : undefined,
-        );
-      }
-      throw new JiraError(response.status, `Jira request failed (${response.status} ${response.statusText})`);
-    }
+    if (!response.ok) throw await toJiraError(response, 'Jira request failed');
     if (response.status === 204) return undefined as T;
     return (await response.json()) as T;
   }
@@ -338,18 +375,7 @@ export class JiraClient implements IssueTracker {
       };
     };
     const response = await this.apiFetch(`/rest/api/3/issue/${encodeURIComponent(key)}/attachments`, build);
-    if (!response.ok) {
-      if (response.status === 429) {
-        const header = response.headers.get('retry-after');
-        const retryAfter = header != null ? Number(header) : NaN;
-        throw new JiraError(
-          429,
-          'Jira rate limited the request (429)',
-          Number.isFinite(retryAfter) ? retryAfter : undefined,
-        );
-      }
-      throw new JiraError(response.status, `Jira attachment failed (${response.status} ${response.statusText})`);
-    }
+    if (!response.ok) throw await toJiraError(response, 'Jira attachment failed');
   }
 
   issueUrl(key: string): string {

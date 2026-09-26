@@ -5,6 +5,7 @@ import { runEventBus } from '../../../utils/run-events';
 import { parseLocation } from '../../../utils/parse-location';
 import { persistRunCases, type RunCaseInput } from '../../../utils/persist-run-cases';
 import { mapCompleteEventToRunCase } from '../../../utils/map-complete-event';
+import { mapStepEventsToRunEvents } from '../../../utils/map-step-events';
 import { authorizeStreamToken } from '../../../utils/stream-auth';
 import type { StreamEventPayload } from '#shared/types';
 import { countFailedFromTally } from '#shared/utils/test-counts';
@@ -14,7 +15,7 @@ defineRouteMeta({
     tags: ['Test Runs'],
     summary: 'Submit test case events for a streaming run',
     description:
-      'Submit test case begin, complete and step lifecycle events for an active streaming test run. Requires the stream token. Supports both single and batch event submission for real-time progress updates. Test-attached step events (step-begin/step-end) are streamed to subscribers without persistence; suite-level hook events keep the timeline shape.',
+      'Submit test case begin, complete and step lifecycle events for an active streaming test run. Requires the stream token. Supports both single and batch event submission for real-time progress updates. Test-attached step events (step-begin/step-end) are streamed to subscribers in the order submitted, without persistence; suite-level hook events keep the timeline shape.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-roles': [],
     requestBody: {
@@ -81,11 +82,10 @@ export default eventHandler(async (event) => {
 
   const validEvents = testCaseEvents.filter((tc: { title?: string }) => tc && tc.title);
 
-  // Split into begin, complete, step-begin, and step-end events
+  // Split into begin and complete events; step events keep their batch order
   const beginEvents = validEvents.filter((tc: { type?: string }) => tc.type === 'begin');
-  const stepBeginEvents = validEvents.filter((tc: { type?: string }) => tc.type === 'step-begin');
-  const stepEndEvents = validEvents.filter((tc: { type?: string }) => tc.type === 'step-end');
   const completeEvents = validEvents.filter((tc: { type?: string }) => tc.type === 'complete');
+  const stepRunEvents = mapStepEventsToRunEvents(validEvents);
 
   // --- Handle begin events (test started, no DB persistence needed) ---
   for (const tc of beginEvents) {
@@ -107,80 +107,16 @@ export default eventHandler(async (event) => {
     runEventBus.recordRunningCase(id, runningCaseKey(tc), beginData);
   }
 
-  // --- Handle step-begin events ---
-  // Test-attached steps stream as `step-begin` so the run page can show what
-  // each worker is doing; suite-level hooks (parentTitle null) keep publishing
-  // as `test-begin` so the timeline's hook shape is unchanged.
-  for (const tc of stepBeginEvents) {
-    if (tc.parentTitle != null) {
-      runEventBus.publish(id, {
-        type: 'step-begin',
-        data: {
-          title: tc.title,
-          subtitle: tc.subtitle ?? null,
-          parentTitle: tc.parentTitle,
-          stepCategory: tc.stepCategory ?? null,
-          location: tc.location,
-          workerIndex: tc.workerIndex ?? null,
-          startedAt: tc.startedAt ?? null,
-        },
-      });
-    } else {
-      runEventBus.publish(id, {
-        type: 'test-begin',
-        data: {
-          title: tc.title,
-          filePath: 'hooks',
-          parentTitle: null,
-          stepCategory: tc.stepCategory ?? null,
-          location: tc.location,
-          workerIndex: tc.workerIndex ?? null,
-          startedAt: tc.startedAt ?? null,
-        },
-      });
-    }
-  }
-
-  // --- Handle step-end events ---
-  for (const tc of stepEndEvents) {
-    if (tc.parentTitle != null) {
-      runEventBus.publish(id, {
-        type: 'step-end',
-        data: {
-          title: tc.title,
-          subtitle: tc.subtitle ?? null,
-          parentTitle: tc.parentTitle,
-          stepCategory: tc.stepCategory ?? null,
-          status: tc.status,
-          duration: tc.duration,
-          location: tc.location,
-          workerIndex: tc.workerIndex ?? null,
-          startedAt: tc.startedAt ?? null,
-        },
-      });
-    } else {
-      runEventBus.publish(id, {
-        type: 'test-completed',
-        data: {
-          title: tc.title,
-          filePath: 'hooks',
-          parentTitle: null,
-          stepCategory: tc.stepCategory ?? null,
-          status: tc.status,
-          duration: tc.duration,
-          location: tc.location,
-          workerIndex: tc.workerIndex ?? null,
-          startedAt: tc.startedAt ?? null,
-        },
-      });
-    }
+  // --- Handle step events (live step readout + suite-level hooks), in batch order ---
+  for (const stepEvent of stepRunEvents) {
+    runEventBus.publish(id, stepEvent);
   }
 
   // --- Handle complete events (test finished, persist to DB) ---
   if (completeEvents.length === 0) {
     return {
       success: true,
-      processed: beginEvents.length + stepBeginEvents.length + stepEndEvents.length,
+      processed: beginEvents.length + stepRunEvents.length,
     };
   }
 

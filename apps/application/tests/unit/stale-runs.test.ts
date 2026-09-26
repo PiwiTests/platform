@@ -66,11 +66,21 @@ describe('interruptStaleRuns', () => {
     unsubscribeRun();
 
     expect([...reaped].sort()).toEqual([1, 2, 3]);
-    expect([...global].sort((a, b) => a.runId - b.runId)).toEqual([
+    const runEvents = global.filter((e) => e.type === 'run-finished');
+    expect([...runEvents].sort((a, b) => a.runId - b.runId)).toEqual([
       { type: 'run-finished', runId: 1, projectId: 1, status: 'interrupted' },
       { type: 'run-finished', runId: 2, projectId: 2, status: 'interrupted' },
       { type: 'run-finished', runId: 3, projectId: 1, status: 'interrupted' },
     ]);
+    // Their day's rollup counts them as failed runs at once, not at the nightly reconcile, and says so once per project.
+    const rollupEvents = global.filter((e) => e.type === 'rollup-updated');
+    expect(rollupEvents.map((e) => e.projectId).sort()).toEqual([1, 2]);
+    expect(global.indexOf(rollupEvents[0]!)).toBeGreaterThan(global.indexOf(runEvents[runEvents.length - 1]!));
+    const rollups = await db.select().from(schema.analyticsDailyRollups);
+    const failedOf = (projectId: number) =>
+      rollups.filter((r) => r.projectId === projectId && r.part === 'retained').reduce((n, r) => n + r.failedRuns, 0);
+    expect(failedOf(1)).toBe(2);
+    expect(failedOf(2)).toBe(1);
     // The run's own stream gets the reconciled counts.
     expect(finished).toEqual([expect.objectContaining({ status: 'interrupted', totalTests: 10, passedTests: 1 })]);
 

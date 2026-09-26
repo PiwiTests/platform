@@ -1190,11 +1190,12 @@ async function runSingleSimulation(
         // Stream a few of the test's steps live (transient SSE events, like the
         // real reporter) so the demo run page shows the in-row live step readout.
         // Wait steps are the least interesting to watch; the persisted stepEvents
-        // still carry them for the timeline.
+        // still carry them for the timeline. Each live step carries the Playwright
+        // category the reporter streams: `expect` for an assertion, `pw:api` otherwise.
         const liveSteps = (test.steps ?? [])
           .filter((s) => s.category !== 'wait')
           .slice(0, 3)
-          .map((s) => ({ ...s, category: s.category === 'expect' ? 'pw:expect' : 'pw:api' }));
+          .map((s) => ({ ...s, category: s.category === 'assertion' ? 'expect' : 'pw:api' }));
 
         let attemptRemaining = attemptDuration;
         let stepCursor = virtualNow;

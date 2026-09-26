@@ -111,7 +111,7 @@ function normalizeRef(ref: string): string {
  * config metadata to attach to each test run submission.
  *
  * Also owns all reach-through access to Playwright-internal suite fields
- * (`_parallelMode`, `_annotations`, `project()`) so the surface area that
+ * (`_parallelMode`, `_staticAnnotations`, `project()`) so the surface area that
  * breaks when Playwright renames those internals is guarded behind one class.
  */
 export class MetadataCollector {
@@ -119,7 +119,9 @@ export class MetadataCollector {
 
   /** Collect all available metadata from the environment, config, and suite */
   collect(config: FullConfig, suite: Suite, options: any): Record<string, unknown> {
-    const metadata: Record<string, unknown> = {};
+    // The directory spec paths are made relative to (see `testFile` in the reporter); the
+    // dashboard strips it from the absolute locations Playwright gives steps.
+    const metadata: Record<string, unknown> = { workingDir: process.cwd() };
 
     if (options.projectDescription) metadata.projectDescription = options.projectDescription;
     if (options.relatedIssue) metadata.relatedIssue = options.relatedIssue;
@@ -203,7 +205,7 @@ export class MetadataCollector {
   /**
    * Walk the test's parent `describe` suites to extract the suite path (titles)
    * and per-level config (parallel mode + annotations). Reaches into Playwright
-   * suite internals (`_parallelMode`, `_annotations`) — kept here next to
+   * suite internals (`_parallelMode`, `_staticAnnotations`) — kept here next to
    * `getBrowserConfig` so all such access is guarded behind one class.
    */
   getSuiteInfo(test: TestCase): { suitePath: string[]; suiteConfig: SuiteConfigEntry[] } {
@@ -223,7 +225,12 @@ export class MetadataCollector {
       const rawMode = (s as any)._parallelMode as string | undefined;
       const mode: SuiteConfigEntry['mode'] =
         rawMode === 'parallel' ? 'parallel' : rawMode === 'serial' ? 'serial' : 'default';
-      const annotations: Array<{ type: string; description?: string }> = (s as any)._annotations ?? [];
+      // Playwright stores a describe's annotations with their source location;
+      // the wire carries the type and description only.
+      const staticAnnotations: Array<{ type: string; description?: string }> = (s as any)._staticAnnotations ?? [];
+      const annotations = staticAnnotations.map((a) =>
+        a.description === undefined ? { type: a.type } : { type: a.type, description: a.description },
+      );
       suiteConfig.push({ mode, annotations });
     }
 
@@ -336,6 +343,8 @@ export class MetadataCollector {
           // The origin of `baseURL` is what the graph treats as the run's own
           // surface, so only requests to it become route nodes.
           baseURL: p.use?.baseURL,
+          // The attribute `getByTestId` reads, so the locator index can resolve those locators on a live page.
+          testIdAttribute: p.use?.testIdAttribute,
           viewport: p.use?.viewport,
           deviceScaleFactor: p.use?.deviceScaleFactor,
         },

@@ -5,8 +5,9 @@ Browser extension (Chrome/Edge, Manifest V3) that reuses the monorepo's locator 
 stable Playwright locators from the live page. The picking/recording features are
 standalone (no server, no permissions beyond `activeTab`/`scripting`/`storage`, plus the
 one-origin-at-a-time `optional_host_permissions` grant recording needs — see below);
-**connecting to a Piwi instance is opt-in** and adds exactly one thing: matching a
-recording against a project's own function catalog. See "Connected mode" below.
+**connecting to a Piwi instance is opt-in** and adds what needs a project's history: matching
+a recording against the project's function catalog, and showing which elements of the page its
+tests reach ("Tested elements"). See "Connected mode" and "Tested elements" below.
 
 Published on the Chrome Web Store as
 [Piwi Picker](https://chromewebstore.google.com/detail/piwi-picker/pakhnokpjboejcghgcmkjlpnogfjihhe)
@@ -88,12 +89,13 @@ matcher a catalog entry's own `urlPattern` gate uses). Every consumer that needs
 applies here" (record-panel's HUD and review panel, test-function-panel, the popup's select)
 calls this one function rather than re-deriving it.
 
-**No recording is ever sent to the instance** — only each mapped project's catalog is
-fetched, and only `piwi-client.ts` makes that request, from exactly two contexts:
-`src/options/` (on save) and the background worker's `piwi-refresh-catalog` handler.
-**Never from a content script**, so the API key never reaches a page's JS context —
-`record-panel.ts`/`test-function-panel.ts` read the cache and, when they need fresher data,
-ask the worker via `catalog-refresh.ts` rather than fetching themselves. Keep it that way.
+**No recording is ever sent to the instance** — only each mapped project's catalog and
+locator index are fetched, and only `piwi-client.ts` makes those requests, from exactly two
+contexts: `src/options/` (on save) and the background worker's `piwi-refresh-catalog` /
+`piwi-refresh-locator-index` handlers. **Never from a content script**, so the API key never
+reaches a page's JS context — `record-panel.ts`/`test-function-panel.ts`/`coverage-overlay.ts`
+read the cache and, when they need fresher data, ask the worker via `catalog-refresh.ts` /
+`locator-index-refresh.ts` rather than fetching themselves. Keep it that way.
 
 Staleness matters here: the catalog used to be written only by the options page's save
 handler, so a function added in the dashboard afterwards never reached the extension at all.
@@ -115,6 +117,49 @@ per-step unique/ambiguous/missing verdict rolling up into ready/partial/not-foun
 It shares `scoreTargetMatch` (`packages/core/src/function-match.ts`) with the recorder's own
 live ranking, so a function this reports "ready" is scored exactly the way it would be mid-recording.
 
+## Tested elements (the project's locator index, evaluated on the page)
+
+`coverage-overlay.ts` (popup tile `T`, and **Show every tested element** in the pick results)
+outlines every element a test of the active project reaches, and the visible interactive
+elements none reaches. The data is `GET /api/projects/:id/locator-index`
+(`LocatorIndex` in `packages/core/src/locator-index.ts`, built by `getLocatorIndex` in
+`apps/application/server/utils/locator-usages.ts`), fetched by the worker and cached in
+`chrome.storage.local` by `locator-index-cache.ts` (TTL `LOCATOR_INDEX_TTL_MS`, the last
+`LOCATOR_INDEX_CACHE_PROJECTS` indexes; an index that does not fit the quota comes back in the
+worker's reply uncached). An index describes one branch: `locator-branch.ts` resolves it from the
+panel's choice for the session, else the URL mapping's `branch`, else the default branch, and the
+cache keeps one entry per project and branch.
+
+The chains are evaluated by an in-page reimplementation of Playwright's selector engines, not by
+`evaluateLocatorChain` (which only counts candidates it generated itself):
+
+- `engine-aria.ts` — `DomModel`: role, accessible name and description, ARIA states,
+  hidden-for-ARIA, visibility, element text and `getByLabel` labels, following Playwright's
+  `roleUtils.ts`/`selectorUtils.ts`. Pure DOM, no `instanceof` (frames are other realms).
+- `engine-selector.ts` — CSS (piercing open shadow roots, Playwright's `:has-text()`, `:text()`,
+  `:visible`, `:scope`, …) and XPath.
+- `locator-engine.ts` — `createLocatorEngine(doc, { testIdAttributes, ignore })`: evaluates a
+  parsed `locator-chain` (every `getBy*`, `locator()`, `>>` parts, `filter`, `and`/`or`,
+  `nth`/`first`/`last`, frames). Caches per engine instance, so build one per scan.
+- `coverage-scan.ts` — the pure half: runs every chain of the index in time slices, reports
+  covered/uncovered elements and tests. `coverage-layer.ts`/`coverage-panel.ts`/`coverage-view.ts`
+  draw it; the overlay lives in a closed shadow root in the top layer (`popover="manual"`) so it
+  paints above the page's own dialogs.
+- One element at a time: `scopeScan` narrows a finished scan to an element and what is inside it
+  (no rescan), and `elementReach` splits the tests reaching a picked element into the element
+  itself, inside it, and around it. The pick results hand an element to the overlay through
+  `globalThis.__piwiCoverageScopeRequest` before asking the worker to inject it: both content
+  scripts run in the extension's isolated world, so the global is shared, and an element cannot
+  travel through `chrome.runtime` messages.
+
+**`locator-engine.spec.ts` is a differential test against real Playwright**: every expression in
+`locator-cases.ts` is resolved by the engine bundle (`engine-entry.ts`) and by a real
+`page.locator(…)`, and the two element lists must be identical. A new locator kind or option
+goes into `locator-cases.ts` with a fixture element in `tests/e2e/pages/`; an expression the
+engine deliberately refuses goes into the pinned refusal list, never into a skipped case.
+
+## Content-script structure
+
 Each standalone content-script feature (locator console, multi-pick, lint overlay, assertion
 suggester, pick session, agent context, recording, try-it scanning, …) is split into a pure
 logic file (e.g. `lint-scan.ts`, `assertion-suggest.ts`, `session-export.ts`,
@@ -128,8 +173,9 @@ instead of needing a live browser for everything.
 ## Rules
 
 - **No network call from a content script, ever.** Picking/recording talk to no server.
-  Connected mode (see above) is opt-in, off by default, confined to `src/options/`
-  (`piwi-client.ts`), and fetches only a function catalog — never sends a recording anywhere.
+  Connected mode (see above) is opt-in, off by default, confined to `src/options/` and the
+  background worker (`piwi-client.ts`), and fetches only a function catalog and a locator
+  index — never sends a recording or anything read from a page.
   A future feature that wants to *send* recorded data to an instance needs the same
   explicit-opt-in, clearly-separated treatment, plus a payload preview before the first send.
 - **Content scripts are separately-bundled IIFEs, not ES modules.** `scripts/build.mjs`
@@ -221,6 +267,17 @@ While iterating, use `npm run extension:dev` instead — it rebuilds on save. Th
 still needs a manual reload on the `chrome://extensions` card to pick up a new build (MV3
 gives no way to trigger that from outside the browser), so the loop is: save → wait for the
 rebuild line → click reload.
+
+Until that reload, the popup and every tool opened come from the new build, read from disk
+each time, while the background worker still runs the build that was loaded — so a message
+only the new build knows goes unanswered. Every bundle carries a build stamp
+(`src/shared/build-id.ts`, set by `scripts/build.mjs`) and `piwi-ping` answers with the
+worker's: when the two differ, the popup shows a notice with a **Reload Piwi Picker** button
+(`chrome.runtime.reload()`), and a tool reports an unanswered message as that cause
+(`OUTDATED_WORKER_MESSAGE`, `src/shared/worker-status.ts`) rather than as a generic failure.
+`worker-build.spec.ts` covers it end to end; like any spec that reloads the extension, it
+launches with Developer mode on (`launchWithExtension(path, { developerMode: true })`), since
+Chromium enables a reloaded unpacked extension again only then.
 
 Disable the Chrome Web Store copy while a local build is loaded — two installs both claim the
 `Ctrl+Shift+E` command, and only one of them gets it, which reads as "my change didn't apply".

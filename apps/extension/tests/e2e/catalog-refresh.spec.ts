@@ -53,7 +53,7 @@ test.beforeAll(async () => {
     if (req.url?.includes('/test-functions')) {
       requestCount++;
       res.setHeader('Content-Type', 'application/json');
-      res.end(JSON.stringify({ testFunctions: catalog.map((e) => ({ entry: e })) }));
+      res.end(JSON.stringify({ items: catalog.map((e) => ({ id: e.id, name: e.name, entry: e })) }));
       return;
     }
     res.statusCode = 404;

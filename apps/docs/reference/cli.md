@@ -22,6 +22,7 @@ npx @piwitests/reporter <command> [options]
 | [`init`](#init) | Wire a Playwright project up to a Piwi Dashboard |
 | [`skills`](#skills) | Install the Piwi agent skills into this project |
 | [`gate`](#gate) | Fail a CI job on the dashboard's analysis of a run |
+| [`report`](#report) | Print a [quality report](/features/quality-reports) as Markdown, PDF, HTML, CSV or JSON |
 | [`select`](#select-run) | Print the Playwright args for a saved test selection |
 | [`run`](#select-run) | Run a saved test selection with `playwright test` |
 | [`probe`](#probe) | Run the dashboard's probe plan and record what the suite noticed |
@@ -101,6 +102,34 @@ npx @piwitests/reporter gate --max-new-regressions 0 --fail-on-flaky
 | `-h`, `--help` | Show help |
 
 The run source is resolved first-match-wins: `--run-id`, then `--from-file`, then `PIWI_OUTPUT_FILE`, then `./piwi-run.json`. At least one policy rule is required.
+
+## `report`
+
+Print a [quality report](/features/quality-reports) from the dashboard, so a CI scheduler can post it every
+week. It calls `GET /api/reports/preview` with the API key; the scope and the dashboard are the ones the
+*Export* dialog offers.
+
+```bash
+npx @piwitests/reporter report --project checkout --period 7d --format md
+```
+
+**Exit codes:** `0` written · `1` written, and the verdict is at or below `--fail-on` · `2` no report.
+
+| Flag | Description |
+|---|---|
+| `--server-url <url>` | Dashboard URL (env `PIWI_DASHBOARD_URL`) |
+| `--api-key <key>` | API key (env `PIWI_API_KEY`) |
+| `--project <names>` | Comma-separated project names or ids (default: every project the key can see) |
+| `--period <period>` | `7d`, `30d` (default), `last-month`, `this-quarter`, `2026-08-01..2026-08-31`, … |
+| `--compare <mode>` | `previous` (default), `year` or `none` |
+| `--dashboard <name>` | `executive` (default), `engineering` or `overview` |
+| `--branch <names>` / `--environment <names>` | Narrow the runs (default: each project's default branch) |
+| `--selection <key>` | Only the tests of this [selection](/guide/test-selection) |
+| `--lang <en\|fr>` | Report language |
+| `--format <fmt>` | `md` (default), `json`, `html`, `pdf`, `csv` |
+| `--output <file>` | Write to a file instead of stdout (required for `pdf`) |
+| `--fail-on <tone>` | `bad`: exit 1 on a bad verdict; `mixed`: on a mixed or bad one |
+| `-h`, `--help` | Show help |
 
 ## `select` / `run` {#select-run}
 

@@ -425,6 +425,16 @@ describe('locator and frame helpers', () => {
     expect(extractLeafSelector(text)).toBe("getByRole('button', { name: 'Delete' })");
   });
 
+  test('extractLeafSelector reads parentheses inside names as text', () => {
+    const text = "waiting for getByRole('dialog').getByRole('button', { name: 'Save :)' }) to be visible";
+    expect(extractLeafSelector(text)).toBe("getByRole('button', { name: 'Save :)' })");
+  });
+
+  test('extractLeafSelector still finds the leaf of a chain cut short', () => {
+    const text = "waiting for getByRole('row', { name: 'A (b)' }).getByRole('button', { name: 'Delete (c";
+    expect(extractLeafSelector(text)).toBe("getByRole('button', { name: 'Delete (c");
+  });
+
   test('extractSelector and extractLocatorChain return null without a locator', () => {
     expect(extractSelector('Timeout 30000ms exceeded')).toBeNull();
     expect(extractLocatorChain('Timeout 30000ms exceeded')).toBeNull();

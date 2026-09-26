@@ -209,6 +209,7 @@ function createServerImportPort(): ImportPort {
     parseErrorContext: (markdown, declLine) => parseErrorContext(markdown, { declLine }),
 
     publishRunSubmitted: (payload) => runEventBus.publishGlobal({ type: 'run-submitted', ...payload }),
+    publishRollupUpdated: (payload) => runEventBus.publishGlobal({ type: 'rollup-updated', ...payload }),
 
     warn: (message) => console.warn(`[Import] ${message}`),
   };

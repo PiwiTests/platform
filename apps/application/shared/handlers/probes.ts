@@ -9,7 +9,7 @@
  * the ledger and upsert the results.
  */
 
-import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
 import {
   graphEdges,
   graphNodes,
@@ -55,6 +55,18 @@ export function isProbeRun(metadata: unknown): boolean {
   return (
     !!metadata && typeof metadata === 'object' && (metadata as Record<string, unknown>)[PROBE_RUN_METADATA_KEY] === true
   );
+}
+
+/**
+ * SQL predicate keeping only runs that are not probe runs: the SQL form of
+ * `!isProbeRun(metadata)`, for queries that aggregate or limit in the database.
+ * The flag is matched in the serialized JSON, with and without the space
+ * PostgreSQL's `jsonb` text output puts after the colon.
+ */
+export function notProbeRun(metadata: SQLWrapper): SQL {
+  const compact = `%"${PROBE_RUN_METADATA_KEY}":true%`;
+  const spaced = `%"${PROBE_RUN_METADATA_KEY}": true%`;
+  return sql`(${metadata} IS NULL OR (CAST(${metadata} AS TEXT) NOT LIKE ${compact} AND CAST(${metadata} AS TEXT) NOT LIKE ${spaced}))`;
 }
 
 /** One (test, route, fault) pair the plan asks a probe run to apply. */

@@ -648,6 +648,72 @@ fn supervise_server(
     });
 }
 
+/// Everything leaving the app must undo: remember the window state, stop the
+/// bundled server and the local test runs, and withdraw the reporter discovery
+/// file. Runs on every quit (`RunEvent::ExitRequested`) and from the updater's
+/// pre-exit hook, since the Windows updater leaves through
+/// `std::process::exit` without that event (see updates.rs). Idempotent.
+///
+/// With `server_wait`, blocks until the server process is really gone (at most
+/// that long): a kill only starts the termination, and until it completes the
+/// files the server has loaded — the bundled native modules — stay locked.
+pub(crate) fn shut_down(app_handle: &AppHandle, server_wait: Option<Duration>) {
+    // Remember whether the window was maximized so the next launch
+    // restores it (first launch, with no stored value, maximizes).
+    if let Some(w) = app_handle.get_webview_window("main") {
+        if let Ok(store) = app_handle.store(STORE_FILE) {
+            store.set(WINDOW_MAXIMIZED_KEY, json!(w.is_maximized().unwrap_or(false)));
+            let _ = store.save();
+        }
+    }
+    // Tell the supervisor this stop is deliberate so it doesn't restart
+    // the server we are about to kill.
+    if let Some(flag) = app_handle.try_state::<ShuttingDown>() {
+        flag.0.store(true, Ordering::SeqCst);
+    }
+    // Best-effort: stop the bundled server so no orphan process lingers.
+    if let Some(child) = app_handle.state::<ServerProcess>().0.lock().unwrap().take() {
+        kill_server(child, server_wait);
+    }
+    // Local test runs die with the shell — never orphan a browser fleet.
+    if let Some(runs) = app_handle.try_state::<runner::LocalRuns>() {
+        runs.kill_all();
+    }
+    // Withdraw the reporter discovery file with the server it points
+    // at, so a later test run does not try a dead port.
+    if let Some(discovery) = app_handle.try_state::<DiscoveryFile>() {
+        let _ = std::fs::remove_file(&discovery.0);
+    }
+}
+
+/// Kill the server sidecar, waiting up to `wait` for it to exit. Only the
+/// Windows updater asks to wait — its installer overwrites the files next — so
+/// the wait is Windows-only.
+fn kill_server(child: CommandChild, wait: Option<Duration>) {
+    #[cfg(windows)]
+    {
+        use windows::Win32::Foundation::CloseHandle;
+        use windows::Win32::System::Threading::{OpenProcess, WaitForSingleObject, PROCESS_SYNCHRONIZE};
+
+        // Opened before the kill, while the live child still pins its pid, so
+        // the handle cannot belong to a later process reusing the number.
+        let process = wait.and_then(|_| unsafe { OpenProcess(PROCESS_SYNCHRONIZE, false, child.pid()) }.ok());
+        let _ = child.kill();
+        if let (Some(process), Some(wait)) = (process, wait) {
+            let millis = u32::try_from(wait.as_millis()).unwrap_or(u32::MAX);
+            unsafe {
+                WaitForSingleObject(process, millis);
+                let _ = CloseHandle(process);
+            }
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = wait;
+        let _ = child.kill();
+    }
+}
+
 // ── Desktop service settings, exposed to the in-app Settings UI over IPC ───────
 // The bundled dashboard webview drives the same "run in background" and "start on
 // login" options as the tray. window.__TAURI__ is injected into the desktop
@@ -1531,34 +1597,7 @@ pub fn run() {
         .build(context)
         .expect("error while building the Piwi Dashboard app")
         .run(|app_handle, event| match event {
-            RunEvent::ExitRequested { .. } => {
-                // Remember whether the window was maximized so the next launch
-                // restores it (first launch, with no stored value, maximizes).
-                if let Some(w) = app_handle.get_webview_window("main") {
-                    if let Ok(store) = app_handle.store(STORE_FILE) {
-                        store.set(WINDOW_MAXIMIZED_KEY, json!(w.is_maximized().unwrap_or(false)));
-                        let _ = store.save();
-                    }
-                }
-                // Tell the supervisor this stop is deliberate so it doesn't restart
-                // the server we are about to kill.
-                if let Some(flag) = app_handle.try_state::<ShuttingDown>() {
-                    flag.0.store(true, Ordering::SeqCst);
-                }
-                // Best-effort: stop the bundled server so no orphan process lingers.
-                if let Some(child) = app_handle.state::<ServerProcess>().0.lock().unwrap().take() {
-                    let _ = child.kill();
-                }
-                // Local test runs die with the shell — never orphan a browser fleet.
-                if let Some(runs) = app_handle.try_state::<runner::LocalRuns>() {
-                    runs.kill_all();
-                }
-                // Withdraw the reporter discovery file with the server it points
-                // at, so a later test run does not try a dead port.
-                if let Some(discovery) = app_handle.try_state::<DiscoveryFile>() {
-                    let _ = std::fs::remove_file(&discovery.0);
-                }
-            }
+            RunEvent::ExitRequested { .. } => shut_down(app_handle, None),
             // macOS delivers file-association opens as an event, not argv.
             #[cfg(target_os = "macos")]
             RunEvent::Opened { urls } => {

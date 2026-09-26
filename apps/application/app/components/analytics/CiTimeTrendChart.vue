@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { AnalyticsCiTimeTrend } from '#shared/analytics/types';
-import { barGeometry, dayTickIndices, formatTickDate } from '~/utils/chart';
+import { barGeometry, bucketTimeToX, dayTickIndices, formatTickDate } from '~/utils/chart';
 
 const props = defineProps<{ query: Record<string, string> }>();
 
@@ -63,16 +63,51 @@ const deltaBadge = computed(() => {
   };
 });
 
+const exportData = computed(() =>
+  trend.value
+    ? {
+        name: 'ci-time',
+        header: ['date', 'CI minutes', 'runs'],
+        rows: trend.value.points.map((p) => [p.date, p.totalMinutes, p.runCount]),
+      }
+    : null,
+);
+
 const subtitle = computed(() => {
   if (!trend.value) return undefined;
   const total = trend.value.totalMinutes;
   const label = total < 60 ? `${Math.round(total)} min` : `${Math.round((total / 60) * 10) / 10} h`;
   return `${label} across ${trend.value.runCount} runs`;
 });
+// Timeline markers of the period, drawn over the bars (provided by the analytics page).
+const scopeSummary = injectAnalyticsScopeSummary();
+const markers = computed(() => scopeSummary.value?.markers ?? []);
+function markerX(plotWidth: number, occurredAt: string | Date): number | null {
+  const { centerOf } = barGeometry(chartData.value.length, plotWidth);
+  const end = scopeSummary.value ? new Date(scopeSummary.value.period.to).getTime() : Date.now();
+  return bucketTimeToX(
+    chartData.value.map((d) => d.date),
+    chartData.value.map((_, i) => centerOf(i)),
+    new Date(occurredAt).getTime(),
+    end,
+  );
+}
+
+/** With one project in scope, a bucket opens that project's runs of those days. */
+const drill = computed(() => (trend.value ? bucketDrill(props.query, trend.value.bucketDays) : null));
+function isoDay(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
 </script>
 
 <template>
-  <ChartCard icon="i-lucide-timer" title="CI time" :subtitle="subtitle" help="analytics.ci-time">
+  <ChartCard
+    icon="i-lucide-timer"
+    title="CI time"
+    :subtitle="subtitle"
+    help="analytics.ci-time"
+    :export-data="exportData"
+  >
     <template #actions>
       <span v-if="deltaBadge" class="text-xs font-medium tabular-nums" :class="deltaBadge.class">
         {{ deltaBadge.label }}
@@ -117,9 +152,16 @@ const subtitle = computed(() => {
           :width="plotWidth / chartData.length"
           :height="plotHeight"
           :fill="tooltipData === d ? 'rgb(148 163 184 / 0.15)' : 'transparent'"
+          :class="drill ? 'cursor-pointer' : ''"
+          @click="drill && navigateTo(drill(isoDay(d.date)))"
           @mouseenter="show($event, d)"
           @mousemove="move($event)"
           @mouseleave="hide()"
+        />
+        <ChartMarkerLines
+          :markers="markers"
+          :x-of="(occurredAt) => markerX(plotWidth, occurredAt)"
+          :plot-height="plotHeight"
         />
       </ChartFrame>
 

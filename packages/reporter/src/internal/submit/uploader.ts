@@ -31,6 +31,8 @@ export interface RunPayload {
   environment?: string;
   /** Optional display label for the test run (e.g. "v2.3.1 release") */
   label?: string | null;
+  /** Keep the run forever: the dashboard's retention never deletes it */
+  keep?: boolean;
   /** Arbitrary metadata collected from the environment, CI, and Playwright config */
   metadata: Record<string, any>;
   /** Unique instance identifier for deduplication */

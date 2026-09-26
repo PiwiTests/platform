@@ -46,6 +46,7 @@ import {
 } from './graph-ingest';
 import { collectOwnOrigins, originsFromDocumentRequests } from '#shared/graph';
 import { isProbeRun } from '#shared/handlers/probes';
+import { upsertLocatorUsages, type LocatorUsageCase } from './locator-usages';
 import type { LocatorSnapshot } from '#shared/locator-healing.types';
 import type { DbClient as DB } from '../database';
 
@@ -423,6 +424,8 @@ export async function persistRunCases(
   // the batch is built. A test appearing twice (retries, browsers) declares the
   // same values, so last-write-wins is safe.
   const caseMetaSnapshots = new Map<number, CaseMetaSnapshot>();
+  // Locator uses read from each execution's steps, indexed after the insert.
+  const perCaseUsages: LocatorUsageCase[] = [];
 
   for (let i = 0; i < cases.length; i++) {
     const c = cases[i]!;
@@ -468,6 +471,18 @@ export async function persistRunCases(
     if (c.locatorSnapshots?.length)
       perCaseLocators.push({ caseId, snapshots: c.locatorSnapshots, purge: c.status === 'passed' });
 
+    // A use missing from a passed execution whose steps were all kept has left
+    // the test; any other execution only adds.
+    const cappedSteps = capSteps(c.steps, limits);
+    perCaseUsages.push({
+      caseId,
+      browserName: resolveBrowserName(c.browser),
+      steps: cappedSteps,
+      filePath: c.filePath,
+      runId: testRunId,
+      complete: c.status === 'passed' && Array.isArray(c.steps) && c.steps.length <= limits.steps,
+    });
+
     if (fingerprint) {
       const pending = pendingClusters.get(fingerprint.fingerprint);
       if (pending) {
@@ -507,7 +522,7 @@ export async function persistRunCases(
       attempts: capArray(normalizeAttemptStatuses(c.attempts), 30),
       line: c.line,
       column: c.column,
-      steps: capSteps(c.steps, limits),
+      steps: cappedSteps,
       stepEvents: capArray(c.stepEvents, limits.stepEvents),
       slowestStep: c.slowestStep ?? null,
       slowestStepDuration: c.slowestStepDuration ?? null,
@@ -570,7 +585,8 @@ export async function persistRunCases(
     .select({ metadata: testRuns.metadata })
     .from(testRuns)
     .where(eq(testRuns.id, testRunId));
-  if (!isProbeRun(probeCheck?.metadata)) {
+  const probeRun = isProbeRun(probeCheck?.metadata);
+  if (!probeRun) {
     const clusterIds = await getOrCreateFailureClusters(db, projectId, testRunId, pendingClusters);
     runCasesRows.forEach((row, i) => {
       const fingerprint = rowFingerprints[i];
@@ -611,6 +627,14 @@ export async function persistRunCases(
   }
 
   await upsertLocatorSnapshots(db, perCaseLocators, testRunId);
+  // A probe run replays tests with injected faults; it stays silent here too.
+  // The index is derived data: a failure to update it degrades to a warning and
+  // never fails the ingest.
+  if (!probeRun) {
+    await upsertLocatorUsages(db, projectId, perCaseUsages).catch((err) =>
+      console.warn('[locator-usages] failed to index the locators of this batch', err),
+    );
+  }
   await syncTestCaseMetadata(db, caseMetaSnapshots);
 
   // Feed the feature graph from the same rows: route nodes from the network

@@ -17,8 +17,11 @@ vi.mock('../../server/utils/notifications/run-notifications', () => ({ emitRunNo
 vi.mock('../../server/utils/scm/pr-feedback', () => ({ postRunPrFeedbackInBackground }));
 vi.mock('../../server/utils/heal/policy', () => ({ maybeEnqueueHealActionInBackground }));
 vi.mock('#shared/handlers/markers', () => ({ syncAutoMarkersForRun }));
+const upsertDailyRollup = vi.fn((_db: unknown, _id: number) => Promise.resolve());
+vi.mock('#shared/handlers/analytics/rollups', () => ({ upsertDailyRollup }));
 
 const { runFinalizeSideEffects } = await import('../../server/utils/run-finalize-side-effects');
+const { runEventBus } = await import('../../server/utils/run-events');
 
 const db = {} as never;
 
@@ -34,6 +37,7 @@ const allEffects = [
 describe('runFinalizeSideEffects', () => {
   beforeEach(() => {
     for (const fn of allEffects) fn.mockClear();
+    upsertDailyRollup.mockClear();
   });
 
   test('a real run fires every finalize side effect', () => {
@@ -49,6 +53,36 @@ describe('runFinalizeSideEffects', () => {
   test('a run with no metadata still finalizes', () => {
     runFinalizeSideEffects(db, 42, { projectId: 1 });
     for (const fn of allEffects) expect(fn).toHaveBeenCalledTimes(1);
+  });
+
+  test('rollup-updated follows each write of the rollup, never comes before it', async () => {
+    let release!: () => void;
+    upsertDailyRollup.mockImplementationOnce(() => new Promise<void>((resolve) => (release = resolve)));
+    const events: Array<{ type: string; projectId: number }> = [];
+    const unsubscribe = runEventBus.subscribeGlobal((e) => events.push({ type: e.type, projectId: e.projectId }));
+    try {
+      const counted = runFinalizeSideEffects(db, 42, { projectId: 7 });
+      await Promise.resolve();
+      // The widget cache would re-cache the old numbers if the event went out before the write.
+      expect(events).toEqual([]);
+      release();
+      await counted;
+      expect(events).toEqual([{ type: 'rollup-updated', projectId: 7 }]);
+      // The second write, once the regression signals are in, is announced too.
+      await vi.waitFor(() => expect(events).toHaveLength(2));
+      expect(upsertDailyRollup).toHaveBeenCalledTimes(2);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  test('a probe-stamped run writes no rollup and announces none', async () => {
+    const events: string[] = [];
+    const unsubscribe = runEventBus.subscribeGlobal((e) => events.push(e.type));
+    await runFinalizeSideEffects(db, 42, { projectId: 1, metadata: { piwiProbe: true } });
+    unsubscribe();
+    expect(upsertDailyRollup).not.toHaveBeenCalled();
+    expect(events).toEqual([]);
   });
 });
 

@@ -1,10 +1,17 @@
 /**
- * A safe-subset parser for Playwright locator expressions — no `eval`, no
- * `Function` construction from user input. Supports exactly the chain shapes
- * the rest of this extension emits and reads back: `getBy*` leaf calls,
- * `locator(css)`, and the narrowing chain methods `filter({ hasText })`,
- * `first()`, `last()`, `nth(n)`.
+ * The locator expressions this extension reads back, parsed with the shared
+ * `@piwitests/core` parser (no `eval`, no `Function` construction from user
+ * input) and narrowed to the chain shapes the in-page evaluator supports:
+ * `getBy*` leaf calls, `locator(css)`, and the narrowing chain methods
+ * `filter({ hasText })`, `first()`, `last()`, `nth(n)`.
  */
+import {
+  LOCATING_METHODS,
+  LocatorParseError,
+  parseLocatorChain,
+  type LocatorArg,
+  type LocatorCall as CoreLocatorCall,
+} from '@piwitests/core/locator-chain';
 
 export type LocatorCall =
   | { method: 'getByRole'; role: string; name?: string; exact?: boolean; level?: number }
@@ -22,7 +29,8 @@ export interface ParsedLocatorChain {
   calls: LocatorCall[];
 }
 
-const LEAF_METHODS = new Set([
+/** Methods this extension evaluates, in the order the error message lists them. */
+const SUPPORTED = new Set([
   'getByRole',
   'getByTestId',
   'getByText',
@@ -31,102 +39,45 @@ const LEAF_METHODS = new Set([
   'getByAltText',
   'getByTitle',
   'locator',
+  'filter',
+  'first',
+  'last',
+  'nth',
 ]);
-const NARROWING_METHODS = new Set(['filter', 'first', 'last', 'nth']);
 
-function endOfString(s: string, start: number): number {
-  const quote = s[start];
-  for (let i = start + 1; i < s.length; i++) {
-    if (s[i] === '\\') {
-      i++;
-      continue;
-    }
-    if (s[i] === quote) return i;
-  }
-  throw new Error('unterminated string');
+function stringArg(arg: LocatorArg | undefined, what: string): string {
+  if (arg?.type === 'string') return arg.value;
+  if (arg?.type === 'regex') throw new Error(`${what}: regular expressions aren't supported here yet`);
+  throw new Error(`${what}: expected a string literal`);
 }
 
-function matchParen(s: string, start: number): number {
-  let depth = 0;
-  for (let i = start; i < s.length; i++) {
-    const c = s[i];
-    if (c === "'" || c === '"' || c === '`') {
-      i = endOfString(s, i);
-      continue;
-    }
-    if (c === '(') depth++;
-    else if (c === ')' && --depth === 0) return i;
-  }
-  throw new Error('unmatched (');
+/** The option values of an object argument, by key. */
+function options(arg: LocatorArg | undefined): Map<string, LocatorArg> {
+  return new Map(arg?.type === 'object' ? arg.entries : []);
 }
 
-function parseString(s: string): string {
-  const q = s[0];
-  if (q !== "'" && q !== '"' && q !== '`') throw new Error('expected a string literal');
-  return s.slice(1, -1).replace(/\\(.)/g, '$1');
+function optString(opts: Map<string, LocatorArg>, key: string, what: string): { [k: string]: string } {
+  const value = opts.get(key);
+  return value === undefined ? {} : { [key]: stringArg(value, `${what} ${key}`) };
 }
 
-function parseObjectLiteral(s: string): Record<string, string | number | boolean> {
-  const trimmed = s.trim();
-  if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) throw new Error('expected an object literal');
-  const body = trimmed.slice(1, -1);
-  const out: Record<string, string | number | boolean> = {};
-  const re = /(\w+)\s*:\s*('(?:\\.|[^'])*'|"(?:\\.|[^"])*"|true|false|-?\d+(?:\.\d+)?)/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(body)) !== null) {
-    const key = m[1]!;
-    const raw = m[2]!;
-    if (raw === 'true') out[key] = true;
-    else if (raw === 'false') out[key] = false;
-    else if (/^-?\d+(?:\.\d+)?$/.test(raw)) out[key] = Number(raw);
-    else out[key] = parseString(raw);
-  }
-  return out;
+function optBoolean(opts: Map<string, LocatorArg>, key: string): { [k: string]: boolean } {
+  const value = opts.get(key);
+  return value?.type === 'boolean' ? { [key]: value.value } : {};
 }
 
-function splitTopLevelArgs(inner: string): string[] {
-  const args: string[] = [];
-  let i = 0;
-  while (i < inner.length) {
-    while (i < inner.length && (inner[i] === ' ' || inner[i] === ',')) i++;
-    if (i >= inner.length) break;
-    if (inner[i] === "'" || inner[i] === '"' || inner[i] === '`') {
-      const end = endOfString(inner, i);
-      args.push(inner.slice(i, end + 1));
-      i = end + 1;
-    } else if (inner[i] === '{') {
-      let depth = 0;
-      const start = i;
-      for (; i < inner.length; i++) {
-        if (inner[i] === '{') depth++;
-        else if (inner[i] === '}' && --depth === 0) {
-          i++;
-          break;
-        }
-      }
-      args.push(inner.slice(start, i));
-    } else {
-      const start = i;
-      while (i < inner.length && inner[i] !== ',') i++;
-      args.push(inner.slice(start, i));
-    }
-  }
-  return args;
-}
-
-function parseCall(methodName: string, argsSrc: string): LocatorCall {
-  const args = splitTopLevelArgs(argsSrc);
-  switch (methodName) {
+function toExtensionCall(call: CoreLocatorCall): LocatorCall {
+  const what = `${call.method}()`;
+  switch (call.method) {
     case 'getByRole': {
-      if (args.length < 1) throw new Error('getByRole needs a role');
-      const role = parseString(args[0]!);
-      const opts = args[1] ? parseObjectLiteral(args[1]) : {};
+      const opts = options(call.args[1]);
+      const level = opts.get('level');
       return {
         method: 'getByRole',
-        role,
-        ...(typeof opts.name === 'string' ? { name: opts.name } : {}),
-        ...(typeof opts.exact === 'boolean' ? { exact: opts.exact } : {}),
-        ...(typeof opts.level === 'number' ? { level: opts.level } : {}),
+        role: stringArg(call.args[0], what),
+        ...optString(opts, 'name', what),
+        ...optBoolean(opts, 'exact'),
+        ...(level?.type === 'number' ? { level: level.value } : {}),
       };
     }
     case 'getByTestId':
@@ -134,34 +85,32 @@ function parseCall(methodName: string, argsSrc: string): LocatorCall {
     case 'getByLabel':
     case 'getByPlaceholder':
     case 'getByAltText':
-    case 'getByTitle': {
-      if (args.length < 1) throw new Error(`${methodName} needs a value`);
-      const text = parseString(args[0]!);
-      const opts = args[1] ? parseObjectLiteral(args[1]) : {};
-      return { method: methodName, text, ...(typeof opts.exact === 'boolean' ? { exact: opts.exact } : {}) };
-    }
-    case 'locator': {
-      if (args.length < 1) throw new Error('locator needs a selector');
-      return { method: 'locator', selector: parseString(args[0]!) };
-    }
-    case 'filter': {
-      const opts = args[0] ? parseObjectLiteral(args[0]) : {};
+    case 'getByTitle':
       return {
-        method: 'filter',
-        ...(typeof opts.hasText === 'string' ? { hasText: opts.hasText } : {}),
-        ...(typeof opts.hasNotText === 'string' ? { hasNotText: opts.hasNotText } : {}),
+        method: call.method,
+        text: stringArg(call.args[0], what),
+        ...optBoolean(options(call.args[1]), 'exact'),
       };
+    case 'locator':
+      if (call.args.length > 1) throw new Error(`${what}: options aren't supported here yet — use filter()`);
+      return { method: 'locator', selector: stringArg(call.args[0], what) };
+    case 'filter': {
+      const opts = options(call.args[0]);
+      if (opts.has('has') || opts.has('hasNot') || opts.has('visible')) {
+        throw new Error(`${what}: only hasText and hasNotText are supported here yet`);
+      }
+      return { method: 'filter', ...optString(opts, 'hasText', what), ...optString(opts, 'hasNotText', what) };
     }
     case 'first':
-      return { method: 'first' };
     case 'last':
-      return { method: 'last' };
+      return { method: call.method };
     case 'nth': {
-      if (args.length < 1) throw new Error('nth needs an index');
-      return { method: 'nth', index: Number(args[0]) };
+      const index = call.args[0];
+      if (index?.type !== 'number') throw new Error('nth needs an index');
+      return { method: 'nth', index: index.value };
     }
     default:
-      throw new Error(`unsupported method: ${methodName}()`);
+      throw new Error(`unsupported method: ${call.method}()`);
   }
 }
 
@@ -172,36 +121,24 @@ function parseCall(methodName: string, argsSrc: string): LocatorCall {
  * stack trace.
  */
 export function parseLocatorExpression(expr: string): ParsedLocatorChain {
-  const trimmed = expr.trim().replace(/^(?:await\s+)?page\./, '');
-  const calls: LocatorCall[] = [];
-  let i = 0;
-  let leafSeen = false;
-  while (i < trimmed.length) {
-    const nameMatch = /^[A-Za-z_$][\w$]*/.exec(trimmed.slice(i));
-    if (!nameMatch) throw new Error(`expected a method name at "${trimmed.slice(i, i + 20)}"`);
-    const methodName = nameMatch[0];
-    const parenStart = i + methodName.length;
-    if (trimmed[parenStart] !== '(') throw new Error(`expected "(" after ${methodName}`);
-    const parenEnd = matchParen(trimmed, parenStart);
-    if (!LEAF_METHODS.has(methodName) && !NARROWING_METHODS.has(methodName)) {
-      throw new Error(`unsupported method: ${methodName}() — try getBy*, locator, filter, first, last, or nth`);
+  let chain;
+  try {
+    chain = parseLocatorChain(expr);
+  } catch (error) {
+    if (error instanceof LocatorParseError && error.message.startsWith('unsupported method')) {
+      throw new Error(`${error.message} — try getBy*, locator, filter, first, last, or nth`);
     }
-    if (LEAF_METHODS.has(methodName)) {
-      if (leafSeen)
-        throw new Error(
-          `${methodName}() can only start a chain, or follow an anchor — chained locators aren't supported here yet`,
-        );
-      leafSeen = true;
-    } else if (!leafSeen) {
-      throw new Error(`${methodName}() needs a locator before it`);
-    }
-    calls.push(parseCall(methodName, trimmed.slice(parenStart + 1, parenEnd)));
-    i = parenEnd + 1;
-    if (i < trimmed.length) {
-      if (trimmed[i] !== '.') throw new Error(`expected "." at "${trimmed.slice(i, i + 20)}"`);
-      i++;
-    }
+    throw error;
   }
-  if (calls.length === 0) throw new Error('empty expression');
-  return { calls };
+  const locating = chain.calls.filter((c) => LOCATING_METHODS.has(c.method));
+  if (locating.length > 1) {
+    throw new Error(
+      `${locating[1]!.method}() can only start a chain, or follow an anchor — chained locators aren't supported here yet`,
+    );
+  }
+  const unsupported = chain.calls.find((c) => !SUPPORTED.has(c.method));
+  if (unsupported) {
+    throw new Error(`unsupported method: ${unsupported.method}() — try getBy*, locator, filter, first, last, or nth`);
+  }
+  return { calls: chain.calls.map(toExtensionCall) };
 }

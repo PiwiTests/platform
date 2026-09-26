@@ -25,6 +25,7 @@ export type CapabilityId =
   | 'ai'
   | 'mcp'
   | 'notifications'
+  | 'quality-reports'
   | 'pr-feedback'
   | 'auto-heal'
   | 'integrations'
@@ -142,6 +143,15 @@ export const CAPABILITIES: CapabilityDef[] = [
     detection: 'notifications',
     since: '0.3.0',
     doc: 'features/notifications',
+  },
+  {
+    id: 'quality-reports',
+    module: 'workflow',
+    levels: ['instance'],
+    needs: [],
+    detection: 'quality-reports',
+    since: '0.39.0',
+    doc: 'features/quality-reports',
   },
   {
     id: 'pr-feedback',

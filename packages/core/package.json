@@ -1,6 +1,6 @@
 {
   "name": "@piwitests/core",
-  "version": "0.37.0",
+  "version": "0.39.0",
   "description": "Pure cross-cutting logic and wire shapes shared by the Piwi Dashboard app and the Playwright reporter",
   "private": true,
   "type": "module",
@@ -22,7 +22,10 @@
     "./wire": "./src/wire.ts",
     "./recording": "./src/recording.ts",
     "./function-match": "./src/function-match.ts",
-    "./codegen": "./src/codegen.ts"
+    "./codegen": "./src/codegen.ts",
+    "./locator-chain": "./src/locator-chain.ts",
+    "./step-locators": "./src/step-locators.ts",
+    "./locator-index": "./src/locator-index.ts"
   },
   "scripts": {
     "core:typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tests/tsconfig.json",

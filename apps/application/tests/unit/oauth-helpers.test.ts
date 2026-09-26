@@ -145,7 +145,23 @@ describe('allowlists', () => {
 // Provisioning ---------------------------------------------------------------
 
 describe('resolveProvisioningAction', () => {
-  test('refresh: identity match keeps profile + email in sync, OR-ing verification', () => {
+  test('refresh: identity match keeps profile + email in sync', () => {
+    const existing = row({
+      id: 7,
+      email: 'old@example.com',
+      emailVerified: false,
+      oauthProvider: 'google',
+      oauthProviderId: 'pid-1',
+    });
+    const action = resolveProvisioningAction(profile({ email: 'new@example.com', emailVerified: true }), existing);
+    expect(action).toEqual({
+      kind: 'refresh',
+      userId: 7,
+      set: { avatarUrl: 'https://img/a.png', name: 'Alice', email: 'new@example.com', emailVerified: true },
+    });
+  });
+
+  test('refresh: a changed address takes only the provider verdict, not the old address flag', () => {
     const existing = row({
       id: 7,
       email: 'old@example.com',
@@ -154,11 +170,24 @@ describe('resolveProvisioningAction', () => {
       oauthProviderId: 'pid-1',
     });
     const action = resolveProvisioningAction(profile({ email: 'new@example.com', emailVerified: false }), existing);
-    expect(action).toEqual({
-      kind: 'refresh',
-      userId: 7,
-      set: { avatarUrl: 'https://img/a.png', name: 'Alice', email: 'new@example.com', emailVerified: true },
+    expect(action.kind).toBe('refresh');
+    if (action.kind === 'refresh') {
+      expect(action.set.email).toBe('new@example.com');
+      expect(action.set.emailVerified).toBe(false);
+    }
+  });
+
+  test('refresh: the same address keeps a verification the provider does not repeat', () => {
+    const existing = row({
+      id: 7,
+      email: 'alice@example.com',
+      emailVerified: true,
+      oauthProvider: 'google',
+      oauthProviderId: 'pid-1',
     });
+    const action = resolveProvisioningAction(profile({ emailVerified: false }), existing);
+    expect(action.kind).toBe('refresh');
+    if (action.kind === 'refresh') expect(action.set.emailVerified).toBe(true);
   });
 
   test('refresh: keeps stored email when provider sends none', () => {
@@ -177,8 +206,8 @@ describe('resolveProvisioningAction', () => {
     }
   });
 
-  test('link: verified email matches an unlinked local account', () => {
-    const local = row({ id: 9, email: 'alice@example.com' });
+  test('link: verified email matches an unlinked local account that verified it too', () => {
+    const local = row({ id: 9, email: 'alice@example.com', emailVerified: true });
     const action = resolveProvisioningAction(profile(), undefined, local);
     expect(action).toEqual({
       kind: 'link',
@@ -194,12 +223,39 @@ describe('resolveProvisioningAction', () => {
   });
 
   test('link: re-linking the same provider identity is allowed (not a conflict)', () => {
-    const local = row({ id: 9, email: 'alice@example.com', oauthProvider: 'google', oauthProviderId: 'pid-1' });
+    const local = row({
+      id: 9,
+      email: 'alice@example.com',
+      emailVerified: true,
+      oauthProvider: 'google',
+      oauthProviderId: 'pid-1',
+    });
     expect(resolveProvisioningAction(profile(), undefined, local).kind).toBe('link');
+  });
+
+  test('unverified: verified email matches a local account that never verified it', () => {
+    const local = row({ id: 9, email: 'alice@example.com', emailVerified: false, password: 'hash' });
+    expect(resolveProvisioningAction(profile(), undefined, local)).toEqual({ kind: 'unverified' });
+  });
+
+  test('unverified: an unverified match is refused even when it is unlinked and passwordless', () => {
+    const local = row({ id: 9, email: 'alice@example.com', emailVerified: false });
+    expect(resolveProvisioningAction(profile({ provider: 'github' }), undefined, local).kind).toBe('unverified');
   });
 
   test('conflict: verified email matches an account linked to a different provider', () => {
     const local = row({ id: 9, email: 'alice@example.com', oauthProvider: 'github', oauthProviderId: 'gh-9' });
+    expect(resolveProvisioningAction(profile({ provider: 'google' }), undefined, local)).toEqual({ kind: 'conflict' });
+  });
+
+  test('conflict: a locally verified account linked to a different provider is still a conflict', () => {
+    const local = row({
+      id: 9,
+      email: 'alice@example.com',
+      emailVerified: true,
+      oauthProvider: 'github',
+      oauthProviderId: 'gh-9',
+    });
     expect(resolveProvisioningAction(profile({ provider: 'google' }), undefined, local)).toEqual({ kind: 'conflict' });
   });
 

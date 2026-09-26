@@ -55,6 +55,30 @@ test.describe('pick.js', () => {
     await expect(page.locator('#__piwi_picker_label')).toContainText("getByRole('button', { name: 'Join now' })");
   });
 
+  test('a form control named only by its label is located by that label', async ({ context }) => {
+    const page = await context.newPage();
+    await page.setContent(`<!doctype html><html><body style="margin-top:120px">
+      <label for="country">Country</label>
+      <select id="country"><option>United Kingdom</option><option>Ireland</option><option>France</option></select>
+      <label><input type="checkbox" id="news"> Keep me posted on new roasts</label>
+    </body></html>`);
+    await page.addScriptTag({ path: path.join(DIST, 'pick.js') });
+    await expect(page.getByText('click any element to generate locators')).toBeVisible();
+
+    const preview = page.locator('#__piwi_picker_locator');
+    await page.hover('#country');
+    await expect(preview).toContainText("getByRole('combobox', { name: 'Country' })");
+    // The suggestion resolves in real Playwright too.
+    await expect(page.getByRole('combobox', { name: 'Country' })).toHaveId('country');
+
+    await page.hover('#news');
+    await expect(preview).toContainText("getByRole('checkbox', { name: 'Keep me posted on new roasts' })");
+    await page.evaluate(() => document.getElementById('news')!.removeAttribute('id'));
+    await page.mouse.move(0, 0);
+    await page.hover('input[type=checkbox]');
+    await expect(preview).toContainText("getByRole('checkbox', { name: 'Keep me posted on new roasts' })");
+  });
+
   test('Escape at the element step ends the flow with no results panel', async ({ context }) => {
     const page = await context.newPage();
     await page.setContent(`<!doctype html><html><body><button id="x">X</button></body></html>`);

@@ -102,7 +102,7 @@ A feature or a gap's node opens in the **feature graph**: the node in the middle
 
 ## Precision, muting and the digest
 
-Every triage verdict is a labeled example: accepted and covered-by count *for* a detector, dismissed-as-wrong *against*. A detector below 60% precision on a project with twenty or more verdicts **mutes itself** there — its rows drop out of the pull-request comment first, and the Gaps tab and the admin **About** page say so. A weekly **digest** of the top new gaps per project is **planned** — the selection ships today; delivery through your [notification channels](/features/notifications) is not yet wired.
+Every triage verdict is a labeled example: accepted and covered-by count *for* a detector, dismissed-as-wrong *against*. A detector below 60% precision on a project with twenty or more verdicts **mutes itself** there — its rows drop out of the pull-request comment first, and the Gaps tab and the admin **About** page say so. The weekly **digest** of the top new gaps per project is the **Gaps digest** [quality report](/features/quality-reports#what-a-report-contains): [schedule it](/features/quality-reports#report-schedules) to your channels.
 
 ## Triage
 

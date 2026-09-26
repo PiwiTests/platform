@@ -154,6 +154,12 @@
         flex: 1 1 160px;
         min-width: 0;
       }
+      .mapping-row input.mapping-branch {
+        flex: 0 1 130px;
+        min-width: 0;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 12.5px;
+      }
       .mapping-row button.remove-mapping {
         flex-shrink: 0;
         padding: 6px 10px;
@@ -216,7 +222,9 @@
         <p class="hint">
           Which project applies on which site — one instance can serve more than one. Checked in order; the first
           matching pattern wins. Same wildcard syntax as a test function's own URL pattern: <code>*</code> matches
-          within a path segment, <code>**</code> matches across segments.
+          within a path segment, <code>**</code> matches across segments. The branch, optional, is the one deployed at
+          those URLs (a staging site on <code>develop</code>, say): Tested elements then shows what that branch's tests
+          reach.
         </p>
         <div id="mappings"></div>
         <div class="row" style="margin-top: 10px">

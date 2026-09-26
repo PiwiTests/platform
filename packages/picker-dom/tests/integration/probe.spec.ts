@@ -1,6 +1,12 @@
 import { test, expect } from '@playwright/test';
 import { probeElementAttrs } from '../../src/probe.js';
 import { domRoleOf, domHeadingLevel } from '../../src/dom-role.js';
+import {
+  approximateAccessibleName,
+  CAPTURED_ATTRIBUTES,
+  INPUT_TYPE_TO_ROLE,
+  TAG_TO_ROLE,
+} from '@piwitests/core/locator-generation';
 
 test.describe('domRoleOf / domHeadingLevel', () => {
   test('resolves explicit and implicit roles, and heading level', async ({ page }) => {
@@ -42,7 +48,6 @@ test.describe('probeElementAttrs', () => {
     const attrs = await page.locator('#submit').evaluate(probeElementAttrs, {
       keep: ['id', 'data-testid', 'class'],
       includeStructural: false,
-      includeLabelText: false,
     });
     expect(attrs.attributes['data-testid']).toBe('submit-btn');
     expect(attrs.selectorCounts.testId).toBe(1);
@@ -65,7 +70,6 @@ test.describe('probeElementAttrs', () => {
       inputRoles: {},
       roleSources: 'button,nav',
       includeStructural: true,
-      includeLabelText: false,
     });
     expect(withStructural.rolePosition).toEqual({ role: 'button', count: 2, index: 0 });
     expect(withStructural.ancestors?.[0]).toMatchObject({ tag: 'nav', ariaLabel: 'Main' });
@@ -73,7 +77,6 @@ test.describe('probeElementAttrs', () => {
     const withoutStructural = await page.locator('[data-testid="a"]').evaluate(probeElementAttrs, {
       keep: ['data-testid'],
       includeStructural: false,
-      includeLabelText: false,
     });
     expect(withoutStructural.rolePosition).toBeUndefined();
     expect(withoutStructural.ancestors).toBeUndefined();
@@ -90,7 +93,6 @@ test.describe('probeElementAttrs', () => {
       inputRoles: {},
       roleSources: 'button,div',
       includeStructural: true,
-      includeLabelText: false,
     });
     // Vue's scoped-style marker sits first in the attribute list and would win
     // a naive "first data-*" scan — it identifies a build, not an element.
@@ -115,7 +117,6 @@ test.describe('probeElementAttrs', () => {
       inputRoles: {},
       roleSources: 'button,div',
       includeStructural: true,
-      includeLabelText: false,
     });
     expect(attrs.ancestors).toEqual([]);
   });
@@ -134,7 +135,6 @@ test.describe('probeElementAttrs', () => {
       inputRoles: {},
       roleSources: 'button,div',
       includeStructural: true,
-      includeLabelText: false,
     });
     expect(attrs.ancestors?.[0]?.dataAttr).toEqual({ name: 'data-qa', value: 'cart-row' });
   });
@@ -149,7 +149,6 @@ test.describe('probeElementAttrs', () => {
       inputRoles: {},
       roleSources: 'button,div',
       includeStructural: true,
-      includeLabelText: false,
     });
     // A row's ordinal changes the moment the list is sorted or filtered.
     expect(attrs.ancestors?.[0]?.dataAttr).toBeUndefined();
@@ -165,7 +164,6 @@ test.describe('probeElementAttrs', () => {
       inputRoles: {},
       roleSources: 'button,div',
       includeStructural: true,
-      includeLabelText: false,
     });
     expect(attrs.ancestors?.[0]?.dataAttr).toEqual({ name: 'data-product-sku', value: 'KB-9' });
   });
@@ -183,7 +181,6 @@ test.describe('probeElementAttrs', () => {
       inputRoles: {},
       roleSources: 'button',
       includeStructural: true,
-      includeLabelText: false,
     });
     expect(attrs.selectorCounts.text).toBe(2);
   });
@@ -199,7 +196,6 @@ test.describe('probeElementAttrs', () => {
       inputRoles: {},
       roleSources: 'button,div',
       includeStructural: true,
-      includeLabelText: false,
     });
     // A <span> has no role, so there is nothing role-shaped to scope — the
     // walk used to stop here and the leaf got no chain at all.
@@ -220,7 +216,6 @@ test.describe('probeElementAttrs', () => {
       inputRoles: {},
       roleSources: 'button',
       includeStructural: true,
-      includeLabelText: false,
     });
     // Two badges match. Their wrapping <section> and <div> contain the text too
     // but only through a descendant, and Playwright resolves to the smallest
@@ -240,7 +235,6 @@ test.describe('probeElementAttrs', () => {
       inputRoles: {},
       roleSources: 'button,li,h3',
       includeStructural: true,
-      includeLabelText: false,
     });
     // Nothing on the page carries a hook and every <li> has the same role, so
     // the heading inside the row is the only thing that names it.
@@ -264,32 +258,76 @@ test.describe('probeElementAttrs', () => {
       inputRoles: {},
       roleSources: 'button,li',
       includeStructural: true,
-      includeLabelText: false,
     });
     // filter({ hasText: 'Remove' }) would match every row — filtering on the
     // very text being disambiguated singles out nothing.
     expect(attrs.ancestors?.[0]?.filterText).toBeUndefined();
   });
 
-  test('includes labelText only when includeLabelText is set', async ({ page }) => {
+  test('reads labelText from a for label, a wrapping label and aria-labelledby', async ({ page }) => {
     await page.setContent(`<!doctype html><html><body>
       <label for="email">Email address</label>
       <input id="email" />
+      <label><input id="news" type="checkbox"> Keep me posted</label>
+      <span id="lbl-a">Delivery</span><span id="lbl-b">window</span>
+      <input id="slot" aria-labelledby="lbl-a lbl-b" />
+      <input id="bare" />
     </body></html>`);
-    const withLabel = await page.locator('#email').evaluate(probeElementAttrs, {
-      keep: ['id'],
-      includeStructural: false,
-      includeLabelText: true,
-    });
-    expect(withLabel.hasLabel).toBe(true);
-    expect(withLabel.labelText).toBe('Email address');
+    const probe = (id: string) =>
+      page.locator(`#${id}`).evaluate(probeElementAttrs, { keep: ['id'], includeStructural: false });
 
-    const withoutLabel = await page.locator('#email').evaluate(probeElementAttrs, {
-      keep: ['id'],
-      includeStructural: false,
-      includeLabelText: false,
-    });
-    expect(withoutLabel.hasLabel).toBe(true);
-    expect(withoutLabel.labelText).toBeUndefined();
+    expect(await probe('email')).toMatchObject({ hasLabel: true, labelText: 'Email address' });
+    expect(await probe('news')).toMatchObject({ hasLabel: true, labelText: 'Keep me posted' });
+    expect(await probe('slot')).toMatchObject({ hasLabel: false, labelText: 'Delivery window' });
+    expect(await probe('bare')).toMatchObject({ hasLabel: false, labelText: null });
   });
+});
+
+test.describe('probeElementAttrs + approximateAccessibleName: form-field names', () => {
+  // Every combination must yield the name Playwright itself computes, so the
+  // `getByRole(role, { name })` built from it resolves to the element.
+  const FIELDS = [
+    {
+      role: 'combobox',
+      html: (a: string) => `<select ${a}><option>United Kingdom</option><option>Ireland</option></select>`,
+    },
+    { role: 'textbox', html: (a: string) => `<input type="text" ${a}>` },
+    { role: 'checkbox', html: (a: string) => `<input type="checkbox" ${a}>` },
+    { role: 'radio', html: (a: string) => `<input type="radio" ${a}>` },
+    { role: 'textbox', html: (a: string) => `<textarea ${a}>Some value</textarea>` },
+  ];
+  const LABELINGS = [
+    { kind: 'label for', wrap: (f: string) => `<label for="f">Country</label>${f.replace(' ', ' id="f" ')}` },
+    { kind: 'wrapping label', wrap: (f: string) => `<label>${f.replace(' ', ' id="f" ')} Country</label>` },
+    {
+      kind: 'aria-labelledby',
+      wrap: (f: string) => `<span id="l">Country</span>${f.replace(' ', ' id="f" aria-labelledby="l" ')}`,
+    },
+    { kind: 'aria-label', wrap: (f: string) => f.replace(' ', ' id="f" aria-label="Country" ') },
+  ];
+
+  for (const field of FIELDS) {
+    for (const labeling of LABELINGS) {
+      test(`${field.html('').split(/[ >]/)[0]}> ${field.role} named by ${labeling.kind}`, async ({ page }) => {
+        await page.setContent(`<!doctype html><html><body>
+          ${labeling.wrap(field.html(''))}
+          <select><option>Country</option></select>
+        </body></html>`);
+        const attrs = await page.locator('#f').evaluate(probeElementAttrs, {
+          keep: [...CAPTURED_ATTRIBUTES],
+          tagRoles: TAG_TO_ROLE,
+          inputRoles: INPUT_TYPE_TO_ROLE,
+          roleSources: '[role],input,select,textarea',
+          includeStructural: true,
+        });
+        const name = approximateAccessibleName({ ...attrs, accessibleName: null });
+        expect(name).toBe('Country');
+        // Playwright agrees on the name, and only this field carries it.
+        const byName = page.getByRole(field.role as 'textbox', { name: name!, exact: true });
+        await expect(byName).toHaveCount(1);
+        await expect(byName).toHaveId('f');
+        expect(attrs.selectorCounts.roleName).toBe(1);
+      });
+    }
+  }
 });

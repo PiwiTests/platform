@@ -1,9 +1,10 @@
-import { and, inArray, lt, sql } from 'drizzle-orm';
+import { and, count, eq, inArray, isNotNull, isNull, lt, sql } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
 import type { SQLiteTable } from 'drizzle-orm/sqlite-core';
 import { getDialect } from '../database';
 import type { DbClient } from '../database';
 import {
+  analyticsDashboards,
   casePayloads,
   entityLinks,
   failureClusters,
@@ -15,6 +16,7 @@ import {
   locatorSnapshots,
   networkRequests,
   notificationDeliveries,
+  reportSnapshots,
   shareLinks,
   subscriptions,
   testRuns,
@@ -23,17 +25,28 @@ import {
 import { deleteFileRow, deleteRunStorageDir, gcTraceBlobs } from './delete-run-files';
 import { deleteGraphRowsForRuns } from './graph-ingest';
 import { recomputeClusterOccurrences } from '#shared/handlers/failure-cluster-ops';
+import { archiveRunsIntoRollups, recomputeRollupCells } from '#shared/handlers/analytics/rollups';
+import { dayKey } from '#shared/handlers/analytics/common';
+import type { DrizzleDB } from '#shared/handlers/db';
+import { deleteDashboardRows } from '#shared/handlers/dashboards';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 /** Max ids per IN (...) list — stays well under SQLite's bound-variable limit. */
 const ID_BATCH_SIZE = 500;
 
-function* batches<T>(items: T[]): Generator<T[]> {
-  for (let i = 0; i < items.length; i += ID_BATCH_SIZE) {
-    yield items.slice(i, i + ID_BATCH_SIZE);
+function* batches<T>(items: T[], size = ID_BATCH_SIZE): Generator<T[]> {
+  for (let i = 0; i < items.length; i += size) {
+    yield items.slice(i, i + size);
   }
 }
+
+/**
+ * Runs deleted per transaction: each slice archives, deletes and recomputes its own runs, so the rollups
+ * are exact at every commit, and a first purge of years of history never holds SQLite's write lock (or a
+ * long PostgreSQL transaction) for the whole aggregation while runs keep arriving.
+ */
+const PURGE_SLICE_RUNS = 100;
 
 export interface DeleteRunsResult {
   deletedRuns: number;
@@ -56,15 +69,25 @@ export interface DeleteRunsResult {
  * gone, so a blob shared by several deleted rows (or by another run) is counted
  * correctly — a per-row refcount taken before deletion sees the not-yet-deleted
  * siblings and leaks the blob.
+ *
+ * The daily rollups follow in the transaction that deletes the run rows: the
+ * retained rows of the touched days are recomputed from the runs that stay.
+ * With `archiveRollups` (age-based deletion) the deleted runs' numbers are
+ * first added to their cells' archived rows, so the day keeps them; without it
+ * (deleting a run by hand) the run's numbers leave the day.
  */
-export async function deleteRunsByIds(db: DbClient, runIds: number[]): Promise<DeleteRunsResult> {
+export async function deleteRunsByIds(
+  db: DbClient,
+  runIds: number[],
+  options: { archiveRollups?: boolean; sliceRuns?: number } = {},
+): Promise<DeleteRunsResult> {
   if (runIds.length === 0) return { deletedRuns: 0, deletedCases: 0 };
 
-  const runs: { id: number; projectId: number }[] = [];
+  const runs: { id: number; projectId: number; startTime: Date }[] = [];
   for (const batch of batches(runIds)) {
     runs.push(
       ...(await db
-        .select({ id: testRuns.id, projectId: testRuns.projectId })
+        .select({ id: testRuns.id, projectId: testRuns.projectId, startTime: testRuns.startTime })
         .from(testRuns)
         .where(inArray(testRuns.id, batch))),
     );
@@ -172,11 +195,24 @@ export async function deleteRunsByIds(db: DbClient, runIds: number[]): Promise<D
       .where(inArray(locatorSnapshots.lastSeenRunId, batch));
   }
 
-  for (const batch of batches(presentRunIds)) {
-    await db.delete(testRunsCases).where(inArray(testRunsCases.testRunId, batch));
-  }
-  for (const batch of batches(presentRunIds)) {
-    await db.delete(testRuns).where(inArray(testRuns.id, batch));
+  // A project's day in as few slices as possible, so each day is recomputed about once.
+  const ordered = [...runs].sort(
+    (a, b) => a.projectId - b.projectId || new Date(a.startTime).getTime() - new Date(b.startTime).getTime(),
+  );
+  for (const slice of batches(ordered, options.sliceRuns ?? PURGE_SLICE_RUNS)) {
+    const sliceIds = slice.map((run) => run.id);
+    const touchedDays = slice.map((run) => ({ projectId: run.projectId, day: dayKey(run.startTime) }));
+    await db.transaction(async (tx) => {
+      const txDb = tx as unknown as DrizzleDB;
+      if (options.archiveRollups) await archiveRunsIntoRollups(txDb, sliceIds);
+      for (const batch of batches(sliceIds)) {
+        await tx.delete(testRunsCases).where(inArray(testRunsCases.testRunId, batch));
+      }
+      for (const batch of batches(sliceIds)) {
+        await tx.delete(testRuns).where(inArray(testRuns.id, batch));
+      }
+      await recomputeRollupCells(txDb, touchedDays);
+    });
   }
 
   // Graph nodes/edges whose newest evidence was a deleted run, per project, so
@@ -204,16 +240,76 @@ export async function deleteRunsByIds(db: DbClient, runIds: number[]): Promise<D
 }
 
 /**
- * Delete all test runs older than the cutoff. Thin wrapper over
- * {@link deleteRunsByIds}, which owns the full deletion.
+ * Newest runs per project that age-based pruning always leaves in place
+ * (`PIWI_RETENTION_MIN_RUNS`); 0 means no floor.
  */
-export async function deleteRunsOlderThan(db: DbClient, olderThanDays: number): Promise<DeleteRunsResult> {
+export function retentionMinRuns(): number {
+  const n = Number(process.env.PIWI_RETENTION_MIN_RUNS);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+}
+
+export interface AgedRunsResult extends DeleteRunsResult {
+  /** Runs past the cutoff left in place because they are kept forever. */
+  skippedKept: number;
+  /** Runs past the cutoff left in place because they are among their project's newest. */
+  skippedNewest: number;
+}
+
+/**
+ * Predicate: the run is not among the newest `keep` runs of its project, by
+ * start time. Ranked over every run of the project, kept or not.
+ */
+function notAmongNewest(keep: number): SQL {
+  return sql`${testRuns.id} NOT IN (
+    SELECT id FROM (
+      SELECT ${sql.identifier('id')} AS id,
+        row_number() OVER (
+          PARTITION BY ${sql.identifier('project_id')}
+          ORDER BY ${sql.identifier('start_time')} DESC, ${sql.identifier('id')} DESC
+        ) AS rn
+      FROM ${testRuns}
+    ) ranked WHERE rn <= ${keep}
+  )`;
+}
+
+/**
+ * Delete the test runs older than the cutoff that nothing protects. A run is
+ * protected when it is kept forever (`kept_at` set), or when it is among the
+ * newest `keepNewestPerProject` runs of its project — so a project that stops
+ * reporting keeps its last runs instead of emptying. Thin wrapper over
+ * {@link deleteRunsByIds}, which owns the full deletion; age-based deletion is
+ * archival, so the deleted runs' numbers move to the rollups' archived rows.
+ */
+export async function deleteRunsOlderThan(
+  db: DbClient,
+  olderThanDays: number,
+  options: { keepNewestPerProject?: number } = {},
+): Promise<AgedRunsResult> {
   const cutoffDate = new Date(Date.now() - olderThanDays * MS_PER_DAY);
-  const oldRuns = await db.select({ id: testRuns.id }).from(testRuns).where(lt(testRuns.startTime, cutoffDate));
-  return deleteRunsByIds(
+  const keepNewest = Math.max(0, Math.floor(options.keepNewestPerProject ?? 0));
+  const aged = lt(testRuns.startTime, cutoffDate);
+
+  const conditions = [aged, isNull(testRuns.keptAt)];
+  if (keepNewest > 0) conditions.push(notAmongNewest(keepNewest));
+  const doomed = await db
+    .select({ id: testRuns.id })
+    .from(testRuns)
+    .where(and(...conditions));
+
+  const [agedTotal] = await db.select({ n: count() }).from(testRuns).where(aged);
+  const [agedKept] = await db
+    .select({ n: count() })
+    .from(testRuns)
+    .where(and(aged, isNotNull(testRuns.keptAt)));
+  const skippedKept = Number(agedKept?.n ?? 0);
+  const skippedNewest = Number(agedTotal?.n ?? 0) - skippedKept - doomed.length;
+
+  const deleted = await deleteRunsByIds(
     db,
-    oldRuns.map((r) => r.id),
+    doomed.map((r) => r.id),
+    { archiveRollups: true },
   );
+  return { ...deleted, skippedKept, skippedNewest };
 }
 
 /**
@@ -237,6 +333,7 @@ export interface OrphanSweepResult {
   notificationDeliveries: number;
   casePayloads: number;
   shareLinks: number;
+  dashboards: number;
 }
 
 async function countWhere(db: DbClient, table: SQLiteTable, where: SQL): Promise<number> {
@@ -264,10 +361,15 @@ export async function sweepOrphans(db: DbClient): Promise<OrphanSweepResult> {
   // so a concurrent sweep must not reap rows from an in-flight ingest batch.
   const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
   const orphanedPayloads = and(lt(casePayloads.createdAt, oneHourAgo), payloadUnreferenced())!;
-  // `share_links.entity_id` is polymorphic over two tables and carries no FK,
-  // so a link whose entity was pruned lingers until this sweep removes it.
+  // `share_links.entity_id` is polymorphic over four tables and carries no FK,
+  // so a link whose entity was pruned or deleted lingers until this sweep removes
+  // it (a snapshot's and a dashboard's links go with them; this is the safety net).
   const orphanedShareLinks = sql`(${shareLinks.entityKind} = 'execution' AND NOT EXISTS (SELECT 1 FROM ${testRunsCases} WHERE ${testRunsCases.id} = ${shareLinks.entityId}))
-    OR (${shareLinks.entityKind} = 'cluster' AND NOT EXISTS (SELECT 1 FROM ${failureClusters} WHERE ${failureClusters.id} = ${shareLinks.entityId}))`;
+    OR (${shareLinks.entityKind} = 'cluster' AND NOT EXISTS (SELECT 1 FROM ${failureClusters} WHERE ${failureClusters.id} = ${shareLinks.entityId}))
+    OR (${shareLinks.entityKind} = 'report' AND NOT EXISTS (SELECT 1 FROM ${reportSnapshots} WHERE ${reportSnapshots.id} = ${shareLinks.entityId}))
+    OR (${shareLinks.entityKind} = 'dashboard' AND NOT EXISTS (SELECT 1 FROM ${analyticsDashboards} WHERE ${analyticsDashboards.id} = ${shareLinks.entityId}))`;
+  // A private dashboard whose owner was deleted has no one left who can open it; a shared one stays.
+  const orphanedDashboards = and(eq(analyticsDashboards.visibility, 'private'), isNull(analyticsDashboards.ownerId))!;
 
   const result: OrphanSweepResult = {
     networkRequests: await countWhere(db, networkRequests, orphanedNetworkRequests),
@@ -278,6 +380,7 @@ export async function sweepOrphans(db: DbClient): Promise<OrphanSweepResult> {
     notificationDeliveries: await countWhere(db, notificationDeliveries, orphanedDeliveries),
     casePayloads: await countWhere(db, casePayloads, orphanedPayloads),
     shareLinks: await countWhere(db, shareLinks, orphanedShareLinks),
+    dashboards: await countWhere(db, analyticsDashboards, orphanedDashboards),
   };
 
   await db.delete(networkRequests).where(orphanedNetworkRequests);
@@ -290,6 +393,7 @@ export async function sweepOrphans(db: DbClient): Promise<OrphanSweepResult> {
   await db.delete(notificationDeliveries).where(orphanedDeliveries);
   await db.delete(casePayloads).where(orphanedPayloads);
   await db.delete(shareLinks).where(orphanedShareLinks);
+  if (result.dashboards > 0) await deleteDashboardRows(db as unknown as DrizzleDB, orphanedDashboards);
 
   return result;
 }
@@ -309,6 +413,31 @@ export async function pruneNotificationDeliveries(db: DbClient, olderThanDays: n
   )!;
   const pruned = await countWhere(db, notificationDeliveries, settled);
   if (pruned > 0) await db.delete(notificationDeliveries).where(settled);
+  return pruned;
+}
+
+/** Days a report snapshot is kept when `PIWI_RETENTION_REPORT_DAYS` is unset. */
+export const DEFAULT_REPORT_RETENTION_DAYS = 365;
+
+/**
+ * Delete report snapshots generated before the cutoff. A snapshot is a frozen
+ * quality report of a few tens of kilobytes; its schedule stays.
+ */
+export async function pruneReportSnapshots(db: DbClient, olderThanDays: number): Promise<number> {
+  const old = lt(reportSnapshots.generatedAt, new Date(Date.now() - olderThanDays * MS_PER_DAY));
+  const pruned = await countWhere(db, reportSnapshots, old);
+  if (pruned > 0) {
+    // A report link has no FK to its snapshot: it goes with it.
+    await db
+      .delete(shareLinks)
+      .where(
+        and(
+          eq(shareLinks.entityKind, 'report'),
+          inArray(shareLinks.entityId, db.select({ id: reportSnapshots.id }).from(reportSnapshots).where(old)),
+        ),
+      );
+    await db.delete(reportSnapshots).where(old);
+  }
   return pruned;
 }
 

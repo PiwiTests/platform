@@ -108,3 +108,19 @@ describe('parseLocatorExpression', () => {
     expect(() => parseLocatorExpression(`getByText('unterminated`)).toThrow('unterminated string');
   });
 });
+
+describe('parseLocatorExpression — shapes the evaluator does not support yet', () => {
+  it('refuses a regex name with a clear message', () => {
+    expect(() => parseLocatorExpression(`getByRole('button', { name: /pay/i })`)).toThrow(/regular expressions/);
+  });
+
+  it('refuses a has filter', () => {
+    expect(() => parseLocatorExpression(`locator('li').filter({ has: getByRole('button') })`)).toThrow(
+      /only hasText and hasNotText/,
+    );
+  });
+
+  it('refuses and/or', () => {
+    expect(() => parseLocatorExpression(`getByRole('button').or(getByText('Pay'))`)).toThrow(/unsupported method/);
+  });
+});

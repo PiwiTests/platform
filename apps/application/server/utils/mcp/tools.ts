@@ -62,6 +62,25 @@ import { buildDiagnosisContext, buildClusterDiagnosisContext } from '../ai-conte
 import { stripAnsi } from '#shared/error-fingerprint';
 import { caseHeadline } from '#shared/failure-verdict';
 import { MCP_TOOL_DEFS, DESKTOP_MCP_TOOL_DEFS } from '#shared/mcp-tools';
+import { collectReportBundle } from '#shared/reports/collect';
+import { assertDashboardScope } from '#shared/reports/request';
+import { REPORT_LANGUAGES, isReportLanguage } from '#shared/reports/languages';
+import { isBuiltinDashboardKey } from '#shared/analytics/dashboards';
+import { getMetric, isMetricId, type MetricId } from '#shared/analytics/metrics';
+import { WIDGET_METRIC_IDS } from '#shared/analytics/registry';
+import { analyticsScopeToQuery, parseAnalyticsScope } from '#shared/analytics/scope';
+import { applyWidgetScope } from '#shared/analytics/dashboards';
+import {
+  DashboardError,
+  dashboardScopeWith,
+  getDashboard,
+  listDashboards,
+  loadDashboardDefinition,
+  type DashboardActor,
+} from '#shared/handlers/dashboards';
+import { isAuthEnabled } from '../auth';
+import { runAnalyticsWidget } from '#shared/handlers/analytics';
+import { compareMetricPeriods, PeriodSpecError } from '#shared/handlers/analytics/compare-periods';
 import type {
   McpToolDef,
   McpToolName,
@@ -1329,8 +1348,8 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
   async get_test_stability_trend(db, params, ctx) {
     const testCaseId = numericParam(params.testCaseId, 'testCaseId');
     if ((await checkEntityScope(db, ctx, testCaseId, resolveCaseProjectId)) === 'not-found') return null;
-    const buckets = params.buckets != null ? numericParam(params.buckets, 'buckets') : 20;
-    return getTestCaseStabilityTrend(db, testCaseId, buckets);
+    const days = params.days != null ? numericParam(params.days, 'days') : undefined;
+    return getTestCaseStabilityTrend(db, testCaseId, { days });
   },
 
   // ── get_network_requests ───────────────────────────────────────────────────
@@ -2144,7 +2163,165 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       })),
     };
   },
+
+  // ── get_quality_report ─────────────────────────────────────────────────────
+  async get_quality_report(db, params, ctx) {
+    const dashboard = params.dashboard ?? 'executive';
+    if (!isBuiltinDashboardKey(dashboard)) {
+      throw new Error('dashboard must be executive, engineering, team, gaps-digest or overview');
+    }
+    const lang = params.lang ?? undefined;
+    if (lang !== undefined && !isReportLanguage(lang))
+      throw new Error(`lang must be one of ${REPORT_LANGUAGES.join(', ')}`);
+    const scope = toolScope(params, ctx);
+    assertDashboardScope(dashboard, scope);
+    return collectReportBundle(db, {
+      dashboard,
+      scope,
+      access: ctx.scope,
+      language: lang,
+      baseUrl: process.env.PIWI_SITE_URL ?? null,
+    });
+  },
+
+  // ── list_dashboards ────────────────────────────────────────────────────────
+  async list_dashboards(db, _params, ctx) {
+    const list = await listDashboards(db, mcpDashboardActor(ctx));
+    return {
+      items: list.items.map((d) =>
+        dropNulls({
+          id: d.id,
+          name: d.name,
+          description: d.description,
+          kind: d.kind,
+          visibility: d.visibility,
+          owner: d.ownerName,
+          widgets: d.widgetCount,
+          updatedAt: d.updatedAt,
+        }),
+      ),
+      instanceDefault: list.instanceDefault ?? 'overview',
+    };
+  },
+
+  // ── get_dashboard ──────────────────────────────────────────────────────────
+  async get_dashboard(db, params, ctx) {
+    const query = toolScopeQuery(params, ctx);
+    const actor = mcpDashboardActor(ctx);
+    const id = String(params.id ?? '');
+    try {
+      const { definition } = await loadDashboardDefinition(db, id, actor);
+      const scope = dashboardScopeWith(definition, query);
+      const view = await getDashboard(db, id, actor, ctx.scope, { scope });
+      const bands = [];
+      for (const band of view.bands) {
+        const widgets = [];
+        for (const widget of band.widgets) {
+          if (!widget.available) {
+            widgets.push({ key: widget.key, title: widget.title, available: false, reason: widget.reason });
+            continue;
+          }
+          const data = await runAnalyticsWidget(
+            db,
+            widget.type,
+            applyWidgetScope(scope, widget.scope),
+            ctx.scope,
+            widget.options,
+          );
+          widgets.push({ key: widget.key, type: widget.type, title: widget.title, data });
+        }
+        bands.push({ title: band.title, description: band.description ?? null, widgets });
+      }
+      return dropNulls({
+        id: view.id,
+        name: view.name,
+        description: view.description,
+        kind: view.kind,
+        visibility: view.visibility,
+        scope: analyticsScopeToQuery(scope),
+        hiddenProjects: view.hiddenProjects,
+        bands,
+      });
+    } catch (error) {
+      if (error instanceof DashboardError) throw new Error(error.message);
+      throw error;
+    }
+  },
+
+  // ── get_metric_trend ───────────────────────────────────────────────────────
+  async get_metric_trend(db, params, ctx) {
+    const metric = params.metric;
+    if (!isMetricId(metric) || !WIDGET_METRIC_IDS.includes(metric)) {
+      throw new Error(`Unknown metric '${String(metric)}'. Use one of: ${WIDGET_METRIC_IDS.join(', ')}`);
+    }
+    const trend = await runAnalyticsWidget(db, 'metric', toolScope(params, ctx), ctx.scope, {
+      metric,
+      display: 'line',
+    });
+    return { definition: getMetric(metric).definition, ...(trend as object) };
+  },
+
+  // ── compare_periods ────────────────────────────────────────────────────────
+  async compare_periods(db, params, ctx) {
+    const raw: unknown[] = Array.isArray(params.metrics) ? params.metrics : [];
+    const metrics = raw.filter((m): m is MetricId => isMetricId(m) && WIDGET_METRIC_IDS.includes(m));
+    if (metrics.length !== raw.length) throw new Error('metrics must be metric ids from the catalog');
+    try {
+      return await compareMetricPeriods(
+        db,
+        toolScope(params, ctx),
+        ctx.scope,
+        String(params.a ?? ''),
+        String(params.b ?? ''),
+        metrics.length > 0 ? metrics : undefined,
+      );
+    } catch (error) {
+      if (error instanceof PeriodSpecError) throw new Error(error.message);
+      throw error;
+    }
+  },
 };
+
+/** The analytics scope of a report or metric tool call, from the tool's scope properties. */
+function toolScope(params: Record<string, unknown>, ctx: McpContext) {
+  return parseAnalyticsScope(toolScopeQuery(params, ctx));
+}
+
+/**
+ * The analytics query keys a tool call's scope parameters stand for; empty when it passed none. A project
+ * out of the caller's scope is refused, as every project-scoped tool does, rather than dropped from the answer.
+ */
+function toolScopeQuery(params: Record<string, unknown>, ctx: McpContext): Record<string, string> {
+  if (Array.isArray(params.projectIds)) for (const id of params.projectIds) assertProject(ctx, Number(id));
+  const list = (value: unknown) => (Array.isArray(value) && value.length > 0 ? value.map(String).join(',') : undefined);
+  const query: Record<string, string> = {};
+  const projects = list(params.projectIds);
+  if (projects) query.projects = projects;
+  if (params.period) query.period = String(params.period);
+  if (params.compare) query.compare = String(params.compare);
+  if (params.by) query.by = String(params.by);
+  const environments = list(params.environments);
+  if (environments) query.environments = environments;
+  const branches = list(params.branches);
+  if (branches) query.branches = branches;
+  if (params.allBranches === true) query.allBranches = 'true';
+  if (params.selection) query.sel = String(params.selection);
+  const tags = list(params.tags);
+  if (tags) query.tags = tags;
+  const owners = list(params.owners);
+  if (owners) query.owner = owners;
+  return query;
+}
+
+/** Who a tool call acts as for dashboards; with authentication off every dashboard is shared. */
+function mcpDashboardActor(ctx: McpContext): DashboardActor {
+  const authEnabled = isAuthEnabled();
+  return {
+    id: authEnabled && ctx.user ? ctx.user.id : null,
+    role: authEnabled && ctx.user ? (ctx.user.role as Role) : null,
+    authEnabled,
+  };
+}
 
 async function resolveProjectRepoUrl(db: DbClient, projectId: number): Promise<string | null> {
   const [run] = await db

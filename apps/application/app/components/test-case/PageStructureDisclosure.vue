@@ -28,11 +28,11 @@ interface DomSnapshotResponse {
   viewport?: { width: number; height: number };
 }
 
-// The read-only render fetches the same trace-derived DOM the picker uses, with
-// the server inlining external stylesheets so the opaque-origin iframe renders
-// styled rather than as bare markup.
+// Whether a snapshot exists, its viewport, and the HTML behind Copy HTML (and
+// the demo's srcdoc). The served frame comes from `dom-snapshot-frame`, which
+// embeds the trace's stylesheets and images itself, so this stays the lean HTML.
 const { data: snapshot, pending } = useFetch<DomSnapshotResponse>(
-  () => `/api/test-run-cases/${props.testRunsCaseId}/dom-snapshot?inlineStyles=1`,
+  () => `/api/test-run-cases/${props.testRunsCaseId}/dom-snapshot`,
   { lazy: true },
 );
 const html = computed(() => snapshot.value?.html ?? null);

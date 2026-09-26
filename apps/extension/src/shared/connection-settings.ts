@@ -18,6 +18,8 @@ export interface ProjectMapping {
   projectId: number;
   /** Cached display label so the popup/options UI doesn't need a network round-trip just to show a name. */
   projectLabel: string;
+  /** The branch deployed at these URLs, whose locator index "Tested elements" reads; absent for the project's default branch. */
+  branch?: string;
 }
 
 export interface ConnectionSettings {
@@ -36,10 +38,12 @@ function coerceMapping(value: unknown): ProjectMapping | null {
   const v = value as Partial<ProjectMapping>;
   if (typeof v.urlPattern !== 'string' || !v.urlPattern.trim()) return null;
   if (typeof v.projectId !== 'number') return null;
+  const branch = typeof v.branch === 'string' ? v.branch.trim() : '';
   return {
     urlPattern: v.urlPattern,
     projectId: v.projectId,
     projectLabel: typeof v.projectLabel === 'string' ? v.projectLabel : `#${v.projectId}`,
+    ...(branch ? { branch } : {}),
   };
 }
 

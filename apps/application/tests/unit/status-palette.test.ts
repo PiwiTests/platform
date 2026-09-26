@@ -9,6 +9,7 @@ describe('statusPaletteKey', () => {
     expect(statusPaletteKey('failed')).toBe('failed');
     expect(statusPaletteKey('flaky')).toBe('flaky');
     expect(statusPaletteKey('skipped')).toBe('skipped');
+    expect(statusPaletteKey('fixme')).toBe('fixme');
     expect(statusPaletteKey('didnotrun')).toBe('didnotrun');
   });
 

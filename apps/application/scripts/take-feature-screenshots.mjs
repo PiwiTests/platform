@@ -279,12 +279,432 @@ const READY_INSPECTION = {
  *   importableRuns — desktop mode: archives `desktop_find_importable_runs` reports (default [])
  *   pickedFiles — desktop mode: archives the native import picker returns (default [])
  */
+/** A global email channel, a weekly schedule on it and one *Run now*, once per server. */
+async function prepareReportSchedule({ base, request }) {
+  const schedules = await (await request.get(`${base}/api/reports/schedules`)).json();
+  if (schedules.items?.length) return;
+  const channels = await (await request.get(`${base}/api/channels`)).json();
+  let channel = channels.items?.find((c) => c.type === 'email');
+  if (!channel) {
+    const created = await request.post(`${base}/api/channels`, {
+      data: { name: 'Team mail', type: 'email', config: { address: 'team@example.com' } },
+    });
+    channel = (await created.json()).channel;
+  }
+  const schedule = await (
+    await request.post(`${base}/api/reports/schedules`, {
+      data: {
+        name: 'Weekly executive report',
+        dashboard: 'executive',
+        cadence: 'weekly',
+        anchor: 1,
+        at: '08:00',
+        channelIds: [channel.id],
+      },
+    })
+  ).json();
+  await request.post(`${base}/api/reports/schedules/${schedule.id}/run`);
+}
+
 // The evidence-footer scene seeds its own fixtures-free project; `prepare`
 // records the execution id it submits so `run` can open that page.
 let footerExecId = 0;
 
 const SCENES = [
   // ── Report artifacts (gitignored `.screens/`) ─────────────────────────────
+  {
+    name: 'analytics-scope-bar',
+    description:
+      'The Filters block on Analytics: Period, Runs and Tests groups, the period picker open with comparison and buckets',
+    route: '/analytics?period=last-90d',
+    viewport: { width: 1280, height: 1000 },
+    async run({ page, shoot, settle }) {
+      await page.getByTestId('analytics-period').waitFor({ timeout: 60000 });
+      await page.getByTestId('analytics-scope-line').waitFor({ timeout: 60000 });
+      await settle();
+      await page.getByTestId('analytics-period').click();
+      await page.getByText('Compare with').waitFor({ timeout: 15000 });
+      await shoot();
+    },
+  },
+  {
+    name: 'analytics-scope-bar-mobile',
+    description:
+      'The Filters block at 375 px: folded to a summary of the active filters, then open, no horizontal scroll',
+    route: '/analytics',
+    viewport: { width: 375, height: 900 },
+    async run({ page, shoot, settle }) {
+      const summary = page.getByTestId('analytics-filters-summary');
+      // The comparison in the summary comes from a client-side fetch, so the page has hydrated once it shows.
+      await summary.filter({ hasText: ' vs ' }).waitFor({ timeout: 60000 });
+      await settle();
+      await shoot('folded', { of: '[data-shot="analytics-scope-bar"]', pad: 8 });
+      await page.getByTestId('analytics-filters-toggle').click();
+      await page.getByTestId('analytics-period').waitFor({ timeout: 15000 });
+      await settle();
+      await shoot('open', { of: '[data-shot="analytics-scope-bar"]', pad: 8 });
+    },
+    outputs: ['analytics-scope-bar-mobile-folded.png', 'analytics-scope-bar-mobile-open.png'],
+  },
+  {
+    name: 'analytics-headline',
+    description:
+      'Analytics, the Overview dashboard: the headline tiles above the portfolio, and the pass rate over time',
+    route: '/analytics',
+    viewport: { width: 1280, height: 2400 },
+    async run({ page, shoot, settle }) {
+      await page.getByTestId('stat-test-pass-rate').waitFor({ timeout: 60000 });
+      await page.locator('[data-shot="analytics-metric"] svg').first().waitFor({ timeout: 60000 });
+      await settle();
+      await shoot('tiles', { of: '[data-shot="analytics-headline"]', pad: 12 });
+      await shoot('trend', { of: '[data-shot="analytics-metric"]', pad: 12 });
+    },
+    outputs: ['analytics-headline-tiles.png', 'analytics-headline-trend.png'],
+  },
+  ...[
+    { name: 'quality-report-preview', width: 1280, height: 1800 },
+    { name: 'quality-report-preview-mobile', width: 375, height: 1400 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `Export on the analytics page: the executive quality report previewed, at ${width} px`,
+    route: '/analytics',
+    viewport: { width, height },
+    async run({ page, shoot, settle }) {
+      const preview = page.getByTestId('report-view');
+      await page.getByTestId('stat-test-pass-rate').waitFor({ timeout: 60000 });
+      await settle();
+      // Hydration can lag the first paint on a dev server; retry the click until the dialog opens.
+      for (let attempt = 0; attempt < 20 && !(await preview.isVisible()); attempt++) {
+        await page.getByRole('button', { name: 'Export' }).first().click();
+        await preview.waitFor({ timeout: 3000 }).catch(() => {});
+      }
+      await preview.locator('svg').first().waitFor({ timeout: 60000 });
+      await settle();
+      await shoot();
+    },
+  })),
+  ...[
+    { name: 'quality-report-download-menu', width: 1280, height: 1000 },
+    { name: 'quality-report-download-menu-mobile', width: 375, height: 1000 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `The quality report preview with its download menu open (PDF, HTML, Markdown, Excel, JSON) and each section's Excel button, at ${width} px`,
+    route: '/analytics',
+    viewport: { width, height },
+    async run({ page, shoot, settle }) {
+      const preview = page.getByTestId('report-view');
+      await page.getByTestId('stat-test-pass-rate').waitFor({ timeout: 60000 });
+      await settle();
+      for (let attempt = 0; attempt < 20 && !(await preview.isVisible()); attempt++) {
+        await page.getByRole('button', { name: 'Export' }).first().click();
+        await preview.waitFor({ timeout: 3000 }).catch(() => {});
+      }
+      await preview.locator('[data-testid^="report-section-xlsx-"]').first().waitFor({ timeout: 60000 });
+      await settle();
+      await page.getByTestId('report-download').click();
+      await page.getByRole('menuitem', { name: 'Excel' }).waitFor();
+      await shoot();
+    },
+  })),
+  // The Reports page and a snapshot: `prepare` makes a channel, a weekly
+  // schedule and one run of it, so the page has a snapshot to list.
+  ...[
+    { name: 'report-schedules', width: 1280, height: 860, docs: true },
+    { name: 'report-schedules-mobile', width: 375, height: 900, docs: false },
+  ].map(({ name, width, height, docs }) => ({
+    name,
+    description: `The Reports page: report snapshots and schedules, at ${width} px`,
+    ...(docs ? { tags: ['docs'], out: 'docs' } : {}),
+    prepare: prepareReportSchedule,
+    route: '/reports',
+    viewport: { width, height },
+    async run({ page, shoot, settle }) {
+      await page.getByTestId('schedule-list').waitFor({ timeout: 60000 });
+      await page.getByTestId('snapshot-list').waitFor({ timeout: 60000 });
+      await settle();
+      await shoot();
+    },
+  })),
+  ...[
+    { name: 'report-snapshot', width: 1280, height: 1600 },
+    { name: 'report-snapshot-mobile', width: 375, height: 1600 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `A report snapshot on /reports/:id, at ${width} px`,
+    prepare: prepareReportSchedule,
+    route: '/reports',
+    viewport: { width, height },
+    async run({ page, shoot, settle }) {
+      await page.getByTestId('snapshot-list').getByRole('link').first().click({ timeout: 60000 });
+      await page.getByTestId('report-view').locator('svg').first().waitFor({ timeout: 60000 });
+      await settle();
+      await shoot();
+    },
+  })),
+  // The share scenes need share links on: run them with PIWI_SHARE_LINKS_ENABLED=true (the harness's own
+  // server inherits the environment), or against a --url server that has it.
+  ...[
+    { name: 'report-share-link', width: 1280, height: 900 },
+    { name: 'report-share-link-mobile', width: 375, height: 1000 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `A report snapshot's share dialog with a minted link and its badge, at ${width} px`,
+    prepare: prepareReportSchedule,
+    route: '/reports',
+    viewport: { width, height },
+    async run({ page, shoot, settle }) {
+      await page.getByTestId('snapshot-list').getByRole('link').first().click({ timeout: 60000 });
+      await page.getByTestId('report-view').locator('svg').first().waitFor({ timeout: 60000 });
+      await page.getByRole('button', { name: 'Share', exact: true }).click();
+      await page.getByRole('button', { name: 'Create link' }).click({ timeout: 30000 });
+      await page.getByTestId('minted-badge').getByRole('img').waitFor({ timeout: 30000 });
+      await settle();
+      await shoot();
+    },
+  })),
+  ...[
+    { name: 'live-dashboard-link', width: 1280, height: 900 },
+    { name: 'live-dashboard-link-mobile', width: 375, height: 1000 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `The live dashboard links dialog of the seeded Checkout team dashboard, at ${width} px`,
+    route: '/analytics/d/1',
+    viewport: { width, height },
+    async run({ page, shoot, settle }) {
+      await page.locator('[data-shot="dashboard"]').waitFor({ timeout: 60000 });
+      await page.getByRole('button', { name: 'More dashboard actions' }).click();
+      await page.getByRole('menuitem', { name: 'Live dashboard links' }).click();
+      await page.getByRole('button', { name: 'Create link' }).click({ timeout: 30000 });
+      await page.getByTestId('minted-badge').getByRole('img').waitFor({ timeout: 30000 });
+      await settle();
+      await shoot();
+    },
+  })),
+  ...[
+    { name: 'saved-dashboard', width: 1280, height: 1500, docs: true },
+    { name: 'saved-dashboard-mobile', width: 375, height: 1600, docs: false },
+  ].map(({ name, width, height, docs }) => ({
+    name,
+    description: `The seeded shared Checkout team dashboard on /analytics/d/1, at ${width} px`,
+    ...(docs ? { tags: ['docs'], out: 'docs' } : {}),
+    route: '/analytics/d/1',
+    viewport: { width, height },
+    async run({ page, shoot, settle }) {
+      await page.locator('[data-shot="dashboard"]').waitFor({ timeout: 60000 });
+      await page.locator('[data-shot="analytics-note"]').waitFor({ timeout: 60000 });
+      await settle();
+      await shoot();
+    },
+  })),
+  // Trend depth: one scene per new widget, tab and control, at 1280 and 375 px.
+  ...[
+    { shot: 'analytics-suite-growth', route: '/analytics?projects=1', what: 'the suite growth widget' },
+    { shot: 'analytics-flaky-debt', route: '/analytics?projects=1', what: 'the flaky debt widget' },
+    { shot: 'analytics-time-to-fix', route: '/analytics?projects=1', what: 'the time to fix widget' },
+    { shot: 'analytics-headline', route: '/analytics?projects=1', what: 'the headline tiles with their target marks' },
+    { shot: 'analytics-ownership', route: '/analytics/d/engineering', what: 'the ownership widget' },
+    { shot: 'analytics-movers', route: '/analytics/d/engineering', what: 'the movers widget' },
+    {
+      shot: 'analytics-environment-comparison',
+      route: '/analytics/d/engineering?projects=2',
+      what: 'the environment comparison widget',
+    },
+    { shot: 'test-case-trend', route: '/test-cases/1?tab=trend', what: 'the Trend tab of a test' },
+    {
+      shot: 'cluster-occurrence-trend',
+      route: '/failure-clusters/3',
+      what: 'a failure cluster’s occurrences over time',
+    },
+    { shot: 'project-targets', route: '/projects/1?tab=settings', what: 'the project targets form' },
+  ].flatMap(({ shot, route, what }) =>
+    [
+      { suffix: '', width: 1280 },
+      { suffix: '-mobile', width: 375 },
+    ].map(({ suffix, width }) => ({
+      name: `${shot}${suffix}`,
+      description: `${what[0].toUpperCase()}${what.slice(1)}, at ${width} px`,
+      route,
+      viewport: { width, height: 1800 },
+      of: `[data-shot="${shot}"]`,
+      async run({ page, shoot, settle }) {
+        const target = page.locator(`[data-shot="${shot}"]`).first();
+        await target.waitFor({ timeout: 90000 });
+        await target.scrollIntoViewIfNeeded();
+        await settle();
+        await shoot();
+      },
+    })),
+  ),
+  ...[
+    { name: 'chart-export-menu', width: 1280 },
+    { name: 'chart-export-menu-mobile', width: 375 },
+  ].map(({ name, width }) => ({
+    name,
+    description: `The export menu of a chart (copy as PNG, download Excel), at ${width} px`,
+    route: '/analytics?projects=1',
+    viewport: { width, height: 900 },
+    async run({ page, shoot, settle }) {
+      const card = page.locator('[data-shot="analytics-suite-growth"]');
+      await card.waitFor({ timeout: 90000 });
+      await card.scrollIntoViewIfNeeded();
+      await settle();
+      await card.getByTestId('chart-export').click();
+      await page.getByRole('menuitem', { name: 'Download Excel' }).waitFor();
+      await shoot();
+    },
+  })),
+  ...[
+    { name: 'dashboard-editor', width: 1280, height: 1200, docs: true },
+    { name: 'dashboard-editor-mobile', width: 375, height: 1400, docs: false },
+  ].map(({ name, width, height, docs }) => ({
+    name,
+    description: `The dashboard editor on the seeded wasted-CI dashboard, a widget menu open, at ${width} px`,
+    ...(docs ? { tags: ['docs'], out: 'docs' } : {}),
+    route: '/analytics/d/2?edit=1',
+    viewport: { width, height },
+    async run({ page, shoot, settle }) {
+      await page.getByTestId('add-widget-button-0').waitFor({ timeout: 60000 });
+      await page.locator('[data-shot="analytics-metric-display"]').first().waitFor({ timeout: 60000 });
+      await settle();
+      await page.getByTestId('widget-menu-wasted-by-browser').click();
+      await page.getByRole('menuitem', { name: 'Configure' }).waitFor();
+      await shoot();
+    },
+  })),
+  ...[
+    { name: 'report-schedule-form', width: 1280, height: 900 },
+    { name: 'report-schedule-form-mobile', width: 375, height: 900 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `Schedule… on the analytics page: the schedule form, at ${width} px`,
+    route: '/analytics',
+    viewport: { width, height },
+    async run({ page, shoot, settle }) {
+      const form = page.getByTestId('schedule-form');
+      await page.getByTestId('stat-test-pass-rate').waitFor({ timeout: 60000 });
+      await settle();
+      for (let attempt = 0; attempt < 20 && !(await form.isVisible()); attempt++) {
+        await page.locator('button[title="Schedule a quality report of this scope"]').first().click();
+        await form.waitFor({ timeout: 3000 }).catch(() => {});
+      }
+      await page.getByTestId('schedule-name').fill('Weekly executive report');
+      await settle();
+      await shoot();
+    },
+  })),
+  // *Preview* in the schedule form, sending to the email channel `prepare` makes.
+  ...[
+    { name: 'report-schedule-preview', width: 1280, height: 1400 },
+    { name: 'report-schedule-preview-mobile', width: 375, height: 1000 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `Schedule… then Preview: the email the schedule would send now, at ${width} px`,
+    prepare: prepareReportSchedule,
+    route: '/analytics',
+    viewport: { width, height },
+    async run({ page, shoot, settle }) {
+      const form = page.getByTestId('schedule-form');
+      await page.getByTestId('stat-test-pass-rate').waitFor({ timeout: 60000 });
+      await settle();
+      for (let attempt = 0; attempt < 20 && !(await form.isVisible()); attempt++) {
+        await page.locator('button[title="Schedule a quality report of this scope"]').first().click();
+        await form.waitFor({ timeout: 3000 }).catch(() => {});
+      }
+      await page.getByTestId('schedule-name').fill('Weekly executive report');
+      await page.getByTestId('schedule-channels').click();
+      await page
+        .getByRole('option', { name: /\(email\)/ })
+        .first()
+        .click();
+      await page.keyboard.press('Escape');
+      await page.getByTestId('schedule-preview-open').click();
+      await page.getByTestId('schedule-preview-email').waitFor({ timeout: 60000 });
+      await settle();
+      await shoot();
+    },
+  })),
+  {
+    name: 'test-case-locators',
+    description:
+      'Test case page: the Locators section, from the latest execution, with how many tests share each chain',
+    route: '/test-cases/1',
+    viewport: { width: 1280, height: 1800 },
+    async run({ page, shoot, settle }) {
+      await page
+        .locator('[data-shot="execution-locators"] ol')
+        .waitFor({ timeout: 15000 })
+        .catch(() => {});
+      await settle();
+      await shoot(undefined, { of: '[data-shot="test-case-locators"]', pad: 12 });
+    },
+  },
+  {
+    name: 'page-structure-picker',
+    description: 'Screen tab: Page structure → Open in picker, the locator picker over the failure-time page',
+    route: '/test-run-cases/37',
+    viewport: { width: 1280, height: 1000 },
+    async run({ page, shoot, settle, openTab }) {
+      await openTab(/^Screen/);
+      await page.getByRole('button', { name: /Page structure/ }).click();
+      await page.locator('iframe[title="Failure-time page"]').waitFor({ timeout: 15000 });
+      await page.getByRole('button', { name: 'Open in picker' }).click();
+      await page.getByText('Rendered from the failure-time DOM snapshot').waitFor({ timeout: 15000 });
+      await page.getByText('Initializing picker').waitFor({ state: 'detached', timeout: 15000 });
+      await settle();
+      await shoot();
+    },
+  },
+  {
+    name: 'locator-usage-drawer',
+    description: 'Who uses this? drawer: the call sites and tests that use a locator, with the command that runs them',
+    route: '/test-run-cases/711',
+    viewport: { width: 1280, height: 1000 },
+    async run({ page, shoot, settle, openTab }) {
+      await openTab('Locators');
+      const card = page.locator('[data-shot="execution-locators"]');
+      await card
+        .getByRole('button', { name: /tests?$/ })
+        .first()
+        .click();
+      const drawer = page.locator('[data-shot="locator-usage-drawer"]');
+      await drawer.getByText(/ call sites?$/).waitFor({ timeout: 15000 });
+      await page.getByRole('button', { name: /^Run these/ }).click();
+      await drawer.getByText('Run them').waitFor({ timeout: 15000 });
+      await settle();
+      await shoot();
+    },
+  },
+  {
+    name: 'project-locators',
+    description:
+      'Project Locators page: pasted locators checked against the locator index (exact, similar, unused), the tests reaching them, the branch select',
+    route: `/projects/1/locators?q=${encodeURIComponent(
+      ["getByLabel('Email')", "getByText('Order confirmed!')", "getByTestId('coupon')"].join('\n'),
+    )}`,
+    viewport: { width: 1280, height: 1400 },
+    async run({ page, shoot, settle }) {
+      await page
+        .locator('[data-shot="locator-check-tests"]')
+        .waitFor({ timeout: 15000 })
+        .catch(() => {});
+      await settle();
+      await shoot();
+    },
+  },
+  {
+    name: 'project-locators-mobile',
+    description: 'Project Locators page at phone width',
+    route: `/projects/1/locators?q=${encodeURIComponent(["getByLabel('Email')", "getByTestId('coupon')"].join('\n'))}`,
+    viewport: { width: 390, height: 1400 },
+    async run({ page, shoot, settle }) {
+      await page
+        .locator('[data-shot="locator-check-tests"]')
+        .waitFor({ timeout: 15000 })
+        .catch(() => {});
+      await settle();
+      await shoot();
+    },
+  },
   {
     name: 'scenario-gaps-tab',
     description: 'Gaps tab: gaps and findings grouped by feature, ranked, with class, factors and inbox verbs',
@@ -397,8 +817,55 @@ const SCENES = [
       await shoot(undefined, { of: '[role="dialog"]', pad: 0 });
     },
   },
+  {
+    name: 'permission-grid-mobile',
+    description:
+      'Settings → Permissions at phone width: the user column stays pinned while the projects scroll sideways',
+    route: '/settings/permissions',
+    viewport: { width: 390, height: 1100 },
+    async run({ page, shoot, settle }) {
+      await page.locator('[data-shot="permission-grid"] table').waitFor({ timeout: 15000 });
+      await settle();
+      await shoot();
+    },
+  },
 
   // ── Docs illustrations (committed) ────────────────────────────────────────
+  {
+    name: 'execution-locators',
+    description: 'Execution Locators tab: every locator the test used, in order, with how many tests share each chain',
+    tags: ['docs'],
+    out: 'docs',
+    route: '/test-run-cases/711',
+    viewport: { width: 1280, height: 1400 },
+    async run({ page, shoot, settle, openTab }) {
+      await openTab('Locators');
+      await page
+        .locator('[data-shot="execution-locators"] ol')
+        .waitFor({ timeout: 15000 })
+        .catch(() => {});
+      await settle();
+      await shoot(undefined, { of: '[data-shot="evidence-card"]', pad: 12 });
+    },
+  },
+  {
+    name: 'permission-grid',
+    description:
+      'Settings → Permissions: every user against every project by role, the hovered cell’s row and column highlighted',
+    tags: ['docs'],
+    out: 'docs',
+    route: '/settings/permissions',
+    viewport: { width: 1280, height: 900 },
+    async run({ page, shoot, settle }) {
+      const cell = page.getByRole('checkbox', { name: 'Priya (API & UI team) — E2E Checkout' });
+      await cell.waitFor({ timeout: 15000 });
+      await settle();
+      // The crosshair follows focus as well as the pointer. Focus survives the
+      // capture's re-layout, where a stationary pointer would land on another cell.
+      await cell.focus();
+      await shoot(undefined, { of: '[data-shot="permission-grid"]', pad: 12 });
+    },
+  },
   {
     name: 'integrations-settings',
     description: 'Settings → Integrations: the Jira card with a connected system and a test button',
@@ -670,6 +1137,69 @@ const SCENES = [
 
   // ── Feature states (report artifacts) ─────────────────────────────────────
   {
+    name: 'run-kept',
+    description: 'Run page of a kept run: the Kept mark in the header and who kept it, in Details',
+    // Seeded run #1 is the v2.4.0 release run, kept by its release marker.
+    route: '/test-runs/1',
+    viewport: { width: 1280, height: 520 },
+    async run({ page, shoot, settle }) {
+      await page.locator('[data-shot="run-kept"]').waitFor();
+      await shoot('header', { of: '[data-shot="run-header"]', pad: 8 });
+      await page.getByRole('button', { name: 'Details' }).click();
+      await settle();
+      await shoot('details');
+    },
+  },
+  {
+    name: 'run-keep-modal',
+    description: 'Run page menu: Keep forever… asks for an optional reason',
+    route: '/test-runs/2',
+    viewport: { width: 1280, height: 720 },
+    async run({ page, shoot, settle }) {
+      await page.getByRole('button', { name: 'More actions' }).click();
+      await page.getByRole('menuitem', { name: 'Keep forever…' }).click();
+      await page.getByRole('dialog', { name: 'Keep run #2 forever' }).waitFor();
+      await settle();
+      await shoot();
+    },
+  },
+  {
+    name: 'kept-runs-table',
+    description: 'Project runs table: lock on kept runs, and the Kept runs only view reaching past the loaded window',
+    route: '/projects/1',
+    viewport: { width: 1280, height: 1400 },
+    async run({ page, shoot, settle }) {
+      await page.locator('[data-shot="kept-runs-toggle"]').waitFor();
+      await shoot('all', { of: '[data-shot="runs-table"]', pad: 8 });
+      await page.locator('[data-shot="kept-runs-toggle"]').click();
+      await settle();
+      await shoot('kept-only', { of: '[data-shot="runs-table"]', pad: 8 });
+    },
+  },
+  {
+    name: 'kept-runs-table-mobile',
+    description: 'Project runs cards at phone width: the lock on kept runs and the Kept runs only toggle',
+    route: '/projects/1',
+    viewport: { width: 390, height: 1400 },
+    async run({ page, shoot, settle }) {
+      await page.locator('[data-shot="kept-runs-toggle"]').waitFor();
+      await page.locator('[data-shot="kept-runs-toggle"]').click();
+      await settle();
+      await shoot(undefined, { of: '[data-shot="runs-table"]', pad: 4 });
+    },
+  },
+  {
+    name: 'kept-runs-storage',
+    description: 'Settings › Storage cleanup card: how many runs are kept and what their files hold',
+    route: '/settings/storage',
+    viewport: { width: 1280, height: 1600 },
+    async run({ page, shoot }) {
+      await page.locator('[data-shot="kept-runs-note"]').waitFor();
+      await shoot(undefined, { of: '[data-shot="cleanup-card"]', pad: 8 });
+    },
+  },
+
+  {
     name: 'attempt-diff',
     description: 'Attempts tab: every attempt, and what differed between the failing and passing attempt',
     // Execution 21 is a flaky test that passed on retry, so the Attempts tab holds a diff.
@@ -698,6 +1228,63 @@ const SCENES = [
     viewport: { width: 1400, height: 900 },
     charts: true,
     of: '[data-shot="run-trend"]',
+    pad: 12,
+  },
+  {
+    name: 'run-skip-kinds',
+    description: 'Run page: the count bar draws skipped and fixme in two greys; the Tests list filters by tag',
+    route: '/test-runs/2',
+    viewport: { width: 1280, height: 900 },
+    async run({ page, shoot, settle }) {
+      await shoot('header', { of: '[data-shot="run-header"]', pad: 12 });
+      await page.getByRole('button', { name: '1 fixme' }).first().click();
+      await settle();
+      await shoot('fixme-filter');
+      await page.getByRole('button', { name: '1 fixme' }).first().click();
+      await page.getByRole('button', { name: 'Filter by tag' }).click();
+      await page.getByRole('option', { name: '@critical' }).click();
+      await settle();
+      await shoot('tag-filter');
+    },
+  },
+  {
+    name: 'run-skip-kinds-dark',
+    description: 'Run page header in dark mode: the fixme grey stays the lighter, more visible one',
+    route: '/test-runs/2',
+    viewport: { width: 1280, height: 900 },
+    colorScheme: 'dark',
+    of: '[data-shot="run-header"]',
+    pad: 12,
+  },
+  {
+    name: 'run-skip-kinds-mobile',
+    description: 'Run page at phone width: the two skipped greys and the tag filter in the wrapped toolbar',
+    route: '/test-runs/2',
+    viewport: { width: 390, height: 1400 },
+  },
+  {
+    name: 'catalog-filters',
+    description: 'Project Tests catalog: the two filter rows, and the list header grouping by file with a filter on',
+    route: '/projects/1?tab=tests',
+    viewport: { width: 1280, height: 1100 },
+    async run({ page, shoot, settle }) {
+      await shoot('flat', { of: '[data-shot="test-cases-catalog"]', pad: 12 });
+      await page.getByRole('combobox', { name: 'Group tests by' }).click();
+      await page.getByRole('option', { name: 'File' }).click();
+      await page.getByRole('button', { name: 'Skipped', exact: true }).click();
+      await settle();
+      await shoot('grouped-filtered', { of: '[data-shot="test-cases-catalog"]', pad: 12 });
+      // Leave the group-by cookie as the next capture expects it.
+      await page.getByRole('combobox', { name: 'Group tests by' }).click();
+      await page.getByRole('option', { name: 'None' }).click();
+    },
+  },
+  {
+    name: 'runs-table-skip-kinds',
+    description: 'Project runs table: each run bar splits its skipped tests into skipped and fixme',
+    route: '/projects/1',
+    viewport: { width: 1400, height: 1500 },
+    of: '[data-shot="runs-table"]',
     pad: 12,
   },
   {
@@ -782,7 +1369,7 @@ const SCENES = [
           type: 'step-begin',
           title: 'waiting for the result count to be visible',
           location: 'tests/catalog.spec.ts:13:5',
-          stepCategory: 'pw:expect',
+          stepCategory: 'expect',
           parentTitle: 'filters apply to the product grid',
           workerIndex: 1,
           startedAt: Date.now(),
@@ -961,6 +1548,44 @@ const SCENES = [
         .getByText('Page at the failing step')
         .first()
         .waitFor({ state: 'visible', timeout: 30_000 });
+      await settle();
+      await shoot();
+    },
+  },
+  {
+    name: 'timeline-type-filter',
+    description: 'Timeline tab: the type chips with Network hidden, and the line naming the failed request it hides',
+    // Execution 241 (the login API test) interleaves four requests with its
+    // steps, the login a 500 — hiding Network names that failed request.
+    route: '/test-run-cases/241',
+    viewport: { width: 1280, height: 1200 },
+    of: '[data-shot="evidence-card"]',
+    pad: 12,
+    async run({ page, openTab, settle, shoot }) {
+      await openTab('Timeline');
+      await page
+        .getByRole('group', { name: 'Show on the timeline' })
+        .getByRole('button', { name: /^Network/ })
+        .click();
+      await page.getByTestId('timeline-hidden-summary').waitFor({ state: 'visible', timeout: 10_000 });
+      await settle();
+      await shoot();
+    },
+  },
+  {
+    name: 'timeline-type-filter-mobile',
+    description: 'Timeline tab at phone width: the type chips wrap, Network hidden, the hidden line under them',
+    route: '/test-run-cases/241',
+    viewport: { width: 375, height: 1800 },
+    of: '[data-shot="evidence-card"]',
+    pad: 12,
+    async run({ page, openTab, settle, shoot }) {
+      await openTab('Timeline');
+      await page
+        .getByRole('group', { name: 'Show on the timeline' })
+        .getByRole('button', { name: /^Network/ })
+        .click();
+      await page.getByTestId('timeline-hidden-summary').waitFor({ state: 'visible', timeout: 10_000 });
       await settle();
       await shoot();
     },

@@ -141,7 +141,8 @@ Rejected sign-ins are returned to the login page with an explanatory message.
 4. The server validates the `state` cookie (CSRF protection), exchanges the code for an access token (sending the PKCE verifier when used), and fetches the user's profile (name, email, avatar).
 5. A local user is created or linked:
    - If a user with the same OAuth provider + ID exists, their name/avatar/email are refreshed from the provider.
-   - If a user with the same **verified** email exists (and isn't already linked to a *different* provider), the existing account is linked to the OAuth provider. Linking only happens when the provider asserts the email is verified, which prevents account takeover via an attacker-controlled public email.
+   - If a user with the same **verified** email exists (and isn't already linked to a *different* provider), the existing account is linked to the OAuth provider. Linking needs proof on both sides: the provider must assert the email is verified, **and** the local account must have verified it too (through the verification link, an accepted invite, or an earlier provider sign-in). This stops an attacker-controlled public email, or an address someone typed into their own profile, from capturing another person's sign-in.
+   - If the matching account has **not** verified the address, the sign-in is refused with an explanatory message instead of being linked. The account's owner signs in with its password (or accepts their invite first) and connects the provider from **Settings → Account**.
    - Otherwise, a new user is created with the **user** role and an empty password (password login disabled for OAuth-only users). The provider email is stored on the account.
 6. A session is established (same encrypted cookie as password login), and the browser is redirected to the dashboard homepage.
 
@@ -150,6 +151,7 @@ Rejected sign-ins are returned to the login page with an explanatory message.
 - OAuth users have an empty password and **cannot sign in with username/password**. They must always use their OAuth provider.
 - The provider's email address is stored on the OAuth account, so OAuth users can receive email notifications and appear with a verified email in the admin user list.
 - If a sign-in's verified email matches an account that is **already linked to a different provider**, the login is rejected with an "already linked to a different sign-in method" message (the schema links one provider per account) — sign in with the original method instead.
+- An email address belongs to one account: changing an account's email to an address another account already uses (ignoring case) is refused, and changing it clears its verified status until it is verified again.
 - GitHub accounts with no verified primary email are still allowed to sign in, but a fresh account is created rather than linked.
 - The reporter (CI/CD) authentication is unaffected — it continues to use API keys or username/password.
 - OAuth is **not available in demo mode**; the buttons are not shown.
@@ -195,16 +197,33 @@ What scoping affects for a non-admin user:
 - Runs, test cases, and clusters that belong to an unassigned project return **403**.
 - A reporter can submit results to an assigned project. Creating a **new** project on first submission requires **global** access — a per-project reporter can't invent projects.
 
-> **Default is no access.** A freshly created Reporter/User has no assignments and sees an empty dashboard until you grant some. (When authentication is first enabled, existing accounts are automatically backfilled with global access so nothing breaks on upgrade.)
+> **Default is no access.** A freshly created Reporter/User has no assignments and sees an empty dashboard until you grant some — and so does an account whose last project you revoke. (Once, on a database with no assignments yet, existing Reporter/User accounts are given global access, so upgrading from a version without project access changes nothing for them.)
 
 ### Managing assignments
 
-Assignments are administrator-only and can be edited from either direction:
+Assignments are administrator-only and can be edited from three places:
 
+- **All at once** — **Settings → Permissions**, the [permission grid](#permission-grid): every user against every project.
 - **Per user** — **Settings → Users → Project access** (the action next to a user). Choose global access or tick specific projects.
 - **Per project** — a project's **Members** tab (`/projects/:id`, admins only). Add or remove users for that one project.
 
-Both edit the same underlying assignments, so use whichever is more convenient.
+All three edit the same underlying assignments, so use whichever is more convenient.
+
+### Permission grid
+
+**Settings → Permissions** lays every user against every project on one grid, so you can read and change access for the whole instance without opening accounts one at a time. Rows are users, grouped by role; columns are projects, after an **All projects** column. A tick grants that role in that project — a reporter can upload results and triage there, a user can read.
+
+<div class="doc-screenshot">
+  <img src="/screenshots/permission-grid.png" alt="Settings → Permissions: users grouped by role down the side, projects across the top, and the focused cell's row and column highlighted">
+</div>
+
+- **Every click saves at once** — there is no Save button. A change the server refuses is rolled back and reported.
+- **All projects** also covers projects created later. While it is ticked, the user's project cells show a faint tick and are locked; unticking it returns the user to exactly the projects ticked one by one.
+- **Administrators** open every project, so their row is ticked and locked.
+- **Hovering a cell highlights its row and column**, so a cell far from the headers still reads against its user and its project. Keyboard focus does the same: Tab enters the grid as one stop, the arrow keys move between cells, Space toggles.
+- **Filter users** and **Filter projects** narrow the grid on a large instance.
+
+The grid reads and writes through `GET /api/project-access` and `PUT /api/project-access` (one cell per request), both administrator-only — see the [API docs](https://piwitests.dev/demo/docs).
 
 > **Try it in the demo:** the [live demo](https://piwitests.dev/demo/) ships with several pre-seeded identities — an admin, a global CI reporter, and users scoped to one or two projects (plus one with none). Use the **Acting as** picker in the demo banner to switch between them and watch the project list, sidebar, and search change to match each user's access. Acting as the admin, change the assignments live and switch back to see the effect. See [UI overview → Live demo](/features/ui-overview#live-demo).
 

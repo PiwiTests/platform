@@ -1,8 +1,10 @@
 <script setup lang="ts">
+import type { ApiResponse } from '~~/types/api';
 const config = useRuntimeConfig();
 const isDesktop = useIsDesktop();
 
-const { data: versionInfo } = await useFetch('/api/version');
+const { data: versionInfo } =
+  await useFetch<ApiResponse<typeof import('~~/server/api/version.get').default>>('/api/version');
 
 // The detector-precision block follows the instance `test-map` state: an
 // instance that declined it hides the block and never fetches it.

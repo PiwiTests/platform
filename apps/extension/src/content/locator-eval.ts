@@ -53,15 +53,38 @@ export function evaluateLocatorChain(chain: ParsedLocatorChain, maps: DomRoleMap
     return exact ? c === e : c.toLowerCase().includes(e.toLowerCase());
   }
 
+  /** `root`'s text, leaving out `skip`'s subtree — a wrapping label's text without the field it wraps. */
+  function textWithout(root: Node, skip: Node): string {
+    if (root === skip) return '';
+    if (root.nodeType === 3) return root.nodeValue || '';
+    let text = '';
+    for (const child of root.childNodes) text += textWithout(child, skip);
+    return text;
+  }
+
+  /** The text of the elements `aria-labelledby` points at, else of the first `<label>` — mirrors the probe's `labelText`. */
+  function fieldLabelOf(el: Element): string | null {
+    let text = '';
+    for (const id of (el.getAttribute('aria-labelledby') || '').split(/\s+/).filter(Boolean)) {
+      const ref = el.ownerDocument.getElementById(id);
+      if (ref) text += ` ${textWithout(ref, el)}`;
+    }
+    const label = (el as HTMLInputElement).labels?.[0];
+    if (!text.trim() && label) text = textWithout(label, el);
+    return normalize(text).slice(0, 120) || null;
+  }
+
   function accessibleNameOf(el: Element): string {
     const attrs: ElementAttributes = {
       tagName: el.tagName.toLowerCase(),
       attributes: {
+        'aria-labelledby': el.getAttribute('aria-labelledby'),
         'aria-label': el.getAttribute('aria-label'),
         title: el.getAttribute('title'),
         placeholder: el.getAttribute('placeholder'),
       },
       textContent: normalize(el.textContent || '').slice(0, 80),
+      labelText: fieldLabelOf(el),
       accessibleName: null,
       center: null,
     };

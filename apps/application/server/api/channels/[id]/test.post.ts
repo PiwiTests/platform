@@ -1,3 +1,4 @@
+import { teamsMessage } from '../../../utils/notifications/teams';
 import { eq } from 'drizzle-orm';
 import { getDatabase } from '../../../database';
 import { notificationChannels, users } from '../../../database/schema';
@@ -76,6 +77,17 @@ export default eventHandler(async (event) => {
         body: JSON.stringify({ text: ':bell: Test notification from Piwi Dashboard' }),
       });
       if (!res.ok) throw new Error(`Slack returned ${res.status}`);
+    } else if (channel.type === 'teams') {
+      const webhookUrl = config.webhookUrl as string;
+      if (!webhookUrl) throw new Error('No Microsoft Teams webhook URL');
+      const res = await safeFetch(webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(
+          teamsMessage([{ type: 'TextBlock', text: 'Test notification from Piwi Dashboard', wrap: true }]),
+        ),
+      });
+      if (!res.ok) throw new Error(`Microsoft Teams returned ${res.status}`);
     } else if (channel.type === 'webhook') {
       const url = config.url as string;
       if (!url) throw new Error('No webhook URL');

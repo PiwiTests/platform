@@ -10,11 +10,13 @@ import {
   failureDiagnoses,
   casePayloads,
   entityLinks,
+  analyticsDailyRollups,
 } from '../../server/database/schema';
 import { asc, desc, eq, exists, sql, and, or, inArray, gte, lte, isNull, isNotNull, count } from 'drizzle-orm';
 import { jsonArrayContainsAll, parseLockFilter, parseTagFilter } from '../utils/tag-filter';
-import { isProbeRun } from './probes';
+import { isProbeRun, notProbeRun } from './probes';
 import { FAILED_STATUS_KEYS } from '../utils/test-counts';
+import { fixmeSkipPredicate } from '../utils/skip-kind';
 import { TEST_PRIORITIES } from '@piwitests/core/test-meta';
 
 import type { DrizzleDB } from './db';
@@ -25,8 +27,35 @@ import {
   type TimeoutThresholds,
 } from '../analytics/timeout-hygiene';
 import { parseProjectDecisions } from '#shared/capabilities';
+import { normalizeProjectTargets } from '#shared/analytics/targets';
 
 type ProjectScope = 'all' | Set<number>;
+
+/**
+ * `test.fixme()` skips per run, for runs with any skipped test — the subset of
+ * `skippedTests` the status bars draw in their second grey. Counted from the
+ * cases' annotations in one grouped query; a run missing from the map has none.
+ */
+async function fixmeTestsByRunId(
+  db: DrizzleDB,
+  runs: ReadonlyArray<{ id: number; skippedTests?: number | null }>,
+): Promise<Map<number, number>> {
+  const runIds = runs.filter((r) => (r.skippedTests ?? 0) > 0).map((r) => r.id);
+  const out = new Map<number, number>();
+  if (runIds.length === 0) return out;
+  const rows: Array<{ testRunId: number; n: number }> = await db
+    .select({ testRunId: testRunsCases.testRunId, n: count() })
+    .from(testRunsCases)
+    .where(
+      and(
+        inArray(testRunsCases.testRunId, runIds),
+        fixmeSkipPredicate(testRunsCases.status, testRunsCases.testAnnotations),
+      ),
+    )
+    .groupBy(testRunsCases.testRunId);
+  for (const r of rows) out.set(r.testRunId, Number(r.n));
+  return out;
+}
 
 // ─── listProjects ────────────────────────────────────────────────
 
@@ -91,9 +120,10 @@ export async function listProjects(db: DrizzleDB, scope: ProjectScope = 'all') {
   // 2. Fetch full latest run rows
   const latestRuns: any[] =
     latestRunIds.length > 0 ? await db.select().from(testRuns).where(inArray(testRuns.id, latestRunIds)) : [];
+  const fixmeByRunId = await fixmeTestsByRunId(db, latestRuns);
   const latestRunByProjectId = new Map<number, any>();
   for (const r of latestRuns) {
-    latestRunByProjectId.set(r.projectId, r);
+    latestRunByProjectId.set(r.projectId, { ...r, fixmeTests: fixmeByRunId.get(r.id) ?? 0 });
   }
 
   // 3. Total test cases per project (batched GROUP BY)
@@ -160,51 +190,49 @@ export async function listProjects(db: DrizzleDB, scope: ProjectScope = 'all') {
 
 // ─── getProject ──────────────────────────────────────────────────
 
-export async function getProject(db: DrizzleDB, id: number, options?: { runLimit?: number }) {
-  // Bounds the run list (and the charts derived from it) — projects grow
-  // unboundedly, so an uncapped select scales with total history.
-  const runLimit = Math.min(Math.max(options?.runLimit ?? 200, 1), 1000);
+/** The run-list columns: everything the table shows, no wide JSON besides the metadata it slims. */
+const RUN_SUMMARY_COLUMNS = {
+  id: testRuns.id,
+  projectId: testRuns.projectId,
+  status: testRuns.status,
+  startTime: testRuns.startTime,
+  duration: testRuns.duration,
+  totalTests: testRuns.totalTests,
+  passedTests: testRuns.passedTests,
+  failedTests: testRuns.failedTests,
+  skippedTests: testRuns.skippedTests,
+  didNotRunTests: testRuns.didNotRunTests,
+  flakyTests: testRuns.flakyTests,
+  avgTestDuration: testRuns.avgTestDuration,
+  p90TestDuration: testRuns.p90TestDuration,
+  shardTotal: testRuns.shardTotal,
+  shardsFinished: testRuns.shardsFinished,
+  environment: testRuns.environment,
+  branch: testRuns.branch,
+  label: testRuns.label,
+  instanceId: testRuns.instanceId,
+  playwrightVersion: testRuns.playwrightVersion,
+  reporterVersion: testRuns.reporterVersion,
+  isFullRun: testRuns.isFullRun,
+  filterDetails: testRuns.filterDetails,
+  metadata: testRuns.metadata,
+  keptAt: testRuns.keptAt,
+  keepSource: testRuns.keepSource,
+  keepReason: testRuns.keepReason,
+  createdAt: testRuns.createdAt,
+  updatedAt: testRuns.updatedAt,
+};
 
-  const projectResults: any[] = await db.select().from(projects).where(eq(projects.id, id));
-  const project = projectResults[0];
+/** Clamp a requested run-list size to 1–1000, 200 by default. */
+function clampRunLimit(limit: number | undefined): number {
+  return Math.min(Math.max(limit ?? 200, 1), 1000);
+}
 
-  if (!project) throw new Error('Project not found');
-
-  // Select only the columns needed for the run list — omit wide JSON columns
-  const runs: any[] = await db
-    .select({
-      id: testRuns.id,
-      projectId: testRuns.projectId,
-      status: testRuns.status,
-      startTime: testRuns.startTime,
-      duration: testRuns.duration,
-      totalTests: testRuns.totalTests,
-      passedTests: testRuns.passedTests,
-      failedTests: testRuns.failedTests,
-      skippedTests: testRuns.skippedTests,
-      didNotRunTests: testRuns.didNotRunTests,
-      flakyTests: testRuns.flakyTests,
-      avgTestDuration: testRuns.avgTestDuration,
-      p90TestDuration: testRuns.p90TestDuration,
-      shardTotal: testRuns.shardTotal,
-      shardsFinished: testRuns.shardsFinished,
-      environment: testRuns.environment,
-      branch: testRuns.branch,
-      label: testRuns.label,
-      instanceId: testRuns.instanceId,
-      playwrightVersion: testRuns.playwrightVersion,
-      reporterVersion: testRuns.reporterVersion,
-      isFullRun: testRuns.isFullRun,
-      filterDetails: testRuns.filterDetails,
-      metadata: testRuns.metadata,
-      createdAt: testRuns.createdAt,
-      updatedAt: testRuns.updatedAt,
-    })
-    .from(testRuns)
-    .where(eq(testRuns.projectId, id))
-    .orderBy(desc(testRuns.startTime))
-    .limit(runLimit);
-
+/**
+ * Shape run-list rows for the runs table: attach each run's reports and
+ * browsers, and slim the metadata JSON down to the SCM branch and commit.
+ */
+async function toRunSummaries(db: DrizzleDB, runs: any[]) {
   // Fetch reports for all runs in a single query
   const runIds: number[] = runs.map((r: any) => r.id);
   const reportResults: any[] =
@@ -235,6 +263,8 @@ export async function getProject(db: DrizzleDB, id: number, options?: { runLimit
           .where(and(inArray(testRunsCases.testRunId, runIds), isNotNull(testRunsCases.browserName)))
       : [];
 
+  const fixmeByRunId = await fixmeTestsByRunId(db, runs);
+
   const browsersByRunId = new Map<number, string[]>();
   for (const row of browserRows) {
     const name = row.browserName as string | null;
@@ -243,6 +273,38 @@ export async function getProject(db: DrizzleDB, id: number, options?: { runLimit
     if (!list.includes(name)) list.push(name);
     browsersByRunId.set(row.testRunId, list);
   }
+
+  return runs.map((r: any) => {
+    // Slim the wide metadata JSON down to just the SCM branch/commit shown in the run list
+    const scm = (r.metadata as { scm?: { branch?: string | null; commit?: string | null } } | null)?.scm;
+    return {
+      ...r,
+      isFullRun: r.isFullRun === 1,
+      metadata: scm?.branch || scm?.commit ? { scm: { branch: scm.branch ?? null, commit: scm.commit ?? null } } : null,
+      reports: reportsByRunId.get(r.id) ?? [],
+      browsers: browsersByRunId.get(r.id) ?? [],
+      fixmeTests: fixmeByRunId.get(r.id) ?? 0,
+    };
+  });
+}
+
+export async function getProject(db: DrizzleDB, id: number, options?: { runLimit?: number }) {
+  // Bounds the run list (and the charts derived from it) — projects grow
+  // unboundedly, so an uncapped select scales with total history.
+  const runLimit = clampRunLimit(options?.runLimit);
+
+  const projectResults: any[] = await db.select().from(projects).where(eq(projects.id, id));
+  const project = projectResults[0];
+
+  if (!project) throw new Error('Project not found');
+
+  // Select only the columns needed for the run list — omit wide JSON columns
+  const runs: any[] = await db
+    .select(RUN_SUMMARY_COLUMNS)
+    .from(testRuns)
+    .where(eq(testRuns.projectId, id))
+    .orderBy(desc(testRuns.startTime))
+    .limit(runLimit);
 
   // Get tags for this project
   const projectTagRows: any[] = await db
@@ -258,19 +320,26 @@ export async function getProject(db: DrizzleDB, id: number, options?: { runLimit
     // stored "declined"/"enabled" rather than always reading "instance default".
     capabilities: parseProjectDecisions(project.capabilities ?? null),
     tags: projectTagRows.map((r: any) => r.tag),
-    testRuns: runs.map((r: any) => {
-      // Slim the wide metadata JSON down to just the SCM branch/commit shown in the run list
-      const scm = (r.metadata as { scm?: { branch?: string | null; commit?: string | null } } | null)?.scm;
-      return {
-        ...r,
-        isFullRun: r.isFullRun === 1,
-        metadata:
-          scm?.branch || scm?.commit ? { scm: { branch: scm.branch ?? null, commit: scm.commit ?? null } } : null,
-        reports: reportsByRunId.get(r.id) ?? [],
-        browsers: browsersByRunId.get(r.id) ?? [],
-      };
-    }),
+    testRuns: await toRunSummaries(db, runs),
   };
+}
+
+// ─── listKeptRuns ────────────────────────────────────────────────
+
+/**
+ * A project's kept runs, newest first, in the run-list shape. Kept runs are
+ * mostly old ones, past the window `getProject` loads, so they list on their own.
+ */
+export async function listKeptRuns(db: DrizzleDB, projectId: number, options?: { limit?: number }) {
+  const where = and(eq(testRuns.projectId, projectId), isNotNull(testRuns.keptAt));
+  const runs: any[] = await db
+    .select(RUN_SUMMARY_COLUMNS)
+    .from(testRuns)
+    .where(where)
+    .orderBy(desc(testRuns.startTime))
+    .limit(clampRunLimit(options?.limit));
+  const [total] = await db.select({ n: count() }).from(testRuns).where(where);
+  return { items: await toRunSummaries(db, runs), total: Number(total?.n ?? 0) };
 }
 
 // ─── createProject ───────────────────────────────────────────────
@@ -315,6 +384,8 @@ export async function updateProject(
     openApiUrl?: string | null;
     serverProbes?: unknown;
     ciRerun?: unknown;
+    /** Per-project targets (`ProjectTargets`); null clears them. */
+    targets?: unknown;
     tagIds?: number[];
   },
 ) {
@@ -331,8 +402,10 @@ export async function updateProject(
     openApiUrl,
     serverProbes,
     ciRerun,
+    targets,
     tagIds: dataTagIds,
   } = data;
+  const resolvedTargets = targets === undefined ? undefined : normalizeProjectTargets(targets);
 
   // Update project
   await db
@@ -347,6 +420,7 @@ export async function updateProject(
       openApiUrl: openApiUrl !== undefined ? openApiUrl : undefined,
       serverProbes: serverProbes !== undefined ? (serverProbes as any) : undefined,
       ciRerun: ciRerun !== undefined ? (ciRerun as any) : undefined,
+      targets: resolvedTargets,
       updatedAt: new Date(),
     })
     .where(eq(projects.id, id));
@@ -433,6 +507,8 @@ export async function deleteProjectData(db: DrizzleDB, projectId: number) {
     await db.delete(entityLinks).where(inArray(entityLinks.failureClusterId, projectClusterIds));
   }
 
+  await db.delete(analyticsDailyRollups).where(eq(analyticsDailyRollups.projectId, projectId));
+
   // Deleting the project row cascades to: projectTags, failureClusters,
   // failureDiagnoses, traceBlobs, traceResources
   await db.delete(projects).where(eq(projects.id, projectId));
@@ -469,7 +545,7 @@ export async function getProjectPerformance(
   if (!projectResults[0]) throw new Error('Project not found');
 
   // Build conditions
-  const conditions = [eq(testRuns.projectId, projectId)];
+  const conditions = [eq(testRuns.projectId, projectId), notProbeRun(testRuns.metadata)];
   if (fullRunsOnly) {
     conditions.push(eq(testRuns.isFullRun, 1));
   }
@@ -721,6 +797,7 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
       passedRuns: passed,
       failedRuns: failed,
       skippedRuns: sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'skipped' THEN 1 ELSE 0 END)`,
+      fixmeRuns: sql<number>`SUM(CASE WHEN ${fixmeSkipPredicate(testRunsCases.status, testRunsCases.testAnnotations)} THEN 1 ELSE 0 END)`,
       didNotRunRuns: sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'didnotrun' THEN 1 ELSE 0 END)`,
       flakyRuns: sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'passed' AND ${testRunsCases.retries} > 0 THEN 1 ELSE 0 END)`,
       recentFlakyRuns: recentFlaky,
@@ -913,7 +990,7 @@ export async function getProjectSlowTests(db: DrizzleDB, projectId: number, runs
   const recentRuns: any[] = await db
     .select({ id: testRuns.id })
     .from(testRuns)
-    .where(eq(testRuns.projectId, projectId))
+    .where(and(eq(testRuns.projectId, projectId), notProbeRun(testRuns.metadata)))
     .orderBy(desc(testRuns.startTime))
     .limit(effectiveLimit);
 
@@ -1597,7 +1674,7 @@ export async function getProjectsOverview(db: DrizzleDB, scope: ProjectScope = '
       totalFullRuns: count(),
     })
     .from(testRuns)
-    .where(and(inArray(testRuns.projectId, projectIds), eq(testRuns.isFullRun, 1)))
+    .where(and(inArray(testRuns.projectId, projectIds), eq(testRuns.isFullRun, 1), notProbeRun(testRuns.metadata)))
     .groupBy(testRuns.projectId);
 
   const totalFullRunsByProjectId = new Map<number, number>();
@@ -1626,7 +1703,7 @@ export async function getProjectsOverview(db: DrizzleDB, scope: ProjectScope = '
           ),
         })
         .from(testRuns)
-        .where(and(inArray(testRuns.projectId, projectIds), eq(testRuns.isFullRun, 1))),
+        .where(and(inArray(testRuns.projectId, projectIds), eq(testRuns.isFullRun, 1), notProbeRun(testRuns.metadata))),
     );
 
     recentFullRuns = await db

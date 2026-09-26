@@ -28,7 +28,6 @@ export function deriveTopLocator(el: Element): TopLocatorInfo {
     inputRoles: INPUT_TYPE_TO_ROLE,
     roleSources,
     includeStructural: true,
-    includeLabelText: false,
   };
   const attrs = probeElementAttrs(el, probeArg);
   const accessibleName = approximateAccessibleName({ ...attrs, accessibleName: null });

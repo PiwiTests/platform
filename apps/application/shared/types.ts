@@ -130,6 +130,9 @@ export interface TestRunCounters {
 
 export type FlakyRootCause = 'timing' | 'network' | 'assertion' | 'environment' | 'other';
 
+/** Who asked for a run to be kept forever: a person, the reporter at ingest, or a release marker. */
+export type KeepSource = 'user' | 'reporter' | 'marker';
+
 export interface TestRunSubmitPayload {
   projectName: string;
   projectDescription?: string;
@@ -145,6 +148,8 @@ export interface TestRunSubmitPayload {
   didNotRunTests?: number;
   environment?: string | null;
   label?: string | null;
+  /** Keep the run forever: retention never deletes it. */
+  keep?: boolean;
   metadata?: Record<string, unknown> | null;
   instanceId?: string | null;
   playwrightVersion?: string;
@@ -237,6 +242,8 @@ export interface TestRunFinishPayload {
     workerIndex?: number | null;
   }>;
   label?: string | null;
+  /** Keep the run forever: retention never deletes it. */
+  keep?: boolean;
   metadata?: Record<string, unknown>;
   playwrightVersion?: string;
   reporterVersion?: string;
@@ -254,6 +261,8 @@ export interface TestRunStartPayload {
   startTime?: string;
   environment?: string | null;
   label?: string | null;
+  /** Keep the run forever: retention never deletes it. */
+  keep?: boolean;
   metadata?: Record<string, unknown>;
   instanceId?: string;
   playwrightVersion?: string;

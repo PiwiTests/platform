@@ -11,6 +11,7 @@ import {
   entityLinks,
   networkRequests,
   markers,
+  users,
 } from '../../server/database/schema';
 import { fetchAndFormatSuites, splitSuitePath } from '../utils/suites';
 import { FAILED_STATUS_KEYS } from '../utils/test-counts';
@@ -22,10 +23,12 @@ import type { TestStepEvent } from '../types';
 import type { EndpointSummary, DiagnosisCompact } from '../../types/api';
 
 import type { DrizzleDB } from './db';
+import { keepRun, releaseRun } from './run-keep';
 import { normalizeGitUrl } from '../../server/utils/scm/git-url';
 import { selectBaselineRun } from '../../server/utils/branch-baseline';
 import { resolveRunBranch } from '../../server/utils/run-branch';
 import { readProjectDefaultBranch, resolveFallbackBranch } from './baseline-scope';
+import { notProbeRun } from './probes';
 import { describeRunBaseline } from '#shared/run-baseline';
 import { getLocatorHealingBatch } from '../../server/utils/locator-healing';
 
@@ -209,6 +212,15 @@ export async function getTestRun(
 
   const { streamToken: _streamToken, ...testRunPublic } = testRun;
 
+  let keptByName: string | null = null;
+  if (testRun.keptBy) {
+    const [keeper] = await db
+      .select({ name: users.name, username: users.username })
+      .from(users)
+      .where(eq(users.id, testRun.keptBy));
+    keptByName = keeper ? keeper.name || keeper.username : null;
+  }
+
   let projectPublic;
   if (project) {
     const { scmToken: _scmToken, ...projectRest } = project;
@@ -250,6 +262,7 @@ export async function getTestRun(
 
   return {
     ...testRunPublic,
+    keptByName,
     precedingMarker,
     isFullRun: testRun.isFullRun === 1,
     project: projectPublic,
@@ -272,7 +285,7 @@ export async function getTestRun(
   };
 }
 
-// ─── getRecentTestRuns — active + 30 most recent completed ───────────────────
+// ─── getRecentTestRuns — active + 30 most recent completed, probe runs left out ─
 
 const ACTIVE_STATUSES = ['running', 'initializing', 'finalizing'] as const;
 
@@ -311,7 +324,7 @@ export async function getRecentTestRuns(db: DrizzleDB, scope: ProjectScope = 'al
       .select(RECENT_FIELDS)
       .from(testRuns)
       .innerJoin(projects, eq(testRuns.projectId, projects.id))
-      .where(notInArray(testRuns.status, [...ACTIVE_STATUSES]))
+      .where(and(notInArray(testRuns.status, [...ACTIVE_STATUSES]), notProbeRun(testRuns.metadata)))
       .orderBy(desc(testRuns.startTime))
       .limit(30),
   ]);
@@ -377,19 +390,60 @@ export async function getTestRunSummary(db: DrizzleDB, id: number) {
   };
 }
 
-// ─── patchTestRun — update label ─────────────────────────────────────────────
+// ─── patchTestRun — update label, keep or release ────────────────────────────
 
-export async function patchTestRun(db: DrizzleDB, id: number, label: string | null) {
-  const existing = await db.select().from(testRuns).where(eq(testRuns.id, id));
+export interface TestRunPatch {
+  label?: string | null;
+  /** `true` keeps the run forever; `false` releases it back to retention. */
+  keep?: boolean;
+  /** Reason recorded with a keep; only accepted alongside `keep: true`. */
+  keepReason?: string | null;
+}
+
+/** Validate a PATCH body. Returns the patch, or the message of a 400. */
+export function parseTestRunPatch(body: unknown): TestRunPatch | string {
+  const b = (body && typeof body === 'object' ? body : {}) as Record<string, unknown>;
+  const patch: TestRunPatch = {};
+  if (b.label !== undefined) {
+    if (b.label !== null && typeof b.label !== 'string') return 'label must be a string or null';
+    patch.label = b.label as string | null;
+  }
+  if (b.keep !== undefined) {
+    if (typeof b.keep !== 'boolean') return 'keep must be a boolean';
+    patch.keep = b.keep;
+  }
+  if (b.keepReason !== undefined) {
+    if (b.keepReason !== null && typeof b.keepReason !== 'string') return 'keepReason must be a string or null';
+    if (patch.keep !== true) return 'keepReason is only accepted with keep: true';
+    patch.keepReason = b.keepReason as string | null;
+  }
+  if (Object.keys(patch).length === 0) return 'No fields to update';
+  return patch;
+}
+
+export async function patchTestRun(
+  db: DrizzleDB,
+  id: number,
+  patch: TestRunPatch,
+  actor: { userId?: number | null } = {},
+) {
+  const existing = await db.select({ id: testRuns.id }).from(testRuns).where(eq(testRuns.id, id));
   if (!existing[0]) throw new Error('Test run not found');
 
-  await db
-    .update(testRuns)
-    .set({
-      label: label ?? null,
-      updatedAt: new Date(),
-    })
-    .where(eq(testRuns.id, id));
+  if (patch.label !== undefined) {
+    await db
+      .update(testRuns)
+      .set({
+        label: patch.label ?? null,
+        updatedAt: new Date(),
+      })
+      .where(eq(testRuns.id, id));
+  }
+  if (patch.keep === true) {
+    await keepRun(db, id, { source: 'user', userId: actor.userId, reason: patch.keepReason });
+  } else if (patch.keep === false) {
+    await releaseRun(db, id);
+  }
 
   const [testRun] = await db.select().from(testRuns).where(eq(testRuns.id, id));
   return { success: true, testRun };

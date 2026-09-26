@@ -38,7 +38,6 @@ export function buildAgentContext(el: Element, pageUrl: string): string {
     inputRoles: INPUT_TYPE_TO_ROLE,
     roleSources,
     includeStructural: true,
-    includeLabelText: false,
   };
 
   const attrs = probeElementAttrs(el, probeArg);

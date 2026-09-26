@@ -3,7 +3,7 @@
  * few times does not hammer Jira with the same project / issue-type / assignable
  * lookups. Keyed by connection id and the query, shared across requests.
  */
-import { TtlCache } from '../scm/cache';
+import { TtlCache } from '../ttl-cache';
 import type { TrackerIssueType, TrackerProject, TrackerUser } from './types';
 
 const TTL_MS = 5 * 60 * 1000;

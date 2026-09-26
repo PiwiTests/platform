@@ -103,6 +103,30 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/analytics',
       },
       {
+        title: 'Trends over time',
+        summary:
+          'Any period against any other (calendar units, sprints, release cycles, since a marker), from daily rollups that outlive retention.',
+        needs: [],
+        where: 'Analytics → Filters',
+        doc: 'features/analytics#periods',
+      },
+      {
+        title: 'Custom dashboards',
+        summary:
+          'Your own arrangement of widgets with its own filters and period, private or shared, refreshed live and shown in TV mode on a wall screen; a shared dashboard shows nobody a project they cannot open.',
+        needs: [],
+        where: 'Analytics → dashboard switcher, Edit, Duplicate; Analytics → Manage dashboards',
+        doc: 'features/dashboards',
+      },
+      {
+        title: 'Quality reports',
+        summary:
+          'The analytics page as a document for stakeholders: a rule-based verdict, headline numbers, the trend, what is being done and the risks, as PDF, HTML, Markdown or Excel, sent on a schedule by email, Slack or webhook and kept as snapshots.',
+        needs: [],
+        where: 'Analytics → Export, Schedule…; Project → Export; Quality reports',
+        doc: 'features/quality-reports',
+      },
+      {
         title: 'Timeline markers',
         summary: 'Your deploys and infra changes overlaid on the trend charts, so a step change has a cause.',
         needs: ['admin'],
@@ -200,6 +224,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         needs: ['fixtures'],
         where: 'Execution → Locator fix',
         doc: 'features/locator-healing',
+      },
+      {
+        title: 'Who uses a locator',
+        summary:
+          'Before changing an element, the tests whose steps reach it and the lines they reach it from, or check pasted locators against every run.',
+        needs: [],
+        where: 'Execution → Locators; Project → Locators',
+        doc: 'features/locator-usage',
       },
       {
         title: 'Fix plans, reproduce & bisect',
@@ -304,6 +336,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         needs: ['extension'],
         where: 'Browser extension',
         doc: 'features/extension',
+      },
+      {
+        title: 'Tested elements',
+        summary:
+          'On a live page, the elements your tests reach and through which tests, and the buttons, links and fields none reaches.',
+        needs: ['extension'],
+        where: 'Browser extension → Tested elements',
+        doc: 'features/tested-elements',
       },
       {
         title: 'Test functions catalog',

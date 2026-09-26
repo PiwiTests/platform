@@ -91,7 +91,7 @@ describe('legendOf', () => {
   });
 
   test('run-status series stack with failed on the baseline', () => {
-    expect(RUN_STATUS_SERIES.map((s) => s.key)).toEqual(['failed', 'flaky', 'skipped', 'didNotRun', 'passed']);
+    expect(RUN_STATUS_SERIES.map((s) => s.key)).toEqual(['failed', 'flaky', 'skipped', 'fixme', 'didNotRun', 'passed']);
   });
 
   test('run-status series take the test outcome palette colors', () => {
@@ -99,6 +99,7 @@ describe('legendOf', () => {
       'var(--color-status-failed)',
       'var(--color-status-flaky)',
       'var(--color-status-skipped)',
+      'var(--color-status-fixme)',
       'var(--color-status-didnotrun)',
       'var(--color-status-passed)',
     ]);

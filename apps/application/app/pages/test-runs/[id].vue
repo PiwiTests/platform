@@ -51,6 +51,8 @@ const toast = useToast();
 const { copy } = useCopy();
 const isDeleteConfirmOpen = ref(false);
 const deleting = ref(false);
+const isKeepOpen = ref(false);
+const { release: releaseKeep, canRelease } = useRunKeep();
 
 // Live streaming state
 const isLive = computed(() => testRun.value?.status === 'running' || testRun.value?.status === 'finalizing');
@@ -457,6 +459,7 @@ const displayProgress = computed(() => {
       passedTests: s.passed,
       failedTests: s.failed,
       skippedTests: s.skipped,
+      fixmeTests: s.fixme,
       didNotRunTests: s.didNotRun,
       flakyTests: s.flaky,
     };
@@ -466,6 +469,7 @@ const displayProgress = computed(() => {
     passedTests: testRun.value.passedTests,
     failedTests: testRun.value.failedTests,
     skippedTests: testRun.value.skippedTests,
+    fixmeTests: 0,
     didNotRunTests: testRun.value.didNotRunTests ?? 0,
     flakyTests: testRun.value.flakyTests ?? 0,
   };
@@ -502,14 +506,16 @@ function buildRunSummary(): string {
   const passed = p?.passedTests ?? run.passedTests ?? 0;
   const failed = p?.failedTests ?? run.failedTests ?? 0;
   const skipped = p?.skippedTests ?? run.skippedTests ?? 0;
+  const fixme = p?.fixmeTests ?? 0;
   const flaky = p?.flakyTests ?? run.flakyTests ?? 0;
   const didNotRun = p?.didNotRunTests ?? run.didNotRunTests ?? 0;
   const flakyPart = flaky > 0 ? ` · ${flaky} passed on retry` : '';
   const didNotRunPart = didNotRun > 0 ? ` · ${didNotRun} didn't run` : '';
+  const fixmePart = fixme > 0 ? ` (${fixme} fixme)` : '';
   return [
     `*Run #${run.id}*${label}`,
     `Status: ${statusEmoji} ${run.status} | Project: ${project}`,
-    `Tests: ${total} total · ${passed} passed · ${failed} failed · ${skipped} skipped${didNotRunPart}${flakyPart}`,
+    `Tests: ${total} total · ${passed} passed · ${failed} failed · ${skipped} skipped${fixmePart}${didNotRunPart}${flakyPart}`,
     `Duration: ${formatDuration(run.duration)}`,
   ].join('\n');
 }
@@ -518,6 +524,7 @@ function buildRunSummary(): string {
 const testCaseSearch = ref('');
 const testCaseActiveStatuses = ref<string[]>([]);
 const testCaseBrowserFilter = ref('all');
+const testCaseTagFilter = ref<string[]>([]);
 
 // The count-bar segments toggle into the same set the Tests list chips use, and
 // switch to the Tests tab so the filtered rows are on screen.
@@ -701,18 +708,32 @@ function handleSelectTestCase(id: number) {
 
 // ── Navbar More menu ────────────────────────────────────────────────────────
 const moreMenuItems = computed(() => {
-  const items: { label: string; icon: string; color?: 'error'; onSelect: () => void }[] = [];
+  const items: { label: string; icon: string; color?: 'error'; disabled?: boolean; onSelect: () => void }[] = [];
   items.push({
     label: 'Copy run summary',
     icon: 'i-lucide-clipboard',
     onSelect: () => copy(buildRunSummary(), { toast: 'Run summary copied' }),
   });
   items.push({ label: 'Refresh', icon: 'i-lucide-refresh-cw', onSelect: () => refresh() });
-  if (canSeeAdmin.value) {
+  const kept = !!testRun.value?.keptAt;
+  if (!kept) {
+    items.push({ label: 'Keep forever…', icon: 'i-lucide-lock', onSelect: () => (isKeepOpen.value = true) });
+  } else if (canRelease.value) {
     items.push({
-      label: 'Delete run',
+      label: 'Release keep',
+      icon: 'i-lucide-lock-open',
+      onSelect: async () => {
+        if (await releaseKeep(Number(runId))) refresh();
+      },
+    });
+  }
+  if (canSeeAdmin.value) {
+    // A kept run cannot be deleted until it is released.
+    items.push({
+      label: kept ? 'Delete run (release it first)' : 'Delete run',
       icon: 'i-lucide-trash-2',
       color: 'error',
+      disabled: kept,
       onSelect: () => (isDeleteConfirmOpen.value = true),
     });
   }
@@ -804,6 +825,7 @@ const moreMenuItems = computed(() => {
             v-model:search="testCaseSearch"
             v-model:active-statuses="testCaseActiveStatuses"
             v-model:browser-filter="testCaseBrowserFilter"
+            v-model:tag-filter="testCaseTagFilter"
             :test-cases="dedupedDisplayCases"
             :is-live="isLive"
             :total="displayProgress?.totalTests"
@@ -850,6 +872,10 @@ const moreMenuItems = computed(() => {
       </DetailPageLayout>
     </template>
   </UDashboardPanel>
+
+  <ClientOnly>
+    <RunKeepModal v-model:open="isKeepOpen" :run-id="Number(runId)" @kept="refresh" />
+  </ClientOnly>
 
   <!-- Delete Confirm Dialog -->
   <ClientOnly>

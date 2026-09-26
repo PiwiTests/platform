@@ -5,13 +5,14 @@ import { updateProject } from '#shared/handlers/projects';
 import { encryptSecret, getEncryptionKey } from '../../utils/crypto';
 import { resolveCiRerunSettings, type CiRerunSettings } from '#shared/ci-rerun';
 import { resolveServerProbeSettings } from '#shared/server-probes';
+import { projectTargetsSchema } from '#shared/analytics/targets';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Projects'],
     summary: 'Update a project',
     description:
-      'Updates project metadata including label, description, diagnosis instructions, SCM token, and tags. Requires administrator role.',
+      'Updates project metadata including label, description, diagnosis instructions, SCM token, targets, and tags. Requires administrator role.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-roles': ['administrator'],
   },
@@ -42,6 +43,8 @@ const updateProjectSchema = z.object({
     .optional()
     .nullable(),
   ciRerun: ciRerunSchema.optional().nullable(),
+  /** Per-project targets on catalog metrics; null clears them. */
+  targets: projectTargetsSchema.optional().nullable(),
   tagIds: z.array(z.number()).optional(),
 });
 
@@ -75,6 +78,7 @@ export default eventHandler(async (event) => {
     openApiUrl,
     serverProbes,
     ciRerun,
+    targets,
     tagIds,
   } = validation.data;
 
@@ -106,6 +110,7 @@ export default eventHandler(async (event) => {
             ? null
             : resolveServerProbeSettings(serverProbes),
       ciRerun: resolvedCiRerun,
+      targets,
       tagIds,
     });
   } catch (e: any) {

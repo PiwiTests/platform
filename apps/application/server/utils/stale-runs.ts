@@ -3,6 +3,8 @@ import { testRuns } from '../database/schema';
 import type { DbClient } from '../database';
 import { runEventBus } from './run-events';
 import { computeRunCountsFromRows } from './run-counts';
+import { recomputeRollupCells } from '#shared/handlers/analytics/rollups';
+import { dayKey } from '#shared/handlers/analytics/common';
 
 // A live reporter sends a heartbeat (~every 15s) during idle gaps, so an active
 // run's `updatedAt` never goes quiet for long. This timeout must stay comfortably
@@ -16,7 +18,9 @@ export const STALE_TIMEOUT_MS = 2 * 60 * 1000; // 2 minutes without activity →
  * activity for `STALE_TIMEOUT_MS` as `interrupted` — its reporter was killed or
  * lost its connection before reporting the end. Each reaped run gets its
  * counters reconciled and its end announced on its own stream and on the global
- * lifecycle stream, like a run that finished normally. Returns the reaped ids.
+ * lifecycle stream, like a run that finished normally, and its day's rollup
+ * recomputed, since an interrupted run counts as a failed one. Returns the
+ * reaped ids.
  */
 export async function interruptStaleRuns(db: DbClient, now = Date.now()): Promise<number[]> {
   const staleThreshold = new Date(now - STALE_TIMEOUT_MS);
@@ -42,6 +46,7 @@ export async function interruptStaleRuns(db: DbClient, now = Date.now()): Promis
       projectId: testRuns.projectId,
       duration: testRuns.duration,
       totalTests: testRuns.totalTests,
+      startTime: testRuns.startTime,
     });
 
   // The streaming events endpoint counts attempts (a flaky test's failed
@@ -87,6 +92,22 @@ export async function interruptStaleRuns(db: DbClient, now = Date.now()): Promis
     // App-wide consumers (run lists, the desktop shell's OS progress) track
     // in-flight runs from the global stream and only drop one on its end event.
     runEventBus.publishGlobal({ type: 'run-finished', runId: run.id, projectId: run.projectId, status: 'interrupted' });
+  }
+
+  // The analytics read the daily rollups, which count an interrupted run as a failed one: recompute
+  // each project-day the sweep touched, once, then announce it as the finalize step does.
+  if (staleRuns.length > 0) {
+    try {
+      await recomputeRollupCells(
+        db,
+        staleRuns.map((run) => ({ projectId: run.projectId, day: dayKey(run.startTime) })),
+      );
+      const lastRunOf = new Map(staleRuns.map((run) => [run.projectId, run.id]));
+      for (const [projectId, runId] of lastRunOf)
+        runEventBus.publishGlobal({ type: 'rollup-updated', runId, projectId });
+    } catch (e) {
+      console.error('[analytics] recomputing the rollups of interrupted runs failed', e);
+    }
   }
 
   return staleRuns.map((run) => run.id);

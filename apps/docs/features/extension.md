@@ -11,8 +11,9 @@ Piwi Picker is a Chrome/Edge extension (Manifest V3) that picks ranked, stable P
 locators directly from the page you're looking at — scored by the same engine the dashboard
 uses, and can record a multi-page flow into a runnable TypeScript spec. Picking and recording
 are fully standalone — nothing is sent anywhere by default. Connecting to a Piwi instance is
-optional and adds exactly one thing: matching a recording against your project's own
-page-object methods and helpers, ranked live as you record.
+optional and adds what needs your project's history: matching a recording against your own
+page-object methods and helpers, and showing which elements of the page
+[your tests reach](./tested-elements).
 
 ## Install
 
@@ -27,8 +28,8 @@ and auto-updates exactly as it does in Chrome. There's no separate Edge Add-ons 
 ## What it does
 
 Every action in the toolbar popup has a digit shortcut, shown on its tile and numbered in
-reading order: `1` records, `2` picks an element, through to `0` for **Test functions**. With
-the popup open, press the digit instead of clicking.
+reading order: `1` records, `2` picks an element, through to `0` for **Test functions**, and `T`
+opens [Tested elements](./tested-elements). With the popup open, press the key instead of clicking.
 
 Only one tool runs at a time: starting one closes whatever was open, and the popup marks the
 running tool as **running** so you can see what is live on the page. **Esc** cancels it from
@@ -74,7 +75,8 @@ nothing. The popup footer reports the key actually bound, and offers a link to
 - **Copy in three forms** — the bare locator, a full action line
   (`await page.getByRole(…).click();`), or a visibility assertion
   (`await expect(page.getByRole(…)).toBeVisible();`). Your last-used form is remembered for next
-  time.
+  time. **Copy all** copies every ranked locator, one per line, for a project's
+  [Locators page](./locator-usage#the-locators-page).
 - **Hover-inspect** — toggle from the popup: hover any element to see its best-ranked locator in
   a syntax-highlighted tooltip, no click needed.
 - **Locator console** — type or paste a locator expression (a safe subset — `getBy*` chains,
@@ -127,6 +129,9 @@ nothing. The popup footer reports the key actually bound, and offers a link to
   (**not found on this page**) — no recording or replay needed, just a live read of the current
   DOM against each function's stored pattern. A **Manage catalog in Piwi ↗** link in the panel
   header opens that project's **Test functions** page in a new tab.
+- **[Tested elements](./tested-elements)** *(needs a Piwi connection)* — outlines every element
+  of the page a test of the active project reaches, lists the tests, and marks the buttons, links
+  and fields no test reaches.
 
 ## Permissions, explained
 
@@ -134,8 +139,8 @@ nothing. The popup footer reports the key actually bound, and offers a link to
 |---|---|
 | `activeTab` | Lets the extension act on the tab you're looking at only when you click the toolbar icon or press the keyboard shortcut — not on every page you visit. |
 | `scripting` | Injects the picker (and the recorder) into the active tab on demand — there is no background content script running on pages you haven't asked it to. |
-| `storage` | Remembers your last-used copy format, a named pick session, the running recording, and (only if you connect) the instance URL/API key, the URL-pattern → project mappings, and each mapped project's cached function catalog — all locally on your machine. Pick sessions, the recording, and a manual **Active project** override specifically use `chrome.storage.session`, which the browser clears when you close it — a working session, not a saved file. |
-| `optional_host_permissions` (`http://*/*`, `https://*/*`, granted nothing by default) | Recording across pages needs to keep working after you navigate, which `activeTab` alone can't do (it's revoked on navigation). Clicking **Record actions** requests access to *the one site you're on* — never `<all_urls>`, never granted in advance — so the recorder can re-attach itself as you move between that site's pages. The other use is your own Piwi instance's origin, requested when you save the connection settings — the extension needs it to read your function catalog, and to keep that catalog up to date afterwards. Both are single origins you pick, never `<all_urls>`. |
+| `storage` | Remembers your last-used copy format, a named pick session, the running recording, and (only if you connect) the instance URL/API key, the URL-pattern → project mappings, each mapped project's cached function catalog, and the last three [locator indexes](./tested-elements) you opened — all locally on your machine. Pick sessions, the recording, and a manual **Active project** override specifically use `chrome.storage.session`, which the browser clears when you close it — a working session, not a saved file. |
+| `optional_host_permissions` (`http://*/*`, `https://*/*`, granted nothing by default) | Recording across pages needs to keep working after you navigate, which `activeTab` alone can't do (it's revoked on navigation). Clicking **Record actions** requests access to *the one site you're on* — never `<all_urls>`, never granted in advance — so the recorder can re-attach itself as you move between that site's pages. The other use is your own Piwi instance's origin, requested when you save the connection settings — the extension needs it to read your function catalog and your project's locator index, and to keep both up to date afterwards. Both are single origins you pick, never `<all_urls>`. |
 
 No picking, hover-inspect, locator console, multi-pick, lint overlay, assertion suggester,
 session export, agent-context copy, or standalone recording ever reaches a network. Connecting
@@ -183,16 +188,13 @@ its pattern actually matches whatever page you're looking at.
   supported yet — the picker sees the top-level document. The same limit applies to recording.
 - **Recording covers one origin.** The host permission recording requests is scoped to the
   site you started on; navigating to a different origin mid-recording stops capturing new steps
-  there (nothing is lost — stop and review what was captured, or start a fresh recording on the
-  new site). Expanding a running recording to a second origin isn't implemented yet.
-- **No aria-snapshot copier yet.** Reproducing Playwright's `toMatchAriaSnapshot()` YAML format
-  exactly needs the browser's real computed accessibility tree, which isn't reachable from a
-  content script without a much heavier permission (`debugger`) than this extension asks for. An
-  approximated version risks copying YAML that looks right but doesn't actually match — worse
-  than not offering it. The copy-context-for-agent element summary is deliberately a simpler,
-  non-recursive approximation instead (tag/role/name/attributes/text) rather than the same
-  aria-snapshot format — fine for giving an AI agent context, not meant for a `toMatchAriaSnapshot()`
-  assertion.
+  there. Nothing is lost: stop and review what was captured, or start a fresh recording on the
+  new site.
+- **No aria-snapshot copier yet.** Reproducing Playwright's `toMatchAriaSnapshot()` YAML exactly
+  needs the browser's computed accessibility tree, which a content script can't reach without the
+  much heavier `debugger` permission, and an approximation could copy YAML that looks right but
+  doesn't match. The copy-context-for-agent summary (tag, role, name, attributes, text) is context
+  for an AI agent, not a `toMatchAriaSnapshot()` assertion.
 - **Live re-check covers the common shapes.** `getByTestId`, CSS locators, and a bare
   `getByRole` are re-verified against the page as it is now; text/label/placeholder-based
   matches and anchor-scoped chains keep the count captured at pick time (Playwright's own

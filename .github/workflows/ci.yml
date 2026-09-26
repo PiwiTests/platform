@@ -397,9 +397,9 @@ jobs:
         with:
           dotnet-version: '10.x'
 
-      # Compile-only. The NuGet package is packed and published from a release
-      # tag by publish-nuget.yml; this proves the instrumentation still compiles
-      # on every pull request without paying for a pack.
-      - name: Build
-        working-directory: ./integrations/aspnetcore/PiwiTests.Instrumentation.AspNetCore
-        run: dotnet build -c Release
+      # Builds every package for every target framework and runs the tests. The
+      # NuGet packages are packed and published from a release tag by
+      # publish-nuget.yml.
+      - name: Build and test
+        working-directory: ./integrations/aspnetcore
+        run: dotnet test PiwiTests.Instrumentation.slnx -c Release

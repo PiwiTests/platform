@@ -73,6 +73,21 @@ test.describe('evaluateLocatorChain', () => {
     expect(await evalChain(page, `getByRole('button', { name: 'Pay now' })`)).toEqual({ count: 1, exact: false });
   });
 
+  test('getByRole names a form field by its label, not by its options or value', async ({ context }) => {
+    const page = await context.newPage();
+    await page.setContent(`<!doctype html><html><body>
+      <label for="country">Country</label>
+      <select id="country"><option>United Kingdom</option><option>Ireland</option></select>
+      <label><input type="checkbox"> Keep me posted</label>
+      <span id="l">Notes</span><textarea aria-labelledby="l">Draft</textarea>
+    </body></html>`);
+    expect((await evalChain(page, `getByRole('combobox', { name: 'Country' })`)).count).toBe(1);
+    expect((await evalChain(page, `getByRole('combobox', { name: 'Ireland' })`)).count).toBe(0);
+    expect((await evalChain(page, `getByRole('checkbox', { name: 'Keep me posted' })`)).count).toBe(1);
+    expect((await evalChain(page, `getByRole('textbox', { name: 'Notes' })`)).count).toBe(1);
+    expect((await evalChain(page, `getByRole('textbox', { name: 'Draft' })`)).count).toBe(0);
+  });
+
   test('getByRole name matching is substring + case-insensitive unless exact', async ({ context }) => {
     const page = await context.newPage();
     await page.setContent(`<!doctype html><html><body><button>Pay Now Please</button></body></html>`);

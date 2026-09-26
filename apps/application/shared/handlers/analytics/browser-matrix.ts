@@ -1,14 +1,13 @@
-import { and, eq, gte, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { testRuns, testRunsCases } from '../../../server/database/schema';
 import type { DrizzleDB } from '../db';
 import type { AnalyticsScope } from '../../analytics/scope';
 import type { AnalyticsBrowserMatrix } from '../../analytics/types';
 import {
-  fetchScopedProjects,
-  periodStart,
-  resolveAllowedProjects,
+  contextRunConditions,
+  fetchContextProjects,
+  getAnalyticsContext,
   roundRate,
-  TERMINAL_RUN_STATUSES,
   type ProjectAccess,
 } from './common';
 
@@ -22,30 +21,30 @@ export async function getAnalyticsBrowserMatrix(
   scope: AnalyticsScope,
   access: ProjectAccess = 'all',
 ): Promise<AnalyticsBrowserMatrix> {
-  const allowed = resolveAllowedProjects(scope, access);
-  if (allowed !== 'all' && allowed.length === 0) return { browsers: [], rows: [] };
+  const ctx = await getAnalyticsContext(db, scope, access);
+  if (ctx.allowed !== 'all' && ctx.allowed.length === 0) return { browsers: [], rows: [] };
 
-  const conditions = [
-    gte(testRuns.startTime, new Date(periodStart(scope.days))),
-    inArray(testRuns.status, TERMINAL_RUN_STATUSES),
-  ];
-  if (allowed !== 'all') conditions.push(inArray(testRuns.projectId, allowed));
-  if (scope.fullRunsOnly) conditions.push(eq(testRuns.isFullRun, 1));
-  if (scope.environments && scope.environments.length > 0)
-    conditions.push(inArray(testRuns.environment, scope.environments));
-  if (scope.branches && scope.branches.length > 0) conditions.push(inArray(testRuns.branch, scope.branches));
+  const conditions = contextRunConditions(ctx, ctx.period.from.getTime(), ctx.period.to.getTime());
+  const filter = ctx.testFilter;
+  if (filter?.browsers) conditions.push(inArray(testRunsCases.browserName, filter.browsers));
 
-  const rows: any[] = await db
+  // Under a test filter the grouping also keeps the test, so rows outside the
+  // resolved set can be dropped before the grid is summed.
+  const grouped: any[] = await db
     .select({
       projectId: testRuns.projectId,
       browserName: testRunsCases.browserName,
+      testCaseId: filter?.testCaseIds ? testRunsCases.testCaseId : sql<number>`0`,
       passed: sql<number>`COALESCE(SUM(CASE WHEN ${testRunsCases.status} = 'passed' THEN 1 ELSE 0 END), 0)`,
       total: sql<number>`COUNT(*)`,
     })
     .from(testRunsCases)
     .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
     .where(and(...conditions))
-    .groupBy(testRuns.projectId, testRunsCases.browserName);
+    .groupBy(testRuns.projectId, testRunsCases.browserName, ...(filter?.testCaseIds ? [testRunsCases.testCaseId] : []));
+  const rows = filter?.testCaseIds
+    ? grouped.filter((row) => filter.testCaseIds!.get(row.projectId)?.has(Number(row.testCaseId)))
+    : grouped;
 
   // Aggregate into a project × browser grid.
   const browserSet = new Set<string>();
@@ -58,13 +57,16 @@ export async function getAnalyticsBrowserMatrix(
       byBrowser = new Map();
       byProject.set(row.projectId, byBrowser);
     }
-    byBrowser.set(browser, { passed: Number(row.passed) || 0, total: Number(row.total) || 0 });
+    const cell = byBrowser.get(browser) ?? { passed: 0, total: 0 };
+    cell.passed += Number(row.passed) || 0;
+    cell.total += Number(row.total) || 0;
+    byBrowser.set(browser, cell);
   }
 
   const browsers = [...browserSet].sort();
   if (browsers.length === 0) return { browsers: [], rows: [] };
 
-  const scopedProjects = await fetchScopedProjects(db, scope, access);
+  const scopedProjects = await fetchContextProjects(db, ctx);
 
   const matrixRows = scopedProjects
     .filter((project) => byProject.has(project.id))

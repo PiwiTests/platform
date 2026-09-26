@@ -142,6 +142,8 @@ const PROJECTS = [
     description: 'End-to-end tests for the checkout flow',
     created_at: ts('2025-03-01'),
     updated_at: ts('2025-04-25T08:30:00'),
+    // Targets the checkout suite misses, so the demo report has missed targets in its risks.
+    targets: { testPassRate: 99, maxFlakyTests: 2, maxMedianTimeToFixDays: 3 },
   },
   {
     id: 2,
@@ -158,6 +160,8 @@ const PROJECTS = [
     description: 'Visual regression tests for UI components',
     created_at: ts('2025-01-10'),
     updated_at: ts('2025-04-24T16:45:00'),
+    // Targets the component suite meets.
+    targets: { testPassRate: 60, maxOpenClusterAgeDays: 400 },
   },
   {
     id: 4,
@@ -218,6 +222,26 @@ const APP_SETTINGS = [
     updated_at: ts('2025-04-20T09:00:00'),
   },
 ];
+// Runs kept forever: the v2.4.0 release run (by the release marker linked to
+// it below), one older run kept by hand, and one the reporter kept at ingest.
+function keepColumnsFor(projectId, runIndex, startTime) {
+  if (projectId === 1 && runIndex === 0) {
+    return { kept_at: startTime, kept_by: null, keep_source: 'marker', keep_reason: 'v2.4.0' };
+  }
+  if (projectId === 1 && runIndex === 17) {
+    return {
+      kept_at: startTime + 7200,
+      kept_by: null,
+      keep_source: 'user',
+      keep_reason: 'Reference run for the Q2 audit',
+    };
+  }
+  if (projectId === 2 && runIndex === 10) {
+    return { kept_at: startTime, kept_by: null, keep_source: 'reporter', keep_reason: null };
+  }
+  return { kept_at: null, kept_by: null, keep_source: null, keep_reason: null };
+}
+
 const MARKERS = [
   {
     id: 1,
@@ -495,6 +519,20 @@ function buildSteps(proj, caseDuration, caseStartMs) {
   return out;
 }
 
+/**
+ * Re-anchor a story's backend log entries onto the request that produced them.
+ * The stories carry one illustrative epoch clock shared by every run, so used
+ * verbatim the entries land wherever that clock sits relative to each run
+ * (minutes to days away from the request). Keep their spacing and put the first
+ * one mid-request, so the timeline's backend lane lines up with its request.
+ */
+function anchorServerLogs(logs, requestStartMs, requestDurationMs) {
+  if (!logs?.length) return null;
+  const first = Math.min(...logs.map((l) => l.timestamp));
+  const at = requestStartMs + Math.round((requestDurationMs ?? 0) / 2);
+  return logs.map((l) => ({ ...l, timestamp: at + (l.timestamp - first) }));
+}
+
 /** Themed network requests for one case (jittered durations; story overrides on failures). */
 function buildNetwork(proj, storyEntry) {
   const base = proj.network.map((req) => ({
@@ -750,6 +788,7 @@ for (const proj of DEMO_PROJECTS) {
       reporter_version: '0.7.0',
       is_full_run: i % 5 !== 4 ? 1 : 0,
       filter_details: i % 5 === 4 ? JSON.stringify({ grep: RUN_GREPS[proj.id] }) : null,
+      ...keepColumnsFor(proj.id, i, startTime),
       created_at: startTime,
       updated_at: startTime + Math.floor(duration / 1000),
     });
@@ -964,7 +1003,7 @@ for (const proj of DEMO_PROJECTS) {
             start_time: startTime,
             resource_type: req.resourceType ?? null,
             content_type: req.contentType ?? (req.resourceType === 'document' ? 'text/html' : 'application/json'),
-            server_logs: req.serverLogs ?? null,
+            server_logs: anchorServerLogs(req.serverLogs, startTime, req.duration),
             server_traces: req.serverTraces ?? null,
           });
         }
@@ -1036,6 +1075,61 @@ for (const proj of DEMO_PROJECTS) {
     run.passed_tests -= cartCaseIds.size;
     if (run.status === 'passed') run.status = 'failed';
     break;
+  }
+}
+
+// ── Intentional skips (post-processing, rng-free) ───────────────────────────
+// Two checkout tests show the two kinds of skip the status bars tell apart: the
+// CVV test is switched off with `test.fixme()` in the newest runs, and the
+// expired-card test skips itself with `test.skip(condition, reason)` on the
+// environments that have no card sandbox. Only clean passes are rewritten, so no
+// failure story, flaky retry or cascade is touched.
+{
+  const checkoutKey = (title) => caseIdByKey.get(`1\x00tests/checkout/checkout.spec.ts\x00${title}`);
+  const fixmeCaseId = checkoutKey('should show error for invalid CVV');
+  const skipCaseId = checkoutKey('should show error for expired card');
+  const FIXME_NEWEST_RUNS = 6;
+  const NO_SANDBOX_ENVIRONMENTS = new Set(['staging', 'development']);
+  const SKIP_REASON = 'Needs the card network sandbox (CARD_SANDBOX_URL)';
+
+  // Project 1 runs, newest first — the newest run has the smallest id.
+  const proj1Runs = TEST_RUNS.filter((r) => r.project_id === 1).sort((a, b) => a.id - b.id);
+  const skippedTrcIds = new Set();
+  for (const [index, run] of proj1Runs.entries()) {
+    const annotationsFor = (caseId) => {
+      if (caseId === fixmeCaseId && index < FIXME_NEWEST_RUNS) return [{ type: 'fixme' }];
+      if (caseId === skipCaseId && NO_SANDBOX_ENVIRONMENTS.has(run.environment)) {
+        return [{ type: 'skip', description: SKIP_REASON }];
+      }
+      return null;
+    };
+    for (const row of TEST_RUNS_CASES) {
+      if (row.test_run_id !== run.id) continue;
+      const annotations = annotationsFor(row.test_case_id);
+      if (!annotations || row.status !== 'passed' || row.retries !== 0) continue;
+      row.status = 'skipped';
+      row.duration = 0;
+      row.test_annotations = annotations;
+      row.attempts = JSON.stringify([{ retry: 0, status: 'skipped', duration: 0, startedAt: row.started_at }]);
+      // A skipped test ran no steps and produced no live evidence.
+      row.steps = [];
+      row.slowest_step = null;
+      row.slowest_step_duration = null;
+      row.step_events = null;
+      row.wasted_time_ms = 0;
+      row.web_vitals = null;
+      row.page_state = null;
+      row.ai_usage = null;
+      row.console_logs = null;
+      row.dialogs = null;
+      row.aria_snapshot = null;
+      skippedTrcIds.add(row.id);
+      run.passed_tests -= 1;
+      run.skipped_tests += 1;
+    }
+  }
+  for (let k = NETWORK_REQUESTS.length - 1; k >= 0; k--) {
+    if (skippedTrcIds.has(NETWORK_REQUESTS[k].test_runs_case_id)) NETWORK_REQUESTS.splice(k, 1);
   }
 }
 
@@ -1529,7 +1623,7 @@ const QUARANTINED_TESTS = [];
       source: spec.streakState === 'ready' ? 'proposed' : 'manual',
       quarantined_at_run_id: anchorRunId,
       created_by: null,
-      created_at: ts('2025-05-02T09:00:00'),
+      created_at: ts('2025-04-20T09:00:00'),
       released_at: null,
       released_reason: null,
     });
@@ -1551,7 +1645,7 @@ const QUARANTINED_TESTS = [];
         source: 'manual',
         quarantined_at_run_id: newestRunByProject[story.projectId] ?? null,
         created_by: null,
-        created_at: ts('2025-05-02T09:00:00'),
+        created_at: ts('2025-04-20T09:00:00'),
         released_at: null,
         released_reason: null,
       });
@@ -2665,6 +2759,7 @@ function collectAnchorSec() {
     bump(r.start_time, 's');
     bump(r.created_at, 's');
     bump(r.updated_at, 's');
+    bump(r.kept_at, 's');
   }
   for (const r of REPORTS) bump(r.created_at, 's');
   for (const r of ATTACHMENTS) bump(r.created_at, 's');
@@ -2682,6 +2777,8 @@ function collectAnchorSec() {
     for (const e of r.steps || []) bump(e.startTime, 'ms');
     for (const e of r.step_events || []) bump(e.startedAt, 'ms');
     for (const e of r.console_logs || []) bump(e.timestamp, 'ms');
+    for (const e of r.dialogs || []) bump(e.closedAt, 'ms');
+    for (const e of JSON.parse(r.attempts ?? '[]')) bump(e.startedAt, 'ms');
   }
   for (const r of NETWORK_REQUESTS) {
     for (const e of r.server_logs || []) bump(e.timestamp, 'ms');
@@ -2717,9 +2814,11 @@ const REBASE_SQL = [
   `UPDATE markers SET occurred_at = occurred_at + ${D}, created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
   `UPDATE users SET created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
   `UPDATE app_settings SET updated_at = updated_at + ${D};`,
+  `UPDATE test_selections SET created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
   `UPDATE test_suites SET created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
   `UPDATE test_cases SET created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
-  `UPDATE test_runs SET start_time = start_time + ${D}, created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
+  // kept_at is nullable; NULL + delta stays NULL.
+  `UPDATE test_runs SET start_time = start_time + ${D}, created_at = created_at + ${D}, updated_at = updated_at + ${D}, kept_at = kept_at + ${D};`,
   `UPDATE files SET created_at = created_at + ${D};`,
   // fix_landed_at is nullable; NULL + delta stays NULL, so no guard is needed.
   `UPDATE failure_clusters SET created_at = created_at + ${D}, updated_at = updated_at + ${D}, fix_landed_at = fix_landed_at + ${D};`,
@@ -2732,13 +2831,23 @@ const REBASE_SQL = [
   `UPDATE test_runs_cases SET started_at = started_at + ${D_MS}, created_at = created_at + ${D_MS};`,
   `UPDATE network_requests SET start_time = start_time + ${D_MS};`,
   `UPDATE project_assignments SET created_at = created_at + ${D_MS};`,
+  `UPDATE analytics_dashboards SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS}, last_viewed_at = last_viewed_at + ${D_MS};`,
   `UPDATE entity_links SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS};`,
   `UPDATE locator_snapshots SET last_seen_at = last_seen_at + ${D_MS};`,
+  // Test Map tables are defined after ANCHOR_SEC is computed, so they add no
+  // candidates to it; they are all stamped at BASE_START_MS, which the run
+  // timestamps already bound. Nullable columns stay NULL.
+  `UPDATE probes SET probed_at = probed_at + ${D_MS};`,
+  `UPDATE graph_nodes SET last_seen_at = last_seen_at + ${D_MS}, created_at = created_at + ${D_MS}, pruned_at = pruned_at + ${D_MS};`,
+  `UPDATE graph_edges SET last_seen_at = last_seen_at + ${D_MS}, created_at = created_at + ${D_MS};`,
+  `UPDATE scenario_gaps SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS}, accepted_at = accepted_at + ${D_MS}, covered_at = covered_at + ${D_MS}, closed_at = closed_at + ${D_MS};`,
   '',
   '-- Millisecond timestamps embedded in JSON columns',
   shiftJsonMs('test_runs_cases', 'steps', 'startTime'),
   shiftJsonMs('test_runs_cases', 'step_events', 'startedAt'),
   shiftJsonMs('test_runs_cases', 'console_logs', 'timestamp'),
+  shiftJsonMs('test_runs_cases', 'dialogs', 'closedAt'),
+  shiftJsonMs('test_runs_cases', 'attempts', 'startedAt'),
   shiftJsonMs('network_requests', 'server_logs', 'timestamp'),
   '',
   'DROP TABLE _rebase;',
@@ -3354,6 +3463,172 @@ const SCENARIO_GAPS = [
   },
 ];
 
+// The v2.4.0 release marker, linked to the run it keeps.
+const releaseRun = TEST_RUNS.find((r) => r.keep_source === 'marker');
+const RELEASE_MARKERS = releaseRun
+  ? [
+      {
+        id: MARKERS.length + 1,
+        project_id: releaseRun.project_id,
+        occurred_at: releaseRun.start_time,
+        label: releaseRun.keep_reason,
+        description: 'Tagged and shipped from this run.',
+        category: 'release',
+        environment: null,
+        source: 'manual',
+        run_id: releaseRun.id,
+        created_at: releaseRun.start_time,
+        updated_at: releaseRun.start_time,
+      },
+    ]
+  : [];
+
+// Two earlier checkout releases, so the release-cycle periods have cycles to
+// resolve: v2.2.0 and v2.3.0 on older checkout runs (the runs go newest first).
+const checkoutRuns = TEST_RUNS.filter((r) => r.project_id === 1);
+const EARLIER_RELEASES = [
+  { index: 15, label: 'v2.2.0' },
+  { index: 7, label: 'v2.3.0' },
+]
+  .filter(({ index }) => checkoutRuns[index])
+  .map(({ index, label }, i) => ({
+    id: MARKERS.length + RELEASE_MARKERS.length + i + 1,
+    project_id: 1,
+    occurred_at: checkoutRuns[index].start_time,
+    label,
+    description: 'Tagged and shipped.',
+    category: 'release',
+    environment: null,
+    source: 'manual',
+    run_id: null,
+    created_at: checkoutRuns[index].start_time,
+    updated_at: checkoutRuns[index].start_time,
+  }));
+
+// ── Test selections ─────────────────────────────────────────────────────────
+// A `smoke` selection in every project (the first test of each spec file
+// carries the tag), so a test filter by selection key resolves across projects.
+const SELECTIONS = PROJECTS.map((project, i) => ({
+  id: i + 1,
+  project_id: project.id,
+  key: 'smoke',
+  name: 'Smoke tests',
+  description: 'The first test of every spec file, tagged @smoke.',
+  definition: JSON.stringify({ include: [{ tags: ['smoke'] }] }),
+  version: 1,
+  created_by: 1,
+  created_at: ts('2025-04-01T09:00:00Z'),
+  updated_at: ts('2025-04-01T09:00:00Z'),
+}));
+
+// ── Saved dashboards ────────────────────────────────────────────────────────
+// A shared checkout dashboard over the smoke tests and a two-week sprint, and a
+// private one breaking wasted CI minutes down by browser. Definitions follow
+// `DashboardDefinition` (shared/analytics/dashboards.ts); a sprint period is a
+// cadence from its start date, so it needs no rebase.
+const DASHBOARD_SCOPE = {
+  comparison: { kind: 'previous' },
+  granularity: 'auto',
+  defaultBranchOnly: true,
+  fullRunsOnly: true,
+};
+const SAVED_DASHBOARDS = [
+  {
+    id: 1,
+    name: 'Checkout team',
+    description: 'The checkout smoke tests, sprint by sprint.',
+    owner_id: 1,
+    visibility: 'shared',
+    definition: JSON.stringify({
+      v: 1,
+      scope: {
+        ...DASHBOARD_SCOPE,
+        period: { kind: 'sprint', offset: 0, start: '2025-01-06', lengthDays: 14 },
+        comparison: { kind: 'previous-unit' },
+        projectIds: [1],
+        selection: 'smoke',
+      },
+      bands: [
+        {
+          title: 'This sprint',
+          description: 'The smoke tests of the checkout suite against the previous sprint.',
+          widgets: [
+            {
+              key: 'headline',
+              type: 'stats',
+              size: 'full',
+              options: { metrics: ['test-pass-rate', 'flaky-tests', 'wasted-ci-minutes', 'open-failure-causes'] },
+            },
+            {
+              key: 'pass-rate',
+              type: 'metric',
+              size: 'full',
+              title: 'Smoke pass rate',
+              options: { metric: 'test-pass-rate', display: 'line' },
+            },
+            { key: 'flaky', type: 'list', size: 'half', options: { source: 'flaky-tests', limit: 5 } },
+            { key: 'releases', type: 'markers', size: 'half', options: { categories: ['release', 'deploy'] } },
+          ],
+        },
+        {
+          title: 'Notes',
+          widgets: [
+            {
+              key: 'note',
+              type: 'text',
+              size: 'full',
+              options: {
+                markdown:
+                  '**Sprint goal**: keep the smoke tests green on `main`.\n\n- Payment provider rollout: watch the PayPal flow\n- Ask in #checkout-quality before quarantining a test',
+              },
+            },
+          ],
+        },
+      ],
+    }),
+    created_at: BASE_START_MS - 10 * 24 * 60 * 60 * 1000,
+    updated_at: BASE_START_MS - 2 * 24 * 60 * 60 * 1000,
+    updated_by: 1,
+    last_viewed_at: BASE_START_MS - 60 * 60 * 1000,
+  },
+  {
+    id: 2,
+    name: 'Wasted CI by browser',
+    description: null,
+    owner_id: 1,
+    visibility: 'private',
+    definition: JSON.stringify({
+      v: 1,
+      scope: { ...DASHBOARD_SCOPE, period: { kind: 'rolling', days: 30 } },
+      bands: [
+        {
+          title: 'Where the minutes go',
+          widgets: [
+            {
+              key: 'wasted-by-browser',
+              type: 'metric',
+              size: 'full',
+              title: 'Wasted CI minutes by browser',
+              options: { metric: 'wasted-ci-minutes', display: 'bar', breakdown: 'browser', top: 5 },
+            },
+            {
+              key: 'wasted-by-project',
+              type: 'metric',
+              size: 'half',
+              options: { metric: 'wasted-ci-minutes', display: 'table', breakdown: 'project' },
+            },
+            { key: 'wasted', type: 'wasted-time', size: 'half' },
+          ],
+        },
+      ],
+    }),
+    created_at: BASE_START_MS - 5 * 24 * 60 * 60 * 1000,
+    updated_at: BASE_START_MS - 5 * 24 * 60 * 60 * 1000,
+    updated_by: 1,
+    last_viewed_at: null,
+  },
+];
+
 // ── Assemble SQL ───────────────────────────────────────────────────────────
 const lines = [
   '-- Piwi Dashboard demo seed',
@@ -3395,6 +3670,16 @@ const lines = [
   '',
   '-- Test runs',
   insert('test_runs', TEST_RUNS),
+  '',
+  '-- Release markers linked to a run (they keep that run forever)',
+  insert('markers', RELEASE_MARKERS),
+  insert('markers', EARLIER_RELEASES),
+  '',
+  '-- Test selections',
+  insert('test_selections', SELECTIONS),
+  '',
+  '-- Saved dashboards',
+  insert('analytics_dashboards', SAVED_DASHBOARDS),
   '',
   '-- Files (reports)',
   insert('files', REPORTS),

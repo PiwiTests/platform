@@ -11,6 +11,8 @@
  * revalidation — never block the UI on it.
  */
 
+import { OUTDATED_WORKER_MESSAGE } from './worker-status.js';
+
 export type RefreshCatalogResult =
   | { ok: true; refreshed: boolean; count: number | null }
   | { ok: false; error: string };
@@ -25,11 +27,12 @@ export async function requestCatalogRefresh(
 ): Promise<RefreshCatalogResult> {
   if (projectId == null) return { ok: false, error: 'No project mapped to this page.' };
   try {
-    return (await chrome.runtime.sendMessage({
+    const answer = (await chrome.runtime.sendMessage({
       type: 'piwi-refresh-catalog',
       projectId,
       force: opts.force === true,
-    })) as RefreshCatalogResult;
+    })) as RefreshCatalogResult | undefined;
+    return answer ?? { ok: false, error: OUTDATED_WORKER_MESSAGE };
   } catch {
     // The worker can be asleep or the extension mid-reload; the caller is
     // already showing cached data, so this is not worth surfacing loudly.

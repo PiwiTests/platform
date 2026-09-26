@@ -21,6 +21,17 @@ import type {
 import { renderEventSubject, notificationTargetPath, failureTargetPath } from '#shared/notification-events';
 import type { LibSQLDatabase } from 'drizzle-orm/libsql';
 import { nextAttempt, OUTBOX_MAX_ATTEMPTS } from '../outbox';
+import { REPORT_READY_EVENT, type ReportReadyPayload } from '#shared/notification-events';
+import {
+  loadReportForDelivery,
+  publishReportNotification,
+  reportSlackMessage,
+  reportWebhookBody,
+  sendReportEmail,
+  snapshotUrl,
+} from '../reports/deliver';
+import { deliveredShareUrl } from '../reports/context';
+import { teamsDigestMessage, teamsEventMessage, teamsReportMessage } from './teams';
 
 const MAX_ATTEMPTS = OUTBOX_MAX_ATTEMPTS;
 /** Slack digest messages list at most this many items; the rest are counted. */
@@ -105,6 +116,17 @@ async function postToSlack(webhookUrl: string, body: Record<string, unknown>) {
   if (!res.ok) throw new Error(`Slack webhook returned ${res.status}`);
 }
 
+async function postToTeams(config: Record<string, unknown>, body: Record<string, unknown>) {
+  const webhookUrl = config.webhookUrl as string;
+  if (!webhookUrl) throw new Error('No Microsoft Teams webhook URL configured');
+  const res = await safeFetch(webhookUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`Microsoft Teams webhook returned ${res.status}`);
+}
+
 async function sendToSlack(config: Record<string, unknown>, event: NotificationEvent, payload: NotificationPayload) {
   const webhookUrl = config.webhookUrl as string;
   if (!webhookUrl) throw new Error('No Slack webhook URL configured');
@@ -184,13 +206,17 @@ async function sendSlackDigest(config: Record<string, unknown>, items: DigestIte
 }
 
 async function sendToWebhook(config: Record<string, unknown>, event: NotificationEvent, payload: NotificationPayload) {
+  await postSignedWebhook(config, JSON.stringify({ event, payload, timestamp: new Date().toISOString() }));
+}
+
+/** POST a JSON body to a webhook channel, HMAC-SHA256 signed in `X-Piwi-Signature` when it has a secret. */
+async function postSignedWebhook(config: Record<string, unknown>, body: string) {
   const url = config.url as string;
   if (!url) throw new Error('No webhook URL configured');
 
   const encryptedSecret = config.secret as string | undefined;
   const secret = encryptedSecret ? decryptSecret(encryptedSecret, getEncryptionKey()) : null;
 
-  const body = JSON.stringify({ event, payload, timestamp: new Date().toISOString() });
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
 
   if (secret) {
@@ -204,8 +230,34 @@ async function sendToWebhook(config: Record<string, unknown>, event: Notificatio
   if (!res.ok) throw new Error(`Webhook returned ${res.status}`);
 }
 
+/**
+ * Deliver a quality report (`report.ready`, queued by a report schedule):
+ * the snapshot rendered for the channel type.
+ */
+async function sendQualityReport(db: Db, d: DeliveryRow, c: ChannelRow) {
+  const config = (c.config ?? {}) as Record<string, unknown>;
+  const payload = (d.payload ?? {}) as ReportReadyPayload;
+  const { bundle, projectIds } = await loadReportForDelivery(db as any, payload);
+  const shareUrl = deliveredShareUrl(payload.shareToken);
+  if (c.type === 'personal_email' || c.type === 'email') {
+    await sendReportEmail(await resolveEmailAddress(db, c), bundle, payload, shareUrl);
+  } else if (c.type === 'slack') {
+    const webhookUrl = config.webhookUrl as string;
+    if (!webhookUrl) throw new Error('No Slack webhook URL configured');
+    await postToSlack(webhookUrl, reportSlackMessage(bundle, snapshotUrl(payload.snapshotId), shareUrl));
+  } else if (c.type === 'teams') {
+    await postToTeams(config, teamsReportMessage(bundle, snapshotUrl(payload.snapshotId), shareUrl));
+  } else if (c.type === 'webhook') {
+    await postSignedWebhook(config, reportWebhookBody(bundle, payload, shareUrl));
+  } else if (c.type === 'browser') {
+    publishReportNotification(bundle, payload, c.userId, projectIds);
+  } else throw new Error(`Unknown channel type: ${c.type}`);
+}
+
 /** Deliver a single outbox row through its channel. */
 async function sendSingle(db: Db, d: DeliveryRow, c: ChannelRow) {
+  // A quality report is not a notification event: it has its own renderers and no subject line.
+  if (d.event === REPORT_READY_EVENT) return sendQualityReport(db, d, c);
   const config = (c.config ?? {}) as Record<string, unknown>;
   const event = d.event as NotificationEvent;
   const payload = (d.payload ?? {}) as NotificationPayload;
@@ -213,6 +265,7 @@ async function sendSingle(db: Db, d: DeliveryRow, c: ChannelRow) {
   if (c.type === 'personal_email' || c.type === 'email') {
     await sendToEmail(await resolveEmailAddress(db, c), event, payload);
   } else if (c.type === 'slack') await sendToSlack(config, event, payload);
+  else if (c.type === 'teams') await postToTeams(config, teamsEventMessage(event, payload, siteBase()));
   else if (c.type === 'webhook') await sendToWebhook(config, event, payload);
   else if (c.type === 'browser') {
     /* Delivered via SSE — the notification/stream endpoint handles this channel type */
@@ -233,6 +286,8 @@ async function sendDigest(db: Db, c: ChannelRow, rows: DeliveryRow[]) {
     await sendEmail({ to, subject, html, text });
   } else if (c.type === 'slack') {
     await sendSlackDigest((c.config ?? {}) as Record<string, unknown>, items);
+  } else if (c.type === 'teams') {
+    await postToTeams((c.config ?? {}) as Record<string, unknown>, teamsDigestMessage(items, siteBase()));
   } else {
     throw new Error(`Digest not supported for channel type: ${c.type}`);
   }
@@ -292,7 +347,8 @@ export async function sweepOutbox(db: Db): Promise<{ sent: number; failed: numbe
     );
 
   const digestable = (row: (typeof due)[number]) =>
-    row.mode === 'digest' && (row.c.type === 'email' || row.c.type === 'personal_email' || row.c.type === 'slack');
+    row.mode === 'digest' &&
+    (row.c.type === 'email' || row.c.type === 'personal_email' || row.c.type === 'slack' || row.c.type === 'teams');
 
   const singles: (typeof due)[number][] = [];
   const digestGroups = new Map<number, (typeof due)[number][]>();

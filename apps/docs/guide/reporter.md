@@ -165,6 +165,7 @@ The feature degrades safely: an older server without the endpoint, or any failur
 | `projectDescription`        | string   | —                         | Description of the project                                                                  |
 | `environment`               | string   | —                         | Deployment environment for this run, e.g. `"production"`, `"staging"`, `"integration"`      |
 | `label`                     | string   | —                         | Display label for this run, e.g. `"v2.3.1 release"`                                         |
+| `keep`                      | boolean  | `false`                   | Keep this run forever: [data retention](/operate/storage#keeping-runs-forever) never deletes it. Set it for release or tag builds |
 | `relatedIssue`              | string   | —                         | Related issue reference, e.g. `"JIRA-123"`                                                  |
 | `ciInfo`                    | string   | —                         | CI job information                                                                          |
 | `tags`                      | string[] | —                         | Tags to categorize the test run                                                             |
@@ -203,6 +204,7 @@ The options in the table below can also be set via a `PIWI_*` environment variab
 | `PIWI_ENVIRONMENT`              | `environment`           | string          |
 | `PIWI_LABEL`                    | `label`                 | string          |
 | `PIWI_RUN_LABEL`                | `runLabel`              | string          |
+| `PIWI_KEEP`                     | `keep`                  | `true`/`false`  |
 | `PIWI_STREAMING`                | `streaming`             | `true`/`false`  |
 | `PIWI_STREAMING_BATCH_SIZE`     | `streamingBatchSize`    | number          |
 | `PIWI_STREAMING_BATCH_DELAY`    | `streamingBatchDelay`   | number          |
@@ -256,7 +258,7 @@ By default, the reporter streams test results to the dashboard in real-time as t
 2. As each test completes, results are sent in batches to the server
 3. With `liveFileUploads` (the default), each test's trace and attachments are uploaded right after the test finishes, so they are viewable on the [execution page](/features/evidence#one-execution-diagnosis-first) while the run is still in progress
 4. The dashboard UI shows a live progress bar and test results as they arrive
-5. While a test runs, the steps it is executing (Playwright `pw:api` actions, `pw:expect` assertions, and hook/fixture steps) stream to the run page as they happen — each running test's row shows the step it is on right now. The polling attempts of `pw:assert` steps are deliberately not streamed; the persisted step events on a completed test still carry everything
+5. While a test runs, the steps it is executing (Playwright `pw:api` actions, `expect` assertions, and hook/fixture steps) stream to the run page as they happen — each running test's row shows the step it is on right now. The steps inside an assertion — each `expect.poll` attempt and `toPass` retry — are not streamed, so the row shows the assertion itself until it settles; the steps saved with the completed test still include every attempt
 6. When a test's final attempt fails, the reporter prints `[Piwi Dashboard] ✗ <title> — <headline> → <url>` right away — the headline is the same one-line explanation the dashboard shows (`getByLabel('Email address') was not found on the page — fill timed out after 10 s`), and the link opens that execution on the dashboard, so you can start reading the failure while the rest of the suite is still running. In batch mode the same lines print after the upload
 7. When tests finish, the reporter finalizes the run with the overall status and prints `View run: <url>` (see [CI → Getting the run URL back out](./ci#getting-the-run-url-back-out-of-ci) for the step outputs and job summary that go with it)
 
@@ -501,7 +503,7 @@ Together with the test's duration history this drives the **Timeout opportunitie
 
 The reporter distinguishes two outcomes that Playwright both reports as `skipped`:
 
-- **`skipped`** — an intentional skip via `test.skip()` / `test.fixme()` (static, conditional, or runtime). These always carry a `skip`/`fixme` annotation, so the skip reason (when provided) is preserved in `testAnnotations` and shown on the test case.
+- **`skipped`** — an intentional skip via `test.skip()` / `test.fixme()` (static, conditional, or runtime). These always carry a `skip`/`fixme` annotation, so the skip reason (when provided) is preserved in `testAnnotations` and shown on the test case. The annotation also decides the grey the status bars draw: a `fixme` skip is counted apart from a plain `skip` (it stays part of `skippedTests`), so a test switched off as known broken does not blend into the deliberate skips.
 - **`didnotrun`** — a test that never actually executed. This covers two cases:
   - a test skipped as a side effect of an **earlier failure in a `describe.serial` group** (Playwright reports it as `skipped` with no annotation; the reporter reclassifies it);
   - a test that Playwright **never started because the run was cut short** (no `onTestEnd` fires for these — the reporter materializes them from the planned test list so they still appear, with zero duration and no error).

@@ -1,5 +1,5 @@
-import { users, apiKeys } from '../../server/database/schema';
-import { eq, and } from 'drizzle-orm';
+import { users, apiKeys, scenarioGaps, testRuns } from '../../server/database/schema';
+import { eq, and, ne, sql } from 'drizzle-orm';
 
 import type { DrizzleDB } from './db';
 
@@ -70,6 +70,13 @@ export async function deleteUserRecord(db: DrizzleDB, id: number) {
   const userResults = await db.select().from(users).where(eq(users.id, id));
   if (!userResults[0]) throw new Error('User not found');
   await db.delete(apiKeys).where(eq(apiKeys.userId, id));
+  // A kept run outlives the user who kept it. The SQLite `kept_by` column has no
+  // ON DELETE action, so the reference is cleared before the user row goes.
+  await db.update(testRuns).set({ keptBy: null }).where(eq(testRuns.keptBy, id));
+  // `scenario_gaps.triaged_by` was added by ALTER TABLE, which cannot carry the
+  // schema's ON DELETE SET NULL on SQLite — clear it by hand or the delete
+  // fails the FK check.
+  await db.update(scenarioGaps).set({ triagedBy: null }).where(eq(scenarioGaps.triagedBy, id));
   await db.delete(users).where(eq(users.id, id));
   return { success: true };
 }
@@ -111,9 +118,22 @@ export async function updateUserRecord(
 ) {
   const userResults = await db.select().from(users).where(eq(users.id, id));
   if (!userResults[0]) throw new Error('User not found');
+  const emailChanged = data.email !== undefined && data.email !== userResults[0].email;
+  // One account per address, ignoring case: OAuth sign-in links by email.
+  if (emailChanged && data.email) {
+    const taken = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(and(sql`lower(${users.email}) = lower(${data.email})`, ne(users.id, id)))
+      .limit(1);
+    if (taken.length > 0) throw new Error('Email already in use');
+  }
+  // A new address has not been proven yet: drop the verified flag so it is not
+  // carried over from the old one (the personal email channel and OAuth
+  // linking read it).
   await db
     .update(users)
-    .set({ ...data, updatedAt: new Date() })
+    .set({ ...data, ...(emailChanged ? { emailVerified: false } : {}), updatedAt: new Date() })
     .where(eq(users.id, id));
   const updated = await db.select().from(users).where(eq(users.id, id));
   return updated[0] ?? null;

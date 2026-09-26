@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { requestCatalogRefresh } from '../../src/shared/catalog-refresh.js';
+import { OUTDATED_WORKER_MESSAGE } from '../../src/shared/worker-status.js';
 
 interface SentMessage {
   type: string;
@@ -50,6 +51,13 @@ describe('requestCatalogRefresh', () => {
     // The caller has already rendered from cache, so an asleep worker must
     // degrade to "showing older data", never to an unhandled rejection.
     expect(result).toMatchObject({ error: expect.stringContaining('unavailable') });
+  });
+
+  it('blames an outdated worker when the message goes unanswered', async () => {
+    // A worker ignores the message only when its build predates it: Chrome
+    // keeps the old worker running after a rebuild until the extension reloads.
+    respond = () => undefined;
+    expect(await requestCatalogRefresh(7)).toEqual({ ok: false, error: OUTDATED_WORKER_MESSAGE });
   });
 
   it('relays a refresh the worker skipped as still-fresh', async () => {

@@ -25,8 +25,9 @@ The sidebar gives access to the top-level sections:
 |---------|------|---------|
 | Home | `/` | Aggregate stats and activity across all projects |
 | Analytics | `/analytics` | Cross-project trends, portfolio health, and insights over a chosen time window (see [Analytics](./analytics)) |
+| Quality reports | `/reports` | The report snapshots kept and the report schedules that send them; `/reports/:id` opens one snapshot (see [Quality reports](./quality-reports#report-schedules)) |
 | Projects | `/projects` | Full project listing with search and tag filters |
-| Settings | `/settings` | Configuration, in two groups — **Instance** (account, users, notifications, storage) and **Analysis** (AI diagnosis, wasted time, timeout hygiene, tags, pull requests) |
+| Settings | `/settings` | Configuration, in two groups — **Instance** (account, users, permissions, notifications, storage) and **Analysis** (AI diagnosis, wasted time, timeout hygiene, tags, pull requests) |
 | Setup *(admins)* | `/setup` | Connect the reporter, and a checklist of which optional capabilities are actually active on this instance |
 | API docs | `/docs` | Self-contained OpenAPI 3.1 reference (no external CDN) — browse endpoints and schemas, try requests live, copy cURL / fetch snippets |
 | MCP server | `/mcp` | Setup guide for connecting AI clients (see [MCP server](/features/mcp)) |
@@ -56,18 +57,15 @@ A quick health check across all projects: a **stat strip** whose every number is
 
 ## Analytics
 
-A cross-project decision view — where Home answers *"what's happening now"*, Analytics answers *"across projects, over time"*. A **scope bar** at the top sets the period (last 7 / 30 / 90 days, last year, or all time) and the projects, then the same **filter bar** Home and each project use — environments and branches (multi-select) and a full-runs-only toggle; every widget re-aggregates against that scope.
+A cross-project decision view — where Home answers *"what's happening now"*, Analytics answers *"across projects, over time"*. A **Filters** block at the top sets the scope — **Period**, **Runs** (projects, plus Home's **filter bar**) and **Tests** — and every widget re-aggregates against it.
 
-Widgets are grouped into four bands, in reading order:
-
-- **Where things stand** — portfolio health, the insights feed, the pass-rate heatmap.
-- **Where the pain is** — open failure clusters, the flakiest-tests leaderboard, wasted CI time.
-- **Which way it is going** — regression velocity, CI time.
-- **Detail** — the browser matrix, cross-project slow endpoints.
+Widgets are grouped into four bands, in reading order: **Where things stand**, **Where the pain is**,
+**Which way it is going** and **Detail**; [Analytics widgets](./analytics-widgets) describes each one, and
+[Analytics](./analytics) the filters and how the periods are compared.
 
 [Timeline markers](./timeline-markers) overlay your deploys and infrastructure changes on the trend charts.
 
-See [Analytics](./analytics) for what each widget answers and how the periods are compared.
+It is the built-in *Overview* [dashboard](./dashboards); the header switcher opens the others.
 
 ## Projects
 
@@ -94,8 +92,9 @@ line with the primary action (**Copy retry command** on a red run, the **HTML re
 one facts line — started, duration, branch, commit, author, environment, CI build — with a **Details** popover
 holding the rest (shards, Playwright and Piwi versions, avg/P90 durations, wasted time, storage and every
 report, tags, links, custom data). Below it, **one count bar** carries the numbers on its segments
-(*N passed · N failed · N passed on retry · N skipped · N didn't run*, zero segments hidden); clicking a
-segment filters the Tests tab and switches to it. While a run is still `running`, a **live progress bar** and
+(*N passed · N failed · N passed on retry · N skipped · N fixme · N didn't run*, zero segments hidden); clicking a
+segment filters the Tests tab and switches to it. Every status bar draws skips in two greys: *skipped* for
+`test.skip()`, a stronger *fixme* for `test.fixme()`. While a run is still `running`, a **live progress bar** and
 streaming results appear in real time, and each still-running row shows the **step its worker is on right now**,
 inline under the test title.
 
@@ -107,8 +106,8 @@ The right panel is tabbed:
   *Open cluster* link, and passing tests fold into a collapsed *Passed* group), *File* (with per-file tallies),
   *File + Describe* (the file nested by its describe blocks), *Lock* (each [lock](/guide/reporter#test-locks) the run
   declared, holders grouped under it, when the run has locks) or *None*. Search matches the title, path **and**
-  error text; filter by status, browser, lock, new regressions and
-  newly flaky. Select failing rows for bulk triage (quarantine, or set the cluster status) in any grouping.
+  error text; filter by status, browser, [tags](/guide/reporter#test-tags) (all must match), lock, new regressions
+  and newly flaky. Select failing rows for bulk triage (quarantine, or set the cluster status) in any grouping.
 - **Changes** — what differs against **one baseline** (the last passing run on the same branch by default, or the
   run you pick — deep-linkable as `?baseline=<runId>`): new failures, fixed, still failing, newly flaky / passed on
   retry, the slower / faster tests, the commits landed since the baseline, and the environment fields that moved. The
@@ -172,6 +171,7 @@ opens with no network and no Piwi server. See [Offline export](./offline-export)
 | General | `/settings` | Basic app configuration; a **Reset Demo** button in demo mode |
 | Account | `/settings/account` | Your display name, email, password, and **connected accounts** (link/unlink Google or GitHub — see [OAuth](/operate/authentication#oauth-google-github)) |
 | Users | `/settings/users` | User accounts, roles, project access, and API keys (shown once, stored hashed) — see [Authentication](/operate/authentication) |
+| Permissions | `/settings/permissions` | Every user against every project on one grid; each tick grants one project and saves at once — see [Permission grid](/operate/authentication#permission-grid) |
 | Storage | `/settings/storage` | Storage analysis (by project, file kind and over time) and cleanup (bulk-delete runs older than N days) — see [Storage](/operate/storage#storage-management) |
 | Tags | `/settings/tags` | Create, color, edit, and delete the tags used to organize projects |
 | Pull requests | `/settings/pr-feedback` | What Piwi posts back to a pull request when a run finishes — see [Pull-request feedback](/guide/ci#pull-request-feedback) |
@@ -194,7 +194,7 @@ The [live demo](https://piwitests.dev/demo/) runs entirely in your browser (in-m
 
 **Simulate a test run** — the demo banner replays the exact streaming protocol a Piwi reporter speaks during a real run, so you can watch one arrive live. Scenarios: a passing run, a run with failures (joining a known cluster plus a brand-new one), flaky retries, a performance regression, an interrupted run, and a cross-browser run. Each creates a real run in the in-browser database, so worker timeline, failure clusters, and history comparisons all behave exactly as they would against a server.
 
-**Acting as** — the demo runs with authentication conceptually enabled. Switch between pre-seeded identities (an admin, a CI reporter, and several project-scoped users) to see how [project access](/operate/authentication#project-access) changes what each user sees. Acting as the admin, you can change affectations live and then switch users to see the effect.
+**Acting as** — the demo runs with authentication conceptually enabled. Switch between pre-seeded identities (an admin, a CI reporter, and several project-scoped users) to see how [project access](/operate/authentication#project-access) changes what each user sees. Acting as the admin, you can change affectations live — on the [permission grid](/operate/authentication#permission-grid), for instance — and then switch users to see the effect.
 
 ## Responsive & dark mode
 

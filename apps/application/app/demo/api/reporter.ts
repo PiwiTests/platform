@@ -22,13 +22,16 @@ import {
 } from '~~/server/database/schema.sqlite';
 import { parseLocation } from '~~/server/utils/parse-location';
 import { mapCompleteEventToRunCase } from '~~/server/utils/map-complete-event';
+import { mapStepEventsToRunEvents } from '~~/server/utils/map-step-events';
 import {
   buildNetworkRequestItems,
   buildNetworkRequestInsertValues,
   type NetworkRequestBuilder,
 } from '~~/server/utils/network-request-helpers';
 import { upsertLocatorSnapshots } from '~~/server/utils/locator-healing';
+import { upsertLocatorUsages, type LocatorUsageCase } from '~~/server/utils/locator-usages';
 import { resolveRunBranch } from '~~/server/utils/run-branch';
+import { applyReporterKeep } from '#shared/handlers/run-keep';
 import type { LocatorSnapshot } from '#shared/locator-healing.types';
 import {
   capArray,
@@ -49,6 +52,7 @@ import { computeErrorFingerprint, type ErrorFingerprint } from '#shared/error-fi
 import { durationStats } from '#shared/utils/stats';
 import { countFailedFromTally, distinctRunCountsFromAttempts, sumFailedAndTimedOut } from '#shared/utils/test-counts';
 import { syncAutoMarkersForRun } from '#shared/handlers/markers';
+import { upsertDailyRollup } from '#shared/handlers/analytics/rollups';
 import { joinSuitePath, SUITE_PATH_SEP } from '#shared/utils/suites';
 import {
   normalizeTestLocks,
@@ -222,6 +226,7 @@ export async function apiSetupTestRun(body: TestRunStartPayload) {
       const tokens = demoShardTokens.get(existingShardedRun.id) ?? new Set();
       tokens.add(setupToken);
       demoShardTokens.set(existingShardedRun.id, tokens);
+      await applyReporterKeep(db, existingShardedRun.id, body.keep);
       return { success: true, runId: existingShardedRun.id, projectId: project.id, setupToken };
     }
 
@@ -257,6 +262,7 @@ export async function apiSetupTestRun(body: TestRunStartPayload) {
 
     const testRun = testRunResult[0];
     if (!testRun) throw new Error('Failed to create test run');
+    await applyReporterKeep(db, testRun.id, body.keep);
     publishDemoGlobalEvent({ type: 'run-initializing', runId: testRun.id, projectId: project.id });
     return { success: true, runId: testRun.id, projectId: project.id, setupToken };
   }
@@ -293,6 +299,7 @@ export async function apiSetupTestRun(body: TestRunStartPayload) {
   if (!testRun) {
     throw new Error('Failed to create test run');
   }
+  await applyReporterKeep(db, testRun.id, body.keep);
 
   publishDemoGlobalEvent({ type: 'run-initializing', runId: testRun.id, projectId: project.id });
 
@@ -601,6 +608,7 @@ export async function persistRunCases(
     snapshots: LocatorSnapshot[] | null | undefined;
     purge?: boolean;
   }> = [];
+  const perCaseUsages: LocatorUsageCase[] = [];
   const caseMetaSnapshots = new Map<number, CaseMetaSnapshot>();
 
   for (let i = 0; i < cases.length; i++) {
@@ -657,6 +665,16 @@ export async function persistRunCases(
     }
     rowFingerprints.push(fingerprint);
 
+    const cappedSteps = capSteps(c.steps, DEFAULT_INGEST_LIMITS);
+    perCaseUsages.push({
+      caseId: shared.id,
+      browserName: resolveBrowserName(c.browser),
+      steps: cappedSteps,
+      filePath: c.filePath,
+      runId: testRunId,
+      complete: c.status === 'passed' && Array.isArray(c.steps) && c.steps.length <= DEFAULT_INGEST_LIMITS.steps,
+    });
+
     if (Array.isArray(c.locatorSnapshots) && c.locatorSnapshots.length)
       perCaseLocators.push({
         caseId: shared.id,
@@ -674,7 +692,7 @@ export async function persistRunCases(
       attempts: capArray(c.attempts, 30),
       line: c.line,
       column: c.column,
-      steps: capSteps(c.steps, DEFAULT_INGEST_LIMITS),
+      steps: cappedSteps,
       stepEvents: capArray(c.stepEvents, DEFAULT_INGEST_LIMITS.stepEvents),
       slowestStep: c.slowestStep ?? null,
       slowestStepDuration: c.slowestStepDuration ?? null,
@@ -756,6 +774,7 @@ export async function persistRunCases(
   }
 
   await upsertLocatorSnapshots(db, perCaseLocators, testRunId);
+  await upsertLocatorUsages(db, projectId, perCaseUsages).catch(() => {});
   await syncTestCaseMetadata(db, caseMetaSnapshots);
 
   return result;
@@ -780,9 +799,8 @@ export async function apiPostRunEvents(
   const validEvents = testCaseEvents.filter((tc): tc is StreamEventPayload => Boolean(tc && tc.title));
 
   const beginEvents = validEvents.filter((tc) => tc.type === 'begin');
-  const stepBeginEvents = validEvents.filter((tc) => tc.type === 'step-begin');
-  const stepEndEvents = validEvents.filter((tc) => tc.type === 'step-end');
   const completeEvents = validEvents.filter((tc) => tc.type === 'complete');
+  const stepRunEvents = mapStepEventsToRunEvents(validEvents);
 
   for (const tc of beginEvents) {
     const loc = tc.location ? parseLocation(tc.location) : { filePath: 'unknown', line: null, column: null };
@@ -802,75 +820,14 @@ export async function apiPostRunEvents(
     });
   }
 
-  // Test-attached steps stream as step-begin/step-end so the run page can show
-  // what each worker is doing; suite-level hooks keep the timeline shape. Mirrors
-  // the server's events handler (server/api/test-runs/[id]/events.post.ts).
-  for (const tc of stepBeginEvents) {
-    if (tc.parentTitle != null) {
-      publishDemoRunEvent(id, {
-        type: 'step-begin',
-        data: {
-          title: tc.title,
-          subtitle: tc.subtitle ?? null,
-          parentTitle: tc.parentTitle,
-          stepCategory: tc.stepCategory ?? null,
-          location: tc.location,
-          workerIndex: tc.workerIndex ?? null,
-          startedAt: tc.startedAt ?? null,
-        },
-      });
-    } else {
-      publishDemoRunEvent(id, {
-        type: 'test-begin',
-        data: {
-          title: tc.title,
-          filePath: 'hooks',
-          parentTitle: null,
-          stepCategory: tc.stepCategory ?? null,
-          location: tc.location,
-          workerIndex: tc.workerIndex ?? null,
-          startedAt: tc.startedAt ?? null,
-        },
-      });
-    }
-  }
-
-  for (const tc of stepEndEvents) {
-    if (tc.parentTitle != null) {
-      publishDemoRunEvent(id, {
-        type: 'step-end',
-        data: {
-          title: tc.title,
-          subtitle: tc.subtitle ?? null,
-          parentTitle: tc.parentTitle,
-          stepCategory: tc.stepCategory ?? null,
-          status: tc.status,
-          duration: tc.duration,
-          location: tc.location,
-          workerIndex: tc.workerIndex ?? null,
-          startedAt: tc.startedAt ?? null,
-        },
-      });
-    } else {
-      publishDemoRunEvent(id, {
-        type: 'test-completed',
-        data: {
-          title: tc.title,
-          filePath: 'hooks',
-          parentTitle: null,
-          stepCategory: tc.stepCategory ?? null,
-          status: tc.status,
-          duration: tc.duration,
-          location: tc.location,
-          workerIndex: tc.workerIndex ?? null,
-          startedAt: tc.startedAt ?? null,
-        },
-      });
-    }
+  // Step events publish in batch order through the helper the server's events
+  // handler (server/api/test-runs/[id]/events.post.ts) uses.
+  for (const stepEvent of stepRunEvents) {
+    publishDemoRunEvent(id, stepEvent);
   }
 
   if (completeEvents.length === 0) {
-    return { success: true, processed: beginEvents.length + stepBeginEvents.length + stepEndEvents.length };
+    return { success: true, processed: beginEvents.length + stepRunEvents.length };
   }
 
   const parsedEvents = completeEvents.map((tc) => {
@@ -991,6 +948,7 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
   const shardTokenSet = demoShardTokens.get(id) ?? readShardTokensFromMeta(testRun.metadata);
   const isValidShardToken = streamToken ? shardTokenSet?.has(streamToken) : false;
   await validateAndReviveDemoRun(db, testRun, streamToken, !!isValidShardToken);
+  await applyReporterKeep(db, id, body.keep);
 
   const isSharded = !!(testRun.shardTotal && testRun.shardTotal > 1);
 
@@ -1107,6 +1065,8 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
       publishDemoGlobalEvent({ type: 'run-finished', runId: id, projectId: testRun.projectId, status: finalStatus });
 
       await syncAutoMarkersForRun(db, id).catch(() => {});
+      await upsertDailyRollup(db, id).catch(() => {});
+      publishDemoGlobalEvent({ type: 'rollup-updated', runId: id, projectId: testRun.projectId });
     } else {
       publishDemoRunEvent(id, {
         type: 'run-progress',
@@ -1189,6 +1149,8 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
   publishDemoGlobalEvent({ type: 'run-finished', runId: id, projectId: testRun.projectId, status });
 
   await syncAutoMarkersForRun(db, id).catch(() => {});
+  await upsertDailyRollup(db, id).catch(() => {});
+  publishDemoGlobalEvent({ type: 'rollup-updated', runId: id, projectId: testRun.projectId });
 
   return { success: true, runId: id, status };
 }

@@ -154,7 +154,7 @@ export interface StepBeginStreamEvent {
   /** The step's target (rendered locator or URL), carried separately by newer Playwright. */
   subtitle?: string | null;
   location: string;
-  /** Playwright step category (`hook`, `fixture`, `pw:api`, `pw:expect`, …). */
+  /** Playwright step category: `hook`, `fixture`, `pw:api` or `expect`. */
   stepCategory: string;
   parentTitle: string | null;
   workerIndex: number | null;
@@ -169,7 +169,7 @@ export interface StepEndStreamEvent {
   location: string;
   status: string;
   duration: number;
-  /** Playwright step category (`hook`, `fixture`, `pw:api`, `pw:expect`, …). */
+  /** Playwright step category: `hook`, `fixture`, `pw:api` or `expect`. */
   stepCategory: string;
   parentTitle: string | null;
   workerIndex: number | null;

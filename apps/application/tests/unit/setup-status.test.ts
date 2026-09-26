@@ -122,6 +122,21 @@ describe('getSetupStatus', () => {
     expect((await activeIds(db)).has('server-probes')).toBe(true);
   });
 
+  test('a report schedule or a report snapshot activates the quality-reports capability', async () => {
+    expect((await activeIds(db)).has('quality-reports')).toBe(false);
+    await db.insert(schema.reportSnapshots).values({
+      dashboardRef: 'executive',
+      dashboardName: 'Executive',
+      periodFrom: new Date('2026-09-14T00:00:00Z'),
+      periodTo: new Date('2026-09-21T00:00:00Z'),
+      bundle: {},
+    });
+    expect((await activeIds(db)).has('quality-reports')).toBe(true);
+    await db.delete(schema.reportSnapshots);
+    await db.insert(schema.reportSchedules).values({ name: 'Weekly', cadence: 'weekly', anchor: 1, at: '08:00' });
+    expect((await activeIds(db)).has('quality-reports')).toBe(true);
+  });
+
   test('detection is evidence-based, not config-based: a defined tag activates tags', async () => {
     await db.insert(schema.tags).values({ text: 'smoke' });
 
@@ -161,12 +176,12 @@ describe('setup capability copy', () => {
 
 describe('first-run version and the New marker', () => {
   test('records the running version on first read and marks nothing new', async () => {
-    const first = await getSetupStatus(db, '0.36.0');
+    const first = await getSetupStatus(db, '0.39.0');
     expect(first.capabilities.every((c) => c.isNew === false)).toBe(true);
 
     // The recorded version sticks: a later, higher version does not re-anchor it.
     const recorded = await getAppSetting<string>(db, 'first-run-version');
-    expect(recorded).toBe('0.36.0');
+    expect(recorded).toBe('0.39.0');
     const again = await getSetupStatus(db, '0.99.0');
     expect(again.capabilities.every((c) => c.isNew === false)).toBe(true);
   });
@@ -175,9 +190,9 @@ describe('first-run version and the New marker', () => {
     await setAppSetting(db, 'first-run-version', '0.20.0');
     const { capabilities } = await getSetupStatus(db, '0.36.0');
     const newIds = new Set(capabilities.filter((c) => c.isNew).map((c) => c.id));
-    // auto-heal (0.26), integrations (0.29) and the Test Map (0.36) landed after
-    // 0.20; pr-feedback (0.19) did not.
-    expect(newIds).toEqual(new Set(['auto-heal', 'integrations', 'test-map', 'server-probes']));
+    // auto-heal (0.26), integrations (0.29), the Test Map (0.36) and quality
+    // reports (0.39) landed after 0.20; pr-feedback (0.19) did not.
+    expect(newIds).toEqual(new Set(['auto-heal', 'integrations', 'test-map', 'server-probes', 'quality-reports']));
   });
 
   test('records nothing and marks nothing when no version is supplied', async () => {
