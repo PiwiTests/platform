@@ -5,6 +5,7 @@
  */
 import { test, expect } from './fixtures';
 import { PROJECT } from '#shared/test-project-names';
+import { waitForHydration } from './utils';
 
 test.describe.serial('Analytics trend depth', () => {
   let projectId: number;
@@ -48,9 +49,11 @@ test.describe.serial('Analytics trend depth', () => {
 
   test('the Settings tab saves targets, and PATCH clears them with null', async ({ page, request }) => {
     await page.goto(`/projects/${projectId}?tab=settings`);
+    // Typed before hydration, the values are reset and Save submits the form natively.
+    await waitForHydration(page);
     const form = page.locator('[data-shot="project-targets"]');
-    await form.getByTestId('target-testPassRate').locator('input').fill('99');
-    await form.getByTestId('target-maxFlakyTests').locator('input').fill('5');
+    await form.getByTestId('target-testPassRate').fill('99');
+    await form.getByTestId('target-maxFlakyTests').fill('5');
     const saved = page.waitForResponse(
       (r) => r.url().includes(`/api/projects/${projectId}`) && r.request().method() === 'PATCH',
     );
@@ -143,11 +146,9 @@ test.describe.serial('Analytics trend depth', () => {
     expect(trend.buckets.reduce((n: number, b: { totalRuns: number }) => n + b.totalRuns, 0)).toBe(2);
 
     await page.goto(`/test-cases/${testCaseId}`);
-    await page
-      .getByRole('link', { name: 'Trend' })
-      .or(page.getByRole('menuitem', { name: 'Trend' }))
-      .first()
-      .click();
+    await waitForHydration(page);
+    // Exact: the project's own name contains "trend".
+    await page.getByRole('button', { name: 'Trend', exact: true }).click();
     await expect(page).toHaveURL(/tab=trend/);
     await expect(page.locator('[data-shot="test-case-trend"] svg.block').first()).toBeVisible({ timeout: 30_000 });
   });
