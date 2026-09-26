@@ -414,7 +414,7 @@ branch, so it can start before that PR is merged.
   moved pages are capped at their current size until PR 3 replaces the budget.
 - `apps/docs/AGENTS.md` rewritten to these rules.
 
-**PR 2: Guide** (2 days)
+**PR 2: Guide** (built)
 
 - Getting started in three steps, under 900 words, ending on Your first failure. "Choosing what you use" moves to
   `operate/capabilities.md`.
@@ -428,6 +428,23 @@ branch, so it can start before that PR is merged.
   under results, failures, analytics and Test Map.
 - What Piwi does and Why Piwi?: one statement of the limits; the FAQ answers become links.
 - About 15 in-app link updates.
+
+Where the build differs from this plan, and why:
+
+- AI diagnosis keeps a heading with a one-line pointer for each moved section ("Enabling AI diagnosis", "Response
+  language", "Context limits (and token cost)"), so old links keep an anchor while the in-app links move to AI provider.
+  The research and embedding help topics link `guide/ai-provider#model-roles` and auto-diagnose links
+  `#enabling-ai-diagnosis`, rather than the page top. The three `cluster.*` SCM topics keep
+  `features/ai-diagnosis#scm-grounded-context`: they are about the diagnosis context, not the token.
+- The Reporter options generator reads `options.ts` and `env.ts` with the TypeScript compiler API, both files, since
+  `DEFAULTS` is not exported. A default comes from the JSDoc, else from `DEFAULTS`. `apps/docs` pins `typescript@^6`,
+  the root's version: TypeScript 7 (the native port) has no compiler API. The generator fails on an option without
+  JSDoc; every option already had one.
+- Server spans and the route manifest are Nitro-only: the ASP.NET Core package sends `X-Piwi-Trace` only on probe
+  requests and serves no manifest. `scenario-gaps.md` says both packages serve `/__piwi/manifest`; PR 3 corrects it
+  with the Test Map split.
+- The branch-detection chain moved from CI & sharding to Test metadata, so CI & sharding lists what is detected and
+  links there.
 
 **PR 3: feature pages** (3 days)
 
