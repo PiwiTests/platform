@@ -174,7 +174,6 @@ Guide                              /guide/
 
 Features                           /features/ and /recipes/, rendered from the catalog; (recipe) marks a recipe
   Keep the history           UI overview · Branches · What changed in a run · Offline export · Share links
-  Trends and reports         Analytics · Dashboards · Quality reports · Timeline markers · Notifications & alerts
   Explain the failures       Regression or flake? (recipe) · Triage a run gone red (recipe) ·
                              Cut costly flakiness (recipe) · Cut the time it costs (recipe) ·
                              Failure evidence · Failure clusters & the inbox · Flaky tests & quarantine ·
@@ -183,6 +182,7 @@ Features                           /features/ and /recipes/, rendered from the c
                              Fix plans, reproduce & bisect · Auto-heal PRs · Issue tracking (Jira) ·
                              Pull-request feedback & re-run (split from CI) · Test selections (moved) · AI steps (moved)
   Find what your tests miss  Scenario gaps & the Test Map · Uncovered changes in pull requests (split) · Probes (split)
+  Trends and reports         Analytics · Dashboards · Quality reports · Timeline markers · Notifications & alerts
   Use it from elsewhere      MCP server · Agent skills (split) · Desktop app · Browser extension · Tested elements ·
                              Test functions catalog · Open in IDE
 
@@ -209,8 +209,8 @@ The main choices:
 - **"Trends and reports" is a new catalog group.** It takes Analytics, Dashboards, Quality reports, Timeline markers
   and Notifications out of "Keep the history", which keeps the run history itself. `ROADMAP.md` calls analytics and
   notifications delivery routes rather than jobs, so this group sits beside "Use it from elsewhere" and changes no
-  product framing. Report schedules deliver through notification channels, and markers explain the trend charts,
-  so the five belong together.
+  product framing, and it comes after the four jobs, as the roadmap ranks delivery routes. Report schedules deliver
+  through notification channels, and markers explain the trend charts, so the five belong together.
 - **"Find what your tests miss" is a fourth job.** The product's jobs today are keep the history, explain the
   failures, hand back a fix (`ROADMAP.md`, "What Piwi is for"). The Test Map has its own tab, CLI command, MCP
   tools, a skill, a pull-request section, dashboard widgets and a capability, and it answers a question none of the
@@ -389,23 +389,30 @@ Name collisions to resolve:
 ## Migration plan
 
 Five pull requests and an optional sixth. The site builds green after each one, and the drift test names every in-app
-link a change breaks. After PR 1, PR 2 and PR 4 can run in parallel in separate sessions; PR 3 and PR 5 start once PR 2
-has merged, because they edit pages PR 2 slims.
+link a change breaks. After PR 1, PR 2 and PR 4 can run in parallel in separate sessions. PR 3 starts once PR 2 is
+done, and PR 5 once PR 3 is done, because each edits pages the previous one slims. A PR builds on the previous PR's
+branch, so it can start before that PR is merged.
 
-**PR 1: one taxonomy** (1 day, one URL change)
+**PR 1: one taxonomy** (built)
 
-- Top navigation; Guide sidebar in three groups; Self-hosting label and groups; the Reference list.
-- Features sidebar rendered from the catalog, each recipe at the top of the group it serves; the recipes index
-  removed, with a redirect to the landing page. In the catalog: Issue tracking added, "Trends and
-  reports" split out of "Keep the history", and the fourth job if decision 1 is yes.
-- Landing page: three steps, one card per catalog group, entry points by reader.
-- Feature map renamed All features, with one redirect row.
-- `<Needs>` chips become links; a chip whose setup page does not exist yet links to the current section.
-- A `description` on every page, one footer heading ("Related"), and outside recipes an H1 equal to the sidebar label.
-- The new checks from the rules table, except the budget.
-- The site structure section of `apps/docs/AGENTS.md` rewritten to the rules above; its stale path to the
-  configuration page (`apps/docs/configuration.md`, now under `reference/`) fixed.
-- Done when the sidebar, the All features page and the landing cards show the same groups in the same order.
+- Top navigation (Guide, Features, Self-hosting, Reference, Blog, Demo); Guide sidebar in three groups; Self-hosting
+  groups; the Reference list. The navigation is plain data in `.vitepress/navigation.ts`, and the Features sidebar
+  and the landing cards are rendered from the catalog.
+- Catalog: groups in the order Keep the history, Explain the failures, Hand back a fix, Find what your tests miss,
+  Trends and reports, Use it from elsewhere, Self-hosting; Issue tracking and Metrics and rollup export added; each
+  title equal to its page's H1. The fourth job is written into `ROADMAP.md` and What Piwi does, in its own commit.
+- Each recipe at the top of its group; the recipes index removed and redirected to the landing page.
+- Four URLs moved, each with a redirect row: `guide/ai-steps` and `guide/test-selection` to `features/`,
+  `features/analytics-widgets` to `reference/`, and the Feature map to `reference/features` (All features).
+- Landing page: three steps, one card per catalog group, entry points by reader, the limits paragraph kept.
+- `<Needs>` chips link to their setup pages through `FEATURE_NEED_DOCS` in the catalog.
+- A `description` on every page, one footer heading ("Related"), and outside recipes an H1 equal to the sidebar
+  label; the recipes' titles match their sidebar labels.
+- Checks: every `features/` page is in the catalog; every page has a description; every sidebar entry resolves and
+  matches its page's H1; every docs URL in the READMEs resolves; the docs links in `shared/`, `FEATURE_NEED_DOCS`
+  and the env-var registry resolve. The feature budget counts the page body, not its front matter, and the two
+  moved pages are capped at their current size until PR 3 replaces the budget.
+- `apps/docs/AGENTS.md` rewritten to these rules.
 
 **PR 2: Guide** (2 days)
 
@@ -430,13 +437,15 @@ has merged, because they edit pages PR 2 slims.
   Locators and Reports pages.
 - The Test Map in three pages plus the detectors reference; the unreleased lines go.
 - MCP server: tool tables to the generated page, agent skills to their own page.
-- Analytics widgets and Metrics generated under `/reference/`; the hand-written widget page goes.
-- `ai-steps.md` and `test-selection.md` move to `/features/`, with two redirect rows.
+- Analytics widgets and Metrics generated from their registries under `/reference/`; the hand-written widget page,
+  moved there by PR 1, is replaced.
 - Extension, desktop, locator healing and notifications rewritten to the template.
 - Each recipe linked from the "Related" footer of the feature pages it draws on; the recipes' re-explanations become
   links. Help topics gain the optional `recipe` field, and five topics link their recipe.
-- The budget check switches to one budget per type with no allowlist.
-- About 25 in-app link updates, eight of them the widget band anchors.
+- The budget check switches to one budget per type with no allowlist. With the Test Map and agent skills split,
+  the check that every entry in a feature group points to a whole page joins the drift test, and so do the checks
+  on endpoint paths and on planned wording, with the pages they clean.
+- About 15 in-app link updates.
 
 **PR 4: Self-hosting** (1 day)
 
@@ -446,7 +455,7 @@ has merged, because they edit pages PR 2 slims.
 - Storage architecture internals cut; retention and runs kept forever stay on Storage.
 - Sidebar groups: Install, Configure, Data, Upgrade; Metrics and rollup export joins Data.
 
-**PR 5: remaining reference and checks** (1 day)
+**PR 5: remaining reference and checks** (1 day, after PR 3)
 
 - Notification events & webhooks, keyboard shortcuts and clue rules, each with its check; the CLI flag check against
   `--help`.
@@ -455,7 +464,8 @@ has merged, because they edit pages PR 2 slims.
 
 **PR 6, optional: docs served by the instance** (1 to 2 days, see Further options)
 
-In-app links that change (occurrences in the app, the catalog and the capability registry):
+In-app links that change (occurrences in the app, the catalog and the capability registry). PR 1 already moved the
+links to AI steps, Test selections, Analytics widgets and All features:
 
 | Link today (occurrences) | New target |
 |---|---|
@@ -463,15 +473,12 @@ In-app links that change (occurrences in the app, the catalog and the capability
 | `features/ai-diagnosis#context-limits-and-token-cost` (3) | `guide/ai-provider#context-limits-and-token-cost` |
 | `features/ai-diagnosis#scm-grounded-context` (4) | `guide/source-control` where the link sits on an SCM setting, unchanged elsewhere |
 | `features/ai-diagnosis#failure-clustering` (2) | `features/failure-clusters#how-failures-are-grouped` |
-| `features/analytics-widgets#…` (8) | `reference/analytics-widgets#…`, same band anchors |
 | `features/mcp#agent-skills` (4) | `features/agent-skills` |
 | `guide/ci#pull-request-feedback`, `guide/ci#re-run-from-the-dashboard` (2) | `features/pr-feedback` |
-| `guide/test-selection` (4), `guide/ai-steps` (1) | `features/test-selection`, `features/ai-steps` |
 | `features/scenario-gaps#…` (4) | `features/uncovered-changes`, `features/probes`, `features/probes#server-probes` |
 | `operate/authentication#project-access`, `#permission-grid`, `#api-keys` (3) | `operate/project-access`, `operate/project-access#permission-grid`, `operate/api-keys` |
 | `guide/getting-started#using-the-piwi-dashboard-reporter` (1) | `guide/reporter` |
 | `guide/getting-started#declining-a-capability` (docs pages only) | `operate/capabilities` |
-| `reference/feature-map` (docs pages, generator, drift test) | `reference/features` |
 
 Unchanged: every `features/ui-overview#…` anchor, `features/evidence#one-execution-diagnosis-first` and
 `#trace-powered-deep-views`, `guide/getting-started#fast-path-one-command`, every link into Analytics, Dashboards
