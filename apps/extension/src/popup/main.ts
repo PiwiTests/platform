@@ -9,6 +9,10 @@ const recordHint = document.getElementById('record-hint')!;
 const configButton = document.getElementById('config-button') as HTMLButtonElement;
 const activeProjectRow = document.getElementById('active-project-row')!;
 const activeProjectSelect = document.getElementById('active-project') as HTMLSelectElement;
+const coverageButton = document.getElementById('coverage-overlay') as HTMLButtonElement;
+const coverageHint = document.getElementById('coverage-hint')!;
+/** Set once the connection settings are read: "Tested elements" needs a Piwi instance. */
+let connected = false;
 
 async function activeTab(): Promise<chrome.tabs.Tab | null> {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -38,6 +42,11 @@ document.getElementById('assertion-panel')!.addEventListener('click', () => void
 document.getElementById('session-panel')!.addEventListener('click', () => void inject('session-panel.js'));
 document.getElementById('agent-context-panel')!.addEventListener('click', () => void inject('agent-context-panel.js'));
 document.getElementById('test-function-panel')!.addEventListener('click', () => void inject('test-function-panel.js'));
+coverageButton.addEventListener('click', () => {
+  // Without a connection there is no locator index to show: go straight to where it is set up.
+  if (connected) void inject('coverage-overlay.js');
+  else chrome.runtime.openOptionsPage();
+});
 
 configButton.addEventListener('click', () => {
   chrome.runtime.openOptionsPage();
@@ -87,7 +96,7 @@ async function highlightActiveTool(): Promise<void> {
     // Restricted page, or nothing injected yet — nothing is running either way.
     return;
   }
-  for (const button of document.querySelectorAll<HTMLElement>('.actions button')) {
+  for (const button of document.querySelectorAll<HTMLElement>('.actions button, button.feature')) {
     const running = button.id === active;
     button.classList.toggle('running', running);
     // Conveys the same thing the ring does, for anyone not seeing the ring.
@@ -138,7 +147,7 @@ document.addEventListener('keydown', (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   const target = e.target as HTMLElement | null;
   if (target && ['INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName)) return;
-  const id = KEY_TO_ACTION_ID[e.key];
+  const id = e.key === 't' || e.key === 'T' ? 'coverage-overlay' : KEY_TO_ACTION_ID[e.key];
   if (!id) return;
   e.preventDefault();
   document.getElementById(id)?.click();
@@ -160,7 +169,11 @@ async function refreshActiveProjectSelect(): Promise<void> {
     activeTab(),
   ]);
 
-  if (!isConnected(connection)) {
+  connected = isConnected(connection);
+  coverageHint.textContent = connected
+    ? 'What your tests reach on this page, and what they miss'
+    : 'Connect to your Piwi instance to see what your tests reach';
+  if (!connected) {
     activeProjectRow.style.display = 'none';
     return;
   }

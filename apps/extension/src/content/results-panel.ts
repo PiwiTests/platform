@@ -4,10 +4,22 @@ import { TAG_TO_ROLE, INPUT_TYPE_TO_ROLE } from '@piwitests/core/locator-generat
 import { COPY_MODES, COPY_MODE_LABELS, renderCopyMode } from '../shared/copy-modes.js';
 import { getLastCopyMode, setLastCopyMode } from '../shared/storage.js';
 import { liveCount } from './live-count.js';
+import { locatorActionLabel } from '@piwitests/core/step-locators';
+import { getConnectionSettings, isConnected } from '../shared/connection-settings.js';
+import { getActiveProjectOverride, resolveActiveProject } from '../shared/active-project.js';
+import { ensureSessionAccess } from '../shared/session-access.js';
+import { getCachedLocatorIndex } from '../shared/locator-index-cache.js';
+import { requestLocatorIndex } from '../shared/locator-index-refresh.js';
+import { projectLocatorsUrl, testCaseUrl } from '../shared/piwi-client.js';
+import { scanCoverage, testsReaching } from './coverage-scan.js';
+import { statusLabel, testTitle } from './coverage-view.js';
 
 const ROLE_MAPS = { tagRoles: TAG_TO_ROLE, inputRoles: INPUT_TYPE_TO_ROLE };
 
 const HOST_ID = 'piwi-picker-results-host';
+
+/** How many tests the Piwi section lists before pointing at the full view. */
+const PIWI_TESTS_SHOWN = 6;
 
 /**
  * Renders the ranked-locator results panel in a closed shadow root — the
@@ -16,16 +28,20 @@ const HOST_ID = 'piwi-picker-results-host';
  * several source-code renderings of each candidate), so this is native
  * extension UI rather than a reuse of picker-dom's confirm step.
  *
+ * With `target` (the picked element) and a connection to a Piwi instance, a
+ * section lists the project's tests whose locators reach that element.
+ *
  * Resolves once the user dismisses the panel (Escape or the close button).
  */
-export async function renderResultsPanel(ranked: RankedLocator[]): Promise<void> {
+export async function renderResultsPanel(ranked: RankedLocator[], target: Element | null = null): Promise<void> {
   document.getElementById(HOST_ID)?.remove();
 
   const host = document.createElement('div');
   host.id = HOST_ID;
   host.style.cssText = 'all:initial;position:fixed;inset:0;z-index:2147483647;';
   document.documentElement.appendChild(host);
-  const root = host.attachShadow({ mode: 'closed' });
+  const openShadow = (globalThis as { __piwiTestOpenShadow?: boolean }).__piwiTestOpenShadow === true;
+  const root = host.attachShadow({ mode: openShadow ? 'open' : 'closed' });
 
   const style = document.createElement('style');
   style.textContent = `
@@ -76,7 +92,29 @@ export async function renderResultsPanel(ranked: RankedLocator[]): Promise<void>
     .footer { color: #9ca3af; font-size: 11px; margin-top: 4px; }
     .unique { color: #4ade80; font-size: 11px; }
     .ambiguous { color: #fbbf24; font-size: 11px; }
+    .header-actions { display: flex; align-items: center; gap: 6px; }
+    .piwi {
+      border: 1px solid #7c3aed66; border-radius: 8px; padding: 8px 10px; margin-bottom: 10px;
+      background: rgba(124,58,237,.08); font-size: 12.5px;
+    }
+    .piwi .lead { font-weight: 600; }
+    .piwi .muted { color: #9ca3af; font-size: 12px; }
+    .piwi ul { list-style: none; margin: 6px 0 0; padding: 0; }
+    .piwi li { display: flex; align-items: baseline; gap: 7px; padding: 2px 0; }
+    .piwi li .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; align-self: center; background: #64748b; }
+    .piwi .dot.passed { background: #10b981; }
+    .piwi .dot.failed { background: #e11d48; }
+    .piwi .dot.flaky { background: #9333ea; }
+    .piwi .dot.skipped { background: #a1a1aa; }
+    .piwi a { color: inherit; text-decoration: underline dotted; text-underline-offset: 2px; }
+    .piwi a:hover { text-decoration-style: solid; }
+    .piwi .actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .piwi .actions a, .piwi .actions button {
+      background: rgba(128,128,128,.12); color: inherit; border: 1px solid rgba(128,128,128,.3); border-radius: 6px;
+      padding: 3px 9px; font: inherit; font-size: 11.5px; cursor: pointer; text-decoration: none;
+    }
     @media (prefers-color-scheme: light) {
+      .piwi .muted { color: #6b7280; }
       .sub, .footer { color: #6b7280; }
       .score { color: #6d28d9; border-color: #6d28d966; }
       .unique { color: #15803d; }
@@ -109,10 +147,25 @@ export async function renderResultsPanel(ranked: RankedLocator[]): Promise<void>
   closeBtn.className = 'close';
   closeBtn.setAttribute('aria-label', 'Close');
   closeBtn.textContent = '×';
-  header.append(titleWrap, closeBtn);
+  const headerActions = document.createElement('div');
+  headerActions.className = 'header-actions';
+  const copyAll = document.createElement('button');
+  copyAll.className = 'copy';
+  copyAll.type = 'button';
+  copyAll.textContent = `Copy all ${ranked.length}`;
+  copyAll.title =
+    'Copy every locator, one per line — paste them into Piwi’s Locators page to find the tests using any of them';
+  copyAll.addEventListener('click', () => void copyToClipboard(ranked.map((alt) => alt.locator).join('\n'), copyAll));
+  headerActions.append(copyAll, closeBtn);
+  header.append(titleWrap, headerActions);
   panel.appendChild(header);
 
-  let activeMode = await getLastCopyMode();
+  const piwiSection = document.createElement('div');
+  piwiSection.className = 'piwi';
+  piwiSection.hidden = true;
+  panel.appendChild(piwiSection);
+
+  let activeMode = await getLastCopyMode().catch(() => 'bare' as const);
 
   return new Promise<void>((resolve) => {
     let done = false;
@@ -201,6 +254,160 @@ export async function renderResultsPanel(ranked: RankedLocator[]): Promise<void>
     backdrop.appendChild(panel);
     root.appendChild(backdrop);
     panel.focus();
+    void fillPiwiSection(piwiSection, ranked, target, () => done);
+  });
+}
+
+type PickCoverage =
+  | { status: 'off' | 'checking' | 'unavailable'; message?: string }
+  | { status: 'ready'; project: string; tests: string[]; locators: string[] };
+
+function reportPickCoverage(value: PickCoverage): void {
+  (globalThis as { __piwiPickCoverage?: PickCoverage }).__piwiPickCoverage = value;
+}
+
+/**
+ * Connected mode: which of the project's tests reach the picked element,
+ * resolved on this page from the project's locator index. Silent when the
+ * extension is not connected or no project is mapped to the page.
+ */
+async function fillPiwiSection(
+  section: HTMLElement,
+  ranked: RankedLocator[],
+  target: Element | null,
+  closed: () => boolean,
+): Promise<void> {
+  reportPickCoverage({ status: 'off' });
+  if (!target) return;
+  let settings: Awaited<ReturnType<typeof getConnectionSettings>>;
+  let projectId: number;
+  let projectLabel: string;
+  try {
+    await ensureSessionAccess();
+    settings = await getConnectionSettings();
+    if (!isConnected(settings)) return;
+    const override = await getActiveProjectOverride().catch(() => null);
+    const project = resolveActiveProject(settings, override, location.href);
+    if (!project) return;
+    projectId = project.projectId;
+    projectLabel = project.projectLabel;
+  } catch {
+    return;
+  }
+
+  const findInPiwi = () => {
+    const link = document.createElement('a');
+    link.href = projectLocatorsUrl(
+      settings.instanceUrl,
+      projectId,
+      ranked.map((alt) => alt.locator),
+    );
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.textContent = 'Find these locators in Piwi ↗';
+    return link;
+  };
+  const lead = (text: string) => {
+    const el = document.createElement('div');
+    el.className = 'lead';
+    el.textContent = text;
+    return el;
+  };
+
+  section.hidden = false;
+  section.replaceChildren(lead(`Checking which tests of ${projectLabel} reach this element…`));
+  reportPickCoverage({ status: 'checking' });
+
+  let index = (await getCachedLocatorIndex(projectId).catch(() => null))?.index ?? null;
+  if (!index) {
+    const answer = await requestLocatorIndex(projectId);
+    if (answer.ok && answer.refreshed) index = answer.index;
+    else {
+      const muted = document.createElement('div');
+      muted.className = 'muted';
+      muted.textContent = answer.ok
+        ? 'The project’s locator index is not available yet.'
+        : `Couldn't load the locator index: ${answer.error}`;
+      const actions = document.createElement('div');
+      actions.className = 'actions';
+      actions.appendChild(findInPiwi());
+      section.replaceChildren(lead(`Tests of ${projectLabel}`), muted, actions);
+      reportPickCoverage({ status: 'unavailable', message: muted.textContent });
+      return;
+    }
+  }
+  if (closed()) return;
+
+  const scan = await scanCoverage(index, document, {
+    testIdAttributes: index.testIdAttributes ?? undefined,
+    ignore: (element) => (element.getAttribute('id') ?? '').startsWith('piwi-'),
+    keepGoing: () => !closed(),
+  });
+  if (!scan || closed()) return;
+  const { tests, entries } = testsReaching(scan, index, target);
+
+  const actions = document.createElement('div');
+  actions.className = 'actions';
+  actions.appendChild(findInPiwi());
+  const showAll = document.createElement('button');
+  showAll.type = 'button';
+  showAll.textContent = 'Show every tested element';
+  showAll.title = 'Open Tested elements on this page';
+  showAll.addEventListener('click', () => {
+    void chrome.runtime.sendMessage({ type: 'piwi-open-coverage' }).catch(() => undefined);
+    document.getElementById(HOST_ID)?.remove();
+  });
+  actions.appendChild(showAll);
+
+  if (tests.length === 0) {
+    const muted = document.createElement('div');
+    muted.className = 'muted';
+    muted.textContent = 'No locator of the project’s tests resolves to this element here.';
+    section.replaceChildren(lead(`Not reached by any test of ${projectLabel}`), muted, actions);
+    reportPickCoverage({ status: 'ready', project: projectLabel, tests: [], locators: [] });
+    return;
+  }
+
+  const list = document.createElement('ul');
+  for (const t of tests.slice(0, PIWI_TESTS_SHOWN)) {
+    const test = index.tests[t]!;
+    const item = document.createElement('li');
+    const dot = document.createElement('span');
+    dot.className = `dot ${test.status ?? ''}`;
+    dot.title = statusLabel(test.status);
+    const link = document.createElement('a');
+    link.href = testCaseUrl(settings.instanceUrl, test.id);
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.textContent = testTitle(test);
+    link.title = test.file;
+    const actionsOf = new Set<string>();
+    for (const entry of entries) {
+      for (const use of index.locators[entry]!.uses) if (use.test === t) use.actions.forEach((a) => actionsOf.add(a));
+    }
+    const meta = document.createElement('span');
+    meta.className = 'muted';
+    meta.textContent = [...actionsOf].map(locatorActionLabel).join(', ');
+    item.append(dot, link, meta);
+    list.appendChild(item);
+  }
+  const children: Node[] = [
+    lead(`Reached by ${tests.length} ${tests.length === 1 ? 'test' : 'tests'} of ${projectLabel}`),
+    list,
+  ];
+  if (tests.length > PIWI_TESTS_SHOWN) {
+    const more = document.createElement('div');
+    more.className = 'muted';
+    more.textContent = `${tests.length - PIWI_TESTS_SHOWN} more — Show every tested element lists them all.`;
+    children.push(more);
+  }
+  children.push(actions);
+  section.replaceChildren(...children);
+  reportPickCoverage({
+    status: 'ready',
+    project: projectLabel,
+    tests: tests.map((t) => index!.tests[t]!.title),
+    locators: entries.map((e) => index!.locators[e]!.locator),
   });
 }
 

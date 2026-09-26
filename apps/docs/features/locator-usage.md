@@ -54,10 +54,13 @@ extension's **Find these locators in Piwi ↗** opens it that way.
 **Locators your tests use** lists every chain of the index, the ones shared by the most tests
 first, with a filter. Each count opens **Who uses this?**.
 
+The index behind this page is also what the extension's [Tested elements](./tested-elements)
+overlay evaluates on a live page.
+
 ## Requirements and limits
 
 - **Playwright 1.61 or later**, with step collection on (`collectPerformanceMetrics`, the default). Playwright 1.63 puts the chain in each step's parameters; 1.61 and 1.62 print it in the step title, which Piwi reads the same way.
 - **Getter calls are not reported.** Playwright hides `textContent()`, `inputValue()`, `isVisible()` and similar calls from reporters, so a locator used only through them is not in the index.
 - **Long and described chains.** Piwi keeps the first 500 steps of an execution (`PIWI_INGEST_MAX_STEPS`) and the first 200 characters of each step parameter (`PIWI_INGEST_MAX_STEP_PARAM_VALUE_CHARS`), and `locator.describe()` replaces the chain with its description. Chains cut short or described are skipped.
-- **Matching is by chain text.** Two different chains that happen to resolve to the same element count separately. The counts tell you where to look, not that a test will break.
+- **Matching is by chain text.** Two different chains that happen to resolve to the same element count separately. The counts tell you where to look, not that a test will break. To match on the element itself, open the page and use the extension's [Tested elements](./tested-elements), which evaluates every chain there.
 - **The index fills itself.** New runs are indexed as they arrive. When the server starts, it indexes each project's stored history once: for every test and Playwright project, the latest passed execution, or the latest one when none passed. To rebuild it later, call the rebuild endpoint: see the [API docs](https://piwitests.dev/demo/docs), or `/docs` on your own instance.

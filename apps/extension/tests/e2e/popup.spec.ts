@@ -189,3 +189,54 @@ test.describe('popup.html', () => {
     expect(optionTexts.filter((t) => t === 'Demo project')).toHaveLength(1);
   });
 });
+
+test.describe('Tested elements tile', () => {
+  test('sits above the numbered tools and answers to T', async ({ context, extensionId }) => {
+    const page = await context.newPage();
+    await page.goto(`chrome-extension://${extensionId}/popup.html`);
+    const tile = page.getByRole('button', { name: /Tested elements/ });
+    await expect(tile).toBeVisible();
+    await expect(tile).toHaveAttribute('aria-keyshortcuts', 'T');
+    await page.evaluate(() => {
+      (globalThis as unknown as { clicked: string[] }).clicked = [];
+      document.getElementById('coverage-overlay')!.addEventListener(
+        'click',
+        (e) => {
+          e.stopImmediatePropagation();
+          (globalThis as unknown as { clicked: string[] }).clicked.push('coverage-overlay');
+        },
+        { capture: true },
+      );
+    });
+    await page.keyboard.press('t');
+    expect(await page.evaluate(() => (globalThis as unknown as { clicked: string[] }).clicked)).toEqual([
+      'coverage-overlay',
+    ]);
+  });
+
+  test('without a connection it says so and opens the settings', async ({ context, extensionId }) => {
+    const page = await context.newPage();
+    await page.goto(`chrome-extension://${extensionId}/popup.html`);
+    await expect(page.locator('#coverage-hint')).toHaveText(
+      'Connect to your Piwi instance to see what your tests reach',
+    );
+    const [options] = await Promise.all([context.waitForEvent('page'), page.locator('#coverage-overlay').click()]);
+    await expect(options).toHaveURL(new RegExp(`chrome-extension://${extensionId}/options.html`));
+  });
+
+  test('once connected it describes what it shows', async ({ context, extensionId }) => {
+    const page = await context.newPage();
+    await page.goto(`chrome-extension://${extensionId}/popup.html`);
+    await page.evaluate(() =>
+      chrome.storage.local.set({
+        piwiConnection: {
+          instanceUrl: 'https://piwi.test',
+          apiKey: '',
+          projectMappings: [{ urlPattern: '**', projectId: 1, projectLabel: 'Demo project' }],
+        },
+      }),
+    );
+    await page.reload();
+    await expect(page.locator('#coverage-hint')).toHaveText('What your tests reach on this page, and what they miss');
+  });
+});

@@ -314,6 +314,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/extension',
       },
       {
+        title: 'Tested elements',
+        summary:
+          'On a live page, the elements your tests reach and through which tests, and the buttons, links and fields none reaches.',
+        needs: ['extension'],
+        where: 'Browser extension → Tested elements',
+        doc: 'features/tested-elements',
+      },
+      {
         title: 'Test functions catalog',
         summary: 'The reusable helpers and page-object methods your suite calls, catalogued with their parameters.',
         needs: [],

@@ -1,13 +1,14 @@
 import type { TestFunctionEntry } from '@piwitests/core/function-match';
+import type { LocatorIndex } from '@piwitests/core/locator-index';
 import type { ConnectionSettings } from './connection-settings';
 
 /**
  * Talks to a Piwi instance — the only place in this extension that makes a
  * network call. Called from the options page (on save) and the background
- * service worker (`piwi-refresh-catalog`) only, never from a content script,
- * so the API key is never reachable from a web page's JS context (matches
- * `extension/AGENTS.md`'s standalone stance: connected mode is opt-in and
- * clearly separated).
+ * service worker (`piwi-refresh-catalog`, `piwi-refresh-locator-index`) only,
+ * never from a content script, so the API key is never reachable from a web
+ * page's JS context (matches `extension/AGENTS.md`'s standalone stance:
+ * connected mode is opt-in and clearly separated).
  *
  * These requests need a host permission for the instance's origin: the
  * dashboard API sends no CORS headers, and `X-API-Key` makes them non-simple
@@ -29,6 +30,17 @@ export function normalizeBaseUrl(instanceUrl: string): string {
 /** Deep link to a project's "Test functions" catalog page in the dashboard — used by `test-function-panel.ts`'s "Manage catalog" link. */
 export function projectCatalogUrl(instanceUrl: string, projectId: number): string {
   return `${normalizeBaseUrl(instanceUrl)}/projects/${projectId}/test-functions`;
+}
+
+/** Deep link to a project's Locators page, with locators to check prefilled one per line. */
+export function projectLocatorsUrl(instanceUrl: string, projectId: number, locators: string[] = []): string {
+  const base = `${normalizeBaseUrl(instanceUrl)}/projects/${projectId}/locators`;
+  return locators.length ? `${base}?q=${encodeURIComponent(locators.join('\n'))}` : base;
+}
+
+/** Deep link to a test case's page in the dashboard. */
+export function testCaseUrl(instanceUrl: string, testCaseId: number): string {
+  return `${normalizeBaseUrl(instanceUrl)}/test-cases/${testCaseId}`;
 }
 
 /** The list a dashboard list endpoint answers: `{ items }`, or a bare array. */
@@ -103,4 +115,29 @@ export async function fetchCatalog(settings: ConnectionSettings, projectId: numb
   const body = (await res.json()) as { testFunctions?: unknown };
   const rows = listItems<{ entry: TestFunctionEntry }>(Array.isArray(body.testFunctions) ? body.testFunctions : body);
   return rows.map((row) => row.entry).filter(Boolean);
+}
+
+/**
+ * How long the locator index may take: it carries every chain a project's
+ * tests used, so it is larger than the other responses. Still bounded — the
+ * caller has already rendered whatever was cached.
+ */
+const LOCATOR_INDEX_TIMEOUT_MS = 30_000;
+
+/** One project's locator index: every chain its tests used, with the tests that use it. */
+export async function fetchLocatorIndex(settings: ConnectionSettings, projectId: number): Promise<LocatorIndex> {
+  if (!settings.instanceUrl.trim()) throw new Error('Not connected to a Piwi instance.');
+  const res = await fetch(`${normalizeBaseUrl(settings.instanceUrl)}/api/projects/${projectId}/locator-index`, {
+    headers: authHeaders(settings),
+    signal: AbortSignal.timeout(LOCATOR_INDEX_TIMEOUT_MS),
+  });
+  if (res.status === 401 || res.status === 403) throw new Error('The instance rejected the API key for this project.');
+  if (res.status === 404)
+    throw new Error('This Piwi instance has no locator index for the project (update Piwi, or check the project).');
+  if (!res.ok) throw new Error(`Failed to fetch the locator index (${res.status})`);
+  const body = (await res.json()) as LocatorIndex;
+  if (!body || !Array.isArray(body.locators) || !Array.isArray(body.tests)) {
+    throw new Error('The instance answered with something that is not a locator index.');
+  }
+  return body;
 }

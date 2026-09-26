@@ -7,9 +7,11 @@ import {
   decideRecordIntent,
 } from '../shared/recording-storage.js';
 import { getConnectionSettings } from '../shared/connection-settings.js';
-import { fetchCatalog } from '../shared/piwi-client.js';
+import { fetchCatalog, fetchLocatorIndex } from '../shared/piwi-client.js';
 import { setCachedCatalog, isCatalogStale } from '../shared/catalog-cache.js';
 import type { RefreshCatalogResult } from '../shared/catalog-refresh.js';
+import { isLocatorIndexStale, setCachedLocatorIndex } from '../shared/locator-index-cache.js';
+import type { LocatorIndexRefreshResult } from '../shared/locator-index-refresh.js';
 
 /**
  * Service worker: the keyboard-shortcut trigger for picking (the toolbar
@@ -224,6 +226,27 @@ async function handleRefreshCatalog(projectId: unknown, force: boolean): Promise
   }
 }
 
+/**
+ * Re-fetches one project's locator index for the coverage overlay, which (a
+ * content script) cannot hold the API key. Answers with the index itself when
+ * it re-fetched, because a large index may not fit the storage cache.
+ */
+async function handleRefreshLocatorIndex(projectId: unknown, force: boolean): Promise<LocatorIndexRefreshResult> {
+  if (typeof projectId !== 'number' || !Number.isFinite(projectId)) {
+    return { ok: false, error: 'No project to refresh.' };
+  }
+  const settings = await getConnectionSettings();
+  if (!settings.instanceUrl.trim()) return { ok: false, error: 'Not connected to a Piwi instance.' };
+  if (!force && !(await isLocatorIndexStale(projectId))) return { ok: true, refreshed: false, index: null };
+  try {
+    const index = await fetchLocatorIndex(settings, projectId);
+    await setCachedLocatorIndex(projectId, index);
+    return { ok: true, refreshed: true, index };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : 'Failed to fetch the locator index.' };
+  }
+}
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === 'piwi-ping') {
     // Resolves only once session storage is readable from content scripts —
@@ -240,6 +263,25 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   if (message?.type === 'piwi-refresh-catalog') {
     void handleRefreshCatalog(message.projectId, message.force === true).then(sendResponse);
+    return true;
+  }
+  if (message?.type === 'piwi-open-coverage') {
+    // From the pick panel: open "Tested elements" in the tab the pick ran in.
+    const tabId = sender.tab?.id;
+    if (tabId == null) return undefined;
+    void chrome.scripting
+      .executeScript({ target: { tabId }, files: ['coverage-overlay.js'] })
+      .then(() => sendResponse({ ok: true }))
+      .catch((err: unknown) => sendResponse({ ok: false, error: err instanceof Error ? err.message : String(err) }));
+    return true;
+  }
+  if (message?.type === 'piwi-open-options') {
+    // Content scripts can't open the options page themselves.
+    void chrome.runtime.openOptionsPage().then(() => sendResponse({ ok: true }));
+    return true;
+  }
+  if (message?.type === 'piwi-refresh-locator-index') {
+    void handleRefreshLocatorIndex(message.projectId, message.force === true).then(sendResponse);
     return true;
   }
   if (message?.type === 'piwi-recording-stopped') {
