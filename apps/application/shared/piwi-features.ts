@@ -298,18 +298,10 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
       {
         title: 'Analytics',
         summary:
-          'Cross-project trends — portfolio health, wasted CI time, pass-rate heatmap, browser matrix, insights feed.',
+          'Cross-project trends (portfolio health, wasted CI time, pass-rate heatmap, browser matrix, insights feed) over any period against any other, from daily rollups that outlive retention.',
         needs: [],
         where: 'Analytics',
         doc: 'features/analytics',
-      },
-      {
-        title: 'Trends over time',
-        summary:
-          'Any period against any other (calendar units, sprints, release cycles, since a marker), from daily rollups that outlive retention.',
-        needs: [],
-        where: 'Analytics → Filters',
-        doc: 'features/analytics#periods',
       },
       {
         title: 'Dashboards',
