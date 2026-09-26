@@ -8,7 +8,8 @@ lang: en-US
 
 Connect an issue tracker and the external links you pin to a run, execution or failure cluster stop being
 dead URLs: Piwi fetches the ticket's title and status through the connection and keeps the badge current
-when you refresh. Jira Cloud is the first tracker; the connection layer is shaped so more follow.
+when you refresh. Jira Cloud is the supported tracker. This page sets up the connection; filing and syncing
+issues from a failure is [Issue tracking (Jira)](/features/issue-tracking).
 
 A connection is instance infrastructure — one row per external system, managed by an administrator, shared
 by every project. Nothing is sent to Jira until a connection exists, and credentials are encrypted at rest
@@ -141,3 +142,9 @@ register a webhook so a close or reopen reflects immediately instead of within t
 
 The webhook is **public but secret-in-path** and rate-limited, and it can only ever *refresh a link* — it can never
 create or transition anything. Regenerating the token invalidates the old URL; *Disable webhook* clears it.
+
+## Related
+
+- [Issue tracking (Jira)](/features/issue-tracking): filing issues from a failure and keeping them in sync
+- [Production checklist](./production-checklist): `PIWI_SECRET_KEY`, which encrypts the stored token
+- [Configuration reference](/reference/configuration): the integration variables

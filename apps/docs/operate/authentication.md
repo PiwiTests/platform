@@ -1,12 +1,12 @@
 ---
 title: Authentication
-description: "Turn on sign-in and roles, configure Google and GitHub OAuth, manage users and project access, and create API keys for CI and agents."
+description: "Turn on sign-in and roles, create the first administrator, configure Google and GitHub OAuth, and manage user accounts."
 lang: en-US
 ---
 
 # Authentication
 
-The dashboard supports optional user authentication with role-based access control. Authentication is **disabled by default**.
+The dashboard supports optional sign-in with role-based access control. Authentication is **disabled by default**: every endpoint then behaves as a single administrator. Turn it on before anyone else can reach the instance; the [production checklist](./production-checklist) lists the rest of what to set.
 
 ## Roles
 
@@ -16,40 +16,28 @@ The dashboard supports optional user authentication with role-based access contr
 | **Reporter** | Submits results (`/api/test-runs/submit`, `/api/test-runs/upload`) and can triage, but only for the **projects it's assigned to**. |
 | **User** | Read-only access to the **projects it's assigned to**. |
 
-Administrators always see everything. **Reporter** and **User** accounts are additionally scoped by [project access](#project-access) — they only see and act on the projects assigned to them.
+Administrators always see everything. **Reporter** and **User** accounts are additionally scoped by [project access](./project-access): they only see and act on the projects assigned to them.
 
 ## Enabling authentication
 
-1. Copy the example environment file:
+1. Set these variables wherever you configure the server (the container's environment, `.env`, or your host's
+   dashboard):
 
    ```bash
-   cd apps/application
-   cp .env.example .env
-   ```
-
-2. Edit `.env` and set:
-
-   ```bash
-   PIWI_SECRET_KEY=your-secret-key-here   # encrypts DB secrets (AI keys, SCM tokens)
    PIWI_AUTH_ENABLED=true
-   PIWI_AUTH_SECRET=your-auth-secret-here  # encrypts session cookies
+   PIWI_AUTH_SECRET=your-auth-secret-here  # signs session cookies
+   PIWI_SECRET_KEY=your-secret-key-here    # encrypts stored credentials (AI keys, SCM tokens)
    ```
 
-   Generate strong random values for both (run twice — once for `PIWI_SECRET_KEY`, once for `PIWI_AUTH_SECRET`):
+   Generate a strong random value for each secret (run it twice):
 
-   ```bash
-   # Cross-platform — works anywhere Node is installed (Node is already required)
-   node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
+   <<< @/snippets/secret.sh{bash}
 
-   # …or with openssl on Linux / macOS / Git Bash
-   openssl rand -hex 32
-   ```
-
-3. Restart the application.
+2. Restart the server. It refuses to start with authentication on and no `PIWI_AUTH_SECRET`.
 
 ## Initial setup
 
-When authentication is enabled and no users exist yet, opening the dashboard lands on the login page, which shows a **Create the first admin account** form in place of the sign-in form. Fill it in and you are signed in as the administrator — no API call needed.
+When authentication is enabled and no users exist yet, opening the dashboard lands on the login page, which shows a **Create the first admin account** form in place of the sign-in form. Fill it in and you are signed in as the administrator, with no API call needed.
 
 For provisioning an instance from a script, the same step is available as an API call:
 
@@ -77,29 +65,11 @@ Both routes go through `POST /api/auth/setup`, which is only available while the
 
 ## Logging in
 
-Navigate to `/login` in your browser, or use the API:
-
-::: code-group
-
-```bash [Linux / macOS]
-curl -X POST http://localhost:3000/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"username": "admin", "password": "your-secure-password"}'
-```
-
-```powershell [Windows (PowerShell)]
-$body = @{ username = 'admin'; password = 'your-secure-password' } | ConvertTo-Json
-Invoke-RestMethod -Method Post -Uri http://localhost:3000/api/auth/login `
-  -ContentType 'application/json' -Body $body
-```
-
-:::
-
-Sessions are stored in encrypted cookies and last for 7 days.
+Sign in at `/login`. Sessions are stored in encrypted cookies and last for 7 days.
 
 ## OAuth (Google, GitHub)
 
-The dashboard supports signing in with Google or GitHub as an alternative to username/password authentication.
+Users can sign in with Google or GitHub instead of a username and password.
 
 ### Configuring OAuth
 
@@ -108,7 +78,7 @@ The dashboard supports signing in with Google or GitHub as an alternative to use
    - **Google**: Go to the [Google Cloud Console](https://console.cloud.google.com/apis/credentials), create an OAuth 2.0 Client ID, and add `https://your-domain.com/api/auth/oauth/google/callback` to the authorized redirect URIs.
    - **GitHub**: Go to **Settings → Developer settings → OAuth Apps** on GitHub, create a new OAuth app, and set the callback URL to `https://your-domain.com/api/auth/oauth/github/callback`.
 
-2. **Add the credentials to your `.env` file:**
+2. **Set the credentials** alongside the other variables:
 
    ```bash
    PIWI_OAUTH_GOOGLE_CLIENT_ID=your-google-client-id
@@ -119,9 +89,7 @@ The dashboard supports signing in with Google or GitHub as an alternative to use
 
    Only configure the providers you actually want to use. OAuth buttons appear automatically on the login page when both a provider's `CLIENT_ID` and `CLIENT_SECRET` are set.
 
-3. **Restart the application.** The login page now shows **Sign in with Google** and/or **Sign in with GitHub** buttons above the password form.
-
-> **Docker image and `npx @piwitests/server`:** the prebuilt server reads these settings from its runtime config, which only honors `NUXT_*` names, so the launcher maps each `PIWI_OAUTH_*` variable onto its `NUXT_OAUTH_*` counterpart at start and lists the configured providers in `NUXT_PUBLIC_OAUTH_PROVIDERS` for the login page. A `NUXT_*` value you set yourself is left untouched.
+3. **Restart the server.** The login page now shows **Sign in with Google** and/or **Sign in with GitHub** buttons above the password form.
 
 > **Behind a reverse proxy:** set `PIWI_SITE_URL` to your public URL (e.g. `https://piwi.example.com`). The OAuth `redirect_uri` is built from it, so it stays consistent with the value you registered even when the proxy rewrites the request host. Without it the redirect URI is inferred from the incoming request.
 
@@ -134,30 +102,16 @@ By default any account at a configured provider can sign in (and a new **user**-
 
 Rejected sign-ins are returned to the login page with an explanatory message.
 
-### How it works
+### Account linking
 
-1. User clicks an OAuth button on the login page.
-2. The server redirects to the provider's authorization page with a cryptographically random `state` parameter stored in an httpOnly cookie. For providers that support it (Google), a PKCE `code_challenge` (S256) is also sent and its verifier stored in an httpOnly cookie, so a stolen authorization code can't be redeemed without the verifier.
-3. After authorization, the provider redirects back to the callback URL.
-4. The server validates the `state` cookie (CSRF protection), exchanges the code for an access token (sending the PKCE verifier when used), and fetches the user's profile (name, email, avatar).
-5. A local user is created or linked:
-   - If a user with the same OAuth provider + ID exists, their name/avatar/email are refreshed from the provider.
-   - If a user with the same **verified** email exists (and isn't already linked to a *different* provider), the existing account is linked to the OAuth provider. Linking needs proof on both sides: the provider must assert the email is verified, **and** the local account must have verified it too (through the verification link, an accepted invite, or an earlier provider sign-in). This stops an attacker-controlled public email, or an address someone typed into their own profile, from capturing another person's sign-in.
-   - If the matching account has **not** verified the address, the sign-in is refused with an explanatory message instead of being linked. The account's owner signs in with its password (or accepts their invite first) and connects the provider from **Settings → Account**.
-   - Otherwise, a new user is created with the **user** role and an empty password (password login disabled for OAuth-only users). The provider email is stored on the account.
-6. A session is established (same encrypted cookie as password login), and the browser is redirected to the dashboard homepage.
+A first sign-in with a provider either links an existing account or creates a new one:
 
-### Notes
+- If a user with the same **verified** email exists (and isn't already linked to a *different* provider), the existing account is linked to the provider. Linking needs proof on both sides: the provider must assert the email is verified, **and** the local account must have verified it too (through the verification link, an accepted invite, or an earlier provider sign-in). This stops an attacker-controlled public email, or an address someone typed into their own profile, from capturing another person's sign-in.
+- If the matching account has **not** verified the address, the sign-in is refused with an explanatory message instead of being linked. The account's owner signs in with its password (or accepts their invite first) and connects the provider from **Settings → Account**.
+- If the matching account is **already linked to a different provider**, the sign-in is refused: one provider is linked per account, so sign in with the original method instead.
+- Otherwise, a new user is created with the **User** role and no password, so it always signs in through its provider. GitHub accounts with no verified primary email always get a new account.
 
-- OAuth users have an empty password and **cannot sign in with username/password**. They must always use their OAuth provider.
-- The provider's email address is stored on the OAuth account, so OAuth users can receive email notifications and appear with a verified email in the admin user list.
-- If a sign-in's verified email matches an account that is **already linked to a different provider**, the login is rejected with an "already linked to a different sign-in method" message (the schema links one provider per account) — sign in with the original method instead.
-- An email address belongs to one account: changing an account's email to an address another account already uses (ignoring case) is refused, and changing it clears its verified status until it is verified again.
-- GitHub accounts with no verified primary email are still allowed to sign in, but a fresh account is created rather than linked.
-- The reporter (CI/CD) authentication is unaffected — it continues to use API keys or username/password.
-- OAuth is **not available in demo mode**; the buttons are not shown.
-- Avatar URLs from the provider are displayed in the user menu when available.
-- The dashboard does not store provider refresh/access tokens — the access token is used once at sign-in to read the profile, then discarded; only the dashboard's own session cookie persists.
+The dashboard does not keep the provider's tokens: the access token is used once to read the profile, then discarded. OAuth is not available in demo mode.
 
 ### Connecting / disconnecting a provider
 
@@ -166,188 +120,25 @@ Signed-in users can link a provider explicitly from **Settings → Account → C
 - **Connect** starts the OAuth flow in "link" mode and attaches the provider identity to the current account (rather than creating a new one). A provider identity already linked to another account is refused.
 - **Disconnect** removes the link. It's only allowed when the account also has a password set, so a provider-only user can't lock themselves out — set a password first.
 
-One provider can be connected per account.
-
 ## User management
 
-User accounts are managed through the admin interface at `/settings/users`.  
-This page is accessible to administrators (or to everyone when authentication is disabled, with an informational message).
-
-To create additional users:
-
-1. Navigate to `/settings/users`
-2. Click **Add user**
-3. Set username, password, role, and optional display name
+Administrators manage accounts under **Settings → Users** (`/settings/users`). **Add user** creates one with a
+username, password, role and optional display name.
 
 ### Changing a role
 
-Each row's **Role** column is an inline selector — pick a new role to reassign it immediately (the user's active sessions are revoked so the change takes effect at once). This is the only way to change an existing account's role, including accounts provisioned through [OAuth](#oauth-google-github), which always self-register with the **User** role. The **last remaining administrator cannot be demoted**, so an instance can never be left without one.
+Each row's **Role** column is an inline selector — pick a new role to reassign it immediately (the user's active sessions are revoked so the change takes effect at once). This is the only way to change an existing account's role, including accounts created through [OAuth](#oauth-google-github), which always start with the **User** role. The **last remaining administrator cannot be demoted**, so an instance can never be left without one.
 
-## Project access
-
-Administrators see every project. **Reporter** and **User** accounts see only the projects they are **assigned** to — so you can give each team its own slice of the dashboard.
-
-An assignment is one of two kinds:
-
-- **Global** — access to *all* projects, including ones created later. Good for a shared CI reporter or a team lead.
-- **Per-project** — access to a specific set of projects only.
-
-What scoping affects for a non-admin user:
-
-- The project list, sidebar menu, home dashboard, recent runs, and search only include assigned projects.
-- Runs, test cases, and clusters that belong to an unassigned project return **403**.
-- A reporter can submit results to an assigned project. Creating a **new** project on first submission requires **global** access — a per-project reporter can't invent projects.
-
-> **Default is no access.** A freshly created Reporter/User has no assignments and sees an empty dashboard until you grant some — and so does an account whose last project you revoke. (Once, on a database with no assignments yet, existing Reporter/User accounts are given global access, so upgrading from a version without project access changes nothing for them.)
-
-### Managing assignments
-
-Assignments are administrator-only and can be edited from three places:
-
-- **All at once** — **Settings → Permissions**, the [permission grid](#permission-grid): every user against every project.
-- **Per user** — **Settings → Users → Project access** (the action next to a user). Choose global access or tick specific projects.
-- **Per project** — a project's **Members** tab (`/projects/:id`, admins only). Add or remove users for that one project.
-
-All three edit the same underlying assignments, so use whichever is more convenient.
-
-### Permission grid
-
-**Settings → Permissions** lays every user against every project on one grid, so you can read and change access for the whole instance without opening accounts one at a time. Rows are users, grouped by role; columns are projects, after an **All projects** column. A tick grants that role in that project — a reporter can upload results and triage there, a user can read.
-
-<div class="doc-screenshot">
-  <img src="/screenshots/permission-grid.png" alt="Settings → Permissions: users grouped by role down the side, projects across the top, and the focused cell's row and column highlighted">
-</div>
-
-- **Every click saves at once** — there is no Save button. A change the server refuses is rolled back and reported.
-- **All projects** also covers projects created later. While it is ticked, the user's project cells show a faint tick and are locked; unticking it returns the user to exactly the projects ticked one by one.
-- **Administrators** open every project, so their row is ticked and locked.
-- **Hovering a cell highlights its row and column**, so a cell far from the headers still reads against its user and its project. Keyboard focus does the same: Tab enters the grid as one stop, the arrow keys move between cells, Space toggles.
-- **Filter users** and **Filter projects** narrow the grid on a large instance.
-
-The grid reads and writes through `GET /api/project-access` and `PUT /api/project-access` (one cell per request), both administrator-only — see the [API docs](https://piwitests.dev/demo/docs).
-
-> **Try it in the demo:** the [live demo](https://piwitests.dev/demo/) ships with several pre-seeded identities — an admin, a global CI reporter, and users scoped to one or two projects (plus one with none). Use the **Acting as** picker in the demo banner to switch between them and watch the project list, sidebar, and search change to match each user's access. Acting as the admin, change the assignments live and switch back to see the effect. See [UI overview → Live demo](/features/ui-overview#live-demo).
-
-## API authentication
-
-When authentication is enabled:
-
-- Every endpoint requires an authenticated caller — a session cookie or an API key — with the role the endpoint declares (listed per endpoint in the [API docs](https://piwitests.dev/demo/docs)). The exceptions are `GET /api/health`, `GET /api/version`, the auth flows themselves (login, initial setup, password reset, email verification, OAuth), and the live-run streaming endpoints, which authenticate with per-run stream tokens instead.
-- The reporter's submission endpoints (`/api/test-runs/submit` and `/api/test-runs/upload`) accept both session cookies and API keys.
-
-## API keys
-
-API keys are the recommended way to authenticate CI pipelines and the Playwright reporter. They are long-lived tokens tied to a specific user account.
-
-### Security properties
-
-- Keys are generated with 256 bits of cryptographic entropy (`pd_` prefix + 64-character hex string).
-- Only a SHA-256 hash of the key is stored in the database — the plaintext is shown **once** at creation time and never retrievable again.
-- Each key displays a short prefix (`pd_xxxxxxxx…`) in the UI for identification without revealing the secret.
-- Keys are sent as `Authorization: Bearer <key>` or `X-API-Key: <key>` headers.
-- Keys can be given an optional expiry date.
-
-### Creating an API key
-
-1. Navigate to **Settings → Users** in the dashboard.
-2. Click the key icon next to the user you want to generate a key for.
-3. Click **Create API key**, enter a descriptive name (e.g. "GitHub Actions"), and set an optional expiry.
-4. Copy the key **immediately** — it will never be shown again.
-5. Store it as a CI secret (e.g. `PIWI_API_KEY`).
-
-### Revoking an API key
-
-1. Navigate to **Settings → Users** and click the key icon.
-2. Click the trash icon next to the key you want to revoke.
-3. The key stops working immediately.
-
-### Using the API key in the reporter
-
-```typescript
-// playwright.config.ts
-export default defineConfig({
-  reporter: [
-    ['@piwitests/reporter', {
-      serverUrl: 'https://your-dashboard.example.com',
-      projectName: 'my-project',
-      apiKey: process.env.PIWI_API_KEY,
-    }],
-  ],
-})
-```
-
-### Using the API key in raw HTTP calls
-
-::: code-group
-
-```bash [Linux / macOS]
-# Authorization: Bearer header (recommended)
-curl -X POST https://your-dashboard.example.com/api/test-runs/submit \
-  -H "Authorization: Bearer pd_<your-key>" \
-  -H "Content-Type: application/json" \
-  -d '{ ... }'
-
-# X-API-Key header (alternative)
-curl -X POST https://your-dashboard.example.com/api/test-runs/submit \
-  -H "X-API-Key: pd_<your-key>" \
-  -H "Content-Type: application/json" \
-  -d '{ ... }'
-```
-
-```powershell [Windows (PowerShell)]
-# Authorization: Bearer header (recommended)
-Invoke-RestMethod -Method Post -Uri https://your-dashboard.example.com/api/test-runs/submit `
-  -Headers @{ Authorization = 'Bearer pd_<your-key>' } `
-  -ContentType 'application/json' -Body '{ ... }'
-
-# X-API-Key header (alternative)
-Invoke-RestMethod -Method Post -Uri https://your-dashboard.example.com/api/test-runs/submit `
-  -Headers @{ 'X-API-Key' = 'pd_<your-key>' } `
-  -ContentType 'application/json' -Body '{ ... }'
-```
-
-:::
-
-## Using the reporter with session authentication (username/password)
-
-As an alternative to API keys, create a dedicated user with the **reporter** role for your CI pipelines:
-
-1. Log in as an administrator in `/settings/users` and add a new user with the **Reporter** role.
-
-2. Configure the reporter with the credentials:
-
-   ```typescript
-   // playwright.config.ts
-   export default defineConfig({
-     reporter: [
-       ['@piwitests/reporter', {
-         serverUrl: 'https://your-dashboard.example.com',
-         projectName: 'my-project',
-         username: process.env.PIWI_USERNAME,
-         password: process.env.PIWI_PASSWORD,
-       }],
-     ],
-   })
-   ```
-
-3. Add `PIWI_USERNAME` and `PIWI_PASSWORD` as secrets in your CI provider.
-
-The reporter automatically calls `/api/auth/login` before each upload and uses the resulting session for all subsequent requests.
-
-> **Tip:** API keys are preferred over username/password for CI because they don't require a login round-trip and can be individually revoked.
-
-## Security considerations
-
-Everything to set before you expose an instance — HTTPS, `PIWI_SECRET_KEY`, `PIWI_AUTH_SECRET` and the trust-proxy flag — is the [production checklist](./production-checklist). What authentication adds on top of that:
-
-- Passwords are hashed using scrypt with per-password salts; use strong, unique passwords.
-- Login, initial setup, and password-reset endpoints are rate-limited per client address — failed logins also per account — and throttled requests get a `429` with a `Retry-After` header. Behind a reverse proxy, set `PIWI_TRUST_PROXY` so those per-address limits see real client addresses; see the [configuration reference](/reference/configuration#authentication).
+Which projects a Reporter or User can open is [project access](./project-access), and the keys that let CI and scripts sign in are [API keys](./api-keys).
 
 ## Disabling authentication
 
-To disable authentication:
+Set `PIWI_AUTH_ENABLED=false`, or remove the variable, and restart the server. Every endpoint is then accessible
+without authentication.
 
-1. Set `PIWI_AUTH_ENABLED=false` in `.env`, or remove the variable entirely.
-2. Restart the application.
+## Related
 
-When disabled, all endpoints are accessible without authentication.
+- [Project access](./project-access): which projects each Reporter and User can open
+- [API keys](./api-keys): authenticating the reporter, CI and scripts
+- [Production checklist](./production-checklist): the secrets, TLS and proxy settings to go with it
+- [Configuration reference](/reference/configuration#authentication): every authentication and OAuth variable

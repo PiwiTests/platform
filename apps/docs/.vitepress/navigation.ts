@@ -139,6 +139,7 @@ export const selfHostingSidebar: SidebarGroup[] = [
     text: 'Install',
     items: [
       { text: 'Deployment', link: '/operate/deployment' },
+      { text: 'One-click deploy', link: '/operate/one-click-deploy' },
       { text: 'Production checklist', link: '/operate/production-checklist' },
     ],
   },
@@ -146,6 +147,8 @@ export const selfHostingSidebar: SidebarGroup[] = [
     text: 'Configure',
     items: [
       { text: 'Authentication', link: '/operate/authentication' },
+      { text: 'Project access', link: '/operate/project-access' },
+      { text: 'API keys', link: '/operate/api-keys' },
       { text: 'Localization', link: '/operate/localization' },
       { text: 'Choose what you use', link: '/operate/capabilities' },
       { text: 'Integrations', link: '/operate/integrations' },
@@ -157,7 +160,7 @@ export const selfHostingSidebar: SidebarGroup[] = [
     text: 'Data',
     items: [
       { text: 'Database', link: '/operate/database' },
-      { text: 'Storage configuration', link: '/operate/storage' },
+      { text: 'Storage & retention', link: '/operate/storage' },
       { text: 'Backup & restore', link: '/operate/backup-restore' },
       { text: 'Metrics and rollup export', link: '/operate/metrics' },
     ],

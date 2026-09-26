@@ -1,6 +1,6 @@
 ---
 title: Offline export
-description: "Export a run or an execution as a self-contained bundle or a Perfetto trace that outlives retention, and what each export leaves out."
+description: "Export a failing execution or a whole failure cluster as HTML, ZIP, PDF, Markdown or JSON that opens with no network and no Piwi server, plus a Perfetto trace of a run."
 lang: en-US
 ---
 
@@ -78,4 +78,4 @@ For a self-contained snapshot of one failure, use the HTML or ZIP export above.
 - [Share links](./share-links) — the live counterpart: a revocable read-only URL instead of a file
 - [Failure evidence](./evidence) — what the export is a snapshot of
 - [AI diagnosis & clustering](./ai-diagnosis) — cluster exports carry the diagnosis too
-- [Storage configuration](/operate/storage#data-retention) — retention, and why an export outlives it
+- [Storage & retention](/operate/storage#data-retention) — retention, and why an export outlives it

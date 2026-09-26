@@ -256,4 +256,4 @@ a dropped network), the server marks it `interrupted`. If the reporter comes bac
 - [Reporter](./reporter): setup, streaming and authentication
 - [Pull-request feedback & re-run](/features/pr-feedback): the result on the pull request
 - [Test tags](/reference/test-metadata#test-tags): what `--require-tag` matches on
-- [Authentication](/operate/authentication): the API key CI uses
+- [API keys](/operate/api-keys): the key CI uses

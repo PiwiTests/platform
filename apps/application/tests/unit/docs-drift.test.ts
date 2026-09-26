@@ -271,8 +271,10 @@ describe('docs site structure', () => {
   });
 
   // The description is the page's search snippet and its social-card text.
+  // The home page uses the site description in config.mts instead.
   test.each(docsPages)('%s has a description', (page) => {
     const frontMatter = /^---\n([\s\S]*?)\n---\n/.exec(read(page))?.[1] ?? '';
+    if (/^layout: home$/m.test(frontMatter)) return;
     expect(frontMatter, `${page} has no description in its front matter`).toMatch(/^description: \S/m);
   });
 

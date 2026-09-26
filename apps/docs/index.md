@@ -1,7 +1,8 @@
 ---
 # https://vitepress.dev/reference/default-theme-home-page
 layout: home
-description: "Your Playwright results, kept and explained: every run and trace kept, failures grouped by root cause, flaky tests scored and broken locators healed. Self-hosted, MIT, zero telemetry."
+title: Piwi Dashboard — Your Playwright results, kept and explained
+titleTemplate: false
 
 hero:
   name: "Piwi Dashboard"
@@ -93,7 +94,7 @@ JUnit, pytest and Cypress results, or you only ever debug on your own machine,
 
 - [Deployment](/operate/deployment): Docker, Compose, Kubernetes and one-click hosts
 - [Production checklist](/operate/production-checklist): what to set before anyone else can reach it
-- [Authentication](/operate/authentication): roles, OAuth, API keys and project access
+- [Authentication](/operate/authentication): sign-in, roles and OAuth, with [project access](/operate/project-access) and [API keys](/operate/api-keys)
 - [Upgrading](/operate/upgrading): what a version bump does, and why there is no downgrade
 
 ### I report to people who don't open Piwi

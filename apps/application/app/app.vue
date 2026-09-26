@@ -24,13 +24,17 @@ useHead({
 const title = 'Piwi Dashboard';
 const description = 'Your Playwright results, kept and explained.';
 
-useSeoMeta({
-  title,
-  description,
-  ogTitle: title,
-  ogDescription: description,
-  twitterCard: 'summary_large_image',
-});
+// The public demo's title, description and link-preview cards live in its
+// static shell (nuxt.config.ts), which is what search engines index.
+if (!config.public.demoMode) {
+  useSeoMeta({
+    title,
+    description,
+    ogTitle: title,
+    ogDescription: description,
+    twitterCard: 'summary_large_image',
+  });
+}
 </script>
 
 <template>

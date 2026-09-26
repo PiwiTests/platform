@@ -1,6 +1,6 @@
 ---
 title: Getting started
-description: "Run the dashboard, connect a Playwright project with one command, and open your first run in three steps."
+description: "Piwi Dashboard is a self-hosted server plus a Playwright reporter that keeps every test run. Run the dashboard, connect your suite with one command, and open your first run in three steps."
 lang: en-US
 ---
 
@@ -64,7 +64,7 @@ steps. `init` also adds the [Piwi agent skills](/features/mcp#agent-skills) to t
 > `npx @piwitests/reporter <command>`, so npx resolves this package: `npx piwi` would fetch an unrelated `piwi`
 > package from npm. Once the reporter is a dependency of your project, `npx piwi <command>` works too.
 
-If authentication is on, pass an [API key](/operate/authentication) as `PIWI_API_KEY`. To wire the reporter in by
+If authentication is on, pass an [API key](/operate/api-keys) as `PIWI_API_KEY`. To wire the reporter in by
 hand, or to send one run without editing your config, see [Reporter](./reporter).
 
 ## 3. Run your tests

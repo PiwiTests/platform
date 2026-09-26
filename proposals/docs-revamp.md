@@ -464,13 +464,27 @@ Where the build differs from this plan, and why:
   on endpoint paths and on planned wording, with the pages they clean.
 - About 15 in-app link updates.
 
-**PR 4: Self-hosting** (1 day)
+**PR 4: Self-hosting** (built)
 
 - `operate/one-click-deploy.md` from `deployment.md`; the security list lives only in the production checklist.
 - `operate/project-access.md` (with the permission grid) and `operate/api-keys.md` from `authentication.md`; OAuth
   internals cut.
 - Storage architecture internals cut; retention and runs kept forever stay on Storage.
 - Sidebar groups: Install, Configure, Data, Upgrade; Metrics and rollup export joins Data.
+- Built differently from the plan, and why:
+  - Storage keeps a short "Storage architecture" section (what is automatic: traces split, compressed and freed when
+    unreferenced; failure evidence stored once) rather than losing it, because the app's storage backend help links
+    `#storage-architecture`. The page is renamed **Storage & retention** (H1 and sidebar), URL kept.
+  - Deployment's Backups section goes too: it copied Backup & restore, and the four operate links to it now point
+    there. Deployment's prose is about 1,000 words; code samples take it to about 1,250.
+  - "Using the reporter with a username and password" lives on API keys, as the alternative to a key for CI.
+  - API keys gets a Self-hosting catalog entry with no need chip: every user manages their own keys under
+    Settings → Account, and administrators manage anyone's under Settings → Users. The page says so; the old
+    section only named Settings → Users. Project access's location becomes Settings → Permissions.
+  - `SECURITY.md` pointed at the old `/deployment` URL with its own three-item list; it now links the checklist.
+    The README keeps its three-line "Before you expose it" summary, which already links the checklist.
+  - The generated one-click manifests point at `/operate/one-click-deploy` instead of the old `/deployment`.
+  - Integrations and Localization gain a Related footer; Integrations links Issue tracking at the top.
 
 **PR 5: remaining reference and checks** (1 day, after PR 3)
 
