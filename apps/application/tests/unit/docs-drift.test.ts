@@ -87,20 +87,26 @@ describe('positioning line', () => {
 });
 
 describe('documented counts', () => {
-  // Every page on the docs site (the generated configuration.md included,
-  // when built) plus the repository-level pages that repeat the number. The
-  // generated What's new page repeats historical changelog counts (e.g. "from
-  // 14 to 38 tools") that were correct for that release — it is the one place
-  // stale numbers are the point, so it is not held to the live count.
-  const countPages = [...docsPages, 'apps/docs/AGENTS.md'].filter((p) => p !== 'apps/docs/reference/whats-new.md');
-  const COUNT_SURFACES = [...countPages, 'README.md', 'ROADMAP.md', 'DOCKER_HUB.md'];
+  // The tool count lives on one page, the generated MCP tools page, where it
+  // is right by construction. A count copied into a narrative page goes stale
+  // with the next tool, so every other page and the repository-level pages
+  // name no count. The generated What's new page repeats historical changelog
+  // counts (e.g. "from 14 to 38 tools") that were correct for that release, so
+  // it is left out too.
+  const COUNT_SURFACES = [
+    ...docsPages.filter((p) => !['apps/docs/reference/mcp-tools.md', 'apps/docs/reference/whats-new.md'].includes(p)),
+    'apps/docs/AGENTS.md',
+    'README.md',
+    'ROADMAP.md',
+    'DOCKER_HUB.md',
+  ];
 
-  test.each(COUNT_SURFACES)('%s states the real MCP tool count, if it states one', (relative) => {
-    for (const [claim, stated] of read(relative).matchAll(/\b(\d+) tools\b/g)) {
-      expect(Number(stated), `${relative} says "${claim}", there are ${MCP_TOOL_DEFS.length}`).toBe(
-        MCP_TOOL_DEFS.length,
-      );
-    }
+  test.each(COUNT_SURFACES)('%s states no MCP tool count', (relative) => {
+    const claims = [...read(relative).matchAll(/\b\d+ (?:MCP )?tools\b/g)].map((m) => m[0]);
+    expect(
+      claims,
+      `${relative} states an MCP tool count: link the [MCP tools](/reference/mcp-tools) page instead`,
+    ).toEqual([]);
   });
 
   // The MCP tools page is generated from MCP_TOOL_DEFS, one section per module,
