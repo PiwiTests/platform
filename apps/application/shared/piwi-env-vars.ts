@@ -226,7 +226,7 @@ export const PIWI_ENV_CATEGORIES: Record<PiwiEnvVarCategory, PiwiEnvVarCategoryM
     order: 14,
     intro:
       'Tunes the similarity thresholds used when grouping failures into clusters by their error fingerprint (and optional embeddings). Only used when an embedding model is configured.',
-    note: 'See [AI diagnosis → Failure clustering](/features/ai-diagnosis#failure-clustering).',
+    note: 'See [Failure clusters → How failures are grouped](/features/failure-clusters#how-failures-are-grouped).',
   },
   testing: {
     title: 'Backend logs',

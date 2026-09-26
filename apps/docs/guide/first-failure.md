@@ -59,7 +59,7 @@ The point is to leave with something to do, not just something to read.
 
 ## You're not reading it alone
 
-This execution is one member of a **[failure cluster](/features/failure-clusters)** — Piwi groups every test that failed for the same reason, so forty red tests become three problems you triage once. From the cluster you get the full [fix plan](/features/ai-diagnosis), the owner, and — once a later run passes every test it covers — [confirmation the fix held](/features/ai-diagnosis#did-the-fix-work).
+This execution is one member of a **[failure cluster](/features/failure-clusters)** — Piwi groups every test that failed for the same reason, so forty red tests become three problems you triage once. From the cluster you get the full [fix plan](/features/ai-diagnosis), the owner, and — once a later run passes every test it covers — [confirmation the fix held](/features/failure-clusters#did-the-fix-work).
 
 ## Where to go next
 

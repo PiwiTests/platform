@@ -93,7 +93,7 @@ export const HELP_TOPICS = {
   'analytics.cluster-landscape': {
     title: 'Failure clusters',
     text: 'Open failure clusters across all projects — the biggest and oldest unresolved root causes. Clusters outlive run retention, so this works on long horizons.',
-    doc: 'features/ai-diagnosis#failure-clustering',
+    doc: 'features/failure-clusters#how-failures-are-grouped',
   },
   'analytics.regression-velocity': {
     title: 'Regression velocity',
@@ -531,7 +531,7 @@ export const HELP_TOPICS = {
   'cluster.concept': {
     title: 'Failure clusters',
     text: 'Failures with the same error fingerprint are grouped into one cluster, so a single root cause shows up once instead of N times.',
-    doc: 'features/ai-diagnosis#failure-clustering',
+    doc: 'features/failure-clusters#how-failures-are-grouped',
   },
   'cluster.owner': {
     title: 'Owner',

@@ -69,7 +69,7 @@ A match is scored deterministically first — the same fingerprint family (error
 
 ## Related
 
-- [AI diagnosis & failure clustering](./ai-diagnosis) — the diagnosis and validated patch a fix plan wraps
+- [AI diagnosis](./ai-diagnosis) — the diagnosis and validated patch a fix plan wraps
 - [Failure clusters & the inbox](./failure-clusters) — the clusters a fix plan is attached to
 - [Auto-heal PRs](./auto-heal) — when Piwi opens the locator fix as a pull request itself
 - [MCP server](/features/mcp) — the `get_fix_plan` tool

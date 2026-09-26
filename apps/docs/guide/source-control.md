@@ -17,7 +17,7 @@ failure, or writes back to a pull request, goes through it.
 | [AI diagnosis](/features/ai-diagnosis#scm-grounded-context) | Reads the commits and diffs since the last green run, and the full source of the most suspect files | read |
 | The failure cluster's **What changed** panel | Lists commits, shows their diffs, and lets you pin a baseline commit | read |
 | [Uncovered changes](/features/scenario-gaps) | Diffs the run's commit against its baseline and flags changed files no test reached | read |
-| [Did the fix work?](/features/ai-diagnosis#did-the-fix-work) | Checks whether the commits after a fix touched the failing files | read |
+| [Did the fix work?](/features/failure-clusters#did-the-fix-work) | Checks whether the commits after a fix touched the failing files | read |
 | [Notifications](/features/notifications) | Names the author of the fixing commit on `cluster.fixed` and `cluster.regressed` | read |
 | Ownership and the default branch | Reads `CODEOWNERS` for test owners, and the repository's default branch when the project sets none | read |
 | [Pull-request feedback](/features/pr-feedback) | Posts a summary comment and a commit status | write |
