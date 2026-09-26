@@ -2,7 +2,8 @@
 
 A plan to reorganize the documentation site (`apps/docs/`). State audited: `main` at v0.39.0 (`cc1b701`),
 2026-09-26. Every page was measured section by section; word counts exclude code blocks. First written against
-0.37.0 on 2026-09-24; updated after 0.38.0 and 0.39.0, which added the analytics program and the locator index.
+0.37.0 on 2026-09-24; updated after 0.38.0 and 0.39.0, which added the analytics program and the locator index, and revised the same
+day to place each recipe in the group it serves.
 
 This proposal replaces the open items of [`docs-restructure.md`](docs-restructure.md) (2026-09-05). That plan's
 mechanisms shipped and stay: one sidebar per section, the generated Feature map and What's new pages,
@@ -32,8 +33,8 @@ The rules that exist work where they apply. The revamp extends them to the whole
 5. **The docs describe what ships.** The dashboard explains its own screens; the site stops describing widgets and
    colors, and stops documenting planned work.
 
-About **10,400 words are deleted** outright and about 3,500 more move to generated pages. The hand-written total goes
-from about 82,000 to about 66,000 words, while the site grows from 65 to about 83 pages, each named for one task.
+About **10,600 words are deleted** outright and about 3,500 more move to generated pages. The hand-written total goes
+from about 82,000 to about 66,000 words, while the site grows from 65 to about 82 pages, each named for one task.
 Five pull requests, eight to nine days, and an optional sixth; the first changes a single URL.
 
 ## What changed since the first version
@@ -117,7 +118,8 @@ The catalog is the only place features are grouped. `config.mts` imports it (pla
 already imported by the docs scripts), keeps the entries whose page is under `/features/`, and renders one sidebar
 group per catalog group. The All features page and the landing cards come from the same list. In the feature groups,
 **a catalog entry is a page**, not an anchor: one feature, one page, one set of `<Needs>` chips. The 0.38.0 and 0.39.0
-pages already follow this; the older pages catch up.
+pages already follow this; the older pages catch up. Recipes are not features, so they are not catalog entries: a
+five-line map in `config.mts` puts each one at the top of the group it serves.
 
 ### 2. One type per page
 
@@ -170,15 +172,16 @@ Guide                              /guide/
                   Backend instrumentation (renamed) · Import past runs
   About Piwi      What Piwi does · Why Piwi? · Privacy & data flow
 
-Features                           /features/ and /recipes/, rendered from the catalog
-  Recipes                    All recipes · the five recipes
+Features                           /features/ and /recipes/, rendered from the catalog; (recipe) marks a recipe
   Keep the history           UI overview · Branches · What changed in a run · Offline export · Share links
   Trends and reports         Analytics · Dashboards · Quality reports · Timeline markers · Notifications & alerts
-  Explain the failures       Failure evidence · Failure clusters & the inbox · Flaky tests & quarantine ·
+  Explain the failures       Regression or flake? (recipe) · Triage a run gone red (recipe) ·
+                             Cut costly flakiness (recipe) · Cut the time it costs (recipe) ·
+                             Failure evidence · Failure clusters & the inbox · Flaky tests & quarantine ·
                              Slow tests & wasted time · AI diagnosis
-  Hand back a fix            Locator healing · Who uses a locator · Fix plans, reproduce & bisect · Auto-heal PRs ·
-                             Issue tracking (Jira) · Pull-request feedback & re-run (split from CI) ·
-                             Test selections (moved) · AI steps (moved)
+  Hand back a fix            Fix a broken locator (recipe) · Locator healing · Who uses a locator ·
+                             Fix plans, reproduce & bisect · Auto-heal PRs · Issue tracking (Jira) ·
+                             Pull-request feedback & re-run (split from CI) · Test selections (moved) · AI steps (moved)
   Find what your tests miss  Scenario gaps & the Test Map · Uncovered changes in pull requests (split) · Probes (split)
   Use it from elsewhere      MCP server · Agent skills (split) · Desktop app · Browser extension · Tested elements ·
                              Test functions catalog · Open in IDE
@@ -213,14 +216,17 @@ The main choices:
   tools, a skill, a pull-request section, dashboard widgets and a capability, and it answers a question none of the
   three asks. Its page splits into the three entries the catalog already has. This does change the product framing
   (decision 1).
-- **Recipes open the Features sidebar.** A reader browsing Features meets the task-first pages before the feature
-  list, and the navigation has one section fewer. Groups collapse, so only the reader's current group is open.
+- **Each recipe opens the group it serves.** A recipe follows one task across several features, so it belongs next to
+  them rather than in a group of its own. Today almost nothing leads to the recipes: the app's inline help links to
+  none of them, one feature page links to one, and only the landing page links to their index. The Recipes group and
+  its index page go. Groups collapse, so only the reader's current group is open.
 - **Self-hosting** replaces the label "Operate": it is the standard term for running your own server. The catalog
   group "Run your instance" takes the same name.
 - **Integrations keeps its name**, because it matches Settings → Integrations; it and Issue tracking link to each
   other at the top.
 - **Four URLs move:** `guide/ai-steps`, `guide/test-selection`, `reference/feature-map` and
-  `features/analytics-widgets`, each with a row in `public/404.html`. Every other change adds a page or keeps one.
+  `features/analytics-widgets`, each with a row in `public/404.html`. A fifth row sends the removed recipes index to
+  the landing page. Every other change adds a page or keeps one.
 
 ### The landing page
 
@@ -234,7 +240,8 @@ from search.
 - **One card per catalog group**, built from each group's title and one-line intro, instead of six hand-picked
   features.
 - **Entry points by reader**, three or four links each: *I write Playwright tests*, *Something is red right now*,
-  *I run Piwi for a team*, *I report to people who don't open Piwi*, *I connect an agent or automate*.
+  *I run Piwi for a team*, *I report to people who don't open Piwi*, *I connect an agent or automate*. *Something
+  is red right now* lists the five recipe questions and replaces the recipes index.
 - Cut: "Why this exists" (it opens What Piwi does), the "Also here" paragraph (All features lists everything), four
   of the seven gallery images.
 
@@ -247,9 +254,31 @@ from search.
 | Probes | client probes and `piwi probe`, the "not noticed" gap, server probes as one Experimental section | Reporter; backend instrumentation for server probes |
 | Reference: gap detectors & exposure | the detector table, the exposure factors, what the graph includes | none |
 
+### The recipes
+
+The five recipes keep their pages and URLs under `/recipes/`. Each one moves to the top of the group it serves and
+gets linked from where its question comes up: the "Related" footer of the feature pages it draws on, and the in-app
+help on the matching screen.
+
+| Recipe | Group | Linked from the feature pages | Linked from the help topic |
+|---|---|---|---|
+| Regression or flake? | Explain the failures | What changed in a run, Flaky tests & quarantine, Timeline markers | `run.changes` |
+| Triage a run gone red | Explain the failures | Failure clusters & the inbox, AI diagnosis | `cluster.concept` |
+| Cut costly flakiness | Explain the failures | Flaky tests & quarantine, Analytics | `project.flaky-tests` |
+| Cut the time it costs | Explain the failures | Slow tests & wasted time, Analytics | `project.performance` |
+| Fix a broken locator | Hand back a fix | Locator healing, Browser extension, Failure evidence | `locator-healing` |
+
+- **The in-app link needs one small app change.** A help topic carries a single `doc` link today, shown as "Learn
+  more". Topics gain an optional `recipe` field, shown as a second link labeled with the recipe's question, and the
+  drift test's link check reads that field too.
+- **Three recipes re-explain a feature**, against the docs guide's own rule. "Cut costly flakiness" copies the
+  five-row table of root-cause classes, "Fix a broken locator" repeats the pause-on-failure options, and "Triage a
+  run gone red" repeats the fingerprint masking. Those passages become links.
+- **The index page goes.** Its questions move to the landing page, and its table of tools repeats All features.
+
 ## What gets removed
 
-Deleted outright, with no copy anywhere: **about 10,400 words**.
+Deleted outright, with no copy anywhere: **about 10,600 words**.
 
 | Content | Page | Words now | Action | Removed |
 |---|---|---:|---|---:|
@@ -266,14 +295,14 @@ Deleted outright, with no copy anywhere: **about 10,400 words**.
 | Copies of locator healing and fix plans | `ai-diagnosis.md` | 332 | links | 330 |
 | Streaming internals and "How it works" | `reporter.md` | 471 | keep the switches | 300 |
 | Storage architecture internals | `storage.md` | 361 | keep what an operator decides | 260 |
-| Tool table that repeats the feature list | `recipes/index.md` | 256 | cut | 256 |
+| Recipes index | `recipes/index.md` | 441 | removed; its questions move to the landing page and its tool table repeats All features | 400 |
 | Landing duplicates | `index.md` | 250 | cut | 250 |
 | Hand-written endpoint paths | 23 pages | 36 lines | link the API docs | 240 |
 | Unreleased and planned behavior | `scenario-gaps.md` | 250 | one Experimental section | 190 |
 | Second CI provider list | `reporter.md` | 350 | CI & sharding owns it | 150 |
 | Second "try it without editing your config" | `reporter.md`, `getting-started.md` | 250 | Reporter owns it | 120 |
 | Contributor material | `desktop.md`, `getting-started.md` | 58 | CONTRIBUTING | 58 |
-| **Total** | | | | **about 10,400** |
+| **Total** | | | | **about 10,600** |
 
 Moved to generated pages: the reporter option and environment variable tables (1,468 words), the MCP tool tables
 (about 1,100 words) and the analytics widget list (947 words). Rewriting the remaining long pages to their template
@@ -282,9 +311,9 @@ reference already lists) takes out about 3,500 more.
 
 | | Now | After |
 |---|---:|---:|
-| Pages | 65 | about 83 |
+| Pages | 65 | about 82 |
 | Hand-written words | about 82,000 | about 66,000 |
-| Average hand-written page | about 1,370 words | about 890 words |
+| Average hand-written page | about 1,370 words | about 900 words |
 | Hand-written pages over 1,500 words, reference excluded | 16 | 0 |
 | Word budget allowlist | 9 entries | deleted |
 
@@ -327,6 +356,7 @@ flat list. Each rule below is a check in the drift test or a line in the docs ag
 | Every docs URL in `README.md`, `DOCKER_HUB.md`, `ROADMAP.md` and the package and integration READMEs resolves to a page and heading | test; it catches the dead README link |
 | No endpoint path in prose, except `/api/health` and `/api/metrics`; link the API reference | test |
 | No "planned", "not yet wired" or "coming soon" in hand-written pages | test, extending the version-history check |
+| Every recipe is linked from at least one feature page and one in-app help topic | test |
 | A new term goes into `concepts.md` in the change that introduces it | agent guide |
 | A new feature adds a catalog entry and one feature page; it never extends another feature's page | agent guide |
 
@@ -365,7 +395,8 @@ has merged, because they edit pages PR 2 slims.
 **PR 1: one taxonomy** (1 day, one URL change)
 
 - Top navigation; Guide sidebar in three groups; Self-hosting label and groups; the Reference list.
-- Features sidebar rendered from the catalog, Recipes group first. In the catalog: Issue tracking added, "Trends and
+- Features sidebar rendered from the catalog, each recipe at the top of the group it serves; the recipes index
+  removed, with a redirect to the landing page. In the catalog: Issue tracking added, "Trends and
   reports" split out of "Keep the history", and the fourth job if decision 1 is yes.
 - Landing page: three steps, one card per catalog group, entry points by reader.
 - Feature map renamed All features, with one redirect row.
@@ -402,6 +433,8 @@ has merged, because they edit pages PR 2 slims.
 - Analytics widgets and Metrics generated under `/reference/`; the hand-written widget page goes.
 - `ai-steps.md` and `test-selection.md` move to `/features/`, with two redirect rows.
 - Extension, desktop, locator healing and notifications rewritten to the template.
+- Each recipe linked from the "Related" footer of the feature pages it draws on; the recipes' re-explanations become
+  links. Help topics gain the optional `recipe` field, and five topics link their recipe.
 - The budget check switches to one budget per type with no allowlist.
 - About 25 in-app link updates, eight of them the widget band anchors.
 
@@ -446,7 +479,8 @@ and Quality reports, and every other `operate/…` link.
 
 ## Further options
 
-Three larger moves. The revamp does not need them; each follows from a principle Piwi already states.
+Three larger moves and one measurement. The revamp does not need them; each follows from a principle Piwi already
+states.
 
 **Docs served by the instance, matching its version.** Operators pin versions and Piwi is pre-1.0, so a pinned
 0.30 instance sends its inline help, and since 0.38.0 its sidebar link, to docs written for 0.39. An air-gapped
@@ -468,6 +502,11 @@ route in the seeded demo, would render a "See it in the demo" link beside the `<
 features table: one click from every feature to the working screen, with nothing to install. A check resolves each
 route against the app's pages.
 
+**Search traffic for the recipes.** The docs guide says recipes exist for search queries that never mention Piwi,
+and the docs site has no analytics, so nobody knows whether those searches arrive. Google Search Console answers it
+without adding anything to the pages: the domain is verified with a DNS record, and its report lists the queries that
+led to each page. Whether to register the domain with Google is your call.
+
 ## Decisions for you
 
 1. **The Test Map as a fourth job**, "Find what your tests miss". Recommended: it has its own tab, CLI command, MCP
@@ -475,7 +514,8 @@ route against the app's pages.
    `ROADMAP.md`, What Piwi does, the catalog and the landing cards. The alternative keeps three jobs and leaves it
    under "Hand back a fix". While the groups change, two other placements deserve a look: Test selections and AI
    steps sit under "Hand back a fix", where few readers would search for them.
-2. **The catalog drives the sidebar, with a "Trends and reports" group.** Recommended. The group changes no product
+2. **The catalog drives the sidebar, with a "Trends and reports" group and each recipe at the top of the group it
+   serves.** Recommended. The group changes no product
    framing, because `ROADMAP.md` already calls analytics and notifications delivery routes. The alternative keeps
    the sidebar hand-written in `config.mts`, with a check that it matches the catalog.
 3. **One 1,500-word budget per page type, with no allowlist**, instead of 1,200 words for feature pages with nine
@@ -489,7 +529,7 @@ route against the app's pages.
 
 | Page | Words now | Action | Target |
 |---|---:|---|---:|
-| `index.md` | 617 | three steps, catalog group cards, entry points by reader | 500 |
+| `index.md` | 617 | three steps, catalog group cards, entry points by reader, the five recipe questions | 550 |
 | guide/getting-started | 1,834 | three steps; capabilities move to Self-hosting | 900 |
 | guide/first-failure | 931 | the one description of the situation block; linked from Getting started and the landing | 1,000 |
 | guide/concepts | 2,132 | adds the Test Map terms, reach, the locator index; owns the baseline rule; reference type | 2,400 |
@@ -532,7 +572,8 @@ route against the app's pages.
 | operate/capabilities | new | from getting-started | 350 |
 | operate/storage | 1,623 | architecture internals cut | 1,350 |
 | other operate pages (7) | 4,650 | the production checklist takes the one security list | 4,700 |
-| recipes (6) | 4,840 | index table cut, re-explanations become links | 4,550 |
+| recipes/index | 448 | removed, redirected to the landing page | removed |
+| recipes (5) | 4,392 | each at the top of its group; re-explanations become links | 4,150 |
 | reference/cli | 1,923 | unchanged, flag check added | 1,950 |
 | reference/reporter-options | new | generated | generated |
 | reference/mcp-tools | new | generated | generated |
