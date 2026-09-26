@@ -1,13 +1,14 @@
 ---
-title: Storage configuration
-description: "Local or S3-compatible storage for reports and traces, data retention, runs kept forever, cleanup, and how evidence is stored."
+title: Storage & retention
+description: "Local or S3-compatible storage for reports and traces, data retention, runs kept forever, cleanup, and what trace snapshots cost."
 lang: en-US
 ---
 
-# Storage configuration
+# Storage & retention
 
-Test artifacts — HTML reports, trace files, screenshots, videos, attachments — are written to one of
-two backends. Runs, test cases and settings live in the [database](./database) instead.
+Test artifacts (HTML reports, trace files, screenshots, videos, attachments) are written to one of
+two backends. Runs, test cases and settings live in the [database](./database) instead. This page also covers how
+long runs are kept: [retention](#data-retention), [runs kept forever](#keeping-runs-forever) and manual cleanup.
 
 Every variable below is an ordinary environment variable: pass it to the container, put it in your
 `.env`, or set it in your host's dashboard. The
@@ -119,11 +120,10 @@ A kept run cannot be deleted until it is released.
 A nightly sweep (03:17 server time) handles recurring cleanup:
 
 - **Test-run pruning** — deletes runs older than `PIWI_RETENTION_DAYS` days, including their files, traces, and reports. **Off by default**: deleting history is opt-in, so nothing is pruned until you set the variable. [Kept runs](#keeping-runs-forever) are never pruned, and `PIWI_RETENTION_MIN_RUNS` keeps each project's newest runs whatever their age, so a project that stops reporting keeps its last runs instead of emptying.
-- **Analytics rollups** — before pruning, the sweep recomputes the [daily rollups](/features/analytics#where-the-numbers-come-from) of the last seven days (or of `PIWI_RETENTION_DAYS`, when shorter) from the stored runs. Pruned runs' numbers are moved into the rollups in the same transaction that deletes them, so the analytics trends keep the days that retention empties; deleting a single run by hand removes its numbers instead.
+- **Analytics rollups** — pruned runs' numbers are moved into the [daily rollups](/features/analytics#where-the-numbers-come-from) in the same transaction that deletes them, so the analytics trends keep the days that retention empties; deleting a single run by hand removes its numbers instead.
 - **Notification outbox pruning** — removes sent/failed delivery rows older than `PIWI_RETENTION_NOTIFICATION_DAYS` days (default 30).
 - **Report snapshot pruning** — removes the stored [quality reports](/features/quality-reports#report-schedules) older than `PIWI_RETENTION_REPORT_DAYS` days (default 365; 0 keeps them).
 - **Diagnosis history capping** — keeps the newest `PIWI_RETENTION_DIAGNOSIS_VERSIONS` versions per AI diagnosis (default 20).
-- **Orphan sweep** — removes rows whose parent records were deleted by older versions.
 
 The manual **Settings › Storage** cleanup remains available for one-off bulk deletes and uses the same deletion logic.
 
@@ -145,7 +145,7 @@ There are three ways to keep a run:
 
 A kept run shows a lock next to its number in the runs table and a **Kept** mark in its header; its **Details** say who kept it, when and why. The runs table's **Kept runs only** box lists every kept run of the project, however far back. **Settings › Storage** shows how many runs are kept and how much storage their own files hold.
 
-Only an administrator can **release** a run (**Release keep** in the same menus), which puts it back under retention. A kept run cannot be deleted until it is released. The API equivalent is `PATCH /api/test-runs/:id` with `{ "keep": true, "keepReason": "…" }` or `{ "keep": false }` — see the [API docs](https://piwitests.dev/demo/docs).
+Only an administrator can **release** a run (**Release keep** in the same menus), which puts it back under retention. A kept run cannot be deleted until it is released. Scripts can keep and release runs through the API; see the [API docs](https://piwitests.dev/demo/docs).
 
 ### Space reclamation
 
@@ -156,48 +156,30 @@ Deleting runs removes rows and stored files, but giving the freed pages back to 
 
 ## Storage architecture
 
-The dashboard uses an abstraction layer that allows switching backends without any code changes. Files are stored using relative paths (e.g. `project-1/run-123/index.html`), making migration between backends straightforward.
+Files are stored under relative paths (e.g. `project-1/run-123/index.html`), so the same layout works on either
+backend. What happens to them is automatic and needs no configuration:
 
-### Compression at rest
+- **Traces are split and compressed.** Each trace's network resources go to a shared pool, stored once per project
+  and freed as soon as no remaining trace references them; the rest of the trace, and every text resource, is
+  compressed. Reconstructed traces, the evidence views and offline exports see the original bytes.
+- **Failure evidence is stored once.** The ARIA snapshot, source snippet and stack frames of a failure are stored
+  once per project and shared by every execution that fails the same way.
 
-Trace files are the largest evidence Piwi keeps, and most of their bytes are text — the trace event
-stream (`trace.trace`, `trace.network`, `trace.stacks`), the ARIA snapshots, and captured network bodies
-(HTML, CSS, JavaScript, JSON). These are compressed where they are stored:
-
-- The **slim events blob** — the part of each trace kept after the shared resources are split out —
-  deflates its text entries per file, leaving already-compressed entries (screen-snapshot PNGs, fonts)
-  stored as they are. The result is still an ordinary ZIP the Playwright trace viewer opens directly.
-- The **shared resource pool** gzip-compresses each text resource on the way in and restores it on the
-  way out; images, fonts and other already-compact resources are stored untouched. A resource is never
-  written larger than it arrived.
-
-Compression is transparent: reconstructed traces, the evidence views and offline exports all see the
-original bytes, and resources written before compression existed keep reading unchanged. It stacks on top
-of deduplication — a resource is stored once per project **and** compressed — and it needs no
-configuration.
-
-Shared resources are also **reference-counted**: each is freed as soon as no remaining trace references it,
-so deleting some of a project's runs reclaims the resources unique to them without waiting for the whole
-project to be removed. This applies automatically; evidence stored before an upgrade is enrolled by a
-one-time background pass, and a nightly sweep frees anything left unreferenced.
-
-### Evidence payload deduplication
-
-Large failure evidence captured per execution — the page's ARIA snapshot, the failing test's source snippet, and its source stack frames — is stored content-addressed: each unique payload is written once per project (keyed by SHA-256) and executions reference it by id. A test that fails the same way across many runs, or across several browsers in one run, stores that evidence a single time instead of once per execution. Unreferenced payloads are garbage-collected when runs are deleted. Deduplication happens server-side at ingest, so it applies regardless of reporter version.
+The one capture choice that visibly changes storage growth is the `screen` trace snapshot, below.
 
 ## Trace snapshots
 
-A Playwright 1.63 trace can record an **aria tree** and a **screenshot** before and after every action (`trace: { snapshots: { dom, aria, screen } }`). Those files ride inside the trace ZIP — `aria/<callId>-<phase>.json` and `screenshots/<callId>-<phase>.png` — and the dashboard keeps them in the slim events blob alongside the trace stream, so the [Screen tab and the filmstrip](/features/evidence#aria-and-screen-snapshots) read them straight back.
+A Playwright 1.63 trace can record an **aria tree** and a **screenshot** before and after every action (`trace: { snapshots: { dom, aria, screen } }`). Those files ride inside the trace ZIP — `aria/<callId>-<phase>.json` and `screenshots/<callId>-<phase>.png` — and the dashboard keeps them with the rest of the trace, so the [Screen tab and the filmstrip](/features/evidence#aria-and-screen-snapshots) read them straight back.
 
 The two kinds cost very differently:
 
 - **`aria`** adds one small JSON tree per action per phase — a few hundred bytes each, negligible next to the trace it rides in. [`wrapConfig`](/guide/reporter#installing-via-wrapconfig) turns it on by default on Playwright 1.63+.
 - **`screen`** adds a **PNG per action per phase** — by far the trace's biggest cost, growing with the page size and the number of actions. It stays **opt-in**: enable it only when you want the filmstrip and the before/after screenshots, and pair it with [data retention](#data-retention) so the extra bytes are swept. Enable it with `use: { trace: { mode: 'retain-on-failure', snapshots: { dom: true, aria: true, screen: true } } }`.
 
-Unlike the network resource pool, these entries are not deduplicated across executions — each is unique to its action's page — so `screen` is the one capture option that visibly changes storage growth.
+Unlike the network resource pool, these entries are not shared across executions: each is unique to its action's page.
 
 ## Related
 - [Database](./database) — SQLite versus PostgreSQL, and what lives there instead
 - [Configuration reference](/reference/configuration#storage) — every `PIWI_STORAGE_*` and `PIWI_S3_*` variable
-- [Backups](./deployment#backups) — copying the storage directory alongside the database
+- [Backup & restore](./backup-restore) — copying the storage directory alongside the database
 - [Offline export](/features/offline-export) — taking one investigation out of storage entirely

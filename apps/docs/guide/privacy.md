@@ -110,5 +110,5 @@ provider, SCM, SMTP, storage and notification clients are the only things there 
 
 ## Related
 - [Authentication](/operate/authentication) — roles, API keys, and project-level access
-- [Deployment → Security](/operate/deployment#security) — hardening a public instance
+- [Production checklist](/operate/production-checklist#before-you-expose-it) — hardening a public instance
 - [Why Piwi?](./comparison#is-my-data-safe-does-piwi-phone-home) — the same question, short form

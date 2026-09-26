@@ -154,7 +154,7 @@ export const PIWI_ENV_CATEGORIES: Record<PiwiEnvVarCategory, PiwiEnvVarCategoryM
     title: 'Storage',
     order: 3,
     intro: 'Controls where test artifacts (HTML reports, traces, attachments) are stored.',
-    note: 'Full details and IAM examples: [Storage configuration](/operate/storage).',
+    note: 'Full details and IAM examples: [Storage & retention](/operate/storage).',
   },
   auth: {
     title: 'Authentication',

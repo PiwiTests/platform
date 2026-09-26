@@ -94,7 +94,7 @@ JUnit, pytest and Cypress results, or you only ever debug on your own machine,
 
 - [Deployment](/operate/deployment): Docker, Compose, Kubernetes and one-click hosts
 - [Production checklist](/operate/production-checklist): what to set before anyone else can reach it
-- [Authentication](/operate/authentication): roles, OAuth, API keys and project access
+- [Authentication](/operate/authentication): sign-in, roles and OAuth, with [project access](/operate/project-access) and [API keys](/operate/api-keys)
 - [Upgrading](/operate/upgrading): what a version bump does, and why there is no downgrade
 
 ### I report to people who don't open Piwi
