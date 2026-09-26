@@ -47,13 +47,25 @@ export const RECIPES_BY_GROUP: Record<string, SidebarItem[]> = {
   'Hand back a fix': [{ text: 'Fix a broken locator', link: '/recipes/broken-locator' }],
 };
 
-/** The anchor VitePress gives a heading, for linking to a group on the All features page. */
-const headingAnchor = (heading: string) =>
-  heading
-    .toLowerCase()
-    .replace(/[^\w\- ]+/g, '')
-    .trim()
-    .replace(/\s+/g, '-');
+/**
+ * The anchor VitePress gives a heading: the heading's text, where a link counts
+ * as its label and inline HTML such as a badge not at all, passed through the
+ * `slugify` of `@mdit-vue/shared` that the docs build uses. It is copied rather
+ * than imported because the app's unit tests load this module without the docs
+ * dependencies installed.
+ */
+export function headingAnchor(heading: string): string {
+  return heading
+    .replace(/<[^>]*>/g, '')
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .normalize('NFKD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[\s~`!@#$%^&*()\-_+=[\]{}|\\;:"'“”‘’<>,.?/]+/g, '-')
+    .replace(/-{2,}/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .replace(/^(\d)/, '_$1')
+    .toLowerCase();
+}
 
 /**
  * One sidebar group per catalog group, holding its recipes and then the catalog

@@ -130,10 +130,15 @@ exists for the long-tail searches that never contain the word "Piwi", so:
 ### What the drift test checks
 
 `apps/application/tests/unit/docs-drift.test.ts` fails when a docs link the code builds points at a missing page or
-heading, a `features/` page is missing from the catalog, a page has no `description`, a sidebar entry points at a
-missing page or differs from that page's H1, or a docs URL in `README.md`, `DOCKER_HUB.md`, `ROADMAP.md` or a
-package or integration README points at a missing page or heading. It also guards the positioning line, the MCP tool
-count, the single-source snippets, changelog wording on hand-written pages and the feature-page word budget.
+heading, a link between two docs pages points at a missing page or heading, a `features/` page is missing from the
+catalog, a page has no `description`, a sidebar entry points at a missing page or differs from that page's H1, or a
+docs URL in `README.md`, `DOCKER_HUB.md`, `ROADMAP.md` or a package or integration README points at a missing page or
+heading. It also guards the positioning line, the MCP tool count, the single-source snippets, changelog wording on
+hand-written pages and the feature-page word budget.
+
+The docs build itself only fails on a link to a missing page, and pull requests do not run it, so this test is what
+catches a heading that moved. It computes anchors the way VitePress does (`headingAnchor` in `.vitepress/navigation.ts`);
+when you move a section, keep its heading text or update every link the test names.
 
 
 ## Writing conventions

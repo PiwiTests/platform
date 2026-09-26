@@ -1,11 +1,11 @@
 import { describe, test, expect } from 'vitest';
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dirname, join, relative } from 'node:path';
+import { dirname, join, posix, relative } from 'node:path';
 import { MCP_TOOL_DEFS } from '#shared/mcp-tools';
 import { FEATURE_NEED_DOCS, PIWI_FEATURE_GROUPS } from '#shared/piwi-features';
 import { PIWI_ENV_VARS } from '#shared/piwi-env-vars';
-import { sidebars } from '../../../docs/.vitepress/navigation';
+import { headingAnchor, sidebars } from '../../../docs/.vitepress/navigation';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..');
 const read = (relative: string) => readFileSync(join(repoRoot, relative), 'utf8');
@@ -14,27 +14,29 @@ const read = (relative: string) => readFileSync(join(repoRoot, relative), 'utf8'
 // only on disk once `docs:gen` has run, and a check skips them rather than fail.
 const GENERATED_PAGES = new Set(['reference/configuration', 'reference/features', 'reference/whats-new']);
 
-// The anchor VitePress gives a heading, as the app and the docs link to it.
-const slug = (heading: string) =>
-  heading
-    .toLowerCase()
-    .replace(/`/g, '')
-    .replace(/\*\*/g, '')
-    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
-    .replace(/[^\w\- ]+/g, '')
-    .trim()
-    .replace(/\s+/g, '-');
+const FRONT_MATTER = /^---\n[\s\S]*?\n---\n/;
+const FENCED_CODE = /^(`{3,}|~{3,})[\s\S]*?^\1/gm;
 
-// Every anchor a docs page offers: its h2-h4 headings, a heading's own
-// `{#id}`, and explicit `<a id="…">` targets.
+// Every anchor a docs page offers, as the docs build assigns them: one per
+// heading at any level (a heading's own `{#id}`, or its text slugified, with
+// -1, -2 appended to a repeat), plus the `id` of any HTML element.
 const anchorsOf = (path: string) => {
-  const contents = readFileSync(path, 'utf8');
+  const contents = readFileSync(path, 'utf8').replace(FRONT_MATTER, '').replace(FENCED_CODE, '');
+  const seen = new Set<string>();
+  const unique = (anchor: string) => {
+    let candidate = anchor;
+    for (let i = 1; seen.has(candidate); i++) candidate = `${anchor}-${i}`;
+    seen.add(candidate);
+    return candidate;
+  };
   return [
-    ...[...contents.matchAll(/^#{2,4} (.+)$/gm)].map((m) => {
-      const custom = /\{#([\w-]+)\}\s*$/.exec(m[1]!);
-      return custom ? custom[1]! : slug(m[1]!);
+    ...[...contents.matchAll(/^#{1,6} (.+?)\s*$/gm)].map((m) => {
+      const custom = /\{#([\w-]+)\}$/.exec(m[1]!);
+      if (!custom) return unique(headingAnchor(m[1]!.replace(/\s*\{[^}]*\}$/, '')));
+      seen.add(custom[1]!);
+      return custom[1]!;
     }),
-    ...[...contents.matchAll(/<a id="([\w-]+)"/g)].map((m) => m[1]!),
+    ...[...contents.matchAll(/<[a-z][\w-]*\s[^>]*\bid="([\w-]+)"/g)].map((m) => m[1]!),
   ];
 };
 
@@ -122,6 +124,11 @@ describe('docs pages the app deep-links into', () => {
         return [
           ...[...contents.matchAll(/doc: '([^']+)'/g)].map((m) => m[1]!),
           ...[...contents.matchAll(/DocLink\s+to="([^"]+)"/g)].map((m) => m[1]!),
+          // Markdown links in registry text, such as the env-var notes the
+          // configuration reference prints.
+          ...[...contents.matchAll(/\]\(\/((?:guide|features|operate|reference|recipes)\/[^)\s]+)\)/g)].map(
+            (m) => m[1]!,
+          ),
         ];
       }),
       // The All features page (apps/docs/reference/features.md) is generated from
@@ -330,5 +337,48 @@ describe('docs site structure', () => {
     expect(path, `${surface} links ${url}, and the docs have no such page`).toBeDefined();
     if (!anchor) return;
     expect(anchorsOf(path!), `${surface} links ${url}, and the page has no such heading`).toContain(anchor);
+  });
+
+  // The docs build fails on a link to a missing page but not on one to a
+  // missing heading, so a section that moves breaks every link to it silently.
+  // Generated pages are left out: their links come from registries checked above.
+  const handWrittenPages = docsPages.filter(
+    (p) => !GENERATED_PAGES.has(p.replace(/^apps\/docs\//, '').replace(/\.md$/, '')),
+  );
+  const brokenLinksFrom = (source: string) => {
+    const contents = read(source);
+    const frontMatter = FRONT_MATTER.exec(contents)?.[0] ?? '';
+    const body = contents
+      .slice(frontMatter.length)
+      .replace(FENCED_CODE, '')
+      .replace(/`[^`\n]*`/g, '')
+      .replace(/<!--[\s\S]*?-->/g, '');
+    const links = [
+      ...[...frontMatter.matchAll(/^\s*link: (\S+)$/gm)].map((m) => m[1]!),
+      ...[...body.matchAll(/\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g)].map((m) => m[1]!),
+      ...[...body.matchAll(/\bhref="([^"]+)"/g)].map((m) => m[1]!),
+    ];
+    const from = source.replace(/^apps\/docs\//, '').replace(/\.md$/, '');
+    return links.flatMap((link) => {
+      // Other sites, and files under public/ rather than pages.
+      if (/^([a-z][a-z\d+.-]*:|\/\/)/i.test(link)) return [];
+      const [route = '', anchor] = link.split('?')[0]!.split('#');
+      if (/\.(?!md$|html$)[a-z\d]+$/i.test(route)) return [];
+      const page = !route
+        ? from
+        : posix
+            .join('/', route.startsWith('/') ? '' : posix.dirname(from), route)
+            .slice(1)
+            .replace(/\.(md|html)$/, '')
+            .replace(/(^|\/)$/, '$1index');
+      const path = [`${page}.md`, `${page}/index.md`].map((file) => join(repoRoot, 'apps/docs', file)).find(existsSync);
+      if (!path) return GENERATED_PAGES.has(page) ? [] : [`${link} (no such page)`];
+      if (!anchor || anchorsOf(path).includes(decodeURIComponent(anchor))) return [];
+      return [`${link} (no such heading)`];
+    });
+  };
+
+  test.each(handWrittenPages)('links from %s resolve to a page and heading', (page) => {
+    expect(brokenLinksFrom(page)).toEqual([]);
   });
 });
