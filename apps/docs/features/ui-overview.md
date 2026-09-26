@@ -25,7 +25,7 @@ The sidebar gives access to the top-level sections:
 |---------|------|---------|
 | Home | `/` | Aggregate stats and activity across all projects |
 | Analytics | `/analytics` | Cross-project trends, portfolio health, and insights over a chosen time window (see [Analytics](./analytics)) |
-| Quality reports | `/reports` | The report snapshots kept and the report schedules that send them; `/reports/:id` opens one snapshot (see [Quality reports](./quality-reports#report-schedules)) |
+| Quality reports | `/reports` | Report snapshots and the schedules that send them (see [Quality reports](./quality-reports#report-schedules)) |
 | Projects | `/projects` | Full project listing with search and tag filters |
 | Settings | `/settings` | Configuration, in two groups — **Instance** (account, users, permissions, notifications, storage) and **Analysis** (AI diagnosis, wasted time, timeout hygiene, tags, pull requests) |
 | Setup *(admins)* | `/setup` | Connect the reporter, and a checklist of which optional capabilities are actually active on this instance |
@@ -68,10 +68,8 @@ Widgets are grouped into four bands, in reading order:
 
 [Timeline markers](./timeline-markers) overlay your deploys and infrastructure changes on the trend charts.
 
-The page is the built-in *Overview* dashboard: the switcher in the header opens the other built-in,
-shared and personal dashboards, and *Manage dashboards* lists them (see [Dashboards](./dashboards)).
-
-See [Analytics](./analytics) for what each widget answers and how the periods are compared.
+The page is the built-in *Overview* dashboard; its header switches to [other dashboards](./dashboards).
+[Analytics widgets](./analytics-widgets) says what each widget answers.
 
 ## Projects
 
