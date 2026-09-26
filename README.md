@@ -187,12 +187,12 @@ Found a vulnerability? Please report it privately via the [security policy](./SE
 
 | | |
 |---|---|
-| [![Failure cluster with AI diagnosis](./apps/docs/public/screenshots/failure-cluster.png)](https://piwitests.dev/features/ai-diagnosis) | [![AI diagnosis grounded in your SCM diff](./apps/docs/public/screenshots/ai-diagnosis.png)](https://piwitests.dev/features/ai-diagnosis) |
-| **Failure clusters** — forty red tests, three root causes | **AI diagnosis** — read against your actual git diff |
-| [![Flaky test detection](./apps/docs/public/screenshots/flaky-detection.png)](https://piwitests.dev/features/flaky-tests) | [![Test run detail with worker timeline](./apps/docs/public/screenshots/test-run.png)](https://piwitests.dev/features/ui-overview) |
-| **Flaky tests** — scored, classified, ranked by wasted CI time | **Run detail** — cases, worker timeline, traces, retry command |
-| [![Locator healing suggestions](./apps/docs/public/screenshots/locator-healing.png)](https://piwitests.dev/features/locator-healing) | [![Performance trends](./apps/docs/public/screenshots/performance-trends.png)](https://piwitests.dev/features/slow-tests) |
-| **Locator healing** — replacements from the last passing run | **Performance** — P90 trends and slowest-test tracking |
+| [![A red run with its failures grouped by cluster](./apps/docs/public/screenshots/tour-run-clusters.png)](https://piwitests.dev/features/failure-clusters) | [![An AI diagnosis with its evidence and a patch that applies cleanly](./apps/docs/public/screenshots/tour-ai-diagnosis.png)](https://piwitests.dev/features/ai-diagnosis) |
+| **Failure clusters**: the red tests of a run grouped by root cause, each triaged once | **AI diagnosis**: read against your git diff, its patch checked against your source |
+| [![A failing execution with its most likely cause and next step](./apps/docs/public/screenshots/tour-execution.png)](https://piwitests.dev/features/evidence) | [![Ranked replacement locators and the recommended fix](./apps/docs/public/screenshots/tour-locator-healing.png)](https://piwitests.dev/features/locator-healing) |
+| **Failing execution**: what broke, the likely cause and the next step, above the evidence | **Locator healing**: replacements from the last passing run, and the patch to apply |
+| [![Analytics: headline numbers and the health of every project](./apps/docs/public/screenshots/tour-analytics.png)](https://piwitests.dev/features/analytics) | [![The history of one test across runs](./apps/docs/public/screenshots/tour-test-history.png)](https://piwitests.dev/features/evidence#the-test-case-page) |
+| **Analytics**: pass rate, flaky tests and wasted CI minutes across projects | **Test history**: every execution of a test, long after CI deleted its artifacts |
 
 ## Where this fits
 

@@ -519,7 +519,7 @@ const windsurfSnippet = computed(() =>
               already does this as part of setup):
             </p>
             <CodeBlock code="npx @piwitests/reporter skills add" lang="bash" class="mb-3" />
-            <DocLink to="features/mcp#agent-skills" class="text-sm">What each skill does</DocLink>
+            <DocLink to="features/agent-skills" class="text-sm">What each skill does</DocLink>
           </SectionCard>
 
           <!-- Authentication -->

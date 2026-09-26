@@ -68,7 +68,7 @@ The intended workflow:
 
 ### Authoring (resolve mode)
 
-Authoring needs a running Piwi dashboard with an AI provider configured (**Settings → AI**, or the `PIWI_AI_PROVIDER` [environment variables](/reference/configuration#ai-diagnosis)). The reporter sends each iteration to the server's resolution endpoint; the server calls the model and returns one decision, which the reporter compiles deterministically. **API keys stay on the server.**
+Authoring needs a running Piwi dashboard with an AI provider configured (**Settings → AI**, or the `PIWI_AI_PROVIDER` [environment variables](/reference/configuration#ai-diagnosis)). The reporter sends each iteration to the server; the server calls the model and returns one decision, which the reporter compiles deterministically. **API keys stay on the server.**
 
 Point the reporter at that server and run the suite in resolve mode:
 
@@ -123,43 +123,25 @@ Intent mappings are as private as everything else here: templates keep their `{p
 
 Parameter values are **masked out of everything sent to the model**. The page snapshot the agent sees has your `{param}` values replaced with markers, and placeholders survive compilation as markers that are substituted locally at replay. Secrets in parameters never leave your machine. See [Privacy & data flow](/guide/privacy) for the full picture.
 
-## The `piwi ai` CLI
+## Keep the artifacts healthy
 
-```
-piwi ai check     Scan committed entries for orphans, non-canonical files and
-                  duplicate templates. Read-only; exits 1 when issues are found.
-piwi ai resolve   Author missing entries by running the suite in resolve mode.
-piwi ai prune     Delete orphaned/dormant entries.
-```
-
-`piwi ai check` is offline and CI-friendly — add it as a lint step to catch an entry whose prompt was deleted or renamed, a file that isn't in canonical form, or two prompts that collide:
-
-```bash
-npx piwi ai check          # exit 1 on any hygiene issue
-npx piwi ai check --json   # machine-readable findings
-```
+`piwi ai check` is offline and fits a CI lint step: it catches an entry whose prompt was deleted or renamed, a file
+that isn't in canonical form, and two prompts that collide, and exits `1` on any of them. `piwi ai prune` deletes
+orphaned entries. Every subcommand and flag is in the [CLI reference](/reference/cli#ai).
 
 ## Configuration
 
-Set these under the `ai` key of your reporter options (in `wrapConfig`'s second argument, or the reporter entry options). Every option has an environment-variable equivalent.
+Set these under the `ai` key of your reporter options; every option has an environment-variable equivalent, and all
+of them are in the [AI steps section of Reporter options](/reference/reporter-options#ai-steps). Authoring also reads
+`PIWI_DASHBOARD_URL` and `PIWI_API_KEY` (the server that runs the model), and `PIWI_AI_UPDATE=true` (or
+`--update-ai`) forces re-authoring of entries that already exist.
 
-| Option | Env var | Default | Purpose |
-|--------|---------|---------|---------|
-| `ai.mode` | `PIWI_AI` | `replay` | `replay` / `resolve` / `heal`. |
-| `ai.dir` | `PIWI_AI_DIR` | `__piwi__` | Per-spec directory holding committed entries. |
-| `ai.onMiss` | `PIWI_AI_ON_MISS` | `fail` | On a replay miss: `fail` (red) or `fixme` (yellow). |
-| `ai.maxSteps` | `PIWI_AI_MAX_FLOW_STEPS` | `20` | Max steps the agent may take authoring one flow. |
-| `ai.maxSnapshotChars` | `PIWI_AI_MAX_SNAPSHOT_CHARS` | `24000` | Max ARIA-snapshot characters sent per authoring iteration. |
-| `ai.optionalProbeTimeout` | `PIWI_AI_OPTIONAL_PROBE_TIMEOUT` | `2000` | Existence-probe timeout (ms) for an `optional` step during replay. |
-| `ai.responseWaitTimeout` | `PIWI_AI_RESPONSE_WAIT_TIMEOUT` | Playwright default | Timeout (ms) for a step's `waitForResponse`, and the authoring settle window. |
-| `ai.screenshotFallback` | `PIWI_AI_SCREENSHOT_FALLBACK` | `false` | Send a screenshot when the ARIA snapshot is empty (**vision models only**). |
+On the **server** side, two limits bound each authoring iteration (see the
+[AI steps section](/reference/configuration#ai-steps) of the configuration reference):
 
-Authoring also reads `PIWI_DASHBOARD_URL` and `PIWI_API_KEY` (the server that runs the model), and `PIWI_AI_UPDATE=true` (or `--update-ai`) forces re-authoring of entries that already exist.
-
-On the **server** side, two limits bound each authoring iteration — see the [AI steps section](/reference/configuration#ai-steps) of the configuration reference:
-
-- `PIWI_AI_STEP_MAX_SNAPSHOT_CHARS` — snapshot characters the model receives.
-- `PIWI_AI_STEP_MAX_OUTPUT_TOKENS` — output tokens the model may return. **Reasoning models** spend tokens on hidden chain-of-thought, so raise this (up to `8192`) when authoring with one, or the JSON decision can be truncated.
+- `PIWI_AI_STEP_MAX_SNAPSHOT_CHARS`: snapshot characters the model receives.
+- `PIWI_AI_STEP_MAX_OUTPUT_TOKENS`: output tokens the model may return. **Reasoning models** spend tokens on hidden
+  chain-of-thought, so raise this (up to `8192`) when authoring with one, or the JSON decision can be truncated.
 
 ## Related
 

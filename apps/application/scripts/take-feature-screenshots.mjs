@@ -198,18 +198,14 @@ function sceneMode(scene) {
  *
  *   - the remaining gallery images come from the live-demo capture described in
  *     `apps/docs/AGENTS.md` ("Marketing screenshots");
- *   - `demo-live-run-poster.png` is a frame of the demo video, not a screen;
- *   - `ai-diagnosis.png` needs a configured AI provider, which the dev seed
- *     has no answer for — it stays a live-demo capture.
+ *   - `demo-live-run-poster.png` is written by `record-demo-video.mjs`, with
+ *     the video it stands in for.
  */
 const EXTERNAL_DOCS_IMAGES = new Set([
   'demo-live-run-poster.png',
-  'failure-cluster-triage.png',
-  'failure-cluster.png',
   'failure-clusters-tab.png',
   'flaky-tests.png',
   'projects.png',
-  'test-run.png',
 ]);
 
 /** What the mocked `desktop_inspect_folder` reports unless a scene overrides it. */
@@ -279,6 +275,17 @@ const READY_INSPECTION = {
  *   importableRuns — desktop mode: archives `desktop_find_importable_runs` reports (default [])
  *   pickedFiles — desktop mode: archives the native import picker returns (default [])
  */
+/**
+ * Classifies project 1's flaky tests. No frontend code calls flaky-classify, so
+ * the root cause reads "—" for every row until something asks for one.
+ */
+async function classifyFlakyTests({ base, request }) {
+  const flaky = await (await request.get(`${base}/api/projects/1/flaky-tests`)).json();
+  for (const test of flaky.items ?? []) {
+    await request.post(`${base}/api/projects/1/flaky-classify`, { data: { testCaseId: test.testCaseId } });
+  }
+}
+
 /** A global email channel, a weekly schedule on it and one *Run now*, once per server. */
 async function prepareReportSchedule({ base, request }) {
   const schedules = await (await request.get(`${base}/api/reports/schedules`)).json();
@@ -1038,14 +1045,7 @@ const SCENES = [
     viewport: { width: 1800, height: 1000 },
     of: '[data-shot="flaky-table"]',
     pad: 12,
-    // No frontend code calls flaky-classify, so Root cause reads "—" for every
-    // row until something asks for a classification.
-    async prepare({ request, base }) {
-      const flaky = await (await request.get(`${base}/api/projects/1/flaky-tests`)).json();
-      for (const test of flaky.items ?? []) {
-        await request.post(`${base}/api/projects/1/flaky-classify`, { data: { testCaseId: test.testCaseId } });
-      }
-    },
+    prepare: classifyFlakyTests,
   },
   {
     name: 'run-changes',
@@ -1134,6 +1134,81 @@ const SCENES = [
     viewport: { width: 1280, height: 720 },
     charts: true,
   },
+
+  // ── README tour ───────────────────────────────────────────────────────────
+  // The README shows these six in a two-column grid, so every one is a whole
+  // screen at the same size and theme; a crop of one panel would leave the
+  // grid's rows uneven. `--tag readme` recaptures the set.
+  ...[
+    {
+      name: 'tour-run-clusters',
+      description: 'Run page: the Tests tab of a red run grouped by failure cluster',
+      route: '/test-runs/2',
+    },
+    {
+      name: 'tour-ai-diagnosis',
+      description: 'Failure cluster page scrolled to its stored AI diagnosis',
+      // Needs a configured provider, or the card offers "Re-diagnose (configure
+      // AI)": start the server with PIWI_AI_PROVIDER=anthropic and any
+      // PIWI_AI_API_KEY. The stored diagnosis means no model is ever called.
+      route: '/failure-clusters/10',
+      scrollTo: '[data-shot="diagnosis-result"]',
+      scrollOffset: 16,
+    },
+    {
+      name: 'tour-execution',
+      description: 'Failing execution: headline, most likely cause, next step and the evidence tabs',
+      route: '/test-run-cases/37',
+    },
+    {
+      name: 'tour-locator-healing',
+      description: 'Broken locator: ranked replacements from the last passing run',
+      route: '/test-run-cases/533',
+      scrollTo: '[data-shot="alternative-locators"]',
+    },
+    {
+      name: 'tour-analytics',
+      description: 'Analytics: headline numbers and the health of every project',
+      route: '/analytics',
+      scrollTo: '[data-shot="analytics-headline"]',
+      scrollOffset: 64,
+      charts: true,
+    },
+    {
+      name: 'tour-test-history',
+      description: "Test history: one test's executions across every run",
+      route: '/test-cases/1',
+      charts: true,
+    },
+  ].map(({ scrollTo, scrollOffset = 72, ...scene }) => ({
+    ...scene,
+    tags: ['docs', 'readme'],
+    out: 'docs',
+    viewport: { width: 1440, height: 810 },
+    deviceScaleFactor: 2,
+    outputWidth: 1280,
+    colorScheme: 'light',
+    ...(scrollTo && {
+      async run({ page, shoot, settle }) {
+        const target = page.locator(scrollTo).first();
+        await target.waitFor({ timeout: 90000 });
+        // The dashboard scrolls inside its content panel, not the document, so
+        // scrollIntoView would shift the whole layout: scroll that panel until
+        // the section sits `scrollOffset` px under its top, heading in view.
+        await target.evaluate((node, offset) => {
+          let panel = node.parentElement;
+          while (
+            panel &&
+            !(panel.scrollHeight > panel.clientHeight && /auto|scroll/.test(getComputedStyle(panel).overflowY))
+          )
+            panel = panel.parentElement;
+          panel?.scrollBy(0, node.getBoundingClientRect().top - panel.getBoundingClientRect().top - offset);
+        }, scrollOffset);
+        await settle();
+        await shoot();
+      },
+    }),
+  })),
 
   // ── Feature states (report artifacts) ─────────────────────────────────────
   {

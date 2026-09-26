@@ -2,7 +2,7 @@
   "name": "piwi-dashboard-docs",
   "private": true,
   "scripts": {
-    "docs:gen": "node scripts/generate-configuration.mjs && node scripts/generate-features.mjs && node scripts/generate-whats-new.mjs && node scripts/generate-reporter-options.mjs",
+    "docs:gen": "node scripts/generate-configuration.mjs && node scripts/generate-features.mjs && node scripts/generate-whats-new.mjs && node scripts/generate-reporter-options.mjs && node scripts/generate-mcp-tools.mjs && node scripts/generate-analytics-widgets.mjs && node scripts/generate-metrics.mjs && node scripts/generate-llms.mjs",
     "docs:dev": "npm run docs:gen && vitepress dev",
     "docs:build": "npm run docs:gen && vitepress build",
     "docs:preview": "vitepress preview"
@@ -10,6 +10,7 @@
   "devDependencies": {
     "jiti": "^2.4.2",
     "typescript": "^6.0.3",
-    "vitepress": "^1.6.3"
+    "vitepress": "^1.6.3",
+    "zod": "^4.6.5"
   }
 }

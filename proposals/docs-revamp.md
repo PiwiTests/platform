@@ -1,5 +1,8 @@
 # Documentation revamp
 
+**Status: built.** Every pull request of the migration plan is built: PR 1 (#648), PR 2 (#650), PR 3 as #652 and
+#653, PR 4 (#649) and PR 5. The optional PR 6 is not started. The rules below are in the drift test and in `apps/docs/AGENTS.md`.
+
 A plan to reorganize the documentation site (`apps/docs/`). State audited: `main` at v0.39.0 (`cc1b701`),
 2026-09-26. Every page was measured section by section; word counts exclude code blocks. First written against
 0.37.0 on 2026-09-24; updated after 0.38.0 and 0.39.0, which added the analytics program and the locator index, and revised the same
@@ -446,7 +449,7 @@ Where the build differs from this plan, and why:
 - The branch-detection chain moved from CI & sharding to Test metadata, so CI & sharding lists what is detected and
   links there.
 
-**PR 3: feature pages** (3 days)
+**PR 3: feature pages** (3 days, built as 3a and 3b)
 
 - AI diagnosis under 1,500 words; Failure clusters takes "how failures are grouped" and "Did the fix work?".
 - Failure evidence: the situation block leaves (Your first failure explains it), clue rules go to reference.
@@ -463,6 +466,22 @@ Where the build differs from this plan, and why:
   the check that every entry in a feature group points to a whole page joins the drift test, and so do the checks
   on endpoint paths and on planned wording, with the pages they clean.
 - About 15 in-app link updates.
+
+PR 3 was built as two pull requests that ran in parallel. **PR 3a** (built) took the failure and fix pages: AI
+diagnosis, Failure clusters, Failure evidence, Your first failure, the UI overview, Locator healing, the recipe links
+and the help topics' `recipe` field. **PR 3b** takes the Test Map pages, MCP and agent skills, the extension, desktop,
+notifications and the generated reference pages. The budget switch moves to PR 5.
+
+Where PR 3a differs from this plan, and why:
+
+- Failure clusters stays under 1,200 words, not 1,500: the budget check is unchanged until PR 5, and the page has no
+  allowlist entry. The cluster page section links the situation block on Your first failure instead of repeating it,
+  and the keyboard table became one sentence.
+- Clue rules (`reference/clues.md`) is written by hand from `shared/failure-clues.ts`, with each rule's id, and adds
+  the stories that chain clues. PR 5 adds its check against `FailureClueRule`.
+- AI diagnosis keeps a one-line "Locator healing" and "Fix plans" section, so their anchors still resolve.
+- "Triage a run gone red" also links the fix verdicts instead of repeating their table.
+- The recipe check reads the `recipe` field of `HELP_TOPICS` and the links on the `features/` pages.
 
 **PR 4: Self-hosting** (built)
 
@@ -486,12 +505,38 @@ Where the build differs from this plan, and why:
   - The generated one-click manifests point at `/operate/one-click-deploy` instead of the old `/deployment`.
   - Integrations and Localization gain a Related footer; Integrations links Issue tracking at the top.
 
-**PR 5: remaining reference and checks** (1 day, after PR 3)
+**PR 5: remaining reference and checks** (built)
 
 - Notification events & webhooks, keyboard shortcuts and clue rules, each with its check; the CLI flag check against
   `--help`.
 - The MCP tool count leaves the narrative pages (landing, comparison, README, ROADMAP) and stays on the generated page.
 - Optional: `llms.txt` and `llms-full.txt`.
+- Built as planned, plus what PR 3 moved here: one word budget per page type with no allowlist, the check that every
+  entry in a feature group points to a whole page, and the checks on endpoint paths and planned wording.
+- Built differently from the plan, and why:
+  - A page's type is its folder; `guide/concepts.md` (reference) and the home page (setup) are the two listed
+    exceptions, and blog posts have no type. The budget counts the body with its code blocks, as the old check did.
+  - Five pages were over their budget after the merges and were cut, mostly by linking a reference page instead of
+    copying it: Test selections (the flags stay in the CLI reference), AI steps (its options table and CLI section),
+    Capture fixtures (the opt-out table, now on Reporter options), Import past runs (the demo internals) and
+    "Our suite takes too long".
+  - "Trends over time" is folded into the Analytics catalog entry: the periods are a section of the Analytics page,
+    not a feature with its own page.
+  - The endpoint check matches prose paths against the routes under `server/api`, so an example route of the
+    reader's app (`/api/orders`) or another product's API stays allowed. The OAuth callback URLs moved into a code
+    block, since an operator pastes them.
+  - The planned-wording check bans the phrasings that announce future work ("is planned", "not yet wired",
+    "coming soon", "unreleased"), not the bare word "planned", which has honest uses.
+  - Notification events adds `auto_heal.pr_opened`, which the old table missed. Notifications is at 950 words.
+  - Keyboard shortcuts is checked against the go-to chords and the failure inbox's keys, the two lists the app
+    registers; the viewers' arrow keys are listed but not checked.
+  - Gap detectors has no check: the detector ids are string literals across the detector functions, not one list,
+    and several are not called by the recompute path.
+  - The MCP tool count also leaves the MCP server feature page; the check now asserts that no page but the
+    generated one states a count.
+  - The triage screenshot of "Triage a run gone red" had no scene (it was a live-demo capture), so step 3 now
+    describes the current cluster page and the outdated image is deleted.
+  - `llms.txt` and `llms-full.txt` are built by `scripts/generate-llms.mjs` at the end of `docs:gen`.
 
 **PR 6, optional: docs served by the instance** (1 to 2 days, see Further options)
 

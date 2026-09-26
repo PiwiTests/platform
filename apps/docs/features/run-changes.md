@@ -21,7 +21,7 @@ Two ways to compare against something else:
 - **Base branch** — take the baseline from one branch only: its last passing run, same environment first. The list offers every branch with an earlier passing run, so it appears once the project has one to choose. Deep-linkable as `?baseBranch=<name>`.
 - **Run** — compare against one specific run, whatever its branch or environment. Deep-linkable as `?baseline=<runId>`, so a link to a comparison reopens the same two runs. **Previous run** is the shortcut for the run just before this one.
 
-**Automatic** returns to the default choice. The same two options exist on the API (`GET /api/test-runs/{id}/insights?baseBranch=…` / `?baseline=…`) and on the MCP `get_run_insights` tool (`baseBranch`).
+**Automatic** returns to the default choice. The same two options exist on the REST API (see the [API docs](https://piwitests.dev/demo/docs)) and on the MCP `get_run_insights` tool (`baseBranch`).
 
 ## What it shows
 
@@ -42,6 +42,7 @@ Comparing two runs is also how the [run comparison](./ui-overview#test-run-detai
 
 ## Related
 
+- [Regression or flake?](/recipes/regression-or-flaky): the Changes tab, used to decide whether one red test is new
 - [Branches](./branches#branch-aware-baselines) — why the default baseline is the same-branch run
 - [Flaky tests](./flaky-tests) — the per-project flaky, regression and spec-health signals
 - [Failure clusters & the inbox](./failure-clusters) — the failures grouped by cause

@@ -4,8 +4,9 @@ import { DOCS_BASE_URL } from '#shared/docs';
 
 /**
  * Verifies the inline-help affordance (`HelpHint`): the trigger is an
- * accessible button, activating it reveals the explanatory popover, and the
- * "Learn more" link points at the right docs anchor.
+ * accessible button, activating it reveals the explanatory popover, the
+ * "Learn more" link points at the right docs anchor, and a topic's recipe
+ * shows as a second link labeled with its question.
  *
  * NOTE: in dev mode Vite compiles pages on-demand, so the SSR markup is
  * interactive only once the client bundle hydrates (a few seconds on first
@@ -40,7 +41,7 @@ test.describe('Inline help (HelpHint)', () => {
     await expect(learnMore).toHaveAttribute('target', '_blank');
   });
 
-  test('project detail performance hint links to the flaky-tests docs', async ({ page, request }) => {
+  test('project detail performance hint links to the slow-tests docs and its recipe', async ({ page, request }) => {
     const res = await request.post('/api/test-runs/submit', {
       data: {
         projectName: PROJECT.INLINE_HELP,
@@ -67,6 +68,11 @@ test.describe('Inline help (HelpHint)', () => {
     await expect(page.getByText('Duration trends for the suite')).toBeVisible();
     const learnMore = page.getByRole('link', { name: /Learn more/ });
     await expect(learnMore).toHaveAttribute('href', `${DOCS_BASE_URL}/features/slow-tests`);
+
+    // The topic's recipe is a second link, labeled with the recipe's question.
+    const recipe = page.getByRole('link', { name: /Cut the time it costs/ });
+    await expect(recipe).toHaveAttribute('href', `${DOCS_BASE_URL}/recipes/faster-suite`);
+    await expect(recipe).toHaveAttribute('target', '_blank');
   });
 
   test('settings AI provider hint lists the backing PIWI_AI_* env vars', async ({ page }) => {
