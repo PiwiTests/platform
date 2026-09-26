@@ -25,7 +25,8 @@ const GENERATED_PAGES = new Set([
 ]);
 
 const FRONT_MATTER = /^---\n[\s\S]*?\n---\n/;
-const FENCED_CODE = /^(`{3,}|~{3,})[\s\S]*?^\1/gm;
+// A fence may be indented, inside a list item.
+const FENCED_CODE = /^[ \t]*(`{3,}|~{3,})[\s\S]*?^[ \t]*\1/gm;
 
 // Every anchor a docs page offers, as the docs build assigns them: one per
 // heading at any level (a heading's own `{#id}`, or its text slugified, with
@@ -202,7 +203,7 @@ describe('single-source snippets', () => {
   }
 });
 
-describe('no leaked version history', () => {
+describe('no leaked version history or planned work', () => {
   // Version history belongs on the generated What's new page (from the
   // changelog), not scattered through the feature pages as "since version X" /
   // "now supports Y" asides that go stale. This bans only the phrasings that are
@@ -210,6 +211,21 @@ describe('no leaked version history', () => {
   // left out because they have too many legitimate uses ("a mark it no longer
   // needs", "the tags used to organize projects").
   const BANNED = [/\bsince version\b/i, /\bsince v\d/i, /\bnow supports\b/i];
+  // A page describes what a default install does today, so planned work
+  // stays in ROADMAP.md (proposals/docs-revamp.md, principle 5). "Planned" alone
+  // has honest uses (Playwright's planned test list), so only the phrasings
+  // that announce future work are banned. An **Experimental** section, which
+  // documents something that ships behind a switch, stays allowed.
+  const PLANNED = [
+    /\b(?:is|are|was|were|still|currently) planned\b/i,
+    /\bplanned (?:for|in|as|feature|work|support)\b/i,
+    /\(planned\)/i,
+    /\bnot yet (?:wired|implemented|available|supported|shipped|released)\b/i,
+    /\bcoming soon\b/i,
+    /\bunreleased\b/i,
+    /\b(?:in|with) (?:a future|an upcoming|the next) (?:release|version)\b/i,
+    /\bupcoming (?:release|version|feature)s?\b/i,
+  ];
 
   // Hand-written docs pages only: the generated pages (What's new is literally
   // the version history) and the blog essay are allowed to talk about releases.
@@ -229,6 +245,66 @@ describe('no leaked version history', () => {
         false,
       );
     }
+  });
+
+  test.each(pages)('%s announces no planned work', (page) => {
+    const contents = read(page);
+    for (const pattern of PLANNED) {
+      expect(
+        contents.match(pattern)?.[0],
+        `${page} describes planned work: describe what ships, and move the plan to ROADMAP.md`,
+      ).toBeUndefined();
+    }
+  });
+});
+
+describe('no endpoint paths in prose', () => {
+  // The API reference is the one place endpoints are documented: the in-app
+  // `/docs` page, generated from each handler's OpenAPI metadata. A path
+  // copied into a docs page goes stale when the route changes, so prose links
+  // the API reference instead. Code examples keep their paths, and so do the
+  // two endpoints an operator's tooling calls by name.
+  const ALLOWED = new Set(['/api/health', '/api/metrics']);
+
+  // Every route under server/api, one pattern per handler file: `[id]` is a
+  // parameter and `[...path]` a catch-all. The catch-all at the root (the
+  // unknown-route handler) would match any path, so it is left out.
+  const routeSegments = (function walk(dir: string, prefix: string[]): string[][] {
+    return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+      if (entry.isDirectory()) return walk(join(dir, entry.name), [...prefix, entry.name]);
+      const name = entry.name.replace(/(\.(get|post|put|patch|delete))?\.ts$/, '');
+      return [name === 'index' ? prefix : [...prefix, name]];
+    });
+  })(join(repoRoot, 'apps/application/server/api'), []).filter((route) => route.join('/') !== '[...path]');
+
+  const isPiwiEndpoint = (path: string) => {
+    const segments = path
+      .replace(/^\/api\/?/, '')
+      .replace(/\/$/, '')
+      .split('/');
+    return routeSegments.some(
+      (route) =>
+        (route.length === segments.length || route.at(-1)?.startsWith('[...')) &&
+        route.every((part, i) => part.startsWith('[') || part === segments[i]),
+    );
+  };
+
+  test('the route list is read', () => {
+    expect(isPiwiEndpoint('/api/projects/:id/quarantine')).toBe(true);
+    expect(isPiwiEndpoint('/api/orders')).toBe(false);
+  });
+
+  const pages = docsPages.filter((p) => !GENERATED_PAGES.has(p.replace(/^apps\/docs\//, '').replace(/\.md$/, '')));
+
+  test.each(pages)('%s names no Piwi endpoint outside a code example', (page) => {
+    const prose = read(page).replace(FRONT_MATTER, '').replace(FENCED_CODE, '');
+    const paths = [...prose.matchAll(/\/api\/[\w:{}.*-]+(?:\/[\w:{}.*-]+)*/g)]
+      .map((m) => m[0].replace(/\.$/, ''))
+      .filter((path) => !ALLOWED.has(path) && isPiwiEndpoint(path));
+    expect(
+      paths,
+      `${page} names Piwi endpoints in prose: link the [API docs](https://piwitests.dev/demo/docs) instead (apps/docs/AGENTS.md, "The API reference")`,
+    ).toEqual([]);
   });
 });
 
@@ -283,6 +359,20 @@ describe('docs site structure', () => {
 
   test.each(featurePages)('%s is an entry in the feature catalog', (page) => {
     expect(catalogPages.has(page), `${page} is missing from shared/piwi-features.ts`).toBe(true);
+  });
+
+  // In a feature group a catalog entry is a page: one feature, one page, one
+  // set of <Needs> chips. Only the Self-hosting group may point into a section
+  // of an operator page.
+  const featureEntries = PIWI_FEATURE_GROUPS.filter((group) => group.title !== 'Self-hosting').flatMap((group) =>
+    group.features.map((feature) => [`${group.title} → ${feature.title}`, feature.doc] as const),
+  );
+
+  test.each(featureEntries)('%s points to a whole page', (_entry, doc) => {
+    expect(
+      doc,
+      `a feature entry links a whole page, not a section: give it a page or fold it into another entry`,
+    ).not.toContain('#');
   });
 
   // The description is the page's search snippet and its social-card text.
