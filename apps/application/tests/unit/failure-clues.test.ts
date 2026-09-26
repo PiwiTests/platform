@@ -425,6 +425,34 @@ describe('wrong-page', () => {
     const input = baseInput({ appState: { url: 'https://app.test/checkout' } });
     expect(rules(input)).not.toContain('wrong-page');
   });
+
+  test('negative: a click after the last navigation moved the page on', () => {
+    const timeline = buildFailureTimeline(
+      timelineInput({
+        steps: [
+          { title: 'Navigate', category: 'navigation', params: { url: '/login' }, duration: 500, startTime: T0 },
+          { title: 'Click', category: 'action', duration: 300, startTime: T0 + 600 },
+          { title: 'Fill', category: 'input', duration: 2_000, startTime: T0 + 1_000, error: 'Timeout' },
+        ],
+      }),
+    );
+    const input = baseInput({ timeline, appState: { url: 'https://app.test/checkout' } });
+    expect(rules(input)).not.toContain('wrong-page');
+  });
+
+  test('negative: an API request is not a navigation', () => {
+    const timeline = buildFailureTimeline(
+      timelineInput({
+        steps: [
+          { title: 'Navigate', category: 'navigation', params: { url: '/account' }, duration: 500, startTime: T0 },
+          { title: 'POST', category: 'api', params: { url: '/api/seed' }, duration: 30, startTime: T0 + 600 },
+          { title: 'Expect "toBe"', category: 'assertion', duration: 2, startTime: T0 + 700, error: 'boom' },
+        ],
+      }),
+    );
+    const input = baseInput({ timeline, appState: { url: 'https://app.test/account' } });
+    expect(rules(input)).not.toContain('wrong-page');
+  });
 });
 
 describe('worker-pollution', () => {
