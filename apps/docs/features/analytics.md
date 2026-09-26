@@ -74,7 +74,7 @@ With one project in scope, *Save as selection* stores the tags as a selection yo
 
 The address carries the scope (`?period=last-month&sel=smoke`), so a copied link opens on what its
 sender saw; without it, the page opens on the scope you used last in this browser. To keep your own
-view, save a [dashboard](./dashboards).
+view, save an [analytics dashboard](./dashboards).
 
 ### Where the numbers come from
 
@@ -85,13 +85,11 @@ deletes old runs, their numbers stay in the rollups, so a one-year pass-rate lin
 retention window. Lists of tests and clusters, and anything under a test filter, read the stored runs.
 The rollups also [export](/operate/metrics) to a BI tool or a Prometheus scraper.
 
-## Widgets
+## Widgets and metrics
 
-The page is the built-in **Overview** dashboard: headline tiles, the portfolio, insights and the heatmap
-in *Where things stand*; failure clusters, flaky tests, wasted CI time and time to fix in *Where the pain
-is*; the pass rate over time, regression velocity, CI time, suite growth and flaky debt in *Which way it
-is going*; browsers and slow endpoints in *Detail*. [Analytics widgets](/reference/analytics-widgets) describes
-each one, and the widgets the other dashboards add.
+The page is the built-in **Overview** dashboard, in four bands. [Analytics widgets](/reference/analytics-widgets)
+lists every widget an [analytics dashboard](./dashboards) can place, and [Metrics](/reference/metrics) defines every
+number they show, with its unit and which direction is better.
 
 ## From a number to its rows
 
@@ -130,9 +128,11 @@ is drawn; across projects only `release`, `infra` and `incident` markers are, la
 becomes something you can see rather than remember.
 
 ## Related
-- [Dashboards](./dashboards) — views of your own
-- [Quality reports](./quality-reports) — this page as a document, with **Export**
 
-- [Flaky tests](./flaky-tests) — the per-project analysis these widgets aggregate
-- [Timeline markers](./timeline-markers) — annotate the trends with real-world events
-- [UI overview](./ui-overview#analytics) — where this sits in the navigation
+- [Dashboards](./dashboards): analytics dashboards of your own
+- [Quality reports](./quality-reports): this page as a document, with **Export**
+- [Flaky tests](./flaky-tests): the per-project analysis these widgets aggregate
+- [Timeline markers](./timeline-markers): annotate the trends with real-world events
+- [Cut costly flakiness](/recipes/flaky-cleanup): from the flaky leaderboard to an afternoon of fixes
+- [Cut the time it costs](/recipes/faster-suite): where the CI minutes go, and how to get them back
+- [UI overview](./ui-overview#analytics): where this sits in the navigation

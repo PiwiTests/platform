@@ -13,7 +13,7 @@ The dashboard supports optional sign-in with role-based access control. Authenti
 | Role | Description |
 |------|-------------|
 | **Administrator** | Full access to every project and feature — editing projects, managing users, and deleting runs. Never restricted by project access. |
-| **Reporter** | Submits results (`/api/test-runs/submit`, `/api/test-runs/upload`) and can triage, but only for the **projects it's assigned to**. |
+| **Reporter** | Submits results and can triage, but only for the **projects it's assigned to**. |
 | **User** | Read-only access to the **projects it's assigned to**. |
 
 Administrators always see everything. **Reporter** and **User** accounts are additionally scoped by [project access](./project-access): they only see and act on the projects assigned to them.
@@ -61,7 +61,7 @@ Invoke-RestMethod -Method Post -Uri http://localhost:3000/api/auth/setup `
 
 :::
 
-Both routes go through `POST /api/auth/setup`, which is only available while the users table is empty and is rate-limited per client address.
+Both routes go through the same setup endpoint, which is only available while the users table is empty and is rate-limited per client address.
 
 ## Logging in
 
@@ -75,8 +75,13 @@ Users can sign in with Google or GitHub instead of a username and password.
 
 1. **Register an OAuth application** with each provider you want to use:
 
-   - **Google**: Go to the [Google Cloud Console](https://console.cloud.google.com/apis/credentials), create an OAuth 2.0 Client ID, and add `https://your-domain.com/api/auth/oauth/google/callback` to the authorized redirect URIs.
-   - **GitHub**: Go to **Settings → Developer settings → OAuth Apps** on GitHub, create a new OAuth app, and set the callback URL to `https://your-domain.com/api/auth/oauth/github/callback`.
+   - **Google**: Go to the [Google Cloud Console](https://console.cloud.google.com/apis/credentials), create an OAuth 2.0 Client ID, and add the Google callback URL below to the authorized redirect URIs.
+   - **GitHub**: Go to **Settings → Developer settings → OAuth Apps** on GitHub, create a new OAuth app, and set its callback URL to the GitHub one below.
+
+   ```text
+   https://your-domain.com/api/auth/oauth/google/callback
+   https://your-domain.com/api/auth/oauth/github/callback
+   ```
 
 2. **Set the credentials** alongside the other variables:
 

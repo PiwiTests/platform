@@ -2,9 +2,12 @@ import { describe, test, expect } from 'vitest';
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, posix, relative } from 'node:path';
+import { CAPABILITY_MODULES } from '#shared/capabilities';
 import { MCP_TOOL_DEFS } from '#shared/mcp-tools';
+import { NOTIFICATION_EVENTS, REPORT_READY_EVENT } from '#shared/notification-events';
 import { FEATURE_NEED_DOCS, PIWI_FEATURE_GROUPS } from '#shared/piwi-features';
 import { PIWI_ENV_VARS } from '#shared/piwi-env-vars';
+import { HELP_TOPICS } from '~/utils/help-content';
 import { headingAnchor, sidebars } from '../../../docs/.vitepress/navigation';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..');
@@ -13,14 +16,18 @@ const read = (relative: string) => readFileSync(join(repoRoot, relative), 'utf8'
 // Pages the docs build writes from a registry; they are gitignored, so they are
 // only on disk once `docs:gen` has run, and a check skips them rather than fail.
 const GENERATED_PAGES = new Set([
+  'reference/analytics-widgets',
   'reference/configuration',
   'reference/features',
+  'reference/mcp-tools',
+  'reference/metrics',
   'reference/reporter-options',
   'reference/whats-new',
 ]);
 
 const FRONT_MATTER = /^---\n[\s\S]*?\n---\n/;
-const FENCED_CODE = /^(`{3,}|~{3,})[\s\S]*?^\1/gm;
+// A fence may be indented, inside a list item.
+const FENCED_CODE = /^[ \t]*(`{3,}|~{3,})[\s\S]*?^[ \t]*\1/gm;
 
 // Every anchor a docs page offers, as the docs build assigns them: one per
 // heading at any level (a heading's own `{#id}`, or its text slugified, with
@@ -80,26 +87,42 @@ describe('positioning line', () => {
 });
 
 describe('documented counts', () => {
-  // Every page on the docs site (the generated configuration.md included,
-  // when built) plus the repository-level pages that repeat the number. The
-  // generated What's new page repeats historical changelog counts (e.g. "from
-  // 14 to 38 tools") that were correct for that release — it is the one place
-  // stale numbers are the point, so it is not held to the live count.
-  const countPages = [...docsPages, 'apps/docs/AGENTS.md'].filter((p) => p !== 'apps/docs/reference/whats-new.md');
-  const COUNT_SURFACES = [...countPages, 'README.md', 'ROADMAP.md', 'DOCKER_HUB.md'];
+  // The tool count lives on one page, the generated MCP tools page, where it
+  // is right by construction. A count copied into a narrative page goes stale
+  // with the next tool, so every other page and the repository-level pages
+  // name no count. The generated What's new page repeats historical changelog
+  // counts (e.g. "from 14 to 38 tools") that were correct for that release, so
+  // it is left out too.
+  const COUNT_SURFACES = [
+    ...docsPages.filter((p) => !['apps/docs/reference/mcp-tools.md', 'apps/docs/reference/whats-new.md'].includes(p)),
+    'apps/docs/AGENTS.md',
+    'README.md',
+    'ROADMAP.md',
+    'DOCKER_HUB.md',
+  ];
 
-  test.each(COUNT_SURFACES)('%s states the real MCP tool count, if it states one', (relative) => {
-    for (const [claim, stated] of read(relative).matchAll(/\b(\d+) tools\b/g)) {
-      expect(Number(stated), `${relative} says "${claim}", there are ${MCP_TOOL_DEFS.length}`).toBe(
-        MCP_TOOL_DEFS.length,
-      );
-    }
+  test.each(COUNT_SURFACES)('%s states no MCP tool count', (relative) => {
+    const claims = [...read(relative).matchAll(/\b\d+ (?:MCP )?tools\b/g)].map((m) => m[0]);
+    expect(
+      claims,
+      `${relative} states an MCP tool count: link the [MCP tools](/reference/mcp-tools) page instead`,
+    ).toEqual([]);
   });
 
-  test('every registered MCP tool is documented in apps/docs/features/mcp.md', () => {
-    const contents = read('apps/docs/features/mcp.md');
+  // The MCP tools page is generated from MCP_TOOL_DEFS, one section per module,
+  // so a tool is listed by construction unless its module has no section.
+  test('every registered MCP tool is on the generated MCP tools page', () => {
+    for (const { name, module } of MCP_TOOL_DEFS) {
+      expect(
+        CAPABILITY_MODULES,
+        `MCP tool \`${name}\` is in module "${module}", which the page has no section for`,
+      ).toContain(module);
+    }
+    const page = join(repoRoot, 'apps/docs/reference/mcp-tools.md');
+    if (!existsSync(page)) return;
+    const contents = readFileSync(page, 'utf8');
     for (const { name } of MCP_TOOL_DEFS) {
-      expect(contents, `apps/docs/features/mcp.md has no entry for \`${name}\``).toContain(`\`${name}\``);
+      expect(contents, `apps/docs/reference/mcp-tools.md has no entry for \`${name}\``).toContain(`id="${name}"`);
     }
   });
 });
@@ -187,7 +210,7 @@ describe('single-source snippets', () => {
   }
 });
 
-describe('no leaked version history', () => {
+describe('no leaked version history or planned work', () => {
   // Version history belongs on the generated What's new page (from the
   // changelog), not scattered through the feature pages as "since version X" /
   // "now supports Y" asides that go stale. This bans only the phrasings that are
@@ -195,6 +218,21 @@ describe('no leaked version history', () => {
   // left out because they have too many legitimate uses ("a mark it no longer
   // needs", "the tags used to organize projects").
   const BANNED = [/\bsince version\b/i, /\bsince v\d/i, /\bnow supports\b/i];
+  // A page describes what a default install does today, so planned work
+  // stays in ROADMAP.md (proposals/docs-revamp.md, principle 5). "Planned" alone
+  // has honest uses (Playwright's planned test list), so only the phrasings
+  // that announce future work are banned. An **Experimental** section, which
+  // documents something that ships behind a switch, stays allowed.
+  const PLANNED = [
+    /\b(?:is|are|was|were|still|currently) planned\b/i,
+    /\bplanned (?:for|in|as|feature|work|support)\b/i,
+    /\(planned\)/i,
+    /\bnot yet (?:wired|implemented|available|supported|shipped|released)\b/i,
+    /\bcoming soon\b/i,
+    /\bunreleased\b/i,
+    /\b(?:in|with) (?:a future|an upcoming|the next) (?:release|version)\b/i,
+    /\bupcoming (?:release|version|feature)s?\b/i,
+  ];
 
   // Hand-written docs pages only: the generated pages (What's new is literally
   // the version history) and the blog essay are allowed to talk about releases.
@@ -215,43 +253,179 @@ describe('no leaked version history', () => {
       );
     }
   });
+
+  test.each(pages)('%s announces no planned work', (page) => {
+    const contents = read(page);
+    for (const pattern of PLANNED) {
+      expect(
+        contents.match(pattern)?.[0],
+        `${page} describes planned work: describe what ships, and move the plan to ROADMAP.md`,
+      ).toBeUndefined();
+    }
+  });
 });
 
-describe('feature-page word budget', () => {
-  // A feature page follows a fixed skeleton and stays short (the restructure
-  // proposal's 1,200-word budget). This keeps a page from quietly growing back
-  // into the grab-bag it was carved out of.
-  const BUDGET = 1200;
-  // Pages carved from the old grab-bags that are still over budget, pending the
-  // remaining content splits (ai-diagnosis → clusters/diagnosis/fix-plans,
-  // evidence flattened, ui-overview rewritten). Capped at their current size so
-  // they can only shrink toward the budget, never grow — retire an entry once
-  // its page is under BUDGET.
-  const OVER_BUDGET: Record<string, number> = {
-    'ai-diagnosis': 4800,
-    evidence: 3700,
-    'ui-overview': 3079,
-    extension: 2500,
-    mcp: 2300,
-    'scenario-gaps': 1760,
-    desktop: 2300,
-    'locator-healing': 2000,
-    notifications: 1400,
-    'ai-steps': 1560,
-    'test-selection': 2063,
+describe('no endpoint paths in prose', () => {
+  // The API reference is the one place endpoints are documented: the in-app
+  // `/docs` page, generated from each handler's OpenAPI metadata. A path
+  // copied into a docs page goes stale when the route changes, so prose links
+  // the API reference instead. Code examples keep their paths, and so do the
+  // two endpoints an operator's tooling calls by name.
+  const ALLOWED = new Set(['/api/health', '/api/metrics']);
+
+  // Every route under server/api, one pattern per handler file: `[id]` is a
+  // parameter and `[...path]` a catch-all. The catch-all at the root (the
+  // unknown-route handler) would match any path, so it is left out.
+  const routeSegments = (function walk(dir: string, prefix: string[]): string[][] {
+    return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+      if (entry.isDirectory()) return walk(join(dir, entry.name), [...prefix, entry.name]);
+      const name = entry.name.replace(/(\.(get|post|put|patch|delete))?\.ts$/, '');
+      return [name === 'index' ? prefix : [...prefix, name]];
+    });
+  })(join(repoRoot, 'apps/application/server/api'), []).filter((route) => route.join('/') !== '[...path]');
+
+  const isPiwiEndpoint = (path: string) => {
+    const segments = path
+      .replace(/^\/api\/?/, '')
+      .replace(/\/$/, '')
+      .split('/');
+    return routeSegments.some(
+      (route) =>
+        (route.length === segments.length || route.at(-1)?.startsWith('[...')) &&
+        route.every((part, i) => part.startsWith('[') || part === segments[i]),
+    );
   };
 
-  const featurePages = readdirSync(join(repoRoot, 'apps/docs/features')).filter((f) => f.endsWith('.md'));
+  test('the route list is read', () => {
+    expect(isPiwiEndpoint('/api/projects/:id/quarantine')).toBe(true);
+    expect(isPiwiEndpoint('/api/orders')).toBe(false);
+  });
 
-  test.each(featurePages)('features/%s is within budget', (file) => {
+  const pages = docsPages.filter((p) => !GENERATED_PAGES.has(p.replace(/^apps\/docs\//, '').replace(/\.md$/, '')));
+
+  test.each(pages)('%s names no Piwi endpoint outside a code example', (page) => {
+    const prose = read(page).replace(FRONT_MATTER, '').replace(FENCED_CODE, '');
+    const paths = [...prose.matchAll(/\/api\/[\w:{}.*-]+(?:\/[\w:{}.*-]+)*/g)]
+      .map((m) => m[0].replace(/\.$/, ''))
+      .filter((path) => !ALLOWED.has(path) && isPiwiEndpoint(path));
+    expect(
+      paths,
+      `${page} names Piwi endpoints in prose: link the [API docs](https://piwitests.dev/demo/docs) instead (apps/docs/AGENTS.md, "The API reference")`,
+    ).toEqual([]);
+  });
+});
+
+describe('hand-written reference pages match the code', () => {
+  // These pages list what a code list holds but are written by hand, because
+  // the code has no descriptions to generate them from. Each check fails when
+  // the code gains an entry the page does not name.
+
+  // One `## ` section of a page, found by a heading that contains `heading`.
+  const sectionOf = (page: string, heading: string) =>
+    read(page)
+      .split(/^## /m)
+      .find((part) => part.split('\n', 1)[0]!.includes(heading)) ?? '';
+
+  test('every notification event is on the Notification events page', () => {
+    const page = read('apps/docs/reference/notification-events.md');
+    for (const event of [...NOTIFICATION_EVENTS, REPORT_READY_EVENT]) {
+      expect(page, `apps/docs/reference/notification-events.md does not name \`${event}\``).toContain(`\`${event}\``);
+    }
+  });
+
+  test('every clue rule is on the Clue rules page', () => {
+    const union = /export type FailureClueRule =([^;]+);/.exec(read('apps/application/shared/failure-clues.ts'))?.[1];
+    const rules = [...(union ?? '').matchAll(/'([\w-]+)'/g)].map((m) => m[1]!);
+    expect(rules.length, 'FailureClueRule was not found in shared/failure-clues.ts').toBeGreaterThan(0);
+    const page = read('apps/docs/reference/clues.md');
+    for (const rule of rules) {
+      expect(page, `apps/docs/reference/clues.md does not show the rule id \`${rule}\``).toContain(`\`${rule}\``);
+    }
+  });
+
+  test('every shortcut the app registers is on the Keyboard shortcuts page', () => {
+    const page = 'apps/docs/reference/keyboard-shortcuts.md';
+    // The go-to chords, `'g-h': () => …` in defineShortcuts.
+    const chords = [...read('apps/application/app/composables/useDashboard.ts').matchAll(/'(\w)-(\w)':/g)];
+    expect(chords.length, 'no defineShortcuts chords found in app/composables/useDashboard.ts').toBeGreaterThan(0);
+    const anywhere = sectionOf(page, 'Anywhere');
+    for (const [, first, second] of chords) {
+      expect(anywhere, `${page} does not list the chord ${first} then ${second}`).toContain(
+        `\`${first}\` then \`${second}\``,
+      );
+    }
+    // The failure inbox's keys, the `case 'x':` branches of its keydown handler.
+    const inbox = read('apps/application/app/components/home/OpenFailuresCard.vue');
+    const handler = /function onKeydown[\s\S]*?\n}\n/.exec(inbox)?.[0] ?? '';
+    const keys = [
+      ...[...handler.matchAll(/case '(\w)':/g)].map((m) => m[1]!),
+      ...(handler.includes("'Escape'") ? ['Esc'] : []),
+    ];
+    expect(keys.length, 'no keys found in the failure inbox keydown handler').toBeGreaterThan(0);
+    const section = sectionOf(page, 'Failure inbox');
+    for (const key of keys) {
+      expect(section, `${page} does not list the failure inbox key \`${key}\``).toContain(`\`${key}\``);
+    }
+  });
+
+  // Each command's `--help` text is its USAGE constant; the page has one
+  // section per command. A flag counts as listed when the section names it.
+  const CLI_COMMANDS: Record<string, string> = {
+    init: '`init`',
+    skills: '`skills`',
+    gate: '`gate`',
+    'quality-report': '`report`',
+    select: '{#select-run}',
+    probe: '`probe`',
+    ai: '`ai`',
+  };
+
+  test.each(Object.entries(CLI_COMMANDS))('every flag of %s --help is in the Piwi CLI reference', (source, heading) => {
+    const usage = /const USAGE = `([\s\S]*?)`/.exec(read(`packages/reporter/src/cli/${source}.ts`))?.[1] ?? '';
+    const flags = [...new Set([...usage.matchAll(/(?<![\w-])--[a-z][a-z\d-]*/g)].map((m) => m[0]))];
+    expect(flags.length, `no flags found in packages/reporter/src/cli/${source}.ts`).toBeGreaterThan(0);
+    const section = sectionOf('apps/docs/reference/cli.md', heading);
+    expect(section, `apps/docs/reference/cli.md has no section headed ${heading}`).not.toBe('');
+    const missing = flags.filter((flag) => !new RegExp(`${flag}(?![a-z\\d-])`).test(section));
+    expect(missing, `apps/docs/reference/cli.md, section ${heading}, does not list these flags`).toEqual([]);
+  });
+});
+
+describe('word budget per page type', () => {
+  // Every page is one type (proposals/docs-revamp.md, "One type per page"),
+  // and each type has one budget, with no allowlist: a page over its budget is
+  // cut or split, never excused. A page's type is its folder; PAGE_TYPE_EXCEPTIONS
+  // lists the few pages whose folder says otherwise. Reference pages list values
+  // and have no budget. Blog posts are essays, not one of the five types.
+  const BUDGETS = { setup: 1500, feature: 1500, recipe: 1000, 'self-hosting': 1500, reference: Infinity } as const;
+  type PageType = keyof typeof BUDGETS;
+  const FOLDER_TYPES: Record<string, PageType> = {
+    guide: 'setup',
+    features: 'feature',
+    recipes: 'recipe',
+    operate: 'self-hosting',
+    reference: 'reference',
+  };
+  const PAGE_TYPE_EXCEPTIONS: Record<string, PageType> = {
+    // The vocabulary: a list of terms, read by lookup.
+    'guide/concepts': 'reference',
+    // The home page opens Get started.
+    index: 'setup',
+  };
+
+  const typedPages = docsPages
+    .map((p) => p.replace(/^apps\/docs\//, '').replace(/\.md$/, ''))
+    .filter((page) => !page.startsWith('blog/') && !GENERATED_PAGES.has(page));
+
+  test.each(typedPages)('%s is within the budget of its page type', (page) => {
+    const type = PAGE_TYPE_EXCEPTIONS[page] ?? FOLDER_TYPES[page.split('/')[0]!];
+    expect(type, `apps/docs/${page}.md has no page type: add its folder to FOLDER_TYPES`).toBeDefined();
     // The page as a reader sees it: the front matter is metadata, not reading.
-    const body = read(`apps/docs/features/${file}`).replace(/^---\n[\s\S]*?\n---\n/, '');
-    const words = body.trim().split(/\s+/).length;
-    const cap = OVER_BUDGET[file.replace(/\.md$/, '')] ?? BUDGET;
+    const words = read(`apps/docs/${page}.md`).replace(FRONT_MATTER, '').trim().split(/\s+/).length;
     expect(
       words,
-      `apps/docs/features/${file} is ${words} words (cap ${cap}) — trim it${cap === BUDGET ? '' : ', and lower its OVER_BUDGET cap'}`,
-    ).toBeLessThanOrEqual(cap);
+      `apps/docs/${page}.md is ${words} words, over the ${BUDGETS[type!]}-word budget of a ${type} page: cut it or split it`,
+    ).toBeLessThanOrEqual(BUDGETS[type!]);
   });
 });
 
@@ -268,6 +442,20 @@ describe('docs site structure', () => {
 
   test.each(featurePages)('%s is an entry in the feature catalog', (page) => {
     expect(catalogPages.has(page), `${page} is missing from shared/piwi-features.ts`).toBe(true);
+  });
+
+  // In a feature group a catalog entry is a page: one feature, one page, one
+  // set of <Needs> chips. Only the Self-hosting group may point into a section
+  // of an operator page.
+  const featureEntries = PIWI_FEATURE_GROUPS.filter((group) => group.title !== 'Self-hosting').flatMap((group) =>
+    group.features.map((feature) => [`${group.title} → ${feature.title}`, feature.doc] as const),
+  );
+
+  test.each(featureEntries)('%s points to a whole page', (_entry, doc) => {
+    expect(
+      doc,
+      `a feature entry links a whole page, not a section: give it a page or fold it into another entry`,
+    ).not.toContain('#');
   });
 
   // The description is the page's search snippet and its social-card text.
@@ -387,5 +575,25 @@ describe('docs site structure', () => {
 
   test.each(handWrittenPages)('links from %s resolve to a page and heading', (page) => {
     expect(brokenLinksFrom(page)).toEqual([]);
+  });
+
+  // A recipe answers a question a reader meets on a feature page or on a screen
+  // of the dashboard, so it is linked from both: a feature page's "Related"
+  // footer and the `recipe` of an in-app help topic.
+  const recipes = docsPages
+    .filter((p) => p.startsWith('apps/docs/recipes/'))
+    .map((p) => p.replace(/^apps\/docs\//, '').replace(/\.md$/, ''));
+  const featurePageSources = docsPages.filter((p) => p.startsWith('apps/docs/features/')).map((p) => read(p));
+  const helpRecipes = new Set(
+    Object.values(HELP_TOPICS).flatMap((topic) => ('recipe' in topic ? [topic.recipe.doc] : [])),
+  );
+
+  test.each(recipes)('%s is linked from a feature page and a help topic', (recipe) => {
+    const link = new RegExp(`\\]\\((?:/|\\.\\./)${recipe}(?:#[^)]*)?\\)`);
+    expect(
+      featurePageSources.some((contents) => link.test(contents)),
+      `no features/ page links /${recipe}`,
+    ).toBe(true);
+    expect(helpRecipes.has(recipe), `no help topic in app/utils/help-content.ts has recipe.doc '${recipe}'`).toBe(true);
   });
 });

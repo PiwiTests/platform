@@ -149,7 +149,7 @@ uploads it with the run, so a route nothing reaches becomes a
 `PIWI_PROBE_SECRET`) and apply it inside the server, so a probe run can check whether a passing test notices the
 server's real error path. Faults are applied only with `PIWI_SERVER_PROBES=true` on the backend, only outside
 production, and only for projects that turn server probes on. See
-[Server probes](/features/scenario-gaps#server-probes-level-two) for what they report and when to turn them on.
+[Server probes](/features/probes#server-probes) for what they report and when to turn them on.
 
 ## Building your own integration
 

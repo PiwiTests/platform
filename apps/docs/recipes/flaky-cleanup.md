@@ -29,19 +29,13 @@ usually account for most of the total.
 
 ## 2. Filter by root cause and fix a class at once
 
-Every flaky test is tagged with one of five categories from heuristics over its errors, steps, and
-browser spread:
+Every flaky test carries one of five root-cause categories, `timing`, `network`, `assertion`, `environment` or
+`other`; [Flaky tests](/features/flaky-tests#root-cause-classification) explains the signals behind each.
 
-| Category | Typical signals | Usually fixed by |
-|---|---|---|
-| `timing` | Timeouts, "to be visible", `waitFor` | Replacing a sleep with a real wait condition |
-| `network` | `net::` / `ERR_` errors, 5xx, `ECONNREFUSED` | Stubbing, or a retry on the fixture rather than the test |
-| `assertion` | `expect(...)`, snapshot comparison, no timing noise | A tolerance, or a genuinely wrong expectation |
-| `environment` | Fails on exactly one browser while others pass | A browser-specific guard or a real compatibility bug |
-| `other` | No clear signal | Reading it |
-
-Filtering by category is the trick that makes an afternoon enough: eight `timing` flakes usually share
-one bad wait helper.
+Filtering by category is the trick that makes an afternoon enough, because a class usually shares one fix: eight
+`timing` flakes usually share one bad wait helper to replace with a real wait condition, a `network` class wants a
+stub or a retry on the fixture rather than the test, and an `environment` class is a browser-specific guard or a real
+compatibility bug.
 
 ## 3. Narrow the window before you conclude anything
 
@@ -84,8 +78,7 @@ across every project, including wasted CI minutes and a global flaky leaderboard
 and root-cause category; `get_test_stability_trend` answers whether one test is getting worse. Useful
 for "what should I fix this sprint?" without opening a browser.
 
-**Script it.** Quarantine is a REST resource — `GET`/`POST /api/projects/:id/quarantine` and
-`DELETE /api/projects/:id/quarantine/:testCaseId` — so promoting candidates or releasing ready tests can
+**Script it.** Quarantine is a REST resource, so promoting candidates or releasing ready tests can
 be a scheduled job. Shapes are in the [API docs](https://piwitests.dev/demo/docs).
 
 **No server at all.** If this is your own laptop suite rather than a team's, the

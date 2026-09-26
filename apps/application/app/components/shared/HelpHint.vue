@@ -1,7 +1,8 @@
 <script setup lang="ts">
 /**
  * Discreet inline-help affordance: a small muted help icon that opens a popover
- * with a short explanation and an optional "Learn more" docs link. Resolve copy
+ * with a short explanation, an optional "Learn more" docs link and, for a
+ * registry topic, an optional link to the recipe it raises. Resolve copy
  * from the shared registry via `topic`, or pass `title`/`text`/`doc` inline for
  * one-offs.
  *
@@ -32,6 +33,7 @@ const entry = computed<HelpTopic | null>(() => (props.topic ? HELP_TOPICS[props.
 const title = computed(() => props.title ?? entry.value?.title);
 const text = computed(() => props.text ?? entry.value?.text ?? '');
 const doc = computed(() => props.doc ?? entry.value?.doc);
+const recipe = computed(() => entry.value?.recipe);
 const envVars = computed(() => props.envVars ?? entry.value?.envVars);
 
 const open = ref(false);
@@ -80,8 +82,9 @@ const contentAttrs = computed(() => ({ side: 'bottom' as const, 'aria-label': ar
           </button>
         </div>
       </div>
-      <div v-if="doc || envVars?.length" class="mt-2 flex flex-col gap-1">
+      <div v-if="doc || recipe || envVars?.length" class="mt-2 flex flex-col gap-1">
         <DocLink v-if="doc" :to="doc">Learn more</DocLink>
+        <DocLink v-if="recipe" :to="recipe.doc">{{ recipe.question }}</DocLink>
         <DocLink v-if="envVars?.length" to="reference/configuration">Configuration reference</DocLink>
       </div>
     </template>

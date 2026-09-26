@@ -211,7 +211,7 @@ export const CAPABILITIES: CapabilityDef[] = [
     id: 'test-map',
     module: 'workflow',
     levels: ['instance', 'project'],
-    needs: [],
+    needs: ['fixtures'],
     detection: 'test-map',
     passiveData: true,
     since: '0.36.0',
@@ -221,11 +221,11 @@ export const CAPABILITIES: CapabilityDef[] = [
     id: 'server-probes',
     module: 'workflow',
     levels: ['project'],
-    needs: ['backend'],
+    needs: ['fixtures', 'backend'],
     detection: 'server-probes',
     follows: 'test-map',
     since: '0.36.0',
-    doc: 'features/scenario-gaps#server-probes-level-two',
+    doc: 'features/probes#server-probes',
   },
 ];
 

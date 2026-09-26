@@ -128,21 +128,10 @@ project, and the traces will attach to the right test cases.
 
 ## Trying it in the demo
 
-The [live demo](https://piwitests.dev/demo/) supports importing, and nothing you drop on it is uploaded: the demo
-has no server. The archive is read by a service worker, parsed in the page, and stored in your browser's IndexedDB
-alongside the sample data — so you can point the dashboard at one of your own blob reports and see your suite in it
-before installing anything.
-
-Two differences from a self-hosted instance:
-
-- **The size limit comes from your browser, not from a server.** The demo asks how much storage the origin has free
-  and offers a quarter of it, so the figure on the page reflects your machine rather than a fixed number — typically a
-  few hundred megabytes. Anything larger is refused before it is read, because exceeding the quota would otherwise fail
-  part-way through and leave a half-imported run behind. The limit is about *storage*, not memory: the archive is
-  hashed as a stream and a ZIP is a random-access format, so the demo reads the directory out of the file you picked
-  and then slices out one entry at a time. It is never held whole.
-- **Imported data is local and temporary.** It never leaves your machine, and it is cleared when you reset the demo or
-  when the demo's sample dataset is refreshed to a new version.
+The [live demo](https://piwitests.dev/demo/) supports importing, and nothing you drop on it is uploaded: the archive is
+parsed and stored in your browser, so you can see your own suite in the dashboard before installing anything. Its size
+limit comes from the storage your browser has free, not from a server, and the imported data is cleared when you reset
+the demo.
 
 ## Size limits
 
@@ -153,9 +142,6 @@ If a reverse proxy in front of Piwi enforces a smaller body limit, set
 [`PIWI_IMPORT_MAX_BYTES`](/reference/configuration#ingest-limits) to match, so the page rejects the same archives your proxy would
 instead of failing mid-upload.
 
-The limit is the server's to set: the page reads each archive as a stream to fingerprint it, so the browser holds a
-chunk at a time rather than the whole file, however large the server is willing to accept.
-
 ## Limitations
 
 - **Sharded runs import separately.** A blob report that is one shard of a larger run becomes its own run in Piwi —
@@ -163,4 +149,10 @@ chunk at a time rather than the whole file, however large the server is willing 
 - **Traces carry less than reports.** No annotations, no worker index, no `didnotrun` tests, no step subtitles or
   params, and no screenshots or videos — a trace holds only itself.
 - **Administrators only.** Importing can create projects and back-dates history, so it is not open to the reporter role.
-- **One archive per request.** There is no bulk endpoint; the page handles batching for you.
+- **One archive per request.** The page handles batching for you.
+
+## Related
+
+- [Reporter](./reporter): send new runs as they happen
+- [Capture fixtures](./capture-fixtures): the data an imported run cannot carry
+- [Test metadata](/reference/test-metadata): how spec paths and branches are recorded

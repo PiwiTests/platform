@@ -11,7 +11,7 @@ lang: en-US
 When a locator breaks on your default branch and Piwi has high-confidence evidence for the replacement, it can open the
 fix pull request itself: a branch, a one-line locator edit per broken call site, and a body that shows the change, the
 score, where the replacement came from, and the command that verifies it. The CI gate runs on the PR like any other,
-and [fix verification](./ai-diagnosis#did-the-fix-work) records the cluster as fixed once the tests pass.
+and [fix verification](./failure-clusters#did-the-fix-work) records the cluster as fixed once the tests pass.
 
 It is **off by default**, and even once on it acts only on projects you list. Writing to your repository is the
 strongest thing the dashboard does, so the posture is conservative by design.
@@ -52,7 +52,7 @@ Settings → Auto-heal (administrator only):
 - **Branch prefix** / **commit message** — the branch namespace (default `piwi/heal/`) and the commit subject
   (default `test: heal broken locators`, a conventional-commit subject so your commit lint accepts it).
 
-You can review what Piwi has opened per project through `GET /api/heal-actions?projectId=<id>`.
+The heal actions Piwi opened for a project are listed on the REST API; see the [API docs](https://piwitests.dev/demo/docs).
 
 ## Limits
 

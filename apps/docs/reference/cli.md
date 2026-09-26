@@ -33,7 +33,7 @@ Several commands read connection settings from the environment as a fallback: `P
 
 ## `init`
 
-Wire a Playwright project up to a dashboard. It installs the reporter as a dev dependency, wraps `export default defineConfig(...)` with [`wrapConfig(...)`](/guide/reporter#installing-via-wrapconfig), creates the [capture-fixtures](/guide/capture-fixtures) file, records `PIWI_*` connection settings in `.env` / `.env.example` (and `.gitignore`), and installs the [agent skills](/features/mcp#agent-skills). **Every step is idempotent** — safe to re-run — and a config shape it will not rewrite is reported as `manual` with the exact change to make. See the [one-command setup](/guide/getting-started#fast-path-one-command) in Getting started.
+Wire a Playwright project up to a dashboard. It installs the reporter as a dev dependency, wraps `export default defineConfig(...)` with [`wrapConfig(...)`](/guide/reporter#installing-via-wrapconfig), creates the [capture-fixtures](/guide/capture-fixtures) file, records `PIWI_*` connection settings in `.env` / `.env.example` (and `.gitignore`), and installs the [agent skills](/features/agent-skills). **Every step is idempotent** — safe to re-run — and a config shape it will not rewrite is reported as `manual` with the exact change to make. See the [one-command setup](/guide/getting-started#fast-path-one-command) in Getting started.
 
 ```bash
 npx @piwitests/reporter init --server-url http://localhost:3000 --project my-project
@@ -57,7 +57,7 @@ npx @piwitests/reporter init --server-url http://localhost:3000 --project my-pro
 
 ## `skills`
 
-Install the Piwi [agent skills](/features/mcp#agent-skills) into a project — agent-agnostic Markdown that lets a coding agent investigate failures, heal locators, and stabilize flaky tests. `init` installs these for you; use `skills` to add them to a project that already has the reporter, or to a different skills directory.
+Install the Piwi [agent skills](/features/agent-skills) into a project — agent-agnostic Markdown that lets a coding agent investigate failures, heal locators, and stabilize flaky tests. `init` installs these for you; use `skills` to add them to a project that already has the reporter, or to a different skills directory.
 
 ```bash
 npx @piwitests/reporter skills list
@@ -107,7 +107,7 @@ The run source is resolved first-match-wins: `--run-id`, then `--from-file`, the
 ## `report`
 
 Print a [quality report](/features/quality-reports) from the dashboard, so a CI scheduler can post it every
-week. It calls `GET /api/reports/preview` with the API key; the scope and the dashboard are the ones the
+week. It calls the report endpoint with the API key; the scope and the dashboard are the ones the
 *Export* dialog offers.
 
 ```bash
@@ -165,7 +165,7 @@ When `run` spawns Playwright and the target config has **no Piwi reporter**, it 
 
 ## `probe`
 
-Run the dashboard's [probe plan](/features/scenario-gaps) and record what the suite noticed. `probe` fetches the (test, route, fault) pairs the dashboard wants checked, runs `playwright test` with the [capture fixtures](/guide/capture-fixtures) in probe mode — each fault injected at the network boundary, one per test — and posts the outcomes back. The run is stamped as a probe run, so the dashboard never counts it as a real run (no clusters, regression signals, notifications or PR feedback), and retries are forced off.
+Run the dashboard's [probe plan](/features/probes) and record what the suite noticed. `probe` fetches the (test, route, fault) pairs the dashboard wants checked, runs `playwright test` with the [capture fixtures](/guide/capture-fixtures) in probe mode — each fault injected at the network boundary, one per test — and posts the outcomes back. The run is stamped as a probe run, so the dashboard never counts it as a real run (no clusters, regression signals, notifications or PR feedback), and retries are forced off.
 
 ```bash
 npx @piwitests/reporter probe --project my-app
@@ -215,4 +215,4 @@ npx @piwitests/reporter ai prune
 - [CI & sharding](/guide/ci) — `gate` in a CI job, and the run output file
 - [Test selections](/features/test-selection) — what `select` / `run` resolve
 - [AI steps](/features/ai-steps) — the authoring/replay lifecycle `ai` manages
-- [MCP server → Agent skills](/features/mcp#agent-skills) — what `skills` installs
+- [Agent skills](/features/agent-skills): what `skills` installs and what each skill does

@@ -268,7 +268,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         title: 'Scenario gaps & the Test Map',
         summary:
           'Routes and pages your runs reach but no test checks, ranked by exposure, each with a skeleton to start from.',
-        needs: [],
+        needs: ['fixtures'],
         where: 'Project → Gaps',
         doc: 'features/scenario-gaps',
       },
@@ -278,15 +278,15 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
           'The files a pull request changed that no test observably reaches, posted back to the PR with a commit status.',
         needs: ['scm'],
         where: 'Pull request comment',
-        doc: 'features/scenario-gaps#uncovered-changes-on-a-pull-request',
+        doc: 'features/uncovered-changes',
       },
       {
         title: 'Probes',
         summary:
-          'Whether a passing test would notice a fault behind a request: client probes ride the reporter alone; server probes inject the fault inside the server, needing a backend package.',
-        needs: ['backend'],
+          'Whether a passing test would notice a fault behind a request: client probes run through the capture fixtures; server probes inject the fault inside the server, needing a backend package.',
+        needs: ['fixtures'],
         where: 'Project → Gaps; reporter (`piwi probe`)',
-        doc: 'features/scenario-gaps#probing-what-a-test-would-notice',
+        doc: 'features/probes',
       },
     ],
   },
@@ -298,18 +298,10 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
       {
         title: 'Analytics',
         summary:
-          'Cross-project trends — portfolio health, wasted CI time, pass-rate heatmap, browser matrix, insights feed.',
+          'Cross-project trends (portfolio health, wasted CI time, pass-rate heatmap, browser matrix, insights feed) over any period against any other, from daily rollups that outlive retention.',
         needs: [],
         where: 'Analytics',
         doc: 'features/analytics',
-      },
-      {
-        title: 'Trends over time',
-        summary:
-          'Any period against any other (calendar units, sprints, release cycles, since a marker), from daily rollups that outlive retention.',
-        needs: [],
-        where: 'Analytics → Filters',
-        doc: 'features/analytics#periods',
       },
       {
         title: 'Dashboards',
@@ -360,7 +352,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         summary: 'Installable skills that teach a coding agent the Piwi failure-fixing workflow end to end.',
         needs: [],
         where: 'reporter CLI (`piwi skills`)',
-        doc: 'features/mcp#agent-skills',
+        doc: 'features/agent-skills',
       },
       {
         title: 'Desktop app',

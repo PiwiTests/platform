@@ -83,8 +83,7 @@ verdict and nothing else. That single difference is what makes the exit possible
 The gate always states how many failures quarantine excluded — a green gate that silently ignored failures would be
 worthless — and `--max-quarantined` sets a ceiling so the list can't grow unbounded.
 
-Manage it from the **Quarantine** view of the project's **Failures** tab, or over the API (`GET`/`POST /api/projects/:id/quarantine`,
-`DELETE /api/projects/:id/quarantine/:testCaseId`).
+Manage it from the **Quarantine** view of the project's **Failures** tab, or over the REST API (see the [API docs](https://piwitests.dev/demo/docs)).
 
 ## Regression signals
 
@@ -113,10 +112,12 @@ regression velocity, a global flaky leaderboard, and an auto-generated insights 
 [Analytics](./analytics).
 
 ## Related
+- [Regression or flake?](/recipes/regression-or-flaky): is one red test flaky?
+- [Cut costly flakiness](/recipes/flaky-cleanup): fix the costliest flaky tests first
 - [What changed in a run](./run-changes) — the Changes tab: new failures, fixed tests, commits since a baseline
 - [Slow tests & wasted time](./slow-tests) — duration trends, slowest tests, and timeout opportunities
 - [Analytics](./analytics) — the same signals across every project
 - [UI overview](./ui-overview) — where each of these views lives in the dashboard
 - [Reporter](/guide/reporter) — how retries, traces, and run metadata get captured
 - [Capture fixtures](/guide/capture-fixtures) — the test-side setup behind network analysis and Web Vitals
-- [AI diagnosis & failure clustering](./ai-diagnosis) — explain the failures behind the trends
+- [Failure clusters & the inbox](./failure-clusters): the failures grouped by cause

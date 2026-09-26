@@ -223,8 +223,8 @@ Seven surfaces carry it, and they drift the moment one changes alone. Update the
 | GitHub repo description + topics       | Repository settings — not in the repo, so check it by hand               |
 
 The four surfaces that live in the repository are guarded by
-`apps/application/tests/unit/docs-drift.test.ts`, clause by clause — it also checks the documented MCP
-tool count against the registry, and every `doc:` anchor the app deep-links into. The npm descriptions
+`apps/application/tests/unit/docs-drift.test.ts`, clause by clause — it also checks that no page but the generated MCP tools page
+states an MCP tool count, and every `doc:` anchor the app deep-links into. The npm descriptions
 and the GitHub repo description are still on you.
 
 Voice rules for all of them, and for `apps/docs/`: see [`apps/docs/AGENTS.md`](apps/docs/AGENTS.md#voice).

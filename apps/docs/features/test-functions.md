@@ -21,7 +21,7 @@ Four ways in, all landing in the same reviewed entry:
 - **By hand** — **Add function** and fill in the name, parameters and pattern yourself.
 - **Paste the source, let AI propose it** — paste a page-object method or helper's source and a model proposes the name, parameters, and DOM pattern into a **review form you edit before saving**. With [AI](/features/ai-diagnosis) configured on the instance, an **Extract** button calls it directly.
 - **Bring your own AI** — no instance AI, or you'd rather not use it? **Copy prompt for your own AI** copies the full extraction prompt (the rules, the JSON schema, and your pasted code) to paste into any AI chat (ChatGPT, Claude.ai, an IDE assistant). Paste the reply back and it is validated against the exact same schema — no Piwi AI credits spent either way.
-- **From a coding agent (MCP)** — an MCP-connected agent (Claude Code, Cursor, …) calls the `create_test_function` [MCP tool](./mcp) directly, reading the source with its own model. No AI call happens on the server side; the tool only validates and persists.
+- **From a coding agent (MCP)** — an MCP-connected agent (Claude Code, Cursor, …) calls the `create_test_function` [MCP tool](/reference/mcp-tools#create_test_function) directly, reading the source with its own model. No AI call happens on the server side; the tool only validates and persists.
 
 Registered entries are edited in place from the same page — the pencil button reopens the form with everything filled in.
 

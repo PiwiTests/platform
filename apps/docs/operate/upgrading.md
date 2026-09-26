@@ -92,7 +92,7 @@ Three ways, in increasing order of automation:
 
 - **Settings → About** shows the running version, the build SHA, the Node version, and which database
   backend is active.
-- `GET /api/version` returns the same thing as JSON, with no authentication required:
+- The version endpoint returns the same thing as JSON, with no authentication required:
 
   ```bash
   curl -s http://localhost:3000/api/version
