@@ -240,10 +240,10 @@ request never shows up as missing on the default branch. See [Scenario gaps & th
 
 ### Reach
 
-A test **reaches** a route, a page or a control when a real run observes it doing so: a request to the route, a
-navigation to the page, or a locator in its steps targeting the control. Reach is measured from runs, never from
-instrumented code coverage, which is why the docs and the dashboard say *observed reach* rather than *coverage*. A
-flaky, quarantined or skipped test's reach does not count as trusted.
+A test **reaches** a route or a page when a real run observes it doing so: a request to the route, or a navigation to
+the page. A control is reached only when triage records a covering test for it. Reach is measured from runs, never
+from instrumented code coverage, which is why the docs and the dashboard say *observed reach* rather than *coverage*.
+A flaky, quarantined or skipped test's reach does not count as trusted.
 
 ### Locator index
 
@@ -254,7 +254,7 @@ use a locator, and it feeds [Who uses a locator](/features/locator-usage) and
 ### Scenario gap
 
 A test the suite does not have yet, proposed from the Test Map with its evidence and a next step: a route no test
-reaches, a control nobody exercises, a changed file no test covered. A gap is triaged like a failure cluster: accept
+reaches, a control nobody exercises, a changed file no test reaches. A gap is triaged like a failure cluster: accept
 it, snooze it, dismiss it with a reason, or mark it covered by an existing test.
 
 ### Gap class
@@ -263,8 +263,8 @@ How serious a gap is:
 
 - **blind-spot**: nothing reaches it.
 - **false-comfort**: a [probe](#probe) broke it and every test still passed.
-- **fragile**: a single trusted test reaches it, or a critical feature is exercised on only one browser, viewport or
-  environment.
+- **fragile**: what reaches it could stop at any time: a single trusted test, a test whose every reached node
+  disappeared, or a fix that did not hold.
 
 Server probes report **findings** rather than gaps, in two more classes: **unhandled** (the application did not handle
 the injected failure) and **degraded** (it handled it badly).
@@ -272,19 +272,21 @@ the injected failure) and **degraded** (it handled it badly).
 ### Detector
 
 A rule that reads the Test Map and the run history and reports one kind of gap, such as *declared, never hit* or
-*single covering test*. Each gap names the detector that raised it.
+*single covering test*. Each gap names the detector that raised it; [Gap detectors & exposure](/reference/gap-detectors)
+lists them all.
 
 ### Exposure
 
-The score that ranks gaps: the geometric mean of four factors (how often the files involved change, how new they are,
+The score that ranks gaps: the geometric mean of four factors (how often the files involved change, how old they are,
 whether they were part of an earlier escaped failure, and the `piwi:priority` of the tests around them), multiplied by
-the detector's confidence.
+the detector's confidence. See [Gap detectors & exposure](/reference/gap-detectors#exposure).
 
 ### Probe
 
 A re-run of a passing test with one injected fault (a 500, an empty body, a dropped field, a slow response), recording
 whether the test noticed. A client probe injects the fault at the Playwright boundary; a server probe asks the
-[backend instrumentation](./backend-logs#server-probes) to inject it inside the server. A **probe run**, the run `piwi probe` produces, fails on purpose, so no metric ever counts it.
+[backend instrumentation](./backend-logs#server-probes) to inject it inside the server. A **probe run**, the run `piwi probe` produces, is marked as one, so no metric, failure cluster or
+regression signal ever counts it. See [Probes](/features/probes).
 
 ### Declared surface
 

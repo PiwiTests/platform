@@ -231,6 +231,6 @@ export const SETUP_CAPABILITIES: SetupCapabilityCopy[] = [
     experimental: true,
     experimentalNote:
       'Experimental — the entry condition (client probes reporting not-noticed on at least one pair in ten) has not been measured yet.',
-    doc: 'features/scenario-gaps#server-probes-level-two',
+    doc: 'features/probes#server-probes',
   },
 ];

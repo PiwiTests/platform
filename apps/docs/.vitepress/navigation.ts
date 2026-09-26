@@ -180,6 +180,8 @@ export const referenceSidebar: SidebarGroup[] = [
       { text: 'Test metadata', link: '/reference/test-metadata' },
       { text: 'Piwi CLI', link: '/reference/cli' },
       { text: 'Analytics widgets', link: '/reference/analytics-widgets' },
+      { text: 'Metrics', link: '/reference/metrics' },
+      { text: 'Gap detectors & exposure', link: '/reference/gap-detectors' },
       { text: 'API docs (interactive)', link: 'https://piwitests.dev/demo/docs' },
     ],
   },
