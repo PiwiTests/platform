@@ -64,7 +64,7 @@ steps. `init` also adds the [Piwi agent skills](/features/agent-skills) to the p
 > `npx @piwitests/reporter <command>`, so npx resolves this package: `npx piwi` would fetch an unrelated `piwi`
 > package from npm. Once the reporter is a dependency of your project, `npx piwi <command>` works too.
 
-If authentication is on, pass an [API key](/operate/authentication) as `PIWI_API_KEY`. To wire the reporter in by
+If authentication is on, pass an [API key](/operate/api-keys) as `PIWI_API_KEY`. To wire the reporter in by
 hand, or to send one run without editing your config, see [Reporter](./reporter).
 
 ## 3. Run your tests

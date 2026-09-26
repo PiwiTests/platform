@@ -109,6 +109,6 @@ small enough to audit: watch the container's egress, or read
 provider, SCM, SMTP, storage and notification clients are the only things there that open a socket.
 
 ## Related
-- [Authentication](/operate/authentication) — roles, API keys, and project-level access
+- [Authentication](/operate/authentication), [API keys](/operate/api-keys) and [Project access](/operate/project-access): roles, keys and project-level access
 - [Production checklist](/operate/production-checklist#before-you-expose-it) — hardening a public instance
 - [Why Piwi?](./comparison#is-my-data-safe-does-piwi-phone-home) — the same question, short form

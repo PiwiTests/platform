@@ -209,7 +209,7 @@ as an archive. Any other type is accepted too, with its directory given in `dir`
 ## With authentication enabled
 
 When the dashboard has authentication enabled, pass an **API key**: create one in the dashboard (see
-[Authentication](/operate/authentication)), store it in a CI secret, and give it to the reporter as `apiKey` or
+[API keys](/operate/api-keys)), store it in a CI secret, and give it to the reporter as `apiKey` or
 `PIWI_API_KEY`:
 
 ```typescript
