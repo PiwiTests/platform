@@ -5,6 +5,8 @@ import { drizzle as sqliteDrizzle } from 'drizzle-orm/libsql/sqlite3';
 import * as sqliteSchema from './schema.sqlite';
 import { backfillProjectAssignments } from '#shared/handlers/project-assignments';
 import { reclusterFailureFingerprints } from '#shared/handlers/failure-cluster-recluster';
+import { applyMigrations } from './migration-history';
+import { postgresMigrationTarget, sqliteMigrationTarget } from './migration-targets';
 import { existsSync, mkdirSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -15,6 +17,7 @@ type DB = ReturnType<typeof sqliteDrizzle<typeof sqliteSchema>>;
 export type DbClient = Awaited<ReturnType<typeof getDatabase>>;
 
 let db: DB;
+let initPromise: Promise<DB> | null = null;
 let migrationPromise: Promise<void> | null = null;
 
 // Detect which database backend to use
@@ -69,7 +72,17 @@ function backfillAnalyticsRollups(): void {
   })();
 }
 
-export async function initDatabase() {
+/**
+ * Open the database and bring its schema up to date, once per process: the
+ * callers that arrive while it is still opening (the startup plugins, the first
+ * requests) share the same connection and the same migration run.
+ */
+export function initDatabase(): Promise<DB> {
+  initPromise ??= openDatabase();
+  return initPromise;
+}
+
+async function openDatabase(): Promise<DB> {
   if (!db) {
     if (databaseUrl) {
       // PostgreSQL path
@@ -86,7 +99,10 @@ export async function initDatabase() {
         try {
           const migrationsFolder = await resolveMigrationsFolder('migrations-pg');
           console.log(`[Database] Running PostgreSQL migrations from ${migrationsFolder}`);
-          await migrate(pgDb, { migrationsFolder });
+          await applyMigrations(
+            postgresMigrationTarget(client, () => migrate(pgDb, { migrationsFolder })),
+            migrationsFolder,
+          );
           console.log('[Database] PostgreSQL migrations completed successfully');
           // Backfill project assignments for existing users (idempotent)
           try {
@@ -145,7 +161,10 @@ export async function initDatabase() {
         try {
           const migrationsFolder = await resolveMigrationsFolder('migrations');
           console.log(`[Database] Running SQLite migrations from ${migrationsFolder}`);
-          await migrate(db, { migrationsFolder });
+          await applyMigrations(
+            sqliteMigrationTarget(client, () => migrate(db, { migrationsFolder })),
+            migrationsFolder,
+          );
           console.log('[Database] SQLite migrations completed successfully');
           // Backfill project assignments for existing users (idempotent)
           try {

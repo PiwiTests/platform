@@ -40,6 +40,8 @@ Drizzle ORM over **SQLite (libSQL)** or **PostgreSQL (postgres.js)**, chosen at 
 - `server/database/schema.ts` — a conditional re-export that picks a dialect at module init; type-checking uses the
   SQLite schema as canonical. Never edit it to add tables.
 - `server/database/migrations/` (SQLite) and `migrations-pg/` (PostgreSQL, auto-run on startup).
+- `server/database/migration-history.ts` — the startup check of the recorded migration history, and the repair of a
+  database that ran another branch's migrations; `migration-targets.ts` holds its SQLite and PostgreSQL queries.
 
 Tables, by area:
 

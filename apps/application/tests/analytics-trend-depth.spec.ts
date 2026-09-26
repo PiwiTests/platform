@@ -5,8 +5,8 @@
  */
 import readXlsxFile from 'read-excel-file/node';
 import { test, expect } from './fixtures';
-import { waitForHydration } from './utils';
 import { PROJECT } from '#shared/test-project-names';
+import { waitForHydration } from './utils';
 
 test.describe.serial('Analytics trend depth', () => {
   let projectId: number;
@@ -50,6 +50,7 @@ test.describe.serial('Analytics trend depth', () => {
 
   test('the Settings tab saves targets, and PATCH clears them with null', async ({ page, request }) => {
     await page.goto(`/projects/${projectId}?tab=settings`);
+    // Typed before hydration, the values are reset and Save submits the form natively.
     await waitForHydration(page);
     const form = page.locator('[data-shot="project-targets"]');
     await form.getByTestId('target-testPassRate').fill('99');
@@ -72,7 +73,7 @@ test.describe.serial('Analytics trend depth', () => {
     request,
   }) => {
     const stats = await (
-      await request.get(`/api/widgets/stats?period=last-7d&projects=${projectId}&allBranches=true`)
+      await request.get(`/api/analytics/stats?period=last-7d&projects=${projectId}&allBranches=true`)
     ).json();
     const passRate = stats.tiles.find((t: { metric: string }) => t.metric === 'test-pass-rate');
     expect(passRate.target).toEqual({ target: 99, direction: 'min', met: 0, missed: 1 });
@@ -103,12 +104,12 @@ test.describe.serial('Analytics trend depth', () => {
       'movers',
     ]) {
       const response = await request.get(
-        `/api/widgets/${widget}?period=last-7d&projects=${projectId}&allBranches=true`,
+        `/api/analytics/${widget}?period=last-7d&projects=${projectId}&allBranches=true`,
       );
       expect(response.ok(), widget).toBeTruthy();
     }
     const growth = await (
-      await request.get(`/api/widgets/suite-growth?period=last-7d&projects=${projectId}&allBranches=true`)
+      await request.get(`/api/analytics/suite-growth?period=last-7d&projects=${projectId}&allBranches=true`)
     ).json();
     expect(growth.suiteSize).toBe(2);
 
@@ -154,12 +155,8 @@ test.describe.serial('Analytics trend depth', () => {
 
     await page.goto(`/test-cases/${testCaseId}`);
     await waitForHydration(page);
-    // The tab strip renders the item as a button (onSelect, no `to`); match a link too in case Nuxt UI
-    // changes that. Exact, since the project's name also holds "trend".
-    await page
-      .getByRole('button', { name: 'Trend', exact: true })
-      .or(page.getByRole('link', { name: 'Trend', exact: true }))
-      .click();
+    // Exact: the project's own name contains "trend".
+    await page.getByRole('button', { name: 'Trend', exact: true }).click();
     await expect(page).toHaveURL(/tab=trend/);
     await expect(page.locator('[data-shot="test-case-trend"] svg.block').first()).toBeVisible({ timeout: 30_000 });
   });

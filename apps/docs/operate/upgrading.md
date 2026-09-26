@@ -23,7 +23,9 @@ what happens before you pull a new tag.
 On boot, before the server accepts a single request:
 
 1. **Database migrations run automatically** — SQLite or PostgreSQL, whichever you're on. There is no
-   separate migrate command and nothing to run by hand.
+   separate migrate command and nothing to run by hand. Before migrating, Piwi compares the migrations
+   the database has recorded with the ones this version ships (see
+   [A database that ran another build](#a-database-that-ran-another-build)).
 2. **A project-assignments backfill** runs (idempotent, safe on every start).
 3. **Failure clusters are re-fingerprinted** if the fingerprint algorithm changed in this release.
    This is non-destructive: existing clusters are updated in place, and clusters that now collide are
@@ -32,6 +34,28 @@ On boot, before the server accepts a single request:
 Steps 2 and 3 log an error and continue if they fail — they never block startup. **Step 1 does not.**
 If a migration fails, the server refuses to start rather than serving against a half-migrated schema.
 That's deliberate: a loud failure you can restore from beats silent corruption.
+
+## A database that ran another build
+
+Releases only ever add migrations, in date order. A database that also ran a build from outside the
+releases (a development branch, a preview image) can hold migrations this version does not ship, and
+be missing some it does. On startup Piwi logs `The migration history of this database does not match
+this build`, lists what differs, and repairs it in a single transaction:
+
+- the migrations the database lacks are applied, including any dated before the latest one it ran;
+- tables, columns, indexes and constraints the other build already created are kept, completed with
+  the columns this version declares, and indexes are rebuilt from this version's definition;
+- a unique index this version does not declare is dropped, since it would reject rows Piwi writes;
+- the result is checked against the schema this version expects, then the migrations the other build
+  recorded are removed from the history.
+
+The log ends with `Migration history repaired` and the next start is a normal one. If the result would
+still differ from the expected schema — a column only the other build has, `NOT NULL` without a
+default, for instance — nothing is changed and the server stops with `Migration history repair
+failed` and the difference it found: restore a backup, or start from an empty database.
+
+A database that is only **ahead** of this version, as after starting an older version on it, gets a
+single warning, `applied migration(s) are not in this build`, and nothing else: see below.
 
 ## Downgrading is not supported
 
@@ -77,7 +101,8 @@ Three ways, in increasing order of automation:
   the database isn't reachable, which is what you want a container orchestrator watching.
 
 In the startup logs, the lines worth grepping for are `Running <dialect> migrations from …` and
-`migrations completed successfully`.
+`migrations completed successfully` — plus `Migration history repaired` after a
+[repair](#a-database-that-ran-another-build).
 
 ## Upgrading the reporter
 
@@ -108,7 +133,9 @@ installer, which reopens it when done.
 
 **The container won't start after upgrading.** Check the logs for `Migration error`. The schema is
 mid-flight or incompatible; restore your backup and open an
-[issue](https://github.com/PiwiTests/platform/issues) with the error.
+[issue](https://github.com/PiwiTests/platform/issues) with the error. If the error starts with
+`Migration history repair failed`, the database ran another build and could not be brought in line
+automatically ([details](#a-database-that-ran-another-build)); it was left as it was.
 
 **The dashboard loads but data looks wrong.** Don't downgrade — restore the backup instead, then
 report what you saw. Downgrading on a migrated database compounds the problem.
