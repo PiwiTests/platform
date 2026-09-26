@@ -224,9 +224,11 @@ export async function collectReportBundle(db: DrizzleDB, opts: CollectReportOpti
     sourceUrl: baseUrl
       ? `${baseUrl}/analytics${/^\d+$/.test(dashboard.ref) ? `/d/${dashboard.ref}` : ''}${query ? `?${query}` : ''}`
       : null,
+    // English names the period (`Last 30 days`), or gives a date range as written; French gives
+    // its dates, lower case after the comma (`du 1er août …`).
     title: s.reportTitle(
       text.projects,
-      language === 'en' && !rangeOnly ? ctx.period.label : lowerFirstLetter(period.label),
+      language === 'en' ? (rangeOnly ? period.label : ctx.period.label) : lowerFirstLetter(period.label),
     ),
     language,
     locale: f.locale,

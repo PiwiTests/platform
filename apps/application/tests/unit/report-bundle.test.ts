@@ -90,6 +90,14 @@ describe('collectReportBundle', () => {
     expect(bundle.comparison?.label.startsWith('la période du ')).toBe(true);
   });
 
+  test('a date range titles the report with its dates, as each language writes them', async () => {
+    const scope = parseAnalyticsScope({ period: '2026-08-01..2026-08-31' });
+    const en = await collectReportBundle(db as any, { dashboard: 'executive', scope });
+    expect(en.title).toBe('All projects, Aug 1, 2026 to Aug 31, 2026');
+    const fr = await collectReportBundle(db as any, { dashboard: 'executive', scope, language: 'fr' });
+    expect(fr.title).toBe('Tous les projets, du 1er août 2026 au 31 août 2026');
+  });
+
   test('a French report says which widgets ignore the test filter', async () => {
     const bundle = await collectReportBundle(db as any, {
       dashboard: 'executive',
