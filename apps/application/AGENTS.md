@@ -590,9 +590,9 @@ app with Playwright — `scripts/take-feature-screenshots.mjs` (`--route`, `--ur
   download URL. The demo is served from `/demo/` and its service worker only intercepts that prefix, so a root-relative
   `/api/...` escapes the scope and 404s against the static host. `fileApiUrl` and `getTraceViewerUrl` exist for exactly
   this reason.
-- **Test cases live under runs #21+.** Runs #1–20 have 0 cases (their rows target a migration-only table the dev schema
-  drops). Query a real id: `node scripts/db-query.mjs "SELECT id FROM test_runs_cases ORDER BY id DESC LIMIT 5"`.
-  Clusters with data: #3, #4, #5, #7, #8; project #2 (`api-integration`) owns clusters 3 and 4.
+- **Every seeded run carries its cases**, and every one of the ten clusters has failing executions; project #2
+  (`api-integration`) owns clusters 3 and 4. Run and execution ids are stable for a given seed, but query a real one
+  rather than guessing: `node scripts/db-query.mjs "SELECT id FROM test_runs_cases ORDER BY id DESC LIMIT 5"`.
 - **Brand icons** (`i-simple-icons-*`) resolve from the iconify CDN at runtime; with no outbound network they render
   blank. Only the `lucide` collection is bundled locally. Environment limitation, not a bug.
 
