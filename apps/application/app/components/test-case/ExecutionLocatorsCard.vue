@@ -71,6 +71,9 @@ function usedByTitle(use: ExecutionLocatorUse): string {
     <template v-else>
       <p class="text-xs text-muted mb-2">
         Every locator this test used, in order. The count is how many tests in the project use the same chain.
+        <NuxtLink :to="`/projects/${data.projectId}/locators`" :class="SENTENCE_LINK_CLASS"
+          >All the project's locators</NuxtLink
+        >
       </p>
       <ol class="divide-y divide-default">
         <li

@@ -657,6 +657,18 @@ export const HELP_TOPICS = {
     doc: 'features/locator-healing',
   },
 
+  // ── Locator index ──────────────────────────────────────────────────────
+  'project.locator-check': {
+    title: 'Check locators',
+    text: 'Paste locators, one per line as the Piwi Picker extension copies them, or lines of test code. Each one is looked up among the chains the project’s tests used: exactly, through the same last call inside other containers, through another call that finds the same element (a shorter name, a regex), or as a container other chains search inside. The tests reaching any of them are listed once at the end.',
+    doc: 'features/locator-usage#the-locators-page',
+  },
+  'project.locator-index': {
+    title: 'Locator index',
+    text: 'Every locator chain recorded in the steps of the project’s runs, with the tests that use it and the actions they perform through it. New runs update it as they arrive. Matching is by chain text: to see which elements of a live page these chains reach, use Tested elements in the Piwi Picker extension.',
+    doc: 'features/locator-usage#the-locators-page',
+  },
+
   // ── Environment diff ────────────────────────────────────────────────────
   'environment-diff': {
     title: 'Environment diff',

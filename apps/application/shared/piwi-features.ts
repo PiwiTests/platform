@@ -202,6 +202,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/locator-healing',
       },
       {
+        title: 'Who uses a locator',
+        summary:
+          'Before changing an element, the tests whose steps reach it and the lines they reach it from, or check pasted locators against every run.',
+        needs: [],
+        where: 'Execution → Locators; Project → Locators',
+        doc: 'features/locator-usage',
+      },
+      {
         title: 'Fix plans, reproduce & bisect',
         summary: 'A plan to reproduce a failure locally and bisect to the commit that introduced it.',
         needs: ['desktop'],

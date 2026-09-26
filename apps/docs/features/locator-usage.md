@@ -26,6 +26,34 @@ Opening a count answers **Who uses this?** in three ways:
 
 Call sites shared by the most tests come first: a page-object line used by five tests is one fix for all five. **Run these tests** turns the list into a `npx playwright test` command through the same materialization as [test selection](/guide/test-selection).
 
+## The Locators page
+
+A project's page links to **Locators** from its **More actions** menu, and an execution's
+**Locators** tab links to it too. It answers the question from the other side: not "what does
+this test use?" but "does any test use this?".
+
+**Check locators** takes locators pasted one per line, as the
+[Piwi Picker extension](./extension)'s **Copy all** copies them for an element, or lines of test
+code (`await page.getByLabel('Card number').fill('4242…')`: the locator is read out of each
+line). Each locator gets a verdict, from the closest match found:
+
+- **Used by N tests** — the exact chain is in the index.
+- **Same target in N tests** — the same last call, inside other containers.
+- **A similar locator in N tests** — the same method with a looser argument that finds the same
+  element: a test's `getByRole('button', { name: /pay/i })` or `getByText('Pay')` finds the
+  pasted `getByRole('button', { name: 'Pay now' })` or `getByText('Pay now')`, following
+  Playwright's case-insensitive substring matching when `exact` is not set.
+- **A container in N tests** — the locator is a container that other chains search inside.
+
+Below the verdicts, the tests reaching any of the pasted locators are listed once, with how many
+of the locators each one reaches. Paste every locator the extension gives for an element, and
+that list answers whether the element is tested, whichever way the tests wrote its locator.
+The page keeps what you paste in its URL (`?q=`), so a check can be shared as a link; the
+extension's **Find these locators in Piwi ↗** opens it that way.
+
+**Locators your tests use** lists every chain of the index, the ones shared by the most tests
+first, with a filter. Each count opens **Who uses this?**.
+
 ## Requirements and limits
 
 - **Playwright 1.61 or later**, with step collection on (`collectPerformanceMetrics`, the default). Playwright 1.63 puts the chain in each step's parameters; 1.61 and 1.62 print it in the step title, which Piwi reads the same way.

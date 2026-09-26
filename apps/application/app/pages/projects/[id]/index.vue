@@ -767,6 +767,11 @@ const moreMenuItems = computed(() => {
     icon: 'i-lucide-list-filter',
     onSelect: () => navigateTo(`/projects/${projectId}/selections`),
   });
+  items.push({
+    label: 'Locators',
+    icon: 'i-lucide-crosshair',
+    onSelect: () => navigateTo(`/projects/${projectId}/locators`),
+  });
   if (canManage.value)
     items.push({
       label: 'Delete',
