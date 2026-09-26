@@ -13,7 +13,7 @@
 import writeXlsxFile from 'write-excel-file/universal';
 import type { MetricUnit } from '#shared/analytics/metrics';
 import { sentencesFor } from './sentences';
-import type { ReportLanguage } from './format';
+import type { ReportLanguage } from './languages';
 import type { ReportBlock, ReportBundle, ReportCellValue, ReportWidget } from './types';
 
 export const XLSX_CONTENT_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
