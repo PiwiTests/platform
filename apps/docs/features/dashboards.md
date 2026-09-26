@@ -1,5 +1,6 @@
 ---
 title: Dashboards
+description: "Saved analytics dashboards: your own arrangement of widgets with its own scope, private or shared, refreshed live, shown in TV mode or scheduled as a report."
 lang: en-US
 ---
 
@@ -58,7 +59,7 @@ version or save yours as a copy; nothing is overwritten.
 
 *Add widget* lists every widget, grouped by the band it usually belongs to, with a search: the fifteen of
 Overview, the report widgets (verdict, what is being done, risks, scenario gaps), the engineering
-widgets (ownership, environment comparison, movers; see [Analytics widgets](./analytics-widgets)), and:
+widgets (ownership, environment comparison, movers; see [Analytics widgets](/reference/analytics-widgets)), and:
 
 - **Metric**: one number of the metric catalog, drawn as a number, a line, bars, a table or a heatmap
   (below).
@@ -132,7 +133,6 @@ reason on the Reports page, until their owner picks another dashboard.
 The [MCP server](./mcp) has `list_dashboards` and `get_dashboard`, which returns every widget's data,
 the JSON the page renders, over the dashboard's scope; each key you pass replaces the dashboard's.
 
-## See also
-
+## Related
 - [Analytics](./analytics): the scope, the periods and the widgets of Overview
 - [Quality reports](./quality-reports): a dashboard as a document, on a schedule

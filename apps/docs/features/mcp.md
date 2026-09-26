@@ -1,5 +1,6 @@
 ---
 title: MCP server
+description: "The MCP server built into the dashboard: its tools and prompts, authentication, client setup for coding agents, and the agent skills."
 lang: en-US
 ---
 
@@ -53,7 +54,7 @@ The server exposes 55 tools, mostly read-only plus a few triage tools, from brow
 | `explain_failure` | **One-call evidence bundle** for a failure: error, steps, console, [clues](/features/evidence#clues), locator fix, [page diff](/features/evidence#page-diff), diagnosis context |
 | `list_links` | External links (Jira/PR/issue) attached to a run, execution, test case, or failure cluster |
 
-**Test selections** *([named, data-driven test subsets](/guide/test-selection))*
+**Test selections** *([named, data-driven test subsets](/features/test-selection))*
 
 | Tool | Description |
 |------|-------------|
@@ -312,7 +313,7 @@ npx @piwitests/reporter skills add investigate-failure --dir .cursor/skills   # 
 | `investigate-failure` | Investigate a failed run and propose a fix grounded in Piwi's evidence — error, steps, console, network, and the diff since the last green run. |
 | `apply-locator-healing` | Replace a brittle locator with Piwi's ranked healed selector at its call site, then re-run to confirm. |
 | `stabilize-flaky-tests` | Fix the root cause of the highest-impact flaky tests (never by adding retries), then verify with repeated runs. |
-| `run-the-right-tests` | Pick and run the right [selection](/guide/test-selection) for the task — smoke, recently-broken, a time budget — instead of the whole suite. |
+| `run-the-right-tests` | Pick and run the right [selection](/features/test-selection) for the task — smoke, recently-broken, a time budget — instead of the whole suite. |
 | `write-the-missing-test` | Take the top [scenario gap](/features/scenario-gaps) in scope, draft it from the graph, finish the assertion and open it in the same change. |
 
 The skills are agent-agnostic Markdown — only the destination is tool-specific, so `--dir` points the install wherever your agent reads skills from. Each one prefers a connected Piwi MCP tool and falls back to the dashboard UI when MCP is not connected.

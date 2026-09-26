@@ -1,5 +1,6 @@
 ---
 title: CI & sharding
+description: "Run the reporter in CI: GitHub Actions, GitLab and others, shards merged into one run, the run URL for later steps, pull-request feedback and the merge gate."
 lang: en-US
 ---
 
@@ -361,8 +362,7 @@ transient blip) the next event revives the run automatically, so `interrupted` i
 job really died. Those runs are excluded by the **full runs only** filter in
 [Analytics](/features/analytics#scope).
 
-## See also
-
+## Related
 - [Reporter](./reporter) — every option, streaming, and locator healing
 - [Authentication](/operate/authentication) — creating the API key CI uses
 - [Concepts → Test run](./concepts#test-run) — why shards are one run

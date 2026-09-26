@@ -1,5 +1,6 @@
 ---
 title: Database
+description: "SQLite by default or PostgreSQL for a shared instance, how to switch between them, and where retention and backups are covered."
 lang: en-US
 ---
 
@@ -70,8 +71,7 @@ about, or accept starting fresh. Your file storage is unaffected either way.
 - **Upgrades apply migrations automatically and they are forward-only.** Read
   [Upgrading](./upgrading) before bumping a version tag.
 
-## See also
-
+## Related
 - [Configuration reference](/reference/configuration#database) — every `PIWI_DATABASE_*` and retention variable
 - [Storage configuration](./storage) — where reports, traces and attachments go
 - [Deployment](./deployment) — Compose, Kubernetes and one-click templates

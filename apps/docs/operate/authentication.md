@@ -1,5 +1,6 @@
 ---
 title: Authentication
+description: "Turn on sign-in and roles, configure Google and GitHub OAuth, manage users and project access, and create API keys for CI and agents."
 lang: en-US
 ---
 

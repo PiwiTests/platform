@@ -1,5 +1,6 @@
 ---
 title: Analytics
+description: "Cross-project trends over a period you choose: filters, comparison periods, targets, drill-down to the rows behind a number, and chart export."
 lang: en-US
 ---
 
@@ -57,7 +58,7 @@ filter bar override both.
 The *Tests* filter narrows every number to some tests:
 
 - a **selection**, by key: `smoke` resolves in each project to that project's
-  [selection](/guide/test-selection) with that key, so a convention shared across projects works on the
+  [selection](/features/test-selection) with that key, so a convention shared across projects works on the
   cross-project page; a project without it is left out and named;
 - **test tags**: tests carrying all of them;
 - **browsers**: the Playwright projects the executions ran on.
@@ -89,7 +90,7 @@ The rollups also [export](/operate/metrics) to a BI tool or a Prometheus scraper
 The page is the built-in **Overview** dashboard: headline tiles, the portfolio, insights and the heatmap
 in *Where things stand*; failure clusters, flaky tests, wasted CI time and time to fix in *Where the pain
 is*; the pass rate over time, regression velocity, CI time, suite growth and flaky debt in *Which way it
-is going*; browsers and slow endpoints in *Detail*. [Analytics widgets](./analytics-widgets) describes
+is going*; browsers and slow endpoints in *Detail*. [Analytics widgets](/reference/analytics-widgets) describes
 each one, and the widgets the other dashboards add.
 
 ## From a number to its rows
@@ -128,8 +129,7 @@ against a project, drawn as a vertical line across the trend charts. On the anal
 is drawn; across projects only `release`, `infra` and `incident` markers are, labeled with their project — so "the slowdown started the day we switched runners"
 becomes something you can see rather than remember.
 
-## See also
-
+## Related
 - [Dashboards](./dashboards) — views of your own
 - [Quality reports](./quality-reports) — this page as a document, with **Export**
 

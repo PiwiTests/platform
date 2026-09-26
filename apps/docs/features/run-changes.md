@@ -1,5 +1,6 @@
 ---
 title: What changed in a run
+description: "What changed in a run against its baseline: new failures, fixed tests, new flakes, the largest duration changes and the commits in between."
 lang: en-US
 ---
 

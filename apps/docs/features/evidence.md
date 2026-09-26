@@ -1,5 +1,6 @@
 ---
 title: Failure evidence
+description: "Everything captured about one failing execution on one screen: the situation block, clues, attempts, the evidence tabs and the trace-powered views."
 lang: en-US
 ---
 
@@ -167,8 +168,7 @@ Any of this can leave the dashboard as a self-contained file — for a ticket at
 without an account, or an archive that outlives your retention window. See
 [Offline export](./offline-export).
 
-## See also
-
+## Related
 - [Capture fixtures](/guide/capture-fixtures) — the one file that produces the network, console, Web Vitals and locator evidence
 - [AI diagnosis & clustering](./ai-diagnosis) — the same investigation across every test sharing a fingerprint
 - [Core concepts](/guide/concepts#execution) — execution versus test case

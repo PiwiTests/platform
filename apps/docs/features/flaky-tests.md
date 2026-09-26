@@ -1,9 +1,10 @@
 ---
-title: Flaky tests
+title: Flaky tests & quarantine
+description: "How Piwi scores and classifies flaky tests from their history, ranks them by the CI time they waste, and quarantines them with a way out."
 lang: en-US
 ---
 
-# Flaky tests
+# Flaky tests & quarantine
 
 <Needs reporter />
 
@@ -111,8 +112,7 @@ portfolio over a time window you choose — portfolio health, a pass-rate heatma
 regression velocity, a global flaky leaderboard, and an auto-generated insights feed. See
 [Analytics](./analytics).
 
-## See also
-
+## Related
 - [What changed in a run](./run-changes) — the Changes tab: new failures, fixed tests, commits since a baseline
 - [Slow tests & wasted time](./slow-tests) — duration trends, slowest tests, and timeout opportunities
 - [Analytics](./analytics) — the same signals across every project

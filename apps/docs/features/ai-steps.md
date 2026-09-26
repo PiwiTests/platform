@@ -1,5 +1,6 @@
 ---
 title: AI steps
+description: "Write test steps in plain English: an agent resolves each one once into a committed artifact, and CI replays it as ordinary Playwright with no model calls."
 lang: en-US
 ---
 
@@ -18,7 +19,7 @@ await page.piwiRun('sign in as {email}', { email: 'ada@example.com' })
 The guiding principle is **the LLM is a compiler, not a runtime**. The first time a prompt is seen, an agent resolves it **once** into a committed, deterministic JSON artifact. Every run after that *replays* that artifact with ordinary Playwright calls — **zero LLM calls and zero network** in the default `replay` mode. Your CI stays fast, offline, and reproducible; the model is only ever involved while authoring.
 
 ::: tip This composes with the capture fixtures
-AI steps are a separate opt-in from the [capture fixtures](./capture-fixtures), and compose with them. Replayed actions flow through the instrumented page, so they feed traces, reports, and [locator healing](/features/locator-healing) exactly like hand-written code.
+AI steps are a separate opt-in from the [capture fixtures](/guide/capture-fixtures), and compose with them. Replayed actions flow through the instrumented page, so they feed traces, reports, and [locator healing](/features/locator-healing) exactly like hand-written code.
 :::
 
 ## Setup
@@ -103,7 +104,7 @@ Because replay is plain Playwright, there is nothing extra to install or start i
 
 An entry is **data, never code**: an allowlisted locator program plus, for a flow, an ordered list of steps and a postcondition oracle. Determinism and safety come from several guarantees:
 
-- **Deterministic bytes.** The model only ever *names* an element (its ARIA role + accessible name). The [`@piwitests/core`](./concepts#locator-snapshot) scorer turns that into the committed locator, so model sampling never changes the file. Two runs that reach the same conclusion produce byte-identical JSON, and a no-op re-resolution leaves your working tree clean.
+- **Deterministic bytes.** The model only ever *names* an element (its ARIA role + accessible name). The [`@piwitests/core`](/guide/concepts#locator-snapshot) scorer turns that into the committed locator, so model sampling never changes the file. Two runs that reach the same conclusion produce byte-identical JSON, and a no-op re-resolution leaves your working tree clean.
 - **No evaluation.** Every locator method and action is checked against an allowlist before it touches the page. A tampered or malformed artifact can never become arbitrary execution.
 - **Drift guard.** Each step records the element's role/name at author time. On replay, if the page positively shows that element has drifted (a rename), the flow **stops before acting** rather than clicking the wrong thing.
 - **Postcondition oracle.** Every flow ends with an assertion the agent chose (an element became visible/hidden, or the URL changed). Replay verifies it, so a subtly wrong flow fails loudly instead of passing.
@@ -120,7 +121,7 @@ Intent mappings are as private as everything else here: templates keep their `{p
 
 ## Privacy
 
-Parameter values are **masked out of everything sent to the model**. The page snapshot the agent sees has your `{param}` values replaced with markers, and placeholders survive compilation as markers that are substituted locally at replay. Secrets in parameters never leave your machine. See [Privacy & data flow](./privacy) for the full picture.
+Parameter values are **masked out of everything sent to the model**. The page snapshot the agent sees has your `{param}` values replaced with markers, and placeholders survive compilation as markers that are substituted locally at replay. Secrets in parameters never leave your machine. See [Privacy & data flow](/guide/privacy) for the full picture.
 
 ## The `piwi ai` CLI
 
@@ -162,6 +163,6 @@ On the **server** side, two limits bound each authoring iteration — see the [A
 
 ## Related
 
-- [Reporter](./reporter) — installing and configuring the reporter.
-- [Capture fixtures](./capture-fixtures) — the sibling opt-in that powers healing and performance data.
+- [Reporter](/guide/reporter) — installing and configuring the reporter.
+- [Capture fixtures](/guide/capture-fixtures) — the sibling opt-in that powers healing and performance data.
 - [AI diagnosis](/features/ai-diagnosis) — the dashboard's failure-analysis AI (a different feature that reuses the same provider config).

@@ -1,5 +1,6 @@
 ---
-title: Triage a run that went mostly red
+title: Triage a run gone red
+description: "Forty tests are red: read the failure clusters instead of the tests, rule out infrastructure, triage each cause once, and confirm the fix."
 lang: en-US
 ---
 
@@ -85,8 +86,7 @@ your own channel — see the [API docs](https://piwitests.dev/demo/docs).
 instead of `run.failed`: you hear once when a genuinely new root cause appears, not on every red build,
 and the payload carries a sample error excerpt and the affected cases.
 
-## See also
-
+## Related
 - [AI diagnosis & failure clustering](/features/ai-diagnosis) — how fingerprints and semantic merging work
 - [Regression or flake?](./regression-or-flaky) — when it's one test rather than forty
 - [Core concepts](/guide/concepts) — *cluster*, *fingerprint*, *baseline*

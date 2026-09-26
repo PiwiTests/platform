@@ -1,5 +1,6 @@
 ---
 title: Storage configuration
+description: "Local or S3-compatible storage for reports and traces, data retention, runs kept forever, cleanup, and how evidence is stored."
 lang: en-US
 ---
 
@@ -195,8 +196,7 @@ The two kinds cost very differently:
 
 Unlike the network resource pool, these entries are not deduplicated across executions — each is unique to its action's page — so `screen` is the one capture option that visibly changes storage growth.
 
-## See also
-
+## Related
 - [Database](./database) — SQLite versus PostgreSQL, and what lives there instead
 - [Configuration reference](/reference/configuration#storage) — every `PIWI_STORAGE_*` and `PIWI_S3_*` variable
 - [Backups](./deployment#backups) — copying the storage directory alongside the database

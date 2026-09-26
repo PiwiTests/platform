@@ -1,5 +1,6 @@
 ---
 title: Getting started
+description: "Pick a way to run the dashboard, connect a Playwright project with one command, and see your first run arrive."
 lang: en-US
 ---
 

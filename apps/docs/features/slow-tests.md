@@ -1,5 +1,6 @@
 ---
 title: Slow tests & wasted time
+description: "Where the suite's time goes: duration trends, timeout headroom, stale test.slow() marks, slow endpoints and Web Vitals."
 lang: en-US
 ---
 

@@ -1,5 +1,6 @@
 ---
 title: Failure clusters & the inbox
+description: "Failures that share an error fingerprint grouped into one cluster, triaged once from the failure inbox with an owner, a known issue and snoozing."
 lang: en-US
 ---
 

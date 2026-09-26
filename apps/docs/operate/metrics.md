@@ -1,5 +1,6 @@
 ---
 title: Metrics and rollup export
+description: "Serve the metric catalog as OpenMetrics for Prometheus and Grafana, and export the daily rollups as JSON or CSV for BI tools."
 lang: en-US
 ---
 
@@ -58,8 +59,7 @@ curl -H "Authorization: Bearer pd_your_api_key" "https://piwi.example.com/api/ro
 
 The column list and every parameter are in the API reference (`/docs` on your instance).
 
-## See also
-
+## Related
 - [Analytics](/features/analytics): the metrics, the scope and the periods
 - [Quality reports](/features/quality-reports): the same numbers as a document for a reader
 - [Configuration reference](/reference/configuration#general): `PIWI_METRICS_ENABLED`

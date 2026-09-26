@@ -1,5 +1,6 @@
 ---
 title: Capture fixtures
+description: "The optional fixtures file that records network timing, Web Vitals, console output, ARIA snapshots and locator snapshots from inside your tests."
 lang: en-US
 ---
 

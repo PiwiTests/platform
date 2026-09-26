@@ -1,5 +1,6 @@
 ---
 title: Auto-heal PRs
+description: "Piwi opens a pull request with a validated locator replacement or patch for a failure; you review and merge it, Piwi never does."
 lang: en-US
 ---
 

@@ -1,5 +1,6 @@
 ---
 title: Localization
+description: "Set the date and time format and the time zone: each viewer's own choice, and the instance default an administrator sets."
 lang: en-US
 ---
 

@@ -57,7 +57,7 @@ Import `test` from this file in your specs instead of `@playwright/test`. A spec
 
 - **Run history, statuses, errors, traces, reports and live streaming** — with no test-code changes.
 - **Capture fixtures** add slow-endpoint analysis, Web Vitals, console capture, failure-time ARIA snapshots and locator healing.
-- **AI steps** (`page.piwiLocator(...)` / `page.piwiRun(...)`) drive flows in plain English, compiled once and replayed deterministically with zero LLM calls in CI — see [AI steps](https://piwitests.dev/guide/ai-steps).
+- **AI steps** (`page.piwiLocator(...)` / `page.piwiRun(...)`) drive flows in plain English, compiled once and replayed deterministically with zero LLM calls in CI — see [AI steps](https://piwitests.dev/features/ai-steps).
 - **CI-aware** — auto-detects the run label, branch and commit, publishes the run URL back to the pipeline, and shards into a single run. See [CI & sharding](https://piwitests.dev/guide/ci).
 
 ## Configuration

@@ -1,5 +1,6 @@
 ---
 title: Notifications & alerts
+description: "Browser, email, Slack, Microsoft Teams and webhook channels, the events they fire on, and per-project subscriptions with digests and mute."
 lang: en-US
 ---
 
@@ -145,8 +146,7 @@ PIWI_SITE_URL=https://piwi.example.com   # base URL used in email links
 
 Send a test email from **Settings → Notifications** to confirm delivery.
 
-## See also
-
+## Related
 - [CI & sharding](/guide/ci) — the alternative: pull the run URL into your pipeline instead
 - [Authentication](/operate/authentication) — per-user channels and subscriptions
 - [Configuration reference](/reference/configuration) — all environment variables

@@ -1,5 +1,6 @@
 ---
 title: Your first failure, explained
+description: "Read one failing test in the dashboard from top to bottom: the headline, the likely cause, the situation, the next step and the evidence."
 lang: en-US
 ---
 

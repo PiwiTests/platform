@@ -1,5 +1,6 @@
 ---
 title: Configuration generator
+description: "Build a ready-to-paste .env, Docker, Kubernetes or systemd configuration in your browser, from the same registry as the configuration reference."
 lang: en-US
 outline: false
 ---

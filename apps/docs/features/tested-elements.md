@@ -1,5 +1,6 @@
 ---
 title: Tested elements
+description: "Open a page of your application and see which of its elements your tests reach, through which tests, and which ones no test reaches."
 lang: en-US
 ---
 

@@ -23,7 +23,7 @@
    The landing page is built from plain <div> blocks rather than the doc
    layout, so its sections carry their own width, rhythm and grid here. */
 
-.home-prose,
+.home-start,
 .screenshots,
 .next-steps {
   max-width: 1152px;
@@ -31,18 +31,32 @@
   padding: 0 24px;
 }
 
-.home-prose {
+.home-start {
   padding-top: 48px;
 }
 
-.home-prose h2,
+/* The home content sits inside .vp-doc, whose h2 carries a rule of its own;
+   the landing sections already draw their dividers, so their headings drop it. */
+.vp-doc .home-start h2,
+.vp-doc .next-steps h2,
+.vp-doc .screenshots h2 {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.vp-doc .home-start h3 {
+  margin-top: 28px;
+}
+
+.home-start h2,
 .next-steps h2 {
   font-size: 1.5rem;
   font-weight: 700;
   margin-bottom: 20px;
 }
 
-.home-prose p {
+.home-start p {
   margin-bottom: 16px;
   color: var(--vp-c-text-2);
   line-height: 1.7;
@@ -98,6 +112,12 @@
   margin-bottom: 64px;
   padding-top: 40px;
   border-top: 1px solid var(--vp-c-divider);
+}
+
+.next-steps h3 {
+  margin: 28px 0 10px;
+  font-size: 1.1rem;
+  font-weight: 600;
 }
 
 .next-steps ul {

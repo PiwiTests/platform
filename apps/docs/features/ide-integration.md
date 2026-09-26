@@ -1,5 +1,6 @@
 ---
 title: Open in IDE
+description: "Open any source path shown in the dashboard at its file and line in VS Code or JetBrains, and how to set up each method."
 lang: en-US
 ---
 

@@ -1,5 +1,6 @@
 ---
 title: Backend logs
+description: "Capture your backend's warnings, errors and spans per test and see them next to the request that caused them, with the ASP.NET Core and Nitro packages."
 lang: en-US
 ---
 

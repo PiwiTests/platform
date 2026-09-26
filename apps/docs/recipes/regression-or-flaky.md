@@ -1,5 +1,6 @@
 ---
 title: Regression or flake?
+description: "Decide in a minute whether a red test is your regression or a known flake, from the run's changes and the test's own history."
 lang: en-US
 ---
 
@@ -76,8 +77,7 @@ block the merge — and the gate always states how many failures it excluded.
 red branch build — the difference between an alert people read and one people mute. `flakiness.spike`
 fires separately when flakiness crosses your configured threshold.
 
-## See also
-
+## Related
 - [Flaky tests](/features/flaky-tests) — how the composite score and root-cause categories are computed
 - [Core concepts](/guide/concepts) — *test case* vs *execution*, the distinction this recipe leans on
 - [Timeline markers](/features/timeline-markers) — correlating a drop with a deploy

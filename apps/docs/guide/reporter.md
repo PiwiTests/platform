@@ -1,9 +1,10 @@
 ---
 title: Reporter
+description: "Install and configure @piwitests/reporter: wrapConfig, live streaming, sharding, multiple reports, authentication, metadata collection and troubleshooting."
 lang: en-US
 ---
 
-# Piwi Dashboard reporter
+# Reporter
 
 The `@piwitests/reporter` package is a custom Playwright reporter that automatically uploads test results, HTML reports, and trace files to the dashboard after each run.
 

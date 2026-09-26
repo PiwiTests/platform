@@ -1,5 +1,6 @@
 ---
 title: Locator healing
+description: "When a locator breaks, ranked replacements captured from the last passing run, a recommended fix in your suite's style, and pickers for local runs."
 lang: en-US
 ---
 

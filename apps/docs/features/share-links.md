@@ -1,5 +1,6 @@
 ---
 title: Share links
+description: "Read-only links to a failure, a quality report or a live dashboard for someone without an account, a status badge, and their security properties."
 lang: en-US
 ---
 
@@ -101,8 +102,7 @@ the reader's address, since such a proxy fetches for many readers.
 - A share URL is a capability: anyone holding it can view the page, and it can end up in browser history or proxy
   logs like any URL. Prefer short expiries, and revoke links when an investigation closes.
 
-## See also
-
+## Related
 - [Offline export](./offline-export) — the file to hand over when the recipient has no network path to your instance
 - [Authentication](/operate/authentication) — roles, and who can mint or revoke
 - [Storage configuration](/operate/storage#data-retention) — retention, and how it interacts with long-lived links

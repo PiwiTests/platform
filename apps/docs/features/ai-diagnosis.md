@@ -1,9 +1,10 @@
 ---
-title: AI diagnosis & failure clustering
+title: AI diagnosis
+description: "An LLM you configure explains a failure cluster against your git diff, with a suggested patch checked against your source before you see it. Off by default."
 lang: en-US
 ---
 
-# AI diagnosis & failure clustering
+# AI diagnosis
 
 When a run finishes, Piwi groups related failures and — optionally — asks an LLM to explain them. The two features work together: clustering decides *what* to diagnose, AI diagnosis explains *why* it broke.
 
@@ -314,8 +315,7 @@ visible without waiting for it to occur.
 
 API keys are encrypted at rest with [`PIWI_SECRET_KEY`](/reference/configuration#general). When you run a diagnosis, the bounded context above is sent to your configured provider — so for fully local analysis, use Ollama or another self-hosted OpenAI-compatible model and keep everything on your own infrastructure.
 
-## See also
-
+## Related
 - [Core concepts](/guide/concepts#error-fingerprint-failure-cluster) — fingerprints, clusters, and baselines in one place
 - [Privacy & data flow](/guide/privacy) — exactly what a diagnosis sends, and where
 - [Configuration reference](/reference/configuration) — all environment variables
