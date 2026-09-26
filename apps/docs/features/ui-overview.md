@@ -1,5 +1,6 @@
 ---
 title: UI overview
+description: "A map of the dashboard: every page and tab, what it is for, and the page of these docs that explains it."
 lang: en-US
 ---
 
@@ -60,7 +61,7 @@ A quick health check across all projects: a **stat strip** whose every number is
 A cross-project decision view — where Home answers *"what's happening now"*, Analytics answers *"across projects, over time"*. A **Filters** block at the top sets the scope — **Period**, **Runs** (projects, plus Home's **filter bar**) and **Tests** — and every widget re-aggregates against it.
 
 Widgets are grouped into four bands, in reading order: **Where things stand**, **Where the pain is**,
-**Which way it is going** and **Detail**; [Analytics widgets](./analytics-widgets) describes each one, and
+**Which way it is going** and **Detail**; [Analytics widgets](/reference/analytics-widgets) describes each one, and
 [Analytics](./analytics) the filters and how the periods are compared.
 
 [Timeline markers](./timeline-markers) overlay your deploys and infrastructure changes on the trend charts.
@@ -80,7 +81,7 @@ Five tabs:
 - **Runs** — the run trend chart (timeline **Markers** open in a slide-over from the chart header, where they can be added, edited and deleted) over a table of every run with status, start time, duration, test counts, and browser badges. A row opens the run; selecting two runs and clicking **Compare** opens the newer run's **Changes** tab with the older as its baseline.
 - **Tests** — every unique test with status, executed-only pass rate, result breakdown, average duration, and last run; searchable, filterable by status, [tag](/guide/reporter#test-tags), [lock](/guide/reporter#test-locks), owner, priority and last-run age (stale cases hidden by default). **Group by File** groups the tests under each spec file and carries that file's pass rate, flaky rate, failure count, test count and average time in the group header. A row opens the test's full history.
 - **Failures** — one place for everything broken, switched with a segmented control: the **Failure clusters** (executions that failed the same way — see [AI diagnosis & clustering](./ai-diagnosis)), the **Flaky** tests scored by a composite flakiness metric with root-cause classification and impact ranking (see [Flaky tests](./flaky-tests#flaky-test-detection)), each with a **Quarantine** action, and the **Quarantine** list — tests excluded from the [CI gate](/guide/ci#blocking-a-merge)'s verdict while still running, each with its passing streak and whether it has earned a release. See [Quarantine](./flaky-tests#quarantine-with-a-way-out).
-- **Performance** — average/P90 duration trends, a slowest-tests table, timeout opportunities, and the [slow endpoints](./slow-tests) for a selected run; the AI-step coverage card appears when the project replays committed [AI-step artifacts](/guide/ai-steps).
+- **Performance** — average/P90 duration trends, a slowest-tests table, timeout opportunities, and the [slow endpoints](./slow-tests) for a selected run; the AI-step coverage card appears when the project replays committed [AI-step artifacts](/features/ai-steps).
 - **Settings** *(admins when auth is enabled, otherwise everyone)* — project [access](/operate/authentication#project-access) (members) and the edit form: label, description, tags, default branch, per-project SCM token, and **AI diagnosis instructions** (project-specific context combined with the global instructions for every diagnosis).
 
 Project **import** (`/projects/:id/import`, admins only) backfills runs recorded before you adopted Piwi from Playwright blob reports, checking each archive against the server's size limit and the project's existing imports before uploading anything. See [Importing past runs](/guide/importing-runs).

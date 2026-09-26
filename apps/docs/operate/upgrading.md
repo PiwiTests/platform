@@ -1,5 +1,6 @@
 ---
 title: Upgrading
+description: "What happens when a new Piwi version starts, how to upgrade safely, why there is no downgrade, and what to do when an upgrade goes wrong."
 lang: en-US
 ---
 
@@ -150,8 +151,7 @@ leaves an old file behind: in Task Manager's **Details** tab, end the `node.exe`
 **Failure clusters look reorganized.** Expected after a fingerprint-algorithm change: clusters that now
 share a root cause have merged. Triage state is carried across the merge.
 
-## See also
-
+## Related
 - [Deployment → Backups](./deployment#backups) — what to back up and how
 - [Deployment → Available tags](./deployment#available-tags) — what to pin
 - [Changelog](https://github.com/PiwiTests/platform/blob/main/CHANGELOG.md) — breaking changes per release

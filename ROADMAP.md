@@ -4,13 +4,14 @@ Piwi Dashboard is under active development (pre-1.0). This page shows direction,
 
 ## What Piwi is for
 
-Everything below is in service of three things, in this order. When a proposed feature doesn't strengthen one of them, that's the argument against building it.
+Everything below is in service of four things, in this order. When a proposed feature doesn't strengthen one of them, that's the argument against building it.
 
 1. **Keep the history.** CI deletes every report it makes. Piwi keeps every run, trace and report, so "has this always been flaky?" and "did my fix hold?" are answerable at all.
 2. **Explain the failures.** Group them by root cause so forty red tests become three problems, score the flaky ones by what they actually cost, and — optionally — have an LLM explain a cluster against your real diff.
 3. **Hand back a fix.** A ranked replacement locator, a validated patch, an owner, a command that verifies the work. The point is to leave with something to do, not just something to read.
+4. **Find what your tests miss.** The runs you already have show the routes, pages and controls no test reaches, and the ones a test reaches without noticing when they break. Each gap comes with a skeleton to start the missing test from.
 
-Everything else — analytics, notifications, the CI gate, PR feedback, MCP, the desktop app — is a delivery route for those three. That's the ranking the UI follows too: the dashboard leads with results and failures, and the supporting lenses sit behind them.
+Everything else — analytics, quality reports, notifications, the CI gate, PR feedback, MCP, the desktop app — is a delivery route for those four. That's the ranking the UI follows too: the dashboard leads with results and failures, and the supporting lenses sit behind them.
 
 ## Recently shipped
 

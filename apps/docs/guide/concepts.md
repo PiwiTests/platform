@@ -1,5 +1,6 @@
 ---
 title: Core concepts
+description: "The vocabulary the docs and the dashboard share: project, run, test case, execution, failure cluster, baseline, flakiness score and more."
 lang: en-US
 ---
 
@@ -239,8 +240,7 @@ injected fault. It fails on purpose, so no metric ever counts it.
 | Quality report | *Export* on `/analytics` and `/projects/:id` | [Quality reports](/features/quality-reports) |
 | Report schedule, report snapshot | `/reports`, `/reports/:id` | [Quality reports](/features/quality-reports#report-schedules) |
 
-## See also
-
+## Related
 - [Getting started](./getting-started) — get results flowing in
 - [UI overview](/features/ui-overview) — a map of every page
 - [Reporter](./reporter) — how each of these objects gets populated

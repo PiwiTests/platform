@@ -1,5 +1,6 @@
 ---
 title: Quality reports
+description: "The Analytics page as a document for readers who never open the dashboard: exports, report schedules, snapshots and the cost of a CI minute."
 lang: en-US
 ---
 
@@ -80,7 +81,7 @@ reports** page starts an empty one. Reporters and administrators create schedule
   trend as an image; Slack and Microsoft Teams the same as a message; a webhook the whole bundle as signed JSON; a browser
   channel a notification. With **Share link** on, each report carries a
   [share link](./share-links#report-share-links) that opens it without an account.
-  **AI narrative** adds the [narrative](./analytics-widgets#where-things-stand) the AI model writes.
+  **AI narrative** adds the [narrative](/reference/analytics-widgets#where-things-stand) the AI model writes.
 
 **Run now** sends the last complete period straight away; **Preview**, in the form, shows that report
 before you save, as its email and as the full report, and sends nothing. **Mute** keeps the snapshots

@@ -1,5 +1,6 @@
 ---
-title: Why Piwi? — Comparison & FAQ
+title: Why Piwi?
+description: "How Piwi compares with the Playwright HTML report, Allure, ReportPortal, Currents and Fault0, and when another tool fits better."
 lang: en-US
 ---
 
@@ -29,7 +30,7 @@ Every tool below is good at what it targets. The honest differences:
 | Failure clustering | ✅ error fingerprinting | ❌ | ❌ | ✅ ML-based | ✅ | ➖ |
 | AI failure diagnosis | ✅ optional, grounded in your git diff, patches validated server-side | ❌ | ❌ | ➖ ML triage | ➖ | ➖ |
 | Locator healing suggestions | ✅ from prior passing runs | ❌ | ❌ | ❌ | ❌ | ➖ |
-| Plain-English steps, compiled | ✅ [AI steps](./ai-steps) — resolved once, replayed with zero model calls | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Plain-English steps, compiled | ✅ [AI steps](/features/ai-steps) — resolved once, replayed with zero model calls | ❌ | ❌ | ❌ | ❌ | ❌ |
 | Web vitals & network capture | ✅ | ➖ in traces | ❌ | ❌ | ✅ | ➖ |
 | MCP server for AI agents | ✅ 55 tools | ❌ | ❌ | ❌ | ✅ | ➖ |
 | Framework support | Playwright only (by design) | Playwright | Many | Many | Playwright, Cypress, Jest… | Playwright only |

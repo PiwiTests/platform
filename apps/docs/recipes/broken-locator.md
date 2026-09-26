@@ -124,8 +124,7 @@ instance — the DOM snapshot at the moment of failure usually shows what the el
 the full alternatives list for a failing case, so a coding agent can apply it without you opening the
 dashboard. This one does still depend on captured snapshots — it reads the same data the panel does.
 
-## See also
-
+## Related
 - [Capture fixtures](/guide/capture-fixtures) — everything else the fixtures unlock
 - [Reporter](/features/locator-healing) — configuration and how the scoring works
 - [Reporter → Inspect the failing page live](/features/locator-healing#inspect-the-failing-page-live-local-runs) — the

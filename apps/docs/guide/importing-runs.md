@@ -1,9 +1,10 @@
 ---
-title: Importing past runs
+title: Import past runs
+description: "Backfill the dashboard with past runs from Playwright JSON and blob reports or trace files, and make imported history line up with new runs."
 lang: en-US
 ---
 
-# Importing past runs
+# Import past runs
 
 Piwi's analysis gets better the more history it has: flaky detection needs repeated executions, failure clusters need
 several failures to group, and trend charts need runs to plot. A team adopting Piwi starts with none of that.

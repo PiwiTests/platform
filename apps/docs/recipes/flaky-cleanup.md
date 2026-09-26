@@ -1,5 +1,6 @@
 ---
-title: Cut the flakiness that costs the most
+title: Cut costly flakiness
+description: "One afternoon to make an unreliable suite trustworthy: fix the flaky tests that cost the most, one root cause at a time, and quarantine the rest."
 lang: en-US
 ---
 
@@ -88,11 +89,10 @@ for "what should I fix this sprint?" without opening a browser.
 be a scheduled job. Shapes are in the [API docs](https://piwitests.dev/demo/docs).
 
 **No server at all.** If this is your own laptop suite rather than a team's, the
-[desktop app](/features/desktop) runs the same analysis with no Docker and no Node — Windows x64 and
-Apple-silicon macOS only, and the installers aren't signed yet.
+[desktop app](/features/desktop) runs the same analysis with no Docker and no Node — Windows x64,
+Apple-silicon macOS and Linux x86-64, and the installers aren't signed yet.
 
-## See also
-
+## Related
 - [Flaky tests](/features/flaky-tests) — the full scoring, quarantine, and performance reference
 - [Analytics](/features/analytics) — the same signals across every project
 - [Regression or flake?](./regression-or-flaky) — deciding whether one red test belongs on this list

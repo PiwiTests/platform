@@ -1,9 +1,10 @@
 ---
-title: Scenario gaps
+title: Scenario gaps & the Test Map
+description: "The Test Map: routes, pages and controls no test reaches, changed files no test covers, and probes that check whether a test notices a fault."
 lang: en-US
 ---
 
-# Scenario gaps
+# Scenario gaps & the Test Map
 
 <Needs reporter />
 
@@ -26,7 +27,7 @@ Observed reach, not instrumented coverage. This run and the last 30 on `main`.
   → *a scenario that exercises [id].patch.ts* · draft
 ```
 
-"No test in this run" is always paired with the count from recent history, so a run narrowed by a [selection](/guide/test-selection) is never mistaken for a gap. With no SCM token or no diff, the section does not appear. Tickets come from the commit messages and the pull request. Change coverage is also available on demand:
+"No test in this run" is always paired with the count from recent history, so a run narrowed by a [selection](/features/test-selection) is never mistaken for a gap. With no SCM token or no diff, the section does not appear. Tickets come from the commit messages and the pull request. Change coverage is also available on demand:
 
 - **API** — `GET /api/projects/{id}/gaps/change-coverage?run={runId}`, or `?base={sha}&head={sha}` for an explicit range.
 - **MCP** — [`get_change_coverage`](/features/mcp) reads what a branch left untested, [`list_scenario_gaps`](/features/mcp) lists the ranked gaps (by class, feature, score or PR) and [`draft_scenario`](/features/mcp) turns one into a deterministic skeleton. The **write-the-missing-test** skill drives the loop for an agent.

@@ -1,5 +1,5 @@
 ---
-title: Triage a run that went mostly red
+title: Triage a run gone red
 description: "When most of a Playwright run goes red, it is usually two or three causes, not forty bugs. Collapse the failures into clusters, rule out the environment, triage each cause once, then confirm the fix."
 lang: en-US
 ---
@@ -86,8 +86,7 @@ your own channel — see the [API docs](https://piwitests.dev/demo/docs).
 instead of `run.failed`: you hear once when a genuinely new root cause appears, not on every red build,
 and the payload carries a sample error excerpt and the affected cases.
 
-## See also
-
+## Related
 - [AI diagnosis & failure clustering](/features/ai-diagnosis) — how fingerprints and semantic merging work
 - [Regression or flake?](./regression-or-flaky) — when it's one test rather than forty
 - [Core concepts](/guide/concepts) — *cluster*, *fingerprint*, *baseline*

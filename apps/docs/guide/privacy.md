@@ -1,5 +1,6 @@
 ---
 title: Privacy & data flow
+description: "Exactly what leaves your server and when, what never does, what Piwi does not capture, and how secrets are stored."
 lang: en-US
 ---
 
@@ -107,8 +108,7 @@ small enough to audit: watch the container's egress, or read
 [`server/utils/`](https://github.com/PiwiTests/platform/tree/main/apps/application/server/utils) — the AI
 provider, SCM, SMTP, storage and notification clients are the only things there that open a socket.
 
-## See also
-
+## Related
 - [Authentication](/operate/authentication) — roles, API keys, and project-level access
 - [Deployment → Security](/operate/deployment#security) — hardening a public instance
 - [Why Piwi?](./comparison#is-my-data-safe-does-piwi-phone-home) — the same question, short form

@@ -87,6 +87,7 @@ const internalVars = Object.entries(PIWI_ENV_CATEGORIES)
 
 const page = `---
 title: Configuration reference
+description: Every PIWI_* environment variable the dashboard reads, with its default and what it does, generated from the typed registry.
 lang: en-US
 editLink: false
 ---

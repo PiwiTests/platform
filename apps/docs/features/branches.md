@@ -1,5 +1,6 @@
 ---
 title: Branches
+description: "Branch as a first-class dimension: how Piwi records it, filtering by branch, and baselines computed per branch."
 lang: en-US
 ---
 

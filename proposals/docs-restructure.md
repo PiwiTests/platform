@@ -5,6 +5,10 @@ with a proposed layout and a migration plan. State audited: `main` at v0.26.1, o
 full against the code (`packages/reporter/src`, `apps/application/app`, `apps/application/shared`) and against
 `CHANGELOG.md` from 0.11.0 to 0.26.1. Line numbers refer to that state; word counts are `wc -w` on the Markdown source.
 
+**Status.** The mechanisms shipped: one sidebar per section, the generated feature map and what's new pages,
+single-source snippets, the `<Needs>` chips, the feature-page word budget and the redirect map. The page splits and
+the remaining organization work continue in [`docs-revamp.md`](docs-revamp.md) (2026-09-24, v0.37.0).
+
 **Summary.** The docs are not too long. They are mis-shaped. Twenty-six minor releases landed between July 11 and
 August 29, and each feature was written into whichever existing page was nearest. Five pages hold a third of the
 words, three pages each carry three to six unrelated features, and roughly thirty-five shipped features have no heading

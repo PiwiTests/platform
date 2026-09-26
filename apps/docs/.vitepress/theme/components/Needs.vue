@@ -1,34 +1,45 @@
 <script setup lang="ts">
 /**
  * The prerequisite row for a feature page — a reader sees what a feature needs
- * before the first paragraph, the way the recipes spell it out in prose. Each
- * boolean prop is one prerequisite chip; declare exactly what the feature needs:
+ * before the first paragraph, and each chip links to the page that switches the
+ * prerequisite on. Each boolean prop is one prerequisite chip; declare exactly
+ * what the feature needs:
  *
  *   <Needs reporter fixtures />
  *   <Needs desktop />
  *
- * The chips and their order match the feature catalog
- * (apps/application/shared/piwi-features.ts) that generates the feature map.
+ * The chips, their order and their setup pages follow the feature catalog
+ * (apps/application/shared/piwi-features.ts), which also renders the All
+ * features page.
  */
+import { withBase } from 'vitepress'
+import { FEATURE_NEED_DOCS, type FeatureNeed } from '#shared/piwi-features'
+
 const props = defineProps<{
   reporter?: boolean
   fixtures?: boolean
   llm?: boolean
   scm?: boolean
+  backend?: boolean
   desktop?: boolean
   extension?: boolean
   admin?: boolean
 }>()
 
 // Fixed order so every page reads the same way, baseline first.
-const CHIPS: { key: keyof typeof props; label: string }[] = [
-  { key: 'reporter', label: 'Reporter' },
-  { key: 'fixtures', label: 'Capture fixtures' },
-  { key: 'llm', label: 'AI key' },
-  { key: 'scm', label: 'SCM token' },
-  { key: 'desktop', label: 'Desktop app' },
-  { key: 'extension', label: 'Browser extension' },
-  { key: 'admin', label: 'Admin' },
+const CHIPS: { key: keyof typeof props; label: string; doc: string }[] = [
+  { key: 'reporter', label: 'Reporter', doc: 'guide/reporter' },
+  ...(
+    [
+      ['fixtures', 'Capture fixtures'],
+      ['llm', 'AI key'],
+      ['scm', 'SCM token'],
+      ['backend', 'Backend integration'],
+      ['desktop', 'Desktop app'],
+      ['extension', 'Browser extension'],
+      ['admin', 'Admin'],
+    ] as [FeatureNeed, string][]
+  ).map(([key, label]) => ({ key, label, doc: FEATURE_NEED_DOCS[key] })),
 ]
 
 const active = CHIPS.filter((c) => props[c.key])
@@ -37,7 +48,7 @@ const active = CHIPS.filter((c) => props[c.key])
 <template>
   <p class="needs" aria-label="Prerequisites">
     <span class="needs-label">Needs</span>
-    <span v-for="chip in active" :key="chip.key" class="needs-chip">{{ chip.label }}</span>
+    <a v-for="chip in active" :key="chip.key" class="needs-chip" :href="withBase(`/${chip.doc}`)">{{ chip.label }}</a>
   </p>
 </template>
 
@@ -66,5 +77,12 @@ const active = CHIPS.filter((c) => props[c.key])
   font-weight: 500;
   color: var(--vp-c-text-2);
   white-space: nowrap;
+  text-decoration: none;
+  transition: color 0.2s, border-color 0.2s;
+}
+.needs-chip:hover,
+.needs-chip:focus-visible {
+  color: var(--vp-c-brand-1);
+  border-color: var(--vp-c-brand-1);
 }
 </style>

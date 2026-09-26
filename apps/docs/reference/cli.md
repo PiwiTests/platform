@@ -1,5 +1,6 @@
 ---
 title: Piwi CLI
+description: "Every command and flag of the piwi CLI that ships with @piwitests/reporter: init, skills, gate, report, select, run, probe and ai."
 lang: en-US
 ---
 
@@ -124,7 +125,7 @@ npx @piwitests/reporter report --project checkout --period 7d --format md
 | `--compare <mode>` | `previous` (default), `year` or `none` |
 | `--dashboard <name>` | `executive` (default), `engineering` or `overview` |
 | `--branch <names>` / `--environment <names>` | Narrow the runs (default: each project's default branch) |
-| `--selection <key>` | Only the tests of this [selection](/guide/test-selection) |
+| `--selection <key>` | Only the tests of this [selection](/features/test-selection) |
 | `--lang <en\|fr>` | Report language |
 | `--format <fmt>` | `md` (default), `json`, `html`, `pdf`, `csv` |
 | `--output <file>` | Write to a file instead of stdout (required for `pdf`) |
@@ -133,7 +134,7 @@ npx @piwitests/reporter report --project checkout --period 7d --format md
 
 ## `select` / `run` {#select-run}
 
-Resolve a saved [test selection](/guide/test-selection) to the tests it matches. `select` prints the Playwright args (so you can compose them yourself); `run` executes `playwright test` with them. `run impact --base <ref>` runs the tests your working-tree diff impacts.
+Resolve a saved [test selection](/features/test-selection) to the tests it matches. `select` prints the Playwright args (so you can compose them yourself); `run` executes `playwright test` with them. `run impact --base <ref>` runs the tests your working-tree diff impacts.
 
 ```bash
 npx @piwitests/reporter select smoke
@@ -182,7 +183,7 @@ Everything after `--` is passed to `playwright test`. A probed test fails by des
 
 ## `ai`
 
-Manage committed natural-language [AI-step](/guide/ai-steps) artifacts (`page.piwiLocator(...)` / `page.piwiRun(...)`). The LLM authors each entry once; CI replays the committed JSON deterministically with no model calls, so these commands are how you keep the committed set healthy.
+Manage committed natural-language [AI-step](/features/ai-steps) artifacts (`page.piwiLocator(...)` / `page.piwiRun(...)`). The LLM authors each entry once; CI replays the committed JSON deterministically with no model calls, so these commands are how you keep the committed set healthy.
 
 ```bash
 npx @piwitests/reporter ai check
@@ -212,6 +213,6 @@ npx @piwitests/reporter ai prune
 
 - [Getting started](/guide/getting-started) — `init` in the setup flow
 - [CI & sharding](/guide/ci) — `gate` in a CI job, and the run output file
-- [Test selections](/guide/test-selection) — what `select` / `run` resolve
-- [AI steps](/guide/ai-steps) — the authoring/replay lifecycle `ai` manages
+- [Test selections](/features/test-selection) — what `select` / `run` resolve
+- [AI steps](/features/ai-steps) — the authoring/replay lifecycle `ai` manages
 - [MCP server → Agent skills](/features/mcp#agent-skills) — what `skills` installs

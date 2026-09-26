@@ -9,17 +9,22 @@ npm run docs:build    # production build (runs docs:gen first)
 npm run docs:gen      # regenerate the derived pages only
 ```
 
-## Two pages are generated — never edit them by hand
+## Generated pages — never edit them by hand
 
-### `apps/docs/configuration.md`
+`docs:gen` writes three pages from registries. They are **gitignored** and rebuilt by `docs:dev` and `docs:build`:
 
-Built from the typed env-var registry (`apps/application/shared/piwi-env-vars.ts`) by
-`apps/docs/scripts/generate-configuration.mjs`. The file is **gitignored** and rebuilt by `docs:gen`.
+| Page | Source | Script |
+|---|---|---|
+| `reference/configuration.md` | the env-var registry, `apps/application/shared/piwi-env-vars.ts` | `scripts/generate-configuration.mjs` |
+| `reference/features.md` (All features) | the feature catalog, `apps/application/shared/piwi-features.ts` | `scripts/generate-features.mjs` |
+| `reference/whats-new.md` | `CHANGELOG.md` | `scripts/generate-whats-new.mjs` |
+
+### The configuration reference
 
 - To change a variable's name, description, default or category → edit the **registry**.
 - To change section prose or ordering → edit `PIWI_ENV_CATEGORIES` (title/intro/note/order; `mergeInto` folds one
   category's table into another; `internal` hides harness-only vars).
-- The interactive generator at `/configuration/generator` reads the **same registry** through the `#shared` Vite alias
+- The interactive generator at `/reference/configuration/generator` reads the **same registry** through the `#shared` Vite alias
   wired in `apps/docs/.vitepress/config.mts`, and emits output through the pure emitters in `apps/application/shared/env-format.ts`
   (unit-tested quoting for .env / compose / docker run / K8s / systemd / shell). Change the emitters, not the markup.
 - Keep the section anchors stable (`#general`, `#wasted-time` are deep-linked from the app and other pages).
@@ -40,31 +45,57 @@ authored in the handler's `defineRouteMeta({ openAPI: … })` block — see
 
 ## Site structure (MUST follow)
 
-The sidebar in `.vitepress/config.mts` is ordered by the **reader's journey**, not by feature, and it is the
-**source of truth** for site structure — do not restate its page lists here, they only go stale. A new page goes in
-the group matching what the reader is *doing*, never the group matching the feature it describes:
+### One grouping: the feature catalog
 
-| Group | The question the reader is holding |
-|---|---|
-| Start here | "What is this, should I adopt it, and what do these words mean?" |
-| Sending results | "How do I get my results in?" |
-| Reading the results | "I have results — how do I read them?" |
-| Recipes | "I have this specific problem right now." |
-| Running your instance | "I operate the server." |
-| Apps & integrations | "I want to use it from somewhere other than the dashboard." |
+The feature catalog (`apps/application/shared/piwi-features.ts`) is the only place features are grouped. Three things
+are rendered from it, so never restate its lists by hand:
 
-Two consequences worth stating, because both have been got wrong:
+- the **Features sidebar**, by `featuresSidebar()` in `.vitepress/navigation.ts`: one group per catalog group, one
+  entry per catalog entry whose page is under `features/`;
+- the **landing page's cards**, one per catalog group, set by `transformPageData` in `.vitepress/config.mts`;
+- the **All features** page, `reference/features.md`.
 
-- An **install path** is not an operations page. The desktop app is a way of *getting* a dashboard (it appears in
-  `getting-started`'s "pick a path" table), so it sits in Apps & integrations, not Running your instance.
-- A page with **no server dependency at all** — the browser extension — is never an operations page either.
+The top navigation and the Guide, Self-hosting and Reference sidebars are plain data in `.vitepress/navigation.ts`,
+which the drift test also reads.
 
-Extend an existing page before adding a new one, and keep every page single-purpose: if a page needs two sentences
-to say what it is for, it is two pages (`storage` + `database` was one of these).
+| Section | Folder | The question the reader is holding |
+|---|---|---|
+| Guide → Get started | `guide/` | "How do I get a first run in, and what do these words mean?" |
+| Guide → Set up | `guide/` | "How do I connect my suite, my CI, and what a feature needs?" |
+| Guide → About Piwi | `guide/` | "What is this, and should I adopt it?" |
+| Features | `features/`, `recipes/` | "What does this feature do, and how do I use it?", grouped by catalog group |
+| Self-hosting | `operate/` | "I run the server." |
+| Reference | `reference/` | "What are all the values?" |
 
-### `recipes/` — the one task-first group
+### Where a new page goes
 
-Every other group is organized by feature. `recipes/` is organized by the question a reader arrives
+- **A new feature** adds a catalog entry and one page under `features/`. The entry's `title` is the page's H1 and its
+  sidebar label, so the feature has one name everywhere. Never extend another feature's page with it. A page stays
+  single-purpose: if it needs two sentences to say what it is for, it is two pages (`storage` + `database` was one).
+- **A prerequisite**, anything a `<Needs>` chip names, gets a setup page in Guide → Set up, and the chip links there
+  through `FEATURE_NEED_DOCS` in the catalog.
+- **An operator task** goes in `operate/`. An install path is not an operations page: the desktop app is a way of
+  getting a dashboard, so it is a feature page. A page with no server dependency at all, the browser extension, is
+  never an operations page either.
+- **A list of a code registry's entries** is a reference page, generated from the registry rather than written by hand.
+- **A recipe** goes in `recipes/` and into `RECIPES_BY_GROUP` in `.vitepress/navigation.ts`, at the top of the catalog
+  group it serves.
+- **A page that moves** keeps its old URL working with a row in `public/404.html`; GitHub Pages has no server-side
+  redirects.
+
+### Every page
+
+- A `description` in its front matter: one sentence, used as the search snippet and the social card text. The home
+  page is the exception: it uses the site description in `config.mts`.
+- Its H1 equals its sidebar label. Recipes are the exception: their H1 is the reader's question.
+- One footer heading, `## Related`.
+- A new term goes into `concepts.md` in the change that introduces it.
+- The page describes what a default install does today. Planned work belongs in `ROADMAP.md`; an experimental
+  feature gets one short section marked **Experimental**, with a link to its proposal.
+
+### `recipes/` — task-first pages
+
+Every other page is organized by feature. `recipes/` is organized by the question a reader arrives
 with ("did I break this, or is it flaky?"), and each page crosses several features to answer one. It
 exists for the long-tail searches that never contain the word "Piwi", so:
 
@@ -75,6 +106,8 @@ exists for the long-tail searches that never contain the word "Piwi", so:
   fixtures, an LLM key, a browser extension, a signed-installer-less desktop build) and offer the
   alternative — dashboard, MCP, REST API, or plain trace evidence. Listing a requirement without an
   alternative is the failure mode to avoid.
+- **A recipe opens the Features group it serves**, through `RECIPES_BY_GROUP`, and the landing page's *Something is
+  red right now* list links every recipe. There is no recipes index page.
 - Recipes reuse **existing committed screenshots**; add a scene to the feature-screenshot harness only
   if a recipe genuinely needs a screen no page shows yet.
 
@@ -90,18 +123,33 @@ exists for the long-tail searches that never contain the word "Piwi", so:
 - **Every user-visible reporter option** must appear in `reporter.md`'s options table (and its `PIWI_*` var in the
   table below it) in the same change that adds it to `packages/reporter/src/public/options.ts`.
 - **In-app help links point here.** `apps/application/app/utils/help-content.ts` builds docs URLs from `doc:` string
-  literals, as do a few components via `<DocLink to="…">`. `apps/application/tests/unit/docs-drift.test.ts` resolves
-  every one of them against the headings on this site, so renaming a heading turns that test red rather than breaking
-  a help link silently — but the fix is still yours: update the literal, or keep the anchor.
+  literals, as do the capability registry, a few components via `<DocLink to="…">`, the catalog, its
+  `FEATURE_NEED_DOCS` and the env-var registry's `docs` fields. `apps/application/tests/unit/docs-drift.test.ts`
+  resolves every one of them against the headings on this site, so renaming a heading turns that test red rather
+  than breaking a help link silently — but the fix is still yours: update the literal, or keep the anchor.
+
+### What the drift test checks
+
+`apps/application/tests/unit/docs-drift.test.ts` fails when a docs link the code builds points at a missing page or
+heading, a link between two docs pages points at a missing page or heading, a `features/` page is missing from the
+catalog, a page has no `description`, a sidebar entry points at a missing page or differs from that page's H1, or a
+docs URL in `README.md`, `DOCKER_HUB.md`, `ROADMAP.md` or a package or integration README points at a missing page or
+heading. It also guards the positioning line, the MCP tool count, the single-source snippets, changelog wording on
+hand-written pages and the feature-page word budget.
+
+The docs build itself only fails on a link to a missing page, and pull requests do not run it, so this test is what
+catches a heading that moved. It computes anchors the way VitePress does (`headingAnchor` in `.vitepress/navigation.ts`);
+when you move a section, keep its heading text or update every link the test names.
+
 
 ## Writing conventions
 
 - Update the affected page **in the same commit** as the code change; commit scope `docs`.
 - **Every page carries its own search description.** `.vitepress/page-meta.mts` gives each page a canonical URL,
   `og:` tags naming the page, and a `description`: the frontmatter `description`, else a blog post's `excerpt`,
-  else the page's first prose paragraph (clipped to whole sentences, ~200 characters). Write a frontmatter
-  `description` when that paragraph does not say what the page covers on its own — a page that opens with a code
-  block or a table, or a recipe whose first line answers its question.
+  else the page's first prose paragraph (clipped to whole sentences, ~200 characters). Every page but the home page
+  sets a frontmatter `description` (see "Every page" above), so the fallbacks only catch a page that lacks one, and
+  `docs-page-meta.test.ts` fails when a page's description is under 50 characters.
 - American English, sentence-case headings, and the shell-portability rule from the root guide: VitePress uses
   `::: code-group` with ```bash [Linux / macOS] + ```powershell [Windows (PowerShell)] tabs when a command has no
   portable single form.

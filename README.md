@@ -74,8 +74,8 @@ Five ways in, depending on what you already have:
 | **[One-click deploy](https://piwitests.dev/operate/deployment#one-click-deploy)** | You want a shared instance and no server to run it on | A button, plus whatever your host charges |
 
 Two caveats worth knowing before you pick. The **desktop installers are not yet code-signed**, so the
-first launch needs a click-through, and they exist for Windows x64 and Apple-silicon macOS only — on
-Linux or an Intel Mac, use Docker or `npx`. The **one-click templates** ([`render.yaml`](./render.yaml),
+first launch needs a click-through, and they exist for Windows x64, Apple-silicon macOS and Linux x86-64; on
+an Intel Mac, use Docker or `npx`. The **one-click templates** ([`render.yaml`](./render.yaml),
 [`fly.toml`](./fly.toml), [`deploy/`](./deploy), generated from the same variable registry as the
 configuration reference so they can't drift from what the app reads) each provision one container with a
 persistent volume and authentication on, but per-provider limits apply — Render needs a paid instance
@@ -191,7 +191,7 @@ Found a vulnerability? Please report it privately via the [security policy](./SE
 | **Failure clusters** — forty red tests, three root causes | **AI diagnosis** — read against your actual git diff |
 | [![Flaky test detection](./apps/docs/public/screenshots/flaky-detection.png)](https://piwitests.dev/features/flaky-tests) | [![Test run detail with worker timeline](./apps/docs/public/screenshots/test-run.png)](https://piwitests.dev/features/ui-overview) |
 | **Flaky tests** — scored, classified, ranked by wasted CI time | **Run detail** — cases, worker timeline, traces, retry command |
-| [![Locator healing suggestions](./apps/docs/public/screenshots/locator-healing.png)](https://piwitests.dev/guide/reporter#locator-healing) | [![Performance trends](./apps/docs/public/screenshots/performance-trends.png)](https://piwitests.dev/features/flaky-tests#performance) |
+| [![Locator healing suggestions](./apps/docs/public/screenshots/locator-healing.png)](https://piwitests.dev/features/locator-healing) | [![Performance trends](./apps/docs/public/screenshots/performance-trends.png)](https://piwitests.dev/features/slow-tests) |
 | **Locator healing** — replacements from the last passing run | **Performance** — P90 trends and slowest-test tracking |
 
 ## Where this fits

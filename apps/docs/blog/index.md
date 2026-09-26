@@ -1,5 +1,6 @@
 ---
 title: Blog
+description: "Notes on how Piwi is built: the engineering behind the features and the reasoning behind the trade-offs."
 sidebar: false
 ---
 

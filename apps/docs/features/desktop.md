@@ -1,5 +1,6 @@
 ---
 title: Desktop app
+description: "The whole dashboard as a local desktop app: no Docker or Node, local test runs from the window, and one-click MCP setup for AI assistants."
 lang: en-US
 ---
 

@@ -103,32 +103,32 @@ export const HELP_TOPICS = {
   'analytics.suite-growth': {
     title: 'Suite growth',
     text: 'How many tests the suite has over time (the highest test count one run reported in each bucket), and the share of them skipped or not run. A growing suite whose skipped share grows too is adding tests nobody runs.',
-    doc: 'features/analytics-widgets#which-way-it-is-going',
+    doc: 'reference/analytics-widgets#which-way-it-is-going',
   },
   'analytics.flaky-debt': {
     title: 'Flaky debt',
     text: 'Whether flakiness is going down: flaky occurrences per run in each bucket (from the daily rollups, so over any window), the distinct tests that passed only on a retry (from the stored runs, so only as far back as retention keeps them) and the tests in quarantine at the end of each bucket.',
-    doc: 'features/analytics-widgets#which-way-it-is-going',
+    doc: 'reference/analytics-widgets#which-way-it-is-going',
   },
   'analytics.time-to-fix': {
     title: 'Time to fix',
     text: 'How fast failures get fixed: failure causes opened and fixed per bucket, the median and 90th-percentile time from first failure to fix over the causes fixed in the period, the share of those fixes that held, and the open causes by age. Failure clusters outlive run retention, so this reaches as far back as they do.',
-    doc: 'features/analytics-widgets#where-the-pain-is',
+    doc: 'reference/analytics-widgets#where-the-pain-is',
   },
   'analytics.ownership': {
     title: 'Ownership',
     text: 'One row per owner: the open failure causes assigned to them, and the flaky tests and wasted CI minutes of the tests they own (their `piwi:owner` annotation), with the median time to fix of the causes they fixed. The Unowned row holds everything nobody is assigned to or owns. Test counts reach back only as far as retention keeps runs.',
-    doc: 'features/analytics-widgets#where-the-pain-is',
+    doc: 'reference/analytics-widgets#where-the-pain-is',
   },
   'analytics.environment-comparison': {
     title: 'Environment comparison',
     text: 'Test pass rate and run success per environment (the `environment` your runs report), side by side with their change against the comparison period, and the pass rate of each over time, so a staging that is green while production is not stands out.',
-    doc: 'features/analytics-widgets#detail',
+    doc: 'reference/analytics-widgets#detail',
   },
   'analytics.movers': {
     title: 'Movers',
     text: 'The tests that changed against the comparison period: those that became flaky or stopped being flaky, and those whose average passing duration grew or shrank by more than 25 %. Read from the stored runs, so both periods reach back only as far as retention keeps them; each direction lists its top tests, at most 25.',
-    doc: 'features/analytics-widgets#detail',
+    doc: 'reference/analytics-widgets#detail',
   },
   'analytics.browser-matrix': {
     title: 'Browser matrix',
@@ -154,12 +154,12 @@ export const HELP_TOPICS = {
   'analytics.narrative': {
     title: 'Narrative',
     text: 'In a scheduled quality report with the AI narrative on, the configured diagnosis model writes three paragraphs here from the report’s numbers only, labeled as generated; an answer citing a number the report lacks is refused. Everywhere else, and whenever the model fails or none is configured, this shows the rule-based verdict.',
-    doc: 'features/analytics-widgets#where-things-stand',
+    doc: 'reference/analytics-widgets#where-things-stand',
   },
   'reports.narrative': {
     title: 'AI narrative',
     text: 'Adds three paragraphs written by the configured diagnosis model at the top of each report, from the report’s numbers only and labeled as generated. The rule-based verdict and tiles stay; without a model, or when its answer cites a number the report lacks, the verdict stands in. Spends tokens once per report.',
-    doc: 'features/analytics-widgets#where-things-stand',
+    doc: 'reference/analytics-widgets#where-things-stand',
   },
   'analytics.progress': {
     title: 'Fixes and triage',
@@ -212,7 +212,7 @@ export const HELP_TOPICS = {
   'analytics.selection-health': {
     title: 'Selection health',
     text: 'How each selection of one project resolves today, its warnings and drift since its last run, and how many tests no selection picks.',
-    doc: 'guide/test-selection',
+    doc: 'features/test-selection',
   },
   'dashboards.widget-scope': {
     title: 'Widget scope',

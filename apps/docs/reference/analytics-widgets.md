@@ -1,5 +1,6 @@
 ---
 title: Analytics widgets
+description: "Every widget of the Analytics page and of saved dashboards, band by band, with what each one counts."
 lang: en-US
 ---
 
@@ -7,7 +8,7 @@ lang: en-US
 
 <Needs reporter />
 
-Every widget of the [Analytics](./analytics) page and of the [dashboards](./dashboards) you save, with
+Every widget of the [Analytics](/features/analytics) page and of the [dashboards](/features/dashboards) you save, with
 what it counts. Each one follows the scope bar; a widget that cannot follow a test filter says so under
 its title.
 
@@ -15,7 +16,7 @@ its title.
 
 **Headline numbers** — six tiles across every project in scope (test pass rate, run success rate,
 flaky tests, wasted CI minutes, open failure causes, median time to fix), each with its change against
-the comparison. With [targets](./analytics#targets) set, a tile says whether its target is met. **Pass
+the comparison. With [targets](/features/analytics#targets) set, a tile says whether its target is met. **Pass
 rate over time** draws the comparison period as a faint line, with markers and, for one project, its
 target.
 
@@ -33,8 +34,8 @@ longer periods).
 This is the fastest way to answer *when* something started degrading.
 
 **Narrative** — off by default; add it to a dashboard, or turn on **AI narrative** in a
-[report schedule](./quality-reports#report-schedules), which puts it at the top of each report. In a
-scheduled quality report, the configured [AI diagnosis](./ai-diagnosis) model writes three paragraphs in
+[report schedule](/features/quality-reports#report-schedules), which puts it at the top of each report. In a
+scheduled quality report, the configured [AI diagnosis](/features/ai-diagnosis) model writes three paragraphs in
 the report language from the report's numbers alone, labeled as generated. An answer that cites a number
 the report does not hold is refused. Everywhere else, and whenever no model is configured or it fails,
 the widget shows the rule-based verdict. The verdict and the tiles stay the report's spine.
@@ -49,13 +50,13 @@ perfect period and a nearly failing one stand out.
 with the oldest unresolved cluster highlighted.
 
 **Flakiest tests** — the global flaky leaderboard, using the same [scoring and impact
-ranking](./flaky-tests#impact-ranking) as each project's Flaky tests tab.
+ranking](/features/flaky-tests#impact-ranking) as each project's Flaky tests tab.
 
 **CI time** and **Wasted CI time** — total minutes your runs consumed, and how many of those produced
 no signal: time spent inside wait steps plus time spent executing attempts that ended failed or timed
 out. Because a timed-out test burns its entire (often oversized) budget, the widget also calls out how
 much is reclaimable by tightening timeouts and removing stale `test.slow()` marks. With a [cost of a CI
-minute](./quality-reports#cost-of-a-ci-minute) set, it shows the money too.
+minute](/features/quality-reports#cost-of-a-ci-minute) set, it shows the money too.
 
 **Time to fix** — how fast you react: failure causes opened and fixed per bucket, the median and p90
 time from first failure to fix over the causes fixed in the period, the share of those fixes that held,
@@ -99,8 +100,7 @@ whose average passing duration grew or shrank by more than 25 %, against the com
 the stored runs, so both periods reach back only as far as retention keeps them, and each direction lists
 its top tests, at most 25.
 
-## See also
-
-- [Analytics](./analytics): the scope, periods, targets and chart export
-- [Dashboards](./dashboards): arranging these widgets into views of your own
-- [Quality reports](./quality-reports): any dashboard as a document
+## Related
+- [Analytics](/features/analytics): the scope, periods, targets and chart export
+- [Dashboards](/features/dashboards): arranging these widgets into views of your own
+- [Quality reports](/features/quality-reports): any dashboard as a document

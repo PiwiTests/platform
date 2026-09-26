@@ -1,5 +1,6 @@
 ---
-title: Cut the time the suite costs
+title: Cut the time it costs
+description: "Find where your suite's CI time goes, from waits and timeouts to flaky retries and slow endpoints, and what to cut first."
 lang: en-US
 ---
 
@@ -116,8 +117,7 @@ into a channel — see the [API docs](https://piwitests.dev/demo/docs).
 **Watch it drift.** Rather than auditing periodically, subscribe to the `perf.regression`
 [notification](/features/notifications) event and let it tell you when a duration trend breaks.
 
-## See also
-
+## Related
 - [Slow tests & wasted time](/features/slow-tests) — the full reference for trends, slowest
   tests and timeout hygiene
 - [Cut the flakiness that costs the most](./flaky-cleanup) — step 4 in full

@@ -1,5 +1,6 @@
 ---
 title: What Piwi does
+description: "What Piwi is for: the jobs it serves, the failure loop, the two rules behind every feature, its pieces, and what it is not."
 lang: en-US
 ---
 
@@ -7,15 +8,16 @@ lang: en-US
 
 Playwright's HTML report is excellent, and it lasts exactly until the next build. Piwi keeps every run instead — every trace and report — and then does something with them: it groups the failures by root cause, scores the flaky tests by what they cost, and finds the locator you should have used. Self-hosted, MIT, zero telemetry.
 
-Everything in the product is in service of **three jobs, in this order**. It's also the test for whether a feature belongs here at all: one that strengthens none of them is an argument against building it.
+Everything in the product is in service of **four jobs, in this order**. It's also the test for whether a feature belongs here at all: one that strengthens none of them is an argument against building it.
 
-## The three jobs
+## The four jobs
 
 1. **Keep the history.** CI deletes every report it makes. Piwi keeps every run, trace and report, so "has this always been flaky?" and "did my fix hold?" are answerable at all.
 2. **Explain the failures.** Group them by root cause so forty red tests become three problems, score the flaky ones by the CI minutes they actually waste, and — optionally — have an LLM explain a cluster against your real git diff.
 3. **Hand back a fix.** A ranked replacement locator, a validated patch, an owner, and the command that verifies the work. The point is to leave with something to *do*, not just something to read.
+4. **Find what your tests miss.** The runs you already have show the routes, pages and controls no test reaches, and the ones a test reaches without noticing when they break. Each gap comes with a skeleton to start the missing test from. See [scenario gaps & the Test Map](/features/scenario-gaps).
 
-Everything else — analytics, notifications, the CI gate, PR feedback, the MCP server, the desktop app — is a delivery route for those three. The dashboard follows the same ranking: it leads with results and failures, and the supporting lenses sit behind them.
+Everything else — analytics, quality reports, notifications, the CI gate, PR feedback, the MCP server, the desktop app — is a delivery route for those four. The dashboard follows the same ranking: it leads with results and failures, and the supporting lenses sit behind them.
 
 ## The loop it serves
 
@@ -56,6 +58,6 @@ Trust is the point, so the limits are stated plainly, not buried:
 
 - [Getting started](./getting-started) — pick a path and land your first run
 - [Core concepts](./concepts) — the vocabulary (run, execution, cluster, fingerprint, baseline)
-- [Feature map](/reference/feature-map) — everything Piwi does, what each thing needs, and where it lives
+- [All features](/reference/features) — everything Piwi does, what each thing needs, and where it lives
 - [Why Piwi? (comparison & FAQ)](./comparison) — how it compares, and whether it's the right tool for you
 - [Live demo](https://piwitests.dev/demo/) — the real app on seeded data, entirely in your browser

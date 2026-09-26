@@ -1,5 +1,6 @@
 ---
 title: Timeline markers
+description: "Deploys and infrastructure changes drawn on the trend charts, so a step change in pass rate or duration has a visible cause."
 lang: en-US
 ---
 

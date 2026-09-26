@@ -1,9 +1,9 @@
 /**
- * Generates apps/docs/reference/feature-map.md — the feature map — from the
+ * Generates apps/docs/reference/features.md — the All features page — from the
  * feature catalog (apps/application/shared/piwi-features.ts).
  *
  * The page is a build artifact (gitignored): `docs:dev` and `docs:build` run
- * this first, so the map can never drift from the catalog. To change the page,
+ * this first, so the page can never drift from the catalog. To change the page,
  * edit the catalog. Every `doc` target in the catalog is resolved against a
  * real page + heading by apps/application/tests/unit/docs-drift.test.ts.
  */
@@ -44,7 +44,8 @@ function groupMarkdown({ title, intro, features }) {
 const total = PIWI_FEATURE_GROUPS.reduce((n, g) => n + g.features.length, 0);
 
 const page = `---
-title: Feature map
+title: All features
+description: Every Piwi feature in one table per group, with what it needs beyond the reporter, where it lives in the dashboard, and the page that explains it.
 lang: en-US
 editLink: false
 ---
@@ -52,18 +53,19 @@ editLink: false
 <!-- GENERATED FILE — do not edit. -->
 <!-- Source of truth: apps/application/shared/piwi-features.ts, rendered by apps/docs/scripts/generate-features.mjs (npm run docs:gen). -->
 
-# Feature map
+# All features
 
-Everything Piwi does, in one place — what each feature is, what it needs beyond
+Everything Piwi does, in one place: what each feature is, what it needs beyond
 a running [reporter](/guide/reporter), where it lives in the dashboard, and the
-page that explains it. Features are grouped by the three jobs the product serves:
-**keep the history**, **explain the failures**, and **hand back a fix** — plus how
-you reach them from elsewhere and what an operator runs.
+page that explains it. The groups are the four jobs the product serves (**keep
+the history**, **explain the failures**, **hand back a fix**, **find what your
+tests miss**), then the routes that carry the results to people and tools, and
+what an operator runs. The docs sidebar and the landing page use the same groups.
 
-New here? Start with [What Piwi does](/guide/what-piwi-does) and [Getting started](/guide/getting-started); this map is the "where next" once a first run has landed.
+New here? Start with [What Piwi does](/guide/what-piwi-does) and [Getting started](/guide/getting-started); this page is the "where next" once a first run has landed.
 
 ${PIWI_FEATURE_GROUPS.map(groupMarkdown).join('\n')}`;
 
 mkdirSync(join(here, '..', 'reference'), { recursive: true });
-writeFileSync(join(here, '..', 'reference', 'feature-map.md'), page);
-console.log(`generated apps/docs/reference/feature-map.md from ${total} features`);
+writeFileSync(join(here, '..', 'reference', 'features.md'), page);
+console.log(`generated apps/docs/reference/features.md from ${total} features`);

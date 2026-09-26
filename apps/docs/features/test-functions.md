@@ -1,5 +1,6 @@
 ---
 title: Test functions catalog
+description: "The catalog of the helpers and page-object methods your suite calls, how functions are registered, and how agents and the extension use it."
 lang: en-US
 ---
 

@@ -1,12 +1,54 @@
 import { describe, test, expect } from 'vitest';
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dirname, join, relative } from 'node:path';
+import { dirname, join, posix, relative } from 'node:path';
 import { MCP_TOOL_DEFS } from '#shared/mcp-tools';
-import { PIWI_FEATURE_GROUPS } from '#shared/piwi-features';
+import { FEATURE_NEED_DOCS, PIWI_FEATURE_GROUPS } from '#shared/piwi-features';
+import { PIWI_ENV_VARS } from '#shared/piwi-env-vars';
+import { headingAnchor, sidebars } from '../../../docs/.vitepress/navigation';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..');
 const read = (relative: string) => readFileSync(join(repoRoot, relative), 'utf8');
+
+// Pages the docs build writes from a registry; they are gitignored, so they are
+// only on disk once `docs:gen` has run, and a check skips them rather than fail.
+const GENERATED_PAGES = new Set(['reference/configuration', 'reference/features', 'reference/whats-new']);
+
+const FRONT_MATTER = /^---\n[\s\S]*?\n---\n/;
+const FENCED_CODE = /^(`{3,}|~{3,})[\s\S]*?^\1/gm;
+
+// Every anchor a docs page offers, as the docs build assigns them: one per
+// heading at any level (a heading's own `{#id}`, or its text slugified, with
+// -1, -2 appended to a repeat), plus the `id` of any HTML element.
+const anchorsOf = (path: string) => {
+  const contents = readFileSync(path, 'utf8').replace(FRONT_MATTER, '').replace(FENCED_CODE, '');
+  const seen = new Set<string>();
+  const unique = (anchor: string) => {
+    let candidate = anchor;
+    for (let i = 1; seen.has(candidate); i++) candidate = `${anchor}-${i}`;
+    seen.add(candidate);
+    return candidate;
+  };
+  return [
+    ...[...contents.matchAll(/^#{1,6} (.+?)\s*$/gm)].map((m) => {
+      const custom = /\{#([\w-]+)\}$/.exec(m[1]!);
+      if (!custom) return unique(headingAnchor(m[1]!.replace(/\s*\{[^}]*\}$/, '')));
+      seen.add(custom[1]!);
+      return custom[1]!;
+    }),
+    ...[...contents.matchAll(/<[a-z][\w-]*\s[^>]*\bid="([\w-]+)"/g)].map((m) => m[1]!),
+  ];
+};
+
+// Every Markdown page of the docs site, generated pages included once built.
+const docsPages = (function walk(dir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    if (entry.name === 'node_modules' || entry.name.startsWith('.')) return [];
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) return walk(path);
+    return entry.name.endsWith('.md') && entry.name !== 'AGENTS.md' ? [relative(repoRoot, path)] : [];
+  });
+})(join(repoRoot, 'apps/docs'));
 
 // The one line the project describes itself with. AGENTS.md names the surfaces
 // that must carry it; these are the ones that live in the repository.
@@ -34,20 +76,12 @@ describe('positioning line', () => {
 
 describe('documented counts', () => {
   // Every page on the docs site (the generated configuration.md included,
-  // when built) plus the repository-level pages that repeat the number.
-  const docsPages = (function walk(dir: string): string[] {
-    return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
-      if (entry.name === 'node_modules' || entry.name.startsWith('.')) return [];
-      const path = join(dir, entry.name);
-      if (entry.isDirectory()) return walk(path);
-      return entry.name.endsWith('.md') ? [relative(repoRoot, path)] : [];
-    });
-  })(join(repoRoot, 'apps/docs'))
-    // The generated What's new page repeats historical changelog counts (e.g.
-    // "from 14 to 38 tools") that were correct for that release — it is the one
-    // place stale numbers are the point, so it is not held to the live count.
-    .filter((p) => p !== 'apps/docs/reference/whats-new.md');
-  const COUNT_SURFACES = [...docsPages, 'README.md', 'ROADMAP.md', 'DOCKER_HUB.md'];
+  // when built) plus the repository-level pages that repeat the number. The
+  // generated What's new page repeats historical changelog counts (e.g. "from
+  // 14 to 38 tools") that were correct for that release — it is the one place
+  // stale numbers are the point, so it is not held to the live count.
+  const countPages = [...docsPages, 'apps/docs/AGENTS.md'].filter((p) => p !== 'apps/docs/reference/whats-new.md');
+  const COUNT_SURFACES = [...countPages, 'README.md', 'ROADMAP.md', 'DOCKER_HUB.md'];
 
   test.each(COUNT_SURFACES)('%s states the real MCP tool count, if it states one', (relative) => {
     for (const [claim, stated] of read(relative).matchAll(/\b(\d+) tools\b/g)) {
@@ -66,28 +100,22 @@ describe('documented counts', () => {
 });
 
 describe('docs pages the app deep-links into', () => {
-  // help-content.ts and a handful of components build docs URLs from bare
-  // string literals that nothing else validates, so a renamed heading breaks
-  // them silently in production.
-  const slug = (heading: string) =>
-    heading
-      .toLowerCase()
-      .replace(/`/g, '')
-      .replace(/\*\*/g, '')
-      .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
-      .replace(/[^\w\- ]+/g, '')
-      .trim()
-      .replace(/\s+/g, '-');
+  // help-content.ts, the capability registry and a handful of components build
+  // docs URLs from bare string literals that nothing else validates, so a
+  // renamed heading breaks them silently in production.
 
-  // Every .vue/.ts file under app/ — any of them may carry a `doc: '…'`
-  // registry field or a static `DocLink to="…"`.
-  const sources = (function walk(dir: string): string[] {
-    return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+  // Every .vue/.ts file under app/ and shared/ — any of them may carry a
+  // `doc: '…'` registry field or a static `DocLink to="…"`.
+  const walkSources = (dir: string): string[] =>
+    readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
       const path = join(dir, entry.name);
-      if (entry.isDirectory()) return walk(path);
+      if (entry.isDirectory()) return walkSources(path);
       return /\.(vue|ts)$/.test(entry.name) ? [relative(repoRoot, path)] : [];
     });
-  })(join(repoRoot, 'apps/application/app'));
+  const sources = [
+    ...walkSources(join(repoRoot, 'apps/application/app')),
+    ...walkSources(join(repoRoot, 'apps/application/shared')),
+  ];
 
   const targets = [
     ...new Set([
@@ -96,11 +124,20 @@ describe('docs pages the app deep-links into', () => {
         return [
           ...[...contents.matchAll(/doc: '([^']+)'/g)].map((m) => m[1]!),
           ...[...contents.matchAll(/DocLink\s+to="([^"]+)"/g)].map((m) => m[1]!),
+          // Markdown links in registry text, such as the env-var notes the
+          // configuration reference prints.
+          ...[...contents.matchAll(/\]\(\/((?:guide|features|operate|reference|recipes)\/[^)\s]+)\)/g)].map(
+            (m) => m[1]!,
+          ),
         ];
       }),
-      // The feature map (apps/docs/reference/feature-map.md) is generated from
+      // The All features page (apps/docs/reference/features.md) is generated from
       // this catalog, so every `doc` in it must resolve just like an in-app link.
       ...PIWI_FEATURE_GROUPS.flatMap((group) => group.features.map((feature) => feature.doc)),
+      // The <Needs> chips link each prerequisite to its setup page.
+      ...Object.values(FEATURE_NEED_DOCS),
+      // The configuration reference links each variable to its details.
+      ...Object.values(PIWI_ENV_VARS).flatMap((meta) => (meta.docs ? [meta.docs] : [])),
     ]),
   ];
 
@@ -110,16 +147,13 @@ describe('docs pages the app deep-links into', () => {
 
   test.each(targets)('%s resolves to a page and heading', (target) => {
     const [page, anchor] = target.split('#');
-    // reference/configuration.md is generated by the docs build and gitignored,
-    // so it is only present when the docs have been built — skip rather than fail.
     const path = join(repoRoot, 'apps/docs', `${page}.md`);
-    if (page === 'reference/configuration' && !existsSync(path)) return;
+    if (GENERATED_PAGES.has(page!) && !existsSync(path)) return;
 
     expect(existsSync(path), `no apps/docs/${page}.md`).toBe(true);
     if (!anchor) return;
 
-    const headings = [...readFileSync(path, 'utf8').matchAll(/^#{2,4} (.+)$/gm)].map((m) => slug(m[1]!));
-    expect(headings, `apps/docs/${page}.md has no heading anchored #${anchor}`).toContain(anchor);
+    expect(anchorsOf(path), `apps/docs/${page}.md has no heading anchored #${anchor}`).toContain(anchor);
   });
 });
 
@@ -166,9 +200,7 @@ describe('no leaked version history', () => {
       if (entry.isDirectory()) return walk(path);
       return entry.name.endsWith('.md') && entry.name !== 'AGENTS.md' ? [relative(repoRoot, path)] : [];
     });
-  })(join(repoRoot, 'apps/docs')).filter(
-    (p) => !['feature-map', 'whats-new', 'configuration'].some((gen) => p === `apps/docs/reference/${gen}.md`),
-  );
+  })(join(repoRoot, 'apps/docs')).filter((p) => ![...GENERATED_PAGES].some((gen) => p === `apps/docs/${gen}.md`));
 
   test.each(pages)('%s carries no changelog-speak', (page) => {
     const contents = read(page);
@@ -200,16 +232,155 @@ describe('feature-page word budget', () => {
     desktop: 2300,
     'locator-healing': 2000,
     notifications: 1400,
+    'ai-steps': 1560,
+    'test-selection': 2063,
   };
 
   const featurePages = readdirSync(join(repoRoot, 'apps/docs/features')).filter((f) => f.endsWith('.md'));
 
   test.each(featurePages)('features/%s is within budget', (file) => {
-    const words = read(`apps/docs/features/${file}`).trim().split(/\s+/).length;
+    // The page as a reader sees it: the front matter is metadata, not reading.
+    const body = read(`apps/docs/features/${file}`).replace(/^---\n[\s\S]*?\n---\n/, '');
+    const words = body.trim().split(/\s+/).length;
     const cap = OVER_BUDGET[file.replace(/\.md$/, '')] ?? BUDGET;
     expect(
       words,
       `apps/docs/features/${file} is ${words} words (cap ${cap}) — trim it${cap === BUDGET ? '' : ', and lower its OVER_BUDGET cap'}`,
     ).toBeLessThanOrEqual(cap);
+  });
+});
+
+describe('docs site structure', () => {
+  // The feature catalog is the site's one grouping: the Features sidebar, the
+  // landing cards and the All features page are all rendered from it, so a
+  // feature page it does not list is a page no reader can find by browsing.
+  const catalogPages = new Set(
+    PIWI_FEATURE_GROUPS.flatMap((group) => group.features.map((feature) => feature.doc.split('#')[0])),
+  );
+  const featurePages = docsPages
+    .filter((p) => p.startsWith('apps/docs/features/'))
+    .map((p) => p.replace(/^apps\/docs\//, '').replace(/\.md$/, ''));
+
+  test.each(featurePages)('%s is an entry in the feature catalog', (page) => {
+    expect(catalogPages.has(page), `${page} is missing from shared/piwi-features.ts`).toBe(true);
+  });
+
+  // The description is the page's search snippet and its social-card text.
+  // The home page uses the site description in config.mts instead.
+  test.each(docsPages)('%s has a description', (page) => {
+    const frontMatter = /^---\n([\s\S]*?)\n---\n/.exec(read(page))?.[1] ?? '';
+    if (/^layout: home$/m.test(frontMatter)) return;
+    expect(frontMatter, `${page} has no description in its front matter`).toMatch(/^description: \S/m);
+  });
+
+  // A page has one name: its sidebar label is its H1. A recipe is the
+  // exception, since its H1 is the question the reader arrives with.
+  const h1Of = (path: string) =>
+    /^# (.+)$/m.exec(
+      readFileSync(path, 'utf8')
+        .replace(/^---\n[\s\S]*?\n---\n/, '')
+        .replace(/```[\s\S]*?```/g, ''),
+    )?.[1];
+  const sidebarEntries = [
+    ...new Map(
+      Object.values(sidebars())
+        .flat()
+        .flatMap((group) => group.items)
+        .filter((item) => item.link.startsWith('/'))
+        .map((item) => [`${item.link} ${item.text}`, [item.link, item.text] as const]),
+    ).values(),
+  ];
+
+  test.each(sidebarEntries)('sidebar entry %s resolves to a page titled "%s"', (link, text) => {
+    const [route, anchor] = link.split('#');
+    const page = route!.replace(/^\//, '').replace(/\/$/, '/index');
+    const path = join(repoRoot, 'apps/docs', `${page}.md`);
+    if (GENERATED_PAGES.has(page) && !existsSync(path)) return;
+
+    expect(existsSync(path), `the sidebar links ${link}, and there is no apps/docs/${page}.md`).toBe(true);
+    if (anchor) {
+      expect(anchorsOf(path), `apps/docs/${page}.md has no heading anchored #${anchor}`).toContain(anchor);
+      return;
+    }
+    if (page.startsWith('recipes/')) return;
+    expect(h1Of(path), `apps/docs/${page}.md: the H1 and the sidebar label differ`).toBe(text);
+  });
+
+  // The READMEs and the Docker Hub page link into the site from outside it, so
+  // nothing but this check notices when a page or heading they point at moves.
+  const SURFACES = [
+    'README.md',
+    'DOCKER_HUB.md',
+    'ROADMAP.md',
+    ...readdirSync(join(repoRoot, 'packages')).map((dir) => `packages/${dir}/README.md`),
+    ...readdirSync(join(repoRoot, 'integrations')).map((dir) => `integrations/${dir}/README.md`),
+    'apps/extension/README.md',
+    'apps/desktop/README.md',
+  ].filter((surface) => existsSync(join(repoRoot, surface)));
+  const surfaceLinks = [
+    ...new Set(
+      SURFACES.flatMap((surface) =>
+        [...read(surface).matchAll(/https:\/\/piwitests\.dev(\/[^\s)"'<>`]*)?/g)]
+          .map((m) => m[1] ?? '/')
+          // The demo is the app itself, and files under public/ are not pages.
+          .filter((url) => !url.startsWith('/demo') && !/\.[a-z0-9]+(#.*)?$/i.test(url))
+          .map((url) => `${surface} ${url}`),
+      ),
+    ),
+  ];
+
+  test.each(surfaceLinks)('%s resolves to a page and heading', (entry) => {
+    const [surface, url] = entry.split(' ');
+    const [route, anchor] = url!.split('#');
+    const page = route!.replace(/^\//, '').replace(/\/$/, '') || 'index';
+    const path = [`${page}.md`, `${page}/index.md`].map((file) => join(repoRoot, 'apps/docs', file)).find(existsSync);
+    if (GENERATED_PAGES.has(page) && !path) return;
+
+    expect(path, `${surface} links ${url}, and the docs have no such page`).toBeDefined();
+    if (!anchor) return;
+    expect(anchorsOf(path!), `${surface} links ${url}, and the page has no such heading`).toContain(anchor);
+  });
+
+  // The docs build fails on a link to a missing page but not on one to a
+  // missing heading, so a section that moves breaks every link to it silently.
+  // Generated pages are left out: their links come from registries checked above.
+  const handWrittenPages = docsPages.filter(
+    (p) => !GENERATED_PAGES.has(p.replace(/^apps\/docs\//, '').replace(/\.md$/, '')),
+  );
+  const brokenLinksFrom = (source: string) => {
+    const contents = read(source);
+    const frontMatter = FRONT_MATTER.exec(contents)?.[0] ?? '';
+    const body = contents
+      .slice(frontMatter.length)
+      .replace(FENCED_CODE, '')
+      .replace(/`[^`\n]*`/g, '')
+      .replace(/<!--[\s\S]*?-->/g, '');
+    const links = [
+      ...[...frontMatter.matchAll(/^\s*link: (\S+)$/gm)].map((m) => m[1]!),
+      ...[...body.matchAll(/\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g)].map((m) => m[1]!),
+      ...[...body.matchAll(/\bhref="([^"]+)"/g)].map((m) => m[1]!),
+    ];
+    const from = source.replace(/^apps\/docs\//, '').replace(/\.md$/, '');
+    return links.flatMap((link) => {
+      // Other sites, and files under public/ rather than pages.
+      if (/^([a-z][a-z\d+.-]*:|\/\/)/i.test(link)) return [];
+      const [route = '', anchor] = link.split('?')[0]!.split('#');
+      if (/\.(?!md$|html$)[a-z\d]+$/i.test(route)) return [];
+      const page = !route
+        ? from
+        : posix
+            .join('/', route.startsWith('/') ? '' : posix.dirname(from), route)
+            .slice(1)
+            .replace(/\.(md|html)$/, '')
+            .replace(/(^|\/)$/, '$1index');
+      const path = [`${page}.md`, `${page}/index.md`].map((file) => join(repoRoot, 'apps/docs', file)).find(existsSync);
+      if (!path) return GENERATED_PAGES.has(page) ? [] : [`${link} (no such page)`];
+      if (!anchor || anchorsOf(path).includes(decodeURIComponent(anchor))) return [];
+      return [`${link} (no such heading)`];
+    });
+  };
+
+  test.each(handWrittenPages)('links from %s resolve to a page and heading', (page) => {
+    expect(brokenLinksFrom(page)).toEqual([]);
   });
 });

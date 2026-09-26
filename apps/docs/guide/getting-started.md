@@ -28,7 +28,7 @@ The dashboard is one Node process, and there are five ways to get one running:
 | Path | Best for | Notes |
 |---|---|---|
 | [Live demo](https://piwitests.dev/demo/) | Looking around before installing anything | Seeded data, runs in your browser, no backend |
-| [Desktop app](/features/desktop) | A single developer running Playwright locally | No Docker or Node needed; Windows x64 and Apple-silicon macOS only, and the installers are not yet signed |
+| [Desktop app](/features/desktop) | A single developer running Playwright locally | No Docker or Node needed; Windows x64, Apple-silicon macOS and Linux x86-64, and the installers are not yet signed |
 | Docker *(below)* | A shared instance for a team | The recommended path for anything long-lived |
 | [`npx @piwitests/server`](/operate/deployment#npm-npx-quick-local-run) | A quick local run with Node 22+ already installed | Same server, no container |
 | [One-click deploy](/operate/deployment#one-click-deploy) | A shared instance with no server of your own | Railway, Render, Fly.io, Koyeb, Coolify or Dokploy — a button, plus whatever the host charges |

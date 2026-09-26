@@ -1,11 +1,12 @@
 ---
 title: Issue tracking (Jira)
+description: "File a Jira issue from a failure with the fix plan as its body, keep it linked as the cluster's known issue, and keep its status in sync."
 lang: en-US
 ---
 
 # Issue tracking (Jira)
 
-<Needs reporter />
+<Needs reporter admin />
 
 Piwi already ends an investigation with everything a ticket needs — a headline, the affected tests and their owners,
 the diagnosis, a validated patch, the failing locator, the verify command. **Create issue** turns that into a Jira

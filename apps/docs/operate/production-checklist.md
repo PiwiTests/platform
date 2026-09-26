@@ -1,5 +1,6 @@
 ---
 title: Production checklist
+description: "What to set before anyone else can reach a Piwi instance: authentication, secrets, TLS, proxy trust, persistent data and a pinned version."
 lang: en-US
 ---
 

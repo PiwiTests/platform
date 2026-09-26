@@ -1,5 +1,6 @@
 ---
 title: Browser extension
+description: "Piwi Picker, the browser extension: pick and lint locators, record actions and copy context for an agent on the live page, with or without a Piwi instance."
 lang: en-US
 ---
 

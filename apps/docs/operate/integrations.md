@@ -1,5 +1,6 @@
 ---
 title: Integrations
+description: "Connect Jira Cloud to the dashboard: the token and permissions it needs, trusted hosts, status sync and the inbound webhook."
 lang: en-US
 ---
 

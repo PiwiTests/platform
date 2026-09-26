@@ -1,5 +1,6 @@
 ---
 title: Who uses a locator
+description: "Before changing an element, see which tests reach it and from which lines, from the locator chains Playwright records on every step."
 lang: en-US
 ---
 
@@ -24,7 +25,7 @@ Opening a count answers **Who uses this?** in three ways:
 - **Same target** — chains ending on the same call inside any container, so `getByLabel('Country')` on its own and inside the shipping form both count.
 - **Inside its container** — every chain that searches inside one of the chain's containers. Changing the container itself (removing a wrapper, renaming a form) reaches all of them, even when no test targets the container directly.
 
-Call sites shared by the most tests come first: a page-object line used by five tests is one fix for all five. **Run these tests** turns the list into a `npx playwright test` command through the same materialization as [test selection](/guide/test-selection).
+Call sites shared by the most tests come first: a page-object line used by five tests is one fix for all five. **Run these tests** turns the list into a `npx playwright test` command through the same materialization as [test selection](/features/test-selection).
 
 ## The Locators page
 
