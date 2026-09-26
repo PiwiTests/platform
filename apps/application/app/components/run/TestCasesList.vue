@@ -236,6 +236,15 @@ const hasFilter = computed(
     showNewRegressionsOnly.value ||
     showNewFlakyOnly.value,
 );
+function clearFilters() {
+  testCaseSearch.value = '';
+  activeStatuses.value = [];
+  testCaseBrowserFilter.value = 'all';
+  testCaseTagFilter.value = [];
+  testCaseLockFilter.value = 'all';
+  showNewRegressionsOnly.value = false;
+  showNewFlakyOnly.value = false;
+}
 function defaultOpen(key: string): boolean {
   return !DEFAULT_COLLAPSED_BUCKETS.has(key);
 }
@@ -657,32 +666,63 @@ defineExpose({ scrollToCase });
 
 <template>
   <div class="flex flex-col min-h-0">
-    <FilterToolbar class="mb-4 shrink-0">
-      <template #start>
-        <div class="flex items-center gap-1.5">
-          <span class="text-xs text-muted whitespace-nowrap">Group by</span>
-          <USelect v-model="groupBy" :items="groupByItems" size="sm" class="w-28" aria-label="Group tests by" />
+    <!-- Filters, in two rows: text and the run's dimensions, then outcomes.
+         How the rows are grouped and sorted sits on the list's own header. -->
+    <div class="mb-3 shrink-0 space-y-2">
+      <div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+        <UInput
+          v-model="testCaseSearch"
+          placeholder="Search title, path, error…"
+          icon="i-lucide-search"
+          size="sm"
+          class="w-full sm:w-auto sm:flex-1 sm:min-w-48"
+        />
+        <div class="grid grid-cols-2 gap-2 sm:flex sm:items-center">
+          <USelect
+            v-model="testCaseBrowserFilter"
+            :items="testCaseBrowserOptions"
+            size="sm"
+            class="w-full sm:w-36"
+            aria-label="Filter by browser"
+          />
+          <USelectMenu
+            v-if="testCaseTagOptions.length > 0"
+            v-model="testCaseTagFilter"
+            :items="testCaseTagOptions"
+            value-key="value"
+            multiple
+            size="sm"
+            class="w-full sm:w-36"
+            aria-label="Filter by tag"
+            title="Show the tests carrying every selected tag"
+          >
+            <template #default>
+              <div class="flex items-center gap-1.5 min-w-0">
+                <UIcon
+                  name="i-lucide-tag"
+                  class="size-3.5 shrink-0"
+                  :class="testCaseTagFilter.length ? 'text-primary' : 'text-dimmed'"
+                />
+                <span v-if="testCaseTagFilter.length === 0" class="text-muted">All tags</span>
+                <span v-else-if="testCaseTagFilter.length === 1" class="truncate font-mono">
+                  @{{ testCaseTagFilter[0] }}
+                </span>
+                <span v-else>{{ testCaseTagFilter.length }} tags</span>
+              </div>
+            </template>
+          </USelectMenu>
+          <USelect
+            v-if="hasAnyLocks"
+            v-model="testCaseLockFilter"
+            :items="testCaseLockOptions"
+            icon="i-lucide-lock"
+            size="sm"
+            class="w-full sm:w-36"
+            aria-label="Filter by lock"
+          />
         </div>
-        <span
-          v-if="isLive"
-          aria-live="polite"
-          class="text-sm text-zinc-500 tabular-nums inline-flex items-center gap-1"
-        >
-          {{ finishedCount }} / {{ Math.max(total ?? 0, testCases.length) }} completed <HelpHint topic="run.live" />
-        </span>
-        <span v-else class="text-sm text-zinc-500 tabular-nums inline-flex items-center gap-1">
-          {{ visibleTestCount }}{{ visibleTestCount !== testCases.length ? ` / ${testCases.length}` : '' }} executions
-          <HelpHint topic="run.test-cases" />
-        </span>
-      </template>
+      </div>
 
-      <UInput
-        v-model="testCaseSearch"
-        placeholder="Search title, path, error…"
-        icon="i-lucide-search"
-        size="sm"
-        class="min-w-48 max-sm:flex-1"
-      />
       <div class="flex flex-wrap items-center gap-1">
         <StatusFilterChip
           v-for="opt in STATUS_OPTIONS"
@@ -693,79 +733,35 @@ defineExpose({ scrollToCase });
           @click="toggleStatus(opt.value)"
         />
         <!-- The two signals join the status chips as toggles, not checkboxes. -->
-        <StatusFilterChip
-          v-if="!isLive"
-          status="failed"
-          label="New regressions"
-          icon="i-lucide-flame"
-          :pressed="showNewRegressionsOnly"
-          @click="showNewRegressionsOnly = !showNewRegressionsOnly"
-        />
-        <StatusFilterChip
-          v-if="!isLive"
-          status="flaky"
-          label="Newly flaky"
-          icon="i-lucide-shuffle"
-          :pressed="showNewFlakyOnly"
-          @click="showNewFlakyOnly = !showNewFlakyOnly"
-        />
-      </div>
-      <USelect
-        v-model="testCaseBrowserFilter"
-        :items="testCaseBrowserOptions"
-        size="sm"
-        class="w-36"
-        aria-label="Filter by browser"
-      />
-      <USelectMenu
-        v-if="testCaseTagOptions.length > 0"
-        v-model="testCaseTagFilter"
-        :items="testCaseTagOptions"
-        value-key="value"
-        multiple
-        size="sm"
-        class="min-w-36"
-        aria-label="Filter by tag"
-        title="Show the tests carrying every selected tag"
-      >
-        <template #default>
-          <div class="flex items-center gap-1.5 min-w-0">
-            <UIcon
-              name="i-lucide-tag"
-              class="size-3.5 shrink-0"
-              :class="testCaseTagFilter.length ? 'text-primary' : 'text-dimmed'"
-            />
-            <span v-if="testCaseTagFilter.length === 0" class="text-muted">All tags</span>
-            <span v-else-if="testCaseTagFilter.length === 1" class="truncate font-mono">
-              @{{ testCaseTagFilter[0] }}
-            </span>
-            <span v-else>{{ testCaseTagFilter.length }} tags</span>
-          </div>
+        <template v-if="!isLive">
+          <span class="mx-1 h-4 w-px bg-accented" aria-hidden="true" />
+          <StatusFilterChip
+            status="failed"
+            label="New regressions"
+            icon="i-lucide-flame"
+            :pressed="showNewRegressionsOnly"
+            @click="showNewRegressionsOnly = !showNewRegressionsOnly"
+          />
+          <StatusFilterChip
+            status="flaky"
+            label="Newly flaky"
+            icon="i-lucide-shuffle"
+            :pressed="showNewFlakyOnly"
+            @click="showNewFlakyOnly = !showNewFlakyOnly"
+          />
         </template>
-      </USelectMenu>
-      <USelect
-        v-if="hasAnyLocks"
-        v-model="testCaseLockFilter"
-        :items="testCaseLockOptions"
-        icon="i-lucide-lock"
-        size="sm"
-        class="w-36"
-        aria-label="Filter by lock"
-      />
-      <div class="flex items-center gap-1">
-        <USelect v-model="sortKey" :items="sortOptions" size="sm" class="w-36" aria-label="Sort tests by" />
         <UButton
-          size="sm"
-          variant="outline"
+          v-if="hasFilter"
+          size="xs"
+          variant="ghost"
           color="neutral"
-          :disabled="sortKey === 'natural'"
-          :icon="sortDir === 'asc' ? 'i-lucide-arrow-up-narrow-wide' : 'i-lucide-arrow-down-wide-narrow'"
-          :title="sortDir === 'asc' ? 'Sorted ascending' : 'Sorted descending'"
-          :aria-label="sortDir === 'asc' ? 'Sorted ascending' : 'Sorted descending'"
-          @click="sortDir = sortDir === 'asc' ? 'desc' : 'asc'"
+          icon="i-lucide-x"
+          label="Clear filters"
+          class="ml-auto"
+          @click="clearFilters"
         />
       </div>
-    </FilterToolbar>
+    </div>
 
     <!-- Bulk triage bar — appears once failing rows are selected. -->
     <div
@@ -808,20 +804,61 @@ defineExpose({ scrollToCase });
     </div>
 
     <div v-if="rows.length > 0" class="flex-1 min-h-0 rounded-lg border border-default bg-default flex flex-col">
-      <!-- Select-all failing, above the list (no column header to host it). -->
+      <!-- List header: select-all failing and the count on the left, how the
+           rows are grouped and sorted on the right. -->
       <div
-        v-if="selectionEnabled"
-        class="flex items-center gap-2 border-b border-default bg-elevated/40 px-3 py-1.5 shrink-0"
+        class="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-default bg-elevated/40 px-3 py-1.5 shrink-0"
       >
-        <input
-          type="checkbox"
-          class="size-4 cursor-pointer accent-primary focus-visible:ring-2 focus-visible:ring-primary rounded"
-          :checked="allSelectableSelected"
-          :indeterminate.prop="someSelectableSelected"
-          :aria-label="allSelectableSelected ? 'Deselect all failing tests' : 'Select all failing tests'"
-          @change="toggleAll"
-        />
-        <span class="text-xs text-muted">Select all failing</span>
+        <div v-if="selectionEnabled" class="flex items-center gap-2">
+          <input
+            type="checkbox"
+            class="size-4 cursor-pointer accent-primary focus-visible:ring-2 focus-visible:ring-primary rounded"
+            :checked="allSelectableSelected"
+            :indeterminate.prop="someSelectableSelected"
+            :aria-label="allSelectableSelected ? 'Deselect all failing tests' : 'Select all failing tests'"
+            @change="toggleAll"
+          />
+          <span class="text-xs text-muted">Select all failing</span>
+        </div>
+        <span v-if="isLive" aria-live="polite" class="text-xs text-muted tabular-nums inline-flex items-center gap-1">
+          {{ finishedCount }} / {{ Math.max(total ?? 0, testCases.length) }} completed <HelpHint topic="run.live" />
+        </span>
+        <span v-else class="text-xs text-muted tabular-nums inline-flex items-center gap-1">
+          {{ visibleTestCount }}{{ visibleTestCount !== testCases.length ? ` / ${testCases.length}` : '' }} executions
+          <HelpHint topic="run.test-cases" />
+        </span>
+        <div class="grid w-full grid-cols-2 gap-2 sm:ml-auto sm:flex sm:w-auto sm:items-center sm:gap-3">
+          <div class="flex items-center gap-1.5 min-w-0">
+            <span class="text-xs text-muted whitespace-nowrap">Group by</span>
+            <USelect
+              v-model="groupBy"
+              :items="groupByItems"
+              size="xs"
+              class="min-w-0 flex-1 sm:w-32 sm:flex-none"
+              aria-label="Group tests by"
+            />
+          </div>
+          <div class="flex items-center gap-1.5 min-w-0">
+            <span class="text-xs text-muted">Sort</span>
+            <USelect
+              v-model="sortKey"
+              :items="sortOptions"
+              size="xs"
+              class="min-w-0 flex-1 sm:w-32 sm:flex-none"
+              aria-label="Sort tests by"
+            />
+            <UButton
+              size="xs"
+              variant="outline"
+              color="neutral"
+              :disabled="sortKey === 'natural'"
+              :icon="sortDir === 'asc' ? 'i-lucide-arrow-up-narrow-wide' : 'i-lucide-arrow-down-wide-narrow'"
+              :title="sortDir === 'asc' ? 'Sorted ascending' : 'Sorted descending'"
+              :aria-label="sortDir === 'asc' ? 'Sorted ascending' : 'Sorted descending'"
+              @click="sortDir = sortDir === 'asc' ? 'desc' : 'asc'"
+            />
+          </div>
+        </div>
       </div>
 
       <ClientOnly>
@@ -898,21 +935,7 @@ defineExpose({ scrollToCase });
     <EmptyState v-else-if="testCases.length === 0" icon="i-lucide-beaker" text="No tests recorded for this run." />
 
     <EmptyState v-else icon="i-lucide-search-x" text="No tests match your filters.">
-      <UButton
-        size="xs"
-        variant="outline"
-        color="neutral"
-        label="Clear filters"
-        @click="
-          testCaseSearch = '';
-          activeStatuses = [];
-          testCaseBrowserFilter = 'all';
-          testCaseTagFilter = [];
-          testCaseLockFilter = 'all';
-          showNewRegressionsOnly = false;
-          showNewFlakyOnly = false;
-        "
-      />
+      <UButton size="xs" variant="outline" color="neutral" label="Clear filters" @click="clearFilters" />
     </EmptyState>
 
     <!-- Confirm quarantining a larger selection. -->
