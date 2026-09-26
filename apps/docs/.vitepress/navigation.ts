@@ -178,6 +178,7 @@ export const referenceSidebar: SidebarGroup[] = [
       { text: 'Configuration generator', link: '/reference/configuration/generator' },
       { text: 'Reporter options', link: '/reference/reporter-options' },
       { text: 'Test metadata', link: '/reference/test-metadata' },
+      { text: 'Clue rules', link: '/reference/clues' },
       { text: 'Piwi CLI', link: '/reference/cli' },
       { text: 'Analytics widgets', link: '/reference/analytics-widgets' },
       { text: 'API docs (interactive)', link: 'https://piwitests.dev/demo/docs' },
