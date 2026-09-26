@@ -85,7 +85,8 @@ which the drift test also reads.
 
 ### Every page
 
-- A `description` in its front matter: one sentence, used as the search snippet and the social card text.
+- A `description` in its front matter: one sentence, used as the search snippet and the social card text. The home
+  page is the exception: it uses the site description in `config.mts`.
 - Its H1 equals its sidebar label. Recipes are the exception: their H1 is the reader's question.
 - One footer heading, `## Related`.
 - A new term goes into `concepts.md` in the change that introduces it.
@@ -144,6 +145,11 @@ when you move a section, keep its heading text or update every link the test nam
 ## Writing conventions
 
 - Update the affected page **in the same commit** as the code change; commit scope `docs`.
+- **Every page carries its own search description.** `.vitepress/page-meta.mts` gives each page a canonical URL,
+  `og:` tags naming the page, and a `description`: the frontmatter `description`, else a blog post's `excerpt`,
+  else the page's first prose paragraph (clipped to whole sentences, ~200 characters). Every page but the home page
+  sets a frontmatter `description` (see "Every page" above), so the fallbacks only catch a page that lacks one, and
+  `docs-page-meta.test.ts` fails when a page's description is under 50 characters.
 - American English, sentence-case headings, and the shell-portability rule from the root guide: VitePress uses
   `::: code-group` with ```bash [Linux / macOS] + ```powershell [Windows (PowerShell)] tabs when a command has no
   portable single form.

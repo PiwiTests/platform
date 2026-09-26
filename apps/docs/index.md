@@ -1,7 +1,8 @@
 ---
 # https://vitepress.dev/reference/default-theme-home-page
 layout: home
-description: "Your Playwright results, kept and explained: every run and trace kept, failures grouped by root cause, flaky tests scored and broken locators healed. Self-hosted, MIT, zero telemetry."
+title: Piwi Dashboard — Your Playwright results, kept and explained
+titleTemplate: false
 
 hero:
   name: "Piwi Dashboard"

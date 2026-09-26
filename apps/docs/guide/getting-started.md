@@ -1,6 +1,6 @@
 ---
 title: Getting started
-description: "Pick a way to run the dashboard, connect a Playwright project with one command, and see your first run arrive."
+description: "Piwi Dashboard is a self-hosted server plus a Playwright reporter that keeps every test run. Pick a way to run it (demo, desktop app, Docker, npx or a one-click host), then send your first results."
 lang: en-US
 ---
 
