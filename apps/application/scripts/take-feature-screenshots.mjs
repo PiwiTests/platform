@@ -894,6 +894,23 @@ const SCENES = [
     viewport: { width: 390, height: 1400 },
   },
   {
+    name: 'catalog-filters',
+    description: 'Project Tests catalog: the two filter rows, and the list header grouping by file with a filter on',
+    route: '/projects/1?tab=tests',
+    viewport: { width: 1280, height: 1100 },
+    async run({ page, shoot, settle }) {
+      await shoot('flat', { of: '[data-shot="test-cases-catalog"]', pad: 12 });
+      await page.getByRole('combobox', { name: 'Group tests by' }).click();
+      await page.getByRole('option', { name: 'File' }).click();
+      await page.getByRole('button', { name: 'Skipped', exact: true }).click();
+      await settle();
+      await shoot('grouped-filtered', { of: '[data-shot="test-cases-catalog"]', pad: 12 });
+      // Leave the group-by cookie as the next capture expects it.
+      await page.getByRole('combobox', { name: 'Group tests by' }).click();
+      await page.getByRole('option', { name: 'None' }).click();
+    },
+  },
+  {
     name: 'runs-table-skip-kinds',
     description: 'Project runs table: each run bar splits its skipped tests into skipped and fixme',
     route: '/projects/1',
