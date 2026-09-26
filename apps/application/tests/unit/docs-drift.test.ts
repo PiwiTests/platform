@@ -193,7 +193,7 @@ describe('feature-page word budget', () => {
   const OVER_BUDGET: Record<string, number> = {
     'ai-diagnosis': 4800,
     evidence: 3700,
-    'ui-overview': 3083,
+    'ui-overview': 3079,
     extension: 2500,
     mcp: 2300,
     'scenario-gaps': 1760,
