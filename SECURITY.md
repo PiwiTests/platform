@@ -33,8 +33,4 @@ Piwi Dashboard is pre-1.0: fixes land on `main` and ship in the next release. On
 
 ## Hardening your deployment
 
-The [deployment guide](https://piwitests.dev/deployment) covers the essentials; the short version:
-
-- Set `PIWI_SECRET_KEY` so stored credentials are encrypted with your key, not the built-in development default.
-- Enable authentication (`PIWI_AUTH_ENABLED=true` + `PIWI_AUTH_SECRET`) before exposing the dashboard beyond localhost.
-- Put the dashboard behind HTTPS (reverse proxy) and keep the container up to date.
+The [production checklist](https://piwitests.dev/operate/production-checklist) lists everything to set before you expose an instance: authentication, the encryption key, HTTPS, the trust-proxy flag, backups and a pinned version. Keep the container up to date.
