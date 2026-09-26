@@ -12,7 +12,7 @@ function entry(locator: string, tests: number[], actions: string[] = ['click']):
   return {
     locator,
     lastSeenAt: '2026-09-01T00:00:00.000Z',
-    uses: tests.map((test) => ({ test, actions, callSites: [], projects: [] })),
+    uses: tests.map((test) => ({ test, actions, callSites: [], projects: [], branches: ['main'] })),
   };
 }
 
@@ -20,6 +20,9 @@ function index(locators: LocatorIndexEntry[]): LocatorIndex {
   return {
     projectId: 1,
     projectName: 'shop',
+    branch: 'main',
+    defaultBranch: 'main',
+    branches: [],
     builtAt: null,
     generatedAt: '2026-09-01T00:00:00.000Z',
     testIdAttributes: null,

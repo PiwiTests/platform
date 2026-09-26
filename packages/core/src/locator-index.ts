@@ -45,6 +45,12 @@ export interface LocatorIndexUse {
   callSites: string[];
   /** Playwright projects the use was recorded in (`chromium`, `mobile-safari`, …); empty when unknown. */
   projects: string[];
+  /**
+   * The branches whose runs recorded it. In a view of one branch, the default
+   * branch's name here means the test did not run on that branch, so its use
+   * on the default branch stands in.
+   */
+  branches: string[];
 }
 
 export interface LocatorIndexEntry {
@@ -55,9 +61,31 @@ export interface LocatorIndexEntry {
   uses: LocatorIndexUse[];
 }
 
+/** A branch whose runs recorded uses of their own. */
+export interface LocatorIndexBranch {
+  name: string;
+  /** When a test of that branch last used a locator, ISO 8601. */
+  lastSeenAt: string;
+  /** Tests that ran on that branch. */
+  tests: number;
+}
+
+/** Asks an instance for every branch together instead of one branch. */
+export const ALL_BRANCHES = '*';
+
 export interface LocatorIndex {
   projectId: number;
   projectName: string;
+  /**
+   * The branch described: the default branch's uses, with those of the tests
+   * that ran on this branch replaced by what they did there. Null for every
+   * branch together.
+   */
+  branch: string | null;
+  /** The project's default branch. */
+  defaultBranch: string;
+  /** Branches with uses of their own, most recently seen first. */
+  branches: LocatorIndexBranch[];
   /** When the index was first built from stored runs; null when it never was. */
   builtAt: string | null;
   generatedAt: string;

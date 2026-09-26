@@ -57,10 +57,32 @@ first, with a filter. Each count opens **Who uses this?**.
 The index behind this page is also what the extension's [Tested elements](./tested-elements)
 overlay evaluates on a live page.
 
+## Branches
+
+Each use is stored with the branch of the run that recorded it. A run on the project's
+default branch, or with no branch, records the default branch's uses; a run on any other
+branch records that branch's own. A feature branch that renames a label never hides the old
+label's tests on `main`, and `main` only loses a use once its own runs stop making it. The default branch is the one Piwi knows for the project, the most common
+branch among its runs otherwise, as for [branch baselines](./branches).
+
+The **Locators** page, **Who uses this?** and the extension's
+[Tested elements](./tested-elements) read one branch at a time:
+
+- **The default branch**, unless another is chosen.
+- **A branch**: the tests that ran on it count with what they did there, and the others with
+  what they do on the default branch, since a test that did not run on a branch is taken to be
+  unchanged on it. This is per Playwright project: a test that ran only in `chromium` on the
+  branch keeps its default-branch uses in `firefox`.
+- **All branches**: every use recorded on any branch, which answers "does any run of the
+  project still use this locator?".
+
+An execution's **Locators** tab counts in the branch of its own run. The index lists at most
+the 50 branches seen most recently; the uses of a branch stay until the index is rebuilt.
+
 ## Requirements and limits
 
 - **Playwright 1.61 or later**, with step collection on (`collectPerformanceMetrics`, the default). Playwright 1.63 puts the chain in each step's parameters; 1.61 and 1.62 print it in the step title, which Piwi reads the same way.
 - **Getter calls are not reported.** Playwright hides `textContent()`, `inputValue()`, `isVisible()` and similar calls from reporters, so a locator used only through them is not in the index.
 - **Long and described chains.** Piwi keeps the first 500 steps of an execution (`PIWI_INGEST_MAX_STEPS`) and the first 200 characters of each step parameter (`PIWI_INGEST_MAX_STEP_PARAM_VALUE_CHARS`), and `locator.describe()` replaces the chain with its description. Chains cut short or described are skipped.
 - **Matching is by chain text.** Two different chains that happen to resolve to the same element count separately. The counts tell you where to look, not that a test will break. To match on the element itself, open the page and use the extension's [Tested elements](./tested-elements), which evaluates every chain there.
-- **The index fills itself.** New runs are indexed as they arrive. When the server starts, it indexes each project's stored history once: for every test and Playwright project, the latest passed execution, or the latest one when none passed. To rebuild it later, call the rebuild endpoint: see the [API docs](https://piwitests.dev/demo/docs), or `/docs` on your own instance.
+- **The index fills itself.** New runs are indexed as they arrive. When the server starts, it indexes each project's stored history once: for every test, Playwright project and branch, the latest passed execution, or the latest one when none passed. The rebuild endpoint empties a project's index and indexes its stored history again, which also splits by branch the uses indexed before branches were recorded (until then they count as the default branch's): see the [API docs](https://piwitests.dev/demo/docs), or `/docs` on your own instance.

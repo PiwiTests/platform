@@ -553,9 +553,11 @@ export const locatorSnapshots = sqliteTable(
 
 // Locator usages — which locator chain each test used, from which call site, for
 // which action. Built at ingest from the stored steps (Playwright reports the full
-// chain on every locator step), one row per (test case, call site, action, chain),
-// with first/last seen runs. Answers "which tests use this locator" without any
-// capture beyond the steps.
+// chain on every locator step), one row per (test case, Playwright project, branch,
+// call site, action, chain), with first/last seen runs. Answers "which tests use
+// this locator" without any capture beyond the steps. A branch other than the
+// default keeps its own rows, so a view of that branch replaces the default
+// branch's uses for the tests that ran on it.
 export const locatorUsages = sqliteTable(
   'locator_usages',
   {
@@ -571,6 +573,7 @@ export const locatorUsages = sqliteTable(
     action: text('action').notNull(), // click, fill, selectOption, expect.toHaveValue, …
     browserName: text('browser_name').notNull(), // Playwright project name of the execution, '' when unknown
     callSite: text('call_site').notNull(), // project-relative file:line:col, '' when unknown
+    branch: text('branch').notNull().default(''), // '' = the project's default branch (or a run with none); else the run's own branch
     firstSeenRunId: integer('first_seen_run_id').references(() => testRuns.id, { onDelete: 'set null' }),
     lastSeenRunId: integer('last_seen_run_id').references(() => testRuns.id, { onDelete: 'set null' }),
     lastSeenAt: integer('last_seen_at', { mode: 'timestamp_ms' }).notNull(),
@@ -579,11 +582,13 @@ export const locatorUsages = sqliteTable(
     uniqueUse: uniqueIndex('idx_locator_usages_use').on(
       table.testCaseId,
       table.browserName,
+      table.branch,
       table.callSite,
       table.action,
       table.locator,
     ),
     projectLocatorIdx: index('idx_locator_usages_project_locator').on(table.projectId, table.locator),
+    projectBranchIdx: index('idx_locator_usages_project_branch').on(table.projectId, table.branch),
     projectTargetIdx: index('idx_locator_usages_project_target').on(table.projectId, table.target),
     lastSeenRunIdx: index('idx_locator_usages_last_seen_run').on(table.lastSeenRunId),
     firstSeenRunIdx: index('idx_locator_usages_first_seen_run').on(table.firstSeenRunId),

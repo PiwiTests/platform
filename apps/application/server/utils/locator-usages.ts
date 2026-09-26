@@ -4,9 +4,29 @@
  * Playwright reports for every execution, so the index needs no capture beyond
  * what the reporter already sends, and works with locator healing turned off.
  *
+ * Rows carry the branch of the run that recorded them: '' for the project's
+ * default branch (and runs with no branch), else the branch name. A view of
+ * one branch starts from the default branch's uses and, for each test and
+ * Playwright project that ran on that branch, replaces them with what it did
+ * there — a test not run on a branch is taken to be unchanged on it.
+ *
  * Shared by the server ingest path and the demo mirror.
  */
-import { and, count, countDistinct, desc, eq, inArray, isNotNull, isNull, max, or, sql } from 'drizzle-orm';
+import {
+  and,
+  count,
+  countDistinct,
+  desc,
+  eq,
+  inArray,
+  isNotNull,
+  isNull,
+  max,
+  ne,
+  or,
+  sql,
+  type SQL,
+} from 'drizzle-orm';
 import { locatorUsages, projects, testCases, testRuns, testRunsCases } from '../database/schema';
 import {
   extractStepLocatorUses,
@@ -28,7 +48,15 @@ import type {
   LocatorUsageSite,
   LocatorUsagesResult,
 } from '#shared/locator-usages.types';
-import type { LocatorIndex, LocatorIndexEntry, LocatorIndexTest, LocatorIndexTestStatus } from '#shared/locator-index';
+import {
+  ALL_BRANCHES,
+  type LocatorIndex,
+  type LocatorIndexBranch,
+  type LocatorIndexEntry,
+  type LocatorIndexTest,
+  type LocatorIndexTestStatus,
+} from '#shared/locator-index';
+import { resolveStoredDefaultBranch } from './scm/stored-default-branch';
 
 /**
  * UTF-8 byte budgets for indexed text. A Postgres btree entry holds about
@@ -67,19 +95,41 @@ interface RunFacts {
   /** The checkout directory the reporter ran from, when it sent one. */
   root: string | null;
   probe: boolean;
+  /** The run's branch, trimmed; null when it had none. */
+  branch: string | null;
 }
 
 type UsageInsert = typeof locatorUsages.$inferInsert;
 
-const usageKey = (caseId: number, browserName: string, callSite: string, action: string, locator: string) =>
-  `${caseId}\x00${browserName}\x00${callSite}\x00${action}\x00${locator}`;
+const usageKey = (
+  caseId: number,
+  browserName: string,
+  branch: string,
+  callSite: string,
+  action: string,
+  locator: string,
+) => `${caseId}\x00${browserName}\x00${branch}\x00${callSite}\x00${action}\x00${locator}`;
+
+/** The branch a run's uses are stored under: '' on the default branch or with no branch, else the branch. */
+export function locatorBranchTag(runBranch: string | null | undefined, defaultBranch: string | null): string {
+  const branch = runBranch?.trim() || '';
+  return branch === '' || branch === defaultBranch ? '' : branch;
+}
+
+async function projectDefaultBranch(db: DrizzleDB, projectId: number): Promise<string> {
+  const [project] = await db
+    .select({ id: projects.id, defaultBranch: projects.defaultBranch })
+    .from(projects)
+    .where(eq(projects.id, projectId));
+  return resolveStoredDefaultBranch(db, project ?? { id: projectId });
+}
 
 async function loadRunFacts(db: DrizzleDB, runIds: number[]): Promise<Map<number, RunFacts>> {
   const out = new Map<number, RunFacts>();
   const ids = [...new Set(runIds)];
   for (let i = 0; i < ids.length; i += INSERT_CHUNK) {
     const rows = await db
-      .select({ id: testRuns.id, startTime: testRuns.startTime, metadata: testRuns.metadata })
+      .select({ id: testRuns.id, startTime: testRuns.startTime, metadata: testRuns.metadata, branch: testRuns.branch })
       .from(testRuns)
       .where(inArray(testRuns.id, ids.slice(i, i + INSERT_CHUNK)));
     for (const r of rows) {
@@ -88,6 +138,7 @@ async function loadRunFacts(db: DrizzleDB, runIds: number[]): Promise<Map<number
         startedAt: new Date(r.startTime),
         root: locationRootOf(metadata?.workingDir),
         probe: isProbeRun(metadata),
+        branch: r.branch?.trim() || null,
       });
     }
   }
@@ -111,21 +162,24 @@ function locationRoots(cases: LocatorUsageCase[], runs: Map<number, RunFacts>): 
 }
 
 /**
- * The rows a batch of executions contributes, one per distinct use per test and
- * project, and the cases that had a use left out: over the byte budget, or at a
- * call site that could not be made project-relative. Those never purge.
+ * The rows a batch of executions contributes, one per distinct use per test,
+ * project and branch, and the cases that had a use left out: over the byte
+ * budget, or at a call site that could not be made project-relative. Those
+ * never purge.
  */
 export function buildLocatorUsageRows(
   projectId: number,
   cases: LocatorUsageCase[],
   runs: Map<number, RunFacts> = new Map(),
   now = new Date(),
+  defaultBranch: string | null = null,
 ): { rows: UsageInsert[]; partial: Set<number> } {
   const rows = new Map<string, UsageInsert>();
   const partial = new Set<number>();
   const roots = locationRoots(cases, runs);
   cases.forEach((c, k) => {
     const browserName = c.browserName ?? '';
+    const branch = locatorBranchTag(runs.get(c.runId)?.branch, defaultBranch);
     const seenAt = runs.get(c.runId)?.startedAt ?? now;
     for (const use of extractStepLocatorUses(c.steps)) {
       const callSite = use.location ? stripLocationRoot(use.location, roots[k]!) : '';
@@ -133,15 +187,17 @@ export function buildLocatorUsageRows(
       if (
         isAbsoluteLocation(callSite) ||
         bytes > MAX_LOCATOR_BYTES ||
-        bytes + byteLength(callSite) + byteLength(browserName) + byteLength(use.action) > MAX_KEY_BYTES
+        bytes + byteLength(callSite) + byteLength(browserName) + byteLength(branch) + byteLength(use.action) >
+          MAX_KEY_BYTES
       ) {
         partial.add(k);
         continue;
       }
-      rows.set(usageKey(c.caseId, browserName, callSite, use.action, use.locator), {
+      rows.set(usageKey(c.caseId, browserName, branch, callSite, use.action, use.locator), {
         projectId,
         testCaseId: c.caseId,
         browserName,
+        branch,
         locator: use.locator,
         target: locatorTarget(use.chain),
         action: use.action,
@@ -161,17 +217,20 @@ export function buildLocatorUsageRows(
  * report never rolls the index back.
  *
  * An execution that ran to the end with every step kept removes the uses its
- * test no longer has, in its own Playwright project only (another project can
- * take other paths through the same test), and only those last seen before its
- * run started. A failed or truncated execution never removes anything: it may
- * have stopped before reaching them.
+ * test no longer has, in its own Playwright project and branch only (another
+ * project can take other paths through the same test, another branch can have
+ * other code), and only those last seen before its run started. A failed or
+ * truncated execution never removes anything: it may have stopped before
+ * reaching them.
  */
 export async function upsertLocatorUsages(db: DrizzleDB, projectId: number, cases: LocatorUsageCase[]): Promise<void> {
   const runs = await loadRunFacts(
     db,
     cases.map((c) => c.runId),
   );
-  const { rows, partial } = buildLocatorUsageRows(projectId, cases, runs);
+  const branched = [...runs.values()].some((r) => r.branch);
+  const defaultBranch = branched ? await projectDefaultBranch(db, projectId) : null;
+  const { rows, partial } = buildLocatorUsageRows(projectId, cases, runs, new Date(), defaultBranch);
 
   for (let i = 0; i < rows.length; i += INSERT_CHUNK) {
     await db
@@ -181,6 +240,7 @@ export async function upsertLocatorUsages(db: DrizzleDB, projectId: number, case
         target: [
           locatorUsages.testCaseId,
           locatorUsages.browserName,
+          locatorUsages.branch,
           locatorUsages.callSite,
           locatorUsages.action,
           locatorUsages.locator,
@@ -192,25 +252,29 @@ export async function upsertLocatorUsages(db: DrizzleDB, projectId: number, case
       });
   }
 
-  // (test case, Playwright project) → the start of the latest complete run seen for it.
+  // (test case, Playwright project, branch) → the start of the latest complete run seen for it.
   const purgeBefore = new Map<string, Date>();
   cases.forEach((c, k) => {
     if (!c.complete || partial.has(k) || !Array.isArray(c.steps) || c.steps.length === 0) return;
-    const startedAt = runs.get(c.runId)?.startedAt;
-    if (!startedAt) return;
-    const key = `${c.caseId}\x00${c.browserName ?? ''}`;
+    const run = runs.get(c.runId);
+    if (!run) return;
+    const startedAt = run.startedAt;
+    const key = `${c.caseId}\x00${c.browserName ?? ''}\x00${locatorBranchTag(run.branch, defaultBranch)}`;
     const current = purgeBefore.get(key);
     if (!current || startedAt > current) purgeBefore.set(key, startedAt);
   });
   if (purgeBefore.size === 0) return;
 
-  const seen = new Set(rows.map((r) => usageKey(r.testCaseId, r.browserName, r.callSite, r.action, r.locator)));
+  const seen = new Set(
+    rows.map((r) => usageKey(r.testCaseId, r.browserName, r.branch ?? '', r.callSite, r.action, r.locator)),
+  );
   const caseIds = [...new Set([...purgeBefore.keys()].map((k) => Number(k.split('\x00')[0])))];
   const existing = await db
     .select({
       id: locatorUsages.id,
       testCaseId: locatorUsages.testCaseId,
       browserName: locatorUsages.browserName,
+      branch: locatorUsages.branch,
       callSite: locatorUsages.callSite,
       action: locatorUsages.action,
       locator: locatorUsages.locator,
@@ -220,11 +284,11 @@ export async function upsertLocatorUsages(db: DrizzleDB, projectId: number, case
     .where(inArray(locatorUsages.testCaseId, caseIds));
   const stale = existing
     .filter((r) => {
-      const before = purgeBefore.get(`${r.testCaseId}\x00${r.browserName}`);
+      const before = purgeBefore.get(`${r.testCaseId}\x00${r.browserName}\x00${r.branch}`);
       return (
         before !== undefined &&
         new Date(r.lastSeenAt) < before &&
-        !seen.has(usageKey(r.testCaseId, r.browserName, r.callSite, r.action, r.locator))
+        !seen.has(usageKey(r.testCaseId, r.browserName, r.branch, r.callSite, r.action, r.locator))
       );
     })
     .map((r) => r.id);
@@ -239,18 +303,20 @@ interface ExecutionRef {
   browserName: string | null;
   status: string;
   testRunId: number;
+  /** Branch tag of the run (see `locatorBranchTag`). */
+  branch: string;
 }
 
 /**
- * The execution to index for each (test case, Playwright project): the latest
- * passed one, which reached every locator, else the latest one. Probe runs
- * replay tests with injected faults and are skipped. Newest groups first.
+ * The execution to index for each (test case, Playwright project, branch): the
+ * latest passed one, which reached every locator, else the latest one. Probe
+ * runs replay tests with injected faults and are skipped. Newest groups first.
  */
 function pickExecutions(refs: ExecutionRef[], probeRuns: Set<number>, maxCases: number): ExecutionRef[] {
   const picked = new Map<string, { latest: ExecutionRef; passed: ExecutionRef | null }>();
   for (const ref of refs) {
     if (probeRuns.has(ref.testRunId)) continue;
-    const key = `${ref.testCaseId}\x00${ref.browserName ?? ''}`;
+    const key = `${ref.testCaseId}\x00${ref.browserName ?? ''}\x00${ref.branch}`;
     const entry = picked.get(key);
     if (!entry) {
       if (picked.size >= maxCases) continue;
@@ -265,27 +331,37 @@ function pickExecutions(refs: ExecutionRef[], probeRuns: Set<number>, maxCases: 
 /**
  * Build a project's index from the executions already stored, then mark the
  * project as indexed. Reads the most recent executions (newest first, bounded
- * by `maxExecutions`) and indexes one per test case and Playwright project, up
- * to `maxCases`. Idempotent, so running it on a filled index only refreshes it.
+ * by `maxExecutions`) and indexes one per test case, Playwright project and
+ * branch, up to `maxCases`. Idempotent, so running it on a filled index only
+ * refreshes it; `reset` empties the project's index first, dropping the uses
+ * of executions no longer stored.
  */
 export async function backfillLocatorUsages(
   db: DrizzleDB,
   projectId: number,
-  opts: { maxCases?: number; maxExecutions?: number } = {},
+  opts: { maxCases?: number; maxExecutions?: number; reset?: boolean } = {},
 ): Promise<{ casesProcessed: number; usages: number }> {
-  const refs: ExecutionRef[] = await db
+  const defaultBranch = await projectDefaultBranch(db, projectId);
+  const stored = await db
     .select({
       id: testRunsCases.id,
       testCaseId: testRunsCases.testCaseId,
       browserName: testRunsCases.browserName,
       status: testRunsCases.status,
       testRunId: testRunsCases.testRunId,
+      runBranch: testRuns.branch,
     })
     .from(testRunsCases)
     .innerJoin(testCases, eq(testCases.id, testRunsCases.testCaseId))
+    .innerJoin(testRuns, eq(testRuns.id, testRunsCases.testRunId))
     .where(and(eq(testCases.projectId, projectId), isNotNull(testRunsCases.steps)))
     .orderBy(desc(testRunsCases.id))
     .limit(opts.maxExecutions ?? 50_000);
+  const refs: ExecutionRef[] = stored.map(({ runBranch, ...ref }) => ({
+    ...ref,
+    branch: locatorBranchTag(runBranch, defaultBranch),
+  }));
+  if (opts.reset) await db.delete(locatorUsages).where(eq(locatorUsages.projectId, projectId));
 
   // Only the runs of the picked executions are checked for probes; a probe
   // found moves its groups to their next execution, whose run is checked next.
@@ -362,23 +438,87 @@ export async function backfillUnindexedProjects(
   return out;
 }
 
-/** Distinct tests per value of `column`, for the given values of that column. */
+/** Which rows of the index a read looks at. */
+interface BranchView {
+  /** The branch described, or null for every branch together. */
+  name: string | null;
+  /** The stored tag of that branch: '' for the default branch, null for every branch. */
+  tag: string | null;
+  defaultBranch: string;
+}
+
+/** A view of `requested` (a branch name, `*` for every branch, nothing for the default branch). */
+async function resolveBranchView(db: DrizzleDB, projectId: number, requested?: string | null): Promise<BranchView> {
+  const defaultBranch = await projectDefaultBranch(db, projectId);
+  if (requested === ALL_BRANCHES) return { name: null, tag: null, defaultBranch };
+  const name = requested?.trim() || defaultBranch;
+  return { name, tag: locatorBranchTag(name, defaultBranch), defaultBranch };
+}
+
+/** The rows a view reads, before `branchFilter` drops the default branch's rows a branch replaces. */
+function branchCondition(view: BranchView): SQL | undefined {
+  if (view.tag === null) return undefined;
+  if (view.tag === '') return eq(locatorUsages.branch, '');
+  return inArray(locatorUsages.branch, ['', view.tag]);
+}
+
+type BranchRow = { testCaseId: number; browserName: string; branch: string };
+
+/**
+ * Keeps the rows a view shows: in a view of a branch, the default branch's
+ * rows of a test and Playwright project that ran on that branch give way to
+ * the branch's own.
+ */
+async function branchFilter(db: DrizzleDB, projectId: number, view: BranchView): Promise<(row: BranchRow) => boolean> {
+  if (view.tag === null || view.tag === '') return () => true;
+  const tag = view.tag;
+  const own = await db
+    .selectDistinct({ testCaseId: locatorUsages.testCaseId, browserName: locatorUsages.browserName })
+    .from(locatorUsages)
+    .where(and(eq(locatorUsages.projectId, projectId), eq(locatorUsages.branch, tag)));
+  const ran = new Set(own.map((r) => `${r.testCaseId}\x00${r.browserName}`));
+  return (row) => row.branch === tag || !ran.has(`${row.testCaseId}\x00${row.browserName}`);
+}
+
+/** The branch a stored tag stands for. */
+function branchName(tag: string, view: BranchView): string {
+  return tag === '' ? view.defaultBranch : tag;
+}
+
+/** Distinct tests per value of `column` in a view, for the given values of that column. */
 async function countTestsBy(
   db: DrizzleDB,
   projectId: number,
   column: typeof locatorUsages.locator | typeof locatorUsages.target,
   values: string[],
+  view: BranchView,
 ): Promise<Map<string, number>> {
-  const out = new Map<string, number>();
+  const keep = await branchFilter(db, projectId, view);
+  const tests = new Map<string, Set<number>>();
   for (let i = 0; i < values.length; i += INSERT_CHUNK) {
     const rows = await db
-      .select({ value: column, n: countDistinct(locatorUsages.testCaseId) })
+      .selectDistinct({
+        value: column,
+        testCaseId: locatorUsages.testCaseId,
+        browserName: locatorUsages.browserName,
+        branch: locatorUsages.branch,
+      })
       .from(locatorUsages)
-      .where(and(eq(locatorUsages.projectId, projectId), inArray(column, values.slice(i, i + INSERT_CHUNK))))
-      .groupBy(column);
-    for (const r of rows) out.set(r.value, Number(r.n));
+      .where(
+        and(
+          eq(locatorUsages.projectId, projectId),
+          inArray(column, values.slice(i, i + INSERT_CHUNK)),
+          branchCondition(view),
+        ),
+      );
+    for (const r of rows) {
+      if (!keep(r)) continue;
+      let set = tests.get(r.value);
+      if (!set) tests.set(r.value, (set = new Set()));
+      set.add(r.testCaseId);
+    }
   }
-  return out;
+  return new Map([...tests.entries()].map(([value, set]) => [value, set.size]));
 }
 
 /**
@@ -393,6 +533,7 @@ export async function getExecutionLocators(db: DrizzleDB, runCaseId: number): Pr
       filePath: testCases.filePath,
       projectId: testCases.projectId,
       runMetadata: testRuns.metadata,
+      runBranch: testRuns.branch,
     })
     .from(testRunsCases)
     .innerJoin(testCases, eq(testCases.id, testRunsCases.testCaseId))
@@ -426,16 +567,22 @@ export async function getExecutionLocators(db: DrizzleDB, runCaseId: number): Pr
   });
   const uses = [...byKey.values()];
 
+  const view = await resolveBranchView(db, row.projectId, row.runBranch);
   const [byLocator, byTarget] = await Promise.all([
-    countTestsBy(db, row.projectId, locatorUsages.locator, [...new Set(uses.map((u) => u.locator))]),
-    countTestsBy(db, row.projectId, locatorUsages.target, [...new Set(uses.map((u) => u.target))]),
+    countTestsBy(db, row.projectId, locatorUsages.locator, [...new Set(uses.map((u) => u.locator))], view),
+    countTestsBy(db, row.projectId, locatorUsages.target, [...new Set(uses.map((u) => u.target))], view),
   ]);
   for (const use of uses) {
     use.sameLocatorTests = byLocator.get(use.locator) ?? 0;
     use.sameTargetTests = byTarget.get(use.target) ?? 0;
   }
 
-  return { projectId: row.projectId, uses, hasSteps: Array.isArray(row.steps) && row.steps.length > 0 };
+  return {
+    projectId: row.projectId,
+    branch: row.runBranch?.trim() || null,
+    uses,
+    hasSteps: Array.isArray(row.steps) && row.steps.length > 0,
+  };
 }
 
 /**
@@ -444,15 +591,20 @@ export async function getExecutionLocators(db: DrizzleDB, runCaseId: number): Pr
  * - `target`: any chain ending on this call, whatever its containers;
  * - `scope`: this chain and every chain that continues inside it;
  * - `search`: chains containing the text, case-insensitively.
+ *
+ * In the view of `opts.branch` (a branch name, `*` for every branch, nothing
+ * for the default branch).
  */
 export async function getLocatorUsages(
   db: DrizzleDB,
   projectId: number,
   match: LocatorUsageMatch,
   value: string,
-  opts: { limit?: number } = {},
+  opts: { limit?: number; branch?: string | null } = {},
 ): Promise<LocatorUsagesResult> {
   const limit = opts.limit ?? 1000;
+  const view = await resolveBranchView(db, projectId, opts.branch);
+  const keep = await branchFilter(db, projectId, view);
   const condition =
     match === 'locator'
       ? eq(locatorUsages.locator, value)
@@ -468,6 +620,8 @@ export async function getLocatorUsages(
   const rows = await db
     .select({
       testCaseId: locatorUsages.testCaseId,
+      browserName: locatorUsages.browserName,
+      branch: locatorUsages.branch,
       locator: locatorUsages.locator,
       action: locatorUsages.action,
       callSite: locatorUsages.callSite,
@@ -478,7 +632,7 @@ export async function getLocatorUsages(
     })
     .from(locatorUsages)
     .innerJoin(testCases, eq(testCases.id, locatorUsages.testCaseId))
-    .where(and(eq(locatorUsages.projectId, projectId), condition))
+    .where(and(eq(locatorUsages.projectId, projectId), condition, branchCondition(view)))
     .orderBy(desc(locatorUsages.lastSeenAt))
     .limit(limit + 1);
 
@@ -486,6 +640,7 @@ export async function getLocatorUsages(
   // SQLite's LIKE ignores ASCII case; a scope match is a case-sensitive prefix.
   const kept = rows
     .slice(0, limit)
+    .filter((r) => keep(r))
     .filter((r) => match !== 'scope' || r.locator === value || r.locator.startsWith(`${value}.`));
 
   const sites = new Map<string, LocatorUsageSite>();
@@ -512,7 +667,7 @@ export async function getLocatorUsages(
 
   // Call sites shared by the most tests first: a page-object line is one fix for all of them.
   const ordered = [...sites.values()].sort((a, b) => b.tests.length - a.tests.length);
-  return { match, value, testCount: tests.size, sites: ordered, truncated };
+  return { match, value, branch: view.name, testCount: tests.size, sites: ordered, truncated };
 }
 
 /** The index as one latest-outcome word per test: a pass after retries is flaky, a timeout or interruption failed. */
@@ -553,15 +708,17 @@ async function projectTestIdAttributes(db: DrizzleDB, projectId: number): Promis
 
 /**
  * A project's locator index as one document: every distinct chain its tests
- * used, with each test's actions, call sites and Playwright projects, the
- * chains reaching the most tests first. Carries each test's latest outcome and
- * the test id attributes the project reads, so a client can resolve the chains
- * against a live page on its own. Null when the project does not exist.
+ * used, with each test's actions, call sites, Playwright projects and
+ * branches, the chains reaching the most tests first. Carries each test's
+ * latest outcome and the test id attributes the project reads, so a client can
+ * resolve the chains against a live page on its own. Describes `opts.branch`
+ * (a branch name, `*` for every branch, nothing for the default branch). Null
+ * when the project does not exist.
  */
 export async function getLocatorIndex(
   db: DrizzleDB,
   projectId: number,
-  opts: { maxLocators?: number; maxRows?: number } = {},
+  opts: { maxLocators?: number; maxRows?: number; branch?: string | null } = {},
 ): Promise<LocatorIndex | null> {
   const [project] = await db
     .select({ id: projects.id, name: projects.name, builtAt: projects.locatorIndexBuiltAt })
@@ -569,6 +726,8 @@ export async function getLocatorIndex(
     .where(eq(projects.id, projectId));
   if (!project) return null;
 
+  const view = await resolveBranchView(db, projectId, opts.branch);
+  const keep = await branchFilter(db, projectId, view);
   const maxRows = opts.maxRows ?? 200_000;
   const rows = await db
     .select({
@@ -576,30 +735,34 @@ export async function getLocatorIndex(
       locator: locatorUsages.locator,
       action: locatorUsages.action,
       browserName: locatorUsages.browserName,
+      branch: locatorUsages.branch,
       callSite: locatorUsages.callSite,
       lastSeenAt: locatorUsages.lastSeenAt,
     })
     .from(locatorUsages)
-    .where(eq(locatorUsages.projectId, projectId))
+    .where(and(eq(locatorUsages.projectId, projectId), branchCondition(view)))
     .orderBy(desc(locatorUsages.lastSeenAt))
     .limit(maxRows + 1);
   let truncated = rows.length > maxRows;
 
   interface Draft {
     lastSeenAt: number;
-    uses: Map<number, { actions: string[]; callSites: string[]; projects: string[] }>;
+    uses: Map<number, { actions: string[]; callSites: string[]; projects: string[]; branches: string[] }>;
   }
   const drafts = new Map<string, Draft>();
   for (const r of rows.slice(0, maxRows)) {
+    if (!keep(r)) continue;
     const seenAt = new Date(r.lastSeenAt).getTime();
     let draft = drafts.get(r.locator);
     if (!draft) drafts.set(r.locator, (draft = { lastSeenAt: seenAt, uses: new Map() }));
     if (seenAt > draft.lastSeenAt) draft.lastSeenAt = seenAt;
     let use = draft.uses.get(r.testCaseId);
-    if (!use) draft.uses.set(r.testCaseId, (use = { actions: [], callSites: [], projects: [] }));
+    if (!use) draft.uses.set(r.testCaseId, (use = { actions: [], callSites: [], projects: [], branches: [] }));
     if (!use.actions.includes(r.action)) use.actions.push(r.action);
     if (r.callSite && !use.callSites.includes(r.callSite)) use.callSites.push(r.callSite);
     if (r.browserName && !use.projects.includes(r.browserName)) use.projects.push(r.browserName);
+    const branch = branchName(r.branch, view);
+    if (!use.branches.includes(branch)) use.branches.push(branch);
   }
 
   const maxLocators = opts.maxLocators ?? 20_000;
@@ -625,13 +788,9 @@ export async function getLocatorIndex(
         })
         .from(testCases)
         .where(inArray(testCases.id, chunk)),
-      db
-        .select({ testCaseId: testRunsCases.testCaseId, id: max(testRunsCases.id) })
-        .from(testRunsCases)
-        .where(inArray(testRunsCases.testCaseId, chunk))
-        .groupBy(testRunsCases.testCaseId),
+      latestExecutions(db, chunk, view),
     ]);
-    const latestIds = latest.map((l) => l.id).filter((id): id is number => id != null);
+    const latestIds = [...latest.values()];
     const outcomes = latestIds.length
       ? await db
           .select({
@@ -666,6 +825,9 @@ export async function getLocatorIndex(
   return {
     projectId: project.id,
     projectName: project.name,
+    branch: view.name,
+    defaultBranch: view.defaultBranch,
+    branches: await indexedBranches(db, projectId),
     builtAt: project.builtAt ? new Date(project.builtAt).toISOString() : null,
     generatedAt: new Date().toISOString(),
     testIdAttributes: await projectTestIdAttributes(db, projectId),
@@ -673,4 +835,64 @@ export async function getLocatorIndex(
     locators,
     truncated,
   };
+}
+
+/** Runs on the default branch: its name, or no branch at all. */
+function defaultBranchRuns(defaultBranch: string): SQL {
+  return or(isNull(testRuns.branch), eq(testRuns.branch, ''), eq(testRuns.branch, defaultBranch))!;
+}
+
+/**
+ * Each test's latest execution id in a view: on the branch viewed, else on the
+ * default branch; on any branch for every branch together.
+ */
+async function latestExecutions(db: DrizzleDB, testCaseIds: number[], view: BranchView): Promise<Map<number, number>> {
+  const latestWhere = async (condition: SQL | undefined, ids: number[]) =>
+    ids.length === 0
+      ? []
+      : db
+          .select({ testCaseId: testRunsCases.testCaseId, id: max(testRunsCases.id) })
+          .from(testRunsCases)
+          .innerJoin(testRuns, eq(testRuns.id, testRunsCases.testRunId))
+          .where(and(inArray(testRunsCases.testCaseId, ids), condition))
+          .groupBy(testRunsCases.testCaseId);
+  const out = new Map<number, number>();
+  const add = (rows: Array<{ testCaseId: number; id: number | null }>) => {
+    for (const r of rows) if (r.id != null) out.set(r.testCaseId, r.id);
+  };
+  if (view.tag === null) {
+    add(await latestWhere(undefined, testCaseIds));
+    return out;
+  }
+  if (view.tag !== '') add(await latestWhere(eq(testRuns.branch, view.tag), testCaseIds));
+  add(
+    await latestWhere(
+      defaultBranchRuns(view.defaultBranch),
+      testCaseIds.filter((id) => !out.has(id)),
+    ),
+  );
+  return out;
+}
+
+/** Cap on the branches an index lists. */
+const MAX_INDEXED_BRANCHES = 50;
+
+/** Branches with uses of their own, most recently seen first. */
+async function indexedBranches(db: DrizzleDB, projectId: number): Promise<LocatorIndexBranch[]> {
+  const rows = await db
+    .select({
+      name: locatorUsages.branch,
+      lastSeenAt: max(locatorUsages.lastSeenAt),
+      tests: countDistinct(locatorUsages.testCaseId),
+    })
+    .from(locatorUsages)
+    .where(and(eq(locatorUsages.projectId, projectId), ne(locatorUsages.branch, '')))
+    .groupBy(locatorUsages.branch)
+    .orderBy(desc(max(locatorUsages.lastSeenAt)))
+    .limit(MAX_INDEXED_BRANCHES);
+  return rows.map((r) => ({
+    name: r.name,
+    lastSeenAt: new Date(r.lastSeenAt ?? 0).toISOString(),
+    tests: Number(r.tests),
+  }));
 }

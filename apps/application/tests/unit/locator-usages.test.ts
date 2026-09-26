@@ -36,7 +36,9 @@ async function seedCase(id: number, title: string, filePath = 'tests/checkout.sp
 }
 
 /** A run, one minute after the previous one unless `startedAt` says otherwise. */
-async function seedRun(opts: { startedAt?: Date; metadata?: Record<string, unknown> } = {}): Promise<number> {
+async function seedRun(
+  opts: { startedAt?: Date; metadata?: Record<string, unknown>; branch?: string | null } = {},
+): Promise<number> {
   const id = ++runSeq;
   await db.insert(schema.testRuns).values({
     id,
@@ -44,6 +46,7 @@ async function seedRun(opts: { startedAt?: Date; metadata?: Record<string, unkno
     status: 'passed',
     startTime: opts.startedAt ?? new Date(Date.UTC(2026, 0, 1) + id * 60_000),
     metadata: opts.metadata ?? null,
+    branch: opts.branch ?? null,
   });
   return id;
 }
@@ -413,5 +416,152 @@ describe('getLocatorIndex', () => {
     expect(await getLocatorIndex(db as never, 99)).toBeNull();
     const index = await getLocatorIndex(db as never, 1);
     expect(index).toMatchObject({ locators: [], tests: [], truncated: false, builtAt: null });
+  });
+});
+
+describe('branches', () => {
+  const BACK = "getByRole('link', { name: 'Back' })";
+  const VOUCHER = "getByLabel('Voucher')";
+  const pay = step('Click', PAY, 'tests/checkout.spec.ts:20:3');
+  const back = step('Click', BACK, 'tests/checkout.spec.ts:21:3');
+  const voucher = step('Fill', VOUCHER, 'tests/checkout.spec.ts:22:3');
+
+  /** Test 1 uses Pay and Back on main and drops Back for a voucher field on feature/voucher; test 2 uses Pay on main. */
+  async function seedTwoBranches() {
+    await db.update(schema.projects).set({ defaultBranch: 'main' }).where(eq(schema.projects.id, 1));
+    await seedCase(1, 'pays by card');
+    await seedCase(2, 'pays again');
+    const main = await seedRun({ branch: 'main' });
+    const feature = await seedRun({ branch: 'feature/voucher' });
+    const mainExecution = await seedExecution(main, 1, [pay, back], { status: 'passed' });
+    await seedExecution(main, 2, [pay], { status: 'passed' });
+    const featureExecution = await seedExecution(feature, 1, [pay, voucher], { status: 'failed' });
+    await upsertLocatorUsages(db as never, 1, [exec(main, [pay, back]), exec(main, [pay], { caseId: 2 })]);
+    await upsertLocatorUsages(db as never, 1, [exec(feature, [pay, voucher])]);
+    return { mainExecution, featureExecution };
+  }
+
+  const uses = (index: Awaited<ReturnType<typeof getLocatorIndex>>, locator: string) =>
+    index!.locators
+      .find((l) => l.locator === locator)
+      ?.uses.map((u) => ({ test: index!.tests[u.test]!.id, branches: [...u.branches].sort() }))
+      .sort((a, b) => a.test - b.test) ?? null;
+
+  test('a branch keeps its own uses, and its complete runs remove only them', async () => {
+    await seedTwoBranches();
+    const rows = (await usages()).map((r) => `${r.testCaseId} ${r.branch || '(default)'} ${r.locator}`).sort();
+    expect(rows).toEqual(
+      [
+        `1 (default) ${BACK}`,
+        `1 (default) ${PAY}`,
+        `1 feature/voucher ${PAY}`,
+        `1 feature/voucher ${VOUCHER}`,
+        `2 (default) ${PAY}`,
+      ].sort(),
+    );
+  });
+
+  test('runs on the default branch, or with no branch, are stored as the default branch', async () => {
+    await db.update(schema.projects).set({ defaultBranch: 'main' }).where(eq(schema.projects.id, 1));
+    await seedCase(1, 'pays by card');
+    await upsertLocatorUsages(db as never, 1, [exec(await seedRun({ branch: 'main' }), [pay], { complete: false })]);
+    await upsertLocatorUsages(db as never, 1, [exec(await seedRun({ branch: null }), [back], { complete: false })]);
+    expect((await usages()).map((r) => r.branch)).toEqual(['', '']);
+  });
+
+  test("a branch view replaces the default branch's uses of the tests that ran on it", async () => {
+    await seedTwoBranches();
+
+    const main = await getLocatorIndex(db as never, 1);
+    expect(main).toMatchObject({ branch: 'main', defaultBranch: 'main' });
+    expect(main!.branches).toEqual([{ name: 'feature/voucher', lastSeenAt: expect.any(String), tests: 1 }]);
+    expect(main!.locators.map((l) => l.locator)).toEqual([PAY, BACK]);
+    expect(main!.tests.find((t) => t.id === 1)!.status).toBe('passed');
+
+    const feature = await getLocatorIndex(db as never, 1, { branch: 'feature/voucher' });
+    expect(feature!.branch).toBe('feature/voucher');
+    expect(feature!.locators.map((l) => l.locator).sort()).toEqual([PAY, VOUCHER].sort());
+    expect(uses(feature, PAY)).toEqual([
+      { test: 1, branches: ['feature/voucher'] },
+      { test: 2, branches: ['main'] },
+    ]);
+    expect(feature!.tests.find((t) => t.id === 1)!.status).toBe('failed');
+    expect(feature!.tests.find((t) => t.id === 2)!.status).toBe('passed');
+
+    const all = await getLocatorIndex(db as never, 1, { branch: '*' });
+    expect(all!.branch).toBeNull();
+    expect(all!.locators.map((l) => l.locator).sort()).toEqual([BACK, PAY, VOUCHER].sort());
+    expect(uses(all, PAY)).toEqual([
+      { test: 1, branches: ['feature/voucher', 'main'] },
+      { test: 2, branches: ['main'] },
+    ]);
+
+    // The default branch asked by name is the default view.
+    expect((await getLocatorIndex(db as never, 1, { branch: 'main' }))!.locators.map((l) => l.locator)).toEqual([
+      PAY,
+      BACK,
+    ]);
+  });
+
+  test('"Who uses this?" answers in the view asked for', async () => {
+    await seedTwoBranches();
+    expect((await getLocatorUsages(db as never, 1, 'locator', BACK)).testCount).toBe(1);
+    const onFeature = await getLocatorUsages(db as never, 1, 'locator', BACK, { branch: 'feature/voucher' });
+    expect(onFeature).toMatchObject({ branch: 'feature/voucher', testCount: 0 });
+    expect((await getLocatorUsages(db as never, 1, 'locator', PAY, { branch: 'feature/voucher' })).testCount).toBe(2);
+    expect((await getLocatorUsages(db as never, 1, 'locator', VOUCHER, { branch: '*' })).testCount).toBe(1);
+  });
+
+  test("an execution's counts come from its own branch", async () => {
+    const { mainExecution, featureExecution } = await seedTwoBranches();
+    const onFeature = await getExecutionLocators(db as never, featureExecution);
+    expect(onFeature!.branch).toBe('feature/voucher');
+    expect(onFeature!.uses.map((u) => [u.locator, u.sameLocatorTests])).toEqual([
+      [PAY, 2],
+      [VOUCHER, 1],
+    ]);
+    const onMain = await getExecutionLocators(db as never, mainExecution);
+    expect(onMain!.uses.map((u) => [u.locator, u.sameLocatorTests])).toEqual([
+      [PAY, 2],
+      [BACK, 1],
+    ]);
+  });
+
+  test('a rebuild indexes one execution per branch, and reset drops uses no stored execution has', async () => {
+    await seedTwoBranches();
+    await db.insert(schema.locatorUsages).values({
+      projectId: 1,
+      testCaseId: 2,
+      locator: "getByText('Gone')",
+      target: "getByText('Gone')",
+      action: 'click',
+      browserName: 'chromium',
+      callSite: '',
+      lastSeenAt: new Date(Date.UTC(2025, 0, 1)),
+    });
+    await backfillLocatorUsages(db as never, 1, { reset: true });
+    const rows = (await usages()).map((r) => `${r.testCaseId} ${r.branch || '(default)'} ${r.locator}`).sort();
+    expect(rows).toEqual(
+      [
+        `1 (default) ${BACK}`,
+        `1 (default) ${PAY}`,
+        `1 feature/voucher ${PAY}`,
+        `1 feature/voucher ${VOUCHER}`,
+        `2 (default) ${PAY}`,
+      ].sort(),
+    );
+  });
+});
+
+describe('parseLocatorBranchQuery', () => {
+  test('reads a branch, every branch, or nothing for the default branch', async () => {
+    const { parseLocatorBranchQuery } = await import('../../shared/locator-usages.types');
+    expect(parseLocatorBranchQuery(undefined)).toEqual({ branch: undefined });
+    expect(parseLocatorBranchQuery('')).toEqual({ branch: undefined });
+    expect(parseLocatorBranchQuery(' feature/x ')).toEqual({ branch: 'feature/x' });
+    expect(parseLocatorBranchQuery('*')).toEqual({ branch: '*' });
+    expect(parseLocatorBranchQuery(['a', 'b'])).toHaveProperty('error');
+    expect(parseLocatorBranchQuery('   ')).toHaveProperty('error');
+    expect(parseLocatorBranchQuery('x'.repeat(256))).toHaveProperty('error');
   });
 });

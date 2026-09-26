@@ -2,24 +2,57 @@
 /**
  * The project's locators: check some locators against the ones its tests use,
  * and browse every chain in the locator index. The Piwi Picker extension links
- * here with the locators of a picked element in `?q=`, one per line.
+ * here with the locators of a picked element in `?q=`, one per line. `?branch=`
+ * picks the branch described (`*` for every branch), the default branch when
+ * absent.
  */
 import type { ProjectDetails } from '~~/types/api';
 import type { LocatorIndex } from '#shared/locator-index';
 import type { ExecutionLocatorUse } from '#shared/locator-usages.types';
 import { locatorScopes, locatorTarget, tryParseLocatorChain } from '#shared/locator-chain';
+import { ALL_BRANCHES } from '#shared/locator-index';
 
 const route = useRoute();
 const router = useRouter();
 const projectId = route.params.id as string;
 
 const { data: project } = await useFetch<ProjectDetails>(`/api/projects/${projectId}`);
+
+/** The select's value for the default branch: a colon is never part of a git branch name. */
+const DEFAULT_BRANCH = ':default';
+const branch = ref(typeof route.query.branch === 'string' && route.query.branch ? route.query.branch : DEFAULT_BRANCH);
+const branchQuery = computed(() => (branch.value === DEFAULT_BRANCH ? undefined : branch.value));
+watch(branchQuery, (value) => void router.replace({ query: { ...route.query, branch: value } }));
+
 // Client-side only: the index can be large, and it has no place in the SSR payload.
 const {
   data: index,
   status,
   error,
-} = useFetch<LocatorIndex>(`/api/projects/${projectId}/locator-index`, { server: false, lazy: true });
+} = useFetch<LocatorIndex>(`/api/projects/${projectId}/locator-index`, {
+  server: false,
+  lazy: true,
+  query: computed(() => (branchQuery.value ? { branch: branchQuery.value } : {})),
+});
+
+const branchItems = computed(() => {
+  const defaultName = index.value?.defaultBranch;
+  const items = [
+    { label: defaultName ? `${defaultName} (default branch)` : 'Default branch', value: DEFAULT_BRANCH },
+    { label: 'All branches', value: ALL_BRANCHES },
+    ...(index.value?.branches ?? []).map((b) => ({ label: b.name, value: b.name })),
+  ];
+  if (!items.some((item) => item.value === branch.value)) items.push({ label: branch.value, value: branch.value });
+  return items;
+});
+
+const branchHint = computed(() => {
+  const i = index.value;
+  if (!i) return '';
+  if (i.branch === null) return 'Uses recorded on any branch.';
+  if (i.branch === i.defaultBranch) return `Uses recorded on ${i.defaultBranch}.`;
+  return `Tests that ran on ${i.branch} count with what they did there, the others with what they do on ${i.defaultBranch}.`;
+});
 
 useHead(
   computed(() => ({
@@ -84,6 +117,18 @@ function inspect(locator: string) {
 
     <template #body>
       <div class="p-4 space-y-4">
+        <div class="flex flex-col gap-2 sm:flex-row sm:items-center" data-shot="locator-branch">
+          <USelect
+            v-model="branch"
+            :items="branchItems"
+            icon="i-lucide-git-branch"
+            size="sm"
+            class="w-full sm:w-72"
+            aria-label="Branch"
+          />
+          <p class="text-xs text-muted">{{ branchHint }}</p>
+        </div>
+
         <SectionCard title="Check locators" icon="i-lucide-scan-search" help="project.locator-check">
           <template #subtitle>
             Find the tests that use some locators: the ones the
@@ -119,6 +164,7 @@ function inspect(locator: string) {
         :project-id="Number(projectId)"
         :project-key="projectId"
         :project-name="project?.name"
+        :branch="branchQuery"
       />
     </template>
   </UDashboardPanel>
