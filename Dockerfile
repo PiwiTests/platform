@@ -41,6 +41,9 @@ COPY integrations/ ./integrations/
 ARG PIWI_BUILD_SHA
 ARG TARGETARCH
 ENV NITRO_PRESET=node-server
+# Node caps the heap at 4 GB in this image, half what it picks on a bare 16 GB
+# runner, and the build peaks around 3 GB. Leave it room to grow.
+ENV NODE_OPTIONS=--max-old-space-size=6144
 ENV PIWI_BUILD_SHA=${PIWI_BUILD_SHA}
 RUN set -eux; \
     npm run app:build --workspace=apps/application; \

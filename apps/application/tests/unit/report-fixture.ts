@@ -117,7 +117,11 @@ export function fixtureBundle(): ReportBundle {
                   { key: 'wasted', label: 'Wasted CI minutes', align: 'right' },
                 ],
                 rows: [
-                  { cells: { test: HOSTILE, wasted: '4 min' }, link: 'https://piwi.example/test-cases/1' },
+                  {
+                    cells: { test: HOSTILE, wasted: '4 min' },
+                    values: { wasted: { number: 4, unit: 'minutes', precision: 0 } },
+                    link: 'https://piwi.example/test-cases/1',
+                  },
                   { cells: { test: '@smoke logs in', wasted: '1 min' } },
                 ],
               },

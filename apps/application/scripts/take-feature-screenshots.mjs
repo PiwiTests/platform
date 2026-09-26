@@ -383,6 +383,29 @@ const SCENES = [
       await shoot();
     },
   })),
+  ...[
+    { name: 'quality-report-download-menu', width: 1280, height: 1000 },
+    { name: 'quality-report-download-menu-mobile', width: 375, height: 1000 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `The quality report preview with its download menu open (PDF, HTML, Markdown, Excel, JSON) and each section's Excel button, at ${width} px`,
+    route: '/analytics',
+    viewport: { width, height },
+    async run({ page, shoot, settle }) {
+      const preview = page.getByTestId('report-view');
+      await page.getByTestId('stat-test-pass-rate').waitFor({ timeout: 60000 });
+      await settle();
+      for (let attempt = 0; attempt < 20 && !(await preview.isVisible()); attempt++) {
+        await page.getByRole('button', { name: 'Export' }).first().click();
+        await preview.waitFor({ timeout: 3000 }).catch(() => {});
+      }
+      await preview.locator('[data-testid^="report-section-xlsx-"]').first().waitFor({ timeout: 60000 });
+      await settle();
+      await page.getByTestId('report-download').click();
+      await page.getByRole('menuitem', { name: 'Excel' }).waitFor();
+      await shoot();
+    },
+  })),
   // The Reports page and a snapshot: `prepare` makes a channel, a weekly
   // schedule and one run of it, so the page has a snapshot to list.
   ...[
@@ -517,7 +540,7 @@ const SCENES = [
     { name: 'chart-export-menu-mobile', width: 375 },
   ].map(({ name, width }) => ({
     name,
-    description: `The export menu of a chart (copy as PNG, download CSV), at ${width} px`,
+    description: `The export menu of a chart (copy as PNG, download Excel), at ${width} px`,
     route: '/analytics?projects=1',
     viewport: { width, height: 900 },
     async run({ page, shoot, settle }) {
@@ -526,7 +549,7 @@ const SCENES = [
       await card.scrollIntoViewIfNeeded();
       await settle();
       await card.getByTestId('chart-export').click();
-      await page.getByRole('menuitem', { name: 'Download CSV' }).waitFor();
+      await page.getByRole('menuitem', { name: 'Download Excel' }).waitFor();
       await shoot();
     },
   })),

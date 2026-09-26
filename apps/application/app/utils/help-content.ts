@@ -136,7 +136,7 @@ export const HELP_TOPICS = {
   },
   'chart.export': {
     title: 'Chart export',
-    text: 'Copy as PNG puts the chart, with its title, on the clipboard as an image to paste into a slide or a document; a browser that cannot copy images downloads the PNG instead. Download CSV saves the numbers behind the chart, one row per bucket or group, with any cell that could run as a spreadsheet formula quoted.',
+    text: 'Copy as PNG puts the chart, with its title, on the clipboard as an image to paste into a slide or a document; a browser that cannot copy images downloads the PNG instead. Download Excel saves the numbers behind the chart as a workbook, one row per bucket or group, with numbers and dates in their own cell types and text that never runs as a formula.',
     doc: 'features/analytics#exporting-a-chart',
   },
   'analytics.stats': {
@@ -270,7 +270,7 @@ export const HELP_TOPICS = {
   },
   'reports.export': {
     title: 'Quality report',
-    text: 'The scope on screen as a document for someone who does not open the dashboard: a rule-based verdict, headline numbers, the trend, what is being done and the risks. Executive keeps to plain words; Engineering adds flaky tests, clusters and detail; Overview is this page. Download it as PDF, HTML, Markdown, CSV or JSON.',
+    text: 'The scope on screen as a document for someone who does not open the dashboard: a rule-based verdict, headline numbers, the trend, what is being done and the risks. Executive keeps to plain words; Engineering adds flaky tests, clusters and detail; Overview is this page. Download it as PDF, HTML, Markdown, Excel or JSON.',
     doc: 'features/quality-reports',
   },
   'analytics.period': {

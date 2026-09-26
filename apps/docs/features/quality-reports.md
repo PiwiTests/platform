@@ -56,8 +56,10 @@ days). The dialog previews the report; pick another dashboard or the language, t
 | PDF | Vector text and charts, one band per page so pages drop into a slide deck |
 | HTML | One self-contained file: inline charts, no script, no remote resource |
 | Markdown | Tables, and a text sparkline (`▁▂▃▅▇`) under each series; pastes into Confluence, Jira or a pull request |
-| CSV | Every table and series in one file, each row led by its widget. A cell starting with `=`, `+`, `-` or `@` is prefixed with `'`, so a spreadsheet never runs a test title as a formula. Each section is also its own CSV, from its **CSV** button |
+| Excel | An .xlsx workbook, a sheet per table named after its widget; numbers and dates are real cells, text never runs as a formula. Each section's **Excel** button downloads just that section |
 | JSON | The report bundle itself, for scripts and BI tools |
+
+Scripts can ask the API for `format=csv`, formula-guarded with a leading `'`.
 
 A report grants no access: it covers only the projects its reader can open.
 

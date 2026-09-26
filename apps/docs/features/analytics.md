@@ -103,9 +103,9 @@ do the same. The project page says the list came from Analytics and offers **Sho
 
 Every chart carries a menu in its header. **Copy as PNG** puts the chart, with its title, on the clipboard
 as an image, ready to paste into a slide; a browser that cannot copy images downloads the PNG instead.
-**Download CSV** saves the numbers behind the chart, one row per bucket or group, with the same
-protection against spreadsheet formulas as the [quality report's CSV](./quality-reports). To send a
-whole dashboard, export it as a [quality report](./quality-reports) instead.
+**Download Excel** saves the numbers behind the chart as an .xlsx workbook, one row per bucket or group:
+numbers and dates are real cells, and a test title is never run as a formula. To send a whole
+dashboard, export it as a [quality report](./quality-reports) instead.
 
 ## Targets
 

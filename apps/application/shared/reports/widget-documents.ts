@@ -42,11 +42,11 @@ import type {
 import type { TimeoutOpportunity } from '#shared/analytics/timeout-hygiene';
 import type { SelectionAnalytics } from '#shared/handlers/selection-analytics';
 import type { PerformanceTrendData, SlowTestsData, SpecHealthData } from '#shared/handlers/analytics/project-analyses';
-import type { MetricId } from '#shared/analytics/metrics';
+import type { MetricId, MetricUnit } from '#shared/analytics/metrics';
 import { NONE_KEY } from '#shared/handlers/analytics/metric-breakdown';
 import type { ValueFormatter } from './format';
 import type { ReportSentences } from './sentences';
-import type { ReportBlock, ReportSeries, ReportTile, ReportTone } from './types';
+import type { ReportBlock, ReportCellValue, ReportRow, ReportSeries, ReportTile, ReportTone } from './types';
 
 export interface DocumentContext {
   f: ValueFormatter;
@@ -67,6 +67,71 @@ const HEATMAP_COLUMNS = 8;
 
 function link(ctx: DocumentContext, path: string | null | undefined): string | null {
   return ctx.baseUrl && path ? `${ctx.baseUrl}${path}` : null;
+}
+
+/** A table cell: its text in the report language and, for a number or a day, the value a spreadsheet keeps. */
+interface Cell {
+  text: string;
+  value: ReportCellValue | null;
+}
+
+/** A number in its unit, formatted as `ctx.f.value` writes it. */
+function num(
+  ctx: DocumentContext,
+  value: number | null,
+  unit: MetricUnit,
+  precision = 0,
+  currency?: string | null,
+): Cell {
+  return {
+    text: ctx.f.value(value, unit, precision, currency),
+    value:
+      value === null || !Number.isFinite(value)
+        ? null
+        : { number: value, unit, precision, ...(currency ? { currency } : {}) },
+  };
+}
+
+function metricCell(ctx: DocumentContext, v: AnalyticsMetricValue): Cell {
+  return num(ctx, v.value, v.unit, v.precision, v.currency);
+}
+
+/** A metric's change, formatted as `ctx.f.delta` writes it; `empty` without one. */
+function deltaCell(
+  ctx: DocumentContext,
+  metric: Pick<AnalyticsMetricValue, 'unit' | 'delta' | 'deltaPct' | 'precision'>,
+  empty: string,
+): Cell {
+  const text = ctx.f.delta(metric) ?? empty;
+  if (metric.delta === null) return { text, value: null };
+  if (metric.unit === 'percent') return { text, value: { number: metric.delta, unit: 'points', precision: 1 } };
+  if (metric.deltaPct !== null) return { text, value: { number: metric.deltaPct, unit: 'change', precision: 0 } };
+  return { text, value: { number: metric.delta, unit: 'count', precision: metric.precision } };
+}
+
+/** A day (`YYYY-MM-DD` or an instant, read in UTC) shown as `text`. */
+function dayCell(date: string, text: string): Cell {
+  return {
+    text,
+    value: { date: new Date(date.length === 10 ? `${date}T12:00:00Z` : date).toISOString().slice(0, 10) },
+  };
+}
+
+/** A table row: the cells' text, and the values of those that carry one. */
+function row(cells: Record<string, string | Cell>, link?: string | null): ReportRow {
+  const out: ReportRow = { cells: {} };
+  const values: Record<string, ReportCellValue> = {};
+  for (const [key, cell] of Object.entries(cells)) {
+    if (typeof cell === 'string') {
+      out.cells[key] = cell;
+    } else {
+      out.cells[key] = cell.text;
+      if (cell.value) values[key] = cell.value;
+    }
+  }
+  if (Object.keys(values).length > 0) out.values = values;
+  if (link !== undefined) out.link = link;
+  return out;
 }
 
 function toneOf(trend: AnalyticsMetricValue['trend']): ReportTone {
@@ -206,14 +271,14 @@ export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
           { key: 'flaky', label: ctx.s.title('Flaky'), align: 'right' },
           { key: 'tests', label: '#', align: 'right' },
         ],
-        rows: health.specs.map((spec) => ({
-          cells: {
+        rows: health.specs.map((spec) =>
+          row({
             spec: spec.prefix,
-            pass: ctx.f.value(spec.passRate * 100, 'percent', 0),
-            flaky: ctx.f.value(spec.flakyRate * 100, 'percent', 0),
-            tests: ctx.f.number(spec.testCount),
-          },
-        })),
+            pass: num(ctx, spec.passRate * 100, 'percent', 0),
+            flaky: num(ctx, spec.flakyRate * 100, 'percent', 0),
+            tests: num(ctx, spec.testCount, 'count'),
+          }),
+        ),
       },
     ]),
 
@@ -225,10 +290,9 @@ export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
           { key: 'title', label: ctx.s.title('Test') },
           { key: 'avg', label: ctx.s.title('Average'), align: 'right' },
         ],
-        rows: tests.map((t) => ({
-          cells: { title: t.title, avg: ctx.f.value(t.avgDuration, 'ms', 0) },
-          link: link(ctx, `/test-cases/${t.id}`),
-        })),
+        rows: tests.map((t) =>
+          row({ title: t.title, avg: num(ctx, t.avgDuration, 'ms', 0) }, link(ctx, `/test-cases/${t.id}`)),
+        ),
       },
     ]),
 
@@ -270,14 +334,14 @@ export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
                 { key: 'p95', label: 'p95', align: 'right' },
                 { key: 'recommended', label: ctx.s.title('Suggested'), align: 'right' },
               ],
-              rows: rows.map((r) => ({
-                cells: {
+              rows: rows.map((r) =>
+                row({
                   title: r.title,
-                  timeout: ctx.f.value(r.timeout, 'ms', 0),
-                  p95: ctx.f.value(r.p95, 'ms', 0),
-                  recommended: ctx.f.value(r.recommendedTimeout, 'ms', 0),
-                },
-              })),
+                  timeout: num(ctx, r.timeout, 'ms', 0),
+                  p95: num(ctx, r.p95, 'ms', 0),
+                  recommended: num(ctx, r.recommendedTimeout, 'ms', 0),
+                }),
+              ),
             },
           ],
     ),
@@ -291,13 +355,13 @@ export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
           { key: 'tests', label: '#', align: 'right' },
           { key: 'warnings', label: ctx.s.title('Warnings'), align: 'right' },
         ],
-        rows: health.selections.map((sel) => ({
-          cells: {
+        rows: health.selections.map((sel) =>
+          row({
             name: `${sel.name} (${sel.key})`,
-            tests: ctx.f.number(sel.resolvedCount),
-            warnings: ctx.f.number(sel.warnings.length),
-          },
-        })),
+            tests: num(ctx, sel.resolvedCount, 'count'),
+            warnings: num(ctx, sel.warnings.length, 'count'),
+          }),
+        ),
       },
     ]),
 
@@ -338,13 +402,13 @@ export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
           { key: 'value', label, align: 'right' },
           { key: 'change', label: ctx.s.title('Change'), align: 'right' },
         ],
-        rows: data.breakdown.groups.map((g) => ({
-          cells: {
+        rows: data.breakdown.groups.map((g) =>
+          row({
             group: groupLabel(g, data.breakdown!.dimension, ctx),
-            value: metricText(g.value, ctx),
-            change: ctx.f.delta(g.value) ?? '',
-          },
-        })),
+            value: metricCell(ctx, g.value),
+            change: deltaCell(ctx, g.value, ''),
+          }),
+        ),
       });
       return blocks;
     }
@@ -356,7 +420,12 @@ export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
             { key: 'date', label: ctx.s.title('Date') },
             { key: 'value', label, align: 'right' },
           ],
-          rows: data.points.map((p) => ({ cells: { date: ctx.f.day(p.date), value: format(p.value) } })),
+          rows: data.points.map((p) =>
+            row({
+              date: dayCell(p.date, ctx.f.day(p.date)),
+              value: num(ctx, p.value, v.unit, v.precision, v.currency),
+            }),
+          ),
         },
       ];
     }
@@ -387,10 +456,12 @@ export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
           { key: 'project', label: ctx.s.labels.projects },
           { key: 'fixed', label: ctx.s.labels.date, align: 'right' },
         ],
-        rows: data.recentFixes.map((fix) => ({
-          cells: { cause: fix.title, project: fix.projectName, fixed: ctx.f.date(fix.fixedAt) },
-          link: link(ctx, `/failure-clusters/${fix.id}`),
-        })),
+        rows: data.recentFixes.map((fix) =>
+          row(
+            { cause: fix.title, project: fix.projectName, fixed: dayCell(fix.fixedAt, ctx.f.date(fix.fixedAt)) },
+            link(ctx, `/failure-clusters/${fix.id}`),
+          ),
+        ),
       });
     }
     return blocks;
@@ -435,18 +506,20 @@ export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
           ? [{ key: 'targets', label: ctx.s.labels.targets, align: 'right' as const }]
           : []),
       ],
-      rows: data.map((row) => ({
-        cells: {
-          project: name(row),
-          passRate: ctx.f.value(row.passRate, 'percent', 1),
-          change: ctx.f.delta({ unit: 'percent', delta: row.passRateDelta, deltaPct: null, precision: 1 }) ?? '—',
-          runs: ctx.f.number(row.runCount),
-          flaky: ctx.f.number(row.flakyTests),
-          open: ctx.f.number(row.openClusters),
-          targets: targetCount(row.targets ?? [], ctx),
-        },
-        link: link(ctx, `/projects/${row.projectId}`),
-      })),
+      rows: data.map((p) =>
+        row(
+          {
+            project: name(p),
+            passRate: num(ctx, p.passRate, 'percent', 1),
+            change: deltaCell(ctx, { unit: 'percent', delta: p.passRateDelta, deltaPct: null, precision: 1 }, '—'),
+            runs: num(ctx, p.runCount, 'count'),
+            flaky: num(ctx, p.flakyTests, 'count'),
+            open: num(ctx, p.openClusters, 'count'),
+            targets: targetCount(p.targets ?? [], ctx),
+          },
+          link(ctx, `/projects/${p.projectId}`),
+        ),
+      ),
     },
   ],
 
@@ -460,12 +533,12 @@ export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
           { key: 'project', label: ctx.s.labels.projects },
           ...buckets.map((b, i) => ({ key: `b${i}`, label: ctx.f.date(b), align: 'right' as const })),
         ],
-        rows: data.rows.map((row) => ({
-          cells: {
-            project: name(row),
-            ...Object.fromEntries(row.cells.slice(start).map((cell, i) => [`b${i}`, ctx.f.value(cell, 'percent', 0)])),
-          },
-        })),
+        rows: data.rows.map((r) =>
+          row({
+            project: name(r),
+            ...Object.fromEntries(r.cells.slice(start).map((cell, i) => [`b${i}`, num(ctx, cell, 'percent', 0)])),
+          }),
+        ),
       },
     ];
   },
@@ -489,15 +562,17 @@ export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
         { key: 'occurrences', label: '#', align: 'right' },
         { key: 'age', label: ctx.s.title('Age'), align: 'right' },
       ],
-      rows: data.clusters.slice(0, TOP_ROWS).map((c) => ({
-        cells: {
-          cause: c.title || c.signature,
-          project: name(c),
-          occurrences: ctx.f.number(c.occurrences),
-          age: ctx.f.value(c.ageDays, 'days', 0),
-        },
-        link: link(ctx, `/failure-clusters/${c.id}`),
-      })),
+      rows: data.clusters.slice(0, TOP_ROWS).map((c) =>
+        row(
+          {
+            cause: c.title || c.signature,
+            project: name(c),
+            occurrences: num(ctx, c.occurrences, 'count'),
+            age: num(ctx, c.ageDays, 'days', 0),
+          },
+          link(ctx, `/failure-clusters/${c.id}`),
+        ),
+      ),
     },
   ],
 
@@ -510,15 +585,17 @@ export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
         { key: 'flips', label: ctx.s.title('Status flips'), align: 'right' },
         { key: 'wasted', label: ctx.s.metricLabel('wasted-ci-minutes', 'Wasted CI minutes'), align: 'right' },
       ],
-      rows: data.slice(0, TOP_ROWS).map((t) => ({
-        cells: {
-          test: t.title,
-          project: name(t),
-          flips: `${ctx.f.number(t.alternations)} / ${ctx.f.number(t.totalRuns)}`,
-          wasted: ctx.f.minutes(t.wastedCiMinutes),
-        },
-        link: link(ctx, `/test-cases/${t.testCaseId}`),
-      })),
+      rows: data.slice(0, TOP_ROWS).map((t) =>
+        row(
+          {
+            test: t.title,
+            project: name(t),
+            flips: `${ctx.f.number(t.alternations)} / ${ctx.f.number(t.totalRuns)}`,
+            wasted: num(ctx, t.wastedCiMinutes, 'minutes'),
+          },
+          link(ctx, `/test-cases/${t.testCaseId}`),
+        ),
+      ),
     },
   ],
 
@@ -553,10 +630,12 @@ export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
           { key: 'project', label: ctx.s.labels.projects },
           { key: 'wasted', label: ctx.s.metricLabel('wasted-ci-minutes', 'Wasted CI minutes'), align: 'right' },
         ],
-        rows: data.byProject.map((p) => ({
-          cells: { project: name(p), wasted: ctx.f.minutes(p.waitMinutes + p.failedExecMinutes) },
-          link: link(ctx, `/projects/${p.projectId}`),
-        })),
+        rows: data.byProject.map((p) =>
+          row(
+            { project: name(p), wasted: num(ctx, p.waitMinutes + p.failedExecMinutes, 'minutes') },
+            link(ctx, `/projects/${p.projectId}`),
+          ),
+        ),
       });
     }
     return blocks;
@@ -613,12 +692,12 @@ export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
           align: 'right' as const,
         })),
       ],
-      rows: data.rows.map((row) => ({
-        cells: {
-          project: name(row),
-          ...Object.fromEntries(row.cells.map((cell, i) => [`b${i}`, ctx.f.value(cell, 'percent', 0)])),
-        },
-      })),
+      rows: data.rows.map((r) =>
+        row({
+          project: name(r),
+          ...Object.fromEntries(r.cells.map((cell, i) => [`b${i}`, num(ctx, cell, 'percent', 0)])),
+        }),
+      ),
     },
   ],
 
@@ -631,14 +710,14 @@ export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
         { key: 'requests', label: '#', align: 'right' },
         { key: 'errors', label: ctx.s.title('Errors'), align: 'right' },
       ],
-      rows: data.endpoints.slice(0, TOP_ROWS).map((e) => ({
-        cells: {
+      rows: data.endpoints.slice(0, TOP_ROWS).map((e) =>
+        row({
           route: `${e.method} ${e.route}`,
-          p90: ctx.f.value(e.p90Ms, 'ms', 0),
-          requests: ctx.f.number(e.requests),
-          errors: ctx.f.value(e.errorRate, 'percent', 1),
-        },
-      })),
+          p90: num(ctx, e.p90Ms, 'ms', 0),
+          requests: num(ctx, e.requests, 'count'),
+          errors: num(ctx, e.errorRate, 'percent', 1),
+        }),
+      ),
     },
   ],
 
@@ -763,7 +842,7 @@ export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
           { key: 'age', label: ctx.s.title('Age') },
           { key: 'count', label: ctx.s.metricLabel('open-failure-causes', 'Open failure causes'), align: 'right' },
         ],
-        rows: data.openByAge.map((g) => ({ cells: { age: ctx.s.title(g.label), count: ctx.f.number(g.count) } })),
+        rows: data.openByAge.map((g) => row({ age: ctx.s.title(g.label), count: num(ctx, g.count, 'count') })),
       });
     }
     return blocks;
@@ -782,15 +861,15 @@ export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
               { key: 'wasted', label: ctx.s.metricLabel('wasted-ci-minutes', 'Wasted CI minutes'), align: 'right' },
               { key: 'ttf', label: ctx.s.metricLabel('median-time-to-fix', 'Median time to fix'), align: 'right' },
             ],
-            rows: data.rows.map((r) => ({
-              cells: {
+            rows: data.rows.map((r) =>
+              row({
                 owner: r.owner ?? ctx.s.title('Unowned'),
-                open: ctx.f.number(r.openClusters),
-                flaky: ctx.f.number(r.flakyTests),
-                wasted: ctx.f.minutes(r.wastedMinutes),
-                ttf: ctx.f.value(r.medianTimeToFixDays, 'days', 1),
-              },
-            })),
+                open: num(ctx, r.openClusters, 'count'),
+                flaky: num(ctx, r.flakyTests, 'count'),
+                wasted: num(ctx, r.wastedMinutes, 'minutes'),
+                ttf: num(ctx, r.medianTimeToFixDays, 'days', 1),
+              }),
+            ),
           },
         ],
 
@@ -809,15 +888,15 @@ export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
           { key: 'success', label: ctx.s.metricLabel('run-success-rate', 'Run success rate'), align: 'right' },
           { key: 'runs', label: ctx.s.metricLabel('runs', 'Runs'), align: 'right' },
         ],
-        rows: data.rows.map((r) => ({
-          cells: {
+        rows: data.rows.map((r) =>
+          row({
             environment: environment(r),
-            passRate: metricText(r.passRate, ctx),
-            change: ctx.f.delta(r.passRate) ?? '—',
-            success: metricText(r.runSuccessRate, ctx),
-            runs: ctx.f.number(r.runs),
-          },
-        })),
+            passRate: metricCell(ctx, r.passRate),
+            change: deltaCell(ctx, r.passRate, '—'),
+            success: metricCell(ctx, r.runSuccessRate),
+            runs: num(ctx, r.runs, 'count'),
+          }),
+        ),
       },
     ];
     if (data.rows.length > 1) {
@@ -847,11 +926,11 @@ export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
       ],
       rows: group.items.map((m) => {
         const duration = group.kind === 'slower' || group.kind === 'faster';
-        const show = (v: number) => (duration ? ctx.f.value(v, 'ms', 0) : ctx.f.value(v * 100, 'percent', 0));
-        return {
-          cells: { test: m.title, project: m.projectName, before: show(m.before), after: show(m.after) },
-          link: link(ctx, `/test-cases/${m.testCaseId}`),
-        };
+        const show = (v: number) => (duration ? num(ctx, v, 'ms', 0) : num(ctx, v * 100, 'percent', 0));
+        return row(
+          { test: m.title, project: m.projectName, before: show(m.before), after: show(m.after) },
+          link(ctx, `/test-cases/${m.testCaseId}`),
+        );
       }),
     }));
   },
@@ -883,7 +962,7 @@ export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
           { key: 'class', label: ctx.s.labels.gapClass },
           { key: 'count', label: ctx.s.labels.count, align: 'right' },
         ],
-        rows: data.byClass.map((c) => ({ cells: { class: ctx.s.gapClass(c.class), count: ctx.f.number(c.count) } })),
+        rows: data.byClass.map((c) => row({ class: ctx.s.gapClass(c.class), count: num(ctx, c.count, 'count') })),
       });
     }
     if (data.byFeature.length > 0) {
@@ -895,15 +974,17 @@ export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
           { key: 'worst', label: ctx.s.labels.gapClass },
           { key: 'count', label: ctx.s.labels.count, align: 'right' },
         ],
-        rows: data.byFeature.map((f) => ({
-          cells: {
-            feature: f.feature,
-            project: f.projectName,
-            worst: f.worstClass ? ctx.s.gapClass(f.worstClass) : '—',
-            count: ctx.f.number(f.count),
-          },
-          link: link(ctx, `/projects/${f.projectId}?tab=gaps`),
-        })),
+        rows: data.byFeature.map((f) =>
+          row(
+            {
+              feature: f.feature,
+              project: f.projectName,
+              worst: f.worstClass ? ctx.s.gapClass(f.worstClass) : '—',
+              count: num(ctx, f.count, 'count'),
+            },
+            link(ctx, `/projects/${f.projectId}?tab=gaps`),
+          ),
+        ),
       });
     }
     return blocks;
@@ -922,15 +1003,17 @@ export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
           { key: 'score', label: ctx.s.labels.score, align: 'right' },
         ],
         rows: data.items.flatMap((p) =>
-          p.gaps.map((g) => ({
-            cells: {
-              gap: ctx.s.gapTitle(g.detector, g.title),
-              project: p.projectName,
-              class: ctx.s.gapClass(g.class),
-              score: g.score === null ? '—' : ctx.f.number(g.score, 3),
-            },
-            link: link(ctx, `/projects/${p.projectId}?tab=gaps`),
-          })),
+          p.gaps.map((g) =>
+            row(
+              {
+                gap: ctx.s.gapTitle(g.detector, g.title),
+                project: p.projectName,
+                class: ctx.s.gapClass(g.class),
+                score: num(ctx, g.score, 'count', 3),
+              },
+              link(ctx, `/projects/${p.projectId}?tab=gaps`),
+            ),
+          ),
         ),
       },
     ];

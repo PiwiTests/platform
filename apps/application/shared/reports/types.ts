@@ -1,7 +1,7 @@
 /**
  * The report bundle: the data behind one quality report, the way
  * `ExportBundle` is the data behind an offline export. Every output format
- * (the in-app view, HTML, PDF, Markdown, JSON, CSV) renders the same bundle,
+ * (the in-app view, HTML, PDF, Markdown, JSON, CSV, Excel) renders the same bundle,
  * and renderers draw blocks, never widgets, so a new widget is reportable
  * without a renderer change.
  *
@@ -10,7 +10,7 @@
  * renderer escapes it.
  */
 import type { AnalyticsScope } from '#shared/analytics/scope';
-import type { MetricDef } from '#shared/analytics/metrics';
+import type { MetricDef, MetricUnit } from '#shared/analytics/metrics';
 import type { VerdictTone } from '#shared/analytics/types';
 import type { ReportLanguage } from './languages';
 
@@ -46,6 +46,22 @@ export interface ReportColumn {
   align?: 'left' | 'right';
 }
 
+/**
+ * A table cell's value for a spreadsheet, beside its formatted text: a number
+ * in its unit (`points` and `change` are the signed changes the formatter
+ * writes `+2.1 pts` and `+12%`), or a `YYYY-MM-DD` day. Absent on text cells
+ * and on snapshots generated before rows carried values.
+ */
+export type ReportCellValue =
+  | { number: number; unit: MetricUnit | 'points' | 'change'; precision: number; currency?: string | null }
+  | { date: string };
+
+export interface ReportRow {
+  cells: Record<string, string>;
+  values?: Record<string, ReportCellValue>;
+  link?: string | null;
+}
+
 export type ReportBlock =
   | { kind: 'stats'; tiles: ReportTile[] }
   | {
@@ -60,7 +76,7 @@ export type ReportBlock =
       /** One line summing the series up. */
       summary: string | null;
     }
-  | { kind: 'table'; columns: ReportColumn[]; rows: Array<{ cells: Record<string, string>; link?: string | null }> }
+  | { kind: 'table'; columns: ReportColumn[]; rows: ReportRow[] }
   | { kind: 'list'; items: Array<{ text: string; detail?: string | null; tone?: ReportTone; link?: string | null }> }
   | { kind: 'text'; text: string; tone?: VerdictTone };
 
@@ -126,7 +142,7 @@ export interface ReportBundle {
   limits: string[];
 }
 
-export const REPORT_FORMATS = ['json', 'html', 'pdf', 'md', 'csv'] as const;
+export const REPORT_FORMATS = ['json', 'html', 'pdf', 'md', 'csv', 'xlsx'] as const;
 export type ReportFormat = (typeof REPORT_FORMATS)[number];
 
 export function isReportFormat(value: unknown): value is ReportFormat {

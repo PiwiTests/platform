@@ -5,6 +5,8 @@
  *   Settings → Performance    — the cost of a CI minute, shown with the wasted minutes
  *   MCP get_quality_report    — the bundle over the same scope
  */
+import readXlsxFile from 'read-excel-file/node';
+import { strFromU8, unzipSync } from 'fflate';
 import { test, expect } from './fixtures';
 import { PROJECT } from '#shared/test-project-names';
 import type { ReportBundle } from '#shared/reports/types';
@@ -84,6 +86,7 @@ test.describe('Quality report API', () => {
       pdf: /^application\/pdf/,
       md: /^text\/markdown/,
       csv: /^text\/csv/,
+      xlsx: /^application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet/,
     };
     for (const [format, type] of Object.entries(expected)) {
       const res = await request.get(`/api/reports/preview?${scope()}&dashboard=engineering&format=${format}`);
@@ -102,6 +105,19 @@ test.describe('Quality report API', () => {
     const csv = await res.text();
     expect(csv).toContain("'=1+1");
     expect(csv).not.toMatch(/(^|,)=1\+1/m);
+  });
+
+  test('a test titled =1+1 is a text cell in the Excel workbook, never a formula', async ({ request }) => {
+    const res = await request.get(`/api/reports/preview?${scope()}&dashboard=engineering&format=xlsx`);
+    expect(res.ok()).toBeTruthy();
+    const bytes = await res.body();
+    const sheets = await readXlsxFile(bytes);
+    const cells = sheets.flatMap((sheet) => sheet.data.flat());
+    expect(cells).toContain('=1+1');
+    const files = unzipSync(new Uint8Array(bytes));
+    for (const [name, file] of Object.entries(files)) {
+      if (name.startsWith('xl/worksheets/sheet')) expect(strFromU8(file), name).not.toContain('<f>');
+    }
   });
 
   test('a French report translates the labels', async ({ request }) => {
@@ -159,6 +175,30 @@ test.describe('Export on the analytics page', () => {
     await page.getByTestId('report-download').click();
     await page.getByRole('menuitem', { name: 'PDF' }).click();
     expect((await download).suggestedFilename()).toMatch(/^piwi-quality-report-engineering-.*\.pdf$/);
+
+    const workbook = page.waitForEvent('download');
+    await page.getByTestId('report-download').click();
+    await page.getByRole('menuitem', { name: 'Excel' }).click();
+    expect((await workbook).suggestedFilename()).toMatch(/^piwi-quality-report-engineering-.*\.xlsx$/);
+  });
+
+  test('each section of the preview downloads as its own Excel workbook', async ({ page }) => {
+    await page.goto(`/analytics?${scope()}`);
+    const preview = await openReport(page);
+    await page.getByTestId('report-dashboard').click();
+    await page.getByRole('option', { name: 'Engineering' }).click();
+    await expect(preview.getByRole('heading', { name: 'Where the pain is' })).toBeVisible();
+
+    const button = preview.locator('[data-testid^="report-section-xlsx-"]').first();
+    await expect(button).toHaveText('Excel');
+    const download = page.waitForEvent('download');
+    await button.click();
+    const file = await download;
+    expect(file.suggestedFilename()).toMatch(/^piwi-quality-report-engineering-\d{4}-\d{2}-\d{2}-.+\.xlsx$/);
+    const sheets = await readXlsxFile(await file.path());
+    expect(sheets.length).toBeGreaterThan(0);
+    // The header row, then at least one row of data.
+    expect(sheets[0]!.data.length).toBeGreaterThan(1);
   });
 
   test('the project page offers Export for that project', async ({ page }) => {

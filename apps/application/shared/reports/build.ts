@@ -6,6 +6,7 @@ import { renderReportCsv } from './render-csv';
 import { renderReportHtml } from './render-html';
 import { renderReportMarkdown } from './render-markdown';
 import { renderReportPdf } from './render-pdf';
+import { renderReportXlsx, XLSX_CONTENT_TYPE } from './render-xlsx';
 import type { ReportBundle, ReportFormat } from './types';
 
 export interface BuiltReport {
@@ -20,6 +21,7 @@ const CONTENT_TYPES: Record<ReportFormat, string> = {
   pdf: 'application/pdf',
   md: 'text/markdown; charset=utf-8',
   csv: 'text/csv; charset=utf-8',
+  xlsx: XLSX_CONTENT_TYPE,
 };
 
 function slug(value: string): string {
@@ -33,9 +35,9 @@ function slug(value: string): string {
   );
 }
 
-/** `piwi-quality-report-executive-2026-09-25-wasted.csv`: one section of a quality report as a CSV. */
+/** `piwi-quality-report-executive-2026-09-25-wasted.xlsx`: one section of a quality report as a workbook. */
 export function reportSectionFileName(bundle: ReportBundle, widgetKey: string): string {
-  return `piwi-quality-report-${slug(bundle.dashboard.ref)}-${bundle.generatedAt.slice(0, 10)}-${slug(widgetKey)}.csv`;
+  return `piwi-quality-report-${slug(bundle.dashboard.ref)}-${bundle.generatedAt.slice(0, 10)}-${slug(widgetKey)}.xlsx`;
 }
 
 /** `piwi-quality-report-executive-2026-09-25.pdf` */
@@ -59,6 +61,9 @@ export async function buildReport(bundle: ReportBundle, format: ReportFormat): P
     case 'csv':
       // A byte-order mark so spreadsheets read the file as UTF-8.
       bytes = encoder.encode(`﻿${renderReportCsv(bundle)}`);
+      break;
+    case 'xlsx':
+      bytes = await renderReportXlsx(bundle);
       break;
     default:
       bytes = encoder.encode(JSON.stringify(bundle, null, 2));
