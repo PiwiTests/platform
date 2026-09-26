@@ -20,8 +20,15 @@ const router = useRouter();
 const GROUP_OPTIONS = ['none', 'file'] as const;
 type GroupBy = (typeof GROUP_OPTIONS)[number];
 const { raw: groupByRaw, set: setGroupBy } = useGroupByCookie('project-test-cases', GROUP_OPTIONS);
-const groupBy = computed<GroupBy>(() => (groupByRaw.value as GroupBy) ?? 'none');
+const groupBy = computed<GroupBy>({
+  get: () => (groupByRaw.value as GroupBy) ?? 'none',
+  set: (v) => setGroupBy(v),
+});
 const grouped = computed(() => groupBy.value === 'file');
+const GROUP_BY_ITEMS = [
+  { label: 'None', value: 'none' },
+  { label: 'File', value: 'file' },
+];
 
 const GROUP_LIMIT = 1000;
 const DEFAULT_PAGE_SIZE = 25;
@@ -267,13 +274,31 @@ const hasSearchOrStatusFilter = computed(
     ownerFilter.value !== '',
 );
 const hasAnyFilter = computed(() => hasSearchOrStatusFilter.value || age.value !== 0);
+
+/** Clears every filter but the age window, which has its own "Show all time". */
+function clearFilters() {
+  searchInput.value = '';
+  q.value = '';
+  statuses.value = [];
+  tagsInput.value = '';
+  tagsFilter.value = '';
+  locksInput.value = '';
+  locksFilter.value = '';
+  ownerFilter.value = '';
+}
 const initialLoading = computed(() => status.value === 'pending' && !data.value);
 
 defineExpose({ refresh });
 </script>
 
 <template>
-  <SectionCard title="Tests" icon="i-lucide-flask-conical" :count="data?.total" help="project.test-cases">
+  <SectionCard
+    title="Tests"
+    icon="i-lucide-flask-conical"
+    :count="data?.total"
+    help="project.test-cases"
+    data-shot="test-cases-catalog"
+  >
     <template #actions>
       <UButton
         icon="i-lucide-refresh-cw"
@@ -286,72 +311,47 @@ defineExpose({ refresh });
       />
     </template>
 
-    <FilterToolbar class="mb-4">
-      <template #start>
-        <div class="flex items-center gap-1.5">
-          <span class="text-xs text-muted">Group by</span>
-          <div class="flex items-center rounded-md border border-default overflow-hidden">
-            <button
-              type="button"
-              class="px-2 py-1 text-xs transition-colors"
-              :class="groupBy === 'none' ? 'bg-primary text-white dark:text-white' : 'text-muted hover:bg-elevated/60'"
-              title="Flat list"
-              @click="setGroupBy('none')"
-            >
-              None
-            </button>
-            <button
-              type="button"
-              class="px-2 py-1 text-xs transition-colors"
-              :class="groupBy === 'file' ? 'bg-primary text-white dark:text-white' : 'text-muted hover:bg-elevated/60'"
-              title="Group by spec file, with per-file health"
-              @click="setGroupBy('file')"
-            >
-              File
-            </button>
-          </div>
+    <!-- Filters, in two rows: text and the catalog's dimensions, then outcomes.
+         How the rows are grouped and sorted sits on the list's own header. -->
+    <div class="mb-3 space-y-2">
+      <div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+        <UInput
+          v-model="searchInput"
+          placeholder="Search title or file…"
+          icon="i-lucide-search"
+          size="sm"
+          class="w-full sm:w-auto sm:flex-1 sm:min-w-44"
+          aria-label="Search tests"
+        />
+        <div class="grid grid-cols-2 gap-2 sm:flex sm:items-center">
+          <UInput
+            v-model="tagsInput"
+            placeholder="Tags: smoke, api…"
+            icon="i-lucide-tag"
+            size="sm"
+            class="w-full sm:w-40"
+            aria-label="Filter by tag"
+            title="Comma-separated; show only cases carrying every listed tag. A leading @ is optional."
+          />
+          <UInput
+            v-model="locksInput"
+            placeholder="Locks: db, auth…"
+            icon="i-lucide-lock"
+            size="sm"
+            class="w-full sm:w-40"
+            aria-label="Filter by lock"
+            title="Comma-separated; show only cases carrying every listed lock name."
+          />
+          <USelect
+            v-model="age"
+            :items="AGE_OPTIONS"
+            size="sm"
+            class="w-full sm:w-36"
+            aria-label="Last run age filter"
+          />
         </div>
-        <span class="text-sm text-muted tabular-nums"> {{ total }} {{ total === 1 ? 'test' : 'tests' }} </span>
-        <UButton
-          v-if="ownerFilter"
-          size="xs"
-          color="neutral"
-          variant="subtle"
-          icon="i-lucide-users"
-          trailing-icon="i-lucide-x"
-          :title="`Clear owner filter: ${ownerFilter}`"
-          @click="ownerFilter = ''"
-        >
-          Owner: {{ ownerFilter }}
-        </UButton>
-      </template>
+      </div>
 
-      <UInput
-        v-model="searchInput"
-        placeholder="Search title or file..."
-        icon="i-lucide-search"
-        size="sm"
-        class="min-w-48 max-sm:flex-1"
-        aria-label="Search tests"
-      />
-      <UInput
-        v-model="tagsInput"
-        placeholder="Tags (comma-separated)…"
-        icon="i-lucide-tag"
-        size="sm"
-        class="min-w-44 max-sm:flex-1"
-        aria-label="Filter by tag"
-        title="Show only cases carrying every listed tag. A leading @ is optional."
-      />
-      <UInput
-        v-model="locksInput"
-        placeholder="Locks (comma-separated)…"
-        icon="i-lucide-lock"
-        size="sm"
-        class="min-w-44 max-sm:flex-1"
-        aria-label="Filter by lock"
-        title="Show only cases carrying every listed lock name."
-      />
       <div class="flex flex-wrap items-center gap-1">
         <StatusFilterChip
           v-for="opt in STATUS_OPTIONS"
@@ -361,22 +361,31 @@ defineExpose({ refresh });
           :pressed="statuses.includes(opt.value)"
           @click="toggleStatus(opt.value)"
         />
-      </div>
-      <USelect v-model="age" :items="AGE_OPTIONS" size="sm" class="w-36" aria-label="Last run age filter" />
-      <div class="flex items-center gap-1">
-        <span class="text-xs text-muted max-sm:sr-only">Sort</span>
-        <USelect v-model="sort" :items="SORT_OPTIONS" size="sm" class="w-36" aria-label="Sort by" />
         <UButton
-          size="sm"
+          v-if="ownerFilter"
+          size="xs"
           color="neutral"
-          variant="outline"
-          :icon="dir === 'asc' ? 'i-lucide-arrow-up' : 'i-lucide-arrow-down'"
-          :title="dir === 'asc' ? 'Ascending' : 'Descending'"
-          aria-label="Toggle sort direction"
-          @click="toggleDir"
+          variant="subtle"
+          icon="i-lucide-users"
+          trailing-icon="i-lucide-x"
+          class="ml-1"
+          :title="`Clear owner filter: ${ownerFilter}`"
+          @click="ownerFilter = ''"
+        >
+          Owner: {{ ownerFilter }}
+        </UButton>
+        <UButton
+          v-if="hasSearchOrStatusFilter"
+          size="xs"
+          variant="ghost"
+          color="neutral"
+          icon="i-lucide-x"
+          label="Clear filters"
+          class="ml-auto"
+          @click="clearFilters"
         />
       </div>
-    </FilterToolbar>
+    </div>
 
     <LoadingState v-if="initialLoading" text="Loading test cases..." />
 
@@ -391,42 +400,64 @@ defineExpose({ refresh });
       <EmptyState v-else icon="i-lucide-search-x" text="No test cases match your filters.">
         <div class="mt-3 flex items-center justify-center gap-2">
           <UButton v-if="age !== 0" size="sm" variant="outline" @click="age = 0">Show all time</UButton>
-          <UButton
-            v-if="hasSearchOrStatusFilter"
-            size="sm"
-            variant="ghost"
-            @click="
-              () => {
-                searchInput = '';
-                q = '';
-                statuses = [];
-              }
-            "
+          <UButton v-if="hasSearchOrStatusFilter" size="sm" variant="ghost" @click="clearFilters"
+            >Clear filters</UButton
           >
-            Clear filters
-          </UButton>
         </div>
       </EmptyState>
     </template>
 
     <template v-else>
       <div :class="{ 'opacity-60 pointer-events-none': status === 'pending' }" class="transition-opacity">
-        <!-- Group by File: a header carries the spec-health numbers per spec file -->
-        <template v-if="grouped">
-          <UAlert
-            v-if="items.length < total"
-            color="warning"
-            variant="subtle"
-            icon="i-lucide-triangle-alert"
-            class="mb-3"
-            :title="`Showing the first ${items.length} of ${total} tests — narrow the search or filters to see the rest.`"
-          />
-          <div class="space-y-3">
-            <div
-              v-for="group in fileGroups"
-              :key="group.prefix"
-              class="rounded-lg border border-default overflow-hidden"
-            >
+        <UAlert
+          v-if="grouped && items.length < total"
+          color="warning"
+          variant="subtle"
+          icon="i-lucide-triangle-alert"
+          class="mb-3"
+          :title="`Showing the first ${items.length} of ${total} tests — narrow the search or filters to see the rest.`"
+        />
+        <div class="rounded-lg border border-default overflow-hidden">
+          <!-- List header: the count on the left, how the rows are grouped and
+               sorted on the right. -->
+          <div class="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-default bg-elevated/40 px-3 py-1.5">
+            <span class="text-xs text-muted tabular-nums">{{ total }} {{ total === 1 ? 'test' : 'tests' }}</span>
+            <div class="grid w-full grid-cols-2 gap-2 sm:ml-auto sm:flex sm:w-auto sm:items-center sm:gap-3">
+              <div class="flex items-center gap-1.5 min-w-0">
+                <span class="text-xs text-muted whitespace-nowrap">Group by</span>
+                <USelect
+                  v-model="groupBy"
+                  :items="GROUP_BY_ITEMS"
+                  size="xs"
+                  class="min-w-0 flex-1 sm:w-32 sm:flex-none"
+                  aria-label="Group tests by"
+                />
+              </div>
+              <div class="flex items-center gap-1.5 min-w-0">
+                <span class="text-xs text-muted">Sort</span>
+                <USelect
+                  v-model="sort"
+                  :items="SORT_OPTIONS"
+                  size="xs"
+                  class="min-w-0 flex-1 sm:w-32 sm:flex-none"
+                  aria-label="Sort by"
+                />
+                <UButton
+                  size="xs"
+                  color="neutral"
+                  variant="outline"
+                  :icon="dir === 'asc' ? 'i-lucide-arrow-up' : 'i-lucide-arrow-down'"
+                  :title="dir === 'asc' ? 'Ascending' : 'Descending'"
+                  aria-label="Toggle sort direction"
+                  @click="toggleDir"
+                />
+              </div>
+            </div>
+          </div>
+
+          <!-- Group by File: a header row carries the spec-health numbers per spec file -->
+          <template v-if="grouped">
+            <template v-for="group in fileGroups" :key="group.prefix">
               <TestRowGroup
                 :label="group.prefix"
                 :count="group.rows.length"
@@ -435,7 +466,7 @@ defineExpose({ refresh });
                 icon="i-lucide-folder"
                 @toggle="toggleGroup(group.prefix)"
               />
-              <div v-if="group.open">
+              <template v-if="group.open">
                 <TestRow
                   v-for="tc in group.rows"
                   :key="tc.id"
@@ -451,28 +482,28 @@ defineExpose({ refresh });
                     <CatalogRowFacts :tc="tc" />
                   </template>
                 </TestRow>
-              </div>
-            </div>
-          </div>
-        </template>
-
-        <!-- Flat list: one TestRow per test -->
-        <div v-else class="rounded-lg border border-default overflow-hidden">
-          <TestRow
-            v-for="tc in items"
-            :key="tc.id"
-            :href="`/test-cases/${tc.id}`"
-            :title="tc.title"
-            :status="tc.status"
-            :file-path="tc.filePath"
-            :badges="catalogBadges(tc)"
-            :project-key="projectId"
-            :project-name="projectName"
-          >
-            <template #metrics>
-              <CatalogRowFacts :tc="tc" />
+              </template>
             </template>
-          </TestRow>
+          </template>
+
+          <!-- Flat list: one TestRow per test -->
+          <template v-else>
+            <TestRow
+              v-for="tc in items"
+              :key="tc.id"
+              :href="`/test-cases/${tc.id}`"
+              :title="tc.title"
+              :status="tc.status"
+              :file-path="tc.filePath"
+              :badges="catalogBadges(tc)"
+              :project-key="projectId"
+              :project-name="projectName"
+            >
+              <template #metrics>
+                <CatalogRowFacts :tc="tc" />
+              </template>
+            </TestRow>
+          </template>
         </div>
 
         <template v-if="!grouped">

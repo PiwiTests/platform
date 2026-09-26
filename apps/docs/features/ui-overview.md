@@ -94,8 +94,9 @@ line with the primary action (**Copy retry command** on a red run, the **HTML re
 one facts line — started, duration, branch, commit, author, environment, CI build — with a **Details** popover
 holding the rest (shards, Playwright and Piwi versions, avg/P90 durations, wasted time, storage and every
 report, tags, links, custom data). Below it, **one count bar** carries the numbers on its segments
-(*N passed · N failed · N passed on retry · N skipped · N didn't run*, zero segments hidden); clicking a
-segment filters the Tests tab and switches to it. While a run is still `running`, a **live progress bar** and
+(*N passed · N failed · N passed on retry · N skipped · N fixme · N didn't run*, zero segments hidden); clicking a
+segment filters the Tests tab and switches to it. Every status bar draws skips in two greys: *skipped* for
+`test.skip()`, a stronger *fixme* for `test.fixme()`. While a run is still `running`, a **live progress bar** and
 streaming results appear in real time, and each still-running row shows the **step its worker is on right now**,
 inline under the test title.
 
@@ -107,8 +108,8 @@ The right panel is tabbed:
   *Open cluster* link, and passing tests fold into a collapsed *Passed* group), *File* (with per-file tallies),
   *File + Describe* (the file nested by its describe blocks), *Lock* (each [lock](/guide/reporter#test-locks) the run
   declared, holders grouped under it, when the run has locks) or *None*. Search matches the title, path **and**
-  error text; filter by status, browser, lock, new regressions and
-  newly flaky. Select failing rows for bulk triage (quarantine, or set the cluster status) in any grouping.
+  error text; filter by status, browser, [tags](/guide/reporter#test-tags) (all must match), lock, new regressions
+  and newly flaky. Select failing rows for bulk triage (quarantine, or set the cluster status) in any grouping.
 - **Changes** — what differs against **one baseline** (the last passing run on the same branch by default, or the
   run you pick — deep-linkable as `?baseline=<runId>`): new failures, fixed, still failing, newly flaky / passed on
   retry, the slower / faster tests, the commits landed since the baseline, and the environment fields that moved. The

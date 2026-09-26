@@ -230,7 +230,9 @@ hover:decoration-solid`. `text-primary` links belong in navigation lists and tab
 
 Passed, failed, flaky, skipped, didn't run and running each have **one** color, everywhere: the `--color-status-*`
 tokens in `app/assets/css/main.css` (emerald, rose, purple, zinc, amber, blue). Timed-out and interrupted count as
-failed; a pass that needed a retry counts as flaky. Never hardcode a status color in a bar, chart, legend, dot, history
+failed; a pass that needed a retry counts as flaky. Skipped has a second grey, `fixme`, for a `test.fixme()` skip
+(`isFixmeSkip` / `fixmeSkipPredicate` in `shared/utils/skip-kind.ts`): a subset of skipped, carved out of the skipped
+segment the way flaky is carved out of passed. Never hardcode a status color in a bar, chart, legend, dot, history
 cell, timeline bar or filter chip: use `STATUS_PALETTE` / `statusPalette(status, retries?)` from
 `app/utils/status-palette.ts` (`bg-status-*` classes for HTML, `var(--color-status-*)` in SVG `style`), the shared
 `StatusFilterChip`, and `getStatusColor` for badges (`flaky` is a registered Nuxt UI color). A new outcome view that
@@ -600,9 +602,9 @@ app with Playwright — `scripts/take-feature-screenshots.mjs` (`--route`, `--ur
   download URL. The demo is served from `/demo/` and its service worker only intercepts that prefix, so a root-relative
   `/api/...` escapes the scope and 404s against the static host. `fileApiUrl` and `getTraceViewerUrl` exist for exactly
   this reason.
-- **Test cases live under runs #21+.** Runs #1–20 have 0 cases (their rows target a migration-only table the dev schema
-  drops). Query a real id: `node scripts/db-query.mjs "SELECT id FROM test_runs_cases ORDER BY id DESC LIMIT 5"`.
-  Clusters with data: #3, #4, #5, #7, #8; project #2 (`api-integration`) owns clusters 3 and 4.
+- **Every seeded run carries its cases**, and every one of the ten clusters has failing executions; project #2
+  (`api-integration`) owns clusters 3 and 4. Run and execution ids are stable for a given seed, but query a real one
+  rather than guessing: `node scripts/db-query.mjs "SELECT id FROM test_runs_cases ORDER BY id DESC LIMIT 5"`.
 - **Brand icons** (`i-simple-icons-*`) resolve from the iconify CDN at runtime; with no outbound network they render
   blank. Only the `lucide` collection is bundled locally. Environment limitation, not a bug.
 
