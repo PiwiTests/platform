@@ -23,12 +23,28 @@ const LIVE_LABEL = 'piwi-live-test';
 
 const AUTH = `Basic ${Buffer.from(`${EMAIL}:${TOKEN}`).toString('base64')}`;
 
-/** A raw Jira REST call with the same Basic credentials the server uses. */
+/** Where the raw REST calls go: the site, or the api.atlassian.com gateway for a scoped token. */
+let restBase = BASE;
+
+/**
+ * A raw Jira REST call with the same Basic credentials the server uses. A scoped
+ * token is refused on the site URL, so the first 401 there moves every later call
+ * to the gateway, the same routing the server's client applies.
+ */
 async function jira(path: string, init: RequestInit = {}): Promise<Response> {
-  return fetch(`${BASE}${path}`, {
-    ...init,
-    headers: { Authorization: AUTH, 'Content-Type': 'application/json', Accept: 'application/json', ...init.headers },
-  });
+  const send = () =>
+    fetch(`${restBase}${path}`, {
+      ...init,
+      headers: { Authorization: AUTH, 'Content-Type': 'application/json', Accept: 'application/json', ...init.headers },
+    });
+  const response = await send();
+  if (response.status !== 401 || restBase !== BASE) return response;
+  const tenant = (await fetch(`${BASE}/_edge/tenant_info`)
+    .then((r) => (r.ok ? r.json() : null))
+    .catch(() => null)) as { cloudId?: string } | null;
+  if (!tenant?.cloudId) return response;
+  restBase = `https://api.atlassian.com/ex/jira/${tenant.cloudId}`;
+  return send();
 }
 
 /** Every ADF text node's string, recursively — for asserting the description. */
@@ -40,9 +56,14 @@ function adfText(node: unknown): string[] {
   return [...here, ...kids];
 }
 
-/** Delete a Jira issue by id, ignoring a 404 (already gone). */
+/** Delete a Jira issue by id, ignoring a 404 (already gone) and warning on any other refusal. */
 async function deleteIssue(id: string): Promise<void> {
-  await jira(`/rest/api/3/issue/${encodeURIComponent(id)}?deleteSubtasks=true`, { method: 'DELETE' }).catch(() => null);
+  const res = await jira(`/rest/api/3/issue/${encodeURIComponent(id)}?deleteSubtasks=true`, {
+    method: 'DELETE',
+  }).catch(() => null);
+  if (res && !res.ok && res.status !== 404) {
+    console.warn(`[live-jira] could not delete issue ${id} (${res.status}): ${await res.text().catch(() => '')}`);
+  }
 }
 
 test.describe.serial('Live Jira integration', () => {
