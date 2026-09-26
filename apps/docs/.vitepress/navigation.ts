@@ -137,6 +137,7 @@ export const selfHostingSidebar: SidebarGroup[] = [
     text: 'Install',
     items: [
       { text: 'Deployment', link: '/operate/deployment' },
+      { text: 'One-click deploy', link: '/operate/one-click-deploy' },
       { text: 'Production checklist', link: '/operate/production-checklist' },
     ],
   },
