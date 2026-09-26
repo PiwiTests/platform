@@ -12,7 +12,7 @@
 import type { AnalyticsScope } from '#shared/analytics/scope';
 import type { MetricDef } from '#shared/analytics/metrics';
 import type { VerdictTone } from '#shared/analytics/types';
-import type { ReportLanguage } from './format';
+import type { ReportLanguage } from './languages';
 
 export type ReportTone = 'good' | 'bad' | 'neutral';
 

@@ -7,18 +7,30 @@ import {
   type InsightComparison,
   type InsightPhrasebook,
 } from '#shared/analytics/insight-rules';
+import type { GapClass } from '#shared/handlers/scenario-gaps';
 import { passRateDirection } from './verdict';
 import type { ValueFormatter } from './format';
-import type { ReportSentences } from './sentences';
+import type { ReportSentences, ReportTypography } from './sentences';
 
-/** French agreement: the singular under two (0,5 jour, 1 test), the plural from two. */
-const plural = (n: number, one: string, many: string) => (Math.abs(n) < 2 ? one : many);
 /** Before a colon. */
 const NBSP = '\u00a0';
 /** Before a semicolon and between a number and its unit. */
 const NNBSP = '\u202f';
 
-const METRIC_LABELS: Partial<Record<MetricId, [label: string, definition: string]>> = {
+const TYPOGRAPHY: ReportTypography = {
+  locale: 'fr-FR',
+  units: { min: 'min', h: 'h', day: 'jour', days: 'jours', pts: 'pts' },
+  // The singular under two (0,5 jour, 1 test), the plural from two.
+  singular: (count) => Math.abs(count) < 2,
+  unitSpace: NNBSP,
+  spacedPercent: true,
+  // The first of a month is an ordinal: 1er sept.
+  date: (text) => text.replace(/^1(?=\s)/, '1er'),
+};
+
+const plural = (n: number, one: string, many: string) => (TYPOGRAPHY.singular(n) ? one : many);
+
+const METRIC_LABELS: Record<MetricId, [label: string, definition: string]> = {
   'test-pass-rate': [
     'Taux de réussite des tests',
     'Tests réussis divisés par tests exécutés, sommés sur les exécutions de la période.',
@@ -169,8 +181,20 @@ const TITLES: Record<string, string> = {
   'Flaky occurrences per run': 'Occurrences instables par exécution',
   'Open gaps by class and by feature, and the gaps closed.':
     'Les lacunes ouvertes par classe et par fonctionnalité, et les lacunes fermées.',
+  // Widget titles of the registry, for the dashboards people build
+  List: 'Liste',
+  Metric: 'Indicateur',
+  Narrative: 'Récit',
+  Note: 'Note',
+  'Performance trend': 'Tendance des performances',
+  'Selection health': 'Santé des sélections',
+  'Slowest tests': 'Tests les plus lents',
+  'Spec health': 'Santé des fichiers de test',
+  'Timeout opportunities': 'Délais d’expiration à réduire',
   // Table columns
   Name: 'Nom',
+  Date: 'Date',
+  Test: 'Test',
   Change: 'Évolution',
   Average: 'Moyenne',
   Timeout: 'Délai d’expiration',
@@ -212,13 +236,15 @@ const TITLES: Record<string, string> = {
   Ignored: 'Ignorées',
 };
 
-const GAP_CLASS_LABELS: Record<string, string> = {
+const GAP_CLASS_LABELS: Record<GapClass, string> = {
   'blind-spot': 'Angle mort',
   'false-comfort': 'Fausse assurance',
   fragile: 'Fragile',
   unhandled: 'Non géré',
   degraded: 'Dégradé',
 };
+
+const gapClassLabel = (cls: string) => GAP_CLASS_LABELS[cls as GapClass] ?? cls;
 
 function branchText(facts: VerdictFacts): string {
   const { kind, branches } = facts.branch;
@@ -617,11 +643,14 @@ function listItem(item: AnalyticsListItem, f: ValueFormatter): { title: string; 
         detail: `score d’instabilité ${f.number(x.score)} · ${count(x.alternations, 'changement de statut', 'changements de statut', f)} sur ${count(x.totalRuns, 'exécution', 'exécutions', f)}`,
       };
     case 'scenario-gaps':
-      return { title: gapTitle(x.detector, item.title), detail: GAP_CLASS_LABELS[x.gapClass] ?? x.gapClass };
+      return { title: gapTitle(x.detector, item.title), detail: gapClassLabel(x.gapClass) };
   }
 }
 
 export const FR_SENTENCES: ReportSentences = {
+  name: 'Français',
+  englishName: 'French',
+  typography: TYPOGRAPHY,
   labels: {
     qualityReport: 'Rapport qualité',
     period: 'Période',
@@ -659,6 +688,8 @@ export const FR_SENTENCES: ReportSentences = {
     count: 'Nombre',
     targets: 'Objectifs',
     markers: 'Repères',
+    narrative: 'Récit',
+    automatedMessage: 'Message automatique envoyé par',
   },
   verdict,
   progress,
@@ -677,16 +708,22 @@ export const FR_SENTENCES: ReportSentences = {
   insight: (facts, f) => writeInsight(FR_INSIGHTS, facts, f),
   metricLabel: (id, fallback) => METRIC_LABELS[id]?.[0] ?? fallback,
   metricDefinition: (id, fallback) => METRIC_LABELS[id]?.[1] ?? fallback,
+  titles: TITLES,
   title: (text) => TITLES[text] ?? text,
-  reportTitle: (scope, period) => `${scope}, ${period}`,
+  // French names a period by its dates, on a line of its own or after « par rapport à ».
+  dateRange: (from, to) => `du ${from} au ${to}`,
+  period: (_name, range) => capitalized(range),
+  comparison: (_name, range) => `la période ${range}`,
+  reportTitle: (scope, _name, range) => `${scope}, ${range}`,
   projectCount: (n) => `${n} ${plural(n, 'projet', 'projets')}`,
+  testFilterNote: (title) => `${quoted(title)} ne tient pas compte du filtre de tests.`,
   testFilterLimit: (start) =>
     start
       ? `Le filtre de tests compte les exécutions conservées, qui commencent le ${start}.`
       : 'Le filtre de tests compte les exécutions conservées, qui ne remontent pas plus loin que la rétention.',
   identityLimit:
     'Les listes de tests et le nombre de tests instables ne remontent pas plus loin que la rétention des exécutions.',
-  gapClass: (cls) => GAP_CLASS_LABELS[cls] ?? cls,
+  gapClass: gapClassLabel,
   gapTitle,
   listItem,
   firstRunLimit: (since) =>
@@ -694,4 +731,11 @@ export const FR_SENTENCES: ReportSentences = {
   narrativeGenerated: (model) =>
     `Généré par un modèle d’IA (${model}) à partir des seuls chiffres de ce rapport. Les tuiles et le verdict ci-dessus sont calculés par des règles ; fiez-vous à eux plutôt qu’à ce texte.`,
   narrativeFallback: 'Aucun récit IA n’a pu être généré pour ce rapport ; le verdict fondé sur des règles le remplace.',
+  badge: {
+    label: (branches) => `tests sur ${branches}`,
+    allBranches: 'toutes les branches',
+    defaultBranch: 'branche par défaut',
+    days: (n) => `${n} j`,
+    verdict: { good: 'bon', mixed: 'mitigé', bad: 'mauvais' },
+  },
 };

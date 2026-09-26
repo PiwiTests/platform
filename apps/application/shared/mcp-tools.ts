@@ -13,6 +13,7 @@
  */
 import type { CapabilityId, CapabilityModule } from '#shared/capabilities';
 import { EXTRACT_SYSTEM_PROMPT } from './test-function-extract-prompt';
+import { REPORT_LANGUAGES } from './reports/languages';
 
 export interface PaginatedResponse<T> {
   items: T[];
@@ -960,7 +961,7 @@ export const MCP_TOOL_DEFS = [
         },
         lang: {
           type: 'string',
-          enum: ['en', 'fr'],
+          enum: [...REPORT_LANGUAGES],
           description:
             'Report language (default: the project’s ticket language, else the instance locale, else English)',
         },

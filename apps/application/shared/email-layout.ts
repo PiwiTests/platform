@@ -14,26 +14,23 @@ export function escapeHtml(text: string): string {
     .replace(/'/g, '&#39;');
 }
 
-/** The footer line before the instance's address, in the email's language. */
-const AUTOMATED_MESSAGE = {
-  en: 'This is an automated message from',
-  fr: 'Message automatique envoyé par',
-} as const;
+/** The language of an email: its `lang` attribute and the footer line before the instance's address. */
+export interface EmailFrame {
+  lang: string;
+  automatedMessage: string;
+}
+
+const ENGLISH_FRAME: EmailFrame = { lang: 'en', automatedMessage: 'This is an automated message from' };
 
 /**
  * An email document: `title` (already escaped) in its head, `body` in the
- * card, `siteUrl` in the footer. A quality report email is written in its
+ * card, `siteUrl` in the footer. A quality report email is framed in its
  * report's language; the other emails in English.
  */
-export function emailLayout(
-  title: string,
-  body: string,
-  siteUrl: string,
-  language: keyof typeof AUTOMATED_MESSAGE = 'en',
-): string {
+export function emailLayout(title: string, body: string, siteUrl: string, frame: EmailFrame = ENGLISH_FRAME): string {
   const site = escapeHtml(siteUrl);
   return `<!DOCTYPE html>
-<html lang="${language}">
+<html lang="${escapeHtml(frame.lang)}">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title></head>
 <body style="margin:0;padding:0;background:#f4f4f5;font-family:system-ui,sans-serif;">
   <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:32px 0;">
@@ -44,7 +41,7 @@ export function emailLayout(
         </td></tr>
         <tr><td style="padding:32px;">${body}</td></tr>
         <tr><td style="padding:16px 32px;background:#f4f4f5;font-size:12px;color:#71717a;text-align:center;">
-          ${AUTOMATED_MESSAGE[language]} <a href="${site}" style="color:#18181b;">${site}</a>
+          ${escapeHtml(frame.automatedMessage)} <a href="${site}" style="color:#18181b;">${site}</a>
         </td></tr>
       </table>
     </td></tr>

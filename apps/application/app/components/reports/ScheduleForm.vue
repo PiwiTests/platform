@@ -10,6 +10,8 @@
 import { offeredDashboards, type BuiltinDashboardKey } from '#shared/analytics/dashboards';
 import { WEEKDAY_NAMES, type ReportCadence, type ScheduleComparison } from '#shared/reports/schedule';
 import type { ReportScheduleView } from '#shared/handlers/reports';
+import { REPORT_LANGUAGES, type ReportLanguage } from '#shared/reports/languages';
+import { sentencesFor } from '#shared/reports/sentences';
 import type { DashboardList } from '#shared/handlers/dashboards';
 import type { ProjectMenuItem } from '~~/types/api';
 
@@ -85,7 +87,7 @@ const weekday = ref(1);
 const dayOfMonth = ref(1);
 const at = ref('08:00');
 const comparison = ref<ScheduleComparison>('previous');
-const language = ref<'auto' | 'en' | 'fr'>('auto');
+const language = ref<'auto' | ReportLanguage>('auto');
 const channelIds = ref<number[]>([]);
 const includeShareLink = ref(false);
 const includeNarrative = ref(false);
@@ -184,10 +186,10 @@ const comparisonItems = [
   { label: 'The same period a year earlier', value: 'year-ago' },
   { label: 'No comparison', value: 'none' },
 ];
+// Each report language under its own name.
 const languageItems = [
   { label: 'Default language', value: 'auto' },
-  { label: 'English', value: 'en' },
-  { label: 'Français', value: 'fr' },
+  ...REPORT_LANGUAGES.map((code) => ({ label: sentencesFor(code).name, value: code })),
 ];
 
 /** Global schedules send to global channels; a personal one to the author's own or a global channel. */

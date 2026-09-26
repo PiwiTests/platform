@@ -5,7 +5,8 @@ import { DAY_MS, firstNonEmptyIndex, getAnalyticsContext, roundRate, type Projec
 import { clusterValue, loadClusters, type ClusterRow } from './metric-values';
 
 /** Open failure causes by age, youngest first; `maxDays` is exclusive, null for the last group. */
-const AGE_GROUPS: Array<{ label: string; maxDays: number | null }> = [
+/** The age buckets of open failure causes; a report translates their labels. */
+export const AGE_GROUPS: Array<{ label: string; maxDays: number | null }> = [
   { label: 'Under a day', maxDays: 1 },
   { label: '1 to 7 days', maxDays: 7 },
   { label: '7 to 30 days', maxDays: 30 },
