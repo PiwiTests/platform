@@ -232,41 +232,41 @@ describe('no leaked version history', () => {
   });
 });
 
-describe('feature-page word budget', () => {
-  // A feature page follows a fixed skeleton and stays short (the restructure
-  // proposal's 1,200-word budget). This keeps a page from quietly growing back
-  // into the grab-bag it was carved out of.
-  const BUDGET = 1200;
-  // Pages carved from the old grab-bags that are still over budget, pending the
-  // remaining content splits (ai-diagnosis → clusters/diagnosis/fix-plans,
-  // evidence flattened, ui-overview rewritten). Capped at their current size so
-  // they can only shrink toward the budget, never grow — retire an entry once
-  // its page is under BUDGET.
-  const OVER_BUDGET: Record<string, number> = {
-    'ai-diagnosis': 4800,
-    evidence: 3700,
-    'ui-overview': 3079,
-    extension: 2500,
-    mcp: 2300,
-    'scenario-gaps': 1760,
-    desktop: 2300,
-    'locator-healing': 2000,
-    notifications: 1400,
-    'ai-steps': 1560,
-    'test-selection': 2063,
+describe('word budget per page type', () => {
+  // Every page is one type (proposals/docs-revamp.md, "One type per page"),
+  // and each type has one budget, with no allowlist: a page over its budget is
+  // cut or split, never excused. A page's type is its folder; PAGE_TYPE_EXCEPTIONS
+  // lists the few pages whose folder says otherwise. Reference pages list values
+  // and have no budget. Blog posts are essays, not one of the five types.
+  const BUDGETS = { setup: 1500, feature: 1500, recipe: 1000, 'self-hosting': 1500, reference: Infinity } as const;
+  type PageType = keyof typeof BUDGETS;
+  const FOLDER_TYPES: Record<string, PageType> = {
+    guide: 'setup',
+    features: 'feature',
+    recipes: 'recipe',
+    operate: 'self-hosting',
+    reference: 'reference',
+  };
+  const PAGE_TYPE_EXCEPTIONS: Record<string, PageType> = {
+    // The vocabulary: a list of terms, read by lookup.
+    'guide/concepts': 'reference',
+    // The home page opens Get started.
+    index: 'setup',
   };
 
-  const featurePages = readdirSync(join(repoRoot, 'apps/docs/features')).filter((f) => f.endsWith('.md'));
+  const typedPages = docsPages
+    .map((p) => p.replace(/^apps\/docs\//, '').replace(/\.md$/, ''))
+    .filter((page) => !page.startsWith('blog/') && !GENERATED_PAGES.has(page));
 
-  test.each(featurePages)('features/%s is within budget', (file) => {
+  test.each(typedPages)('%s is within the budget of its page type', (page) => {
+    const type = PAGE_TYPE_EXCEPTIONS[page] ?? FOLDER_TYPES[page.split('/')[0]!];
+    expect(type, `apps/docs/${page}.md has no page type: add its folder to FOLDER_TYPES`).toBeDefined();
     // The page as a reader sees it: the front matter is metadata, not reading.
-    const body = read(`apps/docs/features/${file}`).replace(/^---\n[\s\S]*?\n---\n/, '');
-    const words = body.trim().split(/\s+/).length;
-    const cap = OVER_BUDGET[file.replace(/\.md$/, '')] ?? BUDGET;
+    const words = read(`apps/docs/${page}.md`).replace(FRONT_MATTER, '').trim().split(/\s+/).length;
     expect(
       words,
-      `apps/docs/features/${file} is ${words} words (cap ${cap}) — trim it${cap === BUDGET ? '' : ', and lower its OVER_BUDGET cap'}`,
-    ).toBeLessThanOrEqual(cap);
+      `apps/docs/${page}.md is ${words} words, over the ${BUDGETS[type!]}-word budget of a ${type} page: cut it or split it`,
+    ).toBeLessThanOrEqual(BUDGETS[type!]);
   });
 });
 
