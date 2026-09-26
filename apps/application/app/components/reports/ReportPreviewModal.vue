@@ -7,6 +7,8 @@
  */
 import { offeredDashboards, type BuiltinDashboardKey } from '#shared/analytics/dashboards';
 import type { ReportBundle, ReportFormat } from '#shared/reports/types';
+import { REPORT_LANGUAGES, type ReportLanguage } from '#shared/reports/languages';
+import { sentencesFor } from '#shared/reports/sentences';
 
 const props = withDefaults(
   defineProps<{
@@ -23,7 +25,7 @@ const props = withDefaults(
 const open = defineModel<boolean>('open', { default: false });
 
 const dashboard = ref<string>(props.savedDashboard?.id ?? props.dashboard);
-const language = ref<'auto' | 'en' | 'fr'>('auto');
+const language = ref<'auto' | ReportLanguage>('auto');
 
 const { isHidden } = await useInstanceCapabilities();
 const dashboardItems = computed(() => [
@@ -36,10 +38,10 @@ const dashboardItems = computed(() => [
     description: d.description,
   })),
 ]);
+// Each report language under its own name.
 const languageItems = [
   { label: 'Default language', value: 'auto' },
-  { label: 'English', value: 'en' },
-  { label: 'Français', value: 'fr' },
+  ...REPORT_LANGUAGES.map((code) => ({ label: sentencesFor(code).name, value: code })),
 ];
 
 const requestQuery = computed(() => ({

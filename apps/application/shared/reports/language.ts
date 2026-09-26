@@ -3,7 +3,7 @@ import { integrationConnections, projectIntegrations } from '../../server/databa
 import { getAppSetting } from '../../server/utils/app-settings';
 import { LOCALE_SETTING_KEY } from '../i18n/locale-format';
 import type { DrizzleDB } from '../handlers/db';
-import { isReportLanguage, type ReportLanguage } from './format';
+import { isReportLanguage, type ReportLanguage } from './languages';
 
 function fromLocale(locale: unknown): ReportLanguage | null {
   if (typeof locale !== 'string') return null;

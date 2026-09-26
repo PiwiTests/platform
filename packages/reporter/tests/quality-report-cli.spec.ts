@@ -31,6 +31,12 @@ describe('parseReportArgs', () => {
     expect(() => parseReportArgs(['--dashboard', 'team'], env)).toThrow(/--dashboard/);
     expect(() => parseReportArgs(['--format', 'pdf'], env)).toThrow(/--output/);
     expect(() => parseReportArgs(['--fail-on', 'good'], env)).toThrow(/--fail-on/);
+    expect(() => parseReportArgs(['--lang', 'not a code'], env)).toThrow(/--lang/);
+  });
+
+  it('sends any language code, and the dashboard says which it writes', () => {
+    expect(parseReportArgs(['--lang', 'de'], env).lang).toBe('de');
+    expect(parseReportArgs(['--lang', 'pt-BR'], env).lang).toBe('pt-BR');
   });
 });
 

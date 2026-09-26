@@ -40,8 +40,9 @@ import { Role } from '../types';
 import { DashboardError, loadDashboardDefinition, type DashboardActor } from './dashboards';
 import type { ComparisonSpec } from '../analytics/period';
 import { collectReportBundle, type ReportDashboard } from '../reports/collect';
-import { makeFormatter, type ReportLanguage } from '../reports/format';
+import { makeFormatter } from '../reports/format';
 import { assertDashboardScope, ReportRequestError } from '../reports/request';
+import { REPORT_LANGUAGES, type ReportLanguage } from '../reports/languages';
 import { sentencesFor } from '../reports/sentences';
 import type { ReportBundle } from '../reports/types';
 import { applyNarrative, type GeneratedNarrative } from '../reports/narrative';
@@ -107,7 +108,7 @@ const reportScheduleFields = z.object({
   anchor: z.number().int().min(1).max(MONTHLY_ANCHOR_MAX).nullable().optional(),
   at: z.string().regex(/^([01]?\d|2[0-3]):[0-5]\d$/, 'at must be HH:mm'),
   comparison: z.enum(SCHEDULE_COMPARISONS),
-  language: z.enum(['en', 'fr']).nullable().optional(),
+  language: z.enum(REPORT_LANGUAGES).nullable().optional(),
   channelIds: z.array(z.number().int().positive()).min(1).max(20),
   /** Mint a share link per snapshot, carried by the email and Slack messages (when share links are enabled). */
   includeShareLink: z.boolean().optional(),

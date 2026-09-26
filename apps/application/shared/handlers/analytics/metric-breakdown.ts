@@ -82,6 +82,15 @@ const RUN_KIND_LABELS: Record<string, string> = { full: 'Full runs', partial: 'P
 
 const CLUSTER_STATUS_LABELS: Record<string, string> = { open: 'Open', resolved: 'Resolved', ignored: 'Ignored' };
 
+/** The group labels Piwi writes (the others are names from the data), which a report translates. */
+export const BREAKDOWN_GROUP_LABELS: readonly string[] = [
+  'Other',
+  'None',
+  ...Object.values(NONE_LABELS),
+  ...Object.values(RUN_KIND_LABELS),
+  ...Object.values(CLUSTER_STATUS_LABELS),
+];
+
 // ── Items: what a group is made of ───────────────────────────────────────────
 
 /** A source read over a range, with each item's groups and the metric's value over any subset. */

@@ -10,7 +10,7 @@ import {
   isBuiltinDashboardKey,
   type BuiltinDashboardKey,
 } from '../analytics/dashboards';
-import { isReportLanguage, type ReportLanguage } from './format';
+import { REPORT_LANGUAGES, isReportLanguage, type ReportLanguage } from './languages';
 import { isReportFormat, REPORT_FORMATS, type ReportFormat } from './types';
 
 export class ReportRequestError extends Error {}
@@ -47,7 +47,7 @@ export function parseReportRequest(query: QueryLike): ReportRequest {
   }
   const lang = pick(query, 'lang');
   if (lang !== null && !isReportLanguage(lang))
-    throw new ReportRequestError(`Unsupported language '${lang}'. Use en or fr.`);
+    throw new ReportRequestError(`Unsupported language '${lang}'. Use one of: ${REPORT_LANGUAGES.join(', ')}.`);
   const scope = parseAnalyticsScope(query);
   if (isBuiltinDashboardKey(dashboard)) assertDashboardScope(dashboard, scope);
   return { dashboard: dashboard as ReportRequest['dashboard'], format, ...(lang ? { language: lang } : {}), scope };

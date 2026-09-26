@@ -39,7 +39,7 @@ What to report:
   --branch <names>       Comma-separated branches (default: each project's default branch)
   --environment <names>  Comma-separated environments
   --selection <key>      Only the tests of this selection
-  --lang <en|fr>         Report language (default: the dashboard's default)
+  --lang <code>          Report language, such as en or fr (default: the dashboard's default)
 
 Output:
   --format <fmt>         md (default), json, html, pdf, csv
@@ -60,7 +60,8 @@ export interface ReportArgs {
   branches: string | null;
   environments: string | null;
   selection: string | null;
-  lang: 'en' | 'fr' | null;
+  /** A language code; the dashboard says which languages it writes. */
+  lang: string | null;
   format: (typeof FORMATS)[number];
   output: string | null;
   failOn: Tone | null;
@@ -95,7 +96,10 @@ export function parseReportArgs(argv: string[], env: NodeJS.ProcessEnv): ReportA
     throw new Error(`--dashboard must be one of ${DASHBOARDS.join(', ')}, got "${dashboard}"`);
   }
   const lang = readOption(argv, '--lang') ?? null;
-  if (lang !== null && lang !== 'en' && lang !== 'fr') throw new Error(`--lang must be en or fr, got "${lang}"`);
+  // The dashboard knows its languages and refuses the others; only the shape is checked here.
+  if (lang !== null && !/^[a-z]{2,3}(-[a-z0-9]{2,8})*$/i.test(lang)) {
+    throw new Error(`--lang must be a language code such as en or fr, got "${lang}"`);
+  }
   const failOn = readOption(argv, '--fail-on') ?? null;
   if (failOn !== null && failOn !== 'bad' && failOn !== 'mixed') {
     throw new Error(`--fail-on must be bad or mixed, got "${failOn}"`);

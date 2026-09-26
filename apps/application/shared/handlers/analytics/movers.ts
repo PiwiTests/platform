@@ -13,7 +13,8 @@ const MIN_EXECUTIONS = 2;
 /** Durations under this are noise at any ratio. */
 const MIN_DURATION_MS = 200;
 
-const LABELS: Record<AnalyticsMoverKind, string> = {
+/** The movers' group labels; a report translates them. */
+export const MOVER_LABELS: Record<AnalyticsMoverKind, string> = {
   'became-flaky': 'Became flaky',
   'stopped-flaky': 'Stopped being flaky',
   slower: 'Got slower',
@@ -152,7 +153,7 @@ export async function getAnalyticsMovers(
 ): Promise<AnalyticsMovers> {
   const { limit } = moversOptionsSchema.parse(rawOptions ?? {});
   const ctx = await getAnalyticsContext(db, scope, access);
-  const kinds = Object.keys(LABELS) as AnalyticsMoverKind[];
+  const kinds = Object.keys(MOVER_LABELS) as AnalyticsMoverKind[];
   const comparison = ctx.comparison;
   if (!comparison) return { groups: [], comparisonLabel: null };
 
@@ -197,7 +198,7 @@ export async function getAnalyticsMovers(
     groups: kinds
       .map((kind) => ({
         kind,
-        label: LABELS[kind],
+        label: MOVER_LABELS[kind],
         items: kept
           .filter((m) => m.kind === kind)
           .map(({ kind: _kind, rank: _rank, ...m }) => {

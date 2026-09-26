@@ -6,19 +6,8 @@
 import type { MetricUnit } from '#shared/analytics/metrics';
 import type { AnalyticsMetricValue } from '#shared/analytics/types';
 import { formatMoney } from '#shared/ci-cost';
-
-export type ReportLanguage = 'en' | 'fr';
-
-export const REPORT_LANGUAGES: readonly ReportLanguage[] = ['en', 'fr'];
-
-export function isReportLanguage(value: unknown): value is ReportLanguage {
-  return value === 'en' || value === 'fr';
-}
-
-const UNIT_WORDS: Record<ReportLanguage, { min: string; h: string; day: string; days: string; pts: string }> = {
-  en: { min: 'min', h: 'h', day: 'day', days: 'days', pts: 'pts' },
-  fr: { min: 'min', h: 'h', day: 'jour', days: 'jours', pts: 'pts' },
-};
+import type { ReportLanguage } from './languages';
+import { sentencesFor } from './sentences';
 
 export interface ValueFormatter {
   language: ReportLanguage;
@@ -37,10 +26,10 @@ export interface ValueFormatter {
 }
 
 export function makeFormatter(language: ReportLanguage, locale?: string): ValueFormatter {
-  const loc = locale || (language === 'fr' ? 'fr-FR' : 'en-US');
-  const words = UNIT_WORDS[language];
-  // English takes the singular for one; French for anything under two (0,5 jour, 1,5 jour).
-  const singular = (value: number) => (language === 'fr' ? Math.abs(value) < 2 : Math.abs(value) === 1);
+  // How the language writes numbers, units and dates (its default locale, plural rule, unit spacing).
+  const t = sentencesFor(language).typography;
+  const loc = locale || t.locale;
+  const words = t.units;
   const number = (value: number, digits = 0) => {
     try {
       return new Intl.NumberFormat(loc, { maximumFractionDigits: digits, minimumFractionDigits: 0 }).format(value);
@@ -48,15 +37,10 @@ export function makeFormatter(language: ReportLanguage, locale?: string): ValueF
       return value.toFixed(digits);
     }
   };
-  // French keeps a unit on the line of its number: a narrow no-break space before `%`, `min`, `jours`.
-  const unitSpace = language === 'fr' ? '\u202f' : ' ';
-  const percentSign = language === 'fr' ? `${unitSpace}%` : '%';
-  // French writes the first of a month as an ordinal: `1er sept.`.
-  const dayText = (text: string) => (language === 'fr' ? text.replace(/^1(?=\s)/, '1er') : text);
+  const withUnit = (value: string, word: string) => `${value}${t.unitSpace}${word}`;
+  const percentSign = t.spacedPercent ? `${t.unitSpace}%` : '%';
   const minutesText = (value: number) =>
-    value < 60
-      ? `${number(value, value < 10 ? 1 : 0)}${unitSpace}${words.min}`
-      : `${number(value / 60, 1)}${unitSpace}${words.h}`;
+    value < 60 ? withUnit(number(value, value < 10 ? 1 : 0), words.min) : withUnit(number(value / 60, 1), words.h);
 
   return {
     language,
@@ -71,11 +55,11 @@ export function makeFormatter(language: ReportLanguage, locale?: string): ValueF
         case 'minutes':
           return minutesText(value);
         case 'ms':
-          if (value < 1000) return `${number(value)}${unitSpace}ms`;
-          if (value < 60_000) return `${number(value / 1000, 1)}${unitSpace}s`;
+          if (value < 1000) return withUnit(number(value), 'ms');
+          if (value < 60_000) return withUnit(number(value / 1000, 1), 's');
           return minutesText(value / 60_000);
         case 'days':
-          return `${number(value, precision)}${unitSpace}${singular(value) ? words.day : words.days}`;
+          return withUnit(number(value, precision), t.singular(value) ? words.day : words.days);
         case 'money':
           return currency ? formatMoney(value, currency, loc) : number(value, 2);
         default:
@@ -86,14 +70,14 @@ export function makeFormatter(language: ReportLanguage, locale?: string): ValueF
       if (metric.delta === null) return null;
       const sign = (n: number) => (n > 0 ? '+' : n < 0 ? '−' : '±');
       if (metric.unit === 'percent') {
-        return `${sign(metric.delta)}${number(Math.abs(metric.delta), 1)}${unitSpace}${words.pts}`;
+        return withUnit(`${sign(metric.delta)}${number(Math.abs(metric.delta), 1)}`, words.pts);
       }
       if (metric.deltaPct !== null) return `${sign(metric.deltaPct)}${number(Math.abs(metric.deltaPct))}${percentSign}`;
       return `${sign(metric.delta)}${number(Math.abs(metric.delta), metric.precision)}`;
     },
     day(value) {
       try {
-        return dayText(
+        return t.date(
           new Intl.DateTimeFormat(loc, { month: 'short', day: 'numeric', timeZone: 'UTC' }).format(
             new Date(`${value.slice(0, 10)}T12:00:00Z`),
           ),
@@ -108,7 +92,7 @@ export function makeFormatter(language: ReportLanguage, locale?: string): ValueF
           ? new Date(`${value}T12:00:00Z`)
           : new Date(value);
       try {
-        return dayText(
+        return t.date(
           new Intl.DateTimeFormat(loc, {
             year: 'numeric',
             month: 'short',

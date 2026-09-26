@@ -25,10 +25,11 @@ import { getAnalyticsScopeSummary } from '../handlers/analytics/scope-summary';
 import { getAnalyticsVerdict } from '../handlers/analytics/verdict';
 import { evaluateTargets } from '../handlers/analytics/targets';
 import { resolveCiCost } from '../handlers/ci-cost';
-import { makeFormatter, type ReportLanguage, type ValueFormatter } from './format';
+import { makeFormatter, type ValueFormatter } from './format';
 import { resolveReportLanguage } from './language';
+import type { ReportLanguage } from './languages';
 import { sentencesFor, type ReportSentences } from './sentences';
-import type { ReportBand, ReportBundle, ReportPeriod } from './types';
+import type { ReportBand, ReportBundle } from './types';
 import { IDENTITY_WIDGETS, WIDGET_DOCUMENTS, widgetMetrics } from './widget-documents';
 
 /** A saved dashboard as a report renders it: its reference, its name and its definition. */
@@ -58,32 +59,15 @@ export interface CollectReportOptions {
 
 const MAX_NAMED_PROJECTS = 5;
 
-const lowerFirstLetter = (text: string) => text.charAt(0).toLowerCase() + text.slice(1);
-
-function periodText(
-  period: { from: Date; to: Date; label: string },
+/** A period's first and last days, as the report's language writes them. */
+function periodRange(
+  period: { from: Date; to: Date },
   f: ValueFormatter,
+  s: ReportSentences,
   timeZone: string,
-  language: ReportLanguage,
-  lowerFirst = false,
-  /** A date range needs no name beside its dates. */
-  rangeOnly = false,
-): ReportPeriod {
+): string {
   const last = new Date(Math.max(period.from.getTime(), period.to.getTime() - 1));
-  const range =
-    language === 'fr'
-      ? `du ${f.date(period.from, timeZone)} au ${f.date(last, timeZone)}`
-      : `${f.date(period.from, timeZone)} to ${f.date(last, timeZone)}`;
-  // A comparison label ("The previous period") reads mid-sentence, so it starts lower case.
-  const label = lowerFirst ? period.label.charAt(0).toLowerCase() + period.label.slice(1) : period.label;
-  // French names a period by its dates: on a line of its own (`Du 1 sept. 2026 au …`), or as the
-  // period compared with, after « par rapport à » (`la période du 1 sept. 2026 au …`).
-  const french = lowerFirst ? `la période ${range}` : `D${range.slice(1)}`;
-  return {
-    from: period.from.toISOString(),
-    to: period.to.toISOString(),
-    label: language === 'fr' ? french : rangeOnly ? range : `${label} (${range})`,
-  };
+  return s.dateRange(f.date(period.from, timeZone), f.date(last, timeZone));
 }
 
 async function scopeText(
@@ -175,11 +159,7 @@ export async function collectReportBundle(db: DrizzleDB, opts: CollectReportOpti
       if (IDENTITY_WIDGETS.has(widget.type)) identity = true;
       const notes: string[] = [];
       if (hasTestFilter(widgetScope) && !getAnalyticsWidget(widget.type).testFilters) {
-        notes.push(
-          language === 'fr'
-            ? `«\u202f${title}\u202f» ne tient pas compte du filtre de tests.`
-            : `${title} is not narrowed by the test filter.`,
-        );
+        notes.push(s.testFilterNote(title));
       }
       const blocks = WIDGET_DOCUMENTS[widget.type](data, docCtx, widget.options);
       // A widget with nothing to show for the scope (the Test Map declined everywhere) is left out.
@@ -195,8 +175,9 @@ export async function collectReportBundle(db: DrizzleDB, opts: CollectReportOpti
   }
 
   verdict ??= await getAnalyticsVerdict(db, scope, access);
-  const rangeOnly = scope.period.kind === 'range';
-  const period = periodText(ctx.period, f, timeZone, language, false, rangeOnly);
+  // A date range needs no name beside its dates.
+  const periodName = scope.period.kind === 'range' ? null : ctx.period.label;
+  const range = periodRange(ctx.period, f, s, timeZone);
   const text = await scopeText(db, ctx, scope, s);
 
   const { cost } = await resolveCiCost(db);
@@ -224,19 +205,24 @@ export async function collectReportBundle(db: DrizzleDB, opts: CollectReportOpti
     sourceUrl: baseUrl
       ? `${baseUrl}/analytics${/^\d+$/.test(dashboard.ref) ? `/d/${dashboard.ref}` : ''}${query ? `?${query}` : ''}`
       : null,
-    // English names the period (`Last 30 days`), or gives a date range as written; French gives
-    // its dates, lower case after the comma (`du 1er août …`).
-    title: s.reportTitle(
-      text.projects,
-      language === 'en' ? (rangeOnly ? period.label : ctx.period.label) : lowerFirstLetter(period.label),
-    ),
+    title: s.reportTitle(text.projects, periodName, range),
     language,
     locale: f.locale,
     timeZone,
     scope,
     scopeText: text,
-    period,
-    comparison: ctx.comparison ? periodText(ctx.comparison, f, timeZone, language, true) : null,
+    period: {
+      from: ctx.period.from.toISOString(),
+      to: ctx.period.to.toISOString(),
+      label: s.period(periodName, range),
+    },
+    comparison: ctx.comparison
+      ? {
+          from: ctx.comparison.from.toISOString(),
+          to: ctx.comparison.to.toISOString(),
+          label: s.comparison(ctx.comparison.label, periodRange(ctx.comparison, f, s, timeZone)),
+        }
+      : null,
     // A built-in dashboard is named in the language; a saved one keeps the name its owner gave it.
     dashboard: {
       ref: dashboard.ref,

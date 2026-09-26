@@ -64,7 +64,7 @@ import { caseHeadline } from '#shared/failure-verdict';
 import { MCP_TOOL_DEFS, DESKTOP_MCP_TOOL_DEFS } from '#shared/mcp-tools';
 import { collectReportBundle } from '#shared/reports/collect';
 import { assertDashboardScope } from '#shared/reports/request';
-import { isReportLanguage } from '#shared/reports/format';
+import { REPORT_LANGUAGES, isReportLanguage } from '#shared/reports/languages';
 import { isBuiltinDashboardKey } from '#shared/analytics/dashboards';
 import { getMetric, isMetricId, type MetricId } from '#shared/analytics/metrics';
 import { WIDGET_METRIC_IDS } from '#shared/analytics/registry';
@@ -2171,7 +2171,8 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       throw new Error('dashboard must be executive, engineering, team, gaps-digest or overview');
     }
     const lang = params.lang ?? undefined;
-    if (lang !== undefined && !isReportLanguage(lang)) throw new Error('lang must be en or fr');
+    if (lang !== undefined && !isReportLanguage(lang))
+      throw new Error(`lang must be one of ${REPORT_LANGUAGES.join(', ')}`);
     const scope = toolScope(params, ctx);
     assertDashboardScope(dashboard, scope);
     return collectReportBundle(db, {

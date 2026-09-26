@@ -6,6 +6,7 @@
  */
 import { escapeHtml } from '#shared/markdown-to-html';
 import { PASS_RATE_COLORS, passRateTone } from '#shared/status-colors';
+import { sentencesFor } from './sentences';
 import { reportWidgets, type ReportBundle, type ReportTile } from './types';
 
 export interface ReportBadge {
@@ -18,11 +19,6 @@ export interface ReportBadge {
 const NEUTRAL = '#71717a';
 const LABEL_FILL = '#3f3f46';
 const DAY_MS = 24 * 60 * 60 * 1000;
-
-const VERDICT_WORDS = {
-  en: { good: 'healthy', mixed: 'mixed', bad: 'poor' },
-  fr: { good: 'bon', mixed: 'mitigé', bad: 'mauvais' },
-} as const;
 
 const VERDICT_COLORS = {
   good: PASS_RATE_COLORS.good.fill,
@@ -51,19 +47,15 @@ export function percentOf(value: string): number | null {
 
 /** The badge's words and color for a bundle. */
 export function reportBadge(bundle: ReportBundle): ReportBadge {
-  const fr = bundle.language === 'fr';
+  const words = sentencesFor(bundle.language).badge;
   const branch = bundle.scope.branches?.length
     ? bundle.scope.branches.join(', ')
     : bundle.scope.defaultBranchOnly === false
-      ? fr
-        ? 'toutes les branches'
-        : 'all branches'
-      : fr
-        ? 'branche par défaut'
-        : 'default branch';
-  const label = fr ? `tests sur ${branch}` : `tests on ${branch}`;
+      ? words.allBranches
+      : words.defaultBranch;
+  const label = words.label(branch);
   const days = Math.max(1, Math.round((Date.parse(bundle.period.to) - Date.parse(bundle.period.from)) / DAY_MS));
-  const period = fr ? `${days} j` : `${days} d`;
+  const period = words.days(days);
   const tile = passRateTile(bundle);
   if (tile) {
     const percent = percentOf(tile.value);
@@ -71,7 +63,7 @@ export function reportBadge(bundle: ReportBundle): ReportBadge {
     return { label, value: `${tile.value} · ${period}`, color };
   }
   const tone = bundle.verdict.tone;
-  return { label, value: `${VERDICT_WORDS[fr ? 'fr' : 'en'][tone]} · ${period}`, color: VERDICT_COLORS[tone] };
+  return { label, value: `${words.verdict[tone]} · ${period}`, color: VERDICT_COLORS[tone] };
 }
 
 /** An approximate text width at 11 px, enough to size the two halves. */

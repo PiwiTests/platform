@@ -187,7 +187,10 @@ export function renderReportEmail(
 
   return {
     subject,
-    html: emailLayout(escapeHtml(subject), parts.join('\n'), opts.siteUrl, bundle.language),
+    html: emailLayout(escapeHtml(subject), parts.join('\n'), opts.siteUrl, {
+      lang: bundle.language,
+      automatedMessage: s.labels.automatedMessage,
+    }),
     text: textParts.join('\n'),
   };
 }

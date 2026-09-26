@@ -74,7 +74,7 @@ export function narrativeInput(bundle: ReportBundle): Record<string, unknown> {
 
 /** The system and user prompts of a narrative request. */
 export function narrativePrompt(bundle: ReportBundle): { system: string; user: string } {
-  const language = bundle.language === 'fr' ? 'French' : 'English';
+  const language = sentencesFor(bundle.language).englishName;
   const system = [
     'You write the narrative of a software test quality report for readers who do not read stack traces.',
     `Write exactly ${NARRATIVE_PARAGRAPHS} short paragraphs in ${language}: how things stand, what changed and why it matters, what to watch next.`,
@@ -122,7 +122,7 @@ function narrativeWidget(bundle: ReportBundle): ReportWidget {
   return {
     key: 'narrative',
     type: 'narrative',
-    title: bundle.language === 'fr' ? 'Récit' : 'Narrative',
+    title: sentencesFor(bundle.language).labels.narrative,
     blocks: [],
     notes: [],
   };
