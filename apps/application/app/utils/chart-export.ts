@@ -1,10 +1,9 @@
 /**
  * Exporting one chart: its SVG drawn onto a canvas as a PNG (copied to the
  * clipboard, or downloaded where the clipboard refuses an image), and its
- * series as a CSV through the quality report's CSV renderer, so a chart pastes
- * into a slide without a full report.
+ * series as an Excel workbook through the quality report's workbook renderer,
+ * so a chart pastes into a slide without a full report.
  */
-import { renderRowsCsv } from '#shared/reports/render-csv';
 
 /** A chart's series as a table: the header row, then one row per bucket or group. */
 export interface ChartExportData {
@@ -138,9 +137,11 @@ export async function copyPng(blob: Blob): Promise<boolean> {
   }
 }
 
-/** The CSV bytes of a chart's series, with a byte-order mark so spreadsheets read UTF-8. */
-export function chartCsv(data: ChartExportData): Blob {
-  return new Blob([`﻿${renderRowsCsv([data.header, ...data.rows])}`], { type: 'text/csv;charset=utf-8' });
+/** A chart's series as a one-sheet workbook, the sheet named after the chart. */
+export async function chartXlsx(data: ChartExportData, title: string): Promise<Blob> {
+  const { plainXlsxTable, renderXlsx, XLSX_CONTENT_TYPE } = await import('#shared/reports/render-xlsx');
+  const bytes = await renderXlsx([plainXlsxTable(title, data.header, data.rows)]);
+  return new Blob([bytes as BlobPart], { type: XLSX_CONTENT_TYPE });
 }
 
 /** A file name from a chart title: `piwi-chart-wasted-ci-time`. */

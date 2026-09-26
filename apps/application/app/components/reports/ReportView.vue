@@ -7,10 +7,14 @@
 import { chartLabelAnchor, chartTickLabel, seriesGeometry } from '#shared/reports/chart';
 import { makeFormatter } from '#shared/reports/format';
 import { sentencesFor } from '#shared/reports/sentences';
-import { renderWidgetCsv } from '#shared/reports/render-csv';
 import { reportSectionFileName } from '#shared/reports/build';
-import { downloadBlob } from '~/utils/chart-export';
-import { hasVerdictWidget, type ReportBlock, type ReportBundle, type ReportTone } from '#shared/reports/types';
+import {
+  hasVerdictWidget,
+  reportWidgets,
+  type ReportBlock,
+  type ReportBundle,
+  type ReportTone,
+} from '#shared/reports/types';
 import type { VerdictTone } from '#shared/analytics/types';
 
 const props = defineProps<{ bundle: ReportBundle }>();
@@ -31,23 +35,33 @@ const VERDICT_DOT: Record<VerdictTone, string> = {
   bad: PASS_RATE_TONES.poor.bg,
 };
 
-/** The widgets with a table or a series, as their own CSV file. */
-const sectionCsv = computed(() => {
-  const out = new Map<string, string>();
-  for (const widget of props.bundle.bands.flatMap((b) => b.widgets)) {
-    const csv = renderWidgetCsv(widget);
-    if (csv) out.set(widget.key, csv);
-  }
-  return out;
-});
+/** The widgets with a table or a series, each downloadable as its own workbook. */
+const exportable = computed(
+  () =>
+    new Set(
+      reportWidgets(props.bundle)
+        .filter((w) => w.blocks.some((b) => b.kind === 'series' || (b.kind === 'table' && b.rows.length > 0)))
+        .map((w) => w.key),
+    ),
+);
 
-function downloadSection(key: string) {
-  const csv = sectionCsv.value.get(key);
-  if (!csv) return;
-  downloadBlob(
-    new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' }),
-    reportSectionFileName(props.bundle, key),
-  );
+const toast = useToast();
+const { saveBlob } = useDesktopDownload();
+
+async function downloadSection(key: string) {
+  const widget = reportWidgets(props.bundle).find((w) => w.key === key);
+  if (!widget) return;
+  try {
+    const { renderWidgetXlsx, XLSX_CONTENT_TYPE } = await import('#shared/reports/render-xlsx');
+    const bytes = await renderWidgetXlsx(widget, props.bundle);
+    if (!bytes) return;
+    await saveBlob(
+      new Blob([bytes as BlobPart], { type: XLSX_CONTENT_TYPE }),
+      reportSectionFileName(props.bundle, key),
+    );
+  } catch (error) {
+    toast.add({ title: 'Couldn’t export the section', description: errorMessage(error), color: 'error' });
+  }
 }
 
 const CHART = { width: 600, height: 150, left: 40, bottom: 18 };
@@ -85,13 +99,13 @@ function chart(block: SeriesBlock) {
         <div class="flex items-center justify-between gap-2">
           <h4 class="text-xs font-medium text-muted">{{ widget.title }}</h4>
           <UButton
-            v-if="sectionCsv.has(widget.key)"
-            label="CSV"
+            v-if="exportable.has(widget.key)"
+            label="Excel"
             size="xs"
             color="neutral"
             variant="ghost"
-            :title="`Download ${widget.title} as CSV`"
-            :data-testid="`report-section-csv-${widget.key}`"
+            :title="`Download ${widget.title} as an Excel workbook`"
+            :data-testid="`report-section-xlsx-${widget.key}`"
             @click="downloadSection(widget.key)"
           />
         </div>

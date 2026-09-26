@@ -26,7 +26,7 @@ const FORMATS: Array<{ format: ReportFormat; label: string; icon: string }> = [
   { format: 'pdf', label: 'PDF', icon: 'i-lucide-file-text' },
   { format: 'html', label: 'HTML', icon: 'i-lucide-file-code' },
   { format: 'md', label: 'Markdown', icon: 'i-lucide-file-type' },
-  { format: 'csv', label: 'CSV', icon: 'i-lucide-sheet' },
+  { format: 'xlsx', label: 'Excel', icon: 'i-lucide-sheet' },
   { format: 'json', label: 'JSON', icon: 'i-lucide-braces' },
 ];
 
@@ -35,7 +35,7 @@ async function downloadAs(format: ReportFormat) {
   await download(
     `${base.value}/api/reports/snapshots/${id.value}/export?format=${format}`,
     `piwi-quality-report-${snapshot.value?.dashboardRef ?? 'report'}-${day}.${format}`,
-    { binary: format === 'pdf' },
+    { binary: format === 'pdf' || format === 'xlsx' },
   );
 }
 

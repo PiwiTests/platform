@@ -261,6 +261,11 @@ emerald / amber / rose. Never write a pass-rate threshold or color at a call sit
   full-width `USelect`** (the strip is `hidden sm:flex`) — the horizontal row collapses to unreadable icons
   on a phone. `DetailPageLayout` does both already; a route-driven strip like `settings.vue` binds the select
   to the current route (grouped by the same sections, one `{ type: 'label' }` row per group).
+- **Spreadsheet exports people click are Excel (.xlsx), never CSV**: build them with `renderXlsx` /
+  `plainXlsxTable` from `#shared/reports/render-xlsx` (numbers and dates as typed cells, text never a formula,
+  bold frozen header) and save them with `useDesktopDownload().saveBlob`, since a download link does nothing in
+  the desktop shell. CSV stays only for machine consumers (the API `format=csv`, `/api/rollups`, the CLI).
+  Page code imports the renderer lazily (`await import(...)`).
 - Add a `title` attribute to any control whose purpose is not obvious from its label.
 - **Clickable source paths**: render any repo-relative path or `file:line[:col]` with `OpenInIdeLink`, never a bare
   `<span>`/`<code>`. Pass `filePath` (+ `line`/`column`) or `location`, and thread `projectKey` (the Piwi project **id**)
@@ -498,6 +503,9 @@ share `app/demo/db.client.ts`.
   deterministic (seeded PRNG), so two runs with no source changes are byte-identical. After editing
   `scripts/generate-demo-seed.mjs` or `shared/demo/failure-stories.mjs`, re-seed and commit the generator plus the
   updated `seed.version.json`; never stage `seed.sql`.
+- **No dynamic `import()` in code the service worker bundles** (`shared/`, `server/utils/`, `app/demo/`): the
+  worker is a classic script and Vite's preload wrapper for a dynamic import uses `import.meta.url`, a syntax
+  error there that stops the worker from installing. Import statically; `app:check:demo:runtime` catches it.
 - Staleness detection injects `demoDataVersion` into `runtimeConfig.public`; the layout compares it to the IndexedDB
   copy and offers a "New demo data available" reset.
 - The run simulator (`DemoSimulator.vue` + `app/demo/simulator.ts`) replays the reporter's streaming protocol against
