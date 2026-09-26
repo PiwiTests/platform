@@ -36,11 +36,21 @@ const STANDALONE_ENTRIES = [
   ['background', 'src/background/index.ts'],
 ];
 
-async function buildStandalone(name, entry) {
+/**
+ * Values replaced in every bundle. `__PIWI_BUILD_ID__` changes on each build, so
+ * the popup and the tools can tell when the background worker still runs an
+ * earlier one (see `src/shared/build-id.ts`).
+ */
+function defines(buildId) {
+  return { __PIWI_BUILD_ID__: JSON.stringify(buildId) };
+}
+
+async function buildStandalone(name, entry, buildId) {
   await build({
     root,
     configFile: false,
     logLevel: 'warn',
+    define: defines(buildId),
     build: {
       outDir,
       emptyOutDir: false,
@@ -53,13 +63,15 @@ async function buildStandalone(name, entry) {
 export async function buildExtension() {
   rmSync(outDir, { recursive: true, force: true });
   mkdirSync(outDir, { recursive: true });
+  const buildId = new Date().toISOString();
 
-  for (const [name, entry] of STANDALONE_ENTRIES) await buildStandalone(name, entry);
+  for (const [name, entry] of STANDALONE_ENTRIES) await buildStandalone(name, entry, buildId);
 
   await build({
     root,
     configFile: false,
     logLevel: 'warn',
+    define: defines(buildId),
     build: {
       outDir,
       emptyOutDir: false,

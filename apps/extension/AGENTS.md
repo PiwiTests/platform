@@ -268,5 +268,16 @@ still needs a manual reload on the `chrome://extensions` card to pick up a new b
 gives no way to trigger that from outside the browser), so the loop is: save → wait for the
 rebuild line → click reload.
 
+Until that reload, the popup and every tool opened come from the new build, read from disk
+each time, while the background worker still runs the build that was loaded — so a message
+only the new build knows goes unanswered. Every bundle carries a build stamp
+(`src/shared/build-id.ts`, set by `scripts/build.mjs`) and `piwi-ping` answers with the
+worker's: when the two differ, the popup shows a notice with a **Reload Piwi Picker** button
+(`chrome.runtime.reload()`), and a tool reports an unanswered message as that cause
+(`OUTDATED_WORKER_MESSAGE`, `src/shared/worker-status.ts`) rather than as a generic failure.
+`worker-build.spec.ts` covers it end to end; like any spec that reloads the extension, it
+launches with Developer mode on (`launchWithExtension(path, { developerMode: true })`), since
+Chromium enables a reloaded unpacked extension again only then.
+
 Disable the Chrome Web Store copy while a local build is loaded — two installs both claim the
 `Ctrl+Shift+E` command, and only one of them gets it, which reads as "my change didn't apply".

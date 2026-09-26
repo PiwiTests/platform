@@ -1,6 +1,7 @@
 import { getRecordingState, stopRecording, setRecordIntent, clearRecordIntent } from '../shared/recording-storage.js';
 import { getConnectionSettings, isConnected, type ProjectMapping } from '../shared/connection-settings.js';
 import { getActiveProjectOverride, setActiveProjectOverride, resolveActiveProject } from '../shared/active-project.js';
+import { workerState } from '../shared/worker-status.js';
 
 const statusEl = document.getElementById('status')!;
 const recordBtn = document.getElementById('record') as HTMLButtonElement;
@@ -341,6 +342,14 @@ recordBtn.addEventListener('click', () => {
   void startRecordingFlow(originPattern, tabId, granted);
 });
 
+/** Offer a reload when the background worker predates this popup's build (see `shared/build-id.ts`). */
+async function showOutdatedWorkerNotice(): Promise<void> {
+  if ((await workerState()) !== 'outdated') return;
+  const notice = document.getElementById('worker-notice')!;
+  notice.hidden = false;
+  document.getElementById('worker-reload')!.addEventListener('click', () => chrome.runtime.reload());
+}
+
 recordBtn.disabled = true;
 void refreshRecordButton().catch(() => {
   // Left disabled on purpose: acting on a state we failed to read could start a
@@ -350,3 +359,4 @@ void refreshRecordButton().catch(() => {
 void refreshActiveProjectSelect();
 void renderPickShortcutHint();
 void highlightActiveTool();
+void showOutdatedWorkerNotice();

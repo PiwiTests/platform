@@ -259,6 +259,39 @@
       #status:empty {
         display: none;
       }
+      .worker-notice {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 8px;
+        padding: 6px 8px;
+        border: 1px solid #f59e0b;
+        border-radius: 6px;
+        background: rgb(245 158 11 / 0.12);
+        font-size: 11.5px;
+      }
+      .worker-notice[hidden] {
+        display: none;
+      }
+      .worker-notice p {
+        flex: 1;
+        margin: 0;
+      }
+      .worker-notice button {
+        flex-shrink: 0;
+        padding: 3px 8px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: var(--surface);
+        color: var(--fg);
+        font: inherit;
+        cursor: pointer;
+      }
+      .worker-notice button:hover,
+      .worker-notice button:focus-visible {
+        border-color: var(--accent);
+        outline: none;
+      }
     </style>
   </head>
   <body>
@@ -275,6 +308,16 @@
           </svg>
         </button>
       </header>
+      <!-- Shown when the background worker runs an older build than this popup:
+           Chrome keeps an unpacked extension's worker until the extension is
+           reloaded, while the popup is read from disk each time it opens. -->
+      <div id="worker-notice" class="worker-notice" role="alert" hidden>
+        <p>
+          Piwi Picker was rebuilt since it was loaded: its background worker still runs the previous build, so some
+          tools won't answer. Reloading ends a recording in progress.
+        </p>
+        <button id="worker-reload" type="button">Reload Piwi Picker</button>
+      </div>
       <div id="status"></div>
       <div id="active-project-row" class="active-project-row" style="display: none">
         <label for="active-project">Active project</label>
