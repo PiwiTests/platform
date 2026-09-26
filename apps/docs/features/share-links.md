@@ -105,4 +105,4 @@ the reader's address, since such a proxy fetches for many readers.
 ## Related
 - [Offline export](./offline-export) — the file to hand over when the recipient has no network path to your instance
 - [Authentication](/operate/authentication) — roles, and who can mint or revoke
-- [Storage configuration](/operate/storage#data-retention) — retention, and how it interacts with long-lived links
+- [Storage & retention](/operate/storage#data-retention) — retention, and how it interacts with long-lived links

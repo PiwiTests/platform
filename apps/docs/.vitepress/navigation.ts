@@ -157,7 +157,7 @@ export const selfHostingSidebar: SidebarGroup[] = [
     text: 'Data',
     items: [
       { text: 'Database', link: '/operate/database' },
-      { text: 'Storage configuration', link: '/operate/storage' },
+      { text: 'Storage & retention', link: '/operate/storage' },
       { text: 'Backup & restore', link: '/operate/backup-restore' },
       { text: 'Metrics and rollup export', link: '/operate/metrics' },
     ],

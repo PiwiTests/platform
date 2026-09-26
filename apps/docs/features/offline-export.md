@@ -78,4 +78,4 @@ For a self-contained snapshot of one failure, use the HTML or ZIP export above.
 - [Share links](./share-links) — the live counterpart: a revocable read-only URL instead of a file
 - [Failure evidence](./evidence) — what the export is a snapshot of
 - [AI diagnosis & clustering](./ai-diagnosis) — cluster exports carry the diagnosis too
-- [Storage configuration](/operate/storage#data-retention) — retention, and why an export outlives it
+- [Storage & retention](/operate/storage#data-retention) — retention, and why an export outlives it
