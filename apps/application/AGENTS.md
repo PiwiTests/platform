@@ -222,7 +222,9 @@ hover:decoration-solid`. `text-primary` links belong in navigation lists and tab
 
 Passed, failed, flaky, skipped, didn't run and running each have **one** color, everywhere: the `--color-status-*`
 tokens in `app/assets/css/main.css` (emerald, rose, purple, zinc, amber, blue). Timed-out and interrupted count as
-failed; a pass that needed a retry counts as flaky. Never hardcode a status color in a bar, chart, legend, dot, history
+failed; a pass that needed a retry counts as flaky. Skipped has a second grey, `fixme`, for a `test.fixme()` skip
+(`isFixmeSkip` / `fixmeSkipPredicate` in `shared/utils/skip-kind.ts`): a subset of skipped, carved out of the skipped
+segment the way flaky is carved out of passed. Never hardcode a status color in a bar, chart, legend, dot, history
 cell, timeline bar or filter chip: use `STATUS_PALETTE` / `statusPalette(status, retries?)` from
 `app/utils/status-palette.ts` (`bg-status-*` classes for HTML, `var(--color-status-*)` in SVG `style`), the shared
 `StatusFilterChip`, and `getStatusColor` for badges (`flaky` is a registered Nuxt UI color). A new outcome view that

@@ -15,6 +15,8 @@ const props = defineProps<{
     passedTests: number;
     failedTests: number;
     skippedTests: number;
+    /** `test.fixme()` skips — a subset of `skippedTests`. */
+    fixmeTests?: number;
     didNotRunTests?: number;
     flakyTests?: number;
   } | null;
@@ -45,6 +47,7 @@ const showStorage = computed(() => !!(storageStats.value?.totalFiles || props.fi
 const passed = computed(() => props.displayProgress?.passedTests ?? props.testRun?.passedTests ?? 0);
 const failed = computed(() => props.displayProgress?.failedTests ?? props.testRun?.failedTests ?? 0);
 const skipped = computed(() => props.displayProgress?.skippedTests ?? props.testRun?.skippedTests ?? 0);
+const fixme = computed(() => props.displayProgress?.fixmeTests ?? 0);
 const total = computed(() => props.displayProgress?.totalTests ?? props.testRun?.totalTests ?? 0);
 // Flaky and didn't-run track the live progress too (both are 0 on the persisted
 // row until the run finishes), so the bar shows passed-on-retry and didn't-run
@@ -330,6 +333,7 @@ function onLabelKeydown(e: KeyboardEvent) {
         :failed="failed"
         :flaky="flaky"
         :skipped="skipped"
+        :fixme="fixme"
         :did-not-run="didNotRun"
         :total="total"
         :active-statuses="activeStatuses"

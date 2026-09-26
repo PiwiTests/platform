@@ -3,6 +3,7 @@ import { computed, nextTick, watch, ref, onUnmounted } from 'vue';
 import type { TestCaseResult } from '~~/types/api';
 import type { LiveStepInfo, LiveStepsByWorker } from '~/utils/live-steps';
 import { summarizeRunCases } from '#shared/utils/test-counts';
+import { isFixmeSkip } from '#shared/utils/skip-kind';
 
 /** Cluster id → its display name and triage status, for the row chip and the
  *  cluster group header. Supplied by the page from the failure-groups payload. */
@@ -44,6 +45,8 @@ function liveStep(tc: TestCaseResult): LiveStepInfo | null {
 const testCaseSearch = defineModel<string>('search', { default: '' });
 const activeStatuses = defineModel<string[]>('activeStatuses', { default: () => [] });
 const testCaseBrowserFilter = defineModel<string>('browserFilter', { default: 'all' });
+/** Selected test tags (stored form, no leading `@`); a test must carry every one. */
+const testCaseTagFilter = defineModel<string[]>('tagFilter', { default: () => [] });
 
 const showNewRegressionsOnly = ref(false);
 const showNewFlakyOnly = ref(false);
@@ -61,11 +64,19 @@ const testCaseLockOptions = computed(() => {
 /** True when at least one execution in the run carries a lock. */
 const hasAnyLocks = computed(() => props.testCases.some((tc) => (tc.locks?.length ?? 0) > 0));
 
+/** Tags present anywhere in this run, for the tag filter; shown with their `@`. */
+const testCaseTagOptions = computed(() => {
+  const tags = new Set<string>();
+  for (const tc of props.testCases) for (const tag of tc.tags ?? []) tags.add(tag);
+  return [...tags].sort().map((tag) => ({ label: `@${tag}`, value: tag }));
+});
+
 const STATUS_OPTIONS = [
   { label: 'Passed', value: 'passed' },
   { label: 'Failed', value: 'failed' },
   { label: 'Passed on retry', value: 'flaky' },
   { label: 'Skipped', value: 'skipped' },
+  { label: 'Fixme', value: 'fixme' },
   { label: "Didn't run", value: 'didnotrun' },
 ] as const;
 
@@ -90,6 +101,9 @@ function matchesStatus(tc: TestCaseResult, filter: string): boolean {
   if (filter === 'failed') return isFailedStatus(tc.status);
   // "Passed on retry" means passed only after a retry — a subset of passed.
   if (filter === 'flaky') return tc.status === 'passed' && (tc.retries ?? 0) > 0;
+  // Skipped and fixme are disjoint here, matching their two bar segments.
+  if (filter === 'fixme') return isFixmeSkip(tc);
+  if (filter === 'skipped') return tc.status === 'skipped' && !isFixmeSkip(tc);
   return tc.status === filter;
 }
 
@@ -100,6 +114,9 @@ const filteredTestCases = computed<TestCaseResult[]>(() => {
   }
   if (testCaseBrowserFilter.value !== 'all') {
     cases = cases.filter((tc) => tc.browser?.projectName === testCaseBrowserFilter.value);
+  }
+  if (testCaseTagFilter.value.length > 0) {
+    cases = cases.filter((tc) => testCaseTagFilter.value.every((tag) => (tc.tags ?? []).includes(tag)));
   }
   if (testCaseSearch.value) {
     // Search matches the title, the path AND the error text, so a failure is
@@ -198,16 +215,23 @@ const groupByItems = computed(() => [
   { label: 'None', value: 'none' },
 ]);
 
-// The quiet buckets (passed, skipped, didn't run) start collapsed; every other
+// The quiet buckets (passed, skipped, fixme, didn't run) start collapsed; every other
 // group starts open. A user click flips a group from its default; a filter
 // forces everything open so a match is never hidden behind a collapsed header.
-const DEFAULT_COLLAPSED_BUCKETS = new Set(['bucket:passed', 'bucket:skipped', 'bucket:didnotrun', 'lock:none']);
+const DEFAULT_COLLAPSED_BUCKETS = new Set([
+  'bucket:passed',
+  'bucket:skipped',
+  'bucket:fixme',
+  'bucket:didnotrun',
+  'lock:none',
+]);
 const userToggled = ref(new Set<string>());
 const hasFilter = computed(
   () =>
     testCaseSearch.value !== '' ||
     activeStatuses.value.length > 0 ||
     testCaseBrowserFilter.value !== 'all' ||
+    testCaseTagFilter.value.length > 0 ||
     testCaseLockFilter.value !== 'all' ||
     showNewRegressionsOnly.value ||
     showNewFlakyOnly.value,
@@ -258,7 +282,8 @@ function computeStats(cases: TestCaseResult[]) {
 const REMAINDER_BUCKETS: Array<{ key: string; label: string; match: (tc: TestCaseResult) => boolean }> = [
   { key: 'running', label: 'Running', match: (tc) => tc.status === 'running' },
   { key: 'passed', label: 'Passed', match: (tc) => tc.status === 'passed' },
-  { key: 'skipped', label: 'Skipped', match: (tc) => tc.status === 'skipped' },
+  { key: 'skipped', label: 'Skipped', match: (tc) => tc.status === 'skipped' && !isFixmeSkip(tc) },
+  { key: 'fixme', label: 'Fixme', match: isFixmeSkip },
   { key: 'didnotrun', label: "Didn't run", match: (tc) => tc.status === 'didnotrun' },
 ];
 
@@ -635,7 +660,7 @@ defineExpose({ scrollToCase });
     <FilterToolbar class="mb-4 shrink-0">
       <template #start>
         <div class="flex items-center gap-1.5">
-          <span class="text-xs text-muted">Group by</span>
+          <span class="text-xs text-muted whitespace-nowrap">Group by</span>
           <USelect v-model="groupBy" :items="groupByItems" size="sm" class="w-28" aria-label="Group tests by" />
         </div>
         <span
@@ -692,6 +717,32 @@ defineExpose({ scrollToCase });
         class="w-36"
         aria-label="Filter by browser"
       />
+      <USelectMenu
+        v-if="testCaseTagOptions.length > 0"
+        v-model="testCaseTagFilter"
+        :items="testCaseTagOptions"
+        value-key="value"
+        multiple
+        size="sm"
+        class="min-w-36"
+        aria-label="Filter by tag"
+        title="Show the tests carrying every selected tag"
+      >
+        <template #default>
+          <div class="flex items-center gap-1.5 min-w-0">
+            <UIcon
+              name="i-lucide-tag"
+              class="size-3.5 shrink-0"
+              :class="testCaseTagFilter.length ? 'text-primary' : 'text-dimmed'"
+            />
+            <span v-if="testCaseTagFilter.length === 0" class="text-muted">All tags</span>
+            <span v-else-if="testCaseTagFilter.length === 1" class="truncate font-mono">
+              @{{ testCaseTagFilter[0] }}
+            </span>
+            <span v-else>{{ testCaseTagFilter.length }} tags</span>
+          </div>
+        </template>
+      </USelectMenu>
       <USelect
         v-if="hasAnyLocks"
         v-model="testCaseLockFilter"
@@ -856,6 +907,7 @@ defineExpose({ scrollToCase });
           testCaseSearch = '';
           activeStatuses = [];
           testCaseBrowserFilter = 'all';
+          testCaseTagFilter = [];
           testCaseLockFilter = 'all';
           showNewRegressionsOnly = false;
           showNewFlakyOnly = false;

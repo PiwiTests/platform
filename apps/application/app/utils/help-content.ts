@@ -129,7 +129,7 @@ export const HELP_TOPICS = {
   // ── Project detail ────────────────────────────────────────────────────
   'project.runs-trend': {
     title: 'Run trend',
-    text: 'One stacked bar per run — failed anchored at the bottom, passed on top — following the filters above. A growing red base marks where things broke; hover a bar for the counts, click it to open the run.',
+    text: 'One stacked bar per run — failed anchored at the bottom, passed on top — following the filters above. A growing red base marks where things broke; skipped tests take two greys, the stronger one for test.fixme(). Hover a bar for the counts, click it to open the run.',
     doc: 'features/ui-overview#project-detail',
   },
   'project.flaky-tests': {
@@ -232,7 +232,7 @@ export const HELP_TOPICS = {
   },
   'run.test-cases': {
     title: 'Tests',
-    text: 'Every execution in this run. Group by cluster, file, file and describe block, lock, or none; search title, path and error text; filter by status, browser, lock, new regressions and newly flaky.',
+    text: 'Every execution in this run. Group by cluster, file, file and describe block, lock, or none; search title, path and error text; filter by status (test.skip() and test.fixme() skips apart), browser, tag, lock, new regressions and newly flaky.',
     doc: 'features/ui-overview#test-run-detail',
   },
   'run.changes': {

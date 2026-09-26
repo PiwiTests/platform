@@ -172,3 +172,108 @@ test.describe.serial('Run page Tests tab', () => {
     await expect(page.getByRole('link', { name: /Open cluster/ })).toHaveCount(2, { timeout: 15000 });
   });
 });
+
+test.describe.serial('Run page skip kinds and tag filter', () => {
+  let runId = 0;
+
+  const visibleTitles = (page: import('@playwright/test').Page) => page.locator('a[href^="/test-run-cases/"]:visible');
+
+  test('seeds a run with plain skips, fixme skips and tagged tests', async ({ request }) => {
+    const response = await retryPost(request, '/api/test-runs/submit', {
+      data: {
+        projectName: PROJECT.RUN_SKIP_KINDS,
+        status: 'passed',
+        startTime: new Date().toISOString(),
+        duration: 30000,
+        totalTests: 5,
+        passedTests: 2,
+        failedTests: 0,
+        skippedTests: 3,
+        testCases: [
+          { title: 'home loads', status: 'passed', duration: 800, location: 'tests/home.spec.ts:3:5', tags: ['smoke'] },
+          {
+            title: 'orders list',
+            status: 'passed',
+            duration: 900,
+            location: 'tests/orders.spec.ts:3:5',
+            tags: ['api'],
+          },
+          {
+            title: 'webkit only flow',
+            status: 'skipped',
+            duration: 0,
+            location: 'tests/home.spec.ts:9:5',
+            tags: ['smoke'],
+            testAnnotations: [{ type: 'skip', description: 'WebKit only' }],
+          },
+          {
+            title: 'refund flow',
+            status: 'skipped',
+            duration: 0,
+            location: 'tests/orders.spec.ts:9:5',
+            tags: ['api'],
+            testAnnotations: [{ type: 'fixme' }],
+          },
+          {
+            title: 'refund email',
+            status: 'skipped',
+            duration: 0,
+            location: 'tests/orders.spec.ts:15:5',
+            tags: ['smoke', 'api'],
+            testAnnotations: [{ type: 'fixme', description: 'Mail stub is down' }],
+          },
+        ],
+      },
+      timeout: 20000,
+    });
+    expect(response.ok()).toBeTruthy();
+    runId = ((await response.json()) as { runId: number }).runId;
+  });
+
+  test('the count bar splits skipped from fixme and each segment filters its own rows', async ({ page }) => {
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+
+    await expect(page.getByRole('button', { name: '1 skipped' }).first()).toBeVisible();
+    await page.getByRole('button', { name: '2 fixme' }).first().click();
+    await expect(visibleTitles(page)).toHaveCount(2);
+    await expect(visibleTitles(page).filter({ hasText: 'refund flow' })).toHaveCount(1);
+    await expect(visibleTitles(page).filter({ hasText: 'refund email' })).toHaveCount(1);
+
+    // The Skipped chip holds the plain skip only.
+    await page.getByRole('button', { name: 'Fixme', exact: true }).click();
+    await page.getByRole('button', { name: 'Skipped', exact: true }).click();
+    await expect(visibleTitles(page)).toHaveCount(1);
+    await expect(visibleTitles(page).first()).toHaveText('webkit only flow');
+  });
+
+  test('the tag filter keeps the tests carrying every selected tag', async ({ page }) => {
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+
+    const tagFilter = page.getByRole('button', { name: 'Filter by tag' });
+    await tagFilter.click();
+    await page.getByRole('option', { name: '@smoke' }).click();
+    await page.keyboard.press('Escape');
+    await expect(visibleTitles(page)).toHaveCount(3);
+
+    await tagFilter.click();
+    await page.getByRole('option', { name: '@api' }).click();
+    await page.keyboard.press('Escape');
+    await expect(visibleTitles(page)).toHaveCount(1);
+    await expect(visibleTitles(page).first()).toHaveText('refund email');
+  });
+
+  test('the project runs table draws the fixme share of the skipped tests', async ({ page, request }) => {
+    const run = await (await request.get(`/api/test-runs/${runId}`)).json();
+    const project = await (await request.get(`/api/projects/${run.projectId}`)).json();
+    const listed = project.testRuns.find((r: { id: number }) => r.id === runId);
+    expect(listed).toMatchObject({ skippedTests: 3, fixmeTests: 2 });
+
+    await page.goto(`/projects/${run.projectId}`);
+    await waitForHydration(page);
+    await expect(
+      page.getByRole('progressbar', { name: 'Test results: 2 passed, 1 skipped, 2 fixme' }).first(),
+    ).toBeVisible();
+  });
+});

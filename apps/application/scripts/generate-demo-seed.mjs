@@ -1074,6 +1074,61 @@ for (const proj of DEMO_PROJECTS) {
   }
 }
 
+// ── Intentional skips (post-processing, rng-free) ───────────────────────────
+// Two checkout tests show the two kinds of skip the status bars tell apart: the
+// CVV test is switched off with `test.fixme()` in the newest runs, and the
+// expired-card test skips itself with `test.skip(condition, reason)` on the
+// environments that have no card sandbox. Only clean passes are rewritten, so no
+// failure story, flaky retry or cascade is touched.
+{
+  const checkoutKey = (title) => caseIdByKey.get(`1\x00tests/checkout/checkout.spec.ts\x00${title}`);
+  const fixmeCaseId = checkoutKey('should show error for invalid CVV');
+  const skipCaseId = checkoutKey('should show error for expired card');
+  const FIXME_NEWEST_RUNS = 6;
+  const NO_SANDBOX_ENVIRONMENTS = new Set(['staging', 'development']);
+  const SKIP_REASON = 'Needs the card network sandbox (CARD_SANDBOX_URL)';
+
+  // Project 1 runs, newest first — the newest run has the smallest id.
+  const proj1Runs = TEST_RUNS.filter((r) => r.project_id === 1).sort((a, b) => a.id - b.id);
+  const skippedTrcIds = new Set();
+  for (const [index, run] of proj1Runs.entries()) {
+    const annotationsFor = (caseId) => {
+      if (caseId === fixmeCaseId && index < FIXME_NEWEST_RUNS) return [{ type: 'fixme' }];
+      if (caseId === skipCaseId && NO_SANDBOX_ENVIRONMENTS.has(run.environment)) {
+        return [{ type: 'skip', description: SKIP_REASON }];
+      }
+      return null;
+    };
+    for (const row of TEST_RUNS_CASES) {
+      if (row.test_run_id !== run.id) continue;
+      const annotations = annotationsFor(row.test_case_id);
+      if (!annotations || row.status !== 'passed' || row.retries !== 0) continue;
+      row.status = 'skipped';
+      row.duration = 0;
+      row.test_annotations = annotations;
+      row.attempts = JSON.stringify([{ retry: 0, status: 'skipped', duration: 0, startedAt: row.started_at }]);
+      // A skipped test ran no steps and produced no live evidence.
+      row.steps = [];
+      row.slowest_step = null;
+      row.slowest_step_duration = null;
+      row.step_events = null;
+      row.wasted_time_ms = 0;
+      row.web_vitals = null;
+      row.page_state = null;
+      row.ai_usage = null;
+      row.console_logs = null;
+      row.dialogs = null;
+      row.aria_snapshot = null;
+      skippedTrcIds.add(row.id);
+      run.passed_tests -= 1;
+      run.skipped_tests += 1;
+    }
+  }
+  for (let k = NETWORK_REQUESTS.length - 1; k >= 0; k--) {
+    if (skippedTrcIds.has(NETWORK_REQUESTS[k].test_runs_case_id)) NETWORK_REQUESTS.splice(k, 1);
+  }
+}
+
 // ── Regression / new-flaky signals ──────────────────────────────────────────
 // Mirror the server's computeRegressionSignals: walk each case's executions in
 // chronological order; a failure right after a pass is a new regression, and a

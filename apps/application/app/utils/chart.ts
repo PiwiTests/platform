@@ -10,12 +10,14 @@ export interface ChartSeries<K extends string = string> {
 
 /**
  * Run-status series, in stacking order — failed sits on the baseline so red is
- * comparable across bars, and passed carries the bulk on top.
+ * comparable across bars, and passed carries the bulk on top. `skipped` is the
+ * plain `test.skip()` share and `fixme` the `test.fixme()` one, in two greys.
  */
 export const RUN_STATUS_SERIES = [
   { key: 'failed', color: STATUS_PALETTE.failed.color, label: 'Failed' },
   { key: 'flaky', color: STATUS_PALETTE.flaky.color, label: 'Flaky' },
   { key: 'skipped', color: STATUS_PALETTE.skipped.color, label: 'Skipped' },
+  { key: 'fixme', color: STATUS_PALETTE.fixme.color, label: 'Fixme' },
   { key: 'didNotRun', color: STATUS_PALETTE.didnotrun.color, label: "Didn't run" },
   { key: 'passed', color: STATUS_PALETTE.passed.color, label: 'Passed' },
 ] as const satisfies readonly ChartSeries[];

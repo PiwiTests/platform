@@ -862,6 +862,46 @@ const SCENES = [
     pad: 12,
   },
   {
+    name: 'run-skip-kinds',
+    description: 'Run page: the count bar draws skipped and fixme in two greys; the Tests list filters by tag',
+    route: '/test-runs/2',
+    viewport: { width: 1280, height: 900 },
+    async run({ page, shoot, settle }) {
+      await shoot('header', { of: '[data-shot="run-header"]', pad: 12 });
+      await page.getByRole('button', { name: '1 fixme' }).first().click();
+      await settle();
+      await shoot('fixme-filter');
+      await page.getByRole('button', { name: '1 fixme' }).first().click();
+      await page.getByRole('button', { name: 'Filter by tag' }).click();
+      await page.getByRole('option', { name: '@critical' }).click();
+      await settle();
+      await shoot('tag-filter');
+    },
+  },
+  {
+    name: 'run-skip-kinds-dark',
+    description: 'Run page header in dark mode: the fixme grey stays the lighter, more visible one',
+    route: '/test-runs/2',
+    viewport: { width: 1280, height: 900 },
+    colorScheme: 'dark',
+    of: '[data-shot="run-header"]',
+    pad: 12,
+  },
+  {
+    name: 'run-skip-kinds-mobile',
+    description: 'Run page at phone width: the two skipped greys and the tag filter in the wrapped toolbar',
+    route: '/test-runs/2',
+    viewport: { width: 390, height: 1400 },
+  },
+  {
+    name: 'runs-table-skip-kinds',
+    description: 'Project runs table: each run bar splits its skipped tests into skipped and fixme',
+    route: '/projects/1',
+    viewport: { width: 1400, height: 1500 },
+    of: '[data-shot="runs-table"]',
+    pad: 12,
+  },
+  {
     name: 'run-live-activity',
     description: 'Run page while live: each still-running row shows the step its worker is on',
     route: '/projects',
