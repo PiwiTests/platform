@@ -31,6 +31,13 @@ export function projectCatalogUrl(instanceUrl: string, projectId: number): strin
   return `${normalizeBaseUrl(instanceUrl)}/projects/${projectId}/test-functions`;
 }
 
+/** The list a dashboard list endpoint answers: `{ items }`, or a bare array. */
+function listItems<T>(body: unknown): T[] {
+  if (Array.isArray(body)) return body as T[];
+  const items = (body as { items?: unknown } | null)?.items;
+  return Array.isArray(items) ? (items as T[]) : [];
+}
+
 function authHeaders(settings: ConnectionSettings): HeadersInit {
   return settings.apiKey.trim() ? { 'X-API-Key': settings.apiKey.trim() } : {};
 }
@@ -76,11 +83,7 @@ export async function fetchProjects(settings: ConnectionSettings): Promise<Proje
     signal: timeout(),
   });
   if (!res.ok) throw new Error(`Failed to list projects (${res.status})`);
-  return (await res.json()) as ProjectOption[];
-}
-
-interface TestFunctionsApiResponse {
-  testFunctions: Array<{ entry: TestFunctionEntry }>;
+  return listItems<ProjectOption>(await res.json());
 }
 
 /**
@@ -97,6 +100,7 @@ export async function fetchCatalog(settings: ConnectionSettings, projectId: numb
     signal: timeout(),
   });
   if (!res.ok) throw new Error(`Failed to fetch the function catalog (${res.status})`);
-  const body = (await res.json()) as TestFunctionsApiResponse;
-  return body.testFunctions.map((row) => row.entry);
+  const body = (await res.json()) as { testFunctions?: unknown };
+  const rows = listItems<{ entry: TestFunctionEntry }>(Array.isArray(body.testFunctions) ? body.testFunctions : body);
+  return rows.map((row) => row.entry).filter(Boolean);
 }
