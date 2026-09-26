@@ -201,8 +201,8 @@ export interface PiwiDashboardOptions {
   label?: string;
   /**
    * Keep this run forever: the dashboard's retention never deletes it. Set it
-   * for the runs worth keeping, such as release or tag builds. Can also be set
-   * with `PIWI_KEEP=true`.
+   * for the runs worth keeping, such as release or tag builds. Defaults to
+   * `false`. Can also be set with `PIWI_KEEP=true`.
    */
   keep?: boolean;
   /** Related issue reference, e.g. `"JIRA-123"` */
