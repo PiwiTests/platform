@@ -140,7 +140,7 @@ describe('French insights', () => {
       detail: `Il est maintenant de 95${NNBSP}% sur 1 exécution.`,
     });
     expect(fr.insight(FACTS['time-to-fix-growth'], f)).toEqual({
-      message: `Le délai médian de correction s’allonge par rapport à la période du 1 août 2026 au 31 août 2026${NBSP}: 4${NNBSP}jours`,
+      message: `Le délai médian de correction s’allonge par rapport à la période du 1er août 2026 au 31 août 2026${NBSP}: 4${NNBSP}jours`,
       detail: `Il était de 0,5${NNBSP}jour, sur 3 causes d’échec corrigées pendant la période.`,
     });
     expect(fr.insight(FACTS['target-missed'], f)).toEqual({
@@ -161,6 +161,11 @@ describe('French typography', () => {
     expect(f.minutes(7.2)).toBe(`7,2${NNBSP}min`);
     expect(f.value(100, 'percent', 0)).toBe(`100${NNBSP}%`);
     expect(makeFormatter('en').value(1, 'days', 0)).toBe('1 day');
+    // The first of a month is an ordinal; the other days and English are not.
+    expect(f.date('2026-09-01')).toBe('1er sept. 2026');
+    expect(f.day('2026-09-01')).toBe('1er sept.');
+    expect(f.day('2026-09-11')).toBe('11 sept.');
+    expect(makeFormatter('en').day('2026-09-01')).toBe('Sep 1');
     expect(makeFormatter('en').value(0.5, 'days', 1)).toBe('0.5 days');
   });
 

@@ -51,6 +51,8 @@ export function makeFormatter(language: ReportLanguage, locale?: string): ValueF
   // French keeps a unit on the line of its number: a narrow no-break space before `%`, `min`, `jours`.
   const unitSpace = language === 'fr' ? '\u202f' : ' ';
   const percentSign = language === 'fr' ? `${unitSpace}%` : '%';
+  // French writes the first of a month as an ordinal: `1er sept.`.
+  const dayText = (text: string) => (language === 'fr' ? text.replace(/^1(?=\s)/, '1er') : text);
   const minutesText = (value: number) =>
     value < 60
       ? `${number(value, value < 10 ? 1 : 0)}${unitSpace}${words.min}`
@@ -91,8 +93,10 @@ export function makeFormatter(language: ReportLanguage, locale?: string): ValueF
     },
     day(value) {
       try {
-        return new Intl.DateTimeFormat(loc, { month: 'short', day: 'numeric', timeZone: 'UTC' }).format(
-          new Date(`${value.slice(0, 10)}T12:00:00Z`),
+        return dayText(
+          new Intl.DateTimeFormat(loc, { month: 'short', day: 'numeric', timeZone: 'UTC' }).format(
+            new Date(`${value.slice(0, 10)}T12:00:00Z`),
+          ),
         );
       } catch {
         return value.slice(5, 10);
@@ -104,12 +108,14 @@ export function makeFormatter(language: ReportLanguage, locale?: string): ValueF
           ? new Date(`${value}T12:00:00Z`)
           : new Date(value);
       try {
-        return new Intl.DateTimeFormat(loc, {
-          year: 'numeric',
-          month: 'short',
-          day: 'numeric',
-          timeZone: timeZone || 'UTC',
-        }).format(d);
+        return dayText(
+          new Intl.DateTimeFormat(loc, {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric',
+            timeZone: timeZone || 'UTC',
+          }).format(d),
+        );
       } catch {
         return d.toISOString().slice(0, 10);
       }
