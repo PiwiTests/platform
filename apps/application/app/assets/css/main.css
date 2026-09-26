@@ -23,11 +23,14 @@
    * `fill-status-failed`, `ring-status-flaky`…) in templates and
    * `var(--color-status-*)` in SVG styles; `app/utils/status-palette.ts` maps a
    * status string to them. Timed-out and interrupted tests count as failed.
+   * Skipped has two greys: `skipped` for `test.skip()` and `fixme` for
+   * `test.fixme()` (redefined for dark mode below, so it stays the stronger one).
    */
   --color-status-passed: var(--color-emerald-500);
   --color-status-failed: var(--color-rose-500);
   --color-status-flaky: var(--color-purple-500);
   --color-status-skipped: var(--color-zinc-400);
+  --color-status-fixme: var(--color-zinc-600);
   --color-status-didnotrun: var(--color-amber-500);
   --color-status-running: var(--color-blue-500);
 }
@@ -55,6 +58,9 @@
   /* Restate Nuxt UI's dark value: the unlayered `:root` override above would
      otherwise beat their layered `.dark` rule and leak the light value. */
   --ui-bg-muted: var(--ui-color-neutral-800);
+  /* On the dark zinc-700 bar track the fixme grey is the lighter of the two
+     skipped greys, so it stays the more visible one. */
+  --color-status-fixme: var(--color-zinc-300);
 }
 
 /* Deliberately unlayered so it beats Nuxt UI's `@layer base` body rule. */

@@ -16,6 +16,7 @@ import { asc, desc, eq, exists, sql, and, or, inArray, gte, lte, isNull, isNotNu
 import { jsonArrayContainsAll, parseLockFilter, parseTagFilter } from '../utils/tag-filter';
 import { isProbeRun, notProbeRun } from './probes';
 import { FAILED_STATUS_KEYS } from '../utils/test-counts';
+import { fixmeSkipPredicate } from '../utils/skip-kind';
 import { TEST_PRIORITIES } from '@piwitests/core/test-meta';
 
 import type { DrizzleDB } from './db';
@@ -29,6 +30,32 @@ import { parseProjectDecisions } from '#shared/capabilities';
 import { normalizeProjectTargets } from '#shared/analytics/targets';
 
 type ProjectScope = 'all' | Set<number>;
+
+/**
+ * `test.fixme()` skips per run, for runs with any skipped test — the subset of
+ * `skippedTests` the status bars draw in their second grey. Counted from the
+ * cases' annotations in one grouped query; a run missing from the map has none.
+ */
+async function fixmeTestsByRunId(
+  db: DrizzleDB,
+  runs: ReadonlyArray<{ id: number; skippedTests?: number | null }>,
+): Promise<Map<number, number>> {
+  const runIds = runs.filter((r) => (r.skippedTests ?? 0) > 0).map((r) => r.id);
+  const out = new Map<number, number>();
+  if (runIds.length === 0) return out;
+  const rows: Array<{ testRunId: number; n: number }> = await db
+    .select({ testRunId: testRunsCases.testRunId, n: count() })
+    .from(testRunsCases)
+    .where(
+      and(
+        inArray(testRunsCases.testRunId, runIds),
+        fixmeSkipPredicate(testRunsCases.status, testRunsCases.testAnnotations),
+      ),
+    )
+    .groupBy(testRunsCases.testRunId);
+  for (const r of rows) out.set(r.testRunId, Number(r.n));
+  return out;
+}
 
 // ─── listProjects ────────────────────────────────────────────────
 
@@ -93,9 +120,10 @@ export async function listProjects(db: DrizzleDB, scope: ProjectScope = 'all') {
   // 2. Fetch full latest run rows
   const latestRuns: any[] =
     latestRunIds.length > 0 ? await db.select().from(testRuns).where(inArray(testRuns.id, latestRunIds)) : [];
+  const fixmeByRunId = await fixmeTestsByRunId(db, latestRuns);
   const latestRunByProjectId = new Map<number, any>();
   for (const r of latestRuns) {
-    latestRunByProjectId.set(r.projectId, r);
+    latestRunByProjectId.set(r.projectId, { ...r, fixmeTests: fixmeByRunId.get(r.id) ?? 0 });
   }
 
   // 3. Total test cases per project (batched GROUP BY)
@@ -235,6 +263,8 @@ async function toRunSummaries(db: DrizzleDB, runs: any[]) {
           .where(and(inArray(testRunsCases.testRunId, runIds), isNotNull(testRunsCases.browserName)))
       : [];
 
+  const fixmeByRunId = await fixmeTestsByRunId(db, runs);
+
   const browsersByRunId = new Map<number, string[]>();
   for (const row of browserRows) {
     const name = row.browserName as string | null;
@@ -253,6 +283,7 @@ async function toRunSummaries(db: DrizzleDB, runs: any[]) {
       metadata: scm?.branch || scm?.commit ? { scm: { branch: scm.branch ?? null, commit: scm.commit ?? null } } : null,
       reports: reportsByRunId.get(r.id) ?? [],
       browsers: browsersByRunId.get(r.id) ?? [],
+      fixmeTests: fixmeByRunId.get(r.id) ?? 0,
     };
   });
 }
@@ -766,6 +797,7 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
       passedRuns: passed,
       failedRuns: failed,
       skippedRuns: sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'skipped' THEN 1 ELSE 0 END)`,
+      fixmeRuns: sql<number>`SUM(CASE WHEN ${fixmeSkipPredicate(testRunsCases.status, testRunsCases.testAnnotations)} THEN 1 ELSE 0 END)`,
       didNotRunRuns: sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'didnotrun' THEN 1 ELSE 0 END)`,
       flakyRuns: sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'passed' AND ${testRunsCases.retries} > 0 THEN 1 ELSE 0 END)`,
       recentFlakyRuns: recentFlaky,

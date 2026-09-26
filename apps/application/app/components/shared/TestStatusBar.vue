@@ -6,20 +6,25 @@ const props = defineProps<{
   flaky: number;
   total: number;
   didNotRun?: number;
+  /** `test.fixme()` skips — a subset of `skipped`, drawn in its second grey. */
+  fixme?: number;
 }>();
 
 const segments = computed(() => {
   if (!props.total) return [];
 
   // Flaky tests are counted as a subset of passed by the reporter, so subtract
-  // them to avoid double-counting in the bar.
+  // them to avoid double-counting in the bar. Fixme is a subset of skipped the
+  // same way.
   const passedCount = props.passed - props.flaky;
+  const fixmeCount = Math.min(props.fixme ?? 0, props.skipped);
 
   return [
     { key: 'passed', label: 'Passed', count: passedCount, color: STATUS_PALETTE.passed.bg },
     { key: 'failed', label: 'Failed', count: props.failed, color: STATUS_PALETTE.failed.bg },
     { key: 'flaky', label: 'Flaky', count: props.flaky, color: STATUS_PALETTE.flaky.bg },
-    { key: 'skipped', label: 'Skipped', count: props.skipped, color: STATUS_PALETTE.skipped.bg },
+    { key: 'skipped', label: 'Skipped', count: props.skipped - fixmeCount, color: STATUS_PALETTE.skipped.bg },
+    { key: 'fixme', label: 'Fixme', count: fixmeCount, color: STATUS_PALETTE.fixme.bg },
     { key: 'didNotRun', label: "Didn't run", count: props.didNotRun ?? 0, color: STATUS_PALETTE.didnotrun.bg },
   ]
     .filter((s) => s.count > 0)

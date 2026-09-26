@@ -19,7 +19,8 @@ describe('shared status colors', () => {
   test('every --color-status-* token in main.css points at the shared palette entry', () => {
     const tokens = new Map<string, string>();
     for (const match of css.matchAll(/--color-status-([a-z]+):\s*var\(--color-([a-z]+-\d+)\)/g)) {
-      tokens.set(match[1]!, match[2]!);
+      // The theme's definition comes first; a dark-mode override (fixme) comes later and is not the palette entry.
+      if (!tokens.has(match[1]!)) tokens.set(match[1]!, match[2]!);
     }
     expect([...tokens.keys()].sort()).toEqual(Object.keys(STATUS_COLORS).sort());
     for (const [key, color] of Object.entries(STATUS_COLORS)) expect(tokens.get(key)).toBe(color.token);

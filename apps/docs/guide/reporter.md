@@ -503,7 +503,7 @@ Together with the test's duration history this drives the **Timeout opportunitie
 
 The reporter distinguishes two outcomes that Playwright both reports as `skipped`:
 
-- **`skipped`** — an intentional skip via `test.skip()` / `test.fixme()` (static, conditional, or runtime). These always carry a `skip`/`fixme` annotation, so the skip reason (when provided) is preserved in `testAnnotations` and shown on the test case.
+- **`skipped`** — an intentional skip via `test.skip()` / `test.fixme()` (static, conditional, or runtime). These always carry a `skip`/`fixme` annotation, so the skip reason (when provided) is preserved in `testAnnotations` and shown on the test case. The annotation also decides the grey the status bars draw: a `fixme` skip is counted apart from a plain `skip` (it stays part of `skippedTests`), so a test switched off as known broken does not blend into the deliberate skips.
 - **`didnotrun`** — a test that never actually executed. This covers two cases:
   - a test skipped as a side effect of an **earlier failure in a `describe.serial` group** (Playwright reports it as `skipped` with no annotation; the reporter reclassifies it);
   - a test that Playwright **never started because the run was cut short** (no `onTestEnd` fires for these — the reporter materializes them from the planned test list so they still appear, with zero duration and no error).
