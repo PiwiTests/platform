@@ -89,8 +89,8 @@ for "what should I fix this sprint?" without opening a browser.
 be a scheduled job. Shapes are in the [API docs](https://piwitests.dev/demo/docs).
 
 **No server at all.** If this is your own laptop suite rather than a team's, the
-[desktop app](/features/desktop) runs the same analysis with no Docker and no Node — Windows x64 and
-Apple-silicon macOS only, and the installers aren't signed yet.
+[desktop app](/features/desktop) runs the same analysis with no Docker and no Node — Windows x64,
+Apple-silicon macOS and Linux x86-64, and the installers aren't signed yet.
 
 ## Related
 - [Flaky tests](/features/flaky-tests) — the full scoring, quarantine, and performance reference

@@ -74,8 +74,8 @@ Five ways in, depending on what you already have:
 | **[One-click deploy](https://piwitests.dev/operate/deployment#one-click-deploy)** | You want a shared instance and no server to run it on | A button, plus whatever your host charges |
 
 Two caveats worth knowing before you pick. The **desktop installers are not yet code-signed**, so the
-first launch needs a click-through, and they exist for Windows x64 and Apple-silicon macOS only — on
-Linux or an Intel Mac, use Docker or `npx`. The **one-click templates** ([`render.yaml`](./render.yaml),
+first launch needs a click-through, and they exist for Windows x64, Apple-silicon macOS and Linux x86-64; on
+an Intel Mac, use Docker or `npx`. The **one-click templates** ([`render.yaml`](./render.yaml),
 [`fly.toml`](./fly.toml), [`deploy/`](./deploy), generated from the same variable registry as the
 configuration reference so they can't drift from what the app reads) each provision one container with a
 persistent volume and authentication on, but per-provider limits apply — Render needs a paid instance
