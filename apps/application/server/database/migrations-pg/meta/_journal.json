@@ -544,8 +544,57 @@
     {
       "idx": 77,
       "version": "7",
-      "when": 1790413158539,
-      "tag": "0077_past_warpath",
+      "when": 1790281918660,
+      "tag": "0077_volatile_warhawk",
+      "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1790314946412,
+      "tag": "0078_crazy_zaran",
+      "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1790323314604,
+      "tag": "0079_flashy_zeigeist",
+      "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "7",
+      "when": 1790338887027,
+      "tag": "0080_famous_madame_masque",
+      "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1790344321995,
+      "tag": "0081_purple_mister_sinister",
+      "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1790346266521,
+      "tag": "0082_icy_squirrel_girl",
+      "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1790366582641,
+      "tag": "0083_thin_kree",
+      "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1790415994624,
+      "tag": "0084_square_iron_lad",
       "breakpoints": true
     }
   ]

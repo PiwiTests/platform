@@ -37,6 +37,7 @@ interface NotificationEventData {
   confidence?: string | null;
   topFailures?: { title: string }[];
   affectedCases?: number;
+  snapshotId?: number;
 }
 
 function renderBody(data: NotificationEventData): string {
@@ -77,6 +78,9 @@ function renderBody(data: NotificationEventData): string {
       lines.push(`${data.projectName ?? `Project #${data.projectId}`}: a fixed cluster is failing again`);
       if (data.title || data.signature) lines.push(data.title || data.signature || '');
       break;
+    case 'report.ready':
+      lines.push(`Your quality report is ready: ${data.title ?? 'open it in Piwi'}`);
+      break;
     case 'diagnosis.completed':
     case 'diagnosis-completed':
       lines.push(data.summary || data.rootCause || '');
@@ -88,6 +92,7 @@ function renderBody(data: NotificationEventData): string {
 }
 
 function getLink(data: NotificationEventData): string | null {
+  if (data.snapshotId) return `/reports/${data.snapshotId}`;
   if (data.clusterId) return `/failure-clusters/${data.clusterId}`;
   if (data.runId && data.projectId) return `/test-runs/${data.runId}`;
   return null;
@@ -115,7 +120,7 @@ function handleEvent(data: NotificationEventData) {
   if (!body) return;
 
   // Use type + key id for dedup tag
-  const dedupKey = data.clusterId ?? data.runId ?? data.signature ?? data.type;
+  const dedupKey = data.snapshotId ?? data.clusterId ?? data.runId ?? data.signature ?? data.type;
   const tag = `piwi-${data.type}-${dedupKey}`;
 
   const notification = new Notification('Piwi Dashboard', {

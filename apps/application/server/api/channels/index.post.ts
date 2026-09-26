@@ -11,14 +11,14 @@ defineRouteMeta({
     tags: ['Notifications'],
     summary: 'Create a notification channel',
     description:
-      'Creates a new notification channel. Webhook secrets are encrypted at rest. Administrators can create global channels; with authentication disabled every channel is global.',
+      'Creates a new notification channel (`email`, `slack`, `teams` for a Microsoft Teams incoming webhook, `webhook` or `browser`). Webhook secrets are encrypted at rest. Administrators can create global channels; with authentication disabled every channel is global.',
     'x-required-roles': [],
   },
 });
 
 const schema = z.object({
   name: z.string().min(1),
-  type: z.enum(['email', 'slack', 'webhook', 'browser']),
+  type: z.enum(['email', 'slack', 'teams', 'webhook', 'browser']),
   config: z.record(z.string(), z.unknown()),
   global: z.boolean().optional(), // admin only: create a global (userId=null) channel
 });

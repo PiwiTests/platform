@@ -11,12 +11,17 @@ import { testRuns, testRunsCases, files } from '~~/server/database/schema.sqlite
 import { recomputeClusterOccurrences } from '#shared/handlers/failure-cluster-ops';
 import { demoHttpError } from './http-error';
 import { isRunKept, keptRunDeleteMessage } from '#shared/handlers/run-keep';
+import { recomputeRollupCells } from '#shared/handlers/analytics/rollups';
+import { dayKey } from '#shared/handlers/analytics/common';
 
 /** DELETE /api/test-runs/:id */
 export async function apiDeleteTestRun(id: number) {
   const db = await getDemoDb();
 
-  const runRows = await db.select({ id: testRuns.id }).from(testRuns).where(eq(testRuns.id, id));
+  const runRows = await db
+    .select({ id: testRuns.id, projectId: testRuns.projectId, startTime: testRuns.startTime })
+    .from(testRuns)
+    .where(eq(testRuns.id, id));
   if (!runRows[0]) throw demoHttpError(404, 'Test run not found');
   if (await isRunKept(db, id)) throw demoHttpError(409, keptRunDeleteMessage(id));
 
@@ -42,6 +47,8 @@ export async function apiDeleteTestRun(id: number) {
   await db.delete(files).where(eq(files.testRunId, id));
   await db.delete(testRunsCases).where(eq(testRunsCases.testRunId, id));
   await db.delete(testRuns).where(eq(testRuns.id, id));
+  // Deleting a run by hand is a correction: its numbers leave the day.
+  await recomputeRollupCells(db, [{ projectId: runRows[0].projectId, day: dayKey(runRows[0].startTime) }]);
 
   for (const clusterId of affectedClusterIds) {
     await recomputeClusterOccurrences(db, clusterId);

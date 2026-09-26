@@ -1,65 +1,211 @@
-import { analyticsScopeToQuery, DEFAULT_ANALYTICS_DAYS, type AnalyticsScope } from '#shared/analytics/scope';
+import { analyticsScopeToQuery, type AnalyticsScope } from '#shared/analytics/scope';
+import {
+  DEFAULT_ANALYTICS_SCOPE_STATE,
+  decodeScopeCookie,
+  queryHasScope,
+  queryWithoutScope,
+  scopeFromState,
+  stateFromScope,
+  type AnalyticsScopeState,
+} from '#shared/analytics/scope-state';
+import { parseAnalyticsScope } from '#shared/analytics/scope';
+import type { AnalyticsScopeSummary } from '#shared/analytics/types';
 import type { AnalyticsWidgetId } from '#shared/analytics/registry';
+import type { InjectionKey, Ref } from 'vue';
 
-export interface AnalyticsScopeState {
-  days: number;
-  /** Selected project ids; empty = every project the caller can see. */
-  projectIds: number[];
-  /** Selected environments; empty = every environment. */
-  environments: string[];
-  /** Selected branches; empty = every branch. */
-  branches: string[];
-  fullRunsOnly: boolean;
+export { DEFAULT_ANALYTICS_SCOPE_STATE, type AnalyticsScopeState };
+
+/** The viewer's effective time zone and locale, sent with every widget request for calendar periods. */
+function viewerContext(): { tz?: string; locale?: string } {
+  if (!import.meta.client) return {};
+  const prefs = activeLocalePrefs();
+  const tz = prefs.timeZone === 'auto' ? Intl.DateTimeFormat().resolvedOptions().timeZone : prefs.timeZone;
+  const locale = prefs.locale === 'auto' ? navigator.language : prefs.locale;
+  return { ...(tz ? { tz } : {}), ...(locale ? { locale } : {}) };
 }
 
-export const DEFAULT_ANALYTICS_SCOPE_STATE: AnalyticsScopeState = {
-  days: DEFAULT_ANALYTICS_DAYS,
-  projectIds: [],
-  environments: [],
-  branches: [],
-  fullRunsOnly: true,
-};
+export interface AnalyticsScopeOptions {
+  /**
+   * The dashboard's default scope. Omitted for Overview, whose per-browser
+   * default is the `piwi-analytics-scope` cookie; a saved dashboard starts
+   * from its own scope and leaves the cookie alone.
+   */
+  defaultState?: AnalyticsScopeState;
+}
 
 /**
- * The `/analytics` page's global filter state (persisted per user in a
- * cookie, SSR-safe) plus the query object every widget fetch derives from.
+ * A dashboard page's scope: the URL first, so a copied link shows what its
+ * sender saw, then the default: for Overview the `piwi-analytics-scope`
+ * cookie, the per-browser default (today's cookie shape still reads), which
+ * every change writes; for another dashboard its own scope. `scopeQuery` is
+ * what every widget request sends.
  */
-export function useAnalyticsScope() {
-  const state = useCookie<AnalyticsScopeState>('piwi-analytics-scope', {
+export function useAnalyticsScope(opts: AnalyticsScopeOptions = {}) {
+  const cookie = useCookie<AnalyticsScopeState>('piwi-analytics-scope', {
     default: () => ({ ...DEFAULT_ANALYTICS_SCOPE_STATE }),
     encode: (v) => JSON.stringify(v),
-    decode: (v) => {
-      try {
-        return v
-          ? { ...DEFAULT_ANALYTICS_SCOPE_STATE, ...(JSON.parse(v) as Partial<AnalyticsScopeState>) }
-          : { ...DEFAULT_ANALYTICS_SCOPE_STATE };
-      } catch {
-        return { ...DEFAULT_ANALYTICS_SCOPE_STATE };
-      }
-    },
+    decode: (v) => decodeScopeCookie(v),
   });
+  const route = useRoute();
+  const router = useRouter();
 
-  const scope = computed<AnalyticsScope>(() => ({
-    days: state.value.days,
-    projectIds: state.value.projectIds.length > 0 ? state.value.projectIds : undefined,
-    environments: state.value.environments.length > 0 ? state.value.environments : undefined,
-    branches: state.value.branches.length > 0 ? state.value.branches : undefined,
-    fullRunsOnly: state.value.fullRunsOnly,
-  }));
+  const usesCookie = !opts.defaultState;
+  const defaultState = opts.defaultState ?? DEFAULT_ANALYTICS_SCOPE_STATE;
+  const initial = queryHasScope(route.query)
+    ? stateFromScope(parseAnalyticsScope(route.query as Record<string, unknown>))
+    : usesCookie
+      ? decodeScopeCookie(cookie.value)
+      : { ...defaultState };
+  const state = ref<AnalyticsScopeState>(initial);
 
-  const scopeQuery = computed(() => analyticsScopeToQuery(scope.value));
+  const scope = computed<AnalyticsScope>(() => scopeFromState(state.value));
+  const urlQuery = computed(() => analyticsScopeToQuery(scope.value));
+  const scopeQuery = computed(() => ({ ...urlQuery.value, ...viewerContext() }));
 
-  return { state, scope, scopeQuery };
+  function syncUrl() {
+    if (!import.meta.client) return;
+    const next = { ...queryWithoutScope(route.query as Record<string, unknown>), ...urlQuery.value };
+    if (JSON.stringify(next) !== JSON.stringify(route.query)) router.replace({ query: next as any });
+  }
+
+  watch(
+    state,
+    (value) => {
+      if (usesCookie) cookie.value = value;
+      syncUrl();
+    },
+    { deep: true },
+  );
+  // A default scope keeps the bare `/analytics` address; any other scope is
+  // written on arrival, once the app has hydrated and the router settled.
+  if (import.meta.client) {
+    onNuxtReady(() => {
+      if (JSON.stringify(state.value) !== JSON.stringify(defaultState)) syncUrl();
+    });
+  }
+
+  /** Back to the dashboard's default scope. */
+  function reset() {
+    state.value = { ...defaultState };
+  }
+
+  return { state, scope, scopeQuery, defaultState, reset };
 }
+
+/**
+ * Where a widget reads its data, provided by the dashboard around it: a saved
+ * dashboard's widget (`GET /api/dashboards/[id]/widgets/[key]`,
+ * the definition stays on the server) or the editor's unsaved widget
+ * (`POST /api/widgets/preview`). Without one, the widget reads
+ * `GET /api/widgets/[widget]`, as on the built-in dashboards.
+ */
+export type AnalyticsWidgetSource =
+  | { mode: 'dashboard'; dashboardId: string; widgetKey: string; refresh: Ref<number> }
+  | {
+      mode: 'preview';
+      widgetKey: string;
+      /** The unsaved widget: type, options and scope override. */
+      widget: () => { type: string; options?: Record<string, unknown>; scope?: Record<string, unknown> };
+      refresh: Ref<number>;
+    }
+  | { mode: 'type'; widgetKey: string; refresh: Ref<number> };
+
+export const ANALYTICS_WIDGET_SOURCE: InjectionKey<AnalyticsWidgetSource> = Symbol('analytics-widget-source');
 
 /**
  * Fetch one analytics widget's data. The query is reactive — changing the
- * scope refetches every mounted widget.
+ * scope refetches every mounted widget. `options` are the widget's options
+ * from the dashboard definition, sent as JSON. A dashboard around the widget
+ * decides where the data comes from and when it refreshes.
  */
-export function useAnalyticsWidget<T>(widget: AnalyticsWidgetId, query: () => Record<string, string>) {
-  return useFetch<T>(`/api/analytics/${widget}`, {
-    query: computed(query),
+export function useAnalyticsWidget<T>(
+  widget: AnalyticsWidgetId,
+  query: () => Record<string, string>,
+  options?: () => Record<string, unknown> | undefined,
+) {
+  const source = inject(ANALYTICS_WIDGET_SOURCE, null);
+  // One shape whichever route answers: the widget's data, typed by the caller.
+  const result = (
+    source?.mode === 'dashboard'
+      ? useFetch<T>(`/api/dashboards/${source.dashboardId}/widgets/${source.widgetKey}`, {
+          key: `dashboard-widget-${source.dashboardId}-${source.widgetKey}`,
+          query: computed(query),
+          lazy: true,
+          server: false,
+        })
+      : source?.mode === 'preview'
+        ? useAsyncData<T>(
+            `preview-widget-${source.widgetKey}`,
+            () =>
+              $fetch<T>('/api/widgets/preview', {
+                method: 'POST',
+                body: { widget: source.widget(), scope: query() },
+              }),
+            {
+              watch: [computed(() => JSON.stringify([source.widget(), query()]))],
+              lazy: true,
+              server: false,
+            },
+          )
+        : useTypeWidget<T>(widget, query, options)
+  ) as ReturnType<typeof useTypeWidget<T>>;
+  if (source) watch(source.refresh, () => void result.refresh());
+  return loadingUntilFetched(result);
+}
+
+/**
+ * A client-only fetch reads as loading until it has answered: the server
+ * renders it `idle` and the client's first render `pending`, so treating both
+ * as loading keeps the server markup and the hydrating client identical. The
+ * result is a plain object, not the fetch's promise, so awaiting it keeps
+ * this `pending`.
+ */
+function loadingUntilFetched<T>(result: {
+  data: Ref<T | undefined>;
+  error: Ref<unknown>;
+  status: Ref<string>;
+  refresh: () => Promise<void>;
+}) {
+  return {
+    data: result.data,
+    error: result.error,
+    status: result.status,
+    refresh: result.refresh,
+    pending: computed(() => result.status.value === 'idle' || result.status.value === 'pending'),
+  };
+}
+
+function useTypeWidget<T>(
+  widget: AnalyticsWidgetId,
+  query: () => Record<string, string>,
+  options: (() => Record<string, unknown> | undefined) | undefined,
+) {
+  return useFetch<T>(`/api/widgets/${widget}`, {
+    query: computed(() => {
+      const value = options?.();
+      return value && Object.keys(value).length > 0 ? { ...query(), options: JSON.stringify(value) } : query();
+    }),
     lazy: true,
     server: false,
   });
+}
+
+/** The page's resolved scope summary, provided to the widgets that draw markers or name the comparison. */
+export const ANALYTICS_SCOPE_SUMMARY: InjectionKey<Ref<AnalyticsScopeSummary | null | undefined>> =
+  Symbol('analytics-scope-summary');
+
+/** Fetch how the scope resolves (period dates, notes, markers, test filter options). */
+export function useAnalyticsScopeSummary(query: () => Record<string, string>) {
+  return loadingUntilFetched(
+    useFetch<AnalyticsScopeSummary>('/api/dashboards/scope', {
+      query: computed(query),
+      lazy: true,
+      server: false,
+    }),
+  );
+}
+
+/** The provided scope summary, or an empty ref outside the analytics page. */
+export function injectAnalyticsScopeSummary(): Ref<AnalyticsScopeSummary | null | undefined> {
+  return inject(ANALYTICS_SCOPE_SUMMARY, ref(null));
 }

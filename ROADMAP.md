@@ -113,7 +113,7 @@ Everything else — analytics, notifications, the CI gate, PR feedback, MCP, the
 - **Runs kept forever** — keep a run from the dashboard, from the reporter (`keep: true` / `PIWI_KEEP`) or with a linked `release` marker, and retention never deletes it; `PIWI_RETENTION_MIN_RUNS` also keeps each project's newest runs whatever their age.
 - **AI diagnosis, grounded** — failure-cluster analysis fed by your actual SCM diff, with suggested patches validated server-side against your source; optional two-stage (research → final) pipeline; works with Anthropic, OpenAI, or any OpenAI-compatible endpoint including local models.
 - **Locator healing** — element attributes captured on passing runs power ranked replacement locators when a selector breaks.
-- **MCP server** — 50 tools so AI agents can query runs, flaky tests, clusters, diagnoses, traces, and test selections.
+- **MCP server** — 55 tools so AI agents can query runs, flaky tests, clusters, diagnoses, traces, and test selections.
 - **Notifications** — email, Slack, webhook (HMAC-signed), and browser channels with per-project subscriptions and digests.
 - **Sharding & live streaming** — shards merge automatically via CI run detection; runs stream into the dashboard while CI executes.
 - **Ops hardening** — `/api/health` endpoint, Docker `HEALTHCHECK`, committed `docker-compose.yml`, backup & reverse-proxy guides; bounded memory on large runs (trace ingestion and the reporter's stream buffer are capped, case-file uploads stream to disk); `PIWI_OAUTH_*` honored by the published image and `npx @piwitests/server`.
@@ -122,6 +122,17 @@ Everything else — analytics, notifications, the CI gate, PR feedback, MCP, the
 
 - **1.0 stabilization** — settle the wire format and API surface, then commit to semver stability. The outstanding
   decisions are catalogued in [proposals/1.0-stabilization.md](proposals/1.0-stabilization.md).
+- **Quality reports, dashboards and trends over time** — being built in six milestones, starting with daily rollups,
+  filters and periods. A periodic, plain-language report of a suite's health for people who do not open the dashboard
+  (pass rate and its movement, wasted CI time and what it costs, open failure causes and how long they take to fix,
+  what changed and what is being done), generated from the same numbers the Analytics page shows, downloadable as
+  HTML, PDF, Markdown or CSV, delivered on a schedule by email, Slack or webhook, and readable by agents through MCP.
+  Underneath: daily rollups that keep long-term trends after retention prunes the runs; custom filters (test
+  selections, tags, owners, browsers) and periods (calendar periods, custom ranges, release cycles, sprints) carried
+  by the URL; saved and shared dashboards any team can shape and put on a wall screen; the default branch as the
+  default scope, per-project targets, and trend widgets for suite growth, flaky debt, time to fix and ownership. The
+  same schedules give the Test Map's weekly gaps digest, whose selection shipped in 0.37.0, its delivery route. Design
+  record in [proposals/analytics-and-reporting.md](proposals/analytics-and-reporting.md).
 
 ## Exploring
 

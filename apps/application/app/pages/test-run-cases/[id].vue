@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { AiStepIntent, TestCaseHistoryPoint, TraceInfo } from '~~/types/api';
+import type { AiStepIntent, ApiResponse, TestCaseHistoryPoint, TraceInfo } from '~~/types/api';
 import { isPiwiAnnotation } from '@piwitests/core/test-meta';
 import { renderAnsi } from '~/utils';
 import { buildRetryCommand } from '~/utils/retry-command';
@@ -21,7 +21,9 @@ import type { LocatorHealingResult } from '#shared/locator-healing.types';
 const route = useRoute();
 const testCaseId = route.params.id;
 
-const { data: testCase, refresh } = await useFetch(`/api/test-run-cases/${testCaseId}`);
+const { data: testCase, refresh } = await useFetch<
+  ApiResponse<typeof import('~~/server/api/test-run-cases/[id].get').default>
+>(`/api/test-run-cases/${testCaseId}`);
 
 // The rows ride in the SSR payload, so the server and the client agree on the
 // History block's strip at hydration.

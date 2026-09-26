@@ -5,6 +5,7 @@ import { runEventBus } from '../../utils/run-events';
 import { createSSEEndpoint } from '../../utils/sse';
 import { getDatabase } from '../../database';
 import { notificationChannels, subscriptions } from '../../database/schema';
+import { REPORT_READY_EVENT } from '#shared/notification-events';
 
 defineRouteMeta({
   openAPI: {
@@ -120,7 +121,14 @@ export default eventHandler(async (event) => {
       const targetedAtMe = typeof targetUserId === 'number' && targetUserId === user.id;
 
       const type = notificationEvent.type as string | undefined;
-      if (!targetedAtMe && typeof projectId === 'number' && type && !matchesSubscription(type, projectId)) return;
+      // A quality report goes to its personal channel's owner, or, from a global
+      // channel, to whoever can open every project it covers.
+      if (type === REPORT_READY_EVENT) {
+        const covered = (notificationEvent.projectIds as number[] | undefined) ?? [];
+        const allowed = typeof targetUserId === 'number' ? targetedAtMe : covered.every((id) => scopeAllows(scope, id));
+        if (!allowed) return;
+      } else if (!targetedAtMe && typeof projectId === 'number' && type && !matchesSubscription(type, projectId))
+        return;
 
       try {
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(notificationEvent)}\n\n`));

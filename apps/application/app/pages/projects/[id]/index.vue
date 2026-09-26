@@ -16,6 +16,7 @@ import type {
 } from '~~/types/api';
 import type { FilterBarState } from '~/components/shared/FilterBar.vue';
 import { RUN_STATUS_SERIES, legendOf } from '~/utils/chart';
+import { parseDrillQuery, type DrillScope } from '~/utils/analytics-drilldown';
 
 const route = useRoute();
 const router = useRouter();
@@ -34,6 +35,13 @@ const { isAdmin, isReporter } = useAuth();
 // Project-level capability states gate the bell, the Quarantine segment, the
 // Gaps tab and the Timeline's add-marker control.
 const { isHidden: projCapHidden } = await useProjectCapabilities(Number(projectId));
+
+// *Export*: this project as a quality report over the last 30 days, the project page's own window.
+const reportOpen = ref(false);
+const reportQuery = computed(() => ({ projects: String(projectId), period: 'last-30d' }));
+// *Schedule…*: a report schedule over this project.
+const scheduleOpen = ref(false);
+const { canWrite } = useAuth();
 const runtimeConfig = useRuntimeConfig();
 const { isDesktop, openReport } = useDesktopReportLink();
 const authEnabled = computed(() => Boolean(runtimeConfig.public.authEnabled));
@@ -90,6 +98,48 @@ const filters = useCookie<FilterBarState>(`piwi-filters-project-${projectId}`, {
   },
 });
 
+// === DRILL-DOWN FROM ANALYTICS ===
+// A number on a dashboard links here with its scope: the filters it names
+// replace the saved ones, and its period and branch policy narrow the runs
+// until cleared.
+function viewerTimeZone(): string {
+  const tz = activeLocalePrefs().timeZone;
+  return tz === 'auto' ? Intl.DateTimeFormat().resolvedOptions().timeZone : tz;
+}
+const drill = ref<DrillScope | null>(null);
+function readDrill() {
+  const parsed = parseDrillQuery(route.query as Record<string, unknown>, {
+    now: Date.now(),
+    timeZone: import.meta.client ? viewerTimeZone() : 'UTC',
+    markers: markers.value,
+  });
+  drill.value = parsed;
+  if (parsed) {
+    filters.value = {
+      environments: parsed.environments,
+      branches: parsed.branches,
+      fullRunsOnly: parsed.fullRunsOnly,
+    };
+  }
+}
+function clearDrill() {
+  drill.value = null;
+  const { source: _s, period: _p, tz: _t, status: _st, allBranches: _a, ...rest } = route.query;
+  router.replace({ query: rest });
+}
+/** The project's default branch as analytics resolves it: its setting, else `main`. */
+const projectDefaultBranch = computed(
+  () => (project.value as { defaultBranch?: string | null } | null)?.defaultBranch?.trim() || 'main',
+);
+const drillText = computed(() => {
+  const d = drill.value;
+  if (!d) return null;
+  const parts: string[] = [];
+  if (d.period) parts.push(d.period.label);
+  if (d.defaultBranchOnly) parts.push(`${projectDefaultBranch.value} and runs with no known branch`);
+  return parts.length ? parts.join(' · ') : null;
+});
+
 // A run's branch reads the scalar column, falling back to the SCM metadata for
 // runs reported before the branch column existed.
 function runBranch(run: { branch?: string | null; metadata?: { scm?: { branch?: string | null } } | null }) {
@@ -121,6 +171,15 @@ function matchesFilters(run: TestRunSummary): boolean {
   if (filters.value.branches.length > 0) {
     const b = runBranch(run);
     if (b === null || !filters.value.branches.includes(b)) return false;
+  }
+  const d = drill.value;
+  if (d?.period) {
+    const t = new Date(run.startTime).getTime();
+    if (t < d.period.from || t >= d.period.to) return false;
+  }
+  if (d?.defaultBranchOnly && filters.value.branches.length === 0) {
+    const b = runBranch(run);
+    if (b !== null && b !== projectDefaultBranch.value) return false;
   }
   return true;
 }
@@ -464,6 +523,15 @@ const { data: markersData, refresh: refreshMarkers } = await useFetch<MarkersRes
 );
 const markers = computed(() => markersData.value?.items ?? []);
 
+// The drill-down period resolves in the viewer's zone, so it applies once mounted.
+onMounted(readDrill);
+watch(
+  () => route.query.source === 'analytics' && route.fullPath,
+  (drilled, before) => {
+    if (drilled && before !== undefined) readDrill();
+  },
+);
+
 const visibleMarkers = computed(() => {
   if (filters.value.environments.length === 0) return markers.value;
   return markers.value.filter((m) => m.environment == null || filters.value.environments.includes(m.environment!));
@@ -772,6 +840,12 @@ const moreMenuItems = computed(() => {
     icon: 'i-lucide-crosshair',
     onSelect: () => navigateTo(`/projects/${projectId}/locators`),
   });
+  if (canWrite.value && !projCapHidden('quality-reports'))
+    items.push({
+      label: 'Schedule a quality report…',
+      icon: 'i-lucide-calendar-clock',
+      onSelect: () => (scheduleOpen.value = true),
+    });
   if (canManage.value)
     items.push({
       label: 'Delete',
@@ -809,6 +883,16 @@ const moreMenuItems = computed(() => {
               :project-label="project?.label || project?.name"
             />
             <UButton
+              v-if="!projCapHidden('quality-reports')"
+              label="Export"
+              icon="i-lucide-file-down"
+              size="sm"
+              color="neutral"
+              variant="outline"
+              title="Export this project as a quality report"
+              @click="reportOpen = true"
+            />
+            <UButton
               v-if="canManage"
               label="Import"
               icon="i-lucide-import"
@@ -828,6 +912,8 @@ const moreMenuItems = computed(() => {
           </div>
         </template>
       </UDashboardNavbar>
+      <ReportPreviewModal v-model:open="reportOpen" :query="reportQuery" />
+      <ScheduleForm v-model:open="scheduleOpen" :scope="reportQuery" />
     </template>
 
     <template #body>
@@ -920,6 +1006,16 @@ const moreMenuItems = computed(() => {
 
         <!-- RUNS TAB -->
         <div v-if="activeTab === 'runs'">
+          <p v-if="drill" class="text-xs text-muted mb-2" data-testid="analytics-drill">
+            From Analytics<template v-if="drillText">: {{ drillText }}</template> ·
+            <button
+              type="button"
+              class="underline decoration-dotted underline-offset-2 hover:decoration-solid"
+              @click="clearDrill"
+            >
+              Show every run
+            </button>
+          </p>
           <ChartCard
             v-if="filteredRuns.length > 0"
             title="Run trend"
@@ -1231,6 +1327,7 @@ const moreMenuItems = computed(() => {
             <FailureClustersList
               :key="clustersRefreshKey"
               :project-id="String(projectId)"
+              :initial-status="drill?.status ?? undefined"
               @count="clustersCount.total = $event"
             />
           </template>
@@ -1447,6 +1544,13 @@ const moreMenuItems = computed(() => {
               </div>
             </UForm>
           </SectionCard>
+
+          <ProjectTargetsForm
+            v-if="canManage"
+            :project-id="Number(projectId)"
+            :targets="(project as { targets?: unknown } | null)?.targets ?? null"
+            @saved="refresh()"
+          />
 
           <!-- Issue-tracker binding: how this project's failures reach Jira. -->
           <ProjectIntegrationSettings v-if="canManage" :project-id="Number(projectId)" />

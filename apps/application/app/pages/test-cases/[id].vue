@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { describeCluster } from '#shared/describe-cluster';
-import type { TestCaseHistoryPoint, MarkerInfo, MarkersResponse } from '~~/types/api';
+import type { ApiResponse, TestCaseHistoryPoint, MarkerInfo, MarkersResponse } from '~~/types/api';
 import { CASE_STATUS_SERIES, legendOf } from '~/utils/chart';
 
 const route = useRoute();
 const testCaseId = route.params.id;
 
-const { data: testCase, refresh } = await useFetch(`/api/test-cases/${testCaseId}`);
+const { data: testCase, refresh } = await useFetch<
+  ApiResponse<typeof import('~~/server/api/test-cases/[id].get').default>
+>(`/api/test-cases/${testCaseId}`);
 const { data: historyData } = await useFetch(`/api/test-cases/${testCaseId}/history`, {
   transform: (r: { items: TestCaseHistoryPoint[] }) => r.items,
 });
@@ -53,6 +55,29 @@ const clusterColor = (status: string) => {
 };
 
 const passRateClass = computed(() => passRateTextClass(passRate.value));
+
+// Overview holds the page as it was; Trend holds the stability trend over time.
+const TABS = [
+  { value: 'overview', label: 'Overview', icon: 'i-lucide-list-checks' },
+  { value: 'trend', label: 'Trend', icon: 'i-lucide-activity' },
+] as const;
+type TabValue = (typeof TABS)[number]['value'];
+const router = useRouter();
+const activeTab = computed<TabValue>({
+  get: () => (route.query.tab === 'trend' ? 'trend' : 'overview'),
+  set: (tab) => router.replace({ query: { ...route.query, tab: tab === 'overview' ? undefined : tab } }),
+});
+const tabNavItems = computed(() =>
+  TABS.map((t) => ({
+    label: t.label,
+    icon: t.icon,
+    active: activeTab.value === t.value,
+    'aria-current': activeTab.value === t.value ? ('true' as const) : undefined,
+    onSelect: () => (activeTab.value = t.value),
+  })),
+);
+const tabSelectItems = TABS.map((t) => ({ label: t.label, value: t.value }));
+const activeTabIcon = computed(() => TABS.find((t) => t.value === activeTab.value)?.icon);
 </script>
 
 <template>
@@ -149,113 +174,140 @@ const passRateClass = computed(() => passRateTextClass(passRate.value));
           </div>
         </div>
 
-        <!-- Duration trend, with the execution strip as its footer row -->
-        <ChartCard
-          v-if="historyData && historyData.length"
-          title="Duration trend"
-          icon="i-lucide-trending-up"
-          help="case.history-chart"
-          :legend="historyData.length > 1 ? legendOf(CASE_STATUS_SERIES) : undefined"
-        >
-          <TestCaseHistoryChart
-            v-if="historyData.length > 1"
-            :data="historyData"
-            :height="200"
-            :markers="historyMarkers"
-            @marker-click="goToProjectRuns"
+        <!-- Mobile: a select replaces the tab strip; the strip shows from sm up. -->
+        <USelect
+          v-model="activeTab"
+          :items="tabSelectItems"
+          value-key="value"
+          :icon="activeTabIcon"
+          size="md"
+          aria-label="Select tab"
+          class="w-full sm:hidden"
+        />
+        <UDashboardToolbar class="hidden sm:block p-1">
+          <UNavigationMenu
+            :items="tabNavItems"
+            highlight
+            class="-mx-1 flex-1"
+            :ui="{ list: 'overflow-x-auto', root: 'min-w-0', item: 'shrink-0' }"
           />
-          <p v-else class="text-center py-4 text-sm text-gray-400">Need at least 2 runs to show a trend.</p>
+        </UDashboardToolbar>
 
-          <template #footer>
-            <HistoryStrip :history="historyData" compact />
-          </template>
-        </ChartCard>
+        <TestCaseStabilityTrend
+          v-if="activeTab === 'trend'"
+          :test-case-id="Number(testCaseId)"
+          :markers="historyMarkers"
+        />
 
-        <!-- Recent executions -->
-        <SectionCard
-          icon="i-lucide-list-checks"
-          :title="`Recent executions (${testCase?.recentExecutions?.length ?? 0})`"
-        >
-          <div v-if="testCase?.recentExecutions?.length" class="rounded-lg border border-default overflow-hidden">
-            <TestRow
-              v-for="exec in testCase.recentExecutions"
-              :key="exec.id"
-              :href="`/test-run-cases/${exec.id}`"
-              :title="formatRelativeTime(exec.startTime)"
-              :status="exec.status"
-              :error="exec.error"
+        <template v-else>
+          <!-- Duration trend, with the execution strip as its footer row -->
+          <ChartCard
+            v-if="historyData && historyData.length"
+            title="Duration trend"
+            icon="i-lucide-trending-up"
+            help="case.history-chart"
+            :legend="historyData.length > 1 ? legendOf(CASE_STATUS_SERIES) : undefined"
+          >
+            <TestCaseHistoryChart
+              v-if="historyData.length > 1"
+              :data="historyData"
+              :height="200"
+              :markers="historyMarkers"
+              @marker-click="goToProjectRuns"
+            />
+            <p v-else class="text-center py-4 text-sm text-gray-400">Need at least 2 runs to show a trend.</p>
+
+            <template #footer>
+              <HistoryStrip :history="historyData" compact />
+            </template>
+          </ChartCard>
+
+          <!-- Recent executions -->
+          <SectionCard
+            icon="i-lucide-list-checks"
+            :title="`Recent executions (${testCase?.recentExecutions?.length ?? 0})`"
+          >
+            <div v-if="testCase?.recentExecutions?.length" class="rounded-lg border border-default overflow-hidden">
+              <TestRow
+                v-for="exec in testCase.recentExecutions"
+                :key="exec.id"
+                :href="`/test-run-cases/${exec.id}`"
+                :title="formatRelativeTime(exec.startTime)"
+                :status="exec.status"
+                :error="exec.error"
+                :project-key="testCase?.project?.id"
+                :project-name="testCase?.project?.name"
+              >
+                <template #metrics>
+                  <DurationValue v-if="exec.duration !== null" :ms="exec.duration" />
+                  <UBadge
+                    v-if="exec.retries && exec.retries > 0"
+                    color="warning"
+                    variant="soft"
+                    size="xs"
+                    :title="`${exec.retries + 1} attempts`"
+                  >
+                    {{ exec.retries + 1 }} attempts
+                  </UBadge>
+                  <NuxtLink :to="`/test-runs/${exec.runId}`" class="text-primary hover:underline shrink-0" @click.stop>
+                    {{ exec.runLabel ? `${exec.runLabel} (#${exec.runId})` : `run #${exec.runId}` }}
+                  </NuxtLink>
+                </template>
+              </TestRow>
+            </div>
+            <EmptyState v-else icon="i-lucide-inbox" text="No executions yet" />
+          </SectionCard>
+
+          <!-- Locators of the latest execution, each with who else uses it -->
+          <SectionCard
+            v-if="testCase?.lastExecutionId"
+            icon="i-lucide-crosshair"
+            title="Locators"
+            subtitle="From the latest execution"
+            data-shot="test-case-locators"
+          >
+            <ExecutionLocatorsCard
+              :test-runs-case-id="testCase.lastExecutionId"
               :project-key="testCase?.project?.id"
               :project-name="testCase?.project?.name"
-            >
-              <template #metrics>
-                <DurationValue v-if="exec.duration !== null" :ms="exec.duration" />
-                <UBadge
-                  v-if="exec.retries && exec.retries > 0"
-                  color="warning"
-                  variant="soft"
-                  size="xs"
-                  :title="`${exec.retries + 1} attempts`"
-                >
-                  {{ exec.retries + 1 }} attempts
+            />
+          </SectionCard>
+
+          <!-- Failure clusters -->
+          <SectionCard
+            v-if="testCase?.failureClusters?.length"
+            icon="i-lucide-bug"
+            :title="`Failure clusters (${testCase.failureClusters.length})`"
+            help="cluster.concept"
+          >
+            <div class="space-y-1">
+              <NuxtLink
+                v-for="cluster in testCase.failureClusters"
+                :key="cluster.id"
+                :to="`/failure-clusters/${cluster.id}`"
+                class="flex items-center gap-2 py-2 px-2 rounded hover:bg-gray-50 dark:hover:bg-gray-800"
+              >
+                <UBadge :color="clusterColor(cluster.status)" variant="soft" size="xs" class="shrink-0">
+                  {{ formatTriageStatus(cluster.status) }}
                 </UBadge>
-                <NuxtLink :to="`/test-runs/${exec.runId}`" class="text-primary hover:underline shrink-0" @click.stop>
-                  {{ exec.runLabel ? `${exec.runLabel} (#${exec.runId})` : `run #${exec.runId}` }}
-                </NuxtLink>
-              </template>
-            </TestRow>
-          </div>
-          <EmptyState v-else icon="i-lucide-inbox" text="No executions yet" />
-        </SectionCard>
+                <span class="text-sm truncate min-w-0" :title="cluster.signature">{{ describeCluster(cluster) }}</span>
+                <span v-if="cluster.occurrences > 1" class="text-xs text-gray-400 shrink-0">
+                  {{ cluster.occurrences }} occurrences
+                </span>
+                <UIcon name="i-lucide-arrow-right" class="size-3.5 text-muted shrink-0 ml-auto" />
+              </NuxtLink>
+            </div>
+          </SectionCard>
 
-        <!-- Locators of the latest execution, each with who else uses it -->
-        <SectionCard
-          v-if="testCase?.lastExecutionId"
-          icon="i-lucide-crosshair"
-          title="Locators"
-          subtitle="From the latest execution"
-          data-shot="test-case-locators"
-        >
-          <ExecutionLocatorsCard
-            :test-runs-case-id="testCase.lastExecutionId"
-            :project-key="testCase?.project?.id"
-            :project-name="testCase?.project?.name"
-          />
-        </SectionCard>
-
-        <!-- Failure clusters -->
-        <SectionCard
-          v-if="testCase?.failureClusters?.length"
-          icon="i-lucide-bug"
-          :title="`Failure clusters (${testCase.failureClusters.length})`"
-          help="cluster.concept"
-        >
-          <div class="space-y-1">
-            <NuxtLink
-              v-for="cluster in testCase.failureClusters"
-              :key="cluster.id"
-              :to="`/failure-clusters/${cluster.id}`"
-              class="flex items-center gap-2 py-2 px-2 rounded hover:bg-gray-50 dark:hover:bg-gray-800"
-            >
-              <UBadge :color="clusterColor(cluster.status)" variant="soft" size="xs" class="shrink-0">
-                {{ formatTriageStatus(cluster.status) }}
-              </UBadge>
-              <span class="text-sm truncate min-w-0" :title="cluster.signature">{{ describeCluster(cluster) }}</span>
-              <span v-if="cluster.occurrences > 1" class="text-xs text-gray-400 shrink-0">
-                {{ cluster.occurrences }} occurrences
-              </span>
-              <UIcon name="i-lucide-arrow-right" class="size-3.5 text-muted shrink-0 ml-auto" />
-            </NuxtLink>
-          </div>
-        </SectionCard>
-
-        <!-- Entity links -->
-        <SectionCard v-if="testCase?.links?.length" icon="i-lucide-link" title="Links" help="shared.entity-links">
-          <EntityLinks
-            entity-type="test_case"
-            :entity-id="Number(testCaseId)"
-            :links="(testCase.links as any) ?? null"
-          />
-        </SectionCard>
+          <!-- Entity links -->
+          <SectionCard v-if="testCase?.links?.length" icon="i-lucide-link" title="Links" help="shared.entity-links">
+            <EntityLinks
+              entity-type="test_case"
+              :entity-id="Number(testCaseId)"
+              :links="(testCase.links as any) ?? null"
+            />
+          </SectionCard>
+        </template>
       </div>
     </template>
   </UDashboardPanel>

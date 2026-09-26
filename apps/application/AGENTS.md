@@ -32,6 +32,35 @@ imported by both. Exceptions only where the implementations genuinely differ (er
   **both** `schema.sqlite.ts` and `schema.pg.ts`, then `npm run db:generate && npm run db:generate:pg`.
 - ⚠ **Never hand-write a migration file or edit `_journal.json`** — always generate. A hand-made migration is silently
   skipped by the migrator.
+- **Migrations across a merge of the base branch** — a local database that ran a branch's migrations keeps their
+  records, so what a merge does to them decides whether that database still starts:
+  - **The base branch added no migration: keep the branch's migrations as they are.** Regenerating gives them new names
+    and dates, and every database that ran the old ones then holds records this build does not know.
+  - **The base branch added migrations** (a conflict in `_journal.json` or a `meta/NNNN_snapshot.json`, or two files
+    with the same number): the branch's must be dated after them. From `apps/application/`, in **both** folders:
+
+    ```bash
+    git diff --relative --name-only --diff-filter=A origin/main... -- server/database/migrations server/database/migrations-pg
+    git rm <each file listed>        # the branch's own .sql files and snapshots
+    git checkout origin/main -- server/database/migrations server/database/migrations-pg
+    npm run db:generate && npm run db:generate:pg
+    ```
+
+    drizzle-kit only regenerates schema changes: recreate each custom migration (a data backfill) with
+    `npm run db:generate -- --custom --name=<name>` and `npm run db:generate:pg -- --custom --name=<name>`, then paste
+    its SQL back.
+
+  - **Never resolve a `_journal.json` or snapshot conflict by hand** — keeping both sides' entries, renumbering `idx`,
+    reordering them. The migrator applies by date: an entry dated before one a database already ran is never run there.
+  - **Never change a committed migration**, not even to fold the base branch's migration into it under the same name or
+    date: a database that already ran it never runs the added statements. A new schema change is a new migration.
+  - Check with `npx vitest run tests/unit/migration-history.test.ts`: it fails on a journal whose dates do not strictly
+    increase, and on a fresh SQLite database that no longer matches the latest snapshot.
+- Startup migrates through `applyMigrations` (`server/database/migration-history.ts`), which compares
+  `__drizzle_migrations` with the journal first. A matching history goes through the Drizzle migrator; a diverged one
+  (rows from another branch, a migration dated before the latest applied one, a file changed after it ran) is
+  repaired in one transaction and checked against the latest `meta/NNNN_snapshot.json`. The snapshot is the reference,
+  so a fresh database must match it — a unit test checks this for SQLite.
 - Dates are stored as Unix timestamps in SQLite.
 - **Large per-case text payloads MUST go through `case_payloads`** (content-addressed, deduped per project):
   `upsertCasePayloads` on write, `inlineCasePayloads` / `resolveCasePayloadContents` on read (`server/utils/case-payloads.ts`).
@@ -313,6 +342,13 @@ same files load unchanged in Vite, Vitest and plain Node (the generator script r
 
 - **API endpoint** — a file under `server/api/` using `eventHandler()` + `getDatabase()`, with a `defineRouteMeta`
   `openAPI` block (including `x-required-roles`) and the right access helper from the authorization rules above.
+  **No address the browser requests may contain `analytics`** (a route path, a query key or value): uBlock Origin and
+  other blockers refuse such requests, and the page then shows nothing. The analytics routes live under
+  `/api/widgets`, `/api/dashboards` and `/api/rollups`; `tests/unit/blocked-request-words.test.ts` checks it.
+- **Calling an endpoint from the app** — `$fetch` and `useFetch` carry no typed route map (a `types:extend` hook in
+  `nuxt.config.ts` empties Nitro's `InternalApi`), so every call site names its response type:
+  `$fetch<ApiResponse<typeof import('~~/server/api/…').default>>(…)` with `ApiResponse` from `types/api.ts`, or a
+  type of that file or of the shared handler. A call without one is `unknown`, never inferred.
 - **Page** — a Vue file in `app/pages/` built on `<UDashboardPanel>`; register it in the nav links array in
   `app/layouts/default.vue` if it belongs in the sidebar.
 - **Component** — a Vue file in the matching `app/components/` subfolder. Auto-import has no folder prefix, so the name
@@ -328,16 +364,17 @@ same files load unchanged in Vite, Vitest and plain Node (the generator script r
 
 Where to add things in subsystems whose wiring spans several files:
 
-| Change                        | Touch                                                                                                                                                                                                                                                                                                                                   |
-| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Flaky root-cause category     | `classifyFlakyRootCause()` + keyword arrays in `server/utils/flaky-classify.ts`; `rootCause` on `FlakyTest` (`types/api.ts`); `FlakyTestsList.vue` colour map                                                                                                                                                                           |
-| Flaky impact scoring          | `getProjectFlakyTests` (`shared/handlers/projects.ts`) — sorts by impact desc; `impact`, `wastedCiMinutes`, `avgFailedDurationMs` on `FlakyTest`                                                                                                                                                                                        |
-| Regression signals            | `computeRegressionSignals()` (`server/utils/compute-regression-signals.ts`), fired by the shared finalize helper `runFinalizeSideEffects` (`server/utils/run-finalize-side-effects.ts`); surfaced by `getTestRun` / `getTestRunCase` mappers                                                                                            |
-| Finish-time side effects      | Every complete-run ingest path (`finish`, `upload` new-and-attach, `submit`) routes finalization through the one probe-aware `runFinalizeSideEffects` (`server/utils/run-finalize-side-effects.ts`): regression signals, auto markers, AI diagnosis, notifications, PR feedback, auto-heal. A probe-stamped run stays silent everywhere |
-| A computed AI-context section | Update the `SectionId` union (`ai-context.types.ts`), `DIAGNOSIS_SECTIONS` (`diagnosis-sections.ts`) and `DiagnosisContextCoverage` (`types/api.ts`) **in one batch** before writing the section builder                                                                                                                                |
-| Sharding behaviour            | See the sharding invariants below                                                                                                                                                                                                                                                                                                       |
-| Blob-report import            | `server/utils/blob-report.ts` (parse) + `import-evidence.ts` (recovered evidence); everything after parsing in `shared/handlers/import-runs.ts`; endpoints `test-runs/import[.post]` and `import/check.post.ts`; page `projects/[id]/import.vue` + `useBlobReportImport`                                                                |
-| Trace-file import             | `server/utils/trace-import.ts` — reconstructs an execution from a trace's `context-options`/`error` events; grouped into one run by the `importGroup` field on `test-runs/import.post.ts`                                                                                                                                               |
+| Change                        | Touch                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Flaky root-cause category     | `classifyFlakyRootCause()` + keyword arrays in `server/utils/flaky-classify.ts`; `rootCause` on `FlakyTest` (`types/api.ts`); `FlakyTestsList.vue` colour map                                                                                                                                                                                                                                                                                                                                                                                             |
+| Flaky impact scoring          | `getProjectFlakyTests` (`shared/handlers/projects.ts`) — sorts by impact desc; `impact`, `wastedCiMinutes`, `avgFailedDurationMs` on `FlakyTest`                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Regression signals            | `computeRegressionSignals()` (`server/utils/compute-regression-signals.ts`), fired by the shared finalize helper `runFinalizeSideEffects` (`server/utils/run-finalize-side-effects.ts`); surfaced by `getTestRun` / `getTestRunCase` mappers                                                                                                                                                                                                                                                                                                              |
+| Finish-time side effects      | Every complete-run ingest path (`finish`, `upload` new-and-attach, `submit`) routes finalization through the one probe-aware `runFinalizeSideEffects` (`server/utils/run-finalize-side-effects.ts`): regression signals, auto markers, AI diagnosis, notifications, PR feedback, auto-heal. A probe-stamped run stays silent everywhere                                                                                                                                                                                                                   |
+| A computed AI-context section | Update the `SectionId` union (`ai-context.types.ts`), `DIAGNOSIS_SECTIONS` (`diagnosis-sections.ts`) and `DiagnosisContextCoverage` (`types/api.ts`) **in one batch** before writing the section builder                                                                                                                                                                                                                                                                                                                                                  |
+| Sharding behaviour            | See the sharding invariants below                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| Blob-report import            | `server/utils/blob-report.ts` (parse) + `import-evidence.ts` (recovered evidence); everything after parsing in `shared/handlers/import-runs.ts`; endpoints `test-runs/import[.post]` and `import/check.post.ts`; page `projects/[id]/import.vue` + `useBlobReportImport`                                                                                                                                                                                                                                                                                  |
+| Trace-file import             | `server/utils/trace-import.ts` — reconstructs an execution from a trace's `context-options`/`error` events; grouped into one run by the `importGroup` field on `test-runs/import.post.ts`                                                                                                                                                                                                                                                                                                                                                                 |
+| Quality report language       | Its code in `shared/reports/languages.ts`, the `lang` enum of `server/api/reports/preview.get.ts` (a literal the test checks) and a `shared/reports/sentences.<code>.ts` implementing `ReportSentences` (copy `sentences.fr.ts`), registered in `REPORT_SENTENCES`; validation, the MCP tool, the pickers and the CLI follow. `tests/unit/report-languages.test.ts` names the labels, metrics and gap titles the file lacks, and a new gap detector needs a sample in `tests/unit/gap-title-samples.ts`. The PDF's standard fonts write Windows-1252 only |
 
 ## Subsystem invariants
 

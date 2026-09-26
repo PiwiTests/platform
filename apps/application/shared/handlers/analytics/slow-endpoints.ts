@@ -1,10 +1,10 @@
-import { and, eq, gte, inArray, isNotNull } from 'drizzle-orm';
-import { networkRequests, testRuns } from '../../../server/database/schema';
+import { and, eq, inArray, isNotNull } from 'drizzle-orm';
+import { networkRequests, testRuns, testRunsCases } from '../../../server/database/schema';
 import type { DrizzleDB } from '../db';
 import type { AnalyticsScope } from '../../analytics/scope';
 import type { AnalyticsSlowEndpoints, AnalyticsSlowEndpointRow } from '../../analytics/types';
 import { percentile } from '../../utils/stats';
-import { periodStart, resolveAllowedProjects, TERMINAL_RUN_STATUSES, type ProjectAccess } from './common';
+import { contextRunConditions, getAnalyticsContext, type ProjectAccess } from './common';
 
 const TOP_ENDPOINTS = 20;
 const MIN_REQUESTS = 3;
@@ -20,31 +20,42 @@ export async function getAnalyticsSlowEndpoints(
   scope: AnalyticsScope,
   access: ProjectAccess = 'all',
 ): Promise<AnalyticsSlowEndpoints> {
-  const allowed = resolveAllowedProjects(scope, access);
-  if (allowed !== 'all' && allowed.length === 0) return { endpoints: [], totalRequests: 0 };
+  const ctx = await getAnalyticsContext(db, scope, access);
+  if (ctx.allowed !== 'all' && ctx.allowed.length === 0) return { endpoints: [], totalRequests: 0 };
 
   const conditions = [
-    gte(testRuns.startTime, new Date(periodStart(scope.days))),
-    inArray(testRuns.status, TERMINAL_RUN_STATUSES),
+    ...contextRunConditions(ctx, ctx.period.from.getTime(), ctx.period.to.getTime()),
     isNotNull(networkRequests.duration),
   ];
-  if (allowed !== 'all') conditions.push(inArray(testRuns.projectId, allowed));
-  if (scope.fullRunsOnly) conditions.push(eq(testRuns.isFullRun, 1));
-  if (scope.environments && scope.environments.length > 0)
-    conditions.push(inArray(testRuns.environment, scope.environments));
-  if (scope.branches && scope.branches.length > 0) conditions.push(inArray(testRuns.branch, scope.branches));
+  const filter = ctx.testFilter;
+  const fields = {
+    projectId: testRuns.projectId,
+    method: networkRequests.method,
+    route: networkRequests.normalizedUrl,
+    status: networkRequests.status,
+    duration: networkRequests.duration,
+  };
 
-  const rows: any[] = await db
-    .select({
-      projectId: testRuns.projectId,
-      method: networkRequests.method,
-      route: networkRequests.normalizedUrl,
-      status: networkRequests.status,
-      duration: networkRequests.duration,
-    })
-    .from(networkRequests)
-    .innerJoin(testRuns, eq(networkRequests.testRunId, testRuns.id))
-    .where(and(...conditions));
+  let rows: any[];
+  if (filter) {
+    // A test filter reaches requests through the execution that made them.
+    if (filter.browsers) conditions.push(inArray(testRunsCases.browserName, filter.browsers));
+    const joined: any[] = await db
+      .select({ ...fields, testCaseId: testRunsCases.testCaseId })
+      .from(networkRequests)
+      .innerJoin(testRuns, eq(networkRequests.testRunId, testRuns.id))
+      .innerJoin(testRunsCases, eq(networkRequests.testRunsCaseId, testRunsCases.id))
+      .where(and(...conditions));
+    rows = filter.testCaseIds
+      ? joined.filter((row) => filter.testCaseIds!.get(row.projectId)?.has(row.testCaseId))
+      : joined;
+  } else {
+    rows = await db
+      .select(fields)
+      .from(networkRequests)
+      .innerJoin(testRuns, eq(networkRequests.testRunId, testRuns.id))
+      .where(and(...conditions));
+  }
 
   interface Group {
     durations: number[];

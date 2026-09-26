@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "d5d2d6a5-2d38-4c2d-a91f-caf1725f24e8",
+  "id": "562d226b-6421-46c6-9480-c24599aa55d7",
   "prevId": "26258e4a-f67f-4fb3-8580-72cee5f352d3",
   "tables": {
     "account_tokens": {
@@ -75,6 +75,231 @@
           "tableFrom": "account_tokens",
           "tableTo": "users",
           "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "analytics_daily_rollups": {
+      "name": "analytics_daily_rollups",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "day": {
+          "name": "day",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "environment": {
+          "name": "environment",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "''"
+        },
+        "branch": {
+          "name": "branch",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "''"
+        },
+        "full_run": {
+          "name": "full_run",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "part": {
+          "name": "part",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "runs": {
+          "name": "runs",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "passed_runs": {
+          "name": "passed_runs",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "failed_runs": {
+          "name": "failed_runs",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "total_tests": {
+          "name": "total_tests",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "passed_tests": {
+          "name": "passed_tests",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "failed_tests": {
+          "name": "failed_tests",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "skipped_tests": {
+          "name": "skipped_tests",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "did_not_run_tests": {
+          "name": "did_not_run_tests",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "flaky_tests": {
+          "name": "flaky_tests",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "max_total_tests": {
+          "name": "max_total_tests",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "duration_ms": {
+          "name": "duration_ms",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "avg_test_duration_sum_ms": {
+          "name": "avg_test_duration_sum_ms",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "p90_test_duration_sum_ms": {
+          "name": "p90_test_duration_sum_ms",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "wait_ms": {
+          "name": "wait_ms",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "failed_exec_ms": {
+          "name": "failed_exec_ms",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "new_regressions": {
+          "name": "new_regressions",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "new_flaky": {
+          "name": "new_flaky",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "computed_at": {
+          "name": "computed_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "idx_analytics_daily_rollups_cell": {
+          "name": "idx_analytics_daily_rollups_cell",
+          "columns": ["project_id", "day", "environment", "branch", "full_run", "part"],
+          "isUnique": true
+        },
+        "idx_analytics_daily_rollups_project_day": {
+          "name": "idx_analytics_daily_rollups_project_day",
+          "columns": ["project_id", "day"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "analytics_daily_rollups_project_id_projects_id_fk": {
+          "name": "analytics_daily_rollups_project_id_projects_id_fk",
+          "tableFrom": "analytics_daily_rollups",
+          "tableTo": "projects",
+          "columnsFrom": ["project_id"],
           "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
@@ -2383,14 +2608,6 @@
           "notNull": true,
           "autoincrement": false
         },
-        "branch": {
-          "name": "branch",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "''"
-        },
         "first_seen_run_id": {
           "name": "first_seen_run_id",
           "type": "integer",
@@ -2416,17 +2633,12 @@
       "indexes": {
         "idx_locator_usages_use": {
           "name": "idx_locator_usages_use",
-          "columns": ["test_case_id", "browser_name", "branch", "call_site", "action", "locator"],
+          "columns": ["test_case_id", "browser_name", "call_site", "action", "locator"],
           "isUnique": true
         },
         "idx_locator_usages_project_locator": {
           "name": "idx_locator_usages_project_locator",
           "columns": ["project_id", "locator"],
-          "isUnique": false
-        },
-        "idx_locator_usages_project_branch": {
-          "name": "idx_locator_usages_project_branch",
-          "columns": ["project_id", "branch"],
           "isUnique": false
         },
         "idx_locator_usages_project_target": {

@@ -1,58 +1,40 @@
 import type { DrizzleDB } from '../db';
-import { MAX_ANALYTICS_DAYS, type AnalyticsScope } from '../../analytics/scope';
+import type { AnalyticsScope } from '../../analytics/scope';
 import type { AnalyticsHeatmap } from '../../analytics/types';
-import {
-  fetchScopedProjects,
-  fetchScopedRuns,
-  firstNonEmptyIndex,
-  makeTimeBuckets,
-  roundRate,
-  type ProjectAccess,
-} from './common';
+import { fetchContextProjects, firstNonEmptyIndex, getAnalyticsContext, roundRate, type ProjectAccess } from './common';
+import { groupRows, loadScalarRows } from './scalar-rows';
 
 /**
  * Projects × time-buckets grid of pass rates — shows at a glance who degraded
- * and when. Buckets grow with the period (daily up to a month, weekly beyond)
- * so the grid stays readable.
+ * and when. A cell is one UTC day (or week, or month, per the granularity), the
+ * same cells the daily rollups keep.
  */
 export async function getAnalyticsPassRateHeatmap(
   db: DrizzleDB,
   scope: AnalyticsScope,
   access: ProjectAccess = 'all',
 ): Promise<AnalyticsHeatmap> {
-  const scopedProjects = await fetchScopedProjects(db, scope, access);
-  const runs = await fetchScopedRuns(db, scope, access, scope.days);
-  const buckets = makeTimeBuckets(scope.days);
-
-  // passed/total per (project, bucket)
-  const totals = new Map<number, Map<string, { passed: number; total: number }>>();
-  for (const run of runs) {
-    const key = buckets.keyFor(run.startTime);
-    if (!key) continue;
-    let byBucket = totals.get(run.projectId);
-    if (!byBucket) {
-      byBucket = new Map();
-      totals.set(run.projectId, byBucket);
-    }
-    const cell = byBucket.get(key) ?? { passed: 0, total: 0 };
-    cell.passed += run.passedTests ?? 0;
-    cell.total += run.totalTests ?? 0;
-    byBucket.set(key, cell);
-  }
+  const ctx = await getAnalyticsContext(db, scope, access);
+  const [scopedProjects, dayRows] = await Promise.all([
+    fetchContextProjects(db, ctx),
+    loadScalarRows(db, ctx, ctx.period.from.getTime(), ctx.period.to.getTime()),
+  ]);
+  const buckets = ctx.buckets;
+  const totals = groupRows(dayRows, (row) => {
+    const key = buckets.keyFor(row.day);
+    return key ? `${row.projectId}:${key}` : null;
+  });
 
   const rows = scopedProjects
-    .map((project) => {
-      const byBucket = totals.get(project.id);
-      return {
-        projectId: project.id,
-        name: project.name,
-        label: project.label,
-        cells: buckets.keys.map((key) => {
-          const cell = byBucket?.get(key);
-          return cell ? roundRate(cell.passed, cell.total) : null;
-        }),
-      };
-    })
+    .map((project) => ({
+      projectId: project.id,
+      name: project.name,
+      label: project.label,
+      cells: buckets.keys.map((key) => {
+        const cell = totals.get(`${project.id}:${key}`);
+        return cell ? roundRate(cell.passedTests, cell.totalTests) : null;
+      }),
+    }))
     // Projects with no runs in the period would render an all-gray row — drop them.
     .filter((row) => row.cells.some((c) => c !== null))
     .sort((a, b) => a.name.localeCompare(b.name));
@@ -61,17 +43,21 @@ export async function getAnalyticsPassRateHeatmap(
   // always spans the full period. Only the unbounded "All time" window trims its
   // leading all-empty columns — otherwise it would show years of blank buckets
   // before the first real data.
-  const firstDataIndex =
-    scope.days >= MAX_ANALYTICS_DAYS
-      ? firstNonEmptyIndex(
-          buckets.keys.map((_, index) => index),
-          (index) => rows.every((row) => row.cells[index] === null),
-        )
-      : 0;
+  const firstDataIndex = isAllTime(scope)
+    ? firstNonEmptyIndex(
+        buckets.keys.map((_, index) => index),
+        (index) => rows.every((row) => row.cells[index] === null),
+      )
+    : 0;
 
   return {
     buckets: buckets.keys.slice(firstDataIndex),
     bucketDays: buckets.bucketDays,
+    ...(scope.granularity === 'month' ? { monthly: true } : {}),
     rows: rows.map((row) => ({ ...row, cells: row.cells.slice(firstDataIndex) })),
   };
+}
+
+function isAllTime(scope: AnalyticsScope): boolean {
+  return scope.period.kind === 'all' || (scope.period.kind === 'rolling' && scope.period.days >= 3650);
 }

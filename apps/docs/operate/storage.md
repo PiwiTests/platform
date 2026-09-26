@@ -118,7 +118,9 @@ A kept run cannot be deleted until it is released.
 A nightly sweep (03:17 server time) handles recurring cleanup:
 
 - **Test-run pruning** — deletes runs older than `PIWI_RETENTION_DAYS` days, including their files, traces, and reports. **Off by default**: deleting history is opt-in, so nothing is pruned until you set the variable. [Kept runs](#keeping-runs-forever) are never pruned, and `PIWI_RETENTION_MIN_RUNS` keeps each project's newest runs whatever their age, so a project that stops reporting keeps its last runs instead of emptying.
+- **Analytics rollups** — before pruning, the sweep recomputes the [daily rollups](/features/analytics#where-the-numbers-come-from) of the last seven days (or of `PIWI_RETENTION_DAYS`, when shorter) from the stored runs. Pruned runs' numbers are moved into the rollups in the same transaction that deletes them, so the analytics trends keep the days that retention empties; deleting a single run by hand removes its numbers instead.
 - **Notification outbox pruning** — removes sent/failed delivery rows older than `PIWI_RETENTION_NOTIFICATION_DAYS` days (default 30).
+- **Report snapshot pruning** — removes the stored [quality reports](/features/quality-reports#report-schedules) older than `PIWI_RETENTION_REPORT_DAYS` days (default 365; 0 keeps them).
 - **Diagnosis history capping** — keeps the newest `PIWI_RETENTION_DIAGNOSIS_VERSIONS` versions per AI diagnosis (default 20).
 - **Orphan sweep** — removes rows whose parent records were deleted by older versions.
 

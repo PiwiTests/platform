@@ -211,10 +211,23 @@ const links = computed(() => {
         label: 'Analytics',
         icon: 'i-lucide-chart-line',
         to: '/analytics',
+        active: route.path === '/analytics' || route.path.startsWith('/analytics/'),
         onSelect: () => {
           open.value = false;
         },
       },
+      ...(capHidden('quality-reports')
+        ? []
+        : [
+            {
+              label: 'Quality reports',
+              icon: 'i-lucide-file-chart-column',
+              to: '/reports',
+              onSelect: () => {
+                open.value = false;
+              },
+            },
+          ]),
       {
         label: 'Projects',
         icon: 'i-lucide-folder',

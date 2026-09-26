@@ -203,6 +203,29 @@ That derived owner is used in [pull-request comments](./ci#pull-request-feedback
 `owners` [notification filter](/features/notifications#subscriptions), which routes a run only to the team whose tests broke.
 It needs an [SCM token](/features/ai-diagnosis#scm-grounded-context); without one, ownership falls back to annotations alone.
 
+## Metric, dashboard and quality report
+
+A **metric** is a named number with one definition every surface reads: test pass rate, run success
+rate, wasted CI minutes, median time to fix, and the rest of the metric catalog. The Analytics page, the
+MCP tools and quality reports all print the same definition, so a number means the same thing wherever
+it appears.
+
+A **dashboard** is a named arrangement of analytics widgets in bands, with a default scope. The
+Analytics page is the built-in *Overview* dashboard; *Executive*, *Engineering*, *Team* and *Gaps
+digest* are the built-in dashboards meant for reports. Anyone can save a dashboard of their own, private
+or shared, and a dashboard never grants access to a project. See [Dashboards](/features/dashboards).
+
+A **quality report** is a dashboard rendered as a document (PDF, HTML, Markdown, CSV or JSON) for a
+reader who does not open the dashboard. It is not the **run report**, the Playwright HTML report a run
+carries. See [Quality reports](/features/quality-reports).
+
+A **report schedule** sends a quality report to notification channels on a cadence (daily, weekly,
+every other week, monthly), and every quality report generated is kept as a **report snapshot**, with its
+numbers as they were when it was generated.
+
+A **probe run** is a run the Test Map's `piwi probe` produces by replaying a passing test with an
+injected fault. It fails on purpose, so no metric ever counts it.
+
 ## Where each concept lives in the UI
 
 | Concept | URL | Docs |
@@ -213,6 +236,8 @@ It needs an [SCM token](/features/ai-diagnosis#scm-grounded-context); without on
 | Execution | `/test-run-cases/:id` | [UI overview](/features/evidence#one-execution-diagnosis-first) |
 | Failure cluster | `/failure-clusters/:id` | [AI diagnosis & clustering](/features/ai-diagnosis) |
 | Cross-project view | `/analytics` | [Analytics](/features/analytics) |
+| Quality report | *Export* on `/analytics` and `/projects/:id` | [Quality reports](/features/quality-reports) |
+| Report schedule, report snapshot | `/reports`, `/reports/:id` | [Quality reports](/features/quality-reports#report-schedules) |
 
 ## See also
 

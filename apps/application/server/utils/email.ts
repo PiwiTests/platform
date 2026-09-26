@@ -1,5 +1,6 @@
 import nodemailer from 'nodemailer';
 import type { Transporter } from 'nodemailer';
+import { STATUS_COLORS } from '#shared/status-colors';
 import { renderEventSubject, notificationTargetPath, failureTargetPath } from '#shared/notification-events';
 import type {
   NotificationEvent,
@@ -7,6 +8,9 @@ import type {
   RunFinishedPayload,
   TopFailure,
 } from '#shared/notification-events';
+import type { ReportBundle } from '#shared/reports/types';
+import { renderReportEmail } from '#shared/reports/render-email';
+import { emailLayout as layoutEmail, escapeHtml } from '#shared/email-layout';
 
 export interface SmtpConfig {
   host: string;
@@ -20,11 +24,20 @@ export interface SmtpConfig {
   envManaged: true;
 }
 
+export interface EmailAttachment {
+  filename: string;
+  content: Buffer;
+  contentType?: string;
+  /** Content id: an inline image the HTML shows as `<img src="cid:…">`. */
+  cid?: string;
+}
+
 export interface SendEmailOptions {
   to: string;
   subject: string;
   html: string;
   text: string;
+  attachments?: EmailAttachment[];
 }
 
 let _transport: Transporter | null = null;
@@ -82,7 +95,14 @@ export async function sendEmail(opts: SendEmailOptions): Promise<void> {
   }
   const transport = getTransport();
   const from = cfg.fromName ? `"${cfg.fromName}" <${cfg.from}>` : cfg.from;
-  await transport.sendMail({ from, to: opts.to, subject: opts.subject, html: opts.html, text: opts.text });
+  await transport.sendMail({
+    from,
+    to: opts.to,
+    subject: opts.subject,
+    html: opts.html,
+    text: opts.text,
+    ...(opts.attachments?.length ? { attachments: opts.attachments } : {}),
+  });
   console.info('[email] Sent "%s" to %s', opts.subject, opts.to);
 }
 
@@ -90,41 +110,12 @@ export async function sendEmail(opts: SendEmailOptions): Promise<void> {
 
 const siteUrl = () => process.env.PIWI_SITE_URL?.replace(/\/$/, '') || 'http://localhost:3000';
 
-/** Passed and failed text colors: the emerald and rose of the dashboard, as in the HTML export. */
-const PASSED_COLOR = '#047857';
-const FAILED_COLOR = '#be123c';
-
-/** Escape user-controlled text (test titles, error messages) for HTML emails. */
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
+/** Passed and failed text colors: the dashboard's outcome colors, as in the HTML export. */
+const PASSED_COLOR = STATUS_COLORS.passed.text;
+const FAILED_COLOR = STATUS_COLORS.failed.text;
 
 function emailLayout(title: string, body: string): { html: string; text: string } {
-  const html = `<!DOCTYPE html>
-<html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title></head>
-<body style="margin:0;padding:0;background:#f4f4f5;font-family:system-ui,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:32px 0;">
-    <tr><td align="center">
-      <table width="560" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.1);">
-        <tr><td style="background:#18181b;padding:20px 32px;">
-          <span style="color:#fff;font-size:18px;font-weight:700;">Piwi Dashboard</span>
-        </td></tr>
-        <tr><td style="padding:32px;">${body}</td></tr>
-        <tr><td style="padding:16px 32px;background:#f4f4f5;font-size:12px;color:#71717a;text-align:center;">
-          This is an automated message from <a href="${siteUrl()}" style="color:#18181b;">${siteUrl()}</a>
-        </td></tr>
-      </table>
-    </td></tr>
-  </table>
-</body>
-</html>`;
-  return { html, text: title };
+  return { html: layoutEmail(title, body, siteUrl()), text: title };
 }
 
 export function renderPasswordResetEmail(token: string): { html: string; text: string } {
@@ -327,4 +318,19 @@ export function renderDigestEmail(items: DigestItem[]): { subject: string; html:
     })
     .join('\n');
   return { subject, html, text: `${subject}\n\n${text}` };
+}
+
+// ── Quality report ────────────────────────────────────────────────────────────
+
+/** The quality report email as sent: the chart attached by content id, the footer naming this instance. */
+export function renderQualityReportEmail(
+  bundle: ReportBundle,
+  opts: { url: string; chartCid: string | null; shareUrl?: string | null },
+): { subject: string; html: string; text: string } {
+  return renderReportEmail(bundle, {
+    url: opts.url,
+    chartSrc: opts.chartCid ? `cid:${opts.chartCid}` : null,
+    shareUrl: opts.shareUrl,
+    siteUrl: siteUrl(),
+  });
 }

@@ -523,3 +523,75 @@ test.describe.serial('Notification dispatch', () => {
     });
   });
 });
+
+// ── Scheduled quality report ─────────────────────────────────────────────────
+
+test.describe.serial('Scheduled quality report email', () => {
+  skip();
+
+  let mailpit: MailpitClient;
+  const REPORT_EMAIL = 'quality-reports@example.com';
+  let channelId = 0;
+  let scheduleId = 0;
+
+  test.beforeAll(async () => {
+    mailpit = new MailpitClient(MAILPIT_URL);
+    await mailpit.deleteAll();
+  });
+
+  test.afterAll(async () => {
+    const cookie = await adminLogin();
+    const del = (path: string) => fetch(`${EMAIL_SERVER}${path}`, { method: 'DELETE', headers: { Cookie: cookie } });
+    if (scheduleId) await del(`/api/reports/schedules/${scheduleId}`);
+    if (channelId) await del(`/api/channels/${channelId}`);
+  });
+
+  test('Run now sends the quality report by email, with the trend as an inline image', async () => {
+    const cookie = await adminLogin();
+    const channel = await apiPost(
+      '/api/channels',
+      { name: 'Quality report mail', type: 'email', config: { address: REPORT_EMAIL }, global: true },
+      cookie,
+    );
+    expect(channel.ok).toBe(true);
+    channelId = ((await channel.json()) as { channel: { id: number } }).channel.id;
+
+    const schedule = await apiPost(
+      '/api/reports/schedules',
+      {
+        name: 'Weekly quality report',
+        dashboard: 'executive',
+        cadence: 'weekly',
+        anchor: 1,
+        at: '08:00',
+        channelIds: [channelId],
+        global: true,
+      },
+      cookie,
+    );
+    expect(schedule.status).toBe(201);
+    scheduleId = ((await schedule.json()) as { id: number }).id;
+
+    const run = await apiPost(`/api/reports/schedules/${scheduleId}/run`, {}, cookie);
+    expect(run.ok).toBe(true);
+    const { snapshotId } = (await run.json()) as { snapshotId: number };
+
+    const msg = await mailpit.waitForMessage((m) => m.To.some((t) => t.Address === REPORT_EMAIL), {
+      timeoutMs: 30_000,
+    });
+    expect(msg.Subject).toMatch(/^Quality report: Weekly quality report: /);
+    const detail = await mailpit.getMessage(msg.ID);
+    expect(detail.HTML).toContain('src="cid:trend"');
+    expect(detail.HTML).toContain(`/reports/${snapshotId}`);
+    expect(detail.Inline?.map((i) => [i.FileName, i.ContentType])).toContainEqual(['trend.png', 'image/png']);
+
+    // The delivery is recorded on the snapshot as sent.
+    await expect
+      .poll(async () => {
+        const res = await fetch(`${EMAIL_SERVER}/api/reports/snapshots/${snapshotId}`, { headers: { Cookie: cookie } });
+        const snapshot = (await res.json()) as { deliveries: Array<{ status: string }> };
+        return snapshot.deliveries.map((d) => d.status);
+      })
+      .toEqual(['sent']);
+  });
+});

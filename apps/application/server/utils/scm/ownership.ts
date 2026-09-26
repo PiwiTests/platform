@@ -19,7 +19,7 @@ import { eq, desc } from 'drizzle-orm';
 import { testRuns } from '../../database/schema';
 import { createScmProvider } from './index';
 import { normalizeGitUrl } from './git-url';
-import { TtlCache } from './cache';
+import { TtlCache } from '../ttl-cache';
 import { primaryOwnerForPath, type CompiledCodeowners } from '@piwitests/core/codeowners';
 import type { RunMetadata } from '../run-json-types';
 import type { DbClient } from '../../database';

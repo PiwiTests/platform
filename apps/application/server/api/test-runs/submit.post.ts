@@ -383,7 +383,7 @@ export default eventHandler(async (event) => {
 
   runEventBus.publishGlobal({ type: 'run-submitted', runId: testRun.id, projectId: project.id, status: body.status });
 
-  runFinalizeSideEffects(db, testRun.id, { projectId: project.id, metadata: testRun.metadata });
+  await runFinalizeSideEffects(db, testRun.id, { projectId: project.id, metadata: testRun.metadata });
 
   return {
     success: true,

@@ -537,8 +537,57 @@
     {
       "idx": 76,
       "version": "6",
-      "when": 1790413157361,
-      "tag": "0076_strange_deadpool",
+      "when": 1790281929981,
+      "tag": "0076_superb_bulldozer",
+      "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "6",
+      "when": 1790314945336,
+      "tag": "0077_woozy_paibok",
+      "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "6",
+      "when": 1790323313466,
+      "tag": "0078_silent_sheva_callister",
+      "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "6",
+      "when": 1790338885775,
+      "tag": "0079_quiet_typhoid_mary",
+      "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "6",
+      "when": 1790344320772,
+      "tag": "0080_keen_nitro",
+      "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "6",
+      "when": 1790346265183,
+      "tag": "0081_jittery_naoko",
+      "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "6",
+      "when": 1790366581376,
+      "tag": "0082_spicy_vermin",
+      "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "6",
+      "when": 1790415993433,
+      "tag": "0083_conscious_war_machine",
       "breakpoints": true
     }
   ]

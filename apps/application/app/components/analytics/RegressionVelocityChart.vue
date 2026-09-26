@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { AnalyticsRegressionVelocity } from '#shared/analytics/types';
-import { barGeometry, dayTickIndices, formatTickDate, stackSegments } from '~/utils/chart';
+import { barGeometry, bucketTimeToX, dayTickIndices, formatTickDate, stackSegments } from '~/utils/chart';
 
 const props = defineProps<{ query: Record<string, string> }>();
 
@@ -74,10 +74,39 @@ const deltaBadge = computed(() => {
   };
 });
 
+const exportData = computed(() =>
+  velocity.value
+    ? {
+        name: 'regression-velocity',
+        header: ['date', 'new regressions', 'newly flaky'],
+        rows: velocity.value.points.map((p) => [p.date, p.regressions, p.newFlaky]),
+      }
+    : null,
+);
+
 const subtitle = computed(() => {
   if (!velocity.value) return undefined;
   return `${velocity.value.totalRegressions} new regressions, ${velocity.value.totalNewFlaky} newly flaky`;
 });
+// Timeline markers of the period, drawn over the bars (provided by the analytics page).
+const scopeSummary = injectAnalyticsScopeSummary();
+const markers = computed(() => scopeSummary.value?.markers ?? []);
+function markerX(plotWidth: number, occurredAt: string | Date): number | null {
+  const { centerOf } = barGeometry(chartData.value.length, plotWidth);
+  const end = scopeSummary.value ? new Date(scopeSummary.value.period.to).getTime() : Date.now();
+  return bucketTimeToX(
+    chartData.value.map((d) => d.date),
+    chartData.value.map((_, i) => centerOf(i)),
+    new Date(occurredAt).getTime(),
+    end,
+  );
+}
+
+/** With one project in scope, a bucket opens that project's runs of those days. */
+const drill = computed(() => (velocity.value ? bucketDrill(props.query, velocity.value.bucketDays) : null));
+function isoDay(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
 </script>
 
 <template>
@@ -87,6 +116,7 @@ const subtitle = computed(() => {
     :subtitle="subtitle"
     help="analytics.regression-velocity"
     :legend="legendItems"
+    :export-data="exportData"
   >
     <template #actions>
       <span v-if="deltaBadge" class="text-xs font-medium tabular-nums" :class="deltaBadge.class">
@@ -136,9 +166,16 @@ const subtitle = computed(() => {
           :width="bar.slotWidth"
           :height="plotHeight"
           :fill="tooltipData === bar.d ? 'rgb(148 163 184 / 0.15)' : 'transparent'"
+          :class="drill ? 'cursor-pointer' : ''"
+          @click="drill && navigateTo(drill(isoDay(bar.d.date)))"
           @mouseenter="show($event, bar.d)"
           @mousemove="move($event)"
           @mouseleave="hide()"
+        />
+        <ChartMarkerLines
+          :markers="markers"
+          :x-of="(occurredAt) => markerX(plotWidth, occurredAt)"
+          :plot-height="plotHeight"
         />
       </ChartFrame>
 
