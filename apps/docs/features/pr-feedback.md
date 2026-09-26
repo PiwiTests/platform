@@ -28,7 +28,7 @@ What the comment says, in this order:
 3. **Flaky**: passed only on a retry.
 4. **New failure clusters**: root causes never seen before in this project.
 5. **Fixed by this change**: clusters this pull request closed, with how long they were open. See
-   [Did the fix work?](./ai-diagnosis#did-the-fix-work)
+   [Did the fix work?](./failure-clusters#did-the-fix-work)
 
 Each failure carries its error, its owner and tags when the test declares them (see
 [ownership metadata](/reference/test-metadata#ownership-metadata-piwi-annotations)), and, when a locator broke, the
@@ -49,7 +49,7 @@ Turn it on in **Settings → Pull requests** (off by default). It needs:
 ## Re-run from the dashboard
 
 Once a cluster is fixed, the fastest way to prove it is to re-run exactly the affected tests, and a
-[filtered run that passes them all closes the cluster](./ai-diagnosis#did-the-fix-work). The cluster page can
+[filtered run that passes them all closes the cluster](./failure-clusters#did-the-fix-work). The cluster page can
 trigger that run in CI for you: **Re-run in CI**, next to *Copy retry command*, dispatches a workflow or pipeline with
 the cluster's retry arguments (`file:line` specs, `--project` when they share one) and links to the run it started. The
 last dispatch (when, by whom, and a link) shows under the Test evidence header.

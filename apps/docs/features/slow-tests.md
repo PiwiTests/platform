@@ -34,6 +34,7 @@ Both require the [capture fixtures](/guide/capture-fixtures) in your test setup 
 
 ## Related
 
+- [Cut the time it costs](/recipes/faster-suite): the slowest tests and wasted time, cut in order of cost
 - [Capture fixtures](/guide/capture-fixtures) — the test-side setup behind network analysis and Web Vitals
 - [Flaky tests](./flaky-tests) — flaky scoring costs wasted CI minutes the same way
 - [Analytics](./analytics) — wasted CI minutes and slow endpoints across every project

@@ -446,7 +446,7 @@ Where the build differs from this plan, and why:
 - The branch-detection chain moved from CI & sharding to Test metadata, so CI & sharding lists what is detected and
   links there.
 
-**PR 3: feature pages** (3 days)
+**PR 3: feature pages** (3 days, built as 3a and 3b)
 
 - AI diagnosis under 1,500 words; Failure clusters takes "how failures are grouped" and "Did the fix work?".
 - Failure evidence: the situation block leaves (Your first failure explains it), clue rules go to reference.
@@ -463,6 +463,22 @@ Where the build differs from this plan, and why:
   the check that every entry in a feature group points to a whole page joins the drift test, and so do the checks
   on endpoint paths and on planned wording, with the pages they clean.
 - About 15 in-app link updates.
+
+PR 3 was built as two pull requests that ran in parallel. **PR 3a** (built) took the failure and fix pages: AI
+diagnosis, Failure clusters, Failure evidence, Your first failure, the UI overview, Locator healing, the recipe links
+and the help topics' `recipe` field. **PR 3b** takes the Test Map pages, MCP and agent skills, the extension, desktop,
+notifications and the generated reference pages. The budget switch moves to PR 5.
+
+Where PR 3a differs from this plan, and why:
+
+- Failure clusters stays under 1,200 words, not 1,500: the budget check is unchanged until PR 5, and the page has no
+  allowlist entry. The cluster page section links the situation block on Your first failure instead of repeating it,
+  and the keyboard table became one sentence.
+- Clue rules (`reference/clues.md`) is written by hand from `shared/failure-clues.ts`, with each rule's id, and adds
+  the stories that chain clues. PR 5 adds its check against `FailureClueRule`.
+- AI diagnosis keeps a one-line "Locator healing" and "Fix plans" section, so their anchors still resolve.
+- "Triage a run gone red" also links the fix verdicts instead of repeating their table.
+- The recipe check reads the `recipe` field of `HELP_TOPICS` and the links on the `features/` pages.
 
 **PR 4: Self-hosting** (1 day)
 

@@ -308,7 +308,7 @@ turn it on with `capturePageInventory`.
 | Test run | `/test-runs/:id` | [UI overview](/features/ui-overview#test-run-detail) |
 | Test case | `/test-cases/:id` | [UI overview](/features/evidence#the-test-case-page) |
 | Execution | `/test-run-cases/:id` | [UI overview](/features/evidence#one-execution-diagnosis-first) |
-| Failure cluster | `/failure-clusters/:id` | [AI diagnosis & clustering](/features/ai-diagnosis) |
+| Failure cluster | `/failure-clusters/:id` | [Failure clusters & the inbox](/features/failure-clusters) |
 | Cross-project view | `/analytics` | [Analytics](/features/analytics) |
 | Quality report | *Export* on `/analytics` and `/projects/:id` | [Quality reports](/features/quality-reports) |
 | Report schedule, report snapshot | `/reports`, `/reports/:id` | [Quality reports](/features/quality-reports#report-schedules) |

@@ -7,7 +7,9 @@
  *
  * Copy rules: 1–2 sentences, sentence case, American English. The `doc` field
  * is a docs page + optional `#anchor` passed through `docsUrl()`; omit it when
- * no docs section exists yet (text-only hint). The `envVars` field lists the
+ * no docs section exists yet (text-only hint). The optional `recipe` links the
+ * recipe that answers the question the block raises, labeled with that
+ * question. The `envVars` field lists the
  * `PIWI_*` environment variable(s) that override the setting; it is typed as
  * `PiwiEnvVarName[]` so a typo is a compile error (see `shared/piwi-env-vars`).
  */
@@ -20,6 +22,11 @@ export interface HelpTopic {
   text: string;
   /** Docs page + optional `#anchor` (passed to `docsUrl()`); omit if none. */
   doc?: string;
+  /**
+   * The recipe that answers the question this block raises, shown under
+   * "Learn more" as a second link labeled with the recipe's question.
+   */
+  recipe?: { question: string; doc: string };
   /**
    * `PIWI_*` environment variable(s) that override this setting (env always
    * wins; the UI shows the field read-only when set). Listed in the popover so a
@@ -93,7 +100,7 @@ export const HELP_TOPICS = {
   'analytics.cluster-landscape': {
     title: 'Failure clusters',
     text: 'Open failure clusters across all projects — the biggest and oldest unresolved root causes. Clusters outlive run retention, so this works on long horizons.',
-    doc: 'features/ai-diagnosis#failure-clustering',
+    doc: 'features/failure-clusters#how-failures-are-grouped',
   },
   'analytics.regression-velocity': {
     title: 'Regression velocity',
@@ -330,6 +337,7 @@ export const HELP_TOPICS = {
     title: 'Flaky tests',
     text: 'Tests that fail intermittently across runs. Impact estimates wasted CI time; the score (0–100) rates severity and root cause explains why.',
     doc: 'features/flaky-tests#flaky-test-detection',
+    recipe: { question: 'Cut costly flakiness', doc: 'recipes/flaky-cleanup' },
   },
   'project.quarantine': {
     title: 'Quarantine',
@@ -340,6 +348,7 @@ export const HELP_TOPICS = {
     title: 'Performance',
     text: 'Duration trends for the suite — average and P90 (the slowest 10% threshold). Use it to catch tests getting steadily slower.',
     doc: 'features/slow-tests',
+    recipe: { question: 'Cut the time it costs', doc: 'recipes/faster-suite' },
   },
   'project.timeline': {
     title: 'Timeline markers',
@@ -448,6 +457,7 @@ export const HELP_TOPICS = {
     title: 'Changes',
     text: 'What differs between this run and one baseline. By default that is the last passing run in the same environment — on the same branch, then the branch it forked from (the pull request’s target, else the project’s default branch), then any branch; the line under the selector says which rung applied. Pick a base branch to take the baseline from that branch only, or pick one specific run. The tests that started or stopped failing, the ones that got slower or faster, the commits landed since the baseline, and the environment fields that moved are all read against that one baseline.',
     doc: 'features/run-changes',
+    recipe: { question: 'Regression or flake?', doc: 'recipes/regression-or-flaky' },
   },
   'run.timeline': {
     title: 'Workers timeline',
@@ -531,7 +541,8 @@ export const HELP_TOPICS = {
   'cluster.concept': {
     title: 'Failure clusters',
     text: 'Failures with the same error fingerprint are grouped into one cluster, so a single root cause shows up once instead of N times.',
-    doc: 'features/ai-diagnosis#failure-clustering',
+    doc: 'features/failure-clusters#how-failures-are-grouped',
+    recipe: { question: 'Triage a run gone red', doc: 'recipes/mass-failure' },
   },
   'cluster.owner': {
     title: 'Owner',
@@ -870,6 +881,7 @@ export const HELP_TOPICS = {
     title: 'Locator fix',
     text: 'When a locator breaks after a UI change, Piwi suggests pre-captured alternatives from the last passing run — or from another test in the project that uses the same locator. Each alternative is ranked by stability score — prefer data-testid (100) over CSS classes (10–40). The recommended fix shows the exact one-line edit for the failing test, with a "Copy fix prompt" for an AI coding agent. A "Your pick" badge marks a replacement you confirmed on the failing page: "Pick from snapshot" opens the failure-time DOM and lets you click the intended element, and "Pick from trace" opens the failure trace in the trace viewer, whose Pick locator tool works on the recorded page snapshots.',
     doc: 'features/locator-healing',
+    recipe: { question: 'Fix a broken locator', doc: 'recipes/broken-locator' },
   },
 
   // ── Locator index ──────────────────────────────────────────────────────

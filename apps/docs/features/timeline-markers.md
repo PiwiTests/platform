@@ -58,3 +58,8 @@ curl -X POST "$PIWI_DASHBOARD_URL/api/projects/<projectId>/markers" -H "Authoriz
 ## API
 
 Markers are managed through the REST API (`GET`/`POST /api/projects/:id/markers`, `PATCH`/`DELETE /api/markers/:id`). See the interactive [API docs](https://piwitests.dev/demo/docs) for request and response shapes.
+
+## Related
+
+- [Regression or flake?](/recipes/regression-or-flaky): correlating a failure with a deploy
+- [Analytics](./analytics): the trend charts the markers annotate
