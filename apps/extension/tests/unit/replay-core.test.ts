@@ -3,6 +3,7 @@ import type { RecordedStep, StepAssertion } from '@piwitests/core/recording';
 import { toStepsDocument } from '@piwitests/core/steps';
 import {
   absoluteUrl,
+  createWaker,
   evaluateAssertion,
   replayVerdict,
   verdictText,
@@ -237,5 +238,45 @@ describe('readStepsFile', () => {
     await expect(readStepsFile('notes.json', new TextEncoder().encode('{"a":1}'))).rejects.toThrow(
       /^notes\.json n’est pas un fichier d’étapes\u00a0: \S/,
     );
+  });
+});
+
+describe('createWaker', () => {
+  it('lets the loop through on the next wake', async () => {
+    const waker = createWaker();
+    let through = false;
+    const waiting = waker.wait().then(() => (through = true));
+    await Promise.resolve();
+    expect(through).toBe(false);
+    waker.wake();
+    await waiting;
+    expect(through).toBe(true);
+  });
+
+  it('keeps a wake that came while the loop was busy, for its next wait', async () => {
+    // Step mode turned off while a step still waited for the page: the loop
+    // must not then wait for a Next that was never going to come.
+    const waker = createWaker();
+    waker.wake();
+    await expect(waker.wait()).resolves.toBeUndefined();
+  });
+
+  it('keeps one wake only, and forgets it when a new loop starts', async () => {
+    const waker = createWaker();
+    waker.wake();
+    waker.wake();
+    await waker.wait();
+    let through = false;
+    void waker.wait().then(() => (through = true));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(through).toBe(false);
+
+    const fresh = createWaker();
+    fresh.wake();
+    fresh.reset();
+    let freshThrough = false;
+    void fresh.wait().then(() => (freshThrough = true));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(freshThrough).toBe(false);
   });
 });

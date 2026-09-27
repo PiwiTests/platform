@@ -147,10 +147,18 @@ function running(
   };
 }
 
+/** The replay's stored state, read from the page; the replay navigates it, so a read can land mid-load and is retried. */
 async function replayState(
   page: Page,
 ): Promise<{ status: string; results: Array<{ status: string; detail: string | null }> }> {
-  return page.evaluate(() => JSON.parse(window.name).session.piwiReplay);
+  for (;;) {
+    try {
+      return await page.evaluate(() => JSON.parse(window.name).session.piwiReplay);
+    } catch (error) {
+      if (!/Execution context was destroyed|navigat/i.test(String(error))) throw error;
+      await page.waitForLoadState('domcontentloaded');
+    }
+  }
 }
 
 async function verdict(page: Page): Promise<Record<string, unknown>> {
@@ -200,6 +208,27 @@ test.describe('replay-panel.js', () => {
       status: 'done',
       detail: 'Started from the tab’s page instead.',
     });
+  });
+
+  test('step by step turned off while the page is still settling plays the rest', async ({ context }) => {
+    await routePages(context, 'buggy');
+    // The page keeps changing for a while, so the first step waits for it: the
+    // panel is up, and step mode is turned off, before the replay reaches Next.
+    await context.addInitScript(() => {
+      const started = Date.now();
+      const tick = setInterval(() => {
+        document.body?.setAttribute('data-tick', String(Date.now()));
+        if (Date.now() - started > 2500) clearInterval(tick);
+      }, 100);
+    });
+    await stubChrome(context, running(true));
+    await openShadowRoots(context);
+    const page = await context.newPage();
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.goto(`${ORIGIN}/login`);
+    const stepByStep = page.locator('#piwi-replay-hud-host').getByRole('checkbox', { name: 'Step by step' });
+    await stepByStep.uncheck();
+    expect(await verdict(page)).toEqual({ kind: 'reproduced', step: 4, found: '"Total: 40"', sameAsReported: true });
   });
 
   test('stops where the page differs, and says why', async ({ context }) => {

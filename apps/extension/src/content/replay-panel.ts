@@ -14,7 +14,7 @@ import {
 } from '../shared/replay-storage.js';
 import { ensureSessionAccess } from '../shared/session-access.js';
 import { REPLAY_DIALOG_HOST_ID, REPLAY_HUD_HOST_ID, SHARED_STYLE } from './record-ui.js';
-import { evaluateAssertion, replayVerdict, verdictText, type ReplayVerdict } from './replay-core.js';
+import { createWaker, evaluateAssertion, replayVerdict, verdictText, type ReplayVerdict } from './replay-core.js';
 import { createCursor, type FakeCursor } from './replay-cursor.js';
 import {
   ACTION_TIMEOUT_MS,
@@ -168,19 +168,15 @@ function notifyFinished(): void {
 let cursor: FakeCursor | null = null;
 let loopActive = false;
 /** Resolves the wait for Next in step mode, or for Continue after a pause. */
-let release: (() => void) | null = null;
+
+const waker = createWaker();
 
 function waitForRelease(): Promise<void> {
-  return new Promise((resolve) => {
-    release = () => {
-      release = null;
-      resolve();
-    };
-  });
+  return waker.wait();
 }
 
 function wakeLoop(): void {
-  release?.();
+  waker.wake();
 }
 
 function glyph(result: ReplayStepResult | undefined, current: boolean): string {
@@ -448,6 +444,7 @@ async function waitForNext(index: number): Promise<ReplayState | null> {
 async function runReplay(): Promise<void> {
   if (loopActive) return;
   loopActive = true;
+  waker.reset();
   try {
     let state = await getReplayState();
     if (!state || (state.status !== 'running' && state.status !== 'paused') || state.origin !== location.origin) return;

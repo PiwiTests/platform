@@ -167,3 +167,43 @@ export function verdictText(verdict: ReplayVerdict, steps: RecordedStep[]): { ti
       };
   }
 }
+
+export interface Waker {
+  /** Resolves on the next `wake`, or at once when one came since the last wait. */
+  wait(): Promise<void>;
+  wake(): void;
+  /** Forgets a wake that came before this loop started. */
+  reset(): void;
+}
+
+/**
+ * What the replay loop waits on in step mode and when paused: Next, turning
+ * step mode off, Continue or Stop. A wake that comes while the loop is still
+ * busy with a step (waiting for the page to settle) is kept for its next
+ * wait, rather than lost with the loop left waiting for a click already made.
+ */
+export function createWaker(): Waker {
+  let release: (() => void) | null = null;
+  let early = false;
+  return {
+    wait() {
+      if (early) {
+        early = false;
+        return Promise.resolve();
+      }
+      return new Promise((resolve) => {
+        release = () => {
+          release = null;
+          resolve();
+        };
+      });
+    },
+    wake() {
+      if (release) release();
+      else early = true;
+    },
+    reset() {
+      early = false;
+    },
+  };
+}
