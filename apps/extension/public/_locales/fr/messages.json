@@ -89,6 +89,24 @@
   "common_instanceUnreachable": {
     "message": "Piwi Picker n’a pas pu joindre l’instance : vérifiez l’adresse, et qu’elle est démarrée."
   },
+  "common_desktopUnreachable": {
+    "message": "L’application de bureau ne répond pas. Est-elle lancée ?"
+  },
+  "common_desktopRejected": {
+    "message": "L’application de bureau a refusé le jeton."
+  },
+  "common_desktopUnsupported": {
+    "message": "Cette adresse n’est pas une application de bureau Piwi qui peut lancer des rapports de bug."
+  },
+  "common_desktopStatus": {
+    "message": "L’application de bureau a répondu $status$.",
+    "placeholders": {
+      "status": {
+        "content": "$1",
+        "example": "500"
+      }
+    }
+  },
   "common_projectsFailed": {
     "message": "La liste des projets n’a pas pu être lue ($status$).",
     "placeholders": {
@@ -576,6 +594,36 @@
   },
   "options_testing": {
     "message": "Test en cours…"
+  },
+  "options_desktopHeading": {
+    "message": "Application de bureau"
+  },
+  "options_desktopHint": {
+    "message": "Facultatif. Associé à l’application de bureau Piwi Dashboard, Rejouer peut lui demander de lancer un rapport de bug avec Playwright dans votre projet. Copiez l’adresse et le jeton depuis la page Configuration de l’application, sous Connecter Piwi Picker."
+  },
+  "options_desktopUrl": {
+    "message": "Adresse de l’application de bureau"
+  },
+  "options_desktopToken": {
+    "message": "Jeton"
+  },
+  "options_desktopSave": {
+    "message": "Enregistrer et tester"
+  },
+  "options_desktopForget": {
+    "message": "Oublier"
+  },
+  "options_desktopSaved": {
+    "message": "Associé à l’application de bureau."
+  },
+  "options_desktopForgotten": {
+    "message": "L’application de bureau n’est plus associée."
+  },
+  "options_desktopNotLoopback": {
+    "message": "Saisissez l’adresse de l’application de bureau, comme http://127.0.0.1:4318, et son jeton."
+  },
+  "options_desktopNeedsAccess": {
+    "message": "Autorisez l’accès à l’adresse de l’application de bureau pour l’associer."
   },
   "options_accessDenied": {
     "message": "L’accès à cette instance a été refusé : autorisez-le pour que Piwi Picker lise votre catalogue."
@@ -2635,6 +2683,51 @@
         "example": "The instance cannot be reached."
       }
     }
+  },
+  "replay_runWithPlaywright": {
+    "message": "Lancer avec Playwright…"
+  },
+  "replay_desktopTitle": {
+    "message": "Lancer avec Playwright dans l’application de bureau"
+  },
+  "replay_desktopNotPaired": {
+    "message": "Associez d’abord l’application de bureau, dans les options de Piwi Picker sous Application de bureau."
+  },
+  "replay_desktopOpenOptions": {
+    "message": "Ouvrir les options"
+  },
+  "replay_desktopPreview": {
+    "message": "Envoie à l’application de bureau à $url$ : le titre et ces étapes, avec les valeurs saisies. Aucune capture, entrée de console ou requête. Rien ne se lance avant que vous le démarriez dans la fenêtre de l’application.",
+    "placeholders": {
+      "url": {
+        "content": "$1",
+        "example": "http://127.0.0.1:4318"
+      }
+    }
+  },
+  "replay_desktopShowPayload": {
+    "message": "Ce qui est envoyé"
+  },
+  "replay_desktopSend": {
+    "message": "Envoyer"
+  },
+  "replay_desktopWaiting": {
+    "message": "Envoyé. Démarrez-le dans la fenêtre de l’application de bureau…"
+  },
+  "replay_desktopNoWindow": {
+    "message": "Envoyé. La fenêtre de l’application de bureau est fermée : ouvrez-la pour démarrer."
+  },
+  "replay_desktopRunning": {
+    "message": "Exécution avec Playwright dans l’application de bureau…"
+  },
+  "replay_desktopRanIn": {
+    "message": "Playwright dans l’application de bureau indique :"
+  },
+  "replay_desktopDeclined": {
+    "message": "Refusé dans l’application de bureau."
+  },
+  "replay_desktopExpired": {
+    "message": "La demande a expiré avant d’être démarrée."
   },
   "replay_fileLabel": {
     "message": "Le .zip du rapport de bug, ou son steps.json"

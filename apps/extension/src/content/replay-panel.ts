@@ -36,6 +36,7 @@ import {
 } from './replay-actions.js';
 import { readStepsFile } from './steps-file.js';
 import { attachPanelShadow } from './panel-root.js';
+import { openDesktopRun } from './desktop-run-panel.js';
 
 /**
  * Replay: plays a bug report's steps (or any steps file) in this tab, on this
@@ -142,6 +143,7 @@ async function startReplay(
   steps: PiwiSteps,
   stepMode: boolean,
   startOn: string | null,
+  bugReportId: number | null = null,
 ): Promise<{ ok: boolean; error?: string }> {
   try {
     const response = (await chrome.runtime.sendMessage({
@@ -151,6 +153,7 @@ async function startReplay(
       stepMode,
       inject: false,
       startOn,
+      bugReportId,
     })) as { ok: boolean; error?: string } | undefined;
     return response ?? { ok: false, error: t('common_workerNoAnswer') };
   } catch (e) {
@@ -367,12 +370,20 @@ function renderHud(state: ReplayState, verdict: ReplayVerdict | null = null): vo
         t('replay_again'),
         () => {
           void (async () => {
-            const response = await startReplay(state.steps, state.stepMode, state.startPage?.actual ?? null);
+            const response = await startReplay(
+              state.steps,
+              state.stepMode,
+              state.startPage?.actual ?? null,
+              state.bugReportId ?? null,
+            );
             if (response.ok) void runReplay();
           })();
         },
         'primary',
       ),
+    );
+    controls.appendChild(
+      button(t('replay_runWithPlaywright'), () => openDesktopRun(state.steps, state.bugReportId ?? null, STYLE)),
     );
     controls.appendChild(
       button(t('common_close'), () => document.getElementById(REPLAY_HUD_HOST_ID)?.remove(), 'stop'),
@@ -642,6 +653,8 @@ function openChooser(lastReport: PiwiSteps | null): void {
   panel.append(title, sub);
 
   let chosen: PiwiSteps | null = null;
+  /** The instance's report the steps came from, when they did. */
+  let chosenReportId: number | null = null;
   const summary = document.createElement('div');
   summary.className = 'sub';
   summary.style.marginTop = '6px';
@@ -656,8 +669,9 @@ function openChooser(lastReport: PiwiSteps | null): void {
   startBox.type = 'checkbox';
   const startText = document.createElement('span');
   startLabel.append(startBox, startText);
-  const describe = (steps: PiwiSteps) => {
+  const describe = (steps: PiwiSteps, reportId: number | null = null) => {
     chosen = steps;
+    chosenReportId = reportId;
     const first = steps.steps[0];
     startLabel.hidden = first?.action !== 'goto';
     startBox.checked = false;
@@ -737,7 +751,7 @@ function openChooser(lastReport: PiwiSteps | null): void {
     const id = Number(reports.value);
     if (!id) return;
     void instanceReportSteps(id).then((answer) => {
-      if (answer.ok) describe(answer.steps);
+      if (answer.ok) describe(answer.steps, id);
       else {
         chosen = null;
         summary.textContent = '';
@@ -767,7 +781,7 @@ function openChooser(lastReport: PiwiSteps | null): void {
         }
         const steps = chosen;
         const startOn = !startLabel.hidden && startBox.checked ? location.href : null;
-        void startReplay(steps, stepBox.checked, startOn).then((response) => {
+        void startReplay(steps, stepBox.checked, startOn, chosenReportId).then((response) => {
           if (!response.ok) {
             message.textContent = response.error ?? t('common_replayStartFailed');
             return;
@@ -778,6 +792,17 @@ function openChooser(lastReport: PiwiSteps | null): void {
       },
       'primary',
     ),
+  );
+  row.appendChild(
+    button(t('replay_runWithPlaywright'), () => {
+      if (!chosen) {
+        message.textContent = t('replay_chooseFirst');
+        return;
+      }
+      const steps = chosen;
+      close();
+      openDesktopRun(steps, chosenReportId, STYLE);
+    }),
   );
   row.appendChild(button(t('common_cancel'), close));
   panel.append(row, message);

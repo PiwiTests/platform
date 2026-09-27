@@ -132,6 +132,13 @@ each mapped project's catalog and locator index, and its bug reports (Replay's l
 pattern the user adds, and a bug report once the user clicks Send in its preview (`bug-send-panel.ts`: the steps and
 every kind of evidence shown, a box per kind and one that leaves the typed values out; the payload is built by the pure
 `bug-send.ts`). The first send in a profile explains once what connected mode now sends (`piwiBugSendExplained`).
+
+**Run with Playwright** (`desktop-run-panel.ts`, worker side `background/desktop-repro.ts`) sends a report's title and
+steps, nothing else, to the desktop app paired in the options (`piwiDesktop`: its loopback address and token, pasted
+from the app's **Connect Piwi Picker**; `desktop-settings.ts` accepts only plain http on 127.0.0.1, localhost or
+[::1]). The dialog shows the payload before **Send**; the options page requests that one loopback origin inside the
+**Save and test** click. The request is JSON with `x-piwi-token`, holds steps and never code, and the app runs nothing
+before the developer confirms it in its window; the dialog then polls the request for the verdict.
 Only `piwi-client.ts` makes those requests, from exactly two
 contexts: `src/options/` (connecting, saving, reading and adding URL patterns) and the background worker's `piwi-refresh-catalog` /
 `piwi-refresh-locator-index` handlers and its bug-report messages (`src/background/bug-reports.ts`:

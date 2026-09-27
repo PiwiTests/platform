@@ -417,6 +417,21 @@
 
       <div id="status" role="status"></div>
 
+      <h2 class="connect" data-i18n="options_desktopHeading">Desktop app</h2>
+      <p class="lead" data-i18n="options_desktopHint">
+        Optional. Paired with the Piwi Dashboard desktop app, Replay can ask it to run a bug report with Playwright in
+        your project. Copy the address and token from the app’s Setup page, under Connect Piwi Picker.
+      </p>
+      <label for="desktop-url" data-i18n="options_desktopUrl">Address of the desktop app</label>
+      <input id="desktop-url" type="url" placeholder="http://127.0.0.1:4318" autocomplete="off" />
+      <label for="desktop-token" data-i18n="options_desktopToken">Token</label>
+      <input id="desktop-token" type="password" placeholder="pd_…" autocomplete="off" />
+      <div class="row">
+        <button id="desktop-save" class="primary" type="button" data-i18n="options_desktopSave">Save and test</button>
+        <button id="desktop-forget" class="danger" type="button" data-i18n="options_desktopForget">Forget</button>
+      </div>
+      <div id="desktop-status" role="status"></div>
+
       <div class="privacy" data-i18n="options_privacy">
         Only used from this page: the API key never reaches a web page’s scripts. Recorded steps go nowhere unless you
         copy or download them. Connecting downloads your projects’ URL patterns, each mapped project’s function catalog

@@ -3,6 +3,8 @@ import type { LocatorIndex } from '@piwitests/core/locator-index';
 import type { ConnectionSettings, ServerPatternsAnswer } from './connection-settings';
 import type { ClientInfo } from './client-info.js';
 import type { ConnectPoll } from './connect-flow.js';
+import type { DesktopSettings } from './desktop-settings.js';
+import type { PiwiSteps } from '@piwitests/core/steps';
 import { t } from './i18n.js';
 
 /**
@@ -10,7 +12,9 @@ import { t } from './i18n.js';
  * network call. Called from the options page (connecting, saving, reading and
  * adding URL patterns) and the background service worker (`piwi-refresh-catalog`, `piwi-refresh-locator-index`,
  * and the bug-report messages: `piwi-send-bug-report` once the reporter has
- * confirmed the preview, `piwi-list-bug-reports`, `piwi-get-bug-report`) only,
+ * confirmed the preview, `piwi-list-bug-reports`, `piwi-get-bug-report`, and
+ * `piwi-desktop-repro` to the paired desktop app once the developer confirmed
+ * its preview) only,
  * never from a content script, so the API key is never reachable from a web
  * page's JS context (matches `extension/AGENTS.md`'s standalone stance:
  * connected mode is opt-in and clearly separated).
@@ -452,4 +456,88 @@ export async function fetchBugReportSteps(settings: ConnectionSettings, id: numb
   if (!res.ok) throw new Error(await refusal(res));
   const body = (await res.json()) as { title?: unknown; steps?: unknown };
   return { ...(body.steps as object), title: typeof body.title === 'string' ? body.title : null };
+}
+
+// ---------------------------------------------------------------------------
+// The paired desktop app
+
+function desktopHeaders(desktop: DesktopSettings): Record<string, string> {
+  return { 'x-piwi-token': desktop.token };
+}
+
+function desktopRefusal(res: Response): string {
+  if (res.status === 401) return t('common_desktopRejected');
+  if (res.status === 404) return t('common_desktopUnsupported');
+  return t('common_desktopStatus', { status: res.status });
+}
+
+/** Checks the pairing: `GET /api/desktop/reporter-config` answers only with the app's token. */
+export async function testDesktop(desktop: DesktopSettings): Promise<ConnectionCheckResult> {
+  try {
+    const res = await fetch(`${desktop.url}/api/desktop/reporter-config`, {
+      headers: desktopHeaders(desktop),
+      signal: timeout(),
+    });
+    return res.ok ? { ok: true } : { ok: false, error: desktopRefusal(res) };
+  } catch {
+    return { ok: false, error: t('common_desktopUnreachable') };
+  }
+}
+
+export interface ReproRequestSend {
+  steps: PiwiSteps;
+  title: string | null;
+  options: { headed: boolean; trace: boolean };
+  bugReportId: number | null;
+  instanceUrl: string | null;
+}
+
+/** Asks the desktop app to run steps with Playwright; the developer confirms it in the app's window. */
+export async function sendReproRequest(
+  desktop: DesktopSettings,
+  send: ReproRequestSend,
+): Promise<{ id: string; windowOpen: boolean }> {
+  let res: Response;
+  try {
+    res = await fetch(`${desktop.url}/api/desktop/repro-requests`, {
+      method: 'POST',
+      headers: { ...desktopHeaders(desktop), 'Content-Type': 'application/json' },
+      body: JSON.stringify(send),
+      signal: timeout(),
+    });
+  } catch {
+    throw new Error(t('common_desktopUnreachable'));
+  }
+  if (!res.ok) throw new Error(desktopRefusal(res));
+  const body = (await res.json()) as { id?: unknown; windowOpen?: unknown };
+  if (typeof body.id !== 'string') throw new Error(t('common_desktopStatus', { status: res.status }));
+  return { id: body.id, windowOpen: body.windowOpen === true };
+}
+
+/** What the desktop app says about a request: its status and, once run, the verdict. */
+export interface ReproRequestState {
+  status: 'waiting' | 'running' | 'done' | 'declined' | 'expired';
+  verdict:
+    | { kind: 'reproduced'; step: number; found: string | null }
+    | { kind: 'not-reproduced' }
+    | { kind: 'diverged'; step: number; reason: string }
+    | { kind: 'completed' }
+    | { kind: 'stopped' }
+    | null;
+}
+
+export async function fetchReproRequest(desktop: DesktopSettings, id: string): Promise<ReproRequestState> {
+  let res: Response;
+  try {
+    res = await fetch(`${desktop.url}/api/desktop/repro-requests/${encodeURIComponent(id)}`, {
+      headers: desktopHeaders(desktop),
+      signal: timeout(),
+    });
+  } catch {
+    throw new Error(t('common_desktopUnreachable'));
+  }
+  if (res.status === 404) return { status: 'expired', verdict: null };
+  if (!res.ok) throw new Error(desktopRefusal(res));
+  const body = (await res.json()) as Partial<ReproRequestState>;
+  return { status: body.status ?? 'expired', verdict: body.verdict ?? null };
 }

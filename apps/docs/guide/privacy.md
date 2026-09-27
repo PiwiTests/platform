@@ -61,6 +61,10 @@ kept ticked: screenshots of the tab, console errors and warnings, failed request
 status; never a header or a body) and an outline of the page. It goes only to the instance the extension is connected
 to, and it is stored there like a run's evidence.
 
+Paired with the [desktop app](/features/bug-reports#running-it-with-playwright-in-the-desktop-app), it also sends a
+report's title and steps, with their typed values and nothing else, to that app on this machine when someone clicks
+**Send** in the **Run with Playwright** preview.
+
 ## What Piwi deliberately does not capture
 
 Some data is skipped at the source, so it never exists to leak:

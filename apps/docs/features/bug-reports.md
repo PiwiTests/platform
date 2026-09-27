@@ -118,6 +118,23 @@ The ticket then follows the report: with **Comment on fix** and **Transition on 
 comments on its ticket and moves it; with **Resolve on close** and **Reopen on ticket reopen**, the report closes and
 reopens with its ticket.
 
+## Running it with Playwright in the desktop app
+
+For the exact verdict and a trace, the [desktop app](./desktop) runs a report's steps with Playwright in your project.
+Pair it once: **Connect Piwi Picker**, on the app's **Setup** page, shows its address and token to paste into the
+extension's options, under **Desktop app**.
+
+**Run with Playwright…**, in Replay's chooser or on a finished replay, shows what it sends (the title and the steps,
+with the values typed in them) and sends it on **Send**. The request holds steps, never code. The app's window shows
+it with the steps in words, the linked project to run it in, and the flags (headed and a trace by default, a
+Playwright project, a repeat count). Nothing runs before **Run with Playwright**; **Decline** drops it, and a request
+left unanswered expires after ten minutes.
+
+The app writes the spec to run, with the project's settings, to `piwi-repro/bug-<id>.spec.ts` under the test directory
+your Playwright config names, runs it in the **Local runs** tray with the project's own config, and deletes it when the
+run ends. The verdict, read from where the test failed, goes back to Piwi Picker: **reproduced** when an expected
+result does not hold, **not reproduced** when the test passes, or **diverged** at the step that failed first.
+
 ## Replaying a report from Piwi
 
 A developer with the extension connected finds the project's open reports in **Replay a bug report**, beside the file

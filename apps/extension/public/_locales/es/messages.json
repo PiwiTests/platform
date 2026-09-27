@@ -89,6 +89,24 @@
   "common_instanceUnreachable": {
     "message": "Piwi Picker no pudo conectar con la instancia: revisa la dirección y que esté en funcionamiento."
   },
+  "common_desktopUnreachable": {
+    "message": "La aplicación de escritorio no responde. ¿Está abierta?"
+  },
+  "common_desktopRejected": {
+    "message": "La aplicación de escritorio rechazó el token."
+  },
+  "common_desktopUnsupported": {
+    "message": "Esta dirección no es una aplicación de escritorio de Piwi que pueda ejecutar informes de errores."
+  },
+  "common_desktopStatus": {
+    "message": "La aplicación de escritorio respondió $status$.",
+    "placeholders": {
+      "status": {
+        "content": "$1",
+        "example": "500"
+      }
+    }
+  },
   "common_projectsFailed": {
     "message": "No se pudo leer la lista de proyectos ($status$).",
     "placeholders": {
@@ -576,6 +594,36 @@
   },
   "options_testing": {
     "message": "Probando…"
+  },
+  "options_desktopHeading": {
+    "message": "Aplicación de escritorio"
+  },
+  "options_desktopHint": {
+    "message": "Opcional. Vinculado a la aplicación de escritorio Piwi Dashboard, Reproducir puede pedirle que ejecute un informe de error con Playwright en tu proyecto. Copia la dirección y el token desde la página Configuración de la aplicación, en Conectar Piwi Picker."
+  },
+  "options_desktopUrl": {
+    "message": "Dirección de la aplicación de escritorio"
+  },
+  "options_desktopToken": {
+    "message": "Token"
+  },
+  "options_desktopSave": {
+    "message": "Guardar y probar"
+  },
+  "options_desktopForget": {
+    "message": "Olvidar"
+  },
+  "options_desktopSaved": {
+    "message": "Vinculado a la aplicación de escritorio."
+  },
+  "options_desktopForgotten": {
+    "message": "La aplicación de escritorio ya no está vinculada."
+  },
+  "options_desktopNotLoopback": {
+    "message": "Introduce la dirección de la aplicación de escritorio, como http://127.0.0.1:4318, y su token."
+  },
+  "options_desktopNeedsAccess": {
+    "message": "Permite el acceso a la dirección de la aplicación de escritorio para vincularla."
   },
   "options_accessDenied": {
     "message": "Se rechazó el acceso a esa instancia: permítelo para que Piwi Picker pueda leer tu catálogo."
@@ -2635,6 +2683,51 @@
         "example": "The instance cannot be reached."
       }
     }
+  },
+  "replay_runWithPlaywright": {
+    "message": "Ejecutar con Playwright…"
+  },
+  "replay_desktopTitle": {
+    "message": "Ejecutar con Playwright en la aplicación de escritorio"
+  },
+  "replay_desktopNotPaired": {
+    "message": "Primero vincula la aplicación de escritorio, en las opciones de Piwi Picker, en Aplicación de escritorio."
+  },
+  "replay_desktopOpenOptions": {
+    "message": "Abrir las opciones"
+  },
+  "replay_desktopPreview": {
+    "message": "Envía a la aplicación de escritorio en $url$: el título y estos pasos, con los valores escritos en ellos. Ninguna captura, entrada de consola ni solicitud. Nada se ejecuta hasta que lo inicies en la ventana de la aplicación.",
+    "placeholders": {
+      "url": {
+        "content": "$1",
+        "example": "http://127.0.0.1:4318"
+      }
+    }
+  },
+  "replay_desktopShowPayload": {
+    "message": "Lo que se envía"
+  },
+  "replay_desktopSend": {
+    "message": "Enviar"
+  },
+  "replay_desktopWaiting": {
+    "message": "Enviado. Inícialo en la ventana de la aplicación de escritorio…"
+  },
+  "replay_desktopNoWindow": {
+    "message": "Enviado. La ventana de la aplicación de escritorio está cerrada: ábrela para iniciar la ejecución."
+  },
+  "replay_desktopRunning": {
+    "message": "Ejecutando con Playwright en la aplicación de escritorio…"
+  },
+  "replay_desktopRanIn": {
+    "message": "Playwright en la aplicación de escritorio indica:"
+  },
+  "replay_desktopDeclined": {
+    "message": "Rechazado en la aplicación de escritorio."
+  },
+  "replay_desktopExpired": {
+    "message": "La solicitud caducó antes de iniciarse."
   },
   "replay_fileLabel": {
     "message": "El .zip del informe de bug, o su steps.json"

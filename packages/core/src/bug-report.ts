@@ -184,6 +184,62 @@ export function renderBugSpec(report: BugReport, options: CodegenOptions = {}): 
   });
 }
 
+/** What a Playwright run of a report's spec left behind: the test's status and where it failed. */
+export interface SpecRunResult {
+  status: 'passed' | 'failed' | 'timedOut' | 'skipped' | 'interrupted';
+  /** The spec's line the error points at, when the error names one. */
+  line: number | null;
+  /** The error's message, when the test failed. */
+  message: string | null;
+}
+
+export type SpecRunVerdict =
+  | { kind: 'reproduced'; step: number; found: string | null }
+  | { kind: 'not-reproduced' }
+  | { kind: 'diverged'; step: number; reason: string }
+  | { kind: 'completed' }
+  | { kind: 'stopped' };
+
+/** Terminal color codes, such as the ones Playwright puts in its error messages. */
+const ANSI_CODES = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, 'g');
+
+/** The step a spec line belongs to: the last one starting on or before it. */
+function stepAtLine(stepLines: number[], line: number): number {
+  let step = 0;
+  for (let i = 0; i < stepLines.length; i++) if (stepLines[i]! <= line) step = i;
+  return step;
+}
+
+/**
+ * The verdict of a Playwright run of a report's spec (rendered without
+ * `test.fail()`), read as Replay reads its own: failing on an expected result
+ * is the bug showing, failing on any other step means the page differs there,
+ * and passing means it did not show. `stepLines` is the rendering's
+ * `CodegenResult.stepLines`.
+ */
+export function specRunVerdict(steps: RecordedStep[], stepLines: number[], result: SpecRunResult): SpecRunVerdict {
+  if (result.status === 'skipped' || result.status === 'interrupted') return { kind: 'stopped' };
+  if (result.status === 'passed') {
+    return steps.some((s) => s.action === 'assert' || s.action === 'assertVisible')
+      ? { kind: 'not-reproduced' }
+      : { kind: 'completed' };
+  }
+  // Playwright colors parts of a message whatever the environment asks.
+  const message = (result.message ?? '').replace(ANSI_CODES, '');
+  const step = result.line == null ? Math.max(0, steps.length - 1) : stepAtLine(stepLines, result.line);
+  const action = steps[step]?.action;
+  if (result.line != null && (action === 'assert' || action === 'assertVisible')) {
+    const found = /Received(?: string| value)?:\s*(.+)/.exec(message)?.[1]?.trim() ?? null;
+    return { kind: 'reproduced', step, found };
+  }
+  const reason =
+    message
+      .split('\n')
+      .find((l) => l.trim())
+      ?.trim() ?? result.status;
+  return { kind: 'diverged', step, reason };
+}
+
 /** Free text on one line, with the characters that would open HTML escaped. */
 function line(s: string): string {
   return s.replace(/\s+/g, ' ').replace(/</g, '&lt;').trim();

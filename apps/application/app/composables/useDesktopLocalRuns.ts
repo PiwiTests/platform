@@ -26,11 +26,26 @@ import {
 } from '~/utils/local-run-args';
 import type { RetryCase, RetryMode } from '~/utils/retry-command';
 import { commitUrl } from '#shared/scm-urls';
+import { specRunVerdict, type SpecRunResult, type SpecRunVerdict } from '@piwitests/core/bug-report';
+import type { PiwiSteps } from '@piwitests/core/steps';
 
 export type LocalRunStatus = 'running' | 'passed' | 'failed' | 'stopped' | 'error';
 
-/** What a run is: a plain test run, a full reproduction (checkout → install → test), or a bisect. */
-export type LocalRunKind = 'tests' | 'reproduce' | 'bisect';
+/**
+ * What a run is: a plain test run, a full reproduction (checkout → install →
+ * test), a bisect, or a bug report's steps run from a repro request.
+ */
+export type LocalRunKind = 'tests' | 'reproduce' | 'bisect' | 'repro';
+
+/** A repro request's run: the request it answers and, once over, its verdict. */
+export interface ReproRunState {
+  requestId: string;
+  steps: PiwiSteps;
+  args: string[];
+  /** What the spec recorded about its run; null when it recorded nothing. */
+  result: SpecRunResult | null;
+  verdict: SpecRunVerdict | null;
+}
 
 /** The phases a reproduce/bisect run streams a header for. */
 export type LocalRunPhase = 'checkout' | 'install' | 'browser' | 'test' | 'bisect';
@@ -104,6 +119,8 @@ export interface LocalRun {
   bisect: BisectState | null;
   /** Where a found bisect result is persisted and linked (kind === 'bisect'). */
   bisectTarget: BisectTarget | null;
+  /** The repro request it answers (kind === 'repro'). */
+  repro: ReproRunState | null;
   status: LocalRunStatus;
   lines: LocalRunLine[];
   exitCode: number | null;
@@ -178,13 +195,15 @@ interface BisectEventPayload {
 
 interface LocalRunEventPayload {
   id: number;
-  kind: 'stdout' | 'stderr' | 'error' | 'exit' | 'phase' | 'bisect';
+  kind: 'stdout' | 'stderr' | 'error' | 'exit' | 'phase' | 'bisect' | 'repro';
   line: string | null;
   code: number | null;
   /** For kind === 'phase': which phase the run entered. */
   phase?: LocalRunPhase | null;
   /** For kind === 'bisect': the bisect progress event. */
   bisect?: BisectEventPayload | null;
+  /** For kind === 'repro': what the repro spec recorded, or null. */
+  repro?: SpecRunResult | null;
 }
 
 /** Output lines kept per run — a soak run can produce hundreds of thousands. */
@@ -300,6 +319,10 @@ export function useDesktopLocalRuns() {
       if (payload.bisect) applyBisectEvent(run, payload.bisect);
       return;
     }
+    if (payload.kind === 'repro') {
+      if (run.repro) run.repro.result = payload.repro ?? null;
+      return;
+    }
     pushLine(run, payload.line ?? '', payload.kind !== 'stdout');
   }
 
@@ -363,6 +386,7 @@ export function useDesktopLocalRuns() {
       pushLine(run, errorMessage(error), true);
       run.status = 'error';
     } finally {
+      if (run.kind === 'repro') await finishRepro(run);
       run.finishedAt = Date.now();
       notifyFinished(run);
       trimFinished();
@@ -389,6 +413,13 @@ export function useDesktopLocalRuns() {
    * streams phase, output and bisect events under a single id.
    */
   async function driveSingle(run: LocalRun): Promise<number | null> {
+    if (run.kind === 'repro' && run.repro) {
+      return spawnCommand(run, 'desktop_run_repro', {
+        projectId: run.projectId,
+        requestId: run.repro.requestId,
+        args: run.repro.args,
+      });
+    }
     const args = buildReproduceArgs(run.cases);
     if (run.kind === 'bisect') {
       return spawnCommand(run, 'desktop_bisect_here', {
@@ -407,8 +438,59 @@ export function useDesktopLocalRuns() {
     });
   }
 
+  /**
+   * Read a repro run's verdict from what its spec recorded, against the lines
+   * each step starts on, and record it on the request, where Piwi Picker reads
+   * it. A run that could not start is recorded as stopped.
+   */
+  async function finishRepro(run: LocalRun) {
+    const repro = run.repro;
+    if (!repro) return;
+    let verdict: SpecRunVerdict = { kind: 'stopped' };
+    if (repro.result && run.status !== 'stopped') {
+      try {
+        const spec = await $fetch<{ stepLines: number[] }>(
+          `/api/desktop/repro-requests/${repro.requestId}/spec?projectId=${run.projectId}`,
+        );
+        verdict = specRunVerdict(repro.steps.steps, spec.stepLines, repro.result);
+      } catch {
+        verdict = specRunVerdict(repro.steps.steps, [], repro.result);
+      }
+    }
+    repro.verdict = verdict;
+    try {
+      await $fetch(`/api/desktop/repro-requests/${repro.requestId}`, {
+        method: 'PATCH',
+        body: { status: 'done', verdict, runId: run.piwiRunId ?? undefined },
+      });
+    } catch {
+      // The request expired meanwhile; the tray still shows the verdict.
+    }
+  }
+
   function notifyFinished(run: LocalRun) {
     if (run.status === 'stopped') return;
+    if (run.kind === 'repro') {
+      const verdict = reproVerdictText(run.repro?.verdict ?? null);
+      notifyUnfocused(run, run.projectLabel || 'Repro', verdict.label, 0);
+      toastApi?.add({
+        title: verdict.label,
+        description: verdict.detail,
+        icon: 'i-lucide-bug',
+        color: verdict.color === 'neutral' ? 'neutral' : verdict.color,
+        actions: [
+          {
+            label: 'View output',
+            color: 'neutral' as const,
+            variant: 'outline' as const,
+            onClick: () => {
+              trayOpen.value = true;
+            },
+          },
+        ],
+      });
+      return;
+    }
     const label = run.projectLabel || 'Local run';
     const seconds = Math.max(1, Math.round(((run.finishedAt ?? Date.now()) - run.startedAt) / 1000));
     const viewOutputAction = {
@@ -571,6 +653,7 @@ export function useDesktopLocalRuns() {
     good?: string | null;
     bad?: string | null;
     bisectTarget?: BisectTarget | null;
+    repro?: ReproRunState | null;
   }): LocalRun {
     const run: LocalRun = {
       key: nextKey++,
@@ -588,6 +671,7 @@ export function useDesktopLocalRuns() {
       bad: input.bad ?? null,
       bisect: input.kind === 'bisect' ? { step: null, stepsEstimate: null, candidates: [], firstBad: null } : null,
       bisectTarget: input.bisectTarget ?? null,
+      repro: input.repro ?? null,
       status: 'running',
       lines: [],
       exitCode: null,
@@ -715,7 +799,43 @@ export function useDesktopLocalRuns() {
     }
   }
 
+  /**
+   * Run a repro request the developer confirmed: the shell renders its steps
+   * as a spec in the project's test directory, runs it and removes it. The
+   * request is marked running here and done, with its verdict, when it ends.
+   */
+  async function startRepro(input: {
+    projectId: string | number;
+    projectLabel?: string | null;
+    requestId: string;
+    steps: PiwiSteps;
+    args: string[];
+  }): Promise<LocalRun | null> {
+    if (!tauriCore()) return null;
+    await $fetch(`/api/desktop/repro-requests/${input.requestId}`, {
+      method: 'PATCH',
+      body: { status: 'running', projectId: Number(input.projectId) },
+    });
+    const display = ['playwright test', `piwi-repro/bug-${input.requestId}.spec.ts`, ...input.args].join(' ');
+    return spawn({
+      kind: 'repro',
+      projectId: input.projectId,
+      projectLabel: input.projectLabel,
+      cases: [],
+      options: { ...DEFAULT_LOCAL_RUN_OPTIONS },
+      steps: [{ args: input.args, display }],
+      repro: { requestId: input.requestId, steps: input.steps, args: input.args, result: null, verdict: null },
+    });
+  }
+
   function rerun(run: LocalRun): LocalRun | null {
+    if (run.kind === 'repro' && run.repro) {
+      const { requestId, steps, args } = run.repro;
+      void startRepro({ projectId: run.projectId, projectLabel: run.projectLabel, requestId, steps, args }).catch(
+        (error) => toastApi?.add({ title: 'Could not run again', description: errorMessage(error), color: 'error' }),
+      );
+      return null;
+    }
     // Re-running repeats the run exactly; only explicit choices change the
     // project's saved defaults.
     if (run.kind === 'reproduce' && run.commit) {
@@ -787,6 +907,7 @@ export function useDesktopLocalRuns() {
     startRun,
     startReproduce,
     startBisect,
+    startRepro,
     rerun,
     stopRun,
     clearFinished,

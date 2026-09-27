@@ -42,6 +42,8 @@ export interface ReplayState {
   startPage?: { recorded: string; actual: string } | null;
   /** The request conditions on in the tab when the replay started (Slow down or fail a request). */
   conditions?: RequestCondition[];
+  /** The connected instance's bug report the steps came from, when they did. */
+  bugReportId?: number | null;
 }
 
 function isReplayState(value: unknown): value is ReplayState {
@@ -78,6 +80,7 @@ export function newReplayState(
   stepMode: boolean,
   now = Date.now(),
   startPage: ReplayState['startPage'] = null,
+  bugReportId: number | null = null,
 ): ReplayState {
   return {
     id: `${now.toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
@@ -90,5 +93,6 @@ export function newReplayState(
     cursor: null,
     startedAt: now,
     startPage,
+    bugReportId,
   };
 }

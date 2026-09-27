@@ -283,6 +283,79 @@ test.describe('replay-panel.js', () => {
   });
 });
 
+test.describe('Run with Playwright', () => {
+  /** The worker's answers, by message type; every message the page sends is kept in `__piwiSent`. */
+  async function stubWorker(context: BrowserContext, answers: Record<string, unknown>): Promise<void> {
+    await context.addInitScript((byType) => {
+      const sent: Array<{ type?: string }> = [];
+      (globalThis as any).__piwiSent = sent;
+      (globalThis as any).chrome.runtime.sendMessage = async (message: { type?: string }) => {
+        sent.push(message);
+        return (byType as Record<string, unknown>)[message.type ?? ''] ?? { ok: true };
+      };
+    }, answers);
+  }
+
+  async function chooseReport(page: Page) {
+    const dialog = page.locator('#piwi-replay-dialog-host').getByRole('dialog', { name: 'Replay a bug report' });
+    await dialog.getByLabel(/steps\.json/).setInputFiles({
+      name: 'steps.json',
+      mimeType: 'application/json',
+      buffer: Buffer.from(JSON.stringify(REPORT)),
+    });
+    await expect(dialog).toContainText('Coupon not applied');
+    await dialog.getByRole('button', { name: 'Run with Playwright…' }).click();
+    return page
+      .locator('#piwi-desktop-run-host')
+      .getByRole('dialog', { name: 'Run with Playwright in the desktop app' });
+  }
+
+  test('shows what it sends, sends nothing before Send, then shows the desktop app’s verdict', async ({ context }) => {
+    await openShadowRoots(context);
+    await routePages(context, 'buggy');
+    await stubChrome(context, {});
+    await stubWorker(context, {
+      'piwi-desktop-target': { paired: true, url: 'http://127.0.0.1:4318' },
+      'piwi-desktop-repro': { ok: true, id: 'a1b2', windowOpen: true },
+      'piwi-desktop-repro-status': {
+        ok: true,
+        status: 'done',
+        verdict: { kind: 'reproduced', step: 4, found: '"Total: 40"' },
+      },
+    });
+    const page = await context.newPage();
+    await page.goto(`${ORIGIN}/login`);
+
+    const desktop = await chooseReport(page);
+    await expect(desktop).toContainText('Sends to the desktop app at http://127.0.0.1:4318');
+    await expect(desktop).toContainText('5. ');
+    const sentTypes = () => page.evaluate(() => ((globalThis as any).__piwiSent as any[]).map((m) => m.type));
+    expect(await sentTypes()).not.toContain('piwi-desktop-repro');
+
+    await desktop.getByRole('button', { name: 'Send', exact: true }).click();
+    await expect(desktop).toContainText('Reproduced: the bug shows here');
+    const sent = await page.evaluate(() =>
+      ((globalThis as any).__piwiSent as any[]).find((m) => m.type === 'piwi-desktop-repro'),
+    );
+    expect(sent.steps.title).toBe('Coupon not applied');
+    expect(sent.steps.steps).toHaveLength(5);
+    expect(sent.bugReportId).toBeNull();
+  });
+
+  test('says to pair the desktop app first when none is', async ({ context }) => {
+    await openShadowRoots(context);
+    await routePages(context, 'buggy');
+    await stubChrome(context, {});
+    await stubWorker(context, { 'piwi-desktop-target': { paired: false, url: null } });
+    const page = await context.newPage();
+    await page.goto(`${ORIGIN}/login`);
+
+    const desktop = await chooseReport(page);
+    await expect(desktop).toContainText('Pair the desktop app first');
+    await expect(desktop.getByRole('button', { name: 'Open the options' })).toBeVisible();
+  });
+});
+
 test.describe('replay-panel.js in French', () => {
   test('shows its panel and its verdict in French, the page texts quoted the French way', async ({ context }) => {
     await openShadowRoots(context);

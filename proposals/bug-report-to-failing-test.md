@@ -16,7 +16,9 @@ options, Download steps and `piwi codegen`), PR 2 (Report a bug in Piwi Picker, 
 (`expectedStatus`, "looks fixed", `piwi:bug`) PR 5 (the dashboard: stored reports, their pages and spec, Send to
 Piwi…, Replay from the instance, `piwi bug`, MCP tools) and PR 7 (Jira: filing from the Send preview, the report's page,
 MCP or for every report, in the ticket's language, screenshots attached, the ticket following the report) and PR 8 (why the suite missed it, escaped defects on the Test
-Map, the `fix-a-reported-bug` skill) are built; evidence collected during a replay and the rest are not. The extension gains
+Map, the `fix-a-reported-bug` skill) and PR 6 (Run with Playwright in the desktop app: pairing, repro requests
+confirmed in the window, `desktop_run_repro`, the verdict back in Replay) are built; evidence collected during a replay
+and **Share result** are not. The extension gains
 two tools and, for the first time, requests that send page data to an instance, behind the explicit opt-in and preview
 its rules require. The reporter gains one wire field (`expectedStatus`); the dashboard gains a table, pages, endpoints,
 an issue type for the Jira integration, a CLI command and MCP tools; the desktop app gains a run request. The steps
@@ -573,7 +575,31 @@ PRs 1–3 close the loop between a tester and a developer with files alone: reco
     screenshot, refusals, both specs, a reproduction, the lifecycle through four runs, the pages), `bug-send.test.ts`
     and `bug-send.spec.ts` (extension: the preview and what it sends, and the real worker against a stub instance).
 
-### PR 6 — desktop
+### PR 6 — desktop (built)
+- Built as planned, with these decisions:
+  - **The verdict comes from the spec itself.** The rendered spec ends with an `afterEach` hook that writes the
+    test's status, the spec line of its first error and the message to the file `PIWI_REPRO_RESULT` names; the core
+    converter now returns `stepLines` (the line each step starts on), and `specRunVerdict` in
+    `@piwitests/core/bug-report` reads failing on an `assert` step as reproduced, failing elsewhere as diverged at
+    that step, and passing as not reproduced. The run is still a normal Piwi run through the project's own reporter,
+    but it is not stamped: `PIWI_BUG_REPORT` is not set, since the verdict no longer needs the run.
+  - **The window picks the project.** A request carries steps, not a project: the confirmation lists the projects
+    linked to a folder on this machine and the developer picks one; the spec is rendered with that project's
+    settings, catalog and suite locators (`renderStepsRunSpec`).
+  - **The shell fetches the spec itself** from the bundled server (`GET /api/desktop/repro-requests/:id/spec`, with
+    its own token over loopback), so the webview never hands it code; `repro_spec_path` refuses a test directory
+    outside the linked folder once both are resolved, and a request id that is not short hex.
+  - **A PATCH records what the window did** (`running` with the project, `declined`, `done` with the verdict), which
+    is what Piwi Picker polls; requests live in memory ten minutes after their last change.
+  - **Options are sent as defaults** (headed and a trace); the developer changes them in the window.
+  - **Connect Piwi Picker** is a card on the desktop app's Setup page (address and token), beside the reporter's.
+  - Posting the desktop verdict to the report's instance is left to **Share result**, which serves both kinds of run.
+- Verified: Rust unit tests on the path handling, app unit tests on the request parsing and store, app e2e with a
+  faked bridge (the dialog, the run, the verdict recorded, declining), extension e2e (the preview, nothing sent
+  before Send, the real worker against a stand-in app), and by hand against a built server in desktop mode: 401
+  without the token, 415 for a non-JSON body even with it, 400 for steps `parseSteps` refuses, and a page's preflight
+  refused; the rendered spec run with Playwright in a scratch project wrote its result, read as reproduced on the
+  buggy page and not reproduced on the fixed one. Not run: the Tauri window itself (no desktop e2e build here).
 - `server/api/desktop/repro-requests.post.ts`, `[id].get.ts`, `[id]/spec.get.ts` (new);
   `server/utils/desktop-handoff.ts` (`repro-request`); `apps/desktop/src-tauri/src/runner.rs` (`desktop_run_repro`),
   `lib.rs` (registration); the window's confirmation dialog and **Connect Piwi Picker**; the extension's Desktop app

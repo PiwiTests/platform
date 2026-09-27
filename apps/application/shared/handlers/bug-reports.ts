@@ -1,6 +1,6 @@
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { z } from 'zod';
-import { bugTitle, renderBugSpec, type BugReport } from '@piwitests/core/bug-report';
+import { bugTitle, emptyBugEvidence, renderBugSpec, type BugReport } from '@piwitests/core/bug-report';
 import { sessionFromSteps, type PiwiSteps } from '@piwitests/core/steps';
 import { renderSpec, type CodegenResult } from '@piwitests/core/codegen';
 import { canonicalLocator } from '@piwitests/core/locator-chain';
@@ -422,6 +422,21 @@ export interface BugReportSpec extends CodegenResult {
  * `test.fail()`, for a reproduction, where a failure on the expected assertion
  * means reproduced.
  */
+/** What a project's specs are written with: its function catalog, the locators its suite uses, its test import. */
+async function projectSpecOptions(db: DrizzleDB, projectId: number, settings: GeneratedSpecSettings) {
+  const [catalog, index] = await Promise.all([
+    getProjectFunctionCatalog(db, projectId).catch(() => []),
+    getLocatorIndex(db, projectId).catch(() => null),
+  ]);
+  const preferLocators = new Set(
+    (index?.locators ?? []).flatMap((entry) => {
+      const canonical = canonicalLocator(entry.locator);
+      return canonical ? [canonical] : [];
+    }),
+  );
+  return { catalog, preferLocators, ...(settings.testImport ? { testImport: settings.testImport } : {}) };
+}
+
 export async function renderBugReportSpec(
   db: DrizzleDB,
   id: number,
@@ -434,26 +449,12 @@ export async function renderBugReportSpec(
     .where(eq(bugReports.id, id));
   if (!row) return null;
   const settings = resolveGeneratedSpecSettings(row.generatedSpecs);
-  const [catalog, index] = await Promise.all([
-    getProjectFunctionCatalog(db, row.report.projectId).catch(() => []),
-    getLocatorIndex(db, row.report.projectId).catch(() => null),
-  ]);
-  const preferLocators = new Set(
-    (index?.locators ?? []).flatMap((entry) => {
-      const canonical = canonicalLocator(entry.locator);
-      return canonical ? [canonical] : [];
-    }),
-  );
+  const shared = await projectSpecOptions(db, row.report.projectId, settings);
   const report: BugReport = {
     v: 1,
     steps: { ...(row.report.steps as PiwiSteps), title: row.report.title },
     evidence: row.report.evidence as BugEvidence,
     context: row.report.context as BugContext,
-  };
-  const shared = {
-    catalog,
-    preferLocators,
-    ...(settings.testImport ? { testImport: settings.testImport } : {}),
   };
   const result =
     mode === 'commit'
@@ -462,6 +463,37 @@ export async function renderBugReportSpec(
   const fileName = bugSpecFileName(row.report.title, id);
   return { ...result, mode, fileName, path: `${settings.bugsFolder}/${fileName}`, settings };
 }
+
+/**
+ * Steps from anywhere (a repro request from Piwi Picker) as the spec a
+ * reproduction runs in a project: its settings, catalog and suite locators,
+ * no `test.fail()`. Null when there is no such project.
+ */
+export async function renderStepsRunSpec(
+  db: DrizzleDB,
+  projectId: number,
+  steps: PiwiSteps,
+): Promise<CodegenResult | null> {
+  const [project] = await db
+    .select({ generatedSpecs: projects.generatedSpecs })
+    .from(projects)
+    .where(eq(projects.id, projectId));
+  if (!project) return null;
+  const shared = await projectSpecOptions(db, projectId, resolveGeneratedSpecSettings(project.generatedSpecs));
+  const report: BugReport = { v: 1, steps, evidence: emptyBugEvidence(), context: EMPTY_CONTEXT };
+  return renderBugSpec(report, { ...shared, expectFail: false, tags: ['@bug'] });
+}
+
+const EMPTY_CONTEXT: BugContext = {
+  origin: null,
+  pageKey: null,
+  path: null,
+  browser: null,
+  userAgent: null,
+  viewport: null,
+  time: 0,
+  extensionVersion: null,
+};
 
 /** Renders steps with the options a caller names, for the MCP `render_steps` tool and the dashboard. */
 export function renderStepsWith(steps: PiwiSteps, options: Parameters<typeof renderSpec>[1]): CodegenResult {

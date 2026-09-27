@@ -12,6 +12,7 @@ import {
   renderBugMarkdown,
   renderBugSpec,
   reportedRequestUrl,
+  specRunVerdict,
   summarizeEvidence,
   type BugReport,
 } from '../src/bug-report';
@@ -299,5 +300,66 @@ describe('parseBugReport', () => {
     expect(parsed.report.evidence.outline!.split('\n')).toHaveLength(400);
     expect(parsed.report.context.origin).toBeNull();
     expect(parsed.report.context.path).toBeNull();
+  });
+});
+
+describe('specRunVerdict', () => {
+  const report = couponReport();
+  const { code, stepLines } = renderBugSpec(report, { expectFail: false });
+  const lines = code.split('\n');
+  const steps = report.steps.steps;
+  const assertAt = steps.findIndex((s) => s.action === 'assert');
+
+  test('each step starts on the line that performs it', () => {
+    expect(stepLines).toHaveLength(steps.length);
+    expect(lines[stepLines[0]! - 1]).toContain('page.goto(');
+    expect(lines[stepLines[1]! - 1]).toContain(".fill('SPRING10')");
+    // An expected result starts with the reporter's note, then asserts.
+    expect(lines.slice(stepLines[assertAt]! - 1, stepLines[assertAt + 1]! - 1).join('\n')).toContain(
+      "toHaveText('Total: 42')",
+    );
+  });
+
+  test('failing on the expected result reproduces, with the value found', () => {
+    const verdict = specRunVerdict(steps, stepLines, {
+      status: 'failed',
+      line: stepLines[assertAt]! + 1,
+      message:
+        'Error: expect(locator).toHaveText(expected) failed\n\nExpected string: "Total: 42"\nReceived string: "Total: 40"',
+    });
+    expect(verdict).toEqual({ kind: 'reproduced', step: assertAt, found: '"Total: 40"' });
+  });
+
+  test('failing on an earlier step diverges there', () => {
+    const verdict = specRunVerdict(steps, stepLines, {
+      status: 'timedOut',
+      line: stepLines[1]!,
+      message: "Test timeout of 30000ms exceeded.\nlocator.fill: waiting for getByLabel('Coupon')",
+    });
+    expect(verdict).toEqual({ kind: 'diverged', step: 1, reason: 'Test timeout of 30000ms exceeded.' });
+  });
+
+  test('reads a message without its terminal colors', () => {
+    const verdict = specRunVerdict(steps, stepLines, {
+      status: 'failed',
+      line: stepLines[0]!,
+      message: 'Error: page.goto: net::ERR_CONNECTION_REFUSED\nCall log:\n\u001b[2m  - navigating\u001b[22m',
+    });
+    expect(verdict).toEqual({ kind: 'diverged', step: 0, reason: 'Error: page.goto: net::ERR_CONNECTION_REFUSED' });
+  });
+
+  test('passing does not reproduce; a stopped run says so', () => {
+    expect(specRunVerdict(steps, stepLines, { status: 'passed', line: null, message: null })).toEqual({
+      kind: 'not-reproduced',
+    });
+    expect(specRunVerdict(steps, stepLines, { status: 'interrupted', line: null, message: null })).toEqual({
+      kind: 'stopped',
+    });
+  });
+
+  test('a function call covers the lines of the steps it stands for', () => {
+    const { stepLines: body } = renderBugSpec(report, { expectFail: false, format: 'body' });
+    expect(body).toHaveLength(steps.length);
+    expect([...body].sort((a, b) => a - b)).toEqual(body);
   });
 });

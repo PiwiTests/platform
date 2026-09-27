@@ -89,6 +89,24 @@
   "common_instanceUnreachable": {
     "message": "O Piwi Picker não conseguiu acessar a instância: confira o endereço e se ela está em execução."
   },
+  "common_desktopUnreachable": {
+    "message": "O aplicativo de desktop não responde. Ele está aberto?"
+  },
+  "common_desktopRejected": {
+    "message": "O aplicativo de desktop recusou o token."
+  },
+  "common_desktopUnsupported": {
+    "message": "Este endereço não é um aplicativo de desktop do Piwi que possa executar relatórios de bug."
+  },
+  "common_desktopStatus": {
+    "message": "O aplicativo de desktop respondeu $status$.",
+    "placeholders": {
+      "status": {
+        "content": "$1",
+        "example": "500"
+      }
+    }
+  },
   "common_projectsFailed": {
     "message": "Não foi possível ler a lista de projetos ($status$).",
     "placeholders": {
@@ -576,6 +594,36 @@
   },
   "options_testing": {
     "message": "Testando…"
+  },
+  "options_desktopHeading": {
+    "message": "Aplicativo de desktop"
+  },
+  "options_desktopHint": {
+    "message": "Opcional. Pareado com o aplicativo de desktop Piwi Dashboard, Reproduzir pode pedir que ele execute um relatório de bug com o Playwright no seu projeto. Copie o endereço e o token da página Configuração do aplicativo, em Conectar o Piwi Picker."
+  },
+  "options_desktopUrl": {
+    "message": "Endereço do aplicativo de desktop"
+  },
+  "options_desktopToken": {
+    "message": "Token"
+  },
+  "options_desktopSave": {
+    "message": "Salvar e testar"
+  },
+  "options_desktopForget": {
+    "message": "Esquecer"
+  },
+  "options_desktopSaved": {
+    "message": "Pareado com o aplicativo de desktop."
+  },
+  "options_desktopForgotten": {
+    "message": "O aplicativo de desktop não está mais pareado."
+  },
+  "options_desktopNotLoopback": {
+    "message": "Informe o endereço do aplicativo de desktop, como http://127.0.0.1:4318, e o token dele."
+  },
+  "options_desktopNeedsAccess": {
+    "message": "Permita o acesso ao endereço do aplicativo de desktop para pareá-lo."
   },
   "options_accessDenied": {
     "message": "O acesso a essa instância foi recusado: permita-o para que o Piwi Picker leia o seu catálogo."
@@ -2635,6 +2683,51 @@
         "example": "The instance cannot be reached."
       }
     }
+  },
+  "replay_runWithPlaywright": {
+    "message": "Executar com o Playwright…"
+  },
+  "replay_desktopTitle": {
+    "message": "Executar com o Playwright no aplicativo de desktop"
+  },
+  "replay_desktopNotPaired": {
+    "message": "Primeiro pareie o aplicativo de desktop, nas opções do Piwi Picker em Aplicativo de desktop."
+  },
+  "replay_desktopOpenOptions": {
+    "message": "Abrir as opções"
+  },
+  "replay_desktopPreview": {
+    "message": "Envia ao aplicativo de desktop em $url$: o título e estas etapas, com os valores digitados nelas. Nenhuma captura de tela, entrada do console ou requisição. Nada é executado até você iniciar na janela do aplicativo.",
+    "placeholders": {
+      "url": {
+        "content": "$1",
+        "example": "http://127.0.0.1:4318"
+      }
+    }
+  },
+  "replay_desktopShowPayload": {
+    "message": "O que é enviado"
+  },
+  "replay_desktopSend": {
+    "message": "Enviar"
+  },
+  "replay_desktopWaiting": {
+    "message": "Enviado. Inicie na janela do aplicativo de desktop…"
+  },
+  "replay_desktopNoWindow": {
+    "message": "Enviado. A janela do aplicativo de desktop está fechada: abra-a para iniciar a execução."
+  },
+  "replay_desktopRunning": {
+    "message": "Executando com o Playwright no aplicativo de desktop…"
+  },
+  "replay_desktopRanIn": {
+    "message": "O Playwright no aplicativo de desktop diz:"
+  },
+  "replay_desktopDeclined": {
+    "message": "Recusado no aplicativo de desktop."
+  },
+  "replay_desktopExpired": {
+    "message": "A solicitação expirou antes de ser iniciada."
   },
   "replay_fileLabel": {
     "message": "O .zip do relatório de bug, ou o steps.json dele"

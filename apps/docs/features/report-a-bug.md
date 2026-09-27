@@ -121,6 +121,11 @@ visible, enabled and still. The replay ends with one of three answers:
 Replay acts with the page's own events: a page that ignores events a script sends can only be reproduced with
 Playwright, from the failing test.
 
+**Run with Playwright…**, beside **Start** and on a finished replay, sends the steps to the
+[desktop app](./bug-reports#running-it-with-playwright-in-the-desktop-app) paired in the extension's options, which runs them with
+Playwright in your project once you confirm it in its window. The panel shows what it sends first, and then the
+verdict.
+
 ## Limits
 
 - It follows one site, like [Record actions](./extension#record-actions), in the top-level document only.

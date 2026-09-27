@@ -113,6 +113,28 @@
     "message": "Piwi Picker could not reach the instance: check the address, and that it is running.",
     "description": "Options: the connection test got no answer."
   },
+  "common_desktopUnreachable": {
+    "message": "The desktop app does not answer. Is it running?",
+    "description": "The paired desktop app did not answer."
+  },
+  "common_desktopRejected": {
+    "message": "The desktop app refused the token.",
+    "description": "The desktop app refused the token pasted in the options."
+  },
+  "common_desktopUnsupported": {
+    "message": "This address is not a Piwi desktop app that can run bug reports.",
+    "description": "The address answers but is not a Piwi desktop app that takes run requests."
+  },
+  "common_desktopStatus": {
+    "message": "The desktop app answered $status$.",
+    "description": "The desktop app answered with an unexpected HTTP status. $status$ is the number.",
+    "placeholders": {
+      "status": {
+        "content": "$1",
+        "example": "500"
+      }
+    }
+  },
   "common_projectsFailed": {
     "message": "The list of projects could not be read ($status$).",
     "description": "Options: listing the instance’s projects failed with an HTTP error. $status$ is the HTTP status code.",
@@ -716,6 +738,46 @@
   "options_testing": {
     "message": "Testing…",
     "description": "Settings page: status while testing the connection."
+  },
+  "options_desktopHeading": {
+    "message": "Desktop app",
+    "description": "Options: heading of the section pairing the desktop app."
+  },
+  "options_desktopHint": {
+    "message": "Optional. Paired with the Piwi Dashboard desktop app, Replay can ask it to run a bug report with Playwright in your project. Copy the address and token from the app’s Setup page, under Connect Piwi Picker.",
+    "description": "Options: what pairing the desktop app is for and where the address and token come from."
+  },
+  "options_desktopUrl": {
+    "message": "Address of the desktop app",
+    "description": "Options: label of the desktop app's address field."
+  },
+  "options_desktopToken": {
+    "message": "Token",
+    "description": "Options: label of the desktop app's token field."
+  },
+  "options_desktopSave": {
+    "message": "Save and test",
+    "description": "Options: button that checks the desktop app's address and token, then keeps them."
+  },
+  "options_desktopForget": {
+    "message": "Forget",
+    "description": "Options: button that removes the desktop app's address and token."
+  },
+  "options_desktopSaved": {
+    "message": "Paired with the desktop app.",
+    "description": "Options: the desktop app answered and is paired."
+  },
+  "options_desktopForgotten": {
+    "message": "The desktop app is no longer paired.",
+    "description": "Options: the desktop app's address and token were removed."
+  },
+  "options_desktopNotLoopback": {
+    "message": "Enter the desktop app’s own address, such as http://127.0.0.1:4318, and its token.",
+    "description": "Options: the address is not the desktop app's own loopback address, or the token is empty."
+  },
+  "options_desktopNeedsAccess": {
+    "message": "Allow access to the desktop app’s address to pair it.",
+    "description": "Options: the browser's permission for the desktop app's address was not granted."
   },
   "options_accessDenied": {
     "message": "Access to that instance was refused: allow it to let Piwi Picker read your catalog.",
@@ -3138,6 +3200,64 @@
         "example": "The instance cannot be reached."
       }
     }
+  },
+  "replay_runWithPlaywright": {
+    "message": "Run with Playwright…",
+    "description": "Replay chooser and finished replay: button that sends the steps to the paired desktop app to run with Playwright."
+  },
+  "replay_desktopTitle": {
+    "message": "Run with Playwright in the desktop app",
+    "description": "Run with Playwright dialog: its title."
+  },
+  "replay_desktopNotPaired": {
+    "message": "Pair the desktop app first, in Piwi Picker’s options under Desktop app.",
+    "description": "Run with Playwright dialog: no desktop app is paired in the options."
+  },
+  "replay_desktopOpenOptions": {
+    "message": "Open the options",
+    "description": "Run with Playwright dialog: button opening the options page."
+  },
+  "replay_desktopPreview": {
+    "message": "Sends to the desktop app at $url$: the title and these steps, with the values typed in them. No screenshot, console entry or request. Nothing runs until you start it in the app’s window.",
+    "description": "Run with Playwright dialog: exactly what is sent and to where, before sending. $url$ is the desktop app's address.",
+    "placeholders": {
+      "url": {
+        "content": "$1",
+        "example": "http://127.0.0.1:4318"
+      }
+    }
+  },
+  "replay_desktopShowPayload": {
+    "message": "What is sent",
+    "description": "Run with Playwright dialog: disclosure showing the exact data sent."
+  },
+  "replay_desktopSend": {
+    "message": "Send",
+    "description": "Run with Playwright dialog: button that sends the steps to the desktop app."
+  },
+  "replay_desktopWaiting": {
+    "message": "Sent. Start it in the desktop app’s window…",
+    "description": "Run with Playwright dialog: sent, waiting for the developer to start it in the desktop app's window."
+  },
+  "replay_desktopNoWindow": {
+    "message": "Sent. The desktop app’s window is closed: open it to start the run.",
+    "description": "Run with Playwright dialog: sent, but no window of the desktop app is open to show it."
+  },
+  "replay_desktopRunning": {
+    "message": "Running with Playwright in the desktop app…",
+    "description": "Run with Playwright dialog: the desktop app is running the spec."
+  },
+  "replay_desktopRanIn": {
+    "message": "Playwright in the desktop app says:",
+    "description": "Run with Playwright dialog: heading above the verdict of the desktop app's run."
+  },
+  "replay_desktopDeclined": {
+    "message": "Declined in the desktop app.",
+    "description": "Run with Playwright dialog: the developer declined the request in the desktop app."
+  },
+  "replay_desktopExpired": {
+    "message": "The request expired before it was started.",
+    "description": "Run with Playwright dialog: the request was not started in time, or the desktop app no longer knows it."
   },
   "replay_fileLabel": {
     "message": "The bug report’s .zip, or its steps.json",

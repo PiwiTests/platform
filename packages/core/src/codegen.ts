@@ -72,6 +72,12 @@ export interface CodegenResult {
   /** One entry per emitted line that came from a function match, keyed by the matched steps' first index — lets a UI highlight which recorded steps a given call represents. */
   matchedSpans: Array<{ startStep: number; endStep: number; functionName: string }>;
   warnings: CodegenWarning[];
+  /**
+   * The 1-based line of `code` each step starts on, by step index; the steps a
+   * function call stands for share its line. Lets a run's failure line name the
+   * step it failed at.
+   */
+  stepLines: number[];
 }
 
 /**
@@ -464,6 +470,8 @@ export function renderSpec(session: RecordedSession, options: CodegenOptions = {
   const bodyLines: string[] = [];
   const matchedSpans: CodegenResult['matchedSpans'] = [];
   const usedEntries: TestFunctionEntry[] = [];
+  /** The index in `bodyLines` each step starts at. */
+  const stepStarts: number[] = [];
 
   /**
    * After the step at `last`, wait for the next step's page when the next step
@@ -489,6 +497,7 @@ export function renderSpec(session: RecordedSession, options: CodegenOptions = {
   while (pos < steps.length) {
     const step = steps[pos]!;
 
+    stepStarts[pos] = bodyLines.length;
     if (step.action === 'goto') {
       bodyLines.push(...renderRawStep(step, pos, ctx));
       sawGoto = true;
@@ -501,6 +510,7 @@ export function renderSpec(session: RecordedSession, options: CodegenOptions = {
       bodyLines.push(renderFunctionCall(match));
       usedEntries.push(match.entry);
       const last = Math.max(...match.matchedIndices);
+      for (let i = pos + 1; i <= last; i++) stepStarts[i] = stepStarts[pos]!;
       matchedSpans.push({ startStep: pos, endStep: last, functionName: match.entry.name });
       checkNextPage(last);
       pos = last + 1;
@@ -512,8 +522,10 @@ export function renderSpec(session: RecordedSession, options: CodegenOptions = {
     pos++;
   }
 
+  let bodyOffset = 0;
   if (!sawGoto && session.startUrl) {
     bodyLines.unshift(`  await page.goto(${quote(urlForCode(session.startUrl, ctx))});`);
+    bodyOffset = 1;
   }
 
   const importLines = renderImports(usedEntries);
@@ -524,10 +536,17 @@ export function renderSpec(session: RecordedSession, options: CodegenOptions = {
       ? [`  // Typed values come from ${[...new Set(ctx.envNames)].join(', ')}.`]
       : [];
   const testBody = [...(failLine ? [failLine] : []), ...envLines, ...instantiationLines, ...bodyLines];
+  const bodyStart = testBody.length - bodyLines.length + bodyOffset;
+  const linesFrom = (first: number): number[] => steps.map((_, i) => first + bodyStart + (stepStarts[i] ?? 0) + 1);
 
   if (options.format === 'body') {
     const needs = importLines.map((line) => `  // Needs: ${line}`);
-    return { code: [...needs, ...testBody, ''].join('\n'), matchedSpans, warnings: ctx.warnings };
+    return {
+      code: [...needs, ...testBody, ''].join('\n'),
+      matchedSpans,
+      warnings: ctx.warnings,
+      stepLines: linesFrom(needs.length),
+    };
   }
 
   const details = renderDetails(options);
@@ -549,5 +568,6 @@ export function renderSpec(session: RecordedSession, options: CodegenOptions = {
     ``,
   ];
 
-  return { code: lines.join('\n'), matchedSpans, warnings: ctx.warnings };
+  const header = 1 + importLines.length + 1 + opening.length;
+  return { code: lines.join('\n'), matchedSpans, warnings: ctx.warnings, stepLines: linesFrom(header) };
 }

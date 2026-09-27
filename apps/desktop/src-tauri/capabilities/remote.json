@@ -26,6 +26,7 @@
     "allow-desktop-set-project-link",
     "allow-desktop-run-local-tests",
     "allow-desktop-stop-local-tests",
+    "allow-desktop-run-repro",
     "allow-desktop-set-project-start-command",
     "allow-desktop-reproduce-here",
     "allow-desktop-bisect-here",

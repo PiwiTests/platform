@@ -22,6 +22,7 @@ import { LANGUAGE_KEY, initI18n, isLanguage, t } from '../shared/i18n.js';
 import { refreshLanguageChoice, storeLanguageChoice } from './language-choice.js';
 import { handleBugSendTarget, handleGetBugReport, handleListBugReports, handleSendBugReport } from './bug-reports.js';
 import { CONDITIONS_KEY, isCondition, type ConditionsState } from '../shared/request-conditions.js';
+import { handleDesktopRepro, handleDesktopReproStatus, handleDesktopTarget } from './desktop-repro.js';
 
 /**
  * The Options language, read at startup and again whenever it changes. Every
@@ -576,7 +577,14 @@ function replayOriginPattern(origin: unknown): string | null {
  * and a bug recording on the same site already holds.
  */
 async function handleStartReplay(
-  message: { steps?: unknown; origin?: unknown; stepMode?: unknown; inject?: unknown; startOn?: unknown },
+  message: {
+    steps?: unknown;
+    origin?: unknown;
+    stepMode?: unknown;
+    inject?: unknown;
+    startOn?: unknown;
+    bugReportId?: unknown;
+  },
   tab: chrome.tabs.Tab | undefined,
 ): Promise<{ ok: boolean; error?: string }> {
   await i18nReady;
@@ -595,7 +603,9 @@ async function handleStartReplay(
       typeof message.startOn === 'string' && message.startOn.startsWith(`${origin}/`) && first?.action === 'goto'
         ? { recorded: first.value ?? first.pageUrl, actual: message.startOn }
         : null;
-    const replay = newReplayState(parsed.steps, origin, message.stepMode === true, Date.now(), startPage);
+    const bugReportId =
+      typeof message.bugReportId === 'number' && Number.isInteger(message.bugReportId) ? message.bugReportId : null;
+    const replay = newReplayState(parsed.steps, origin, message.stepMode === true, Date.now(), startPage, bugReportId);
     // A replay under a request condition says so, while it runs and in its verdict.
     const conditions = await conditionsFor(tab, tab.url);
     await setReplayState(conditions.length ? { ...replay, conditions } : replay);
@@ -696,6 +706,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   if (message?.type === 'piwi-list-bug-reports') {
     void i18nReady.then(() => handleListBugReports(sender.tab)).then(sendResponse);
+    return true;
+  }
+  if (message?.type === 'piwi-desktop-target') {
+    void handleDesktopTarget().then(sendResponse);
+    return true;
+  }
+  if (message?.type === 'piwi-desktop-repro') {
+    void i18nReady.then(() => handleDesktopRepro(message)).then(sendResponse);
+    return true;
+  }
+  if (message?.type === 'piwi-desktop-repro-status') {
+    void i18nReady.then(() => handleDesktopReproStatus(message.id)).then(sendResponse);
     return true;
   }
   if (message?.type === 'piwi-get-bug-report') {
