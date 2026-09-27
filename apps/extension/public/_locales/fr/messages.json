@@ -152,6 +152,12 @@
   "popup_testedElementsConnect": {
     "message": "Connectez Piwi pour voir ce que vos tests atteignent"
   },
+  "popup_playwrightView": {
+    "message": "Vue Playwright"
+  },
+  "popup_playwrightViewHint": {
+    "message": "Chaque élément tel que getByRole le voit, et ceux qu’aucun locator n’atteint"
+  },
   "popup_reportBug": {
     "message": "Signaler un bug"
   },
@@ -3729,6 +3735,352 @@
   },
   "common_workerOutdated": {
     "message": "Piwi Picker a été reconstruit sans être rechargé, et son processus d’arrière-plan tourne encore sur la version précédente. Rechargez l’extension depuis son menu, ou depuis la page des extensions du navigateur."
+  },
+  "devtools_ranking": {
+    "message": "Classement de l’élément sélectionné…"
+  },
+  "devtools_selectElement": {
+    "message": "Sélectionnez un élément dans le panneau Éléments pour voir ses locators."
+  },
+  "devtools_inFrame": {
+    "message": "Cet élément est dans un cadre. Le volet ne classe que les éléments de la page principale."
+  },
+  "devtools_ownElement": {
+    "message": "Cet élément fait partie de Piwi Picker."
+  },
+  "devtools_restricted": {
+    "message": "Piwi Picker ne peut pas fonctionner sur cette page."
+  },
+  "devtools_noAccess": {
+    "message": "Piwi Picker a besoin d’accéder à $site$ pour lire cette page. L’accès est demandé pour ce site seulement.",
+    "placeholders": {
+      "site": {
+        "content": "$1",
+        "example": "https://shop.example"
+      }
+    }
+  },
+  "devtools_allowSite": {
+    "message": "Autoriser sur ce site"
+  },
+  "devtools_rankFailed": {
+    "message": "L’élément n’a pas pu être classé : $error$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "Cannot access a chrome:// URL"
+      }
+    }
+  },
+  "devtools_rankFailedPlain": {
+    "message": "L’élément n’a pas pu être classé."
+  },
+  "devtools_noLocator": {
+    "message": "Aucun locator ne trouve cet élément."
+  },
+  "devtools_unique": {
+    "message": "unique"
+  },
+  "devtools_byPosition": {
+    "message": "unique par sa position"
+  },
+  "devtools_matches_one": {
+    "message": "$count$ correspondance",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "devtools_matches_other": {
+    "message": "$count$ correspondances",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "devtools_unchecked": {
+    "message": "non vérifié"
+  },
+  "devtools_stable": {
+    "message": "stable"
+  },
+  "devtools_watch": {
+    "message": "peut casser : $rules$",
+    "placeholders": {
+      "rules": {
+        "content": "$1",
+        "example": "long text"
+      }
+    }
+  },
+  "devtools_brittle": {
+    "message": "fragile : $rules$",
+    "placeholders": {
+      "rules": {
+        "content": "$1",
+        "example": "CSS class"
+      }
+    }
+  },
+  "devtools_addToSession": {
+    "message": "Ajouter à la session"
+  },
+  "devtools_addedToSession": {
+    "message": "Ajouté à la session sous le nom $name$.",
+    "placeholders": {
+      "name": {
+        "content": "$1",
+        "example": "applyCoupon"
+      }
+    }
+  },
+  "view_title": {
+    "message": "Vue Playwright"
+  },
+  "view_noRole": {
+    "message": "(sans rôle)"
+  },
+  "view_noName": {
+    "message": "(sans nom)"
+  },
+  "view_filterRole": {
+    "message": "Rôle"
+  },
+  "view_allRoles": {
+    "message": "Tous les rôles"
+  },
+  "view_labelled_one": {
+    "message": "$count$ élément étiqueté",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "42"
+      }
+    }
+  },
+  "view_labelled_other": {
+    "message": "$count$ éléments étiquetés",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "42"
+      }
+    }
+  },
+  "view_unreachable_one": {
+    "message": "$count$ qu’aucun locator stable n’atteint (rouge)",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "view_unreachable_other": {
+    "message": "$count$ qu’aucun locator stable n’atteint (rouge)",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "view_ambiguous_one": {
+    "message": "$count$ dont le rôle et le nom en trouvent d’autres aussi (orange)",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "view_ambiguous_other": {
+    "message": "$count$ dont le rôle et le nom en trouvent d’autres aussi (orange)",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "devtools_tabRecord": {
+    "message": "Enregistrer"
+  },
+  "devtools_tabReplay": {
+    "message": "Rejouer"
+  },
+  "devtools_noRecording": {
+    "message": "Aucun enregistrement en cours. Commencez par Enregistrer ou Signaler un bug dans le menu de l’extension : les étapes s’affichent ici au fur et à mesure."
+  },
+  "devtools_recordingOn_one": {
+    "message": "Enregistrement sur $site$ : $count$ étape",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "site": {
+        "content": "$2",
+        "example": "https://shop.example"
+      }
+    }
+  },
+  "devtools_recordingOn_other": {
+    "message": "Enregistrement sur $site$ : $count$ étapes",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "site": {
+        "content": "$2",
+        "example": "https://shop.example"
+      }
+    }
+  },
+  "devtools_bugRecordingOn_one": {
+    "message": "Rapport de bug sur $site$ : $count$ étape",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "site": {
+        "content": "$2",
+        "example": "https://shop.example"
+      }
+    }
+  },
+  "devtools_bugRecordingOn_other": {
+    "message": "Rapport de bug sur $site$ : $count$ étapes",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "site": {
+        "content": "$2",
+        "example": "https://shop.example"
+      }
+    }
+  },
+  "devtools_recordingStopped_one": {
+    "message": "Enregistrement arrêté : $count$ étape, pas encore exportée",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "devtools_recordingStopped_other": {
+    "message": "Enregistrement arrêté : $count$ étapes, pas encore exportées",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "devtools_stopRecording": {
+    "message": "Arrêter l’enregistrement"
+  },
+  "devtools_finishBugOnPage": {
+    "message": "Terminez le rapport de bug depuis son panneau sur la page, qui rassemble les éléments de preuve."
+  },
+  "devtools_noReplay": {
+    "message": "Aucune relecture pour l’instant. Lancez-en une avec Rejouer un rapport de bug dans le menu de l’extension : ses étapes et leurs résultats s’affichent ici."
+  },
+  "devtools_tabNetwork": {
+    "message": "Réseau"
+  },
+  "devtools_networkHint": {
+    "message": "Les requêtes fetch et XHR de la page, lues dans DevTools tant qu’il est ouvert. Rien ne quitte le navigateur, sauf ce que vous copiez ou téléchargez."
+  },
+  "devtools_networkEmpty": {
+    "message": "Aucune requête pour l’instant. Utilisez la page, ou rechargez-la, et ses requêtes s’affichent ici."
+  },
+  "devtools_networkAllOrigins": {
+    "message": "Autres sites aussi"
+  },
+  "devtools_networkClear": {
+    "message": "Effacer"
+  },
+  "devtools_requestTime": {
+    "message": "$ms$ ms",
+    "placeholders": {
+      "ms": {
+        "content": "$1",
+        "example": "35"
+      }
+    }
+  },
+  "devtools_mockTitle": {
+    "message": "Simuler cette réponse"
+  },
+  "devtools_mockPattern": {
+    "message": "Motif d’adresse"
+  },
+  "devtools_mockKind": {
+    "message": "Répondre avec"
+  },
+  "devtools_mockResponse": {
+    "message": "cette réponse"
+  },
+  "devtools_mockError": {
+    "message": "une erreur du serveur (500)"
+  },
+  "devtools_mockAbort": {
+    "message": "un échec réseau"
+  },
+  "devtools_mockNoBody": {
+    "message": "DevTools n’a pas gardé le corps de cette réponse. Rechargez la page avec DevTools ouvert pour la simuler."
+  },
+  "devtools_mockHidden_one": {
+    "message": "$count$ valeur masquée : champs nommés comme un mot de passe, un jeton ou une clé.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "devtools_mockHidden_other": {
+    "message": "$count$ valeurs masquées : champs nommés comme un mot de passe, un jeton ou une clé.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "devtools_mockReveal": {
+    "message": "Afficher les valeurs masquées"
+  },
+  "devtools_mockCopy": {
+    "message": "Copier le code"
+  },
+  "devtools_mockDownload": {
+    "message": "Télécharger $file$",
+    "placeholders": {
+      "file": {
+        "content": "$1",
+        "example": "cart.json"
+      }
+    }
+  },
+  "devtools_mockFileHint": {
+    "message": "Le corps dépasse 100 ko, le code le lit donc dans un fichier : enregistrez-le sous $path$ dans le dossier d’où vous lancez Playwright.",
+    "placeholders": {
+      "path": {
+        "content": "$1",
+        "example": "mocks/cart.json"
+      }
+    }
   },
   "stability_position": {
     "message": "position"

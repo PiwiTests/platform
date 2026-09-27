@@ -8,9 +8,9 @@ Playwright test does. That is the gap this plan fills: a **Piwi panel inside Dev
 page, **mocks written from real responses**, the **login saved for tests**, **slow and failing requests** on demand,
 and **viewports** from the project's own configuration.
 
-**Status.** Proposed 2026-09-27. Nothing is built. No part needs the `debugger` permission, and only one adds a
-permission at all: `cookies`, optional, requested when the login is saved. The DevTools panel adds a manifest key
-(`devtools_page`) that shows no install warning.
+**Status.** Proposed 2026-09-27; in progress. Built: PR 1 (the Elements sidebar), PR 2 (the Playwright view), PR 3 (the Piwi panel's Record and Replay tabs), PR 4 (the Network tab and Mock this response). No part needs the `debugger`
+permission, and only one adds a permission at all: `cookies`, optional, requested when the login is saved. The DevTools
+panel adds a manifest key (`devtools_page`) that shows no install warning. The open questions are settled below.
 
 **Summary.** A developer writing a test switches between the page, DevTools and the editor: they read the accessibility
 tree to guess what `getByRole` will find, copy a response from the Network panel to write a mock by hand, and log in
@@ -125,8 +125,12 @@ the permission in a click when it has neither.
 - **Network**: the page's `fetch` and XHR requests from `chrome.devtools.network.onRequestFinished`, each with its
   method, path, status and duration, filtered to the tab's origin by default. See 2.2 and 2.4.
 
-The panel talks to the tab through the background worker (`chrome.runtime.connect` with the tab id), the same state
-the popup reads.
+The panel reads the same session storage the popup and the in-page panels read, and redraws on
+`chrome.storage.onChanged`: no channel through the background worker is needed (a change from the `runtime.connect`
+first planned). Its buttons do what the in-page panels do: Stop recording is the popup's stop; Pause, Continue, Next
+step and Stop write the replay state and then send `piwi-replay-wake` to the replayed site's tabs, whose replay script
+redraws its panel and, except after a pause, goes on. A bug report is finished from its panel on the page, which
+collects the evidence, and a recording is started from the popup, as before.
 
 ## Part 2 — The tools
 
@@ -150,8 +154,9 @@ From the panel's Network tab, a request becomes code:
 
 - `page.route('**/api/cart', …)` with `route.fulfill({ json })` for a JSON body, `{ body, contentType }` otherwise, and
   the status when it is not 200;
-- the URL pattern keeps the path and drops the origin and volatile query values (a timestamp, a cache buster), shown
-  for editing before copying;
+- the URL pattern keeps the path and drops the origin; volatile query values (a timestamp, a cache buster) become `*`
+  rather than being dropped, since a Playwright glob with no query does not match a URL that has one. It is shown for
+  editing before copying, and a method other than GET adds a check that falls back for the other methods;
 - **Mock with an error** writes the same route with a 500 or a network failure (`route.abort()`), for testing the
   page's error state;
 - bodies over 100 kB are written to a file (`mocks/cart.json`) the snippet reads, and the file is downloaded beside it.
@@ -241,8 +246,8 @@ DevTools' own page as Playwright can.
 ## Open questions
 
 1. **Viewports from the instance.** The reporter does not send the projects' `use.viewport` today. Add it to the run's
-   wire data (a field freezing at 1.0), or read it from the Playwright config in the desktop app?
-2. **The panel as the main UI.** Should recording and replay move into the panel entirely when DevTools is open, the
-   in-page HUD hiding itself, or should both show?
-3. **Mocks as fixtures.** Should Mock this response also write a Piwi-style fixture (a `mocks/` folder and a
-   `useMocks` helper) when the project's function catalog has one, as the converter uses the project's page objects?
+   wire data (a field freezing at 1.0), or read it from the Playwright config in the desktop app? To be decided with
+   PR 7.
+2. **The panel as the main UI.** Settled: both show. The in-page HUD stays for people without DevTools open, and the
+   Piwi panel mirrors the same state.
+3. **Mocks as fixtures.** Settled: not now. Mock this response writes plain `page.route` code, as 2.2 describes.

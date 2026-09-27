@@ -32,6 +32,7 @@
       "background.js"
     ]
   },
+  "devtools_page": "devtools.html",
   "options_ui": {
     "page": "options.html",
     "open_in_tab": true

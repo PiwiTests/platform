@@ -32,7 +32,8 @@ export type ToolId =
   | 'session-panel'
   | 'agent-context-panel'
   | 'test-function-panel'
-  | 'coverage-overlay';
+  | 'coverage-overlay'
+  | 'playwright-view';
 
 interface ActiveTool {
   id: ToolId;

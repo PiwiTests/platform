@@ -58,6 +58,7 @@ document.getElementById('hover-inspect')!.addEventListener('click', () => void i
 document.getElementById('locator-console')!.addEventListener('click', () => void inject('locator-console.js'));
 document.getElementById('multi-pick')!.addEventListener('click', () => void inject('multi-pick.js'));
 document.getElementById('lint-overlay')!.addEventListener('click', () => void inject('lint-overlay.js'));
+document.getElementById('playwright-view')!.addEventListener('click', () => void inject('playwright-view.js'));
 document.getElementById('assertion-panel')!.addEventListener('click', () => void inject('assertion-panel.js'));
 document.getElementById('session-panel')!.addEventListener('click', () => void inject('session-panel.js'));
 document.getElementById('agent-context-panel')!.addEventListener('click', () => void inject('agent-context-panel.js'));
@@ -174,7 +175,9 @@ document.addEventListener('keydown', (e) => {
         ? 'report-bug'
         : e.key === 'r' || e.key === 'R'
           ? 'replay-bug'
-          : KEY_TO_ACTION_ID[e.key];
+          : e.key === 'v' || e.key === 'V'
+            ? 'playwright-view'
+            : KEY_TO_ACTION_ID[e.key];
   if (!id) return;
   e.preventDefault();
   document.getElementById(id)?.click();

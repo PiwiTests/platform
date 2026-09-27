@@ -288,6 +288,46 @@ the element pointed at and its ancestors, moving it with each step and removing 
 pointer events it sends follow the element tree: leaves for the ancestors it left, enters for the ones it entered.
 `hover.spec.ts` records, replays and runs the spec of each kind of reveal on `tests/e2e/pages/hover-*.html`.
 
+## Playwright view
+
+`playwright-view.ts` (popup tile `V`, a toggle) labels every element a test could reach with the role and name
+`DomModel` gives it and its test id, and marks two kinds: **unreachable** (looks operable, through a `tabindex`, an
+`onclick` or a pointer cursor its parent lacks, with no role; or an operable role with no name; and no test id) and
+**ambiguous** (its `getByRole(role, { name })` finds other elements on the engine). The pure half is
+`playwright-view-scan.ts`, one engine per scan. The overlay redraws on scroll, scans again once the page has been still
+for a moment after a change, and bridges its labels to `globalThis.__piwiPlaywrightView` for
+`playwright-view.spec.ts`, which also checks the counts against real Playwright.
+
+## DevTools
+
+`devtools_page` (`devtools.html`, `src/devtools/devtools.ts`) loads once per DevTools window and adds the **Piwi**
+pane to the Elements panel (`devtools-sidebar.html`, `src/devtools/sidebar.ts`). DevTools pages are extension pages:
+they have `chrome.scripting`, `chrome.permissions` and `chrome.storage` as well as `chrome.devtools`.
+
+- **The selection reaches the ranking through `inspectedWindow.eval`.** The pane injects `devtools-rank.js` into the
+  inspected tab (`src/devtools/selection.ts`) and calls `__piwiRankSelected($0)` with `useContentScriptContext`, so
+  `$0` arrives in the extension's isolated world as the same element the engine finds. The answer is plain data
+  (`src/shared/devtools-selection.ts`). Firefox has no `useContentScriptContext`: there `$0` is marked with an
+  attribute in the page's world and the content script is asked by message (unverified in Firefox so far).
+- **Access** is the tab's `activeTab` grant or the origin's optional host permission. When injection fails on a web
+  page, the pane offers **Allow on this site**, which requests that one origin inside the click. Reading the page's
+  origin with a plain `inspectedWindow.eval` needs no permission.
+- **The Piwi panel** (`devtools-panel.html`, `src/devtools/panel.ts`, `panel-record.ts`, `panel-replay.ts`) mirrors
+  the recording and the replay from session storage (`RECORDING_KEY`, `REPLAY_KEY`) and redraws on
+  `chrome.storage.onChanged`, so it needs no channel of its own. Its buttons do what the in-page panels do: Stop is the
+  popup's stop (`stopRecording` + `piwi-recording-stopped`); Pause, Continue and Stop write the replay state, then send
+  `piwi-replay-wake` to the replayed site's tabs, which `replay-panel.ts` answers by redrawing its panel and, with
+  `wake: true` (Continue, Next step, Stop, never Pause), releasing its wait.
+- **Network and Mock this response** (`panel-network.ts`, pure half `src/shared/mock-code.ts`): requests come only
+  from `chrome.devtools.network` (`getHAR` at open, then `onRequestFinished`), kept in the panel's memory, fetch and
+  XHR only, and never leave the browser but through the user's copy or download. `mockCode` hides credential fields
+  (`HIDDEN_VALUE`) unless revealed, and never writes a header. `devtools-network.spec.ts` runs the copied code as a
+  test body against a real page.
+- **Tests**: `devtools-sidebar.spec.ts`, `devtools-panel.spec.ts` and `devtools-network.spec.ts` open the pages as tabs with `chrome.devtools` stubbed (`devtools-stub.ts`:
+  `eval` runs in a fixture page's own world, where the spec adds the content script; `$0` is that page's global).
+  `devtools-real.spec.ts` launches Chromium with `--auto-open-devtools-for-tabs` and drives the real DevTools page
+  through the browser's debugging port: it checks the `devtools_page` loads and that `$0` reaches the ranking script.
+
 ## Content-script structure
 
 Each standalone content-script feature (locator console, multi-pick, lint overlay, assertion

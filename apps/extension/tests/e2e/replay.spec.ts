@@ -46,7 +46,14 @@ async function stubChrome(context: BrowserContext, session: Record<string, unkno
     };
     (globalThis as any).chrome = {
       storage: { session: area, local: area },
-      runtime: { sendMessage: async () => ({ ok: true }), onMessage: { addListener: () => undefined } },
+      runtime: {
+        sendMessage: async () => ({ ok: true }),
+        onMessage: {
+          addListener: (fn: (message: unknown) => void) => {
+            ((globalThis as any).__piwiTestRuntimeListeners ??= []).push(fn);
+          },
+        },
+      },
     };
   }, session);
   await stubChromeI18n(context, language);
@@ -229,6 +236,22 @@ test.describe('replay-panel.js', () => {
     const stepByStep = page.locator('#piwi-replay-hud-host').getByRole('checkbox', { name: 'Step by step' });
     await stepByStep.uncheck();
     expect(await verdict(page)).toEqual({ kind: 'reproduced', step: 4, found: '"Total: 40"', sameAsReported: true });
+  });
+
+  test('a Next from the Piwi panel in DevTools plays the step waiting for it', async ({ context }) => {
+    await routePages(context, 'buggy');
+    await stubChrome(context, running(true));
+    const page = await context.newPage();
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.goto(`${ORIGIN}/login`);
+    await expect(page.locator('#piwi-replay-hud-host')).toBeAttached();
+    await expect.poll(async () => (await replayState(page)).results.length).toBe(1);
+    // What the panel sends to the replayed site's tabs after a Next.
+    await page.evaluate(() => {
+      for (const fn of (globalThis as any).__piwiTestRuntimeListeners ?? [])
+        fn({ type: 'piwi-replay-wake', wake: true });
+    });
+    await expect.poll(async () => (await replayState(page)).results.length).toBe(2);
   });
 
   test('stops where the page differs, and says why', async ({ context }) => {

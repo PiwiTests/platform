@@ -193,6 +193,14 @@
     "message": "Connect to your Piwi instance to see what your tests reach",
     "description": "Popup tile hint, under “Tested elements”, when no Piwi instance is set up. One line."
   },
+  "popup_playwrightView": {
+    "message": "Playwright view",
+    "description": "Popup tile label: turns on labels showing each element as a Playwright test sees it. “Playwright” is a product name."
+  },
+  "popup_playwrightViewHint": {
+    "message": "Each element as getByRole sees it, and the ones no locator reaches",
+    "description": "Popup tile hint, under “Playwright view”. One line. getByRole is Playwright code: keep it as it is."
+  },
   "popup_reportBug": {
     "message": "Report a bug",
     "description": "Popup tile: records the steps of a bug. Short."
@@ -4408,6 +4416,414 @@
   "common_workerOutdated": {
     "message": "Piwi Picker was rebuilt without being reloaded, and its background worker still runs the previous build. Reload the extension from its menu, or from the browser’s extensions page.",
     "description": "Error shown by a tool when the background worker does not know its message: the extension was rebuilt (a developer’s local build) but not reloaded."
+  },
+  "devtools_ranking": {
+    "message": "Ranking the selected element…",
+    "description": "DevTools, Elements panel, Piwi sidebar: shown while the selected element's locators are being worked out."
+  },
+  "devtools_selectElement": {
+    "message": "Select an element in the Elements panel to see its locators.",
+    "description": "DevTools, Piwi sidebar: when no element is selected in the Elements panel."
+  },
+  "devtools_inFrame": {
+    "message": "This element is inside a frame. The sidebar ranks the elements of the top page only.",
+    "description": "DevTools, Piwi sidebar: the selected element is inside an iframe, which the sidebar does not rank."
+  },
+  "devtools_ownElement": {
+    "message": "This element belongs to Piwi Picker.",
+    "description": "DevTools, Piwi sidebar: the selected element is part of Piwi Picker's own interface on the page."
+  },
+  "devtools_restricted": {
+    "message": "Piwi Picker cannot run on this page.",
+    "description": "DevTools, Piwi panes: the inspected page is one no extension can run on (a browser page, the extension store)."
+  },
+  "devtools_noAccess": {
+    "message": "Piwi Picker needs access to $site$ to read this page. It asks for this site only.",
+    "description": "DevTools, Piwi panes: the extension needs the site's permission first. $site$ is the site's origin, like https://shop.example. Followed by the devtools_allowSite button.",
+    "placeholders": {
+      "site": {
+        "content": "$1",
+        "example": "https://shop.example"
+      }
+    }
+  },
+  "devtools_allowSite": {
+    "message": "Allow on this site",
+    "description": "DevTools, Piwi panes: button that asks the browser for the site's permission."
+  },
+  "devtools_rankFailed": {
+    "message": "The element could not be ranked: $error$",
+    "description": "DevTools, Piwi sidebar: ranking the selected element failed. $error$ is the browser's error message, in English.",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "Cannot access a chrome:// URL"
+      }
+    }
+  },
+  "devtools_rankFailedPlain": {
+    "message": "The element could not be ranked.",
+    "description": "DevTools, Piwi sidebar: ranking the selected element failed with no error to show."
+  },
+  "devtools_noLocator": {
+    "message": "No locator finds this element.",
+    "description": "DevTools, Piwi sidebar: no candidate locator finds the selected element."
+  },
+  "devtools_unique": {
+    "message": "unique",
+    "description": "DevTools, Piwi sidebar: under a locator, after a ✓: it finds only the selected element. One or two words, lower case."
+  },
+  "devtools_byPosition": {
+    "message": "unique by position",
+    "description": "DevTools, Piwi sidebar: under a locator ending in .first() or .nth(): it finds the element alone only by its position. A few words, lower case."
+  },
+  "devtools_matches_one": {
+    "message": "$count$ match",
+    "description": "DevTools, Piwi sidebar: under a locator that finds several elements. $count$ is how many. Short, lower case.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "devtools_matches_other": {
+    "message": "$count$ matches",
+    "description": "DevTools, Piwi sidebar: under a locator that finds several elements. $count$ is how many. Short, lower case.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "devtools_unchecked": {
+    "message": "not checked",
+    "description": "DevTools, Piwi sidebar: under a locator the extension cannot evaluate on the page. Lower case."
+  },
+  "devtools_stable": {
+    "message": "stable",
+    "description": "DevTools, Piwi sidebar: after the verdict, the locator follows every stability rule. One word, lower case."
+  },
+  "devtools_watch": {
+    "message": "could break: $rules$",
+    "description": "DevTools, Piwi sidebar: after the verdict, the locator could break. $rules$ lists the reasons, from the stability_ messages.",
+    "placeholders": {
+      "rules": {
+        "content": "$1",
+        "example": "long text"
+      }
+    }
+  },
+  "devtools_brittle": {
+    "message": "brittle: $rules$",
+    "description": "DevTools, Piwi sidebar: after the verdict, the locator is likely to break. $rules$ lists the reasons, from the stability_ messages.",
+    "placeholders": {
+      "rules": {
+        "content": "$1",
+        "example": "CSS class"
+      }
+    }
+  },
+  "devtools_addToSession": {
+    "message": "Add to session",
+    "description": "DevTools, Piwi sidebar: button under a locator that adds it to the pick session under a name."
+  },
+  "devtools_addedToSession": {
+    "message": "Added to the session as $name$.",
+    "description": "DevTools, Piwi sidebar: confirmation after adding a locator to the pick session. $name$ is the name the user typed.",
+    "placeholders": {
+      "name": {
+        "content": "$1",
+        "example": "applyCoupon"
+      }
+    }
+  },
+  "view_title": {
+    "message": "Playwright view",
+    "description": "Playwright view: title of the small panel over the page. “Playwright” is a product name."
+  },
+  "view_noRole": {
+    "message": "(no role)",
+    "description": "Playwright view: in a label over an element, after its tag name, when the element has no role Playwright recognizes. Short."
+  },
+  "view_noName": {
+    "message": "(no name)",
+    "description": "Playwright view: in a label over an element, after its role, when it has no accessible name. Short."
+  },
+  "view_filterRole": {
+    "message": "Role",
+    "description": "Playwright view: label of the select that shows the labels of one role only."
+  },
+  "view_allRoles": {
+    "message": "All roles",
+    "description": "Playwright view: first option of the role select, showing every label."
+  },
+  "view_labelled_one": {
+    "message": "$count$ element labelled",
+    "description": "Playwright view panel: how many elements carry a label. $count$ is the number.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "42"
+      }
+    }
+  },
+  "view_labelled_other": {
+    "message": "$count$ elements labelled",
+    "description": "Playwright view panel: how many elements carry a label. $count$ is the number.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "42"
+      }
+    }
+  },
+  "view_unreachable_one": {
+    "message": "$count$ no stable locator reaches (red)",
+    "description": "Playwright view panel: elements marked in red, which look operable but have no role, or no name and no test id. $count$ is the number.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "view_unreachable_other": {
+    "message": "$count$ no stable locator reaches (red)",
+    "description": "Playwright view panel: elements marked in red, which look operable but have no role, or no name and no test id. $count$ is the number.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "view_ambiguous_one": {
+    "message": "$count$ whose role and name find others too (amber)",
+    "description": "Playwright view panel: elements marked in amber, whose getByRole with their name finds other elements too. $count$ is the number.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "view_ambiguous_other": {
+    "message": "$count$ whose role and name find others too (amber)",
+    "description": "Playwright view panel: elements marked in amber, whose getByRole with their name finds other elements too. $count$ is the number.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "devtools_tabRecord": {
+    "message": "Record",
+    "description": "DevTools, Piwi panel: tab showing the running recording. One word."
+  },
+  "devtools_tabReplay": {
+    "message": "Replay",
+    "description": "DevTools, Piwi panel: tab showing the running replay. One word."
+  },
+  "devtools_noRecording": {
+    "message": "Nothing is being recorded. Start with Record actions or Report a bug in the toolbar popup: the steps show here as they are recorded.",
+    "description": "DevTools, Piwi panel, Record tab: nothing is being recorded. “Record actions” and “Report a bug” are the popup tiles' names (popup_record, popup_reportBug)."
+  },
+  "devtools_recordingOn_one": {
+    "message": "Recording on $site$: $count$ step",
+    "description": "DevTools, Piwi panel, Record tab: a recording runs. $count$ is the number of steps so far, $site$ the recorded site, like https://shop.example.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "site": {
+        "content": "$2",
+        "example": "https://shop.example"
+      }
+    }
+  },
+  "devtools_recordingOn_other": {
+    "message": "Recording on $site$: $count$ steps",
+    "description": "DevTools, Piwi panel, Record tab: a recording runs. $count$ is the number of steps so far, $site$ the recorded site, like https://shop.example.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "site": {
+        "content": "$2",
+        "example": "https://shop.example"
+      }
+    }
+  },
+  "devtools_bugRecordingOn_one": {
+    "message": "Bug report on $site$: $count$ step",
+    "description": "DevTools, Piwi panel, Record tab: a bug report is being recorded. $count$ is the number of steps so far, $site$ the recorded site.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "site": {
+        "content": "$2",
+        "example": "https://shop.example"
+      }
+    }
+  },
+  "devtools_bugRecordingOn_other": {
+    "message": "Bug report on $site$: $count$ steps",
+    "description": "DevTools, Piwi panel, Record tab: a bug report is being recorded. $count$ is the number of steps so far, $site$ the recorded site.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "site": {
+        "content": "$2",
+        "example": "https://shop.example"
+      }
+    }
+  },
+  "devtools_recordingStopped_one": {
+    "message": "Recording stopped: $count$ step, not exported yet",
+    "description": "DevTools, Piwi panel, Record tab: the recording has stopped and is kept until exported or discarded. $count$ is the number of steps.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "devtools_recordingStopped_other": {
+    "message": "Recording stopped: $count$ steps, not exported yet",
+    "description": "DevTools, Piwi panel, Record tab: the recording has stopped and is kept until exported or discarded. $count$ is the number of steps.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "devtools_stopRecording": {
+    "message": "Stop recording",
+    "description": "DevTools, Piwi panel, Record tab: button that stops the recording, as the popup's Stop does."
+  },
+  "devtools_finishBugOnPage": {
+    "message": "Finish the bug report from its panel on the page, which collects the evidence.",
+    "description": "DevTools, Piwi panel, Record tab: a bug report is finished from its own panel on the page, which collects the evidence."
+  },
+  "devtools_noReplay": {
+    "message": "No replay yet. Start one with Replay a bug report in the toolbar popup: its steps and results show here.",
+    "description": "DevTools, Piwi panel, Replay tab: no replay has run. “Replay a bug report” is the popup tile's name (popup_replayBug)."
+  },
+  "devtools_tabNetwork": {
+    "message": "Network",
+    "description": "DevTools, Piwi panel: tab listing the page's fetch and XHR requests. One word."
+  },
+  "devtools_networkHint": {
+    "message": "The page’s fetch and XHR requests, read from DevTools while it is open. Nothing leaves the browser unless you copy or download it.",
+    "description": "DevTools, Piwi panel, Network tab: what it lists and where the data goes. fetch and XHR are names of browser APIs: keep them."
+  },
+  "devtools_networkEmpty": {
+    "message": "No request yet. Use the page, or reload it, and its requests show here.",
+    "description": "DevTools, Piwi panel, Network tab: no request listed yet."
+  },
+  "devtools_networkAllOrigins": {
+    "message": "Other sites too",
+    "description": "DevTools, Piwi panel, Network tab: checkbox that also lists requests to other sites than the page's."
+  },
+  "devtools_networkClear": {
+    "message": "Clear",
+    "description": "DevTools, Piwi panel, Network tab: button that empties the list of requests."
+  },
+  "devtools_requestTime": {
+    "message": "$ms$ ms",
+    "description": "DevTools, Piwi panel, Network tab: how long a request took. $ms$ is a number of milliseconds.",
+    "placeholders": {
+      "ms": {
+        "content": "$1",
+        "example": "35"
+      }
+    }
+  },
+  "devtools_mockTitle": {
+    "message": "Mock this response",
+    "description": "DevTools, Piwi panel, Network tab: accessible name of the section that writes a mock for the selected request."
+  },
+  "devtools_mockPattern": {
+    "message": "URL pattern",
+    "description": "DevTools, Piwi panel, Network tab: label of the editable URL pattern the mock routes."
+  },
+  "devtools_mockKind": {
+    "message": "Answer with",
+    "description": "DevTools, Piwi panel, Network tab: label of the select choosing what the mock answers. Followed by devtools_mockResponse, devtools_mockError or devtools_mockAbort."
+  },
+  "devtools_mockResponse": {
+    "message": "this response",
+    "description": "DevTools, Piwi panel, Network tab: option, after “Answer with”: the response DevTools recorded."
+  },
+  "devtools_mockError": {
+    "message": "a server error (500)",
+    "description": "DevTools, Piwi panel, Network tab: option, after “Answer with”: a server error."
+  },
+  "devtools_mockAbort": {
+    "message": "a network failure",
+    "description": "DevTools, Piwi panel, Network tab: option, after “Answer with”: the request fails as if the network were down."
+  },
+  "devtools_mockNoBody": {
+    "message": "DevTools kept no body for this response. Reload the page with DevTools open to mock it.",
+    "description": "DevTools, Piwi panel, Network tab: DevTools kept no body for the selected response."
+  },
+  "devtools_mockHidden_one": {
+    "message": "$count$ value hidden: fields named like a password, a token or a key.",
+    "description": "DevTools, Piwi panel, Network tab: values of fields named like a password, token or key were replaced in the mock. $count$ is how many.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "devtools_mockHidden_other": {
+    "message": "$count$ values hidden: fields named like a password, a token or a key.",
+    "description": "DevTools, Piwi panel, Network tab: values of fields named like a password, token or key were replaced in the mock. $count$ is how many.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "devtools_mockReveal": {
+    "message": "Show hidden values",
+    "description": "DevTools, Piwi panel, Network tab: checkbox that puts the hidden values back in the mock."
+  },
+  "devtools_mockCopy": {
+    "message": "Copy code",
+    "description": "DevTools, Piwi panel, Network tab: button that copies the mock's code."
+  },
+  "devtools_mockDownload": {
+    "message": "Download $file$",
+    "description": "DevTools, Piwi panel, Network tab: button that downloads the file holding a large response body. $file$ is its name, like cart.json.",
+    "placeholders": {
+      "file": {
+        "content": "$1",
+        "example": "cart.json"
+      }
+    }
+  },
+  "devtools_mockFileHint": {
+    "message": "The body is over 100 kB, so the code reads it from a file: save it as $path$ in the folder you run Playwright from.",
+    "description": "DevTools, Piwi panel, Network tab: the body is too large to go in the code. $path$ is where the code reads it, like mocks/cart.json.",
+    "placeholders": {
+      "path": {
+        "content": "$1",
+        "example": "mocks/cart.json"
+      }
+    }
   },
   "stability_position": {
     "message": "position",

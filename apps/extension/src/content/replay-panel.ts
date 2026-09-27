@@ -725,5 +725,14 @@ if (globals.__piwiReplayEntry) {
   void globals.__piwiReplayEntry();
 } else {
   globals.__piwiReplayEntry = entry;
+  // The Piwi panel in DevTools changed the stored state: draw it, and go on when asked.
+  chrome.runtime.onMessage.addListener((message) => {
+    if (message?.type !== 'piwi-replay-wake') return undefined;
+    void getReplayState().then((state) => {
+      if (state && loopActive) renderHud(state);
+    });
+    if (message.wake === true) wakeLoop();
+    return undefined;
+  });
   void entry();
 }

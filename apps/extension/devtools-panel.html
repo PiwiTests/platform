@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Piwi</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --fg: #1f2937;
+        --muted: #6b7280;
+        --border: #e5e7eb;
+        --accent: #6d28d9;
+        --good: #15803d;
+        --warn: #b45309;
+        --bad: #b91c1c;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --fg: #e5e7eb;
+          --muted: #9ca3af;
+          --border: #374151;
+          --accent: #a78bfa;
+          --good: #4ade80;
+          --warn: #fbbf24;
+          --bad: #f87171;
+        }
+      }
+      body {
+        margin: 0;
+        font: 12px ui-sans-serif, system-ui, -apple-system, sans-serif;
+        color: var(--fg);
+        background: transparent;
+      }
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        border-bottom: 1px solid var(--border);
+        padding: 0 8px;
+      }
+      [role='tablist'] {
+        display: flex;
+      }
+      [role='tab'] {
+        font: inherit;
+        color: var(--muted);
+        background: none;
+        border: none;
+        border-bottom: 2px solid transparent;
+        padding: 7px 10px;
+        cursor: pointer;
+      }
+      [role='tab'][aria-selected='true'] {
+        color: var(--fg);
+        border-bottom-color: var(--accent);
+      }
+      button {
+        font: inherit;
+        font-size: 11.5px;
+        color: inherit;
+        background: rgba(128, 128, 128, 0.12);
+        border: 1px solid rgba(128, 128, 128, 0.35);
+        border-radius: 4px;
+        padding: 2px 8px;
+        cursor: pointer;
+      }
+      button:hover,
+      button:focus-visible {
+        background: rgba(128, 128, 128, 0.25);
+      }
+      button.primary {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      button.stop {
+        border-color: var(--bad);
+        color: var(--bad);
+      }
+      #notice:not(:empty) {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        padding: 6px 10px;
+        border-bottom: 1px solid var(--border);
+      }
+      main {
+        padding: 6px 10px;
+      }
+      .note {
+        color: var(--muted);
+      }
+      .status {
+        font-weight: 600;
+        margin: 4px 0 6px;
+      }
+      .controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-bottom: 8px;
+      }
+      .verdict {
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 6px 8px;
+        margin-bottom: 8px;
+      }
+      ol.steps {
+        margin: 0;
+        padding-left: 24px;
+      }
+      ol.steps li {
+        padding: 3px 0;
+        border-bottom: 1px solid var(--border);
+      }
+      ol.steps li[data-status='failed'],
+      ol.steps li[data-status='diverged'] {
+        color: var(--bad);
+      }
+      ol.steps code {
+        display: block;
+        font-size: 11.5px;
+        overflow-wrap: anywhere;
+      }
+      ul.requests {
+        list-style: none;
+        margin: 0 0 8px;
+        padding: 0;
+        max-height: 40vh;
+        overflow: auto;
+        border: 1px solid var(--border);
+      }
+      button.request {
+        display: grid;
+        grid-template-columns: 5em 1fr 3.5em 5em;
+        gap: 6px;
+        width: 100%;
+        text-align: left;
+        border: none;
+        border-bottom: 1px solid var(--border);
+        border-radius: 0;
+        background: none;
+        padding: 3px 6px;
+      }
+      button.request[aria-pressed='true'] {
+        background: rgba(124, 58, 237, 0.15);
+      }
+      .request .path {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .request .status.bad,
+      .note.warn {
+        color: var(--bad);
+      }
+      .request .time {
+        color: var(--muted);
+        text-align: right;
+      }
+      .mock .field {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        margin: 4px 0;
+      }
+      .mock .field input {
+        flex: 1;
+        font: 11.5px ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+      .check {
+        display: inline-flex;
+        gap: 4px;
+        align-items: center;
+      }
+      pre.code {
+        font: 11.5px ui-monospace, SFMono-Regular, Menlo, monospace;
+        background: rgba(128, 128, 128, 0.1);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        padding: 6px 8px;
+        overflow: auto;
+        max-height: 40vh;
+      }
+      .request-title {
+        font-size: 12px;
+        overflow-wrap: anywhere;
+        margin: 6px 0;
+      }
+      .detail {
+        color: var(--muted);
+        overflow-wrap: anywhere;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div role="tablist" aria-label="Piwi">
+        <button type="button" role="tab" data-tab="record" data-i18n="devtools_tabRecord">Record</button>
+        <button type="button" role="tab" data-tab="replay" data-i18n="devtools_tabReplay">Replay</button>
+        <button type="button" role="tab" data-tab="network" data-i18n="devtools_tabNetwork">Network</button>
+      </div>
+      <button type="button" id="playwright-view" data-i18n="popup_playwrightView">Playwright view</button>
+    </header>
+    <div id="notice"></div>
+    <main id="content" role="tabpanel"></main>
+    <script type="module" src="src/devtools/panel.ts"></script>
+  </body>
+</html>
