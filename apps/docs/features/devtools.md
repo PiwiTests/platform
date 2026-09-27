@@ -69,6 +69,21 @@ Fields named like a password, a token, a key or a session are written as `<hidde
 values**; headers, cookies included, are never written. Nothing is sent anywhere: the code reaches your clipboard
 when you copy it.
 
+## Save login for tests
+
+The key button in the popup's header, or **Save login for tests** in the Piwi panel, saves the site's login as the
+file Playwright's `storageState` reads: the site's cookies, `httpOnly` ones included, which a page's scripts cannot
+read, and its `localStorage`. IndexedDB is left out. **Save login file** asks, the first time, for permission to read
+that one site's cookies, then downloads `user.json`:
+
+```ts
+test.use({ storageState: 'playwright/.auth/user.json' });
+```
+
+The file logs anyone in as you until the session expires: save it with a test account, as
+`playwright/.auth/user.json`, and add `playwright/.auth` to `.gitignore`. The page offers both lines, and a setup test
+that refreshes the file.
+
 ## Playwright view
 
 **Playwright view** in the popup (key `V`) labels the page as a test sees it: each button, link, field, heading and

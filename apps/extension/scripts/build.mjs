@@ -113,6 +113,7 @@ export async function buildExtension({ release = false, pseudo = false } = {}) {
           devtools: path.join(root, 'devtools.html'),
           'devtools-sidebar': path.join(root, 'devtools-sidebar.html'),
           'devtools-panel': path.join(root, 'devtools-panel.html'),
+          login: path.join(root, 'login.html'),
         },
       },
     },

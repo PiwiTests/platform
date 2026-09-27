@@ -8,7 +8,7 @@ Playwright test does. That is the gap this plan fills: a **Piwi panel inside Dev
 page, **mocks written from real responses**, the **login saved for tests**, **slow and failing requests** on demand,
 and **viewports** from the project's own configuration.
 
-**Status.** Proposed 2026-09-27; in progress. Built: PR 1 (the Elements sidebar), PR 2 (the Playwright view), PR 3 (the Piwi panel's Record and Replay tabs), PR 4 (the Network tab and Mock this response). No part needs the `debugger`
+**Status.** Proposed 2026-09-27; in progress. Built: PR 1 (the Elements sidebar), PR 2 (the Playwright view), PR 3 (the Piwi panel's Record and Replay tabs), PR 4 (the Network tab and Mock this response), PR 5 (Save login for tests). No part needs the `debugger`
 permission, and only one adds a permission at all: `cookies`, optional, requested when the login is saved. The DevTools
 panel adds a manifest key (`devtools_page`) that shows no install warning. The open questions are settled below.
 
@@ -180,6 +180,11 @@ setup('log in', async ({ page }) => {
 
 IndexedDB is left out: Playwright saves it only with `indexedDB: true`, and reading it from an extension means walking
 every database of the origin. A later option if asked.
+
+As built, the dialog is an extension page (`login.html`) the popup's header and the panel open for the tab, and the
+click that saves asks for `cookies` together with the site's origin (the `cookies` API needs the host permission too).
+T5's hiding does not apply to this file: the cookie values are what makes it work, so the page warns instead, gives the
+`.gitignore` line, and says to use a test account.
 
 ### 2.4 Slow down or fail a request
 
