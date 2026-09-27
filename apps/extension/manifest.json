@@ -48,6 +48,9 @@
     "scripting",
     "storage"
   ],
+  "optional_permissions": [
+    "cookies"
+  ],
   "optional_host_permissions": [
     "http://*/*",
     "https://*/*"

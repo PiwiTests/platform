@@ -69,6 +69,14 @@ coverageButton.addEventListener('click', () => {
   else chrome.runtime.openOptionsPage();
 });
 
+document.getElementById('save-login')!.addEventListener('click', () => {
+  void activeTab().then((tab) => {
+    if (tab?.id == null) return;
+    const query = new URLSearchParams({ tabId: String(tab.id), url: tab.url ?? '' });
+    void chrome.tabs.create({ url: chrome.runtime.getURL(`login.html?${query}`) }).then(() => window.close());
+  });
+});
+
 configButton.addEventListener('click', () => {
   chrome.runtime.openOptionsPage();
 });

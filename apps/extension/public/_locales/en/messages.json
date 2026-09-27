@@ -201,6 +201,10 @@
     "message": "Each element as getByRole sees it, and the ones no locator reaches",
     "description": "Popup tile hint, under “Playwright view”. One line. getByRole is Playwright code: keep it as it is."
   },
+  "popup_saveLogin": {
+    "message": "Save login for tests",
+    "description": "Popup header icon button's label and tooltip, and a button in the DevTools Piwi panel: opens the page that saves the site's login as a Playwright storageState file."
+  },
   "popup_reportBug": {
     "message": "Report a bug",
     "description": "Popup tile: records the steps of a bug. Short."
@@ -4824,6 +4828,120 @@
         "example": "mocks/cart.json"
       }
     }
+  },
+  "login_title": {
+    "message": "Save login for tests",
+    "description": "Save login page: title of the page and of its tab."
+  },
+  "login_site": {
+    "message": "Site: $site$",
+    "description": "Save login page: the site whose login is saved. $site$ is its origin, like https://shop.example.",
+    "placeholders": {
+      "site": {
+        "content": "$1",
+        "example": "https://shop.example"
+      }
+    }
+  },
+  "login_noSite": {
+    "message": "Open this from the toolbar popup on a web page: it saves the login of that page’s site.",
+    "description": "Save login page: opened without a web page to save the login of."
+  },
+  "login_holds": {
+    "message": "The file holds this browser’s cookies for the site, httpOnly ones included, and the site’s localStorage, in Playwright’s storageState format. IndexedDB is left out.",
+    "description": "Save login page: what the saved file holds. httpOnly, localStorage, storageState and IndexedDB are technical names: keep them."
+  },
+  "login_warning": {
+    "message": "Anyone with this file is logged in as you until the session expires. Use a test account, and keep the file out of your repository.",
+    "description": "Save login page: warning shown before saving. The file is a credential."
+  },
+  "login_gitignore": {
+    "message": "Save it as $path$ and add $folder$ to $file$.",
+    "description": "Save login page: where to save the file. $path$ is playwright/.auth/user.json, $folder$ is playwright/.auth, $file$ is .gitignore; all three are shown as code.",
+    "placeholders": {
+      "file": {
+        "content": "$1",
+        "example": ".gitignore"
+      },
+      "folder": {
+        "content": "$2",
+        "example": "playwright/.auth"
+      },
+      "path": {
+        "content": "$3",
+        "example": "playwright/.auth/user.json"
+      }
+    }
+  },
+  "login_copyGitignore": {
+    "message": "Copy the .gitignore line",
+    "description": "Save login page: button that copies the line to add to .gitignore."
+  },
+  "login_save": {
+    "message": "Save login file",
+    "description": "Save login page: the button that asks for the cookies permission for the site, then downloads the file."
+  },
+  "login_denied": {
+    "message": "The login was not saved: saving it needs Piwi Picker to read this site’s cookies.",
+    "description": "Save login page: the user refused the permission."
+  },
+  "login_failed": {
+    "message": "The login could not be saved: $error$",
+    "description": "Save login page: saving failed. $error$ is the browser's message, in English.",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "No tab with id: 12"
+      }
+    }
+  },
+  "login_savedCookies_one": {
+    "message": "Saved user.json with $count$ cookie.",
+    "description": "Save login page: after the download. $count$ is the number of cookies in user.json. Followed by login_savedStorage.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "login_savedCookies_other": {
+    "message": "Saved user.json with $count$ cookies.",
+    "description": "Save login page: after the download. $count$ is the number of cookies in user.json. Followed by login_savedStorage.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "login_savedStorage_one": {
+    "message": "$count$ localStorage entry.",
+    "description": "Save login page: after login_savedCookies. $count$ is the number of localStorage entries in the file.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "login_savedStorage_other": {
+    "message": "$count$ localStorage entries.",
+    "description": "Save login page: after login_savedCookies. $count$ is the number of localStorage entries in the file.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "login_setupTitle": {
+    "message": "Use it in a test",
+    "description": "Save login page: heading above the code that uses the file in a Playwright test."
+  },
+  "login_copySnippet": {
+    "message": "Copy the code",
+    "description": "Save login page: button that copies the code above it."
   },
   "stability_position": {
     "message": "position",

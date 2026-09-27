@@ -178,4 +178,15 @@ test.describe('the Piwi panel', () => {
     await expect(panel.getByText(`Piwi Picker needs access to ${ORIGIN} to read this page.`)).toBeVisible();
     await expect(panel.getByRole('button', { name: 'Allow on this site' })).toBeVisible();
   });
+
+  test('opens Save login for tests for the inspected tab', async ({ context, extensionId }) => {
+    const shop = await context.newPage();
+    const panel = await openPanel(shop, extensionId, context);
+    const opened = context.waitForEvent('page');
+    await panel.getByRole('button', { name: 'Save login for tests' }).click();
+    const login = await opened;
+    await login.waitForLoadState();
+    expect(login.url()).toContain('/login.html?tabId=987654321&url=');
+    await expect(login.getByText(`Site: ${ORIGIN}`)).toBeVisible();
+  });
 });

@@ -158,6 +158,9 @@
   "popup_playwrightViewHint": {
     "message": "Jedes Element, wie getByRole es sieht, und die, die kein Locator erreicht"
   },
+  "popup_saveLogin": {
+    "message": "Anmeldung für Tests speichern"
+  },
   "popup_reportBug": {
     "message": "Bug melden"
   },
@@ -4081,6 +4084,104 @@
         "example": "mocks/cart.json"
       }
     }
+  },
+  "login_title": {
+    "message": "Anmeldung für Tests speichern"
+  },
+  "login_site": {
+    "message": "Website: $site$",
+    "placeholders": {
+      "site": {
+        "content": "$1",
+        "example": "https://shop.example"
+      }
+    }
+  },
+  "login_noSite": {
+    "message": "Öffnen Sie dies über das Menü der Erweiterung auf einer Webseite: Es speichert die Anmeldung der Website dieser Seite."
+  },
+  "login_holds": {
+    "message": "Die Datei enthält die Cookies dieses Browsers für die Website, auch die httpOnly-Cookies, und den localStorage der Website, im storageState-Format von Playwright. IndexedDB bleibt außen vor."
+  },
+  "login_warning": {
+    "message": "Wer diese Datei hat, ist bis zum Ablauf der Sitzung als Sie angemeldet. Verwenden Sie ein Testkonto und halten Sie die Datei aus Ihrem Repository heraus."
+  },
+  "login_gitignore": {
+    "message": "Speichern Sie sie als $path$ und fügen Sie $folder$ zu $file$ hinzu.",
+    "placeholders": {
+      "file": {
+        "content": "$1",
+        "example": ".gitignore"
+      },
+      "folder": {
+        "content": "$2",
+        "example": "playwright/.auth"
+      },
+      "path": {
+        "content": "$3",
+        "example": "playwright/.auth/user.json"
+      }
+    }
+  },
+  "login_copyGitignore": {
+    "message": "Zeile für .gitignore kopieren"
+  },
+  "login_save": {
+    "message": "Anmeldedatei speichern"
+  },
+  "login_denied": {
+    "message": "Die Anmeldung wurde nicht gespeichert: Dafür muss Piwi Picker die Cookies dieser Website lesen."
+  },
+  "login_failed": {
+    "message": "Die Anmeldung konnte nicht gespeichert werden: $error$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "No tab with id: 12"
+      }
+    }
+  },
+  "login_savedCookies_one": {
+    "message": "user.json mit $count$ Cookie gespeichert.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "login_savedCookies_other": {
+    "message": "user.json mit $count$ Cookies gespeichert.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "login_savedStorage_one": {
+    "message": "$count$ localStorage-Eintrag.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "login_savedStorage_other": {
+    "message": "$count$ localStorage-Einträge.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "login_setupTitle": {
+    "message": "In einem Test verwenden"
+  },
+  "login_copySnippet": {
+    "message": "Code kopieren"
   },
   "stability_position": {
     "message": "Position"

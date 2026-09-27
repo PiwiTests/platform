@@ -22,7 +22,11 @@ AMO listings that are still outstanding.
   (`http://*/*`, `https://*/*`) is declared but **granted nothing by default** — the popup
   requests a single origin (`https://<the-recorded-site>/*`) from `chrome.permissions.request`
   only when the user clicks "Record actions", inside that click's own gesture. Adding a new
-  *standing* permission here is still a deliberate, reviewed decision, not a default.
+  *standing* permission here is still a deliberate, reviewed decision, not a default. `optional_permissions` holds
+  `cookies` alone, granted nothing at install: **Save login for tests** (`login.html`, `src/login/main.ts`, pure half
+  `src/shared/storage-state.ts`) requests it with the one site's origin inside its Save click, reads that site's
+  cookies and `localStorage` once, and downloads them as Playwright's `storageState`; nothing is kept or sent.
+  `save-login.spec.ts` loads the file into a new browser context and checks it logs in.
   `browser_specific_settings.gecko.id` is Firefox's required stable add-on ID (Chromium ignores
   the key); don't change it once the add-on is published to AMO — a new ID creates a separate
   add-on rather than an update, orphaning existing installs. `background` names `background.js`

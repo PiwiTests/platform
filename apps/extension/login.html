@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title data-i18n="login_title">Save login for tests</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #ffffff;
+        --fg: #111827;
+        --muted: #6b7280;
+        --border: #e5e7eb;
+        --accent: #7c3aed;
+        --warn-bg: #fffbeb;
+        --warn-border: #f59e0b;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #111827;
+          --fg: #f9fafb;
+          --muted: #9ca3af;
+          --border: #374151;
+          --warn-bg: rgba(245, 158, 11, 0.12);
+        }
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, sans-serif;
+      }
+      main {
+        max-width: 640px;
+        margin: 32px auto;
+        padding: 0 16px;
+      }
+      h1 {
+        font-size: 20px;
+      }
+      .warning {
+        background: var(--warn-bg);
+        border: 1px solid var(--warn-border);
+        border-radius: 8px;
+        padding: 10px 12px;
+      }
+      pre {
+        background: rgba(128, 128, 128, 0.1);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 10px 12px;
+        overflow: auto;
+        font: 12.5px ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+      button {
+        font: inherit;
+        color: inherit;
+        background: rgba(128, 128, 128, 0.12);
+        border: 1px solid rgba(128, 128, 128, 0.35);
+        border-radius: 6px;
+        padding: 4px 10px;
+        cursor: pointer;
+      }
+      button.primary {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+        padding: 7px 16px;
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      #status {
+        margin-top: 10px;
+        min-height: 1.5em;
+      }
+      .row {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1 data-i18n="login_title">Save login for tests</h1>
+      <p id="site"></p>
+      <p data-i18n="login_holds">
+        The file holds this browser’s cookies for the site, httpOnly ones included, and the site’s localStorage, in
+        Playwright’s storageState format. IndexedDB is left out.
+      </p>
+      <p class="warning" role="note" data-i18n="login_warning">
+        Anyone with this file is logged in as you until the session expires. Use a test account, and keep the file out
+        of your repository.
+      </p>
+      <p data-i18n="login_gitignore">
+        Save it as <code data-i18n-slot="path">playwright/.auth/user.json</code> and add
+        <code data-i18n-slot="folder">playwright/.auth</code> to <code data-i18n-slot="file">.gitignore</code>.
+      </p>
+      <p><button type="button" id="copy-gitignore" data-i18n="login_copyGitignore">Copy the .gitignore line</button></p>
+      <p class="row">
+        <button type="button" id="save" class="primary" data-i18n="login_save">Save login file</button>
+      </p>
+      <p id="status" role="status"></p>
+      <h2 data-i18n="login_setupTitle">Use it in a test</h2>
+      <pre id="snippet"></pre>
+      <button type="button" id="copy-snippet" data-i18n="login_copySnippet">Copy</button>
+    </main>
+    <script type="module" src="src/login/main.ts"></script>
+  </body>
+</html>

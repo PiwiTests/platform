@@ -77,6 +77,10 @@
         border-color: var(--bad);
         color: var(--bad);
       }
+      .tools {
+        display: flex;
+        gap: 6px;
+      }
       #notice:not(:empty) {
         display: flex;
         gap: 8px;
@@ -201,7 +205,10 @@
         <button type="button" role="tab" data-tab="replay" data-i18n="devtools_tabReplay">Replay</button>
         <button type="button" role="tab" data-tab="network" data-i18n="devtools_tabNetwork">Network</button>
       </div>
-      <button type="button" id="playwright-view" data-i18n="popup_playwrightView">Playwright view</button>
+      <div class="tools">
+        <button type="button" id="playwright-view" data-i18n="popup_playwrightView">Playwright view</button>
+        <button type="button" id="save-login" data-i18n="popup_saveLogin">Save login for tests</button>
+      </div>
     </header>
     <div id="notice"></div>
     <main id="content" role="tabpanel"></main>

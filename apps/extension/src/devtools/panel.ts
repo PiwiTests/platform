@@ -2,7 +2,14 @@ import { LOCATOR_SYNTAX_CSS } from '@piwitests/picker-dom';
 import { initI18n, localizeDocument, t, uiLanguage } from '../shared/i18n.js';
 import { RECORDING_KEY } from '../shared/recording-storage.js';
 import { REPLAY_KEY } from '../shared/replay-storage.js';
-import { injectContentScript, inspectedOrigin, requestSiteAccess, sitePattern } from './inspected.js';
+import {
+  evalInPage,
+  injectContentScript,
+  inspectedOrigin,
+  inspectedTabId,
+  requestSiteAccess,
+  sitePattern,
+} from './inspected.js';
 import { renderRecordTab } from './panel-record.js';
 import { renderReplayTab } from './panel-replay.js';
 import { refreshNetworkList, renderNetworkTab, startNetworkLog } from './panel-network.js';
@@ -77,6 +84,14 @@ async function togglePlaywrightView(): Promise<void> {
   notice.replaceChildren(text, allow);
 }
 
+/** Opens Save login for tests for the inspected tab, in a tab of its own. */
+async function openSaveLogin(): Promise<void> {
+  const href = await evalInPage<string>('location.href');
+  const url = href.ok && typeof href.value === 'string' ? href.value : '';
+  const query = new URLSearchParams({ tabId: String(inspectedTabId()), url });
+  await chrome.tabs.create({ url: chrome.runtime.getURL(`login.html?${query}`) });
+}
+
 async function start(): Promise<void> {
   await initI18n();
   document.documentElement.lang = uiLanguage();
@@ -96,6 +111,7 @@ async function start(): Promise<void> {
     });
   }
   document.getElementById('playwright-view')!.addEventListener('click', () => void togglePlaywrightView());
+  document.getElementById('save-login')!.addEventListener('click', () => void openSaveLogin());
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'session') return;
     if (TAB_KEYS[current].some((key) => key in changes)) void render();
