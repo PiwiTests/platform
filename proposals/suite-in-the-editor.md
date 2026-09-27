@@ -6,11 +6,12 @@ which test locators the change breaks, and rewrites them. **Track B** records wh
 executes, so any file can answer "which tests reach me?". **Track C** is one editor service that holds the logic, and
 **Tracks D and E** are thin clients for VS Code and the JetBrains IDEs.
 
-**Status.** Proposed 2026-09-27. Nothing is built. Track A needs no capture change. Track B adds an opt-in capture, one
+**Status.** Proposed 2026-09-27. Being built on `claude/suite-in-the-editor`, in the Delivery order: PR 1 (core) is
+built. What changed while building is under [As built](#as-built). Track A needs no capture change. Track B adds an opt-in capture, one
 payload column on `test_runs_cases` and one table. Tracks C–E add a workspace package, a VS Code extension and a
 JetBrains plugin, and a commitlint scope (`ide`); a catalog of what the editors can do after their first release
 follows the tracks. New wire fields, endpoints, a CLI command and a published extension
-API freeze at 1.0 (one new D entry in [`1.0-stabilization.md`](1.0-stabilization.md)).
+API freeze at 1.0 (D22 in [`1.0-stabilization.md`](1.0-stabilization.md)).
 
 **Summary.** Tested elements answers "which tests reach this element?" on the live page. This plan answers the same
 question where the change is made, before anything runs. Renaming a button breaks every test that finds it by its name,
@@ -434,7 +435,7 @@ the feature they come from.
 
 ## File-by-file checklist
 
-### PR 1 — core
+### PR 1 — core (built)
 - `packages/core/src/locator-text-match.ts` (new): `textMatches`, `nameMatches`, `attributeMatches`, whitespace
   normalization; `apps/extension/src/content/locator-engine.ts` and `engine-aria.ts` import them.
 - `packages/core/src/diff-anchors.ts` (new), `locator-break.ts` (new), `locator-edit.ts` (moved); exports in
@@ -474,6 +475,38 @@ the feature they come from.
 - Root `package.json` workspaces, `release-please-config.json` (two entries per new workspace), `commitlint.config.js`
   (scope `ide`), CI jobs in `.github/workflows/ci.yml`, a publish workflow per marketplace.
 - Docs: `features/editors.md` (new), `features/ide-integration.md` (link), `AGENTS.md` files for the new apps.
+
+## As built
+
+Decisions the build changed or made precise, per PR. The sections above still describe the design; where they
+disagree, this section wins.
+
+### PR 1 — core
+
+- **Text rules.** `locator-text-match.ts` exports the factories the engine uses (`textMatcher`, `nameMatcher`,
+  `attributeMatcher`, `normalizeWhiteSpace`) and one-shot forms (`textMatches`, `nameMatches`, `attributeMatches`).
+  `legacyTextMatcher` (the `text=` selector) stays in the extension: nothing outside the engine reads that syntax.
+- **Licensing.** The text rules (from the extension) and `buildLocatorEdit` (from the app) move from FSL code into
+  MIT core, as this plan decided; they ship inside the reporter from here on.
+- **`DiffAnchor`** carries `line` on the new side (the added line of a rename, the hunk's position for a removal) and
+  `oldLine` on the old side, so an editor can warn on the line being typed.
+- **Translation keys.** A changed line of a locale file gives its last key segment; given `readFile`, the full key path
+  (`checkout.coupon.apply`), read with `parseTranslationFile` (JSON, YAML, `.properties`, `.po`, `.resx`, line based).
+  A template's key change is resolved through a `translations(key, side)` lookup the caller builds from those files.
+  `.po` and `.resx` value lines carry no key on the line itself.
+- **Pairing.** Tokens pair into renames within a group: the same attribute, text, the same translation key, literals,
+  and template key references (`t('a')` → `t('b')`) as their own group.
+- **Confidence.** A literal is always possible. With reach, an anchor from a locale file stays likely, since no test
+  executes a locale file; any other anchor is likely only when a test reaches its file.
+- **The rewrite.** `LocatorBreak` adds `tests` (the uses' tests) and `replacements` (`[before, after]` string
+  arguments). The call-site edit is `buildLiteralEdit` (new in `locator-edit.ts`): it replaces the literal on the line
+  and keeps the author's quotes, where `buildLocatorEdit` would re-render the whole call. Under Playwright's substring
+  rule a call only matches an anchor that contains its value, so in prediction "the value contains `before`" reduces
+  to equality up to case and whitespace. `renameValue` keeps the replace-inside branch for other callers.
+- **Test files.** `extractDiffAnchors` takes `isTestFile`; `predictLocatorBreaks` itself drops anchors in any file the
+  index calls locators from (suffix match, `sameFilePath`).
+- **`detectLocatorBreakAhead(anchors, index, options)`** returns one prediction per broken anchor with the call sites
+  of every chain it breaks; the `LocatorBreakInput` shape is gone (it had no caller).
 
 ## Verification
 

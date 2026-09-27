@@ -23,6 +23,9 @@ import {
 } from '../../server/database/schema';
 import { fileRouteTarget, filePageTarget, routeKeyMatchesTarget, pageKeyMatchesTarget } from '../graph';
 import { isProbeRun } from './probes';
+import type { DiffAnchor } from '@piwitests/core/diff-anchors';
+import { predictLocatorBreaks, type PredictLocatorBreaksOptions } from '@piwitests/core/locator-break';
+import type { LocatorIndex } from '@piwitests/core/locator-index';
 import type { DrizzleDB } from './db';
 
 // ── Vocabulary ───────────────────────────────────────────────────────────────
@@ -1031,17 +1034,10 @@ export function detectNewControl(inputs: NewControlInput[]): DetectedGap[] {
   return gaps;
 }
 
-/** A hunk that removes a locator anchor a control node's snapshot still relies on. */
-export interface LocatorBreakInput {
-  removedAttr: string;
-  filePath: string;
-  /** Call sites whose stored locator uses the removed attribute. */
-  callSites: string[];
-}
-
 /** A prediction handed to locator healing — not a gap. */
 export interface LocatorBreakPrediction {
   detector: 'locator-break-ahead';
+  /** The removed anchor: `attribute=value` for an attribute, the string otherwise. */
   removedAttr: string;
   filePath: string;
   callSites: string[];
@@ -1049,20 +1045,33 @@ export interface LocatorBreakPrediction {
 }
 
 /**
- * Locator break ahead — a diff removes a testid/id/name a control node's stored
- * locator relies on. A prediction handed to locator healing as a pre-flight, not
- * a scenario gap.
+ * Locator break ahead — a diff removes or renames a string the index's
+ * locators find elements by. One prediction per anchor, with the call sites
+ * of every chain it breaks, from `predictLocatorBreaks`. A prediction handed
+ * to locator healing as a pre-flight, not a scenario gap.
  */
-export function detectLocatorBreakAhead(inputs: LocatorBreakInput[]): LocatorBreakPrediction[] {
-  return inputs
-    .filter((i) => i.callSites.length > 0)
-    .map((i) => ({
+export function detectLocatorBreakAhead(
+  anchors: DiffAnchor[],
+  index: LocatorIndex,
+  options: PredictLocatorBreaksOptions = {},
+): LocatorBreakPrediction[] {
+  const byAnchor = new Map<DiffAnchor, Set<string>>();
+  for (const b of predictLocatorBreaks(anchors, index, options)) {
+    const sites = byAnchor.get(b.anchor) ?? new Set<string>();
+    for (const use of b.uses) for (const site of use.callSites) sites.add(site);
+    byAnchor.set(b.anchor, sites);
+  }
+  return [...byAnchor].map(([anchor, sites]) => {
+    const callSites = [...sites];
+    const removed = anchor.attribute ? `${anchor.attribute}=${anchor.before}` : anchor.before;
+    return {
       detector: 'locator-break-ahead' as const,
-      removedAttr: i.removedAttr,
-      filePath: i.filePath,
-      callSites: i.callSites,
-      evidence: `Removes ${i.removedAttr} · ${i.callSites.length} call site${i.callSites.length === 1 ? '' : 's'} — heal before the run fails.`,
-    }));
+      removedAttr: removed,
+      filePath: anchor.file,
+      callSites,
+      evidence: `${anchor.after === undefined ? 'Removes' : 'Renames'} ${removed} · ${callSites.length} call site${callSites.length === 1 ? '' : 's'} — heal before the run fails.`,
+    };
+  });
 }
 
 // ── Loaders + orchestration (impure) ─────────────────────────────────────────

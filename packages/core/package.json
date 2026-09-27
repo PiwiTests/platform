@@ -32,7 +32,11 @@
     "./page-key": "./src/page-key.ts",
     "./steps": "./src/steps.ts",
     "./bug-report": "./src/bug-report.ts",
-    "./bug-phrases": "./src/bug-phrases.ts"
+    "./bug-phrases": "./src/bug-phrases.ts",
+    "./locator-text-match": "./src/locator-text-match.ts",
+    "./diff-anchors": "./src/diff-anchors.ts",
+    "./locator-break": "./src/locator-break.ts",
+    "./locator-edit": "./src/locator-edit.ts"
   },
   "scripts": {
     "core:typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tests/tsconfig.json",

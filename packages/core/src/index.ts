@@ -28,3 +28,7 @@ export * from './codegen';
 export * from './locator-chain';
 export * from './step-locators';
 export * from './locator-index';
+export * from './locator-text-match';
+export * from './diff-anchors';
+export * from './locator-break';
+export * from './locator-edit';
