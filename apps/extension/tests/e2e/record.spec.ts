@@ -1,8 +1,12 @@
+import { readFile } from 'node:fs/promises';
+import { stripVTControlCharacters } from 'node:util';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { BrowserContext, Page } from '@playwright/test';
 import { test, expect } from './fixtures.js';
 import { normalizeSteps, type RawCaptureEvent } from '@piwitests/core/recording';
+import { renderSpec } from '@piwitests/core/codegen';
+import { parseSteps, sessionFromSteps, type PiwiSteps } from '@piwitests/core/steps';
 import type { TestFunctionEntry } from '@piwitests/core/function-match';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -356,5 +360,89 @@ test.describe('record-panel.js', () => {
     await page.keyboard.press('Enter');
 
     await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain('addToCart(page)');
+  });
+
+  test('Download steps saves a steps file whose rendered spec replays the flow in a real browser', async ({
+    context,
+  }) => {
+    await routePages(context);
+    await stubChromeStorage(context, {
+      session: {
+        piwiRecording: { active: true, events: [], startedAt: Date.now(), grantedOriginPattern: `${ORIGIN}/*` },
+      },
+    });
+
+    const page = await context.newPage();
+    await page.goto(`${ORIGIN}/login`);
+    await page.addScriptTag({ path: path.join(DIST, 'record-panel.js') });
+    await expect.poll(() => page.evaluate(() => !!document.getElementById('piwi-record-hud-host'))).toBe(true);
+    await page.fill('#username', 'alice');
+    await page.click('#submit');
+    await page.waitForURL('**/dashboard');
+    await page.addScriptTag({ path: path.join(DIST, 'record-panel.js') });
+    await expect.poll(() => page.evaluate(() => !!document.getElementById('piwi-record-hud-host'))).toBe(true);
+    await page.click('#add');
+    await expect.poll(() => readStoredEvents(page).then((e) => e.length)).toBeGreaterThanOrEqual(4);
+
+    // Stopped: a fresh document opens straight on the review panel.
+    await setRecordingActive(page, false);
+    await page.reload();
+    await page.addScriptTag({ path: path.join(DIST, 'record-panel.js') });
+    await expect.poll(() => page.evaluate(() => !!document.getElementById('piwi-record-review-host'))).toBe(true);
+
+    // Tab order in the closed shadow root: close, Copy as TypeScript, Download steps.
+    const download = page.waitForEvent('download');
+    await page.keyboard.press('Tab');
+    await page.keyboard.press('Tab');
+    await page.keyboard.press('Tab');
+    await page.keyboard.press('Enter');
+    const file = await download;
+    expect(file.suggestedFilename()).toMatch(/^piwi-steps-\d{4}-\d{2}-\d{2}-\d{2}-\d{2}\.json$/);
+    const parsed = parseSteps(await readFile((await file.path())!, 'utf-8'));
+    if (!parsed.ok) throw new Error(parsed.errors.join('\n'));
+    const doc: PiwiSteps = parsed.steps;
+    expect(doc.origin).toBe(ORIGIN);
+    expect(doc.steps.map((s) => [s.action, s.pageUrl])).toEqual([
+      ['goto', '/login'],
+      ['fill', '/login'],
+      ['click', '/login'],
+      ['click', '/dashboard'],
+    ]);
+
+    // Render the steps as the lines of a test and run them on a new page with
+    // Playwright's own expect, once as recorded and once with a wrong expectation.
+    const run = async (expected: string) => {
+      const withCheck: PiwiSteps = {
+        ...doc,
+        steps: [
+          ...doc.steps,
+          {
+            ...doc.steps[3]!,
+            action: 'assert',
+            assertion: { matcher: 'toHaveText', expected, actual: null, negated: false, note: null },
+          },
+        ],
+      };
+      const { code, warnings } = renderSpec(sessionFromSteps(withCheck), {
+        format: 'body',
+        locators: 'stable',
+        urlChecks: true,
+      });
+      expect(warnings).toEqual([]);
+      expect(code).toContain('await expect(page).toHaveURL(/\\/dashboard(?:[?#]|$)/);');
+      const replayPage = await context.newPage();
+      const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor;
+      try {
+        await new AsyncFunction('page', 'expect', code)(replayPage, expect.configure({ timeout: 2000 }));
+        return 'passed';
+      } catch (error) {
+        // Playwright colors the differing part of a value; drop the color codes.
+        return stripVTControlCharacters((error as Error).message);
+      } finally {
+        await replayPage.close();
+      }
+    };
+    expect(await run('Add to cart')).toBe('passed');
+    expect(await run('Remove from cart')).toContain('Remove from cart');
   });
 });

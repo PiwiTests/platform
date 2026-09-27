@@ -1,5 +1,6 @@
 import { describe, test, expect } from 'vitest';
-import { renderSpec } from '../src/codegen';
+import ts from 'typescript';
+import { pageUrlPattern, renderSpec, safeLocator } from '../src/codegen';
 import { buildSession } from '../src/recording';
 import type { RecordedStep, RecordedTarget } from '../src/recording';
 import type { TestFunctionEntry } from '../src/function-match';
@@ -315,5 +316,291 @@ describe('renderSpec — object params', () => {
     const session = buildSession(selectSteps('France'), 0);
     const { code } = renderSpec(session, { catalog: [quirky] });
     expect(code).toContain(`{ 'data-label': 'Country' }`);
+  });
+});
+
+describe('renderSpec — options', () => {
+  const origin = 'https://x.test';
+  const at = (path: string) => `${origin}${path}`;
+  const brittle = { locator: `locator('.btn').nth(1)`, method: 'locator', score: 20 };
+  const byRole = { locator: `getByRole('button', { name: 'Log in' })`, method: 'getByRole', score: 90 };
+
+  test('with no options the output is the plain recorder export', () => {
+    const session = buildSession([step()], 0);
+    session.startUrl = at('/login');
+    const { code, warnings } = renderSpec(session);
+    expect(code).toBe(
+      [
+        `import { test, expect } from '@playwright/test';`,
+        ``,
+        `test('recorded flow', async ({ page }) => {`,
+        `  await page.goto('https://x.test/login');`,
+        `  await page.getByRole('button', { name: 'Log in' }).click();`,
+        `});`,
+        ``,
+      ].join('\n'),
+    );
+    expect(warnings).toEqual([]);
+  });
+
+  test('testImport replaces the module test and expect come from', () => {
+    const { code } = renderSpec(buildSession([step()], 0), { testImport: '../fixtures' });
+    expect(code).toContain(`import { test, expect } from '../fixtures';`);
+    expect(code).not.toContain('@playwright/test');
+  });
+
+  test('relative urls write the recorded origin as paths and leave other origins alone', () => {
+    const session = buildSession(
+      [
+        step({ action: 'goto', target: null, value: at('/login?next=%2Fcart'), pageUrl: at('/login') }),
+        step({ action: 'goto', target: null, value: 'https://pay.example/checkout', pageUrl: at('/login') }),
+      ],
+      0,
+    );
+    const { code } = renderSpec(session, { urls: 'relative' });
+    expect(code).toContain(`await page.goto('/login?next=%2Fcart');`);
+    expect(code).toContain(`await page.goto('https://pay.example/checkout');`);
+  });
+
+  test('the leading goto from startUrl follows the url mode too', () => {
+    const session = buildSession([step()], 0);
+    session.startUrl = at('/login');
+    expect(renderSpec(session, { urls: 'relative' }).code).toContain(`await page.goto('/login');`);
+  });
+
+  test('stable locators skip a brittle first alternative; the default keeps it and warns', () => {
+    const session = buildSession([step({ target: target({ alternatives: [brittle, byRole] }) })], 0);
+    const first = renderSpec(session);
+    expect(first.code).toContain(`page.locator('.btn').nth(1).click()`);
+    expect(first.warnings).toEqual([expect.objectContaining({ step: 0, code: 'brittle-locator' })]);
+    const stable = renderSpec(session, { locators: 'stable' });
+    expect(stable.code).toContain(`page.getByRole('button', { name: 'Log in' }).click()`);
+    expect(stable.warnings).toEqual([]);
+  });
+
+  test('a chain the suite already uses comes first, unless it is brittle', () => {
+    const byTestId = { locator: `getByTestId('login')`, method: 'getByTestId', score: 100 };
+    const session = buildSession([step({ target: target({ alternatives: [byTestId, byRole, brittle] }) })], 0);
+    const preferred = renderSpec(session, { preferLocators: new Set([byRole.locator]) });
+    expect(preferred.code).toContain(`page.getByRole('button', { name: 'Log in' }).click()`);
+    const brittleKnown = renderSpec(session, { preferLocators: new Set([brittle.locator]) });
+    expect(brittleKnown.code).toContain(`page.getByTestId('login').click()`);
+  });
+
+  test('url checks wait for the next page after a step that leads to it', () => {
+    const session = buildSession(
+      [
+        step({ pageUrl: at('/login') }),
+        step({ pageUrl: at('/orders/42'), target: target({ accessibleName: 'Pay' }) }),
+        step({ pageUrl: at('/orders/42?tab=items'), target: target({ accessibleName: 'Items' }) }),
+      ],
+      0,
+    );
+    const { code } = renderSpec(session, { urlChecks: true });
+    const lines = code.split('\n').map((l) => l.trim());
+    const login = lines.indexOf(`await page.getByRole('button', { name: 'Log in' }).click();`);
+    expect(lines[login + 1]).toBe('await expect(page).toHaveURL(/\\/orders\\/[^/?#]+(?:[?#]|$)/);');
+    // The query changes, the page does not: no second check.
+    expect(code.match(/toHaveURL/g)).toHaveLength(1);
+  });
+
+  test('page url patterns match the page with any id and nothing else', () => {
+    const regex = (url: string) => new Function(`return ${pageUrlPattern(url)}`)() as RegExp;
+    const orders = regex('https://x.test/orders/42');
+    expect(orders.test('http://localhost:3000/orders/7')).toBe(true);
+    expect(orders.test('http://localhost:3000/orders/7?tab=items#top')).toBe(true);
+    expect(orders.test('http://localhost:3000/orders/7/items')).toBe(false);
+    const root = regex('https://x.test/');
+    expect(root.test('http://localhost:3000/')).toBe(true);
+    expect(root.test('http://localhost:3000')).toBe(true);
+    expect(root.test('http://localhost:3000/cart')).toBe(false);
+    const odd = regex('https://x.test/a.b(c)/d');
+    expect(odd.test('https://x.test/a.b(c)/d')).toBe(true);
+    expect(odd.test('https://x.test/aXb(c)/d')).toBe(false);
+    expect(pageUrlPattern('mailto:someone@example.com')).toBeNull();
+  });
+
+  test('env values read every typed value from the environment', () => {
+    const field = target({ role: 'textbox', accessibleName: 'Email' });
+    const session = buildSession([step({ action: 'fill', value: 'ana@acme.test', target: field })], 0);
+    const { code } = renderSpec(session, { values: 'env' });
+    expect(code).toContain(`.fill(process.env.PIWI_TEST_VALUE_0 ?? '');`);
+    expect(code).toContain('// Typed values come from PIWI_TEST_VALUE_0.');
+    expect(code).not.toContain('ana@acme.test');
+  });
+
+  test('a redacted value warns', () => {
+    const session = buildSession([step({ action: 'fill', value: null, redacted: true })], 0);
+    expect(renderSpec(session).warnings).toEqual([expect.objectContaining({ code: 'redacted-value' })]);
+  });
+
+  test('expectFail, tags and annotations shape the test declaration', () => {
+    const { code } = renderSpec(buildSession([step()], 0), {
+      title: 'bug: coupon ignored',
+      expectFail: { reason: 'SHOP-812: passes while\nthe bug exists' },
+      tags: ['bug', '@checkout'],
+      annotations: [{ type: 'piwi:bug', description: "37 'quoted'" }, { type: 'slow' }],
+    });
+    expect(code).toContain(
+      [
+        `test('bug: coupon ignored', {`,
+        `  tag: ['@bug', '@checkout'],`,
+        `  annotation: [`,
+        `    { type: 'piwi:bug', description: '37 \\'quoted\\'' },`,
+        `    { type: 'slow' },`,
+        `  ],`,
+        `}, async ({ page }) => {`,
+        `  test.fail(); // SHOP-812: passes while the bug exists`,
+      ].join('\n'),
+    );
+  });
+
+  test('body format holds only the lines to paste, with the imports they need', () => {
+    const logIn: TestFunctionEntry = {
+      id: 9,
+      name: 'logIn',
+      kind: 'page-object-method',
+      module: './pages/login',
+      receiver: 'loginPage',
+      importName: 'LoginPage',
+      params: [],
+      urlPattern: null,
+      steps: [{ action: 'click', target: { role: 'button', name: 'Log in' } }],
+      paramSources: [],
+    };
+    const search = target({ role: 'searchbox', tagName: 'input', accessibleName: 'Search' });
+    const session = buildSession([step(), step({ action: 'fill', value: 'mug', target: search })], 0);
+    const { code } = renderSpec(session, { format: 'body', catalog: [logIn] });
+    expect(code).toBe(
+      [
+        `  // Needs: import { LoginPage } from './pages/login';`,
+        `  const loginPage = new LoginPage(page);`,
+        `  await page.goto('https://x.test/login');`,
+        `  await loginPage.logIn();`,
+        `  await page.getByRole('searchbox', { name: 'Search' }).fill('mug');`,
+        ``,
+      ].join('\n'),
+    );
+  });
+});
+
+describe('renderSpec — assertions', () => {
+  const total = target({ role: null, tagName: 'output', accessibleName: null, testId: 'cart-total' });
+
+  test('a value assertion writes the expected value and the recorded one beside it', () => {
+    const session = buildSession(
+      [
+        step({
+          action: 'assert',
+          target: total,
+          assertion: { matcher: 'toHaveText', expected: 'Total: 42', actual: 'Total: 40', negated: false, note: null },
+        }),
+      ],
+      0,
+    );
+    expect(renderSpec(session).code).toContain(
+      `await expect(page.getByTestId('cart-total')).toHaveText('Total: 42'); // recorded: 'Total: 40'`,
+    );
+  });
+
+  test('state assertions, negation and notes', () => {
+    const session = buildSession(
+      [
+        step({
+          action: 'assert',
+          target: total,
+          assertion: { matcher: 'toBeVisible', expected: null, actual: null, negated: true, note: 'gone\nafter pay' },
+        }),
+      ],
+      0,
+    );
+    const { code } = renderSpec(session);
+    expect(code).toContain('  // gone after pay\n');
+    expect(code).toContain(`await expect(page.getByTestId('cart-total')).not.toBeVisible();`);
+  });
+
+  test('toHaveURL checks the page and follows the url mode', () => {
+    const assertion = { matcher: 'toHaveURL' as const, expected: '/thanks', actual: null, negated: false, note: null };
+    const session = buildSession([step({ action: 'assert', target: null, assertion })], 0);
+    session.startUrl = 'https://x.test/cart';
+    expect(renderSpec(session, { urls: 'relative' }).code).toContain(`await expect(page).toHaveURL('/thanks');`);
+    expect(renderSpec(session).code).toContain(`await expect(page).toHaveURL('https://x.test/thanks');`);
+  });
+
+  test('an assertion with nothing to check becomes a comment and a warning', () => {
+    const session = buildSession(
+      [
+        step({ action: 'assert', target: total }),
+        step({
+          action: 'assert',
+          target: total,
+          assertion: { matcher: 'toHaveText', expected: null, actual: null, negated: false, note: null },
+        }),
+      ],
+      0,
+    );
+    const { code, warnings } = renderSpec(session);
+    expect(code).not.toContain('expect(page.getByTestId');
+    expect(warnings.map((w) => w.code)).toEqual(['incomplete-assertion', 'incomplete-assertion']);
+  });
+
+  test('the legacy assertVisible step still renders', () => {
+    const session = buildSession([step({ action: 'assertVisible', target: total })], 0);
+    expect(renderSpec(session).code).toContain(`await expect(page.getByTestId('cart-total')).toBeVisible();`);
+  });
+});
+
+describe('renderSpec — only steps, never code', () => {
+  test('a locator that is not a Playwright chain is never written into the spec', () => {
+    const evil = { locator: `getByRole('x')); process.exit(1); ((0`, method: 'getByRole', score: 99 };
+    const session = buildSession([step({ target: target({ alternatives: [evil] }) })], 0);
+    const { code, warnings } = renderSpec(session);
+    expect(code).not.toContain('process.exit');
+    expect(code).toContain(`page.locator('/* no locator captured */').click()`);
+    expect(warnings).toEqual([expect.objectContaining({ code: 'no-locator' })]);
+  });
+
+  test('a regex argument must be a valid pattern on one line', () => {
+    expect(safeLocator('getByText(/total/i)')?.text).toBe('getByText(/total/i)');
+    expect(safeLocator('getByText(/a\nb/)')).toBeNull();
+    expect(safeLocator('getByText(/(/)')).toBeNull();
+    expect(safeLocator('getByText(/x/zz)')).toBeNull();
+  });
+
+  test('a locator is re-rendered in canonical form', () => {
+    expect(safeLocator(`getByRole("button", {name: "Pay"})`)?.text).toBe(`getByRole('button', { name: 'Pay' })`);
+  });
+
+  test('a spec with every option parses as TypeScript', () => {
+    const session = buildSession(
+      [
+        step({ action: 'goto', target: null, value: 'https://x.test/cart', pageUrl: 'https://x.test/cart' }),
+        step({ action: 'fill', value: `it's "quoted"\n`, pageUrl: 'https://x.test/cart' }),
+        step({ action: 'press', target: null, value: 'Enter', pageUrl: 'https://x.test/cart' }),
+        step({ pageUrl: 'https://x.test/cart' }),
+        step({
+          action: 'assert',
+          pageUrl: 'https://x.test/orders/9',
+          target: target({ testId: 'total' }),
+          assertion: { matcher: 'toHaveText', expected: 'a b', actual: `x'y`, negated: true, note: '*/ // note' },
+        }),
+      ],
+      0,
+    );
+    const { code } = renderSpec(session, {
+      title: `bug: it's \n broken`,
+      testImport: `../fix'tures`,
+      urls: 'relative',
+      locators: 'stable',
+      urlChecks: true,
+      expectFail: { reason: 'SHOP-1 */' },
+      tags: ['bug'],
+      annotations: [{ type: 'piwi:link', description: 'https://x.test/a?b=1&c= ' }],
+    });
+    const out = ts.transpileModule(code, {
+      reportDiagnostics: true,
+      compilerOptions: { target: ts.ScriptTarget.ES2022 },
+    });
+    expect(out.diagnostics ?? []).toEqual([]);
   });
 });

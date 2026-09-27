@@ -12,7 +12,58 @@
  */
 
 /** The Playwright action a recorded step maps to. */
-export type StepAction = 'goto' | 'click' | 'fill' | 'check' | 'uncheck' | 'selectOption' | 'press' | 'assertVisible';
+export type StepAction =
+  | 'goto'
+  | 'click'
+  | 'fill'
+  | 'check'
+  | 'uncheck'
+  | 'selectOption'
+  | 'press'
+  | 'assertVisible'
+  | 'assert';
+
+/** The web-first assertions an `assert` step can state. */
+export type AssertionMatcher =
+  | 'toHaveText'
+  | 'toHaveValue'
+  | 'toHaveAccessibleName'
+  | 'toBeVisible'
+  | 'toBeHidden'
+  | 'toBeEnabled'
+  | 'toBeDisabled'
+  | 'toHaveURL';
+
+export const ASSERTION_MATCHERS: readonly AssertionMatcher[] = [
+  'toHaveText',
+  'toHaveValue',
+  'toHaveAccessibleName',
+  'toBeVisible',
+  'toBeHidden',
+  'toBeEnabled',
+  'toBeDisabled',
+  'toHaveURL',
+];
+
+/** Matchers that compare with an expected value; the others check a state. */
+export const VALUE_MATCHERS: ReadonlySet<AssertionMatcher> = new Set([
+  'toHaveText',
+  'toHaveValue',
+  'toHaveAccessibleName',
+  'toHaveURL',
+]);
+
+/** What an `assert` step expects. `toHaveURL` checks the page and needs no target. */
+export interface StepAssertion {
+  matcher: AssertionMatcher;
+  /** The value the page should show: set for `VALUE_MATCHERS`, null for a state matcher. */
+  expected: string | null;
+  /** What the page showed when the step was recorded, when that is worth keeping (a bug report's wrong value). */
+  actual: string | null;
+  negated: boolean;
+  /** Free text from the person who recorded it. */
+  note: string | null;
+}
 
 /** One ranked locator alternative, trimmed to what codegen/matching need (mirrors `RankedLocator` minus scoring metadata not used here). */
 export interface RecordedLocatorAlternative {
@@ -56,6 +107,8 @@ export interface RecordedStep {
   redacted: boolean;
   pageUrl: string;
   timestamp: number;
+  /** Set on `assert` steps only. */
+  assertion?: StepAssertion;
 }
 
 export interface RecordedSession {

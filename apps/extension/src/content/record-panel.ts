@@ -16,6 +16,7 @@ import {
 } from '@piwitests/core/recording';
 import { rankFunctionMatches, type TestFunctionEntry, type RankedFunctionMatch } from '@piwitests/core/function-match';
 import { renderSpec } from '@piwitests/core/codegen';
+import { toStepsDocument, type PiwiSteps } from '@piwitests/core/steps';
 import { classifyInputKind, isPasswordInput } from './record-capture.js';
 import {
   getRecordingState,
@@ -315,6 +316,20 @@ function describeStep(step: RecordedStep): string {
   return `${step.action}${label ? ` — ${label}` : ''}${value ? ` = "${value}"` : ''}`;
 }
 
+/** Save a steps document as `piwi-steps-<date>-<time>.json`, through the page's own download handling. */
+function downloadSteps(doc: PiwiSteps): void {
+  const stamp = new Date(doc.recordedAt || Date.now()).toISOString().slice(0, 16).replace(/[:T]/g, '-');
+  const url = URL.createObjectURL(new Blob([JSON.stringify(doc, null, 2)], { type: 'application/json' }));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `piwi-steps-${stamp}.json`;
+  link.style.display = 'none';
+  document.documentElement.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
 async function renderReviewPanel(events: RawCaptureEvent[]): Promise<void> {
   document.getElementById(HUD_HOST_ID)?.remove();
   document.getElementById(PANEL_HOST_ID)?.remove();
@@ -459,6 +474,14 @@ async function renderReviewPanel(events: RawCaptureEvent[]): Promise<void> {
       copyRaw.addEventListener('click', () => void copyToClipboard(raw.code, copyRaw));
       actions.appendChild(copyRaw);
     }
+
+    const downloadBtn = document.createElement('button');
+    downloadBtn.type = 'button';
+    downloadBtn.className = 'action';
+    downloadBtn.textContent = 'Download steps';
+    downloadBtn.title = 'The recording as a steps file, to share or to turn into a spec with piwi codegen';
+    downloadBtn.addEventListener('click', () => downloadSteps(toStepsDocument(session)));
+    actions.appendChild(downloadBtn);
   }
 
   const discardBtn = document.createElement('button');

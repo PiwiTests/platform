@@ -10,7 +10,8 @@ followed until its spec passes.
 
 **Status.** Proposed 2026-09-27; revised the same day after deciding: replay targets the developer's local dev server
 in their everyday browser, Playwright runs go through the desktop app, and the `debugger` permission is not used (it
-cannot be optional; see [The `debugger` permission](#the-debugger-permission)). Nothing is built. The extension gains
+cannot be optional; see [The `debugger` permission](#the-debugger-permission)). PR 1 (the steps file, the converter's
+options, Download steps and `piwi codegen`) is built; the rest is not. The extension gains
 two tools and, for the first time, requests that send page data to an instance, behind the explicit opt-in and preview
 its rules require. The reporter gains one wire field (`expectedStatus`); the dashboard gains a table, pages, endpoints,
 an issue type for the Jira integration, a CLI command and MCP tools; the desktop app gains a run request. The steps
@@ -170,7 +171,7 @@ in the desktop app.
 |---|---|---|
 | D1 | Steps are the source of truth. A report is a versioned steps document; code is rendered from it, and replay reads it. Nothing ever parses generated code back. | One artifact feeds the spec, the replay, the desktop run and the dashboard, and each can improve without breaking the others. |
 | D2 | One converter in core renders steps as Playwright code, with options, and every surface calls it: the extension, the dashboard, the CLI, the desktop app and MCP. | The same steps give the same code everywhere. |
-| D3 | The converter emits relative URLs by default (`page.goto('/cart')`), the project's own `test` import when one is set, and, for each step, the first alternative rated stable, preferring one the project's locator index already uses. | A report recorded on staging must run against the developer's `baseURL`, with the project's fixtures, in the style of the suite. |
+| D3 | A spec written for a project (by `piwi codegen`, the dashboard, the desktop app) uses relative URLs (`page.goto('/cart')`), the project's own `test` import when one is set, a URL check after each navigation, and for each step the first alternative rated stable, preferring one the project's locator index already uses. With no options, the converter writes what the recorder always wrote. | A report recorded on staging must run against the developer's `baseURL`, with the project's fixtures, in the style of the suite; existing users of the recorder's export see no change. |
 | D4 | Report a bug reuses the recorder, the pick flow and the assertion suggester. What is new is an expected assertion, a missing-element assertion and evidence. | Recording and rendering already work across pages and use the project's page objects. |
 | D5 | Every report yields files locally, with no instance. Sending to Piwi is a separate action with a preview of exactly what is sent, and a checkbox per kind of evidence. | The extension's standalone stance and its rule for sending page data. |
 | D6 | Replay runs in the developer's tab with the page's own events, on the origin the developer chooses (by default the tab's). It resolves each step with the in-page engine, in the same order the converter picks locators. | No new permission, the developer's own session and DevTools, and the same element the spec would use. |
@@ -212,24 +213,29 @@ interface PiwiSteps {
 
 ### 1.2 The converter
 
-`renderSpec(steps, options)` in `codegen.ts` grows options; defaults are chosen per surface.
+`renderSpec(session, options)` in `codegen.ts` takes options. With none, it writes exactly what the recorder's
+**Copy as TypeScript** always wrote; each surface picks its own defaults (`sessionFromSteps` turns a document back into
+the session it renders).
 
-| Option | Default | Effect |
-|---|---|---|
-| `title` | the document's title | the test's title (`bug: …` for reports) |
-| `testImport` | `@playwright/test` | the module `test` and `expect` come from, e.g. `../fixtures` for a project with auth fixtures |
-| `urls` | `relative` | `page.goto('/cart')`, so `baseURL` applies; `absolute` joins the recorded origin |
-| `catalog` | none | page-object and helper calls for contiguous matching steps (existing) |
-| `locators` | `stable` | per step, the first alternative `assessLocatorChain` rates stable, else the first; with `index`, an alternative whose canonical chain the project's locator index already has comes first |
-| `urlChecks` | `true` | after a step that changed the page, `await expect(page).toHaveURL(…)` with the page key's placeholders as `[^/]+`, so the next step never runs on the page before |
-| `values` | `literal` | `env` turns every typed value into `process.env.PIWI_TEST_VALUE_<i>` and lists the names in a comment |
-| `expectFail` | `false` | `test.fail()` with a comment naming the ticket |
-| `tag`, `annotations` | none | test details (`tag: '@bug'`, `piwi:bug`, `piwi:link`) |
-| `format` | `file` | `file` (imports and one test) or `body` (the lines to paste into an existing test) |
+| Option | Core default | `piwi codegen` | Effect |
+|---|---|---|---|
+| `title` | `recorded flow` | the document's title | the test's title (`bug: …` for reports) |
+| `testImport` | `@playwright/test` | `--test-import` | the module `test` and `expect` come from, such as `../fixtures` for a project with auth fixtures |
+| `urls` | `absolute` | `relative` | `relative` writes URLs on the recorded origin as paths (`page.goto('/cart')`), so `baseURL` applies |
+| `catalog` | none | the project's, with `--project` | page-object and helper calls for contiguous matching steps |
+| `locators` | `first` | `stable` | `stable` takes the first alternative `assessLocatorChain` rates stable, else the first |
+| `preferLocators` | none | the project's locator index, with `--project` | an alternative the suite already uses comes first, unless it is brittle |
+| `urlChecks` | off | on | after a step that leads to another page, `await expect(page).toHaveURL(…)` with the page key's id and token segments open, so the next step never runs on the page before |
+| `values` | `literal` | `--env-values` | `env` reads every typed value from `process.env.PIWI_TEST_VALUE_<i>` and names them in a comment |
+| `expectFail` | off | `--fail`, `--fail-reason` | `test.fail()`, with the reason in a comment |
+| `tags`, `annotations` | none | `--tag` | test details (`tag: ['@bug']`, `piwi:bug`, `piwi:link`) |
+| `format` | `file` | `--body` | `file` (imports and one test) or `body` (the lines to paste, with the imports they need as comments) |
 
-It returns `{ code, matchedSpans, warnings }`, with a warning for a step without a locator, a redacted value, or a
-target whose best alternative is only rated watch or brittle. The escaping and identifier checks stay as they are:
-the converter is the one place steps become code.
+It returns `{ code, matchedSpans, warnings }`, with a warning for a step without a locator, a redacted value, a target
+whose chosen locator is brittle, or an assertion with nothing to check. The converter is the one place steps become
+code: values are escaped literals, catalog identifiers are checked, and every locator is parsed with the chain grammar
+and written from its parsed form (`safeLocator`), with regex arguments checked as valid one-line patterns. A step can
+therefore choose a locator but never add code, which is what makes a steps file from someone else safe to render.
 
 ### 1.3 Where it is available
 
@@ -237,9 +243,9 @@ the converter is the one place steps become code.
   mapping.
 - **Dashboard:** a **Spec** tab on each report, rendered with the project's settings (a new "Generated specs" section:
   test import, folder for bug specs, default `tests/bugs`), with copy and download.
-- **CLI:** `npx @piwitests/reporter codegen <steps.json | bug:<id>> [--out <file>] [--test-import <module>]
-  [--absolute-urls] [--no-catalog] [--fail] [--body]` prints or writes a spec. `bug <id> --write` renders a report's
-  committed spec into the bugs folder and runs it once.
+- **CLI:** `npx @piwitests/reporter codegen <steps.json>` prints or writes a spec (flags in
+  `apps/docs/reference/cli.md`); a report id as the source (`bug:<id>`) comes with PR 5. `bug <id> --write` renders a
+  report's committed spec into the bugs folder and runs it once.
 - **Desktop app:** renders the run spec for a repro request (Part 3.2).
 - **MCP:** `render_steps { steps | bugReportId, options }` for an agent that writes the test from a recording.
 
@@ -405,8 +411,8 @@ owner.
 
 | PR | Content | Needs |
 |---|---|---|
-| 1 | Core: `PiwiSteps` and `parseSteps`, `assert` steps, the converter options, `renderBugMarkdown`; the recorder's Download steps; `piwi codegen` | — |
-| 2 | Extension, reporter side: Report a bug, expected and missing assertions, evidence, local exports | 1 |
+| 1 | Core: `PiwiSteps` and `parseSteps`, `assert` steps, the converter options; the recorder's Download steps; `piwi codegen` (built) | — |
+| 2 | Extension, reporter side: Report a bug, expected and missing assertions, evidence, `renderBugMarkdown`, local exports | 1 |
 | 3 | Extension, developer side: Replay from a file, the verdict, step mode | 1 |
 | 4 | Reporter and app: `expectedStatus`, the "expected failure passed" outcome, `piwi:bug` | — |
 | 5 | Dashboard: `bug_reports`, reproductions, endpoints, pages, Spec tab and project settings, **Send to Piwi…**, Replay from the instance, `piwi bug`, MCP tools, capability `bug-reports` | 1–4 |
@@ -419,17 +425,22 @@ PRs 1–3 close the loop between a tester and a developer with files alone: reco
 
 ## File-by-file checklist
 
-### PR 1 — steps and the converter
-- `packages/core/src/steps.ts` (new), `recording.ts` (`assert`, relative paths), `codegen.ts` (options, `urlChecks`,
-  locator choice, `format: 'body'`, warnings), `bug-report.ts` (new), exports in `packages/core/package.json`.
+### PR 1 — steps and the converter (built)
+- `packages/core/src/steps.ts` (new: `PiwiSteps`, `toStepsDocument`, `sessionFromSteps`, `parseSteps`),
+  `recording.ts` (`assert` steps, `StepAssertion`), `codegen.ts` (options, `safeLocator`, `pageUrlPattern`, warnings),
+  `./steps` in `packages/core/package.json`.
 - `apps/extension/src/content/record-panel.ts` (Download steps), `packages/reporter/src/cli/codegen.ts` (new),
   `cli/index.ts`.
-- Tests: `steps.test.ts` (validation, limits, legacy sessions), `codegen.test.ts` (every option; relative and absolute
-  URLs; `index` locator preference; URL checks with placeholders; `body` format), `bug-report.test.ts`; an extension e2e
-  test that runs a rendered spec with real Playwright against the fixture shop.
-- Docs: `features/extension.md` (Download steps), `reference/cli.md` (`codegen`), `reference/steps-format.md` (new).
+- Tests: `packages/core/tests/steps.test.ts` and `codegen.test.ts` (every option, assertions, the default output
+  unchanged, locators that are code refused, a spec with every option parsed by TypeScript);
+  `packages/reporter/tests/codegen-cli.spec.ts`; in `apps/extension/tests/e2e/record.spec.ts`, a real recording
+  across two pages, downloaded, parsed, rendered and run on a new page with Playwright's `expect`, passing as recorded
+  and failing on a wrong expected value.
+- Docs: `features/extension.md` (Download steps), `reference/cli.md` (`codegen`), `reference/steps-format.md` (new),
+  the CLI drift check in `apps/application/tests/unit/docs-drift.test.ts`, D20 in `1.0-stabilization.md`.
 
 ### PR 2 — reporting
+- `packages/core/src/bug-report.ts` (new: `BugReport`, `renderBugMarkdown`) with its tests.
 - `apps/extension/src/content/bug-panel.ts` (new), `bug-evidence-main.ts` (new, main world), `bug-outline.ts` (new),
   `assertion-panel.ts` (expected mode), `record-panel.ts` (assert events), `src/background/index.ts` (screenshot,
   main-world registration, message types), `src/popup/` (tile), `scripts/build.mjs` (entries).

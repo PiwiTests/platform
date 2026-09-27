@@ -100,11 +100,12 @@ name, key attributes, text) and every ranked locator.
 
 ## Record actions
 
-**Record actions** asks for access to the one site you are on, then captures clicks, fills, checks, select changes
-and Enter-to-submit across that site's pages. A red border marks the recorded tab, and a small overlay counts the
-steps and shows the locator of the last one. **Stop** opens the review: **Copy as TypeScript** for a runnable spec
-(`page.goto`, then one line per step), or **Discard**. Password values are never captured; the spec reads a
-`process.env.*` placeholder instead.
+**Record actions** asks for access to the site you are on, then captures clicks, fills, checks, select changes
+and Enter-to-submit across that site's pages. A red border marks the recorded tab; an overlay counts the steps and
+shows the last step's locator. **Stop** opens the review: **Copy as TypeScript** for a runnable spec
+(`page.goto`, then one line per step), **Download steps** for a [steps file](/reference/steps-format) to share or
+render with [`piwi codegen`](/reference/cli#codegen), or **Discard**. Password values are never captured; the spec
+reads a `process.env.*` placeholder.
 
 ## Matching functions
 

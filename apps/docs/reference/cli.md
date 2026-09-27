@@ -1,12 +1,12 @@
 ---
 title: Piwi CLI
-description: "Every command and flag of the piwi CLI that ships with @piwitests/reporter: init, skills, gate, report, select, run, probe and ai."
+description: "Every command and flag of the piwi CLI that ships with @piwitests/reporter: init, skills, gate, report, select, run, probe, ai and codegen."
 lang: en-US
 ---
 
 # Piwi CLI
 
-The `@piwitests/reporter` package ships a command-line tool, `piwi`, for the things that happen *around* a test run: wiring a project up, gating a CI job on the dashboard's analysis, running a saved test selection, and managing AI-step artifacts and agent skills. This page is the reference for every command and flag; each command's own `--help` prints the same list.
+The `@piwitests/reporter` package ships a command-line tool, `piwi`, for the things that happen *around* a test run: wiring a project up, gating a CI job on the dashboard's analysis, running a saved test selection, turning a recording into a spec, and managing AI-step artifacts and agent skills. This page is the reference for every command and flag; each command's own `--help` prints the same list.
 
 ## Invoking it
 
@@ -28,6 +28,7 @@ npx @piwitests/reporter <command> [options]
 | [`run`](#select-run) | Run a saved test selection with `playwright test` |
 | [`probe`](#probe) | Run the dashboard's probe plan and record what the suite noticed |
 | [`ai`](#ai) | Manage committed natural-language AI-step artifacts |
+| [`codegen`](#codegen) | Turn a steps file (a Piwi Picker recording) into a Playwright spec |
 
 Several commands read connection settings from the environment as a fallback: `PIWI_DASHBOARD_URL` (dashboard URL), `PIWI_API_KEY` (API key), and `PIWI_PROJECT_NAME` (project). A flag always wins over its environment variable.
 
@@ -208,6 +209,44 @@ npx @piwitests/reporter ai prune
 | `--update-ai` | `resolve` | Re-author entries that already exist (needs `PIWI_DASHBOARD_URL` / `PIWI_API_KEY`) |
 
 **Exit codes:** `0` clean (or `--help`) · `1` hygiene issues found · `2` bad arguments / command unavailable.
+
+## `codegen`
+
+Turn a [steps file](/reference/steps-format) into a Playwright spec. Piwi Picker saves one with
+[**Download steps**](/features/extension#record-actions). The spec is written for a test project: URLs on the recorded
+site become paths, so your config's `baseURL` applies; each element uses the first of its recorded locators that the
+[stability rules](/reference/locator-stability) call stable; and after each step that leads to another page, the spec
+waits for that page's URL. Nothing is sent anywhere unless a project is configured.
+
+```bash
+npx @piwitests/reporter codegen steps.json --out tests/checkout.spec.ts --test-import ./fixtures
+```
+
+| Flag | Description |
+|---|---|
+| `--out <file>` | Write the spec to this file instead of printing it; an existing file is kept unless `--force` |
+| `--force` | Replace the file `--out` names |
+| `--body` | Print only the test's lines, to paste into an existing test, with the imports they need as comments |
+| `--title <text>` | Test title (default: the steps file's own title) |
+| `--test-import <mod>` | Module `test` and `expect` are imported from, such as your fixtures file (default `@playwright/test`) |
+| `--absolute-urls` | Keep the recorded URLs instead of paths |
+| `--no-url-checks` | Do not wait for each new page's URL |
+| `--env-values` | Read every typed value from a `PIWI_TEST_VALUE_<n>` environment variable instead of writing it into the spec |
+| `--fail` | Mark the test as expected to fail (`test.fail()`) |
+| `--fail-reason <text>` | The reason written beside `test.fail()`, such as a ticket key |
+| `--tag <tag>` | Add a tag; repeat for more (`@` is added when missing) |
+| `--project <name\|id>` | Project (env `PIWI_PROJECT_NAME`): its [function catalog](/features/test-functions) turns matching steps into calls to your own functions, and a locator your tests already use is preferred when it is not brittle |
+| `--server-url <url>` | Dashboard URL (env `PIWI_DASHBOARD_URL`) |
+| `--api-key <key>` | API key (env `PIWI_API_KEY`) |
+| `--offline` | Do not contact the dashboard, even when one is configured |
+| `-h`, `--help` | Show help |
+
+Warnings go to stderr, one per step worth a look: a password read from the environment, an element with no locator,
+or one whose best locator is brittle. A dashboard that cannot be reached only costs the catalog and the preferred
+locators; the spec is still written.
+
+**Exit codes:** `0` written or printed · `2` the steps file could not be read or checked, or the spec could not be
+written.
 
 ## Related
 
