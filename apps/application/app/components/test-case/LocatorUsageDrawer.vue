@@ -12,6 +12,7 @@
  * the default branch when absent).
  */
 import type { ExecutionLocatorUse, LocatorUsageMatch, LocatorUsagesResult } from '#shared/locator-usages.types';
+import { assessLocator, stabilityLabels } from '#shared/locator-stability';
 
 const props = defineProps<{
   open: boolean;
@@ -62,6 +63,16 @@ const readings = computed<Reading[]>(() => {
     });
   });
   return list;
+});
+
+/** Why the chain may break on an unrelated change, from the locator stability rules; null when stable. */
+const stability = computed(() => {
+  const s = props.use ? assessLocator(props.use.locator) : null;
+  if (!s || s.level === 'stable') return null;
+  return {
+    text: `${s.level === 'brittle' ? 'Brittle' : 'Watch'}: ${stabilityLabels(s, ', ')}`,
+    detail: s.findings.map((f) => f.detail).join('\n'),
+  };
 });
 
 const readingId = ref('locator');
@@ -156,6 +167,10 @@ async function buildCommand() {
         <div class="space-y-1">
           <p class="text-xs font-medium text-muted">{{ locatorActionLabel(use.action) }}</p>
           <LocatorCode :locator="use.locator" class="text-sm" />
+          <p v-if="stability" class="text-xs text-muted" data-stability :title="stability.detail">
+            {{ stability.text }} ·
+            <DocLink to="reference/locator-stability" no-icon :class="SENTENCE_LINK_CLASS">why</DocLink>
+          </p>
         </div>
 
         <div

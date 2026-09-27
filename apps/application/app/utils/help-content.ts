@@ -892,7 +892,7 @@ export const HELP_TOPICS = {
   },
   'project.locator-index': {
     title: 'Locator index',
-    text: 'Every locator chain recorded in the steps of the project’s runs, with the tests that use it and the actions they perform through it. New runs update it as they arrive. The branch select picks what a branch’s tests use: the tests that ran on it with what they did there, the others with what they do on the default branch. Matching is by chain text: to see which elements of a live page these chains reach, use Tested elements in the Piwi Picker extension.',
+    text: 'Every locator chain recorded in the steps of the project’s runs, with the tests that use it and the actions they perform through it. New runs update it as they arrive. The branch select picks what a branch’s tests use: the tests that ran on it with what they did there, the others with what they do on the default branch. Matching is by chain text: to see which elements of a live page these chains reach, use Tested elements in the Piwi Picker extension. A chain the locator stability rules flag says why: brittle ones break on changes unrelated to what the test checks, such as a position, a styling class or the page structure; the Stability select lists only those.',
     doc: 'features/locator-usage#branches',
   },
 

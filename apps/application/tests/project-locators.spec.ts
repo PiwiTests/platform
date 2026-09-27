@@ -118,4 +118,32 @@ test.describe.serial('Project locators page', () => {
     await expect(drawer).toContainText('2 tests');
     await expect(drawer).toContainText('on feature/voucher');
   });
+
+  test('the stability select lists the brittle locators, and Who uses this says why', async ({ page, request }) => {
+    const BRITTLE = "locator('.btn-primary').nth(1)";
+    const response = await request.post('/api/test-runs/submit', {
+      data: run('main', 3, [
+        { title: 'adds a legacy mug', steps: [step('Click', BRITTLE, 'tests/legacy.spec.ts:7:3')] },
+      ]),
+    });
+    expect(response.ok()).toBeTruthy();
+
+    await page.goto(`/projects/${projectId}/locators`);
+    const list = page.locator('[data-shot="locator-list"]');
+    await expect(list).toContainText(BRITTLE, { timeout: 20_000 });
+    await expect(list.locator('li', { hasText: BRITTLE }).locator('[data-stability]')).toHaveText(
+      'brittle: position, CSS class',
+    );
+    await expect(list.locator('li', { hasText: PAY }).locator('[data-stability]')).toHaveCount(0);
+
+    await list.getByRole('combobox', { name: 'Stability' }).click();
+    await page.getByRole('option', { name: 'Brittle (1)' }).click();
+    await expect(page).toHaveURL(/stability=brittle/);
+    await expect(list.locator('li')).toHaveCount(1);
+    await expect(list).toContainText(BRITTLE);
+
+    await list.getByTitle(`Who uses ${BRITTLE}?`).click();
+    const drawer = page.locator('[data-shot="locator-usage-drawer"]');
+    await expect(drawer.locator('[data-stability]')).toContainText('Brittle: position, CSS class');
+  });
 });
