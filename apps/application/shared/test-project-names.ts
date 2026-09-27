@@ -24,6 +24,7 @@ export const PROJECT = {
   BLOCK_LAYOUT: 'block-layout-test',
   BLOCK_LAYOUT_VERSIONS: 'block-layout-versions-test',
   BROWSER_NOTIFY: 'browser-notify-test',
+  BUG_REPORTS: 'bug-reports-test',
   CAPABILITY_OPT_OUT: 'capability-opt-out-test',
   CAPABILITY_ROLE_GATING: 'capability-role-gating-test',
   CASE_FILES_LIVE: 'case-files-live-test',

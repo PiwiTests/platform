@@ -8,6 +8,7 @@ import {
   testCases,
   testRunsCases,
   failureClusters,
+  bugReports,
   failureDiagnoses,
   markers,
   testFunctions,
@@ -177,4 +178,12 @@ export async function resolveDiagnosisProjectId(db: DrizzleDB, diagnosisId: numb
   const row = rows[0];
   if (!row) return null;
   return row.clusterProjectId ?? row.execProjectId ?? null;
+}
+
+export async function resolveBugReportProjectId(db: DrizzleDB, bugReportId: number): Promise<number | null> {
+  const rows = await db
+    .select({ projectId: bugReports.projectId })
+    .from(bugReports)
+    .where(eq(bugReports.id, bugReportId));
+  return rows[0]?.projectId ?? null;
 }

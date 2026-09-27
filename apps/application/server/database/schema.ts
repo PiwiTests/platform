@@ -38,6 +38,8 @@ export const {
   apiKeys,
   extensionDeviceCodes,
   projectUrlPatterns,
+  bugReports,
+  bugReproductions,
   networkRequests,
   accountTokens,
   notificationChannels,

@@ -1042,6 +1042,59 @@ export const MCP_TOOL_DEFS = [
       required: ['a', 'b'],
     },
   },
+  {
+    name: 'list_bug_reports',
+    module: 'workflow',
+    capability: 'bug-reports',
+    description:
+      'A project’s bug reports, newest first: bugs reported from Piwi Picker with their steps, the expected result and evidence. Each item has its status (open, test-committed, looks-fixed, closed, dismissed), page, reporter, the test that reproduces it once committed (testCaseId) and how many reproductions were recorded. Use get_bug_report for the steps and evidence of one.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        projectId: { type: 'number', description: 'Project ID from list_projects' },
+        status: {
+          type: 'string',
+          enum: ['open', 'test-committed', 'looks-fixed', 'closed', 'dismissed'],
+          description: 'Keep one status',
+        },
+        pageSize: { type: 'number', description: 'Items per page (1-50, default 10)' },
+        cursor: { type: 'string', description: 'nextCursor from the previous page' },
+      },
+      required: ['projectId'],
+    },
+  },
+  {
+    name: 'get_bug_report',
+    module: 'workflow',
+    capability: 'bug-reports',
+    description:
+      'One bug report: its steps in words, each expected assertion with the value the page showed instead, the steps document itself (to replay or render), the evidence (console errors, failed requests with their status, the page outline), the reproductions recorded since, and the test that reproduces it. Use render_steps with its id to get the failing test to commit.',
+    inputSchema: {
+      type: 'object',
+      properties: { id: { type: 'number', description: 'Bug report id from list_bug_reports' } },
+      required: ['id'],
+    },
+  },
+  {
+    name: 'render_steps',
+    module: 'workflow',
+    capability: 'bug-reports',
+    description:
+      'Render a steps document as a Playwright spec with the converter every Piwi surface uses. Pass `bugReportId` for a report’s spec with the project’s generated-spec settings, function catalog and suite locators (`mode` commit, the default: `test.fail()`, `@bug` and `piwi:bug`, to commit now; run: without `test.fail()`, to reproduce), or `steps` (a steps document, as Piwi Picker’s Download steps writes it) with converter options. Returns { code, path, warnings }.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        bugReportId: { type: 'number', description: 'Bug report id; takes precedence over steps' },
+        mode: { type: 'string', enum: ['commit', 'run'], description: 'For a bug report (default commit)' },
+        steps: { type: 'object', description: 'A steps document ({ v: 1, origin, steps, … })' },
+        options: {
+          type: 'object',
+          description:
+            'Converter options for `steps`: title, testImport, urls (absolute|relative), locators (first|stable), urlChecks, values (literal|env), expectFail, tags',
+        },
+      },
+    },
+  },
 ] as const satisfies readonly McpToolDef[];
 
 /**

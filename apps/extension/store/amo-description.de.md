@@ -20,7 +20,7 @@ Auswählen und Aufzeichnen nutzen nie das Netzwerk. Nichts wird gesammelt oder i
 
 **Optional: Ihre eigene Piwi-Instanz verbinden**
 
-Piwi ist ein selbst gehostetes Dashboard für Playwright-Testergebnisse. Ist die Erweiterung mit Ihrer Instanz verbunden (ihre URL und ein API-Schlüssel, in den Einstellungen), kommen drei Werkzeuge hinzu: Aufzeichnungen, die Ihre eigenen Testfunktionen aufrufen, **Testfunktionen**, das zeigt, welche davon auf der Seite funktionieren, und **Getestete Elemente**, das die Elemente hervorhebt, die Ihre Tests erreichen. Die Erweiterung liest Ihre Instanz nur; eine Aufzeichnung wird nie an sie gesendet.
+Piwi ist ein selbst gehostetes Dashboard für Playwright-Testergebnisse. Ist die Erweiterung mit Ihrer Instanz verbunden (ihre URL und ein API-Schlüssel, in den Einstellungen), kommen drei Werkzeuge hinzu: Aufzeichnungen, die Ihre eigenen Testfunktionen aufrufen, **Testfunktionen**, das zeigt, welche davon auf der Seite funktionieren, und **Getestete Elemente**, das die Elemente hervorhebt, die Ihre Tests erreichen. Die Erweiterung liest Ihre Instanz und sendet ihr nur eines: einen Bug-Report, wenn Sie in der Vorschau, die genau zeigt, was gesendet wird, auf Senden klicken.
 
 **Berechtigungen**
 

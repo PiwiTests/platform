@@ -12,8 +12,9 @@ followed until its spec passes.
 in their everyday browser, Playwright runs go through the desktop app, and the `debugger` permission is not used (it
 cannot be optional; see [The `debugger` permission](#the-debugger-permission)). PR 1 (the steps file, the converter's
 options, Download steps and `piwi codegen`), PR 2 (Report a bug in Piwi Picker, its evidence and local exports), PR 3
-(Replay, from a file, from the report just recorded, or from the finished report, with a fake cursor) and PR 4
-(`expectedStatus`, "looks fixed", `piwi:bug`) are built; evidence collected during a replay and the rest are not. The extension gains
+(Replay, from a file, from the report just recorded, or from the finished report, with a fake cursor), PR 4
+(`expectedStatus`, "looks fixed", `piwi:bug`) and PR 5 (the dashboard: stored reports, their pages and spec, Send to
+Piwi…, Replay from the instance, `piwi bug`, MCP tools) are built; evidence collected during a replay and the rest are not. The extension gains
 two tools and, for the first time, requests that send page data to an instance, behind the explicit opt-in and preview
 its rules require. The reporter gains one wire field (`expectedStatus`); the dashboard gains a table, pages, endpoints,
 an issue type for the Jira integration, a CLI command and MCP tools; the desktop app gains a run request. The steps
@@ -534,7 +535,7 @@ PRs 1–3 close the loop between a tester and a developer with files alone: reco
     `expected-failure.spec.ts` (app). D22 in `1.0-stabilization.md` covers the wire field, the annotation and the
     event.
 
-### PR 5 — dashboard
+### PR 5 — dashboard (built)
 - Schema and migrations for `bug_reports`, `bug_reproductions`, `test_cases.bug_report_id`, the project's
   generated-spec settings; `server/api/projects/[id]/bug-reports.post.ts` and `.get.ts`,
   `server/api/bug-reports/[id].get.ts`, `.patch.ts`, `reproductions.post.ts` (new); `shared/handlers/bug-reports.ts`
@@ -543,6 +544,32 @@ PRs 1–3 close the loop between a tester and a developer with files alone: reco
 - `packages/reporter/src/cli/bug.ts` (new); `shared/mcp-tools.ts`, `server/utils/mcp/tools.ts`;
   `shared/capabilities.ts` and the setup ladder.
 - Docs: `features/bug-reports.md` (new), `reference/cli.md`, `navigation.ts`, `guide/privacy.md`.
+- Built as: `parseBugReport` in core (the steps through `parseSteps`, evidence and context field by field, capped);
+  `bug_reports`, `bug_reproductions`, `test_cases.bug_report_id`, `projects.generated_specs`; the endpoints above plus
+  `GET /api/bug-reports/:id/spec` and `GET /api/bug-reports/:id/screenshots/:index`; `shared/handlers/bug-reports.ts`
+  (storage, lists, the spec with the project's catalog and suite locators, `applyBugReportLifecycle`, run from
+  `runFinalizeSideEffects`); the list page and the report page (Steps, Evidence, Reproductions, Spec), **Bug reports**
+  in the project's More menu, **Generated specs** in the project settings; the demo seeds one report; `piwi bug` and
+  `piwi codegen bug:<id>`; the MCP tools `list_bug_reports`, `get_bug_report`, `render_steps`; the capability
+  `bug-reports` and its Setup entry. In the extension: `bug-send.ts` (pure payload), `bug-send-panel.ts` (the preview),
+  `src/background/bug-reports.ts` (the worker's messages), the client's `sendBugReport`, `fetchBugReports`,
+  `fetchBugReportSteps`, and Replay's list from the instance. Decisions made while building:
+  - **The one-time explanation sits in the preview**, not in the settings page: it shows before the first send of a
+    profile (`piwiBugSendExplained`), where the reader is deciding.
+  - **Leave out the values I typed** also removes those values from the evidence that repeats them: the extension's
+    e2e found the outline holding a text box's value (`textbox "Coupon": SPRING10`). They become `…` in the outline and
+    in console messages.
+  - **The worker resolves the project from the sending tab's URL** and never takes one from the page; the preview
+    names the project and the instance it will go to.
+  - **The lifecycle reads the last attempt of each test that names a report**: an expected failure that passed →
+    looks fixed; an ordinary pass → closed; anything else that ran → test committed (a closed report's test failing
+    again reopens it there). Only reports of the run's project move; `dismissed` never does.
+  - **The spec is rendered on the server** (`GET /api/bug-reports/:id/spec`), so the page, `piwi bug` and MCP share it;
+    `mode=run` is the reproduction's twin without `test.fail()`.
+  - The list shows every status with a filter rather than grouping by page; the page key is on each row.
+  - Tests: `bug-report.test.ts` (core), `bug-cli.spec.ts` (reporter), `bug-reports.spec.ts` (app e2e: send with a
+    screenshot, refusals, both specs, a reproduction, the lifecycle through four runs, the pages), `bug-send.test.ts`
+    and `bug-send.spec.ts` (extension: the preview and what it sends, and the real worker against a stub instance).
 
 ### PR 6 — desktop
 - `server/api/desktop/repro-requests.post.ts`, `[id].get.ts`, `[id]/spec.get.ts` (new);

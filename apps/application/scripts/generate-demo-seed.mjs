@@ -218,6 +218,116 @@ const PROJECT_URL_PATTERNS = [
   updated_at: URL_PATTERN_TIME,
 }));
 
+// ── Bug reports (sent from Piwi Picker's Report a bug) ─────────────────────
+// One open report on the checkout project, with the steps a tester recorded on
+// staging, the value the page showed, and the evidence they chose to send.
+const BUG_REPORT_TIME = Math.floor(new Date('2025-04-24T15:20:00Z').getTime() / 1000);
+const bugTarget = (t) => ({ tagName: 'button', role: null, accessibleName: null, testId: null, text: null, ...t });
+const BUG_REPORTS = [
+  {
+    id: 1,
+    project_id: 1,
+    title: 'Coupon not applied to the total',
+    note: null,
+    page_key: '/cart',
+    path: '/cart',
+    origin: 'https://staging.checkout.example.com',
+    status: 'open',
+    steps: {
+      v: 1,
+      title: 'Coupon not applied to the total',
+      origin: 'https://staging.checkout.example.com',
+      recordedAt: 0,
+      note: null,
+      steps: [
+        { action: 'goto', target: null, value: '/cart', redacted: false, pageUrl: '/cart', timestamp: 1 },
+        {
+          action: 'fill',
+          target: bugTarget({
+            tagName: 'input',
+            role: 'textbox',
+            accessibleName: 'Coupon',
+            alternatives: [{ locator: "getByLabel('Coupon')", method: 'getByLabel', score: 90 }],
+          }),
+          value: 'SPRING10',
+          redacted: false,
+          pageUrl: '/cart',
+          timestamp: 2,
+        },
+        {
+          action: 'click',
+          target: bugTarget({
+            role: 'button',
+            accessibleName: 'Apply coupon',
+            alternatives: [
+              { locator: "getByRole('button', { name: 'Apply coupon' })", method: 'getByRole', score: 90 },
+            ],
+          }),
+          value: null,
+          redacted: false,
+          pageUrl: '/cart',
+          timestamp: 3,
+        },
+        {
+          action: 'assert',
+          target: bugTarget({
+            tagName: 'p',
+            testId: 'cart-total',
+            text: 'Total: 40.00',
+            alternatives: [{ locator: "getByTestId('cart-total')", method: 'getByTestId', score: 95 }],
+          }),
+          value: null,
+          redacted: false,
+          pageUrl: '/cart',
+          timestamp: 4,
+          assertion: {
+            matcher: 'toHaveText',
+            expected: 'Total: 36.00',
+            actual: 'Total: 40.00',
+            negated: false,
+            note: 'The 10% coupon is accepted but the total does not change',
+          },
+        },
+      ],
+    },
+    evidence: {
+      console: [{ level: 'error', source: 'console', message: 'Coupon service failed: 500', page: '/cart', time: 4 }],
+      consoleDropped: 0,
+      requests: [{ method: 'POST', url: '/api/cart/coupon', status: 500, page: '/cart', time: 4 }],
+      requestsDropped: 0,
+      screenshots: [],
+      screenshotNote: 'none was taken',
+      outline:
+        '- main:\n  - heading "Your cart" [level=1]\n  - textbox "Coupon": SPRING10\n  - button "Apply coupon"\n  - paragraph: "Total: 40.00"',
+    },
+    context: {
+      origin: 'https://staging.checkout.example.com',
+      pageKey: '/cart',
+      path: '/cart',
+      browser: 'Chrome 141',
+      userAgent: null,
+      viewport: { width: 1440, height: 900 },
+      time: 0,
+      extensionVersion: '0.41.0',
+    },
+    language: 'en',
+    created_at: BUG_REPORT_TIME,
+    updated_at: BUG_REPORT_TIME,
+  },
+];
+const BUG_REPRODUCTIONS = [
+  {
+    id: 1,
+    bug_report_id: 1,
+    source: 'replay',
+    verdict: 'reproduced',
+    diverged_at: null,
+    origin: 'http://localhost:3000',
+    user_agent: null,
+    created_at: BUG_REPORT_TIME + 3600,
+  },
+];
+
 // ── Timeline markers (dated project events overlaid on the trend charts) ────
 // Dated within project 1's run window (newest run 2025-04-25T08:30Z, ~8h apart)
 // so they land on the charts. Timestamps are rebased to load time like the runs.
@@ -2862,6 +2972,8 @@ const REBASE_SQL = [
   `UPDATE projects SET created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
   `UPDATE markers SET occurred_at = occurred_at + ${D}, created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
   `UPDATE project_url_patterns SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS};`,
+  `UPDATE bug_reports SET created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
+  `UPDATE bug_reproductions SET created_at = created_at + ${D};`,
   `UPDATE users SET created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
   `UPDATE app_settings SET updated_at = updated_at + ${D};`,
   `UPDATE test_selections SET created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
@@ -3712,6 +3824,10 @@ const lines = [
   '',
   '-- Project URL patterns (browser extension)',
   insert('project_url_patterns', PROJECT_URL_PATTERNS),
+  '',
+  '-- Bug reports (Piwi Picker)',
+  insert('bug_reports', BUG_REPORTS),
+  insert('bug_reproductions', BUG_REPRODUCTIONS),
   '',
   '-- Timeline markers',
   insert('markers', MARKERS),

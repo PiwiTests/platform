@@ -150,8 +150,7 @@ page comes from URL patterns kept on the instance, per project, and from any you
 **Active project** select overrides both for the session. See [Extension connection](./extension-connection).
 
 The function catalogs refresh in the background, once per recorded page and when a recording stops; **Refresh** in
-Test functions fetches them now. **A recording is never sent to your instance.** Connecting changes only what **Copy
-as TypeScript** produces and what the overlay shows while recording.
+Test functions fetches them now. **A recording is never sent to your instance**, and a [bug report](./bug-reports) only from its preview.
 
 ## Limits
 

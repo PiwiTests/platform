@@ -393,6 +393,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/report-a-bug',
       },
       {
+        title: 'Bug reports',
+        summary:
+          'Reports sent from Piwi Picker kept with their steps and evidence, each rendered as a failing test for your project and followed through its runs until the fix holds.',
+        needs: ['extension'],
+        where: 'Project → More → Bug reports',
+        doc: 'features/bug-reports',
+      },
+      {
         title: 'Test functions catalog',
         summary: 'The reusable helpers and page-object methods your suite calls, catalogued with their parameters.',
         needs: [],

@@ -2252,6 +2252,40 @@ const SCENES = [
     pad: 12,
   },
 
+  // ── Bug reports ──────────────────────────────────────────────────────────
+  {
+    name: 'bug-report-page',
+    description: 'A bug report sent from Piwi Picker: what was expected, where it stands, and its steps',
+    tags: ['desktop'],
+    route: '/bug-reports/1',
+    viewport: { width: 1280, height: 900 },
+  },
+  {
+    name: 'bug-report-spec',
+    description: 'A bug report’s Spec tab: the failing test to commit, rendered with the project’s settings',
+    tags: ['desktop'],
+    route: '/bug-reports/1?tab=spec',
+    viewport: { width: 1280, height: 1100 },
+    of: '[data-shot="bug-report-spec"]',
+    pad: 12,
+  },
+  {
+    name: 'bug-report-mobile',
+    description: 'The same bug report at phone width',
+    tags: ['desktop'],
+    route: '/bug-reports/1',
+    viewport: { width: 375, height: 1100 },
+  },
+  {
+    name: 'bug-report-list',
+    description: 'A project’s bug reports',
+    tags: ['desktop'],
+    route: '/projects/1/bug-reports',
+    viewport: { width: 1280, height: 700 },
+    of: '[data-shot="bug-report-list"]',
+    pad: 12,
+  },
+
   // ── Failure headline (report artifacts) ──────────────────────────────────
   {
     name: 'failure-headline',

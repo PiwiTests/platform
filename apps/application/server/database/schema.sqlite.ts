@@ -18,6 +18,7 @@ export const projects = sqliteTable(
     routeOrigins: text('route_origins', { mode: 'json' }), // string[] — extra own origins whose requests become graph route nodes, beyond the run's Playwright baseURL
     ciRerun: text('ci_rerun', { mode: 'json' }), // CiRerunSettings — provider-specific "re-run from the dashboard" target (off by default)
     capabilities: text('capabilities', { mode: 'json' }), // Partial<Record<CapabilityId, 'declined' | 'enabled'>> — per-project capability decisions
+    generatedSpecs: text('generated_specs', { mode: 'json' }), // GeneratedSpecSettings — test import and bugs folder for specs rendered from steps
     targets: text('targets', { mode: 'json' }), // ProjectTargets — per-project goals on catalog metrics (shared/analytics/targets.ts)
     locatorIndexBuiltAt: integer('locator_index_built_at', { mode: 'timestamp' }), // when locator_usages was first built from stored executions; null = not yet
     createdAt: integer('created_at', { mode: 'timestamp' })
@@ -138,6 +139,7 @@ export const testCases = sqliteTable(
     priority: text('priority'), // 'critical' | 'high' | 'medium' | 'low'
     feature: text('feature'),
     link: text('link'), // absolute http(s) URL
+    bugReportId: integer('bug_report_id'), // the bug report this test reproduces (`piwi:bug`), once that report exists
     createdAt: integer('created_at', { mode: 'timestamp' })
       .notNull()
       .$defaultFn(() => new Date()),
@@ -1745,3 +1747,72 @@ export type ScenarioGap = typeof scenarioGaps.$inferSelect;
 export type NewScenarioGap = typeof scenarioGaps.$inferInsert;
 export type Probe = typeof probes.$inferSelect;
 export type NewProbe = typeof probes.$inferInsert;
+
+// Bug reports: a steps document with the assertion that states the correct
+// behavior, and the evidence collected on the page, sent from Piwi Picker.
+// Screenshots live in storage under `bug-reports/<id>/`; `evidence.screenshots`
+// names them. Status: 'open' | 'test-committed' | 'looks-fixed' | 'closed' | 'dismissed'.
+export const bugReports = sqliteTable(
+  'bug_reports',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    title: text('title').notNull(),
+    note: text('note'),
+    pageKey: text('page_key'),
+    path: text('path'),
+    origin: text('origin'),
+    status: text('status').notNull().default('open'),
+    steps: text('steps', { mode: 'json' }).notNull(), // PiwiSteps
+    evidence: text('evidence', { mode: 'json' }).notNull(), // BugEvidence
+    context: text('context', { mode: 'json' }).notNull(), // BugContext
+    language: text('language'), // the language the report was written in (`en`, `fr`, …)
+    createdBy: integer('created_by').references(() => users.id, { onDelete: 'set null' }),
+    testCaseId: integer('test_case_id').references(() => testCases.id, { onDelete: 'set null' }),
+    statusRunId: integer('status_run_id').references(() => testRuns.id, { onDelete: 'set null' }), // the run that last moved the status
+    closedAt: integer('closed_at', { mode: 'timestamp' }),
+    closedByRunId: integer('closed_by_run_id').references(() => testRuns.id, { onDelete: 'set null' }),
+    createdAt: integer('created_at', { mode: 'timestamp' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    updatedAt: integer('updated_at', { mode: 'timestamp' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    projectStatusIdx: index('idx_bug_reports_project_status').on(t.projectId, t.status),
+    testCaseIdx: index('idx_bug_reports_test_case').on(t.testCaseId),
+    createdByIdx: index('idx_bug_reports_created_by').on(t.createdBy),
+    statusRunIdx: index('idx_bug_reports_status_run').on(t.statusRunId),
+    closedByRunIdx: index('idx_bug_reports_closed_by_run').on(t.closedByRunId),
+  }),
+);
+
+// What happened when someone tried a bug report again: a replay in Piwi Picker
+// or a Playwright run from the desktop app. Verdict: 'reproduced' | 'not-reproduced' | 'diverged'.
+export const bugReproductions = sqliteTable(
+  'bug_reproductions',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    bugReportId: integer('bug_report_id')
+      .notNull()
+      .references(() => bugReports.id, { onDelete: 'cascade' }),
+    source: text('source').notNull(), // 'replay' | 'desktop'
+    verdict: text('verdict').notNull(),
+    divergedAt: integer('diverged_at'), // 0-based step index, for a 'diverged' verdict
+    origin: text('origin'),
+    userAgent: text('user_agent'),
+    runId: integer('run_id').references(() => testRuns.id, { onDelete: 'set null' }),
+    createdBy: integer('created_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: integer('created_at', { mode: 'timestamp' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    bugReportIdx: index('idx_bug_reproductions_report').on(t.bugReportId),
+    runIdx: index('idx_bug_reproductions_run').on(t.runId),
+    createdByIdx: index('idx_bug_reproductions_created_by').on(t.createdBy),
+  }),
+);

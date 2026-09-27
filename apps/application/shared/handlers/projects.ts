@@ -384,6 +384,8 @@ export async function updateProject(
     openApiUrl?: string | null;
     serverProbes?: unknown;
     ciRerun?: unknown;
+    /** `GeneratedSpecSettings`; null clears them. */
+    generatedSpecs?: unknown;
     /** Per-project targets (`ProjectTargets`); null clears them. */
     targets?: unknown;
     tagIds?: number[];
@@ -402,6 +404,7 @@ export async function updateProject(
     openApiUrl,
     serverProbes,
     ciRerun,
+    generatedSpecs,
     targets,
     tagIds: dataTagIds,
   } = data;
@@ -420,6 +423,7 @@ export async function updateProject(
       openApiUrl: openApiUrl !== undefined ? openApiUrl : undefined,
       serverProbes: serverProbes !== undefined ? (serverProbes as any) : undefined,
       ciRerun: ciRerun !== undefined ? (ciRerun as any) : undefined,
+      generatedSpecs: generatedSpecs !== undefined ? (generatedSpecs as any) : undefined,
       targets: resolvedTargets,
       updatedAt: new Date(),
     })

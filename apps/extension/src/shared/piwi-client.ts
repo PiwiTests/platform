@@ -8,7 +8,9 @@ import { t } from './i18n.js';
 /**
  * Talks to a Piwi instance — the only place in this extension that makes a
  * network call. Called from the options page (connecting, saving, reading and
- * adding URL patterns) and the background service worker (`piwi-refresh-catalog`, `piwi-refresh-locator-index`) only,
+ * adding URL patterns) and the background service worker (`piwi-refresh-catalog`, `piwi-refresh-locator-index`,
+ * and the bug-report messages: `piwi-send-bug-report` once the reporter has
+ * confirmed the preview, `piwi-list-bug-reports`, `piwi-get-bug-report`) only,
  * never from a content script, so the API key is never reachable from a web
  * page's JS context (matches `extension/AGENTS.md`'s standalone stance:
  * connected mode is opt-in and clearly separated).
@@ -301,4 +303,106 @@ export async function addServerPattern(
   if (res.status === 409) throw new Error(t('options_addDuplicate'));
   if (res.status === 400) throw new Error(t('options_addInvalid'));
   throw new Error(t('common_instanceStatus', { status: res.status }));
+}
+
+/** Deep link to a bug report's page in the dashboard. */
+export function bugReportUrl(instanceUrl: string, id: number): string {
+  return `${normalizeBaseUrl(instanceUrl)}/bug-reports/${id}`;
+}
+
+/** What Send to Piwi sends: the report as JSON, the language it is written in, and its PNG screenshots. */
+export interface BugReportSend {
+  report: unknown;
+  language: string | null;
+  screenshots: Array<{ name: string; bytes: Uint8Array }>;
+}
+
+/** The multipart parts of a bug report, as the instance reads them. */
+const BUG_REPORT_PARTS = { report: 'report', language: 'language', screenshot: 'screenshot' } as const;
+
+/** Why the instance answered a request the way it did, as a sentence to show. */
+async function refusal(res: Response): Promise<string> {
+  if (res.status === 401) return t('common_apiKeyRejected');
+  if (res.status === 403) return t('common_sendForbidden');
+  if (res.status === 404) return t('common_bugReportsUnsupported');
+  if (res.status === 413) return t('common_sendTooLarge');
+  if (res.status === 400) {
+    const body = (await res.json().catch(() => null)) as { message?: unknown } | null;
+    const message = typeof body?.message === 'string' ? body.message.slice(0, 300) : String(res.status);
+    return t('common_sendRefused', { error: message });
+  }
+  return t('common_instanceStatus', { status: res.status });
+}
+
+/**
+ * Sends a bug report to a project (`POST /api/projects/:id/bug-reports`, multipart).
+ * Only the background worker calls it, after the reporter confirmed the preview.
+ */
+export async function sendBugReport(
+  settings: ConnectionSettings,
+  projectId: number,
+  send: BugReportSend,
+): Promise<{ id: number; url: string }> {
+  const form = new FormData();
+  form.append(BUG_REPORT_PARTS.report, JSON.stringify(send.report));
+  if (send.language) form.append(BUG_REPORT_PARTS.language, send.language);
+  for (const shot of send.screenshots) {
+    form.append(BUG_REPORT_PARTS.screenshot, new Blob([shot.bytes as BlobPart], { type: 'image/png' }), shot.name);
+  }
+  let res: Response;
+  try {
+    res = await fetch(`${normalizeBaseUrl(settings.instanceUrl)}/api/projects/${projectId}/bug-reports`, {
+      method: 'POST',
+      headers: authHeaders(settings),
+      body: form,
+      signal: AbortSignal.timeout(60_000),
+    });
+  } catch {
+    throw new Error(t('common_instanceUnreachable'));
+  }
+  if (!res.ok) throw new Error(await refusal(res));
+  const body = (await res.json()) as { id?: unknown };
+  if (typeof body.id !== 'number') throw new Error(t('common_instanceStatus', { status: res.status }));
+  return { id: body.id, url: bugReportUrl(settings.instanceUrl, body.id) };
+}
+
+/** One of a project's bug reports, as Replay lists them. */
+export interface BugReportSummary {
+  id: number;
+  title: string;
+  status: string;
+  path: string | null;
+}
+
+/** A project's bug reports that are still to be fixed: open, test committed, or looking fixed. */
+export async function fetchBugReports(settings: ConnectionSettings, projectId: number): Promise<BugReportSummary[]> {
+  let res: Response;
+  try {
+    res = await fetch(`${normalizeBaseUrl(settings.instanceUrl)}/api/projects/${projectId}/bug-reports`, {
+      headers: authHeaders(settings),
+      signal: timeout(),
+    });
+  } catch {
+    throw new Error(t('common_instanceUnreachable'));
+  }
+  if (!res.ok) throw new Error(await refusal(res));
+  return listItems<BugReportSummary>(await res.json()).filter(
+    (r) => typeof r.id === 'number' && r.status !== 'closed' && r.status !== 'dismissed',
+  );
+}
+
+/** A bug report's steps document, with the report's title, for Replay. */
+export async function fetchBugReportSteps(settings: ConnectionSettings, id: number): Promise<unknown> {
+  let res: Response;
+  try {
+    res = await fetch(`${normalizeBaseUrl(settings.instanceUrl)}/api/bug-reports/${id}`, {
+      headers: authHeaders(settings),
+      signal: timeout(),
+    });
+  } catch {
+    throw new Error(t('common_instanceUnreachable'));
+  }
+  if (!res.ok) throw new Error(await refusal(res));
+  const body = (await res.json()) as { title?: unknown; steps?: unknown };
+  return { ...(body.steps as object), title: typeof body.title === 'string' ? body.title : null };
 }

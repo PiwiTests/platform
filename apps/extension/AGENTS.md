@@ -123,11 +123,16 @@ matcher a catalog entry's own `urlPattern` gate uses). Every consumer that needs
 applies here" (record-panel's HUD and review panel, test-function-panel, the popup's select)
 calls this one function rather than re-deriving it.
 
-**No recording is ever sent to the instance**, a bug report included — only the URL patterns and each mapped
-project's catalog and locator index are fetched, and the only thing ever sent is a URL pattern the user adds.
+**No recording is ever sent to the instance**, and a bug report only through **Send to Piwi…**: the URL patterns,
+each mapped project's catalog and locator index, and its bug reports (Replay's list) are fetched; what is sent is a URL
+pattern the user adds, and a bug report once the user clicks Send in its preview (`bug-send-panel.ts`: the steps and
+every kind of evidence shown, a box per kind and one that leaves the typed values out; the payload is built by the pure
+`bug-send.ts`). The first send in a profile explains once what connected mode now sends (`piwiBugSendExplained`).
 Only `piwi-client.ts` makes those requests, from exactly two
 contexts: `src/options/` (connecting, saving, reading and adding URL patterns) and the background worker's `piwi-refresh-catalog` /
-`piwi-refresh-locator-index` handlers. **Never from a content script**, so the API key never
+`piwi-refresh-locator-index` handlers and its bug-report messages (`src/background/bug-reports.ts`:
+`piwi-bug-send-target`, `piwi-send-bug-report`, `piwi-list-bug-reports`, `piwi-get-bug-report`), which resolve the
+project again from the sending tab's URL and never take one from the page. **Never from a content script**, so the API key never
 reaches a page's JS context — `record-panel.ts`/`test-function-panel.ts`/`coverage-overlay.ts`
 read the cache and, when they need fresher data, ask the worker via `catalog-refresh.ts` /
 `locator-index-refresh.ts` rather than fetching themselves. Keep it that way.
@@ -281,10 +286,10 @@ instead of needing a live browser for everything.
 
 - **No network call from a content script, ever.** Picking/recording talk to no server.
   Connected mode (see above) is opt-in, off by default, confined to `src/options/` and the
-  background worker (`piwi-client.ts`), and fetches only a function catalog and a locator
-  index — never sends a recording or anything read from a page.
-  A future feature that wants to *send* recorded data to an instance needs the same
-  explicit-opt-in, clearly-separated treatment, plus a payload preview before the first send.
+  background worker (`piwi-client.ts`). It never sends a recording or anything read from a
+  page except a bug report the user sends from its preview. Any other feature that wants to
+  *send* recorded data needs the same explicit-opt-in, clearly-separated treatment, plus a
+  payload preview before the first send.
 - **Content scripts are separately-bundled IIFEs, not ES modules.** `scripts/build.mjs`
   builds each one with Vite's library mode specifically so `chrome.scripting.executeScript`
   (or a `registerContentScripts` registration, for `record-panel.ts`) can inject it as a plain

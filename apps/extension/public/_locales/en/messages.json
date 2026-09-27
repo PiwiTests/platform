@@ -65,6 +65,28 @@
     "message": "The replay could not start.",
     "description": "Error when a replay fails to start for an unknown reason."
   },
+  "common_sendForbidden": {
+    "message": "your account cannot send reports to this project.",
+    "description": "Background: the instance refused a bug report because the account may not send to that project."
+  },
+  "common_sendTooLarge": {
+    "message": "the report is too large for the instance. Leave out a screenshot and try again.",
+    "description": "Background: the instance refused a bug report as too large."
+  },
+  "common_sendRefused": {
+    "message": "the instance refused it ($error$).",
+    "description": "Background: the instance refused a bug report. $error$ is the instance’s own message, in English.",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "Not a bug report: steps: must be a list"
+      }
+    }
+  },
+  "common_bugReportsUnsupported": {
+    "message": "this Piwi instance does not take bug reports yet. Update it.",
+    "description": "Background: the connected instance is too old to take bug reports."
+  },
   "common_workerNoAnswer": {
     "message": "Piwi Picker’s background worker did not answer: reload Piwi Picker.",
     "description": "Error when the part of the extension that runs in the background does not answer a request."
@@ -2419,6 +2441,144 @@
     "message": "Everything here stays in this browser: nothing is sent anywhere.",
     "description": "Report a bug, finished report: note at the bottom of the panel."
   },
+  "bug_sendToPiwi": {
+    "message": "Send to Piwi…",
+    "description": "Report a bug, finished report: the button that opens the preview of what is sent to the connected Piwi instance."
+  },
+  "bug_sendToPiwiHint": {
+    "message": "See exactly what is sent, then store the report on your Piwi instance",
+    "description": "Report a bug, finished report: tooltip of “Send to Piwi…”."
+  },
+  "bug_sendTitle": {
+    "message": "Send to $project$",
+    "description": "Send to Piwi preview: dialog title. $project$ is a project name.",
+    "placeholders": {
+      "project": {
+        "content": "$1",
+        "example": "Checkout"
+      }
+    }
+  },
+  "bug_sendWhere": {
+    "message": "A bug report of $project$ on $instance$. Only what is ticked below is sent.",
+    "description": "Send to Piwi preview: first line. $instance$ is a host such as piwi.acme.com, $project$ a project name.",
+    "placeholders": {
+      "instance": {
+        "content": "$1",
+        "example": "piwi.acme.com"
+      },
+      "project": {
+        "content": "$2",
+        "example": "Checkout"
+      }
+    }
+  },
+  "bug_sendFirstTime": {
+    "message": "This is the first report sent from this browser. Piwi Picker sends a report only when you click Send, only to the instance you connected, and only what you tick here. The steps keep the values you typed, except passwords.",
+    "description": "Send to Piwi preview: shown before the first send from this browser profile, to explain what connected mode now sends."
+  },
+  "bug_sendSteps_one": {
+    "message": "The title and $count$ step, with the page it was on",
+    "description": "Send to Piwi preview: what is always sent. $count$ is the number of steps.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "bug_sendSteps_other": {
+    "message": "The title and $count$ steps, with the pages they were on",
+    "description": "Send to Piwi preview: what is always sent. $count$ is the number of steps.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "6"
+      }
+    }
+  },
+  "bug_sendScreenshots": {
+    "message": "Screenshots: $count$",
+    "description": "Send to Piwi preview: checkbox. $count$ is a number.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "bug_sendConsole": {
+    "message": "Console errors and warnings: $count$",
+    "description": "Send to Piwi preview: checkbox. $count$ is a number.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "bug_sendRequests": {
+    "message": "Failed requests (method, path, status; never a body): $count$",
+    "description": "Send to Piwi preview: checkbox. $count$ is a number.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "bug_sendOutline": {
+    "message": "The outline of the page",
+    "description": "Send to Piwi preview: checkbox for the outline of the page."
+  },
+  "bug_sendEnvValues": {
+    "message": "Leave out the values I typed (the test reads them from environment variables)",
+    "description": "Send to Piwi preview: checkbox that removes every typed value from the steps sent; the generated test then reads them from environment variables."
+  },
+  "bug_sendShowData": {
+    "message": "Show the exact data",
+    "description": "Send to Piwi preview: disclosure that shows the JSON that is sent."
+  },
+  "bug_send": {
+    "message": "Send",
+    "description": "Send to Piwi preview: the button that sends."
+  },
+  "bug_sending": {
+    "message": "Sending…",
+    "description": "Send to Piwi preview: while sending."
+  },
+  "bug_sent": {
+    "message": "Sent as bug report #$id$.",
+    "description": "Send to Piwi: after sending. $id$ is the number of the report on the instance.",
+    "placeholders": {
+      "id": {
+        "content": "$1",
+        "example": "37"
+      }
+    }
+  },
+  "bug_openInPiwi": {
+    "message": "Open it in Piwi",
+    "description": "Send to Piwi: link to the report on the instance, after sending."
+  },
+  "bug_sendFailed": {
+    "message": "Not sent: $error$",
+    "description": "Send to Piwi: the report was not sent. $error$ is the reason, already translated.",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "The instance cannot be reached."
+      }
+    }
+  },
+  "bug_sendNoProject": {
+    "message": "No project of your Piwi instance matches this page. Add this site in the settings, or choose the project in the popup.",
+    "description": "Send to Piwi: no project of the connected instance applies to this page."
+  },
+  "bug_staysLocalUntilSent": {
+    "message": "Everything here stays in this browser until you send it.",
+    "description": "Report a bug, finished report: note at the bottom of the panel when an instance is connected."
+  },
   "replay_hudLabel": {
     "message": "Piwi Picker: replaying a bug report",
     "description": "Replay panel (the box in the corner while a bug report replays): its aria-label, read by screen readers."
@@ -2828,6 +2988,54 @@
   "replay_chooseFile": {
     "message": "Or choose the report’s .zip, or its steps.json, saved by Piwi Picker:",
     "description": "Replay dialog, above the file field. “.zip” and “steps.json” are file names, kept as they are."
+  },
+  "replay_fromPiwi": {
+    "message": "Or a bug report of $project$ on Piwi:",
+    "description": "Replay chooser: label of the list of bug reports fetched from the connected instance. $project$ is a project name.",
+    "placeholders": {
+      "project": {
+        "content": "$1",
+        "example": "Checkout"
+      }
+    }
+  },
+  "replay_fromPiwiChoose": {
+    "message": "Choose a bug report",
+    "description": "Replay chooser: first option of the list of bug reports from the instance."
+  },
+  "replay_fromPiwiItem": {
+    "message": "#$id$ · $title$",
+    "description": "Replay chooser: one bug report from the instance. $id$ is its number, $title$ its title as the reporter wrote it.",
+    "placeholders": {
+      "id": {
+        "content": "$1",
+        "example": "37"
+      },
+      "title": {
+        "content": "$2",
+        "example": "Coupon not applied to the total"
+      }
+    }
+  },
+  "replay_fromPiwiNone": {
+    "message": "$project$ has no open bug report on Piwi.",
+    "description": "Replay chooser: the project mapped to this tab has no open bug report. $project$ is a project name.",
+    "placeholders": {
+      "project": {
+        "content": "$1",
+        "example": "Checkout"
+      }
+    }
+  },
+  "replay_fromPiwiFailed": {
+    "message": "Could not read the bug reports from Piwi: $error$",
+    "description": "Replay chooser: the list or the report could not be read from the instance. $error$ is the reason, already translated.",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "The instance cannot be reached."
+      }
+    }
   },
   "replay_fileLabel": {
     "message": "The bug report’s .zip, or its steps.json",

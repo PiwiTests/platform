@@ -74,7 +74,8 @@ the instance takes a role that edits the project; without one, the settings say 
 
 Connecting sends the browser's and the operating system's names, nothing else about the machine. Afterwards the
 extension downloads the URL patterns, each mapped project's function catalog and its locator index; adding a site
-sends that one pattern. A recording is never sent. Only the settings page and the extension's background worker talk
+sends that one pattern. A recording is never sent; a bug report is sent only from **Send to Piwi…**, after a preview of
+exactly what goes (see [Bug reports](./bug-reports)). Only the settings page and the extension's background worker talk
 to the instance, never a script running in a page.
 
 ## Related
