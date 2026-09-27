@@ -156,76 +156,75 @@ body {
   color: #82071e;
 }
 
-@media (prefers-color-scheme: dark) {
-  .hljs-keyword,
-  .hljs-literal,
-  .hljs-symbol,
-  .hljs-name {
-    color: #d2a8ff;
-  }
+/* Dark palette: follows the app's color mode (`.dark` on <html>). */
+.dark .hljs-keyword,
+.dark .hljs-literal,
+.dark .hljs-symbol,
+.dark .hljs-name {
+  color: #d2a8ff;
+}
 
-  .hljs-string,
-  .hljs-meta .hljs-string,
-  .hljs-regexp {
-    color: #a5d6ff;
-  }
+.dark .hljs-string,
+.dark .hljs-meta .hljs-string,
+.dark .hljs-regexp {
+  color: #a5d6ff;
+}
 
-  .hljs-number,
-  .hljs-attr,
-  .hljs-built_in,
-  .hljs-selector-class,
-  .hljs-selector-attr,
-  .hljs-selector-pseudo {
-    color: #79c0ff;
-  }
+.dark .hljs-number,
+.dark .hljs-attr,
+.dark .hljs-built_in,
+.dark .hljs-selector-class,
+.dark .hljs-selector-attr,
+.dark .hljs-selector-pseudo {
+  color: #79c0ff;
+}
 
-  .hljs-comment,
-  .hljs-quote {
-    color: #8b949e;
-  }
+.dark .hljs-comment,
+.dark .hljs-quote {
+  color: #8b949e;
+}
 
-  .hljs-title,
-  .hljs-section {
-    color: #d2a8ff;
-  }
+.dark .hljs-title,
+.dark .hljs-section {
+  color: #d2a8ff;
+}
 
-  .hljs-type,
-  .hljs-class .hljs-title {
-    color: #79c0ff;
-  }
+.dark .hljs-type,
+.dark .hljs-class .hljs-title {
+  color: #79c0ff;
+}
 
-  .hljs-variable,
-  .hljs-template-variable,
-  .hljs-params {
-    color: #db6d28;
-  }
+.dark .hljs-variable,
+.dark .hljs-template-variable,
+.dark .hljs-params {
+  color: #db6d28;
+}
 
-  .hljs-bullet,
-  .hljs-meta {
-    color: #d2a8ff;
-  }
+.dark .hljs-bullet,
+.dark .hljs-meta {
+  color: #d2a8ff;
+}
 
-  .hljs-link {
-    color: #79c0ff;
-  }
+.dark .hljs-link {
+  color: #79c0ff;
+}
 
-  .hljs-property {
-    color: #79c0ff;
-  }
+.dark .hljs-property {
+  color: #79c0ff;
+}
 
-  .hljs-punctuation {
-    color: #e6edf3;
-  }
+.dark .hljs-punctuation {
+  color: #e6edf3;
+}
 
-  .hljs-addition {
-    background: #122620;
-    color: #7ee787;
-  }
+.dark .hljs-addition {
+  background: #122620;
+  color: #7ee787;
+}
 
-  .hljs-deletion {
-    background: #25171c;
-    color: #ff7b72;
-  }
+.dark .hljs-deletion {
+  background: #25171c;
+  color: #ff7b72;
 }
 
 /* TV mode: a dashboard on a wall screen reads from across the room. */
