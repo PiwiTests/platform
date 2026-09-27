@@ -10,7 +10,7 @@ import {
 } from '../shared/recording-storage.js';
 import { getConnectionSettings } from '../shared/connection-settings.js';
 import { getReplayState, newReplayState, setReplayState } from '../shared/replay-storage.js';
-import { parseSteps } from '@piwitests/core/steps';
+import { parseSteps, sessionFromSteps } from '@piwitests/core/steps';
 import { fetchCatalog, fetchLocatorIndex } from '../shared/piwi-client.js';
 import { setCachedCatalog, isCatalogStale } from '../shared/catalog-cache.js';
 import type { RefreshCatalogResult } from '../shared/catalog-refresh.js';
@@ -395,7 +395,7 @@ function replayOriginPattern(origin: unknown): string | null {
  * and a bug recording on the same site already holds.
  */
 async function handleStartReplay(
-  message: { steps?: unknown; origin?: unknown; stepMode?: unknown; inject?: unknown },
+  message: { steps?: unknown; origin?: unknown; stepMode?: unknown; inject?: unknown; startOn?: unknown },
   tab: chrome.tabs.Tab | undefined,
 ): Promise<{ ok: boolean; error?: string }> {
   await i18nReady;
@@ -408,7 +408,13 @@ async function handleStartReplay(
     return { ok: false, error: t('common_replayNeedsAccess') };
   }
   try {
-    await setReplayState(newReplayState(parsed.steps, message.origin as string, message.stepMode === true));
+    const origin = message.origin as string;
+    const first = sessionFromSteps(parsed.steps, origin).steps[0];
+    const startPage =
+      typeof message.startOn === 'string' && message.startOn.startsWith(`${origin}/`) && first?.action === 'goto'
+        ? { recorded: first.value ?? first.pageUrl, actual: message.startOn }
+        : null;
+    await setReplayState(newReplayState(parsed.steps, origin, message.stepMode === true, Date.now(), startPage));
     await chrome.scripting.unregisterContentScripts({ ids: [REPLAY_SCRIPT_ID] }).catch(() => undefined);
     await chrome.scripting.registerContentScripts([
       {

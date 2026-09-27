@@ -109,16 +109,21 @@ function pathOf(url: string): string {
   }
 }
 
-/** Whether the page is the one a step happened on, by page key (ids and tokens aside). */
-function onPageOf(url: string): boolean {
+/**
+ * Whether the page is the one a step happened on, by page key (ids and tokens
+ * aside). A replay started on the tab's own page takes that page for the first
+ * recorded one, whatever their addresses.
+ */
+function onPageOf(url: string, startPage: ReplayState['startPage']): boolean {
   const here = pageKey(location.href);
   const there = pageKey(url);
+  if (startPage && there === pageKey(startPage.recorded) && here === pageKey(startPage.actual)) return true;
   return here === null || there === null || here === there;
 }
 
-async function waitForPage(url: string, timeout: number): Promise<boolean> {
+async function waitForPage(url: string, timeout: number, startPage: ReplayState['startPage']): Promise<boolean> {
   const deadline = Date.now() + timeout;
-  while (!onPageOf(url)) {
+  while (!onPageOf(url, startPage)) {
     if (Date.now() >= deadline) return false;
     await wait(100);
   }
@@ -128,7 +133,12 @@ async function waitForPage(url: string, timeout: number): Promise<boolean> {
 // ---------------------------------------------------------------------------
 // Talking to the background script
 
-async function startReplay(steps: PiwiSteps, stepMode: boolean): Promise<{ ok: boolean; error?: string }> {
+/** Starts a replay; `startOn` is the page it starts on instead of opening the first recorded one. */
+async function startReplay(
+  steps: PiwiSteps,
+  stepMode: boolean,
+  startOn: string | null,
+): Promise<{ ok: boolean; error?: string }> {
   try {
     const response = (await chrome.runtime.sendMessage({
       type: 'piwi-start-replay',
@@ -136,6 +146,7 @@ async function startReplay(steps: PiwiSteps, stepMode: boolean): Promise<{ ok: b
       origin: location.origin,
       stepMode,
       inject: false,
+      startOn,
     })) as { ok: boolean; error?: string } | undefined;
     return response ?? { ok: false, error: t('common_workerNoAnswer') };
   } catch (e) {
@@ -321,7 +332,7 @@ function renderHud(state: ReplayState, verdict: ReplayVerdict | null = null): vo
         t('replay_again'),
         () => {
           void (async () => {
-            const response = await startReplay(state.steps, state.stepMode);
+            const response = await startReplay(state.steps, state.stepMode, state.startPage?.actual ?? null);
             if (response.ok) void runReplay();
           })();
         },
@@ -458,6 +469,17 @@ async function runReplay(): Promise<void> {
       const step = steps[index];
       if (!step) return void (await finish(state, false));
 
+      if (step.action === 'goto' && index === 0 && state.startPage) {
+        const actual = state.startPage.actual;
+        await recordResult(state, index, { status: 'done', detail: t('replay_startedHere') });
+        // Replayed again from another page: back to the page it started on.
+        if (location.href.split('#')[0] !== actual.split('#')[0]) {
+          location.assign(actual);
+          await new Promise(() => undefined);
+        }
+        continue;
+      }
+
       if (step.action === 'goto') {
         const target = step.value ?? step.pageUrl;
         await recordResult(state, index, { status: 'done', detail: null });
@@ -473,7 +495,7 @@ async function runReplay(): Promise<void> {
         await new Promise(() => undefined);
       }
 
-      if (!(await waitForPage(step.pageUrl, ACTION_TIMEOUT_MS))) {
+      if (!(await waitForPage(step.pageUrl, ACTION_TIMEOUT_MS, state.startPage))) {
         const reason = t('replay_reasonOtherPage', { expected: pathOf(step.pageUrl), actual: pathOf(location.href) });
         await recordResult(state, index, { status: 'diverged', detail: reason });
         return void (await finish((await getReplayState())!, false));
@@ -584,8 +606,20 @@ function openChooser(lastReport: PiwiSteps | null): void {
   const message = document.createElement('div');
   message.className = 'message';
   message.setAttribute('role', 'alert');
+  const startLabel = document.createElement('label');
+  startLabel.className = 'check';
+  startLabel.style.marginTop = '8px';
+  startLabel.hidden = true;
+  const startBox = document.createElement('input');
+  startBox.type = 'checkbox';
+  const startText = document.createElement('span');
+  startLabel.append(startBox, startText);
   const describe = (steps: PiwiSteps) => {
     chosen = steps;
+    const first = steps.steps[0];
+    startLabel.hidden = first?.action !== 'goto';
+    startBox.checked = false;
+    if (first?.action === 'goto') startText.textContent = t('replay_startHere', { path: first.value ?? first.pageUrl });
     const parts = [tn('replay_summary', steps.steps.length, { title: steps.title ?? t('replay_untitled') })];
     if (steps.origin && steps.origin !== location.origin) parts.push(t('replay_recordedOn', { origin: steps.origin }));
     summary.textContent = parts.join(' · ');
@@ -626,7 +660,7 @@ function openChooser(lastReport: PiwiSteps | null): void {
   const stepBox = document.createElement('input');
   stepBox.type = 'checkbox';
   stepLabel.append(stepBox, t('replay_stepByStepHint'));
-  panel.appendChild(stepLabel);
+  panel.append(startLabel, stepLabel);
 
   const row = document.createElement('div');
   row.className = 'row';
@@ -640,7 +674,8 @@ function openChooser(lastReport: PiwiSteps | null): void {
           return;
         }
         const steps = chosen;
-        void startReplay(steps, stepBox.checked).then((response) => {
+        const startOn = !startLabel.hidden && startBox.checked ? location.href : null;
+        void startReplay(steps, stepBox.checked, startOn).then((response) => {
           if (!response.ok) {
             message.textContent = response.error ?? t('common_replayStartFailed');
             return;

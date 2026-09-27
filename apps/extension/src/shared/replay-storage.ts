@@ -33,6 +33,12 @@ export interface ReplayState {
   /** Where the fake cursor was, in viewport pixels, so the next page starts it there. */
   cursor: { x: number; y: number } | null;
   startedAt: number;
+  /**
+   * Set when the replay starts on the tab's page instead of opening the first
+   * recorded one, whose address may differ (another id, other parameters).
+   * Steps recorded on that page play on this one, whatever its address.
+   */
+  startPage?: { recorded: string; actual: string } | null;
 }
 
 function isReplayState(value: unknown): value is ReplayState {
@@ -63,7 +69,13 @@ export async function clearReplayState(): Promise<void> {
 }
 
 /** A new replay of `steps` on `origin`, from its first step. */
-export function newReplayState(steps: PiwiSteps, origin: string, stepMode: boolean, now = Date.now()): ReplayState {
+export function newReplayState(
+  steps: PiwiSteps,
+  origin: string,
+  stepMode: boolean,
+  now = Date.now(),
+  startPage: ReplayState['startPage'] = null,
+): ReplayState {
   return {
     id: `${now.toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
     steps,
@@ -74,5 +86,6 @@ export function newReplayState(steps: PiwiSteps, origin: string, stepMode: boole
     stepMode,
     cursor: null,
     startedAt: now,
+    startPage,
   };
 }

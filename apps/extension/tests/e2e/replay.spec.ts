@@ -127,7 +127,10 @@ const REPORT: PiwiSteps = {
   ],
 };
 
-function running(stepMode = false): Record<string, unknown> {
+function running(
+  stepMode = false,
+  startPage: { recorded: string; actual: string } | null = null,
+): Record<string, unknown> {
   return {
     piwiReplay: {
       id: 'r1',
@@ -139,6 +142,7 @@ function running(stepMode = false): Record<string, unknown> {
       stepMode,
       cursor: null,
       startedAt: 0,
+      startPage,
     },
   };
 }
@@ -178,6 +182,24 @@ test.describe('replay-panel.js', () => {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.goto(`${ORIGIN}/login`);
     expect(await verdict(page)).toEqual({ kind: 'not-reproduced' });
+  });
+
+  test('starts from the tab’s own page when asked, whatever its address', async ({ context }) => {
+    await routePages(context, 'buggy');
+    const opened: string[] = [];
+    context.on('request', (request) => {
+      if (request.resourceType() === 'document') opened.push(new URL(request.url()).pathname);
+    });
+    await stubChrome(context, running(false, { recorded: `${ORIGIN}/login`, actual: `${ORIGIN}/signin?from=mail` }));
+    const page = await context.newPage();
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.goto(`${ORIGIN}/signin?from=mail`);
+    expect(await verdict(page)).toEqual({ kind: 'reproduced', step: 4, found: '"Total: 40"', sameAsReported: true });
+    expect(opened).toEqual(['/signin', '/dashboard']);
+    expect((await replayState(page)).results[0]).toEqual({
+      status: 'done',
+      detail: 'Started from the tab’s page instead.',
+    });
   });
 
   test('stops where the page differs, and says why', async ({ context }) => {

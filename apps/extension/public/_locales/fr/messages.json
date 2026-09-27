@@ -2133,6 +2133,9 @@
       }
     }
   },
+  "replay_startedHere": {
+    "message": "Commencé sur la page de l’onglet à la place."
+  },
   "replay_reasonActionFailed": {
     "message": "La page n’a pas réagi à l’action comme lors de l’enregistrement."
   },
@@ -2197,6 +2200,15 @@
   },
   "replay_stepByStepHint": {
     "message": "Pas à pas : cliquez sur Étape suivante avant chaque étape"
+  },
+  "replay_startHere": {
+    "message": "Commencer sur cette page, sans ouvrir d’abord $path$",
+    "placeholders": {
+      "path": {
+        "content": "$1",
+        "example": "/projects/1?tab=runs"
+      }
+    }
   },
   "replay_start": {
     "message": "Rejouer"
