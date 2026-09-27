@@ -1263,6 +1263,63 @@ export const apiKeys = sqliteTable(
   }),
 );
 
+// Browser-extension connect requests (an RFC 8628 device authorization grant).
+// Both codes are stored as SHA-256 hashes only. A row goes pending → approved or
+// denied → consumed; the API key is created by the token call that consumes an
+// approved row, so its plaintext is never stored.
+export const extensionDeviceCodes = sqliteTable(
+  'extension_device_codes',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    deviceCodeHash: text('device_code_hash').notNull(),
+    userCodeHash: text('user_code_hash').notNull(),
+    clientName: text('client_name').notNull(), // "Piwi Picker in Chrome on Windows"
+    status: text('status').notNull().default('pending'), // 'pending' | 'approved' | 'denied' | 'consumed'
+    userId: integer('user_id').references(() => users.id, { onDelete: 'cascade' }), // who decided; null until then
+    apiKeyId: integer('api_key_id').references(() => apiKeys.id, { onDelete: 'set null' }), // the key the token call created
+    intervalSeconds: integer('interval_seconds').notNull().default(5),
+    lastPolledAt: integer('last_polled_at', { mode: 'timestamp_ms' }),
+    expiresAt: integer('expires_at', { mode: 'timestamp_ms' }).notNull(),
+    decidedAt: integer('decided_at', { mode: 'timestamp_ms' }),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    deviceCodeIdx: uniqueIndex('idx_extension_device_codes_device').on(t.deviceCodeHash),
+    userCodeIdx: uniqueIndex('idx_extension_device_codes_user').on(t.userCodeHash),
+    expiresIdx: index('idx_extension_device_codes_expires').on(t.expiresAt),
+    userIdx: index('idx_extension_device_codes_user_id').on(t.userId),
+    apiKeyIdx: index('idx_extension_device_codes_api_key').on(t.apiKeyId),
+  }),
+);
+
+// The URLs a project's application is served at, as `*`/`**` globs over the
+// whole URL (`urlMatches` in @piwitests/core/function-match). The browser
+// extension resolves the project of the page it is on from them.
+export const projectUrlPatterns = sqliteTable(
+  'project_url_patterns',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    pattern: text('pattern').notNull(),
+    environment: text('environment'), // free label: 'staging', 'production'
+    branch: text('branch'), // the branch deployed at these URLs; null for the default branch
+    position: integer('position').notNull().default(0),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    projectPatternIdx: uniqueIndex('idx_project_url_patterns_pattern').on(t.projectId, t.pattern),
+  }),
+);
+
 // Feature graph — nodes. One typed node per object a project's surface exposes.
 // A node's `key` is its stable identity within its `kind` (a route's
 // `METHOD /pattern`, a page's URL). Populated on every ingest from the same
@@ -1641,6 +1698,8 @@ export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type ApiKey = typeof apiKeys.$inferSelect;
 export type NewApiKey = typeof apiKeys.$inferInsert;
+export type ExtensionDeviceCode = typeof extensionDeviceCodes.$inferSelect;
+export type ProjectUrlPattern = typeof projectUrlPatterns.$inferSelect;
 export type AccountToken = typeof accountTokens.$inferSelect;
 export type NewAccountToken = typeof accountTokens.$inferInsert;
 export type NotificationChannel = typeof notificationChannels.$inferSelect;

@@ -610,6 +610,13 @@
       "when": 1790500338797,
       "tag": "0086_nasty_reavers",
       "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1790532406006,
+      "tag": "0087_extension_connect",
+      "breakpoints": true
     }
   ]
 }
