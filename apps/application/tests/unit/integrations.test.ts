@@ -23,6 +23,8 @@ const {
   defaultTrackerConnection,
   ensureEnvManagedConnections,
   testConnection,
+  credentialsForCheck,
+  setWebhookToken,
 } = await import('../../server/utils/integrations/connections');
 const { detectProviderWithConnections } = await import('../../server/utils/integrations/link-resolve');
 
@@ -381,7 +383,7 @@ describe('connections and link resolution', () => {
     vi.stubGlobal('fetch', fetchMock);
     try {
       const result = await testConnection(dbc, created.id);
-      expect(result).toMatchObject({ ok: true, account: { id: 'acct-9' } });
+      expect(result).toMatchObject({ ok: true, account: { id: 'acct-9' }, tokenKind: 'scoped' });
     } finally {
       vi.unstubAllGlobals();
     }
@@ -389,5 +391,72 @@ describe('connections and link resolution', () => {
     const row = await getConnectionRow(dbc, created.id);
     expect((row?.config as Record<string, unknown> | null)?.cloudId).toBe('conn-cloud-1');
     expect(row?.status).toBe('ok');
+  });
+
+  test('a failed testConnection explains a refused token', async () => {
+    const created = await createConnection(dbc, {
+      provider: 'jira',
+      name: 'Refused',
+      baseUrl: 'https://refused.atlassian.net',
+      credentials: { email: 'r@team.io', apiToken: 'bad' },
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(jsonResponse({}, false, 401)) // site /myself
+        .mockResolvedValueOnce(jsonResponse({}, false, 404)), // _edge/tenant_info: no cloud id, no retry
+    );
+    try {
+      const result = await testConnection(dbc, created.id);
+      expect(result?.ok).toBe(false);
+      expect(result?.hint).toMatch(/email and token/);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  test('editing a connection keeps its webhook token, which the edit form never sees', async () => {
+    const created = await createConnection(dbc, {
+      provider: 'jira',
+      name: 'Hooked',
+      baseUrl: 'https://hooked.atlassian.net',
+      credentials: { email: 'h@team.io', apiToken: 'tok' },
+    });
+    const token = await setWebhookToken(dbc, created.id);
+    const summary = (await listConnections(dbc)).find((c) => c.id === created.id)!;
+    expect(summary.config).not.toHaveProperty('webhookToken');
+
+    await updateConnection(dbc, created.id, { name: 'Renamed', config: { ...summary.config, locale: 'fr' } });
+    const row = await getConnectionRow(dbc, created.id);
+    expect(row?.config).toMatchObject({ locale: 'fr', webhookToken: token });
+  });
+
+  test('a pre-save check fills a blank token from the edited connection, on the same site only', async () => {
+    const created = await createConnection(dbc, {
+      provider: 'jira',
+      name: 'Edited',
+      baseUrl: 'https://edited.atlassian.net/',
+      credentials: { email: 'e@team.io', apiToken: 'stored-token' },
+    });
+    const sameSite = await credentialsForCheck(dbc, {
+      siteUrl: 'https://edited.atlassian.net',
+      credentials: { email: 'new@team.io', apiToken: '' },
+      connectionId: created.id,
+    });
+    expect(sameSite).toEqual({ email: 'new@team.io', apiToken: 'stored-token' });
+
+    const otherSite = await credentialsForCheck(dbc, {
+      siteUrl: 'https://elsewhere.atlassian.net',
+      credentials: { email: 'new@team.io' },
+      connectionId: created.id,
+    });
+    expect(otherSite).toBeNull();
+
+    const typed = await credentialsForCheck(dbc, {
+      siteUrl: 'https://elsewhere.atlassian.net',
+      credentials: { email: 'x@team.io', apiToken: 'typed' },
+    });
+    expect(typed).toEqual({ email: 'x@team.io', apiToken: 'typed' });
   });
 });

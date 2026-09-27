@@ -1,12 +1,15 @@
 import { and, eq, isNotNull } from 'drizzle-orm';
 import type {
+  ConnectionCheckResult,
   ConnectionInput,
   ConnectionSummary,
   ConnectionTestResult,
   ExistingIssueCandidate,
   IssueDraft,
+  TrackerSummary,
 } from '#shared/integrations/types';
 import { nonSecretCredentials } from '#shared/integrations/registry';
+import { normalizeJiraSiteUrl } from '#shared/integrations/jira-setup';
 import { renderMarkdown } from '#shared/integrations/render-markdown';
 import { DEFAULT_LOCALE, type IssueLocale } from '#shared/integrations/messages';
 import { resolveProjectIntegration, type ResolvedProjectIntegration } from '#shared/integrations/binding';
@@ -37,8 +40,8 @@ const DEMO_CONNECTION: ConnectionSummary = {
   updatedAt: DEMO_TIME,
 };
 
-export function listDemoConnections(): { connections: ConnectionSummary[] } {
-  return { connections: [DEMO_CONNECTION] };
+export function listDemoConnections(): { connections: ConnectionSummary[]; canStoreSecrets: boolean } {
+  return { connections: [DEMO_CONNECTION], canStoreSecrets: true };
 }
 
 export function getDemoConnection(id: number): { connection: ConnectionSummary } | null {
@@ -75,7 +78,30 @@ export function updateDemoConnection(id: number, body: Partial<ConnectionInput>)
 }
 
 export function testDemoConnection(): ConnectionTestResult {
-  return { ok: true, account: { id: 'demo-account', displayName: 'Demo User' } };
+  return { ok: true, account: { id: 'demo-account', displayName: 'Demo User' }, tokenKind: 'classic' };
+}
+
+/**
+ * The pre-save check in the demo: the address is read the way the server reads
+ * it, but the demo runs in the browser and never calls out, so the site is
+ * reported unreachable. Null when the address is not a URL.
+ */
+export function checkDemoConnection(body: { baseUrl?: string }): ConnectionCheckResult | null {
+  const site = normalizeJiraSiteUrl(body.baseUrl ?? '');
+  if (!site) return null;
+  return {
+    baseUrl: site.url,
+    site: {
+      ok: false,
+      reachable: false,
+      deploymentType: null,
+      title: null,
+      reportedUrl: null,
+      cloudId: null,
+      error: 'The demo runs in your browser and does not contact Jira.',
+      hint: null,
+    },
+  };
 }
 
 // ── Create-issue flow (in-browser, never calls out) ──────────────────────────
@@ -83,8 +109,16 @@ export function testDemoConnection(): ConnectionTestResult {
 const DEMO_PROJECT_KEY = 'DEMO';
 const DEMO_ISSUE_TYPE = 'Bug';
 
-export function demoTrackerStatus(): { trackers: { id: number; provider: 'jira'; name: string }[] } {
-  return { trackers: [{ id: DEMO_CONNECTION.id, provider: 'jira', name: DEMO_CONNECTION.name }] };
+/** The canned connection as the tracker pickers list it. */
+const DEMO_TRACKER: TrackerSummary = {
+  id: DEMO_CONNECTION.id,
+  provider: 'jira',
+  name: DEMO_CONNECTION.name,
+  baseUrl: DEMO_CONNECTION.baseUrl,
+};
+
+export function demoTrackerStatus(): { trackers: TrackerSummary[] } {
+  return { trackers: [DEMO_TRACKER] };
 }
 
 /** The cluster an entity belongs to (itself for a cluster, its cluster for an execution). */
@@ -138,7 +172,7 @@ export async function demoIssueDraft(
     clusterId,
     title: built.title,
     connectionId: DEMO_CONNECTION.id,
-    connections: [{ id: DEMO_CONNECTION.id, provider: 'jira', name: DEMO_CONNECTION.name }],
+    connections: [DEMO_TRACKER],
     projectKey: DEMO_PROJECT_KEY,
     issueType: DEMO_ISSUE_TYPE,
     labels: built.labels,

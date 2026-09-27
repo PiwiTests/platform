@@ -12,6 +12,7 @@
  */
 import { DEFAULT_PROJECT_INTEGRATION, type ResolvedProjectIntegration } from '#shared/integrations/binding';
 import { SUPPORTED_LOCALES } from '#shared/integrations/messages';
+import { JIRA_NO_PROJECTS_HINT, jiraProjectUrl } from '#shared/integrations/jira-setup';
 import type { TrackerSummary, TrackerProjectOption, TrackerIssueTypeOption } from '#shared/integrations/types';
 
 const props = defineProps<{ projectId: number }>();
@@ -61,22 +62,40 @@ const projectKeyItems = computed(() =>
 );
 const issueTypeItems = computed(() => issueTypes.value.map((t) => ({ label: t.name, value: t.id })));
 
+/** The connection the project list was last loaded for, so an empty list is not shown while loading. */
+const projectsLoadedFor = ref(0);
+
 async function loadPickers() {
   if (!form.connectionId) {
     jiraProjects.value = [];
     issueTypes.value = [];
     return;
   }
+  const connectionId = form.connectionId;
   try {
     const { projects } = await $fetch<{ projects: TrackerProjectOption[] }>(
-      `/api/integrations/connections/${form.connectionId}/projects`,
+      `/api/integrations/connections/${connectionId}/projects`,
     );
     jiraProjects.value = projects;
   } catch {
     jiraProjects.value = [];
   }
+  projectsLoadedFor.value = connectionId;
   await loadIssueTypes();
 }
+
+const selectedConnection = computed(() => connections.value.find((c) => c.id === form.connectionId) ?? null);
+/** The chosen Jira project's page, to check it (and its permissions) in Jira. */
+const projectLink = computed(() =>
+  selectedConnection.value?.baseUrl && form.projectKey
+    ? jiraProjectUrl(selectedConnection.value.baseUrl, form.projectKey)
+    : null,
+);
+const noProjectsHelp = computed(() =>
+  form.connectionId && projectsLoadedFor.value === form.connectionId && jiraProjects.value.length === 0
+    ? JIRA_NO_PROJECTS_HINT
+    : undefined,
+);
 
 async function loadIssueTypes() {
   if (!form.connectionId || !form.projectKey) {
@@ -218,7 +237,10 @@ onMounted(load);
           <UFormField label="Ticket language">
             <USelectMenu v-model="form.locale" :items="localeItems" value-key="value" class="w-full" />
           </UFormField>
-          <UFormField label="Jira project">
+          <UFormField label="Jira project" :help="noProjectsHelp">
+            <template v-if="projectLink" #hint>
+              <OutboundLink :href="projectLink">Open in Jira</OutboundLink>
+            </template>
             <USelectMenu
               v-model="form.projectKey"
               :items="projectKeyItems"

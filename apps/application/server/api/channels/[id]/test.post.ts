@@ -1,11 +1,10 @@
-import { teamsMessage } from '../../../utils/notifications/teams';
 import { eq } from 'drizzle-orm';
 import { getDatabase } from '../../../database';
 import { notificationChannels, users } from '../../../database/schema';
 import { requireAuth } from '../../../utils/auth';
 import { decryptSecret, getEncryptionKey } from '../../../utils/crypto';
-import { sendEmail, renderTestEmail, isEmailConfigured } from '../../../utils/email';
-import { safeFetch } from '../../../utils/safe-fetch';
+import { deliverChannelTest } from '../../../utils/notifications/channel-test';
+import { channelDeliveryHint, isDeliverableChannelType, type ChannelType } from '#shared/notifications/channel-setup';
 import { Role } from '#shared/types';
 
 defineRouteMeta({
@@ -27,6 +26,10 @@ defineRouteMeta({
               properties: {
                 success: { type: 'boolean' },
                 error: { type: 'string', description: 'Present only when success is false.' },
+                hint: {
+                  type: 'string',
+                  description: 'What to do about a failed delivery, when there is more to say than the error.',
+                },
               },
             },
           },
@@ -53,54 +56,18 @@ export default eventHandler(async (event) => {
   }
 
   const config = (channel.config ?? {}) as Record<string, unknown>;
+  const type = channel.type as ChannelType | 'personal_email';
 
   try {
-    if (channel.type === 'personal_email') {
+    if (type === 'personal_email') {
       if (!channel.userId) throw new Error('Personal email channel has no owner');
-      if (!isEmailConfigured()) throw new Error('SMTP not configured');
       const [owner] = await db.select({ email: users.email }).from(users).where(eq(users.id, channel.userId));
       if (!owner?.email) throw new Error('Account has no email address');
-      const { html, text } = renderTestEmail(owner.email);
-      await sendEmail({ to: owner.email, subject: 'Test notification — Piwi Dashboard', html, text });
-    } else if (channel.type === 'email') {
-      const to = config.address as string;
-      if (!to) throw new Error('No email address configured');
-      if (!isEmailConfigured()) throw new Error('SMTP not configured');
-      const { html, text } = renderTestEmail(to);
-      await sendEmail({ to, subject: 'Test notification — Piwi Dashboard', html, text });
-    } else if (channel.type === 'slack') {
-      const webhookUrl = config.webhookUrl as string;
-      if (!webhookUrl) throw new Error('No Slack webhook URL');
-      const res = await safeFetch(webhookUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: ':bell: Test notification from Piwi Dashboard' }),
-      });
-      if (!res.ok) throw new Error(`Slack returned ${res.status}`);
-    } else if (channel.type === 'teams') {
-      const webhookUrl = config.webhookUrl as string;
-      if (!webhookUrl) throw new Error('No Microsoft Teams webhook URL');
-      const res = await safeFetch(webhookUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(
-          teamsMessage([{ type: 'TextBlock', text: 'Test notification from Piwi Dashboard', wrap: true }]),
-        ),
-      });
-      if (!res.ok) throw new Error(`Microsoft Teams returned ${res.status}`);
-    } else if (channel.type === 'webhook') {
-      const url = config.url as string;
-      if (!url) throw new Error('No webhook URL');
-      const encryptedSecret = config.secret as string | undefined;
-      const secret = encryptedSecret ? decryptSecret(encryptedSecret, getEncryptionKey()) : null;
-      const body = JSON.stringify({ event: 'test', payload: {}, timestamp: new Date().toISOString() });
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (secret) {
-        const { createHmac } = await import('node:crypto');
-        headers['X-Piwi-Signature'] = `sha256=${createHmac('sha256', secret).update(body).digest('hex')}`;
-      }
-      const res = await safeFetch(url, { method: 'POST', headers, body });
-      if (!res.ok) throw new Error(`Webhook returned ${res.status}`);
+      await deliverChannelTest({ type: 'email', config: { address: owner.email } });
+    } else if (isDeliverableChannelType(type)) {
+      const encryptedSecret = typeof config.secret === 'string' ? config.secret : null;
+      const secret = type === 'webhook' && encryptedSecret ? decryptSecret(encryptedSecret, getEncryptionKey()) : null;
+      await deliverChannelTest({ type, config, secret });
     }
 
     // A delivered test proves the destination works. personal_email stays
@@ -114,6 +81,7 @@ export default eventHandler(async (event) => {
     return { success: true };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    return { success: false, error: message };
+    const hint = channelDeliveryHint(type === 'personal_email' ? 'email' : (type as ChannelType), message);
+    return { success: false, error: message, ...(hint ? { hint } : {}) };
   }
 });

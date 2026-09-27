@@ -7,6 +7,7 @@
 import type { IntegrationProviderName } from './registry';
 import type { IssueDocument } from './document';
 import type { IssueLocale } from './messages';
+import type { JiraTokenKind } from './jira-setup';
 
 export type ConnectionStatus = 'unverified' | 'ok' | 'failed';
 export type ConnectionManagedBy = 'db' | 'env';
@@ -52,8 +53,52 @@ export interface ConnectionTestResult {
   ok: boolean;
   /** The account the credentials resolved to, when the test succeeded. */
   account?: { id: string; displayName: string };
+  /** Whether the token turned out classic or scoped, when the test succeeded. */
+  tokenKind?: JiraTokenKind;
   /** Provider error text when the test failed. */
   error?: string;
+  /** What to do about the failure, when there is more to say than the error. */
+  hint?: string | null;
+}
+
+/** One step of a connection check. */
+export interface ConnectionCheckStep {
+  ok: boolean;
+  error?: string;
+  hint?: string | null;
+}
+
+/**
+ * What `POST connections/check` reports before anything is saved: whether the
+ * address is a Jira site, then — when credentials were supplied — whether they
+ * sign in, which kind of token they are, and how many projects the account sees.
+ */
+export interface ConnectionCheckResult {
+  /** The site URL the check ran against, read from what was typed. */
+  baseUrl: string;
+  site: ConnectionCheckStep & {
+    /** False when nothing answered at the address (DNS, refused connection, timeout). */
+    reachable: boolean;
+    /** `Cloud`, `Server` or `DataCenter`, as the site reports itself. */
+    deploymentType: string | null;
+    /** The site's own name for itself. */
+    title: string | null;
+    /** The address the site reports for itself, when it differs from `baseUrl`. */
+    reportedUrl: string | null;
+    /** A Cloud site's tenant id — the gateway path a scoped token calls. */
+    cloudId: string | null;
+  };
+  /** Present when credentials were supplied (or kept from the connection being edited). */
+  auth?: ConnectionCheckStep & {
+    account?: { id: string; displayName: string };
+    tokenKind?: JiraTokenKind;
+  };
+  /** Present once the credentials signed in. */
+  projects?: ConnectionCheckStep & {
+    count: number;
+    /** The first few project keys, to recognize the account's reach at a glance. */
+    keys: string[];
+  };
 }
 
 /** A tracker the UI can file into — what `GET status` returns. */
@@ -61,6 +106,8 @@ export interface TrackerSummary {
   id: number;
   provider: IntegrationProviderName;
   name: string;
+  /** The tracker's site URL, for linking to a project on it. */
+  baseUrl: string;
 }
 
 /** A tracker project option for the create modal's picker. */

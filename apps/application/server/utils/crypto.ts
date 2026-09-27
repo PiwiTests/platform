@@ -55,6 +55,15 @@ export function decryptSecret(ciphertext: string, secret: string): string {
 }
 
 /**
+ * Whether secrets can be stored: `PIWI_SECRET_KEY` is set to something other
+ * than the published development default, which `encryptSecret` refuses.
+ */
+export function canEncryptSecrets(): boolean {
+  const key = process.env.PIWI_SECRET_KEY;
+  return !!key && key !== DEFAULT_INSECURE_SECRET;
+}
+
+/**
  * Returns the secret key used for DB-level encryption.
  * Reads `PIWI_SECRET_KEY`; falls back to an insecure default so local dev
  * works out-of-the-box. Set this in production even when auth is disabled.

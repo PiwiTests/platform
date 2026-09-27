@@ -13,12 +13,10 @@ import type {
   TrackerUser,
 } from '../types';
 import { statusColorForCategory, toStatusCategory } from '../types';
+import { ATLASSIAN_API_GATEWAY } from '#shared/integrations/jira-setup';
 import { createHash } from 'node:crypto';
 
 const JIRA_TIMEOUT_MS = 10_000;
-
-/** The Atlassian API gateway a scoped ("granular") API token must go through. */
-const ATLASSIAN_API_GATEWAY = 'https://api.atlassian.com/ex/jira';
 
 /**
  * Cloud ids resolved for scoped-token credentials, so only the first request for
