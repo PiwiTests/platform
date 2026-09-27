@@ -130,6 +130,7 @@ export const guideSidebar: SidebarGroup[] = [
       { text: 'What Piwi does', link: '/guide/what-piwi-does' },
       { text: 'Why Piwi?', link: '/guide/comparison' },
       { text: 'Privacy & data flow', link: '/guide/privacy' },
+      { text: 'License', link: '/guide/license' },
     ],
   },
 ];

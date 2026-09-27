@@ -27,7 +27,7 @@
     "url": "https://github.com/PiwiTests/platform/issues"
   },
   "author": "piwitests",
-  "license": "MIT",
+  "license": "FSL-1.1-MIT",
   "keywords": [
     "playwright",
     "dashboard",

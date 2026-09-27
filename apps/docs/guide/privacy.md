@@ -103,7 +103,7 @@ by anything else. See [Storage → Data retention](/operate/storage#data-retenti
 
 ## Verifying any of this
 
-You don't have to take the page's word for it. The source is MIT-licensed and the outbound surface is
+You don't have to take the page's word for it. The source is public and the outbound surface is
 small enough to audit: watch the container's egress, or read
 [`server/utils/`](https://github.com/PiwiTests/platform/tree/main/apps/application/server/utils) — the AI
 provider, SCM, SMTP, storage and notification clients are the only things there that open a socket.

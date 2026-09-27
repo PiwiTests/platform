@@ -1,6 +1,6 @@
 # Piwi Dashboard
 
-**Your Playwright results, kept and explained.** CI throws away every report it makes. Piwi keeps them — then groups the failures by root cause, scores the flaky tests, and finds the locator you should have used. Self-hosted, MIT, zero telemetry.
+**Your Playwright results, kept and explained.** CI throws away every report it makes. Piwi keeps them — then groups the failures by root cause, scores the flaky tests, and finds the locator you should have used. Self-hosted, zero telemetry.
 
 📖 [Full documentation](https://piwitests.dev) · 🎮 [Live demo](https://piwitests.dev/demo/) · 💬 [GitHub](https://github.com/PiwiTests/platform)
 
@@ -76,4 +76,4 @@ Beyond those: `PIWI_DATABASE_URL` switches to PostgreSQL, `PIWI_STORAGE_TYPE=s3`
 
 ## License
 
-MIT — [source code on GitHub](https://github.com/PiwiTests/platform)
+FSL-1.1-MIT (fair source): free to use, self-host and modify, at work too; each release becomes MIT two years after it is published. See [License](https://piwitests.dev/guide/license) · [source code on GitHub](https://github.com/PiwiTests/platform)

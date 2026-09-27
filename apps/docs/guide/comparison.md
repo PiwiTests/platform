@@ -34,7 +34,7 @@ Every tool below is good at what it targets. The honest differences:
 | Web vitals & network capture | ✅ | ➖ in traces | ❌ | ❌ | ✅ | ➖ |
 | MCP server for AI agents | ✅ | ❌ | ❌ | ❌ | ✅ | ➖ |
 | Framework support | Playwright only (by design) | Playwright | Many | Many | Playwright, Cypress, Jest… | Playwright only |
-| Price | Free, MIT | Free | Free | Free (self-host) / paid SaaS | Paid | Free, OSS |
+| Price | Free, [fair source](/guide/license) | Free | Free | Free (self-host) / paid SaaS | Paid | Free, OSS |
 
 In the **Fault0** column, ➖ marks a capability we did not find in its public docs at the time of writing (not necessarily a confirmed absence) — the two products share the core results-dashboard experience and differ mainly in Piwi's analysis depth. Corrections welcome.
 

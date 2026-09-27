@@ -1,0 +1,7 @@
+# Canonical author identities for git log, shortlog and blame.
+# Commits are not rewritten; show the raw identity with --no-mailmap.
+Fabien Ménager <PhenX@users.noreply.github.com>
+Fabien Ménager <PhenX@users.noreply.github.com> <phenx@users.noreply.github.com>
+Fabien Ménager <PhenX@users.noreply.github.com> <fabien.menager@gmail.com>
+Fabien Ménager <PhenX@users.noreply.github.com> <fabien.menager@repply.fr>
+Fabien Ménager <PhenX@users.noreply.github.com> <fabien.menager@am-creations.fr>

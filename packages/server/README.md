@@ -73,4 +73,6 @@ Playwright project and point it at this server — see the
 
 ## License
 
-MIT
+[FSL-1.1-MIT](LICENSE) (fair source): free to use, self-host and modify, at work too. It rules out offering Piwi, or a
+product built from it, as a commercial product or service that competes with it. Each release becomes MIT two years
+after it is published. See [License](https://piwitests.dev/guide/license).
