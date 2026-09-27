@@ -19,12 +19,14 @@ import { createCursor, type FakeCursor } from './replay-cursor.js';
 import {
   ACTION_TIMEOUT_MS,
   ASSERT_TIMEOUT_MS,
+  endHover,
   findAll,
   locatorFor,
   observe,
   performCheck,
   performClick,
   performFill,
+  performHover,
   performPress,
   performSelect,
   resolveForAction,
@@ -357,6 +359,7 @@ async function recordResult(state: ReplayState, index: number, result: ReplaySte
 async function finish(state: ReplayState, stopped: boolean): Promise<void> {
   const steps = sessionFromSteps(state.steps, state.origin).steps;
   const verdict = replayVerdict(steps, state.results, stopped);
+  endHover();
   const final: ReplayState = { ...state, status: stopped ? 'stopped' : 'done', cursor: cursor?.position() ?? null };
   await setReplayState(final);
   notifyFinished();
@@ -377,6 +380,9 @@ async function act(step: RecordedStep, element: Element): Promise<boolean> {
   switch (step.action) {
     case 'click':
       await performClick(element, c, caption(step));
+      return true;
+    case 'hover':
+      await performHover(element, c, caption(step));
       return true;
     case 'fill':
       if (step.redacted) return performFill(element, '', c, caption(step));

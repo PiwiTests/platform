@@ -265,6 +265,29 @@ JavaScript world, so:
   not a page that means harm; `readRelayedEntry` rebuilds every entry field by field and truncates
   it, and storage caps each kind at 100. Treat everything it relays as page-controlled text.
 
+## Hovers a click depends on
+
+Some elements show only while another is hovered. At each press, `record-panel.ts` asks `hoverTargets` which hovers
+revealed the pressed element or an ancestor, and records a `hover` step for each before the click:
+
+- **CSS `:hover`** — `hover-rules.ts` reads the page's same-origin sheets once per change (inside `@media`,
+  `@supports`, `@layer`, `@container`, and nested rules resolved to their full selector) and keeps the `:hover` rules
+  that set `display`, `visibility`, `opacity` or `pointer-events`, and the rules that hide. `cssHoverSubjects`
+  (`hover-reveal.ts`) keeps a rule that applies now to an element another rule hides, then finds the hovered element
+  by writing `:hover` as the `data-piwi-hover-probe` attribute and setting it on ancestors until the rule matches; the
+  attribute is removed before it returns, and is the only change to the page.
+- **Script** — `HoverTracker` follows trusted `pointerover` entries and a `MutationObserver`'s insertions (and
+  `style`/`hidden` changes that show an element). An element inserted soon after the pointer entered an ancestor, with
+  no press in between, was revealed by that ancestor's hover.
+- The step names the element the pointer entered the subject through when the subject's own name includes what the
+  hover shows (a row read as "Invoice 42Delete"), through the same verified locators as the click.
+
+The replay emulates CSS `:hover` without the `debugger` permission (`hover-emulation.ts`): a constructed sheet repeats
+the `:hover` rules with the `data-piwi-hover` attribute in place of `:hover`, and `dispatchHover` sets the attribute on
+the element pointed at and its ancestors, moving it with each step and removing everything when the replay ends. The
+pointer events it sends follow the element tree: leaves for the ancestors it left, enters for the ones it entered.
+`hover.spec.ts` records, replays and runs the spec of each kind of reveal on `tests/e2e/pages/hover-*.html`.
+
 ## Content-script structure
 
 Each standalone content-script feature (locator console, multi-pick, lint overlay, assertion
