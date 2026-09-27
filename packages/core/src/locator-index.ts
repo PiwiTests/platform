@@ -51,6 +51,16 @@ export interface LocatorIndexUse {
    * on the default branch stands in.
    */
   branches: string[];
+  /**
+   * Positions in `LocatorIndex.pages` of the pages the calls ran on, as the
+   * capture fixtures recorded them. Absent or empty: the page is unknown (a
+   * run without the fixtures), and the use counts on every page.
+   */
+  pages?: number[];
+  /** Of `pages`, those where a call ran before any locator interaction: the element was there as the page loaded. */
+  arrival?: number[];
+  /** The use was recorded on more pages than `pages` lists. */
+  pagesTruncated?: boolean;
 }
 
 export interface LocatorIndexEntry {
@@ -91,6 +101,12 @@ export interface LocatorIndex {
   generatedAt: string;
   /** The attributes `getByTestId` reads in this project (Playwright's `testIdAttribute`), when a run reported one. */
   testIdAttributes: string[] | null;
+  /**
+   * The page keys uses were recorded on, the most used first (`/checkout`,
+   * `/orders/:id`; a third-party page keeps its origin). Absent when no run
+   * recorded a page.
+   */
+  pages?: string[];
   tests: LocatorIndexTest[];
   /** Most widely used chains first. */
   locators: LocatorIndexEntry[];

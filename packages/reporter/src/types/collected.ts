@@ -14,6 +14,7 @@ import type {
   TestMetadata,
   TestSourceFrame,
   TestStepEvent,
+  LocatorPageUse,
 } from './wire.js';
 import type { LocatorSnapshot } from '../internal/capture/locator-healing.js';
 
@@ -108,6 +109,8 @@ export interface CollectedTestCase {
   ariaSnapshotJson?: string;
   /** Parsed from `piwi-locators` attachment. */
   locatorSnapshots?: LocatorSnapshot[];
+  /** Parsed from `piwi-locator-pages`: the page each locator call ran on. */
+  locatorPages?: LocatorPageUse[];
   /** Why a `didnotrun` case never executed; unset for tests that ran. */
   didNotRunReason?: string | null;
   /** For a `previous-failure` cascade, the location of the failing test that blocked it. */

@@ -23,6 +23,8 @@ export interface ExecutionLocatorUse {
   sameLocatorTests: number;
   /** Distinct tests whose chains end on the same target call, whatever their containers. */
   sameTargetTests: number;
+  /** The pages this execution made the call on, when the capture fixtures recorded them. */
+  pages?: string[];
 }
 
 export interface ExecutionLocatorsResult {
@@ -51,6 +53,8 @@ export interface LocatorUsageSite {
   actions: string[];
   tests: LocatorUsageTest[];
   lastSeenAt: string;
+  /** The pages the calls ran on, when the capture fixtures recorded them. */
+  pages?: string[];
 }
 
 export interface LocatorUsagesResult {

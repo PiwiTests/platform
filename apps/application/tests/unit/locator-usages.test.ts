@@ -565,3 +565,138 @@ describe('parseLocatorBranchQuery', () => {
     expect(parseLocatorBranchQuery('x'.repeat(256))).toHaveProperty('error');
   });
 });
+
+describe('pages', () => {
+  /** A `piwi-locator-pages` entry for a call at `location` (project-relative) on `page` of the shop. */
+  const onPage = (location: string, locator: string, page: string, arrival = true, origin = 'https://shop.test') => ({
+    location: `${ROOT}${location}`,
+    locator,
+    origin,
+    page,
+    arrival,
+  });
+  const shopRun = () =>
+    seedRun({ metadata: { htmlReport: { projects: [{ use: { baseURL: 'https://shop.test' } }] } } });
+
+  test('a use made on two pages is a row per page, with whether it ran there on arrival', async () => {
+    await seedCase(1, 'pays by card');
+    const runId = await shopRun();
+    await upsertLocatorUsages(db as never, 1, [
+      exec(
+        runId,
+        [step('Click', PAY, 'pages/pay.ts:9:5'), step('Select option', COUNTRY, 'tests/checkout.spec.ts:21:3')],
+        {
+          locatorPages: [
+            onPage('pages/pay.ts:9:5', PAY, '/checkout', true),
+            onPage('pages/pay.ts:9:5', PAY, '/orders/:id', false),
+            // Another column on the same line: the wrapper's stack and the step can disagree.
+            onPage('tests/checkout.spec.ts:21:9', COUNTRY, '/checkout', false),
+          ],
+        },
+      ),
+    ]);
+    const rows = (await usages()).map((r) => [r.locator, r.page, r.arrival]).sort();
+    expect(rows).toEqual(
+      [
+        [COUNTRY, '/checkout', false],
+        [PAY, '/checkout', true],
+        [PAY, '/orders/:id', false],
+      ].sort(),
+    );
+  });
+
+  test('a call with no recorded page is stored with an unknown page, and a third-party page keeps its origin', async () => {
+    await seedCase(1, 'pays by card');
+    const runId = await shopRun();
+    await upsertLocatorUsages(db as never, 1, [
+      exec(
+        runId,
+        [
+          step('Click', PAY, 'tests/checkout.spec.ts:20:3'),
+          step('Fill', "getByLabel('Card')", 'tests/checkout.spec.ts:22:3'),
+        ],
+        {
+          locatorPages: [
+            onPage('tests/checkout.spec.ts:22:3', "getByLabel('Card')", '/pay', true, 'https://pay.example'),
+          ],
+        },
+      ),
+    ]);
+    const rows = new Map((await usages()).map((r) => [r.locator, r.page]));
+    expect(rows.get(PAY)).toBe('');
+    expect(rows.get("getByLabel('Card')")).toBe('https://pay.example/pay');
+  });
+
+  test('a complete run that moved a use to another page drops the old page', async () => {
+    await seedCase(1, 'pays by card');
+    const first = await shopRun();
+    const steps = [step('Click', PAY, 'tests/checkout.spec.ts:20:3')];
+    await upsertLocatorUsages(db as never, 1, [
+      exec(first, steps, { locatorPages: [onPage('tests/checkout.spec.ts:20:3', PAY, '/cart')] }),
+    ]);
+    const second = await shopRun();
+    await upsertLocatorUsages(db as never, 1, [
+      exec(second, steps, { locatorPages: [onPage('tests/checkout.spec.ts:20:3', PAY, '/checkout')] }),
+    ]);
+    expect((await usages()).map((r) => r.page)).toEqual(['/checkout']);
+  });
+
+  test('the index lists the pages, most used first, and each use its pages and arrivals', async () => {
+    await seedCase(1, 'pays by card');
+    await seedCase(2, 'pays with a voucher');
+    const runId = await shopRun();
+    const pay = step('Click', PAY, 'tests/checkout.spec.ts:20:3');
+    await upsertLocatorUsages(db as never, 1, [
+      exec(runId, [pay], {
+        locatorPages: [
+          onPage('tests/checkout.spec.ts:20:3', PAY, '/checkout', true),
+          onPage('tests/checkout.spec.ts:20:3', PAY, '/cart', false),
+        ],
+      }),
+      exec(runId, [pay], { caseId: 2, locatorPages: [onPage('tests/checkout.spec.ts:20:3', PAY, '/checkout', false)] }),
+    ]);
+    const index = await getLocatorIndex(db as never, 1);
+    expect(index!.pages).toEqual(['/checkout', '/cart']);
+    const [entry] = index!.locators;
+    const byTest = new Map(entry!.uses.map((u) => [index!.tests[u.test]!.title, u]));
+    expect(byTest.get('pays by card')).toMatchObject({ pages: [0, 1], arrival: [0] });
+    expect(byTest.get('pays with a voucher')).toMatchObject({ pages: [0] });
+    expect(byTest.get('pays with a voucher')!.arrival).toBeUndefined();
+
+    const usagesResult = await getLocatorUsages(db as never, 1, 'locator', PAY);
+    expect(usagesResult.sites[0]!.pages?.sort()).toEqual(['/cart', '/checkout']);
+  });
+
+  test('an index without any recorded page says nothing about pages', async () => {
+    await seedCase(1, 'pays by card');
+    const runId = await seedRun();
+    await upsertLocatorUsages(db as never, 1, [exec(runId, [step('Click', PAY, 'tests/checkout.spec.ts:20:3')])]);
+    const index = await getLocatorIndex(db as never, 1);
+    expect(index!.pages).toBeUndefined();
+    expect(index!.locators[0]!.uses[0]!.pages).toBeUndefined();
+  });
+
+  test('a rebuild reads the pages stored with each execution', async () => {
+    await seedCase(1, 'pays by card');
+    const runId = await shopRun();
+    const [payload] = await db
+      .insert(schema.casePayloads)
+      .values({
+        projectId: 1,
+        hash: 'h1',
+        content: JSON.stringify([onPage('tests/checkout.spec.ts:20:3', PAY, '/checkout')]),
+        size: 10,
+      })
+      .returning({ id: schema.casePayloads.id });
+    const executionId = await seedExecution(runId, 1, [step('Click', PAY, 'tests/checkout.spec.ts:20:3')]);
+    await db
+      .update(schema.testRunsCases)
+      .set({ locatorPagesPayloadId: payload!.id })
+      .where(eq(schema.testRunsCases.id, executionId));
+
+    await backfillLocatorUsages(db as never, 1, { reset: true });
+    expect((await usages()).map((r) => [r.page, r.arrival])).toEqual([['/checkout', true]]);
+    const locators = await getExecutionLocators(db as never, executionId);
+    expect(locators!.uses[0]!.pages).toEqual(['/checkout']);
+  });
+});

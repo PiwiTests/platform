@@ -47,6 +47,7 @@ import {
 import { collectOwnOrigins, originsFromDocumentRequests } from '#shared/graph';
 import { isProbeRun } from '#shared/handlers/probes';
 import { upsertLocatorUsages, type LocatorUsageCase } from './locator-usages';
+import { sanitizeLocatorPages } from './locator-pages';
 import type { LocatorSnapshot } from '#shared/locator-healing.types';
 import type { DbClient as DB } from '../database';
 
@@ -98,6 +99,8 @@ export interface RunCaseInput {
   pageState?: unknown;
   /** Controls and links per visited page (passing runs) — stored through case_payloads. */
   pageInventory?: unknown;
+  /** The page each locator call ran on — stored through case_payloads, joined to the locator index. */
+  locatorPages?: unknown;
   aiUsage?: unknown;
   consoleLogs?: unknown;
   dialogs?: unknown;
@@ -409,6 +412,7 @@ export async function persistRunCases(
     source: string | null;
     framesJson: string | null;
     inventory: string | null;
+    locatorPages: string | null;
   }> = [];
   const networkRequestBuilders: NetworkRequestBuilder[] = [];
   const rowFingerprints: Array<ErrorFingerprint | null> = [];
@@ -474,10 +478,12 @@ export async function persistRunCases(
     // A use missing from a passed execution whose steps were all kept has left
     // the test; any other execution only adds.
     const cappedSteps = capSteps(c.steps, limits);
+    const locatorPages = sanitizeLocatorPages(c.locatorPages);
     perCaseUsages.push({
       caseId,
       browserName: resolveBrowserName(c.browser),
       steps: cappedSteps,
+      locatorPages,
       filePath: c.filePath,
       runId: testRunId,
       complete: c.status === 'passed' && Array.isArray(c.steps) && c.steps.length <= limits.steps,
@@ -509,6 +515,7 @@ export async function persistRunCases(
       source,
       framesJson: frames != null ? JSON.stringify(frames) : null,
       inventory,
+      locatorPages: locatorPages ? JSON.stringify(locatorPages) : null,
     });
 
     runCasesRows.push({
@@ -568,7 +575,7 @@ export async function persistRunCases(
   const payloadIds = await upsertCasePayloads(
     db,
     projectId,
-    rowPayloads.flatMap((p) => [p.aria, p.ariaJson, p.source, p.framesJson, p.inventory]),
+    rowPayloads.flatMap((p) => [p.aria, p.ariaJson, p.source, p.framesJson, p.inventory, p.locatorPages]),
   );
   runCasesRows.forEach((row, i) => {
     const p = rowPayloads[i]!;
@@ -577,6 +584,7 @@ export async function persistRunCases(
     row.testSourcePayloadId = p.source ? (payloadIds.get(p.source) ?? null) : null;
     row.testSourceFramesPayloadId = p.framesJson ? (payloadIds.get(p.framesJson) ?? null) : null;
     row.pageInventoryPayloadId = p.inventory ? (payloadIds.get(p.inventory) ?? null) : null;
+    row.locatorPagesPayloadId = p.locatorPages ? (payloadIds.get(p.locatorPages) ?? null) : null;
   });
 
   // A probe run's failures are injected, not real: it never counts as a real

@@ -596,6 +596,13 @@
       "when": 1790415994624,
       "tag": "0084_square_iron_lad",
       "breakpoints": true
+    },
+    {
+      "idx": 85,
+      "version": "7",
+      "when": 1790470774860,
+      "tag": "0085_locator_pages",
+      "breakpoints": true
     }
   ]
 }

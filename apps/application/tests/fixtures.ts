@@ -37,6 +37,9 @@ import {
   computeCoreVitals,
   probeElementAttrs,
   CAPTURED_ATTRS_ARG,
+  LocatorPageLog,
+  noteLocatorCall,
+  noteNavigation,
 } from '../../../packages/reporter/dist/internal/capture/capture-fixtures.js';
 import {
   inspectionGateFromTestInfo,
@@ -266,6 +269,15 @@ export const test = base.extend<{ page: Page }>({
     // Call sites already captured via a passing assertion this test —
     // assertions are denser than actions, so each site probes only once.
     const expectCapturedLocations = new Set<string>();
+    // The page each locator call ran on (mirrors the reporter fixture's `piwi-locator-pages`).
+    const locatorPages = new LocatorPageLog();
+    const recordPage = (target: unknown, location: string | null, arrival: boolean) => {
+      try {
+        locatorPages.record({ location, locator: String(target), url: page.url(), arrival });
+      } catch {
+        // A side channel: it must never affect the test.
+      }
+    };
 
     // Method-surface constants and the in-page probe are imported from the
     // reporter so this fixture stays in lockstep with the reporter's proxy
@@ -351,6 +363,10 @@ export const test = base.extend<{ page: Page }>({
             return async (...callArgs: unknown[]) => {
               const expression = typeof callArgs[0] === 'string' ? callArgs[0] : '';
               const isNot = Boolean((callArgs[1] as { isNot?: boolean } | undefined)?.isNot);
+              // Sync, before the await — the caller's frames are gone after it.
+              const callerLocation = captureCallerLocation();
+              // Every assertion records the page it ran on, negations included.
+              recordPage(target, callerLocation, noteLocatorCall(page, EXPECT_METHOD, true));
               // Only positive presence-proving assertions participate —
               // negations, absence/count/page-level assertions, and any
               // unknown future expression pass through untouched.
@@ -358,8 +374,6 @@ export const test = base.extend<{ page: Page }>({
                 return original.apply(target, callArgs);
               }
 
-              // Sync, before the await — the caller's frames are gone after it.
-              const callerLocation = captureCallerLocation();
               const used = {
                 method: originMethod,
                 args: originArgs,
@@ -403,6 +417,7 @@ export const test = base.extend<{ page: Page }>({
             // Capture the test call-site now (sync) so the snapshot's location
             // matches the error stack's first user frame.
             const callerLocation = captureCallerLocation();
+            recordPage(target, callerLocation, noteLocatorCall(page, String(prop)));
             const used = {
               method: originMethod,
               args: originArgs,
@@ -441,6 +456,9 @@ export const test = base.extend<{ page: Page }>({
         const original = (page as any)[method].bind(page);
         (page as any)[method] = (...args: unknown[]) => wrapLocator(original(...args), method, args);
       }
+      page.on('framenavigated', (frame) => {
+        if (frame === page.mainFrame()) noteNavigation(page);
+      });
     }
 
     // ── Existing event listeners ──────────────────────────────────────────
@@ -487,6 +505,12 @@ export const test = base.extend<{ page: Page }>({
         contentType: 'application/json',
         // Repeated call sites (loops) keep only their latest capture.
         body: Buffer.from(JSON.stringify(dedupeSnapshotsByLocation(capturedLocators))),
+      });
+    }
+    if (locatorPages.size > 0) {
+      await testInfo.attach(ATTACHMENT_NAMES.locatorPages, {
+        contentType: 'application/json',
+        body: Buffer.from(JSON.stringify(locatorPages.list())),
       });
     }
 

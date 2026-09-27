@@ -118,6 +118,7 @@ export async function deleteRunsByIds(
         source: testRunsCases.testSourcePayloadId,
         frames: testRunsCases.testSourceFramesPayloadId,
         inventory: testRunsCases.pageInventoryPayloadId,
+        locatorPages: testRunsCases.locatorPagesPayloadId,
       })
       .from(testRunsCases)
       .where(inArray(testRunsCases.id, batch));
@@ -127,6 +128,7 @@ export async function deleteRunsByIds(
       if (ref.source != null) candidatePayloadIds.add(ref.source);
       if (ref.frames != null) candidatePayloadIds.add(ref.frames);
       if (ref.inventory != null) candidatePayloadIds.add(ref.inventory);
+      if (ref.locatorPages != null) candidatePayloadIds.add(ref.locatorPages);
     }
   }
 
@@ -322,7 +324,8 @@ function payloadUnreferenced(): SQL {
     AND NOT EXISTS (SELECT 1 FROM ${testRunsCases} WHERE ${testRunsCases.ariaSnapshotJsonPayloadId} = ${casePayloads.id})
     AND NOT EXISTS (SELECT 1 FROM ${testRunsCases} WHERE ${testRunsCases.testSourcePayloadId} = ${casePayloads.id})
     AND NOT EXISTS (SELECT 1 FROM ${testRunsCases} WHERE ${testRunsCases.testSourceFramesPayloadId} = ${casePayloads.id})
-    AND NOT EXISTS (SELECT 1 FROM ${testRunsCases} WHERE ${testRunsCases.pageInventoryPayloadId} = ${casePayloads.id})`;
+    AND NOT EXISTS (SELECT 1 FROM ${testRunsCases} WHERE ${testRunsCases.pageInventoryPayloadId} = ${casePayloads.id})
+    AND NOT EXISTS (SELECT 1 FROM ${testRunsCases} WHERE ${testRunsCases.locatorPagesPayloadId} = ${casePayloads.id})`;
 }
 
 export interface OrphanSweepResult {

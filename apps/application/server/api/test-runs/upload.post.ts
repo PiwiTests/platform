@@ -505,6 +505,7 @@ export default eventHandler(async (event) => {
         webVitals: testCase.webVitals,
         pageState: testCase.pageState,
         pageInventory: testCase.pageInventory,
+        locatorPages: testCase.locatorPages,
         aiUsage: testCase.aiUsage,
         consoleLogs: testCase.consoleLogs,
         dialogs: testCase.dialogs,

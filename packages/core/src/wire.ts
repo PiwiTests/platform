@@ -100,3 +100,22 @@ export interface TestStepEvent {
   status: string;
   location?: string | null;
 }
+
+/**
+ * One locator call and the page it ran on, as the capture fixtures record it
+ * in the `piwi-locator-pages` attachment: a test's calls, deduped by call
+ * site, chain and page. The dashboard joins it to the locator index, so a use
+ * of a chain knows the pages it was made on.
+ */
+export interface LocatorPageUse {
+  /** `file:line:col` of the call, as a step location reports it (absolute; the server makes it project-relative). */
+  location: string;
+  /** The chain as Playwright prints it (`Locator.toString()`). */
+  locator: string;
+  /** The page's origin (`https://shop.test`), to tell the application's pages from third-party ones. */
+  origin: string;
+  /** The page key: the path with ids and tokens collapsed, no query, no hash (`/orders/:id`). */
+  page: string;
+  /** No locator interaction happened on the page since it was navigated to: the element was there as it loaded. */
+  arrival: boolean;
+}
