@@ -32,11 +32,12 @@ npm run extension:build:release --workspace=apps/extension
 
 `--include-workspace-root` installs the root's development tools as well: its `prepare` script runs Git
 hooks setup (`husky`), which only prints `.git can't be found` here. The add-on is written to
-`apps/extension/dist/`. Its contents match the submitted add-on file exactly:
+`apps/extension/dist-firefox/` (and, for Chrome and Edge, `apps/extension/dist/`, whose manifest leaves out
+`background.scripts`). Its contents match the submitted add-on file exactly:
 
 ```bash
-mkdir submitted && cd submitted && unzip ../piwi-picker-v<version>.zip && cd ..
-diff -r submitted apps/extension/dist
+mkdir submitted && cd submitted && unzip ../piwi-picker-v<version>-firefox.zip && cd ..
+diff -r submitted apps/extension/dist-firefox
 ```
 
 ## What the build does
@@ -47,7 +48,8 @@ diff -r submitted apps/extension/dist
   self-contained script (Vite library mode, IIFE format), because `scripting.executeScript` injects files
   as classic scripts;
 - `popup.html` and `options.html` are built as normal pages into `assets/`;
-- `manifest.json` and `public/` (the icons and the `_locales/` translations) are copied as they are.
+- `manifest.json` and `public/` (the icons and the `_locales/` translations) are copied as they are into
+  `dist-firefox/`; `dist/` gets the same files, with the manifest's `background.scripts` left out.
 
 The output is minified by Vite's default minifier. Nothing is obfuscated, and no code is downloaded at
 runtime.

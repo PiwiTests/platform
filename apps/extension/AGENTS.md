@@ -27,7 +27,8 @@ AMO listings that are still outstanding.
   the key); don't change it once the add-on is published to AMO — a new ID creates a separate
   add-on rather than an update, orphaning existing installs. `background` names `background.js`
   twice, as `service_worker` (Chrome) and `scripts` (Firefox, which has no extension service
-  workers — AMO rejects the manifest without it), and `gecko.data_collection_permissions` is
+  workers — AMO rejects the manifest without it); the build writes `dist/` for Chrome and Edge
+  without `scripts` (Edge lists it as an error) and `dist-firefox/` with it, and `gecko.data_collection_permissions` is
   `"none"`, which holds only while nothing is sent anywhere but the user's own instance. See
   `PUBLISHING.md` §4. The manifest's `description` and the shortcut's label are `__MSG_*__`
   strings, translated in `public/_locales/` (English, the default, French, and German, Spanish and
