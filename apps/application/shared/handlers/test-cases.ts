@@ -42,6 +42,7 @@ import type { FlatStep } from '@piwitests/core/step-analysis';
 import type { RunMetadata } from '../../server/utils/run-json-types';
 
 import type { DrizzleDB } from './db';
+import { clusterKnownIssues } from './known-issues';
 
 export async function getTestCase(db: DrizzleDB, id: number) {
   const [testCase] = await db.select().from(testCases).where(eq(testCases.id, id));
@@ -101,6 +102,7 @@ export async function getTestCase(db: DrizzleDB, id: number) {
         startTime: testRuns.startTime,
         isNewRegression: testRunsCases.isNewRegression,
         isNewFlaky: testRunsCases.isNewFlaky,
+        failureClusterId: testRunsCases.failureClusterId,
       })
       .from(testRunsCases)
       .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
@@ -124,6 +126,12 @@ export async function getTestCase(db: DrizzleDB, id: number) {
   ]);
 
   const totalRuns = aggResult[0]?.totalRuns ?? 0;
+  const knownIssues = await clusterKnownIssues(
+    db,
+    recentExecutions
+      .map((e: { failureClusterId: number | null }) => e.failureClusterId)
+      .filter((c): c is number => c != null),
+  );
 
   return {
     id: testCase.id,
@@ -151,7 +159,10 @@ export async function getTestCase(db: DrizzleDB, id: number) {
       ...c,
       status: c.status ?? 'open',
     })),
-    recentExecutions,
+    recentExecutions: recentExecutions.map((e: { failureClusterId: number | null }) => ({
+      ...e,
+      knownIssue: e.failureClusterId != null ? (knownIssues.get(e.failureClusterId) ?? null) : null,
+    })),
     links,
   };
 }
@@ -309,6 +320,7 @@ export async function getTestRunCase(
         fixLandedRunId: cluster.fixLandedRunId ?? null,
         fixLandedAt: cluster.fixLandedAt ?? null,
         assignee: cluster.assignee ?? null,
+        knownIssue: (await clusterKnownIssues(db, [cluster.id])).get(cluster.id) ?? null,
       };
     }
   }
@@ -445,6 +457,7 @@ export async function getTestRunCase(
         owner: verdict.owner,
         clusterStatus: failureCluster?.status ?? null,
         assignee: failureCluster?.assignee ?? null,
+        knownIssue: failureCluster?.knownIssue ?? null,
         now: opts.now,
       })
     : null;

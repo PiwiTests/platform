@@ -1,6 +1,13 @@
 <script setup lang="ts">
 import { computed, nextTick, watch, onUnmounted } from 'vue';
-import type { TestRunDetails, TestCaseResult, ReportInfo, TestStepEvent, FailureGroup } from '~~/types/api';
+import type {
+  TestRunDetails,
+  TestCaseResult,
+  ReportInfo,
+  TestStepEvent,
+  FailureGroup,
+  RunClusterMeta,
+} from '~~/types/api';
 import type { LiveStepsByWorker } from '~/utils/live-steps';
 import { subscribeDemoEvents } from '~/demo/run-events';
 import { useRunStream } from '~/composables/useRunStream';
@@ -561,14 +568,17 @@ const showFailureTabs = computed(() => hasFailures.value || (testRun.value?.flak
 // taken from the same failure-groups payload. Fetched whenever the failure tabs
 // become available: a flaky-only run has no failedTests yet still has clusters,
 // and a live run can gain its first failure mid-stream.
-const clusterMeta = ref<Record<number, { name: string; status: string | null }>>({});
+const clusterMeta = ref<RunClusterMeta>({});
 
 async function fetchClusterMeta() {
   if (!import.meta.client) return;
   try {
     const r = await $fetch<{ items: FailureGroup[] }>(`/api/test-runs/${runId}/failure-groups`);
     clusterMeta.value = Object.fromEntries(
-      r.items.map((g) => [g.clusterId, { name: g.title || `Cluster #${g.clusterId}`, status: g.status ?? null }]),
+      r.items.map((g) => [
+        g.clusterId,
+        { name: g.title || `Cluster #${g.clusterId}`, status: g.status ?? null, issue: g.knownIssue ?? null },
+      ]),
     );
   } catch {
     // chips fall back to plain cluster ids, headers to no triage badge

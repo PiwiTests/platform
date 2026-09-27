@@ -8,6 +8,7 @@ import { and, desc, eq, isNotNull } from 'drizzle-orm';
 import { entityLinks } from '../../database/schema';
 import type { DbClient } from '../../database';
 import type { EntityLink } from '../../database/schema';
+import { clusterKnownIssues, isTrackerLink } from '#shared/handlers/known-issues';
 
 export interface KnownIssue {
   key: string;
@@ -26,7 +27,7 @@ export async function getClusterTrackerLink(db: DbClient, clusterId: number): Pr
     .from(entityLinks)
     .where(and(eq(entityLinks.failureClusterId, clusterId), isNotNull(entityLinks.key)))
     .orderBy(desc(entityLinks.id));
-  return links.find((l) => l.provider === 'jira' || l.connectionId != null) ?? null;
+  return links.find(isTrackerLink) ?? null;
 }
 
 /** The cluster's known tracker issue, or null. */
@@ -38,11 +39,6 @@ export async function getClusterKnownIssue(db: DbClient, clusterId: number): Pro
 
 /** Known issues for several clusters at once, keyed by cluster id. */
 export async function getClusterKnownIssues(db: DbClient, clusterIds: number[]): Promise<Map<number, KnownIssue>> {
-  const out = new Map<number, KnownIssue>();
-  const unique = [...new Set(clusterIds.filter((id) => id != null))];
-  for (const id of unique) {
-    const issue = await getClusterKnownIssue(db, id);
-    if (issue) out.set(id, issue);
-  }
-  return out;
+  const issues = await clusterKnownIssues(db, clusterIds);
+  return new Map([...issues].map(([id, issue]) => [id, { key: issue.key, url: issue.url, status: issue.status }]));
 }

@@ -135,6 +135,8 @@ test.describe.serial('Integrations — create an issue', () => {
   let baseUrl = '';
   let connectionId = 0;
   let clusterId = 0;
+  let runId = 0;
+  let executionId = 0;
   let createdKey = '';
   // Regenerated on every beforeAll run so a serial-group retry gets fresh clusters.
   let runTag = '';
@@ -177,10 +179,12 @@ test.describe.serial('Integrations — create an issue', () => {
         ],
       },
     });
-    const { runId } = await submit.json();
+    runId = (await submit.json()).runId;
     const runDetail = await request.get(`/api/test-runs/${runId}`);
-    const cases = (await runDetail.json()).testCases as { failureClusterId?: number }[];
-    clusterId = cases.find((c) => c.failureClusterId)!.failureClusterId!;
+    const cases = (await runDetail.json()).testCases as { failureClusterId?: number; executionId: number }[];
+    const failing = cases.find((c) => c.failureClusterId)!;
+    clusterId = failing.failureClusterId!;
+    executionId = failing.executionId;
   });
 
   test.afterAll(async ({ request }) => {
@@ -236,6 +240,19 @@ test.describe.serial('Integrations — create an issue', () => {
     expect(link?.statusText).toBe('To Do');
     expect(link?.origin).toBe('created');
     expect(mock.created()).toBe(1);
+  });
+
+  test('the failing execution shows the issue on its page and on its row in the run', async ({ page, request }) => {
+    const execution = await (await request.get(`/api/test-run-cases/${executionId}`)).json();
+    expect(execution.failureCluster.knownIssue.key).toBe(createdKey);
+
+    await page.goto(`/test-run-cases/${executionId}`);
+    const tracked = page.getByTestId('situation-issue');
+    await expect(tracked).toHaveText(createdKey);
+    await expect(tracked).toHaveAttribute('href', new RegExp(`/browse/${createdKey}$`));
+
+    await page.goto(`/test-runs/${runId}`);
+    await expect(page.getByTestId('issue-key-chip').filter({ hasText: createdKey }).first()).toBeVisible();
   });
 
   test('a duplicate create is a no-op that returns the same issue', async ({ request }) => {
