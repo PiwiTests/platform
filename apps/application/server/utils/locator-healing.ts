@@ -9,6 +9,8 @@
 import { and, eq, ne, notInArray, sql, inArray } from 'drizzle-orm';
 import { locatorSnapshots, testCases, testRuns, testRunsCases, type LocatorSnapshotRow } from '../database/schema';
 import { extractLeafSelector } from '#shared/error-fingerprint';
+import { canonicalLocator } from '#shared/locator-chain';
+import { loadRunLocatorBreaks, type RunLocatorBreak } from '#shared/handlers/locator-breaks';
 import { classifyLocatorResolution } from '#shared/locator-resolution';
 import {
   locatorSignatureFromExpression,
@@ -26,7 +28,7 @@ import {
   parseAriaCandidates,
   type ElementFingerprint,
 } from '#shared/locator-fingerprint';
-import { parsePlaywrightError } from '#shared/error-parse';
+import { extractLocatorChain, parsePlaywrightError } from '#shared/error-parse';
 import { ariaTextPreferJson } from '#shared/aria-json';
 import { buildHealEdit } from '#shared/heal-edit';
 import { inlineCasePayloads, resolveCasePayloadContents } from './case-payloads';
@@ -100,9 +102,14 @@ function buildHealingResult(
   source: LocatorHealingResult['source'],
   fromElementMatch: RankedLocator[] | null = null,
   capturedAt: Date | null = null,
-  opts: { recommendFrom?: RankedLocator[]; priorNameMayBeStale?: boolean } = {},
+  opts: {
+    recommendFrom?: RankedLocator[];
+    priorNameMayBeStale?: boolean;
+    fromDiffRename?: RankedLocator[];
+    diffRename?: LocatorHealingResult['diffRename'];
+  } = {},
 ): LocatorHealingResult {
-  const alternatives = fromElementMatch ?? fromPriorSuccess ?? fromAriaSnapshot ?? [];
+  const alternatives = opts.fromDiffRename ?? fromElementMatch ?? fromPriorSuccess ?? fromAriaSnapshot ?? [];
   // The recommendation may be picked from a filtered pool (stale name-derived
   // entries excluded) while the full list stays visible. An empty pool means
   // nothing trustworthy remains — recommendation: null, never a stale pick.
@@ -124,7 +131,60 @@ function buildHealingResult(
     recommendation,
     capturedAt: capturedAt ? capturedAt.toISOString() : null,
     ...(opts.priorNameMayBeStale ? { priorNameMayBeStale: true } : {}),
+    ...(opts.fromDiffRename ? { fromDiffRename: opts.fromDiffRename, diffRename: opts.diffRename ?? null } : {}),
   };
+}
+
+/**
+ * Score of a `diff-rename` replacement: the change under test renamed the
+ * string, so the rewritten chain is what the author meant. High enough for an
+ * auto-heal pull request.
+ */
+const DIFF_RENAME_SCORE = 95;
+
+/**
+ * The run's stored break whose chain is the failing chain and whose call
+ * sites include the failing one (any, when the error names no call site),
+ * with a rewrite to offer.
+ */
+function findDiffRename(
+  error: string,
+  location: string | null,
+  breaks: RunLocatorBreak[] | null | undefined,
+): RunLocatorBreak | null {
+  if (!breaks?.length) return null;
+  const raw = extractLocatorChain(error);
+  const chain = raw ? canonicalLocator(raw) : null;
+  if (!chain) return null;
+  return (
+    breaks.find(
+      (b) =>
+        b.rewrite && b.locator === chain && (!location || b.callSites.some((site) => sameFileLine(site, location))),
+    ) ?? null
+  );
+}
+
+/** A `diff-rename` result: the stored rewrite as the one alternative, with the diff as its evidence. */
+function diffRenameResult(
+  failingLocator: LocatorHealingResult['failingLocator'],
+  b: RunLocatorBreak,
+): LocatorHealingResult {
+  const parsed = parseLocatorExpression(b.rewrite!);
+  const rewritten: RankedLocator = {
+    locator: b.rewrite!,
+    method: parsed?.method ?? failingLocator?.method ?? 'locator',
+    args: parsed?.args ?? {},
+    score: DIFF_RENAME_SCORE,
+  };
+  return buildHealingResult(failingLocator, null, null, 'diff-rename', null, null, {
+    fromDiffRename: [rewritten],
+    diffRename: {
+      before: b.anchor.before,
+      after: b.anchor.after ?? '',
+      file: b.anchor.file,
+      line: b.anchor.line,
+    },
+  });
 }
 
 /**
@@ -305,6 +365,8 @@ export async function getLocatorHealing(db: DrizzleDB, testRunsCaseId: number): 
     ? await db.select().from(locatorSnapshots).where(eq(locatorSnapshots.testCaseId, testCaseId))
     : [];
 
+  const breaks = await loadRunLocatorBreaks(db, [row.testRunId]);
+
   return resolveHealingForCase(
     {
       error: row.error,
@@ -314,6 +376,7 @@ export async function getLocatorHealing(db: DrizzleDB, testRunsCaseId: number): 
       testSource: row.testSource,
       failingRunId: row.testRunId,
       filePath: row.filePath,
+      locatorBreaks: breaks.get(row.testRunId) ?? null,
     },
     snaps,
     testCaseId ? (sig, method) => findCrossTestSnapshot(db, testCaseId, sig, method) : null,
@@ -337,6 +400,8 @@ export interface HealingCaseInput {
    * site's line still comes from the source snippet.
    */
   filePath?: string | null;
+  /** The locator breaks the failing run's diff predicts, for the `diff-rename` rung. */
+  locatorBreaks?: RunLocatorBreak[] | null;
 }
 
 /** An empty result for a failure healing cannot address, with the one-line reason. */
@@ -362,6 +427,8 @@ function notApplicableResult(
  * error, or an error naming no locator returns `applicable: false` with a
  * reason and no alternatives — the ARIA fallback included.
  *
+ * 0. Diff rename — the run's own diff renamed the string the failing chain
+ *    finds its element by, at this call site: the rewritten chain.
  * 1. Call-site location — exact `file:line:col`, then `file:line` (tolerates a
  *    column drift). Disambiguates repeated identical locators by where they run.
  * 2. Locator signature — method + ordered string literals; survives line shifts.
@@ -439,6 +506,8 @@ export async function resolveHealingForCase(
   const failingSig = selector ? await locatorSignatureFromExpression(selector) : null;
   const method = selector ? locatorExpressionMethod(selector) : null;
 
+  const renamed = findDiffRename(error, location, input.locatorBreaks);
+
   const finish = async (r: LocatorHealingResult): Promise<LocatorHealingResult> => {
     r.applicable = true;
     r.reason = null;
@@ -452,10 +521,14 @@ export async function resolveHealingForCase(
       recommendedLocator: r.recommendation?.recommended?.locator ?? null,
       testSource: input.testSource ?? null,
       fallbackFilePath: input.filePath ?? null,
+      literalReplacements: r.source === 'diff-rename' ? (renamed?.replacements ?? null) : null,
     });
     await stampHealedRun(r, snaps, failingSig, input.failingRunId ?? null);
     return r;
   };
+
+  // Ladder 0: the run's own diff renamed the string this chain finds its element by.
+  if (renamed) return finish(diffRenameResult(failingLocator, renamed));
 
   // Ladder 1: call-site location.
   if (location && snaps.length > 0) {
@@ -598,6 +671,8 @@ export async function getLocatorHealingBatch(
     else snapsByTc.set(s.testCaseId, [s]);
   }
 
+  const breaksByRun = await loadRunLocatorBreaks(db, [...new Set(caseRows.map((r) => r.testRunId))]);
+
   // 3. Run the shared ladder for each case (cross-test still queried per case,
   // but only when the cheaper location/signature rungs miss).
   for (const row of caseRows) {
@@ -613,6 +688,7 @@ export async function getLocatorHealingBatch(
           testSource: row.testSource,
           failingRunId: row.testRunId,
           filePath: row.filePath,
+          locatorBreaks: breaksByRun.get(row.testRunId) ?? null,
         },
         snaps,
         row.testCaseId ? (sig, method) => findCrossTestSnapshot(db, row.testCaseId, sig, method) : null,

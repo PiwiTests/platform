@@ -617,6 +617,13 @@
       "when": 1790532406006,
       "tag": "0087_extension_connect",
       "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1790542184997,
+      "tag": "0088_lame_oracle",
+      "breakpoints": true
     }
   ]
 }

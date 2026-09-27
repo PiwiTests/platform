@@ -603,6 +603,37 @@ export const locatorUsages = sqliteTable(
   }),
 );
 
+// Locator breaks a pull-request run's diff predicts: one row per chain of the
+// locator index that a string the diff removed or renamed stops matching.
+// Written at finish time by change coverage; read by the pull-request comment
+// and by locator healing's `diff-rename` rung. Replaced on every run.
+export const runLocatorBreaks = sqliteTable(
+  'run_locator_breaks',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    runId: integer('run_id')
+      .notNull()
+      .references(() => testRuns.id, { onDelete: 'cascade' }),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    locator: text('locator').notNull(), // canonical chain the diff breaks
+    rewrite: text('rewrite'), // the same chain with the new string; null for a removal or a regex
+    replacements: text('replacements', { mode: 'json' }), // Array<[before, after]> string arguments the rewrite changes
+    anchor: text('anchor', { mode: 'json' }).notNull(), // DiffAnchor: file, line, kind, attribute?, key?, before, after?
+    confidence: text('confidence').notNull(), // 'likely' | 'possible'
+    callSites: text('call_sites', { mode: 'json' }).notNull(), // string[] — file:line:col of every use
+    testCaseIds: text('test_case_ids', { mode: 'json' }).notNull(), // number[] — the tests that use the chain
+    createdAt: integer('created_at', { mode: 'timestamp' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => ({
+    runIdx: index('idx_run_locator_breaks_run').on(table.runId),
+    projectIdx: index('idx_run_locator_breaks_project').on(table.projectId),
+  }),
+);
+
 // Network requests table - normalized child table of test_runs_cases
 // Stores one row per filtered network request (API/document types only).
 // Normalized URLs enable endpoint-grouped stats without parsing JSON.

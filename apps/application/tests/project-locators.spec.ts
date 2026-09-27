@@ -88,6 +88,36 @@ test.describe.serial('Project locators page', () => {
     expect(bad.status()).toBe(400);
   });
 
+  test('predict_locator_breaks names the locators a diff breaks, with the rewrite', async ({ request }) => {
+    const diff = [
+      'diff --git a/src/components/PayButton.vue b/src/components/PayButton.vue',
+      '--- a/src/components/PayButton.vue',
+      '+++ b/src/components/PayButton.vue',
+      '@@ -3 +3 @@',
+      '-    <button class="pay">Pay</button>',
+      '+    <button class="pay">Checkout</button>',
+    ].join('\n');
+    const res = await request.post('/mcp', {
+      data: {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/call',
+        params: { name: 'predict_locator_breaks', arguments: { projectId, diff } },
+      },
+    });
+    expect(res.ok()).toBeTruthy();
+    const result = JSON.parse((await res.json()).result.content[0].text);
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]).toMatchObject({
+      locator: PAY,
+      confidence: 'likely',
+      rewrite: "getByRole('button', { name: 'Checkout' })",
+      change: { filePath: 'src/components/PayButton.vue', line: 3, kind: 'text', before: 'Pay', after: 'Checkout' },
+      edits: [{ before: 'Pay', after: 'Checkout' }],
+    });
+    expect(result.items[0].tests).toHaveLength(2);
+  });
+
   test('checks pasted locators and lists the tests reaching them', async ({ page }) => {
     const pasted = `${PAY}\ngetByTestId('nowhere')`;
     await page.goto(`/projects/${projectId}/locators?q=${encodeURIComponent(pasted)}`);

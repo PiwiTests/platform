@@ -35,6 +35,7 @@ import {
   PR_FEEDBACK_KEY,
   resolvePrFeedbackSettings,
   type PrChangeCoverage,
+  type PrLocatorBreaks,
   type PrFailureEntry,
   type PrFeedbackSettings,
   type PrSummaryInput,
@@ -312,6 +313,7 @@ export async function postRunPrFeedback(
   runId: number,
   fixedClusters: VerifiedFix[] = [],
   changeCoverage: PrChangeCoverage | null = null,
+  locatorBreaks: PrLocatorBreaks | null = null,
 ): Promise<{ posted: boolean; comment: boolean; status: boolean; reason?: string }> {
   const none = (reason: string) => ({ posted: false, comment: false, status: false, reason });
 
@@ -344,6 +346,7 @@ export async function postRunPrFeedback(
   const testMapDeclined = (await resolveProjectStates(db, run.projectId))['test-map'] === 'declined';
   const effectiveChangeCoverage = testMapDeclined ? null : changeCoverage;
   summary.changeCoverage = effectiveChangeCoverage;
+  summary.locatorBreaks = testMapDeclined ? null : locatorBreaks;
 
   // `onlyOnFailure` silences routine green runs, but a run that closed a
   // cluster is news — that is the answer somebody was waiting for.
@@ -410,7 +413,7 @@ export function postRunPrFeedbackInBackground(db: DbClient, runId: number): void
       return null;
     }),
   ])
-    .then(([fixed, change]) => postRunPrFeedback(db, runId, fixed, change?.pr ?? null))
+    .then(([fixed, change]) => postRunPrFeedback(db, runId, fixed, change?.pr ?? null, change?.locatorBreaks ?? null))
     .then((result) => {
       if (!result.posted && result.reason && result.reason !== 'disabled') {
         console.warn(`[pr-feedback] nothing posted for run #${runId}: ${result.reason}`);

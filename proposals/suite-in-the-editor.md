@@ -6,8 +6,9 @@ which test locators the change breaks, and rewrites them. **Track B** records wh
 executes, so any file can answer "which tests reach me?". **Track C** is one editor service that holds the logic, and
 **Tracks D and E** are thin clients for VS Code and the JetBrains IDEs.
 
-**Status.** Proposed 2026-09-27. Being built on `claude/suite-in-the-editor`, in the Delivery order: PR 1 (core) and
-PR 2 (`piwi preflight`) are built. What changed while building is under [As built](#as-built). Track A needs no capture change. Track B adds an opt-in capture, one
+**Status.** Proposed 2026-09-27. Being built on `claude/suite-in-the-editor`, in the Delivery order: PR 1 (core),
+PR 2 (`piwi preflight`) and PR 3 (the pull-request section, `diff-rename` healing, `predict_locator_breaks`) are
+built. What changed while building is under [As built](#as-built). Track A needs no capture change. Track B adds an opt-in capture, one
 payload column on `test_runs_cases` and one table. Tracks C–E add a workspace package, a VS Code extension and a
 JetBrains plugin, and a commitlint scope (`ide`); a catalog of what the editors can do after their first release
 follows the tracks. New wire fields, endpoints, a CLI command and a published extension
@@ -451,7 +452,7 @@ the feature they come from.
   `navigation.ts`, `shared/piwi-features.ts`.
 - Tests: CLI tests on a fixture repository with a staged rename, `--fix` output, offline cache, exit codes.
 
-### PR 3 — pull request and healing
+### PR 3 — pull request and healing (built)
 - `server/utils/scm/change-coverage.ts`, `shared/handlers/change-coverage.ts` (patch kept, `locatorBreaks`),
   `shared/pr-feedback.ts` (`renderLocatorBreaks`), `server/utils/scm/pr-feedback.ts`.
 - `packages/core/src/locator-healing-types.ts` (`diff-rename`), `server/utils/locator-healing.ts`,
@@ -530,6 +531,29 @@ disagree, this section wins.
 - **`--strict`** counts a likely break as fixed when every call site is `applied` or edited by this run.
 - **Output.** Likely breaks are listed in full, at most 20; possible breaks get one line each; the footer names the
   number of strings checked when nothing breaks.
+
+### PR 3 — pull request and healing
+
+- **Storage.** Change coverage is not stored, so `locatorBreaks` gets a table: `run_locator_breaks` (run, project,
+  chain, rewrite, `[before, after]` replacements, the anchor, confidence, call sites, test case ids), replaced on
+  every run and deleted with it (retention and the foreign key). The pure half is `shared/handlers/locator-breaks.ts`;
+  `shared/handlers/change-coverage.ts` is unchanged: the patches stay in the SCM path of
+  `server/utils/scm/change-coverage.ts`.
+- **Which runs.** Every run change coverage diffs, not only pull requests: a run diffed against its last green run
+  also stores its breaks, so `diff-rename` healing works on a branch without a pull request. The index is the one of
+  the branch the change is compared with (the pull request's base, open question 2). A provider that omitted the
+  patches (`patchesOmitted`) gives no breaks.
+- **The comment** lists only likely breaks none of whose tests executed in the run, at most 10, and counts the possible
+  ones in one line pointing to `piwi preflight`. It is withheld with Uncovered changes when the project declined the
+  Test Map. Translation-key changes in templates are not resolved on the server, which has patches only.
+- **`diff-rename`** is rung 0 of the ladder: the failing chain (`extractLocatorChain`, canonicalized) equals a stored
+  break's chain with a rewrite, and the failing call site is one of its call sites (any, when the error names none).
+  The result carries `fromDiffRename` (one alternative, score 95) and `diffRename` (`before`, `after`, `file`, `line`),
+  and its edit replaces the literal in place (`buildHealEdit`'s `literalReplacements`). The auto-heal policy accepts
+  it. The `element-renamed` clue and the AI context name the rename.
+- **`predict_locator_breaks`** is in the `healing` module with no capability gate; it returns at most 50 breaks as
+  `{ branch, locators, truncated, items, nextCursor: null }`, each with `change`, `tests`, `callSites` and `edits`
+  (`[{ before, after }]` string literals to replace). Diffs over 2,000,000 characters are refused.
 
 ## Verification
 

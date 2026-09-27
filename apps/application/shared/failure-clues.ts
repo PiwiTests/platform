@@ -529,6 +529,7 @@ export function buildFailureClues(input: FailureClueInput): FailureCluesReport {
   const healing = input.healing;
   if (healing) {
     const renamed =
+      healing.source === 'diff-rename' ||
       healing.source === 'element-match' ||
       (healing.priorNameMayBeStale === true && healing.recommendation?.recommended != null);
     if (renamed) {
@@ -539,9 +540,12 @@ export function buildFailureClues(input: FailureClueInput): FailureCluesReport {
         rule: 'element-renamed',
         strength: 'strong',
         title: 'The element was renamed or moved',
-        detail: rec
-          ? `The failing locator no longer matches; the same element is now reachable as \`${rec.locator}\`.`
-          : 'The failing locator no longer matches — the element it named appears to have been renamed or moved.',
+        detail:
+          healing.source === 'diff-rename' && healing.diffRename && rec
+            ? `This change renamed \`${healing.diffRename.before}\` to \`${healing.diffRename.after}\` in ${healing.diffRename.file}:${healing.diffRename.line}; the same locator with the new text is \`${rec.locator}\`.`
+            : rec
+              ? `The failing locator no longer matches; the same element is now reachable as \`${rec.locator}\`.`
+              : 'The failing locator no longer matches — the element it named appears to have been renamed or moved.',
         citations: [{ section: 'locatorHealing' }],
       });
     }

@@ -490,6 +490,24 @@ export const MCP_TOOL_DEFS = [
     },
   },
   {
+    name: 'predict_locator_breaks',
+    module: 'healing',
+    description:
+      "Which of the project's test locators a change breaks, before any test runs. Send your own working diff (the output of `git diff`, unified format): the strings it removes or renames (attribute values such as aria-label, placeholder or a test id, text between tags, quoted strings, translation values) are matched against every locator chain the project's tests used, under Playwright's text rules (case-insensitive substring unless exact, regex as written). Each break carries its confidence (`likely` for an attribute, tag text or translation; `possible` for a bare string), the tests and call sites (`file:line:col`, relative to where the reporter ran), and for a one-to-one rename the `rewrite` (the same chain with the new string) plus `edits`: replace each `before` string literal with `after` at the call sites. Run it after a UI change, apply the edits, then run the tests it names. Test files in the diff are ignored. `branch` picks the locator index to compare with (default: the project's default branch).",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        projectId: { type: 'number', description: 'Project ID' },
+        diff: { type: 'string', description: 'The change as a unified diff (`git diff` output)' },
+        branch: {
+          type: 'string',
+          description: "Branch whose locator index to compare with (default: the project's default branch)",
+        },
+      },
+      required: ['projectId', 'diff'],
+    },
+  },
+  {
     name: 'search',
     module: 'core',
     description:

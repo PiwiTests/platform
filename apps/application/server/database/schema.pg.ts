@@ -629,6 +629,35 @@ export const locatorUsages = pgTable(
   }),
 );
 
+// Locator breaks a pull-request run's diff predicts: one row per chain of the
+// locator index that a string the diff removed or renamed stops matching.
+// Written at finish time by change coverage; read by the pull-request comment
+// and by locator healing's `diff-rename` rung. Replaced on every run.
+export const runLocatorBreaks = pgTable(
+  'run_locator_breaks',
+  {
+    id: serial('id').primaryKey(),
+    runId: integer('run_id')
+      .notNull()
+      .references(() => testRuns.id, { onDelete: 'cascade' }),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    locator: text('locator').notNull(),
+    rewrite: text('rewrite'),
+    replacements: jsonb('replacements'),
+    anchor: jsonb('anchor').notNull(),
+    confidence: text('confidence').notNull(),
+    callSites: jsonb('call_sites').notNull(),
+    testCaseIds: jsonb('test_case_ids').notNull(),
+    createdAt: timestamp('created_at', { mode: 'date' }).notNull().defaultNow(),
+  },
+  (table) => ({
+    runIdx: index('idx_run_locator_breaks_run').on(table.runId),
+    projectIdx: index('idx_run_locator_breaks_project').on(table.projectId),
+  }),
+);
+
 // Network requests table - normalized child table of test_runs_cases
 export const networkRequests = pgTable(
   'network_requests',

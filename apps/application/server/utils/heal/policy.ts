@@ -33,8 +33,16 @@ import type { DbClient } from '../../database';
 
 const FAIL_STATUSES = ['failed', 'timedOut', 'timedout'];
 
-/** Healing rungs whose scores are real stability scores (safe to threshold on). */
-const ELIGIBLE_SOURCES = new Set<LocatorHealingResult['source']>(['prior-run', 'fingerprint', 'cross-test']);
+/**
+ * Healing rungs backed by evidence (safe to threshold on): stored snapshots,
+ * whose scores are stability scores, and the run's own diff renaming the string.
+ */
+const ELIGIBLE_SOURCES = new Set<LocatorHealingResult['source']>([
+  'diff-rename',
+  'prior-run',
+  'fingerprint',
+  'cross-test',
+]);
 
 /** One failing execution considered for healing. */
 export interface HealCandidateRow {

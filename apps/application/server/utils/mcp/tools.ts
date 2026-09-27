@@ -100,6 +100,13 @@ import type {
 import type { RunMetadata, BrowserConfig } from '../run-json-types';
 import { getStorage } from '../../storage';
 import { getLocatorHealingBatch, getLocatorHealing } from '../locator-healing';
+import { predictDiffBreaks, toRunLocatorBreak } from '#shared/handlers/locator-breaks';
+import { getLocatorIndex } from '../locator-usages';
+
+/** The largest diff `predict_locator_breaks` reads, in characters. */
+const MAX_PREDICT_DIFF_CHARS = 2_000_000;
+/** Breaks `predict_locator_breaks` returns, likely first. */
+const MAX_PREDICTED_BREAKS = 50;
 import { getPageDiff } from '../page-diff';
 import { describePageDiff, formatPageDiffSummary } from '#shared/page-diff';
 import { inlineCasePayloads } from '../case-payloads';
@@ -1470,11 +1477,54 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
             suggestAddTestId: h.recommendation.suggestAddTestId || null,
           })
         : null,
+      fromDiffRename: rankedList(h.fromDiffRename),
+      diffRename: h.diffRename ?? null,
       fromPriorSuccess: rankedList(h.fromPriorSuccess),
       fromElementMatch: rankedList(h.fromElementMatch),
       fromAriaSnapshot: rankedList(h.fromAriaSnapshot),
       priorNameMayBeStale: h.priorNameMayBeStale || null,
     });
+  },
+
+  // ── predict_locator_breaks ─────────────────────────────────────────────────
+  async predict_locator_breaks(db, params, ctx) {
+    const projectId = numericParam(params.projectId, 'projectId');
+    assertProject(ctx, projectId);
+    const diff = typeof params.diff === 'string' ? params.diff : '';
+    if (!diff.trim()) throw new Error('diff is required: the output of `git diff` for the change');
+    if (diff.length > MAX_PREDICT_DIFF_CHARS) throw new Error(`diff is over ${MAX_PREDICT_DIFF_CHARS} characters`);
+    const branch = typeof params.branch === 'string' && params.branch.trim() ? params.branch.trim() : null;
+    const index = await getLocatorIndex(db, projectId, { branch });
+    if (!index) return null;
+    const breaks = predictDiffBreaks(diff, index);
+    const items = breaks.slice(0, MAX_PREDICTED_BREAKS).map((b) => {
+      const stored = toRunLocatorBreak(b);
+      return dropNulls({
+        locator: b.locator,
+        confidence: b.confidence,
+        rewrite: b.rewrite ?? null,
+        change: dropNulls({
+          filePath: b.anchor.file,
+          line: b.anchor.line,
+          kind: b.anchor.kind,
+          attribute: b.anchor.attribute ?? null,
+          key: b.anchor.key ?? null,
+          before: b.anchor.before,
+          after: b.anchor.after ?? null,
+        }),
+        tests: b.tests.slice(0, 20).map((t) => ({ testCaseId: t.id, title: t.title, filePath: t.file })),
+        callSites: stored.callSites,
+        // Replace each `before` string literal with `after` at the call sites, keeping the quotes.
+        edits: stored.replacements.map(([before, after]) => ({ before, after })),
+      });
+    });
+    return {
+      branch: index.branch ?? index.defaultBranch,
+      locators: index.locators.length,
+      truncated: breaks.length > MAX_PREDICTED_BREAKS || index.truncated || null,
+      items,
+      nextCursor: null,
+    };
   },
 
   // ── search ─────────────────────────────────────────────────────────────────

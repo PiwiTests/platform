@@ -20,10 +20,11 @@ strongest thing the dashboard does, so the posture is conservative by design.
 
 - Triggers only on a **full run on the default branch** — never a feature branch, and never a run reported from a
   heal branch (that would feed on itself).
-- Edits are **deterministic one-line locator rewrites** taken from a passing run's captured snapshot. No
-  AI-generated code is ever in the write path.
-- Each edit must come from a stored snapshot (`prior-run`, `fingerprint`, or `cross-test`) and score at or above the
-  configured minimum — or be a locator **you confirmed** in the picker.
+- Edits are **deterministic one-line locator rewrites** taken from a passing run's captured snapshot, or from the
+  run's own diff renaming the string the locator finds its element by. No AI-generated code is ever in the write path.
+- Each edit must come from a stored snapshot (`prior-run`, `fingerprint`, or `cross-test`) or a
+  [diff rename](./locator-healing#what-it-does) (`diff-rename`, scored 95) and score at or above the configured
+  minimum — or be a locator **you confirmed** in the picker.
 - Before committing, Piwi re-reads each file at the branch head and only writes lines it can still match exactly. A
   line that has drifted is dropped, not guessed.
 - One PR per run, batching every qualifying edit. A duplicate run never opens a second PR.

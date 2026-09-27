@@ -17,6 +17,7 @@ import {
   networkRequests,
   notificationDeliveries,
   reportSnapshots,
+  runLocatorBreaks,
   shareLinks,
   subscriptions,
   testRuns,
@@ -165,6 +166,7 @@ export async function deleteRunsByIds(
   for (const batch of batches(presentRunIds)) {
     await db.delete(networkRequests).where(inArray(networkRequests.testRunId, batch));
     await db.delete(entityLinks).where(inArray(entityLinks.testRunId, batch));
+    await db.delete(runLocatorBreaks).where(inArray(runLocatorBreaks.runId, batch));
   }
   for (const batch of batches(caseIds)) {
     await db.delete(entityLinks).where(inArray(entityLinks.testRunsCaseId, batch));
