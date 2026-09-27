@@ -153,13 +153,13 @@ export function jiraFailureHint(stage: JiraCheckStage, failure: JiraCheckFailure
   const message = (failure.message ?? '').toLowerCase();
 
   if (status === null) {
-    return 'Piwi could not reach this address. Check the URL, and that this server can reach it through any proxy, firewall or VPN.';
+    return 'Check the URL, and that this server can reach it through any proxy, firewall or VPN.';
   }
   if (status === 429) return 'Atlassian is rate limiting this account. Wait a minute and check again.';
 
   if (stage === 'site') {
     if (status === 404) {
-      return 'No Jira answered at this address. A Jira Cloud site is https://<your-site>.atlassian.net: copy it from the address bar of any Jira page.';
+      return 'A Jira Cloud site is https://<your-site>.atlassian.net: copy it from the address bar of any Jira page.';
     }
     return 'The address answered, but not like a Jira site. Check the URL.';
   }

@@ -68,7 +68,7 @@ describe('Jira setup links', () => {
 
 describe('jiraFailureHint', () => {
   test('an unreachable address points at the network', () => {
-    expect(jiraFailureHint('site', { status: null })).toMatch(/could not reach/);
+    expect(jiraFailureHint('site', { status: null })).toMatch(/proxy, firewall or VPN/);
   });
 
   test('a 404 on the site explains the Cloud address', () => {
