@@ -34,6 +34,8 @@ AMO listings that are still outstanding.
   `record-panel.ts` is the one exception: it's also registered dynamically
   (`chrome.scripting.registerContentScripts`, scoped to the granted origin) so it re-attaches
   itself on every navigation for the lifetime of a recording — see `background/index.ts`.
+  A bug recording (**Report a bug**, `bug-panel.ts`) registers a second script beside it,
+  `bug-evidence-main.ts`, in the page's **main world** — see "The main-world evidence script" below.
 - `src/background/` — the service worker. Handles the `chrome.commands` keyboard shortcut
   (the toolbar icon opens the popup instead, which injects content scripts itself) and the
   recorder's start/stop messages (`piwi-start-recording` / `piwi-recording-stopped`, plus the
@@ -89,7 +91,7 @@ matcher a catalog entry's own `urlPattern` gate uses). Every consumer that needs
 applies here" (record-panel's HUD and review panel, test-function-panel, the popup's select)
 calls this one function rather than re-deriving it.
 
-**No recording is ever sent to the instance** — only each mapped project's catalog and
+**No recording is ever sent to the instance**, a bug report included — only each mapped project's catalog and
 locator index are fetched, and only `piwi-client.ts` makes those requests, from exactly two
 contexts: `src/options/` (on save) and the background worker's `piwi-refresh-catalog` /
 `piwi-refresh-locator-index` handlers. **Never from a content script**, so the API key never
@@ -165,6 +167,44 @@ because its locator would need the frame's prefix.
 `page.locator(…)`, and the two element lists must be identical. A new locator kind or option
 goes into `locator-cases.ts` with a fixture element in `tests/e2e/pages/`; an expression the
 engine deliberately refuses goes into the pinned refusal list, never into a skipped case.
+
+## Report a bug
+
+A bug recording is a recording with `mode: 'bug'` (`recording-storage.ts`): the same capture,
+navigation and one-origin rule, a different HUD (`bug-panel.ts`), and `assert` events that
+`normalizeSteps` keeps in place. **Mark what's wrong** pauses capture (`__piwiRecordPaused`, a
+global because every re-injection of `record-panel.js` is its own module instance), runs the pick
+overlay, and opens the expected-value dialog built from `suggestAssertions`; **Something is
+missing** checks its `getByRole` with the in-page engine and refuses an element that is there.
+Evidence lives under its own `chrome.storage.session` keys (`bug-storage.ts`), not in
+`RecordingState`, which is rewritten on every keystroke. The report and its files are assembled
+by `bug-report-files.ts` (pure) and `@piwitests/core/bug-report` (`renderBugMarkdown`,
+`renderBugSpec`); the zip is written by `shared/zip.ts`, stored without compression.
+
+**Screenshots need `activeTab`.** `chrome.tabs.captureVisibleTab` refuses under the recorder's
+per-origin host grant ("Either the '<all_urls>' or 'activeTab' permission is required", checked on
+the bundled Chromium, and in `bug-report.spec.ts` against the real extension). The popup click
+that starts a report grants `activeTab` until the tab navigates; after that the report records
+why there is no screenshot, and the popup's tile, during a bug recording, asks the page for one
+(opening the popup is the grant). Never answer this with `<all_urls>`.
+
+### The main-world evidence script
+
+`bug-evidence-main.ts` wraps `console.error`/`console.warn`, `fetch` and `XMLHttpRequest`, and
+listens to `error` and `unhandledrejection`. It is the only code here that runs in the page's own
+JavaScript world, so:
+
+- It is registered only while a bug recording runs, for the recording's granted origin, at
+  `document_start` (`BUG_EVIDENCE_SCRIPT_ID` in `background/index.ts`), and unregistered with the
+  recorder. It needs no permission beyond `scripting` and that grant.
+- It must never import anything that touches `chrome.*` (the main world has none) and must only
+  wrap and listen: every wrapper calls the original with the same arguments and returns its result.
+- It never reads a header or a body; a URL keeps its path with ids collapsed and query values
+  removed (`reportedRequestUrl`, built on `normalizeRoute`).
+- It talks to the isolated-world recorder only by `window.postMessage` (`shared/bug-relay.ts`), and
+  the page sees those messages. The per-recording token keeps out entries from another recording,
+  not a page that means harm; `readRelayedEntry` rebuilds every entry field by field and truncates
+  it, and storage caps each kind at 100. Treat everything it relays as page-controlled text.
 
 ## Content-script structure
 

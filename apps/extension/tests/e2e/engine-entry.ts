@@ -1,5 +1,6 @@
 import { parseLocatorChain } from '@piwitests/core/locator-chain';
 import { createLocatorEngine } from '../../src/content/locator-engine.js';
+import { buildOutline } from '../../src/content/bug-outline.js';
 
 interface EngineResult {
   ids?: Array<string | null>;
@@ -24,3 +25,9 @@ interface EngineResult {
     }
   });
 };
+
+/** Test-only: the bug report's outline of the element matching `selector`, or of the body. */
+(globalThis as unknown as Record<string, unknown>).__piwiBuildOutline = (
+  selector?: string,
+  maxLines?: number,
+): string => buildOutline(selector ? document.querySelector(selector)! : document.body, { maxLines });

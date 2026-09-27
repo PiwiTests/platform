@@ -240,3 +240,48 @@ test.describe('Tested elements tile', () => {
     await expect(page.locator('#coverage-hint')).toHaveText('What your tests reach on this page, and what they miss');
   });
 });
+
+test.describe('Report a bug tile', () => {
+  test('answers to B and says what it does in each recording state', async ({ context, extensionId }) => {
+    const page = await context.newPage();
+    await page.goto(`chrome-extension://${extensionId}/popup.html`);
+    const tile = page.getByRole('button', { name: /Report a bug/ });
+    await expect(tile).toBeVisible();
+    await expect(tile).toHaveAttribute('aria-keyshortcuts', 'B');
+    await expect(page.locator('#report-bug-hint')).toHaveText("Record the steps, mark what's wrong → a failing test");
+    await page.evaluate(() => {
+      (globalThis as unknown as { clicked: string[] }).clicked = [];
+      document.getElementById('report-bug')!.addEventListener(
+        'click',
+        (e) => {
+          e.stopImmediatePropagation();
+          (globalThis as unknown as { clicked: string[] }).clicked.push('report-bug');
+        },
+        { capture: true },
+      );
+    });
+    await page.keyboard.press('b');
+    expect(await page.evaluate(() => (globalThis as unknown as { clicked: string[] }).clicked)).toEqual(['report-bug']);
+
+    // During a bug recording the tile takes a screenshot, and the record tile finishes the report.
+    await page.evaluate(() =>
+      chrome.storage.session.set({
+        piwiRecording: { active: true, events: [], startedAt: 1, grantedOriginPattern: null, mode: 'bug' },
+      }),
+    );
+    await page.reload();
+    await expect(page.locator('#report-bug-label')).toHaveText('Take a screenshot');
+    await expect(page.locator('#record-label')).toHaveText('Finish bug report (0)');
+
+    // A recording of actions in progress has to end first.
+    await page.evaluate(() =>
+      chrome.storage.session.set({
+        piwiRecording: { active: true, events: [], startedAt: 1, grantedOriginPattern: null, mode: 'actions' },
+      }),
+    );
+    await page.reload();
+    await expect(page.locator('#report-bug-hint')).toHaveText('Finish or discard the current recording first');
+    await page.locator('#report-bug').click();
+    await expect(page.locator('#status')).toHaveText('Finish or discard the current recording before reporting a bug.');
+  });
+});

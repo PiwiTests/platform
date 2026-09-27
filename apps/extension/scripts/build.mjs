@@ -33,6 +33,9 @@ const STANDALONE_ENTRIES = [
   // itself on every navigation across the recording's granted origin. Still built the same
   // standalone-IIFE way: MV3 has no other way to inject a classic script by file path.
   ['record-panel', 'src/content/record-panel.ts'],
+  // Registered the same way for a bug recording's lifetime, in the page's main world (`world: 'MAIN'`): the only
+  // place that sees the page's console and its fetch/XHR calls. Imports nothing that touches `chrome.*`.
+  ['bug-evidence-main', 'src/content/bug-evidence-main.ts'],
   ['background', 'src/background/index.ts'],
 ];
 

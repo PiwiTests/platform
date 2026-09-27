@@ -13,6 +13,7 @@ import {
   type RawCaptureEvent,
   type RecordedTarget,
   type RecordedStep,
+  type StepAssertion,
 } from '@piwitests/core/recording';
 import { rankFunctionMatches, type TestFunctionEntry, type RankedFunctionMatch } from '@piwitests/core/function-match';
 import { renderSpec } from '@piwitests/core/codegen';
@@ -23,17 +24,38 @@ import {
   appendRecordingEvent,
   stopRecording,
   discardRecording,
+  recordingMode,
   type RecordingState,
 } from '../shared/recording-storage.js';
+import { getBugEvidence, setBugEvidenceFields } from '../shared/bug-storage.js';
+import {
+  currentBugContext,
+  outlineAround,
+  renderBugFinishPanel,
+  renderBugHud,
+  runMarkFlow,
+  runMissingFlow,
+  runWrongPageFlow,
+  startEvidenceRelay,
+  takeBugScreenshot,
+  type BugRecorderHooks,
+} from './bug-panel.js';
+import {
+  HUD_HOST_ID,
+  PANEL_HOST_ID,
+  FRAME_HOST_ID,
+  BUG_DIALOG_HOST_ID,
+  OWN_HOST_IDS,
+  SHARED_STYLE,
+  copyToClipboard,
+  downloadBlob,
+  fileStamp,
+} from './record-ui.js';
 import { getCachedCatalog } from '../shared/catalog-cache.js';
 import { requestCatalogRefresh } from '../shared/catalog-refresh.js';
 import { ensureSessionAccess } from '../shared/session-access.js';
 import { getConnectionSettings } from '../shared/connection-settings.js';
 import { getActiveProjectOverride, resolveActiveProject } from '../shared/active-project.js';
-
-const HUD_HOST_ID = 'piwi-record-hud-host';
-const PANEL_HOST_ID = 'piwi-record-review-host';
-const FRAME_HOST_ID = 'piwi-record-frame-host';
 
 const ROLE_SOURCES = [...new Set(['[role]', 'input', 'select', ...Object.keys(TAG_TO_ROLE)])].join(',');
 const PROBE_ARG: ProbeArg = {
@@ -124,10 +146,12 @@ function nearestActionable(el: Element): Element {
 }
 
 function withinOwnUi(e: Event): boolean {
-  const path = e.composedPath();
-  return path.some(
-    (n) => n instanceof HTMLElement && (n.id === HUD_HOST_ID || n.id === PANEL_HOST_ID || n.id === FRAME_HOST_ID),
-  );
+  return e.composedPath().some((n) => n instanceof HTMLElement && OWN_HOST_IDS.has(n.id));
+}
+
+/** Whether capture is paused in this document: a bug report's pick or dialog is on screen. */
+function capturePaused(): boolean {
+  return recorderGlobals().__piwiRecordPaused === true;
 }
 
 /**
@@ -167,24 +191,6 @@ function ensureRecordingFrame(): void {
 function removeRecordingFrame(): void {
   document.getElementById(FRAME_HOST_ID)?.remove();
 }
-
-async function copyToClipboard(text: string, btn: HTMLButtonElement): Promise<void> {
-  try {
-    await navigator.clipboard.writeText(text);
-  } catch {
-    return;
-  }
-  const original = btn.textContent;
-  btn.textContent = 'Copied';
-  setTimeout(() => {
-    btn.textContent = original;
-  }, 1200);
-}
-
-const SHARED_STYLE = `
-  :host { all: initial; }
-  * { box-sizing: border-box; font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; }
-`;
 
 function renderHud(state: RecordingState, catalog: TestFunctionEntry[]): void {
   document.getElementById(HUD_HOST_ID)?.remove();
@@ -318,19 +324,18 @@ function describeStep(step: RecordedStep): string {
 
 /** Save a steps document as `piwi-steps-<date>-<time>.json`, through the page's own download handling. */
 function downloadSteps(doc: PiwiSteps): void {
-  const stamp = new Date(doc.recordedAt || Date.now()).toISOString().slice(0, 16).replace(/[:T]/g, '-');
-  const url = URL.createObjectURL(new Blob([JSON.stringify(doc, null, 2)], { type: 'application/json' }));
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = `piwi-steps-${stamp}.json`;
-  link.style.display = 'none';
-  document.documentElement.appendChild(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  downloadBlob(
+    new Blob([JSON.stringify(doc, null, 2)], { type: 'application/json' }),
+    `piwi-steps-${fileStamp(doc.recordedAt)}.json`,
+  );
 }
 
-async function renderReviewPanel(events: RawCaptureEvent[]): Promise<void> {
+async function renderReviewPanel(state: RecordingState): Promise<void> {
+  if (recordingMode(state) === 'bug') {
+    await renderBugFinishPanel(state, discardRecording);
+    return;
+  }
+  const { events } = state;
   document.getElementById(HUD_HOST_ID)?.remove();
   document.getElementById(PANEL_HOST_ID)?.remove();
   // Recording is over by the time the review panel opens — drop the border
@@ -518,7 +523,32 @@ async function handleStop(): Promise<void> {
   } catch {
     // Extension context can be gone (e.g. reloaded mid-recording) — the storage write above already stuck.
   }
-  await renderReviewPanel(state.events);
+  await renderReviewPanel(state);
+}
+
+/**
+ * Finishes a bug recording: the last evidence entries, a screenshot of the
+ * page as it is, an outline when nothing was marked, and the page's context,
+ * then the same stop as any recording.
+ */
+async function handleBugFinish(): Promise<void> {
+  const g = recorderGlobals();
+  if (g.__piwiBugFinishing) return;
+  g.__piwiBugFinishing = true;
+  try {
+    await g.__piwiBugRelayFlush?.();
+    const state = await getRecordingState();
+    if (!state.active) return;
+    await takeBugScreenshot('finish', normalizeSteps(state.events).length - 1);
+    const evidence = await getBugEvidence();
+    await setBugEvidenceFields({
+      context: currentBugContext(),
+      ...(evidence.outline ? {} : { outline: outlineAround(null) }),
+    });
+    await handleStop();
+  } finally {
+    g.__piwiBugFinishing = false;
+  }
 }
 
 function buildEvent(
@@ -542,6 +572,26 @@ function buildEvent(
   };
 }
 
+/** What the bug panel needs from the recorder to add an assertion to the recording. */
+const bugHooks: BugRecorderHooks = {
+  targetFor: deriveRecordedTarget,
+  async addAssert(target: RecordedTarget | null, assertion: StepAssertion): Promise<number | null> {
+    try {
+      const state = await appendRecordingEvent(buildEvent('assert', null, { target, assertion: { ...assertion } }));
+      if (!state.active) return null;
+      return normalizeSteps(state.events).length - 1;
+    } catch {
+      captureError = 'The step could not be saved.';
+      return null;
+    } finally {
+      scheduleHudRefresh();
+    }
+  },
+  setPaused(paused: boolean) {
+    recorderGlobals().__piwiRecordPaused = paused;
+  },
+};
+
 async function refreshHud(): Promise<void> {
   const [state, connection, override] = await Promise.all([
     getRecordingState(),
@@ -549,6 +599,17 @@ async function refreshHud(): Promise<void> {
     getActiveProjectOverride(),
   ]);
   if (!state.active) return;
+  if (recordingMode(state) === 'bug') {
+    const evidence = await getBugEvidence();
+    ensureRecordingFrame();
+    renderBugHud(state, evidence, captureError, {
+      mark: () => void runMarkFlow(bugHooks),
+      missing: () => void runMissingFlow(bugHooks),
+      wrongPage: () => void runWrongPageFlow(bugHooks),
+      finish: () => void handleBugFinish(),
+    });
+    return;
+  }
   const activeProject = resolveActiveProject(connection, override, location.href);
   const catalog = await getCachedCatalog(activeProject?.projectId ?? null);
   renderHud(state, catalog);
@@ -611,6 +672,12 @@ async function refreshCatalogForThisPage(): Promise<void> {
 interface RecorderGlobals {
   /** Aborting this detaches every capture listener at once — see `stopCapture`. */
   __piwiRecordCapture?: AbortController;
+  /** Set while a bug report's pick or dialog is open: nothing is captured meanwhile. */
+  __piwiRecordPaused?: boolean;
+  /** Stores the evidence entries received but not stored yet. */
+  __piwiBugRelayFlush?: () => Promise<void>;
+  /** Guards Finish against a second click while it runs. */
+  __piwiBugFinishing?: boolean;
   /** Serializes concurrent injections of this script into one document. */
   __piwiRecordPanelRun?: Promise<void>;
   /** Whether this document's `chrome.runtime` stop listener is already registered. */
@@ -634,7 +701,10 @@ function stopCapture(): void {
   const g = recorderGlobals();
   g.__piwiRecordCapture?.abort();
   g.__piwiRecordCapture = undefined;
+  g.__piwiBugRelayFlush = undefined;
+  g.__piwiRecordPaused = false;
   document.getElementById(HUD_HOST_ID)?.remove();
+  document.getElementById(BUG_DIALOG_HOST_ID)?.remove();
   removeRecordingFrame();
 }
 
@@ -651,7 +721,7 @@ function attachListeners(): void {
   document.addEventListener(
     'click',
     (e) => {
-      if (withinOwnUi(e)) return;
+      if (capturePaused() || withinOwnUi(e)) return;
       const raw = e.target;
       if (!(raw instanceof Element)) return;
       const el = nearestActionable(raw);
@@ -665,7 +735,7 @@ function attachListeners(): void {
   document.addEventListener(
     'input',
     (e) => {
-      if (withinOwnUi(e)) return;
+      if (capturePaused() || withinOwnUi(e)) return;
       const el = e.target;
       if (!(el instanceof HTMLInputElement) && !(el instanceof HTMLTextAreaElement)) return;
       const typeAttr = el instanceof HTMLInputElement ? el.type : null;
@@ -689,7 +759,7 @@ function attachListeners(): void {
   document.addEventListener(
     'change',
     (e) => {
-      if (withinOwnUi(e)) return;
+      if (capturePaused() || withinOwnUi(e)) return;
       const el = e.target;
       if (!(el instanceof Element)) return;
       const typeAttr = el instanceof HTMLInputElement ? el.type : null;
@@ -706,7 +776,7 @@ function attachListeners(): void {
   document.addEventListener(
     'keydown',
     (e) => {
-      if (withinOwnUi(e)) return;
+      if (capturePaused() || withinOwnUi(e)) return;
       if (e.key !== 'Enter') return;
       const el = e.target instanceof Element ? e.target : null;
       captureEvent(buildEvent('keydown', el, { value: 'Enter' }));
@@ -730,8 +800,18 @@ function installStopListener(): void {
   const g = recorderGlobals();
   if (g.__piwiRecordStopListener) return;
   g.__piwiRecordStopListener = true;
-  chrome.runtime.onMessage.addListener((message) => {
+  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message?.type === 'piwi-recording-stopped') stopCapture();
+    if (message?.type === 'piwi-bug-take-screenshot' && recorderGlobals().__piwiRecordCapture) {
+      // Answered at once: the popup that asked closes as soon as it hears back.
+      sendResponse({ ok: true });
+      void getRecordingState().then(async (state) => {
+        if (!state.active || recordingMode(state) !== 'bug') return;
+        await takeBugScreenshot('manual', normalizeSteps(state.events).length - 1);
+        scheduleHudRefresh();
+      });
+    }
+    return undefined;
   });
 }
 
@@ -775,7 +855,7 @@ async function initRecordPanel(): Promise<void> {
     // first — a border that outlives the capture it signals is worse than no
     // border at all — then show whatever is left to review.
     stopCapture();
-    if (state.events.length > 0) await renderReviewPanel(state.events);
+    if (state.events.length > 0) await renderReviewPanel(state);
     return;
   }
 
@@ -791,6 +871,10 @@ async function initRecordPanel(): Promise<void> {
   await appendRecordingEvent(buildEvent('navigate', null, { value: location.href }));
   attachListeners();
   installStopListener();
+  const capture = recorderGlobals().__piwiRecordCapture;
+  if (recordingMode(state) === 'bug' && state.bugToken && capture) {
+    recorderGlobals().__piwiBugRelayFlush = startEvidenceRelay(state.bugToken, capture.signal, scheduleHudRefresh);
+  }
   // Once per page, not per step — `refreshHud` runs on every captured
   // interaction and must stay local-only. TTL-guarded, so a recording that
   // crosses many pages still only re-fetches occasionally.
