@@ -10,7 +10,7 @@ import { locatorActionLabel } from '@piwitests/core/step-locators';
 import { stabilityLabels } from '@piwitests/core/locator-stability';
 import { editText, type Replacement } from './coverage-risk.js';
 import type { CoveredElement, UncoveredElement } from './coverage-scan.js';
-import { plural, statusLabel, testTitle, type CoverageContext } from './coverage-view.js';
+import { plural, statusLabel, testTitle, usePages, type CoverageContext } from './coverage-view.js';
 import { projectLocatorsUrl, testCaseUrl } from '../shared/piwi-client.js';
 
 export interface Drawable {
@@ -519,7 +519,8 @@ export class CoverageLayer {
         const list = el('ul');
         for (const use of entry.uses.slice(0, CARD_TESTS)) {
           const where = use.callSites[0] ?? index.tests[use.test]!.file;
-          const detail = `${use.actions.map(locatorActionLabel).join(', ')} · ${where}${use.projects.length ? ` · ${use.projects.join(', ')}` : ''}`;
+          const pages = usePages(index, use);
+          const detail = `${use.actions.map(locatorActionLabel).join(', ')} · ${where}${use.projects.length ? ` · ${use.projects.join(', ')}` : ''}${pages.length ? ` · on ${pages.slice(0, 3).join('; ')}${pages.length > 3 ? ` +${pages.length - 3}` : ''}` : ''}`;
           list.appendChild(this.testItem(use.test, context, detail, true));
         }
         block.appendChild(list);
@@ -529,7 +530,13 @@ export class CoverageLayer {
       }
       const actions = el('div', 'card-actions');
       const find = el('a', 'button', 'Find these locators in Piwi ↗');
-      find.href = projectLocatorsUrl(context.instanceUrl, context.projectId, locators, context.branch);
+      find.href = projectLocatorsUrl(
+        context.instanceUrl,
+        context.projectId,
+        locators,
+        context.branch,
+        context.pageScoped && context.pagePosition >= 0 ? context.pageKey : null,
+      );
       find.target = '_blank';
       find.rel = 'noopener noreferrer';
       actions.appendChild(find);

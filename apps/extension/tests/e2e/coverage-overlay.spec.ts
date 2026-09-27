@@ -4,6 +4,7 @@ import {
   CARD_TEST,
   DEFAULT_CONNECTION,
   INSTANCE_URL,
+  PAGE_TESTS,
   SHOP_TESTS,
   injectCoverage,
   openShop,
@@ -784,5 +785,111 @@ test.describe('coverage overlay: locators at risk', () => {
 
     await panel.getByLabel('Filter the list').fill('checkout');
     await expect(panel.locator('li.row')).toHaveCount(1);
+  });
+});
+
+test.describe('coverage overlay: what tests do on this page', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.setViewportSize({ width: 1400, height: 900 });
+  });
+
+  test('This page counts what tests do here, and lists what they use here that finds nothing', async ({
+    page,
+    context,
+  }) => {
+    await stubCoverageChrome(context, { cached: shopIndex([...SHOP_TESTS, ...PAGE_TESTS]) });
+    await openShop(page, '?nodialog');
+    await injectCoverage(page);
+    let coverage = await readCoverage(page);
+    expect(coverage).toMatchObject({ page: '/shop.html', pageScoped: true });
+
+    // Only a locator tests use on /newsletter finds Subscribe: not tested here, and the row says why.
+    expect(coverage.covered.some((c) => c.description === 'button "Subscribe"')).toBe(false);
+    expect(coverage.uncovered.find((u) => u.description === 'button "Subscribe"')?.elsewhere).toEqual([
+      "getByRole('button', { name: 'Subscribe' })",
+    ]);
+    // Uses with no recorded page count here, as before.
+    expect(coverage.covered.some((c) => c.description === 'searchbox "Search products"')).toBe(true);
+
+    // Used here and found nowhere: the one used as the page loads first. The negative assertion is never listed.
+    expect(coverage.missing).toEqual([
+      {
+        locator: "getByRole('button', { name: 'Pay now' })",
+        arrival: true,
+        actions: ['click'],
+        tests: ['pays in one click'],
+      },
+      {
+        locator: "getByRole('menuitem', { name: 'Sign out' })",
+        arrival: false,
+        actions: ['click'],
+        tests: ['signs out'],
+      },
+    ]);
+    // Clicked here, and four buttons share the name: strict mode refuses the click.
+    expect(coverage.several).toEqual([
+      {
+        locator: "getByRole('button', { name: 'Add to cart' })",
+        count: 4,
+        actions: ['click'],
+        tests: ['adds the first mug it sees'],
+      },
+    ]);
+
+    const panel = page.locator(`${HOST} .panel`);
+    await expect(panel.locator('.sub')).toContainText('Acme Mugs · /shop.html');
+    await panel.getByRole('button', { name: /^At risk \d+$/ }).click();
+    await expect(panel.locator('.section-head')).toHaveText([
+      'Missing here · 2',
+      'Several match here · 1',
+      /^Brittle locators · \d+$/,
+    ]);
+    const payNow = panel.locator('li.row', { hasText: "getByRole('button', { name: 'Pay now' })" });
+    await expect(payNow.locator('.label')).toHaveText('Not found as the page loads');
+    await expect(payNow.locator('.detail')).toHaveText('Click · tests/one-click.spec.ts:8:5 · chromium');
+
+    // The card of the Blue mug's button gives the page of each use, and links to the Locators page of this page.
+    await page.locator(`${HOST} .badge`).filter({ hasText: '2' }).first().click();
+    const card = page.locator(`${HOST} .card.pinned`);
+    await expect(card).toContainText('on /shop.html, as it loads');
+    expect(await card.getByRole('link', { name: /Find these locators in Piwi/ }).getAttribute('href')).toContain(
+      'page=%2Fshop.html',
+    );
+
+    // All pages: every locator that matches here counts, and the page's own risks go.
+    await panel.getByRole('button', { name: 'All pages' }).click();
+    coverage = await readCoverage(page);
+    expect(coverage.pageScoped).toBe(false);
+    expect(coverage.missing).toEqual([]);
+    expect(coverage.covered.some((c) => c.description === 'button "Subscribe"')).toBe(true);
+  });
+
+  test('the collapsed pill says what tests will not find as the page loads', async ({ page, context }) => {
+    await stubCoverageChrome(context, { cached: shopIndex([...SHOP_TESTS, ...PAGE_TESTS]) });
+    await openShop(page, '?nodialog');
+    await injectCoverage(page);
+    await page.locator(`${HOST} .panel`).getByRole('button', { name: 'Collapse to a summary pill' }).click();
+    await expect(page.locator(`${HOST} .pill`)).toContainText('1 missing here');
+  });
+
+  test('a client-side route change reads the new page', async ({ page, context }) => {
+    await stubCoverageChrome(context, { cached: shopIndex([...SHOP_TESTS, ...PAGE_TESTS]) });
+    await openShop(page, '?nodialog');
+    await injectCoverage(page);
+    await page.evaluate(() => history.pushState({}, '', '/newsletter'));
+    await expect.poll(async () => (await readCoverage(page)).page, { timeout: 10_000 }).toBe('/newsletter');
+    await expect
+      .poll(async () => (await readCoverage(page)).covered.some((c) => c.description === 'button "Subscribe"'))
+      .toBe(true);
+    // What tests use on /shop.html is elsewhere now.
+    expect((await readCoverage(page)).missing).toEqual([]);
+  });
+
+  test('an index without pages keeps the view as it was, with no switch', async ({ page, context }) => {
+    await stubCoverageChrome(context);
+    await openShop(page, '?nodialog');
+    await injectCoverage(page);
+    expect(await readCoverage(page)).toMatchObject({ pageScoped: false, missing: [], several: [] });
+    await expect(page.locator(`${HOST} .panel .page-switch`)).toHaveCount(0);
   });
 });

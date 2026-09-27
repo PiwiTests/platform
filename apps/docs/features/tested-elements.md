@@ -59,6 +59,25 @@ the actions they run. **Show tested elements inside it** opens the overlay limit
 element. **Copy all** copies every ranked locator, one per line, for the
 [Locators page](./locator-usage#the-locators-page) of the dashboard.
 
+## This page
+
+When the tests run with the [capture fixtures](/guide/capture-fixtures), Piwi records the
+[page](/guide/concepts#page-key) each locator call ran on, and the panel opens on **This page**: what tests do on the
+page you are on, `/checkout` or `/orders/:id`, plus the uses whose page no run recorded. A **Save** button a test
+clicks on `/settings` no longer lights up a lookalike on `/profile`; its row under **Not tested** says which locator
+matches it and where tests use it. **All pages** counts every locator that matches here, as without the fixtures.
+
+**At risk** then adds two lists above the brittle locators:
+
+- **Missing here**: locators tests use on this page, to act on an element or to assert it is there, that find nothing
+  now. Those used as the page loads come first: a test will fail on them. The others ran after the test acted on the
+  page, so the menu or dialog they belong to may just be closed. The collapsed pill counts the first kind.
+- **Several match here**: locators tests click or fill on this page that find several elements. Playwright's strict
+  mode refuses that action.
+
+Open a preview deployment of a branch with the default branch selected: **Missing here** lists what the default
+branch's tests will not find, before the branch's suite runs. The lists follow the page as it changes.
+
 ## Brittle locators
 
 A **brittle locator** breaks on a change unrelated to what its test checks: `locator('.btn-primary').nth(1)` breaks
@@ -81,7 +100,8 @@ the element with the extension names the brittle locators finding it.
    overlay then shows what that branch's tests reach, as the [Locators page](./locator-usage#branches)
    reads a branch. The branch select in the panel changes it for the rest of the browser session.
 2. Let a few runs arrive. The index fills in from the steps the reporter already sends, with
-   Playwright 1.61 or later: see the [requirements](./locator-usage#requirements-and-limits).
+   Playwright 1.61 or later: see the [requirements](./locator-usage#requirements-and-limits). With the
+   [capture fixtures](/guide/capture-fixtures), it also records the page of each use.
 3. For projects that set `testIdAttribute` in their Playwright config, the reporter records it
    with each run, and `getByTestId` reads that attribute on the page.
 
@@ -90,10 +110,9 @@ the panel's **Refresh** downloads it now.
 
 ## What it does not tell you
 
-- **Where the test used the locator.** The index keeps the chain, not the page URL of the step, so
-  a chain is matched on whatever page you're on. `getByRole('button', { name: 'Save' })` used on
-  the settings page also outlines a **Save** button on the profile page. The card lists the call
-  sites, so you can check.
+- **Where the test used the locator, without the capture fixtures.** A chain is then matched on
+  whatever page you're on: `getByRole('button', { name: 'Save' })` used on the settings page also
+  outlines a **Save** button on the profile page. The card lists the call sites, so you can check.
 - **States the page is not in.** Only what is in the DOM now is matched: a closed menu, another
   step of a wizard, or content behind a login shows once the page shows it.
 - **Locators the index skips**: chains cut short, `locator.describe()`, and locators used only

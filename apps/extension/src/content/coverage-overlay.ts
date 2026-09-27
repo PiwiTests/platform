@@ -22,8 +22,16 @@ import { getCachedLocatorIndex } from '../shared/locator-index-cache.js';
 import { getLocatorBranchOverride, resolveLocatorBranch, setLocatorBranchOverride } from '../shared/locator-branch.js';
 import { requestLocatorIndex } from '../shared/locator-index-refresh.js';
 import { isElementNode } from './engine-aria.js';
-import { scanCoverage, scopeScan, widerScope, type CoverageScan } from './coverage-scan.js';
-import { brittleRows, chainStabilities, replacementFor, type Replacement } from './coverage-risk.js';
+import { pageView, scanCoverage, scopeScan, widerScope, type CoverageScan } from './coverage-scan.js';
+import {
+  brittleRows,
+  chainStabilities,
+  pageRisks,
+  replacementFor,
+  usePlace,
+  type Replacement,
+} from './coverage-risk.js';
+import { pageKey } from '@piwitests/core/page-key';
 import { createLocatorEngine, type LocatorEngine } from './locator-engine.js';
 import { CoverageLayer, type Drawable, type Frame } from './coverage-layer.js';
 import { CoveragePanel, type PanelStatus } from './coverage-panel.js';
@@ -280,6 +288,16 @@ function startCoverageOverlay(): void {
     },
     suggestLocator,
     replacementFor: replacementForEntry,
+    onPageScope: (scope) => {
+      if (state.pageScope === scope) return;
+      state.pageScope = scope;
+      state.pinned = null;
+      state.focusTest = null;
+      layer.showPinned(null);
+      buildContext();
+      redraw();
+      renderPanel();
+    },
   });
 
   function describe(element: Element): string {
@@ -391,8 +409,18 @@ function startCoverageOverlay(): void {
       return;
     }
     if (state.scope && !state.scope.isConnected) state.scope = null;
-    const view = state.scope ? scopeScan(scan, state.scope) : scan;
+    // This page: only the uses made here, or whose page is unknown (runs without the capture fixtures).
+    const key = pageKey(location.href);
+    const pagePosition = key && index.pages ? index.pages.indexOf(key) : -1;
+    const hasPages = (index.pages?.length ?? 0) > 0;
+    const pageScoped = hasPages && state.pageScope === 'page';
+    const paged = pageScoped
+      ? pageView(scan, index, (_entry, use) => usePlace(use, pagePosition) !== 'elsewhere')
+      : null;
+    const base = paged ?? scan;
+    const view = state.scope ? scopeScan(base, state.scope) : base;
     const brittle = brittleRows(view, index);
+    const risks = pageScoped ? pageRisks(index, scan.found, pagePosition) : { missing: [], several: [] };
     context = {
       index,
       scan: view,
@@ -403,6 +431,13 @@ function startCoverageOverlay(): void {
       stabilities: chainStabilities(index),
       brittle,
       brittleElements: new Set(brittle.flatMap((row) => row.elements)),
+      pageKey: key,
+      pagePosition,
+      hasPages,
+      pageScoped,
+      elsewhere: paged?.elsewhere ?? new Map(),
+      missing: risks.missing,
+      several: risks.several,
     };
   }
 
@@ -523,7 +558,27 @@ function startCoverageOverlay(): void {
           locators: c.matches.map((m) => idx!.locators[m.entry]!.locator),
         })) ?? [],
       uncovered:
-        view?.uncovered.map((u) => ({ description: u.description, eid: u.element.getAttribute('data-eid') })) ?? [],
+        view?.uncovered.map((u) => ({
+          description: u.description,
+          eid: u.element.getAttribute('data-eid'),
+          elsewhere: context?.elsewhere.get(u.element)?.map((e) => idx!.locators[e]!.locator) ?? [],
+        })) ?? [],
+      page: context?.pageKey ?? null,
+      pageScoped: context?.pageScoped ?? false,
+      missing:
+        context?.missing.map((row) => ({
+          locator: idx!.locators[row.entry]!.locator,
+          arrival: row.arrival,
+          actions: row.actions,
+          tests: row.tests.map((t) => idx!.tests[t]!.title),
+        })) ?? [],
+      several:
+        context?.several.map((row) => ({
+          locator: idx!.locators[row.entry]!.locator,
+          count: row.count,
+          actions: row.actions,
+          tests: row.tests.map((t) => idx!.tests[t]!.title),
+        })) ?? [],
       tests: view?.tests.map((t) => ({ title: idx!.tests[t.test]!.title, elements: t.elements.length })) ?? [],
       brittle:
         context?.brittle.map((row) => {

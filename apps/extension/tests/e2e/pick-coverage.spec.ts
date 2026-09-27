@@ -6,6 +6,7 @@ import {
   DEFAULT_CONNECTION,
   DIST,
   INSTANCE_URL,
+  PAGE_TESTS,
   SHOP_TESTS,
   injectCoverage,
   openShop,
@@ -140,6 +141,15 @@ test.describe('pick results in connected mode', () => {
       () => (globalThis as unknown as { __piwiPickCoverage: { brittle: string[] } }).__piwiPickCoverage,
     );
     expect(report.brittle).toEqual(["locator('aside.cart > button')"]);
+  });
+
+  test('counts what tests do on this page, as Tested elements does', async ({ page, context }) => {
+    await stubCoverageChrome(context, { cached: shopIndex([...SHOP_TESTS, ...PAGE_TESTS]) });
+    await openShop(page, '?nodialog');
+    // A test clicks a Subscribe button, but on /newsletter: not this one.
+    await pick(page, '.newsletter button');
+    const section = page.locator(`${RESULTS} .piwi`);
+    await expect(section).toContainText('Not reached by any test of Acme Mugs');
   });
 
   test('says so when no test reaches the picked element', async ({ page, context }) => {

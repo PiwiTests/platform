@@ -203,6 +203,9 @@ export const COVERAGE_CSS = `
   .swatch.checked { background: #0ea5e9; }
   .swatch.uncovered { background: repeating-linear-gradient(45deg, #f59e0b 0 3px, transparent 3px 6px); border: 1px solid #f59e0b; }
   .swatch.brittle { background: #ea580c; }
+  .swatch.missing { background: #e11d48; }
+  .panel .page-switch { display: flex; gap: 3px; padding: 3px; border-radius: 8px; background: rgb(128 128 128 / 0.14); margin: 0 0 8px; }
+  .panel li.row.static { cursor: default; }
   .panel .risk-section + .risk-section { margin-top: 12px; }
   .panel .section-head { margin: 0 0 2px; font-size: 12.5px; font-weight: 650; }
   .panel .section-hint { margin: 0 0 6px; color: #9ca3af; font-size: 11.5px; }

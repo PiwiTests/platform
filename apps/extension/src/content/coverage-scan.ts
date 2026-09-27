@@ -15,7 +15,7 @@
  * it to storage and draws the result.
  */
 import { tryParseLocatorChain, type LocatorChain } from '@piwitests/core/locator-chain';
-import type { LocatorIndex } from '@piwitests/core/locator-index';
+import type { LocatorIndex, LocatorIndexUse } from '@piwitests/core/locator-index';
 import { isInteractionAction } from '@piwitests/core/step-locators';
 import { normalizeWhiteSpace, parentElementOrShadowHost, tagNameOf, type DomModel } from './engine-aria.js';
 import { createLocatorEngine, type LocatorEngine } from './locator-engine.js';
@@ -73,6 +73,8 @@ export interface CoverageScan {
   uncoveredCount: number;
   /** Chains resolving to nothing on this page. */
   unmatched: number;
+  /** How many elements each chain of the index resolves to here, by position; -1 where it could not be evaluated. */
+  found: number[];
   /** Chains the engine could not evaluate here, with why. */
   errors: Array<{ entry: number; message: string }>;
   evaluated: number;
@@ -207,6 +209,7 @@ export async function scanCoverage(
   const chains = chainsOf(index);
   const byElement = new Map<Element, CoverageMatch[]>();
   const errors: CoverageScan['errors'] = [];
+  const foundCounts: number[] = Array.from({ length: chains.length }, () => -1);
   let unmatched = 0;
   let sliceStart = performance.now();
 
@@ -229,6 +232,7 @@ export async function scanCoverage(
       errors.push({ entry: i, message: error instanceof Error ? error.message : String(error) });
       continue;
     }
+    foundCounts[i] = found.length;
     if (found.length === 0) {
       unmatched++;
       continue;
@@ -269,17 +273,7 @@ export async function scanCoverage(
   const position = (element: Element) => order.get(element) ?? Number.MAX_SAFE_INTEGER;
   covered.sort((a, b) => position(a.element) - position(b.element));
 
-  // An interactive element counts as covered when a chain reaches it, a child
-  // of it (the text inside a button), or its label (Playwright acts through labels).
-  const reached = new Set<Element>();
-  for (const element of byElement.keys()) {
-    reached.add(element);
-    for (let parent = parentElementOrShadowHost(element); parent; parent = parentElementOrShadowHost(parent)) {
-      reached.add(parent);
-    }
-    const label = element.closest('label') as HTMLLabelElement | null;
-    if (label?.control) reached.add(label.control);
-  }
+  const reached = reachedBy(byElement.keys());
   const interactive: InteractiveElement[] = [];
   for (const d of docs) {
     for (const element of engine.elements(d)) {
@@ -295,11 +289,92 @@ export async function scanCoverage(
     tests: testsOf(covered),
     ...surfaceOf(interactive, describe),
     unmatched,
+    found: foundCounts,
     errors,
     evaluated: chains.length,
     durationMs: Math.round(performance.now() - started),
     interactive,
     describe,
+  };
+}
+
+/**
+ * The elements a set of matched elements counts as reaching: each of them, its
+ * containers (a chain reaching the text inside a button reaches the button),
+ * and the field a matched label names (Playwright acts through labels).
+ */
+function reachedBy(elements: Iterable<Element>): Set<Element> {
+  const reached = new Set<Element>();
+  for (const element of elements) {
+    reached.add(element);
+    for (let parent = parentElementOrShadowHost(element); parent; parent = parentElementOrShadowHost(parent)) {
+      reached.add(parent);
+    }
+    const label = element.closest('label') as HTMLLabelElement | null;
+    if (label?.control) reached.add(label.control);
+  }
+  return reached;
+}
+
+/** A scan narrowed to what tests do on one page. */
+export interface PageView extends CoverageScan {
+  /** Elements only chains used on other pages find, with those chains' positions in the index. */
+  elsewhere: Map<Element, number[]>;
+}
+
+/**
+ * Narrow a finished scan to the uses `keep` keeps — on the page open, or of
+ * unknown page — the way `scopeScan` narrows it to an element: a chain none of
+ * whose uses is kept stops counting, its elements are reached only if another
+ * chain reaches them, and the tests counted are those of the kept uses.
+ */
+export function pageView(
+  scan: CoverageScan,
+  index: LocatorIndex,
+  keep: (entry: number, use: LocatorIndexUse) => boolean,
+): PageView {
+  const kept = new Map<number, LocatorIndexUse[]>();
+  const usesOf = (entry: number) => {
+    let uses = kept.get(entry);
+    if (!uses) kept.set(entry, (uses = index.locators[entry]!.uses.filter((use) => keep(entry, use))));
+    return uses;
+  };
+  const covered: CoveredElement[] = [];
+  const elsewhere = new Map<Element, number[]>();
+  for (const c of scan.covered) {
+    const matches = c.matches.filter((m) => usesOf(m.entry).length > 0);
+    if (matches.length === 0) {
+      elsewhere.set(
+        c.element,
+        c.matches.map((m) => m.entry),
+      );
+      continue;
+    }
+    const tests = new Set<number>();
+    let operated = false;
+    for (const m of matches) {
+      for (const use of usesOf(m.entry)) {
+        tests.add(use.test);
+        if (use.actions.some(isInteractionAction)) operated = true;
+      }
+    }
+    covered.push({
+      ...c,
+      matches,
+      tests: [...tests],
+      kind: operated ? 'operated' : 'checked',
+      ambiguous: matches.every((m) => m.count > 1),
+    });
+  }
+  const reached = reachedBy(covered.map((c) => c.element));
+  const interactive = scan.interactive.map(({ element }) => ({ element, reached: reached.has(element) }));
+  return {
+    ...scan,
+    covered,
+    tests: testsOf(covered),
+    ...surfaceOf(interactive, scan.describe),
+    interactive,
+    elsewhere,
   };
 }
 
@@ -429,7 +504,12 @@ export interface ElementReach {
   containers: ReachGroup;
 }
 
-export function elementReach(scan: CoverageScan, index: LocatorIndex, target: Element): ElementReach {
+export function elementReach(
+  scan: CoverageScan,
+  index: LocatorIndex,
+  target: Element,
+  keep: (entry: number, use: LocatorIndexUse) => boolean = () => true,
+): ElementReach {
   const labels = labelsOf(target);
   const around = new Set(containersOf(target));
   const found: Record<keyof ElementReach, CoveredElement[]> = { self: [], inside: [], containers: [] };
@@ -449,7 +529,7 @@ export function elementReach(scan: CoverageScan, index: LocatorIndex, target: El
     const weight = new Map<number, number>();
     for (const entry of entries) {
       for (const use of index.locators[entry]!.uses) {
-        if (!seen.has(use.test)) weight.set(use.test, (weight.get(use.test) ?? 0) + 1);
+        if (keep(entry, use) && !seen.has(use.test)) weight.set(use.test, (weight.get(use.test) ?? 0) + 1);
       }
     }
     const tests = [...weight.entries()].sort((a, b) => b[1] - a[1] || a[0] - b[0]).map(([test]) => test);

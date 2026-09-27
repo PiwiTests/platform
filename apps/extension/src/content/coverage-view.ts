@@ -1,6 +1,6 @@
 import type { LocatorIndex, LocatorIndexTest, LocatorIndexTestStatus } from '@piwitests/core/locator-index';
 import type { LocatorStability } from '@piwitests/core/locator-stability';
-import type { BrittleRow } from './coverage-risk.js';
+import type { BrittleRow, PageRiskRow } from './coverage-risk.js';
 import type { CoverageScan, CoveredElement, ScopedScan } from './coverage-scan.js';
 
 /** Everything the coverage UI draws from once a scan has run. */
@@ -19,6 +19,20 @@ export interface CoverageContext {
   brittle: BrittleRow[];
   /** The elements those chains find. */
   brittleElements: Set<Element>;
+  /** The key of the page open (`/orders/:id`); null off an http(s) page. */
+  pageKey: string | null;
+  /** Its position in `index.pages`; -1 when no use was recorded on it. */
+  pagePosition: number;
+  /** The index records pages, so the view can be limited to this page. */
+  hasPages: boolean;
+  /** The view counts only the uses made on this page, or of unknown page. */
+  pageScoped: boolean;
+  /** In a page-scoped view: elements only chains used on other pages find, with those chains. */
+  elsewhere: Map<Element, number[]>;
+  /** In a page-scoped view: chains used here that find nothing now. */
+  missing: PageRiskRow[];
+  /** In a page-scoped view: chains operated here that find several elements. */
+  several: PageRiskRow[];
 }
 
 export type CoverageTab = 'elements' | 'tests' | 'untested' | 'risk';
@@ -33,6 +47,8 @@ export interface ViewState {
   heatmap: boolean;
   /** Mark the elements a brittle locator finds. */
   showBrittle: boolean;
+  /** Count what tests do on this page only, or on every page (today's view without pages). */
+  pageScope: 'page' | 'all';
   /** A test pinned from the Tests list: only its elements stand out. */
   focusTest: number | null;
   /** A test hovered in the Tests list. */
@@ -58,6 +74,7 @@ export function initialViewState(): ViewState {
     showUncovered: true,
     heatmap: false,
     showBrittle: true,
+    pageScope: 'page',
     focusTest: null,
     hoverTest: null,
     hoverElement: null,
@@ -112,6 +129,19 @@ export function kindShown(state: ViewState, covered: CoveredElement): boolean {
 /** The test whose elements stand out right now: a hovered one, else the pinned focus. */
 export function spotlightTest(state: ViewState): number | null {
   return state.hoverTest ?? state.focusTest;
+}
+
+/** The page keys of a use, with the ones it ran on as the page loaded marked. */
+export function usePages(index: LocatorIndex, use: { pages?: number[]; arrival?: number[] }): string[] {
+  return (use.pages ?? []).map((i) => {
+    const page = index.pages?.[i] ?? '?';
+    return use.arrival?.includes(i) ? `${page}, as it loads` : page;
+  });
+}
+
+/** The count of At risk rows. */
+export function riskCount(context: CoverageContext): number {
+  return context.missing.length + context.several.length + context.brittle.length;
 }
 
 export function plural(count: number, one: string, many = `${one}s`): string {

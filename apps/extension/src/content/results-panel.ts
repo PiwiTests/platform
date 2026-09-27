@@ -13,8 +13,9 @@ import { getLocatorBranchOverride, resolveLocatorBranch } from '../shared/locato
 import { ALL_BRANCHES } from '@piwitests/core/locator-index';
 import { requestLocatorIndex } from '../shared/locator-index-refresh.js';
 import { projectLocatorsUrl, testCaseUrl } from '../shared/piwi-client.js';
-import { elementReach, scanCoverage, type ReachGroup } from './coverage-scan.js';
-import { chainStabilities } from './coverage-risk.js';
+import { elementReach, pageView, scanCoverage, type ReachGroup } from './coverage-scan.js';
+import { chainStabilities, usePlace } from './coverage-risk.js';
+import { pageKey } from '@piwitests/core/page-key';
 import { stabilityLabels } from '@piwitests/core/locator-stability';
 import { plural, statusLabel, testTitle } from './coverage-view.js';
 
@@ -359,13 +360,19 @@ async function fillPiwiSection(
   }
   if (closed()) return;
 
-  const scan = await scanCoverage(index, document, {
+  const fullScan = await scanCoverage(index, document, {
     testIdAttributes: index.testIdAttributes ?? undefined,
     ignore: (element) => (element.getAttribute('id') ?? '').startsWith('piwi-'),
     keepGoing: () => !closed(),
   });
-  if (!scan || closed()) return;
-  const reach = elementReach(scan, index, target);
+  if (!fullScan || closed()) return;
+  // As Tested elements counts by default: what tests do on this page, and uses whose page no run recorded.
+  const key = pageKey(location.href);
+  const position = key && index.pages ? index.pages.indexOf(key) : -1;
+  const keep = (_entry: number, use: Parameters<typeof usePlace>[0]) =>
+    !index!.pages?.length || usePlace(use, position) !== 'elsewhere';
+  const scan = index.pages?.length ? pageView(fullScan, index, keep) : fullScan;
+  const reach = elementReach(scan, index, target, keep);
   const direct = [...reach.self.tests, ...reach.inside.tests];
 
   const openCoverage = (scoped: boolean) => {

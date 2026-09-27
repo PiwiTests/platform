@@ -14,7 +14,8 @@ interface TestSpec {
   suite: string[];
   file: string;
   status: LocatorIndexTestStatus | null;
-  uses: Array<[locator: string, actions: string[], line: number]>;
+  /** Each use, with the pages its calls ran on (`[page key, on arrival]`) when the capture fixtures recorded them. */
+  uses: Array<[locator: string, actions: string[], line: number, pages?: Array<[page: string, arrival: boolean]>]>;
 }
 
 /** The tests of the Acme Mugs project, as a Piwi instance would index them. */
@@ -147,6 +148,46 @@ export const BRITTLE_TESTS: TestSpec[] = [
   },
 ];
 
+/**
+ * Tests whose calls recorded the page they ran on (the shop page is
+ * `/shop.html`): a button this page no longer has, used as it loads, a menu
+ * item used after an interaction, a negative assertion, a click on a name
+ * four buttons share, and a button used only on another page.
+ */
+export const PAGE_TESTS: TestSpec[] = [
+  {
+    title: 'pays in one click',
+    suite: ['checkout'],
+    file: 'tests/one-click.spec.ts',
+    status: 'passed',
+    uses: [
+      ["getByRole('button', { name: 'Pay now' })", ['click'], 8, [['/shop.html', true]]],
+      ["getByText('Out of stock')", ['expect.not.toBeVisible'], 9, [['/shop.html', true]]],
+    ],
+  },
+  {
+    title: 'signs out',
+    suite: ['account'],
+    file: 'tests/account.spec.ts',
+    status: 'failed',
+    uses: [["getByRole('menuitem', { name: 'Sign out' })", ['click'], 14, [['/shop.html', false]]]],
+  },
+  {
+    title: 'adds the first mug it sees',
+    suite: ['catalog'],
+    file: 'tests/quick-add.spec.ts',
+    status: 'passed',
+    uses: [["getByRole('button', { name: 'Add to cart' })", ['click'], 6, [['/shop.html', true]]]],
+  },
+  {
+    title: 'subscribes from the newsletter page',
+    suite: ['newsletter'],
+    file: 'tests/newsletter.spec.ts',
+    status: 'passed',
+    uses: [["getByRole('button', { name: 'Subscribe' })", ['click'], 11, [['/newsletter', true]]]],
+  },
+];
+
 /** A test checking the Blue mug card itself, around its buttons. */
 export const CARD_TEST: TestSpec = {
   title: 'shows the Blue mug card',
@@ -158,8 +199,13 @@ export const CARD_TEST: TestSpec = {
 
 export function shopIndex(tests: TestSpec[] = SHOP_TESTS, extra: Partial<LocatorIndex> = {}): LocatorIndex {
   const locators = new Map<string, LocatorIndex['locators'][number]>();
+  const pages: string[] = [];
+  const pageAt = (page: string) => {
+    if (!pages.includes(page)) pages.push(page);
+    return pages.indexOf(page);
+  };
   tests.forEach((test, i) => {
-    for (const [locator, actions, line] of test.uses) {
+    for (const [locator, actions, line, onPages] of test.uses) {
       let entry = locators.get(locator);
       if (!entry) locators.set(locator, (entry = { locator, lastSeenAt: '2026-09-25T10:00:00.000Z', uses: [] }));
       entry.uses.push({
@@ -168,6 +214,12 @@ export function shopIndex(tests: TestSpec[] = SHOP_TESTS, extra: Partial<Locator
         callSites: [`${test.file}:${line}:5`],
         projects: ['chromium'],
         branches: ['main'],
+        ...(onPages?.length
+          ? {
+              pages: onPages.map(([page]) => pageAt(page)),
+              arrival: onPages.filter(([, arrival]) => arrival).map(([page]) => pageAt(page)),
+            }
+          : {}),
       });
     }
   });
@@ -180,6 +232,7 @@ export function shopIndex(tests: TestSpec[] = SHOP_TESTS, extra: Partial<Locator
     builtAt: '2026-09-20T08:00:00.000Z',
     generatedAt: '2026-09-25T10:00:00.000Z',
     testIdAttributes: null,
+    ...(pages.length ? { pages } : {}),
     tests: tests.map((t, i) => ({ id: 100 + i, title: t.title, suite: t.suite, file: t.file, status: t.status })),
     locators: [...locators.values()].sort((a, b) => b.uses.length - a.uses.length),
     truncated: false,
@@ -291,7 +344,12 @@ export interface BridgedCoverage {
     tests: string[];
     locators: string[];
   }>;
-  uncovered: Array<{ description: string; eid: string | null }>;
+  uncovered: Array<{ description: string; eid: string | null; elsewhere: string[] }>;
+  /** The key of the page open, and whether the view counts only what tests do on it. */
+  page: string | null;
+  pageScoped: boolean;
+  missing: Array<{ locator: string; arrival: boolean; actions: string[]; tests: string[] }>;
+  several: Array<{ locator: string; count: number; actions: string[]; tests: string[] }>;
   tests: Array<{ title: string; elements: number }>;
   /** Brittle chains finding something here, most urgent first. */
   brittle: Array<{
