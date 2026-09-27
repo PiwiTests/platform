@@ -379,6 +379,38 @@ function seedNormalizeUrl(url) {
 
 const TEST_RUNS = [];
 const TEST_RUNS_CASES = [];
+// Content-addressed payloads (the page each locator call ran on), one per distinct content.
+const CASE_PAYLOADS = [];
+const casePayloadIds = new Map();
+
+/**
+ * The `piwi-locator-pages` payload the capture fixtures would have recorded for
+ * a case of this project: each step with a call site and a page, on the
+ * project's origin. Null when the project's steps record none.
+ */
+function locatorPagesPayloadId(proj) {
+  if (!proj.baseUrl) return null;
+  const origin = new URL(proj.baseUrl).origin;
+  const entries = proj.stepTitles
+    .filter((st) => st.location && st.page && st.params?.locator)
+    .map((st) => ({ location: st.location, locator: st.params.locator, origin, page: st.page, arrival: !!st.arrival }));
+  if (entries.length === 0) return null;
+  const content = JSON.stringify(entries);
+  const key = `${proj.id}\x00${content}`;
+  if (!casePayloadIds.has(key)) {
+    const id = CASE_PAYLOADS.length + 1;
+    CASE_PAYLOADS.push({
+      id,
+      project_id: proj.id,
+      hash: createHash('sha256').update(content).digest('hex'),
+      content,
+      size: content.length,
+      created_at: ts('2025-04-01'),
+    });
+    casePayloadIds.set(key, id);
+  }
+  return casePayloadIds.get(key);
+}
 const NETWORK_REQUESTS = [];
 const REPORTS = [];
 const FAILURE_CLUSTERS = [];
@@ -480,6 +512,7 @@ function shapeStep(src, duration, startTime) {
   // curated arguments in `params`.
   if (src.subtitle) step.subtitle = src.subtitle;
   if (src.params) step.params = src.params;
+  if (src.location) step.location = src.location;
   return step;
 }
 
@@ -957,6 +990,7 @@ for (const proj of DEMO_PROJECTS) {
         locks: JSON.stringify(demoLocks(caseDef.file, j)),
         test_meta: demoTestMeta(caseDef.file, j),
         steps,
+        locator_pages_payload_id: steps.length > 0 ? locatorPagesPayloadId(proj) : null,
         step_events: stepEvents,
         wasted_time_ms: wastedMs,
         slowest_step: slowestStep.title,
@@ -1113,6 +1147,7 @@ for (const proj of DEMO_PROJECTS) {
       row.attempts = JSON.stringify([{ retry: 0, status: 'skipped', duration: 0, startedAt: row.started_at }]);
       // A skipped test ran no steps and produced no live evidence.
       row.steps = [];
+      row.locator_pages_payload_id = null;
       row.slowest_step = null;
       row.slowest_step_duration = null;
       row.step_events = null;
@@ -2820,6 +2855,7 @@ const REBASE_SQL = [
   // kept_at is nullable; NULL + delta stays NULL.
   `UPDATE test_runs SET start_time = start_time + ${D}, created_at = created_at + ${D}, updated_at = updated_at + ${D}, kept_at = kept_at + ${D};`,
   `UPDATE files SET created_at = created_at + ${D};`,
+  `UPDATE case_payloads SET created_at = created_at + ${D};`,
   // fix_landed_at is nullable; NULL + delta stays NULL, so no guard is needed.
   `UPDATE failure_clusters SET created_at = created_at + ${D}, updated_at = updated_at + ${D}, fix_landed_at = fix_landed_at + ${D};`,
   `UPDATE quarantined_tests SET created_at = created_at + ${D}, released_at = released_at + ${D};`,
@@ -3695,6 +3731,9 @@ const lines = [
   '',
   '-- Diagnosis version history (references failure_diagnoses + failure_clusters)',
   insert('failure_diagnosis_versions', FAILURE_DIAGNOSIS_VERSIONS),
+  '',
+  '-- Content-addressed case payloads (referenced by test_runs_cases, so must come first)',
+  insert('case_payloads', CASE_PAYLOADS),
   '',
   '-- Test run cases',
   insert('test_runs_cases', TEST_RUNS_CASES),

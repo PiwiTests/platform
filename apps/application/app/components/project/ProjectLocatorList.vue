@@ -1,26 +1,38 @@
 <script setup lang="ts">
 /**
  * Every locator chain the project's tests use, the chains shared by the most
- * tests first, with a text filter and a stability filter. Each row opens
- * "Who uses this?". A brittle or watched chain says why, from the locator
- * stability rules.
+ * tests first, with a text filter, a stability filter and, when runs recorded
+ * the page of each call, a page filter. Each row opens "Who uses this?". A
+ * brittle or watched chain says why, from the locator stability rules.
  */
 import type { LocatorIndex } from '#shared/locator-index';
 import { assessLocator, stabilityLabels } from '#shared/locator-stability';
 import type { LocatorStabilityFilter } from '~/utils/locator-stability';
+import { ALL_PAGES, formatPageList } from '~/utils/locator-pages';
 
 const props = defineProps<{ index: LocatorIndex }>();
 const emit = defineEmits<{ inspect: [locator: string] }>();
 const stability = defineModel<LocatorStabilityFilter>('stability', { default: 'all' });
+/** A page key; `ALL_PAGES` for every page. */
+const page = defineModel<string>('page', { default: ALL_PAGES });
 
 const PAGE = 50;
 const search = ref('');
 const shown = ref(PAGE);
-watch([search, stability], () => (shown.value = PAGE));
+watch([search, stability, page], () => (shown.value = PAGE));
 
 const assessed = computed(() =>
-  props.index.locators.map((entry) => ({ entry, stability: assessLocator(entry.locator) })),
+  props.index.locators.map((entry) => {
+    const positions = new Set(entry.uses.flatMap((u) => u.pages ?? []));
+    const pages = [...positions].sort((a, b) => a - b).map((i) => props.index.pages?.[i] ?? '');
+    return { entry, stability: assessLocator(entry.locator), pages };
+  }),
 );
+
+const pageItems = computed(() => [
+  { label: 'All pages', value: ALL_PAGES },
+  ...(props.index.pages ?? []).map((p) => ({ label: p, value: p })),
+]);
 
 const counts = computed(() => {
   let brittle = 0;
@@ -41,16 +53,19 @@ const stabilityItems = computed(() => [
 const rows = computed(() => {
   const q = search.value.trim().toLowerCase();
   return assessed.value
-    .filter(({ entry, stability: s }) => {
+    .filter(({ entry, stability: s, pages }) => {
       if (stability.value !== 'all' && s?.level !== stability.value) return false;
+      if (page.value !== ALL_PAGES && !pages.includes(page.value)) return false;
       return !q || entry.locator.toLowerCase().includes(q);
     })
-    .map(({ entry, stability: s }) => ({
+    .map(({ entry, stability: s, pages }) => ({
       entry,
       tests: new Set(entry.uses.map((u) => u.test)).size,
       actions: [...new Set(entry.uses.flatMap((u) => u.actions))],
       stability: s && s.level !== 'stable' ? `${s.level}: ${stabilityLabels(s, ', ')}` : null,
       stabilityDetail: s?.findings.map((f) => f.detail).join('\n') ?? '',
+      pages: pages.length ? formatPageList(pages) : null,
+      pagesDetail: pages.join('\n'),
     }));
 });
 </script>
@@ -66,6 +81,14 @@ const rows = computed(() => {
         class="w-full sm:max-w-sm"
       />
       <USelect v-model="stability" :items="stabilityItems" size="md" class="w-full sm:w-44" aria-label="Stability" />
+      <USelect
+        v-if="index.pages?.length"
+        v-model="page"
+        :items="pageItems"
+        size="md"
+        class="w-full sm:w-52"
+        aria-label="Page"
+      />
     </div>
     <EmptyState v-if="rows.length === 0" icon="i-lucide-crosshair" text="No locator matches the filter." />
     <ul v-else class="divide-y divide-default border-y border-default">
@@ -80,7 +103,9 @@ const rows = computed(() => {
             {{ row.actions.slice(0, 4).map(locatorActionLabel).join(', ')
             }}<template v-if="row.actions.length > 4"> and {{ row.actions.length - 4 }} more</template> · last seen
             {{ formatRelativeTime(row.entry.lastSeenAt)
-            }}<template v-if="row.stability">
+            }}<template v-if="row.pages">
+              · on <span data-pages :title="row.pagesDetail">{{ row.pages }}</span></template
+            ><template v-if="row.stability">
               · <span data-stability :title="row.stabilityDetail">{{ row.stability }}</span></template
             >
           </p>

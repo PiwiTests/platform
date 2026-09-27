@@ -152,6 +152,12 @@ export interface DemoStepTitle {
   weight: number;
   subtitle?: string;
   params?: Record<string, string | number | boolean>;
+  /** Project-relative `file:line:col` of the call, as a step location reports it. */
+  location?: string;
+  /** The page key the call ran on, as the capture fixtures record it (`piwi-locator-pages`). */
+  page?: string;
+  /** The call ran before any locator interaction on that page. */
+  arrival?: boolean;
   children?: DemoStepTitle[];
 }
 

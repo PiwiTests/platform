@@ -30,6 +30,8 @@ import {
 } from '~~/server/utils/network-request-helpers';
 import { upsertLocatorSnapshots } from '~~/server/utils/locator-healing';
 import { upsertLocatorUsages, type LocatorUsageCase } from '~~/server/utils/locator-usages';
+import { sanitizeLocatorPages } from '~~/server/utils/locator-pages';
+import { upsertCasePayloads } from '~~/server/utils/case-payloads';
 import { resolveRunBranch } from '~~/server/utils/run-branch';
 import { applyReporterKeep } from '#shared/handlers/run-keep';
 import type { LocatorSnapshot } from '#shared/locator-healing.types';
@@ -415,6 +417,8 @@ export interface RunCaseInput {
   networkRequests?: unknown;
   webVitals?: unknown;
   pageState?: unknown;
+  /** The page each locator call ran on (capture fixtures). */
+  locatorPages?: unknown;
   aiUsage?: unknown;
   consoleLogs?: unknown;
   dialogs?: unknown;
@@ -609,6 +613,9 @@ export async function persistRunCases(
     purge?: boolean;
   }> = [];
   const perCaseUsages: LocatorUsageCase[] = [];
+  // The page each locator call ran on, per row: stored through case_payloads,
+  // like the server, so a rebuild of the index keeps them.
+  const rowLocatorPages: Array<string | null> = [];
   const caseMetaSnapshots = new Map<number, CaseMetaSnapshot>();
 
   for (let i = 0; i < cases.length; i++) {
@@ -666,10 +673,13 @@ export async function persistRunCases(
     rowFingerprints.push(fingerprint);
 
     const cappedSteps = capSteps(c.steps, DEFAULT_INGEST_LIMITS);
+    const locatorPages = sanitizeLocatorPages(c.locatorPages);
+    rowLocatorPages.push(locatorPages ? JSON.stringify(locatorPages) : null);
     perCaseUsages.push({
       caseId: shared.id,
       browserName: resolveBrowserName(c.browser),
       steps: cappedSteps,
+      locatorPages,
       filePath: c.filePath,
       runId: testRunId,
       complete: c.status === 'passed' && Array.isArray(c.steps) && c.steps.length <= DEFAULT_INGEST_LIMITS.steps,
@@ -732,6 +742,12 @@ export async function persistRunCases(
   }
 
   if (runCasesRows.length === 0) return [];
+
+  const pagePayloadIds = await upsertCasePayloads(db, projectId, rowLocatorPages);
+  runCasesRows.forEach((row, i) => {
+    const content = rowLocatorPages[i];
+    row.locatorPagesPayloadId = content ? (pagePayloadIds.get(content) ?? null) : null;
+  });
 
   const clusterIds = await getOrCreateFailureClusters(db, projectId, testRunId, pendingClusters);
   runCasesRows.forEach((row, i) => {

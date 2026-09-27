@@ -108,6 +108,23 @@ export function isOwnOriginRequest(url: string | null | undefined, origins: Set<
   return origin != null && origins.has(origin);
 }
 
+/** The base URLs a run's Playwright config recorded, one per configured project. */
+export function runBaseUrls(runMetadata: unknown): string[] {
+  const meta = runMetadata as { htmlReport?: { projects?: Array<{ use?: { baseURL?: unknown } } | null> } } | null;
+  const urls: string[] = [];
+  for (const p of meta?.htmlReport?.projects ?? []) {
+    const baseUrl = p?.use?.baseURL;
+    if (typeof baseUrl === 'string' && baseUrl) urls.push(baseUrl);
+  }
+  return urls;
+}
+
+/** The per-project route-origin allowlist stored on the project row. */
+export function projectRouteOrigins(routeOrigins: unknown): string[] {
+  if (!Array.isArray(routeOrigins)) return [];
+  return routeOrigins.filter((o): o is string => typeof o === 'string' && o.length > 0);
+}
+
 /**
  * Origins of a run's own document requests (navigations). The fallback for runs
  * from reporters that predate the recorded Playwright `baseURL`: a `document`

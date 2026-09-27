@@ -39,9 +39,11 @@ import {
   type RequestSpansInput,
   type PageInventoryInput,
   type ImportPair,
+  projectRouteOrigins,
+  runBaseUrls,
 } from '#shared/graph';
 import type { AppManifest, ManifestSource } from '#shared/types';
-import type { RunMetadata, ServerSpanEntry } from './run-json-types';
+import type { ServerSpanEntry } from './run-json-types';
 import { resolveRunBranch } from './run-branch';
 import { resolveDefaultBranch } from './scm/default-branch';
 import { resolveStoredDefaultBranch, type DefaultBranchProject } from './scm/stored-default-branch';
@@ -702,23 +704,9 @@ export async function resolveRunBranchTagFromStored(
   return branch === defaultBranch ? null : branch;
 }
 
-/** The base URLs a run's Playwright config recorded, one per configured project. */
-export function runBaseUrls(runMetadata: unknown): string[] {
-  const meta = (runMetadata as RunMetadata | null) ?? null;
-  const configProjects = meta?.htmlReport?.projects ?? [];
-  const urls: string[] = [];
-  for (const p of configProjects) {
-    const baseUrl = p?.use?.baseURL;
-    if (typeof baseUrl === 'string' && baseUrl) urls.push(baseUrl);
-  }
-  return urls;
-}
-
-/** The per-project route-origin allowlist stored on the project row. */
-export function projectRouteOrigins(routeOrigins: unknown): string[] {
-  if (!Array.isArray(routeOrigins)) return [];
-  return routeOrigins.filter((o): o is string => typeof o === 'string' && o.length > 0);
-}
+// The run's own origins, pure and shared with the locator index (which the demo
+// runs in the browser, where this module's SCM imports cannot load).
+export { projectRouteOrigins, runBaseUrls };
 
 /**
  * Rebuild a project's `route`/`page` nodes and `reaches` edges from its whole

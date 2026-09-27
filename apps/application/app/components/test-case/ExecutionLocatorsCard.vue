@@ -7,6 +7,7 @@
  * its containers.
  */
 import type { ExecutionLocatorUse, ExecutionLocatorsResult } from '#shared/locator-usages.types';
+import { formatPageList } from '~/utils/locator-pages';
 
 const props = defineProps<{
   testRunsCaseId: number;
@@ -98,6 +99,9 @@ function usedByTitle(use: ExecutionLocatorUse): string {
                 :project-key="projectKey"
                 :project-name="projectName"
               />
+              <span v-if="use.pages?.length" data-pages :title="use.pages.join('\n')"
+                >on {{ formatPageList(use.pages) }}</span
+              >
             </div>
             <LocatorCode :locator="use.locator" class="text-sm" />
           </div>

@@ -34,8 +34,7 @@ import {
 import { locatorUsages, projects, testCases, testRuns, testRunsCases } from '../database/schema';
 import { resolveCasePayloadContents } from './case-payloads';
 import { parseStoredLocatorPages } from './locator-pages';
-import { projectRouteOrigins, runBaseUrls } from './graph-ingest';
-import { collectOwnOrigins } from '#shared/graph';
+import { collectOwnOrigins, projectRouteOrigins, runBaseUrls } from '#shared/graph';
 import {
   extractStepLocatorUses,
   findLocationRoot,

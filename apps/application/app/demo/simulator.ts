@@ -48,6 +48,8 @@ interface SimStep {
   subtitle?: string;
   /** Playwright 1.63 curated per-step arguments. */
   params?: Record<string, string | number | boolean>;
+  /** Project-relative `file:line:col` of the call. */
+  location?: string;
 }
 
 interface SimAttempt {
@@ -222,7 +224,9 @@ const STRICT_MODE_ARIA_SNAPSHOT =
  * with the target in `subtitle` and curated `params`. The static seed keeps
  * other suites in the 1.61 shape, so the demo renders both.
  */
-const STEP_SHAPE: Array<Omit<SimStep, 'duration'> & { fraction: number; slowFraction: number }> = [
+const STEP_SHAPE: Array<
+  Omit<SimStep, 'duration'> & { fraction: number; slowFraction: number; page?: string; arrival?: boolean }
+> = [
   {
     title: 'Navigate',
     subtitle: '/checkout',
@@ -238,6 +242,9 @@ const STEP_SHAPE: Array<Omit<SimStep, 'duration'> & { fraction: number; slowFrac
     fraction: 0.12,
     slowFraction: 0.08,
     params: { locator: "getByLabel('Email')", value: 'ada@example.com' },
+    location: 'tests/pages/checkout.page.ts:18:31',
+    page: '/checkout',
+    arrival: true,
   },
   {
     title: 'Fill "Ada Lovelace"',
@@ -246,6 +253,9 @@ const STEP_SHAPE: Array<Omit<SimStep, 'duration'> & { fraction: number; slowFrac
     fraction: 0.25,
     slowFraction: 0.12,
     params: { locator: "getByLabel('Name on card')", value: 'Ada Lovelace' },
+    location: 'tests/pages/checkout.page.ts:22:38',
+    page: '/checkout',
+    arrival: false,
   },
   {
     title: 'Click',
@@ -254,6 +264,9 @@ const STEP_SHAPE: Array<Omit<SimStep, 'duration'> & { fraction: number; slowFrac
     fraction: 0.28,
     slowFraction: 0.55,
     params: { locator: "getByRole('button', { name: 'Place order' })" },
+    location: 'tests/pages/checkout.page.ts:26:58',
+    page: '/checkout',
+    arrival: false,
   },
   {
     title: 'Expect "toBeVisible"',
@@ -262,6 +275,9 @@ const STEP_SHAPE: Array<Omit<SimStep, 'duration'> & { fraction: number; slowFrac
     fraction: 0.15,
     slowFraction: 0.15,
     params: { locator: "getByText('Order confirmed')" },
+    location: 'tests/pages/checkout.page.ts:30:40',
+    page: '/orders/:id',
+    arrival: true,
   },
 ];
 
@@ -271,7 +287,19 @@ function buildSteps(duration: number, slowStepBias = false): SimStep[] {
     subtitle: s.subtitle,
     category: s.category,
     params: s.params,
+    location: s.location,
     duration: Math.round(duration * (slowStepBias ? s.slowFraction : s.fraction)),
+  }));
+}
+
+/** The page each locator call ran on, as the capture fixtures send it (`locatorPages`), matching the seeded runs. */
+function buildLocatorPages(): Array<Record<string, unknown>> {
+  return STEP_SHAPE.filter((s) => s.location && s.page && s.params?.locator).map((s) => ({
+    location: s.location,
+    locator: s.params!.locator,
+    origin: 'https://shop.example.com',
+    page: s.page,
+    arrival: !!s.arrival,
   }));
 }
 
@@ -1272,6 +1300,7 @@ async function runSingleSimulation(
             networkRequests: test.networkRequests,
             webVitals: test.webVitals,
             pageState: test.pageState ?? null,
+            locatorPages: test.steps?.length ? buildLocatorPages() : null,
             aiUsage: (await buildAiUsage({ file: test.file, title: test.title })) ?? null,
             tags: test.tags,
             locks: test.locks,

@@ -50,6 +50,7 @@ That's the entire setup — there is nothing to start, wrap, or await inside you
 | **ARIA snapshot** of the final page state: the YAML dump, plus the JSON aria tree on Playwright 1.63 or later | on failure | Failure evidence on the [execution](/features/evidence#one-execution-diagnosis-first) and cluster pages; [AI diagnosis](/features/ai-diagnosis) context; the JSON tree feeds [locator healing](/features/locator-healing)'s rename matching and the page diff |
 | **Browser dialogs**: an `alert`/`confirm`/`prompt`/`beforeunload` dialog's type, message and close time, through Playwright 1.63's `dialogclosed` event, which never suppresses the automatic dismissal | as each dialog closes | A *dialogs* lane on the [failure timeline](/features/evidence#one-execution-diagnosis-first) and a *a dialog was open when the action failed* [clue](/features/evidence#clues) |
 | **Locator snapshots**: element attributes, stable-ancestor anchors, same-role position and ranked alternative locators for each element a test proves resolvable, stamped with the call site | after each successful action and each passing web-first assertion (`toBeVisible()`, `toHaveText()`, …) | [Locator healing](/features/locator-healing); when a failing name-based locator (`getByRole`, `getByText`, `getByLabel`, …) matches nothing, a fresh suggestion is attached to the test as a Playwright annotation |
+| **Locator pages**: the [page key](/guide/concepts#page-key) each locator call ran on, never a query or raw id | at each locator action and assertion | [Locator pages](/features/locator-usage#pages); **This page** in [Tested elements](/features/tested-elements) |
 
 ::: tip Test source is captured without any fixture
 On a failure the reporter also reads the **call stack's in-project source**: the line that threw plus the helpers and page objects above it, as line-numbered snippets. It comes from the stack trace and the local files, so it needs no fixture, and renders as the **Test source** call stack on the [execution](/features/evidence#one-execution-diagnosis-first) and cluster pages.
@@ -71,6 +72,7 @@ The reporter degrades gracefully — nothing breaks without the fixtures. This i
 | Failure-time ARIA snapshot + locator suggestion | — | ✅ |
 | Dialogs lane on the failure timeline (Playwright 1.63+) | — | ✅ |
 | Locator healing (ranked alternatives panel) | — | ✅ |
+| The page each locator was used on | — | ✅ |
 | Backend log correlation | — | ✅ with a [backend integration](./backend-logs) |
 
 ## Where capture works
@@ -86,7 +88,7 @@ Semantics worth knowing:
 - **`beforeAll` / `afterAll` activity is intentionally not captured** — only what happens inside a test is attributed to that test.
 - **Multi-page tests** attribute Web Vitals and the failure ARIA snapshot to the most recently active page.
 - **Repeated call sites** (actions in a loop, a page-object method called several times) probe the element once per call site per test. If a probe fails, the next run of that line tries again.
-- **Assertion capture is positive-presence only** — negated assertions (`.not.…`), absence checks (`toBeHidden`, `toBeDetached`), multi-element checks (`toHaveCount`, array forms) and page-level ones (`toHaveTitle`, `toHaveURL`) never probe.
+- **Assertion capture is positive-presence only** — negated (`.not.…`), absence (`toBeHidden`), multi-element (`toHaveCount`) and page-level (`toHaveURL`) assertions never probe.
 
 ## Composing with your own fixtures
 
@@ -121,7 +123,7 @@ Capture is designed to never fail or noticeably slow down a test:
 - A capture that can't complete (mid-navigation, detached element) is dropped silently; it never throws into your test.
 
 `collectPerformanceMetrics: false` turns all fixture capture off; `captureLocators: false` turns off only the locator
-snapshots, and `capturePageState: false` only the test-end app state (URL, storage key names, cookie flags, never
+snapshots and pages, and `capturePageState: false` only the test-end app state (URL, storage key names, cookie flags, never
 values). Two opt-in aids for headed local runs, `inspectOnFailure` and `pickLocatorOnFailure`, open
 [the failing page for inspection](/features/locator-healing#inspect-the-failing-page-live-local-runs) or
 [let you pick a replacement locator](/features/locator-healing#pick-a-replacement-locator-on-the-failing-page-local-runs).
@@ -140,13 +142,13 @@ If that request fails, the set stays empty and **nothing is sampled**. Turn it o
 ## Troubleshooting
 
 - **Data missing for some specs only** — those specs import `test` from `@playwright/test` instead of your fixtures file. Capture is per-`test`-object; the import is the switch.
-- **No fixture data at all**: check that `collectPerformanceMetrics` is not `false`, and that tests navigate to a real page (`about:blank`-only tests produce no Web Vitals).
+- **No fixture data at all**: check that `collectPerformanceMetrics` is not `false`, and that tests leave `about:blank`.
 - **ARIA snapshot or locator healing missing**: the same causes, or `captureLocators` is off.
 - **An evidence card says "not captured"**: that project has never had the fixtures active; the in-app `/setup` checklist, which each empty card links, says what to switch on. A card that reads *nothing happened* means the fixtures ran and this execution produced nothing. With an uploaded trace, the console, network and ARIA cards are recovered from it and marked *derived from the trace*.
 
 ## Try it
 
-A runnable example project exercising every capture path, including a failing test that shows the ARIA snapshot, the locator suggestion and the healing panel, lives in [`examples/playwright-fixtures`](https://github.com/PiwiTests/platform/tree/main/examples/playwright-fixtures).
+A runnable example project exercising every capture path, a failing test included, lives in [`examples/playwright-fixtures`](https://github.com/PiwiTests/platform/tree/main/examples/playwright-fixtures).
 
 ## Related
 

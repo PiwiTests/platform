@@ -13,6 +13,7 @@
  */
 import type { ExecutionLocatorUse, LocatorUsageMatch, LocatorUsagesResult } from '#shared/locator-usages.types';
 import { assessLocator, stabilityLabels } from '#shared/locator-stability';
+import { formatPageList } from '~/utils/locator-pages';
 
 const props = defineProps<{
   open: boolean;
@@ -219,6 +220,9 @@ async function buildCommand() {
                 />
                 <span v-else>Unknown call site</span>
                 <span>{{ site.actions.map(locatorActionLabel).join(', ') }}</span>
+                <span v-if="site.pages?.length" data-pages :title="site.pages.join('\n')"
+                  >on {{ formatPageList(site.pages) }}</span
+                >
               </div>
               <LocatorCode v-if="site.locator !== reading?.value" :locator="site.locator" class="text-sm" />
               <ul class="text-sm space-y-0.5">

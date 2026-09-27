@@ -84,6 +84,14 @@ The **Locators** page, **Who uses this?** and the extension's
 An execution's **Locators** tab counts in the branch of its own run. The index lists at most
 the 50 branches seen most recently; the uses of a branch stay until the index is rebuilt.
 
+## Pages
+
+With the [capture fixtures](/guide/capture-fixtures), each use also records the
+[page](/guide/concepts#page-key) its call ran on, `/checkout` or `/orders/:id`, and whether it ran as the page loaded,
+before any locator interaction there. The Locators page says where each chain is used and filters by page, **Who
+uses this?** gives the pages of each call site, and the extension's [Tested elements](./tested-elements)
+shows only what tests do on the page you are on. Without the fixtures a use has no page, and counts on every page.
+
 ## Requirements and limits
 
 - **Playwright 1.61 or later**, with step collection on (`collectPerformanceMetrics`, the default). Playwright 1.63 puts the chain in each step's parameters; 1.61 and 1.62 print it in the step title, which Piwi reads the same way.
