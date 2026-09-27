@@ -33,6 +33,7 @@ const SURFACES = [
   'agent',
   'functions',
   'devtools',
+  'view',
   'stability',
   'codegen',
   'badge',

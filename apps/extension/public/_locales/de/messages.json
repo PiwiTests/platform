@@ -152,6 +152,12 @@
   "popup_testedElementsConnect": {
     "message": "Verbinden Sie Piwi, um zu sehen, was Ihre Tests erreichen"
   },
+  "popup_playwrightView": {
+    "message": "Playwright-Ansicht"
+  },
+  "popup_playwrightViewHint": {
+    "message": "Jedes Element, wie getByRole es sieht, und die, die kein Locator erreicht"
+  },
   "popup_reportBug": {
     "message": "Bug melden"
   },
@@ -3829,6 +3835,75 @@
       "name": {
         "content": "$1",
         "example": "applyCoupon"
+      }
+    }
+  },
+  "view_title": {
+    "message": "Playwright-Ansicht"
+  },
+  "view_noRole": {
+    "message": "(keine Rolle)"
+  },
+  "view_noName": {
+    "message": "(kein Name)"
+  },
+  "view_filterRole": {
+    "message": "Rolle"
+  },
+  "view_allRoles": {
+    "message": "Alle Rollen"
+  },
+  "view_labelled_one": {
+    "message": "$count$ Element beschriftet",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "42"
+      }
+    }
+  },
+  "view_labelled_other": {
+    "message": "$count$ Elemente beschriftet",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "42"
+      }
+    }
+  },
+  "view_unreachable_one": {
+    "message": "$count$, das kein stabiler Locator erreicht (rot)",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "view_unreachable_other": {
+    "message": "$count$, die kein stabiler Locator erreicht (rot)",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "view_ambiguous_one": {
+    "message": "$count$, dessen Rolle und Name auch andere finden (orange)",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "view_ambiguous_other": {
+    "message": "$count$, deren Rolle und Name auch andere finden (orange)",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
       }
     }
   },

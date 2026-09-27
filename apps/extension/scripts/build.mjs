@@ -38,6 +38,7 @@ const STANDALONE_ENTRIES = [
   ['locator-console', 'src/content/locator-console.ts'],
   ['multi-pick', 'src/content/multi-pick.ts'],
   ['lint-overlay', 'src/content/lint-overlay.ts'],
+  ['playwright-view', 'src/content/playwright-view.ts'],
   ['assertion-panel', 'src/content/assertion-panel.ts'],
   ['session-panel', 'src/content/session-panel.ts'],
   ['agent-context-panel', 'src/content/agent-context-panel.ts'],

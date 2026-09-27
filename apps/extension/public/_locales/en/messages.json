@@ -193,6 +193,14 @@
     "message": "Connect to your Piwi instance to see what your tests reach",
     "description": "Popup tile hint, under “Tested elements”, when no Piwi instance is set up. One line."
   },
+  "popup_playwrightView": {
+    "message": "Playwright view",
+    "description": "Popup tile label: turns on labels showing each element as a Playwright test sees it. “Playwright” is a product name."
+  },
+  "popup_playwrightViewHint": {
+    "message": "Each element as getByRole sees it, and the ones no locator reaches",
+    "description": "Popup tile hint, under “Playwright view”. One line. getByRole is Playwright code: keep it as it is."
+  },
   "popup_reportBug": {
     "message": "Report a bug",
     "description": "Popup tile: records the steps of a bug. Short."
@@ -4528,6 +4536,86 @@
       "name": {
         "content": "$1",
         "example": "applyCoupon"
+      }
+    }
+  },
+  "view_title": {
+    "message": "Playwright view",
+    "description": "Playwright view: title of the small panel over the page. “Playwright” is a product name."
+  },
+  "view_noRole": {
+    "message": "(no role)",
+    "description": "Playwright view: in a label over an element, after its tag name, when the element has no role Playwright recognizes. Short."
+  },
+  "view_noName": {
+    "message": "(no name)",
+    "description": "Playwright view: in a label over an element, after its role, when it has no accessible name. Short."
+  },
+  "view_filterRole": {
+    "message": "Role",
+    "description": "Playwright view: label of the select that shows the labels of one role only."
+  },
+  "view_allRoles": {
+    "message": "All roles",
+    "description": "Playwright view: first option of the role select, showing every label."
+  },
+  "view_labelled_one": {
+    "message": "$count$ element labelled",
+    "description": "Playwright view panel: how many elements carry a label. $count$ is the number.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "42"
+      }
+    }
+  },
+  "view_labelled_other": {
+    "message": "$count$ elements labelled",
+    "description": "Playwright view panel: how many elements carry a label. $count$ is the number.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "42"
+      }
+    }
+  },
+  "view_unreachable_one": {
+    "message": "$count$ no stable locator reaches (red)",
+    "description": "Playwright view panel: elements marked in red, which look operable but have no role, or no name and no test id. $count$ is the number.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "view_unreachable_other": {
+    "message": "$count$ no stable locator reaches (red)",
+    "description": "Playwright view panel: elements marked in red, which look operable but have no role, or no name and no test id. $count$ is the number.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "view_ambiguous_one": {
+    "message": "$count$ whose role and name find others too (amber)",
+    "description": "Playwright view panel: elements marked in amber, whose getByRole with their name finds other elements too. $count$ is the number.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "view_ambiguous_other": {
+    "message": "$count$ whose role and name find others too (amber)",
+    "description": "Playwright view panel: elements marked in amber, whose getByRole with their name finds other elements too. $count$ is the number.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
       }
     }
   },

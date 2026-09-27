@@ -265,6 +265,16 @@ JavaScript world, so:
   not a page that means harm; `readRelayedEntry` rebuilds every entry field by field and truncates
   it, and storage caps each kind at 100. Treat everything it relays as page-controlled text.
 
+## Playwright view
+
+`playwright-view.ts` (popup tile `V`, a toggle) labels every element a test could reach with the role and name
+`DomModel` gives it and its test id, and marks two kinds: **unreachable** (looks operable, through a `tabindex`, an
+`onclick` or a pointer cursor its parent lacks, with no role; or an operable role with no name; and no test id) and
+**ambiguous** (its `getByRole(role, { name })` finds other elements on the engine). The pure half is
+`playwright-view-scan.ts`, one engine per scan. The overlay redraws on scroll, scans again once the page has been still
+for a moment after a change, and bridges its labels to `globalThis.__piwiPlaywrightView` for
+`playwright-view.spec.ts`, which also checks the counts against real Playwright.
+
 ## DevTools
 
 `devtools_page` (`devtools.html`, `src/devtools/devtools.ts`) loads once per DevTools window and adds the **Piwi**

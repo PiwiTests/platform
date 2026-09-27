@@ -152,6 +152,12 @@
   "popup_testedElementsConnect": {
     "message": "Connectez Piwi pour voir ce que vos tests atteignent"
   },
+  "popup_playwrightView": {
+    "message": "Vue Playwright"
+  },
+  "popup_playwrightViewHint": {
+    "message": "Chaque élément tel que getByRole le voit, et ceux qu’aucun locator n’atteint"
+  },
   "popup_reportBug": {
     "message": "Signaler un bug"
   },
@@ -3829,6 +3835,75 @@
       "name": {
         "content": "$1",
         "example": "applyCoupon"
+      }
+    }
+  },
+  "view_title": {
+    "message": "Vue Playwright"
+  },
+  "view_noRole": {
+    "message": "(sans rôle)"
+  },
+  "view_noName": {
+    "message": "(sans nom)"
+  },
+  "view_filterRole": {
+    "message": "Rôle"
+  },
+  "view_allRoles": {
+    "message": "Tous les rôles"
+  },
+  "view_labelled_one": {
+    "message": "$count$ élément étiqueté",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "42"
+      }
+    }
+  },
+  "view_labelled_other": {
+    "message": "$count$ éléments étiquetés",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "42"
+      }
+    }
+  },
+  "view_unreachable_one": {
+    "message": "$count$ qu’aucun locator stable n’atteint (rouge)",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "view_unreachable_other": {
+    "message": "$count$ qu’aucun locator stable n’atteint (rouge)",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "view_ambiguous_one": {
+    "message": "$count$ dont le rôle et le nom en trouvent d’autres aussi (orange)",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "view_ambiguous_other": {
+    "message": "$count$ dont le rôle et le nom en trouvent d’autres aussi (orange)",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
       }
     }
   },

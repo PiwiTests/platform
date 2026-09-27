@@ -152,6 +152,12 @@
   "popup_testedElementsConnect": {
     "message": "Conecta Piwi para ver lo que alcanzan tus pruebas"
   },
+  "popup_playwrightView": {
+    "message": "Vista Playwright"
+  },
+  "popup_playwrightViewHint": {
+    "message": "Cada elemento como lo ve getByRole, y los que ningún locator alcanza"
+  },
   "popup_reportBug": {
     "message": "Notificar un bug"
   },
@@ -3829,6 +3835,75 @@
       "name": {
         "content": "$1",
         "example": "applyCoupon"
+      }
+    }
+  },
+  "view_title": {
+    "message": "Vista Playwright"
+  },
+  "view_noRole": {
+    "message": "(sin rol)"
+  },
+  "view_noName": {
+    "message": "(sin nombre)"
+  },
+  "view_filterRole": {
+    "message": "Rol"
+  },
+  "view_allRoles": {
+    "message": "Todos los roles"
+  },
+  "view_labelled_one": {
+    "message": "$count$ elemento etiquetado",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "42"
+      }
+    }
+  },
+  "view_labelled_other": {
+    "message": "$count$ elementos etiquetados",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "42"
+      }
+    }
+  },
+  "view_unreachable_one": {
+    "message": "$count$ que ningún locator estable alcanza (rojo)",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "view_unreachable_other": {
+    "message": "$count$ que ningún locator estable alcanza (rojo)",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "view_ambiguous_one": {
+    "message": "$count$ cuyo rol y nombre encuentran también otros (ámbar)",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "view_ambiguous_other": {
+    "message": "$count$ cuyo rol y nombre encuentran también otros (ámbar)",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
       }
     }
   },
