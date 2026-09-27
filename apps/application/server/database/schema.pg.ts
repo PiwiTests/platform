@@ -1079,6 +1079,7 @@ export const projectIntegrations = pgTable(
     policies: jsonb('policies'), // { commentOnFix, transitionOnFix, commentOnRegression, resolveOnClose, … }
     ownerRoutes: jsonb('owner_routes'), // { owner, projectKey?, componentId?, assigneeAccountId?, labels? }[]
     autoCreate: jsonb('auto_create'), // { enabled, minOccurrences, minRuns, dailyCap, routeUnmatched } — disabled by default
+    fieldDefaults: jsonb('field_defaults'), // { [trackerFieldId]: { value, label } } — values for fields the tracker requires
     createdAt: timestamp('created_at', { mode: 'date' })
       .notNull()
       .$defaultFn(() => new Date()),

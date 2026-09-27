@@ -13,6 +13,7 @@ import type { BlockedCaseRef } from '~~/types/api';
 import type { ReproRecipe, BisectResult, ReproduceDesktopContext } from '#shared/reproduce';
 import type { FixedBeforeMatch, FixPlan } from '#shared/fix-plan.types';
 import type { Situation, SituationPart } from '#shared/situation';
+import type { KnownIssueRef } from '#shared/handlers/known-issues';
 import type { NextStep } from '#shared/next-step';
 import { commitUrl } from '#shared/scm-urls';
 import { shouldNudgeFixtures } from '#shared/capability-nudge';
@@ -96,6 +97,7 @@ const failureCluster = computed(() => {
       confidence?: string | null;
       summary?: string | null;
     } | null;
+    knownIssue?: KnownIssueRef | null;
   } | null;
 });
 
@@ -438,25 +440,10 @@ function copyFailure() {
 const linksModalOpen = ref(false);
 
 // ── Create issue / link to the cluster's known issue ─────────────────────────
-const toast = useToast();
 const { hasTracker } = useTrackerStatus();
-const knownIssue = computed(() => fixPlanData.value?.issue ?? null);
+// The execution carries its cluster's issue, so it is current right after a create.
+const knownIssue = computed(() => failureCluster.value?.knownIssue ?? fixPlanData.value?.issue ?? null);
 const issueModalOpen = ref(false);
-
-async function linkKnownIssue() {
-  const issue = knownIssue.value;
-  if (!issue || !testCase.value) return;
-  try {
-    await $fetch('/api/links', {
-      method: 'POST',
-      body: { entityType: 'test_runs_case', entityId: testCase.value.id, url: issue.url, title: issue.key },
-    });
-    toast.add({ title: `Linked ${issue.key}`, color: 'success' });
-    await refresh();
-  } catch (e) {
-    toast.add({ title: 'Could not link the issue', description: errorMessage(e), color: 'error' });
-  }
-}
 
 function onIssueCreated() {
   issueModalOpen.value = false;
@@ -465,7 +452,14 @@ function onIssueCreated() {
 
 // ── Navbar More menu ────────────────────────────────────────────────────────
 const moreMenuItems = computed(() => {
-  const items: { label: string; icon: string; color?: 'warning'; onSelect: () => void }[] = [];
+  const items: {
+    label: string;
+    icon: string;
+    color?: 'warning';
+    to?: string;
+    target?: '_blank';
+    onSelect?: () => void;
+  }[] = [];
   // The retry command was the header's always-on primary; it now lives here and
   // on the next-step line (for code-change steps) and in the Verify section.
   if (retryCommand.value && !desktopBridge.value) {
@@ -492,16 +486,15 @@ const moreMenuItems = computed(() => {
           },
     );
   }
-  if (canWrite.value && hasTracker.value && failureCluster.value) {
-    if (knownIssue.value) {
-      items.push({
-        label: `Link to ${knownIssue.value.key}`,
-        icon: 'i-simple-icons-jira',
-        onSelect: () => void linkKnownIssue(),
-      });
-    } else {
-      items.push({ label: 'Create issue', icon: 'i-simple-icons-jira', onSelect: () => (issueModalOpen.value = true) });
-    }
+  if (knownIssue.value) {
+    items.push({
+      label: `Open ${knownIssue.value.key}`,
+      icon: 'i-simple-icons-jira',
+      to: knownIssue.value.url,
+      target: '_blank',
+    });
+  } else if (canWrite.value && hasTracker.value && failureCluster.value) {
+    items.push({ label: 'Create issue', icon: 'i-simple-icons-jira', onSelect: () => (issueModalOpen.value = true) });
   }
   items.push({ label: 'Link an issue', icon: 'i-lucide-link', onSelect: () => (linksModalOpen.value = true) });
   if (testCase.value?.error) items.push({ label: 'Copy failure', icon: 'i-lucide-clipboard', onSelect: copyFailure });
@@ -747,8 +740,17 @@ const { handle: handleNextStepAction } = useNextStepActions({
           <template v-if="situation" #situation>
             <p data-shot="situation">
               <template v-for="(part, i) in situation.parts" :key="i">
+                <a
+                  v-if="part.kind === 'issue' && part.url"
+                  :href="part.url"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  :class="[SENTENCE_LINK_CLASS, CODE_CHIP_CLASS]"
+                  data-testid="situation-issue"
+                  >{{ part.text }}</a
+                >
                 <NuxtLink
-                  v-if="part.href"
+                  v-else-if="part.href"
                   :to="part.href"
                   :class="[SENTENCE_LINK_CLASS, part.kind === 'commit' ? CODE_CHIP_CLASS : '']"
                   >{{ part.text }}</NuxtLink
@@ -978,10 +980,10 @@ const { handle: handleNextStepAction } = useNextStepActions({
   <UModal v-model:open="linksModalOpen" title="Links">
     <template #body>
       <EntityLinks
-        v-if="testCase?.executionId"
+        v-if="testCase?.testCaseId"
         entity-type="test_case"
-        :entity-id="testCase.executionId"
-        :links="(testCase as any)?.stableLinks ?? null"
+        :entity-id="testCase.testCaseId"
+        :links="testCase.stableLinks ?? null"
         @updated="refresh()"
       />
     </template>

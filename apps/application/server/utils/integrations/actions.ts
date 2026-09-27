@@ -8,6 +8,11 @@
  * so the issue resolves in a single round-trip when Jira is up and degrades to a
  * background retry (`sweepIntegrationActions`, every minute) when it is not. A
  * successful `create-issue` writes the entity link and the result together.
+ *
+ * A refusal no retry can change — Jira answering that the request itself is
+ * wrong (a missing required field, a project the account cannot see), or a
+ * transition whose screen requires a field the project gives no value for —
+ * fails the action at once instead of retrying it for hours.
  */
 import { and, eq, lt, lte } from 'drizzle-orm';
 import { integrationActions } from '../../database/schema';
@@ -21,6 +26,14 @@ import { createTracker } from './connections';
 import { JiraError } from './jira/client';
 import { writeCreatedIssueLink } from './entity-links';
 import { nextAttempt, OUTBOX_MAX_ATTEMPTS } from '../outbox';
+import {
+  fieldPayload,
+  missingRequiredFields,
+  missingTransitionFieldsMessage,
+  TRANSITION_SKIPPED_FIELDS,
+  type FieldValues,
+} from '#shared/integrations/fields';
+import { matchTransition } from '#shared/integrations/transitions';
 
 /** The snapshot a `create-issue` action carries — enough to retry deterministically. */
 export interface CreateIssueActionPayload {
@@ -32,6 +45,8 @@ export interface CreateIssueActionPayload {
   assigneeId?: string | null;
   priority?: string | null;
   componentId?: string | null;
+  /** Extra field values, as the tracker API takes them, keyed by field id. */
+  fields?: Record<string, unknown>;
   /** The language the body was rendered in, so a retry stays consistent. */
   locale?: IssueLocale;
   /** The entity the created known-issue link attaches to — normally the cluster. */
@@ -55,6 +70,8 @@ export interface TransitionActionPayload {
   issueKey: string;
   transitionId?: string | null;
   statusName?: string | null;
+  /** Values for the fields the transition's screen asks for, from the project settings. */
+  fields?: FieldValues;
 }
 
 export interface CreateIssueResult {
@@ -112,6 +129,76 @@ export async function enqueueAction(db: DbClient, input: EnqueueInput): Promise<
   return row;
 }
 
+/** The action already queued under a dedupe key, or null. */
+export async function findActionByKey(db: DbClient, dedupeKey: string): Promise<IntegrationAction | null> {
+  const [row] = await db.select().from(integrationActions).where(eq(integrationActions.dedupeKey, dedupeKey));
+  return row ?? null;
+}
+
+/**
+ * Enqueue an action, or give an earlier one with the same dedupe key a new
+ * payload when it has already failed: a person who changes the request after a
+ * refusal (another issue type, a filled-in field) sends the new request, not
+ * the one that was refused. An action that succeeded, or that is queued and has
+ * not been tried yet, is returned as it is.
+ */
+export async function enqueueOrReplaceAction(db: DbClient, input: EnqueueInput): Promise<IntegrationAction> {
+  const action = await enqueueAction(db, input);
+  const failedBefore = action.status === 'failed' || (action.status === 'pending' && action.attempts > 0);
+  if (!failedBefore) return action;
+  const [replaced] = await db
+    .update(integrationActions)
+    .set({
+      payload: input.payload as never,
+      status: 'pending',
+      attempts: 0,
+      error: null,
+      scheduledFor: new Date(),
+      finishedAt: null,
+      requestedBy: input.requestedBy ?? action.requestedBy,
+    })
+    .where(eq(integrationActions.id, action.id))
+    .returning();
+  return replaced ?? action;
+}
+
+/**
+ * HTTP statuses of a tracker refusal no retry can change: the request itself is
+ * wrong or not allowed. A 401 (a token that may be renewed), a 429 (rate
+ * limit) and any 5xx or network failure are retried.
+ */
+const FINAL_REFUSAL_STATUSES = new Set([400, 403, 404, 405, 410, 413, 422]);
+
+/**
+ * A write Piwi refuses before calling the tracker, because a field the tracker
+ * requires has no value: a retry would be refused the same way.
+ */
+export class RequiredFieldsError extends Error {
+  constructor(
+    message: string,
+    /** The empty fields, by id, with Jira's names. */
+    readonly missing: { id: string; name: string }[],
+  ) {
+    super(message);
+    this.name = 'RequiredFieldsError';
+  }
+}
+
+/** Whether an attempt's error is a refusal that retrying cannot change. */
+export function isFinalRefusal(err: unknown): boolean {
+  if (err instanceof RequiredFieldsError) return true;
+  return err instanceof JiraError && FINAL_REFUSAL_STATUSES.has(err.status);
+}
+
+/** The per-field errors an attempt's error carries, keyed by field id. */
+function errorFields(err: unknown): Record<string, string> | undefined {
+  if (err instanceof JiraError) return err.fieldErrors;
+  if (err instanceof RequiredFieldsError) {
+    return Object.fromEntries(err.missing.map((f) => [f.id, `${f.name} is required.`]));
+  }
+  return undefined;
+}
+
 /** Retry-after seconds carried on a 429, in milliseconds, or null. */
 function retryAfterMs(err: unknown): number | null {
   if (err instanceof JiraError && err.retryAfterSeconds != null) return err.retryAfterSeconds * 1000;
@@ -134,6 +221,7 @@ async function applyCreateIssue(
     assigneeId: payload.assigneeId ?? null,
     priority: payload.priority ?? null,
     componentId: payload.componentId ?? null,
+    fields: payload.fields,
   });
   // The create response carries no status; read it back once so the chip shows a
   // status the moment the key exists (best-effort — the key still lands if not).
@@ -177,25 +265,32 @@ async function applyComment(tracker: IssueTracker, action: IntegrationAction): P
  * transition whose target status name matches (case-insensitively), read from
  * the actual issue so the match is on the site's own names. A no-op when the
  * transition is not available (already there, or renamed away).
+ *
+ * The transition's screen is read with it: the project's values for its fields
+ * are sent, and a field it requires with no value refuses the transition before
+ * Jira is asked, naming the field.
  */
 async function applyTransition(tracker: IssueTracker, action: IntegrationAction): Promise<void> {
   const payload = action.payload as TransitionActionPayload;
   const available = await tracker.listTransitions(payload.issueKey);
-  let target = payload.transitionId ? available.find((t) => t.id === payload.transitionId) : undefined;
-  if (!target && payload.statusName) {
-    const wanted = payload.statusName.trim().toLowerCase();
-    target =
-      available.find((t) => (t.toStatus ?? '').trim().toLowerCase() === wanted) ??
-      available.find((t) => t.name.trim().toLowerCase() === wanted);
-  }
+  const target = matchTransition(available, payload.transitionId) ?? matchTransition(available, payload.statusName);
   if (!target) return;
-  await tracker.transition(payload.issueKey, target.id);
+  const values = payload.fields ?? {};
+  const screen = target.fields ?? [];
+  const missing = missingRequiredFields(screen, values, {}, TRANSITION_SKIPPED_FIELDS);
+  if (missing.length) {
+    throw new RequiredFieldsError(
+      missingTransitionFieldsMessage(missing, payload.issueKey, target.toStatus ?? target.name),
+      missing.map((f) => ({ id: f.id, name: f.name })),
+    );
+  }
+  await tracker.transition(payload.issueKey, target.id, fieldPayload(values, screen, TRANSITION_SKIPPED_FIELDS));
 }
 
 export type ActionOutcome =
   | { status: 'done'; result?: unknown }
   | { status: 'skipped'; reason: string }
-  | { status: 'failed'; error: string };
+  | { status: 'failed'; error: string; final?: boolean; fieldErrors?: Record<string, string> };
 
 /**
  * Run one action once. Marks the row terminal on success or skip; on failure
@@ -243,7 +338,10 @@ export async function runAction(db: DbClient, action: IntegrationAction): Promis
     return { status: 'skipped', reason: `unsupported action kind '${action.kind}'` };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    const next = nextAttempt(attempts, now, action.scheduledFor, retryAfterMs(err));
+    const final = isFinalRefusal(err);
+    const next = final
+      ? { status: 'failed' as const, scheduledFor: action.scheduledFor }
+      : nextAttempt(attempts, now, action.scheduledFor, retryAfterMs(err));
     await db
       .update(integrationActions)
       .set({
@@ -255,7 +353,8 @@ export async function runAction(db: DbClient, action: IntegrationAction): Promis
       })
       .where(eq(integrationActions.id, action.id));
     console.error(`[integrations] action ${action.id} failed (attempt ${attempts}/${OUTBOX_MAX_ATTEMPTS}): ${message}`);
-    return { status: 'failed', error: message };
+    const fieldErrors = errorFields(err);
+    return { status: 'failed', error: message, final, ...(fieldErrors ? { fieldErrors } : {}) };
   }
 }
 

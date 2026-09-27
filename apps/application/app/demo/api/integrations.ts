@@ -1,6 +1,7 @@
 import { and, eq, isNotNull } from 'drizzle-orm';
 import type {
   ConnectionCheckResult,
+  CreateIssueResponse,
   ConnectionInput,
   ConnectionSummary,
   ConnectionTestResult,
@@ -10,6 +11,13 @@ import type {
 } from '#shared/integrations/types';
 import { nonSecretCredentials } from '#shared/integrations/registry';
 import { normalizeJiraSiteUrl } from '#shared/integrations/jira-setup';
+import {
+  missingFieldsMessage,
+  missingRequiredFields,
+  normalizeFieldValues,
+  type TrackerField,
+} from '#shared/integrations/fields';
+import type { TransitionSample } from '#shared/integrations/transitions';
 import { renderMarkdown } from '#shared/integrations/render-markdown';
 import { DEFAULT_LOCALE, type IssueLocale } from '#shared/integrations/messages';
 import { resolveProjectIntegration, type ResolvedProjectIntegration } from '#shared/integrations/binding';
@@ -178,6 +186,7 @@ export async function demoIssueDraft(
     labels: built.labels,
     assignee: null,
     locale,
+    fieldValues: getDemoProjectIntegration().fieldDefaults,
     include: { includeDiagnosis: true, includePatch: true, includeScreenshot: false, includeShareLink: false },
     markdown: renderMarkdown(built.document),
     document: built.document,
@@ -185,13 +194,29 @@ export async function demoIssueDraft(
   };
 }
 
-/** File a DEMO-<n> issue and write the known-issue link into the in-browser DB. */
+/**
+ * File a DEMO-<n> issue and write the known-issue link into the in-browser DB —
+ * or, like the server, refuse before filing when the issue type's required
+ * fields are still empty.
+ */
 export async function demoCreateIssue(
   db: DrizzleDB,
   entityType: 'failure_cluster' | 'test_runs_case',
   entityId: number,
   title?: string | null,
-): Promise<{ actionId: number; status: 'done'; key: string; url: string }> {
+  request: { issueType?: string; fields?: unknown } = {},
+): Promise<CreateIssueResponse> {
+  const values = { ...getDemoProjectIntegration().fieldDefaults, ...normalizeFieldValues(request.fields) };
+  const missing = missingRequiredFields(demoCreateFields(request.issueType ?? DEMO_ISSUE_TYPE).fields, values);
+  if (missing.length) {
+    return {
+      actionId: null,
+      status: 'failed',
+      error: missingFieldsMessage(missing),
+      missingFields: missing.map((f) => ({ id: f.id, name: f.name })),
+    };
+  }
+
   const clusterId = (await resolveClusterId(db, entityType, entityId)) ?? entityId;
   const built =
     entityType === 'failure_cluster'
@@ -236,6 +261,135 @@ export function demoConnectionIssueTypes(): { issueTypes: { id: string; name: st
     issueTypes: [
       { id: '1', name: 'Bug' },
       { id: '2', name: 'Task' },
+    ],
+  };
+}
+
+/**
+ * The demo project's create screen: a Bug requires a Severity (a pick-list Jira
+ * would list), components are optional, and Jira defaults the priority — enough
+ * to show the required-field flow without a Jira.
+ */
+const DEMO_BUG_FIELDS: TrackerField[] = [
+  {
+    id: 'project',
+    name: 'Project',
+    required: true,
+    hasDefault: false,
+    kind: 'raw',
+    options: null,
+    typeName: 'project',
+  },
+  {
+    id: 'issuetype',
+    name: 'Issue type',
+    required: true,
+    hasDefault: false,
+    kind: 'raw',
+    options: null,
+    typeName: 'issuetype',
+  },
+  {
+    id: 'summary',
+    name: 'Summary',
+    required: true,
+    hasDefault: false,
+    kind: 'string',
+    options: null,
+    typeName: 'summary',
+  },
+  {
+    id: 'description',
+    name: 'Description',
+    required: false,
+    hasDefault: false,
+    kind: 'text',
+    options: null,
+    typeName: 'description',
+  },
+  {
+    id: 'customfield_10050',
+    name: 'Severity',
+    required: true,
+    hasDefault: false,
+    kind: 'option',
+    options: [
+      { id: '10100', label: 'Critical' },
+      { id: '10101', label: 'Major' },
+      { id: '10102', label: 'Minor' },
+    ],
+    typeName: 'select',
+  },
+  {
+    id: 'components',
+    name: 'Components',
+    required: false,
+    hasDefault: false,
+    kind: 'option-array',
+    options: [
+      { id: '10200', label: 'Checkout' },
+      { id: '10201', label: 'Payments' },
+      { id: '10202', label: 'Web' },
+    ],
+    typeName: 'components',
+  },
+  {
+    id: 'priority',
+    name: 'Priority',
+    required: false,
+    hasDefault: true,
+    kind: 'option',
+    options: [
+      { id: '2', label: 'High' },
+      { id: '3', label: 'Medium' },
+      { id: '4', label: 'Low' },
+    ],
+    typeName: 'priority',
+  },
+];
+
+/** The create screen's fields for a demo issue type (by id or name): the Bug asks for a Severity. */
+export function demoCreateFields(issueType: string): { fields: TrackerField[] } {
+  const isBug = issueType === '1' || issueType.toLowerCase() === DEMO_ISSUE_TYPE.toLowerCase();
+  return { fields: isBug ? DEMO_BUG_FIELDS : DEMO_BUG_FIELDS.filter((f) => f.id !== 'customfield_10050') };
+}
+
+/**
+ * The transitions a demo issue offers: an open one moves to Done through a
+ * screen that asks for a Resolution, a done one reopens with no screen.
+ */
+export function demoTransitionSample(from: 'open' | 'done'): TransitionSample {
+  if (from === 'done') {
+    return {
+      issue: { key: 'DEMO-2', status: 'Done' },
+      transitions: [{ id: '11', name: 'Reopen', toStatus: 'To Do', toStatusCategory: 'new', fields: [] }],
+    };
+  }
+  return {
+    issue: { key: 'DEMO-1', status: 'To Do' },
+    transitions: [
+      { id: '21', name: 'Start progress', toStatus: 'In Progress', toStatusCategory: 'indeterminate', fields: [] },
+      {
+        id: '31',
+        name: 'Done',
+        toStatus: 'Done',
+        toStatusCategory: 'done',
+        fields: [
+          {
+            id: 'resolution',
+            name: 'Resolution',
+            required: true,
+            hasDefault: false,
+            kind: 'option',
+            options: [
+              { id: '10000', label: 'Done' },
+              { id: '10001', label: "Won't do" },
+              { id: '10002', label: 'Duplicate' },
+            ],
+            typeName: 'resolution',
+          },
+        ],
+      },
     ],
   };
 }

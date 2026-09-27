@@ -535,7 +535,7 @@ export const MCP_TOOL_DEFS = [
     module: 'workflow',
     capability: 'integrations',
     description:
-      "File a Jira issue from a failure cluster or a failing execution, with the fix plan as its body — the same ticket the dashboard's Create issue button produces. The issue is deduped by cluster, so calling twice for the same cluster returns the existing action rather than a second ticket. Returns the issue { key, url } and any `existing` issues that already track the cluster (a pinned link, a matching label, or a fixed-before match) so you can link instead of filing again. Requires a Jira connection and a project binding (project key and issue type). Reporter or administrator access.",
+      "File a Jira issue from a failure cluster or a failing execution, with the fix plan as its body — the same ticket the dashboard's Create issue button produces. The issue is deduped by cluster, so calling twice for the same cluster returns the existing action rather than a second ticket. Returns the issue { key, url } and any `existing` issues that already track the cluster (a pinned link, a matching label, or a fixed-before match) so you can link instead of filing again. Requires a Jira connection and a project binding (project key and issue type); the binding's field defaults fill the fields the project requires. Reporter or administrator access.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -555,6 +555,11 @@ export const MCP_TOOL_DEFS = [
           type: 'string',
           enum: ['en', 'fr'],
           description: "The ticket's language; defaults from the project/connection binding, else English",
+        },
+        fields: {
+          type: 'object',
+          description:
+            'Values for Jira fields the project requires, keyed by field id — e.g. { "customfield_10050": "Critical" }. A listed value can be given by its name, a person by account id, rich text as plain text; anything else as Jira\'s API takes it. Overrides the project\'s field defaults. When a required field is still empty, the call fails naming each field, its id and what it takes.',
         },
       },
       required: ['entityType', 'entityId'],

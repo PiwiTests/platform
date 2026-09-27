@@ -235,6 +235,7 @@ const activeTabIcon = computed(() => TABS.find((t) => t.value === activeTab.valu
                 :title="formatRelativeTime(exec.startTime)"
                 :status="exec.status"
                 :error="exec.error"
+                :issue="exec.knownIssue"
                 :project-key="testCase?.project?.id"
                 :project-name="testCase?.project?.name"
               >

@@ -232,6 +232,8 @@ import {
   demoSyncTrackerLinks,
   demoConnectionProjects,
   demoConnectionIssueTypes,
+  demoCreateFields,
+  demoTransitionSample,
   demoAssignable,
   getDemoProjectIntegration,
   saveDemoProjectIntegration,
@@ -2233,8 +2235,17 @@ const routes: RouteEntry[] = [
     method: 'POST',
     pattern: /^\/api\/integrations\/issues$/,
     handler: async (_, body) => {
-      const b = body as { entityType: 'failure_cluster' | 'test_runs_case'; entityId: number; title?: string };
-      return demoCreateIssue(await getDemoDb(), b.entityType, b.entityId, b.title);
+      const b = body as {
+        entityType: 'failure_cluster' | 'test_runs_case';
+        entityId: number;
+        title?: string;
+        issueType?: string;
+        fields?: unknown;
+      };
+      return demoCreateIssue(await getDemoDb(), b.entityType, b.entityId, b.title, {
+        issueType: b.issueType,
+        fields: b.fields,
+      });
     },
   },
   { method: 'GET', pattern: /^\/api\/integrations\/actions$/, handler: async () => demoIntegrationActions() },
@@ -2248,6 +2259,16 @@ const routes: RouteEntry[] = [
     method: 'GET',
     pattern: /^\/api\/integrations\/connections\/(\d+)\/projects\/([^/]+)\/issue-types$/,
     handler: async () => demoConnectionIssueTypes(),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/integrations\/connections\/(\d+)\/projects\/([^/]+)\/issue-types\/([^/]+)\/fields$/,
+    handler: async (m) => demoCreateFields(decodeURIComponent(m[3]!)),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/integrations\/connections\/(\d+)\/projects\/([^/]+)\/transitions$/,
+    handler: async (_m, _body, query) => demoTransitionSample(query?.get('from') === 'done' ? 'done' : 'open'),
   },
   {
     method: 'GET',

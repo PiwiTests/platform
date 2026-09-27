@@ -172,9 +172,11 @@ export async function buildIssueDraft(
   )[0]?.projectId;
   if (projectId == null) return null;
 
-  const chosenId = opts.connectionId ?? connections[0]!.id;
   const bindingRow = await getProjectBinding(db, projectId);
   const resolved = bindingRowToResolved(bindingRow);
+  // The requested connection, else the one the project is bound to, else the first.
+  const bound = connections.find((c) => c.id === resolved.connectionId)?.id;
+  const chosenId = opts.connectionId ?? bound ?? connections[0]!.id;
   const chosenRow = await getConnectionRow(db, chosenId);
   const include = { ...resolved.include, ...(opts.include ?? {}) };
   const locale = resolveLocale(bindingRow, chosenRow, opts.locale);
@@ -229,6 +231,7 @@ export async function buildIssueDraft(
     labels,
     assignee: route?.assigneeAccountId ?? resolved.defaultAssignee,
     locale,
+    fieldValues: resolved.fieldDefaults,
     include,
     markdown: renderMarkdown(built.document),
     document: built.document,

@@ -37,6 +37,14 @@ import { buildIssueDraft, type DraftEntityType } from '../integrations/draft';
 import { createIssue } from '../integrations/create';
 import { getClusterKnownIssue } from '../integrations/known-issue';
 import { toIssueLocale } from '#shared/integrations/messages';
+import {
+  coerceFieldValue,
+  fieldValueHint,
+  joinFieldNames,
+  normalizeFieldValues,
+  type TrackerField,
+} from '#shared/integrations/fields';
+import { getCreateFields } from '../integrations/fields';
 import { getAdminStats } from '#shared/handlers/admin';
 import { createTestFunction } from '#shared/handlers/test-functions';
 import { createTestFunctionSchema } from '#shared/test-function-schemas';
@@ -291,6 +299,19 @@ function selectionFormatParam(raw: unknown): SelectionFormat {
 
 // Keyed by `McpToolName` (derived from MCP_TOOL_DEFS): TypeScript now rejects a
 // handler whose name isn't a declared tool, and a declared tool with no handler.
+/**
+ * A create refused over empty required fields, worded for an agent: each field's
+ * id, its name and what it takes, so the next call can pass them in `fields`.
+ */
+function missingFieldsForAgent(missing: { id: string; name: string }[], screen: Map<string, TrackerField>): string {
+  const names = joinFieldNames(missing.map((f) => f.name));
+  const each = missing.map((f) => {
+    const field = screen.get(f.id);
+    return `${f.id} (${f.name})${field ? ` takes ${fieldValueHint(field)}` : ''}`;
+  });
+  return `Jira requires ${names} for this issue type. Pass ${missing.length === 1 ? 'it' : 'them'} in \`fields\`, keyed by field id: ${each.join('; ')}. Or set a default in the project's issue tracker settings.`;
+}
+
 const HANDLERS: Record<McpToolName, McpToolHandler> = {
   // ── list_projects ──────────────────────────────────────────────────────────
   async list_projects(db, _params, ctx) {
@@ -1555,6 +1576,23 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       throw new Error('Configure a Jira project binding (project key and issue type) before filing issues');
     }
 
+    // Field values arrive keyed by field id, loosely typed (a listed value by its
+    // name, a person by account id); the create screen shapes them for Jira.
+    const screen = await getCreateFields(db, draft.connectionId, draft.projectKey, draft.issueType).catch(() => null);
+    const byId = new Map((screen ?? []).map((f) => [f.id, f]));
+    const given =
+      params.fields && typeof params.fields === 'object' && !Array.isArray(params.fields)
+        ? (params.fields as Record<string, unknown>)
+        : {};
+    const fields = normalizeFieldValues(
+      Object.fromEntries(
+        Object.entries(given).map(([id, value]) => {
+          const field = byId.get(id);
+          return [id, { value: field ? coerceFieldValue(field, value) : value }];
+        }),
+      ),
+    );
+
     const outcome = await createIssue(db, {
       entityType,
       entityId,
@@ -1566,10 +1604,16 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       assignee: draft.assignee,
       locale: draft.locale,
       include,
-      requestedBy: ctx.user?.id ?? null,
+      fields,
+      // The auth-disabled administrator is user 0, which no row references.
+      requestedBy: ctx.user?.id || null,
       siteUrl,
     });
     if (!outcome) return null;
+    if (outcome.missingFields?.length) throw new Error(missingFieldsForAgent(outcome.missingFields, byId));
+    if (outcome.fieldErrors?.length) {
+      throw new Error(`${outcome.error} Pass values Jira accepts in \`fields\`, keyed by field id.`);
+    }
     if (outcome.status !== 'done') {
       throw new Error(outcome.error || 'Filing the issue did not complete; it is queued for retry');
     }

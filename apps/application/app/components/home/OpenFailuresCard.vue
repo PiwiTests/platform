@@ -1,7 +1,5 @@
 <script setup lang="ts">
 import { describeCluster } from '#shared/describe-cluster';
-import { getProviderIcon } from '#shared/link-detect';
-import type { LinkProvider } from '#shared/link-detect';
 import {
   INBOX_QUEUES,
   clusterInQueue,
@@ -718,20 +716,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
               <UIcon name="i-lucide-git-merge" class="size-3" />Merge suggested
             </UBadge>
 
-            <a
-              v-if="cluster.issueLink"
-              :href="cluster.issueLink.url"
-              target="_blank"
-              rel="noopener noreferrer"
-              class="shrink-0"
-              :title="`Known issue: ${cluster.issueLink.key ?? cluster.issueLink.url}`"
-              @click.stop
-            >
-              <UBadge color="neutral" variant="subtle" size="xs" class="gap-1">
-                <UIcon :name="getProviderIcon(cluster.issueLink.provider as LinkProvider)" class="size-3" />
-                {{ cluster.issueLink.key ?? 'Issue' }}
-              </UBadge>
-            </a>
+            <IssueKeyChip v-if="cluster.issueLink" :issue="cluster.issueLink" />
           </div>
 
           <!-- Top clue (muted) -->

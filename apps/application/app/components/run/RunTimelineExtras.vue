@@ -7,13 +7,13 @@
  * any finished run.
  */
 import { computed } from 'vue';
-import type { TestCaseResult } from '~~/types/api';
+import type { RunClusterMeta, TestCaseResult } from '~~/types/api';
 import { useTimelineModel } from '~/composables/useTimelineModel';
 import { formatTimelineTime, lockColorHex } from '~/utils/timeline';
 
 const props = defineProps<{
   testCases: TestCaseResult[];
-  clusterMeta?: Record<number, { name: string; status: string | null }>;
+  clusterMeta?: RunClusterMeta;
   projectKey?: string | number | null;
   projectName?: string | null;
 }>();
@@ -74,6 +74,10 @@ const imbalanceWarning = computed<string | null>(() => {
 function clusterName(tc: TestCaseResult): string | null {
   return tc.failureClusterId != null ? (props.clusterMeta?.[tc.failureClusterId]?.name ?? null) : null;
 }
+
+function clusterIssue(tc: TestCaseResult) {
+  return tc.failureClusterId != null ? (props.clusterMeta?.[tc.failureClusterId]?.issue ?? null) : null;
+}
 </script>
 
 <template>
@@ -85,6 +89,7 @@ function clusterName(tc: TestCaseResult): string | null {
           :key="tc.executionId"
           :test-case="tc"
           :cluster-name="clusterName(tc)"
+          :issue="clusterIssue(tc)"
           :project-key="projectKey"
           :project-name="projectName"
         />

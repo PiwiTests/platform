@@ -23,6 +23,7 @@ import type { TestStepEvent } from '../types';
 import type { EndpointSummary, DiagnosisCompact } from '../../types/api';
 
 import type { DrizzleDB } from './db';
+import { clusterKnownIssues } from './known-issues';
 import { keepRun, releaseRun } from './run-keep';
 import { normalizeGitUrl } from '../../server/utils/scm/git-url';
 import { selectBaselineRun } from '../../server/utils/branch-baseline';
@@ -742,10 +743,13 @@ export async function getFailureGroups(db: DrizzleDB, runId: number) {
     }
   }
 
+  const knownIssues = await clusterKnownIssues(db, allClusterIds);
+
   return result.map((g) => ({
     ...g,
     diagnosis: diagnosisById.get(g.clusterId) ?? null,
     locatorHealing: healingByCluster.get(g.clusterId) ?? null,
+    knownIssue: knownIssues.get(g.clusterId) ?? null,
   }));
 }
 

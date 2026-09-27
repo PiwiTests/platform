@@ -17,6 +17,7 @@
 import type { TestCaseResult } from '~~/types/api';
 import type { LiveStepInfo } from '~/utils/live-steps';
 import type { TestRowBadge } from '~/utils/test-row-badges';
+import type { KnownIssueRef } from '#shared/handlers/known-issues';
 import { badgesFromTestCase } from '~/utils/test-row-badges';
 
 const props = withDefaults(
@@ -44,6 +45,8 @@ const props = withDefaults(
     clusterName?: string | null;
     /** Show the failing row's cluster chip on the right. */
     showCluster?: boolean;
+    /** The tracker issue this execution's failure is tracked in, shown as a chip after the metrics. */
+    issue?: KnownIssueRef | null;
     quarantined?: boolean;
     /** Render a selection checkbox on a failing row and reflect `selected`. */
     selectable?: boolean;
@@ -78,6 +81,7 @@ const props = withDefaults(
     steps: null,
     badges: null,
     clusterName: null,
+    issue: null,
     showCluster: true,
     quarantined: false,
     selectable: false,
@@ -204,7 +208,7 @@ const clusterLabel = computed(() =>
                 <NuxtLink
                   v-if="showCluster && tc.failureClusterId"
                   :to="`/failure-clusters/${tc.failureClusterId}`"
-                  class="shrink-0"
+                  class="inline-flex shrink-0"
                   @click.stop
                 >
                   <UBadge color="info" variant="subtle" size="xs" class="max-w-44">
@@ -213,6 +217,7 @@ const clusterLabel = computed(() =>
                 </NuxtLink>
               </template>
             </slot>
+            <IssueKeyChip v-if="issue" :issue="issue" />
           </div>
         </div>
 

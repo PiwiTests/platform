@@ -1,9 +1,10 @@
 /**
  * Read and write a project's tracker binding as a resolved settings object. The
  * table keeps the binding in typed columns (project key, issue type, labels …)
- * plus three JSON blobs (include toggles, policies, owner routes, auto-create);
- * this maps between those columns and the flat {@link ResolvedProjectIntegration}
- * the settings endpoint and the create-issue draft both read.
+ * plus JSON blobs (field defaults, include toggles, policies, owner routes,
+ * auto-create); this maps between those columns and the flat
+ * {@link ResolvedProjectIntegration} the settings endpoint and the create-issue
+ * draft both read.
  *
  * A project has at most one binding here — the endpoint replaces it whole, so a
  * connection change never leaves a second, stale row behind.
@@ -22,6 +23,7 @@ export function bindingRowToResolved(row: ProjectIntegration | null): ResolvedPr
     issueType: row?.issueType ?? null,
     labels: (row?.labels as string[] | null) ?? [],
     defaultAssignee: row?.defaultAssignee ?? null,
+    fieldDefaults: (row?.fieldDefaults as ResolvedProjectIntegration['fieldDefaults']) ?? {},
     locale: (row?.locale as ResolvedProjectIntegration['locale']) ?? null,
     include: (row?.include as ResolvedProjectIntegration['include']) ?? undefined,
     policies: (row?.policies as ResolvedProjectIntegration['policies']) ?? undefined,
@@ -62,6 +64,7 @@ export async function writeProjectIntegration(
         issueType: resolved.issueType,
         labels: resolved.labels as never,
         defaultAssignee: resolved.defaultAssignee,
+        fieldDefaults: resolved.fieldDefaults as never,
         locale: resolved.locale,
         include: resolved.include as never,
         policies: resolved.policies as never,

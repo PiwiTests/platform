@@ -68,6 +68,23 @@ describe('buildSituation — clause by clause', () => {
     expect(buildSituation(input).text).toContain('fixed once before, the fix did not hold');
   });
 
+  test('the tracked issue follows the cluster, with its status, as a link out', () => {
+    const input = base({
+      knownIssue: { key: 'PIWI-12', url: 'https://acme.atlassian.net/browse/PIWI-12', status: 'In Progress' },
+    });
+    const situation = buildSituation(input);
+    expect(situation.text).toContain('(open, unassigned). Tracked in PIWI-12 (In Progress). Owner @checkout-team.');
+    const part = situation.parts.find((p) => p.kind === 'issue');
+    expect(part).toMatchObject({ text: 'PIWI-12', url: 'https://acme.atlassian.net/browse/PIWI-12' });
+    expect(part?.href).toBeUndefined();
+  });
+
+  test('an issue without a synced status is named alone, and no cluster means no issue clause', () => {
+    const issue = { key: 'PIWI-12', url: 'https://acme.atlassian.net/browse/PIWI-12', status: null };
+    expect(buildSituation(base({ knownIssue: issue })).text).toContain('Tracked in PIWI-12. Owner');
+    expect(buildSituation(base({ knownIssue: issue, cluster: null })).text).not.toContain('Tracked in');
+  });
+
   test('the owner closes the sentence', () => {
     expect(buildSituation(base()).text).toMatch(/Owner @checkout-team\.$/);
   });

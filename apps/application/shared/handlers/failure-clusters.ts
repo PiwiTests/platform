@@ -16,6 +16,7 @@ import { isProbeRun } from './probes';
 import type { DrizzleDB } from './db';
 import type { OpenFailureCluster, OccurrenceSeriesPoint } from '../../types/api';
 import { recomputeClusterOccurrences } from './failure-cluster-ops';
+import { isTrackerLink } from './known-issues';
 import { getQuarantinedCaseIds, listQuarantine, addQuarantine } from './quarantine';
 import { clusterClue, computeSnooze, DEFAULT_NEEDS_TICKET_AFTER_DAYS, type SnoozeOption } from '../inbox-queues';
 import { resolveProjectIntegration } from '#shared/integrations/binding';
@@ -667,7 +668,7 @@ export async function getOpenFailureClusters(
     if (row.clusterId != null && !issueByCluster.has(row.clusterId)) {
       issueByCluster.set(row.clusterId, { url: row.url, provider: row.provider, key: row.key ?? null });
     }
-    if (row.clusterId != null && row.key && (row.provider === 'jira' || row.connectionId != null)) {
+    if (row.clusterId != null && isTrackerLink(row)) {
       hasKnownIssueByCluster.add(row.clusterId);
     }
   }
