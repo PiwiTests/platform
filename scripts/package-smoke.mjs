@@ -159,7 +159,8 @@ async function stopServer(child) {
   if (child.exitCode !== null || child.signalCode !== null) return;
   const exited = new Promise((resolve) => child.once('exit', resolve));
   killServer(child);
-  const timedOut = await Promise.race([exited.then(() => false), delay(10_000).then(() => true)]);
+  // Unref'd, so the timer does not hold the process open once the server has stopped.
+  const timedOut = await Promise.race([exited.then(() => false), delay(10_000, true, { ref: false })]);
   if (timedOut) killServer(child, 'SIGKILL');
 }
 
