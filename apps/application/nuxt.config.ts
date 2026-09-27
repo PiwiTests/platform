@@ -86,8 +86,9 @@ export default defineNuxtConfig({
 
   // @piwitests/core and @piwitests/picker-dom ship TypeScript source (shared
   // with the reporter); Vite must transpile them since node_modules is not
-  // transpiled by default and nitro.experimental.noExternals inlines them
-  // into the server build.
+  // transpiled by default. Nuxt also passes this list to Nitro's
+  // externals.inline, so they are bundled into the server build instead of
+  // being copied as TypeScript into .output/server/node_modules.
   build: {
     transpile: ['@piwitests/core', '@piwitests/picker-dom'],
   },
@@ -348,16 +349,21 @@ export default defineNuxtConfig({
         swagger: false,
       },
     },
+    // npm dependencies stay external: Nitro traces the files the server uses and
+    // copies them into .output/server/node_modules. The Docker image, the desktop
+    // staging (apps/desktop/scripts/stage-server.mjs) and @piwitests/server
+    // (packages/server/scripts/copy-output.mjs) prune the sharp and libsql
+    // platform binaries in that folder and install the target platform's beside
+    // it. Nitro's top-level `noExternals` does not fit that: it bundles every
+    // dependency and refuses any external, native modules included.
     experimental: {
       openAPI: true,
-      // Inline all dependencies into the built output — no external node_modules
-      // needed at runtime. Only native modules (sharp, libsql) stay external.
-      // @ts-expect-error — noExternals is a valid Nitro option but not yet typed
-      noExternals: true,
       // Windows-only workaround to avoid Nitro build issues caused by ESM/CJS externals
-      // resolution on Windows. Enabling legacyExternals here keeps dependency resolution
-      // compatible with older behavior and prevents intermittent build timeouts / failures
-      // during Nitro server bundling on Windows.
+      // resolution on Windows. legacyExternals swaps the plugin that traces the externals
+      // above for Nitro's older one, which keeps dependency resolution compatible with
+      // older behavior and prevents intermittent build timeouts / failures during Nitro
+      // server bundling on Windows. `nuxi build` sets NODE_ENV=production before it
+      // loads this file.
       // See: https://github.com/nuxt/nuxt/issues/31836
       legacyExternals: process.platform === 'win32' && process.env.NODE_ENV === 'production',
       tasks: true,
