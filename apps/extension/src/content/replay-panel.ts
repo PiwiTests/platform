@@ -454,6 +454,8 @@ async function runReplay(): Promise<void> {
     document.getElementById(REPLAY_DIALOG_HOST_ID)?.remove();
     cursor?.remove();
     cursor = createCursor(state.cursor);
+    // The panel shows at once; the first step waits for the page to be ready.
+    renderHud(state);
     await waitForPageReady();
     for (;;) {
       state = await getReplayState();

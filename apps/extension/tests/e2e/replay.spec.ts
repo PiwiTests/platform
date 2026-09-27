@@ -373,7 +373,9 @@ test.describe('replay-panel.js in German', () => {
       buffer: Buffer.from(JSON.stringify(REPORT)),
     });
     await expect(dialog).toContainText(REPORT.origin!);
-    await expect(dialog.getByRole('checkbox')).toBeVisible();
+    // Step by step, and starting from this page instead of the report's first one.
+    await expect(dialog.getByRole('checkbox')).toHaveCount(2);
+    await expect(dialog).toContainText('/login');
     expect(await clippedInShadows(page)).toEqual([]);
   });
 });
