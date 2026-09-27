@@ -1,0 +1,248 @@
+# Developer tools for tests, in the browser
+
+A plan for the developer tools Piwi Picker should grow, and the ones it should not. The question was whether the
+extension should also become a web developer toolbar. It should not: the browser's DevTools already disable styles,
+measure boxes, edit cookies and throttle the network better than an extension can, and most toolbar features need
+standing permissions this extension refuses on principle. What DevTools does not do is look at a page the way a
+Playwright test does. That is the gap this plan fills: a **Piwi panel inside DevTools**, a **Playwright view** of the
+page, **mocks written from real responses**, the **login saved for tests**, **slow and failing requests** on demand,
+and **viewports** from the project's own configuration.
+
+**Status.** Proposed 2026-09-27. Nothing is built. No part needs the `debugger` permission, and only one adds a
+permission at all: `cookies`, optional, requested when the login is saved. The DevTools panel adds a manifest key
+(`devtools_page`) that shows no install warning.
+
+**Summary.** A developer writing a test switches between the page, DevTools and the editor: they read the accessibility
+tree to guess what `getByRole` will find, copy a response from the Network panel to write a mock by hand, and log in
+again in every test because saving `storageState` means writing a setup project first. Piwi Picker already has the
+pieces: an engine that evaluates locators the way Playwright does, the ranked and verified locators the recorder
+keeps, the bug report's evidence scripts, and a connection to the project's instance. This plan puts them where the
+developer already is:
+
+- a **Piwi sidebar in the Elements panel**: select a node in DevTools and read its ranked locators, each verified on
+  the page, without switching to the Pick tool;
+- a **Piwi panel** that holds the recorder and the replay beside the page, survives its navigations, and reads the
+  network log that content scripts cannot see;
+- a **Playwright view** overlay: each element labelled with the role and name `getByRole` sees, its test id, and a
+  mark on the ones no stable locator can reach or that share a name;
+- **Mock this response**: a request from the network log becomes `page.route(...)` code with its body;
+- **Save login for tests**: the tab's cookies and storage written as a Playwright `storageState` file;
+- **Slow down or fail a request**, for the flaky conditions Flake Lab names, and a replay under that condition;
+- **Viewport presets** from the project's Playwright projects.
+
+## What the reader gets
+
+In DevTools, the Elements panel gets a **Piwi** sidebar. Selecting `<button class="btn">Apply coupon</button>` there
+shows what the Pick tool shows today, for that node, as it is selected:
+
+```
+getByRole('button', { name: 'Apply coupon' })     ✓ unique · stable
+getByTestId('apply-coupon')                        ✓ unique · stable
+locator('.btn').nth(2)                             3 match · brittle
+[Copy]  [Copy as click]  [Copy as expect]  [Add to session]
+```
+
+The **Piwi** panel lists the recording's steps as they happen, and a replay's steps with their results, and stays
+open across the page's navigations where the in-page HUD redraws on each page. Its **Network** tab lists the page's
+`fetch` and XHR requests; one click on `GET /api/cart` gives:
+
+```ts
+await page.route('**/api/cart', (route) =>
+  route.fulfill({ json: { items: [{ sku: 'SPRING-TEE', qty: 1 }], total: 40 } }),
+);
+```
+
+The popup's **Playwright view** tile labels the page: `button · Apply coupon`, `textbox · Coupon`,
+`link · Cart (2)`, a test id badge where there is one, a red mark on a clickable `<div>` with no role and no name, an
+amber one on two buttons both named "Show popup".
+
+**Save login for tests** writes `auth.json`, which a project's setup uses as it is:
+
+```ts
+test.use({ storageState: 'playwright/.auth/user.json' });
+```
+
+## Why not a general toolbar
+
+| Toolbar feature | Where it belongs |
+| --- | --- |
+| Disable CSS or JavaScript, outline blocks, show rulers | DevTools does it; an extension would need to rewrite every page |
+| View and edit cookies, clear storage | DevTools' Application panel; an extension needs `cookies` and host access to every site |
+| Throttle the network, go offline, emulate a device | DevTools and Playwright do it through the debugging protocol, which an extension reaches only with the `debugger` permission (it cannot be optional; see [`bug-report-to-failing-test.md`](bug-report-to-failing-test.md)) |
+| Validate HTML, check links | Other tools; nothing to do with tests |
+
+A toolbar would also blur what Piwi Picker is for. Every tool below answers one question: *what will my test see, and
+how do I get the test there?*
+
+## What exists
+
+- **The engine.** `src/content/engine-aria.ts` and `locator-engine.ts` evaluate locator chains with Playwright's
+  rules (roles, accessible names, visibility), compared against Playwright in `tests/e2e/locator-engine.spec.ts`.
+  `verified-locators.ts` keeps the candidates that find exactly the element and narrows the ambiguous ones.
+- **The tools.** Pick, hover, the locator console, multi-pick, the lint overlay, assertions, the session, agent
+  context, the recorder, the bug report and the replay, all as content scripts opened from the popup.
+- **Evidence.** The bug report registers a main-world script (`bug-evidence-main.ts`) that sees `fetch`, XHR and the
+  console while a bug recording runs, under the origin's optional host permission.
+- **The instance.** An optional connection reads the project list, the function catalog and the locator index; the
+  project a tab belongs to comes from URL patterns stored on the instance (`proposals/extension-connect.md`).
+
+## Decisions
+
+| # | Decision | Why |
+| --- | --- | --- |
+| T1 | No general developer toolbar. | DevTools does those better, and they need permissions the extension refuses. |
+| T2 | No `debugger` permission, here as elsewhere. | It cannot be optional, and it shows a debugging bar on the page. |
+| T3 | The DevTools panel is an addition, never a requirement: every tool still opens from the popup. | Testers do not open DevTools. |
+| T4 | Network data is read only through `chrome.devtools.network`, only while DevTools is open on the tab, and never leaves the browser unless the user exports it. | It needs no permission, and a HAR holds credentials. |
+| T5 | Exports hide credentials by default: `Authorization`, `Cookie` and `Set-Cookie` headers, and fields named like a password or a token, until the user reveals them. | A mock or a login file is committed more often than it should be. |
+| T6 | `cookies` is an optional permission, requested in the click that saves a login, for the tab's origin only. | The only feature that needs it, used rarely. |
+| T7 | Slowing or failing a request wraps `fetch` and XHR in the page's main world, as the bug evidence script does; it does not touch documents, scripts or images. | That is what an extension can do without `debugger` or `declarativeNetRequest`'s redirect rules, and it covers the API calls flaky tests wait on. |
+
+## Part 1 — In DevTools
+
+### 1.1 The Elements sidebar
+
+`devtools_page` loads a small page for every DevTools window. It creates a sidebar pane in the Elements panel
+(`chrome.devtools.panels.elements.createSidebarPane`) and follows the selection (`onSelectionChanged`). On each change
+it asks the tab's content script to rank the selected node:
+`chrome.devtools.inspectedWindow.eval('__piwiRankSelected($0)', { useContentScriptContext: true })` hands `$0`, the
+node selected in DevTools, to a function the extension's content script defines. The ranking is the verified one the
+Pick tool uses (see the "accurate names and verified locators" work on this branch). The pane shows the candidates, a
+count and a stability label for each, and the Pick panel's copy actions.
+
+The content script is injected on demand with `chrome.scripting.executeScript`, under the tab's `activeTab` grant
+when DevTools was opened from a click on the extension, or the origin's optional host permission; the pane asks for
+the permission in a click when it has neither.
+
+### 1.2 The Piwi panel
+
+`chrome.devtools.panels.create('Piwi', …)` adds a panel with three tabs:
+
+- **Record**: the recording's steps, live, with the same actions as the review panel (copy as TypeScript, download
+  steps, discard). The in-page HUD stays for people without DevTools open.
+- **Replay**: the replay's steps and verdict, with Pause, Next step and Stop. The panel lives as long as DevTools, so
+  it does not redraw on each page as the HUD does, and it has room for each step's detail and the locator it used.
+- **Network**: the page's `fetch` and XHR requests from `chrome.devtools.network.onRequestFinished`, each with its
+  method, path, status and duration, filtered to the tab's origin by default. See 2.2 and 2.4.
+
+The panel talks to the tab through the background worker (`chrome.runtime.connect` with the tab id), the same state
+the popup reads.
+
+## Part 2 — The tools
+
+### 2.1 Playwright view
+
+A tool in the popup, and a toggle in the Piwi panel, that labels every element a test could reach: its role and
+accessible name as `getByRole` sees them (from `DomModel`), its test id when it has one, and two marks:
+
+- **unreachable** (red): an element with a click handler or `tabindex` but no role Playwright recognizes, or a role
+  with no name, so no stable locator can reach it;
+- **ambiguous** (amber): two or more elements sharing a role and a name, where `getByRole` would need `exact`, a scope
+  or `.nth()`.
+
+Labels are placed like the lint overlay's badges, skip hidden elements, and follow scrolling. A filter limits them to
+one role. The lint overlay stays for its suggestions (a `data-testid` to add); this view answers "what does the test
+see here".
+
+### 2.2 Mock this response
+
+From the panel's Network tab, a request becomes code:
+
+- `page.route('**/api/cart', …)` with `route.fulfill({ json })` for a JSON body, `{ body, contentType }` otherwise, and
+  the status when it is not 200;
+- the URL pattern keeps the path and drops the origin and volatile query values (a timestamp, a cache buster), shown
+  for editing before copying;
+- **Mock with an error** writes the same route with a 500 or a network failure (`route.abort()`), for testing the
+  page's error state;
+- bodies over 100 kB are written to a file (`mocks/cart.json`) the snippet reads, and the file is downloaded beside it.
+
+Credentials in headers and bodies are hidden (T5).
+
+### 2.3 Save login for tests
+
+A button in the popup's settings row and in the panel: the tab's cookies (through `chrome.cookies.getAll` for the
+tab's origin, `httpOnly` ones included, which `document.cookie` cannot read) and the origin's `localStorage` (from the
+content script), written as Playwright's `storageState` JSON and downloaded. The dialog says what the file holds and
+that it logs anyone in as this user until the session expires, recommends a test account, and offers the setup snippet:
+
+```ts
+// auth.setup.ts
+setup('log in', async ({ page }) => {
+  /* … the login steps, or none: the saved file is enough until it expires */
+  await page.context().storageState({ path: 'playwright/.auth/user.json' });
+});
+```
+
+IndexedDB is left out: Playwright saves it only with `indexedDB: true`, and reading it from an extension means walking
+every database of the origin. A later option if asked.
+
+### 2.4 Slow down or fail a request
+
+From the Network tab, or from Flake Lab's suspects when the instance has them: **Slow down GET /api/cart by 2 s**,
+**Fail it with 500**, **Fail it (network error)**. A main-world script registered for the origin (as the bug evidence
+script is, under the same grant) wraps `fetch` and `XMLHttpRequest` and applies the conditions to matching requests,
+until the user turns them off or closes the tab; a banner on the page says a condition is on.
+
+A replay can run under a condition: the replay dialog lists the active ones, and the verdict says which were on. That
+is the manual half of Flake Lab ([`flake-lab.md`](flake-lab.md)): a condition the lab reproduced in CI, tried by hand in
+the developer's own tab.
+
+Out of reach without `debugger`, and said so in the UI: CPU throttling, whole-page network throttling, delays on
+documents, scripts and images, and requests made by service workers.
+
+### 2.5 Viewport presets
+
+When the instance knows the project's Playwright projects and their `use.viewport` (an open question below), the popup
+offers them: **Open this page at iPhone 13 (390×844)** opens the page in a new window sized so its viewport, not its
+outer frame, matches (`chrome.windows.create`, then corrected by the difference between the window's outer and inner
+size). No emulation of touch, device pixel ratio or user agent: that takes the debugging protocol. The label says
+"viewport only".
+
+## Permissions
+
+| Feature | Needs | Install warning |
+| --- | --- | --- |
+| Elements sidebar, Piwi panel, Network tab | `devtools_page` | none |
+| Ranking the selected node | the tab's `activeTab` grant or the origin's optional host permission (existing) | none new |
+| Playwright view | `activeTab` (existing) | none new |
+| Mock this response | nothing beyond DevTools being open | none |
+| Save login for tests | `cookies`, optional, requested in the click | shown when requested |
+| Slow down or fail a request | the origin's optional host permission (existing) | none new |
+| Viewport presets | `windows` API, no permission needed for creating a window | none |
+
+## Delivery
+
+| PR | Content | Depends on |
+| --- | --- | --- |
+| 1 | `devtools_page`, the Elements sidebar with verified locators for `$0`, and its copy actions | the verified-locators work |
+| 2 | Playwright view overlay, from the popup | — |
+| 3 | The Piwi panel: Record and Replay tabs, the background channel | 1 |
+| 4 | The Network tab and Mock this response | 3 |
+| 5 | Save login for tests (optional `cookies`) | — |
+| 6 | Slow down or fail a request, and replays under a condition | 3, 4 |
+| 7 | Viewport presets | the instance knowing the projects' viewports |
+
+Each PR ships its texts in the five catalogs (English, French, and German, Spanish and Brazilian Portuguese as drafts),
+its end-to-end tests, and a section on `features/extension.md` within its word budget. The DevTools pieces are tested
+by loading the extension in Chromium and opening DevTools through the debugging protocol from the test, which drives
+DevTools' own page as Playwright can.
+
+## Risks
+
+- **DevTools extension APIs in Firefox.** `devtools.panels`, `devtools.network` and `inspectedWindow.eval` exist in
+  Firefox, but `useContentScriptContext` does not: the sidebar there asks the content script for the element under
+  DevTools' selection by a different route (a temporary attribute set on `$0` in the page's world), to be verified.
+- **Storage state leaks.** A saved login is a credential. Mitigated by the dialog, the test-account advice, the file
+  name under `playwright/.auth/` (commonly gitignored), and a check in the dialog that recommends adding it to
+  `.gitignore`.
+- **Wrapping `fetch` breaks a page.** A page that replaces `fetch` itself, or checks it is native, may behave
+  differently with a condition on. The banner makes the state visible, and turning conditions off reloads the tab.
+
+## Open questions
+
+1. **Viewports from the instance.** The reporter does not send the projects' `use.viewport` today. Add it to the run's
+   wire data (a field freezing at 1.0), or read it from the Playwright config in the desktop app?
+2. **The panel as the main UI.** Should recording and replay move into the panel entirely when DevTools is open, the
+   in-page HUD hiding itself, or should both show?
+3. **Mocks as fixtures.** Should Mock this response also write a Piwi-style fixture (a `mocks/` folder and a
+   `useMocks` helper) when the project's function catalog has one, as the converter uses the project's page objects?
