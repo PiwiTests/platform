@@ -24,6 +24,8 @@ const WATCHED = [
   'public',
   'popup.html',
   'options.html',
+  'devtools.html',
+  'devtools-sidebar.html',
   'manifest.json',
   'scripts',
   '../../packages/core/src',

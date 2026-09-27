@@ -3730,6 +3730,108 @@
   "common_workerOutdated": {
     "message": "Piwi Picker se volvió a compilar sin recargarse, y su proceso en segundo plano sigue ejecutando la versión anterior. Vuelve a cargar la extensión desde su menú o desde la página de extensiones del navegador."
   },
+  "devtools_ranking": {
+    "message": "Clasificando el elemento seleccionado…"
+  },
+  "devtools_selectElement": {
+    "message": "Seleccione un elemento en el panel Elementos para ver sus locators."
+  },
+  "devtools_inFrame": {
+    "message": "Este elemento está dentro de un marco. La barra lateral solo clasifica los elementos de la página principal."
+  },
+  "devtools_ownElement": {
+    "message": "Este elemento pertenece a Piwi Picker."
+  },
+  "devtools_restricted": {
+    "message": "Piwi Picker no puede funcionar en esta página."
+  },
+  "devtools_noAccess": {
+    "message": "Piwi Picker necesita acceso a $site$ para leer esta página. Solo lo pide para este sitio.",
+    "placeholders": {
+      "site": {
+        "content": "$1",
+        "example": "https://shop.example"
+      }
+    }
+  },
+  "devtools_allowSite": {
+    "message": "Permitir en este sitio"
+  },
+  "devtools_rankFailed": {
+    "message": "No se pudo clasificar el elemento: $error$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "Cannot access a chrome:// URL"
+      }
+    }
+  },
+  "devtools_rankFailedPlain": {
+    "message": "No se pudo clasificar el elemento."
+  },
+  "devtools_noLocator": {
+    "message": "Ningún locator encuentra este elemento."
+  },
+  "devtools_unique": {
+    "message": "único"
+  },
+  "devtools_byPosition": {
+    "message": "único por su posición"
+  },
+  "devtools_matches_one": {
+    "message": "$count$ coincidencia",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "devtools_matches_other": {
+    "message": "$count$ coincidencias",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "devtools_unchecked": {
+    "message": "sin comprobar"
+  },
+  "devtools_stable": {
+    "message": "estable"
+  },
+  "devtools_watch": {
+    "message": "puede fallar: $rules$",
+    "placeholders": {
+      "rules": {
+        "content": "$1",
+        "example": "long text"
+      }
+    }
+  },
+  "devtools_brittle": {
+    "message": "frágil: $rules$",
+    "placeholders": {
+      "rules": {
+        "content": "$1",
+        "example": "CSS class"
+      }
+    }
+  },
+  "devtools_addToSession": {
+    "message": "Añadir a la sesión"
+  },
+  "devtools_addedToSession": {
+    "message": "Añadido a la sesión como $name$.",
+    "placeholders": {
+      "name": {
+        "content": "$1",
+        "example": "applyCoupon"
+      }
+    }
+  },
   "stability_position": {
     "message": "posición"
   },

@@ -30,6 +30,7 @@ Every tool below runs on the live page, from the toolbar popup. The last three n
 | [Copy context for agent](#copy-context-for-agent) | one block about an element for a coding agent |
 | [Record actions](#record-actions) | a runnable spec from clicks and fills across pages |
 | [Report a bug](./report-a-bug) | a failing test and a report of a bug you reproduce |
+| [Developer tools](./devtools) | locators in DevTools, and what a test sees |
 | [Matching functions](#matching-functions) | a recording that calls your own functions |
 | [Test functions](#test-functions-against-this-page) | which of your functions work on this page |
 | [Tested elements](#tested-elements) | which elements of this page your tests reach |
@@ -149,8 +150,7 @@ Optional and off by default. In the settings (the popup's gear button), type you
 page comes from URL patterns kept on the instance, per project, and from any you keep in this browser; the popup's
 **Active project** select overrides both for the session. See [Extension connection](./extension-connection).
 
-The function catalogs refresh in the background, once per recorded page and when a recording stops; **Refresh** in
-Test functions fetches them now. **A recording is never sent to your instance.** Connecting changes only what **Copy
+The function catalogs refresh in the background; **Refresh** in Test functions fetches them now. **A recording is never sent to your instance.** Connecting changes only what **Copy
 as TypeScript** produces and what the overlay shows while recording.
 
 ## Limits
@@ -158,8 +158,8 @@ as TypeScript** produces and what the overlay shows while recording.
 - **One frame at a time.** The picker and the recorder see the top-level document, not iframes or shadow DOM.
 - **Recording covers one origin.** On another site, recording stops capturing steps; stop and review, or start again
   there.
-- **No aria-snapshot copier.** `toMatchAriaSnapshot()` YAML needs the computed accessibility tree, which an
-  extension reaches only with the `debugger` permission.
+- **No aria-snapshot copier.** `toMatchAriaSnapshot()` YAML needs the browser's accessibility tree, behind the
+  `debugger` permission.
 
 ## Related
 

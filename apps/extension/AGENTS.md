@@ -265,6 +265,25 @@ JavaScript world, so:
   not a page that means harm; `readRelayedEntry` rebuilds every entry field by field and truncates
   it, and storage caps each kind at 100. Treat everything it relays as page-controlled text.
 
+## DevTools
+
+`devtools_page` (`devtools.html`, `src/devtools/devtools.ts`) loads once per DevTools window and adds the **Piwi**
+pane to the Elements panel (`devtools-sidebar.html`, `src/devtools/sidebar.ts`). DevTools pages are extension pages:
+they have `chrome.scripting`, `chrome.permissions` and `chrome.storage` as well as `chrome.devtools`.
+
+- **The selection reaches the ranking through `inspectedWindow.eval`.** The pane injects `devtools-rank.js` into the
+  inspected tab (`src/devtools/selection.ts`) and calls `__piwiRankSelected($0)` with `useContentScriptContext`, so
+  `$0` arrives in the extension's isolated world as the same element the engine finds. The answer is plain data
+  (`src/shared/devtools-selection.ts`). Firefox has no `useContentScriptContext`: there `$0` is marked with an
+  attribute in the page's world and the content script is asked by message (unverified in Firefox so far).
+- **Access** is the tab's `activeTab` grant or the origin's optional host permission. When injection fails on a web
+  page, the pane offers **Allow on this site**, which requests that one origin inside the click. Reading the page's
+  origin with a plain `inspectedWindow.eval` needs no permission.
+- **Tests**: `devtools-sidebar.spec.ts` opens the pane as a tab with `chrome.devtools` stubbed (`devtools-stub.ts`:
+  `eval` runs in a fixture page's own world, where the spec adds the content script; `$0` is that page's global).
+  `devtools-real.spec.ts` launches Chromium with `--auto-open-devtools-for-tabs` and drives the real DevTools page
+  through the browser's debugging port: it checks the `devtools_page` loads and that `$0` reaches the ranking script.
+
 ## Content-script structure
 
 Each standalone content-script feature (locator console, multi-pick, lint overlay, assertion

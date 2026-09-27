@@ -29,7 +29,8 @@ message and draft it again.
 
 - **Keys** are `<surface>_<name>`: `popup_`, `options_`, `badge_`, `common_` (words and errors several surfaces show),
   and for the in-page tools `pick_` (the pick results), `console_`, `multipick_`, `lint_`, `assert_`, `session_`,
-  `agent_`, `functions_` (Test functions), `record_`, `bug_`, `replay_` and `coverage_` (Tested elements), and
+  `agent_`, `functions_` (Test functions), `record_`, `bug_`, `replay_` and `coverage_` (Tested elements), `devtools_`
+  for the DevTools pages, and
   `stability_` and `codegen_` for core's stability rules and converter warnings, by their code. ASCII letters, digits
   and `_` only; the browser ignores case, so `bug_Title` and `bug_title` collide. `extDescription` and
   `pickElementCommand`, the manifest's, keep their names.

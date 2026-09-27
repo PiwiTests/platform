@@ -53,6 +53,8 @@ const STANDALONE_ENTRIES = [
   // Registered the same way for a bug recording's lifetime, in the page's main world (`world: 'MAIN'`): the only
   // place that sees the page's console and its fetch/XHR calls. Imports nothing that touches `chrome.*`.
   ['bug-evidence-main', 'src/content/bug-evidence-main.ts'],
+  // Injected into the inspected tab by the Elements sidebar, which calls it with DevTools' selection.
+  ['devtools-rank', 'src/content/devtools-rank.ts'],
   ['background', 'src/background/index.ts'],
 ];
 
@@ -103,7 +105,14 @@ export async function buildExtension({ release = false, pseudo = false } = {}) {
     build: {
       outDir,
       emptyOutDir: false,
-      rollupOptions: { input: { popup: path.join(root, 'popup.html'), options: path.join(root, 'options.html') } },
+      rollupOptions: {
+        input: {
+          popup: path.join(root, 'popup.html'),
+          options: path.join(root, 'options.html'),
+          devtools: path.join(root, 'devtools.html'),
+          'devtools-sidebar': path.join(root, 'devtools-sidebar.html'),
+        },
+      },
     },
   });
 

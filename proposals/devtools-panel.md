@@ -8,9 +8,9 @@ Playwright test does. That is the gap this plan fills: a **Piwi panel inside Dev
 page, **mocks written from real responses**, the **login saved for tests**, **slow and failing requests** on demand,
 and **viewports** from the project's own configuration.
 
-**Status.** Proposed 2026-09-27. Nothing is built. No part needs the `debugger` permission, and only one adds a
-permission at all: `cookies`, optional, requested when the login is saved. The DevTools panel adds a manifest key
-(`devtools_page`) that shows no install warning.
+**Status.** Proposed 2026-09-27; in progress. Built: PR 1 (the Elements sidebar). No part needs the `debugger`
+permission, and only one adds a permission at all: `cookies`, optional, requested when the login is saved. The DevTools
+panel adds a manifest key (`devtools_page`) that shows no install warning. The open questions are settled below.
 
 **Summary.** A developer writing a test switches between the page, DevTools and the editor: they read the accessibility
 tree to guess what `getByRole` will find, copy a response from the Network panel to write a mock by hand, and log in
@@ -241,8 +241,8 @@ DevTools' own page as Playwright can.
 ## Open questions
 
 1. **Viewports from the instance.** The reporter does not send the projects' `use.viewport` today. Add it to the run's
-   wire data (a field freezing at 1.0), or read it from the Playwright config in the desktop app?
-2. **The panel as the main UI.** Should recording and replay move into the panel entirely when DevTools is open, the
-   in-page HUD hiding itself, or should both show?
-3. **Mocks as fixtures.** Should Mock this response also write a Piwi-style fixture (a `mocks/` folder and a
-   `useMocks` helper) when the project's function catalog has one, as the converter uses the project's page objects?
+   wire data (a field freezing at 1.0), or read it from the Playwright config in the desktop app? To be decided with
+   PR 7.
+2. **The panel as the main UI.** Settled: both show. The in-page HUD stays for people without DevTools open, and the
+   Piwi panel mirrors the same state.
+3. **Mocks as fixtures.** Settled: not now. Mock this response writes plain `page.route` code, as 2.2 describes.
