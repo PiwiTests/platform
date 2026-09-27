@@ -1,4 +1,5 @@
 import { CURSOR_HOST_ID, SHARED_STYLE } from './record-ui.js';
+import { attachPanelShadow } from './panel-root.js';
 
 /**
  * The replay's fake cursor: an arrow that glides to each element before the
@@ -39,7 +40,7 @@ export function createCursor(start: { x: number; y: number } | null): FakeCursor
   host.id = CURSOR_HOST_ID;
   host.style.cssText = 'all:initial;position:fixed;inset:0;pointer-events:none;z-index:2147483647;';
   document.documentElement.appendChild(host);
-  const root = host.attachShadow({ mode: 'closed' });
+  const root = attachPanelShadow(host, { mode: 'closed' });
   const still = reducedMotion();
   const style = document.createElement('style');
   style.textContent = `

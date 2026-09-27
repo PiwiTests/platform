@@ -161,6 +161,8 @@ describe('parseBlobReport', () => {
     const xpass = byTitle.get('fixed but still marked')!;
     expect(xpass.status).toBe('failed');
     expect(xpass.error).toBe('Expected to fail, but passed.');
+    expect(xpass.expectedStatus).toBe('failed');
+    expect(xfail.expectedStatus).toBe('failed');
 
     expect(parsed.passedTests).toBe(1);
     expect(parsed.failedTests).toBe(1);

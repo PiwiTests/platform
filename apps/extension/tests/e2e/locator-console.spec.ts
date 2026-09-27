@@ -34,6 +34,22 @@ test.describe('locator-console.js', () => {
     expect(await page.evaluate(() => !!document.getElementById('piwi-locator-console-host'))).toBe(false);
   });
 
+  test('what is typed in it never reaches the page’s own shortcuts', async ({ context }) => {
+    const page = await context.newPage();
+    // A page that acts on single keys and on paste, as the dashboard's inbox does.
+    await page.setContent(`<!doctype html><html><body><button data-testid="x">X</button><script>
+      window.__seen = [];
+      for (const type of ['keydown', 'keyup', 'keypress', 'input', 'paste'])
+        document.addEventListener(type, (e) => window.__seen.push(type + ':' + (e.key ?? '')));
+    </script></body></html>`);
+    await page.addScriptTag({ path: path.join(DIST, 'locator-console.js') });
+    await page.keyboard.type(`getByRole('button')`);
+    await page.keyboard.press('Enter');
+    await page.keyboard.press('ControlOrMeta+A');
+    await page.waitForTimeout(100);
+    expect(await page.evaluate(() => (window as unknown as { __seen: string[] }).__seen)).toEqual([]);
+  });
+
   test('typing a valid locator expression does not throw an unhandled page error', async ({ context }) => {
     const page = await context.newPage();
     const pageErrors: Error[] = [];

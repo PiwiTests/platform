@@ -11,9 +11,9 @@ followed until its spec passes.
 **Status.** Proposed 2026-09-27; revised the same day after deciding: replay targets the developer's local dev server
 in their everyday browser, Playwright runs go through the desktop app, and the `debugger` permission is not used (it
 cannot be optional; see [The `debugger` permission](#the-debugger-permission)). PR 1 (the steps file, the converter's
-options, Download steps and `piwi codegen`), PR 2 (Report a bug in Piwi Picker, its evidence and local exports) and PR 3
-(Replay, from a file, from the report just recorded, or from the finished report, with a fake cursor) are built;
-evidence collected during a replay and the rest are not. The extension gains
+options, Download steps and `piwi codegen`), PR 2 (Report a bug in Piwi Picker, its evidence and local exports), PR 3
+(Replay, from a file, from the report just recorded, or from the finished report, with a fake cursor) and PR 4
+(`expectedStatus`, "looks fixed", `piwi:bug`) are built; evidence collected during a replay and the rest are not. The extension gains
 two tools and, for the first time, requests that send page data to an instance, behind the explicit opt-in and preview
 its rules require. The reporter gains one wire field (`expectedStatus`); the dashboard gains a table, pages, endpoints,
 an issue type for the Jira integration, a CLI command and MCP tools; the desktop app gains a run request. The steps
@@ -509,13 +509,30 @@ PRs 1–3 close the loop between a tester and a developer with files alone: reco
   step mode; unit tests for the verdict.
 - Docs: `features/extension.md` (Replay, its limits).
 
-### PR 4 — expected status
+### PR 4 — expected status (built)
 - `packages/reporter/src/public/reporter.ts`, collected and wire types, serializer;
   `apps/application/server/utils/blob-report.ts` (importer); `packages/core/src/wire.ts`, `status-classify.ts`,
   `test-meta.ts` (`piwi:bug`).
 - App: schema and migrations (`test_runs_cases.expected_status`), no clustering for the new outcome, counts and badges,
   `shared/pr-feedback.ts`, the notification event.
 - Docs: `reference/test-metadata.md`, `reference/notification-events.md`, `features/pr-feedback.md`.
+- Built as: `resolveExpectedStatus`, `isExpectedFailurePassed` and `normalizeExpectedStatus` in
+  `packages/core/src/status-classify.ts`; `piwi:bug` read by `parseTestMetadata` as `TestMetadata.bug`; the column
+  `test_runs_cases.expected_status`, written by every ingest path and, for a payload without the field (an older
+  reporter, a blob report without it), derived from the `fail`, `skip` and `fixme` annotations. Decisions made while
+  building:
+  - **The stored status stays `failed`**, as Playwright reports it, so the run's counts and CI agree. "Expected failure
+    passed" is read, not stored: a `failed` row whose expected status is `failed` (an expected failure that did fail is
+    stored `passed`). No run-level counter was added; the row's **Looks fixed** badge, the execution page's header
+    and the pull-request comment's **Looks fixed** section name it.
+  - **`bug.looks_fixed` fires for every `test.fail()` test that passes**, once per run, with the `piwi:bug` id and the
+    `piwi:link` each test names, whether or not a bug report exists; PR 5 adds the report's state change to it.
+  - The pull-request line reads "the spec of bug #37 now passes: remove `test.fail()` in `<file>`" and links the
+    execution; PR 5 links the report.
+  - Tests: `status-classify.test.ts`, `test-meta.test.ts` (core); `expected-status.spec.ts`, `serializer.spec.ts`
+    (reporter); `blob-report.test.ts`, `pr-feedback.test.ts`, `notification-events.test.ts` and the e2e
+    `expected-failure.spec.ts` (app). D22 in `1.0-stabilization.md` covers the wire field, the annotation and the
+    event.
 
 ### PR 5 — dashboard
 - Schema and migrations for `bug_reports`, `bug_reproductions`, `test_cases.bug_report_id`, the project's

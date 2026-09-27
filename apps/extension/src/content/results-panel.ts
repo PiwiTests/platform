@@ -16,6 +16,7 @@ import { chainStabilities, usePlace } from './coverage-risk.js';
 import { pageKey } from '@piwitests/core/page-key';
 import { actionLabel, stabilityText } from '../shared/core-words.js';
 import { statusLabel, testTitle } from './coverage-view.js';
+import { attachPanelShadow } from './panel-root.js';
 
 const HOST_ID = 'piwi-picker-results-host';
 
@@ -47,7 +48,7 @@ export async function renderResultsPanel(ranked: CheckedLocator[], target: Eleme
   host.style.cssText = 'all:initial;position:fixed;inset:0;z-index:2147483647;';
   document.documentElement.appendChild(host);
   const openShadow = (globalThis as { __piwiTestOpenShadow?: boolean }).__piwiTestOpenShadow === true;
-  const root = host.attachShadow({ mode: openShadow ? 'open' : 'closed' });
+  const root = attachPanelShadow(host, { mode: openShadow ? 'open' : 'closed' });
 
   const style = document.createElement('style');
   style.textContent = `

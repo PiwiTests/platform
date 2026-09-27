@@ -34,6 +34,7 @@ import {
   waitForStepReady,
 } from './replay-actions.js';
 import { readStepsFile } from './steps-file.js';
+import { attachPanelShadow } from './panel-root.js';
 
 /**
  * Replay: plays a bug report's steps (or any steps file) in this tab, on this
@@ -218,7 +219,7 @@ function hudRoot(): ShadowRoot {
   host.id = REPLAY_HUD_HOST_ID;
   host.style.cssText = 'all:initial;position:fixed;inset:auto 16px 16px auto;z-index:2147483647;';
   document.documentElement.appendChild(host);
-  hud = { host, root: host.attachShadow({ mode: 'closed', delegatesFocus: true }) };
+  hud = { host, root: attachPanelShadow(host, { mode: 'closed', delegatesFocus: true }) };
   return hud.root;
 }
 
@@ -582,7 +583,7 @@ function openChooser(lastReport: PiwiSteps | null): void {
   host.id = REPLAY_DIALOG_HOST_ID;
   host.style.cssText = 'all:initial;position:fixed;inset:0;z-index:2147483647;';
   document.documentElement.appendChild(host);
-  const root = host.attachShadow({ mode: 'closed' });
+  const root = attachPanelShadow(host, { mode: 'closed' });
   const style = document.createElement('style');
   style.textContent = `${STYLE}
     .backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: flex; align-items: flex-start; justify-content: center; padding-top: 8vh; }`;

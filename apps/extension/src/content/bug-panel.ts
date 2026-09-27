@@ -53,6 +53,7 @@ import {
 import { BUG_RELAY, ownOrigin, readRelayedEntry } from '../shared/bug-relay.js';
 import { t, tn, tNodes, uiLanguage, type MessageKey } from '../shared/i18n.js';
 import type { RecordingState } from '../shared/recording-storage.js';
+import { attachPanelShadow } from './panel-root.js';
 
 /**
  * The bug recording's page UI: its HUD, the three ways to say what is wrong
@@ -307,7 +308,7 @@ function openBugDialog<T>(
   host.id = BUG_DIALOG_HOST_ID;
   host.style.cssText = 'all:initial;position:fixed;inset:0;z-index:2147483647;';
   document.documentElement.appendChild(host);
-  const root = host.attachShadow({ mode: 'closed' });
+  const root = attachPanelShadow(host, { mode: 'closed' });
   const style = document.createElement('style');
   style.textContent = PANEL_CSS;
   const backdrop = document.createElement('div');
@@ -777,7 +778,7 @@ export function renderBugHud(
   host.id = HUD_HOST_ID;
   host.style.cssText = 'all:initial;position:fixed;inset:auto 16px 16px auto;z-index:2147483647;';
   document.documentElement.appendChild(host);
-  const root = host.attachShadow({ mode: 'closed', delegatesFocus: true });
+  const root = attachPanelShadow(host, { mode: 'closed', delegatesFocus: true });
   const style = document.createElement('style');
   style.textContent = `
     ${SHARED_STYLE}
@@ -895,7 +896,7 @@ export async function renderBugFinishPanel(state: RecordingState, onDiscard: () 
   host.id = PANEL_HOST_ID;
   host.style.cssText = 'all:initial;position:fixed;inset:0;z-index:2147483647;';
   document.documentElement.appendChild(host);
-  const root = host.attachShadow({ mode: 'closed' });
+  const root = attachPanelShadow(host, { mode: 'closed' });
   const style = document.createElement('style');
   style.textContent = PANEL_CSS;
   const backdrop = document.createElement('div');

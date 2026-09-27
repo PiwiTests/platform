@@ -399,6 +399,7 @@ export class PiwiDashboardReporter {
       // An annotation-less skip reclassified to `didnotrun` is a serial-group
       // cascade: an earlier test failed and Playwright skipped the rest.
       didNotRunReason: status === 'didnotrun' ? 'previous-failure' : null,
+      expectedStatus: test.expectedStatus ?? null,
     };
 
     if (result.status === 'failed' || result.status === 'timedOut') {
@@ -533,6 +534,7 @@ export class PiwiDashboardReporter {
         locks: locks.length ? locks : null,
         testMeta: collectTestMetadata(declaredAnnotations),
         didNotRunReason: reason,
+        expectedStatus: test.expectedStatus ?? null,
       };
 
       this.testCases.push(testCase);

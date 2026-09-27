@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { resolveUnrunReason, linkBlockedTests, type BlockableCase } from '../src/status-classify.js';
+import {
+  resolveUnrunReason,
+  linkBlockedTests,
+  classifyStatus,
+  resolveExpectedStatus,
+  isExpectedFailurePassed,
+  type BlockableCase,
+} from '../src/status-classify.js';
 
 describe('resolveUnrunReason', () => {
   it('reads a timed-out run as the global timeout', () => {
@@ -71,5 +78,27 @@ describe('linkBlockedTests', () => {
     ];
     linkBlockedTests(cases);
     expect(cases[1]!.blockedBy).toBeUndefined();
+  });
+});
+
+describe('expected status', () => {
+  it('keeps the status Playwright reported', () => {
+    expect(resolveExpectedStatus('failed', [])).toBe('failed');
+    expect(resolveExpectedStatus('skipped', [{ type: 'fail' }])).toBe('skipped');
+  });
+
+  it('derives it from the annotations when none was reported', () => {
+    expect(resolveExpectedStatus(undefined, [{ type: 'fail' }])).toBe('failed');
+    expect(resolveExpectedStatus(null, [{ type: 'fail' }, { type: 'fixme' }])).toBe('skipped');
+    expect(resolveExpectedStatus('bogus', null)).toBe('passed');
+  });
+
+  it('tells an expected failure that passed from every other row', () => {
+    const passedBody = classifyStatus('passed', [{ type: 'fail' }]);
+    const failedBody = classifyStatus('failed', [{ type: 'fail' }]);
+    expect(isExpectedFailurePassed(passedBody, 'failed')).toBe(true);
+    expect(isExpectedFailurePassed(failedBody, 'failed')).toBe(false);
+    expect(isExpectedFailurePassed('failed', 'passed')).toBe(false);
+    expect(isExpectedFailurePassed('failed', null)).toBe(false);
   });
 });

@@ -47,7 +47,8 @@ import { withProjectGraphLock } from '../project-graph-lock';
 import type { VerifiedFix } from '../fix-verification';
 import type { RunMetadata } from '../run-json-types';
 import type { DbClient } from '../../database';
-import type { FilterDetails } from '#shared/types';
+import type { FilterDetails, TestMetadata } from '#shared/types';
+import { isExpectedFailurePassed } from '#shared/status-classify';
 import { errorExcerpt } from '#shared/notification-events';
 import { caseHeadline } from '#shared/failure-verdict';
 import { locksHeldAcrossShards } from '#shared/lock-overlap';
@@ -74,6 +75,8 @@ interface CaseRow {
   id: number;
   testCaseId: number;
   status: string;
+  expectedStatus: string | null;
+  testMeta: unknown;
   retries: number | null;
   duration: number | null;
   wastedTimeMs: number | null;
@@ -178,6 +181,8 @@ export async function buildRunPrSummary(
       id: testRunsCases.id,
       testCaseId: testRunsCases.testCaseId,
       status: testRunsCases.status,
+      expectedStatus: testRunsCases.expectedStatus,
+      testMeta: testRunsCases.testMeta,
       retries: testRunsCases.retries,
       duration: testRunsCases.duration,
       wastedTimeMs: testRunsCases.wastedTimeMs,
@@ -195,7 +200,10 @@ export async function buildRunPrSummary(
     .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
     .where(eq(testRunsCases.testRunId, runId));
 
-  const failingRows = caseRows.filter((row) => FAIL_STATUSES.includes(row.status));
+  const looksFixedRows = caseRows.filter((row) => isExpectedFailurePassed(row.status, row.expectedStatus));
+  const failingRows = caseRows.filter(
+    (row) => FAIL_STATUSES.includes(row.status) && !isExpectedFailurePassed(row.status, row.expectedStatus),
+  );
   const flakyRows = caseRows.filter((row) => row.status === 'passed' && (row.retries ?? 0) > 0);
 
   // `computeRunInsights` owns the baseline comparison; reuse it rather than
@@ -262,6 +270,10 @@ export async function buildRunPrSummary(
     durationMs: run.duration ?? null,
     newRegressions,
     preExisting,
+    looksFixed: [...new Map(looksFixedRows.map((row) => [row.testCaseId, row])).values()].map((row) => {
+      const bug = (row.testMeta as TestMetadata | null)?.bug;
+      return { title: row.title, filePath: row.filePath, executionId: row.id, bugId: bug ? Number(bug) : null };
+    }),
     flaky: flakyRows.map((row) => ({
       title: row.title,
       filePath: row.filePath,

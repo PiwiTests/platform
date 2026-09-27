@@ -8,6 +8,7 @@ import {
   type PickerOverlayArg,
 } from '@piwitests/picker-dom';
 import { suggestAssertions, type AssertionSuggestion } from './assertion-suggest.js';
+import { attachPanelShadow } from './panel-root.js';
 
 const HOST_ID = 'piwi-assertion-panel-host';
 
@@ -52,7 +53,7 @@ async function renderAssertionPanel(suggestion: AssertionSuggestion): Promise<vo
   host.id = HOST_ID;
   host.style.cssText = 'all:initial;position:fixed;inset:0;z-index:2147483647;';
   document.documentElement.appendChild(host);
-  const root = host.attachShadow({ mode: 'closed' });
+  const root = attachPanelShadow(host, { mode: 'closed' });
 
   // Exposed for assertion-suggest.spec.ts: suggestAssertions calls
   // @piwitests/core's generateAlternatives, which has its own private

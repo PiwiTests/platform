@@ -21,6 +21,45 @@ import { FAILED_STATUS_KEYS } from '#shared/utils/test-counts';
 import { describeCluster } from '#shared/describe-cluster';
 import { getClusterKnownIssue } from '../integrations/known-issue';
 import type { DbClient } from '../../database';
+import type { LooksFixedTest } from '#shared/notification-events';
+import type { TestMetadata } from '#shared/types';
+
+/**
+ * The run's `test.fail()` tests that passed, with the bug report and ticket
+ * each names: the tests whose bug looks fixed.
+ */
+export async function loadLooksFixedTests(db: DbClient, runId: number): Promise<LooksFixedTest[]> {
+  const rows = await db
+    .select({
+      title: testCases.title,
+      filePath: testCases.filePath,
+      executionId: testRunsCases.id,
+      testCaseId: testRunsCases.testCaseId,
+      testMeta: testRunsCases.testMeta,
+    })
+    .from(testRunsCases)
+    .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
+    .where(
+      and(
+        eq(testRunsCases.testRunId, runId),
+        eq(testRunsCases.status, 'failed'),
+        eq(testRunsCases.expectedStatus, 'failed'),
+      ),
+    );
+  // A retried test has one row per attempt; name each test once.
+  const byTest = new Map(rows.map((row) => [row.testCaseId, row]));
+  return [...byTest.values()].map((row) => {
+    const meta = (row.testMeta ?? null) as TestMetadata | null;
+    return {
+      title: row.title,
+      filePath: row.filePath,
+      executionId: row.executionId,
+      testCaseId: row.testCaseId,
+      ...(meta?.bug ? { bugId: Number(meta.bug) } : {}),
+      ...(meta?.link ? { link: meta.link } : {}),
+    };
+  });
+}
 
 /**
  * Emit run.finished / run.failed / run.failed.default_branch notifications for a completed run,
@@ -169,6 +208,17 @@ export async function emitRunNotifications(db: DbClient, runId: number): Promise
         sampleErrorExcerpt: errorExcerpt(cluster.sampleError),
         affectedCases: affected.length,
         knownIssue: knownIssue ? { key: knownIssue.key, url: knownIssue.url } : undefined,
+      });
+    }
+
+    const looksFixed = await loadLooksFixedTests(db, runId);
+    if (looksFixed.length > 0) {
+      await emitNotification(db, 'bug.looks_fixed', {
+        projectId: runRow.projectId,
+        projectName: project.label || project.name,
+        runId,
+        branch,
+        tests: looksFixed,
       });
     }
   } catch (e) {
