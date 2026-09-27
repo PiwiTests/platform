@@ -1,12 +1,3 @@
-import { probeElementAttrs, type ProbeArg } from '@piwitests/picker-dom';
-import {
-  generateAlternatives,
-  approximateAccessibleName,
-  resolveAriaRole,
-  CAPTURED_ATTRIBUTES,
-  TAG_TO_ROLE,
-  INPUT_TYPE_TO_ROLE,
-} from '@piwitests/core/locator-generation';
 import {
   normalizeSteps,
   buildSession,
@@ -21,8 +12,7 @@ import { renderSpec } from '@piwitests/core/codegen';
 import { toStepsDocument, type PiwiSteps } from '@piwitests/core/steps';
 import { formatNumber, initI18n, t, tn, uiLanguage } from '../shared/i18n.js';
 import { classifyInputKind, isPasswordInput } from './record-capture.js';
-import { DomModel } from './engine-aria.js';
-import { verifiedLocators } from './verified-locators.js';
+import { rankElement, verifiedLocators } from './verified-locators.js';
 import {
   getRecordingState,
   appendRecordingEvent,
@@ -60,15 +50,6 @@ import { requestCatalogRefresh } from '../shared/catalog-refresh.js';
 import { ensureSessionAccess } from '../shared/session-access.js';
 import { getConnectionSettings } from '../shared/connection-settings.js';
 import { getActiveProjectOverride, resolveActiveProject } from '../shared/active-project.js';
-
-const ROLE_SOURCES = [...new Set(['[role]', 'input', 'select', ...Object.keys(TAG_TO_ROLE)])].join(',');
-const PROBE_ARG: ProbeArg = {
-  keep: [...CAPTURED_ATTRIBUTES],
-  tagRoles: TAG_TO_ROLE,
-  inputRoles: INPUT_TYPE_TO_ROLE,
-  roleSources: ROLE_SOURCES,
-  includeStructural: true,
-};
 
 /** The DOM shapes a click/action can reasonably land on — a click deeper inside one of these snaps up to it, same intent as the picker overlay's own snapping (not the identical algorithm — see AGENTS.md note in this file's own doc comment below). */
 const ACTIONABLE_SELECTOR =
@@ -173,22 +154,16 @@ function elementKeyFor(el: Element): string {
 }
 
 /**
- * Element → `RecordedTarget`, mirroring `top-locator.ts`'s probe pipeline but
- * keeping the top few ranked alternatives (not just the winner) and the
- * role/testId/text a catalog pattern match needs. Lives here rather than a
- * separate pure file because it calls `generateAlternatives`, which per
- * `extension/AGENTS.md`'s two-strategy rule can only be tested by driving
- * the real built bundle — same reasoning as `agent-context.ts`.
+ * Element → `RecordedTarget`: the element named and ranked as every picking
+ * tool does (`rankElement`: the accessible name Playwright computes, "Regressions
+ * 5" rather than `textContent`'s "Regressions5", and no ranking on the probe's
+ * estimated counts), keeping the top few locators that find it alone on the
+ * page (`verifiedLocators`) and the role/testId/text a catalog pattern match
+ * needs. Tested by driving the real built bundle, since `generateAlternatives`
+ * can't be reconstructed from its source (see `extension/AGENTS.md`).
  */
 function deriveRecordedTarget(el: Element): RecordedTarget {
-  const attrs = probeElementAttrs(el, PROBE_ARG);
-  // The name Playwright computes, spaces between the parts of a composite
-  // control included ("Regressions 5", not "Regressions5"): a role locator
-  // built on the name `textContent` gives never matches.
-  const accessibleName =
-    new DomModel().normalizedAccessibleName(el, false) || approximateAccessibleName({ ...attrs, accessibleName: null });
-  const role = resolveAriaRole({ ...attrs, accessibleName });
-  const ranked = generateAlternatives({ ...attrs, accessibleName });
+  const { attrs, accessibleName, role, ranked } = rankElement(el);
   return {
     tagName: attrs.tagName,
     role,
