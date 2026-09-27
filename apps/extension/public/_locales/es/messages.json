@@ -4211,9 +4211,6 @@
   "devtools_conditionsFor": {
     "message": "Ralentizar o hacer fallar esta petición"
   },
-  "devtools_conditionsNone": {
-    "message": "Ninguna condición activa. Seleccione una petición abajo para ralentizarla o hacerla fallar."
-  },
   "devtools_conditionsLimits": {
     "message": "Las condiciones se aplican a las llamadas fetch y XHR de las páginas de esta pestaña hasta que las desactive o cierre la pestaña. Limitar la CPU o toda la página, y retrasar documentos, scripts, imágenes o las peticiones de un service worker, requieren el permiso debugger, que Piwi Picker no pide."
   },
@@ -4332,6 +4329,75 @@
   },
   "login_copySnippet": {
     "message": "Copiar el código"
+  },
+  "devtools_networkSelect": {
+    "message": "Seleccione una petición para simularla, ralentizarla o hacerla fallar."
+  },
+  "devtools_colMethod": {
+    "message": "Método"
+  },
+  "devtools_colPath": {
+    "message": "Ruta"
+  },
+  "devtools_colStatus": {
+    "message": "Estado"
+  },
+  "devtools_colTime": {
+    "message": "Tiempo"
+  },
+  "devtools_conditionsLimitsTitle": {
+    "message": "Lo que esto no puede ralentizar"
+  },
+  "devtools_copyAs": {
+    "message": "Copiar como"
+  },
+  "devtools_tabLocators": {
+    "message": "Locators"
+  },
+  "devtools_tabSession": {
+    "message": "Sesión"
+  },
+  "devtools_locatorsHint": {
+    "message": "Escriba un locator: se listan los elementos que encuentra en esta página, como los encuentra Playwright. Pase el puntero sobre uno para resaltarlo en la página; Mostrar lo selecciona en el panel Elementos."
+  },
+  "devtools_matches": {
+    "message": "Elementos encontrados"
+  },
+  "devtools_reveal": {
+    "message": "Mostrar"
+  },
+  "devtools_matchesListed": {
+    "message": "Solo se listan los $shown$ primeros.",
+    "placeholders": {
+      "shown": {
+        "content": "$1",
+        "example": "50"
+      }
+    }
+  },
+  "devtools_sessionEmpty": {
+    "message": "Aún no hay ningún elemento con nombre. Seleccione uno en el panel Elementos y use Añadir a la sesión en la barra lateral Piwi, o la herramienta Sesión del menú de la extensión."
+  },
+  "devtools_sessionCount_one": {
+    "message": "$count$ elemento con nombre",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "devtools_sessionCount_other": {
+    "message": "$count$ elementos con nombre",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "devtools_remove": {
+    "message": "Quitar"
   },
   "stability_position": {
     "message": "posición"

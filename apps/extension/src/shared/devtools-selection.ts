@@ -50,3 +50,28 @@ export function describeSelection(ranking: { tag: string; role: string | null; n
   const kind = ranking.role ?? ranking.tag;
   return ranking.name ? `${kind} · ${ranking.name}` : kind;
 }
+
+/** The global the DevTools content script defines for the Locators tab: `query`, `highlight` and `mark`. */
+export const DEVTOOLS_GLOBAL = '__piwiDevtools';
+
+/** Asks the DevTools content script which elements a locator expression finds. */
+export const QUERY_MESSAGE = 'piwi-devtools-query';
+/** Asks it to outline one of those elements on the page, or none. */
+export const HIGHLIGHT_MESSAGE = 'piwi-devtools-highlight';
+/** Asks it to mark one of them with {@link REVEAL_MARK}, for the DevTools page to `inspect()` in the page's world. */
+export const MARK_MATCH_MESSAGE = 'piwi-devtools-mark';
+export const REVEAL_MARK = 'data-piwi-devtools-reveal';
+
+/** One element a locator finds, as the Locators tab lists it. */
+export interface LocatorMatch {
+  tag: string;
+  role: string | null;
+  name: string;
+  /** Its text, shortened. */
+  text: string;
+}
+
+export type LocatorQueryResult =
+  | { ok: true; count: number; matches: LocatorMatch[] }
+  /** The expression is not a locator, or names a CSS selector the page refuses (`selector`). */
+  | { ok: false; error: string; selector: string | null };

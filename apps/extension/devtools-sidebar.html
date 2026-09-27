@@ -3,119 +3,13 @@
   <head>
     <meta charset="utf-8" />
     <title>Piwi</title>
-    <style>
-      :root {
-        color-scheme: light dark;
-        --fg: #1f2937;
-        --muted: #6b7280;
-        --border: #e5e7eb;
-        --accent: #6d28d9;
-        --good: #15803d;
-        --warn: #b45309;
-      }
-      @media (prefers-color-scheme: dark) {
-        :root {
-          --fg: #e5e7eb;
-          --muted: #9ca3af;
-          --border: #374151;
-          --accent: #a78bfa;
-          --good: #4ade80;
-          --warn: #fbbf24;
-        }
-      }
-      body {
-        margin: 0;
-        padding: 6px 8px;
-        font: 12px ui-sans-serif, system-ui, -apple-system, sans-serif;
-        color: var(--fg);
-        background: transparent;
-      }
-      .toolbar {
-        display: flex;
-        justify-content: flex-end;
-      }
-      button {
-        font: inherit;
-        font-size: 11.5px;
-        color: inherit;
-        background: rgba(128, 128, 128, 0.12);
-        border: 1px solid rgba(128, 128, 128, 0.35);
-        border-radius: 4px;
-        padding: 2px 7px;
-        cursor: pointer;
-      }
-      button:hover,
-      button:focus-visible {
-        background: rgba(128, 128, 128, 0.25);
-      }
-      button.primary {
-        border-color: var(--accent);
-        color: var(--accent);
-      }
-      .selection {
-        font-size: 12px;
-        font-weight: 600;
-        margin: 4px 0 8px;
-        overflow-wrap: anywhere;
-      }
-      .note {
-        color: var(--muted);
-        margin: 6px 0;
-        overflow-wrap: anywhere;
-      }
-      .note.added {
-        color: var(--good);
-      }
-      ul.locators {
-        list-style: none;
-        margin: 0;
-        padding: 0;
-      }
-      li.locator {
-        border-top: 1px solid var(--border);
-        padding: 6px 0;
-      }
-      li.locator code {
-        display: block;
-        font-size: 12px;
-        overflow-wrap: anywhere;
-      }
-      .verdict {
-        font-size: 11px;
-        margin: 3px 0;
-      }
-      .verdict.good {
-        color: var(--good);
-      }
-      .verdict.warn {
-        color: var(--warn);
-      }
-      .actions,
-      .session-form {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 4px;
-        margin-top: 3px;
-      }
-      .session-form input {
-        font: inherit;
-        flex: 1;
-        min-width: 120px;
-        padding: 2px 5px;
-        color: inherit;
-        background: transparent;
-        border: 1px solid rgba(128, 128, 128, 0.4);
-        border-radius: 4px;
-      }
-      .form-message {
-        flex-basis: 100%;
-        color: var(--warn);
-        font-size: 11px;
-      }
-    </style>
+    <link rel="stylesheet" href="src/devtools/devtools.css" />
   </head>
   <body>
-    <div class="toolbar"><button type="button" id="refresh" data-i18n="common_refresh">Refresh</button></div>
+    <div class="pane-head">
+      <h2 class="selection" id="selection"></h2>
+      <button type="button" id="refresh" data-i18n="common_refresh">Refresh</button>
+    </div>
     <div id="content"></div>
     <script type="module" src="src/devtools/sidebar.ts"></script>
   </body>

@@ -7,8 +7,9 @@ import {
   type ReplayState,
   type ReplayStepResult,
 } from '../shared/replay-storage.js';
-import { replayVerdict, verdictText } from '../content/replay-core.js';
-import { stepRow } from './panel-record.js';
+import { replayVerdict, verdictText, type ReplayVerdict } from '../content/replay-core.js';
+import { stepRow, viewHead } from './panel-record.js';
+import { button, el, emptyState } from './ui.js';
 
 /** The message the replay script answers in each page of the replayed site: redraw its panel, and go on when `wake`. */
 export const REPLAY_WAKE_MESSAGE = 'piwi-replay-wake';
@@ -35,33 +36,32 @@ async function notifyReplay(origin: string, wake: boolean): Promise<void> {
 }
 
 function glyph(result: ReplayStepResult | undefined, current: boolean): string {
-  if (current) return '▸ ';
+  if (current) return '▸';
   switch (result?.status) {
     case 'done':
     case 'passed':
-      return '✓ ';
+      return '✓';
     case 'failed':
-      return '✗ ';
+      return '✗';
     case 'diverged':
-      return '! ';
+      return '!';
     default:
-      return '· ';
+      return '·';
   }
-}
-
-function button(label: string, onClick: () => void, className = ''): HTMLButtonElement {
-  const b = document.createElement('button');
-  b.type = 'button';
-  b.className = className;
-  b.textContent = label;
-  b.addEventListener('click', onClick);
-  return b;
 }
 
 async function change(state: ReplayState, next: Partial<ReplayState>, wake: boolean): Promise<void> {
   await updateReplayState((s) => ({ ...s, ...next }));
   await notifyReplay(state.origin, wake);
 }
+
+const VERDICT_TONES: Record<ReplayVerdict['kind'], string> = {
+  reproduced: 'bad',
+  diverged: 'warn',
+  stopped: 'warn',
+  'not-reproduced': 'good',
+  completed: 'good',
+};
 
 /**
  * The Replay tab: the replay's steps with their results, the locator each was
@@ -72,70 +72,50 @@ async function change(state: ReplayState, next: Partial<ReplayState>, wake: bool
 export async function renderReplayTab(container: HTMLElement): Promise<void> {
   const state = await getReplayState();
   if (!state) {
-    const empty = document.createElement('p');
-    empty.className = 'note';
-    empty.textContent = t('devtools_noReplay');
-    container.replaceChildren(empty);
+    container.replaceChildren(emptyState('replay', t('devtools_noReplay')));
     return;
   }
   const steps = sessionFromSteps(state.steps, state.origin).steps;
   const done = state.status === 'done' || state.status === 'stopped';
+  const paused = state.status === 'paused';
+  const text = `${t(done ? 'replay_statusDone' : paused ? 'replay_statusPaused' : 'replay_statusRunning')} · ${state.origin}`;
 
-  const status = document.createElement('p');
-  status.className = 'status';
-  status.setAttribute('role', 'status');
-  status.textContent = `${t(
-    done ? 'replay_statusDone' : state.status === 'paused' ? 'replay_statusPaused' : 'replay_statusRunning',
-  )} · ${state.origin}`;
-
-  const controls = document.createElement('div');
-  controls.className = 'controls';
+  const actions: HTMLElement[] = [];
   if (!done) {
-    const paused = state.status === 'paused';
-    controls.appendChild(
+    actions.push(
       button(paused ? t('replay_continue') : t('replay_pause'), () => {
         void change(state, { status: paused ? 'running' : 'paused' }, paused);
       }),
     );
     if (state.stepMode) {
-      controls.appendChild(button(t('replay_nextStep'), () => void notifyReplay(state.origin, true), 'primary'));
+      actions.push(button(t('replay_nextStep'), () => void notifyReplay(state.origin, true), 'primary'));
     }
-    controls.appendChild(button(t('common_stop'), () => void change(state, { status: 'stopped' }, true), 'stop'));
+    actions.push(button(t('common_stop'), () => void change(state, { status: 'stopped' }, true), 'danger'));
   }
 
-  const parts: HTMLElement[] = [status, controls];
+  const parts: HTMLElement[] = [viewHead(done ? 'done' : paused ? '' : 'running', text, ...actions)];
   if (state.conditions?.length) {
-    parts.push(
-      Object.assign(document.createElement('p'), {
-        className: 'note',
-        textContent: t('replay_underConditions', { conditions: state.conditions.map(conditionText).join(' · ') }),
-      }),
-    );
+    const chips = el('div', 'view-note chips');
+    chips.appendChild(el('span', '', t('devtools_conditionsTitle')));
+    for (const condition of state.conditions) chips.appendChild(el('span', 'chip', conditionText(condition)));
+    parts.push(chips);
   }
   if (done) {
-    const verdict = verdictText(replayVerdict(steps, state.results, state.status === 'stopped'), steps);
-    const box = document.createElement('div');
-    box.className = 'verdict';
-    const title = document.createElement('strong');
-    title.textContent = verdict.title;
-    const detail = document.createElement('div');
-    detail.textContent = verdict.detail;
-    box.append(title, detail);
+    const verdict = replayVerdict(steps, state.results, state.status === 'stopped');
+    const { title, detail } = verdictText(verdict, steps);
+    const box = el('div', `verdict ${VERDICT_TONES[verdict.kind]}`);
+    box.append(el('strong', '', title), el('div', '', detail));
     parts.push(box);
   }
 
-  const list = document.createElement('ol');
-  list.className = 'steps';
+  const list = el('ol', 'steps');
   steps.forEach((step, index) => {
     const result = state.results[index];
-    const row = stepRow(step, glyph(result, !done && index === state.position));
+    const current = !done && index === state.position;
+    const row = stepRow(step, glyph(result, current));
+    if (current) row.classList.add('current');
     if (result?.status) row.dataset.status = result.status;
-    if (result?.detail) {
-      const detail = document.createElement('div');
-      detail.className = 'detail';
-      detail.textContent = result.detail;
-      row.appendChild(detail);
-    }
+    if (result?.detail) row.appendChild(el('div', 'detail', result.detail));
     list.appendChild(row);
   });
   parts.push(list);

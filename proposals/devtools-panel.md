@@ -8,7 +8,8 @@ Playwright test does. That is the gap this plan fills: a **Piwi panel inside Dev
 page, **mocks written from real responses**, the **login saved for tests**, **slow and failing requests** on demand,
 and **viewports** from the project's own configuration.
 
-**Status.** Proposed 2026-09-27; in progress. Built: PR 1 (the Elements sidebar), PR 2 (the Playwright view), PR 3 (the Piwi panel's Record and Replay tabs), PR 4 (the Network tab and Mock this response), PR 5 (Save login for tests), PR 6 (slow down or fail a request, and replays under a condition), PR 7 (viewport presets). No part needs the `debugger`
+**Status.** Proposed 2026-09-27; in progress. Built: PR 1 (the Elements sidebar), PR 2 (the Playwright view), PR 3 (the Piwi panel's Record and Replay tabs), PR 4 (the Network tab and Mock this response), PR 5 (Save login for tests), PR 6 (slow down or fail a request, and replays under a condition), PR 7 (viewport presets). After them, a layout pass on the DevTools pages and two more panel tabs, Locators and
+Session (see 1.2). No part needs the `debugger`
 permission, and only one adds a permission at all: `cookies`, optional, requested when the login is saved. The DevTools
 panel adds a manifest key (`devtools_page`) that shows no install warning. The open questions are settled below.
 
@@ -131,6 +132,12 @@ first planned). Its buttons do what the in-page panels do: Stop recording is the
 step and Stop write the replay state and then send `piwi-replay-wake` to the replayed site's tabs, whose replay script
 redraws its panel and, except after a pause, goes on. A bug report is finished from its panel on the page, which
 collects the evidence, and a recording is started from the popup, as before.
+
+Two popup tools gained a place in the panel, since DevTools does more for them than a panel on the page can: the
+locator console (**Locators**), whose matches are revealed in the Elements panel with `inspect()`, and the pick session
+(**Session**), which the Elements sidebar's Add to session fills. Both stay in the popup (T3). Both DevTools pages share
+one stylesheet drawn like DevTools' own (flat toolbars, 12px type, the DevTools theme), and the Network tab splits the
+requests and the selected one side by side.
 
 ## Part 2 — The tools
 

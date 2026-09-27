@@ -4211,9 +4211,6 @@
   "devtools_conditionsFor": {
     "message": "Atrasar ou fazer falhar esta requisição"
   },
-  "devtools_conditionsNone": {
-    "message": "Nenhuma condição ativa. Selecione uma requisição abaixo para atrasá-la ou fazê-la falhar."
-  },
   "devtools_conditionsLimits": {
     "message": "As condições valem para as chamadas fetch e XHR das páginas desta aba até você desativá-las ou fechar a aba. Limitar a CPU ou a página inteira, e atrasar documentos, scripts, imagens ou as requisições de um service worker, exigem a permissão debugger, que o Piwi Picker não pede."
   },
@@ -4332,6 +4329,75 @@
   },
   "login_copySnippet": {
     "message": "Copiar o código"
+  },
+  "devtools_networkSelect": {
+    "message": "Selecione uma requisição para simulá-la, atrasá-la ou fazê-la falhar."
+  },
+  "devtools_colMethod": {
+    "message": "Método"
+  },
+  "devtools_colPath": {
+    "message": "Caminho"
+  },
+  "devtools_colStatus": {
+    "message": "Status"
+  },
+  "devtools_colTime": {
+    "message": "Tempo"
+  },
+  "devtools_conditionsLimitsTitle": {
+    "message": "O que isto não consegue atrasar"
+  },
+  "devtools_copyAs": {
+    "message": "Copiar como"
+  },
+  "devtools_tabLocators": {
+    "message": "Locators"
+  },
+  "devtools_tabSession": {
+    "message": "Sessão"
+  },
+  "devtools_locatorsHint": {
+    "message": "Digite um locator: os elementos que ele encontra nesta página são listados, como o Playwright os encontra. Passe o ponteiro sobre um para destacá-lo na página; Mostrar o seleciona no painel Elementos."
+  },
+  "devtools_matches": {
+    "message": "Elementos encontrados"
+  },
+  "devtools_reveal": {
+    "message": "Mostrar"
+  },
+  "devtools_matchesListed": {
+    "message": "Só os $shown$ primeiros são listados.",
+    "placeholders": {
+      "shown": {
+        "content": "$1",
+        "example": "50"
+      }
+    }
+  },
+  "devtools_sessionEmpty": {
+    "message": "Nenhum elemento nomeado ainda. Selecione um no painel Elementos e use Adicionar à sessão na barra lateral Piwi, ou a ferramenta Sessão no menu da extensão."
+  },
+  "devtools_sessionCount_one": {
+    "message": "$count$ elemento nomeado",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "devtools_sessionCount_other": {
+    "message": "$count$ elementos nomeados",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "devtools_remove": {
+    "message": "Remover"
   },
   "stability_position": {
     "message": "posição"

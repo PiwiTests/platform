@@ -35,7 +35,7 @@ Elements inside an iframe are not ranked: their locator would need the frame's p
 
 ## The Piwi panel
 
-DevTools also gets a **Piwi** panel of its own, with two tabs. It shows what runs on the page and stays up while the
+DevTools also gets a **Piwi** panel of its own, with five tabs. It shows what runs on the page and stays up while the
 page navigates; the panels on the page stay too, for when DevTools is closed.
 
 - **Record** lists a recording's steps as they are captured, each with the locator it was recorded with. **Stop
@@ -44,7 +44,12 @@ page navigates; the panels on the page stay too, for when DevTools is closed.
 - **Replay** lists a replay's steps with their results and the verdict once it ends. **Pause**, **Continue**, **Next
   step** and **Stop** act on the replay running in the page.
 - **Network** lists the page's `fetch` and XHR requests, from DevTools' own log while it is open; **Other sites too**
-  adds the requests to other origins.
+  adds the requests to other origins. Select one to mock it, slow it down or make it fail (below).
+- **Locators** is the [locator console](./extension#locator-console) beside the Elements panel: type a locator and
+  the elements it finds are listed, as Playwright finds them, with the strict-mode verdict. Hovering one outlines it
+  on the page, and **Reveal** selects it in the Elements panel.
+- **Session** lists the elements named with **Add to session**, here or on the page, and copies them as a page object,
+  a Markdown table or JSON.
 
 **Playwright view**, at the top of the panel, turns the view below on and off in the inspected tab.
 

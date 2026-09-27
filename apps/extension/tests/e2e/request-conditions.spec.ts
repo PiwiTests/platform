@@ -106,7 +106,9 @@ test('slows down or fails the selected request in its tab only, and turns off', 
   const tabId = await tabIdOf(context, extensionId, `${site}/shop`);
   const panel = await openDevtoolsPage(context, extensionId, 'devtools-panel.html', shop, { tabId });
   await panel.getByRole('tab', { name: 'Network' }).click();
-  await expect(panel.getByText('No condition on.')).toBeVisible();
+  await expect(panel.getByText('Select a request to mock it, slow it down or make it fail.')).toBeVisible();
+  const conditions = panel.getByRole('region', { name: 'Request conditions' });
+  await expect(conditions).toBeHidden();
   await fireDevtoolsEvent(panel, 'requestFinished', {
     request: { method: 'GET', url: `${site}/api/cart?_=1695820800000` },
     response: { status: 200, content: { mimeType: 'application/json' } },
@@ -117,7 +119,6 @@ test('slows down or fails the selected request in its tab only, and turns off', 
   await panel.getByRole('list', { name: 'Network' }).getByRole('button').first().click();
 
   await panel.getByRole('button', { name: 'Fail with 500' }).click();
-  const conditions = panel.getByRole('region', { name: 'Request conditions' });
   await expect(conditions.getByRole('listitem')).toHaveText([/Answer GET \*\*\/api\/cart\?_=\* with a 500 error/]);
   await expect(shop.locator('#piwi-conditions-banner')).toBeAttached();
   expect(await load(shop, 'fetch')).toMatchObject({ result: 'error 500' });
@@ -148,7 +149,7 @@ test('slows down or fails the selected request in its tab only, and turns off', 
   const reloaded = shop.waitForEvent('load');
   await conditions.getByRole('button', { name: 'Turn all off and reload' }).click();
   await reloaded;
-  await expect(panel.getByText('No condition on.')).toBeVisible();
+  await expect(conditions).toBeHidden();
   await expect(shop.locator('#piwi-conditions-banner')).toHaveCount(0);
   expect((await load(shop, 'fetch')).elapsed).toBeLessThan(1000);
 });

@@ -1,7 +1,8 @@
 import { formatNumber, t, tn } from '../shared/i18n.js';
 import { mockCode, type MockKind, type MockSource, mockUrlPattern } from '../shared/mock-code.js';
 import { copyText, inspectedOrigin } from './inspected.js';
-import { conditionButtons, renderConditions } from './panel-conditions.js';
+import { conditionActions, renderConditions } from './panel-conditions.js';
+import { button, el, emptyState, flash } from './ui.js';
 
 /**
  * The Network tab: the page's `fetch` and XHR requests, read from
@@ -113,13 +114,6 @@ interface NetworkView {
 
 const view: NetworkView = { allOrigins: false, selected: null, kind: 'response', reveal: false, pattern: null };
 
-function el<K extends keyof HTMLElementTagNameMap>(tag: K, className = '', text = ''): HTMLElementTagNameMap[K] {
-  const node = document.createElement(tag);
-  if (className) node.className = className;
-  if (text) node.textContent = text;
-  return node;
-}
-
 function download(content: string, filename: string, base64: boolean): void {
   const bytes = base64 ? Uint8Array.from(atob(content), (c) => c.charCodeAt(0)) : content;
   const url = URL.createObjectURL(new Blob([bytes]));
@@ -132,7 +126,21 @@ function download(content: string, filename: string, base64: boolean): void {
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
 
-async function renderMock(section: HTMLElement, entry: NetworkEntry): Promise<void> {
+const KINDS = [
+  ['response', 'devtools_mockResponse'],
+  ['error', 'devtools_mockError'],
+  ['abort', 'devtools_mockAbort'],
+] as const;
+
+/** A label and its field, for the `.fields` grid. */
+function field(id: string, label: string, control: HTMLInputElement | HTMLSelectElement): HTMLElement[] {
+  control.id = id;
+  const labelEl = el('label', '', label);
+  labelEl.htmlFor = id;
+  return [labelEl, control];
+}
+
+async function renderMock(pane: HTMLElement, entry: NetworkEntry): Promise<void> {
   const { text, base64 } = await entry.body();
   const source: MockSource = {
     method: entry.method,
@@ -142,43 +150,51 @@ async function renderMock(section: HTMLElement, entry: NetworkEntry): Promise<vo
     body: text,
     base64,
   };
-  const pattern = view.pattern ?? mockUrlPattern(entry.url);
 
-  const patternLabel = el('label', 'field');
-  patternLabel.append(el('span', '', t('devtools_mockPattern')));
+  const mock = el('section', 'mock');
+  mock.setAttribute('aria-label', t('devtools_mockTitle'));
+  const title = el('h3', 'request-title', `${entry.method} ${entry.url}`);
+
   const patternInput = el('input');
   patternInput.type = 'text';
-  patternInput.value = pattern;
+  patternInput.value = view.pattern ?? mockUrlPattern(entry.url);
   patternInput.spellcheck = false;
-  patternLabel.appendChild(patternInput);
-
-  const kindLabel = el('label', 'field');
-  kindLabel.append(el('span', '', t('devtools_mockKind')));
   const kind = el('select');
-  for (const [value, key] of [
-    ['response', 'devtools_mockResponse'],
-    ['error', 'devtools_mockError'],
-    ['abort', 'devtools_mockAbort'],
-  ] as const) {
+  for (const [value, key] of KINDS) {
     const option = el('option', '', t(key));
     option.value = value;
     kind.appendChild(option);
   }
   kind.value = view.kind;
-  kindLabel.appendChild(kind);
+  const fields = el('div', 'fields');
+  fields.append(
+    ...field('mock-pattern', t('devtools_mockPattern'), patternInput),
+    ...field('mock-kind', t('devtools_mockKind'), kind),
+  );
 
-  const code = el('pre', 'code');
   const notes = el('div', 'notes');
-  const actions = el('div', 'controls');
-  const conditions = el('div', 'controls');
-  conditions.append(...conditionButtons(entry, dom?.origin ?? null));
+  const code = el('pre', 'code');
+  const copy = button(
+    t('devtools_mockCopy'),
+    () => {
+      void copyText(code.textContent ?? '').then((copied) => {
+        if (copied) flash(copy, t('common_copied'));
+      });
+    },
+    'primary copy-code',
+  );
+  const codeBox = el('div', 'code-box');
+  codeBox.append(code, copy);
+  const fileActions = el('div', 'controls');
 
   const update = () => {
     view.pattern = patternInput.value;
     const result = mockCode(source, { kind: view.kind, pattern: patternInput.value, reveal: view.reveal });
     code.textContent = result.code;
     notes.replaceChildren();
-    if (view.kind === 'response' && text === null) notes.appendChild(el('p', 'note warn', t('devtools_mockNoBody')));
+    fileActions.replaceChildren();
+    if (view.kind === 'response' && text === null) notes.appendChild(el('p', 'warn-text', t('devtools_mockNoBody')));
+    if (result.hidden > 0) notes.appendChild(el('p', '', tn('devtools_mockHidden', result.hidden)));
     if (result.hidden > 0 || view.reveal) {
       const reveal = el('label', 'check');
       const box = el('input');
@@ -189,29 +205,15 @@ async function renderMock(section: HTMLElement, entry: NetworkEntry): Promise<vo
         update();
       });
       reveal.append(box, t('devtools_mockReveal'));
-      if (result.hidden > 0) notes.appendChild(el('p', 'note', tn('devtools_mockHidden', result.hidden)));
       notes.appendChild(reveal);
     }
-    const copy = el('button', 'primary', t('devtools_mockCopy'));
-    copy.type = 'button';
-    copy.addEventListener('click', () => {
-      void copyText(code.textContent ?? '').then((copied) => {
-        if (!copied) return;
-        copy.textContent = t('common_copied');
-        setTimeout(() => {
-          copy.textContent = t('devtools_mockCopy');
-        }, 1200);
-      });
-    });
-    actions.replaceChildren(copy);
     if (result.file) {
       const file = result.file;
       const name = file.path.split('/').pop()!;
-      const save = el('button', '', t('devtools_mockDownload', { file: name }));
-      save.type = 'button';
-      save.addEventListener('click', () => download(file.content, name, file.base64));
-      actions.appendChild(save);
-      notes.appendChild(el('p', 'note', t('devtools_mockFileHint', { path: file.path })));
+      notes.appendChild(el('p', '', t('devtools_mockFileHint', { path: file.path })));
+      fileActions.appendChild(
+        button(t('devtools_mockDownload', { file: name }), () => download(file.content, name, file.base64)),
+      );
     }
   };
   patternInput.addEventListener('input', update);
@@ -220,22 +222,13 @@ async function renderMock(section: HTMLElement, entry: NetworkEntry): Promise<vo
     update();
   });
   update();
-  section.replaceChildren(
-    el('h3', 'request-title', `${entry.method} ${entry.url}`),
-    patternLabel,
-    kindLabel,
-    notes,
-    code,
-    actions,
-    el('h3', 'request-title', t('devtools_conditionsFor')),
-    conditions,
-  );
+  mock.append(title, fields, notes, codeBox, fileActions);
+  pane.replaceChildren(mock, conditionActions(entry, dom?.origin ?? null));
 }
 
 interface NetworkDom {
   list: HTMLElement;
-  section: HTMLElement;
-  conditions: HTMLElement;
+  detail: HTMLElement;
   origin: string | null;
 }
 
@@ -255,6 +248,7 @@ export function refreshNetworkList(): void {
       const item = el('li');
       const row = el('button', 'request');
       row.type = 'button';
+      row.title = `${entry.method} ${entry.url}`;
       row.setAttribute('aria-pressed', String(entry.id === view.selected));
       row.append(
         el('span', 'method', entry.method),
@@ -280,16 +274,21 @@ async function showSelected(): Promise<void> {
   if (!dom) return;
   const selected = entries.find((entry) => entry.id === view.selected);
   if (!selected) {
-    dom.section.replaceChildren();
+    dom.detail.replaceChildren(emptyState('network', t('devtools_networkSelect')));
     return;
   }
-  await renderMock(dom.section, selected);
+  await renderMock(dom.detail, selected);
 }
 
-/** Draws the tab: the requests, most recent last, and Mock this response under the selected one. */
+/**
+ * Draws the tab: the conditions on, across the top; the requests on the left,
+ * most recent last; the selected one on the right, to mock, slow down or fail.
+ */
 export async function renderNetworkTab(container: HTMLElement): Promise<void> {
   const origin = await inspectedOrigin();
-  const toolbar = el('div', 'controls');
+  const strip = el('section', 'conditions-strip');
+  strip.setAttribute('aria-label', t('devtools_conditionsTitle'));
+
   const allLabel = el('label', 'check');
   const all = el('input');
   all.type = 'checkbox';
@@ -299,24 +298,33 @@ export async function renderNetworkTab(container: HTMLElement): Promise<void> {
     refreshNetworkList();
   });
   allLabel.append(all, t('devtools_networkAllOrigins'));
-  const clear = el('button', '', t('devtools_networkClear'));
-  clear.type = 'button';
-  clear.addEventListener('click', () => {
+  const clear = button(t('devtools_networkClear'), () => {
     entries.length = 0;
     view.selected = null;
     refreshNetworkList();
     void showSelected();
   });
+  const toolbar = el('div', 'pane-toolbar');
   toolbar.append(allLabel, clear);
+  const head = el('div', 'request-head');
+  head.setAttribute('aria-hidden', 'true');
+  head.append(
+    el('span', '', t('devtools_colMethod')),
+    el('span', '', t('devtools_colPath')),
+    el('span', '', t('devtools_colStatus')),
+    el('span', '', t('devtools_colTime')),
+  );
   const list = el('ul', 'requests');
   list.setAttribute('aria-label', t('devtools_tabNetwork'));
-  const section = el('section', 'mock');
-  section.setAttribute('aria-label', t('devtools_mockTitle'));
-  const conditions = el('section', 'conditions');
-  conditions.setAttribute('aria-label', t('devtools_conditionsTitle'));
-  container.replaceChildren(conditions, toolbar, el('p', 'note', t('devtools_networkHint')), list, section);
-  dom = { list, section, conditions, origin };
-  await renderConditions(conditions, origin);
+  const requests = el('div', 'requests-pane');
+  requests.append(toolbar, head, list, el('p', 'pane-foot', t('devtools_networkHint')));
+  const detail = el('div', 'detail-pane');
+
+  const grid = el('div', 'network');
+  grid.append(strip, requests, detail);
+  container.replaceChildren(grid);
+  dom = { list, detail, origin };
+  await renderConditions(strip, origin);
   refreshNetworkList();
   await showSelected();
 }

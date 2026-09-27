@@ -4975,10 +4975,6 @@
     "message": "Slow down or fail this request",
     "description": "DevTools, Piwi panel, Network tab: heading above the buttons that slow down or fail the selected request."
   },
-  "devtools_conditionsNone": {
-    "message": "No condition on. Select a request below to slow it down or make it fail.",
-    "description": "DevTools, Piwi panel, Network tab: no request condition is on."
-  },
   "devtools_conditionsLimits": {
     "message": "Conditions apply to the fetch and XHR calls of this tab’s pages until you turn them off or close the tab. Throttling the CPU or the whole page, and delaying documents, scripts, images or a service worker’s requests, need the debugger permission, which Piwi Picker does not ask for.",
     "description": "DevTools, Piwi panel, Network tab: what request conditions reach, and what they cannot. fetch, XHR and debugger are technical names: keep them."
@@ -5120,6 +5116,92 @@
   "login_copySnippet": {
     "message": "Copy the code",
     "description": "Save login page: button that copies the code above it."
+  },
+  "devtools_networkSelect": {
+    "message": "Select a request to mock it, slow it down or make it fail.",
+    "description": "DevTools, Piwi panel, Network tab: right side, before a request is selected."
+  },
+  "devtools_colMethod": {
+    "message": "Method",
+    "description": "DevTools, Piwi panel, Network tab: column heading, the request's HTTP method. One short word."
+  },
+  "devtools_colPath": {
+    "message": "Path",
+    "description": "DevTools, Piwi panel, Network tab: column heading, the request's path. One short word."
+  },
+  "devtools_colStatus": {
+    "message": "Status",
+    "description": "DevTools, Piwi panel, Network tab: column heading, the response's HTTP status. One short word."
+  },
+  "devtools_colTime": {
+    "message": "Time",
+    "description": "DevTools, Piwi panel, Network tab: column heading, how long the request took. One short word."
+  },
+  "devtools_conditionsLimitsTitle": {
+    "message": "What this cannot slow down",
+    "description": "DevTools, Piwi panel, Network tab: a fold that opens devtools_conditionsLimits."
+  },
+  "devtools_copyAs": {
+    "message": "Copy as",
+    "description": "DevTools, Piwi sidebar: before the three copy buttons under a locator (common_copyModeBare, common_copyModeAction, common_copyModeExpect). Short."
+  },
+  "devtools_tabLocators": {
+    "message": "Locators",
+    "description": "DevTools, Piwi panel: tab where a locator is typed and the elements it finds are listed. One word."
+  },
+  "devtools_tabSession": {
+    "message": "Session",
+    "description": "DevTools, Piwi panel: tab listing the named elements of the pick session. One word."
+  },
+  "devtools_locatorsHint": {
+    "message": "Type a locator: the elements it finds on this page are listed, as Playwright finds them. Hover one to outline it on the page; Reveal selects it in the Elements panel.",
+    "description": "DevTools, Piwi panel, Locators tab: shown while the field is empty."
+  },
+  "devtools_matches": {
+    "message": "Elements found",
+    "description": "DevTools, Piwi panel, Locators tab: accessible name of the list of elements the locator finds."
+  },
+  "devtools_reveal": {
+    "message": "Reveal",
+    "description": "DevTools, Piwi panel, Locators tab: button beside a found element that selects it in DevTools' Elements panel. One short word."
+  },
+  "devtools_matchesListed": {
+    "message": "Only the first $shown$ are listed.",
+    "description": "DevTools, Piwi panel, Locators tab: under the list, when the locator finds more elements than it lists. $shown$ is how many are listed.",
+    "placeholders": {
+      "shown": {
+        "content": "$1",
+        "example": "50"
+      }
+    }
+  },
+  "devtools_sessionEmpty": {
+    "message": "No named element yet. Select one in the Elements panel and use Add to session in the Piwi sidebar, or the Session tool in the toolbar popup.",
+    "description": "DevTools, Piwi panel, Session tab: no element has been named yet. “Add to session” is the sidebar's button (devtools_addToSession)."
+  },
+  "devtools_sessionCount_one": {
+    "message": "$count$ named element",
+    "description": "DevTools, Piwi panel, Session tab: how many elements the session names. $count$ is the number.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "devtools_sessionCount_other": {
+    "message": "$count$ named elements",
+    "description": "DevTools, Piwi panel, Session tab: how many elements the session names. $count$ is the number.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "devtools_remove": {
+    "message": "Remove",
+    "description": "DevTools, Piwi panel, Session tab: button beside a named element that takes it out of the session. One word."
   },
   "stability_position": {
     "message": "position",

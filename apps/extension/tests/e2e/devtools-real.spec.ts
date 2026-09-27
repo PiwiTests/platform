@@ -52,7 +52,9 @@ test('the real DevTools loads the devtools page, and $0 reaches the ranking scri
   const server = http
     .createServer((_request, response) => {
       response.setHeader('content-type', 'text/html');
-      response.end('<!doctype html><main><button class="btn">Apply coupon</button></main>');
+      response.end(
+        '<!doctype html><main><button class="btn">Apply coupon</button><button id="show">Show popup</button></main>',
+      );
     })
     .listen(0, '127.0.0.1');
   await new Promise((resolve) => server.once('listening', resolve));
@@ -115,6 +117,27 @@ test('the real DevTools loads the devtools page, and $0 reaches the ranking scri
       locator: "getByRole('button', { name: 'Apply coupon' })",
       verdict: 'unique',
     });
+
+    // The Locators tab's path: the content script finds the elements, and Reveal selects one in Elements.
+    const found = (await evaluateIn(
+      devtoolsPage!,
+      `new Promise((resolve) => chrome.devtools.inspectedWindow.eval('__piwiDevtools.query("getByRole(\\'button\\')")', { useContentScriptContext: true }, (value, error) => resolve(value ?? error)))`,
+    )) as { ok: boolean; count: number };
+    expect(found).toMatchObject({ ok: true, count: 2 });
+    await evaluateIn(
+      devtoolsPage!,
+      `new Promise((resolve) => chrome.devtools.inspectedWindow.eval('__piwiDevtools.mark(1)', { useContentScriptContext: true }, () =>
+        chrome.devtools.inspectedWindow.eval("(() => { const el = document.querySelector('[data-piwi-devtools-reveal]'); el.removeAttribute('data-piwi-devtools-reveal'); inspect(el); return true; })()", resolve)))`,
+    );
+    await expect
+      .poll(async () => {
+        const selected = (await evaluateIn(
+          devtoolsPage!,
+          `new Promise((resolve) => chrome.devtools.inspectedWindow.eval('__piwiRankSelected($0)', { useContentScriptContext: true }, (value) => resolve(value)))`,
+        )) as { name?: string };
+        return selected?.name;
+      })
+      .toBe('Show popup');
   } finally {
     await context.close();
     server.close();

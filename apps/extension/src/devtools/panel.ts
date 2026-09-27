@@ -1,7 +1,7 @@
 import { LOCATOR_SYNTAX_CSS } from '@piwitests/picker-dom';
 import { initI18n, localizeDocument, t, uiLanguage } from '../shared/i18n.js';
-import { RECORDING_KEY } from '../shared/recording-storage.js';
-import { REPLAY_KEY } from '../shared/replay-storage.js';
+import { RECORDING_KEY, getRecordingState } from '../shared/recording-storage.js';
+import { REPLAY_KEY, getReplayState } from '../shared/replay-storage.js';
 import { CONDITIONS_KEY } from '../shared/request-conditions.js';
 import {
   evalInPage,
@@ -14,22 +14,29 @@ import {
 import { renderRecordTab } from './panel-record.js';
 import { renderReplayTab } from './panel-replay.js';
 import { refreshNetworkList, renderNetworkTab, startNetworkLog } from './panel-network.js';
+import { renderLocatorsTab } from './panel-locators.js';
+import { renderSessionTab } from './panel-session.js';
+import { SESSION_KEY } from '../shared/session-storage.js';
 
 /**
  * The Piwi panel in DevTools. It mirrors what runs on the page, from the same
  * session storage the in-page panels read: the recording's steps (Record),
  * the replay's steps and verdict (Replay), and redraws whenever that storage
  * changes, so it stays up across the page's navigations. Network lists the
- * page's API calls from DevTools' own log, for Mock this response. The in-page panels
+ * page's API calls from DevTools' own log, for Mock this response. Locators
+ * tries a locator on the page and reveals what it finds in the Elements panel;
+ * Session lists the elements named so far. The in-page panels
  * stay: the panel is an addition for people with DevTools open.
  */
 
-type TabId = 'record' | 'replay' | 'network';
+type TabId = 'record' | 'replay' | 'network' | 'locators' | 'session';
 
 const TAB_KEYS: Record<TabId, string[]> = {
   record: [RECORDING_KEY],
   replay: [REPLAY_KEY],
   network: [CONDITIONS_KEY],
+  locators: [],
+  session: [SESSION_KEY],
 };
 
 const content = document.getElementById('content') as HTMLElement;
@@ -44,8 +51,26 @@ async function render(): Promise<void> {
   const container = document.createElement('div');
   if (current === 'record') await renderRecordTab(container);
   else if (current === 'replay') await renderReplayTab(container);
-  else await renderNetworkTab(container);
-  if (mine === generation) content.replaceChildren(...container.childNodes);
+  else if (current === 'network') await renderNetworkTab(container);
+  else if (current === 'locators') renderLocatorsTab(container);
+  else await renderSessionTab(container);
+  if (mine !== generation) return;
+  content.classList.toggle('flush', current === 'network');
+  content.setAttribute('aria-labelledby', `tab-${current}`);
+  content.replaceChildren(...container.childNodes);
+}
+
+/** A dot on Record while a recording runs, and on Replay while a replay does, whatever tab is open. */
+async function markLiveTabs(): Promise<void> {
+  const [recording, replay] = await Promise.all([getRecordingState(), getReplayState()]);
+  const live: Record<TabId, boolean> = {
+    record: recording.active,
+    replay: replay?.status === 'running' || replay?.status === 'paused',
+    network: false,
+    locators: false,
+    session: false,
+  };
+  for (const tab of tabButtons) tab.dataset.live = String(live[tab.dataset.tab as TabId]);
 }
 
 function select(tab: TabId): void {
@@ -82,7 +107,12 @@ async function togglePlaywrightView(): Promise<void> {
       void injectContentScript('playwright-view.js');
     });
   });
-  notice.replaceChildren(text, allow);
+  const dismiss = document.createElement('button');
+  dismiss.type = 'button';
+  dismiss.className = 'link';
+  dismiss.textContent = t('common_close');
+  dismiss.addEventListener('click', () => notice.replaceChildren());
+  notice.replaceChildren(text, allow, dismiss);
 }
 
 /** Opens Save login for tests for the inspected tab, in a tab of its own. */
@@ -116,11 +146,13 @@ async function start(): Promise<void> {
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'session') return;
     if (TAB_KEYS[current].some((key) => key in changes)) void render();
+    if (RECORDING_KEY in changes || REPLAY_KEY in changes) void markLiveTabs();
   });
   startNetworkLog(() => {
     if (current === 'network') refreshNetworkList();
   });
   select('record');
+  void markLiveTabs();
 }
 
 void start();

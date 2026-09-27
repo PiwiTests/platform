@@ -6,6 +6,7 @@ import { initI18n, localizeDocument, t, tn, uiLanguage } from '../shared/i18n.js
 import { isValidPickName } from '../shared/session-export.js';
 import { addSessionPick, getSessionPicks } from '../shared/session-storage.js';
 import { copyText, requestSiteAccess } from './inspected.js';
+import { button, el, emptyState, flash, type IconName } from './ui.js';
 import { rankDevtoolsSelection, type RankOutcome } from './selection.js';
 
 /**
@@ -16,48 +17,68 @@ import { rankDevtoolsSelection, type RankOutcome } from './selection.js';
  */
 
 const content = document.getElementById('content') as HTMLElement;
+const selection = document.getElementById('selection') as HTMLElement;
 const refreshBtn = document.getElementById('refresh') as HTMLButtonElement;
 
 let generation = 0;
 
 async function refresh(): Promise<void> {
   const current = ++generation;
-  content.replaceChildren(note(t('devtools_ranking')));
+  refreshBtn.disabled = true;
+  content.setAttribute('aria-busy', 'true');
   const outcome = await rankDevtoolsSelection().catch(
     (err: unknown): RankOutcome => ({ kind: 'failed', message: err instanceof Error ? err.message : String(err) }),
   );
   if (current !== generation) return;
+  refreshBtn.disabled = false;
+  content.removeAttribute('aria-busy');
   render(outcome);
 }
 
-function note(text: string, className = 'note'): HTMLElement {
-  const el = document.createElement('p');
-  el.className = className;
-  el.textContent = text;
-  return el;
+function show(heading: SelectionRanking | null, ...nodes: HTMLElement[]): void {
+  if (heading?.status === 'ranked') {
+    const kind = el('span', 'role', heading.role ?? heading.tag);
+    selection.replaceChildren(kind);
+    if (heading.name) selection.append(el('span', 'sep', ' · '), el('span', '', heading.name));
+    selection.title = describeSelection(heading);
+  } else {
+    selection.replaceChildren();
+    selection.removeAttribute('title');
+  }
+  content.replaceChildren(...nodes);
+}
+
+function empty(name: IconName, text: string, ...actions: HTMLElement[]): HTMLElement {
+  const box = emptyState(name, text, ...actions);
+  box.classList.add('pane-empty');
+  return box;
 }
 
 function render(outcome: RankOutcome): void {
   switch (outcome.kind) {
     case 'restricted':
-      content.replaceChildren(note(t('devtools_restricted')));
+      show(null, empty('blocked', t('devtools_restricted')));
       return;
     case 'failed':
-      content.replaceChildren(
-        note(outcome.message ? t('devtools_rankFailed', { error: outcome.message }) : t('devtools_rankFailedPlain')),
+      show(
+        null,
+        empty(
+          'blocked',
+          outcome.message ? t('devtools_rankFailed', { error: outcome.message }) : t('devtools_rankFailedPlain'),
+        ),
       );
       return;
     case 'no-access': {
-      const allow = document.createElement('button');
-      allow.type = 'button';
-      allow.className = 'primary';
-      allow.textContent = t('devtools_allowSite');
-      allow.addEventListener('click', () => {
-        void requestSiteAccess(outcome.pattern).then((granted) => {
-          if (granted) void refresh();
-        });
-      });
-      content.replaceChildren(note(t('devtools_noAccess', { site: outcome.pattern.replace(/\/\*$/, '') })), allow);
+      const allow = button(
+        t('devtools_allowSite'),
+        () => {
+          void requestSiteAccess(outcome.pattern).then((granted) => {
+            if (granted) void refresh();
+          });
+        },
+        'primary',
+      );
+      show(null, empty('lock', t('devtools_noAccess', { site: outcome.pattern.replace(/\/\*$/, '') }), allow));
       return;
     }
     case 'ranked':
@@ -66,33 +87,17 @@ function render(outcome: RankOutcome): void {
 }
 
 function renderRanking(ranking: SelectionRanking): void {
-  if (ranking.status === 'none') {
-    content.replaceChildren(note(t('devtools_selectElement')));
-    return;
-  }
-  if (ranking.status === 'frame') {
-    content.replaceChildren(note(t('devtools_inFrame')));
-    return;
-  }
-  if (ranking.status === 'extension') {
-    content.replaceChildren(note(t('devtools_ownElement')));
-    return;
-  }
-  const heading = document.createElement('h2');
-  heading.className = 'selection';
-  heading.textContent = describeSelection(ranking);
-  if (ranking.locators.length === 0) {
-    content.replaceChildren(heading, note(t('devtools_noLocator')));
-    return;
-  }
-  const list = document.createElement('ul');
-  list.className = 'locators';
-  for (const locator of ranking.locators) list.appendChild(locatorRow(locator, ranking));
-  content.replaceChildren(heading, list);
+  if (ranking.status === 'none') return show(null, empty('select', t('devtools_selectElement')));
+  if (ranking.status === 'frame') return show(null, empty('blocked', t('devtools_inFrame')));
+  if (ranking.status === 'extension') return show(null, empty('blocked', t('devtools_ownElement')));
+  if (ranking.locators.length === 0) return show(ranking, empty('blocked', t('devtools_noLocator')));
+  const list = el('ul', 'locators');
+  ranking.locators.forEach((locator, i) => list.appendChild(locatorRow(locator, ranking, i === 0)));
+  show(ranking, list);
 }
 
-/** `✓ unique · stable`, `3 matches · brittle`. */
-function verdictText(locator: SelectionLocator): { text: string; good: boolean } {
+/** `✓ unique · stable`, `3 matches · brittle: CSS class`, and whether it reads as good or as a warning. */
+function verdictText(locator: SelectionLocator): { text: string; tone: 'good' | 'warn' } {
   const stability =
     locator.stability === 'stable'
       ? t('devtools_stable')
@@ -102,75 +107,74 @@ function verdictText(locator: SelectionLocator): { text: string; good: boolean }
   switch (locator.verdict) {
     case 'unique':
     case 'narrowed':
-      return { text: `✓ ${t('devtools_unique')} · ${stability}`, good: locator.stability !== 'brittle' };
+      return {
+        text: `✓ ${t('devtools_unique')} · ${stability}`,
+        tone: locator.stability === 'brittle' ? 'warn' : 'good',
+      };
     case 'position':
-      return { text: `✓ ${t('devtools_byPosition')} · ${stability}`, good: false };
+      return { text: `✓ ${t('devtools_byPosition')} · ${stability}`, tone: 'warn' };
     case 'ambiguous':
-      return { text: `${tn('devtools_matches', locator.count ?? 0)} · ${stability}`, good: false };
+      return { text: `${tn('devtools_matches', locator.count ?? 0)} · ${stability}`, tone: 'warn' };
     case 'unchecked':
-      return { text: `${t('devtools_unchecked')} · ${stability}`, good: false };
+      return { text: `${t('devtools_unchecked')} · ${stability}`, tone: 'warn' };
   }
 }
 
-function locatorRow(locator: SelectionLocator, ranking: Extract<SelectionRanking, { status: 'ranked' }>): HTMLElement {
-  const row = document.createElement('li');
-  row.className = 'locator';
-  const code = document.createElement('code');
-  code.className = 'piwi-loc';
+function locatorRow(
+  locator: SelectionLocator,
+  ranking: Extract<SelectionRanking, { status: 'ranked' }>,
+  best: boolean,
+): HTMLElement {
+  const row = el('li', best && locator.verdict !== 'ambiguous' ? 'locator best' : 'locator');
+  const code = el('code', 'piwi-loc');
   code.innerHTML = highlightLocator(locator.locator);
   const verdict = verdictText(locator);
-  const badge = document.createElement('div');
-  badge.className = verdict.good ? 'verdict good' : 'verdict warn';
-  badge.textContent = verdict.text;
+  const badge = el('div', `locator-verdict badge ${verdict.tone}`, verdict.text);
 
-  const actions = document.createElement('div');
-  actions.className = 'actions';
+  const actions = el('div', 'row-actions');
+  actions.appendChild(el('span', 'copy-label', t('devtools_copyAs')));
   for (const mode of COPY_MODES) {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.textContent = copyModeLabel(mode);
-    btn.title = renderCopyMode(locator, mode);
-    btn.addEventListener('click', () => {
-      void copyText(renderCopyMode(locator, mode)).then((copied) => {
-        if (copied) flash(btn, t('common_copied'));
-      });
-    });
-    actions.appendChild(btn);
+    const copy = button(
+      copyModeLabel(mode),
+      () => {
+        void copyText(renderCopyMode(locator, mode)).then((copied) => {
+          if (copied) flash(copy, t('common_copied'));
+        });
+      },
+      'link',
+    );
+    copy.title = renderCopyMode(locator, mode);
+    actions.appendChild(copy);
   }
-  const add = document.createElement('button');
-  add.type = 'button';
-  add.textContent = t('devtools_addToSession');
-  add.addEventListener('click', () => openSessionForm(row, locator.locator, ranking.pageUrl));
-  actions.appendChild(add);
+  actions.appendChild(
+    button(
+      t('devtools_addToSession'),
+      () => openSessionForm(row, locator.locator, ranking.pageUrl),
+      'link add-to-session',
+    ),
+  );
 
   row.append(code, badge, actions);
   return row;
 }
 
-function flash(btn: HTMLButtonElement, text: string): void {
-  const original = btn.textContent;
-  btn.textContent = text;
-  setTimeout(() => {
-    btn.textContent = original;
-  }, 1200);
-}
-
 function openSessionForm(row: HTMLElement, locator: string, pageUrl: string): void {
   row.querySelector('form')?.remove();
-  const form = document.createElement('form');
-  form.className = 'session-form';
-  const input = document.createElement('input');
+  row.querySelector('.confirm')?.remove();
+  const form = el('form', 'session-form');
+  const input = el('input');
   input.type = 'text';
   input.placeholder = t('session_namePlaceholder');
   input.setAttribute('aria-label', t('session_nameLabel'));
-  const save = document.createElement('button');
+  const save = el('button', 'primary', t('common_save'));
   save.type = 'submit';
-  save.className = 'primary';
-  save.textContent = t('common_save');
-  const message = document.createElement('div');
-  message.className = 'form-message';
+  const cancel = button(t('common_cancel'), () => form.remove());
+  const message = el('div', 'form-message');
   message.setAttribute('role', 'status');
-  form.append(input, save, message);
+  form.append(input, save, cancel, message);
+  form.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') form.remove();
+  });
   form.addEventListener('submit', (event) => {
     event.preventDefault();
     void (async () => {
@@ -182,7 +186,7 @@ function openSessionForm(row: HTMLElement, locator: string, pageUrl: string): vo
         return void (message.textContent = t('session_nameTaken', { name }));
       await addSessionPick({ name, locator, pageUrl });
       form.remove();
-      row.appendChild(note(t('devtools_addedToSession', { name }), 'note added'));
+      row.appendChild(el('p', 'confirm', t('devtools_addedToSession', { name })));
     })();
   });
   row.appendChild(form);

@@ -10,6 +10,7 @@ import {
 import { mockUrlPattern } from '../shared/mock-code.js';
 import { sessionArea } from '../shared/session-area.js';
 import { inspectedTabId, sitePattern } from './inspected.js';
+import { button, el } from './ui.js';
 import type { NetworkEntry } from './panel-network.js';
 
 /**
@@ -34,19 +35,10 @@ async function setConditions(origin: string, conditions: RequestCondition[], rep
   if (!reply?.ok) report(t('devtools_conditionFailed', { error: reply?.error ?? '' }));
 }
 
-function button(label: string, onClick: () => void, className = ''): HTMLButtonElement {
-  const b = document.createElement('button');
-  b.type = 'button';
-  b.className = className;
-  b.textContent = label;
-  b.addEventListener('click', onClick);
-  return b;
-}
-
-/** The buttons under a selected request: slow it down by the seconds given, or make it fail. */
-export function conditionButtons(entry: NetworkEntry, origin: string | null): HTMLElement[] {
+/** The section under a selected request: slow it down by the seconds given, or make it fail. */
+export function conditionActions(entry: NetworkEntry, origin: string | null): HTMLElement {
   const status = document.createElement('span');
-  status.className = 'note warn';
+  status.className = 'warn-text';
   status.setAttribute('role', 'status');
   const report = (text: string) => {
     status.textContent = text;
@@ -81,54 +73,52 @@ export function conditionButtons(entry: NetworkEntry, origin: string | null): HT
       await setConditions(origin, [...others, condition], report);
     });
   };
-  return [
+  const section = el('section', 'condition-actions');
+  section.setAttribute('aria-label', t('devtools_conditionsFor'));
+  const controls = el('div', 'controls');
+  controls.append(
     seconds,
     button(t('devtools_slowDown'), () => add('delay')),
     button(t('devtools_failError'), () => add('error')),
     button(t('devtools_failAbort'), () => add('abort')),
     status,
-  ];
+  );
+  const limits = el('details', 'limits');
+  limits.append(el('summary', '', t('devtools_conditionsLimitsTitle')), el('p', '', t('devtools_conditionsLimits')));
+  section.append(el('h3', 'section-title', t('devtools_conditionsFor')), controls, limits);
+  return section;
 }
 
-/** The conditions on this tab, each with Remove, and Turn all off. */
-export async function renderConditions(section: HTMLElement, origin: string | null): Promise<void> {
+/** The conditions on this tab, each with Remove, and Turn all off; nothing when none is on. */
+export async function renderConditions(strip: HTMLElement, origin: string | null): Promise<void> {
   const conditions = await conditionsOnThisTab();
-  const heading = document.createElement('h3');
-  heading.className = 'request-title';
-  heading.textContent = t('devtools_conditionsTitle');
-  const limits = document.createElement('p');
-  limits.className = 'note';
-  limits.textContent = t('devtools_conditionsLimits');
-  const status = document.createElement('p');
-  status.className = 'note warn';
+  if (conditions.length === 0 || !origin) {
+    strip.replaceChildren();
+    return;
+  }
+  const status = el('span', 'warn-text');
   const report = (text: string) => {
     status.textContent = text;
   };
-  if (conditions.length === 0 || !origin) {
-    const none = document.createElement('p');
-    none.className = 'note';
-    none.textContent = t('devtools_conditionsNone');
-    section.replaceChildren(heading, none, limits);
-    return;
-  }
-  const list = document.createElement('ul');
-  list.className = 'conditions';
+  const list = el('ul');
   for (const condition of conditions) {
-    const item = document.createElement('li');
-    const text = document.createElement('span');
-    text.textContent = conditionText(condition);
+    const item = el('li');
     item.append(
-      text,
-      button(t('devtools_conditionRemove'), () => {
-        void setConditions(
-          origin,
-          conditions.filter((c) => c.id !== condition.id),
-          report,
-        );
-      }),
+      el('span', '', conditionText(condition)),
+      button(
+        t('devtools_conditionRemove'),
+        () => {
+          void setConditions(
+            origin,
+            conditions.filter((c) => c.id !== condition.id),
+            report,
+          );
+        },
+        'link',
+      ),
     );
     list.appendChild(item);
   }
-  const allOff = button(t('devtools_conditionsAllOff'), () => void setConditions(origin, [], report), 'stop');
-  section.replaceChildren(heading, list, allOff, status, limits);
+  const allOff = button(t('devtools_conditionsAllOff'), () => void setConditions(origin, [], report), 'danger');
+  strip.replaceChildren(el('span', 'strip-title', t('devtools_conditionsTitle')), list, allOff, status);
 }

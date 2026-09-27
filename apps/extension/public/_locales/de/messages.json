@@ -4211,9 +4211,6 @@
   "devtools_conditionsFor": {
     "message": "Diese Anfrage verlangsamen oder scheitern lassen"
   },
-  "devtools_conditionsNone": {
-    "message": "Keine Bedingung aktiv. Wählen Sie unten eine Anfrage, um sie zu verlangsamen oder scheitern zu lassen."
-  },
   "devtools_conditionsLimits": {
     "message": "Bedingungen gelten für die fetch- und XHR-Aufrufe der Seiten dieses Tabs, bis Sie sie ausschalten oder den Tab schließen. Die CPU oder die ganze Seite zu drosseln und Dokumente, Skripte, Bilder oder Anfragen eines Service Workers zu verzögern, braucht die debugger-Berechtigung, die Piwi Picker nicht anfordert."
   },
@@ -4332,6 +4329,75 @@
   },
   "login_copySnippet": {
     "message": "Code kopieren"
+  },
+  "devtools_networkSelect": {
+    "message": "Wählen Sie eine Anfrage, um sie nachzubilden, zu verlangsamen oder scheitern zu lassen."
+  },
+  "devtools_colMethod": {
+    "message": "Methode"
+  },
+  "devtools_colPath": {
+    "message": "Pfad"
+  },
+  "devtools_colStatus": {
+    "message": "Status"
+  },
+  "devtools_colTime": {
+    "message": "Dauer"
+  },
+  "devtools_conditionsLimitsTitle": {
+    "message": "Was sich so nicht verlangsamen lässt"
+  },
+  "devtools_copyAs": {
+    "message": "Kopieren als"
+  },
+  "devtools_tabLocators": {
+    "message": "Locators"
+  },
+  "devtools_tabSession": {
+    "message": "Session"
+  },
+  "devtools_locatorsHint": {
+    "message": "Geben Sie einen Locator ein: Die Elemente, die er auf dieser Seite findet, werden aufgelistet, wie Playwright sie findet. Fahren Sie über eines, um es auf der Seite zu umranden; Anzeigen wählt es im Elemente-Bereich aus."
+  },
+  "devtools_matches": {
+    "message": "Gefundene Elemente"
+  },
+  "devtools_reveal": {
+    "message": "Anzeigen"
+  },
+  "devtools_matchesListed": {
+    "message": "Nur die ersten $shown$ werden aufgelistet.",
+    "placeholders": {
+      "shown": {
+        "content": "$1",
+        "example": "50"
+      }
+    }
+  },
+  "devtools_sessionEmpty": {
+    "message": "Noch kein benanntes Element. Wählen Sie eines im Elemente-Bereich und nutzen Sie Zur Session hinzufügen in der Piwi-Seitenleiste oder das Session-Werkzeug im Menü der Erweiterung."
+  },
+  "devtools_sessionCount_one": {
+    "message": "$count$ benanntes Element",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "devtools_sessionCount_other": {
+    "message": "$count$ benannte Elemente",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "devtools_remove": {
+    "message": "Entfernen"
   },
   "stability_position": {
     "message": "Position"

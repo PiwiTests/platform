@@ -306,7 +306,9 @@ for a moment after a change, and bridges its labels to `globalThis.__piwiPlaywri
 
 `devtools_page` (`devtools.html`, `src/devtools/devtools.ts`) loads once per DevTools window and adds the **Piwi**
 pane to the Elements panel (`devtools-sidebar.html`, `src/devtools/sidebar.ts`). DevTools pages are extension pages:
-they have `chrome.scripting`, `chrome.permissions` and `chrome.storage` as well as `chrome.devtools`.
+they have `chrome.scripting`, `chrome.permissions` and `chrome.storage` as well as `chrome.devtools`. Both pages
+share `src/devtools/devtools.css` (DevTools' own look: 12px type, flat toolbars, the theme through the frame's color
+scheme, a transparent background) and the helpers in `src/devtools/ui.ts` (buttons, empty states and their icons).
 
 - **The selection reaches the ranking through `inspectedWindow.eval`.** The pane injects `devtools-rank.js` into the
   inspected tab (`src/devtools/selection.ts`) and calls `__piwiRankSelected($0)` with `useContentScriptContext`, so
@@ -322,6 +324,10 @@ they have `chrome.scripting`, `chrome.permissions` and `chrome.storage` as well 
   popup's stop (`stopRecording` + `piwi-recording-stopped`); Pause, Continue and Stop write the replay state, then send
   `piwi-replay-wake` to the replayed site's tabs, which `replay-panel.ts` answers by redrawing its panel and, with
   `wake: true` (Continue, Next step, Stop, never Pause), releasing its wait.
+- **Locators and Session** (`panel-locators.ts`, `panel-session.ts`): Locators calls the DevTools content script
+  (`__piwiDevtools.query`, `highlight`, `mark`, through `src/devtools/page-script.ts`) and reveals a match by marking
+  it with `data-piwi-devtools-reveal`, then running `inspect()` on it in the page's world, which needs no permission.
+  Session reads the pick session (`SESSION_KEY`) and redraws when it changes.
 - **Network and Mock this response** (`panel-network.ts`, pure half `src/shared/mock-code.ts`): requests come only
   from `chrome.devtools.network` (`getHAR` at open, then `onRequestFinished`), kept in the panel's memory, fetch and
   XHR only, and never leave the browser but through the user's copy or download. `mockCode` hides credential fields

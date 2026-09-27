@@ -17,39 +17,39 @@ import {
   type RecordingState,
 } from '../shared/recording-storage.js';
 import { copyText, evalInPage } from './inspected.js';
+import { button, el, emptyState, flash } from './ui.js';
 
-/** A step in words, as the replay's panel says it, and the locator it was recorded with. */
-export function stepRow(step: RecordedStep, prefix = ''): HTMLLIElement {
-  const item = document.createElement('li');
-  const words = document.createElement('div');
-  words.className = 'step-words';
-  words.textContent = `${prefix}${describeStepInWords(step, interfacePhrases()).replace(/`+/g, '')}`;
-  item.appendChild(words);
+/**
+ * A step in words, as the replay's panel says it, and the locator it was
+ * recorded with. `glyph` is the replay's mark for it; the list numbers the
+ * steps itself.
+ */
+export function stepRow(step: RecordedStep, glyph = ''): HTMLLIElement {
+  const item = el('li');
+  const mark = el('span', 'glyph', glyph);
+  mark.setAttribute('aria-hidden', 'true');
+  item.append(mark, el('div', 'step-words', describeStepInWords(step, interfacePhrases()).replace(/`+/g, '')));
   const locator = step.target?.alternatives[0]?.locator;
   if (locator) {
-    const code = document.createElement('code');
-    code.className = 'piwi-loc';
+    const code = el('code', 'piwi-loc');
     code.innerHTML = highlightLocator(locator);
     item.appendChild(code);
   }
   return item;
 }
 
-function button(label: string, onClick: () => void, className = ''): HTMLButtonElement {
-  const b = document.createElement('button');
-  b.type = 'button';
-  b.className = className;
-  b.textContent = label;
-  b.addEventListener('click', onClick);
-  return b;
-}
-
-function flash(btn: HTMLButtonElement): void {
-  const original = btn.textContent;
-  btn.textContent = t('common_copied');
-  setTimeout(() => {
-    btn.textContent = original;
-  }, 1200);
+/** The head of the Record and Replay views: a dot and the state, then the actions. */
+export function viewHead(dot: string, text: string, ...actions: HTMLElement[]): HTMLElement {
+  const head = el('div', 'view-head');
+  const status = el('p', 'status');
+  status.setAttribute('role', 'status');
+  const mark = el('span', `dot ${dot}`);
+  mark.setAttribute('aria-hidden', 'true');
+  status.append(mark, text);
+  const controls = el('div', 'controls');
+  controls.append(...actions);
+  head.append(status, controls);
+  return head;
 }
 
 function originOf(pattern: string | null): string {
@@ -94,32 +94,22 @@ export async function renderRecordTab(container: HTMLElement): Promise<void> {
   const steps = normalizeSteps(state.events);
   const bug = recordingMode(state) === 'bug';
   if (!state.active && state.events.length === 0) {
-    const empty = document.createElement('p');
-    empty.className = 'note';
-    empty.textContent = t('devtools_noRecording');
-    container.replaceChildren(empty);
+    container.replaceChildren(emptyState('record', t('devtools_noRecording')));
     return;
   }
 
-  const status = document.createElement('p');
-  status.className = 'status';
-  status.setAttribute('role', 'status');
   const count = steps.length;
-  status.textContent = state.active
+  const text = state.active
     ? tn(bug ? 'devtools_bugRecordingOn' : 'devtools_recordingOn', count, {
         site: originOf(state.grantedOriginPattern),
       })
     : tn('devtools_recordingStopped', count);
 
-  const controls = document.createElement('div');
-  controls.className = 'controls';
+  const actions: HTMLElement[] = [];
   if (state.active && bug) {
-    const hint = document.createElement('span');
-    hint.className = 'note';
-    hint.textContent = t('devtools_finishBugOnPage');
-    controls.appendChild(hint);
+    actions.push(el('span', 'muted', t('devtools_finishBugOnPage')));
   } else if (state.active) {
-    controls.appendChild(
+    actions.push(
       button(
         t('devtools_stopRecording'),
         () => {
@@ -127,14 +117,18 @@ export async function renderRecordTab(container: HTMLElement): Promise<void> {
             chrome.runtime.sendMessage({ type: 'piwi-recording-stopped' }).catch(() => undefined),
           );
         },
-        'stop',
+        'danger',
       ),
     );
   } else if (!bug) {
     const copy = button(
       t('record_copyCode'),
       () => {
-        void specFor(state).then((spec) => copyText(spec).then((copied) => copied && flash(copy)));
+        void specFor(state).then((spec) =>
+          copyText(spec).then((copied) => {
+            if (copied) flash(copy, t('common_copied'));
+          }),
+        );
       },
       'primary',
     );
@@ -144,12 +138,14 @@ export async function renderRecordTab(container: HTMLElement): Promise<void> {
       download(JSON.stringify(doc, null, 2), `piwi-steps-${fileStamp(doc.recordedAt)}.json`);
     });
     save.title = t('record_downloadStepsTitle');
-    const discard = button(t('common_discard'), () => void discardRecording());
-    controls.append(copy, save, discard);
+    actions.push(
+      copy,
+      save,
+      button(t('common_discard'), () => void discardRecording()),
+    );
   }
 
-  const list = document.createElement('ol');
-  list.className = 'steps';
+  const list = el('ol', 'steps');
   for (const step of steps) list.appendChild(stepRow(step));
-  container.replaceChildren(status, controls, list);
+  container.replaceChildren(viewHead(state.active ? 'live' : '', text, ...actions), list);
 }

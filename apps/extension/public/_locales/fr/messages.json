@@ -4211,9 +4211,6 @@
   "devtools_conditionsFor": {
     "message": "Ralentir ou faire échouer cette requête"
   },
-  "devtools_conditionsNone": {
-    "message": "Aucune condition active. Sélectionnez une requête ci-dessous pour la ralentir ou la faire échouer."
-  },
   "devtools_conditionsLimits": {
     "message": "Les conditions s’appliquent aux appels fetch et XHR des pages de cet onglet jusqu’à ce que vous les désactiviez ou fermiez l’onglet. Ralentir le processeur ou toute la page, et retarder les documents, les scripts, les images ou les requêtes d’un service worker, demandent la permission debugger, que Piwi Picker ne demande pas."
   },
@@ -4332,6 +4329,75 @@
   },
   "login_copySnippet": {
     "message": "Copier le code"
+  },
+  "devtools_networkSelect": {
+    "message": "Sélectionnez une requête pour la simuler, la ralentir ou la faire échouer."
+  },
+  "devtools_colMethod": {
+    "message": "Méthode"
+  },
+  "devtools_colPath": {
+    "message": "Chemin"
+  },
+  "devtools_colStatus": {
+    "message": "Statut"
+  },
+  "devtools_colTime": {
+    "message": "Durée"
+  },
+  "devtools_conditionsLimitsTitle": {
+    "message": "Ce que cela ne peut pas ralentir"
+  },
+  "devtools_copyAs": {
+    "message": "Copier en"
+  },
+  "devtools_tabLocators": {
+    "message": "Locators"
+  },
+  "devtools_tabSession": {
+    "message": "Session"
+  },
+  "devtools_locatorsHint": {
+    "message": "Tapez un locator : les éléments qu’il trouve sur cette page s’affichent, tels que Playwright les trouve. Survolez-en un pour l’encadrer sur la page ; Afficher le sélectionne dans le panneau Éléments."
+  },
+  "devtools_matches": {
+    "message": "Éléments trouvés"
+  },
+  "devtools_reveal": {
+    "message": "Afficher"
+  },
+  "devtools_matchesListed": {
+    "message": "Seuls les $shown$ premiers sont listés.",
+    "placeholders": {
+      "shown": {
+        "content": "$1",
+        "example": "50"
+      }
+    }
+  },
+  "devtools_sessionEmpty": {
+    "message": "Aucun élément nommé pour l’instant. Sélectionnez-en un dans le panneau Éléments et utilisez Ajouter à la session dans le volet Piwi, ou l’outil Session du menu de l’extension."
+  },
+  "devtools_sessionCount_one": {
+    "message": "$count$ élément nommé",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "devtools_sessionCount_other": {
+    "message": "$count$ éléments nommés",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "devtools_remove": {
+    "message": "Retirer"
   },
   "stability_position": {
     "message": "position"
