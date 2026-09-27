@@ -47,6 +47,9 @@ describe('assessLocator', () => {
     ["locator('#radix-:r4:')", 'brittle', ['generated-id:brittle']],
     ['locator(\'[id="headlessui-menu-3"]\')', 'brittle', ['generated-id:brittle']],
     ["locator('id=mui-12345')", 'brittle', ['generated-id:brittle']],
+    ["locator('#reka-select-item-text-v-0-0-22-55')", 'brittle', ['generated-id:brittle']],
+    ["locator('#v-0-0-22')", 'brittle', ['generated-id:brittle']],
+    ["locator('#el-id-4127-12')", 'brittle', ['generated-id:brittle']],
     // style-attribute
     ['locator(\'[style*="display: block"]\')', 'brittle', ['style-attribute:brittle']],
     ['locator(\'div[class="card active"]\')', 'brittle', ['style-attribute:brittle']],

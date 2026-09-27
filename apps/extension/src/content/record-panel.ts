@@ -10,6 +10,7 @@ import {
 import {
   normalizeSteps,
   buildSession,
+  RECORDED_KEYS,
   type RawCaptureEvent,
   type RecordedTarget,
   type RecordedStep,
@@ -20,6 +21,8 @@ import { renderSpec } from '@piwitests/core/codegen';
 import { toStepsDocument, type PiwiSteps } from '@piwitests/core/steps';
 import { formatNumber, initI18n, t, tn, uiLanguage } from '../shared/i18n.js';
 import { classifyInputKind, isPasswordInput } from './record-capture.js';
+import { DomModel } from './engine-aria.js';
+import { verifiedLocators } from './verified-locators.js';
 import {
   getRecordingState,
   appendRecordingEvent,
@@ -69,7 +72,11 @@ const PROBE_ARG: ProbeArg = {
 
 /** The DOM shapes a click/action can reasonably land on — a click deeper inside one of these snaps up to it, same intent as the picker overlay's own snapping (not the identical algorithm — see AGENTS.md note in this file's own doc comment below). */
 const ACTIONABLE_SELECTOR =
-  'button, a[href], input, select, textarea, [role="button"], [role="link"], [role="checkbox"], [role="radio"], [role="tab"], [role="menuitem"], [contenteditable="true"], [data-testid]';
+  'button, a[href], input, select, textarea, [role="button"], [role="link"], [role="checkbox"], [role="radio"], [role="switch"], [role="tab"], [role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"], [role="option"], [role="combobox"], [role="treeitem"], [contenteditable="true"], [data-testid]';
+
+/** Where an arrow key moves through choices rather than a caret or the page, and so is worth replaying. */
+const ARROW_KEY_WIDGETS =
+  'select, [role="combobox"], [role="listbox"], [role="menu"], [role="menubar"], [role="tree"], [role="grid"], [role="tablist"], [role="radiogroup"], [aria-activedescendant]';
 
 function normalizeText(s: string): string {
   return s.replace(/\s+/g, ' ').trim();
@@ -107,7 +114,11 @@ function elementKeyFor(el: Element): string {
  */
 function deriveRecordedTarget(el: Element): RecordedTarget {
   const attrs = probeElementAttrs(el, PROBE_ARG);
-  const accessibleName = approximateAccessibleName({ ...attrs, accessibleName: null });
+  // The name Playwright computes, spaces between the parts of a composite
+  // control included ("Regressions 5", not "Regressions5"): a role locator
+  // built on the name `textContent` gives never matches.
+  const accessibleName =
+    new DomModel().normalizedAccessibleName(el, false) || approximateAccessibleName({ ...attrs, accessibleName: null });
   const role = resolveAriaRole({ ...attrs, accessibleName });
   const ranked = generateAlternatives({ ...attrs, accessibleName });
   return {
@@ -116,7 +127,7 @@ function deriveRecordedTarget(el: Element): RecordedTarget {
     accessibleName,
     testId: attrs.attributes['data-testid'] ?? null,
     text: el.textContent ? normalizeText(el.textContent).slice(0, 200) : null,
-    alternatives: ranked.slice(0, 5).map((r) => ({ locator: r.locator, method: r.method, score: r.score })),
+    alternatives: verifiedLocators(el, ranked),
     elementKey: elementKeyFor(el),
   };
 }
@@ -144,6 +155,27 @@ function fieldTarget(el: Element): RecordedTarget {
 
 function nearestActionable(el: Element): Element {
   return el.closest(ACTIONABLE_SELECTOR) ?? el;
+}
+
+/**
+ * The control a press began on, and its target as the page stood then. A
+ * control that opens on press (a custom select, a menu button) covers itself
+ * with what it opened before the button comes back up: the browser then sends
+ * the click to what the press and the release have in common, often `<html>`,
+ * and a modal popup has already hidden the rest of the page from role queries.
+ * The press says which control it was, and what named it.
+ */
+let lastPress: { el: Element; target: RecordedTarget; at: number } | null = null;
+const PRESS_CLICK_WINDOW_MS = 2000;
+
+function clickTarget(raw: Element, at: number): { el: Element; target: RecordedTarget } {
+  const el = nearestActionable(raw);
+  const press = lastPress;
+  lastPress = null;
+  if (press && press.el.isConnected && at - press.at <= PRESS_CLICK_WINDOW_MS) {
+    if (press.el === el || el.contains(press.el)) return press;
+  }
+  return { el, target: deriveRecordedTarget(el) };
 }
 
 function withinOwnUi(e: Event): boolean {
@@ -734,15 +766,32 @@ function attachListeners(): void {
   const opts = { capture: true, signal: controller.signal };
 
   document.addEventListener(
+    'pointerdown',
+    (e) => {
+      if (!e.isTrusted || capturePaused() || withinOwnUi(e)) return;
+      const raw = e.composedPath()[0];
+      if (!(raw instanceof Element)) {
+        lastPress = null;
+        return;
+      }
+      const el = nearestActionable(raw);
+      lastPress = { el, target: deriveRecordedTarget(el), at: e.timeStamp };
+    },
+    opts,
+  );
+
+  document.addEventListener(
     'click',
     (e) => {
-      if (capturePaused() || withinOwnUi(e)) return;
+      // A click the page's own script sends (`el.click()` when Enter picks an
+      // option) follows from an action already recorded.
+      if (!e.isTrusted || capturePaused() || withinOwnUi(e)) return;
       const raw = e.target;
       if (!(raw instanceof Element)) return;
-      const el = nearestActionable(raw);
+      const { el, target } = clickTarget(raw, e.timeStamp);
       const kind = classifyInputKind(el.tagName, (el as HTMLInputElement).type ?? null);
       if (kind === 'checkbox' || kind === 'radio') return; // the resulting `change` event records this one
-      captureEvent(buildEvent('click', el));
+      captureEvent(buildEvent('click', el, { target }));
     },
     opts,
   );
@@ -750,7 +799,9 @@ function attachListeners(): void {
   document.addEventListener(
     'input',
     (e) => {
-      if (capturePaused() || withinOwnUi(e)) return;
+      // Only what the person does: a component that mirrors its state into a
+      // hidden input (a switch, a custom select) sends its own events there.
+      if (!e.isTrusted || capturePaused() || withinOwnUi(e)) return;
       const el = e.target;
       if (!(el instanceof HTMLInputElement) && !(el instanceof HTMLTextAreaElement)) return;
       const typeAttr = el instanceof HTMLInputElement ? el.type : null;
@@ -774,7 +825,7 @@ function attachListeners(): void {
   document.addEventListener(
     'change',
     (e) => {
-      if (capturePaused() || withinOwnUi(e)) return;
+      if (!e.isTrusted || capturePaused() || withinOwnUi(e)) return;
       const el = e.target;
       if (!(el instanceof Element)) return;
       const typeAttr = el instanceof HTMLInputElement ? el.type : null;
@@ -791,10 +842,15 @@ function attachListeners(): void {
   document.addEventListener(
     'keydown',
     (e) => {
-      if (capturePaused() || withinOwnUi(e)) return;
-      if (e.key !== 'Enter') return;
-      const el = e.target instanceof Element ? e.target : null;
-      captureEvent(buildEvent('keydown', el, { value: 'Enter' }));
+      if (!e.isTrusted || e.isComposing || capturePaused() || withinOwnUi(e)) return;
+      if (!RECORDED_KEYS.has(e.key)) return;
+      const focused = e.target instanceof Element ? e.target : null;
+      if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && !focused?.closest(ARROW_KEY_WIDGETS)) return;
+      // Escape goes to whatever has focus, as the replay sends it: its target
+      // is often the page itself, which no locator names.
+      const el =
+        e.key === 'Escape' || focused === document.body || focused === document.documentElement ? null : focused;
+      captureEvent(buildEvent('keydown', el, { value: e.key }));
     },
     opts,
   );

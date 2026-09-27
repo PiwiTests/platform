@@ -166,6 +166,13 @@ function normalizeText(s: string): string {
 const ENTER_CLICK_WINDOW_MS = 500;
 
 /**
+ * The keys a recording keeps: Enter submits or picks, Escape closes a popup or
+ * a dialog, and the arrows move through a list or a menu. Any other key only
+ * edits a field, which the field's `fill` already carries.
+ */
+export const RECORDED_KEYS: ReadonlySet<string> = new Set(['Enter', 'Escape', 'ArrowDown', 'ArrowUp']);
+
+/**
  * Coalesce a stream of raw capture events into `RecordedStep`s:
  *  - a burst of `input` events on the same field collapses into one `fill`,
  *    committed once the field changes or the burst ends (the last value
@@ -175,7 +182,8 @@ const ENTER_CLICK_WINDOW_MS = 500;
  *  - `change` on a `<select>` becomes `selectOption`;
  *  - `Enter` on a text field becomes `press('Enter')`, and the browser's own
  *    synthetic click on the same element right after it is dropped rather than
- *    recorded a second time;
+ *    recorded a second time; `Escape` and the arrow keys (`RECORDED_KEYS`)
+ *    become presses too;
  *  - a plain `click` becomes a `click` step;
  *  - `navigate` events become `goto` steps only for the session's very first
  *    page — later navigations are implied by the click/press that caused
@@ -246,13 +254,13 @@ export function normalizeSteps(events: RawCaptureEvent[]): RecordedStep[] {
     }
 
     if (ev.kind === 'keydown') {
-      if (ev.value !== 'Enter') continue;
-      // Enter commits whatever field was mid-fill, then replaces the click that would otherwise follow it.
+      if (ev.value == null || !RECORDED_KEYS.has(ev.value)) continue;
+      // A key commits whatever field was mid-fill; Enter then replaces the click that would otherwise follow it.
       flushPendingFill();
       steps.push({
         action: 'press',
         target: ev.target,
-        value: 'Enter',
+        value: ev.value,
         redacted: false,
         pageUrl: ev.pageUrl,
         timestamp: ev.timestamp,

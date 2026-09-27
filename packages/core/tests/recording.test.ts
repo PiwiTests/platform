@@ -162,10 +162,27 @@ describe('normalizeSteps', () => {
     expect(steps[1]).toMatchObject({ value: 'Enter' });
   });
 
-  test('non-Enter keydowns are ignored', () => {
+  test('keys that only edit or move between fields are ignored', () => {
     const field = target();
-    const steps = normalizeSteps([ev({ kind: 'keydown', target: field, value: 'Tab', timestamp: 1 })]);
+    const steps = normalizeSteps([
+      ev({ kind: 'keydown', target: field, value: 'Tab', timestamp: 1 }),
+      ev({ kind: 'keydown', target: field, value: 'a', timestamp: 2 }),
+    ]);
     expect(steps).toHaveLength(0);
+  });
+
+  test('Escape and the arrow keys become presses, after the fill they end', () => {
+    const field = target({ tagName: 'input', role: 'combobox' });
+    const steps = normalizeSteps([
+      ev({ kind: 'input', target: field, value: 'fr', timestamp: 1 }),
+      ev({ kind: 'keydown', target: field, value: 'ArrowDown', timestamp: 2 }),
+      ev({ kind: 'keydown', target: field, value: 'Escape', timestamp: 3 }),
+    ]);
+    expect(steps.map((s) => [s.action, s.value])).toEqual([
+      ['fill', 'fr'],
+      ['press', 'ArrowDown'],
+      ['press', 'Escape'],
+    ]);
   });
 
   test('only the first navigation becomes a goto — later ones are implied by what caused them', () => {
