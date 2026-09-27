@@ -1,0 +1,198 @@
+import { chromium, type BrowserContext, type Page } from '@playwright/test';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { buildSession, normalizeSteps, type RawCaptureEvent } from '@piwitests/core/recording';
+import { toStepsDocument, type PiwiSteps } from '@piwitests/core/steps';
+import { renderSpec, stepLocator } from '@piwitests/core/codegen';
+import type { Scenario } from './scenarios.js';
+
+/**
+ * The replay lab's moving parts: the real extension, loaded from a copy of
+ * `dist/` granted the lab's origin (the permission a person grants in the
+ * popup), records a scenario driven by Playwright's trusted input; the steps
+ * are then replayed by the extension in a fresh browser, and written as a spec
+ * for Playwright to run.
+ */
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+
+export const LAB = {
+  origin: (process.env.LAB_ORIGIN ?? 'http://localhost:3000').replace(/\/$/, ''),
+  dry: !!process.env.LAB_DRY,
+  out: path.join(here, 'out'),
+  viewport: { width: 1400, height: 900 },
+  /** How long a person looks at a page before acting; a server-rendered app ignores input until it has hydrated. */
+  settleMs: Number(process.env.LAB_SETTLE_MS ?? 5000),
+};
+
+const EXT = path.join(LAB.out, 'ext');
+
+export function prepareExtension(): void {
+  rmSync(EXT, { recursive: true, force: true });
+  cpSync(path.join(here, '..', '..', 'dist'), EXT, { recursive: true });
+  const manifest = JSON.parse(readFileSync(path.join(EXT, 'manifest.json'), 'utf8'));
+  manifest.host_permissions = [`${LAB.origin}/*`];
+  writeFileSync(path.join(EXT, 'manifest.json'), JSON.stringify(manifest, null, 2));
+  for (const dir of ['results', 'specs', 'shots']) mkdirSync(path.join(LAB.out, dir), { recursive: true });
+}
+
+interface Lab {
+  ctx: BrowserContext;
+  /** An extension page: messages from it reach the background script, as the popup's do. */
+  ctl: Page;
+}
+
+async function launch(): Promise<Lab> {
+  const ctx = await chromium.launchPersistentContext(mkdtempSync(path.join(tmpdir(), 'piwi-lab-')), {
+    channel: 'chromium',
+    viewport: LAB.viewport,
+    args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`],
+  });
+  let worker = ctx.serviceWorkers()[0];
+  const deadline = Date.now() + 30_000;
+  while (!worker && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    worker = ctx.serviceWorkers()[0];
+  }
+  if (!worker) throw new Error('The extension’s background script did not start.');
+  const ctl = await ctx.newPage();
+  await ctl.goto(`chrome-extension://${new URL(worker.url()).host}/options.html`);
+  return { ctx, ctl };
+}
+
+export async function open(page: Page, route: string): Promise<void> {
+  await page.goto(LAB.origin + route, { timeout: 90_000, waitUntil: 'domcontentloaded' });
+  await page.waitForLoadState('load', { timeout: 90_000 }).catch(() => undefined);
+  await page.waitForTimeout(LAB.settleMs);
+}
+
+function shot(name: string): string {
+  return path.join(LAB.out, 'shots', `${name}.png`);
+}
+
+export interface Recording {
+  events: RawCaptureEvent[];
+  startedAt: number;
+  endUrl: string;
+}
+
+/** Drives `scenario` with the extension recording, and answers what it captured. */
+export async function record(scenario: Scenario): Promise<Recording> {
+  const { ctx, ctl } = await launch();
+  try {
+    const page = await ctx.newPage();
+    await open(page, scenario.start);
+    const tabId = await ctl.evaluate(async (origin) => {
+      const [tab] = await chrome.tabs.query({ url: `${origin}/*` });
+      return tab!.id!;
+    }, LAB.origin);
+    const started = await ctl.evaluate(
+      ({ tabId, pattern }) =>
+        chrome.runtime.sendMessage({ type: 'piwi-start-recording', originPattern: pattern, tabId, mode: 'actions' }),
+      { tabId, pattern: `${LAB.origin}/*` },
+    );
+    if (!started?.ok) throw new Error(`The recording did not start: ${JSON.stringify(started)}`);
+    await page.waitForFunction(() => !!document.getElementById('piwi-record-hud-host'), null, { timeout: 15_000 });
+    await scenario.run(page);
+    await page.waitForTimeout(1500);
+    const state = (await ctl.evaluate(
+      async () => (await chrome.storage.session.get('piwiRecording')).piwiRecording,
+    )) as { events: RawCaptureEvent[]; startedAt: number };
+    await page.screenshot({ path: shot(`${scenario.name}.recorded`) });
+    return { events: state.events, startedAt: state.startedAt, endUrl: page.url() };
+  } finally {
+    await ctx.close();
+  }
+}
+
+export interface Replay {
+  status: string;
+  results: Array<{ status: string; detail: string | null }>;
+  divergedAt: number | null;
+  reason: string | null;
+  endUrl: string | null;
+  seconds: number;
+}
+
+/** Replays `doc` with the extension in a fresh browser, from `start`. */
+export async function replay(scenario: Scenario, doc: PiwiSteps): Promise<Replay> {
+  const { ctx, ctl } = await launch();
+  const began = Date.now();
+  try {
+    const page = await ctx.newPage();
+    await open(page, scenario.start);
+    const started = await ctl.evaluate(
+      ({ steps, origin }) =>
+        chrome.runtime.sendMessage({ type: 'piwi-start-replay', steps, origin, stepMode: false, inject: false }),
+      { steps: doc, origin: LAB.origin },
+    );
+    if (!started?.ok) throw new Error(`The replay did not start: ${JSON.stringify(started)}`);
+    // The replay script is registered for the origin: a load starts it.
+    await page.reload();
+    const deadline = Date.now() + 30_000 + doc.steps.length * 15_000;
+    type Stored = { status: string; results: Replay['results'] } | null;
+    let state: Stored = null;
+    while (Date.now() < deadline) {
+      state = (await ctl.evaluate(async () => (await chrome.storage.session.get('piwiReplay')).piwiReplay)) as Stored;
+      if (state && state.status !== 'running' && state.status !== 'paused') break;
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+    const last = ctx
+      .pages()
+      .filter((p) => p.url().startsWith(LAB.origin))
+      .pop();
+    await last?.waitForTimeout(1500);
+    await last?.screenshot({ path: shot(`${scenario.name}.replayed`) }).catch(() => undefined);
+    const results = state?.results ?? [];
+    const at = results.findIndex((r) => r.status === 'diverged');
+    return {
+      status: state?.status ?? 'timeout',
+      results,
+      divergedAt: at >= 0 ? at : null,
+      reason: at >= 0 ? results[at]!.detail : null,
+      endUrl: last?.url() ?? null,
+      seconds: Math.round((Date.now() - began) / 1000),
+    };
+  } finally {
+    await ctx.close();
+  }
+}
+
+/** Runs `scenario` in a plain browser, without the extension: to write and check a new one. */
+export async function dryRun(scenario: Scenario): Promise<string> {
+  const browser = await chromium.launch({ channel: 'chromium' });
+  try {
+    const page = await browser.newPage({ viewport: LAB.viewport });
+    await open(page, scenario.start);
+    await scenario.run(page);
+    return page.url();
+  } finally {
+    await browser.close();
+  }
+}
+
+/** The recording as a steps document, the lines the steps read as, and the spec Playwright runs. */
+export function stepsOf(scenario: Scenario, recording: Recording): { doc: PiwiSteps; lines: string[] } {
+  const session = buildSession(normalizeSteps(recording.events), recording.events[0]?.timestamp ?? recording.startedAt);
+  const doc = toStepsDocument(session, { title: scenario.name });
+  const lines = doc.steps.map((step, i) => {
+    const locator = step.target ? (stepLocator(step.target, { locators: 'stable' }) ?? '(no locator)') : '';
+    const value = step.value != null ? ` ${JSON.stringify(step.value)}` : '';
+    return `${i}. ${step.action} ${locator}${value}`.trim();
+  });
+  // The first load waits as a person would: the app ignores input until it has
+  // hydrated, which says nothing about the recorded locators.
+  const spec = renderSpec(session, { title: scenario.name, locators: 'stable', urlChecks: true }).code.replace(
+    /(await page\.goto\([^;]*\);)/,
+    `$1\n  await page.waitForTimeout(${LAB.settleMs});`,
+  );
+  writeFileSync(path.join(LAB.out, 'specs', `${scenario.name}.spec.ts`), spec);
+  writeFileSync(path.join(LAB.out, 'results', `${scenario.name}.steps.json`), JSON.stringify(doc, null, 2));
+  return { doc, lines };
+}
+
+export function saveResult(name: string, result: Record<string, unknown>): void {
+  writeFileSync(path.join(LAB.out, 'results', `${name}.json`), JSON.stringify(result, null, 2));
+}

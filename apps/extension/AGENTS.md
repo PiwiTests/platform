@@ -350,6 +350,7 @@ instead of needing a live browser for everything.
 | `npm run extension:format` / `extension:format:check` | oxfmt |
 | `npm run extension:test` | Unit tests (Vitest) — pure logic only |
 | `npm run extension:test:e2e` | Builds, then drives the real built extension with Playwright (`--load-extension`) |
+| `npm run extension:lab` | The replay lab: records scenarios on a running Piwi dashboard with the real extension, replays them with the extension and as Playwright specs, and prints the comparison (see `tests/lab/README.md`; not part of CI) |
 
 ## Loading it locally
 
