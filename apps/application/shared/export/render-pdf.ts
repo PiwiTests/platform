@@ -20,7 +20,14 @@
  */
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from 'pdf-lib';
 import { stripAnsi } from '#shared/error-fingerprint';
-import { highlightToSpans, isKnownLanguage, type HighlightSpan } from '#shared/highlight';
+import {
+  highlightLinesToSpans,
+  highlightToSpans,
+  isKnownLanguage,
+  languageForPath,
+  type HighlightSpan,
+} from '#shared/highlight';
+import { parseSourceSnippet } from '#shared/source-snippet';
 import {
   caseFacts,
   clusterFacts,
@@ -215,6 +222,19 @@ function layoutHighlighted(spans: HighlightSpan[], maxChars: number): CodeSegmen
     });
   }
   return lines;
+}
+
+/** A captured source snippet as spans: the line-number gutter faint, the code syntax-highlighted. */
+function snippetSpans(text: string, file: string): HighlightSpan[] {
+  const rows = parseSourceSnippet(stripAnsi(text));
+  const code = highlightLinesToSpans(
+    rows.map((row) => row.code),
+    languageForPath(file),
+  );
+  return rows.flatMap((row, i) => [
+    { text: i === 0 ? row.gutter : `\n${row.gutter}`, scope: 'comment' },
+    ...(code[i] ?? []),
+  ]);
 }
 
 interface TextOptions {
@@ -421,25 +441,29 @@ class PdfBuilder {
   }
 
   /**
-   * A monospace block on a sunken background, split cleanly across pages. With a
-   * known `lang` the source is syntax-highlighted into colored runs; without one
-   * (stack traces, raw errors) it is drawn as a single plain run per line.
+   * A monospace block on a sunken background, split cleanly across pages. Spans
+   * are drawn in their token colors; text with a known `lang` is
+   * syntax-highlighted into colored runs; text without one (stack traces, raw
+   * errors) is drawn as a single plain run per line.
    */
-  codeBlock(text: string, lang?: string): void {
+  codeBlock(source: string | HighlightSpan[], lang?: string): void {
     const size = 8;
     const lineGap = size * 0.5;
     const lineHeight = size + lineGap;
     const padX = 6;
     const padY = 5;
     const innerWidth = CONTENT_WIDTH - padX * 2;
-    const clean = stripAnsi(text);
+    const maxChars = Math.max(1, Math.floor(innerWidth / this.mono.widthOfTextAtSize('M', size)));
 
     let lines: CodeSegment[][];
-    if (lang && isKnownLanguage(lang)) {
-      const maxChars = Math.max(1, Math.floor(innerWidth / this.mono.widthOfTextAtSize('M', size)));
-      lines = layoutHighlighted(highlightToSpans(clean, lang).spans, maxChars);
+    if (typeof source !== 'string') {
+      lines = layoutHighlighted(source, maxChars);
+    } else if (lang && isKnownLanguage(lang)) {
+      lines = layoutHighlighted(highlightToSpans(stripAnsi(source), lang).spans, maxChars);
     } else {
-      lines = this.wrap(clean, this.mono, size, innerWidth).map((line) => [{ text: line, color: COLORS.fg }]);
+      lines = this.wrap(stripAnsi(source), this.mono, size, innerWidth).map((line) => [
+        { text: line, color: COLORS.fg },
+      ]);
     }
     this.space(2);
 
@@ -721,7 +745,7 @@ async function renderCase(
     b.sectionLabel('Call stack');
     for (const frame of d.testSourceFrames as Record<string, any>[]) {
       b.meta(`${frame.file ?? ''}:${frame.line ?? ''}`, b.mono);
-      if (frame.snippet) b.codeBlock(String(frame.snippet));
+      if (frame.snippet) b.codeBlock(snippetSpans(String(frame.snippet), String(frame.file ?? '')));
     }
   }
 

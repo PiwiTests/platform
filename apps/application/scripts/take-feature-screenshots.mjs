@@ -1861,6 +1861,26 @@ const SCENES = [
       await shoot();
     },
   },
+  ...[
+    { suffix: '', viewport: { width: 1280, height: 1400 } },
+    { suffix: '-dark', viewport: { width: 1280, height: 1400 }, colorScheme: 'dark' },
+    { suffix: '-mobile', viewport: { width: 375, height: 2000 } },
+  ].map(({ suffix, viewport, colorScheme }) => ({
+    name: `evidence-source${suffix}`,
+    description: `Source tab: the failing helper line and its caller, syntax-highlighted${suffix ? ` (${suffix.slice(1)})` : ''}`,
+    // Execution 1 fails inside a helper whose snippet opens mid-JSDoc, so the
+    // capture also shows the comment tail read as a comment.
+    route: '/test-run-cases/1',
+    viewport,
+    colorScheme,
+    of: '[data-shot="evidence-card"]',
+    pad: suffix === '-mobile' ? 8 : 12,
+    async run({ openTab, settle, shoot }) {
+      await openTab(/^Source/);
+      await settle();
+      await shoot();
+    },
+  })),
   {
     name: 'timeline-type-filter-mobile',
     description: 'Timeline tab at phone width: the type chips wrap, Network hidden, the hidden line under them',

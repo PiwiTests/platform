@@ -17,6 +17,7 @@
  */
 import { buildLocatorEdit } from '#shared/locator-edit';
 import { parseCallsiteLocation } from '#shared/callsite-location';
+import { parseSourceSnippet } from '#shared/source-snippet';
 import type { LocatorEdit } from '#shared/locator-healing.types';
 
 /** A parsed row of a captured `testSource` snippet: its 1-based line and code. */
@@ -25,18 +26,11 @@ interface SourceRow {
   text: string;
 }
 
-// The reporter formats each snippet row as `<marker><padded line no> | <code>`
-// and marks the failing line with `>` (reporter `source-snippet.ts`). The caret
-// underline row (`   |   ^`) has no line number, so it never matches.
-const SOURCE_ROW_RE = /^([>*\s])\s*(\d+)\s*\|\s?(.*)$/;
-
+/** The snippet's numbered rows; the caret underline row (`   |   ^`) has no line number, so it is dropped. */
 function parseSourceRows(testSource: string): SourceRow[] {
-  const rows: SourceRow[] = [];
-  for (const raw of testSource.split('\n')) {
-    const m = SOURCE_ROW_RE.exec(raw);
-    if (m) rows.push({ line: Number(m[2]), text: m[3]! });
-  }
-  return rows;
+  return parseSourceSnippet(testSource).flatMap((row) =>
+    row.line === null ? [] : [{ line: row.line, text: row.code }],
+  );
 }
 
 /**
