@@ -44,6 +44,7 @@ const coupon = target({ tagName: 'input', role: 'textbox', accessibleName: 'Coup
 const country = target({ tagName: 'select', role: 'combobox', accessibleName: 'Country' });
 const agree = target({ tagName: 'input', role: 'checkbox', accessibleName: 'I agree' });
 const total = target({ tagName: 'p', testId: 'cart-total', text: 'Total: 40' });
+const row = target({ tagName: 'tr', role: 'row', accessibleName: 'Invoice 42' });
 const logo = target({ tagName: 'img', role: 'img', accessibleName: 'Acme' });
 const menu = target({ tagName: 'nav', role: 'navigation', text: 'Shop' });
 
@@ -68,6 +69,7 @@ function everyTemplate(): RecordedStep[] {
         }),
       ),
     ),
+    step('hover', { target: row }),
   ];
 }
 
@@ -127,6 +129,7 @@ describe('Brazilian Portuguese', () => {
       'Escolher “France” na lista suspensa “Country”',
     );
     expect(words(step('check', { target: agree }))).toBe('Marcar a caixa de seleção “I agree”');
+    expect(words(step('hover', { target: row }))).toBe('Passar o mouse sobre a linha de tabela “Invoice 42”');
     expect(words(step('uncheck', { target: agree }))).toBe('Desmarcar a caixa de seleção “I agree”');
     expect(words(step('fill', { target: coupon, redacted: true }))).toBe(
       'Digitar uma senha (não gravada) no campo de texto “Coupon”',

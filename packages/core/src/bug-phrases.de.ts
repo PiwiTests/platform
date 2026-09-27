@@ -161,6 +161,7 @@ export const GERMAN_BUG_PHRASES: BugPhrases = {
   steps: {
     goto: (url) => `${markdownCode(url)} öffnen`,
     click: (s) => capitalize(`auf ${subject(s, 'accusative')} klicken`),
+    hover: (s) => capitalize(`mit der Maus über ${subject(s, 'accusative')} fahren`),
     fill: (s, v) => capitalize(`${value(v)} in ${subject(s, 'accusative')} eingeben`),
     check: (s) => capitalize(`${subject(s, 'accusative')} aktivieren`),
     uncheck: (s) => capitalize(`${subject(s, 'accusative')} deaktivieren`),

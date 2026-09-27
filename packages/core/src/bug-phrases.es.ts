@@ -150,6 +150,7 @@ export const SPANISH_BUG_PHRASES: BugPhrases = {
   steps: {
     goto: (url) => `Abrir ${markdownCode(url)}`,
     click: (s) => `Hacer clic en ${phrase(s)}`,
+    hover: (s) => `Pasar el cursor sobre ${phrase(s)}`,
     fill: (s, v) => `Escribir ${value(v)} en ${phrase(s)}`,
     check: (s) => `Marcar ${checkable(s)}`,
     uncheck: (s) => `Desmarcar ${checkable(s)}`,
