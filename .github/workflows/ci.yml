@@ -77,6 +77,23 @@ jobs:
           retention-days: 1
           compression-level: 1
 
+      # Packed from this build the way publish.yml packs a release, so the package
+      # smoke job installs what a user downloads from npm.
+      - name: Pack npm packages
+        working-directory: .
+        run: |
+          mkdir -p npm-packages
+          npm pack --workspace @piwitests/server --workspace @piwitests/reporter --pack-destination npm-packages
+
+      - name: Upload npm packages
+        uses: actions/upload-artifact@v7
+        with:
+          name: npm-packages
+          path: npm-packages/*.tgz
+          retention-days: 1
+          # The tarballs are already gzipped.
+          compression-level: 0
+
   # Backend-agnostic checks. Independent of the E2E matrix, so they run alongside it.
   checks:
     name: Lint, typecheck and unit tests
@@ -345,6 +362,46 @@ jobs:
           name: blob-report-${{ matrix.storage }}-${{ matrix.database }}-${{ matrix.shard }}
           path: apps/application/blob-report
           retention-days: 3
+
+  # Installs the packed @piwitests/server and @piwitests/reporter into a new project,
+  # starts the server with `npx @piwitests/server` and runs a suite through the reporter
+  # (scripts/package-smoke.mjs). Windows and macOS catch what breaks only on their paths
+  # or native binaries; the Linux leg runs the server package's Node 22 floor.
+  package-smoke:
+    name: Package smoke (${{ matrix.os }}, Node ${{ matrix.node }})
+    runs-on: ${{ matrix.os }}
+    needs: build
+    timeout-minutes: 10
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            node: 22
+          - os: windows-latest
+            node: 24
+          - os: macos-latest
+            node: 24
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install node
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Download npm packages
+        uses: actions/download-artifact@v8
+        with:
+          name: npm-packages
+          path: npm-packages
+
+      - name: Install the packages and report a run through them
+        working-directory: .
+        run: node scripts/package-smoke.mjs npm-packages
 
   demo:
     name: Test demo generation

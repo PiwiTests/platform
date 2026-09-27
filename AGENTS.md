@@ -122,6 +122,11 @@ From `packages/reporter/`: `reporter:build`, `reporter:dev` (watch), `reporter:t
 From `integrations/aspnetcore/`: `dotnet test PiwiTests.Instrumentation.slnx` builds every .NET instrumentation package
 for each target framework and runs their tests (needs the .NET 10 SDK).
 
+From the repository root: `node scripts/package-smoke.mjs <dir>` installs the packed `@piwitests/server` and
+`@piwitests/reporter` tarballs from `<dir>` into a new project, starts the server with `npx @piwitests/server` and
+reports a run through it. CI's `package-smoke` job runs it on Linux, macOS and Windows; the script header shows how to
+pack the tarballs.
+
 Run typecheck, lint and tests **once at the end** before the final commit — not after every edit.
 
 ## Conventions that apply everywhere
