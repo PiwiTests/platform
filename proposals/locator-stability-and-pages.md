@@ -6,7 +6,8 @@ records the page each locator is used on, so the overlay shows what tests do on 
 when a locator a test uses there no longer finds its element. The tracks are independent; Track A ships without a
 wire or schema change.
 
-**Status.** Proposed 2026-09-26. Nothing is built. Track A is core, extension and dashboard work. Track B adds a
+**Status.** Proposed 2026-09-26. Steps 1 to 6 built on 2026-09-27, in one pull request; the four open questions below
+are still open (the path-prefix mapping recommended for PR 6 was not built). Track A is core, extension and dashboard work. Track B adds a
 capture-fixture attachment, one payload column on `test_runs_cases` and two `locator_usages` columns, and adds
 contracts that freeze at 1.0 (a new D19 in [`1.0-stabilization.md`](1.0-stabilization.md)).
 

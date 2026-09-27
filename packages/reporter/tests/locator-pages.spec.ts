@@ -129,7 +129,11 @@ describe('capture fixtures record the page of each locator call', () => {
       url: () => url,
       evaluate: async () => null,
     };
-    const testInfo = { status: 'passed', attach: vi.fn(async () => {}), annotations: [] as unknown[] };
+    const testInfo = {
+      status: 'passed',
+      attach: vi.fn(async (_name: string, _body: { body: Buffer }) => {}),
+      annotations: [] as unknown[],
+    };
     const pageFixture = piwiFixtures.page as unknown as (
       args: { page: unknown },
       use: (page: typeof fakePage) => Promise<void>,
@@ -158,7 +162,7 @@ describe('capture fixtures record the page of each locator call', () => {
 
     const attached = testInfo.attach.mock.calls.find((c) => c[0] === ATTACHMENT_NAMES.locatorPages);
     expect(attached).toBeDefined();
-    const entries = JSON.parse((attached![1] as { body: Buffer }).body.toString()) as LocatorPageUse[];
+    const entries = JSON.parse(attached![1].body.toString()) as LocatorPageUse[];
     expect(entries.map(({ locator, page, arrival, origin }) => ({ locator, page, arrival, origin }))).toEqual([
       { locator: "getByRole('button', { name: 'Your cart' })", page: '/cart', arrival: true, origin: 'https://shop.test' },
       { locator: "getByRole('button', { name: 'Checkout' })", page: '/cart', arrival: true, origin: 'https://shop.test' },
