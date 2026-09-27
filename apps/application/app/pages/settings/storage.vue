@@ -9,9 +9,11 @@ const toast = useToast();
 const {
   data: storage,
   refresh,
-  pending,
+  status,
   error,
 } = useFetch<StorageAnalysis>('/api/admin/storage', { lazy: true, server: false });
+// The server renders before the fetch starts (`idle`), so idle reads as loading too.
+const loading = computed(() => status.value === 'idle' || status.value === 'pending');
 
 // Storage-backend env vars, driven by the shared registry (single source of
 // truth). Excludes test-only vars (they are not runtime settings).
@@ -101,7 +103,7 @@ async function handleCleanup() {
     </SectionCard>
 
     <!-- Storage analysis: usage, growth over time, by file kind, by project -->
-    <StorageAnalysisDashboard :analysis="storage ?? null" :pending="pending" :error="error" @refresh="refresh()" />
+    <StorageAnalysisDashboard :analysis="storage ?? null" :pending="loading" :error="error" @refresh="refresh()" />
 
     <!-- Cleanup Section -->
     <SectionCard icon="i-lucide-trash-2" title="Cleanup old test runs" help="settings.cleanup" data-shot="cleanup-card">

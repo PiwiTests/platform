@@ -7,12 +7,14 @@ const props = defineProps<{
   projectName?: string | null;
 }>();
 
-const { data, pending } = await useFetch(() => `/api/projects/${props.projectId}/timeout-opportunities`, {
+const { data, status } = await useFetch(() => `/api/projects/${props.projectId}/timeout-opportunities`, {
   lazy: true,
   server: false,
   transform: (r: { items: TimeoutOpportunity[] }) => r.items,
 });
 
+// The server renders before the client-only fetch starts (`idle`), so idle reads as loading too.
+const loading = computed(() => status.value === 'idle' || status.value === 'pending');
 const opportunities = computed(() => data.value ?? []);
 
 function formatMs(ms: number | null | undefined): string {
@@ -42,7 +44,7 @@ const columns: TableColumn<TimeoutOpportunity>[] = [
       </p>
     </template>
 
-    <LoadingState v-if="pending" />
+    <LoadingState v-if="loading" />
 
     <EmptyState
       v-else-if="opportunities.length === 0"

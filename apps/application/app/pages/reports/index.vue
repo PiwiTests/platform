@@ -10,7 +10,7 @@ const demoMode = !!useRuntimeConfig().public.demoMode;
 
 const {
   data: snapshots,
-  pending: snapshotsPending,
+  status: snapshotsStatus,
   error: snapshotsError,
   refresh: refreshSnapshots,
 } = await useFetch<{ items: ReportSnapshotSummary[] }>('/api/reports/snapshots', {
@@ -21,7 +21,7 @@ const {
 
 const {
   data: schedules,
-  pending: schedulesPending,
+  status: schedulesStatus,
   error: schedulesError,
   refresh: refreshSchedules,
 } = await useFetch<{ items: ReportScheduleView[] }>('/api/reports/schedules', {
@@ -30,6 +30,11 @@ const {
   immediate: canWrite.value,
   default: () => ({ items: [] }),
 });
+
+// Both lists load client-side only, so the server renders them `idle`: idle reads as
+// loading too, and the first client render matches the server's.
+const snapshotsLoading = computed(() => snapshotsStatus.value === 'idle' || snapshotsStatus.value === 'pending');
+const schedulesLoading = computed(() => schedulesStatus.value === 'idle' || schedulesStatus.value === 'pending');
 
 const formOpen = ref(false);
 const editing = ref<ReportScheduleView | null>(null);
@@ -94,7 +99,7 @@ const schedulesSubtitle = computed(() => {
           subtitle="Every quality report generated, kept with its numbers as they were."
           help="reports.snapshots"
         >
-          <LoadingState v-if="snapshotsPending && snapshots.items.length === 0" />
+          <LoadingState v-if="snapshotsLoading && snapshots.items.length === 0" />
           <ErrorState
             v-else-if="snapshotsError"
             :text="`Couldn't load the report snapshots: ${errorMessage(snapshotsError)}`"
@@ -115,7 +120,7 @@ const schedulesSubtitle = computed(() => {
           :subtitle="schedulesSubtitle"
           help="reports.schedule"
         >
-          <LoadingState v-if="schedulesPending && schedules.items.length === 0" />
+          <LoadingState v-if="schedulesLoading && schedules.items.length === 0" />
           <ErrorState
             v-else-if="schedulesError"
             :text="`Couldn't load the report schedules: ${errorMessage(schedulesError)}`"

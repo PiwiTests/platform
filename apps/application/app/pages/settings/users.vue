@@ -37,7 +37,7 @@ const columns: TableColumn<UserDetails>[] = [
     header: createSortHeader<UserDetails>('Created'),
     meta: { class: { th: 'w-28', td: 'w-28' } },
   },
-  { accessorKey: 'actions', header: '', meta: { class: { th: 'w-40', td: 'w-40' } } },
+  { id: 'actions', header: 'Actions', meta: { class: { th: 'w-40', td: 'w-40' } } },
 ];
 
 // Add user modal
@@ -366,6 +366,9 @@ async function handleInviteUser(user: UserDetails) {
             <ClientDate :date="row.original.createdAt" date-only class="text-sm text-muted" />
           </template>
 
+          <template #actions-header>
+            <span class="sr-only">Actions</span>
+          </template>
           <template #actions-cell="{ row }">
             <div class="flex items-center gap-1 justify-end">
               <UButton

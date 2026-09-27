@@ -7,12 +7,14 @@ const id = computed(() => Number(route.params.id));
 
 const {
   data: snapshot,
-  pending,
+  status,
   error,
 } = await useFetch<ReportSnapshotView>(() => `/api/reports/snapshots/${id.value}`, {
   server: false,
   lazy: true,
 });
+// The server renders before the client-only fetch starts (`idle`), so idle reads as loading too.
+const loading = computed(() => status.value === 'idle' || status.value === 'pending');
 
 useHead({ title: () => `${snapshot.value?.title ?? 'Quality report'} - Piwi Dashboard` });
 
@@ -84,7 +86,7 @@ const deliveryLine = computed(() => {
     </template>
 
     <template #body>
-      <LoadingState v-if="pending && !snapshot" />
+      <LoadingState v-if="loading && !snapshot" />
       <ErrorState v-else-if="error" :text="`Couldn't open this quality report: ${errorMessage(error)}`" />
       <div v-else-if="snapshot" class="max-w-4xl space-y-4" data-shot="report-snapshot">
         <dl class="grid grid-cols-[6.5rem_1fr] gap-x-3 gap-y-1">
