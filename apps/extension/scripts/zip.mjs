@@ -8,11 +8,14 @@
 //   AMO, which requires them for bundled or minified code. Its reviewers
 //   rebuild it and diff the result against the add-on, so it holds exactly the
 //   files the build reads, with SOURCE-BUILD.md as its README.
-import { createWriteStream, readFileSync, unlinkSync, existsSync } from 'node:fs';
+// - piwi-picker-v<version>-amo-metadata.json: the AMO listing fields the add-on
+//   cannot carry itself, for `web-ext sign --amo-metadata` (see amo-metadata.mjs).
+import { createWriteStream, readFileSync, unlinkSync, existsSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import archiver from 'archiver';
+import { buildAmoMetadata } from './amo-metadata.mjs';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const repoRoot = path.resolve(root, '..', '..');
@@ -79,3 +82,7 @@ await writeZip(`piwi-picker-v${version}-source.zip`, (archive) => {
   for (const file of listSourceFiles()) archive.file(path.join(repoRoot, file), { name: file });
   archive.file(path.join(root, 'SOURCE-BUILD.md'), { name: 'README.md' });
 });
+
+const metadataPath = path.join(root, `piwi-picker-v${version}-amo-metadata.json`);
+writeFileSync(metadataPath, `${JSON.stringify(buildAmoMetadata(), null, 2)}\n`);
+console.log(`Wrote ${path.relative(process.cwd(), metadataPath)}`);

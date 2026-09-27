@@ -3,7 +3,9 @@
   "name": "Piwi Picker",
   "short_name": "Piwi Picker",
   "version": "0.39.0",
-  "description": "Ranked, stable Playwright locators for any element on the page — scored the same way Piwi's dashboard scores them.",
+  "description": "__MSG_extDescription__",
+  "default_locale": "en",
+  "homepage_url": "https://piwitests.dev/features/extension",
   "browser_specific_settings": {
     "gecko": {
       "id": "piwi-picker@piwitests.dev",
@@ -51,7 +53,7 @@
         "default": "Ctrl+Shift+E",
         "mac": "Command+Shift+E"
       },
-      "description": "Pick a locator for an element on the page"
+      "description": "__MSG_pickElementCommand__"
     }
   }
 }

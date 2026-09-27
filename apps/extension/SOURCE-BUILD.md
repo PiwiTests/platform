@@ -47,7 +47,7 @@ diff -r submitted apps/extension/dist
   self-contained script (Vite library mode, IIFE format), because `scripting.executeScript` injects files
   as classic scripts;
 - `popup.html` and `options.html` are built as normal pages into `assets/`;
-- `manifest.json` and `public/icons/` are copied as they are.
+- `manifest.json` and `public/` (the icons and the `_locales/` translations) are copied as they are.
 
 The output is minified by Vite's default minifier. Nothing is obfuscated, and no code is downloaded at
 runtime.
