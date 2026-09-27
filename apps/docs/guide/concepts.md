@@ -251,6 +251,20 @@ The locator chains each test used in its steps, recorded per branch and per Play
 use a locator, and it feeds [Who uses a locator](/features/locator-usage) and
 [Tested elements](/features/tested-elements).
 
+### Page key
+
+A page's URL reduced to its path pattern: numeric ids, UUIDs, ULIDs, JWTs and long tokens become `:id`, `:uuid`,
+`:ulid`, `:jwt` and `:token`, and the host, query and hash are dropped. `/orders/123?tab=items` and `/orders/456` are
+both `/orders/:id`, on staging and in production alike. The Test Map's page nodes, the page each locator was used on
+and the extension's **This page** all use it. A page of another site keeps its origin in front of the path.
+
+### Brittle locator
+
+A locator a test uses that breaks on a change unrelated to what the test checks: a position, a styling class, the
+document structure, a generated id. Piwi judges each locator of the index with named rules as *brittle*, *watch* or
+*stable*; see [Locator stability rules](/reference/locator-stability). Not to be confused with the *fragile*
+[gap class](#gap-class), which is about the tests reaching a node, not a locator.
+
 ### Scenario gap
 
 A test the suite does not have yet, proposed from the Test Map with its evidence and a next step: a route no test

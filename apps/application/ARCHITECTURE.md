@@ -64,9 +64,12 @@ Non-obvious ones:
   latest element attributes and pre-computed ranked alternatives. Unique index on `(test_case_id, location)`;
   `last_seen_run_id` FK is `ON DELETE set null`.
 - **`locator_usages`** — the locator index: one row per (test case, Playwright project, branch, call site, action,
-  canonical chain), read from the steps of each ingested execution; `branch` is `''` for the default branch, and a
-  view of another branch replaces the default rows of the tests that ran on it. Feeds "Who uses this?", the
-  project's Locators page and the extension's Tested elements (`GET /api/projects/:id/locator-index`).
+  canonical chain, page), read from the steps of each ingested execution; `branch` is `''` for the default branch, and a
+  view of another branch replaces the default rows of the tests that ran on it. `page` is the page key the call ran
+  on, joined by call site and chain from the execution's `piwi-locator-pages` list (stored through `case_payloads` as
+  `test_runs_cases.locator_pages_payload_id`, so a rebuild keeps it; `server/utils/locator-pages.ts`), `''` when
+  unknown; `arrival` says a call ran there before any locator interaction. Feeds "Who uses this?", the project's
+  Locators page and the extension's Tested elements (`GET /api/projects/:id/locator-index`).
 - **`account_tokens`** — single-use SHA-256-hashed tokens for reset/invite/verify, with a purpose enum and TTL enforced
   at query time.
 - **`notification_deliveries`** — an outbox: `dedupeKey` unique for idempotency, `status`, `attempts` + `scheduledFor`

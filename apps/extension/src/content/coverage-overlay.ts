@@ -22,7 +22,17 @@ import { getCachedLocatorIndex } from '../shared/locator-index-cache.js';
 import { getLocatorBranchOverride, resolveLocatorBranch, setLocatorBranchOverride } from '../shared/locator-branch.js';
 import { requestLocatorIndex } from '../shared/locator-index-refresh.js';
 import { isElementNode } from './engine-aria.js';
-import { scanCoverage, scopeScan, widerScope, type CoverageScan } from './coverage-scan.js';
+import { pageView, scanCoverage, scopeScan, widerScope, type CoverageScan } from './coverage-scan.js';
+import {
+  brittleRows,
+  chainStabilities,
+  pageRisks,
+  replacementFor,
+  usePlace,
+  type Replacement,
+} from './coverage-risk.js';
+import { pageKey } from '@piwitests/core/page-key';
+import { createLocatorEngine, type LocatorEngine } from './locator-engine.js';
 import { CoverageLayer, type Drawable, type Frame } from './coverage-layer.js';
 import { CoveragePanel, type PanelStatus } from './coverage-panel.js';
 import { COVERAGE_CSS } from './coverage-style.js';
@@ -35,7 +45,7 @@ import {
   type CoverageContext,
   type ViewState,
 } from './coverage-view.js';
-import { deriveTopLocator } from './top-locator.js';
+import { deriveTopLocator, rankElementLocators } from './top-locator.js';
 
 const HOST_ID = 'piwi-coverage-host';
 /** Wait after the last page change before rescanning. */
@@ -170,6 +180,10 @@ function startCoverageOverlay(): void {
   let scanning: { done: number; total: number } | null = null;
   let scanCount = 0;
   const suggestions = new WeakMap<Element, string | null>();
+  /** Replacements for brittle locators, per element and chain, for the current scan only: the page may change. */
+  let replacements = new WeakMap<Element, Map<number, Replacement | null>>();
+  /** An engine over the page as the current scan saw it, to check replacements with. */
+  let riskEngine: LocatorEngine | null = null;
   /** While choosing: the element that would be chosen, and the narrower ones ↑ walked out of. */
   let choosingTarget: Element | null = null;
   let choosingNarrower: Element[] = [];
@@ -188,10 +202,34 @@ function startCoverageOverlay(): void {
     return locator;
   };
 
+  const replacementForEntry = (element: Element, entry: number): Replacement | null => {
+    if (!index) return null;
+    let perElement = replacements.get(element);
+    if (!perElement) replacements.set(element, (perElement = new Map()));
+    if (perElement.has(entry)) return perElement.get(entry)!;
+    riskEngine ??= createLocatorEngine(document, {
+      testIdAttributes: index.testIdAttributes ?? undefined,
+      ignore: isOwnElement,
+    });
+    let replacement: Replacement | null = null;
+    try {
+      replacement = replacementFor(element, index.locators[entry]!.locator, {
+        doc: document,
+        engine: riskEngine,
+        rank: (e) => rankElementLocators(e).ranked,
+      });
+    } catch {
+      replacement = null;
+    }
+    perElement.set(entry, replacement);
+    return replacement;
+  };
+
   const layer = new CoverageLayer(shadow, {
     onPin: (element) => pin(element),
     onClosePinned: () => pin(null),
     suggestLocator,
+    replacementFor: replacementForEntry,
   });
   const panel = new CoveragePanel(shadow, {
     onClose: () => off(),
@@ -249,6 +287,17 @@ function startCoverageOverlay(): void {
       setScope(element);
     },
     suggestLocator,
+    replacementFor: replacementForEntry,
+    onPageScope: (scope) => {
+      if (state.pageScope === scope) return;
+      state.pageScope = scope;
+      state.pinned = null;
+      state.focusTest = null;
+      layer.showPinned(null);
+      buildContext();
+      redraw();
+      renderPanel();
+    },
   });
 
   function describe(element: Element): string {
@@ -309,6 +358,7 @@ function startCoverageOverlay(): void {
         uncovered: null,
         health: worstStatus(idx, covered.tests),
         heat: state.heatmap ? Math.log1p(covered.tests.length) / Math.log1p(maxTests) : 0,
+        brittle: state.showBrittle && context.brittleElements.has(covered.element),
         emphasis: lit ? (lit.has(covered.element) ? 'strong' : 'dim') : behindModal(covered.element) ? 'dim' : 'normal',
       });
     }
@@ -321,6 +371,7 @@ function startCoverageOverlay(): void {
           uncovered,
           health: null,
           heat: 0,
+          brittle: false,
           emphasis: lit || behindModal(uncovered.element) ? 'dim' : 'normal',
         });
       }
@@ -358,13 +409,35 @@ function startCoverageOverlay(): void {
       return;
     }
     if (state.scope && !state.scope.isConnected) state.scope = null;
+    // This page: only the uses made here, or whose page is unknown (runs without the capture fixtures).
+    const key = pageKey(location.href);
+    const pagePosition = key && index.pages ? index.pages.indexOf(key) : -1;
+    const hasPages = (index.pages?.length ?? 0) > 0;
+    const pageScoped = hasPages && state.pageScope === 'page';
+    const paged = pageScoped
+      ? pageView(scan, index, (_entry, use) => usePlace(use, pagePosition) !== 'elsewhere')
+      : null;
+    const base = paged ?? scan;
+    const view = state.scope ? scopeScan(base, state.scope) : base;
+    const brittle = brittleRows(view, index);
+    const risks = pageScoped ? pageRisks(index, scan.found, pagePosition) : { missing: [], several: [] };
     context = {
       index,
-      scan: state.scope ? scopeScan(scan, state.scope) : scan,
+      scan: view,
       instanceUrl,
       projectId: project.projectId,
       projectLabel: project.projectLabel,
       branch,
+      stabilities: chainStabilities(index),
+      brittle,
+      brittleElements: new Set(brittle.flatMap((row) => row.elements)),
+      pageKey: key,
+      pagePosition,
+      hasPages,
+      pageScoped,
+      elsewhere: paged?.elsewhere ?? new Map(),
+      missing: risks.missing,
+      several: risks.several,
     };
   }
 
@@ -485,8 +558,45 @@ function startCoverageOverlay(): void {
           locators: c.matches.map((m) => idx!.locators[m.entry]!.locator),
         })) ?? [],
       uncovered:
-        view?.uncovered.map((u) => ({ description: u.description, eid: u.element.getAttribute('data-eid') })) ?? [],
+        view?.uncovered.map((u) => ({
+          description: u.description,
+          eid: u.element.getAttribute('data-eid'),
+          elsewhere: context?.elsewhere.get(u.element)?.map((e) => idx!.locators[e]!.locator) ?? [],
+        })) ?? [],
+      page: context?.pageKey ?? null,
+      pageScoped: context?.pageScoped ?? false,
+      missing:
+        context?.missing.map((row) => ({
+          locator: idx!.locators[row.entry]!.locator,
+          arrival: row.arrival,
+          actions: row.actions,
+          tests: row.tests.map((t) => idx!.tests[t]!.title),
+        })) ?? [],
+      several:
+        context?.several.map((row) => ({
+          locator: idx!.locators[row.entry]!.locator,
+          count: row.count,
+          actions: row.actions,
+          tests: row.tests.map((t) => idx!.tests[t]!.title),
+        })) ?? [],
       tests: view?.tests.map((t) => ({ title: idx!.tests[t.test]!.title, elements: t.elements.length })) ?? [],
+      brittle:
+        context?.brittle.map((row) => {
+          const replacement =
+            row.count === 1 && row.elements.length === 1 ? replacementForEntry(row.elements[0]!, row.entry) : null;
+          return {
+            locator: idx!.locators[row.entry]!.locator,
+            rules: row.stability.findings.map((f) => f.rule),
+            elements: row.elements.map((e) => describe(e)),
+            count: row.count,
+            tests: row.tests.map((t) => idx!.tests[t]!.title),
+            callSites: row.callSites,
+            replacement:
+              replacement?.kind === 'replace'
+                ? { recommended: replacement.recommended.locator, durable: replacement.durable?.locator ?? null }
+                : (replacement?.kind ?? null),
+          };
+        }) ?? [],
       coveredInteractive: view?.coveredInteractive ?? 0,
       uncoveredCount: view?.uncoveredCount ?? 0,
       unmatched: scan?.unmatched ?? 0,
@@ -539,6 +649,8 @@ function startCoverageOverlay(): void {
     if (result && seq === scanSeq && scanIndex === index) {
       scan = result;
       scanCount++;
+      replacements = new WeakMap();
+      riskEngine = null;
       buildContext();
       const view = context!.scan;
       status = 'ready';

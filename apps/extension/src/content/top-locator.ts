@@ -5,6 +5,7 @@ import {
   CAPTURED_ATTRIBUTES,
   TAG_TO_ROLE,
   INPUT_TYPE_TO_ROLE,
+  type RankedLocator,
 } from '@piwitests/core/locator-generation';
 
 export interface TopLocatorInfo {
@@ -21,6 +22,17 @@ export interface TopLocatorInfo {
  * the hover preview `installDescribeHook` feeds the picker overlay.
  */
 export function deriveTopLocator(el: Element): TopLocatorInfo {
+  const { ranked, accessibleName } = rankElementLocators(el);
+  return { locator: ranked.length > 0 ? ranked[0]!.locator : null, accessibleName };
+}
+
+/**
+ * Every locator `generateAlternatives` ranks for an element, most stable
+ * first, with the accessible name it read — for features that choose among
+ * them rather than take the first (the coverage overlay's replacements for
+ * brittle locators).
+ */
+export function rankElementLocators(el: Element): { ranked: RankedLocator[]; accessibleName: string | null } {
   const roleSources = [...new Set(['[role]', 'input', 'select', ...Object.keys(TAG_TO_ROLE)])].join(',');
   const probeArg: ProbeArg = {
     keep: [...CAPTURED_ATTRIBUTES],
@@ -31,8 +43,7 @@ export function deriveTopLocator(el: Element): TopLocatorInfo {
   };
   const attrs = probeElementAttrs(el, probeArg);
   const accessibleName = approximateAccessibleName({ ...attrs, accessibleName: null });
-  const ranked = generateAlternatives({ ...attrs, accessibleName });
-  return { locator: ranked.length > 0 ? ranked[0]!.locator : null, accessibleName };
+  return { ranked: generateAlternatives({ ...attrs, accessibleName }), accessibleName };
 }
 
 /**

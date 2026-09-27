@@ -4,6 +4,10 @@
  * Playwright reports for every execution, so the index needs no capture beyond
  * what the reporter already sends, and works with locator healing turned off.
  *
+ * With the capture fixtures, rows also carry the page the call ran on (see
+ * `locator-pages.ts`), joined by call site and chain: a use made on two pages
+ * is two rows. Without them the page is '' (unknown).
+ *
  * Rows carry the branch of the run that recorded them: '' for the project's
  * default branch (and runs with no branch), else the branch name. A view of
  * one branch starts from the default branch's uses and, for each test and
@@ -28,6 +32,9 @@ import {
   type SQL,
 } from 'drizzle-orm';
 import { locatorUsages, projects, testCases, testRuns, testRunsCases } from '../database/schema';
+import { resolveCasePayloadContents } from './case-payloads';
+import { parseStoredLocatorPages } from './locator-pages';
+import { collectOwnOrigins, projectRouteOrigins, runBaseUrls } from '#shared/graph';
 import {
   extractStepLocatorUses,
   findLocationRoot,
@@ -57,6 +64,7 @@ import {
   type LocatorIndexTestStatus,
 } from '#shared/locator-index';
 import { resolveStoredDefaultBranch } from './scm/stored-default-branch';
+import type { LocatorPageUse } from '@piwitests/core/wire';
 
 /**
  * UTF-8 byte budgets for indexed text. A Postgres btree entry holds about
@@ -65,6 +73,10 @@ import { resolveStoredDefaultBranch } from './scm/stored-default-branch';
  */
 const MAX_LOCATOR_BYTES = 1000;
 const MAX_KEY_BYTES = 2000;
+/** A page key longer than this is stored as unknown (''). */
+const MAX_PAGE_BYTES = 300;
+/** Pages listed per use in the index document; the rest is said with `pagesTruncated`. */
+const MAX_PAGES_PER_USE = 50;
 /** Rows per insert statement, well under SQLite's bound-parameter limit. */
 const INSERT_CHUNK = 200;
 
@@ -86,6 +98,8 @@ export interface LocatorUsageCase {
    * from it no longer exists in the test and may be removed.
    */
   complete: boolean;
+  /** The page each locator call ran on, from the capture fixtures; null or absent when unknown. */
+  locatorPages?: LocatorPageUse[] | null;
 }
 
 /** What the index needs to know about a run. */
@@ -97,6 +111,8 @@ interface RunFacts {
   probe: boolean;
   /** The run's branch, trimmed; null when it had none. */
   branch: string | null;
+  /** The run's Playwright `baseURL`s: the application's own pages, beside the project's route origins. */
+  baseUrls: string[];
 }
 
 type UsageInsert = typeof locatorUsages.$inferInsert;
@@ -108,7 +124,8 @@ const usageKey = (
   callSite: string,
   action: string,
   locator: string,
-) => `${caseId}\x00${browserName}\x00${branch}\x00${callSite}\x00${action}\x00${locator}`;
+  page: string,
+) => `${caseId}\x00${browserName}\x00${branch}\x00${callSite}\x00${action}\x00${locator}\x00${page}`;
 
 /** The branch a run's uses are stored under: '' on the default branch or with no branch, else the branch. */
 export function locatorBranchTag(runBranch: string | null | undefined, defaultBranch: string | null): string {
@@ -139,6 +156,7 @@ async function loadRunFacts(db: DrizzleDB, runIds: number[]): Promise<Map<number
         root: locationRootOf(metadata?.workingDir),
         probe: isProbeRun(metadata),
         branch: r.branch?.trim() || null,
+        baseUrls: runBaseUrls(metadata),
       });
     }
   }
@@ -161,6 +179,50 @@ function locationRoots(cases: LocatorUsageCase[], runs: Map<number, RunFacts>): 
   return cases.map((c, i) => own[i] ?? byRun.get(c.runId) ?? null);
 }
 
+/** The project's own route origins, beside each run's Playwright `baseURL`s: what tells its pages from third-party ones. */
+async function projectOrigins(db: DrizzleDB, projectId: number): Promise<string[]> {
+  const [project] = await db
+    .select({ routeOrigins: projects.routeOrigins })
+    .from(projects)
+    .where(eq(projects.id, projectId));
+  return projectRouteOrigins(project?.routeOrigins);
+}
+
+/** `file:line` of a `file:line:col` call site: the stack a wrapper reads and a step's location can differ by column. */
+function fileLine(callSite: string): string | null {
+  const m = /^(.*:\d+):\d+$/.exec(callSite);
+  return m ? m[1]! : null;
+}
+
+/**
+ * The pages each (call site, chain) of one execution ran on, with whether a
+ * call ran there on arrival, keyed exactly and by `file:line`. An own page
+ * keeps its path key; a third-party page's key starts with its origin, so it
+ * never matches a page of the application.
+ */
+function pagesByCall(
+  entries: LocatorUsageCase['locatorPages'],
+  root: string | null,
+  ownOrigins: Set<string>,
+): Map<string, Map<string, boolean>> {
+  const out = new Map<string, Map<string, boolean>>();
+  for (const entry of entries ?? []) {
+    const callSite = stripLocationRoot(entry.location, root);
+    const own = ownOrigins.size === 0 || ownOrigins.has(entry.origin);
+    const page = own ? entry.page : `${entry.origin}${entry.page}`;
+    if (byteLength(page) > MAX_PAGE_BYTES) continue;
+    const keys = [`${callSite}\x00${entry.locator}`];
+    const line = fileLine(callSite);
+    if (line) keys.push(`${line}\x00${entry.locator}`);
+    for (const key of keys) {
+      let pages = out.get(key);
+      if (!pages) out.set(key, (pages = new Map()));
+      pages.set(page, (pages.get(page) ?? false) || entry.arrival);
+    }
+  }
+  return out;
+}
+
 /**
  * The rows a batch of executions contributes, one per distinct use per test,
  * project and branch, and the cases that had a use left out: over the byte
@@ -173,14 +235,17 @@ export function buildLocatorUsageRows(
   runs: Map<number, RunFacts> = new Map(),
   now = new Date(),
   defaultBranch: string | null = null,
+  routeOrigins: string[] = [],
 ): { rows: UsageInsert[]; partial: Set<number> } {
   const rows = new Map<string, UsageInsert>();
   const partial = new Set<number>();
   const roots = locationRoots(cases, runs);
   cases.forEach((c, k) => {
     const browserName = c.browserName ?? '';
-    const branch = locatorBranchTag(runs.get(c.runId)?.branch, defaultBranch);
-    const seenAt = runs.get(c.runId)?.startedAt ?? now;
+    const run = runs.get(c.runId);
+    const branch = locatorBranchTag(run?.branch, defaultBranch);
+    const seenAt = run?.startedAt ?? now;
+    const pages = pagesByCall(c.locatorPages, roots[k]!, collectOwnOrigins(run?.baseUrls ?? [], routeOrigins));
     for (const use of extractStepLocatorUses(c.steps)) {
       const callSite = use.location ? stripLocationRoot(use.location, roots[k]!) : '';
       const bytes = byteLength(use.locator);
@@ -188,24 +253,37 @@ export function buildLocatorUsageRows(
         isAbsoluteLocation(callSite) ||
         bytes > MAX_LOCATOR_BYTES ||
         bytes + byteLength(callSite) + byteLength(browserName) + byteLength(branch) + byteLength(use.action) >
-          MAX_KEY_BYTES
+          MAX_KEY_BYTES - MAX_PAGE_BYTES
       ) {
         partial.add(k);
         continue;
       }
-      rows.set(usageKey(c.caseId, browserName, branch, callSite, use.action, use.locator), {
-        projectId,
-        testCaseId: c.caseId,
-        browserName,
-        branch,
-        locator: use.locator,
-        target: locatorTarget(use.chain),
-        action: use.action,
-        callSite,
-        firstSeenRunId: c.runId,
-        lastSeenRunId: c.runId,
-        lastSeenAt: seenAt,
-      });
+      const line = fileLine(callSite);
+      const onPages =
+        pages.get(`${callSite}\x00${use.locator}`) ?? (line ? pages.get(`${line}\x00${use.locator}`) : undefined);
+      for (const [page, arrival] of onPages?.size ? onPages : new Map([['', false]])) {
+        const key = usageKey(c.caseId, browserName, branch, callSite, use.action, use.locator, page);
+        const existing = rows.get(key);
+        if (existing) {
+          existing.arrival ||= arrival;
+          continue;
+        }
+        rows.set(key, {
+          projectId,
+          testCaseId: c.caseId,
+          browserName,
+          branch,
+          locator: use.locator,
+          target: locatorTarget(use.chain),
+          action: use.action,
+          callSite,
+          page,
+          arrival,
+          firstSeenRunId: c.runId,
+          lastSeenRunId: c.runId,
+          lastSeenAt: seenAt,
+        });
+      }
     }
   });
   return { rows: [...rows.values()], partial };
@@ -230,7 +308,8 @@ export async function upsertLocatorUsages(db: DrizzleDB, projectId: number, case
   );
   const branched = [...runs.values()].some((r) => r.branch);
   const defaultBranch = branched ? await projectDefaultBranch(db, projectId) : null;
-  const { rows, partial } = buildLocatorUsageRows(projectId, cases, runs, new Date(), defaultBranch);
+  const routeOrigins = cases.some((c) => c.locatorPages?.length) ? await projectOrigins(db, projectId) : [];
+  const { rows, partial } = buildLocatorUsageRows(projectId, cases, runs, new Date(), defaultBranch, routeOrigins);
 
   for (let i = 0; i < rows.length; i += INSERT_CHUNK) {
     await db
@@ -244,9 +323,11 @@ export async function upsertLocatorUsages(db: DrizzleDB, projectId: number, case
           locatorUsages.callSite,
           locatorUsages.action,
           locatorUsages.locator,
+          locatorUsages.page,
         ],
         set: {
           lastSeenRunId: sql`CASE WHEN excluded.last_seen_at >= locator_usages.last_seen_at THEN excluded.last_seen_run_id ELSE locator_usages.last_seen_run_id END`,
+          arrival: sql`CASE WHEN excluded.last_seen_at >= locator_usages.last_seen_at THEN excluded.arrival ELSE locator_usages.arrival END`,
           lastSeenAt: sql`CASE WHEN excluded.last_seen_at >= locator_usages.last_seen_at THEN excluded.last_seen_at ELSE locator_usages.last_seen_at END`,
         },
       });
@@ -266,7 +347,9 @@ export async function upsertLocatorUsages(db: DrizzleDB, projectId: number, case
   if (purgeBefore.size === 0) return;
 
   const seen = new Set(
-    rows.map((r) => usageKey(r.testCaseId, r.browserName, r.branch ?? '', r.callSite, r.action, r.locator)),
+    rows.map((r) =>
+      usageKey(r.testCaseId, r.browserName, r.branch ?? '', r.callSite, r.action, r.locator, r.page ?? ''),
+    ),
   );
   const caseIds = [...new Set([...purgeBefore.keys()].map((k) => Number(k.split('\x00')[0])))];
   const existing = await db
@@ -278,6 +361,7 @@ export async function upsertLocatorUsages(db: DrizzleDB, projectId: number, case
       callSite: locatorUsages.callSite,
       action: locatorUsages.action,
       locator: locatorUsages.locator,
+      page: locatorUsages.page,
       lastSeenAt: locatorUsages.lastSeenAt,
     })
     .from(locatorUsages)
@@ -288,7 +372,7 @@ export async function upsertLocatorUsages(db: DrizzleDB, projectId: number, case
       return (
         before !== undefined &&
         new Date(r.lastSeenAt) < before &&
-        !seen.has(usageKey(r.testCaseId, r.browserName, r.branch, r.callSite, r.action, r.locator))
+        !seen.has(usageKey(r.testCaseId, r.browserName, r.branch, r.callSite, r.action, r.locator, r.page))
       );
     })
     .map((r) => r.id);
@@ -395,10 +479,16 @@ export async function backfillLocatorUsages(
         testRunId: testRunsCases.testRunId,
         steps: testRunsCases.steps,
         filePath: testCases.filePath,
+        locatorPagesPayloadId: testRunsCases.locatorPagesPayloadId,
       })
       .from(testRunsCases)
       .innerJoin(testCases, eq(testCases.id, testRunsCases.testCaseId))
       .where(inArray(testRunsCases.id, ids.slice(i, i + 100)));
+    // The pages each call ran on were stored with the execution, so a rebuild keeps them.
+    const pagePayloads = await resolveCasePayloadContents(
+      db,
+      executions.map((e) => e.locatorPagesPayloadId),
+    );
     await upsertLocatorUsages(
       db,
       projectId,
@@ -409,6 +499,8 @@ export async function backfillLocatorUsages(
         filePath: e.filePath,
         runId: e.testRunId,
         complete: false,
+        locatorPages:
+          e.locatorPagesPayloadId != null ? parseStoredLocatorPages(pagePayloads.get(e.locatorPagesPayloadId)) : null,
       })),
     );
     casesProcessed += executions.length;
@@ -534,6 +626,7 @@ export async function getExecutionLocators(db: DrizzleDB, runCaseId: number): Pr
       projectId: testCases.projectId,
       runMetadata: testRuns.metadata,
       runBranch: testRuns.branch,
+      locatorPagesPayloadId: testRunsCases.locatorPagesPayloadId,
     })
     .from(testRunsCases)
     .innerJoin(testCases, eq(testCases.id, testRunsCases.testCaseId))
@@ -544,6 +637,15 @@ export async function getExecutionLocators(db: DrizzleDB, runCaseId: number): Pr
   const found = extractStepLocatorUses(row.steps);
   const metadata = row.runMetadata as Record<string, unknown> | null;
   const root = locationRootOf(metadata?.workingDir) ?? findLocationRoot(stepLocations(row.steps), row.filePath);
+  const storedPages =
+    row.locatorPagesPayloadId != null
+      ? parseStoredLocatorPages(
+          (await resolveCasePayloadContents(db, [row.locatorPagesPayloadId])).get(row.locatorPagesPayloadId),
+        )
+      : null;
+  const pages = storedPages
+    ? pagesByCall(storedPages, root, collectOwnOrigins(runBaseUrls(metadata), await projectOrigins(db, row.projectId)))
+    : null;
   const byKey = new Map<string, ExecutionLocatorUse>();
   found.forEach((use) => {
     const callSite = use.location ? stripLocationRoot(use.location, root) : null;
@@ -553,6 +655,9 @@ export async function getExecutionLocators(db: DrizzleDB, runCaseId: number): Pr
       existing.occurrences++;
       return;
     }
+    const line = callSite ? fileLine(callSite) : null;
+    const onPages =
+      pages?.get(`${callSite ?? ''}\x00${use.locator}`) ?? (line ? pages?.get(`${line}\x00${use.locator}`) : undefined);
     byKey.set(key, {
       stepIndex: use.stepIndex,
       occurrences: 1,
@@ -563,6 +668,7 @@ export async function getExecutionLocators(db: DrizzleDB, runCaseId: number): Pr
       callSite,
       sameLocatorTests: 0,
       sameTargetTests: 0,
+      ...(onPages?.size ? { pages: [...onPages.keys()] } : {}),
     });
   });
   const uses = [...byKey.values()];
@@ -625,6 +731,7 @@ export async function getLocatorUsages(
       locator: locatorUsages.locator,
       action: locatorUsages.action,
       callSite: locatorUsages.callSite,
+      page: locatorUsages.page,
       lastSeenAt: locatorUsages.lastSeenAt,
       title: testCases.title,
       filePath: testCases.filePath,
@@ -660,6 +767,10 @@ export async function getLocatorUsages(
       sites.set(key, site);
     }
     if (!site.actions.includes(r.action)) site.actions.push(r.action);
+    if (r.page) {
+      site.pages ??= [];
+      if (!site.pages.includes(r.page)) site.pages.push(r.page);
+    }
     if (!site.tests.some((t) => t.testCaseId === r.testCaseId)) {
       site.tests.push({ testCaseId: r.testCaseId, title: r.title, filePath: r.filePath, suitePath: r.suitePath });
     }
@@ -737,6 +848,8 @@ export async function getLocatorIndex(
       browserName: locatorUsages.browserName,
       branch: locatorUsages.branch,
       callSite: locatorUsages.callSite,
+      page: locatorUsages.page,
+      arrival: locatorUsages.arrival,
       lastSeenAt: locatorUsages.lastSeenAt,
     })
     .from(locatorUsages)
@@ -745,9 +858,17 @@ export async function getLocatorIndex(
     .limit(maxRows + 1);
   let truncated = rows.length > maxRows;
 
+  interface DraftUse {
+    actions: string[];
+    callSites: string[];
+    projects: string[];
+    branches: string[];
+    /** Page key → whether a call ran there on arrival. */
+    pages: Map<string, boolean>;
+  }
   interface Draft {
     lastSeenAt: number;
-    uses: Map<number, { actions: string[]; callSites: string[]; projects: string[]; branches: string[] }>;
+    uses: Map<number, DraftUse>;
   }
   const drafts = new Map<string, Draft>();
   for (const r of rows.slice(0, maxRows)) {
@@ -757,7 +878,13 @@ export async function getLocatorIndex(
     if (!draft) drafts.set(r.locator, (draft = { lastSeenAt: seenAt, uses: new Map() }));
     if (seenAt > draft.lastSeenAt) draft.lastSeenAt = seenAt;
     let use = draft.uses.get(r.testCaseId);
-    if (!use) draft.uses.set(r.testCaseId, (use = { actions: [], callSites: [], projects: [], branches: [] }));
+    if (!use) {
+      draft.uses.set(
+        r.testCaseId,
+        (use = { actions: [], callSites: [], projects: [], branches: [], pages: new Map() }),
+      );
+    }
+    if (r.page) use.pages.set(r.page, (use.pages.get(r.page) ?? false) || r.arrival);
     if (!use.actions.includes(r.action)) use.actions.push(r.action);
     if (r.callSite && !use.callSites.includes(r.callSite)) use.callSites.push(r.callSite);
     if (r.browserName && !use.projects.includes(r.browserName)) use.projects.push(r.browserName);
@@ -814,12 +941,35 @@ export async function getLocatorIndex(
     }
   }
 
+  // Page keys, those the most uses were recorded on first.
+  const pageUses = new Map<string, number>();
+  for (const [, draft] of kept) {
+    for (const use of draft.uses.values())
+      for (const page of use.pages.keys()) pageUses.set(page, (pageUses.get(page) ?? 0) + 1);
+  }
+  const pages = [...pageUses.entries()]
+    .sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
+    .map(([page]) => page);
+  const pagePosition = new Map(pages.map((page, i) => [page, i]));
+
   const locators: LocatorIndexEntry[] = kept.map(([locator, draft]) => ({
     locator,
     lastSeenAt: new Date(draft.lastSeenAt).toISOString(),
     uses: [...draft.uses.entries()]
       .filter(([testCaseId]) => position.has(testCaseId))
-      .map(([testCaseId, use]) => ({ test: position.get(testCaseId)!, ...use })),
+      .map(([testCaseId, { pages: onPages, ...use }]) => {
+        const out: LocatorIndexEntry['uses'][number] = { test: position.get(testCaseId)!, ...use };
+        if (onPages.size === 0) return out;
+        const listed = [...onPages.keys()]
+          .map((page) => pagePosition.get(page)!)
+          .sort((a, b) => a - b)
+          .slice(0, MAX_PAGES_PER_USE);
+        out.pages = listed;
+        const arrival = listed.filter((i) => onPages.get(pages[i]!));
+        if (arrival.length) out.arrival = arrival;
+        if (onPages.size > MAX_PAGES_PER_USE) out.pagesTruncated = true;
+        return out;
+      }),
   }));
 
   return {
@@ -831,6 +981,7 @@ export async function getLocatorIndex(
     builtAt: project.builtAt ? new Date(project.builtAt).toISOString() : null,
     generatedAt: new Date().toISOString(),
     testIdAttributes: await projectTestIdAttributes(db, projectId),
+    ...(pages.length ? { pages } : {}),
     tests,
     locators,
     truncated,

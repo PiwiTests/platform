@@ -6,12 +6,16 @@
  */
 import { highlightLocator } from '@piwitests/picker-dom';
 import { ALL_BRANCHES } from '@piwitests/core/locator-index';
+import { stabilityLabels } from '@piwitests/core/locator-stability';
+import { locatorActionLabel } from '@piwitests/core/step-locators';
+import { editText, type BrittleRow, type PageRiskRow, type Replacement } from './coverage-risk.js';
 import type { CoveredElement, UncoveredElement } from './coverage-scan.js';
 import {
   ageLabel,
   isScoped,
   kindShown,
   plural,
+  riskCount,
   statusLabel,
   testTitle,
   worstStatus,
@@ -53,7 +57,7 @@ export interface PanelCallbacks {
   onOpenSettings(): void;
   onTab(tab: CoverageTab): void;
   onQuery(query: string): void;
-  onToggle(key: 'showOperated' | 'showChecked' | 'showUncovered' | 'heatmap'): void;
+  onToggle(key: 'showOperated' | 'showChecked' | 'showUncovered' | 'heatmap' | 'showBrittle'): void;
   onElementHover(element: Element | null): void;
   onElementSelect(element: Element): void;
   onTestHover(test: number | null): void;
@@ -65,6 +69,10 @@ export interface PanelCallbacks {
   onContainerHover(element: Element | null): void;
   onContainerSelect(element: Element): void;
   suggestLocator(element: Element): string | null;
+  /** A replacement for the chain at `entry`, which finds only `element` here. */
+  replacementFor(element: Element, entry: number): Replacement | null;
+  /** Count what tests do on this page only, or on every page. */
+  onPageScope(scope: 'page' | 'all'): void;
 }
 
 /** Containers listed around the element the view is limited to. */
@@ -149,6 +157,7 @@ export class CoveragePanel {
       ['showChecked', 'Checked', 'Elements tests only assert on'],
       ['showUncovered', 'Not tested', 'Interactive elements no test reaches'],
       ['heatmap', 'Heatmap', 'Shade each box by how many tests reach it'],
+      ['showBrittle', 'Brittle', 'Mark the elements a brittle locator finds'],
     ] as const) {
       const wrap = el('label');
       wrap.title = title;
@@ -165,6 +174,7 @@ export class CoveragePanel {
       ['swatch checked', 'checked only'],
       ['swatch uncovered', 'not tested'],
       ['dotted', 'ambiguous'],
+      ['swatch brittle', 'brittle locator'],
     ] as const) {
       const item = el('span');
       item.append(el('span', cls), label);
@@ -204,7 +214,8 @@ export class CoveragePanel {
     this.pill.style.display = state.collapsed ? '' : 'none';
     for (const [key, input] of this.toggles) input.checked = state[key as keyof ViewState] === true;
 
-    this.subEl.replaceChildren(model.projectLabel ? `${model.projectLabel} · Esc to close` : 'Esc to close');
+    const where = [model.projectLabel, model.context?.pageKey].filter(Boolean).join(' · ');
+    this.subEl.replaceChildren(where ? `${where} · Esc to close` : 'Esc to close');
     this.renderPill(model);
 
     const children: Node[] = [];
@@ -246,6 +257,9 @@ export class CoveragePanel {
     if (scan) {
       const total = scan.coveredInteractive + scan.uncoveredCount;
       this.pill.append(`Piwi · ${scan.coveredInteractive}/${total} tested · ${plural(scan.tests.length, 'test')}`);
+      // Tests find these as soon as the page loads: the strongest sign a test will fail here.
+      const missing = model.context!.missing.filter((row) => row.arrival).length;
+      if (missing) this.pill.append(` · ${missing} missing here`);
     } else {
       this.pill.append('Piwi · tested elements');
     }
@@ -293,6 +307,8 @@ export class CoveragePanel {
       out.push(bar);
     }
 
+    const pageSwitch = this.renderPageSwitch(model, context);
+    if (pageSwitch) out.push(pageSwitch);
     out.push(this.renderScopeBar(model));
 
     const where = isScoped(scan) ? 'inside it' : 'here';
@@ -329,16 +345,38 @@ export class CoveragePanel {
     meter.setAttribute('aria-label', `${percent}% of interactive elements reached by a test`);
     out.push(meter);
     const checkedOnly = scan.covered.filter((c) => c.kind === 'checked').length;
+    const brittle = context.brittleElements.size;
     out.push(
       el(
         'div',
         'meter-label',
-        total
+        (total
           ? `${percent}% of the ${plural(total, 'interactive element')} ${where} · ${plural(scan.covered.length, 'element')} matched, ${checkedOnly} by assertions only`
-          : `No interactive element ${where === 'here' ? 'on this page' : where} · ${plural(scan.covered.length, 'element')} matched`,
+          : `No interactive element ${where === 'here' ? 'on this page' : where} · ${plural(scan.covered.length, 'element')} matched`) +
+          (brittle ? ` · ${plural(brittle, 'tested element')} reached through brittle locators` : ''),
       ),
     );
     return out;
+  }
+
+  /** This page / All pages, when the index records the page each use was made on. */
+  private renderPageSwitch(model: PanelModel, context: CoverageContext): HTMLElement | null {
+    if (!context.hasPages) return null;
+    const bar = el('div', 'page-switch');
+    bar.setAttribute('role', 'group');
+    bar.setAttribute('aria-label', 'Which uses to count');
+    for (const [scope, label, title] of [
+      ['page', 'This page', 'Count what tests do on this page, and uses whose page no run recorded'],
+      ['all', 'All pages', 'Count every locator that matches here, whatever page its test used it on'],
+    ] as const) {
+      const button = el('button', 'tab', label);
+      button.type = 'button';
+      button.title = title;
+      button.setAttribute('aria-pressed', String(model.state.pageScope === scope));
+      button.addEventListener('click', () => this.callbacks.onPageScope(scope));
+      bar.appendChild(button);
+    }
+    return bar;
   }
 
   private renderBranchSelect(model: PanelModel, context: CoverageContext): HTMLSelectElement {
@@ -444,6 +482,7 @@ export class CoveragePanel {
       ['elements', `Elements ${scan.covered.length}`],
       ['tests', `Tests ${scan.tests.length}`],
       ['untested', `Not tested ${scan.uncoveredCount}`],
+      ['risk', `At risk ${riskCount(context)}`],
     ] as const) {
       const button = el('button', 'tab', label);
       button.type = 'button';
@@ -457,7 +496,8 @@ export class CoveragePanel {
   private renderList(state: ViewState, context: CoverageContext): HTMLElement {
     const query = state.query.trim().toLowerCase();
     if (state.tab === 'tests') return this.renderTests(state, context, query);
-    if (state.tab === 'untested') return this.renderUncovered(context.scan.uncovered, query, isScoped(context.scan));
+    if (state.tab === 'untested') return this.renderUncovered(context, query);
+    if (state.tab === 'risk') return this.renderRisk(context, query);
     return this.renderCovered(state, context, query);
   }
 
@@ -583,7 +623,9 @@ export class CoveragePanel {
     );
   }
 
-  private renderUncovered(uncovered: UncoveredElement[], query: string, scoped: boolean): HTMLElement {
+  private renderUncovered(context: CoverageContext, query: string): HTMLElement {
+    const uncovered: UncoveredElement[] = context.scan.uncovered;
+    const scoped = isScoped(context.scan);
     const shown = uncovered.filter((u) => !query || u.description.toLowerCase().includes(query));
     const rows = shown.slice(0, MAX_ROWS).map((u, i) => {
       const row = this.row(
@@ -596,6 +638,17 @@ export class CoveragePanel {
       label.title = u.description;
       row.appendChild(label);
       row.appendChild(el('span', 'count'));
+      // This page: a locator tests use on other pages finds it. Perhaps the same component, perhaps a lookalike.
+      const elsewhere = context.elsewhere.get(u.element);
+      if (elsewhere?.length) {
+        const entry = context.index.locators[elsewhere[0]!]!;
+        const pages = [...new Set(entry.uses.flatMap((use) => (use.pages ?? []).map((p) => context.index.pages?.[p])))]
+          .filter(Boolean)
+          .slice(0, 2);
+        const hint = el('span', 'detail', `Matches ${entry.locator}, used on ${pages.join(', ') || 'other pages'}`);
+        hint.title = elsewhere.map((e) => context.index.locators[e]!.locator).join('\n');
+        row.appendChild(hint);
+      }
       const suggestion = i < MAX_SUGGESTIONS ? this.callbacks.suggestLocator(u.element) : null;
       if (suggestion) {
         const code = el('code', 'piwi-loc');
@@ -623,6 +676,206 @@ export class CoveragePanel {
     );
   }
 
+  /** The locators likely to break, most urgent first. */
+  private renderRisk(context: CoverageContext, query: string): HTMLElement {
+    const block = el('div', 'risk');
+    if (context.pageScoped) {
+      block.appendChild(this.renderMissing(context, query));
+      block.appendChild(this.renderSeveral(context, query));
+    }
+    block.appendChild(this.renderBrittle(context, query));
+    return block;
+  }
+
+  private pageRiskMatches(context: CoverageContext, query: string): (row: PageRiskRow) => boolean {
+    const { index } = context;
+    return (row) =>
+      !query ||
+      index.locators[row.entry]!.locator.toLowerCase().includes(query) ||
+      row.callSites.some((site) => site.toLowerCase().includes(query)) ||
+      row.tests.some((t) => testTitle(index.tests[t]!).toLowerCase().includes(query));
+  }
+
+  /** Chains a test uses on this page that find nothing now: the test will fail here, or the page is in another state. */
+  private renderMissing(context: CoverageContext, query: string): HTMLElement {
+    const section = el('section', 'risk-section');
+    section.appendChild(el('h3', 'section-head', `Missing here · ${context.missing.length}`));
+    section.appendChild(
+      el(
+        'p',
+        'section-hint',
+        'Tests use these on this page, and they find nothing here now. Those used as the page loads come first; the others may need a menu or a dialog opened.',
+      ),
+    );
+    const shown = context.missing.filter(this.pageRiskMatches(context, query));
+    const rows = shown.slice(0, MAX_ROWS).map((row) => this.pageRiskRow(context, row));
+    section.appendChild(
+      this.rowsOrEmpty(
+        rows,
+        context.missing.length === 0
+          ? 'Every locator tests use on this page finds its element here.'
+          : 'Nothing matches the filter.',
+        shown.length,
+      ),
+    );
+    return section;
+  }
+
+  /** Chains a test clicks or fills on this page that find several elements: strict mode refuses that. */
+  private renderSeveral(context: CoverageContext, query: string): HTMLElement {
+    const section = el('section', 'risk-section');
+    section.appendChild(el('h3', 'section-head', `Several match here · ${context.several.length}`));
+    section.appendChild(
+      el(
+        'p',
+        'section-hint',
+        'Tests act on these on this page, and they find several elements here: a click needs exactly one.',
+      ),
+    );
+    const shown = context.several.filter(this.pageRiskMatches(context, query));
+    const rows = shown.slice(0, MAX_ROWS).map((row) => this.pageRiskRow(context, row));
+    section.appendChild(
+      this.rowsOrEmpty(
+        rows,
+        context.several.length === 0
+          ? 'Every locator tests act on here finds one element.'
+          : 'Nothing matches the filter.',
+        shown.length,
+      ),
+    );
+    return section;
+  }
+
+  private pageRiskRow(context: CoverageContext, row: PageRiskRow): HTMLLIElement {
+    const { index } = context;
+    const locator = index.locators[row.entry]!.locator;
+    const item = el('li', 'row static');
+    item.dataset.kind = row.count === 0 ? 'missing' : 'several';
+    item.appendChild(el('span', `swatch ${row.count === 0 ? 'missing' : 'brittle'}`));
+    const label = el(
+      'span',
+      'label',
+      row.count === 0 ? (row.arrival ? 'Not found as the page loads' : 'Not found now') : `Finds ${row.count} elements`,
+    );
+    item.appendChild(label);
+    const count = el('span', 'count', plural(row.tests.length, 'test'));
+    const health = worstStatus(index, row.tests);
+    if (health) count.prepend(el('span', `dot ${health}`), ' ');
+    item.appendChild(count);
+    const chain = el('code', 'piwi-loc');
+    chain.innerHTML = highlightLocator(locator);
+    item.appendChild(chain);
+    const parts = [row.actions.slice(0, 3).map(locatorActionLabel).join(', ')];
+    if (row.callSites.length)
+      parts.push(`${row.callSites[0]}${row.callSites.length > 1 ? ` +${row.callSites.length - 1}` : ''}`);
+    if (row.projects.length) parts.push(row.projects.join(', '));
+    const stability = context.stabilities[row.entry];
+    if (stability?.level === 'brittle') parts.push(`brittle: ${stabilityLabels(stability, ', ')}`);
+    const detail = el('span', 'detail', parts.filter(Boolean).join(' · '));
+    detail.title = row.tests.map((t) => testTitle(index.tests[t]!)).join('\n');
+    item.appendChild(detail);
+    return item;
+  }
+
+  private renderBrittle(context: CoverageContext, query: string): HTMLElement {
+    const { index, scan } = context;
+    const section = el('section', 'risk-section');
+    section.appendChild(el('h3', 'section-head', `Brittle locators · ${context.brittle.length}`));
+    section.appendChild(
+      el(
+        'p',
+        'section-hint',
+        'They break on changes unrelated to what the test checks: a restyle, a wrapper, a reordered list.',
+      ),
+    );
+    const matches = (row: BrittleRow) =>
+      !query ||
+      index.locators[row.entry]!.locator.toLowerCase().includes(query) ||
+      row.elements.some((e) => scan.describe(e).toLowerCase().includes(query)) ||
+      row.callSites.some((site) => site.toLowerCase().includes(query)) ||
+      row.tests.some((t) => testTitle(index.tests[t]!).toLowerCase().includes(query));
+    const shown = context.brittle.filter(matches);
+    const rows = shown.slice(0, MAX_ROWS).map((row, i) => this.brittleRow(context, row, i < MAX_SUGGESTIONS));
+    section.appendChild(
+      this.rowsOrEmpty(
+        rows,
+        context.brittle.length === 0
+          ? `No brittle locator finds anything ${isScoped(scan) ? 'inside it' : 'on this page'}.`
+          : 'Nothing matches the filter.',
+        shown.length,
+      ),
+    );
+    return section;
+  }
+
+  private brittleRow(context: CoverageContext, row: BrittleRow, suggest: boolean): HTMLLIElement {
+    const { index, scan } = context;
+    const locator = index.locators[row.entry]!.locator;
+    const first = row.elements[0]!;
+    const item = this.row(
+      (on) => this.callbacks.onElementHover(on ? first : null),
+      () => this.callbacks.onElementSelect(first),
+    );
+    item.dataset.kind = 'brittle';
+    item.appendChild(el('span', 'swatch brittle'));
+    const label = el('span', 'label', row.count > 1 ? `${plural(row.count, 'element')}` : scan.describe(first));
+    label.title = row.elements.map((e) => scan.describe(e)).join('\n');
+    item.appendChild(label);
+    const count = el('span', 'count', plural(row.tests.length, 'test'));
+    const health = worstStatus(index, row.tests);
+    if (health) {
+      count.prepend(el('span', `dot ${health}`), ' ');
+      count.title = health === 'failed' ? 'A test using it is failing' : 'A test using it is flaky';
+    }
+    item.appendChild(count);
+    const chain = el('code', 'piwi-loc');
+    chain.innerHTML = highlightLocator(locator);
+    item.appendChild(chain);
+    const why = el('span', 'detail', stabilityLabels(row.stability));
+    why.title = row.stability.findings.map((f) => f.detail).join('\n');
+    if (row.callSites.length)
+      why.append(` · ${row.callSites[0]}${row.callSites.length > 1 ? ` +${row.callSites.length - 1}` : ''}`);
+    item.appendChild(why);
+
+    if (row.count > 1) {
+      item.appendChild(el('span', 'detail', `Finds ${row.count} elements here, so no replacement is offered.`));
+      return item;
+    }
+    const replacement = suggest ? this.callbacks.replacementFor(first, row.entry) : null;
+    if (replacement?.kind === 'add-test-id') {
+      item.appendChild(el('span', 'detail', 'No stable locator finds only this element: give it a test id.'));
+    } else if (replacement?.kind === 'replace') {
+      const next = replacement.recommended.locator;
+      const code = el('code', 'piwi-loc suggestion');
+      code.innerHTML = `→ ${highlightLocator(next)}`;
+      code.title = 'Finds only this element here';
+      item.appendChild(code);
+      if (replacement.durable) {
+        const durable = el('span', 'detail', `Most stable: ${replacement.durable.locator}`);
+        durable.title = replacement.durable.locator;
+        item.appendChild(durable);
+      }
+      const actions = el('div', 'row-actions');
+      const copy = el('button', undefined, 'Copy locator');
+      copy.type = 'button';
+      copy.title = 'Copy the replacement, which finds only this element here';
+      copy.addEventListener('click', (e) => {
+        e.stopPropagation();
+        void copyText(next, copy);
+      });
+      const edit = el('button', undefined, 'Copy edit');
+      edit.type = 'button';
+      edit.title = 'Copy each call site with the old and the new locator';
+      edit.addEventListener('click', (e) => {
+        e.stopPropagation();
+        void copyText(editText(row.callSites, locator, next), edit);
+      });
+      actions.append(copy, edit);
+      item.appendChild(actions);
+    }
+    return item;
+  }
+
   private renderNotes(context: CoverageContext): HTMLElement | null {
     const { scan, index } = context;
     const items: Node[] = [];
@@ -646,7 +899,11 @@ export class CoveragePanel {
       el(
         'li',
         undefined,
-        `Checked ${plural(scan.evaluated, 'locator')} in ${scan.durationMs} ms. Locators are matched on this page whatever page their test used them on.`,
+        `Checked ${plural(scan.evaluated, 'locator')} in ${scan.durationMs} ms. ${
+          context.pageScoped
+            ? `Counting what tests do on ${context.pageKey ?? 'this page'}, and the uses whose page no run recorded.`
+            : 'Locators are matched on this page whatever page their test used them on.'
+        }`,
       ),
     );
     if (scan.errors.length) {

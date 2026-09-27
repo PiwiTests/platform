@@ -245,6 +245,7 @@ describe('toWireTestCase', () => {
       'duration',
       'error',
       'location',
+      'locatorPages',
       'locatorSnapshots',
       'locks',
       'networkRequests',

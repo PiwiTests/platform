@@ -1,10 +1,12 @@
 import path from 'node:path';
 import { test, expect, type Page } from '@playwright/test';
 import {
+  BRITTLE_TESTS,
   CARD_TEST,
   DEFAULT_CONNECTION,
   DIST,
   INSTANCE_URL,
+  PAGE_TESTS,
   SHOP_TESTS,
   injectCoverage,
   openShop,
@@ -123,6 +125,31 @@ test.describe('pick results in connected mode', () => {
     await expect(section).toContainText('Reached by 2 tests of Acme Mugs on develop');
     const find = section.getByRole('link', { name: /Find these locators in Piwi/ });
     expect(await find.getAttribute('href')).toContain('&branch=develop');
+  });
+
+  test('names the brittle locators finding the picked element', async ({ page, context }) => {
+    await stubCoverageChrome(context, { cached: shopIndex([...SHOP_TESTS, ...BRITTLE_TESTS]) });
+    await openShop(page, '?nodialog');
+    await pick(page, 'aside.cart > button');
+
+    const section = page.locator(`${RESULTS} .piwi`);
+    await expect(section).toContainText('Reached by 2 tests of Acme Mugs');
+    await expect(section.locator('.brittle')).toHaveText(
+      "Brittle locator: locator('aside.cart > button') · CSS class · CSS structure",
+    );
+    const report = await page.evaluate(
+      () => (globalThis as unknown as { __piwiPickCoverage: { brittle: string[] } }).__piwiPickCoverage,
+    );
+    expect(report.brittle).toEqual(["locator('aside.cart > button')"]);
+  });
+
+  test('counts what tests do on this page, as Tested elements does', async ({ page, context }) => {
+    await stubCoverageChrome(context, { cached: shopIndex([...SHOP_TESTS, ...PAGE_TESTS]) });
+    await openShop(page, '?nodialog');
+    // A test clicks a Subscribe button, but on /newsletter: not this one.
+    await pick(page, '.newsletter button');
+    const section = page.locator(`${RESULTS} .piwi`);
+    await expect(section).toContainText('Not reached by any test of Acme Mugs');
   });
 
   test('says so when no test reaches the picked element', async ({ page, context }) => {

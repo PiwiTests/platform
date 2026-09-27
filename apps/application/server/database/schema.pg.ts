@@ -505,6 +505,7 @@ export const testRunsCases = pgTable(
     testSourcePayloadId: integer('test_source_payload_id').references(() => casePayloads.id),
     testSourceFramesPayloadId: integer('test_source_frames_payload_id').references(() => casePayloads.id),
     pageInventoryPayloadId: integer('page_inventory_payload_id').references(() => casePayloads.id), // Content-addressed page inventory (controls + links per visited page), passing runs
+    locatorPagesPayloadId: integer('locator_pages_payload_id').references(() => casePayloads.id), // Content-addressed list of the page each locator call ran on (piwi-locator-pages)
     browser: jsonb('browser'), // Playwright project/browser config: { projectName, browserName, channel, viewport }
     browserName: text('browser_name'), // Scalar browser identity (projectName) for index efficiency
     testAnnotations: jsonb('test_annotations'), // Array<{ type, description? }> — runtime test marks (@fixme, @slow …)
@@ -551,6 +552,9 @@ export const testRunsCases = pgTable(
     pageInventoryPayloadIdx: index('idx_trc_page_inventory_payload')
       .on(table.pageInventoryPayloadId)
       .where(sql`page_inventory_payload_id IS NOT NULL`),
+    locatorPagesPayloadIdx: index('idx_trc_locator_pages_payload')
+      .on(table.locatorPagesPayloadId)
+      .where(sql`locator_pages_payload_id IS NOT NULL`),
   }),
 );
 
@@ -601,6 +605,8 @@ export const locatorUsages = pgTable(
     browserName: text('browser_name').notNull(),
     callSite: text('call_site').notNull(),
     branch: text('branch').notNull().default(''),
+    page: text('page').notNull().default(''), // page key the call ran on (`/orders/:id`, or origin + path off the app); '' when unknown
+    arrival: boolean('arrival').notNull().default(false), // the call ran on that page before any locator interaction there
     firstSeenRunId: integer('first_seen_run_id').references(() => testRuns.id, { onDelete: 'set null' }),
     lastSeenRunId: integer('last_seen_run_id').references(() => testRuns.id, { onDelete: 'set null' }),
     lastSeenAt: timestamp('last_seen_at', { mode: 'date' }).notNull(),
@@ -613,6 +619,7 @@ export const locatorUsages = pgTable(
       table.callSite,
       table.action,
       table.locator,
+      table.page,
     ),
     projectLocatorIdx: index('idx_locator_usages_project_locator').on(table.projectId, table.locator),
     projectBranchIdx: index('idx_locator_usages_project_branch').on(table.projectId, table.branch),

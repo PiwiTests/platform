@@ -118,4 +118,72 @@ test.describe.serial('Project locators page', () => {
     await expect(drawer).toContainText('2 tests');
     await expect(drawer).toContainText('on feature/voucher');
   });
+
+  test('the stability select lists the brittle locators, and Who uses this says why', async ({ page, request }) => {
+    const BRITTLE = "locator('.btn-primary').nth(1)";
+    const response = await request.post('/api/test-runs/submit', {
+      data: run('main', 3, [
+        { title: 'adds a legacy mug', steps: [step('Click', BRITTLE, 'tests/legacy.spec.ts:7:3')] },
+      ]),
+    });
+    expect(response.ok()).toBeTruthy();
+
+    await page.goto(`/projects/${projectId}/locators`);
+    const list = page.locator('[data-shot="locator-list"]');
+    await expect(list).toContainText(BRITTLE, { timeout: 20_000 });
+    await expect(list.locator('li', { hasText: BRITTLE }).locator('[data-stability]')).toHaveText(
+      'brittle: position, CSS class',
+    );
+    await expect(list.locator('li', { hasText: PAY }).locator('[data-stability]')).toHaveCount(0);
+
+    await list.getByRole('combobox', { name: 'Stability' }).click();
+    await page.getByRole('option', { name: 'Brittle (1)' }).click();
+    await expect(page).toHaveURL(/stability=brittle/);
+    await expect(list.locator('li')).toHaveCount(1);
+    await expect(list).toContainText(BRITTLE);
+
+    await list.getByTitle(`Who uses ${BRITTLE}?`).click();
+    const drawer = page.locator('[data-shot="locator-usage-drawer"]');
+    await expect(drawer.locator('[data-stability]')).toContainText('Brittle: position, CSS class');
+  });
+
+  test('the pages each call ran on reach the index, the list and its page filter', async ({ page, request }) => {
+    const SEARCH = "getByRole('searchbox', { name: 'Search' })";
+    const body = run('main', 4, [
+      { title: 'searches the catalog', steps: [step('Fill', SEARCH, 'tests/search.spec.ts:5:3')] },
+    ]);
+    // As the capture fixtures record them: the call site, the chain, the page's origin and key.
+    const withPages = {
+      ...body,
+      testCases: body.testCases.map((c) => ({
+        ...c,
+        locatorPages: [
+          {
+            location: `${ROOT}/tests/search.spec.ts:5:3`,
+            locator: SEARCH,
+            origin: 'https://shop.test',
+            page: '/search',
+            arrival: true,
+          },
+        ],
+      })),
+    };
+    const response = await request.post('/api/test-runs/submit', { data: withPages });
+    expect(response.ok()).toBeTruthy();
+
+    const index = await (await request.get(`/api/projects/${projectId}/locator-index`)).json();
+    expect(index.pages).toEqual(['/search']);
+    const entry = index.locators.find((l: { locator: string }) => l.locator === SEARCH);
+    expect(entry.uses[0]).toMatchObject({ pages: [0], arrival: [0] });
+
+    await page.goto(`/projects/${projectId}/locators`);
+    const list = page.locator('[data-shot="locator-list"]');
+    await expect(list.locator('li', { hasText: SEARCH }).locator('[data-pages]')).toHaveText('/search', {
+      timeout: 20_000,
+    });
+    await list.getByRole('combobox', { name: 'Page' }).click();
+    await page.getByRole('option', { name: '/search' }).click();
+    await expect(page).toHaveURL(/page=(%2F|\/)search/);
+    await expect(list.locator('li')).toHaveCount(1);
+  });
 });

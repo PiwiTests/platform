@@ -41,11 +41,13 @@ export function projectLocatorsUrl(
   projectId: number,
   locators: string[] = [],
   branch: string | null = null,
+  page: string | null = null,
 ): string {
   const base = `${normalizeBaseUrl(instanceUrl)}/projects/${projectId}/locators`;
   const query = [
     ...(locators.length ? [`q=${encodeURIComponent(locators.join('\n'))}`] : []),
     ...(branch ? [`branch=${encodeURIComponent(branch)}`] : []),
+    ...(page ? [`page=${encodeURIComponent(page)}`] : []),
   ];
   return query.length ? `${base}?${query.join('&')}` : base;
 }

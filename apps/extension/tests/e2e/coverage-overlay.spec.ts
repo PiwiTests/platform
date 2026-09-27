@@ -1,8 +1,10 @@
 import { test, expect, type Page } from '@playwright/test';
 import {
+  BRITTLE_TESTS,
   CARD_TEST,
   DEFAULT_CONNECTION,
   INSTANCE_URL,
+  PAGE_TESTS,
   SHOP_TESTS,
   injectCoverage,
   openShop,
@@ -701,5 +703,193 @@ test.describe('coverage overlay on a branch', () => {
       (globalThis as any).chrome.storage.session.get('piwiLocatorBranchOverride'),
     );
     expect(remembered).toEqual({ piwiLocatorBranchOverride: { '1': '' } });
+  });
+});
+
+test.describe('coverage overlay: locators at risk', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.setViewportSize({ width: 1400, height: 900 });
+  });
+
+  test('lists the brittle locators, with a replacement that finds only their element', async ({ page, context }) => {
+    await stubCoverageChrome(context, { cached: shopIndex([...SHOP_TESTS, ...BRITTLE_TESTS]) });
+    await openShop(page, '?nodialog');
+    // The replacement offered below finds the Checkout button with real Playwright, and only it. (Checked before
+    // the overlay opens: in tests it renders into an open shadow root, whose badges Playwright would find too.)
+    await expect(page.getByRole('button', { name: 'Checkout' })).toHaveCount(1);
+    await expect(page.getByRole('button', { name: 'Checkout' })).toHaveText('Checkout');
+    await injectCoverage(page);
+    const coverage = await readCoverage(page);
+
+    expect(coverage.brittle.map((b) => b.locator)).toEqual([
+      // Used by a flaky test, so listed first.
+      "locator('.grid .primary').nth(1)",
+      "locator('.card .price').first()",
+      "locator('.card .primary')",
+      "locator('aside.cart > button')",
+    ]);
+    const [redMug, price, buttons, checkout] = coverage.brittle;
+    expect(redMug).toMatchObject({
+      rules: ['position', 'css-class', 'css-class'],
+      elements: ['button "Add to cart"'],
+      count: 1,
+      tests: ['adds the red mug'],
+      callSites: ['tests/legacy.spec.ts:12:5'],
+      // Every stable locator for it also finds the other cards' buttons.
+      replacement: 'add-test-id',
+    });
+    expect(price).toMatchObject({ rules: ['css-class', 'css-class', 'position'], replacement: 'add-test-id' });
+    // Finding four buttons, no single element to build a replacement from.
+    expect(buttons).toMatchObject({ count: 4, replacement: null });
+    expect(checkout).toMatchObject({
+      rules: ['css-class', 'css-structure'],
+      elements: ['button "Checkout"'],
+      replacement: { recommended: "getByRole('button', { name: 'Checkout' })", durable: null },
+    });
+    // Six elements carry the mark: the first price, the four cards' buttons and Checkout.
+    await expect(page.locator(`${HOST} .box.brittle`)).toHaveCount(6);
+    const panel = page.locator(`${HOST} .panel`);
+    await expect(panel.locator('.meter-label')).toContainText('6 tested elements reached through brittle locators');
+    await panel.getByLabel('Brittle').uncheck();
+    await expect(page.locator(`${HOST} .box.brittle`)).toHaveCount(0);
+  });
+
+  test('the At risk tab copies the replacement and the edit to make', async ({ page, context }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    await stubCoverageChrome(context, { cached: shopIndex([...SHOP_TESTS, ...BRITTLE_TESTS]) });
+    await openShop(page, '?nodialog');
+    await injectCoverage(page);
+    const panel = page.locator(`${HOST} .panel`);
+    await panel.getByRole('button', { name: 'At risk 4' }).click();
+    await expect(panel.locator('.section-head')).toHaveText('Brittle locators · 4');
+
+    const row = panel.locator('li.row', { hasText: "locator('aside.cart > button')" });
+    await expect(row.locator('.detail').first()).toHaveText('CSS class · CSS structure · tests/legacy.spec.ts:20:5');
+    await expect(row.locator('code.suggestion')).toHaveText("→ getByRole('button', { name: 'Checkout' })");
+    await row.getByRole('button', { name: 'Copy edit' }).click();
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+      "tests/legacy.spec.ts:20:5\n- locator('aside.cart > button')\n+ getByRole('button', { name: 'Checkout' })",
+    );
+    await expect(
+      panel.locator('li.row', { hasText: "locator('.grid .primary').nth(1)" }).locator('.detail').last(),
+    ).toHaveText('No stable locator finds only this element: give it a test id.');
+    await expect(panel.locator('li.row', { hasText: "locator('.card .primary')" })).toContainText(
+      'Finds 4 elements here, so no replacement is offered.',
+    );
+
+    // The card of the Checkout button says the same, next to the locator.
+    await row.click();
+    const card = page.locator(`${HOST} .card.pinned`);
+    await expect(card.locator('.note.stability')).toHaveText('Brittle: CSS class, CSS structure');
+    await expect(card.locator('.replacement code')).toHaveText("getByRole('button', { name: 'Checkout' })");
+
+    await panel.getByLabel('Filter the list').fill('checkout');
+    await expect(panel.locator('li.row')).toHaveCount(1);
+  });
+});
+
+test.describe('coverage overlay: what tests do on this page', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.setViewportSize({ width: 1400, height: 900 });
+  });
+
+  test('This page counts what tests do here, and lists what they use here that finds nothing', async ({
+    page,
+    context,
+  }) => {
+    await stubCoverageChrome(context, { cached: shopIndex([...SHOP_TESTS, ...PAGE_TESTS]) });
+    await openShop(page, '?nodialog');
+    await injectCoverage(page);
+    let coverage = await readCoverage(page);
+    expect(coverage).toMatchObject({ page: '/shop.html', pageScoped: true });
+
+    // Only a locator tests use on /newsletter finds Subscribe: not tested here, and the row says why.
+    expect(coverage.covered.some((c) => c.description === 'button "Subscribe"')).toBe(false);
+    expect(coverage.uncovered.find((u) => u.description === 'button "Subscribe"')?.elsewhere).toEqual([
+      "getByRole('button', { name: 'Subscribe' })",
+    ]);
+    // Uses with no recorded page count here, as before.
+    expect(coverage.covered.some((c) => c.description === 'searchbox "Search products"')).toBe(true);
+
+    // Used here and found nowhere: the one used as the page loads first. The negative assertion is never listed.
+    expect(coverage.missing).toEqual([
+      {
+        locator: "getByRole('button', { name: 'Pay now' })",
+        arrival: true,
+        actions: ['click'],
+        tests: ['pays in one click'],
+      },
+      {
+        locator: "getByRole('menuitem', { name: 'Sign out' })",
+        arrival: false,
+        actions: ['click'],
+        tests: ['signs out'],
+      },
+    ]);
+    // Clicked here, and four buttons share the name: strict mode refuses the click.
+    expect(coverage.several).toEqual([
+      {
+        locator: "getByRole('button', { name: 'Add to cart' })",
+        count: 4,
+        actions: ['click'],
+        tests: ['adds the first mug it sees'],
+      },
+    ]);
+
+    const panel = page.locator(`${HOST} .panel`);
+    await expect(panel.locator('.sub')).toContainText('Acme Mugs · /shop.html');
+    await panel.getByRole('button', { name: /^At risk \d+$/ }).click();
+    await expect(panel.locator('.section-head')).toHaveText([
+      'Missing here · 2',
+      'Several match here · 1',
+      /^Brittle locators · \d+$/,
+    ]);
+    const payNow = panel.locator('li.row', { hasText: "getByRole('button', { name: 'Pay now' })" });
+    await expect(payNow.locator('.label')).toHaveText('Not found as the page loads');
+    await expect(payNow.locator('.detail')).toHaveText('Click · tests/one-click.spec.ts:8:5 · chromium');
+
+    // The card of the Blue mug's button gives the page of each use, and links to the Locators page of this page.
+    await page.locator(`${HOST} .badge`).filter({ hasText: '2' }).first().click();
+    const card = page.locator(`${HOST} .card.pinned`);
+    await expect(card).toContainText('on /shop.html, as it loads');
+    expect(await card.getByRole('link', { name: /Find these locators in Piwi/ }).getAttribute('href')).toContain(
+      'page=%2Fshop.html',
+    );
+
+    // All pages: every locator that matches here counts, and the page's own risks go.
+    await panel.getByRole('button', { name: 'All pages' }).click();
+    coverage = await readCoverage(page);
+    expect(coverage.pageScoped).toBe(false);
+    expect(coverage.missing).toEqual([]);
+    expect(coverage.covered.some((c) => c.description === 'button "Subscribe"')).toBe(true);
+  });
+
+  test('the collapsed pill says what tests will not find as the page loads', async ({ page, context }) => {
+    await stubCoverageChrome(context, { cached: shopIndex([...SHOP_TESTS, ...PAGE_TESTS]) });
+    await openShop(page, '?nodialog');
+    await injectCoverage(page);
+    await page.locator(`${HOST} .panel`).getByRole('button', { name: 'Collapse to a summary pill' }).click();
+    await expect(page.locator(`${HOST} .pill`)).toContainText('1 missing here');
+  });
+
+  test('a client-side route change reads the new page', async ({ page, context }) => {
+    await stubCoverageChrome(context, { cached: shopIndex([...SHOP_TESTS, ...PAGE_TESTS]) });
+    await openShop(page, '?nodialog');
+    await injectCoverage(page);
+    await page.evaluate(() => history.pushState({}, '', '/newsletter'));
+    await expect.poll(async () => (await readCoverage(page)).page, { timeout: 10_000 }).toBe('/newsletter');
+    await expect
+      .poll(async () => (await readCoverage(page)).covered.some((c) => c.description === 'button "Subscribe"'))
+      .toBe(true);
+    // What tests use on /shop.html is elsewhere now.
+    expect((await readCoverage(page)).missing).toEqual([]);
+  });
+
+  test('an index without pages keeps the view as it was, with no switch', async ({ page, context }) => {
+    await stubCoverageChrome(context);
+    await openShop(page, '?nodialog');
+    await injectCoverage(page);
+    expect(await readCoverage(page)).toMatchObject({ pageScoped: false, missing: [], several: [] });
+    await expect(page.locator(`${HOST} .panel .page-switch`)).toHaveCount(0);
   });
 });

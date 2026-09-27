@@ -436,6 +436,18 @@ export class PiwiDashboardReporter {
           /* ignore parse errors */
         }
       }
+      // The page each locator call ran on, recorded by the same locator wrapper.
+      const pagesAttachment =
+        this.options.captureLocators !== false
+          ? result.attachments.find((a: any) => a.name === ATTACHMENT_NAMES.locatorPages)
+          : undefined;
+      if (pagesAttachment?.body) {
+        try {
+          testCase.locatorPages = JSON.parse((pagesAttachment.body as Buffer).toString());
+        } catch {
+          /* ignore parse errors */
+        }
+      }
     }
 
     switch (status) {

@@ -4,13 +4,17 @@
  * and browse every chain in the locator index. The Piwi Picker extension links
  * here with the locators of a picked element in `?q=`, one per line. `?branch=`
  * picks the branch described (`*` for every branch), the default branch when
- * absent.
+ * absent. `?stability=brittle` or `watch` lists only the chains the locator
+ * stability rules flag, and `?page=/checkout` only the chains tests used on
+ * that page.
  */
 import type { ProjectDetails } from '~~/types/api';
 import type { LocatorIndex } from '#shared/locator-index';
 import type { ExecutionLocatorUse } from '#shared/locator-usages.types';
 import { locatorScopes, locatorTarget, tryParseLocatorChain } from '#shared/locator-chain';
 import { ALL_BRANCHES } from '#shared/locator-index';
+import { parseLocatorStabilityFilter } from '~/utils/locator-stability';
+import { ALL_PAGES } from '~/utils/locator-pages';
 
 const route = useRoute();
 const router = useRouter();
@@ -71,6 +75,16 @@ watch(pasted, (value) => {
   }, 400);
 });
 onBeforeUnmount(() => clearTimeout(syncTimer));
+
+const stability = ref(parseLocatorStabilityFilter(route.query.stability));
+watch(stability, (value) => {
+  void router.replace({ query: { ...route.query, stability: value === 'all' ? undefined : value } });
+});
+
+const pageFilter = ref(typeof route.query.page === 'string' ? route.query.page : ALL_PAGES);
+watch(pageFilter, (value) => {
+  void router.replace({ query: { ...route.query, page: value === ALL_PAGES ? undefined : value } });
+});
 
 const drawerOpen = ref(false);
 const drawerUse = ref<ExecutionLocatorUse | null>(null);
@@ -154,7 +168,13 @@ function inspect(locator: string) {
             icon="i-lucide-crosshair"
             text="No locator recorded yet: the index fills in from the steps of the runs the reporter sends."
           />
-          <ProjectLocatorList v-else-if="index" :index="index" @inspect="inspect" />
+          <ProjectLocatorList
+            v-else-if="index"
+            v-model:stability="stability"
+            v-model:page="pageFilter"
+            :index="index"
+            @inspect="inspect"
+          />
         </SectionCard>
       </div>
 

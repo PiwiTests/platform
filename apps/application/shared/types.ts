@@ -83,6 +83,8 @@ export interface TestCasePayload {
   pageState?: unknown;
   /** Page inventory: controls and links per visited page (passing runs). */
   pageInventory?: unknown;
+  /** The page each locator call ran on (`piwi-locator-pages`): `{ location, locator, origin, page, arrival }[]`. */
+  locatorPages?: unknown;
   /** AI-step usage manifest (`{ entries: string[] }`): committed AI-step artifacts this test replayed. */
   aiUsage?: unknown;
   consoleLogs?: unknown;
@@ -191,6 +193,7 @@ export interface StreamEventPayload {
   webVitals?: unknown;
   pageState?: unknown;
   pageInventory?: unknown;
+  locatorPages?: unknown;
   aiUsage?: unknown;
   consoleLogs?: unknown;
   dialogs?: unknown;

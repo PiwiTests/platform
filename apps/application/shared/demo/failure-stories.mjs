@@ -1746,6 +1746,10 @@ export const DEMO_PROJECTS = [
         category: 'input',
         weight: 800,
         params: { locator: "getByLabel('Email')", value: 'ada@example.com' },
+        // The call site, and the page it ran on as the capture fixtures record it.
+        location: 'tests/pages/checkout.page.ts:18:31',
+        page: '/checkout',
+        arrival: true,
       },
       {
         title: 'Fill "Ada Lovelace"',
@@ -1753,6 +1757,9 @@ export const DEMO_PROJECTS = [
         category: 'input',
         weight: 1100,
         params: { locator: "getByLabel('Name on card')", value: 'Ada Lovelace' },
+        location: 'tests/pages/checkout.page.ts:22:38',
+        page: '/checkout',
+        arrival: false,
       },
       {
         title: 'Click',
@@ -1760,6 +1767,9 @@ export const DEMO_PROJECTS = [
         category: 'action',
         weight: 1300,
         params: { locator: "getByRole('button', { name: 'Place order' })" },
+        location: 'tests/pages/checkout.page.ts:26:58',
+        page: '/checkout',
+        arrival: false,
       },
       {
         title: 'Expect "toBeVisible"',
@@ -1767,6 +1777,10 @@ export const DEMO_PROJECTS = [
         category: 'assertion',
         weight: 700,
         params: { locator: "getByText('Order confirmed')" },
+        // Placing the order navigates to the order's page: the assertion runs there, as it loads.
+        location: 'tests/pages/checkout.page.ts:30:40',
+        page: '/orders/:id',
+        arrival: true,
       },
     ],
   },

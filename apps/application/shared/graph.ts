@@ -6,7 +6,7 @@
  */
 
 import type { AppManifest, ManifestSource } from '#shared/types';
-import { normalizeRoute } from '#shared/utils/route';
+import { PATH_ANCHOR_HOST, pageKey as pageNodeKey } from '@piwitests/core/page-key';
 
 /** Node kinds. Route and page are populated today; the rest are reserved. */
 export type GraphNodeKind = 'feature' | 'page' | 'control' | 'link' | 'route' | 'handler' | 'dependency' | 'file';
@@ -63,32 +63,11 @@ export function parseRouteNodeKey(key: string): { method: string; pattern: strin
 }
 
 /**
- * A page node's key is the normalized path pattern only — ids collapsed the way
- * `normalizeRoute` collapses them for routes, with the host, query and fragment
- * dropped. So `/orders/123` and `/orders/456` are one node, and the same path
- * served from staging and production lands on that one node too. Accepts both an
- * absolute `page.url()` and a bare path.
- *
- * Returns null for anything that is not a real navigable page: a non-`http(s)`
- * URL (`about:blank`, `chrome-error://…`, `data:`, `blob:`) is never a page node,
- * or it would collapse to `/` and mint junk surface.
+ * A page node's key: the normalized path pattern of a page URL, from
+ * `@piwitests/core/page-key` — the same key the reporter records for the page
+ * each locator call ran on, so the two can be joined.
  */
-export function pageNodeKey(url: string): string | null {
-  const hasScheme = /^[a-z][a-z0-9+.-]*:/i.test(url);
-  // A scheme that is present but not http(s) is not a page — drop it.
-  if (hasScheme && !/^https?:\/\//i.test(url)) return null;
-  // `normalizeRoute` needs an absolute URL to parse; a bare path is anchored to
-  // a placeholder origin first, which the normalization then drops anyway.
-  const absolute = /^https?:\/\//i.test(url)
-    ? url
-    : `http://${PATH_ANCHOR_HOST}${url.startsWith('/') ? '' : '/'}${url}`;
-  const normalized = normalizeRoute(absolute);
-  const q = normalized.indexOf('?');
-  return q < 0 ? normalized : normalized.slice(0, q);
-}
-
-/** Placeholder host used to anchor a bare path before normalization. */
-const PATH_ANCHOR_HOST = 'piwi.invalid';
+export { pageNodeKey };
 
 /** The origin (`scheme://host:port`) of a URL, or null when it has none. */
 export function urlOrigin(url: string | null | undefined): string | null {
@@ -127,6 +106,23 @@ export function isOwnOriginRequest(url: string | null | undefined, origins: Set<
   if (origins.size === 0) return true;
   const origin = urlOrigin(url);
   return origin != null && origins.has(origin);
+}
+
+/** The base URLs a run's Playwright config recorded, one per configured project. */
+export function runBaseUrls(runMetadata: unknown): string[] {
+  const meta = runMetadata as { htmlReport?: { projects?: Array<{ use?: { baseURL?: unknown } } | null> } } | null;
+  const urls: string[] = [];
+  for (const p of meta?.htmlReport?.projects ?? []) {
+    const baseUrl = p?.use?.baseURL;
+    if (typeof baseUrl === 'string' && baseUrl) urls.push(baseUrl);
+  }
+  return urls;
+}
+
+/** The per-project route-origin allowlist stored on the project row. */
+export function projectRouteOrigins(routeOrigins: unknown): string[] {
+  if (!Array.isArray(routeOrigins)) return [];
+  return routeOrigins.filter((o): o is string => typeof o === 'string' && o.length > 0);
 }
 
 /**

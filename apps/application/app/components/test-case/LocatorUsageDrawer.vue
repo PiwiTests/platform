@@ -12,6 +12,8 @@
  * the default branch when absent).
  */
 import type { ExecutionLocatorUse, LocatorUsageMatch, LocatorUsagesResult } from '#shared/locator-usages.types';
+import { assessLocator, stabilityLabels } from '#shared/locator-stability';
+import { formatPageList } from '~/utils/locator-pages';
 
 const props = defineProps<{
   open: boolean;
@@ -62,6 +64,16 @@ const readings = computed<Reading[]>(() => {
     });
   });
   return list;
+});
+
+/** Why the chain may break on an unrelated change, from the locator stability rules; null when stable. */
+const stability = computed(() => {
+  const s = props.use ? assessLocator(props.use.locator) : null;
+  if (!s || s.level === 'stable') return null;
+  return {
+    text: `${s.level === 'brittle' ? 'Brittle' : 'Watch'}: ${stabilityLabels(s, ', ')}`,
+    detail: s.findings.map((f) => f.detail).join('\n'),
+  };
 });
 
 const readingId = ref('locator');
@@ -156,6 +168,10 @@ async function buildCommand() {
         <div class="space-y-1">
           <p class="text-xs font-medium text-muted">{{ locatorActionLabel(use.action) }}</p>
           <LocatorCode :locator="use.locator" class="text-sm" />
+          <p v-if="stability" class="text-xs text-muted" data-stability :title="stability.detail">
+            {{ stability.text }} ·
+            <DocLink to="reference/locator-stability" no-icon :class="SENTENCE_LINK_CLASS">why</DocLink>
+          </p>
         </div>
 
         <div
@@ -204,6 +220,9 @@ async function buildCommand() {
                 />
                 <span v-else>Unknown call site</span>
                 <span>{{ site.actions.map(locatorActionLabel).join(', ') }}</span>
+                <span v-if="site.pages?.length" data-pages :title="site.pages.join('\n')"
+                  >on {{ formatPageList(site.pages) }}</span
+                >
               </div>
               <LocatorCode v-if="site.locator !== reading?.value" :locator="site.locator" class="text-sm" />
               <ul class="text-sm space-y-0.5">

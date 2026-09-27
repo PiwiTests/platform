@@ -25,7 +25,10 @@
     "./codegen": "./src/codegen.ts",
     "./locator-chain": "./src/locator-chain.ts",
     "./step-locators": "./src/step-locators.ts",
-    "./locator-index": "./src/locator-index.ts"
+    "./locator-index": "./src/locator-index.ts",
+    "./locator-fix": "./src/locator-fix.ts",
+    "./locator-stability": "./src/locator-stability.ts",
+    "./page-key": "./src/page-key.ts"
   },
   "scripts": {
     "core:typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tests/tsconfig.json",

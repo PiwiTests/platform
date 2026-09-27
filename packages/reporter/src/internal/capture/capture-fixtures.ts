@@ -45,6 +45,11 @@ import {
   inventoryPageKey,
   type RawPageInventory,
 } from './page-inventory.js';
+import { LocatorPageLog, noteLocatorCall, noteNavigation } from './locator-pages.js';
+
+// Re-exported for the dogfood fixtures (`apps/application/tests/fixtures.ts`),
+// which rebuild this wrapper and must record pages the same way.
+export { LocatorPageLog, noteLocatorCall, noteNavigation } from './locator-pages.js';
 import {
   isProbeMode,
   probeItemForTest,
@@ -214,6 +219,8 @@ interface CaptureSink {
   pickOffered: boolean;
   // A replacement locator the human confirmed in the failure-time picker.
   userPick: UserPickResult | null;
+  // The page each locator call ran on, keyed by call site and chain.
+  locatorPages: LocatorPageLog;
 }
 
 function createSink(): CaptureSink {
@@ -237,6 +244,7 @@ function createSink(): CaptureSink {
     probeInterception: null,
     pickOffered: false,
     userPick: null,
+    locatorPages: new LocatorPageLog(),
   };
 }
 
@@ -933,6 +941,21 @@ function startElementCapture(
 // Origin method/args update to the chain call, e.g. .locator('.item') → locator('.item').
 // Positional/filter chains that narrow but don't change locator identity.
 // Origin stays from the page-level call, e.g. .first(), .nth(2), .filter(...).
+/** Record the page a locator call runs on, best-effort: a closed page or an odd URL is skipped. */
+function recordLocatorPage(
+  sink: CaptureSink,
+  page: Page,
+  locator: Locator,
+  location: string | null,
+  arrival: boolean,
+): void {
+  try {
+    sink.locatorPages.record({ location, locator: String(locator), url: page.url(), arrival });
+  } catch {
+    /* the page record is a side channel; it must never affect the test */
+  }
+}
+
 function wrapLocator(page: Page, locator: Locator, originMethod: string, originArgs: unknown[]): Locator {
   return new Proxy(locator, {
     get(target, prop) {
@@ -955,6 +978,10 @@ function wrapLocator(page: Page, locator: Locator, originMethod: string, originA
           const sink = currentSink;
           const expression = typeof callArgs[0] === 'string' ? callArgs[0] : '';
           const isNot = Boolean((callArgs[1] as { isNot?: boolean } | undefined)?.isNot);
+          // Sync, before the await — the caller's frames are gone after it.
+          const callerLocation = sink ? captureCallerLocation() : null;
+          // Every assertion records the page it ran on, negations included.
+          if (sink) recordLocatorPage(sink, page, target, callerLocation, noteLocatorCall(page, EXPECT_METHOD, true));
           // Only positive presence-proving assertions participate — negations,
           // absence/count/page-level assertions, and any unknown future
           // expression pass through untouched.
@@ -963,8 +990,6 @@ function wrapLocator(page: Page, locator: Locator, originMethod: string, originA
           }
 
           sink.lastActivePage = page;
-          // Sync, before the await — the caller's frames are gone after it.
-          const callerLocation = captureCallerLocation();
           const used = {
             method: originMethod,
             args: originArgs,
@@ -1016,6 +1041,7 @@ function wrapLocator(page: Page, locator: Locator, originMethod: string, originA
         // matches the error stack's first user frame — independent of
         // pw:api step ordering, worker interleaving, or concurrent actions.
         const callerLocation = captureCallerLocation();
+        recordLocatorPage(sink, page, target, callerLocation, noteLocatorCall(page, String(prop)));
         // Built once, shared by the placeholder and the resolved snapshot below.
         const used = {
           method: originMethod,
@@ -1163,7 +1189,15 @@ function instrumentPage(page: Page): void {
     // the init script runs for every navigation, so give each new document a
     // fresh chance at the fast path.
     if (typeof page.on === 'function') {
-      page.on('framenavigated', () => PROBE_UNSEEDED_PAGES.delete(page));
+      page.on('framenavigated', (frame) => {
+        PROBE_UNSEEDED_PAGES.delete(page);
+        // A new document or a client-side route: locator calls start over "on arrival".
+        try {
+          if (frame === page.mainFrame()) noteNavigation(page);
+        } catch {
+          /* a page event handler must never throw */
+        }
+      });
     }
   }
 
@@ -1407,6 +1441,15 @@ async function flushSink(sink: CaptureSink, testInfo: TestInfo): Promise<void> {
       // server stores one row per location anyway, so shipping every
       // iteration is pure payload bloat.
       body: Buffer.from(JSON.stringify(dedupeSnapshotsByLocation(sink.capturedLocators))),
+    });
+  }
+
+  // The page each locator call ran on, whatever the outcome: a failed run's
+  // calls were still made on those pages.
+  if (sink.locatorPages.size > 0) {
+    await testInfo.attach(ATTACHMENT_NAMES.locatorPages, {
+      contentType: 'application/json',
+      body: Buffer.from(JSON.stringify(sink.locatorPages.list())),
     });
   }
 
