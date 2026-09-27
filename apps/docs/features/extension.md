@@ -136,22 +136,19 @@ written in the extension's language; page texts, locators, test ids, `steps.json
 |---|---|
 | `activeTab` | acts on the tab you are looking at, only when you click the toolbar icon or press the shortcut |
 | `scripting` | injects the picker or the recorder into that tab on demand; no content script runs on pages you did not ask it to |
-| `storage` | keeps your copy format and, only if you connect, the instance URL, API key, project mappings, cached catalogs and the last three [locator indexes](./tested-elements), on your machine. The session and the running recording use `chrome.storage.session`, cleared when the browser closes |
+| `storage` | keeps your copy format and, only if you connect, the instance URL, API key, URL patterns, cached catalogs and the last three [locator indexes](./tested-elements), on your machine. The session and the running recording use `chrome.storage.session`, cleared when the browser closes |
 | `optional_host_permissions` (none granted in advance) | recording asks for the one site you are on, to follow you across its pages; a connection asks for your instance's origin. Never `<all_urls>` |
 
 ## Connecting to a Piwi instance
 
-Optional and off by default. The popup's gear button opens the settings: your instance's URL, an API key (`pd_…`,
-from your account's API key settings), and a **Project mappings** table of URL patterns and projects (`*` matches
-within one path segment, `**` across segments, as in `https://shop.example.com/**`). Saving fetches each mapped
-project's function catalog and caches it; the request carries nothing about your browsing beyond the project ids.
+Optional and off by default. In the settings (the popup's gear button), type your instance's address and click
+**Connect**, then **Allow** in the tab that opens: Piwi Picker receives its own API key. Which project applies on a
+page comes from URL patterns kept on the instance, per project, and from any you keep in this browser; the popup's
+**Active project** select overrides both for the session. See [Extension connection](./extension-connection).
 
-The cache refreshes in the background, once per recorded page and when a recording stops; **Refresh** in Test
-functions fetches it now. The first mapping that matches the page applies, and the popup's **Active project** select
-overrides it for the current tab.
-
-**A recording is never sent to your instance.** Connecting changes only what **Copy as TypeScript** produces and what
-the overlay shows while recording.
+The function catalogs refresh in the background, once per recorded page and when a recording stops; **Refresh** in
+Test functions fetches them now. **A recording is never sent to your instance.** Connecting changes only what **Copy
+as TypeScript** produces and what the overlay shows while recording.
 
 ## Limits
 
@@ -166,6 +163,7 @@ the overlay shows while recording.
 ## Related
 
 - [Fix a broken locator](/recipes/broken-locator): from a failing locator to the one to use instead
+- [Extension connection](./extension-connection): connecting in one step, and the URL patterns kept on the instance
 - [Tested elements](./tested-elements): the elements your tests reach, drawn on the page
 - [Test functions catalog](./test-functions): the functions a recording can call
 - [Locator healing](./locator-healing): the replacement Piwi proposes after a failure

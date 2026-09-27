@@ -1,12 +1,14 @@
 import type { TestFunctionEntry } from '@piwitests/core/function-match';
 import type { LocatorIndex } from '@piwitests/core/locator-index';
-import type { ConnectionSettings } from './connection-settings';
+import type { ConnectionSettings, ServerPatternsAnswer } from './connection-settings';
+import type { ClientInfo } from './client-info.js';
+import type { ConnectPoll } from './connect-flow.js';
 import { t } from './i18n.js';
 
 /**
  * Talks to a Piwi instance — the only place in this extension that makes a
- * network call. Called from the options page (on save) and the background
- * service worker (`piwi-refresh-catalog`, `piwi-refresh-locator-index`) only,
+ * network call. Called from the options page (connecting, saving, reading and
+ * adding URL patterns) and the background service worker (`piwi-refresh-catalog`, `piwi-refresh-locator-index`) only,
  * never from a content script, so the API key is never reachable from a web
  * page's JS context (matches `extension/AGENTS.md`'s standalone stance:
  * connected mode is opt-in and clearly separated).
@@ -174,4 +176,129 @@ export async function fetchLocatorIndex(
       uses: entry.uses.map((use) => ({ ...use, branches: Array.isArray(use.branches) ? use.branches : [] })),
     })),
   };
+}
+
+/** What `POST /api/extension/connect` answers: the codes of a new connect request. */
+export interface ConnectStart {
+  deviceCode: string;
+  userCode: string;
+  verificationUrl: string;
+  interval: number;
+  expiresIn: number;
+}
+
+async function postJson(url: string, body: unknown): Promise<Response> {
+  return fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    signal: timeout(),
+  });
+}
+
+/**
+ * Starts connecting: the instance answers the code to show and the page where
+ * the user allows it. Throws a message to show when it cannot.
+ */
+export async function startConnect(instanceUrl: string, client: ClientInfo): Promise<ConnectStart> {
+  if (!instanceUrl.trim()) throw new Error(t('common_enterInstanceUrl'));
+  let res: Response;
+  try {
+    res = await postJson(`${normalizeBaseUrl(instanceUrl)}/api/extension/connect`, client);
+  } catch {
+    throw new Error(t('common_instanceUnreachable'));
+  }
+  if (res.status === 404 || res.status === 405) throw new Error(t('options_connectUnsupported'));
+  if (res.status === 429) throw new Error(t('options_connectTooMany'));
+  if (!res.ok) throw new Error(t('common_instanceStatus', { status: res.status }));
+  const body = (await res.json()) as Partial<ConnectStart>;
+  if (
+    typeof body.deviceCode !== 'string' ||
+    typeof body.userCode !== 'string' ||
+    typeof body.verificationUrl !== 'string' ||
+    !/^https?:\/\//i.test(body.verificationUrl)
+  ) {
+    throw new Error(t('options_connectUnsupported'));
+  }
+  return {
+    deviceCode: body.deviceCode,
+    userCode: body.userCode,
+    verificationUrl: body.verificationUrl,
+    interval: typeof body.interval === 'number' && body.interval > 0 ? body.interval : 5,
+    expiresIn: typeof body.expiresIn === 'number' && body.expiresIn > 0 ? body.expiresIn : 600,
+  };
+}
+
+/** One poll of a connect request. Throws on a network error or an unexpected answer, which the caller retries. */
+export async function pollConnect(instanceUrl: string, deviceCode: string): Promise<ConnectPoll> {
+  const res = await postJson(`${normalizeBaseUrl(instanceUrl)}/api/extension/connect/token`, { deviceCode });
+  if (res.status === 429) return { status: 'slow_down', interval: 30 };
+  if (!res.ok) throw new Error(t('common_instanceStatus', { status: res.status }));
+  const body = (await res.json()) as { status?: unknown; interval?: unknown; apiKey?: unknown; user?: unknown };
+  switch (body.status) {
+    case 'pending':
+    case 'denied':
+    case 'expired':
+      return { status: body.status };
+    case 'slow_down':
+      return { status: 'slow_down', interval: typeof body.interval === 'number' ? body.interval : 10 };
+    case 'approved': {
+      const name = (body.user as { name?: unknown } | null)?.name;
+      return {
+        status: 'approved',
+        apiKey: typeof body.apiKey === 'string' ? body.apiKey : '',
+        user: typeof name === 'string' ? { name } : null,
+      };
+    }
+    default:
+      throw new Error(t('options_connectUnsupported'));
+  }
+}
+
+/** Every URL pattern of the projects the key's user can see, with those projects and the user's name. */
+export async function fetchServerPatterns(settings: ConnectionSettings): Promise<ServerPatternsAnswer> {
+  if (!settings.instanceUrl.trim()) throw new Error(t('common_enterInstanceUrl'));
+  let res: Response;
+  try {
+    res = await fetch(`${normalizeBaseUrl(settings.instanceUrl)}/api/extension/url-patterns`, {
+      headers: authHeaders(settings),
+      signal: timeout(),
+    });
+  } catch {
+    throw new Error(t('common_instanceUnreachable'));
+  }
+  if (res.status === 401 || res.status === 403) throw new Error(t('common_apiKeyRejected'));
+  if (res.status === 404) throw new Error(t('options_serverUnsupported'));
+  if (!res.ok) throw new Error(t('common_instanceStatus', { status: res.status }));
+  const body = (await res.json()) as Partial<ServerPatternsAnswer>;
+  return {
+    user: body.user && typeof body.user.name === 'string' ? { name: body.user.name } : null,
+    items: Array.isArray(body.items) ? body.items : [],
+    projects: Array.isArray(body.projects) ? body.projects : [],
+  };
+}
+
+/** Adds a URL pattern to a project on the instance. Throws a message to show when it cannot. */
+export async function addServerPattern(
+  settings: ConnectionSettings,
+  projectId: number,
+  input: { pattern: string; environment?: string | null; branch?: string | null },
+): Promise<void> {
+  let res: Response;
+  try {
+    res = await fetch(`${normalizeBaseUrl(settings.instanceUrl)}/api/projects/${projectId}/url-patterns`, {
+      method: 'POST',
+      headers: { ...authHeaders(settings), 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+      signal: timeout(),
+    });
+  } catch {
+    throw new Error(t('common_instanceUnreachable'));
+  }
+  if (res.ok) return;
+  if (res.status === 401) throw new Error(t('common_apiKeyRejected'));
+  if (res.status === 403) throw new Error(t('options_addForbidden'));
+  if (res.status === 409) throw new Error(t('options_addDuplicate'));
+  if (res.status === 400) throw new Error(t('options_addInvalid'));
+  throw new Error(t('common_instanceStatus', { status: res.status }));
 }

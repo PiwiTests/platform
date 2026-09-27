@@ -44,10 +44,17 @@ describe('active project override (chrome.storage.session)', () => {
   });
 });
 
-const settings = (mappings: ConnectionSettings['projectMappings']): ConnectionSettings => ({
+const settings = (
+  mappings: ConnectionSettings['projectMappings'],
+  serverMappings: ConnectionSettings['serverMappings'] = [],
+): ConnectionSettings => ({
   instanceUrl: 'https://piwi.test',
   apiKey: '',
   projectMappings: mappings,
+  serverMappings,
+  serverProjects: [],
+  serverSyncedAt: 0,
+  connectedAs: '',
 });
 
 describe('resolveActiveProject', () => {
@@ -60,12 +67,12 @@ describe('resolveActiveProject', () => {
       { projectId: 9, projectLabel: 'Manual' },
       'https://shop.test/cart',
     );
-    expect(result).toEqual({ projectId: 9, projectLabel: 'Manual' });
+    expect(result).toEqual({ projectId: 9, projectLabel: 'Manual', source: 'override' });
   });
 
   it('with no override, resolves the first matching mapping', () => {
     const result = resolveActiveProject(settings([shop, admin]), null, 'https://admin.test/users');
-    expect(result).toEqual({ projectId: 2, projectLabel: 'Admin' });
+    expect(result).toEqual({ projectId: 2, projectLabel: 'Admin', source: 'local' });
   });
 
   it('first-match-wins when multiple mappings could apply', () => {
@@ -85,10 +92,58 @@ describe('resolveActiveProject', () => {
       projectId: 1,
       projectLabel: 'Shop',
       branch: 'develop',
+      source: 'local',
     });
   });
 
   it('returns null with no mappings and no override', () => {
     expect(resolveActiveProject(settings([]), null, 'https://shop.test/')).toBeNull();
+  });
+});
+
+describe("resolveActiveProject with the instance's patterns", () => {
+  const serverShop = {
+    urlPattern: 'https://shop.test/**',
+    projectId: 1,
+    projectLabel: 'Shop',
+    environment: 'production',
+  };
+  const serverStaging = {
+    urlPattern: 'https://staging.shop.test/**',
+    projectId: 1,
+    projectLabel: 'Shop',
+    branch: 'develop',
+    environment: 'staging',
+  };
+  const localOther = { urlPattern: 'https://shop.test/**', projectId: 7, projectLabel: 'Shop (mine)' };
+
+  it('resolves from a server pattern, with its environment and branch', () => {
+    expect(
+      resolveActiveProject(settings([], [serverShop, serverStaging]), null, 'https://staging.shop.test/a'),
+    ).toEqual({ projectId: 1, projectLabel: 'Shop', branch: 'develop', environment: 'staging', source: 'server' });
+  });
+
+  it("a pattern kept in this browser overrides the server's", () => {
+    const result = resolveActiveProject(settings([localOther], [serverShop]), null, 'https://shop.test/cart');
+    expect(result).toMatchObject({ projectId: 7, source: 'local' });
+  });
+
+  it('falls back to the server when no local pattern matches', () => {
+    const result = resolveActiveProject(settings([localOther], [serverStaging]), null, 'https://staging.shop.test/');
+    expect(result).toMatchObject({ projectId: 1, source: 'server' });
+  });
+
+  it('the popup override still wins over both', () => {
+    const result = resolveActiveProject(
+      settings([localOther], [serverShop]),
+      { projectId: 9, projectLabel: 'Manual' },
+      'https://shop.test/',
+    );
+    expect(result).toMatchObject({ projectId: 9, source: 'override' });
+  });
+
+  it("keeps the server's order: the first matching server pattern wins", () => {
+    const broad = { urlPattern: 'https://**', projectId: 3, projectLabel: 'Catch-all' };
+    expect(resolveActiveProject(settings([], [broad, serverShop]), null, 'https://shop.test/')!.projectId).toBe(3);
   });
 });

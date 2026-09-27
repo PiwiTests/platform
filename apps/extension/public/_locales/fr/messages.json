@@ -134,6 +134,15 @@
   "popup_autoNoMatch": {
     "message": "Automatique (aucun projet ne correspond à cette page)"
   },
+  "popup_noProjectHere": {
+    "message": "Aucun projet ne correspond à ce site."
+  },
+  "popup_addSite": {
+    "message": "Ajouter ce site"
+  },
+  "popup_addSiteTitle": {
+    "message": "Ouvrir les réglages avec le motif de ce site déjà rempli"
+  },
   "popup_testedElements": {
     "message": "Éléments testés"
   },
@@ -436,7 +445,7 @@
     "message": "Projets par site"
   },
   "options_mappingsHint": {
-    "message": "Le projet qui s’applique sur chaque site : une instance peut en servir plusieurs. Les lignes sont lues dans l’ordre, et le premier motif qui correspond l’emporte. $star$ correspond à l’intérieur d’une partie du chemin, $globstar$ à travers plusieurs parties, comme dans le motif d’adresse d’une fonction de test. La branche, facultative, est celle déployée à ces adresses (un site de préproduction sur $example$, par exemple) : Éléments testés montre alors ce qu’atteignent les tests de cette branche.",
+    "message": "Le projet qui s’applique sur chaque site. Les motifs gardés dans ce navigateur sont lus en premier, puis ceux de votre instance, et le premier qui correspond l’emporte. $star$ correspond à l’intérieur d’une partie du chemin, $globstar$ à travers plusieurs parties. La branche, facultative, est celle déployée à ces adresses (un site de préproduction sur $example$, par exemple) : Éléments testés montre alors ce qu’atteignent les tests de cette branche.",
     "placeholders": {
       "example": {
         "content": "$1",
@@ -492,7 +501,7 @@
     "message": "Se déconnecter"
   },
   "options_privacy": {
-    "message": "Utilisée uniquement depuis cette page, une clé d’API saisie ici n’atteint jamais les scripts d’une page web. Les étapes enregistrées ne vont nulle part, sauf si vous les copiez ou les téléchargez. La connexion ne fait que télécharger le catalogue de fonctions de chaque projet et les éléments que ses tests atteignent."
+    "message": "Utilisée uniquement depuis cette page, la clé d’API n’atteint jamais les scripts d’une page web. Les étapes enregistrées ne vont nulle part, sauf si vous les copiez ou les téléchargez. La connexion télécharge les motifs d’adresse de vos projets, le catalogue de fonctions de chaque projet et les éléments que ses tests atteignent ; ajouter un site n’envoie que son motif."
   },
   "options_testing": {
     "message": "Test en cours…"
@@ -632,6 +641,166 @@
   },
   "options_disconnected": {
     "message": "Déconnecté."
+  },
+  "options_connect": {
+    "message": "Se connecter"
+  },
+  "options_connectHint": {
+    "message": "Ouvre votre instance dans un nouvel onglet, où vous autorisez Piwi Picker ; il reçoit alors sa propre clé d’API."
+  },
+  "options_connectStarting": {
+    "message": "Connexion…"
+  },
+  "options_connectCode": {
+    "message": "Autorisez Piwi Picker dans l’onglet qui s’est ouvert, après avoir vérifié qu’il affiche $code$.",
+    "placeholders": {
+      "code": {
+        "content": "$1",
+        "example": "BCDF-GHJK"
+      }
+    }
+  },
+  "options_connectCancel": {
+    "message": "Annuler"
+  },
+  "options_connectedAs": {
+    "message": "Connecté en tant que $name$.",
+    "placeholders": {
+      "name": {
+        "content": "$1",
+        "example": "Ada Lovelace"
+      }
+    }
+  },
+  "options_connectedNoAuth": {
+    "message": "Connecté. L’authentification est désactivée sur cette instance : aucune clé d’API n’est nécessaire."
+  },
+  "options_connectDenied": {
+    "message": "Piwi Picker a été refusé sur votre instance."
+  },
+  "options_connectExpired": {
+    "message": "Le code a expiré avant d’être autorisé. Cliquez sur Se connecter pour recommencer."
+  },
+  "options_connectCancelled": {
+    "message": "Connexion annulée."
+  },
+  "options_connectUnsupported": {
+    "message": "Cette instance ne permet pas de se connecter en une étape : mettez-la à jour, ou utilisez plutôt une clé d’API."
+  },
+  "options_connectTooMany": {
+    "message": "Trop de tentatives de connexion depuis cette adresse. Attendez quelques minutes et réessayez."
+  },
+  "options_useApiKey": {
+    "message": "Utiliser plutôt une clé d’API"
+  },
+  "options_localHeading": {
+    "message": "Ce navigateur uniquement"
+  },
+  "options_serverHeading": {
+    "message": "Depuis votre instance Piwi"
+  },
+  "options_serverHint": {
+    "message": "Définis dans les réglages de chaque projet, sous Browser extension URLs, et lus à chaque ouverture de cette page."
+  },
+  "options_serverRefresh": {
+    "message": "Actualiser"
+  },
+  "options_serverReading": {
+    "message": "Lecture des motifs d’adresse de votre instance…"
+  },
+  "options_serverEmpty": {
+    "message": "Votre instance n’a encore aucun motif d’adresse pour vos projets."
+  },
+  "options_serverNotRead": {
+    "message": "Pas encore lus : connectez-vous d’abord."
+  },
+  "options_serverSyncFailed": {
+    "message": "Impossible de lire les motifs de votre instance ($error$). Ceux lus la dernière fois s’appliquent toujours.",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "The instance answered with an error (500)."
+      }
+    }
+  },
+  "options_serverUnsupported": {
+    "message": "Cette instance ne partage pas de motifs d’adresse : mettez-la à jour pour les lire."
+  },
+  "options_serverPatterns_one": {
+    "message": "$count$ motif d’adresse de votre instance.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "options_serverPatterns_other": {
+    "message": "$count$ motifs d’adresse de votre instance.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "options_sourceServer": {
+    "message": "Piwi"
+  },
+  "options_sourceLocal": {
+    "message": "Ce navigateur"
+  },
+  "options_addHeading": {
+    "message": "Ajouter un site"
+  },
+  "options_addHint": {
+    "message": "Ajoute le motif à un projet de votre instance, pour tous ceux qui s’y connectent. Il faut un rôle qui peut modifier le projet."
+  },
+  "options_environment": {
+    "message": "Environnement"
+  },
+  "options_environmentPlaceholder": {
+    "message": "Environnement (facultatif)"
+  },
+  "options_addToServer": {
+    "message": "Ajouter à Piwi"
+  },
+  "options_addLocally": {
+    "message": "Garder dans ce navigateur uniquement"
+  },
+  "options_addNoEditable": {
+    "message": "Votre rôle ne permet de modifier aucun projet de cette instance : gardez le motif dans ce navigateur, ou demandez à un administrateur de l’ajouter."
+  },
+  "options_addNeedsPattern": {
+    "message": "Saisissez d’abord un motif d’adresse."
+  },
+  "options_addNeedsProject": {
+    "message": "Choisissez d’abord un projet."
+  },
+  "options_added": {
+    "message": "$pattern$ ajouté à $project$.",
+    "placeholders": {
+      "pattern": {
+        "content": "$1",
+        "example": "https://staging.shop.example/**"
+      },
+      "project": {
+        "content": "$2",
+        "example": "Shop"
+      }
+    }
+  },
+  "options_addedLocally": {
+    "message": "Ajouté aux lignes de ce navigateur. Cliquez sur Enregistrer pour le garder."
+  },
+  "options_addDuplicate": {
+    "message": "Ce projet a déjà ce motif."
+  },
+  "options_addForbidden": {
+    "message": "Votre rôle ne permet pas de modifier ce projet."
+  },
+  "options_addInvalid": {
+    "message": "Commencez le motif par http://, https:// ou un joker."
   },
   "common_close": {
     "message": "Fermer"

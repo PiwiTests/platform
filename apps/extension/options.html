@@ -103,6 +103,9 @@
       select:not(.mapping-project) {
         width: 100%;
       }
+      .mapping-row input {
+        width: auto;
+      }
       input:focus-visible,
       select:focus-visible {
         outline: 2px solid var(--accent);
@@ -191,6 +194,86 @@
       #status.error {
         color: var(--error);
       }
+      .inline {
+        display: flex;
+        gap: 8px;
+      }
+      .inline input {
+        flex: 1 1 auto;
+        min-width: 0;
+      }
+      .inline button {
+        flex-shrink: 0;
+      }
+      .panel {
+        margin-top: 12px;
+        padding: 12px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--surface);
+      }
+      #connect-panel {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+      }
+      #connect-panel[hidden],
+      .panel[hidden] {
+        display: none;
+      }
+      #connect-panel code {
+        font-size: 15px;
+        font-weight: 600;
+        letter-spacing: 0.12em;
+      }
+      .connected {
+        margin-top: 10px;
+        color: var(--success);
+        font-size: 12.5px;
+      }
+      details {
+        margin-top: 16px;
+      }
+      details summary {
+        cursor: pointer;
+        color: var(--muted);
+        font-size: 12.5px;
+      }
+      details[open] summary {
+        margin-bottom: 10px;
+      }
+      section h3 {
+        font-size: 12.5px;
+        font-weight: 600;
+        margin: 16px 0 6px;
+      }
+      .server-row {
+        display: flex;
+        gap: 8px;
+        align-items: baseline;
+        flex-wrap: wrap;
+        padding: 6px 0;
+        border-bottom: 1px solid var(--border);
+        font-size: 12.5px;
+      }
+      .server-row .pattern {
+        flex: 1 1 220px;
+        min-width: 0;
+        overflow-wrap: anywhere;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+      .server-row .meta {
+        color: var(--muted);
+      }
+      .source {
+        flex-shrink: 0;
+        font-size: 11px;
+        padding: 1px 6px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        color: var(--muted);
+      }
       .privacy {
         margin-top: 28px;
         padding-top: 18px;
@@ -223,37 +306,107 @@
       </p>
 
       <label for="instance-url" data-i18n="options_instanceUrl">Address of your Piwi instance</label>
-      <input
-        id="instance-url"
-        type="url"
-        placeholder="https://piwi.example.com"
-        data-i18n-placeholder="options_instanceUrlPlaceholder"
-        autocomplete="off"
-      />
-
-      <label for="api-key" data-i18n="options_apiKey">API key</label>
-      <input id="api-key" type="password" placeholder="pd_…" autocomplete="off" />
-      <div class="hint" data-i18n="options_apiKeyHint">
-        Create one in the Piwi dashboard, in your account’s API key settings.
+      <div class="inline">
+        <input
+          id="instance-url"
+          type="url"
+          placeholder="https://piwi.example.com"
+          data-i18n-placeholder="options_instanceUrlPlaceholder"
+          autocomplete="off"
+        />
+        <button id="connect" class="primary" type="button" data-i18n="options_connect">Connect</button>
+      </div>
+      <div class="hint" data-i18n="options_connectHint">
+        Opens your instance in a new tab, where you allow Piwi Picker; it then receives its own API key.
       </div>
 
-      <div class="row">
-        <button id="test-connection" type="button" data-i18n="options_testConnection">Test connection</button>
+      <div id="connect-panel" class="panel" hidden>
+        <div id="connect-code-line"></div>
+        <button id="connect-cancel" type="button" class="small" data-i18n="options_connectCancel">Cancel</button>
       </div>
+      <div id="connected-as" class="connected" hidden></div>
+
+      <details id="api-key-fallback">
+        <summary data-i18n="options_useApiKey">Use an API key instead</summary>
+        <label for="api-key" data-i18n="options_apiKey">API key</label>
+        <input id="api-key" type="password" placeholder="pd_…" autocomplete="off" />
+        <div class="hint" data-i18n="options_apiKeyHint">
+          Create one in the Piwi dashboard, in your account’s API key settings.
+        </div>
+        <div class="row">
+          <button id="test-connection" type="button" data-i18n="options_testConnection">Test connection</button>
+        </div>
+      </details>
 
       <section>
         <h2 data-i18n="options_mappingsHeading">Project mappings</h2>
         <p class="hint" data-i18n="options_mappingsHint">
-          Which project applies on which site: one instance can serve more than one. Lines are read in order, and the
-          first pattern that matches wins. <code data-i18n-slot="star">*</code> matches within one part of the path,
-          <code data-i18n-slot="globstar">**</code> across parts, as in a test function’s own address pattern. The
-          branch, optional, is the one deployed at those addresses (a staging site on
-          <code data-i18n-slot="example">develop</code>, say): Tested elements then shows what that branch’s tests
-          reach.
+          Which project applies on which site. Patterns kept in this browser are read first, then your instance’s, and
+          the first that matches wins. <code data-i18n-slot="star">*</code> matches within one part of the path,
+          <code data-i18n-slot="globstar">**</code> across parts. The branch, optional, is the one deployed at those
+          addresses (a staging site on <code data-i18n-slot="example">develop</code>, say): Tested elements then shows
+          what that branch’s tests reach.
         </p>
+
+        <h3 data-i18n="options_localHeading">This browser only</h3>
         <div id="mappings"></div>
         <div class="row" style="margin-top: 10px">
           <button id="add-mapping" type="button" class="small" data-i18n="options_addMapping">+ Add a line</button>
+        </div>
+
+        <h3 data-i18n="options_serverHeading">From your Piwi instance</h3>
+        <p class="hint" data-i18n="options_serverHint">
+          Set in each project’s settings, under Browser extension URLs, and read each time this page opens.
+        </p>
+        <div id="server-mappings"></div>
+        <div class="row" style="margin-top: 10px">
+          <button id="refresh-server" type="button" class="small" data-i18n="options_serverRefresh">Refresh</button>
+        </div>
+
+        <div id="add-site" class="panel" hidden>
+          <h3 data-i18n="options_addHeading">Add a site</h3>
+          <p class="hint" data-i18n="options_addHint">
+            Adds the pattern to a project on your instance, for everyone who connects to it. It takes a role that can
+            edit the project.
+          </p>
+          <div class="mapping-row">
+            <input
+              id="add-pattern"
+              class="mapping-pattern"
+              type="text"
+              placeholder="https://staging.example.com/**"
+              data-i18n-placeholder="options_patternPlaceholder"
+              data-i18n-aria-label="options_pattern"
+            />
+            <select id="add-project" class="mapping-project" data-i18n-aria-label="options_project"></select>
+          </div>
+          <div class="mapping-row" style="margin-top: 6px">
+            <input
+              id="add-environment"
+              class="mapping-branch"
+              type="text"
+              placeholder="Environment (optional)"
+              data-i18n-placeholder="options_environmentPlaceholder"
+              data-i18n-aria-label="options_environment"
+            />
+            <input
+              id="add-branch"
+              class="mapping-branch"
+              type="text"
+              placeholder="Default branch"
+              data-i18n-placeholder="options_branchPlaceholder"
+              data-i18n-aria-label="options_branch"
+            />
+          </div>
+          <div class="hint" id="add-note" hidden></div>
+          <div class="row" style="margin-top: 10px">
+            <button id="add-to-server" type="button" class="small primary" data-i18n="options_addToServer">
+              Add to Piwi
+            </button>
+            <button id="add-locally" type="button" class="small" data-i18n="options_addLocally">
+              Keep in this browser only
+            </button>
+          </div>
         </div>
       </section>
 
@@ -265,9 +418,9 @@
       <div id="status" role="status"></div>
 
       <div class="privacy" data-i18n="options_privacy">
-        Only used from this page: an API key entered here never reaches a web page’s scripts. Recorded steps go nowhere
-        unless you copy or download them. Connecting only downloads each mapped project’s function catalog and the
-        elements its tests reach.
+        Only used from this page: the API key never reaches a web page’s scripts. Recorded steps go nowhere unless you
+        copy or download them. Connecting downloads your projects’ URL patterns, each mapped project’s function catalog
+        and the elements its tests reach; adding a site sends only its pattern.
       </div>
     </div>
     <script type="module" src="src/options/main.ts"></script>

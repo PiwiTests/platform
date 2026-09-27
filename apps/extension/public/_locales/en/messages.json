@@ -169,6 +169,18 @@
     "message": "Automatic (no project matches this page)",
     "description": "Popup, active project menu: the project is chosen from the page address, and none matches."
   },
+  "popup_noProjectHere": {
+    "message": "No project matches this site.",
+    "description": "Popup: under the active project, when no URL pattern covers the current site."
+  },
+  "popup_addSite": {
+    "message": "Add this site",
+    "description": "Popup: small button next to popup_noProjectHere that opens the settings to add the site. Short."
+  },
+  "popup_addSiteTitle": {
+    "message": "Open the settings with this site’s pattern filled in",
+    "description": "Popup: tooltip of popup_addSite."
+  },
   "popup_testedElements": {
     "message": "Tested elements",
     "description": "Popup tile: shows on the page which elements the project’s tests reach. Short."
@@ -542,7 +554,7 @@
     "description": "Settings page: heading of the table saying which Piwi project applies on which site."
   },
   "options_mappingsHint": {
-    "message": "Which project applies on which site: one instance can serve more than one. Lines are read in order, and the first pattern that matches wins. $star$ matches within one part of the path, $globstar$ across parts, as in a test function’s own address pattern. The branch, optional, is the one deployed at those addresses (a staging site on $example$, say): Tested elements then shows what that branch’s tests reach.",
+    "message": "Which project applies on which site. Patterns kept in this browser are read first, then your instance’s, and the first that matches wins. $star$ matches within one part of the path, $globstar$ across parts. The branch, optional, is the one deployed at those addresses (a staging site on $example$, say): Tested elements then shows what that branch’s tests reach.",
     "description": "Settings page: hint of the project mappings. The placeholders are shown as code. $example$ is a branch name; $globstar$ is the wildcard across parts of a path; $star$ is the wildcard for one part of a path.",
     "placeholders": {
       "example": {
@@ -612,7 +624,7 @@
     "description": "Settings page: button."
   },
   "options_privacy": {
-    "message": "Only used from this page: an API key entered here never reaches a web page’s scripts. Recorded steps go nowhere unless you copy or download them. Connecting only downloads each mapped project’s function catalog and the elements its tests reach.",
+    "message": "Only used from this page: the API key never reaches a web page’s scripts. Recorded steps go nowhere unless you copy or download them. Connecting downloads your projects’ URL patterns, each mapped project’s function catalog and the elements its tests reach; adding a site sends only its pattern.",
     "description": "Settings page: privacy note at the bottom."
   },
   "options_testing": {
@@ -772,6 +784,206 @@
   "options_disconnected": {
     "message": "Disconnected.",
     "description": "Settings page: after Disconnect."
+  },
+  "options_connect": {
+    "message": "Connect",
+    "description": "Settings page: button next to the instance address that starts connecting (opens the instance to allow Piwi Picker). Short."
+  },
+  "options_connectHint": {
+    "message": "Opens your instance in a new tab, where you allow Piwi Picker; it then receives its own API key.",
+    "description": "Settings page: hint under the instance address, explaining what Connect does."
+  },
+  "options_connectStarting": {
+    "message": "Connecting…",
+    "description": "Settings page: status while the connection request is being started."
+  },
+  "options_connectCode": {
+    "message": "Allow Piwi Picker in the tab that opened, after checking it shows $code$.",
+    "description": "Settings page: shown while waiting for the user to allow Piwi Picker on the instance. $code$ is the code the instance page also shows (like BCDF-GHJK), shown as code.",
+    "placeholders": {
+      "code": {
+        "content": "$1",
+        "example": "BCDF-GHJK"
+      }
+    }
+  },
+  "options_connectCancel": {
+    "message": "Cancel",
+    "description": "Settings page: button that stops waiting for the user to allow the connection. Short."
+  },
+  "options_connectedAs": {
+    "message": "Connected as $name$.",
+    "description": "Settings page: the connection works. $name$ is the name of the account on the Piwi instance.",
+    "placeholders": {
+      "name": {
+        "content": "$1",
+        "example": "Ada Lovelace"
+      }
+    }
+  },
+  "options_connectedNoAuth": {
+    "message": "Connected. Authentication is off on this instance, so no API key is needed.",
+    "description": "Settings page: the connection works, with an instance that has sign-in turned off."
+  },
+  "options_connectDenied": {
+    "message": "Piwi Picker was denied on your instance.",
+    "description": "Settings page: the user clicked Deny on the instance."
+  },
+  "options_connectExpired": {
+    "message": "The code expired before it was allowed. Click Connect to start again.",
+    "description": "Settings page: nobody allowed the connection within ten minutes. Names the Connect button (options_connect)."
+  },
+  "options_connectCancelled": {
+    "message": "Connecting was cancelled.",
+    "description": "Settings page: the user cancelled while waiting for the connection."
+  },
+  "options_connectUnsupported": {
+    "message": "This instance can’t connect in one step: update it, or use an API key instead.",
+    "description": "Settings page: the instance is too old for the one-step connection."
+  },
+  "options_connectTooMany": {
+    "message": "Too many connection attempts from this address. Wait a few minutes and try again.",
+    "description": "Settings page: the instance refused because of too many connection attempts."
+  },
+  "options_useApiKey": {
+    "message": "Use an API key instead",
+    "description": "Settings page: folded section to paste an API key by hand instead of connecting."
+  },
+  "options_localHeading": {
+    "message": "This browser only",
+    "description": "Settings page: heading of the URL patterns kept in this browser only."
+  },
+  "options_serverHeading": {
+    "message": "From your Piwi instance",
+    "description": "Settings page: heading of the URL patterns read from the Piwi instance."
+  },
+  "options_serverHint": {
+    "message": "Set in each project’s settings, under Browser extension URLs, and read each time this page opens.",
+    "description": "Settings page: hint under options_serverHeading. “Browser extension URLs” is the name of the section in the dashboard, which is in English: keep it in English."
+  },
+  "options_serverRefresh": {
+    "message": "Refresh",
+    "description": "Settings page: button that reads the URL patterns from the instance again. Short."
+  },
+  "options_serverReading": {
+    "message": "Reading the patterns from your instance…",
+    "description": "Settings page: status while the URL patterns are read from the instance."
+  },
+  "options_serverEmpty": {
+    "message": "Your instance has no URL pattern for your projects yet.",
+    "description": "Settings page: the instance has no URL pattern for any project the user can see."
+  },
+  "options_serverNotRead": {
+    "message": "Not read yet: connect first.",
+    "description": "Settings page: in place of the instance’s URL patterns, before the first connection."
+  },
+  "options_serverSyncFailed": {
+    "message": "Couldn’t read the patterns from your instance ($error$). The ones read last time still apply.",
+    "description": "Settings page: the URL patterns could not be read from the instance. $error$ is the reason, a whole sentence.",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "The instance answered with an error (500)."
+      }
+    }
+  },
+  "options_serverUnsupported": {
+    "message": "This instance has no URL patterns to share: update it to read them.",
+    "description": "Settings page: the instance is too old to share URL patterns."
+  },
+  "options_serverPatterns_one": {
+    "message": "$count$ URL pattern from your instance.",
+    "description": "Settings page: after connecting or refreshing, one URL pattern read from the instance. $count$ is the number.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "options_serverPatterns_other": {
+    "message": "$count$ URL patterns from your instance.",
+    "description": "Settings page: after connecting or refreshing, several URL patterns read from the instance. $count$ is the number.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "options_sourceServer": {
+    "message": "Piwi",
+    "description": "Settings page: small tag on a URL pattern that comes from the instance. The product name."
+  },
+  "options_sourceLocal": {
+    "message": "This browser",
+    "description": "Settings page: small tag on a URL pattern kept in this browser only. Short."
+  },
+  "options_addHeading": {
+    "message": "Add a site",
+    "description": "Settings page: heading of the form that adds a URL pattern for a site."
+  },
+  "options_addHint": {
+    "message": "Adds the pattern to a project on your instance, for everyone who connects to it. It takes a role that can edit the project.",
+    "description": "Settings page: hint under options_addHeading."
+  },
+  "options_environment": {
+    "message": "Environment",
+    "description": "Settings page: accessible name of the environment field (staging, production…)."
+  },
+  "options_environmentPlaceholder": {
+    "message": "Environment (optional)",
+    "description": "Settings page: placeholder of the environment field."
+  },
+  "options_addToServer": {
+    "message": "Add to Piwi",
+    "description": "Settings page: button that adds the pattern to the chosen project on the instance. Short."
+  },
+  "options_addLocally": {
+    "message": "Keep in this browser only",
+    "description": "Settings page: button that adds the pattern to this browser’s own lines instead. Short."
+  },
+  "options_addNoEditable": {
+    "message": "Your role can’t edit any project on this instance: keep the pattern in this browser, or ask an administrator to add it.",
+    "description": "Settings page: under the add form, when the user may not add patterns to any project."
+  },
+  "options_addNeedsPattern": {
+    "message": "Enter a URL pattern first.",
+    "description": "Settings page: the add form was used with no pattern."
+  },
+  "options_addNeedsProject": {
+    "message": "Choose a project first.",
+    "description": "Settings page: Add to Piwi was clicked with no project chosen."
+  },
+  "options_added": {
+    "message": "Added $pattern$ to $project$.",
+    "description": "Settings page: a pattern was added on the instance. $pattern$ is the pattern; $project$ is the project’s name.",
+    "placeholders": {
+      "pattern": {
+        "content": "$1",
+        "example": "https://staging.shop.example/**"
+      },
+      "project": {
+        "content": "$2",
+        "example": "Shop"
+      }
+    }
+  },
+  "options_addedLocally": {
+    "message": "Added to this browser’s lines. Click Save to keep it.",
+    "description": "Settings page: a pattern was added to this browser’s lines, which are kept on Save (options_save)."
+  },
+  "options_addDuplicate": {
+    "message": "That project already has this pattern.",
+    "description": "Settings page: the instance already has this pattern for the project."
+  },
+  "options_addForbidden": {
+    "message": "Your role can’t edit this project.",
+    "description": "Settings page: the user’s role may not add patterns to the project."
+  },
+  "options_addInvalid": {
+    "message": "Start the pattern with http://, https:// or a wildcard.",
+    "description": "Settings page: the instance refused the pattern. http://, https:// stay as they are."
   },
   "common_close": {
     "message": "Close",

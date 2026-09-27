@@ -202,7 +202,11 @@ test.describe('in a French browser', () => {
       'Português (Brasil)',
     ]);
     await expect(page.getByRole('heading', { name: 'Projets par site' })).toBeVisible();
-    await expect(page.locator('.empty-mappings')).toHaveText(
+    await expect(page.getByRole('button', { name: 'Se connecter' })).toBeVisible();
+    await expect(page.locator('#server-mappings .empty-mappings')).toHaveText(
+      'Pas encore lus : connectez-vous d’abord.',
+    );
+    await expect(page.locator('#mappings .empty-mappings')).toHaveText(
       'Aucune ligne pour l’instant : ajoutez-en une ci-dessous.',
     );
     await expect(page.locator('p.hint code')).toHaveText(['*', '**', 'develop']);

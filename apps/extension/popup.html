@@ -104,6 +104,32 @@
         background: var(--surface);
         color: inherit;
       }
+      .add-site-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        margin-top: 6px;
+        font-size: 11.5px;
+        color: var(--muted);
+      }
+      .only-add-site label,
+      .only-add-site select {
+        display: none;
+      }
+      .add-site-row[hidden] {
+        display: none;
+      }
+      .add-site-row button {
+        flex-shrink: 0;
+        font: inherit;
+        padding: 3px 8px;
+        border-radius: 6px;
+        border: 1px solid var(--border);
+        background: var(--surface);
+        color: var(--fg);
+        cursor: pointer;
+      }
       /* Connected-mode entry, set apart from the numbered grid of standalone tools. */
       .feature {
         display: flex;
@@ -331,6 +357,18 @@
       <div id="active-project-row" class="active-project-row" style="display: none">
         <label for="active-project" data-i18n="popup_activeProject">Active project</label>
         <select id="active-project"></select>
+        <div id="add-site-row" class="add-site-row" hidden>
+          <span data-i18n="popup_noProjectHere">No project matches this site.</span>
+          <button
+            id="add-site"
+            type="button"
+            data-i18n="popup_addSite"
+            data-i18n-title="popup_addSiteTitle"
+            title="Open the settings with this site’s pattern filled in"
+          >
+            Add this site
+          </button>
+        </div>
       </div>
       <button id="coverage-overlay" class="feature" type="button" aria-keyshortcuts="T">
         <span class="text">

@@ -134,6 +134,15 @@
   "popup_autoNoMatch": {
     "message": "Automático (nenhum projeto corresponde a esta página)"
   },
+  "popup_noProjectHere": {
+    "message": "Nenhum projeto corresponde a este site."
+  },
+  "popup_addSite": {
+    "message": "Adicionar este site"
+  },
+  "popup_addSiteTitle": {
+    "message": "Abrir as configurações com o padrão deste site já preenchido"
+  },
   "popup_testedElements": {
     "message": "Elementos testados"
   },
@@ -436,7 +445,7 @@
     "message": "Projetos por site"
   },
   "options_mappingsHint": {
-    "message": "Qual projeto vale em qual site: uma instância pode atender mais de um. As linhas são lidas em ordem, e o primeiro padrão que corresponder vence. $star$ corresponde dentro de uma parte do caminho, $globstar$ através de várias partes, como no padrão de endereço de uma função de teste. A branch, opcional, é a que está implantada nesses endereços (um site de homologação em $example$, por exemplo): Elementos testados mostra então o que os testes dessa branch alcançam.",
+    "message": "Qual projeto vale em qual site. Os padrões guardados neste navegador são lidos primeiro, depois os da sua instância, e o primeiro que corresponder vence. $star$ corresponde dentro de uma parte do caminho, $globstar$ através de várias partes. A branch, opcional, é a que está implantada nesses endereços (um site de homologação em $example$, por exemplo): Elementos testados mostra então o que os testes dessa branch alcançam.",
     "placeholders": {
       "example": {
         "content": "$1",
@@ -492,7 +501,7 @@
     "message": "Desconectar"
   },
   "options_privacy": {
-    "message": "Usada só a partir desta página, uma chave de API digitada aqui nunca chega aos scripts de uma página web. Os passos gravados não vão a lugar nenhum, a menos que você os copie ou baixe. A conexão só baixa o catálogo de funções de cada projeto associado e os elementos que os testes dele alcançam."
+    "message": "Usada só a partir desta página, a chave de API nunca chega aos scripts de uma página web. Os passos gravados não vão a lugar nenhum, a menos que você os copie ou baixe. A conexão baixa os padrões de endereço dos seus projetos, o catálogo de funções de cada projeto associado e os elementos que os testes dele alcançam; adicionar um site envia só o padrão dele."
   },
   "options_testing": {
     "message": "Testando…"
@@ -632,6 +641,166 @@
   },
   "options_disconnected": {
     "message": "Desconectado."
+  },
+  "options_connect": {
+    "message": "Conectar"
+  },
+  "options_connectHint": {
+    "message": "Abre sua instância em uma nova aba, onde você autoriza o Piwi Picker; ele então recebe sua própria chave de API."
+  },
+  "options_connectStarting": {
+    "message": "Conectando…"
+  },
+  "options_connectCode": {
+    "message": "Autorize o Piwi Picker na aba que se abriu, depois de conferir que ela mostra $code$.",
+    "placeholders": {
+      "code": {
+        "content": "$1",
+        "example": "BCDF-GHJK"
+      }
+    }
+  },
+  "options_connectCancel": {
+    "message": "Cancelar"
+  },
+  "options_connectedAs": {
+    "message": "Conectado como $name$.",
+    "placeholders": {
+      "name": {
+        "content": "$1",
+        "example": "Ada Lovelace"
+      }
+    }
+  },
+  "options_connectedNoAuth": {
+    "message": "Conectado. A autenticação está desativada nesta instância, então nenhuma chave de API é necessária."
+  },
+  "options_connectDenied": {
+    "message": "O Piwi Picker foi recusado na sua instância."
+  },
+  "options_connectExpired": {
+    "message": "O código expirou antes de ser autorizado. Clique em Conectar para começar de novo."
+  },
+  "options_connectCancelled": {
+    "message": "A conexão foi cancelada."
+  },
+  "options_connectUnsupported": {
+    "message": "Esta instância não permite conectar em uma etapa: atualize-a ou use uma chave de API."
+  },
+  "options_connectTooMany": {
+    "message": "Tentativas de conexão demais a partir deste endereço. Espere alguns minutos e tente de novo."
+  },
+  "options_useApiKey": {
+    "message": "Usar uma chave de API"
+  },
+  "options_localHeading": {
+    "message": "Somente este navegador"
+  },
+  "options_serverHeading": {
+    "message": "Da sua instância do Piwi"
+  },
+  "options_serverHint": {
+    "message": "Definidos nas configurações de cada projeto, em Browser extension URLs, e lidos sempre que esta página abre."
+  },
+  "options_serverRefresh": {
+    "message": "Atualizar"
+  },
+  "options_serverReading": {
+    "message": "Lendo os padrões da sua instância…"
+  },
+  "options_serverEmpty": {
+    "message": "Sua instância ainda não tem padrões de endereço para seus projetos."
+  },
+  "options_serverNotRead": {
+    "message": "Ainda não lidos: conecte-se primeiro."
+  },
+  "options_serverSyncFailed": {
+    "message": "Não foi possível ler os padrões da sua instância ($error$). Os lidos da última vez continuam valendo.",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "The instance answered with an error (500)."
+      }
+    }
+  },
+  "options_serverUnsupported": {
+    "message": "Esta instância não compartilha padrões de endereço: atualize-a para lê-los."
+  },
+  "options_serverPatterns_one": {
+    "message": "$count$ padrão de endereço da sua instância.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "options_serverPatterns_other": {
+    "message": "$count$ padrões de endereço da sua instância.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "options_sourceServer": {
+    "message": "Piwi"
+  },
+  "options_sourceLocal": {
+    "message": "Este navegador"
+  },
+  "options_addHeading": {
+    "message": "Adicionar um site"
+  },
+  "options_addHint": {
+    "message": "Adiciona o padrão a um projeto da sua instância, para todos que se conectam a ela. É preciso um papel que possa editar o projeto."
+  },
+  "options_environment": {
+    "message": "Ambiente"
+  },
+  "options_environmentPlaceholder": {
+    "message": "Ambiente (opcional)"
+  },
+  "options_addToServer": {
+    "message": "Adicionar ao Piwi"
+  },
+  "options_addLocally": {
+    "message": "Manter somente neste navegador"
+  },
+  "options_addNoEditable": {
+    "message": "Seu papel não pode editar nenhum projeto desta instância: mantenha o padrão neste navegador ou peça a um administrador que o adicione."
+  },
+  "options_addNeedsPattern": {
+    "message": "Digite primeiro um padrão de endereço."
+  },
+  "options_addNeedsProject": {
+    "message": "Escolha primeiro um projeto."
+  },
+  "options_added": {
+    "message": "$pattern$ adicionado a $project$.",
+    "placeholders": {
+      "pattern": {
+        "content": "$1",
+        "example": "https://staging.shop.example/**"
+      },
+      "project": {
+        "content": "$2",
+        "example": "Shop"
+      }
+    }
+  },
+  "options_addedLocally": {
+    "message": "Adicionado às linhas deste navegador. Clique em Salvar para mantê-lo."
+  },
+  "options_addDuplicate": {
+    "message": "Esse projeto já tem este padrão."
+  },
+  "options_addForbidden": {
+    "message": "Seu papel não pode editar este projeto."
+  },
+  "options_addInvalid": {
+    "message": "Comece o padrão com http://, https:// ou um curinga."
   },
   "common_close": {
     "message": "Fechar"

@@ -6,7 +6,7 @@ import {
   recordingMode,
   type RecordingMode,
 } from '../shared/recording-storage.js';
-import { getConnectionSettings, isConnected, type ProjectMapping } from '../shared/connection-settings.js';
+import { getConnectionSettings, isConnected, mappedProjects } from '../shared/connection-settings.js';
 import { getActiveProjectOverride, setActiveProjectOverride, resolveActiveProject } from '../shared/active-project.js';
 import { workerState } from '../shared/worker-status.js';
 import { initI18n, localizeDocument, t, tn, tNodes, formatNumber } from '../shared/i18n.js';
@@ -24,6 +24,8 @@ const recordHint = document.getElementById('record-hint')!;
 const configButton = document.getElementById('config-button') as HTMLButtonElement;
 const activeProjectRow = document.getElementById('active-project-row')!;
 const activeProjectSelect = document.getElementById('active-project') as HTMLSelectElement;
+const addSiteRow = document.getElementById('add-site-row') as HTMLElement;
+const addSiteButton = document.getElementById('add-site') as HTMLButtonElement;
 const coverageButton = document.getElementById('coverage-overlay') as HTMLButtonElement;
 const coverageHint = document.getElementById('coverage-hint')!;
 const bugBtn = document.getElementById('report-bug') as HTMLButtonElement;
@@ -180,12 +182,6 @@ document.addEventListener('keydown', (e) => {
 
 const AUTO_OPTION_VALUE = '';
 
-function dedupeMappings(mappings: ProjectMapping[]): Array<{ projectId: number; projectLabel: string }> {
-  const seen = new Map<number, string>();
-  for (const m of mappings) if (!seen.has(m.projectId)) seen.set(m.projectId, m.projectLabel);
-  return [...seen].map(([projectId, projectLabel]) => ({ projectId, projectLabel }));
-}
-
 /** Populates and pre-selects the active-project picker: hidden until connected, otherwise offering every mapped project plus "Auto" (clears the manual override, falling back to URL-pattern matching). */
 async function refreshActiveProjectSelect(): Promise<void> {
   const [connection, override, tab] = await Promise.all([
@@ -197,12 +193,17 @@ async function refreshActiveProjectSelect(): Promise<void> {
   connected = isConnected(connection);
   coverageHint.textContent = connected ? t('popup_testedElementsHint') : t('popup_testedElementsConnect');
   if (!connected) {
-    activeProjectRow.style.display = 'none';
+    // Connected to an instance that has no pattern yet: only the offer to add this site.
+    const reachable = connection.instanceUrl.trim() !== '' && connection.serverSyncedAt > 0;
+    activeProjectRow.style.display = reachable ? '' : 'none';
+    activeProjectRow.classList.toggle('only-add-site', reachable);
+    if (reachable) renderAddSite(tab?.url, true);
     return;
   }
   activeProjectRow.style.display = '';
+  activeProjectRow.classList.remove('only-add-site');
 
-  const options = dedupeMappings(connection.projectMappings);
+  const options = mappedProjects(connection);
   const resolved = tab?.url ? resolveActiveProject(connection, override, tab.url) : override;
   if (resolved && !options.some((o) => o.projectId === resolved.projectId)) {
     options.push({ projectId: resolved.projectId, projectLabel: resolved.projectLabel });
@@ -221,6 +222,7 @@ async function refreshActiveProjectSelect(): Promise<void> {
     activeProjectSelect.appendChild(opt);
   }
   activeProjectSelect.value = override ? String(override.projectId) : AUTO_OPTION_VALUE;
+  renderAddSite(tab?.url, !resolveActiveProject(connection, null, tab?.url ?? ''));
 
   activeProjectSelect.addEventListener('change', () => {
     void (async () => {
@@ -233,6 +235,27 @@ async function refreshActiveProjectSelect(): Promise<void> {
       await setActiveProjectOverride({ projectId, projectLabel });
     })();
   });
+}
+
+/**
+ * When no pattern covers the tab's site, offers to add one: the settings open
+ * with `https://<host>/**` filled in, where it goes to the instance or stays in
+ * this browser.
+ */
+function renderAddSite(url: string | undefined, unmatched: boolean): void {
+  let origin: string | null = null;
+  try {
+    const parsed = new URL(url ?? '');
+    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') origin = parsed.origin;
+  } catch {
+    // Not a page a pattern could cover.
+  }
+  addSiteRow.hidden = !(unmatched && origin);
+  addSiteButton.onclick = () => {
+    if (!origin) return;
+    const target = `${chrome.runtime.getURL('options.html')}#add=${encodeURIComponent(`${origin}/**`)}`;
+    void chrome.tabs.create({ url: target }).then(() => window.close());
+  };
 }
 
 type RecordUiState = 'idle' | 'recording' | 'stopped';

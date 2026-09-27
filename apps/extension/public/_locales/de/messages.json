@@ -134,6 +134,15 @@
   "popup_autoNoMatch": {
     "message": "Automatisch (kein Projekt passt zu dieser Seite)"
   },
+  "popup_noProjectHere": {
+    "message": "Kein Projekt passt zu dieser Website."
+  },
+  "popup_addSite": {
+    "message": "Website hinzufügen"
+  },
+  "popup_addSiteTitle": {
+    "message": "Einstellungen mit dem Muster dieser Website öffnen"
+  },
   "popup_testedElements": {
     "message": "Getestete Elemente"
   },
@@ -436,7 +445,7 @@
     "message": "Projekte je Website"
   },
   "options_mappingsHint": {
-    "message": "Welches Projekt auf welcher Website gilt: Eine Instanz kann mehrere bedienen. Die Zeilen werden der Reihe nach gelesen, und das erste passende Muster gewinnt. $star$ passt innerhalb eines Pfadteils, $globstar$ über mehrere Teile hinweg, wie im Adressmuster einer Testfunktion. Der Branch ist optional: der unter diesen Adressen bereitgestellte (etwa eine Staging-Website auf $example$). Getestete Elemente zeigt dann, was die Tests dieses Branches erreichen.",
+    "message": "Welches Projekt auf welcher Website gilt. Die Muster dieses Browsers werden zuerst gelesen, dann die Ihrer Instanz, und das erste passende gewinnt. $star$ passt innerhalb eines Pfadteils, $globstar$ über mehrere Teile hinweg. Der Branch ist optional: der unter diesen Adressen bereitgestellte (etwa eine Staging-Website auf $example$). Getestete Elemente zeigt dann, was die Tests dieses Branches erreichen.",
     "placeholders": {
       "example": {
         "content": "$1",
@@ -492,7 +501,7 @@
     "message": "Trennen"
   },
   "options_privacy": {
-    "message": "Nur von dieser Seite aus verwendet: Ein hier eingegebener API-Schlüssel erreicht nie die Skripte einer Webseite. Aufgezeichnete Schritte gehen nirgendwohin, außer Sie kopieren oder laden sie herunter. Die Verbindung lädt nur den Funktionskatalog jedes zugeordneten Projekts herunter und die Elemente, die seine Tests erreichen."
+    "message": "Nur von dieser Seite aus verwendet: Der API-Schlüssel erreicht nie die Skripte einer Webseite. Aufgezeichnete Schritte gehen nirgendwohin, außer Sie kopieren oder laden sie herunter. Die Verbindung lädt die Adressmuster Ihrer Projekte, den Funktionskatalog jedes zugeordneten Projekts und die Elemente herunter, die seine Tests erreichen; eine Website hinzuzufügen sendet nur ihr Muster."
   },
   "options_testing": {
     "message": "Wird getestet…"
@@ -632,6 +641,166 @@
   },
   "options_disconnected": {
     "message": "Getrennt."
+  },
+  "options_connect": {
+    "message": "Verbinden"
+  },
+  "options_connectHint": {
+    "message": "Öffnet Ihre Instanz in einem neuen Tab, wo Sie Piwi Picker zulassen; danach erhält es einen eigenen API-Schlüssel."
+  },
+  "options_connectStarting": {
+    "message": "Verbinden…"
+  },
+  "options_connectCode": {
+    "message": "Lassen Sie Piwi Picker im geöffneten Tab zu, nachdem Sie geprüft haben, dass dort $code$ steht.",
+    "placeholders": {
+      "code": {
+        "content": "$1",
+        "example": "BCDF-GHJK"
+      }
+    }
+  },
+  "options_connectCancel": {
+    "message": "Abbrechen"
+  },
+  "options_connectedAs": {
+    "message": "Verbunden als $name$.",
+    "placeholders": {
+      "name": {
+        "content": "$1",
+        "example": "Ada Lovelace"
+      }
+    }
+  },
+  "options_connectedNoAuth": {
+    "message": "Verbunden. Auf dieser Instanz ist die Anmeldung ausgeschaltet, daher ist kein API-Schlüssel nötig."
+  },
+  "options_connectDenied": {
+    "message": "Piwi Picker wurde auf Ihrer Instanz abgelehnt."
+  },
+  "options_connectExpired": {
+    "message": "Der Code ist abgelaufen, bevor er zugelassen wurde. Klicken Sie auf Verbinden, um neu zu beginnen."
+  },
+  "options_connectCancelled": {
+    "message": "Verbinden abgebrochen."
+  },
+  "options_connectUnsupported": {
+    "message": "Diese Instanz kann sich nicht in einem Schritt verbinden: Aktualisieren Sie sie oder verwenden Sie stattdessen einen API-Schlüssel."
+  },
+  "options_connectTooMany": {
+    "message": "Zu viele Verbindungsversuche von dieser Adresse. Warten Sie ein paar Minuten und versuchen Sie es erneut."
+  },
+  "options_useApiKey": {
+    "message": "Stattdessen einen API-Schlüssel verwenden"
+  },
+  "options_localHeading": {
+    "message": "Nur dieser Browser"
+  },
+  "options_serverHeading": {
+    "message": "Von Ihrer Piwi-Instanz"
+  },
+  "options_serverHint": {
+    "message": "In den Einstellungen jedes Projekts unter Browser extension URLs festgelegt und bei jedem Öffnen dieser Seite gelesen."
+  },
+  "options_serverRefresh": {
+    "message": "Aktualisieren"
+  },
+  "options_serverReading": {
+    "message": "Adressmuster werden von Ihrer Instanz gelesen…"
+  },
+  "options_serverEmpty": {
+    "message": "Ihre Instanz hat noch kein Adressmuster für Ihre Projekte."
+  },
+  "options_serverNotRead": {
+    "message": "Noch nicht gelesen: Verbinden Sie sich zuerst."
+  },
+  "options_serverSyncFailed": {
+    "message": "Die Muster Ihrer Instanz konnten nicht gelesen werden ($error$). Die zuletzt gelesenen gelten weiter.",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "The instance answered with an error (500)."
+      }
+    }
+  },
+  "options_serverUnsupported": {
+    "message": "Diese Instanz teilt keine Adressmuster: Aktualisieren Sie sie, um sie zu lesen."
+  },
+  "options_serverPatterns_one": {
+    "message": "$count$ Adressmuster von Ihrer Instanz.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "options_serverPatterns_other": {
+    "message": "$count$ Adressmuster von Ihrer Instanz.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "options_sourceServer": {
+    "message": "Piwi"
+  },
+  "options_sourceLocal": {
+    "message": "Dieser Browser"
+  },
+  "options_addHeading": {
+    "message": "Website hinzufügen"
+  },
+  "options_addHint": {
+    "message": "Fügt das Muster einem Projekt auf Ihrer Instanz hinzu, für alle, die sich damit verbinden. Dafür braucht es eine Rolle, die das Projekt bearbeiten darf."
+  },
+  "options_environment": {
+    "message": "Umgebung"
+  },
+  "options_environmentPlaceholder": {
+    "message": "Umgebung (optional)"
+  },
+  "options_addToServer": {
+    "message": "Zu Piwi hinzufügen"
+  },
+  "options_addLocally": {
+    "message": "Nur in diesem Browser behalten"
+  },
+  "options_addNoEditable": {
+    "message": "Ihre Rolle darf auf dieser Instanz kein Projekt bearbeiten: Behalten Sie das Muster in diesem Browser oder bitten Sie die Administration, es hinzuzufügen."
+  },
+  "options_addNeedsPattern": {
+    "message": "Geben Sie zuerst ein Adressmuster ein."
+  },
+  "options_addNeedsProject": {
+    "message": "Wählen Sie zuerst ein Projekt."
+  },
+  "options_added": {
+    "message": "$pattern$ zu $project$ hinzugefügt.",
+    "placeholders": {
+      "pattern": {
+        "content": "$1",
+        "example": "https://staging.shop.example/**"
+      },
+      "project": {
+        "content": "$2",
+        "example": "Shop"
+      }
+    }
+  },
+  "options_addedLocally": {
+    "message": "Zu den Zeilen dieses Browsers hinzugefügt. Klicken Sie auf Speichern, um sie zu behalten."
+  },
+  "options_addDuplicate": {
+    "message": "Dieses Projekt hat dieses Muster bereits."
+  },
+  "options_addForbidden": {
+    "message": "Ihre Rolle darf dieses Projekt nicht bearbeiten."
+  },
+  "options_addInvalid": {
+    "message": "Beginnen Sie das Muster mit http://, https:// oder einem Platzhalter."
   },
   "common_close": {
     "message": "Schließen"

@@ -55,10 +55,13 @@ AMO listings that are still outstanding.
   way unless the popup's own complexity genuinely outgrows it. Has a config (gear) button
   (`chrome.runtime.openOptionsPage()`) and, once connected, an **Active project** select that
   shows/overrides which mapped project applies to the current tab.
-- `src/options/` + `options.html` — the connected-mode settings page: instance URL, API key,
-  and a **Project mappings** table (URL pattern with wildcards → project, ordered, first match
-  wins). Same plain TypeScript + DOM approach as the popup. Opened via
-  `chrome.runtime.openOptionsPage()`, never linked to from a content script.
+- `src/options/` + `options.html` — the connected-mode settings page: instance URL and a
+  **Connect** button (an RFC 8628 device authorization, below), a folded **Use an API key
+  instead** fallback, the instance's URL patterns (read-only, marked **Piwi**), the patterns kept
+  in this browser (**This browser only**, editable) and an **Add a site** form. Same plain
+  TypeScript + DOM approach as the popup. Opened via `chrome.runtime.openOptionsPage()`, or as
+  `options.html#add=<pattern>` from the popup's **Add this site**, never linked to from a content
+  script.
 - `src/shared/` — code shared between content scripts, background, popup, and options.
 
 **A momentary tool must claim the page through `src/shared/tool-session.ts`.** `startTool(id,
@@ -90,7 +93,7 @@ only in Firefox, which no CI run exercises.
 The recorder (`record-panel.ts`, `record-capture.ts`, `packages/core/src/recording.ts`,
 `function-match.ts`, `codegen.ts`) works fully standalone: record clicks/fills/etc. across
 pages, get a raw Playwright spec back. Connecting to a Piwi instance (`options.html` →
-instance URL + API key + one or more URL-pattern → project mappings) adds one thing on top:
+instance URL + **Connect**, or a pasted API key; URL patterns from the instance and from this browser) adds one thing on top:
 each mapped project's `test_functions` catalog (`apps/application/shared/handlers/test-functions.ts`)
 is fetched once and cached per-project (`src/shared/catalog-cache.ts`, `chrome.storage.local`,
 keyed by project id), and `rankFunctionMatches` / `matchFunctionAt` (pure, deterministic,
@@ -98,18 +101,31 @@ unit-tested in `packages/core`) match the live recording against whichever proje
 applies — ranked live in the HUD, substituted into the generated spec on export. The matcher
 never invents a function; it only scores and selects among what the catalog already has.
 
+**Connect** is a device authorization (`proposals/extension-connect.md`): the settings page
+requests the instance origin inside the click, `startConnect` gets a user code and a verification
+page, the page opens in a tab, and `waitForApproval` (`src/shared/connect-flow.ts`, pure) polls
+`pollConnect` until the user allows or denies it there. The approved answer carries the API key,
+created for that user at that moment and returned once; the tab is closed and the key stored like a
+pasted one. The browser and OS names sent with the start come from `describeClient`
+(`src/shared/client-info.ts`) and nothing else about the machine.
+
+The instance's own URL patterns (`GET /api/extension/url-patterns`) are read by the settings
+page when it connects and each time it opens, and cached in `ConnectionSettings.serverMappings`
+(with `serverProjects`, whose `canEdit` gates **Add to Piwi**) by `applyServerSync`.
 Which project applies on a given page is resolved by `src/shared/active-project.ts`'s
 `resolveActiveProject(settings, override, url)`: a manual per-tab override
 (`chrome.storage.session`, set from the popup's **Active project** select) wins if present,
-otherwise the first `ConnectionSettings.projectMappings` entry whose `urlPattern` matches the
-URL (via `urlMatches`/`globToRegExp` in `packages/core/src/function-match.ts` — the same glob
+then the first `ConnectionSettings.projectMappings` entry (this browser only) whose `urlPattern`
+matches, then the first `serverMappings` entry that matches — so a local pattern overrides the
+instance's in this browser. Matching uses the URL (via `urlMatches`/`globToRegExp` in `packages/core/src/function-match.ts` — the same glob
 matcher a catalog entry's own `urlPattern` gate uses). Every consumer that needs "which project
 applies here" (record-panel's HUD and review panel, test-function-panel, the popup's select)
 calls this one function rather than re-deriving it.
 
-**No recording is ever sent to the instance**, a bug report included — only each mapped project's catalog and
-locator index are fetched, and only `piwi-client.ts` makes those requests, from exactly two
-contexts: `src/options/` (on save) and the background worker's `piwi-refresh-catalog` /
+**No recording is ever sent to the instance**, a bug report included — only the URL patterns and each mapped
+project's catalog and locator index are fetched, and the only thing ever sent is a URL pattern the user adds.
+Only `piwi-client.ts` makes those requests, from exactly two
+contexts: `src/options/` (connecting, saving, reading and adding URL patterns) and the background worker's `piwi-refresh-catalog` /
 `piwi-refresh-locator-index` handlers. **Never from a content script**, so the API key never
 reaches a page's JS context — `record-panel.ts`/`test-function-panel.ts`/`coverage-overlay.ts`
 read the cache and, when they need fresher data, ask the worker via `catalog-refresh.ts` /

@@ -134,6 +134,15 @@
   "popup_autoNoMatch": {
     "message": "Automático (ningún proyecto corresponde a esta página)"
   },
+  "popup_noProjectHere": {
+    "message": "Ningún proyecto coincide con este sitio."
+  },
+  "popup_addSite": {
+    "message": "Añadir este sitio"
+  },
+  "popup_addSiteTitle": {
+    "message": "Abrir los ajustes con el patrón de este sitio ya escrito"
+  },
   "popup_testedElements": {
     "message": "Elementos probados"
   },
@@ -436,7 +445,7 @@
     "message": "Proyectos por sitio"
   },
   "options_mappingsHint": {
-    "message": "Qué proyecto se aplica en cada sitio: una instancia puede servir a varios. Las líneas se leen en orden, y gana el primer patrón que coincide. $star$ coincide dentro de una parte de la ruta, $globstar$ a través de varias partes, como en el patrón de dirección de una función de prueba. La rama, opcional, es la que está desplegada en esas direcciones (un sitio de preproducción en $example$, por ejemplo): Elementos probados muestra entonces lo que alcanzan las pruebas de esa rama.",
+    "message": "Qué proyecto se aplica en cada sitio. Primero se leen los patrones guardados en este navegador, luego los de tu instancia, y gana el primero que coincide. $star$ coincide dentro de una parte de la ruta, $globstar$ a través de varias partes. La rama, opcional, es la que está desplegada en esas direcciones (un sitio de preproducción en $example$, por ejemplo): Elementos probados muestra entonces lo que alcanzan las pruebas de esa rama.",
     "placeholders": {
       "example": {
         "content": "$1",
@@ -492,7 +501,7 @@
     "message": "Desconectar"
   },
   "options_privacy": {
-    "message": "Solo se usa desde esta página: una clave de API escrita aquí nunca llega a los scripts de una página web. Los pasos grabados no van a ninguna parte, salvo que los copies o los descargues. La conexión solo descarga el catálogo de funciones de cada proyecto asignado y los elementos que alcanzan sus pruebas."
+    "message": "Solo se usa desde esta página: la clave de API nunca llega a los scripts de una página web. Los pasos grabados no van a ninguna parte, salvo que los copies o los descargues. La conexión descarga los patrones de dirección de tus proyectos, el catálogo de funciones de cada proyecto asignado y los elementos que alcanzan sus pruebas; añadir un sitio solo envía su patrón."
   },
   "options_testing": {
     "message": "Probando…"
@@ -632,6 +641,166 @@
   },
   "options_disconnected": {
     "message": "Desconectado."
+  },
+  "options_connect": {
+    "message": "Conectar"
+  },
+  "options_connectHint": {
+    "message": "Abre tu instancia en una pestaña nueva, donde autorizas a Piwi Picker; después recibe su propia clave de API."
+  },
+  "options_connectStarting": {
+    "message": "Conectando…"
+  },
+  "options_connectCode": {
+    "message": "Autoriza a Piwi Picker en la pestaña que se abrió, después de comprobar que muestra $code$.",
+    "placeholders": {
+      "code": {
+        "content": "$1",
+        "example": "BCDF-GHJK"
+      }
+    }
+  },
+  "options_connectCancel": {
+    "message": "Cancelar"
+  },
+  "options_connectedAs": {
+    "message": "Conectado como $name$.",
+    "placeholders": {
+      "name": {
+        "content": "$1",
+        "example": "Ada Lovelace"
+      }
+    }
+  },
+  "options_connectedNoAuth": {
+    "message": "Conectado. La autenticación está desactivada en esta instancia, así que no hace falta clave de API."
+  },
+  "options_connectDenied": {
+    "message": "Piwi Picker fue rechazado en tu instancia."
+  },
+  "options_connectExpired": {
+    "message": "El código caducó antes de ser autorizado. Haz clic en Conectar para empezar de nuevo."
+  },
+  "options_connectCancelled": {
+    "message": "Se canceló la conexión."
+  },
+  "options_connectUnsupported": {
+    "message": "Esta instancia no permite conectar en un paso: actualízala o usa una clave de API."
+  },
+  "options_connectTooMany": {
+    "message": "Demasiados intentos de conexión desde esta dirección. Espera unos minutos y vuelve a intentarlo."
+  },
+  "options_useApiKey": {
+    "message": "Usar una clave de API"
+  },
+  "options_localHeading": {
+    "message": "Solo este navegador"
+  },
+  "options_serverHeading": {
+    "message": "De tu instancia de Piwi"
+  },
+  "options_serverHint": {
+    "message": "Se definen en los ajustes de cada proyecto, en Browser extension URLs, y se leen cada vez que se abre esta página."
+  },
+  "options_serverRefresh": {
+    "message": "Actualizar"
+  },
+  "options_serverReading": {
+    "message": "Leyendo los patrones de tu instancia…"
+  },
+  "options_serverEmpty": {
+    "message": "Tu instancia aún no tiene patrones de dirección para tus proyectos."
+  },
+  "options_serverNotRead": {
+    "message": "Aún no se han leído: conéctate primero."
+  },
+  "options_serverSyncFailed": {
+    "message": "No se pudieron leer los patrones de tu instancia ($error$). Siguen valiendo los leídos la última vez.",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "The instance answered with an error (500)."
+      }
+    }
+  },
+  "options_serverUnsupported": {
+    "message": "Esta instancia no comparte patrones de dirección: actualízala para leerlos."
+  },
+  "options_serverPatterns_one": {
+    "message": "$count$ patrón de dirección de tu instancia.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "options_serverPatterns_other": {
+    "message": "$count$ patrones de dirección de tu instancia.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "options_sourceServer": {
+    "message": "Piwi"
+  },
+  "options_sourceLocal": {
+    "message": "Este navegador"
+  },
+  "options_addHeading": {
+    "message": "Añadir un sitio"
+  },
+  "options_addHint": {
+    "message": "Añade el patrón a un proyecto de tu instancia, para todos los que se conectan a ella. Hace falta un rol que pueda editar el proyecto."
+  },
+  "options_environment": {
+    "message": "Entorno"
+  },
+  "options_environmentPlaceholder": {
+    "message": "Entorno (opcional)"
+  },
+  "options_addToServer": {
+    "message": "Añadir a Piwi"
+  },
+  "options_addLocally": {
+    "message": "Guardar solo en este navegador"
+  },
+  "options_addNoEditable": {
+    "message": "Tu rol no puede editar ningún proyecto de esta instancia: guarda el patrón en este navegador o pide a un administrador que lo añada."
+  },
+  "options_addNeedsPattern": {
+    "message": "Escribe primero un patrón de dirección."
+  },
+  "options_addNeedsProject": {
+    "message": "Elige primero un proyecto."
+  },
+  "options_added": {
+    "message": "$pattern$ añadido a $project$.",
+    "placeholders": {
+      "pattern": {
+        "content": "$1",
+        "example": "https://staging.shop.example/**"
+      },
+      "project": {
+        "content": "$2",
+        "example": "Shop"
+      }
+    }
+  },
+  "options_addedLocally": {
+    "message": "Añadido a las líneas de este navegador. Haz clic en Guardar para conservarlo."
+  },
+  "options_addDuplicate": {
+    "message": "Ese proyecto ya tiene este patrón."
+  },
+  "options_addForbidden": {
+    "message": "Tu rol no puede editar este proyecto."
+  },
+  "options_addInvalid": {
+    "message": "Empieza el patrón con http://, https:// o un comodín."
   },
   "common_close": {
     "message": "Cerrar"

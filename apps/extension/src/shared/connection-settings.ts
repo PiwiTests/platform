@@ -4,12 +4,14 @@
  * `storage.ts`'s last-used copy mode): a remembered device setting, not a
  * working session, so it survives the browser restarting. Never sent
  * anywhere except in requests the user's own actions trigger (see
- * `piwi-client.ts` — everything happens from the options page).
+ * `piwi-client.ts` — the settings page and the background worker only).
  *
  * A single instance can serve more than one site, so the project isn't one
- * fixed value — it's resolved per page from `projectMappings` (see
- * `active-project.ts`'s `resolveActiveProject`), the same `**`/`*` glob
- * syntax as a catalog entry's own `urlPattern` (`@piwitests/core/function-match`'s
+ * fixed value — it's resolved per page (see `active-project.ts`'s
+ * `resolveActiveProject`) from two lists of URL patterns: `projectMappings`,
+ * kept in this browser only, and `serverMappings`, the instance's own project
+ * URL patterns cached at the last sync. Both use the same `**`/`*` glob syntax
+ * as a catalog entry's own `urlPattern` (`@piwitests/core/function-match`'s
  * `urlMatches`), so "which pages does this apply to" means one thing
  * everywhere in this extension.
  */
@@ -22,16 +24,44 @@ export interface ProjectMapping {
   branch?: string;
 }
 
+/** A project URL pattern kept on the instance, as the last sync read it. */
+export interface ServerMapping extends ProjectMapping {
+  /** A label such as `staging`; absent when the pattern names none. */
+  environment?: string;
+}
+
+/** A project the connected user can see, and whether their role may add URL patterns to it. */
+export interface ServerProject {
+  id: number;
+  label: string;
+  canEdit: boolean;
+}
+
 export interface ConnectionSettings {
   instanceUrl: string;
   apiKey: string;
-  /** Checked in order; the first matching pattern wins — see `resolveActiveProject`. */
+  /** Kept in this browser only; checked in order before `serverMappings` — see `resolveActiveProject`. */
   projectMappings: ProjectMapping[];
+  /** The instance's patterns, in the order it lists them, as of `serverSyncedAt`. */
+  serverMappings: ServerMapping[];
+  serverProjects: ServerProject[];
+  /** Epoch ms of the last successful sync; 0 before the first. */
+  serverSyncedAt: number;
+  /** The name of the account the key belongs to; empty when the instance has authentication off. */
+  connectedAs: string;
 }
 
 const CONNECTION_KEY = 'piwiConnection';
 
-const EMPTY: ConnectionSettings = { instanceUrl: '', apiKey: '', projectMappings: [] };
+const EMPTY: ConnectionSettings = {
+  instanceUrl: '',
+  apiKey: '',
+  projectMappings: [],
+  serverMappings: [],
+  serverProjects: [],
+  serverSyncedAt: 0,
+  connectedAs: '',
+};
 
 function coerceMapping(value: unknown): ProjectMapping | null {
   if (!value || typeof value !== 'object') return null;
@@ -47,18 +77,91 @@ function coerceMapping(value: unknown): ProjectMapping | null {
   };
 }
 
-export async function getConnectionSettings(): Promise<ConnectionSettings> {
-  const stored = await chrome.storage.local.get(CONNECTION_KEY);
-  const value = stored[CONNECTION_KEY];
+function coerceServerMapping(value: unknown): ServerMapping | null {
+  const mapping = coerceMapping(value);
+  if (!mapping) return null;
+  const environment = (value as { environment?: unknown }).environment;
+  return typeof environment === 'string' && environment.trim()
+    ? { ...mapping, environment: environment.trim() }
+    : mapping;
+}
+
+function coerceServerProject(value: unknown): ServerProject | null {
+  if (!value || typeof value !== 'object') return null;
+  const v = value as Partial<ServerProject>;
+  if (typeof v.id !== 'number') return null;
+  return { id: v.id, label: typeof v.label === 'string' ? v.label : `#${v.id}`, canEdit: v.canEdit === true };
+}
+
+function coerceList<T>(value: unknown, coerce: (item: unknown) => T | null): T[] {
+  return Array.isArray(value) ? value.map(coerce).filter((item) => item != null) : [];
+}
+
+/** Reads stored settings of any age: a field an older version did not write comes back empty. */
+export function coerceConnectionSettings(value: unknown): ConnectionSettings {
   if (!value || typeof value !== 'object') return { ...EMPTY };
-  const v = value as Partial<ConnectionSettings>;
+  const v = value as Partial<Record<keyof ConnectionSettings, unknown>>;
   return {
     instanceUrl: typeof v.instanceUrl === 'string' ? v.instanceUrl : '',
     apiKey: typeof v.apiKey === 'string' ? v.apiKey : '',
-    projectMappings: Array.isArray(v.projectMappings)
-      ? v.projectMappings.map(coerceMapping).filter((m) => m != null)
-      : [],
+    projectMappings: coerceList(v.projectMappings, coerceMapping),
+    serverMappings: coerceList(v.serverMappings, coerceServerMapping),
+    serverProjects: coerceList(v.serverProjects, coerceServerProject),
+    serverSyncedAt: typeof v.serverSyncedAt === 'number' ? v.serverSyncedAt : 0,
+    connectedAs: typeof v.connectedAs === 'string' ? v.connectedAs : '',
   };
+}
+
+export async function getConnectionSettings(): Promise<ConnectionSettings> {
+  const stored = await chrome.storage.local.get(CONNECTION_KEY);
+  return coerceConnectionSettings(stored[CONNECTION_KEY]);
+}
+
+/** What `GET /api/extension/url-patterns` answers. */
+export interface ServerPatternsAnswer {
+  user: { name: string } | null;
+  items: Array<{
+    projectId: number;
+    projectName?: string;
+    projectLabel: string;
+    pattern: string;
+    environment: string | null;
+    branch: string | null;
+  }>;
+  projects: ServerProject[];
+}
+
+/** `settings` with the instance's patterns, projects and account name from a sync at `now`. */
+export function applyServerSync(
+  settings: ConnectionSettings,
+  answer: ServerPatternsAnswer,
+  now: number,
+): ConnectionSettings {
+  return {
+    ...settings,
+    serverMappings: coerceList(
+      answer.items.map((item) => ({
+        urlPattern: item.pattern,
+        projectId: item.projectId,
+        projectLabel: item.projectLabel,
+        branch: item.branch ?? undefined,
+        environment: item.environment ?? undefined,
+      })),
+      coerceServerMapping,
+    ),
+    serverProjects: coerceList(answer.projects, coerceServerProject),
+    serverSyncedAt: now,
+    connectedAs: answer.user?.name ?? '',
+  };
+}
+
+/** Every project either list maps, each once, with the label it was first seen under. */
+export function mappedProjects(settings: ConnectionSettings): Array<{ projectId: number; projectLabel: string }> {
+  const seen = new Map<number, string>();
+  for (const m of [...settings.projectMappings, ...settings.serverMappings]) {
+    if (!seen.has(m.projectId)) seen.set(m.projectId, m.projectLabel);
+  }
+  return [...seen].map(([projectId, projectLabel]) => ({ projectId, projectLabel }));
 }
 
 export async function setConnectionSettings(settings: ConnectionSettings): Promise<void> {
@@ -69,7 +172,7 @@ export async function clearConnectionSettings(): Promise<void> {
   await chrome.storage.local.remove(CONNECTION_KEY);
 }
 
-/** True once there's an instance URL and at least one URL-pattern → project mapping — the minimum needed to fetch a catalog for any page. */
+/** True once there's an instance URL and at least one URL pattern, from either list — the minimum needed to fetch a catalog for any page. */
 export function isConnected(settings: ConnectionSettings): boolean {
-  return settings.instanceUrl.trim().length > 0 && settings.projectMappings.length > 0;
+  return settings.instanceUrl.trim().length > 0 && settings.projectMappings.length + settings.serverMappings.length > 0;
 }
