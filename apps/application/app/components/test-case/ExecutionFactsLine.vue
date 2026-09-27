@@ -63,8 +63,14 @@ function attemptColor(status: string): 'success' | 'error' | 'neutral' {
   if (status === 'failed' || status === 'timedout' || status === 'timedOut') return 'error';
   return 'neutral';
 }
+// An attempt's start time is in the browser's time zone, which the server does
+// not know, so the titles name it once the line is mounted.
+const mounted = ref(false);
+onMounted(() => {
+  mounted.value = true;
+});
 function attemptTitle(a: AttemptOutcome): string {
-  const when = a.startedAt ? ` at ${new Date(a.startedAt).toLocaleString()}` : '';
+  const when = a.startedAt && mounted.value ? ` at ${new Date(a.startedAt).toLocaleString()}` : '';
   return `Attempt ${a.retry + 1}: ${a.status} (${Math.round(a.duration)} ms)${when}`;
 }
 function isCurrentAttempt(a: AttemptOutcome): boolean {

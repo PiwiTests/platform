@@ -314,32 +314,28 @@ describe('file path helpers', () => {
     );
   });
 
-  test('getTraceViewerUrl embeds the encoded file API URL using the current origin', () => {
-    vi.stubGlobal('location', { origin: 'http://localhost:3000' });
+  test('getTraceViewerUrl embeds the encoded root-relative file API URL', () => {
     const url = getTraceViewerUrl('.data/storage/t.zip');
-    expect(url).toBe(`/trace-viewer/?trace=${encodeURIComponent('http://localhost:3000/api/files/t.zip')}`);
-    vi.unstubAllGlobals();
+    expect(url).toBe(`/trace-viewer/?trace=${encodeURIComponent('/api/files/t.zip')}`);
   });
 
   test('getTraceViewerUrl prefixes the base path for both the viewer and the trace URL', () => {
-    vi.stubGlobal('location', { origin: 'http://localhost:3000' });
     const url = getTraceViewerUrl('.data/storage/t.zip', '/demo/');
-    expect(url).toBe(`/demo/trace-viewer/?trace=${encodeURIComponent('http://localhost:3000/demo/api/files/t.zip')}`);
-    vi.unstubAllGlobals();
+    expect(url).toBe(`/demo/trace-viewer/?trace=${encodeURIComponent('/demo/api/files/t.zip')}`);
   });
 
-  test('getTraceViewerUrl falls back to a relative trace URL when location is absent (SSR)', () => {
+  test('getTraceViewerUrl builds the same link with and without a browser location (SSR)', () => {
+    vi.stubGlobal('location', { origin: 'http://localhost:3000' });
+    const inBrowser = getTraceViewerUrl('t.zip', '/demo/');
     vi.stubGlobal('location', undefined);
-    const url = getTraceViewerUrl('t.zip');
-    expect(url).toBe(`/trace-viewer/?trace=${encodeURIComponent('/api/files/t.zip')}`);
+    const onServer = getTraceViewerUrl('t.zip', '/demo/');
     vi.unstubAllGlobals();
+    expect(inBrowser).toBe(onServer);
   });
 
   test('getTraceViewerUrl points at the static asset URL when staticAsset is set (demo mode)', () => {
-    vi.stubGlobal('location', { origin: 'http://localhost:3000' });
     const url = getTraceViewerUrl('demo/traces/t.zip', '/demo/', true);
-    expect(url).toBe(`/demo/trace-viewer/?trace=${encodeURIComponent('http://localhost:3000/demo/demo/traces/t.zip')}`);
-    vi.unstubAllGlobals();
+    expect(url).toBe(`/demo/trace-viewer/?trace=${encodeURIComponent('/demo/demo/traces/t.zip')}`);
   });
 });
 
