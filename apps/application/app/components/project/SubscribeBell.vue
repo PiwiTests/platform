@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { NotificationEvent } from '#shared/notification-events';
-import { NOTIFICATION_EVENTS } from '#shared/notification-events';
+import { NOTIFICATION_EVENTS, notificationEventLabel as eventLabel } from '#shared/notification-events';
 
 const props = defineProps<{ projectId: number; projectLabel?: string }>();
 
@@ -141,7 +141,7 @@ const channelItems = computed(() =>
 );
 
 const eventItems = NOTIFICATION_EVENTS.map((e) => ({
-  label: e === 'auto_heal.pr_opened' ? 'Auto-heal › PR opened' : e.replace(/\./g, ' › '),
+  label: eventLabel(e),
   value: e,
 }));
 

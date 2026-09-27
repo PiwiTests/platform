@@ -74,6 +74,22 @@ describe('resolvePrFeedbackSettings', () => {
 });
 
 describe('buildPrComment', () => {
+  test('tells the reader to remove test.fail() from the spec of a bug that looks fixed', () => {
+    const body = buildPrComment(
+      summary({
+        status: 'failed',
+        failedTests: 1,
+        looksFixed: [
+          { title: 'bug: coupon not applied', filePath: 'tests/bugs/coupon.spec.ts', executionId: 7, bugId: 37 },
+        ],
+      }),
+    );
+    expect(body).toContain('#### 🐞 Looks fixed (1)');
+    expect(body).toContain(
+      '[the spec](https://piwi.example.com/test-run-cases/7) of bug #37 now passes: remove `test.fail()` in `tests/bugs/coupon.spec.ts`',
+    );
+  });
+
   test('starts with the marker so the comment can be found and edited later', () => {
     expect(buildPrComment(summary()).startsWith(PR_COMMENT_MARKER)).toBe(true);
   });

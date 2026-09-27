@@ -39,6 +39,8 @@ export interface TestMetadata {
   feature?: string;
   /** Absolute `http(s)` URL to a ticket, spec or runbook. */
   link?: string;
+  /** The id of the Piwi bug report this test reproduces (`piwi:bug`), digits only. */
+  bug?: string;
 }
 
 const PRIORITY_SET: ReadonlySet<string> = new Set(TEST_PRIORITIES);
@@ -154,6 +156,11 @@ export function parseTestMetadata(annotations: unknown): TestMetadata | null {
       case 'link': {
         const value = normalizeLink(description);
         if (value) meta.link = value;
+        break;
+      }
+      case 'bug': {
+        const value = cleanString(description, MAX_TEST_META_CHARS)?.replace(/^#/, '');
+        if (value && /^[1-9]\d{0,11}$/.test(value)) meta.bug = value;
         break;
       }
       default:

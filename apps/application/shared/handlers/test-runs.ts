@@ -135,6 +135,7 @@ export async function getTestRun(
       isNewRegression: testRunsCases.isNewRegression,
       isNewFlaky: testRunsCases.isNewFlaky,
       didNotRunReason: testRunsCases.didNotRunReason,
+      expectedStatus: testRunsCases.expectedStatus,
       blockedBy: testRunsCases.blockedBy,
     })
     .from(testRunsCases)
@@ -190,6 +191,7 @@ export async function getTestRun(
     isNewRegression: tc.isNewRegression ?? null,
     isNewFlaky: tc.isNewFlaky ?? null,
     didNotRunReason: (tc.didNotRunReason as string | null) ?? null,
+    expectedStatus: (tc.expectedStatus as string | null) ?? null,
     blockedBy: (tc.blockedBy as string | null) ?? null,
   }));
 

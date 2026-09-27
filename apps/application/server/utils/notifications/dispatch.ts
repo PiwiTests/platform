@@ -17,8 +17,14 @@ import type {
   NotificationPayload,
   RunFinishedPayload,
   ClusterNewPayload,
+  BugLooksFixedPayload,
 } from '#shared/notification-events';
-import { renderEventSubject, notificationTargetPath, failureTargetPath } from '#shared/notification-events';
+import {
+  renderEventSubject,
+  notificationTargetPath,
+  failureTargetPath,
+  TOP_FAILURES_LIMIT,
+} from '#shared/notification-events';
 import type { LibSQLDatabase } from 'drizzle-orm/libsql';
 import { nextAttempt, OUTBOX_MAX_ATTEMPTS } from '../outbox';
 import { REPORT_READY_EVENT, type ReportReadyPayload } from '#shared/notification-events';
@@ -138,6 +144,7 @@ async function sendToSlack(config: Record<string, unknown>, event: NotificationE
   else if (event === 'cluster.fixed') emoji = ':white_check_mark:';
   else if (event === 'cluster.regressed') emoji = ':rotating_light:';
   else if (event === 'flakiness.spike') emoji = ':game_die:';
+  else if (event === 'bug.looks_fixed') emoji = ':white_check_mark:';
 
   const base = siteBase();
   // Slack section text is capped at 3000 chars; keep excerpts short.
@@ -176,6 +183,15 @@ async function sendToSlack(config: Record<string, unknown>, event: NotificationE
     if (p.knownIssue) parts.push(`Tracked in <${p.knownIssue.url}|${p.knownIssue.key}>`);
     parts.push(`<${base}/failure-clusters/${p.clusterId}|View cluster>`);
     blocks.push({ type: 'section', text: { type: 'mrkdwn', text: parts.join('\n') } });
+  } else if (event === 'bug.looks_fixed') {
+    const p = payload as BugLooksFixedPayload;
+    for (const t of p.tests.slice(0, TOP_FAILURES_LIMIT)) {
+      const link = `<${base}/test-run-cases/${t.executionId}|${t.title}>`;
+      blocks.push({
+        type: 'section',
+        text: { type: 'mrkdwn', text: `• *${link}* passes: remove \`test.fail()\` in \`${t.filePath}\`` },
+      });
+    }
   }
 
   await postToSlack(webhookUrl, { text: `${emoji} *${text}*`, blocks });

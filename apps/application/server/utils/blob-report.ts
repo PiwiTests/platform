@@ -428,6 +428,7 @@ export async function parseBlobReport(readEntry: ArchiveEntryReader): Promise<Pa
           // A `test.fail()` test that passed is now `failed` with no recorded
           // error; Playwright reports the same line, so synthesize it.
           error: expectedFailureError(rawStatus, annotations) ?? buildErrorText(result.errors, resolver),
+          expectedStatus: typeof test.expectedStatus === 'string' ? test.expectedStatus : null,
           retries: acc?.retry ?? 0,
           line: plan?.line ?? null,
           column: plan?.column ?? null,

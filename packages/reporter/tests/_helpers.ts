@@ -102,9 +102,11 @@ export function fakeTestCase(opts: {
   column?: number;
   parent?: any;
   annotations?: any[];
+  expectedStatus?: string;
 }): any {
   return {
     title: opts.title ?? 'test',
+    expectedStatus: opts.expectedStatus ?? 'passed',
     location: { file: opts.file ?? '/tmp/test.spec.ts', line: opts.line ?? 1, column: opts.column ?? 1 },
     parent: opts.parent ?? fakeSuite(),
     annotations: opts.annotations ?? [],
