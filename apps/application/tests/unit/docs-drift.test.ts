@@ -71,7 +71,7 @@ const POSITIONING = [
   'groups the failures by root cause',
   'scores the flaky tests',
   'finds the locator you should have used',
-  'Self-hosted, MIT, zero telemetry',
+  'Self-hosted, zero telemetry',
 ];
 
 const POSITIONING_SURFACES = ['README.md', 'DOCKER_HUB.md', 'apps/docs/index.md', 'apps/docs/.vitepress/config.mts'];
