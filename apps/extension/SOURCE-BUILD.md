@@ -47,7 +47,7 @@ diff -r submitted apps/extension/dist-firefox
 - each content script in `src/content/` and the background script `src/background/index.ts` becomes one
   self-contained script (Vite library mode, IIFE format), because `scripting.executeScript` injects files
   as classic scripts;
-- `popup.html`, `options.html` and the DevTools pages (`devtools.html`, `devtools-sidebar.html`) are built as
+- `popup.html`, `options.html` and the DevTools pages (`devtools.html`, `devtools-sidebar.html`, `devtools-panel.html`) are built as
   normal pages into `assets/`;
 - `manifest.json` and `public/` (the icons and the `_locales/` translations) are copied as they are into
   `dist-firefox/`; `dist/` gets the same files, with the manifest's `background.scripts` left out.

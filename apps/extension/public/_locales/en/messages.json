@@ -4619,6 +4619,106 @@
       }
     }
   },
+  "devtools_tabRecord": {
+    "message": "Record",
+    "description": "DevTools, Piwi panel: tab showing the running recording. One word."
+  },
+  "devtools_tabReplay": {
+    "message": "Replay",
+    "description": "DevTools, Piwi panel: tab showing the running replay. One word."
+  },
+  "devtools_noRecording": {
+    "message": "Nothing is being recorded. Start with Record actions or Report a bug in the toolbar popup: the steps show here as they are recorded.",
+    "description": "DevTools, Piwi panel, Record tab: nothing is being recorded. “Record actions” and “Report a bug” are the popup tiles' names (popup_record, popup_reportBug)."
+  },
+  "devtools_recordingOn_one": {
+    "message": "Recording on $site$: $count$ step",
+    "description": "DevTools, Piwi panel, Record tab: a recording runs. $count$ is the number of steps so far, $site$ the recorded site, like https://shop.example.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "site": {
+        "content": "$2",
+        "example": "https://shop.example"
+      }
+    }
+  },
+  "devtools_recordingOn_other": {
+    "message": "Recording on $site$: $count$ steps",
+    "description": "DevTools, Piwi panel, Record tab: a recording runs. $count$ is the number of steps so far, $site$ the recorded site, like https://shop.example.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "site": {
+        "content": "$2",
+        "example": "https://shop.example"
+      }
+    }
+  },
+  "devtools_bugRecordingOn_one": {
+    "message": "Bug report on $site$: $count$ step",
+    "description": "DevTools, Piwi panel, Record tab: a bug report is being recorded. $count$ is the number of steps so far, $site$ the recorded site.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "site": {
+        "content": "$2",
+        "example": "https://shop.example"
+      }
+    }
+  },
+  "devtools_bugRecordingOn_other": {
+    "message": "Bug report on $site$: $count$ steps",
+    "description": "DevTools, Piwi panel, Record tab: a bug report is being recorded. $count$ is the number of steps so far, $site$ the recorded site.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "site": {
+        "content": "$2",
+        "example": "https://shop.example"
+      }
+    }
+  },
+  "devtools_recordingStopped_one": {
+    "message": "Recording stopped: $count$ step, not exported yet",
+    "description": "DevTools, Piwi panel, Record tab: the recording has stopped and is kept until exported or discarded. $count$ is the number of steps.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "devtools_recordingStopped_other": {
+    "message": "Recording stopped: $count$ steps, not exported yet",
+    "description": "DevTools, Piwi panel, Record tab: the recording has stopped and is kept until exported or discarded. $count$ is the number of steps.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "devtools_stopRecording": {
+    "message": "Stop recording",
+    "description": "DevTools, Piwi panel, Record tab: button that stops the recording, as the popup's Stop does."
+  },
+  "devtools_finishBugOnPage": {
+    "message": "Finish the bug report from its panel on the page, which collects the evidence.",
+    "description": "DevTools, Piwi panel, Record tab: a bug report is finished from its own panel on the page, which collects the evidence."
+  },
+  "devtools_noReplay": {
+    "message": "No replay yet. Start one with Replay a bug report in the toolbar popup: its steps and results show here.",
+    "description": "DevTools, Piwi panel, Replay tab: no replay has run. “Replay a bug report” is the popup tile's name (popup_replayBug)."
+  },
   "stability_position": {
     "message": "position",
     "description": "Name of a locator stability rule, in a list after “Brittle locator:”: the locator picks an element by its order (nth, first, last). Lower case, a few words."

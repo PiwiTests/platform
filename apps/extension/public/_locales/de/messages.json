@@ -3907,6 +3907,94 @@
       }
     }
   },
+  "devtools_tabRecord": {
+    "message": "Aufzeichnen"
+  },
+  "devtools_tabReplay": {
+    "message": "Abspielen"
+  },
+  "devtools_noRecording": {
+    "message": "Es läuft keine Aufzeichnung. Starten Sie Aufzeichnen oder Bug melden im Menü der Erweiterung: Die Schritte erscheinen hier, während sie aufgezeichnet werden."
+  },
+  "devtools_recordingOn_one": {
+    "message": "Aufzeichnung auf $site$: $count$ Schritt",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "site": {
+        "content": "$2",
+        "example": "https://shop.example"
+      }
+    }
+  },
+  "devtools_recordingOn_other": {
+    "message": "Aufzeichnung auf $site$: $count$ Schritte",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "site": {
+        "content": "$2",
+        "example": "https://shop.example"
+      }
+    }
+  },
+  "devtools_bugRecordingOn_one": {
+    "message": "Bug-Report auf $site$: $count$ Schritt",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "site": {
+        "content": "$2",
+        "example": "https://shop.example"
+      }
+    }
+  },
+  "devtools_bugRecordingOn_other": {
+    "message": "Bug-Report auf $site$: $count$ Schritte",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "site": {
+        "content": "$2",
+        "example": "https://shop.example"
+      }
+    }
+  },
+  "devtools_recordingStopped_one": {
+    "message": "Aufzeichnung beendet: $count$ Schritt, noch nicht exportiert",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "devtools_recordingStopped_other": {
+    "message": "Aufzeichnung beendet: $count$ Schritte, noch nicht exportiert",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "devtools_stopRecording": {
+    "message": "Aufzeichnung beenden"
+  },
+  "devtools_finishBugOnPage": {
+    "message": "Schließen Sie den Bug-Report über sein Panel auf der Seite ab, das die Belege sammelt."
+  },
+  "devtools_noReplay": {
+    "message": "Noch keine Wiedergabe. Starten Sie eine mit Bug-Report abspielen im Menü der Erweiterung: Ihre Schritte und Ergebnisse erscheinen hier."
+  },
   "stability_position": {
     "message": "Position"
   },

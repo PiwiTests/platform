@@ -26,6 +26,7 @@ const WATCHED = [
   'options.html',
   'devtools.html',
   'devtools-sidebar.html',
+  'devtools-panel.html',
   'manifest.json',
   'scripts',
   '../../packages/core/src',

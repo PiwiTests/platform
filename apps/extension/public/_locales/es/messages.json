@@ -3907,6 +3907,94 @@
       }
     }
   },
+  "devtools_tabRecord": {
+    "message": "Grabar"
+  },
+  "devtools_tabReplay": {
+    "message": "Reproducir"
+  },
+  "devtools_noRecording": {
+    "message": "No se está grabando nada. Empiece con Grabar acciones o Notificar un bug en el menú de la extensión: los pasos aparecen aquí a medida que se graban."
+  },
+  "devtools_recordingOn_one": {
+    "message": "Grabando en $site$: $count$ paso",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "site": {
+        "content": "$2",
+        "example": "https://shop.example"
+      }
+    }
+  },
+  "devtools_recordingOn_other": {
+    "message": "Grabando en $site$: $count$ pasos",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "site": {
+        "content": "$2",
+        "example": "https://shop.example"
+      }
+    }
+  },
+  "devtools_bugRecordingOn_one": {
+    "message": "Informe de bug en $site$: $count$ paso",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "site": {
+        "content": "$2",
+        "example": "https://shop.example"
+      }
+    }
+  },
+  "devtools_bugRecordingOn_other": {
+    "message": "Informe de bug en $site$: $count$ pasos",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "site": {
+        "content": "$2",
+        "example": "https://shop.example"
+      }
+    }
+  },
+  "devtools_recordingStopped_one": {
+    "message": "Grabación detenida: $count$ paso, aún sin exportar",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "devtools_recordingStopped_other": {
+    "message": "Grabación detenida: $count$ pasos, aún sin exportar",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "devtools_stopRecording": {
+    "message": "Detener la grabación"
+  },
+  "devtools_finishBugOnPage": {
+    "message": "Termine el informe de bug desde su panel en la página, que reúne las evidencias."
+  },
+  "devtools_noReplay": {
+    "message": "Aún no hay ninguna reproducción. Inicie una con Reproducir un informe de bug en el menú de la extensión: sus pasos y resultados aparecen aquí."
+  },
   "stability_position": {
     "message": "posición"
   },

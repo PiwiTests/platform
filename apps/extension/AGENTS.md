@@ -289,7 +289,13 @@ they have `chrome.scripting`, `chrome.permissions` and `chrome.storage` as well 
 - **Access** is the tab's `activeTab` grant or the origin's optional host permission. When injection fails on a web
   page, the pane offers **Allow on this site**, which requests that one origin inside the click. Reading the page's
   origin with a plain `inspectedWindow.eval` needs no permission.
-- **Tests**: `devtools-sidebar.spec.ts` opens the pane as a tab with `chrome.devtools` stubbed (`devtools-stub.ts`:
+- **The Piwi panel** (`devtools-panel.html`, `src/devtools/panel.ts`, `panel-record.ts`, `panel-replay.ts`) mirrors
+  the recording and the replay from session storage (`RECORDING_KEY`, `REPLAY_KEY`) and redraws on
+  `chrome.storage.onChanged`, so it needs no channel of its own. Its buttons do what the in-page panels do: Stop is the
+  popup's stop (`stopRecording` + `piwi-recording-stopped`); Pause, Continue and Stop write the replay state, then send
+  `piwi-replay-wake` to the replayed site's tabs, which `replay-panel.ts` answers by redrawing its panel and, with
+  `wake: true` (Continue, Next step, Stop, never Pause), releasing its wait.
+- **Tests**: `devtools-sidebar.spec.ts` and `devtools-panel.spec.ts` open the pages as tabs with `chrome.devtools` stubbed (`devtools-stub.ts`:
   `eval` runs in a fixture page's own world, where the spec adds the content script; `$0` is that page's global).
   `devtools-real.spec.ts` launches Chromium with `--auto-open-devtools-for-tabs` and drives the real DevTools page
   through the browser's debugging port: it checks the `devtools_page` loads and that `$0` reaches the ranking script.

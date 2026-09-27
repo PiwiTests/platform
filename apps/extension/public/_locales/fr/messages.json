@@ -3907,6 +3907,94 @@
       }
     }
   },
+  "devtools_tabRecord": {
+    "message": "Enregistrer"
+  },
+  "devtools_tabReplay": {
+    "message": "Rejouer"
+  },
+  "devtools_noRecording": {
+    "message": "Aucun enregistrement en cours. Commencez par Enregistrer ou Signaler un bug dans le menu de l’extension : les étapes s’affichent ici au fur et à mesure."
+  },
+  "devtools_recordingOn_one": {
+    "message": "Enregistrement sur $site$ : $count$ étape",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "site": {
+        "content": "$2",
+        "example": "https://shop.example"
+      }
+    }
+  },
+  "devtools_recordingOn_other": {
+    "message": "Enregistrement sur $site$ : $count$ étapes",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "site": {
+        "content": "$2",
+        "example": "https://shop.example"
+      }
+    }
+  },
+  "devtools_bugRecordingOn_one": {
+    "message": "Rapport de bug sur $site$ : $count$ étape",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "site": {
+        "content": "$2",
+        "example": "https://shop.example"
+      }
+    }
+  },
+  "devtools_bugRecordingOn_other": {
+    "message": "Rapport de bug sur $site$ : $count$ étapes",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "site": {
+        "content": "$2",
+        "example": "https://shop.example"
+      }
+    }
+  },
+  "devtools_recordingStopped_one": {
+    "message": "Enregistrement arrêté : $count$ étape, pas encore exportée",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "devtools_recordingStopped_other": {
+    "message": "Enregistrement arrêté : $count$ étapes, pas encore exportées",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "devtools_stopRecording": {
+    "message": "Arrêter l’enregistrement"
+  },
+  "devtools_finishBugOnPage": {
+    "message": "Terminez le rapport de bug depuis son panneau sur la page, qui rassemble les éléments de preuve."
+  },
+  "devtools_noReplay": {
+    "message": "Aucune relecture pour l’instant. Lancez-en une avec Rejouer un rapport de bug dans le menu de l’extension : ses étapes et leurs résultats s’affichent ici."
+  },
   "stability_position": {
     "message": "position"
   },

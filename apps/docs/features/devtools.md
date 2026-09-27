@@ -33,6 +33,19 @@ needed on a tab where you have just used the toolbar popup.
 
 Elements inside an iframe are not ranked: their locator would need the frame's prefix. Use Pick an element there.
 
+## The Piwi panel
+
+DevTools also gets a **Piwi** panel of its own, with two tabs. It shows what runs on the page and stays up while the
+page navigates; the panels on the page stay too, for when DevTools is closed.
+
+- **Record** lists a recording's steps as they are captured, each with the locator it was recorded with. **Stop
+  recording** stops it as the popup does; then **Copy as TypeScript**, **Download steps** and **Discard** do what the
+  review panel does. A bug report is finished from its panel on the page, which collects the evidence.
+- **Replay** lists a replay's steps with their results and the verdict once it ends. **Pause**, **Continue**, **Next
+  step** and **Stop** act on the replay running in the page.
+
+**Playwright view**, at the top of the panel, turns the view below on and off in the inspected tab.
+
 ## Playwright view
 
 **Playwright view** in the popup (key `V`) labels the page as a test sees it: each button, link, field, heading and
