@@ -106,4 +106,26 @@ test.describe('assertion-panel.js', () => {
     });
     expect(await clippedInShadows(page)).toEqual([]);
   });
+
+  test('lays out in German without clipping', async ({ context }) => {
+    await openShadowRoots(context);
+    await stubChromeI18n(context, 'de');
+    const page = await context.newPage();
+    await page.setContent(`<!doctype html><html><body>
+      <button id="target" data-testid="submit-btn">Submit</button>
+    </body></html>`);
+    await page.addScriptTag({ path: path.join(DIST, 'assertion-panel.js') });
+    await page.hover('#target');
+    await page.click('#target');
+
+    const lang = () =>
+      page.evaluate(
+        () =>
+          document
+            .getElementById('piwi-assertion-panel-host')
+            ?.shadowRoot?.querySelector<HTMLElement>('[role="dialog"]')?.lang ?? null,
+      );
+    await expect.poll(lang).toBe('de');
+    expect(await clippedInShadows(page)).toEqual([]);
+  });
 });

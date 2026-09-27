@@ -89,4 +89,17 @@ test.describe('lint-overlay.js', () => {
     await expect(panel.getByRole('button', { name: 'Fermer le contrôle' })).toBeVisible();
     expect(await clippedInShadows(page)).toEqual([]);
   });
+
+  test('lays out in German without clipping', async ({ context }) => {
+    await openShadowRoots(context);
+    await stubChromeI18n(context, 'de');
+    const page = await context.newPage();
+    await page.setContent(`<!doctype html><html><body><button></button><button></button></body></html>`);
+    await page.addScriptTag({ path: path.join(DIST, 'lint-overlay.js') });
+
+    const panel = page.locator('#piwi-lint-overlay-host .panel');
+    await expect(panel).toHaveAttribute('lang', 'de');
+    await expect(panel.locator('.row').first()).toBeVisible();
+    expect(await clippedInShadows(page)).toEqual([]);
+  });
 });

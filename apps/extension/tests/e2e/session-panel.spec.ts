@@ -317,4 +317,64 @@ test.describe('session-panel.js', () => {
       expect(await clippedInShadows(page)).toEqual([]);
     });
   });
+
+  test.describe('in German', () => {
+    const panelLang = (page: Page, hostId: string, selector: string) =>
+      page.evaluate(
+        ([id, sel]) => document.getElementById(id)?.shadowRoot?.querySelector<HTMLElement>(sel)?.lang ?? null,
+        [hostId, selector] as const,
+      );
+    const promptError = (page: Page) =>
+      page.evaluate(
+        () => document.getElementById('piwi-session-name-host')?.shadowRoot?.querySelector('.error')?.textContent ?? '',
+      );
+
+    test('the empty list lays out without clipping', async ({ context }) => {
+      await openShadowRoots(context);
+      await stubSessionStorage(context, [], 'de');
+      const page = await context.newPage();
+      await page.setContent(`<!doctype html><html><body></body></html>`);
+      await page.addScriptTag({ path: path.join(DIST, 'session-panel.js') });
+      await expect.poll(() => panelLang(page, 'piwi-session-panel-host', '[role="dialog"]')).toBe('de');
+      expect(await clippedInShadows(page)).toEqual([]);
+    });
+
+    test('a list of two and the name prompt refusing a name lay out without clipping', async ({ context }) => {
+      await openShadowRoots(context);
+      await stubSessionStorage(
+        context,
+        [
+          { name: 'submitButton', locator: `getByTestId('x')`, pageUrl: 'https://x.test/' },
+          { name: 'total', locator: `getByTestId('total')`, pageUrl: 'https://x.test/cart' },
+        ],
+        'de',
+      );
+      const page = await context.newPage();
+      await page.setContent(`<!doctype html><html><body>
+        <button id="target" data-testid="submit-btn">Submit</button>
+      </body></html>`);
+      await page.addScriptTag({ path: path.join(DIST, 'session-panel.js') });
+      await expect.poll(() => panelLang(page, 'piwi-session-panel-host', '[role="dialog"]')).toBe('de');
+      expect(await clippedInShadows(page)).toEqual([]);
+
+      await pressTabTimes(page, 4);
+      await page.keyboard.press('Enter');
+      await page.hover('#target');
+      await page.click('#target');
+      await expect.poll(() => panelLang(page, 'piwi-session-name-host', '.bar')).toBe('de');
+      expect(await clippedInShadows(page)).toEqual([]);
+
+      let previous = '';
+      for (const typed of ['', '2total', 'total']) {
+        if (typed) {
+          await page.keyboard.press('Control+A');
+          await page.keyboard.type(typed);
+        }
+        await page.keyboard.press('Enter');
+        await expect.poll(() => promptError(page)).not.toBe(previous);
+        previous = await promptError(page);
+        expect(await clippedInShadows(page)).toEqual([]);
+      }
+    });
+  });
 });

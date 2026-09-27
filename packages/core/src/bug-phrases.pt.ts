@@ -1,0 +1,231 @@
+import type { BugPhrases, BugState, BugStepValue, BugSubject, RoleNoun } from './bug-phrases';
+import { markdownCode } from './markdown-code';
+
+/** ARIA roles in the words of a Brazilian Portuguese interface, with their gender. */
+const ROLES: Readonly<Record<string, RoleNoun>> = {
+  alert: { noun: 'mensagem de alerta', gender: 'feminine' },
+  alertdialog: { noun: 'caixa de diálogo', gender: 'feminine' },
+  article: { noun: 'artigo', gender: 'masculine' },
+  banner: { noun: 'cabeçalho', gender: 'masculine' },
+  button: { noun: 'botão', gender: 'masculine' },
+  cell: { noun: 'célula de tabela', gender: 'feminine' },
+  checkbox: { noun: 'caixa de seleção', gender: 'feminine' },
+  columnheader: { noun: 'cabeçalho de coluna', gender: 'masculine' },
+  combobox: { noun: 'lista suspensa', gender: 'feminine' },
+  contentinfo: { noun: 'rodapé', gender: 'masculine' },
+  dialog: { noun: 'caixa de diálogo', gender: 'feminine' },
+  form: { noun: 'formulário', gender: 'masculine' },
+  generic: { noun: 'elemento', gender: 'masculine' },
+  grid: { noun: 'tabela', gender: 'feminine' },
+  gridcell: { noun: 'célula de tabela', gender: 'feminine' },
+  heading: { noun: 'título', gender: 'masculine' },
+  img: { noun: 'imagem', gender: 'feminine' },
+  link: { noun: 'link', gender: 'masculine' },
+  list: { noun: 'lista', gender: 'feminine' },
+  listbox: { noun: 'lista', gender: 'feminine' },
+  listitem: { noun: 'item de lista', gender: 'masculine' },
+  main: { noun: 'conteúdo principal', gender: 'masculine' },
+  menu: { noun: 'menu', gender: 'masculine' },
+  menubar: { noun: 'barra de menus', gender: 'feminine' },
+  menuitem: { noun: 'item de menu', gender: 'masculine' },
+  menuitemcheckbox: { noun: 'item de menu', gender: 'masculine' },
+  menuitemradio: { noun: 'item de menu', gender: 'masculine' },
+  navigation: { noun: 'navegação', gender: 'feminine' },
+  option: { noun: 'opção', gender: 'feminine' },
+  paragraph: { noun: 'parágrafo', gender: 'masculine' },
+  progressbar: { noun: 'barra de progresso', gender: 'feminine' },
+  radio: { noun: 'botão de opção', gender: 'masculine' },
+  radiogroup: { noun: 'grupo de botões de opção', gender: 'masculine' },
+  region: { noun: 'seção', gender: 'feminine' },
+  row: { noun: 'linha de tabela', gender: 'feminine' },
+  rowheader: { noun: 'cabeçalho de linha', gender: 'masculine' },
+  search: { noun: 'área de pesquisa', gender: 'feminine' },
+  searchbox: { noun: 'campo de pesquisa', gender: 'masculine' },
+  slider: { noun: 'controle deslizante', gender: 'masculine' },
+  spinbutton: { noun: 'campo numérico', gender: 'masculine' },
+  status: { noun: 'mensagem de status', gender: 'feminine' },
+  switch: { noun: 'interruptor', gender: 'masculine' },
+  tab: { noun: 'aba', gender: 'feminine' },
+  table: { noun: 'tabela', gender: 'feminine' },
+  tablist: { noun: 'lista de abas', gender: 'feminine' },
+  tabpanel: { noun: 'painel de aba', gender: 'masculine' },
+  textbox: { noun: 'campo de texto', gender: 'masculine' },
+  toolbar: { noun: 'barra de ferramentas', gender: 'feminine' },
+  tooltip: { noun: 'dica', gender: 'feminine' },
+  tree: { noun: 'árvore', gender: 'feminine' },
+  treeitem: { noun: 'item de árvore', gender: 'masculine' },
+};
+
+const ELEMENT: RoleNoun = { noun: 'elemento', gender: 'masculine' };
+const PAGE: RoleNoun = { noun: 'página', gender: 'feminine' };
+
+const roleNoun = (role: string | null): RoleNoun =>
+  role ? (ROLES[role] ?? { noun: role, gender: 'masculine' }) : ELEMENT;
+
+const quote = (text: string): string => `“${text}”`;
+
+type Article = 'definite' | 'indefinite' | null;
+
+/**
+ * A subject as Portuguese needs it: the article apart from the rest, since a
+ * preposition contracts with it (`em` + `o` = `no`), and the gender its
+ * adjectives agree with.
+ */
+interface Phrase {
+  article: Article;
+  words: string;
+  noun: RoleNoun;
+}
+
+function subject(s: BugSubject): Phrase {
+  switch (s.kind) {
+    case 'page':
+      return { article: 'definite', words: 'página', noun: PAGE };
+    case 'named': {
+      const n = roleNoun(s.role);
+      return { article: 'definite', words: `${n.noun} ${quote(s.name)}`, noun: n };
+    }
+    case 'name':
+      return { article: null, words: quote(s.name), noun: ELEMENT };
+    case 'testId':
+      return { article: 'definite', words: `elemento com o test id ${markdownCode(s.testId)}`, noun: ELEMENT };
+    case 'text': {
+      const n = roleNoun(s.role);
+      return { article: 'definite', words: `${n.noun} ${quote(s.text)}`, noun: n };
+    }
+    case 'locator':
+      return { article: 'definite', words: `elemento ${markdownCode(s.locator)}`, noun: ELEMENT };
+    case 'element': {
+      const article = s.definite ? 'definite' : 'indefinite';
+      if (s.role) {
+        const n = roleNoun(s.role);
+        return { article, words: n.noun, noun: n };
+      }
+      if (s.tagName) return { article, words: `elemento ${markdownCode(s.tagName)}`, noun: ELEMENT };
+      return { article, words: 'elemento', noun: ELEMENT };
+    }
+  }
+}
+
+const feminine = (p: Phrase): boolean => p.noun.gender === 'feminine';
+
+/** `o botão`, `a caixa de seleção`, `um elemento`. */
+function bare(p: Phrase): string {
+  if (p.article === 'definite') return `${feminine(p) ? 'a' : 'o'} ${p.words}`;
+  if (p.article === 'indefinite') return `${feminine(p) ? 'uma' : 'um'} ${p.words}`;
+  return p.words;
+}
+
+/** After `em`, which contracts with the definite article: `no botão`, `na lista`, `em um elemento`. */
+function inside(p: Phrase): string {
+  if (p.article === 'definite') return `${feminine(p) ? 'na' : 'no'} ${p.words}`;
+  return `em ${bare(p)}`;
+}
+
+/** Keys by the names Brazilian (ABNT2) keyboards print on them; any other key keeps Playwright's name. */
+const KEYS: Readonly<Record<string, string>> = {
+  Escape: 'Esc',
+  Space: 'Espaço',
+  ArrowUp: 'Seta para cima',
+  ArrowDown: 'Seta para baixo',
+  ArrowLeft: 'Seta para a esquerda',
+  ArrowRight: 'Seta para a direita',
+  PageUp: 'Page Up',
+  PageDown: 'Page Down',
+};
+
+const key = (name: string): string => KEYS[name] ?? name;
+
+const value = (v: BugStepValue): string => (v.kind === 'password' ? 'uma senha (não gravada)' : quote(v.text));
+
+const STATES: Record<BugState, [masculine: string, feminine: string]> = {
+  visible: ['visível', 'visível'],
+  hidden: ['oculto', 'oculta'],
+  enabled: ['habilitado', 'habilitada'],
+  disabled: ['desabilitado', 'desabilitada'],
+};
+
+const number = (n: number): string => new Intl.NumberFormat('pt-BR').format(n);
+/** Brazilian Portuguese puts 0 and 1 in the singular. */
+const plural = (n: number, one: string, many: string): string => `${number(n)} ${n < 2 ? one : many}`;
+const ofTotal = (shown: number, total: number | null): string =>
+  `${number(shown)}${total != null ? ` de ${number(total)}` : ''}`;
+
+export const PORTUGUESE_BUG_PHRASES: BugPhrases = {
+  language: 'pt-BR',
+  roles: ROLES,
+  quote,
+  code: markdownCode,
+  capitalize: (text) => `${text.charAt(0).toLocaleUpperCase('pt-BR')}${text.slice(1)}`,
+  steps: {
+    goto: (url) => `Abrir ${markdownCode(url)}`,
+    click: (s) => `Clicar ${inside(subject(s))}`,
+    fill: (s, v) => `Digitar ${value(v)} ${inside(subject(s))}`,
+    check: (s) => `Marcar ${bare(subject(s))}`,
+    uncheck: (s) => `Desmarcar ${bare(subject(s))}`,
+    selectOption: (s, v) => `Escolher ${value(v)} ${inside(subject(s))}`,
+    press: (name, s) => (s ? `Pressionar ${key(name)} ${inside(subject(s))}` : `Pressionar ${key(name)}`),
+  },
+  expectation(s, e, negated) {
+    const should = negated ? 'não deveria' : 'deveria';
+    const p = subject(s);
+    const text = bare(p);
+    switch (e.matcher) {
+      case 'text':
+        return `${text} ${should} mostrar ${quote(e.expected)}`;
+      case 'value':
+        return `${text} ${should} ter o valor ${quote(e.expected)}`;
+      case 'name':
+        return `${text} ${should} se chamar ${quote(e.expected)}`;
+      case 'url':
+        return `a página ${should} ser ${markdownCode(e.expected)}`;
+      case 'state':
+        return `${text} ${should} estar ${STATES[e.state][feminine(p) ? 1 : 0]}`;
+    }
+  },
+  evidence: (c) =>
+    [
+      c.screenshots > 0 ? plural(c.screenshots, 'captura de tela', 'capturas de tela') : 'nenhuma captura de tela',
+      ...(c.consoleErrors > 0 ? [plural(c.consoleErrors, 'erro de console', 'erros de console')] : []),
+      ...(c.consoleWarnings > 0 ? [plural(c.consoleWarnings, 'aviso de console', 'avisos de console')] : []),
+      ...(c.failedRequests > 0 ? [plural(c.failedRequests, 'requisição com falha', 'requisições com falha')] : []),
+      ...(c.outline ? ['estrutura da página'] : []),
+    ].join(' · '),
+  report: {
+    untitled: 'Bug relatado',
+    titleOnPage: (pageKey) => `Bug em ${pageKey}`,
+    pageLabel: '**Página**',
+    pathOn: (path, origin) => `${path} em ${origin}`,
+    stepsHeading: 'Passos para reproduzir',
+    noSteps: 'Nenhum passo foi gravado.',
+    actual: (v) => `Resultado: ${v}`,
+    note: (text) => `Observação: ${text}`,
+    expectedHeading: 'Esperado e obtido',
+    nothingMarked: 'Nada foi marcado como errado.',
+    expectedLine: (step, expectation, actual) =>
+      `Passo ${step}: ${expectation}.${actual != null ? ` Resultado: ${actual}.` : ''}`,
+    evidenceHeading: 'Evidências',
+    screenshotsHeading: 'Capturas de tela',
+    screenshotAfterStep: (step) => `depois do passo ${step}`,
+    screenshotAtFinish: 'ao concluir o relatório',
+    screenshotByHand: 'feita manualmente',
+    noScreenshot: (reason) => `Sem captura de tela: ${reason}`,
+    consoleHeading: (shown, total) => `Console (${ofTotal(shown, total)})`,
+    consoleLine: (e) => {
+      const what =
+        e.source === 'rejection'
+          ? 'promise rejeitada sem tratamento'
+          : e.level === 'error'
+            ? e.source === 'error'
+              ? 'erro não capturado'
+              : 'erro'
+            : 'aviso';
+      return `${what} em ${e.page} às ${e.time}: ${e.message}`;
+    },
+    requestsHeading: (shown, total) => `Requisições com falha (${ofTotal(shown, total)})`,
+    requestLine: (r) => `${r.request} → ${r.status > 0 ? String(r.status) : 'sem resposta'}, em ${r.page} às ${r.time}`,
+    outlineHeading: 'Estrutura da página',
+    outlineNote:
+      'Gerada pelo Piwi Picker a partir da página; a forma YAML de um snapshot ARIA, não a do próprio Playwright.',
+  },
+};

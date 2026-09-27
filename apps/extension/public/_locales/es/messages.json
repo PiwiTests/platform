@@ -1,39 +1,39 @@
 {
   "extDescription": {
-    "message": "Des locators Playwright stables et classés pour tout élément de la page, notés comme dans le tableau de bord Piwi."
+    "message": "Locators de Playwright estables y clasificados para cualquier elemento de la página, puntuados como en el panel de control de Piwi."
   },
   "pickElementCommand": {
-    "message": "Obtenir le locator d'un élément de la page"
+    "message": "Obtener el locator de un elemento de la página"
   },
   "common_languageTag": {
-    "message": "fr"
+    "message": "es"
   },
   "common_recordingStartFailed": {
-    "message": "L’enregistrement n’a pas pu démarrer."
+    "message": "No se pudo iniciar la grabación."
   },
   "common_screenshotNoTab": {
-    "message": "Aucun onglet à capturer."
+    "message": "No hay ninguna pestaña que capturar."
   },
   "common_screenshotTabHidden": {
-    "message": "L’onglet n’est pas celui au premier plan."
+    "message": "La pestaña no es la que está en primer plano."
   },
   "common_noProject": {
-    "message": "Aucun projet à actualiser."
+    "message": "No hay ningún proyecto que actualizar."
   },
   "common_notConnected": {
-    "message": "Piwi Picker n’est connecté à aucune instance Piwi."
+    "message": "Piwi Picker no está conectado a ninguna instancia de Piwi."
   },
   "common_catalogRefreshFailed": {
-    "message": "Le catalogue de fonctions n’a pas pu être actualisé."
+    "message": "No se pudo actualizar el catálogo de funciones."
   },
   "common_locatorIndexFailed": {
-    "message": "Les éléments testés n’ont pas pu être téléchargés."
+    "message": "No se pudieron descargar los elementos probados."
   },
   "common_replayNeedsPage": {
-    "message": "Un rapport se rejoue sur une page web."
+    "message": "Un informe se reproduce en una página web."
   },
   "common_replayNotSteps": {
-    "message": "Ce fichier n’est pas un fichier d’étapes : $error$",
+    "message": "Este archivo no contiene los pasos de un informe de bug: $error$",
     "placeholders": {
       "error": {
         "content": "$1",
@@ -42,25 +42,25 @@
     }
   },
   "common_replayNoSteps": {
-    "message": "Le rapport ne contient aucune étape."
+    "message": "El informe no tiene ningún paso."
   },
   "common_replayNeedsAccess": {
-    "message": "Piwi Picker a besoin d’accéder à ce site pour suivre le rapport de page en page. Ouvrez Piwi Picker sur cet onglet et choisissez Rejouer un rapport de bug."
+    "message": "Piwi Picker necesita acceso a este sitio para seguir la reproducción de una página a otra. Abre Piwi Picker en esta pestaña y elige Reproducir un informe de bug."
   },
   "common_replayStartFailed": {
-    "message": "Le rapport n’a pas pu être rejoué."
+    "message": "No se pudo iniciar la reproducción."
   },
   "common_workerNoAnswer": {
-    "message": "Le processus d’arrière-plan de Piwi Picker n’a pas répondu : rechargez Piwi Picker."
+    "message": "El proceso en segundo plano de Piwi Picker no respondió: vuelve a cargar Piwi Picker."
   },
   "common_enterInstanceUrl": {
-    "message": "Saisissez d’abord l’adresse de votre instance Piwi."
+    "message": "Primero escribe la dirección de tu instancia de Piwi."
   },
   "common_apiKeyRejected": {
-    "message": "L’instance a refusé la clé d’API : vérifiez-la."
+    "message": "La instancia rechazó la clave de API: revísala."
   },
   "common_instanceStatus": {
-    "message": "L’instance a répondu par une erreur ($status$).",
+    "message": "La instancia respondió con un error ($status$).",
     "placeholders": {
       "status": {
         "content": "$1",
@@ -69,10 +69,10 @@
     }
   },
   "common_instanceUnreachable": {
-    "message": "Piwi Picker n’a pas pu joindre l’instance : vérifiez l’adresse, et qu’elle est démarrée."
+    "message": "Piwi Picker no pudo conectar con la instancia: revisa la dirección y que esté en funcionamiento."
   },
   "common_projectsFailed": {
-    "message": "La liste des projets n’a pas pu être lue ($status$).",
+    "message": "No se pudo leer la lista de proyectos ($status$).",
     "placeholders": {
       "status": {
         "content": "$1",
@@ -81,7 +81,7 @@
     }
   },
   "common_catalogFailed": {
-    "message": "Le catalogue de fonctions n’a pas pu être téléchargé ($status$).",
+    "message": "No se pudo descargar el catálogo de funciones ($status$).",
     "placeholders": {
       "status": {
         "content": "$1",
@@ -90,13 +90,13 @@
     }
   },
   "common_projectKeyRejected": {
-    "message": "L’instance a refusé la clé d’API pour ce projet."
+    "message": "La instancia rechazó la clave de API para este proyecto."
   },
   "common_noLocatorIndex": {
-    "message": "Cette instance Piwi n’a pas d’index de locators pour ce projet : mettez Piwi à jour, ou vérifiez le projet."
+    "message": "Esta instancia de Piwi no tiene índice de locators para el proyecto: actualiza Piwi o revisa el proyecto."
   },
   "common_locatorIndexStatus": {
-    "message": "L’index de locators n’a pas pu être téléchargé ($status$).",
+    "message": "No se pudo descargar el índice de locators ($status$).",
     "placeholders": {
       "status": {
         "content": "$1",
@@ -105,121 +105,121 @@
     }
   },
   "common_locatorIndexInvalid": {
-    "message": "L’instance a répondu par autre chose qu’un index de locators."
+    "message": "La instancia respondió con algo que no es un índice de locators."
   },
   "badge_recording": {
-    "message": "ENR"
+    "message": "REC"
   },
   "badge_bug": {
     "message": "BUG"
   },
   "badge_replay": {
-    "message": "LECT"
+    "message": "REPR"
   },
   "popup_settings": {
-    "message": "Réglages"
+    "message": "Configuración"
   },
   "popup_workerNotice": {
-    "message": "Piwi Picker a été reconstruit depuis son chargement, et une partie tourne encore sur la version précédente : certains outils ne répondront pas. Recharger met fin à un enregistrement en cours."
+    "message": "Piwi Picker se volvió a compilar después de cargarse, y una parte sigue ejecutando la versión anterior, así que algunas herramientas no responderán. Volver a cargarlo termina la grabación en curso."
   },
   "popup_reload": {
-    "message": "Recharger Piwi Picker"
+    "message": "Volver a cargar Piwi Picker"
   },
   "popup_activeProject": {
-    "message": "Projet actif"
+    "message": "Proyecto activo"
   },
   "popup_autoMatched": {
-    "message": "Automatique (d’après l’adresse de la page)"
+    "message": "Automático (según la dirección de la página)"
   },
   "popup_autoNoMatch": {
-    "message": "Automatique (aucun projet ne correspond à cette page)"
+    "message": "Automático (ningún proyecto corresponde a esta página)"
   },
   "popup_testedElements": {
-    "message": "Éléments testés"
+    "message": "Elementos probados"
   },
   "popup_testedElementsHint": {
-    "message": "Ce que vos tests atteignent sur cette page, et ce qu’ils manquent"
+    "message": "Lo que tus pruebas alcanzan en esta página, y lo que no"
   },
   "popup_testedElementsConnect": {
-    "message": "Connectez Piwi pour voir ce que vos tests atteignent"
+    "message": "Conecta Piwi para ver lo que alcanzan tus pruebas"
   },
   "popup_reportBug": {
-    "message": "Signaler un bug"
+    "message": "Notificar un bug"
   },
   "popup_reportBugHint": {
-    "message": "Enregistrez, marquez ce qui ne va pas → un test en échec"
+    "message": "Graba los pasos, marca lo que falla → una prueba que falla"
   },
   "popup_replayBug": {
-    "message": "Rejouer un rapport de bug"
+    "message": "Reproducir un informe de bug"
   },
   "popup_replayBugHint": {
-    "message": "Rejouez-le ici, avec un curseur, et voyez si le bug apparaît"
+    "message": "Reprodúcelo aquí, con un cursor, y mira si el bug aparece"
   },
   "popup_record": {
-    "message": "Enregistrer"
+    "message": "Grabar acciones"
   },
   "popup_recordHint": {
-    "message": "Vos actions → un test"
+    "message": "Tus pasos → una prueba"
   },
   "popup_pick": {
-    "message": "Choisir un élément"
+    "message": "Elegir un elemento"
   },
   "popup_pickHint": {
-    "message": "Locators classés"
+    "message": "Locators clasificados"
   },
   "popup_hoverInspect": {
-    "message": "Inspecter"
+    "message": "Inspeccionar"
   },
   "popup_hoverInspectHint": {
-    "message": "Le locator au survol"
+    "message": "Locator bajo el cursor"
   },
   "popup_locatorConsole": {
-    "message": "Console"
+    "message": "Consola"
   },
   "popup_locatorConsoleHint": {
-    "message": "Testez un locator"
+    "message": "Prueba un locator"
   },
   "popup_multiPick": {
-    "message": "Multi-sélection"
+    "message": "Multiselección"
   },
   "popup_multiPickHint": {
-    "message": "2–3 éléments → liste"
+    "message": "2–3 elementos → lista"
   },
   "popup_lint": {
-    "message": "Contrôle"
+    "message": "Revisión"
   },
   "popup_lintHint": {
-    "message": "Éléments peu testables"
+    "message": "Elementos difíciles"
   },
   "popup_assertions": {
-    "message": "Assertions"
+    "message": "Aserciones"
   },
   "popup_assertionsHint": {
-    "message": "Lignes expect(…)"
+    "message": "Líneas expect(…)"
   },
   "popup_session": {
-    "message": "Session"
+    "message": "Sesión"
   },
   "popup_sessionHint": {
-    "message": "Nommer → exporter"
+    "message": "Nombrar → exportar"
   },
   "popup_agentContext": {
-    "message": "Contexte IA"
+    "message": "Contexto para IA"
   },
   "popup_agentContextHint": {
-    "message": "Résumé pour une IA"
+    "message": "Resumen para una IA"
   },
   "popup_testFunctions": {
-    "message": "Fonctions de test"
+    "message": "Funciones de prueba"
   },
   "popup_testFunctionsHint": {
-    "message": "Votre catalogue ici"
+    "message": "Tu catálogo aquí"
   },
   "popup_running": {
-    "message": "en cours"
+    "message": "en curso"
   },
   "popup_footerKeys": {
-    "message": "$first$–$last$ lancent un outil, $tested$ les éléments testés, $bug$ signale un bug, $replay$ en rejoue un",
+    "message": "$first$–$last$ abren una herramienta, $tested$ los elementos probados, $bug$ notifica un bug, $replay$ reproduce uno",
     "placeholders": {
       "bug": {
         "content": "$1",
@@ -244,7 +244,7 @@
     }
   },
   "popup_pickShortcut": {
-    "message": "$shortcut$ choisit sans ouvrir ce menu",
+    "message": "$shortcut$ elige un elemento sin abrir este menú",
     "placeholders": {
       "shortcut": {
         "content": "$1",
@@ -253,25 +253,25 @@
     }
   },
   "popup_noPickShortcut": {
-    "message": "Aucun raccourci pour choisir un élément : en définir un"
+    "message": "Sin atajo para elegir un elemento: asigna uno"
   },
   "popup_docs": {
-    "message": "documentation"
+    "message": "documentación"
   },
   "popup_noTab": {
-    "message": "Aucun onglet actif sur lequel travailler."
+    "message": "No hay ninguna pestaña activa en la que trabajar."
   },
   "popup_cannotRun": {
-    "message": "Piwi Picker ne peut pas agir sur cette page : les navigateurs protègent leurs propres pages et les boutiques d’extensions."
+    "message": "Piwi Picker no puede funcionar en esta página: los navegadores protegen sus propias páginas y las tiendas de extensiones."
   },
   "popup_tabShowsError": {
-    "message": "Cet onglet affiche une page d’erreur au lieu du site. Le site est-il démarré ? Rechargez l’onglet une fois qu’il l’est, puis réessayez."
+    "message": "Esta pestaña muestra una página de error en lugar del sitio. ¿Está en marcha el sitio? Vuelve a cargar la pestaña cuando lo esté y prueba de nuevo."
   },
   "popup_blockedByPolicy": {
-    "message": "Les réglages du navigateur de votre organisation interdisent les extensions sur ce site."
+    "message": "La configuración del navegador de tu organización no permite extensiones en este sitio."
   },
   "popup_buildIncomplete": {
-    "message": "Cette version de Piwi Picker n’a pas de fichier $file$. Reconstruisez l’extension, puis rechargez-la dans la page des extensions du navigateur.",
+    "message": "Esta versión de Piwi Picker no tiene el archivo $file$. Vuelve a compilar la extensión y recárgala en la página de extensiones del navegador.",
     "placeholders": {
       "file": {
         "content": "$1",
@@ -280,7 +280,7 @@
     }
   },
   "popup_cannotRunBecause": {
-    "message": "Piwi Picker ne peut pas agir sur cette page. Le navigateur indique : $reason$",
+    "message": "Piwi Picker no puede funcionar en esta página. El navegador dice: $reason$",
     "placeholders": {
       "reason": {
         "content": "$1",
@@ -289,7 +289,7 @@
     }
   },
   "popup_stopRecording": {
-    "message": "Arrêter l’enregistrement ($count$)",
+    "message": "Detener la grabación ($count$)",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -298,7 +298,7 @@
     }
   },
   "popup_finishBugReport": {
-    "message": "Terminer le rapport ($count$)",
+    "message": "Terminar el informe ($count$)",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -307,10 +307,10 @@
     }
   },
   "popup_stepsSoFar": {
-    "message": "Étapes enregistrées jusqu’ici"
+    "message": "Pasos grabados hasta ahora"
   },
   "popup_reviewRecording": {
-    "message": "Revoir l’enregistrement ($count$)",
+    "message": "Revisar la grabación ($count$)",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -319,25 +319,25 @@
     }
   },
   "popup_reviewBugReport": {
-    "message": "Revoir le rapport de bug"
+    "message": "Revisar el informe de bug"
   },
   "popup_notExported": {
-    "message": "Pas encore exporté"
+    "message": "Aún sin exportar"
   },
   "popup_takeScreenshot": {
-    "message": "Prendre une capture d’écran"
+    "message": "Hacer una captura de pantalla"
   },
   "popup_screenshotHint_one": {
-    "message": "Ajoute cet onglet, tel qu’il est, au rapport ($count$ événement jusqu’ici)",
+    "message": "Añade esta pestaña, tal como está, al informe ($count$ evento hasta ahora)",
     "placeholders": {
       "count": {
         "content": "$1",
-        "example": "1"
+        "example": "12"
       }
     }
   },
   "popup_screenshotHint_other": {
-    "message": "Ajoute cet onglet, tel qu’il est, au rapport ($count$ événements jusqu’ici)",
+    "message": "Añade esta pestaña, tal como está, al informe ($count$ eventos hasta ahora)",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -346,37 +346,37 @@
     }
   },
   "popup_reviewBugReportHint": {
-    "message": "Copiez le test en échec ou le rapport, ou téléchargez-le"
+    "message": "Copia la prueba que falla o el informe, o descárgalo"
   },
   "popup_finishFirst": {
-    "message": "Terminez ou abandonnez d’abord l’enregistrement en cours"
+    "message": "Primero termina o descarta la grabación en curso"
   },
   "popup_finishBeforeBug": {
-    "message": "Terminez ou abandonnez l’enregistrement en cours avant de signaler un bug."
+    "message": "Termina o descarta la grabación en curso antes de notificar un bug."
   },
   "popup_permissionNeeded": {
-    "message": "Piwi Picker a besoin d’accéder à ce site pour enregistrer de page en page."
+    "message": "Piwi Picker necesita acceso a este sitio para grabar de una página a otra."
   },
   "popup_cannotRecord": {
-    "message": "Piwi Picker ne peut pas enregistrer sur cette page."
+    "message": "Piwi Picker no puede grabar en esta página."
   },
   "popup_cannotReplay": {
-    "message": "Piwi Picker ne peut pas rejouer de rapport sur cette page."
+    "message": "Piwi Picker no puede reproducir un informe en esta página."
   },
   "popup_notRecordedTab": {
-    "message": "Cet onglet n’est pas celui qui est enregistré."
+    "message": "Esta pestaña no es la que se está grabando."
   },
   "popup_stateUnreadable": {
-    "message": "Piwi Picker n’a pas pu savoir si un enregistrement est en cours : rouvrez-le."
+    "message": "Piwi Picker no pudo saber si hay una grabación en curso: vuelve a abrirlo."
   },
   "options_title": {
-    "message": "Réglages de Piwi Picker"
+    "message": "Configuración de Piwi Picker"
   },
   "options_language": {
-    "message": "Langue"
+    "message": "Idioma"
   },
   "options_languageBrowser": {
-    "message": "Celle du navigateur ($language$)",
+    "message": "El del navegador ($language$)",
     "placeholders": {
       "language": {
         "content": "$1",
@@ -385,10 +385,10 @@
     }
   },
   "options_languageHint": {
-    "message": "La langue des textes de Piwi Picker. Les textes des pages, les locators et les tests écrits restent tels quels."
+    "message": "El idioma de los textos de Piwi Picker. Los textos de las páginas, los locators y las pruebas que escribe no cambian."
   },
   "options_draftNote": {
-    "message": "Cette traduction est un brouillon : aucun lecteur natif ne l’a encore relue. $link$",
+    "message": "Esta traducción es un borrador: todavía no la ha revisado ningún hablante nativo. $link$",
     "placeholders": {
       "link": {
         "content": "$1",
@@ -397,13 +397,13 @@
     }
   },
   "options_draftNoteLink": {
-    "message": "Proposer une correction"
+    "message": "Sugerir una corrección"
   },
   "options_languageSaved": {
-    "message": "Langue enregistrée."
+    "message": "Idioma guardado."
   },
   "options_languageFailed": {
-    "message": "La langue n’a pas pu être changée : $error$",
+    "message": "No se pudo cambiar el idioma: $error$",
     "placeholders": {
       "error": {
         "content": "$1",
@@ -412,31 +412,31 @@
     }
   },
   "options_connectHeading": {
-    "message": "Connexion à Piwi"
+    "message": "Conexión con Piwi"
   },
   "options_lead": {
-    "message": "Facultatif. Connecté à votre instance Piwi, l’enregistreur utilise les page objects et les fonctions d’aide de vos projets, et les classe en direct pendant l’enregistrement. Choisir des locators et enregistrer un test simple fonctionnent toujours sans connexion."
+    "message": "Opcional. Conectado a tu instancia de Piwi, el grabador usa los page objects y las funciones auxiliares de tus proyectos, y los clasifica en directo mientras grabas. Elegir locators y grabar una prueba sencilla siempre funcionan sin conexión."
   },
   "options_instanceUrl": {
-    "message": "Adresse de votre instance Piwi"
+    "message": "Dirección de tu instancia de Piwi"
   },
   "options_instanceUrlPlaceholder": {
-    "message": "https://piwi.exemple.fr"
+    "message": "https://piwi.ejemplo.com"
   },
   "options_apiKey": {
-    "message": "Clé d’API"
+    "message": "Clave de API"
   },
   "options_apiKeyHint": {
-    "message": "À créer dans le tableau de bord Piwi, dans les réglages des clés d’API de votre compte."
+    "message": "Créala en el panel de control de Piwi, en la configuración de claves de API de tu cuenta."
   },
   "options_testConnection": {
-    "message": "Tester la connexion"
+    "message": "Probar la conexión"
   },
   "options_mappingsHeading": {
-    "message": "Projets par site"
+    "message": "Proyectos por sitio"
   },
   "options_mappingsHint": {
-    "message": "Le projet qui s’applique sur chaque site : une instance peut en servir plusieurs. Les lignes sont lues dans l’ordre, et le premier motif qui correspond l’emporte. $star$ correspond à l’intérieur d’une partie du chemin, $globstar$ à travers plusieurs parties, comme dans le motif d’adresse d’une fonction de test. La branche, facultative, est celle déployée à ces adresses (un site de préproduction sur $example$, par exemple) : Éléments testés montre alors ce qu’atteignent les tests de cette branche.",
+    "message": "Qué proyecto se aplica en cada sitio: una instancia puede servir a varios. Las líneas se leen en orden, y gana el primer patrón que coincide. $star$ coincide dentro de una parte de la ruta, $globstar$ a través de varias partes, como en el patrón de dirección de una función de prueba. La rama, opcional, es la que está desplegada en esas direcciones (un sitio de preproducción en $example$, por ejemplo): Elementos probados muestra entonces lo que alcanzan las pruebas de esa rama.",
     "placeholders": {
       "example": {
         "content": "$1",
@@ -453,64 +453,64 @@
     }
   },
   "options_addMapping": {
-    "message": "+ Ajouter une ligne"
+    "message": "+ Añadir una línea"
   },
   "options_noMappings": {
-    "message": "Aucune ligne pour l’instant : ajoutez-en une ci-dessous."
+    "message": "Todavía no hay líneas: añade una abajo."
   },
   "options_pattern": {
-    "message": "Motif d’adresse"
+    "message": "Patrón de dirección"
   },
   "options_patternPlaceholder": {
-    "message": "https://boutique.exemple.fr/**"
+    "message": "https://tienda.ejemplo.com/**"
   },
   "options_project": {
-    "message": "Projet"
+    "message": "Proyecto"
   },
   "options_projectTestFirst": {
-    "message": "Testez la connexion"
+    "message": "Prueba la conexión primero"
   },
   "options_projectChoose": {
-    "message": "Choisir un projet…"
+    "message": "Elige un proyecto…"
   },
   "options_branch": {
-    "message": "Branche déployée à ces adresses"
+    "message": "Rama desplegada ahí"
   },
   "options_branchPlaceholder": {
-    "message": "branche par défaut"
+    "message": "rama predeterminada"
   },
   "options_branchTitle": {
-    "message": "La branche déployée à ces adresses : Éléments testés montre ce qu’atteignent ses tests"
+    "message": "La rama desplegada en estas direcciones: Elementos probados muestra lo que alcanzan sus pruebas"
   },
   "options_removeMapping": {
-    "message": "Supprimer cette ligne"
+    "message": "Quitar esta línea"
   },
   "options_save": {
-    "message": "Enregistrer"
+    "message": "Guardar"
   },
   "options_disconnect": {
-    "message": "Se déconnecter"
+    "message": "Desconectar"
   },
   "options_privacy": {
-    "message": "Utilisée uniquement depuis cette page, une clé d’API saisie ici n’atteint jamais les scripts d’une page web. Les étapes enregistrées ne vont nulle part, sauf si vous les copiez ou les téléchargez. La connexion ne fait que télécharger le catalogue de fonctions de chaque projet et les éléments que ses tests atteignent."
+    "message": "Solo se usa desde esta página: una clave de API escrita aquí nunca llega a los scripts de una página web. Los pasos grabados no van a ninguna parte, salvo que los copies o los descargues. La conexión solo descarga el catálogo de funciones de cada proyecto asignado y los elementos que alcanzan sus pruebas."
   },
   "options_testing": {
-    "message": "Test en cours…"
+    "message": "Probando…"
   },
   "options_accessDenied": {
-    "message": "L’accès à cette instance a été refusé : autorisez-le pour que Piwi Picker lise votre catalogue."
+    "message": "Se rechazó el acceso a esa instancia: permítelo para que Piwi Picker pueda leer tu catálogo."
   },
   "options_connected_one": {
-    "message": "Connecté : $count$ projet trouvé.",
+    "message": "Conectado: se encontró $count$ proyecto.",
     "placeholders": {
       "count": {
         "content": "$1",
-        "example": "1"
+        "example": "3"
       }
     }
   },
   "options_connected_other": {
-    "message": "Connecté : $count$ projets trouvés.",
+    "message": "Conectado: se encontraron $count$ proyectos.",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -519,19 +519,19 @@
     }
   },
   "options_projectsUnlisted": {
-    "message": "Connecté, mais les projets n’ont pas pu être listés."
+    "message": "Conectado, pero no se pudieron listar los proyectos."
   },
   "options_saved_one": {
-    "message": "$count$ ligne enregistrée.",
+    "message": "$count$ línea guardada.",
     "placeholders": {
       "count": {
         "content": "$1",
-        "example": "1"
+        "example": "3"
       }
     }
   },
   "options_saved_other": {
-    "message": "$count$ lignes enregistrées.",
+    "message": "$count$ líneas guardadas.",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -540,16 +540,16 @@
     }
   },
   "options_skipped_one": {
-    "message": "$count$ ligne incomplète ignorée.",
+    "message": "$count$ línea incompleta omitida.",
     "placeholders": {
       "count": {
         "content": "$1",
-        "example": "1"
+        "example": "2"
       }
     }
   },
   "options_skipped_other": {
-    "message": "$count$ lignes incomplètes ignorées.",
+    "message": "$count$ líneas incompletas omitidas.",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -558,13 +558,13 @@
     }
   },
   "options_plainHttp": {
-    "message": "Cette instance utilise HTTP sans chiffrement : la clé d’API circule en clair."
+    "message": "Esta instancia usa HTTP sin cifrar, así que la clave de API viaja sin cifrar."
   },
   "options_refreshDenied": {
-    "message": "L’accès à l’instance a été refusé : le catalogue ne s’actualisera pas de lui-même."
+    "message": "Se rechazó el acceso a la instancia, así que el catálogo no se actualizará solo."
   },
   "options_cached": {
-    "message": "Catalogue enregistré : $functions$ de $projects$.",
+    "message": "Catálogo guardado: $functions$ de $projects$.",
     "placeholders": {
       "functions": {
         "content": "$1",
@@ -577,16 +577,16 @@
     }
   },
   "options_functionCount_one": {
-    "message": "$count$ fonction",
+    "message": "$count$ función",
     "placeholders": {
       "count": {
         "content": "$1",
-        "example": "1"
+        "example": "12"
       }
     }
   },
   "options_functionCount_other": {
-    "message": "$count$ fonctions",
+    "message": "$count$ funciones",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -595,16 +595,16 @@
     }
   },
   "options_projectCount_one": {
-    "message": "$count$ projet",
+    "message": "$count$ proyecto",
     "placeholders": {
       "count": {
         "content": "$1",
-        "example": "1"
+        "example": "2"
       }
     }
   },
   "options_projectCount_other": {
-    "message": "$count$ projets",
+    "message": "$count$ proyectos",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -613,16 +613,16 @@
     }
   },
   "options_catalogsFailed_one": {
-    "message": "$count$ catalogue n’a pas pu être téléchargé.",
+    "message": "No se pudo descargar $count$ catálogo.",
     "placeholders": {
       "count": {
         "content": "$1",
-        "example": "1"
+        "example": "2"
       }
     }
   },
   "options_catalogsFailed_other": {
-    "message": "$count$ catalogues n’ont pas pu être téléchargés.",
+    "message": "No se pudieron descargar $count$ catálogos.",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -631,55 +631,55 @@
     }
   },
   "options_disconnected": {
-    "message": "Déconnecté."
+    "message": "Desconectado."
   },
   "common_close": {
-    "message": "Fermer"
+    "message": "Cerrar"
   },
   "common_copy": {
-    "message": "Copier"
+    "message": "Copiar"
   },
   "common_copied": {
-    "message": "Copié"
+    "message": "Copiado"
   },
   "common_cancel": {
-    "message": "Annuler"
+    "message": "Cancelar"
   },
   "common_save": {
-    "message": "Enregistrer"
+    "message": "Guardar"
   },
   "common_stop": {
-    "message": "Arrêter"
+    "message": "Detener"
   },
   "common_discard": {
-    "message": "Abandonner"
+    "message": "Descartar"
   },
   "common_refresh": {
-    "message": "Actualiser"
+    "message": "Actualizar"
   },
   "common_refreshing": {
-    "message": "Actualisation…"
+    "message": "Actualizando…"
   },
   "common_escToClose": {
-    "message": "Échap pour fermer"
+    "message": "Esc para cerrar"
   },
   "common_clickToCopy": {
-    "message": "Cliquer pour copier"
+    "message": "Haz clic para copiar"
   },
   "console_expression": {
-    "message": "Locator à essayer"
+    "message": "Locator que probar"
   },
   "console_close": {
-    "message": "Fermer la console"
+    "message": "Cerrar la consola"
   },
   "console_unique": {
-    "message": "Un seul élément : le mode strict passe"
+    "message": "Un solo elemento: el modo estricto pasa"
   },
   "console_none": {
-    "message": "Aucun élément trouvé"
+    "message": "No se encontró ningún elemento"
   },
   "console_many_one": {
-    "message": "$count$ élément : le mode strict échoue",
+    "message": "$count$ elemento: el modo estricto falla",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -688,7 +688,7 @@
     }
   },
   "console_many_other": {
-    "message": "$count$ éléments : le mode strict échoue",
+    "message": "$count$ elementos: el modo estricto falla",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -697,7 +697,7 @@
     }
   },
   "console_manyOutlined_one": {
-    "message": "$count$ élément : le mode strict échoue (les $shown$ premiers encadrés)",
+    "message": "$count$ elemento: el modo estricto falla (los $shown$ primeros resaltados)",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -710,7 +710,7 @@
     }
   },
   "console_manyOutlined_other": {
-    "message": "$count$ éléments : le mode strict échoue (les $shown$ premiers encadrés)",
+    "message": "$count$ elementos: el modo estricto falla (los $shown$ primeros resaltados)",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -723,10 +723,10 @@
     }
   },
   "console_approximate": {
-    "message": "approximatif : les textes sont comparés de façon souple ici"
+    "message": "aproximado: aquí los textos se comparan de forma flexible"
   },
   "console_invalidCss": {
-    "message": "$selector$ n’est pas un sélecteur CSS que cette page accepte",
+    "message": "$selector$ no es un selector CSS que acepte esta página",
     "placeholders": {
       "selector": {
         "content": "$1",
@@ -735,7 +735,7 @@
     }
   },
   "console_unreadable": {
-    "message": "La console ne sait pas lire ce locator : $error$",
+    "message": "La consola no puede leer este locator: $error$",
     "placeholders": {
       "error": {
         "content": "$1",
@@ -747,13 +747,13 @@
     "message": "Locator"
   },
   "common_copyModeAction": {
-    "message": "Action"
+    "message": "Acción"
   },
   "common_copyModeExpect": {
-    "message": "Assertion"
+    "message": "Aserción"
   },
   "multipick_picked_one": {
-    "message": "$count$ élément similaire choisi",
+    "message": "$count$ elemento similar elegido",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -762,7 +762,7 @@
     }
   },
   "multipick_picked_other": {
-    "message": "$count$ éléments similaires choisis",
+    "message": "$count$ elementos similares elegidos",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -771,10 +771,10 @@
     }
   },
   "multipick_derive": {
-    "message": "Trouver le motif"
+    "message": "Buscar el patrón"
   },
   "multipick_pickMore": {
-    "message": "En choisir un de plus ($max$ au maximum)",
+    "message": "Elegir uno más ($max$ como máximo)",
     "placeholders": {
       "max": {
         "content": "$1",
@@ -783,16 +783,16 @@
     }
   },
   "multipick_cancel": {
-    "message": "Annuler la multi-sélection"
+    "message": "Cancelar la multiselección"
   },
   "multipick_noPattern": {
-    "message": "Aucun motif commun trouvé. Choisissez des éléments du même type, comme les lignes d’un même tableau ou les cartes d’une même liste."
+    "message": "No se encontró ningún patrón común. Elige elementos del mismo tipo, como las filas de una misma tabla o las tarjetas de una misma lista."
   },
   "multipick_dialog": {
-    "message": "Multi-sélection : motif commun"
+    "message": "Multiselección: patrón común"
   },
   "multipick_title_one": {
-    "message": "$count$ locator construit sur $base$",
+    "message": "$count$ locator construido sobre $base$",
     "placeholders": {
       "base": {
         "content": "$1",
@@ -805,7 +805,7 @@
     }
   },
   "multipick_title_other": {
-    "message": "$count$ locators construits sur $base$",
+    "message": "$count$ locators construidos sobre $base$",
     "placeholders": {
       "base": {
         "content": "$1",
@@ -818,16 +818,16 @@
     }
   },
   "multipick_byPosition": {
-    "message": "⚠ Repéré par sa position (nth) : il casse si l’ordre de la liste change"
+    "message": "⚠ Encontrado por su posición (nth): falla si cambia el orden de la lista"
   },
   "lint_dialog": {
-    "message": "Contrôle : éléments difficiles à cibler"
+    "message": "Revisión: elementos difíciles de localizar"
   },
   "lint_none": {
-    "message": "Aucun élément difficile à cibler"
+    "message": "Ningún elemento difícil de localizar"
   },
   "lint_found_one": {
-    "message": "$count$ élément difficile à cibler",
+    "message": "$count$ elemento difícil de localizar",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -836,7 +836,7 @@
     }
   },
   "lint_found_other": {
-    "message": "$count$ éléments difficiles à cibler",
+    "message": "$count$ elementos difíciles de localizar",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -845,16 +845,16 @@
     }
   },
   "lint_close": {
-    "message": "Fermer le contrôle"
+    "message": "Cerrar la revisión"
   },
   "lint_allGood": {
-    "message": "Chaque bouton, lien et champ de cette page a un test id, un nom ou une place stable dans la page."
+    "message": "Cada botón, enlace y campo de esta página tiene un test id, un nombre o un lugar estable en la página."
   },
   "lint_copyChecklist": {
-    "message": "Copier en liste de tâches Markdown"
+    "message": "Copiar como lista de tareas Markdown"
   },
   "lint_role": {
-    "message": "rôle $role$",
+    "message": "rol $role$",
     "placeholders": {
       "role": {
         "content": "$1",
@@ -863,7 +863,7 @@
     }
   },
   "lint_roleNamed": {
-    "message": "rôle $role$, nommé « $name$ »",
+    "message": "rol $role$, con el nombre «$name$»",
     "placeholders": {
       "name": {
         "content": "$1",
@@ -876,10 +876,10 @@
     }
   },
   "assert_dialog": {
-    "message": "Assertions suggérées"
+    "message": "Aserciones sugeridas"
   },
   "assert_count_one": {
-    "message": "$count$ assertion suggérée",
+    "message": "$count$ aserción sugerida",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -888,7 +888,7 @@
     }
   },
   "assert_count_other": {
-    "message": "$count$ assertions suggérées",
+    "message": "$count$ aserciones sugeridas",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -897,10 +897,10 @@
     }
   },
   "assert_none": {
-    "message": "Aucune assertion à suggérer"
+    "message": "Ninguna aserción que sugerir"
   },
   "assert_locator": {
-    "message": "Avec le locator $locator$",
+    "message": "Con el locator $locator$",
     "placeholders": {
       "locator": {
         "content": "$1",
@@ -909,19 +909,19 @@
     }
   },
   "assert_noLocator": {
-    "message": "Aucun locator trouvé pour cet élément : il n’y a donc pas d’assertion à suggérer."
+    "message": "No se encontró ningún locator para este elemento, así que no hay ninguna aserción que sugerir."
   },
   "agent_title": {
-    "message": "Contexte pour un agent IA"
+    "message": "Contexto para un agente de IA"
   },
   "agent_hint": {
-    "message": "Collez ce texte dans votre assistant de code IA"
+    "message": "Pega este texto en tu asistente de código con IA"
   },
   "session_dialog": {
-    "message": "Session : éléments nommés"
+    "message": "Sesión: elementos con nombre"
   },
   "session_count_one": {
-    "message": "$count$ élément nommé",
+    "message": "$count$ elemento con nombre",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -930,7 +930,7 @@
     }
   },
   "session_count_other": {
-    "message": "$count$ éléments nommés",
+    "message": "$count$ elementos con nombre",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -939,16 +939,16 @@
     }
   },
   "session_none": {
-    "message": "Aucun élément nommé pour l’instant"
+    "message": "Todavía no hay elementos con nombre"
   },
   "session_kept": {
-    "message": "La liste reste jusqu’à la fermeture du navigateur"
+    "message": "La lista se conserva hasta que cierres el navegador"
   },
   "session_intro": {
-    "message": "Choisissez un élément et donnez-lui un nom. Ajoutez des éléments de plusieurs pages, puis copiez la liste en page object, en tableau Markdown ou en JSON."
+    "message": "Elige un elemento y ponle un nombre. Añade elementos de varias páginas y luego copia la lista como page object, tabla Markdown o JSON."
   },
   "session_remove": {
-    "message": "Retirer $name$",
+    "message": "Quitar $name$",
     "placeholders": {
       "name": {
         "content": "$1",
@@ -957,34 +957,34 @@
     }
   },
   "session_add": {
-    "message": "+ Ajouter un élément"
+    "message": "+ Añadir un elemento"
   },
   "session_copyPageObject": {
-    "message": "Copier en page object (.ts)"
+    "message": "Copiar como page object (.ts)"
   },
   "session_copyMarkdown": {
-    "message": "Copier en tableau Markdown"
+    "message": "Copiar como tabla Markdown"
   },
   "session_copyJson": {
-    "message": "Copier en JSON"
+    "message": "Copiar como JSON"
   },
   "session_clear": {
-    "message": "Vider la liste"
+    "message": "Vaciar la lista"
   },
   "session_nameLabel": {
-    "message": "Nom de cet élément"
+    "message": "Nombre de este elemento"
   },
   "session_namePlaceholder": {
-    "message": "Nom, par ex. submitButton"
+    "message": "Nombre, p. ej. submitButton"
   },
   "session_nameRequired": {
-    "message": "Saisissez un nom."
+    "message": "Escribe un nombre."
   },
   "session_nameInvalid": {
-    "message": "Utilisez seulement des lettres sans accent, des chiffres, _ ou $$, sans commencer par un chiffre."
+    "message": "Usa solo letras sin tildes, cifras, _ o $$, y no empieces por una cifra."
   },
   "session_nameTaken": {
-    "message": "« $name$ » est déjà dans la liste.",
+    "message": "«$name$» ya está en la lista.",
     "placeholders": {
       "name": {
         "content": "$1",
@@ -993,7 +993,7 @@
     }
   },
   "pick_panelLabel": {
-    "message": "Locators de l’élément choisi"
+    "message": "Locators del elemento elegido"
   },
   "pick_title_one": {
     "message": "$count$ locator",
@@ -1005,7 +1005,7 @@
     }
   },
   "pick_title_other": {
-    "message": "$count$ locators, du plus stable au moins stable",
+    "message": "$count$ locators, del más estable al menos estable",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -1014,10 +1014,10 @@
     }
   },
   "pick_tabHint": {
-    "message": "Tab pour passer d’une ligne à l’autre"
+    "message": "Tab pasa de una fila a otra"
   },
   "pick_copyAll_one": {
-    "message": "Tout copier ($count$)",
+    "message": "Copiar todo ($count$)",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -1026,7 +1026,7 @@
     }
   },
   "pick_copyAll_other": {
-    "message": "Tout copier ($count$)",
+    "message": "Copiar todo ($count$)",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -1035,16 +1035,16 @@
     }
   },
   "pick_copyAllHint": {
-    "message": "Copier tous les locators, un par ligne, à coller dans la page Locators de Piwi pour trouver les tests qui les utilisent"
+    "message": "Copia todos los locators, uno por línea, para pegarlos en la página Locators de Piwi y encontrar las pruebas que los usan"
   },
   "pick_score": {
-    "message": "Score de stabilité : plus il est haut, moins le locator risque de casser quand la page change"
+    "message": "Puntuación de estabilidad: cuanto más alta, menos probable es que el locator falle cuando cambie la página"
   },
   "pick_unique": {
-    "message": "Trouve exactement un élément sur la page en ce moment"
+    "message": "Encuentra exactamente un elemento en la página ahora mismo"
   },
   "pick_ambiguous_one": {
-    "message": "Trouve $count$ élément en ce moment : ajoutez $first$ ou $filter$ pour n’en garder qu’un",
+    "message": "Encuentra $count$ elemento ahora mismo: añade $first$ o $filter$ para quedarte con uno",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -1061,7 +1061,7 @@
     }
   },
   "pick_ambiguous_other": {
-    "message": "Trouve $count$ éléments en ce moment : ajoutez $first$ ou $filter$ pour n’en garder qu’un",
+    "message": "Encuentra $count$ elementos ahora mismo: añade $first$ o $filter$ para quedarte con uno",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -1078,10 +1078,10 @@
     }
   },
   "pick_topPick": {
-    "message": "Meilleur choix : le locator le plus stable."
+    "message": "La mejor opción: el locator más estable."
   },
   "pick_whereBranch": {
-    "message": "$project$ sur la branche $branch$",
+    "message": "$project$ en la rama $branch$",
     "placeholders": {
       "branch": {
         "content": "$1",
@@ -1094,7 +1094,7 @@
     }
   },
   "pick_whereAnyBranch": {
-    "message": "$project$, toutes branches confondues",
+    "message": "$project$, en todas las ramas",
     "placeholders": {
       "project": {
         "content": "$1",
@@ -1103,7 +1103,7 @@
     }
   },
   "pick_checking": {
-    "message": "Recherche des tests du projet $where$ qui atteignent cet élément…",
+    "message": "Buscando las pruebas del proyecto $where$ que alcanzan este elemento…",
     "placeholders": {
       "where": {
         "content": "$1",
@@ -1112,10 +1112,10 @@
     }
   },
   "pick_indexNotReady": {
-    "message": "Les éléments testés de ce projet ne sont pas encore disponibles."
+    "message": "Los elementos probados de este proyecto todavía no están disponibles."
   },
   "pick_indexFailed": {
-    "message": "Les éléments testés n’ont pas pu être chargés : $error$",
+    "message": "No se pudieron cargar los elementos probados: $error$",
     "placeholders": {
       "error": {
         "content": "$1",
@@ -1124,7 +1124,7 @@
     }
   },
   "pick_testsOf": {
-    "message": "Tests du projet $where$",
+    "message": "Pruebas del proyecto $where$",
     "placeholders": {
       "where": {
         "content": "$1",
@@ -1133,25 +1133,25 @@
     }
   },
   "pick_findInPiwi": {
-    "message": "Chercher ces locators dans Piwi ↗"
+    "message": "Buscar estos locators en Piwi ↗"
   },
   "pick_showInside": {
-    "message": "Voir les éléments testés à l’intérieur"
+    "message": "Ver los elementos probados que contiene"
   },
   "pick_showInsideHint": {
-    "message": "Ouvrir Éléments testés pour cet élément seulement"
+    "message": "Abrir Elementos probados solo para este elemento"
   },
   "pick_showAll": {
-    "message": "Voir tous les éléments testés"
+    "message": "Ver todos los elementos probados"
   },
   "pick_showAllHint": {
-    "message": "Ouvrir Éléments testés sur cette page"
+    "message": "Abrir Elementos probados en esta página"
   },
   "pick_groupSelf": {
-    "message": "Cet élément"
+    "message": "Este elemento"
   },
   "pick_groupInside_one": {
-    "message": "À l’intérieur · $count$ élément",
+    "message": "Dentro · $count$ elemento",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -1160,7 +1160,7 @@
     }
   },
   "pick_groupInside_other": {
-    "message": "À l’intérieur · $count$ éléments",
+    "message": "Dentro · $count$ elementos",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -1169,7 +1169,7 @@
     }
   },
   "pick_groupAroundOne": {
-    "message": "Autour · $element$",
+    "message": "Alrededor · $element$",
     "placeholders": {
       "element": {
         "content": "$1",
@@ -1178,7 +1178,7 @@
     }
   },
   "pick_groupAround_one": {
-    "message": "Autour · $count$ conteneur",
+    "message": "Alrededor · $count$ contenedor",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -1187,7 +1187,7 @@
     }
   },
   "pick_groupAround_other": {
-    "message": "Autour · $count$ conteneurs",
+    "message": "Alrededor · $count$ contenedores",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -1196,7 +1196,7 @@
     }
   },
   "pick_reachedBy_one": {
-    "message": "Atteint par $count$ test du projet $where$",
+    "message": "Alcanzado por $count$ prueba del proyecto $where$",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -1209,7 +1209,7 @@
     }
   },
   "pick_reachedBy_other": {
-    "message": "Atteint par $count$ tests du projet $where$",
+    "message": "Alcanzado por $count$ pruebas del proyecto $where$",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -1222,7 +1222,7 @@
     }
   },
   "pick_notReached": {
-    "message": "Aucun test du projet $where$ n’atteint cet élément",
+    "message": "Ninguna prueba del proyecto $where$ alcanza este elemento",
     "placeholders": {
       "where": {
         "content": "$1",
@@ -1231,13 +1231,13 @@
     }
   },
   "pick_onlyAround": {
-    "message": "Aucun test ne trouve cet élément ni ce qu’il contient. Ces tests atteignent un élément autour."
+    "message": "Ninguna prueba encuentra este elemento ni lo que contiene. Estas pruebas alcanzan un elemento que lo rodea."
   },
   "pick_noneHere": {
-    "message": "Aucun locator des tests du projet ne trouve cet élément sur cette page."
+    "message": "Ningún locator de las pruebas del proyecto encuentra este elemento en esta página."
   },
   "pick_more_one": {
-    "message": "$count$ autre : Éléments testés les montre tous.",
+    "message": "$count$ más: Elementos probados las muestra todas.",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -1246,7 +1246,7 @@
     }
   },
   "pick_more_other": {
-    "message": "$count$ autres : Éléments testés les montre tous.",
+    "message": "$count$ más: Elementos probados las muestra todas.",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -1255,7 +1255,7 @@
     }
   },
   "pick_brittle": {
-    "message": "Locator fragile : $locator$ · $reasons$",
+    "message": "Locator frágil: $locator$ · $reasons$",
     "placeholders": {
       "locator": {
         "content": "$1",
@@ -1268,13 +1268,13 @@
     }
   },
   "pick_useRankedInstead": {
-    "message": "Ces tests pourraient plutôt utiliser l’un des locators proposés plus haut."
+    "message": "Estas pruebas podrían usar en su lugar uno de los locators propuestos arriba."
   },
   "functions_title": {
-    "message": "Fonctions de test sur cette page"
+    "message": "Funciones de prueba en esta página"
   },
   "functions_manage": {
-    "message": "Gérer les fonctions du projet $project$ dans Piwi ↗",
+    "message": "Gestionar las funciones del proyecto $project$ en Piwi ↗",
     "placeholders": {
       "project": {
         "content": "$1",
@@ -1283,13 +1283,13 @@
     }
   },
   "functions_refreshHint": {
-    "message": "Télécharger à nouveau les fonctions de ce projet depuis Piwi"
+    "message": "Volver a descargar las funciones de este proyecto desde Piwi"
   },
   "functions_noProject": {
-    "message": "Aucun projet Piwi n’est associé à ce site. Ajoutez-le dans Projets par site, dans les réglages de Piwi Picker, ou choisissez un projet dans le menu de Piwi Picker."
+    "message": "No hay ningún proyecto de Piwi asignado a este sitio. Añádelo en Proyectos por sitio, en la configuración de Piwi Picker, o elige un proyecto en el menú de Piwi Picker."
   },
   "functions_empty": {
-    "message": "Le projet $project$ n’a encore aucune fonction de test. Ajoutez-en une dans le tableau de bord Piwi, ou créez-en une à partir d’un enregistrement.",
+    "message": "El proyecto $project$ todavía no tiene funciones de prueba. Añade una en el panel de control de Piwi o crea una a partir de una grabación.",
     "placeholders": {
       "project": {
         "content": "$1",
@@ -1298,7 +1298,7 @@
     }
   },
   "functions_refreshFailed": {
-    "message": "$error$ Les fonctions affichées sont les dernières téléchargées.",
+    "message": "$error$ Las funciones que se muestran son las últimas descargadas.",
     "placeholders": {
       "error": {
         "content": "$1",
@@ -1307,16 +1307,16 @@
     }
   },
   "functions_ready": {
-    "message": "Prête à l’emploi ici"
+    "message": "Lista para usar aquí"
   },
   "functions_partial": {
-    "message": "Trouvée en partie ici"
+    "message": "Encontrada en parte aquí"
   },
   "functions_notFound": {
-    "message": "Absente de cette page"
+    "message": "No está en esta página"
   },
   "functions_stepUnique": {
-    "message": "$action$() → un élément",
+    "message": "$action$() → un elemento",
     "placeholders": {
       "action": {
         "content": "$1",
@@ -1325,7 +1325,7 @@
     }
   },
   "functions_stepAmbiguous_one": {
-    "message": "$action$() → $count$ élément, impossible de savoir lequel",
+    "message": "$action$() → $count$ elemento, no se sabe cuál",
     "placeholders": {
       "action": {
         "content": "$1",
@@ -1338,7 +1338,7 @@
     }
   },
   "functions_stepAmbiguous_other": {
-    "message": "$action$() → $count$ éléments, impossible de savoir lequel",
+    "message": "$action$() → $count$ elementos, no se sabe cuál",
     "placeholders": {
       "action": {
         "content": "$1",
@@ -1351,7 +1351,7 @@
     }
   },
   "functions_stepMissing": {
-    "message": "$action$() → aucun élément",
+    "message": "$action$() → ningún elemento",
     "placeholders": {
       "action": {
         "content": "$1",
@@ -1360,7 +1360,7 @@
     }
   },
   "record_hudTitle_one": {
-    "message": "Enregistrement : $count$ étape",
+    "message": "Grabando: $count$ paso",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -1369,7 +1369,7 @@
     }
   },
   "record_hudTitle_other": {
-    "message": "Enregistrement : $count$ étapes",
+    "message": "Grabando: $count$ pasos",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -1378,31 +1378,31 @@
     }
   },
   "record_lastLocator": {
-    "message": "Dernier locator"
+    "message": "Último locator"
   },
   "record_matchingFunctions": {
-    "message": "Fonctions de test correspondantes"
+    "message": "Funciones de prueba que coinciden"
   },
   "record_noMatch": {
-    "message": "Aucune fonction de test ne correspond pour l’instant"
+    "message": "Todavía no coincide ninguna función de prueba"
   },
   "record_matchReady": {
-    "message": "prête"
+    "message": "lista"
   },
   "record_stepNotSaved": {
-    "message": "Une étape n’a pas pu être enregistrée."
+    "message": "No se pudo guardar un paso."
   },
   "record_storageFull": {
-    "message": "Plus de place pour enregistrer les étapes : arrêtez maintenant et exportez ce que vous avez. Les nouvelles étapes sont perdues."
+    "message": "No queda espacio para guardar los pasos: detén la grabación ahora y exporta lo que tienes. Los pasos nuevos se pierden."
   },
   "record_reviewLabel": {
-    "message": "Votre enregistrement"
+    "message": "Tu grabación"
   },
   "record_nothingRecorded": {
-    "message": "Rien n’a été enregistré"
+    "message": "No se grabó nada"
   },
   "record_stepsRecorded_one": {
-    "message": "$count$ étape enregistrée",
+    "message": "$count$ paso grabado",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -1411,7 +1411,7 @@
     }
   },
   "record_stepsRecorded_other": {
-    "message": "$count$ étapes enregistrées",
+    "message": "$count$ pasos grabados",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -1420,7 +1420,7 @@
     }
   },
   "record_stepsMatched_one": {
-    "message": "$count$ étape correspond à l’une de vos fonctions de test",
+    "message": "$count$ paso coincide con una de tus funciones de prueba",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -1429,7 +1429,7 @@
     }
   },
   "record_stepsMatched_other": {
-    "message": "$count$ étapes correspondent à vos fonctions de test",
+    "message": "$count$ pasos coinciden con tus funciones de prueba",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -1438,16 +1438,16 @@
     }
   },
   "record_noFunctionMatches": {
-    "message": "Aucune de vos fonctions de test ne correspond : le code n’utilise que des locators."
+    "message": "Ninguna de tus funciones de prueba coincide: el código solo usa locators."
   },
   "record_notConnected": {
-    "message": "Pas de connexion à Piwi : le code n’utilise que des locators."
+    "message": "Sin conexión con Piwi: el código solo usa locators."
   },
   "record_noSteps": {
-    "message": "Aucune étape n’a été enregistrée."
+    "message": "No se grabó ningún paso."
   },
   "record_stepValue": {
-    "message": "$step$ = « $value$ »",
+    "message": "$step$ = «$value$»",
     "placeholders": {
       "step": {
         "content": "$1",
@@ -1460,25 +1460,25 @@
     }
   },
   "record_copyCode": {
-    "message": "Copier en TypeScript"
+    "message": "Copiar como TypeScript"
   },
   "record_copyCodeWithFunctions": {
-    "message": "Copier en TypeScript (avec vos fonctions)"
+    "message": "Copiar como TypeScript (con tus funciones)"
   },
   "record_copyCodeWithoutFunctions": {
-    "message": "Copier en TypeScript sans vos fonctions"
+    "message": "Copiar como TypeScript sin tus funciones"
   },
   "record_downloadSteps": {
-    "message": "Télécharger les étapes"
+    "message": "Descargar los pasos"
   },
   "record_downloadStepsTitle": {
-    "message": "Enregistre les étapes dans un fichier, à partager ou à transformer en test avec piwi codegen"
+    "message": "Guarda la grabación como archivo de pasos, para compartirla o convertirla en una prueba con piwi codegen"
   },
   "bug_reportLabel": {
-    "message": "Rapport de bug Piwi Picker"
+    "message": "Informe de bug de Piwi Picker"
   },
   "bug_hudTitle_one": {
-    "message": "Signalement d’un bug · $count$ étape",
+    "message": "Notificando un bug · $count$ paso",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -1487,7 +1487,7 @@
     }
   },
   "bug_hudTitle_other": {
-    "message": "Signalement d’un bug · $count$ étapes",
+    "message": "Notificando un bug · $count$ pasos",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -1496,28 +1496,28 @@
     }
   },
   "bug_mark": {
-    "message": "Marquer ce qui ne va pas"
+    "message": "Marcar lo que falla"
   },
   "bug_markHint": {
-    "message": "Choisissez un élément de la page et dites ce qu’il devrait afficher"
+    "message": "Elige un elemento de la página y di lo que debería mostrar"
   },
   "bug_missing": {
-    "message": "Il manque quelque chose"
+    "message": "Falta algo"
   },
   "bug_missingHint": {
-    "message": "Nommez un élément qui devrait être sur cette page et n’y est pas"
+    "message": "Nombra un elemento que debería estar en esta página y no está"
   },
   "bug_wrongPage": {
-    "message": "Mauvaise page"
+    "message": "Página equivocada"
   },
   "bug_wrongPageHint": {
-    "message": "Dites sur quelle page vous auriez dû arriver"
+    "message": "Di a qué página deberías haber llegado"
   },
   "bug_finish": {
-    "message": "Terminer"
+    "message": "Terminar"
   },
   "bug_screenshotBlocked": {
-    "message": "Chrome ne laisse Piwi Picker prendre une capture d’écran qu’après que vous l’avez ouvert sur cet onglet. Ouvrez Piwi Picker et choisissez « $action$ ».",
+    "message": "Chrome solo deja que Piwi Picker haga una captura de pantalla después de que lo abras en esta pestaña. Abre Piwi Picker y elige «$action$».",
     "placeholders": {
       "action": {
         "content": "$1",
@@ -1526,7 +1526,7 @@
     }
   },
   "bug_stepShows": {
-    "message": "affiche « $text$ »",
+    "message": "muestra «$text$»",
     "placeholders": {
       "text": {
         "content": "$1",
@@ -1535,7 +1535,7 @@
     }
   },
   "bug_stepIs": {
-    "message": "est $state$",
+    "message": "está $state$",
     "placeholders": {
       "state": {
         "content": "$1",
@@ -1544,25 +1544,25 @@
     }
   },
   "bug_stepAbsent": {
-    "message": "absent de la page"
+    "message": "no está en la página"
   },
   "bug_stateVisible": {
     "message": "visible"
   },
   "bug_stateHidden": {
-    "message": "masqué"
+    "message": "oculto"
   },
   "bug_stateEnabled": {
-    "message": "utilisable"
+    "message": "disponible"
   },
   "bug_stateDisabled": {
-    "message": "grisé"
+    "message": "atenuado"
   },
   "bug_addToReport": {
-    "message": "Ajouter au rapport"
+    "message": "Añadir al informe"
   },
   "bug_onElement": {
-    "message": "Élément : $locator$",
+    "message": "Elemento: $locator$",
     "placeholders": {
       "locator": {
         "content": "$1",
@@ -1571,58 +1571,58 @@
     }
   },
   "bug_whatsWrong": {
-    "message": "Ce qui ne va pas"
+    "message": "Lo que falla"
   },
   "bug_itsValue": {
-    "message": "Sa valeur"
+    "message": "Su valor"
   },
   "bug_itsText": {
-    "message": "Son texte"
+    "message": "Su texto"
   },
   "bug_itsName": {
-    "message": "Son nom, tel que les lecteurs d’écran l’annoncent"
+    "message": "Su nombre, tal como lo anuncian los lectores de pantalla"
   },
   "bug_shouldBeVisible": {
-    "message": "Il devrait être visible"
+    "message": "Debería estar visible"
   },
   "bug_shouldBeHidden": {
-    "message": "Il devrait être masqué"
+    "message": "Debería estar oculto"
   },
   "bug_shouldBeEnabled": {
-    "message": "Il devrait être utilisable, pas grisé"
+    "message": "Debería estar disponible, no atenuado"
   },
   "bug_shouldBeDisabled": {
-    "message": "Il devrait être grisé, pas utilisable"
+    "message": "Debería estar atenuado, no disponible"
   },
   "bug_pageShows": {
-    "message": "La page affiche"
+    "message": "La página muestra"
   },
   "bug_shouldShow": {
-    "message": "Ce qui devrait s’afficher"
+    "message": "Lo que debería mostrar"
   },
   "bug_note": {
-    "message": "Note"
+    "message": "Nota"
   },
   "bug_notePlaceholder": {
-    "message": "Ce qui s’est passé, avec vos mots (facultatif)"
+    "message": "Lo que pasó, con tus palabras (opcional)"
   },
   "bug_sameAsPage": {
-    "message": "C’est ce que la page affiche déjà. Saisissez ce qui devrait s’afficher à la place."
+    "message": "Eso es lo que la página ya muestra. Escribe lo que debería mostrar en su lugar."
   },
   "bug_whatShouldBeThere": {
-    "message": "Ce qui devrait être là"
+    "message": "Lo que debería estar"
   },
   "bug_itsNameLabel": {
-    "message": "Son nom"
+    "message": "Su nombre"
   },
   "bug_namePlaceholder": {
-    "message": "Son nom, tel qu’il se lit sur la page : Télécharger la facture"
+    "message": "Su nombre tal como se lee en la página: Descargar factura"
   },
   "bug_nameRequired": {
-    "message": "Saisissez son nom, tel qu’il se lirait sur la page."
+    "message": "Escribe su nombre, tal como se leería en la página."
   },
   "bug_alreadyThere_one": {
-    "message": "$count$ élément de ce type est déjà sur la page : utilisez « $mark$ » pour dire ce qui ne va pas.",
+    "message": "Ya hay $count$ elemento así en la página: usa «$mark$» para decir lo que falla.",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -1635,7 +1635,7 @@
     }
   },
   "bug_alreadyThere_other": {
-    "message": "$count$ éléments de ce type sont déjà sur la page : utilisez « $mark$ » pour dire ce qui ne va pas.",
+    "message": "Ya hay $count$ elementos así en la página: usa «$mark$» para decir lo que falla.",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -1648,7 +1648,7 @@
     }
   },
   "bug_youAreOn": {
-    "message": "Vous êtes sur $path$",
+    "message": "Estás en $path$",
     "placeholders": {
       "path": {
         "content": "$1",
@@ -1657,67 +1657,67 @@
     }
   },
   "bug_pageShouldBe": {
-    "message": "La page où vous devriez être"
+    "message": "La página en la que deberías estar"
   },
   "bug_samePage": {
-    "message": "C’est l’adresse de cette page. Saisissez celle où vous auriez dû arriver."
+    "message": "Esa es la dirección de esta página. Escribe aquella a la que deberías haber llegado."
   },
   "bug_kindButton": {
-    "message": "Bouton"
+    "message": "Botón"
   },
   "bug_kindLink": {
-    "message": "Lien"
+    "message": "Enlace"
   },
   "bug_kindHeading": {
-    "message": "Titre"
+    "message": "Título o encabezado"
   },
   "bug_kindTextbox": {
-    "message": "Champ de texte"
+    "message": "Campo de texto"
   },
   "bug_kindCombobox": {
-    "message": "Liste déroulante"
+    "message": "Lista desplegable"
   },
   "bug_kindCheckbox": {
-    "message": "Case à cocher"
+    "message": "Casilla"
   },
   "bug_kindRadio": {
-    "message": "Bouton radio (un choix parmi plusieurs)"
+    "message": "Botón de opción (una opción entre varias)"
   },
   "bug_kindOption": {
-    "message": "Choix dans une liste déroulante ou une liste"
+    "message": "Opción de una lista desplegable o de una lista"
   },
   "bug_kindTab": {
-    "message": "Onglet"
+    "message": "Pestaña"
   },
   "bug_kindMenuitem": {
-    "message": "Élément de menu"
+    "message": "Elemento de menú"
   },
   "bug_kindListitem": {
-    "message": "Élément d’une liste"
+    "message": "Elemento de una lista"
   },
   "bug_kindRow": {
-    "message": "Ligne de tableau"
+    "message": "Fila de tabla"
   },
   "bug_kindCell": {
-    "message": "Cellule de tableau"
+    "message": "Celda de tabla"
   },
   "bug_kindImg": {
-    "message": "Image ou icône"
+    "message": "Imagen o icono"
   },
   "bug_kindDialog": {
-    "message": "Boîte de dialogue ou fenêtre"
+    "message": "Cuadro de diálogo o ventana emergente"
   },
   "bug_kindAlert": {
-    "message": "Message d’erreur ou d’avertissement"
+    "message": "Mensaje de error o de advertencia"
   },
   "bug_kindStatus": {
-    "message": "Message d’état ou de confirmation"
+    "message": "Mensaje de estado o de confirmación"
   },
   "bug_kindRegion": {
-    "message": "Section de la page"
+    "message": "Sección de la página"
   },
   "bug_finishTitle_one": {
-    "message": "Rapport de bug · $count$ étape",
+    "message": "Informe de bug · $count$ paso",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -1726,7 +1726,7 @@
     }
   },
   "bug_finishTitle_other": {
-    "message": "Rapport de bug · $count$ étapes",
+    "message": "Informe de bug · $count$ pasos",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -1735,13 +1735,13 @@
     }
   },
   "bug_title": {
-    "message": "Titre"
+    "message": "Título"
   },
   "bug_titlePlaceholder": {
-    "message": "Ce qui ne va pas, en quelques mots : Code promo non appliqué au total"
+    "message": "Lo que falla, en pocas palabras: El cupón no se aplica al total"
   },
   "bug_attached": {
-    "message": "Aussi dans le rapport : $summary$",
+    "message": "También en el informe: $summary$",
     "placeholders": {
       "summary": {
         "content": "$1",
@@ -1750,7 +1750,7 @@
     }
   },
   "bug_nothingMarked": {
-    "message": "Rien n’est marqué comme incorrect : le test réussirait. Enregistrez à nouveau et utilisez « $mark$ ».",
+    "message": "No hay nada marcado como incorrecto, así que la prueba pasaría. Vuelve a grabar y usa «$mark$».",
     "placeholders": {
       "mark": {
         "content": "$1",
@@ -1759,7 +1759,7 @@
     }
   },
   "bug_stepWarning": {
-    "message": "Étape $step$ : $message$",
+    "message": "Paso $step$: $message$",
     "placeholders": {
       "message": {
         "content": "$1",
@@ -1772,7 +1772,7 @@
     }
   },
   "bug_noScreenshot": {
-    "message": "Pas de capture d’écran : $reason$",
+    "message": "Sin captura de pantalla: $reason$",
     "placeholders": {
       "reason": {
         "content": "$1",
@@ -1781,49 +1781,49 @@
     }
   },
   "bug_noScreenshotTaken": {
-    "message": "Aucune capture d’écran n’a été prise."
+    "message": "No se hizo ninguna captura de pantalla."
   },
   "bug_copyTest": {
-    "message": "Copier le test en échec"
+    "message": "Copiar la prueba que falla"
   },
   "bug_copyTestHint": {
-    "message": "Un test Playwright qui échoue tant que le bug est là, marqué avec test.fail()"
+    "message": "Una prueba de Playwright que falla mientras el bug siga ahí, marcada con test.fail()"
   },
   "bug_copyReport": {
-    "message": "Copier le rapport"
+    "message": "Copiar el informe"
   },
   "bug_copyReportHint": {
-    "message": "Le rapport en Markdown, pour un ticket ou un message"
+    "message": "El informe en Markdown, para un ticket o un mensaje"
   },
   "bug_downloadZip": {
-    "message": "Télécharger le .zip"
+    "message": "Descargar el .zip"
   },
   "bug_downloadZipHint": {
-    "message": "steps.json, le test, le rapport en Markdown, evidence.json et les captures d’écran"
+    "message": "steps.json, la prueba, el informe en Markdown, evidence.json y las capturas de pantalla"
   },
   "bug_replay": {
-    "message": "Rejouer"
+    "message": "Reproducir"
   },
   "bug_replayHint": {
-    "message": "Rejouez les étapes sur ce site, avec un curseur, et voyez si le bug apparaît"
+    "message": "Vuelve a ejecutar los pasos en este sitio, con un cursor, y mira si el bug aparece"
   },
   "bug_staysLocal": {
-    "message": "Tout reste dans ce navigateur : rien n’est envoyé nulle part."
+    "message": "Todo se queda en este navegador: no se envía nada a ninguna parte."
   },
   "replay_hudLabel": {
-    "message": "Piwi Picker : rapport de bug rejoué"
+    "message": "Piwi Picker: reproducción de un informe de bug"
   },
   "replay_statusRunning": {
-    "message": "En cours"
+    "message": "Reproduciendo"
   },
   "replay_statusPaused": {
-    "message": "En pause"
+    "message": "En pausa"
   },
   "replay_statusDone": {
-    "message": "Terminé"
+    "message": "Terminado"
   },
   "replay_statusWithTitle": {
-    "message": "$status$ : $title$",
+    "message": "$status$: $title$",
     "placeholders": {
       "status": {
         "content": "$1",
@@ -1836,7 +1836,7 @@
     }
   },
   "replay_progress": {
-    "message": "sur $origin$ · étape $step$ sur $total$",
+    "message": "en $origin$ · paso $step$ de $total$",
     "placeholders": {
       "origin": {
         "content": "$1",
@@ -1853,7 +1853,7 @@
     }
   },
   "replay_progressDone_one": {
-    "message": "sur $origin$ · $count$ étape",
+    "message": "en $origin$ · $count$ paso",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -1866,7 +1866,7 @@
     }
   },
   "replay_progressDone_other": {
-    "message": "sur $origin$ · $count$ étapes",
+    "message": "en $origin$ · $count$ pasos",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -1879,22 +1879,22 @@
     }
   },
   "replay_pause": {
-    "message": "Pause"
+    "message": "Pausa"
   },
   "replay_continue": {
-    "message": "Reprendre"
+    "message": "Continuar"
   },
   "replay_nextStep": {
-    "message": "Étape suivante"
+    "message": "Paso siguiente"
   },
   "replay_stepByStep": {
-    "message": "Pas à pas"
+    "message": "Paso a paso"
   },
   "replay_again": {
-    "message": "Rejouer"
+    "message": "Repetir"
   },
   "replay_stepFound": {
-    "message": "Résultat : $found$.",
+    "message": "Resultado: $found$.",
     "placeholders": {
       "found": {
         "content": "$1",
@@ -1903,7 +1903,7 @@
     }
   },
   "replay_cursorCheck": {
-    "message": "Vérification : $step$",
+    "message": "Comprobación: $step$",
     "placeholders": {
       "step": {
         "content": "$1",
@@ -1912,7 +1912,7 @@
     }
   },
   "replay_cursorNext": {
-    "message": "À suivre : $step$",
+    "message": "Siguiente: $step$",
     "placeholders": {
       "step": {
         "content": "$1",
@@ -1921,7 +1921,7 @@
     }
   },
   "replay_quotedText": {
-    "message": "« $text$ »",
+    "message": "«$text$»",
     "placeholders": {
       "text": {
         "content": "$1",
@@ -1930,10 +1930,10 @@
     }
   },
   "replay_foundMissing": {
-    "message": "aucun élément sur la page"
+    "message": "ningún elemento en la página"
   },
   "replay_foundCount_one": {
-    "message": "$count$ élément",
+    "message": "$count$ elemento",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -1942,7 +1942,7 @@
     }
   },
   "replay_foundCount_other": {
-    "message": "$count$ éléments",
+    "message": "$count$ elementos",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -1954,19 +1954,19 @@
     "message": "visible"
   },
   "replay_foundHidden": {
-    "message": "masqué"
+    "message": "oculto"
   },
   "replay_foundEnabled": {
-    "message": "activé"
+    "message": "habilitado"
   },
   "replay_foundDisabled": {
-    "message": "désactivé"
+    "message": "deshabilitado"
   },
   "replay_verdictReproduced": {
-    "message": "Reproduit : le bug est visible ici"
+    "message": "Reproducido: el bug aparece aquí"
   },
   "replay_verdictExpectedFound": {
-    "message": "Étape $step$ : attendu « $expected$ », résultat : $found$.",
+    "message": "Paso $step$: se esperaba «$expected$», resultado: $found$.",
     "placeholders": {
       "expected": {
         "content": "$1",
@@ -1983,7 +1983,7 @@
     }
   },
   "replay_verdictExpectedFoundAsReported": {
-    "message": "Étape $step$ : attendu « $expected$ », résultat : $found$, comme signalé.",
+    "message": "Paso $step$: se esperaba «$expected$», resultado: $found$, como se notificó.",
     "placeholders": {
       "expected": {
         "content": "$1",
@@ -2000,7 +2000,7 @@
     }
   },
   "replay_verdictFound": {
-    "message": "Étape $step$, résultat : $found$.",
+    "message": "Paso $step$, resultado: $found$.",
     "placeholders": {
       "found": {
         "content": "$1",
@@ -2013,7 +2013,7 @@
     }
   },
   "replay_verdictFoundAsReported": {
-    "message": "Étape $step$, résultat : $found$, comme signalé.",
+    "message": "Paso $step$, resultado: $found$, como se notificó.",
     "placeholders": {
       "found": {
         "content": "$1",
@@ -2026,13 +2026,13 @@
     }
   },
   "replay_verdictNotReproduced": {
-    "message": "Non reproduit"
+    "message": "No reproducido"
   },
   "replay_verdictNotReproducedDetail": {
-    "message": "Tous les résultats attendus sont vérifiés sur cette page."
+    "message": "Todos los resultados esperados se cumplen en esta página."
   },
   "replay_verdictDiverged": {
-    "message": "Impossible d’atteindre le bug : arrêt à l’étape $step$",
+    "message": "No se pudo llegar al bug: se detuvo en el paso $step$",
     "placeholders": {
       "step": {
         "content": "$1",
@@ -2041,7 +2041,7 @@
     }
   },
   "replay_verdictDivergedDetail": {
-    "message": "$reason$ Cette page n’est pas la même que dans le rapport : d’autres données, un autre compte, ou une option activée ou non.",
+    "message": "$reason$ Esta página no es la misma que en el informe: otros datos, otra cuenta o una opción activada o desactivada.",
     "placeholders": {
       "reason": {
         "content": "$1",
@@ -2050,16 +2050,16 @@
     }
   },
   "replay_verdictCompleted": {
-    "message": "Toutes les étapes ont été rejouées"
+    "message": "Se reprodujeron todos los pasos"
   },
   "replay_verdictCompletedDetail": {
-    "message": "Ces étapes ne disent pas quel résultat attendre."
+    "message": "Nada en estos pasos dice qué resultado esperar."
   },
   "replay_verdictStopped": {
-    "message": "Arrêté"
+    "message": "Detenido"
   },
   "replay_verdictStoppedDetail": {
-    "message": "Arrêté avant l’étape $step$.",
+    "message": "Se detuvo antes del paso $step$.",
     "placeholders": {
       "step": {
         "content": "$1",
@@ -2068,10 +2068,10 @@
     }
   },
   "replay_reasonNoLocator": {
-    "message": "Le rapport ne dit pas comment trouver cet élément."
+    "message": "El informe no dice cómo encontrar este elemento."
   },
   "replay_reasonNoMatch": {
-    "message": "Aucun élément de cette page ne correspond à $locator$.",
+    "message": "Nada en esta página coincide con $locator$.",
     "placeholders": {
       "locator": {
         "content": "$1",
@@ -2080,7 +2080,7 @@
     }
   },
   "replay_reasonManyMatches_one": {
-    "message": "$count$ élément correspond à $locator$ : il en faut exactement un pour rejouer l’étape.",
+    "message": "$count$ elemento coincide con $locator$, y la reproducción necesita exactamente uno.",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -2093,7 +2093,7 @@
     }
   },
   "replay_reasonManyMatches_other": {
-    "message": "$count$ éléments correspondent à $locator$ : il en faut exactement un pour rejouer l’étape.",
+    "message": "$count$ elementos coinciden con $locator$, y la reproducción necesita exactamente uno.",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -2106,7 +2106,7 @@
     }
   },
   "replay_reasonHidden": {
-    "message": "$locator$ est sur la page, mais masqué.",
+    "message": "$locator$ está en la página, pero oculto.",
     "placeholders": {
       "locator": {
         "content": "$1",
@@ -2115,7 +2115,7 @@
     }
   },
   "replay_reasonDisabled": {
-    "message": "$locator$ est désactivé.",
+    "message": "$locator$ está deshabilitado.",
     "placeholders": {
       "locator": {
         "content": "$1",
@@ -2124,7 +2124,7 @@
     }
   },
   "replay_reasonMoving": {
-    "message": "$locator$ n’arrêtait pas de bouger sur la page.",
+    "message": "$locator$ no dejaba de moverse en la página.",
     "placeholders": {
       "locator": {
         "content": "$1",
@@ -2133,7 +2133,7 @@
     }
   },
   "replay_reasonOtherPage": {
-    "message": "Cette étape a eu lieu sur $expected$, et l’onglet est sur $actual$.",
+    "message": "Este paso ocurrió en $expected$, y la pestaña está en $actual$.",
     "placeholders": {
       "actual": {
         "content": "$1",
@@ -2146,13 +2146,13 @@
     }
   },
   "replay_reasonActionFailed": {
-    "message": "La page n’a pas réagi à l’action comme lors de l’enregistrement."
+    "message": "La página no reaccionó a la acción como cuando se grabó."
   },
   "replay_dialogTitle": {
-    "message": "Rejouer un rapport de bug"
+    "message": "Reproducir un informe de bug"
   },
   "replay_dialogIntro": {
-    "message": "Rejoue ses étapes sur $origin$, avec un curseur qui montre chacune d’elles, et indique si le bug apparaît ici.",
+    "message": "Reproduce sus pasos en $origin$, con un cursor que muestra cada uno, y dice si el bug aparece aquí.",
     "placeholders": {
       "origin": {
         "content": "$1",
@@ -2161,19 +2161,19 @@
     }
   },
   "replay_useRecorded": {
-    "message": "Utiliser le rapport de bug enregistré dans ce navigateur"
+    "message": "Usar el informe de bug grabado en este navegador"
   },
   "replay_chooseFile": {
-    "message": "Ou choisissez le .zip du rapport, ou son steps.json, enregistré par Piwi Picker :"
+    "message": "O elige el .zip del informe, o su steps.json, guardado por Piwi Picker:"
   },
   "replay_fileLabel": {
-    "message": "Le .zip du rapport de bug, ou son steps.json"
+    "message": "El .zip del informe de bug, o su steps.json"
   },
   "replay_untitled": {
-    "message": "Rapport sans titre"
+    "message": "Informe sin título"
   },
   "replay_summary_one": {
-    "message": "$title$ · $count$ étape",
+    "message": "$title$ · $count$ paso",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -2186,7 +2186,7 @@
     }
   },
   "replay_summary_other": {
-    "message": "$title$ · $count$ étapes",
+    "message": "$title$ · $count$ pasos",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -2199,7 +2199,7 @@
     }
   },
   "replay_recordedOn": {
-    "message": "enregistré sur $origin$",
+    "message": "grabado en $origin$",
     "placeholders": {
       "origin": {
         "content": "$1",
@@ -2208,16 +2208,16 @@
     }
   },
   "replay_stepByStepHint": {
-    "message": "Pas à pas : cliquez sur Étape suivante avant chaque étape"
+    "message": "Paso a paso: haz clic en Paso siguiente antes de cada paso"
   },
   "replay_start": {
-    "message": "Rejouer"
+    "message": "Reproducir"
   },
   "replay_chooseFirst": {
-    "message": "Choisissez d’abord un rapport."
+    "message": "Primero elige un informe."
   },
   "replay_zipNoSteps": {
-    "message": "$file$ ne contient pas de steps.json : choisissez le .zip enregistré par Piwi Picker, ou son steps.json.",
+    "message": "$file$ no contiene ningún steps.json: elige el .zip guardado por Piwi Picker, o su steps.json.",
     "placeholders": {
       "file": {
         "content": "$1",
@@ -2226,7 +2226,7 @@
     }
   },
   "replay_fileNotSteps": {
-    "message": "$file$ n’est pas un fichier d’étapes : $error$",
+    "message": "$file$ no es un archivo de pasos: $error$",
     "placeholders": {
       "error": {
         "content": "$1",
@@ -2239,25 +2239,25 @@
     }
   },
   "coverage_panelLabel": {
-    "message": "Piwi : éléments testés"
+    "message": "Piwi: elementos probados"
   },
   "coverage_title": {
-    "message": "Éléments testés"
+    "message": "Elementos probados"
   },
   "coverage_dock": {
-    "message": "Placer le panneau de l’autre côté"
+    "message": "Mover el panel al otro lado"
   },
   "coverage_collapse": {
-    "message": "Réduire le panneau à un résumé"
+    "message": "Reducir el panel a un resumen"
   },
   "coverage_closeEsc": {
-    "message": "Fermer (Échap)"
+    "message": "Cerrar (Esc)"
   },
   "coverage_expand": {
-    "message": "Rouvrir le panneau Éléments testés"
+    "message": "Volver a abrir el panel Elementos probados"
   },
   "coverage_pill_one": {
-    "message": "Piwi · $count$/$total$ testé · $tests$",
+    "message": "Piwi · $count$/$total$ probado · $tests$",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -2274,7 +2274,7 @@
     }
   },
   "coverage_pill_other": {
-    "message": "Piwi · $count$/$total$ testés · $tests$",
+    "message": "Piwi · $count$/$total$ probados · $tests$",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -2291,7 +2291,7 @@
     }
   },
   "coverage_pillMissing_one": {
-    "message": "$count$ introuvable ici",
+    "message": "$count$ no se encuentra aquí",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -2300,7 +2300,7 @@
     }
   },
   "coverage_pillMissing_other": {
-    "message": "$count$ introuvables ici",
+    "message": "$count$ no se encuentran aquí",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -2309,22 +2309,22 @@
     }
   },
   "coverage_pillIdle": {
-    "message": "Piwi · éléments testés"
+    "message": "Piwi · elementos probados"
   },
   "coverage_modalOpen": {
-    "message": "La page affiche une fenêtre de dialogue : les cadres restent visibles, mais vous ne pourrez utiliser ce panneau qu’une fois la fenêtre fermée."
+    "message": "La página tiene un cuadro de diálogo abierto: los recuadros siguen visibles, pero solo podrás usar este panel cuando se cierre."
   },
   "coverage_openSettings": {
-    "message": "Ouvrir les réglages de Piwi Picker"
+    "message": "Abrir la configuración de Piwi Picker"
   },
   "coverage_tryAgain": {
-    "message": "Réessayer"
+    "message": "Reintentar"
   },
   "coverage_loading": {
-    "message": "Chargement de l’index de locators…"
+    "message": "Cargando el índice de locators…"
   },
   "coverage_loadingProject": {
-    "message": "Chargement de l’index de locators de $project$…",
+    "message": "Cargando el índice de locators de $project$…",
     "placeholders": {
       "project": {
         "content": "$1",
@@ -2333,7 +2333,7 @@
     }
   },
   "coverage_loadingProjectAll": {
-    "message": "Chargement de l’index de locators de $project$ sur toutes les branches…",
+    "message": "Cargando el índice de locators de $project$ en todas las ramas…",
     "placeholders": {
       "project": {
         "content": "$1",
@@ -2342,7 +2342,7 @@
     }
   },
   "coverage_loadingProjectBranch": {
-    "message": "Chargement de l’index de locators de $project$ sur $branch$…",
+    "message": "Cargando el índice de locators de $project$ en $branch$…",
     "placeholders": {
       "branch": {
         "content": "$1",
@@ -2355,7 +2355,7 @@
     }
   },
   "coverage_loadFailed": {
-    "message": "Impossible de charger l’index de locators de $project$ : $error$",
+    "message": "No se pudo cargar el índice de locators de $project$: $error$",
     "placeholders": {
       "error": {
         "content": "$1",
@@ -2368,13 +2368,13 @@
     }
   },
   "coverage_notConnected": {
-    "message": "Connectez Piwi Picker à votre instance Piwi pour voir quels éléments de cette page vos tests utilisent : dans les réglages, ajoutez l’adresse de votre instance, une clé d’API et un motif d’adresse pour ce site."
+    "message": "Conecta Piwi Picker a tu instancia de Piwi para ver qué elementos de esta página usan tus pruebas: en la configuración, añade la dirección de tu instancia, una clave de API y un patrón de dirección para este sitio."
   },
   "coverage_noProject": {
-    "message": "Aucun projet n’est associé à cette page. Ajoutez-lui un motif d’adresse dans les réglages, ou choisissez un projet dans le menu de Piwi Picker."
+    "message": "No hay ningún proyecto asignado a esta página. Añade un patrón de dirección para ella en la configuración o elige un proyecto en el menú de Piwi Picker."
   },
   "coverage_indexSize_one": {
-    "message": "$count$ locator issu de $tests$",
+    "message": "$count$ locator de $tests$",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -2387,7 +2387,7 @@
     }
   },
   "coverage_indexSize_other": {
-    "message": "$count$ locators issus de $tests$",
+    "message": "$count$ locators de $tests$",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -2400,7 +2400,7 @@
     }
   },
   "coverage_updated": {
-    "message": "mis à jour $age$",
+    "message": "actualizado $age$",
     "placeholders": {
       "age": {
         "content": "$1",
@@ -2409,10 +2409,10 @@
     }
   },
   "coverage_ageJustNow": {
-    "message": "à l’instant"
+    "message": "ahora mismo"
   },
   "coverage_ageMinutes_one": {
-    "message": "il y a $count$ min",
+    "message": "hace $count$ min",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -2421,7 +2421,7 @@
     }
   },
   "coverage_ageMinutes_other": {
-    "message": "il y a $count$ min",
+    "message": "hace $count$ min",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -2430,7 +2430,7 @@
     }
   },
   "coverage_ageHours_one": {
-    "message": "il y a $count$ h",
+    "message": "hace $count$ h",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -2439,7 +2439,7 @@
     }
   },
   "coverage_ageHours_other": {
-    "message": "il y a $count$ h",
+    "message": "hace $count$ h",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -2448,7 +2448,7 @@
     }
   },
   "coverage_ageDays_one": {
-    "message": "il y a $count$ jour",
+    "message": "hace $count$ día",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -2457,7 +2457,7 @@
     }
   },
   "coverage_ageDays_other": {
-    "message": "il y a $count$ jours",
+    "message": "hace $count$ días",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -2466,10 +2466,10 @@
     }
   },
   "coverage_refreshTitle": {
-    "message": "Télécharger à nouveau l’index de locators depuis Piwi"
+    "message": "Volver a descargar el índice de locators desde Piwi"
   },
   "coverage_refreshFailed": {
-    "message": "Actualisation impossible : $error$",
+    "message": "No se pudo actualizar: $error$",
     "placeholders": {
       "error": {
         "content": "$1",
@@ -2478,16 +2478,16 @@
     }
   },
   "coverage_checking": {
-    "message": "Recherche de chaque locator sur cette page"
+    "message": "Buscando cada locator en esta página"
   },
   "coverage_branch": {
-    "message": "Branche"
+    "message": "Rama"
   },
   "coverage_branchTitle": {
-    "message": "Afficher les tests de cette branche, avec ce qu’ils y ont fait"
+    "message": "Mostrar las pruebas de esta rama, con lo que hicieron en ella"
   },
   "coverage_branchDefaultNamed": {
-    "message": "$branch$ (par défaut)",
+    "message": "$branch$ (predeterminada)",
     "placeholders": {
       "branch": {
         "content": "$1",
@@ -2496,13 +2496,13 @@
     }
   },
   "coverage_branchDefault": {
-    "message": "Branche par défaut"
+    "message": "Rama predeterminada"
   },
   "coverage_branchAll": {
-    "message": "Toutes les branches"
+    "message": "Todas las ramas"
   },
   "coverage_testCount_one": {
-    "message": "$count$ test",
+    "message": "$count$ prueba",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -2511,7 +2511,7 @@
     }
   },
   "coverage_testCount_other": {
-    "message": "$count$ tests",
+    "message": "$count$ pruebas",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -2520,7 +2520,7 @@
     }
   },
   "coverage_elementCount_one": {
-    "message": "$count$ élément",
+    "message": "$count$ elemento",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -2529,7 +2529,7 @@
     }
   },
   "coverage_elementCount_other": {
-    "message": "$count$ éléments",
+    "message": "$count$ elementos",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -2538,58 +2538,58 @@
     }
   },
   "coverage_pageSwitch": {
-    "message": "Ce qui est compté"
+    "message": "Qué contar"
   },
   "coverage_thisPage": {
-    "message": "Cette page"
+    "message": "Esta página"
   },
   "coverage_thisPageTitle": {
-    "message": "Compter ce que les tests font sur cette page, et les usages dont aucune exécution n’a noté la page"
+    "message": "Contar lo que las pruebas hacen en esta página, más los usos en los que ninguna ejecución anotó la página"
   },
   "coverage_allPages": {
-    "message": "Toutes les pages"
+    "message": "Todas las páginas"
   },
   "coverage_allPagesTitle": {
-    "message": "Compter chaque locator qui trouve quelque chose ici, quelle que soit la page où son test l’utilise"
+    "message": "Contar cada locator que encuentra algo aquí, sea cual sea la página en la que lo usó su prueba"
   },
   "coverage_tileTested": {
-    "message": "testés"
+    "message": "probados"
   },
   "coverage_tileTestedTitle": {
-    "message": "Boutons, liens et champs de cette page qu’un test atteint"
+    "message": "Botones, enlaces y campos de esta página que alcanza alguna prueba"
   },
   "coverage_tileTestedTitleInside": {
-    "message": "Boutons, liens et champs à l’intérieur qu’un test atteint"
+    "message": "Botones, enlaces y campos de su interior que alcanza alguna prueba"
   },
   "coverage_tileUntested": {
-    "message": "non testés"
+    "message": "sin probar"
   },
   "coverage_tileUntestedTitle": {
-    "message": "Boutons, liens et champs visibles de cette page qu’aucun test n’atteint"
+    "message": "Botones, enlaces y campos visibles de esta página que ninguna prueba alcanza"
   },
   "coverage_tileUntestedTitleInside": {
-    "message": "Boutons, liens et champs visibles à l’intérieur qu’aucun test n’atteint"
+    "message": "Botones, enlaces y campos visibles de su interior que ninguna prueba alcanza"
   },
   "coverage_tileTestHere": {
-    "message": "test ici"
+    "message": "prueba aquí"
   },
   "coverage_tileTestsHere": {
-    "message": "tests ici"
+    "message": "pruebas aquí"
   },
   "coverage_tileTestInside": {
-    "message": "test à l’intérieur"
+    "message": "prueba dentro"
   },
   "coverage_tileTestsInside": {
-    "message": "tests à l’intérieur"
+    "message": "pruebas dentro"
   },
   "coverage_tileTestsTitle": {
-    "message": "Tests dont les locators trouvent quelque chose sur cette page"
+    "message": "Pruebas cuyos locators encuentran algo en esta página"
   },
   "coverage_tileTestsTitleInside": {
-    "message": "Tests dont les locators trouvent quelque chose à l’intérieur"
+    "message": "Pruebas cuyos locators encuentran algo en su interior"
   },
   "coverage_meterLabel": {
-    "message": "$percent$ % des boutons, liens et champs atteints par un test",
+    "message": "$percent$ % de los botones, enlaces y campos alcanzados por una prueba",
     "placeholders": {
       "percent": {
         "content": "$1",
@@ -2598,7 +2598,7 @@
     }
   },
   "coverage_meterShare_one": {
-    "message": "$percent$ % de $count$ élément interactif de cette page",
+    "message": "$percent$ % de $count$ elemento interactivo de esta página",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -2611,7 +2611,7 @@
     }
   },
   "coverage_meterShare_other": {
-    "message": "$percent$ % des $count$ éléments interactifs de cette page",
+    "message": "$percent$ % de los $count$ elementos interactivos de esta página",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -2624,7 +2624,7 @@
     }
   },
   "coverage_meterShareInside_one": {
-    "message": "$percent$ % de $count$ élément interactif à l’intérieur",
+    "message": "$percent$ % de $count$ elemento interactivo de su interior",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -2637,7 +2637,7 @@
     }
   },
   "coverage_meterShareInside_other": {
-    "message": "$percent$ % des $count$ éléments interactifs à l’intérieur",
+    "message": "$percent$ % de los $count$ elementos interactivos de su interior",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -2650,13 +2650,13 @@
     }
   },
   "coverage_meterNone": {
-    "message": "Aucun élément interactif sur cette page"
+    "message": "Ningún elemento interactivo en esta página"
   },
   "coverage_meterNoneInside": {
-    "message": "Aucun élément interactif à l’intérieur"
+    "message": "Ningún elemento interactivo en su interior"
   },
   "coverage_meterFound_one": {
-    "message": "$count$ élément trouvé, dont $checked$ seulement vérifié",
+    "message": "$count$ elemento encontrado, $checked$ de ellos solo comprobado",
     "placeholders": {
       "checked": {
         "content": "$1",
@@ -2669,7 +2669,7 @@
     }
   },
   "coverage_meterFound_other": {
-    "message": "$count$ éléments trouvés, dont $checked$ seulement vérifiés",
+    "message": "$count$ elementos encontrados, $checked$ de ellos solo comprobados",
     "placeholders": {
       "checked": {
         "content": "$1",
@@ -2682,7 +2682,7 @@
     }
   },
   "coverage_meterFoundOnly_one": {
-    "message": "$count$ élément trouvé",
+    "message": "$count$ elemento encontrado",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -2691,7 +2691,7 @@
     }
   },
   "coverage_meterFoundOnly_other": {
-    "message": "$count$ éléments trouvés",
+    "message": "$count$ elementos encontrados",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -2700,7 +2700,7 @@
     }
   },
   "coverage_meterBrittle_one": {
-    "message": "$count$ élément testé atteint par des locators fragiles",
+    "message": "$count$ elemento probado alcanzado mediante locators frágiles",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -2709,7 +2709,7 @@
     }
   },
   "coverage_meterBrittle_other": {
-    "message": "$count$ éléments testés atteints par des locators fragiles",
+    "message": "$count$ elementos probados alcanzados mediante locators frágiles",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -2718,7 +2718,7 @@
     }
   },
   "coverage_choosingKeys": {
-    "message": "$up$ plus large · $down$ plus étroit · $esc$ annule",
+    "message": "$up$ más amplio · $down$ más estrecho · $esc$ cancela",
     "placeholders": {
       "down": {
         "content": "$1",
@@ -2735,16 +2735,16 @@
     }
   },
   "coverage_escKey": {
-    "message": "Échap"
+    "message": "Esc"
   },
   "coverage_clickPart": {
-    "message": "Cliquez sur une partie de la page"
+    "message": "Haz clic en una parte de la página"
   },
   "coverage_cancelChoosingTitle": {
-    "message": "Continuer à regarder toute la page (Échap)"
+    "message": "Seguir viendo toda la página (Esc)"
   },
   "coverage_inside": {
-    "message": "Dans $element$",
+    "message": "Dentro de $element$",
     "placeholders": {
       "element": {
         "content": "$1",
@@ -2753,25 +2753,25 @@
     }
   },
   "coverage_widen": {
-    "message": "Conteneur ↑"
+    "message": "Contenedor ↑"
   },
   "coverage_widenTitle": {
-    "message": "Regarder l’élément qui l’entoure"
+    "message": "Ver el elemento que lo rodea"
   },
   "coverage_wholePage": {
-    "message": "Toute la page"
+    "message": "Toda la página"
   },
   "coverage_wholePageTitle": {
-    "message": "Revenir à toute la page (Échap)"
+    "message": "Volver a ver toda la página (Esc)"
   },
   "coverage_limit": {
-    "message": "Limiter à un élément"
+    "message": "Limitar a un elemento"
   },
   "coverage_limitTitle": {
-    "message": "Choisissez un formulaire, une carte ou un menu, pour ne voir que ce qu’il contient"
+    "message": "Elige un formulario, una tarjeta o un menú, y ve solo lo que contiene"
   },
   "coverage_choosingFrame": {
-    "message": "$element$ · cliquez pour regarder à l’intérieur",
+    "message": "$element$ · haz clic para ver su interior",
     "placeholders": {
       "element": {
         "content": "$1",
@@ -2780,13 +2780,13 @@
     }
   },
   "coverage_aroundHint": {
-    "message": "Autour : des tests atteignent ces parties de la page"
+    "message": "Alrededor: hay pruebas que alcanzan estas partes de la página"
   },
   "coverage_aroundRowTitle": {
-    "message": "Regarder à l’intérieur de cette partie"
+    "message": "Ver el interior de esta parte"
   },
   "coverage_aroundMore_one": {
-    "message": "et $count$ autre plus loin",
+    "message": "y $count$ más, más afuera",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -2795,7 +2795,7 @@
     }
   },
   "coverage_aroundMore_other": {
-    "message": "et $count$ autres plus loin",
+    "message": "y $count$ más, más afuera",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -2804,10 +2804,10 @@
     }
   },
   "coverage_tabs": {
-    "message": "Ce qui est listé"
+    "message": "Qué listar"
   },
   "coverage_tabElements": {
-    "message": "Éléments $count$",
+    "message": "Elementos $count$",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -2816,7 +2816,7 @@
     }
   },
   "coverage_tabTests": {
-    "message": "Tests $count$",
+    "message": "Pruebas $count$",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -2825,7 +2825,7 @@
     }
   },
   "coverage_tabUntested": {
-    "message": "Non testés $count$",
+    "message": "Sin probar $count$",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -2834,7 +2834,7 @@
     }
   },
   "coverage_tabRisk": {
-    "message": "À risque $count$",
+    "message": "En riesgo $count$",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -2843,13 +2843,13 @@
     }
   },
   "coverage_search": {
-    "message": "Filtrer par élément, test ou fichier"
+    "message": "Filtrar por elemento, prueba o archivo"
   },
   "coverage_searchLabel": {
-    "message": "Filtrer la liste"
+    "message": "Filtrar la lista"
   },
   "coverage_listMore_one": {
-    "message": "$count$ de plus : tapez dans le filtre pour réduire la liste",
+    "message": "$count$ más: escribe en el filtro para acotar la lista",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -2858,7 +2858,7 @@
     }
   },
   "coverage_listMore_other": {
-    "message": "$count$ de plus : tapez dans le filtre pour réduire la liste",
+    "message": "$count$ más: escribe en el filtro para acotar la lista",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -2867,37 +2867,37 @@
     }
   },
   "coverage_noMatch": {
-    "message": "Rien ne correspond au filtre."
+    "message": "Nada coincide con el filtro."
   },
   "coverage_reachFailing": {
-    "message": "Un test qui l’atteint est en échec"
+    "message": "Una prueba que lo alcanza está fallando"
   },
   "coverage_reachFlaky": {
-    "message": "Un test qui l’atteint est instable"
+    "message": "Una prueba que lo alcanza es inestable"
   },
   "coverage_hiddenNow": {
-    "message": "masqué pour l’instant"
+    "message": "oculto por ahora"
   },
   "coverage_emptyElements": {
-    "message": "Aucun locator du projet ne trouve quoi que ce soit sur cette page. Ses tests utilisent peut-être d’autres pages, ou cette page dans un autre état."
+    "message": "Ningún locator del proyecto encuentra nada en esta página. Puede que sus pruebas usen otras páginas, o esta página en otro estado."
   },
   "coverage_emptyElementsInside": {
-    "message": "Aucun locator du projet ne trouve quoi que ce soit à l’intérieur."
+    "message": "Ningún locator del proyecto encuentra nada en su interior."
   },
   "coverage_openTest": {
-    "message": "Ouvrir ce test dans Piwi"
+    "message": "Abrir esta prueba en Piwi"
   },
   "coverage_onlyItsElements": {
-    "message": "seuls ses éléments sont affichés"
+    "message": "solo se muestran sus elementos"
   },
   "coverage_emptyTests": {
-    "message": "Aucun test n’atteint cette page."
+    "message": "Ninguna prueba alcanza esta página."
   },
   "coverage_emptyTestsInside": {
-    "message": "Aucun test n’atteint l’intérieur."
+    "message": "Ninguna prueba alcanza su interior."
   },
   "coverage_foundElsewhere": {
-    "message": "Trouvé par $locator$, que les tests utilisent sur $pages$",
+    "message": "Encontrado por $locator$, que las pruebas usan en $pages$",
     "placeholders": {
       "locator": {
         "content": "$1",
@@ -2910,7 +2910,7 @@
     }
   },
   "coverage_foundElsewhereOther": {
-    "message": "Trouvé par $locator$, que les tests utilisent sur d’autres pages",
+    "message": "Encontrado por $locator$, que las pruebas usan en otras páginas",
     "placeholders": {
       "locator": {
         "content": "$1",
@@ -2919,19 +2919,19 @@
     }
   },
   "coverage_copyLocator": {
-    "message": "Copier le locator"
+    "message": "Copiar el locator"
   },
   "coverage_copyLocatorTitle": {
-    "message": "Copier ce locator pour écrire un test de cet élément"
+    "message": "Copiar este locator para escribir una prueba del elemento"
   },
   "coverage_emptyUntested": {
-    "message": "Chaque bouton, lien et champ visible de cette page est atteint par un test."
+    "message": "Cada botón, enlace y campo visible de esta página lo alcanza alguna prueba."
   },
   "coverage_emptyUntestedInside": {
-    "message": "Chaque bouton, lien et champ visible à l’intérieur est atteint par un test."
+    "message": "Cada botón, enlace y campo visible de su interior lo alcanza alguna prueba."
   },
   "coverage_missingHead": {
-    "message": "Introuvables ici · $count$",
+    "message": "No se encuentran aquí · $count$",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -2940,13 +2940,13 @@
     }
   },
   "coverage_missingHint": {
-    "message": "Les tests utilisent ces locators sur cette page, mais ils n’y trouvent rien pour l’instant. Ceux que les tests utilisent dès le chargement de la page viennent en premier ; les autres ont peut-être besoin d’un menu ou d’une fenêtre ouverts."
+    "message": "Las pruebas usan estos locators en esta página, pero ahora no encuentran nada aquí. Primero aparecen los que las pruebas usan en cuanto se carga la página; los demás quizá necesiten un menú o un cuadro de diálogo abierto."
   },
   "coverage_missingEmpty": {
-    "message": "Chaque locator que les tests utilisent sur cette page trouve son élément ici."
+    "message": "Cada locator que las pruebas usan en esta página encuentra aquí su elemento."
   },
   "coverage_severalHead": {
-    "message": "Plusieurs trouvés ici · $count$",
+    "message": "Varios coinciden aquí · $count$",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -2955,19 +2955,19 @@
     }
   },
   "coverage_severalHint": {
-    "message": "Les tests agissent sur ces locators sur cette page, et chacun trouve plusieurs éléments ici : un clic a besoin d’un seul élément."
+    "message": "Las pruebas actúan sobre estos locators en esta página, y cada uno encuentra aquí varios elementos: un clic necesita exactamente uno."
   },
   "coverage_severalEmpty": {
-    "message": "Chaque locator sur lequel les tests agissent ici trouve un seul élément."
+    "message": "Cada locator sobre el que actúan las pruebas aquí encuentra un solo elemento."
   },
   "coverage_notFoundOnLoad": {
-    "message": "Introuvable au chargement de la page"
+    "message": "No se encuentra al cargar la página"
   },
   "coverage_notFoundNow": {
-    "message": "Introuvable pour l’instant"
+    "message": "No se encuentra ahora"
   },
   "coverage_findsCount_one": {
-    "message": "Trouve $count$ élément",
+    "message": "Encuentra $count$ elemento",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -2976,7 +2976,7 @@
     }
   },
   "coverage_findsCount_other": {
-    "message": "Trouve $count$ éléments",
+    "message": "Encuentra $count$ elementos",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -2985,7 +2985,7 @@
     }
   },
   "coverage_brittleRules": {
-    "message": "fragile : $rules$",
+    "message": "frágil: $rules$",
     "placeholders": {
       "rules": {
         "content": "$1",
@@ -2994,7 +2994,7 @@
     }
   },
   "coverage_brittleHead": {
-    "message": "Locators fragiles · $count$",
+    "message": "Locators frágiles · $count$",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -3003,22 +3003,22 @@
     }
   },
   "coverage_brittleHint": {
-    "message": "Ils cassent quand la page change d’une façon qui n’importe pas au test : un nouveau style, un conteneur de plus, une liste dans un autre ordre."
+    "message": "Fallan cuando la página cambia de formas que no le importan a la prueba: un estilo nuevo, un contenedor más, una lista en otro orden."
   },
   "coverage_brittleEmpty": {
-    "message": "Aucun locator fragile ne trouve quoi que ce soit sur cette page."
+    "message": "Ningún locator frágil encuentra nada en esta página."
   },
   "coverage_brittleEmptyInside": {
-    "message": "Aucun locator fragile ne trouve quoi que ce soit à l’intérieur."
+    "message": "Ningún locator frágil encuentra nada en su interior."
   },
   "coverage_useFailing": {
-    "message": "Un test qui l’utilise est en échec"
+    "message": "Una prueba que lo usa está fallando"
   },
   "coverage_useFlaky": {
-    "message": "Un test qui l’utilise est instable"
+    "message": "Una prueba que lo usa es inestable"
   },
   "coverage_severalNoReplacement_one": {
-    "message": "Trouve $count$ élément ici : aucun remplacement n’est proposé.",
+    "message": "Encuentra $count$ elemento aquí, así que no se propone ningún reemplazo.",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -3027,7 +3027,7 @@
     }
   },
   "coverage_severalNoReplacement_other": {
-    "message": "Trouve $count$ éléments ici : aucun remplacement n’est proposé.",
+    "message": "Encuentra $count$ elementos aquí, así que no se propone ningún reemplazo.",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -3036,13 +3036,13 @@
     }
   },
   "coverage_addTestId": {
-    "message": "Aucun locator stable ne trouve cet élément seul : donnez-lui un test id."
+    "message": "Ningún locator estable encuentra solo este elemento: ponle un test id."
   },
   "coverage_replacementTitle": {
-    "message": "Ne trouve que cet élément ici"
+    "message": "Solo encuentra este elemento aquí"
   },
   "coverage_mostStable": {
-    "message": "Le plus stable : $locator$",
+    "message": "El más estable: $locator$",
     "placeholders": {
       "locator": {
         "content": "$1",
@@ -3051,16 +3051,16 @@
     }
   },
   "coverage_copyReplacementTitle": {
-    "message": "Copier le remplacement, qui ne trouve que cet élément ici"
+    "message": "Copiar el reemplazo, que solo encuentra este elemento aquí"
   },
   "coverage_copyEdit": {
-    "message": "Copier la modification"
+    "message": "Copiar el cambio"
   },
   "coverage_copyEditTitle": {
-    "message": "Copier chaque endroit du code qui l’utilise, avec l’ancien et le nouveau locator"
+    "message": "Copiar cada lugar del código que lo usa, con el locator antiguo y el nuevo"
   },
   "coverage_notesUnmatched_one": {
-    "message": "$count$ locator ne trouve rien ici : il vise une autre page, ou cette page dans un autre état.",
+    "message": "$count$ locator no encuentra nada aquí: apunta a otra página, o a esta página en otro estado.",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -3069,7 +3069,7 @@
     }
   },
   "coverage_notesUnmatched_other": {
-    "message": "$count$ locators ne trouvent rien ici : ils visent d’autres pages, ou cette page dans un autre état.",
+    "message": "$count$ locators no encuentran nada aquí: apuntan a otras páginas, o a esta página en otro estado.",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -3078,10 +3078,10 @@
     }
   },
   "coverage_notesTruncated": {
-    "message": "Le projet a plus de locators que l’index n’en contient ; les moins utilisés sont laissés de côté."
+    "message": "El proyecto tiene más locators de los que caben en el índice; los menos usados se quedan fuera."
   },
   "coverage_notesTestIds": {
-    "message": "getByTestId lit $attributes$ dans ce projet.",
+    "message": "getByTestId lee $attributes$ en este proyecto.",
     "placeholders": {
       "attributes": {
         "content": "$1",
@@ -3090,7 +3090,7 @@
     }
   },
   "coverage_notesChecked_one": {
-    "message": "$count$ locator vérifié en $ms$ ms.",
+    "message": "$count$ locator comprobado en $ms$ ms.",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -3103,7 +3103,7 @@
     }
   },
   "coverage_notesChecked_other": {
-    "message": "$count$ locators vérifiés en $ms$ ms.",
+    "message": "$count$ locators comprobados en $ms$ ms.",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -3116,7 +3116,7 @@
     }
   },
   "coverage_notesPageScoped": {
-    "message": "Sont comptés ce que les tests font sur $page$, et les usages dont aucune exécution n’a noté la page.",
+    "message": "Se cuenta lo que las pruebas hacen en $page$, más los usos en los que ninguna ejecución anotó la página.",
     "placeholders": {
       "page": {
         "content": "$1",
@@ -3125,13 +3125,13 @@
     }
   },
   "coverage_notesPageScopedHere": {
-    "message": "Sont comptés ce que les tests font sur cette page, et les usages dont aucune exécution n’a noté la page."
+    "message": "Se cuenta lo que las pruebas hacen en esta página, más los usos en los que ninguna ejecución anotó la página."
   },
   "coverage_notesAllPages": {
-    "message": "Les locators sont cherchés sur cette page, quelle que soit la page où leur test les utilise."
+    "message": "Los locators se buscan en esta página, sea cual sea la página en la que los usó su prueba."
   },
   "coverage_notesErrors_one": {
-    "message": "$count$ locator n’a pas pu être vérifié ici :",
+    "message": "No se pudo comprobar aquí $count$ locator:",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -3140,7 +3140,7 @@
     }
   },
   "coverage_notesErrors_other": {
-    "message": "$count$ locators n’ont pas pu être vérifiés ici :",
+    "message": "No se pudieron comprobar aquí $count$ locators:",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -3149,10 +3149,10 @@
     }
   },
   "coverage_notes": {
-    "message": "Notes"
+    "message": "Notas"
   },
   "coverage_notesWithErrors_one": {
-    "message": "Notes · $count$ locator non vérifié",
+    "message": "Notas · $count$ locator sin comprobar",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -3161,7 +3161,7 @@
     }
   },
   "coverage_notesWithErrors_other": {
-    "message": "Notes · $count$ locators non vérifiés",
+    "message": "Notas · $count$ locators sin comprobar",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -3170,67 +3170,67 @@
     }
   },
   "coverage_statusPassed": {
-    "message": "Réussi lors de sa dernière exécution"
+    "message": "Superada en su última ejecución"
   },
   "coverage_statusFlaky": {
-    "message": "Réussi après une nouvelle tentative lors de sa dernière exécution"
+    "message": "Superada tras un reintento en su última ejecución"
   },
   "coverage_statusFailed": {
-    "message": "En échec lors de sa dernière exécution"
+    "message": "Fallida en su última ejecución"
   },
   "coverage_statusSkipped": {
-    "message": "Ignoré lors de sa dernière exécution"
+    "message": "Omitida en su última ejecución"
   },
   "coverage_statusNone": {
-    "message": "Aucune exécution enregistrée"
+    "message": "Ninguna ejecución registrada"
   },
   "coverage_toggleActed": {
-    "message": "Manipulés"
+    "message": "Usados"
   },
   "coverage_toggleActedTitle": {
-    "message": "Éléments que les tests cliquent, remplissent ou manipulent autrement"
+    "message": "Elementos en los que las pruebas hacen clic, escriben o sobre los que actúan de otra forma"
   },
   "coverage_toggleChecked": {
-    "message": "Vérifiés"
+    "message": "Comprobados"
   },
   "coverage_toggleCheckedTitle": {
-    "message": "Éléments que les tests vérifient seulement, sans les manipuler"
+    "message": "Elementos que las pruebas solo comprueban, sin actuar sobre ellos"
   },
   "coverage_toggleUntested": {
-    "message": "Non testés"
+    "message": "Sin probar"
   },
   "coverage_toggleUntestedTitle": {
-    "message": "Boutons, liens et champs qu’aucun test n’atteint"
+    "message": "Botones, enlaces y campos que ninguna prueba alcanza"
   },
   "coverage_toggleHeat": {
-    "message": "Carte de chaleur"
+    "message": "Mapa de calor"
   },
   "coverage_toggleHeatTitle": {
-    "message": "Colorer chaque cadre plus fort quand plus de tests l’atteignent"
+    "message": "Colorear cada recuadro más oscuro cuantas más pruebas lo alcanzan"
   },
   "coverage_toggleBrittle": {
-    "message": "Fragiles"
+    "message": "Frágiles"
   },
   "coverage_toggleBrittleTitle": {
-    "message": "Signaler les éléments trouvés par un locator susceptible de casser"
+    "message": "Señalar los elementos que encuentra un locator que puede fallar"
   },
   "coverage_legendActed": {
-    "message": "manipulés par les tests"
+    "message": "usados por las pruebas"
   },
   "coverage_legendChecked": {
-    "message": "vérifiés seulement"
+    "message": "solo comprobados"
   },
   "coverage_legendUntested": {
-    "message": "non testés"
+    "message": "sin probar"
   },
   "coverage_legendAmbiguous": {
-    "message": "le locator en trouve plusieurs"
+    "message": "el locator encuentra varios"
   },
   "coverage_legendBrittle": {
-    "message": "locator fragile"
+    "message": "locator frágil"
   },
   "coverage_badgeTitle_one": {
-    "message": "$element$ : atteint par $count$ test. Cliquez pour les détails.",
+    "message": "$element$: alcanzado por $count$ prueba. Haz clic para ver los detalles.",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -3243,7 +3243,7 @@
     }
   },
   "coverage_badgeTitle_other": {
-    "message": "$element$ : atteint par $count$ tests. Cliquez pour les détails.",
+    "message": "$element$: alcanzado por $count$ pruebas. Haz clic para ver los detalles.",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -3256,7 +3256,7 @@
     }
   },
   "coverage_badgeTitleFailing_one": {
-    "message": "$element$ : atteint par $count$ test, en échec. Cliquez pour les détails.",
+    "message": "$element$: alcanzado por $count$ prueba, que está fallando. Haz clic para ver los detalles.",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -3269,7 +3269,7 @@
     }
   },
   "coverage_badgeTitleFailing_other": {
-    "message": "$element$ : atteint par $count$ tests, dont un en échec. Cliquez pour les détails.",
+    "message": "$element$: alcanzado por $count$ pruebas, una de ellas fallando. Haz clic para ver los detalles.",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -3282,7 +3282,7 @@
     }
   },
   "coverage_badgeTitleFlaky_one": {
-    "message": "$element$ : atteint par $count$ test, instable. Cliquez pour les détails.",
+    "message": "$element$: alcanzado por $count$ prueba, que es inestable. Haz clic para ver los detalles.",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -3295,7 +3295,7 @@
     }
   },
   "coverage_badgeTitleFlaky_other": {
-    "message": "$element$ : atteint par $count$ tests, dont un instable. Cliquez pour les détails.",
+    "message": "$element$: alcanzado por $count$ pruebas, una de ellas inestable. Haz clic para ver los detalles.",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -3308,7 +3308,7 @@
     }
   },
   "coverage_badgeLabel_one": {
-    "message": "$element$ : $count$ test",
+    "message": "$element$: $count$ prueba",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -3321,7 +3321,7 @@
     }
   },
   "coverage_badgeLabel_other": {
-    "message": "$element$ : $count$ tests",
+    "message": "$element$: $count$ pruebas",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -3334,7 +3334,7 @@
     }
   },
   "coverage_cardLabel": {
-    "message": "Tests qui atteignent $element$",
+    "message": "Pruebas que alcanzan $element$",
     "placeholders": {
       "element": {
         "content": "$1",
@@ -3343,10 +3343,10 @@
     }
   },
   "coverage_cardLabelThis": {
-    "message": "Tests qui atteignent cet élément"
+    "message": "Pruebas que alcanzan este elemento"
   },
   "coverage_noteBrittle": {
-    "message": "Fragile : $rules$",
+    "message": "Frágil: $rules$",
     "placeholders": {
       "rules": {
         "content": "$1",
@@ -3355,7 +3355,7 @@
     }
   },
   "coverage_noteWatch": {
-    "message": "Peut casser : $rules$",
+    "message": "Puede fallar: $rules$",
     "placeholders": {
       "rules": {
         "content": "$1",
@@ -3364,13 +3364,13 @@
     }
   },
   "coverage_replaceWith": {
-    "message": "Remplacez-le par celui-ci, qui ne trouve que cet élément ici"
+    "message": "Reemplázalo por este, que solo encuentra este elemento aquí"
   },
   "coverage_mostStableHead": {
-    "message": "Le plus stable"
+    "message": "El más estable"
   },
   "coverage_actedOnBy_one": {
-    "message": "Manipulé par $count$ test",
+    "message": "Usado por $count$ prueba",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -3379,7 +3379,7 @@
     }
   },
   "coverage_actedOnBy_other": {
-    "message": "Manipulé par $count$ tests",
+    "message": "Usado por $count$ pruebas",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -3388,7 +3388,7 @@
     }
   },
   "coverage_checkedBy_one": {
-    "message": "Vérifié par $count$ test, sans être manipulé",
+    "message": "Comprobado por $count$ prueba, sin actuar sobre él",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -3397,7 +3397,7 @@
     }
   },
   "coverage_checkedBy_other": {
-    "message": "Vérifié par $count$ tests, sans être manipulé",
+    "message": "Comprobado por $count$ pruebas, sin actuar sobre él",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -3406,16 +3406,16 @@
     }
   },
   "coverage_ambiguous": {
-    "message": "ses locators trouvent plusieurs éléments ici"
+    "message": "sus locators encuentran varios elementos aquí"
   },
   "coverage_notTested": {
-    "message": "Non testé"
+    "message": "Sin probar"
   },
   "coverage_noLocatorReaches": {
-    "message": "aucun locator de ce projet ne le trouve"
+    "message": "ningún locator de este proyecto lo encuentra"
   },
   "coverage_openTestFile": {
-    "message": "Ouvrir ce test dans Piwi : $file$",
+    "message": "Abrir esta prueba en Piwi: $file$",
     "placeholders": {
       "file": {
         "content": "$1",
@@ -3424,10 +3424,10 @@
     }
   },
   "coverage_previewBrittle": {
-    "message": "Un locator fragile le trouve · cliquez sur le badge pour un remplacement"
+    "message": "Lo encuentra un locator frágil · haz clic en la insignia para ver un reemplazo"
   },
   "coverage_previewMore_one": {
-    "message": "et $count$ autre · cliquez sur le badge pour les locators et les liens",
+    "message": "y $count$ más · haz clic en la insignia para ver los locators y los enlaces",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -3436,7 +3436,7 @@
     }
   },
   "coverage_previewMore_other": {
-    "message": "et $count$ autres · cliquez sur le badge pour les locators et les liens",
+    "message": "y $count$ más · haz clic en la insignia para ver los locators y los enlaces",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -3445,13 +3445,13 @@
     }
   },
   "coverage_previewHint": {
-    "message": "Cliquez sur le badge pour les locators et les liens"
+    "message": "Haz clic en la insignia para ver los locators y los enlaces"
   },
   "coverage_aLocator": {
-    "message": "Un locator pour cet élément"
+    "message": "Un locator para este elemento"
   },
   "coverage_matchesOnPage_one": {
-    "message": "Trouve $count$ élément sur cette page",
+    "message": "Encuentra $count$ elemento en esta página",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -3460,7 +3460,7 @@
     }
   },
   "coverage_matchesOnPage_other": {
-    "message": "Trouve $count$ éléments sur cette page",
+    "message": "Encuentra $count$ elementos en esta página",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -3469,7 +3469,7 @@
     }
   },
   "coverage_onPages": {
-    "message": "sur $pages$",
+    "message": "en $pages$",
     "placeholders": {
       "pages": {
         "content": "$1",
@@ -3478,7 +3478,7 @@
     }
   },
   "coverage_pageOnLoad": {
-    "message": "$page$, au chargement",
+    "message": "$page$, al cargarse",
     "placeholders": {
       "page": {
         "content": "$1",
@@ -3487,7 +3487,7 @@
     }
   },
   "coverage_moreTests_one": {
-    "message": "et $count$ autre test",
+    "message": "y $count$ prueba más",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -3496,7 +3496,7 @@
     }
   },
   "coverage_moreTests_other": {
-    "message": "et $count$ autres tests",
+    "message": "y $count$ pruebas más",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -3505,49 +3505,49 @@
     }
   },
   "coverage_findInPiwi": {
-    "message": "Trouver ces locators dans Piwi ↗"
+    "message": "Buscar estos locators en Piwi ↗"
   },
   "coverage_noTestReaches": {
-    "message": "Aucun test de ce projet n’atteint cet élément."
+    "message": "Ninguna prueba de este proyecto alcanza este elemento."
   },
   "coverage_mostStableFor": {
-    "message": "Le locator le plus stable pour cet élément"
+    "message": "El locator más estable para este elemento"
   },
   "common_workerOutdated": {
-    "message": "Piwi Picker a été reconstruit sans être rechargé, et son processus d’arrière-plan tourne encore sur la version précédente. Rechargez l’extension depuis son menu, ou depuis la page des extensions du navigateur."
+    "message": "Piwi Picker se volvió a compilar sin recargarse, y su proceso en segundo plano sigue ejecutando la versión anterior. Vuelve a cargar la extensión desde su menú o desde la página de extensiones del navegador."
   },
   "stability_position": {
-    "message": "position"
+    "message": "posición"
   },
   "stability_cssClass": {
-    "message": "classe CSS"
+    "message": "clase CSS"
   },
   "stability_cssStructure": {
-    "message": "structure CSS"
+    "message": "estructura CSS"
   },
   "stability_xpath": {
     "message": "XPath"
   },
   "stability_generatedId": {
-    "message": "id généré"
+    "message": "id generado"
   },
   "stability_styleAttribute": {
-    "message": "attribut style"
+    "message": "atributo style"
   },
   "stability_longText": {
-    "message": "texte long"
+    "message": "texto largo"
   },
   "stability_dataText": {
-    "message": "nombre dans le texte"
+    "message": "número en el texto"
   },
   "stability_deepChain": {
-    "message": "chaîne longue"
+    "message": "cadena larga"
   },
   "codegen_noLocator": {
-    "message": "Aucun locator n’a été enregistré pour cet élément."
+    "message": "No se grabó ningún locator para este elemento."
   },
   "codegen_brittleLocator": {
-    "message": "Le meilleur locator enregistré pour cet élément risque de casser quand la page change : $locator$",
+    "message": "El mejor locator grabado para este elemento puede fallar cuando cambie la página: $locator$",
     "placeholders": {
       "locator": {
         "content": "$1",
@@ -3556,7 +3556,7 @@
     }
   },
   "codegen_redactedValue": {
-    "message": "Un mot de passe a été saisi ici : le test le lit dans $variable$.",
+    "message": "Aquí se escribió una contraseña: la prueba la lee de $variable$.",
     "placeholders": {
       "variable": {
         "content": "$1",
@@ -3565,10 +3565,10 @@
     }
   },
   "codegen_emptyAssertion": {
-    "message": "Cette vérification n’a rien à comparer."
+    "message": "Esta comprobación no tiene nada que comparar."
   },
   "codegen_missingExpected": {
-    "message": "$matcher$ a besoin d’une valeur attendue.",
+    "message": "$matcher$ necesita un valor esperado.",
     "placeholders": {
       "matcher": {
         "content": "$1",
@@ -3580,70 +3580,70 @@
     "message": "Clic"
   },
   "common_actionDblclick": {
-    "message": "Double-clic"
+    "message": "Doble clic"
   },
   "common_actionFill": {
-    "message": "Saisie"
+    "message": "Escritura"
   },
   "common_actionSelectOption": {
-    "message": "Choix d’une option"
+    "message": "Elección de opción"
   },
   "common_actionCheck": {
-    "message": "Cocher"
+    "message": "Marcar"
   },
   "common_actionUncheck": {
-    "message": "Décocher"
+    "message": "Desmarcar"
   },
   "common_actionHover": {
-    "message": "Survol"
+    "message": "Paso del puntero"
   },
   "common_actionTap": {
-    "message": "Toucher"
+    "message": "Toque"
   },
   "common_actionFocus": {
-    "message": "Focus"
+    "message": "Foco"
   },
   "common_actionBlur": {
-    "message": "Perte du focus"
+    "message": "Pérdida del foco"
   },
   "common_actionPress": {
-    "message": "Touche"
+    "message": "Tecla"
   },
   "common_actionType": {
-    "message": "Frappe"
+    "message": "Tecleo"
   },
   "common_actionSetInputFiles": {
-    "message": "Choix de fichiers"
+    "message": "Elección de archivos"
   },
   "common_actionDragTo": {
-    "message": "Glisser-déposer"
+    "message": "Arrastrar y soltar"
   },
   "common_actionDrop": {
-    "message": "Dépôt"
+    "message": "Soltar"
   },
   "common_actionDispatchEvent": {
-    "message": "Événement déclenché"
+    "message": "Evento lanzado"
   },
   "common_actionScrollIntoView": {
-    "message": "Défilement jusqu’à l’élément"
+    "message": "Desplazamiento hasta el elemento"
   },
   "common_actionWaitFor": {
-    "message": "Attente"
+    "message": "Espera"
   },
   "common_actionCount": {
-    "message": "Comptage"
+    "message": "Recuento"
   },
   "common_actionEvaluate": {
-    "message": "Évaluation"
+    "message": "Evaluación"
   },
   "common_actionExpect": {
-    "message": "Vérification"
+    "message": "Comprobación"
   },
   "common_actionOther": {
-    "message": "Autre"
+    "message": "Otra"
   },
   "common_actionExpectMatcher": {
-    "message": "Vérification $matcher$",
+    "message": "Comprobación $matcher$",
     "placeholders": {
       "matcher": {
         "content": "$1",
@@ -3652,7 +3652,7 @@
     }
   },
   "common_actionExpectNot": {
-    "message": "Vérification not.$matcher$",
+    "message": "Comprobación not.$matcher$",
     "placeholders": {
       "matcher": {
         "content": "$1",
@@ -3661,6 +3661,6 @@
     }
   },
   "bug_noScreenshotNone": {
-    "message": "aucune n’a été prise"
+    "message": "no se hizo ninguna"
   }
 }

@@ -127,7 +127,7 @@ describe('the phrasebooks', () => {
   test('a language is matched on its primary subtag, English otherwise', () => {
     expect(bugPhrases('fr-CA')).toBe(french);
     expect(bugPhrases('fr')).toBe(french);
-    expect(bugPhrases('de')).toBe(english);
+    expect(bugPhrases('ja')).toBe(english);
     expect(bugPhrases(null)).toBe(english);
   });
 

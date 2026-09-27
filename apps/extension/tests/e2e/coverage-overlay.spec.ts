@@ -13,6 +13,7 @@ import {
   stubCoverageChrome,
 } from './coverage-fixtures.js';
 import { servePages } from './engine-bundle.js';
+import { readCatalog } from './i18n-stub.js';
 import { clippedInShadows } from './shadow.js';
 
 /**
@@ -951,6 +952,54 @@ test.describe('coverage overlay in French', () => {
     const panel = page.locator(`${HOST} .panel`);
     await expect(panel).toContainText('Connectez Piwi Picker à votre instance Piwi');
     await expect(panel.getByRole('button', { name: 'Ouvrir les réglages de Piwi Picker' })).toBeVisible();
+    expect(await clippedInShadows(page)).toEqual([]);
+  });
+});
+
+test.describe('coverage overlay in German', () => {
+  const catalog = readCatalog('de');
+  const escape = (text: string) => text.replace(/[.*+?^$()|[\]\\{}]/g, '\\$&');
+  /** A message with a `$count$` placeholder, as a pattern that takes any count. */
+  const counted = (key: string) => new RegExp(`^${catalog[key]!.message.split('$count$').map(escape).join('\\d+')}$`);
+
+  test.beforeEach(async ({ page }) => {
+    await page.setViewportSize({ width: 1400, height: 900 });
+  });
+
+  test('the panel, the tabs, a card and the summary lay out without clipping', async ({ page, context }) => {
+    await stubCoverageChrome(context, {
+      language: 'de',
+      cached: shopIndex([...SHOP_TESTS, ...PAGE_TESTS]),
+    });
+    await openShop(page, '?nodialog');
+    await injectCoverage(page);
+    const panel = page.locator(`${HOST} .panel`);
+    await expect(panel).toHaveAttribute('lang', 'de');
+    await expect(page.locator(`${HOST} .layer`)).toHaveAttribute('lang', 'de');
+    expect(await clippedInShadows(page)).toEqual([]);
+
+    await panel.getByRole('button', { name: counted('coverage_tabTests') }).click();
+    await expect(panel.locator('li.row', { hasText: 'shows prices' })).toBeVisible();
+    expect(await clippedInShadows(page)).toEqual([]);
+
+    await panel.getByRole('button', { name: counted('coverage_tabRisk') }).click();
+    await expect(panel.locator('.section-head')).toHaveCount(3);
+    expect(await clippedInShadows(page)).toEqual([]);
+
+    await page.locator(`${HOST} .badge`).filter({ hasText: '2' }).first().click();
+    await expect(page.locator(`${HOST} .card.pinned`)).toContainText('button "Add to cart"');
+    expect(await clippedInShadows(page)).toEqual([]);
+
+    await panel.getByRole('button', { name: catalog.coverage_collapse!.message }).click();
+    await expect(page.locator(`${HOST} .pill`)).toBeVisible();
+    expect(await clippedInShadows(page)).toEqual([]);
+  });
+
+  test('the states before the page is checked lay out without clipping', async ({ page, context }) => {
+    await stubCoverageChrome(context, { language: 'de', connection: null, cached: null });
+    await openShop(page, '?nodialog');
+    await injectCoverage(page, 'not-connected');
+    await expect(page.locator(`${HOST} .panel`)).toHaveAttribute('lang', 'de');
     expect(await clippedInShadows(page)).toEqual([]);
   });
 });

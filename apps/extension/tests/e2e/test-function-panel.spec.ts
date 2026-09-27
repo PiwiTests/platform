@@ -108,7 +108,8 @@ test.describe('test-function-panel.js', () => {
     expect(await page.evaluate(() => document.querySelectorAll('#piwi-test-function-host').length)).toBe(1);
   });
 
-  test('speaks French in a French browser, and leaves function names and actions as they are', async ({ context }) => {
+  /** Opens the panel in `language` over a page with one ready and one ambiguous function. */
+  async function openInLanguage(context: BrowserContext, language: string) {
     await stubStorage(context, {
       piwiConnection: {
         instanceUrl: 'https://piwi.test',
@@ -125,12 +126,17 @@ test.describe('test-function-panel.js', () => {
         },
       },
     });
-    await stubChromeI18n(context, 'fr');
+    await stubChromeI18n(context, language);
     await openShadowRoots(context);
     const page = await context.newPage();
     await page.setContent(`<!doctype html><html><body><button>Add to cart</button><button>Menu</button></body></html>`);
     await page.addScriptTag({ path: path.join(DIST, 'test-function-panel.js') });
     const panel = page.locator('#piwi-test-function-host .panel');
+    return { page, panel };
+  }
+
+  test('speaks French in a French browser, and leaves function names and actions as they are', async ({ context }) => {
+    const { page, panel } = await openInLanguage(context, 'fr');
     await expect(panel).toHaveAttribute('lang', 'fr');
     await expect(panel.locator('.title')).toHaveText('Fonctions de test sur cette page');
     await expect(
@@ -140,6 +146,13 @@ test.describe('test-function-panel.js', () => {
     await expect(panel.locator('.row.ready .badge')).toHaveText('Prête à l’emploi ici');
     await expect(panel.locator('.row.ready .step')).toHaveText('click() → un élément');
     await expect(panel.locator('.row.partial .step')).toHaveText('click() → 2 éléments, impossible de savoir lequel');
+    expect(await clippedInShadows(page)).toEqual([]);
+  });
+
+  test('lays out in German without clipping', async ({ context }) => {
+    const { page, panel } = await openInLanguage(context, 'de');
+    await expect(panel).toHaveAttribute('lang', 'de');
+    await expect(panel.locator('.row.partial .step')).toBeVisible();
     expect(await clippedInShadows(page)).toEqual([]);
   });
 });
