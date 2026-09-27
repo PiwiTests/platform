@@ -1735,6 +1735,8 @@ export interface AiSettings {
   language: string | null;
   /** True when the language is fixed by `PIWI_AI_LANGUAGE` (rendered locked). */
   languageEnvManaged: boolean;
+  /** False when `PIWI_SECRET_KEY` is unset, so an API key or SCM token cannot be saved. */
+  canStoreSecrets: boolean;
 }
 
 // ============================================================================

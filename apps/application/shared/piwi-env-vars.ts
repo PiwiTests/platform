@@ -262,7 +262,7 @@ export const PIWI_ENV_VARS = {
     secret: true,
     example: 'a 64-char random hex string',
     notes:
-      "Falls back to an insecure built-in development key (with a startup warning in production). Generate one with `node -e \"console.log(require('node:crypto').randomBytes(32).toString('hex'))\"`.",
+      "Unset, or set to the built-in development key, the dashboard cannot save a secret: the save answers HTTP 409 with a message naming this variable. Generate one with `node -e \"console.log(require('node:crypto').randomBytes(32).toString('hex'))\"`.",
   },
   // ── Localization ─────────────────────────────────────────────────────────
   PIWI_LOCALE: {
