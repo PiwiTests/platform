@@ -180,12 +180,15 @@ export function sanitizeTestMetadata(raw: unknown): TestMetadata | null {
 }
 
 /**
- * True when the annotation belongs to Piwi rather than to Playwright. The
- * dashboard renders test marks (`skip`, `fixme`, `slow`) as chips and would
- * otherwise show the metadata annotations twice.
+ * True when the annotation belongs to Piwi rather than to Playwright: the
+ * `piwi:` metadata annotations, and the `piwi-` ones the reporter adds itself
+ * (a locator suggestion). The dashboard renders test marks (`skip`, `fixme`,
+ * `slow`) as chips and would otherwise show Piwi's own annotations among them.
  */
 export function isPiwiAnnotation(type: unknown): boolean {
-  return typeof type === 'string' && type.trim().toLowerCase().startsWith(PIWI_ANNOTATION_PREFIX);
+  if (typeof type !== 'string') return false;
+  const lower = type.trim().toLowerCase();
+  return lower.startsWith(PIWI_ANNOTATION_PREFIX) || lower.startsWith('piwi-');
 }
 
 /** Sort key for a priority, lowest number = most severe. Unknown sorts last. */
