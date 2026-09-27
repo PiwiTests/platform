@@ -1,0 +1,382 @@
+import * as fs from 'node:fs';
+import * as http from 'node:http';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { execFileSync, spawn } from 'node:child_process';
+import { PassThrough } from 'node:stream';
+import type { AddressInfo } from 'node:net';
+import { pathToFileURL } from 'node:url';
+import { afterAll, beforeAll, describe, expect, test } from 'vitest';
+import {
+  createMessageConnection,
+  StreamMessageReader,
+  StreamMessageWriter,
+  type MessageConnection,
+} from 'vscode-jsonrpc/node';
+import { createConnection } from 'vscode-languageserver/node';
+import type { LocatorIndex } from '@piwitests/core/locator-index';
+import { startServer } from '../src/server';
+import type { FileSummary, RunCommand, StatusResult, TestsForFile } from '../src/protocol';
+
+const use = (test: number, site: string, actions = ['click']) => ({
+  test,
+  actions,
+  callSites: [site],
+  projects: ['chromium'],
+  branches: ['main'],
+});
+
+const INDEX: LocatorIndex = {
+  projectId: 7,
+  projectName: 'Acme Mugs',
+  branch: null,
+  defaultBranch: 'main',
+  branches: [],
+  builtAt: null,
+  generatedAt: '2026-09-27T00:00:00Z',
+  testIdAttributes: null,
+  pages: ['/checkout'],
+  tests: [
+    { id: 1, title: 'pays', file: 'tests/checkout.spec.ts', suite: [], status: 'passed' },
+    { id: 2, title: 'pays by card', file: 'tests/checkout.spec.ts', suite: [], status: 'flaky' },
+    { id: 3, title: 'removes a row', file: 'tests/checkout.spec.ts', suite: [], status: 'failed' },
+  ],
+  locators: [
+    {
+      locator: "getByRole('button', { name: 'Pay now' })",
+      lastSeenAt: '',
+      uses: [
+        { ...use(0, 'tests/pages/checkout.page.ts:4:21'), pages: [0] },
+        { ...use(1, 'tests/pages/checkout.page.ts:4:21'), pages: [0] },
+      ],
+    },
+    { locator: "locator('.cart-row').nth(2)", lastSeenAt: '', uses: [use(2, 'tests/pages/checkout.page.ts:5:21')] },
+  ],
+  truncated: false,
+};
+
+const PAGE_OBJECT = [
+  "import type { Page } from '@playwright/test';",
+  'export class CheckoutPage {',
+  '  constructor(private readonly page: Page) {}',
+  '  pay = () => this.page.getByRole(\'button\', { name: "Pay now" });',
+  "  row = () => this.page.locator('.cart-row').nth(2);",
+  '}',
+  '',
+].join('\n');
+
+const SPEC = ["import { test } from '@playwright/test';", '', "test('pays', async ({ page }) => {});", ''].join('\n');
+
+const COMPONENT = '<template>\n  <button class="pay">\n    Pay now\n  </button>\n</template>\n';
+
+let dir = '';
+let server: http.Server;
+let url = '';
+let client: MessageConnection;
+let stop: () => void;
+const diagnostics = new Map<
+  string,
+  Array<{ message: string; code?: string; severity?: number; range: unknown; data?: unknown; source?: string }>
+>();
+
+function write(file: string, text: string): string {
+  const full = path.join(dir, file);
+  fs.mkdirSync(path.dirname(full), { recursive: true });
+  fs.writeFileSync(full, text);
+  return full;
+}
+
+const uri = (file: string) => pathToFileURL(path.join(dir, file)).href;
+
+async function waitFor<T>(read: () => T | undefined, ms = 5000): Promise<T> {
+  const start = Date.now();
+  for (;;) {
+    const value = read();
+    if (value !== undefined) return value;
+    if (Date.now() - start > ms) throw new Error('timed out');
+    await new Promise((r) => setTimeout(r, 20));
+  }
+}
+
+beforeAll(async () => {
+  server = http.createServer((req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    const u = req.url ?? '';
+    if (u === '/api/projects/menu') return res.end(JSON.stringify({ items: [{ id: 7, name: 'Acme Mugs' }] }));
+    if (u.startsWith('/api/projects/7/locator-index')) return res.end(JSON.stringify(INDEX));
+    if (u.startsWith('/api/projects/7/code-index')) {
+      return res.end(
+        JSON.stringify({
+          files: ['src/components/CheckoutButton.vue'],
+          tests: [INDEX.tests[0], INDEX.tests[1]],
+          reach: [{ file: 0, tests: [0, 1], origin: 'client' }],
+          builtAt: null,
+          truncated: false,
+        }),
+      );
+    }
+    if (u.startsWith('/api/projects/7/test-cases')) {
+      return res.end(
+        JSON.stringify({
+          items: [
+            {
+              id: 1,
+              title: 'pays',
+              filePath: 'tests/checkout.spec.ts',
+              status: 'passed',
+              totalRuns: 50,
+              passedRuns: 48,
+            },
+          ],
+        }),
+      );
+    }
+    if (u.startsWith('/api/projects/7/locator-alternatives')) {
+      return res.end(
+        JSON.stringify({
+          items: [
+            {
+              testCaseId: 3,
+              location: 'tests/pages/checkout.page.ts:5:21',
+              method: 'locator',
+              lastSeenAt: '2026-09-26T00:00:00Z',
+              alternatives: [
+                { locator: "locator('.cart-row').nth(2)", method: 'locator', args: {}, score: 20 },
+                { locator: "getByRole('row', { name: /Mug/ })", method: 'getByRole', args: {}, score: 85 },
+              ],
+            },
+          ],
+        }),
+      );
+    }
+    if (u === '/api/projects/7/selections/preview') {
+      return res.end(
+        JSON.stringify({
+          materialization: {
+            args: ['tests/checkout.spec.ts:3'],
+            command: 'npx playwright test tests/checkout.spec.ts:3',
+          },
+        }),
+      );
+    }
+    res.statusCode = 404;
+    res.end('{}');
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+
+  dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-editor-')));
+  const git = (...args: string[]) =>
+    execFileSync('git', ['-c', 'user.email=t@example.com', '-c', 'user.name=t', ...args], {
+      cwd: dir,
+      stdio: 'ignore',
+    });
+  git('init', '-q', '-b', 'main');
+  write('playwright.config.ts', 'export default {};\n');
+  write('src/components/CheckoutButton.vue', COMPONENT);
+  write('tests/pages/checkout.page.ts', PAGE_OBJECT);
+  write('tests/checkout.spec.ts', SPEC);
+  write('src/unreached.ts', "export const x = 'y';\n");
+  git('add', '.');
+  git('commit', '-q', '-m', 'init');
+
+  const toServer = new PassThrough();
+  const toClient = new PassThrough();
+  stop = startServer(createConnection(toServer, toClient), {
+    env: { PIWI_DASHBOARD_URL: url, PIWI_PROJECT_NAME: 'Acme Mugs', PIWI_DESKTOP_CONFIG: '/nonexistent' },
+    debounceMs: 10,
+  });
+  client = createMessageConnection(new StreamMessageReader(toClient), new StreamMessageWriter(toServer));
+  client.onNotification('textDocument/publishDiagnostics', (p: { uri: string; diagnostics: never[] }) => {
+    diagnostics.set(p.uri, p.diagnostics);
+  });
+  client.listen();
+  const init = await client.sendRequest('initialize', {
+    processId: null,
+    rootUri: null,
+    capabilities: {},
+    workspaceFolders: [{ uri: pathToFileURL(dir).href, name: 'shop' }],
+  });
+  expect(init).toMatchObject({ capabilities: { hoverProvider: true } });
+  await client.sendNotification('initialized', {});
+  // The indexes are fetched in the background: wait until the status says so.
+  await waitFor(() => (connected ? true : undefined));
+});
+
+let connected = false;
+const pollStatus = setInterval(async () => {
+  if (!client || connected) return;
+  const status = (await client.sendRequest('piwi/status').catch(() => null)) as StatusResult | null;
+  connected = !!status?.contexts[0]?.connected;
+}, 30);
+
+afterAll(async () => {
+  clearInterval(pollStatus);
+  stop?.();
+  client?.dispose();
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+function open(file: string, text: string, version = 1) {
+  diagnostics.delete(uri(file));
+  return client.sendNotification('textDocument/didOpen', {
+    textDocument: { uri: uri(file), languageId: file.endsWith('.vue') ? 'vue' : 'typescript', version, text },
+  });
+}
+
+describe('the Piwi language server', () => {
+  test('reports its context', async () => {
+    const status = (await client.sendRequest('piwi/status')) as StatusResult;
+    expect(status.contexts).toEqual([
+      expect.objectContaining({
+        root: dir,
+        connected: true,
+        projectName: 'Acme Mugs',
+        branch: 'main',
+        locators: 2,
+        reachedFiles: 1,
+      }),
+    ]);
+  });
+
+  test('warns on the line of an unsaved rename that breaks locators, and fixes the call sites', async () => {
+    await open('src/components/CheckoutButton.vue', COMPONENT.replace('Pay now', 'Pay'));
+    const diags = await waitFor(() => diagnostics.get(uri('src/components/CheckoutButton.vue')));
+    expect(diags).toHaveLength(1);
+    expect(diags[0]).toMatchObject({
+      source: 'Piwi',
+      code: 'locator-break',
+      severity: 2,
+      range: { start: { line: 2, character: 4 }, end: { line: 2, character: 7 } },
+    });
+    expect(diags[0]!.message).toBe(
+      `2 tests find an element by "Pay now" ("Pay now" → "Pay"): getByRole('button', { name: 'Pay now' })`,
+    );
+
+    const actions = (await client.sendRequest('textDocument/codeAction', {
+      textDocument: { uri: uri('src/components/CheckoutButton.vue') },
+      range: diags[0]!.range,
+      context: { diagnostics: diags },
+    })) as Array<{
+      title: string;
+      edit: { changes: Record<string, Array<{ newText: string; range: { start: { line: number } } }>> };
+    }>;
+    expect(actions.map((a) => a.title)).toEqual(['Update 1 locator in checkout.page.ts']);
+    const edits = actions[0]!.edit.changes[uri('tests/pages/checkout.page.ts')]!;
+    expect(edits).toEqual([
+      expect.objectContaining({
+        newText: '  pay = () => this.page.getByRole(\'button\', { name: "Pay" });',
+        range: expect.objectContaining({ start: { line: 3, character: 0 } }),
+      }),
+    ]);
+
+    const hover = (await client.sendRequest('textDocument/hover', {
+      textDocument: { uri: uri('src/components/CheckoutButton.vue') },
+      position: { line: 2, character: 5 },
+    })) as { contents: { value: string } };
+    expect(hover.contents.value).toContain("→ `getByRole('button', { name: 'Pay' })`");
+  });
+
+  test('a rename the locators still match is not a warning', async () => {
+    await open('src/components/CheckoutButton.vue', COMPONENT.replace('Pay now', 'Pay now!'), 2);
+    const diags = await waitFor(() => diagnostics.get(uri('src/components/CheckoutButton.vue')));
+    expect(diags).toEqual([]);
+  });
+
+  test('flags a brittle locator in a page object, with the stored stable alternative as the fix', async () => {
+    await open('tests/pages/checkout.page.ts', PAGE_OBJECT);
+    const diags = await waitFor(() => diagnostics.get(uri('tests/pages/checkout.page.ts')));
+    const brittle = diags.find((d) => d.code === 'brittle')!;
+    expect(brittle).toMatchObject({ severity: 2, range: { start: { line: 4, character: 24 } } });
+    expect(brittle.message).toMatch(/^Brittle: .* · 1 test$/);
+    const actions = (await client.sendRequest('textDocument/codeAction', {
+      textDocument: { uri: uri('tests/pages/checkout.page.ts') },
+      range: brittle.range,
+      context: { diagnostics: [brittle] },
+    })) as Array<{ title: string; edit: { changes: Record<string, Array<{ newText: string }>> } }>;
+    expect(actions[0]!.title).toBe("Use getByRole('row', { name: /Mug/ }) (as of the last passing run)");
+    expect(actions[0]!.edit.changes[uri('tests/pages/checkout.page.ts')]![0]!.newText).toBe(
+      "  row = () => this.page.getByRole('row', { name: /Mug/ });",
+    );
+
+    const hover = (await client.sendRequest('textDocument/hover', {
+      textDocument: { uri: uri('tests/pages/checkout.page.ts') },
+      position: { line: 3, character: 30 },
+    })) as { contents: { value: string } };
+    expect(hover.contents.value).toContain("**`getByRole('button', { name: 'Pay now' })`** · 2 tests · click");
+    expect(hover.contents.value).toContain('Pages: `/checkout`');
+  });
+
+  test('summarizes a page object, a spec and an application file', async () => {
+    const pageObject = (await client.sendRequest('piwi/fileSummary', {
+      uri: uri('tests/pages/checkout.page.ts'),
+    })) as FileSummary;
+    expect(pageObject.lines.map((l) => [l.line, l.title])).toEqual([
+      [3, '2 tests · click · 1 flaky'],
+      [4, '1 test · click · 1 failing'],
+    ]);
+    expect(pageObject.lines[0]!.command).toMatchObject({ command: 'piwi.runTests', arguments: [{ testIds: [1, 2] }] });
+
+    const spec = (await client.sendRequest('piwi/fileSummary', { uri: uri('tests/checkout.spec.ts') })) as FileSummary;
+    expect(spec.file?.title).toBe('1 test in Piwi');
+    expect(spec.lines).toEqual([
+      {
+        line: 2,
+        title: 'passed 48/50',
+        command: { title: 'Open in dashboard', command: 'piwi.openInDashboard', arguments: [`${url}/test-cases/1`] },
+      },
+    ]);
+
+    const app = (await client.sendRequest('piwi/fileSummary', {
+      uri: uri('src/components/CheckoutButton.vue'),
+    })) as FileSummary;
+    expect(app.file?.title).toBe('Reached by 2 tests · 1 flaky');
+    const none = (await client.sendRequest('piwi/fileSummary', { uri: uri('src/unreached.ts') })) as FileSummary;
+    expect(none).toEqual({ file: null, lines: [] });
+  });
+
+  test('lists the tests of a file and the command that runs them', async () => {
+    const reached = (await client.sendRequest('piwi/testsForFile', {
+      uri: uri('src/components/CheckoutButton.vue'),
+    })) as TestsForFile;
+    expect(reached.basis).toBe('reach');
+    expect(reached.tests.map((t) => t.title)).toEqual(['pays', 'pays by card']);
+    const defined = (await client.sendRequest('piwi/testsForFile', {
+      uri: uri('tests/checkout.spec.ts'),
+    })) as TestsForFile;
+    expect(defined).toMatchObject({ basis: 'defined', tests: [{ id: 1, title: 'pays', status: 'passed' }] });
+    const command = (await client.sendRequest('piwi/runArgs', {
+      uri: uri('tests/checkout.spec.ts'),
+      testIds: [1],
+    })) as RunCommand;
+    expect(command).toEqual({
+      cwd: dir,
+      args: ['tests/checkout.spec.ts:3'],
+      command: 'npx playwright test tests/checkout.spec.ts:3',
+    });
+  });
+});
+
+describe('the bundle', () => {
+  test('answers initialize over stdio', async (ctx) => {
+    const bundle = path.join(__dirname, '..', 'dist', 'piwi-language-server.cjs');
+    if (!fs.existsSync(bundle)) return ctx.skip();
+    const child = spawn(process.execPath, [bundle, '--stdio'], { stdio: ['pipe', 'pipe', 'inherit'] });
+    const connection = createMessageConnection(
+      new StreamMessageReader(child.stdout!),
+      new StreamMessageWriter(child.stdin!),
+    );
+    connection.listen();
+    const result = (await connection.sendRequest('initialize', {
+      processId: null,
+      rootUri: null,
+      capabilities: {},
+    })) as {
+      serverInfo: { name: string };
+    };
+    expect(result.serverInfo.name).toBe('Piwi');
+    connection.dispose();
+    child.kill();
+  });
+});

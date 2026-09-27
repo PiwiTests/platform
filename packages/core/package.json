@@ -39,7 +39,8 @@
     "./locator-edit": "./src/locator-edit.ts",
     "./dotenv": "./src/dotenv.ts",
     "./source-map": "./src/source-map.ts",
-    "./code-reach": "./src/code-reach.ts"
+    "./code-reach": "./src/code-reach.ts",
+    "./line-diff": "./src/line-diff.ts"
   },
   "scripts": {
     "core:typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tests/tsconfig.json",

@@ -32,6 +32,13 @@ defineRouteMeta({
         description: 'Case-insensitive substring filter on title or file path',
       },
       {
+        name: 'file',
+        in: 'query',
+        required: false,
+        schema: { type: 'string' },
+        description: 'Exact spec file path, as the test case stores it (project-relative).',
+      },
+      {
         name: 'status',
         in: 'query',
         required: false,

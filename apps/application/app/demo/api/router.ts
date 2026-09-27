@@ -33,6 +33,7 @@ import {
 } from '#shared/handlers/project-assignments';
 import { getDemoDb } from '../db.client';
 import { getCodeIndex, getCodeReachForFile } from '~~/server/utils/code-reach';
+import { getLocatorAlternatives } from '~~/server/utils/locator-alternatives';
 import { getLocatorHealing, saveLocatorPick } from '~~/server/utils/locator-healing';
 import {
   backfillLocatorUsages,
@@ -1577,6 +1578,16 @@ const routes: RouteEntry[] = [
       const branch = parseLocatorBranchQuery(q?.get('branch'));
       if ('error' in branch) throw demoHttpError(400, branch.error);
       return getCodeReachForFile(await getDemoDb(), +m[1]!, file, branch.branch);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/locator-alternatives$/,
+    handler: async (m, _b, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const file = q?.get('file')?.trim() ?? '';
+      if (!file || file.length > 500) throw demoHttpError(400, 'file is required (at most 500 characters)');
+      return { items: await getLocatorAlternatives(await getDemoDb(), +m[1]!, file) };
     },
   },
   {

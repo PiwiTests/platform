@@ -35,3 +35,4 @@ export * from './locator-edit';
 export * from './dotenv';
 export * from './source-map';
 export * from './code-reach';
+export * from './line-diff';

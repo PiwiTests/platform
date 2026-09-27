@@ -14,6 +14,7 @@
         { "type": "json", "path": "packages/server/package.json", "jsonpath": "$.version" },
         { "type": "json", "path": "apps/application/package.json", "jsonpath": "$.version" },
         { "type": "json", "path": "packages/reporter/package.json", "jsonpath": "$.version" },
+        { "type": "json", "path": "packages/editor/package.json", "jsonpath": "$.version" },
         { "type": "json", "path": "integrations/nitro/package.json", "jsonpath": "$.version" },
         { "type": "json", "path": "apps/desktop/package.json", "jsonpath": "$.version" },
         { "type": "json", "path": "apps/desktop/src-tauri/tauri.conf.json", "jsonpath": "$.version" },
@@ -46,6 +47,7 @@
         { "type": "json", "path": "package-lock.json", "jsonpath": "$.packages['packages/picker-dom'].version" },
         { "type": "json", "path": "package-lock.json", "jsonpath": "$.packages['packages/server'].version" },
         { "type": "json", "path": "package-lock.json", "jsonpath": "$.packages['packages/reporter'].version" },
+        { "type": "json", "path": "package-lock.json", "jsonpath": "$.packages['packages/editor'].version" },
         { "type": "json", "path": "package-lock.json", "jsonpath": "$.packages['apps/application'].version" },
         { "type": "json", "path": "package-lock.json", "jsonpath": "$.packages['apps/extension'].version" },
         { "type": "json", "path": "package-lock.json", "jsonpath": "$.packages['integrations/nitro'].version" }

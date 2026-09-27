@@ -7,8 +7,8 @@ executes, so any file can answer "which tests reach me?". **Track C** is one edi
 **Tracks D and E** are thin clients for VS Code and the JetBrains IDEs.
 
 **Status.** Proposed 2026-09-27. Being built on `claude/suite-in-the-editor`, in the Delivery order: PR 1 (core),
-PR 2 (`piwi preflight`), PR 3 (the pull-request section, `diff-rename` healing, `predict_locator_breaks`) and PR 4
-(code reach) are built. What changed while building is under [As built](#as-built). Track A needs no capture change. Track B adds an opt-in capture, one
+PR 2 (`piwi preflight`), PR 3 (the pull-request section, `diff-rename` healing, `predict_locator_breaks`) PR 4
+(code reach) and PR 5 (the editor service) are built. What changed while building is under [As built](#as-built). Track A needs no capture change. Track B adds an opt-in capture, one
 payload column on `test_runs_cases` and one table. Tracks C–E add a workspace package, a VS Code extension and a
 JetBrains plugin, and a commitlint scope (`ide`); a catalog of what the editors can do after their first release
 follows the tracks. New wire fields, endpoints, a CLI command and a published extension
@@ -471,7 +471,7 @@ the feature they come from.
 - Docs: `guide/capture-fixtures.md`, `guide/privacy.md` (file paths only), `features/test-selection.md`,
   `reference/reporter-options.md` (generated).
 
-### PRs 5–7 — editors
+### PRs 5–7 — editors (PR 5 built)
 - `packages/editor` (new workspace), `apps/vscode` (new workspace), `apps/jetbrains` (new Gradle project).
 - Root `package.json` workspaces, `release-please-config.json` (two entries per new workspace), `commitlint.config.js`
   (scope `ide`), CI jobs in `.github/workflows/ci.yml`, a publish workflow per marketplace.
@@ -584,6 +584,34 @@ disagree, this section wins.
   of the dashboard's own suite and the bench; the Risks' check on Vite build, Next.js dev and webpack builds is left
   too. Verified: Vite-style module URLs with a live Chromium (unit test and a scratch Playwright project through the
   built fixtures), and bundles with fetched and inline maps (unit tests).
+
+### PR 5 — the editor service
+
+- **`packages/editor`** (`@piwitests/editor`, FSL like the server package) bundles to one file,
+  `dist/piwi-language-server.cjs` (esbuild, CommonJS, Node 20+), which both clients will ship.
+- **Contexts.** One per Playwright config found up to four levels under each workspace folder. A file belongs to the
+  deepest config above it, else to a config in the same repository: an application file outside the test directory
+  still gets break warnings.
+- **Connection** (D11) through `resolveContextConnection`: the environment, the `.env` of the config's directory and of
+  the repository root, the desktop discovery file, then the editor's settings, sent by the client in
+  `initializationOptions.credentials` and later with the `piwi/setCredentials` notification (the API key from the
+  editor's secret store). A missing project is reported in `piwi/status` for the client to ask, rather than asked by
+  the server: the pick belongs to the client's UI.
+- **Diagnostics.** Test code is a spec or any file the index calls locators from. Its brittle locators are warnings
+  (code `brittle`), those worth a look hints (`watch`), on the range of the locator call. An application file is diffed
+  against `HEAD` in memory (`diffLines`, a new core module giving the hunks `git diff --unified=0` gives), 500 ms after
+  the last keystroke; each anchor with breaks is one diagnostic (code `locator-break`), a warning when a break is
+  likely and information otherwise.
+- **Quick fixes.** A brittle locator's fix replaces the whole chain on the line (keeping `page.` and `.click()`) with
+  the stored alternative the stability rules call stable, picked with `recommendLocatorFix`. A break's fix edits every
+  call site whose line holds the string, in open buffers or on disk.
+- **Custom requests**: `piwi/fileSummary`, `piwi/testsForFile`, `piwi/runArgs` (through the selection preview
+  endpoint), `piwi/status`, `piwi/refresh`. Summary lines name client commands `piwi.openInDashboard` and
+  `piwi.runTests`.
+- **Server.** `GET /api/projects/:id/locator-alternatives?file=` (suffix match on the call site's file, newest first,
+  10 alternatives each) and the catalog's exact `file` filter on `GET /api/projects/:id/test-cases`.
+- **Repository.** The `ide` commitlint scope, two release-please entries, a CI step (lint, typecheck, build, test) in
+  the checks job, and an `AGENTS.md` for the package. No publish workflow: the service ships inside the clients.
 
 ## Verification
 

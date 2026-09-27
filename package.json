@@ -8,6 +8,7 @@
     "packages/picker-dom",
     "packages/server",
     "packages/reporter",
+    "packages/editor",
     "apps/application",
     "apps/extension",
     "integrations/nitro"

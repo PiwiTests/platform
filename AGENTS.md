@@ -15,6 +15,7 @@ how to run and verify things, and the conventions that apply everywhere.
 | `packages/reporter/` — the Playwright reporter package            | [`packages/reporter/AGENTS.md`](packages/reporter/AGENTS.md) |
 | `apps/desktop/` — the Tauri desktop shell                         | [`apps/desktop/AGENTS.md`](apps/desktop/AGENTS.md)           |
 | `apps/extension/` — the browser extension (Manifest V3)           | [`apps/extension/AGENTS.md`](apps/extension/AGENTS.md)       |
+| `packages/editor/` — the editor service (language server)         | [`packages/editor/AGENTS.md`](packages/editor/AGENTS.md)     |
 | `apps/docs/` — the VitePress documentation site                   | [`apps/docs/AGENTS.md`](apps/docs/AGENTS.md)                 |
 
 Reference material worth opening when you need the map rather than the rules:
@@ -41,6 +42,7 @@ packages/                  Packages consumed by name (`@piwitests/*`) — publis
   core/                    @piwitests/core — private, zero-dependency logic shared by app AND reporter
   picker-dom/              @piwitests/picker-dom — shared DOM picker overlay (reporter, dashboard, extension)
   reporter/                @piwitests/reporter — the Playwright reporter (TypeScript → bundled via tsup)
+  editor/                  @piwitests/editor — the language server both editor clients bundle (scope `ide`)
   server/                  @piwitests/server — published npm run-option (`npx @piwitests/server`)
 integrations/              Framework-specific instrumentation adapters.
   nitro/                   @piwitests/instrumentation-nitro — backend-log instrumentation for Nitro apps
@@ -57,7 +59,7 @@ plans/                     Local working docs — gitignored, never committed
 - `apps/*` — a deployable surface: something you run, install, download or read (the dashboard, the desktop app, the
   extension, the docs site).
 - `packages/*` — a package consumed _by name_ (`@piwitests/*`): either published to npm (`reporter`, `server`) or
-  imported by another workspace (`core`, `picker-dom`).
+  imported or bundled by another workspace (`core`, `picker-dom`, `editor`).
 - `integrations/*` — a framework-specific instrumentation adapter, one directory per framework.
 
 Every JS workspace is listed in the root [`package.json`](package.json) `workspaces` array. Three directories carry a
@@ -170,7 +172,7 @@ and the type → release-bump table. release-please reads PR titles (squash-merg
 Format `type(scope): subject`:
 
 - **type** — `feat` `fix` `perf` `docs` `chore` `ci` `refactor` `test` `build` `style` `revert`
-- **scope** — closed list, anything else fails: `app` `reporter` `db` `ui` `demo` `desktop` `extension` `ci` `docs`
+- **scope** — closed list, anything else fails: `app` `reporter` `db` `ui` `demo` `desktop` `extension` `ide` `ci` `docs`
   `deps` `auth` `ai` `notifications` `release` (`main` is reserved for release-please). Optional but include the best
   fit; never invent one (a timeline component change is `fix(ui)`, not `fix(timeline)`).
 - **subject** — lower-case start, imperative, no trailing period, full header ≤ 100 chars.

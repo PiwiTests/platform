@@ -613,6 +613,8 @@ export interface TestCasesQuery {
   limit: number;
   offset: number;
   q?: string;
+  /** Exact spec file path, as the test case stores it. */
+  file?: string;
   statuses?: string[];
   /** Every tag here must be present on a case for it to match. */
   tags?: string[];
@@ -655,6 +657,7 @@ export function parseTestCasesQuery(input?: URLSearchParams | Record<string, unk
     limit: Math.min(1000, Math.max(1, Math.floor(num('limit', 50)))),
     offset: Math.max(0, Math.floor(num('offset', 0))),
     q: get('q')?.trim() || undefined,
+    file: get('file')?.trim() || undefined,
     statuses: statuses.length > 0 ? statuses : undefined,
     tags: tags.length > 0 ? tags : undefined,
     locks: locks.length > 0 ? locks : undefined,
@@ -696,6 +699,7 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
     limit = 50,
     offset = 0,
     q,
+    file,
     statuses,
     tags,
     locks,
@@ -738,6 +742,7 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
     const pattern = `%${q.toLowerCase()}%`;
     conditions.push(sql`(lower(${testCases.title}) LIKE ${pattern} OR lower(${testCases.filePath}) LIKE ${pattern})`);
   }
+  if (file) conditions.push(eq(testCases.filePath, file));
   if (maxAgeDays > 0) {
     const cutoff = new Date(Date.now() - maxAgeDays * 24 * 60 * 60 * 1000);
     conditions.push(
