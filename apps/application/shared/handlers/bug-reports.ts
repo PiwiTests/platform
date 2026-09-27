@@ -9,6 +9,7 @@ import type { BugContext, BugEvidence } from '@piwitests/core/bug-report';
 import {
   bugReports,
   bugReproductions,
+  entityLinks,
   projects,
   testCases,
   testRuns,
@@ -140,6 +141,15 @@ export interface BugReportDetail extends BugReportListItem {
   statusRunId: number | null;
   test: { id: number; title: string; filePath: string } | null;
   reproductionList: BugReproductionItem[];
+  /** The tracker issue the report is filed as, when there is one. */
+  ticket: {
+    id: number;
+    url: string;
+    key: string;
+    provider: string;
+    statusText: string | null;
+    statusColor: string | null;
+  } | null;
 }
 
 function iso(d: Date | number | null | undefined): string | null {
@@ -185,6 +195,7 @@ export async function insertBugReport(
 }
 
 export async function deleteBugReport(db: DrizzleDB, id: number): Promise<void> {
+  await db.delete(entityLinks).where(eq(entityLinks.bugReportId, id));
   await db.delete(bugReports).where(eq(bugReports.id, id));
 }
 
@@ -280,6 +291,19 @@ export async function getBugReport(db: DrizzleDB, id: number): Promise<BugReport
       )[0] ?? null)
     : null;
   const reproductionList = await listBugReproductions(db, id);
+  const [ticket] = await db
+    .select({
+      id: entityLinks.id,
+      url: entityLinks.url,
+      key: entityLinks.key,
+      provider: entityLinks.provider,
+      statusText: entityLinks.statusText,
+      statusColor: entityLinks.statusColor,
+    })
+    .from(entityLinks)
+    .where(and(eq(entityLinks.bugReportId, id), sql`${entityLinks.key} is not null`))
+    .orderBy(desc(entityLinks.id))
+    .limit(1);
   return {
     id: r.id,
     projectId: r.projectId,
@@ -304,6 +328,7 @@ export async function getBugReport(db: DrizzleDB, id: number): Promise<BugReport
     reproductions: reproductionList.length,
     lastVerdict: reproductionList.at(-1)?.verdict ?? null,
     reproductionList,
+    ticket: ticket?.key ? { ...ticket, key: ticket.key } : null,
   };
 }
 
@@ -445,7 +470,7 @@ export function renderStepsWith(steps: PiwiSteps, options: Parameters<typeof ren
 // ---------------------------------------------------------------------------
 // Lifecycle from runs
 
-type Transition = { id: number; from: BugReportStatus; to: BugReportStatus; testCaseId: number };
+type Transition = { id: number; from: BugReportStatus; to: BugReportStatus; testCaseId: number; projectId: number };
 
 /**
  * Moves the reports a run's tests name (`piwi:bug <id>`, same project) along
@@ -512,7 +537,7 @@ export async function applyBugReportLifecycle(db: DrizzleDB, runId: number): Pro
       set.statusRunId = runId;
       set.closedAt = to === 'closed' ? now : null;
       set.closedByRunId = to === 'closed' ? runId : null;
-      transitions.push({ id: attempt.bugId, from, to, testCaseId: attempt.testCaseId });
+      transitions.push({ id: attempt.bugId, from, to, testCaseId: attempt.testCaseId, projectId: run.projectId });
       statusOf.set(attempt.bugId, to);
     }
     await db.update(bugReports).set(set).where(eq(bugReports.id, attempt.bugId));

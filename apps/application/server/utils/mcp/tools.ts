@@ -1552,8 +1552,8 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
   async create_issue(db, params, ctx) {
     assertWriteRole(ctx);
     const entityType = String(params.entityType ?? '') as DraftEntityType;
-    if (entityType !== 'failure_cluster' && entityType !== 'test_runs_case') {
-      throw new Error('entityType must be failure_cluster or test_runs_case');
+    if (entityType !== 'failure_cluster' && entityType !== 'test_runs_case' && entityType !== 'bug_report') {
+      throw new Error('entityType must be failure_cluster, test_runs_case or bug_report');
     }
     const entityId = numericParam(params.entityId, 'entityId');
     const projectId = await resolveLinkEntityProjectId(db, entityType, entityId);

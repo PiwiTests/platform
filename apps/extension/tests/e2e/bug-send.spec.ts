@@ -53,8 +53,14 @@ async function recordReport(context: BrowserContext): Promise<Page> {
         project: { id: 7, label: 'Shop' },
         instance: 'piwi.acme.test',
         firstSend: true,
+        intake: { tracker: 'jira', projectKey: 'SHOP', canCreate: true, fileEvery: false },
       },
-      'piwi-send-bug-report': { ok: true, id: 37, url: 'https://piwi.acme.test/bug-reports/37' },
+      'piwi-send-bug-report': {
+        ok: true,
+        id: 37,
+        url: 'https://piwi.acme.test/bug-reports/37',
+        issue: { status: 'done', key: 'SHOP-812' },
+      },
     },
   });
   await context.addInitScript(() => {
@@ -137,8 +143,14 @@ test.describe('Send to Piwi', () => {
     await expect(preview.locator('pre')).not.toContainText('SPRING10');
     await expect(preview.locator('pre')).not.toContainText('Coupon failed');
 
+    // The project files into Jira and this role may create issues: offered, unticked.
+    const alsoFile = preview.getByRole('checkbox', { name: 'Also create a Jira issue in SHOP' });
+    await expect(alsoFile).not.toBeChecked();
+    await alsoFile.check();
+
     await preview.getByRole('button', { name: 'Send', exact: true }).click();
     await expect(preview.getByText('Sent as bug report #37.')).toBeVisible();
+    await expect(preview.getByText('Jira issue SHOP-812 created.')).toBeVisible();
     await expect(preview.getByRole('link', { name: 'Open it in Piwi' })).toHaveAttribute(
       'href',
       'https://piwi.acme.test/bug-reports/37',
@@ -152,6 +164,7 @@ test.describe('Send to Piwi', () => {
     expect(parsed.report.evidence.requests).toHaveLength(1);
     expect(parsed.report.steps.steps.find((s) => s.action === 'fill')).toMatchObject({ value: null, redacted: true });
     expect(message.language).toBe('en');
+    expect(message.createIssue).toBe(true);
     // The screenshot of the mark and the one taken at Finish.
     expect(message.screenshots).toEqual([
       { name: '1-marked.png', dataUrl: PNG },
@@ -246,7 +259,14 @@ test.describe('Send to Piwi, in the real extension', () => {
       res.setHeader('Content-Type', 'application/json');
       if (req.method === 'POST' && req.url === '/api/projects/7/bug-reports') {
         res.statusCode = 201;
-        res.end(JSON.stringify({ id: 37, url: '/bug-reports/37' }));
+        const filed = body.toString('latin1').includes('name="createIssue"');
+        res.end(JSON.stringify({ id: 37, url: '/bug-reports/37', issue: filed ? { status: 'pending' } : null }));
+        return;
+      }
+      if (req.method === 'GET' && req.url === '/api/projects/7/bug-reports/intake') {
+        res.end(
+          JSON.stringify({ tracker: 'jira', projectKey: 'SHOP', locale: 'fr', canCreate: true, fileEvery: false }),
+        );
         return;
       }
       if (req.method === 'GET' && req.url === '/api/projects/7/bug-reports') {
@@ -328,16 +348,29 @@ test.describe('Send to Piwi, in the real extension', () => {
         project: { id: 7, label: 'Shop' },
         instance: new URL(instance).host,
         firstSend: true,
+        intake: {
+          tracker: 'jira',
+          projectKey: 'SHOP',
+          canCreate: true,
+          fileEvery: false,
+        },
       });
-      expect(received).toEqual([]);
+      // Only the intake was asked; nothing is sent before Send.
+      expect(received.map((r) => r.url)).toEqual(['/api/projects/7/bug-reports/intake']);
 
       const answer = await fromTab({
         type: 'piwi-send-bug-report',
         report: sampleReport(),
         language: 'fr',
+        createIssue: true,
         screenshots: [{ name: '1-marked.png', dataUrl: PNG }],
       });
-      expect(answer).toEqual({ ok: true, id: 37, url: `${instance}/bug-reports/37` });
+      expect(answer).toEqual({
+        ok: true,
+        id: 37,
+        url: `${instance}/bug-reports/37`,
+        issue: { status: 'pending', key: null },
+      });
       const post = received.find((r) => r.url === '/api/projects/7/bug-reports')!;
       expect(post.apiKey).toBe('pd_test');
       expect(post.contentType).toMatch(/^multipart\/form-data; boundary=/);
@@ -345,6 +378,7 @@ test.describe('Send to Piwi, in the real extension', () => {
       expect(text).toContain('name="report"');
       expect(text).toContain('"title":"Coupon not applied"');
       expect(text).toContain('name="language"\r\n\r\nfr');
+      expect(text).toContain('name="createIssue"\r\n\r\ntrue');
       expect(text).toContain('name="screenshot"; filename="1-marked.png"');
       expect(text).toContain('Content-Type: image/png');
       expect(post.body.includes(Buffer.from(PNG.split(',')[1]!, 'base64'))).toBe(true);

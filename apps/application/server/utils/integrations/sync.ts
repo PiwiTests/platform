@@ -13,7 +13,7 @@
  * `last_error` rather than failing the whole sweep.
  */
 import { and, asc, eq, inArray, isNotNull } from 'drizzle-orm';
-import { entityLinks, failureClusters, integrationConnections } from '../../database/schema';
+import { bugReports, entityLinks, failureClusters, integrationConnections } from '../../database/schema';
 import type { DbClient } from '../../database';
 import type { EntityLink } from '../../database/schema';
 import type { IssueTracker } from './types';
@@ -89,6 +89,10 @@ async function syncOneLink(
     assignee: issue.assignee?.displayName ?? null,
   });
 
+  if (link.bugReportId != null) {
+    await syncBugReport(db, link.bugReportId, issue.statusCategory, bindingFor);
+    return;
+  }
   if (!cluster) return;
   const binding = await bindingFor(cluster.projectId);
 
@@ -130,6 +134,45 @@ export interface SyncResult {
  * Refresh due tracker links, bounded to {@link SYNC_BATCH_LIMIT} per sweep. Open
  * clusters come first so a large backlog of resolved links never starves them.
  */
+/**
+ * A bug report follows its ticket like a cluster does: closed when the ticket
+ * is Done (`resolveOnClose`), open again when it is reopened
+ * (`reopenOnTicketReopen`). A dismissed report stays dismissed.
+ */
+async function syncBugReport(
+  db: DbClient,
+  bugReportId: number,
+  statusCategory: string | null | undefined,
+  bindingFor: (projectId: number) => Promise<ResolvedProjectIntegration>,
+): Promise<void> {
+  const [report] = await db
+    .select({ projectId: bugReports.projectId, status: bugReports.status, testCaseId: bugReports.testCaseId })
+    .from(bugReports)
+    .where(eq(bugReports.id, bugReportId));
+  if (!report || report.status === 'dismissed') return;
+  const binding = await bindingFor(report.projectId);
+  const now = new Date();
+  if (statusCategory === 'done' && report.status !== 'closed' && binding.policies.resolveOnClose) {
+    await db
+      .update(bugReports)
+      .set({ status: 'closed', closedAt: now, closedByRunId: null, statusRunId: null, updatedAt: now })
+      .where(eq(bugReports.id, bugReportId));
+    return;
+  }
+  if (statusCategory !== 'done' && report.status === 'closed' && binding.policies.reopenOnTicketReopen) {
+    await db
+      .update(bugReports)
+      .set({
+        status: report.testCaseId ? 'test-committed' : 'open',
+        closedAt: null,
+        closedByRunId: null,
+        statusRunId: null,
+        updatedAt: now,
+      })
+      .where(eq(bugReports.id, bugReportId));
+  }
+}
+
 export async function syncTrackerLinks(db: DbClient, opts: { now?: Date; limit?: number } = {}): Promise<SyncResult> {
   const now = opts.now ?? new Date();
   const limit = opts.limit ?? SYNC_BATCH_LIMIT;

@@ -10,7 +10,7 @@ import { normalizeFieldValues } from '#shared/integrations/fields';
 defineRouteMeta({
   openAPI: {
     tags: ['Integrations'],
-    summary: 'Create an issue from a failure',
+    summary: 'Create an issue from a failure or a bug report',
     description:
       "Enqueues a create-issue action and makes one immediate attempt. A duplicate of an issue already filed is a no-op. `fields` sets tracker fields (field id → `{ value, label }`, the value as the tracker API takes it) over the project's field defaults. When the create screen still has an empty required field, nothing is sent: the response is `failed` with `missingFields`. A refusal from the tracker comes back with `fieldErrors` when it names fields, and is not retried; creating again replaces the refused request.",
     'x-required-roles': ['administrator', 'reporter'],
@@ -18,7 +18,7 @@ defineRouteMeta({
 });
 
 const schema = z.object({
-  entityType: z.enum(['failure_cluster', 'test_runs_case']),
+  entityType: z.enum(['failure_cluster', 'test_runs_case', 'bug_report']),
   entityId: z.number().int().positive(),
   connectionId: z.number().int().positive(),
   title: z.string().min(1).max(255),

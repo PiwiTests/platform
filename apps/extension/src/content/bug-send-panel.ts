@@ -11,6 +11,8 @@ export interface SendTarget {
   project: { id: number; label: string } | null;
   instance: string | null;
   firstSend: boolean;
+  /** What the project does with its tracker, when it files anywhere. */
+  intake?: { tracker: 'jira' | null; projectKey: string | null; canCreate: boolean; fileEvery: boolean } | null;
 }
 
 export const SEND_DIALOG_HOST_ID = '__piwi_bug_send_host';
@@ -23,7 +25,7 @@ export async function sendTarget(): Promise<SendTarget> {
   } catch {
     // An older worker, or none: not connected.
   }
-  return { connected: false, project: null, instance: null, firstSend: false };
+  return { connected: false, project: null, instance: null, firstSend: false, intake: null };
 }
 
 const SEND_CSS = `
@@ -123,6 +125,31 @@ export function openSendPreview(opts: {
   if (report.steps.steps.some((step) => step.action === 'fill' && step.value != null))
     box(t('bug_sendEnvValues'), 'leaveOutValues');
 
+  // The tracker: offered to a role that may create issues, and ticked (and fixed) when the project files every report.
+  const intake = target.intake;
+  let createIssue = false;
+  if (intake?.tracker && intake.projectKey && (intake.canCreate || intake.fileEvery)) {
+    const el = document.createElement('label');
+    el.className = 'check';
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.checked = createIssue = intake.fileEvery;
+    input.disabled = intake.fileEvery;
+    input.addEventListener('change', () => {
+      createIssue = input.checked;
+    });
+    const text = document.createElement('span');
+    text.textContent = t('bug_sendCreateIssue', { project: intake.projectKey });
+    el.append(input, text);
+    panel.appendChild(el);
+    if (intake.fileEvery) {
+      const note = document.createElement('div');
+      note.className = 'sub';
+      note.textContent = t('bug_sendFilesEvery');
+      panel.appendChild(note);
+    }
+  }
+
   const details = document.createElement('details');
   const summary = document.createElement('summary');
   summary.textContent = t('bug_sendShowData');
@@ -164,12 +191,21 @@ export function openSendPreview(opts: {
     sendBtn.textContent = t('bug_sending');
     message.textContent = '';
     void (async () => {
-      let answer: { ok: boolean; id?: number; url?: string; error?: string } | undefined;
+      let answer:
+        | {
+            ok: boolean;
+            id?: number;
+            url?: string;
+            error?: string;
+            issue?: { status: string; key: string | null } | null;
+          }
+        | undefined;
       try {
         answer = await chrome.runtime.sendMessage({
           type: 'piwi-send-bug-report',
           report: reportToSend(report, choices),
           language: uiLanguage(),
+          createIssue,
           screenshots: screenshotsToSend(screenshots, choices),
         });
       } catch (e) {
@@ -188,6 +224,10 @@ export function openSendPreview(opts: {
           link.textContent = t('bug_openInPiwi');
           done.appendChild(link);
         }
+        const issueLine = document.createElement('div');
+        issueLine.className = 'sub';
+        if (answer.issue?.key) issueLine.textContent = t('bug_issueCreated', { key: answer.issue.key });
+        else if (answer.issue && answer.issue.status !== 'failed') issueLine.textContent = t('bug_issueQueued');
         const closeBtn = document.createElement('button');
         closeBtn.type = 'button';
         closeBtn.className = 'action';
@@ -196,7 +236,7 @@ export function openSendPreview(opts: {
         const row = document.createElement('div');
         row.className = 'actions';
         row.appendChild(closeBtn);
-        panel.replaceChildren(heading, where, done, row);
+        panel.replaceChildren(heading, where, done, ...(issueLine.textContent ? [issueLine] : []), row);
         closeBtn.focus();
         return;
       }

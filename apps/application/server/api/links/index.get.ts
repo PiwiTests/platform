@@ -13,7 +13,7 @@ defineRouteMeta({
         name: 'entityType',
         in: 'query',
         required: true,
-        schema: { type: 'string', enum: ['test_run', 'test_runs_case', 'test_case', 'failure_cluster'] },
+        schema: { type: 'string', enum: ['test_run', 'test_runs_case', 'test_case', 'failure_cluster', 'bug_report'] },
       },
       { name: 'entityId', in: 'query', required: true, schema: { type: 'integer' } },
     ],

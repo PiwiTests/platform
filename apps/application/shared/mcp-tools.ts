@@ -541,10 +541,13 @@ export const MCP_TOOL_DEFS = [
       properties: {
         entityType: {
           type: 'string',
-          enum: ['failure_cluster', 'test_runs_case'],
-          description: 'Whether to file for a failure cluster or one failing execution',
+          enum: ['failure_cluster', 'test_runs_case', 'bug_report'],
+          description: 'Whether to file for a failure cluster, one failing execution, or a bug report',
         },
-        entityId: { type: 'number', description: 'The cluster id or the execution (testRunsCaseId)' },
+        entityId: {
+          type: 'number',
+          description: 'The cluster id, the execution (testRunsCaseId) or the bug report id',
+        },
         title: { type: 'string', description: 'Optional issue title; defaults to the cluster name' },
         includeDiagnosis: {
           type: 'boolean',

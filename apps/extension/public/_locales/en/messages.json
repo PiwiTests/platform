@@ -2535,6 +2535,34 @@
     "message": "Leave out the values I typed (the test reads them from environment variables)",
     "description": "Send to Piwi preview: checkbox that removes every typed value from the steps sent; the generated test then reads them from environment variables."
   },
+  "bug_sendCreateIssue": {
+    "message": "Also create a Jira issue in $project$",
+    "description": "Send to Piwi preview: checkbox that also files the report in the project’s issue tracker. $project$ is a Jira project key such as SHOP.",
+    "placeholders": {
+      "project": {
+        "content": "$1",
+        "example": "SHOP"
+      }
+    }
+  },
+  "bug_sendFilesEvery": {
+    "message": "This project files every bug report in Jira.",
+    "description": "Send to Piwi preview: under the checkbox, when the project files every report whoever sends it."
+  },
+  "bug_issueCreated": {
+    "message": "Jira issue $key$ created.",
+    "description": "Send to Piwi: after sending, the Jira issue was created. $key$ is its key such as SHOP-812.",
+    "placeholders": {
+      "key": {
+        "content": "$1",
+        "example": "SHOP-812"
+      }
+    }
+  },
+  "bug_issueQueued": {
+    "message": "The Jira issue is queued: the report’s page shows its key once it is created.",
+    "description": "Send to Piwi: after sending, the Jira issue is queued and will be created by the instance; the report’s page shows its key once created."
+  },
   "bug_sendShowData": {
     "message": "Show the exact data",
     "description": "Send to Piwi preview: disclosure that shows the JSON that is sent."

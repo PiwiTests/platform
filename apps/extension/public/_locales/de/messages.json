@@ -2112,6 +2112,30 @@
   "bug_sendEnvValues": {
     "message": "Die eingegebenen Werte weglassen (der Test liest sie aus Umgebungsvariablen)"
   },
+  "bug_sendCreateIssue": {
+    "message": "Auch ein Jira-Ticket in $project$ anlegen",
+    "placeholders": {
+      "project": {
+        "content": "$1",
+        "example": "SHOP"
+      }
+    }
+  },
+  "bug_sendFilesEvery": {
+    "message": "Dieses Projekt legt für jeden Bug-Report ein Jira-Ticket an."
+  },
+  "bug_issueCreated": {
+    "message": "Jira-Ticket $key$ angelegt.",
+    "placeholders": {
+      "key": {
+        "content": "$1",
+        "example": "SHOP-812"
+      }
+    }
+  },
+  "bug_issueQueued": {
+    "message": "Das Jira-Ticket steht in der Warteschlange: Die Seite des Berichts zeigt seinen Schlüssel, sobald es angelegt ist."
+  },
   "bug_sendShowData": {
     "message": "Die genauen Daten anzeigen"
   },

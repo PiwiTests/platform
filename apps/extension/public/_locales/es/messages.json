@@ -2112,6 +2112,30 @@
   "bug_sendEnvValues": {
     "message": "No enviar los valores escritos (la prueba los lee de variables de entorno)"
   },
+  "bug_sendCreateIssue": {
+    "message": "Crear también una incidencia de Jira en $project$",
+    "placeholders": {
+      "project": {
+        "content": "$1",
+        "example": "SHOP"
+      }
+    }
+  },
+  "bug_sendFilesEvery": {
+    "message": "Este proyecto crea una incidencia de Jira para cada informe de bug."
+  },
+  "bug_issueCreated": {
+    "message": "Incidencia de Jira $key$ creada.",
+    "placeholders": {
+      "key": {
+        "content": "$1",
+        "example": "SHOP-812"
+      }
+    }
+  },
+  "bug_issueQueued": {
+    "message": "La incidencia de Jira está en cola: la página del informe muestra su clave cuando se crea."
+  },
   "bug_sendShowData": {
     "message": "Mostrar los datos exactos"
   },

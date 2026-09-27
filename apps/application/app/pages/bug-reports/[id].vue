@@ -12,6 +12,12 @@ import { BUG_REPORT_STATUS, capitalize, reproductionPlace, verdictLabel } from '
 const route = useRoute();
 const toast = useToast();
 const { canWrite } = useAuth();
+const { hasTracker } = useTrackerStatus();
+const issueModalOpen = ref(false);
+function onIssueCreated() {
+  issueModalOpen.value = false;
+  void refresh();
+}
 const reportId = Number(route.params.id);
 
 const { data: report, error, refresh } = await useFetch<BugReportDetail>(`/api/bug-reports/${reportId}`);
@@ -116,6 +122,15 @@ async function setStatus(status: 'open' | 'dismissed') {
             </template>
             <template v-if="canWrite" #actions>
               <UButton
+                v-if="hasTracker && !report.ticket"
+                size="xs"
+                icon="i-simple-icons-jira"
+                data-shot="bug-report-create-issue"
+                @click="issueModalOpen = true"
+              >
+                Create issue
+              </UButton>
+              <UButton
                 v-if="report.status !== 'dismissed'"
                 color="neutral"
                 variant="ghost"
@@ -152,6 +167,13 @@ async function setStatus(status: 'open' | 'dismissed') {
                   }}</NuxtLink>
                   in <span class="font-mono">{{ report.test.filePath }}</span
                   >.
+                </template>
+                <template v-if="report.ticket">
+                  Filed as
+                  <a :href="report.ticket.url" target="_blank" rel="noopener noreferrer" :class="SENTENCE_LINK_CLASS">{{
+                    report.ticket.key
+                  }}</a
+                  ><template v-if="report.ticket.statusText"> ({{ report.ticket.statusText }})</template>.
                 </template>
                 <template v-if="lastTry">
                   Last try: {{ verdictLabel(lastTry.verdict, lastTry.divergedAt).toLowerCase() }}
@@ -216,6 +238,14 @@ async function setStatus(status: 'open' | 'dismissed') {
           </div>
         </template>
       </DetailPageLayout>
+      <CreateIssueModal
+        v-if="report"
+        v-model:open="issueModalOpen"
+        entity-type="bug_report"
+        :entity-id="report.id"
+        @created="onIssueCreated"
+        @linked="onIssueCreated"
+      />
     </template>
   </UDashboardPanel>
 </template>

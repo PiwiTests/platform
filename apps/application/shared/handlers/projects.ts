@@ -10,6 +10,7 @@ import {
   failureDiagnoses,
   casePayloads,
   entityLinks,
+  bugReports,
   analyticsDailyRollups,
 } from '../../server/database/schema';
 import { asc, desc, eq, exists, sql, and, or, inArray, gte, lte, isNull, isNotNull, count } from 'drizzle-orm';
@@ -509,6 +510,18 @@ export async function deleteProjectData(db: DrizzleDB, projectId: number) {
   const projectClusterIds = projectClusterRows.map((r: { id: number }) => r.id);
   if (projectClusterIds.length > 0) {
     await db.delete(entityLinks).where(inArray(entityLinks.failureClusterId, projectClusterIds));
+  }
+  const projectBugReports = await db
+    .select({ id: bugReports.id })
+    .from(bugReports)
+    .where(eq(bugReports.projectId, projectId));
+  if (projectBugReports.length > 0) {
+    await db.delete(entityLinks).where(
+      inArray(
+        entityLinks.bugReportId,
+        projectBugReports.map((r: { id: number }) => r.id),
+      ),
+    );
   }
 
   await db.delete(analyticsDailyRollups).where(eq(analyticsDailyRollups.projectId, projectId));

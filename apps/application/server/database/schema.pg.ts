@@ -791,6 +791,7 @@ export const entityLinks = pgTable(
     testRunsCaseId: integer('test_runs_case_id').references(() => testRunsCases.id, { onDelete: 'cascade' }),
     testCaseId: integer('test_case_id').references(() => testCases.id, { onDelete: 'cascade' }),
     failureClusterId: integer('failure_cluster_id').references(() => failureClusters.id, { onDelete: 'cascade' }),
+    bugReportId: integer('bug_report_id').references(() => bugReports.id, { onDelete: 'cascade' }),
 
     url: text('url').notNull(),
 
@@ -815,6 +816,7 @@ export const entityLinks = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
+    bugReportIdx: index('idx_entity_links_bug_report').on(t.bugReportId),
     runIdx: index('idx_entity_links_run').on(t.testRunId),
     caseRunIdx: index('idx_entity_links_case_run').on(t.testRunsCaseId),
     caseIdx: index('idx_entity_links_case').on(t.testCaseId),

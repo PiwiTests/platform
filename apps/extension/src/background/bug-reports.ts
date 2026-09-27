@@ -2,7 +2,15 @@ import { parseBugReport } from '@piwitests/core/bug-report';
 import { parseSteps, type PiwiSteps } from '@piwitests/core/steps';
 import { getConnectionSettings, type ConnectionSettings } from '../shared/connection-settings.js';
 import { getActiveProjectOverride, resolveActiveProject, type ActiveProject } from '../shared/active-project.js';
-import { fetchBugReports, fetchBugReportSteps, sendBugReport, type BugReportSummary } from '../shared/piwi-client.js';
+import {
+  fetchBugReportIntake,
+  fetchBugReports,
+  fetchBugReportSteps,
+  sendBugReport,
+  type BugReportIntake,
+  type BugReportSummary,
+  type SentIssue,
+} from '../shared/piwi-client.js';
 import { dataUrlBytes } from '../shared/zip.js';
 import { t } from '../shared/i18n.js';
 
@@ -41,26 +49,32 @@ export interface SendTargetAnswer {
   instance: string | null;
   /** True until a report has been sent from this browser profile. */
   firstSend: boolean;
+  /** What the project does with its tracker; null when it files nowhere or the tab maps to no project. */
+  intake: BugReportIntake | null;
 }
 
 /** Where Send to Piwi would send a report from this tab, for the finish panel and its preview. */
 export async function handleBugSendTarget(tab: chrome.tabs.Tab | undefined): Promise<SendTargetAnswer> {
   const target = await targetFor(tab);
-  if (!target) return { connected: false, project: null, instance: null, firstSend: false };
+  if (!target) return { connected: false, project: null, instance: null, firstSend: false, intake: null };
   const stored = await chrome.storage.local.get(SEND_EXPLAINED_KEY);
+  const intake = target.project ? await fetchBugReportIntake(target.settings, target.project.projectId) : null;
   return {
     connected: true,
     project: target.project ? { id: target.project.projectId, label: target.project.projectLabel } : null,
     instance: instanceHost(target.settings),
     firstSend: stored[SEND_EXPLAINED_KEY] !== true,
+    intake: intake?.tracker ? intake : null,
   };
 }
 
-export type SendBugReportAnswer = { ok: true; id: number; url: string } | { ok: false; error: string };
+export type SendBugReportAnswer =
+  | { ok: true; id: number; url: string; issue: SentIssue | null }
+  | { ok: false; error: string };
 
 /** Sends the report the reporter confirmed in the preview, as it was shown. */
 export async function handleSendBugReport(
-  message: { report?: unknown; language?: unknown; screenshots?: unknown },
+  message: { report?: unknown; language?: unknown; screenshots?: unknown; createIssue?: unknown },
   tab: chrome.tabs.Tab | undefined,
 ): Promise<SendBugReportAnswer> {
   const target = await targetFor(tab);
@@ -78,6 +92,7 @@ export async function handleSendBugReport(
     const sent = await sendBugReport(target.settings, target.project.projectId, {
       report: parsed.report,
       language: typeof message.language === 'string' ? message.language : null,
+      createIssue: message.createIssue === true,
       screenshots,
     });
     await chrome.storage.local.set({ [SEND_EXPLAINED_KEY]: true });

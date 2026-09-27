@@ -41,6 +41,40 @@ export const fr: Record<MessageKey, MessageValue> = {
   'link.run': 'Série de tests',
   'link.share': 'Rapport partageable',
   'link.dashboard': 'Ouvrir dans Piwi',
+  'link.bugReport': 'Rapport de bug dans Piwi',
+
+  // Rapports de bug (un ticket créé depuis un rapport envoyé par Piwi Picker)
+  'section.stepsToReproduce': 'Étapes pour reproduire',
+  'section.expectedActual': 'Attendu et constaté',
+  'section.failingTest': 'Le test en échec',
+  'section.reproductions': 'Reproductions',
+  'label.expected': 'Attendu',
+  'label.actual': 'La page affichait',
+  'label.note': 'Note',
+  'fact.page': 'Page',
+  'fact.browser': 'Navigateur',
+  'fact.reportedBy': 'Signalé par',
+  'fact.reportedOn': 'Signalé le',
+  'evidence.screenshots': {
+    one: '{count} capture d’écran, jointe à ce ticket',
+    other: '{count} captures d’écran, jointes à ce ticket',
+  },
+  'evidence.console': {
+    one: '{count} erreur ou avertissement de la console',
+    other: '{count} erreurs et avertissements de la console',
+  },
+  'evidence.requests': { one: '{count} requête en échec', other: '{count} requêtes en échec' },
+  'text.reportLanguage':
+    'Signalé en {language}. Les étapes sont réécrites dans la langue de ce ticket ; le titre, la note et les valeurs saisies par la personne qui a signalé restent telles qu’elles ont été écrites.',
+  'text.failingTest':
+    'À committer sous {path}. Marqué test.fail(), il garde la suite au vert tant que le bug existe ; quand il passe, le bug semble corrigé.',
+  'verdict.reproduced': 'Reproduit',
+  'verdict.notReproduced': 'Non reproduit',
+  'verdict.diverged': 'Bug non atteint (étape {step})',
+  'reproduction.replay': 'rejoué dans un navigateur',
+  'reproduction.desktop': 'exécuté avec Playwright',
+  'comment.bugLooksFixed':
+    'Le test de ce bug est passé dans la série #{run} alors qu’il est encore marqué test.fail() : le bug semble corrigé. Retirez test.fail() avec le correctif.',
 
   // Commentaires de politique (réécrits dans le ticket, dans sa langue)
   'comment.fixLanded':

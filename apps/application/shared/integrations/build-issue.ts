@@ -11,6 +11,14 @@
  */
 import { doc, type DocNode, type Inline, type IssueDocument } from './document';
 import { DEFAULT_LOCALE, formatNumber, t, type IssueLocale } from './messages';
+import {
+  describeExpectation,
+  describeStepInWords,
+  type BugContext,
+  type BugEvidence,
+} from '@piwitests/core/bug-report';
+import { bugPhrases } from '@piwitests/core/bug-phrases';
+import type { PiwiSteps } from '@piwitests/core/steps';
 
 /** The include toggles the modal and the per-project policy set. */
 export interface IssueBuildOpts {
@@ -208,4 +216,147 @@ export function buildIssue(facts: IssueFacts, opts: IssueBuildOpts = {}): BuiltI
     document: buildIssueDocument(facts, opts),
     labels: issueLabels(facts.clusterId, facts.fingerprint),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Bug reports
+
+/** What the builder reads about a bug report sent from Piwi Picker. */
+export interface BugIssueFacts {
+  id: number;
+  title: string;
+  steps: PiwiSteps;
+  evidence: BugEvidence;
+  context: BugContext;
+  /** The language the report was written in (`de`, `pt-BR`), when known. */
+  reportLanguage: string | null;
+  reportedBy: string | null;
+  reportedAt: string | null;
+  /** The spec to commit, as the report's page renders it. */
+  spec: { path: string; code: string } | null;
+  reproductions: Array<{ verdict: string; divergedAt: number | null; origin: string | null; source: string }>;
+  reportUrl: string | null;
+}
+
+/** `piwi`, `piwi-bug-<id>` — how a filed report is found again. */
+export function bugIssueLabels(id: number): string[] {
+  return ['piwi', `piwi-bug-${id}`];
+}
+
+/** A phrasebook sentence as inlines: its Markdown code spans become code. */
+function phraseInlines(text: string): Inline[] {
+  return text
+    .split(/(`[^`]*`)/)
+    .filter(Boolean)
+    .map((part) => (part.length > 1 && part.startsWith('`') && part.endsWith('`') ? code(part.slice(1, -1)) : part));
+}
+
+/** A language code by its name in the ticket's language, or the code when the platform has no name for it. */
+function languageName(locale: IssueLocale, codeOrTag: string): string {
+  try {
+    return new Intl.DisplayNames([locale], { type: 'language' }).of(codeOrTag.replace('_', '-')) ?? codeOrTag;
+  } catch {
+    return codeOrTag;
+  }
+}
+
+/**
+ * The ticket for a bug report, in the ticket's language: the steps and the
+ * expectations written again from the steps document with core's phrasebook
+ * for that language, Piwi's own parts from the message catalog, and the
+ * reporter's own words (the title, the note, the values typed) as they are.
+ */
+export function buildBugIssueDocument(facts: BugIssueFacts, opts: { locale?: IssueLocale } = {}): IssueDocument {
+  const locale = opts.locale ?? DEFAULT_LOCALE;
+  const phrases = bugPhrases(locale);
+  const b = doc();
+
+  b.heading(2, t(locale, 'section.whatHappened'));
+  const page =
+    facts.context.origin && facts.context.path ? `${facts.context.origin}${facts.context.path}` : facts.context.path;
+  b.facts([
+    [t(locale, 'fact.page'), page ? [code(page)] : []],
+    [t(locale, 'fact.browser'), facts.context.browser ? [facts.context.browser] : []],
+    [t(locale, 'fact.reportedBy'), facts.reportedBy ? [facts.reportedBy] : []],
+    [t(locale, 'fact.reportedOn'), facts.reportedAt ? [facts.reportedAt] : []],
+  ]);
+  if (facts.reportLanguage && facts.reportLanguage.split(/[-_]/)[0] !== locale) {
+    b.paragraph(t(locale, 'text.reportLanguage', { language: languageName(locale, facts.reportLanguage) }));
+  }
+
+  b.heading(2, t(locale, 'section.stepsToReproduce'));
+  b.bullets(
+    facts.steps.steps.map((step, i) => [
+      `${i + 1}. `,
+      ...phraseInlines(
+        step.action === 'assert' ? describeExpectation(step, phrases) : describeStepInWords(step, phrases),
+      ),
+    ]),
+  );
+
+  const expected = facts.steps.steps.flatMap((step, index) =>
+    step.action === 'assert' && step.assertion ? [{ index, step, a: step.assertion }] : [],
+  );
+  if (expected.length) {
+    b.heading(2, t(locale, 'section.expectedActual'));
+    for (const { step, a } of expected) {
+      b.paragraph(
+        { text: `${t(locale, 'label.expected')}: `, strong: true },
+        ...phraseInlines(describeExpectation(step, phrases)),
+      );
+      if (a.actual != null) b.paragraph({ text: `${t(locale, 'label.actual')}: `, strong: true }, code(a.actual));
+      if (a.note) b.paragraph({ text: `${t(locale, 'label.note')}: `, strong: true }, a.note);
+    }
+  }
+
+  const ev = facts.evidence;
+  const evidenceItems: Inline[][] = [];
+  if (ev.screenshots.length) evidenceItems.push([t(locale, 'evidence.screenshots', { count: ev.screenshots.length })]);
+  if (ev.console.length)
+    evidenceItems.push([t(locale, 'evidence.console', { count: ev.console.length + ev.consoleDropped })]);
+  if (ev.requests.length) {
+    evidenceItems.push([t(locale, 'evidence.requests', { count: ev.requests.length + ev.requestsDropped })]);
+    for (const r of ev.requests.slice(0, 5)) evidenceItems.push([code(`${r.method} ${r.url} → ${r.status || '—'}`)]);
+  }
+  if (evidenceItems.length || ev.console.length) {
+    b.heading(2, t(locale, 'section.evidence'));
+    if (evidenceItems.length) b.bullets(evidenceItems);
+    const messages = ev.console.slice(0, 5).map((c) => c.message);
+    if (messages.length) b.code(messages.join('\n'));
+  }
+
+  if (facts.spec) {
+    b.heading(2, t(locale, 'section.failingTest'));
+    b.paragraph(t(locale, 'text.failingTest', { path: facts.spec.path }));
+    b.code(facts.spec.code, 'typescript');
+  }
+
+  if (facts.reproductions.length) {
+    b.heading(2, t(locale, 'section.reproductions'));
+    b.bullets(
+      facts.reproductions.map((r) => {
+        const verdict =
+          r.verdict === 'reproduced'
+            ? t(locale, 'verdict.reproduced')
+            : r.verdict === 'not-reproduced'
+              ? t(locale, 'verdict.notReproduced')
+              : t(locale, 'verdict.diverged', { step: (r.divergedAt ?? 0) + 1 });
+        const how = t(locale, r.source === 'desktop' ? 'reproduction.desktop' : 'reproduction.replay');
+        return [`${verdict}${r.origin ? ` — ${r.origin}` : ''} (${how})`];
+      }),
+    );
+  }
+
+  if (facts.reportUrl) {
+    b.heading(2, t(locale, 'section.links'));
+    b.bullets([[{ text: t(locale, 'link.bugReport'), href: facts.reportUrl }]]);
+  }
+
+  b.rule();
+  b.paragraph(code(`Piwi-Bug: ${facts.id}`));
+  return b.build();
+}
+
+export function buildBugIssue(facts: BugIssueFacts, opts: { locale?: IssueLocale } = {}): BuiltIssue {
+  return { title: facts.title, document: buildBugIssueDocument(facts, opts), labels: bugIssueLabels(facts.id) };
 }

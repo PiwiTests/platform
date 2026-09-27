@@ -15,7 +15,10 @@
  * fails the action at once instead of retrying it for hours.
  */
 import { and, eq, lt, lte } from 'drizzle-orm';
-import { integrationActions } from '../../database/schema';
+import { bugReports, integrationActions } from '../../database/schema';
+import { getStorage } from '../../storage';
+import { bugReportStorageDir } from '#shared/handlers/bug-reports';
+import { attachKey } from '#shared/integrations/action-keys';
 import type { DbClient } from '../../database';
 import type { IssueDocument } from '#shared/integrations/document';
 import type { IssueLocale } from '#shared/integrations/messages';
@@ -72,6 +75,15 @@ export interface TransitionActionPayload {
   statusName?: string | null;
   /** Values for the fields the transition's screen asks for, from the project settings. */
   fields?: FieldValues;
+}
+
+/** An attach action's snapshot: one stored file to attach to an issue. */
+export interface AttachActionPayload {
+  issueKey: string;
+  /** The file's path in Piwi's storage. */
+  storagePath: string;
+  name: string;
+  mime: string;
 }
 
 export interface CreateIssueResult {
@@ -251,7 +263,48 @@ async function applyCreateIssue(
       .where(eq(integrationActions.id, action.id));
   });
 
+  // A bug report's screenshots follow the issue, one queued attach each.
+  if (payload.linkEntityType === 'bug_report' && tracker.attach) {
+    for (const file of await bugReportAttachments(db, payload.linkEntityId)) {
+      const attach = await enqueueAction(db, {
+        connectionId: action.connectionId,
+        projectId: action.projectId,
+        kind: 'attach',
+        entityType: 'bug_report',
+        entityId: payload.linkEntityId,
+        dedupeKey: attachKey(payload.linkEntityId, issue.key, file.name),
+        payload: { issueKey: issue.key, ...file } satisfies AttachActionPayload,
+        requestedBy: action.requestedBy ?? null,
+      });
+      await runActionNow(db, attach.id).catch(() => null);
+    }
+  }
+
   return result;
+}
+
+/** The screenshots of a bug report, as files to attach. */
+async function bugReportAttachments(
+  db: DbClient,
+  bugReportId: number,
+): Promise<Array<{ storagePath: string; name: string; mime: string }>> {
+  const [row] = await db
+    .select({ evidence: bugReports.evidence })
+    .from(bugReports)
+    .where(eq(bugReports.id, bugReportId));
+  const shots = ((row?.evidence ?? null) as { screenshots?: Array<{ file: string }> } | null)?.screenshots ?? [];
+  return shots.map((shot) => {
+    const name = shot.file.replace(/^screenshots\//, '');
+    return { storagePath: `${bugReportStorageDir(bugReportId)}/${name}`, name, mime: 'image/png' };
+  });
+}
+
+/** Attach one stored file to its issue. */
+async function applyAttach(tracker: IssueTracker, action: IntegrationAction): Promise<void> {
+  const payload = action.payload as AttachActionPayload;
+  if (!tracker.attach) throw new Error('this tracker takes no attachments');
+  const bytes = await getStorage().readFile(payload.storagePath);
+  await tracker.attach(payload.issueKey, { name: payload.name, bytes: new Uint8Array(bytes), mime: payload.mime });
 }
 
 /** Perform one comment against the tracker (used from the sync milestone). */
@@ -317,6 +370,14 @@ export async function runAction(db: DbClient, action: IntegrationAction): Promis
     }
     if (action.kind === 'comment') {
       await applyComment(tracker, action);
+      await db
+        .update(integrationActions)
+        .set({ status: 'done', error: null, attempts, finishedAt: now })
+        .where(eq(integrationActions.id, action.id));
+      return { status: 'done' };
+    }
+    if (action.kind === 'attach') {
+      await applyAttach(tracker, action);
       await db
         .update(integrationActions)
         .set({ status: 'done', error: null, attempts, finishedAt: now })

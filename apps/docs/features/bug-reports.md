@@ -87,6 +87,27 @@ A closed report whose test fails again goes back to **Test committed**. A test m
 never counted into a [failure cluster](./failure-clusters): it is good news about one test, shown as **Looks fixed** on
 the run.
 
+## Filing it in Jira
+
+When the project is bound to Jira in its [issue tracking](./issue-tracking) settings, a report becomes a ticket in
+three ways, all through the same outbox, links and attachments:
+
+- **From the Send preview**: **Also create a Jira issue in SHOP** is offered to a sender whose role may create issues
+  (administrator or reporter).
+- **From the report's page**: **Create issue**, with the same modal as a failure cluster.
+- **For every report**: **File every bug report**, in the project's two-way sync settings, files each report as it
+  arrives, whoever sends it; the preview then says so.
+
+The ticket carries the steps, what was expected and what the page showed, the evidence (the screenshots attached to
+it), the failing test to commit, the reproductions and a link back, with the labels `piwi` and `piwi-bug-<id>`. It is
+written in the binding's ticket language, whatever language the report was written in: the steps are written again in
+that language, the reporter's own words (the title, the note, the values typed) stay as they were, and a line says which
+language the report came in.
+
+The ticket then follows the report: with **Comment on fix** and **Transition on fix** on, a report that looks fixed
+comments on its ticket and moves it; with **Resolve on close** and **Reopen on ticket reopen**, the report closes and
+reopens with its ticket.
+
 ## Replaying a report from Piwi
 
 A developer with the extension connected finds the project's open reports in **Replay a bug report**, beside the file

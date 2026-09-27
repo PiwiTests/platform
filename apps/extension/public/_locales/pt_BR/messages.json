@@ -2112,6 +2112,30 @@
   "bug_sendEnvValues": {
     "message": "Não enviar os valores digitados (o teste os lê de variáveis de ambiente)"
   },
+  "bug_sendCreateIssue": {
+    "message": "Criar também um ticket do Jira em $project$",
+    "placeholders": {
+      "project": {
+        "content": "$1",
+        "example": "SHOP"
+      }
+    }
+  },
+  "bug_sendFilesEvery": {
+    "message": "Este projeto cria um ticket do Jira para cada relatório de bug."
+  },
+  "bug_issueCreated": {
+    "message": "Ticket do Jira $key$ criado.",
+    "placeholders": {
+      "key": {
+        "content": "$1",
+        "example": "SHOP-812"
+      }
+    }
+  },
+  "bug_issueQueued": {
+    "message": "O ticket do Jira está na fila: a página do relatório mostra a chave dele quando for criado."
+  },
   "bug_sendShowData": {
     "message": "Mostrar os dados exatos"
   },

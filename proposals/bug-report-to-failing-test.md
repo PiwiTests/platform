@@ -13,8 +13,9 @@ in their everyday browser, Playwright runs go through the desktop app, and the `
 cannot be optional; see [The `debugger` permission](#the-debugger-permission)). PR 1 (the steps file, the converter's
 options, Download steps and `piwi codegen`), PR 2 (Report a bug in Piwi Picker, its evidence and local exports), PR 3
 (Replay, from a file, from the report just recorded, or from the finished report, with a fake cursor), PR 4
-(`expectedStatus`, "looks fixed", `piwi:bug`) and PR 5 (the dashboard: stored reports, their pages and spec, Send to
-Piwi…, Replay from the instance, `piwi bug`, MCP tools) are built; evidence collected during a replay and the rest are not. The extension gains
+(`expectedStatus`, "looks fixed", `piwi:bug`) PR 5 (the dashboard: stored reports, their pages and spec, Send to
+Piwi…, Replay from the instance, `piwi bug`, MCP tools) and PR 7 (Jira: filing from the Send preview, the report's page,
+MCP or for every report, in the ticket's language, screenshots attached, the ticket following the report) are built; evidence collected during a replay and the rest are not. The extension gains
 two tools and, for the first time, requests that send page data to an instance, behind the explicit opt-in and preview
 its rules require. The reporter gains one wire field (`expectedStatus`); the dashboard gains a table, pages, endpoints,
 an issue type for the Jira integration, a CLI command and MCP tools; the desktop app gains a run request. The steps
@@ -580,7 +581,7 @@ PRs 1–3 close the loop between a tester and a developer with files alone: reco
   spec stays under the test directory); a desktop e2e run of a repro.
 - Docs: `features/desktop.md`.
 
-### PR 7 — Jira
+### PR 7 — Jira (built)
 - `server/utils/integrations/create.ts`, `actions.ts` (`attach`), `sync.ts`, `known-issue.ts`;
   `shared/integrations/build-issue.ts` (`buildBugIssueDocument`, the steps through core's phrasebook for the ticket
   language), `messages/en.ts`, `messages/fr.ts`; schema for `entity_links.bug_report_id` and the binding's `fileEvery`;
@@ -593,6 +594,29 @@ PRs 1–3 close the loop between a tester and a developer with files alone: reco
   `user` key is not offered the checkbox and cannot create unless the project files every report; a report written in
   German files a French ticket whose steps read in French and whose note is unchanged.
 - Docs: `features/issue-tracking.md`, `features/report-a-bug.md`.
+- Built as: `entity_links.bug_report_id`; `bug_report` as a link entity and an issue entity (`IssueEntityType`), in the
+  draft (`buildBugReportDraft`), `createIssue` (`createBugReportIssue`, no cluster, the link on the report) and the MCP
+  tool; `buildBugIssueDocument` in `shared/integrations/build-issue.ts` with the steps through `bugPhrases(locale)`;
+  `buildBugReportIssue` in `documents.ts`; the `attach` outbox action, queued per screenshot once the issue exists;
+  `server/utils/integrations/bug-reports.ts` (intake, `fileBugReportIssue`, `shouldFileOnSend`,
+  `followBugReportTickets`); `enqueueBugLooksFixedPolicies`; the bug-report branch of the tracker sync; the intake
+  endpoint; **Create issue** and the ticket on the report's page; **File every bug report** in the project's sync
+  settings; in the extension, the intake read with the send target, the preview's checkbox and the result line.
+  Decisions made while building:
+  - **`fileEvery` is a sync policy** (`policies.fileEveryBugReport`), stored with the binding's other policies, so it
+    needs no column; the intake answers it as `fileEvery`.
+  - **The committed spec in the ticket carries `piwi:bug`, not the ticket's key**: the key exists only once Jira
+    answers, and the spec is rendered before. The ticket links the report, whose Spec tab is the reference.
+  - **A `createIssue` a role may not make is refused (403) before the report is stored**, unless the project files
+    every report; a send never fails because Jira did, the report is kept and the answer's `issue` says what happened.
+  - **The ticket follows the report on looks fixed** with the cluster policies (`commentOnFix`, `transitionOnFix`),
+    and the report follows the ticket (`resolveOnClose`, `reopenOnTicketReopen`); "why the suite missed it" joins the
+    ticket with PR 8.
+  - Tests: `integrations-bug-issue.test.ts` (a German report files a French ticket, its steps in French, the note
+    unchanged), `bug-reports-jira.spec.ts` (intake, a send that does not ask files nothing, one that asks files exactly
+    one issue with its screenshot attached, `fileEvery` files without asking, filing from the page and its draft; a
+    `user` key's refusal on the CI auth server), and the extension's `bug-send.spec.ts` (the checkbox and
+    `createIssue` on the wire).
 
 ### PR 8 — missed-by and escapes
 - `shared/handlers/bug-reports.ts`, `shared/handlers/scenario-gaps.ts` (escaped-defect loader),

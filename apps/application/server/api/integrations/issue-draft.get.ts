@@ -17,7 +17,7 @@ defineRouteMeta({
   },
 });
 
-const DRAFT_ENTITY_TYPES: DraftEntityType[] = ['failure_cluster', 'test_runs_case'];
+const DRAFT_ENTITY_TYPES: DraftEntityType[] = ['failure_cluster', 'test_runs_case', 'bug_report'];
 
 function boolQuery(value: unknown): boolean | undefined {
   if (value === 'true' || value === '1') return true;

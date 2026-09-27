@@ -314,11 +314,18 @@ export function bugReportUrl(instanceUrl: string, id: number): string {
 export interface BugReportSend {
   report: unknown;
   language: string | null;
+  /** Ask for an issue in the project's tracker. */
+  createIssue: boolean;
   screenshots: Array<{ name: string; bytes: Uint8Array }>;
 }
 
 /** The multipart parts of a bug report, as the instance reads them. */
-const BUG_REPORT_PARTS = { report: 'report', language: 'language', screenshot: 'screenshot' } as const;
+const BUG_REPORT_PARTS = {
+  report: 'report',
+  language: 'language',
+  createIssue: 'createIssue',
+  screenshot: 'screenshot',
+} as const;
 
 /** Why the instance answered a request the way it did, as a sentence to show. */
 async function refusal(res: Response): Promise<string> {
@@ -342,10 +349,11 @@ export async function sendBugReport(
   settings: ConnectionSettings,
   projectId: number,
   send: BugReportSend,
-): Promise<{ id: number; url: string }> {
+): Promise<{ id: number; url: string; issue: SentIssue | null }> {
   const form = new FormData();
   form.append(BUG_REPORT_PARTS.report, JSON.stringify(send.report));
   if (send.language) form.append(BUG_REPORT_PARTS.language, send.language);
+  if (send.createIssue) form.append(BUG_REPORT_PARTS.createIssue, String(true));
   for (const shot of send.screenshots) {
     form.append(BUG_REPORT_PARTS.screenshot, new Blob([shot.bytes as BlobPart], { type: 'image/png' }), shot.name);
   }
@@ -361,9 +369,48 @@ export async function sendBugReport(
     throw new Error(t('common_instanceUnreachable'));
   }
   if (!res.ok) throw new Error(await refusal(res));
-  const body = (await res.json()) as { id?: unknown };
+  const body = (await res.json()) as { id?: unknown; issue?: { status?: unknown; key?: unknown } | null };
   if (typeof body.id !== 'number') throw new Error(t('common_instanceStatus', { status: res.status }));
-  return { id: body.id, url: bugReportUrl(settings.instanceUrl, body.id) };
+  const issue =
+    body.issue && typeof body.issue.status === 'string'
+      ? { status: body.issue.status, key: typeof body.issue.key === 'string' ? body.issue.key : null }
+      : null;
+  return { id: body.id, url: bugReportUrl(settings.instanceUrl, body.id), issue };
+}
+
+/** What became of the issue a send asked for: created (with its key), queued, or refused. */
+export interface SentIssue {
+  status: string;
+  key: string | null;
+}
+
+/** What a send to a project will do with its tracker (`GET /api/projects/:id/bug-reports/intake`). */
+export interface BugReportIntake {
+  tracker: 'jira' | null;
+  projectKey: string | null;
+  canCreate: boolean;
+  fileEvery: boolean;
+}
+
+/** The intake, or no tracker when the instance cannot say (an older one, or unreachable). */
+export async function fetchBugReportIntake(settings: ConnectionSettings, projectId: number): Promise<BugReportIntake> {
+  const none: BugReportIntake = { tracker: null, projectKey: null, canCreate: false, fileEvery: false };
+  try {
+    const res = await fetch(`${normalizeBaseUrl(settings.instanceUrl)}/api/projects/${projectId}/bug-reports/intake`, {
+      headers: authHeaders(settings),
+      signal: timeout(),
+    });
+    if (!res.ok) return none;
+    const body = (await res.json()) as Partial<BugReportIntake>;
+    return {
+      tracker: body.tracker === 'jira' ? 'jira' : null,
+      projectKey: typeof body.projectKey === 'string' ? body.projectKey : null,
+      canCreate: body.canCreate === true,
+      fileEvery: body.fileEvery === true,
+    };
+  } catch {
+    return none;
+  }
 }
 
 /** One of a project's bug reports, as Replay lists them. */

@@ -149,6 +149,7 @@ export async function resolveLinkEntityProjectId(
   if (entityType === 'test_runs_case') return resolveTestRunCaseProjectId(db, entityId);
   if (entityType === 'test_case') return resolveCaseProjectId(db, entityId);
   if (entityType === 'failure_cluster') return resolveClusterProjectId(db, entityId);
+  if (entityType === 'bug_report') return resolveBugReportProjectId(db, entityId);
   return null;
 }
 
@@ -161,6 +162,7 @@ export async function resolveLinkProjectId(db: DrizzleDB, linkId: number): Promi
   if (link.testRunsCaseId != null) return resolveTestRunCaseProjectId(db, link.testRunsCaseId);
   if (link.testCaseId != null) return resolveCaseProjectId(db, link.testCaseId);
   if (link.failureClusterId != null) return resolveClusterProjectId(db, link.failureClusterId);
+  if (link.bugReportId != null) return resolveBugReportProjectId(db, link.bugReportId);
   return null;
 }
 
