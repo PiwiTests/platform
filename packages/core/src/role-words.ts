@@ -1,0 +1,63 @@
+/**
+ * ARIA roles in the words a person uses for them: `textbox` is a "text field",
+ * `combobox` a "dropdown". For anything written for people rather than tests:
+ * a bug report's steps, a picker's labels.
+ */
+const ROLE_WORDS: Readonly<Record<string, string>> = {
+  alert: 'alert message',
+  alertdialog: 'dialog',
+  article: 'article',
+  banner: 'header',
+  button: 'button',
+  cell: 'table cell',
+  checkbox: 'checkbox',
+  columnheader: 'column header',
+  combobox: 'dropdown',
+  contentinfo: 'footer',
+  dialog: 'dialog',
+  form: 'form',
+  generic: 'element',
+  grid: 'table',
+  gridcell: 'table cell',
+  heading: 'heading',
+  img: 'image',
+  link: 'link',
+  list: 'list',
+  listbox: 'list',
+  listitem: 'list item',
+  main: 'main content',
+  menu: 'menu',
+  menubar: 'menu bar',
+  menuitem: 'menu item',
+  menuitemcheckbox: 'menu item',
+  menuitemradio: 'menu item',
+  navigation: 'navigation',
+  option: 'option',
+  paragraph: 'paragraph',
+  progressbar: 'progress bar',
+  radio: 'radio button',
+  radiogroup: 'group of radio buttons',
+  region: 'section',
+  row: 'table row',
+  rowheader: 'row header',
+  search: 'search area',
+  searchbox: 'search field',
+  slider: 'slider',
+  spinbutton: 'number field',
+  status: 'status message',
+  switch: 'switch',
+  tab: 'tab',
+  table: 'table',
+  tablist: 'list of tabs',
+  tabpanel: 'tab panel',
+  textbox: 'text field',
+  toolbar: 'toolbar',
+  tooltip: 'tooltip',
+  tree: 'tree',
+  treeitem: 'tree item',
+};
+
+/** A role in everyday words, lower case; an unknown role is returned as it is. */
+export function roleWord(role: string): string {
+  return ROLE_WORDS[role] ?? role;
+}

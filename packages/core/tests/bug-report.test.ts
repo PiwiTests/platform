@@ -171,7 +171,7 @@ describe('bug report', () => {
       `**Page** \`/cart\` on ${ORIGIN} · Chrome 141 · 1280×720 · 2026-09-27 14:03 UTC · Piwi Picker 0.39.0`,
     );
     expect(md).toContain('1. Go to `/cart?session=abc`');
-    expect(md).toContain('2. Fill textbox "Coupon" with "SPRING10"');
+    expect(md).toContain('2. Fill text field "Coupon" with "SPRING10"');
     expect(md).toContain('3. Click button "Apply"');
     expect(md).toContain('4. The element with test id `cart-total` should read "Total: 42"');
     expect(md).toContain('   - Actual: "Total: 40"');
@@ -242,10 +242,10 @@ describe('bug report', () => {
     const words = (step: Parameters<typeof describeStepInWords>[0]) => describeStepInWords(step);
     const base = { target: coupon, value: null, redacted: false, pageUrl: '/cart', timestamp: 1 };
     expect(words({ ...base, action: 'fill', value: null, redacted: true })).toBe(
-      'Fill textbox "Coupon" with a password (not recorded)',
+      'Fill text field "Coupon" with a password (not recorded)',
     );
-    expect(words({ ...base, action: 'press', value: 'Enter' })).toBe('Press Enter in textbox "Coupon"');
-    expect(words({ ...base, action: 'selectOption', value: 'FR' })).toBe('Select "FR" in textbox "Coupon"');
+    expect(words({ ...base, action: 'press', value: 'Enter' })).toBe('Press Enter in text field "Coupon"');
+    expect(words({ ...base, action: 'selectOption', value: 'FR' })).toBe('Select "FR" in text field "Coupon"');
     expect(
       words({
         ...base,

@@ -75,6 +75,9 @@ const PANEL_CSS = `
   .panel { background: #111827; color: #f9fafb; border-radius: 12px; padding: 16px; width: min(640px, 92vw); max-height: 86vh;
     overflow: auto; box-shadow: 0 8px 40px rgba(0,0,0,.5); font-size: 13px; line-height: 1.5; }
   @media (prefers-color-scheme: light) { .panel { background: #ffffff; color: #111827; box-shadow: 0 8px 40px rgba(0,0,0,.2); } }
+  .panel { color-scheme: dark; }
+  option { background: #1f2937; color: #f9fafb; }
+  @media (prefers-color-scheme: light) { .panel { color-scheme: light; } option { background: #ffffff; color: #111827; } }
   .header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
   .title { font-weight: 600; font-size: 14px; }
   .sub { color: #9ca3af; font-size: 12px; word-break: break-all; }
@@ -392,7 +395,7 @@ function expectedChoices(element: Element): { locator: string | null; choices: E
     if (c.method === 'toHaveValue') choices.push({ matcher: c.method, label: 'Its value', actual: c.detail });
     if (c.method === 'toHaveText') choices.push({ matcher: c.method, label: 'Its text', actual: c.detail });
     if (c.method === 'toHaveAccessibleName')
-      choices.push({ matcher: c.method, label: 'Its accessible name', actual: c.detail });
+      choices.push({ matcher: c.method, label: 'Its name, as screen readers announce it', actual: c.detail });
   }
   const model = new DomModel();
   const visible = model.isVisible(element);
@@ -468,25 +471,26 @@ function expectedDialog(element: Element): Promise<StepAssertion | null> {
   });
 }
 
-const MISSING_ROLES = [
-  'button',
-  'link',
-  'heading',
-  'textbox',
-  'checkbox',
-  'radio',
-  'combobox',
-  'option',
-  'tab',
-  'menuitem',
-  'listitem',
-  'row',
-  'cell',
-  'img',
-  'dialog',
-  'alert',
-  'status',
-  'region',
+/** The kinds of element a person can say are missing, in their words, most common first. */
+const MISSING_KINDS: ReadonlyArray<{ role: string; label: string }> = [
+  { role: 'button', label: 'Button' },
+  { role: 'link', label: 'Link' },
+  { role: 'heading', label: 'Title or heading' },
+  { role: 'textbox', label: 'Text field' },
+  { role: 'combobox', label: 'Dropdown' },
+  { role: 'checkbox', label: 'Checkbox' },
+  { role: 'radio', label: 'Radio button (one choice among several)' },
+  { role: 'option', label: 'Choice in a dropdown or a list' },
+  { role: 'tab', label: 'Tab' },
+  { role: 'menuitem', label: 'Menu item' },
+  { role: 'listitem', label: 'Item in a list' },
+  { role: 'row', label: 'Table row' },
+  { role: 'cell', label: 'Table cell' },
+  { role: 'img', label: 'Image or icon' },
+  { role: 'dialog', label: 'Dialog or popup window' },
+  { role: 'alert', label: 'Error or warning message' },
+  { role: 'status', label: 'Status or confirmation message' },
+  { role: 'region', label: 'Section of the page' },
 ];
 
 /** `getByRole(role, { name })`, rendered by the chain grammar so the name is quoted the one safe way. */
@@ -507,13 +511,13 @@ function roleLocator(role: string, name: string): string {
 function missingDialog(): Promise<{ target: RecordedTarget; note: string | null } | null> {
   return openBugDialog('Something is missing', ({ field, say }) => {
     const role = document.createElement('select');
-    for (const r of MISSING_ROLES) {
+    for (const kind of MISSING_KINDS) {
       const option = document.createElement('option');
-      option.value = r;
-      option.textContent = r;
+      option.value = kind.role;
+      option.textContent = kind.label;
       role.appendChild(option);
     }
-    field('What kind of element', role);
+    field('What should be there', role);
     const name = input('', 'Its name as a person reads it: Download invoice');
     field('Its name', name);
     const note = input('', 'What happened, in your words (optional)');
@@ -926,8 +930,32 @@ export async function renderBugFinishPanel(state: RecordingState, onDiscard: () 
     controller.abort();
     host.remove();
   };
+  const replayMessage = document.createElement('div');
+  replayMessage.className = 'warn';
+  action('Replay', '', (b) => {
+    b.disabled = true;
+    void (async () => {
+      let response: { ok: boolean; error?: string } | undefined;
+      try {
+        response = await chrome.runtime.sendMessage({
+          type: 'piwi-start-replay',
+          steps: report().steps,
+          origin: location.origin,
+          stepMode: false,
+          inject: true,
+        });
+      } catch (e) {
+        response = { ok: false, error: e instanceof Error ? e.message : String(e) };
+      }
+      if (response?.ok) closePanel();
+      else {
+        b.disabled = false;
+        replayMessage.textContent = response?.error ?? 'The replay could not start.';
+      }
+    })();
+  }).title = 'Play the steps again on this site, with a cursor, and see whether the bug shows';
   action('Discard', 'danger', () => void onDiscard().then(closePanel, closePanel));
-  panel.appendChild(actions);
+  panel.append(actions, replayMessage);
 
   const local = document.createElement('div');
   local.className = 'local';

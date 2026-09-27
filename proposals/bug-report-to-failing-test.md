@@ -11,8 +11,9 @@ followed until its spec passes.
 **Status.** Proposed 2026-09-27; revised the same day after deciding: replay targets the developer's local dev server
 in their everyday browser, Playwright runs go through the desktop app, and the `debugger` permission is not used (it
 cannot be optional; see [The `debugger` permission](#the-debugger-permission)). PR 1 (the steps file, the converter's
-options, Download steps and `piwi codegen`) and PR 2 (Report a bug in Piwi Picker, its evidence and local exports) are
-built; the rest is not. The extension gains
+options, Download steps and `piwi codegen`), PR 2 (Report a bug in Piwi Picker, its evidence and local exports) and PR 3
+(Replay, from a file, from the report just recorded, or from the finished report, with a fake cursor) are built;
+evidence collected during a replay and the rest are not. The extension gains
 two tools and, for the first time, requests that send page data to an instance, behind the explicit opt-in and preview
 its rules require. The reporter gains one wire field (`expectedStatus`); the dashboard gains a table, pages, endpoints,
 an issue type for the Jira integration, a CLI command and MCP tools; the desktop app gains a run request. The steps
@@ -426,7 +427,7 @@ owner.
 |---|---|---|
 | 1 | Core: `PiwiSteps` and `parseSteps`, `assert` steps, the converter options; the recorder's Download steps; `piwi codegen` (built) | — |
 | 2 | Extension, reporter side: Report a bug, expected and missing assertions, evidence, `renderBugMarkdown`, local exports | 1 |
-| 3 | Extension, developer side: Replay from a file, the verdict, step mode | 1 |
+| 3 | Extension, developer side: Replay from a file, the verdict, step mode, a fake cursor (built) | 1 |
 | 4 | Reporter and app: `expectedStatus`, the "expected failure passed" outcome, `piwi:bug` | — |
 | 5 | Dashboard: `bug_reports`, reproductions, endpoints, pages, Spec tab and project settings, **Send to Piwi…**, Replay from the instance, `piwi bug`, MCP tools, capability `bug-reports` | 1–4 |
 | 6 | Desktop: pairing, repro requests, `desktop_run_repro` | 1, 5 |
@@ -472,7 +473,13 @@ PRs 1–3 close the loop between a tester and a developer with files alone: reco
   screenshot, unregistration); the outline's format and its 400-line cut. Unit tests for the storage caps, the relay's
   validation, the archive and the zip writer; the popup tile in `popup.spec.ts`.
 
-### PR 3 — replay
+### PR 3 — replay (built)
+- Built as `replay-panel.ts` (chooser, panel, run loop), `replay-actions.ts` (resolution with `stepLocator`, the
+  actions), `replay-core.ts` (assertions with Playwright's rules, the verdict), `replay-cursor.ts` (the fake cursor:
+  an arrow that glides to each element, a ripple on clicks, a caption, still with reduced motion), `steps-file.ts` and
+  `readZipEntry` (a report's `.zip` or `steps.json`), `shared/replay-storage.ts`, the background's `piwi-start-replay`
+  and `piwi-replay-finished`, the popup's **Replay a bug report** (`R`) and the finished report's **Replay**. Not built:
+  console errors and failed requests collected during a replay, and **Share result**.
 - `apps/extension/src/content/replay-panel.ts` (new, HUD and verdict), `replay-actions.ts` (new, events per action),
   `replay-runner.ts` (new, waiting and resolution with the engine), `src/background/index.ts` (state and
   registration), `src/popup/` (tile).

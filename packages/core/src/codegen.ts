@@ -165,6 +165,18 @@ function chooseLocator(target: RecordedTarget | null, options: CodegenOptions): 
   return { text: first.text, level: levelOf(first) };
 }
 
+/**
+ * The locator a spec writes for a step's target, as `renderSpec` chooses it
+ * with the same options; null when no alternative can be written. A replay
+ * uses it to act on the element the spec would.
+ */
+export function stepLocator(
+  target: RecordedTarget | null,
+  options: Pick<CodegenOptions, 'locators' | 'preferLocators'> = {},
+): string | null {
+  return chooseLocator(target, options)?.text ?? null;
+}
+
 function originOf(url: string): string | null {
   try {
     const parsed = new URL(url);

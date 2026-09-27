@@ -6,11 +6,19 @@ export const FRAME_HOST_ID = 'piwi-record-frame-host';
 /** A bug recording's dialogs (what is wrong, what is missing, which page), above the HUD. */
 export const BUG_DIALOG_HOST_ID = 'piwi-bug-dialog-host';
 
+/** A replay's panel, its file dialog, and its fake cursor. */
+export const REPLAY_HUD_HOST_ID = 'piwi-replay-hud-host';
+export const REPLAY_DIALOG_HOST_ID = 'piwi-replay-dialog-host';
+export const CURSOR_HOST_ID = 'piwi-replay-cursor-host';
+
 export const OWN_HOST_IDS: ReadonlySet<string> = new Set([
   HUD_HOST_ID,
   PANEL_HOST_ID,
   FRAME_HOST_ID,
   BUG_DIALOG_HOST_ID,
+  REPLAY_HUD_HOST_ID,
+  REPLAY_DIALOG_HOST_ID,
+  CURSOR_HOST_ID,
 ]);
 
 export const SHARED_STYLE = `

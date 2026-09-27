@@ -163,7 +163,9 @@ document.addEventListener('keydown', (e) => {
       ? 'coverage-overlay'
       : e.key === 'b' || e.key === 'B'
         ? 'report-bug'
-        : KEY_TO_ACTION_ID[e.key];
+        : e.key === 'r' || e.key === 'R'
+          ? 'replay-bug'
+          : KEY_TO_ACTION_ID[e.key];
   if (!id) return;
   e.preventDefault();
   document.getElementById(id)?.click();
@@ -419,6 +421,22 @@ bugBtn.addEventListener('click', () => {
     return;
   }
   requestRecording('bug');
+});
+
+/**
+ * Replay a bug report: asks for this site's permission (inside the click, the
+ * only place the request counts as the user's), which the replay needs to
+ * continue across pages, and opens the replay's chooser in the tab under the
+ * `activeTab` grant opening the popup gave.
+ */
+document.getElementById('replay-bug')!.addEventListener('click', () => {
+  const originPattern = recordOriginPattern(recordTab?.url);
+  if (originPattern == null || recordTab?.id == null) {
+    statusEl.textContent = "Can't replay on this page.";
+    return;
+  }
+  void chrome.permissions.request({ origins: [originPattern] }).catch(() => false);
+  void inject('replay-panel.js');
 });
 
 /** Offer a reload when the background worker predates this popup's build (see `shared/build-id.ts`). */

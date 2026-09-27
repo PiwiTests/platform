@@ -9,6 +9,8 @@ import {
   type RecordingMode,
 } from '../shared/recording-storage.js';
 import { getConnectionSettings } from '../shared/connection-settings.js';
+import { newReplayState, setReplayState } from '../shared/replay-storage.js';
+import { parseSteps } from '@piwitests/core/steps';
 import { fetchCatalog, fetchLocatorIndex } from '../shared/piwi-client.js';
 import { setCachedCatalog, isCatalogStale } from '../shared/catalog-cache.js';
 import type { RefreshCatalogResult } from '../shared/catalog-refresh.js';
@@ -315,6 +317,70 @@ async function handleRefreshLocatorIndex(
   }
 }
 
+const REPLAY_SCRIPT_ID = 'piwi-replay-panel';
+
+function replayOriginPattern(origin: unknown): string | null {
+  if (typeof origin !== 'string') return null;
+  try {
+    const url = new URL(origin);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
+    return url.origin === origin ? `${origin}/*` : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Starts a replay of a steps document on one origin: the steps are checked
+ * again here, the state goes to session storage, and the replay script is
+ * registered for the origin so every page the replay reaches continues it.
+ * It needs the origin's host permission, which Replay in the popup requests
+ * and a bug recording on the same site already holds.
+ */
+async function handleStartReplay(
+  message: { steps?: unknown; origin?: unknown; stepMode?: unknown; inject?: unknown },
+  tab: chrome.tabs.Tab | undefined,
+): Promise<{ ok: boolean; error?: string }> {
+  const pattern = replayOriginPattern(message.origin);
+  if (!pattern || tab?.id == null) return { ok: false, error: 'Replay runs on a web page.' };
+  const parsed = parseSteps(message.steps);
+  if (!parsed.ok) return { ok: false, error: `Not a steps file: ${parsed.errors[0]}` };
+  if (parsed.steps.steps.length === 0) return { ok: false, error: 'The report has no steps.' };
+  if (!(await chrome.permissions.contains({ origins: [pattern] }))) {
+    return {
+      ok: false,
+      error:
+        'Piwi Picker needs access to this site to follow the replay from page to page. Open Piwi Picker on this tab and choose Replay a bug report.',
+    };
+  }
+  try {
+    await setReplayState(newReplayState(parsed.steps, message.origin as string, message.stepMode === true));
+    await chrome.scripting.unregisterContentScripts({ ids: [REPLAY_SCRIPT_ID] }).catch(() => undefined);
+    await chrome.scripting.registerContentScripts([
+      {
+        id: REPLAY_SCRIPT_ID,
+        js: ['replay-panel.js'],
+        matches: [pattern],
+        runAt: 'document_idle',
+        persistAcrossSessions: false,
+      },
+    ]);
+    if (message.inject === true)
+      await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['replay-panel.js'] });
+    await chrome.action.setBadgeText({ text: 'PLAY' });
+    await chrome.action.setBadgeBackgroundColor({ color: '#7c3aed' });
+    return { ok: true };
+  } catch (err) {
+    await chrome.scripting.unregisterContentScripts({ ids: [REPLAY_SCRIPT_ID] }).catch(() => undefined);
+    return { ok: false, error: err instanceof Error ? err.message : 'The replay could not start.' };
+  }
+}
+
+async function handleReplayFinished(): Promise<void> {
+  await chrome.scripting.unregisterContentScripts({ ids: [REPLAY_SCRIPT_ID] }).catch(() => undefined);
+  if ((await chrome.action.getBadgeText({})) === 'PLAY') await chrome.action.setBadgeText({ text: '' });
+}
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === 'piwi-ping') {
     // Resolves only once session storage is readable from content scripts —
@@ -341,6 +407,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse,
     );
     return true; // keep the message channel open for the async response
+  }
+  if (message?.type === 'piwi-start-replay') {
+    void handleStartReplay(message, sender.tab).then(sendResponse);
+    return true;
+  }
+  if (message?.type === 'piwi-replay-finished') {
+    void handleReplayFinished().then(() => sendResponse({ ok: true }));
+    return true;
   }
   if (message?.type === 'piwi-bug-screenshot') {
     void handleBugScreenshot(sender.tab).then(sendResponse);

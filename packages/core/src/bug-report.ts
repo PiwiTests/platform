@@ -15,6 +15,7 @@ import { renderSpec, type CodegenOptions, type CodegenResult } from './codegen';
 import { normalizeRoute, pageKey } from './page-key';
 import type { RecordedStep, RecordedTarget, StepAssertion } from './recording';
 import { sessionFromSteps, type PiwiSteps } from './steps';
+import { roleWord } from './role-words';
 
 export const BUG_REPORT_VERSION = 1;
 
@@ -202,15 +203,15 @@ function describeTarget(target: RecordedTarget | null, byText = true): string {
   if (!byText) {
     if (target.testId) return `the element with test id ${code(target.testId)}`;
     const locator = target.alternatives[0]?.locator;
-    return locator ? code(locator) : `the ${target.role ?? (target.tagName || 'element')}`;
+    return locator ? code(locator) : `the ${target.role ? roleWord(target.role) : target.tagName || 'element'}`;
   }
-  if (target.role && target.accessibleName) return `${target.role} ${quoted(target.accessibleName)}`;
+  if (target.role && target.accessibleName) return `${roleWord(target.role)} ${quoted(target.accessibleName)}`;
   if (target.accessibleName) return quoted(target.accessibleName);
   if (target.testId) return `the element with test id ${code(target.testId)}`;
-  if (target.text) return `${target.role ?? target.tagName} ${quoted(target.text.slice(0, 80))}`;
+  if (target.text) return `${target.role ? roleWord(target.role) : target.tagName} ${quoted(target.text.slice(0, 80))}`;
   const locator = target.alternatives[0]?.locator;
   if (locator) return code(locator);
-  return target.role ?? (target.tagName || 'an element');
+  return target.role ? roleWord(target.role) : target.tagName || 'an element';
 }
 
 function stateWord(matcher: StepAssertion['matcher']): string {

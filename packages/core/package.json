@@ -31,7 +31,8 @@
     "./locator-stability": "./src/locator-stability.ts",
     "./page-key": "./src/page-key.ts",
     "./steps": "./src/steps.ts",
-    "./bug-report": "./src/bug-report.ts"
+    "./bug-report": "./src/bug-report.ts",
+    "./role-words": "./src/role-words.ts"
   },
   "scripts": {
     "core:typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tests/tsconfig.json",

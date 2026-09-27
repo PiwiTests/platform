@@ -21,10 +21,11 @@ checks, select changes and Enter are recorded across the site's pages, and a red
 
 A panel in the corner lists the last steps and offers three ways to say what is wrong:
 
-- **Mark what's wrong**: pick the element, then choose what is wrong with it: its text, its value, its accessible
-  name, or its state (it should be hidden, visible, enabled or disabled). The panel shows what the page shows now and
+- **Mark what's wrong**: pick the element, then choose what is wrong with it: its text, its value, its name as screen
+  readers announce it, or its state (it should be hidden, visible, enabled or disabled). The panel shows what the page shows now and
   an **It should be** field holding the same value: type what it should be instead, and add a note if it helps.
-- **Something is missing**: give the kind of element (button, link, heading, …) and its name, such as a button
+- **Something is missing**: say what should be there (a button, a link, a title, a text field, a dropdown, …) and its
+  name, such as a button
   named "Download invoice". Piwi Picker looks for it on the page first and refuses one that is there already; use
   Mark what's wrong for that one.
 - **Wrong page**: type the path the flow should have reached, such as `/checkout/thanks`.
@@ -90,6 +91,30 @@ same site access as recording and no other permission.
 
 Typed values stay as you typed them, except passwords, which are never recorded: the spec reads them from an
 environment variable. Look over the report before you share it.
+
+## Replaying a report
+
+**Replay** plays a report's steps again in a tab, with a cursor that moves to each element and a caption saying what
+it does, then says whether the bug shows there. It suits the developer who receives the report: open the app on your
+own dev server, and the steps run there, with your session and your browser's developer tools at hand.
+
+- From the finished report, **Replay** plays it at once on the same site.
+- From the popup, **Replay a bug report** (`R`) asks for the site's access if needed, then for the report: the `.zip`
+  or its `steps.json`, or the report just recorded in this browser. The steps run on the tab's site, whichever site
+  they were recorded on.
+
+Each element is found with the locator the failing test uses, and waited for as Playwright waits: exactly one match,
+visible, enabled and still. The replay ends with one of three answers:
+
+- **Reproduced**: an expected result does not hold, such as a total that still reads "Total: 50", and the panel says
+  whether that is the value reported.
+- **Not reproduced**: every expected result holds here.
+- **Could not reach the bug**: a step found no element, several, or a disabled one, or the flow ended on another page.
+  The data, the login or a flag differ here.
+
+**Step by step** waits for **Next** before each step, with the element outlined, so you can set a breakpoint first.
+Replay acts with the page's own events: a page that ignores events a script sends can only be reproduced with
+Playwright, from the failing test.
 
 ## Limits
 
