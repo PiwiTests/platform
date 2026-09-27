@@ -2,6 +2,7 @@ import { initI18n, t, tn, uiLanguage } from '../shared/i18n.js';
 import { startTool, endTool, installEscapeToCancel } from '../shared/tool-session.js';
 import { parseLocatorChain } from '@piwitests/core/locator-chain';
 import { createPageEngine } from './verified-locators.js';
+import { attachPanelShadow } from './panel-root.js';
 const HOST_ID = 'piwi-locator-console-host';
 const MAX_HIGHLIGHTS = 50;
 
@@ -29,7 +30,7 @@ function toggleLocatorConsole(): void {
   host.id = HOST_ID;
   host.style.cssText = 'all:initial;position:fixed;inset:0;z-index:2147483647;pointer-events:none;';
   document.documentElement.appendChild(host);
-  const root = host.attachShadow({ mode: 'closed' });
+  const root = attachPanelShadow(host, { mode: 'closed' });
 
   const style = document.createElement('style');
   style.textContent = `

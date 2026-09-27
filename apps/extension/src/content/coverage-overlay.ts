@@ -47,6 +47,7 @@ import {
   type ViewState,
 } from './coverage-view.js';
 import { deriveTopLocator, isPiwiElement, rankElementLocators } from './verified-locators.js';
+import { attachPanelShadow } from './panel-root.js';
 
 const HOST_ID = 'piwi-coverage-host';
 /** Wait after the last page change before rescanning. */
@@ -146,7 +147,7 @@ function startCoverageOverlay(): void {
   host.style.cssText =
     'all:initial;position:fixed;inset:0;width:auto;height:auto;margin:0;padding:0;border:0;background:transparent;overflow:visible;max-width:none;max-height:none;z-index:2147483647;pointer-events:none;';
   document.documentElement.appendChild(host);
-  const shadow = host.attachShadow({ mode: g.__piwiTestOpenShadow === true ? 'open' : 'closed' });
+  const shadow = attachPanelShadow(host, { mode: g.__piwiTestOpenShadow === true ? 'open' : 'closed' });
   const style = document.createElement('style');
   style.textContent = COVERAGE_CSS;
   shadow.appendChild(style);

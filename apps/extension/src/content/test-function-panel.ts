@@ -9,6 +9,7 @@ import { ensureSessionAccess } from '../shared/session-access.js';
 import { getConnectionSettings } from '../shared/connection-settings.js';
 import { projectCatalogUrl } from '../shared/piwi-client.js';
 import { getActiveProjectOverride, resolveActiveProject } from '../shared/active-project.js';
+import { attachPanelShadow } from './panel-root.js';
 
 const HOST_ID = 'piwi-test-function-host';
 const MAPS = { tagRoles: TAG_TO_ROLE, inputRoles: INPUT_TYPE_TO_ROLE };
@@ -60,7 +61,7 @@ async function renderPanel(): Promise<void> {
   host.id = HOST_ID;
   host.style.cssText = 'all:initial;position:fixed;inset:0;z-index:2147483647;';
   document.documentElement.appendChild(host);
-  const root = host.attachShadow({ mode: 'closed' });
+  const root = attachPanelShadow(host, { mode: 'closed' });
 
   const style = document.createElement('style');
   style.textContent = `

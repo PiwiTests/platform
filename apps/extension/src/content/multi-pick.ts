@@ -12,6 +12,7 @@ import { TAG_TO_ROLE, INPUT_TYPE_TO_ROLE } from '@piwitests/core/locator-generat
 import { COPY_MODES, copyModeLabel, renderCopyMode } from '../shared/copy-modes.js';
 import { getLastCopyMode, setLastCopyMode } from '../shared/storage.js';
 import { installDescribeHook } from './verified-locators.js';
+import { attachPanelShadow } from './panel-root.js';
 
 const ROLE_MAPS = { tagRoles: TAG_TO_ROLE, inputRoles: INPUT_TYPE_TO_ROLE };
 const MIN_PICKS = 2;
@@ -60,7 +61,7 @@ function showBetweenPicksBar(count: number): Promise<'pick-more' | 'derive' | 'c
     host.id = 'piwi-multi-pick-bar-host';
     host.style.cssText = 'all:initial;position:fixed;inset:0;z-index:2147483647;pointer-events:none;';
     document.documentElement.appendChild(host);
-    const root = host.attachShadow({ mode: 'closed' });
+    const root = attachPanelShadow(host, { mode: 'closed' });
 
     const style = document.createElement('style');
     style.textContent = `
@@ -138,7 +139,7 @@ function showMessage(text: string): Promise<void> {
     host.id = 'piwi-multi-pick-message-host';
     host.style.cssText = 'all:initial;position:fixed;inset:0;z-index:2147483647;pointer-events:none;';
     document.documentElement.appendChild(host);
-    const root = host.attachShadow({ mode: 'closed' });
+    const root = attachPanelShadow(host, { mode: 'closed' });
     const style = document.createElement('style');
     style.textContent = `
       .bar {
@@ -197,7 +198,7 @@ async function renderPatternPanel(result: PatternResult): Promise<void> {
   host.id = PANEL_HOST_ID;
   host.style.cssText = 'all:initial;position:fixed;inset:0;z-index:2147483647;';
   document.documentElement.appendChild(host);
-  const root = host.attachShadow({ mode: 'closed' });
+  const root = attachPanelShadow(host, { mode: 'closed' });
 
   const style = document.createElement('style');
   style.textContent = `

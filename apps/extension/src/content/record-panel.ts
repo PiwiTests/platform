@@ -50,6 +50,7 @@ import { requestCatalogRefresh } from '../shared/catalog-refresh.js';
 import { ensureSessionAccess } from '../shared/session-access.js';
 import { getConnectionSettings } from '../shared/connection-settings.js';
 import { getActiveProjectOverride, resolveActiveProject } from '../shared/active-project.js';
+import { attachPanelShadow } from './panel-root.js';
 
 /** The DOM shapes a click/action can reasonably land on — a click deeper inside one of these snaps up to it, same intent as the picker overlay's own snapping (not the identical algorithm — see AGENTS.md note in this file's own doc comment below). */
 const ACTIONABLE_SELECTOR =
@@ -247,7 +248,7 @@ function ensureRecordingFrame(): void {
   host.id = FRAME_HOST_ID;
   host.style.cssText = 'all:initial;position:fixed;inset:0;z-index:2147483646;pointer-events:none;';
   document.documentElement.appendChild(host);
-  const root = host.attachShadow({ mode: 'closed' });
+  const root = attachPanelShadow(host, { mode: 'closed' });
   const style = document.createElement('style');
   style.textContent = `
     .frame {
@@ -277,7 +278,7 @@ function renderHud(state: RecordingState, catalog: TestFunctionEntry[]): void {
   host.id = HUD_HOST_ID;
   host.style.cssText = 'all:initial;position:fixed;inset:auto 16px 16px auto;z-index:2147483647;';
   document.documentElement.appendChild(host);
-  const root = host.attachShadow({ mode: 'closed' });
+  const root = attachPanelShadow(host, { mode: 'closed' });
 
   const style = document.createElement('style');
   style.textContent = `
@@ -446,7 +447,7 @@ async function renderReviewPanel(state: RecordingState): Promise<void> {
   host.id = PANEL_HOST_ID;
   host.style.cssText = 'all:initial;position:fixed;inset:0;z-index:2147483647;';
   document.documentElement.appendChild(host);
-  const root = host.attachShadow({ mode: 'closed' });
+  const root = attachPanelShadow(host, { mode: 'closed' });
 
   const style = document.createElement('style');
   style.textContent = `

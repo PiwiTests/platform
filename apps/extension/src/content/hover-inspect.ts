@@ -1,6 +1,7 @@
 import { startTool, endTool, installEscapeToCancel } from '../shared/tool-session.js';
 import { highlightLocator, LOCATOR_SYNTAX_CSS } from '@piwitests/picker-dom';
 import { createHoverLocator } from './verified-locators.js';
+import { attachPanelShadow } from './panel-root.js';
 
 const HOST_ID = 'piwi-hover-inspect-host';
 
@@ -24,7 +25,7 @@ function toggleHoverInspect(): void {
   host.id = HOST_ID;
   host.style.cssText = 'all:initial;position:fixed;inset:0;z-index:2147483647;pointer-events:none;';
   document.documentElement.appendChild(host);
-  const root = host.attachShadow({ mode: 'closed' });
+  const root = attachPanelShadow(host, { mode: 'closed' });
   const style = document.createElement('style');
   // The box carries a light hairline outside its ring and a dark one outside
   // that, so its edge survives white, black and busy backgrounds alike.

@@ -17,6 +17,7 @@ import {
 } from '../shared/session-storage.js';
 import { isValidPickName, renderFixture, renderMarkdown, renderJson } from '../shared/session-export.js';
 import { ensureSessionAccess } from '../shared/session-access.js';
+import { attachPanelShadow } from './panel-root.js';
 
 const HOST_ID = 'piwi-session-panel-host';
 const NAME_HOST_ID = 'piwi-session-name-host';
@@ -77,7 +78,7 @@ function promptForName(existingNames: Set<string>): Promise<string | null> {
     host.id = NAME_HOST_ID;
     host.style.cssText = 'all:initial;position:fixed;inset:0;z-index:2147483647;pointer-events:none;';
     document.documentElement.appendChild(host);
-    const root = host.attachShadow({ mode: 'closed' });
+    const root = attachPanelShadow(host, { mode: 'closed' });
 
     const style = document.createElement('style');
     style.textContent = `
@@ -180,7 +181,7 @@ function renderSessionPanelOnce(picks: SessionPick[]): Promise<PanelAction> {
   host.id = HOST_ID;
   host.style.cssText = 'all:initial;position:fixed;inset:0;z-index:2147483647;';
   document.documentElement.appendChild(host);
-  const root = host.attachShadow({ mode: 'closed' });
+  const root = attachPanelShadow(host, { mode: 'closed' });
 
   const style = document.createElement('style');
   style.textContent = `
