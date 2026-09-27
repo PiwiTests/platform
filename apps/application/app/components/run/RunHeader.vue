@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { TestRunDetails, ReportInfo } from '~~/types/api';
 import type { RetryMode } from '~/utils/retry-command';
+import { highlightCode } from '#shared/highlight';
 
 /**
  * The run page's detail header (the run variant of `DetailHeader`): status,
@@ -41,6 +42,9 @@ const ci = computed(() => props.testRun?.metadata?.ci);
 const scm = computed(() => props.testRun?.metadata?.scm);
 const tags = computed(() => props.testRun?.metadata?.tags as string[] | undefined);
 const customData = computed(() => props.testRun?.metadata?.customData);
+const customDataHtml = computed(() =>
+  customData.value ? highlightCode(JSON.stringify(customData.value, null, 2), 'json').html : '',
+);
 
 const showStorage = computed(() => !!(storageStats.value?.totalFiles || props.finalizing));
 
@@ -323,7 +327,7 @@ function onLabelKeydown(e: KeyboardEvent) {
         <span class="text-muted">Custom data</span>
         <pre
           class="mt-1 bg-zinc-50 dark:bg-zinc-900 p-2 rounded text-xs font-mono overflow-x-auto max-h-48 overflow-y-auto"
-          >{{ JSON.stringify(customData, null, 2) }}</pre>
+        ><code v-html="customDataHtml" /></pre>
       </div>
     </template>
 
