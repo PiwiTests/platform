@@ -481,6 +481,20 @@
     "message": "The language of Piwi Picker’s own texts. Page texts, locators and the tests it writes stay as they are.",
     "description": "Settings page: hint under the language menu."
   },
+  "options_draftNote": {
+    "message": "This translation is a draft: no native reader has reviewed it yet. $link$",
+    "description": "Settings, under the Language setting, shown only while the interface is in a draft language, in that language. $link$ is a link whose text is options_draftNoteLink.",
+    "placeholders": {
+      "link": {
+        "content": "$1",
+        "example": "Suggest a correction"
+      }
+    }
+  },
+  "options_draftNoteLink": {
+    "message": "Suggest a correction",
+    "description": "Settings: the text of the link, after options_draftNote, that opens GitHub’s form for translation fixes."
+  },
   "options_languageSaved": {
     "message": "Language saved.",
     "description": "Settings page: confirmation after choosing a language."
@@ -2075,7 +2089,7 @@
   },
   "bug_attached": {
     "message": "Also in the report: $summary$",
-    "description": "Report a bug, finished report: what was collected besides the steps. $summary$ is a list such as “2 screenshots · 1 console error”, still in English for now.",
+    "description": "Report a bug, finished report: what was collected besides the steps. $summary$ is a list such as “2 screenshots · 1 console error”, in the interface language.",
     "placeholders": {
       "summary": {
         "content": "$1",
@@ -2265,7 +2279,7 @@
   },
   "replay_cursorCheck": {
     "message": "Check: $step$",
-    "description": "Caption next to the replay’s fake cursor while it checks an expected result. $step$ is the step in words (in English for now).",
+    "description": "Caption next to the replay’s fake cursor while it checks an expected result. $step$ is the step in words, in the interface language.",
     "placeholders": {
       "step": {
         "content": "$1",
@@ -2275,7 +2289,7 @@
   },
   "replay_cursorNext": {
     "message": "Next: $step$",
-    "description": "Caption next to the replay’s fake cursor in step-by-step mode, pointing at the element the next step acts on. $step$ is the step in words (in English for now).",
+    "description": "Caption next to the replay’s fake cursor in step-by-step mode, pointing at the element the next step acts on. $step$ is the step in words, in the interface language.",
     "placeholders": {
       "step": {
         "content": "$1",
@@ -3531,7 +3545,7 @@
   },
   "coverage_brittleRules": {
     "message": "brittle: $rules$",
-    "description": "Tested elements panel, At risk tab: why a locator is likely to break. $rules$ lists the reasons, in English for now.",
+    "description": "Tested elements panel, At risk tab: why a locator is likely to break. $rules$ lists the reasons, from the stability_ messages.",
     "placeholders": {
       "rules": {
         "content": "$1",
@@ -3951,7 +3965,7 @@
   },
   "coverage_noteBrittle": {
     "message": "Brittle: $rules$",
-    "description": "Tested elements, card over the page: under a locator likely to break. $rules$ lists the reasons, in English for now.",
+    "description": "Tested elements, card over the page: under a locator likely to break. $rules$ lists the reasons, from the stability_ messages.",
     "placeholders": {
       "rules": {
         "content": "$1",
@@ -3961,7 +3975,7 @@
   },
   "coverage_noteWatch": {
     "message": "Could break: $rules$",
-    "description": "Tested elements, card over the page: under a locator that could break. $rules$ lists the reasons, in English for now.",
+    "description": "Tested elements, card over the page: under a locator that could break. $rules$ lists the reasons, from the stability_ messages.",
     "placeholders": {
       "rules": {
         "content": "$1",

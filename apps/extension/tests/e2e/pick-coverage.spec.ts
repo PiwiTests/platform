@@ -15,6 +15,7 @@ import {
   stubCoverageChrome,
 } from './coverage-fixtures.js';
 import { stubChromeI18n } from './i18n-stub.js';
+import { clippedInShadows } from './shadow.js';
 
 /**
  * The pick results panel in connected mode: "Copy all" puts every ranked
@@ -203,5 +204,16 @@ test.describe('pick results in connected mode', () => {
     );
     await expect(section.getByRole('link', { name: 'Chercher ces locators dans Piwi ↗' })).toBeVisible();
     await expect(section.getByRole('button', { name: 'Voir tous les éléments testés' })).toBeVisible();
+  });
+
+  test('lays out in German without clipping', async ({ page, context }) => {
+    await stubCoverageChrome(context, { cached: shopIndex([...SHOP_TESTS, ...BRITTLE_TESTS]) });
+    await stubChromeI18n(context, 'de');
+    await openShop(page, '?nodialog');
+    await pick(page, 'aside.cart > button');
+
+    await expect(page.locator(`${RESULTS} .panel`)).toHaveAttribute('lang', 'de');
+    await expect(page.locator(`${RESULTS} .piwi .brittle`)).toBeVisible();
+    expect(await clippedInShadows(page)).toEqual([]);
   });
 });

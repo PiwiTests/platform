@@ -1,0 +1,71 @@
+# Brazilian Portuguese glossary
+
+The words the Brazilian Portuguese catalog (`pt_BR`) and core's phrasebook (`packages/core/src/bug-phrases.pt.ts`)
+use for the terms that come back everywhere. The tone is the one of `store/amo-description.pt_BR.md`: plain sentences,
+`você`, and the technical words Brazilian developers use as they are (*locator*, *test id*, *page object*, *branch*).
+This is a draft: no native reader has reviewed it yet.
+
+| English | Brazilian Portuguese | Notes |
+| --- | --- | --- |
+| locator | locator (masculino) | `o locator`, `os locators`; never *seletor*, which is a CSS selector |
+| locator index | índice de locators | |
+| selector (CSS) | seletor | only for CSS or XPath selectors |
+| test id | test id | code, kept as it is |
+| run | execução | |
+| flaky | instável | |
+| passed / failed | aprovado / com falha | `um teste com falha` |
+| step | passo | `Passos para reproduzir`, as bug trackers say it |
+| assertion | asserção (feminino) | |
+| page object | page object | as Brazilian developers say it |
+| helper function | função auxiliar | |
+| test function | função de teste | |
+| recording / to record | gravação / gravar | |
+| bug report | relatório de bug | |
+| to report (a bug) | relatar | |
+| to replay | reproduzir | `Reproduzir um relatório de bug`; the verdict's "reproduced" is the same verb |
+| screenshot | captura de tela | `fazer uma captura de tela` |
+| tested elements | elementos testados | the tool's name, capitalized as a title: *Elementos testados* |
+| project mappings | projetos por site | |
+| address pattern (URL pattern) | padrão de endereço | |
+| branch | branch (feminino) | `a branch`, `todas as branches` |
+| instance (Piwi) | instância | `sua instância do Piwi` |
+| API key | chave de API | |
+| settings | configurações | the gear button and the settings page |
+| dashboard | painel | `o painel do Piwi` |
+| popup | este menu | when a text must name it; mostly avoided |
+| background worker | processo em segundo plano | |
+| to pick (an element) | escolher | |
+| to hover | passar o mouse | |
+| badge (on a box) | selo | the toolbar's badge is not named |
+| to download | baixar | |
+| to save | salvar | |
+| to type (in a field) | digitar | |
+| hidden / disabled | oculto / desabilitado | agree with the noun: `a imagem … oculta` |
+
+## Tool names
+
+The popup's tiles, and the same names in the panels, the store description and the phrasebook.
+
+| English | Brazilian Portuguese |
+| --- | --- |
+| Pick an element | Escolher elemento |
+| Hover-inspect | Inspecionar |
+| Locator console | Console |
+| Multi-pick | Multisseleção |
+| Lint overlay | Verificação |
+| Assertions | Asserções |
+| Session | Sessão |
+| Agent context | Contexto de IA |
+| Test functions | Funções de teste |
+| Record actions | Gravar |
+| Report a bug | Relatar um bug |
+| Replay a bug report | Reproduzir um relatório de bug |
+| Tested elements | Elementos testados |
+
+## Typography
+
+- `“ ”` around a quoted text, with no space inside: `o botão “Apply coupon”`.
+- No space before `:`, `;`, `!` or `?`.
+- `…` rather than three dots.
+- `em` contracts with the article: `no botão`, `na lista`, `em um elemento`; `de` likewise: `do campo`, `da página`.
+- Numbers are formatted by the code: `1.234`. A percentage has no space: `40%`.

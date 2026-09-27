@@ -5,6 +5,7 @@ import type { Page } from '@playwright/test';
 import { substitutePlaceholders, type RawCatalog } from '../../src/shared/i18n.js';
 import { test, expect } from './fixtures.js';
 import { stubChromeI18n } from './i18n-stub.js';
+import { TRANSLATION_ISSUE_URL } from '../../src/shared/languages.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const readCatalog = (code: string): RawCatalog =>
@@ -88,7 +89,14 @@ test.describe('in an English browser', () => {
     const options = await context.newPage();
     await options.goto(`chrome-extension://${extensionId}/options.html`);
     const language = options.getByLabel('Language');
-    await expect(language.locator('option')).toHaveText(['Same as the browser (English)', 'English', 'Français']);
+    await expect(language.locator('option')).toHaveText([
+      'Same as the browser (English)',
+      'English',
+      'Français',
+      'Deutsch',
+      'Español',
+      'Português (Brasil)',
+    ]);
     await expect(language).toHaveValue('');
 
     await language.selectOption('fr');
@@ -189,6 +197,9 @@ test.describe('in a French browser', () => {
       'Celle du navigateur (Français)',
       'English',
       'Français',
+      'Deutsch',
+      'Español',
+      'Português (Brasil)',
     ]);
     await expect(page.getByRole('heading', { name: 'Projets par site' })).toBeVisible();
     await expect(page.locator('.empty-mappings')).toHaveText(
@@ -217,4 +228,66 @@ test.describe('in a French browser', () => {
       await browserMessages(page, list),
     );
   });
+});
+
+test.describe('in a German browser', () => {
+  test.use({ browserLanguage: 'de' });
+
+  test('the popup is in German and nothing in it clips', async ({ context, extensionId }) => {
+    const page = await context.newPage();
+    await page.goto(`chrome-extension://${extensionId}/popup.html`);
+    await expect(page.locator('html')).toHaveAttribute('lang', 'de');
+    await expect(page.getByRole('button', { name: /Element wählen/ })).toBeVisible();
+    expect(await untranslated(page)).toEqual([]);
+    expect(await clipped(page)).toEqual([]);
+  });
+
+  test('the settings say German is a draft, and where to suggest a correction', async ({ context, extensionId }) => {
+    const page = await context.newPage();
+    await page.goto(`chrome-extension://${extensionId}/options.html`);
+    await expect(page.locator('html')).toHaveAttribute('lang', 'de');
+    const note = page.locator('#language-draft');
+    await expect(note).toBeVisible();
+    await expect(note).toContainText('Entwurf');
+    await expect(note.getByRole('link')).toHaveAttribute('href', TRANSLATION_ISSUE_URL);
+    // Each language by its own name.
+    await expect(page.locator('#language option')).toHaveText([
+      /\(Deutsch\)$/,
+      'English',
+      'Français',
+      'Deutsch',
+      'Español',
+      'Português (Brasil)',
+    ]);
+    expect(await untranslated(page)).toEqual([]);
+    expect(await clipped(page)).toEqual([]);
+
+    // A reviewed language has no note.
+    await page.locator('#language').selectOption('fr');
+    await expect(page.locator('html')).toHaveAttribute('lang', 'fr');
+    await expect(note).toBeHidden();
+  });
+});
+
+test('the Language setting reaches a panel through the stored catalog, whatever the browser says', async ({
+  context,
+}) => {
+  // The browser answers in English; the stored choice is German, as the worker stores it.
+  const choice = { code: 'de', messages: readCatalog('de') };
+  await context.addInitScript((stored) => {
+    (globalThis as { chrome?: unknown }).chrome = {
+      storage: { local: { get: async () => ({ piwiLanguage: stored }) } },
+    };
+    const attach = Element.prototype.attachShadow;
+    Element.prototype.attachShadow = function (init: ShadowRootInit) {
+      return attach.call(this, { ...init, mode: 'open' });
+    };
+  }, choice);
+  await stubChromeI18n(context);
+  const page = await context.newPage();
+  await page.setContent('<!doctype html><html lang="en"><body><button>Pay</button></body></html>');
+  await page.addScriptTag({ path: path.join(here, '..', '..', 'dist', 'locator-console.js') });
+  const bar = page.locator('#piwi-locator-console-host .bar');
+  await expect(bar).toHaveAttribute('lang', 'de');
+  await expect(bar.locator('input')).toHaveAttribute('aria-label', readCatalog('de').console_expression!.message);
 });

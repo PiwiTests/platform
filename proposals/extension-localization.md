@@ -5,14 +5,14 @@ English as the source. The extension has become a tool for testers as well as de
 should be on the page and what happened, and the replay tells a developer in sentences whether the bug shows. That text
 is written for people who are not necessarily fluent in English, and a French team is its first audience.
 
-**Status.** Proposed 2026-09-27. PR 1 built 2026-09-27: the machinery, the popup, the settings page, the background's
-texts and badges, in English and French. PR 2 built 2026-09-27: every in-page tool, in English and French, with its
-English rewritten in plain words; the French store listing names the tools as the French interface does. PR 3 built
-2026-09-27: core's phrasebooks in English and French, so the bug report, its steps and the replay's step list are
+**Status.** Proposed 2026-09-27. Built 2026-09-27 in four PRs. PR 1: the machinery, the popup, the settings page, the
+background's texts and badges, in English and French. PR 2: every in-page tool, in English and French, with its
+English rewritten in plain words. PR 3: core's phrasebooks, so the bug report, its steps and the replay's step list are
 written in the interface language, and the stability rules, converter warnings and action labels core writes in
-English are worded by code. French is to be reviewed by the team before release. The decisions each PR changed are
-under "Decisions made while building" below. Nothing here changes a wire format, the steps format or generated code, so
-no entry
+English are worded by code. PR 4: German, Spanish and Brazilian Portuguese, catalogs and phrasebooks, shipped as
+drafts. French is to be reviewed by the team before release, the three others by native readers. The decisions each PR
+changed are under "Decisions made while building" below. Nothing here changes a wire format, the steps format or
+generated code, so no entry
 in [`1.0-stabilization.md`](1.0-stabilization.md) is needed.
 
 **Summary.** Every text the extension shows moves into one catalog per language, the `messages.json` files the browser
@@ -316,7 +316,7 @@ the bug report written in the selected language; the replay's step list and curs
 verdict is already translated, by PR 2); stability rules and converter warnings by code; the action labels of
 `locatorActionLabel` (Click, Count) that the pick results and Tested elements show.
 
-**PR 4 — German, Spanish, Brazilian Portuguese.** Their catalogs, phrasebooks, glossaries, store summaries and
+**PR 4 — German, Spanish, Brazilian Portuguese.** Built. Their catalogs, phrasebooks, glossaries, store summaries and
 descriptions, all marked as drafts (`draft: true`, the note in Options and in the store descriptions, the translation
 issue template); the layout pass and test in German; the docs section. Adding a language afterwards is these files and
 nothing else.
@@ -415,6 +415,29 @@ PR 3 changed or settled these:
   English for the dashboard and the CLI.
 - **The report does not record its language.** The Jira plan's "a line says which language the report was written in"
   needs the report to carry it; that is left to that work, since it changes what a report stores.
+
+PR 4 changed or settled these:
+
+- **How each language addresses the reader.** German says *Sie*, Spanish *tú* (as Google's and Mozilla's Spanish do),
+  Brazilian Portuguese *você*. The Spanish avoids regional words, since `es` also serves `es_419` browsers.
+- **Words a reviewer should check first**, listed in each glossary: the tool names (German *Element wählen*,
+  *Prüfung*, *Bug melden*; Spanish *Elegir un elemento*, *Revisión*, *Notificar un bug*; Portuguese *Escolher
+  elemento*, *Verificação*, *Relatar um bug*), German *nutzbar* / *ausgegraut* for enabled and disabled (*aktivieren*
+  already means checking a checkbox), Spanish *bug* rather than *error* (kept for console errors), Portuguese *passo*
+  for step. The badges stay REC, BUG and PLAY, except Spanish REPR for a replay.
+- **One Portuguese phrasebook.** `bugPhrases('pt-PT')` gives the Brazilian phrasebook: core matches on the language,
+  and a ticket in European Portuguese reads better in Brazilian Portuguese than in English. The extension itself shows
+  a Portuguese browser in Portugal its English catalog, as planned.
+- **The draft note** in Options shows whenever the language on screen is a draft, chosen in Options or served by the
+  browser, and links to `.github/ISSUE_TEMPLATE/translation.yml`. `store-listing.test.ts` checks that a draft's store
+  description names that form in its first paragraph, and that a reviewed one does not.
+- **The German layout test** is a German twin of each French panel test, running the same setup and asserting
+  `lang="de"` and `clippedInShadows`, plus the popup and the settings in a German browser. The spec the PR 1 plan listed
+  as "a bug report written in French while the interface is English" gave way to the decision that a report follows the
+  interface language; a spec checks instead that the Language setting reaches a panel through the stored catalog while
+  the browser answers in English.
+- **Documentation.** `features/extension.md` gains its **Languages** section, paid for within the page's budget by
+  cutting an example from Pick an element and bringing Test functions' labels up to date.
 
 ## Open questions
 

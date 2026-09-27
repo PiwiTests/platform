@@ -361,7 +361,7 @@ test.describe('record-panel.js', () => {
   });
 });
 
-test.describe('record-panel.js in French', () => {
+test.describe('record-panel.js in French and German', () => {
   const addToCart: TestFunctionEntry = {
     id: 1,
     name: 'addToCart',
@@ -399,8 +399,13 @@ test.describe('record-panel.js in French', () => {
     timestamp: 1,
   };
 
-  /** A recording seeded with `events`, a connection and a one-function catalog; the recorder's shadow roots open. */
-  async function frenchRecording(context: BrowserContext, active: boolean, events: RawCaptureEvent[]): Promise<Page> {
+  /** A recording in `language` seeded with `events`, a connection and a one-function catalog; the recorder's shadow roots open. */
+  async function recordingIn(
+    language: string,
+    context: BrowserContext,
+    active: boolean,
+    events: RawCaptureEvent[],
+  ): Promise<Page> {
     await routePages(context);
     await stubChromeStorage(context, {
       session: { piwiRecording: { active, events, startedAt: 1, grantedOriginPattern: `${ORIGIN}/*` } },
@@ -413,7 +418,7 @@ test.describe('record-panel.js in French', () => {
         },
       },
     });
-    await stubChromeI18n(context, 'fr');
+    await stubChromeI18n(context, language);
     await openShadowRoots(context);
     const page = await context.newPage();
     await page.goto(`${ORIGIN}/dashboard`);
@@ -437,7 +442,7 @@ test.describe('record-panel.js in French', () => {
   }
 
   test('the HUD speaks French', async ({ context }) => {
-    const page = await frenchRecording(context, true, [clickAddToCart]);
+    const page = await recordingIn('fr', context, true, [clickAddToCart]);
     await expect.poll(() => shadowOf(page, 'piwi-record-hud-host').then((s) => s?.text ?? '')).toContain('Arrêter');
     const hud = (await shadowOf(page, 'piwi-record-hud-host'))!;
     expect(hud.lang).toBe('fr');
@@ -452,7 +457,7 @@ test.describe('record-panel.js in French', () => {
   });
 
   test('the review panel speaks French, and keeps the page’s text as it is', async ({ context }) => {
-    const page = await frenchRecording(context, false, [fillCoupon, clickAddToCart]);
+    const page = await recordingIn('fr', context, false, [fillCoupon, clickAddToCart]);
     await expect.poll(() => shadowOf(page, 'piwi-record-review-host').then((s) => s?.lang ?? null)).toBe('fr');
     const review = (await shadowOf(page, 'piwi-record-review-host'))!;
     expect(review.text).toContain('2 étapes enregistrées');
@@ -465,6 +470,19 @@ test.describe('record-panel.js in French', () => {
     expect(review.labels).toEqual(
       expect.arrayContaining(['Votre enregistrement', 'Fermer', expect.stringContaining('piwi codegen')]),
     );
+    expect(await clippedInShadows(page)).toEqual([]);
+  });
+
+  test('the HUD lays out in German without clipping', async ({ context }) => {
+    const page = await recordingIn('de', context, true, [clickAddToCart]);
+    await expect.poll(() => shadowOf(page, 'piwi-record-hud-host').then((s) => s?.text ?? '')).toContain('addToCart');
+    expect((await shadowOf(page, 'piwi-record-hud-host'))!.lang).toBe('de');
+    expect(await clippedInShadows(page)).toEqual([]);
+  });
+
+  test('the review panel lays out in German without clipping', async ({ context }) => {
+    const page = await recordingIn('de', context, false, [fillCoupon, clickAddToCart]);
+    await expect.poll(() => shadowOf(page, 'piwi-record-review-host').then((s) => s?.lang ?? null)).toBe('de');
     expect(await clippedInShadows(page)).toEqual([]);
   });
 });

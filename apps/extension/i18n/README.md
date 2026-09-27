@@ -72,3 +72,12 @@ One per language, `glossary.<code>.md`: the words a translation of that language
 | --- | --- | --- | --- |
 | English (`en`) | the source | — | — |
 | French (`fr`) | all surfaces: the popup, the settings, the in-page tools, badges and messages from the background | to be reviewed by the team before the release that ships it | — |
+| German (`de`) | all surfaces | nobody yet: ships as a draft | — |
+| Spanish (`es`) | all surfaces | nobody yet: ships as a draft | — |
+| Brazilian Portuguese (`pt_BR`) | all surfaces | nobody yet: ships as a draft | — |
+
+A draft is marked in three places, all driven by `draft: true` in `src/shared/languages.ts`: a note under Language in
+the settings while the interface is in that language, with a link to the form for translation fixes
+(`.github/ISSUE_TEMPLATE/translation.yml`); the first paragraph of its store description, which
+`store-listing.test.ts` checks; and this table. A reviewer's pass is one pull request: the corrections,
+`draft: false`, the note removed from the store description, and their name here.

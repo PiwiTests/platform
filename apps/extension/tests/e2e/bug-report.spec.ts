@@ -408,6 +408,41 @@ test.describe('Report a bug', () => {
     expect(spec).toMatch(/test\('bug: bug on \/cart'/);
   });
 
+  test('in German: the HUD, the dialogs and the finished report lay out without clipping', async ({ context }) => {
+    await openShadowRoots(context);
+    await routeShop(context, { fixed: false });
+    const page = await startBugRecording(context, { ok: false }, { language: 'de' });
+    const dialog = page.locator('#piwi-bug-dialog-host');
+    await expect.poll(() => panelLang(page, 'piwi-record-hud-host', '.bar')).toBe('de');
+    expect(await clippedInShadows(page)).toEqual([]);
+
+    await pressHudButton(page, 'missing');
+    await expect.poll(() => panelLang(page, 'piwi-bug-dialog-host', '.panel')).toBe('de');
+    expect(await clippedInShadows(page)).toEqual([]);
+    await page.keyboard.type('Apply');
+    await page.keyboard.press('Enter');
+    await expect(dialog.getByRole('alert')).toBeVisible();
+    expect(await clippedInShadows(page)).toEqual([]);
+    await page.keyboard.press('Escape');
+    await expect.poll(() => hostPresent(page, 'piwi-bug-dialog-host')).toBe(false);
+
+    await pressHudButton(page, 'mark');
+    await page.hover('#total');
+    await page.click('#total');
+    await expect.poll(() => panelLang(page, 'piwi-bug-dialog-host', '.panel')).toBe('de');
+    expect(await clippedInShadows(page)).toEqual([]);
+    await page.keyboard.type('Total: 45');
+    await page.keyboard.press('Enter');
+    await expect.poll(() => hostPresent(page, 'piwi-bug-dialog-host')).toBe(false);
+    await expect(page.locator('#piwi-record-hud-host').getByText('Total: 50', { exact: false })).toBeVisible();
+    expect(await clippedInShadows(page)).toEqual([]);
+
+    await pressHudButton(page, 'finish');
+    await expect.poll(() => panelLang(page, 'piwi-record-review-host', '.panel')).toBe('de');
+    await expect(page.locator('#piwi-record-review-host .step.marked')).toBeVisible();
+    expect(await clippedInShadows(page)).toEqual([]);
+  });
+
   test('in the real extension: the main-world script is registered for the recording, relays across worlds, and no screenshot is taken without activeTab', async () => {
     // A copy of the build whose manifest grants the shop's origin: what the
     // popup's per-origin request grants, which a test cannot click through.

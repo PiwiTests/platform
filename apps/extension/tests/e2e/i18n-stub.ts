@@ -7,7 +7,8 @@ import { substitutePlaceholders, type RawCatalog } from '../../src/shared/i18n.j
 const here = path.dirname(fileURLToPath(import.meta.url));
 const LOCALES = path.join(here, '..', '..', 'public', '_locales');
 
-function readCatalog(code: string): RawCatalog {
+/** The catalog of `code` as it ships in `public/_locales`. */
+export function readCatalog(code: string): RawCatalog {
   return JSON.parse(readFileSync(path.join(LOCALES, code, 'messages.json'), 'utf8')) as RawCatalog;
 }
 

@@ -12,6 +12,9 @@
  */
 import { ENGLISH_BUG_PHRASES } from './bug-phrases.en';
 import { FRENCH_BUG_PHRASES } from './bug-phrases.fr';
+import { GERMAN_BUG_PHRASES } from './bug-phrases.de';
+import { SPANISH_BUG_PHRASES } from './bug-phrases.es';
+import { PORTUGUESE_BUG_PHRASES } from './bug-phrases.pt';
 
 export { markdownCode } from './markdown-code';
 
@@ -129,6 +132,10 @@ export interface BugPhrases {
 export const BUG_PHRASES: Readonly<Record<string, BugPhrases>> = {
   en: ENGLISH_BUG_PHRASES,
   fr: FRENCH_BUG_PHRASES,
+  de: GERMAN_BUG_PHRASES,
+  es: SPANISH_BUG_PHRASES,
+  // Brazilian Portuguese, the one Portuguese the extension ships.
+  pt: PORTUGUESE_BUG_PHRASES,
 };
 
 /**

@@ -16,8 +16,10 @@ import {
   localizeDocument,
   t,
   tn,
+  tNodes,
   type Language,
 } from '../shared/i18n.js';
+import { isDraftLanguage, TRANSLATION_ISSUE_URL } from '../shared/languages.js';
 
 await initI18n();
 localizeDocument();
@@ -31,6 +33,7 @@ const testBtn = document.getElementById('test-connection') as HTMLButtonElement;
 const saveBtn = document.getElementById('save') as HTMLButtonElement;
 const disconnectBtn = document.getElementById('disconnect') as HTMLButtonElement;
 const languageSelect = document.getElementById('language') as HTMLSelectElement;
+const draftNote = document.getElementById('language-draft') as HTMLElement;
 
 interface EditableMapping {
   urlPattern: string;
@@ -333,6 +336,23 @@ function renderLanguageSelect(): void {
   });
   languageSelect.replaceChildren(follow, ...options);
   languageSelect.value = chosenLanguage() ?? '';
+  renderDraftNote();
+}
+
+/** Under the setting, in a draft language: the translation is a draft, and where to suggest a correction. */
+function renderDraftNote(): void {
+  const shown = chosenLanguage() ?? browserCatalogLanguage();
+  draftNote.hidden = !isDraftLanguage(shown);
+  if (draftNote.hidden) {
+    draftNote.replaceChildren();
+    return;
+  }
+  const link = document.createElement('a');
+  link.href = TRANSLATION_ISSUE_URL;
+  link.target = '_blank';
+  link.rel = 'noopener noreferrer';
+  link.textContent = t('options_draftNoteLink');
+  draftNote.replaceChildren(...tNodes('options_draftNote', { link }));
 }
 
 languageSelect.addEventListener('change', () => {

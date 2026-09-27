@@ -30,7 +30,8 @@ AMO listings that are still outstanding.
   workers — AMO rejects the manifest without it), and `gecko.data_collection_permissions` is
   `"none"`, which holds only while nothing is sent anywhere but the user's own instance. See
   `PUBLISHING.md` §4. The manifest's `description` and the shortcut's label are `__MSG_*__`
-  strings, translated in `public/_locales/` (English, the default, and French). The
+  strings, translated in `public/_locales/` (English, the default, French, and German, Spanish and
+  Brazilian Portuguese as drafts). The
   description doubles as the store listings' summary, so it stays within 132 characters in every
   language. The rest of the Firefox listing lives in `store/` (§4 c) — a new language needs both.
 - `src/content/` — content scripts, each a standalone entry injected on demand. Most are

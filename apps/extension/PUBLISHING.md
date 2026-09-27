@@ -81,12 +81,12 @@ Expect 0 errors. The warnings it leaves are known: `service_worker` ignored by F
 
 **b) Submit source, not just the built zip.** `dist/` is Vite-bundled and minified output, so AMO requires the original source plus build instructions, and its reviewers rebuild it and diff the result against the add-on — there must be no differences. `npm run extension:zip` produces that source package alongside the add-on (§1): `piwi-picker-v<version>-source.zip`, holding exactly what the build reads — `apps/extension/`, the two workspaces it bundles from source (`packages/core`, `packages/picker-dom`), and the root `package.json`, `package-lock.json`, `.npmrc` and `tsconfig.json` — with `apps/extension/SOURCE-BUILD.md` as its `README.md`: requirements (Node.js 24, npm), the two build commands, and how to diff the output. A zip of `apps/extension/` alone would not build, since it imports the other two workspaces. Always upload the two zips from the same `extension:zip` run.
 
-**c) The listing, in English (default) and French.** AMO reads exactly three listing fields from the add-on file — the name, the summary (the manifest `description`) and the homepage (`homepage_url`) — in every language under `public/_locales/`, which `default_locale: "en"` turns on. So the zip pre-fills those in both languages, and the Chrome Web Store shows the localized summary too. Everything else on the listing lives in `store/` and reaches AMO through its API, never through the zip:
+**c) The listing, in every language of `public/_locales/`:** English (the default), French, and German, Spanish and Brazilian Portuguese, whose descriptions open with a note that the translation is a draft. AMO reads exactly three listing fields from the add-on file — the name, the summary (the manifest `description`) and the homepage (`homepage_url`) — in every language under `public/_locales/`, which `default_locale: "en"` turns on. So the zip pre-fills those in every language, and the Chrome Web Store shows the localized summary too. Everything else on the listing lives in `store/` and reaches AMO through its API, never through the zip:
 
 | AMO field | Source |
 |---|---|
-| Name, summary, homepage | the manifest and `public/_locales/{en,fr}/messages.json` (in the zip) |
-| Description | `store/amo-description.en.md`, `store/amo-description.fr.md` (AMO's Markdown subset: bold, italic, links, lists; no headings) |
+| Name, summary, homepage | the manifest and `public/_locales/<code>/messages.json` (in the zip) |
+| Description | `store/amo-description.<code>.md`, one per language (AMO's Markdown subset: bold, italic, links, lists; no headings) |
 | Add-on URL, category, support website, license, experimental, payment, platforms | `store/amo-listing.json` (`piwi-picker`, Web Development, the GitHub issues page, MIT, no, no, Firefox desktop only) |
 | Notes to reviewer | `store/amo-reviewer-notes.md`: source build, network use, permissions, the `innerHTML` warnings, how to test |
 | Screenshots | not pre-fillable: upload them in the listing editor |
@@ -107,12 +107,12 @@ Two ways to submit:
   ```
 
   Then add the screenshots in the listing editor. Only the first listed version needs the metadata: for later versions leave `--amo-metadata` out, and edit the listing on AMO.
-- **Through the web form**, as below: name, summary and homepage arrive from the zip in both languages, and the other fields are pasted from `store/` — the French description through the listing editor's language selector once the add-on exists.
+- **Through the web form**, as below: name, summary and homepage arrive from the zip in every language, and the other fields are pasted from `store/` — each other language's description through the listing editor's language selector once the add-on exists.
 
 Submission steps (web form):
 1. AMO developer hub → **Submit a New Add-on** → "On this site" (listed, public) vs "self-distribution" (unlisted) — pick listed unless there's a specific reason not to.
 2. Upload `piwi-picker-v<version>.zip`, keep **Firefox for Android** unchecked, answer "does your extension contain minified/bundled/compiled code?" with yes, and upload `piwi-picker-v<version>-source.zip` when prompted.
-3. Fill the rest of the listing from `store/` (§4 c), in English and French, and add screenshots.
+3. Fill the rest of the listing from `store/` (§4 c), in every language, and add screenshots.
 4. Firefox review is manual and can take longer than Chrome/Edge for a first submission, especially with source review involved.
 
 **Verify, don't assume, before submitting:** Firefox's `chrome.*` namespace aliasing in MV3 is close to Chrome's but not identical everywhere, and nothing in this repo's CI exercises Firefox — the E2E harness (`apps/extension/tests/e2e/`) is Chromium-only via `--load-extension`. Run the extension in a real Firefox (`about:debugging` → **Load Temporary Add-on** → `dist/manifest.json`) before trusting the listing's "works in Firefox" claim. The one difference found so far is handled: Firefox has no `storage.session.setAccessLevel` and no session storage in content scripts, so the tools that keep state there — the recorder, the pick session, and the active-project and branch overrides — reach it through the background script instead (`src/shared/session-area.ts`). The recorder across two pages and the pick-session panel were checked in Firefox 156 that way; the rest of the tools were not.

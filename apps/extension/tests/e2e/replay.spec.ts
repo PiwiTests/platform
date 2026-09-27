@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import type { BrowserContext, Page } from '@playwright/test';
 import type { PiwiSteps } from '@piwitests/core/steps';
 import { test, expect } from './fixtures.js';
-import { stubChromeI18n } from './i18n-stub.js';
+import { readCatalog, stubChromeI18n } from './i18n-stub.js';
 import { clippedInShadows, openShadowRoots } from './shadow.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -305,6 +305,75 @@ test.describe('replay-panel.js in French', () => {
     await expect(
       dialog.getByRole('checkbox', { name: 'Pas à pas : cliquez sur Étape suivante avant chaque étape' }),
     ).toBeVisible();
+    expect(await clippedInShadows(page)).toEqual([]);
+  });
+});
+
+test.describe('replay-panel.js in German', () => {
+  const catalog = readCatalog('de');
+
+  test('lays out its panel and its verdict without clipping', async ({ context }) => {
+    await openShadowRoots(context);
+    await routePages(context, 'buggy');
+    await stubChrome(context, running(true), 'de');
+    const page = await context.newPage();
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.goto(`${ORIGIN}/login`);
+
+    const hud = page.locator('#piwi-replay-hud-host').getByRole('region');
+    await expect(hud).toHaveAttribute('lang', 'de');
+    await expect(hud.getByRole('checkbox')).toBeChecked();
+    expect(await clippedInShadows(page)).toEqual([]);
+
+    await hud.getByRole('checkbox').uncheck();
+    expect(await verdict(page)).toMatchObject({ kind: 'reproduced' });
+    const done = page.locator('#piwi-replay-hud-host').getByRole('region');
+    await expect(done).toHaveAttribute('lang', 'de');
+    await expect(done.getByRole('status')).toBeVisible();
+    expect(await clippedInShadows(page)).toEqual([]);
+  });
+
+  test('lays out why the replay stopped without clipping', async ({ context }) => {
+    await openShadowRoots(context);
+    await routePages(context, 'broken');
+    await stubChrome(context, running(), 'de');
+    const page = await context.newPage();
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.goto(`${ORIGIN}/login`);
+    expect(await verdict(page)).toMatchObject({ kind: 'diverged' });
+    await expect(page.locator('#piwi-replay-hud-host').getByRole('region')).toHaveAttribute('lang', 'de');
+    await expect(page.locator('#piwi-replay-hud-host').getByRole('status')).toBeVisible();
+    expect(await clippedInShadows(page)).toEqual([]);
+  });
+
+  test('lays out the dialog, its errors and a chosen report without clipping', async ({ context }) => {
+    await openShadowRoots(context);
+    await routePages(context, 'buggy');
+    await stubChrome(context, {}, 'de');
+    const page = await context.newPage();
+    await page.goto(`${ORIGIN}/login`);
+
+    const dialog = page
+      .locator('#piwi-replay-dialog-host')
+      .getByRole('dialog', { name: catalog.replay_dialogTitle!.message });
+    await expect(dialog).toHaveAttribute('lang', 'de');
+    expect(await clippedInShadows(page)).toEqual([]);
+    await dialog.getByRole('button', { name: catalog.replay_start!.message, exact: true }).click();
+    await expect(dialog.getByRole('alert')).toBeVisible();
+    expect(await clippedInShadows(page)).toEqual([]);
+
+    const file = dialog.getByLabel(catalog.replay_fileLabel!.message);
+    await file.setInputFiles({ name: 'notes.json', mimeType: 'application/json', buffer: Buffer.from('{"a":1}') });
+    await expect(dialog.getByRole('alert')).toContainText('notes.json');
+    expect(await clippedInShadows(page)).toEqual([]);
+
+    await file.setInputFiles({
+      name: 'steps.json',
+      mimeType: 'application/json',
+      buffer: Buffer.from(JSON.stringify(REPORT)),
+    });
+    await expect(dialog).toContainText(REPORT.origin!);
+    await expect(dialog.getByRole('checkbox')).toBeVisible();
     expect(await clippedInShadows(page)).toEqual([]);
   });
 });

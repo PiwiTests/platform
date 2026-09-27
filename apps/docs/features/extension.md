@@ -56,12 +56,9 @@ an **anchors** step lets you pick stable parents to scope the locator to, with a
 Every candidate is scored the way the dashboard scores captured locators, then counted again against the page. A candidate that matches several elements shows its count and a suggestion (`.first()`,
 `.filter({ hasText: … })`), and ranks below every candidate that matches exactly one, so
 `getByTestId('product-43').getByRole('button')` beats a `getByRole('button', { name: 'Add to cart' })` that hits every
-card. Parents are anchored on the hook they carry (`data-testid`, `id`, a landmark role, an app-specific `data-*`),
-and a repeated container with no hook is singled out by its heading:
-`getByRole('listitem').filter({ hasText: 'Keyboard' }).getByRole('button')`.
+card. A repeated container with no hook of its own is singled out by its heading.
 
-Copy the result as the bare locator, an action line (`await page.getByRole(…).click();`) or a visibility assertion;
-the popup remembers the last form. **Copy all** copies every ranked locator, one per line, for a project's
+Copy the result as the bare locator, an action line (`await page.getByRole(…).click();`) or a visibility assertion. **Copy all** copies every ranked locator, one per line, for a project's
 [Locators page](./locator-usage#the-locators-page).
 
 ## Hover-inspect
@@ -92,18 +89,16 @@ Pick an element to get the `expect(...)` candidates that apply to it (`toHaveVal
 ## Session
 
 Pick and name elements as you browse, across pages, then export the list as a page-object fixture class, a Markdown
-table for a pull request or an issue, or JSON.
+table or JSON.
 
 ## Copy context for agent
 
-Pick an element to copy one block for a coding agent: the page URL, a summary of the element (tag, role, accessible
-name, key attributes, text) and every ranked locator.
+Pick an element to copy one block for a coding agent: the page URL, a summary of the element and every ranked locator.
 
 ## Record actions
 
 **Record actions** asks for access to the site you are on, then captures clicks, fills, checks, select changes
-and Enter-to-submit across that site's pages. A red border marks the recorded tab; an overlay counts the steps and
-shows the last step's locator. **Stop** opens the review: **Copy as TypeScript** for a runnable spec
+and Enter-to-submit across that site's pages. A red border marks the recorded tab. **Stop** opens the review: **Copy as TypeScript** for a runnable spec
 (`page.goto`, then one line per step), **Download steps** for a [steps file](/reference/steps-format) to share or
 render with [`piwi codegen`](/reference/cli#codegen), or **Discard**. Password values are never captured; the spec
 reads a `process.env.*` placeholder.
@@ -111,21 +106,29 @@ reads a `process.env.*` placeholder.
 ## Matching functions
 
 With a connection, the recorder loads the [function catalog](./test-functions) of the project mapped to the page: the
-page-object methods and helpers you registered. While recording, the overlay ranks which function the steps so far
-look like, with a progress count (`2/3`) until one matches in full. On export, a complete match becomes a call to
+page-object methods and helpers you registered. While recording, the overlay ranks the functions the steps so far
+look like. On export, a complete match becomes a call to
 your function; unmatched steps stay plain locator lines. The matcher only chooses among your registered functions
 and scores DOM patterns without AI.
 
 ## Test functions against this page
 
 **Test functions** in the popup scores every function of the active project's catalog against the page as it is now:
-**ready to use here** (every step resolves to one element), **partial match**, or **not found on this page**.
-**Manage catalog in Piwi ↗** opens the project's Test functions page.
+**Ready to use here** (every step finds one element), **Partly found here**, or **Not on this page**. Its link opens
+the catalog in Piwi.
 
 ## Tested elements
 
 With a connection, [Tested elements](./tested-elements) outlines every element of the page a test of the active
 project reaches, lists those tests, and marks the buttons, links and fields no test reaches.
+
+## Languages
+
+Piwi Picker speaks English, French, German, Spanish and Brazilian Portuguese. It follows the browser's language unless
+**Language**, in the settings, picks another. German, Spanish and Portuguese are drafts no native reader has
+reviewed yet: the settings say so and link to
+[suggest a correction](https://github.com/PiwiTests/platform/issues/new?template=translation.yml). A bug report is
+written in the extension's language; page texts, locators, test ids, `steps.json` and generated specs never are.
 
 ## Permissions, explained
 
