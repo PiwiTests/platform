@@ -17,6 +17,7 @@ import {
   normalizeFieldValues,
   type TrackerField,
 } from '#shared/integrations/fields';
+import type { TransitionSample } from '#shared/integrations/transitions';
 import { renderMarkdown } from '#shared/integrations/render-markdown';
 import { DEFAULT_LOCALE, type IssueLocale } from '#shared/integrations/messages';
 import { resolveProjectIntegration, type ResolvedProjectIntegration } from '#shared/integrations/binding';
@@ -351,6 +352,46 @@ const DEMO_BUG_FIELDS: TrackerField[] = [
 export function demoCreateFields(issueType: string): { fields: TrackerField[] } {
   const isBug = issueType === '1' || issueType.toLowerCase() === DEMO_ISSUE_TYPE.toLowerCase();
   return { fields: isBug ? DEMO_BUG_FIELDS : DEMO_BUG_FIELDS.filter((f) => f.id !== 'customfield_10050') };
+}
+
+/**
+ * The transitions a demo issue offers: an open one moves to Done through a
+ * screen that asks for a Resolution, a done one reopens with no screen.
+ */
+export function demoTransitionSample(from: 'open' | 'done'): TransitionSample {
+  if (from === 'done') {
+    return {
+      issue: { key: 'DEMO-2', status: 'Done' },
+      transitions: [{ id: '11', name: 'Reopen', toStatus: 'To Do', toStatusCategory: 'new', fields: [] }],
+    };
+  }
+  return {
+    issue: { key: 'DEMO-1', status: 'To Do' },
+    transitions: [
+      { id: '21', name: 'Start progress', toStatus: 'In Progress', toStatusCategory: 'indeterminate', fields: [] },
+      {
+        id: '31',
+        name: 'Done',
+        toStatus: 'Done',
+        toStatusCategory: 'done',
+        fields: [
+          {
+            id: 'resolution',
+            name: 'Resolution',
+            required: true,
+            hasDefault: false,
+            kind: 'option',
+            options: [
+              { id: '10000', label: 'Done' },
+              { id: '10001', label: "Won't do" },
+              { id: '10002', label: 'Duplicate' },
+            ],
+            typeName: 'resolution',
+          },
+        ],
+      },
+    ],
+  };
 }
 
 export function demoAssignable(): { users: { id: string; displayName: string }[] } {

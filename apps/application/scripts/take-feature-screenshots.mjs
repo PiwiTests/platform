@@ -540,6 +540,50 @@ const JIRA_SCREEN_FIELDS = [
   },
 ];
 
+/** An open sample issue's transitions: Resolve leads to Done through a screen requiring a Resolution. */
+const JIRA_OPEN_SAMPLE = {
+  issue: { key: 'CHK-128', status: 'To Do' },
+  transitions: [
+    { id: '21', name: 'Start progress', toStatus: 'In Progress', toStatusCategory: 'indeterminate', fields: [] },
+    {
+      id: '31',
+      name: 'Resolve',
+      toStatus: 'Done',
+      toStatusCategory: 'done',
+      fields: [
+        {
+          id: 'resolution',
+          name: 'Resolution',
+          required: true,
+          hasDefault: false,
+          kind: 'option',
+          options: [
+            { id: '1', label: 'Fixed' },
+            { id: '2', label: "Won't fix" },
+            { id: '3', label: 'Duplicate' },
+          ],
+          typeName: 'resolution',
+        },
+        {
+          id: 'fixVersions',
+          name: 'Fix versions',
+          required: false,
+          hasDefault: false,
+          kind: 'option-array',
+          options: [{ id: '10300', label: '2.5.0' }],
+          typeName: 'fixVersions',
+        },
+      ],
+    },
+  ],
+};
+
+/** A done sample issue's transitions: Reopen has no screen. */
+const JIRA_DONE_SAMPLE = {
+  issue: { key: 'CHK-97', status: 'Done' },
+  transitions: [{ id: '11', name: 'Reopen', toStatus: 'To Do', toStatusCategory: 'new', fields: [] }],
+};
+
 /** The project defaults the required-fields scenes show: a Severity and a component. */
 const JIRA_FIELD_DEFAULTS = {
   customfield_10050: { value: { id: '10101' }, label: 'Major' },
@@ -1363,6 +1407,50 @@ const SCENES = [
       await goto('/projects/2?tab=settings');
       await page.locator('[data-shot="binding-jira-fields"] [data-field-id="customfield_10001"]').waitFor();
       await shoot(undefined, { of: '[data-shot="binding-jira-fields"]', pad: 12 });
+    },
+  },
+  {
+    name: 'binding-transition-fields',
+    description:
+      "Project → Settings → Issue tracker: the fix and reopen transitions checked against the project's issues, with the resolution the fix transition requires",
+    // The binding is answered as bound to CHK / Bug with both transitions set;
+    // the transitions of an open and a done sample issue are canned, so no Jira
+    // is contacted.
+    prepare: prepareJiraSceneConnection,
+    route: '/projects/2?tab=settings',
+    viewport: { width: 1280, height: 1800 },
+    async run({ page, goto, shoot }) {
+      await routeJiraScreen(page);
+      await page.route('**/api/integrations/connections/*/projects/*/transitions*', (route) => {
+        const done = new URL(route.request().url()).searchParams.get('from') === 'done';
+        route.fulfill({ json: done ? JIRA_DONE_SAMPLE : JIRA_OPEN_SAMPLE });
+      });
+      await page.route('**/api/projects/2/integrations', async (route) => {
+        if (route.request().method() !== 'GET') return route.continue();
+        const binding = await (await route.fetch()).json();
+        await route.fulfill({
+          json: {
+            ...binding,
+            connectionId: jiraSceneConnectionId,
+            projectKey: 'CHK',
+            issueType: '10004',
+            policies: {
+              ...binding.policies,
+              commentOnFix: true,
+              transitionOnFix: true,
+              fixTransitionId: 'Done',
+              fixTransitionFields: { resolution: { value: { id: '1' }, label: 'Fixed' } },
+              commentOnRegression: true,
+              reopenTransitionId: 'To Do',
+              reopenTransitionFields: {},
+            },
+          },
+        });
+      });
+      await goto('/projects/2?tab=settings');
+      await page.locator('[data-shot="transition-fields-open"] [data-field-id="resolution"]').waitFor();
+      await page.locator('[data-shot="transition-fields-done"] [data-testid="transition-check"]').waitFor();
+      await shoot(undefined, { of: '[data-shot="binding-sync-policies"]', pad: 12 });
     },
   },
   {

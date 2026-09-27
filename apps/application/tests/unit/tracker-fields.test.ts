@@ -7,11 +7,13 @@ import {
   joinFieldNames,
   missingFieldsMessage,
   missingRequiredFields,
+  missingTransitionFieldsMessage,
   normalizeFieldValues,
   parseRawFieldValue,
   requiredFieldsToFill,
   settableFields,
   textToDocument,
+  TRANSITION_SKIPPED_FIELDS,
   type TrackerField,
 } from '#shared/integrations/fields';
 import { jiraFieldKind, jiraFieldToTrackerField } from '../../server/utils/integrations/jira/fields';
@@ -271,5 +273,41 @@ describe('values given without the form', () => {
     );
     const many = Array.from({ length: 12 }, (_, i) => ({ id: String(i), label: `v${i}` }));
     expect(fieldValueHint({ kind: 'option', options: many, typeName: 'select' })).toMatch(/v9, …$/);
+  });
+});
+
+describe('on a transition screen', () => {
+  const RESOLVE = [
+    field({ id: 'resolution', name: 'Resolution', required: true, kind: 'option' }),
+    field({ id: 'assignee', name: 'Assignee', required: true, kind: 'user' }),
+    field({ id: 'comment', name: 'Comment', required: true, kind: 'raw' }),
+  ];
+
+  test('the assignee is a value like any other; the comment is never asked for or sent', () => {
+    const values = {
+      resolution: { value: { id: '1' }, label: 'Fixed' },
+      assignee: { value: { accountId: 'acc-7' }, label: 'Ada' },
+      comment: { value: 'no', label: 'no' },
+    };
+    expect(missingRequiredFields(RESOLVE, {}, {}, TRANSITION_SKIPPED_FIELDS).map((f) => f.id)).toEqual([
+      'resolution',
+      'assignee',
+    ]);
+    expect(missingRequiredFields(RESOLVE, values, {}, TRANSITION_SKIPPED_FIELDS)).toEqual([]);
+    expect(requiredFieldsToFill(RESOLVE, TRANSITION_SKIPPED_FIELDS).map((f) => f.id)).toEqual([
+      'resolution',
+      'assignee',
+    ]);
+    expect(fieldPayload(values, RESOLVE, TRANSITION_SKIPPED_FIELDS)).toEqual({
+      resolution: { id: '1' },
+      assignee: { accountId: 'acc-7' },
+    });
+    expect(Object.keys(normalizeFieldValues(values, TRANSITION_SKIPPED_FIELDS))).toEqual(['resolution', 'assignee']);
+  });
+
+  test('a refused move names the fields, the issue and where it was going', () => {
+    expect(missingTransitionFieldsMessage([{ name: 'Resolution' }, { name: 'Root cause' }], 'PROJ-7', 'Done')).toBe(
+      "Jira requires Resolution and Root cause to move PROJ-7 to Done. Set them under that transition in the project's issue tracker settings.",
+    );
   });
 });

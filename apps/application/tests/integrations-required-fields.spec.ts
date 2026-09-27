@@ -1,11 +1,14 @@
 /**
  * The fields Jira requires, against a mock Jira Cloud whose Bug type requires a
- * Severity and a Team: the fields endpoint reads the create screen, a create
- * that leaves one empty is refused before Jira is called, the project settings
- * keep a default, the create dialog asks for the rest and files the issue with
- * both, a refusal Jira names is final and creating again replaces it, and the
- * MCP tool names what is missing and takes loosely typed values. Nothing calls
- * out.
+ * Severity and a Team, and whose Resolve transition requires a Resolution: the
+ * fields endpoint reads the create screen, a create that leaves one empty is
+ * refused before Jira is called, the project settings keep a default, the create
+ * dialog asks for the rest and files the issue with both, a refusal Jira names
+ * is final and creating again replaces it, and the MCP tool names what is
+ * missing and takes loosely typed values. Then the fix transition: the settings
+ * check it against an open issue and keep its resolution, a verified fix moves
+ * the issue with it, and a move with no resolution fails for good without
+ * calling Jira. Nothing calls out.
  */
 import { test, expect } from './fixtures';
 import * as http from 'http';
@@ -77,12 +80,54 @@ interface MockJira {
   creates: Record<string, unknown>[];
   /** A workflow validator the create screen does not show: Squad must be set. */
   requireSquad: boolean;
+  /** Every transition made, in order. */
+  moves: { key: string; id: string; fields: Record<string, unknown> | null }[];
 }
+
+/** An open issue resolves to Done through a screen requiring a Resolution; a done one reopens. */
+const OPEN_TRANSITIONS = [
+  {
+    id: '21',
+    name: 'Start progress',
+    hasScreen: false,
+    to: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
+    fields: {},
+  },
+  {
+    id: '31',
+    name: 'Resolve',
+    hasScreen: true,
+    to: { name: 'Done', statusCategory: { key: 'done' } },
+    fields: {
+      resolution: {
+        key: 'resolution',
+        name: 'Resolution',
+        required: true,
+        hasDefaultValue: false,
+        schema: { type: 'resolution', system: 'resolution' },
+        allowedValues: [
+          { id: '1', name: 'Fixed' },
+          { id: '2', name: "Won't fix" },
+        ],
+      },
+    },
+  },
+];
+const DONE_TRANSITIONS = [
+  { id: '11', name: 'Reopen', hasScreen: false, to: { name: 'To Do', statusCategory: { key: 'new' } }, fields: {} },
+];
 
 /** A mock Jira Cloud REST v3 that checks the Bug type's required fields the way Jira does. */
 function startMockJira(port: number): MockJira {
-  const state: MockJira = { server: null as unknown as http.Server, creates: [], requireSquad: false };
+  const state: MockJira = { server: null as unknown as http.Server, creates: [], requireSquad: false, moves: [] };
   let counter = 300;
+  /** Issues created, newest last, with whether each is done. */
+  const issues: { key: string; done: boolean }[] = [];
+  const readBody = (req: http.IncomingMessage, cb: (raw: string) => void) => {
+    let raw = '';
+    req.on('data', (c) => (raw += c));
+    req.on('end', () => cb(raw));
+  };
 
   state.server = http.createServer((req, res) => {
     const url = new URL(req.url ?? '/', 'http://mock');
@@ -101,7 +146,37 @@ function startMockJira(port: number): MockJira {
       return send({ startAt: 0, maxResults: 100, total: BUG_SCREEN.length, fields: BUG_SCREEN });
     }
     if (path === '/rest/api/3/user/assignable/search') return send([{ accountId: 'acct-2', displayName: 'Assignee' }]);
-    if (req.method === 'POST' && path === '/rest/api/3/search/jql') return send({ issues: [] });
+    if (req.method === 'POST' && path === '/rest/api/3/search/jql') {
+      // The binding's sample-issue lookup names a status category; the create's dedupe search does not.
+      return readBody(req, (raw) => {
+        const jql = (JSON.parse(raw || '{}') as { jql?: string }).jql ?? '';
+        const category = /statusCategory (!?=) Done/.exec(jql);
+        const hit = category ? [...issues].reverse().find((i) => i.done === (category[1] === '=')) : undefined;
+        if (!hit) return send({ issues: [] });
+        const status = hit.done
+          ? { name: 'Done', statusCategory: { key: 'done' } }
+          : { name: 'To Do', statusCategory: { key: 'new' } };
+        send({ issues: [{ id: '1', key: hit.key, fields: { summary: 'Filed by Piwi', status } }] });
+      });
+    }
+
+    const transitions = /^\/rest\/api\/3\/issue\/(PROJ-\d+)\/transitions$/.exec(path);
+    if (transitions) {
+      const issue = issues.find((i) => i.key === transitions[1]);
+      if (!issue) return send({ errorMessages: ['Issue does not exist'] }, 404);
+      if (req.method === 'GET') return send({ transitions: issue.done ? DONE_TRANSITIONS : OPEN_TRANSITIONS });
+      return readBody(req, (raw) => {
+        const body = JSON.parse(raw || '{}') as { transition?: { id?: string }; fields?: Record<string, unknown> };
+        const id = String(body.transition?.id);
+        if (id === '31' && !body.fields?.resolution) {
+          return send({ errorMessages: [], errors: { resolution: 'Resolution is required.' } }, 400);
+        }
+        state.moves.push({ key: issue.key, id, fields: body.fields ?? null });
+        issue.done = id === '31';
+        res.statusCode = 204;
+        res.end();
+      });
+    }
 
     if (req.method === 'POST' && path === '/rest/api/3/issue') {
       let raw = '';
@@ -115,6 +190,7 @@ function startMockJira(port: number): MockJira {
         if (Object.keys(errors).length) return send({ errorMessages: [], errors }, 400);
         state.creates.push(fields);
         counter++;
+        issues.push({ key: `PROJ-${counter}`, done: false });
         send({ id: String(10000 + counter), key: `PROJ-${counter}` }, 201);
       });
       return;
@@ -122,10 +198,16 @@ function startMockJira(port: number): MockJira {
 
     const issue = /^\/rest\/api\/3\/issue\/(PROJ-\d+)$/.exec(path);
     if (issue && req.method === 'GET') {
+      const done = issues.find((i) => i.key === issue[1])?.done ?? false;
       return send({
         id: String(10000 + Number(issue[1]!.split('-')[1])),
         key: issue[1],
-        fields: { summary: 'Filed by Piwi', status: { name: 'To Do', statusCategory: { key: 'new' } } },
+        fields: {
+          summary: 'Filed by Piwi',
+          status: done
+            ? { name: 'Done', statusCategory: { key: 'done' } }
+            : { name: 'To Do', statusCategory: { key: 'new' } },
+        },
       });
     }
 
@@ -133,6 +215,14 @@ function startMockJira(port: number): MockJira {
   });
   state.server.listen(port, '127.0.0.1');
   return state;
+}
+
+/** The failing tests the suite seeds, one cluster each. */
+const SEEDED_TESTS = ['refused', 'dialog', 'validator', 'agent'] as const;
+type SeededTest = (typeof SEEDED_TESTS)[number];
+
+function locationOf(title: SeededTest): string {
+  return `checkout.spec.ts:${SEEDED_TESTS.indexOf(title) + 3}:1`;
 }
 
 test.describe.serial('Integrations — the fields Jira requires', () => {
@@ -170,7 +260,7 @@ test.describe.serial('Integrations — the fields Jira requires', () => {
     connectionId = (await created.json()).connection.id;
 
     // Four distinct failures → four clusters to file against.
-    const failures = {
+    const failures: Record<SeededTest, string> = {
       refused: `TimeoutError: locator.click: Timeout 5000ms exceeded. [${tag}]`,
       dialog: `Error: expect(locator).toBeVisible() failed [${tag}]`,
       validator: `TypeError: Cannot read properties of undefined (reading 'total') [${tag}]`,
@@ -186,12 +276,12 @@ test.describe.serial('Integrations — the fields Jira requires', () => {
         passedTests: 0,
         failedTests: 4,
         skippedTests: 0,
-        testCases: Object.entries(failures).map(([title, error], i) => ({
+        testCases: SEEDED_TESTS.map((title) => ({
           title,
           status: 'failed',
           duration: 500,
-          location: `checkout.spec.ts:${i + 3}:1`,
-          error,
+          location: locationOf(title),
+          error: failures[title],
         })),
       },
     });
@@ -201,7 +291,7 @@ test.describe.serial('Integrations — the fields Jira requires', () => {
       failureClusterId?: number;
     }[];
     for (const c of cases) if (c.failureClusterId) clusters[c.title] = c.failureClusterId;
-    expect(Object.keys(clusters).sort()).toEqual(Object.keys(failures).sort());
+    expect(Object.keys(clusters).sort()).toEqual([...SEEDED_TESTS].sort());
     projectId = (await (await request.get(`/api/failure-clusters/${clusters.refused}`)).json()).project.id;
 
     const bound = await request.put(`/api/projects/${projectId}/integrations`, {
@@ -340,5 +430,83 @@ test.describe.serial('Integrations — the fields Jira requires', () => {
     expect(filed.isError).toBeFalsy();
     expect(JSON.parse(filed.content[0]!.text).key).toMatch(/^PROJ-\d+$/);
     expect(mock.creates.at(-1)).toMatchObject({ [SEVERITY]: { id: '10100' }, [TEAM]: 'team-agent' });
+  });
+
+  /** A run in which one seeded test passes: its cluster's fix is verified, firing the fix policies. */
+  async function passTest(request: import('@playwright/test').APIRequestContext, title: SeededTest) {
+    const res = await request.post('/api/test-runs/submit', {
+      data: {
+        projectName: PROJECT.INTEGRATIONS_REQUIRED_FIELDS,
+        status: 'passed',
+        startTime: new Date().toISOString(),
+        duration: 500,
+        totalTests: 1,
+        passedTests: 1,
+        failedTests: 0,
+        skippedTests: 0,
+        testCases: [{ title, status: 'passed', duration: 300, location: locationOf(title) }],
+      },
+    });
+    expect(res.ok()).toBe(true);
+  }
+
+  test('the project settings check the fix transition against an open issue and keep its resolution', async ({
+    page,
+    request,
+  }) => {
+    await page.goto(`/projects/${projectId}?tab=settings`);
+    const binding = page.locator('[data-shot="project-integration-binding"]');
+    await expect(binding.getByText('Keep the ticket honest')).toBeVisible({ timeout: 30_000 });
+    await binding.getByRole('switch', { name: 'Transition on fix' }).click();
+
+    // With nothing set yet, the transitions an open issue offers are suggested.
+    const block = binding.locator('[data-shot="transition-fields-open"]');
+    await block.getByRole('button', { name: 'Resolve → Done' }).click({ timeout: 15_000 });
+    await expect(binding.getByPlaceholder('transition id or status name (e.g. Done)')).toHaveValue('Done');
+    await expect(block.getByTestId('transition-check')).toContainText('moving it to Done requires Resolution');
+
+    await block.locator('[data-field-id="resolution"] button').first().click();
+    await page.getByRole('option', { name: 'Fixed' }).click();
+    await expect(page.getByRole('listbox')).toBeHidden();
+    await binding.getByRole('button', { name: 'Save' }).click();
+
+    await expect
+      .poll(async () => {
+        const saved = await (await request.get(`/api/projects/${projectId}/integrations`)).json();
+        return { transition: saved.policies.fixTransitionId, fields: saved.policies.fixTransitionFields };
+      })
+      .toEqual({ transition: 'Done', fields: { resolution: { value: { id: '1' }, label: 'Fixed' } } });
+  });
+
+  test('a verified fix moves the issue with that resolution', async ({ request }) => {
+    await passTest(request, 'dialog');
+    await expect
+      .poll(() => mock.moves.find((m) => m.id === '31')?.fields ?? null, { timeout: 20_000 })
+      .toEqual({ resolution: { id: '1' } });
+  });
+
+  test('a move with no resolution fails for good, naming it, without calling Jira', async ({ request }) => {
+    const binding = await (await request.get(`/api/projects/${projectId}/integrations`)).json();
+    binding.policies.fixTransitionFields = {};
+    expect((await request.put(`/api/projects/${projectId}/integrations`, { data: binding })).ok()).toBe(true);
+    const movesBefore = mock.moves.length;
+
+    await passTest(request, 'agent');
+    await expect
+      .poll(
+        async () => {
+          const { actions } = await (await request.get(`/api/integrations/actions?projectId=${projectId}`)).json();
+          const move = (actions as { kind: string; entityId: number; status: string; error: string | null }[]).find(
+            (a) => a.kind === 'transition' && a.entityId === clusters.agent,
+          );
+          return move ? { status: move.status, error: move.error } : null;
+        },
+        { timeout: 20_000 },
+      )
+      .toMatchObject({
+        status: 'failed',
+        error: expect.stringMatching(/^Jira requires Resolution to move PROJ-\d+ to Done\./),
+      });
+    expect(mock.moves).toHaveLength(movesBefore);
   });
 });

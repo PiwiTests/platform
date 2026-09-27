@@ -5,6 +5,7 @@
  */
 import { TtlCache } from '../ttl-cache';
 import type { TrackerField } from '#shared/integrations/fields';
+import type { TransitionSample } from '#shared/integrations/transitions';
 import type { TrackerIssueType, TrackerProject, TrackerUser } from './types';
 
 const TTL_MS = 5 * 60 * 1000;
@@ -13,3 +14,4 @@ export const projectsCache = new TtlCache<TrackerProject[]>(TTL_MS);
 export const issueTypesCache = new TtlCache<TrackerIssueType[]>(TTL_MS);
 export const assignableCache = new TtlCache<TrackerUser[]>(TTL_MS);
 export const createFieldsCache = new TtlCache<TrackerField[]>(TTL_MS);
+export const transitionsCache = new TtlCache<TransitionSample>(TTL_MS);

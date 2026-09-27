@@ -90,18 +90,21 @@ file tickets on its own in this release.
 ## Required Jira fields
 
 A Jira project can require fields on its create screen, such as a *Severity*, a *Team* or *Components*. Piwi reads
-the issue type's create screen and asks for every required field Jira does not fill on its own:
+the issue type's create screen and asks for every required field Jira does not fill:
 
-- The project binding's **Jira fields** block lists them. A value set there fills every issue filed from the project.
-  *Set a default for another field* adds an optional one, such as a component or a fix version.
+- The project binding's **Jira fields** block lists them. A value set there fills every issue filed from the project;
+  *Set a default for another field* adds an optional one.
 - The create modal shows them under **Required by Jira**, prefilled from those defaults, and keeps *Create* disabled
-  until each has a value. Listed values are picked from Jira's own list. A value Jira gives no list for, such as a
-  team, is typed as its id.
+  until each has a value. A value Jira lists no choices for, such as a team, is typed as its id.
 - The [`create_issue` MCP tool](/reference/mcp-tools#create_issue) refuses early, naming each missing field, its id and
-  what it takes. An agent passes it in `fields`, and a listed value can be given by its name.
+  what it takes; an agent passes them in `fields`.
 
-A requirement the create screen does not show, such as a workflow validator, comes back as Jira's own refusal naming
-the field. The modal then asks for that field too.
+A transition's screen can require fields too, such as a *Resolution* on the move to Done. Under *transition on fix*
+and the reopen transition, the binding checks the transition against an issue in the project, suggests the ones it
+offers, and asks for its fields. A move that would still leave one empty fails at once, naming it.
+
+A requirement no screen shows, such as a workflow validator, comes back as Jira's refusal naming the field, and the
+modal asks for it.
 
 <div class="doc-screenshot">
   <img src="/screenshots/create-issue-required-fields.png" alt="The Create issue modal with a Required by Jira block: Severity prefilled with Major from the project settings, an empty Team field, and the footer saying Jira still needs Team">

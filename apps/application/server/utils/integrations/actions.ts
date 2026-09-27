@@ -10,8 +10,9 @@
  * successful `create-issue` writes the entity link and the result together.
  *
  * A refusal no retry can change — Jira answering that the request itself is
- * wrong (a missing required field, a project the account cannot see) — fails the
- * action at once instead of retrying it for hours.
+ * wrong (a missing required field, a project the account cannot see), or a
+ * transition whose screen requires a field the project gives no value for —
+ * fails the action at once instead of retrying it for hours.
  */
 import { and, eq, lt, lte } from 'drizzle-orm';
 import { integrationActions } from '../../database/schema';
@@ -25,6 +26,14 @@ import { createTracker } from './connections';
 import { JiraError } from './jira/client';
 import { writeCreatedIssueLink } from './entity-links';
 import { nextAttempt, OUTBOX_MAX_ATTEMPTS } from '../outbox';
+import {
+  fieldPayload,
+  missingRequiredFields,
+  missingTransitionFieldsMessage,
+  TRANSITION_SKIPPED_FIELDS,
+  type FieldValues,
+} from '#shared/integrations/fields';
+import { matchTransition } from '#shared/integrations/transitions';
 
 /** The snapshot a `create-issue` action carries — enough to retry deterministically. */
 export interface CreateIssueActionPayload {
@@ -61,6 +70,8 @@ export interface TransitionActionPayload {
   issueKey: string;
   transitionId?: string | null;
   statusName?: string | null;
+  /** Values for the fields the transition's screen asks for, from the project settings. */
+  fields?: FieldValues;
 }
 
 export interface CreateIssueResult {
@@ -158,9 +169,34 @@ export async function enqueueOrReplaceAction(db: DbClient, input: EnqueueInput):
  */
 const FINAL_REFUSAL_STATUSES = new Set([400, 403, 404, 405, 410, 413, 422]);
 
+/**
+ * A write Piwi refuses before calling the tracker, because a field the tracker
+ * requires has no value: a retry would be refused the same way.
+ */
+export class RequiredFieldsError extends Error {
+  constructor(
+    message: string,
+    /** The empty fields, by id, with Jira's names. */
+    readonly missing: { id: string; name: string }[],
+  ) {
+    super(message);
+    this.name = 'RequiredFieldsError';
+  }
+}
+
 /** Whether an attempt's error is a refusal that retrying cannot change. */
 export function isFinalRefusal(err: unknown): boolean {
+  if (err instanceof RequiredFieldsError) return true;
   return err instanceof JiraError && FINAL_REFUSAL_STATUSES.has(err.status);
+}
+
+/** The per-field errors an attempt's error carries, keyed by field id. */
+function errorFields(err: unknown): Record<string, string> | undefined {
+  if (err instanceof JiraError) return err.fieldErrors;
+  if (err instanceof RequiredFieldsError) {
+    return Object.fromEntries(err.missing.map((f) => [f.id, `${f.name} is required.`]));
+  }
+  return undefined;
 }
 
 /** Retry-after seconds carried on a 429, in milliseconds, or null. */
@@ -229,19 +265,26 @@ async function applyComment(tracker: IssueTracker, action: IntegrationAction): P
  * transition whose target status name matches (case-insensitively), read from
  * the actual issue so the match is on the site's own names. A no-op when the
  * transition is not available (already there, or renamed away).
+ *
+ * The transition's screen is read with it: the project's values for its fields
+ * are sent, and a field it requires with no value refuses the transition before
+ * Jira is asked, naming the field.
  */
 async function applyTransition(tracker: IssueTracker, action: IntegrationAction): Promise<void> {
   const payload = action.payload as TransitionActionPayload;
   const available = await tracker.listTransitions(payload.issueKey);
-  let target = payload.transitionId ? available.find((t) => t.id === payload.transitionId) : undefined;
-  if (!target && payload.statusName) {
-    const wanted = payload.statusName.trim().toLowerCase();
-    target =
-      available.find((t) => (t.toStatus ?? '').trim().toLowerCase() === wanted) ??
-      available.find((t) => t.name.trim().toLowerCase() === wanted);
-  }
+  const target = matchTransition(available, payload.transitionId) ?? matchTransition(available, payload.statusName);
   if (!target) return;
-  await tracker.transition(payload.issueKey, target.id);
+  const values = payload.fields ?? {};
+  const screen = target.fields ?? [];
+  const missing = missingRequiredFields(screen, values, {}, TRANSITION_SKIPPED_FIELDS);
+  if (missing.length) {
+    throw new RequiredFieldsError(
+      missingTransitionFieldsMessage(missing, payload.issueKey, target.toStatus ?? target.name),
+      missing.map((f) => ({ id: f.id, name: f.name })),
+    );
+  }
+  await tracker.transition(payload.issueKey, target.id, fieldPayload(values, screen, TRANSITION_SKIPPED_FIELDS));
 }
 
 export type ActionOutcome =
@@ -310,7 +353,7 @@ export async function runAction(db: DbClient, action: IntegrationAction): Promis
       })
       .where(eq(integrationActions.id, action.id));
     console.error(`[integrations] action ${action.id} failed (attempt ${attempts}/${OUTBOX_MAX_ATTEMPTS}): ${message}`);
-    const fieldErrors = err instanceof JiraError ? err.fieldErrors : undefined;
+    const fieldErrors = errorFields(err);
     return { status: 'failed', error: message, final, ...(fieldErrors ? { fieldErrors } : {}) };
   }
 }

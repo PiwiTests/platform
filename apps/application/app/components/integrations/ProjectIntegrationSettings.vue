@@ -3,9 +3,10 @@
  * The per-project tracker binding form (admin, project Settings tab): which
  * connection and Jira project/issue type a failure files into, the default
  * labels and assignee, values for the fields that issue type requires, the
- * ticket language, what a ticket carries, the two-way sync policies, the owner
- * routes, and the auto-create fields (greyed out — the trigger is not enabled
- * yet). Saves the whole resolved binding to
+ * ticket language, what a ticket carries, the two-way sync policies with values
+ * for the fields their transitions ask for, the owner routes, and the
+ * auto-create fields (greyed out — the trigger is not enabled yet). Saves the
+ * whole resolved binding to
  * PUT /api/projects/:id/integrations.
  *
  * The form holds strings (never null) so the inputs bind cleanly; the server
@@ -14,13 +15,7 @@
 import { DEFAULT_PROJECT_INTEGRATION, type ResolvedProjectIntegration } from '#shared/integrations/binding';
 import { SUPPORTED_LOCALES } from '#shared/integrations/messages';
 import { JIRA_NO_PROJECTS_HINT, jiraProjectUrl } from '#shared/integrations/jira-setup';
-import {
-  hasFieldValue,
-  requiredFieldsToFill,
-  settableFields,
-  type FieldValues,
-  type TrackerField,
-} from '#shared/integrations/fields';
+import { requiredFieldsToFill, type FieldValues } from '#shared/integrations/fields';
 import type { TrackerSummary, TrackerProjectOption, TrackerIssueTypeOption } from '#shared/integrations/types';
 
 const props = defineProps<{ projectId: number }>();
@@ -234,41 +229,6 @@ const {
 );
 /** The required fields to give a default: required, not filled by Jira, not managed by Piwi. */
 const requiredFields = computed(() => requiredFieldsToFill(screenFields.value));
-/** Optional fields a default is set for, on this screen. */
-const optionalDefaultFields = computed(() =>
-  settableFields(screenFields.value).filter(
-    (f) => !requiredFields.value.includes(f) && hasFieldValue(form.fieldDefaults[f.id]?.value),
-  ),
-);
-/** Fields added through the menu, shown with an empty input until a value is chosen. */
-const addedFields = ref<TrackerField[]>([]);
-/** Optional fields that could take a default, for the "Set a default for another field" menu. */
-const addableFieldItems = computed(() =>
-  settableFields(screenFields.value)
-    .filter(
-      (f) =>
-        !requiredFields.value.includes(f) &&
-        !addedFields.value.includes(f) &&
-        !hasFieldValue(form.fieldDefaults[f.id]?.value),
-    )
-    .map((f) => ({ label: f.name, onSelect: () => void addedFields.value.push(f) })),
-);
-/** Defaults for fields this issue type's screen does not have: kept, but not sent for it. */
-const offScreenDefaults = computed(() => {
-  if (!screenFields.value.length) return [];
-  const onScreen = new Set(screenFields.value.map((f) => f.id));
-  return Object.entries(form.fieldDefaults).filter(([id]) => !onScreen.has(id));
-});
-const shownOptionalFields = computed(() => [
-  ...optionalDefaultFields.value,
-  ...addedFields.value.filter((f) => !optionalDefaultFields.value.includes(f)),
-]);
-watch(screenFields, () => (addedFields.value = []));
-function removeDefault(id: string) {
-  const next = { ...form.fieldDefaults };
-  delete next[id];
-  form.fieldDefaults = next;
-}
 </script>
 
 <template>
@@ -345,36 +305,12 @@ function removeDefault(id: string) {
               value set here fills every issue filed from this project.
             </p>
             <p v-else class="text-sm text-muted">This issue type requires no field beyond what Piwi fills.</p>
-            <TrackerFieldsList
-              v-if="requiredFields.length"
+            <TrackerFieldDefaults
               v-model="form.fieldDefaults"
-              :fields="requiredFields"
+              :fields="screenFields"
               :connection-id="form.connectionId"
               :project-key="form.projectKey"
             />
-            <TrackerFieldsList
-              v-if="shownOptionalFields.length"
-              v-model="form.fieldDefaults"
-              :fields="shownOptionalFields"
-              :connection-id="form.connectionId"
-              :project-key="form.projectKey"
-              removable
-            />
-            <UDropdownMenu v-if="addableFieldItems.length" :items="addableFieldItems">
-              <UButton
-                type="button"
-                color="neutral"
-                variant="outline"
-                size="xs"
-                icon="i-lucide-plus"
-                trailing-icon="i-lucide-chevron-down"
-                label="Set a default for another field"
-              />
-            </UDropdownMenu>
-            <p v-for="[id, entry] in offScreenDefaults" :key="id" class="text-xs text-muted">
-              {{ id }} = {{ entry.label }} is not on this issue type's screen, so it is not sent.
-              <button type="button" :class="SENTENCE_LINK_CLASS" @click="removeDefault(id)">Remove it</button>
-            </p>
           </div>
         </div>
 
@@ -390,7 +326,7 @@ function removeDefault(id: string) {
         </div>
 
         <!-- Sync policies -->
-        <div>
+        <div data-shot="binding-sync-policies">
           <p class="text-xs font-medium text-muted mb-2">Keep the ticket honest</p>
           <div class="space-y-2">
             <USwitch v-model="form.policies.commentOnFix" label="Comment when the fix lands" />
@@ -404,6 +340,17 @@ function removeDefault(id: string) {
                 class="flex-1"
               />
             </div>
+            <TransitionFields
+              v-if="form.policies.transitionOnFix && form.connectionId && form.projectKey"
+              v-model="form.policies.fixTransitionFields"
+              :connection-id="form.connectionId"
+              :project-key="form.projectKey"
+              :issue-type="form.issueType || null"
+              from="open"
+              :transition="form.policies.fixTransitionId"
+              class="ps-11"
+              @pick="(value) => (form.policies.fixTransitionId = value)"
+            />
             <div class="flex items-center gap-2">
               <USwitch v-model="form.policies.commentOnRegression" label="Comment on regression" />
               <UInput
@@ -413,6 +360,17 @@ function removeDefault(id: string) {
                 class="flex-1"
               />
             </div>
+            <TransitionFields
+              v-if="form.policies.reopenTransitionId.trim() && form.connectionId && form.projectKey"
+              v-model="form.policies.reopenTransitionFields"
+              :connection-id="form.connectionId"
+              :project-key="form.projectKey"
+              :issue-type="form.issueType || null"
+              from="done"
+              :transition="form.policies.reopenTransitionId"
+              class="ps-11"
+              @pick="(value) => (form.policies.reopenTransitionId = value)"
+            />
             <USwitch v-model="form.policies.commentOnNewOccurrences" label="Daily 'still failing' note" />
             <USwitch v-model="form.policies.resolveOnClose" label="Resolve the cluster when the ticket closes" />
             <USwitch v-model="form.policies.reopenOnTicketReopen" label="Reopen the cluster when the ticket reopens" />

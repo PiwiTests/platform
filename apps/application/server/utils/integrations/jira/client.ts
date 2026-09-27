@@ -331,20 +331,32 @@ export class JiraClient implements IssueTracker {
   }
 
   async listTransitions(key: string): Promise<TrackerTransition[]> {
-    const data = await this.request<{ transitions?: { id?: string; name?: string; to?: { name?: string } }[] }>(
-      `/rest/api/3/issue/${encodeURIComponent(key)}/transitions`,
-    );
+    const data = await this.request<{
+      transitions?: {
+        id?: string;
+        name?: string;
+        to?: { name?: string; statusCategory?: { key?: string } };
+        fields?: Record<string, Omit<JiraCreateMetaField, 'fieldId'>>;
+      }[];
+    }>(`/rest/api/3/issue/${encodeURIComponent(key)}/transitions?expand=transitions.fields`);
     return (data.transitions ?? []).map((t) => ({
       id: t.id ?? '',
       name: t.name ?? '',
       toStatus: t.to?.name ?? null,
+      toStatusCategory: toStatusCategory(t.to?.statusCategory?.key),
+      // A transition screen's fields come keyed by field id.
+      fields: Object.entries(t.fields ?? {})
+        .map(([fieldId, meta]) => jiraFieldToTrackerField({ ...meta, fieldId }))
+        .filter((f): f is TrackerField => f !== null),
     }));
   }
 
-  async transition(key: string, transitionId: string): Promise<void> {
+  async transition(key: string, transitionId: string, fields?: Record<string, unknown>): Promise<void> {
+    const body: { transition: { id: string }; fields?: Record<string, unknown> } = { transition: { id: transitionId } };
+    if (fields && Object.keys(fields).length) body.fields = fields;
     await this.request<void>(`/rest/api/3/issue/${encodeURIComponent(key)}/transitions`, {
       method: 'POST',
-      body: JSON.stringify({ transition: { id: transitionId } }),
+      body: JSON.stringify(body),
     });
   }
 

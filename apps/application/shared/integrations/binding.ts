@@ -14,7 +14,7 @@
  */
 import { toIssueLocale, type IssueLocale } from './messages';
 import type { IssueIncludeOptions } from './types';
-import { normalizeFieldValues, type FieldValues } from './fields';
+import { normalizeFieldValues, TRANSITION_SKIPPED_FIELDS, type FieldValues } from './fields';
 
 /** One owner → tracker route. The first route whose owner matches wins. */
 export interface OwnerRoute {
@@ -30,7 +30,7 @@ export interface OwnerRoute {
   labels?: string[];
 }
 
-/** The two-way sync policies — each a boolean off by default, plus the transition ids. */
+/** The two-way sync policies — each a boolean off by default, plus the transitions and their field values. */
 export interface ProjectIntegrationPolicies {
   /** Comment on the known issue when the cluster's fix is verified. */
   commentOnFix: boolean;
@@ -38,10 +38,14 @@ export interface ProjectIntegrationPolicies {
   transitionOnFix: boolean;
   /** The transition id (or status name) used when `transitionOnFix` is on. */
   fixTransitionId: string | null;
+  /** Values for the fields the fix transition's screen asks for, such as a resolution. */
+  fixTransitionFields: FieldValues;
   /** Comment on the known issue when the cluster regresses. */
   commentOnRegression: boolean;
   /** The transition id (or status name) used to reopen the issue on regression. */
   reopenTransitionId: string | null;
+  /** Values for the fields the reopen transition's screen asks for. */
+  reopenTransitionFields: FieldValues;
   /** At most one comment per day when new occurrences land on an open ticket. */
   commentOnNewOccurrences: boolean;
   /** Resolve the cluster automatically when its ticket moves to Done. */
@@ -109,8 +113,10 @@ export const DEFAULT_POLICIES: ProjectIntegrationPolicies = {
   commentOnFix: false,
   transitionOnFix: false,
   fixTransitionId: null,
+  fixTransitionFields: {},
   commentOnRegression: false,
   reopenTransitionId: null,
+  reopenTransitionFields: {},
   commentOnNewOccurrences: false,
   resolveOnClose: false,
   reopenOnTicketReopen: false,
@@ -191,8 +197,10 @@ function resolvePolicies(raw: unknown): ProjectIntegrationPolicies {
     commentOnFix: r.commentOnFix === true,
     transitionOnFix: r.transitionOnFix === true,
     fixTransitionId: trimOrNull(r.fixTransitionId, 100),
+    fixTransitionFields: normalizeFieldValues(r.fixTransitionFields, TRANSITION_SKIPPED_FIELDS),
     commentOnRegression: r.commentOnRegression === true,
     reopenTransitionId: trimOrNull(r.reopenTransitionId, 100),
+    reopenTransitionFields: normalizeFieldValues(r.reopenTransitionFields, TRANSITION_SKIPPED_FIELDS),
     commentOnNewOccurrences: r.commentOnNewOccurrences === true,
     resolveOnClose: r.resolveOnClose === true,
     reopenOnTicketReopen: r.reopenOnTicketReopen === true,

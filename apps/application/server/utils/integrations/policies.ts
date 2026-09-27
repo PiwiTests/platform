@@ -123,6 +123,7 @@ export async function enqueueFixPolicies(
         issueKey: link.key!,
         transitionId: binding.policies.fixTransitionId,
         statusName: binding.policies.fixTransitionId,
+        fields: binding.policies.fixTransitionFields,
       } satisfies TransitionActionPayload,
     });
   }
@@ -162,6 +163,7 @@ export async function enqueueRegressionPolicies(
         issueKey: link.key!,
         transitionId: binding.policies.reopenTransitionId,
         statusName: binding.policies.reopenTransitionId,
+        fields: binding.policies.reopenTransitionFields,
       } satisfies TransitionActionPayload,
     });
   }

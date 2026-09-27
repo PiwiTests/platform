@@ -83,6 +83,20 @@ export const MANAGED_FIELDS: ReadonlySet<string> = new Set([
   'issuelinks',
 ]);
 
+/**
+ * Fields a workflow transition never takes from Piwi: the project and issue
+ * type, attachments and links, and the comment (a transition adds one through
+ * its own update, not as a field). Everything else on a transition screen, the
+ * assignee included, can carry a value from the project settings.
+ */
+export const TRANSITION_SKIPPED_FIELDS: ReadonlySet<string> = new Set([
+  'project',
+  'issuetype',
+  'attachment',
+  'issuelinks',
+  'comment',
+]);
+
 /** The most field defaults a binding keeps. */
 export const MAX_FIELD_VALUES = 50;
 const MAX_VALUE_JSON = 4000;
@@ -97,14 +111,23 @@ export function hasFieldValue(value: unknown): boolean {
   return true;
 }
 
-/** The fields a person can set: every field Piwi does not fill itself. */
-export function settableFields(fields: readonly TrackerField[]): TrackerField[] {
-  return fields.filter((f) => !MANAGED_FIELDS.has(f.id));
+/**
+ * The fields a person can set: every field but the skipped ones — by default
+ * {@link MANAGED_FIELDS}, the ones Piwi fills itself on a create.
+ */
+export function settableFields(
+  fields: readonly TrackerField[],
+  skipped: ReadonlySet<string> = MANAGED_FIELDS,
+): TrackerField[] {
+  return fields.filter((f) => !skipped.has(f.id));
 }
 
-/** The required fields the tracker does not fill and Piwi does not manage: the ones to ask for. */
-export function requiredFieldsToFill(fields: readonly TrackerField[]): TrackerField[] {
-  return settableFields(fields).filter((f) => f.required && !f.hasDefault);
+/** The required fields the tracker does not fill and Piwi does not skip: the ones to ask for. */
+export function requiredFieldsToFill(
+  fields: readonly TrackerField[],
+  skipped: ReadonlySet<string> = MANAGED_FIELDS,
+): TrackerField[] {
+  return settableFields(fields, skipped).filter((f) => f.required && !f.hasDefault);
 }
 
 /** What the create request itself provides, beyond the field values. */
@@ -116,20 +139,20 @@ export interface ProvidedByRequest {
 }
 
 /**
- * The required fields a create would still leave empty: required, not filled by
- * the tracker, and not provided by the values or the request. The assignee
- * counts here too when the tracker requires one — the modal asks for it in its
- * own picker.
+ * The required fields a create (or a transition, with its skipped set) would
+ * still leave empty: required, not filled by the tracker, and not provided by
+ * the values or the request. A create's assignee counts here too when the
+ * tracker requires one — the modal asks for it in its own picker.
  */
 export function missingRequiredFields(
   fields: readonly TrackerField[],
   values: FieldValues,
   provided: ProvidedByRequest = {},
+  skipped: ReadonlySet<string> = MANAGED_FIELDS,
 ): TrackerField[] {
   return fields.filter((f) => {
     if (!f.required || f.hasDefault) return false;
-    if (f.id === 'assignee') return !provided.assignee;
-    if (MANAGED_FIELDS.has(f.id)) return false;
+    if (skipped.has(f.id)) return f.id === 'assignee' && !provided.assignee;
     if (f.id === 'components' && provided.components) return false;
     return !hasFieldValue(values[f.id]?.value);
   });
@@ -141,11 +164,15 @@ export function missingRequiredFields(
  * rather than refused. Without the screen (the tracker could not be asked), every
  * set value is sent.
  */
-export function fieldPayload(values: FieldValues, fields: readonly TrackerField[] | null): Record<string, unknown> {
+export function fieldPayload(
+  values: FieldValues,
+  fields: readonly TrackerField[] | null,
+  skipped: ReadonlySet<string> = MANAGED_FIELDS,
+): Record<string, unknown> {
   const onScreen = fields ? new Set(fields.map((f) => f.id)) : null;
   const out: Record<string, unknown> = {};
   for (const [id, entry] of Object.entries(values)) {
-    if (MANAGED_FIELDS.has(id) || !hasFieldValue(entry?.value)) continue;
+    if (skipped.has(id) || !hasFieldValue(entry?.value)) continue;
     if (onScreen && !onScreen.has(id)) continue;
     out[id] = entry.value;
   }
@@ -162,6 +189,16 @@ export function joinFieldNames(names: readonly string[]): string {
 export function missingFieldsMessage(missing: readonly Pick<TrackerField, 'name'>[]): string {
   const names = joinFieldNames(missing.map((f) => f.name));
   return `Jira requires ${names} for this issue type. Fill ${missing.length === 1 ? 'it' : 'them'} in, or set a default in the project's issue tracker settings.`;
+}
+
+/** The sentence a refused transition carries when fields its screen requires have no value. */
+export function missingTransitionFieldsMessage(
+  missing: readonly Pick<TrackerField, 'name'>[],
+  issueKey: string,
+  status: string,
+): string {
+  const names = joinFieldNames(missing.map((f) => f.name));
+  return `Jira requires ${names} to move ${issueKey} to ${status}. Set ${missing.length === 1 ? 'it' : 'them'} under that transition in the project's issue tracker settings.`;
 }
 
 /** The most listed values a hint names before trailing off. */
@@ -240,15 +277,16 @@ export function coerceFieldValue(field: Pick<TrackerField, 'kind' | 'options'>, 
 
 /**
  * Normalize untrusted field values (a settings body, a stored blob): valid field
- * ids only, no Piwi-managed field, a JSON-serializable value of bounded size, a
- * label, and at most {@link MAX_FIELD_VALUES} entries. Empty values are dropped.
+ * ids only, none of the skipped fields (by default the ones Piwi fills on a
+ * create), a JSON-serializable value of bounded size, a label, and at most
+ * {@link MAX_FIELD_VALUES} entries. Empty values are dropped.
  */
-export function normalizeFieldValues(raw: unknown): FieldValues {
+export function normalizeFieldValues(raw: unknown, skipped: ReadonlySet<string> = MANAGED_FIELDS): FieldValues {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
   const out: FieldValues = {};
   for (const [id, entry] of Object.entries(raw as Record<string, unknown>)) {
     if (Object.keys(out).length >= MAX_FIELD_VALUES) break;
-    if (!FIELD_ID.test(id) || MANAGED_FIELDS.has(id)) continue;
+    if (!FIELD_ID.test(id) || skipped.has(id)) continue;
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
     const { value, label } = entry as { value?: unknown; label?: unknown };
     if (!hasFieldValue(value)) continue;

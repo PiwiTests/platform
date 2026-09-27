@@ -233,6 +233,7 @@ import {
   demoConnectionProjects,
   demoConnectionIssueTypes,
   demoCreateFields,
+  demoTransitionSample,
   demoAssignable,
   getDemoProjectIntegration,
   saveDemoProjectIntegration,
@@ -2263,6 +2264,11 @@ const routes: RouteEntry[] = [
     method: 'GET',
     pattern: /^\/api\/integrations\/connections\/(\d+)\/projects\/([^/]+)\/issue-types\/([^/]+)\/fields$/,
     handler: async (m) => demoCreateFields(decodeURIComponent(m[3]!)),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/integrations\/connections\/(\d+)\/projects\/([^/]+)\/transitions$/,
+    handler: async (_m, _body, query) => demoTransitionSample(query?.get('from') === 'done' ? 'done' : 'open'),
   },
   {
     method: 'GET',
