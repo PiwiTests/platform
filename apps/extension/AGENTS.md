@@ -25,7 +25,11 @@ AMO listings that are still outstanding.
   *standing* permission here is still a deliberate, reviewed decision, not a default.
   `browser_specific_settings.gecko.id` is Firefox's required stable add-on ID (Chromium ignores
   the key); don't change it once the add-on is published to AMO — a new ID creates a separate
-  add-on rather than an update, orphaning existing installs. See `PUBLISHING.md`.
+  add-on rather than an update, orphaning existing installs. `background` names `background.js`
+  twice, as `service_worker` (Chrome) and `scripts` (Firefox, which has no extension service
+  workers — AMO rejects the manifest without it), and `gecko.data_collection_permissions` is
+  `"none"`, which holds only while nothing is sent anywhere but the user's own instance. See
+  `PUBLISHING.md` §4.
 - `src/content/` — content scripts, each a standalone entry injected on demand. Most are
   injected via `chrome.scripting.executeScript({ files: [...] })` from the popup (never
   `<all_urls>` static injection, never the `func:` stringify-and-inject form — a normal file
@@ -259,7 +263,8 @@ instead of needing a live browser for everything.
 |---|---|
 | `npm run extension:build` | Build `dist/` (content scripts, background, popup, options page, manifest, icons) |
 | `npm run extension:dev` | Same build, re-run on every change to `src/`, `public/`, `popup.html`, `options.html`, or `manifest.json` |
-| `npm run extension:zip` | Build, then package `dist/` as a store-ready zip (see `PUBLISHING.md`) |
+| `npm run extension:build:release` | Reproducible build: stamps the version instead of the build time into every bundle |
+| `npm run extension:zip` | Release build, then the store-ready zip plus the source zip Firefox AMO requires (see `PUBLISHING.md`) |
 | `npm run extension:typecheck` | TypeScript check |
 | `npm run extension:lint` / `extension:lint:fix` | oxlint |
 | `npm run extension:format` / `extension:format:check` | oxfmt |

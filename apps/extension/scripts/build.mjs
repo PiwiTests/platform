@@ -6,7 +6,10 @@
 // standard (chunk-splitting-friendly) HTML-entry build.
 //
 // Exports buildExtension() so dev.mjs can re-run the whole thing on change;
-// running this file directly builds once.
+// running this file directly builds once. `--release` makes the build
+// reproducible (see `buildExtension`): the store zips are built that way, since
+// Firefox reviewers rebuild the source package and diff the result against the
+// submitted add-on.
 import { cpSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
@@ -60,10 +63,17 @@ async function buildStandalone(name, entry, buildId) {
   });
 }
 
-export async function buildExtension() {
+/**
+ * Builds everything into dist/. A dev build stamps the current time, so a
+ * rebuild always differs from the worker still running; a release build stamps
+ * the manifest version instead, so the same sources always produce the same
+ * bytes.
+ */
+export async function buildExtension({ release = false } = {}) {
   rmSync(outDir, { recursive: true, force: true });
   mkdirSync(outDir, { recursive: true });
-  const buildId = new Date().toISOString();
+  const manifest = JSON.parse(readFileSync(path.join(root, 'manifest.json'), 'utf8'));
+  const buildId = release ? `v${manifest.version}` : new Date().toISOString();
 
   for (const [name, entry] of STANDALONE_ENTRIES) await buildStandalone(name, entry, buildId);
 
@@ -79,12 +89,12 @@ export async function buildExtension() {
     },
   });
 
-  const manifest = JSON.parse(readFileSync(path.join(root, 'manifest.json'), 'utf8'));
   writeFileSync(path.join(outDir, 'manifest.json'), JSON.stringify(manifest, null, 2));
   cpSync(path.join(root, 'public', 'icons'), path.join(outDir, 'icons'), { recursive: true });
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  await buildExtension();
-  console.log(`Built extension into ${path.relative(process.cwd(), outDir)}`);
+  const release = process.argv.includes('--release');
+  await buildExtension({ release });
+  console.log(`Built extension${release ? ' (release)' : ''} into ${path.relative(process.cwd(), outDir)}`);
 }

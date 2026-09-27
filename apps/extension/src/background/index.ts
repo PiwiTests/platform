@@ -53,8 +53,12 @@ async function runPickCommand(tab?: chrome.tabs.Tab): Promise<void> {
 // read from a content script *throws* until it has. `piwi-ping` below lets a
 // content script wait for exactly that (see `shared/session-access.ts`) —
 // without it the recorder's HUD failed to appear at random.
-const sessionAccessReady = chrome.storage.session
-  .setAccessLevel({ accessLevel: 'TRUSTED_AND_UNTRUSTED_CONTEXTS' })
+//
+// Called inside `.then` because Firefox has no `setAccessLevel`: calling it
+// directly throws there, synchronously, which would stop this script before any
+// listener below is registered.
+const sessionAccessReady = Promise.resolve()
+  .then(() => chrome.storage.session.setAccessLevel({ accessLevel: 'TRUSTED_AND_UNTRUSTED_CONTEXTS' }))
   .catch(() => undefined);
 
 const RECORD_SCRIPT_ID = 'piwi-record-panel';
