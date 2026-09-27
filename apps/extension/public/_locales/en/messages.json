@@ -341,6 +341,16 @@
     "message": "Your organization’s browser settings keep extensions off this site.",
     "description": "Popup error when an enterprise policy forbids extensions on the tab's site."
   },
+  "popup_buildIncomplete": {
+    "message": "This build of Piwi Picker has no $file$. Rebuild the extension, then reload it in the browser’s extensions page.",
+    "description": "Popup error when a tool's script is missing from the extension's files, which only happens with a development build that is out of date. $file$ is the script's file name.",
+    "placeholders": {
+      "file": {
+        "content": "$1",
+        "example": "replay-panel.js"
+      }
+    }
+  },
   "popup_cannotRunBecause": {
     "message": "Piwi Picker can’t run on this page. The browser says: $reason$",
     "description": "Popup error for any other reason the browser gives for refusing to open a tool in the tab. $reason$ is the browser's own message, in English.",

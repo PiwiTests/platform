@@ -21,6 +21,12 @@ describe('injectionFailureText', () => {
     expect(injectionFailureText(new Error('Cannot access contents of the page.'), undefined)).toMatch(browserPage);
   });
 
+  it('says a development build is missing a tool’s script', () => {
+    expect(injectionFailureText(new Error("Could not load file: 'replay-panel.js'."), 'http://localhost:3000/')).toBe(
+      'This build of Piwi Picker has no replay-panel.js. Rebuild the extension, then reload it in the browser’s extensions page.',
+    );
+  });
+
   it('names a policy, and passes any other reason on as the browser wrote it', () => {
     expect(
       injectionFailureText(
