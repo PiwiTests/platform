@@ -389,7 +389,7 @@ describe('renderSpec — options', () => {
     expect(brittleKnown.code).toContain(`page.getByTestId('login').click()`);
   });
 
-  test('url checks wait for the next page after a step that leads to it', () => {
+  test('url checks wait for the next page after a step that leads to it, then for its element alone', () => {
     const session = buildSession(
       [
         step({ pageUrl: at('/login') }),
@@ -402,8 +402,12 @@ describe('renderSpec — options', () => {
     const lines = code.split('\n').map((l) => l.trim());
     const login = lines.indexOf(`await page.getByRole('button', { name: 'Log in' }).click();`);
     expect(lines[login + 1]).toBe('await expect(page).toHaveURL(/\\/orders\\/[^/?#]+(?:[?#]|$)/);');
+    // The page it left can still be on screen: an action would fail on a match there, the count waits it out.
+    expect(lines[login + 2]).toBe(`await expect(page.getByRole('button', { name: 'Pay' })).toHaveCount(1);`);
+    expect(lines[login + 3]).toBe(`await page.getByRole('button', { name: 'Pay' }).click();`);
     // The query changes, the page does not: no second check.
     expect(code.match(/toHaveURL/g)).toHaveLength(1);
+    expect(code.match(/toHaveCount/g)).toHaveLength(1);
   });
 
   test('page url patterns match the page with any id and nothing else', () => {

@@ -394,8 +394,10 @@ async function renderReviewPanel(state: RecordingState): Promise<void> {
   // where a call belonged.
   await requestCatalogRefresh(activeProject?.projectId ?? null);
   const catalog = await getCachedCatalog(activeProject?.projectId ?? null);
-  const withCatalog = renderSpec(session, { catalog });
-  const raw = renderSpec(session);
+  // URL checks: after a step that leads to another page, the spec waits for
+  // it, and for the next element as the only match, before acting.
+  const withCatalog = renderSpec(session, { catalog, urlChecks: true });
+  const raw = renderSpec(session, { urlChecks: true });
 
   const host = document.createElement('div');
   host.id = PANEL_HOST_ID;

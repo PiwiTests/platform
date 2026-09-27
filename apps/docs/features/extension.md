@@ -97,11 +97,11 @@ Pick an element to copy one block for a coding agent: the page URL, a summary of
 
 ## Record actions
 
-**Record actions** asks for access to the site you are on, then captures clicks, fills, checks, select changes
-and Enter-to-submit across that site's pages. A red border marks the recorded tab. **Stop** opens the review: **Copy as TypeScript** for a runnable spec
-(`page.goto`, then one line per step), **Download steps** for a [steps file](/reference/steps-format) to share or
-render with [`piwi codegen`](/reference/cli#codegen), or **Discard**. Password values are never captured; the spec
-reads a `process.env.*` placeholder.
+**Record actions** asks for access to the site you are on, then captures clicks, fills, checks, choices and the
+keys that submit, close or move through a list, across the site's pages. **Stop** opens the
+review: **Copy as TypeScript** for a runnable spec that waits for each page it opens, **Download steps** for a
+[steps file](/reference/steps-format) to share or render with [`piwi codegen`](/reference/cli#codegen), or
+**Discard**. Passwords are never captured: the spec reads them from `process.env`.
 
 ## Matching functions
 

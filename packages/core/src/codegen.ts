@@ -463,7 +463,13 @@ export function renderSpec(session: RecordedSession, options: CodegenOptions = {
   const matchedSpans: CodegenResult['matchedSpans'] = [];
   const usedEntries: TestFunctionEntry[] = [];
 
-  /** After the step at `last`, wait for the next step's page when the next step is on another one. */
+  /**
+   * After the step at `last`, wait for the next step's page when the next step
+   * is on another one: its URL, then its element as the only match. An app
+   * can keep the previous page on screen a moment after the address changes,
+   * while the next one loads; an action fails at once on a locator that
+   * matches there too, where `toHaveCount` waits for the old page to go.
+   */
   const checkNextPage = (last: number): void => {
     if (!options.urlChecks) return;
     const next = steps[last + 1];
@@ -471,6 +477,9 @@ export function renderSpec(session: RecordedSession, options: CodegenOptions = {
     if (!next || !current || next.action === 'goto' || samePage(current.pageUrl, next.pageUrl)) return;
     const pattern = pageUrlPattern(next.pageUrl);
     if (pattern) bodyLines.push(`  await expect(page).toHaveURL(${pattern});`);
+    const acts = next.action !== 'assert' && next.action !== 'assertVisible';
+    const chosen = acts && next.target ? chooseLocator(next.target, options) : null;
+    if (chosen) bodyLines.push(`  await expect(page.${chosen.text}).toHaveCount(1);`);
   };
 
   let pos = 0;
