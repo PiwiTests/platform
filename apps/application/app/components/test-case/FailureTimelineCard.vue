@@ -493,6 +493,10 @@ const bodyLeafIndices = computed(() =>
     .filter((i) => tree.value.phases[i] === 'body' && !tree.value.hidden.has(i) && !tree.value.groups.has(i)),
 );
 
+// A setup failure stops the test before its body; a body with no steps of its
+// own (a test that makes no Playwright calls) still ran.
+const bodyNeverRan = computed(() => bodyLeafIndices.value.length === 0 && Boolean(tree.value.sections.setup?.failed));
+
 // Per-category rollup for the summary strip above the table, over the test
 // body's steps; setup and teardown follow as one figure each.
 const stepSummary = computed(() => {
@@ -851,7 +855,10 @@ function revealItem(item: TimelineItem) {
           <span v-if="bodyLeafIndices.length" class="font-medium text-gray-600 dark:text-gray-300"
             >{{ bodyLeafIndices.length }} step{{ bodyLeafIndices.length === 1 ? '' : 's' }}</span
           >
-          <span v-else class="font-medium text-gray-600 dark:text-gray-300">The test body never ran</span>
+          <span v-else-if="bodyNeverRan" class="font-medium text-gray-600 dark:text-gray-300"
+            >The test body never ran</span
+          >
+          <span v-else class="font-medium text-gray-600 dark:text-gray-300">No steps in the test body</span>
           <span class="text-gray-300 dark:text-gray-600">·</span>
           <span v-for="c in stepSummary" :key="c.category" class="inline-flex items-center gap-1">
             <UBadge :color="stepCategoryColor[c.category] || 'neutral'" variant="soft" size="xs">
