@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test, expect } from './fixtures.js';
+import { playwrightLocator } from './playwright-locator.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.join(here, '..', '..', 'dist');
@@ -23,6 +24,24 @@ test.describe('hover-inspect.js', () => {
     await page.evaluate(() => document.addEventListener('click', () => (window as any).__recordClick(), true));
     await page.waitForTimeout(200);
     expect(clicks).toHaveLength(0);
+  });
+
+  test('shows the name Playwright computes and a locator finding only the hovered element', async ({ context }) => {
+    const page = await context.newPage();
+    await page.setContent(`<!doctype html><html><body>
+      <div role="tablist"><button role="tab" id="tab">Regressions<span style="display:inline-flex">5</span></button></div>
+      <button id="failed">Failed</button><button>3 failed</button>
+    </body></html>`);
+    await page.addScriptTag({ path: path.join(DIST, 'hover-inspect.js') });
+    const shown = () => page.evaluate(() => (globalThis as { __piwiHoverLocator?: string | null }).__piwiHoverLocator);
+
+    await page.mouse.move(0, 0);
+    await page.hover('#tab');
+    await expect.poll(shown).toBe(`getByRole('tab', { name: 'Regressions 5' })`);
+
+    await page.hover('#failed');
+    await expect.poll(shown).toBe(`getByRole('button', { name: 'Failed', exact: true })`);
+    await expect(playwrightLocator(page, (await shown())!)).toHaveId('failed');
   });
 
   test('a second trigger toggles it back off', async ({ context }) => {

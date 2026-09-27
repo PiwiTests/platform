@@ -2,6 +2,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Page } from '@playwright/test';
 import { test, expect } from './fixtures.js';
+import { playwrightLocator } from './playwright-locator.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.join(here, '..', '..', 'dist');
@@ -55,6 +56,22 @@ test.describe('suggestAssertions (via the real built assertion-panel.js)', () =>
       detail: null,
       expectLine: `await expect(page.getByTestId('submit-btn')).toBeVisible();`,
     });
+  });
+
+  test('a tab with a count badge is named as Playwright names it, and its locator resolves in Playwright', async ({
+    context,
+  }) => {
+    const page = await context.newPage();
+    await page.setContent(`<!doctype html><html><body style="margin-top:120px">
+      <div role="tablist"><button role="tab" id="tab">Regressions<span style="display:inline-flex">5</span></button></div>
+    </body></html>`);
+    const { locator, candidates } = await pickAndSuggest(page, '#tab');
+
+    expect(locator).toBe(`getByRole('tab', { name: 'Regressions 5' })`);
+    expect(candidates.find((c) => c.method === 'toHaveAccessibleName')?.detail).toBe('Regressions 5');
+    await expect(playwrightLocator(page, locator!)).toHaveAccessibleName('Regressions 5');
+    // toHaveText compares the element's text, which has no space.
+    await expect(playwrightLocator(page, locator!)).toHaveText('Regressions5');
   });
 
   test('whitespace in text content is normalized (collapsed and trimmed)', async ({ context }) => {

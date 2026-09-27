@@ -165,8 +165,7 @@ worker's reply uncached). An index describes one branch: `locator-branch.ts` res
 panel's choice for the session, else the URL mapping's `branch`, else the default branch, and the
 cache keeps one entry per project and branch.
 
-The chains are evaluated by an in-page reimplementation of Playwright's selector engines, not by
-`evaluateLocatorChain` (which only counts candidates it generated itself):
+The chains are evaluated by an in-page reimplementation of Playwright's selector engines:
 
 - `engine-aria.ts` — `DomModel`: role, accessible name and description, ARIA states,
   hidden-for-ARIA, visibility, element text and `getByLabel` labels, following Playwright's
@@ -189,11 +188,38 @@ The chains are evaluated by an in-page reimplementation of Playwright's selector
 
 **At risk** (`coverage-risk.ts`, pure apart from the engine it is handed) lists the locators likely to break. Brittle
 ones come from `assessLocatorChain` (`@piwitests/core/locator-stability`), judged once per index. A replacement is
-built only for a chain finding one element: `rankElementLocators` (`top-locator.ts`) ranks that element's locators, the
+built only for a chain finding one element: `rankElementLocators` (`verified-locators.ts`) ranks that element's locators, the
 same rules must call a candidate stable, an engine over the current page must find only that element with it, and
 `recommendLocatorFix` (`@piwitests/core/locator-fix`, locator healing's ladder) picks among the survivors. Replacements
 are cached per element and chain for one scan only, since the page may change; an element inside a frame gets none,
 because its locator would need the frame's prefix.
+
+## Naming and ranking an element
+
+Every tool that names an element or offers a locator for it goes through `verified-locators.ts`, the same path the
+recorder takes:
+
+- **Names** come from `DomModel` (`accessibleNameOf`): "Regressions 5" for a tab showing a count badge, where
+  `textContent` reads "Regressions5". The probe's `approximateAccessibleName` is only the fallback when the model finds
+  no name.
+- **Ranking** (`rankElement`) is `generateAlternatives` without the probe's estimated match counts, and
+  **`checkLocators`** runs every candidate through an engine over the page (`createPageEngine`, blind to the
+  extension's own elements): verified first, a candidate finding the element among others narrowed (exact, then
+  `.filter({ hasText })`, then a landmark, dialog, row or test-id scope) at one point under it, one finding only others
+  dropped, `.first()`/`.nth()` last. `keepAmbiguous` also returns the others with the engine's count, which is what the
+  Pick results panel shows. `verifiedLocators` (the recorder), `deriveTopLocator` (assertions, session, the Tested
+  elements overlay) and `rankElementLocators` (At risk replacements) are built on it; a scan passes one engine to every
+  call so the engine's caches serve the whole scan.
+- **Hover** (`createHoverLocator`, behind hover-inspect and the picker overlay's `__piwiDescribeElement`) must stay
+  cheap on pointer moves. Building the engine's indexes costs tens of milliseconds on a large page (about 45 ms at
+  3,000 elements, 120 ms at 9,000), so a move gets the ranked candidate (probe without structural anchors, `DomModel`
+  name: under a millisecond), and the check runs once the pointer has rested `HOVER_REST_MS` on the element, kept for
+  that animation frame; the picker overlay re-reads it through `globalThis.__piwiRedescribe`.
+- **Counts** (the locator console) come from the same engine; nothing in the extension estimates a count any more.
+
+`pick.spec.ts` picks each case of `tests/e2e/pages/pick-cases.html` (a tab with a count badge, a name that is a
+substring of another, a link in the nav and in main, buttons sharing an `aria-label`) and has real Playwright click the
+top locator the results panel offers. A new naming or narrowing case goes there.
 
 **`locator-engine.spec.ts` is a differential test against real Playwright**: every expression in
 `locator-cases.ts` is resolved by the engine bundle (`engine-entry.ts`) and by a real
@@ -269,9 +295,8 @@ instead of needing a live browser for everything.
   that seems to need more (`debugger`, `contextMenus`, `sidePanel`, a broader or default-granted
   host permission) needs a deliberate call, not a silent addition — see the aria-snapshot
   feature (deferred; would need `debugger` to get the browser's real accessibility tree, which
-  contradicts the minimal-permissions goal), the agent-context feature's element summary, which
-  deliberately approximates instead of attempting the same real accessibility tree for the same
-  reason, and the recorder's own permission design below.
+  contradicts the minimal-permissions goal; names and roles come from `DomModel`, which follows
+  Playwright's own computation without it), and the recorder's own permission design below.
 - **The recorder's host permission is requested per-origin, per-recording, from the popup's
   own click handler — never pre-granted, never `<all_urls>`.** `chrome.permissions.request`
   only counts as satisfying a user gesture when called synchronously inside one, so this can't
@@ -317,7 +342,7 @@ instead of needing a live browser for everything.
   `chrome.storage.local` (connection settings, the catalog cache) has no such restriction.
 - **Two different test strategies for content-script logic, pick deliberately.** A function
   built entirely from nested helpers with no imports from `@piwitests/core`'s scoring engine
-  (`evaluateLocatorChain`, `derivePattern`, `testCatalogAgainstPage`) can be re-serialized via
+  (`derivePattern`, `testCatalogAgainstPage`) can be re-serialized via
   `Function.prototype.toString()` in tests, installing any genuine cross-module dependency as
   a global first. A function that calls `generateAlternatives` (`scanForLintIssues`,
   `suggestAssertions`, `buildAgentContext`, `record-panel.ts`'s `deriveRecordedTarget`) can't

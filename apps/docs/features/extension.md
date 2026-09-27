@@ -53,23 +53,30 @@ Hover highlights, a click picks. The pick snaps to the nearest actionable ancest
 the button), and ↑/↓ walk the DOM tree first, showing the locator each step would produce. For an element with a role,
 an **anchors** step lets you pick stable parents to scope the locator to, with a live match count.
 
-Every candidate is scored the way the dashboard scores captured locators, then counted again against the page. A candidate that matches several elements shows its count and a suggestion (`.first()`,
-`.filter({ hasText: … })`), and ranks below every candidate that matches exactly one, so
-`getByTestId('product-43').getByRole('button')` beats a `getByRole('button', { name: 'Add to cart' })` that hits every
-card. A repeated container with no hook of its own is singled out by its heading.
+Names are the ones Playwright computes: a tab showing a count badge is `getByRole('tab', { name: 'Regressions 5' })`,
+with the space Playwright puts before the badge. Every candidate is scored the way the dashboard scores captured
+locators, then run against the page the way Playwright runs it. The ones that find the picked element and nothing else
+come first. A candidate that finds it among others is also offered narrowed: made exact (`{ name: 'Failed' }` also
+finds "3 failed"), filtered by the element's text, or scoped to its landmark, dialog or row (a link that is both in the
+sidebar and in the page). The candidate itself stays below, with the number of elements it finds and a suggestion
+(`.first()`, `.filter({ hasText: … })`). When nothing tells the element apart, `.first()` or `.nth()` is offered, with a
+warning.
 
 Copy the result as the bare locator, an action line (`await page.getByRole(…).click();`) or a visibility assertion. **Copy all** copies every ranked locator, one per line, for a project's
 [Locators page](./locator-usage#the-locators-page).
 
 ## Hover-inspect
 
-Hover any element to see its best-ranked locator in a tooltip, with no click.
+Hover any element to see its best locator in a tooltip, with no click. The tooltip shows the best-ranked locator as
+the pointer enters an element, and the one checked against the page, as in the pick results, once the pointer rests
+there.
 
 ## Locator console
 
 Type or paste a locator expression and every match is outlined on the page as you type, with a strict-mode verdict:
-green for a single match, amber and numbered for several. It parses a safe subset (`getBy*` chains,
-`locator(css)`, `filter({ hasText })`, `.first()`, `.last()`, `.nth()`) and never runs it as code.
+green for a single match, amber and numbered for several. It reads the expression, never runs it as code, and finds
+what Playwright would find: every `getBy*` with its options, `locator()`, chains, `filter()`, `and()`/`or()`,
+`.first()`, `.last()`, `.nth()` and same-origin frames.
 
 ## Multi-pick
 
@@ -157,8 +164,6 @@ as TypeScript** produces and what the overlay shows while recording.
   there.
 - **No aria-snapshot copier.** `toMatchAriaSnapshot()` YAML needs the computed accessibility tree, which an
   extension reaches only with the `debugger` permission.
-- **Live re-check covers the common shapes.** `getByTestId`, CSS and a bare `getByRole` are counted again against the
-  page; text, label and placeholder matches and anchored chains keep the count from the pick.
 
 ## Related
 

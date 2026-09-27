@@ -43,7 +43,7 @@ function toggleLintOverlay(): void {
   // Exposed for lint-scan.spec.ts: scanForLintIssues calls @piwitests/core's
   // generateAlternatives, which has its own private module-level helpers
   // that Function.prototype.toString() reconstruction (the trick
-  // evaluateLocatorChain/derivePattern's own tests use) can't carry along —
+  // derivePattern's own tests use) can't carry along —
   // real bundling is the only way to exercise it correctly, so results are
   // bridged out here the same way picker state is bridged through other
   // well-known globals elsewhere in this extension.

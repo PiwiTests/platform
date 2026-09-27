@@ -1,10 +1,8 @@
-import type { RankedLocator } from '@piwitests/picker-dom';
 import { highlightLocator, LOCATOR_SYNTAX_CSS } from '@piwitests/picker-dom';
-import { TAG_TO_ROLE, INPUT_TYPE_TO_ROLE } from '@piwitests/core/locator-generation';
 import { COPY_MODES, copyModeLabel, renderCopyMode } from '../shared/copy-modes.js';
 import { formatNumber, t, tn, tNodes, uiLanguage } from '../shared/i18n.js';
 import { getLastCopyMode, setLastCopyMode } from '../shared/storage.js';
-import { liveCount } from './live-count.js';
+import type { CheckedLocator } from './verified-locators.js';
 import { getConnectionSettings, isConnected } from '../shared/connection-settings.js';
 import { getActiveProjectOverride, resolveActiveProject } from '../shared/active-project.js';
 import { ensureSessionAccess } from '../shared/session-access.js';
@@ -19,8 +17,6 @@ import { pageKey } from '@piwitests/core/page-key';
 import { actionLabel, stabilityText } from '../shared/core-words.js';
 import { statusLabel, testTitle } from './coverage-view.js';
 
-const ROLE_MAPS = { tagRoles: TAG_TO_ROLE, inputRoles: INPUT_TYPE_TO_ROLE };
-
 const HOST_ID = 'piwi-picker-results-host';
 
 /** How many tests the Piwi section lists before pointing at the full view. */
@@ -33,13 +29,17 @@ const PIWI_TESTS_SHOWN = 6;
  * several source-code renderings of each candidate), so this is native
  * extension UI rather than a reuse of picker-dom's confirm step.
  *
+ * `ranked` is already checked against the page (`checkLocators`): the
+ * locators finding the picked element alone come first, then those finding it
+ * among others, each with the number of elements it finds.
+ *
  * With `target` (the picked element) and a connection to a Piwi instance, a
  * section lists the project's tests whose locators reach that element.
  *
  * Resolves once the user dismisses the panel (Escape or the close button).
  * The caller has run `initI18n()`.
  */
-export async function renderResultsPanel(ranked: RankedLocator[], target: Element | null = null): Promise<void> {
+export async function renderResultsPanel(ranked: CheckedLocator[], target: Element | null = null): Promise<void> {
   document.getElementById(HOST_ID)?.remove();
 
   const host = document.createElement('div');
@@ -235,27 +235,12 @@ export async function renderResultsPanel(ranked: RankedLocator[], target: Elemen
       }
       row.appendChild(copyRow);
 
-      // Live re-check: a page can re-render between the pick and this panel
-      // opening, so re-verify uniqueness right now rather than trusting the
-      // count captured at pick time. Ambiguous candidates are flagged, not
-      // dropped — some shapes aren't safely re-checkable (see live-count.ts)
-      // and show no badge rather than a guessed one.
-      const { count } = liveCount(alt, ROLE_MAPS);
-      if (count != null) {
-        const badge = document.createElement('div');
-        if (count === 1) {
-          badge.className = 'unique';
-          badge.textContent = `✓ ${t('pick_unique')}`;
-        } else {
-          badge.className = 'ambiguous';
-          badge.textContent = `⚠ ${tn('pick_ambiguous', count, { first: '.first()', filter: '.filter({ hasText: … })' })}`;
-        }
-        row.appendChild(badge);
-      }
+      const badge = verdictBadge(alt);
+      if (badge) row.appendChild(badge);
 
       panel.appendChild(row);
 
-      if (i === 0) {
+      if (i === 0 && (alt.verdict === 'unique' || alt.verdict === 'narrowed')) {
         const footer = document.createElement('div');
         footer.className = 'footer';
         footer.textContent = t('pick_topPick');
@@ -297,7 +282,7 @@ function reportPickCoverage(value: PickCoverage): void {
  */
 async function fillPiwiSection(
   section: HTMLElement,
-  ranked: RankedLocator[],
+  ranked: CheckedLocator[],
   target: Element | null,
   closed: () => boolean,
 ): Promise<void> {
@@ -495,6 +480,31 @@ async function fillPiwiSection(
     locators: [...reach.self.entries, ...reach.inside.entries].map((e) => index!.locators[e]!.locator),
     brittle: brittle.map((e) => index!.locators[e]!.locator),
   });
+}
+
+/** What the engine found for a locator, under it; nothing for one it could not evaluate. */
+function verdictBadge(alt: CheckedLocator): HTMLElement | null {
+  const badge = document.createElement('div');
+  switch (alt.verdict) {
+    case 'unique':
+      badge.className = 'unique';
+      badge.textContent = `✓ ${t('pick_unique')}`;
+      return badge;
+    case 'narrowed':
+      badge.className = 'unique';
+      badge.textContent = `✓ ${tn('pick_narrowed', alt.from!.count)}`;
+      return badge;
+    case 'position':
+      badge.className = 'ambiguous';
+      badge.textContent = `⚠ ${tn('pick_byPosition', alt.from!.count)}`;
+      return badge;
+    case 'ambiguous':
+      badge.className = 'ambiguous';
+      badge.textContent = `⚠ ${tn('pick_ambiguous', alt.count!, { first: '.first()', filter: '.filter({ hasText: … })' })}`;
+      return badge;
+    case 'unchecked':
+      return null;
+  }
 }
 
 async function copyToClipboard(text: string, btn: HTMLButtonElement): Promise<void> {

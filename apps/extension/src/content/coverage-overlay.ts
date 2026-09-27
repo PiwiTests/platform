@@ -46,7 +46,7 @@ import {
   type CoverageContext,
   type ViewState,
 } from './coverage-view.js';
-import { deriveTopLocator, rankElementLocators } from './top-locator.js';
+import { deriveTopLocator, isPiwiElement, rankElementLocators } from './verified-locators.js';
 
 const HOST_ID = 'piwi-coverage-host';
 /** Wait after the last page change before rescanning. */
@@ -180,11 +180,17 @@ function startCoverageOverlay(): void {
   let context: CoverageContext | null = null;
   let scanning: { done: number; total: number } | null = null;
   let scanCount = 0;
-  const suggestions = new WeakMap<Element, string | null>();
-  /** Replacements for brittle locators, per element and chain, for the current scan only: the page may change. */
+  /** Each element's best locator, for the current scan only: the page may change. */
+  let suggestions = new WeakMap<Element, string | null>();
+  /** Replacements for brittle locators, per element and chain, for the current scan only. */
   let replacements = new WeakMap<Element, Map<number, Replacement | null>>();
-  /** An engine over the page as the current scan saw it, to check replacements with. */
-  let riskEngine: LocatorEngine | null = null;
+  /** An engine over the page as the current scan saw it, to check suggestions and replacements with. */
+  let scanEngine: LocatorEngine | null = null;
+  const engineNow = (): LocatorEngine =>
+    (scanEngine ??= createLocatorEngine(document, {
+      testIdAttributes: index?.testIdAttributes ?? undefined,
+      ignore: (element) => isOwnElement(element) || isPiwiElement(element),
+    }));
   /** While choosing: the element that would be chosen, and the narrower ones ↑ walked out of. */
   let choosingTarget: Element | null = null;
   let choosingNarrower: Element[] = [];
@@ -195,7 +201,7 @@ function startCoverageOverlay(): void {
     if (suggestions.has(element)) return suggestions.get(element)!;
     let locator: string | null = null;
     try {
-      locator = deriveTopLocator(element).locator;
+      locator = deriveTopLocator(element, engineNow()).locator;
     } catch {
       locator = null;
     }
@@ -208,16 +214,13 @@ function startCoverageOverlay(): void {
     let perElement = replacements.get(element);
     if (!perElement) replacements.set(element, (perElement = new Map()));
     if (perElement.has(entry)) return perElement.get(entry)!;
-    riskEngine ??= createLocatorEngine(document, {
-      testIdAttributes: index.testIdAttributes ?? undefined,
-      ignore: isOwnElement,
-    });
     let replacement: Replacement | null = null;
     try {
+      const engine = engineNow();
       replacement = replacementFor(element, index.locators[entry]!.locator, {
         doc: document,
-        engine: riskEngine,
-        rank: (e) => rankElementLocators(e).ranked,
+        engine,
+        rank: (e) => rankElementLocators(e, engine),
       });
     } catch {
       replacement = null;
@@ -654,8 +657,9 @@ function startCoverageOverlay(): void {
     if (result && seq === scanSeq && scanIndex === index) {
       scan = result;
       scanCount++;
+      suggestions = new WeakMap();
       replacements = new WeakMap();
-      riskEngine = null;
+      scanEngine = null;
       buildContext();
       const view = context!.scan;
       status = 'ready';

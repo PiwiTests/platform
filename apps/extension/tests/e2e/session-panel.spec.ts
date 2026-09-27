@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import type { BrowserContext, Page } from '@playwright/test';
 import { test, expect } from './fixtures.js';
 import { stubChromeI18n } from './i18n-stub.js';
+import { playwrightLocator } from './playwright-locator.js';
 import { clippedInShadows, openShadowRoots } from './shadow.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -100,6 +101,33 @@ test.describe('session-panel.js', () => {
     const picks = await readStoredPicks(page);
     expect(picks).toHaveLength(1);
     expect(picks[0]).toMatchObject({ name: 'submitButton', locator: `getByTestId('submit-btn')` });
+  });
+
+  test('a link repeated in the nav and in main is saved with a locator finding only the picked one', async ({
+    context,
+  }) => {
+    await stubSessionStorage(context);
+    const page = await context.newPage();
+    await page.setContent(`<!doctype html><html><body style="margin-top:120px">
+      <nav><a href="#runs">Runs</a></nav>
+      <main><a href="#runs" id="target">Runs</a></main>
+    </body></html>`);
+    await page.addScriptTag({ path: path.join(DIST, 'session-panel.js') });
+    await expect.poll(() => page.evaluate(() => !!document.getElementById('piwi-session-panel-host'))).toBe(true);
+    await pressTabTimes(page, 2);
+    await page.keyboard.press('Enter');
+    await expect(page.getByText('click any element to generate locators')).toBeVisible();
+    await page.hover('#target');
+    await page.click('#target');
+    await expect.poll(() => page.evaluate(() => !!document.getElementById('piwi-session-name-host'))).toBe(true);
+    await page.keyboard.type('runsLink');
+    await page.keyboard.press('Enter');
+
+    await expect.poll(async () => (await readStoredPicks(page)).length).toBe(1);
+    const [pick] = await readStoredPicks(page);
+    // `getByRole('link', { name: 'Runs' })` finds both links in Playwright.
+    expect(pick!.locator).toBe(`getByRole('main').getByRole('link', { name: 'Runs', exact: true })`);
+    await expect(playwrightLocator(page, pick!.locator)).toHaveId('target');
   });
 
   test('a duplicate name is rejected and the name prompt stays open', async ({ context }) => {

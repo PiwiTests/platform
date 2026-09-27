@@ -1,20 +1,15 @@
 import { startTool, endTool, installEscapeToCancel } from '../shared/tool-session.js';
-import { probeElementAttrs, highlightLocator, LOCATOR_SYNTAX_CSS } from '@piwitests/picker-dom';
-import {
-  generateAlternatives,
-  approximateAccessibleName,
-  CAPTURED_ATTRIBUTES,
-} from '@piwitests/core/locator-generation';
+import { highlightLocator, LOCATOR_SYNTAX_CSS } from '@piwitests/picker-dom';
+import { createHoverLocator } from './verified-locators.js';
 
 const HOST_ID = 'piwi-hover-inspect-host';
-const PROBE_ARG = {
-  keep: [...CAPTURED_ATTRIBUTES],
-  includeStructural: false,
-};
 
 /**
- * Toggleable "what would Piwi call this?" mode: the best-ranked locator for
- * whatever's under the cursor, shown in a tooltip, no click needed. A second
+ * Toggleable "what would Piwi call this?" mode: the best locator for whatever's
+ * under the cursor, checked against the page as the Pick results are, shown in
+ * a tooltip, no click needed. It runs on pointer moves: the tip shows the
+ * ranked candidate as the pointer enters an element and the checked locator
+ * once it rests there (`createHoverLocator`). A second
  * trigger (or Escape) turns it back off — state lives on `globalThis` so a
  * fresh injection of this same module toggles rather than stacking.
  */
@@ -55,27 +50,40 @@ function toggleHoverInspect(): void {
   root.append(style, box, tip);
 
   let lastEl: Element | null = null;
-  const onMove = (e: MouseEvent) => {
-    const target = document.elementFromPoint(e.clientX, e.clientY);
-    if (!target || host.contains(target)) return;
-    if (target === lastEl) {
-      position(target, e);
-      return;
+  let lastEvent: MouseEvent | null = null;
+  const show = (target: Element) => {
+    let locator: string | null = null;
+    try {
+      locator = hover.locatorOf(target);
+    } catch {
+      locator = null;
     }
-    lastEl = target;
-    const attrs = probeElementAttrs(target as any, PROBE_ARG);
-    const accessibleName = approximateAccessibleName({ ...attrs, accessibleName: null });
-    const ranked = generateAlternatives({ ...attrs, accessibleName });
-    if (ranked.length === 0) {
+    // Read by hover-inspect.spec.ts: the tip itself sits in a closed shadow root.
+    g.__piwiHoverLocator = locator;
+    if (!locator) {
       box.style.display = 'none';
       tip.style.display = 'none';
       return;
     }
     const tag = target.tagName.toLowerCase();
-    tip.innerHTML = `<span style="color:#c4b5fd">&lt;${tag}&gt;</span> ${highlightLocator(ranked[0]!.locator)}`;
+    tip.innerHTML = `<span style="color:#c4b5fd">&lt;${tag}&gt;</span> ${highlightLocator(locator)}`;
     tip.style.display = 'block';
     box.style.display = 'block';
-    position(target, e);
+    if (lastEvent) position(target, lastEvent);
+  };
+  const hover = createHoverLocator((el) => {
+    if (el === lastEl) show(el);
+  });
+  const onMove = (e: MouseEvent) => {
+    const target = document.elementFromPoint(e.clientX, e.clientY);
+    if (!target || host.contains(target)) return;
+    lastEvent = e;
+    if (target === lastEl) {
+      position(target, e);
+      return;
+    }
+    lastEl = target;
+    show(target);
   };
   // Pin the tip above the element, flipping below when the top edge is too
   // close to the viewport, and keep the whole chip inside the horizontal bounds.
@@ -99,8 +107,10 @@ function toggleHoverInspect(): void {
   const off = () => {
     document.removeEventListener('mousemove', onMove, true);
     document.removeEventListener('keydown', onKey, true);
+    hover.dispose();
     host.remove();
     delete g.__piwiHoverInspectOff;
+    delete g.__piwiHoverLocator;
     endTool(toolEpoch);
   };
   g.__piwiHoverInspectOff = off;

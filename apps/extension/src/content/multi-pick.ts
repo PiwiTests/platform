@@ -11,7 +11,7 @@ import { derivePattern, type PatternResult } from './multi-pick-derive.js';
 import { TAG_TO_ROLE, INPUT_TYPE_TO_ROLE } from '@piwitests/core/locator-generation';
 import { COPY_MODES, copyModeLabel, renderCopyMode } from '../shared/copy-modes.js';
 import { getLastCopyMode, setLastCopyMode } from '../shared/storage.js';
-import { installDescribeHook } from './top-locator.js';
+import { installDescribeHook } from './verified-locators.js';
 
 const ROLE_MAPS = { tagRoles: TAG_TO_ROLE, inputRoles: INPUT_TYPE_TO_ROLE };
 const MIN_PICKS = 2;

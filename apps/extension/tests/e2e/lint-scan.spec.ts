@@ -17,7 +17,7 @@ interface ExposedFinding {
 /**
  * `scanForLintIssues` calls @piwitests/core's `generateAlternatives`, which
  * has its own web of private module-level helpers (`attr`, `esc`, etc.) —
- * unlike `evaluateLocatorChain`/`derivePattern`, stringifying it alone via
+ * unlike `derivePattern`, stringifying it alone via
  * `Function.prototype.toString()` can't carry those along, and they aren't
  * exported to install individually either. Driving the real built
  * `lint-overlay.js` and reading the findings it bridges out to
@@ -65,6 +65,29 @@ test.describe('scanForLintIssues (via the real built lint-overlay.js)', () => {
       expect(f.bestScore).toBeLessThan(50);
     }
     expect(findings.map((f) => f.suggestedTestId)).toEqual(['button-1', 'button-2']);
+  });
+
+  test('flags buttons sharing a name no locator tells apart but by position', async ({ context }) => {
+    const page = await context.newPage();
+    await page.setContent(`<!doctype html><html><body>
+      <button aria-label="Show popup"></button>
+      <button aria-label="Show popup"></button>
+    </body></html>`);
+    const findings = await scan(page);
+    expect(findings).toHaveLength(2);
+    for (const f of findings) {
+      expect(f.accessibleName).toBe('Show popup');
+      expect(f.bestScore).toBeLessThan(50);
+    }
+  });
+
+  test('does not flag buttons sharing a name but showing different text', async ({ context }) => {
+    const page = await context.newPage();
+    await page.setContent(`<!doctype html><html><body>
+      <button aria-label="Show popup">Details</button>
+      <button aria-label="Show popup">History</button>
+    </body></html>`);
+    expect(await scan(page)).toEqual([]);
   });
 
   test('numbers suggested test ids per role, not with one counter shared across roles', async ({ context }) => {

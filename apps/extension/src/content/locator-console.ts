@@ -1,19 +1,18 @@
 import { initI18n, t, tn, uiLanguage } from '../shared/i18n.js';
 import { startTool, endTool, installEscapeToCancel } from '../shared/tool-session.js';
-import { parseLocatorExpression } from '../shared/locator-expr.js';
-import { evaluateLocatorChain } from './locator-eval.js';
-import { TAG_TO_ROLE, INPUT_TYPE_TO_ROLE } from '@piwitests/core/locator-generation';
-
-const ROLE_MAPS = { tagRoles: TAG_TO_ROLE, inputRoles: INPUT_TYPE_TO_ROLE };
+import { parseLocatorChain } from '@piwitests/core/locator-chain';
+import { createPageEngine } from './verified-locators.js';
 const HOST_ID = 'piwi-locator-console-host';
 const MAX_HIGHLIGHTS = 50;
 
 /**
  * Toggleable "debugging half of the picker": type a locator expression, see
  * every match highlighted in-page and a live count/strict-mode verdict, with
- * no `eval` involved anywhere (`parseLocatorExpression` + `evaluateLocatorChain`
- * are both hand-rolled). A second trigger (or Escape) closes it — state lives
- * on `globalThis`, same toggle pattern as hover-inspect.
+ * no `eval` involved anywhere: the expression is read by the shared parser
+ * (`parseLocatorChain`) and evaluated by the engine that resolves locators as
+ * Playwright does, over the page as it is at each keystroke, so the count is
+ * the one Playwright would find. A second trigger (or Escape) closes it — state
+ * lives on `globalThis`, same toggle pattern as hover-inspect.
  *
  * Unlike the full-backdrop results panel, the host stays `pointer-events:
  * none` so the page underneath remains clickable/scrollable while the console
@@ -136,28 +135,29 @@ function toggleLocatorConsole(): void {
       return;
     }
     try {
-      const chain = parseLocatorExpression(expr);
-      const { elements, exact } = evaluateLocatorChain(chain, ROLE_MAPS);
+      const elements = createPageEngine(document).queryAll(parseLocatorChain(expr));
       lastElements = elements;
       drawBoxes();
-      const approx = exact ? '' : ` · ${t('console_approximate')}`;
+      // Read by locator-console.spec.ts: the verdict itself sits in a closed shadow root.
+      g.__piwiConsoleCount = elements.length;
       if (elements.length === 1) {
         verdict.className = 'verdict ok';
-        verdict.textContent = `✓ ${t('console_unique')}${approx}`;
+        verdict.textContent = `✓ ${t('console_unique')}`;
       } else if (elements.length === 0) {
         verdict.className = 'verdict warn';
-        verdict.textContent = `${t('console_none')}${approx}`;
+        verdict.textContent = t('console_none');
       } else {
         verdict.className = 'verdict warn';
         verdict.textContent = `⚠ ${
           elements.length > MAX_HIGHLIGHTS
             ? tn('console_manyOutlined', elements.length, { shown: MAX_HIGHLIGHTS })
             : tn('console_many', elements.length)
-        }${approx}`;
+        }`;
       }
     } catch (e) {
       lastElements = [];
       clearBoxes();
+      delete g.__piwiConsoleCount;
       verdict.className = 'verdict err';
       verdict.textContent = describeError(e);
     }
