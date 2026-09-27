@@ -186,6 +186,7 @@ in the desktop app.
 | D13 | The page outline is built by the extension's engine in the YAML form of Playwright's ARIA snapshots and labeled "outline". | It is the engine the locator checks already trust, but it is not Playwright's snapshot. |
 | D14 | A report is linked to its test by a `piwi:bug` annotation and to its ticket through `entity_links`. Every report is an escaped defect for the Test Map, keyed by its page. | An annotation survives renames. A bug on a page the suite visits is the escape history exposure ranking was designed to use. |
 | D15 | Typed values stay as typed, except passwords (already redacted). The preview shows them, and a checkbox turns every typed value into an environment variable. | A reproduction often needs the exact input; the reporter decides what leaves the machine. |
+| D16 | Jira issues are created by the instance, never by the extension: from the Send preview, from the report's page, from MCP, or automatically when the project files every report. The ticket is written in the project's ticket language. | Jira credentials stay on the server, the extension talks only to the instance it is connected to, and every path gets the same outbox, attachments and links. The ticket's readers are the project's team. |
 
 ## Part 1 — Steps and the converter
 
@@ -372,6 +373,17 @@ checkbox per kind (D5, D15) and the project from the tab's mapping. The backgrou
 in a profile explains once what connected mode now sends. Limits: 5 MB per screenshot, 3 screenshots, 1 MB of JSON.
 Roles: administrator, reporter or user, so a tester's key can report.
 
+**Filing in Jira in the same step.** Before showing the preview, the extension asks the instance what a send will do:
+`GET /api/projects/:id/bug-reports/intake` answers with the project's tracker binding, if any
+(`{ tracker: 'jira', projectKey, locale, canCreate, fileEvery }`). With a binding, the preview adds **Also create a
+Jira issue in ACME**. It is ticked when the project files every bug report (`fileEvery`, a binding setting an
+administrator turns on), and offered only when the key's role can create issues (administrator or reporter, as
+`POST /api/integrations/issues` requires) or the project files every report anyway. The send then carries
+`createIssue: true`: the instance stores the report and enqueues the issue through the same path as the dashboard's
+**Create issue**, so the outbox, the attachments and the links are the same. The extension's result says the issue is
+queued and links the report's page, which shows the ticket's key once created. Reports sent without it can be filed
+later from that page.
+
 ### 4.2 Storage and pages
 
 - `bug_reports (id, project_id, title, note, page_key, path, status, steps JSON, evidence JSON, created_by,
@@ -412,6 +424,15 @@ owner.
 - `entity_links` gains `bug_report_id`. `commentOnFix` and `transitionOnFix` fire on `looks-fixed`; `resolveOnClose`
   and `reopenOnTicketReopen` follow the ticket.
 - The MCP tool `create_issue` accepts the new entity type.
+- **Where it is created.** From the Send preview (4.1); from the report's page, with **Create issue** and the modal
+  clusters use; from the MCP tool; and automatically on receipt when the binding files every bug report.
+- **The ticket's language** is the binding's ticket language (English or French today), whatever language the report
+  was written in. Piwi's own parts (headings, facts, links) are in that language, as for clusters. The steps and
+  expectations are written again from the steps document with core's phrasebook for that language (see
+  [`extension-localization.md`](extension-localization.md), PR 3), so a report written in German files as a French
+  ticket in French. The reporter's own words (the title, the note, a value they typed as expected) stay as typed, and
+  a line says which language the report was written in when it differs; the send carries it. A ticket language with no
+  phrasebook falls back to English.
 
 ### 4.6 Agents and the Test Map
 
@@ -431,7 +452,7 @@ owner.
 | 4 | Reporter and app: `expectedStatus`, the "expected failure passed" outcome, `piwi:bug` | — |
 | 5 | Dashboard: `bug_reports`, reproductions, endpoints, pages, Spec tab and project settings, **Send to Piwi…**, Replay from the instance, `piwi bug`, MCP tools, capability `bug-reports` | 1–4 |
 | 6 | Desktop: pairing, repro requests, `desktop_run_repro` | 1, 5 |
-| 7 | Jira: the bug entity, the document, attachments through the outbox, sync | 5 |
+| 7 | Jira: the bug entity, the document in the ticket's language, attachments through the outbox, sync; filing from the Send preview and the report's page | 5 |
 | 8 | Why the suite missed it, escapes for the Test Map, the skill | 5 |
 
 PRs 1–3 close the loop between a tester and a developer with files alone: record, send the zip, replay on
@@ -517,9 +538,17 @@ PRs 1–3 close the loop between a tester and a developer with files alone: reco
 
 ### PR 7 — Jira
 - `server/utils/integrations/create.ts`, `actions.ts` (`attach`), `sync.ts`, `known-issue.ts`;
-  `shared/integrations/build-issue.ts`, `messages/en.ts`, `messages/fr.ts`; schema for `entity_links.bug_report_id`;
+  `shared/integrations/build-issue.ts` (`buildBugIssueDocument`, the steps through core's phrasebook for the ticket
+  language), `messages/en.ts`, `messages/fr.ts`; schema for `entity_links.bug_report_id` and the binding's `fileEvery`;
   `server/api/integrations/issues.post.ts`.
-- Docs: `features/issue-tracking.md`.
+- `server/api/projects/[id]/bug-reports/intake.get.ts` (new); `bug-reports.post.ts` (`createIssue`, the report's
+  language); **Create issue** on `app/pages/bug-reports/[id].vue`; **File every bug report** in the project's tracker
+  settings.
+- `apps/extension/src/content/bug-panel.ts` (the preview's checkbox and result), `src/shared/piwi-client.ts` (intake).
+- Tests: a send with `createIssue` enqueues exactly one create action, and one with `fileEvery` too without it; a
+  `user` key is not offered the checkbox and cannot create unless the project files every report; a report written in
+  German files a French ticket whose steps read in French and whose note is unchanged.
+- Docs: `features/issue-tracking.md`, `features/report-a-bug.md`.
 
 ### PR 8 — missed-by and escapes
 - `shared/handlers/bug-reports.ts`, `shared/handlers/scenario-gaps.ts` (escaped-defect loader),
@@ -579,3 +608,8 @@ PRs 1–3 close the loop between a tester and a developer with files alone: reco
 - Automatic deduplication of reports; a report page lists the other open reports on the same page.
 - Parsing hand-written specs back into steps.
 - Generating the fix; the skill hands that to a coding agent with the steps and the evidence.
+- Filing in Jira without an instance. The extension would need Jira credentials and would send page data to
+  Atlassian. A pre-filled create-issue link (`/secure/CreateIssueDetails!init.jspa?pid=…&summary=…&description=…`)
+  needs neither, but Atlassian does not support it on Jira Cloud
+  ([JRACLOUD-69267](https://jira.atlassian.com/browse/JRACLOUD-69267)) and it cannot attach files. Without an
+  instance, the reporter attaches the report's zip and pastes its Markdown by hand.
