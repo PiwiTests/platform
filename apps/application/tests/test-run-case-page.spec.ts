@@ -341,11 +341,13 @@ test.describe('Situation block on seeded cases', () => {
     await expect(situation).toContainText('New regression');
     await expect(situation.getByRole('link', { name: /cluster #/ })).toBeVisible();
 
-    // The next step applies the diagnosed fix, with the trailing retry command.
+    // The next step applies the diagnosed fix; its overflow menu copies the retry command.
     const next = page.locator('[data-shot="next-step"]');
     await expect(next).toContainText('Apply the diagnosed fix');
     await expect(next.getByRole('button', { name: 'Copy git apply' })).toBeVisible();
-    await expect(next.getByRole('button', { name: 'Copy retry command' })).toBeVisible();
+    await next.getByRole('button', { name: 'More next-step actions' }).click();
+    await expect(page.getByRole('menuitem', { name: 'Copy retry command' })).toBeVisible();
+    await page.keyboard.press('Escape');
 
     // "New regression" appears exactly once on the page.
     await expect(page.getByText('New regression')).toHaveCount(1);

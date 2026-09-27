@@ -93,7 +93,7 @@ defineExpose({ revealRawError });
     />
     <!-- Secondary facts collapse at 390px; they stay in Details below. -->
     <span class="max-sm:hidden inline-flex items-center gap-x-2 gap-y-1 flex-wrap">
-      <span v-if="browser" class="inline-flex items-center gap-1">
+      <span v-if="browser?.projectName" class="inline-flex items-center gap-1">
         <BrowserBadge :browser="{ ...browser, viewport: undefined }" size="sm" />
         <span v-if="browser.viewport" class="tabular-nums">
           {{ browser.viewport.width }}×{{ browser.viewport.height }}

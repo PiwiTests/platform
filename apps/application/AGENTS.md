@@ -222,14 +222,16 @@ rules apply to every block a page opens on and to any card that states facts (th
 summaries, list rows). Dense tables and code views are exempt only where a rule says so.
 
 - **Four text styles per block, no more**: a heading (`text-lg sm:text-xl font-semibold text-highlighted`, at most
-  one per block), a body (`text-sm text-highlighted leading-relaxed`, every sentence), a label (`text-xs font-medium
-text-muted`) and a meta style (`text-xs text-muted` — qualifiers, facts, footers). Code — a locator, a path, a
-  commit — is the body or meta style in `font-mono`, inheriting the color. Nothing else in the block: no
-  `text-toned`/`text-dimmed` mixed with `text-muted`, no italics, no uppercase micro-labels, no `font-semibold` on a
-  sentence.
+  one per block), a body (`text-sm text-highlighted leading-relaxed`, every sentence), a label (`text-sm font-semibold
+text-highlighted`) and a meta style (`text-xs text-muted` — qualifiers, facts, footers). Code — a locator, a path, a
+  commit — is the body or meta style in `font-mono`. Nothing else in the block: no `text-toned`/`text-dimmed` mixed
+  with `text-muted`, no italics, no uppercase micro-labels, no `font-semibold` on a sentence.
 - **Structure with layout, not with styling.** A block with several kinds of lines gets one label column
-  (`SituationBlock` renders a `<dl>` with a 6.5 rem label column: _Most likely_, _Situation_, _State_, _Next_), so the
+  (`SituationBlock` renders a `<dl>` with an 8 rem label column: _Most likely_, _Situation_, _State_, _Next_), so the
   reader scans labels, not formatting. A badge, a color or a bold span is never what tells two lines apart.
+- **The situation block's left edge carries the page's status color** (`SituationBlock :edge`): the execution's
+  outcome color, the cluster state's dot color. It is the status, not an accent, and nothing else in the block
+  repeats it.
 - **One accent color per screen: the primary action.** The solid `color="primary"` button is the only saturated
   element the reader is meant to click. Every other button is `color="neutral"` — `variant="outline"` for a secondary
   action, `variant="ghost"` for a disclosure or a menu trigger. No `warning`, `success` or `soft` buttons for ordinary
@@ -241,11 +243,13 @@ hover:decoration-solid`. `text-primary` links belong in navigation lists and tab
   never a chip. Two red chips on one screen is a bug.
 - **Icons only where they carry meaning the text does not**: a status dot, a chevron on a disclosure or a menu, the
   check on a copied button. No icon in front of a label, a heading or a fact.
-- **A locator inside a heading or a sentence is plain mono** (`<LocatorCode plain>`, `<FailureHeadline plain>`).
-  Syntax highlighting belongs in code views — clue rows, the toolbox, the picker — where it competes with nothing.
+- **Code inside a heading or a sentence of the situation block sits in a chip**: a locator is syntax-highlighted in
+  it (`<LocatorCode chip>`, `<FailureHeadline chip>`), a commit keeps the sentence's color (`CODE_CHIP_CLASS`).
+  Elsewhere in prose a locator stays plain mono (`<LocatorCode plain>`).
 - **Say a fact once, in one style.** When the same fact could be a chip and words, keep the words.
-- **Measure it.** `npm run app:measure -- --json` reports `distinctTextStyles` inside the situation block. Keep it at
-  or under 15 on the execution page and 12 on the cluster page; a change that raises it needs a reason in the PR.
+- **Measure it.** `npm run app:measure -- --json` reports `distinctTextStyles` inside the situation block, a code chip
+  counting once whatever its token colors. Keep it at or under 15 on the execution page and 12 on the cluster page; a
+  change that raises it needs a reason in the PR.
 
 ### Test outcome colors (MUST follow)
 

@@ -22,7 +22,7 @@ The last part makes it a loop, not a lookup: the plan names the Playwright comma
 
 ## The next step
 
-Both the cluster and the [execution](./evidence#one-execution-diagnosis-first) page lead with a single **Next** line — one action chosen for you, with a word on why, not a row of equal buttons. A policy picks it from what the page knows, first match wins: open a **blocking** failure, **mark resolved** a verified-but-open cluster, **replace the locator** when [healing](./locator-healing) has one, **apply the diagnosed patch** (or follow the diagnosis when it is stale), **see what changed** when a fix regressed, **compare attempts** on a retry pass, **re-run in CI** for a crash, **diagnose with AI**, else **reproduce locally**. Where the fix is a code change, **Copy retry command** trails it; every other action lives in the toolbox below.
+Both the cluster and the [execution](./evidence#one-execution-diagnosis-first) page lead with a single **Next** line — one action chosen for you, with a word on why, not a row of equal buttons. A policy picks it from what the page knows, first match wins: open a **blocking** failure, **mark resolved** a verified-but-open cluster, **replace the locator** when [healing](./locator-healing) has one, **apply the diagnosed patch** (or follow the diagnosis when it is stale), **see what changed** when a fix regressed, **compare attempts** on a retry pass, **re-run in CI** for a crash, **diagnose with AI**, else **reproduce locally**. Where the fix is a code change, the step's **···** menu also holds **Copy retry command**; every other action lives in the toolbox below.
 
 ## More ways to fix
 

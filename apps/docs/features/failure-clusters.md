@@ -95,8 +95,8 @@ The cluster page states where a cluster stands in **one sentence with one verb**
 *still failing*, *fixed and verified, still open*, *stopped failing*, *regressed, the fix did not hold*,
 *resolved*, *ignored*, *snoozed* or *all tests quarantined*. When the verdict the runs showed and the status a person
 set disagree, the line offers the **one action** that reconciles them (*Mark resolved*, *Reopen*, *Unsnooze*,
-*Release*). Beside it, **Triage** sets the status (open / resolved / ignored), a note and the assignee, and **Snooze**
-hides or brings back the cluster.
+*Release*). Beside it, **Triage** sets the status (open / resolved / ignored), a note and the assignee, and snoozes
+the cluster for a day, a week or until it recurs.
 
 ### Occurrences over time
 

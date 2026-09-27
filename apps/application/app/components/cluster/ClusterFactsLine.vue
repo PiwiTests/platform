@@ -1,9 +1,9 @@
 <script setup lang="ts">
 /**
  * The facts line under the cluster's situation block: a Details popover (owner
- * and known-issue editing), the shared "Raw error ▸" disclosure (the sample
- * error and its fingerprint signature) and Copy summary. `revealRawError()` lets
- * a citation open the raw error from elsewhere on the page.
+ * and known-issue editing) and the shared "Raw error ▸" disclosure (the sample
+ * error and its fingerprint signature). `revealRawError()` lets a citation open
+ * the raw error from elsewhere on the page.
  */
 import type { FailureClusterDetail } from '~~/types/api';
 
@@ -13,7 +13,7 @@ defineProps<{
   signatureLine: string | null;
 }>();
 
-const emit = defineEmits<{ refresh: []; copy: [] }>();
+const emit = defineEmits<{ refresh: [] }>();
 
 const disclosure = ref<{ reveal: () => void } | null>(null);
 function revealRawError() {
@@ -58,7 +58,5 @@ defineExpose({ revealRawError });
     </UPopover>
 
     <RawErrorDisclosure ref="disclosure" :error="cluster.sampleError" :signature="signatureLine" />
-
-    <UButton size="xs" variant="ghost" color="neutral" label="Copy summary" class="shrink-0" @click="emit('copy')" />
   </div>
 </template>

@@ -311,6 +311,11 @@ const annotations = computed(() =>
 
 const quarantined = computed(() => Boolean((testCase.value as { quarantined?: boolean } | null)?.quarantined));
 
+// The situation block's edge, in this execution's outcome color.
+const statusEdge = computed(() =>
+  testCase.value ? statusPalette(testCase.value.status, testCase.value.retries).color : null,
+);
+
 /**
  * Exceptional badges only. The why-signals (regression, passed on retry, newly
  * flaky) live in the headline's fact row when there is a headline, so they show
@@ -357,8 +362,7 @@ const headerBadges = computed(() => {
 });
 
 // ── Retry command ────────────────────────────────────────────────────────────
-// The trailing "then" on the next-step line, plus the More menu and the Verify
-// section — no longer an always-on header button.
+// In the next-step line's overflow menu, the More menu and the Verify section.
 const retryCases = computed(() => [
   {
     filePath: testCase.value?.filePath ?? '',
@@ -685,7 +689,7 @@ const { handle: handleNextStepAction } = useNextStepActions({
       <!-- No side gutter below `sm`: the cards go full-bleed to the screen edge. -->
       <div class="flex flex-col gap-4 p-4 max-sm:px-0 max-w-6xl mx-auto w-full">
         <!-- ── One block: what broke, what is going on, what to do next ── -->
-        <SituationBlock help="case.situation">
+        <SituationBlock help="case.situation" :edge="statusEdge">
           <!-- Line 1: identity kicker — status, title, marks, quarantine -->
           <template #identity>
             <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -711,7 +715,7 @@ const { handle: handleNextStepAction } = useNextStepActions({
               data-shot="failure-headline"
               class="text-lg sm:text-xl font-semibold leading-snug text-highlighted break-words"
             >
-              <FailureHeadline :parts="verdict.parts" plain />
+              <FailureHeadline :parts="verdict.parts" chip />
             </h1>
             <p
               v-if="verdict.detail && !story"
@@ -746,7 +750,7 @@ const { handle: handleNextStepAction } = useNextStepActions({
                 <NuxtLink
                   v-if="part.href"
                   :to="part.href"
-                  :class="[SENTENCE_LINK_CLASS, part.kind === 'commit' ? 'font-mono' : '']"
+                  :class="[SENTENCE_LINK_CLASS, part.kind === 'commit' ? CODE_CHIP_CLASS : '']"
                   >{{ part.text }}</NuxtLink
                 >
                 <a
@@ -754,10 +758,10 @@ const { handle: handleNextStepAction } = useNextStepActions({
                   :href="situationCommitHref(part)!"
                   target="_blank"
                   rel="noopener"
-                  :class="[SENTENCE_LINK_CLASS, 'font-mono']"
+                  :class="[SENTENCE_LINK_CLASS, CODE_CHIP_CLASS]"
                   >{{ part.text }}</a
                 >
-                <span v-else-if="part.kind === 'commit'" class="font-mono">{{ part.text }}</span>
+                <span v-else-if="part.kind === 'commit'" :class="CODE_CHIP_CLASS">{{ part.text }}</span>
                 <span v-else-if="part.kind === 'owner'" class="text-highlighted">{{ part.text }}</span>
                 <template v-else>{{ part.text }}</template>
               </template>
