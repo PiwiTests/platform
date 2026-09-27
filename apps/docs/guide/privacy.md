@@ -75,8 +75,8 @@ Some data is skipped at the source, so it never exists to leak:
 
 Credentials you store in the dashboard — AI API keys, SCM tokens, webhook signing secrets — are
 encrypted with AES-256-GCM using `PIWI_SECRET_KEY`. **Set it in production.** With the variable unset,
-Piwi falls back to a hardcoded default string that is published in this repository — the values are
-encrypted, but against a key anyone can look up, so treat that as no protection at all.
+or set to the development default published in this repository, the dashboard refuses to save a
+credential and says which variable to set. Generate a key with:
 
 ```bash
 node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
@@ -103,7 +103,7 @@ by anything else. See [Storage → Data retention](/operate/storage#data-retenti
 
 ## Verifying any of this
 
-You don't have to take the page's word for it. The source is MIT-licensed and the outbound surface is
+You don't have to take the page's word for it. The source is public and the outbound surface is
 small enough to audit: watch the container's egress, or read
 [`server/utils/`](https://github.com/PiwiTests/platform/tree/main/apps/application/server/utils) — the AI
 provider, SCM, SMTP, storage and notification clients are the only things there that open a socket.

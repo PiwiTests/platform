@@ -23,7 +23,9 @@ dashboard.
 ## Where it is
 
 **Settings → Notifications** manages channels and subscriptions, and the **bell** on a project page subscribes to that
-project. Notifications need no authentication: with it off, the instance is single-tenant and every channel and
+project. The new-channel form shows where to get each destination, flags a URL that belongs to another type (a Slack
+URL pasted under Teams offers to switch), and can **send a test** before saving: a channel whose test went through is
+saved as verified. Notifications need no authentication: with it off, the instance is single-tenant and every channel and
 subscription is **global**. With `PIWI_AUTH_ENABLED=true` ([authentication](/operate/authentication)), each user keeps
 their own, and administrators can add global ones shared by everyone.
 
@@ -52,18 +54,24 @@ Requires SMTP to be configured (see below). Sends to a destination address.
 
 ### Slack
 
-Create an [incoming webhook](https://api.slack.com/messaging/webhooks) in Slack and paste its URL. Messages are posted to the webhook's channel.
+Paste an [incoming webhook](https://docs.slack.dev/messaging/sending-messages-using-incoming-webhooks) URL
+(`https://hooks.slack.com/services/…`). Without one, the form's **Create a Slack app for Piwi** link opens Slack with an
+app already filled in, asking only for the `incoming-webhook` permission: create it, choose **Install to Workspace** and
+the channel, then copy the URL from **Incoming Webhooks**. Messages are posted to that channel. A Slack-compatible
+server (Mattermost, Rocket.Chat) works too.
 
 ### Microsoft Teams
 
-In the Teams channel, add the Workflows template *Post to a channel when a webhook request is received* (or a
-legacy incoming webhook) and paste its URL. Each event, digest and
+In the Teams channel's **⋯** menu, open **Workflows**, pick the template *Send webhook alerts to a channel*, choose the
+team and channel, and paste the URL the workflow shows. A legacy Microsoft 365 connector webhook still works while
+Microsoft keeps it, and the form flags it. Each event, digest and
 [quality report](./quality-reports#report-schedules) arrives as an Adaptive Card.
 
 ### Webhook
 
 Piwi `POST`s a JSON body to your URL, signed with an HMAC-SHA256 `X-Piwi-Signature` header derived from the channel's
-secret. The body, its fields and how to verify the signature are in
+secret, which the form can generate (storing it needs `PIWI_SECRET_KEY`). Private and loopback addresses are refused.
+The body, its fields and how to verify the signature are in
 [Notification events & webhooks](/reference/notification-events#webhook-body).
 
 ### Reaching the person who fixed it

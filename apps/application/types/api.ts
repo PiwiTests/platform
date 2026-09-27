@@ -9,6 +9,7 @@ import type { ScmProviderName } from '#shared/scm-urls';
 import type { PageDiffSummary, PageDiffHunk } from '#shared/page-diff';
 import type { ClusterState } from '#shared/cluster-state';
 import type { NextStep } from '#shared/next-step';
+import type { KnownIssueRef } from '#shared/handlers/known-issues';
 import type { ProjectAccessGrid, ProjectAccessUser } from '#shared/project-access';
 export type { TestMetadata, TestSourceFrame };
 export type { ClusterState } from '#shared/cluster-state';
@@ -971,7 +972,15 @@ export interface FailureGroup {
    * locator already passes at that call site in a later run.
    */
   locatorHealing?: { recommended: string; source: string; healed: boolean } | null;
+  /** The tracker issue the cluster is known by, when one is linked or was created for it. */
+  knownIssue?: KnownIssueRef | null;
 }
+
+/**
+ * Per-cluster facts a run's test rows show next to a failing execution: the
+ * cluster's name, its triage status and the issue it is tracked in.
+ */
+export type RunClusterMeta = Record<number, { name: string; status: string | null; issue?: KnownIssueRef | null }>;
 
 /**
  * What a landed fix was corroborated against.
@@ -1735,6 +1744,8 @@ export interface AiSettings {
   language: string | null;
   /** True when the language is fixed by `PIWI_AI_LANGUAGE` (rendered locked). */
   languageEnvManaged: boolean;
+  /** False when `PIWI_SECRET_KEY` is unset, so an API key or SCM token cannot be saved. */
+  canStoreSecrets: boolean;
 }
 
 // ============================================================================

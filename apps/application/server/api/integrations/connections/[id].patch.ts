@@ -8,7 +8,7 @@ defineRouteMeta({
     tags: ['Integrations'],
     summary: 'Update an integration connection',
     description:
-      'Updates a connection. An empty credential map keeps the stored credential. Environment-managed connections are read-only.',
+      'Updates a connection. An empty credential map keeps the stored credential. Changed credentials answer HTTP 409 while `PIWI_SECRET_KEY` is unset, since they cannot be encrypted. Environment-managed connections are read-only.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-roles': ['administrator'],
   },

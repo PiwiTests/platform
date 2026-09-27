@@ -32,6 +32,8 @@ interface RoleMeta {
 const props = defineProps<{
   meta: RoleMeta;
   hasApiKey: boolean;
+  /** False when the server has no `PIWI_SECRET_KEY`, so an API key cannot be stored. */
+  canStoreSecrets: boolean;
   reuseOptions: Array<{ label: string; value: string }>;
   providerOptions: Array<{ label: string; value: string }>;
   presetOptions: Array<{ label: string; value: string }>;
@@ -136,9 +138,11 @@ const roleEnvVars = computed<PiwiEnvVarName[]>(() => helpEnvVars(props.meta.help
           v-if="model.provider && model.provider !== 'claude-cli'"
           label="API key"
           :description="
-            hasApiKey
-              ? 'Leave empty to keep the stored key, clear and save to remove it'
-              : 'Required for Anthropic; optional for local OpenAI-compatible servers'
+            !canStoreSecrets && !disabled
+              ? 'Needs PIWI_SECRET_KEY set on the server to be stored'
+              : hasApiKey
+                ? 'Leave empty to keep the stored key, clear and save to remove it'
+                : 'Required for Anthropic; optional for local OpenAI-compatible servers'
           "
         >
           <template #label>
@@ -151,7 +155,7 @@ const roleEnvVars = computed<PiwiEnvVarName[]>(() => helpEnvVars(props.meta.help
             v-model="model.apiKey"
             type="password"
             :placeholder="hasApiKey ? '•••••••• (unchanged)' : 'sk-…'"
-            :disabled="disabled"
+            :disabled="disabled || !canStoreSecrets"
             class="w-full font-mono"
           />
         </UFormField>

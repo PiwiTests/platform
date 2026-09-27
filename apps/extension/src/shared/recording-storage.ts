@@ -1,11 +1,12 @@
 import type { RawCaptureEvent } from '@piwitests/core/recording';
+import { hasSessionArea, sessionArea } from './session-area.js';
 
 /**
  * The running cross-page recording (event stream + on/off state), in
  * `chrome.storage.session` — same reasoning as `session-storage.ts`'s named
  * pick session: a working session for this browser run, not a saved file.
- * Requires `setAccessLevel` at the service worker to be reachable from a
- * content script — see `background/index.ts`.
+ * Reached through `sessionArea()`, since the recorder reads and writes it from
+ * a content script — see `session-area.ts`.
  *
  * Stores the *raw* event stream, not pre-coalesced steps: `normalizeSteps`
  * (from `@piwitests/core/recording`) is the single source of truth for
@@ -26,13 +27,13 @@ export interface RecordingState {
 const EMPTY: RecordingState = { active: false, events: [], startedAt: null, grantedOriginPattern: null };
 
 export async function getRecordingState(): Promise<RecordingState> {
-  const stored = await chrome.storage.session.get(RECORDING_KEY);
+  const stored = await sessionArea().get(RECORDING_KEY);
   const value = stored[RECORDING_KEY];
   return value && typeof value === 'object' ? (value as RecordingState) : { ...EMPTY };
 }
 
 async function setRecordingState(state: RecordingState): Promise<void> {
-  await chrome.storage.session.set({ [RECORDING_KEY]: state });
+  await sessionArea().set({ [RECORDING_KEY]: state });
 }
 
 export async function startRecording(grantedOriginPattern: string): Promise<RecordingState> {
@@ -49,7 +50,7 @@ export async function stopRecording(): Promise<RecordingState> {
 }
 
 export async function discardRecording(): Promise<void> {
-  await chrome.storage.session.remove(RECORDING_KEY);
+  await sessionArea().remove(RECORDING_KEY);
 }
 
 /**
@@ -84,11 +85,11 @@ export interface RecordIntent {
 export const RECORD_INTENT_TTL_MS = 60_000;
 
 export async function setRecordIntent(intent: Omit<RecordIntent, 'createdAt'>): Promise<void> {
-  await chrome.storage.session.set({ [RECORD_INTENT_KEY]: { ...intent, createdAt: Date.now() } });
+  await sessionArea().set({ [RECORD_INTENT_KEY]: { ...intent, createdAt: Date.now() } });
 }
 
 export async function getRecordIntent(): Promise<RecordIntent | null> {
-  const stored = await chrome.storage.session.get(RECORD_INTENT_KEY);
+  const stored = await sessionArea().get(RECORD_INTENT_KEY);
   const value = stored[RECORD_INTENT_KEY];
   if (!value || typeof value !== 'object') return null;
   const intent = value as Partial<RecordIntent>;
@@ -97,7 +98,7 @@ export async function getRecordIntent(): Promise<RecordIntent | null> {
 }
 
 export async function clearRecordIntent(): Promise<void> {
-  await chrome.storage.session.remove(RECORD_INTENT_KEY);
+  await sessionArea().remove(RECORD_INTENT_KEY);
 }
 
 export type RecordIntentDecision =
@@ -143,6 +144,12 @@ export function decideRecordIntent(
  * impossible would mean routing every append through the service worker, and
  * paying a message round-trip per keystroke to close a gap nothing has been
  * observed to hit.
+ *
+ * In Firefox that round-trip is paid anyway — its content scripts reach session
+ * storage only through the background script (see `session-area.ts`) — so
+ * there every append *is* routed through it, as one message: the background
+ * runs this same function, where this queue then serializes every tab's
+ * appends.
  */
 let appendQueue: Promise<unknown> = Promise.resolve();
 
@@ -157,6 +164,7 @@ let appendQueue: Promise<unknown> = Promise.resolve();
  * is a recording that looks healthy and exports short.
  */
 export async function appendRecordingEvent(event: RawCaptureEvent): Promise<RecordingState> {
+  if (!hasSessionArea()) return appendViaBackground(event);
   const run = appendQueue.then(async () => {
     const current = await getRecordingState();
     if (!current.active) return current;
@@ -168,4 +176,32 @@ export async function appendRecordingEvent(event: RawCaptureEvent): Promise<Reco
   // every append after it; the rejection still reaches this call's own caller.
   appendQueue = run.catch(() => undefined);
   return run;
+}
+
+export type AppendRecordingEventResponse = { ok: true; state: RecordingState } | { ok: false; error: string };
+
+/**
+ * A Firefox content script's append: one message, sent at once rather than
+ * after this document's previous append settles. A get and a set sent
+ * separately would leave a gap in which a click that navigates away unloads
+ * the page before its set goes out, losing the step that caused the
+ * navigation; once this message is sent, the background finishes the write
+ * whatever happens to the page.
+ */
+async function appendViaBackground(event: RawCaptureEvent): Promise<RecordingState> {
+  const response = (await chrome.runtime.sendMessage({ type: 'piwi-append-recording-event', event })) as
+    | AppendRecordingEventResponse
+    | undefined;
+  if (!response?.ok) throw new Error(response?.error ?? 'The background script did not answer.');
+  return response.state;
+}
+
+/** The background script's half of {@link appendViaBackground}. */
+export async function serveAppendRecordingEvent(event: unknown): Promise<AppendRecordingEventResponse> {
+  if (!event || typeof event !== 'object') return { ok: false, error: 'Malformed recording event.' };
+  try {
+    return { ok: true, state: await appendRecordingEvent(event as RawCaptureEvent) };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
 }

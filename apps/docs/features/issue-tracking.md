@@ -34,13 +34,16 @@ none of the entry points appear.
   surfaces any issue that already tracks the failure (a pinned link, a matching label, or a *fixed-before* match) and
   leads with *link it instead*.
 - Creating an issue is a **durable outbox action**: attempted immediately, retried with backoff if Jira is down, and
-  recorded, and the REST API lists what Piwi wrote (see the [API docs](https://piwitests.dev/demo/docs)).
+  recorded, and the REST API lists what Piwi wrote (see the [API docs](https://piwitests.dev/demo/docs)). A create
+  Jira refuses outright, such as a missing or invalid field, fails at once rather than being retried, and creating
+  again replaces it.
 
 ## The key travels
 
 Once a cluster has a known issue, its key follows the failure everywhere:
 
-- the **cluster state line** and the **inbox row** show the key with its status color;
+- the **cluster state line**, the **inbox row**, a failing **execution's page** and its row in the **run's test list**
+  show the key with its status color;
 - `cluster.new`, `cluster.fixed` and `cluster.regressed` **Slack and email** messages name it;
 - the **pull-request feedback** comment says *tracked in PROJ-123* on each failure whose cluster has one;
 - the **fix plan** lists it under *Links*, and the `get_cluster` / `get_fix_plan` MCP tools return it.
@@ -82,6 +85,29 @@ file tickets on its own in this release.
 
 <div class="doc-screenshot">
   <img src="/screenshots/project-integration-binding.png" alt="The project's Issue tracker settings: connection, Jira project and issue type, labels, sync-policy switches, an owner-routes table, and the greyed-out automatic-creation fields">
+</div>
+
+## Required Jira fields
+
+A Jira project can require fields on its create screen, such as a *Severity*, a *Team* or *Components*. Piwi reads
+the issue type's create screen and asks for every required field Jira does not fill:
+
+- The project binding's **Jira fields** block lists them. A value set there fills every issue filed from the project;
+  *Set a default for another field* adds an optional one.
+- The create modal shows them under **Required by Jira**, prefilled from those defaults, and keeps *Create* disabled
+  until each has a value. A value Jira lists no choices for, such as a team, is typed as its id.
+- The [`create_issue` MCP tool](/reference/mcp-tools#create_issue) refuses early, naming each missing field, its id and
+  what it takes; an agent passes them in `fields`.
+
+A transition's screen can require fields too, such as a *Resolution* on the move to Done. Under *transition on fix*
+and the reopen transition, the binding checks the transition against an issue in the project, suggests the ones it
+offers, and asks for its fields. A move that would still leave one empty fails at once, naming it.
+
+A requirement no screen shows, such as a workflow validator, comes back as Jira's refusal naming the field, and the
+modal asks for it.
+
+<div class="doc-screenshot">
+  <img src="/screenshots/create-issue-required-fields.png" alt="The Create issue modal with a Required by Jira block: Severity prefilled with Major from the project settings, an empty Team field, and the footer saying Jira still needs Team">
 </div>
 
 ## Requirements

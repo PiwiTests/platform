@@ -2,12 +2,13 @@
 /**
  * Renders the trace-derived full call stack: every frame of the failing
  * action with real source read from the trace's embedded files. Extends the
- * visual language of TestSourceStack (frame blocks, red failing line) with
- * line-number gutters, function names, and consecutive dependency frames
- * folded into a single expandable group so the in-project story stays
- * scannable.
+ * visual language of TestSourceStack (frame blocks, highlighted code, red
+ * failing line) with line-number gutters, function names, and consecutive
+ * dependency frames folded into a single expandable group so the in-project
+ * story stays scannable.
  */
 import type { TraceStackFrame } from '~~/types/api';
+import { highlightLines, languageForPath } from '#shared/highlight';
 
 const props = defineProps<{
   frames: TraceStackFrame[];
@@ -62,13 +63,15 @@ function toggleGroup(key: string) {
   openGroups.value = next;
 }
 
-function sourceRows(frame: TraceStackFrame) {
-  if (!frame.source) return [];
-  return frame.source.lines.map((text, i) => {
-    const lineNo = frame.source!.startLine + i;
-    return { lineNo, text, failing: lineNo === frame.line };
-  });
-}
+/** Each frame's source lines, numbered and syntax-highlighted, indexed like `frames`. */
+const frameSourceRows = computed(() =>
+  props.frames.map((frame) => {
+    if (!frame.source) return [];
+    const { startLine, lines } = frame.source;
+    const html = highlightLines(lines, languageForPath(frame.file));
+    return lines.map((_, i) => ({ lineNo: startLine + i, html: html[i] ?? '', failing: startLine + i === frame.line }));
+  }),
+);
 </script>
 
 <template>
@@ -112,21 +115,17 @@ function sourceRows(frame: TraceStackFrame) {
         <div v-if="row.frame.source" class="overflow-x-auto text-xs font-mono leading-relaxed py-1">
           <div class="min-w-max">
             <div
-              v-for="line in sourceRows(row.frame)"
+              v-for="line in frameSourceRows[row.frameIndex]"
               :key="line.lineNo"
-              class="px-3 whitespace-pre flex"
-              :class="
-                line.failing
-                  ? 'bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-300 font-medium'
-                  : 'text-gray-600 dark:text-gray-400'
-              "
+              class="px-3 whitespace-pre flex text-gray-800 dark:text-gray-200"
+              :class="line.failing ? 'bg-red-50 dark:bg-red-950/30 font-medium' : ''"
             >
               <span
                 class="w-10 shrink-0 text-right pr-3 tabular-nums select-none"
                 :class="line.failing ? 'text-red-400 dark:text-red-500' : 'text-gray-300 dark:text-gray-600'"
                 >{{ line.lineNo }}</span
               >
-              <span>{{ line.text }}</span>
+              <span v-html="line.html" />
             </div>
           </div>
         </div>

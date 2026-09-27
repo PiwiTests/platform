@@ -2,12 +2,19 @@
   "manifest_version": 3,
   "name": "Piwi Picker",
   "short_name": "Piwi Picker",
-  "version": "0.39.0",
-  "description": "Ranked, stable Playwright locators for any element on the page — scored the same way Piwi's dashboard scores them.",
+  "version": "0.40.0",
+  "description": "__MSG_extDescription__",
+  "default_locale": "en",
+  "homepage_url": "https://piwitests.dev/features/extension",
   "browser_specific_settings": {
     "gecko": {
       "id": "piwi-picker@piwitests.dev",
-      "strict_min_version": "116.0"
+      "strict_min_version": "140.0",
+      "data_collection_permissions": {
+        "required": [
+          "none"
+        ]
+      }
     }
   },
   "action": {
@@ -20,7 +27,10 @@
     }
   },
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "background.js",
+    "scripts": [
+      "background.js"
+    ]
   },
   "options_ui": {
     "page": "options.html",
@@ -47,7 +57,7 @@
         "default": "Ctrl+Shift+E",
         "mac": "Command+Shift+E"
       },
-      "description": "Pick a locator for an element on the page"
+      "description": "__MSG_pickElementCommand__"
     }
   }
 }

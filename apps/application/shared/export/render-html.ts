@@ -15,7 +15,8 @@
 import { markdownToHtml } from '#shared/markdown-to-html';
 import { html, joinHtml, raw, toHtmlString, type RawHtml } from './html';
 import { stripAnsi } from '#shared/error-fingerprint';
-import { highlightCode } from '#shared/highlight';
+import { highlightCode, highlightLines, languageForPath } from '#shared/highlight';
+import { parseSourceSnippet } from '#shared/source-snippet';
 import {
   caseFacts,
   clusterFacts,
@@ -128,6 +129,7 @@ pre.hljs[data-lang]:not([data-lang=""])::before {
 .hljs-deletion { color:var(--fail); }
 .hljs-emphasis { font-style:italic; }
 .hljs-strong { font-weight:650; }
+.ln { color:var(--faint); user-select:none; }
 p { margin:.4rem 0; }
 ul { margin:.35rem 0; padding-left:1.1rem; }
 li { margin:.1rem 0; }
@@ -249,6 +251,18 @@ function pre(text: string): RawHtml {
 function code(text: string, lang: string): RawHtml {
   const { html: highlighted, language } = highlightCode(stripAnsi(text), lang);
   return html`<pre class="hljs" data-lang="${language || lang}"><code>${raw(highlighted)}</code></pre>`;
+}
+
+/** A captured source snippet: the line-number gutter kept plain, the code syntax-highlighted. */
+function snippet(text: string, file: string): RawHtml {
+  const rows = parseSourceSnippet(stripAnsi(text));
+  const lang = languageForPath(file);
+  const code = highlightLines(
+    rows.map((row) => row.code),
+    lang,
+  );
+  const lines = rows.map((row, i) => toHtmlString(html`<span class="ln">${row.gutter}</span>${raw(code[i] ?? '')}`));
+  return html`<pre class="hljs" data-lang="${lang ?? ''}"><code>${raw(lines.join('\n'))}</code></pre>`;
 }
 
 /** AI prose is Markdown; links are flattened so the document stays self-contained. */
@@ -465,7 +479,7 @@ function renderCase(exportCase: ExportCase, opts: RenderOptions, index: number, 
           (d.testSourceFrames as Record<string, any>[]).map(
             (f) =>
               html`<h3>${`${f.file ?? ''}:${f.line ?? ''}`}</h3>
-                ${pre(String(f.snippet ?? ''))}`,
+                ${snippet(String(f.snippet ?? ''), String(f.file ?? ''))}`,
           ),
         ),
       ),

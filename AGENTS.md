@@ -143,6 +143,13 @@ Run typecheck, lint and tests **once at the end** before the final commit — no
   keeps its own scan because failure fingerprints hash its output (a change regroups existing failures), and the
   error-text readers fall back to a lenient scan for a chain cut short, which no parser can read.
 
+### Licensing (MUST follow)
+
+`packages/reporter`, `packages/core`, `packages/picker-dom`, `integrations/` and `examples/` are MIT; everything else
+is FSL-1.1-MIT (see `LICENSE`). Code may move from the MIT parts into the FSL parts, never the other way: app, server,
+desktop or extension code moved into `core` or `picker-dom` ships under MIT inside the reporter. A new package or
+integration gets its own `LICENSE` file and a `license` field that match the side it belongs to.
+
 ### Comments
 
 - **Never reference plans or specs.** No plan IDs (`A1`, `B3`), plan file names or plan titles in code. Strip all
@@ -212,7 +219,7 @@ Piwi is not a product being sold. Copy is informative, specific and honest — n
 itself the same way everywhere:
 
 > **Your Playwright results, kept and explained.** CI throws away every report it makes. Piwi keeps them — then groups
-> the failures by root cause, scores the flaky tests, and finds the locator you should have used. Self-hosted, MIT,
+> the failures by root cause, scores the flaky tests, and finds the locator you should have used. Self-hosted,
 > zero telemetry.
 
 Seven surfaces carry it, and they drift the moment one changes alone. Update them **in the same commit**:

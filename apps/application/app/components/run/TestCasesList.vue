@@ -1,14 +1,12 @@
 <script setup lang="ts">
 import { computed, nextTick, watch, ref, onUnmounted } from 'vue';
-import type { TestCaseResult } from '~~/types/api';
+import type { RunClusterMeta, TestCaseResult } from '~~/types/api';
 import type { LiveStepInfo, LiveStepsByWorker } from '~/utils/live-steps';
 import { summarizeRunCases } from '#shared/utils/test-counts';
 import { isFixmeSkip } from '#shared/utils/skip-kind';
 
 /** Cluster id → its display name and triage status, for the row chip and the
  *  cluster group header. Supplied by the page from the failure-groups payload. */
-type ClusterMeta = Record<number, { name: string; status: string | null }>;
-
 type GroupBy = 'cluster' | 'file' | 'file-describe' | 'lock' | 'none';
 
 const props = defineProps<{
@@ -19,7 +17,7 @@ const props = defineProps<{
   total?: number | null;
   /** Worker index → current step, rendered inline on the matching running rows. */
   liveSteps?: LiveStepsByWorker | null;
-  clusterMeta?: ClusterMeta | null;
+  clusterMeta?: RunClusterMeta | null;
   /** Stable test-case ids currently quarantined — marks the matching rows. */
   quarantinedCaseIds?: Set<number> | null;
   /** Piwi project id + name, threaded so the IDE opener can resolve a workspace root. */
@@ -35,6 +33,10 @@ function isQuarantined(tc: TestCaseResult): boolean {
 
 function clusterName(id: number): string {
   return props.clusterMeta?.[id]?.name ?? `Cluster #${id}`;
+}
+
+function clusterIssue(id: number | null | undefined) {
+  return id != null ? (props.clusterMeta?.[id]?.issue ?? null) : null;
 }
 
 function liveStep(tc: TestCaseResult): LiveStepInfo | null {
@@ -910,6 +912,7 @@ defineExpose({ scrollToCase });
                 v-else
                 :test-case="item.tc"
                 :cluster-name="item.tc.failureClusterId != null ? clusterName(item.tc.failureClusterId) : null"
+                :issue="clusterIssue(item.tc.failureClusterId)"
                 :quarantined="isQuarantined(item.tc)"
                 :selectable="selectionEnabled && isFailedStatus(item.tc.status)"
                 :selected="selectedIds.has(item.tc.executionId)"

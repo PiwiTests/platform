@@ -1,0 +1,10 @@
+{
+  "extDescription": {
+    "message": "Ranked, stable Playwright locators for any element on the page — scored the same way Piwi's dashboard scores them.",
+    "description": "The manifest description: shown by the browser and used as the store listing's summary. At most 132 characters, the Chrome Web Store's limit."
+  },
+  "pickElementCommand": {
+    "message": "Pick a locator for an element on the page",
+    "description": "Label of the pick keyboard shortcut in the browser's shortcut settings."
+  }
+}

@@ -240,12 +240,12 @@ defineExpose({ revealRawError });
             <p class="text-xs font-medium text-muted uppercase tracking-wide">Tags</p>
             <TestMetaBadges :tags="testCase?.tags" :meta="testCase?.testMeta" />
           </div>
-          <div v-if="testCase?.executionId" class="space-y-1">
+          <div v-if="testCase?.testCaseId && testCase?.stableLinks?.length" class="space-y-1">
             <p class="text-xs font-medium text-muted uppercase tracking-wide">Links</p>
             <EntityLinks
               entity-type="test_case"
-              :entity-id="testCase.executionId"
-              :links="(testCase as any)?.stableLinks ?? null"
+              :entity-id="testCase.testCaseId"
+              :links="testCase.stableLinks"
               readonly
             />
           </div>

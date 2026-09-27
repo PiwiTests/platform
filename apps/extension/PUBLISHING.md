@@ -2,7 +2,7 @@
 
 **Status: live on the Chrome Web Store**, at [`pakhnokpjboejcghgcmkjlpnogfjihhe`](https://chromewebstore.google.com/detail/piwi-picker/pakhnokpjboejcghgcmkjlpnogfjihhe) — that ID is assigned by the store and is now permanent for this listing. Edge and Firefox are still unsubmitted; §3 and §4 below are the remaining work, and neither blocks an Edge user today (Edge installs Chrome Web Store extensions once the user allows other stores — see §3).
 
-Current state this guide assumes: manifest name `"Piwi Picker"`, version tracked by release-please repo-wide (`apps/extension/manifest.json`'s version is already an `extra-files` target in `release-please-config.json` — no manual version bumps needed), MIT-licensed, icons present at 16/32/48/128px, standing permissions limited to `activeTab` + `scripting` + `storage`, plus `optional_host_permissions` (`http://*/*`, `https://*/*`) — declared but granted nothing until the user clicks "Record actions" and approves a single origin. See `apps/docs/extension.md`'s permissions table for the exact wording, and the note in §2 step 3 below on justifying this one to reviewers.
+Current state this guide assumes: manifest name `"Piwi Picker"`, version tracked by release-please repo-wide (`apps/extension/manifest.json`'s version is already an `extra-files` target in `release-please-config.json` — no manual version bumps needed), FSL-1.1-MIT-licensed (root `LICENSE`), icons present at 16/32/48/128px, standing permissions limited to `activeTab` + `scripting` + `storage`, plus `optional_host_permissions` (`http://*/*`, `https://*/*`) — declared but granted nothing until the user clicks "Record actions" and approves a single origin. See `apps/docs/extension.md`'s permissions table for the exact wording, and the note in §2 step 3 below on justifying this one to reviewers.
 
 ## 0. One-time setup (per store, before your first submission)
 
@@ -20,7 +20,13 @@ Current state this guide assumes: manifest name `"Piwi Picker"`, version tracked
 npm run extension:zip --workspace=apps/extension
 ```
 
-Builds, then zips `dist/`'s contents (manifest at the zip root, not nested — what stores expect) into `apps/extension/piwi-picker-v<version>.zip`, dropping `.map` sourcemaps along the way (`apps/extension/scripts/zip.mjs`, via `archiver` — pure JS, no dependency on a system `zip`/`7z` binary, so this works the same on Windows as it does in CI). The zip is gitignored; regenerate it whenever you need a fresh one rather than keeping an old one around. All three stores want this **same built zip**; the manifest is already store-agnostic MV3, so no store-specific rebuild is needed (Firefox's one extra requirement is a manifest key addition, not a different build — see §4).
+Runs a **release build** (`extension:build:release`), then writes two zips next to `manifest.json` (`apps/extension/scripts/zip.mjs`, via `archiver` — pure JS, no dependency on a system `zip`/`7z` binary, so this works the same on Windows as it does in CI):
+
+- `piwi-picker-v<version>.zip` — the add-on: `dist/`'s contents with the manifest at the zip root, not nested (what stores expect), minus `.map` sourcemaps. All three stores want this **same zip**; the manifest is store-agnostic MV3, so no store-specific rebuild is needed (see §4 for the Firefox-only keys it carries).
+- `piwi-picker-v<version>-source.zip` — the sources that build came from, for Firefox only (§4 b). Chrome and Edge don't ask for it.
+- `piwi-picker-v<version>-amo-metadata.json` — the Firefox listing fields the add-on can't carry itself, in both languages (§4 c).
+
+Both are gitignored; regenerate them together whenever you need a fresh pair rather than keeping old ones around. A release build stamps `v<version>` into every bundle where a dev build (`extension:build`, `extension:dev`) stamps the build time, so the same sources always produce the same files — that is what lets Firefox reviewers rebuild the source zip and get the add-on zip back.
 
 ## 2. Chrome Web Store — **done**
 
@@ -44,32 +50,72 @@ Not urgent, because Edge users are already served: opening the Chrome Web Store 
 
 ## 4. Firefox AMO — the one with real differences
 
-**a) The Firefox-specific manifest key is already in place.** Firefox requires an explicit, stable extension ID (Chrome/Edge derive one from the store upload automatically; Firefox doesn't). `apps/extension/manifest.json` carries it:
+**a) The Firefox-specific manifest keys are already in place.** Chromium ignores all of them, so the single built zip stays valid for all three stores:
 
 ```json
 "browser_specific_settings": {
   "gecko": {
     "id": "piwi-picker@piwitests.dev",
-    "strict_min_version": "116.0"
+    "strict_min_version": "140.0",
+    "data_collection_permissions": { "required": ["none"] }
   }
+},
+"background": {
+  "service_worker": "background.js",
+  "scripts": ["background.js"]
 }
 ```
 
-Chromium ignores this key entirely, so the single built zip stays valid for all three stores. Two caveats worth knowing:
-- **The ID is permanent once published.** AMO binds the listing to it; changing it later creates a *new* add-on rather than updating the existing one, orphaning existing installs. Change it before the first submission or not at all.
-- **`116.0` is a floor set by a feature, not a fully verified minimum.** `optional_host_permissions` (used by the recorder — see the top of this doc) needs Firefox 116+; without recording, `109.0` would likely still work. Test against a real Firefox install of the target version and adjust before submitting, rather than trusting the number as-is — this repo's CI doesn't exercise Firefox at all (see the note near the bottom of this section).
+- **`id`** — Firefox requires an explicit, stable extension ID (Chrome/Edge derive one from the store upload). **It is permanent once published**: AMO binds the listing to it, and changing it later creates a *new* add-on rather than updating the existing one, orphaning existing installs.
+- **`background.scripts`** — Firefox has no extension service workers, and AMO rejects a `service_worker` without this fallback (`Unsupported "/background/service_worker" manifest property used without "/background/scripts" property as Firefox-compatible fallback`). Both keys name the same `background.js`: Chrome 121+ runs it as the service worker and ignores `scripts`; Firefox runs it as a non-persistent background script and ignores `service_worker` (the linter reports that as a warning, which is expected). The bundle is a plain IIFE, which works as either.
+- **`data_collection_permissions`** — required for every new AMO add-on since November 2025. `"none"` because the add-on sends nothing to its developer or any third party. The only requests it ever makes go to the Piwi instance the user configures in the options page — their own server, with their own API key — and only read from it (the project list, a project's function catalog and its locator index), sending nothing but that key, a project id and a branch name. If that reading changes (a feature that sends page or recording data anywhere), this key must list the data types, and the Chrome privacy disclosure (§2 step 2) changes with it.
+- **`strict_min_version` `140.0`** — the highest floor any key needs: `data_collection_permissions` needs 140, `optional_host_permissions` (the recorder's per-origin grant) needs 128, and Firefox before 121 would not start the background script at all while `service_worker` is present. 140 is an ESR release.
 
-**b) Submit source, not just the built zip.** Because `apps/extension/dist` is Vite-bundled/minified output, not hand-written source, Mozilla's reviewers require the **original source** plus build instructions whenever the reviewable code doesn't match human-readable source 1:1. Concretely:
-- Upload the same built zip as the actual extension.
-- AMO's submission flow asks "does your extension contain minified/bundled/compiled code?" → yes → it prompts for a source zip. Provide a zip of the `apps/extension/` directory (or the whole repo at that tag) plus a short build note: `npm install && npm run extension:build --workspace=apps/extension`, output in `apps/extension/dist`.
+Check the zip with Mozilla's own linter before uploading — it is what AMO runs on upload, and it reports the same errors:
 
-Submission steps:
+```bash
+npx addons-linter apps/extension/piwi-picker-v<version>.zip
+```
+
+Expect 0 errors. The warnings it leaves are known: `service_worker` ignored by Firefox (above), `data_collection_permissions` needing Firefox for Android 142 (only relevant if the listing targets Android — leave **Firefox for Android** unchecked on AMO; the add-on is a desktop tool), and the panels' `innerHTML` assignments, which reviewers read in the source.
+
+**b) Submit source, not just the built zip.** `dist/` is Vite-bundled and minified output, so AMO requires the original source plus build instructions, and its reviewers rebuild it and diff the result against the add-on — there must be no differences. `npm run extension:zip` produces that source package alongside the add-on (§1): `piwi-picker-v<version>-source.zip`, holding exactly what the build reads — `apps/extension/`, the two workspaces it bundles from source (`packages/core`, `packages/picker-dom`), and the root `package.json`, `package-lock.json`, `.npmrc` and `tsconfig.json` — with `apps/extension/SOURCE-BUILD.md` as its `README.md`: requirements (Node.js 24, npm), the two build commands, and how to diff the output. A zip of `apps/extension/` alone would not build, since it imports the other two workspaces. Always upload the two zips from the same `extension:zip` run.
+
+**c) The listing, in English (default) and French.** AMO reads exactly three listing fields from the add-on file — the name, the summary (the manifest `description`) and the homepage (`homepage_url`) — in every language under `public/_locales/`, which `default_locale: "en"` turns on. So the zip pre-fills those in both languages, and the Chrome Web Store shows the localized summary too. Everything else on the listing lives in `store/` and reaches AMO through its API, never through the zip:
+
+| AMO field | Source |
+|---|---|
+| Name, summary, homepage | the manifest and `public/_locales/{en,fr}/messages.json` (in the zip) |
+| Description | `store/amo-description.en.md`, `store/amo-description.fr.md` (AMO's Markdown subset: bold, italic, links, lists; no headings) |
+| Add-on URL, category, support website, license, experimental, payment, platforms | `store/amo-listing.json` (`piwi-picker`, Web Development, the GitHub issues page, MIT, no, no, Firefox desktop only) |
+| Notes to reviewer | `store/amo-reviewer-notes.md`: source build, network use, permissions, the `innerHTML` warnings, how to test |
+| Screenshots | not pre-fillable: upload them in the listing editor |
+
+`npm run extension:zip` merges all of it into `piwi-picker-v<version>-amo-metadata.json`, in the shape AMO's add-on API takes. A new language is one more `public/_locales/<lang>/` directory plus `store/amo-description.<lang>.md`; `tests/unit/store-listing.test.ts` checks every language has both, and that each summary stays within 132 characters, the Chrome Web Store's limit.
+
+Two ways to submit:
+
+- **Everything pre-filled, through AMO's API** (`web-ext sign`, which uploads the add-on, the source and the listing in one go). Needs an API key from <https://addons.mozilla.org/developers/addon/api/key/>; run it right after `npm run extension:zip`, since it packs `dist/` itself and that must be the release build:
+
+  ```bash
+  npx web-ext sign --channel listed \
+    --source-dir apps/extension/dist \
+    --amo-metadata apps/extension/piwi-picker-v<version>-amo-metadata.json \
+    --upload-source-code apps/extension/piwi-picker-v<version>-source.zip \
+    --api-key "$AMO_JWT_ISSUER" --api-secret "$AMO_JWT_SECRET" \
+    --approval-timeout 0
+  ```
+
+  Then add the screenshots in the listing editor. Only the first listed version needs the metadata: for later versions leave `--amo-metadata` out, and edit the listing on AMO.
+- **Through the web form**, as below: name, summary and homepage arrive from the zip in both languages, and the other fields are pasted from `store/` — the French description through the listing editor's language selector once the add-on exists.
+
+Submission steps (web form):
 1. AMO developer hub → **Submit a New Add-on** → "On this site" (listed, public) vs "self-distribution" (unlisted) — pick listed unless there's a specific reason not to.
-2. Upload the zip, answer the minified-code question, attach source + build notes as above.
-3. Fill the listing (same screenshots/description as Chrome/Edge).
+2. Upload `piwi-picker-v<version>.zip`, keep **Firefox for Android** unchecked, answer "does your extension contain minified/bundled/compiled code?" with yes, and upload `piwi-picker-v<version>-source.zip` when prompted.
+3. Fill the rest of the listing from `store/` (§4 c), in English and French, and add screenshots.
 4. Firefox review is manual and can take longer than Chrome/Edge for a first submission, especially with source review involved.
 
-**Verify, don't assume, before submitting:** Firefox's `chrome.*` namespace aliasing in MV3 is close to Chrome's but not identical everywhere. Nothing in this repo's CI currently exercises Firefox at all — the E2E harness (`apps/extension/tests/e2e/`) is Chromium-only via `--load-extension`. Run the extension manually in a real Firefox install (or extend the harness) before trusting the store listing's "works in Firefox" claim.
+**Verify, don't assume, before submitting:** Firefox's `chrome.*` namespace aliasing in MV3 is close to Chrome's but not identical everywhere, and nothing in this repo's CI exercises Firefox — the E2E harness (`apps/extension/tests/e2e/`) is Chromium-only via `--load-extension`. Run the extension in a real Firefox (`about:debugging` → **Load Temporary Add-on** → `dist/manifest.json`) before trusting the listing's "works in Firefox" claim. The one difference found so far is handled: Firefox has no `storage.session.setAccessLevel` and no session storage in content scripts, so the tools that keep state there — the recorder, the pick session, and the active-project and branch overrides — reach it through the background script instead (`src/shared/session-area.ts`). The recorder across two pages and the pick-session panel were checked in Firefox 156 that way; the rest of the tools were not.
 
 ## 5. Ongoing updates
 

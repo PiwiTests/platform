@@ -1,4 +1,5 @@
 import type { IssueDocument } from '#shared/integrations/document';
+import type { TrackerField } from '#shared/integrations/fields';
 
 /** Tracker providers that have a server-side client. */
 export type TrackerProviderName = 'jira';
@@ -27,6 +28,9 @@ export interface TrackerTransition {
   id: string;
   name: string;
   toStatus?: string | null;
+  toStatusCategory?: TrackerStatusCategory | null;
+  /** The fields the transition's screen asks for; empty when it has no screen. */
+  fields?: TrackerField[];
 }
 
 export interface TrackerIssue {
@@ -52,6 +56,8 @@ export interface CreateIssueInput {
   assigneeId?: string | null;
   priority?: string | null;
   componentId?: string | null;
+  /** Extra field values, as the tracker API takes them, keyed by field id. */
+  fields?: Record<string, unknown>;
 }
 
 export interface TrackerSearch {
@@ -74,12 +80,16 @@ export interface IssueTracker {
   whoAmI(): Promise<{ id: string; displayName: string }>;
   listProjects(): Promise<TrackerProject[]>;
   listIssueTypes(projectKey: string): Promise<TrackerIssueType[]>;
+  /** The fields of the create screen for a project and issue type (id or name). */
+  listCreateFields?(projectKey: string, issueType: string): Promise<TrackerField[]>;
   searchAssignable(projectKey: string, query: string): Promise<TrackerUser[]>;
   createIssue(input: CreateIssueInput): Promise<TrackerIssue>;
   getIssue(key: string): Promise<TrackerIssue | null>;
   addComment(key: string, body: IssueDocument): Promise<void>;
+  /** The transitions an issue offers from its current status, with their screens' fields. */
   listTransitions(key: string): Promise<TrackerTransition[]>;
-  transition(key: string, transitionId: string): Promise<void>;
+  /** Move an issue through a transition, with values for its screen's fields. */
+  transition(key: string, transitionId: string, fields?: Record<string, unknown>): Promise<void>;
   search(query: TrackerSearch): Promise<TrackerIssue[]>;
   attach?(key: string, file: { name: string; bytes: Uint8Array; mime: string }): Promise<void>;
   issueUrl(key: string): string;

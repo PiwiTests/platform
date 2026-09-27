@@ -945,6 +945,7 @@ export async function apiGetAiSettings() {
     customInstructions: null,
     language: null,
     languageEnvManaged: false,
+    canStoreSecrets: true,
   };
 }
 

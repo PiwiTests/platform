@@ -49,6 +49,10 @@ If an E2E test creates a project, use a static name registered in `apps/applicat
 - For anything non-trivial, open an issue or a [Discussion](https://github.com/PiwiTests/platform/discussions) first so we can agree on the approach before you invest time.
 - Security problems: follow [SECURITY.md](SECURITY.md) — please don't open public issues for those.
 
+## License of your contribution
+
+The repository is licensed in two parts (see [LICENSE](LICENSE)): `packages/reporter`, `packages/core`, `packages/picker-dom`, `integrations/` and `examples/` are MIT; everything else is FSL-1.1-MIT. By opening a pull request, you agree that your contribution is licensed under the license of the directory it changes.
+
 ## Commit messages & PR titles
 
 This repo uses [Conventional Commits](https://www.conventionalcommits.org/), enforced by commitlint (locally and in CI) and a PR-title check. [release-please](https://github.com/googleapis/release-please) reads commit history to compute version bumps and generate the changelog, so following this format isn't just style — it's what makes releases work.

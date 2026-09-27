@@ -22,6 +22,8 @@ import type { DbClient } from '../../database';
 import { randomBytes } from 'node:crypto';
 import { decryptSecret, encryptSecret, getEncryptionKey } from '../crypto';
 import { JiraClient } from './jira/client';
+import { jiraCheckFailure } from './jira/check';
+import { jiraFailureHint, normalizeJiraSiteUrl, type JiraTokenKind } from '#shared/integrations/jira-setup';
 import type { IssueTracker, TrackerCredentials } from './types';
 
 /** Providers whose registry entry is a tracker (as opposed to a wiki). */
@@ -215,7 +217,12 @@ export async function updateConnection(
   const updates: Partial<IntegrationConnection> = { updatedAt: new Date() };
   if (input.name !== undefined) updates.name = input.name;
   if (input.baseUrl !== undefined) updates.baseUrl = input.baseUrl;
-  if (input.config !== undefined) updates.config = input.config;
+  if (input.config !== undefined) {
+    // The webhook token is never returned, so a submitted config cannot carry it;
+    // it changes only through the webhook-token endpoints.
+    const webhookToken = webhookTokenFor(row);
+    updates.config = webhookToken ? { ...(input.config ?? {}), webhookToken } : input.config;
+  }
 
   // Merge the submitted credential fields onto the stored ones. A blank field is
   // ignored, so changing one field — rotating the API token, or correcting the
@@ -282,7 +289,7 @@ export async function listTrackerConnections(db: DbClient): Promise<TrackerSumma
   const rows = await db.select().from(integrationConnections);
   return rows
     .filter((r) => TRACKER_PROVIDERS.has(r.provider as IntegrationProviderName) && hasStoredCredentials(r))
-    .map((r) => ({ id: r.id, provider: r.provider as IntegrationProviderName, name: r.name }));
+    .map((r) => ({ id: r.id, provider: r.provider as IntegrationProviderName, name: r.name, baseUrl: r.baseUrl }));
 }
 
 /**
@@ -381,12 +388,11 @@ export async function testConnection(db: DbClient, id: number): Promise<Connecti
   try {
     const account = await tracker.whoAmI();
     // A scoped token resolves a cloud id while verifying; persist it so later
-    // clients route through the gateway without re-detecting.
+    // clients route through the gateway without re-detecting, and record the
+    // token kind the connection card shows.
     const detected = tracker.detectedConfig?.() ?? null;
-    const config =
-      detected && Object.keys(detected).length > 0
-        ? { ...((row.config as Record<string, unknown> | null) ?? {}), ...detected }
-        : null;
+    const tokenKind: JiraTokenKind = detected?.cloudId ? 'scoped' : 'classic';
+    const config = { ...((row.config as Record<string, unknown> | null) ?? {}), ...(detected ?? {}), tokenKind };
     await db
       .update(integrationConnections)
       .set({
@@ -394,16 +400,36 @@ export async function testConnection(db: DbClient, id: number): Promise<Connecti
         lastCheckedAt: new Date(),
         lastError: null,
         updatedAt: new Date(),
-        ...(config ? { config } : {}),
+        config,
       })
       .where(eq(integrationConnections.id, id));
-    return { ok: true, account };
+    return { ok: true, account, tokenKind };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     await db
       .update(integrationConnections)
       .set({ status: 'failed', lastCheckedAt: new Date(), lastError: message, updatedAt: new Date() })
       .where(eq(integrationConnections.id, id));
-    return { ok: false, error: message };
+    const failure = jiraCheckFailure(err);
+    return { ok: false, error: message, hint: failure ? jiraFailureHint('auth', failure) : null };
   }
+}
+
+/**
+ * The credentials a pre-save check signs in with: the submitted fields, each
+ * blank one taken from the connection being edited. The stored ones are used
+ * only while the site stays the same, so a stored token never goes to another host.
+ */
+export async function credentialsForCheck(
+  db: DbClient,
+  input: { siteUrl: string; credentials?: Record<string, string> | null; connectionId?: number | null },
+): Promise<TrackerCredentials | null> {
+  let merged = nonEmptyValues(input.credentials);
+  if (input.connectionId && (!merged.email || !merged.apiToken)) {
+    const row = await getConnectionRow(db, input.connectionId);
+    if (row && normalizeJiraSiteUrl(row.baseUrl)?.url === input.siteUrl) {
+      merged = { ...(credentialMap(row) ?? {}), ...merged };
+    }
+  }
+  return merged.email && merged.apiToken ? { email: merged.email, apiToken: merged.apiToken } : null;
 }

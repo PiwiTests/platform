@@ -6,7 +6,7 @@
   <b>Your Playwright results, kept and explained.</b><br>
   CI throws away every report it makes. Piwi keeps them — every run, trace, and HTML report — then
   groups the failures by root cause, scores the flaky tests, and finds the locator you should have
-  used. Self-hosted, MIT, zero telemetry.
+  used. Self-hosted, zero telemetry.
 </p>
 
 <p align="center">
@@ -21,7 +21,7 @@
   <a href="https://www.npmjs.com/package/@piwitests/server"><img src="https://img.shields.io/npm/v/@piwitests/server?logo=npm&label=server&labelColor=020420&color=CB3837" alt="npm server"></a>
   <a href="https://hub.docker.com/r/phenx/piwitests-server"><img src="https://img.shields.io/docker/v/phenx/piwitests-server?logo=docker&labelColor=020420&color=2496ED" alt="Docker"></a>
   <a href="https://github.com/PiwiTests/platform/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/PiwiTests/platform/ci.yml?branch=main&logo=githubactions&logoColor=white&labelColor=020420&label=CI" alt="CI status"></a>
-  <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-green?labelColor=020420" alt="MIT license"></a>
+  <a href="./LICENSE"><img src="https://img.shields.io/badge/license-FSL--1.1--MIT-green?labelColor=020420" alt="FSL-1.1-MIT license"></a>
 </p>
 
 <p align="center">
@@ -272,7 +272,13 @@ cd apps/application && npm install && npm run app:dev   # http://localhost:3000
 
 ## License
 
-MIT
+Fair source. The dashboard, the server, the desktop app and the browser extension are under the
+[Functional Source License, Version 1.1, MIT Future License](LICENSE) (FSL-1.1-MIT): use it, self-host it and
+modify it for free, at work too. What it rules out is offering Piwi, or a product built from it, as a
+commercial product or service that competes with it. Each release becomes MIT two years after it is published.
+
+The reporter, the integrations and the examples are MIT. Releases up to v0.39.x stay MIT.
+See [License](https://piwitests.dev/guide/license) for what is and isn't allowed.
 
 ---
 

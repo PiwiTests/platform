@@ -1,0 +1,1 @@
+ALTER TABLE "project_integrations" ADD COLUMN "field_defaults" jsonb;

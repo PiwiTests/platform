@@ -10,7 +10,7 @@
  * why it was chosen.
  */
 import { computed, ref, watch } from 'vue';
-import type { TestRunDetails, TestCaseResult, ProjectWithTestRuns } from '~~/types/api';
+import type { TestRunDetails, TestCaseResult, ProjectWithTestRuns, RunClusterMeta } from '~~/types/api';
 import type { RunInsightsResult } from '#shared/handlers/run-insights';
 import { describeRunBaselineParts, type RunBaselinePart } from '#shared/run-baseline';
 
@@ -19,7 +19,7 @@ const props = defineProps<{
   /** This run's executions, so each changed test renders as a full TestRow. */
   testCases: TestCaseResult[];
   /** Resolved cluster names for the row chips. */
-  clusterMeta?: Record<number, { name: string; status: string | null }>;
+  clusterMeta?: RunClusterMeta;
   projectKey?: string | number | null;
   projectName?: string | null;
   /** Increments when the run finishes so this tab can refetch. */
@@ -237,6 +237,10 @@ const hasAnyChange = computed(() => {
 function clusterName(tc: TestCaseResult): string | null {
   return tc.failureClusterId != null ? (props.clusterMeta?.[tc.failureClusterId]?.name ?? null) : null;
 }
+
+function clusterIssue(tc: TestCaseResult) {
+  return tc.failureClusterId != null ? (props.clusterMeta?.[tc.failureClusterId]?.issue ?? null) : null;
+}
 </script>
 
 <template>
@@ -419,6 +423,7 @@ function clusterName(tc: TestCaseResult): string | null {
             :key="tc.executionId"
             :test-case="tc"
             :cluster-name="clusterName(tc)"
+            :issue="clusterIssue(tc)"
             :project-key="projectKey"
             :project-name="projectName"
           />
@@ -440,6 +445,7 @@ function clusterName(tc: TestCaseResult): string | null {
             :key="tc.executionId"
             :test-case="tc"
             :cluster-name="clusterName(tc)"
+            :issue="clusterIssue(tc)"
             :project-key="projectKey"
             :project-name="projectName"
           />
@@ -461,6 +467,7 @@ function clusterName(tc: TestCaseResult): string | null {
             :key="tc.executionId"
             :test-case="tc"
             :cluster-name="clusterName(tc)"
+            :issue="clusterIssue(tc)"
             :project-key="projectKey"
             :project-name="projectName"
           />
@@ -482,6 +489,7 @@ function clusterName(tc: TestCaseResult): string | null {
             :key="tc.executionId"
             :test-case="tc"
             :cluster-name="clusterName(tc)"
+            :issue="clusterIssue(tc)"
             :project-key="projectKey"
             :project-name="projectName"
           />

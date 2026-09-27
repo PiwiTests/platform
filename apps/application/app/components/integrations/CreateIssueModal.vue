@@ -1,12 +1,22 @@
 <script setup lang="ts">
 import type {
+  CreateIssueResponse,
   ExistingIssueCandidate,
   IssueDraft,
+  IssueFieldProblem,
   IssueIncludeOptions,
   TrackerProjectOption,
   TrackerIssueTypeOption,
   TrackerUserOption,
 } from '#shared/integrations/types';
+import {
+  hasFieldValue,
+  joinFieldNames,
+  missingRequiredFields,
+  requiredFieldsToFill,
+  settableFields,
+  type FieldValues,
+} from '#shared/integrations/fields';
 
 const props = defineProps<{
   entityType: 'failure_cluster' | 'test_runs_case';
@@ -58,8 +68,49 @@ const showAllCreate = ref(false);
 const hasMultipleConnections = computed(() => (draft.value?.connections.length ?? 0) > 1);
 const connectionItems = computed(() => (draft.value?.connections ?? []).map((c) => ({ label: c.name, value: c.id })));
 const existing = computed<ExistingIssueCandidate[]>(() => draft.value?.existing ?? []);
+
+// ── Jira fields: what the chosen issue type requires ─────────────────────────
+const fieldValues = ref<FieldValues>({});
+/** Fields the last create was refused over — shown even when the metadata does not mark them required. */
+const fieldProblems = ref<IssueFieldProblem[]>([]);
+const {
+  fields: screenFields,
+  loading: fieldsLoading,
+  error: fieldsError,
+  reload: reloadFields,
+} = useTrackerFields(
+  () => connectionId.value,
+  () => projectKey.value,
+  () => issueType.value,
+);
+/** The fields to ask for: the required ones Piwi does not fill, plus any Jira refused. */
+const askedFields = computed(() => {
+  const required = requiredFieldsToFill(screenFields.value);
+  const refused = new Set(fieldProblems.value.map((p) => p.id));
+  const extra = settableFields(screenFields.value).filter((f) => refused.has(f.id) && !required.includes(f));
+  return [...required, ...extra];
+});
+/** Optional project defaults that ride along without being asked for: "Components to Checkout". */
+const projectDefaultsLine = computed(() =>
+  joinFieldNames(
+    settableFields(screenFields.value)
+      .filter((f) => !askedFields.value.includes(f) && hasFieldValue(fieldValues.value[f.id]?.value))
+      .map((f) => `${f.name} to ${fieldValues.value[f.id]!.label}`),
+  ),
+);
+const missingFields = computed(() =>
+  missingRequiredFields(screenFields.value, fieldValues.value, { assignee: !!assignee.value }),
+);
+const assigneeRequired = computed(() => missingFields.value.some((f) => f.id === 'assignee'));
+const missingNames = computed(() => joinFieldNames(missingFields.value.map((f) => f.name)));
+
 const canCreate = computed(
-  () => !!connectionId.value && !!projectKey.value && !!issueType.value && !!title.value.trim(),
+  () =>
+    !!connectionId.value &&
+    !!projectKey.value &&
+    !!issueType.value &&
+    !!title.value.trim() &&
+    missingFields.value.length === 0,
 );
 
 function applyDraft(d: IssueDraft) {
@@ -72,6 +123,8 @@ function applyDraft(d: IssueDraft) {
   assignee.value = d.assignee ?? undefined;
   locale.value = d.locale;
   include.value = { ...d.include };
+  fieldValues.value = { ...(d.fieldValues ?? {}) };
+  fieldProblems.value = [];
 }
 
 async function loadDraft() {
@@ -183,24 +236,22 @@ async function create() {
   if (!canCreate.value) return;
   creating.value = true;
   try {
-    const res = await $fetch<{ status: string; key?: string; url?: string; error?: string }>(
-      '/api/integrations/issues',
-      {
-        method: 'POST',
-        body: {
-          entityType: props.entityType,
-          entityId: props.entityId,
-          connectionId: connectionId.value,
-          title: title.value.trim(),
-          projectKey: projectKey.value,
-          issueType: issueType.value,
-          labels: labels.value,
-          assignee: assignee.value,
-          locale: locale.value,
-          include: include.value,
-        },
+    const res = await $fetch<CreateIssueResponse>('/api/integrations/issues', {
+      method: 'POST',
+      body: {
+        entityType: props.entityType,
+        entityId: props.entityId,
+        connectionId: connectionId.value,
+        title: title.value.trim(),
+        projectKey: projectKey.value,
+        issueType: issueType.value,
+        labels: labels.value,
+        assignee: assignee.value,
+        locale: locale.value,
+        include: include.value,
+        fields: fieldValues.value,
       },
-    );
+    });
     if (res.status === 'done' && res.key && res.url) {
       toast.add({
         title: `${res.key} created`,
@@ -218,6 +269,9 @@ async function create() {
       open.value = false;
     } else {
       error.value = res.error || 'Could not create the issue';
+      fieldProblems.value = [...(res.missingFields ?? []), ...(res.fieldErrors ?? [])];
+      // The screen may have changed since it was read: read it again.
+      if (fieldProblems.value.length) void reloadFields();
     }
   } catch (err) {
     error.value = errorMessage(err);
@@ -317,6 +371,30 @@ async function linkExisting(candidate: ExistingIssueCandidate) {
             </UFormField>
           </div>
 
+          <template v-if="projectKey && issueType">
+            <CheckResultLine v-if="fieldsLoading" state="pending" text="Reading the issue type's fields from Jira…" />
+            <CheckResultLine
+              v-else-if="fieldsError"
+              state="warning"
+              :text="fieldsError"
+              hint="Jira still checks its required fields when the issue is created."
+            />
+            <div v-else-if="askedFields.length" class="space-y-2" data-shot="create-issue-fields">
+              <p class="text-xs font-medium text-gray-500 flex items-center gap-1">
+                Required by Jira <HelpHint topic="integrations.required-fields" />
+              </p>
+              <TrackerFieldsList
+                v-model="fieldValues"
+                :fields="askedFields"
+                :connection-id="connectionId"
+                :project-key="projectKey"
+              />
+            </div>
+            <p v-if="projectDefaultsLine" class="text-xs text-muted">
+              The project settings also set {{ projectDefaultsLine }}.
+            </p>
+          </template>
+
           <UFormField label="Assignee">
             <USelectMenu
               v-model="assignee"
@@ -332,6 +410,12 @@ async function linkExisting(candidate: ExistingIssueCandidate) {
                   searchAssignable();
                 }
               "
+            />
+            <CheckResultLine
+              v-if="assigneeRequired"
+              state="warning"
+              text="Jira requires an assignee for this issue type."
+              class="mt-1"
             />
           </UFormField>
 
@@ -364,7 +448,10 @@ async function linkExisting(candidate: ExistingIssueCandidate) {
     </template>
 
     <template #footer>
-      <div class="flex justify-end gap-2 w-full">
+      <div class="flex flex-wrap items-center justify-end gap-2 w-full">
+        <span v-if="draft && missingNames" class="mr-auto text-xs text-muted" data-testid="create-issue-missing">
+          Jira still needs {{ missingNames }}.
+        </span>
         <UButton color="neutral" variant="ghost" @click="open = false">Cancel</UButton>
         <UButton
           v-if="draft && (!existing.length || showAllCreate)"

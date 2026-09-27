@@ -224,6 +224,7 @@ import {
   createDemoConnection,
   updateDemoConnection,
   testDemoConnection,
+  checkDemoConnection,
   demoTrackerStatus,
   demoIssueDraft,
   demoCreateIssue,
@@ -231,6 +232,8 @@ import {
   demoSyncTrackerLinks,
   demoConnectionProjects,
   demoConnectionIssueTypes,
+  demoCreateFields,
+  demoTransitionSample,
   demoAssignable,
   getDemoProjectIntegration,
   saveDemoProjectIntegration,
@@ -2202,6 +2205,15 @@ const routes: RouteEntry[] = [
     pattern: /^\/api\/integrations\/connections\/(\d+)\/test$/,
     handler: async () => testDemoConnection(),
   },
+  {
+    method: 'POST',
+    pattern: /^\/api\/integrations\/connections\/check$/,
+    handler: async (_, body) => {
+      const result = checkDemoConnection(body as { baseUrl?: string });
+      if (!result) throw demoHttpError(400, 'Enter the site address, e.g. https://your-team.atlassian.net');
+      return result;
+    },
+  },
   { method: 'GET', pattern: /^\/api\/integrations\/status$/, handler: async () => demoTrackerStatus() },
   {
     method: 'GET',
@@ -2223,8 +2235,17 @@ const routes: RouteEntry[] = [
     method: 'POST',
     pattern: /^\/api\/integrations\/issues$/,
     handler: async (_, body) => {
-      const b = body as { entityType: 'failure_cluster' | 'test_runs_case'; entityId: number; title?: string };
-      return demoCreateIssue(await getDemoDb(), b.entityType, b.entityId, b.title);
+      const b = body as {
+        entityType: 'failure_cluster' | 'test_runs_case';
+        entityId: number;
+        title?: string;
+        issueType?: string;
+        fields?: unknown;
+      };
+      return demoCreateIssue(await getDemoDb(), b.entityType, b.entityId, b.title, {
+        issueType: b.issueType,
+        fields: b.fields,
+      });
     },
   },
   { method: 'GET', pattern: /^\/api\/integrations\/actions$/, handler: async () => demoIntegrationActions() },
@@ -2238,6 +2259,16 @@ const routes: RouteEntry[] = [
     method: 'GET',
     pattern: /^\/api\/integrations\/connections\/(\d+)\/projects\/([^/]+)\/issue-types$/,
     handler: async () => demoConnectionIssueTypes(),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/integrations\/connections\/(\d+)\/projects\/([^/]+)\/issue-types\/([^/]+)\/fields$/,
+    handler: async (m) => demoCreateFields(decodeURIComponent(m[3]!)),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/integrations\/connections\/(\d+)\/projects\/([^/]+)\/transitions$/,
+    handler: async (_m, _body, query) => demoTransitionSample(query?.get('from') === 'done' ? 'done' : 'open'),
   },
   {
     method: 'GET',
@@ -2490,7 +2521,7 @@ routes.push(
   {
     method: 'GET',
     pattern: /^\/api\/channels$/,
-    handler: () => Promise.resolve({ items: [DEMO_CHANNEL] }),
+    handler: () => Promise.resolve({ items: [DEMO_CHANNEL], canStoreSecrets: true }),
   },
   {
     method: 'POST',
@@ -2501,6 +2532,11 @@ routes.push(
   {
     method: 'POST',
     pattern: /^\/api\/channels\/(\d+)\/test$/,
+    handler: () => Promise.resolve({ success: false, error: 'Not available in demo mode' }),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/channels\/test$/,
     handler: () => Promise.resolve({ success: false, error: 'Not available in demo mode' }),
   },
 
