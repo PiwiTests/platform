@@ -3,8 +3,8 @@
 // is intentionally not committed to git — CI runs `npm run app:build --workspace=apps/application`
 // (with NITRO_PRESET=node-server) before packing.
 //
-// The build bundles a `node_modules` into `.output/server/` (Nitro's noExternals does
-// not fully inline it — the runtime still resolves deps like drizzle-orm from there).
+// Nitro keeps the npm dependencies external and copies the files they use into
+// `.output/server/node_modules`; the runtime resolves deps like drizzle-orm from there.
 // Those pure-JS deps are cross-platform and ship as-is. The one exception is the native
 // modules (sharp, libsql): the bundled copies are the BUILD machine's platform binaries
 // (e.g. linux-x64-glibc), which would be wrong for a macOS / Windows / arm / musl user.
