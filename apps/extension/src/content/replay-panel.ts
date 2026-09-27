@@ -28,6 +28,8 @@ import {
   performPress,
   performSelect,
   resolveForAction,
+  waitForPageReady,
+  waitForStepReady,
 } from './replay-actions.js';
 import { readStepsFile } from './steps-file.js';
 
@@ -441,6 +443,7 @@ async function runReplay(): Promise<void> {
     document.getElementById(REPLAY_DIALOG_HOST_ID)?.remove();
     cursor?.remove();
     cursor = createCursor(state.cursor);
+    await waitForPageReady();
     for (;;) {
       state = await getReplayState();
       if (!state) return;
@@ -475,6 +478,8 @@ async function runReplay(): Promise<void> {
         await recordResult(state, index, { status: 'diverged', detail: reason });
         return void (await finish((await getReplayState())!, false));
       }
+
+      await waitForStepReady();
 
       if (step.action === 'assert' || step.action === 'assertVisible') {
         if (state.stepMode) {

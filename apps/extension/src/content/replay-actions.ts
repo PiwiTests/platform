@@ -31,6 +31,68 @@ function nextFrame(): Promise<void> {
   return new Promise((resolve) => requestAnimationFrame(() => resolve()));
 }
 
+/**
+ * How long the page must stay still before the replay acts: no change to its
+ * DOM and no new request. An app rendered on the server ignores input until it
+ * has hydrated, and hydrating writes its own state back over whatever was
+ * typed before; a person never acts that fast after a page appears.
+ */
+const QUIET_MS = 400;
+const LOAD_QUIET_MAX_MS = 10_000;
+const STEP_QUIET_MS = 250;
+const STEP_QUIET_MAX_MS = 3_000;
+
+function isOwnNode(node: Node): boolean {
+  const element = node instanceof Element ? node : node.parentElement;
+  return !!element && isOwnHost(element);
+}
+
+/** Resolves once the page has gone `quietMs` without a DOM change or a new request, or after `maxMs`. */
+async function waitForQuiet(quietMs: number, maxMs: number): Promise<void> {
+  const deadline = Date.now() + maxMs;
+  let last = Date.now();
+  const mutations = new MutationObserver((records) => {
+    if (records.some((r) => !isOwnNode(r.target))) last = Date.now();
+  });
+  mutations.observe(document.documentElement, {
+    subtree: true,
+    childList: true,
+    attributes: true,
+    characterData: true,
+  });
+  let requests: PerformanceObserver | null = null;
+  try {
+    requests = new PerformanceObserver(() => {
+      last = Date.now();
+    });
+    requests.observe({ type: 'resource' });
+  } catch {
+    requests = null;
+  }
+  try {
+    while (Date.now() < deadline && Date.now() - last < quietMs) await wait(50);
+  } finally {
+    mutations.disconnect();
+    requests?.disconnect();
+  }
+}
+
+/** Waits for a page that has just opened: its load, then a quiet moment. */
+export async function waitForPageReady(): Promise<void> {
+  if (document.readyState !== 'complete') {
+    await Promise.race([
+      new Promise((resolve) => window.addEventListener('load', resolve, { once: true })),
+      wait(LOAD_QUIET_MAX_MS),
+    ]);
+  }
+  await waitForQuiet(QUIET_MS, LOAD_QUIET_MAX_MS);
+}
+
+/** Waits, briefly, for what the last step started (a request, a re-render) to finish. */
+export function waitForStepReady(): Promise<void> {
+  return waitForQuiet(STEP_QUIET_MS, STEP_QUIET_MAX_MS);
+}
+
 /** The locator the spec would write for a step, or null when none was recorded. */
 export function locatorFor(step: RecordedStep): string | null {
   return stepLocator(step.target, { locators: 'stable' });
@@ -114,6 +176,36 @@ function mouseInit(x: number, y: number): MouseEventInit {
   return { bubbles: true, cancelable: true, composed: true, clientX: x, clientY: y, button: 0, view: window };
 }
 
+/** The element the replay's pointer is over, which gets the leave events when it moves on. */
+let hovered: Element | null = null;
+
+/**
+ * The pointer arriving over an element, as a mouse sends it on its way to a
+ * click: out of the last element, over and into this one, then a move. Menus
+ * and selects rely on it: a Radix or Reka select ignores the release that
+ * picks an option unless the pointer moved since it opened.
+ */
+function dispatchHover(element: Element, x: number, y: number): void {
+  const init = mouseInit(x, y);
+  const pointer: PointerEventInit = { ...init, pointerId: 1, pointerType: 'mouse', isPrimary: true };
+  if (hovered !== element) {
+    const previous = hovered;
+    if (previous?.isConnected) {
+      previous.dispatchEvent(new PointerEvent('pointerout', { ...pointer, relatedTarget: element }));
+      previous.dispatchEvent(new PointerEvent('pointerleave', { ...pointer, bubbles: false, relatedTarget: element }));
+      previous.dispatchEvent(new MouseEvent('mouseout', { ...init, relatedTarget: element }));
+      previous.dispatchEvent(new MouseEvent('mouseleave', { ...init, bubbles: false, relatedTarget: element }));
+    }
+    element.dispatchEvent(new PointerEvent('pointerover', { ...pointer, relatedTarget: previous }));
+    element.dispatchEvent(new PointerEvent('pointerenter', { ...pointer, bubbles: false, relatedTarget: previous }));
+    element.dispatchEvent(new MouseEvent('mouseover', { ...init, relatedTarget: previous }));
+    element.dispatchEvent(new MouseEvent('mouseenter', { ...init, bubbles: false, relatedTarget: previous }));
+    hovered = element;
+  }
+  element.dispatchEvent(new PointerEvent('pointermove', pointer));
+  element.dispatchEvent(new MouseEvent('mousemove', init));
+}
+
 /** A click as a person makes it: pointer and mouse down and up, focus, then the click. */
 function dispatchClick(element: Element, x: number, y: number): void {
   const init = mouseInit(x, y);
@@ -130,6 +222,7 @@ async function pointAt(element: Element, cursor: FakeCursor, caption: string): P
   const target = center(element);
   cursor.outline(element.getBoundingClientRect());
   await cursor.moveTo(target.x, target.y, caption);
+  dispatchHover(element, target.x, target.y);
   return target;
 }
 
@@ -139,6 +232,12 @@ export async function performClick(element: Element, cursor: FakeCursor, caption
   cursor.outline(null);
   dispatchClick(element, x, y);
 }
+
+/**
+ * Fields whose value is only valid whole (`09:30`, `2026-09-27`, `#22c55e`):
+ * a browser drops a partial one, so the replay sets them in one go.
+ */
+const WHOLE_VALUE_TYPES = new Set(['date', 'time', 'datetime-local', 'month', 'week', 'color', 'range']);
 
 /** Typed in steps a person can follow, at most about a second and a half whatever its length. */
 export async function performFill(
@@ -160,6 +259,14 @@ export async function performFill(
   }
   if (!(element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement)) return false;
   element.focus({ preventScroll: true });
+  if (element instanceof HTMLInputElement && WHOLE_VALUE_TYPES.has(element.type)) {
+    element.value = value;
+    element.dispatchEvent(
+      new InputEvent('input', { bubbles: true, composed: true, inputType: 'insertReplacementText' }),
+    );
+    element.dispatchEvent(new Event('change', { bubbles: true }));
+    return element.value === value;
+  }
   element.value = '';
   element.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true, inputType: 'deleteContentBackward' }));
   const perTick = Math.max(1, Math.ceil(value.length / 40));
