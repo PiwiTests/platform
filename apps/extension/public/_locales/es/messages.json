@@ -2687,6 +2687,94 @@
   "replay_runWithPlaywright": {
     "message": "Ejecutar con Playwright…"
   },
+  "replay_seenHere": {
+    "message": "Lo que mostró la página durante la reproducción:"
+  },
+  "replay_seenRequest": {
+    "message": "$method$ $url$ respondió $status$",
+    "placeholders": {
+      "method": {
+        "content": "$1",
+        "example": "POST"
+      },
+      "status": {
+        "content": "$2",
+        "example": "500"
+      },
+      "url": {
+        "content": "$3",
+        "example": "/api/cart/coupon"
+      }
+    }
+  },
+  "replay_seenRequestFailed": {
+    "message": "$method$ $url$ no recibió respuesta",
+    "placeholders": {
+      "method": {
+        "content": "$1",
+        "example": "GET"
+      },
+      "url": {
+        "content": "$2",
+        "example": "/api/cart"
+      }
+    }
+  },
+  "replay_seenConsole": {
+    "message": "Error de consola: $message$",
+    "placeholders": {
+      "message": {
+        "content": "$1",
+        "example": "Coupon failed: 500"
+      }
+    }
+  },
+  "replay_seenMore": {
+    "message": "+$count$ más",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "replay_share": {
+    "message": "Compartir el resultado…"
+  },
+  "replay_sharePreview": {
+    "message": "Envía a $instance$, en el informe: este veredicto, el sitio donde se ejecutó ($origin$) y el nombre de tu navegador.",
+    "placeholders": {
+      "instance": {
+        "content": "$1",
+        "example": "piwi.acme.test"
+      },
+      "origin": {
+        "content": "$2",
+        "example": "http://localhost:3000"
+      }
+    }
+  },
+  "replay_sharePreviewDesktop": {
+    "message": "Envía a $instance$, en el informe: este veredicto y el nombre de tu navegador.",
+    "placeholders": {
+      "instance": {
+        "content": "$1",
+        "example": "piwi.acme.test"
+      }
+    }
+  },
+  "replay_shared": {
+    "message": "Compartido en el informe."
+  },
+  "replay_shareFailed": {
+    "message": "No se pudo compartir el resultado: $error$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "The instance cannot be reached."
+      }
+    }
+  },
   "replay_desktopTitle": {
     "message": "Ejecutar con Playwright en la aplicación de escritorio"
   },

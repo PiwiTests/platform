@@ -7,6 +7,7 @@ import {
   fetchBugReports,
   fetchBugReportSteps,
   sendBugReport,
+  sendReproduction,
   type BugReportIntake,
   type BugReportSummary,
   type SentIssue,
@@ -129,6 +130,45 @@ export async function handleGetBugReport(id: unknown): Promise<GetBugReportAnswe
     const parsed = parseSteps(await fetchBugReportSteps(settings, id));
     if (!parsed.ok) return { ok: false, error: t('common_replayNotSteps', { error: parsed.errors[0] ?? '' }) };
     return { ok: true, steps: parsed.steps };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/** Where Share result would send a verdict: the connected instance's host, or null. */
+export async function handleShareTarget(): Promise<{ instance: string | null }> {
+  const settings = await getConnectionSettings();
+  return { instance: settings.instanceUrl.trim() ? instanceHost(settings) : null };
+}
+
+export type ShareReproductionAnswer = { ok: true } | { ok: false; error: string };
+
+const SHARED_VERDICTS = ['reproduced', 'not-reproduced', 'diverged'] as const;
+
+/** Records the verdict the developer chose to share on the report it came from. */
+export async function handleShareReproduction(message: {
+  bugReportId?: unknown;
+  source?: unknown;
+  verdict?: unknown;
+  divergedAt?: unknown;
+  origin?: unknown;
+}): Promise<ShareReproductionAnswer> {
+  const settings = await getConnectionSettings();
+  if (!settings.instanceUrl.trim()) return { ok: false, error: t('common_notConnected') };
+  const id = message.bugReportId;
+  const verdict = SHARED_VERDICTS.find((v) => v === message.verdict);
+  if (typeof id !== 'number' || !Number.isInteger(id) || !verdict) return { ok: false, error: t('common_noProject') };
+  const origin =
+    typeof message.origin === 'string' && /^https?:\/\/[^/\s]+$/.test(message.origin) ? message.origin : null;
+  try {
+    await sendReproduction(settings, id, {
+      source: message.source === 'desktop' ? 'desktop' : 'replay',
+      verdict,
+      divergedAt: verdict === 'diverged' && typeof message.divergedAt === 'number' ? message.divergedAt : null,
+      origin,
+      userAgent: navigator.userAgent,
+    });
+    return { ok: true };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }

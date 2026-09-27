@@ -139,6 +139,12 @@ from the app's **Connect Piwi Picker**; `desktop-settings.ts` accepts only plain
 [::1]). The dialog shows the payload before **Send**; the options page requests that one loopback origin inside the
 **Save and test** click. The request is JSON with `x-piwi-token`, holds steps and never code, and the app runs nothing
 before the developer confirms it in its window; the dialog then polls the request for the verdict.
+
+A replay registers `bug-evidence-main.js` in the page's main world beside `replay-panel.js`, for as long as it runs,
+under the replay's `evidenceToken`; the panel keeps the entries apart from the replay state (`piwiReplayEvidence`) and
+lists them under the verdict. **Share result** (`share-result.ts`, worker side `handleShareReproduction`) records a
+verdict on the report it came from (`bugReportId`, set only for a report chosen from the instance), after a preview:
+the verdict, the origin it ran on and the user agent, `POST /api/bug-reports/:id/reproductions`.
 Only `piwi-client.ts` makes those requests, from exactly two
 contexts: `src/options/` (connecting, saving, reading and adding URL patterns) and the background worker's `piwi-refresh-catalog` /
 `piwi-refresh-locator-index` handlers and its bug-report messages (`src/background/bug-reports.ts`:

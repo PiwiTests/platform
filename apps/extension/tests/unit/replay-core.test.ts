@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import type { RecordedStep, StepAssertion } from '@piwitests/core/recording';
 import { toStepsDocument } from '@piwitests/core/steps';
 import {
+  evidenceLines,
   absoluteUrl,
   createWaker,
   evaluateAssertion,
@@ -278,5 +279,37 @@ describe('createWaker', () => {
     void fresh.wait().then(() => (freshThrough = true));
     await new Promise((resolve) => setTimeout(resolve, 10));
     expect(freshThrough).toBe(false);
+  });
+});
+
+describe('evidenceLines', () => {
+  const request = (status: number) => ({ method: 'POST', url: '/api/cart/coupon', status, page: '/cart', time: 1 });
+  const error = (message: string) => ({
+    level: 'error' as const,
+    source: 'console' as const,
+    message,
+    page: '/cart',
+    time: 1,
+  });
+
+  it('says what failed during the replay, requests first, and counts the rest', () => {
+    const shown = evidenceLines({
+      token: 't',
+      console: [error('Coupon failed: 500'), { ...error('slow'), level: 'warn' }],
+      requests: [request(500), request(0)],
+    });
+    expect(shown.lines).toEqual([
+      'POST /api/cart/coupon answered 500',
+      'POST /api/cart/coupon got no answer',
+      'Console error: Coupon failed: 500',
+    ]);
+    expect(shown.more).toBe(0);
+    const many = evidenceLines({ token: 't', console: [], requests: Array.from({ length: 8 }, () => request(502)) });
+    expect(many.lines).toHaveLength(5);
+    expect(many.more).toBe(3);
+  });
+
+  it('shows nothing when the page showed nothing', () => {
+    expect(evidenceLines(null)).toEqual({ lines: [], more: 0 });
   });
 });

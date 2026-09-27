@@ -3205,6 +3205,104 @@
     "message": "Run with Playwright…",
     "description": "Replay chooser and finished replay: button that sends the steps to the paired desktop app to run with Playwright."
   },
+  "replay_seenHere": {
+    "message": "What the page showed during the replay:",
+    "description": "Under a replay's verdict: heading above the failed requests and console errors the page showed during the replay."
+  },
+  "replay_seenRequest": {
+    "message": "$method$ $url$ answered $status$",
+    "description": "Under a replay's verdict: a request that failed during the replay. $method$ is GET or POST, $url$ its path, $status$ the HTTP status.",
+    "placeholders": {
+      "method": {
+        "content": "$1",
+        "example": "POST"
+      },
+      "status": {
+        "content": "$2",
+        "example": "500"
+      },
+      "url": {
+        "content": "$3",
+        "example": "/api/cart/coupon"
+      }
+    }
+  },
+  "replay_seenRequestFailed": {
+    "message": "$method$ $url$ got no answer",
+    "description": "Under a replay's verdict: a request that got no answer during the replay. $method$ is GET or POST, $url$ its path.",
+    "placeholders": {
+      "method": {
+        "content": "$1",
+        "example": "GET"
+      },
+      "url": {
+        "content": "$2",
+        "example": "/api/cart"
+      }
+    }
+  },
+  "replay_seenConsole": {
+    "message": "Console error: $message$",
+    "description": "Under a replay's verdict: an error the page logged to its console during the replay. $message$ is the page's message, as it is.",
+    "placeholders": {
+      "message": {
+        "content": "$1",
+        "example": "Coupon failed: 500"
+      }
+    }
+  },
+  "replay_seenMore": {
+    "message": "+$count$ more",
+    "description": "Under a replay's verdict: how many more requests and console errors are not listed. $count$ is a number, already formatted.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "replay_share": {
+    "message": "Share result…",
+    "description": "Under a verdict of a report from the connected instance: button that shows what Share result sends, before sending it."
+  },
+  "replay_sharePreview": {
+    "message": "Sends to $instance$, on the report: this verdict, the site it ran on ($origin$) and your browser’s name.",
+    "description": "Share result: exactly what is sent, and where, before sending a replay's verdict. $instance$ is the Piwi instance's host, $origin$ the site the replay ran on.",
+    "placeholders": {
+      "instance": {
+        "content": "$1",
+        "example": "piwi.acme.test"
+      },
+      "origin": {
+        "content": "$2",
+        "example": "http://localhost:3000"
+      }
+    }
+  },
+  "replay_sharePreviewDesktop": {
+    "message": "Sends to $instance$, on the report: this verdict and your browser’s name.",
+    "description": "Share result: exactly what is sent, and where, before sending the desktop app's verdict. $instance$ is the Piwi instance's host.",
+    "placeholders": {
+      "instance": {
+        "content": "$1",
+        "example": "piwi.acme.test"
+      }
+    }
+  },
+  "replay_shared": {
+    "message": "Shared on the report.",
+    "description": "Share result: the verdict was recorded on the report."
+  },
+  "replay_shareFailed": {
+    "message": "Could not share the result: $error$",
+    "description": "Share result: the verdict could not be recorded. $error$ is the reason, already translated.",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "The instance cannot be reached."
+      }
+    }
+  },
   "replay_desktopTitle": {
     "message": "Run with Playwright in the desktop app",
     "description": "Run with Playwright dialog: its title."

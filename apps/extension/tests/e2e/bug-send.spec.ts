@@ -280,6 +280,11 @@ test.describe('Send to Piwi, in the real extension', () => {
         );
         return;
       }
+      if (req.method === 'POST' && req.url === '/api/bug-reports/37/reproductions') {
+        res.statusCode = 201;
+        res.end('{}');
+        return;
+      }
       if (req.method === 'GET' && req.url === '/api/bug-reports/37') {
         res.end(JSON.stringify({ title: 'Coupon not applied', steps: sampleReport().steps }));
         return;
@@ -395,6 +400,28 @@ test.describe('Send to Piwi, in the real extension', () => {
       const steps = (await fromTab({ type: 'piwi-get-bug-report', id: 37 })) as { ok: boolean; steps: unknown };
       expect(steps.ok).toBe(true);
       expect(steps.steps).toMatchObject({ title: 'Coupon not applied', steps: [{ action: 'goto', value: '/cart' }] });
+
+      // Share result: the verdict, where it ran and the browser, on the report.
+      expect(await fromTab({ type: 'piwi-share-target' })).toEqual({ instance: new URL(instance).host });
+      expect(
+        await fromTab({
+          type: 'piwi-share-reproduction',
+          bugReportId: 37,
+          source: 'replay',
+          verdict: 'diverged',
+          divergedAt: 2,
+          origin: 'http://localhost:3000',
+        }),
+      ).toEqual({ ok: true });
+      const shared = received.find((r) => r.url === '/api/bug-reports/37/reproductions')!;
+      expect(shared.apiKey).toBe('pd_test');
+      expect(JSON.parse(shared.body.toString('utf8'))).toMatchObject({
+        source: 'replay',
+        verdict: 'diverged',
+        divergedAt: 2,
+        origin: 'http://localhost:3000',
+      });
+      expect(JSON.parse(shared.body.toString('utf8')).userAgent).toMatch(/Chrome/);
     } finally {
       await context.close();
     }

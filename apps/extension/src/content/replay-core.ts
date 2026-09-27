@@ -1,6 +1,6 @@
 import type { RecordedStep, StepAssertion } from '@piwitests/core/recording';
 import { t, tn } from '../shared/i18n.js';
-import type { ReplayStepResult } from '../shared/replay-storage.js';
+import type { ReplayEvidence, ReplayStepResult } from '../shared/replay-storage.js';
 
 /**
  * The replay's decisions, apart from the page: whether an assertion holds on
@@ -206,4 +206,25 @@ export function createWaker(): Waker {
       early = false;
     },
   };
+}
+
+/** Lines of evidence shown under a verdict; more are counted. */
+const EVIDENCE_SHOWN = 5;
+
+/**
+ * What the page showed during the replay, as lines under the verdict: failed
+ * requests first ("POST /api/cart/coupon answered 500"), then console errors.
+ * Empty when it showed nothing.
+ */
+export function evidenceLines(evidence: ReplayEvidence | null): { lines: string[]; more: number } {
+  if (!evidence) return { lines: [], more: 0 };
+  const all = [
+    ...evidence.requests.map((r) =>
+      r.status
+        ? t('replay_seenRequest', { method: r.method, url: r.url, status: String(r.status) })
+        : t('replay_seenRequestFailed', { method: r.method, url: r.url }),
+    ),
+    ...evidence.console.filter((c) => c.level === 'error').map((c) => t('replay_seenConsole', { message: c.message })),
+  ];
+  return { lines: all.slice(0, EVIDENCE_SHOWN), more: Math.max(0, all.length - EVIDENCE_SHOWN) };
 }

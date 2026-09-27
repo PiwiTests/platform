@@ -36,7 +36,8 @@ tester expected and what the page showed instead, where the report stands, and w
 
 - **Steps**: the steps in words, each marked step with its expected result, the value the page showed and the note.
 - **Evidence**: the screenshots, the failed requests, the console entries and the page's outline.
-- **Reproductions**: each time someone replayed it or ran it with Playwright, and what they found.
+- **Reproductions**: each time someone replayed it or ran it with Playwright and shared what they found (**Share
+  result…** in Piwi Picker).
 - **Spec**: the failing test.
 
 **Dismiss** sets a report aside: runs no longer move it. **Reopen** brings it back.

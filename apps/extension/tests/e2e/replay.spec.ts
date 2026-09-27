@@ -283,19 +283,19 @@ test.describe('replay-panel.js', () => {
   });
 });
 
-test.describe('Run with Playwright', () => {
-  /** The worker's answers, by message type; every message the page sends is kept in `__piwiSent`. */
-  async function stubWorker(context: BrowserContext, answers: Record<string, unknown>): Promise<void> {
-    await context.addInitScript((byType) => {
-      const sent: Array<{ type?: string }> = [];
-      (globalThis as any).__piwiSent = sent;
-      (globalThis as any).chrome.runtime.sendMessage = async (message: { type?: string }) => {
-        sent.push(message);
-        return (byType as Record<string, unknown>)[message.type ?? ''] ?? { ok: true };
-      };
-    }, answers);
-  }
+/** The worker's answers, by message type; every message the page sends is kept in `__piwiSent`. */
+async function stubWorker(context: BrowserContext, answers: Record<string, unknown>): Promise<void> {
+  await context.addInitScript((byType) => {
+    const sent: Array<{ type?: string }> = [];
+    (globalThis as any).__piwiSent = sent;
+    (globalThis as any).chrome.runtime.sendMessage = async (message: { type?: string }) => {
+      sent.push(message);
+      return (byType as Record<string, unknown>)[message.type ?? ''] ?? { ok: true };
+    };
+  }, answers);
+}
 
+test.describe('Run with Playwright', () => {
   async function chooseReport(page: Page) {
     const dialog = page.locator('#piwi-replay-dialog-host').getByRole('dialog', { name: 'Replay a bug report' });
     await dialog.getByLabel(/steps\.json/).setInputFiles({
@@ -353,6 +353,87 @@ test.describe('Run with Playwright', () => {
     const desktop = await chooseReport(page);
     await expect(desktop).toContainText('Pair the desktop app first');
     await expect(desktop.getByRole('button', { name: 'Open the options' })).toBeVisible();
+  });
+});
+
+test.describe('after a replay', () => {
+  /** The cart, whose Apply posts a coupon the server refuses and logs the error. */
+  async function routeFailingCart(context: BrowserContext): Promise<void> {
+    await routePages(context, 'buggy');
+    await context.route(`${ORIGIN}/dashboard`, (route) =>
+      route.fulfill({
+        contentType: 'text/html',
+        body: `<!doctype html><html><body>
+          <button data-testid="add-to-cart" onclick="fetch('/api/cart/coupon', { method: 'POST' }).then(() => console.error('Coupon failed: 500'))">Apply coupon</button>
+          <output id="total" data-testid="cart-total">Total: 40</output></body></html>`,
+      }),
+    );
+    await context.route(`${ORIGIN}/api/**`, (route) => route.fulfill({ status: 500, body: '{}' }));
+  }
+
+  test('says what the page showed during the replay: the failed request and the console error', async ({ context }) => {
+    await openShadowRoots(context);
+    await routeFailingCart(context);
+    const state = running() as { piwiReplay: Record<string, unknown> };
+    await stubChrome(context, { piwiReplay: { ...state.piwiReplay, evidenceToken: 'tok1' } });
+    // The background script registers it in the page's main world for as long as the replay runs.
+    await context.addInitScript({ path: path.join(DIST, 'bug-evidence-main.js') });
+    const page = await context.newPage();
+    await page.goto(`${ORIGIN}/login`);
+
+    expect(await verdict(page)).toMatchObject({ kind: 'reproduced' });
+    const hud = page.locator('#piwi-replay-hud-host');
+    await expect(hud).toContainText('What the page showed during the replay:');
+    await expect(hud).toContainText('POST /api/cart/coupon answered 500');
+    await expect(hud).toContainText('Console error: Coupon failed: 500');
+  });
+
+  test('shares the verdict on the report it came from, after showing what it sends', async ({ context }) => {
+    await openShadowRoots(context);
+    await routePages(context, 'buggy');
+    const state = running() as { piwiReplay: Record<string, unknown> };
+    await stubChrome(context, { piwiReplay: { ...state.piwiReplay, bugReportId: 37 } });
+    await stubWorker(context, {
+      'piwi-share-target': { instance: 'piwi.acme.test' },
+      'piwi-share-reproduction': { ok: true },
+    });
+    const page = await context.newPage();
+    await page.goto(`${ORIGIN}/login`);
+
+    expect(await verdict(page)).toMatchObject({ kind: 'reproduced' });
+    const hud = page.locator('#piwi-replay-hud-host');
+    await hud.getByRole('button', { name: 'Share result…' }).click();
+    await expect(hud).toContainText(
+      `Sends to piwi.acme.test, on the report: this verdict, the site it ran on (${ORIGIN})`,
+    );
+    const shares = () =>
+      page.evaluate(() =>
+        ((globalThis as any).__piwiSent as any[]).filter((m) => m.type === 'piwi-share-reproduction'),
+      );
+    expect(await shares()).toEqual([]);
+    await hud.getByRole('button', { name: 'Send', exact: true }).click();
+    await expect(hud).toContainText('Shared on the report.');
+    expect(await shares()).toEqual([
+      {
+        type: 'piwi-share-reproduction',
+        bugReportId: 37,
+        source: 'replay',
+        verdict: 'reproduced',
+        divergedAt: null,
+        origin: ORIGIN,
+      },
+    ]);
+  });
+
+  test('offers no Share result for steps that did not come from the instance', async ({ context }) => {
+    await openShadowRoots(context);
+    await routePages(context, 'buggy');
+    await stubChrome(context, running());
+    const page = await context.newPage();
+    await page.goto(`${ORIGIN}/login`);
+    expect(await verdict(page)).toMatchObject({ kind: 'reproduced' });
+    await expect(page.locator('#piwi-replay-hud-host').getByRole('button', { name: 'Replay again' })).toBeVisible();
+    await expect(page.locator('#piwi-replay-hud-host').getByRole('button', { name: 'Share result…' })).toHaveCount(0);
   });
 });
 

@@ -117,21 +117,25 @@ visible, enabled and still. The replay ends with one of three answers:
 - **Could not reach the bug**: a step found no element, several, or a disabled one, or the flow ended on another page.
   The data, the login or a flag differ here.
 
+Under the answer, the panel lists the failed requests and console errors the page showed during the replay, such as
+"POST /api/cart/coupon answered 500". For a report from Piwi, **Share result…** records the answer on the report, with
+the site it ran on, after showing what it sends.
+
 **Step by step** waits for **Next** before each step, with the element outlined, so you can set a breakpoint first.
 Replay acts with the page's own events: a page that ignores events a script sends can only be reproduced with
 Playwright, from the failing test.
 
-**Run with Playwright…**, beside **Start** and on a finished replay, sends the steps to the
-[desktop app](./bug-reports#running-it-with-playwright-in-the-desktop-app) paired in the extension's options, which runs them with
-Playwright in your project once you confirm it in its window. The panel shows what it sends first, and then the
-verdict.
+**Run with Playwright…**, beside **Start** and on a finished replay, sends the steps to the paired
+[desktop app](./bug-reports#running-it-with-playwright-in-the-desktop-app), which runs them in your project once you
+confirm it there.
 
 ## Limits
 
 - It follows one site, like [Record actions](./extension#record-actions), in the top-level document only.
 - Only the page's own `fetch` and `XMLHttpRequest` calls are seen: not images, stylesheets, a form that loads a new
   page, or a request made by a worker.
-- Nothing is sent to a Piwi instance, even when the extension is connected to one.
+- A recording sends nothing anywhere: only **Send to Piwi…**, **Share result…** and **Run with Playwright…** do, each
+  after showing what it sends.
 
 ## Related
 

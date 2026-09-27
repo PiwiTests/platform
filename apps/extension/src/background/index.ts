@@ -20,7 +20,14 @@ import { BUILD_ID } from '../shared/build-id.js';
 import { serveSessionStorage, sessionArea } from '../shared/session-area.js';
 import { LANGUAGE_KEY, initI18n, isLanguage, t } from '../shared/i18n.js';
 import { refreshLanguageChoice, storeLanguageChoice } from './language-choice.js';
-import { handleBugSendTarget, handleGetBugReport, handleListBugReports, handleSendBugReport } from './bug-reports.js';
+import {
+  handleBugSendTarget,
+  handleGetBugReport,
+  handleListBugReports,
+  handleSendBugReport,
+  handleShareReproduction,
+  handleShareTarget,
+} from './bug-reports.js';
 import { CONDITIONS_KEY, isCondition, type ConditionsState } from '../shared/request-conditions.js';
 import { handleDesktopRepro, handleDesktopReproStatus, handleDesktopTarget } from './desktop-repro.js';
 
@@ -557,6 +564,9 @@ async function handleOpenViewport(message: {
 }
 
 const REPLAY_SCRIPT_ID = 'piwi-replay-panel';
+/** The main-world script that sees the page's console and failed requests, for as long as a replay runs. */
+const REPLAY_EVIDENCE_SCRIPT_ID = 'piwi-replay-evidence';
+const REPLAY_SCRIPT_IDS = [REPLAY_SCRIPT_ID, REPLAY_EVIDENCE_SCRIPT_ID];
 
 function replayOriginPattern(origin: unknown): string | null {
   if (typeof origin !== 'string') return null;
@@ -609,8 +619,16 @@ async function handleStartReplay(
     // A replay under a request condition says so, while it runs and in its verdict.
     const conditions = await conditionsFor(tab, tab.url);
     await setReplayState(conditions.length ? { ...replay, conditions } : replay);
-    await chrome.scripting.unregisterContentScripts({ ids: [REPLAY_SCRIPT_ID] }).catch(() => undefined);
+    await unregisterScripts(REPLAY_SCRIPT_IDS);
     await chrome.scripting.registerContentScripts([
+      {
+        id: REPLAY_EVIDENCE_SCRIPT_ID,
+        js: ['bug-evidence-main.js'],
+        matches: [pattern],
+        runAt: 'document_start',
+        world: 'MAIN',
+        persistAcrossSessions: false,
+      },
       {
         id: REPLAY_SCRIPT_ID,
         js: ['replay-panel.js'],
@@ -619,20 +637,24 @@ async function handleStartReplay(
         persistAcrossSessions: false,
       },
     ]);
+    // The page already loaded, where a replay that starts on it runs its first steps.
+    await chrome.scripting
+      .executeScript({ target: { tabId: tab.id }, files: ['bug-evidence-main.js'], world: 'MAIN' })
+      .catch(() => undefined);
     if (message.inject === true)
       await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['replay-panel.js'] });
     await chrome.action.setBadgeText({ text: t('badge_replay') });
     await chrome.action.setBadgeBackgroundColor({ color: REPLAY_BADGE_COLOR });
     return { ok: true };
   } catch (err) {
-    await chrome.scripting.unregisterContentScripts({ ids: [REPLAY_SCRIPT_ID] }).catch(() => undefined);
+    await unregisterScripts(REPLAY_SCRIPT_IDS);
     return { ok: false, error: err instanceof Error ? err.message : t('common_replayStartFailed') };
   }
 }
 
 /** The replay script has stored its final state: the badge follows what still runs, a recording perhaps. */
 async function handleReplayFinished(): Promise<void> {
-  await chrome.scripting.unregisterContentScripts({ ids: [REPLAY_SCRIPT_ID] }).catch(() => undefined);
+  await unregisterScripts(REPLAY_SCRIPT_IDS);
   await showStateBadge();
 }
 
@@ -706,6 +728,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   if (message?.type === 'piwi-list-bug-reports') {
     void i18nReady.then(() => handleListBugReports(sender.tab)).then(sendResponse);
+    return true;
+  }
+  if (message?.type === 'piwi-share-target') {
+    void handleShareTarget().then(sendResponse);
+    return true;
+  }
+  if (message?.type === 'piwi-share-reproduction') {
+    void i18nReady.then(() => handleShareReproduction(message)).then(sendResponse);
     return true;
   }
   if (message?.type === 'piwi-desktop-target') {

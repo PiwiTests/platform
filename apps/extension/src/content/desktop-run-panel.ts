@@ -5,6 +5,7 @@ import { formatNumber, t, uiLanguage } from '../shared/i18n.js';
 import { DESKTOP_DIALOG_HOST_ID } from './record-ui.js';
 import { verdictText, type ReplayVerdict } from './replay-core.js';
 import { attachPanelShadow } from './panel-root.js';
+import { shareable, shareResultRow } from './share-result.js';
 
 /**
  * Run with Playwright: sends a report's steps to the paired desktop app, which
@@ -122,6 +123,17 @@ export function openDesktopRun(steps: PiwiSteps, bugReportId: number | null, sty
       box.className = `verdict ${verdict.kind}`;
       box.append(line(verdictTitle, 'title'), line(detail, ''));
       body.append(line(t('replay_desktopRanIn')), box);
+      if (bugReportId && shareable(verdict.kind)) {
+        body.append(
+          shareResultRow({
+            bugReportId,
+            source: 'desktop',
+            verdict: verdict.kind,
+            divergedAt: verdict.kind === 'diverged' ? verdict.step : null,
+            origin: null,
+          }),
+        );
+      }
     }
   };
 

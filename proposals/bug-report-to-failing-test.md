@@ -17,8 +17,8 @@ options, Download steps and `piwi codegen`), PR 2 (Report a bug in Piwi Picker, 
 Piwi…, Replay from the instance, `piwi bug`, MCP tools) and PR 7 (Jira: filing from the Send preview, the report's page,
 MCP or for every report, in the ticket's language, screenshots attached, the ticket following the report) and PR 8 (why the suite missed it, escaped defects on the Test
 Map, the `fix-a-reported-bug` skill) and PR 6 (Run with Playwright in the desktop app: pairing, repro requests
-confirmed in the window, `desktop_run_repro`, the verdict back in Replay) are built; evidence collected during a replay
-and **Share result** are not. The extension gains
+confirmed in the window, `desktop_run_repro`, the verdict back in Replay) are built, and so are PR 3's two leftovers
+(the console errors and failed requests a replay sees, and **Share result**): the whole plan is built. The extension gains
 two tools and, for the first time, requests that send page data to an instance, behind the explicit opt-in and preview
 its rules require. The reporter gains one wire field (`expectedStatus`); the dashboard gains a table, pages, endpoints,
 an issue type for the Jira integration, a CLI command and MCP tools; the desktop app gains a run request. The steps
@@ -504,8 +504,17 @@ PRs 1–3 close the loop between a tester and a developer with files alone: reco
   actions), `replay-core.ts` (assertions with Playwright's rules, the verdict), `replay-cursor.ts` (the fake cursor:
   an arrow that glides to each element, a ripple on clicks, a caption, still with reduced motion), `steps-file.ts` and
   `readZipEntry` (a report's `.zip` or `steps.json`), `shared/replay-storage.ts`, the background's `piwi-start-replay`
-  and `piwi-replay-finished`, the popup's **Replay a bug report** (`R`) and the finished report's **Replay**. Not built:
-  console errors and failed requests collected during a replay, and **Share result**.
+  and `piwi-replay-finished`, the popup's **Replay a bug report** (`R`) and the finished report's **Replay**.
+- Built after PR 6: the **evidence of a replay** (the background registers `bug-evidence-main.js` in the main world
+  beside the replay script, under the replay's `evidenceToken`; the panel keeps the entries in `piwiReplayEvidence`
+  and lists up to five under the verdict, failed requests first). It says what the page showed here, not "here too":
+  the replay has the steps, not the report's evidence. **Share result** (`share-result.ts`) follows a verdict of a
+  report chosen from the instance, in the replay HUD and in Run with Playwright's dialog (`source: 'desktop'`), and
+  sends the verdict, the step it diverged at, the origin (none for a desktop run) and the user agent after a preview.
+- The replay lab after PRs 6 and 3: 23 of 24 scenarios pass both ways (import-file its known gap).
+  `project-tests-search` times out before recording, at its first step: it opens a "Piwi Dashboard" project that
+  neither the dev database nor `app:seed:dev`'s demo seed holds. That is a data mismatch in the scenario, not in the
+  replay, and it is left to whoever keeps the lab.
 - `apps/extension/src/content/replay-panel.ts` (new, HUD and verdict), `replay-actions.ts` (new, events per action),
   `replay-runner.ts` (new, waiting and resolution with the engine), `src/background/index.ts` (state and
   registration), `src/popup/` (tile).

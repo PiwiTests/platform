@@ -7,15 +7,27 @@ import { sessionFromSteps, toStepsDocument, type PiwiSteps } from '@piwitests/co
 import { formatNumber, initI18n, t, tn, uiLanguage } from '../shared/i18n.js';
 import { getRecordingState, recordingMode } from '../shared/recording-storage.js';
 import {
+  appendReplayEvidence,
+  getReplayEvidence,
   getReplayState,
   setReplayState,
+  type ReplayEvidence,
   updateReplayState,
   type ReplayState,
   type ReplayStepResult,
 } from '../shared/replay-storage.js';
 import { ensureSessionAccess } from '../shared/session-access.js';
 import { REPLAY_DIALOG_HOST_ID, REPLAY_HUD_HOST_ID, SHARED_STYLE } from './record-ui.js';
-import { createWaker, evaluateAssertion, replayVerdict, verdictText, type ReplayVerdict } from './replay-core.js';
+import {
+  createWaker,
+  evaluateAssertion,
+  evidenceLines,
+  replayVerdict,
+  verdictText,
+  type ReplayVerdict,
+} from './replay-core.js';
+import { BUG_RELAY, ownOrigin, readRelayedEntry } from '../shared/bug-relay.js';
+import type { BugConsoleEntry, BugFailedRequest } from '@piwitests/core/bug-report';
 import { createCursor, type FakeCursor } from './replay-cursor.js';
 import {
   ACTION_TIMEOUT_MS,
@@ -37,6 +49,7 @@ import {
 import { readStepsFile } from './steps-file.js';
 import { attachPanelShadow } from './panel-root.js';
 import { openDesktopRun } from './desktop-run-panel.js';
+import { shareable, shareResultRow } from './share-result.js';
 
 /**
  * Replay: plays a bug report's steps (or any steps file) in this tab, on this
@@ -85,6 +98,8 @@ const STYLE = `
   .verdict.diverged, .verdict.stopped { background: rgba(245,158,11,.16); }
   .verdict.completed { background: rgba(128,128,128,.14); }
   .verdict .title { margin-bottom: 2px; }
+  .seen, .share { margin-top: 8px; }
+  .share { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
   .message { color: #fca5a5; font-size: 12px; margin-top: 6px; }
   .message:empty { display: none; }
   input[type=file] { font: inherit; font-size: 12px; margin: 8px 0; color: inherit; }
@@ -254,7 +269,11 @@ function hudRoot(): ShadowRoot {
   return hud.root;
 }
 
-function renderHud(state: ReplayState, verdict: ReplayVerdict | null = null): void {
+function renderHud(
+  state: ReplayState,
+  verdict: ReplayVerdict | null = null,
+  evidence: ReplayEvidence | null = null,
+): void {
   const root = hudRoot();
   const style = document.createElement('style');
   style.textContent = STYLE;
@@ -363,6 +382,39 @@ function renderHud(state: ReplayState, verdict: ReplayVerdict | null = null): vo
       d.textContent = detail;
       box2.append(t, d);
       box.appendChild(box2);
+      if (state.bugReportId && shareable(verdict.kind)) {
+        box.appendChild(
+          shareResultRow({
+            bugReportId: state.bugReportId,
+            source: 'replay',
+            verdict: verdict.kind,
+            divergedAt: verdict.kind === 'diverged' ? verdict.step : null,
+            origin: state.origin,
+          }),
+        );
+      }
+    }
+    const seen = evidenceLines(evidence);
+    if (seen.lines.length) {
+      const box3 = document.createElement('div');
+      box3.className = 'seen';
+      const head = document.createElement('div');
+      head.className = 'sub';
+      head.textContent = t('replay_seenHere');
+      box3.appendChild(head);
+      for (const text of seen.lines) {
+        const line = document.createElement('div');
+        line.className = 'detail';
+        line.textContent = text;
+        box3.appendChild(line);
+      }
+      if (seen.more) {
+        const more = document.createElement('div');
+        more.className = 'sub';
+        more.textContent = t('replay_seenMore', { count: formatNumber(seen.more) });
+        box3.appendChild(more);
+      }
+      box.appendChild(box3);
     }
     controls.style.marginTop = '8px';
     controls.appendChild(
@@ -405,13 +457,15 @@ async function recordResult(state: ReplayState, index: number, result: ReplaySte
 }
 
 async function finish(state: ReplayState, stopped: boolean): Promise<void> {
+  await evidenceFlush?.();
+  const evidence = await getReplayEvidence(state.evidenceToken).catch(() => null);
   const steps = sessionFromSteps(state.steps, state.origin).steps;
   const verdict = replayVerdict(steps, state.results, stopped);
   endHover();
   const final: ReplayState = { ...state, status: stopped ? 'stopped' : 'done', cursor: cursor?.position() ?? null };
   await setReplayState(final);
   notifyFinished();
-  renderHud(final, verdict);
+  renderHud(final, verdict, evidence);
   (globalThis as ReplayGlobals).__piwiReplayVerdict = verdict;
   const shown = cursor;
   cursor = null;
@@ -495,6 +549,44 @@ async function waitForNext(index: number): Promise<ReplayState | null> {
   return latest && latest.status === 'running' && latest.position === index ? latest : null;
 }
 
+/** Stores what the evidence script relays during the replay; null until this page's replay starts it. */
+let evidenceFlush: (() => Promise<void>) | null = null;
+/** The replay whose entries this page listens for; a new replay (Replay again) listens anew. */
+let evidenceToken: string | null = null;
+
+/**
+ * Listens to the main-world evidence script (registered by the background
+ * script while a replay runs) with the replay's token, and keeps its entries in
+ * batches. Returns the function that stores what is still pending.
+ */
+function startReplayEvidence(token: string): () => Promise<void> {
+  const pendingConsole: BugConsoleEntry[] = [];
+  const pendingRequests: BugFailedRequest[] = [];
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const flush = async (): Promise<void> => {
+    if (timer != null) clearTimeout(timer);
+    timer = null;
+    if (pendingConsole.length === 0 && pendingRequests.length === 0) return;
+    const entries = { console: pendingConsole.splice(0), requests: pendingRequests.splice(0) };
+    await appendReplayEvidence(token, entries).catch(() => undefined);
+  };
+  const hello = () => window.postMessage({ source: BUG_RELAY.HELLO, token }, ownOrigin());
+  window.addEventListener('message', (e: MessageEvent) => {
+    if (e.source !== window) return;
+    const data = e.data as { source?: unknown } | null;
+    if (data?.source === BUG_RELAY.READY) return hello();
+    const item = readRelayedEntry(data, token);
+    if (!item) return;
+    if (item.kind === 'console') pendingConsole.push(item.entry);
+    else pendingRequests.push(item.entry);
+    timer ??= setTimeout(() => void flush(), 250);
+  });
+  // A page left mid-batch keeps what it saw.
+  window.addEventListener('pagehide', () => void flush());
+  hello();
+  return flush;
+}
+
 async function runReplay(): Promise<void> {
   if (loopActive) return;
   loopActive = true;
@@ -503,6 +595,10 @@ async function runReplay(): Promise<void> {
     let state = await getReplayState();
     if (!state || (state.status !== 'running' && state.status !== 'paused') || state.origin !== location.origin) return;
     document.getElementById(REPLAY_DIALOG_HOST_ID)?.remove();
+    if (state.evidenceToken && state.evidenceToken !== evidenceToken) {
+      evidenceToken = state.evidenceToken;
+      evidenceFlush = startReplayEvidence(state.evidenceToken);
+    }
     cursor?.remove();
     cursor = createCursor(state.cursor);
     // The panel shows at once; the first step waits for the page to be ready.

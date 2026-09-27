@@ -458,6 +458,35 @@ export async function fetchBugReportSteps(settings: ConnectionSettings, id: numb
   return { ...(body.steps as object), title: typeof body.title === 'string' ? body.title : null };
 }
 
+/** A reproduction of a report, as Share result sends it. */
+export interface ReproductionSend {
+  source: 'replay' | 'desktop';
+  verdict: 'reproduced' | 'not-reproduced' | 'diverged';
+  divergedAt: number | null;
+  origin: string | null;
+  userAgent: string | null;
+}
+
+/** Records a reproduction on a report (`POST /api/bug-reports/:id/reproductions`), after the developer's click. */
+export async function sendReproduction(
+  settings: ConnectionSettings,
+  id: number,
+  send: ReproductionSend,
+): Promise<void> {
+  let res: Response;
+  try {
+    res = await fetch(`${normalizeBaseUrl(settings.instanceUrl)}/api/bug-reports/${id}/reproductions`, {
+      method: 'POST',
+      headers: { ...authHeaders(settings), 'Content-Type': 'application/json' },
+      body: JSON.stringify(send),
+      signal: timeout(),
+    });
+  } catch {
+    throw new Error(t('common_instanceUnreachable'));
+  }
+  if (!res.ok) throw new Error(await refusal(res));
+}
+
 // ---------------------------------------------------------------------------
 // The paired desktop app
 
