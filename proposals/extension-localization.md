@@ -40,8 +40,9 @@ The developer who replays the report reads **Reproduit : le bug est visible ici*
 **Étape 4 : attendu « Total: 42 », trouvé « Total: 40 », comme signalé.** The spec the report generates is the same,
 character for character, as the one an English report generates.
 
-The finish panel of a bug report offers **Langue du rapport**, set to the interface's language: a French tester who
-files into an English-speaking tracker writes the report in English with one choice, and the panel stays in French.
+The report is written in the language selected for the extension: the Language setting, else the browser's. There is
+no separate choice per report; a French tester who files into an English-speaking tracker switches the Language setting
+to English.
 
 ## Languages
 
@@ -307,7 +308,7 @@ alone holds about 95 strings), and the one where the English is rewritten in pla
 picking tools first. The not-yet-migrated list ends empty.
 
 **PR 3 — the phrasebooks (en, fr).** `BugPhrases` in core, English and French; `role-words.ts` folded into them; the
-bug report's **Report language** choice; the replay verdict and step captions through the phrasebook; stability rules
+bug report written in the selected language; the replay verdict and step captions through the phrasebook; stability rules
 and converter warnings by code.
 
 **PR 4 — German, Spanish, Brazilian Portuguese.** Their catalogs, phrasebooks, glossaries, store summaries and
@@ -320,6 +321,7 @@ nothing else.
 - **The languages** (2026-09-27): English, French, German, Spanish and Brazilian Portuguese.
 - **Drafts ship** (2026-09-27): German, Spanish and Portuguese ship without a native review, marked as drafts in Options
   and in their store listings, as described under "Review status".
+- **The report's language** (2026-09-27): the language selected for the extension, with no separate choice per report.
 
 ## Decisions made while building
 
@@ -352,8 +354,5 @@ PR 1 changed or settled these:
 
 ## Open questions
 
-1. **The report's language.** Defaulting to the interface's language suits a team that files in its own language; a
-   team filing into an English tracker would rather default to English and change it once. A remembered last choice
-   covers both; is that enough?
-2. **The dashboard.** It has English and French for tickets and quality reports only. This plan leaves it alone, but the
+1. **The dashboard.** It has English and French for tickets and quality reports only. This plan leaves it alone, but the
    glossaries and the phrasebooks are written so the dashboard could adopt them later.
