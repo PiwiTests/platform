@@ -53,23 +53,19 @@ Hover highlights, a click picks. The pick snaps to the nearest actionable ancest
 the button), and ↑/↓ walk the DOM tree first, showing the locator each step would produce. For an element with a role,
 an **anchors** step lets you pick stable parents to scope the locator to, with a live match count.
 
-Names are the ones Playwright computes: a tab showing a count badge is `getByRole('tab', { name: 'Regressions 5' })`,
-with the space Playwright puts before the badge. Every candidate is scored the way the dashboard scores captured
-locators, then run against the page the way Playwright runs it. The ones that find the picked element and nothing else
-come first. A candidate that finds it among others is also offered narrowed: made exact (`{ name: 'Failed' }` also
-finds "3 failed"), filtered by the element's text, or scoped to its landmark, dialog or row (a link that is both in the
-sidebar and in the page). The candidate itself stays below, with the number of elements it finds and a suggestion
-(`.first()`, `.filter({ hasText: … })`). When nothing tells the element apart, `.first()` or `.nth()` is offered, with a
-warning.
+Every candidate uses the names Playwright computes (a tab with a count badge is `{ name: 'Regressions 5' }`), is scored
+the way the dashboard scores captured locators, and is run against the page as Playwright runs it. Those that find only
+the picked element come first. One that also finds others is offered narrowed: exact (`{ name: 'Failed' }` also finds
+"3 failed"), filtered by its text, or scoped to its landmark, dialog or row, and below it with its count;
+failing that, `.first()` or `.nth()`, with a warning.
 
 Copy the result as the bare locator, an action line (`await page.getByRole(…).click();`) or a visibility assertion. **Copy all** copies every ranked locator, one per line, for a project's
 [Locators page](./locator-usage#the-locators-page).
 
 ## Hover-inspect
 
-Hover any element to see its best locator in a tooltip, with no click. The tooltip shows the best-ranked locator as
-the pointer enters an element, and the one checked against the page, as in the pick results, once the pointer rests
-there.
+Hover any element to see its best locator in a tooltip, with no click, checked against the page once the pointer
+rests.
 
 ## Locator console
 
