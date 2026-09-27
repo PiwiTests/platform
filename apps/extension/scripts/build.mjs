@@ -1,4 +1,5 @@
-// Builds the extension into dist/. Content scripts and the background
+// Builds the extension into dist/ (Chrome, Edge) and dist-firefox/ (Firefox),
+// which differ only in their manifest. Content scripts and the background
 // service worker are each built as a standalone IIFE (no shared chunks) via
 // Vite's library mode, since chrome.scripting.executeScript({ files: [...] })
 // injects them as plain classic scripts with no module resolution — unlike
@@ -18,6 +19,17 @@ import { build } from 'vite';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const outDir = path.join(root, 'dist');
+const firefoxOutDir = path.join(root, 'dist-firefox');
+
+/**
+ * The manifest Chrome and Edge load: `manifest.json` without
+ * `background.scripts`, Firefox's stand-in for the service worker it lacks.
+ * Chromium ignores the key, and Edge lists it as an error on an unpacked load.
+ */
+export function chromiumManifest(manifest) {
+  const { scripts: _firefoxOnly, ...background } = manifest.background ?? {};
+  return { ...manifest, background };
+}
 
 /** Every standalone content script / service worker entry, as [output name, source entry]. */
 const STANDALONE_ENTRIES = [
@@ -95,9 +107,14 @@ export async function buildExtension({ release = false, pseudo = false } = {}) {
     },
   });
 
-  writeFileSync(path.join(outDir, 'manifest.json'), JSON.stringify(manifest, null, 2));
+  writeFileSync(path.join(outDir, 'manifest.json'), JSON.stringify(chromiumManifest(manifest), null, 2));
   cpSync(path.join(root, 'public', 'icons'), path.join(outDir, 'icons'), { recursive: true });
   if (pseudo) writePseudoCatalog();
+
+  // The same files for Firefox, with the manifest as written.
+  rmSync(firefoxOutDir, { recursive: true, force: true });
+  cpSync(outDir, firefoxOutDir, { recursive: true });
+  writeFileSync(path.join(firefoxOutDir, 'manifest.json'), JSON.stringify(manifest, null, 2));
 }
 
 const ACCENTED = {
@@ -187,5 +204,6 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const pseudo = process.argv.includes('--pseudo');
   await buildExtension({ release, pseudo });
   const kind = release ? ' (release)' : pseudo ? ' (pseudo-localized English)' : '';
-  console.log(`Built extension${kind} into ${path.relative(process.cwd(), outDir)}`);
+  const dirs = [outDir, firefoxOutDir].map((dir) => path.relative(process.cwd(), dir)).join(' and ');
+  console.log(`Built extension${kind} into ${dirs}`);
 }
