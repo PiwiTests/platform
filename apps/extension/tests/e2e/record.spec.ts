@@ -6,6 +6,7 @@ import type { BrowserContext, Page } from '@playwright/test';
 import { test, expect } from './fixtures.js';
 import { dispatchRuntimeMessage, readStoredEvents, setRecordingActive, stubChromeStorage } from './recording-stub.js';
 import { stubChromeI18n } from './i18n-stub.js';
+import { playwrightLocator } from './playwright-locator.js';
 import { normalizeSteps, type RawCaptureEvent } from '@piwitests/core/recording';
 import { renderSpec } from '@piwitests/core/codegen';
 import { parseSteps, sessionFromSteps, type PiwiSteps } from '@piwitests/core/steps';
@@ -39,11 +40,26 @@ const BARE_FORM_PAGE = `<!doctype html><html><body>
   </form>
 </body></html>`;
 
+/** A link both in the sidebar and in the page, and a tab showing a count badge (not inline, as the dashboard's). */
+const LINKS_PAGE = `<!doctype html><html><body>
+  <nav><a href="#runs">Runs</a></nav>
+  <main>
+    <div role="tablist"><button role="tab" id="tab">Regressions<span style="display:inline-flex">5</span></button></div>
+    <a href="#runs" id="runs">Runs</a>
+  </main>
+</body></html>`;
+
 async function routePages(context: BrowserContext): Promise<void> {
   await context.route(`${ORIGIN}/**`, async (route) => {
     const url = new URL(route.request().url());
     const body =
-      url.pathname === '/dashboard' ? DASHBOARD_PAGE : url.pathname === '/bare' ? BARE_FORM_PAGE : LOGIN_PAGE;
+      url.pathname === '/dashboard'
+        ? DASHBOARD_PAGE
+        : url.pathname === '/bare'
+          ? BARE_FORM_PAGE
+          : url.pathname === '/links'
+            ? LINKS_PAGE
+            : LOGIN_PAGE;
     await route.fulfill({ contentType: 'text/html', body });
   });
 }
@@ -90,6 +106,35 @@ test.describe('record-panel.js', () => {
     expect(steps[3]!.target?.testId).toBe('add-to-cart');
     // Both pages' events are present under one session — proof the recording survived the navigation.
     expect(new Set(events.map((e) => e.pageUrl)).size).toBeGreaterThanOrEqual(2);
+  });
+
+  test('records the name Playwright computes and ranks a repeated link as the other tools do', async ({ context }) => {
+    await routePages(context);
+    await stubChromeStorage(context, {
+      session: {
+        piwiRecording: { active: true, events: [], startedAt: Date.now(), grantedOriginPattern: `${ORIGIN}/*` },
+      },
+    });
+    const page = await context.newPage();
+    await page.goto(`${ORIGIN}/links`);
+    await page.addScriptTag({ path: path.join(DIST, 'record-panel.js') });
+    await expect.poll(() => page.evaluate(() => !!document.getElementById('piwi-record-hud-host'))).toBe(true);
+
+    await page.click('#tab');
+    await page.click('#runs');
+    await expect.poll(() => readStoredEvents(page).then((e) => e.length)).toBeGreaterThanOrEqual(3);
+
+    const [, tab, link] = normalizeSteps(await readStoredEvents(page));
+    expect(tab!.target?.accessibleName).toBe('Regressions 5');
+    expect(tab!.target?.alternatives[0]?.locator).toBe(`getByRole('tab', { name: 'Regressions 5' })`);
+    // The name locator narrowed to main ranks above a name-less scoped one: the
+    // probe's estimated count no longer ranks it down before it is checked.
+    expect(link!.target?.alternatives[0]?.locator).toBe(
+      `getByRole('main').getByRole('link', { name: 'Runs', exact: true })`,
+    );
+    for (const alternative of link!.target!.alternatives) {
+      await expect(playwrightLocator(page, alternative.locator), alternative.locator).toHaveId('runs');
+    }
   });
 
   test('two indistinguishable fields record as two fills, and Enter does not double up with its own click', async ({
