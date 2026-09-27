@@ -49,9 +49,9 @@ files into an English-speaking tracker writes the report in English with one cho
 | --- | --- | --- | --- |
 | `en` | English | the source and `default_locale` | — |
 | `fr` | French | the team using it first | the team, before release |
-| `de` | German | a large developer community in Europe, and the longest strings: the layout test language | to find |
-| `es` | Spanish | Spain and Latin America: `es` also serves browsers set to `es_419` | to find |
-| `pt_BR` | Brazilian Portuguese | one of the largest developer communities on GitHub | to find |
+| `de` | German | a large developer community in Europe, and the longest strings: the layout test language | ships as a marked draft |
+| `es` | Spanish | Spain and Latin America: `es` also serves browsers set to `es_419` | ships as a marked draft |
+| `pt_BR` | Brazilian Portuguese | one of the largest developer communities on GitHub | ships as a marked draft |
 
 Next candidates, cheap once the machinery exists: `it`, `ja`, `zh_CN`, `pl`. Japanese and Chinese are worth a layout
 pass of their own (no spaces to wrap on), and Polish is the first language with the plural forms `few` and `many` in
@@ -263,8 +263,16 @@ browser; a bug report written in French while the interface is English; the layo
   *instable*, *passed* / *failed* are *réussi* / *en échec*, *test id* stays *test id*, *assertion* is *assertion*,
   *step* is *étape*. The check can then flag a French message that uses *sélecteur* for a locator.
 - **Review status** lives in `apps/extension/i18n/README.md`: per language, who reviewed it and at which version. French
-  is reviewed by the team before the release that ships it. German, Spanish and Portuguese ship as drafts until a
-  native reader reviews them, said as much in their store listings, with an issue template for translation fixes.
+  is reviewed by the team before the release that ships it. German, Spanish and Portuguese ship as drafts, marked as
+  such until a native reader reviews them:
+  - `src/shared/languages.ts` lists the shipped languages, each with `draft: true` or not. It is the one place a
+    language changes status, and Options, the checks and the store listing read it.
+  - In Options, a draft language keeps its own name in the list, and while it is the interface's language a line under
+    the setting says, in that language, that the translation is a draft and links to the issue template for
+    translation fixes (`.github/ISSUE_TEMPLATE/translation.yml`).
+  - Its store description opens with the same note, in its language, and `store-listing.test.ts` checks that it does.
+  - A reviewer's pass is one pull request: the corrections, `draft: false`, the note removed from the store
+    description, and their name in the README's table.
 - **Plain language while extracting.** Moving 550 strings is the moment to rewrite the technical ones, as was done for
   the bug report's element kinds: the English is fixed first, in the extraction pull request, so the translators
   translate the final text once.
@@ -303,8 +311,15 @@ bug report's **Report language** choice; the replay verdict and step captions th
 and converter warnings by code.
 
 **PR 4 — German, Spanish, Brazilian Portuguese.** Their catalogs, phrasebooks, glossaries, store summaries and
-descriptions; the layout pass and test in German; the docs section. Adding a language afterwards is these files and
+descriptions, all marked as drafts (`draft: true`, the note in Options and in the store descriptions, the translation
+issue template); the layout pass and test in German; the docs section. Adding a language afterwards is these files and
 nothing else.
+
+## Decided
+
+- **The languages** (2026-09-27): English, French, German, Spanish and Brazilian Portuguese.
+- **Drafts ship** (2026-09-27): German, Spanish and Portuguese ship without a native review, marked as drafts in Options
+  and in their store listings, as described under "Review status".
 
 ## Decisions made while building
 
@@ -337,12 +352,8 @@ PR 1 changed or settled these:
 
 ## Open questions
 
-1. **The five languages.** English, French, German, Spanish and Brazilian Portuguese as proposed, or another set (Italian
-   or Japanese instead of one of them)?
-2. **The report's language.** Defaulting to the interface's language suits a team that files in its own language; a
+1. **The report's language.** Defaulting to the interface's language suits a team that files in its own language; a
    team filing into an English tracker would rather default to English and change it once. A remembered last choice
    covers both; is that enough?
-3. **Unreviewed drafts in the stores.** Ship German, Spanish and Portuguese as drafts (marked as such), or hold each
-   until a native reader has reviewed it?
-4. **The dashboard.** It has English and French for tickets and quality reports only. This plan leaves it alone, but the
+2. **The dashboard.** It has English and French for tickets and quality reports only. This plan leaves it alone, but the
    glossaries and the phrasebooks are written so the dashboard could adopt them later.

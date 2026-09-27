@@ -1,4 +1,7 @@
 import type englishCatalog from '../../public/_locales/en/messages.json';
+import { LANGUAGES, type Language } from './languages.js';
+
+export { LANGUAGES, type Language };
 
 /**
  * Every text the extension shows comes from here, out of the catalogs in
@@ -42,11 +45,6 @@ export interface CatalogEntry {
 }
 
 export type RawCatalog = Record<string, CatalogEntry>;
-
-/** The catalogs shipped in `public/_locales/`, by directory name. */
-export const LANGUAGES = ['en', 'fr'] as const;
-
-export type Language = (typeof LANGUAGES)[number];
 
 /** The Options override in `chrome.storage.local`: the chosen language and its catalog, read from the package. */
 export const LANGUAGE_KEY = 'piwiLanguage';

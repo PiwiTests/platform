@@ -47,8 +47,8 @@ message and draft it again.
 
 Settings → **Language** lists "Same as the browser" and every shipped language by its own name. The background worker
 copies the chosen catalog from the package into `chrome.storage.local` (`piwiLanguage`), refreshes it on every install
-and update, and every page reads it once at startup. A new language needs its code in `LANGUAGES`
-(`src/shared/i18n.ts`) as well as its catalog.
+and update, and every page reads it once at startup. A new language needs its entry in `src/shared/languages.ts`
+(with `draft: true` until a native reader has reviewed it) as well as its catalog.
 
 ## Checking a build
 
