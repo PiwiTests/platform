@@ -1,4 +1,5 @@
 import type { IssueDocument } from '#shared/integrations/document';
+import type { TrackerField } from '#shared/integrations/fields';
 
 /** Tracker providers that have a server-side client. */
 export type TrackerProviderName = 'jira';
@@ -52,6 +53,8 @@ export interface CreateIssueInput {
   assigneeId?: string | null;
   priority?: string | null;
   componentId?: string | null;
+  /** Extra field values, as the tracker API takes them, keyed by field id. */
+  fields?: Record<string, unknown>;
 }
 
 export interface TrackerSearch {
@@ -74,6 +77,8 @@ export interface IssueTracker {
   whoAmI(): Promise<{ id: string; displayName: string }>;
   listProjects(): Promise<TrackerProject[]>;
   listIssueTypes(projectKey: string): Promise<TrackerIssueType[]>;
+  /** The fields of the create screen for a project and issue type (id or name). */
+  listCreateFields?(projectKey: string, issueType: string): Promise<TrackerField[]>;
   searchAssignable(projectKey: string, query: string): Promise<TrackerUser[]>;
   createIssue(input: CreateIssueInput): Promise<TrackerIssue>;
   getIssue(key: string): Promise<TrackerIssue | null>;

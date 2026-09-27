@@ -8,6 +8,7 @@ import type { IntegrationProviderName } from './registry';
 import type { IssueDocument } from './document';
 import type { IssueLocale } from './messages';
 import type { JiraTokenKind } from './jira-setup';
+import type { FieldValues } from './fields';
 
 export type ConnectionStatus = 'unverified' | 'ok' | 'failed';
 export type ConnectionManagedBy = 'db' | 'env';
@@ -164,6 +165,8 @@ export interface IssueDraft {
   assignee: string | null;
   /** The language the ticket is written in — binding, else connection default, else en. */
   locale: IssueLocale;
+  /** The project's values for tracker fields — the binding's field defaults. */
+  fieldValues: FieldValues;
   include: IssueIncludeOptions;
   /** Markdown preview of the body — what the modal renders through `MarkdownPreview`. */
   markdown: string;
@@ -184,13 +187,27 @@ export interface CreateIssueRequest {
   assignee?: string | null;
   locale?: IssueLocale;
   include?: Partial<IssueIncludeOptions>;
+  /** Values for tracker fields, over the project's field defaults. */
+  fields?: FieldValues;
+}
+
+/** A field a create was refused over: its id, its display name and, from the tracker, why. */
+export interface IssueFieldProblem {
+  id: string;
+  name: string;
+  message?: string;
 }
 
 /** What `POST issues` returns once the immediate attempt resolves. */
 export interface CreateIssueResponse {
-  actionId: number;
+  /** The queued action; null when the create was refused before anything was queued. */
+  actionId: number | null;
   status: 'done' | 'pending' | 'failed' | 'skipped';
   key?: string;
   url?: string;
   error?: string;
+  /** Required fields the create would leave empty — nothing was sent to the tracker. */
+  missingFields?: IssueFieldProblem[];
+  /** The tracker's own per-field refusals. */
+  fieldErrors?: IssueFieldProblem[];
 }

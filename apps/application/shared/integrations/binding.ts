@@ -1,9 +1,10 @@
 /**
  * The per-project binding — how a project's failures reach a tracker: which
  * connection, which Jira project and issue type, the default labels and
- * assignee, the include toggles, the two-way sync policies, the owner routes
- * that file a team's failures into that team's project, and the auto-create
- * fields (stored but inert this milestone).
+ * assignee, the values for the fields the tracker requires, the include
+ * toggles, the two-way sync policies, the owner routes that file a team's
+ * failures into that team's project, and the auto-create fields (stored but
+ * inert this milestone).
  *
  * Pure + dependency-free, mirroring `shared/auto-heal.ts`: the code that reads
  * the binding and talks to Jira lives in `server/utils/integrations/`. The
@@ -13,6 +14,7 @@
  */
 import { toIssueLocale, type IssueLocale } from './messages';
 import type { IssueIncludeOptions } from './types';
+import { normalizeFieldValues, type FieldValues } from './fields';
 
 /** One owner → tracker route. The first route whose owner matches wins. */
 export interface OwnerRoute {
@@ -78,6 +80,12 @@ export interface ResolvedProjectIntegration {
   labels: string[];
   /** The account id issues are assigned to by default. */
   defaultAssignee: string | null;
+  /**
+   * Values for tracker fields, keyed by field id — typically the fields the
+   * project's create screen requires and Piwi does not fill. A create request's
+   * own values override them; a value for a field the screen lacks is not sent.
+   */
+  fieldDefaults: FieldValues;
   /** The ticket language, or null to inherit the connection's default. */
   locale: IssueLocale | null;
   /** What a ticket body carries. */
@@ -124,6 +132,7 @@ export const DEFAULT_PROJECT_INTEGRATION: ResolvedProjectIntegration = {
   issueType: null,
   labels: [],
   defaultAssignee: null,
+  fieldDefaults: {},
   locale: null,
   include: DEFAULT_INCLUDE,
   policies: DEFAULT_POLICIES,
@@ -222,6 +231,7 @@ export function resolveProjectIntegration(
     issueType: trimOrNull(input?.issueType, 100),
     labels: normalizeLabels(input?.labels),
     defaultAssignee: trimOrNull(input?.defaultAssignee),
+    fieldDefaults: normalizeFieldValues(input?.fieldDefaults),
     locale: toIssueLocale(input?.locale),
     include: resolveInclude(input?.include),
     policies: resolvePolicies(input?.policies),

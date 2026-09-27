@@ -480,6 +480,117 @@ async function prepareReportSchedule({ base, request }) {
   await request.post(`${base}/api/reports/schedules/${schedule.id}/run`);
 }
 
+/**
+ * A Bug type's create screen as the fields endpoint returns it: Severity and a
+ * Team are required, Components and Fix versions are optional, Priority has a
+ * Jira default.
+ */
+const JIRA_SCREEN_FIELDS = [
+  {
+    id: 'customfield_10050',
+    name: 'Severity',
+    required: true,
+    hasDefault: false,
+    kind: 'option',
+    options: [
+      { id: '10100', label: 'Critical' },
+      { id: '10101', label: 'Major' },
+      { id: '10102', label: 'Minor' },
+    ],
+    typeName: 'select',
+  },
+  {
+    id: 'customfield_10001',
+    name: 'Team',
+    required: true,
+    hasDefault: false,
+    kind: 'raw',
+    options: null,
+    typeName: 'atlassian-team',
+  },
+  {
+    id: 'components',
+    name: 'Components',
+    required: false,
+    hasDefault: false,
+    kind: 'option-array',
+    options: [
+      { id: '10200', label: 'Checkout' },
+      { id: '10201', label: 'Payments' },
+    ],
+    typeName: 'components',
+  },
+  {
+    id: 'fixVersions',
+    name: 'Fix versions',
+    required: false,
+    hasDefault: false,
+    kind: 'option-array',
+    options: [{ id: '10300', label: '2.5.0' }],
+    typeName: 'fixVersions',
+  },
+  {
+    id: 'priority',
+    name: 'Priority',
+    required: false,
+    hasDefault: true,
+    kind: 'option',
+    options: [{ id: '3', label: 'Medium' }],
+    typeName: 'priority',
+  },
+];
+
+/** The project defaults the required-fields scenes show: a Severity and a component. */
+const JIRA_FIELD_DEFAULTS = {
+  customfield_10050: { value: { id: '10101' }, label: 'Major' },
+  components: { value: [{ id: '10200' }], label: 'Checkout' },
+};
+
+/** The db-managed connection the required-fields scenes bind; its dead port means no Jira is contacted. */
+let jiraSceneConnectionId = 0;
+
+async function prepareJiraSceneConnection({ base, request }) {
+  const list = await (await request.get(`${base}/api/integrations/connections`)).json();
+  const existing = list.connections?.find((c) => c.provider === 'jira' && c.managedBy === 'db' && c.name === 'Jira');
+  if (existing) {
+    jiraSceneConnectionId = existing.id;
+    return;
+  }
+  const created = await request.post(`${base}/api/integrations/connections`, {
+    data: {
+      provider: 'jira',
+      name: 'Jira',
+      baseUrl: 'http://127.0.0.1:9',
+      credentials: { email: 'you@example.com', apiToken: 'screenshot-token' },
+    },
+  });
+  jiraSceneConnectionId = (await created.json()).connection.id;
+}
+
+/**
+ * Answers the Jira pickers and the create screen in the page, so a scene shows
+ * the required-fields UI for project CHK and its Bug type without a Jira.
+ */
+async function routeJiraScreen(page) {
+  await page.route('**/api/integrations/connections/*/projects', (route) =>
+    route.fulfill({ json: { projects: [{ id: '1', key: 'CHK', name: 'Checkout' }] } }),
+  );
+  await page.route('**/api/integrations/connections/*/projects/*/issue-types', (route) =>
+    route.fulfill({
+      json: {
+        issueTypes: [
+          { id: '10004', name: 'Bug' },
+          { id: '10006', name: 'Task' },
+        ],
+      },
+    }),
+  );
+  await page.route('**/api/integrations/connections/*/projects/*/issue-types/*/fields', (route) =>
+    route.fulfill({ json: { fields: JIRA_SCREEN_FIELDS } }),
+  );
+  await page.route('**/api/integrations/connections/*/assignable*', (route) => route.fulfill({ json: { users: [] } }));
+}
+
 // The evidence-footer scene seeds its own fixtures-free project; `prepare`
 // records the execution id it submits so `run` can open that page.
 let footerExecId = 0;
@@ -1192,6 +1303,67 @@ const SCENES = [
     viewport: { width: 1280, height: 1600 },
     of: '[data-shot="project-integration-binding"]',
     pad: 12,
+  },
+  {
+    name: 'create-issue-required-fields',
+    description: 'Create issue modal asking for the fields Jira requires, one filled from the project default',
+    tags: ['docs'],
+    out: 'docs',
+    // The draft is answered as for a project bound to CHK / Bug with a Severity
+    // default; the pickers and the create screen come from routeJiraScreen.
+    prepare: prepareJiraSceneConnection,
+    route: '/failure-clusters/7',
+    viewport: { width: 1280, height: 1100 },
+    async run({ page, shoot, settle }) {
+      await routeJiraScreen(page);
+      await page.route('**/api/integrations/issue-draft*', async (route) => {
+        const draft = await (await route.fetch()).json();
+        await route.fulfill({
+          json: {
+            ...draft,
+            connectionId: jiraSceneConnectionId,
+            projectKey: 'CHK',
+            issueType: '10004',
+            fieldValues: JIRA_FIELD_DEFAULTS,
+          },
+        });
+      });
+      await page.locator('[data-shot="cluster-create-issue"]').first().click();
+      const dialog = page.getByRole('dialog');
+      await dialog.locator('[data-shot="create-issue-fields"]').waitFor({ timeout: 15000 });
+      await dialog.getByTestId('create-issue-missing').waitFor();
+      await settle();
+      await shoot(undefined, { of: '[role="dialog"]', pad: 0 });
+    },
+  },
+  {
+    name: 'binding-jira-fields',
+    description:
+      "Project → Settings → Issue tracker: the Jira fields the issue type requires, with the project's defaults",
+    // The binding is answered as bound to CHK / Bug with a Severity and a
+    // component default; the pickers and the create screen come from routeJiraScreen.
+    prepare: prepareJiraSceneConnection,
+    route: '/projects/2?tab=settings',
+    viewport: { width: 1280, height: 1600 },
+    async run({ page, goto, shoot }) {
+      await routeJiraScreen(page);
+      await page.route('**/api/projects/2/integrations', async (route) => {
+        if (route.request().method() !== 'GET') return route.continue();
+        const binding = await (await route.fetch()).json();
+        await route.fulfill({
+          json: {
+            ...binding,
+            connectionId: jiraSceneConnectionId,
+            projectKey: 'CHK',
+            issueType: '10004',
+            fieldDefaults: JIRA_FIELD_DEFAULTS,
+          },
+        });
+      });
+      await goto('/projects/2?tab=settings');
+      await page.locator('[data-shot="binding-jira-fields"] [data-field-id="customfield_10001"]').waitFor();
+      await shoot(undefined, { of: '[data-shot="binding-jira-fields"]', pad: 12 });
+    },
   },
   {
     name: 'locator-healing',

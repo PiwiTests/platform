@@ -59,6 +59,17 @@ describe('resolveProjectIntegration', () => {
     expect(resolveProjectIntegration({ labels: [' a ', 'a', '', 'b'] as string[] }).labels).toEqual(['a', 'b']);
   });
 
+  test('field defaults keep valid entries and drop Piwi-managed or empty ones', () => {
+    const resolved = resolveProjectIntegration({
+      fieldDefaults: {
+        customfield_10050: { value: { id: '10100' }, label: 'Critical' },
+        summary: { value: 'not settable here', label: 'x' },
+        customfield_10060: { value: '', label: '' },
+      },
+    });
+    expect(resolved.fieldDefaults).toEqual({ customfield_10050: { value: { id: '10100' }, label: 'Critical' } });
+  });
+
   test('locale is narrowed to a supported language, else null (inherit)', () => {
     expect(resolveProjectIntegration({ locale: 'fr' }).locale).toBe('fr');
     expect(resolveProjectIntegration({ locale: 'de' as never }).locale).toBeNull();
