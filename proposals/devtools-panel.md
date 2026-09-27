@@ -8,10 +8,26 @@ Playwright test does. That is the gap this plan fills: a **Piwi panel inside Dev
 page, **mocks written from real responses**, the **login saved for tests**, **slow and failing requests** on demand,
 and **viewports** from the project's own configuration.
 
-**Status.** Proposed 2026-09-27; in progress. Built: PR 1 (the Elements sidebar), PR 2 (the Playwright view), PR 3 (the Piwi panel's Record and Replay tabs), PR 4 (the Network tab and Mock this response), PR 5 (Save login for tests), PR 6 (slow down or fail a request, and replays under a condition), PR 7 (viewport presets). After them, a layout pass on the DevTools pages and two more panel tabs, Locators and
-Session (see 1.2). No part needs the `debugger`
-permission, and only one adds a permission at all: `cookies`, optional, requested when the login is saved. The DevTools
-panel adds a manifest key (`devtools_page`) that shows no install warning. The open questions are settled below.
+**Status.** Proposed 2026-09-27; built the same day, PRs 1 to 7 in their Delivery order, then a layout pass on the
+DevTools pages and two more panel tabs (Locators, Session; see 1.2). No part needs the `debugger` permission, and only
+one adds a permission at all: `cookies`, optional, requested when the login is saved. The DevTools panel adds a manifest
+key (`devtools_page`) that shows no install warning. The open questions are settled below.
+
+What is left:
+
+- **Firefox.** Nothing here was run in Firefox. The sidebar's route there (`$0` marked in the page's world, the
+  content script asked by message, since `useContentScriptContext` is missing) and the Locators tab's message route
+  are written but unverified, as are the main-world request conditions and `cookies` in a Firefox container tab.
+- **Flake Lab's suspects** as a source for Slow down or fail a request (2.4): not built; the Network tab's requests are
+  the only source.
+- **The replay dialog** does not list the conditions on before a replay starts; the replay's panel and the Piwi panel
+  list them from its start to its verdict.
+- **Real DevTools** is exercised by one spec (`devtools-real.spec.ts`): the `devtools_page` loads, `$0` reaches the
+  ranking script, and Reveal's `inspect()` moves the selection. The sidebar and panel pages themselves are tested as
+  tabs with `chrome.devtools` stubbed; opening them inside DevTools' own frames from a test was not attempted.
+- **The lab** has no scenario for these tools: they add no recorded action, and the lab measures recordings and their
+  replays. On the demo seed its README prescribes, `project-tests-search` fails with or without the extension, since
+  the seed has no "Piwi Dashboard" project; the other 23 scenarios pass.
 
 **Summary.** A developer writing a test switches between the page, DevTools and the editor: they read the accessibility
 tree to guess what `getByRole` will find, copy a response from the Network panel to write a mock by hand, and log in
