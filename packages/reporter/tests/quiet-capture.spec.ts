@@ -54,6 +54,16 @@ describe('boxCaptureFrames', () => {
     ]);
   });
 
+  it('boxes a fixtures file the caller names, and only that file', () => {
+    boxCaptureFrames(['/work/app/tests/fixtures.ts']);
+    const files = filteredStackTrace([
+      frame('/work/app/tests/fixtures.ts'),
+      frame('/work/app/tests/checkout.spec.ts'),
+      frame(path.join(packageRoot, 'dist', 'index.js')),
+    ]).map((f) => f.file);
+    expect(files).toEqual(['/work/app/tests/checkout.spec.ts']);
+  });
+
   it("keeps Playwright's own package boxed", () => {
     boxCaptureFrames();
     const playwrightRoot = path.dirname(

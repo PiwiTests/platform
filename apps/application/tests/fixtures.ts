@@ -12,6 +12,7 @@
  * import { test, expect } from './fixtures'
  * ```
  */
+import { fileURLToPath } from 'node:url';
 import { gunzipSync } from 'node:zlib';
 import { test as base, expect, type Page, type TestInfo } from '@playwright/test';
 import {
@@ -33,6 +34,7 @@ import {
 } from '../../../packages/reporter/dist/internal/capture/locator-healing.js';
 import {
   ariaSnapshotBestEffort,
+  boxCaptureFrames,
   buildPageState,
   callMethod,
   computeCoreVitals,
@@ -258,8 +260,12 @@ async function collectNetworkAndVitals(page: Page, testInfo: TestInfo) {
   };
 }
 
+/** This file, boxed with the reporter's bundle so wrapped actions report the spec's line. */
+const FIXTURES_FILE = fileURLToPath(import.meta.url);
+
 export const test = base.extend<{ page: Page }>({
   page: async ({ page }, use, testInfo) => {
+    boxCaptureFrames([FIXTURES_FILE]);
     // ── Locator interaction capture (dogfooding: matches reporter/src/fixtures.ts) ──
     const captureLocators = process.env.PIWI_CAPTURE_LOCATORS !== 'false';
     const capturedLocators: LocatorSnapshot[] = [];

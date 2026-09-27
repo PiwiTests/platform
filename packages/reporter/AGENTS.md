@@ -23,7 +23,8 @@ per-directory responsibilities.
 5. **Invisible capture.** Nothing the capture fixtures do may show up as the test's own: a Playwright method a
    wrapper forwards is called on its receiver (`callMethod` — never `fn.apply`, which renames the call
    `locator.apply`), and every page read the fixtures make goes through `internalCall` (never a bare
-   `page.evaluate` / `ariaSnapshot`), so it is neither a step nor a trace action.
+   `page.evaluate` / `ariaSnapshot`), so it is neither a step nor a trace action. A copy that wraps locators
+   from its own file (the dogfood mirror) passes that file to `boxCaptureFrames` so its frames are boxed too.
    `tests/integration/verify-reporter.ts` checks both.
 
 ## Conventions

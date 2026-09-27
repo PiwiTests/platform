@@ -63,7 +63,7 @@ import { boxCaptureFrames, internalCall } from './quiet-capture.js';
 // with the dashboard's snapshot picker), but the dogfood mirror
 // (`application/tests/fixtures.ts`) and this package's own tests import it
 // from here, as the mirror does the quiet-capture helpers.
-export { probeElementAttrs, internalCall };
+export { probeElementAttrs, internalCall, boxCaptureFrames };
 export type { ProbeArg, ProbedAttrs };
 
 /** A Playwright fixture's `use` callback — hands the fixture value to the test. */
@@ -1565,7 +1565,8 @@ async function flushSink(sink: CaptureSink, testInfo: TestInfo): Promise<void> {
 
   // Live read when the page still exists (e.g. a browser.newPage the test left
   // open); otherwise the vitals the close wrappers stashed before the page went.
-  const webVitals = (pageReadable ? await readWebVitals(page) : null) ?? sink.stashedWebVitals;
+  const webVitals =
+    (pageReadable ? await internalCall(page, () => readWebVitals(page)) : null) ?? sink.stashedWebVitals;
   if (webVitals) {
     await testInfo.attach(ATTACHMENT_NAMES.webVitals, {
       contentType: 'application/json',
@@ -1575,7 +1576,8 @@ async function flushSink(sink: CaptureSink, testInfo: TestInfo): Promise<void> {
 
   // Page state at test end (pass AND fail — the pass side is the diff baseline).
   if (process.env.PIWI_CAPTURE_PAGE_STATE !== 'false') {
-    const pageState = (pageReadable ? await readPageState(page) : null) ?? sink.stashedPageState;
+    const pageState =
+      (pageReadable ? await internalCall(page, () => readPageState(page)) : null) ?? sink.stashedPageState;
     if (pageState) {
       await testInfo.attach(ATTACHMENT_NAMES.pageState, {
         contentType: 'application/json',

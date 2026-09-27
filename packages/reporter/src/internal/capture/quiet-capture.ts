@@ -23,21 +23,17 @@ const BOXED_PREFIX_EXPORTS: Array<[moduleId: string, pick: (mod: unknown) => unk
   ['playwright-core/lib/utils', (mod) => (mod as Record<string, unknown> | null)?.setBoxedStackPrefixes],
 ];
 
-let framesBoxed = false;
+/** The hook that sets Playwright's boxed prefixes, and the prefixes set through it. */
+type Boxing = { set: SetBoxedStackPrefixes; prefixes: string[] };
 
-/**
- * Register this package's `dist/` directory as a boxed stack prefix — the list
- * Playwright filters its own frames with — so a wrapped action's step location
- * and error stack name the test's line instead of the wrapper. Playwright's own
- * package stays in the list. Runs once per worker; a missing hook or an
- * unexpected layout leaves Playwright's defaults untouched.
- */
-export function boxCaptureFrames(): void {
-  if (framesBoxed) return;
-  framesBoxed = true;
+/** Resolved on first use; null when this Playwright offers no hook. */
+let boxing: Boxing | null | undefined;
+
+/** Find the hook, with Playwright's own package and this package's `dist/` as the first prefixes. */
+function resolveBoxing(): Boxing | null {
   try {
     const root = findOwnPackageJson(__dirname)?.root;
-    if (!root) return;
+    if (!root) return null;
     // Resolve through @playwright/test → playwright, the same path Playwright's
     // own `require('playwright-core/…')` takes, so the module (and its prefix
     // list) is the instance the test runner uses.
@@ -45,18 +41,43 @@ export function boxCaptureFrames(): void {
     const playwrightPackageJson = createRequire(testPackageJson).resolve('playwright/package.json');
     const requireFromPlaywright = createRequire(playwrightPackageJson);
     for (const [moduleId, pick] of BOXED_PREFIX_EXPORTS) {
-      let setPrefixes: unknown;
+      let set: unknown;
       try {
-        setPrefixes = pick(requireFromPlaywright(moduleId));
+        set = pick(requireFromPlaywright(moduleId));
       } catch {
         continue;
       }
-      if (typeof setPrefixes !== 'function') continue;
-      (setPrefixes as SetBoxedStackPrefixes)([path.dirname(playwrightPackageJson), path.join(root, 'dist') + path.sep]);
-      return;
+      if (typeof set !== 'function') continue;
+      return {
+        set: set as SetBoxedStackPrefixes,
+        prefixes: [path.dirname(playwrightPackageJson), path.join(root, 'dist') + path.sep],
+      };
     }
   } catch {
     // An install layout the lookup does not know: keep Playwright's defaults.
+  }
+  return null;
+}
+
+/**
+ * Register this package's `dist/` directory as a boxed stack prefix — the list
+ * Playwright filters its own frames with — so a wrapped action's step location
+ * and error stack name the test's line instead of the wrapper. `extraPrefixes`
+ * adds more: a fixtures file of your own that wraps locators the same way.
+ * Playwright's own package stays in the list. A missing hook or an unexpected
+ * layout leaves Playwright's defaults untouched.
+ */
+export function boxCaptureFrames(extraPrefixes: readonly string[] = []): void {
+  const first = boxing === undefined;
+  if (first) boxing = resolveBoxing();
+  if (!boxing) return;
+  const added = extraPrefixes.filter((prefix) => !boxing!.prefixes.includes(prefix));
+  if (!first && added.length === 0) return;
+  boxing.prefixes.push(...added);
+  try {
+    boxing.set([...boxing.prefixes]);
+  } catch {
+    // The hook refused the list: keep Playwright's defaults.
   }
 }
 
