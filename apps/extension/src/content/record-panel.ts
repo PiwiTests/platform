@@ -257,7 +257,7 @@ interface Press {
 let lastPress: Press | null = null;
 const PRESS_CLICK_WINDOW_MS = 2000;
 
-/** A click with no press before it, `pointer` false for one from the keyboard, which no hover revealed. */
+/** The control a click acted on, from its press when it had one; `pointer` is false for a click from the keyboard, which no hover revealed. */
 function clickTarget(raw: Element, at: number, pointer: boolean): Omit<Press, 'at'> {
   const el = nearestActionable(raw);
   const press = lastPress;
