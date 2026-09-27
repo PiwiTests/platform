@@ -1054,6 +1054,51 @@ const SCENES = [
     pad: 12,
   },
   {
+    name: 'jira-connect-form',
+    description:
+      'Settings → Integrations: the Jira connect form with a pasted board URL, scoped-token steps and a sign-in check',
+    tags: ['docs'],
+    out: 'docs',
+    // Run with PIWI_SECRET_KEY set, or the form opens on the "cannot store a token" notice.
+    // The check endpoint would call the typed site, so the scene answers it with a
+    // canned Cloud site and sign-in; no Atlassian host is contacted.
+    route: '/settings/integrations',
+    viewport: { width: 1280, height: 1700 },
+    async run({ page, shoot, settle }) {
+      await page.route('**/api/integrations/connections/check', async (route) => {
+        const body = route.request().postDataJSON();
+        const result = {
+          baseUrl: body.baseUrl,
+          site: {
+            ok: true,
+            reachable: true,
+            deploymentType: 'Cloud',
+            title: 'Jira',
+            reportedUrl: null,
+            cloudId: '8f1c2b7e-4d3a-4b6f-9a51-2c0e7d9b3f10',
+          },
+        };
+        if (body.credentials?.apiToken) {
+          result.auth = { ok: true, account: { id: 'acct-1', displayName: 'Piwi Bot' }, tokenKind: 'scoped' };
+          result.projects = { ok: true, count: 3, keys: ['CHK', 'PAY', 'WEB'], hint: null };
+        }
+        await route.fulfill({ json: result });
+      });
+      await page.getByRole('button', { name: 'Connect Jira' }).first().click();
+      const form = page.locator('[data-shot="jira-connection-form"]');
+      await form.waitFor();
+      await page.getByTestId('jira-site').fill('https://your-team.atlassian.net/jira/software/projects/CHK/boards/1');
+      await page.getByTestId('jira-site-check').waitFor();
+      await form.getByText('Scoped token', { exact: true }).click();
+      await form.getByLabel('Account email').fill('piwi-bot@example.com');
+      await form.getByLabel('API token', { exact: true }).fill('screenshot-token');
+      await form.getByRole('button', { name: 'Check sign-in' }).click();
+      await page.getByTestId('jira-credential-check').waitFor();
+      await settle();
+      await shoot(undefined, { of: '[data-shot="jira-connection-form"]', pad: 12 });
+    },
+  },
+  {
     name: 'create-issue-modal',
     description: 'Create issue modal on a cluster: title, fields, include toggles and the fix-plan preview',
     tags: ['docs'],
@@ -2168,7 +2213,7 @@ const SCENES = [
       // One channel + subscription so neither section captures empty. Reruns
       // reuse the rows from the previous run instead of duplicating them.
       const list = await (await request.get(`${base}/api/channels`)).json();
-      if (!list.channels.some((c) => c.name === 'Team Slack')) {
+      if (!list.items.some((c) => c.name === 'Team Slack')) {
         const ch = await (
           await request.post(`${base}/api/channels`, {
             data: {
@@ -2190,6 +2235,31 @@ const SCENES = [
       await page.getByText('Browser notifications').waitFor();
       await settle();
       await shoot('bell');
+    },
+  },
+  {
+    name: 'channel-form',
+    description: 'Notifications → Add channel: the Slack app steps with a checked URL, then that URL under Teams',
+    route: '/settings/notifications',
+    viewport: { width: 1280, height: 1100 },
+    outputs: ['channel-form-slack.png', 'channel-form-teams.png'],
+    async run({ page, shoot, settle }) {
+      await page.getByRole('button', { name: 'Add channel' }).click();
+      const form = page.locator('[data-shot="channel-form"]');
+      await form.waitFor();
+      const pick = async (label) => {
+        await form.getByRole('combobox').first().click();
+        await page.getByRole('option', { name: label, exact: true }).click();
+      };
+      await pick('Slack webhook');
+      await page.getByTestId('slack-webhook-url').fill('https://hooks.slack.com/services/T000/B000/XXXX');
+      await settle();
+      await shoot('slack', { of: '[data-shot="channel-form"]', pad: 12 });
+      // The URL stays when the type changes, so Teams offers to switch back.
+      await pick('Microsoft Teams webhook');
+      await page.getByTestId('channel-url-check').waitFor();
+      await settle();
+      await shoot('teams', { of: '[data-shot="channel-form"]', pad: 12 });
     },
   },
   // ── Capabilities opt-out ─────────────────────────────────────────────────
