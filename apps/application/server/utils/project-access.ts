@@ -8,6 +8,7 @@ import {
   testCases,
   testRunsCases,
   failureClusters,
+  bugReports,
   failureDiagnoses,
   markers,
   testFunctions,
@@ -148,6 +149,7 @@ export async function resolveLinkEntityProjectId(
   if (entityType === 'test_runs_case') return resolveTestRunCaseProjectId(db, entityId);
   if (entityType === 'test_case') return resolveCaseProjectId(db, entityId);
   if (entityType === 'failure_cluster') return resolveClusterProjectId(db, entityId);
+  if (entityType === 'bug_report') return resolveBugReportProjectId(db, entityId);
   return null;
 }
 
@@ -160,6 +162,7 @@ export async function resolveLinkProjectId(db: DrizzleDB, linkId: number): Promi
   if (link.testRunsCaseId != null) return resolveTestRunCaseProjectId(db, link.testRunsCaseId);
   if (link.testCaseId != null) return resolveCaseProjectId(db, link.testCaseId);
   if (link.failureClusterId != null) return resolveClusterProjectId(db, link.failureClusterId);
+  if (link.bugReportId != null) return resolveBugReportProjectId(db, link.bugReportId);
   return null;
 }
 
@@ -177,4 +180,12 @@ export async function resolveDiagnosisProjectId(db: DrizzleDB, diagnosisId: numb
   const row = rows[0];
   if (!row) return null;
   return row.clusterProjectId ?? row.execProjectId ?? null;
+}
+
+export async function resolveBugReportProjectId(db: DrizzleDB, bugReportId: number): Promise<number | null> {
+  const rows = await db
+    .select({ projectId: bugReports.projectId })
+    .from(bugReports)
+    .where(eq(bugReports.id, bugReportId));
+  return rows[0]?.projectId ?? null;
 }

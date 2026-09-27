@@ -8,6 +8,7 @@
  * dashboard's history once a run has landed (`gate`, `report`).
  */
 import { runAi } from './ai.js';
+import { runBug } from './bug.js';
 import { runCodegen } from './codegen.js';
 import { runGate } from './gate.js';
 import { runInit } from './init.js';
@@ -32,6 +33,7 @@ Commands:
   probe     Run the dashboard's probe plan and record what the suite noticed
   ai        Manage committed natural-language AI-step artifacts
   codegen   Turn a steps file (a Piwi Picker recording) into a Playwright spec
+  bug       Write a bug report's failing test into the project and run it once
 
 Run \`npx @piwitests/reporter <command> --help\` for a command's options.
 (The published package is @piwitests/reporter; its command is piwi. Invoke it
@@ -60,6 +62,8 @@ async function main(): Promise<number> {
       return runAi(rest);
     case 'codegen':
       return runCodegen(rest);
+    case 'bug':
+      return runBug(rest);
     case undefined:
     case '-h':
     case '--help':

@@ -18,7 +18,7 @@ Picking and recording never use the network. Nothing is collected or sent anywhe
 
 **Optional: connect your own Piwi instance**
 
-Piwi is a self-hosted dashboard for Playwright test results. Connecting the add-on to your instance (its URL and an API key, in the settings) adds three tools: recordings that call your own test functions, a check of which functions work on the page, and an outline of the elements your tests reach. The add-on only reads from your instance; a recording is never sent to it.
+Piwi is a self-hosted dashboard for Playwright test results. Connecting the add-on to your instance (its URL and an API key, in the settings) adds three tools: recordings that call your own test functions, a check of which functions work on the page, and an outline of the elements your tests reach. The add-on reads from your instance and sends it one thing: a bug report, when you click Send in the preview that shows exactly what goes.
 
 **Permissions**
 

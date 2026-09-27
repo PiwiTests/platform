@@ -900,6 +900,16 @@ export const HELP_TOPICS = {
     text: 'Paste locators, one per line as the Piwi Picker extension copies them, or lines of test code. Each one is looked up among the chains the project’s tests used: exactly, through the same last call inside other containers, through another call that finds the same element (a shorter name, a regex), or as a container other chains search inside. The tests reaching any of them are listed once at the end.',
     doc: 'features/locator-usage#the-locators-page',
   },
+  'project.bug-reports': {
+    title: 'Bug reports',
+    text: 'Bugs reported from Piwi Picker: the steps recorded on the page, the assertion that states what should have happened, with the value the page showed instead, and the evidence the reporter chose to send (screenshots, console errors, failed requests, an outline of the page). Each report renders a failing test to commit with test.fail() and the piwi:bug annotation; the runs of that test then move the report along: test committed, looks fixed when the test passes while still marked to fail, closed once it passes as an ordinary test.',
+    doc: 'features/bug-reports',
+  },
+  'bug-report.spec': {
+    title: 'The failing test',
+    text: 'The steps written as a Playwright spec with this project’s settings (the test import and the folder for bug specs, in the project’s Generated specs settings), its page objects and the locators its tests already use. To commit: marked test.fail() so the suite stays green while the bug exists, with @bug and piwi:bug so its runs follow the report. To run: the same test without test.fail(), which fails on the expected assertion while the bug is there.',
+    doc: 'features/bug-reports#the-failing-test',
+  },
   'project.locator-index': {
     title: 'Locator index',
     text: 'Every locator chain recorded in the steps of the project’s runs, with the tests that use it and the actions they perform through it. New runs update it as they arrive. The branch select picks what a branch’s tests use: the tests that ran on it with what they did there, the others with what they do on the default branch. Matching is by chain text: to see which elements of a live page these chains reach, use Tested elements in the Piwi Picker extension. A chain the locator stability rules flag says why: brittle ones break on changes unrelated to what the test checks, such as a position, a styling class or the page structure; the Stability select lists only those.',

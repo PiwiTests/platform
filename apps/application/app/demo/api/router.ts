@@ -18,6 +18,7 @@ import {
   failureClusters,
   failureDiagnoses,
   graphNodes,
+  bugReports,
 } from '~~/server/database/schema.sqlite';
 import { Role } from '#shared/types';
 import { NOTIFICATION_EVENTS } from '#shared/notification-events';
@@ -314,6 +315,16 @@ import {
   type UrlPatternWriteResult,
 } from '#shared/handlers/url-patterns';
 import { apiDeleteTestRun } from './test-runs';
+import {
+  addBugReproduction,
+  bugReportPatchSchema,
+  bugReproductionSchema,
+  getBugReport,
+  getBugReportMissedBy,
+  listBugReports,
+  renderBugReportSpec,
+  updateBugReport,
+} from '#shared/handlers/bug-reports';
 import { apiCheckDemoImport, apiDemoImport } from './import';
 import {
   apiGetWastedWaits,
@@ -387,7 +398,7 @@ function assertDemoScope(ctx: DemoCtx | undefined, projectId: number): void {
  */
 async function assertDemoEntityScope(
   ctx: DemoCtx | undefined,
-  entity: 'project' | 'run' | 'case' | 'cluster' | 'execution',
+  entity: 'project' | 'run' | 'case' | 'cluster' | 'execution' | 'bugReport',
   id: number,
 ): Promise<void> {
   if (!ctx || ctx.scope === 'all') return;
@@ -406,6 +417,9 @@ async function assertDemoEntityScope(
       .select({ projectId: failureClusters.projectId })
       .from(failureClusters)
       .where(eq(failureClusters.id, id));
+    projectId = row?.projectId ?? null;
+  } else if (entity === 'bugReport') {
+    const [row] = await db.select({ projectId: bugReports.projectId }).from(bugReports).where(eq(bugReports.id, id));
     projectId = row?.projectId ?? null;
   } else {
     const [row] = await db
@@ -2351,6 +2365,84 @@ const routes: RouteEntry[] = [
     handler: async (m, _, __, ctx) => {
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
       return getProjectCapabilities(await getDemoDb(), +m[1]!);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/bug-reports$/,
+    handler: async (m, _b, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const status = q?.get('status') ?? null;
+      return { items: await listBugReports(await getDemoDb(), +m[1]!, { status }) };
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/bug-reports\/intake$/,
+    // The demo has no tracker connection: a send files nowhere.
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      return { tracker: null, projectKey: null, locale: null, canCreate: false, fileEvery: false };
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/bug-reports\/(\d+)$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'bugReport', +m[1]!);
+      const report = await getBugReport(await getDemoDb(), +m[1]!);
+      if (!report) throw demoHttpError(404, 'Bug report not found');
+      return report;
+    },
+  },
+  {
+    method: 'PATCH',
+    pattern: /^\/api\/bug-reports\/(\d+)$/,
+    handler: async (m, body, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'bugReport', +m[1]!);
+      const parsed = bugReportPatchSchema.safeParse(body);
+      if (!parsed.success) throw demoHttpError(400, 'Invalid request body');
+      const report = await updateBugReport(await getDemoDb(), +m[1]!, parsed.data);
+      if (!report) throw demoHttpError(404, 'Bug report not found');
+      return report;
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/bug-reports\/(\d+)\/reproductions$/,
+    handler: async (m, body, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'bugReport', +m[1]!);
+      const parsed = bugReproductionSchema.safeParse(body);
+      if (!parsed.success) throw demoHttpError(400, 'Invalid request body');
+      return addBugReproduction(await getDemoDb(), +m[1]!, parsed.data, null);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/bug-reports\/(\d+)\/missed-by$/,
+    // The demo has no CODEOWNERS to read: no owner.
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'bugReport', +m[1]!);
+      const missed = await getBugReportMissedBy(await getDemoDb(), +m[1]!);
+      if (!missed) throw demoHttpError(404, 'Bug report not found');
+      return { ...missed, owner: null };
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/bug-reports\/(\d+)\/spec$/,
+    handler: async (m, _b, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'bugReport', +m[1]!);
+      const spec = await renderBugReportSpec(await getDemoDb(), +m[1]!, q?.get('mode') === 'run' ? 'run' : 'commit');
+      if (!spec) throw demoHttpError(404, 'Bug report not found');
+      return {
+        mode: spec.mode,
+        code: spec.code,
+        fileName: spec.fileName,
+        path: spec.path,
+        warnings: spec.warnings,
+        matchedSpans: spec.matchedSpans,
+      };
     },
   },
   {

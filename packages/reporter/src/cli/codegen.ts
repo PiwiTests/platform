@@ -29,6 +29,7 @@ piwi codegen — turn a steps file into a Playwright spec
 
 Usage:
   npx @piwitests/reporter codegen <steps.json> [options]
+  npx @piwitests/reporter codegen bug:<id> [options]   the steps of a bug report on the dashboard
 
 Output:
   --out <file>          Write the spec to this file (an existing file needs --force)
@@ -221,13 +222,33 @@ export async function runCodegen(argv: string[], env: NodeJS.ProcessEnv = proces
   }
 
   let text: string;
-  try {
-    if (fs.statSync(args.file).size > MAX_STEPS_FILE_BYTES) throw new Error('is too large to be a steps file');
-    text = fs.readFileSync(args.file, 'utf-8');
-  } catch (e) {
-    const reason = (e as NodeJS.ErrnoException).code === 'ENOENT' ? 'does not exist' : (e as Error).message;
-    console.error(`piwi codegen: ${args.file} ${reason}`);
-    return EXIT_ERROR;
+  const bugId = /^bug:#?(\d+)$/.exec(args.file)?.[1];
+  if (bugId) {
+    if (!args.serverUrl) {
+      console.error(
+        'piwi codegen: bug:<id> reads the report from the dashboard — pass --server-url or set PIWI_DASHBOARD_URL',
+      );
+      return EXIT_ERROR;
+    }
+    try {
+      const report = (await fetchJson(`${args.serverUrl}/api/bug-reports/${bugId}`, args.apiKey)) as {
+        title?: string;
+        steps?: unknown;
+      };
+      text = JSON.stringify({ ...(report.steps as object), title: report.title ?? null });
+    } catch (e) {
+      console.error(`piwi codegen: bug report #${bugId}: ${(e as Error).message}`);
+      return EXIT_ERROR;
+    }
+  } else {
+    try {
+      if (fs.statSync(args.file).size > MAX_STEPS_FILE_BYTES) throw new Error('is too large to be a steps file');
+      text = fs.readFileSync(args.file, 'utf-8');
+    } catch (e) {
+      const reason = (e as NodeJS.ErrnoException).code === 'ENOENT' ? 'does not exist' : (e as Error).message;
+      console.error(`piwi codegen: ${args.file} ${reason}`);
+      return EXIT_ERROR;
+    }
   }
 
   let project: ProjectContext | null = null;

@@ -71,10 +71,11 @@ test.describe.serial('Expected failures that pass', () => {
     const bug = run.testCases.find((tc: { title: string }) => tc.title === 'bug: coupon not applied to the total');
 
     await page.goto(`/test-runs/${runId}`);
-    await expect(page.getByText('bug: coupon not applied to the total')).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText('bug: coupon not applied to the total')).toBeVisible({ timeout: 60_000 });
     await expect(page.getByText('Looks fixed').first()).toBeVisible();
 
     await page.goto(`/test-run-cases/${bug.executionId}`);
-    await expect(page.getByText('Looks fixed').first()).toBeVisible();
+    // A route compiles on its first visit in dev mode.
+    await expect(page.getByText('Looks fixed').first()).toBeVisible({ timeout: 60_000 });
   });
 });

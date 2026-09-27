@@ -20,6 +20,7 @@ import { BUILD_ID } from '../shared/build-id.js';
 import { serveSessionStorage, sessionArea } from '../shared/session-area.js';
 import { LANGUAGE_KEY, initI18n, isLanguage, t } from '../shared/i18n.js';
 import { refreshLanguageChoice, storeLanguageChoice } from './language-choice.js';
+import { handleBugSendTarget, handleGetBugReport, handleListBugReports, handleSendBugReport } from './bug-reports.js';
 import { CONDITIONS_KEY, isCondition, type ConditionsState } from '../shared/request-conditions.js';
 
 /**
@@ -683,6 +684,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   if (message?.type === 'piwi-bug-screenshot') {
     void handleBugScreenshot(sender.tab).then(sendResponse);
+    return true;
+  }
+  if (message?.type === 'piwi-bug-send-target') {
+    void i18nReady.then(() => handleBugSendTarget(sender.tab)).then(sendResponse);
+    return true;
+  }
+  if (message?.type === 'piwi-send-bug-report') {
+    void i18nReady.then(() => handleSendBugReport(message, sender.tab)).then(sendResponse);
+    return true;
+  }
+  if (message?.type === 'piwi-list-bug-reports') {
+    void i18nReady.then(() => handleListBugReports(sender.tab)).then(sendResponse);
+    return true;
+  }
+  if (message?.type === 'piwi-get-bug-report') {
+    void i18nReady.then(() => handleGetBugReport(message.id)).then(sendResponse);
     return true;
   }
   if (message?.type === 'piwi-refresh-catalog') {

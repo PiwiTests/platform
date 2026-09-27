@@ -51,6 +51,16 @@ context before it's sent, and you can cap its size. See
   local storage, because the source is on your machine, not the server's. It is never sent to the
   dashboard.
 
+## What reaches your server from Piwi Picker
+
+The [browser extension](/features/extension) works with no instance. Connected, it reads a project's URL patterns,
+function catalog and locator index, and sends one thing: a [bug report](/features/bug-reports), only when someone
+clicks **Send** in its preview, which shows exactly what goes. That report carries the recorded steps with the values
+typed (never a password, and none at all with **Leave out the values I typed**), and whichever evidence the reporter
+kept ticked: screenshots of the tab, console errors and warnings, failed requests (method, path without query values,
+status; never a header or a body) and an outline of the page. It goes only to the instance the extension is connected
+to, and it is stored there like a run's evidence.
+
 ## What Piwi deliberately does not capture
 
 Some data is skipped at the source, so it never exists to leak:

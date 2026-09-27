@@ -393,6 +393,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/report-a-bug',
       },
       {
+        title: 'Bug reports',
+        summary:
+          'Reports sent from Piwi Picker kept with their steps and evidence, each rendered as a failing test for your project and followed through its runs until the fix holds.',
+        needs: ['extension'],
+        where: 'Project → More → Bug reports',
+        doc: 'features/bug-reports',
+      },
+      {
         title: 'Developer tools',
         summary:
           "Beside the browser's DevTools: the ranked, verified locators of the element selected in the Elements panel.",

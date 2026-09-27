@@ -158,6 +158,33 @@ async function startReplay(
   }
 }
 
+type InstanceReports =
+  | { ok: true; project: { id: number; label: string } | null; items: Array<{ id: number; title: string }> }
+  | { ok: false; error: string };
+
+/** The bug reports of the project this tab maps to on the connected instance; null when not connected. */
+async function listInstanceReports(): Promise<InstanceReports | null> {
+  try {
+    return (
+      ((await chrome.runtime.sendMessage({ type: 'piwi-list-bug-reports' })) as InstanceReports | undefined) ?? null
+    );
+  } catch {
+    return null;
+  }
+}
+
+async function instanceReportSteps(id: number): Promise<{ ok: true; steps: PiwiSteps } | { ok: false; error: string }> {
+  try {
+    const answer = (await chrome.runtime.sendMessage({ type: 'piwi-get-bug-report', id })) as
+      | { ok: true; steps: PiwiSteps }
+      | { ok: false; error: string }
+      | undefined;
+    return answer ?? { ok: false, error: t('common_workerNoAnswer') };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 function notifyFinished(): void {
   try {
     void chrome.runtime.sendMessage({ type: 'piwi-replay-finished' }).catch(() => undefined);
@@ -667,7 +694,57 @@ function openChooser(lastReport: PiwiSteps | null): void {
   fileLabel.className = 'sub';
   fileLabel.style.marginTop = '10px';
   fileLabel.textContent = t('replay_chooseFile');
-  panel.append(fileLabel, file, summary);
+  panel.append(fileLabel, file);
+
+  // Connected, the bug reports of the project this tab maps to, read by the worker.
+  const fromPiwi = document.createElement('div');
+  fromPiwi.hidden = true;
+  const fromPiwiLabel = document.createElement('div');
+  fromPiwiLabel.className = 'sub';
+  fromPiwiLabel.style.marginTop = '10px';
+  const reports = document.createElement('select');
+  fromPiwi.append(fromPiwiLabel, reports);
+  panel.append(fromPiwi, summary);
+  void listInstanceReports().then((answer) => {
+    if (!answer) return;
+    if (!answer.ok) {
+      fromPiwi.hidden = false;
+      fromPiwiLabel.textContent = t('replay_fromPiwiFailed', { error: answer.error });
+      reports.hidden = true;
+      return;
+    }
+    if (!answer.project) return;
+    fromPiwi.hidden = false;
+    if (answer.items.length === 0) {
+      fromPiwiLabel.textContent = t('replay_fromPiwiNone', { project: answer.project.label });
+      reports.hidden = true;
+      return;
+    }
+    fromPiwiLabel.textContent = t('replay_fromPiwi', { project: answer.project.label });
+    reports.setAttribute('aria-label', t('replay_fromPiwiChoose'));
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = t('replay_fromPiwiChoose');
+    reports.appendChild(placeholder);
+    for (const item of answer.items) {
+      const option = document.createElement('option');
+      option.value = String(item.id);
+      option.textContent = t('replay_fromPiwiItem', { id: item.id, title: item.title });
+      reports.appendChild(option);
+    }
+  });
+  reports.addEventListener('change', () => {
+    const id = Number(reports.value);
+    if (!id) return;
+    void instanceReportSteps(id).then((answer) => {
+      if (answer.ok) describe(answer.steps);
+      else {
+        chosen = null;
+        summary.textContent = '';
+        message.textContent = t('replay_fromPiwiFailed', { error: answer.error });
+      }
+    });
+  });
 
   const stepLabel = document.createElement('label');
   stepLabel.className = 'check';

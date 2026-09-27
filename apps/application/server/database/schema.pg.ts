@@ -58,6 +58,7 @@ export const projects = pgTable(
     routeOrigins: jsonb('route_origins'), // string[] — extra own origins whose requests become graph route nodes, beyond the run's Playwright baseURL
     ciRerun: jsonb('ci_rerun'), // CiRerunSettings — provider-specific "re-run from the dashboard" target (off by default)
     capabilities: jsonb('capabilities'), // Partial<Record<CapabilityId, 'declined' | 'enabled'>> — per-project capability decisions
+    generatedSpecs: jsonb('generated_specs'), // GeneratedSpecSettings — test import and bugs folder for specs rendered from steps
     targets: jsonb('targets'), // ProjectTargets — per-project goals on catalog metrics (shared/analytics/targets.ts)
     locatorIndexBuiltAt: timestamp('locator_index_built_at', { mode: 'date' }),
     createdAt: timestamp('created_at', { mode: 'date' })
@@ -178,6 +179,7 @@ export const testCases = pgTable(
     priority: text('priority'), // 'critical' | 'high' | 'medium' | 'low'
     feature: text('feature'),
     link: text('link'), // absolute http(s) URL
+    bugReportId: integer('bug_report_id'), // the bug report this test reproduces (`piwi:bug`), once that report exists
     createdAt: timestamp('created_at', { mode: 'date' })
       .notNull()
       .$defaultFn(() => new Date()),
@@ -789,6 +791,7 @@ export const entityLinks = pgTable(
     testRunsCaseId: integer('test_runs_case_id').references(() => testRunsCases.id, { onDelete: 'cascade' }),
     testCaseId: integer('test_case_id').references(() => testCases.id, { onDelete: 'cascade' }),
     failureClusterId: integer('failure_cluster_id').references(() => failureClusters.id, { onDelete: 'cascade' }),
+    bugReportId: integer('bug_report_id').references(() => bugReports.id, { onDelete: 'cascade' }),
 
     url: text('url').notNull(),
 
@@ -813,6 +816,7 @@ export const entityLinks = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
+    bugReportIdx: index('idx_entity_links_bug_report').on(t.bugReportId),
     runIdx: index('idx_entity_links_run').on(t.testRunId),
     caseRunIdx: index('idx_entity_links_case_run').on(t.testRunsCaseId),
     caseIdx: index('idx_entity_links_case').on(t.testCaseId),
@@ -1742,3 +1746,72 @@ export type TestFunction = typeof testFunctions.$inferSelect;
 export type ShareLink = typeof shareLinks.$inferSelect;
 export type NewShareLink = typeof shareLinks.$inferInsert;
 export type NewTestFunction = typeof testFunctions.$inferInsert;
+
+// Bug reports: a steps document with the assertion that states the correct
+// behavior, and the evidence collected on the page, sent from Piwi Picker.
+// Screenshots live in storage under `bug-reports/<id>/`; `evidence.screenshots`
+// names them. Status: 'open' | 'test-committed' | 'looks-fixed' | 'closed' | 'dismissed'.
+export const bugReports = pgTable(
+  'bug_reports',
+  {
+    id: serial('id').primaryKey(),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    title: text('title').notNull(),
+    note: text('note'),
+    pageKey: text('page_key'),
+    path: text('path'),
+    origin: text('origin'),
+    status: text('status').notNull().default('open'),
+    steps: jsonb('steps').notNull(), // PiwiSteps
+    evidence: jsonb('evidence').notNull(), // BugEvidence
+    context: jsonb('context').notNull(), // BugContext
+    language: text('language'), // the language the report was written in (`en`, `fr`, …)
+    createdBy: integer('created_by').references(() => users.id, { onDelete: 'set null' }),
+    testCaseId: integer('test_case_id').references(() => testCases.id, { onDelete: 'set null' }),
+    statusRunId: integer('status_run_id').references(() => testRuns.id, { onDelete: 'set null' }), // the run that last moved the status
+    closedAt: timestamp('closed_at', { mode: 'date' }),
+    closedByRunId: integer('closed_by_run_id').references(() => testRuns.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    updatedAt: timestamp('updated_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    projectStatusIdx: index('idx_bug_reports_project_status').on(t.projectId, t.status),
+    testCaseIdx: index('idx_bug_reports_test_case').on(t.testCaseId),
+    createdByIdx: index('idx_bug_reports_created_by').on(t.createdBy),
+    statusRunIdx: index('idx_bug_reports_status_run').on(t.statusRunId),
+    closedByRunIdx: index('idx_bug_reports_closed_by_run').on(t.closedByRunId),
+  }),
+);
+
+// What happened when someone tried a bug report again: a replay in Piwi Picker
+// or a Playwright run from the desktop app. Verdict: 'reproduced' | 'not-reproduced' | 'diverged'.
+export const bugReproductions = pgTable(
+  'bug_reproductions',
+  {
+    id: serial('id').primaryKey(),
+    bugReportId: integer('bug_report_id')
+      .notNull()
+      .references(() => bugReports.id, { onDelete: 'cascade' }),
+    source: text('source').notNull(), // 'replay' | 'desktop'
+    verdict: text('verdict').notNull(),
+    divergedAt: integer('diverged_at'), // 0-based step index, for a 'diverged' verdict
+    origin: text('origin'),
+    userAgent: text('user_agent'),
+    runId: integer('run_id').references(() => testRuns.id, { onDelete: 'set null' }),
+    createdBy: integer('created_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    bugReportIdx: index('idx_bug_reproductions_report').on(t.bugReportId),
+    runIdx: index('idx_bug_reproductions_run').on(t.runId),
+    createdByIdx: index('idx_bug_reproductions_created_by').on(t.createdBy),
+  }),
+);

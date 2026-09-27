@@ -21,6 +21,7 @@ export const WORKFLOW_SKILLS = [
   'stabilize-flaky-tests',
   'run-the-right-tests',
   'write-the-missing-test',
+  'fix-a-reported-bug',
 ] as const;
 export const ALL_SKILLS = [SETUP_SKILL, ...WORKFLOW_SKILLS] as const;
 

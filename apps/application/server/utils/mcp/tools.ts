@@ -112,12 +112,22 @@ import { getFeatureGraph } from '../feature-graph';
 import { resolveAiConfig } from '../ai-provider';
 import { runClusterDiagnosis, isDiagnosisRunning } from '../ai-diagnosis';
 import {
+  getBugReport,
+  getBugReportMissedBy,
+  listBugReports,
+  renderBugReportSpec,
+  renderStepsWith,
+} from '#shared/handlers/bug-reports';
+import { describeExpectation, describeStepInWords, expectedSteps, type BugReport } from '@piwitests/core/bug-report';
+import { parseSteps } from '@piwitests/core/steps';
+import {
   scopeAllows,
   resolveRunProjectId,
   resolveClusterProjectId,
   resolveCaseProjectId,
   resolveTestRunCaseProjectId,
   resolveDiagnosisProjectId,
+  resolveBugReportProjectId,
 } from '../project-access';
 import type { ProjectScope } from '../project-access';
 import type { User } from '../../database/schema';
@@ -1548,8 +1558,8 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
   async create_issue(db, params, ctx) {
     assertWriteRole(ctx);
     const entityType = String(params.entityType ?? '') as DraftEntityType;
-    if (entityType !== 'failure_cluster' && entityType !== 'test_runs_case') {
-      throw new Error('entityType must be failure_cluster or test_runs_case');
+    if (entityType !== 'failure_cluster' && entityType !== 'test_runs_case' && entityType !== 'bug_report') {
+      throw new Error('entityType must be failure_cluster, test_runs_case or bug_report');
     }
     const entityId = numericParam(params.entityId, 'entityId');
     const projectId = await resolveLinkEntityProjectId(db, entityType, entityId);
@@ -2326,6 +2336,113 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       if (error instanceof PeriodSpecError) throw new Error(error.message);
       throw error;
     }
+  },
+
+  // ── Bug reports ────────────────────────────────────────────────────────────
+  async list_bug_reports(db, params, ctx) {
+    const projectId = numericParam(params.projectId, 'projectId');
+    assertProject(ctx, projectId);
+    const pageSize = clampPageSize(params.pageSize);
+    const cursor = numericCursor(params.cursor);
+    const all = await listBugReports(db, projectId, {
+      status: typeof params.status === 'string' ? params.status : null,
+    });
+    const page = all.filter((r) => cursor == null || r.id < cursor).slice(0, pageSize + 1);
+    return paginatedItems(
+      page.map((r) => dropNulls({ ...r, reproductions: r.reproductions || null })),
+      pageSize,
+      (r) => String(r.id),
+    );
+  },
+
+  async get_bug_report(db, params, ctx) {
+    const id = numericParam(params.id, 'id');
+    if ((await checkEntityScope(db, ctx, id, resolveBugReportProjectId)) === 'not-found') return null;
+    const report = await getBugReport(db, id);
+    if (!report) return null;
+    const bug: BugReport = { v: 1, steps: report.steps, evidence: report.evidence, context: report.context };
+    return dropNulls({
+      id: report.id,
+      projectId: report.projectId,
+      title: report.title,
+      status: report.status,
+      pageKey: report.pageKey,
+      path: report.path,
+      origin: report.origin,
+      reportedBy: report.reportedBy,
+      createdAt: report.createdAt,
+      language: report.language,
+      stepsInWords: report.steps.steps.map((step, i) => `${i + 1}. ${describeStepInWords(step)}`),
+      expected: expectedSteps(bug).map(({ index, step }) => ({
+        step: index + 1,
+        expected: describeExpectation(step),
+        actual: step.assertion?.actual ?? null,
+        note: step.assertion?.note ?? null,
+      })),
+      steps: report.steps,
+      evidence: {
+        console: report.evidence.console.map((c) => ({ level: c.level, message: trunc(c.message, 400), page: c.page })),
+        failedRequests: report.evidence.requests.map((r) => ({ method: r.method, url: r.url, status: r.status })),
+        screenshots: report.evidence.screenshots.length,
+        outline: report.evidence.outline,
+      },
+      test: report.test
+        ? { testCaseId: report.test.id, title: report.test.title, filePath: report.test.filePath }
+        : null,
+      missedBy: await getBugReportMissedBy(db, id)
+        .then((m) =>
+          m
+            ? {
+                summary: m.summary,
+                page: m.page,
+                testsOnPage: m.visiting.slice(0, 20),
+                reaching: m.targets.flatMap((t) => t.reaching).slice(0, 20),
+              }
+            : null,
+        )
+        .catch(() => null),
+      reproductions: report.reproductionList.map((r) =>
+        dropNulls({
+          source: r.source,
+          verdict: r.verdict,
+          divergedAt: r.divergedAt,
+          origin: r.origin,
+          createdAt: r.createdAt,
+        }),
+      ),
+    });
+  },
+
+  async render_steps(db, params, ctx) {
+    if (params.bugReportId != null) {
+      const id = numericParam(params.bugReportId, 'bugReportId');
+      if ((await checkEntityScope(db, ctx, id, resolveBugReportProjectId)) === 'not-found') return null;
+      const spec = await renderBugReportSpec(db, id, params.mode === 'run' ? 'run' : 'commit');
+      if (!spec) return null;
+      return {
+        code: spec.code,
+        path: spec.path,
+        warnings: spec.warnings.map((w) => `step ${w.step + 1}: ${w.message}`),
+      };
+    }
+    const parsed = parseSteps(params.steps);
+    if (!parsed.ok) throw new Error(`Not a steps document: ${parsed.errors.slice(0, 3).join('; ')}`);
+    const raw = (params.options ?? {}) as Record<string, unknown>;
+    const pick = <T extends string>(v: unknown, allowed: readonly T[]): T | undefined =>
+      allowed.includes(v as T) ? (v as T) : undefined;
+    const result = renderStepsWith(parsed.steps, {
+      title: typeof raw.title === 'string' ? raw.title.slice(0, 200) : undefined,
+      testImport: typeof raw.testImport === 'string' ? raw.testImport.slice(0, 200) : undefined,
+      urls: pick(raw.urls, ['absolute', 'relative'] as const),
+      locators: pick(raw.locators, ['first', 'stable'] as const),
+      urlChecks: raw.urlChecks === true,
+      values: pick(raw.values, ['literal', 'env'] as const),
+      expectFail: raw.expectFail === true,
+      tags: Array.isArray(raw.tags)
+        ? raw.tags.filter((t): t is string => typeof t === 'string').slice(0, 10)
+        : undefined,
+    });
+    return { code: result.code, warnings: result.warnings.map((w) => `step ${w.step + 1}: ${w.message}`) };
   },
 };
 

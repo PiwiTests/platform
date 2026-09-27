@@ -8,6 +8,7 @@ import {
   describeStepInWords,
   emptyBugEvidence,
   expectedSteps,
+  parseBugReport,
   renderBugMarkdown,
   renderBugSpec,
   reportedRequestUrl,
@@ -255,5 +256,48 @@ describe('bug report', () => {
         assertion: { matcher: 'toHaveURL', expected: '/thanks', actual: '/cart', negated: false, note: null },
       }),
     ).toBe('The page should be `/thanks`');
+  });
+});
+
+describe('parseBugReport', () => {
+  test('reads back a report written as JSON', () => {
+    const report = couponReport();
+    const parsed = parseBugReport(JSON.stringify(report));
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.report.steps).toEqual(report.steps);
+    expect(parsed.report.evidence.requests).toEqual(report.evidence.requests);
+    expect(parsed.report.evidence.screenshots).toEqual(report.evidence.screenshots);
+    expect(parsed.report.context.origin).toBe(report.context.origin);
+  });
+
+  test('refuses steps that are not a steps document', () => {
+    const parsed = parseBugReport({ ...couponReport(), steps: { v: 1, steps: 'nope' } });
+    expect(parsed.ok).toBe(false);
+    expect(parseBugReport({ ...couponReport(), v: 2 }).ok).toBe(false);
+    expect(parseBugReport('{').ok).toBe(false);
+  });
+
+  test('drops evidence that does not fit its shape, and caps what it keeps', () => {
+    const report = couponReport();
+    const parsed = parseBugReport({
+      ...report,
+      evidence: {
+        ...report.evidence,
+        console: [{ level: 'info', source: 'console', message: 'x' }, ...report.evidence.console],
+        requests: [{ method: 'GET; rm', url: '/a', status: 500 }],
+        screenshots: [{ file: '../../etc/passwd', moment: 'marked' }, ...report.evidence.screenshots],
+        outline: Array.from({ length: 900 }, (_, i) => `- line ${i}`).join('\n'),
+      },
+      context: { ...report.context, origin: 'javascript:alert(1)', path: 'not-a-path' },
+    });
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.report.evidence.console).toHaveLength(1);
+    expect(parsed.report.evidence.requests).toEqual([]);
+    expect(parsed.report.evidence.screenshots.map((s) => s.file)).toEqual(['screenshots/1-marked.png']);
+    expect(parsed.report.evidence.outline!.split('\n')).toHaveLength(400);
+    expect(parsed.report.context.origin).toBeNull();
+    expect(parsed.report.context.path).toBeNull();
   });
 });

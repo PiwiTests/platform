@@ -12,7 +12,7 @@
  * an ingest error, so failures are logged and swallowed.
  */
 import { and, eq, inArray } from 'drizzle-orm';
-import { failureClusters, projects, testCases, testRuns, testRunsCases } from '../../database/schema';
+import { bugReports, failureClusters, projects, testCases, testRuns, testRunsCases } from '../../database/schema';
 import { getAppSetting } from '../app-settings';
 import { createScmProvider } from './index';
 import { normalizeGitUrl } from './git-url';
@@ -201,6 +201,20 @@ export async function buildRunPrSummary(
     .where(eq(testRunsCases.testRunId, runId));
 
   const looksFixedRows = caseRows.filter((row) => isExpectedFailurePassed(row.status, row.expectedStatus));
+  const namedBugs = looksFixedRows.flatMap((row) => {
+    const bug = Number((row.testMeta as TestMetadata | null)?.bug);
+    return bug ? [bug] : [];
+  });
+  const knownBugReports = new Set(
+    namedBugs.length
+      ? (
+          await db
+            .select({ id: bugReports.id })
+            .from(bugReports)
+            .where(and(eq(bugReports.projectId, run.projectId), inArray(bugReports.id, namedBugs)))
+        ).map((r) => r.id)
+      : [],
+  );
   const failingRows = caseRows.filter(
     (row) => FAIL_STATUSES.includes(row.status) && !isExpectedFailurePassed(row.status, row.expectedStatus),
   );
@@ -271,8 +285,14 @@ export async function buildRunPrSummary(
     newRegressions,
     preExisting,
     looksFixed: [...new Map(looksFixedRows.map((row) => [row.testCaseId, row])).values()].map((row) => {
-      const bug = (row.testMeta as TestMetadata | null)?.bug;
-      return { title: row.title, filePath: row.filePath, executionId: row.id, bugId: bug ? Number(bug) : null };
+      const bug = Number((row.testMeta as TestMetadata | null)?.bug) || null;
+      return {
+        title: row.title,
+        filePath: row.filePath,
+        executionId: row.id,
+        bugId: bug,
+        bugReportExists: bug != null && knownBugReports.has(bug),
+      };
     }),
     flaky: flakyRows.map((row) => ({
       title: row.title,

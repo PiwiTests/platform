@@ -50,6 +50,24 @@
   "common_replayStartFailed": {
     "message": "No se pudo iniciar la reproducción."
   },
+  "common_sendForbidden": {
+    "message": "su cuenta no puede enviar informes a este proyecto."
+  },
+  "common_sendTooLarge": {
+    "message": "el informe es demasiado grande para la instancia. Quite una captura y vuelva a intentarlo."
+  },
+  "common_sendRefused": {
+    "message": "la instancia lo rechazó ($error$).",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "Not a bug report: steps: must be a list"
+      }
+    }
+  },
+  "common_bugReportsUnsupported": {
+    "message": "esta instancia de Piwi todavía no acepta informes de bug. Actualícela."
+  },
   "common_workerNoAnswer": {
     "message": "El proceso en segundo plano de Piwi Picker no respondió: vuelve a cargar Piwi Picker."
   },
@@ -2065,6 +2083,148 @@
   "bug_staysLocal": {
     "message": "Todo se queda en este navegador: no se envía nada a ninguna parte."
   },
+  "bug_sendToPiwi": {
+    "message": "Enviar a Piwi…"
+  },
+  "bug_sendToPiwiHint": {
+    "message": "Ver exactamente lo que se envía y guardar el informe en su instancia de Piwi"
+  },
+  "bug_sendTitle": {
+    "message": "Enviar a $project$",
+    "placeholders": {
+      "project": {
+        "content": "$1",
+        "example": "Checkout"
+      }
+    }
+  },
+  "bug_sendWhere": {
+    "message": "Un informe de bug de $project$ en $instance$. Solo se envía lo que está marcado abajo.",
+    "placeholders": {
+      "instance": {
+        "content": "$1",
+        "example": "piwi.acme.com"
+      },
+      "project": {
+        "content": "$2",
+        "example": "Checkout"
+      }
+    }
+  },
+  "bug_sendFirstTime": {
+    "message": "Es el primer informe enviado desde este navegador. Piwi Picker envía un informe solo cuando hace clic en Enviar, solo a la instancia que conectó y solo lo que marque aquí. Los pasos conservan los valores escritos, salvo las contraseñas."
+  },
+  "bug_sendSteps_one": {
+    "message": "El título y $count$ paso, con la página en la que ocurrió",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "bug_sendSteps_other": {
+    "message": "El título y $count$ pasos, con las páginas en las que ocurrieron",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "6"
+      }
+    }
+  },
+  "bug_sendScreenshots": {
+    "message": "Capturas de pantalla: $count$",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "bug_sendConsole": {
+    "message": "Errores y advertencias de la consola: $count$",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "bug_sendRequests": {
+    "message": "Solicitudes fallidas (método, ruta, estado; nunca el contenido): $count$",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "bug_sendOutline": {
+    "message": "El esquema de la página"
+  },
+  "bug_sendEnvValues": {
+    "message": "No enviar los valores escritos (la prueba los lee de variables de entorno)"
+  },
+  "bug_sendCreateIssue": {
+    "message": "Crear también una incidencia de Jira en $project$",
+    "placeholders": {
+      "project": {
+        "content": "$1",
+        "example": "SHOP"
+      }
+    }
+  },
+  "bug_sendFilesEvery": {
+    "message": "Este proyecto crea una incidencia de Jira para cada informe de bug."
+  },
+  "bug_issueCreated": {
+    "message": "Incidencia de Jira $key$ creada.",
+    "placeholders": {
+      "key": {
+        "content": "$1",
+        "example": "SHOP-812"
+      }
+    }
+  },
+  "bug_issueQueued": {
+    "message": "La incidencia de Jira está en cola: la página del informe muestra su clave cuando se crea."
+  },
+  "bug_sendShowData": {
+    "message": "Mostrar los datos exactos"
+  },
+  "bug_send": {
+    "message": "Enviar"
+  },
+  "bug_sending": {
+    "message": "Enviando…"
+  },
+  "bug_sent": {
+    "message": "Enviado como informe de bug n.º $id$.",
+    "placeholders": {
+      "id": {
+        "content": "$1",
+        "example": "37"
+      }
+    }
+  },
+  "bug_openInPiwi": {
+    "message": "Abrirlo en Piwi"
+  },
+  "bug_sendFailed": {
+    "message": "No enviado: $error$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "The instance cannot be reached."
+      }
+    }
+  },
+  "bug_sendNoProject": {
+    "message": "Ningún proyecto de su instancia de Piwi corresponde a esta página. Añada este sitio en los ajustes o elija el proyecto en la ventana emergente."
+  },
+  "bug_staysLocalUntilSent": {
+    "message": "Todo se queda en este navegador hasta que lo envíe."
+  },
   "replay_hudLabel": {
     "message": "Piwi Picker: reproducción de un informe de bug"
   },
@@ -2432,6 +2592,49 @@
   },
   "replay_chooseFile": {
     "message": "O elige el .zip del informe, o su steps.json, guardado por Piwi Picker:"
+  },
+  "replay_fromPiwi": {
+    "message": "O un informe de bug de $project$ en Piwi:",
+    "placeholders": {
+      "project": {
+        "content": "$1",
+        "example": "Checkout"
+      }
+    }
+  },
+  "replay_fromPiwiChoose": {
+    "message": "Elegir un informe de bug"
+  },
+  "replay_fromPiwiItem": {
+    "message": "n.º $id$ · $title$",
+    "placeholders": {
+      "id": {
+        "content": "$1",
+        "example": "37"
+      },
+      "title": {
+        "content": "$2",
+        "example": "Coupon not applied to the total"
+      }
+    }
+  },
+  "replay_fromPiwiNone": {
+    "message": "$project$ no tiene ningún informe de bug abierto en Piwi.",
+    "placeholders": {
+      "project": {
+        "content": "$1",
+        "example": "Checkout"
+      }
+    }
+  },
+  "replay_fromPiwiFailed": {
+    "message": "No se pudieron leer los informes de bug de Piwi: $error$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "The instance cannot be reached."
+      }
+    }
   },
   "replay_fileLabel": {
     "message": "El .zip del informe de bug, o su steps.json"
