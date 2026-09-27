@@ -129,7 +129,7 @@ export function buildBlobReport(options: FixtureOptions): Buffer {
         params: {
           test: {
             testId: test.testId,
-            expectedStatus: 'passed',
+            expectedStatus: attempt.annotations?.some((a) => a.type === 'fail') ? 'failed' : 'passed',
             timeout: test.timeout ?? 30000,
             annotations: [],
           },

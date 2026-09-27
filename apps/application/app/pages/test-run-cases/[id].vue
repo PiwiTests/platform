@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { AiStepIntent, ApiResponse, TestCaseHistoryPoint, TraceInfo } from '~~/types/api';
 import { isPiwiAnnotation } from '@piwitests/core/test-meta';
+import { isExpectedFailurePassed } from '@piwitests/core/status-classify';
 import { renderAnsi } from '~/utils';
 import { buildRetryCommand } from '~/utils/retry-command';
 import type { FailureVerdict } from '#shared/failure-verdict';
@@ -328,13 +329,20 @@ const headerBadges = computed(() => {
   const tc = testCase.value;
   type Badge = {
     label: string;
-    color?: 'error' | 'flaky' | 'neutral';
+    color?: 'error' | 'flaky' | 'neutral' | 'success';
     icon?: string;
     title?: string;
     mono?: boolean;
   };
   if (!tc) return [] as Badge[];
   const out: Badge[] = [];
+  if (isExpectedFailurePassed(tc.status, tc.expectedStatus))
+    out.push({
+      label: 'Looks fixed',
+      color: 'success',
+      icon: 'i-lucide-bug-off',
+      title: 'Marked test.fail() and passed: the bug it reproduces no longer shows. Remove test.fail() with the fix.',
+    });
   if (!verdict.value) {
     if (tc.isNewRegression)
       out.push({

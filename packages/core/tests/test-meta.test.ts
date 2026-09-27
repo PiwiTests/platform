@@ -141,6 +141,15 @@ describe('parseTestMetadata', () => {
     expect(parseTestMetadata([{ type: 'piwi:link', description: link }])).toEqual({ link });
   });
 
+  test('reads a bug report id from piwi:bug, with or without a leading #', () => {
+    expect(parseTestMetadata([{ type: 'piwi:bug', description: '37' }])).toEqual({ bug: '37' });
+    expect(parseTestMetadata([{ type: 'piwi:bug', description: '#37' }])).toEqual({ bug: '37' });
+  });
+
+  test.each(['0', 'abc', '12a', '-3', '1234567890123'])('ignores the bug id %s', (id) => {
+    expect(parseTestMetadata([{ type: 'piwi:bug', description: id }])).toBeNull();
+  });
+
   test('survives malformed annotation entries', () => {
     expect(parseTestMetadata([null, 42, {}, { type: 7 }, { type: 'piwi:owner' }])).toBeNull();
   });

@@ -912,6 +912,8 @@ export interface TestCaseResult {
   isNewFlaky?: boolean | null;
   /** Why a `didnotrun` case never executed; null for tests that ran. */
   didNotRunReason?: DidNotRunReason | null;
+  /** Playwright's expected status: `failed` for a `test.fail()` test. */
+  expectedStatus?: string | null;
   /** For a `previous-failure` cascade, the location of the failing test that blocked it. */
   blockedBy?: string | null;
 }
