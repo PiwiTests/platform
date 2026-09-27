@@ -1093,10 +1093,6 @@
       }
     }
   },
-  "console_approximate": {
-    "message": "approximate: text is compared loosely here",
-    "description": "Locator console: added after the verdict when the count may differ from Playwright’s, because names and texts are matched loosely in the page."
-  },
   "console_invalidCss": {
     "message": "$selector$ is not a CSS selector this page accepts",
     "description": "Locator console error: the browser refused the CSS selector inside locator(…). $selector$ is the selector as typed.",
@@ -1506,6 +1502,46 @@
       "first": {
         "content": "$3",
         "example": ".first()"
+      }
+    }
+  },
+  "pick_narrowed_one": {
+    "message": "Finds exactly this element: the locator it narrows finds $count$ element",
+    "description": "Pick results: under a locator, after a ✓, when it was built from another locator of the list that finds several elements (made exact, filtered by text, or scoped to a parent), and finds only the picked element. $count$ is how many elements the other locator finds, 2 or more.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "pick_narrowed_other": {
+    "message": "Finds exactly this element: the locator it narrows finds $count$ elements",
+    "description": "Pick results: under a locator, after a ✓, when it was built from another locator of the list that finds several elements (made exact, filtered by text, or scoped to a parent), and finds only the picked element. $count$ is how many elements the other locator finds, 2 or more.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "pick_byPosition_one": {
+    "message": "Finds this element by its position among $count$: breaks when their order changes",
+    "description": "Pick results: under a locator ending in .first() or .nth(…), after a ⚠, offered when no other locator finds the picked element alone. $count$ is how many elements the locator without .first()/.nth() finds.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "pick_byPosition_other": {
+    "message": "Finds this element by its position among $count$: breaks when their order changes",
+    "description": "Pick results: under a locator ending in .first() or .nth(…), after a ⚠, offered when no other locator finds the picked element alone. $count$ is how many elements the locator without .first()/.nth() finds.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
       }
     }
   },

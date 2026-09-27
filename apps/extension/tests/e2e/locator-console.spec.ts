@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test, expect } from './fixtures.js';
+import { playwrightLocator } from './playwright-locator.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.join(here, '..', '..', 'dist');
@@ -10,9 +11,9 @@ const DIST = path.join(here, '..', '..', 'dist');
  * closed shadow root by design (same reasoning as `results-panel.ts`), so —
  * like `hover-inspect.spec.ts` and `pick.spec.ts` — these tests assert only
  * externally-observable effects (host presence, toggling, and that the page
- * underneath stays interactive) rather than shadow-root-internal content.
- * `evaluateLocatorChain`'s matching behavior itself is covered directly in
- * `locator-eval.spec.ts`.
+ * underneath stays interactive) rather than shadow-root-internal content,
+ * and the count the console bridges out to `globalThis.__piwiConsoleCount`.
+ * The engine behind it is compared with Playwright in `locator-engine.spec.ts`.
  */
 test.describe('locator-console.js', () => {
   test('mounts on trigger and a second trigger toggles it back off', async ({ context }) => {
@@ -46,6 +47,33 @@ test.describe('locator-console.js', () => {
     await page.keyboard.type(`getByTestId('x')`);
     await page.waitForTimeout(100);
     expect(pageErrors).toHaveLength(0);
+  });
+
+  test('counts what Playwright finds: a role name is a case-insensitive substring unless exact', async ({
+    context,
+  }) => {
+    const page = await context.newPage();
+    await page.setContent(`<!doctype html><html><body>
+      <div role="tablist"><button role="tab">Regressions<span style="display:inline-flex">5</span></button></div>
+      <button>Failed</button><button>3 failed</button>
+    </body></html>`);
+    await page.addScriptTag({ path: path.join(DIST, 'locator-console.js') });
+    const countOf = async (expression: string) => {
+      await page.keyboard.press('ControlOrMeta+a');
+      await page.keyboard.type(expression);
+      return page.evaluate(() => (globalThis as { __piwiConsoleCount?: number }).__piwiConsoleCount);
+    };
+    for (const expression of [
+      `getByRole('button', { name: 'Failed' })`,
+      `getByRole('button', { name: 'Failed', exact: true })`,
+      `getByRole('tab', { name: 'Regressions 5' })`,
+      `getByRole('tab', { name: 'Regressions5' })`,
+      `getByRole('button').filter({ hasText: 'failed' }).last()`,
+    ]) {
+      expect(await countOf(expression), expression).toBe(await playwrightLocator(page, expression).count());
+    }
+    expect(await countOf(`getByRole('button', { name: 'Failed' })`)).toBe(2);
+    expect(await countOf(`getByRole('tab', { name: 'Regressions 5' })`)).toBe(1);
   });
 
   test('an unsupported expression is caught as a verdict, not thrown to the page', async ({ context }) => {

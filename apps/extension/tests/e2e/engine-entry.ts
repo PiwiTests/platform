@@ -1,5 +1,6 @@
 import { parseLocatorChain } from '@piwitests/core/locator-chain';
 import { createLocatorEngine } from '../../src/content/locator-engine.js';
+import { DomModel } from '../../src/content/engine-aria.js';
 import { buildOutline } from '../../src/content/bug-outline.js';
 
 interface EngineResult {
@@ -31,3 +32,7 @@ interface EngineResult {
   selector?: string,
   maxLines?: number,
 ): string => buildOutline(selector ? document.querySelector(selector)! : document.body, { maxLines });
+
+/** Test-only: the accessible name Playwright computes for an element, as the tools name it. */
+(globalThis as unknown as Record<string, unknown>).__piwiAccessibleName = (element: Element): string | null =>
+  new DomModel().normalizedAccessibleName(element, false) || null;

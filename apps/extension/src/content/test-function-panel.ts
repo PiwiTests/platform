@@ -2,6 +2,7 @@ import { initI18n, t, tn, uiLanguage } from '../shared/i18n.js';
 import { startTool, endTool, installEscapeToCancel } from '../shared/tool-session.js';
 import { TAG_TO_ROLE, INPUT_TYPE_TO_ROLE } from '@piwitests/core/locator-generation';
 import { testCatalogAgainstPage, type FunctionTestResult } from './test-function-scan.js';
+import { DomModel } from './engine-aria.js';
 import { getCachedCatalog } from '../shared/catalog-cache.js';
 import { requestCatalogRefresh } from '../shared/catalog-refresh.js';
 import { ensureSessionAccess } from '../shared/session-access.js';
@@ -171,7 +172,8 @@ async function renderPanel(): Promise<void> {
       resultsEl.appendChild(empty);
       return;
     }
-    const results = testCatalogAgainstPage(catalog, MAPS);
+    const model = new DomModel();
+    const results = testCatalogAgainstPage(catalog, MAPS, (el) => model.normalizedAccessibleName(el, false) || null);
     const order = { ready: 0, partial: 1, 'not-found': 2 };
     results.sort((a, b) => order[a.verdict] - order[b.verdict]);
     for (const result of results) resultsEl.appendChild(renderResult(result));

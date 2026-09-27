@@ -891,9 +891,6 @@
       }
     }
   },
-  "console_approximate": {
-    "message": "aproximado: aquí los textos se comparan de forma flexible"
-  },
   "console_invalidCss": {
     "message": "$selector$ no es un selector CSS que acepte esta página",
     "placeholders": {
@@ -1243,6 +1240,42 @@
       "first": {
         "content": "$3",
         "example": ".first()"
+      }
+    }
+  },
+  "pick_narrowed_one": {
+    "message": "Encuentra exactamente este elemento: el locator que acota encuentra $count$ elemento",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "pick_narrowed_other": {
+    "message": "Encuentra exactamente este elemento: el locator que acota encuentra $count$ elementos",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "pick_byPosition_one": {
+    "message": "Encuentra este elemento por su posición entre $count$: falla si cambia su orden",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "pick_byPosition_other": {
+    "message": "Encuentra este elemento por su posición entre $count$: falla si cambia su orden",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
       }
     }
   },

@@ -7,7 +7,7 @@ import {
   LOCATOR_SYNTAX_CSS,
   type PickerOverlayArg,
 } from '@piwitests/picker-dom';
-import { deriveTopLocator } from './top-locator.js';
+import { deriveTopLocator } from './verified-locators.js';
 import {
   getSessionPicks,
   addSessionPick,

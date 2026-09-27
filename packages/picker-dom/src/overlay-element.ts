@@ -35,7 +35,9 @@ export interface PickerOverlayArg {
  * element itself and on its own line in the banner. Both render whatever
  * `globalThis.__piwiDescribeElement(el)` returns when a host installs one (the
  * extension points it at the real ranked locator engine), falling back to this
- * function's own attribute-order approximation.
+ * function's own attribute-order approximation. A host whose answer improves
+ * later (checked against the page once the pointer rests) calls
+ * `globalThis.__piwiRedescribe()` to have the hovered element described again.
  *
  * Must stay fully self-contained (no module-closure references) — both hosts
  * re-serialize this function via `Function.prototype.toString()` (the
@@ -246,6 +248,12 @@ export function installPickerOverlay(arg: PickerOverlayArg): void {
     foot.textContent = 'click to pick · ↑ parent · ↓ child · Esc skip';
   };
 
+  const redescribe = () => {
+    labeled = null;
+    if (current()) refresh();
+  };
+  g.__piwiRedescribe = redescribe;
+
   const stop = (e: any) => {
     e.preventDefault();
     e.stopImmediatePropagation();
@@ -313,6 +321,7 @@ export function installPickerOverlay(arg: PickerOverlayArg): void {
     highlight.remove();
     label.remove();
     banner.remove();
+    if (g.__piwiRedescribe === redescribe) delete g.__piwiRedescribe;
   };
 
   // A pick committed. `'global'` hands the raw element back to Node (probed
