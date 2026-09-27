@@ -137,7 +137,7 @@
         box-shadow: inset 0 0 0 1px var(--accent);
       }
       .feature.running .label::after {
-        content: ' ·  running';
+        content: var(--piwi-running, ' ·  running');
         color: var(--accent);
         font-weight: 500;
         font-size: 10.5px;
@@ -180,7 +180,7 @@
         box-shadow: inset 0 0 0 1px var(--accent);
       }
       .actions button.running .label::after {
-        content: ' ·  running';
+        content: var(--piwi-running, ' ·  running');
         color: var(--accent);
         font-weight: 500;
         font-size: 10.5px;
@@ -308,7 +308,7 @@
       <header>
         <img src="icons/icon-32.png" width="18" height="18" alt="" />
         <span>Piwi Picker</span>
-        <button id="config-button" type="button" class="icon-button" aria-label="Configure Piwi connection" title="Configure Piwi connection">
+        <button id="config-button" type="button" class="icon-button" aria-label="Settings" title="Settings" data-i18n-aria-label="popup_settings" data-i18n-title="popup_settings">
           <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
             <circle cx="12" cy="12" r="3" />
             <path
@@ -321,21 +321,21 @@
            Chrome keeps an unpacked extension's worker until the extension is
            reloaded, while the popup is read from disk each time it opens. -->
       <div id="worker-notice" class="worker-notice" role="alert" hidden>
-        <p>
-          Piwi Picker was rebuilt since it was loaded: its background worker still runs the previous build, so some
-          tools won't answer. Reloading ends a recording in progress.
+        <p data-i18n="popup_workerNotice">
+          Piwi Picker was rebuilt since it was loaded, and part of it still runs the previous build, so some tools won’t
+          answer. Reloading ends a recording in progress.
         </p>
-        <button id="worker-reload" type="button">Reload Piwi Picker</button>
+        <button id="worker-reload" type="button" data-i18n="popup_reload">Reload Piwi Picker</button>
       </div>
       <div id="status"></div>
       <div id="active-project-row" class="active-project-row" style="display: none">
-        <label for="active-project">Active project</label>
+        <label for="active-project" data-i18n="popup_activeProject">Active project</label>
         <select id="active-project"></select>
       </div>
       <button id="coverage-overlay" class="feature" type="button" aria-keyshortcuts="T">
         <span class="text">
-          <span class="label">Tested elements</span>
-          <span class="hint" id="coverage-hint">What your tests reach on this page, and what they miss</span>
+          <span class="label" data-i18n="popup_testedElements">Tested elements</span>
+          <span class="hint" id="coverage-hint" data-i18n="popup_testedElementsHint">What your tests reach on this page, and what they miss</span>
         </span>
         <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
           <rect x="3" y="3" width="8" height="8" rx="1.5" />
@@ -347,8 +347,8 @@
       </button>
       <button id="report-bug" class="feature bug" type="button" aria-keyshortcuts="B">
         <span class="text">
-          <span class="label" id="report-bug-label">Report a bug</span>
-          <span class="hint" id="report-bug-hint">Record the steps, mark what's wrong → a failing test</span>
+          <span class="label" id="report-bug-label" data-i18n="popup_reportBug">Report a bug</span>
+          <span class="hint" id="report-bug-hint" data-i18n="popup_reportBugHint">Record the steps, mark what's wrong → a failing test</span>
         </span>
         <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
           <rect x="7.5" y="7" width="9" height="12.5" rx="4.5" />
@@ -358,8 +358,8 @@
       </button>
       <button id="replay-bug" class="feature" type="button" aria-keyshortcuts="R">
         <span class="text">
-          <span class="label">Replay a bug report</span>
-          <span class="hint">Play its steps on this site, with a cursor, and see if the bug shows</span>
+          <span class="label" data-i18n="popup_replayBug">Replay a bug report</span>
+          <span class="hint" data-i18n="popup_replayBugHint">Play its steps on this site, with a cursor, and see if the bug shows</span>
         </span>
         <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
           <path d="M8 5.5v13l10-6.5z" />
@@ -370,8 +370,8 @@
       <div class="actions">
         <button id="record" type="button" aria-keyshortcuts="1">
           <span class="text">
-            <span class="label" id="record-label">Record actions</span>
-            <span class="hint" id="record-hint">Multi-page → TypeScript</span>
+            <span class="label" id="record-label" data-i18n="popup_record">Record actions</span>
+            <span class="hint" id="record-hint" data-i18n="popup_recordHint">Across pages → a test</span>
           </span>
           <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
             <circle cx="12" cy="12" r="8" />
@@ -380,8 +380,8 @@
         </button>
         <button id="pick" class="primary" type="button" aria-keyshortcuts="2">
           <span class="text">
-            <span class="label">Pick an element</span>
-            <span class="hint">Ranked, stable locators</span>
+            <span class="label" data-i18n="popup_pick">Pick an element</span>
+            <span class="hint" data-i18n="popup_pickHint">Ranked, stable locators</span>
           </span>
           <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
             <circle cx="12" cy="12" r="6.5" />
@@ -391,8 +391,8 @@
         </button>
         <button id="hover-inspect" type="button" aria-keyshortcuts="3">
           <span class="text">
-            <span class="label">Hover-inspect</span>
-            <span class="hint">Toggle: locator tooltip</span>
+            <span class="label" data-i18n="popup_hoverInspect">Hover-inspect</span>
+            <span class="hint" data-i18n="popup_hoverInspectHint">Locator on hover</span>
           </span>
           <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
             <path d="M2.5 12S6 6.5 12 6.5 21.5 12 21.5 12 18 17.5 12 17.5 2.5 12 2.5 12z" />
@@ -402,8 +402,8 @@
         </button>
         <button id="locator-console" type="button" aria-keyshortcuts="4">
           <span class="text">
-            <span class="label">Locator console</span>
-            <span class="hint">See matches live</span>
+            <span class="label" data-i18n="popup_locatorConsole">Locator console</span>
+            <span class="hint" data-i18n="popup_locatorConsoleHint">See matches live</span>
           </span>
           <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
             <rect x="2.5" y="4" width="19" height="16" rx="2" />
@@ -413,8 +413,8 @@
         </button>
         <button id="multi-pick" type="button" aria-keyshortcuts="5">
           <span class="text">
-            <span class="label">Multi-pick</span>
-            <span class="hint">2–3 items → a list</span>
+            <span class="label" data-i18n="popup_multiPick">Multi-pick</span>
+            <span class="hint" data-i18n="popup_multiPickHint">2–3 items → a list</span>
           </span>
           <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
             <rect x="3" y="4" width="18" height="5" rx="1.5" />
@@ -425,8 +425,8 @@
         </button>
         <button id="lint-overlay" type="button" aria-keyshortcuts="6">
           <span class="text">
-            <span class="label">Lint overlay</span>
-            <span class="hint">Untestable elements</span>
+            <span class="label" data-i18n="popup_lint">Lint overlay</span>
+            <span class="hint" data-i18n="popup_lintHint">Hard-to-test elements</span>
           </span>
           <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
             <path d="M12 3.5l9 16.5H3z" />
@@ -436,8 +436,8 @@
         </button>
         <button id="assertion-panel" type="button" aria-keyshortcuts="7">
           <span class="text">
-            <span class="label">Assertions</span>
-            <span class="hint">Ranked expect(…) lines</span>
+            <span class="label" data-i18n="popup_assertions">Assertions</span>
+            <span class="hint" data-i18n="popup_assertionsHint">Ranked expect(…) lines</span>
           </span>
           <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
             <circle cx="12" cy="12" r="8.5" />
@@ -447,8 +447,8 @@
         </button>
         <button id="session-panel" type="button" aria-keyshortcuts="8">
           <span class="text">
-            <span class="label">Session</span>
-            <span class="hint">Name picks → export</span>
+            <span class="label" data-i18n="popup_session">Session</span>
+            <span class="hint" data-i18n="popup_sessionHint">Name picks → export</span>
           </span>
           <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
             <path d="M6.5 3h11a1 1 0 011 1v16.5l-6.5-3.8-6.5 3.8V4a1 1 0 011-1z" />
@@ -457,8 +457,8 @@
         </button>
         <button id="agent-context-panel" type="button" aria-keyshortcuts="9">
           <span class="text">
-            <span class="label">Agent context</span>
-            <span class="hint">Summary for an AI</span>
+            <span class="label" data-i18n="popup_agentContext">Agent context</span>
+            <span class="hint" data-i18n="popup_agentContextHint">Summary for an AI</span>
           </span>
           <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
             <path d="M11 3l1.9 5.1L18 10l-5.1 1.9L11 17l-1.9-5.1L4 10l5.1-1.9z" />
@@ -468,8 +468,8 @@
         </button>
         <button id="test-function-panel" type="button" aria-keyshortcuts="0">
           <span class="text">
-            <span class="label">Test functions</span>
-            <span class="hint">Check the catalog here</span>
+            <span class="label" data-i18n="popup_testFunctions">Test functions</span>
+            <span class="hint" data-i18n="popup_testFunctionsHint">Check the catalog here</span>
           </span>
           <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
             <path d="M9 11l2.5 2.5L15 9" />
@@ -479,13 +479,17 @@
         </button>
       </div>
       <footer>
-        Press <kbd>1</kbd>–<kbd>0</kbd> to run an action, <kbd>T</kbd> for tested elements, <kbd>B</kbd> to report a
-        bug ·
+        <span data-i18n="popup_footerKeys"
+          >Press <kbd data-i18n-slot="first">1</kbd>–<kbd data-i18n-slot="last">0</kbd> to run a tool,
+          <kbd data-i18n-slot="tested">T</kbd> for tested elements, <kbd data-i18n-slot="bug">B</kbd> to report a bug,
+          <kbd data-i18n-slot="replay">R</kbd> to replay one</span
+        >
+        ·
         <!-- Filled in from chrome.commands.getAll(): the browser may not have
              been able to assign the suggested key, and claiming one that isn't
              bound is worse than saying so. -->
         <span id="pick-shortcut"></span> ·
-        <a href="https://piwitests.dev/extension" target="_blank" rel="noopener">docs</a>
+        <a href="https://piwitests.dev/extension" target="_blank" rel="noopener" data-i18n="popup_docs">docs</a>
       </footer>
     </div>
     <script type="module" src="src/popup/main.ts"></script>

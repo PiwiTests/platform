@@ -6,6 +6,21 @@ import {
 } from '../shared/connection-settings.js';
 import { testConnection, fetchProjects, fetchCatalog, type ProjectOption } from '../shared/piwi-client.js';
 import { setCachedCatalog, pruneCachedCatalogs } from '../shared/catalog-cache.js';
+import {
+  LANGUAGES,
+  browserCatalogLanguage,
+  chosenLanguage,
+  initI18n,
+  languageName,
+  languageTag,
+  localizeDocument,
+  t,
+  tn,
+  type Language,
+} from '../shared/i18n.js';
+
+await initI18n();
+localizeDocument();
 
 const instanceUrlEl = document.getElementById('instance-url') as HTMLInputElement;
 const apiKeyEl = document.getElementById('api-key') as HTMLInputElement;
@@ -15,6 +30,7 @@ const statusEl = document.getElementById('status')!;
 const testBtn = document.getElementById('test-connection') as HTMLButtonElement;
 const saveBtn = document.getElementById('save') as HTMLButtonElement;
 const disconnectBtn = document.getElementById('disconnect') as HTMLButtonElement;
+const languageSelect = document.getElementById('language') as HTMLSelectElement;
 
 interface EditableMapping {
   urlPattern: string;
@@ -74,7 +90,7 @@ function renderMappings(): void {
   if (mappings.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'empty-mappings';
-    empty.textContent = 'No mappings yet — add one below.';
+    empty.textContent = t('options_noMappings');
     mappingsEl.appendChild(empty);
     return;
   }
@@ -88,8 +104,8 @@ function renderMappings(): void {
     const patternInput = document.createElement('input');
     patternInput.type = 'text';
     patternInput.className = 'mapping-pattern';
-    patternInput.placeholder = 'https://shop.example.com/**';
-    patternInput.setAttribute('aria-label', 'URL pattern');
+    patternInput.placeholder = t('options_patternPlaceholder');
+    patternInput.setAttribute('aria-label', t('options_pattern'));
     patternInput.value = mapping.urlPattern;
     patternInput.addEventListener('input', () => {
       mappings[index]!.urlPattern = patternInput.value;
@@ -97,10 +113,10 @@ function renderMappings(): void {
 
     const projectSelect = document.createElement('select');
     projectSelect.className = 'mapping-project';
-    projectSelect.setAttribute('aria-label', 'Project');
+    projectSelect.setAttribute('aria-label', t('options_project'));
     const placeholder = document.createElement('option');
     placeholder.value = '';
-    placeholder.textContent = projectOptions.length === 0 ? 'Test connection first' : 'Select a project…';
+    placeholder.textContent = projectOptions.length === 0 ? t('options_projectTestFirst') : t('options_projectChoose');
     projectSelect.appendChild(placeholder);
     // A mapping saved before the project list was (re-)fetched still names a real project — keep showing it even if it's not in `projectOptions` yet.
     if (mapping.projectId != null && !knownIds.has(mapping.projectId)) {
@@ -125,9 +141,9 @@ function renderMappings(): void {
     const branchInput = document.createElement('input');
     branchInput.type = 'text';
     branchInput.className = 'mapping-branch';
-    branchInput.placeholder = 'default branch';
-    branchInput.title = 'The branch deployed at these URLs: Tested elements shows what its tests reach';
-    branchInput.setAttribute('aria-label', 'Branch deployed there');
+    branchInput.placeholder = t('options_branchPlaceholder');
+    branchInput.title = t('options_branchTitle');
+    branchInput.setAttribute('aria-label', t('options_branch'));
     branchInput.value = mapping.branch;
     branchInput.addEventListener('input', () => {
       mappings[index]!.branch = branchInput.value;
@@ -136,7 +152,7 @@ function renderMappings(): void {
     const removeBtn = document.createElement('button');
     removeBtn.type = 'button';
     removeBtn.className = 'remove-mapping';
-    removeBtn.setAttribute('aria-label', 'Remove mapping');
+    removeBtn.setAttribute('aria-label', t('options_removeMapping'));
     removeBtn.textContent = '×';
     removeBtn.addEventListener('click', () => {
       mappings.splice(index, 1);
@@ -180,9 +196,9 @@ testBtn.addEventListener('click', () => {
   // Before any await, so the click still counts as the user gesture.
   const permission = ensureInstanceHostPermission(settings.instanceUrl);
   void (async () => {
-    setStatus('Testing…');
+    setStatus(t('options_testing'));
     if (!(await permission)) {
-      setStatus('Access to that instance was denied — grant it to let Piwi Picker read your catalog.', 'error');
+      setStatus(t('options_accessDenied'), 'error');
       return;
     }
     const result = await testConnection(settings);
@@ -193,9 +209,9 @@ testBtn.addEventListener('click', () => {
     try {
       projectOptions = await fetchProjects(settings);
       renderMappings();
-      setStatus(`Connected — ${projectOptions.length} project${projectOptions.length === 1 ? '' : 's'} found.`, 'ok');
+      setStatus(tn('options_connected', projectOptions.length), 'ok');
     } catch (err) {
-      setStatus(err instanceof Error ? err.message : 'Connected, but failed to list projects.', 'error');
+      setStatus(err instanceof Error ? err.message : t('options_projectsUnlisted'), 'error');
     }
   })();
 });
@@ -206,7 +222,7 @@ saveBtn.addEventListener('click', () => {
   const permission = ensureInstanceHostPermission(base.instanceUrl);
   void (async () => {
     if (!base.instanceUrl) {
-      setStatus('Enter an instance URL first.', 'error');
+      setStatus(t('common_enterInstanceUrl'), 'error');
       return;
     }
     const granted = await permission;
@@ -239,26 +255,28 @@ saveBtn.addEventListener('click', () => {
     }
     await pruneCachedCatalogs(distinctProjectIds);
 
-    const parts = [`Saved ${valid.length} mapping${valid.length === 1 ? '' : 's'}`];
-    if (incompleteCount > 0) parts.push(`${incompleteCount} incomplete row${incompleteCount === 1 ? '' : 's'} skipped`);
+    const parts = [tn('options_saved', valid.length)];
+    if (incompleteCount > 0) parts.push(tn('options_skipped', incompleteCount));
     // The API key travels on every catalog fetch; over plain HTTP it travels in
     // the clear. Worth saying once, at the moment the choice is made — not a
     // reason to refuse a local instance on `http://localhost`.
     if (/^http:\/\//i.test(settings.instanceUrl) && settings.apiKey) {
-      parts.push('this instance is plain HTTP, so the API key is sent unencrypted');
+      parts.push(t('options_plainHttp'));
     }
     // Without the host permission the catalog can still be fetched from this
     // page if the instance happens to allow the origin, but the background
     // refresh never can — so the catalog would silently stop updating.
-    if (!granted) parts.push('access to the instance was denied, so the catalog will not refresh on its own');
+    if (!granted) parts.push(t('options_refreshDenied'));
     if (distinctProjectIds.length > 0) {
       parts.push(
-        `cached ${cachedFunctionCount} function${cachedFunctionCount === 1 ? '' : 's'} across ${distinctProjectIds.length} project${distinctProjectIds.length === 1 ? '' : 's'}`,
+        t('options_cached', {
+          functions: tn('options_functionCount', cachedFunctionCount),
+          projects: tn('options_projectCount', distinctProjectIds.length),
+        }),
       );
     }
-    if (failedFetchCount > 0)
-      parts.push(`${failedFetchCount} catalog fetch${failedFetchCount === 1 ? '' : 'es'} failed`);
-    setStatus(`${parts.join(' — ')}.`, failedFetchCount > 0 ? 'error' : 'ok');
+    if (failedFetchCount > 0) parts.push(tn('options_catalogsFailed', failedFetchCount));
+    setStatus(parts.join(' '), failedFetchCount > 0 ? 'error' : 'ok');
   })();
 });
 
@@ -293,8 +311,47 @@ disconnectBtn.addEventListener('click', () => {
     projectOptions = [];
     mappings = [];
     renderMappings();
-    setStatus('Disconnected.', 'ok');
+    setStatus(t('options_disconnected'), 'ok');
   })();
 });
 
+/**
+ * The Language setting: follow the browser, or one of the shipped languages,
+ * each named in itself. The background worker stores the choice with its
+ * catalog; this page then reads it again and redraws in the new language.
+ */
+function renderLanguageSelect(): void {
+  const follow = document.createElement('option');
+  follow.value = '';
+  follow.textContent = t('options_languageBrowser', { language: languageName(browserCatalogLanguage()) });
+  const options = LANGUAGES.map((code) => {
+    const option = document.createElement('option');
+    option.value = code;
+    option.lang = languageTag(code);
+    option.textContent = languageName(code);
+    return option;
+  });
+  languageSelect.replaceChildren(follow, ...options);
+  languageSelect.value = chosenLanguage() ?? '';
+}
+
+languageSelect.addEventListener('change', () => {
+  const code = (languageSelect.value || null) as Language | null;
+  void (async () => {
+    let answer: { ok: boolean; error?: string } | undefined;
+    try {
+      answer = (await chrome.runtime.sendMessage({ type: 'piwi-set-language', code })) as typeof answer;
+    } catch (err) {
+      answer = { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+    await initI18n();
+    localizeDocument();
+    renderLanguageSelect();
+    renderMappings();
+    if (answer?.ok) setStatus(t('options_languageSaved'), 'ok');
+    else setStatus(t('options_languageFailed', { error: answer?.error ?? t('common_workerNoAnswer') }), 'error');
+  })();
+});
+
+renderLanguageSelect();
 void loadInitial();

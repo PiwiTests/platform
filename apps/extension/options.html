@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>Piwi Picker — Options</title>
+    <title data-i18n="options_title">Piwi Picker settings</title>
     <style>
       :root {
         color-scheme: light dark;
@@ -61,6 +61,11 @@
       }
       section {
         margin-top: 24px;
+      }
+      h2.connect {
+        font-size: 15px;
+        font-weight: 600;
+        margin: 32px 0 4px;
       }
       section > h2 {
         font-size: 13px;
@@ -155,7 +160,7 @@
         min-width: 0;
       }
       .mapping-row input.mapping-branch {
-        flex: 0 1 130px;
+        flex: 0 1 170px;
         min-width: 0;
         font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
         font-size: 12.5px;
@@ -198,51 +203,70 @@
   <body>
     <div class="page">
       <header>
-        <img src="icons/icon-32.png" width="20" height="20" alt="" /><span>Piwi Picker — Connect to Piwi</span>
+        <img src="icons/icon-32.png" width="20" height="20" alt="" /><span data-i18n="options_title"
+          >Piwi Picker settings</span
+        >
       </header>
-      <p class="lead">
-        Optional. Connecting lets the recorder match your recording against your projects' own page-object methods and
-        helpers, and rank them live as you record. Nothing here is required for picking locators or recording a plain
-        TypeScript spec — that always works standalone.
+
+      <label for="language" data-i18n="options_language">Language</label>
+      <select id="language"></select>
+      <div class="hint" data-i18n="options_languageHint">
+        The language of Piwi Picker’s own texts. Page texts, locators and the tests it writes stay as they are.
+      </div>
+
+      <h2 class="connect" data-i18n="options_connectHeading">Connect to Piwi</h2>
+      <p class="lead" data-i18n="options_lead">
+        Optional. Connected to your Piwi instance, the recorder uses your projects’ own page objects and helper
+        functions, and ranks them live as you record. Picking locators and recording a plain test always work without
+        it.
       </p>
 
-      <label for="instance-url">Piwi instance URL</label>
-      <input id="instance-url" type="url" placeholder="https://piwi.example.com" autocomplete="off" />
+      <label for="instance-url" data-i18n="options_instanceUrl">Address of your Piwi instance</label>
+      <input
+        id="instance-url"
+        type="url"
+        placeholder="https://piwi.example.com"
+        data-i18n-placeholder="options_instanceUrlPlaceholder"
+        autocomplete="off"
+      />
 
-      <label for="api-key">API key</label>
+      <label for="api-key" data-i18n="options_apiKey">API key</label>
       <input id="api-key" type="password" placeholder="pd_…" autocomplete="off" />
-      <div class="hint">Generated from your account's API key settings in the Piwi dashboard.</div>
+      <div class="hint" data-i18n="options_apiKeyHint">
+        Create one in the Piwi dashboard, in your account’s API key settings.
+      </div>
 
       <div class="row">
-        <button id="test-connection" type="button">Test connection</button>
+        <button id="test-connection" type="button" data-i18n="options_testConnection">Test connection</button>
       </div>
 
       <section>
-        <h2>Project mappings</h2>
-        <p class="hint">
-          Which project applies on which site — one instance can serve more than one. Checked in order; the first
-          matching pattern wins. Same wildcard syntax as a test function's own URL pattern: <code>*</code> matches
-          within a path segment, <code>**</code> matches across segments. The branch, optional, is the one deployed at
-          those URLs (a staging site on <code>develop</code>, say): Tested elements then shows what that branch's tests
+        <h2 data-i18n="options_mappingsHeading">Project mappings</h2>
+        <p class="hint" data-i18n="options_mappingsHint">
+          Which project applies on which site: one instance can serve more than one. Lines are read in order, and the
+          first pattern that matches wins. <code data-i18n-slot="star">*</code> matches within one part of the path,
+          <code data-i18n-slot="globstar">**</code> across parts, as in a test function’s own address pattern. The
+          branch, optional, is the one deployed at those addresses (a staging site on
+          <code data-i18n-slot="example">develop</code>, say): Tested elements then shows what that branch’s tests
           reach.
         </p>
         <div id="mappings"></div>
         <div class="row" style="margin-top: 10px">
-          <button id="add-mapping" type="button" class="small">+ Add mapping</button>
+          <button id="add-mapping" type="button" class="small" data-i18n="options_addMapping">+ Add a line</button>
         </div>
       </section>
 
       <div class="row">
-        <button id="save" class="primary" type="button">Save</button>
-        <button id="disconnect" class="danger" type="button">Disconnect</button>
+        <button id="save" class="primary" type="button" data-i18n="options_save">Save</button>
+        <button id="disconnect" class="danger" type="button" data-i18n="options_disconnect">Disconnect</button>
       </div>
 
-      <div id="status"></div>
+      <div id="status" role="status"></div>
 
-      <div class="privacy">
-        Only used from this options page — an API key entered here never reaches a web page's JavaScript. Recording
-        steps are sent nowhere unless you explicitly copy or send them; connecting only fetches each mapped project's
-        function catalog.
+      <div class="privacy" data-i18n="options_privacy">
+        Only used from this page: an API key entered here never reaches a web page’s scripts. Recorded steps go nowhere
+        unless you copy or download them. Connecting only downloads each mapped project’s function catalog and the
+        elements its tests reach.
       </div>
     </div>
     <script type="module" src="src/options/main.ts"></script>

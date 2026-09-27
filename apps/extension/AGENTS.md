@@ -271,6 +271,13 @@ instead of needing a live browser for everything.
   — a future phase could detect it and prompt to expand, but that also needs a fresh user
   gesture, which the HUD (a content script, no `chrome.permissions` access) can't provide on its
   own either.
+- **Every text the extension shows comes from the catalogs** (`public/_locales/<code>/messages.json`) through `t()` /
+  `tn()` / `tNodes()` in `src/shared/i18n.ts`; `popup.html` and `options.html` name their keys in `data-i18n*`
+  attributes, which `localizeDocument()` fills. A page or script calls `await initI18n()` once before its first text,
+  for the Language setting's override. A new message goes into every catalog in the same change, English with a
+  `description` — see `i18n/README.md` for the rules `locales.test.ts` enforces. `no-hardcoded-text.test.ts` fails on
+  text written straight into the UI; its list of content scripts not yet migrated only shrinks. Translated text reaches
+  the page as text (`textContent`, `tNodes`) or through an escape helper, never as raw HTML.
 - Reuse `@piwitests/picker-dom`'s exports (`installPickerOverlay`, `showAnchorPicker`,
   probe, role-resolution, syntax highlighting) rather than re-deriving picker logic here —
   that package exists so this workspace doesn't become a third hand-synced copy.
@@ -315,6 +322,7 @@ instead of needing a live browser for everything.
 |---|---|
 | `npm run extension:build` | Build `dist/` (content scripts, background, popup, options page, manifest, icons, `_locales`) |
 | `npm run extension:dev` | Same build, re-run on every change to `src/`, `public/`, `popup.html`, `options.html`, or `manifest.json` |
+| `npm run extension:build -- --pseudo` | Same build with a pseudo-localized English catalog, to spot text that bypasses `t()` or clips (never released) |
 | `npm run extension:build:release` | Reproducible build: stamps the version instead of the build time into every bundle |
 | `npm run extension:zip` | Release build, then the store-ready zip, the source zip Firefox AMO requires, and the AMO listing metadata (see `PUBLISHING.md`) |
 | `npm run extension:typecheck` | TypeScript check |

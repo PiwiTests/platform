@@ -5,10 +5,10 @@ English as the source. The extension has become a tool for testers as well as de
 should be on the page and what happened, and the replay tells a developer in sentences whether the bug shows. That text
 is written for people who are not necessarily fluent in English, and a French team is its first audience.
 
-**Status.** Proposed 2026-09-27. Nothing is built. Only the store listing is translated today: the manifest summary and
-the keyboard shortcut label in `public/_locales/{en,fr}/messages.json`, and the Firefox listing description in
-`store/amo-description.{en,fr}.md`. The French listing says so: "L'interface de l'extension est en anglais". No UI
-string goes through `chrome.i18n`. Nothing here changes a wire format, the steps format or generated code, so no entry
+**Status.** Proposed 2026-09-27. PR 1 built 2026-09-27: the machinery, the popup, the settings page, the background's
+texts and badges, in English and French (French to be reviewed by the team before release). The in-page panels are
+still English, so the French listing still says "L'interface de l'extension est en anglais" until PR 2. The decisions
+PR 1 changed are under "Decisions made while building" below. Nothing here changes a wire format, the steps format or generated code, so no entry
 in [`1.0-stabilization.md`](1.0-stabilization.md) is needed.
 
 **Summary.** Every text the extension shows moves into one catalog per language, the `messages.json` files the browser
@@ -282,16 +282,16 @@ never translated) within the page's word budget, and screenshots stay English.
 
 ## Plan
 
-**PR 1 — the machinery, the popup and the options page (en, fr).**
+**PR 1 — the machinery, the popup and the options page (en, fr).** Built.
 
-- [ ] `src/shared/i18n.ts`: `t`, `tn`, `initI18n`, `uiLanguage`, `localizeDocument`, the placeholder substitution; typed
+- [x] `src/shared/i18n.ts`: `t`, `tn`, `initI18n`, `uiLanguage`, `localizeDocument`, the placeholder substitution; typed
       keys from `en/messages.json` (`resolveJsonModule` in the extension's `tsconfig.json`).
-- [ ] `popup.html`, `src/popup/main.ts`, `options.html`, `src/options/main.ts`, the background's texts and badges
+- [x] `popup.html`, `src/popup/main.ts`, `options.html`, `src/options/main.ts`, the background's texts and badges
       (the replay's end clears its badge from the replay state, no longer by comparing the badge text with `PLAY`).
-- [ ] The Language setting and the stored catalog, refreshed on install and update.
-- [ ] `locales.test.ts`, `no-hardcoded-text.test.ts` with the not-yet-migrated list, the Vitest `chrome.i18n` setup,
+- [x] The Language setting and the stored catalog, refreshed on install and update.
+- [x] `locales.test.ts`, `no-hardcoded-text.test.ts` with the not-yet-migrated list, the Vitest `chrome.i18n` setup,
       the `--pseudo` build, the French e2e launcher (`LANGUAGE=fr`).
-- [ ] `apps/extension/i18n/README.md` and `glossary.fr.md`.
+- [x] `apps/extension/i18n/README.md` and `glossary.fr.md`.
 
 **PR 2 — the panels (en, fr).** Pick and hover, the locator console, multi-pick, the lint overlay, assertions, session,
 agent context, record, results, test functions, coverage, the bug report, the replay. The largest by far (coverage
@@ -305,6 +305,35 @@ and converter warnings by code.
 **PR 4 — German, Spanish, Brazilian Portuguese.** Their catalogs, phrasebooks, glossaries, store summaries and
 descriptions; the layout pass and test in German; the docs section. Adding a language afterwards is these files and
 nothing else.
+
+## Decisions made while building
+
+PR 1 changed or settled these:
+
+- **Placeholder numbers.** A message's placeholders are numbered `$1`, `$2`, … in the alphabetical order of their
+  names, not in the order they are declared: `t()` receives named values and must know each one's position for
+  `chrome.i18n.getMessage`, without shipping the English catalog in every bundle. The catalog check enforces the
+  numbering. The `replay_stepExpected` example above would number `expected` `$1`, `found` `$2`, `step` `$3`.
+- **`uiLanguage()`.** Without an Options choice it is the browser's language only when the browser shows that
+  language's catalog; otherwise it is the language of the catalog shown, read from `common_languageTag`, a message
+  each catalog carries and never shows. A Polish browser sees English, and the page says `lang="en"`, not `pl`.
+- **One storage key.** The choice and its catalog are one value, `piwiLanguage: { code, messages }`, so `initI18n()`
+  is a single read of a single key (and works with the one-key storage stubs of the e2e specs).
+- **Plural forms.** `_other` is required in every language even where no integer uses it (Polish), since `tn()` falls
+  back to it.
+- **Keys of the background's texts.** The worker's errors and the Piwi client's (shown by the settings page and by the
+  panels) are `common_`: no separate surface.
+- **The French launch in e2e.** Under Playwright Test, `LANGUAGE=fr` is not enough: the runner gives every context it
+  launches `locale: 'en-US'`, which decides `getUILanguage()`. The launcher (`browserLanguage` option in
+  `tests/e2e/fixtures.ts`) sets the environment, the `--lang` flag and `locale`.
+- **The text scan** also flags literals passed to `append`, `prepend`, `replaceChildren` and `createTextNode`, and
+  assigned to `innerText` and `alt`. `hover-inspect.ts` and `coverage-overlay.ts` hold no text to move, so the
+  not-yet-migrated list starts with fourteen content scripts.
+- **The settings page** is now "Piwi Picker settings", with Language first and the connection under "Connect to Piwi";
+  the popup's gear button is "Settings".
+- **Documentation.** `features/extension.md` describes the connection rather than the settings page setting by
+  setting, so the Language setting waits for PR 4's Languages section.
+- **Descriptions** live in the English catalog only: it is the one translators read.
 
 ## Open questions
 

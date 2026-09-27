@@ -1,5 +1,6 @@
 import type { BrowserContext, Page } from '@playwright/test';
 import type { RawCaptureEvent } from '@piwitests/core/recording';
+import { stubChromeI18n } from './i18n-stub.js';
 
 /**
  * record-panel.ts reads/writes chrome.storage.session and .local directly —
@@ -74,6 +75,7 @@ export async function stubChromeStorage(
       },
     };
   }, seed);
+  await stubChromeI18n(context);
 }
 
 /** Plays the service worker's `chrome.tabs.sendMessage` fan-out — the only way a stop reaches a content script. */

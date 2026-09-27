@@ -1,6 +1,7 @@
 import type { TestFunctionEntry } from '@piwitests/core/function-match';
 import type { LocatorIndex } from '@piwitests/core/locator-index';
 import type { ConnectionSettings } from './connection-settings';
+import { t } from './i18n.js';
 
 /**
  * Talks to a Piwi instance — the only place in this extension that makes a
@@ -88,17 +89,17 @@ export type ConnectionCheckResult = { ok: true } | { ok: false; error: string };
 
 /** Hits `/api/projects/menu` — cheap, always available, and exercises auth the same way the rest of the client does. */
 export async function testConnection(settings: ConnectionSettings): Promise<ConnectionCheckResult> {
-  if (!settings.instanceUrl.trim()) return { ok: false, error: 'Enter an instance URL first.' };
+  if (!settings.instanceUrl.trim()) return { ok: false, error: t('common_enterInstanceUrl') };
   try {
     const res = await fetch(`${normalizeBaseUrl(settings.instanceUrl)}/api/projects/menu`, {
       headers: authHeaders(settings),
       signal: timeout(),
     });
-    if (res.status === 401 || res.status === 403) return { ok: false, error: 'Rejected — check the API key.' };
-    if (!res.ok) return { ok: false, error: `Instance responded with ${res.status}.` };
+    if (res.status === 401 || res.status === 403) return { ok: false, error: t('common_apiKeyRejected') };
+    if (!res.ok) return { ok: false, error: t('common_instanceStatus', { status: res.status }) };
     return { ok: true };
   } catch {
-    return { ok: false, error: "Couldn't reach that instance — check the URL and that it's running." };
+    return { ok: false, error: t('common_instanceUnreachable') };
   }
 }
 
@@ -108,7 +109,7 @@ export async function fetchProjects(settings: ConnectionSettings): Promise<Proje
     headers: authHeaders(settings),
     signal: timeout(),
   });
-  if (!res.ok) throw new Error(`Failed to list projects (${res.status})`);
+  if (!res.ok) throw new Error(t('common_projectsFailed', { status: res.status }));
   return listItems<ProjectOption>(await res.json());
 }
 
@@ -125,7 +126,7 @@ export async function fetchCatalog(settings: ConnectionSettings, projectId: numb
     headers: authHeaders(settings),
     signal: timeout(),
   });
-  if (!res.ok) throw new Error(`Failed to fetch the function catalog (${res.status})`);
+  if (!res.ok) throw new Error(t('common_catalogFailed', { status: res.status }));
   const body = (await res.json()) as { testFunctions?: unknown };
   const rows = listItems<{ entry: TestFunctionEntry }>(Array.isArray(body.testFunctions) ? body.testFunctions : body);
   return rows.map((row) => row.entry).filter(Boolean);
@@ -149,19 +150,18 @@ export async function fetchLocatorIndex(
   projectId: number,
   branch: string | null = null,
 ): Promise<LocatorIndex> {
-  if (!settings.instanceUrl.trim()) throw new Error('Not connected to a Piwi instance.');
+  if (!settings.instanceUrl.trim()) throw new Error(t('common_notConnected'));
   const query = branch ? `?branch=${encodeURIComponent(branch)}` : '';
   const res = await fetch(`${normalizeBaseUrl(settings.instanceUrl)}/api/projects/${projectId}/locator-index${query}`, {
     headers: authHeaders(settings),
     signal: AbortSignal.timeout(LOCATOR_INDEX_TIMEOUT_MS),
   });
-  if (res.status === 401 || res.status === 403) throw new Error('The instance rejected the API key for this project.');
-  if (res.status === 404)
-    throw new Error('This Piwi instance has no locator index for the project (update Piwi, or check the project).');
-  if (!res.ok) throw new Error(`Failed to fetch the locator index (${res.status})`);
+  if (res.status === 401 || res.status === 403) throw new Error(t('common_projectKeyRejected'));
+  if (res.status === 404) throw new Error(t('common_noLocatorIndex'));
+  if (!res.ok) throw new Error(t('common_locatorIndexStatus', { status: res.status }));
   const body = (await res.json()) as LocatorIndex;
   if (!body || !Array.isArray(body.locators) || !Array.isArray(body.tests)) {
-    throw new Error('The instance answered with something that is not a locator index.');
+    throw new Error(t('common_locatorIndexInvalid'));
   }
   const defaultBranch = typeof body.defaultBranch === 'string' ? body.defaultBranch : '';
   return {

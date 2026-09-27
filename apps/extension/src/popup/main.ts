@@ -9,6 +9,12 @@ import {
 import { getConnectionSettings, isConnected, type ProjectMapping } from '../shared/connection-settings.js';
 import { getActiveProjectOverride, setActiveProjectOverride, resolveActiveProject } from '../shared/active-project.js';
 import { workerState } from '../shared/worker-status.js';
+import { initI18n, localizeDocument, t, tn, tNodes, formatNumber } from '../shared/i18n.js';
+
+await initI18n();
+localizeDocument();
+// The "running" mark after a tile's label is drawn by CSS.
+document.documentElement.style.setProperty('--piwi-running', JSON.stringify(` ·  ${t('popup_running')}`));
 
 const statusEl = document.getElementById('status')!;
 const recordBtn = document.getElementById('record') as HTMLButtonElement;
@@ -33,14 +39,14 @@ async function activeTab(): Promise<chrome.tabs.Tab | null> {
 async function inject(file: string): Promise<void> {
   const tab = await activeTab();
   if (tab?.id == null) {
-    statusEl.textContent = 'No active tab to pick from.';
+    statusEl.textContent = t('popup_noTab');
     return;
   }
   try {
     await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: [file] });
     window.close();
   } catch {
-    statusEl.textContent = "Can't run on this page (browser/store pages are off-limits to extensions).";
+    statusEl.textContent = t('popup_cannotRun');
   }
 }
 
@@ -138,12 +144,12 @@ async function renderPickShortcutHint(): Promise<void> {
   if (shortcut) {
     const key = document.createElement('kbd');
     key.textContent = shortcut;
-    el.append(key, ' picks without the popup');
+    el.append(...tNodes('popup_pickShortcut', { shortcut: key }));
     return;
   }
   const link = document.createElement('a');
   link.href = '#';
-  link.textContent = 'no pick shortcut assigned — set one';
+  link.textContent = t('popup_noPickShortcut');
   link.addEventListener('click', (e) => {
     e.preventDefault();
     // chrome:// URLs can't be opened with a plain link from an extension page.
@@ -188,9 +194,7 @@ async function refreshActiveProjectSelect(): Promise<void> {
   ]);
 
   connected = isConnected(connection);
-  coverageHint.textContent = connected
-    ? 'What your tests reach on this page, and what they miss'
-    : 'Connect to your Piwi instance to see what your tests reach';
+  coverageHint.textContent = connected ? t('popup_testedElementsHint') : t('popup_testedElementsConnect');
   if (!connected) {
     activeProjectRow.style.display = 'none';
     return;
@@ -207,9 +211,7 @@ async function refreshActiveProjectSelect(): Promise<void> {
   const autoOpt = document.createElement('option');
   autoOpt.value = AUTO_OPTION_VALUE;
   autoOpt.textContent =
-    tab?.url && resolveActiveProject(connection, null, tab.url)
-      ? 'Auto (matched by URL)'
-      : 'Auto (no match on this page)';
+    tab?.url && resolveActiveProject(connection, null, tab.url) ? t('popup_autoMatched') : t('popup_autoNoMatch');
   activeProjectSelect.appendChild(autoOpt);
   for (const o of options) {
     const opt = document.createElement('option');
@@ -263,30 +265,31 @@ async function refreshRecordButton(): Promise<void> {
   uiMode = mode;
   recordTab = tab;
   const bug = mode === 'bug';
+  const count = formatNumber(steps);
   if (state === 'recording') {
-    recordLabel.textContent = bug ? `Finish bug report (${steps})` : `Stop recording (${steps})`;
-    recordHint.textContent = 'Steps captured so far';
+    recordLabel.textContent = bug ? t('popup_finishBugReport', { count }) : t('popup_stopRecording', { count });
+    recordHint.textContent = t('popup_stepsSoFar');
   } else if (state === 'stopped') {
-    recordLabel.textContent = bug ? 'Review bug report' : `Review recording (${steps})`;
-    recordHint.textContent = 'Not exported yet';
+    recordLabel.textContent = bug ? t('popup_reviewBugReport') : t('popup_reviewRecording', { count });
+    recordHint.textContent = t('popup_notExported');
   } else {
-    recordLabel.textContent = 'Record actions';
-    recordHint.textContent = 'Multi-page → TypeScript';
+    recordLabel.textContent = t('popup_record');
+    recordHint.textContent = t('popup_recordHint');
   }
   recordBtn.disabled = false;
 
   if (state === 'recording' && bug) {
-    bugLabel.textContent = 'Take a screenshot';
-    bugHint.textContent = `Adds this tab, as it is now, to the bug report (${steps} events so far)`;
+    bugLabel.textContent = t('popup_takeScreenshot');
+    bugHint.textContent = tn('popup_screenshotHint', steps);
   } else if (state === 'stopped' && bug) {
-    bugLabel.textContent = 'Review bug report';
-    bugHint.textContent = 'Copy the failing test, the report, or download it';
+    bugLabel.textContent = t('popup_reviewBugReport');
+    bugHint.textContent = t('popup_reviewBugReportHint');
   } else if (state !== 'idle') {
-    bugLabel.textContent = 'Report a bug';
-    bugHint.textContent = 'Finish or discard the current recording first';
+    bugLabel.textContent = t('popup_reportBug');
+    bugHint.textContent = t('popup_finishFirst');
   } else {
-    bugLabel.textContent = 'Report a bug';
-    bugHint.textContent = "Record the steps, mark what's wrong → a failing test";
+    bugLabel.textContent = t('popup_reportBug');
+    bugHint.textContent = t('popup_reportBugHint');
   }
   bugBtn.disabled = false;
 }
@@ -312,7 +315,7 @@ async function startRecordingFlow(
     // Drop the intent the click parked for the worker, so a later unrelated
     // grant for this same origin can't revive a recording the user declined.
     await clearRecordIntent().catch(() => undefined);
-    statusEl.textContent = 'Permission for this site is needed to record across pages.';
+    statusEl.textContent = t('popup_permissionNeeded');
     return;
   }
 
@@ -326,7 +329,7 @@ async function startRecordingFlow(
     error?: string;
   };
   if (!response?.ok) {
-    statusEl.textContent = response?.error ?? 'Failed to start recording.';
+    statusEl.textContent = response?.error ?? t('common_recordingStartFailed');
     return;
   }
   window.close();
@@ -358,7 +361,7 @@ async function reviewRecordingFlow(): Promise<void> {
 function requestRecording(mode: RecordingMode): void {
   const originPattern = recordOriginPattern(recordTab?.url);
   if (originPattern == null || recordTab?.id == null) {
-    statusEl.textContent = "Can't record on this page.";
+    statusEl.textContent = t('popup_cannotRecord');
     return;
   }
   const tabId = recordTab.id;
@@ -367,7 +370,7 @@ function requestRecording(mode: RecordingMode): void {
   try {
     granted = chrome.permissions.request({ origins: [originPattern] });
   } catch {
-    statusEl.textContent = 'Permission for this site is needed to record across pages.';
+    statusEl.textContent = t('popup_permissionNeeded');
     return;
   }
   // Park the intent so the background can still start the recording if this
@@ -403,7 +406,7 @@ async function bugScreenshotFlow(): Promise<void> {
     await chrome.tabs.sendMessage(tab.id, { type: 'piwi-bug-take-screenshot' });
     window.close();
   } catch {
-    statusEl.textContent = 'This tab is not the one being recorded.';
+    statusEl.textContent = t('popup_notRecordedTab');
   }
 }
 
@@ -417,7 +420,7 @@ bugBtn.addEventListener('click', () => {
     return;
   }
   if (uiState !== 'idle') {
-    statusEl.textContent = 'Finish or discard the current recording before reporting a bug.';
+    statusEl.textContent = t('popup_finishBeforeBug');
     return;
   }
   requestRecording('bug');
@@ -432,7 +435,7 @@ bugBtn.addEventListener('click', () => {
 document.getElementById('replay-bug')!.addEventListener('click', () => {
   const originPattern = recordOriginPattern(recordTab?.url);
   if (originPattern == null || recordTab?.id == null) {
-    statusEl.textContent = "Can't replay on this page.";
+    statusEl.textContent = t('popup_cannotReplay');
     return;
   }
   void chrome.permissions.request({ origins: [originPattern] }).catch(() => false);
@@ -452,7 +455,7 @@ bugBtn.disabled = true;
 void refreshRecordButton().catch(() => {
   // Left disabled on purpose: acting on a state we failed to read could start a
   // second recording over a live one.
-  statusEl.textContent = "Couldn't read the recorder state — reopen the popup.";
+  statusEl.textContent = t('popup_stateUnreadable');
 });
 void refreshActiveProjectSelect();
 void renderPickShortcutHint();

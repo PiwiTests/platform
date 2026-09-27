@@ -2,6 +2,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { BrowserContext, Page } from '@playwright/test';
 import { test, expect } from './fixtures.js';
+import { stubChromeI18n } from './i18n-stub.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.join(here, '..', '..', 'dist');
@@ -46,6 +47,7 @@ async function stubSessionStorage(context: BrowserContext, initialPicks: FakeSes
       },
     };
   }, initialPicks);
+  await stubChromeI18n(context);
 }
 
 async function readStoredPicks(page: Page): Promise<FakeSessionPick[]> {

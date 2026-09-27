@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import type { BrowserContext, Page } from '@playwright/test';
 import type { PiwiSteps } from '@piwitests/core/steps';
 import { test, expect } from './fixtures.js';
+import { stubChromeI18n } from './i18n-stub.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.join(here, '..', '..', 'dist');
@@ -47,6 +48,7 @@ async function stubChrome(context: BrowserContext, session: Record<string, unkno
       runtime: { sendMessage: async () => ({ ok: true }), onMessage: { addListener: () => undefined } },
     };
   }, session);
+  await stubChromeI18n(context);
   await context.addInitScript({ path: path.join(DIST, 'replay-panel.js') });
 }
 

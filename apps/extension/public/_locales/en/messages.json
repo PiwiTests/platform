@@ -6,5 +6,729 @@
   "pickElementCommand": {
     "message": "Pick a locator for an element on the page",
     "description": "Label of the pick keyboard shortcut in the browser's shortcut settings."
+  },
+  "common_languageTag": {
+    "message": "en",
+    "description": "Not shown and not translated: the code of this catalog’s language (its _locales directory, with - for _). Sets the pages’ lang attribute."
+  },
+  "common_recordingStartFailed": {
+    "message": "The recording could not start.",
+    "description": "Error shown in the popup when starting a recording fails for an unknown reason."
+  },
+  "common_screenshotNoTab": {
+    "message": "There is no tab to capture.",
+    "description": "Bug report: why a screenshot could not be taken."
+  },
+  "common_screenshotTabHidden": {
+    "message": "The tab is not the one in front.",
+    "description": "Bug report: why a screenshot could not be taken. The browser only captures the visible tab."
+  },
+  "common_noProject": {
+    "message": "There is no project to refresh.",
+    "description": "Error from the background worker when a panel asks to refresh data without naming a Piwi project."
+  },
+  "common_notConnected": {
+    "message": "Piwi Picker is not connected to a Piwi instance.",
+    "description": "Error when data from a Piwi instance is needed and none is set up in Options."
+  },
+  "common_catalogRefreshFailed": {
+    "message": "The function catalog could not be refreshed.",
+    "description": "Error when the list of test functions could not be downloaded again from Piwi."
+  },
+  "common_locatorIndexFailed": {
+    "message": "The tested elements could not be downloaded.",
+    "description": "Error when the data behind “Tested elements” could not be downloaded from Piwi."
+  },
+  "common_replayNeedsPage": {
+    "message": "A replay runs on a web page.",
+    "description": "Error when a bug report replay is started somewhere other than a web page."
+  },
+  "common_replayNotSteps": {
+    "message": "This file is not a bug report’s steps: $error$",
+    "description": "Error when the file chosen for a replay is not a steps file. $error$ is the first problem found in the file, in English, naming a field of the file.",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "`steps[3].action` is not a step action"
+      }
+    }
+  },
+  "common_replayNoSteps": {
+    "message": "The report has no steps.",
+    "description": "Error when the bug report chosen for a replay has no steps."
+  },
+  "common_replayNeedsAccess": {
+    "message": "Piwi Picker needs access to this site to follow the replay from page to page. Open Piwi Picker on this tab and choose Replay a bug report.",
+    "description": "Error when a replay starts without the site’s permission. “Replay a bug report” is the popup button (popup_replayBug)."
+  },
+  "common_replayStartFailed": {
+    "message": "The replay could not start.",
+    "description": "Error when a replay fails to start for an unknown reason."
+  },
+  "common_workerNoAnswer": {
+    "message": "Piwi Picker’s background worker did not answer: reload Piwi Picker.",
+    "description": "Error when the part of the extension that runs in the background does not answer a request."
+  },
+  "common_enterInstanceUrl": {
+    "message": "Enter the address of your Piwi instance first.",
+    "description": "Options: shown when testing or saving the connection with no address."
+  },
+  "common_apiKeyRejected": {
+    "message": "The instance rejected the API key: check it.",
+    "description": "Options: the Piwi instance answered 401 or 403 to the connection test."
+  },
+  "common_instanceStatus": {
+    "message": "The instance answered with an error ($status$).",
+    "description": "Options: the Piwi instance answered the connection test with an HTTP error. $status$ is the HTTP status code.",
+    "placeholders": {
+      "status": {
+        "content": "$1",
+        "example": "500"
+      }
+    }
+  },
+  "common_instanceUnreachable": {
+    "message": "Piwi Picker could not reach the instance: check the address, and that it is running.",
+    "description": "Options: the connection test got no answer."
+  },
+  "common_projectsFailed": {
+    "message": "The list of projects could not be read ($status$).",
+    "description": "Options: listing the instance’s projects failed with an HTTP error. $status$ is the HTTP status code.",
+    "placeholders": {
+      "status": {
+        "content": "$1",
+        "example": "500"
+      }
+    }
+  },
+  "common_catalogFailed": {
+    "message": "The function catalog could not be downloaded ($status$).",
+    "description": "Downloading a project’s test functions failed with an HTTP error. $status$ is the HTTP status code.",
+    "placeholders": {
+      "status": {
+        "content": "$1",
+        "example": "500"
+      }
+    }
+  },
+  "common_projectKeyRejected": {
+    "message": "The instance rejected the API key for this project.",
+    "description": "Downloading a project’s tested elements was refused (401 or 403)."
+  },
+  "common_noLocatorIndex": {
+    "message": "This Piwi instance has no locator index for the project: update Piwi, or check the project.",
+    "description": "The Piwi instance does not know the “locator index” request (an older version) or the project. A locator index lists the locators a project’s tests use."
+  },
+  "common_locatorIndexStatus": {
+    "message": "The locator index could not be downloaded ($status$).",
+    "description": "Downloading a project’s locator index failed with an HTTP error. $status$ is the HTTP status code.",
+    "placeholders": {
+      "status": {
+        "content": "$1",
+        "example": "500"
+      }
+    }
+  },
+  "common_locatorIndexInvalid": {
+    "message": "The instance answered with something that is not a locator index.",
+    "description": "The Piwi instance’s answer could not be read as a locator index."
+  },
+  "badge_recording": {
+    "message": "REC",
+    "description": "Toolbar badge while actions are recorded. At most 4 characters."
+  },
+  "badge_bug": {
+    "message": "BUG",
+    "description": "Toolbar badge while a bug report is recorded. At most 4 characters."
+  },
+  "badge_replay": {
+    "message": "PLAY",
+    "description": "Toolbar badge while a bug report is replayed. At most 4 characters."
+  },
+  "popup_settings": {
+    "message": "Settings",
+    "description": "Popup: tooltip and accessible name of the gear button that opens the settings page."
+  },
+  "popup_workerNotice": {
+    "message": "Piwi Picker was rebuilt since it was loaded, and part of it still runs the previous build, so some tools won’t answer. Reloading ends a recording in progress.",
+    "description": "Popup notice, seen by developers who build the extension themselves."
+  },
+  "popup_reload": {
+    "message": "Reload Piwi Picker",
+    "description": "Popup: button of the notice above."
+  },
+  "popup_activeProject": {
+    "message": "Active project",
+    "description": "Popup: label of the menu choosing which Piwi project applies to this tab."
+  },
+  "popup_autoMatched": {
+    "message": "Automatic (found from the page address)",
+    "description": "Popup, active project menu: the project is chosen from the page address, and one matches."
+  },
+  "popup_autoNoMatch": {
+    "message": "Automatic (no project matches this page)",
+    "description": "Popup, active project menu: the project is chosen from the page address, and none matches."
+  },
+  "popup_testedElements": {
+    "message": "Tested elements",
+    "description": "Popup tile: shows on the page which elements the project’s tests reach. Short."
+  },
+  "popup_testedElementsHint": {
+    "message": "What your tests reach on this page, and what they miss",
+    "description": "Popup tile hint, under “Tested elements”. One line."
+  },
+  "popup_testedElementsConnect": {
+    "message": "Connect to your Piwi instance to see what your tests reach",
+    "description": "Popup tile hint, under “Tested elements”, when no Piwi instance is set up. One line."
+  },
+  "popup_reportBug": {
+    "message": "Report a bug",
+    "description": "Popup tile: records the steps of a bug. Short."
+  },
+  "popup_reportBugHint": {
+    "message": "Record the steps, mark what's wrong → a failing test",
+    "description": "Popup tile hint, under “Report a bug”. One line."
+  },
+  "popup_replayBug": {
+    "message": "Replay a bug report",
+    "description": "Popup tile: plays a bug report’s steps on the current site. Short."
+  },
+  "popup_replayBugHint": {
+    "message": "Play its steps on this site, with a cursor, and see if the bug shows",
+    "description": "Popup tile hint, under “Replay a bug report”. One line."
+  },
+  "popup_record": {
+    "message": "Record actions",
+    "description": "Popup tile: records clicks and typing into a test. At most about 16 characters: the tile is half the popup wide."
+  },
+  "popup_recordHint": {
+    "message": "Across pages → a test",
+    "description": "Popup tile hint, under “Record actions”. At most about 22 characters."
+  },
+  "popup_pick": {
+    "message": "Pick an element",
+    "description": "Popup tile: click an element of the page to get its locators. At most about 16 characters: the tile is half the popup wide."
+  },
+  "popup_pickHint": {
+    "message": "Ranked, stable locators",
+    "description": "Popup tile hint. A locator is Playwright’s way to find an element (see the glossary). At most about 22 characters."
+  },
+  "popup_hoverInspect": {
+    "message": "Hover-inspect",
+    "description": "Popup tile: shows the locator of the element under the pointer. At most about 16 characters: the tile is half the popup wide."
+  },
+  "popup_hoverInspectHint": {
+    "message": "Locator on hover",
+    "description": "Popup tile hint, in a tile half the popup wide. At most about 22 characters."
+  },
+  "popup_locatorConsole": {
+    "message": "Locator console",
+    "description": "Popup tile: type a locator and see what it finds. At most about 16 characters: the tile is half the popup wide."
+  },
+  "popup_locatorConsoleHint": {
+    "message": "See matches live",
+    "description": "Popup tile hint, in a tile half the popup wide. At most about 22 characters."
+  },
+  "popup_multiPick": {
+    "message": "Multi-pick",
+    "description": "Popup tile: pick a few items of a list to get a locator for all of them. At most about 16 characters: the tile is half the popup wide."
+  },
+  "popup_multiPickHint": {
+    "message": "2–3 items → a list",
+    "description": "Popup tile hint, in a tile half the popup wide. At most about 22 characters."
+  },
+  "popup_lint": {
+    "message": "Lint overlay",
+    "description": "Popup tile: outlines the elements of the page that are hard to find from a test. At most about 16 characters: the tile is half the popup wide."
+  },
+  "popup_lintHint": {
+    "message": "Hard-to-test elements",
+    "description": "Popup tile hint, in a tile half the popup wide. At most about 22 characters."
+  },
+  "popup_assertions": {
+    "message": "Assertions",
+    "description": "Popup tile: suggests checks for an element. At most about 16 characters: the tile is half the popup wide."
+  },
+  "popup_assertionsHint": {
+    "message": "Ranked expect(…) lines",
+    "description": "Popup tile hint. expect(…) is code: keep it as is. At most about 22 characters."
+  },
+  "popup_session": {
+    "message": "Session",
+    "description": "Popup tile: name elements across pages and export them together. At most about 16 characters: the tile is half the popup wide."
+  },
+  "popup_sessionHint": {
+    "message": "Name picks → export",
+    "description": "Popup tile hint: name the elements picked, then export them. At most about 22 characters."
+  },
+  "popup_agentContext": {
+    "message": "Agent context",
+    "description": "Popup tile: describes an element for an AI coding agent. At most about 16 characters: the tile is half the popup wide."
+  },
+  "popup_agentContextHint": {
+    "message": "Summary for an AI",
+    "description": "Popup tile hint, in a tile half the popup wide. At most about 22 characters."
+  },
+  "popup_testFunctions": {
+    "message": "Test functions",
+    "description": "Popup tile: checks which of the project’s test functions work on this page. At most about 16 characters: the tile is half the popup wide."
+  },
+  "popup_testFunctionsHint": {
+    "message": "Check the catalog here",
+    "description": "Popup tile hint, in a tile half the popup wide. At most about 22 characters."
+  },
+  "popup_running": {
+    "message": "running",
+    "description": "Popup: marks the tile of the tool running on the page, after “·”."
+  },
+  "popup_footerKeys": {
+    "message": "Press $first$–$last$ to run a tool, $tested$ for tested elements, $bug$ to report a bug, $replay$ to replay one",
+    "description": "Popup footer. Each placeholder is a key shown as a key cap; the keys are the same in every language. $bug$ is the key of Report a bug; $first$ is the first digit key; $last$ is the last digit key; $replay$ is the key of Replay a bug report; $tested$ is the key of Tested elements.",
+    "placeholders": {
+      "bug": {
+        "content": "$1",
+        "example": "B"
+      },
+      "first": {
+        "content": "$2",
+        "example": "1"
+      },
+      "last": {
+        "content": "$3",
+        "example": "0"
+      },
+      "replay": {
+        "content": "$4",
+        "example": "R"
+      },
+      "tested": {
+        "content": "$5",
+        "example": "T"
+      }
+    }
+  },
+  "popup_pickShortcut": {
+    "message": "$shortcut$ picks an element without the popup",
+    "description": "Popup footer: the browser-wide keyboard shortcut, shown as a key cap. $shortcut$ is the shortcut the browser assigned.",
+    "placeholders": {
+      "shortcut": {
+        "content": "$1",
+        "example": "Ctrl+Shift+E"
+      }
+    }
+  },
+  "popup_noPickShortcut": {
+    "message": "No pick shortcut assigned: set one",
+    "description": "Popup footer link to the browser’s shortcut settings, when no key is assigned."
+  },
+  "popup_docs": {
+    "message": "docs",
+    "description": "Popup footer link to the documentation, which is in English."
+  },
+  "popup_noTab": {
+    "message": "There is no active tab to work on.",
+    "description": "Popup error."
+  },
+  "popup_cannotRun": {
+    "message": "Piwi Picker can’t run on this page: browsers keep their own pages and extension stores out of reach.",
+    "description": "Popup error, on a browser page such as the settings or an extension store."
+  },
+  "popup_stopRecording": {
+    "message": "Stop recording ($count$)",
+    "description": "Popup tile during a recording. $count$ is the number of steps recorded.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "popup_finishBugReport": {
+    "message": "Finish bug report ($count$)",
+    "description": "Popup tile during a bug report recording. $count$ is the number of steps recorded.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "popup_stepsSoFar": {
+    "message": "Steps captured so far",
+    "description": "Popup tile hint during a recording."
+  },
+  "popup_reviewRecording": {
+    "message": "Review recording ($count$)",
+    "description": "Popup tile once a recording is stopped. $count$ is the number of steps recorded.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "popup_reviewBugReport": {
+    "message": "Review bug report",
+    "description": "Popup tile once a bug report recording is stopped."
+  },
+  "popup_notExported": {
+    "message": "Not exported yet",
+    "description": "Popup tile hint once a recording is stopped."
+  },
+  "popup_takeScreenshot": {
+    "message": "Take a screenshot",
+    "description": "Popup tile during a bug report recording."
+  },
+  "popup_screenshotHint_one": {
+    "message": "Adds this tab, as it is now, to the bug report ($count$ event so far)",
+    "description": "Popup tile hint under “Take a screenshot”, for one event. $count$ is the number of events recorded.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "popup_screenshotHint_other": {
+    "message": "Adds this tab, as it is now, to the bug report ($count$ events so far)",
+    "description": "Popup tile hint under “Take a screenshot”, for several events. $count$ is the number of events recorded.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "12"
+      }
+    }
+  },
+  "popup_reviewBugReportHint": {
+    "message": "Copy the failing test or the report, or download it",
+    "description": "Popup tile hint once a bug report recording is stopped."
+  },
+  "popup_finishFirst": {
+    "message": "Finish or discard the current recording first",
+    "description": "Popup tile hint under “Report a bug” while another recording exists."
+  },
+  "popup_finishBeforeBug": {
+    "message": "Finish or discard the current recording before reporting a bug.",
+    "description": "Popup error on “Report a bug” while another recording exists."
+  },
+  "popup_permissionNeeded": {
+    "message": "Piwi Picker needs access to this site to record from page to page.",
+    "description": "Popup error when the site permission a recording needs was refused."
+  },
+  "popup_cannotRecord": {
+    "message": "Piwi Picker can’t record on this page.",
+    "description": "Popup error on a page that is not a web site."
+  },
+  "popup_cannotReplay": {
+    "message": "Piwi Picker can’t replay a report on this page.",
+    "description": "Popup error on a page that is not a web site."
+  },
+  "popup_notRecordedTab": {
+    "message": "This tab is not the one being recorded.",
+    "description": "Popup error on “Take a screenshot” in another tab."
+  },
+  "popup_stateUnreadable": {
+    "message": "Piwi Picker couldn’t tell whether a recording is running: open it again.",
+    "description": "Popup error when the recording state could not be read. “it” is the popup."
+  },
+  "options_title": {
+    "message": "Piwi Picker settings",
+    "description": "Settings page: its title and heading."
+  },
+  "options_language": {
+    "message": "Language",
+    "description": "Settings page: label of the language menu."
+  },
+  "options_languageBrowser": {
+    "message": "Same as the browser ($language$)",
+    "description": "Settings page, language menu: follow the browser’s language. $language$ is the name of the language shown, in that language.",
+    "placeholders": {
+      "language": {
+        "content": "$1",
+        "example": "English"
+      }
+    }
+  },
+  "options_languageHint": {
+    "message": "The language of Piwi Picker’s own texts. Page texts, locators and the tests it writes stay as they are.",
+    "description": "Settings page: hint under the language menu."
+  },
+  "options_languageSaved": {
+    "message": "Language saved.",
+    "description": "Settings page: confirmation after choosing a language."
+  },
+  "options_languageFailed": {
+    "message": "The language could not be changed: $error$",
+    "description": "Settings page: error after choosing a language. $error$ is the reason, often in English.",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "Failed to fetch"
+      }
+    }
+  },
+  "options_connectHeading": {
+    "message": "Connect to Piwi",
+    "description": "Settings page: heading of the connection settings."
+  },
+  "options_lead": {
+    "message": "Optional. Connected to your Piwi instance, the recorder uses your projects’ own page objects and helper functions, and ranks them live as you record. Picking locators and recording a plain test always work without it.",
+    "description": "Settings page: introduction of the connection settings."
+  },
+  "options_instanceUrl": {
+    "message": "Address of your Piwi instance",
+    "description": "Settings page: label of the address field."
+  },
+  "options_instanceUrlPlaceholder": {
+    "message": "https://piwi.example.com",
+    "description": "Settings page: example in the empty address field."
+  },
+  "options_apiKey": {
+    "message": "API key",
+    "description": "Settings page: label of the API key field."
+  },
+  "options_apiKeyHint": {
+    "message": "Create one in the Piwi dashboard, in your account’s API key settings.",
+    "description": "Settings page: hint under the API key field."
+  },
+  "options_testConnection": {
+    "message": "Test connection",
+    "description": "Settings page: button."
+  },
+  "options_mappingsHeading": {
+    "message": "Project mappings",
+    "description": "Settings page: heading of the table saying which Piwi project applies on which site."
+  },
+  "options_mappingsHint": {
+    "message": "Which project applies on which site: one instance can serve more than one. Lines are read in order, and the first pattern that matches wins. $star$ matches within one part of the path, $globstar$ across parts, as in a test function’s own address pattern. The branch, optional, is the one deployed at those addresses (a staging site on $example$, say): Tested elements then shows what that branch’s tests reach.",
+    "description": "Settings page: hint of the project mappings. The placeholders are shown as code. $example$ is a branch name; $globstar$ is the wildcard across parts of a path; $star$ is the wildcard for one part of a path.",
+    "placeholders": {
+      "example": {
+        "content": "$1",
+        "example": "develop"
+      },
+      "globstar": {
+        "content": "$2",
+        "example": "**"
+      },
+      "star": {
+        "content": "$3",
+        "example": "*"
+      }
+    }
+  },
+  "options_addMapping": {
+    "message": "+ Add a line",
+    "description": "Settings page: button adding a line to the project mappings."
+  },
+  "options_noMappings": {
+    "message": "No lines yet: add one below.",
+    "description": "Settings page: the project mappings are empty."
+  },
+  "options_pattern": {
+    "message": "Address pattern",
+    "description": "Settings page: accessible name of a line’s address pattern field."
+  },
+  "options_patternPlaceholder": {
+    "message": "https://shop.example.com/**",
+    "description": "Settings page: example in an empty address pattern field. Keep /** at the end."
+  },
+  "options_project": {
+    "message": "Project",
+    "description": "Settings page: accessible name of a line’s project menu."
+  },
+  "options_projectTestFirst": {
+    "message": "Test the connection first",
+    "description": "Settings page: project menu before the projects are known."
+  },
+  "options_projectChoose": {
+    "message": "Choose a project…",
+    "description": "Settings page: project menu with nothing chosen."
+  },
+  "options_branch": {
+    "message": "Branch deployed there",
+    "description": "Settings page: accessible name of a line’s branch field."
+  },
+  "options_branchPlaceholder": {
+    "message": "default branch",
+    "description": "Settings page: shown in an empty branch field."
+  },
+  "options_branchTitle": {
+    "message": "The branch deployed at these addresses: Tested elements shows what its tests reach",
+    "description": "Settings page: tooltip of a line’s branch field."
+  },
+  "options_removeMapping": {
+    "message": "Remove this line",
+    "description": "Settings page: accessible name of the × button of a line."
+  },
+  "options_save": {
+    "message": "Save",
+    "description": "Settings page: button saving the connection."
+  },
+  "options_disconnect": {
+    "message": "Disconnect",
+    "description": "Settings page: button."
+  },
+  "options_privacy": {
+    "message": "Only used from this page: an API key entered here never reaches a web page’s scripts. Recorded steps go nowhere unless you copy or download them. Connecting only downloads each mapped project’s function catalog and the elements its tests reach.",
+    "description": "Settings page: privacy note at the bottom."
+  },
+  "options_testing": {
+    "message": "Testing…",
+    "description": "Settings page: status while testing the connection."
+  },
+  "options_accessDenied": {
+    "message": "Access to that instance was refused: allow it to let Piwi Picker read your catalog.",
+    "description": "Settings page: the browser’s permission for the instance address was refused."
+  },
+  "options_connected_one": {
+    "message": "Connected: $count$ project found.",
+    "description": "Settings page: connection test succeeded, one project. $count$ is the number of projects.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "options_connected_other": {
+    "message": "Connected: $count$ projects found.",
+    "description": "Settings page: connection test succeeded, several projects. $count$ is the number of projects.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "options_projectsUnlisted": {
+    "message": "Connected, but the projects could not be listed.",
+    "description": "Settings page: connection test succeeded, listing projects failed."
+  },
+  "options_saved_one": {
+    "message": "Saved $count$ line.",
+    "description": "Settings page: after Save, one project mapping line saved. Other sentences may follow. $count$ is the number of lines.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "options_saved_other": {
+    "message": "Saved $count$ lines.",
+    "description": "Settings page: after Save, several project mapping lines saved. $count$ is the number of lines.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "options_skipped_one": {
+    "message": "$count$ incomplete line skipped.",
+    "description": "Settings page: after Save, one line lacked a pattern or a project. $count$ is the number of lines.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "options_skipped_other": {
+    "message": "$count$ incomplete lines skipped.",
+    "description": "Settings page: after Save, several lines lacked a pattern or a project. $count$ is the number of lines.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "options_plainHttp": {
+    "message": "This instance uses plain HTTP, so the API key travels unencrypted.",
+    "description": "Settings page: after Save, a warning."
+  },
+  "options_refreshDenied": {
+    "message": "Access to the instance was refused, so the catalog will not refresh on its own.",
+    "description": "Settings page: after Save, the instance permission was refused."
+  },
+  "options_cached": {
+    "message": "Catalog saved: $functions$ from $projects$.",
+    "description": "Settings page: after Save, the test functions downloaded. $functions$ is a count of functions (options_functionCount); $projects$ is a count of projects (options_projectCount).",
+    "placeholders": {
+      "functions": {
+        "content": "$1",
+        "example": "12 functions"
+      },
+      "projects": {
+        "content": "$2",
+        "example": "2 projects"
+      }
+    }
+  },
+  "options_functionCount_one": {
+    "message": "$count$ function",
+    "description": "Settings page: part of options_cached. $count$ is the number of functions.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "options_functionCount_other": {
+    "message": "$count$ functions",
+    "description": "Settings page: part of options_cached. $count$ is the number of functions.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "12"
+      }
+    }
+  },
+  "options_projectCount_one": {
+    "message": "$count$ project",
+    "description": "Settings page: part of options_cached. $count$ is the number of projects.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "options_projectCount_other": {
+    "message": "$count$ projects",
+    "description": "Settings page: part of options_cached. $count$ is the number of projects.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "options_catalogsFailed_one": {
+    "message": "$count$ catalog could not be downloaded.",
+    "description": "Settings page: after Save, downloads that failed. $count$ is the number of catalogs.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "options_catalogsFailed_other": {
+    "message": "$count$ catalogs could not be downloaded.",
+    "description": "Settings page: after Save, downloads that failed. $count$ is the number of catalogs.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "options_disconnected": {
+    "message": "Disconnected.",
+    "description": "Settings page: after Disconnect."
   }
 }

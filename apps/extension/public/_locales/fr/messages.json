@@ -1,10 +1,600 @@
 {
   "extDescription": {
-    "message": "Des locators Playwright stables et classés pour tout élément de la page, notés comme dans le tableau de bord Piwi.",
-    "description": "The manifest description: shown by the browser and used as the store listing's summary. At most 132 characters, the Chrome Web Store's limit."
+    "message": "Des locators Playwright stables et classés pour tout élément de la page, notés comme dans le tableau de bord Piwi."
   },
   "pickElementCommand": {
-    "message": "Obtenir le locator d'un élément de la page",
-    "description": "Label of the pick keyboard shortcut in the browser's shortcut settings."
+    "message": "Obtenir le locator d'un élément de la page"
+  },
+  "common_languageTag": {
+    "message": "fr"
+  },
+  "common_recordingStartFailed": {
+    "message": "L’enregistrement n’a pas pu démarrer."
+  },
+  "common_screenshotNoTab": {
+    "message": "Aucun onglet à capturer."
+  },
+  "common_screenshotTabHidden": {
+    "message": "L’onglet n’est pas celui au premier plan."
+  },
+  "common_noProject": {
+    "message": "Aucun projet à actualiser."
+  },
+  "common_notConnected": {
+    "message": "Piwi Picker n’est connecté à aucune instance Piwi."
+  },
+  "common_catalogRefreshFailed": {
+    "message": "Le catalogue de fonctions n’a pas pu être actualisé."
+  },
+  "common_locatorIndexFailed": {
+    "message": "Les éléments testés n’ont pas pu être téléchargés."
+  },
+  "common_replayNeedsPage": {
+    "message": "Un rapport se rejoue sur une page web."
+  },
+  "common_replayNotSteps": {
+    "message": "Ce fichier n’est pas un fichier d’étapes : $error$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "`steps[3].action` is not a step action"
+      }
+    }
+  },
+  "common_replayNoSteps": {
+    "message": "Le rapport ne contient aucune étape."
+  },
+  "common_replayNeedsAccess": {
+    "message": "Piwi Picker a besoin d’accéder à ce site pour suivre le rapport de page en page. Ouvrez Piwi Picker sur cet onglet et choisissez Rejouer un rapport de bug."
+  },
+  "common_replayStartFailed": {
+    "message": "Le rapport n’a pas pu être rejoué."
+  },
+  "common_workerNoAnswer": {
+    "message": "Le processus d’arrière-plan de Piwi Picker n’a pas répondu : rechargez Piwi Picker."
+  },
+  "common_enterInstanceUrl": {
+    "message": "Saisissez d’abord l’adresse de votre instance Piwi."
+  },
+  "common_apiKeyRejected": {
+    "message": "L’instance a refusé la clé d’API : vérifiez-la."
+  },
+  "common_instanceStatus": {
+    "message": "L’instance a répondu par une erreur ($status$).",
+    "placeholders": {
+      "status": {
+        "content": "$1",
+        "example": "500"
+      }
+    }
+  },
+  "common_instanceUnreachable": {
+    "message": "Piwi Picker n’a pas pu joindre l’instance : vérifiez l’adresse, et qu’elle est démarrée."
+  },
+  "common_projectsFailed": {
+    "message": "La liste des projets n’a pas pu être lue ($status$).",
+    "placeholders": {
+      "status": {
+        "content": "$1",
+        "example": "500"
+      }
+    }
+  },
+  "common_catalogFailed": {
+    "message": "Le catalogue de fonctions n’a pas pu être téléchargé ($status$).",
+    "placeholders": {
+      "status": {
+        "content": "$1",
+        "example": "500"
+      }
+    }
+  },
+  "common_projectKeyRejected": {
+    "message": "L’instance a refusé la clé d’API pour ce projet."
+  },
+  "common_noLocatorIndex": {
+    "message": "Cette instance Piwi n’a pas d’index de locators pour ce projet : mettez Piwi à jour, ou vérifiez le projet."
+  },
+  "common_locatorIndexStatus": {
+    "message": "L’index de locators n’a pas pu être téléchargé ($status$).",
+    "placeholders": {
+      "status": {
+        "content": "$1",
+        "example": "500"
+      }
+    }
+  },
+  "common_locatorIndexInvalid": {
+    "message": "L’instance a répondu par autre chose qu’un index de locators."
+  },
+  "badge_recording": {
+    "message": "ENR"
+  },
+  "badge_bug": {
+    "message": "BUG"
+  },
+  "badge_replay": {
+    "message": "LECT"
+  },
+  "popup_settings": {
+    "message": "Réglages"
+  },
+  "popup_workerNotice": {
+    "message": "Piwi Picker a été reconstruit depuis son chargement, et une partie tourne encore sur la version précédente : certains outils ne répondront pas. Recharger met fin à un enregistrement en cours."
+  },
+  "popup_reload": {
+    "message": "Recharger Piwi Picker"
+  },
+  "popup_activeProject": {
+    "message": "Projet actif"
+  },
+  "popup_autoMatched": {
+    "message": "Automatique (d’après l’adresse de la page)"
+  },
+  "popup_autoNoMatch": {
+    "message": "Automatique (aucun projet ne correspond à cette page)"
+  },
+  "popup_testedElements": {
+    "message": "Éléments testés"
+  },
+  "popup_testedElementsHint": {
+    "message": "Ce que vos tests atteignent sur cette page, et ce qu’ils manquent"
+  },
+  "popup_testedElementsConnect": {
+    "message": "Connectez Piwi pour voir ce que vos tests atteignent"
+  },
+  "popup_reportBug": {
+    "message": "Signaler un bug"
+  },
+  "popup_reportBugHint": {
+    "message": "Enregistrez, marquez ce qui ne va pas → un test en échec"
+  },
+  "popup_replayBug": {
+    "message": "Rejouer un rapport de bug"
+  },
+  "popup_replayBugHint": {
+    "message": "Rejouez-le ici, avec un curseur, et voyez si le bug apparaît"
+  },
+  "popup_record": {
+    "message": "Enregistrer"
+  },
+  "popup_recordHint": {
+    "message": "Vos actions → un test"
+  },
+  "popup_pick": {
+    "message": "Choisir un élément"
+  },
+  "popup_pickHint": {
+    "message": "Locators classés"
+  },
+  "popup_hoverInspect": {
+    "message": "Inspecter"
+  },
+  "popup_hoverInspectHint": {
+    "message": "Le locator au survol"
+  },
+  "popup_locatorConsole": {
+    "message": "Console"
+  },
+  "popup_locatorConsoleHint": {
+    "message": "Testez un locator"
+  },
+  "popup_multiPick": {
+    "message": "Multi-sélection"
+  },
+  "popup_multiPickHint": {
+    "message": "2–3 éléments → liste"
+  },
+  "popup_lint": {
+    "message": "Contrôle"
+  },
+  "popup_lintHint": {
+    "message": "Éléments peu testables"
+  },
+  "popup_assertions": {
+    "message": "Assertions"
+  },
+  "popup_assertionsHint": {
+    "message": "Lignes expect(…)"
+  },
+  "popup_session": {
+    "message": "Session"
+  },
+  "popup_sessionHint": {
+    "message": "Nommer → exporter"
+  },
+  "popup_agentContext": {
+    "message": "Contexte IA"
+  },
+  "popup_agentContextHint": {
+    "message": "Résumé pour une IA"
+  },
+  "popup_testFunctions": {
+    "message": "Fonctions de test"
+  },
+  "popup_testFunctionsHint": {
+    "message": "Votre catalogue ici"
+  },
+  "popup_running": {
+    "message": "en cours"
+  },
+  "popup_footerKeys": {
+    "message": "$first$–$last$ lancent un outil, $tested$ les éléments testés, $bug$ signale un bug, $replay$ en rejoue un",
+    "placeholders": {
+      "bug": {
+        "content": "$1",
+        "example": "B"
+      },
+      "first": {
+        "content": "$2",
+        "example": "1"
+      },
+      "last": {
+        "content": "$3",
+        "example": "0"
+      },
+      "replay": {
+        "content": "$4",
+        "example": "R"
+      },
+      "tested": {
+        "content": "$5",
+        "example": "T"
+      }
+    }
+  },
+  "popup_pickShortcut": {
+    "message": "$shortcut$ choisit sans ouvrir ce menu",
+    "placeholders": {
+      "shortcut": {
+        "content": "$1",
+        "example": "Ctrl+Shift+E"
+      }
+    }
+  },
+  "popup_noPickShortcut": {
+    "message": "Aucun raccourci pour choisir un élément : en définir un"
+  },
+  "popup_docs": {
+    "message": "documentation"
+  },
+  "popup_noTab": {
+    "message": "Aucun onglet actif sur lequel travailler."
+  },
+  "popup_cannotRun": {
+    "message": "Piwi Picker ne peut pas agir sur cette page : les navigateurs protègent leurs propres pages et les boutiques d’extensions."
+  },
+  "popup_stopRecording": {
+    "message": "Arrêter l’enregistrement ($count$)",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "popup_finishBugReport": {
+    "message": "Terminer le rapport ($count$)",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "popup_stepsSoFar": {
+    "message": "Étapes enregistrées jusqu’ici"
+  },
+  "popup_reviewRecording": {
+    "message": "Revoir l’enregistrement ($count$)",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "popup_reviewBugReport": {
+    "message": "Revoir le rapport de bug"
+  },
+  "popup_notExported": {
+    "message": "Pas encore exporté"
+  },
+  "popup_takeScreenshot": {
+    "message": "Prendre une capture d’écran"
+  },
+  "popup_screenshotHint_one": {
+    "message": "Ajoute cet onglet, tel qu’il est, au rapport ($count$ événement jusqu’ici)",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "popup_screenshotHint_other": {
+    "message": "Ajoute cet onglet, tel qu’il est, au rapport ($count$ événements jusqu’ici)",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "12"
+      }
+    }
+  },
+  "popup_reviewBugReportHint": {
+    "message": "Copiez le test en échec ou le rapport, ou téléchargez-le"
+  },
+  "popup_finishFirst": {
+    "message": "Terminez ou abandonnez d’abord l’enregistrement en cours"
+  },
+  "popup_finishBeforeBug": {
+    "message": "Terminez ou abandonnez l’enregistrement en cours avant de signaler un bug."
+  },
+  "popup_permissionNeeded": {
+    "message": "Piwi Picker a besoin d’accéder à ce site pour enregistrer de page en page."
+  },
+  "popup_cannotRecord": {
+    "message": "Piwi Picker ne peut pas enregistrer sur cette page."
+  },
+  "popup_cannotReplay": {
+    "message": "Piwi Picker ne peut pas rejouer de rapport sur cette page."
+  },
+  "popup_notRecordedTab": {
+    "message": "Cet onglet n’est pas celui qui est enregistré."
+  },
+  "popup_stateUnreadable": {
+    "message": "Piwi Picker n’a pas pu savoir si un enregistrement est en cours : rouvrez-le."
+  },
+  "options_title": {
+    "message": "Réglages de Piwi Picker"
+  },
+  "options_language": {
+    "message": "Langue"
+  },
+  "options_languageBrowser": {
+    "message": "Celle du navigateur ($language$)",
+    "placeholders": {
+      "language": {
+        "content": "$1",
+        "example": "English"
+      }
+    }
+  },
+  "options_languageHint": {
+    "message": "La langue des textes de Piwi Picker. Les textes des pages, les locators et les tests écrits restent tels quels."
+  },
+  "options_languageSaved": {
+    "message": "Langue enregistrée."
+  },
+  "options_languageFailed": {
+    "message": "La langue n’a pas pu être changée : $error$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "Failed to fetch"
+      }
+    }
+  },
+  "options_connectHeading": {
+    "message": "Connexion à Piwi"
+  },
+  "options_lead": {
+    "message": "Facultatif. Connecté à votre instance Piwi, l’enregistreur utilise les page objects et les fonctions d’aide de vos projets, et les classe en direct pendant l’enregistrement. Choisir des locators et enregistrer un test simple fonctionnent toujours sans connexion."
+  },
+  "options_instanceUrl": {
+    "message": "Adresse de votre instance Piwi"
+  },
+  "options_instanceUrlPlaceholder": {
+    "message": "https://piwi.exemple.fr"
+  },
+  "options_apiKey": {
+    "message": "Clé d’API"
+  },
+  "options_apiKeyHint": {
+    "message": "À créer dans le tableau de bord Piwi, dans les réglages des clés d’API de votre compte."
+  },
+  "options_testConnection": {
+    "message": "Tester la connexion"
+  },
+  "options_mappingsHeading": {
+    "message": "Projets par site"
+  },
+  "options_mappingsHint": {
+    "message": "Le projet qui s’applique sur chaque site : une instance peut en servir plusieurs. Les lignes sont lues dans l’ordre, et le premier motif qui correspond l’emporte. $star$ correspond à l’intérieur d’une partie du chemin, $globstar$ à travers plusieurs parties, comme dans le motif d’adresse d’une fonction de test. La branche, facultative, est celle déployée à ces adresses (un site de préproduction sur $example$, par exemple) : Éléments testés montre alors ce qu’atteignent les tests de cette branche.",
+    "placeholders": {
+      "example": {
+        "content": "$1",
+        "example": "develop"
+      },
+      "globstar": {
+        "content": "$2",
+        "example": "**"
+      },
+      "star": {
+        "content": "$3",
+        "example": "*"
+      }
+    }
+  },
+  "options_addMapping": {
+    "message": "+ Ajouter une ligne"
+  },
+  "options_noMappings": {
+    "message": "Aucune ligne pour l’instant : ajoutez-en une ci-dessous."
+  },
+  "options_pattern": {
+    "message": "Motif d’adresse"
+  },
+  "options_patternPlaceholder": {
+    "message": "https://boutique.exemple.fr/**"
+  },
+  "options_project": {
+    "message": "Projet"
+  },
+  "options_projectTestFirst": {
+    "message": "Testez la connexion"
+  },
+  "options_projectChoose": {
+    "message": "Choisir un projet…"
+  },
+  "options_branch": {
+    "message": "Branche déployée à ces adresses"
+  },
+  "options_branchPlaceholder": {
+    "message": "branche par défaut"
+  },
+  "options_branchTitle": {
+    "message": "La branche déployée à ces adresses : Éléments testés montre ce qu’atteignent ses tests"
+  },
+  "options_removeMapping": {
+    "message": "Supprimer cette ligne"
+  },
+  "options_save": {
+    "message": "Enregistrer"
+  },
+  "options_disconnect": {
+    "message": "Se déconnecter"
+  },
+  "options_privacy": {
+    "message": "Utilisée uniquement depuis cette page, une clé d’API saisie ici n’atteint jamais les scripts d’une page web. Les étapes enregistrées ne vont nulle part, sauf si vous les copiez ou les téléchargez. La connexion ne fait que télécharger le catalogue de fonctions de chaque projet et les éléments que ses tests atteignent."
+  },
+  "options_testing": {
+    "message": "Test en cours…"
+  },
+  "options_accessDenied": {
+    "message": "L’accès à cette instance a été refusé : autorisez-le pour que Piwi Picker lise votre catalogue."
+  },
+  "options_connected_one": {
+    "message": "Connecté : $count$ projet trouvé.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "options_connected_other": {
+    "message": "Connecté : $count$ projets trouvés.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "options_projectsUnlisted": {
+    "message": "Connecté, mais les projets n’ont pas pu être listés."
+  },
+  "options_saved_one": {
+    "message": "$count$ ligne enregistrée.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "options_saved_other": {
+    "message": "$count$ lignes enregistrées.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "options_skipped_one": {
+    "message": "$count$ ligne incomplète ignorée.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "options_skipped_other": {
+    "message": "$count$ lignes incomplètes ignorées.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "options_plainHttp": {
+    "message": "Cette instance utilise HTTP sans chiffrement : la clé d’API circule en clair."
+  },
+  "options_refreshDenied": {
+    "message": "L’accès à l’instance a été refusé : le catalogue ne s’actualisera pas de lui-même."
+  },
+  "options_cached": {
+    "message": "Catalogue enregistré : $functions$ de $projects$.",
+    "placeholders": {
+      "functions": {
+        "content": "$1",
+        "example": "12 functions"
+      },
+      "projects": {
+        "content": "$2",
+        "example": "2 projects"
+      }
+    }
+  },
+  "options_functionCount_one": {
+    "message": "$count$ fonction",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "options_functionCount_other": {
+    "message": "$count$ fonctions",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "12"
+      }
+    }
+  },
+  "options_projectCount_one": {
+    "message": "$count$ projet",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "options_projectCount_other": {
+    "message": "$count$ projets",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "options_catalogsFailed_one": {
+    "message": "$count$ catalogue n’a pas pu être téléchargé.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "options_catalogsFailed_other": {
+    "message": "$count$ catalogues n’ont pas pu être téléchargés.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "options_disconnected": {
+    "message": "Déconnecté."
   }
 }

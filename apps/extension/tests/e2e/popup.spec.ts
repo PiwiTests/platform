@@ -126,7 +126,7 @@ test.describe('popup.html', () => {
   test('shows a config button that opens the options page', async ({ context, extensionId }) => {
     const page = await context.newPage();
     await page.goto(`chrome-extension://${extensionId}/popup.html`);
-    await expect(page.getByRole('button', { name: 'Configure Piwi connection' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Settings' })).toBeVisible();
   });
 
   test('hides the active-project row when not connected to a Piwi instance', async ({ context, extensionId }) => {

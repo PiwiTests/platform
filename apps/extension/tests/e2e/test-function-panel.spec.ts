@@ -2,6 +2,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { BrowserContext } from '@playwright/test';
 import { test, expect } from './fixtures.js';
+import { stubChromeI18n } from './i18n-stub.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.join(here, '..', '..', 'dist');
@@ -34,6 +35,7 @@ async function stubStorage(
       },
     };
   }, seed);
+  await stubChromeI18n(context);
 }
 
 const CATALOG_ENTRY = {

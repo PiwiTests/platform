@@ -9,7 +9,7 @@ import {
   type RecordingMode,
 } from '../shared/recording-storage.js';
 import { getConnectionSettings } from '../shared/connection-settings.js';
-import { newReplayState, setReplayState } from '../shared/replay-storage.js';
+import { getReplayState, newReplayState, setReplayState } from '../shared/replay-storage.js';
 import { parseSteps } from '@piwitests/core/steps';
 import { fetchCatalog, fetchLocatorIndex } from '../shared/piwi-client.js';
 import { setCachedCatalog, isCatalogStale } from '../shared/catalog-cache.js';
@@ -18,6 +18,58 @@ import { isLocatorIndexStale, setCachedLocatorIndex } from '../shared/locator-in
 import type { LocatorIndexRefreshResult } from '../shared/locator-index-refresh.js';
 import { BUILD_ID } from '../shared/build-id.js';
 import { serveSessionStorage } from '../shared/session-area.js';
+import { LANGUAGE_KEY, initI18n, isLanguage, t } from '../shared/i18n.js';
+import { refreshLanguageChoice, storeLanguageChoice } from './language-choice.js';
+
+/**
+ * The Options language, read at startup and again whenever it changes. Every
+ * handler that answers with a text waits for it first.
+ */
+let i18nReady = initI18n();
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && LANGUAGE_KEY in changes) i18nReady = initI18n();
+});
+
+// An update ships new texts: the stored copy of the chosen catalog is read again.
+chrome.runtime.onInstalled.addListener(() => {
+  void refreshLanguageChoice().catch((err: unknown) => console.warn('[Piwi Picker] language catalog refresh:', err));
+});
+
+async function handleSetLanguage(code: unknown): Promise<{ ok: boolean; error?: string }> {
+  if (code !== null && !isLanguage(code)) return { ok: false, error: String(code) };
+  try {
+    await storeLanguageChoice(code);
+    i18nReady = initI18n();
+    await i18nReady;
+    await showStateBadge();
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+const RECORDING_BADGE_COLOR = '#dc2626';
+const REPLAY_BADGE_COLOR = '#7c3aed';
+
+/**
+ * The toolbar badge for what runs now: a recording, else a replay, else
+ * nothing. Decided from the stored states, never from the badge's own text,
+ * which depends on the language.
+ */
+async function showStateBadge(): Promise<void> {
+  await i18nReady;
+  const [recording, replay] = await Promise.all([getRecordingState(), getReplayState()]);
+  if (recording.active) {
+    await chrome.action.setBadgeText({ text: t(recording.mode === 'bug' ? 'badge_bug' : 'badge_recording') });
+    await chrome.action.setBadgeBackgroundColor({ color: RECORDING_BADGE_COLOR });
+  } else if (replay && (replay.status === 'running' || replay.status === 'paused')) {
+    await chrome.action.setBadgeText({ text: t('badge_replay') });
+    await chrome.action.setBadgeBackgroundColor({ color: REPLAY_BADGE_COLOR });
+  } else {
+    await chrome.action.setBadgeText({ text: '' });
+  }
+}
 
 /**
  * Service worker: the keyboard-shortcut trigger for picking (the toolbar
@@ -125,8 +177,9 @@ async function handleStartRecording(
       await chrome.scripting.executeScript({ target: { tabId }, files: ['bug-evidence-main.js'], world: 'MAIN' });
     }
     await chrome.scripting.executeScript({ target: { tabId }, files: ['record-panel.js'] });
-    await chrome.action.setBadgeText({ text: mode === 'bug' ? 'BUG' : 'REC' });
-    await chrome.action.setBadgeBackgroundColor({ color: '#dc2626' });
+    await i18nReady;
+    await chrome.action.setBadgeText({ text: t(mode === 'bug' ? 'badge_bug' : 'badge_recording') });
+    await chrome.action.setBadgeBackgroundColor({ color: RECORDING_BADGE_COLOR });
     return { ok: true };
   } catch (err) {
     // `startRecording` has already written `active: true`, so a failure after it
@@ -136,7 +189,8 @@ async function handleStartRecording(
     await discardRecording().catch(() => undefined);
     await chrome.scripting.unregisterContentScripts({ ids: RECORDING_SCRIPT_IDS }).catch(() => undefined);
     await chrome.action.setBadgeText({ text: '' }).catch(() => undefined);
-    return { ok: false, error: err instanceof Error ? err.message : 'Failed to start recording' };
+    await i18nReady;
+    return { ok: false, error: err instanceof Error ? err.message : t('common_recordingStartFailed') };
   }
 }
 
@@ -249,8 +303,9 @@ async function handleRecordingStopped(senderTabId?: number): Promise<void> {
 async function handleBugScreenshot(
   tab: chrome.tabs.Tab | undefined,
 ): Promise<{ ok: true; dataUrl: string } | { ok: false; error: string }> {
-  if (tab?.id == null || tab.windowId == null) return { ok: false, error: 'No tab to capture.' };
-  if (!tab.active) return { ok: false, error: 'The tab is not the one in front.' };
+  await i18nReady;
+  if (tab?.id == null || tab.windowId == null) return { ok: false, error: t('common_screenshotNoTab') };
+  if (!tab.active) return { ok: false, error: t('common_screenshotTabHidden') };
   try {
     const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' });
     return { ok: true, dataUrl };
@@ -272,11 +327,12 @@ async function handleBugScreenshot(
  * appeared in the extension at all.
  */
 async function handleRefreshCatalog(projectId: unknown, force: boolean): Promise<RefreshCatalogResult> {
+  await i18nReady;
   if (typeof projectId !== 'number' || !Number.isFinite(projectId)) {
-    return { ok: false, error: 'No project to refresh.' };
+    return { ok: false, error: t('common_noProject') };
   }
   const settings = await getConnectionSettings();
-  if (!settings.instanceUrl.trim()) return { ok: false, error: 'Not connected to a Piwi instance.' };
+  if (!settings.instanceUrl.trim()) return { ok: false, error: t('common_notConnected') };
 
   if (!force && !(await isCatalogStale(projectId))) return { ok: true, refreshed: false, count: null };
 
@@ -287,7 +343,7 @@ async function handleRefreshCatalog(projectId: unknown, force: boolean): Promise
   } catch (err) {
     // The caller already rendered whatever was cached, so a failed refresh
     // degrades to "showing older data" rather than showing nothing.
-    return { ok: false, error: err instanceof Error ? err.message : 'Failed to refresh the catalog.' };
+    return { ok: false, error: err instanceof Error ? err.message : t('common_catalogRefreshFailed') };
   }
 }
 
@@ -301,19 +357,20 @@ async function handleRefreshLocatorIndex(
   force: boolean,
   requestedBranch: unknown,
 ): Promise<LocatorIndexRefreshResult> {
+  await i18nReady;
   if (typeof projectId !== 'number' || !Number.isFinite(projectId)) {
-    return { ok: false, error: 'No project to refresh.' };
+    return { ok: false, error: t('common_noProject') };
   }
   const branch = typeof requestedBranch === 'string' && requestedBranch.trim() ? requestedBranch.trim() : null;
   const settings = await getConnectionSettings();
-  if (!settings.instanceUrl.trim()) return { ok: false, error: 'Not connected to a Piwi instance.' };
+  if (!settings.instanceUrl.trim()) return { ok: false, error: t('common_notConnected') };
   if (!force && !(await isLocatorIndexStale(projectId, branch))) return { ok: true, refreshed: false, index: null };
   try {
     const index = await fetchLocatorIndex(settings, projectId, branch);
     await setCachedLocatorIndex(projectId, index, branch);
     return { ok: true, refreshed: true, index };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : 'Failed to fetch the locator index.' };
+    return { ok: false, error: err instanceof Error ? err.message : t('common_locatorIndexFailed') };
   }
 }
 
@@ -341,17 +398,14 @@ async function handleStartReplay(
   message: { steps?: unknown; origin?: unknown; stepMode?: unknown; inject?: unknown },
   tab: chrome.tabs.Tab | undefined,
 ): Promise<{ ok: boolean; error?: string }> {
+  await i18nReady;
   const pattern = replayOriginPattern(message.origin);
-  if (!pattern || tab?.id == null) return { ok: false, error: 'Replay runs on a web page.' };
+  if (!pattern || tab?.id == null) return { ok: false, error: t('common_replayNeedsPage') };
   const parsed = parseSteps(message.steps);
-  if (!parsed.ok) return { ok: false, error: `Not a steps file: ${parsed.errors[0]}` };
-  if (parsed.steps.steps.length === 0) return { ok: false, error: 'The report has no steps.' };
+  if (!parsed.ok) return { ok: false, error: t('common_replayNotSteps', { error: parsed.errors[0] ?? '' }) };
+  if (parsed.steps.steps.length === 0) return { ok: false, error: t('common_replayNoSteps') };
   if (!(await chrome.permissions.contains({ origins: [pattern] }))) {
-    return {
-      ok: false,
-      error:
-        'Piwi Picker needs access to this site to follow the replay from page to page. Open Piwi Picker on this tab and choose Replay a bug report.',
-    };
+    return { ok: false, error: t('common_replayNeedsAccess') };
   }
   try {
     await setReplayState(newReplayState(parsed.steps, message.origin as string, message.stepMode === true));
@@ -367,18 +421,19 @@ async function handleStartReplay(
     ]);
     if (message.inject === true)
       await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['replay-panel.js'] });
-    await chrome.action.setBadgeText({ text: 'PLAY' });
-    await chrome.action.setBadgeBackgroundColor({ color: '#7c3aed' });
+    await chrome.action.setBadgeText({ text: t('badge_replay') });
+    await chrome.action.setBadgeBackgroundColor({ color: REPLAY_BADGE_COLOR });
     return { ok: true };
   } catch (err) {
     await chrome.scripting.unregisterContentScripts({ ids: [REPLAY_SCRIPT_ID] }).catch(() => undefined);
-    return { ok: false, error: err instanceof Error ? err.message : 'The replay could not start.' };
+    return { ok: false, error: err instanceof Error ? err.message : t('common_replayStartFailed') };
   }
 }
 
+/** The replay script has stored its final state: the badge follows what still runs, a recording perhaps. */
 async function handleReplayFinished(): Promise<void> {
   await chrome.scripting.unregisterContentScripts({ ids: [REPLAY_SCRIPT_ID] }).catch(() => undefined);
-  if ((await chrome.action.getBadgeText({})) === 'PLAY') await chrome.action.setBadgeText({ text: '' });
+  await showStateBadge();
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -410,6 +465,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   if (message?.type === 'piwi-start-replay') {
     void handleStartReplay(message, sender.tab).then(sendResponse);
+    return true;
+  }
+  if (message?.type === 'piwi-set-language') {
+    // From the Options page: store the chosen catalog, or follow the browser again.
+    void handleSetLanguage(message.code ?? null).then(sendResponse);
     return true;
   }
   if (message?.type === 'piwi-replay-finished') {

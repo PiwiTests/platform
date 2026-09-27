@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import type { BrowserContext, Page } from '@playwright/test';
 import type { LocatorIndex, LocatorIndexTestStatus } from '@piwitests/core/locator-index';
 import { servePages } from './engine-bundle.js';
+import { stubChromeI18n } from './i18n-stub.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const DIST = path.join(here, '..', '..', 'dist');
@@ -311,6 +312,7 @@ export async function stubCoverageChrome(context: BrowserContext, options: Cover
     },
     { localSeed: local, refresh: options.refresh ?? { ok: true, refreshed: false, index: null } },
   );
+  await stubChromeI18n(context);
 }
 
 export async function openShop(page: Page, query = ''): Promise<void> {

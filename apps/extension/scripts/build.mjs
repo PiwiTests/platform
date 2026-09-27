@@ -9,7 +9,8 @@
 // running this file directly builds once. `--release` makes the build
 // reproducible (see `buildExtension`): the store zips are built that way, since
 // Firefox reviewers rebuild the source package and diff the result against the
-// submitted add-on.
+// submitted add-on. `--pseudo` replaces the English catalog with a pseudo-localized
+// copy (see `pseudoLocalize`), a development aid that never goes into a release.
 import { cpSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
@@ -73,7 +74,8 @@ async function buildStandalone(name, entry, buildId) {
  * the manifest version instead, so the same sources always produce the same
  * bytes.
  */
-export async function buildExtension({ release = false } = {}) {
+export async function buildExtension({ release = false, pseudo = false } = {}) {
+  if (release && pseudo) throw new Error('--pseudo is a development aid: it never goes into a release build');
   rmSync(outDir, { recursive: true, force: true });
   mkdirSync(outDir, { recursive: true });
   const manifest = JSON.parse(readFileSync(path.join(root, 'manifest.json'), 'utf8'));
@@ -95,10 +97,95 @@ export async function buildExtension({ release = false } = {}) {
 
   writeFileSync(path.join(outDir, 'manifest.json'), JSON.stringify(manifest, null, 2));
   cpSync(path.join(root, 'public', 'icons'), path.join(outDir, 'icons'), { recursive: true });
+  if (pseudo) writePseudoCatalog();
+}
+
+const ACCENTED = {
+  a: 'å',
+  b: 'ƀ',
+  c: 'ç',
+  d: 'ð',
+  e: 'é',
+  f: 'ƒ',
+  g: 'ĝ',
+  h: 'ĥ',
+  i: 'î',
+  j: 'ĵ',
+  k: 'ķ',
+  l: 'ļ',
+  m: 'ɱ',
+  n: 'ñ',
+  o: 'ö',
+  p: 'ƥ',
+  q: 'ǫ',
+  r: 'ŕ',
+  s: 'š',
+  t: 'ţ',
+  u: 'û',
+  v: 'ṽ',
+  w: 'ŵ',
+  x: 'ẋ',
+  y: 'ý',
+  z: 'ž',
+  A: 'Å',
+  B: 'Ɓ',
+  C: 'Ç',
+  D: 'Ð',
+  E: 'É',
+  F: 'Ƒ',
+  G: 'Ĝ',
+  H: 'Ĥ',
+  I: 'Î',
+  J: 'Ĵ',
+  K: 'Ķ',
+  L: 'Ļ',
+  M: 'Ṁ',
+  N: 'Ñ',
+  O: 'Ö',
+  P: 'Ƥ',
+  Q: 'Ǫ',
+  R: 'Ŕ',
+  S: 'Š',
+  T: 'Ţ',
+  U: 'Û',
+  V: 'Ṽ',
+  W: 'Ŵ',
+  X: 'Ẋ',
+  Y: 'Ý',
+  Z: 'Ž',
+};
+
+/**
+ * `Pick an element` → `[Ƥîçķ åñ éļéɱéñţ ·······]`: accented, about a third
+ * longer, bracketed, with `$name$` and `$$` left as they are. Loaded in a
+ * browser, plain English left on screen is text that bypasses `t()`, and a
+ * label cut off is one that will clip in a longer language.
+ */
+export function pseudoLocalize(message) {
+  const parts = message.split(/(\$[A-Za-z0-9_]+\$|\$\$)/);
+  const accented = parts.map((part, i) => (i % 2 ? part : part.replace(/[A-Za-z]/g, (c) => ACCENTED[c]))).join('');
+  const letters = message.replace(/\$[A-Za-z0-9_]+\$/g, '').length;
+  return `[${accented} ${'·'.repeat(Math.max(1, Math.round(letters / 3)))}]`;
+}
+
+/** Messages the code reads rather than shows. */
+const NOT_PSEUDO = new Set(['common_languageTag']);
+
+function writePseudoCatalog() {
+  const file = path.join(outDir, '_locales', 'en', 'messages.json');
+  const catalog = JSON.parse(readFileSync(file, 'utf8'));
+  for (const [key, entry] of Object.entries(catalog)) {
+    // Badges and the store summary have hard length limits.
+    if (NOT_PSEUDO.has(key) || key.startsWith('badge_') || key === 'extDescription') continue;
+    entry.message = pseudoLocalize(entry.message);
+  }
+  writeFileSync(file, JSON.stringify(catalog, null, 2));
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const release = process.argv.includes('--release');
-  await buildExtension({ release });
-  console.log(`Built extension${release ? ' (release)' : ''} into ${path.relative(process.cwd(), outDir)}`);
+  const pseudo = process.argv.includes('--pseudo');
+  await buildExtension({ release, pseudo });
+  const kind = release ? ' (release)' : pseudo ? ' (pseudo-localized English)' : '';
+  console.log(`Built extension${kind} into ${path.relative(process.cwd(), outDir)}`);
 }
