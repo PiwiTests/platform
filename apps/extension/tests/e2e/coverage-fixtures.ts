@@ -118,6 +118,35 @@ export const SHOP_TESTS: TestSpec[] = [
   },
 ];
 
+/**
+ * Tests using brittle locators on the shop page: by position and styling
+ * classes (the Red mug's button), by a child combinator (Checkout), and by
+ * classes matching every card's button.
+ */
+export const BRITTLE_TESTS: TestSpec[] = [
+  {
+    title: 'adds the red mug',
+    suite: ['legacy'],
+    file: 'tests/legacy.spec.ts',
+    status: 'flaky',
+    uses: [["locator('.grid .primary').nth(1)", ['click'], 12]],
+  },
+  {
+    title: 'checks out',
+    suite: ['legacy'],
+    file: 'tests/legacy.spec.ts',
+    status: 'passed',
+    uses: [["locator('aside.cart > button')", ['click'], 20]],
+  },
+  {
+    title: 'counts the buttons',
+    suite: ['legacy'],
+    file: 'tests/legacy.spec.ts',
+    status: 'passed',
+    uses: [["locator('.card .primary')", ['count'], 25]],
+  },
+];
+
 /** A test checking the Blue mug card itself, around its buttons. */
 export const CARD_TEST: TestSpec = {
   title: 'shows the Blue mug card',
@@ -264,6 +293,16 @@ export interface BridgedCoverage {
   }>;
   uncovered: Array<{ description: string; eid: string | null }>;
   tests: Array<{ title: string; elements: number }>;
+  /** Brittle chains finding something here, most urgent first. */
+  brittle: Array<{
+    locator: string;
+    rules: string[];
+    elements: string[];
+    count: number;
+    tests: string[];
+    callSites: string[];
+    replacement: { recommended: string; durable: string | null } | 'add-test-id' | null;
+  }>;
   /** The element the view is limited to, as the lists describe it. */
   scope: string | null;
   /** While choosing that element: the one that would be chosen ('' for none yet); null otherwise. */

@@ -6,6 +6,8 @@
  */
 import { highlightLocator } from '@piwitests/picker-dom';
 import { ALL_BRANCHES } from '@piwitests/core/locator-index';
+import { stabilityLabels } from '@piwitests/core/locator-stability';
+import { editText, type BrittleRow, type Replacement } from './coverage-risk.js';
 import type { CoveredElement, UncoveredElement } from './coverage-scan.js';
 import {
   ageLabel,
@@ -53,7 +55,7 @@ export interface PanelCallbacks {
   onOpenSettings(): void;
   onTab(tab: CoverageTab): void;
   onQuery(query: string): void;
-  onToggle(key: 'showOperated' | 'showChecked' | 'showUncovered' | 'heatmap'): void;
+  onToggle(key: 'showOperated' | 'showChecked' | 'showUncovered' | 'heatmap' | 'showBrittle'): void;
   onElementHover(element: Element | null): void;
   onElementSelect(element: Element): void;
   onTestHover(test: number | null): void;
@@ -65,6 +67,8 @@ export interface PanelCallbacks {
   onContainerHover(element: Element | null): void;
   onContainerSelect(element: Element): void;
   suggestLocator(element: Element): string | null;
+  /** A replacement for the chain at `entry`, which finds only `element` here. */
+  replacementFor(element: Element, entry: number): Replacement | null;
 }
 
 /** Containers listed around the element the view is limited to. */
@@ -149,6 +153,7 @@ export class CoveragePanel {
       ['showChecked', 'Checked', 'Elements tests only assert on'],
       ['showUncovered', 'Not tested', 'Interactive elements no test reaches'],
       ['heatmap', 'Heatmap', 'Shade each box by how many tests reach it'],
+      ['showBrittle', 'Brittle', 'Mark the elements a brittle locator finds'],
     ] as const) {
       const wrap = el('label');
       wrap.title = title;
@@ -165,6 +170,7 @@ export class CoveragePanel {
       ['swatch checked', 'checked only'],
       ['swatch uncovered', 'not tested'],
       ['dotted', 'ambiguous'],
+      ['swatch brittle', 'brittle locator'],
     ] as const) {
       const item = el('span');
       item.append(el('span', cls), label);
@@ -329,13 +335,15 @@ export class CoveragePanel {
     meter.setAttribute('aria-label', `${percent}% of interactive elements reached by a test`);
     out.push(meter);
     const checkedOnly = scan.covered.filter((c) => c.kind === 'checked').length;
+    const brittle = context.brittleElements.size;
     out.push(
       el(
         'div',
         'meter-label',
-        total
+        (total
           ? `${percent}% of the ${plural(total, 'interactive element')} ${where} · ${plural(scan.covered.length, 'element')} matched, ${checkedOnly} by assertions only`
-          : `No interactive element ${where === 'here' ? 'on this page' : where} · ${plural(scan.covered.length, 'element')} matched`,
+          : `No interactive element ${where === 'here' ? 'on this page' : where} · ${plural(scan.covered.length, 'element')} matched`) +
+          (brittle ? ` · ${plural(brittle, 'tested element')} reached through brittle locators` : ''),
       ),
     );
     return out;
@@ -444,6 +452,7 @@ export class CoveragePanel {
       ['elements', `Elements ${scan.covered.length}`],
       ['tests', `Tests ${scan.tests.length}`],
       ['untested', `Not tested ${scan.uncoveredCount}`],
+      ['risk', `At risk ${context.brittle.length}`],
     ] as const) {
       const button = el('button', 'tab', label);
       button.type = 'button';
@@ -458,6 +467,7 @@ export class CoveragePanel {
     const query = state.query.trim().toLowerCase();
     if (state.tab === 'tests') return this.renderTests(state, context, query);
     if (state.tab === 'untested') return this.renderUncovered(context.scan.uncovered, query, isScoped(context.scan));
+    if (state.tab === 'risk') return this.renderRisk(context, query);
     return this.renderCovered(state, context, query);
   }
 
@@ -621,6 +631,112 @@ export class CoveragePanel {
         : 'Nothing matches the filter.',
       shown.length,
     );
+  }
+
+  /** The locators likely to break, most urgent first. */
+  private renderRisk(context: CoverageContext, query: string): HTMLElement {
+    const block = el('div', 'risk');
+    block.appendChild(this.renderBrittle(context, query));
+    return block;
+  }
+
+  private renderBrittle(context: CoverageContext, query: string): HTMLElement {
+    const { index, scan } = context;
+    const section = el('section', 'risk-section');
+    section.appendChild(el('h3', 'section-head', `Brittle locators · ${context.brittle.length}`));
+    section.appendChild(
+      el(
+        'p',
+        'section-hint',
+        'They break on changes unrelated to what the test checks: a restyle, a wrapper, a reordered list.',
+      ),
+    );
+    const matches = (row: BrittleRow) =>
+      !query ||
+      index.locators[row.entry]!.locator.toLowerCase().includes(query) ||
+      row.elements.some((e) => scan.describe(e).toLowerCase().includes(query)) ||
+      row.callSites.some((site) => site.toLowerCase().includes(query)) ||
+      row.tests.some((t) => testTitle(index.tests[t]!).toLowerCase().includes(query));
+    const shown = context.brittle.filter(matches);
+    const rows = shown.slice(0, MAX_ROWS).map((row, i) => this.brittleRow(context, row, i < MAX_SUGGESTIONS));
+    section.appendChild(
+      this.rowsOrEmpty(
+        rows,
+        context.brittle.length === 0
+          ? `No brittle locator finds anything ${isScoped(scan) ? 'inside it' : 'on this page'}.`
+          : 'Nothing matches the filter.',
+        shown.length,
+      ),
+    );
+    return section;
+  }
+
+  private brittleRow(context: CoverageContext, row: BrittleRow, suggest: boolean): HTMLLIElement {
+    const { index, scan } = context;
+    const locator = index.locators[row.entry]!.locator;
+    const first = row.elements[0]!;
+    const item = this.row(
+      (on) => this.callbacks.onElementHover(on ? first : null),
+      () => this.callbacks.onElementSelect(first),
+    );
+    item.dataset.kind = 'brittle';
+    item.appendChild(el('span', 'swatch brittle'));
+    const label = el('span', 'label', row.count > 1 ? `${plural(row.count, 'element')}` : scan.describe(first));
+    label.title = row.elements.map((e) => scan.describe(e)).join('\n');
+    item.appendChild(label);
+    const count = el('span', 'count', plural(row.tests.length, 'test'));
+    const health = worstStatus(index, row.tests);
+    if (health) {
+      count.prepend(el('span', `dot ${health}`), ' ');
+      count.title = health === 'failed' ? 'A test using it is failing' : 'A test using it is flaky';
+    }
+    item.appendChild(count);
+    const chain = el('code', 'piwi-loc');
+    chain.innerHTML = highlightLocator(locator);
+    item.appendChild(chain);
+    const why = el('span', 'detail', stabilityLabels(row.stability));
+    why.title = row.stability.findings.map((f) => f.detail).join('\n');
+    if (row.callSites.length)
+      why.append(` · ${row.callSites[0]}${row.callSites.length > 1 ? ` +${row.callSites.length - 1}` : ''}`);
+    item.appendChild(why);
+
+    if (row.count > 1) {
+      item.appendChild(el('span', 'detail', `Finds ${row.count} elements here, so no replacement is offered.`));
+      return item;
+    }
+    const replacement = suggest ? this.callbacks.replacementFor(first, row.entry) : null;
+    if (replacement?.kind === 'add-test-id') {
+      item.appendChild(el('span', 'detail', 'No stable locator finds only this element: give it a test id.'));
+    } else if (replacement?.kind === 'replace') {
+      const next = replacement.recommended.locator;
+      const code = el('code', 'piwi-loc suggestion');
+      code.innerHTML = `→ ${highlightLocator(next)}`;
+      code.title = 'Finds only this element here';
+      item.appendChild(code);
+      if (replacement.durable) {
+        const durable = el('span', 'detail', `Most stable: ${replacement.durable.locator}`);
+        durable.title = replacement.durable.locator;
+        item.appendChild(durable);
+      }
+      const actions = el('div', 'row-actions');
+      const copy = el('button', undefined, 'Copy locator');
+      copy.type = 'button';
+      copy.title = 'Copy the replacement, which finds only this element here';
+      copy.addEventListener('click', (e) => {
+        e.stopPropagation();
+        void copyText(next, copy);
+      });
+      const edit = el('button', undefined, 'Copy edit');
+      edit.type = 'button';
+      edit.title = 'Copy each call site with the old and the new locator';
+      edit.addEventListener('click', (e) => {
+        e.stopPropagation();
+        void copyText(editText(row.callSites, locator, next), edit);
+      });
+      actions.append(copy, edit);
+      item.appendChild(actions);
+    }
+    return item;
   }
 
   private renderNotes(context: CoverageContext): HTMLElement | null {

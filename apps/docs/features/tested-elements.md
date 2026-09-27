@@ -59,6 +59,20 @@ the actions they run. **Show tested elements inside it** opens the overlay limit
 element. **Copy all** copies every ranked locator, one per line, for the
 [Locators page](./locator-usage#the-locators-page) of the dashboard.
 
+## Brittle locators
+
+A **brittle locator** breaks on a change unrelated to what its test checks: `locator('.btn-primary').nth(1)` breaks
+when the button is restyled or another button appears before it. Piwi judges every locator with the
+[locator stability rules](/reference/locator-stability), and marks an element a brittle locator finds with an orange
+corner; **Brittle**, in the panel, hides the marks.
+
+The **At risk** tab lists the brittle locators finding something on the page, those used by a failing or flaky test
+first, with their tests and call sites. For one that finds a single element, it offers a replacement: a locator for
+that element that the same rules call stable and that finds only it on this page, in the test's own style when that
+style is stable. **Copy edit** copies each call site with the old and the new locator. When no stable locator finds
+only the element, the row says to give it a test id. The element's card says the same next to the locator, and picking
+the element with the extension names the brittle locators finding it.
+
 ## Setting it up
 
 1. Connect the extension to your instance and map the application's URLs to its project: see

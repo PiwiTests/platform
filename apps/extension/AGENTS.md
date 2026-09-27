@@ -152,6 +152,14 @@ The chains are evaluated by an in-page reimplementation of Playwright's selector
   scripts run in the extension's isolated world, so the global is shared, and an element cannot
   travel through `chrome.runtime` messages.
 
+**At risk** (`coverage-risk.ts`, pure apart from the engine it is handed) lists the locators likely to break. Brittle
+ones come from `assessLocatorChain` (`@piwitests/core/locator-stability`), judged once per index. A replacement is
+built only for a chain finding one element: `rankElementLocators` (`top-locator.ts`) ranks that element's locators, the
+same rules must call a candidate stable, an engine over the current page must find only that element with it, and
+`recommendLocatorFix` (`@piwitests/core/locator-fix`, locator healing's ladder) picks among the survivors. Replacements
+are cached per element and chain for one scan only, since the page may change; an element inside a frame gets none,
+because its locator would need the frame's prefix.
+
 **`locator-engine.spec.ts` is a differential test against real Playwright**: every expression in
 `locator-cases.ts` is resolved by the engine bundle (`engine-entry.ts`) and by a real
 `page.locator(…)`, and the two element lists must be identical. A new locator kind or option

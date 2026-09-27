@@ -7,6 +7,8 @@
  */
 import { highlightLocator } from '@piwitests/picker-dom';
 import { locatorActionLabel } from '@piwitests/core/step-locators';
+import { stabilityLabels } from '@piwitests/core/locator-stability';
+import { editText, type Replacement } from './coverage-risk.js';
 import type { CoveredElement, UncoveredElement } from './coverage-scan.js';
 import { plural, statusLabel, testTitle, type CoverageContext } from './coverage-view.js';
 import { projectLocatorsUrl, testCaseUrl } from '../shared/piwi-client.js';
@@ -19,6 +21,8 @@ export interface Drawable {
   health: 'failed' | 'flaky' | null;
   /** 0 to 1, how many tests reach it relative to the most-tested element here. */
   heat: number;
+  /** A brittle locator finds it, and the marks are shown. */
+  brittle: boolean;
   emphasis: 'normal' | 'dim' | 'strong';
 }
 
@@ -105,6 +109,8 @@ export interface LayerCallbacks {
   onClosePinned(): void;
   /** The best locator for an untested element, generated on demand. */
   suggestLocator(element: Element): string | null;
+  /** A replacement for the chain at `entry`, which finds only `element` here. */
+  replacementFor(element: Element, entry: number): Replacement | null;
 }
 
 export class CoverageLayer {
@@ -156,6 +162,7 @@ export class CoverageLayer {
       }
       const classes = ['box', d.kind];
       if (d.covered?.ambiguous) classes.push('ambiguous');
+      if (d.brittle) classes.push('brittle');
       if (d.emphasis !== 'normal') classes.push(d.emphasis);
       if (d.element === this.hovered) classes.push('hover');
       nodes.box.className = classes.join(' ');
@@ -372,6 +379,53 @@ export class CoverageLayer {
     card.style.top = `${top}px`;
   }
 
+  /** A chain's stability findings, and for one finding only this element, its replacement. */
+  private appendStability(
+    block: HTMLElement,
+    element: Element,
+    entry: number,
+    count: number,
+    context: CoverageContext,
+  ): void {
+    const stability = context.stabilities[entry];
+    if (!stability || stability.level === 'stable') return;
+    const note = el(
+      'div',
+      `note stability ${stability.level}`,
+      `${stability.level === 'brittle' ? 'Brittle' : 'Watch'}: ${stabilityLabels(stability, ', ')}`,
+    );
+    note.title = stability.findings.map((f) => f.detail).join('\n');
+    block.appendChild(note);
+    if (count !== 1) return;
+    const replacement = this.callbacks.replacementFor(element, entry);
+    if (replacement?.kind === 'add-test-id') {
+      block.appendChild(el('div', 'hint', 'No stable locator finds only this element: give it a test id.'));
+      return;
+    }
+    if (replacement?.kind !== 'replace') return;
+    const next = replacement.recommended.locator;
+    const suggestion = el('div', 'replacement');
+    suggestion.appendChild(el('div', 'hint', 'Replace it with · finds only this element here'));
+    suggestion.appendChild(locatorCode(next));
+    if (replacement.durable) {
+      suggestion.appendChild(el('div', 'hint', 'Most stable'));
+      suggestion.appendChild(locatorCode(replacement.durable.locator));
+    }
+    const actions = el('div', 'card-actions');
+    const copy = el('button', undefined, 'Copy locator');
+    copy.type = 'button';
+    copy.addEventListener('click', () => void copyText(next, copy));
+    const edit = el('button', undefined, 'Copy edit');
+    edit.type = 'button';
+    edit.title = 'Copy each call site with the old and the new locator';
+    const locator = context.index.locators[entry]!;
+    const sites = [...new Set(locator.uses.flatMap((use) => use.callSites))];
+    edit.addEventListener('click', () => void copyText(editText(sites, locator.locator, next), edit));
+    actions.append(copy, edit);
+    suggestion.appendChild(actions);
+    block.appendChild(suggestion);
+  }
+
   private kindLine(d: Drawable): HTMLElement {
     const line = el('div', 'kind');
     if (d.covered) {
@@ -418,6 +472,9 @@ export class CoverageLayer {
   private fillPreview(card: HTMLDivElement, d: Drawable, context: CoverageContext): void {
     card.appendChild(el('div', 'what', d.covered?.description ?? d.uncovered?.description ?? ''));
     card.appendChild(this.kindLine(d));
+    if (d.covered && context.brittleElements.has(d.element)) {
+      card.appendChild(el('div', 'note brittle', 'A brittle locator finds it · click the badge for a replacement'));
+    }
     if (d.covered) {
       const list = el('ul');
       for (const t of d.covered.tests.slice(0, PREVIEW_TESTS)) list.appendChild(this.testItem(t, context, null, false));
@@ -458,6 +515,7 @@ export class CoverageLayer {
         if (match.count > 1) {
           block.appendChild(el('div', 'note', `Matches ${match.count} elements on this page`));
         }
+        this.appendStability(block, d.element, match.entry, match.count, context);
         const list = el('ul');
         for (const use of entry.uses.slice(0, CARD_TESTS)) {
           const where = use.callSites[0] ?? index.tests[use.test]!.file;

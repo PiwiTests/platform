@@ -34,6 +34,12 @@ export const COVERAGE_CSS = `
     box-shadow: 0 0 0 1px rgb(255 255 255 / 0.7);
   }
   .box.ambiguous { border-style: dotted; }
+  /* A brittle locator finds it: an orange corner mark, over any kind of box. */
+  .box.brittle::after {
+    content: '!'; position: absolute; left: -2px; top: -2px; width: 13px; height: 13px; border-radius: 3px 0 6px 0;
+    background: #ea580c; color: #fff; font: 800 10px/13px ui-sans-serif, system-ui, sans-serif; text-align: center;
+    box-shadow: 0 0 0 1px #fff;
+  }
   .box.dim, .badge.dim { opacity: 0.15; }
   .box.strong { box-shadow: 0 0 0 2px #fff, 0 0 0 6px rgb(124 58 237 / 0.6); z-index: 2; }
   .box.hover { box-shadow: 0 0 0 2px #fff, 0 0 0 5px rgb(124 58 237 / 0.45); }
@@ -90,6 +96,11 @@ export const COVERAGE_CSS = `
   .card .chain { margin-top: 9px; padding-top: 8px; border-top: 1px solid rgb(148 163 184 / 0.2); }
   .card .chain code { display: block; font-size: 12px; word-break: break-all; }
   .card .chain .note { color: #fbbf24; font-size: 11.5px; margin-top: 2px; }
+  .card .note.stability.brittle, .card .note.brittle { color: #fb923c; font-size: 11.5px; margin-top: 2px; }
+  .card .note.stability.watch { color: #cbd5e1; }
+  .card .replacement { margin-top: 6px; padding: 6px 8px; border-radius: 7px; background: rgb(234 88 12 / 0.12); }
+  .card .replacement .hint { margin-top: 0; }
+  .card .replacement code + .hint { margin-top: 6px; }
   .card ul { list-style: none; margin: 5px 0 0; padding: 0; }
   .card li { display: grid; grid-template-columns: 10px 1fr; gap: 2px 7px; align-items: baseline; padding: 3px 0; }
   .card li .dot { width: 8px; height: 8px; border-radius: 50%; align-self: center; }
@@ -191,6 +202,11 @@ export const COVERAGE_CSS = `
   .swatch.operated { background: #10b981; }
   .swatch.checked { background: #0ea5e9; }
   .swatch.uncovered { background: repeating-linear-gradient(45deg, #f59e0b 0 3px, transparent 3px 6px); border: 1px solid #f59e0b; }
+  .swatch.brittle { background: #ea580c; }
+  .panel .risk-section + .risk-section { margin-top: 12px; }
+  .panel .section-head { margin: 0 0 2px; font-size: 12.5px; font-weight: 650; }
+  .panel .section-hint { margin: 0 0 6px; color: #9ca3af; font-size: 11.5px; }
+  .panel li.row code.piwi-loc.suggestion { margin-top: 2px; }
   .panel li.row .label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .panel li.row .count { color: #9ca3af; font-size: 11.5px; font-variant-numeric: tabular-nums; }
   .panel li.row .detail { grid-column: 2 / 4; color: #9ca3af; font-size: 11.5px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -225,7 +241,7 @@ export const COVERAGE_CSS = `
   @media (prefers-color-scheme: light) {
     .panel { background: #ffffff; color: #111827; box-shadow: 0 8px 40px rgb(0 0 0 / 0.2); }
     .panel .sub, .panel .tile .l, .panel .meter-label, .panel .status-line, .panel li.row .count,
-    .panel li.row .detail, .panel .empty, .panel .legend, .panel details.notes { color: #6b7280; }
+    .panel li.row .detail, .panel .empty, .panel .legend, .panel details.notes, .panel .section-hint { color: #6b7280; }
     .panel .message { color: #374151; }
     .panel .message.error { color: #be123c; }
     .panel .tile.operated .n { color: #059669; }

@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import {
+  BRITTLE_TESTS,
   CARD_TEST,
   DEFAULT_CONNECTION,
   INSTANCE_URL,
@@ -701,5 +702,87 @@ test.describe('coverage overlay on a branch', () => {
       (globalThis as any).chrome.storage.session.get('piwiLocatorBranchOverride'),
     );
     expect(remembered).toEqual({ piwiLocatorBranchOverride: { '1': '' } });
+  });
+});
+
+test.describe('coverage overlay: locators at risk', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.setViewportSize({ width: 1400, height: 900 });
+  });
+
+  test('lists the brittle locators, with a replacement that finds only their element', async ({ page, context }) => {
+    await stubCoverageChrome(context, { cached: shopIndex([...SHOP_TESTS, ...BRITTLE_TESTS]) });
+    await openShop(page, '?nodialog');
+    // The replacement offered below finds the Checkout button with real Playwright, and only it. (Checked before
+    // the overlay opens: in tests it renders into an open shadow root, whose badges Playwright would find too.)
+    await expect(page.getByRole('button', { name: 'Checkout' })).toHaveCount(1);
+    await expect(page.getByRole('button', { name: 'Checkout' })).toHaveText('Checkout');
+    await injectCoverage(page);
+    const coverage = await readCoverage(page);
+
+    expect(coverage.brittle.map((b) => b.locator)).toEqual([
+      // Used by a flaky test, so listed first.
+      "locator('.grid .primary').nth(1)",
+      "locator('.card .price').first()",
+      "locator('.card .primary')",
+      "locator('aside.cart > button')",
+    ]);
+    const [redMug, price, buttons, checkout] = coverage.brittle;
+    expect(redMug).toMatchObject({
+      rules: ['position', 'css-class', 'css-class'],
+      elements: ['button "Add to cart"'],
+      count: 1,
+      tests: ['adds the red mug'],
+      callSites: ['tests/legacy.spec.ts:12:5'],
+      // Every stable locator for it also finds the other cards' buttons.
+      replacement: 'add-test-id',
+    });
+    expect(price).toMatchObject({ rules: ['css-class', 'css-class', 'position'], replacement: 'add-test-id' });
+    // Finding four buttons, no single element to build a replacement from.
+    expect(buttons).toMatchObject({ count: 4, replacement: null });
+    expect(checkout).toMatchObject({
+      rules: ['css-class', 'css-structure'],
+      elements: ['button "Checkout"'],
+      replacement: { recommended: "getByRole('button', { name: 'Checkout' })", durable: null },
+    });
+    // Six elements carry the mark: the first price, the four cards' buttons and Checkout.
+    await expect(page.locator(`${HOST} .box.brittle`)).toHaveCount(6);
+    const panel = page.locator(`${HOST} .panel`);
+    await expect(panel.locator('.meter-label')).toContainText('6 tested elements reached through brittle locators');
+    await panel.getByLabel('Brittle').uncheck();
+    await expect(page.locator(`${HOST} .box.brittle`)).toHaveCount(0);
+  });
+
+  test('the At risk tab copies the replacement and the edit to make', async ({ page, context }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    await stubCoverageChrome(context, { cached: shopIndex([...SHOP_TESTS, ...BRITTLE_TESTS]) });
+    await openShop(page, '?nodialog');
+    await injectCoverage(page);
+    const panel = page.locator(`${HOST} .panel`);
+    await panel.getByRole('button', { name: 'At risk 4' }).click();
+    await expect(panel.locator('.section-head')).toHaveText('Brittle locators · 4');
+
+    const row = panel.locator('li.row', { hasText: "locator('aside.cart > button')" });
+    await expect(row.locator('.detail').first()).toHaveText('CSS class · CSS structure · tests/legacy.spec.ts:20:5');
+    await expect(row.locator('code.suggestion')).toHaveText("→ getByRole('button', { name: 'Checkout' })");
+    await row.getByRole('button', { name: 'Copy edit' }).click();
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+      "tests/legacy.spec.ts:20:5\n- locator('aside.cart > button')\n+ getByRole('button', { name: 'Checkout' })",
+    );
+    await expect(
+      panel.locator('li.row', { hasText: "locator('.grid .primary').nth(1)" }).locator('.detail').last(),
+    ).toHaveText('No stable locator finds only this element: give it a test id.');
+    await expect(panel.locator('li.row', { hasText: "locator('.card .primary')" })).toContainText(
+      'Finds 4 elements here, so no replacement is offered.',
+    );
+
+    // The card of the Checkout button says the same, next to the locator.
+    await row.click();
+    const card = page.locator(`${HOST} .card.pinned`);
+    await expect(card.locator('.note.stability')).toHaveText('Brittle: CSS class, CSS structure');
+    await expect(card.locator('.replacement code')).toHaveText("getByRole('button', { name: 'Checkout' })");
+
+    await panel.getByLabel('Filter the list').fill('checkout');
+    await expect(panel.locator('li.row')).toHaveCount(1);
   });
 });

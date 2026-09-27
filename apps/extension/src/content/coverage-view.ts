@@ -1,4 +1,6 @@
 import type { LocatorIndex, LocatorIndexTest, LocatorIndexTestStatus } from '@piwitests/core/locator-index';
+import type { LocatorStability } from '@piwitests/core/locator-stability';
+import type { BrittleRow } from './coverage-risk.js';
 import type { CoverageScan, CoveredElement, ScopedScan } from './coverage-scan.js';
 
 /** Everything the coverage UI draws from once a scan has run. */
@@ -11,9 +13,15 @@ export interface CoverageContext {
   projectLabel: string;
   /** The branch read: a name, `*` for every branch, null for the default branch. */
   branch: string | null;
+  /** The stability of each chain of the index, by position. */
+  stabilities: Array<LocatorStability | null>;
+  /** The brittle chains finding something in `scan`. */
+  brittle: BrittleRow[];
+  /** The elements those chains find. */
+  brittleElements: Set<Element>;
 }
 
-export type CoverageTab = 'elements' | 'tests' | 'untested';
+export type CoverageTab = 'elements' | 'tests' | 'untested' | 'risk';
 
 /** What the reader chose to look at. */
 export interface ViewState {
@@ -23,6 +31,8 @@ export interface ViewState {
   showChecked: boolean;
   showUncovered: boolean;
   heatmap: boolean;
+  /** Mark the elements a brittle locator finds. */
+  showBrittle: boolean;
   /** A test pinned from the Tests list: only its elements stand out. */
   focusTest: number | null;
   /** A test hovered in the Tests list. */
@@ -47,6 +57,7 @@ export function initialViewState(): ViewState {
     showChecked: true,
     showUncovered: true,
     heatmap: false,
+    showBrittle: true,
     focusTest: null,
     hoverTest: null,
     hoverElement: null,

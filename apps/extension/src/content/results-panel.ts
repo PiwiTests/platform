@@ -14,6 +14,8 @@ import { ALL_BRANCHES } from '@piwitests/core/locator-index';
 import { requestLocatorIndex } from '../shared/locator-index-refresh.js';
 import { projectLocatorsUrl, testCaseUrl } from '../shared/piwi-client.js';
 import { elementReach, scanCoverage, type ReachGroup } from './coverage-scan.js';
+import { chainStabilities } from './coverage-risk.js';
+import { stabilityLabels } from '@piwitests/core/locator-stability';
 import { plural, statusLabel, testTitle } from './coverage-view.js';
 
 const ROLE_MAPS = { tagRoles: TAG_TO_ROLE, inputRoles: INPUT_TYPE_TO_ROLE };
@@ -273,6 +275,8 @@ type PickCoverage =
       /** Tests reaching only an element around it. */
       around: string[];
       locators: string[];
+      /** The brittle locators among those finding the element itself. */
+      brittle: string[];
     };
 
 function reportPickCoverage(value: PickCoverage): void {
@@ -457,6 +461,19 @@ async function fillPiwiSection(
   }
   const total = groups.reduce((sum, { group }) => sum + group.tests.length, 0);
   if (total > shown) children.push(muted(`${total - shown} more — Tested elements lists them all.`));
+  // Brittle locators finding the element itself: the ranked list above has the stable one to replace them with.
+  const stabilities = chainStabilities(index);
+  const brittle = reach.self.entries.filter((entry) => stabilities[entry]?.level === 'brittle');
+  for (const entry of brittle.slice(0, 3)) {
+    const line = muted('');
+    line.classList.add('brittle');
+    const code = document.createElement('code');
+    code.className = 'piwi-loc';
+    code.innerHTML = highlightLocator(index.locators[entry]!.locator);
+    line.append('Brittle locator: ', code, ` · ${stabilityLabels(stabilities[entry]!)}`);
+    children.push(line);
+  }
+  if (brittle.length) children.push(muted('Tests could use one of the locators ranked above instead.'));
   children.push(actions);
   section.replaceChildren(...children);
   const titles = (tests: number[]) => tests.map((t) => index!.tests[t]!.title);
@@ -467,6 +484,7 @@ async function fillPiwiSection(
     inside: titles(reach.inside.tests),
     around: titles(reach.containers.tests),
     locators: [...reach.self.entries, ...reach.inside.entries].map((e) => index!.locators[e]!.locator),
+    brittle: brittle.map((e) => index!.locators[e]!.locator),
   });
 }
 

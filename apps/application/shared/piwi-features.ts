@@ -371,7 +371,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
       {
         title: 'Tested elements',
         summary:
-          'On a live page, the elements your tests reach and through which tests, and the buttons, links and fields none reaches.',
+          'On a live page, the elements your tests reach and through which tests, the buttons, links and fields none reaches, and the brittle locators to replace.',
         needs: ['extension'],
         where: 'Browser extension → Tested elements',
         doc: 'features/tested-elements',

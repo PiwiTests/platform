@@ -251,6 +251,13 @@ The locator chains each test used in its steps, recorded per branch and per Play
 use a locator, and it feeds [Who uses a locator](/features/locator-usage) and
 [Tested elements](/features/tested-elements).
 
+### Brittle locator
+
+A locator a test uses that breaks on a change unrelated to what the test checks: a position, a styling class, the
+document structure, a generated id. Piwi judges each locator of the index with named rules as *brittle*, *watch* or
+*stable*; see [Locator stability rules](/reference/locator-stability). Not to be confused with the *fragile*
+[gap class](#gap-class), which is about the tests reaching a node, not a locator.
+
 ### Scenario gap
 
 A test the suite does not have yet, proposed from the Test Map with its evidence and a next step: a route no test

@@ -8,6 +8,7 @@ import { NOTIFICATION_EVENTS, REPORT_READY_EVENT } from '#shared/notification-ev
 import { FEATURE_NEED_DOCS, PIWI_FEATURE_GROUPS } from '#shared/piwi-features';
 import { PIWI_ENV_VARS } from '#shared/piwi-env-vars';
 import { HELP_TOPICS } from '~/utils/help-content';
+import { LOCATOR_STABILITY_RULES } from '#shared/locator-stability';
 import { headingAnchor, sidebars } from '../../../docs/.vitepress/navigation';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..');
@@ -340,6 +341,15 @@ describe('hand-written reference pages match the code', () => {
     const page = read('apps/docs/reference/clues.md');
     for (const rule of rules) {
       expect(page, `apps/docs/reference/clues.md does not show the rule id \`${rule}\``).toContain(`\`${rule}\``);
+    }
+  });
+
+  test('every locator stability rule is on the Locator stability rules page', () => {
+    const page = read('apps/docs/reference/locator-stability.md');
+    for (const rule of LOCATOR_STABILITY_RULES) {
+      expect(page, `apps/docs/reference/locator-stability.md does not show the rule id \`${rule.id}\``).toContain(
+        `\`${rule.id}\``,
+      );
     }
   });
 
