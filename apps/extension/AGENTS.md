@@ -327,6 +327,15 @@ they have `chrome.scripting`, `chrome.permissions` and `chrome.storage` as well 
   XHR only, and never leave the browser but through the user's copy or download. `mockCode` hides credential fields
   (`HIDDEN_VALUE`) unless revealed, and never writes a header. `devtools-network.spec.ts` runs the copied code as a
   test body against a real page.
+- **Slow down or fail a request** (`panel-conditions.ts`, pure half `src/shared/request-conditions.ts`): the panel asks
+  for the page's origin inside the click and sends `piwi-set-conditions`; the background worker keeps one tab's
+  conditions in session storage (`CONDITIONS_KEY`), registers `request-conditions-main.js` (main world) and
+  `request-conditions.js` (isolated) for that origin at `document_start`, and injects both into the page now. The
+  isolated script asks `piwi-get-conditions` (answered for that tab only), posts the conditions to the main world by
+  `window.postMessage` and draws the banner; the main-world script wraps `fetch` and XHR and, like the evidence script,
+  imports nothing that touches `chrome.*`. Turning them off, or closing the tab, unregisters both, and turning them off
+  reloads the tab. A replay started meanwhile carries them (`ReplayState.conditions`) and its panel lists them.
+  `request-conditions.spec.ts` drives it against a real server, by `fetch` and by XHR.
 - **Tests**: `devtools-sidebar.spec.ts`, `devtools-panel.spec.ts` and `devtools-network.spec.ts` open the pages as tabs with `chrome.devtools` stubbed (`devtools-stub.ts`:
   `eval` runs in a fixture page's own world, where the spec adds the content script; `$0` is that page's global).
   `devtools-real.spec.ts` launches Chromium with `--auto-open-devtools-for-tabs` and drives the real DevTools page

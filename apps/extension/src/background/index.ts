@@ -17,9 +17,10 @@ import type { RefreshCatalogResult } from '../shared/catalog-refresh.js';
 import { isLocatorIndexStale, setCachedLocatorIndex } from '../shared/locator-index-cache.js';
 import type { LocatorIndexRefreshResult } from '../shared/locator-index-refresh.js';
 import { BUILD_ID } from '../shared/build-id.js';
-import { serveSessionStorage } from '../shared/session-area.js';
+import { serveSessionStorage, sessionArea } from '../shared/session-area.js';
 import { LANGUAGE_KEY, initI18n, isLanguage, t } from '../shared/i18n.js';
 import { refreshLanguageChoice, storeLanguageChoice } from './language-choice.js';
+import { CONDITIONS_KEY, isCondition, type ConditionsState } from '../shared/request-conditions.js';
 
 /**
  * The Options language, read at startup and again whenever it changes. Every
@@ -388,6 +389,98 @@ async function handleRefreshLocatorIndex(
   }
 }
 
+/** Slow down or fail a request: the main-world wrapper and its isolated-world relay, registered while a condition is on. */
+const CONDITION_SCRIPT_IDS = ['piwi-conditions-main', 'piwi-conditions'];
+
+async function getConditionsState(): Promise<ConditionsState | null> {
+  const value = (await sessionArea().get(CONDITIONS_KEY))[CONDITIONS_KEY] as ConditionsState | undefined;
+  return value && typeof value.tabId === 'number' && Array.isArray(value.conditions) ? value : null;
+}
+
+/**
+ * Turns the conditions off: the scripts are unregistered, and the tab they
+ * were on reloads, since its `fetch` and XHR stay wrapped until it does.
+ */
+async function clearConditions(reload: boolean): Promise<void> {
+  const state = await getConditionsState();
+  await sessionArea().remove(CONDITIONS_KEY);
+  await chrome.scripting.unregisterContentScripts({ ids: CONDITION_SCRIPT_IDS }).catch(() => undefined);
+  if (reload && state) await chrome.tabs.reload(state.tabId).catch(() => undefined);
+}
+
+/**
+ * Puts conditions on one tab's requests, from the Piwi panel, which has asked
+ * for the page's origin inside the click. The scripts are registered for that
+ * origin, so the tab's next pages keep them, and injected into its page now.
+ * An empty list turns them off.
+ */
+async function handleSetConditions(message: {
+  tabId?: unknown;
+  origin?: unknown;
+  conditions?: unknown;
+}): Promise<{ ok: boolean; error?: string }> {
+  await i18nReady;
+  const pattern = replayOriginPattern(message.origin);
+  const conditions = Array.isArray(message.conditions) ? message.conditions.filter(isCondition) : [];
+  if (!pattern || typeof message.tabId !== 'number') return { ok: false, error: t('devtools_conditionsNoPage') };
+  if (conditions.length === 0) {
+    await clearConditions(true);
+    return { ok: true };
+  }
+  if (!(await chrome.permissions.contains({ origins: [pattern] }))) {
+    return { ok: false, error: t('devtools_conditionsNeedAccess') };
+  }
+  try {
+    const state: ConditionsState = { tabId: message.tabId, origin: message.origin as string, conditions };
+    await sessionArea().set({ [CONDITIONS_KEY]: state });
+    await chrome.scripting.unregisterContentScripts({ ids: CONDITION_SCRIPT_IDS }).catch(() => undefined);
+    await chrome.scripting.registerContentScripts([
+      {
+        id: CONDITION_SCRIPT_IDS[0]!,
+        js: ['request-conditions-main.js'],
+        matches: [pattern],
+        runAt: 'document_start',
+        world: 'MAIN',
+        persistAcrossSessions: false,
+      },
+      {
+        id: CONDITION_SCRIPT_IDS[1]!,
+        js: ['request-conditions.js'],
+        matches: [pattern],
+        runAt: 'document_start',
+        persistAcrossSessions: false,
+      },
+    ]);
+    const target = { tabId: message.tabId };
+    await chrome.scripting.executeScript({ target, files: ['request-conditions-main.js'], world: 'MAIN' });
+    await chrome.scripting.executeScript({ target, files: ['request-conditions.js'] });
+    return { ok: true };
+  } catch (err) {
+    await clearConditions(false);
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/** The conditions for the tab asking, on the origin they were set for; none for any other tab. */
+async function conditionsFor(
+  tab: chrome.tabs.Tab | undefined,
+  url: string | undefined,
+): Promise<ConditionsState['conditions']> {
+  const state = await getConditionsState();
+  if (!state || tab?.id !== state.tabId || !url) return [];
+  try {
+    return new URL(url).origin === state.origin ? state.conditions : [];
+  } catch {
+    return [];
+  }
+}
+
+chrome.tabs.onRemoved.addListener((tabId) => {
+  void getConditionsState().then((state) => {
+    if (state?.tabId === tabId) void clearConditions(false);
+  });
+});
+
 const REPLAY_SCRIPT_ID = 'piwi-replay-panel';
 
 function replayOriginPattern(origin: unknown): string | null {
@@ -428,7 +521,10 @@ async function handleStartReplay(
       typeof message.startOn === 'string' && message.startOn.startsWith(`${origin}/`) && first?.action === 'goto'
         ? { recorded: first.value ?? first.pageUrl, actual: message.startOn }
         : null;
-    await setReplayState(newReplayState(parsed.steps, origin, message.stepMode === true, Date.now(), startPage));
+    const replay = newReplayState(parsed.steps, origin, message.stepMode === true, Date.now(), startPage);
+    // A replay under a request condition says so, while it runs and in its verdict.
+    const conditions = await conditionsFor(tab, tab.url);
+    await setReplayState(conditions.length ? { ...replay, conditions } : replay);
     await chrome.scripting.unregisterContentScripts({ ids: [REPLAY_SCRIPT_ID] }).catch(() => undefined);
     await chrome.scripting.registerContentScripts([
       {
@@ -485,6 +581,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   if (message?.type === 'piwi-start-replay') {
     void handleStartReplay(message, sender.tab).then(sendResponse);
+    return true;
+  }
+  if (message?.type === 'piwi-set-conditions') {
+    void handleSetConditions(message).then(sendResponse);
+    return true;
+  }
+  if (message?.type === 'piwi-get-conditions') {
+    void conditionsFor(sender.tab, sender.url).then((conditions) => sendResponse({ conditions }));
+    return true;
+  }
+  if (message?.type === 'piwi-clear-conditions') {
+    void clearConditions(true).then(() => sendResponse({ ok: true }));
     return true;
   }
   if (message?.type === 'piwi-set-language') {

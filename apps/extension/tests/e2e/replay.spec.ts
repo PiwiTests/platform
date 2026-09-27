@@ -254,6 +254,21 @@ test.describe('replay-panel.js', () => {
     await expect.poll(async () => (await replayState(page)).results.length).toBe(2);
   });
 
+  test('says which request conditions were on', async ({ context }) => {
+    await routePages(context, 'buggy');
+    const session = running();
+    const conditions = [{ id: 'c1', method: 'GET', pattern: '**/api/cart', kind: 'delay', delayMs: 2000 }];
+    await stubChrome(context, { piwiReplay: { ...(session.piwiReplay as object), conditions } });
+    await openShadowRoots(context);
+    const page = await context.newPage();
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.goto(`${ORIGIN}/login`);
+    await verdict(page);
+    await expect(page.locator('#piwi-replay-hud-host')).toContainText(
+      'Request conditions on: Slow down GET **/api/cart by 2 s',
+    );
+  });
+
   test('stops where the page differs, and says why', async ({ context }) => {
     await routePages(context, 'broken');
     await stubChrome(context, running());

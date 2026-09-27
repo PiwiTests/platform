@@ -2089,6 +2089,15 @@
       }
     }
   },
+  "replay_underConditions": {
+    "message": "Aktive Bedingungen für Anfragen: $conditions$",
+    "placeholders": {
+      "conditions": {
+        "content": "$1",
+        "example": "Slow down GET **/api/cart by 2 s"
+      }
+    }
+  },
   "replay_pause": {
     "message": "Pause"
   },
@@ -4084,6 +4093,103 @@
         "example": "mocks/cart.json"
       }
     }
+  },
+  "devtools_conditionDelay": {
+    "message": "$request$ um $seconds$ s verlangsamen",
+    "placeholders": {
+      "request": {
+        "content": "$1",
+        "example": "GET **/api/cart"
+      },
+      "seconds": {
+        "content": "$2",
+        "example": "2"
+      }
+    }
+  },
+  "devtools_conditionError": {
+    "message": "$request$ mit einem 500-Fehler beantworten",
+    "placeholders": {
+      "request": {
+        "content": "$1",
+        "example": "GET **/api/cart"
+      }
+    }
+  },
+  "devtools_conditionAbort": {
+    "message": "$request$ wie einen Netzwerkfehler scheitern lassen",
+    "placeholders": {
+      "request": {
+        "content": "$1",
+        "example": "GET **/api/cart"
+      }
+    }
+  },
+  "devtools_conditionsOn_one": {
+    "message": "Piwi Picker: $count$ Bedingung für Anfragen aktiv",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "devtools_conditionsOn_other": {
+    "message": "Piwi Picker: $count$ Bedingungen für Anfragen aktiv",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "devtools_conditionsOff": {
+    "message": "Ausschalten"
+  },
+  "devtools_conditionsNoPage": {
+    "message": "Bedingungen für Anfragen brauchen eine Webseite im Tab."
+  },
+  "devtools_conditionsNeedAccess": {
+    "message": "Piwi Picker braucht Zugriff auf diese Website, um ihre Anfragen zu verlangsamen oder scheitern zu lassen."
+  },
+  "devtools_conditionFailed": {
+    "message": "Die Bedingung konnte nicht gesetzt werden: $error$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "No tab with id: 12"
+      }
+    }
+  },
+  "devtools_conditionsTitle": {
+    "message": "Bedingungen für Anfragen"
+  },
+  "devtools_conditionsFor": {
+    "message": "Diese Anfrage verlangsamen oder scheitern lassen"
+  },
+  "devtools_conditionsNone": {
+    "message": "Keine Bedingung aktiv. Wählen Sie unten eine Anfrage, um sie zu verlangsamen oder scheitern zu lassen."
+  },
+  "devtools_conditionsLimits": {
+    "message": "Bedingungen gelten für die fetch- und XHR-Aufrufe der Seiten dieses Tabs, bis Sie sie ausschalten oder den Tab schließen. Die CPU oder die ganze Seite zu drosseln und Dokumente, Skripte, Bilder oder Anfragen eines Service Workers zu verzögern, braucht die debugger-Berechtigung, die Piwi Picker nicht anfordert."
+  },
+  "devtools_conditionRemove": {
+    "message": "Entfernen"
+  },
+  "devtools_conditionsAllOff": {
+    "message": "Alle ausschalten und neu laden"
+  },
+  "devtools_delaySeconds": {
+    "message": "Verzögerung in Sekunden"
+  },
+  "devtools_slowDown": {
+    "message": "Verlangsamen"
+  },
+  "devtools_failError": {
+    "message": "Mit 500 scheitern"
+  },
+  "devtools_failAbort": {
+    "message": "Scheitern (Netzwerkfehler)"
   },
   "login_title": {
     "message": "Anmeldung für Tests speichern"

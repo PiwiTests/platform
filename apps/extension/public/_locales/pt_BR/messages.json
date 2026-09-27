@@ -2089,6 +2089,15 @@
       }
     }
   },
+  "replay_underConditions": {
+    "message": "Condições nas requisições ativas: $conditions$",
+    "placeholders": {
+      "conditions": {
+        "content": "$1",
+        "example": "Slow down GET **/api/cart by 2 s"
+      }
+    }
+  },
   "replay_pause": {
     "message": "Pausar"
   },
@@ -4084,6 +4093,103 @@
         "example": "mocks/cart.json"
       }
     }
+  },
+  "devtools_conditionDelay": {
+    "message": "Atrasar $request$ em $seconds$ s",
+    "placeholders": {
+      "request": {
+        "content": "$1",
+        "example": "GET **/api/cart"
+      },
+      "seconds": {
+        "content": "$2",
+        "example": "2"
+      }
+    }
+  },
+  "devtools_conditionError": {
+    "message": "Responder a $request$ com um erro 500",
+    "placeholders": {
+      "request": {
+        "content": "$1",
+        "example": "GET **/api/cart"
+      }
+    }
+  },
+  "devtools_conditionAbort": {
+    "message": "Fazer $request$ falhar como erro de rede",
+    "placeholders": {
+      "request": {
+        "content": "$1",
+        "example": "GET **/api/cart"
+      }
+    }
+  },
+  "devtools_conditionsOn_one": {
+    "message": "Piwi Picker: $count$ condição nas requisições ativa",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "devtools_conditionsOn_other": {
+    "message": "Piwi Picker: $count$ condições nas requisições ativas",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "devtools_conditionsOff": {
+    "message": "Desativar"
+  },
+  "devtools_conditionsNoPage": {
+    "message": "As condições nas requisições precisam de uma página web na aba."
+  },
+  "devtools_conditionsNeedAccess": {
+    "message": "O Piwi Picker precisa de acesso a este site para atrasar ou fazer falhar as requisições dele."
+  },
+  "devtools_conditionFailed": {
+    "message": "Não foi possível ativar a condição: $error$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "No tab with id: 12"
+      }
+    }
+  },
+  "devtools_conditionsTitle": {
+    "message": "Condições nas requisições"
+  },
+  "devtools_conditionsFor": {
+    "message": "Atrasar ou fazer falhar esta requisição"
+  },
+  "devtools_conditionsNone": {
+    "message": "Nenhuma condição ativa. Selecione uma requisição abaixo para atrasá-la ou fazê-la falhar."
+  },
+  "devtools_conditionsLimits": {
+    "message": "As condições valem para as chamadas fetch e XHR das páginas desta aba até você desativá-las ou fechar a aba. Limitar a CPU ou a página inteira, e atrasar documentos, scripts, imagens ou as requisições de um service worker, exigem a permissão debugger, que o Piwi Picker não pede."
+  },
+  "devtools_conditionRemove": {
+    "message": "Remover"
+  },
+  "devtools_conditionsAllOff": {
+    "message": "Desativar tudo e recarregar"
+  },
+  "devtools_delaySeconds": {
+    "message": "Atraso em segundos"
+  },
+  "devtools_slowDown": {
+    "message": "Atrasar"
+  },
+  "devtools_failError": {
+    "message": "Falhar com 500"
+  },
+  "devtools_failAbort": {
+    "message": "Falhar (erro de rede)"
   },
   "login_title": {
     "message": "Salvar o login para os testes"
