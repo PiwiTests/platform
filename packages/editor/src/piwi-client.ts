@@ -4,7 +4,7 @@
  * but file paths the index already holds.
  */
 import type { LocatorIndex, LocatorIndexTest } from '@piwitests/core/locator-index';
-import type { RankedLocator } from '@piwitests/core/locator-healing-types';
+import type { LocatorHealingResult, RankedLocator } from '@piwitests/core/locator-healing-types';
 import type { PiwiConnection } from '@piwitests/core/dotenv';
 
 const TIMEOUT_MS = 15_000;
@@ -49,6 +49,35 @@ export interface CallSiteAlternatives {
   alternatives: RankedLocator[];
   lastSeenAt: string;
 }
+
+/** The latest run on a branch and its failed executions (`GET /api/projects/:id/branch-failures`). */
+export interface BranchFailures {
+  run: {
+    id: number;
+    status: string;
+    branch: string | null;
+    startTime: string;
+    totalTests: number;
+    passedTests: number;
+    failedTests: number;
+    flakyTests: number;
+    skippedTests: number;
+  } | null;
+  failures: Array<{
+    executionId: number;
+    testCaseId: number;
+    title: string;
+    file: string;
+    line: number | null;
+    status: string;
+    headline: string | null;
+    location: string | null;
+    traces: string[];
+    screenshot: string | null;
+  }>;
+}
+
+export type BranchFailure = BranchFailures['failures'][number];
 
 export class PiwiClient {
   constructor(readonly connection: PiwiConnection) {}
@@ -119,6 +148,37 @@ export class PiwiClient {
       { definition: { include: [{ ids: testIds }] }, format: 'args' },
     );
     return { args: body.materialization?.args ?? [], command: body.materialization?.command ?? '' };
+  }
+
+  branchFailures(projectId: number, branch: string | null): Promise<BranchFailures> {
+    return this.get(
+      `/api/projects/${projectId}/branch-failures${branch ? `?branch=${encodeURIComponent(branch)}` : ''}`,
+    );
+  }
+
+  locatorHealing(executionId: number): Promise<LocatorHealingResult> {
+    return this.get(`/api/test-run-cases/${executionId}/locator-healing`);
+  }
+
+  /** A stored file's bytes (`/api/files/<path>`). */
+  async file(storedPath: string): Promise<Uint8Array> {
+    const encoded = storedPath.split('/').map(encodeURIComponent).join('/');
+    const response = await fetch(`${this.connection.serverUrl}/api/files/${encoded}`, {
+      headers: this.connection.apiKey ? { 'X-API-Key': this.connection.apiKey } : {},
+      signal: AbortSignal.timeout(TIMEOUT_MS * 4),
+    });
+    if (!response.ok) throw new PiwiHttpError(`/api/files answered ${response.status}`, response.status);
+    return new Uint8Array(await response.arrayBuffer());
+  }
+
+  /** An execution's page in the dashboard. */
+  executionUrl(executionId: number): string {
+    return `${this.connection.serverUrl}/test-run-cases/${executionId}`;
+  }
+
+  /** A run's page in the dashboard. */
+  runUrl(runId: number): string {
+    return `${this.connection.serverUrl}/test-runs/${runId}`;
   }
 
   /** A test case's page in the dashboard. */

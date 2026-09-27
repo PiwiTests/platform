@@ -19,6 +19,10 @@ machine, the mapping from a repo-relative path (`tests/checkout.spec.ts`) to a
 real file is configured **per browser** and stored locally — it is never sent to
 the server.
 
+To see Piwi's answers inside the editor instead — CI failures at their lines, the
+tests behind each locator, the heal as a quick fix — install the
+[editor extension](/features/editors).
+
 ## Set it up
 
 1. Hover any source path and click the **⌄** caret, then **Configure…** — or open

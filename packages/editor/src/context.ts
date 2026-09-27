@@ -4,12 +4,20 @@
  * the project's indexes, fetched in the background and refreshed on a timer.
  * Nothing here blocks typing: a request answers from what is cached.
  */
+import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { parseDotEnv, resolvePiwiConnection, type PiwiConnection } from '@piwitests/core/dotenv';
 import type { LocatorIndex } from '@piwitests/core/locator-index';
-import { PiwiClient, type CallSiteAlternatives, type CatalogCase, type CodeIndex } from './piwi-client.js';
+import type { LocatorHealingResult } from '@piwitests/core/locator-healing-types';
+import {
+  PiwiClient,
+  type BranchFailures,
+  type CallSiteAlternatives,
+  type CatalogCase,
+  type CodeIndex,
+} from './piwi-client.js';
 import type { EditorCredentials } from './protocol.js';
 import { committedText, currentBranch, headCommit, repositoryRoot, translationValues } from './workspace.js';
 
@@ -81,6 +89,12 @@ export class PiwiContext {
   codeIndex: CodeIndex | null = null;
   /** Why the context has no data, in one sentence; null when it has. */
   problem: string | null = null;
+  /** The branch whose latest run is read: the checked-out one, else the default branch. */
+  runBranch: string | null = null;
+  /** The latest run on `runBranch` and its failures; null before the first answer. */
+  failures: BranchFailures | null = null;
+  private readonly healings = new Map<number, Promise<LocatorHealingResult | null>>();
+  private readonly downloads = new Map<string, Promise<string | null>>();
   private readonly catalog = new Map<string, { at: number; items: CatalogCase[] }>();
   private readonly alternatives = new Map<string, { at: number; items: CallSiteAlternatives[] }>();
   private committedFiles = new Map<string, string | null>();
@@ -137,9 +151,66 @@ export class PiwiContext {
       this.catalog.clear();
       this.alternatives.clear();
       this.problem = null;
+      await this.refreshRun();
     } catch (e) {
       this.problem = `Could not reach ${connection.serverUrl}: ${(e as Error).message}`;
     }
+  }
+
+  /**
+   * Fetch the latest run on the checked-out branch (the default branch on a
+   * detached head). Returns whether the run or its failures changed.
+   */
+  async refreshRun(): Promise<boolean> {
+    if (!this.client || !this.project) return false;
+    const branch = (await currentBranch(this.repoRoot)) ?? this.index?.defaultBranch ?? null;
+    try {
+      const next = await this.client.branchFailures(this.project.id, branch);
+      const changed = branch !== this.runBranch || JSON.stringify(next) !== JSON.stringify(this.failures);
+      if (next.run?.id !== this.failures?.run?.id) this.healings.clear();
+      this.runBranch = branch;
+      this.failures = next;
+      return changed;
+    } catch {
+      return false;
+    }
+  }
+
+  /** The healing of a failed execution, fetched once. */
+  healing(executionId: number): Promise<LocatorHealingResult | null> {
+    if (!this.client) return Promise.resolve(null);
+    let found = this.healings.get(executionId);
+    if (!found) {
+      found = this.client.locatorHealing(executionId).catch(() => null);
+      this.healings.set(executionId, found);
+    }
+    return found;
+  }
+
+  /** A stored file downloaded to the temporary directory, once; null when it cannot be fetched. */
+  evidence(storedPath: string): Promise<string | null> {
+    const client = this.client;
+    if (!client) return Promise.resolve(null);
+    const key = `${client.connection.serverUrl}\n${storedPath}`;
+    let found = this.downloads.get(key);
+    if (!found) {
+      const dir = path.join(os.tmpdir(), 'piwi-editor', createHash('sha256').update(key).digest('hex').slice(0, 16));
+      const target = path.join(dir, path.basename(storedPath) || 'file');
+      found = (async () => {
+        if (fs.existsSync(target)) return target;
+        try {
+          const bytes = await client.file(storedPath);
+          await fs.promises.mkdir(dir, { recursive: true });
+          await fs.promises.writeFile(target, bytes);
+          return target;
+        } catch {
+          this.downloads.delete(key);
+          return null;
+        }
+      })();
+      this.downloads.set(key, found);
+    }
+    return found;
   }
 
   /** The catalog's cases defined in a spec file (its path relative to the config). */

@@ -8,8 +8,13 @@
  * - in application files, a warning on each changed line whose string the
  *   project's locators find elements by, with the rewrite of every call site
  *   as a quick fix, as `piwi preflight` computes it for the unsaved buffer;
+ * - the failures of the latest run on the checked-out branch, as errors at
+ *   their failing lines in every file (the Problems panel), with the healing's
+ *   edit as a quick fix and the trace, the screenshot and the execution page
+ *   one action away;
  * - custom requests (`protocol.ts`) for the summary lines each editor draws
- *   natively above a file, a test and a locator line.
+ *   natively above a file, a test and a locator line, the run status, a trace
+ *   to open, and the MCP server to register.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -46,9 +51,14 @@ import {
   type LineLocator,
 } from './analysis.js';
 import { PiwiContext } from './context.js';
+import type { BranchFailure } from './piwi-client.js';
 import {
   FILE_SUMMARY_REQUEST,
+  MCP_REQUEST,
   REFRESH_REQUEST,
+  RUN_STATUS_NOTIFICATION,
+  RUN_STATUS_REQUEST,
+  TRACE_REQUEST,
   RUN_ARGS_REQUEST,
   SET_CREDENTIALS_NOTIFICATION,
   STATUS_REQUEST,
@@ -57,17 +67,25 @@ import {
   type EditorTest,
   type FileSummary,
   type FileSummaryParams,
+  type McpServersResult,
   type RunCommand,
+  type RunStatusResult,
   type RunTestsArgs,
   type StatusResult,
   type SummaryLine,
   type TestsForFile,
   type TestsForFileParams,
+  type TraceParams,
+  type TraceResult,
 } from './protocol.js';
-import { findPlaywrightRoots, relativeTo } from './workspace.js';
+import { findPlaywrightRoots, relativeTo, resolveReportedFile, splitLocation } from './workspace.js';
 
 /** How often every context fetches its indexes again. */
 const REFRESH_MS = 5 * 60_000;
+/** How often the latest run is read again while it runs, and otherwise. */
+const RUN_POLL_ACTIVE_MS = 15_000;
+const RUN_POLL_MS = 60_000;
+const ACTIVE_RUN = new Set(['running', 'initializing', 'finalizing']);
 /** Pause after a keystroke before an application file is compared with `HEAD`. */
 const DEBOUNCE_MS = 500;
 const SPEC_FILE = /(?:^|\/)[^/]+\.(?:spec|test)\.[cm]?[jt]sx?$/;
@@ -78,6 +96,8 @@ export interface ServerOptions {
   env?: Record<string, string | undefined>;
   refreshMs?: number;
   debounceMs?: number;
+  /** How often the latest run is read while none runs; a quarter of it while one runs. */
+  runPollMs?: number;
 }
 
 /** What the last analysis of an application file found, for its quick fixes and hover. */
@@ -92,6 +112,12 @@ function uriToPath(uri: string): string | null {
   } catch {
     return null;
   }
+}
+
+/** What a `ci-failure` diagnostic carries, for its quick fixes and hover. */
+interface FailureData {
+  root: string;
+  executionId: number;
 }
 
 function toEditorTest(context: PiwiContext, t: LocatorIndexTest): EditorTest {
@@ -118,6 +144,28 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   const appAnalyses = new Map<string, AppAnalysis>();
   const timers = new Map<string, ReturnType<typeof setTimeout>>();
   let refreshTimer: ReturnType<typeof setInterval> | null = null;
+  let runTimer: ReturnType<typeof setTimeout> | null = null;
+  let stopped = false;
+  /** Diagnostics of the analysis of open documents, and of the latest run's failures, by URI. */
+  const analysisDiagnostics = new Map<string, Diagnostic[]>();
+  let failureDiagnostics = new Map<string, Diagnostic[]>();
+  let lastRunStatus = '';
+
+  const publish = (uri: string) =>
+    connection.sendDiagnostics({
+      uri,
+      diagnostics: [...(analysisDiagnostics.get(uri) ?? []), ...(failureDiagnostics.get(uri) ?? [])],
+    });
+
+  const readText = (file: string): string | null => {
+    const open = documents.get(pathToFileURL(file).href);
+    if (open) return open.getText();
+    try {
+      return fs.readFileSync(file, 'utf-8');
+    } catch {
+      return null;
+    }
+  };
 
   const contextFor = (file: string): PiwiContext | null => {
     const owning = contexts
@@ -135,17 +183,119 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   };
 
   const lineOf = (file: string, line: number): string | null => {
-    const open = documents.get(pathToFileURL(file).href);
-    const text = open ? open.getText() : fs.existsSync(file) ? fs.readFileSync(file, 'utf-8') : null;
+    const text = readText(file);
     if (text === null) return null;
     return text.split(/\r?\n/)[line - 1] ?? null;
+  };
+
+  /** Where a failure shows: its failing call when that file is in the workspace, else its `test(…)` line. */
+  const failureSite = (context: PiwiContext, f: BranchFailure): { file: string; line: number } | null => {
+    const roots = [context.root, context.repoRoot];
+    const at = f.location ? splitLocation(f.location) : null;
+    const located = at ? resolveReportedFile(roots, at.file) : null;
+    if (located && at) return { file: located, line: at.line };
+    const spec = resolveReportedFile(roots, f.file);
+    return spec ? { file: spec, line: f.line ?? 1 } : null;
+  };
+
+  /** Rebuild the failure diagnostics of every context, and publish the files whose set changed. */
+  const publishFailures = () => {
+    const next = new Map<string, Diagnostic[]>();
+    for (const context of contexts) {
+      for (const f of context.failures?.failures ?? []) {
+        const site = failureSite(context, f);
+        if (!site) continue;
+        const text = lineOf(site.file, site.line) ?? '';
+        const start = text.length - text.trimStart().length;
+        const uri = pathToFileURL(site.file).href;
+        (next.get(uri) ?? next.set(uri, []).get(uri)!).push({
+          range: {
+            start: { line: site.line - 1, character: start },
+            end: { line: site.line - 1, character: Math.max(start, text.trimEnd().length) },
+          },
+          severity: DiagnosticSeverity.Error,
+          source: 'Piwi',
+          code: 'ci-failure',
+          codeDescription: context.client ? { href: context.client.executionUrl(f.executionId) } : undefined,
+          message: `${f.headline ?? 'Failed'} (${f.title}, run #${context.failures!.run!.id})`,
+          data: { root: context.root, executionId: f.executionId } satisfies FailureData,
+        });
+      }
+    }
+    const previous = failureDiagnostics;
+    failureDiagnostics = next;
+    for (const uri of new Set([...previous.keys(), ...next.keys()])) {
+      if (JSON.stringify(previous.get(uri) ?? []) !== JSON.stringify(next.get(uri) ?? [])) publish(uri);
+    }
+  };
+
+  const runStatus = (): RunStatusResult => ({
+    contexts: contexts
+      .filter((c) => c.client && c.project)
+      .map((c) => {
+        const run = c.failures?.run ?? null;
+        return {
+          root: c.root,
+          branch: c.runBranch,
+          run: run
+            ? {
+                id: run.id,
+                status: run.status,
+                startTime: run.startTime,
+                totalTests: run.totalTests,
+                passedTests: run.passedTests,
+                failedTests: run.failedTests,
+                flakyTests: run.flakyTests,
+                skippedTests: run.skippedTests,
+                url: c.client!.runUrl(run.id),
+              }
+            : null,
+          failures: c.failures?.failures.length ?? 0,
+        };
+      }),
+  });
+
+  /** Publish the failures and tell the client when the run status changed. */
+  const runChanged = () => {
+    publishFailures();
+    const status = runStatus();
+    const serialized = JSON.stringify(status);
+    if (serialized !== lastRunStatus) {
+      lastRunStatus = serialized;
+      void connection.sendNotification(RUN_STATUS_NOTIFICATION, status);
+    }
+  };
+
+  /** Read the latest runs again, sooner while one runs. */
+  const pollRuns = () => {
+    if (stopped) return;
+    const base = options.runPollMs ?? RUN_POLL_MS;
+    const active = contexts.some((c) => ACTIVE_RUN.has(c.failures?.run?.status ?? ''));
+    runTimer = setTimeout(
+      async () => {
+        const changed = await Promise.all(contexts.map((c) => c.refreshRun()));
+        if (changed.some(Boolean)) runChanged();
+        pollRuns();
+      },
+      active ? Math.min(base, RUN_POLL_ACTIVE_MS, Math.max(1, Math.floor(base / 4))) : base,
+    );
+    runTimer.unref?.();
+  };
+
+  const contextOfRoot = (root: string) => contexts.find((c) => c.root === root) ?? null;
+
+  const failureOf = (data: FailureData): { context: PiwiContext; failure: BranchFailure } | null => {
+    const context = contextOfRoot(data.root);
+    const failure = context?.failures?.failures.find((f) => f.executionId === data.executionId);
+    return context && failure ? { context, failure } : null;
   };
 
   async function validate(document: TextDocument): Promise<void> {
     const file = uriToPath(document.uri);
     const context = file ? contextFor(file) : null;
     if (!file || !context?.index) {
-      connection.sendDiagnostics({ uri: document.uri, diagnostics: [] });
+      analysisDiagnostics.delete(document.uri);
+      publish(document.uri);
       return;
     }
     const lines = document.getText().split(/\r?\n/);
@@ -202,7 +352,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         appAnalyses.delete(document.uri);
       }
     }
-    connection.sendDiagnostics({ uri: document.uri, diagnostics });
+    analysisDiagnostics.set(document.uri, diagnostics);
+    publish(document.uri);
   }
 
   const schedule = (document: TextDocument, delay = options.debounceMs ?? DEBOUNCE_MS) => {
@@ -218,6 +369,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
 
   async function refreshAll(): Promise<void> {
     await Promise.all(contexts.map((c) => c.refresh(env, credentials)));
+    runChanged();
     for (const document of documents.all()) schedule(document, 0);
   }
 
@@ -248,13 +400,15 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     void refreshAll();
     refreshTimer = setInterval(() => void refreshAll(), options.refreshMs ?? REFRESH_MS);
     refreshTimer.unref?.();
+    pollRuns();
   });
 
   documents.onDidOpen((e) => schedule(e.document, 0));
   documents.onDidChangeContent((e) => schedule(e.document));
   documents.onDidClose((e) => {
     appAnalyses.delete(e.document.uri);
-    connection.sendDiagnostics({ uri: e.document.uri, diagnostics: [] });
+    analysisDiagnostics.delete(e.document.uri);
+    publish(e.document.uri);
   });
 
   connection.onCodeAction(async (params): Promise<CodeAction[]> => {
@@ -316,12 +470,94 @@ export function startServer(connection: Connection, options: ServerOptions = {})
           isPreferred: true,
           edit: { changes },
         });
+      } else if (diagnostic.code === 'ci-failure') {
+        const found = failureOf(diagnostic.data as FailureData);
+        if (!found) continue;
+        const { context: owner, failure } = found;
+        const healing = await owner.healing(failure.executionId);
+        const edit = healing?.edit;
+        const line = diagnostic.range.start.line;
+        const current = lines[line] ?? '';
+        if (edit && edit.line === line + 1 && current.trim() === edit.oldLine.trim() && edit.newLine.trim()) {
+          const indent = current.slice(0, current.length - current.trimStart().length);
+          actions.push({
+            title: `Heal: use ${healing!.recommendation?.recommended?.locator ?? edit.newLine.trim()}`,
+            kind: CodeActionKind.QuickFix,
+            diagnostics: [diagnostic],
+            isPreferred: true,
+            edit: {
+              changes: {
+                [params.textDocument.uri]: [
+                  {
+                    range: { start: { line, character: 0 }, end: { line, character: current.length } },
+                    newText: indent + edit.newLine.trimStart(),
+                  },
+                ],
+              },
+            },
+          });
+        }
+        if (failure.traces.length) {
+          actions.push({
+            title: 'Open the trace',
+            kind: CodeActionKind.QuickFix,
+            diagnostics: [diagnostic],
+            command: {
+              title: 'Open the trace',
+              command: 'piwi.openTrace',
+              arguments: [{ uri: params.textDocument.uri, executionId: failure.executionId } satisfies TraceParams],
+            },
+          });
+        }
+        if (owner.client) {
+          actions.push({
+            title: 'Open the failure in the dashboard',
+            kind: CodeActionKind.QuickFix,
+            diagnostics: [diagnostic],
+            command: {
+              title: 'Open the failure in the dashboard',
+              command: 'piwi.openInDashboard',
+              arguments: [owner.client.executionUrl(failure.executionId)],
+            },
+          });
+        }
       }
     }
     return actions;
   });
 
-  connection.onHover((params): Hover | null => {
+  connection.onHover(async (params): Promise<Hover | null> => {
+    const failures = (failureDiagnostics.get(params.textDocument.uri) ?? []).filter(
+      (d) => d.range.start.line === params.position.line,
+    );
+    const analysis = await hoverOfAnalysis(params);
+    if (!failures.length) return analysis;
+    const parts: string[] = [];
+    for (const d of failures) {
+      const found = failureOf(d.data as FailureData);
+      if (!found) continue;
+      const { context, failure } = found;
+      const shot = failure.screenshot ? await context.evidence(failure.screenshot) : null;
+      parts.push(
+        [
+          `**CI failure** · [${failure.title.replace(/[[\]]/g, '')}](${context.client?.executionUrl(failure.executionId) ?? ''}) · run #${context.failures?.run?.id ?? ''}`,
+          failure.headline ?? '',
+          shot ? `![Failure screenshot](${pathToFileURL(shot).href})` : '',
+        ]
+          .filter(Boolean)
+          .join('\n\n'),
+      );
+    }
+    const analysisText =
+      analysis && typeof analysis.contents === 'object' && 'value' in analysis.contents ? analysis.contents.value : '';
+    const value = [...parts, analysisText].filter(Boolean).join('\n\n---\n\n');
+    return value ? { contents: { kind: 'markdown', value } } : null;
+  });
+
+  const hoverOfAnalysis = async (params: {
+    textDocument: { uri: string };
+    position: { line: number };
+  }): Promise<Hover | null> => {
     const file = uriToPath(params.textDocument.uri);
     const context = file ? contextFor(file) : null;
     if (!file || !context?.index) return null;
@@ -344,7 +580,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     const here = locatorsInFile(context.index, relative).filter((l) => l.line === line);
     if (!here.length) return null;
     return { contents: { kind: 'markdown', value: here.map((l) => hoverFor(context, l)).join('\n\n---\n\n') } };
-  });
+  };
 
   const hoverFor = (context: PiwiContext, l: LineLocator): string => {
     const icon = (status: string | null) =>
@@ -506,6 +742,43 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     }),
   );
 
+  connection.onRequest(RUN_STATUS_REQUEST, (): RunStatusResult => runStatus());
+
+  connection.onRequest(TRACE_REQUEST, async (params: TraceParams): Promise<TraceResult | null> => {
+    const file = uriToPath(params.uri);
+    const candidates = [file ? contextFor(file) : null, ...contexts].filter((c): c is PiwiContext => !!c);
+    for (const context of candidates) {
+      const failure = context.failures?.failures.find((f) => f.executionId === params.executionId);
+      if (!failure?.traces.length) continue;
+      const trace = await context.evidence(failure.traces[failure.traces.length - 1]!);
+      if (!trace) return null;
+      return { path: trace, cwd: context.root, command: `npx playwright show-trace "${trace}"` };
+    }
+    return null;
+  });
+
+  connection.onRequest(MCP_REQUEST, (): McpServersResult => {
+    const seen = new Set<string>();
+    const servers: McpServersResult['servers'] = [];
+    for (const c of contexts) {
+      const conn = c.client?.connection;
+      if (!conn || seen.has(conn.serverUrl)) continue;
+      seen.add(conn.serverUrl);
+      let host = conn.serverUrl;
+      try {
+        host = new URL(conn.serverUrl).host;
+      } catch {
+        // keep the URL as given
+      }
+      servers.push({
+        label: `Piwi (${host})`,
+        url: `${conn.serverUrl}/mcp`,
+        headers: conn.apiKey ? { Authorization: `Bearer ${conn.apiKey}` } : {},
+      });
+    }
+    return { servers };
+  });
+
   connection.onRequest(REFRESH_REQUEST, async () => {
     await refreshAll();
     return null;
@@ -519,7 +792,9 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   documents.listen(connection);
   connection.listen();
   return () => {
+    stopped = true;
     if (refreshTimer) clearInterval(refreshTimer);
+    if (runTimer) clearTimeout(runTimer);
     for (const t of timers.values()) clearTimeout(t);
   };
 }

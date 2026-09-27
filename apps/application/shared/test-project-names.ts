@@ -23,6 +23,7 @@ export const PROJECT = {
   BLOB_GZ: 'blob-gz-test-project',
   BLOCK_LAYOUT: 'block-layout-test',
   BLOCK_LAYOUT_VERSIONS: 'block-layout-versions-test',
+  BRANCH_FAILURES: 'branch-failures-test',
   BROWSER_NOTIFY: 'browser-notify-test',
   CAPABILITY_OPT_OUT: 'capability-opt-out-test',
   CAPABILITY_ROLE_GATING: 'capability-role-gating-test',

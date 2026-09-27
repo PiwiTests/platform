@@ -11,6 +11,7 @@
     "packages/editor",
     "apps/application",
     "apps/extension",
+    "apps/vscode",
     "integrations/nitro"
   ],
   "engines": {

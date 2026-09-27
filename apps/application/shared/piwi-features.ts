@@ -422,6 +422,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         where: 'any source path',
         doc: 'features/ide-integration',
       },
+      {
+        title: 'Editor extensions',
+        summary:
+          'In VS Code: the latest CI failures at their lines with the heal as a quick fix, the tests behind each locator and file, and the locators an unsaved change breaks.',
+        needs: [],
+        where: 'VS Code extension',
+        doc: 'features/editors',
+      },
     ],
   },
   {

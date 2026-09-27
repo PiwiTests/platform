@@ -16,7 +16,15 @@ import {
 import { createConnection } from 'vscode-languageserver/node';
 import type { LocatorIndex } from '@piwitests/core/locator-index';
 import { startServer } from '../src/server';
-import type { FileSummary, RunCommand, StatusResult, TestsForFile } from '../src/protocol';
+import type {
+  FileSummary,
+  McpServersResult,
+  RunCommand,
+  RunStatusResult,
+  StatusResult,
+  TestsForFile,
+  TraceResult,
+} from '../src/protocol';
 
 const use = (test: number, site: string, actions = ['click']) => ({
   test,
@@ -74,6 +82,7 @@ let server: http.Server;
 let url = '';
 let client: MessageConnection;
 let stop: () => void;
+const runStatuses: RunStatusResult[] = [];
 const diagnostics = new Map<
   string,
   Array<{ message: string; code?: string; severity?: number; range: unknown; data?: unknown; source?: string }>
@@ -149,6 +158,55 @@ beforeAll(async () => {
         }),
       );
     }
+    if (u === '/api/projects/7/branch-failures?branch=main') {
+      return res.end(
+        JSON.stringify({
+          run: {
+            id: 41,
+            status: 'failed',
+            branch: 'main',
+            startTime: '2026-09-27T10:00:00.000Z',
+            totalTests: 3,
+            passedTests: 1,
+            failedTests: 1,
+            flakyTests: 1,
+            skippedTests: 0,
+          },
+          failures: [
+            {
+              executionId: 900,
+              testCaseId: 3,
+              title: 'removes a row',
+              file: 'tests/checkout.spec.ts',
+              line: 3,
+              status: 'failed',
+              headline: "locator('.cart-row').nth(2) was not found",
+              location: '/ci/work/tests/pages/checkout.page.ts:5:21',
+              traces: ['traces/900.zip'],
+              screenshot: 'shots/900.png',
+            },
+          ],
+        }),
+      );
+    }
+    if (u === '/api/test-run-cases/900/locator-healing') {
+      return res.end(
+        JSON.stringify({
+          recommendation: { recommended: { locator: "getByRole('row', { name: /Mug/ })" } },
+          edit: {
+            filePath: 'tests/pages/checkout.page.ts',
+            line: 5,
+            oldLine: "  row = () => this.page.locator('.cart-row').nth(2);",
+            newLine: "  row = () => this.page.getByRole('row', { name: /Mug/ });",
+            unifiedDiff: null,
+          },
+        }),
+      );
+    }
+    if (u === '/api/files/traces/900.zip' || u === '/api/files/shots/900.png') {
+      res.setHeader('Content-Type', 'application/octet-stream');
+      return res.end(Buffer.from('PK-stub'));
+    }
     if (u === '/api/projects/7/selections/preview') {
       return res.end(
         JSON.stringify({
@@ -189,6 +247,9 @@ beforeAll(async () => {
   client = createMessageConnection(new StreamMessageReader(toClient), new StreamMessageWriter(toServer));
   client.onNotification('textDocument/publishDiagnostics', (p: { uri: string; diagnostics: never[] }) => {
     diagnostics.set(p.uri, p.diagnostics);
+  });
+  client.onNotification('piwi/runStatusChanged', (p: RunStatusResult) => {
+    runStatuses.push(p);
   });
   client.listen();
   const init = await client.sendRequest('initialize', {
@@ -306,6 +367,74 @@ describe('the Piwi language server', () => {
     })) as { contents: { value: string } };
     expect(hover.contents.value).toContain("**`getByRole('button', { name: 'Pay now' })`** · 2 tests · click");
     expect(hover.contents.value).toContain('Pages: `/checkout`');
+  });
+
+  test('lists the latest run’s failures at their failing line, with the heal, the trace and the page', async () => {
+    const all = await waitFor(() => diagnostics.get(uri('tests/pages/checkout.page.ts')));
+    const failure = all.find((d) => d.code === 'ci-failure')!;
+    expect(failure).toMatchObject({
+      severity: 1,
+      source: 'Piwi',
+      message: "locator('.cart-row').nth(2) was not found (removes a row, run #41)",
+      range: { start: { line: 4, character: 2 } },
+      codeDescription: { href: `${url}/test-run-cases/900` },
+    });
+    const actions = (await client.sendRequest('textDocument/codeAction', {
+      textDocument: { uri: uri('tests/pages/checkout.page.ts') },
+      range: failure.range,
+      context: { diagnostics: [failure] },
+    })) as Array<{
+      title: string;
+      edit?: { changes: Record<string, Array<{ newText: string }>> };
+      command?: { command: string; arguments: unknown[] };
+    }>;
+    expect(actions.map((a) => a.title)).toEqual([
+      "Heal: use getByRole('row', { name: /Mug/ })",
+      'Open the trace',
+      'Open the failure in the dashboard',
+    ]);
+    expect(actions[0]!.edit!.changes[uri('tests/pages/checkout.page.ts')]![0]!.newText).toBe(
+      "  row = () => this.page.getByRole('row', { name: /Mug/ });",
+    );
+    expect(actions[1]!.command).toEqual({
+      title: 'Open the trace',
+      command: 'piwi.openTrace',
+      arguments: [{ uri: uri('tests/pages/checkout.page.ts'), executionId: 900 }],
+    });
+
+    const hover = (await client.sendRequest('textDocument/hover', {
+      textDocument: { uri: uri('tests/pages/checkout.page.ts') },
+      position: { line: 4, character: 30 },
+    })) as { contents: { value: string } };
+    expect(hover.contents.value).toContain(`**CI failure** · [removes a row](${url}/test-run-cases/900) · run #41`);
+    expect(hover.contents.value).toMatch(/!\[Failure screenshot\]\(file:\/\/.*900\.png\)/);
+    expect(hover.contents.value).toContain("**`locator('.cart-row').nth(2)`**");
+
+    const trace = (await client.sendRequest('piwi/trace', {
+      uri: uri('tests/pages/checkout.page.ts'),
+      executionId: 900,
+    })) as TraceResult;
+    expect(trace.cwd).toBe(dir);
+    expect(fs.readFileSync(trace.path, 'utf-8')).toBe('PK-stub');
+    expect(trace.command).toBe(`npx playwright show-trace "${trace.path}"`);
+  });
+
+  test('reports the run status, and pushes it when it changes', async () => {
+    const status = (await client.sendRequest('piwi/runStatus')) as RunStatusResult;
+    expect(status.contexts).toEqual([
+      {
+        root: dir,
+        branch: 'main',
+        run: expect.objectContaining({ id: 41, status: 'failed', failedTests: 1, url: `${url}/test-runs/41` }),
+        failures: 1,
+      },
+    ]);
+    expect(runStatuses[runStatuses.length - 1]).toEqual(status);
+  });
+
+  test('offers Piwi’s MCP server with the connection it has', async () => {
+    const mcp = (await client.sendRequest('piwi/mcp')) as McpServersResult;
+    expect(mcp.servers).toEqual([{ label: `Piwi (${new URL(url).host})`, url: `${url}/mcp`, headers: {} }]);
   });
 
   test('summarizes a page object, a spec and an application file', async () => {

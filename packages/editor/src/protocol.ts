@@ -9,8 +9,11 @@
 /** A command a summary line runs when clicked. Clients implement each `command` id. */
 export interface PiwiCommand {
   title: string;
-  /** `piwi.openInDashboard` (arguments: `[url]`) or `piwi.runTests` (arguments: `[RunTestsArgs]`). */
-  command: 'piwi.openInDashboard' | 'piwi.runTests';
+  /**
+   * `piwi.openInDashboard` (arguments: `[url]`), `piwi.runTests` (arguments: `[RunTestsArgs]`) or
+   * `piwi.openTrace` (arguments: `[TraceParams]`).
+   */
+  command: 'piwi.openInDashboard' | 'piwi.runTests' | 'piwi.openTrace';
   arguments: unknown[];
 }
 
@@ -110,3 +113,68 @@ export interface EditorCredentials {
 }
 
 export const SET_CREDENTIALS_NOTIFICATION = 'piwi/setCredentials';
+
+/** `piwi/trace`: download an execution's trace and return the command that opens it in Playwright's trace viewer. */
+export interface TraceParams {
+  /** Any file of the workspace the execution belongs to, to pick the Playwright config. */
+  uri: string;
+  executionId: number;
+}
+
+export interface TraceResult {
+  /** The downloaded trace archive. */
+  path: string;
+  /** The directory to run the command in: the Playwright config's, so its Playwright opens it. */
+  cwd: string;
+  command: string;
+}
+
+export const TRACE_REQUEST = 'piwi/trace';
+
+/** The latest run on the checked-out branch of one workspace context. */
+export interface RunStatus {
+  /** The Playwright config's directory. */
+  root: string;
+  /** The branch whose runs are read; null reads the newest run of any branch. */
+  branch: string | null;
+  run: {
+    id: number;
+    status: string;
+    /** ISO 8601. */
+    startTime: string;
+    totalTests: number;
+    passedTests: number;
+    failedTests: number;
+    flakyTests: number;
+    skippedTests: number;
+    /** The run's page in the dashboard. */
+    url: string;
+  } | null;
+  /** Failed executions the Problems panel lists for this run. */
+  failures: number;
+}
+
+/** `piwi/runStatus`: the latest run of each context, for the status bar. */
+export interface RunStatusResult {
+  contexts: RunStatus[];
+}
+
+export const RUN_STATUS_REQUEST = 'piwi/runStatus';
+
+/** `piwi/runStatusChanged` (notification, server to client): a context's latest run changed; carries `RunStatusResult`. */
+export const RUN_STATUS_NOTIFICATION = 'piwi/runStatusChanged';
+
+/** An MCP server the editor's agent can register: Piwi's, with the connection the service already has. */
+export interface McpServerDefinition {
+  label: string;
+  /** The streamable HTTP endpoint. */
+  url: string;
+  headers: Record<string, string>;
+}
+
+/** `piwi/mcp`: one definition per Piwi instance the workspace is connected to. */
+export interface McpServersResult {
+  servers: McpServerDefinition[];
+}
+
+export const MCP_REQUEST = 'piwi/mcp';

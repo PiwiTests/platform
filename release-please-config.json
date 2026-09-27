@@ -21,6 +21,7 @@
         { "type": "generic", "path": "apps/desktop/src-tauri/Cargo.toml" },
         { "type": "json", "path": "apps/extension/package.json", "jsonpath": "$.version" },
         { "type": "json", "path": "apps/extension/manifest.json", "jsonpath": "$.version" },
+        { "type": "json", "path": "apps/vscode/package.json", "jsonpath": "$.version" },
         {
           "type": "json",
           "path": "examples/playwright-fixtures/package.json",
@@ -50,6 +51,7 @@
         { "type": "json", "path": "package-lock.json", "jsonpath": "$.packages['packages/editor'].version" },
         { "type": "json", "path": "package-lock.json", "jsonpath": "$.packages['apps/application'].version" },
         { "type": "json", "path": "package-lock.json", "jsonpath": "$.packages['apps/extension'].version" },
+        { "type": "json", "path": "package-lock.json", "jsonpath": "$.packages['apps/vscode'].version" },
         { "type": "json", "path": "package-lock.json", "jsonpath": "$.packages['integrations/nitro'].version" }
       ]
     }

@@ -116,3 +116,30 @@ export async function translationValues(
   }
   return map;
 }
+
+/**
+ * The workspace file a path reported by a run names: CI paths are absolute on
+ * another machine, so the path is tried as given, then relative to each root,
+ * then by ever shorter suffixes (at least the file and its directory) under
+ * each root. Null when none exists.
+ */
+export function resolveReportedFile(roots: string[], reported: string): string | null {
+  const normalized = reported.replace(/\\/g, '/');
+  if (path.isAbsolute(normalized) && fs.existsSync(normalized)) return path.resolve(normalized);
+  const parts = normalized.split('/').filter((p) => p && p !== '.');
+  for (const root of roots) {
+    for (let from = 0; from < parts.length; from++) {
+      if (parts.length - from < Math.min(2, parts.length)) break;
+      const candidate = path.join(root, ...parts.slice(from));
+      if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) return candidate;
+    }
+  }
+  return null;
+}
+
+/** A `file:line:col` location split into its parts; the file keeps any drive letter. */
+export function splitLocation(location: string): { file: string; line: number; column: number } | null {
+  const m = /^(.*?):(\d+)(?::(\d+))?$/.exec(location);
+  if (!m) return null;
+  return { file: m[1]!, line: Number(m[2]), column: m[3] ? Number(m[3]) : 1 };
+}

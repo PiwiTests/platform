@@ -8,7 +8,7 @@ executes, so any file can answer "which tests reach me?". **Track C** is one edi
 
 **Status.** Proposed 2026-09-27. Being built on `claude/suite-in-the-editor`, in the Delivery order: PR 1 (core),
 PR 2 (`piwi preflight`), PR 3 (the pull-request section, `diff-rename` healing, `predict_locator_breaks`) PR 4
-(code reach) and PR 5 (the editor service) are built. What changed while building is under [As built](#as-built). Track A needs no capture change. Track B adds an opt-in capture, one
+(code reach), PR 5 (the editor service) and PR 6 (VS Code, with the priority 1 items) are built. What changed while building is under [As built](#as-built). Track A needs no capture change. Track B adds an opt-in capture, one
 payload column on `test_runs_cases` and one table. Tracks C–E add a workspace package, a VS Code extension and a
 JetBrains plugin, and a commitlint scope (`ide`); a catalog of what the editors can do after their first release
 follows the tracks. New wire fields, endpoints, a CLI command and a published extension
@@ -471,7 +471,7 @@ the feature they come from.
 - Docs: `guide/capture-fixtures.md`, `guide/privacy.md` (file paths only), `features/test-selection.md`,
   `reference/reporter-options.md` (generated).
 
-### PRs 5–7 — editors (PR 5 built)
+### PRs 5–7 — editors (PRs 5 and 6 built)
 - `packages/editor` (new workspace), `apps/vscode` (new workspace), `apps/jetbrains` (new Gradle project).
 - Root `package.json` workspaces, `release-please-config.json` (two entries per new workspace), `commitlint.config.js`
   (scope `ide`), CI jobs in `.github/workflows/ci.yml`, a publish workflow per marketplace.
@@ -612,6 +612,47 @@ disagree, this section wins.
   10 alternatives each) and the catalog's exact `file` filter on `GET /api/projects/:id/test-cases`.
 - **Repository.** The `ide` commitlint scope, two release-please entries, a CI step (lint, typecheck, build, test) in
   the checks job, and an `AGENTS.md` for the package. No publish workflow: the service ships inside the clients.
+
+### PR 6 — VS Code, with the priority 1 items
+
+- **`apps/vscode`** (npm workspace `piwi`, published as `piwitests.piwi`, FSL) bundles `src/extension.ts` with esbuild
+  into `dist/extension.cjs` and copies the service bundle beside it; `@piwitests/editor` exports it as
+  `@piwitests/editor/server`. `engines.vscode` is `^1.91.0`, the oldest `vscode-languageclient` 10 supports, so Cursor
+  and VSCodium install it from Open VSX; the MCP provider API is read at runtime.
+- **The service does the work**, so PR 7 renders the same answers. It gained:
+  - **CI failures**: `GET /api/projects/:id/branch-failures?branch=` (new) gives the latest run on the checked-out
+    branch (the default branch on a detached head) and its failed executions with their headline (`caseHeadline`),
+    failing call (`extractErrorLocation`), traces and screenshot. The service reads it every minute, every 15 seconds
+    while the run is active, and publishes each failure as an error (code `ci-failure`) in the file it points to,
+    open or not: the failing call when that file resolves in the workspace (CI paths are absolute on another machine,
+    so they resolve by suffix), else the `test(…)` line. Failure and analysis diagnostics are merged per file.
+  - **Heal in place**: the quick fix "Heal: use …" applies the healing endpoint's `edit` to the line when the line
+    still reads `oldLine`, keeping the line's indentation.
+  - **Evidence**: "Open the trace" (client command `piwi.openTrace`) asks `piwi/trace`, which downloads the trace to the
+    temporary directory and returns `npx playwright show-trace <path>` to run in the config's directory; the hover
+    shows the downloaded failure screenshot; "Open the failure in the dashboard" and the diagnostic's code link open
+    the execution page.
+  - **Status**: `piwi/runStatus` and the `piwi/runStatusChanged` notification, sent when the run changes.
+  - **MCP**: `piwi/mcp` returns one definition per connected instance (`<url>/mcp`, the key as a bearer header).
+- **The extension** draws `piwi/fileSummary` as CodeLens, the run in the status bar (progress while it runs, failing
+  and flaky counts, click to open the run, "connect" with the reason when not connected), and registers the commands
+  Connect (URL, key to `SecretStorage`, project picked from `/api/projects/menu`), Refresh, Run the tests that reach
+  this file, Open in dashboard, Open the latest run and Copy the MCP server configuration. With
+  `vscode.lm.registerMcpServerDefinitionProvider` (VS Code 1.101+), Piwi's server is listed for the agent once
+  connected; without it, a one-time offer copies an `mcp.json` entry.
+- **Decisions changed.** The status bar shows no gate verdict: the gate policy is sent by the CI job to
+  `POST /api/test-runs/:id/gate` and not stored, so the instance has no verdict to show; it shows the run's counts
+  instead. The run is polled rather than read from the run event stream: the stream is per run and the editor must
+  also notice a new run. The key reaches the client in `piwi/mcp` only to hand to the editor's agent.
+- **Tests.** The service's in-process suite covers the failure diagnostics, the heal, the trace download, the hover,
+  the run status and the MCP definition (10 tests). `apps/vscode` has unit tests of the status bar and MCP glue, and an
+  integration suite that runs VS Code (1.139, downloaded by `@vscode/test-electron`) under Xvfb on a fixture
+  repository against a stub instance: activation, the failure in the Problems panel, the heal applied, the evidence
+  actions, CodeLens, hover and the commands. `vsce package` builds `dist/piwi.vsix` (198 KB).
+- **Repository.** CI step in the checks job (lint, typecheck, build, unit), `vscode-e2e.yml` (the integration suite,
+  on editor changes), `publish-vscode.yml` (on release tags, to the Marketplace with `VSCE_PAT` and Open VSX with
+  `OVSX_PAT`, each skipped without its secret), release-please entries, `apps/vscode/AGENTS.md`, docs page
+  `features/editors.md` with its catalog entry, links from Open in IDE and the MCP page.
 
 ## Verification
 

@@ -7,7 +7,8 @@
   "type": "module",
   "exports": {
     ".": "./src/server.ts",
-    "./protocol": "./src/protocol.ts"
+    "./protocol": "./src/protocol.ts",
+    "./server": "./dist/piwi-language-server.cjs"
   },
   "scripts": {
     "editor:build": "node build.mjs",
