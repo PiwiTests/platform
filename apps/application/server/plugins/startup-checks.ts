@@ -6,9 +6,9 @@ export default defineNitroPlugin(() => {
 
   if (!process.env.PIWI_SECRET_KEY) {
     console.warn(
-      '\n⚠️  [security] PIWI_SECRET_KEY is not set — falling back to a publicly known default key.\n' +
-        '   Secrets saved in the dashboard (AI API keys, SCM tokens, webhook secrets) are encrypted\n' +
-        '   with this default, so anyone with database access can decrypt them.\n' +
+      '\n⚠️  [security] PIWI_SECRET_KEY is not set.\n' +
+        '   The dashboard cannot save secrets (AI API keys, SCM tokens, webhook secrets, integration\n' +
+        '   credentials) until it is: saving one answers HTTP 409.\n' +
         '   Set PIWI_SECRET_KEY to a long random string. Generate one with:\n' +
         "   node -e \"console.log(require('node:crypto').randomBytes(32).toString('hex'))\"\n",
     );
