@@ -6,8 +6,7 @@
  */
 import { highlightLocator } from '@piwitests/picker-dom';
 import { ALL_BRANCHES } from '@piwitests/core/locator-index';
-import { stabilityLabels } from '@piwitests/core/locator-stability';
-import { locatorActionLabel } from '@piwitests/core/step-locators';
+import { actionLabel, stabilityText } from '../shared/core-words.js';
 import { editText, type BrittleRow, type PageRiskRow, type Replacement } from './coverage-risk.js';
 import type { CoveredElement, UncoveredElement } from './coverage-scan.js';
 import {
@@ -781,13 +780,13 @@ export class CoveragePanel {
     const chain = el('code', 'piwi-loc');
     chain.innerHTML = highlightLocator(locator);
     item.appendChild(chain);
-    const parts = [row.actions.slice(0, 3).map(locatorActionLabel).join(', ')];
+    const parts = [row.actions.slice(0, 3).map(actionLabel).join(', ')];
     if (row.callSites.length)
       parts.push(`${row.callSites[0]}${row.callSites.length > 1 ? ` +${row.callSites.length - 1}` : ''}`);
     if (row.projects.length) parts.push(row.projects.join(', '));
     const stability = context.stabilities[row.entry];
     if (stability?.level === 'brittle')
-      parts.push(t('coverage_brittleRules', { rules: stabilityLabels(stability, ', ') }));
+      parts.push(t('coverage_brittleRules', { rules: stabilityText(stability, ', ') }));
     const detail = el('span', 'detail', parts.filter(Boolean).join(' · '));
     detail.title = row.tests.map((test) => testTitle(index.tests[test]!)).join('\n');
     item.appendChild(detail);
@@ -846,7 +845,7 @@ export class CoveragePanel {
     const chain = el('code', 'piwi-loc');
     chain.innerHTML = highlightLocator(locator);
     item.appendChild(chain);
-    const why = el('span', 'detail', stabilityLabels(row.stability));
+    const why = el('span', 'detail', stabilityText(row.stability));
     why.title = row.stability.findings.map((f) => f.detail).join('\n');
     if (row.callSites.length)
       why.append(` · ${row.callSites[0]}${row.callSites.length > 1 ? ` +${row.callSites.length - 1}` : ''}`);

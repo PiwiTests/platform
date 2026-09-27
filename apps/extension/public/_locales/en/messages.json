@@ -4104,5 +4104,191 @@
   "common_workerOutdated": {
     "message": "Piwi Picker was rebuilt without being reloaded, and its background worker still runs the previous build. Reload the extension from its menu, or from the browser’s extensions page.",
     "description": "Error shown by a tool when the background worker does not know its message: the extension was rebuilt (a developer’s local build) but not reloaded."
+  },
+  "stability_position": {
+    "message": "position",
+    "description": "Name of a locator stability rule, in a list after “Brittle locator:”: the locator picks an element by its order (nth, first, last). Lower case, a few words."
+  },
+  "stability_cssClass": {
+    "message": "CSS class",
+    "description": "Name of a locator stability rule: the locator finds an element by a CSS class. Lower case except acronyms."
+  },
+  "stability_cssStructure": {
+    "message": "CSS structure",
+    "description": "Name of a locator stability rule: the locator depends on the document’s structure (child combinators, nth-child)."
+  },
+  "stability_xpath": {
+    "message": "XPath",
+    "description": "Name of a locator stability rule: the locator is an XPath."
+  },
+  "stability_generatedId": {
+    "message": "generated id",
+    "description": "Name of a locator stability rule: the locator uses an id a framework generates, which changes between builds."
+  },
+  "stability_styleAttribute": {
+    "message": "style attribute",
+    "description": "Name of a locator stability rule: the locator matches the style or class attribute as a string."
+  },
+  "stability_longText": {
+    "message": "long text",
+    "description": "Name of a locator stability rule: the locator matches an exact text over 40 characters."
+  },
+  "stability_dataText": {
+    "message": "number in text",
+    "description": "Name of a locator stability rule: the locator’s text holds a count, price or date, which changes with the data."
+  },
+  "stability_deepChain": {
+    "message": "long chain",
+    "description": "Name of a locator stability rule: the locator chains more than three locating calls."
+  },
+  "codegen_noLocator": {
+    "message": "No locator was recorded for this element.",
+    "description": "Warning about a step of a generated test, after “Step N:”: the recorder found no way to locate the element."
+  },
+  "codegen_brittleLocator": {
+    "message": "The best locator recorded for this element may break when the page changes: $locator$",
+    "description": "Warning about a step of a generated test. $locator$ is a Playwright locator, as code.",
+    "placeholders": {
+      "locator": {
+        "content": "$1",
+        "example": "locator('.btn').nth(1)"
+      }
+    }
+  },
+  "codegen_redactedValue": {
+    "message": "A password was typed here: the test reads it from $variable$.",
+    "description": "Warning about a step of a generated test. $variable$ is the name of an environment variable, as code.",
+    "placeholders": {
+      "variable": {
+        "content": "$1",
+        "example": "PIWI_TEST_VALUE_3"
+      }
+    }
+  },
+  "codegen_emptyAssertion": {
+    "message": "This check has nothing to compare.",
+    "description": "Warning about a step of a generated test: an assertion step with no assertion in it."
+  },
+  "codegen_missingExpected": {
+    "message": "$matcher$ needs an expected value.",
+    "description": "Warning about a step of a generated test. $matcher$ is a Playwright matcher, as code.",
+    "placeholders": {
+      "matcher": {
+        "content": "$1",
+        "example": "toHaveText"
+      }
+    }
+  },
+  "common_actionClick": {
+    "message": "Click",
+    "description": "Label of a test action on an element, in the lists of Tested elements and the pick results: Playwright’s click action."
+  },
+  "common_actionDblclick": {
+    "message": "Double click",
+    "description": "Label of a test action on an element, in the lists of Tested elements and the pick results: Playwright’s double click action."
+  },
+  "common_actionFill": {
+    "message": "Fill",
+    "description": "Label of a test action on an element, in the lists of Tested elements and the pick results: Playwright’s fill action."
+  },
+  "common_actionSelectOption": {
+    "message": "Select option",
+    "description": "Label of a test action on an element, in the lists of Tested elements and the pick results: Playwright’s select option action."
+  },
+  "common_actionCheck": {
+    "message": "Check",
+    "description": "Label of a test action on an element, in the lists of Tested elements and the pick results: Playwright’s check action."
+  },
+  "common_actionUncheck": {
+    "message": "Uncheck",
+    "description": "Label of a test action on an element, in the lists of Tested elements and the pick results: Playwright’s uncheck action."
+  },
+  "common_actionHover": {
+    "message": "Hover",
+    "description": "Label of a test action on an element, in the lists of Tested elements and the pick results: Playwright’s hover action."
+  },
+  "common_actionTap": {
+    "message": "Tap",
+    "description": "Label of a test action on an element, in the lists of Tested elements and the pick results: Playwright’s tap action."
+  },
+  "common_actionFocus": {
+    "message": "Focus",
+    "description": "Label of a test action on an element, in the lists of Tested elements and the pick results: Playwright’s focus action."
+  },
+  "common_actionBlur": {
+    "message": "Blur",
+    "description": "Label of a test action on an element, in the lists of Tested elements and the pick results: Playwright’s blur action."
+  },
+  "common_actionPress": {
+    "message": "Press",
+    "description": "Label of a test action on an element, in the lists of Tested elements and the pick results: Playwright’s press action."
+  },
+  "common_actionType": {
+    "message": "Type",
+    "description": "Label of a test action on an element, in the lists of Tested elements and the pick results: Playwright’s type action."
+  },
+  "common_actionSetInputFiles": {
+    "message": "Set input files",
+    "description": "Label of a test action on an element, in the lists of Tested elements and the pick results: Playwright’s set input files action."
+  },
+  "common_actionDragTo": {
+    "message": "Drag and drop",
+    "description": "Label of a test action on an element, in the lists of Tested elements and the pick results: Playwright’s drag and drop action."
+  },
+  "common_actionDrop": {
+    "message": "Drop",
+    "description": "Label of a test action on an element, in the lists of Tested elements and the pick results: Playwright’s drop action."
+  },
+  "common_actionDispatchEvent": {
+    "message": "Dispatch event",
+    "description": "Label of a test action on an element, in the lists of Tested elements and the pick results: Playwright’s dispatch event action."
+  },
+  "common_actionScrollIntoView": {
+    "message": "Scroll into view",
+    "description": "Label of a test action on an element, in the lists of Tested elements and the pick results: Playwright’s scroll into view action."
+  },
+  "common_actionWaitFor": {
+    "message": "Wait for",
+    "description": "Label of a test action on an element, in the lists of Tested elements and the pick results: Playwright’s wait for action."
+  },
+  "common_actionCount": {
+    "message": "Count",
+    "description": "Label of a test action on an element, in the lists of Tested elements and the pick results: Playwright’s count action."
+  },
+  "common_actionEvaluate": {
+    "message": "Evaluate",
+    "description": "Label of a test action on an element, in the lists of Tested elements and the pick results: Playwright’s evaluate action."
+  },
+  "common_actionExpect": {
+    "message": "Expect",
+    "description": "Label of a test action on an element, in the lists of Tested elements and the pick results: Playwright’s expect action."
+  },
+  "common_actionOther": {
+    "message": "Other",
+    "description": "Label of a test action on an element, in the lists of Tested elements and the pick results: Playwright’s other action."
+  },
+  "common_actionExpectMatcher": {
+    "message": "Expect $matcher$",
+    "description": "Label of an assertion a test makes on an element, in the lists of Tested elements and the pick results. $matcher$ is a Playwright matcher, as code.",
+    "placeholders": {
+      "matcher": {
+        "content": "$1",
+        "example": "toBeVisible"
+      }
+    }
+  },
+  "common_actionExpectNot": {
+    "message": "Expect not $matcher$",
+    "description": "Label of a negated assertion a test makes on an element (expect(…).not.toBeVisible()). $matcher$ is a Playwright matcher, as code.",
+    "placeholders": {
+      "matcher": {
+        "content": "$1",
+        "example": "toBeVisible"
+      }
+    }
+  },
+  "bug_noScreenshotNone": {
+    "message": "none was taken",
+    "description": "Bug report, after “No screenshot:”: the reason when no screenshot was taken and nothing said why. Lower case."
   }
 }

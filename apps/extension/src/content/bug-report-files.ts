@@ -1,5 +1,6 @@
 import { buildSession, normalizeSteps, type RawCaptureEvent } from '@piwitests/core/recording';
 import { toStepsDocument } from '@piwitests/core/steps';
+import { bugPhrases, type BugPhrases } from '@piwitests/core/bug-phrases';
 import {
   BUG_REPORT_VERSION,
   bugTitle,
@@ -64,14 +65,36 @@ export function specFileName(report: BugReport): string {
 }
 
 /**
- * Every file of the report's archive: the steps document, the failing test,
- * the Markdown, the evidence with the context, and the screenshots.
+ * The language a report's Markdown is written in: core's phrasebook, and the
+ * screenshot note (stored in English) in that language.
  */
-export function bugReportEntries(report: BugReport, screenshots: StoredBugScreenshot[]): ZipEntry[] {
+export interface ReportLanguage {
+  phrases: BugPhrases;
+  screenshotNote(note: string): string;
+}
+
+export const ENGLISH_REPORT: ReportLanguage = { phrases: bugPhrases('en'), screenshotNote: (note) => note };
+
+/** The report as Markdown, in `language`. The steps document, the spec and the evidence stay as they are stored. */
+export function bugReportMarkdown(report: BugReport, language: ReportLanguage = ENGLISH_REPORT): string {
+  const note = report.evidence.screenshotNote;
+  const evidence = { ...report.evidence, screenshotNote: note ? language.screenshotNote(note) : null };
+  return renderBugMarkdown({ ...report, evidence }, language.phrases);
+}
+
+/**
+ * Every file of the report's archive: the steps document, the failing test,
+ * the Markdown in `language`, the evidence with the context, and the screenshots.
+ */
+export function bugReportEntries(
+  report: BugReport,
+  screenshots: StoredBugScreenshot[],
+  language: ReportLanguage = ENGLISH_REPORT,
+): ZipEntry[] {
   return [
     { name: 'steps.json', data: `${JSON.stringify(report.steps, null, 2)}\n` },
     { name: specFileName(report), data: renderBugSpec(report).code },
-    { name: 'bug-report.md', data: renderBugMarkdown(report) },
+    { name: 'bug-report.md', data: bugReportMarkdown(report, language) },
     {
       name: 'evidence.json',
       data: `${JSON.stringify({ v: report.v, context: report.context, evidence: report.evidence }, null, 2)}\n`,
@@ -80,6 +103,10 @@ export function bugReportEntries(report: BugReport, screenshots: StoredBugScreen
   ];
 }
 
-export function bugReportZip(report: BugReport, screenshots: StoredBugScreenshot[]): Uint8Array {
-  return createZip(bugReportEntries(report, screenshots), new Date(report.context.time || Date.now()));
+export function bugReportZip(
+  report: BugReport,
+  screenshots: StoredBugScreenshot[],
+  language: ReportLanguage = ENGLISH_REPORT,
+): Uint8Array {
+  return createZip(bugReportEntries(report, screenshots, language), new Date(report.context.time || Date.now()));
 }

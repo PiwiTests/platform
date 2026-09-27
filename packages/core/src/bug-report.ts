@@ -15,7 +15,16 @@ import { renderSpec, type CodegenOptions, type CodegenResult } from './codegen';
 import { normalizeRoute, pageKey } from './page-key';
 import type { RecordedStep, RecordedTarget, StepAssertion } from './recording';
 import { sessionFromSteps, type PiwiSteps } from './steps';
-import { roleWord } from './role-words';
+import {
+  bugPhrases,
+  markdownCode as code,
+  type BugExpectation,
+  type BugPhrases,
+  type BugStepValue,
+  type BugSubject,
+} from './bug-phrases';
+
+const ENGLISH = bugPhrases('en');
 
 export const BUG_REPORT_VERSION = 1;
 
@@ -142,11 +151,11 @@ export function describeBrowser(userAgent: string): string | null {
   return null;
 }
 
-/** The report's title, or one made from the page it is about. */
-export function bugTitle(report: BugReport): string {
+/** The report's title, or one made from the page it is about, in the phrasebook's language. */
+export function bugTitle(report: BugReport, phrases: BugPhrases = ENGLISH): string {
   const title = report.steps.title?.trim();
   if (title) return title;
-  return report.context.pageKey ? `Bug on ${report.context.pageKey}` : 'Reported bug';
+  return report.context.pageKey ? phrases.report.titleOnPage(report.context.pageKey) : phrases.report.untitled;
 }
 
 /** The steps that state what should happen instead. */
@@ -175,21 +184,9 @@ export function renderBugSpec(report: BugReport, options: CodegenOptions = {}): 
   });
 }
 
-/** Text as an inline code span, with a fence longer than any run of backticks inside. */
-function code(s: string): string {
-  const longest = Math.max(0, ...[...s.matchAll(/`+/g)].map((m) => m[0].length));
-  const fence = '`'.repeat(longest + 1);
-  const pad = s.startsWith('`') || s.endsWith('`') ? ' ' : '';
-  return `${fence}${pad}${s}${pad}${fence}`;
-}
-
 /** Free text on one line, with the characters that would open HTML escaped. */
 function line(s: string): string {
   return s.replace(/\s+/g, ' ').replace(/</g, '&lt;').trim();
-}
-
-function quoted(s: string): string {
-  return `"${line(s)}"`;
 }
 
 /**
@@ -198,82 +195,76 @@ function quoted(s: string): string {
  * assertion about that text: "Total: 50" should read "Total: 45" names the
  * element by the very value that is wrong.
  */
-function describeTarget(target: RecordedTarget | null, byText = true): string {
-  if (!target) return 'the page';
-  if (!byText) {
-    if (target.testId) return `the element with test id ${code(target.testId)}`;
-    const locator = target.alternatives[0]?.locator;
-    return locator ? code(locator) : `the ${target.role ? roleWord(target.role) : target.tagName || 'element'}`;
-  }
-  if (target.role && target.accessibleName) return `${roleWord(target.role)} ${quoted(target.accessibleName)}`;
-  if (target.accessibleName) return quoted(target.accessibleName);
-  if (target.testId) return `the element with test id ${code(target.testId)}`;
-  if (target.text) return `${target.role ? roleWord(target.role) : target.tagName} ${quoted(target.text.slice(0, 80))}`;
+function subjectOf(target: RecordedTarget | null, byText = true): BugSubject {
+  if (!target) return { kind: 'page' };
   const locator = target.alternatives[0]?.locator;
-  if (locator) return code(locator);
-  return target.role ? roleWord(target.role) : target.tagName || 'an element';
-}
-
-function stateWord(matcher: StepAssertion['matcher']): string {
-  switch (matcher) {
-    case 'toBeVisible':
-      return 'visible';
-    case 'toBeHidden':
-      return 'hidden';
-    case 'toBeEnabled':
-      return 'enabled';
-    case 'toBeDisabled':
-      return 'disabled';
-    default:
-      return '';
+  if (!byText) {
+    if (target.testId) return { kind: 'testId', testId: target.testId };
+    if (locator) return { kind: 'locator', locator };
+    return { kind: 'element', role: target.role, tagName: target.tagName, definite: true };
   }
+  if (target.role && target.accessibleName)
+    return { kind: 'named', role: target.role, name: line(target.accessibleName) };
+  if (target.accessibleName) return { kind: 'name', name: line(target.accessibleName) };
+  if (target.testId) return { kind: 'testId', testId: target.testId };
+  if (target.text)
+    return { kind: 'text', role: target.role, tagName: target.tagName, text: line(target.text.slice(0, 80)) };
+  if (locator) return { kind: 'locator', locator };
+  return { kind: 'element', role: target.role, tagName: target.tagName, definite: false };
 }
 
-/** An expectation in plain words, such as `button "Apply" should read "Total: 42"`. */
-export function describeExpectation(step: RecordedStep): string {
-  const a = step.assertion;
-  if (!a) return `${describeTarget(step.target)} should be visible`;
-  const should = a.negated ? 'should not' : 'should';
-  const subject = describeTarget(step.target, a.matcher !== 'toHaveText' && a.matcher !== 'toHaveAccessibleName');
+function expectationOf(a: StepAssertion): BugExpectation {
   const expected = a.expected ?? '';
   switch (a.matcher) {
     case 'toHaveText':
-      return `${subject} ${should} read ${quoted(expected)}`;
+      return { matcher: 'text', expected: line(expected) };
     case 'toHaveValue':
-      return `${subject} ${should} have the value ${quoted(expected)}`;
+      return { matcher: 'value', expected: line(expected) };
     case 'toHaveAccessibleName':
-      return `${subject} ${should} be named ${quoted(expected)}`;
+      return { matcher: 'name', expected: line(expected) };
     case 'toHaveURL':
-      return `the page ${should} be ${code(expected)}`;
+      return { matcher: 'url', expected };
+    case 'toBeHidden':
+      return { matcher: 'state', state: 'hidden' };
+    case 'toBeEnabled':
+      return { matcher: 'state', state: 'enabled' };
+    case 'toBeDisabled':
+      return { matcher: 'state', state: 'disabled' };
     default:
-      return `${subject} ${should} be ${stateWord(a.matcher)}`;
+      return { matcher: 'state', state: 'visible' };
   }
 }
 
-/** A step in plain words, for a person reproducing it by hand. */
-export function describeStepInWords(step: RecordedStep): string {
-  const target = describeTarget(step.target);
-  const value = step.redacted ? 'a password (not recorded)' : quoted(step.value ?? '');
+/** An expectation in plain words, such as `button "Apply" should read "Total: 42"`, in the phrasebook's language. */
+export function describeExpectation(step: RecordedStep, phrases: BugPhrases = ENGLISH): string {
+  const a = step.assertion;
+  if (!a) return phrases.expectation(subjectOf(step.target), { matcher: 'state', state: 'visible' }, false);
+  const byText = a.matcher !== 'toHaveText' && a.matcher !== 'toHaveAccessibleName';
+  return phrases.expectation(subjectOf(step.target, byText), expectationOf(a), !!a.negated);
+}
+
+/** A step in plain words, for a person reproducing it by hand, in the phrasebook's language. */
+export function describeStepInWords(step: RecordedStep, phrases: BugPhrases = ENGLISH): string {
+  const target = subjectOf(step.target);
+  const value: BugStepValue = step.redacted ? { kind: 'password' } : { kind: 'text', text: line(step.value ?? '') };
   switch (step.action) {
     case 'goto':
-      return `Go to ${code(step.value ?? step.pageUrl)}`;
+      return phrases.steps.goto(step.value ?? step.pageUrl);
     case 'click':
-      return `Click ${target}`;
+      return phrases.steps.click(target);
     case 'fill':
-      return `Fill ${target} with ${value}`;
+      return phrases.steps.fill(target, value);
     case 'check':
-      return `Check ${target}`;
+      return phrases.steps.check(target);
     case 'uncheck':
-      return `Uncheck ${target}`;
+      return phrases.steps.uncheck(target);
     case 'selectOption':
-      return `Select ${value} in ${target}`;
+      return phrases.steps.selectOption(target, value);
     case 'press':
-      return step.target ? `Press ${step.value ?? 'Enter'} in ${target}` : `Press ${step.value ?? 'Enter'}`;
+      return phrases.steps.press(step.value ?? 'Enter', step.target ? target : null);
     case 'assertVisible':
-    case 'assert': {
-      const text = describeExpectation(step);
-      return `${text.charAt(0).toUpperCase()}${text.slice(1)}`;
-    }
+    case 'assert':
+      return phrases.capitalize(describeExpectation(step, phrases));
   }
 }
 
@@ -286,116 +277,104 @@ function clockTime(time: number): string {
   return Number.isFinite(time) && time > 0 ? new Date(time).toISOString().slice(11, 19) : '';
 }
 
-function plural(n: number, one: string, many = `${one}s`): string {
-  return `${n} ${n === 1 ? one : many}`;
-}
-
 /** One line summing up the evidence, such as `1 screenshot · 1 console error · 1 failed request · page outline`. */
-export function summarizeEvidence(evidence: BugEvidence): string {
+export function summarizeEvidence(evidence: BugEvidence, phrases: BugPhrases = ENGLISH): string {
   const errors = evidence.console.filter((e) => e.level === 'error').length;
-  const warnings = evidence.console.length - errors;
-  const parts = [
-    evidence.screenshots.length > 0 ? plural(evidence.screenshots.length, 'screenshot') : 'no screenshot',
-    ...(errors > 0 ? [plural(errors, 'console error')] : []),
-    ...(warnings > 0 ? [plural(warnings, 'console warning')] : []),
-    ...(evidence.requests.length > 0 ? [plural(evidence.requests.length, 'failed request')] : []),
-    ...(evidence.outline ? ['page outline'] : []),
-  ];
-  return parts.join(' · ');
+  return phrases.evidence({
+    screenshots: evidence.screenshots.length,
+    consoleErrors: errors,
+    consoleWarnings: evidence.console.length - errors,
+    failedRequests: evidence.requests.length,
+    outline: !!evidence.outline,
+  });
 }
 
 /**
- * The report as Markdown: the steps in plain words, what should happen and
- * what happened, the notes, and the evidence. Screenshots are named by their
- * file in the report's archive; the outline is included in full.
+ * The report as Markdown, in the phrasebook's language: the steps in plain
+ * words, what should happen and what happened, the notes, and the evidence.
+ * Screenshots are named by their file in the report's archive; the outline is
+ * included in full. The reporter's own words (title, notes, typed values) and
+ * the page's texts stay as they are.
  */
-export function renderBugMarkdown(report: BugReport): string {
+export function renderBugMarkdown(report: BugReport, phrases: BugPhrases = ENGLISH): string {
   const { steps: doc, evidence, context } = report;
-  const out: string[] = [`# ${line(bugTitle(report))}`, ''];
+  const words = phrases.report;
+  const out: string[] = [`# ${line(bugTitle(report, phrases))}`, ''];
   if (doc.note?.trim()) out.push(line(doc.note), '');
 
   const facts = [
-    context.path ? `${code(context.path)}${context.origin ? ` on ${context.origin}` : ''}` : context.origin,
+    context.path
+      ? context.origin
+        ? words.pathOn(code(context.path), context.origin)
+        : code(context.path)
+      : context.origin,
     context.browser,
     context.viewport ? `${context.viewport.width}×${context.viewport.height}` : null,
     formatTime(context.time),
     context.extensionVersion ? `Piwi Picker ${context.extensionVersion}` : null,
   ].filter((f): f is string => !!f);
-  if (facts.length > 0) out.push(`**Page** ${facts.join(' · ')}`, '');
+  if (facts.length > 0) out.push(`${words.pageLabel} ${facts.join(' · ')}`, '');
 
-  out.push('## Steps to reproduce', '');
-  if (doc.steps.length === 0) out.push('No steps were recorded.');
+  out.push(`## ${words.stepsHeading}`, '');
+  if (doc.steps.length === 0) out.push(words.noSteps);
   doc.steps.forEach((step, i) => {
-    out.push(`${i + 1}. ${describeStepInWords(step)}`);
+    out.push(`${i + 1}. ${describeStepInWords(step, phrases)}`);
     const a = step.action === 'assert' ? step.assertion : undefined;
-    if (a?.actual != null && a.actual !== a.expected) out.push(`   - Actual: ${quoted(a.actual)}`);
-    if (a?.note?.trim()) out.push(`   - Note: ${line(a.note)}`);
+    if (a?.actual != null && a.actual !== a.expected) out.push(`   - ${words.actual(phrases.quote(line(a.actual)))}`);
+    if (a?.note?.trim()) out.push(`   - ${words.note(line(a.note))}`);
   });
   out.push('');
 
   const expectations = expectedSteps(report);
-  out.push('## Expected and actual', '');
+  out.push(`## ${words.expectedHeading}`, '');
   if (expectations.length === 0) {
-    out.push('Nothing was marked as wrong.');
+    out.push(words.nothingMarked);
   } else {
     for (const { index, step } of expectations) {
       const a = step.assertion!;
-      const actual = a.actual != null ? ` It shows ${quoted(a.actual)}.` : '';
-      out.push(`- Step ${index + 1}: ${describeExpectation(step)}.${actual}`);
+      const actual = a.actual != null ? phrases.quote(line(a.actual)) : null;
+      out.push(`- ${words.expectedLine(index + 1, describeExpectation(step, phrases), actual)}`);
     }
   }
   out.push('');
 
-  out.push('## Evidence', '', summarizeEvidence(evidence), '');
+  out.push(`## ${words.evidenceHeading}`, '', summarizeEvidence(evidence, phrases), '');
   if (evidence.screenshots.length > 0) {
-    out.push('### Screenshots', '');
+    out.push(`### ${words.screenshotsHeading}`, '');
     for (const shot of evidence.screenshots) {
       const when =
         shot.moment === 'marked' && shot.step != null
-          ? `after step ${shot.step + 1}`
+          ? words.screenshotAfterStep(shot.step + 1)
           : shot.moment === 'finish'
-            ? 'when the report was finished'
-            : 'taken by hand';
+            ? words.screenshotAtFinish
+            : words.screenshotByHand;
       out.push(`- ${code(shot.file)}, ${when}`);
     }
     out.push('');
   } else if (evidence.screenshotNote) {
-    out.push(`No screenshot: ${line(evidence.screenshotNote)}`, '');
+    out.push(words.noScreenshot(line(evidence.screenshotNote)), '');
   }
   if (evidence.console.length > 0) {
-    out.push(
-      `### Console (${evidence.console.length}${evidence.consoleDropped ? ` of ${evidence.console.length + evidence.consoleDropped}` : ''})`,
-      '',
-    );
+    const total = evidence.consoleDropped ? evidence.console.length + evidence.consoleDropped : null;
+    out.push(`### ${words.consoleHeading(evidence.console.length, total)}`, '');
     for (const e of evidence.console) {
-      const origin = e.source === 'console' ? '' : e.source === 'error' ? ' uncaught' : ' unhandled rejection';
-      out.push(`- ${e.level}${origin} on ${code(e.page)} at ${clockTime(e.time)}: ${code(line(e.message))}`);
+      const entry = { level: e.level, source: e.source, page: code(e.page), time: clockTime(e.time) };
+      out.push(`- ${words.consoleLine({ ...entry, message: code(line(e.message)) })}`);
     }
     out.push('');
   }
   if (evidence.requests.length > 0) {
-    out.push(
-      `### Failed requests (${evidence.requests.length}${evidence.requestsDropped ? ` of ${evidence.requests.length + evidence.requestsDropped}` : ''})`,
-      '',
-    );
+    const total = evidence.requestsDropped ? evidence.requests.length + evidence.requestsDropped : null;
+    out.push(`### ${words.requestsHeading(evidence.requests.length, total)}`, '');
     for (const r of evidence.requests) {
-      const status = r.status > 0 ? String(r.status) : 'no answer';
-      out.push(`- ${code(`${r.method} ${r.url}`)} → ${status}, on ${code(r.page)} at ${clockTime(r.time)}`);
+      const request = code(`${r.method} ${r.url}`);
+      out.push(`- ${words.requestLine({ request, status: r.status, page: code(r.page), time: clockTime(r.time) })}`);
     }
     out.push('');
   }
   if (evidence.outline) {
     const fence = evidence.outline.includes('```') ? '~~~~' : '```';
-    out.push(
-      '### Page outline',
-      '',
-      'Built by Piwi Picker from the page; the YAML form of an ARIA snapshot, not Playwright’s own.',
-      '',
-      `${fence}yaml`,
-      evidence.outline,
-      fence,
-      '',
-    );
+    out.push(`### ${words.outlineHeading}`, '', words.outlineNote, '', `${fence}yaml`, evidence.outline, fence, '');
   }
   return `${out.join('\n').trimEnd()}\n`;
 }

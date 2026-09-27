@@ -57,6 +57,13 @@ export interface CodegenWarning {
   /** Index of the step in the session. */
   step: number;
   code: CodegenWarningCode;
+  /**
+   * The value the message names, for a reader that words the warning itself
+   * from its code: the brittle locator, the environment variable of a redacted
+   * value, or the matcher an incomplete assertion lacks a value for.
+   */
+  detail?: string;
+  /** The warning in English. */
   message: string;
 }
 
@@ -245,6 +252,7 @@ function locatorForStep(step: RecordedStep, index: number, ctx: RenderContext): 
     ctx.warnings.push({
       step: index,
       code: 'brittle-locator',
+      detail: chosen.text,
       message: `The best locator captured for this element is brittle: ${chosen.text}`,
     });
   }
@@ -264,7 +272,12 @@ function renderAssertStep(step: RecordedStep, index: number, ctx: RenderContext)
   let arg = '';
   if (VALUE_MATCHERS.has(matcher)) {
     if (assertion?.expected == null) {
-      ctx.warnings.push({ step: index, code: 'incomplete-assertion', message: `${matcher} needs an expected value.` });
+      ctx.warnings.push({
+        step: index,
+        code: 'incomplete-assertion',
+        detail: matcher,
+        message: `${matcher} needs an expected value.`,
+      });
       return [`  // Step ${index + 1}: ${matcher} without an expected value.`];
     }
     arg = quote(matcher === 'toHaveURL' ? urlForCode(assertion.expected, ctx) : assertion.expected);
@@ -294,6 +307,7 @@ function renderRawStep(step: RecordedStep, index: number, ctx: RenderContext): s
           ctx.warnings.push({
             step: index,
             code: 'redacted-value',
+            detail: envVar,
             message: `A password was typed here; the spec reads it from ${envVar}.`,
           });
         }

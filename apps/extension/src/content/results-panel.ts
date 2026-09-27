@@ -5,7 +5,6 @@ import { COPY_MODES, copyModeLabel, renderCopyMode } from '../shared/copy-modes.
 import { formatNumber, t, tn, tNodes, uiLanguage } from '../shared/i18n.js';
 import { getLastCopyMode, setLastCopyMode } from '../shared/storage.js';
 import { liveCount } from './live-count.js';
-import { locatorActionLabel } from '@piwitests/core/step-locators';
 import { getConnectionSettings, isConnected } from '../shared/connection-settings.js';
 import { getActiveProjectOverride, resolveActiveProject } from '../shared/active-project.js';
 import { ensureSessionAccess } from '../shared/session-access.js';
@@ -17,7 +16,7 @@ import { projectLocatorsUrl, testCaseUrl } from '../shared/piwi-client.js';
 import { elementReach, pageView, scanCoverage, type ReachGroup } from './coverage-scan.js';
 import { chainStabilities, usePlace } from './coverage-risk.js';
 import { pageKey } from '@piwitests/core/page-key';
-import { stabilityLabels } from '@piwitests/core/locator-stability';
+import { actionLabel, stabilityText } from '../shared/core-words.js';
 import { statusLabel, testTitle } from './coverage-view.js';
 
 const ROLE_MAPS = { tagRoles: TAG_TO_ROLE, inputRoles: INPUT_TYPE_TO_ROLE };
@@ -462,7 +461,7 @@ async function fillPiwiSection(
       }
       const meta = document.createElement('span');
       meta.className = 'muted';
-      meta.textContent = [...actionsOf].map(locatorActionLabel).join(', ');
+      meta.textContent = [...actionsOf].map(actionLabel).join(', ');
       item.append(dot, link, meta);
       list.appendChild(item);
       shown++;
@@ -480,7 +479,7 @@ async function fillPiwiSection(
     const code = document.createElement('code');
     code.className = 'piwi-loc';
     code.innerHTML = highlightLocator(index.locators[entry]!.locator);
-    line.append(...tNodes('pick_brittle', { locator: code, reasons: stabilityLabels(stabilities[entry]!) }));
+    line.append(...tNodes('pick_brittle', { locator: code, reasons: stabilityText(stabilities[entry]!) }));
     children.push(line);
   }
   if (brittle.length) children.push(muted(t('pick_useRankedInstead')));

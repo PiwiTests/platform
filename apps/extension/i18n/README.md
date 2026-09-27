@@ -27,11 +27,12 @@ message and draft it again.
 
 ## The rules the check enforces
 
-- **Keys** are `<surface>_<name>`: `popup_`, `options_`, `badge_`, `common_` (words and errors several surfaces
-  show), and for the in-page tools `pick_` (the pick results), `console_`, `multipick_`, `lint_`, `assert_`,
-  `session_`, `agent_`, `functions_` (Test functions), `record_`, `bug_`, `replay_` and `coverage_` (Tested
-  elements). ASCII letters, digits and `_` only; the browser ignores case, so `bug_Title` and `bug_title` collide.
-  `extDescription` and `pickElementCommand`, the manifest's, keep their names.
+- **Keys** are `<surface>_<name>`: `popup_`, `options_`, `badge_`, `common_` (words and errors several surfaces show),
+  and for the in-page tools `pick_` (the pick results), `console_`, `multipick_`, `lint_`, `assert_`, `session_`,
+  `agent_`, `functions_` (Test functions), `record_`, `bug_`, `replay_` and `coverage_` (Tested elements), and
+  `stability_` and `codegen_` for core's stability rules and converter warnings, by their code. ASCII letters, digits
+  and `_` only; the browser ignores case, so `bug_Title` and `bug_title` collide. `extDescription` and
+  `pickElementCommand`, the manifest's, keep their names.
 - **Placeholders** are `$name$` in the message, declared in `placeholders` with `"content": "$1"`, `"$2"`, … numbered
   in the alphabetical order of their names (`t()` passes named values in that order). At most nine. Every language has
   the same ones as English and uses each; `$$` writes a dollar sign, and any other `$` is an error.

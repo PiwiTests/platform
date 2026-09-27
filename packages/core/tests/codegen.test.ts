@@ -372,7 +372,9 @@ describe('renderSpec — options', () => {
     const session = buildSession([step({ target: target({ alternatives: [brittle, byRole] }) })], 0);
     const first = renderSpec(session);
     expect(first.code).toContain(`page.locator('.btn').nth(1).click()`);
-    expect(first.warnings).toEqual([expect.objectContaining({ step: 0, code: 'brittle-locator' })]);
+    expect(first.warnings).toEqual([
+      expect.objectContaining({ step: 0, code: 'brittle-locator', detail: `locator('.btn').nth(1)` }),
+    ]);
     const stable = renderSpec(session, { locators: 'stable' });
     expect(stable.code).toContain(`page.getByRole('button', { name: 'Log in' }).click()`);
     expect(stable.warnings).toEqual([]);
@@ -431,7 +433,9 @@ describe('renderSpec — options', () => {
 
   test('a redacted value warns', () => {
     const session = buildSession([step({ action: 'fill', value: null, redacted: true })], 0);
-    expect(renderSpec(session).warnings).toEqual([expect.objectContaining({ code: 'redacted-value' })]);
+    expect(renderSpec(session).warnings).toEqual([
+      expect.objectContaining({ code: 'redacted-value', detail: 'PIWI_TEST_VALUE_0' }),
+    ]);
   });
 
   test('expectFail, tags and annotations shape the test declaration', () => {

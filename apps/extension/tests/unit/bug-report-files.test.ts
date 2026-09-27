@@ -1,9 +1,11 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { RawCaptureEvent } from '@piwitests/core/recording';
 import { bugContextFrom } from '@piwitests/core/bug-report';
+import { bugPhrases } from '@piwitests/core/bug-phrases';
 import {
   assembleBugReport,
   bugReportEntries,
+  bugReportMarkdown,
   NO_SCREENSHOT_TAKEN,
   specFileName,
 } from '../../src/content/bug-report-files.js';
@@ -135,6 +137,43 @@ describe('assembleBugReport', () => {
     ]);
     expect([...(entries[4]!.data as Uint8Array)]).toEqual([0, 1, 2]);
     expect(JSON.parse(entries[3]!.data as string)).toMatchObject({ v: 1, context: { pageKey: '/cart' } });
+  });
+});
+
+describe('bugReportMarkdown', () => {
+  const report = () =>
+    assembleBugReport({
+      events: [
+        ev({ kind: 'navigate', value: `${ORIGIN}/cart` }),
+        ev({
+          kind: 'assert',
+          target: null,
+          assertion: { matcher: 'toHaveURL', expected: '/thanks', actual: '/cart', negated: false, note: null },
+        }),
+      ],
+      startedAt: 1,
+      evidence: { ...evidence, title: null },
+      screenshots: [],
+      context,
+    });
+
+  it('writes the report in English by default, the stored note as it is', () => {
+    const markdown = bugReportMarkdown(report());
+    expect(markdown).toContain('## Steps to reproduce');
+    expect(markdown).toContain('2. The page should be `/thanks`');
+    expect(markdown).toContain(`No screenshot: ${NO_SCREENSHOT_TAKEN}`);
+  });
+
+  it('writes it in the language it is given, the note in that language, steps.json and the test unchanged', () => {
+    const french = { phrases: bugPhrases('fr'), screenshotNote: () => 'aucune n’a été prise' };
+    const markdown = bugReportMarkdown(report(), french);
+    expect(markdown).toContain('# Bug sur /cart');
+    expect(markdown).toContain('2. La page devrait être `/thanks`');
+    expect(markdown).toContain('Aucune capture d’écran\u00a0: aucune n’a été prise');
+    const [steps, spec] = bugReportEntries(report(), [], french);
+    const [englishSteps, englishSpec] = bugReportEntries(report(), []);
+    expect(steps).toEqual(englishSteps);
+    expect(spec).toEqual(englishSpec);
   });
 });
 

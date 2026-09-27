@@ -1,4 +1,5 @@
 import { describeStepInWords } from '@piwitests/core/bug-report';
+import { interfacePhrases } from '../shared/core-words.js';
 import { pageKey } from '@piwitests/core/page-key';
 import { buildSession, normalizeSteps, type RecordedStep } from '@piwitests/core/recording';
 import { sessionFromSteps, toStepsDocument, type PiwiSteps } from '@piwitests/core/steps';
@@ -94,7 +95,7 @@ function wait(ms: number): Promise<void> {
 
 /** A step in plain words, without the Markdown code marks the report uses. */
 function stepWords(step: RecordedStep): string {
-  return describeStepInWords(step).replace(/`+/g, '');
+  return describeStepInWords(step, interfacePhrases()).replace(/`+/g, '');
 }
 
 function pathOf(url: string): string {

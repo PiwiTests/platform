@@ -3479,5 +3479,152 @@
   },
   "common_workerOutdated": {
     "message": "Piwi Picker a été reconstruit sans être rechargé, et son processus d’arrière-plan tourne encore sur la version précédente. Rechargez l’extension depuis son menu, ou depuis la page des extensions du navigateur."
+  },
+  "stability_position": {
+    "message": "position"
+  },
+  "stability_cssClass": {
+    "message": "classe CSS"
+  },
+  "stability_cssStructure": {
+    "message": "structure CSS"
+  },
+  "stability_xpath": {
+    "message": "XPath"
+  },
+  "stability_generatedId": {
+    "message": "id généré"
+  },
+  "stability_styleAttribute": {
+    "message": "attribut style"
+  },
+  "stability_longText": {
+    "message": "texte long"
+  },
+  "stability_dataText": {
+    "message": "nombre dans le texte"
+  },
+  "stability_deepChain": {
+    "message": "chaîne longue"
+  },
+  "codegen_noLocator": {
+    "message": "Aucun locator n’a été enregistré pour cet élément."
+  },
+  "codegen_brittleLocator": {
+    "message": "Le meilleur locator enregistré pour cet élément risque de casser quand la page change : $locator$",
+    "placeholders": {
+      "locator": {
+        "content": "$1",
+        "example": "locator('.btn').nth(1)"
+      }
+    }
+  },
+  "codegen_redactedValue": {
+    "message": "Un mot de passe a été saisi ici : le test le lit dans $variable$.",
+    "placeholders": {
+      "variable": {
+        "content": "$1",
+        "example": "PIWI_TEST_VALUE_3"
+      }
+    }
+  },
+  "codegen_emptyAssertion": {
+    "message": "Cette vérification n’a rien à comparer."
+  },
+  "codegen_missingExpected": {
+    "message": "$matcher$ a besoin d’une valeur attendue.",
+    "placeholders": {
+      "matcher": {
+        "content": "$1",
+        "example": "toHaveText"
+      }
+    }
+  },
+  "common_actionClick": {
+    "message": "Clic"
+  },
+  "common_actionDblclick": {
+    "message": "Double-clic"
+  },
+  "common_actionFill": {
+    "message": "Saisie"
+  },
+  "common_actionSelectOption": {
+    "message": "Choix d’une option"
+  },
+  "common_actionCheck": {
+    "message": "Cocher"
+  },
+  "common_actionUncheck": {
+    "message": "Décocher"
+  },
+  "common_actionHover": {
+    "message": "Survol"
+  },
+  "common_actionTap": {
+    "message": "Toucher"
+  },
+  "common_actionFocus": {
+    "message": "Focus"
+  },
+  "common_actionBlur": {
+    "message": "Perte du focus"
+  },
+  "common_actionPress": {
+    "message": "Touche"
+  },
+  "common_actionType": {
+    "message": "Frappe"
+  },
+  "common_actionSetInputFiles": {
+    "message": "Choix de fichiers"
+  },
+  "common_actionDragTo": {
+    "message": "Glisser-déposer"
+  },
+  "common_actionDrop": {
+    "message": "Dépôt"
+  },
+  "common_actionDispatchEvent": {
+    "message": "Événement déclenché"
+  },
+  "common_actionScrollIntoView": {
+    "message": "Défilement jusqu’à l’élément"
+  },
+  "common_actionWaitFor": {
+    "message": "Attente"
+  },
+  "common_actionCount": {
+    "message": "Comptage"
+  },
+  "common_actionEvaluate": {
+    "message": "Évaluation"
+  },
+  "common_actionExpect": {
+    "message": "Vérification"
+  },
+  "common_actionOther": {
+    "message": "Autre"
+  },
+  "common_actionExpectMatcher": {
+    "message": "Vérification $matcher$",
+    "placeholders": {
+      "matcher": {
+        "content": "$1",
+        "example": "toBeVisible"
+      }
+    }
+  },
+  "common_actionExpectNot": {
+    "message": "Vérification not.$matcher$",
+    "placeholders": {
+      "matcher": {
+        "content": "$1",
+        "example": "toBeVisible"
+      }
+    }
+  },
+  "bug_noScreenshotNone": {
+    "message": "aucune n’a été prise"
   }
 }

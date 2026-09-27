@@ -32,7 +32,7 @@
     "./page-key": "./src/page-key.ts",
     "./steps": "./src/steps.ts",
     "./bug-report": "./src/bug-report.ts",
-    "./role-words": "./src/role-words.ts"
+    "./bug-phrases": "./src/bug-phrases.ts"
   },
   "scripts": {
     "core:typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tests/tsconfig.json",

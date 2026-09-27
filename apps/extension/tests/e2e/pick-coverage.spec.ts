@@ -199,7 +199,7 @@ test.describe('pick results in connected mode', () => {
     const section = page.locator(`${RESULTS} .piwi`);
     await expect(section).toContainText('Atteint par 2 tests du projet Acme Mugs');
     await expect(section.locator('.brittle')).toHaveText(
-      "Locator fragile\u00a0: locator('aside.cart > button') · CSS class · CSS structure",
+      "Locator fragile\u00a0: locator('aside.cart > button') · classe CSS · structure CSS",
     );
     await expect(section.getByRole('link', { name: 'Chercher ces locators dans Piwi ↗' })).toBeVisible();
     await expect(section.getByRole('button', { name: 'Voir tous les éléments testés' })).toBeVisible();

@@ -6,8 +6,7 @@
  * pointer events, so the page stays usable underneath.
  */
 import { highlightLocator } from '@piwitests/picker-dom';
-import { locatorActionLabel } from '@piwitests/core/step-locators';
-import { stabilityLabels } from '@piwitests/core/locator-stability';
+import { actionLabel, stabilityText } from '../shared/core-words.js';
 import { editText, type Replacement } from './coverage-risk.js';
 import type { CoveredElement, UncoveredElement } from './coverage-scan.js';
 import { statusLabel, testTitle, usePages, type CoverageContext } from './coverage-view.js';
@@ -402,7 +401,7 @@ export class CoverageLayer {
       'div',
       `note stability ${stability.level}`,
       t(stability.level === 'brittle' ? 'coverage_noteBrittle' : 'coverage_noteWatch', {
-        rules: stabilityLabels(stability, ', '),
+        rules: stabilityText(stability, ', '),
       }),
     );
     note.title = stability.findings.map((f) => f.detail).join('\n');
@@ -451,7 +450,7 @@ export class CoverageLayer {
       const index = this.context!.index;
       for (const m of d.covered.matches)
         for (const use of index.locators[m.entry]!.uses) use.actions.forEach((a) => actions.add(a));
-      if (actions.size) line.append(` · ${[...actions].slice(0, 4).map(locatorActionLabel).join(', ')}`);
+      if (actions.size) line.append(` · ${[...actions].slice(0, 4).map(actionLabel).join(', ')}`);
       if (d.covered.ambiguous) line.append(` · ${t('coverage_ambiguous')}`);
     } else {
       line.appendChild(el('span', 'uncovered', t('coverage_notTested')));
@@ -532,7 +531,7 @@ export class CoverageLayer {
         for (const use of entry.uses.slice(0, CARD_TESTS)) {
           const where = use.callSites[0] ?? index.tests[use.test]!.file;
           const pages = usePages(index, use);
-          const detail = `${use.actions.map(locatorActionLabel).join(', ')} · ${where}${use.projects.length ? ` · ${use.projects.join(', ')}` : ''}${pages.length ? ` · ${t('coverage_onPages', { pages: `${pages.slice(0, 3).join('; ')}${pages.length > 3 ? ` +${pages.length - 3}` : ''}` })}` : ''}`;
+          const detail = `${use.actions.map(actionLabel).join(', ')} · ${where}${use.projects.length ? ` · ${use.projects.join(', ')}` : ''}${pages.length ? ` · ${t('coverage_onPages', { pages: `${pages.slice(0, 3).join('; ')}${pages.length > 3 ? ` +${pages.length - 3}` : ''}` })}` : ''}`;
           list.appendChild(this.testItem(use.test, context, detail, true));
         }
         block.appendChild(list);

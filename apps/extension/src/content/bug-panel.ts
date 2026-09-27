@@ -12,7 +12,6 @@ import {
   describeStepInWords,
   emptyBugEvidence,
   expectedSteps,
-  renderBugMarkdown,
   renderBugSpec,
   summarizeEvidence,
   type BugConsoleEntry,
@@ -24,7 +23,14 @@ import { suggestAssertions } from './assertion-suggest.js';
 import { DomModel } from './engine-aria.js';
 import { createLocatorEngine } from './locator-engine.js';
 import { buildOutline, outlineRoot } from './bug-outline.js';
-import { assembleBugReport, bugReportZip } from './bug-report-files.js';
+import {
+  assembleBugReport,
+  bugReportMarkdown,
+  bugReportZip,
+  NO_SCREENSHOT_TAKEN,
+  type ReportLanguage,
+} from './bug-report-files.js';
+import { codegenWarningText, interfacePhrases } from '../shared/core-words.js';
 import {
   BUG_DIALOG_HOST_ID,
   FRAME_HOST_ID,
@@ -75,7 +81,14 @@ export const NO_SCREENSHOT_NOTE =
 
 /** A stored screenshot note in the interface language; a note this module does not know stays as it is. */
 function screenshotNoteText(note: string): string {
-  return note === NO_SCREENSHOT_NOTE ? t('bug_screenshotBlocked', { action: t('popup_takeScreenshot') }) : note;
+  if (note === NO_SCREENSHOT_NOTE) return t('bug_screenshotBlocked', { action: t('popup_takeScreenshot') });
+  if (note === NO_SCREENSHOT_TAKEN) return t('bug_noScreenshotNone');
+  return note;
+}
+
+/** The report's Markdown in the interface language. */
+function reportLanguage(): ReportLanguage {
+  return { phrases: interfacePhrases(), screenshotNote: screenshotNoteText };
 }
 
 const PANEL_CSS = `
@@ -699,18 +712,21 @@ export interface BugHudHandlers {
 }
 
 function evidenceSummary(evidence: StoredBugEvidence): string {
-  return summarizeEvidence({
-    ...emptyBugEvidence(),
-    console: evidence.console,
-    requests: evidence.requests,
-    outline: evidence.outline,
-    screenshots: Array.from({ length: evidence.screenshots }, () => ({
-      file: '',
-      step: null,
-      moment: 'manual',
-      takenAt: 0,
-    })),
-  });
+  return summarizeEvidence(
+    {
+      ...emptyBugEvidence(),
+      console: evidence.console,
+      requests: evidence.requests,
+      outline: evidence.outline,
+      screenshots: Array.from({ length: evidence.screenshots }, () => ({
+        file: '',
+        step: null,
+        moment: 'manual',
+        takenAt: 0,
+      })),
+    },
+    interfacePhrases(),
+  );
 }
 
 function stepRow(step: RecordedStep, index: number): HTMLElement {
@@ -720,7 +736,7 @@ function stepRow(step: RecordedStep, index: number): HTMLElement {
   idx.className = 'step-idx';
   idx.textContent = String(index + 1);
   const text = document.createElement('span');
-  text.textContent = describeStepInWords(step);
+  text.textContent = describeStepInWords(step, interfacePhrases());
   row.append(idx, text);
   const assertion = step.assertion;
   if (step.action === 'assert' && assertion?.actual != null) {
@@ -921,7 +937,7 @@ export async function renderBugFinishPanel(state: RecordingState, onDiscard: () 
 
   const summary = document.createElement('div');
   summary.className = 'evidence';
-  summary.textContent = t('bug_attached', { summary: summarizeEvidence(initial.evidence) });
+  summary.textContent = t('bug_attached', { summary: summarizeEvidence(initial.evidence, interfacePhrases()) });
   panel.appendChild(summary);
 
   const notes: string[] = [];
@@ -929,7 +945,7 @@ export async function renderBugFinishPanel(state: RecordingState, onDiscard: () 
     notes.push(t('bug_nothingMarked', { mark: t('bug_mark') }));
   }
   for (const w of renderBugSpec(initial).warnings)
-    notes.push(t('bug_stepWarning', { step: w.step + 1, message: w.message }));
+    notes.push(t('bug_stepWarning', { step: w.step + 1, message: codegenWarningText(w) }));
   if (initial.evidence.screenshots.length === 0) {
     notes.push(
       evidence.screenshotNote
@@ -957,12 +973,12 @@ export async function renderBugFinishPanel(state: RecordingState, onDiscard: () 
   };
   action(t('bug_copyTest'), 'primary', (b) => void copyToClipboard(renderBugSpec(report()).code, b)).title =
     t('bug_copyTestHint');
-  action(t('bug_copyReport'), '', (b) => void copyToClipboard(renderBugMarkdown(report()), b)).title =
+  action(t('bug_copyReport'), '', (b) => void copyToClipboard(bugReportMarkdown(report(), reportLanguage()), b)).title =
     t('bug_copyReportHint');
   action(t('bug_downloadZip'), '', () => {
     const current = report();
     downloadBlob(
-      new Blob([bugReportZip(current, screenshots) as BlobPart], { type: 'application/zip' }),
+      new Blob([bugReportZip(current, screenshots, reportLanguage()) as BlobPart], { type: 'application/zip' }),
       `piwi-bug-${fileStamp(current.context.time)}.zip`,
     );
   }).title = t('bug_downloadZipHint');

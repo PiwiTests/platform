@@ -333,6 +333,7 @@ test.describe('Report a bug', () => {
   });
 
   test('in French: the HUD, the dialogs and the finished report', async ({ context }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
     await openShadowRoots(context);
     await routeShop(context, { fixed: false });
     const page = await startBugRecording(context, { ok: false }, { language: 'fr' });
@@ -384,7 +385,27 @@ test.describe('Report a bug', () => {
       await expect(review.getByRole('button', { name })).toBeVisible();
     await expect(review.getByText(/^Pas de capture d’écran\u00a0: Chrome ne laisse/)).toBeVisible();
     await expect(review.getByText('Tout reste dans ce navigateur\u00a0: rien n’est envoyé nulle part.')).toBeVisible();
+    // The steps in French words, the page's texts as they are.
+    await expect(review.locator('.step').first()).toContainText(/^1\s*Ouvrir /);
+    await expect(review.locator('.step.marked')).toContainText('devrait afficher «\u202fTotal: 45\u202f»');
     expect(await clippedInShadows(page)).toEqual([]);
+
+    // The report is written in French; the failing test is the one an English report makes.
+    await review.getByRole('button', { name: 'Copier le rapport' }).click();
+    await expect.poll(() => readClipboard(page)).toContain('## Étapes pour reproduire');
+    const markdown = await readClipboard(page);
+    expect(markdown).toContain('devrait afficher «\u202fTotal: 45\u202f»');
+    expect(markdown).toContain('   - Résultat\u00a0: «\u202fTotal: 50\u202f»');
+    expect(markdown).toContain('## Attendu et constaté');
+    expect(markdown).toMatch(/^Aucune capture d’écran\u00a0: Chrome ne laisse Piwi Picker/m);
+    expect(markdown).not.toContain(' should ');
+    await review.getByRole('button', { name: 'Copier le test en échec' }).click();
+    await expect.poll(() => readClipboard(page)).toContain('test.fail();');
+    const spec = await readClipboard(page);
+    expect(spec).toContain(
+      `await expect(page.getByTestId('cart-total')).toHaveText('Total: 45'); // recorded: 'Total: 50'`,
+    );
+    expect(spec).toMatch(/test\('bug: bug on \/cart'/);
   });
 
   test('in the real extension: the main-world script is registered for the recording, relays across worlds, and no screenshot is taken without activeTab', async () => {

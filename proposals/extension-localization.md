@@ -7,11 +7,12 @@ is written for people who are not necessarily fluent in English, and a French te
 
 **Status.** Proposed 2026-09-27. PR 1 built 2026-09-27: the machinery, the popup, the settings page, the background's
 texts and badges, in English and French. PR 2 built 2026-09-27: every in-page tool, in English and French, with its
-English rewritten in plain words; the French store listing names the tools as the French interface does. French is to
-be reviewed by the team before release. What still reads English in a French interface is what PR 3 moves: the
-sentences core writes about the page (steps, expectations, evidence, the Markdown report), stability rules and
-converter warnings. The decisions PR 1 and PR 2 changed are under "Decisions made while building" below. Nothing here
-changes a wire format, the steps format or generated code, so no entry
+English rewritten in plain words; the French store listing names the tools as the French interface does. PR 3 built
+2026-09-27: core's phrasebooks in English and French, so the bug report, its steps and the replay's step list are
+written in the interface language, and the stability rules, converter warnings and action labels core writes in
+English are worded by code. French is to be reviewed by the team before release. The decisions each PR changed are
+under "Decisions made while building" below. Nothing here changes a wire format, the steps format or generated code, so
+no entry
 in [`1.0-stabilization.md`](1.0-stabilization.md) is needed.
 
 **Summary.** Every text the extension shows moves into one catalog per language, the `messages.json` files the browser
@@ -185,7 +186,7 @@ So `packages/core` gets a phrasebook interface, `BugPhrases`, with one file per 
 `bug-phrases.fr.ts`, and so on, registered by language code, the same shape as the dashboard's
 `apps/application/shared/reports/sentences.{en,fr}.ts`. A phrasebook holds:
 
-- the role nouns of `role-words.ts` (about 60 roles), each with its gender where the language has them;
+- the role nouns (about 60 roles, formerly `role-words.ts`), each with its gender where the language has them;
 - `quote(text)`, `code(text)`, and the article and preposition forms the language's templates need;
 - one template per action and per matcher (visible, hidden, enabled, disabled, text, value, name, URL), negated or not;
 - the report's headings and labels, the evidence summary with its counts, and "a password (not recorded)".
@@ -310,8 +311,8 @@ session, agent context, record, results, test functions, coverage, the bug repor
 (coverage alone holds about 95 strings), and the one where the English is rewritten in plain words. It may be split in
 two, the picking tools first. The not-yet-migrated list ends empty.
 
-**PR 3 — the phrasebooks (en, fr).** `BugPhrases` in core, English and French; `role-words.ts` folded into them; the
-bug report written in the selected language; the replay's step list and cursor captions through the phrasebook (its
+**PR 3 — the phrasebooks (en, fr).** Built. `BugPhrases` in core, English and French; `role-words.ts` folded into them;
+the bug report written in the selected language; the replay's step list and cursor captions through the phrasebook (its
 verdict is already translated, by PR 2); stability rules and converter warnings by code; the action labels of
 `locatorActionLabel` (Click, Count) that the pick results and Tested elements show.
 
@@ -388,6 +389,32 @@ PR 2 changed or settled these:
 - **Starting a tool.** A script that paints on injection ends with `void initI18n().then(start)`; a script that
   already awaits storage runs `initI18n()` beside it (`Promise.all`), so no first paint waits longer. The bug panels
   have no entry point of their own: `record-panel.ts` reads the language before any of them paints.
+
+PR 3 changed or settled these:
+
+- **A phrasebook takes parts, not strings.** `bug-report.ts` reads a step into language-free parts (a `BugSubject`: the
+  element by role and name, name, test id, text, locator or kind; a `BugStepValue`; a `BugExpectation`) and the
+  phrasebook writes the sentence around them, so each language places its own articles, prepositions and agreements.
+  `bugPhrases(tag)` picks one by the tag's language (`fr-CA` reads French) and falls back to English, which the Jira
+  ticket in the project's language needs too. `role-words.ts` is gone: `roleWord(role, phrases)` lives in
+  `bug-phrases.ts`, and the package exports `./bug-phrases` instead of `./role-words`.
+- **French choices.** Steps start with an infinitive (« Ouvrir », « Cliquer sur », « Saisir … dans », « Choisir …
+  dans », « Cocher la case »); a checkbox is « la case » when checked, as in the table above; a bare locator is
+  « l’élément `…` »; a state agrees with the noun (« l’image … devrait être masquée »); keys have the names French
+  keyboards print (« Entrée », « Échap »), any other key keeps Playwright's name; the value the page showed is
+  « Résultat : … », as in the replay's verdict.
+- **What is written in the interface language, and what is not.** The Markdown report (copied, and `bug-report.md`
+  in the zip), the steps and evidence summary in the bug panels, and the replay's step list and cursor captions
+  follow the interface language. `steps.json`, `evidence.json` and the failing test stay as they are: the spec's title
+  and its file name come from the English title when the reporter gave none (`bug: bug on /cart`). The screenshot note,
+  stored in English, is worded when the Markdown is written.
+- **Core's English texts by code.** Stability rules show only their labels in the extension, so only labels are
+  messages (`stability_<rule>`, the rule id in camel case since keys cannot hold `-`). Converter warnings gained an
+  optional `detail` (the locator, the environment variable or the matcher their message names) and are worded from
+  `code` and `detail` (`codegen_`). Action labels (`locatorActionLabel`) are `common_action*` messages. Core keeps its
+  English for the dashboard and the CLI.
+- **The report does not record its language.** The Jira plan's "a line says which language the report was written in"
+  needs the report to carry it; that is left to that work, since it changes what a report stores.
 
 ## Open questions
 

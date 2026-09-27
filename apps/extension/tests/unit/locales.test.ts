@@ -32,6 +32,8 @@ const SURFACES = [
   'assert',
   'agent',
   'functions',
+  'stability',
+  'codegen',
   'badge',
   'common',
 ];
