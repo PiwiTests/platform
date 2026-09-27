@@ -15,7 +15,8 @@ options, Download steps and `piwi codegen`), PR 2 (Report a bug in Piwi Picker, 
 (Replay, from a file, from the report just recorded, or from the finished report, with a fake cursor), PR 4
 (`expectedStatus`, "looks fixed", `piwi:bug`) PR 5 (the dashboard: stored reports, their pages and spec, Send to
 Piwi…, Replay from the instance, `piwi bug`, MCP tools) and PR 7 (Jira: filing from the Send preview, the report's page,
-MCP or for every report, in the ticket's language, screenshots attached, the ticket following the report) are built; evidence collected during a replay and the rest are not. The extension gains
+MCP or for every report, in the ticket's language, screenshots attached, the ticket following the report) and PR 8 (why the suite missed it, escaped defects on the Test
+Map, the `fix-a-reported-bug` skill) are built; evidence collected during a replay and the rest are not. The extension gains
 two tools and, for the first time, requests that send page data to an instance, behind the explicit opt-in and preview
 its rules require. The reporter gains one wire field (`expectedStatus`); the dashboard gains a table, pages, endpoints,
 an issue type for the Jira integration, a CLI command and MCP tools; the desktop app gains a run request. The steps
@@ -618,10 +619,27 @@ PRs 1–3 close the loop between a tester and a developer with files alone: reco
     `user` key's refusal on the CI auth server), and the extension's `bug-send.spec.ts` (the checkbox and
     `createIssue` on the wire).
 
-### PR 8 — missed-by and escapes
+### PR 8 — missed-by and escapes (built)
 - `shared/handlers/bug-reports.ts`, `shared/handlers/scenario-gaps.ts` (escaped-defect loader),
   `packages/reporter/templates/skills/fix-a-reported-bug/SKILL.md` (new), `cli/skills.ts`.
 - Docs: `features/agent-skills.md`, `features/scenario-gaps.md`.
+- Built as: `computeMissedBy` and `describeMissedBy` (`shared/bug-report-missed-by.ts`, pure: the page of the first
+  marked step, the tests whose uses ran on it, and for each marked element the tests whose chains find it through
+  core's `lookupLocators`, with what they assert); `getBugReportMissedBy` in the shared handler;
+  `GET /api/bug-reports/:id/missed-by` (adds the owner of the spec file whose tests visit the page most, through
+  `resolveOwners`); the report page's **The suite** line; `missedBy` in `get_bug_report` and a section of the Jira
+  ticket; `detectReportedBugEscapes` with its loader in `computeScenarioGaps`; the skill in
+  `packages/reporter/templates/skills/fix-a-reported-bug/SKILL.md`, registered in `cli/skills.ts`. Decisions made
+  while building:
+  - **An escape is a gap per page, from the open reports only**: a report whose test is committed is no longer a
+    blind spot, since the test now guards it. The gap closes when no open report is left on the page. The exposure
+    factors keep reading the SCM's files; a page gap has none, so it ranks on its confidence (0.6, more with more
+    reports).
+  - **A use recorded on another page does not count as reaching the element**, even when its chain matches: the same
+    test id on the checkout page is another element.
+  - **Without page data** (no capture fixtures), the line says the visits are unknown rather than "no test visits".
+  - Tests: `bug-report-missed-by.test.ts` (the counts, a same-id element on another page left out, no pages, the
+    escape gaps) and the e2e read in `bug-reports.spec.ts`.
 
 ## Verification
 

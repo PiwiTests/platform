@@ -66,7 +66,7 @@ npx @piwitests/reporter skills list
 npx @piwitests/reporter skills add [names...] [options]
 ```
 
-The six skills are `setup-piwi`, `investigate-failure`, `apply-locator-healing`, `stabilize-flaky-tests`, `run-the-right-tests` and `write-the-missing-test`. `add` with no names installs all of them.
+The seven skills are `setup-piwi`, `investigate-failure`, `apply-locator-healing`, `stabilize-flaky-tests`, `run-the-right-tests`, `write-the-missing-test` and `fix-a-reported-bug`. `add` with no names installs all of them.
 
 | Flag (for `add`) | Description |
 |---|---|

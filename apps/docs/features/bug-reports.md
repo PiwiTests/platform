@@ -41,6 +41,16 @@ tester expected and what the page showed instead, where the report stands, and w
 
 **Dismiss** sets a report aside: runs no longer move it. **Reopen** brings it back.
 
+### Why the suite missed it
+
+The page also says, in one line, why no test caught the bug, from the [locators your tests use](./locator-usage) on
+the report's page: "4 tests visit /cart; 2 reach the element marked, and none asserts its text". **Show the tests**
+lists them, and the owner is the one of the spec file whose tests visit the page most (its `piwi:owner`, else
+CODEOWNERS). It needs the [capture fixtures](/guide/capture-fixtures), which record the page each locator ran on.
+
+Until a test names it, an open report is also an **escaped defect** on the [Test Map](./scenario-gaps): one blind spot
+per page with open reports, ranked like any gap.
+
 ## The failing test
 
 The **Spec** tab renders the steps as a Playwright spec with the same converter as Piwi Picker and

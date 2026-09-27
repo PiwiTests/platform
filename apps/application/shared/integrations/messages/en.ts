@@ -61,6 +61,7 @@ export const en = {
   'section.expectedActual': 'Expected and actual',
   'section.failingTest': 'The failing test',
   'section.reproductions': 'Reproductions',
+  'section.missedBy': 'Why the suite missed it',
   'label.expected': 'Expected',
   'label.actual': 'The page showed',
   'label.note': 'Note',

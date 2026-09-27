@@ -20,6 +20,7 @@ import {
   testFunctions,
   testRuns,
   testRunsCases,
+  bugReports,
 } from '../../server/database/schema';
 import { fileRouteTarget, filePageTarget, routeKeyMatchesTarget, pageKeyMatchesTarget } from '../graph';
 import { isProbeRun } from './probes';
@@ -722,6 +723,41 @@ export function detectEscapedDefect(bugs: EscapedDefectInput[]): DetectedGap[] {
     });
   }
   return gaps;
+}
+
+/** A bug report still open: a defect that reached someone before any test caught it. */
+export interface ReportedBugInput {
+  id: number;
+  title: string;
+  /** The page it was reported on, as the Test Map keys pages. */
+  pageKey: string | null;
+}
+
+/**
+ * Escaped defects reported from Piwi Picker, one blind spot per page: every
+ * open report is a bug the suite let through on that page, so the page ranks
+ * higher until a test names each report (`piwi:bug`), which moves it on.
+ */
+export function detectReportedBugEscapes(reports: ReportedBugInput[]): DetectedGap[] {
+  const byPage = new Map<string, ReportedBugInput[]>();
+  for (const report of reports) {
+    if (!report.pageKey) continue;
+    byPage.set(report.pageKey, [...(byPage.get(report.pageKey) ?? []), report]);
+  }
+  return [...byPage.entries()].map(([page, list]) => ({
+    detector: 'escaped-defect',
+    kind: 'gap',
+    class: 'blind-spot',
+    key: `page:${page}`,
+    title:
+      list.length === 1
+        ? `A reported bug escaped the suite on ${page}: ${list[0]!.title}`
+        : `${list.length} reported bugs escaped the suite on ${page}`,
+    evidence: list.map(
+      (r) => `Bug report #${r.id}: ${r.title} — no test names it yet; commit its failing test (piwi:bug ${r.id}).`,
+    ),
+    confidence: Math.min(1, 0.6 + 0.1 * (list.length - 1)),
+  }));
 }
 
 /** A test and the set of nodes it reaches, each with whether it was seen recently. */
@@ -1519,7 +1555,16 @@ export async function computeScenarioGaps(
     };
   });
 
+  // Escaped defects: the project's bug reports that no test names yet.
+  const openReports: ReportedBugInput[] = (
+    await db
+      .select({ id: bugReports.id, title: bugReports.title, pageKey: bugReports.pageKey })
+      .from(bugReports)
+      .where(and(eq(bugReports.projectId, projectId), eq(bugReports.status, 'open')))
+  ).map((r) => ({ id: r.id, title: r.title, pageKey: r.pageKey }));
+
   const detected = [
+    ...detectReportedBugEscapes(openReports),
     ...detectSuccessOnly([...routeStats.values()]),
     ...detectSingleCoveringTest(nodeReach),
     ...detectSurfaceDrift(nodeDrift, latestRunId),
@@ -1554,6 +1599,7 @@ export async function computeScenarioGaps(
       'fix-did-not-hold',
       'declared-never-hit',
       'unprobed-dependency',
+      'escaped-defect',
     ],
     scored,
     latestRunId,

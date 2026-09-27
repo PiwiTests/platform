@@ -42,7 +42,8 @@ and its factors show on every gap. Counts are per class, never a coverage percen
 surface looks complete exactly when that surface is sparse.
 
 A changed file no test reaches is a gap too, raised at pull-request time: see
-[Uncovered changes in pull requests](/features/uncovered-changes).
+[Uncovered changes in pull requests](/features/uncovered-changes). So is a page with open
+[bug reports](/features/bug-reports): a defect that escaped the suite there.
 
 ## The Gaps tab
 

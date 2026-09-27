@@ -48,6 +48,7 @@ export const fr: Record<MessageKey, MessageValue> = {
   'section.expectedActual': 'Attendu et constaté',
   'section.failingTest': 'Le test en échec',
   'section.reproductions': 'Reproductions',
+  'section.missedBy': 'Pourquoi la suite ne l’a pas vu',
   'label.expected': 'Attendu',
   'label.actual': 'La page affichait',
   'label.note': 'Note',

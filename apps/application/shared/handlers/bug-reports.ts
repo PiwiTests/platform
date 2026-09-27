@@ -19,6 +19,7 @@ import {
 import { getProjectFunctionCatalog } from './test-functions';
 import { getLocatorIndex } from '../../server/utils/locator-usages';
 import type { TestMetadata } from '#shared/types';
+import { computeMissedBy, describeMissedBy, type MissedBy } from '#shared/bug-report-missed-by';
 import type { DrizzleDB } from './db';
 
 /**
@@ -543,4 +544,19 @@ export async function applyBugReportLifecycle(db: DrizzleDB, runId: number): Pro
     await db.update(bugReports).set(set).where(eq(bugReports.id, attempt.bugId));
   }
   return transitions;
+}
+
+/** Why the suite missed a report's bug, from its project's locator index. Null when there is no such report. */
+export async function getBugReportMissedBy(
+  db: DrizzleDB,
+  id: number,
+): Promise<(MissedBy & { summary: string }) | null> {
+  const [row] = await db
+    .select({ projectId: bugReports.projectId, steps: bugReports.steps, pageKey: bugReports.pageKey })
+    .from(bugReports)
+    .where(eq(bugReports.id, id));
+  if (!row) return null;
+  const index = await getLocatorIndex(db, row.projectId).catch(() => null);
+  const missed = computeMissedBy(index, { steps: row.steps as PiwiSteps, pageKey: row.pageKey });
+  return { ...missed, summary: describeMissedBy(missed) };
 }

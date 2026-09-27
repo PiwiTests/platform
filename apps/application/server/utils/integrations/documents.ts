@@ -17,7 +17,7 @@ import { caseHeadline } from '#shared/failure-verdict';
 import { errorExcerpt } from '#shared/notification-events';
 import { clusterClue } from '#shared/inbox-queues';
 import { reproScript } from '#shared/reproduce';
-import { getBugReport, renderBugReportSpec } from '#shared/handlers/bug-reports';
+import { getBugReport, getBugReportMissedBy, renderBugReportSpec } from '#shared/handlers/bug-reports';
 import {
   buildBugIssue,
   type BugIssueFacts,
@@ -246,6 +246,9 @@ export async function buildBugReportIssue(
       origin: r.origin,
       source: r.source,
     })),
+    missedBy: await getBugReportMissedBy(db, bugReportId)
+      .then((m) => (m?.pagesKnown ? { summary: m.summary, tests: m.visiting } : null))
+      .catch(() => null),
     reportUrl: link(base, `/bug-reports/${report.id}`),
   };
   return { ...buildBugIssue(facts, { locale }), projectId: report.projectId };

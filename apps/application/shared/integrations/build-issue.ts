@@ -235,6 +235,8 @@ export interface BugIssueFacts {
   /** The spec to commit, as the report's page renders it. */
   spec: { path: string; code: string } | null;
   reproductions: Array<{ verdict: string; divergedAt: number | null; origin: string | null; source: string }>;
+  /** Why the suite missed it, one line, and the tests that visit the page. */
+  missedBy?: { summary: string; tests: Array<{ title: string; filePath: string }> } | null;
   reportUrl: string | null;
 }
 
@@ -345,6 +347,16 @@ export function buildBugIssueDocument(facts: BugIssueFacts, opts: { locale?: Iss
         return [`${verdict}${r.origin ? ` — ${r.origin}` : ''} (${how})`];
       }),
     );
+  }
+
+  if (facts.missedBy) {
+    b.heading(2, t(locale, 'section.missedBy'));
+    b.paragraph(facts.missedBy.summary);
+    if (facts.missedBy.tests.length)
+      b.table(
+        [t(locale, 'table.test'), t(locale, 'table.file')],
+        facts.missedBy.tests.slice(0, 10).map((test) => [test.title, test.filePath]),
+      );
   }
 
   if (facts.reportUrl) {

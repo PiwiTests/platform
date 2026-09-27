@@ -60,6 +60,21 @@ const next = computed(() => {
 
 const lastTry = computed(() => report.value?.reproductionList.at(-1) ?? null);
 
+// Why the suite missed it: read after the page, since it walks the project's locator index.
+interface MissedByAnswer {
+  summary: string;
+  page: string | null;
+  pagesKnown: boolean;
+  visiting: Array<{ testCaseId: number; title: string; filePath: string }>;
+  owner: string | null;
+  mainFile: string | null;
+}
+const missedBy = ref<MissedByAnswer | null>(null);
+const showVisiting = ref(false);
+onMounted(async () => {
+  missedBy.value = await $fetch<MissedByAnswer>(`/api/bug-reports/${reportId}/missed-by`).catch(() => null);
+});
+
 const TABS = ['steps', 'evidence', 'reproductions', 'spec'];
 const activeTab = ref(TABS.includes(String(route.query.tab)) ? String(route.query.tab) : 'steps');
 const router = useRouter();
@@ -182,6 +197,33 @@ async function setStatus(status: 'open' | 'dismissed') {
                   >.
                 </template>
               </p>
+            </template>
+            <template v-if="missedBy" #suite>
+              <p data-shot="bug-report-missed-by">
+                {{ missedBy.summary }}
+                <template v-if="missedBy.owner">
+                  Owner: {{ missedBy.owner
+                  }}<template v-if="missedBy.mainFile">
+                    (<span class="font-mono">{{ missedBy.mainFile }}</span
+                    >)</template
+                  >.
+                </template>
+                <button
+                  v-if="missedBy.visiting.length"
+                  type="button"
+                  :class="SENTENCE_LINK_CLASS"
+                  :aria-expanded="showVisiting"
+                  @click="showVisiting = !showVisiting"
+                >
+                  {{ showVisiting ? 'Hide the tests' : 'Show the tests' }}
+                </button>
+              </p>
+              <ul v-if="showVisiting" class="mt-1 space-y-0.5 text-xs text-muted">
+                <li v-for="t in missedBy.visiting" :key="t.testCaseId">
+                  <NuxtLink :to="`/test-cases/${t.testCaseId}`" :class="SENTENCE_LINK_CLASS">{{ t.title }}</NuxtLink>
+                  · <span class="font-mono">{{ t.filePath }}</span>
+                </li>
+              </ul>
             </template>
             <template v-if="next" #next>
               <p>{{ next }}</p>

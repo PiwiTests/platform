@@ -84,6 +84,14 @@ test.describe.serial('Bug reports', () => {
     expect(run.code).not.toContain('test.fail()');
   });
 
+  test('says why the suite missed it', async ({ request }) => {
+    const missed = await (await request.get(`/api/bug-reports/${reportId}/missed-by`)).json();
+    expect(missed.page).toBe('/cart');
+    // The submitted runs carry no page data: the visits are unknown, not zero.
+    expect(missed.pagesKnown).toBe(false);
+    expect(missed.summary).toBe('No run recorded the pages its tests visit, so the tests on /cart are unknown.');
+  });
+
   test('records a reproduction', async ({ request }) => {
     const response = await request.post(`/api/bug-reports/${reportId}/reproductions`, {
       data: { verdict: 'reproduced', origin: 'http://localhost:3000', userAgent: 'Chrome' },

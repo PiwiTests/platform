@@ -32,6 +32,7 @@ const ROWS = [
   { slot: 'occurrences', label: 'Occurrences' },
   { slot: 'whatChanged', label: 'What changed' },
   { slot: 'state', label: 'State' },
+  { slot: 'suite', label: 'The suite' },
   { slot: 'next', label: 'Next' },
 ] as const;
 </script>

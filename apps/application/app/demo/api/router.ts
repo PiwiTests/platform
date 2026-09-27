@@ -320,6 +320,7 @@ import {
   bugReportPatchSchema,
   bugReproductionSchema,
   getBugReport,
+  getBugReportMissedBy,
   listBugReports,
   renderBugReportSpec,
   updateBugReport,
@@ -2414,6 +2415,17 @@ const routes: RouteEntry[] = [
       const parsed = bugReproductionSchema.safeParse(body);
       if (!parsed.success) throw demoHttpError(400, 'Invalid request body');
       return addBugReproduction(await getDemoDb(), +m[1]!, parsed.data, null);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/bug-reports\/(\d+)\/missed-by$/,
+    // The demo has no CODEOWNERS to read: no owner.
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'bugReport', +m[1]!);
+      const missed = await getBugReportMissedBy(await getDemoDb(), +m[1]!);
+      if (!missed) throw demoHttpError(404, 'Bug report not found');
+      return { ...missed, owner: null };
     },
   },
   {

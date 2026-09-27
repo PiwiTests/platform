@@ -111,7 +111,13 @@ import { listScenarioGaps, draftScenario } from '#shared/handlers/scenario-gaps'
 import { getFeatureGraph } from '../feature-graph';
 import { resolveAiConfig } from '../ai-provider';
 import { runClusterDiagnosis, isDiagnosisRunning } from '../ai-diagnosis';
-import { getBugReport, listBugReports, renderBugReportSpec, renderStepsWith } from '#shared/handlers/bug-reports';
+import {
+  getBugReport,
+  getBugReportMissedBy,
+  listBugReports,
+  renderBugReportSpec,
+  renderStepsWith,
+} from '#shared/handlers/bug-reports';
 import { describeExpectation, describeStepInWords, expectedSteps, type BugReport } from '@piwitests/core/bug-report';
 import { parseSteps } from '@piwitests/core/steps';
 import {
@@ -2383,6 +2389,18 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       test: report.test
         ? { testCaseId: report.test.id, title: report.test.title, filePath: report.test.filePath }
         : null,
+      missedBy: await getBugReportMissedBy(db, id)
+        .then((m) =>
+          m
+            ? {
+                summary: m.summary,
+                page: m.page,
+                testsOnPage: m.visiting.slice(0, 20),
+                reaching: m.targets.flatMap((t) => t.reaching).slice(0, 20),
+              }
+            : null,
+        )
+        .catch(() => null),
       reproductions: report.reproductionList.map((r) =>
         dropNulls({
           source: r.source,
