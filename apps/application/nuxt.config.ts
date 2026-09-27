@@ -281,18 +281,14 @@ export default defineNuxtConfig({
         types.routes = {};
       },
     },
-    // In demo mode, override the "internal:nuxt:prerender" storage driver with the
-    // built-in memory driver. On Windows, @nuxt/nitro-server registers this driver
-    // using pathToFileURL() which produces a "file:///C:/..." URL that Rollup cannot
-    // resolve. The module is then treated as an unresolvable external, fails to load
-    // at runtime, and every prerender request returns 500. Using memory avoids the
-    // Windows file-URL resolution issue entirely (and is equivalent for a single build
-    // run since the prerender cache is discarded after each generate anyway).
     // Pre-render /_openapi.json so it ships as a static file in the demo.
     // Nitro's built-in OpenAPI handler reads compiled route metadata (from
     // defineRouteMeta transforms) and writes the full spec to
     // .output/public/_openapi.json, which the /docs page fetches at runtime.
     prerender: isDemo ? { failOnError: false, routes: ['/_openapi.json'] } : undefined,
+    // The demo's prerender cache lives in memory (a generate run discards it
+    // anyway), so the prerenderer never imports @nuxt/nitro-server's disk cache
+    // driver, which it registers by file:// URL on Windows.
     storage: isDemo ? { 'internal:nuxt:prerender': { driver: 'memory' } } : undefined,
     publicAssets: [
       {
@@ -365,7 +361,12 @@ export default defineNuxtConfig({
       // server bundling on Windows. `nuxi build` sets NODE_ENV=production before it
       // loads this file.
       // See: https://github.com/nuxt/nuxt/issues/31836
-      legacyExternals: process.platform === 'win32' && process.env.NODE_ENV === 'production',
+      // Never in the demo, whose only server bundle is the prerenderer: the legacy
+      // resolver resolves bare imports from the project root rather than the importing
+      // file, which hands Nitro's runtime the hoisted hookable 6 in place of its own
+      // hookable 5 (whose callHook() always returns a promise), and every prerendered
+      // route answers 500.
+      legacyExternals: !isDemo && process.platform === 'win32' && process.env.NODE_ENV === 'production',
       tasks: true,
     },
     scheduledTasks: {
