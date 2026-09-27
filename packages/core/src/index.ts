@@ -32,3 +32,4 @@ export * from './locator-text-match';
 export * from './diff-anchors';
 export * from './locator-break';
 export * from './locator-edit';
+export * from './dotenv';

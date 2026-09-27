@@ -36,7 +36,8 @@
     "./locator-text-match": "./src/locator-text-match.ts",
     "./diff-anchors": "./src/diff-anchors.ts",
     "./locator-break": "./src/locator-break.ts",
-    "./locator-edit": "./src/locator-edit.ts"
+    "./locator-edit": "./src/locator-edit.ts",
+    "./dotenv": "./src/dotenv.ts"
   },
   "scripts": {
     "core:typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tests/tsconfig.json",

@@ -6,8 +6,8 @@ which test locators the change breaks, and rewrites them. **Track B** records wh
 executes, so any file can answer "which tests reach me?". **Track C** is one editor service that holds the logic, and
 **Tracks D and E** are thin clients for VS Code and the JetBrains IDEs.
 
-**Status.** Proposed 2026-09-27. Being built on `claude/suite-in-the-editor`, in the Delivery order: PR 1 (core) is
-built. What changed while building is under [As built](#as-built). Track A needs no capture change. Track B adds an opt-in capture, one
+**Status.** Proposed 2026-09-27. Being built on `claude/suite-in-the-editor`, in the Delivery order: PR 1 (core) and
+PR 2 (`piwi preflight`) are built. What changed while building is under [As built](#as-built). Track A needs no capture change. Track B adds an opt-in capture, one
 payload column on `test_runs_cases` and one table. Tracks C–E add a workspace package, a VS Code extension and a
 JetBrains plugin, and a commitlint scope (`ide`); a catalog of what the editors can do after their first release
 follows the tracks. New wire fields, endpoints, a CLI command and a published extension
@@ -445,7 +445,7 @@ the feature they come from.
   changes), `locator-break.test.ts` (every row of the A2 table, exact, regex, still-matching renames), the extension's
   engine tests unchanged and green.
 
-### PR 2 — preflight
+### PR 2 — preflight (built)
 - `packages/reporter/src/cli/preflight.ts` (new), `cli/index.ts`, `internal/support/selection-client.ts` (index fetch).
 - Docs: `apps/docs/features/preflight.md` (new), `reference/cli.md`, `features/locator-usage.md` (link),
   `navigation.ts`, `shared/piwi-features.ts`.
@@ -507,6 +507,29 @@ disagree, this section wins.
   index calls locators from (suffix match, `sameFilePath`).
 - **`detectLocatorBreakAhead(anchors, index, options)`** returns one prediction per broken anchor with the call sites
   of every chain it breaks; the `LocatorBreakInput` shape is gone (it had no caller).
+
+### PR 2 — preflight
+
+- **Connection** (D11 for the CLI). Flags, then the environment, then the `.env` of the test root, the working
+  directory and the repository root, then the desktop app's discovery file, whose token serves only its own URL.
+  `parseDotEnv` and `resolvePiwiConnection` live in core (`dotenv.ts`), for the editor service to read the same way.
+- **The diff** is `git diff --unified=0 <base> --` from the repository root, so untracked files are not read (they
+  remove nothing). Test files are the `*.spec.*`/`*.test.*` files plus, in `predictLocatorBreaks`, the index's
+  call-site files.
+- **Translations.** Keys resolve through every tracked translation file, the `--locale` ones first (a new flag,
+  default `en`); a key under a locale root (`en.checkout.pay`) also resolves without it.
+- **The cache** is keyed by instance URL, project as given (name or id) and branch, so it works when the project
+  menu cannot be reached either.
+- **Call sites.** Each is `edit` (the line holds the literal), `applied` (the line already holds the new literal:
+  the index keeps the old chain until the next run), `by-hand` (with the files `git grep --fixed-strings` finds
+  holding the quoted literal), `elsewhere` (not in this checkout: open question 1's answer, shown with the
+  rewrite, never edited) or `none` (a removal, or a regex).
+- **`--run`** sends the changed files plus the spec files of the broken locators' tests to the impact endpoint and
+  runs its materialization through `piwi run`'s spawn path, so a broken locator's whole spec runs rather than only its
+  test. Playwright arguments go after `--`.
+- **`--strict`** counts a likely break as fixed when every call site is `applied` or edited by this run.
+- **Output.** Likely breaks are listed in full, at most 20; possible breaks get one line each; the footer names the
+  number of strings checked when nothing breaks.
 
 ## Verification
 

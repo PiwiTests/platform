@@ -205,6 +205,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/locator-usage',
       },
       {
+        title: 'Locator preflight',
+        summary:
+          'Before a push, the test locators your diff breaks — a renamed label, a removed test id, a changed translation — with the rewrite applied in place.',
+        needs: [],
+        where: 'piwi preflight',
+        doc: 'features/preflight',
+      },
+      {
         title: 'Fix plans, reproduce & bisect',
         summary: 'A plan to reproduce a failure locally and bisect to the commit that introduced it.',
         needs: ['desktop'],

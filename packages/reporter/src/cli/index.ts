@@ -5,13 +5,15 @@
  * The reporter's job is to get results into the dashboard during
  * `playwright test`; the CLI covers the things that happen around a run:
  * setting a project up in the first place (`init`, `skills`) and acting on the
- * dashboard's history once a run has landed (`gate`, `report`).
+ * dashboard's history once a run has landed (`gate`, `report`), and checking a
+ * change against it before it runs (`preflight`).
  */
 import { runAi } from './ai.js';
 import { runCodegen } from './codegen.js';
 import { runGate } from './gate.js';
 import { runInit } from './init.js';
 import { runSelect, runRun } from './select.js';
+import { runPreflight } from './preflight.js';
 import { runProbe } from './probe.js';
 import { runQualityReport } from './quality-report.js';
 import { findTemplatesDir, runSkills } from './skills.js';
@@ -32,6 +34,7 @@ Commands:
   probe     Run the dashboard's probe plan and record what the suite noticed
   ai        Manage committed natural-language AI-step artifacts
   codegen   Turn a steps file (a Piwi Picker recording) into a Playwright spec
+  preflight List the test locators your uncommitted change breaks, and fix them
 
 Run \`npx @piwitests/reporter <command> --help\` for a command's options.
 (The published package is @piwitests/reporter; its command is piwi. Invoke it
@@ -60,6 +63,8 @@ async function main(): Promise<number> {
       return runAi(rest);
     case 'codegen':
       return runCodegen(rest);
+    case 'preflight':
+      return runPreflight(rest);
     case undefined:
     case '-h':
     case '--help':

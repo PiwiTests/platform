@@ -251,6 +251,12 @@ The locator chains each test used in its steps, recorded per branch and per Play
 use a locator, and it feeds [Who uses a locator](/features/locator-usage) and
 [Tested elements](/features/tested-elements).
 
+### Locator break
+
+A locator of the index that a change stops matching: the diff removes or renames a string one of its calls finds the
+element by, under Playwright's text rules. *Likely* when the string was an attribute value, tag text or a
+translation; *possible* when it was a bare quoted string. [Locator preflight](/features/preflight) lists them.
+
 ### Page key
 
 A page's URL reduced to its path pattern: numeric ids, UUIDs, ULIDs, JWTs and long tokens become `:id`, `:uuid`,

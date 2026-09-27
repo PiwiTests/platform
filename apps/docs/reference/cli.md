@@ -1,12 +1,12 @@
 ---
 title: Piwi CLI
-description: "Every command and flag of the piwi CLI that ships with @piwitests/reporter: init, skills, gate, report, select, run, probe, ai and codegen."
+description: "Every command and flag of the piwi CLI that ships with @piwitests/reporter: init, skills, gate, report, select, run, probe, ai, codegen and preflight."
 lang: en-US
 ---
 
 # Piwi CLI
 
-The `@piwitests/reporter` package ships a command-line tool, `piwi`, for the things that happen *around* a test run: wiring a project up, gating a CI job on the dashboard's analysis, running a saved test selection, turning a recording into a spec, and managing AI-step artifacts and agent skills. This page is the reference for every command and flag; each command's own `--help` prints the same list.
+The `@piwitests/reporter` package ships a command-line tool, `piwi`, for the things that happen *around* a test run: wiring a project up, gating a CI job on the dashboard's analysis, running a saved test selection, turning a recording into a spec, checking a change against the tests' locators, and managing AI-step artifacts and agent skills. This page is the reference for every command and flag; each command's own `--help` prints the same list.
 
 ## Invoking it
 
@@ -29,6 +29,7 @@ npx @piwitests/reporter <command> [options]
 | [`probe`](#probe) | Run the dashboard's probe plan and record what the suite noticed |
 | [`ai`](#ai) | Manage committed natural-language AI-step artifacts |
 | [`codegen`](#codegen) | Turn a steps file (a Piwi Picker recording) into a Playwright spec |
+| [`preflight`](#preflight) | List the test locators your change breaks, and fix them |
 
 Several commands read connection settings from the environment as a fallback: `PIWI_DASHBOARD_URL` (dashboard URL), `PIWI_API_KEY` (API key), and `PIWI_PROJECT_NAME` (project). A flag always wins over its environment variable.
 
@@ -248,10 +249,44 @@ locators; the spec is still written.
 **Exit codes:** `0` written or printed · `2` the steps file could not be read or checked, or the spec could not be
 written.
 
+## `preflight`
+
+List the test locators a change breaks, before it runs: [Locator preflight](/features/preflight) explains what it
+reads and how it matches. It diffs the working tree against a ref, compares the strings the diff removes or renames
+with the project's locator index, and prints each broken chain with its tests, its call sites and its rewrite.
+
+```bash
+npx @piwitests/reporter preflight
+npx @piwitests/reporter preflight --base @{upstream} --strict
+npx @piwitests/reporter preflight --fix --run -- --workers=2
+```
+
+| Flag | Description |
+|---|---|
+| `--base <ref>` | Diff the working tree against this ref (default `HEAD`: uncommitted changes) |
+| `--branch <name>` | Compare with this branch's locator index (default: the project's default branch) |
+| `--test-root <dir>` | Where call sites resolve (default: the directory of the nearest `playwright.config`) |
+| `--locale <code>` | Translation files of this locale resolve keys first (default `en`) |
+| `--fix` | Write the rewrites into the call sites whose line holds the string |
+| `--run` | Run the tests that reach the changed files and the specs of the broken locators; Playwright arguments go after `--` |
+| `--strict` | Exit 1 when a likely break is left unfixed |
+| `--server-url <url>` | Dashboard URL (env `PIWI_DASHBOARD_URL`, then `.env`, then the running desktop app) |
+| `--api-key <key>` | API key (env `PIWI_API_KEY`) |
+| `--project <name\|id>` | Project (env `PIWI_PROJECT_NAME`) |
+| `--json` | Print the breaks, their call sites, the edits and the impact as JSON |
+| `-h`, `--help` | Show help |
+
+The index is cached in `.piwi/locator-index.json` per dashboard, project and branch, and used when the dashboard
+cannot be reached.
+
+**Exit codes:** `0` ok, breaks or not · `1` a likely break left unfixed with `--strict`, or `--run`'s tests failed ·
+`2` the index could not be fetched and there is no cached copy, or the diff could not be read.
+
 ## Related
 
 - [Getting started](/guide/getting-started) — `init` in the setup flow
 - [CI & sharding](/guide/ci) — `gate` in a CI job, and the run output file
 - [Test selections](/features/test-selection) — what `select` / `run` resolve
+- [Locator preflight](/features/preflight) — what `preflight` reads in a diff
 - [AI steps](/features/ai-steps) — the authoring/replay lifecycle `ai` manages
 - [Agent skills](/features/agent-skills): what `skills` installs and what each skill does

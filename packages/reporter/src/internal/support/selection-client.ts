@@ -1,9 +1,11 @@
 /**
  * Thin HTTP client for the dashboard's selection resolve endpoint, shared by the
- * `piwi select` / `piwi run` CLI and the `resolveSelection()` config helper.
- * Resolution happens server-side; this only names the project, calls resolve,
- * and hands back the structured result.
+ * `piwi select` / `piwi run` / `piwi preflight` CLI and the `resolveSelection()`
+ * config helper. Resolution happens server-side; this only names the project,
+ * calls resolve, and hands back the structured result. It also fetches the
+ * project's locator index for `piwi preflight`.
  */
+import type { LocatorIndex } from '@piwitests/core/locator-index';
 
 export interface SelectionResolution {
   key: string | null;
@@ -93,4 +95,21 @@ export async function fetchImpact(
     throw new Error(body.message || `Dashboard returned ${res.status} resolving impact`);
   }
   return (await res.json()) as ImpactResolution;
+}
+
+/** A project's locator index: every chain its tests used, for one branch (the default branch when absent). */
+export async function fetchLocatorIndex(
+  options: Pick<SelectionClientOptions, 'serverUrl' | 'apiKey'>,
+  projectId: number,
+  branch?: string | null,
+): Promise<LocatorIndex> {
+  const query = branch ? `?branch=${encodeURIComponent(branch)}` : '';
+  const res = await fetch(`${options.serverUrl}/api/projects/${projectId}/locator-index${query}`, {
+    headers: authHeaders(options.apiKey),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { message?: string };
+    throw new Error(body.message || `Dashboard returned ${res.status} fetching the locator index`);
+  }
+  return (await res.json()) as LocatorIndex;
 }
