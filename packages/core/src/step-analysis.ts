@@ -22,15 +22,21 @@ export function capStepValue(value: string, max: number): string {
   return value.length > max ? `${value.slice(0, Math.max(0, max - 1))}…` : value;
 }
 
+/** An API request's title in newer Playwright: the bare HTTP method (`GET`, `POST`, …). */
+const HTTP_METHOD_TITLE_RE = /^(?:get|post|put|patch|delete|head|options|fetch)$/i;
+
 /**
  * Categorise a Playwright step into `navigation`, `action`, `input`,
- * `assertion`, `wait`, `api`, `hook`, or `other`.
+ * `assertion`, `wait`, `api`, `hook`, `fixture`, `test.step`, `attach`, or
+ * `other`.
  *
  * Supports two title formats:
  *  - Legacy api-path titles ("page.goto", "locator.click", "page.waitForTimeout")
  *  - Modern human-readable titles introduced in newer Playwright versions
  *    ("Navigate to \"{url}\"", "Click", "Wait for timeout", "Wait for load state").
- * Hook/fixture/expect steps are detected via Playwright's own `category`.
+ * Hook/fixture/expect steps, `test.step` groups and attachments are detected via
+ * Playwright's own `category`, so a `test.step` titled "Fill the form" stays a
+ * group rather than an input.
  *
  * `params` is Playwright's curated per-step argument object (the rendered
  * `locator`, a navigation's `url`, …). When present it is the exact signal for
@@ -39,9 +45,14 @@ export function capStepValue(value: string, max: number): string {
  */
 export function categorizeStep(title: string, pwCategory?: string, params?: Record<string, unknown>): string {
   if (!title) return 'other';
-  if (pwCategory === 'hook' || pwCategory === 'fixture') return pwCategory;
+  if (pwCategory === 'hook' || pwCategory === 'fixture' || pwCategory === 'test.step') return pwCategory;
   if (pwCategory === 'expect') return 'assertion';
+  if (pwCategory === 'test.attach') return 'attach';
   const lower = title.toLowerCase();
+
+  // An API request (`request.get(…)`): newer Playwright titles it with the bare
+  // HTTP method and a `url` param, so it is caught before the url-means-navigation rule.
+  if (HTTP_METHOD_TITLE_RE.test(title.trim())) return 'api';
 
   // Waits — modern "Wait for timeout/function/selector/state/navigation/load state/url/event"
   // and legacy "*.waitFor*" (locator.waitFor, page.waitForLoadState, frame.waitForTimeout, ...).
@@ -139,6 +150,8 @@ export interface FlatStep {
   location?: string;
   /** Absolute start time in ms; enables per-step timing/waterfall on the case detail page. */
   startTime?: number;
+  /** Nesting depth in Playwright's step tree: 0 for a top-level step, 1 for its children, and so on. */
+  depth?: number;
 }
 
 /**
@@ -219,14 +232,19 @@ function normalizeStepParams(raw: unknown): Record<string, string | number | boo
 /** Step-event category restricted to the values `extractTestStepEvents` emits. */
 export type StepEventCategory = 'hook' | 'fixture' | 'test.step' | 'expect' | 'wait';
 
-/** Recursively flatten a nested step tree into a flat list. Uses Playwright's built-in category when available. */
-export function flattenSteps(steps: any[]): FlatStep[] {
+/**
+ * Recursively flatten a nested step tree into a flat list, depth first, each
+ * step recording its `depth` so the tree can be rebuilt. Uses Playwright's
+ * built-in category when available.
+ */
+export function flattenSteps(steps: any[], depth = 0): FlatStep[] {
   const result: FlatStep[] = [];
   for (const step of steps) {
     const flat: FlatStep = {
       title: step.title,
       duration: step.duration,
       category: categorizeStep(step.title, step.category, step.params),
+      depth,
     };
     if (typeof step.subtitle === 'string' && step.subtitle.length > 0) flat.subtitle = maskTokenLike(step.subtitle);
     const params = normalizeStepParams(step.params);
@@ -238,7 +256,7 @@ export function flattenSteps(steps: any[]): FlatStep[] {
     if (step.location) flat.location = `${step.location.file}:${step.location.line}:${step.location.column}`;
     if (step.startTime) flat.startTime = step.startTime instanceof Date ? step.startTime.getTime() : step.startTime;
     result.push(flat);
-    if (step.steps?.length > 0) result.push(...flattenSteps(step.steps));
+    if (step.steps?.length > 0) result.push(...flattenSteps(step.steps, depth + 1));
   }
   return result;
 }

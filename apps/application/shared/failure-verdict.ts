@@ -12,8 +12,9 @@ import { describeCluster, type DescribableCluster } from '#shared/describe-clust
 import {
   describeFailureText,
   failingStepParams,
-  lastStepTitle,
+  stepHeadlineContext,
   type FailureDescription,
+  type HeadlineStepLike,
 } from '#shared/describe-failure';
 import { parsePlaywrightError, type ParsedErrorKind } from '#shared/error-parse';
 
@@ -62,20 +63,15 @@ export interface FailureVerdict extends FailureDescription {
   owner: { name: string; source: 'annotation' | 'codeowners' } | null;
 }
 
-/** The step list shape the headline needs: the failed (or last) step's title and params. */
-type StepLike = { title: string; failed?: boolean | null; params?: Record<string, string | number | boolean> | null };
-
 /**
- * The headline for a stored execution: the parsed error, with the failed step's
- * title feeding a test-timeout line and its params backing the locator where
- * the error text names none. Null when the execution has no error.
+ * The headline for a stored execution: the parsed error, read with the recorded
+ * steps — the failed step's title feeds a test-timeout line, its params back the
+ * locator where the error text names none, and a failure in a hook or a fixture
+ * names it. Null when the execution has no error.
  */
 export function caseHeadline(row: { error?: string | null; steps?: unknown }): FailureDescription | null {
-  const steps = Array.isArray(row.steps) ? (row.steps as StepLike[]) : null;
-  return describeFailureText(row.error, {
-    lastStepTitle: lastStepTitle(steps),
-    stepParams: failingStepParams(steps),
-  });
+  const steps = Array.isArray(row.steps) ? (row.steps as HeadlineStepLike[]) : null;
+  return describeFailureText(row.error, stepHeadlineContext(steps, row.error));
 }
 
 export interface FailureVerdictInput {
@@ -130,7 +126,7 @@ function classifyWhy(input: FailureVerdictInput, kind: ParsedErrorKind): Failure
 /** Build the verdict for an execution, or null when it carries no error. */
 export function buildFailureVerdict(input: FailureVerdictInput): FailureVerdict | null {
   if (!input.error || !input.error.trim()) return null;
-  const steps = Array.isArray(input.steps) ? (input.steps as StepLike[]) : null;
+  const steps = Array.isArray(input.steps) ? (input.steps as HeadlineStepLike[]) : null;
   const parsed = parsePlaywrightError(input.error, { stepParams: failingStepParams(steps) });
   const description = caseHeadline({ error: input.error, steps: input.steps });
   if (!description) return null;

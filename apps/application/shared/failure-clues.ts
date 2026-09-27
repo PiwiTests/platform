@@ -241,6 +241,12 @@ export interface FailureClueInput {
 const MAX_CLUES = 8;
 
 const DEFAULT_SLOW_REQUEST_MS = 1500;
+/**
+ * How far past the failure a failed request may be recorded as ending: the
+ * capture stamps a response when its body is read, a few ms after the test
+ * already saw its status.
+ */
+const REQUEST_END_SLACK_MS = 250;
 
 /** Rule precedence for the final tiebreak, in the order the rules are declared. */
 const RULE_ORDER: FailureClueRule[] = [
@@ -292,10 +298,15 @@ function pathOf(url: string | null | undefined): string | null {
   }
 }
 
-/** `t-1.1 s` style lead, or empty when the anchor is at/after the failure. */
+/**
+ * How long before the failure the anchor happened (`1.1 s before the failure`);
+ * under 100 ms, and up to the request slack after it, `just before the
+ * failure`; empty when the anchor is later than that.
+ */
 function formatLead(at: number, failureAt: number): string {
   const lead = failureAt - at;
-  if (!Number.isFinite(lead) || lead <= 0) return '';
+  if (!Number.isFinite(lead) || lead < -REQUEST_END_SLACK_MS) return '';
+  if (lead < 100) return 'just before the failure';
   return `${(lead / 1000).toFixed(1)} s before the failure`;
 }
 
@@ -374,7 +385,7 @@ export function buildFailureClues(input: FailureClueInput): FailureCluesReport {
       .filter((p) => {
         const status = isFiniteNumber(p.req.status) ? p.req.status : 0;
         const bad = status >= 500 || status <= 0;
-        return bad && p.endAt != null && p.endAt <= failureAt && p.endAt >= leadStart;
+        return bad && p.endAt != null && p.endAt <= failureAt + REQUEST_END_SLACK_MS && p.endAt >= leadStart;
       })
       .sort((a, b) => (b.endAt ?? 0) - (a.endAt ?? 0));
     failedRequests.slice(0, 2).forEach((p, i) => {
@@ -597,13 +608,16 @@ export function buildFailureClues(input: FailureClueInput): FailureCluesReport {
 
   // ── wrong-page (strong) ────────────────────────────────────────────────────
   // The page ended on an auth/error route, or somewhere other than the last
-  // navigation the test asked for. Where the captured app state carries no URL,
-  // the last navigation step's own `params.url` stands in for where it ended.
-  const lastNav = lastNavigationPath(timeline);
+  // navigation the test asked for — when nothing the test did after it (a click,
+  // a submitted form) could have moved the page on. Where the captured app state
+  // carries no URL, the last navigation step's own `params.url` stands in for
+  // where it ended.
+  const navigation = lastNavigation(timeline);
+  const lastNav = navigation?.path ?? null;
   const endedPath = pathOf(input.appState?.url) ?? lastNav;
   if (endedPath) {
     const onKnownWrong = WRONG_PAGE_PATHS.find((p) => endedPath === p || endedPath.startsWith(`${p}/`));
-    const driftedFromNav = lastNav && pathsDiffer(endedPath, lastNav);
+    const driftedFromNav = lastNav && !navigation?.actedAfter && pathsDiffer(endedPath, lastNav);
     if (onKnownWrong || driftedFromNav) {
       facts.wrongPage = { endedPath, expected: driftedFromNav ? lastNav : null, via: null };
       add({
@@ -974,20 +988,30 @@ function cap(text: string): string {
   return text.length > 0 ? text[0]!.toUpperCase() + text.slice(1) : text;
 }
 
+/** An API request step (`request.get(…)`), by its category or its HTTP-method title. */
+const API_REQUEST_LABEL_RE = /^(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|FETCH)\b/;
+
 /**
- * The path of the last navigation step the test performed, from the timeline.
- * A navigation step's own `params.url` (the full URL newer Playwright records)
- * is read first; otherwise the URL is parsed out of the step label.
+ * The path of the last navigation step the test performed, from the timeline,
+ * and whether the test clicked or typed successfully after it (an action that
+ * can move the page on). A navigation step's own `params.url` (the full URL
+ * newer Playwright records) is read first; otherwise the URL is parsed out of
+ * the step label. An API request is not a navigation.
  */
-function lastNavigationPath(timeline: FailureTimeline | null): string | null {
+function lastNavigation(timeline: FailureTimeline | null): { path: string | null; actedAfter: boolean } | null {
   if (!timeline) return null;
   const steps = timeline.lanes.steps;
+  let actedAfter = false;
   for (let i = steps.length - 1; i >= 0; i--) {
     const step = steps[i]!;
-    if (typeof step.params?.url === 'string' && step.params.url.length > 0) return pathOf(step.params.url);
+    if (step.category === 'api' || API_REQUEST_LABEL_RE.test(step.label)) continue;
+    if (typeof step.params?.url === 'string' && step.params.url.length > 0) {
+      return { path: pathOf(step.params.url), actedAfter };
+    }
     const label = step.label;
     const m = /(?:goto|waitForURL)\(\s*['"`]([^'"`]+)['"`]/.exec(label) ?? /https?:\/\/[^\s'"`)]+/.exec(label);
-    if (m) return pathOf(m[1] ?? m[0]);
+    if (m) return { path: pathOf(m[1] ?? m[0]), actedAfter };
+    if ((step.category === 'action' || step.category === 'input') && !step.failed) actedAfter = true;
   }
   return null;
 }

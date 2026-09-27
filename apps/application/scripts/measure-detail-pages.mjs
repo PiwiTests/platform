@@ -156,7 +156,8 @@ function measurePage({ viewportHeight }) {
     while (walker.nextNode()) {
       const node = walker.currentNode;
       if (!node.textContent.trim() || !node.parentElement) continue;
-      const cs = getComputedStyle(node.parentElement);
+      // A code chip counts once, whatever colors its syntax tokens take.
+      const cs = getComputedStyle(node.parentElement.closest('code') ?? node.parentElement);
       if (cs.display === 'none' || cs.visibility === 'hidden') continue;
       styles.add(
         [

@@ -78,6 +78,22 @@ const TRACE_SNAPSHOT_CASE = {
   retries: 0,
 };
 
+/** POST to the server, retrying while the dev server compiles the API route on its first hit. */
+async function postRetrying(request, base, path, options) {
+  let last;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    if (attempt > 0) await new Promise((r) => setTimeout(r, 3000));
+    try {
+      const res = await request.post(`${base}${path}`, options);
+      if (res.ok()) return res;
+      last = new Error(`${path} → ${res.status()}`);
+    } catch (error) {
+      last = error;
+    }
+  }
+  throw last ?? new Error(`could not POST ${path}`);
+}
+
 /**
  * Start a run, push one failing case with a marked failing step, and upload the
  * 1.63 trace fixture for it. Returns its executionId. Retries the pushes while
@@ -86,21 +102,7 @@ const TRACE_SNAPSHOT_CASE = {
 async function ingestTraceSnapshotCase(request, base) {
   const trace = readFileSync(TRACE_SNAPSHOT_FIXTURE);
   const traceHash = createHash('sha256').update(trace).digest('hex');
-
-  const post = async (path, options) => {
-    let last;
-    for (let attempt = 0; attempt < 5; attempt++) {
-      if (attempt > 0) await new Promise((r) => setTimeout(r, 3000));
-      try {
-        const res = await request.post(`${base}${path}`, options);
-        if (res.ok()) return res;
-        last = new Error(`${path} → ${res.status()}`);
-      } catch (error) {
-        last = error;
-      }
-    }
-    throw last ?? new Error(`could not POST ${path}`);
-  };
+  const post = (path, options) => postRetrying(request, base, path, options);
 
   const started = await (
     await post('/api/test-runs/start', {
@@ -140,6 +142,171 @@ async function ingestTraceSnapshotCase(request, base) {
     },
   });
   return (await upload.json()).executionId;
+}
+
+/**
+ * A test whose beforeEach hook failed, as the reporter records it from
+ * Playwright 1.63 (taken from a real run): the hook and its fixtures under
+ * `Before Hooks`, the failing click inside the hook, the capture's own
+ * attachments and the teardown under `After Hooks`. Start times are offsets
+ * from the test's start, in ms.
+ */
+const HOOK_FAILURE_CASE = { title: 'renames the profile', location: 'tests/profile.spec.ts:9:3', retries: 0 };
+const HOOK_FAILURE_ERROR =
+  "TimeoutError: locator.click: Timeout 1500ms exceeded.\nCall log:\n  - waiting for getByRole('button', { name: 'Edit profile' })\n\n    at tests/profile.spec.ts:6:62";
+const HOOK_FAILURE_TIMEOUT = { message: 'TimeoutError: locator.click: Timeout 1500ms exceeded.' };
+const HOOK_FAILURE_STEPS = [
+  {
+    title: 'Before Hooks',
+    category: 'hook',
+    depth: 0,
+    at: 0,
+    duration: 1637,
+    failed: true,
+    error: HOOK_FAILURE_TIMEOUT,
+  },
+  {
+    title: 'beforeEach hook',
+    category: 'hook',
+    depth: 1,
+    at: 0,
+    duration: 1637,
+    failed: true,
+    error: HOOK_FAILURE_TIMEOUT,
+    location: 'tests/profile.spec.ts:4:8',
+  },
+  { title: 'Fixture "piwiCapture"', category: 'fixture', depth: 2, at: 6, duration: 0 },
+  { title: 'Fixture "context"', category: 'fixture', depth: 2, at: 6, duration: 13 },
+  { title: 'Create context', category: 'other', depth: 3, at: 7, duration: 6 },
+  { title: 'Fixture "page"', category: 'fixture', depth: 2, at: 20, duration: 59 },
+  { title: 'Create page', category: 'other', depth: 3, at: 20, duration: 59 },
+  {
+    title: 'Navigate',
+    subtitle: '/account',
+    category: 'navigation',
+    depth: 2,
+    at: 80,
+    duration: 51,
+    location: 'tests/profile.spec.ts:5:16',
+  },
+  {
+    title: 'Click',
+    subtitle: "getByRole('button', { name: 'Edit profile' })",
+    category: 'action',
+    depth: 2,
+    at: 132,
+    duration: 1505,
+    failed: true,
+    error: HOOK_FAILURE_TIMEOUT,
+    params: { locator: "getByRole('button', { name: 'Edit profile' })" },
+    location: 'tests/profile.spec.ts:6:62',
+  },
+  { title: 'After Hooks', category: 'hook', depth: 0, at: 1638, duration: 138 },
+  { title: 'Fixture "page"', category: 'fixture', depth: 1, at: 1678, duration: 0 },
+  { title: 'Fixture "context"', category: 'fixture', depth: 1, at: 1678, duration: 88 },
+  { title: 'Close context', category: 'other', depth: 2, at: 1748, duration: 18 },
+  { title: 'Fixture "piwiCapture"', category: 'fixture', depth: 1, at: 1766, duration: 4 },
+  { title: 'Attach "piwi-locators"', category: 'attach', depth: 2, at: 1767, duration: 0 },
+  { title: 'Attach "piwi-network"', category: 'attach', depth: 2, at: 1769, duration: 0 },
+  { title: 'Worker Cleanup', category: 'hook', depth: 0, at: 1776, duration: 59 },
+  { title: 'Fixture "browser"', category: 'fixture', depth: 1, at: 1777, duration: 56 },
+];
+
+/**
+ * Report one run through the streaming API — start, one completed case, finish
+ * — and return its id and the case's executionId. `metadata` is the run's
+ * (its `scm` block is what the cluster page's "What changed" line reads).
+ */
+async function ingestRun(request, base, { projectName, metadata, testCase, startTime }) {
+  const post = (path, options) => postRetrying(request, base, path, options);
+  const started = await (
+    await post('/api/test-runs/start', {
+      data: { projectName, startTime: new Date(startTime).toISOString(), totalTests: 1, metadata },
+    })
+  ).json();
+  const { runId, streamToken } = started;
+  await post(`/api/test-runs/${runId}/events`, {
+    data: { streamToken, testCases: [{ type: 'complete', ...testCase }] },
+  });
+  const failed = testCase.status !== 'passed';
+  await post(`/api/test-runs/${runId}/finish`, {
+    data: {
+      streamToken,
+      status: failed ? 'failed' : 'passed',
+      duration: testCase.duration,
+      totalTests: 1,
+      passedTests: failed ? 0 : 1,
+      failedTests: failed ? 1 : 0,
+    },
+  });
+  const run = await (await request.get(`${base}/api/test-runs/${runId}`)).json();
+  return { runId, executionId: run.testCases?.[0]?.executionId ?? null };
+}
+
+/** The hook-failure case, its steps placed at `startTime`. */
+function hookFailureCase(startTime) {
+  return {
+    ...HOOK_FAILURE_CASE,
+    status: 'failed',
+    duration: 1835,
+    error: HOOK_FAILURE_ERROR,
+    steps: HOOK_FAILURE_STEPS.map(({ at, ...step }) => ({ ...step, startTime: startTime + at })),
+  };
+}
+
+/** The hook-failure execution both widths of its scene open, reported once per session. */
+let hookFailureExecution;
+
+function reportHookFailure(request, base) {
+  hookFailureExecution ??= (async () => {
+    const startTime = Date.now() - 5_000;
+    const { executionId } = await ingestRun(request, base, {
+      projectName: 'profile-e2e',
+      testCase: hookFailureCase(startTime),
+      startTime,
+    });
+    if (!executionId) throw new Error('the hook-failure run has no execution');
+    return executionId;
+  })();
+  return hookFailureExecution;
+}
+
+/**
+ * A cluster whose runs record their commits but no repository URL: a passing
+ * run at one commit, then the hook failure at the next. Reported once per
+ * session, so both widths of its scene show the same cluster in the same state.
+ */
+let noRepositoryCluster;
+
+function reportNoRepositoryCluster(request, base) {
+  noRepositoryCluster ??= (async () => {
+    const scm = (commit, commitMessage) => ({
+      scm: { commit, branch: 'main', author: 'Ada Lovelace', commitMessage },
+    });
+    const passedAt = Date.now() - 60 * 60_000;
+    await ingestRun(request, base, {
+      projectName: 'storefront-no-remote',
+      metadata: scm('3f9c2e1a7b4d5c6e8f0a1b2c3d4e5f6a7b8c9d0e', 'feat: checkout with saved cards'),
+      testCase: { ...HOOK_FAILURE_CASE, status: 'passed', duration: 1400, steps: [] },
+      startTime: passedAt,
+    });
+    const failedAt = Date.now() - 5_000;
+    const { runId } = await ingestRun(request, base, {
+      projectName: 'storefront-no-remote',
+      metadata: scm('b7e41d09c2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7', 'refactor(profile): rename the edit button'),
+      testCase: hookFailureCase(failedAt),
+      startTime: failedAt,
+    });
+    // The run's cluster is written when the run finishes; give it a moment.
+    for (let attempt = 0; attempt < 10; attempt++) {
+      if (attempt > 0) await new Promise((r) => setTimeout(r, 1000));
+      const groups = await (await request.get(`${base}/api/test-runs/${runId}/failure-groups`)).json();
+      const clusterId = groups.items?.[0]?.clusterId;
+      if (clusterId) return clusterId;
+    }
+    throw new Error(`run ${runId} has no failure cluster`);
+  })();
+  return noRepositoryCluster;
 }
 
 /** Surfaces a scene can be captured against. */
@@ -1627,6 +1794,53 @@ const SCENES = [
       await shoot();
     },
   },
+  ...['', '-mobile'].map((suffix) => ({
+    name: `hook-failure-timeline${suffix}`,
+    description: suffix
+      ? 'The hook-failure timeline at phone width: the Setup section as stacked cards'
+      : 'Timeline tab of a test whose beforeEach failed: the Setup section open on the failing click, Teardown folded',
+    route: '/projects',
+    viewport: suffix ? { width: 375, height: 2400 } : { width: 1280, height: 1800 },
+    of: '[data-shot="evidence-card"]',
+    pad: suffix ? 8 : 12,
+    async prepare({ request, base }) {
+      this.executionId = await reportHookFailure(request, base);
+    },
+    async run({ page, goto, settle, shoot }) {
+      await goto(`/test-run-cases/${this.executionId}`);
+      await page
+        .getByRole('tablist', { name: 'Evidence sections' })
+        .getByRole('tab', { name: 'Timeline', exact: true })
+        .click();
+      await page
+        .locator('[data-shot="evidence-card"] button[aria-expanded="true"]:visible', { hasText: 'Setup' })
+        .first()
+        .waitFor({ timeout: 30_000 });
+      await settle();
+      await shoot();
+    },
+  })),
+  ...['', '-mobile'].map((suffix) => ({
+    name: `what-changed-no-repository${suffix}`,
+    description: suffix
+      ? 'The cluster situation block at phone width, for runs without a repository URL'
+      : 'Cluster situation block for runs that record commits but no repository URL: the range, why, the docs, the git log',
+    route: '/projects',
+    viewport: suffix ? { width: 375, height: 1200 } : { width: 1280, height: 900 },
+    of: '[data-shot="situation-block"]',
+    pad: suffix ? 8 : 12,
+    async prepare({ request, base }) {
+      this.clusterId = await reportNoRepositoryCluster(request, base);
+    },
+    async run({ page, goto, settle, shoot }) {
+      await goto(`/failure-clusters/${this.clusterId}`);
+      await page
+        .locator('[data-shot="what-changed"]', { hasText: 'since the last passing run' })
+        .waitFor({ timeout: 60_000 });
+      await settle();
+      await shoot();
+    },
+  })),
   {
     name: 'timeline-type-filter',
     description: 'Timeline tab: the type chips with Network hidden, and the line naming the failed request it hides',

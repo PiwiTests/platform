@@ -171,6 +171,11 @@ describe('isPiwiAnnotation', () => {
     expect(isPiwiAnnotation('skip')).toBe(false);
     expect(isPiwiAnnotation(null)).toBe(false);
   });
+
+  test("counts the reporter's own annotations as Piwi's", () => {
+    expect(isPiwiAnnotation('piwi-locator-suggestion')).toBe(true);
+    expect(isPiwiAnnotation('piwis')).toBe(false);
+  });
 });
 
 describe('priorityRank', () => {

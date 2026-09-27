@@ -4,7 +4,9 @@
  * failure-time DOM snapshot in an iframe, and lets the user click the element
  * the failing locator should have targeted. The picked element is probed for
  * its attributes, ranked alternative locators are generated client-side, and
- * the user confirms one — which is saved back to the server.
+ * the user confirms one — which is saved back to the server. Without a failing
+ * locator (a failure that was not about one) it is an inspector: any element's
+ * locators, to copy.
  */
 import {
   generateAlternatives,
@@ -14,14 +16,15 @@ import {
   type ElementAttributes,
 } from '#shared/locator-generation';
 import type { LocatorFixRecommendation, LocatorHealingResult } from '#shared/locator-healing.types';
-import { recommendLocatorFix } from '#shared/locator-healing';
+import { locatorExpression, recommendLocatorFix } from '#shared/locator-healing';
 import { buildPickerDocument, deriveHighlightHints } from '~/utils/snapshot-picker-script';
 import LocatorAlternativeRow from './LocatorAlternativeRow.vue';
 
 const props = defineProps<{
   runId: number;
   testRunsCaseId: number;
-  failingLocator: { method: string; args: Record<string, unknown> };
+  /** The locator that failed; null opens the picker as an inspector. */
+  failingLocator: { method: string; args: Record<string, unknown> } | null;
   /** The healing result — its candidate names pre-highlight the likely element. */
   healing?: LocatorHealingResult | null;
 }>();
@@ -410,13 +413,18 @@ function selectAlternative(alt: RankedLocator) {
 }
 
 const recommendation = computed<LocatorFixRecommendation>(() =>
-  recommendLocatorFix(props.failingLocator.method, alternatives.value),
+  recommendLocatorFix(props.failingLocator?.method, alternatives.value),
+);
+
+/** The failing locator as Playwright source, named in the header. */
+const failingLocatorText = computed(() =>
+  props.failingLocator ? locatorExpression(props.failingLocator.method, props.failingLocator.args) : null,
 );
 
 const toast = useToast();
 
 async function confirm() {
-  if (!selectedAlt.value) return;
+  if (!selectedAlt.value || !props.failingLocator) return;
   saving.value = true;
   try {
     const result = await $fetch<{ status: string }>(`/api/test-run-cases/${props.testRunsCaseId}/locator-pick`, {
@@ -494,9 +502,15 @@ onBeforeUnmount(() => {
   <UModal v-model:open="isOpen" :ui="{ content: 'max-w-6xl w-[95vw]' }" @after-leave="close">
     <template #header>
       <div>
-        <h3 class="text-lg font-medium">Pick a locator from the DOM snapshot</h3>
-        <p class="text-sm text-gray-500 mt-0.5">
-          Click the element the failing locator should target. Use &uarr;&darr; to walk the DOM tree.
+        <h3 class="text-lg font-medium">
+          {{ failingLocator ? 'Pick a locator from the DOM snapshot' : 'Find a locator on the failure-time page' }}
+        </h3>
+        <p class="text-sm text-muted mt-0.5">
+          <template v-if="failingLocatorText">
+            Click the element <LocatorCode :locator="failingLocatorText" plain /> should target.
+          </template>
+          <template v-else>Click any element to get the locators that target it.</template>
+          Use &uarr;&darr; to walk the DOM tree.
         </p>
       </div>
     </template>
@@ -761,7 +775,7 @@ onBeforeUnmount(() => {
         <div class="flex gap-2">
           <UButton size="sm" variant="outline" color="neutral" @click="close">Cancel</UButton>
           <UButton
-            v-if="step === 'review'"
+            v-if="step === 'review' && failingLocator"
             size="sm"
             color="primary"
             :loading="saving"

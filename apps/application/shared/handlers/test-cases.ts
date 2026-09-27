@@ -30,6 +30,7 @@ import {
 } from '../failure-clues';
 import { parsePlaywrightError } from '../error-parse';
 import { failingStepParams } from '../describe-failure';
+import { failureHookContext, type FailureHookContext, type TreeStepLike } from '../step-tree';
 import { diffAttempts, type AttemptDiffEntry, type AttemptEvidence } from '../attempt-diff';
 import { getLocatorHealing } from '../../server/utils/locator-healing';
 import { getEnvironmentDiff } from '../../server/utils/environment-diff';
@@ -382,12 +383,14 @@ export async function getTestRunCase(
     blockedTests = rows.map(toRef);
   }
 
-  let blockedByCase: BlockedCaseRef | null = null;
+  // The blocking execution also says where it failed: a failing beforeAll hook
+  // skips the rest of its group just as a serial-group failure does.
+  let blockedByCase: (BlockedCaseRef & { failedIn: FailureHookContext | null }) | null = null;
   if (trc.blockedBy) {
     const m = /^(.*):(\d+):(\d+)$/.exec(trc.blockedBy);
     if (m) {
       const [row] = await db
-        .select(blockedRefColumns)
+        .select({ ...blockedRefColumns, steps: testRunsCases.steps, error: testRunsCases.error })
         .from(testRunsCases)
         .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
         .where(
@@ -398,7 +401,10 @@ export async function getTestRunCase(
             eq(testRunsCases.column, Number(m[3])),
           ),
         );
-      if (row) blockedByCase = toRef(row);
+      if (row) {
+        const steps = Array.isArray(row.steps) ? (row.steps as TreeStepLike[]) : [];
+        blockedByCase = { ...toRef(row), failedIn: failureHookContext(steps, row.error) };
+      }
     }
   }
 

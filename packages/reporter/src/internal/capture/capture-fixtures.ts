@@ -62,12 +62,13 @@ import type { ProbePlanItem } from '../probe/plan.js';
 import { environmentalSkipReason, inspectionGateFromTestInfo, shouldInspectOnFailure } from './inspect-on-failure.js';
 import { applyPickToSnapshots, deriveFailedLocator, runLocatorPicker, type UserPickResult } from './pick-on-failure.js';
 import { isDueForAriaSample } from '../support/aria-sampling.js';
+import { boxCaptureFrames, internalCall } from './quiet-capture.js';
 
 // Re-exported: probeElementAttrs now lives in @piwitests/picker-dom (shared
 // with the dashboard's snapshot picker), but the dogfood mirror
 // (`application/tests/fixtures.ts`) and this package's own tests import it
-// from here.
-export { probeElementAttrs };
+// from here, as the mirror does the quiet-capture helpers.
+export { probeElementAttrs, internalCall, boxCaptureFrames };
 export type { ProbeArg, ProbedAttrs };
 
 /** A Playwright fixture's `use` callback — hands the fixture value to the test. */
@@ -601,7 +602,7 @@ async function recordPageWindow(sink: CaptureSink, page: Page): Promise<void> {
   if (sink.pageInventories.length >= MAX_PAGE_INVENTORY_WINDOWS) return;
   if (key && !inventoriedPageKeys.has(key)) {
     inventoriedPageKeys.add(key);
-    const content = await readPageInventory(page);
+    const content = await internalCall(page, () => readPageInventory(page));
     if (sink.pageInventories.length >= MAX_PAGE_INVENTORY_WINDOWS) return;
     sink.pageInventories.push({
       url: content?.url ?? url,
@@ -626,7 +627,11 @@ async function stashPageState(sink: CaptureSink, closing: { page?: Page; context
   const belongsToClosing =
     closing.page === page || (closing.context !== undefined && pageContext(page) === closing.context);
   if (!belongsToClosing) return;
+  await internalCall(page, () => readPageBeforeClose(sink, page));
+}
 
+/** The reads {@link stashPageState} takes from the page about to close. */
+async function readPageBeforeClose(sink: CaptureSink, page: Page): Promise<void> {
   const vitals = await readWebVitals(page);
   if (vitals) sink.stashedWebVitals = vitals;
 
@@ -699,7 +704,9 @@ async function maybeOpenPicker(sink: CaptureSink, closing?: { page?: Page; conte
     console.log('[piwi] locator picker: no failing locator could be identified in this failure — nothing to replace.');
     return;
   }
-  const pick = await runLocatorPicker(page, testInfo, failed, { fn: probeElementAttrs, arg: CAPTURED_ATTRS_ARG });
+  const pick = await internalCall(page, () =>
+    runLocatorPicker(page, testInfo, failed, { fn: probeElementAttrs, arg: CAPTURED_ATTRS_ARG }),
+  );
   if (!pick) return;
   sink.userPick = pick;
   applyPickToSnapshots(sink.capturedLocators, pick);
@@ -783,18 +790,20 @@ const PROBE_UNSEEDED_PAGES = new WeakSet<Page>();
  */
 function probeElement(page: Page | null, target: Locator): Promise<ProbedAttrs> {
   const shipSource = () => target.evaluate(probeElementAttrs, CAPTURED_ATTRS_ARG);
-  if (!page || PROBE_UNSEEDED_PAGES.has(page)) return shipSource();
+  if (!page || PROBE_UNSEEDED_PAGES.has(page)) return internalCall(page, shipSource);
 
-  return target
-    .evaluate((el, name) => {
-      const seeded = (globalThis as Record<string, any>)[name];
-      return typeof seeded === 'function' ? (seeded(el) as ProbedAttrs) : null;
-    }, PROBE_GLOBAL)
-    .then((attrs) => {
-      if (attrs) return attrs;
-      PROBE_UNSEEDED_PAGES.add(page);
-      return shipSource();
-    });
+  return internalCall(page, () =>
+    target
+      .evaluate((el, name) => {
+        const seeded = (globalThis as Record<string, any>)[name];
+        return typeof seeded === 'function' ? (seeded(el) as ProbedAttrs) : null;
+      }, PROBE_GLOBAL)
+      .then((attrs) => {
+        if (attrs) return attrs;
+        PROBE_UNSEEDED_PAGES.add(page);
+        return shipSource();
+      }),
+  );
 }
 
 /**
@@ -902,7 +911,10 @@ function startElementCapture(
       // teardown that drains these capture promises.
       // ariaSnapshotBestEffort adapts the options to the installed
       // Playwright version and never throws (see its doc comment).
-      const aria = exactName === null && (role || isFormField) ? await ariaSnapshotBestEffort(target, 500) : null;
+      const aria =
+        exactName === null && (role || isFormField)
+          ? await internalCall(page, () => ariaSnapshotBestEffort(target, 500))
+          : null;
 
       const accessibleName =
         exactName ?? (extractAccessibleName(aria) || approximateAccessibleName({ ...attrs, accessibleName: null }));
@@ -937,6 +949,16 @@ function startElementCapture(
   sink.capturePromises.push(resolveAttrs);
 }
 
+/**
+ * Call a Playwright method on its own receiver. Playwright names an API call
+ * after the method frame the call enters, so the call keeps its real name
+ * (`locator.fill: Timeout …`); a call through `Function.prototype.apply` is
+ * named `apply`.
+ */
+export function callMethod(target: object, prop: string | symbol, args: unknown[]): unknown {
+  return (target as Record<string | symbol, (...a: unknown[]) => unknown>)[prop]!(...args);
+}
+
 // Chain methods that take args and define a new locator scope (not just narrow).
 // Origin method/args update to the chain call, e.g. .locator('.item') → locator('.item').
 // Positional/filter chains that narrow but don't change locator identity.
@@ -961,11 +983,10 @@ function wrapLocator(page: Page, locator: Locator, originMethod: string, originA
     get(target, prop) {
       const original = Reflect.get(target, prop) as unknown;
       if (typeof original !== 'function') return original;
-      const fn = original as (...args: unknown[]) => unknown;
 
       if (CHAIN_METHOD_SET.has(prop as string)) {
         return (...args: unknown[]): Locator => {
-          const next = fn.apply(target, args) as Locator;
+          const next = callMethod(target, prop, args) as Locator;
           if (LOCATOR_CREATING_CHAINS.has(prop as string)) {
             return wrapLocator(page, next, String(prop), args);
           }
@@ -986,7 +1007,7 @@ function wrapLocator(page: Page, locator: Locator, originMethod: string, originA
           // absence/count/page-level assertions, and any unknown future
           // expression pass through untouched.
           if (!sink || isNot || !EXPECT_CAPTURE_EXPRESSIONS.has(expression)) {
-            return fn.apply(target, callArgs);
+            return callMethod(target, prop, callArgs);
           }
 
           sink.lastActivePage = page;
@@ -1006,7 +1027,7 @@ function wrapLocator(page: Page, locator: Locator, originMethod: string, originA
             sink.capturedLocators.push({ location: callerLocation, used, element: null, alternatives: [] });
           }
 
-          const result = await fn.apply(target, callArgs);
+          const result = await callMethod(target, prop, callArgs);
 
           // `_expect` reports the outcome instead of throwing (the matcher
           // layer above does the throw), so read it off the result. A missing
@@ -1034,7 +1055,7 @@ function wrapLocator(page: Page, locator: Locator, originMethod: string, originA
         // capture below writes back to the right test even across a boundary.
         const sink = currentSink;
         // Action outside a tracked test (e.g. during beforeAll) — run untouched.
-        if (!sink) return fn.apply(target, callArgs);
+        if (!sink) return callMethod(target, prop, callArgs);
 
         sink.lastActivePage = page;
         // Capture the test call-site now (sync) so the snapshot's location
@@ -1068,7 +1089,7 @@ function wrapLocator(page: Page, locator: Locator, originMethod: string, originA
         // current identity) and re-throw so the test still fails.
         let result: unknown;
         try {
-          result = await fn.apply(target, callArgs);
+          result = await callMethod(target, prop, callArgs);
         } catch (error) {
           sink.failedLocators.push({ method: originMethod, args: originArgs, location: callerLocation });
           throw error;
@@ -1098,11 +1119,10 @@ function wrapFrameLocator(page: Page, frameLocator: FrameLocator): FrameLocator 
     get(target, prop) {
       const original = Reflect.get(target, prop) as unknown;
       if (typeof original !== 'function') return original;
-      const fn = original as (...args: unknown[]) => unknown;
       if (!LOCATOR_METHOD_SET.has(prop as string)) return original;
       return (...args: unknown[]): Locator => {
         if (currentSink) currentSink.lastActivePage = page;
-        return wrapLocator(page, fn.apply(target, args) as Locator, String(prop), args);
+        return wrapLocator(page, callMethod(target, prop, args) as Locator, String(prop), args);
       };
     },
   });
@@ -1402,6 +1422,16 @@ function patchBrowser(browser: Browser): void {
   }
 }
 
+/** The whole page's ARIA snapshot, read as an internal call. */
+function readRootAria(page: Page): Promise<string | null> {
+  return internalCall(page, () => ariaSnapshotBestEffort(page.locator(':root')));
+}
+
+/** The whole page's ARIA tree as JSON, read as an internal call. */
+function readRootAriaJson(page: Page): Promise<string | null> {
+  return internalCall(page, () => ariaSnapshotJSONBestEffort(page.locator(':root')));
+}
+
 /**
  * Drain in-flight capture work and attach the collected `piwi-*` data
  * to the test. Mirrors the per-test teardown the `page` fixture used to do, but
@@ -1458,15 +1488,14 @@ async function flushSink(sink: CaptureSink, testInfo: TestInfo): Promise<void> {
       // Prefer a live read; fall back to the snapshot the close wrappers
       // stashed — the standard test page is already closed when this auto
       // fixture tears down.
-      const snapshot = (pageReadable ? await ariaSnapshotBestEffort(page.locator(':root')) : null) ?? sink.stashedAria;
+      const snapshot = (pageReadable ? await readRootAria(page) : null) ?? sink.stashedAria;
       if (snapshot) {
         await testInfo.attach(ATTACHMENT_NAMES.ariaSnapshot, {
           contentType: 'text/plain',
           body: snapshot,
         });
 
-        const snapshotJson =
-          (pageReadable ? await ariaSnapshotJSONBestEffort(page.locator(':root')) : null) ?? sink.stashedAriaJson;
+        const snapshotJson = (pageReadable ? await readRootAriaJson(page) : null) ?? sink.stashedAriaJson;
         if (snapshotJson) {
           await testInfo.attach(ATTACHMENT_NAMES.ariaSnapshotJson, {
             contentType: 'application/json',
@@ -1507,14 +1536,13 @@ async function flushSink(sink: CaptureSink, testInfo: TestInfo): Promise<void> {
     isDueForAriaSample(testInfo)
   ) {
     try {
-      const snapshot = (pageReadable ? await ariaSnapshotBestEffort(page.locator(':root')) : null) ?? sink.stashedAria;
+      const snapshot = (pageReadable ? await readRootAria(page) : null) ?? sink.stashedAria;
       if (snapshot) {
         await testInfo.attach(ATTACHMENT_NAMES.ariaSnapshot, {
           contentType: 'text/plain',
           body: snapshot,
         });
-        const snapshotJson =
-          (pageReadable ? await ariaSnapshotJSONBestEffort(page.locator(':root')) : null) ?? sink.stashedAriaJson;
+        const snapshotJson = (pageReadable ? await readRootAriaJson(page) : null) ?? sink.stashedAriaJson;
         if (snapshotJson) {
           await testInfo.attach(ATTACHMENT_NAMES.ariaSnapshotJson, {
             contentType: 'application/json',
@@ -1580,7 +1608,8 @@ async function flushSink(sink: CaptureSink, testInfo: TestInfo): Promise<void> {
 
   // Live read when the page still exists (e.g. a browser.newPage the test left
   // open); otherwise the vitals the close wrappers stashed before the page went.
-  const webVitals = (pageReadable ? await readWebVitals(page) : null) ?? sink.stashedWebVitals;
+  const webVitals =
+    (pageReadable ? await internalCall(page, () => readWebVitals(page)) : null) ?? sink.stashedWebVitals;
   if (webVitals) {
     await testInfo.attach(ATTACHMENT_NAMES.webVitals, {
       contentType: 'application/json',
@@ -1590,7 +1619,8 @@ async function flushSink(sink: CaptureSink, testInfo: TestInfo): Promise<void> {
 
   // Page state at test end (pass AND fail — the pass side is the diff baseline).
   if (process.env.PIWI_CAPTURE_PAGE_STATE !== 'false') {
-    const pageState = (pageReadable ? await readPageState(page) : null) ?? sink.stashedPageState;
+    const pageState =
+      (pageReadable ? await internalCall(page, () => readPageState(page)) : null) ?? sink.stashedPageState;
     if (pageState) {
       await testInfo.attach(ATTACHMENT_NAMES.pageState, {
         contentType: 'application/json',
@@ -1668,6 +1698,7 @@ export const piwiFixtures: Fixtures<
   // requested, so suites that never destructure `page` are still captured.
   piwiCapture: [
     async ({}, use: UseFn<void>, testInfo: TestInfo) => {
+      boxCaptureFrames();
       const sink = createSink();
       sink.testInfo = testInfo;
       if (isProbeMode())

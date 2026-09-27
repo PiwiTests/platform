@@ -97,6 +97,8 @@ export interface ParsedPlaywrightError {
   lastStateLine: string | null;
   /** The lines before the call log and the stack, at most five. */
   messageHead: string;
+  /** The message an `expect(value, message)` call puts above Playwright's own matcher line. */
+  customMessage: string | null;
   /** First stack frame outside `node_modules`, as `file:line`. */
   topFrame: string | null;
   /** True when the navigation signals (a navigation action or a network error code) are present. */
@@ -538,6 +540,25 @@ export interface ParseErrorContext {
   stepParams?: Record<string, string | number | boolean> | null;
 }
 
+/** A line Playwright itself writes at the top of an assertion error. */
+const MATCHER_LINE_RE = /^(?:expect[.(]|Timed out\b|Expected\b|Received\b|Locator\b)/;
+
+/**
+ * The custom message of `expect(value, 'message')`: Playwright prints it as the
+ * error's first line, above its own `expect(…)` matcher line. Null when the
+ * first line is Playwright's own.
+ */
+function readCustomMessage(messageHead: string): string | null {
+  const lines = messageHead
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length < 2) return null;
+  const first = lines[0]!.replace(/^Error:\s*/, '');
+  if (!first || MATCHER_LINE_RE.test(first)) return null;
+  return /^(?:expect[.(]|Timed out\b)/.test(lines[1]!) ? first : null;
+}
+
 /**
  * Parse a raw Playwright error (ANSI codes allowed) into its structured facts.
  * Never throws; empty input yields an `unknown` record.
@@ -640,6 +661,7 @@ export function parsePlaywrightError(
     lastCallLogLine: callLog.lastLine,
     lastStateLine: callLog.stateLine,
     messageHead,
+    customMessage: isAssertion ? readCustomMessage(messageHead) : null,
     topFrame: frame ? `${frame.file}:${frame.line}` : null,
     isNavigationFailure,
     isLocatorResolutionFailure,

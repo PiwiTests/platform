@@ -10,12 +10,21 @@
  * the cluster page, which adds its occurrence, what-changed and state lines.
  *
  * The block uses four text styles and no more: the heading, one body style for
- * the sentences, one label style, one meta style. It carries the page's single
- * help hint; nothing else on it does.
+ * the sentences, one label style, one meta style; code in a heading or a sentence
+ * sits in a chip. Its left edge carries the status color the page passes — the
+ * execution's outcome, the cluster's state — so the page's situation reads before
+ * a word of it. It carries the page's single help hint; nothing else on it does.
  */
 import type { HelpTopicKey } from '~/utils/help-content';
 
-defineProps<{ help?: HelpTopicKey }>();
+const props = defineProps<{
+  help?: HelpTopicKey;
+  /** The status color of the left edge, a CSS color (`var(--color-status-failed)`); none without. */
+  edge?: string | null;
+}>();
+
+// A 4px edge in the status color, on every width (the phone layout drops the side borders).
+const edgeStyle = computed(() => (props.edge ? { borderLeftWidth: '4px', borderLeftColor: props.edge } : undefined));
 
 const ROWS = [
   { slot: 'story', label: 'Most likely' },
@@ -31,6 +40,7 @@ const ROWS = [
   <div
     data-shot="situation-block"
     class="rounded-lg border border-default bg-default p-3 sm:p-4 max-sm:rounded-none max-sm:border-x-0"
+    :style="edgeStyle"
   >
     <!-- Identity kicker, with the block's one help hint and any actions -->
     <div v-if="$slots.identity || $slots.actions || help" class="flex items-start justify-between gap-2">
@@ -47,11 +57,11 @@ const ROWS = [
     <!-- The labelled lines: one narrow label column, one content column -->
     <dl
       v-if="ROWS.some((r) => $slots[r.slot])"
-      class="mt-4 grid grid-cols-1 gap-y-3 sm:grid-cols-[6.5rem_minmax(0,1fr)] sm:gap-x-4"
+      class="mt-4 grid grid-cols-1 gap-y-4 sm:grid-cols-[8rem_minmax(0,1fr)] sm:gap-x-4"
     >
       <template v-for="row in ROWS" :key="row.slot">
         <template v-if="$slots[row.slot]">
-          <dt class="text-xs font-medium text-muted sm:pt-0.5 max-sm:-mb-2">{{ row.label }}</dt>
+          <dt class="text-sm font-semibold text-highlighted leading-relaxed max-sm:-mb-3">{{ row.label }}</dt>
           <dd class="min-w-0 text-sm text-highlighted leading-relaxed"><slot :name="row.slot" /></dd>
         </template>
       </template>

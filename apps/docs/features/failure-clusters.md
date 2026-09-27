@@ -79,7 +79,11 @@ failure](/guide/first-failure)), across every test that shares the failure. The 
 
 - **The occurrence sparkline**: how often it failed across recent runs, *N occurrences in M tests over D · last X ago*.
 - **What changed**: the commits and files between the last passing run (or your baseline) and this failure, with
-  **See the changes** leading to the diff, or **Browse commits** when there is nothing to diff.
+  **See the changes** leading to the diff. When there is nothing to diff it says why and what would fix it (no passing
+  run yet, runs that record no commit or repository URL, a host Piwi does not read, or a private repository without
+  an [SCM token](/guide/source-control)), and keeps what still works: the range on the host's **Compare** page,
+  **Copy git log** for your own checkout, and **Browse commits** to pick a baseline. The same commit on both sides
+  means the change is not in the code.
 - **The state line**, below.
 
 The **Affected tests** list selects which test's latest execution the evidence shows. The diagnosis, the locator fix,
@@ -91,8 +95,8 @@ The cluster page states where a cluster stands in **one sentence with one verb**
 *still failing*, *fixed and verified, still open*, *stopped failing*, *regressed, the fix did not hold*,
 *resolved*, *ignored*, *snoozed* or *all tests quarantined*. When the verdict the runs showed and the status a person
 set disagree, the line offers the **one action** that reconciles them (*Mark resolved*, *Reopen*, *Unsnooze*,
-*Release*). Beside it, **Triage** sets the status (open / resolved / ignored), a note and the assignee, and **Snooze**
-hides or brings back the cluster.
+*Release*). Beside it, **Triage** sets the status (open / resolved / ignored), a note and the assignee, and snoozes
+the cluster for a day, a week or until it recurs.
 
 ### Occurrences over time
 

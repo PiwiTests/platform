@@ -12,6 +12,7 @@
  * import { test, expect } from './fixtures'
  * ```
  */
+import { fileURLToPath } from 'node:url';
 import { gunzipSync } from 'node:zlib';
 import { test as base, expect, type Page, type TestInfo } from '@playwright/test';
 import {
@@ -33,8 +34,11 @@ import {
 } from '../../../packages/reporter/dist/internal/capture/locator-healing.js';
 import {
   ariaSnapshotBestEffort,
+  boxCaptureFrames,
   buildPageState,
+  callMethod,
   computeCoreVitals,
+  internalCall,
   probeElementAttrs,
   CAPTURED_ATTRS_ARG,
   LocatorPageLog,
@@ -259,8 +263,12 @@ async function collectNetworkAndVitals(page: Page, testInfo: TestInfo) {
   };
 }
 
+/** This file, boxed with the reporter's bundle so wrapped actions report the spec's line. */
+const FIXTURES_FILE = fileURLToPath(import.meta.url);
+
 export const test = base.extend<{ page: Page }>({
   page: async ({ page }, use, testInfo) => {
+    boxCaptureFrames([FIXTURES_FILE]);
     // ── Locator interaction capture (dogfooding: matches reporter/src/fixtures.ts) ──
     const captureLocators = process.env.PIWI_CAPTURE_LOCATORS !== 'false';
     const capturedLocators: LocatorSnapshot[] = [];
@@ -297,7 +305,7 @@ export const test = base.extend<{ page: Page }>({
         let deadline: ReturnType<typeof setTimeout> | undefined;
         try {
           const attrs = (await Promise.race([
-            target.evaluate(probeElementAttrs, CAPTURED_ATTRS_ARG),
+            internalCall(page, () => target.evaluate(probeElementAttrs, CAPTURED_ATTRS_ARG)),
             new Promise<null>((_, reject) => {
               deadline = setTimeout(() => reject(new Error('locator capture timeout')), 500);
             }),
@@ -310,7 +318,8 @@ export const test = base.extend<{ page: Page }>({
           // Bound with a timeout: without it, ariaSnapshot waits up to the
           // test timeout when the page is mid-navigation, hanging the
           // fixture teardown that drains these capture promises.
-          const aria = role || isFormField ? await ariaSnapshotBestEffort(target as any, 500) : null;
+          const aria =
+            role || isFormField ? await internalCall(page, () => ariaSnapshotBestEffort(target as any, 500)) : null;
 
           const accessibleName =
             extractAccessibleName(aria) || approximateAccessibleName({ ...attrs, accessibleName: null });
@@ -351,7 +360,7 @@ export const test = base.extend<{ page: Page }>({
 
           if (CHAIN_METHODS.includes(prop as string)) {
             return (...args: unknown[]) => {
-              const next = original.apply(target, args);
+              const next = callMethod(target, prop, args);
               if (LOCATOR_CREATING_CHAINS.has(prop as string)) {
                 return wrapLocator(next, String(prop), args);
               }
@@ -371,7 +380,7 @@ export const test = base.extend<{ page: Page }>({
               // negations, absence/count/page-level assertions, and any
               // unknown future expression pass through untouched.
               if (isNot || !EXPECT_CAPTURE_EXPRESSIONS.has(expression)) {
-                return original.apply(target, callArgs);
+                return callMethod(target, prop, callArgs);
               }
 
               const used = {
@@ -390,7 +399,7 @@ export const test = base.extend<{ page: Page }>({
                 capturedLocators.push({ location: callerLocation, used, element: null, alternatives: [] });
               }
 
-              const result = await original.apply(target, callArgs);
+              const result = await callMethod(target, prop, callArgs);
 
               // `_expect` reports the outcome instead of throwing (the matcher
               // layer above does the throw). A missing `matches` — a future
@@ -437,7 +446,7 @@ export const test = base.extend<{ page: Page }>({
             // element's current identity) and re-throw so the test still fails.
             let result: unknown;
             try {
-              result = await original.apply(target, callArgs);
+              result = await callMethod(target, prop, callArgs);
             } catch (err) {
               failedLocators.push({ method: originMethod, args: originArgs, location: callerLocation });
               throw err;
@@ -492,10 +501,12 @@ export const test = base.extend<{ page: Page }>({
       // assertion error; inspectOnFailure opens even with no failing locator.
       const failed = failedLocators[failedLocators.length - 1] ?? deriveFailedLocator(testInfo);
       if (failed || inspectGate) {
-        userPick = await runLocatorPicker(page, testInfo, failed, {
-          fn: probeElementAttrs,
-          arg: CAPTURED_ATTRS_ARG,
-        });
+        userPick = await internalCall(page, () =>
+          runLocatorPicker(page, testInfo, failed, {
+            fn: probeElementAttrs,
+            arg: CAPTURED_ATTRS_ARG,
+          }),
+        );
         if (userPick) applyPickToSnapshots(capturedLocators, userPick);
       }
     }
@@ -529,7 +540,7 @@ export const test = base.extend<{ page: Page }>({
     try {
       if (testInfo.status !== 'passed' && testInfo.status !== 'skipped') {
         // Version-tolerant + bounded — mirrors the reporter's flushSink.
-        const snapshot = await ariaSnapshotBestEffort(page.locator(':root') as any);
+        const snapshot = await internalCall(page, () => ariaSnapshotBestEffort(page.locator(':root') as any));
         if (snapshot) {
           await testInfo.attach(ATTACHMENT_NAMES.ariaSnapshot, {
             contentType: 'text/plain',
@@ -573,7 +584,7 @@ export const test = base.extend<{ page: Page }>({
       });
     }
 
-    await flush();
+    await internalCall(page, flush);
   },
 });
 

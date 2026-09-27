@@ -16,6 +16,14 @@ import { statusPalette, statusPaletteKey } from './status-palette';
  */
 export const SENTENCE_LINK_CLASS = 'underline decoration-dotted underline-offset-2 hover:decoration-solid';
 
+/**
+ * Code inside a heading or a sentence of the situation block — a locator, a
+ * commit — sits in a small chip, so it reads as code at a glance without a second
+ * font color for the prose around it. The chip wraps with its text on a narrow
+ * screen, each line keeping its own edges.
+ */
+export const CODE_CHIP_CLASS = 'font-mono rounded-md border border-default bg-elevated px-1 box-decoration-clone';
+
 /** The `diagnosis` shape the toolbox's folded summary reads. */
 export interface ToolboxDiagnosisLike {
   status?: string | null;

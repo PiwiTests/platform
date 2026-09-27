@@ -9,6 +9,7 @@
  * checkout.spec.ts`. Mask tokens never reach the title.
  */
 import { extractTopFrameFile } from '#shared/error-fingerprint';
+import { parsePlaywrightError } from '#shared/error-parse';
 
 export interface DescribableCluster {
   /** AI-generated title; wins when present. */
@@ -95,8 +96,20 @@ export function clusterFallbackTitle(cluster: DescribableCluster): string {
   switch (cluster.errorType) {
     case 'strict-mode':
       return `Strict-mode violation${onTarget}${inSpec}`;
-    case 'assertion':
+    case 'assertion': {
+      // The message the author gave `expect()` names what failed better than the
+      // matcher does. It is read off the masked signature — the error's first
+      // line — so one sample's values never name the whole cluster.
+      if (raw && parsePlaywrightError(raw).customMessage) {
+        const message = signature
+          .replace(/^Error:\s*/, '')
+          .replace(MASK_TOKEN_RE, '…')
+          .replace(/\s+/g, ' ')
+          .trim();
+        if (message) return `"${message.length > 60 ? `${message.slice(0, 59)}…` : message}" failed${inSpec}`;
+      }
       return `${assertionKind(signature) === 'Assertion failed' ? assertionKind(raw) : assertionKind(signature)}${onTarget}${inSpec}`;
+    }
     case 'timeout': {
       if (/\bTest timeout\b/i.test(signature)) return `Test timeout${inSpec}`;
       const action = /\b(?:locator|page|frame|element)\.(\w+): /.exec(signature)?.[1];
@@ -156,6 +169,12 @@ export function headlineAddsValue(name: string, headline: string | null | undefi
 
   // A concrete state ("was not found on the page") the name does not carry.
   if (HEADLINE_STATE_PHRASES.some((p) => headLc.includes(p) && !nameLc.includes(p))) return true;
+
+  // The hook or fixture the failure happened in (`In beforeAll: …`).
+  const hook = /^in ((?:before|after)(?:each|all)|fixture "[^"]+"|hook "[^"]+"|setup|teardown)(?![\w-])/.exec(
+    headLc,
+  )?.[1];
+  if (hook && !nameLc.includes(hook)) return true;
 
   // A number the name lacks — a count, an expected/received value, or a timeout
   // duration. Names carry no digits (spec line numbers are stripped), so a new
