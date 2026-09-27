@@ -489,10 +489,14 @@ function buildCrash(parsed: ParsedPlaywrightError, opts: BuildOptions): Line {
 /** Longest custom `expect` message quoted in a headline. */
 const CUSTOM_MESSAGE_MAX_CHARS = 60;
 
+/** A first word in plain sentence case (`Expected`, `Timed`), not a name such as `TypeError` or `GraphQL`. */
+const SENTENCE_CASE_WORD_RE = /^[A-Z][a-z]*(?![A-Za-z])/;
+
 /**
  * Put what the failure is about ahead of the line: the hook or fixture it
  * happened in, then the message the author gave `expect`. The line's first word
- * drops its capital when it follows a lead (`In beforeAll: expected …`).
+ * drops its capital when it follows a lead (`In beforeAll: expected …`), unless
+ * it is a name (`In beforeAll: TypeError: …`).
  * A test timeout that already names its hook keeps its own wording.
  */
 function withLeads(line: Line, parsed: ParsedPlaywrightError, ctx: DescribeFailureContext | undefined): Line {
@@ -505,7 +509,7 @@ function withLeads(line: Line, parsed: ParsedPlaywrightError, ctx: DescribeFailu
   if (message) led.text(`"${message}" failed: `);
   line.parts.forEach((part, i) => {
     const text =
-      i === 0 && part.kind === 'text' && /^[A-Z][a-z]/.test(part.text)
+      i === 0 && part.kind === 'text' && SENTENCE_CASE_WORD_RE.test(part.text)
         ? part.text[0]!.toLowerCase() + part.text.slice(1)
         : part.text;
     if (part.kind === 'text') led.text(text);

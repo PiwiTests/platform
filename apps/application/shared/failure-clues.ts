@@ -298,7 +298,11 @@ function pathOf(url: string | null | undefined): string | null {
   }
 }
 
-/** `t-1.1 s` style lead, or empty when the anchor is at/after the failure. */
+/**
+ * How long before the failure the anchor happened (`1.1 s before the failure`);
+ * under 100 ms, and up to the request slack after it, `just before the
+ * failure`; empty when the anchor is later than that.
+ */
 function formatLead(at: number, failureAt: number): string {
   const lead = failureAt - at;
   if (!Number.isFinite(lead) || lead < -REQUEST_END_SLACK_MS) return '';

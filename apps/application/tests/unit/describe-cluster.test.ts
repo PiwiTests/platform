@@ -154,6 +154,12 @@ describe('headlineAddsValue', () => {
     ).toBe(true);
   });
 
+  test('the fixture or named hook a failure happened in adds value', () => {
+    expect(headlineAddsValue('TypeError in db.spec.ts', 'In fixture "db": TypeError: fetch failed')).toBe(true);
+    expect(headlineAddsValue('TypeError in db.spec.ts', 'In hook "seed", TypeError: fetch failed')).toBe(true);
+    expect(headlineAddsValue('TypeError in fixture "db"', 'In fixture "db": TypeError: fetch failed')).toBe(false);
+  });
+
   test('a bare count in the headline adds value', () => {
     expect(
       headlineAddsValue('Strict-mode violation on getByRole(button)', 'getByRole(button) matched 3 elements'),

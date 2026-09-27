@@ -171,7 +171,9 @@ export function headlineAddsValue(name: string, headline: string | null | undefi
   if (HEADLINE_STATE_PHRASES.some((p) => headLc.includes(p) && !nameLc.includes(p))) return true;
 
   // The hook or fixture the failure happened in (`In beforeAll: …`).
-  const hook = /^in ((?:before|after)(?:each|all)|fixture "[^"]+"|hook "[^"]+"|setup|teardown)\b/.exec(headLc)?.[1];
+  const hook = /^in ((?:before|after)(?:each|all)|fixture "[^"]+"|hook "[^"]+"|setup|teardown)(?![\w-])/.exec(
+    headLc,
+  )?.[1];
   if (hook && !nameLc.includes(hook)) return true;
 
   // A number the name lacks — a count, an expected/received value, or a timeout

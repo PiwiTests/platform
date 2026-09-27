@@ -256,7 +256,7 @@ describe('headlines read with the recorded steps', () => {
   const headlineOf = (execution: RecordedExecution) =>
     describeFailureText(execution.error, stepHeadlineContext(execution.steps, execution.error))?.headline;
 
-  test('a failure in the test body reads as before', () => {
+  test('a failure in the test body has no lead', () => {
     expect(headlineOf(bodyFailure)).toBe(
       "getByLabel('Email address') was not found on the page — fill timed out after 2 s",
     );
@@ -279,6 +279,16 @@ describe('headlines read with the recorded steps', () => {
     const error =
       'Error: the order total\n\nexpect(received).toBe(expected) // Object.is equality\n\nExpected: 42\nReceived: 41';
     expect(describeFailureText(error)?.headline).toBe('"the order total" failed: expected 42, got 41 — toBe');
+  });
+
+  test('a lead keeps the capital of a name the line starts with', () => {
+    const failedIn = { phase: 'setup' as const, hook: 'beforeAll' };
+    expect(describeFailureText('TypeError: fetch failed', { failedIn })?.headline).toBe(
+      'In beforeAll: TypeError: fetch failed',
+    );
+    expect(describeFailureText('Error: Timed out waiting for the seed', { failedIn })?.headline).toMatch(
+      /^In beforeAll: timed out/,
+    );
   });
 
   test('a test timeout that names its hook keeps its own wording', () => {
