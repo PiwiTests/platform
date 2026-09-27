@@ -85,6 +85,50 @@
         stroke-linejoin: round;
         fill: none;
       }
+      .viewport-row {
+        margin: 10px 0 6px;
+        font-size: 12px;
+      }
+      .viewport-row label {
+        display: block;
+        font-size: 10.5px;
+        color: var(--muted);
+        margin-bottom: 3px;
+      }
+      .viewport-fields {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+      }
+      .viewport-fields select {
+        flex: 1;
+        min-width: 0;
+        font: inherit;
+        padding: 4px 6px;
+        border-radius: 7px;
+        border: 1px solid var(--border);
+        background: var(--surface);
+        color: inherit;
+      }
+      .viewport-custom input {
+        width: 4.2em;
+        font: inherit;
+      }
+      .viewport-fields button {
+        font: inherit;
+        padding: 4px 10px;
+        border-radius: 7px;
+        border: 1px solid var(--border);
+        background: var(--surface);
+        color: inherit;
+        cursor: pointer;
+      }
+      .viewport-note {
+        display: block;
+        font-size: 10.5px;
+        color: var(--muted);
+        margin-top: 3px;
+      }
       .active-project-row {
         margin-bottom: 10px;
       }
@@ -533,6 +577,19 @@
           <kbd class="key" aria-hidden="true">0</kbd>
         </button>
       </div>
+      <form id="viewport-row" class="viewport-row">
+        <label for="viewport" data-i18n="popup_viewport">Open this page at a viewport</label>
+        <div class="viewport-fields">
+          <select id="viewport"></select>
+          <span id="viewport-custom" class="viewport-custom" hidden>
+            <input id="viewport-width" type="number" min="200" max="4000" value="390" aria-label="Width" data-i18n-aria-label="popup_viewportWidth" />
+            ×
+            <input id="viewport-height" type="number" min="200" max="4000" value="844" aria-label="Height" data-i18n-aria-label="popup_viewportHeight" />
+          </span>
+          <button type="submit" data-i18n="popup_viewportOpen">Open</button>
+        </div>
+        <span class="viewport-note" id="viewport-note" data-i18n="popup_viewportOnly">Viewport only: no touch, pixel ratio or user agent.</span>
+      </form>
       <footer>
         <span data-i18n="popup_footerKeys"
           >Press <kbd data-i18n-slot="first">1</kbd>–<kbd data-i18n-slot="last">0</kbd> to run a tool,

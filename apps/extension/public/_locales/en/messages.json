@@ -205,6 +205,58 @@
     "message": "Save login for tests",
     "description": "Popup header icon button's label and tooltip, and a button in the DevTools Piwi panel: opens the page that saves the site's login as a Playwright storageState file."
   },
+  "popup_viewport": {
+    "message": "Open this page at a viewport",
+    "description": "Popup, near the bottom: label of the row that opens the page in a new window at a chosen viewport size."
+  },
+  "popup_viewportProject": {
+    "message": "$project$ ($size$)",
+    "description": "Popup, viewport select: one of the project's Playwright projects. $project$ is its name, like Mobile Safari; $size$ its viewport, like 390×844.",
+    "placeholders": {
+      "project": {
+        "content": "$1",
+        "example": "Mobile Safari"
+      },
+      "size": {
+        "content": "$2",
+        "example": "390×844"
+      }
+    }
+  },
+  "popup_viewportCustom": {
+    "message": "Size typed by hand",
+    "description": "Popup, viewport select: the option that shows width and height fields."
+  },
+  "popup_viewportWidth": {
+    "message": "Width",
+    "description": "Popup, viewport row: accessible name of the width field, in CSS pixels."
+  },
+  "popup_viewportHeight": {
+    "message": "Height",
+    "description": "Popup, viewport row: accessible name of the height field, in CSS pixels."
+  },
+  "popup_viewportOpen": {
+    "message": "Open",
+    "description": "Popup, viewport row: button that opens the page in a new window at that viewport. One word."
+  },
+  "popup_viewportOnly": {
+    "message": "Viewport only: no touch, pixel ratio or user agent.",
+    "description": "Popup, under the viewport row: what the new window does not emulate. Short."
+  },
+  "popup_viewportInvalid": {
+    "message": "Open a web page, at a width and height between $min$ and $max$ pixels.",
+    "description": "Popup, viewport row: the page or the size cannot be opened. $min$ and $max$ are sizes in pixels.",
+    "placeholders": {
+      "max": {
+        "content": "$1",
+        "example": "4000"
+      },
+      "min": {
+        "content": "$2",
+        "example": "200"
+      }
+    }
+  },
   "popup_reportBug": {
     "message": "Report a bug",
     "description": "Popup tile: records the steps of a bug. Short."

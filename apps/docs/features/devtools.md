@@ -99,6 +99,14 @@ The file logs anyone in as you until the session expires: save it with a test ac
 `playwright/.auth/user.json`, and add `playwright/.auth` to `.gitignore`. The page offers both lines, and a setup test
 that refreshes the file.
 
+## Open this page at a viewport
+
+The popup's last row opens the tab's page in a new window whose viewport, not its outer frame, has the size of one
+of your Playwright projects: **Mobile Safari (390×664)**. With a connection, the sizes come from the `use.viewport`
+the [reporter](/guide/reporter) sends with each run, per project; without one, or for another size, choose **Size typed
+by hand**. It sizes the viewport only: touch, device pixel ratio and user agent need the debugging protocol, as
+Playwright's device emulation does.
+
 ## Playwright view
 
 **Playwright view** in the popup (key `V`) labels the page as a test sees it: each button, link, field, heading and

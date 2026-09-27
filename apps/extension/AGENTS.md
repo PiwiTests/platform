@@ -313,6 +313,10 @@ they have `chrome.scripting`, `chrome.permissions` and `chrome.storage` as well 
   imports nothing that touches `chrome.*`. Turning them off, or closing the tab, unregisters both, and turning them off
   reloads the tab. A replay started meanwhile carries them (`ReplayState.conditions`) and its panel lists them.
   `request-conditions.spec.ts` drives it against a real server, by `fetch` and by XHR.
+- **Open this page at a viewport** (the popup's last row, `src/popup/viewports.ts`): the sizes are the active
+  project's `viewports` from the cached locator index, or typed by hand; `piwi-open-viewport` in the background worker
+  creates the window and grows it until the tab's `width`/`height` match. In a spec, measure the tab through
+  `chrome.tabs`, not the page: Playwright emulates its own viewport in the pages it drives (`viewport.spec.ts`).
 - **Tests**: `devtools-sidebar.spec.ts`, `devtools-panel.spec.ts` and `devtools-network.spec.ts` open the pages as tabs with `chrome.devtools` stubbed (`devtools-stub.ts`:
   `eval` runs in a fixture page's own world, where the spec adds the content script; `$0` is that page's global).
   `devtools-real.spec.ts` launches Chromium with `--auto-open-devtools-for-tabs` and drives the real DevTools page

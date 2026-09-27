@@ -161,6 +161,50 @@
   "popup_saveLogin": {
     "message": "Anmeldung für Tests speichern"
   },
+  "popup_viewport": {
+    "message": "Diese Seite mit einem Viewport öffnen"
+  },
+  "popup_viewportProject": {
+    "message": "$project$ ($size$)",
+    "placeholders": {
+      "project": {
+        "content": "$1",
+        "example": "Mobile Safari"
+      },
+      "size": {
+        "content": "$2",
+        "example": "390×844"
+      }
+    }
+  },
+  "popup_viewportCustom": {
+    "message": "Manuell eingegebene Größe"
+  },
+  "popup_viewportWidth": {
+    "message": "Breite"
+  },
+  "popup_viewportHeight": {
+    "message": "Höhe"
+  },
+  "popup_viewportOpen": {
+    "message": "Öffnen"
+  },
+  "popup_viewportOnly": {
+    "message": "Nur der Viewport: kein Touch, keine Pixeldichte, kein User-Agent."
+  },
+  "popup_viewportInvalid": {
+    "message": "Öffnen Sie eine Webseite, mit Breite und Höhe zwischen $min$ und $max$ Pixeln.",
+    "placeholders": {
+      "max": {
+        "content": "$1",
+        "example": "4000"
+      },
+      "min": {
+        "content": "$2",
+        "example": "200"
+      }
+    }
+  },
   "popup_reportBug": {
     "message": "Bug melden"
   },

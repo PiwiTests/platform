@@ -467,6 +467,79 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   });
 });
 
+/** The narrowest and the widest viewport a window is opened at, in CSS pixels. */
+const VIEWPORT_MIN = 200;
+const VIEWPORT_MAX = 4000;
+
+/** The tab's content size, once the browser has laid the window out, and changed from `before` when given. */
+async function tabSize(
+  tabId: number,
+  before: { width: number; height: number } | null = null,
+): Promise<{ width: number; height: number } | null> {
+  let last: { width: number; height: number } | null = null;
+  for (let attempt = 0; attempt < 30; attempt++) {
+    const tab = await chrome.tabs.get(tabId);
+    if (tab.width && tab.height) {
+      last = { width: tab.width, height: tab.height };
+      if (!before || last.width !== before.width || last.height !== before.height) return last;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  return last;
+}
+
+/**
+ * Opens `url` in a new window whose viewport, not its outer frame, measures
+ * `width` × `height`: the window is created at that size, then grown by the
+ * difference between its outer size and its tab's. Viewport only: no touch,
+ * device pixel ratio or user agent, which take the debugging protocol.
+ */
+async function handleOpenViewport(message: {
+  url?: unknown;
+  width?: unknown;
+  height?: unknown;
+}): Promise<{ ok: true; width: number; height: number } | { ok: false; error: string }> {
+  await i18nReady;
+  const { url, width, height } = message;
+  const size = (value: unknown) =>
+    typeof value === 'number' && Number.isInteger(value) && value >= VIEWPORT_MIN && value <= VIEWPORT_MAX;
+  if (typeof url !== 'string' || !/^https?:\/\//.test(url) || !size(width) || !size(height)) {
+    return { ok: false, error: t('popup_viewportInvalid', { min: VIEWPORT_MIN, max: VIEWPORT_MAX }) };
+  }
+  try {
+    const w = width as number;
+    const h = height as number;
+    // Placed where the current window is: a window mostly off the screen is refused.
+    const base = await chrome.windows.getLastFocused().catch(() => null);
+    const created = await chrome.windows.create({
+      url,
+      width: w,
+      height: h,
+      left: base?.left ?? 0,
+      top: base?.top ?? 0,
+      type: 'normal',
+      focused: true,
+    });
+    const tabId = created?.tabs?.[0]?.id;
+    if (created?.id == null || tabId == null)
+      return { ok: false, error: t('popup_viewportInvalid', { min: VIEWPORT_MIN, max: VIEWPORT_MAX }) };
+    // The window's size as set, which `windows.get` may not report yet, and the viewport it gave.
+    let outer = { width: created.width ?? w, height: created.height ?? h };
+    let inner = await tabSize(tabId);
+    for (let pass = 0; inner && pass < 4 && (inner.width !== w || inner.height !== h); pass++) {
+      // The frame around the viewport: toolbars, borders, scrollbars.
+      const frameWidth = Math.max(0, outer.width - inner.width);
+      const frameHeight = Math.max(0, outer.height - inner.height);
+      outer = { width: w + frameWidth, height: h + frameHeight };
+      await chrome.windows.update(created.id, outer);
+      inner = await tabSize(tabId, inner);
+    }
+    return { ok: true, width: inner?.width ?? w, height: inner?.height ?? h };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 const REPLAY_SCRIPT_ID = 'piwi-replay-panel';
 
 function replayOriginPattern(origin: unknown): string | null {
@@ -567,6 +640,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   if (message?.type === 'piwi-start-replay') {
     void handleStartReplay(message, sender.tab).then(sendResponse);
+    return true;
+  }
+  if (message?.type === 'piwi-open-viewport') {
+    void handleOpenViewport(message).then(sendResponse);
     return true;
   }
   if (message?.type === 'piwi-set-conditions') {

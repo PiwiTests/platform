@@ -8,7 +8,7 @@ Playwright test does. That is the gap this plan fills: a **Piwi panel inside Dev
 page, **mocks written from real responses**, the **login saved for tests**, **slow and failing requests** on demand,
 and **viewports** from the project's own configuration.
 
-**Status.** Proposed 2026-09-27; in progress. Built: PR 1 (the Elements sidebar), PR 2 (the Playwright view), PR 3 (the Piwi panel's Record and Replay tabs), PR 4 (the Network tab and Mock this response), PR 5 (Save login for tests), PR 6 (slow down or fail a request, and replays under a condition). No part needs the `debugger`
+**Status.** Proposed 2026-09-27; in progress. Built: PR 1 (the Elements sidebar), PR 2 (the Playwright view), PR 3 (the Piwi panel's Record and Replay tabs), PR 4 (the Network tab and Mock this response), PR 5 (Save login for tests), PR 6 (slow down or fail a request, and replays under a condition), PR 7 (viewport presets). No part needs the `debugger`
 permission, and only one adds a permission at all: `cookies`, optional, requested when the login is saved. The DevTools
 panel adds a manifest key (`devtools_page`) that shows no install warning. The open questions are settled below.
 
@@ -209,11 +209,13 @@ Starting from Flake Lab's suspects is not built: the Network tab's requests are 
 
 ### 2.5 Viewport presets
 
-When the instance knows the project's Playwright projects and their `use.viewport` (an open question below), the popup
-offers them: **Open this page at iPhone 13 (390×844)** opens the page in a new window sized so its viewport, not its
+When the instance knows the project's Playwright projects and their `use.viewport` (from the runs, see the first open
+question), the popup offers them: **Open this page at iPhone 13 (390×844)** opens the page in a new window sized so its viewport, not its
 outer frame, matches (`chrome.windows.create`, then corrected by the difference between the window's outer and inner
 size). No emulation of touch, device pixel ratio or user agent: that takes the debugging protocol. The label says
-"viewport only".
+"viewport only". As built, the background worker creates the window, then grows it by the frame it measures
+(`tabs.Tab.width`/`height` against the window's size) until the viewport matches; a size the screen cannot hold
+ends at the nearest one the browser allows.
 
 ## Permissions
 
@@ -257,9 +259,12 @@ DevTools' own page as Playwright can.
 
 ## Open questions
 
-1. **Viewports from the instance.** The reporter does not send the projects' `use.viewport` today. Add it to the run's
-   wire data (a field freezing at 1.0), or read it from the Playwright config in the desktop app? To be decided with
-   PR 7.
+1. **Viewports from the instance.** Settled: from the instance. The reporter already sends each project's
+   `use.viewport` with the run (`htmlReport.projects[].use.viewport`, beside the `testIdAttribute` the locator index
+   reads), so no new wire field is needed: the locator index gains an optional `viewports` list, frozen at 1.0 as
+   D23 in [`1.0-stabilization.md`](1.0-stabilization.md). Reading the Playwright config in the desktop app would need
+   the config evaluated by Node, and would leave out anyone without the desktop app. The popup also offers a size
+   typed by hand, for anyone not connected.
 2. **The panel as the main UI.** Settled: both show. The in-page HUD stays for people without DevTools open, and the
    Piwi panel mirrors the same state.
 3. **Mocks as fixtures.** Settled: not now. Mock this response writes plain `page.route` code, as 2.2 describes.

@@ -161,6 +161,50 @@
   "popup_saveLogin": {
     "message": "Salvar o login para os testes"
   },
+  "popup_viewport": {
+    "message": "Abrir esta página com um viewport"
+  },
+  "popup_viewportProject": {
+    "message": "$project$ ($size$)",
+    "placeholders": {
+      "project": {
+        "content": "$1",
+        "example": "Mobile Safari"
+      },
+      "size": {
+        "content": "$2",
+        "example": "390×844"
+      }
+    }
+  },
+  "popup_viewportCustom": {
+    "message": "Tamanho digitado à mão"
+  },
+  "popup_viewportWidth": {
+    "message": "Largura"
+  },
+  "popup_viewportHeight": {
+    "message": "Altura"
+  },
+  "popup_viewportOpen": {
+    "message": "Abrir"
+  },
+  "popup_viewportOnly": {
+    "message": "Só o viewport: sem toque, densidade de pixels nem user agent."
+  },
+  "popup_viewportInvalid": {
+    "message": "Abra uma página web, com largura e altura entre $min$ e $max$ pixels.",
+    "placeholders": {
+      "max": {
+        "content": "$1",
+        "example": "4000"
+      },
+      "min": {
+        "content": "$2",
+        "example": "200"
+      }
+    }
+  },
   "popup_reportBug": {
     "message": "Relatar um bug"
   },

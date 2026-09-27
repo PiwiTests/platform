@@ -1,3 +1,4 @@
+import { setUpViewportRow } from './viewports.js';
 import {
   getRecordingState,
   stopRecording,
@@ -75,6 +76,10 @@ document.getElementById('save-login')!.addEventListener('click', () => {
     const query = new URLSearchParams({ tabId: String(tab.id), url: tab.url ?? '' });
     void chrome.tabs.create({ url: chrome.runtime.getURL(`login.html?${query}`) }).then(() => window.close());
   });
+});
+
+void setUpViewportRow(activeTab, (text) => {
+  statusEl.textContent = text;
 });
 
 configButton.addEventListener('click', () => {
