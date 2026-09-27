@@ -1,5 +1,6 @@
 import type { BugPhrases, BugState, BugStepValue, BugSubject, NounGender, RoleNoun } from './bug-phrases';
 import { markdownCode } from './markdown-code';
+import { keyCombo } from './key-combo';
 
 /** ARIA roles in the words of a German interface, with their gender. None of them changes its ending by case. */
 const ROLES: Readonly<Record<string, RoleNoun>> = {
@@ -112,6 +113,7 @@ function inDative(s: BugSubject): string {
 
 /** Keys by the names German keyboards print on them; any other key keeps Playwright's name. */
 const KEYS: Readonly<Record<string, string>> = {
+  ControlOrMeta: 'Strg',
   Escape: 'Esc',
   Backspace: 'Rücktaste',
   Delete: 'Entf',
@@ -129,7 +131,7 @@ const KEYS: Readonly<Record<string, string>> = {
   Shift: 'Umschalt',
 };
 
-const key = (name: string): string => KEYS[name] ?? name;
+const key = (name: string): string => keyCombo(name, (part) => KEYS[part] ?? part);
 
 const value = (v: BugStepValue): string =>
   v.kind === 'password' ? 'ein Passwort (nicht aufgezeichnet)' : quote(v.text);

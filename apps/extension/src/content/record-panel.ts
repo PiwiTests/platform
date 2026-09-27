@@ -78,6 +78,74 @@ const ACTIONABLE_SELECTOR =
 const ARROW_KEY_WIDGETS =
   'select, [role="combobox"], [role="listbox"], [role="menu"], [role="menubar"], [role="tree"], [role="grid"], [role="tablist"], [role="radiogroup"], [aria-activedescendant]';
 
+/** Inputs Playwright's `fill` refuses: their `input` event is not a fill. */
+const UNFILLABLE_INPUT_TYPES = new Set(['checkbox', 'radio', 'file', 'submit', 'button', 'reset', 'image', 'hidden']);
+
+/** Fields a character typed into is text, not a shortcut. */
+const TEXT_FIELDS =
+  'textarea, select, [contenteditable=""], [contenteditable="true"], input:not([type="checkbox"], [type="radio"], [type="button"], [type="submit"], [type="reset"], [type="file"], [type="range"], [type="color"], [type="image"])';
+const MODIFIER_KEYS = new Set([
+  'Control',
+  'Shift',
+  'Alt',
+  'AltGraph',
+  'Meta',
+  'CapsLock',
+  'Fn',
+  'Dead',
+  'Unidentified',
+]);
+/** Keys that edit a field or move its caret, with or without a modifier: the field's fill says what they did. */
+const FIELD_EDIT_KEYS = new Set([
+  'a',
+  'c',
+  'v',
+  'x',
+  'z',
+  'y',
+  'Backspace',
+  'Delete',
+  'ArrowLeft',
+  'ArrowRight',
+  'Home',
+  'End',
+]);
+const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform);
+
+/**
+ * A key press as Playwright writes it, or null when it only types, edits or
+ * moves the focus: Enter, Escape and the arrows in a list (`RECORDED_KEYS`),
+ * a shortcut with a modifier (`ControlOrMeta+K`, portable between Ctrl and
+ * ⌘), and a character pressed outside a field, a page's own shortcut.
+ */
+function recordedKey(e: KeyboardEvent, focused: Element | null): string | null {
+  if (MODIFIER_KEYS.has(e.key)) return null;
+  const inField = !!focused?.closest(TEXT_FIELDS);
+  // A letter or digit by its key, whatever Alt or a layout made of it.
+  const named = /^Key[A-Z]$/.test(e.code)
+    ? e.code.slice(3).toLowerCase()
+    : /^Digit\d$/.test(e.code)
+      ? e.code.slice(5)
+      : e.key;
+  const modifiers = [
+    (IS_MAC ? e.metaKey : e.ctrlKey) && 'ControlOrMeta',
+    IS_MAC && e.ctrlKey && 'Control',
+    !IS_MAC && e.metaKey && 'Meta',
+    e.altKey && 'Alt',
+  ].filter((m): m is string => !!m);
+  if (modifiers.length === 0) {
+    if (e.shiftKey && [...e.key].length > 1) return null;
+    if (RECORDED_KEYS.has(e.key)) {
+      if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && !focused?.closest(ARROW_KEY_WIDGETS)) return null;
+      return e.key;
+    }
+    return !inField && [...e.key].length === 1 && e.key !== ' ' ? e.key : null;
+  }
+  if (inField && FIELD_EDIT_KEYS.has(named)) return null;
+  if (e.shiftKey) modifiers.push('Shift');
+  return [...modifiers, named === ' ' ? 'Space' : named].join('+');
+}
+
 function normalizeText(s: string): string {
   return s.replace(/\s+/g, ' ').trim();
 }
@@ -806,6 +874,8 @@ function attachListeners(): void {
       if (!e.isTrusted || capturePaused() || withinOwnUi(e)) return;
       const el = e.target;
       if (!(el instanceof HTMLInputElement) && !(el instanceof HTMLTextAreaElement)) return;
+      // A checkbox or a radio fires `input` too; its `change` records it as a check.
+      if (el instanceof HTMLInputElement && UNFILLABLE_INPUT_TYPES.has(el.type)) return;
       const typeAttr = el instanceof HTMLInputElement ? el.type : null;
       const passwordField = isPasswordInput(el.tagName, typeAttr);
       // The raw value never enters the event at all for a password field —
@@ -845,14 +915,14 @@ function attachListeners(): void {
     'keydown',
     (e) => {
       if (!e.isTrusted || e.isComposing || capturePaused() || withinOwnUi(e)) return;
-      if (!RECORDED_KEYS.has(e.key)) return;
       const focused = e.target instanceof Element ? e.target : null;
-      if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && !focused?.closest(ARROW_KEY_WIDGETS)) return;
-      // Escape goes to whatever has focus, as the replay sends it: its target
-      // is often the page itself, which no locator names.
-      const el =
-        e.key === 'Escape' || focused === document.body || focused === document.documentElement ? null : focused;
-      captureEvent(buildEvent('keydown', el, { value: e.key }));
+      const key = recordedKey(e, focused);
+      if (!key) return;
+      // Escape and a page's shortcuts go to whatever has focus, as the replay
+      // sends them: their target is often the page itself, which no locator names.
+      const shortcut = key.includes('+') ? !focused?.closest(TEXT_FIELDS) : [...key].length === 1;
+      const onPage = !focused || focused === document.body || focused === document.documentElement;
+      captureEvent(buildEvent('keydown', key === 'Escape' || shortcut || onPage ? null : focused, { value: key }));
     },
     opts,
   );

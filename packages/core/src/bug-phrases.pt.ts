@@ -1,5 +1,6 @@
 import type { BugPhrases, BugState, BugStepValue, BugSubject, RoleNoun } from './bug-phrases';
 import { markdownCode } from './markdown-code';
+import { keyCombo } from './key-combo';
 
 /** ARIA roles in the words of a Brazilian Portuguese interface, with their gender. */
 const ROLES: Readonly<Record<string, RoleNoun>> = {
@@ -124,6 +125,7 @@ function inside(p: Phrase): string {
 
 /** Keys by the names Brazilian (ABNT2) keyboards print on them; any other key keeps Playwright's name. */
 const KEYS: Readonly<Record<string, string>> = {
+  ControlOrMeta: 'Ctrl',
   Escape: 'Esc',
   Space: 'Espaço',
   ArrowUp: 'Seta para cima',
@@ -134,7 +136,7 @@ const KEYS: Readonly<Record<string, string>> = {
   PageDown: 'Page Down',
 };
 
-const key = (name: string): string => KEYS[name] ?? name;
+const key = (name: string): string => keyCombo(name, (part) => KEYS[part] ?? part);
 
 const value = (v: BugStepValue): string => (v.kind === 'password' ? 'uma senha (não gravada)' : quote(v.text));
 

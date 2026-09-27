@@ -18,6 +18,7 @@ const ORIGIN = 'https://record-test.local';
 
 const LOGIN_PAGE = `<!doctype html><html><body>
   <input id="username" data-testid="username-field" />
+  <label><input type="checkbox" data-testid="remember-me" /> Remember me</label>
   <button id="submit" data-testid="login-submit" onclick="location.href='/dashboard'">Log in</button>
 </body></html>`;
 
@@ -122,6 +123,46 @@ test.describe('record-panel.js', () => {
     // must be activated once, not twice.
     expect(steps.map((s) => s.action)).toEqual(['goto', 'fill', 'fill', 'press']);
     expect(steps.filter((s) => s.action === 'fill').map((s) => s.value)).toEqual(['alice', 'smith']);
+  });
+
+  test('a page’s shortcuts are recorded, and typing, select-all, Tab and a checkbox’s own input are not', async ({
+    context,
+  }) => {
+    await routePages(context);
+    await stubChromeStorage(context, {
+      session: {
+        piwiRecording: { active: true, events: [], startedAt: Date.now(), grantedOriginPattern: `${ORIGIN}/*` },
+      },
+    });
+
+    const page = await context.newPage();
+    await page.goto(`${ORIGIN}/login`);
+    await page.addScriptTag({ path: path.join(DIST, 'record-panel.js') });
+    await expect.poll(() => page.evaluate(() => !!document.getElementById('piwi-record-hud-host'))).toBe(true);
+
+    await page.keyboard.press('ControlOrMeta+K');
+    await page.keyboard.press('?');
+    await page.locator('#username').click();
+    await page.keyboard.type('abc');
+    await page.keyboard.press('ControlOrMeta+A');
+    await page.keyboard.press('Tab');
+    await page.keyboard.press('Escape');
+    await page.getByTestId('remember-me').click();
+
+    await expect.poll(() => readStoredEvents(page).then((e) => e.length)).toBeGreaterThanOrEqual(8);
+    await page.waitForTimeout(200);
+    const steps = normalizeSteps(await readStoredEvents(page));
+    expect(steps.map((s) => [s.action, s.value, s.target?.testId ?? null])).toEqual([
+      ['goto', `${ORIGIN}/login`, null],
+      // Ctrl on Windows and Linux, ⌘ on a Mac: the spec replays it on either.
+      ['press', 'ControlOrMeta+k', null],
+      ['press', '?', null],
+      ['click', null, 'username-field'],
+      ['fill', 'abc', 'username-field'],
+      ['press', 'Escape', null],
+      // A checkbox fires `input` as well as `change`: one step, never a fill.
+      ['check', null, 'remember-me'],
+    ]);
   });
 
   test('a password field is never captured — redacted with no value in storage', async ({ context }) => {

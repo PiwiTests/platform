@@ -162,13 +162,22 @@ describe('normalizeSteps', () => {
     expect(steps[1]).toMatchObject({ value: 'Enter' });
   });
 
-  test('keys that only edit or move between fields are ignored', () => {
+  test('keys that only move between fields are ignored', () => {
     const field = target();
     const steps = normalizeSteps([
       ev({ kind: 'keydown', target: field, value: 'Tab', timestamp: 1 }),
-      ev({ kind: 'keydown', target: field, value: 'a', timestamp: 2 }),
+      ev({ kind: 'keydown', target: field, value: 'PageDown', timestamp: 2 }),
     ]);
     expect(steps).toHaveLength(0);
+  });
+
+  test('a page’s shortcuts become presses: a combination, or a single character', () => {
+    const steps = normalizeSteps([
+      ev({ kind: 'keydown', target: null, value: 'ControlOrMeta+k', timestamp: 1 }),
+      ev({ kind: 'keydown', target: null, value: '?', timestamp: 2 }),
+      ev({ kind: 'keydown', target: null, value: 'Shift+Tab', timestamp: 3 }),
+    ]);
+    expect(steps.map((s) => s.value)).toEqual(['ControlOrMeta+k', '?', 'Shift+Tab']);
   });
 
   test('Escape and the arrow keys become presses, after the fill they end', () => {

@@ -1,5 +1,6 @@
 import type { BugPhrases, BugState, BugStepValue, BugSubject, RoleNoun } from './bug-phrases';
 import { markdownCode } from './markdown-code';
+import { keyCombo } from './key-combo';
 
 /** ARIA roles in the words of a Spanish interface, with their gender. One Spanish for Spain and Latin America. */
 const ROLES: Readonly<Record<string, RoleNoun>> = {
@@ -109,6 +110,7 @@ const checkable = (s: BugSubject): string => subject(s, (role) => (role === 'che
  * America alike; any other key (Enter, Tab, Esc) keeps Playwright's name.
  */
 const KEYS: Readonly<Record<string, string>> = {
+  ControlOrMeta: 'Ctrl',
   Backspace: 'Retroceso',
   Delete: 'Supr',
   Space: 'Espacio',
@@ -122,7 +124,7 @@ const KEYS: Readonly<Record<string, string>> = {
   End: 'Fin',
 };
 
-const key = (name: string): string => KEYS[name] ?? name;
+const key = (name: string): string => keyCombo(name, (part) => KEYS[part] ?? part);
 
 const value = (v: BugStepValue): string => (v.kind === 'password' ? 'una contraseña (no grabada)' : quote(v.text));
 

@@ -318,6 +318,37 @@ export async function performSelect(
   return true;
 }
 
+const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform);
+
+/**
+ * The events for a key as Playwright writes it: `Enter`, `?`, or a shortcut
+ * such as `ControlOrMeta+K` (Ctrl, or ⌘ on a Mac) or `Shift+Tab`.
+ */
+function keyboardInit(combo: string): KeyboardEventInit {
+  const parts = combo.length > 1 ? combo.split(/\+(?=.)/) : [combo];
+  const name = parts.pop()!;
+  const held = new Set(parts);
+  const key = name === 'Space' ? ' ' : name;
+  const code = /^[a-z]$/i.test(key)
+    ? `Key${key.toUpperCase()}`
+    : /^\d$/.test(key)
+      ? `Digit${key}`
+      : key === ' '
+        ? 'Space'
+        : key;
+  return {
+    key,
+    code,
+    ctrlKey: held.has('Control') || (held.has('ControlOrMeta') && !IS_MAC),
+    metaKey: held.has('Meta') || (held.has('ControlOrMeta') && IS_MAC),
+    altKey: held.has('Alt'),
+    shiftKey: held.has('Shift'),
+    bubbles: true,
+    cancelable: true,
+    composed: true,
+  };
+}
+
 /**
  * A key press. Enter in a form's field submits the form, which the browser
  * does not do for an event a script sends, unless the page cancelled the key.
@@ -334,16 +365,13 @@ export async function performPress(
     cursor.outline(null);
     if (element instanceof HTMLElement) element.focus({ preventScroll: true });
   }
-  const init: KeyboardEventInit = {
-    key,
-    code: key === 'Enter' ? 'Enter' : key,
-    bubbles: true,
-    cancelable: true,
-    composed: true,
-  };
+  const init = keyboardInit(key);
   const down = new KeyboardEvent('keydown', init);
   target.dispatchEvent(down);
-  if (key === 'Enter') target.dispatchEvent(new KeyboardEvent('keypress', init));
+  // Enter, and a character typed without Ctrl or ⌘, also send the older `keypress` some pages still listen to.
+  if (key === 'Enter' || ([...init.key!].length === 1 && !init.ctrlKey && !init.metaKey)) {
+    target.dispatchEvent(new KeyboardEvent('keypress', init));
+  }
   target.dispatchEvent(new KeyboardEvent('keyup', init));
   if (key === 'Enter' && !down.defaultPrevented && target instanceof HTMLInputElement && target.form) {
     target.form.requestSubmit();

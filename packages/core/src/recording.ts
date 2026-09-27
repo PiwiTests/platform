@@ -173,6 +173,19 @@ const ENTER_CLICK_WINDOW_MS = 500;
 export const RECORDED_KEYS: ReadonlySet<string> = new Set(['Enter', 'Escape', 'ArrowDown', 'ArrowUp']);
 
 /**
+ * Whether a recorded key press becomes a step: one of `RECORDED_KEYS`, a
+ * shortcut with a modifier as Playwright writes it (`ControlOrMeta+K`), or a
+ * single character pressed outside a field (a page's own shortcut, such as `?`).
+ * The recorder decides which presses to send; this keeps the rest out.
+ */
+export function isRecordedKey(key: string | null | undefined): key is string {
+  if (!key) return false;
+  return (
+    RECORDED_KEYS.has(key) || /^(?:(?:ControlOrMeta|Control|Meta|Alt|Shift)\+)+.+$/.test(key) || [...key].length === 1
+  );
+}
+
+/**
  * Coalesce a stream of raw capture events into `RecordedStep`s:
  *  - a burst of `input` events on the same field collapses into one `fill`,
  *    committed once the field changes or the burst ends (the last value
@@ -182,8 +195,8 @@ export const RECORDED_KEYS: ReadonlySet<string> = new Set(['Enter', 'Escape', 'A
  *  - `change` on a `<select>` becomes `selectOption`;
  *  - `Enter` on a text field becomes `press('Enter')`, and the browser's own
  *    synthetic click on the same element right after it is dropped rather than
- *    recorded a second time; `Escape` and the arrow keys (`RECORDED_KEYS`)
- *    become presses too;
+ *    recorded a second time; `Escape`, the arrow keys (`RECORDED_KEYS`) and
+ *    the page's shortcuts (`isRecordedKey`) become presses too;
  *  - a plain `click` becomes a `click` step;
  *  - `navigate` events become `goto` steps only for the session's very first
  *    page — later navigations are implied by the click/press that caused
@@ -254,7 +267,7 @@ export function normalizeSteps(events: RawCaptureEvent[]): RecordedStep[] {
     }
 
     if (ev.kind === 'keydown') {
-      if (ev.value == null || !RECORDED_KEYS.has(ev.value)) continue;
+      if (!isRecordedKey(ev.value)) continue;
       // A key commits whatever field was mid-fill; Enter then replaces the click that would otherwise follow it.
       flushPendingFill();
       steps.push({

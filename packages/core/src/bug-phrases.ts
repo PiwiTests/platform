@@ -17,6 +17,7 @@ import { SPANISH_BUG_PHRASES } from './bug-phrases.es';
 import { PORTUGUESE_BUG_PHRASES } from './bug-phrases.pt';
 
 export { markdownCode } from './markdown-code';
+export { keyCombo } from './key-combo';
 
 export type NounGender = 'masculine' | 'feminine' | 'neuter';
 

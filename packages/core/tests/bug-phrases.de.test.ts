@@ -138,6 +138,9 @@ describe('German', () => {
     expect(words(step('press', { target: coupon, value: 'Enter' }))).toBe(`Enter im Textfeld ${q('Coupon')} drücken`);
     expect(words(step('press', { value: 'Escape' }))).toBe('Esc drücken');
     expect(words(step('press', { value: 'Delete' }))).toBe('Entf drücken');
+    // A shortcut as its keys read, the letter in capitals.
+    expect(words(step('press', { value: 'ControlOrMeta+k' }))).toBe('Strg+K drücken');
+    expect(words(step('press', { value: 'Shift+Tab' }))).toBe('Umschalt+Tab drücken');
   });
 
   test('declines the article by the noun’s gender and the case the preposition asks for', () => {

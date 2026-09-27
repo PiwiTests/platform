@@ -245,6 +245,7 @@ describe('bug report', () => {
       'Fill text field "Coupon" with a password (not recorded)',
     );
     expect(words({ ...base, action: 'press', value: 'Enter' })).toBe('Press Enter in text field "Coupon"');
+    expect(words({ ...base, target: null, action: 'press', value: 'ControlOrMeta+k' })).toBe('Press Ctrl+K');
     expect(words({ ...base, action: 'selectOption', value: 'FR' })).toBe('Select "FR" in text field "Coupon"');
     expect(
       words({

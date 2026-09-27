@@ -1,5 +1,6 @@
 import type { BugPhrases, BugState, BugStepValue, BugSubject, RoleNoun } from './bug-phrases';
 import { markdownCode } from './markdown-code';
+import { keyCombo } from './key-combo';
 
 /** Before a colon. */
 const NBSP = ' ';
@@ -113,6 +114,7 @@ const checkable = (s: BugSubject): string => subject(s, (role) => (role === 'che
 
 /** Keys by the names French keyboards print on them; any other key keeps Playwright's name. */
 const KEYS: Readonly<Record<string, string>> = {
+  ControlOrMeta: 'Ctrl',
   Enter: 'Entrée',
   Escape: 'Échap',
   Backspace: 'Retour arrière',
@@ -128,7 +130,7 @@ const KEYS: Readonly<Record<string, string>> = {
   End: 'Fin',
 };
 
-const key = (name: string): string => KEYS[name] ?? name;
+const key = (name: string): string => keyCombo(name, (part) => KEYS[part] ?? part);
 
 const value = (v: BugStepValue): string => (v.kind === 'password' ? 'un mot de passe (non enregistré)' : quote(v.text));
 

@@ -1,4 +1,5 @@
 import type { BugPhrases, BugState, BugStepValue, BugSubject, RoleNoun } from './bug-phrases';
+import { keyCombo } from './key-combo';
 import { markdownCode } from './markdown-code';
 
 /**
@@ -62,6 +63,11 @@ const ROLES: Readonly<Record<string, RoleNoun>> = {
 const noun = (role: string): string => ROLES[role]?.noun ?? role;
 const quote = (text: string): string => `"${text}"`;
 
+/** Keys by the names keyboards print on them; any other key keeps Playwright's name. */
+const KEYS: Readonly<Record<string, string>> = { ControlOrMeta: 'Ctrl', Control: 'Ctrl' };
+
+const key = (name: string): string => keyCombo(name, (part) => KEYS[part] ?? part);
+
 function subject(s: BugSubject): string {
   switch (s.kind) {
     case 'page':
@@ -108,7 +114,7 @@ export const ENGLISH_BUG_PHRASES: BugPhrases = {
     check: (s) => `Check ${subject(s)}`,
     uncheck: (s) => `Uncheck ${subject(s)}`,
     selectOption: (s, v) => `Select ${value(v)} in ${subject(s)}`,
-    press: (key, s) => (s ? `Press ${key} in ${subject(s)}` : `Press ${key}`),
+    press: (name, s) => (s ? `Press ${key(name)} in ${subject(s)}` : `Press ${key(name)}`),
   },
   expectation(s, e, negated) {
     const should = negated ? 'should not' : 'should';
