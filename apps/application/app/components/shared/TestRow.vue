@@ -208,7 +208,7 @@ const clusterLabel = computed(() =>
                 <NuxtLink
                   v-if="showCluster && tc.failureClusterId"
                   :to="`/failure-clusters/${tc.failureClusterId}`"
-                  class="shrink-0"
+                  class="inline-flex shrink-0"
                   @click.stop
                 >
                   <UBadge color="info" variant="subtle" size="xs" class="max-w-44">

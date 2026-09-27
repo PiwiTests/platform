@@ -3,6 +3,8 @@
  * A tracker issue as a compact chip — the provider icon and the key — linking
  * to the issue in a new tab. Rows use it to show the issue an execution's (or a
  * cluster's) failure is tracked in; a click never triggers the row's own link.
+ * The link is a flex box, so the badge centers in a row of badges rather than
+ * sitting on the text baseline.
  */
 import { getProviderIcon, type LinkProvider } from '#shared/link-detect';
 
@@ -21,7 +23,7 @@ const title = computed(() => {
     :href="issue.url"
     target="_blank"
     rel="noopener noreferrer"
-    class="shrink-0"
+    class="inline-flex shrink-0"
     :title="title"
     data-testid="issue-key-chip"
     @click.stop
