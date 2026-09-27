@@ -1,4 +1,5 @@
 import { sessionFromSteps } from '@piwitests/core/steps';
+import { conditionText } from '../shared/condition-words.js';
 import { t } from '../shared/i18n.js';
 import {
   getReplayState,
@@ -103,6 +104,14 @@ export async function renderReplayTab(container: HTMLElement): Promise<void> {
   }
 
   const parts: HTMLElement[] = [status, controls];
+  if (state.conditions?.length) {
+    parts.push(
+      Object.assign(document.createElement('p'), {
+        className: 'note',
+        textContent: t('replay_underConditions', { conditions: state.conditions.map(conditionText).join(' · ') }),
+      }),
+    );
+  }
   if (done) {
     const verdict = verdictText(replayVerdict(steps, state.results, state.status === 'stopped'), steps);
     const box = document.createElement('div');

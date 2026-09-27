@@ -8,7 +8,7 @@ Playwright test does. That is the gap this plan fills: a **Piwi panel inside Dev
 page, **mocks written from real responses**, the **login saved for tests**, **slow and failing requests** on demand,
 and **viewports** from the project's own configuration.
 
-**Status.** Proposed 2026-09-27; in progress. Built: PR 1 (the Elements sidebar), PR 2 (the Playwright view), PR 3 (the Piwi panel's Record and Replay tabs), PR 4 (the Network tab and Mock this response), PR 5 (Save login for tests). No part needs the `debugger`
+**Status.** Proposed 2026-09-27; in progress. Built: PR 1 (the Elements sidebar), PR 2 (the Playwright view), PR 3 (the Piwi panel's Record and Replay tabs), PR 4 (the Network tab and Mock this response), PR 5 (Save login for tests), PR 6 (slow down or fail a request, and replays under a condition). No part needs the `debugger`
 permission, and only one adds a permission at all: `cookies`, optional, requested when the login is saved. The DevTools
 panel adds a manifest key (`devtools_page`) that shows no install warning. The open questions are settled below.
 
@@ -199,6 +199,13 @@ the developer's own tab.
 
 Out of reach without `debugger`, and said so in the UI: CPU throttling, whole-page network throttling, delays on
 documents, scripts and images, and requests made by service workers.
+
+As built: the conditions belong to one tab, kept by the background worker, which registers the main-world wrapper and
+an isolated-world relay for the page's origin; the relay asks the worker for the tab's conditions (other tabs of the
+site get none) and posts them to the wrapper, which holds a request back until they arrive, at most a second. A new
+condition on the same method and URL pattern replaces the old one. The replay carries the conditions on when it
+starts, and its panel and the Piwi panel list them from the start to the verdict, rather than in the replay dialog.
+Starting from Flake Lab's suspects is not built: the Network tab's requests are the only source for now.
 
 ### 2.5 Viewport presets
 

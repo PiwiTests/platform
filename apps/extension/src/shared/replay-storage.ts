@@ -1,5 +1,6 @@
 import type { PiwiSteps } from '@piwitests/core/steps';
 import { sessionArea } from './session-area.js';
+import type { RequestCondition } from './request-conditions.js';
 
 /**
  * A running replay, in session storage so it survives the navigations it
@@ -39,6 +40,8 @@ export interface ReplayState {
    * Steps recorded on that page play on this one, whatever its address.
    */
   startPage?: { recorded: string; actual: string } | null;
+  /** The request conditions on in the tab when the replay started (Slow down or fail a request). */
+  conditions?: RequestCondition[];
 }
 
 function isReplayState(value: unknown): value is ReplayState {

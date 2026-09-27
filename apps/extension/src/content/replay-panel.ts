@@ -1,4 +1,5 @@
 import { describeStepInWords } from '@piwitests/core/bug-report';
+import { conditionText } from '../shared/condition-words.js';
 import { interfacePhrases } from '../shared/core-words.js';
 import { pageKey } from '@piwitests/core/page-key';
 import { buildSession, normalizeSteps, type RecordedStep } from '@piwitests/core/recording';
@@ -250,6 +251,14 @@ function renderHud(state: ReplayState, verdict: ReplayVerdict | null = null): vo
         total: formatNumber(steps.length),
       });
   box.append(title, sub);
+  if (state.conditions?.length) {
+    const conditions = document.createElement('div');
+    conditions.className = 'sub';
+    conditions.textContent = t('replay_underConditions', {
+      conditions: state.conditions.map(conditionText).join(' · '),
+    });
+    box.appendChild(conditions);
+  }
 
   const list = document.createElement('div');
   list.className = 'steps';

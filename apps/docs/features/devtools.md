@@ -69,6 +69,21 @@ Fields named like a password, a token, a key or a session are written as `<hidde
 values**; headers, cookies included, are never written. Nothing is sent anywhere: the code reaches your clipboard
 when you copy it.
 
+## Slow down or fail a request
+
+Under a selected request, the Network tab also offers **Slow down** by the seconds you type, **Fail with 500** and
+**Fail (network error)**: the flaky conditions a test has to survive, tried by hand in your own tab. The first time,
+Piwi Picker asks for access to the site. From then on the tab's `fetch` and XHR calls to that URL wait, answer 500 or
+fail, on every page of the site in that tab, until you remove the condition, click **Turn all off and reload**, or
+close the tab. A banner on the page says which conditions are on, with **Turn off**; other tabs are not affected.
+
+A replay started while a condition is on runs under it, and its panel says which conditions were on, beside the
+verdict.
+
+What an extension cannot slow down without the `debugger` permission, which Piwi Picker does not ask for: the CPU, the
+whole page's network, documents, scripts, images and a service worker's requests. A page that replaces `fetch` itself,
+or checks that it is the browser's own, may behave differently while a condition is on.
+
 ## Save login for tests
 
 The key button in the popup's header, or **Save login for tests** in the Piwi panel, saves the site's login as the

@@ -54,6 +54,10 @@ const STANDALONE_ENTRIES = [
   // Registered the same way for a bug recording's lifetime, in the page's main world (`world: 'MAIN'`): the only
   // place that sees the page's console and its fetch/XHR calls. Imports nothing that touches `chrome.*`.
   ['bug-evidence-main', 'src/content/bug-evidence-main.ts'],
+  // Slow down or fail a request: registered while a condition is on, the wrapper in the page's main world
+  // and its relay in the isolated one.
+  ['request-conditions-main', 'src/content/request-conditions-main.ts'],
+  ['request-conditions', 'src/content/request-conditions.ts'],
   // Injected into the inspected tab by the Elements sidebar, which calls it with DevTools' selection.
   ['devtools-rank', 'src/content/devtools-rank.ts'],
   ['background', 'src/background/index.ts'],

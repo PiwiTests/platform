@@ -2089,6 +2089,15 @@
       }
     }
   },
+  "replay_underConditions": {
+    "message": "Condiciones sobre las peticiones activas: $conditions$",
+    "placeholders": {
+      "conditions": {
+        "content": "$1",
+        "example": "Slow down GET **/api/cart by 2 s"
+      }
+    }
+  },
   "replay_pause": {
     "message": "Pausa"
   },
@@ -4084,6 +4093,103 @@
         "example": "mocks/cart.json"
       }
     }
+  },
+  "devtools_conditionDelay": {
+    "message": "Ralentizar $request$ $seconds$ s",
+    "placeholders": {
+      "request": {
+        "content": "$1",
+        "example": "GET **/api/cart"
+      },
+      "seconds": {
+        "content": "$2",
+        "example": "2"
+      }
+    }
+  },
+  "devtools_conditionError": {
+    "message": "Responder a $request$ con un error 500",
+    "placeholders": {
+      "request": {
+        "content": "$1",
+        "example": "GET **/api/cart"
+      }
+    }
+  },
+  "devtools_conditionAbort": {
+    "message": "Hacer fallar $request$ como un error de red",
+    "placeholders": {
+      "request": {
+        "content": "$1",
+        "example": "GET **/api/cart"
+      }
+    }
+  },
+  "devtools_conditionsOn_one": {
+    "message": "Piwi Picker: $count$ condición sobre las peticiones activa",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "devtools_conditionsOn_other": {
+    "message": "Piwi Picker: $count$ condiciones sobre las peticiones activas",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "devtools_conditionsOff": {
+    "message": "Desactivar"
+  },
+  "devtools_conditionsNoPage": {
+    "message": "Las condiciones sobre las peticiones necesitan una página web en la pestaña."
+  },
+  "devtools_conditionsNeedAccess": {
+    "message": "Piwi Picker necesita acceso a este sitio para ralentizar o hacer fallar sus peticiones."
+  },
+  "devtools_conditionFailed": {
+    "message": "No se pudo activar la condición: $error$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "No tab with id: 12"
+      }
+    }
+  },
+  "devtools_conditionsTitle": {
+    "message": "Condiciones sobre las peticiones"
+  },
+  "devtools_conditionsFor": {
+    "message": "Ralentizar o hacer fallar esta petición"
+  },
+  "devtools_conditionsNone": {
+    "message": "Ninguna condición activa. Seleccione una petición abajo para ralentizarla o hacerla fallar."
+  },
+  "devtools_conditionsLimits": {
+    "message": "Las condiciones se aplican a las llamadas fetch y XHR de las páginas de esta pestaña hasta que las desactive o cierre la pestaña. Limitar la CPU o toda la página, y retrasar documentos, scripts, imágenes o las peticiones de un service worker, requieren el permiso debugger, que Piwi Picker no pide."
+  },
+  "devtools_conditionRemove": {
+    "message": "Quitar"
+  },
+  "devtools_conditionsAllOff": {
+    "message": "Desactivar todo y recargar"
+  },
+  "devtools_delaySeconds": {
+    "message": "Retraso en segundos"
+  },
+  "devtools_slowDown": {
+    "message": "Ralentizar"
+  },
+  "devtools_failError": {
+    "message": "Fallar con 500"
+  },
+  "devtools_failAbort": {
+    "message": "Fallar (error de red)"
   },
   "login_title": {
     "message": "Guardar la sesión para las pruebas"

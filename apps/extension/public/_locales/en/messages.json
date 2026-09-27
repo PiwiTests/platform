@@ -2507,6 +2507,16 @@
       }
     }
   },
+  "replay_underConditions": {
+    "message": "Request conditions on: $conditions$",
+    "description": "Replay panel and DevTools Piwi panel: the request conditions on in the tab when the replay started. $conditions$ lists them, from the devtools_condition* messages.",
+    "placeholders": {
+      "conditions": {
+        "content": "$1",
+        "example": "Slow down GET **/api/cart by 2 s"
+      }
+    }
+  },
   "replay_pause": {
     "message": "Pause",
     "description": "Replay panel button that pauses the replay. Short."
@@ -4828,6 +4838,122 @@
         "example": "mocks/cart.json"
       }
     }
+  },
+  "devtools_conditionDelay": {
+    "message": "Slow down $request$ by $seconds$ s",
+    "description": "A request condition in words, in the banner on the page, the Piwi panel and the replay. $request$ is a method and a URL pattern, like GET **/api/cart; $seconds$ a number of seconds.",
+    "placeholders": {
+      "request": {
+        "content": "$1",
+        "example": "GET **/api/cart"
+      },
+      "seconds": {
+        "content": "$2",
+        "example": "2"
+      }
+    }
+  },
+  "devtools_conditionError": {
+    "message": "Answer $request$ with a 500 error",
+    "description": "A request condition in words: the request is answered with a server error. $request$ is a method and a URL pattern.",
+    "placeholders": {
+      "request": {
+        "content": "$1",
+        "example": "GET **/api/cart"
+      }
+    }
+  },
+  "devtools_conditionAbort": {
+    "message": "Fail $request$ as a network error",
+    "description": "A request condition in words: the request fails as if the network were down. $request$ is a method and a URL pattern.",
+    "placeholders": {
+      "request": {
+        "content": "$1",
+        "example": "GET **/api/cart"
+      }
+    }
+  },
+  "devtools_conditionsOn_one": {
+    "message": "Piwi Picker: $count$ request condition on",
+    "description": "Banner on the page while request conditions are on. $count$ is how many.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "devtools_conditionsOn_other": {
+    "message": "Piwi Picker: $count$ request conditions on",
+    "description": "Banner on the page while request conditions are on. $count$ is how many.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "devtools_conditionsOff": {
+    "message": "Turn off",
+    "description": "Banner on the page: button that turns every request condition off and reloads the page."
+  },
+  "devtools_conditionsNoPage": {
+    "message": "Request conditions need a web page in the tab.",
+    "description": "Error when a request condition is asked for without a web page in the tab."
+  },
+  "devtools_conditionsNeedAccess": {
+    "message": "Piwi Picker needs access to this site to slow down or fail its requests.",
+    "description": "Error when the user did not allow the site: slowing or failing a request needs it."
+  },
+  "devtools_conditionFailed": {
+    "message": "The condition could not be set: $error$",
+    "description": "DevTools, Piwi panel: a request condition could not be set. $error$ is the browser's message, in English.",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "No tab with id: 12"
+      }
+    }
+  },
+  "devtools_conditionsTitle": {
+    "message": "Request conditions",
+    "description": "DevTools, Piwi panel, Network tab: heading of the list of request conditions on."
+  },
+  "devtools_conditionsFor": {
+    "message": "Slow down or fail this request",
+    "description": "DevTools, Piwi panel, Network tab: heading above the buttons that slow down or fail the selected request."
+  },
+  "devtools_conditionsNone": {
+    "message": "No condition on. Select a request below to slow it down or make it fail.",
+    "description": "DevTools, Piwi panel, Network tab: no request condition is on."
+  },
+  "devtools_conditionsLimits": {
+    "message": "Conditions apply to the fetch and XHR calls of this tab’s pages until you turn them off or close the tab. Throttling the CPU or the whole page, and delaying documents, scripts, images or a service worker’s requests, need the debugger permission, which Piwi Picker does not ask for.",
+    "description": "DevTools, Piwi panel, Network tab: what request conditions reach, and what they cannot. fetch, XHR and debugger are technical names: keep them."
+  },
+  "devtools_conditionRemove": {
+    "message": "Remove",
+    "description": "DevTools, Piwi panel, Network tab: button that removes one request condition."
+  },
+  "devtools_conditionsAllOff": {
+    "message": "Turn all off and reload",
+    "description": "DevTools, Piwi panel, Network tab: button that turns every request condition off; the page reloads."
+  },
+  "devtools_delaySeconds": {
+    "message": "Delay in seconds",
+    "description": "DevTools, Piwi panel, Network tab: accessible name of the number field holding the delay, in seconds."
+  },
+  "devtools_slowDown": {
+    "message": "Slow down",
+    "description": "DevTools, Piwi panel, Network tab: button, after the seconds field, that delays the selected request."
+  },
+  "devtools_failError": {
+    "message": "Fail with 500",
+    "description": "DevTools, Piwi panel, Network tab: button that answers the selected request with a server error."
+  },
+  "devtools_failAbort": {
+    "message": "Fail (network error)",
+    "description": "DevTools, Piwi panel, Network tab: button that makes the selected request fail as a network error."
   },
   "login_title": {
     "message": "Save login for tests",

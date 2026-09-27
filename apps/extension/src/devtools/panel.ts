@@ -2,6 +2,7 @@ import { LOCATOR_SYNTAX_CSS } from '@piwitests/picker-dom';
 import { initI18n, localizeDocument, t, uiLanguage } from '../shared/i18n.js';
 import { RECORDING_KEY } from '../shared/recording-storage.js';
 import { REPLAY_KEY } from '../shared/replay-storage.js';
+import { CONDITIONS_KEY } from '../shared/request-conditions.js';
 import {
   evalInPage,
   injectContentScript,
@@ -28,7 +29,7 @@ type TabId = 'record' | 'replay' | 'network';
 const TAB_KEYS: Record<TabId, string[]> = {
   record: [RECORDING_KEY],
   replay: [REPLAY_KEY],
-  network: [],
+  network: [CONDITIONS_KEY],
 };
 
 const content = document.getElementById('content') as HTMLElement;

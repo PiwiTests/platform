@@ -1,6 +1,7 @@
 import { formatNumber, t, tn } from '../shared/i18n.js';
 import { mockCode, type MockKind, type MockSource, mockUrlPattern } from '../shared/mock-code.js';
 import { copyText, inspectedOrigin } from './inspected.js';
+import { conditionButtons, renderConditions } from './panel-conditions.js';
 
 /**
  * The Network tab: the page's `fetch` and XHR requests, read from
@@ -112,15 +113,6 @@ interface NetworkView {
 
 const view: NetworkView = { allOrigins: false, selected: null, kind: 'response', reveal: false, pattern: null };
 
-/** Buttons a later part of the panel adds under a selected request. */
-export type RequestActions = (entry: NetworkEntry) => HTMLElement[];
-
-let extraActions: RequestActions = () => [];
-
-export function setRequestActions(actions: RequestActions): void {
-  extraActions = actions;
-}
-
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, className = '', text = ''): HTMLElementTagNameMap[K] {
   const node = document.createElement(tag);
   if (className) node.className = className;
@@ -178,6 +170,8 @@ async function renderMock(section: HTMLElement, entry: NetworkEntry): Promise<vo
   const code = el('pre', 'code');
   const notes = el('div', 'notes');
   const actions = el('div', 'controls');
+  const conditions = el('div', 'controls');
+  conditions.append(...conditionButtons(entry, dom?.origin ?? null));
 
   const update = () => {
     view.pattern = patternInput.value;
@@ -219,7 +213,6 @@ async function renderMock(section: HTMLElement, entry: NetworkEntry): Promise<vo
       actions.appendChild(save);
       notes.appendChild(el('p', 'note', t('devtools_mockFileHint', { path: file.path })));
     }
-    actions.append(...extraActions(entry));
   };
   patternInput.addEventListener('input', update);
   kind.addEventListener('change', () => {
@@ -234,12 +227,15 @@ async function renderMock(section: HTMLElement, entry: NetworkEntry): Promise<vo
     notes,
     code,
     actions,
+    el('h3', 'request-title', t('devtools_conditionsFor')),
+    conditions,
   );
 }
 
 interface NetworkDom {
   list: HTMLElement;
   section: HTMLElement;
+  conditions: HTMLElement;
   origin: string | null;
 }
 
@@ -316,8 +312,11 @@ export async function renderNetworkTab(container: HTMLElement): Promise<void> {
   list.setAttribute('aria-label', t('devtools_tabNetwork'));
   const section = el('section', 'mock');
   section.setAttribute('aria-label', t('devtools_mockTitle'));
-  container.replaceChildren(toolbar, el('p', 'note', t('devtools_networkHint')), list, section);
-  dom = { list, section, origin };
+  const conditions = el('section', 'conditions');
+  conditions.setAttribute('aria-label', t('devtools_conditionsTitle'));
+  container.replaceChildren(conditions, toolbar, el('p', 'note', t('devtools_networkHint')), list, section);
+  dom = { list, section, conditions, origin };
+  await renderConditions(conditions, origin);
   refreshNetworkList();
   await showSelected();
 }
