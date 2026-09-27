@@ -38,6 +38,11 @@ export function isPlainRevision(revision: string): boolean {
   return /^[A-Za-z0-9][\w./-]{0,199}$/.test(revision) && !revision.includes('..');
 }
 
+/** A commit as a sentence shows it: a full hex SHA cut to its first 7 characters, any other ref as it is. */
+export function shortCommit(commit: string): string {
+  return /^[0-9a-f]{8,40}$/i.test(commit) ? commit.slice(0, 7) : commit;
+}
+
 /** Base repository URL without a trailing slash, or null when the host is unknown. */
 function repoBase(repositoryUrl: string): { host: ScmProviderName; base: string } | null {
   const host = detectScmHost(repositoryUrl);

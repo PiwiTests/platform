@@ -11,6 +11,7 @@
 import type { SituationPart } from '#shared/situation';
 import { isCurrentlySnoozed } from '#shared/inbox-queues';
 import { relativeTimeAgo, durationApprox, toEpochMs } from '#shared/relative-time';
+import { shortCommit } from '#shared/scm-urls';
 
 export type ClusterStateKind =
   | 'failing'
@@ -133,7 +134,7 @@ export function computeClusterState(cluster: ClusterStateCluster, project: Clust
   // a stronger claim than the quarantine overlay below — a fix that landed
   // outranks tests that are merely parked.
   if (cluster.fixVerification === 'regressed') {
-    const commit = cluster.fixCommit?.trim();
+    const commit = cluster.fixCommit?.trim() ? shortCommit(cluster.fixCommit.trim()) : null;
     t(commit ? `Fixed by ${commit}, back since ` : 'Fixed earlier, back since ');
     run(cluster.regressedSinceRunId ?? cluster.lastSeenRunId);
     t(' — the fix did not hold.');
@@ -142,7 +143,7 @@ export function computeClusterState(cluster: ClusterStateCluster, project: Clust
   if (cluster.fixVerification === 'diagnosis-verified') {
     t('Fixed in ');
     run(cluster.fixLandedRunId);
-    const commit = cluster.fixCommit?.trim();
+    const commit = cluster.fixCommit?.trim() ? shortCommit(cluster.fixCommit.trim()) : null;
     t(`${commit ? ` (${commit})` : ''} and verified, still marked open.`);
     return done('fix-verified-open', 'mark-resolved');
   }

@@ -76,6 +76,21 @@ describe('computeClusterState — one row per kind', () => {
     expect(s.action).toBeNull(); // open, not resolved
   });
 
+  test('a full fix SHA reads as its short form', () => {
+    const sha = '3f9c2e1a7b4d5c6e8f0a1b2c3d4e5f6a7b8c9d0e';
+    const regressed = computeClusterState(
+      cluster({ fixVerification: 'regressed', fixCommit: sha, regressedSinceRunId: 3 }),
+      PROJECT,
+    );
+    expect(regressed.sentence).toContain('Fixed by 3f9c2e1, back since');
+    const verified = computeClusterState(
+      cluster({ fixVerification: 'diagnosis-verified', fixLandedRunId: 62, fixCommit: sha }),
+      PROJECT,
+    );
+    expect(verified.sentence).toContain('(3f9c2e1)');
+    expect(verified.sentence).not.toContain(sha);
+  });
+
   test('regressed while resolved offers reopen', () => {
     const s = computeClusterState(cluster({ status: 'resolved', fixVerification: 'regressed' }), PROJECT);
     // resolved is terminal and wins here
