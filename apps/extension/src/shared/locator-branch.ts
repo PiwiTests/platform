@@ -1,4 +1,5 @@
 import type { ActiveProject } from './active-project.js';
+import { sessionArea } from './session-area.js';
 
 /**
  * Which branch's locator index "Tested elements" reads for a project: the
@@ -10,17 +11,17 @@ const OVERRIDE_KEY = 'piwiLocatorBranchOverride';
 
 /** The panel's choice for a project: a branch, `*`, or `''` for the default branch; undefined when none was made. */
 export async function getLocatorBranchOverride(projectId: number): Promise<string | undefined> {
-  const stored = await chrome.storage.session.get(OVERRIDE_KEY);
+  const stored = await sessionArea().get(OVERRIDE_KEY);
   const value = (stored[OVERRIDE_KEY] as Record<string, unknown> | undefined)?.[String(projectId)];
   return typeof value === 'string' ? value : undefined;
 }
 
 export async function setLocatorBranchOverride(projectId: number, branch: string | undefined): Promise<void> {
-  const stored = await chrome.storage.session.get(OVERRIDE_KEY);
+  const stored = await sessionArea().get(OVERRIDE_KEY);
   const all = { ...(stored[OVERRIDE_KEY] as Record<string, string> | undefined) };
   if (branch === undefined) delete all[String(projectId)];
   else all[String(projectId)] = branch;
-  await chrome.storage.session.set({ [OVERRIDE_KEY]: all });
+  await sessionArea().set({ [OVERRIDE_KEY]: all });
 }
 
 /** The branch to read; null for the project's default branch. */

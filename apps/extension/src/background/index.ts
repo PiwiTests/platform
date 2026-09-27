@@ -5,6 +5,7 @@ import {
   getRecordIntent,
   clearRecordIntent,
   decideRecordIntent,
+  serveAppendRecordingEvent,
 } from '../shared/recording-storage.js';
 import { getConnectionSettings } from '../shared/connection-settings.js';
 import { fetchCatalog, fetchLocatorIndex } from '../shared/piwi-client.js';
@@ -13,6 +14,7 @@ import type { RefreshCatalogResult } from '../shared/catalog-refresh.js';
 import { isLocatorIndexStale, setCachedLocatorIndex } from '../shared/locator-index-cache.js';
 import type { LocatorIndexRefreshResult } from '../shared/locator-index-refresh.js';
 import { BUILD_ID } from '../shared/build-id.js';
+import { serveSessionStorage } from '../shared/session-area.js';
 
 /**
  * Service worker: the keyboard-shortcut trigger for picking (the toolbar
@@ -56,7 +58,8 @@ async function runPickCommand(tab?: chrome.tabs.Tab): Promise<void> {
 //
 // Called inside `.then` because Firefox has no `setAccessLevel`: calling it
 // directly throws there, synchronously, which would stop this script before any
-// listener below is registered.
+// listener below is registered. Content scripts in Firefox reach session
+// storage through `piwi-session-storage` instead (see `shared/session-area.ts`).
 const sessionAccessReady = Promise.resolve()
   .then(() => chrome.storage.session.setAccessLevel({ accessLevel: 'TRUSTED_AND_UNTRUSTED_CONTEXTS' }))
   .catch(() => undefined);
@@ -263,6 +266,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // the whole point of the ping. The build lets the caller tell whether this
     // worker predates a rebuild (see `shared/build-id.ts`).
     void sessionAccessReady.then(() => sendResponse({ ok: true, build: BUILD_ID }));
+    return true;
+  }
+  if (message?.type === 'piwi-session-storage') {
+    // A content script in Firefox, which has no session storage of its own.
+    void serveSessionStorage(message).then(sendResponse);
+    return true;
+  }
+  if (message?.type === 'piwi-append-recording-event') {
+    // The recorder in Firefox — see `appendRecordingEvent`.
+    void serveAppendRecordingEvent(message.event).then(sendResponse);
     return true;
   }
   if (message?.type === 'piwi-start-recording') {

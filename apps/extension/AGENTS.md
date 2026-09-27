@@ -71,6 +71,14 @@ before that has been applied — and the read *throws* rather than returning emp
 pings the worker, which both wakes it and withholds its reply until the widening resolves.
 Skipping this is what made the recorder's HUD appear only sometimes.
 
+**Session storage goes through `sessionArea()` (`src/shared/session-area.ts`), never
+`chrome.storage.session` directly.** Firefox has no `setAccessLevel` and no session storage in
+content scripts at all, so there `sessionArea()` sends each get/set/remove to the background
+script (`piwi-session-storage`), and the recorder's appends go as one `piwi-append-recording-event`
+message each (see `appendRecordingEvent`) so a click that navigates away is not lost between a
+read and a write. A module reaching `chrome.storage.session` itself works in Chrome and breaks
+only in Firefox, which no CI run exercises.
+
 ## Connected mode (recording → your own functions)
 
 The recorder (`record-panel.ts`, `record-capture.ts`, `packages/core/src/recording.ts`,
@@ -234,8 +242,9 @@ instead of needing a live browser for everything.
 - **`chrome.storage.session` needs `setAccessLevel` to be reachable from a content script.**
   It defaults to extension-page/service-worker-only access; `src/background/index.ts` widens
   it once at startup (`TRUSTED_AND_UNTRUSTED_CONTEXTS`) specifically so `session-panel.ts` and
-  `recording-storage.ts` can read/write it directly from a content script. `chrome.storage.local`
-  (connection settings, the catalog cache) has no such restriction.
+  `recording-storage.ts` can read/write it directly from a content script — in Chrome. Firefox
+  has no such call, which is why every access goes through `sessionArea()` (see above).
+  `chrome.storage.local` (connection settings, the catalog cache) has no such restriction.
 - **Two different test strategies for content-script logic, pick deliberately.** A function
   built entirely from nested helpers with no imports from `@piwitests/core`'s scoring engine
   (`evaluateLocatorChain`, `derivePattern`, `testCatalogAgainstPage`) can be re-serialized via
