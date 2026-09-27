@@ -17,10 +17,11 @@ import type { RefreshCatalogResult } from '../shared/catalog-refresh.js';
 import { isLocatorIndexStale, setCachedLocatorIndex } from '../shared/locator-index-cache.js';
 import type { LocatorIndexRefreshResult } from '../shared/locator-index-refresh.js';
 import { BUILD_ID } from '../shared/build-id.js';
-import { serveSessionStorage } from '../shared/session-area.js';
+import { serveSessionStorage, sessionArea } from '../shared/session-area.js';
 import { LANGUAGE_KEY, initI18n, isLanguage, t } from '../shared/i18n.js';
 import { refreshLanguageChoice, storeLanguageChoice } from './language-choice.js';
 import { handleBugSendTarget, handleGetBugReport, handleListBugReports, handleSendBugReport } from './bug-reports.js';
+import { CONDITIONS_KEY, isCondition, type ConditionsState } from '../shared/request-conditions.js';
 
 /**
  * The Options language, read at startup and again whenever it changes. Every
@@ -126,6 +127,20 @@ const BUG_EVIDENCE_SCRIPT_ID = 'piwi-bug-evidence';
 const RECORDING_SCRIPT_IDS = [RECORD_SCRIPT_ID, BUG_EVIDENCE_SCRIPT_ID];
 
 /**
+ * Unregisters whichever of `ids` are registered. Chrome refuses the whole call
+ * when one of the ids is not registered, as the bug recording's script is not
+ * during an actions recording.
+ */
+async function unregisterScripts(ids: string[]): Promise<void> {
+  try {
+    const registered = await chrome.scripting.getRegisteredContentScripts({ ids });
+    if (registered.length > 0) await chrome.scripting.unregisterContentScripts({ ids: registered.map((s) => s.id) });
+  } catch {
+    // Nothing registered to remove.
+  }
+}
+
+/**
  * `chrome.scripting.registerContentScripts`/`unregisterContentScripts` and
  * `chrome.action.*` aren't reachable from a content script, so the recorder
  * routes its start/stop through here even though `popup.ts` and
@@ -145,7 +160,7 @@ async function handleStartRecording(
     // (crashed tab, browser killed mid-session) can leave a stale
     // registration behind — `persistAcrossSessions: false` means it never
     // survives a full browser restart, only the current one.
-    await chrome.scripting.unregisterContentScripts({ ids: RECORDING_SCRIPT_IDS }).catch(() => undefined);
+    await unregisterScripts(RECORDING_SCRIPT_IDS);
     // A bug recording also runs a script in the page's main world, the only
     // place that sees the page's console and its fetch/XHR calls, under the
     // same origin grant and only for as long as the recording.
@@ -188,7 +203,7 @@ async function handleStartRecording(
     // offered "Stop recording (0)" — a dead end reachable only via Discard.
     // Unwind everything this function may have put in place.
     await discardRecording().catch(() => undefined);
-    await chrome.scripting.unregisterContentScripts({ ids: RECORDING_SCRIPT_IDS }).catch(() => undefined);
+    await unregisterScripts(RECORDING_SCRIPT_IDS);
     await chrome.action.setBadgeText({ text: '' }).catch(() => undefined);
     await i18nReady;
     return { ok: false, error: err instanceof Error ? err.message : t('common_recordingStartFailed') };
@@ -285,7 +300,7 @@ async function handleRecordingStopped(senderTabId?: number): Promise<void> {
   // Read before unregistering: the granted pattern is the only record of which
   // tabs could be running the recorder.
   const { grantedOriginPattern } = await getRecordingState();
-  await chrome.scripting.unregisterContentScripts({ ids: RECORDING_SCRIPT_IDS }).catch(() => undefined);
+  await unregisterScripts(RECORDING_SCRIPT_IDS);
   await chrome.action.setBadgeText({ text: '' });
   // The sender, if it was a content script, has already torn itself down.
   await notifyRecorderTabs(grantedOriginPattern, senderTabId);
@@ -375,6 +390,171 @@ async function handleRefreshLocatorIndex(
   }
 }
 
+/** Slow down or fail a request: the main-world wrapper and its isolated-world relay, registered while a condition is on. */
+const CONDITION_SCRIPT_IDS = ['piwi-conditions-main', 'piwi-conditions'];
+
+async function getConditionsState(): Promise<ConditionsState | null> {
+  const value = (await sessionArea().get(CONDITIONS_KEY))[CONDITIONS_KEY] as ConditionsState | undefined;
+  return value && typeof value.tabId === 'number' && Array.isArray(value.conditions) ? value : null;
+}
+
+/**
+ * Turns the conditions off: the scripts are unregistered, and the tab they
+ * were on reloads, since its `fetch` and XHR stay wrapped until it does.
+ */
+async function clearConditions(reload: boolean): Promise<void> {
+  const state = await getConditionsState();
+  await sessionArea().remove(CONDITIONS_KEY);
+  await chrome.scripting.unregisterContentScripts({ ids: CONDITION_SCRIPT_IDS }).catch(() => undefined);
+  if (reload && state) await chrome.tabs.reload(state.tabId).catch(() => undefined);
+}
+
+/**
+ * Puts conditions on one tab's requests, from the Piwi panel, which has asked
+ * for the page's origin inside the click. The scripts are registered for that
+ * origin, so the tab's next pages keep them, and injected into its page now.
+ * An empty list turns them off.
+ */
+async function handleSetConditions(message: {
+  tabId?: unknown;
+  origin?: unknown;
+  conditions?: unknown;
+}): Promise<{ ok: boolean; error?: string }> {
+  await i18nReady;
+  const pattern = replayOriginPattern(message.origin);
+  const conditions = Array.isArray(message.conditions) ? message.conditions.filter(isCondition) : [];
+  if (!pattern || typeof message.tabId !== 'number') return { ok: false, error: t('devtools_conditionsNoPage') };
+  if (conditions.length === 0) {
+    await clearConditions(true);
+    return { ok: true };
+  }
+  if (!(await chrome.permissions.contains({ origins: [pattern] }))) {
+    return { ok: false, error: t('devtools_conditionsNeedAccess') };
+  }
+  try {
+    const state: ConditionsState = { tabId: message.tabId, origin: message.origin as string, conditions };
+    await sessionArea().set({ [CONDITIONS_KEY]: state });
+    await chrome.scripting.unregisterContentScripts({ ids: CONDITION_SCRIPT_IDS }).catch(() => undefined);
+    await chrome.scripting.registerContentScripts([
+      {
+        id: CONDITION_SCRIPT_IDS[0]!,
+        js: ['request-conditions-main.js'],
+        matches: [pattern],
+        runAt: 'document_start',
+        world: 'MAIN',
+        persistAcrossSessions: false,
+      },
+      {
+        id: CONDITION_SCRIPT_IDS[1]!,
+        js: ['request-conditions.js'],
+        matches: [pattern],
+        runAt: 'document_start',
+        persistAcrossSessions: false,
+      },
+    ]);
+    const target = { tabId: message.tabId };
+    await chrome.scripting.executeScript({ target, files: ['request-conditions-main.js'], world: 'MAIN' });
+    await chrome.scripting.executeScript({ target, files: ['request-conditions.js'] });
+    return { ok: true };
+  } catch (err) {
+    await clearConditions(false);
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/** The conditions for the tab asking, on the origin they were set for; none for any other tab. */
+async function conditionsFor(
+  tab: chrome.tabs.Tab | undefined,
+  url: string | undefined,
+): Promise<ConditionsState['conditions']> {
+  const state = await getConditionsState();
+  if (!state || tab?.id !== state.tabId || !url) return [];
+  try {
+    return new URL(url).origin === state.origin ? state.conditions : [];
+  } catch {
+    return [];
+  }
+}
+
+chrome.tabs.onRemoved.addListener((tabId) => {
+  void getConditionsState().then((state) => {
+    if (state?.tabId === tabId) void clearConditions(false);
+  });
+});
+
+/** The narrowest and the widest viewport a window is opened at, in CSS pixels. */
+const VIEWPORT_MIN = 200;
+const VIEWPORT_MAX = 4000;
+
+/** The tab's content size, once the browser has laid the window out, and changed from `before` when given. */
+async function tabSize(
+  tabId: number,
+  before: { width: number; height: number } | null = null,
+): Promise<{ width: number; height: number } | null> {
+  let last: { width: number; height: number } | null = null;
+  for (let attempt = 0; attempt < 30; attempt++) {
+    const tab = await chrome.tabs.get(tabId);
+    if (tab.width && tab.height) {
+      last = { width: tab.width, height: tab.height };
+      if (!before || last.width !== before.width || last.height !== before.height) return last;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  return last;
+}
+
+/**
+ * Opens `url` in a new window whose viewport, not its outer frame, measures
+ * `width` × `height`: the window is created at that size, then grown by the
+ * difference between its outer size and its tab's. Viewport only: no touch,
+ * device pixel ratio or user agent, which take the debugging protocol.
+ */
+async function handleOpenViewport(message: {
+  url?: unknown;
+  width?: unknown;
+  height?: unknown;
+}): Promise<{ ok: true; width: number; height: number } | { ok: false; error: string }> {
+  await i18nReady;
+  const { url, width, height } = message;
+  const size = (value: unknown) =>
+    typeof value === 'number' && Number.isInteger(value) && value >= VIEWPORT_MIN && value <= VIEWPORT_MAX;
+  if (typeof url !== 'string' || !/^https?:\/\//.test(url) || !size(width) || !size(height)) {
+    return { ok: false, error: t('popup_viewportInvalid', { min: VIEWPORT_MIN, max: VIEWPORT_MAX }) };
+  }
+  try {
+    const w = width as number;
+    const h = height as number;
+    // Placed where the current window is: a window mostly off the screen is refused.
+    const base = await chrome.windows.getLastFocused().catch(() => null);
+    const created = await chrome.windows.create({
+      url,
+      width: w,
+      height: h,
+      left: base?.left ?? 0,
+      top: base?.top ?? 0,
+      type: 'normal',
+      focused: true,
+    });
+    const tabId = created?.tabs?.[0]?.id;
+    if (created?.id == null || tabId == null)
+      return { ok: false, error: t('popup_viewportInvalid', { min: VIEWPORT_MIN, max: VIEWPORT_MAX }) };
+    // The window's size as set, which `windows.get` may not report yet, and the viewport it gave.
+    let outer = { width: created.width ?? w, height: created.height ?? h };
+    let inner = await tabSize(tabId);
+    for (let pass = 0; inner && pass < 4 && (inner.width !== w || inner.height !== h); pass++) {
+      // The frame around the viewport: toolbars, borders, scrollbars.
+      const frameWidth = Math.max(0, outer.width - inner.width);
+      const frameHeight = Math.max(0, outer.height - inner.height);
+      outer = { width: w + frameWidth, height: h + frameHeight };
+      await chrome.windows.update(created.id, outer);
+      inner = await tabSize(tabId, inner);
+    }
+    return { ok: true, width: inner?.width ?? w, height: inner?.height ?? h };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 const REPLAY_SCRIPT_ID = 'piwi-replay-panel';
 
 function replayOriginPattern(origin: unknown): string | null {
@@ -415,7 +595,10 @@ async function handleStartReplay(
       typeof message.startOn === 'string' && message.startOn.startsWith(`${origin}/`) && first?.action === 'goto'
         ? { recorded: first.value ?? first.pageUrl, actual: message.startOn }
         : null;
-    await setReplayState(newReplayState(parsed.steps, origin, message.stepMode === true, Date.now(), startPage));
+    const replay = newReplayState(parsed.steps, origin, message.stepMode === true, Date.now(), startPage);
+    // A replay under a request condition says so, while it runs and in its verdict.
+    const conditions = await conditionsFor(tab, tab.url);
+    await setReplayState(conditions.length ? { ...replay, conditions } : replay);
     await chrome.scripting.unregisterContentScripts({ ids: [REPLAY_SCRIPT_ID] }).catch(() => undefined);
     await chrome.scripting.registerContentScripts([
       {
@@ -472,6 +655,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   if (message?.type === 'piwi-start-replay') {
     void handleStartReplay(message, sender.tab).then(sendResponse);
+    return true;
+  }
+  if (message?.type === 'piwi-open-viewport') {
+    void handleOpenViewport(message).then(sendResponse);
+    return true;
+  }
+  if (message?.type === 'piwi-set-conditions') {
+    void handleSetConditions(message).then(sendResponse);
+    return true;
+  }
+  if (message?.type === 'piwi-get-conditions') {
+    void conditionsFor(sender.tab, sender.url).then((conditions) => sendResponse({ conditions }));
+    return true;
+  }
+  if (message?.type === 'piwi-clear-conditions') {
+    void clearConditions(true).then(() => sendResponse({ ok: true }));
     return true;
   }
   if (message?.type === 'piwi-set-language') {

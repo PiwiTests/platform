@@ -57,13 +57,17 @@ URLs on `origin` are stored as paths (`/cart?from=mail`), so a spec rendered fro
 
 | Field | Type | Meaning |
 |---|---|---|
-| `action` | string | `goto`, `click`, `fill`, `check`, `uncheck`, `selectOption`, `press` or `assert`. |
+| `action` | string | `goto`, `click`, `hover`, `fill`, `check`, `uncheck`, `selectOption`, `press` or `assert`. |
 | `target` | object or null | The element the step acted on; null for `goto`, a key press on the page, or an `assert` on the URL. |
 | `value` | string or null | The URL for `goto`, the typed text for `fill`, the option for `selectOption`, the key for `press`. |
 | `redacted` | boolean | The value was typed in a password field and was not kept; the spec reads it from `PIWI_TEST_VALUE_<n>`. |
 | `pageUrl` | string | The page the step happened on. |
 | `timestamp` | number | When it happened. |
 | `assertion` | object | On `assert` steps only; see below. |
+
+A `hover` step moves the pointer over its target and is written as `await <locator>.hover();`. Piwi Picker records
+one before a click on an element that shows only while another is hovered (a row's actions, a menu that opens on
+hover); the hover is on the element that shows it.
 
 A target holds what identifies the element: `tagName`, `role`, `accessibleName`, `testId`, `text`, and
 `alternatives`, its locators ranked best first. Each alternative has a `locator` (a Playwright locator chain such as
@@ -89,6 +93,7 @@ A file is checked in full before anything uses it, and every problem found is re
   locators but can never add code. A regex must be a valid pattern on one line.
 - `origin` must be an `http` or `https` origin.
 - A redacted step never keeps a value.
+- A `hover` step needs a target and never keeps a value.
 - Limits: 200 steps, 10 alternatives per target, 2,000 characters for values, expected values, URLs and notes, 500 for
   titles, names, texts and locators, and 5 MB for the file.
 

@@ -361,7 +361,17 @@ describe('getLocatorIndex', () => {
     await seedCase(1, 'pays by card');
     await seedCase(2, 'pays with a voucher', 'tests/voucher.spec.ts');
     await db.update(schema.testCases).set({ suitePath: 'Checkout\x1fPayment' }).where(eq(schema.testCases.id, 1));
-    const run = await seedRun({ metadata: { htmlReport: { projects: [{ use: { testIdAttribute: 'data-qa' } }] } } });
+    const run = await seedRun({
+      metadata: {
+        htmlReport: {
+          projects: [
+            { name: 'chromium', use: { testIdAttribute: 'data-qa', viewport: { width: 1280, height: 720 } } },
+            { name: 'Mobile Safari', use: { viewport: { width: 390, height: 664 } } },
+            { name: 'no viewport', use: { viewport: null } },
+          ],
+        },
+      },
+    });
     await seedExecution(run, 1, [], { status: 'passed' });
     await seedExecution(run, 2, [], { status: 'failed' });
     await upsertLocatorUsages(db as never, 1, [
@@ -379,6 +389,10 @@ describe('getLocatorIndex', () => {
     const index = await getLocatorIndex(db as never, 1);
     expect(index).toMatchObject({ projectId: 1, projectName: 'locator-usages-project', truncated: false });
     expect(index!.testIdAttributes).toEqual(['data-qa']);
+    expect(index!.viewports).toEqual([
+      { project: 'chromium', width: 1280, height: 720 },
+      { project: 'Mobile Safari', width: 390, height: 664 },
+    ]);
     expect(index!.locators.map((l) => l.locator)).toEqual([PAY, COUNTRY]);
 
     const byId = new Map(index!.tests.map((t, i) => [t.id, { ...t, i }]));
@@ -410,6 +424,7 @@ describe('getLocatorIndex', () => {
     expect(index!.locators).toHaveLength(1);
     expect(index!.truncated).toBe(true);
     expect(index!.testIdAttributes).toBeNull();
+    expect(index!.viewports).toBeUndefined();
   });
 
   test('answers null for a missing project and an empty index for a project with no uses', async () => {

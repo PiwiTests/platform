@@ -285,3 +285,27 @@ test.describe('Report a bug tile', () => {
     await expect(page.locator('#status')).toHaveText('Finish or discard the current recording before reporting a bug.');
   });
 });
+
+test.describe('Playwright view tile', () => {
+  test('answers to V', async ({ context, extensionId }) => {
+    const page = await context.newPage();
+    await page.goto(`chrome-extension://${extensionId}/popup.html`);
+    const tile = page.getByRole('button', { name: /Playwright view/ });
+    await expect(tile).toHaveAttribute('aria-keyshortcuts', 'V');
+    await page.evaluate(() => {
+      (globalThis as unknown as { clicked: string[] }).clicked = [];
+      document.getElementById('playwright-view')!.addEventListener(
+        'click',
+        (e) => {
+          e.stopImmediatePropagation();
+          (globalThis as unknown as { clicked: string[] }).clicked.push('playwright-view');
+        },
+        { capture: true },
+      );
+    });
+    await page.keyboard.press('v');
+    expect(await page.evaluate(() => (globalThis as unknown as { clicked: string[] }).clicked)).toEqual([
+      'playwright-view',
+    ]);
+  });
+});

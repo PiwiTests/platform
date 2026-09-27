@@ -62,6 +62,7 @@ import {
   type LocatorIndexEntry,
   type LocatorIndexTest,
   type LocatorIndexTestStatus,
+  type LocatorIndexViewport,
 } from '#shared/locator-index';
 import { resolveStoredDefaultBranch } from './scm/stored-default-branch';
 import type { LocatorPageUse } from '@piwitests/core/wire';
@@ -818,6 +819,35 @@ async function projectTestIdAttributes(db: DrizzleDB, projectId: number): Promis
 }
 
 /**
+ * The viewports of a project's Playwright projects (`use.viewport`), as the
+ * most recent run reporting any recorded them. Empty when none did.
+ */
+async function projectViewports(db: DrizzleDB, projectId: number): Promise<LocatorIndexViewport[]> {
+  const runs = await db
+    .select({ metadata: testRuns.metadata })
+    .from(testRuns)
+    .where(eq(testRuns.projectId, projectId))
+    .orderBy(desc(testRuns.startTime))
+    .limit(10);
+  for (const run of runs) {
+    const projectsMeta = (
+      run.metadata as { htmlReport?: { projects?: Array<{ name?: unknown; use?: { viewport?: unknown } }> } } | null
+    )?.htmlReport?.projects;
+    const viewports: LocatorIndexViewport[] = [];
+    for (const project of projectsMeta ?? []) {
+      const viewport = project?.use?.viewport as { width?: unknown; height?: unknown } | null | undefined;
+      const { width, height } = viewport ?? {};
+      if (typeof project?.name !== 'string' || typeof width !== 'number' || typeof height !== 'number') continue;
+      if (width > 0 && height > 0 && !viewports.some((v) => v.project === project.name)) {
+        viewports.push({ project: project.name, width, height });
+      }
+    }
+    if (viewports.length > 0) return viewports;
+  }
+  return [];
+}
+
+/**
  * A project's locator index as one document: every distinct chain its tests
  * used, with each test's actions, call sites, Playwright projects and
  * branches, the chains reaching the most tests first. Carries each test's
@@ -972,6 +1002,7 @@ export async function getLocatorIndex(
       }),
   }));
 
+  const viewports = await projectViewports(db, projectId);
   return {
     projectId: project.id,
     projectName: project.name,
@@ -981,6 +1012,7 @@ export async function getLocatorIndex(
     builtAt: project.builtAt ? new Date(project.builtAt).toISOString() : null,
     generatedAt: new Date().toISOString(),
     testIdAttributes: await projectTestIdAttributes(db, projectId),
+    ...(viewports.length ? { viewports } : {}),
     ...(pages.length ? { pages } : {}),
     tests,
     locators,

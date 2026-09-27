@@ -401,6 +401,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/bug-reports',
       },
       {
+        title: 'Developer tools',
+        summary:
+          "Beside the browser's DevTools: the ranked, verified locators of the element selected in the Elements panel.",
+        needs: ['extension'],
+        where: 'DevTools → Elements → Piwi',
+        doc: 'features/devtools',
+      },
+      {
         title: 'Test functions catalog',
         summary: 'The reusable helpers and page-object methods your suite calls, catalogued with their parameters.',
         needs: [],

@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Editor</title>
+    <style>
+      body {
+        font: 14px sans-serif;
+        margin: 40px;
+      }
+      .menubar,
+      .menubar ul {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+      .menubar > li {
+        display: inline-block;
+      }
+      .menubar li {
+        position: relative;
+        padding: 6px 12px;
+        background: #f3f4f6;
+        white-space: nowrap;
+      }
+      .menubar li > ul {
+        display: none;
+        position: absolute;
+        left: 0;
+        top: 100%;
+        min-width: 140px;
+        border: 1px solid #ccc;
+      }
+      .menubar li li > ul {
+        left: 100%;
+        top: 0;
+      }
+      .menubar li:hover > ul {
+        display: block;
+      }
+    </style>
+  </head>
+  <body>
+    <nav aria-label="Main menu">
+      <ul class="menubar">
+        <li>
+          <span>File</span>
+          <ul>
+            <li>
+              <span>New</span>
+              <ul>
+                <li><button onclick="done('New document')">Document</button></li>
+                <li><button onclick="done('New folder')">Folder</button></li>
+              </ul>
+            </li>
+            <li><button onclick="done('Opened')">Open</button></li>
+          </ul>
+        </li>
+        <li>
+          <span>Edit</span>
+          <ul>
+            <li><button onclick="done('Undone')">Undo</button></li>
+          </ul>
+        </li>
+      </ul>
+    </nav>
+    <output id="out"></output>
+    <script>
+      function done(text) {
+        document.getElementById('out').textContent = text;
+      }
+    </script>
+  </body>
+</html>

@@ -29,9 +29,17 @@ const STABILITY_LABELS: Record<LocatorStabilityRuleId, MessageKey> = {
 
 /** The rules a chain breaks, by label, each once: `position · CSS class`. */
 export function stabilityText(stability: LocatorStability, separator = ' · '): string {
+  return stabilityRulesText(
+    stability.findings.map((finding) => finding.rule),
+    separator,
+  );
+}
+
+/** `stabilityText` for rules already listed by id. */
+export function stabilityRulesText(rules: readonly LocatorStabilityRuleId[], separator = ' · '): string {
   const labels: string[] = [];
-  for (const finding of stability.findings) {
-    const label = t(STABILITY_LABELS[finding.rule]);
+  for (const rule of rules) {
+    const label = t(STABILITY_LABELS[rule]);
     if (!labels.includes(label)) labels.push(label);
   }
   return labels.join(separator);

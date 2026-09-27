@@ -170,6 +170,59 @@
   "popup_testedElementsConnect": {
     "message": "Verbinden Sie Piwi, um zu sehen, was Ihre Tests erreichen"
   },
+  "popup_playwrightView": {
+    "message": "Playwright-Ansicht"
+  },
+  "popup_playwrightViewHint": {
+    "message": "Jedes Element, wie getByRole es sieht, und die, die kein Locator erreicht"
+  },
+  "popup_saveLogin": {
+    "message": "Anmeldung für Tests speichern"
+  },
+  "popup_viewport": {
+    "message": "Diese Seite mit einem Viewport öffnen"
+  },
+  "popup_viewportProject": {
+    "message": "$project$ ($size$)",
+    "placeholders": {
+      "project": {
+        "content": "$1",
+        "example": "Mobile Safari"
+      },
+      "size": {
+        "content": "$2",
+        "example": "390×844"
+      }
+    }
+  },
+  "popup_viewportCustom": {
+    "message": "Manuell eingegebene Größe"
+  },
+  "popup_viewportWidth": {
+    "message": "Breite"
+  },
+  "popup_viewportHeight": {
+    "message": "Höhe"
+  },
+  "popup_viewportOpen": {
+    "message": "Öffnen"
+  },
+  "popup_viewportOnly": {
+    "message": "Nur der Viewport: kein Touch, keine Pixeldichte, kein User-Agent."
+  },
+  "popup_viewportInvalid": {
+    "message": "Öffnen Sie eine Webseite, mit Breite und Höhe zwischen $min$ und $max$ Pixeln.",
+    "placeholders": {
+      "max": {
+        "content": "$1",
+        "example": "4000"
+      },
+      "min": {
+        "content": "$2",
+        "example": "200"
+      }
+    }
+  },
   "popup_reportBug": {
     "message": "Bug melden"
   },
@@ -2240,6 +2293,15 @@
       }
     }
   },
+  "replay_underConditions": {
+    "message": "Aktive Bedingungen für Anfragen: $conditions$",
+    "placeholders": {
+      "conditions": {
+        "content": "$1",
+        "example": "Slow down GET **/api/cart by 2 s"
+      }
+    }
+  },
   "replay_pause": {
     "message": "Pause"
   },
@@ -3932,6 +3994,613 @@
   },
   "common_workerOutdated": {
     "message": "Piwi Picker wurde neu gebaut, ohne neu geladen zu werden, und sein Hintergrundprozess läuft noch mit der vorherigen Version. Laden Sie die Erweiterung über ihr Menü oder auf der Erweiterungsseite des Browsers neu."
+  },
+  "devtools_ranking": {
+    "message": "Das ausgewählte Element wird bewertet…"
+  },
+  "devtools_selectElement": {
+    "message": "Wählen Sie im Elemente-Bereich ein Element aus, um seine Locators zu sehen."
+  },
+  "devtools_inFrame": {
+    "message": "Dieses Element liegt in einem Frame. Die Seitenleiste bewertet nur Elemente der obersten Seite."
+  },
+  "devtools_ownElement": {
+    "message": "Dieses Element gehört zu Piwi Picker."
+  },
+  "devtools_restricted": {
+    "message": "Piwi Picker kann auf dieser Seite nicht laufen."
+  },
+  "devtools_noAccess": {
+    "message": "Piwi Picker braucht Zugriff auf $site$, um diese Seite zu lesen. Der Zugriff gilt nur für diese Website.",
+    "placeholders": {
+      "site": {
+        "content": "$1",
+        "example": "https://shop.example"
+      }
+    }
+  },
+  "devtools_allowSite": {
+    "message": "Auf dieser Website erlauben"
+  },
+  "devtools_rankFailed": {
+    "message": "Das Element konnte nicht bewertet werden: $error$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "Cannot access a chrome:// URL"
+      }
+    }
+  },
+  "devtools_rankFailedPlain": {
+    "message": "Das Element konnte nicht bewertet werden."
+  },
+  "devtools_noLocator": {
+    "message": "Kein Locator findet dieses Element."
+  },
+  "devtools_unique": {
+    "message": "eindeutig"
+  },
+  "devtools_byPosition": {
+    "message": "eindeutig über die Position"
+  },
+  "devtools_matches_one": {
+    "message": "$count$ Treffer",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "devtools_matches_other": {
+    "message": "$count$ Treffer",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "devtools_unchecked": {
+    "message": "nicht geprüft"
+  },
+  "devtools_stable": {
+    "message": "stabil"
+  },
+  "devtools_watch": {
+    "message": "kann brechen: $rules$",
+    "placeholders": {
+      "rules": {
+        "content": "$1",
+        "example": "long text"
+      }
+    }
+  },
+  "devtools_brittle": {
+    "message": "fragil: $rules$",
+    "placeholders": {
+      "rules": {
+        "content": "$1",
+        "example": "CSS class"
+      }
+    }
+  },
+  "devtools_addToSession": {
+    "message": "Zur Session hinzufügen"
+  },
+  "devtools_addedToSession": {
+    "message": "Zur Session als $name$ hinzugefügt.",
+    "placeholders": {
+      "name": {
+        "content": "$1",
+        "example": "applyCoupon"
+      }
+    }
+  },
+  "view_title": {
+    "message": "Playwright-Ansicht"
+  },
+  "view_noRole": {
+    "message": "(keine Rolle)"
+  },
+  "view_noName": {
+    "message": "(kein Name)"
+  },
+  "view_filterRole": {
+    "message": "Rolle"
+  },
+  "view_allRoles": {
+    "message": "Alle Rollen"
+  },
+  "view_labelled_one": {
+    "message": "$count$ Element beschriftet",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "42"
+      }
+    }
+  },
+  "view_labelled_other": {
+    "message": "$count$ Elemente beschriftet",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "42"
+      }
+    }
+  },
+  "view_unreachable_one": {
+    "message": "$count$, das kein stabiler Locator erreicht (rot)",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "view_unreachable_other": {
+    "message": "$count$, die kein stabiler Locator erreicht (rot)",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "view_ambiguous_one": {
+    "message": "$count$, dessen Rolle und Name auch andere finden (orange)",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "view_ambiguous_other": {
+    "message": "$count$, deren Rolle und Name auch andere finden (orange)",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "devtools_tabRecord": {
+    "message": "Aufzeichnen"
+  },
+  "devtools_tabReplay": {
+    "message": "Abspielen"
+  },
+  "devtools_noRecording": {
+    "message": "Es läuft keine Aufzeichnung. Starten Sie Aufzeichnen oder Bug melden im Menü der Erweiterung: Die Schritte erscheinen hier, während sie aufgezeichnet werden."
+  },
+  "devtools_recordingOn_one": {
+    "message": "Aufzeichnung auf $site$: $count$ Schritt",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "site": {
+        "content": "$2",
+        "example": "https://shop.example"
+      }
+    }
+  },
+  "devtools_recordingOn_other": {
+    "message": "Aufzeichnung auf $site$: $count$ Schritte",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "site": {
+        "content": "$2",
+        "example": "https://shop.example"
+      }
+    }
+  },
+  "devtools_bugRecordingOn_one": {
+    "message": "Bug-Report auf $site$: $count$ Schritt",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "site": {
+        "content": "$2",
+        "example": "https://shop.example"
+      }
+    }
+  },
+  "devtools_bugRecordingOn_other": {
+    "message": "Bug-Report auf $site$: $count$ Schritte",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "site": {
+        "content": "$2",
+        "example": "https://shop.example"
+      }
+    }
+  },
+  "devtools_recordingStopped_one": {
+    "message": "Aufzeichnung beendet: $count$ Schritt, noch nicht exportiert",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "devtools_recordingStopped_other": {
+    "message": "Aufzeichnung beendet: $count$ Schritte, noch nicht exportiert",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "devtools_stopRecording": {
+    "message": "Aufzeichnung beenden"
+  },
+  "devtools_finishBugOnPage": {
+    "message": "Schließen Sie den Bug-Report über sein Panel auf der Seite ab, das die Belege sammelt."
+  },
+  "devtools_noReplay": {
+    "message": "Noch keine Wiedergabe. Starten Sie eine mit Bug-Report abspielen im Menü der Erweiterung: Ihre Schritte und Ergebnisse erscheinen hier."
+  },
+  "devtools_tabNetwork": {
+    "message": "Netzwerk"
+  },
+  "devtools_networkHint": {
+    "message": "Die fetch- und XHR-Anfragen der Seite, gelesen aus den DevTools, solange sie geöffnet sind. Nichts verlässt den Browser, außer Sie kopieren oder laden es herunter."
+  },
+  "devtools_networkEmpty": {
+    "message": "Noch keine Anfrage. Verwenden Sie die Seite oder laden Sie sie neu, dann erscheinen ihre Anfragen hier."
+  },
+  "devtools_networkAllOrigins": {
+    "message": "Auch andere Websites"
+  },
+  "devtools_networkClear": {
+    "message": "Leeren"
+  },
+  "devtools_requestTime": {
+    "message": "$ms$ ms",
+    "placeholders": {
+      "ms": {
+        "content": "$1",
+        "example": "35"
+      }
+    }
+  },
+  "devtools_mockTitle": {
+    "message": "Diese Antwort nachbilden"
+  },
+  "devtools_mockPattern": {
+    "message": "URL-Muster"
+  },
+  "devtools_mockKind": {
+    "message": "Antworten mit"
+  },
+  "devtools_mockResponse": {
+    "message": "dieser Antwort"
+  },
+  "devtools_mockError": {
+    "message": "einem Serverfehler (500)"
+  },
+  "devtools_mockAbort": {
+    "message": "einem Netzwerkfehler"
+  },
+  "devtools_mockNoBody": {
+    "message": "Die DevTools haben keinen Inhalt dieser Antwort behalten. Laden Sie die Seite bei geöffneten DevTools neu, um sie nachzubilden."
+  },
+  "devtools_mockHidden_one": {
+    "message": "$count$ Wert ausgeblendet: Felder, die wie ein Passwort, ein Token oder ein Schlüssel heißen.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "devtools_mockHidden_other": {
+    "message": "$count$ Werte ausgeblendet: Felder, die wie ein Passwort, ein Token oder ein Schlüssel heißen.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "devtools_mockReveal": {
+    "message": "Ausgeblendete Werte zeigen"
+  },
+  "devtools_mockCopy": {
+    "message": "Code kopieren"
+  },
+  "devtools_mockDownload": {
+    "message": "$file$ herunterladen",
+    "placeholders": {
+      "file": {
+        "content": "$1",
+        "example": "cart.json"
+      }
+    }
+  },
+  "devtools_mockFileHint": {
+    "message": "Der Inhalt ist größer als 100 kB, daher liest der Code ihn aus einer Datei: Speichern Sie sie als $path$ im Ordner, aus dem Sie Playwright starten.",
+    "placeholders": {
+      "path": {
+        "content": "$1",
+        "example": "mocks/cart.json"
+      }
+    }
+  },
+  "devtools_conditionDelay": {
+    "message": "$request$ um $seconds$ s verlangsamen",
+    "placeholders": {
+      "request": {
+        "content": "$1",
+        "example": "GET **/api/cart"
+      },
+      "seconds": {
+        "content": "$2",
+        "example": "2"
+      }
+    }
+  },
+  "devtools_conditionError": {
+    "message": "$request$ mit einem 500-Fehler beantworten",
+    "placeholders": {
+      "request": {
+        "content": "$1",
+        "example": "GET **/api/cart"
+      }
+    }
+  },
+  "devtools_conditionAbort": {
+    "message": "$request$ wie einen Netzwerkfehler scheitern lassen",
+    "placeholders": {
+      "request": {
+        "content": "$1",
+        "example": "GET **/api/cart"
+      }
+    }
+  },
+  "devtools_conditionsOn_one": {
+    "message": "Piwi Picker: $count$ Bedingung für Anfragen aktiv",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "devtools_conditionsOn_other": {
+    "message": "Piwi Picker: $count$ Bedingungen für Anfragen aktiv",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "devtools_conditionsOff": {
+    "message": "Ausschalten"
+  },
+  "devtools_conditionsNoPage": {
+    "message": "Bedingungen für Anfragen brauchen eine Webseite im Tab."
+  },
+  "devtools_conditionsNeedAccess": {
+    "message": "Piwi Picker braucht Zugriff auf diese Website, um ihre Anfragen zu verlangsamen oder scheitern zu lassen."
+  },
+  "devtools_conditionFailed": {
+    "message": "Die Bedingung konnte nicht gesetzt werden: $error$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "No tab with id: 12"
+      }
+    }
+  },
+  "devtools_conditionsTitle": {
+    "message": "Bedingungen für Anfragen"
+  },
+  "devtools_conditionsFor": {
+    "message": "Diese Anfrage verlangsamen oder scheitern lassen"
+  },
+  "devtools_conditionsLimits": {
+    "message": "Bedingungen gelten für die fetch- und XHR-Aufrufe der Seiten dieses Tabs, bis Sie sie ausschalten oder den Tab schließen. Die CPU oder die ganze Seite zu drosseln und Dokumente, Skripte, Bilder oder Anfragen eines Service Workers zu verzögern, braucht die debugger-Berechtigung, die Piwi Picker nicht anfordert."
+  },
+  "devtools_conditionRemove": {
+    "message": "Entfernen"
+  },
+  "devtools_conditionsAllOff": {
+    "message": "Alle ausschalten und neu laden"
+  },
+  "devtools_delaySeconds": {
+    "message": "Verzögerung in Sekunden"
+  },
+  "devtools_slowDown": {
+    "message": "Verlangsamen"
+  },
+  "devtools_failError": {
+    "message": "Mit 500 scheitern"
+  },
+  "devtools_failAbort": {
+    "message": "Scheitern (Netzwerkfehler)"
+  },
+  "login_title": {
+    "message": "Anmeldung für Tests speichern"
+  },
+  "login_site": {
+    "message": "Website: $site$",
+    "placeholders": {
+      "site": {
+        "content": "$1",
+        "example": "https://shop.example"
+      }
+    }
+  },
+  "login_noSite": {
+    "message": "Öffnen Sie dies über das Menü der Erweiterung auf einer Webseite: Es speichert die Anmeldung der Website dieser Seite."
+  },
+  "login_holds": {
+    "message": "Die Datei enthält die Cookies dieses Browsers für die Website, auch die httpOnly-Cookies, und den localStorage der Website, im storageState-Format von Playwright. IndexedDB bleibt außen vor."
+  },
+  "login_warning": {
+    "message": "Wer diese Datei hat, ist bis zum Ablauf der Sitzung als Sie angemeldet. Verwenden Sie ein Testkonto und halten Sie die Datei aus Ihrem Repository heraus."
+  },
+  "login_gitignore": {
+    "message": "Speichern Sie sie als $path$ und fügen Sie $folder$ zu $file$ hinzu.",
+    "placeholders": {
+      "file": {
+        "content": "$1",
+        "example": ".gitignore"
+      },
+      "folder": {
+        "content": "$2",
+        "example": "playwright/.auth"
+      },
+      "path": {
+        "content": "$3",
+        "example": "playwright/.auth/user.json"
+      }
+    }
+  },
+  "login_copyGitignore": {
+    "message": "Zeile für .gitignore kopieren"
+  },
+  "login_save": {
+    "message": "Anmeldedatei speichern"
+  },
+  "login_denied": {
+    "message": "Die Anmeldung wurde nicht gespeichert: Dafür muss Piwi Picker die Cookies dieser Website lesen."
+  },
+  "login_failed": {
+    "message": "Die Anmeldung konnte nicht gespeichert werden: $error$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "No tab with id: 12"
+      }
+    }
+  },
+  "login_savedCookies_one": {
+    "message": "user.json mit $count$ Cookie gespeichert.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "login_savedCookies_other": {
+    "message": "user.json mit $count$ Cookies gespeichert.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "login_savedStorage_one": {
+    "message": "$count$ localStorage-Eintrag.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "login_savedStorage_other": {
+    "message": "$count$ localStorage-Einträge.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "login_setupTitle": {
+    "message": "In einem Test verwenden"
+  },
+  "login_copySnippet": {
+    "message": "Code kopieren"
+  },
+  "devtools_networkSelect": {
+    "message": "Wählen Sie eine Anfrage, um sie nachzubilden, zu verlangsamen oder scheitern zu lassen."
+  },
+  "devtools_colMethod": {
+    "message": "Methode"
+  },
+  "devtools_colPath": {
+    "message": "Pfad"
+  },
+  "devtools_colStatus": {
+    "message": "Status"
+  },
+  "devtools_colTime": {
+    "message": "Dauer"
+  },
+  "devtools_conditionsLimitsTitle": {
+    "message": "Was sich so nicht verlangsamen lässt"
+  },
+  "devtools_copyAs": {
+    "message": "Kopieren als"
+  },
+  "devtools_tabLocators": {
+    "message": "Locators"
+  },
+  "devtools_tabSession": {
+    "message": "Session"
+  },
+  "devtools_locatorsHint": {
+    "message": "Geben Sie einen Locator ein: Die Elemente, die er auf dieser Seite findet, werden aufgelistet, wie Playwright sie findet. Fahren Sie über eines, um es auf der Seite zu umranden; Anzeigen wählt es im Elemente-Bereich aus."
+  },
+  "devtools_matches": {
+    "message": "Gefundene Elemente"
+  },
+  "devtools_reveal": {
+    "message": "Anzeigen"
+  },
+  "devtools_matchesListed": {
+    "message": "Nur die ersten $shown$ werden aufgelistet.",
+    "placeholders": {
+      "shown": {
+        "content": "$1",
+        "example": "50"
+      }
+    }
+  },
+  "devtools_sessionEmpty": {
+    "message": "Noch kein benanntes Element. Wählen Sie eines im Elemente-Bereich und nutzen Sie Zur Session hinzufügen in der Piwi-Seitenleiste oder das Session-Werkzeug im Menü der Erweiterung."
+  },
+  "devtools_sessionCount_one": {
+    "message": "$count$ benanntes Element",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "devtools_sessionCount_other": {
+    "message": "$count$ benannte Elemente",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "devtools_remove": {
+    "message": "Entfernen"
   },
   "stability_position": {
     "message": "Position"

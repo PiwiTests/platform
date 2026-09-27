@@ -1,4 +1,5 @@
 import { describeStepInWords } from '@piwitests/core/bug-report';
+import { conditionText } from '../shared/condition-words.js';
 import { interfacePhrases } from '../shared/core-words.js';
 import { pageKey } from '@piwitests/core/page-key';
 import { buildSession, normalizeSteps, type RecordedStep } from '@piwitests/core/recording';
@@ -19,12 +20,14 @@ import { createCursor, type FakeCursor } from './replay-cursor.js';
 import {
   ACTION_TIMEOUT_MS,
   ASSERT_TIMEOUT_MS,
+  endHover,
   findAll,
   locatorFor,
   observe,
   performCheck,
   performClick,
   performFill,
+  performHover,
   performPress,
   performSelect,
   resolveForAction,
@@ -277,6 +280,14 @@ function renderHud(state: ReplayState, verdict: ReplayVerdict | null = null): vo
         total: formatNumber(steps.length),
       });
   box.append(title, sub);
+  if (state.conditions?.length) {
+    const conditions = document.createElement('div');
+    conditions.className = 'sub';
+    conditions.textContent = t('replay_underConditions', {
+      conditions: state.conditions.map(conditionText).join(' · '),
+    });
+    box.appendChild(conditions);
+  }
 
   const list = document.createElement('div');
   list.className = 'steps';
@@ -385,6 +396,7 @@ async function recordResult(state: ReplayState, index: number, result: ReplaySte
 async function finish(state: ReplayState, stopped: boolean): Promise<void> {
   const steps = sessionFromSteps(state.steps, state.origin).steps;
   const verdict = replayVerdict(steps, state.results, stopped);
+  endHover();
   const final: ReplayState = { ...state, status: stopped ? 'stopped' : 'done', cursor: cursor?.position() ?? null };
   await setReplayState(final);
   notifyFinished();
@@ -405,6 +417,9 @@ async function act(step: RecordedStep, element: Element): Promise<boolean> {
   switch (step.action) {
     case 'click':
       await performClick(element, c, caption(step));
+      return true;
+    case 'hover':
+      await performHover(element, c, caption(step));
       return true;
     case 'fill':
       if (step.redacted) return performFill(element, '', c, caption(step));
@@ -796,5 +811,14 @@ if (globals.__piwiReplayEntry) {
   void globals.__piwiReplayEntry();
 } else {
   globals.__piwiReplayEntry = entry;
+  // The Piwi panel in DevTools changed the stored state: draw it, and go on when asked.
+  chrome.runtime.onMessage.addListener((message) => {
+    if (message?.type !== 'piwi-replay-wake') return undefined;
+    void getReplayState().then((state) => {
+      if (state && loopActive) renderHud(state);
+    });
+    if (message.wake === true) wakeLoop();
+    return undefined;
+  });
   void entry();
 }

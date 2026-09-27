@@ -252,6 +252,8 @@ export function describeStepInWords(step: RecordedStep, phrases: BugPhrases = EN
       return phrases.steps.goto(step.value ?? step.pageUrl);
     case 'click':
       return phrases.steps.click(target);
+    case 'hover':
+      return phrases.steps.hover(target);
     case 'fill':
       return phrases.steps.fill(target, value);
     case 'check':

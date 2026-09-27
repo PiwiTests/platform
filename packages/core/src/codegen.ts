@@ -299,6 +299,8 @@ function renderRawStep(step: RecordedStep, index: number, ctx: RenderContext): s
   switch (step.action) {
     case 'click':
       return [`  await ${loc}.click();`];
+    case 'hover':
+      return [`  await ${loc}.hover();`];
     case 'fill': {
       if (step.redacted || ctx.options.values === 'env') {
         const envVar = `PIWI_TEST_VALUE_${index}`;
