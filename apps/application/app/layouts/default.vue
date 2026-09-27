@@ -2,7 +2,6 @@
 import type { CommandPaletteGroup, CommandPaletteItem, NavigationMenuItem } from '@nuxt/ui';
 import type { ProjectWithStats } from '~~/types/api';
 import ProjectsMenu from '~/components/layout/ProjectsMenu.vue';
-import { getStoredDemoVersion } from '~/demo/db.client';
 import { DOCS_BASE_URL } from '#shared/docs';
 
 const route = useRoute();
@@ -388,6 +387,8 @@ onMounted(async () => {
   // belt-and-suspenders nudge; its "Refresh" runs the same window + service
   // worker reset the toolbar button uses.
   if (isDemo && demoDataVersion) {
+    // Lazy: the demo database module carries the server schema and Drizzle.
+    const { getStoredDemoVersion } = await import('~/demo/db.client');
     const stored = await getStoredDemoVersion();
     if (stored !== null && stored !== demoDataVersion) {
       toast.add({

@@ -385,33 +385,60 @@ export default defineNuxtConfig({
   },
 
   vite: {
+    // Every client dependency is listed: Vite's startup scan cannot follow
+    // Nuxt's virtual entry, so an unlisted one is discovered while a page
+    // loads, and Vite re-bundles and reloads that page. reka-ui and its
+    // subpath entries stay unlisted: Nuxt UI transpiles reka-ui, which keeps it
+    // out of pre-bundling, and all its entries must load the same copy.
     optimizeDeps: {
       include: [
         'date-fns',
+        // The locales useLocaleSettings loads on demand.
+        'date-fns/locale/cs',
+        'date-fns/locale/da',
+        'date-fns/locale/de',
+        'date-fns/locale/en-GB',
+        'date-fns/locale/es',
+        'date-fns/locale/fi',
+        'date-fns/locale/fr',
+        'date-fns/locale/fr-CA',
+        'date-fns/locale/it',
+        'date-fns/locale/ja',
+        'date-fns/locale/ko',
+        'date-fns/locale/nb',
+        'date-fns/locale/nl',
+        'date-fns/locale/pl',
+        'date-fns/locale/pt',
+        'date-fns/locale/pt-BR',
+        'date-fns/locale/sv',
+        'date-fns/locale/zh-CN',
+        'date-fns/locale/zh-TW',
         'drizzle-orm',
+        'drizzle-orm/pg-core',
         'drizzle-orm/sqlite-core',
         'drizzle-orm/sqlite-proxy',
+        // The languages shared/highlight.ts registers.
         'highlight.js/lib/core',
         'highlight.js/lib/languages/bash',
         'highlight.js/lib/languages/css',
         'highlight.js/lib/languages/diff',
         'highlight.js/lib/languages/javascript',
         'highlight.js/lib/languages/json',
+        'highlight.js/lib/languages/powershell',
         'highlight.js/lib/languages/python',
         'highlight.js/lib/languages/typescript',
         'highlight.js/lib/languages/xml',
+        'highlight.js/lib/languages/yaml',
+        'marked',
+        'pdf-lib',
+        'vue-virtual-scroller',
+        'write-excel-file/universal',
         'zod',
       ],
 
       // sql.js bundles a WASM binary and must not be pre-bundled by Vite;
       // excluding it ensures the WASM file is loaded at runtime via locateFile.
       exclude: ['sql.js'],
-    },
-    server: {
-      warmup: {
-        // relative to Vite root = Nuxt srcDir (application/app)
-        clientFiles: ['./pages/**/*.vue', './components/**/*.vue', './layouts/**/*.vue'],
-      },
     },
   },
 
