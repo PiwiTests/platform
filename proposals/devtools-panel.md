@@ -8,7 +8,7 @@ Playwright test does. That is the gap this plan fills: a **Piwi panel inside Dev
 page, **mocks written from real responses**, the **login saved for tests**, **slow and failing requests** on demand,
 and **viewports** from the project's own configuration.
 
-**Status.** Proposed 2026-09-27; in progress. Built: PR 1 (the Elements sidebar), PR 2 (the Playwright view), PR 3 (the Piwi panel's Record and Replay tabs). No part needs the `debugger`
+**Status.** Proposed 2026-09-27; in progress. Built: PR 1 (the Elements sidebar), PR 2 (the Playwright view), PR 3 (the Piwi panel's Record and Replay tabs), PR 4 (the Network tab and Mock this response). No part needs the `debugger`
 permission, and only one adds a permission at all: `cookies`, optional, requested when the login is saved. The DevTools
 panel adds a manifest key (`devtools_page`) that shows no install warning. The open questions are settled below.
 
@@ -154,8 +154,9 @@ From the panel's Network tab, a request becomes code:
 
 - `page.route('**/api/cart', …)` with `route.fulfill({ json })` for a JSON body, `{ body, contentType }` otherwise, and
   the status when it is not 200;
-- the URL pattern keeps the path and drops the origin and volatile query values (a timestamp, a cache buster), shown
-  for editing before copying;
+- the URL pattern keeps the path and drops the origin; volatile query values (a timestamp, a cache buster) become `*`
+  rather than being dropped, since a Playwright glob with no query does not match a URL that has one. It is shown for
+  editing before copying, and a method other than GET adds a check that falls back for the other methods;
 - **Mock with an error** writes the same route with a 500 or a network failure (`route.abort()`), for testing the
   page's error state;
 - bodies over 100 kB are written to a file (`mocks/cart.json`) the snippet reads, and the file is downloaded beside it.

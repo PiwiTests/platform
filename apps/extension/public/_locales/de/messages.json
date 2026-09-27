@@ -3995,6 +3995,93 @@
   "devtools_noReplay": {
     "message": "Noch keine Wiedergabe. Starten Sie eine mit Bug-Report abspielen im Menü der Erweiterung: Ihre Schritte und Ergebnisse erscheinen hier."
   },
+  "devtools_tabNetwork": {
+    "message": "Netzwerk"
+  },
+  "devtools_networkHint": {
+    "message": "Die fetch- und XHR-Anfragen der Seite, gelesen aus den DevTools, solange sie geöffnet sind. Nichts verlässt den Browser, außer Sie kopieren oder laden es herunter."
+  },
+  "devtools_networkEmpty": {
+    "message": "Noch keine Anfrage. Verwenden Sie die Seite oder laden Sie sie neu, dann erscheinen ihre Anfragen hier."
+  },
+  "devtools_networkAllOrigins": {
+    "message": "Auch andere Websites"
+  },
+  "devtools_networkClear": {
+    "message": "Leeren"
+  },
+  "devtools_requestTime": {
+    "message": "$ms$ ms",
+    "placeholders": {
+      "ms": {
+        "content": "$1",
+        "example": "35"
+      }
+    }
+  },
+  "devtools_mockTitle": {
+    "message": "Diese Antwort nachbilden"
+  },
+  "devtools_mockPattern": {
+    "message": "URL-Muster"
+  },
+  "devtools_mockKind": {
+    "message": "Antworten mit"
+  },
+  "devtools_mockResponse": {
+    "message": "dieser Antwort"
+  },
+  "devtools_mockError": {
+    "message": "einem Serverfehler (500)"
+  },
+  "devtools_mockAbort": {
+    "message": "einem Netzwerkfehler"
+  },
+  "devtools_mockNoBody": {
+    "message": "Die DevTools haben keinen Inhalt dieser Antwort behalten. Laden Sie die Seite bei geöffneten DevTools neu, um sie nachzubilden."
+  },
+  "devtools_mockHidden_one": {
+    "message": "$count$ Wert ausgeblendet: Felder, die wie ein Passwort, ein Token oder ein Schlüssel heißen.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "devtools_mockHidden_other": {
+    "message": "$count$ Werte ausgeblendet: Felder, die wie ein Passwort, ein Token oder ein Schlüssel heißen.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "devtools_mockReveal": {
+    "message": "Ausgeblendete Werte zeigen"
+  },
+  "devtools_mockCopy": {
+    "message": "Code kopieren"
+  },
+  "devtools_mockDownload": {
+    "message": "$file$ herunterladen",
+    "placeholders": {
+      "file": {
+        "content": "$1",
+        "example": "cart.json"
+      }
+    }
+  },
+  "devtools_mockFileHint": {
+    "message": "Der Inhalt ist größer als 100 kB, daher liest der Code ihn aus einer Datei: Speichern Sie sie als $path$ im Ordner, aus dem Sie Playwright starten.",
+    "placeholders": {
+      "path": {
+        "content": "$1",
+        "example": "mocks/cart.json"
+      }
+    }
+  },
   "stability_position": {
     "message": "Position"
   },

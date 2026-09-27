@@ -4719,6 +4719,112 @@
     "message": "No replay yet. Start one with Replay a bug report in the toolbar popup: its steps and results show here.",
     "description": "DevTools, Piwi panel, Replay tab: no replay has run. “Replay a bug report” is the popup tile's name (popup_replayBug)."
   },
+  "devtools_tabNetwork": {
+    "message": "Network",
+    "description": "DevTools, Piwi panel: tab listing the page's fetch and XHR requests. One word."
+  },
+  "devtools_networkHint": {
+    "message": "The page’s fetch and XHR requests, read from DevTools while it is open. Nothing leaves the browser unless you copy or download it.",
+    "description": "DevTools, Piwi panel, Network tab: what it lists and where the data goes. fetch and XHR are names of browser APIs: keep them."
+  },
+  "devtools_networkEmpty": {
+    "message": "No request yet. Use the page, or reload it, and its requests show here.",
+    "description": "DevTools, Piwi panel, Network tab: no request listed yet."
+  },
+  "devtools_networkAllOrigins": {
+    "message": "Other sites too",
+    "description": "DevTools, Piwi panel, Network tab: checkbox that also lists requests to other sites than the page's."
+  },
+  "devtools_networkClear": {
+    "message": "Clear",
+    "description": "DevTools, Piwi panel, Network tab: button that empties the list of requests."
+  },
+  "devtools_requestTime": {
+    "message": "$ms$ ms",
+    "description": "DevTools, Piwi panel, Network tab: how long a request took. $ms$ is a number of milliseconds.",
+    "placeholders": {
+      "ms": {
+        "content": "$1",
+        "example": "35"
+      }
+    }
+  },
+  "devtools_mockTitle": {
+    "message": "Mock this response",
+    "description": "DevTools, Piwi panel, Network tab: accessible name of the section that writes a mock for the selected request."
+  },
+  "devtools_mockPattern": {
+    "message": "URL pattern",
+    "description": "DevTools, Piwi panel, Network tab: label of the editable URL pattern the mock routes."
+  },
+  "devtools_mockKind": {
+    "message": "Answer with",
+    "description": "DevTools, Piwi panel, Network tab: label of the select choosing what the mock answers. Followed by devtools_mockResponse, devtools_mockError or devtools_mockAbort."
+  },
+  "devtools_mockResponse": {
+    "message": "this response",
+    "description": "DevTools, Piwi panel, Network tab: option, after “Answer with”: the response DevTools recorded."
+  },
+  "devtools_mockError": {
+    "message": "a server error (500)",
+    "description": "DevTools, Piwi panel, Network tab: option, after “Answer with”: a server error."
+  },
+  "devtools_mockAbort": {
+    "message": "a network failure",
+    "description": "DevTools, Piwi panel, Network tab: option, after “Answer with”: the request fails as if the network were down."
+  },
+  "devtools_mockNoBody": {
+    "message": "DevTools kept no body for this response. Reload the page with DevTools open to mock it.",
+    "description": "DevTools, Piwi panel, Network tab: DevTools kept no body for the selected response."
+  },
+  "devtools_mockHidden_one": {
+    "message": "$count$ value hidden: fields named like a password, a token or a key.",
+    "description": "DevTools, Piwi panel, Network tab: values of fields named like a password, token or key were replaced in the mock. $count$ is how many.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "devtools_mockHidden_other": {
+    "message": "$count$ values hidden: fields named like a password, a token or a key.",
+    "description": "DevTools, Piwi panel, Network tab: values of fields named like a password, token or key were replaced in the mock. $count$ is how many.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "devtools_mockReveal": {
+    "message": "Show hidden values",
+    "description": "DevTools, Piwi panel, Network tab: checkbox that puts the hidden values back in the mock."
+  },
+  "devtools_mockCopy": {
+    "message": "Copy code",
+    "description": "DevTools, Piwi panel, Network tab: button that copies the mock's code."
+  },
+  "devtools_mockDownload": {
+    "message": "Download $file$",
+    "description": "DevTools, Piwi panel, Network tab: button that downloads the file holding a large response body. $file$ is its name, like cart.json.",
+    "placeholders": {
+      "file": {
+        "content": "$1",
+        "example": "cart.json"
+      }
+    }
+  },
+  "devtools_mockFileHint": {
+    "message": "The body is over 100 kB, so the code reads it from a file: save it as $path$ in the folder you run Playwright from.",
+    "description": "DevTools, Piwi panel, Network tab: the body is too large to go in the code. $path$ is where the code reads it, like mocks/cart.json.",
+    "placeholders": {
+      "path": {
+        "content": "$1",
+        "example": "mocks/cart.json"
+      }
+    }
+  },
   "stability_position": {
     "message": "position",
     "description": "Name of a locator stability rule, in a list after “Brittle locator:”: the locator picks an element by its order (nth, first, last). Lower case, a few words."

@@ -3995,6 +3995,93 @@
   "devtools_noReplay": {
     "message": "Aucune relecture pour l’instant. Lancez-en une avec Rejouer un rapport de bug dans le menu de l’extension : ses étapes et leurs résultats s’affichent ici."
   },
+  "devtools_tabNetwork": {
+    "message": "Réseau"
+  },
+  "devtools_networkHint": {
+    "message": "Les requêtes fetch et XHR de la page, lues dans DevTools tant qu’il est ouvert. Rien ne quitte le navigateur, sauf ce que vous copiez ou téléchargez."
+  },
+  "devtools_networkEmpty": {
+    "message": "Aucune requête pour l’instant. Utilisez la page, ou rechargez-la, et ses requêtes s’affichent ici."
+  },
+  "devtools_networkAllOrigins": {
+    "message": "Autres sites aussi"
+  },
+  "devtools_networkClear": {
+    "message": "Effacer"
+  },
+  "devtools_requestTime": {
+    "message": "$ms$ ms",
+    "placeholders": {
+      "ms": {
+        "content": "$1",
+        "example": "35"
+      }
+    }
+  },
+  "devtools_mockTitle": {
+    "message": "Simuler cette réponse"
+  },
+  "devtools_mockPattern": {
+    "message": "Motif d’adresse"
+  },
+  "devtools_mockKind": {
+    "message": "Répondre avec"
+  },
+  "devtools_mockResponse": {
+    "message": "cette réponse"
+  },
+  "devtools_mockError": {
+    "message": "une erreur du serveur (500)"
+  },
+  "devtools_mockAbort": {
+    "message": "un échec réseau"
+  },
+  "devtools_mockNoBody": {
+    "message": "DevTools n’a pas gardé le corps de cette réponse. Rechargez la page avec DevTools ouvert pour la simuler."
+  },
+  "devtools_mockHidden_one": {
+    "message": "$count$ valeur masquée : champs nommés comme un mot de passe, un jeton ou une clé.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "devtools_mockHidden_other": {
+    "message": "$count$ valeurs masquées : champs nommés comme un mot de passe, un jeton ou une clé.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "devtools_mockReveal": {
+    "message": "Afficher les valeurs masquées"
+  },
+  "devtools_mockCopy": {
+    "message": "Copier le code"
+  },
+  "devtools_mockDownload": {
+    "message": "Télécharger $file$",
+    "placeholders": {
+      "file": {
+        "content": "$1",
+        "example": "cart.json"
+      }
+    }
+  },
+  "devtools_mockFileHint": {
+    "message": "Le corps dépasse 100 ko, le code le lit donc dans un fichier : enregistrez-le sous $path$ dans le dossier d’où vous lancez Playwright.",
+    "placeholders": {
+      "path": {
+        "content": "$1",
+        "example": "mocks/cart.json"
+      }
+    }
+  },
   "stability_position": {
     "message": "position"
   },

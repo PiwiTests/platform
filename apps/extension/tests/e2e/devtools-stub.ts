@@ -37,8 +37,17 @@ function installDevtoolsStub(seed: { tabId: number; har: unknown[] }): void {
     __piwiDevtoolsHar: unknown[];
   };
   g.__piwiDevtoolsHar = seed.har;
+  // A network entry carries its body as `__body`, handed out by `getContent` as DevTools does.
+  const withContent = (entry: unknown) => {
+    if (!entry || typeof entry !== 'object' || !('request' in entry)) return entry;
+    const e = entry as { __body?: string | null; __encoding?: string };
+    return {
+      ...e,
+      getContent: (cb: (content: string | null, encoding: string) => void) => cb(e.__body ?? null, e.__encoding ?? ''),
+    };
+  };
   g.__piwiDevtoolsFire = (name, ...args) => {
-    for (const fn of events[name] ?? []) fn(...args);
+    for (const fn of events[name] ?? []) fn(...args.map(withContent));
   };
   g.chrome.devtools = {
     inspectedWindow: {
@@ -59,7 +68,7 @@ function installDevtoolsStub(seed: { tabId: number; har: unknown[] }): void {
       onNavigated: event('navigated'),
       onRequestFinished: event('requestFinished'),
       getHAR(callback: (har: { entries: unknown[] }) => void) {
-        callback({ entries: g.__piwiDevtoolsHar });
+        callback({ entries: g.__piwiDevtoolsHar.map(withContent) });
       },
     },
   };

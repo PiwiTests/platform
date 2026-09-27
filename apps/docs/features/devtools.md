@@ -43,8 +43,31 @@ page navigates; the panels on the page stay too, for when DevTools is closed.
   review panel does. A bug report is finished from its panel on the page, which collects the evidence.
 - **Replay** lists a replay's steps with their results and the verdict once it ends. **Pause**, **Continue**, **Next
   step** and **Stop** act on the replay running in the page.
+- **Network** lists the page's `fetch` and XHR requests, from DevTools' own log while it is open; **Other sites too**
+  adds the requests to other origins.
 
 **Playwright view**, at the top of the panel, turns the view below on and off in the inspected tab.
+
+## Mock this response
+
+Select a request in the Network tab and the panel writes it as a route for a test:
+
+```ts
+await page.route('**/api/cart?_=*', (route) =>
+  route.fulfill({
+    json: { items: [{ sku: 'SPRING-TEE', qty: 1 }], total: 40 },
+  }),
+);
+```
+
+The URL pattern drops the origin and turns the query values that change on every request (a timestamp, a cache
+buster) into `*`; edit it before copying. A status other than 200 is kept, and a method other than GET is checked.
+**Answer with** switches to a server error (500) or a network failure (`route.abort()`), for testing the page's
+error state. A body over 100 kB goes to a file the route reads, such as `mocks/cart.json`, downloaded beside the code.
+
+Fields named like a password, a token, a key or a session are written as `<hidden>` until you tick **Show hidden
+values**; headers, cookies included, are never written. Nothing is sent anywhere: the code reaches your clipboard
+when you copy it.
 
 ## Playwright view
 

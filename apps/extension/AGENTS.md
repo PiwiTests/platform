@@ -295,7 +295,12 @@ they have `chrome.scripting`, `chrome.permissions` and `chrome.storage` as well 
   popup's stop (`stopRecording` + `piwi-recording-stopped`); Pause, Continue and Stop write the replay state, then send
   `piwi-replay-wake` to the replayed site's tabs, which `replay-panel.ts` answers by redrawing its panel and, with
   `wake: true` (Continue, Next step, Stop, never Pause), releasing its wait.
-- **Tests**: `devtools-sidebar.spec.ts` and `devtools-panel.spec.ts` open the pages as tabs with `chrome.devtools` stubbed (`devtools-stub.ts`:
+- **Network and Mock this response** (`panel-network.ts`, pure half `src/shared/mock-code.ts`): requests come only
+  from `chrome.devtools.network` (`getHAR` at open, then `onRequestFinished`), kept in the panel's memory, fetch and
+  XHR only, and never leave the browser but through the user's copy or download. `mockCode` hides credential fields
+  (`HIDDEN_VALUE`) unless revealed, and never writes a header. `devtools-network.spec.ts` runs the copied code as a
+  test body against a real page.
+- **Tests**: `devtools-sidebar.spec.ts`, `devtools-panel.spec.ts` and `devtools-network.spec.ts` open the pages as tabs with `chrome.devtools` stubbed (`devtools-stub.ts`:
   `eval` runs in a fixture page's own world, where the spec adds the content script; `$0` is that page's global).
   `devtools-real.spec.ts` launches Chromium with `--auto-open-devtools-for-tabs` and drives the real DevTools page
   through the browser's debugging port: it checks the `devtools_page` loads and that `$0` reaches the ranking script.

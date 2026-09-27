@@ -3995,6 +3995,93 @@
   "devtools_noReplay": {
     "message": "Nenhuma reprodução ainda. Inicie uma com Reproduzir um relatório de bug no menu da extensão: os passos e resultados aparecem aqui."
   },
+  "devtools_tabNetwork": {
+    "message": "Rede"
+  },
+  "devtools_networkHint": {
+    "message": "As requisições fetch e XHR da página, lidas do DevTools enquanto ele está aberto. Nada sai do navegador, a não ser o que você copiar ou baixar."
+  },
+  "devtools_networkEmpty": {
+    "message": "Nenhuma requisição ainda. Use a página, ou recarregue-a, e as requisições aparecem aqui."
+  },
+  "devtools_networkAllOrigins": {
+    "message": "Outros sites também"
+  },
+  "devtools_networkClear": {
+    "message": "Limpar"
+  },
+  "devtools_requestTime": {
+    "message": "$ms$ ms",
+    "placeholders": {
+      "ms": {
+        "content": "$1",
+        "example": "35"
+      }
+    }
+  },
+  "devtools_mockTitle": {
+    "message": "Simular esta resposta"
+  },
+  "devtools_mockPattern": {
+    "message": "Padrão de URL"
+  },
+  "devtools_mockKind": {
+    "message": "Responder com"
+  },
+  "devtools_mockResponse": {
+    "message": "esta resposta"
+  },
+  "devtools_mockError": {
+    "message": "um erro do servidor (500)"
+  },
+  "devtools_mockAbort": {
+    "message": "uma falha de rede"
+  },
+  "devtools_mockNoBody": {
+    "message": "O DevTools não guardou o corpo desta resposta. Recarregue a página com o DevTools aberto para simulá-la."
+  },
+  "devtools_mockHidden_one": {
+    "message": "$count$ valor oculto: campos com nome de senha, token ou chave.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "devtools_mockHidden_other": {
+    "message": "$count$ valores ocultos: campos com nome de senha, token ou chave.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "devtools_mockReveal": {
+    "message": "Mostrar os valores ocultos"
+  },
+  "devtools_mockCopy": {
+    "message": "Copiar o código"
+  },
+  "devtools_mockDownload": {
+    "message": "Baixar $file$",
+    "placeholders": {
+      "file": {
+        "content": "$1",
+        "example": "cart.json"
+      }
+    }
+  },
+  "devtools_mockFileHint": {
+    "message": "O corpo passa de 100 kB, então o código o lê de um arquivo: salve-o como $path$ na pasta de onde você roda o Playwright.",
+    "placeholders": {
+      "path": {
+        "content": "$1",
+        "example": "mocks/cart.json"
+      }
+    }
+  },
   "stability_position": {
     "message": "posição"
   },
