@@ -162,6 +162,7 @@ export const PORTUGUESE_BUG_PHRASES: BugPhrases = {
   steps: {
     goto: (url) => `Abrir ${markdownCode(url)}`,
     click: (s) => `Clicar ${inside(subject(s))}`,
+    hover: (s) => `Passar o mouse sobre ${bare(subject(s))}`,
     fill: (s, v) => `Digitar ${value(v)} ${inside(subject(s))}`,
     check: (s) => `Marcar ${bare(subject(s))}`,
     uncheck: (s) => `Desmarcar ${bare(subject(s))}`,

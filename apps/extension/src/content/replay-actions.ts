@@ -4,6 +4,8 @@ import type { RecordedStep } from '@piwitests/core/recording';
 import { t, tn } from '../shared/i18n.js';
 import { DomModel } from './engine-aria.js';
 import { createLocatorEngine } from './locator-engine.js';
+import { endHoverEmulation, hoverElement } from './hover-emulation.js';
+import { parentOf } from './hover-reveal.js';
 import { isOwnHost } from './record-ui.js';
 import type { FakeCursor } from './replay-cursor.js';
 import type { Observation } from './replay-core.js';
@@ -129,7 +131,7 @@ export async function resolveForAction(step: RecordedStep, timeout = ACTION_TIME
     if (found.length === 0) reason = t('replay_reasonNoMatch', { locator });
     else if (found.length > 1) reason = tn('replay_reasonManyMatches', found.length, { locator });
     else if (!model.isVisible(found[0]!)) reason = t('replay_reasonHidden', { locator });
-    else if (model.disabled(found[0]!)) reason = t('replay_reasonDisabled', { locator });
+    else if (step.action !== 'hover' && model.disabled(found[0]!)) reason = t('replay_reasonDisabled', { locator });
     else {
       const element = found[0]!;
       element.scrollIntoView({ block: 'center', inline: 'nearest' });
@@ -179,31 +181,72 @@ function mouseInit(x: number, y: number): MouseEventInit {
 /** The element the replay's pointer is over, which gets the leave events when it moves on. */
 let hovered: Element | null = null;
 
+function chainOf(element: Element): Element[] {
+  const chain: Element[] = [];
+  for (let n: Element | null = element; n; n = parentOf(n)) chain.push(n);
+  return chain;
+}
+
+/**
+ * The pointer leaving the element it was over for `next` (null: for no
+ * element), as a mouse sends it: out of that element, then a leave for each of
+ * its ancestors `next` is not inside, innermost first. A menu that opens on
+ * hover closes on it.
+ */
+function dispatchLeave(next: Element | null, x: number, y: number): void {
+  const previous = hovered;
+  if (!previous || previous === next) return;
+  hovered = null;
+  if (!previous.isConnected) return;
+  const init = { ...mouseInit(x, y), relatedTarget: next };
+  const pointer: PointerEventInit = { ...init, pointerId: 1, pointerType: 'mouse', isPrimary: true };
+  const staying = new Set(next ? chainOf(next) : []);
+  previous.dispatchEvent(new PointerEvent('pointerout', pointer));
+  previous.dispatchEvent(new MouseEvent('mouseout', init));
+  for (const el of chainOf(previous)) {
+    if (staying.has(el)) break;
+    el.dispatchEvent(new PointerEvent('pointerleave', { ...pointer, bubbles: false }));
+    el.dispatchEvent(new MouseEvent('mouseleave', { ...init, bubbles: false }));
+  }
+}
+
 /**
  * The pointer arriving over an element, as a mouse sends it on its way to a
- * click: out of the last element, over and into this one, then a move. Menus
- * and selects rely on it: a Radix or Reka select ignores the release that
- * picks an option unless the pointer moved since it opened.
+ * click: out of the last element, over this one and into each ancestor it was
+ * not in yet, outermost first, then a move. CSS `:hover` moves with it
+ * (`hoverElement`). Menus and selects rely on it: a Radix or Reka select
+ * ignores the release that picks an option unless the pointer moved since it
+ * opened.
  */
 function dispatchHover(element: Element, x: number, y: number): void {
   const init = mouseInit(x, y);
   const pointer: PointerEventInit = { ...init, pointerId: 1, pointerType: 'mouse', isPrimary: true };
+  hoverElement(element);
   if (hovered !== element) {
-    const previous = hovered;
-    if (previous?.isConnected) {
-      previous.dispatchEvent(new PointerEvent('pointerout', { ...pointer, relatedTarget: element }));
-      previous.dispatchEvent(new PointerEvent('pointerleave', { ...pointer, bubbles: false, relatedTarget: element }));
-      previous.dispatchEvent(new MouseEvent('mouseout', { ...init, relatedTarget: element }));
-      previous.dispatchEvent(new MouseEvent('mouseleave', { ...init, bubbles: false, relatedTarget: element }));
-    }
+    const previous = hovered?.isConnected ? hovered : null;
+    const before = new Set(previous ? chainOf(previous) : []);
+    dispatchLeave(element, x, y);
+    const entering = chainOf(element)
+      .filter((el) => !before.has(el))
+      .reverse();
     element.dispatchEvent(new PointerEvent('pointerover', { ...pointer, relatedTarget: previous }));
-    element.dispatchEvent(new PointerEvent('pointerenter', { ...pointer, bubbles: false, relatedTarget: previous }));
+    for (const el of entering) {
+      el.dispatchEvent(new PointerEvent('pointerenter', { ...pointer, bubbles: false, relatedTarget: previous }));
+    }
     element.dispatchEvent(new MouseEvent('mouseover', { ...init, relatedTarget: previous }));
-    element.dispatchEvent(new MouseEvent('mouseenter', { ...init, bubbles: false, relatedTarget: previous }));
+    for (const el of entering) {
+      el.dispatchEvent(new MouseEvent('mouseenter', { ...init, bubbles: false, relatedTarget: previous }));
+    }
     hovered = element;
   }
   element.dispatchEvent(new PointerEvent('pointermove', pointer));
   element.dispatchEvent(new MouseEvent('mousemove', init));
+}
+
+/** The pointer leaving the page's elements, and the emulated `:hover` removed: the replay is over. */
+export function endHover(): void {
+  dispatchLeave(null, 0, 0);
+  endHoverEmulation();
 }
 
 /** A click as a person makes it: pointer and mouse down and up, focus, then the click. */
@@ -224,6 +267,12 @@ async function pointAt(element: Element, cursor: FakeCursor, caption: string): P
   await cursor.moveTo(target.x, target.y, caption);
   dispatchHover(element, target.x, target.y);
   return target;
+}
+
+/** A hover: the pointer moves over the element and stays there. */
+export async function performHover(element: Element, cursor: FakeCursor, caption: string): Promise<void> {
+  await pointAt(element, cursor, caption);
+  cursor.outline(null);
 }
 
 export async function performClick(element: Element, cursor: FakeCursor, caption: string): Promise<void> {

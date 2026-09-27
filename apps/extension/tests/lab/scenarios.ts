@@ -19,6 +19,8 @@ export interface Scenario {
    * lab reports the result without failing on it.
    */
   knownGap?: string;
+  /** How many hover steps the recording must hold: the hovers its clicks depend on, and no others. */
+  hovers?: number;
 }
 
 const pause = (page: Page, ms = 900) => page.waitForTimeout(ms);
@@ -344,6 +346,62 @@ export const SCENARIOS: Scenario[] = [
       await retype(page, dialog.getByRole('textbox', { name: 'To' }), '2026-08-31');
       await dialog.getByRole('button', { name: 'Apply', exact: true }).first().click();
       await pause(page, 1500);
+    },
+  },
+  {
+    name: 'inbox-row-actions',
+    start: '/',
+    hovers: 1,
+    run: async (page) => {
+      // The row's triage actions show only while it is hovered (`opacity-0 group-hover:opacity-100`).
+      const row = page.locator('[data-cluster-row]').first();
+      await row.hover();
+      await pause(page, 600);
+      await row.getByRole('button', { name: /^Assign/ }).click();
+      await pause(page, 900);
+      await page.keyboard.press('Escape');
+      await pause(page, 900);
+    },
+  },
+  {
+    name: 'gaps-feature-map',
+    start: '/projects/1?tab=gaps',
+    hovers: 0,
+    run: async (page) => {
+      // Hovering a feature highlights it in the map (a script's state); the click lands on the feature itself.
+      const feature = page.getByRole('button', { name: /^Orders/ }).first();
+      await feature.hover();
+      await pause(page, 800);
+      await feature.click();
+      await pause(page, 1500);
+    },
+  },
+  {
+    name: 'cluster-trend-bucket',
+    start: '/failure-clusters/10',
+    hovers: 0,
+    run: async (page) => {
+      // A bucket shows its tooltip on hover (inserted by a script) and opens its list on click.
+      const bucket = page.locator('rect.cursor-pointer').last();
+      await bucket.hover();
+      await pause(page, 800);
+      await bucket.click();
+      await pause(page, 2000);
+    },
+  },
+  {
+    name: 'execution-screenshot-zoom',
+    start: '/test-run-cases/37',
+    hovers: 0,
+    run: async (page) => {
+      // The enlarge overlay fades in on hover and lets the click through to the image's button.
+      const image = page.getByRole('button', { name: /^Enlarge/ }).first();
+      await image.hover();
+      await pause(page, 800);
+      await image.click();
+      await pause(page, 1200);
+      await page.keyboard.press('Escape');
+      await pause(page, 900);
     },
   },
   {

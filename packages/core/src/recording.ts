@@ -15,6 +15,7 @@
 export type StepAction =
   | 'goto'
   | 'click'
+  | 'hover'
   | 'fill'
   | 'check'
   | 'uncheck'
@@ -120,7 +121,7 @@ export interface RecordedSession {
 
 /** A raw capture event, as built by the extension's DOM listeners — one per meaningful browser event, before coalescing. */
 export interface RawCaptureEvent {
-  kind: 'click' | 'input' | 'change' | 'keydown' | 'navigate' | 'assert';
+  kind: 'click' | 'hover' | 'input' | 'change' | 'keydown' | 'navigate' | 'assert';
   /** The element acted on or asserted about; null for a navigation and for a `toHaveURL` assertion. */
   target: RecordedTarget | null;
   /** Current field value (input/change), the key pressed (keydown), or the new URL (navigate). */
@@ -198,6 +199,9 @@ export function isRecordedKey(key: string | null | undefined): key is string {
  *    recorded a second time; `Escape`, the arrow keys (`RECORDED_KEYS`) and
  *    the page's shortcuts (`isRecordedKey`) become presses too;
  *  - a plain `click` becomes a `click` step;
+ *  - a `hover` event becomes a `hover` step: the recorder sends one only for
+ *    the element whose hover revealed what the next click lands on; a second
+ *    hover on the same element right after the first is dropped;
  *  - `navigate` events become `goto` steps only for the session's very first
  *    page — later navigations are implied by the click/press that caused
  *    them and are dropped (they still update `pageUrl` on later steps via
@@ -319,6 +323,21 @@ export function normalizeSteps(events: RawCaptureEvent[]): RecordedStep[] {
         pageUrl: ev.pageUrl,
         timestamp: ev.timestamp,
         assertion: { ...ev.assertion },
+      });
+      continue;
+    }
+
+    if (ev.kind === 'hover') {
+      flushPendingFill();
+      const prev = steps[steps.length - 1];
+      if (!ev.target || (prev?.action === 'hover' && sameTarget(prev.target, ev.target))) continue;
+      steps.push({
+        action: 'hover',
+        target: ev.target,
+        value: null,
+        redacted: false,
+        pageUrl: ev.pageUrl,
+        timestamp: ev.timestamp,
       });
       continue;
     }

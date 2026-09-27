@@ -116,6 +116,8 @@ export interface BugPhrases {
   steps: {
     goto(url: string): string;
     click(subject: BugSubject): string;
+    /** Hovering over an element, for what shows only while the pointer is on it. */
+    hover(subject: BugSubject): string;
     fill(subject: BugSubject, value: BugStepValue): string;
     check(subject: BugSubject): string;
     uncheck(subject: BugSubject): string;

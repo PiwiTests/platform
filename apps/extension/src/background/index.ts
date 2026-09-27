@@ -126,6 +126,20 @@ const BUG_EVIDENCE_SCRIPT_ID = 'piwi-bug-evidence';
 const RECORDING_SCRIPT_IDS = [RECORD_SCRIPT_ID, BUG_EVIDENCE_SCRIPT_ID];
 
 /**
+ * Unregisters whichever of `ids` are registered. Chrome refuses the whole call
+ * when one of the ids is not registered, as the bug recording's script is not
+ * during an actions recording.
+ */
+async function unregisterScripts(ids: string[]): Promise<void> {
+  try {
+    const registered = await chrome.scripting.getRegisteredContentScripts({ ids });
+    if (registered.length > 0) await chrome.scripting.unregisterContentScripts({ ids: registered.map((s) => s.id) });
+  } catch {
+    // Nothing registered to remove.
+  }
+}
+
+/**
  * `chrome.scripting.registerContentScripts`/`unregisterContentScripts` and
  * `chrome.action.*` aren't reachable from a content script, so the recorder
  * routes its start/stop through here even though `popup.ts` and
@@ -145,7 +159,7 @@ async function handleStartRecording(
     // (crashed tab, browser killed mid-session) can leave a stale
     // registration behind — `persistAcrossSessions: false` means it never
     // survives a full browser restart, only the current one.
-    await chrome.scripting.unregisterContentScripts({ ids: RECORDING_SCRIPT_IDS }).catch(() => undefined);
+    await unregisterScripts(RECORDING_SCRIPT_IDS);
     // A bug recording also runs a script in the page's main world, the only
     // place that sees the page's console and its fetch/XHR calls, under the
     // same origin grant and only for as long as the recording.
@@ -188,7 +202,7 @@ async function handleStartRecording(
     // offered "Stop recording (0)" — a dead end reachable only via Discard.
     // Unwind everything this function may have put in place.
     await discardRecording().catch(() => undefined);
-    await chrome.scripting.unregisterContentScripts({ ids: RECORDING_SCRIPT_IDS }).catch(() => undefined);
+    await unregisterScripts(RECORDING_SCRIPT_IDS);
     await chrome.action.setBadgeText({ text: '' }).catch(() => undefined);
     await i18nReady;
     return { ok: false, error: err instanceof Error ? err.message : t('common_recordingStartFailed') };
@@ -285,7 +299,7 @@ async function handleRecordingStopped(senderTabId?: number): Promise<void> {
   // Read before unregistering: the granted pattern is the only record of which
   // tabs could be running the recorder.
   const { grantedOriginPattern } = await getRecordingState();
-  await chrome.scripting.unregisterContentScripts({ ids: RECORDING_SCRIPT_IDS }).catch(() => undefined);
+  await unregisterScripts(RECORDING_SCRIPT_IDS);
   await chrome.action.setBadgeText({ text: '' });
   // The sender, if it was a content script, has already torn itself down.
   await notifyRecorderTabs(grantedOriginPattern, senderTabId);

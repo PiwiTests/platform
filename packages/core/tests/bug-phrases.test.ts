@@ -47,6 +47,7 @@ const coupon = target({ tagName: 'input', role: 'textbox', accessibleName: 'Coup
 const country = target({ tagName: 'select', role: 'combobox', accessibleName: 'Country' });
 const agree = target({ tagName: 'input', role: 'checkbox', accessibleName: 'I agree' });
 const total = target({ tagName: 'p', testId: 'cart-total', text: 'Total: 40' });
+const row = target({ tagName: 'tr', role: 'row', accessibleName: 'Invoice 42' });
 const logo = target({ tagName: 'img', role: 'img', accessibleName: 'Acme' });
 
 /** Every action and every matcher, negated or not: each template of a phrasebook. */
@@ -70,6 +71,7 @@ function everyTemplate(): RecordedStep[] {
         }),
       ),
     ),
+    step('hover', { target: row }),
   ];
 }
 
@@ -138,6 +140,12 @@ describe('the phrasebooks', () => {
   });
 });
 
+describe('English', () => {
+  test('writes a hover as a person does it by hand', () => {
+    expect(describeStepInWords(step('hover', { target: row }))).toBe('Hover over table row "Invoice 42"');
+  });
+});
+
 describe('French', () => {
   const words = (s: RecordedStep, phrases: BugPhrases = french) => describeStepInWords(s, phrases);
   const q = (text: string) => `«${NNBSP}${text}${NNBSP}»`;
@@ -152,6 +160,7 @@ describe('French', () => {
       `Choisir ${q('France')} dans la liste déroulante ${q('Country')}`,
     );
     expect(words(step('check', { target: agree }))).toBe(`Cocher la case ${q('I agree')}`);
+    expect(words(step('hover', { target: row }))).toBe(`Survoler la ligne de tableau ${q('Invoice 42')}`);
     expect(words(step('fill', { target: coupon, redacted: true }))).toBe(
       `Saisir un mot de passe (non enregistré) dans le champ de texte ${q('Coupon')}`,
     );

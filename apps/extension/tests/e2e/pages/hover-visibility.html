@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Invoices</title>
+    <style>
+      body {
+        font: 14px sans-serif;
+        margin: 40px;
+      }
+      .rows {
+        list-style: none;
+        padding: 0;
+        width: 420px;
+      }
+      .row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 10px;
+        border-bottom: 1px solid #ddd;
+      }
+      .row .actions {
+        visibility: hidden;
+      }
+      .row:hover .actions {
+        visibility: visible;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Invoices</h1>
+    <button onclick="done('Refreshed')">Refresh</button>
+    <ul class="rows" aria-label="Invoices">
+      <li class="row">
+        <span>Invoice 41</span><span class="actions"><button onclick="done('Deleted invoice 41')">Delete</button></span>
+      </li>
+      <li class="row">
+        <span>Invoice 42</span><span class="actions"><button onclick="done('Deleted invoice 42')">Delete</button></span>
+      </li>
+      <li class="row">
+        <span>Invoice 43</span><span class="actions"><button onclick="done('Deleted invoice 43')">Delete</button></span>
+      </li>
+    </ul>
+    <output id="out"></output>
+    <script>
+      function done(text) {
+        document.getElementById('out').textContent = text;
+      }
+    </script>
+  </body>
+</html>

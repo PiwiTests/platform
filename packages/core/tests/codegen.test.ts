@@ -38,6 +38,15 @@ function step(overrides: Partial<RecordedStep> = {}): RecordedStep {
 }
 
 describe('renderSpec — raw mode (no catalog)', () => {
+  test('writes a hover step as a hover on its locator', () => {
+    const row = target({ role: 'row', accessibleName: 'Invoice 42' });
+    const session = buildSession([step({ action: 'hover', target: row }), step({ action: 'click' })], 0);
+    const { code } = renderSpec(session);
+    expect(code).toContain(
+      `  await page.getByRole('row', { name: 'Invoice 42' }).hover();\n  await page.getByRole('button', { name: 'Log in' }).click();`,
+    );
+  });
+
   test('emits an initial goto from startUrl, then one line per step', () => {
     const session = buildSession([step({ action: 'click' })], 0);
     session.startUrl = 'https://x.test/login';

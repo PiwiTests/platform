@@ -38,6 +38,10 @@ for (const scenario of SCENARIOS) {
       testInfo.annotations.push({ type: 'known gap', description: scenario.knownGap });
       return;
     }
+    if (scenario.hovers != null) {
+      const hovers = doc.steps.filter((s) => s.action === 'hover').length;
+      expect(hovers, `the recording holds the hovers its clicks depend on:\n${lines.join('\n')}`).toBe(scenario.hovers);
+    }
     expect(replayed.reason, `the replay played every step`).toBeNull();
     expect(replayed.status).toBe('done');
     expect(replayed.endUrl, 'the replay ends on the page the recording ended on').toBe(recording.endUrl);

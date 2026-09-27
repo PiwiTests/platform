@@ -254,6 +254,36 @@ describe('normalizeSteps', () => {
   });
 });
 
+describe('normalizeSteps — hover', () => {
+  const row = target({ tagName: 'tr', role: 'row', accessibleName: 'Invoice 42', alternatives: [] });
+  const del = target({ tagName: 'button', role: 'button', accessibleName: 'Delete' });
+
+  test('keeps a hover before the click it reveals', () => {
+    const steps = normalizeSteps([
+      ev({ kind: 'hover', target: row, timestamp: 1 }),
+      ev({ kind: 'click', target: del, timestamp: 1 }),
+    ]);
+    expect(steps.map((s) => s.action)).toEqual(['hover', 'click']);
+    expect(steps[0]).toMatchObject({ target: { accessibleName: 'Invoice 42' }, value: null });
+  });
+
+  test('commits a fill in progress first, and drops a repeated hover on the same element', () => {
+    const steps = normalizeSteps([
+      ev({ kind: 'input', target: target(), value: 'a', timestamp: 1 }),
+      ev({ kind: 'hover', target: row, timestamp: 2 }),
+      ev({ kind: 'hover', target: row, timestamp: 3 }),
+      ev({ kind: 'click', target: del, timestamp: 3 }),
+      ev({ kind: 'hover', target: row, timestamp: 4 }),
+      ev({ kind: 'click', target: del, timestamp: 4 }),
+    ]);
+    expect(steps.map((s) => s.action)).toEqual(['fill', 'hover', 'click', 'hover', 'click']);
+  });
+
+  test('drops a hover with no target', () => {
+    expect(normalizeSteps([ev({ kind: 'hover', target: null })])).toEqual([]);
+  });
+});
+
 describe('buildSession', () => {
   test('startUrl comes from the first goto step when present', () => {
     const steps = normalizeSteps([

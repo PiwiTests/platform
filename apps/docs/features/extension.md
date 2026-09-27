@@ -42,8 +42,7 @@ The same listing covers Edge and the other Chromium browsers; in Edge, click **A
 other stores* banner once, then **Get**.
 
 Every tool in the popup has a key shown on its tile (`1` records, `2` picks, `T` opens Tested elements, `B`
-reports a bug). One tool
-runs at a time and **Esc** cancels it; recording is the exception and runs until its own **Stop**.
+reports a bug). One tool runs at a time and **Esc** cancels it; recording runs until its own **Stop**.
 
 Picking also has a shortcut without the popup, suggested as `Ctrl+Shift+E` (`Cmd+Shift+E` on macOS). A browser
 leaves it unbound when another extension holds it; the popup footer shows the key actually bound.
@@ -65,8 +64,7 @@ Copy the result as the bare locator, an action line (`await page.getByRole(…).
 
 ## Hover-inspect
 
-Hover any element to see its best locator in a tooltip, with no click, checked against the page once the pointer
-rests.
+Hover any element to see its best locator, checked against the page once the pointer rests.
 
 ## Locator console
 
@@ -77,13 +75,13 @@ frames.
 
 ## Multi-pick
 
-Pick two or three similar items, such as table rows or cards, to derive the pattern they share (for example
-`getByRole('row').filter({ hasText: … })`). It warns when only `.nth()` could tell them apart.
+Pick two or three similar items (table rows, cards) to derive the pattern they share, such as
+`getByRole('row').filter({ hasText: … })`. It warns when only `.nth()` could tell them apart.
 
 ## Lint overlay
 
 One click outlines every interactive element no stable locator finds alone, with a suggested `data-testid` for each
-and a Markdown checklist to export.
+and a Markdown checklist.
 
 ## Assertion suggester
 
@@ -92,8 +90,7 @@ Pick an element to get the `expect(...)` candidates that apply to it (`toHaveVal
 
 ## Session
 
-Pick and name elements as you browse, across pages, then export the list as a page-object fixture class, a Markdown
-table or JSON.
+Pick and name elements across pages, then export them as a page-object fixture class, a Markdown table or JSON.
 
 ## Copy context for agent
 
@@ -102,7 +99,8 @@ Pick an element to copy one block for a coding agent: the page URL, a summary of
 ## Record actions
 
 **Record actions** asks for access to the site you are on, then captures clicks, fills, checks, choices and the
-keys that submit, close or move through a list, across the site's pages. **Stop** opens the
+keys that submit, close or move through a list, across the site's pages. A click on what a hover shows (row actions, a
+hover menu) is recorded after that hover. **Stop** opens the
 review: **Copy as TypeScript** for a runnable spec that waits for each page it opens, **Download steps** for a
 [steps file](/reference/steps-format) to share or render with [`piwi codegen`](/reference/cli#codegen), or
 **Discard**. Passwords are never captured: the spec reads them from `process.env`.
