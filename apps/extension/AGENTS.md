@@ -29,7 +29,10 @@ AMO listings that are still outstanding.
   twice, as `service_worker` (Chrome) and `scripts` (Firefox, which has no extension service
   workers — AMO rejects the manifest without it), and `gecko.data_collection_permissions` is
   `"none"`, which holds only while nothing is sent anywhere but the user's own instance. See
-  `PUBLISHING.md` §4.
+  `PUBLISHING.md` §4. The manifest's `description` and the shortcut's label are `__MSG_*__`
+  strings, translated in `public/_locales/` (English, the default, and French). The
+  description doubles as the store listings' summary, so it stays within 132 characters in every
+  language. The rest of the Firefox listing lives in `store/` (§4 c) — a new language needs both.
 - `src/content/` — content scripts, each a standalone entry injected on demand. Most are
   injected via `chrome.scripting.executeScript({ files: [...] })` from the popup (never
   `<all_urls>` static injection, never the `func:` stringify-and-inject form — a normal file
@@ -270,10 +273,10 @@ instead of needing a live browser for everything.
 
 | Command | Purpose |
 |---|---|
-| `npm run extension:build` | Build `dist/` (content scripts, background, popup, options page, manifest, icons) |
+| `npm run extension:build` | Build `dist/` (content scripts, background, popup, options page, manifest, icons, `_locales`) |
 | `npm run extension:dev` | Same build, re-run on every change to `src/`, `public/`, `popup.html`, `options.html`, or `manifest.json` |
 | `npm run extension:build:release` | Reproducible build: stamps the version instead of the build time into every bundle |
-| `npm run extension:zip` | Release build, then the store-ready zip plus the source zip Firefox AMO requires (see `PUBLISHING.md`) |
+| `npm run extension:zip` | Release build, then the store-ready zip, the source zip Firefox AMO requires, and the AMO listing metadata (see `PUBLISHING.md`) |
 | `npm run extension:typecheck` | TypeScript check |
 | `npm run extension:lint` / `extension:lint:fix` | oxlint |
 | `npm run extension:format` / `extension:format:check` | oxfmt |

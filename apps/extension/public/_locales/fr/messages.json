@@ -1,0 +1,10 @@
+{
+  "extDescription": {
+    "message": "Des locators Playwright stables et classés pour tout élément de la page, notés comme dans le tableau de bord Piwi.",
+    "description": "The manifest description: shown by the browser and used as the store listing's summary. At most 132 characters, the Chrome Web Store's limit."
+  },
+  "pickElementCommand": {
+    "message": "Obtenir le locator d'un élément de la page",
+    "description": "Label of the pick keyboard shortcut in the browser's shortcut settings."
+  }
+}
