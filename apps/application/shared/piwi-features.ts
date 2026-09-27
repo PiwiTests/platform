@@ -377,6 +377,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/tested-elements',
       },
       {
+        title: 'Report a bug',
+        summary:
+          'Record the steps to a bug, mark what the page should show, and get a failing Playwright test, a Markdown report and the evidence, from the browser.',
+        needs: ['extension'],
+        where: 'Browser extension → Report a bug',
+        doc: 'features/report-a-bug',
+      },
+      {
         title: 'Test functions catalog',
         summary: 'The reusable helpers and page-object methods your suite calls, catalogued with their parameters.',
         needs: [],

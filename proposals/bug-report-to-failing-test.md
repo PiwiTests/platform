@@ -11,7 +11,8 @@ followed until its spec passes.
 **Status.** Proposed 2026-09-27; revised the same day after deciding: replay targets the developer's local dev server
 in their everyday browser, Playwright runs go through the desktop app, and the `debugger` permission is not used (it
 cannot be optional; see [The `debugger` permission](#the-debugger-permission)). PR 1 (the steps file, the converter's
-options, Download steps and `piwi codegen`) is built; the rest is not. The extension gains
+options, Download steps and `piwi codegen`) and PR 2 (Report a bug in Piwi Picker, its evidence and local exports) are
+built; the rest is not. The extension gains
 two tools and, for the first time, requests that send page data to an instance, behind the explicit opt-in and preview
 its rules require. The reporter gains one wire field (`expectedStatus`); the dashboard gains a table, pages, endpoints,
 an issue type for the Jira integration, a CLI command and MCP tools; the desktop app gains a run request. The steps
@@ -260,29 +261,41 @@ wrong**, **Something is missing**, and **Finish**. Recording, navigation and the
   value shown as **actual**, an editable **expected** field, and a note ("the coupon is ignored").
 - **Something is missing** asks for a role and a name ("button", "Download invoice"), checked with the engine to find
   nothing on the page, and adds a `toBeVisible` assertion on `getByRole(role, { name })`.
-- **Wrong page** is `toHaveURL` with the expected path.
+- **Wrong page** is `toHaveURL` with the expected path, from a fourth HUD button.
+
+The expected mode is a dialog of the bug panel (`bug-panel.ts`) built on the assertion suggester's values
+(`suggestAssertions`), not a mode of `assertion-panel.ts`, which is an injected entry that runs when it loads. It offers
+the element's text, value and accessible name, and the opposite of each state it is in (hidden when visible, enabled
+when disabled, and so on). A missing element's assertion records "not on the page" as its actual value.
 
 ### 2.2 Evidence
 
-- **Screenshot.** `chrome.tabs.captureVisibleTab` from the background worker at each Mark what's wrong and at Finish.
-  When Chrome refuses it under the current grant, the report says "no screenshot" rather than asking for more
-  permission (open question 1).
+- **Screenshot.** `chrome.tabs.captureVisibleTab` from the background worker at each mark (what's wrong, missing,
+  wrong page) and at Finish, three kept at most (a new one replaces the last). The recorder's per-origin grant is not
+  enough: Chrome answers "Either the '<all_urls>' or 'activeTab' permission is required" (checked on the bundled
+  Chromium and in `bug-report.spec.ts` against the real extension). Screenshots therefore rely on the `activeTab` grant
+  of the popup click that starts the report, which lasts until the tab navigates; after that the report and the HUD say
+  "no screenshot", and the popup's tile, during a bug recording, reads **Take a screenshot** (opening the popup grants
+  `activeTab` again). No permission is widened.
 - **Console errors and failed requests.** For the duration of a bug recording, the recorder registers a second content
   script in the page's main world (`registerContentScripts` with `world: 'MAIN'`, the same origin grant,
   `document_start`). It wraps `console.error` and `console.warn`, listens to `error` and `unhandledrejection`, and
   wraps `fetch` and `XMLHttpRequest` to note requests that failed or answered 400 or more (method, path with query
   values removed as `normalizeRoute` does, status, time). Entries reach the recorder by `postMessage` with a
   per-recording token, capped at 100 of each. No body is read.
-- **Outline.** A walk over `DomModel` from the marked element's nearest landmark, in ARIA snapshot YAML, at most 400
-  lines (D13).
+- **Outline.** A walk over `DomModel` from the marked element's nearest landmark (the main landmark, else the body, for
+  a missing element, a wrong page or a report with no mark), in ARIA snapshot YAML, at most 400 lines (D13). The last
+  mark's outline is kept.
 - **Context.** Origin, page key and path, browser and version, viewport, time, extension version.
 
 ### 2.3 Output
 
 `packages/core/src/bug-report.ts`: `BugReport { steps: PiwiSteps, evidence, context }` and
-`renderBugMarkdown(report)` (steps in plain words, expected and actual, the note, the evidence summarized). The finish
-panel offers **Copy failing test** (the converter with `expectFail`), **Copy report**, **Download .zip** (`steps.json`,
-the spec, the Markdown, screenshots, `evidence.json`) and, when connected, **Send to Piwi…**.
+`renderBugMarkdown(report)` (steps in plain words, expected and actual, the note, the evidence summarized), and
+`renderBugSpec(report, options)`, the converter with the committed spec's defaults (`expectFail`, `@bug`, relative URLs,
+stable locators, URL checks). The finish panel offers **Copy failing test**, **Copy report**, **Download .zip**
+(`steps.json`, the spec, the Markdown, screenshots, `evidence.json`; stored without compression by `shared/zip.ts`) and,
+when connected, **Send to Piwi…** (PR 5).
 
 ## Part 3 — Reproducing it
 
@@ -439,14 +452,25 @@ PRs 1–3 close the loop between a tester and a developer with files alone: reco
 - Docs: `features/extension.md` (Download steps), `reference/cli.md` (`codegen`), `reference/steps-format.md` (new),
   the CLI drift check in `apps/application/tests/unit/docs-drift.test.ts`, D20 in `1.0-stabilization.md`.
 
-### PR 2 — reporting
-- `packages/core/src/bug-report.ts` (new: `BugReport`, `renderBugMarkdown`) with its tests.
-- `apps/extension/src/content/bug-panel.ts` (new), `bug-evidence-main.ts` (new, main world), `bug-outline.ts` (new),
-  `assertion-panel.ts` (expected mode), `record-panel.ts` (assert events), `src/background/index.ts` (screenshot,
-  main-world registration, message types), `src/popup/` (tile), `scripts/build.mjs` (entries).
-- Docs: `features/extension.md` (Report a bug; the outline and its label), `apps/extension/AGENTS.md` (the main-world
-  script).
-- Tests: e2e on the fixture shop (record, mark, missing element, console error, failed request, outline, exports).
+### PR 2 — reporting (built)
+- `packages/core/src/bug-report.ts` (new: `BugReport`, `renderBugMarkdown`, `renderBugSpec`, `reportedRequestUrl`,
+  `bugContextFrom`), `recording.ts` (`assert` raw events, kept in place by `normalizeSteps`), `./bug-report` in
+  `packages/core/package.json`; tests in `bug-report.test.ts` and `recording.test.ts`.
+- `apps/extension/src/content/bug-panel.ts` (new: HUD, the three dialogs with the expected mode, screenshots, the relay,
+  the finish panel), `bug-evidence-main.ts` (new, main world), `bug-outline.ts` (new), `bug-report-files.ts` (new, pure:
+  the report and the archive's files), `record-ui.ts` (new: the recorder's shared host ids and helpers),
+  `record-panel.ts` (bug mode, assert events, pause), `src/shared/bug-storage.ts`, `bug-relay.ts`, `zip.ts` (new),
+  `recording-storage.ts` (mode, token), `src/background/index.ts` (screenshot, main-world registration, message types),
+  `src/popup/` and `popup.html` (tile `B`), `scripts/build.mjs` (entry).
+- Docs: `features/report-a-bug.md` (new, in the feature catalog `apps/application/shared/piwi-features.ts`, since
+  `features/extension.md` is at its word budget; the extension page links it from its tool table),
+  `apps/extension/AGENTS.md` (Report a bug, the main-world script, screenshots).
+- Tests: `apps/extension/tests/e2e/bug-report.spec.ts` on the fixture shop (`bug-shop.ts`): record, mark, missing
+  element (one on the page refused), console error and warning, failed request, outline, each export, and the steps
+  rendered and run on a new page, failing on the marked assertion and passing once the shop is fixed; wrong page and no
+  screenshot; Escape during the pick; the real extension (main-world registration, cross-world relay, refused
+  screenshot, unregistration); the outline's format and its 400-line cut. Unit tests for the storage caps, the relay's
+  validation, the archive and the zip writer; the popup tile in `popup.spec.ts`.
 
 ### PR 3 — replay
 - `apps/extension/src/content/replay-panel.ts` (new, HUD and verdict), `replay-actions.ts` (new, events per action),
@@ -527,9 +551,11 @@ PRs 1–3 close the loop between a tester and a developer with files alone: reco
 
 ## Open questions
 
-1. **Screenshots across navigations.** Recommendation: verify whether the recorder's origin grant satisfies
-   `captureVisibleTab`; if not, take screenshots when the popup opens or the shortcut is used (both grant `activeTab`),
-   and say so in the HUD.
+1. **Screenshots across navigations.** Settled in PR 2: the origin grant does not satisfy `captureVisibleTab`, so
+   screenshots are taken under the `activeTab` grant (the Report a bug click, then **Take a screenshot** from the
+   popup), and the HUD and the report say when there is none (see 2.2). Not verified in a test, since a test cannot
+   click the toolbar icon: how long the popup click's grant lasts in practice (Chrome documents it as ending when the
+   tab navigates).
 2. **Reports from people without an API key.** Recommendation: not in this plan; a report-only key would need API key
    scopes, which do not exist yet.
 3. **Other trackers.** Recommendation: follow the issue-tracker plan's order; the bug document is written against the

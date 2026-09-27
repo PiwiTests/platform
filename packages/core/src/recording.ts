@@ -120,7 +120,8 @@ export interface RecordedSession {
 
 /** A raw capture event, as built by the extension's DOM listeners — one per meaningful browser event, before coalescing. */
 export interface RawCaptureEvent {
-  kind: 'click' | 'input' | 'change' | 'keydown' | 'navigate';
+  kind: 'click' | 'input' | 'change' | 'keydown' | 'navigate' | 'assert';
+  /** The element acted on or asserted about; null for a navigation and for a `toHaveURL` assertion. */
   target: RecordedTarget | null;
   /** Current field value (input/change), the key pressed (keydown), or the new URL (navigate). */
   value: string | null;
@@ -129,6 +130,8 @@ export interface RawCaptureEvent {
   isPasswordField: boolean;
   pageUrl: string;
   timestamp: number;
+  /** What an `assert` event states: an expected value or state, added by hand during a recording. */
+  assertion?: StepAssertion;
 }
 
 /**
@@ -178,6 +181,8 @@ const ENTER_CLICK_WINDOW_MS = 500;
  *    page — later navigations are implied by the click/press that caused
  *    them and are dropped (they still update `pageUrl` on later steps via
  *    the caller passing the current page's URL on each event).
+ *  - an `assert` event becomes an `assert` step where it was added, after
+ *    committing any fill in progress; one without an assertion is dropped;
  *  - password-field values are never carried through — `redacted: true`,
  *    `value: null`.
  */
@@ -279,6 +284,21 @@ export function normalizeSteps(events: RawCaptureEvent[]): RecordedStep[] {
         });
         continue;
       }
+      continue;
+    }
+
+    if (ev.kind === 'assert') {
+      flushPendingFill();
+      if (!ev.assertion) continue;
+      steps.push({
+        action: 'assert',
+        target: ev.assertion.matcher === 'toHaveURL' ? null : ev.target,
+        value: null,
+        redacted: false,
+        pageUrl: ev.pageUrl,
+        timestamp: ev.timestamp,
+        assertion: { ...ev.assertion },
+      });
       continue;
     }
 

@@ -184,6 +184,48 @@ describe('normalizeSteps', () => {
     const steps = normalizeSteps([ev({ kind: 'click', target: target({ text: `  ${long}  ` }), timestamp: 1 })]);
     expect(steps[0]!.target!.text).toHaveLength(120);
   });
+
+  test('an assert event becomes an assert step where it was added, after the fill in progress', () => {
+    const coupon = target({ accessibleName: 'Coupon' });
+    const total = target({
+      tagName: 'p',
+      role: null,
+      accessibleName: null,
+      testId: 'cart-total',
+      alternatives: [{ locator: `getByTestId('cart-total')`, method: 'getByTestId', score: 100 }],
+    });
+    const assertion = {
+      matcher: 'toHaveText' as const,
+      expected: 'Total: 42',
+      actual: 'Total: 40',
+      negated: false,
+      note: 'coupon ignored',
+    };
+    const steps = normalizeSteps([
+      ev({ kind: 'navigate', value: 'https://x.test/cart', timestamp: 1 }),
+      ev({ kind: 'input', target: coupon, value: 'SPRING', timestamp: 2 }),
+      ev({ kind: 'input', target: coupon, value: 'SPRING10', timestamp: 3 }),
+      ev({ kind: 'assert', target: total, assertion, pageUrl: 'https://x.test/cart', timestamp: 4 }),
+      ev({ kind: 'click', target: target({ accessibleName: 'Apply' }), timestamp: 5 }),
+    ]);
+    expect(steps.map((s) => s.action)).toEqual(['goto', 'fill', 'assert', 'click']);
+    expect(steps[1]).toMatchObject({ value: 'SPRING10' });
+    expect(steps[2]).toMatchObject({ target: { testId: 'cart-total' }, value: null, assertion });
+  });
+
+  test('a toHaveURL assert has no target, and an assert event without an assertion is dropped', () => {
+    const steps = normalizeSteps([
+      ev({
+        kind: 'assert',
+        target: target(),
+        assertion: { matcher: 'toHaveURL', expected: '/thanks', actual: '/cart', negated: false, note: null },
+        timestamp: 1,
+      }),
+      ev({ kind: 'assert', target: target(), timestamp: 2 }),
+    ]);
+    expect(steps).toHaveLength(1);
+    expect(steps[0]).toMatchObject({ action: 'assert', target: null, assertion: { matcher: 'toHaveURL' } });
+  });
 });
 
 describe('buildSession', () => {

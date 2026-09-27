@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { BrowserContext, Page } from '@playwright/test';
 import { test, expect } from './fixtures.js';
+import { dispatchRuntimeMessage, readStoredEvents, setRecordingActive, stubChromeStorage } from './recording-stub.js';
 import { normalizeSteps, type RawCaptureEvent } from '@piwitests/core/recording';
 import { renderSpec } from '@piwitests/core/codegen';
 import { parseSteps, sessionFromSteps, type PiwiSteps } from '@piwitests/core/steps';
@@ -12,95 +13,6 @@ import type { TestFunctionEntry } from '@piwitests/core/function-match';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.join(here, '..', '..', 'dist');
 const ORIGIN = 'https://record-test.local';
-
-/**
- * record-panel.ts reads/writes chrome.storage.session and .local directly —
- * real access needs a genuine content-script injection (background's
- * setAccessLevel call). Driving the bundle via page.addScriptTag (the same
- * shortcut session-panel.spec.ts uses) runs in the page's own main world
- * instead, with no chrome.* APIs at all, so this stubs a minimal
- * chrome.storage backed by `window.name` — one of the few things that
- * survives a real cross-page navigation in the same tab, which a plain
- * in-memory stub (reset by addInitScript re-running on every new document)
- * would not. `chrome.runtime.sendMessage` is a no-op stub, but `onMessage`
- * keeps its listeners so a test can play the part of the service worker
- * fanning a stop out with `chrome.tabs.sendMessage` (see
- * `dispatchRuntimeMessage`).
- */
-async function stubChromeStorage(
-  context: BrowserContext,
-  seed: { session?: Record<string, unknown>; local?: Record<string, unknown> } = {},
-): Promise<void> {
-  await context.addInitScript((initialSeed) => {
-    function load(): { session: Record<string, unknown>; local: Record<string, unknown> } {
-      if (!window.name) return { session: initialSeed.session ?? {}, local: initialSeed.local ?? {} };
-      try {
-        const parsed = JSON.parse(window.name);
-        return { session: parsed.session ?? {}, local: parsed.local ?? {} };
-      } catch {
-        return { session: {}, local: {} };
-      }
-    }
-    function persist(data: { session: Record<string, unknown>; local: Record<string, unknown> }): void {
-      window.name = JSON.stringify(data);
-    }
-    if (!window.name) persist(load());
-
-    function makeArea(area: 'session' | 'local') {
-      return {
-        get: async (key: string) => {
-          const data = load();
-          return { [key]: data[area][key] };
-        },
-        set: async (values: Record<string, unknown>) => {
-          const data = load();
-          Object.assign(data[area], values);
-          persist(data);
-        },
-        remove: async (key: string) => {
-          const data = load();
-          delete data[area][key];
-          persist(data);
-        },
-      };
-    }
-
-    const listeners: Array<(message: unknown) => void> = [];
-    (globalThis as any).__piwiTestRuntimeListeners = listeners;
-    (globalThis as any).chrome = {
-      storage: { session: makeArea('session'), local: makeArea('local') },
-      runtime: {
-        sendMessage: async () => ({ ok: true }),
-        onMessage: {
-          addListener: (fn: (message: unknown) => void) => {
-            listeners.push(fn);
-          },
-        },
-      },
-    };
-  }, seed);
-}
-
-/** Plays the service worker's `chrome.tabs.sendMessage` fan-out — the only way a stop reaches a content script. */
-async function dispatchRuntimeMessage(page: Page, message: unknown): Promise<void> {
-  await page.evaluate((msg) => {
-    for (const fn of (globalThis as any).__piwiTestRuntimeListeners ?? []) fn(msg);
-  }, message);
-}
-
-async function setRecordingActive(page: Page, active: boolean): Promise<void> {
-  await page.evaluate(async (isActive) => {
-    const chromeApi = (globalThis as any).chrome;
-    const stored = await chromeApi.storage.session.get('piwiRecording');
-    await chromeApi.storage.session.set({ piwiRecording: { ...stored.piwiRecording, active: isActive } });
-  }, active);
-}
-
-async function readStoredEvents(page: Page): Promise<RawCaptureEvent[]> {
-  const result = await page.evaluate(async () => (globalThis as any).chrome.storage.session.get('piwiRecording'));
-  const state = result.piwiRecording as { events?: RawCaptureEvent[] } | undefined;
-  return state?.events ?? [];
-}
 
 const LOGIN_PAGE = `<!doctype html><html><body>
   <input id="username" data-testid="username-field" />

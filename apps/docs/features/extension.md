@@ -29,6 +29,7 @@ Every tool below runs on the live page, from the toolbar popup. The last three n
 | [Session](#session) | named elements across pages, exported as a page object |
 | [Copy context for agent](#copy-context-for-agent) | one block about an element for a coding agent |
 | [Record actions](#record-actions) | a runnable spec from clicks and fills across pages |
+| [Report a bug](./report-a-bug) | a failing test and a report of a bug you reproduce |
 | [Matching functions](#matching-functions) | a recording that calls your own functions |
 | [Test functions](#test-functions-against-this-page) | which of your functions work on this page |
 | [Tested elements](#tested-elements) | which elements of this page your tests reach |
@@ -39,7 +40,8 @@ Install **[Piwi Picker from the Chrome Web Store ↗](https://chromewebstore.goo
 The same listing covers Edge and the other Chromium browsers; in Edge, click **Allow** on the *Allow extensions from
 other stores* banner once, then **Get**.
 
-Every tool in the popup has a key shown on its tile (`1` records, `2` picks, `T` opens Tested elements). One tool
+Every tool in the popup has a key shown on its tile (`1` records, `2` picks, `T` opens Tested elements, `B`
+reports a bug). One tool
 runs at a time and **Esc** cancels it; recording is the exception and runs until its own **Stop**.
 
 Picking also has a shortcut without the popup, suggested as `Ctrl+Shift+E` (`Cmd+Shift+E` on macOS). A browser
@@ -51,8 +53,7 @@ Hover highlights, a click picks. The pick snaps to the nearest actionable ancest
 the button), and ↑/↓ walk the DOM tree first, showing the locator each step would produce. For an element with a role,
 an **anchors** step lets you pick stable parents to scope the locator to, with a live match count.
 
-Every candidate is scored the way the dashboard scores captured locators, then counted again against the page as it
-is now. A candidate that matches several elements shows its count and a suggestion (`.first()`,
+Every candidate is scored the way the dashboard scores captured locators, then counted again against the page. A candidate that matches several elements shows its count and a suggestion (`.first()`,
 `.filter({ hasText: … })`), and ranks below every candidate that matches exactly one, so
 `getByTestId('product-43').getByRole('button')` beats a `getByRole('button', { name: 'Add to cart' })` that hits every
 card. Parents are anchored on the hook they carry (`data-testid`, `id`, a landmark role, an app-specific `data-*`),
@@ -65,7 +66,7 @@ the popup remembers the last form. **Copy all** copies every ranked locator, one
 
 ## Hover-inspect
 
-Toggled from the popup: hover any element to see its best-ranked locator in a tooltip, with no click.
+Hover any element to see its best-ranked locator in a tooltip, with no click.
 
 ## Locator console
 
@@ -91,7 +92,7 @@ Pick an element to get the `expect(...)` candidates that apply to it (`toHaveVal
 ## Session
 
 Pick and name elements as you browse, across pages, then export the list as a page-object fixture class, a Markdown
-table for a pull request or an issue, or JSON. The session lasts until the browser closes.
+table for a pull request or an issue, or JSON.
 
 ## Copy context for agent
 
@@ -112,14 +113,14 @@ reads a `process.env.*` placeholder.
 With a connection, the recorder loads the [function catalog](./test-functions) of the project mapped to the page: the
 page-object methods and helpers you registered. While recording, the overlay ranks which function the steps so far
 look like, with a progress count (`2/3`) until one matches in full. On export, a complete match becomes a call to
-your function; unmatched steps stay plain locator lines. The matcher only chooses among the functions you
-registered, never invents one, and scores DOM patterns without AI.
+your function; unmatched steps stay plain locator lines. The matcher only chooses among your registered functions
+and scores DOM patterns without AI.
 
 ## Test functions against this page
 
 **Test functions** in the popup scores every function of the active project's catalog against the page as it is now:
-**ready to use here** (every step resolves to one element), **partial match**, or **not found on this page**. No
-recording is needed. **Manage catalog in Piwi ↗** opens the project's Test functions page.
+**ready to use here** (every step resolves to one element), **partial match**, or **not found on this page**.
+**Manage catalog in Piwi ↗** opens the project's Test functions page.
 
 ## Tested elements
 

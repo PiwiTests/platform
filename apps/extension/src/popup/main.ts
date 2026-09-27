@@ -1,4 +1,11 @@
-import { getRecordingState, stopRecording, setRecordIntent, clearRecordIntent } from '../shared/recording-storage.js';
+import {
+  getRecordingState,
+  stopRecording,
+  setRecordIntent,
+  clearRecordIntent,
+  recordingMode,
+  type RecordingMode,
+} from '../shared/recording-storage.js';
 import { getConnectionSettings, isConnected, type ProjectMapping } from '../shared/connection-settings.js';
 import { getActiveProjectOverride, setActiveProjectOverride, resolveActiveProject } from '../shared/active-project.js';
 import { workerState } from '../shared/worker-status.js';
@@ -12,6 +19,9 @@ const activeProjectRow = document.getElementById('active-project-row')!;
 const activeProjectSelect = document.getElementById('active-project') as HTMLSelectElement;
 const coverageButton = document.getElementById('coverage-overlay') as HTMLButtonElement;
 const coverageHint = document.getElementById('coverage-hint')!;
+const bugBtn = document.getElementById('report-bug') as HTMLButtonElement;
+const bugLabel = document.getElementById('report-bug-label')!;
+const bugHint = document.getElementById('report-bug-hint')!;
 /** Set once the connection settings are read: "Tested elements" needs a Piwi instance. */
 let connected = false;
 
@@ -148,7 +158,12 @@ document.addEventListener('keydown', (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   const target = e.target as HTMLElement | null;
   if (target && ['INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName)) return;
-  const id = e.key === 't' || e.key === 'T' ? 'coverage-overlay' : KEY_TO_ACTION_ID[e.key];
+  const id =
+    e.key === 't' || e.key === 'T'
+      ? 'coverage-overlay'
+      : e.key === 'b' || e.key === 'B'
+        ? 'report-bug'
+        : KEY_TO_ACTION_ID[e.key];
   if (!id) return;
   e.preventDefault();
   document.getElementById(id)?.click();
@@ -229,30 +244,49 @@ type RecordUiState = 'idle' | 'recording' | 'stopped';
  * never act on a state that hasn't loaded.
  */
 let uiState: RecordUiState = 'idle';
+let uiMode: RecordingMode = 'actions';
 let recordTab: chrome.tabs.Tab | null = null;
 
-async function recordUiState(): Promise<{ state: RecordUiState; steps: number }> {
+async function recordUiState(): Promise<{ state: RecordUiState; mode: RecordingMode; steps: number }> {
   const rec = await getRecordingState();
-  if (rec.active) return { state: 'recording', steps: rec.events.length };
-  if (rec.events.length > 0) return { state: 'stopped', steps: rec.events.length };
-  return { state: 'idle', steps: 0 };
+  const mode = recordingMode(rec);
+  if (rec.active) return { state: 'recording', mode, steps: rec.events.length };
+  if (rec.events.length > 0) return { state: 'stopped', mode, steps: rec.events.length };
+  return { state: 'idle', mode: 'actions', steps: 0 };
 }
 
 async function refreshRecordButton(): Promise<void> {
-  const [{ state, steps }, tab] = await Promise.all([recordUiState(), activeTab()]);
+  const [{ state, mode, steps }, tab] = await Promise.all([recordUiState(), activeTab()]);
   uiState = state;
+  uiMode = mode;
   recordTab = tab;
+  const bug = mode === 'bug';
   if (state === 'recording') {
-    recordLabel.textContent = `Stop recording (${steps})`;
+    recordLabel.textContent = bug ? `Finish bug report (${steps})` : `Stop recording (${steps})`;
     recordHint.textContent = 'Steps captured so far';
   } else if (state === 'stopped') {
-    recordLabel.textContent = `Review recording (${steps})`;
+    recordLabel.textContent = bug ? 'Review bug report' : `Review recording (${steps})`;
     recordHint.textContent = 'Not exported yet';
   } else {
     recordLabel.textContent = 'Record actions';
     recordHint.textContent = 'Multi-page → TypeScript';
   }
   recordBtn.disabled = false;
+
+  if (state === 'recording' && bug) {
+    bugLabel.textContent = 'Take a screenshot';
+    bugHint.textContent = `Adds this tab, as it is now, to the bug report (${steps} events so far)`;
+  } else if (state === 'stopped' && bug) {
+    bugLabel.textContent = 'Review bug report';
+    bugHint.textContent = 'Copy the failing test, the report, or download it';
+  } else if (state !== 'idle') {
+    bugLabel.textContent = 'Report a bug';
+    bugHint.textContent = 'Finish or discard the current recording first';
+  } else {
+    bugLabel.textContent = 'Report a bug';
+    bugHint.textContent = "Record the steps, mark what's wrong → a failing test";
+  }
+  bugBtn.disabled = false;
 }
 
 /** The host permission a recording on `url` needs, or null when the page can't be recorded at all. */
@@ -266,7 +300,12 @@ function recordOriginPattern(url: string | undefined): string | null {
   }
 }
 
-async function startRecordingFlow(originPattern: string, tabId: number, granted: Promise<boolean>): Promise<void> {
+async function startRecordingFlow(
+  originPattern: string,
+  tabId: number,
+  mode: RecordingMode,
+  granted: Promise<boolean>,
+): Promise<void> {
   if (!(await granted)) {
     // Drop the intent the click parked for the worker, so a later unrelated
     // grant for this same origin can't revive a recording the user declined.
@@ -279,6 +318,7 @@ async function startRecordingFlow(originPattern: string, tabId: number, granted:
     type: 'piwi-start-recording',
     originPattern,
     tabId,
+    mode,
   })) as {
     ok: boolean;
     error?: string;
@@ -309,16 +349,11 @@ async function reviewRecordingFlow(): Promise<void> {
   await inject('record-panel.js');
 }
 
-recordBtn.addEventListener('click', () => {
-  if (uiState === 'recording') {
-    void stopRecordingFlow();
-    return;
-  }
-  if (uiState === 'stopped') {
-    void reviewRecordingFlow();
-    return;
-  }
-
+/**
+ * Starts a recording of `mode` on the popup's tab. Synchronous up to the
+ * permission request, which must run inside the click's user gesture.
+ */
+function requestRecording(mode: RecordingMode): void {
   const originPattern = recordOriginPattern(recordTab?.url);
   if (originPattern == null || recordTab?.id == null) {
     statusEl.textContent = "Can't record on this page.";
@@ -338,8 +373,52 @@ recordBtn.addEventListener('click', () => {
   // used to leave the recorder needing a second click. Fire-and-forget: it must
   // not delay the request above, and `startRecordingFlow` still starts things
   // directly whenever the popup does survive.
-  void setRecordIntent({ originPattern, tabId });
-  void startRecordingFlow(originPattern, tabId, granted);
+  void setRecordIntent({ originPattern, tabId, mode });
+  void startRecordingFlow(originPattern, tabId, mode, granted);
+}
+
+recordBtn.addEventListener('click', () => {
+  if (uiState === 'recording') {
+    void stopRecordingFlow();
+    return;
+  }
+  if (uiState === 'stopped') {
+    void reviewRecordingFlow();
+    return;
+  }
+  requestRecording('actions');
+});
+
+/**
+ * Report a bug: starts a bug recording, or during one asks the page for a
+ * screenshot. Opening this popup is what grants `activeTab`, the only grant
+ * under which Chrome allows one.
+ */
+async function bugScreenshotFlow(): Promise<void> {
+  const tab = await activeTab();
+  if (tab?.id == null) return;
+  try {
+    await chrome.tabs.sendMessage(tab.id, { type: 'piwi-bug-take-screenshot' });
+    window.close();
+  } catch {
+    statusEl.textContent = 'This tab is not the one being recorded.';
+  }
+}
+
+bugBtn.addEventListener('click', () => {
+  if (uiState === 'recording' && uiMode === 'bug') {
+    void bugScreenshotFlow();
+    return;
+  }
+  if (uiState === 'stopped' && uiMode === 'bug') {
+    void reviewRecordingFlow();
+    return;
+  }
+  if (uiState !== 'idle') {
+    statusEl.textContent = 'Finish or discard the current recording before reporting a bug.';
+    return;
+  }
+  requestRecording('bug');
 });
 
 /** Offer a reload when the background worker predates this popup's build (see `shared/build-id.ts`). */
@@ -351,6 +430,7 @@ async function showOutdatedWorkerNotice(): Promise<void> {
 }
 
 recordBtn.disabled = true;
+bugBtn.disabled = true;
 void refreshRecordButton().catch(() => {
   // Left disabled on purpose: acting on a state we failed to read could start a
   // second recording over a live one.
