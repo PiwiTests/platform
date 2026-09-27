@@ -2145,6 +2145,9 @@
       }
     }
   },
+  "replay_startedHere": {
+    "message": "Stattdessen auf der Seite des Tabs begonnen."
+  },
   "replay_reasonActionFailed": {
     "message": "Die Seite hat auf die Aktion nicht so reagiert wie bei der Aufzeichnung."
   },
@@ -2209,6 +2212,15 @@
   },
   "replay_stepByStepHint": {
     "message": "Schrittweise: Klicken Sie vor jedem Schritt auf Nächster Schritt"
+  },
+  "replay_startHere": {
+    "message": "Auf dieser Seite beginnen, statt zuerst $path$ zu öffnen",
+    "placeholders": {
+      "path": {
+        "content": "$1",
+        "example": "/projects/1?tab=runs"
+      }
+    }
   },
   "replay_start": {
     "message": "Abspielen"

@@ -2145,6 +2145,9 @@
       }
     }
   },
+  "replay_startedHere": {
+    "message": "Começou na página da aba, em vez disso."
+  },
   "replay_reasonActionFailed": {
     "message": "A página não reagiu à ação como reagiu durante a gravação."
   },
@@ -2209,6 +2212,15 @@
   },
   "replay_stepByStepHint": {
     "message": "Passo a passo: clique em Próximo passo antes de cada passo"
+  },
+  "replay_startHere": {
+    "message": "Começar nesta página, sem abrir $path$ antes",
+    "placeholders": {
+      "path": {
+        "content": "$1",
+        "example": "/projects/1?tab=runs"
+      }
+    }
   },
   "replay_start": {
     "message": "Reproduzir"
