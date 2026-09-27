@@ -25,7 +25,11 @@ AMO listings that are still outstanding.
   *standing* permission here is still a deliberate, reviewed decision, not a default.
   `browser_specific_settings.gecko.id` is Firefox's required stable add-on ID (Chromium ignores
   the key); don't change it once the add-on is published to AMO — a new ID creates a separate
-  add-on rather than an update, orphaning existing installs. See `PUBLISHING.md`.
+  add-on rather than an update, orphaning existing installs. `background` names `background.js`
+  twice, as `service_worker` (Chrome) and `scripts` (Firefox, which has no extension service
+  workers — AMO rejects the manifest without it), and `gecko.data_collection_permissions` is
+  `"none"`, which holds only while nothing is sent anywhere but the user's own instance. See
+  `PUBLISHING.md` §4.
 - `src/content/` — content scripts, each a standalone entry injected on demand. Most are
   injected via `chrome.scripting.executeScript({ files: [...] })` from the popup (never
   `<all_urls>` static injection, never the `func:` stringify-and-inject form — a normal file
@@ -66,6 +70,14 @@ startup, but it is torn down when idle, so a script injected at `document_start`
 before that has been applied — and the read *throws* rather than returning empty. The helper
 pings the worker, which both wakes it and withholds its reply until the widening resolves.
 Skipping this is what made the recorder's HUD appear only sometimes.
+
+**Session storage goes through `sessionArea()` (`src/shared/session-area.ts`), never
+`chrome.storage.session` directly.** Firefox has no `setAccessLevel` and no session storage in
+content scripts at all, so there `sessionArea()` sends each get/set/remove to the background
+script (`piwi-session-storage`), and the recorder's appends go as one `piwi-append-recording-event`
+message each (see `appendRecordingEvent`) so a click that navigates away is not lost between a
+read and a write. A module reaching `chrome.storage.session` itself works in Chrome and breaks
+only in Firefox, which no CI run exercises.
 
 ## Connected mode (recording → your own functions)
 
@@ -230,8 +242,9 @@ instead of needing a live browser for everything.
 - **`chrome.storage.session` needs `setAccessLevel` to be reachable from a content script.**
   It defaults to extension-page/service-worker-only access; `src/background/index.ts` widens
   it once at startup (`TRUSTED_AND_UNTRUSTED_CONTEXTS`) specifically so `session-panel.ts` and
-  `recording-storage.ts` can read/write it directly from a content script. `chrome.storage.local`
-  (connection settings, the catalog cache) has no such restriction.
+  `recording-storage.ts` can read/write it directly from a content script — in Chrome. Firefox
+  has no such call, which is why every access goes through `sessionArea()` (see above).
+  `chrome.storage.local` (connection settings, the catalog cache) has no such restriction.
 - **Two different test strategies for content-script logic, pick deliberately.** A function
   built entirely from nested helpers with no imports from `@piwitests/core`'s scoring engine
   (`evaluateLocatorChain`, `derivePattern`, `testCatalogAgainstPage`) can be re-serialized via
@@ -259,7 +272,8 @@ instead of needing a live browser for everything.
 |---|---|
 | `npm run extension:build` | Build `dist/` (content scripts, background, popup, options page, manifest, icons) |
 | `npm run extension:dev` | Same build, re-run on every change to `src/`, `public/`, `popup.html`, `options.html`, or `manifest.json` |
-| `npm run extension:zip` | Build, then package `dist/` as a store-ready zip (see `PUBLISHING.md`) |
+| `npm run extension:build:release` | Reproducible build: stamps the version instead of the build time into every bundle |
+| `npm run extension:zip` | Release build, then the store-ready zip plus the source zip Firefox AMO requires (see `PUBLISHING.md`) |
 | `npm run extension:typecheck` | TypeScript check |
 | `npm run extension:lint` / `extension:lint:fix` | oxlint |
 | `npm run extension:format` / `extension:format:check` | oxfmt |

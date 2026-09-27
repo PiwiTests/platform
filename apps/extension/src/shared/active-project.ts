@@ -1,5 +1,6 @@
 import { urlMatches } from '@piwitests/core/function-match';
 import type { ConnectionSettings } from './connection-settings.js';
+import { sessionArea } from './session-area.js';
 
 export interface ActiveProject {
   projectId: number;
@@ -18,7 +19,7 @@ const OVERRIDE_KEY = 'piwiActiveProjectOverride';
  * recording/pick-session state in `recording-storage.ts`/`session-storage.ts`.
  */
 export async function getActiveProjectOverride(): Promise<ActiveProject | null> {
-  const stored = await chrome.storage.session.get(OVERRIDE_KEY);
+  const stored = await sessionArea().get(OVERRIDE_KEY);
   const value = stored[OVERRIDE_KEY];
   if (!value || typeof value !== 'object') return null;
   const v = value as Partial<ActiveProject>;
@@ -28,8 +29,8 @@ export async function getActiveProjectOverride(): Promise<ActiveProject | null> 
 }
 
 export async function setActiveProjectOverride(project: ActiveProject | null): Promise<void> {
-  if (project) await chrome.storage.session.set({ [OVERRIDE_KEY]: project });
-  else await chrome.storage.session.remove(OVERRIDE_KEY);
+  if (project) await sessionArea().set({ [OVERRIDE_KEY]: project });
+  else await sessionArea().remove(OVERRIDE_KEY);
 }
 
 /**

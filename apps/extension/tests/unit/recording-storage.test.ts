@@ -9,6 +9,7 @@ import {
   getRecordIntent,
   clearRecordIntent,
   decideRecordIntent,
+  serveAppendRecordingEvent,
   RECORD_INTENT_TTL_MS,
   type RecordIntent,
 } from '../../src/shared/recording-storage.js';
@@ -120,6 +121,51 @@ describe('recording state', () => {
     await appendRecordingEvent({ ...clickEvent, timestamp: 2 });
     const state = await getRecordingState();
     expect(state.events.map((e) => e.timestamp)).toEqual([2]);
+  });
+
+  it('in a Firefox content script, each append is one message, sent without waiting for the last', async () => {
+    // No session storage in this context: the background does the whole
+    // read-modify-write. Sending at once is what keeps a click that navigates
+    // away from being lost — the page may unload before an earlier append settles.
+    const sent: unknown[] = [];
+    const answers: Array<() => void> = [];
+    (globalThis as any).chrome = {
+      storage: { local: {} },
+      runtime: {
+        sendMessage: (msg: unknown) => {
+          sent.push(msg);
+          return new Promise((resolve) => answers.push(() => resolve({ ok: true, state: { active: true } })));
+        },
+      },
+    };
+
+    const appends = [appendRecordingEvent(clickEvent), appendRecordingEvent({ ...clickEvent, timestamp: 2 })];
+    await Promise.resolve();
+    expect(sent).toEqual([
+      { type: 'piwi-append-recording-event', event: clickEvent },
+      { type: 'piwi-append-recording-event', event: { ...clickEvent, timestamp: 2 } },
+    ]);
+    answers.forEach((answer) => answer());
+    expect((await Promise.all(appends)).map((state) => state.active)).toEqual([true, true]);
+  });
+
+  it('in a Firefox content script, a failed append rejects to its caller', async () => {
+    (globalThis as any).chrome = {
+      storage: { local: {} },
+      runtime: { sendMessage: async () => ({ ok: false, error: 'QUOTA_BYTES quota exceeded' }) },
+    };
+    await expect(appendRecordingEvent(clickEvent)).rejects.toThrow(/quota/i);
+  });
+
+  it('the background serves appends from content scripts in order, and refuses a malformed one', async () => {
+    await startRecording('https://x.test/*');
+    const answers = await Promise.all([
+      serveAppendRecordingEvent(clickEvent),
+      serveAppendRecordingEvent({ ...clickEvent, timestamp: 2 }),
+    ]);
+    expect(answers.every((answer) => answer.ok)).toBe(true);
+    expect((await getRecordingState()).events.map((e) => e.timestamp)).toEqual([1, 2]);
+    expect(await serveAppendRecordingEvent(null)).toEqual({ ok: false, error: 'Malformed recording event.' });
   });
 
   it('stopRecording flips active to false but keeps events', async () => {
