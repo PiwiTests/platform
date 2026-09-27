@@ -1,46 +1,68 @@
 # Bug reports as failing tests
 
-A plan to turn a bug report into the test that proves it. In Piwi Picker, **Report a bug** records the steps with the
-existing recorder, lets the reporter mark what is wrong ("this should read Total: 42"), collects evidence from the page
-(a screenshot, console errors, failed requests, an outline of the page), and produces a Playwright spec that fails
-because of the bug. Without an instance, that is a spec and a Markdown report to copy. With one, the report is stored
-in Piwi, filed in Jira with the spec and the evidence, linked to the tests that already visit that page, and followed
-until the spec passes, which is when the bug is fixed.
+A plan to turn a bug report into the test that proves it, and to let the developer who receives it watch it happen.
+In Piwi Picker, **Report a bug** records the steps with the existing recorder, lets the reporter mark what is wrong
+("this should read Total: 42"), and collects evidence from the page. The result is a **steps document**: structured
+data, not code. From it, a converter writes a Playwright spec that fails because of the bug; the extension **replays**
+it in the developer's own tab against their local dev server; and the desktop app **runs** it with Playwright. With an
+instance, the report is also stored in Piwi, filed in Jira, linked to the tests that already visit the page, and
+followed until its spec passes.
 
-**Status.** Proposed 2026-09-27. Nothing is built. The extension gains a tool and, for the first time, a request that
-sends page data to an instance, behind the explicit opt-in and preview its rules require. The reporter gains one wire
-field (`expectedStatus`); the dashboard gains a table, pages, an endpoint, an issue type for the Jira integration and
-MCP tools. The wire field, the annotation, the endpoint and the MCP tools freeze at 1.0 (one new D entry in
-[`1.0-stabilization.md`](1.0-stabilization.md)).
+**Status.** Proposed 2026-09-27; revised the same day after deciding: replay targets the developer's local dev server
+in their everyday browser, Playwright runs go through the desktop app, and the `debugger` permission is not used (it
+cannot be optional; see [The `debugger` permission](#the-debugger-permission)). Nothing is built. The extension gains
+two tools and, for the first time, requests that send page data to an instance, behind the explicit opt-in and preview
+its rules require. The reporter gains one wire field (`expectedStatus`); the dashboard gains a table, pages, endpoints,
+an issue type for the Jira integration, a CLI command and MCP tools; the desktop app gains a run request. The steps
+document, the wire field, the annotation, the endpoints, the CLI command and the MCP tools freeze at 1.0 (one new D
+entry in [`1.0-stabilization.md`](1.0-stabilization.md)).
 
 **Summary.** A bug report is prose: steps someone remembers, a screenshot, "it should say 42". The developer rebuilds
 the steps, often cannot reproduce, and when the fix lands nothing checks that it holds. Piwi Picker already records a
-flow into a runnable spec, knows how to write `expect(...)` lines for an element, and matches recorded steps against a
-project's own page objects. This plan adds the missing half: an **expected** assertion that states the correct
-behavior (so the spec fails today), evidence captured while recording, and a lifecycle. The spec is written with
-`test.fail()` and a link to the ticket, so it can be committed at once without turning CI red. It documents the bug
-and passes while the bug exists. When someone fixes the bug, the spec's unexpected pass is a signal Piwi reports as
-"this bug looks fixed" (not a new failure), on the pull request and on the ticket. Every report is also an escaped
-defect: a bug on a page the suite visits, which the Test Map's escape history and exposure ranking have been waiting
-for.
+flow into structured steps, turns them into a runnable spec, knows how to write `expect(...)` lines for an element,
+and matches steps against a project's own page objects. This plan makes the steps the product. A report is a
+versioned steps document with an **expected** assertion that states the correct behavior, plus evidence. One converter
+in core renders it as Playwright code, with the project's own `test` import, relative URLs, the stable locator the
+suite already uses, and `test.fail()` for a spec meant to be committed now. The extension replays the same steps in
+the developer's tab, on `localhost`, with their session and DevTools open, and answers in three ways: reproduced, not
+reproduced, or diverged at step N. The desktop app runs the rendered spec with Playwright in the linked project, headed
+or with a trace, and records it as a normal run. The committed `test.fail()` spec keeps CI green while the bug exists,
+and its unexpected pass is reported as "this bug looks fixed" rather than as a new failure. Every report is also an
+escaped defect, which the Test Map's escape history has been waiting for.
 
 ## What the reader gets
 
+On the reporter's side:
+
 ```
-Piwi Picker · Report a bug                                          ● recording · 4 steps
+Piwi Picker · Report a bug                                    ● recording · staging.acme.com · 4 steps
   1  goto /cart
   2  fill "Coupon" with "SPRING10"
   3  click button "Apply"
   4  expect cart total  toHaveText  "Total: 42"        actual: "Total: 40"   ← marked as wrong
   [Mark what's wrong]  [Something is missing]  [Finish]
 
-Finish → Bug report · "Coupon not applied to the total"
+Finish → "Coupon not applied to the total"
   Evidence  screenshot · 1 console error · 1 failed request (POST /api/cart/coupon 500) · page outline
   [Copy failing test]  [Copy report (Markdown)]  [Download .zip]  [Send to Piwi…]
 ```
 
+On the developer's side, in their own browser on the local dev server:
+
+```
+Piwi Picker · Replay · bug #37 "Coupon not applied to the total"         on http://localhost:3000
+  ✓ 1  goto /cart
+  ✓ 2  fill "Coupon" with "SPRING10"
+  ✓ 3  click button "Apply"
+  ✗ 4  expect cart total toHaveText "Total: 42"      got "Total: 40"
+  Reproduced · the same value as reported · POST /api/cart/coupon answered 500 here too
+  [Step mode]  [Replay again]  [Run with Playwright in the desktop app]  [Copy failing test]
+```
+
+The spec the converter writes for committing:
+
 ```ts
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../fixtures';
 
 test('bug: coupon not applied to the total', {
   tag: '@bug',
@@ -53,13 +75,16 @@ test('bug: coupon not applied to the total', {
   await page.goto('/cart');
   await page.getByLabel('Coupon').fill('SPRING10');
   await page.getByRole('button', { name: 'Apply' }).click();
-  await expect(page.getByTestId('cart-total')).toHaveText('Total: 42'); // was "Total: 40" when reported
+  await expect(page.getByTestId('cart-total')).toHaveText('Total: 42'); // "Total: 40" when reported
 });
 ```
+
+In Piwi:
 
 ```
 Bug report #37 · Coupon not applied to the total              open · SHOP-812 · test committed
   /cart · Chrome 141 · reported by ana@acme · 2 days ago
+  Reproduced  by a developer on localhost:3000 (replay) · with Playwright on 9f2c1e0 (desktop, trace)
   Why the suite missed it  4 tests visit /cart; 2 reach the total, and none asserts its text
   Owner  @acme/checkout (CODEOWNERS of tests/cart.spec.ts, the page's main test file)
   Spec   tests/bugs/coupon-not-applied.spec.ts · expected failure in 3 runs
@@ -67,273 +92,446 @@ Bug report #37 · Coupon not applied to the total              open · SHOP-812 
 
 ## What exists
 
-- **The recorder.** `record-panel.ts` captures `click`, `input`, `change` and Enter in the page, and a navigation per
-  page, into a raw event stream in `chrome.storage.session` (`recording-storage.ts`). `normalizeSteps`
-  (`packages/core/src/recording.ts`) merges them into steps, and `renderSpec` (`packages/core/src/codegen.ts`) emits a
-  `test('recorded flow', …)` with one line per step, a redacted password fill as `process.env.PIWI_TEST_VALUE_<i>`,
-  and, with a function catalog, calls to the project's own page objects (`matchFunctionAt`). Recording follows one
-  origin across pages. `StepAction` includes `assertVisible` and codegen renders it, but the recorder never emits it;
-  the recording HUD has only Stop.
+- **The recorder records data, then renders code.** `record-panel.ts` captures `click`, `input`, `change` and Enter in
+  the page, and a navigation per page, into a raw event stream in `chrome.storage.session` (`recording-storage.ts`).
+  `normalizeSteps` (`packages/core/src/recording.ts`) turns it into a `RecordedSession` of `RecordedStep`s: an action
+  (`goto`, `click`, `fill`, `check`, `uncheck`, `selectOption`, `press`, `assertVisible`), a value (never for a password
+  field: `redacted`), the page URL, and a `RecordedTarget` with the element's tag, role, accessible name, test id, text
+  and ranked locator `alternatives`, computed at capture time. Recording follows one origin across pages, top frame
+  only. `assertVisible` exists but the recorder never emits it.
+- **The generator.** `renderSpec(session, { title, catalog })` (`packages/core/src/codegen.ts`) emits
+  `import { test, expect } from '@playwright/test'`, a `test('recorded flow', …)`, one line per step with the first
+  alternative as the locator, a redacted fill as `process.env.PIWI_TEST_VALUE_<i>`, and, with a function catalog,
+  calls to the project's page objects (`matchFunctionAt`) with their imports. Every value is quoted by one escaping
+  function, and catalog identifiers are checked before they are emitted (`callIdentifiersAreSafe`). `goto` emits the
+  **recorded absolute URL**, so a spec recorded on staging does not follow the developer's `baseURL`.
 - **The assertion suggester** (`assertion-suggest.ts`, `assertion-panel.ts`) proposes `toHaveValue`, `toHaveText`,
-  `toHaveAccessibleName` and `toBeVisible` for a picked element, each with the element's **current** value. There is
-  no way to type an expected value.
-- **The in-page engine** (`engine-aria.ts`, `DomModel`) computes role, accessible name and description, states and
-  visibility per element. No outline or ARIA snapshot is built from it; the docs list "no aria-snapshot copier" as a
-  limit because Playwright's own snapshot needs the `debugger` permission.
-- **Connected mode is read-only.** `piwi-client.ts`, the extension's only networked module, makes three kinds of GET
-  requests (project menu, function catalog, locator index), from the options page and the background worker only. The
-  manifest asks for `activeTab`, `scripting`, `storage` and optional host permissions. Nothing captures a screenshot,
-  a console message or a failed request, and no content script runs in the page's main world.
-- **The extension's rules** (`apps/extension/AGENTS.md`): no network call from a content script; a feature that sends
-  recorded data needs explicit opt-in, clear separation and a payload preview before the first send; standing
-  permissions are not widened casually. The docs say "A recording is never sent to your instance".
+  `toHaveAccessibleName` and `toBeVisible` with the element's **current** value; nothing lets a person type an
+  expected value.
+- **The in-page engine.** `locator-engine.ts` resolves Playwright locator chains in the page and is checked against real
+  Playwright (`locator-engine.spec.ts`); `engine-aria.ts` (`DomModel`) computes role, accessible name, states and
+  visibility. Tested elements and the pick flow already rely on both.
+- **Judging and preferring locators.** `assessLocatorChain` (`packages/core/src/locator-stability.ts`) rates a chain;
+  `canonicalLocator` (`locator-chain.ts`) normalizes one; the locator index lists every chain a project's tests use.
+- **Connected mode is read-only.** `piwi-client.ts`, the extension's only networked module, makes GET requests (project
+  menu, function catalog, locator index) from the options page and the background worker. The manifest asks for
+  `activeTab`, `scripting`, `storage` and optional host permissions, requested per origin from a popup click. Nothing
+  captures a screenshot, a console message or a failed request, and no content script runs in the page's main world.
+- **The extension's rules** (`apps/extension/AGENTS.md`): no network call from a content script; sending recorded data
+  needs explicit opt-in, clear separation and a payload preview before the first send; no standing permission is added
+  without a deliberate decision. The docs say "A recording is never sent to your instance".
+- **The desktop app.** It serves the dashboard on a loopback port (3000 when free) and publishes that URL with a
+  full-access local token in `~/.piwi/desktop.json` (mode 0600), which the reporter reads to find it. The window keeps
+  an event stream open (`GET /api/desktop/events`), which already carries `open-page` requests handed over from the
+  system browser (`server/utils/desktop-handoff.ts`). Tests run through Rust commands in the linked project folder or a
+  throwaway worktree (`runner.rs`, `worktree.rs`), with an allowlist of Playwright flags that includes `--headed`,
+  `--debug`, `--trace`, `--project`, `--repeat-each`; the webview cannot set environment variables, Rust does.
 - **Jira.** `IssueTracker` (`server/utils/integrations/types.ts`) with a Jira Cloud client that can create, comment,
   transition, search and attach (`jira/client.ts`). `POST /api/integrations/issues` files an issue for a failure
-  cluster or an execution, and `createIssue` needs the entity to resolve to a cluster. `buildIssueDocument`
-  (`shared/integrations/build-issue.ts`) writes What happened, Most likely, Evidence, What to do and Links, in English or
-  French. `attach()` is implemented but never called, and the outbox (`integration_actions`, `actions.ts`) handles
-  `create-issue`, `comment` and `transition` only. Links live in `entity_links`; status sync and policies
-  (`commentOnFix`, `transitionOnFix`, `resolveOnClose`, …) run in `server/tasks/integrations/sync.ts`.
+  cluster or an execution, and `createIssue` needs a cluster. `buildIssueDocument`
+  (`shared/integrations/build-issue.ts`) writes the issue in English or French. `attach()` exists but is never called,
+  and the outbox (`integration_actions`, `actions.ts`) handles `create-issue`, `comment` and `transition` only. Links
+  live in `entity_links`; status sync and policies (`commentOnFix`, `transitionOnFix`, `resolveOnClose`, …) run in
+  `server/tasks/integrations/sync.ts`.
 - **`test.fail()`.** `classifyStatus` (`packages/core/src/status-classify.ts`) inverts the outcome: an expected failure
-  that passes becomes `failed` with the error "Expected to fail, but passed.". There is no `expectedStatus` column; the
-  `fail` annotation survives in `test_runs_cases.test_annotations`. Such a row is clustered like any failure, and since
-  the error fingerprint ignores the call site, every unexpected pass of a project likely lands in one cluster.
-- **Annotations.** `parseTestMetadata` (`packages/core/src/test-meta.ts`) reads `piwi:owner`, `piwi:priority`,
-  `piwi:feature` and `piwi:link` into `test_cases` columns. A link is shown, not matched to a ticket.
-- **Owners.** `primaryOwnerForPath` (`packages/core/src/codeowners.ts`) resolves CODEOWNERS for any repository path;
-  `resolveOwners` applies it to spec paths. No page or route maps to an application source file.
-- **Tests per page.** The locator index carries the page of each locator use (`LocatorIndex.pages`, `uses[].pages`),
-  and `locator_usages` has `page` and `action`.
-- **Escapes are derived, not recorded.** A file counts as escaped when a recent commit touching it is some cluster's
-  fix commit (`server/utils/scm/change-coverage.ts`). `detectEscapedDefect` (`shared/handlers/scenario-gaps.ts`) is a
-  pure function over tracker bugs with no linked cluster; its loader is not wired.
-- **Lifecycle patterns.** `scenario_gaps` has `open`, `snoozed`, `dismissed`, `accepted` and `closed`, with a ticket,
-  a test case and the run that closed it, and closes itself when a run reaches its page. `markers` and `entity_links`
-  are created by hand through the API. Uploaded files use the storage adapter (`server/storage/types.ts`) that holds
-  run artifacts. API keys act as their user, with no scopes.
+  that passes becomes `failed` with "Expected to fail, but passed.". No `expectedStatus` is stored, and such rows are
+  clustered like any failure (with the call site ignored by the fingerprint, likely into one cluster per project).
+- **Annotations, owners, pages.** `parseTestMetadata` (`packages/core/src/test-meta.ts`) reads `piwi:owner`,
+  `piwi:priority`, `piwi:feature`, `piwi:link`. `primaryOwnerForPath` (`codeowners.ts`) resolves CODEOWNERS for any
+  path. The locator index carries the page of each locator use.
+- **Escapes are derived, not recorded.** `detectEscapedDefect` (`shared/handlers/scenario-gaps.ts`) is a pure function
+  over tracker bugs with no linked cluster; its loader is not wired.
+- **Patterns to follow.** `scenario_gaps` has a lifecycle (`open` … `closed`) that closes itself from a run; uploaded
+  files use the storage adapter (`server/storage/types.ts`) that holds run artifacts; API keys act as their user, and
+  the roles `administrator`, `reporter` and `user` are what endpoints require.
+
+## The `debugger` permission
+
+The high-fidelity way for an extension to drive a page is the Chrome DevTools Protocol through `chrome.debugger`: it
+sends trusted input, as Playwright does, and would also give real console, network and accessibility data. It cannot be
+optional:
+
+- Chrome's permissions reference lists `debugger` among the "permissions that can *not* be specified as optional",
+  with `declarativeNetRequest`, `devtools`, `geolocation`, `mdns`, `proxy`, `tts`, `ttsEngine` and `wallpaper`
+  ([chrome.permissions](https://developer.chrome.com/docs/extensions/reference/api/permissions)).
+- Checked on the Chromium this repository's tests use: an unpacked extension declaring
+  `"optional_permissions": ["debugger", "tabs"]` keeps both in its manifest, but `chrome.permissions.request({
+  permissions: ['debugger'] })` from a click in its popup rejects with "Only permissions specified in the manifest may be
+  requested", while the same request for `tabs` opens the permission prompt.
+
+As a required permission, `debugger` would add an install warning for every user, and an update that adds it disables
+the extension until each user accepts the new warning; Chrome also shows a "started debugging this browser" bar while it
+is attached. So this plan does not use it. Replay uses the page's own events, and exact fidelity comes from Playwright
+in the desktop app.
 
 ## Decisions
 
 | # | Decision | Why |
 |---|---|---|
-| D1 | Report a bug reuses the recorder, the pick flow and the assertion suggester. What is new is an **expected** assertion, a missing-element assertion and evidence. | Recording and codegen already work across pages and use the project's page objects. |
-| D2 | Every report yields a spec and Markdown locally, with no instance. Sending to Piwi is a separate, explicit action with a preview of exactly what is sent, and checkboxes per kind of evidence. | The extension's standalone stance and its rule for sending page data. |
-| D3 | The spec is written with `test.fail()` and the report's annotations. An option writes a plain failing test instead. | A committed `test.fail()` spec keeps CI green, documents the bug, and turns into a signal when the bug is fixed. |
-| D4 | An expected failure that passes is its own outcome, "expected failure passed", recorded from a new `expectedStatus` wire field. It is not clustered; it is reported as "this bug looks fixed". | Treating it as one more failure hides the good news in a cluster shared by every such test. |
-| D5 | Console errors and failed requests are captured by a main-world script the recorder registers with its existing `scripting` permission and origin grant, not with `debugger`. | No new standing permission. The page can tamper with that script, which is acceptable for evidence a person reviews. |
-| D6 | The page outline is built by the extension's own engine in the YAML form of Playwright's ARIA snapshots, and labeled "outline", not "ARIA snapshot". | It is the engine the locator checks already trust, but it is not Playwright's snapshot; the label says so. |
-| D7 | A report is linked to its test by a `piwi:bug` annotation holding the report id, and to its ticket through `entity_links`. | An annotation survives renames and moves of the test, as `piwi:owner` does. |
-| D8 | Every report is an escaped defect for the Test Map, keyed by its page. | A bug on a page the suite visits is the escape history the exposure ranking was designed to use. |
-| D9 | Typed values stay in the spec as typed, except passwords (already redacted); the preview shows them, and a checkbox replaces every typed value with an environment variable. | A reproduction often needs the exact input; the reporter decides what leaves the machine. |
+| D1 | Steps are the source of truth. A report is a versioned steps document; code is rendered from it, and replay reads it. Nothing ever parses generated code back. | One artifact feeds the spec, the replay, the desktop run and the dashboard, and each can improve without breaking the others. |
+| D2 | One converter in core renders steps as Playwright code, with options, and every surface calls it: the extension, the dashboard, the CLI, the desktop app and MCP. | The same steps give the same code everywhere. |
+| D3 | The converter emits relative URLs by default (`page.goto('/cart')`), the project's own `test` import when one is set, and, for each step, the first alternative rated stable, preferring one the project's locator index already uses. | A report recorded on staging must run against the developer's `baseURL`, with the project's fixtures, in the style of the suite. |
+| D4 | Report a bug reuses the recorder, the pick flow and the assertion suggester. What is new is an expected assertion, a missing-element assertion and evidence. | Recording and rendering already work across pages and use the project's page objects. |
+| D5 | Every report yields files locally, with no instance. Sending to Piwi is a separate action with a preview of exactly what is sent, and a checkbox per kind of evidence. | The extension's standalone stance and its rule for sending page data. |
+| D6 | Replay runs in the developer's tab with the page's own events, on the origin the developer chooses (by default the tab's). It resolves each step with the in-page engine, in the same order the converter picks locators. | No new permission, the developer's own session and DevTools, and the same element the spec would use. |
+| D7 | A replay or a run answers **reproduced** (the expected assertion fails), **not reproduced** (it passes) or **diverged at step N** (an earlier step found no element, several, or a disabled one). | "Not reproduced" and "the page is different here" call for different next steps. |
+| D8 | No `debugger` permission (see above). | It cannot be optional. |
+| D9 | The desktop app runs a repro only after the developer confirms it in its window. A request carries steps and options, never code; the desktop renders the spec itself with the converter, writes it under the project's test directory, runs it with the project's own config, and deletes it. | The loopback API is reachable by anything on the machine; confirmation and steps-only requests keep it from becoming a way to run arbitrary code. The project's config keeps its fixtures and `baseURL`. |
+| D10 | A spec for committing is written with `test.fail()` and the report's annotations; a spec for running (replay's twin, the desktop run) is written without it. | Committed, it keeps CI green and becomes a signal when the bug is fixed. Run, it gives the three-way verdict directly. |
+| D11 | An expected failure that passes is its own outcome, "expected failure passed", recorded from a new `expectedStatus` wire field, not clustered, and reported as "this bug looks fixed". | Treated as one more failure, the good news hides in a cluster shared by every such test. |
+| D12 | Console errors and failed requests are captured by a main-world script registered with the existing `scripting` permission and origin grant, while a bug recording or a replay runs. | No new standing permission. The page can affect that script, which is acceptable for evidence a person reviews. |
+| D13 | The page outline is built by the extension's engine in the YAML form of Playwright's ARIA snapshots and labeled "outline". | It is the engine the locator checks already trust, but it is not Playwright's snapshot. |
+| D14 | A report is linked to its test by a `piwi:bug` annotation and to its ticket through `entity_links`. Every report is an escaped defect for the Test Map, keyed by its page. | An annotation survives renames. A bug on a page the suite visits is the escape history exposure ranking was designed to use. |
+| D15 | Typed values stay as typed, except passwords (already redacted). The preview shows them, and a checkbox turns every typed value into an environment variable. | A reproduction often needs the exact input; the reporter decides what leaves the machine. |
 
-## Part 1 — In the extension
+## Part 1 — Steps and the converter
 
-### 1.1 The tool
+### 1.1 The steps document
 
-A **Report a bug** tile in the popup (key `B`), which starts a recording with a bug HUD: the steps so far, **Mark what's
+`packages/core/src/steps.ts` defines `PiwiSteps`, the portable form of a recording:
+
+```ts
+interface PiwiSteps {
+  v: 1;
+  title: string | null;
+  origin: string;          // where it was recorded: https://staging.acme.com
+  steps: PiwiStep[];       // RecordedStep, with pageUrl stored as a path relative to origin
+  recordedAt: number;
+  note?: string;
+}
+```
+
+- `StepAction` gains `assert`, with `assertion: { matcher, expected, actual, negated, note }`. Matchers: `toHaveText`,
+  `toHaveValue`, `toBeVisible`, `toBeHidden`, `toBeEnabled`, `toBeDisabled`, `toHaveAccessibleName`, `toHaveURL` (no
+  target). `assertVisible` becomes `assert` with `toBeVisible`; a document without `v` is read as a legacy session.
+- `parseSteps(json)` validates a document (shape, sizes: 200 steps, 10 alternatives per target, 2,000 characters per
+  value) and returns it or a list of errors. Everything that consumes steps from outside (a file, a request, the
+  dashboard) goes through it.
+- The recorder's own **Download steps** exports any recording this way, not only bug reports, so a steps file becomes
+  the thing a tester hands a developer.
+
+### 1.2 The converter
+
+`renderSpec(steps, options)` in `codegen.ts` grows options; defaults are chosen per surface.
+
+| Option | Default | Effect |
+|---|---|---|
+| `title` | the document's title | the test's title (`bug: …` for reports) |
+| `testImport` | `@playwright/test` | the module `test` and `expect` come from, e.g. `../fixtures` for a project with auth fixtures |
+| `urls` | `relative` | `page.goto('/cart')`, so `baseURL` applies; `absolute` joins the recorded origin |
+| `catalog` | none | page-object and helper calls for contiguous matching steps (existing) |
+| `locators` | `stable` | per step, the first alternative `assessLocatorChain` rates stable, else the first; with `index`, an alternative whose canonical chain the project's locator index already has comes first |
+| `urlChecks` | `true` | after a step that changed the page, `await expect(page).toHaveURL(…)` with the page key's placeholders as `[^/]+`, so the next step never runs on the page before |
+| `values` | `literal` | `env` turns every typed value into `process.env.PIWI_TEST_VALUE_<i>` and lists the names in a comment |
+| `expectFail` | `false` | `test.fail()` with a comment naming the ticket |
+| `tag`, `annotations` | none | test details (`tag: '@bug'`, `piwi:bug`, `piwi:link`) |
+| `format` | `file` | `file` (imports and one test) or `body` (the lines to paste into an existing test) |
+
+It returns `{ code, matchedSpans, warnings }`, with a warning for a step without a locator, a redacted value, or a
+target whose best alternative is only rated watch or brittle. The escaping and identifier checks stay as they are:
+the converter is the one place steps become code.
+
+### 1.3 Where it is available
+
+- **Extension:** **Copy failing test** and **Download**, with the test import and URL mode remembered per project
+  mapping.
+- **Dashboard:** a **Spec** tab on each report, rendered with the project's settings (a new "Generated specs" section:
+  test import, folder for bug specs, default `tests/bugs`), with copy and download.
+- **CLI:** `npx @piwitests/reporter codegen <steps.json | bug:<id>> [--out <file>] [--test-import <module>]
+  [--absolute-urls] [--no-catalog] [--fail] [--body]` prints or writes a spec. `bug <id> --write` renders a report's
+  committed spec into the bugs folder and runs it once.
+- **Desktop app:** renders the run spec for a repro request (Part 3.2).
+- **MCP:** `render_steps { steps | bugReportId, options }` for an agent that writes the test from a recording.
+
+## Part 2 — Reporting a bug
+
+### 2.1 The tool
+
+A **Report a bug** tile in the popup (key `B`) starts a recording with a bug HUD: the steps so far, **Mark what's
 wrong**, **Something is missing**, and **Finish**. Recording, navigation and the one-origin rule are the recorder's.
 
-- **Mark what's wrong** starts the pick flow. The assertion panel opens in expected mode: the matcher (`toHaveText`,
-  `toHaveValue`, `toBeVisible`, `toBeHidden`, `toBeEnabled`, `toBeDisabled`, `toHaveAccessibleName`) with the current
-  value shown as **actual** and an editable **expected** field, and a note field ("the coupon is ignored").
+- **Mark what's wrong** starts the pick flow; the assertion panel opens in expected mode: the matcher with the current
+  value shown as **actual**, an editable **expected** field, and a note ("the coupon is ignored").
 - **Something is missing** asks for a role and a name ("button", "Download invoice"), checked with the engine to find
-  nothing on the page, and adds `await expect(page.getByRole('button', { name: 'Download invoice' })).toBeVisible()`.
-- **Wrong page** is a matcher on the page itself: `toHaveURL` with the expected path.
+  nothing on the page, and adds a `toBeVisible` assertion on `getByRole(role, { name })`.
+- **Wrong page** is `toHaveURL` with the expected path.
 
-Assertions become recording events of a new kind, `assert`, with `{ target, matcher, expected, actual, negated,
-note }`. `normalizeSteps` keeps them in place; `StepAction` gains `assert` (the unused `assertVisible` becomes one of
-its matchers).
+### 2.2 Evidence
 
-### 1.2 Evidence
+- **Screenshot.** `chrome.tabs.captureVisibleTab` from the background worker at each Mark what's wrong and at Finish.
+  When Chrome refuses it under the current grant, the report says "no screenshot" rather than asking for more
+  permission (open question 1).
+- **Console errors and failed requests.** For the duration of a bug recording, the recorder registers a second content
+  script in the page's main world (`registerContentScripts` with `world: 'MAIN'`, the same origin grant,
+  `document_start`). It wraps `console.error` and `console.warn`, listens to `error` and `unhandledrejection`, and
+  wraps `fetch` and `XMLHttpRequest` to note requests that failed or answered 400 or more (method, path with query
+  values removed as `normalizeRoute` does, status, time). Entries reach the recorder by `postMessage` with a
+  per-recording token, capped at 100 of each. No body is read.
+- **Outline.** A walk over `DomModel` from the marked element's nearest landmark, in ARIA snapshot YAML, at most 400
+  lines (D13).
+- **Context.** Origin, page key and path, browser and version, viewport, time, extension version.
 
-- **Screenshot.** `chrome.tabs.captureVisibleTab` at each Mark what's wrong and at Finish, from the background worker.
-  It needs `activeTab` or a host grant it accepts; when the call is refused, the report says "no screenshot" rather than
-  asking for more permission (open question 1).
-- **Console errors and failed requests.** When a bug recording starts, the recorder registers a second content script
-  in the page's main world (`registerContentScripts` with `world: 'MAIN'`, the same origin grant, `document_start`). It
-  wraps `console.error` and `console.warn`, listens to `error` and `unhandledrejection`, and wraps `fetch` and
-  `XMLHttpRequest` to note requests that failed or answered 400 or more (method, URL path with query values removed as
-  `normalizeRoute` does, status, time). Entries go to the isolated-world recorder by `postMessage` with a per-recording
-  token, capped at 100 console entries and 100 requests. No body is read.
-- **Outline.** At each Mark what's wrong and at Finish, a walk over `DomModel` from the marked element's nearest landmark
-  (or `main`, or the body) writes roles, names and states in ARIA snapshot YAML, at most 400 lines (D6).
-- **Context.** Page key and path, browser and version, viewport, time, extension version.
+### 2.3 Output
 
-### 1.3 Output
+`packages/core/src/bug-report.ts`: `BugReport { steps: PiwiSteps, evidence, context }` and
+`renderBugMarkdown(report)` (steps in plain words, expected and actual, the note, the evidence summarized). The finish
+panel offers **Copy failing test** (the converter with `expectFail`), **Copy report**, **Download .zip** (`steps.json`,
+the spec, the Markdown, screenshots, `evidence.json`) and, when connected, **Send to Piwi…**.
 
-`packages/core/src/bug-report.ts` holds the report shape (`BugReport { title, note, steps, assertions, evidence,
-context }`) and two renderers:
+## Part 3 — Reproducing it
 
-- `renderBugSpec(report, { catalog?, ticket?, reportId?, expectFail = true })` extends `renderSpec`: the title
-  `bug: <title>`, the `@bug` tag and the annotations of D7, `test.fail()` with a comment naming the ticket when
-  `expectFail`, the expected assertions with their actual value in a trailing comment, and page-object calls when a
-  catalog matches.
-- `renderBugMarkdown(report)`: steps in plain words ("Click the Apply button"), expected and actual, the note, and the
-  evidence summarized, for pasting into any tracker.
+### 3.1 Replay in the developer's tab
 
-The finish panel offers **Copy failing test**, **Copy report**, **Download .zip** (spec, Markdown, screenshots,
-`evidence.json`) and, when connected, **Send to Piwi…**.
+A **Replay** tool in the popup, for a developer with their app open on the local dev server.
 
-## Part 2 — In Piwi
+1. **Which report.** From a file (a `.zip` or `steps.json` a tester sent, with no instance involved), or, when
+   connected, from a **Bug reports** list of the project mapped to this tab, fetched by the background worker
+   (`GET /api/projects/:id/bug-reports?status=open`, then the report's steps).
+2. **Where.** The steps' paths are replayed on the tab's origin (`http://localhost:3000`) unless another is chosen. The
+   host permission for that origin is requested from the popup click, as the recorder does.
+3. **Running across pages.** The background worker keeps the replay's state (steps, position, results) in
+   `chrome.storage.session` and registers a replay content script for the origin (`registerContentScripts`,
+   `document_start`), which asks for the next step on every page load, as the recorder does for recording.
+4. **Finding the element.** Each step's target is resolved with the in-page engine, trying its alternatives in the
+   converter's order (D6). Like Playwright, the replay waits (polling every 100 ms, up to 10 seconds) until exactly one
+   element matches and, for an action, is visible, enabled and has kept the same box for two animation frames.
+5. **Acting.** With the page's own events (D8), scrolled into view first:
+   - `click`: pointer and mouse down, up, click at the element's center, after focusing it;
+   - `fill`: focus, the native `value` setter (so React, Vue and Angular see it), then `input` and `change`;
+     `contenteditable` through `beforeinput` and `input`;
+   - `check`, `uncheck`: a click when the state differs;
+   - `selectOption`: the native setter, then `input` and `change`;
+   - `press`: key down, press and up; for Enter in a form whose key events were not cancelled, `form.requestSubmit()`,
+     which the browser does not do for synthetic events;
+   - `goto`: `location.assign(path)`.
+   These are exactly the actions the recorder produces, so every recorded step has a replay. A step that fails to take
+   effect (a fill whose value did not stick) is reported as diverged, with "run it with Playwright" offered.
+6. **Checking.** An `assert` step is evaluated with the engine and core's text matching, retried for up to 5 seconds as
+   `expect` retries.
+7. **The verdict** (D7): reproduced, with the value found here beside the reported one; not reproduced; or diverged at
+   step N, with the reason. The same main-world script as in 2.2 collects console errors and failed requests during
+   the replay, so "POST /api/cart/coupon answered 500 here too" appears next to the verdict.
+8. **Step mode.** The HUD highlights each target and waits for **Next**, so the developer can set breakpoints in
+   DevTools before the step that matters.
+9. **Reporting back.** When connected to the instance the report came from, **Share result** posts
+   `{ verdict, divergedAt, origin, userAgent }` to the report (`POST /api/bug-reports/:id/reproductions`), where it
+   shows as "Reproduced by a developer on localhost:3000".
 
-### 2.1 Sending
+### 3.2 Run with Playwright in the desktop app
 
-**Send to Piwi…** opens a preview of the exact payload (the spec, the steps with typed values, each evidence item) with
-a checkbox per kind (D2, D9) and the target project from the tab's mapping. The background worker, the only networked
-module, sends `POST /api/projects/:id/bug-reports` as multipart (a JSON part and PNG parts), with the connection's key.
-The first send in a profile shows a one-time explanation of what connected mode now sends. Limits: 5 MB per
-screenshot, 3 screenshots, 1 MB of JSON. Roles: administrator, reporter or user, so a tester's key can report.
+For the exact verdict, a trace, and a run recorded in Piwi.
 
-### 2.2 Storage and pages
+1. **Pairing.** The desktop app gets a **Connect Piwi Picker** button that shows its URL and token to paste into the
+   extension's options, in a new **Desktop app** field beside the instance connection. (The extension cannot read
+   `~/.piwi/desktop.json`.)
+2. **The request.** **Run with Playwright** in Replay (or on a report) sends the steps and the options (headed, trace,
+   Playwright project, repeat) to `POST {desktop}/api/desktop/repro-requests` from the background worker, with the
+   token and a JSON body. The body is parsed with `parseSteps`; nothing in it is code (D9). The desktop server keeps the
+   request for ten minutes and emits `repro-request` on `/api/desktop/events`.
+3. **Confirmation.** The window shows the request: the steps, the linked project it will run in, the flags. Only the
+   developer's click starts it.
+4. **The run.** A new Rust command, `desktop_run_repro`, asks the local server to render the run spec (the converter
+   with `expectFail: false`, the project's generated-spec settings and catalog), reads the project's test directory from
+   `playwright test --list --reporter=json` (the config's `projects[].testDir`), writes the spec to
+   `<testDir>/piwi-repro/bug-<id>.spec.ts`, runs `playwright test <that file>` with the project's own config through
+   the existing sidecar path and flag allowlist (`--headed`, `--debug`, `--trace`, `--project`, `--repeat-each`), sets
+   `PIWI_BUG_REPORT=<id>` so the reporter stamps the run, and deletes the file (and the folder, when empty) when it
+   ends.
+5. **The verdict.** Read from the run's result: failing on the expected assertion is reproduced, passing is not
+   reproduced, failing earlier is diverged at that step. The run is a normal Piwi run in the desktop app, with its trace.
+   The extension polls `GET {desktop}/api/desktop/repro-requests/:id` to show the verdict, and posts it to the report's
+   instance as in 3.1.
 
-- `bug_reports (id, project_id, title, note, page_key, path, status, report JSON, spec, created_by, created_at,
-  closed_at, closed_by_run_id, test_case_id)`, statuses `open`, `test-committed`, `looks-fixed`, `closed`,
-  `dismissed`. Screenshots go through the storage adapter under `bug-reports/<id>/`.
-- `/projects/:id/bug-reports` (from the project menu) lists them with filters by status and page; the detail page
-  shows steps, expected and actual, screenshots, evidence, the spec with copy and download, the ticket, the owner and
-  "Why the suite missed it" (2.4).
-- `piwi bug <id> --write [--dir tests/bugs]` writes the spec into the test project, runs it once, and prints whether it
-  behaved as expected (a `test.fail()` spec passes while the bug is there).
+## Part 4 — In Piwi
 
-### 2.3 The lifecycle
+### 4.1 Sending
 
-1. **Test committed.** On ingest, a test whose annotations carry `piwi:bug <id>` links the report (`test_case_id`) and
-   moves it to `test-committed`. `parseTestMetadata` learns `piwi:bug`.
-2. **Looks fixed.** The reporter sends `expectedStatus` for every result (from `test.expectedStatus`), stored on
-   `test_runs_cases`. A row with expected `failed` and actual passed is recorded as the outcome "expected failure passed"
-   instead of being clustered (D4). For a linked report, that moves it to `looks-fixed`, raises the event
-   `bug.looks_fixed`, and adds a line to the pull-request comment: "the spec of bug #37 now passes: remove `test.fail()`
-   in tests/bugs/coupon-not-applied.spec.ts".
-3. **Closed.** When the spec passes as a normal test (the `test.fail()` line removed), the report closes with that run.
-   A later failure of the spec reopens it as a regression, in the same way fix verification treats clusters.
+**Send to Piwi…** opens a preview of the exact payload (the steps with typed values, each evidence item) with a
+checkbox per kind (D5, D15) and the project from the tab's mapping. The background worker sends
+`POST /api/projects/:id/bug-reports` as multipart (a JSON part and PNG parts) with the connection's key. The first send
+in a profile explains once what connected mode now sends. Limits: 5 MB per screenshot, 3 screenshots, 1 MB of JSON.
+Roles: administrator, reporter or user, so a tester's key can report.
 
-### 2.4 Why the suite missed it
+### 4.2 Storage and pages
+
+- `bug_reports (id, project_id, title, note, page_key, path, status, steps JSON, evidence JSON, created_by,
+  created_at, closed_at, closed_by_run_id, test_case_id)`, statuses `open`, `test-committed`, `looks-fixed`, `closed`,
+  `dismissed`; `bug_reproductions (id, bug_report_id, source: 'replay' | 'desktop', verdict, diverged_at, origin,
+  run_id, created_at)`. Screenshots go through the storage adapter under `bug-reports/<id>/`.
+- `/projects/:id/bug-reports` (from the project menu) lists them by status and page; `/bug-reports/:id` shows steps,
+  expected and actual, screenshots, evidence, reproductions, the Spec tab, the ticket, the owner and Why the suite
+  missed it.
+
+### 4.3 The lifecycle
+
+1. **Test committed.** On ingest, a test whose annotations carry `piwi:bug <id>` links the report and moves it to
+   `test-committed`. `parseTestMetadata` learns `piwi:bug`.
+2. **Looks fixed.** The reporter sends `expectedStatus` for every result (`test.expectedStatus`), stored on
+   `test_runs_cases`. A row expected to fail that passed is recorded as "expected failure passed", not clustered (D11).
+   For a linked report, that moves it to `looks-fixed`, raises the event `bug.looks_fixed`, and adds a line to the
+   pull-request comment: "the spec of bug #37 now passes: remove `test.fail()` in
+   tests/bugs/coupon-not-applied.spec.ts".
+3. **Closed.** When the spec passes as a normal test, the report closes with that run. A later failure reopens it as a
+   regression, as fix verification does for clusters.
+
+### 4.4 Why the suite missed it
 
 From the locator index for the report's page key: the tests that visit the page, the ones whose locators reach the
-marked element (the element's locator in the report matched against their chains with the core matchers), and what
-they do with it (click, fill, which assertions). The detail page states it in one line and lists the tests. The same
-data picks the owner: CODEOWNERS of the spec file that uses the page most, until a page maps to application code
-(the code reach in [`suite-in-the-editor.md`](suite-in-the-editor.md) would give the component's owner).
+marked element (its alternatives matched against their chains), and what they do with it (actions, assertions). The
+detail page says it in one line and lists the tests. The same data picks the owner: CODEOWNERS of the spec file that
+uses the page most, until code reach ([`suite-in-the-editor.md`](suite-in-the-editor.md)) can name the component's
+owner.
 
-### 2.5 Jira
+### 4.5 Jira
 
-- `POST /api/integrations/issues` accepts `entityType: 'bug_report'`. `createIssue` files it without a cluster.
-- `buildBugIssueDocument` (beside `buildIssueDocument`, same locales and ADF rendering): What happened (steps, expected,
-  actual, the note), Evidence (console errors, failed requests, the outline around the element), The failing test (the
-  spec, as it would be committed with this ticket's key), Why the suite missed it, Links (the report in Piwi). Labels
-  `piwi`, `piwi-bug-<id>`.
-- Screenshots are attached through a new `attach` outbox action in `actions.ts`, calling the client's existing
-  `attach()`; the schema's action-kind comment already lists it.
-- `entity_links` gains `bug_report_id`. Sync and policies apply: `commentOnFix` and `transitionOnFix` fire on
-  `looks-fixed`, `resolveOnClose` closes the report when the ticket is resolved, `reopenOnTicketReopen` reopens it.
-- `create_issue` (MCP) accepts the new entity type.
+- `POST /api/integrations/issues` accepts `entityType: 'bug_report'`; `createIssue` files it without a cluster.
+- `buildBugIssueDocument`, beside `buildIssueDocument`, in the same locales and ADF rendering: what happened (steps,
+  expected, actual, the note), evidence, the failing test (the committed spec with this ticket's key), reproductions,
+  why the suite missed it, links. Labels `piwi`, `piwi-bug-<id>`.
+- Screenshots are attached through a new `attach` outbox action calling the client's existing `attach()`.
+- `entity_links` gains `bug_report_id`. `commentOnFix` and `transitionOnFix` fire on `looks-fixed`; `resolveOnClose`
+  and `reopenOnTicketReopen` follow the ticket.
+- The MCP tool `create_issue` accepts the new entity type.
 
-### 2.6 For agents and the Test Map
+### 4.6 Agents and the Test Map
 
-- MCP `list_bug_reports { projectId, status? }` and `get_bug_report { id }` (the report, the spec, the evidence, the
-  tests on the page).
-- A skill, `fix-a-reported-bug`: fetch the report, commit the spec with `test.fail()` (`piwi bug <id> --write`), find and
-  fix the cause, remove `test.fail()`, and run the spec and the tests that visit the page.
-- The Test Map's `detectEscapedDefect` gets its loader from `bug_reports` (D8), so reported bugs feed escape history
-  and the page's exposure.
+- MCP `list_bug_reports { projectId, status? }`, `get_bug_report { id }` (steps, evidence, reproductions, the tests on
+  the page) and `render_steps` (1.3).
+- A skill, `fix-a-reported-bug`: fetch the report, `piwi bug <id> --write`, reproduce, fix, remove `test.fail()`, run
+  the spec and the tests that visit the page.
+- `detectEscapedDefect` gets its loader from `bug_reports`, so reported bugs feed escape history and page exposure.
 
 ## Delivery
 
 | PR | Content | Needs |
 |---|---|---|
-| 1 | Core: `assert` steps, `BugReport`, `renderBugSpec`, `renderBugMarkdown` | — |
-| 2 | Extension: the tool, expected and missing assertions, evidence, local exports | 1 |
-| 3 | Reporter and app: `expectedStatus`, the "expected failure passed" outcome, `piwi:bug` | — |
-| 4 | Dashboard: `bug_reports`, the endpoint, pages, **Send to Piwi…**, `piwi bug`, MCP tools, capability `bug-reports` | 1, 2, 3 |
-| 5 | Jira: the bug entity, the document, attachments through the outbox, sync | 4 |
-| 6 | Why the suite missed it, escapes for the Test Map, the skill | 4 |
+| 1 | Core: `PiwiSteps` and `parseSteps`, `assert` steps, the converter options, `renderBugMarkdown`; the recorder's Download steps; `piwi codegen` | — |
+| 2 | Extension, reporter side: Report a bug, expected and missing assertions, evidence, local exports | 1 |
+| 3 | Extension, developer side: Replay from a file, the verdict, step mode | 1 |
+| 4 | Reporter and app: `expectedStatus`, the "expected failure passed" outcome, `piwi:bug` | — |
+| 5 | Dashboard: `bug_reports`, reproductions, endpoints, pages, Spec tab and project settings, **Send to Piwi…**, Replay from the instance, `piwi bug`, MCP tools, capability `bug-reports` | 1–4 |
+| 6 | Desktop: pairing, repro requests, `desktop_run_repro` | 1, 5 |
+| 7 | Jira: the bug entity, the document, attachments through the outbox, sync | 5 |
+| 8 | Why the suite missed it, escapes for the Test Map, the skill | 5 |
 
-PRs 1–3 are useful alone: a tester gets failing specs and Markdown with no instance, and every `test.fail()` spec
-already gets the "looks fixed" signal.
+PRs 1–3 close the loop between a tester and a developer with files alone: record, send the zip, replay on
+`localhost`, copy the failing test. PR 4 gives every `test.fail()` spec the "looks fixed" signal on its own.
 
 ## File-by-file checklist
 
-### PR 1 — core
-- `packages/core/src/recording.ts` (`assert` events and steps), `codegen.ts` (render `assert`), `bug-report.ts` (new),
-  exports in `packages/core/package.json`.
-- Tests: `recording.test.ts`, `codegen.test.ts`, `bug-report.test.ts` (each matcher, negation, missing element,
-  `test.fail()` on and off, catalog calls, Markdown).
+### PR 1 — steps and the converter
+- `packages/core/src/steps.ts` (new), `recording.ts` (`assert`, relative paths), `codegen.ts` (options, `urlChecks`,
+  locator choice, `format: 'body'`, warnings), `bug-report.ts` (new), exports in `packages/core/package.json`.
+- `apps/extension/src/content/record-panel.ts` (Download steps), `packages/reporter/src/cli/codegen.ts` (new),
+  `cli/index.ts`.
+- Tests: `steps.test.ts` (validation, limits, legacy sessions), `codegen.test.ts` (every option; relative and absolute
+  URLs; `index` locator preference; URL checks with placeholders; `body` format), `bug-report.test.ts`; an extension e2e
+  test that runs a rendered spec with real Playwright against the fixture shop.
+- Docs: `features/extension.md` (Download steps), `reference/cli.md` (`codegen`), `reference/steps-format.md` (new).
 
-### PR 2 — extension
-- `apps/extension/src/content/bug-panel.ts` (new, the HUD and finish panel), `bug-evidence-main.ts` (new, main-world
-  script), `bug-outline.ts` (new, the `DomModel` walk), `assertion-panel.ts` (expected mode), `record-panel.ts`
-  (assert events), `src/background/index.ts` (screenshot, the main-world registration, message types),
-  `src/popup/` (tile), `scripts/build.mjs` (the new entries).
-- Docs: `apps/docs/features/extension.md` (Report a bug; the "never sent" sentence becomes "sent only with Send to
-  Piwi, after a preview"; the outline and its label), `apps/extension/AGENTS.md` (the main-world script and the send).
-- Tests: e2e on a fixture shop (record, mark, missing element, console error, failed request, outline, exports), unit
-  tests for the outline walk.
+### PR 2 — reporting
+- `apps/extension/src/content/bug-panel.ts` (new), `bug-evidence-main.ts` (new, main world), `bug-outline.ts` (new),
+  `assertion-panel.ts` (expected mode), `record-panel.ts` (assert events), `src/background/index.ts` (screenshot,
+  main-world registration, message types), `src/popup/` (tile), `scripts/build.mjs` (entries).
+- Docs: `features/extension.md` (Report a bug; the outline and its label), `apps/extension/AGENTS.md` (the main-world
+  script).
+- Tests: e2e on the fixture shop (record, mark, missing element, console error, failed request, outline, exports).
 
-### PR 3 — expected status
+### PR 3 — replay
+- `apps/extension/src/content/replay-panel.ts` (new, HUD and verdict), `replay-actions.ts` (new, events per action),
+  `replay-runner.ts` (new, waiting and resolution with the engine), `src/background/index.ts` (state and
+  registration), `src/popup/` (tile).
+- Tests: e2e on the fixture shop served on two origins (record on one, replay on the other): reproduced, not
+  reproduced (bug fixed in the fixture), diverged (element removed), React-controlled input, Enter submitting a form,
+  step mode; unit tests for the verdict.
+- Docs: `features/extension.md` (Replay, its limits).
+
+### PR 4 — expected status
 - `packages/reporter/src/public/reporter.ts`, collected and wire types, serializer;
-  `apps/application/server/utils/blob-report.ts` (the importer); `packages/core/src/wire.ts`, `status-classify.ts`,
+  `apps/application/server/utils/blob-report.ts` (importer); `packages/core/src/wire.ts`, `status-classify.ts`,
   `test-meta.ts` (`piwi:bug`).
-- App: schema and migrations (`test_runs_cases.expected_status`, `test_cases.bug_report_id` later in PR 4), clustering
-  skip for the new outcome, run counts and badges, `shared/pr-feedback.ts` (the line), the notification event.
-- Docs: `reference/test-metadata.md` (`piwi:bug`), `reference/notification-events.md`, `features/pr-feedback.md`.
+- App: schema and migrations (`test_runs_cases.expected_status`), no clustering for the new outcome, counts and badges,
+  `shared/pr-feedback.ts`, the notification event.
+- Docs: `reference/test-metadata.md`, `reference/notification-events.md`, `features/pr-feedback.md`.
 
-### PR 4 — dashboard
-- Schema and migrations for `bug_reports`; `server/api/projects/[id]/bug-reports.post.ts`, `bug-reports.get.ts`,
-  `server/api/bug-reports/[id].get.ts` and `.patch.ts` (new); `shared/handlers/bug-reports.ts` (new);
-  `app/pages/projects/[id]/bug-reports.vue`, `app/pages/bug-reports/[id].vue` (new); the project menu.
-- `apps/extension/src/shared/piwi-client.ts` (the POST), the options page (the one-time explanation).
-- `packages/reporter/src/cli/bug.ts` (new), `cli/index.ts`.
-- `shared/mcp-tools.ts`, `server/utils/mcp/tools.ts`; `shared/capabilities.ts` and the setup ladder.
-- Docs: `features/bug-reports.md` (new), `reference/cli.md`, `navigation.ts`, `guide/privacy.md` (what a report sends).
+### PR 5 — dashboard
+- Schema and migrations for `bug_reports`, `bug_reproductions`, `test_cases.bug_report_id`, the project's
+  generated-spec settings; `server/api/projects/[id]/bug-reports.post.ts` and `.get.ts`,
+  `server/api/bug-reports/[id].get.ts`, `.patch.ts`, `reproductions.post.ts` (new); `shared/handlers/bug-reports.ts`
+  (new); `app/pages/projects/[id]/bug-reports.vue`, `app/pages/bug-reports/[id].vue` (new); the project menu.
+- `apps/extension/src/shared/piwi-client.ts` (POSTs), the options page (one-time explanation), Replay's instance list.
+- `packages/reporter/src/cli/bug.ts` (new); `shared/mcp-tools.ts`, `server/utils/mcp/tools.ts`;
+  `shared/capabilities.ts` and the setup ladder.
+- Docs: `features/bug-reports.md` (new), `reference/cli.md`, `navigation.ts`, `guide/privacy.md`.
 
-### PR 5 — Jira
+### PR 6 — desktop
+- `server/api/desktop/repro-requests.post.ts`, `[id].get.ts`, `[id]/spec.get.ts` (new);
+  `server/utils/desktop-handoff.ts` (`repro-request`); `apps/desktop/src-tauri/src/runner.rs` (`desktop_run_repro`),
+  `lib.rs` (registration); the window's confirmation dialog and **Connect Piwi Picker**; the extension's Desktop app
+  setting.
+- Tests: the endpoint rejects a non-JSON body and a body `parseSteps` refuses; the Rust command's path handling (the
+  spec stays under the test directory); a desktop e2e run of a repro.
+- Docs: `features/desktop.md`.
+
+### PR 7 — Jira
 - `server/utils/integrations/create.ts`, `actions.ts` (`attach`), `sync.ts`, `known-issue.ts`;
-  `shared/integrations/build-issue.ts` (`buildBugIssueDocument`), `messages/en.ts`, `messages/fr.ts`; schema for
-  `entity_links.bug_report_id`; `server/api/integrations/issues.post.ts`.
+  `shared/integrations/build-issue.ts`, `messages/en.ts`, `messages/fr.ts`; schema for `entity_links.bug_report_id`;
+  `server/api/integrations/issues.post.ts`.
 - Docs: `features/issue-tracking.md`.
 
-### PR 6 — missed-by and escapes
-- `shared/handlers/bug-reports.ts` (why missed, owner), `shared/handlers/scenario-gaps.ts` (escaped-defect loader),
+### PR 8 — missed-by and escapes
+- `shared/handlers/bug-reports.ts`, `shared/handlers/scenario-gaps.ts` (escaped-defect loader),
   `packages/reporter/templates/skills/fix-a-reported-bug/SKILL.md` (new), `cli/skills.ts`.
 - Docs: `features/agent-skills.md`, `features/scenario-gaps.md`.
 
 ## Verification
 
-1. On a fixture shop with a coupon bug, record the flow, mark the total with the expected text, and finish: the spec
-   runs with Playwright and passes (as an expected failure); edit out `test.fail()` and it fails on the assertion.
-2. The evidence has the 500 from the coupon endpoint and the console error the page logs; the outline shows the cart
-   region with the total.
-3. Without a connection, every export works and no request leaves the browser (checked in the e2e test).
-4. Connected, **Send to Piwi…** shows the preview; unchecking console errors removes them from the stored report.
-5. File it in Jira against a stub: the issue has the spec in a code block and the screenshot attached.
-6. Commit the spec, fix the bug in the fixture, run: the report moves to looks fixed, the pull-request comment says to
-   remove `test.fail()`, the ticket gets the fix comment. Remove it and run: the report closes.
+1. On the fixture shop with a coupon bug, served as "staging": record the flow, mark the total, finish. The rendered
+   spec, run with Playwright against the same server, fails on the assertion; with `test.fail()` it passes.
+2. Serve the same shop on a second origin as "localhost": Replay reproduces with the reported value. Fix the bug on that
+   origin: not reproduced. Remove the coupon field: diverged at step 2.
+3. The evidence has the 500 and the console error, during the recording and during the replay.
+4. Without a connection, every export and Replay from a file work, and no request leaves the browser (checked in e2e).
+5. Connected, **Send to Piwi…** shows the preview; unchecking console errors removes them from the stored report.
+6. In the desktop app, a repro request waits for confirmation; the run writes the spec under the test directory, runs
+   headed with a trace, deletes the spec, and the verdict reaches the extension and the report.
+7. A page on `localhost` that posts to the desktop's repro endpoint is refused (no CORS for a JSON body, no token).
+8. Commit the spec, fix the bug, run: the report moves to looks fixed, the pull-request comment says to remove
+   `test.fail()`, the ticket gets the fix comment. Remove it and run: the report closes.
 
 ## Risks
 
-- **Specs that depend on data.** A reproduction recorded on staging may need a user, a cart, a coupon. The spec names
-  the values it used, `piwi bug --write` runs it once, and the report keeps the original environment's path and time.
-- **Sensitive data in evidence.** Console messages and typed values can hold personal data. Nothing is sent without the
-  preview; each kind can be left out; request bodies are never read.
-- **The main-world script.** It runs in the page and can be affected by the page's own code. It only listens and wraps,
-  and it is registered only for the duration of a bug recording.
-- **Screenshot permission.** If Chrome refuses `captureVisibleTab` under the recorder's grant, reports from the HUD come
-  without screenshots until the user uses the popup or the shortcut.
+- **Replay fidelity.** Synthetic events are not trusted input. The replayed actions are limited to what the recorder
+  records, the native setters cover the common frameworks, form submission is handled explicitly, and a step that does
+  not take effect is reported as diverged with the desktop run offered. An app that ignores untrusted events can only be
+  reproduced in Playwright.
+- **Specs that depend on data.** A report recorded on staging may need a user, a cart, a coupon that the local database
+  lacks. "Diverged at step N" names the step, and the report keeps the original origin and time.
+- **Sensitive data in evidence.** Nothing is sent without the preview; each kind can be left out; request bodies are
+  never read.
+- **The main-world script.** It runs in the page and can be affected by it. It only listens and wraps, and it is
+  registered only while a bug recording or a replay runs.
+- **The desktop endpoint.** Loopback, token, JSON-only, steps-only and a confirmation in the window. The spec is
+  written by the desktop from the steps, under the test directory, and removed.
 
 ## Open questions
 
 1. **Screenshots across navigations.** Recommendation: verify whether the recorder's origin grant satisfies
-   `captureVisibleTab`; if it does not, take screenshots when the user opens the popup or uses the shortcut (both grant
-   `activeTab`), and say so in the HUD.
-2. **Reports from people without an API key.** Testers outside engineering may not have accounts. Recommendation: not in
-   this plan; a report-only key scope would need API key scopes, which do not exist yet.
-3. **Other trackers.** The provider layer is ready for GitHub Issues and GitLab Issues. Recommendation: follow the
-   issue-tracker plan's order; the bug document is written against the `IssueTracker` interface, not Jira.
+   `captureVisibleTab`; if not, take screenshots when the popup opens or the shortcut is used (both grant `activeTab`),
+   and say so in the HUD.
+2. **Reports from people without an API key.** Recommendation: not in this plan; a report-only key would need API key
+   scopes, which do not exist yet.
+3. **Other trackers.** Recommendation: follow the issue-tracker plan's order; the bug document is written against the
+   `IssueTracker` interface, not Jira.
+4. **Pairing with the desktop app.** Copying a URL and a token works but is clumsy. Recommendation: start with it; a
+   one-time code shown in the window and typed in the extension can replace it later.
+5. **A companion extension with `debugger`.** For trusted input in the everyday browser, a separate, opt-in extension
+   could carry the permission. Recommendation: only if replay's divergence rate on real reports shows the need.
 
 ## Not in this plan
 
 - Video or session replay of the recording.
-- Reports from a mobile browser.
-- Automatic deduplication of reports. A report page lists the other open reports on the same page, which covers most of
-  it.
-- Generating the fix. The skill hands that to a coding agent with the spec and the evidence.
+- Reports from a mobile browser, and replay in Firefox.
+- Automatic deduplication of reports; a report page lists the other open reports on the same page.
+- Parsing hand-written specs back into steps.
+- Generating the fix; the skill hands that to a coding agent with the steps and the evidence.
