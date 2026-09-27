@@ -45,6 +45,7 @@ import {
   type StoredBugEvidence,
 } from '../shared/bug-storage.js';
 import { BUG_RELAY, ownOrigin, readRelayedEntry } from '../shared/bug-relay.js';
+import { t, tn, tNodes, uiLanguage, type MessageKey } from '../shared/i18n.js';
 import type { RecordingState } from '../shared/recording-storage.js';
 
 /**
@@ -65,8 +66,17 @@ export interface BugRecorderHooks {
   setPaused(paused: boolean): void;
 }
 
+/**
+ * Why a report has no screenshot, as the report stores it. The panels show
+ * {@link screenshotNoteText} instead, in the interface language.
+ */
 export const NO_SCREENSHOT_NOTE =
   'Chrome lets Piwi Picker take a screenshot only after you open it on this tab. Open Piwi Picker and choose Take a screenshot.';
+
+/** A stored screenshot note in the interface language; a note this module does not know stays as it is. */
+function screenshotNoteText(note: string): string {
+  return note === NO_SCREENSHOT_NOTE ? t('bug_screenshotBlocked', { action: t('popup_takeScreenshot') }) : note;
+}
 
 const PANEL_CSS = `
   ${SHARED_STYLE}
@@ -79,11 +89,11 @@ const PANEL_CSS = `
   option { background: #1f2937; color: #f9fafb; }
   @media (prefers-color-scheme: light) { .panel { color-scheme: light; } option { background: #ffffff; color: #111827; } }
   .header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
-  .title { font-weight: 600; font-size: 14px; }
-  .sub { color: #9ca3af; font-size: 12px; word-break: break-all; }
+  .title { font-weight: 600; font-size: 14px; min-width: 0; overflow-wrap: anywhere; hyphens: auto; }
+  .sub { color: #9ca3af; font-size: 12px; overflow-wrap: anywhere; }
   .close { background: none; border: none; color: inherit; opacity: .7; cursor: pointer; font-size: 18px; line-height: 1; padding: 4px 8px; border-radius: 6px; }
   .close:hover, .close:focus-visible { opacity: 1; background: rgba(128,128,128,.15); }
-  label { display: block; font-size: 11.5px; color: #9ca3af; margin: 10px 0 4px; }
+  label { display: block; font-size: 11.5px; color: #9ca3af; margin: 10px 0 4px; overflow-wrap: anywhere; }
   input, select { width: 100%; font: inherit; font-size: 12.5px; padding: 6px 8px; border-radius: 6px;
     border: 1px solid rgba(128,128,128,.4); background: rgba(128,128,128,.1); color: inherit; }
   .actual { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; padding: 6px 8px; border-radius: 6px;
@@ -103,7 +113,7 @@ const PANEL_CSS = `
   .step.marked { background: rgba(239,68,68,.1); }
   .step-actual { color: #fca5a5; }
   .evidence { font-size: 12px; color: #9ca3af; }
-  .warn { color: #fca5a5; font-size: 12px; margin-top: 6px; }
+  .warn { color: #fca5a5; font-size: 12px; margin-top: 6px; overflow-wrap: anywhere; }
   .local { color: #9ca3af; font-size: 11px; margin-top: 10px; }
   @media (prefers-color-scheme: light) {
     .sub, label, .step-idx, .evidence, .local { color: #6b7280; }
@@ -293,6 +303,7 @@ function openBugDialog<T>(
   panel.className = 'panel';
   panel.setAttribute('role', 'dialog');
   panel.setAttribute('aria-label', title);
+  panel.lang = uiLanguage();
   const heading = document.createElement('div');
   heading.className = 'title';
   heading.textContent = title;
@@ -320,11 +331,11 @@ function openBugDialog<T>(
   const addBtn = document.createElement('button');
   addBtn.type = 'submit';
   addBtn.className = 'action primary';
-  addBtn.textContent = 'Add to the report';
+  addBtn.textContent = t('bug_addToReport');
   const cancelBtn = document.createElement('button');
   cancelBtn.type = 'button';
   cancelBtn.className = 'action';
-  cancelBtn.textContent = 'Cancel';
+  cancelBtn.textContent = t('common_cancel');
   actions.append(addBtn, cancelBtn);
   form.append(message, actions);
   panel.append(heading, form);
@@ -379,12 +390,25 @@ interface ExpectedChoice {
   actual: string;
 }
 
-const STATE_LABELS: Partial<Record<AssertionMatcher, string>> = {
-  toBeVisible: 'It should be visible',
-  toBeHidden: 'It should be hidden',
-  toBeEnabled: 'It should be enabled',
-  toBeDisabled: 'It should be disabled',
+const STATE_LABELS: Partial<Record<AssertionMatcher, MessageKey>> = {
+  toBeVisible: 'bug_shouldBeVisible',
+  toBeHidden: 'bug_shouldBeHidden',
+  toBeEnabled: 'bug_shouldBeEnabled',
+  toBeDisabled: 'bug_shouldBeDisabled',
 };
+
+/** The state words a recorded assertion keeps in `actual`, which the report stores in English. */
+const STATE_WORDS: Record<string, MessageKey> = {
+  visible: 'bug_stateVisible',
+  hidden: 'bug_stateHidden',
+  enabled: 'bug_stateEnabled',
+  disabled: 'bug_stateDisabled',
+};
+
+const STATE_MATCHERS = new Set<AssertionMatcher>(['toBeVisible', 'toBeHidden', 'toBeEnabled', 'toBeDisabled']);
+
+/** What `actual` holds for an element named in Something is missing. */
+const MISSING_ACTUAL = 'not on the page';
 
 /** What can be said to be wrong about an element: its value, text or name, or the opposite of each state it is in. */
 function expectedChoices(element: Element): { locator: string | null; choices: ExpectedChoice[] } {
@@ -392,10 +416,10 @@ function expectedChoices(element: Element): { locator: string | null; choices: E
   const choices: ExpectedChoice[] = [];
   for (const c of suggestion.candidates) {
     if (c.detail == null) continue;
-    if (c.method === 'toHaveValue') choices.push({ matcher: c.method, label: 'Its value', actual: c.detail });
-    if (c.method === 'toHaveText') choices.push({ matcher: c.method, label: 'Its text', actual: c.detail });
+    if (c.method === 'toHaveValue') choices.push({ matcher: c.method, label: t('bug_itsValue'), actual: c.detail });
+    if (c.method === 'toHaveText') choices.push({ matcher: c.method, label: t('bug_itsText'), actual: c.detail });
     if (c.method === 'toHaveAccessibleName')
-      choices.push({ matcher: c.method, label: 'Its name, as screen readers announce it', actual: c.detail });
+      choices.push({ matcher: c.method, label: t('bug_itsName'), actual: c.detail });
   }
   const model = new DomModel();
   const visible = model.isVisible(element);
@@ -404,21 +428,21 @@ function expectedChoices(element: Element): { locator: string | null; choices: E
     [visible ? 'toBeHidden' : 'toBeVisible', visible ? 'visible' : 'hidden'],
     [disabled ? 'toBeEnabled' : 'toBeDisabled', disabled ? 'disabled' : 'enabled'],
   ];
-  for (const [matcher, actual] of states) choices.push({ matcher, label: STATE_LABELS[matcher]!, actual });
+  for (const [matcher, actual] of states) choices.push({ matcher, label: t(STATE_LABELS[matcher]!), actual });
   return { locator: suggestion.locator, choices };
 }
 
 /** The expected-value dialog for a picked element. */
 function expectedDialog(element: Element): Promise<StepAssertion | null> {
   const { locator, choices } = expectedChoices(element);
-  return openBugDialog<StepAssertion>("Mark what's wrong", ({ form, field, say }) => {
+  return openBugDialog<StepAssertion>(t('bug_mark'), ({ form, field, say }) => {
     if (locator) {
       const sub = document.createElement('div');
       sub.className = 'sub';
       const code = document.createElement('span');
       code.className = 'piwi-loc';
       code.innerHTML = highlightLocator(locator);
-      sub.append('on ', code);
+      sub.append(...tNodes('bug_onElement', { locator: code }));
       form.appendChild(sub);
     }
     const select = document.createElement('select');
@@ -428,22 +452,22 @@ function expectedDialog(element: Element): Promise<StepAssertion | null> {
       option.textContent = c.label;
       select.appendChild(option);
     });
-    field("What's wrong", select);
+    field(t('bug_whatsWrong'), select);
     const actual = document.createElement('div');
     actual.className = 'actual';
-    field('The page shows', actual);
+    field(t('bug_pageShows'), actual);
     const expected = input();
-    field('It should be', expected);
-    const note = input('', 'What happened, in your words (optional)');
-    field('Note', note);
+    field(t('bug_shouldShow'), expected);
+    const note = input('', t('bug_notePlaceholder'));
+    field(t('bug_note'), note);
 
     const expectedLabel = expected.previousElementSibling as HTMLElement;
     const show = () => {
       const choice = choices[Number(select.value)]!;
-      actual.textContent = choice.actual;
       const takesValue = VALUE_MATCHERS.has(choice.matcher);
       expected.hidden = !takesValue;
       expectedLabel.hidden = !takesValue;
+      actual.textContent = takesValue ? choice.actual : stateWord(choice.actual);
       if (takesValue) expected.value = choice.actual;
       say('');
     };
@@ -456,7 +480,7 @@ function expectedDialog(element: Element): Promise<StepAssertion | null> {
         const choice = choices[Number(select.value)]!;
         const takesValue = VALUE_MATCHERS.has(choice.matcher);
         if (takesValue && expected.value === choice.actual) {
-          say('That is what the page shows now. Type what it should be.');
+          say(t('bug_sameAsPage'));
           return null;
         }
         return {
@@ -472,25 +496,25 @@ function expectedDialog(element: Element): Promise<StepAssertion | null> {
 }
 
 /** The kinds of element a person can say are missing, in their words, most common first. */
-const MISSING_KINDS: ReadonlyArray<{ role: string; label: string }> = [
-  { role: 'button', label: 'Button' },
-  { role: 'link', label: 'Link' },
-  { role: 'heading', label: 'Title or heading' },
-  { role: 'textbox', label: 'Text field' },
-  { role: 'combobox', label: 'Dropdown' },
-  { role: 'checkbox', label: 'Checkbox' },
-  { role: 'radio', label: 'Radio button (one choice among several)' },
-  { role: 'option', label: 'Choice in a dropdown or a list' },
-  { role: 'tab', label: 'Tab' },
-  { role: 'menuitem', label: 'Menu item' },
-  { role: 'listitem', label: 'Item in a list' },
-  { role: 'row', label: 'Table row' },
-  { role: 'cell', label: 'Table cell' },
-  { role: 'img', label: 'Image or icon' },
-  { role: 'dialog', label: 'Dialog or popup window' },
-  { role: 'alert', label: 'Error or warning message' },
-  { role: 'status', label: 'Status or confirmation message' },
-  { role: 'region', label: 'Section of the page' },
+const MISSING_KINDS: ReadonlyArray<{ role: string; label: MessageKey }> = [
+  { role: 'button', label: 'bug_kindButton' },
+  { role: 'link', label: 'bug_kindLink' },
+  { role: 'heading', label: 'bug_kindHeading' },
+  { role: 'textbox', label: 'bug_kindTextbox' },
+  { role: 'combobox', label: 'bug_kindCombobox' },
+  { role: 'checkbox', label: 'bug_kindCheckbox' },
+  { role: 'radio', label: 'bug_kindRadio' },
+  { role: 'option', label: 'bug_kindOption' },
+  { role: 'tab', label: 'bug_kindTab' },
+  { role: 'menuitem', label: 'bug_kindMenuitem' },
+  { role: 'listitem', label: 'bug_kindListitem' },
+  { role: 'row', label: 'bug_kindRow' },
+  { role: 'cell', label: 'bug_kindCell' },
+  { role: 'img', label: 'bug_kindImg' },
+  { role: 'dialog', label: 'bug_kindDialog' },
+  { role: 'alert', label: 'bug_kindAlert' },
+  { role: 'status', label: 'bug_kindStatus' },
+  { role: 'region', label: 'bug_kindRegion' },
 ];
 
 /** `getByRole(role, { name })`, rendered by the chain grammar so the name is quoted the one safe way. */
@@ -509,25 +533,25 @@ function roleLocator(role: string, name: string): string {
 }
 
 function missingDialog(): Promise<{ target: RecordedTarget; note: string | null } | null> {
-  return openBugDialog('Something is missing', ({ field, say }) => {
+  return openBugDialog(t('bug_missing'), ({ field, say }) => {
     const role = document.createElement('select');
     for (const kind of MISSING_KINDS) {
       const option = document.createElement('option');
       option.value = kind.role;
-      option.textContent = kind.label;
+      option.textContent = t(kind.label);
       role.appendChild(option);
     }
-    field('What should be there', role);
-    const name = input('', 'Its name as a person reads it: Download invoice');
-    field('Its name', name);
-    const note = input('', 'What happened, in your words (optional)');
-    field('Note', note);
+    field(t('bug_whatShouldBeThere'), role);
+    const name = input('', t('bug_namePlaceholder'));
+    field(t('bug_itsNameLabel'), name);
+    const note = input('', t('bug_notePlaceholder'));
+    field(t('bug_note'), note);
     return {
       focus: name,
       submit: () => {
         const text = name.value.trim();
         if (!text) {
-          say('Give its name, as it would read on the page.');
+          say(t('bug_nameRequired'));
           return null;
         }
         const locator = roleLocator(role.value, text);
@@ -539,9 +563,7 @@ function missingDialog(): Promise<{ target: RecordedTarget; note: string | null 
           found = 0;
         }
         if (found > 0) {
-          say(
-            `${found === 1 ? 'One is' : `${found} are`} on this page already. Use Mark what's wrong to say what is wrong with it.`,
-          );
+          say(tn('bug_alreadyThere', found, { mark: t('bug_mark') }));
           return null;
         }
         return {
@@ -562,21 +584,21 @@ function missingDialog(): Promise<{ target: RecordedTarget; note: string | null 
 
 function wrongPageDialog(): Promise<StepAssertion | null> {
   const here = `${location.pathname}${location.search}`;
-  return openBugDialog<StepAssertion>('Wrong page', ({ form, field, say }) => {
+  return openBugDialog<StepAssertion>(t('bug_wrongPage'), ({ form, field, say }) => {
     const sub = document.createElement('div');
     sub.className = 'sub';
-    sub.textContent = `This is ${here}`;
+    sub.textContent = t('bug_youAreOn', { path: here });
     form.appendChild(sub);
     const expected = input(location.pathname, '/checkout/thanks');
-    field('It should be', expected);
-    const note = input('', 'What happened, in your words (optional)');
-    field('Note', note);
+    field(t('bug_pageShouldBe'), expected);
+    const note = input('', t('bug_notePlaceholder'));
+    field(t('bug_note'), note);
     return {
       focus: expected,
       submit: () => {
         const value = expected.value.trim();
         if (!value || value === here || value === location.pathname || value === location.href) {
-          say("That is this page's address. Type the one the flow should have reached.");
+          say(t('bug_samePage'));
           return null;
         }
         return { matcher: 'toHaveURL', expected: value, actual: here, negated: false, note: note.value.trim() || null };
@@ -638,7 +660,7 @@ export function runMissingFlow(hooks: BugRecorderHooks): Promise<void> {
       const step = await hooks.addAssert(missing.target, {
         matcher: 'toBeVisible',
         expected: null,
-        actual: 'not on the page',
+        actual: MISSING_ACTUAL,
         negated: false,
         note: missing.note,
       });
@@ -700,14 +722,27 @@ function stepRow(step: RecordedStep, index: number): HTMLElement {
   const text = document.createElement('span');
   text.textContent = describeStepInWords(step);
   row.append(idx, text);
-  const actual = step.assertion?.actual;
-  if (step.action === 'assert' && actual != null) {
+  const assertion = step.assertion;
+  if (step.action === 'assert' && assertion?.actual != null) {
     const shown = document.createElement('span');
     shown.className = 'step-actual';
-    shown.textContent = ` · shows "${actual}"`;
+    shown.textContent = ` · ${actualInWords(assertion.matcher, assertion.actual)}`;
     text.appendChild(shown);
   }
   return row;
+}
+
+/** A recorded state word (`hidden`) in the interface language. */
+function stateWord(actual: string): string {
+  const key = STATE_WORDS[actual];
+  return key ? t(key) : actual;
+}
+
+/** What the page showed at a marked step: a text in quotes, a state, or the missing element's absence. */
+function actualInWords(matcher: AssertionMatcher, actual: string): string {
+  if (matcher === 'toBeVisible' && actual === MISSING_ACTUAL) return t('bug_stepAbsent');
+  if (STATE_MATCHERS.has(matcher) && STATE_WORDS[actual]) return t('bug_stepIs', { state: stateWord(actual) });
+  return t('bug_stepShows', { text: actual });
 }
 
 /**
@@ -739,9 +774,9 @@ export function renderBugHud(
     .dot { width: 8px; height: 8px; border-radius: 50%; background: #ef4444; flex-shrink: 0; animation: pulse 1.4s ease-in-out infinite; }
     @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
     @media (prefers-reduced-motion: reduce) { .dot { animation: none; } }
-    .title { font-weight: 600; flex: 1; }
+    .title { font-weight: 600; flex: 1; min-width: 0; overflow-wrap: anywhere; }
     .steps { display: flex; flex-direction: column; gap: 2px; font-size: 11.5px; max-height: 150px; overflow: auto; }
-    .step { display: flex; gap: 6px; }
+    .step { display: flex; gap: 6px; overflow-wrap: anywhere; }
     .step-idx { color: #9ca3af; width: 16px; flex-shrink: 0; text-align: right; }
     .step.marked { color: #fca5a5; }
     .step-actual { opacity: .85; }
@@ -749,14 +784,15 @@ export function renderBugHud(
       border: 1px solid rgba(128,128,128,.3); background: rgba(128,128,128,.12); color: inherit; }
     button:hover, button:focus-visible { background: rgba(128,128,128,.25); }
     button.finish { background: #dc2626; border-color: #dc2626; color: #fff; margin-left: auto; }
-    .evidence { color: #9ca3af; font-size: 11px; }
-    .warn { color: #fca5a5; font-size: 11px; line-height: 1.35; }
+    .evidence { color: #9ca3af; font-size: 11px; overflow-wrap: anywhere; }
+    .warn { color: #fca5a5; font-size: 11px; line-height: 1.35; overflow-wrap: anywhere; }
     @media (prefers-color-scheme: light) { .warn, .step.marked { color: #b91c1c; } .evidence, .step-idx { color: #6b7280; } }
   `;
   const bar = document.createElement('div');
   bar.className = 'bar';
   bar.setAttribute('role', 'region');
-  bar.setAttribute('aria-label', 'Piwi Picker bug report');
+  bar.setAttribute('aria-label', t('bug_reportLabel'));
+  bar.lang = uiLanguage();
 
   const steps = normalizeSteps(state.events);
   const top = document.createElement('div');
@@ -765,7 +801,7 @@ export function renderBugHud(
   dot.className = 'dot';
   const title = document.createElement('div');
   title.className = 'title';
-  title.textContent = `Reporting a bug — ${steps.length} step${steps.length === 1 ? '' : 's'}`;
+  title.textContent = tn('bug_hudTitle', steps.length);
   top.append(dot, title);
   bar.appendChild(top);
 
@@ -792,10 +828,10 @@ export function renderBugHud(
     buttons.appendChild(b);
     return b;
   };
-  button("Mark what's wrong", handlers.mark).title = 'Pick an element and say what it should show';
-  button('Something is missing', handlers.missing).title = 'Name an element that should be on this page';
-  button('Wrong page', handlers.wrongPage).title = 'Say which page this should be';
-  button('Finish', handlers.finish, 'finish');
+  button(t('bug_mark'), handlers.mark).title = t('bug_markHint');
+  button(t('bug_missing'), handlers.missing).title = t('bug_missingHint');
+  button(t('bug_wrongPage'), handlers.wrongPage).title = t('bug_wrongPageHint');
+  button(t('bug_finish'), handlers.finish, 'finish');
   bar.appendChild(buttons);
 
   const summary = document.createElement('div');
@@ -803,7 +839,7 @@ export function renderBugHud(
   summary.textContent = evidenceSummary(evidence);
   bar.appendChild(summary);
 
-  for (const text of [captureError, evidence.screenshotNote]) {
+  for (const text of [captureError, evidence.screenshotNote && screenshotNoteText(evidence.screenshotNote)]) {
     if (!text) continue;
     const warn = document.createElement('div');
     warn.className = 'warn';
@@ -851,25 +887,26 @@ export async function renderBugFinishPanel(state: RecordingState, onDiscard: () 
   const panel = document.createElement('div');
   panel.className = 'panel';
   panel.setAttribute('role', 'dialog');
-  panel.setAttribute('aria-label', 'Piwi bug report');
+  panel.setAttribute('aria-label', t('bug_reportLabel'));
+  panel.lang = uiLanguage();
   panel.tabIndex = -1;
 
   const header = document.createElement('div');
   header.className = 'header';
   const heading = document.createElement('div');
   heading.className = 'title';
-  heading.textContent = `Bug report — ${initial.steps.steps.length} step${initial.steps.steps.length === 1 ? '' : 's'}`;
+  heading.textContent = tn('bug_finishTitle', initial.steps.steps.length);
   const closeBtn = document.createElement('button');
   closeBtn.className = 'close';
-  closeBtn.setAttribute('aria-label', 'Close');
+  closeBtn.setAttribute('aria-label', t('common_close'));
   closeBtn.textContent = '×';
   header.append(heading, closeBtn);
   panel.appendChild(header);
 
   const titleLabel = document.createElement('label');
-  titleLabel.textContent = 'Title';
+  titleLabel.textContent = t('bug_title');
   titleLabel.htmlFor = 'bug-title';
-  const titleInput = input(title, "What's wrong, in a few words: Coupon not applied to the total");
+  const titleInput = input(title, t('bug_titlePlaceholder'));
   titleInput.id = 'bug-title';
   titleInput.addEventListener('input', () => {
     title = titleInput.value;
@@ -884,16 +921,21 @@ export async function renderBugFinishPanel(state: RecordingState, onDiscard: () 
 
   const summary = document.createElement('div');
   summary.className = 'evidence';
-  summary.textContent = `Evidence: ${summarizeEvidence(initial.evidence)}`;
+  summary.textContent = t('bug_attached', { summary: summarizeEvidence(initial.evidence) });
   panel.appendChild(summary);
 
   const notes: string[] = [];
   if (expectedSteps(initial).length === 0) {
-    notes.push("Nothing is marked as wrong, so the failing test would pass. Record again and use Mark what's wrong.");
+    notes.push(t('bug_nothingMarked', { mark: t('bug_mark') }));
   }
-  for (const w of renderBugSpec(initial).warnings) notes.push(`Step ${w.step + 1}: ${w.message}`);
-  if (initial.evidence.screenshotNote && initial.evidence.screenshots.length === 0) {
-    notes.push(`No screenshot: ${initial.evidence.screenshotNote}`);
+  for (const w of renderBugSpec(initial).warnings)
+    notes.push(t('bug_stepWarning', { step: w.step + 1, message: w.message }));
+  if (initial.evidence.screenshots.length === 0) {
+    notes.push(
+      evidence.screenshotNote
+        ? t('bug_noScreenshot', { reason: screenshotNoteText(evidence.screenshotNote) })
+        : t('bug_noScreenshotTaken'),
+    );
   }
   for (const text of notes) {
     const warn = document.createElement('div');
@@ -913,17 +955,17 @@ export async function renderBugFinishPanel(state: RecordingState, onDiscard: () 
     actions.appendChild(b);
     return b;
   };
-  action('Copy failing test', 'primary', (b) => void copyToClipboard(renderBugSpec(report()).code, b)).title =
-    'A Playwright test that fails while the bug exists, marked with test.fail()';
-  action('Copy report', '', (b) => void copyToClipboard(renderBugMarkdown(report()), b)).title =
-    'The report as Markdown, for an issue or a message';
-  action('Download .zip', '', () => {
+  action(t('bug_copyTest'), 'primary', (b) => void copyToClipboard(renderBugSpec(report()).code, b)).title =
+    t('bug_copyTestHint');
+  action(t('bug_copyReport'), '', (b) => void copyToClipboard(renderBugMarkdown(report()), b)).title =
+    t('bug_copyReportHint');
+  action(t('bug_downloadZip'), '', () => {
     const current = report();
     downloadBlob(
       new Blob([bugReportZip(current, screenshots) as BlobPart], { type: 'application/zip' }),
       `piwi-bug-${fileStamp(current.context.time)}.zip`,
     );
-  }).title = 'steps.json, the test, the Markdown, evidence.json and the screenshots';
+  }).title = t('bug_downloadZipHint');
 
   const controller = new AbortController();
   const closePanel = () => {
@@ -932,7 +974,7 @@ export async function renderBugFinishPanel(state: RecordingState, onDiscard: () 
   };
   const replayMessage = document.createElement('div');
   replayMessage.className = 'warn';
-  action('Replay', '', (b) => {
+  action(t('bug_replay'), '', (b) => {
     b.disabled = true;
     void (async () => {
       let response: { ok: boolean; error?: string } | undefined;
@@ -950,16 +992,16 @@ export async function renderBugFinishPanel(state: RecordingState, onDiscard: () 
       if (response?.ok) closePanel();
       else {
         b.disabled = false;
-        replayMessage.textContent = response?.error ?? 'The replay could not start.';
+        replayMessage.textContent = response?.error ?? t('common_replayStartFailed');
       }
     })();
-  }).title = 'Play the steps again on this site, with a cursor, and see whether the bug shows';
-  action('Discard', 'danger', () => void onDiscard().then(closePanel, closePanel));
+  }).title = t('bug_replayHint');
+  action(t('common_discard'), 'danger', () => void onDiscard().then(closePanel, closePanel));
   panel.append(actions, replayMessage);
 
   const local = document.createElement('div');
   local.className = 'local';
-  local.textContent = 'Everything here stays in this browser: nothing is sent anywhere.';
+  local.textContent = t('bug_staysLocal');
   panel.appendChild(local);
 
   closeBtn.addEventListener('click', closePanel);

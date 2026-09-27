@@ -21,6 +21,7 @@ import { getActiveProjectOverride, resolveActiveProject, type ActiveProject } fr
 import { getCachedLocatorIndex } from '../shared/locator-index-cache.js';
 import { getLocatorBranchOverride, resolveLocatorBranch, setLocatorBranchOverride } from '../shared/locator-branch.js';
 import { requestLocatorIndex } from '../shared/locator-index-refresh.js';
+import { initI18n, t } from '../shared/i18n.js';
 import { isElementNode } from './engine-aria.js';
 import { pageView, scanCoverage, scopeScan, widerScope, type CoverageScan } from './coverage-scan.js';
 import {
@@ -166,7 +167,7 @@ function startCoverageOverlay(): void {
 
   const state: ViewState = { ...initialViewState(), scope: scopeRequest };
   let status: PanelStatus = 'loading';
-  let message: string | null = 'Loading the locator index…';
+  let message: string | null = t('coverage_loading');
   let project: ActiveProject | null = null;
   /** The branch whose index is read: a name, `*` for every branch, null for the default branch. */
   let branch: string | null = null;
@@ -382,12 +383,16 @@ function startCoverageOverlay(): void {
   function frames(): Frame[] {
     const out: Frame[] = [];
     if (state.scope && !state.choosingScope)
-      out.push({ element: state.scope, kind: 'scope', label: `Inside ${describe(state.scope)}` });
+      out.push({
+        element: state.scope,
+        kind: 'scope',
+        label: t('coverage_inside', { element: describe(state.scope) }),
+      });
     if (state.choosingScope && choosingTarget) {
       out.push({
         element: choosingTarget,
         kind: 'choosing',
-        label: `${describe(choosingTarget)} · click to look inside`,
+        label: t('coverage_choosingFrame', { element: describe(choosingTarget) }),
       });
     }
     if (aroundHover) out.push({ element: aroundHover, kind: 'around', label: describe(aroundHover) });
@@ -700,7 +705,7 @@ function startCoverageOverlay(): void {
       refreshError = answer.error;
     } else {
       status = 'error';
-      message = `Couldn't load the locator index of ${project.projectLabel}: ${answer.error}`;
+      message = t('coverage_loadFailed', { project: project.projectLabel, error: answer.error });
     }
     renderPanel();
     bridge();
@@ -717,8 +722,11 @@ function startCoverageOverlay(): void {
   }
 
   function loadingMessage(): string {
-    const on = branch === ALL_BRANCHES ? ' on every branch' : branch ? ` on ${branch}` : '';
-    return `Loading the locator index of ${project?.projectLabel ?? 'the project'}${on}…`;
+    if (!project) return t('coverage_loading');
+    const name = { project: project.projectLabel };
+    if (branch === ALL_BRANCHES) return t('coverage_loadingProjectAll', name);
+    if (branch) return t('coverage_loadingProjectBranch', { ...name, branch });
+    return t('coverage_loadingProject', name);
   }
 
   /** The panel's branch select: '' for the default branch, `*` for every branch, else a branch. */
@@ -751,8 +759,7 @@ function startCoverageOverlay(): void {
     instanceUrl = settings.instanceUrl;
     if (!isConnected(settings)) {
       status = 'not-connected';
-      message =
-        'Connect Piwi Picker to your Piwi instance to see which elements of this page your tests use: add the instance URL, an API key and a URL pattern for this site in the settings.';
+      message = t('coverage_notConnected');
       renderPanel();
       bridge();
       return;
@@ -760,8 +767,7 @@ function startCoverageOverlay(): void {
     project = resolveActiveProject(settings, override, location.href);
     if (!project) {
       status = 'no-project';
-      message =
-        'No project is mapped to this page. Add a URL pattern for it in the settings, or pick a project from the popup.';
+      message = t('coverage_noProject');
       renderPanel();
       bridge();
       return;
@@ -898,8 +904,7 @@ function startCoverageOverlay(): void {
         redraw();
         if (!project) {
           status = 'no-project';
-          message =
-            'No project is mapped to this page. Add a URL pattern for it in the settings, or pick a project from the popup.';
+          message = t('coverage_noProject');
           renderPanel();
           return;
         }
@@ -956,4 +961,4 @@ function startCoverageOverlay(): void {
   void boot();
 }
 
-startCoverageOverlay();
+void initI18n().then(startCoverageOverlay);

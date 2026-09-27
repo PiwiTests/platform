@@ -23,28 +23,6 @@ const srcDir = path.join(root, 'src');
 /** The only file allowed to hold UI text in code: it reads the catalogs. */
 const SKIPPED = new Set(['src/shared/i18n.ts']);
 
-/**
- * Files whose texts have not moved to the catalogs yet. This list only
- * shrinks: a file leaves it once it has no finding left, and the test fails
- * until it does.
- */
-const NOT_YET_MIGRATED = new Set([
-  'src/content/agent-context-panel.ts',
-  'src/content/assertion-panel.ts',
-  'src/content/bug-panel.ts',
-  'src/content/coverage-layer.ts',
-  'src/content/coverage-panel.ts',
-  'src/content/lint-overlay.ts',
-  'src/content/locator-console.ts',
-  'src/content/multi-pick.ts',
-  'src/content/record-panel.ts',
-  'src/content/record-ui.ts',
-  'src/content/replay-panel.ts',
-  'src/content/results-panel.ts',
-  'src/content/session-panel.ts',
-  'src/content/test-function-panel.ts',
-]);
-
 const TEXT_PROPERTIES = new Set(['textContent', 'innerText', 'title', 'placeholder', 'ariaLabel', 'alt']);
 const TEXT_ATTRIBUTES = new Set(['title', 'aria-label', 'placeholder', 'alt']);
 const TEXT_METHODS = new Set(['append', 'prepend', 'replaceChildren', 'createTextNode']);
@@ -170,12 +148,7 @@ const files = sourceFiles(srcDir)
   .sort();
 
 describe('no text written straight into the UI', () => {
-  it.each(files.filter((file) => !NOT_YET_MIGRATED.has(file)))('%s takes its texts from the catalogs', (file) => {
+  it.each(files)('%s takes its texts from the catalogs', (file) => {
     expect(findings(path.join(root, file))).toEqual([]);
-  });
-
-  it.each([...NOT_YET_MIGRATED])('%s, not yet migrated, still has texts to move', (file) => {
-    // Once a file is migrated, it leaves the list.
-    expect(findings(path.join(root, file)).length).toBeGreaterThan(0);
   });
 });

@@ -1,6 +1,7 @@
 import { stepLocator } from '@piwitests/core/codegen';
 import { parseLocatorChain } from '@piwitests/core/locator-chain';
 import type { RecordedStep } from '@piwitests/core/recording';
+import { t, tn } from '../shared/i18n.js';
 import { DomModel } from './engine-aria.js';
 import { createLocatorEngine } from './locator-engine.js';
 import { isOwnHost } from './record-ui.js';
@@ -57,16 +58,16 @@ function sameRect(a: DOMRect, b: DOMRect): boolean {
  */
 export async function resolveForAction(step: RecordedStep, timeout = ACTION_TIMEOUT_MS): Promise<Resolution> {
   const locator = locatorFor(step);
-  if (!locator) return { ok: false, reason: 'No locator was recorded for this element.' };
+  if (!locator) return { ok: false, reason: t('replay_reasonNoLocator') };
   const deadline = Date.now() + timeout;
   let reason = '';
   for (;;) {
     const found = findAll(locator);
     const model = new DomModel();
-    if (found.length === 0) reason = `Nothing on this page matches ${locator}.`;
-    else if (found.length > 1) reason = `${found.length} elements match ${locator}; an action needs exactly one.`;
-    else if (!model.isVisible(found[0]!)) reason = `${locator} is on the page but hidden.`;
-    else if (model.disabled(found[0]!)) reason = `${locator} is disabled.`;
+    if (found.length === 0) reason = t('replay_reasonNoMatch', { locator });
+    else if (found.length > 1) reason = tn('replay_reasonManyMatches', found.length, { locator });
+    else if (!model.isVisible(found[0]!)) reason = t('replay_reasonHidden', { locator });
+    else if (model.disabled(found[0]!)) reason = t('replay_reasonDisabled', { locator });
     else {
       const element = found[0]!;
       element.scrollIntoView({ block: 'center', inline: 'nearest' });
@@ -74,7 +75,7 @@ export async function resolveForAction(step: RecordedStep, timeout = ACTION_TIME
       await nextFrame();
       await nextFrame();
       if (element.isConnected && sameRect(before, element.getBoundingClientRect())) return { ok: true, element };
-      reason = `${locator} kept moving.`;
+      reason = t('replay_reasonMoving', { locator });
     }
     if (Date.now() >= deadline) return { ok: false, reason };
     await wait(POLL_MS);

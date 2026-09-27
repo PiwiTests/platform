@@ -1,6 +1,7 @@
 import type { RawCaptureEvent } from '@piwitests/core/recording';
 import { clearBugEvidence } from './bug-storage.js';
 import { hasSessionArea, sessionArea } from './session-area.js';
+import { t } from './i18n.js';
 
 /**
  * The running cross-page recording (event stream + on/off state), in
@@ -229,7 +230,7 @@ async function appendViaBackground(event: RawCaptureEvent): Promise<RecordingSta
   const response = (await chrome.runtime.sendMessage({ type: 'piwi-append-recording-event', event })) as
     | AppendRecordingEventResponse
     | undefined;
-  if (!response?.ok) throw new Error(response?.error ?? 'The background script did not answer.');
+  if (!response?.ok) throw new Error(response?.error ?? t('common_workerNoAnswer'));
   return response.state;
 }
 

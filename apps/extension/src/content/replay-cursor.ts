@@ -46,8 +46,8 @@ export function createCursor(start: { x: number; y: number } | null): FakeCursor
     ${SHARED_STYLE}
     .cursor { position: fixed; left: 0; top: 0; width: 22px; height: 26px; will-change: transform;
       transition: transform ${still ? 0 : MOVE_MS}ms cubic-bezier(.2,.7,.2,1); filter: drop-shadow(0 1px 2px rgba(0,0,0,.45)); }
-    .caption { position: absolute; left: 20px; top: 22px; white-space: nowrap; max-width: 280px; overflow: hidden;
-      text-overflow: ellipsis; background: #7c3aed; color: #fff; font-size: 11.5px; line-height: 1.3; padding: 3px 7px;
+    .caption { position: absolute; left: 20px; top: 22px; width: max-content; max-width: 280px;
+      overflow-wrap: anywhere; background: #7c3aed; color: #fff; font-size: 11.5px; line-height: 1.3; padding: 3px 7px;
       border-radius: 6px; opacity: 0; transition: opacity 150ms; }
     .caption.shown { opacity: 1; }
     .ripple { position: fixed; left: 0; top: 0; width: 36px; height: 36px; margin: -18px 0 0 -18px; border-radius: 50%;

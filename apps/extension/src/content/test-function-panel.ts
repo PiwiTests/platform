@@ -1,3 +1,4 @@
+import { initI18n, t, tn, uiLanguage } from '../shared/i18n.js';
 import { startTool, endTool, installEscapeToCancel } from '../shared/tool-session.js';
 import { TAG_TO_ROLE, INPUT_TYPE_TO_ROLE } from '@piwitests/core/locator-generation';
 import { testCatalogAgainstPage, type FunctionTestResult } from './test-function-scan.js';
@@ -12,15 +13,15 @@ const HOST_ID = 'piwi-test-function-host';
 const MAPS = { tagRoles: TAG_TO_ROLE, inputRoles: INPUT_TYPE_TO_ROLE };
 
 function verdictLabel(verdict: FunctionTestResult['verdict']): string {
-  if (verdict === 'ready') return 'ready to use here';
-  if (verdict === 'partial') return 'partial match';
-  return 'not found on this page';
+  if (verdict === 'ready') return t('functions_ready');
+  if (verdict === 'partial') return t('functions_partial');
+  return t('functions_notFound');
 }
 
 function stepLabel(step: FunctionTestResult['steps'][number]): string {
-  if (step.verdict === 'unique') return `${step.action}() → 1 match`;
-  if (step.verdict === 'ambiguous') return `${step.action}() → ${step.matchCount} matches (ambiguous)`;
-  return `${step.action}() → no match`;
+  if (step.verdict === 'unique') return t('functions_stepUnique', { action: step.action });
+  if (step.verdict === 'ambiguous') return tn('functions_stepAmbiguous', step.matchCount, { action: step.action });
+  return t('functions_stepMissing', { action: step.action });
 }
 
 function renderResult(result: FunctionTestResult): HTMLElement {
@@ -68,10 +69,11 @@ async function renderPanel(): Promise<void> {
     .panel { background: #111827; color: #f9fafb; border-radius: 12px; padding: 16px; width: min(560px, 92vw); max-height: 78vh;
       overflow: auto; box-shadow: 0 8px 40px rgba(0,0,0,.5); font-size: 13px; line-height: 1.5; }
     @media (prefers-color-scheme: light) { .panel { background: #ffffff; color: #111827; box-shadow: 0 8px 40px rgba(0,0,0,.2); } }
-    .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-    .title { font-weight: 600; font-size: 14px; }
+    .header { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+    .header > div:first-child { min-width: 0; }
+    .title { font-weight: 600; font-size: 14px; overflow-wrap: anywhere; hyphens: auto; }
     .sub { color: #9ca3af; font-size: 12px; }
-    .manage-link { color: #7c3aed; text-decoration: none; }
+    .manage-link { color: #a78bfa; text-decoration: none; overflow-wrap: anywhere; }
     .manage-link:hover, .manage-link:focus-visible { text-decoration: underline; }
     .close { background: none; border: none; color: inherit; opacity: .7; cursor: pointer; font-size: 18px; line-height: 1; padding: 4px 8px; border-radius: 6px; }
     .close:hover, .close:focus-visible { opacity: 1; background: rgba(128,128,128,.15); }
@@ -80,12 +82,12 @@ async function renderPanel(): Promise<void> {
       opacity: .85; cursor: pointer; padding: 3px 10px; border-radius: 999px; white-space: nowrap; }
     .refresh:hover:not(:disabled), .refresh:focus-visible:not(:disabled) { opacity: 1; border-color: #7c3aed; }
     .refresh:disabled { opacity: .45; cursor: default; }
-    .refresh-error { color: #eab308; font-size: 11.5px; padding: 4px 0 8px; }
-    .empty { color: #9ca3af; font-size: 12.5px; padding: 8px 0; }
+    .refresh-error { color: #eab308; font-size: 11.5px; padding: 4px 0 8px; overflow-wrap: anywhere; }
+    .empty { color: #9ca3af; font-size: 12.5px; padding: 8px 0; overflow-wrap: anywhere; hyphens: auto; }
     .row { border: 1px solid rgba(128,128,128,.3); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; }
     .row-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-    .name { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 600; }
-    .badge { font-size: 10.5px; padding: 2px 7px; border-radius: 999px; flex-shrink: 0; }
+    .name { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+    .badge { font-size: 10.5px; padding: 2px 7px; border-radius: 999px; flex-shrink: 0; max-width: 55%; text-align: center; }
     .badge.ready { background: rgba(34,197,94,.2); color: #22c55e; }
     .badge.partial { background: rgba(234,179,8,.2); color: #eab308; }
     .badge.not-found { background: rgba(128,128,128,.2); color: #9ca3af; }
@@ -93,6 +95,13 @@ async function renderPanel(): Promise<void> {
     .step { font-size: 11.5px; color: #9ca3af; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
     .step.unique { color: #22c55e; }
     .step.ambiguous { color: #eab308; }
+    .step { overflow-wrap: anywhere; }
+    @media (prefers-color-scheme: light) {
+      .sub, .empty, .step, .badge.not-found { color: #6b7280; }
+      .manage-link { color: #6d28d9; }
+      .refresh-error, .step.ambiguous, .badge.partial { color: #a16207; }
+      .step.unique, .badge.ready { color: #15803d; }
+    }
   `;
   root.appendChild(style);
 
@@ -101,12 +110,13 @@ async function renderPanel(): Promise<void> {
   const panel = document.createElement('div');
   panel.className = 'panel';
   panel.setAttribute('role', 'dialog');
-  panel.setAttribute('aria-label', 'Test catalog functions against this page');
   panel.tabIndex = -1;
 
   // `getActiveProjectOverride` reads session storage — see `session-access.ts`.
   await ensureSessionAccess();
-  const [connection, override] = await Promise.all([getConnectionSettings(), getActiveProjectOverride()]);
+  const [connection, override] = await Promise.all([getConnectionSettings(), getActiveProjectOverride(), initI18n()]);
+  panel.lang = uiLanguage();
+  panel.setAttribute('aria-label', t('functions_title'));
   const activeProject = resolveActiveProject(connection, override, location.href);
   const projectId = activeProject?.projectId ?? null;
 
@@ -115,10 +125,10 @@ async function renderPanel(): Promise<void> {
   const titleWrap = document.createElement('div');
   const title = document.createElement('div');
   title.className = 'title';
-  title.textContent = 'Test functions on this page';
+  title.textContent = t('functions_title');
   const sub = document.createElement('div');
   sub.className = 'sub';
-  sub.append('Esc to close');
+  sub.append(t('common_escToClose'));
   if (activeProject != null && connection.instanceUrl.trim()) {
     sub.append(' · ');
     const manageLink = document.createElement('a');
@@ -126,7 +136,7 @@ async function renderPanel(): Promise<void> {
     manageLink.href = projectCatalogUrl(connection.instanceUrl, activeProject.projectId);
     manageLink.target = '_blank';
     manageLink.rel = 'noopener noreferrer';
-    manageLink.textContent = `Manage ${activeProject.projectLabel}'s catalog in Piwi ↗`;
+    manageLink.textContent = t('functions_manage', { project: activeProject.projectLabel });
     sub.appendChild(manageLink);
   }
   titleWrap.append(title, sub);
@@ -135,12 +145,12 @@ async function renderPanel(): Promise<void> {
   actions.className = 'header-actions';
   const refreshBtn = document.createElement('button');
   refreshBtn.className = 'refresh';
-  refreshBtn.textContent = 'Refresh';
-  refreshBtn.title = 'Re-fetch this project’s catalog from Piwi';
+  refreshBtn.textContent = t('common_refresh');
+  refreshBtn.title = t('functions_refreshHint');
   if (projectId == null) refreshBtn.disabled = true;
   const closeBtn = document.createElement('button');
   closeBtn.className = 'close';
-  closeBtn.setAttribute('aria-label', 'Close');
+  closeBtn.setAttribute('aria-label', t('common_close'));
   closeBtn.textContent = '×';
   actions.append(refreshBtn, closeBtn);
   header.append(titleWrap, actions);
@@ -156,8 +166,8 @@ async function renderPanel(): Promise<void> {
       empty.className = 'empty';
       empty.textContent =
         activeProject == null
-          ? 'No project mapped to this page — add a URL pattern for it in the extension’s config, or pick a project from the popup.'
-          : `No functions in ${activeProject.projectLabel}’s catalog yet — add one in the dashboard, or extract one from a recording.`;
+          ? t('functions_noProject')
+          : t('functions_empty', { project: activeProject.projectLabel });
       resultsEl.appendChild(empty);
       return;
     }
@@ -175,7 +185,7 @@ async function renderPanel(): Promise<void> {
     if (projectId == null) return;
     refreshBtn.disabled = true;
     const previousLabel = refreshBtn.textContent;
-    if (force) refreshBtn.textContent = 'Refreshing…';
+    if (force) refreshBtn.textContent = t('common_refreshing');
     const result = await requestCatalogRefresh(projectId, { force });
     if (result.ok && result.refreshed) renderResults(await getCachedCatalog(projectId));
     refreshBtn.textContent = previousLabel;
@@ -183,7 +193,7 @@ async function renderPanel(): Promise<void> {
     if (!result.ok && force) {
       const failed = document.createElement('div');
       failed.className = 'refresh-error';
-      failed.textContent = `Couldn't refresh: ${result.error} Showing the last cached catalog.`;
+      failed.textContent = t('functions_refreshFailed', { error: result.error });
       resultsEl.prepend(failed);
     }
   }

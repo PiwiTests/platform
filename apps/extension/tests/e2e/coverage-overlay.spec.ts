@@ -13,6 +13,7 @@ import {
   stubCoverageChrome,
 } from './coverage-fixtures.js';
 import { servePages } from './engine-bundle.js';
+import { clippedInShadows } from './shadow.js';
 
 /**
  * The "Tested elements" overlay (`coverage-overlay.js`) driven as a bundle on
@@ -142,7 +143,7 @@ test.describe('coverage overlay on a page', () => {
     const preview = page.locator(`${HOST} .card.preview`);
     await expect(preview).toBeVisible();
     await expect(preview).toContainText('link "Deals"');
-    await expect(preview).toContainText('Operated by 1 test');
+    await expect(preview).toContainText('Acted on by 1 test');
     await expect(preview).toContainText('navigation › visits the deals');
     await page.mouse.move(700, 880);
     await expect(preview).toBeHidden();
@@ -162,7 +163,7 @@ test.describe('coverage overlay on a page', () => {
       "getByTestId('product-card').filter({ hasText: 'Blue mug' }).getByRole('button', { name: 'Add to cart' })",
     );
     await expect(card).toContainText("getByRole('button', { name: 'Add to cart' })");
-    await expect(card).toContainText('Matches 4 elements on this page');
+    await expect(card).toContainText('Finds 4 elements on this page');
     await expect(card.getByRole('link', { name: 'catalog › adds a mug to the cart' })).toHaveAttribute(
       'href',
       `${INSTANCE_URL}/test-cases/101`,
@@ -214,7 +215,7 @@ test.describe('coverage overlay on a page', () => {
     await panel.getByLabel('Checked').uncheck();
     await expect(page.locator(`${HOST} .box.checked`)).toHaveCount(0);
     await expect(page.locator(`${HOST} .box.operated`).first()).toBeAttached();
-    await panel.getByLabel('Heatmap').check();
+    await panel.getByLabel('Heat map').check();
     const heats = await page
       .locator(`${HOST} .box.operated`)
       .evaluateAll((els) => els.map((e) => Number((e as HTMLElement).style.getPropertyValue('--heat'))));
@@ -349,7 +350,7 @@ test.describe('coverage overlay on a page', () => {
     expect(dimmed).toBeGreaterThan(20);
     expect(await page.locator(`${HOST} .box.operated:not(.dim)`).count()).toBe(1);
     // A modal dialog makes the rest of the page inert, the overlay included.
-    await expect(page.locator(`${HOST} .panel`)).toContainText('The page shows a modal dialog');
+    await expect(page.locator(`${HOST} .panel`)).toContainText('The page has a dialog open');
   });
 
   test('collapses to a pill that keeps the summary, and expands back', async ({ page, context }) => {
@@ -357,7 +358,7 @@ test.describe('coverage overlay on a page', () => {
     await openShop(page, '?nodialog');
     await injectCoverage(page);
     const panel = page.locator(`${HOST} .panel`);
-    await panel.getByRole('button', { name: 'Collapse to a summary pill' }).click();
+    await panel.getByRole('button', { name: 'Shrink the panel to a summary' }).click();
     const pill = page.locator(`${HOST} .pill`);
     await expect(pill).toBeVisible();
     await expect(pill).toHaveText(/Piwi · 14\/34 tested · 8 tests/);
@@ -403,7 +404,7 @@ test.describe('coverage overlay states', () => {
     });
     await openShop(page, '?nodialog');
     await injectCoverage(page, 'no-project');
-    await expect(page.locator(`${HOST} .panel`)).toContainText('No project is mapped to this page');
+    await expect(page.locator(`${HOST} .panel`)).toContainText('No project is set for this page');
   });
 
   test('no cached index and the instance unreachable: says why and offers a retry', async ({ page, context }) => {
@@ -415,7 +416,7 @@ test.describe('coverage overlay states', () => {
     await injectCoverage(page, 'error');
     const panel = page.locator(`${HOST} .panel`);
     await expect(panel).toContainText(
-      "Couldn't load the locator index of Acme Mugs: Failed to fetch the locator index (502)",
+      'Could not load the locator index of Acme Mugs: Failed to fetch the locator index (502)',
     );
     await page.evaluate((index) => {
       (globalThis as Record<string, unknown>).__piwiTestRefreshAnswer = { ok: true, refreshed: true, index };
@@ -766,7 +767,7 @@ test.describe('coverage overlay: locators at risk', () => {
     const row = panel.locator('li.row', { hasText: "locator('aside.cart > button')" });
     await expect(row.locator('.detail').first()).toHaveText('CSS class · CSS structure · tests/legacy.spec.ts:20:5');
     await expect(row.locator('code.suggestion')).toHaveText("→ getByRole('button', { name: 'Checkout' })");
-    await row.getByRole('button', { name: 'Copy edit' }).click();
+    await row.getByRole('button', { name: 'Copy the change' }).click();
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
       "tests/legacy.spec.ts:20:5\n- locator('aside.cart > button')\n+ getByRole('button', { name: 'Checkout' })",
     );
@@ -868,7 +869,7 @@ test.describe('coverage overlay: what tests do on this page', () => {
     await stubCoverageChrome(context, { cached: shopIndex([...SHOP_TESTS, ...PAGE_TESTS]) });
     await openShop(page, '?nodialog');
     await injectCoverage(page);
-    await page.locator(`${HOST} .panel`).getByRole('button', { name: 'Collapse to a summary pill' }).click();
+    await page.locator(`${HOST} .panel`).getByRole('button', { name: 'Shrink the panel to a summary' }).click();
     await expect(page.locator(`${HOST} .pill`)).toContainText('1 missing here');
   });
 
@@ -891,5 +892,65 @@ test.describe('coverage overlay: what tests do on this page', () => {
     await injectCoverage(page);
     expect(await readCoverage(page)).toMatchObject({ pageScoped: false, missing: [], several: [] });
     await expect(page.locator(`${HOST} .panel .page-switch`)).toHaveCount(0);
+  });
+});
+
+test.describe('coverage overlay in French', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.setViewportSize({ width: 1400, height: 900 });
+  });
+
+  test('the panel, the cards and the At risk tab read in French', async ({ page, context }) => {
+    await stubCoverageChrome(context, {
+      language: 'fr',
+      cached: shopIndex([...SHOP_TESTS, ...PAGE_TESTS]),
+    });
+    await openShop(page, '?nodialog');
+    await injectCoverage(page);
+    const panel = page.locator(`${HOST} .panel`);
+    await expect(panel).toHaveAttribute('lang', 'fr');
+    await expect(page.locator(`${HOST} .layer`)).toHaveAttribute('lang', 'fr');
+    await expect(panel.locator('.title')).toHaveText('Éléments testés');
+    await expect(panel.locator('.sub')).toContainText('Acme Mugs · /shop.html · Échap pour fermer');
+    await expect(panel.getByRole('button', { name: 'Cette page' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(panel.locator('.meter-label')).toContainText('éléments trouvés, dont');
+    await expect(panel.getByRole('button', { name: 'Limiter à un élément' })).toBeVisible();
+    expect(await clippedInShadows(page)).toEqual([]);
+
+    await panel.getByRole('button', { name: /^Tests \d+$/ }).click();
+    await expect(panel.locator('li.row', { hasText: 'shows prices' })).toContainText('7 éléments');
+
+    await panel.getByRole('button', { name: /^À risque \d+$/ }).click();
+    await expect(panel.locator('.section-head')).toHaveText([
+      'Introuvables ici · 2',
+      'Plusieurs trouvés ici · 1',
+      /^Locators fragiles · \d+$/,
+    ]);
+    const payNow = panel.locator('li.row', { hasText: "getByRole('button', { name: 'Pay now' })" });
+    await expect(payNow.locator('.label')).toHaveText('Introuvable au chargement de la page');
+    expect(await clippedInShadows(page)).toEqual([]);
+
+    // The card of the Blue mug's button: page texts and locators stay as they are.
+    await page.locator(`${HOST} .badge`).filter({ hasText: '2' }).first().click();
+    const card = page.locator(`${HOST} .card.pinned`);
+    await expect(card).toContainText('button "Add to cart"');
+    await expect(card).toContainText('Manipulé par 2 tests');
+    await expect(card).toContainText('sur /shop.html, au chargement');
+    await expect(card.getByRole('link', { name: /Trouver ces locators dans Piwi/ })).toBeVisible();
+    await expect(card.getByRole('button', { name: 'Fermer' })).toBeVisible();
+    expect(await clippedInShadows(page)).toEqual([]);
+
+    await panel.getByRole('button', { name: 'Réduire le panneau à un résumé' }).click();
+    await expect(page.locator(`${HOST} .pill`)).toContainText(/Piwi · \d+\/\d+ testés · \d+ tests · 1 introuvable ici/);
+  });
+
+  test('the states before the page is checked read in French', async ({ page, context }) => {
+    await stubCoverageChrome(context, { language: 'fr', connection: null, cached: null });
+    await openShop(page, '?nodialog');
+    await injectCoverage(page, 'not-connected');
+    const panel = page.locator(`${HOST} .panel`);
+    await expect(panel).toContainText('Connectez Piwi Picker à votre instance Piwi');
+    await expect(panel.getByRole('button', { name: 'Ouvrir les réglages de Piwi Picker' })).toBeVisible();
+    expect(await clippedInShadows(page)).toEqual([]);
   });
 });

@@ -1,3 +1,4 @@
+import { initI18n, t, tn, uiLanguage } from '../shared/i18n.js';
 import { startTool, endTool, installEscapeToCancel, teardownToolSurfaces } from '../shared/tool-session.js';
 import {
   installPickerOverlay,
@@ -8,7 +9,7 @@ import {
 } from '@piwitests/picker-dom';
 import { derivePattern, type PatternResult } from './multi-pick-derive.js';
 import { TAG_TO_ROLE, INPUT_TYPE_TO_ROLE } from '@piwitests/core/locator-generation';
-import { COPY_MODES, COPY_MODE_LABELS, renderCopyMode } from '../shared/copy-modes.js';
+import { COPY_MODES, copyModeLabel, renderCopyMode } from '../shared/copy-modes.js';
 import { getLastCopyMode, setLastCopyMode } from '../shared/storage.js';
 import { installDescribeHook } from './top-locator.js';
 
@@ -65,8 +66,9 @@ function showBetweenPicksBar(count: number): Promise<'pick-more' | 'derive' | 'c
     style.textContent = `
       .bar {
         position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); pointer-events: auto;
-        display: flex; align-items: center; gap: 8px; background: #111827; color: #f9fafb;
+        display: flex; flex-wrap: wrap; align-items: center; gap: 8px; background: #111827; color: #f9fafb;
         border-radius: 10px; padding: 8px 10px; box-shadow: 0 8px 30px rgba(0,0,0,.4);
+        width: max-content; max-width: min(640px, calc(100vw - 32px)); box-sizing: border-box;
         font: 13px ui-sans-serif, system-ui, -apple-system, sans-serif;
       }
       @media (prefers-color-scheme: light) {
@@ -77,6 +79,7 @@ function showBetweenPicksBar(count: number): Promise<'pick-more' | 'derive' | 'c
         border: 1px solid rgba(128,128,128,.3); background: rgba(128,128,128,.12); color: inherit;
       }
       button:hover, button:focus-visible { background: rgba(128,128,128,.25); }
+      .label { min-width: 0; overflow-wrap: anywhere; hyphens: auto; }
       button.primary { background: #7c3aed; border-color: #7c3aed; color: #fff; }
       .close { border: none; background: none; opacity: .7; font-size: 16px; line-height: 1; padding: 2px 6px; }
     `;
@@ -84,19 +87,21 @@ function showBetweenPicksBar(count: number): Promise<'pick-more' | 'derive' | 'c
 
     const bar = document.createElement('div');
     bar.className = 'bar';
+    bar.lang = uiLanguage();
     const label = document.createElement('span');
-    label.textContent = `${count} similar items picked.`;
+    label.className = 'label';
+    label.textContent = tn('multipick_picked', count);
     const deriveBtn = document.createElement('button');
     deriveBtn.type = 'button';
     deriveBtn.className = 'primary';
-    deriveBtn.textContent = 'Derive pattern';
+    deriveBtn.textContent = t('multipick_derive');
     const moreBtn = document.createElement('button');
     moreBtn.type = 'button';
-    moreBtn.textContent = `Pick another (up to ${MAX_PICKS})`;
+    moreBtn.textContent = t('multipick_pickMore', { max: MAX_PICKS });
     const closeBtn = document.createElement('button');
     closeBtn.type = 'button';
     closeBtn.className = 'close';
-    closeBtn.setAttribute('aria-label', 'Cancel multi-pick');
+    closeBtn.setAttribute('aria-label', t('multipick_cancel'));
     closeBtn.textContent = '×';
     bar.append(label, moreBtn, deriveBtn, closeBtn);
     root.appendChild(bar);
@@ -140,7 +145,8 @@ function showMessage(text: string): Promise<void> {
         position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); pointer-events: auto;
         background: #111827; color: #f9fafb; border-radius: 10px; padding: 10px 14px;
         box-shadow: 0 8px 30px rgba(0,0,0,.4); font: 13px ui-sans-serif, system-ui, -apple-system, sans-serif;
-        max-width: min(480px, 90vw); cursor: pointer;
+        max-width: min(480px, 90vw); width: max-content; box-sizing: border-box; cursor: pointer;
+        overflow-wrap: anywhere; hyphens: auto;
       }
       @media (prefers-color-scheme: light) {
         .bar { background: #ffffff; color: #111827; box-shadow: 0 8px 30px rgba(0,0,0,.2); }
@@ -149,6 +155,7 @@ function showMessage(text: string): Promise<void> {
     root.appendChild(style);
     const bar = document.createElement('div');
     bar.className = 'bar';
+    bar.lang = uiLanguage();
     bar.textContent = text;
     root.appendChild(bar);
 
@@ -177,7 +184,7 @@ async function copyToClipboard(text: string, btn: HTMLButtonElement): Promise<vo
     return;
   }
   const original = btn.textContent;
-  btn.textContent = 'Copied';
+  btn.textContent = t('common_copied');
   setTimeout(() => {
     btn.textContent = original;
   }, 1200);
@@ -209,8 +216,9 @@ async function renderPatternPanel(result: PatternResult): Promise<void> {
     @media (prefers-color-scheme: light) {
       .panel { background: #ffffff; color: #111827; box-shadow: 0 8px 40px rgba(0,0,0,.2); }
     }
-    .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-    .title { font-weight: 600; font-size: 14px; }
+    .header { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+    .header > div { min-width: 0; }
+    .title { font-weight: 600; font-size: 14px; overflow-wrap: anywhere; hyphens: auto; }
     .sub { color: #9ca3af; font-size: 12px; }
     .close {
       background: none; border: none; color: inherit; opacity: .7; cursor: pointer; font-size: 18px;
@@ -219,7 +227,7 @@ async function renderPatternPanel(result: PatternResult): Promise<void> {
     .close:hover, .close:focus-visible { opacity: 1; background: rgba(128,128,128,.15); }
     .row { border: 1px solid rgba(128,128,128,.3); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; }
     .row code { display: block; font-size: 13px; line-height: 1.55; margin-bottom: 6px; }
-    .warn { color: #fbbf24; font-size: 11px; margin-bottom: 6px; }
+    .warn { color: #fbbf24; font-size: 11px; margin-bottom: 6px; overflow-wrap: anywhere; hyphens: auto; }
     .copy-row { display: flex; gap: 6px; flex-wrap: wrap; }
     button.copy {
       background: rgba(128,128,128,.12); color: inherit; border: 1px solid rgba(128,128,128,.3);
@@ -240,7 +248,8 @@ async function renderPatternPanel(result: PatternResult): Promise<void> {
   const panel = document.createElement('div');
   panel.className = 'panel';
   panel.setAttribute('role', 'dialog');
-  panel.setAttribute('aria-label', 'Piwi multi-pick pattern');
+  panel.lang = uiLanguage();
+  panel.setAttribute('aria-label', t('multipick_dialog'));
   panel.tabIndex = -1;
 
   const header = document.createElement('div');
@@ -248,14 +257,14 @@ async function renderPatternPanel(result: PatternResult): Promise<void> {
   const titleWrap = document.createElement('div');
   const title = document.createElement('div');
   title.className = 'title';
-  title.textContent = `${result.rows.length} locators from ${result.baseLocator}`;
+  title.textContent = tn('multipick_title', result.rows.length, { base: result.baseLocator ?? '' });
   const sub = document.createElement('div');
   sub.className = 'sub';
-  sub.textContent = 'Esc to close';
+  sub.textContent = t('common_escToClose');
   titleWrap.append(title, sub);
   const closeBtn = document.createElement('button');
   closeBtn.className = 'close';
-  closeBtn.setAttribute('aria-label', 'Close');
+  closeBtn.setAttribute('aria-label', t('common_close'));
   closeBtn.textContent = '×';
   header.append(titleWrap, closeBtn);
   panel.appendChild(header);
@@ -295,7 +304,7 @@ async function renderPatternPanel(result: PatternResult): Promise<void> {
       if (row.indexBased) {
         const warn = document.createElement('div');
         warn.className = 'warn';
-        warn.textContent = '⚠ index-based (nth) — breaks if the list reorders';
+        warn.textContent = t('multipick_byPosition');
         rowEl.appendChild(warn);
       }
 
@@ -306,7 +315,7 @@ async function renderPatternPanel(result: PatternResult): Promise<void> {
         btn.className = 'copy';
         btn.type = 'button';
         btn.dataset.active = String(mode === activeMode);
-        btn.textContent = COPY_MODE_LABELS[mode];
+        btn.textContent = copyModeLabel(mode);
         btn.addEventListener('click', () => {
           void copyToClipboard(renderCopyMode({ locator: row.locator }, mode), btn);
           activeMode = mode;
@@ -341,6 +350,8 @@ async function runMultiPick(): Promise<void> {
   const toolEpoch = startTool('multi-pick', teardownToolSurfaces);
   installEscapeToCancel();
   const removeDescribeHook = installDescribeHook();
+  // The catalog loads while the first picks run; the tool's own text comes after them.
+  const i18nReady = initI18n();
   try {
     const picked: Element[] = [];
     for (let i = 0; i < MIN_PICKS; i++) {
@@ -349,6 +360,7 @@ async function runMultiPick(): Promise<void> {
       picked.push(el);
     }
 
+    await i18nReady;
     while (picked.length < MAX_PICKS) {
       const action = await showBetweenPicksBar(picked.length);
       if (action === 'cancel') return;
@@ -360,9 +372,7 @@ async function runMultiPick(): Promise<void> {
 
     const result = derivePattern(picked, ROLE_MAPS);
     if (result.rows.length === 0) {
-      await showMessage(
-        "Couldn't find a pattern — pick items that share a role (e.g. table rows) or a CSS class (e.g. cards).",
-      );
+      await showMessage(t('multipick_noPattern'));
       return;
     }
     await renderPatternPanel(result);

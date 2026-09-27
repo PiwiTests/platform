@@ -1,4 +1,5 @@
 import type { RecordedStep, StepAssertion } from '@piwitests/core/recording';
+import { t, tn } from '../shared/i18n.js';
 import type { ReplayStepResult } from '../shared/replay-storage.js';
 
 /**
@@ -34,24 +35,29 @@ export function absoluteUrl(expected: string, origin: string): string {
   }
 }
 
-/** What an assertion found, in words: `"Total: 40"`, `hidden`, `not on the page`. */
+/** A page text quoted the interface language's way: `"Total: 40"`, `« Total: 40 »`. */
+export function quoted(text: string): string {
+  return t('replay_quotedText', { text });
+}
+
+/** What an assertion found, in words: `"Total: 40"`, `hidden`, `nothing on the page`. */
 function foundText(assertion: StepAssertion, o: Observation): string {
   if (assertion.matcher === 'toHaveURL') return o.url;
-  if (o.count === 0) return 'not on the page';
-  if (o.count > 1) return `${o.count} elements`;
+  if (o.count === 0) return t('replay_foundMissing');
+  if (o.count > 1) return tn('replay_foundCount', o.count);
   switch (assertion.matcher) {
     case 'toHaveText':
-      return `"${normalizeText(o.text ?? '')}"`;
+      return quoted(normalizeText(o.text ?? ''));
     case 'toHaveValue':
-      return `"${o.value ?? ''}"`;
+      return quoted(o.value ?? '');
     case 'toHaveAccessibleName':
-      return `"${normalizeText(o.name ?? '')}"`;
+      return quoted(normalizeText(o.name ?? ''));
     case 'toBeVisible':
     case 'toBeHidden':
-      return o.visible ? 'visible' : 'hidden';
+      return o.visible ? t('replay_foundVisible') : t('replay_foundHidden');
     case 'toBeEnabled':
     case 'toBeDisabled':
-      return o.enabled ? 'enabled' : 'disabled';
+      return o.enabled ? t('replay_foundEnabled') : t('replay_foundDisabled');
   }
 }
 
@@ -117,7 +123,7 @@ export function replayVerdict(steps: RecordedStep[], results: ReplayStepResult[]
   if (failed >= 0) {
     const found = results[failed]!.found ?? '';
     const actual = steps[failed]?.assertion?.actual;
-    const sameAsReported = actual != null && (found === `"${normalizeText(actual)}"` || found === actual);
+    const sameAsReported = actual != null && (found === quoted(normalizeText(actual)) || found === actual);
     return { kind: 'reproduced', step: failed, found, sameAsReported };
   }
   if (stopped) return { kind: 'stopped', step: results.length };
@@ -131,22 +137,33 @@ export function verdictText(verdict: ReplayVerdict, steps: RecordedStep[]): { ti
   switch (verdict.kind) {
     case 'reproduced': {
       const expected = steps[verdict.step]?.assertion?.expected;
-      const wanted = expected != null ? `expected "${expected}", ` : '';
-      return {
-        title: 'Reproduced: the bug shows here',
-        detail: `Step ${verdict.step + 1}: ${wanted}found ${verdict.found}${verdict.sameAsReported ? ', as reported' : ''}.`,
-      };
+      const step = verdict.step + 1;
+      const found = verdict.found;
+      let detail: string;
+      if (expected != null) {
+        detail = verdict.sameAsReported
+          ? t('replay_verdictExpectedFoundAsReported', { step, expected, found })
+          : t('replay_verdictExpectedFound', { step, expected, found });
+      } else {
+        detail = verdict.sameAsReported
+          ? t('replay_verdictFoundAsReported', { step, found })
+          : t('replay_verdictFound', { step, found });
+      }
+      return { title: t('replay_verdictReproduced'), detail };
     }
     case 'not-reproduced':
-      return { title: 'Not reproduced', detail: 'Every expected result holds on this page.' };
+      return { title: t('replay_verdictNotReproduced'), detail: t('replay_verdictNotReproducedDetail') };
     case 'diverged':
       return {
-        title: `Could not reach the bug: stopped at step ${verdict.step + 1}`,
-        detail: `${verdict.reason} The page differs here: other data, another login, a flag.`,
+        title: t('replay_verdictDiverged', { step: verdict.step + 1 }),
+        detail: t('replay_verdictDivergedDetail', { reason: verdict.reason }),
       };
     case 'completed':
-      return { title: 'Replayed every step', detail: 'Nothing in these steps says what to expect.' };
+      return { title: t('replay_verdictCompleted'), detail: t('replay_verdictCompletedDetail') };
     case 'stopped':
-      return { title: 'Stopped', detail: `Stopped before step ${verdict.step + 1}.` };
+      return {
+        title: t('replay_verdictStopped'),
+        detail: t('replay_verdictStoppedDetail', { step: verdict.step + 1 }),
+      };
   }
 }

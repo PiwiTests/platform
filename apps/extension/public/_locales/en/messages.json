@@ -730,5 +730,3379 @@
   "options_disconnected": {
     "message": "Disconnected.",
     "description": "Settings page: after Disconnect."
+  },
+  "common_close": {
+    "message": "Close",
+    "description": "Button or aria-label that closes a panel or dialog."
+  },
+  "common_copy": {
+    "message": "Copy",
+    "description": "Button that copies a text to the clipboard."
+  },
+  "common_copied": {
+    "message": "Copied",
+    "description": "A copy button’s label for a second after a successful copy."
+  },
+  "common_cancel": {
+    "message": "Cancel",
+    "description": "Button that closes a dialog without doing anything."
+  },
+  "common_save": {
+    "message": "Save",
+    "description": "Button that saves what a dialog asks for."
+  },
+  "common_stop": {
+    "message": "Stop",
+    "description": "Button that stops a recording or a replay."
+  },
+  "common_discard": {
+    "message": "Discard",
+    "description": "Button that throws away a recording in progress."
+  },
+  "common_refresh": {
+    "message": "Refresh",
+    "description": "Button that downloads fresh data from the Piwi instance."
+  },
+  "common_refreshing": {
+    "message": "Refreshing…",
+    "description": "The Refresh button while it works."
+  },
+  "common_escToClose": {
+    "message": "Esc to close",
+    "description": "Hint in a panel’s corner: the Escape key closes it."
+  },
+  "common_clickToCopy": {
+    "message": "Click to copy",
+    "description": "Tooltip of a text that copies itself when clicked."
+  },
+  "console_expression": {
+    "message": "Locator to try",
+    "description": "Locator console: aria-label of the text field where a Playwright locator is typed."
+  },
+  "console_close": {
+    "message": "Close the locator console",
+    "description": "Locator console: aria-label of its × button."
+  },
+  "console_unique": {
+    "message": "One element: strict mode passes",
+    "description": "Locator console verdict when the locator finds exactly one element, after a ✓. “Strict mode” is Playwright’s rule that an action fails when a locator finds several elements. Short: the bar is one line."
+  },
+  "console_none": {
+    "message": "No element found",
+    "description": "Locator console verdict when the locator finds nothing on the page."
+  },
+  "console_many_one": {
+    "message": "$count$ element: strict mode fails",
+    "description": "Locator console verdict when the locator finds several elements, after a ⚠: a Playwright action on it would fail.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "console_many_other": {
+    "message": "$count$ elements: strict mode fails",
+    "description": "Locator console verdict when the locator finds several elements, after a ⚠: a Playwright action on it would fail.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "console_manyOutlined_one": {
+    "message": "$count$ element: strict mode fails (the first $shown$ outlined)",
+    "description": "Locator console verdict when the locator finds more elements than the page outlines. $shown$ is how many are outlined.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "120"
+      },
+      "shown": {
+        "content": "$2",
+        "example": "50"
+      }
+    }
+  },
+  "console_manyOutlined_other": {
+    "message": "$count$ elements: strict mode fails (the first $shown$ outlined)",
+    "description": "Locator console verdict when the locator finds more elements than the page outlines. $shown$ is how many are outlined.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "120"
+      },
+      "shown": {
+        "content": "$2",
+        "example": "50"
+      }
+    }
+  },
+  "console_approximate": {
+    "message": "approximate: text is compared loosely here",
+    "description": "Locator console: added after the verdict when the count may differ from Playwright’s, because names and texts are matched loosely in the page."
+  },
+  "console_invalidCss": {
+    "message": "$selector$ is not a CSS selector this page accepts",
+    "description": "Locator console error: the browser refused the CSS selector inside locator(…). $selector$ is the selector as typed.",
+    "placeholders": {
+      "selector": {
+        "content": "$1",
+        "example": "div::bad"
+      }
+    }
+  },
+  "console_unreadable": {
+    "message": "The console can’t read this locator: $error$",
+    "description": "Locator console error. $error$ is the parser’s message, in English, naming what it could not read.",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "unterminated string"
+      }
+    }
+  },
+  "common_copyModeBare": {
+    "message": "Locator",
+    "description": "Copy button under a locator: copies the locator alone, as `page.getByRole(…)`. One word."
+  },
+  "common_copyModeAction": {
+    "message": "Action",
+    "description": "Copy button under a locator: copies it as an action line, `await page.….click();`. One word."
+  },
+  "common_copyModeExpect": {
+    "message": "Assertion",
+    "description": "Copy button under a locator: copies it as an assertion line, `await expect(page.…).toBeVisible();`. One word."
+  },
+  "multipick_picked_one": {
+    "message": "$count$ similar item picked",
+    "description": "Multi-pick: the bar shown between picks, before its buttons. $count$ is how many items of the list were picked (2 or 3).",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "multipick_picked_other": {
+    "message": "$count$ similar items picked",
+    "description": "Multi-pick: the bar shown between picks, before its buttons. $count$ is how many items of the list were picked (2 or 3).",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "multipick_derive": {
+    "message": "Find the pattern",
+    "description": "Multi-pick: main button of the bar between picks. Builds the locators shared by the picked items of a list. Short."
+  },
+  "multipick_pickMore": {
+    "message": "Pick one more ($max$ at most)",
+    "description": "Multi-pick: button of the bar between picks that picks another item of the list. $max$ is the most items it takes.",
+    "placeholders": {
+      "max": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "multipick_cancel": {
+    "message": "Cancel Multi-pick",
+    "description": "Multi-pick: aria-label of the × button of the bar between picks."
+  },
+  "multipick_noPattern": {
+    "message": "No shared pattern found. Pick items of the same kind, such as rows of one table or cards of one list.",
+    "description": "Multi-pick: message shown for a few seconds when the picked items have nothing in common to build locators from."
+  },
+  "multipick_dialog": {
+    "message": "Multi-pick: shared pattern",
+    "description": "Multi-pick: aria-label of the results panel, read by screen readers."
+  },
+  "multipick_title_one": {
+    "message": "$count$ locator built on $base$",
+    "description": "Multi-pick: title of the results panel. $base$ is the locator every result starts from, as code (kept as it is).",
+    "placeholders": {
+      "base": {
+        "content": "$1",
+        "example": "getByRole('listitem')"
+      },
+      "count": {
+        "content": "$2",
+        "example": "3"
+      }
+    }
+  },
+  "multipick_title_other": {
+    "message": "$count$ locators built on $base$",
+    "description": "Multi-pick: title of the results panel. $base$ is the locator every result starts from, as code (kept as it is).",
+    "placeholders": {
+      "base": {
+        "content": "$1",
+        "example": "getByRole('listitem')"
+      },
+      "count": {
+        "content": "$2",
+        "example": "3"
+      }
+    }
+  },
+  "multipick_byPosition": {
+    "message": "⚠ Found by its position (nth): it breaks if the order of the list changes",
+    "description": "Multi-pick: warning under a locator that finds its item only by its place in the list. “nth” is Playwright code, kept as it is."
+  },
+  "lint_dialog": {
+    "message": "Lint overlay: elements hard to target",
+    "description": "Lint overlay: aria-label of its panel, read by screen readers. Starts with the tool’s name as the popup shows it."
+  },
+  "lint_none": {
+    "message": "No element hard to target",
+    "description": "Lint overlay: panel title when every button, link and field of the page can be targeted by a good locator."
+  },
+  "lint_found_one": {
+    "message": "$count$ element hard to target",
+    "description": "Lint overlay: panel title. $count$ is how many buttons, links or fields have no test id, no name and no stable place, so no good locator finds them.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "4"
+      }
+    }
+  },
+  "lint_found_other": {
+    "message": "$count$ elements hard to target",
+    "description": "Lint overlay: panel title. $count$ is how many buttons, links or fields have no test id, no name and no stable place, so no good locator finds them.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "4"
+      }
+    }
+  },
+  "lint_close": {
+    "message": "Close the lint overlay",
+    "description": "Lint overlay: aria-label of its × button."
+  },
+  "lint_allGood": {
+    "message": "Every button, link and field here has a test id, a name, or a stable place in the page.",
+    "description": "Lint overlay: shown under the title when nothing was found."
+  },
+  "lint_copyChecklist": {
+    "message": "Copy as a Markdown checklist",
+    "description": "Lint overlay: button that copies every finding as a Markdown checklist, to paste into a ticket. The checklist itself stays in English."
+  },
+  "lint_role": {
+    "message": "role $role$",
+    "description": "Lint overlay: after an element’s tag, its ARIA role. $role$ is the role’s name as code, kept as it is.",
+    "placeholders": {
+      "role": {
+        "content": "$1",
+        "example": "button"
+      }
+    }
+  },
+  "lint_roleNamed": {
+    "message": "role $role$, named \"$name$\"",
+    "description": "Lint overlay: after an element’s tag, its ARIA role and its accessible name. $role$ is code; $name$ is the page’s own text.",
+    "placeholders": {
+      "name": {
+        "content": "$1",
+        "example": "Save"
+      },
+      "role": {
+        "content": "$2",
+        "example": "button"
+      }
+    }
+  },
+  "assert_dialog": {
+    "message": "Suggested assertions",
+    "description": "Assertions panel: accessible name of the dialog that lists expect(…) lines for a picked element."
+  },
+  "assert_count_one": {
+    "message": "$count$ suggested assertion",
+    "description": "Assertions panel title: how many expect(…) lines it suggests for the picked element.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "4"
+      }
+    }
+  },
+  "assert_count_other": {
+    "message": "$count$ suggested assertions",
+    "description": "Assertions panel title: how many expect(…) lines it suggests for the picked element.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "4"
+      }
+    }
+  },
+  "assert_none": {
+    "message": "No assertion to suggest",
+    "description": "Assertions panel title when it has nothing to suggest for the picked element."
+  },
+  "assert_locator": {
+    "message": "With the locator $locator$",
+    "description": "Assertions panel, under the title. $locator$ is the Playwright locator every suggested line uses, shown as code (e.g. getByRole('button', { name: 'Pay' })).",
+    "placeholders": {
+      "locator": {
+        "content": "$1",
+        "example": "getByTestId('submit-btn')"
+      }
+    }
+  },
+  "assert_noLocator": {
+    "message": "No locator found for this element, so there is no assertion to suggest.",
+    "description": "Assertions panel, in place of the list, when no locator could be built for the picked element."
+  },
+  "agent_title": {
+    "message": "Context for an AI agent",
+    "description": "Agent context panel: its title and the dialog’s accessible name. The panel shows a text block describing the picked element, to paste into an AI coding assistant."
+  },
+  "agent_hint": {
+    "message": "Paste this into your AI coding assistant",
+    "description": "Agent context panel, under the title, before “Esc to close”. The block below it stays in English: it is written for the AI."
+  },
+  "session_dialog": {
+    "message": "Session: named elements",
+    "description": "Session panel: accessible name of the dialog listing the elements the user named, across pages."
+  },
+  "session_count_one": {
+    "message": "$count$ named element",
+    "description": "Session panel title: how many elements the user has named so far.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "session_count_other": {
+    "message": "$count$ named elements",
+    "description": "Session panel title: how many elements the user has named so far.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "session_none": {
+    "message": "No named element yet",
+    "description": "Session panel title while the list is empty."
+  },
+  "session_kept": {
+    "message": "The list stays until you close the browser",
+    "description": "Session panel, under the title, after “Esc to close ·”: the named elements are kept until the browser closes."
+  },
+  "session_intro": {
+    "message": "Choose an element and give it a name. Add elements from several pages, then copy the list as a page object, a Markdown table or JSON.",
+    "description": "Session panel, shown while the list is empty: how the tool works."
+  },
+  "session_remove": {
+    "message": "Remove $name$",
+    "description": "Session panel: accessible name of the × button of one element of the list. $name$ is the name the user gave it (a code identifier).",
+    "placeholders": {
+      "name": {
+        "content": "$1",
+        "example": "submitButton"
+      }
+    }
+  },
+  "session_add": {
+    "message": "+ Add an element",
+    "description": "Session panel button: choose one more element on the page and name it."
+  },
+  "session_copyPageObject": {
+    "message": "Copy as page object (.ts)",
+    "description": "Session panel button: copies the list as a TypeScript page object class."
+  },
+  "session_copyMarkdown": {
+    "message": "Copy as Markdown table",
+    "description": "Session panel button: copies the list as a Markdown table."
+  },
+  "session_copyJson": {
+    "message": "Copy as JSON",
+    "description": "Session panel button: copies the list as JSON."
+  },
+  "session_clear": {
+    "message": "Clear the list",
+    "description": "Session panel button: removes every named element."
+  },
+  "session_nameLabel": {
+    "message": "Name for this element",
+    "description": "Session panel: accessible name of the text field where the user names the element just chosen."
+  },
+  "session_namePlaceholder": {
+    "message": "Name, e.g. submitButton",
+    "description": "Session panel: placeholder of the name field. “submitButton” is an example of a code name: keep it as it is."
+  },
+  "session_nameRequired": {
+    "message": "Type a name.",
+    "description": "Session panel: error under the name field when it is empty."
+  },
+  "session_nameInvalid": {
+    "message": "Use only letters without accents, digits, _ or $$, and do not start with a digit.",
+    "description": "Session panel: error under the name field when the name cannot be a code name. $$ writes a dollar sign."
+  },
+  "session_nameTaken": {
+    "message": "\"$name$\" is already in the list.",
+    "description": "Session panel: error under the name field when another element of the list has that name. $name$ is the name typed.",
+    "placeholders": {
+      "name": {
+        "content": "$1",
+        "example": "submitButton"
+      }
+    }
+  },
+  "pick_panelLabel": {
+    "message": "Locators for the chosen element",
+    "description": "Pick results: aria-label of the panel that lists the locators found for the element the user picked."
+  },
+  "pick_title_one": {
+    "message": "$count$ locator",
+    "description": "Pick results: the panel’s title. $count$ is how many locators were found for the picked element; they are listed from the most stable down.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "4"
+      }
+    }
+  },
+  "pick_title_other": {
+    "message": "$count$ locators, most stable first",
+    "description": "Pick results: the panel’s title. $count$ is how many locators were found for the picked element; they are listed from the most stable down.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "4"
+      }
+    }
+  },
+  "pick_tabHint": {
+    "message": "Tab moves between rows",
+    "description": "Pick results: hint under the title, after “Esc to close ·”: the Tab key moves the focus from one locator to the next. Short."
+  },
+  "pick_copyAll_one": {
+    "message": "Copy all $count$",
+    "description": "Pick results: button in the header that copies every locator of the list. $count$ is how many. Short: it sits next to the close button.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "4"
+      }
+    }
+  },
+  "pick_copyAll_other": {
+    "message": "Copy all $count$",
+    "description": "Pick results: button in the header that copies every locator of the list. $count$ is how many. Short: it sits next to the close button.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "4"
+      }
+    }
+  },
+  "pick_copyAllHint": {
+    "message": "Copy every locator, one per line, to paste into Piwi’s Locators page and find the tests that use them",
+    "description": "Pick results: tooltip of the “Copy all” button. “Locators” is the name of a page of the Piwi dashboard."
+  },
+  "pick_score": {
+    "message": "Stability score: the higher, the less likely the locator breaks when the page changes",
+    "description": "Pick results: tooltip of the number shown before each locator."
+  },
+  "pick_unique": {
+    "message": "Finds exactly one element on the page right now",
+    "description": "Pick results: under a locator, after a ✓, when the locator finds only the picked element on the page as it is now."
+  },
+  "pick_ambiguous_one": {
+    "message": "Finds $count$ element right now: add $first$ or $filter$ to keep one",
+    "description": "Pick results: under a locator, after a ⚠, when the locator finds several elements on the page. $count$ is how many. $first$ and $filter$ are Playwright code the user can add to the locator: .first() and .filter({ hasText: … }).",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "filter": {
+        "content": "$2",
+        "example": ".filter({ hasText: … })"
+      },
+      "first": {
+        "content": "$3",
+        "example": ".first()"
+      }
+    }
+  },
+  "pick_ambiguous_other": {
+    "message": "Finds $count$ elements right now: add $first$ or $filter$ to keep one",
+    "description": "Pick results: under a locator, after a ⚠, when the locator finds several elements on the page. $count$ is how many. $first$ and $filter$ are Playwright code the user can add to the locator: .first() and .filter({ hasText: … }).",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "filter": {
+        "content": "$2",
+        "example": ".filter({ hasText: … })"
+      },
+      "first": {
+        "content": "$3",
+        "example": ".first()"
+      }
+    }
+  },
+  "pick_topPick": {
+    "message": "Best choice: the most stable locator.",
+    "description": "Pick results: note under the first locator of the list."
+  },
+  "pick_whereBranch": {
+    "message": "$project$ on $branch$",
+    "description": "Pick results: a project and the branch its tests are read from, inserted as $where$ in the Piwi section’s sentences (“Tests of $where$”). $project$ is the project’s name, $branch$ a git branch name.",
+    "placeholders": {
+      "branch": {
+        "content": "$1",
+        "example": "develop"
+      },
+      "project": {
+        "content": "$2",
+        "example": "Acme Mugs"
+      }
+    }
+  },
+  "pick_whereAnyBranch": {
+    "message": "$project$ on any branch",
+    "description": "Pick results: a project whose tests are read from every branch, inserted as $where$ in the Piwi section’s sentences. $project$ is the project’s name.",
+    "placeholders": {
+      "project": {
+        "content": "$1",
+        "example": "Acme Mugs"
+      }
+    }
+  },
+  "pick_checking": {
+    "message": "Looking for the tests of $where$ that reach this element…",
+    "description": "Pick results: shown while the extension looks for the project’s tests whose locators find the picked element. $where$ is the project’s name, maybe with its branch (see pick_whereBranch).",
+    "placeholders": {
+      "where": {
+        "content": "$1",
+        "example": "Acme Mugs"
+      }
+    }
+  },
+  "pick_indexNotReady": {
+    "message": "The tested elements of this project are not available yet.",
+    "description": "Pick results: Piwi has not built the list of what the project’s tests reach yet."
+  },
+  "pick_indexFailed": {
+    "message": "The tested elements could not be loaded: $error$",
+    "description": "Pick results: loading what the project’s tests reach failed. $error$ is the reason, a sentence.",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "The instance rejected the API key for this project."
+      }
+    }
+  },
+  "pick_testsOf": {
+    "message": "Tests of $where$",
+    "description": "Pick results: heading of the Piwi section when its tests could not be read. $where$ is the project’s name, maybe with its branch.",
+    "placeholders": {
+      "where": {
+        "content": "$1",
+        "example": "Acme Mugs"
+      }
+    }
+  },
+  "pick_findInPiwi": {
+    "message": "Find these locators in Piwi ↗",
+    "description": "Pick results: link that opens the Piwi dashboard’s Locators page with the listed locators. The ↗ says it opens a new tab."
+  },
+  "pick_showInside": {
+    "message": "Show tested elements inside it",
+    "description": "Pick results: button that opens Tested elements limited to the picked element and what it contains."
+  },
+  "pick_showInsideHint": {
+    "message": "Open Tested elements for this element only",
+    "description": "Pick results: tooltip of the “Show tested elements inside it” button. “Tested elements” is the name of a tool."
+  },
+  "pick_showAll": {
+    "message": "Show every tested element",
+    "description": "Pick results: button that opens Tested elements on the whole page."
+  },
+  "pick_showAllHint": {
+    "message": "Open Tested elements on this page",
+    "description": "Pick results: tooltip of the “Show every tested element” button. “Tested elements” is the name of a tool."
+  },
+  "pick_groupSelf": {
+    "message": "This element",
+    "description": "Pick results: heading above the tests whose locators find the picked element itself."
+  },
+  "pick_groupInside_one": {
+    "message": "Inside it · $count$ element",
+    "description": "Pick results: heading above the tests whose locators find something inside the picked element. $count$ is how many elements inside it they find.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "pick_groupInside_other": {
+    "message": "Inside it · $count$ elements",
+    "description": "Pick results: heading above the tests whose locators find something inside the picked element. $count$ is how many elements inside it they find.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "pick_groupAroundOne": {
+    "message": "Around it · $element$",
+    "description": "Pick results: heading above the tests whose locators find one element around the picked one. $element$ describes that element, as a CSS-like tag and its text, taken from the page.",
+    "placeholders": {
+      "element": {
+        "content": "$1",
+        "example": "article.card \"Blue mug\""
+      }
+    }
+  },
+  "pick_groupAround_one": {
+    "message": "Around it · $count$ container",
+    "description": "Pick results: heading above the tests whose locators find elements around the picked one. $count$ is how many such elements.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "pick_groupAround_other": {
+    "message": "Around it · $count$ containers",
+    "description": "Pick results: heading above the tests whose locators find elements around the picked one. $count$ is how many such elements.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "pick_reachedBy_one": {
+    "message": "Reached by $count$ test of $where$",
+    "description": "Pick results: heading of the Piwi section. $count$ tests of the project have a locator that finds the picked element (or something inside it). $where$ is the project’s name, maybe with its branch.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      },
+      "where": {
+        "content": "$2",
+        "example": "Acme Mugs"
+      }
+    }
+  },
+  "pick_reachedBy_other": {
+    "message": "Reached by $count$ tests of $where$",
+    "description": "Pick results: heading of the Piwi section. $count$ tests of the project have a locator that finds the picked element (or something inside it). $where$ is the project’s name, maybe with its branch.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      },
+      "where": {
+        "content": "$2",
+        "example": "Acme Mugs"
+      }
+    }
+  },
+  "pick_notReached": {
+    "message": "Not reached by any test of $where$",
+    "description": "Pick results: heading of the Piwi section when no test of the project has a locator that finds the picked element. $where$ is the project’s name, maybe with its branch.",
+    "placeholders": {
+      "where": {
+        "content": "$1",
+        "example": "Acme Mugs"
+      }
+    }
+  },
+  "pick_onlyAround": {
+    "message": "No test finds this element or anything inside it. These tests reach an element around it.",
+    "description": "Pick results: under “Not reached by any test”, when some tests reach an element that contains the picked one."
+  },
+  "pick_noneHere": {
+    "message": "No locator in the project’s tests finds this element on this page.",
+    "description": "Pick results: under “Not reached by any test”, when no test reaches the element nor anything around it."
+  },
+  "pick_more_one": {
+    "message": "$count$ more: Tested elements lists them all.",
+    "description": "Pick results: after the first few tests listed, how many are not shown. “Tested elements” is the name of a tool.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "pick_more_other": {
+    "message": "$count$ more: Tested elements lists them all.",
+    "description": "Pick results: after the first few tests listed, how many are not shown. “Tested elements” is the name of a tool.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "pick_brittle": {
+    "message": "Brittle locator: $locator$ · $reasons$",
+    "description": "Pick results: a locator of the project’s tests that finds the picked element but may break easily. $locator$ is the locator, as code; $reasons$ lists why it is brittle (“CSS class · CSS structure”).",
+    "placeholders": {
+      "locator": {
+        "content": "$1",
+        "example": "locator('aside.cart > button')"
+      },
+      "reasons": {
+        "content": "$2",
+        "example": "CSS class · CSS structure"
+      }
+    }
+  },
+  "pick_useRankedInstead": {
+    "message": "These tests could use one of the locators listed above instead.",
+    "description": "Pick results: after the brittle locators of the project’s tests."
+  },
+  "functions_title": {
+    "message": "Test functions on this page",
+    "description": "Test functions: the panel’s title and aria-label. The panel checks each test function of the project against the page open."
+  },
+  "functions_manage": {
+    "message": "Manage the functions of $project$ in Piwi ↗",
+    "description": "Test functions: link under the title to the project’s function catalog in the Piwi dashboard. $project$ is the project’s name. The ↗ says it opens a new tab.",
+    "placeholders": {
+      "project": {
+        "content": "$1",
+        "example": "Acme Mugs"
+      }
+    }
+  },
+  "functions_refreshHint": {
+    "message": "Download this project’s functions from Piwi again",
+    "description": "Test functions: tooltip of the Refresh button."
+  },
+  "functions_noProject": {
+    "message": "No Piwi project is set for this site. Add it under Project mappings in Piwi Picker’s settings, or choose a project in Piwi Picker’s menu.",
+    "description": "Test functions: shown instead of the list when no project applies to the page. “Project mappings” is a section of the settings page (options_mappingsHeading)."
+  },
+  "functions_empty": {
+    "message": "$project$ has no test functions yet. Add one in the Piwi dashboard, or create one from a recording.",
+    "description": "Test functions: shown instead of the list when the project’s catalog is empty. $project$ is the project’s name.",
+    "placeholders": {
+      "project": {
+        "content": "$1",
+        "example": "Acme Mugs"
+      }
+    }
+  },
+  "functions_refreshFailed": {
+    "message": "$error$ The functions shown are the last ones downloaded.",
+    "description": "Test functions: shown above the list when the Refresh button failed. $error$ is the reason, a sentence ending with a period.",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "The function catalog could not be refreshed."
+      }
+    }
+  },
+  "functions_ready": {
+    "message": "Ready to use here",
+    "description": "Test functions: badge next to a function when every one of its steps finds exactly one element on the page. Short. In French it agrees with “fonction” (feminine)."
+  },
+  "functions_partial": {
+    "message": "Partly found here",
+    "description": "Test functions: badge next to a function when some of its steps find their element on the page and others do not, or find several. Short. In French it agrees with “fonction” (feminine)."
+  },
+  "functions_notFound": {
+    "message": "Not on this page",
+    "description": "Test functions: badge next to a function when none of its steps finds an element on the page. Short. In French it agrees with “fonction” (feminine)."
+  },
+  "functions_stepUnique": {
+    "message": "$action$() → one element",
+    "description": "Test functions: a step of a function, whose target is exactly one element of the page. $action$ is the Playwright action, as code (click, fill…).",
+    "placeholders": {
+      "action": {
+        "content": "$1",
+        "example": "click"
+      }
+    }
+  },
+  "functions_stepAmbiguous_one": {
+    "message": "$action$() → $count$ element, can’t tell which",
+    "description": "Test functions: a step of a function whose target matches several elements of the page. $action$ is the Playwright action, as code; $count$ how many elements.",
+    "placeholders": {
+      "action": {
+        "content": "$1",
+        "example": "click"
+      },
+      "count": {
+        "content": "$2",
+        "example": "3"
+      }
+    }
+  },
+  "functions_stepAmbiguous_other": {
+    "message": "$action$() → $count$ elements, can’t tell which",
+    "description": "Test functions: a step of a function whose target matches several elements of the page. $action$ is the Playwright action, as code; $count$ how many elements.",
+    "placeholders": {
+      "action": {
+        "content": "$1",
+        "example": "click"
+      },
+      "count": {
+        "content": "$2",
+        "example": "3"
+      }
+    }
+  },
+  "functions_stepMissing": {
+    "message": "$action$() → no element",
+    "description": "Test functions: a step of a function whose target is not on the page. $action$ is the Playwright action, as code.",
+    "placeholders": {
+      "action": {
+        "content": "$1",
+        "example": "click"
+      }
+    }
+  },
+  "record_hudTitle_one": {
+    "message": "Recording: $count$ step",
+    "description": "Recorder HUD, top line while a recording runs, next to a red dot and the Stop button: how many steps are recorded so far. Short: the HUD is narrow.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "4"
+      }
+    }
+  },
+  "record_hudTitle_other": {
+    "message": "Recording: $count$ steps",
+    "description": "Recorder HUD, top line while a recording runs, next to a red dot and the Stop button: how many steps are recorded so far. Short: the HUD is narrow.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "4"
+      }
+    }
+  },
+  "record_lastLocator": {
+    "message": "Last locator",
+    "description": "Recorder HUD: small uppercase heading above the locator of the element the last step acted on."
+  },
+  "record_matchingFunctions": {
+    "message": "Matching test functions",
+    "description": "Recorder HUD: small uppercase heading above the project’s test functions that look like the steps recorded so far."
+  },
+  "record_noMatch": {
+    "message": "No test function matches yet",
+    "description": "Recorder HUD, under “Matching test functions”, while none of the project’s test functions looks like the steps recorded so far."
+  },
+  "record_matchReady": {
+    "message": "ready",
+    "description": "Recorder HUD: small badge next to a test function whose steps were all recorded, so the exported test can call it. One short word (French: agrees with “fonction”)."
+  },
+  "record_stepNotSaved": {
+    "message": "A step could not be saved.",
+    "description": "Recorder HUD, in red: saving the last recorded step failed."
+  },
+  "record_storageFull": {
+    "message": "No room left to save steps: stop now and export what you have. New steps are lost.",
+    "description": "Recorder HUD, in red: the browser’s storage for the recording is full, so the steps recorded from now on are not kept."
+  },
+  "record_reviewLabel": {
+    "message": "Your recording",
+    "description": "Recorder review panel: accessible name of the dialog that opens when a recording stops (read by screen readers, not shown)."
+  },
+  "record_nothingRecorded": {
+    "message": "Nothing recorded",
+    "description": "Recorder review panel: title when the recording has no step."
+  },
+  "record_stepsRecorded_one": {
+    "message": "$count$ step recorded",
+    "description": "Recorder review panel: title, how many steps the recording has.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "4"
+      }
+    }
+  },
+  "record_stepsRecorded_other": {
+    "message": "$count$ steps recorded",
+    "description": "Recorder review panel: title, how many steps the recording has.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "4"
+      }
+    }
+  },
+  "record_stepsMatched_one": {
+    "message": "$count$ step matches one of your test functions",
+    "description": "Recorder review panel: line under the title when some steps will be written as calls to the project’s test functions in the exported code.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "record_stepsMatched_other": {
+    "message": "$count$ steps match your test functions",
+    "description": "Recorder review panel: line under the title when some steps will be written as calls to the project’s test functions in the exported code.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "record_noFunctionMatches": {
+    "message": "None of your test functions match: the code uses locators only.",
+    "description": "Recorder review panel: line under the title when the project has test functions but none matches the steps."
+  },
+  "record_notConnected": {
+    "message": "Not connected to Piwi: the code uses locators only.",
+    "description": "Recorder review panel: line under the title when Piwi Picker is not connected to a Piwi instance, so it knows no test function."
+  },
+  "record_noSteps": {
+    "message": "No steps were recorded.",
+    "description": "Recorder review panel: body when the recording has no step."
+  },
+  "record_stepValue": {
+    "message": "$step$ = \"$value$\"",
+    "description": "Recorder review panel, one line per step, in a code font: $step$ is the Playwright action and its target (“fill — Email”), $value$ the text typed or chosen, as it was on the page. Only the quotes change.",
+    "placeholders": {
+      "step": {
+        "content": "$1",
+        "example": "fill — Email"
+      },
+      "value": {
+        "content": "$2",
+        "example": "alice@example.com"
+      }
+    }
+  },
+  "record_copyCode": {
+    "message": "Copy as TypeScript",
+    "description": "Recorder review panel: main button, copies the recording as the code of a Playwright test."
+  },
+  "record_copyCodeWithFunctions": {
+    "message": "Copy as TypeScript (with your functions)",
+    "description": "Recorder review panel: main button when connected to Piwi: copies the code of a Playwright test that calls the project’s test functions where the steps match them."
+  },
+  "record_copyCodeWithoutFunctions": {
+    "message": "Copy as TypeScript without your functions",
+    "description": "Recorder review panel: button that copies the code with plain locators only, even where a test function matches."
+  },
+  "record_downloadSteps": {
+    "message": "Download steps",
+    "description": "Recorder review panel: button that saves the recording as a steps file (JSON)."
+  },
+  "record_downloadStepsTitle": {
+    "message": "Saves the recording as a steps file, to share it or turn it into a test with piwi codegen",
+    "description": "Recorder review panel: tooltip of “Download steps”. “piwi codegen” is a command: keep it as it is."
+  },
+  "bug_reportLabel": {
+    "message": "Piwi Picker bug report",
+    "description": "Report a bug: aria-label of the HUD shown while a bug is recorded, and of the finished report panel."
+  },
+  "bug_hudTitle_one": {
+    "message": "Reporting a bug · $count$ step",
+    "description": "Report a bug: title of the small box in the page corner while the steps are recorded. $count$ is the number of steps so far. Short: one line.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "4"
+      }
+    }
+  },
+  "bug_hudTitle_other": {
+    "message": "Reporting a bug · $count$ steps",
+    "description": "Report a bug: title of the small box in the page corner while the steps are recorded. $count$ is the number of steps so far. Short: one line.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "4"
+      }
+    }
+  },
+  "bug_mark": {
+    "message": "Mark what’s wrong",
+    "description": "Report a bug: button that lets the tester pick an element on the page and say what it should show. Also the title of the dialog it opens, and quoted in other messages."
+  },
+  "bug_markHint": {
+    "message": "Choose an element on the page and say what it should show",
+    "description": "Report a bug: tooltip of the “Mark what’s wrong” button."
+  },
+  "bug_missing": {
+    "message": "Something is missing",
+    "description": "Report a bug: button to name an element that should be on the page and is not. Also the title of the dialog it opens."
+  },
+  "bug_missingHint": {
+    "message": "Name an element that should be on this page and is not",
+    "description": "Report a bug: tooltip of the “Something is missing” button."
+  },
+  "bug_wrongPage": {
+    "message": "Wrong page",
+    "description": "Report a bug: button to say the steps ended on the wrong page. Also the title of the dialog it opens."
+  },
+  "bug_wrongPageHint": {
+    "message": "Say which page you should have reached",
+    "description": "Report a bug: tooltip of the “Wrong page” button."
+  },
+  "bug_finish": {
+    "message": "Finish",
+    "description": "Report a bug: button that stops recording and opens the finished report."
+  },
+  "bug_screenshotBlocked": {
+    "message": "Chrome lets Piwi Picker take a screenshot only after you open it on this tab. Open Piwi Picker and choose \"$action$\".",
+    "description": "Report a bug: warning when no screenshot could be taken. $action$ is the name of the popup’s “Take a screenshot” button.",
+    "placeholders": {
+      "action": {
+        "content": "$1",
+        "example": "Take a screenshot"
+      }
+    }
+  },
+  "bug_stepShows": {
+    "message": "shows \"$text$\"",
+    "description": "Report a bug: after a marked step, what the page showed. $text$ is the page’s text, as it is.",
+    "placeholders": {
+      "text": {
+        "content": "$1",
+        "example": "Total: 50"
+      }
+    }
+  },
+  "bug_stepIs": {
+    "message": "is $state$",
+    "description": "Report a bug: after a marked step, the state the element was in. $state$ is one of the bug_state* words (visible, hidden, usable, grayed out).",
+    "placeholders": {
+      "state": {
+        "content": "$1",
+        "example": "hidden"
+      }
+    }
+  },
+  "bug_stepAbsent": {
+    "message": "not on the page",
+    "description": "Report a bug: after a step saying an element is missing: the page does not have it."
+  },
+  "bug_stateVisible": {
+    "message": "visible",
+    "description": "Report a bug: an element’s state, in “is $state$” and “The page shows”."
+  },
+  "bug_stateHidden": {
+    "message": "hidden",
+    "description": "Report a bug: an element’s state (not visible), in “is $state$” and “The page shows”. French: masculine (un élément)."
+  },
+  "bug_stateEnabled": {
+    "message": "usable",
+    "description": "Report a bug: an element’s state (enabled), in “is $state$” and “The page shows”."
+  },
+  "bug_stateDisabled": {
+    "message": "grayed out",
+    "description": "Report a bug: an element’s state (disabled, cannot be used), in “is $state$” and “The page shows”. French: masculine (un élément)."
+  },
+  "bug_addToReport": {
+    "message": "Add to the report",
+    "description": "Report a bug: the main button of each dialog."
+  },
+  "bug_onElement": {
+    "message": "Element: $locator$",
+    "description": "Report a bug, “Mark what’s wrong” dialog: under the title, the locator of the chosen element. $locator$ is Playwright code, never translated.",
+    "placeholders": {
+      "locator": {
+        "content": "$1",
+        "example": "getByTestId('cart-total')"
+      }
+    }
+  },
+  "bug_whatsWrong": {
+    "message": "What’s wrong",
+    "description": "Report a bug, “Mark what’s wrong” dialog: label of the list of what can be wrong with the element."
+  },
+  "bug_itsValue": {
+    "message": "Its value",
+    "description": "Report a bug: a choice in “What’s wrong”: the value of a field."
+  },
+  "bug_itsText": {
+    "message": "Its text",
+    "description": "Report a bug: a choice in “What’s wrong”: the text the element shows."
+  },
+  "bug_itsName": {
+    "message": "Its name, as screen readers announce it",
+    "description": "Report a bug: a choice in “What’s wrong”: the element’s accessible name."
+  },
+  "bug_shouldBeVisible": {
+    "message": "It should be visible",
+    "description": "Report a bug: a choice in “What’s wrong”, for an element that is hidden. “It” is the element (masculine in French)."
+  },
+  "bug_shouldBeHidden": {
+    "message": "It should be hidden",
+    "description": "Report a bug: a choice in “What’s wrong”, for an element that is visible."
+  },
+  "bug_shouldBeEnabled": {
+    "message": "It should be usable, not grayed out",
+    "description": "Report a bug: a choice in “What’s wrong”, for an element that is disabled."
+  },
+  "bug_shouldBeDisabled": {
+    "message": "It should be grayed out, not usable",
+    "description": "Report a bug: a choice in “What’s wrong”, for an element that is enabled."
+  },
+  "bug_pageShows": {
+    "message": "The page shows",
+    "description": "Report a bug, “Mark what’s wrong” dialog: label above what the element shows now."
+  },
+  "bug_shouldShow": {
+    "message": "What it should show",
+    "description": "Report a bug, “Mark what’s wrong” dialog: label of the field where the tester types the expected value or text."
+  },
+  "bug_note": {
+    "message": "Note",
+    "description": "Report a bug: label of the optional free-text note in each dialog."
+  },
+  "bug_notePlaceholder": {
+    "message": "What happened, in your words (optional)",
+    "description": "Report a bug: placeholder of the note field."
+  },
+  "bug_sameAsPage": {
+    "message": "That is what the page shows now. Type what it should show instead.",
+    "description": "Report a bug, “Mark what’s wrong” dialog: error when the expected value is the one the page already shows."
+  },
+  "bug_whatShouldBeThere": {
+    "message": "What should be there",
+    "description": "Report a bug, “Something is missing” dialog: label of the list of element kinds."
+  },
+  "bug_itsNameLabel": {
+    "message": "Its name",
+    "description": "Report a bug, “Something is missing” dialog: label of the field for the missing element’s name."
+  },
+  "bug_namePlaceholder": {
+    "message": "Its name as it reads on the page: Download invoice",
+    "description": "Report a bug, “Something is missing” dialog: placeholder of the name field, with an example after the colon."
+  },
+  "bug_nameRequired": {
+    "message": "Type its name, as it would read on the page.",
+    "description": "Report a bug, “Something is missing” dialog: error when the name is empty."
+  },
+  "bug_alreadyThere_one": {
+    "message": "$count$ element like this is already on the page: use \"$mark$\" to say what is wrong with it.",
+    "description": "Report a bug, “Something is missing” dialog: error when the named element is on the page. $count$ is how many were found (1 or more); $mark$ is the name of the “Mark what’s wrong” button.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      },
+      "mark": {
+        "content": "$2",
+        "example": "Mark what’s wrong"
+      }
+    }
+  },
+  "bug_alreadyThere_other": {
+    "message": "$count$ elements like this are already on the page: use \"$mark$\" to say what is wrong with them.",
+    "description": "Report a bug, “Something is missing” dialog: error when the named element is on the page. $count$ is how many were found (1 or more); $mark$ is the name of the “Mark what’s wrong” button.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      },
+      "mark": {
+        "content": "$2",
+        "example": "Mark what’s wrong"
+      }
+    }
+  },
+  "bug_youAreOn": {
+    "message": "You are on $path$",
+    "description": "Report a bug, “Wrong page” dialog: under the title, the address of the current page. $path$ is the page’s path, as it is.",
+    "placeholders": {
+      "path": {
+        "content": "$1",
+        "example": "/cart"
+      }
+    }
+  },
+  "bug_pageShouldBe": {
+    "message": "The page you should be on",
+    "description": "Report a bug, “Wrong page” dialog: label of the field for the expected address."
+  },
+  "bug_samePage": {
+    "message": "That is the address of this page. Type the one you should have reached.",
+    "description": "Report a bug, “Wrong page” dialog: error when the expected address is the current one."
+  },
+  "bug_kindButton": {
+    "message": "Button",
+    "description": "Report a bug: a kind of element in “What should be there”."
+  },
+  "bug_kindLink": {
+    "message": "Link",
+    "description": "Report a bug: a kind of element in “What should be there”."
+  },
+  "bug_kindHeading": {
+    "message": "Title or heading",
+    "description": "Report a bug: a kind of element in “What should be there”: a heading."
+  },
+  "bug_kindTextbox": {
+    "message": "Text field",
+    "description": "Report a bug: a kind of element in “What should be there”."
+  },
+  "bug_kindCombobox": {
+    "message": "Dropdown",
+    "description": "Report a bug: a kind of element in “What should be there”."
+  },
+  "bug_kindCheckbox": {
+    "message": "Checkbox",
+    "description": "Report a bug: a kind of element in “What should be there”."
+  },
+  "bug_kindRadio": {
+    "message": "Radio button (one choice among several)",
+    "description": "Report a bug: a kind of element in “What should be there”."
+  },
+  "bug_kindOption": {
+    "message": "Choice in a dropdown or a list",
+    "description": "Report a bug: a kind of element in “What should be there”: an option."
+  },
+  "bug_kindTab": {
+    "message": "Tab",
+    "description": "Report a bug: a kind of element in “What should be there”: a tab of a tabbed panel."
+  },
+  "bug_kindMenuitem": {
+    "message": "Menu item",
+    "description": "Report a bug: a kind of element in “What should be there”."
+  },
+  "bug_kindListitem": {
+    "message": "Item in a list",
+    "description": "Report a bug: a kind of element in “What should be there”."
+  },
+  "bug_kindRow": {
+    "message": "Table row",
+    "description": "Report a bug: a kind of element in “What should be there”."
+  },
+  "bug_kindCell": {
+    "message": "Table cell",
+    "description": "Report a bug: a kind of element in “What should be there”."
+  },
+  "bug_kindImg": {
+    "message": "Image or icon",
+    "description": "Report a bug: a kind of element in “What should be there”."
+  },
+  "bug_kindDialog": {
+    "message": "Dialog or popup window",
+    "description": "Report a bug: a kind of element in “What should be there”."
+  },
+  "bug_kindAlert": {
+    "message": "Error or warning message",
+    "description": "Report a bug: a kind of element in “What should be there”."
+  },
+  "bug_kindStatus": {
+    "message": "Status or confirmation message",
+    "description": "Report a bug: a kind of element in “What should be there”."
+  },
+  "bug_kindRegion": {
+    "message": "Section of the page",
+    "description": "Report a bug: a kind of element in “What should be there”."
+  },
+  "bug_finishTitle_one": {
+    "message": "Bug report · $count$ step",
+    "description": "Report a bug: title of the finished report panel. $count$ is the number of steps.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "6"
+      }
+    }
+  },
+  "bug_finishTitle_other": {
+    "message": "Bug report · $count$ steps",
+    "description": "Report a bug: title of the finished report panel. $count$ is the number of steps.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "6"
+      }
+    }
+  },
+  "bug_title": {
+    "message": "Title",
+    "description": "Report a bug, finished report: label of the report’s title field."
+  },
+  "bug_titlePlaceholder": {
+    "message": "What’s wrong, in a few words: Coupon not applied to the total",
+    "description": "Report a bug, finished report: placeholder of the title field, with an example after the colon."
+  },
+  "bug_attached": {
+    "message": "Also in the report: $summary$",
+    "description": "Report a bug, finished report: what was collected besides the steps. $summary$ is a list such as “2 screenshots · 1 console error”, still in English for now.",
+    "placeholders": {
+      "summary": {
+        "content": "$1",
+        "example": "2 screenshots · 1 console error · page outline"
+      }
+    }
+  },
+  "bug_nothingMarked": {
+    "message": "Nothing is marked as wrong, so the test would pass. Record again and use \"$mark$\".",
+    "description": "Report a bug, finished report: warning when no step says what is wrong. $mark$ is the name of the “Mark what’s wrong” button.",
+    "placeholders": {
+      "mark": {
+        "content": "$1",
+        "example": "Mark what’s wrong"
+      }
+    }
+  },
+  "bug_stepWarning": {
+    "message": "Step $step$: $message$",
+    "description": "Report a bug, finished report: a warning about one step of the generated test. $message$ is the code generator’s warning, in English.",
+    "placeholders": {
+      "message": {
+        "content": "$1",
+        "example": "no stable locator for this element"
+      },
+      "step": {
+        "content": "$2",
+        "example": "3"
+      }
+    }
+  },
+  "bug_noScreenshot": {
+    "message": "No screenshot: $reason$",
+    "description": "Report a bug, finished report: warning when the report has no screenshot. $reason$ says why, as a sentence.",
+    "placeholders": {
+      "reason": {
+        "content": "$1",
+        "example": "Chrome lets Piwi Picker take a screenshot only after you open it on this tab."
+      }
+    }
+  },
+  "bug_noScreenshotTaken": {
+    "message": "No screenshot was taken.",
+    "description": "Report a bug, finished report: warning when the report has no screenshot, for no known reason."
+  },
+  "bug_copyTest": {
+    "message": "Copy failing test",
+    "description": "Report a bug, finished report: button that copies a Playwright test that fails while the bug is there."
+  },
+  "bug_copyTestHint": {
+    "message": "A Playwright test that fails while the bug is there, marked with test.fail()",
+    "description": "Report a bug: tooltip of “Copy failing test”. test.fail() is code, never translated."
+  },
+  "bug_copyReport": {
+    "message": "Copy report",
+    "description": "Report a bug, finished report: button that copies the report as Markdown."
+  },
+  "bug_copyReportHint": {
+    "message": "The report as Markdown, for a ticket or a message",
+    "description": "Report a bug: tooltip of “Copy report”."
+  },
+  "bug_downloadZip": {
+    "message": "Download .zip",
+    "description": "Report a bug, finished report: button that downloads every file of the report in one .zip archive."
+  },
+  "bug_downloadZipHint": {
+    "message": "steps.json, the test, the report in Markdown, evidence.json and the screenshots",
+    "description": "Report a bug: tooltip of “Download .zip”: the files in the archive. File names are never translated."
+  },
+  "bug_replay": {
+    "message": "Replay",
+    "description": "Report a bug, finished report: button that plays the recorded steps again on the site."
+  },
+  "bug_replayHint": {
+    "message": "Play the steps again on this site, with a cursor, and see whether the bug shows",
+    "description": "Report a bug: tooltip of “Replay”."
+  },
+  "bug_staysLocal": {
+    "message": "Everything here stays in this browser: nothing is sent anywhere.",
+    "description": "Report a bug, finished report: note at the bottom of the panel."
+  },
+  "replay_hudLabel": {
+    "message": "Piwi Picker: replaying a bug report",
+    "description": "Replay panel (the box in the corner while a bug report replays): its aria-label, read by screen readers."
+  },
+  "replay_statusRunning": {
+    "message": "Replaying",
+    "description": "Replay panel title while the steps play. Short: often followed by “: <report title>”."
+  },
+  "replay_statusPaused": {
+    "message": "Paused",
+    "description": "Replay panel title while the replay is paused. Short."
+  },
+  "replay_statusDone": {
+    "message": "Replayed",
+    "description": "Replay panel title once every step has played or the replay stopped. Short."
+  },
+  "replay_statusWithTitle": {
+    "message": "$status$: $title$",
+    "description": "Replay panel title when the report has a title. $status$ is Replaying, Paused or Replayed (replay_status*); $title$ is the title the tester gave the report, as written.",
+    "placeholders": {
+      "status": {
+        "content": "$1",
+        "example": "Replaying"
+      },
+      "title": {
+        "content": "$2",
+        "example": "Coupon not applied"
+      }
+    }
+  },
+  "replay_progress": {
+    "message": "on $origin$ · step $step$ of $total$",
+    "description": "Replay panel, under the title while it plays. $origin$ is the site the steps replay on; $step$ the step playing now; $total$ how many steps there are.",
+    "placeholders": {
+      "origin": {
+        "content": "$1",
+        "example": "https://staging.acme.test"
+      },
+      "step": {
+        "content": "$2",
+        "example": "2"
+      },
+      "total": {
+        "content": "$3",
+        "example": "5"
+      }
+    }
+  },
+  "replay_progressDone_one": {
+    "message": "on $origin$ · $count$ step",
+    "description": "Replay panel, under the title once the replay is over. $origin$ is the site the steps replayed on.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "5"
+      },
+      "origin": {
+        "content": "$2",
+        "example": "https://staging.acme.test"
+      }
+    }
+  },
+  "replay_progressDone_other": {
+    "message": "on $origin$ · $count$ steps",
+    "description": "Replay panel, under the title once the replay is over. $origin$ is the site the steps replayed on.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "5"
+      },
+      "origin": {
+        "content": "$2",
+        "example": "https://staging.acme.test"
+      }
+    }
+  },
+  "replay_pause": {
+    "message": "Pause",
+    "description": "Replay panel button that pauses the replay. Short."
+  },
+  "replay_continue": {
+    "message": "Continue",
+    "description": "Replay panel button that continues a paused replay. Short."
+  },
+  "replay_nextStep": {
+    "message": "Next step",
+    "description": "Replay panel button, step-by-step mode: plays the next step. Short."
+  },
+  "replay_stepByStep": {
+    "message": "Step by step",
+    "description": "Replay panel checkbox: wait for a click on Next step before each step. Short."
+  },
+  "replay_again": {
+    "message": "Replay again",
+    "description": "Replay panel button, once the replay is over: plays the same steps again from the start. Short."
+  },
+  "replay_stepFound": {
+    "message": "Found $found$.",
+    "description": "Replay panel, under an expected result that did not hold: what the page showed instead. $found$ is one of replay_found* or a URL.",
+    "placeholders": {
+      "found": {
+        "content": "$1",
+        "example": "\"Total: 40\""
+      }
+    }
+  },
+  "replay_cursorCheck": {
+    "message": "Check: $step$",
+    "description": "Caption next to the replay’s fake cursor while it checks an expected result. $step$ is the step in words (in English for now).",
+    "placeholders": {
+      "step": {
+        "content": "$1",
+        "example": "The element with test id cart-total should show \"Total: 42\""
+      }
+    }
+  },
+  "replay_cursorNext": {
+    "message": "Next: $step$",
+    "description": "Caption next to the replay’s fake cursor in step-by-step mode, pointing at the element the next step acts on. $step$ is the step in words (in English for now).",
+    "placeholders": {
+      "step": {
+        "content": "$1",
+        "example": "Click the button \"Apply coupon\""
+      }
+    }
+  },
+  "replay_quotedText": {
+    "message": "\"$text$\"",
+    "description": "A text, value or name read from the page, quoted, as the replay shows what it found. $text$ is the page’s text, as it is. Only the quotes change.",
+    "placeholders": {
+      "text": {
+        "content": "$1",
+        "example": "Total: 40"
+      }
+    }
+  },
+  "replay_foundMissing": {
+    "message": "nothing on the page",
+    "description": "What the replay found for an expected result whose element is not on the page. Read after “found” (French: after “Résultat :”)."
+  },
+  "replay_foundCount_one": {
+    "message": "$count$ element",
+    "description": "What the replay found when the step’s locator finds several elements where one was expected. Read after “found” (French: after “Résultat :”).",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "replay_foundCount_other": {
+    "message": "$count$ elements",
+    "description": "What the replay found when the step’s locator finds several elements where one was expected. Read after “found” (French: after “Résultat :”).",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "replay_foundVisible": {
+    "message": "visible",
+    "description": "What the replay found: the element is visible. Read after “found” (French: after “Résultat :”, about “l’élément”, masculine)."
+  },
+  "replay_foundHidden": {
+    "message": "hidden",
+    "description": "What the replay found: the element is hidden. Read after “found” (French: after “Résultat :”, about “l’élément”, masculine)."
+  },
+  "replay_foundEnabled": {
+    "message": "enabled",
+    "description": "What the replay found: the element can be used (not disabled). Read after “found” (French: after “Résultat :”, about “l’élément”, masculine)."
+  },
+  "replay_foundDisabled": {
+    "message": "disabled",
+    "description": "What the replay found: the element is disabled. Read after “found” (French: after “Résultat :”, about “l’élément”, masculine)."
+  },
+  "replay_verdictReproduced": {
+    "message": "Reproduced: the bug shows here",
+    "description": "Replay verdict title: an expected result of the bug report did not hold on this page, so the bug shows here."
+  },
+  "replay_verdictExpectedFound": {
+    "message": "Step $step$: expected \"$expected$\", found $found$.",
+    "description": "Replay verdict detail when the bug shows. $expected$ is the text the report expected, from the page, as written; $found$ what the page showed (replay_quotedText, replay_found* or a URL).",
+    "placeholders": {
+      "expected": {
+        "content": "$1",
+        "example": "Total: 42"
+      },
+      "found": {
+        "content": "$2",
+        "example": "\"Total: 40\""
+      },
+      "step": {
+        "content": "$3",
+        "example": "4"
+      }
+    }
+  },
+  "replay_verdictExpectedFoundAsReported": {
+    "message": "Step $step$: expected \"$expected$\", found $found$, as reported.",
+    "description": "Like replay_verdictExpectedFound, when the page shows exactly what the tester reported.",
+    "placeholders": {
+      "expected": {
+        "content": "$1",
+        "example": "Total: 42"
+      },
+      "found": {
+        "content": "$2",
+        "example": "\"Total: 40\""
+      },
+      "step": {
+        "content": "$3",
+        "example": "4"
+      }
+    }
+  },
+  "replay_verdictFound": {
+    "message": "Step $step$: found $found$.",
+    "description": "Replay verdict detail when the bug shows and the step expected a state rather than a text (visible, enabled…). $found$ is what the page showed (replay_found*).",
+    "placeholders": {
+      "found": {
+        "content": "$1",
+        "example": "hidden"
+      },
+      "step": {
+        "content": "$2",
+        "example": "4"
+      }
+    }
+  },
+  "replay_verdictFoundAsReported": {
+    "message": "Step $step$: found $found$, as reported.",
+    "description": "Like replay_verdictFound, when the page shows exactly what the tester reported.",
+    "placeholders": {
+      "found": {
+        "content": "$1",
+        "example": "hidden"
+      },
+      "step": {
+        "content": "$2",
+        "example": "4"
+      }
+    }
+  },
+  "replay_verdictNotReproduced": {
+    "message": "Not reproduced",
+    "description": "Replay verdict title: every expected result of the bug report holds, so the bug does not show here."
+  },
+  "replay_verdictNotReproducedDetail": {
+    "message": "Every expected result holds on this page.",
+    "description": "Replay verdict detail under “Not reproduced”."
+  },
+  "replay_verdictDiverged": {
+    "message": "Could not reach the bug: stopped at step $step$",
+    "description": "Replay verdict title when a step could not be done on this page.",
+    "placeholders": {
+      "step": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "replay_verdictDivergedDetail": {
+    "message": "$reason$ This page is not the same as in the report: other data, another account, or an option turned on or off.",
+    "description": "Replay verdict detail when a step could not be done. $reason$ is why, a full sentence (replay_reason*).",
+    "placeholders": {
+      "reason": {
+        "content": "$1",
+        "example": "Nothing on this page matches getByTestId('add-to-cart')."
+      }
+    }
+  },
+  "replay_verdictCompleted": {
+    "message": "Replayed every step",
+    "description": "Replay verdict title when the steps hold no expected result to check."
+  },
+  "replay_verdictCompletedDetail": {
+    "message": "Nothing in these steps says what to expect.",
+    "description": "Replay verdict detail under “Replayed every step”."
+  },
+  "replay_verdictStopped": {
+    "message": "Stopped",
+    "description": "Replay verdict title when the tester stopped the replay."
+  },
+  "replay_verdictStoppedDetail": {
+    "message": "Stopped before step $step$.",
+    "description": "Replay verdict detail when the tester stopped the replay.",
+    "placeholders": {
+      "step": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "replay_reasonNoLocator": {
+    "message": "The report does not say how to find this element.",
+    "description": "Why a replay step could not be done: the step was recorded without a locator."
+  },
+  "replay_reasonNoMatch": {
+    "message": "Nothing on this page matches $locator$.",
+    "description": "Why a replay step could not be done. $locator$ is a Playwright locator, as code.",
+    "placeholders": {
+      "locator": {
+        "content": "$1",
+        "example": "getByTestId('add-to-cart')"
+      }
+    }
+  },
+  "replay_reasonManyMatches_one": {
+    "message": "$count$ element matches $locator$, and the replay needs exactly one.",
+    "description": "Why a replay step could not be done: the locator finds several elements. $locator$ is a Playwright locator, as code.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "locator": {
+        "content": "$2",
+        "example": "getByRole('button')"
+      }
+    }
+  },
+  "replay_reasonManyMatches_other": {
+    "message": "$count$ elements match $locator$, and the replay needs exactly one.",
+    "description": "Why a replay step could not be done: the locator finds several elements. $locator$ is a Playwright locator, as code.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "locator": {
+        "content": "$2",
+        "example": "getByRole('button')"
+      }
+    }
+  },
+  "replay_reasonHidden": {
+    "message": "$locator$ is on the page, but hidden.",
+    "description": "Why a replay step could not be done. $locator$ is a Playwright locator, as code (French: masculine, “le locator”).",
+    "placeholders": {
+      "locator": {
+        "content": "$1",
+        "example": "getByTestId('add-to-cart')"
+      }
+    }
+  },
+  "replay_reasonDisabled": {
+    "message": "$locator$ is disabled.",
+    "description": "Why a replay step could not be done. $locator$ is a Playwright locator, as code (French: masculine).",
+    "placeholders": {
+      "locator": {
+        "content": "$1",
+        "example": "getByTestId('add-to-cart')"
+      }
+    }
+  },
+  "replay_reasonMoving": {
+    "message": "$locator$ kept moving on the page.",
+    "description": "Why a replay step could not be done: the element never stood still long enough to act on it. $locator$ is a Playwright locator, as code.",
+    "placeholders": {
+      "locator": {
+        "content": "$1",
+        "example": "getByTestId('add-to-cart')"
+      }
+    }
+  },
+  "replay_reasonOtherPage": {
+    "message": "This step happened on $expected$, and the tab is on $actual$.",
+    "description": "Why a replay step could not be done: the tab is on another page. $expected$ and $actual$ are page paths.",
+    "placeholders": {
+      "actual": {
+        "content": "$1",
+        "example": "/login"
+      },
+      "expected": {
+        "content": "$2",
+        "example": "/dashboard"
+      }
+    }
+  },
+  "replay_reasonActionFailed": {
+    "message": "The page did not react to the action the way it did when it was recorded.",
+    "description": "Why a replay step could not be done: the click, typing or choice did not have its effect."
+  },
+  "replay_dialogTitle": {
+    "message": "Replay a bug report",
+    "description": "Title and aria-label of the dialog that chooses which bug report to replay. Same name as the popup’s button (popup_replayBug)."
+  },
+  "replay_dialogIntro": {
+    "message": "Plays its steps on $origin$, with a cursor showing each one, and says whether the bug shows here.",
+    "description": "Replay dialog, under its title. $origin$ is the site of the current tab.",
+    "placeholders": {
+      "origin": {
+        "content": "$1",
+        "example": "https://staging.acme.test"
+      }
+    }
+  },
+  "replay_useRecorded": {
+    "message": "Use the bug report recorded in this browser",
+    "description": "Replay dialog button: replays the last bug report recorded with Piwi Picker in this browser."
+  },
+  "replay_chooseFile": {
+    "message": "Or choose the report’s .zip, or its steps.json, saved by Piwi Picker:",
+    "description": "Replay dialog, above the file field. “.zip” and “steps.json” are file names, kept as they are."
+  },
+  "replay_fileLabel": {
+    "message": "The bug report’s .zip, or its steps.json",
+    "description": "Replay dialog: aria-label of the file field."
+  },
+  "replay_untitled": {
+    "message": "Untitled report",
+    "description": "Replay dialog: the name of a chosen report that has no title."
+  },
+  "replay_summary_one": {
+    "message": "$title$ · $count$ step",
+    "description": "Replay dialog, once a report is chosen. $title$ is the report’s title, as written (or replay_untitled).",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "5"
+      },
+      "title": {
+        "content": "$2",
+        "example": "Coupon not applied"
+      }
+    }
+  },
+  "replay_summary_other": {
+    "message": "$title$ · $count$ steps",
+    "description": "Replay dialog, once a report is chosen. $title$ is the report’s title, as written (or replay_untitled).",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "5"
+      },
+      "title": {
+        "content": "$2",
+        "example": "Coupon not applied"
+      }
+    }
+  },
+  "replay_recordedOn": {
+    "message": "recorded on $origin$",
+    "description": "Replay dialog, after replay_summary and a “·”, when the report was recorded on another site. $origin$ is that site.",
+    "placeholders": {
+      "origin": {
+        "content": "$1",
+        "example": "https://staging.acme.test"
+      }
+    }
+  },
+  "replay_stepByStepHint": {
+    "message": "Step by step: click Next step before each step",
+    "description": "Replay dialog checkbox. “Next step” is the replay panel’s button (replay_nextStep)."
+  },
+  "replay_start": {
+    "message": "Replay",
+    "description": "Replay dialog button that starts the replay. Short."
+  },
+  "replay_chooseFirst": {
+    "message": "Choose a report first.",
+    "description": "Replay dialog error: Replay was clicked before a report was chosen."
+  },
+  "replay_zipNoSteps": {
+    "message": "$file$ has no steps.json: choose the .zip saved by Piwi Picker, or its steps.json.",
+    "description": "Replay dialog error: the chosen .zip holds no steps.json. $file$ is the file’s name.",
+    "placeholders": {
+      "file": {
+        "content": "$1",
+        "example": "bug.zip"
+      }
+    }
+  },
+  "replay_fileNotSteps": {
+    "message": "$file$ is not a steps file: $error$",
+    "description": "Replay dialog error: the chosen file is not a steps file. $file$ is the file’s name; $error$ the first problem found in it, in English, naming a field of the file.",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "`v` must be 1"
+      },
+      "file": {
+        "content": "$2",
+        "example": "notes.json"
+      }
+    }
+  },
+  "coverage_panelLabel": {
+    "message": "Piwi: tested elements",
+    "description": "Tested elements panel: aria-label of the whole panel."
+  },
+  "coverage_title": {
+    "message": "Tested elements",
+    "description": "Tested elements panel: its title, the tool's name as the popup shows it."
+  },
+  "coverage_dock": {
+    "message": "Move the panel to the other side",
+    "description": "Tested elements panel: tooltip and aria-label of the ⇆ button."
+  },
+  "coverage_collapse": {
+    "message": "Shrink the panel to a summary",
+    "description": "Tested elements panel: tooltip and aria-label of the – button, which shrinks the panel to a small pill in the corner."
+  },
+  "coverage_closeEsc": {
+    "message": "Close (Esc)",
+    "description": "Tested elements panel: tooltip and aria-label of the × button. Esc is the Escape key, as the keyboard labels it."
+  },
+  "coverage_expand": {
+    "message": "Open the Tested elements panel again",
+    "description": "Tested elements panel: tooltip of the small summary pill the panel shrinks to."
+  },
+  "coverage_pill_one": {
+    "message": "Piwi · $count$/$total$ tested · $tests$",
+    "description": "Tested elements panel, shrunk to a pill: $count$ of the $total$ buttons, links and fields on the page are tested; $tests$ is “8 tests” (coverage_testCount). Short: one line.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "14"
+      },
+      "tests": {
+        "content": "$2",
+        "example": "8 tests"
+      },
+      "total": {
+        "content": "$3",
+        "example": "34"
+      }
+    }
+  },
+  "coverage_pill_other": {
+    "message": "Piwi · $count$/$total$ tested · $tests$",
+    "description": "Tested elements panel, shrunk to a pill: $count$ of the $total$ buttons, links and fields on the page are tested; $tests$ is “8 tests” (coverage_testCount). Short: one line.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "14"
+      },
+      "tests": {
+        "content": "$2",
+        "example": "8 tests"
+      },
+      "total": {
+        "content": "$3",
+        "example": "34"
+      }
+    }
+  },
+  "coverage_pillMissing_one": {
+    "message": "$count$ missing here",
+    "description": "Tested elements panel, shrunk to a pill: added after “·” when locators tests use as the page loads find nothing here.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "coverage_pillMissing_other": {
+    "message": "$count$ missing here",
+    "description": "Tested elements panel, shrunk to a pill: added after “·” when locators tests use as the page loads find nothing here.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "coverage_pillIdle": {
+    "message": "Piwi · tested elements",
+    "description": "Tested elements panel, shrunk to a pill, before the page has been checked."
+  },
+  "coverage_modalOpen": {
+    "message": "The page has a dialog open: the boxes stay visible, but you can use this panel only once the dialog closes.",
+    "description": "Tested elements panel: note at the top while the page shows a modal dialog, which blocks everything else."
+  },
+  "coverage_openSettings": {
+    "message": "Open Piwi Picker settings",
+    "description": "Tested elements panel: button under the message when Piwi Picker is not connected or no project is set for the page."
+  },
+  "coverage_tryAgain": {
+    "message": "Try again",
+    "description": "Tested elements panel: button under the message when the tested elements could not be loaded."
+  },
+  "coverage_loading": {
+    "message": "Loading the locator index…",
+    "description": "Tested elements panel: message while the list of the project's locators downloads."
+  },
+  "coverage_loadingProject": {
+    "message": "Loading the locator index of $project$…",
+    "description": "Tested elements panel: message while the list of the project's locators downloads. $project$ is the project's name.",
+    "placeholders": {
+      "project": {
+        "content": "$1",
+        "example": "Acme Mugs"
+      }
+    }
+  },
+  "coverage_loadingProjectAll": {
+    "message": "Loading the locator index of $project$ on every branch…",
+    "description": "Tested elements panel: as coverage_loadingProject, for every branch at once.",
+    "placeholders": {
+      "project": {
+        "content": "$1",
+        "example": "Acme Mugs"
+      }
+    }
+  },
+  "coverage_loadingProjectBranch": {
+    "message": "Loading the locator index of $project$ on $branch$…",
+    "description": "Tested elements panel: as coverage_loadingProject, for one git branch. $branch$ is its name.",
+    "placeholders": {
+      "branch": {
+        "content": "$1",
+        "example": "feature/voucher"
+      },
+      "project": {
+        "content": "$2",
+        "example": "Acme Mugs"
+      }
+    }
+  },
+  "coverage_loadFailed": {
+    "message": "Could not load the locator index of $project$: $error$",
+    "description": "Tested elements panel: error message. $project$ is the project's name, $error$ the reason, a sentence.",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "The locator index could not be downloaded (502)."
+      },
+      "project": {
+        "content": "$2",
+        "example": "Acme Mugs"
+      }
+    }
+  },
+  "coverage_notConnected": {
+    "message": "Connect Piwi Picker to your Piwi instance to see which elements of this page your tests use: in the settings, add the address of your instance, an API key and an address pattern for this site.",
+    "description": "Tested elements panel: message when Piwi Picker is not connected to a Piwi instance."
+  },
+  "coverage_noProject": {
+    "message": "No project is set for this page. Add an address pattern for it in the settings, or choose a project in Piwi Picker’s menu.",
+    "description": "Tested elements panel: message when no project of the Piwi instance matches the page's address."
+  },
+  "coverage_indexSize_one": {
+    "message": "$count$ locator from $tests$",
+    "description": "Tested elements panel: what the downloaded list holds. $tests$ is “8 tests” (coverage_testCount).",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "42"
+      },
+      "tests": {
+        "content": "$2",
+        "example": "8 tests"
+      }
+    }
+  },
+  "coverage_indexSize_other": {
+    "message": "$count$ locators from $tests$",
+    "description": "Tested elements panel: what the downloaded list holds. $tests$ is “8 tests” (coverage_testCount).",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "42"
+      },
+      "tests": {
+        "content": "$2",
+        "example": "8 tests"
+      }
+    }
+  },
+  "coverage_updated": {
+    "message": "updated $age$",
+    "description": "Tested elements panel: after the list's size, when it was downloaded. $age$ is “just now” or “3 min ago” (coverage_age*).",
+    "placeholders": {
+      "age": {
+        "content": "$1",
+        "example": "3 min ago"
+      }
+    }
+  },
+  "coverage_ageJustNow": {
+    "message": "just now",
+    "description": "Tested elements panel: fills $age$ in coverage_updated, under 45 seconds."
+  },
+  "coverage_ageMinutes_one": {
+    "message": "$count$ min ago",
+    "description": "Tested elements panel: fills $age$ in coverage_updated.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "coverage_ageMinutes_other": {
+    "message": "$count$ min ago",
+    "description": "Tested elements panel: fills $age$ in coverage_updated.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "coverage_ageHours_one": {
+    "message": "$count$ h ago",
+    "description": "Tested elements panel: fills $age$ in coverage_updated.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "5"
+      }
+    }
+  },
+  "coverage_ageHours_other": {
+    "message": "$count$ h ago",
+    "description": "Tested elements panel: fills $age$ in coverage_updated.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "5"
+      }
+    }
+  },
+  "coverage_ageDays_one": {
+    "message": "$count$ day ago",
+    "description": "Tested elements panel: fills $age$ in coverage_updated.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "coverage_ageDays_other": {
+    "message": "$count$ days ago",
+    "description": "Tested elements panel: fills $age$ in coverage_updated.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "coverage_refreshTitle": {
+    "message": "Download the locator index from Piwi again",
+    "description": "Tested elements panel: tooltip of the Refresh button."
+  },
+  "coverage_refreshFailed": {
+    "message": "Could not refresh: $error$",
+    "description": "Tested elements panel: error under the status line. $error$ is the reason, a sentence.",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "The instance answered with an error (502)."
+      }
+    }
+  },
+  "coverage_checking": {
+    "message": "Looking for each locator on this page",
+    "description": "Tested elements panel: tooltip of the progress bar while the page is checked."
+  },
+  "coverage_branch": {
+    "message": "Branch",
+    "description": "Tested elements panel: aria-label of the git branch menu."
+  },
+  "coverage_branchTitle": {
+    "message": "Show the tests of this branch, with what they did on it",
+    "description": "Tested elements panel: tooltip of the git branch menu."
+  },
+  "coverage_branchDefaultNamed": {
+    "message": "$branch$ (default)",
+    "description": "Tested elements panel: branch menu option for the project's default branch. $branch$ is its name.",
+    "placeholders": {
+      "branch": {
+        "content": "$1",
+        "example": "main"
+      }
+    }
+  },
+  "coverage_branchDefault": {
+    "message": "Default branch",
+    "description": "Tested elements panel: branch menu option when the default branch's name is unknown."
+  },
+  "coverage_branchAll": {
+    "message": "All branches",
+    "description": "Tested elements panel: branch menu option that reads every branch at once."
+  },
+  "coverage_testCount_one": {
+    "message": "$count$ test",
+    "description": "Tested elements: a number of tests, in lists and inside other messages.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "coverage_testCount_other": {
+    "message": "$count$ tests",
+    "description": "Tested elements: a number of tests, in lists and inside other messages.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "coverage_elementCount_one": {
+    "message": "$count$ element",
+    "description": "Tested elements: a number of page elements, in lists.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "7"
+      }
+    }
+  },
+  "coverage_elementCount_other": {
+    "message": "$count$ elements",
+    "description": "Tested elements: a number of page elements, in lists.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "7"
+      }
+    }
+  },
+  "coverage_pageSwitch": {
+    "message": "What to count",
+    "description": "Tested elements panel: aria-label of the This page / All pages switch."
+  },
+  "coverage_thisPage": {
+    "message": "This page",
+    "description": "Tested elements panel: switch button: count only what tests do on the page open."
+  },
+  "coverage_thisPageTitle": {
+    "message": "Count what tests do on this page, plus the uses where no run recorded the page",
+    "description": "Tested elements panel: tooltip of the This page button."
+  },
+  "coverage_allPages": {
+    "message": "All pages",
+    "description": "Tested elements panel: switch button: count every locator that finds something here."
+  },
+  "coverage_allPagesTitle": {
+    "message": "Count every locator that finds something here, whatever page its test used it on",
+    "description": "Tested elements panel: tooltip of the All pages button."
+  },
+  "coverage_tileTested": {
+    "message": "tested",
+    "description": "Tested elements panel: label under a big number: buttons, links and fields a test reaches. One or two words."
+  },
+  "coverage_tileTestedTitle": {
+    "message": "Buttons, links and fields on this page that a test reaches",
+    "description": "Tested elements panel: tooltip of the “tested” tile."
+  },
+  "coverage_tileTestedTitleInside": {
+    "message": "Buttons, links and fields inside it that a test reaches",
+    "description": "Tested elements panel: tooltip of the “tested” tile when the view is limited to one part of the page (“it”)."
+  },
+  "coverage_tileUntested": {
+    "message": "not tested",
+    "description": "Tested elements panel: label under a big number: buttons, links and fields no test reaches. One or two words."
+  },
+  "coverage_tileUntestedTitle": {
+    "message": "Visible buttons, links and fields on this page that no test reaches",
+    "description": "Tested elements panel: tooltip of the “not tested” tile."
+  },
+  "coverage_tileUntestedTitleInside": {
+    "message": "Visible buttons, links and fields inside it that no test reaches",
+    "description": "Tested elements panel: tooltip of the “not tested” tile when the view is limited to one part of the page."
+  },
+  "coverage_tileTestHere": {
+    "message": "test here",
+    "description": "Tested elements panel: label under the number 1 (the singular of coverage_tileTestsHere): the tests reaching this page. Short."
+  },
+  "coverage_tileTestsHere": {
+    "message": "tests here",
+    "description": "Tested elements panel: label under a big number: the tests reaching this page. Short."
+  },
+  "coverage_tileTestInside": {
+    "message": "test inside it",
+    "description": "Tested elements panel: as coverage_tileTestHere, when the view is limited to one part of the page. Short."
+  },
+  "coverage_tileTestsInside": {
+    "message": "tests inside it",
+    "description": "Tested elements panel: as coverage_tileTestsHere, when the view is limited to one part of the page. Short."
+  },
+  "coverage_tileTestsTitle": {
+    "message": "Tests whose locators find something on this page",
+    "description": "Tested elements panel: tooltip of the tests tile."
+  },
+  "coverage_tileTestsTitleInside": {
+    "message": "Tests whose locators find something inside it",
+    "description": "Tested elements panel: tooltip of the tests tile when the view is limited to one part of the page."
+  },
+  "coverage_meterLabel": {
+    "message": "$percent$% of buttons, links and fields reached by a test",
+    "description": "Tested elements panel: aria-label of the progress bar. $percent$ is a whole number.",
+    "placeholders": {
+      "percent": {
+        "content": "$1",
+        "example": "41"
+      }
+    }
+  },
+  "coverage_meterShare_one": {
+    "message": "$percent$% of the $count$ interactive element on this page",
+    "description": "Tested elements panel: line under the bar: the share of buttons, links and fields a test reaches. $percent$ is a whole number.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "34"
+      },
+      "percent": {
+        "content": "$2",
+        "example": "41"
+      }
+    }
+  },
+  "coverage_meterShare_other": {
+    "message": "$percent$% of the $count$ interactive elements on this page",
+    "description": "Tested elements panel: line under the bar: the share of buttons, links and fields a test reaches. $percent$ is a whole number.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "34"
+      },
+      "percent": {
+        "content": "$2",
+        "example": "41"
+      }
+    }
+  },
+  "coverage_meterShareInside_one": {
+    "message": "$percent$% of the $count$ interactive element inside it",
+    "description": "Tested elements panel: as coverage_meterShare, when the view is limited to one part of the page.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "34"
+      },
+      "percent": {
+        "content": "$2",
+        "example": "41"
+      }
+    }
+  },
+  "coverage_meterShareInside_other": {
+    "message": "$percent$% of the $count$ interactive elements inside it",
+    "description": "Tested elements panel: as coverage_meterShare, when the view is limited to one part of the page.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "34"
+      },
+      "percent": {
+        "content": "$2",
+        "example": "41"
+      }
+    }
+  },
+  "coverage_meterNone": {
+    "message": "No interactive element on this page",
+    "description": "Tested elements panel: line under the bar when the page has no button, link or field."
+  },
+  "coverage_meterNoneInside": {
+    "message": "No interactive element inside it",
+    "description": "Tested elements panel: as coverage_meterNone, when the view is limited to one part of the page."
+  },
+  "coverage_meterFound_one": {
+    "message": "$count$ element found, $checked$ of them only checked",
+    "description": "Tested elements panel: after “·” under the bar: the elements the tests' locators find, and how many of them tests only check without acting on them.",
+    "placeholders": {
+      "checked": {
+        "content": "$1",
+        "example": "3"
+      },
+      "count": {
+        "content": "$2",
+        "example": "17"
+      }
+    }
+  },
+  "coverage_meterFound_other": {
+    "message": "$count$ elements found, $checked$ of them only checked",
+    "description": "Tested elements panel: after “·” under the bar: the elements the tests' locators find, and how many of them tests only check without acting on them.",
+    "placeholders": {
+      "checked": {
+        "content": "$1",
+        "example": "3"
+      },
+      "count": {
+        "content": "$2",
+        "example": "17"
+      }
+    }
+  },
+  "coverage_meterFoundOnly_one": {
+    "message": "$count$ element found",
+    "description": "Tested elements panel: after coverage_meterNone: the elements the tests' locators find.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "coverage_meterFoundOnly_other": {
+    "message": "$count$ elements found",
+    "description": "Tested elements panel: after coverage_meterNone: the elements the tests' locators find.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "coverage_meterBrittle_one": {
+    "message": "$count$ tested element reached through brittle locators",
+    "description": "Tested elements panel: after “·” under the bar. A brittle locator is one likely to break when the page changes.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "6"
+      }
+    }
+  },
+  "coverage_meterBrittle_other": {
+    "message": "$count$ tested elements reached through brittle locators",
+    "description": "Tested elements panel: after “·” under the bar. A brittle locator is one likely to break when the page changes.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "6"
+      }
+    }
+  },
+  "coverage_choosingKeys": {
+    "message": "$up$ wider · $down$ narrower · $esc$ cancels",
+    "description": "Tested elements panel: keys while choosing a part of the page. $up$, $down$ and $esc$ are the keys ↑, ↓ and Esc, drawn as keys.",
+    "placeholders": {
+      "down": {
+        "content": "$1",
+        "example": "↓"
+      },
+      "esc": {
+        "content": "$2",
+        "example": "Esc"
+      },
+      "up": {
+        "content": "$3",
+        "example": "↑"
+      }
+    }
+  },
+  "coverage_escKey": {
+    "message": "Esc",
+    "description": "The Escape key as the keyboard labels it, drawn as a key."
+  },
+  "coverage_clickPart": {
+    "message": "Click a part of the page",
+    "description": "Tested elements panel: while choosing the part of the page to look inside."
+  },
+  "coverage_cancelChoosingTitle": {
+    "message": "Keep looking at the whole page (Esc)",
+    "description": "Tested elements panel: tooltip of Cancel while choosing a part of the page."
+  },
+  "coverage_inside": {
+    "message": "Inside $element$",
+    "description": "Tested elements: the part of the page the view is limited to, in the panel and on the outline around it. $element$ describes it: its role or tag and its text, as the page gives them.",
+    "placeholders": {
+      "element": {
+        "content": "$1",
+        "example": "article.card \"Blue mug\""
+      }
+    }
+  },
+  "coverage_widen": {
+    "message": "Container ↑",
+    "description": "Tested elements panel: button that widens the view to the element around the current one. Short."
+  },
+  "coverage_widenTitle": {
+    "message": "Look at the element around it",
+    "description": "Tested elements panel: tooltip of Container ↑."
+  },
+  "coverage_wholePage": {
+    "message": "Whole page",
+    "description": "Tested elements panel: the view shows the whole page; also a button that goes back to it. Short."
+  },
+  "coverage_wholePageTitle": {
+    "message": "Look at the whole page again (Esc)",
+    "description": "Tested elements panel: tooltip of the Whole page button."
+  },
+  "coverage_limit": {
+    "message": "Limit to an element",
+    "description": "Tested elements panel: button that starts choosing a part of the page to look inside. Short."
+  },
+  "coverage_limitTitle": {
+    "message": "Choose a form, a card or a menu, and see only what is inside it",
+    "description": "Tested elements panel: tooltip of Limit to an element."
+  },
+  "coverage_choosingFrame": {
+    "message": "$element$ · click to look inside",
+    "description": "Tested elements: label on the outline of the part of the page under the pointer while choosing. $element$ describes it.",
+    "placeholders": {
+      "element": {
+        "content": "$1",
+        "example": "article.card \"Blue mug\""
+      }
+    }
+  },
+  "coverage_aroundHint": {
+    "message": "Around it: tests reach these parts of the page",
+    "description": "Tested elements panel: above the tested parts of the page that contain the one the view is limited to."
+  },
+  "coverage_aroundRowTitle": {
+    "message": "Look inside this part",
+    "description": "Tested elements panel: tooltip of a row in the Around it list."
+  },
+  "coverage_aroundMore_one": {
+    "message": "$count$ more further out",
+    "description": "Tested elements panel: last row of the Around it list.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "coverage_aroundMore_other": {
+    "message": "$count$ more further out",
+    "description": "Tested elements panel: last row of the Around it list.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "coverage_tabs": {
+    "message": "What to list",
+    "description": "Tested elements panel: aria-label of the tabs."
+  },
+  "coverage_tabElements": {
+    "message": "Elements $count$",
+    "description": "Tested elements panel: tab: the tested elements, with their number. Short.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "17"
+      }
+    }
+  },
+  "coverage_tabTests": {
+    "message": "Tests $count$",
+    "description": "Tested elements panel: tab: the tests reaching the page, with their number. Short.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "8"
+      }
+    }
+  },
+  "coverage_tabUntested": {
+    "message": "Not tested $count$",
+    "description": "Tested elements panel: tab: the buttons, links and fields no test reaches, with their number. Short.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "20"
+      }
+    }
+  },
+  "coverage_tabRisk": {
+    "message": "At risk $count$",
+    "description": "Tested elements panel: tab: the locators likely to break, with their number. Short.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "4"
+      }
+    }
+  },
+  "coverage_search": {
+    "message": "Filter by element, test or file",
+    "description": "Tested elements panel: placeholder of the filter field."
+  },
+  "coverage_searchLabel": {
+    "message": "Filter the list",
+    "description": "Tested elements panel: aria-label of the filter field."
+  },
+  "coverage_listMore_one": {
+    "message": "$count$ more: type in the filter to narrow the list",
+    "description": "Tested elements panel: last row of a long list.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "120"
+      }
+    }
+  },
+  "coverage_listMore_other": {
+    "message": "$count$ more: type in the filter to narrow the list",
+    "description": "Tested elements panel: last row of a long list.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "120"
+      }
+    }
+  },
+  "coverage_noMatch": {
+    "message": "Nothing matches the filter.",
+    "description": "Tested elements panel: empty list when the filter finds nothing."
+  },
+  "coverage_reachFailing": {
+    "message": "A test reaching it is failing",
+    "description": "Tested elements panel: tooltip of a red dot next to a number of tests."
+  },
+  "coverage_reachFlaky": {
+    "message": "A test reaching it is flaky",
+    "description": "Tested elements panel: tooltip of a purple dot next to a number of tests. Flaky: passes only after a retry."
+  },
+  "coverage_hiddenNow": {
+    "message": "hidden right now",
+    "description": "Tested elements panel: before a tested element's locator, when the element is not visible."
+  },
+  "coverage_emptyElements": {
+    "message": "No locator of the project finds anything on this page. Its tests may use other pages, or this page in another state.",
+    "description": "Tested elements panel: empty Elements tab."
+  },
+  "coverage_emptyElementsInside": {
+    "message": "No locator of the project finds anything inside it.",
+    "description": "Tested elements panel: empty Elements tab when the view is limited to one part of the page."
+  },
+  "coverage_openTest": {
+    "message": "Open this test in Piwi",
+    "description": "Tested elements panel: tooltip of a test's file name, a link."
+  },
+  "coverage_onlyItsElements": {
+    "message": "showing only its elements",
+    "description": "Tested elements panel: after “·” on a test's row once clicked: the page shows only the elements it reaches."
+  },
+  "coverage_emptyTests": {
+    "message": "No test reaches this page.",
+    "description": "Tested elements panel: empty Tests tab."
+  },
+  "coverage_emptyTestsInside": {
+    "message": "No test reaches inside it.",
+    "description": "Tested elements panel: empty Tests tab when the view is limited to one part of the page."
+  },
+  "coverage_foundElsewhere": {
+    "message": "Found by $locator$, which tests use on $pages$",
+    "description": "Tested elements panel: under an untested element. $locator$ is Playwright code; $pages$ lists page addresses.",
+    "placeholders": {
+      "locator": {
+        "content": "$1",
+        "example": "getByRole('button', { name: 'Subscribe' })"
+      },
+      "pages": {
+        "content": "$2",
+        "example": "/newsletter"
+      }
+    }
+  },
+  "coverage_foundElsewhereOther": {
+    "message": "Found by $locator$, which tests use on other pages",
+    "description": "Tested elements panel: as coverage_foundElsewhere, when the pages are not known.",
+    "placeholders": {
+      "locator": {
+        "content": "$1",
+        "example": "getByRole('button', { name: 'Subscribe' })"
+      }
+    }
+  },
+  "coverage_copyLocator": {
+    "message": "Copy locator",
+    "description": "Tested elements: button that copies a locator. Short."
+  },
+  "coverage_copyLocatorTitle": {
+    "message": "Copy this locator to write a test for the element",
+    "description": "Tested elements panel: tooltip of Copy locator on an untested element."
+  },
+  "coverage_emptyUntested": {
+    "message": "Every visible button, link and field on this page is reached by a test.",
+    "description": "Tested elements panel: empty Not tested tab."
+  },
+  "coverage_emptyUntestedInside": {
+    "message": "Every visible button, link and field inside it is reached by a test.",
+    "description": "Tested elements panel: empty Not tested tab when the view is limited to one part of the page."
+  },
+  "coverage_missingHead": {
+    "message": "Missing here · $count$",
+    "description": "Tested elements panel, At risk tab: heading of the locators tests use on this page that find nothing now, with their number.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "coverage_missingHint": {
+    "message": "Tests use these locators on this page, but they find nothing here now. The ones tests use as soon as the page loads come first; the others may need a menu or a dialog to be open.",
+    "description": "Tested elements panel, At risk tab: under the Missing here heading."
+  },
+  "coverage_missingEmpty": {
+    "message": "Every locator tests use on this page finds its element here.",
+    "description": "Tested elements panel, At risk tab: empty Missing here list."
+  },
+  "coverage_severalHead": {
+    "message": "Several match here · $count$",
+    "description": "Tested elements panel, At risk tab: heading of the locators tests act on here that find several elements, with their number.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "coverage_severalHint": {
+    "message": "Tests act on these locators on this page, and each finds several elements here: a click needs exactly one.",
+    "description": "Tested elements panel, At risk tab: under the Several match here heading."
+  },
+  "coverage_severalEmpty": {
+    "message": "Every locator tests act on here finds a single element.",
+    "description": "Tested elements panel, At risk tab: empty Several match here list."
+  },
+  "coverage_notFoundOnLoad": {
+    "message": "Not found as the page loads",
+    "description": "Tested elements panel, At risk tab: a locator tests use as soon as the page loads finds nothing."
+  },
+  "coverage_notFoundNow": {
+    "message": "Not found now",
+    "description": "Tested elements panel, At risk tab: a locator tests use on this page finds nothing now."
+  },
+  "coverage_findsCount_one": {
+    "message": "Finds $count$ element",
+    "description": "Tested elements panel, At risk tab: how many elements a locator finds here.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "4"
+      }
+    }
+  },
+  "coverage_findsCount_other": {
+    "message": "Finds $count$ elements",
+    "description": "Tested elements panel, At risk tab: how many elements a locator finds here.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "4"
+      }
+    }
+  },
+  "coverage_brittleRules": {
+    "message": "brittle: $rules$",
+    "description": "Tested elements panel, At risk tab: why a locator is likely to break. $rules$ lists the reasons, in English for now.",
+    "placeholders": {
+      "rules": {
+        "content": "$1",
+        "example": "CSS class, position"
+      }
+    }
+  },
+  "coverage_brittleHead": {
+    "message": "Brittle locators · $count$",
+    "description": "Tested elements panel, At risk tab: heading of the locators likely to break, with their number.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "4"
+      }
+    }
+  },
+  "coverage_brittleHint": {
+    "message": "They break when the page changes in ways the test does not care about: a new style, an extra wrapper, a list in another order.",
+    "description": "Tested elements panel, At risk tab: under the Brittle locators heading."
+  },
+  "coverage_brittleEmpty": {
+    "message": "No brittle locator finds anything on this page.",
+    "description": "Tested elements panel, At risk tab: empty Brittle locators list."
+  },
+  "coverage_brittleEmptyInside": {
+    "message": "No brittle locator finds anything inside it.",
+    "description": "Tested elements panel, At risk tab: as coverage_brittleEmpty, when the view is limited to one part of the page."
+  },
+  "coverage_useFailing": {
+    "message": "A test using it is failing",
+    "description": "Tested elements panel, At risk tab: tooltip of a red dot next to a locator's number of tests."
+  },
+  "coverage_useFlaky": {
+    "message": "A test using it is flaky",
+    "description": "Tested elements panel, At risk tab: tooltip of a purple dot next to a locator's number of tests."
+  },
+  "coverage_severalNoReplacement_one": {
+    "message": "Finds $count$ element here, so no replacement is offered.",
+    "description": "Tested elements panel, At risk tab: under a brittle locator that finds several elements.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "4"
+      }
+    }
+  },
+  "coverage_severalNoReplacement_other": {
+    "message": "Finds $count$ elements here, so no replacement is offered.",
+    "description": "Tested elements panel, At risk tab: under a brittle locator that finds several elements.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "4"
+      }
+    }
+  },
+  "coverage_addTestId": {
+    "message": "No stable locator finds only this element: give it a test id.",
+    "description": "Tested elements: under a brittle locator, when no replacement finds only its element. A test id is an attribute like data-testid."
+  },
+  "coverage_replacementTitle": {
+    "message": "Finds only this element here",
+    "description": "Tested elements panel, At risk tab: tooltip of the suggested replacement locator."
+  },
+  "coverage_mostStable": {
+    "message": "Most stable: $locator$",
+    "description": "Tested elements panel, At risk tab: another replacement, the least likely to break. $locator$ is Playwright code.",
+    "placeholders": {
+      "locator": {
+        "content": "$1",
+        "example": "getByTestId('checkout')"
+      }
+    }
+  },
+  "coverage_copyReplacementTitle": {
+    "message": "Copy the replacement, which finds only this element here",
+    "description": "Tested elements panel, At risk tab: tooltip of Copy locator."
+  },
+  "coverage_copyEdit": {
+    "message": "Copy the change",
+    "description": "Tested elements: button that copies, for each place in the code using a locator, the old and the new locator. Short."
+  },
+  "coverage_copyEditTitle": {
+    "message": "Copy each place in the code that uses it, with the old and the new locator",
+    "description": "Tested elements: tooltip of Copy the change."
+  },
+  "coverage_notesUnmatched_one": {
+    "message": "$count$ locator finds nothing here: it targets another page, or this page in another state.",
+    "description": "Tested elements panel, Notes: the project's locators that find nothing on this page.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "12"
+      }
+    }
+  },
+  "coverage_notesUnmatched_other": {
+    "message": "$count$ locators find nothing here: they target other pages, or this page in another state.",
+    "description": "Tested elements panel, Notes: the project's locators that find nothing on this page.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "12"
+      }
+    }
+  },
+  "coverage_notesTruncated": {
+    "message": "The project has more locators than the index holds; the least used are left out.",
+    "description": "Tested elements panel, Notes: the downloaded list is incomplete."
+  },
+  "coverage_notesTestIds": {
+    "message": "getByTestId reads $attributes$ in this project.",
+    "description": "Tested elements panel, Notes: getByTestId is Playwright code, kept as it is. $attributes$ lists HTML attribute names.",
+    "placeholders": {
+      "attributes": {
+        "content": "$1",
+        "example": "data-qa"
+      }
+    }
+  },
+  "coverage_notesChecked_one": {
+    "message": "Checked $count$ locator in $ms$ ms.",
+    "description": "Tested elements panel, Notes: how long checking the page took. $ms$ is in milliseconds.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "42"
+      },
+      "ms": {
+        "content": "$2",
+        "example": "18"
+      }
+    }
+  },
+  "coverage_notesChecked_other": {
+    "message": "Checked $count$ locators in $ms$ ms.",
+    "description": "Tested elements panel, Notes: how long checking the page took. $ms$ is in milliseconds.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "42"
+      },
+      "ms": {
+        "content": "$2",
+        "example": "18"
+      }
+    }
+  },
+  "coverage_notesPageScoped": {
+    "message": "Counting what tests do on $page$, plus the uses where no run recorded the page.",
+    "description": "Tested elements panel, Notes: after coverage_notesChecked, with This page on. $page$ is the page's address, like /orders/:id.",
+    "placeholders": {
+      "page": {
+        "content": "$1",
+        "example": "/shop.html"
+      }
+    }
+  },
+  "coverage_notesPageScopedHere": {
+    "message": "Counting what tests do on this page, plus the uses where no run recorded the page.",
+    "description": "Tested elements panel, Notes: as coverage_notesPageScoped, when the page has no address to show."
+  },
+  "coverage_notesAllPages": {
+    "message": "Locators are looked for on this page, whatever page their test used them on.",
+    "description": "Tested elements panel, Notes: after coverage_notesChecked, with All pages on."
+  },
+  "coverage_notesErrors_one": {
+    "message": "$count$ locator could not be checked here:",
+    "description": "Tested elements panel, Notes: before a list of locators, each with the reason in English.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "coverage_notesErrors_other": {
+    "message": "$count$ locators could not be checked here:",
+    "description": "Tested elements panel, Notes: before a list of locators, each with the reason in English.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "coverage_notes": {
+    "message": "Notes",
+    "description": "Tested elements panel: the folded section at the bottom with technical notes."
+  },
+  "coverage_notesWithErrors_one": {
+    "message": "Notes · $count$ locator not checked",
+    "description": "Tested elements panel: the Notes section's title when some locators could not be checked.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "coverage_notesWithErrors_other": {
+    "message": "Notes · $count$ locators not checked",
+    "description": "Tested elements panel: the Notes section's title when some locators could not be checked.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "coverage_statusPassed": {
+    "message": "Passed in its latest run",
+    "description": "Tooltip of a test's colored dot."
+  },
+  "coverage_statusFlaky": {
+    "message": "Passed after a retry in its latest run",
+    "description": "Tooltip of a test's colored dot."
+  },
+  "coverage_statusFailed": {
+    "message": "Failed in its latest run",
+    "description": "Tooltip of a test's colored dot."
+  },
+  "coverage_statusSkipped": {
+    "message": "Skipped in its latest run",
+    "description": "Tooltip of a test's colored dot."
+  },
+  "coverage_statusNone": {
+    "message": "No recorded run",
+    "description": "Tooltip of a test's grey dot: no run of it is known."
+  },
+  "coverage_toggleActed": {
+    "message": "Acted on",
+    "description": "Tested elements panel: checkbox: show the elements tests click, fill or otherwise act on. One or two words."
+  },
+  "coverage_toggleActedTitle": {
+    "message": "Elements tests click, fill or otherwise act on",
+    "description": "Tested elements panel: tooltip of Acted on."
+  },
+  "coverage_toggleChecked": {
+    "message": "Checked",
+    "description": "Tested elements panel: checkbox: show the elements tests only check. One word."
+  },
+  "coverage_toggleCheckedTitle": {
+    "message": "Elements tests only check, without acting on them",
+    "description": "Tested elements panel: tooltip of Checked."
+  },
+  "coverage_toggleUntested": {
+    "message": "Not tested",
+    "description": "Tested elements panel: checkbox: show the buttons, links and fields no test reaches. Short."
+  },
+  "coverage_toggleUntestedTitle": {
+    "message": "Buttons, links and fields no test reaches",
+    "description": "Tested elements panel: tooltip of Not tested."
+  },
+  "coverage_toggleHeat": {
+    "message": "Heat map",
+    "description": "Tested elements panel: checkbox: color the boxes by how many tests reach each element. Short."
+  },
+  "coverage_toggleHeatTitle": {
+    "message": "Color each box darker the more tests reach it",
+    "description": "Tested elements panel: tooltip of Heat map."
+  },
+  "coverage_toggleBrittle": {
+    "message": "Brittle",
+    "description": "Tested elements panel: checkbox: mark the elements found by a locator likely to break. One word."
+  },
+  "coverage_toggleBrittleTitle": {
+    "message": "Mark the elements found by a locator likely to break",
+    "description": "Tested elements panel: tooltip of Brittle."
+  },
+  "coverage_legendActed": {
+    "message": "acted on by tests",
+    "description": "Tested elements panel: legend of the green boxes. Short."
+  },
+  "coverage_legendChecked": {
+    "message": "checked only",
+    "description": "Tested elements panel: legend of the blue boxes. Short."
+  },
+  "coverage_legendUntested": {
+    "message": "not tested",
+    "description": "Tested elements panel: legend of the hatched amber boxes. Short."
+  },
+  "coverage_legendAmbiguous": {
+    "message": "locator finds several",
+    "description": "Tested elements panel: legend of the dotted boxes: the element's locator finds other elements too. Short."
+  },
+  "coverage_legendBrittle": {
+    "message": "brittle locator",
+    "description": "Tested elements panel: legend of the orange corner mark. Short."
+  },
+  "coverage_badgeTitle_one": {
+    "message": "$element$: reached by $count$ test. Click for details.",
+    "description": "Tested elements: tooltip of the number badge on a box. $element$ describes the element: its role and its text, as the page gives them.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      },
+      "element": {
+        "content": "$2",
+        "example": "button \"Add to cart\""
+      }
+    }
+  },
+  "coverage_badgeTitle_other": {
+    "message": "$element$: reached by $count$ tests. Click for details.",
+    "description": "Tested elements: tooltip of the number badge on a box. $element$ describes the element: its role and its text, as the page gives them.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      },
+      "element": {
+        "content": "$2",
+        "example": "button \"Add to cart\""
+      }
+    }
+  },
+  "coverage_badgeTitleFailing_one": {
+    "message": "$element$: reached by $count$ test, which is failing. Click for details.",
+    "description": "Tested elements: as coverage_badgeTitle, when a test reaching the element is failing.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      },
+      "element": {
+        "content": "$2",
+        "example": "button \"Checkout\""
+      }
+    }
+  },
+  "coverage_badgeTitleFailing_other": {
+    "message": "$element$: reached by $count$ tests, one of them failing. Click for details.",
+    "description": "Tested elements: as coverage_badgeTitle, when a test reaching the element is failing.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      },
+      "element": {
+        "content": "$2",
+        "example": "button \"Checkout\""
+      }
+    }
+  },
+  "coverage_badgeTitleFlaky_one": {
+    "message": "$element$: reached by $count$ test, which is flaky. Click for details.",
+    "description": "Tested elements: as coverage_badgeTitle, when a test reaching the element is flaky (passes only after a retry).",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      },
+      "element": {
+        "content": "$2",
+        "example": "checkbox \"In stock\""
+      }
+    }
+  },
+  "coverage_badgeTitleFlaky_other": {
+    "message": "$element$: reached by $count$ tests, one of them flaky. Click for details.",
+    "description": "Tested elements: as coverage_badgeTitle, when a test reaching the element is flaky (passes only after a retry).",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      },
+      "element": {
+        "content": "$2",
+        "example": "checkbox \"In stock\""
+      }
+    }
+  },
+  "coverage_badgeLabel_one": {
+    "message": "$element$: $count$ test",
+    "description": "Tested elements: aria-label of the number badge on a box.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      },
+      "element": {
+        "content": "$2",
+        "example": "button \"Add to cart\""
+      }
+    }
+  },
+  "coverage_badgeLabel_other": {
+    "message": "$element$: $count$ tests",
+    "description": "Tested elements: aria-label of the number badge on a box.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      },
+      "element": {
+        "content": "$2",
+        "example": "button \"Add to cart\""
+      }
+    }
+  },
+  "coverage_cardLabel": {
+    "message": "Tests reaching $element$",
+    "description": "Tested elements, card over the page: aria-label of an element's detail card.",
+    "placeholders": {
+      "element": {
+        "content": "$1",
+        "example": "button \"Add to cart\""
+      }
+    }
+  },
+  "coverage_cardLabelThis": {
+    "message": "Tests reaching this element",
+    "description": "Tested elements, card over the page: aria-label of an element's detail card, when the element has no description."
+  },
+  "coverage_noteBrittle": {
+    "message": "Brittle: $rules$",
+    "description": "Tested elements, card over the page: under a locator likely to break. $rules$ lists the reasons, in English for now.",
+    "placeholders": {
+      "rules": {
+        "content": "$1",
+        "example": "CSS class, CSS structure"
+      }
+    }
+  },
+  "coverage_noteWatch": {
+    "message": "Could break: $rules$",
+    "description": "Tested elements, card over the page: under a locator that could break. $rules$ lists the reasons, in English for now.",
+    "placeholders": {
+      "rules": {
+        "content": "$1",
+        "example": "text"
+      }
+    }
+  },
+  "coverage_replaceWith": {
+    "message": "Replace it with this one, which finds only this element here",
+    "description": "Tested elements, card over the page: above a suggested replacement locator."
+  },
+  "coverage_mostStableHead": {
+    "message": "Most stable",
+    "description": "Tested elements, card over the page: above the replacement least likely to break."
+  },
+  "coverage_actedOnBy_one": {
+    "message": "Acted on by $count$ test",
+    "description": "Tested elements, card over the page: tests click, fill or otherwise act on the element.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "coverage_actedOnBy_other": {
+    "message": "Acted on by $count$ tests",
+    "description": "Tested elements, card over the page: tests click, fill or otherwise act on the element.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "coverage_checkedBy_one": {
+    "message": "Checked by $count$ test, without acting on it",
+    "description": "Tested elements, card over the page: tests only check the element.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "coverage_checkedBy_other": {
+    "message": "Checked by $count$ tests, without acting on it",
+    "description": "Tested elements, card over the page: tests only check the element.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "coverage_ambiguous": {
+    "message": "its locators find several elements here",
+    "description": "Tested elements, card over the page: after “·” on the line saying how tests use the element."
+  },
+  "coverage_notTested": {
+    "message": "Not tested",
+    "description": "Tested elements, card over the page: an element no test reaches. Short."
+  },
+  "coverage_noLocatorReaches": {
+    "message": "no locator of this project finds it",
+    "description": "Tested elements, card over the page: after “Not tested ·”."
+  },
+  "coverage_openTestFile": {
+    "message": "Open this test in Piwi: $file$",
+    "description": "Tested elements, card over the page: tooltip of a test's title, a link. $file$ is the test's file.",
+    "placeholders": {
+      "file": {
+        "content": "$1",
+        "example": "tests/catalog.spec.ts"
+      }
+    }
+  },
+  "coverage_previewBrittle": {
+    "message": "A brittle locator finds it · click the badge for a replacement",
+    "description": "Tested elements, card over the page, shown on hover: a locator likely to break finds the element."
+  },
+  "coverage_previewMore_one": {
+    "message": "$count$ more · click the badge for locators and links",
+    "description": "Tested elements, card over the page, shown on hover: below a shortened list of tests.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "coverage_previewMore_other": {
+    "message": "$count$ more · click the badge for locators and links",
+    "description": "Tested elements, card over the page, shown on hover: below a shortened list of tests.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "coverage_previewHint": {
+    "message": "Click the badge for locators and links",
+    "description": "Tested elements, card over the page, shown on hover: below the list of tests."
+  },
+  "coverage_aLocator": {
+    "message": "A locator for it",
+    "description": "Tested elements, card over the page, shown on hover: above a locator for an untested element."
+  },
+  "coverage_matchesOnPage_one": {
+    "message": "Finds $count$ element on this page",
+    "description": "Tested elements, card over the page: under a locator that finds several elements.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "4"
+      }
+    }
+  },
+  "coverage_matchesOnPage_other": {
+    "message": "Finds $count$ elements on this page",
+    "description": "Tested elements, card over the page: under a locator that finds several elements.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "4"
+      }
+    }
+  },
+  "coverage_onPages": {
+    "message": "on $pages$",
+    "description": "Tested elements, card over the page: after “·” on a test's line: the pages it used the locator on. $pages$ lists page addresses.",
+    "placeholders": {
+      "pages": {
+        "content": "$1",
+        "example": "/shop.html, as it loads"
+      }
+    }
+  },
+  "coverage_pageOnLoad": {
+    "message": "$page$, as it loads",
+    "description": "Tested elements, card over the page: a page address where the test used the locator as soon as the page loaded.",
+    "placeholders": {
+      "page": {
+        "content": "$1",
+        "example": "/shop.html"
+      }
+    }
+  },
+  "coverage_moreTests_one": {
+    "message": "$count$ more test",
+    "description": "Tested elements, card over the page: below a shortened list of tests.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "coverage_moreTests_other": {
+    "message": "$count$ more tests",
+    "description": "Tested elements, card over the page: below a shortened list of tests.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "coverage_findInPiwi": {
+    "message": "Find these locators in Piwi ↗",
+    "description": "Tested elements, card over the page: link to the Locators page of the Piwi dashboard."
+  },
+  "coverage_noTestReaches": {
+    "message": "No test of this project reaches this element.",
+    "description": "Tested elements, card over the page: for an untested element."
+  },
+  "coverage_mostStableFor": {
+    "message": "The most stable locator for it",
+    "description": "Tested elements, card over the page: above a locator for an untested element."
+  },
+  "common_workerOutdated": {
+    "message": "Piwi Picker was rebuilt without being reloaded, and its background worker still runs the previous build. Reload the extension from its menu, or from the browser’s extensions page.",
+    "description": "Error shown by a tool when the background worker does not know its message: the extension was rebuilt (a developer’s local build) but not reloaded."
   }
 }

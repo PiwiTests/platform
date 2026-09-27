@@ -6,9 +6,12 @@ should be on the page and what happened, and the replay tells a developer in sen
 is written for people who are not necessarily fluent in English, and a French team is its first audience.
 
 **Status.** Proposed 2026-09-27. PR 1 built 2026-09-27: the machinery, the popup, the settings page, the background's
-texts and badges, in English and French (French to be reviewed by the team before release). The in-page panels are
-still English, so the French listing still says "L'interface de l'extension est en anglais" until PR 2. The decisions
-PR 1 changed are under "Decisions made while building" below. Nothing here changes a wire format, the steps format or generated code, so no entry
+texts and badges, in English and French. PR 2 built 2026-09-27: every in-page tool, in English and French, with its
+English rewritten in plain words; the French store listing names the tools as the French interface does. French is to
+be reviewed by the team before release. What still reads English in a French interface is what PR 3 moves: the
+sentences core writes about the page (steps, expectations, evidence, the Markdown report), stability rules and
+converter warnings. The decisions PR 1 and PR 2 changed are under "Decisions made while building" below. Nothing here
+changes a wire format, the steps format or generated code, so no entry
 in [`1.0-stabilization.md`](1.0-stabilization.md) is needed.
 
 **Summary.** Every text the extension shows moves into one catalog per language, the `messages.json` files the browser
@@ -37,7 +40,7 @@ A French tester opens the popup and reads **Choisir un élément**, **Enregistre
 
 The page is in English, so its texts ("Coupon", "Apply coupon", "Total: 42") stay in English, quoted the French way.
 The developer who replays the report reads **Reproduit : le bug est visible ici** and, below it,
-**Étape 4 : attendu « Total: 42 », trouvé « Total: 40 », comme signalé.** The spec the report generates is the same,
+**Étape 4 : attendu « Total: 42 », résultat : « Total: 40 », comme signalé.** The spec the report generates is the same,
 character for character, as the one an English report generates.
 
 The report is written in the language selected for the extension: the Language setting, else the browser's. There is
@@ -302,14 +305,15 @@ never translated) within the page's word budget, and screenshots stay English.
       the `--pseudo` build, the French e2e launcher (`LANGUAGE=fr`).
 - [x] `apps/extension/i18n/README.md` and `glossary.fr.md`.
 
-**PR 2 — the panels (en, fr).** Pick and hover, the locator console, multi-pick, the lint overlay, assertions, session,
-agent context, record, results, test functions, coverage, the bug report, the replay. The largest by far (coverage
-alone holds about 95 strings), and the one where the English is rewritten in plain words. It may be split in two, the
-picking tools first. The not-yet-migrated list ends empty.
+**PR 2 — the panels (en, fr).** Built. Pick and hover, the locator console, multi-pick, the lint overlay, assertions,
+session, agent context, record, results, test functions, coverage, the bug report, the replay. The largest by far
+(coverage alone holds about 95 strings), and the one where the English is rewritten in plain words. It may be split in
+two, the picking tools first. The not-yet-migrated list ends empty.
 
 **PR 3 — the phrasebooks (en, fr).** `BugPhrases` in core, English and French; `role-words.ts` folded into them; the
-bug report written in the selected language; the replay verdict and step captions through the phrasebook; stability rules
-and converter warnings by code.
+bug report written in the selected language; the replay's step list and cursor captions through the phrasebook (its
+verdict is already translated, by PR 2); stability rules and converter warnings by code; the action labels of
+`locatorActionLabel` (Click, Count) that the pick results and Tested elements show.
 
 **PR 4 — German, Spanish, Brazilian Portuguese.** Their catalogs, phrasebooks, glossaries, store summaries and
 descriptions, all marked as drafts (`draft: true`, the note in Options and in the store descriptions, the translation
@@ -352,7 +356,43 @@ PR 1 changed or settled these:
   setting, so the Language setting waits for PR 4's Languages section.
 - **Descriptions** live in the English catalog only: it is the one translators read.
 
+PR 2 changed or settled these:
+
+- **Where the texts of pure functions are translated.** Functions that the e2e specs rebuild with
+  `Function.prototype.toString()` (`evaluateLocatorChain`, the lint and multi-pick scans, `testCatalogAgainstPage`)
+  cannot call `t()`: they return codes, or an error carrying its value (`invalidSelector`), and the panel words them.
+- **Parser errors stay English.** Besides `parseSteps`, the errors of `parseLocatorExpression` (the extension's front
+  of the core locator parser) name what the parser could not read, and stay English inside a translated sentence
+  ("La console ne sait pas lire ce locator : unterminated string").
+- **The replay verdict** is translated in PR 2: `verdictText`, the "found" descriptions, the divergence reasons and the
+  file errors are catalog messages. Quotes around page text come from a message (`replay_quotedText`), so
+  `sameAsReported` compares in the language shown. The French detail reads « attendu « X », résultat : Y » rather
+  than « trouvé », because Y is sometimes a state or an absence (« résultat : masqué », « résultat : aucun élément sur
+  la page »). A replay's step results are worded when the step runs and stored as text in its state: a language change
+  in the middle of a replay leaves earlier steps in the earlier language.
+- **What a report stores stays English.** A bug report's assertion values ("hidden", "not on the page") and its
+  screenshot note stay English in `steps.json`, `evidence.json` and the Markdown; the bug panel words them when it shows
+  them. The agent-context block, the lint overlay's Markdown checklist, the session's exports and the "copy the change"
+  text of Tested elements are texts for code, tickets or agents, and stay English with the report's Markdown (PR 3
+  decides the report's language).
+- **Labels the docs name keep their names**: the recorder's Copy as TypeScript and Download steps.
+- **New surfaces**: `multipick_`, `lint_`, `assert_`, `agent_` and `functions_` (Test functions), recorded in
+  `i18n/README.md`. The pick results use `pick_`. The copy modes (Locator, Action, Assertion) are `common_`, shared
+  by the pick results and multi-pick. `OUTDATED_WORKER_MESSAGE` became `outdatedWorkerMessage()`, a `common_` message.
+- **The clipping test** is an assertion in each French panel test (lint, assertions, agent context, session, test
+  functions, record, bug report, replay, Tested elements): `clippedInShadows` (`tests/e2e/shadow.ts`) fails on an
+  element holding text whose `scrollWidth` exceeds its `clientWidth`, inside the panels' shadow roots, which
+  `openShadowRoots` opens for the test. Code is left out: some rows cut a long locator on purpose, and code is the same
+  in every language. PR 4 runs the same assertions in German. It found the replay cursor's caption cut at one line;
+  the caption now wraps.
+- **Starting a tool.** A script that paints on injection ends with `void initI18n().then(start)`; a script that
+  already awaits storage runs `initI18n()` beside it (`Promise.all`), so no first paint waits longer. The bug panels
+  have no entry point of their own: `record-panel.ts` reads the language before any of them paints.
+
 ## Open questions
 
 1. **The dashboard.** It has English and French for tickets and quality reports only. This plan leaves it alone, but the
    glossaries and the phrasebooks are written so the dashboard could adopt them later.
+2. **The picking overlay.** Its hint ("click any element to generate locators for it") and the anchor step ("Scope to
+   stable parents", "Skip (Esc)") come from `@piwitests/picker-dom`, which the reporter and the dashboard share, and
+   stay English. Translating them needs the overlay to take its labels as an argument.

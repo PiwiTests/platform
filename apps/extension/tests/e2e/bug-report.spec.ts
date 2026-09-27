@@ -7,11 +7,13 @@ import { fileURLToPath } from 'node:url';
 import type { BrowserContext, Page } from '@playwright/test';
 import { test, expect, extensionWorker, launchWithExtension } from './fixtures.js';
 import { readStoredEvents, stubChromeStorage } from './recording-stub.js';
+import { stubChromeI18n } from './i18n-stub.js';
 import { routeShop, SHOP_ORIGIN } from './bug-shop.js';
 import { readStoredZip } from '../zip-reader.js';
 import { engineBundle } from './engine-bundle.js';
 import { emptyBugEvidence, renderBugSpec, type BugReport } from '@piwitests/core/bug-report';
 import { parseSteps, type PiwiSteps } from '@piwitests/core/steps';
+import { clippedInShadows, openShadowRoots } from './shadow.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.join(here, '..', '..', 'dist');
@@ -26,7 +28,11 @@ const PNG =
  * registration does, and both run in the page's main world here, where the
  * relay works the same way it does across the two worlds.
  */
-async function startBugRecording(context: BrowserContext, screenshot: { ok: boolean }): Promise<Page> {
+async function startBugRecording(
+  context: BrowserContext,
+  screenshot: { ok: boolean },
+  options: { language?: string } = {},
+): Promise<Page> {
   await stubChromeStorage(context, {
     session: {
       piwiRecording: {
@@ -42,6 +48,7 @@ async function startBugRecording(context: BrowserContext, screenshot: { ok: bool
       'piwi-bug-screenshot': screenshot.ok ? { ok: true, dataUrl: PNG } : { ok: false, error: 'activeTab' },
     },
   });
+  if (options.language) await stubChromeI18n(context, options.language);
   await context.addInitScript({ path: path.join(DIST, 'bug-evidence-main.js') });
   const page = await context.newPage();
   await page.goto(`${SHOP_ORIGIN}/cart`);
@@ -76,6 +83,14 @@ async function readEvidence(page: Page): Promise<Record<string, any>> {
 async function screenshotCount(page: Page): Promise<number> {
   const stored = await page.evaluate(async () => (globalThis as any).chrome.storage.session.get('piwiBugScreenshots'));
   return (stored.piwiBugScreenshots ?? []).length;
+}
+
+/** The `lang` of the panel inside a host's shadow root. */
+function panelLang(page: Page, hostId: string, selector: string): Promise<string | null> {
+  return page.evaluate(
+    ([id, sel]) => document.getElementById(id)?.shadowRoot?.querySelector(sel)?.getAttribute('lang') ?? null,
+    [hostId, selector] as const,
+  );
 }
 
 async function readClipboard(page: Page): Promise<string> {
@@ -315,6 +330,61 @@ test.describe('Report a bug', () => {
     await expect
       .poll(async () => (await readStoredEvents(page)).map((e) => e.kind))
       .toEqual(['navigate', 'input', 'click']);
+  });
+
+  test('in French: the HUD, the dialogs and the finished report', async ({ context }) => {
+    await openShadowRoots(context);
+    await routeShop(context, { fixed: false });
+    const page = await startBugRecording(context, { ok: false }, { language: 'fr' });
+    const hud = page.locator('#piwi-record-hud-host');
+
+    await expect(hud.getByText('Signalement d’un bug · 1 étape')).toBeVisible();
+    await expect(hud.getByRole('button', { name: 'Marquer ce qui ne va pas' })).toHaveAttribute(
+      'title',
+      'Choisissez un élément de la page et dites ce qu’il devrait afficher',
+    );
+    await expect(hud.getByRole('button', { name: 'Il manque quelque chose' })).toBeVisible();
+    await expect(hud.getByRole('button', { name: 'Terminer' })).toBeVisible();
+    expect(await panelLang(page, 'piwi-record-hud-host', '.bar')).toBe('fr');
+
+    // Something is missing: the kinds in French, and an element that is there refused in French.
+    await pressHudButton(page, 'missing');
+    const dialog = page.locator('#piwi-bug-dialog-host');
+    await expect(dialog.getByRole('dialog', { name: 'Il manque quelque chose' })).toBeVisible();
+    expect(await panelLang(page, 'piwi-bug-dialog-host', '.panel')).toBe('fr');
+    await expect(dialog.getByLabel('Ce qui devrait être là')).toHaveValue('button');
+    await expect(dialog.getByRole('option', { name: 'Case à cocher' })).toBeAttached();
+    await page.keyboard.type('Apply');
+    await page.keyboard.press('Enter');
+    await expect(dialog.getByRole('alert')).toHaveText(
+      '1 élément de ce type est déjà sur la page\u00a0: utilisez «\u202fMarquer ce qui ne va pas\u202f» pour dire ce qui ne va pas.',
+    );
+    await page.keyboard.press('Escape');
+    await expect.poll(() => hostPresent(page, 'piwi-bug-dialog-host')).toBe(false);
+
+    // Mark what's wrong: the state choices and what the page shows, in French.
+    await pressHudButton(page, 'mark');
+    await page.hover('#total');
+    await page.click('#total');
+    await expect(dialog.getByRole('dialog', { name: 'Marquer ce qui ne va pas' })).toBeVisible();
+    await expect(dialog.getByText('La page affiche')).toBeVisible();
+    await expect(dialog.getByRole('option', { name: 'Il devrait être masqué' })).toBeAttached();
+    await page.keyboard.type('Total: 45');
+    await page.keyboard.press('Enter');
+    await expect.poll(() => hostPresent(page, 'piwi-bug-dialog-host')).toBe(false);
+    await expect(hud.getByText('affiche «\u202fTotal: 50\u202f»')).toBeVisible();
+
+    await pressHudButton(page, 'finish');
+    const review = page.locator('#piwi-record-review-host');
+    await expect(review.getByRole('dialog', { name: 'Rapport de bug Piwi Picker' })).toBeVisible();
+    expect(await panelLang(page, 'piwi-record-review-host', '.panel')).toBe('fr');
+    await expect(review.getByText('Rapport de bug · 2 étapes')).toBeVisible();
+    await expect(review.getByLabel('Titre')).toBeVisible();
+    for (const name of ['Copier le test en échec', 'Copier le rapport', 'Télécharger le .zip', 'Rejouer', 'Abandonner'])
+      await expect(review.getByRole('button', { name })).toBeVisible();
+    await expect(review.getByText(/^Pas de capture d’écran\u00a0: Chrome ne laisse/)).toBeVisible();
+    await expect(review.getByText('Tout reste dans ce navigateur\u00a0: rien n’est envoyé nulle part.')).toBeVisible();
+    expect(await clippedInShadows(page)).toEqual([]);
   });
 
   test('in the real extension: the main-world script is registered for the recording, relays across worlds, and no screenshot is taken without activeTab', async () => {

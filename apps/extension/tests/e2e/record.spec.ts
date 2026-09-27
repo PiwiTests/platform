@@ -5,10 +5,12 @@ import { fileURLToPath } from 'node:url';
 import type { BrowserContext, Page } from '@playwright/test';
 import { test, expect } from './fixtures.js';
 import { dispatchRuntimeMessage, readStoredEvents, setRecordingActive, stubChromeStorage } from './recording-stub.js';
+import { stubChromeI18n } from './i18n-stub.js';
 import { normalizeSteps, type RawCaptureEvent } from '@piwitests/core/recording';
 import { renderSpec } from '@piwitests/core/codegen';
 import { parseSteps, sessionFromSteps, type PiwiSteps } from '@piwitests/core/steps';
 import type { TestFunctionEntry } from '@piwitests/core/function-match';
+import { clippedInShadows, openShadowRoots } from './shadow.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.join(here, '..', '..', 'dist');
@@ -356,5 +358,113 @@ test.describe('record-panel.js', () => {
     };
     expect(await run('Add to cart')).toBe('passed');
     expect(await run('Remove from cart')).toContain('Remove from cart');
+  });
+});
+
+test.describe('record-panel.js in French', () => {
+  const addToCart: TestFunctionEntry = {
+    id: 1,
+    name: 'addToCart',
+    kind: 'helper',
+    module: './helpers/cart',
+    receiver: null,
+    importName: null,
+    params: [],
+    urlPattern: null,
+    steps: [{ action: 'click', target: { testId: 'add-to-cart' } }],
+    paramSources: [],
+  };
+  const clickAddToCart: RawCaptureEvent = {
+    kind: 'click',
+    target: {
+      tagName: 'button',
+      role: 'button',
+      accessibleName: 'Add to cart',
+      testId: 'add-to-cart',
+      text: 'Add to cart',
+      alternatives: [{ locator: `getByTestId('add-to-cart')`, method: 'getByTestId', score: 100 }],
+    },
+    value: null,
+    checked: null,
+    inputType: null,
+    isPasswordField: false,
+    pageUrl: `${ORIGIN}/dashboard`,
+    timestamp: 2,
+  };
+  const fillCoupon: RawCaptureEvent = {
+    ...clickAddToCart,
+    kind: 'input',
+    target: { ...clickAddToCart.target!, role: 'textbox', accessibleName: 'Coupon', testId: null, alternatives: [] },
+    value: 'SPRING10',
+    timestamp: 1,
+  };
+
+  /** A recording seeded with `events`, a connection and a one-function catalog; the recorder's shadow roots open. */
+  async function frenchRecording(context: BrowserContext, active: boolean, events: RawCaptureEvent[]): Promise<Page> {
+    await routePages(context);
+    await stubChromeStorage(context, {
+      session: { piwiRecording: { active, events, startedAt: 1, grantedOriginPattern: `${ORIGIN}/*` } },
+      local: {
+        piwiCatalogCache: { '1': { entries: [addToCart], fetchedAt: Date.now() } },
+        piwiConnection: {
+          instanceUrl: 'https://piwi.test',
+          apiKey: '',
+          projectMappings: [{ urlPattern: '**', projectId: 1, projectLabel: 'Test project' }],
+        },
+      },
+    });
+    await stubChromeI18n(context, 'fr');
+    await openShadowRoots(context);
+    const page = await context.newPage();
+    await page.goto(`${ORIGIN}/dashboard`);
+    await page.addScriptTag({ path: path.join(DIST, 'record-panel.js') });
+    return page;
+  }
+
+  function shadowOf(page: Page, hostId: string) {
+    return page.evaluate((id) => {
+      const root = document.getElementById(id)?.shadowRoot;
+      if (!root) return null;
+      const box = root.querySelector<HTMLElement>('[lang]');
+      return {
+        lang: box?.lang ?? null,
+        text: (box?.innerText ?? '').replace(/[ \t\n]+/g, ' '),
+        labels: [...root.querySelectorAll('[aria-label], [title]')].map(
+          (el) => el.getAttribute('aria-label') ?? el.getAttribute('title'),
+        ),
+      };
+    }, hostId);
+  }
+
+  test('the HUD speaks French', async ({ context }) => {
+    const page = await frenchRecording(context, true, [clickAddToCart]);
+    await expect.poll(() => shadowOf(page, 'piwi-record-hud-host').then((s) => s?.text ?? '')).toContain('Arrêter');
+    const hud = (await shadowOf(page, 'piwi-record-hud-host'))!;
+    expect(hud.lang).toBe('fr');
+    // The seeded click plus this page's own navigation.
+    expect(hud.text).toContain('Enregistrement : 2 étapes');
+    expect(hud.text).toMatch(/Dernier locator/i);
+    expect(hud.text).toContain(`getByTestId('add-to-cart')`);
+    expect(hud.text).toMatch(/Fonctions de test correspondantes/i);
+    expect(hud.text).toContain('addToCart');
+    expect(hud.text).toContain('prête');
+    expect(await clippedInShadows(page)).toEqual([]);
+  });
+
+  test('the review panel speaks French, and keeps the page’s text as it is', async ({ context }) => {
+    const page = await frenchRecording(context, false, [fillCoupon, clickAddToCart]);
+    await expect.poll(() => shadowOf(page, 'piwi-record-review-host').then((s) => s?.lang ?? null)).toBe('fr');
+    const review = (await shadowOf(page, 'piwi-record-review-host'))!;
+    expect(review.text).toContain('2 étapes enregistrées');
+    expect(review.text).toContain('1 étape correspond à l’une de vos fonctions de test');
+    expect(review.text).toContain('fill — Coupon = « SPRING10 »');
+    expect(review.text).toContain('Copier en TypeScript (avec vos fonctions)');
+    expect(review.text).toContain('Copier en TypeScript sans vos fonctions');
+    expect(review.text).toContain('Télécharger les étapes');
+    expect(review.text).toContain('Abandonner');
+    expect(review.labels).toEqual(
+      expect.arrayContaining(['Votre enregistrement', 'Fermer', expect.stringContaining('piwi codegen')]),
+    );
+    expect(await clippedInShadows(page)).toEqual([]);
   });
 });

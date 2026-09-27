@@ -1,3 +1,4 @@
+import { initI18n, t, tn, uiLanguage } from '../shared/i18n.js';
 import { startTool, endTool, installEscapeToCancel, teardownToolSurfaces } from '../shared/tool-session.js';
 import {
   installPickerOverlay,
@@ -48,7 +49,7 @@ async function copyToClipboard(text: string, btn: HTMLButtonElement): Promise<vo
     return;
   }
   const original = btn.textContent;
-  btn.textContent = 'Copied';
+  btn.textContent = t('common_copied');
   setTimeout(() => {
     btn.textContent = original;
   }, 1200);
@@ -84,7 +85,7 @@ function promptForName(existingNames: Set<string>): Promise<string | null> {
         position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); pointer-events: auto;
         display: flex; flex-direction: column; gap: 6px; background: #111827; color: #f9fafb;
         border-radius: 10px; padding: 10px 12px; box-shadow: 0 8px 30px rgba(0,0,0,.4);
-        font: 13px ui-sans-serif, system-ui, -apple-system, sans-serif; min-width: 280px;
+        font: 13px ui-sans-serif, system-ui, -apple-system, sans-serif; min-width: 280px; max-width: min(480px, 92vw);
       }
       @media (prefers-color-scheme: light) {
         .bar { background: #ffffff; color: #111827; box-shadow: 0 8px 30px rgba(0,0,0,.2); }
@@ -101,22 +102,26 @@ function promptForName(existingNames: Set<string>): Promise<string | null> {
       }
       button:hover, button:focus-visible { background: rgba(128,128,128,.25); }
       button.primary { background: #7c3aed; border-color: #7c3aed; color: #fff; }
-      .error { color: #f87171; font-size: 11.5px; min-height: 14px; }
+      .error { color: #f87171; font-size: 11.5px; min-height: 14px; overflow-wrap: anywhere; hyphens: auto; }
+      @media (prefers-color-scheme: light) {
+        .error { color: #b91c1c; }
+      }
     `;
     root.appendChild(style);
 
     const bar = document.createElement('div');
     bar.className = 'bar';
+    bar.lang = uiLanguage();
     const row = document.createElement('div');
     row.className = 'row';
     const input = document.createElement('input');
     input.type = 'text';
-    input.placeholder = 'name this pick, e.g. submitButton';
-    input.setAttribute('aria-label', 'Name this pick');
+    input.placeholder = t('session_namePlaceholder');
+    input.setAttribute('aria-label', t('session_nameLabel'));
     const saveBtn = document.createElement('button');
     saveBtn.type = 'button';
     saveBtn.className = 'primary';
-    saveBtn.textContent = 'Save';
+    saveBtn.textContent = t('common_save');
     row.append(input, saveBtn);
     const error = document.createElement('div');
     error.className = 'error';
@@ -132,15 +137,15 @@ function promptForName(existingNames: Set<string>): Promise<string | null> {
     const trySave = () => {
       const name = input.value.trim();
       if (!name) {
-        error.textContent = 'Name is required.';
+        error.textContent = t('session_nameRequired');
         return;
       }
       if (!isValidPickName(name)) {
-        error.textContent = 'Use letters, digits, _ or $ — must not start with a digit.';
+        error.textContent = t('session_nameInvalid');
         return;
       }
       if (existingNames.has(name)) {
-        error.textContent = `"${name}" is already used in this session.`;
+        error.textContent = t('session_nameTaken', { name });
         return;
       }
       finish(name);
@@ -194,18 +199,20 @@ function renderSessionPanelOnce(picks: SessionPick[]): Promise<PanelAction> {
     @media (prefers-color-scheme: light) {
       .panel { background: #ffffff; color: #111827; box-shadow: 0 8px 40px rgba(0,0,0,.2); }
     }
-    .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-    .title { font-weight: 600; font-size: 14px; }
-    .sub { color: #9ca3af; font-size: 12px; }
+    .header { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+    .header > div { min-width: 0; }
+    .title { font-weight: 600; font-size: 14px; overflow-wrap: anywhere; hyphens: auto; }
+    .sub { color: #9ca3af; font-size: 12px; overflow-wrap: anywhere; hyphens: auto; }
     .close {
       background: none; border: none; color: inherit; opacity: .7; cursor: pointer; font-size: 18px;
       line-height: 1; padding: 4px 8px; border-radius: 6px;
     }
     .close:hover, .close:focus-visible { opacity: 1; background: rgba(128,128,128,.15); }
-    .empty { color: #9ca3af; font-size: 12.5px; margin-bottom: 12px; }
+    .empty { color: #9ca3af; font-size: 12.5px; margin-bottom: 12px; overflow-wrap: anywhere; }
     .row { border: 1px solid rgba(128,128,128,.3); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; }
     .row-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-    .name { font-weight: 600; }
+    .row-top > div { min-width: 0; }
+    .name { font-weight: 600; overflow-wrap: anywhere; }
     .row code { font-size: 13px; line-height: 1.55; }
     .url { color: #9ca3af; font-size: 11px; margin-top: 4px; word-break: break-all; }
     button.remove {
@@ -232,7 +239,8 @@ function renderSessionPanelOnce(picks: SessionPick[]): Promise<PanelAction> {
   const panel = document.createElement('div');
   panel.className = 'panel';
   panel.setAttribute('role', 'dialog');
-  panel.setAttribute('aria-label', 'Piwi pick session');
+  panel.lang = uiLanguage();
+  panel.setAttribute('aria-label', t('session_dialog'));
   panel.tabIndex = -1;
 
   const header = document.createElement('div');
@@ -240,15 +248,14 @@ function renderSessionPanelOnce(picks: SessionPick[]): Promise<PanelAction> {
   const titleWrap = document.createElement('div');
   const title = document.createElement('div');
   title.className = 'title';
-  title.textContent =
-    picks.length === 0 ? 'No picks in this session yet' : `${picks.length} named pick${picks.length === 1 ? '' : 's'}`;
+  title.textContent = picks.length === 0 ? t('session_none') : tn('session_count', picks.length);
   const sub = document.createElement('div');
   sub.className = 'sub';
-  sub.textContent = 'Esc to close · picks persist for this browser session';
+  sub.textContent = `${t('common_escToClose')} · ${t('session_kept')}`;
   titleWrap.append(title, sub);
   const closeBtn = document.createElement('button');
   closeBtn.className = 'close';
-  closeBtn.setAttribute('aria-label', 'Close');
+  closeBtn.setAttribute('aria-label', t('common_close'));
   closeBtn.textContent = '×';
   header.append(titleWrap, closeBtn);
   panel.appendChild(header);
@@ -278,7 +285,7 @@ function renderSessionPanelOnce(picks: SessionPick[]): Promise<PanelAction> {
     if (picks.length === 0) {
       const empty = document.createElement('div');
       empty.className = 'empty';
-      empty.textContent = 'Pick an element and give it a name — build up a named session across pages, then export it.';
+      empty.textContent = t('session_intro');
       panel.appendChild(empty);
     } else {
       for (const pick of picks) {
@@ -297,7 +304,7 @@ function renderSessionPanelOnce(picks: SessionPick[]): Promise<PanelAction> {
         const removeBtn = document.createElement('button');
         removeBtn.className = 'remove';
         removeBtn.type = 'button';
-        removeBtn.setAttribute('aria-label', `Remove ${pick.name}`);
+        removeBtn.setAttribute('aria-label', t('session_remove', { name: pick.name }));
         removeBtn.textContent = '×';
         removeBtn.addEventListener('click', () => finish({ type: 'remove', name: pick.name }));
         top.append(nameWrap, removeBtn);
@@ -315,15 +322,15 @@ function renderSessionPanelOnce(picks: SessionPick[]): Promise<PanelAction> {
     const addBtn = document.createElement('button');
     addBtn.type = 'button';
     addBtn.className = 'action primary';
-    addBtn.textContent = '+ Add pick';
+    addBtn.textContent = t('session_add');
     addBtn.addEventListener('click', () => finish({ type: 'add' }));
     actions.appendChild(addBtn);
 
     if (picks.length > 0) {
       const exportSpecs: Array<{ label: string; render: () => string }> = [
-        { label: 'Copy as fixture (.ts)', render: () => renderFixture(picks) },
-        { label: 'Copy as Markdown', render: () => renderMarkdown(picks) },
-        { label: 'Copy as JSON', render: () => renderJson(picks) },
+        { label: t('session_copyPageObject'), render: () => renderFixture(picks) },
+        { label: t('session_copyMarkdown'), render: () => renderMarkdown(picks) },
+        { label: t('session_copyJson'), render: () => renderJson(picks) },
       ];
       for (const spec of exportSpecs) {
         const btn = document.createElement('button');
@@ -336,7 +343,7 @@ function renderSessionPanelOnce(picks: SessionPick[]): Promise<PanelAction> {
       const clearBtn = document.createElement('button');
       clearBtn.type = 'button';
       clearBtn.className = 'action danger';
-      clearBtn.textContent = 'Clear session';
+      clearBtn.textContent = t('session_clear');
       clearBtn.addEventListener('click', () => finish({ type: 'clear' }));
       actions.appendChild(clearBtn);
     }
@@ -363,7 +370,7 @@ async function runSessionPanel(): Promise<void> {
   installEscapeToCancel();
   try {
     // Pick sessions live in session storage — see `session-access.ts`.
-    await ensureSessionAccess();
+    await Promise.all([ensureSessionAccess(), initI18n()]);
     for (;;) {
       const picks = await getSessionPicks();
       const action = await renderSessionPanelOnce(picks);

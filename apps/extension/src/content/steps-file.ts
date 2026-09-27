@@ -1,4 +1,5 @@
 import { parseSteps, type PiwiSteps } from '@piwitests/core/steps';
+import { t } from '../shared/i18n.js';
 import { readZipEntry } from '../shared/zip.js';
 
 /**
@@ -10,12 +11,12 @@ export async function readStepsFile(name: string, bytes: Uint8Array): Promise<Pi
   let text: string;
   if (isZip) {
     const entry = await readZipEntry(bytes, 'steps.json');
-    if (!entry) throw new Error(`${name} has no steps.json: choose the .zip Piwi Picker saved, or its steps.json.`);
+    if (!entry) throw new Error(t('replay_zipNoSteps', { file: name }));
     text = new TextDecoder().decode(entry);
   } else {
     text = new TextDecoder().decode(bytes);
   }
   const parsed = parseSteps(text);
-  if (!parsed.ok) throw new Error(`${name} is not a steps file: ${parsed.errors[0]}`);
+  if (!parsed.ok) throw new Error(t('replay_fileNotSteps', { file: name, error: parsed.errors[0] ?? '' }));
   return parsed.steps;
 }

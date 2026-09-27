@@ -13,8 +13,8 @@ import type { CoveredElement, UncoveredElement } from './coverage-scan.js';
 import {
   ageLabel,
   isScoped,
+  isSingular,
   kindShown,
-  plural,
   riskCount,
   statusLabel,
   testTitle,
@@ -24,6 +24,7 @@ import {
   type ViewState,
 } from './coverage-view.js';
 import { testCaseUrl } from '../shared/piwi-client.js';
+import { formatNumber, t, tn, tNodes, uiLanguage } from '../shared/i18n.js';
 
 export type PanelStatus = 'loading' | 'not-connected' | 'no-project' | 'error' | 'ready';
 
@@ -101,7 +102,7 @@ async function copyText(text: string, button: HTMLButtonElement): Promise<void> 
     return;
   }
   const original = button.textContent;
-  button.textContent = 'Copied';
+  button.textContent = t('common_copied');
   setTimeout(() => (button.textContent = original), 1200);
 }
 
@@ -121,25 +122,26 @@ export class CoveragePanel {
   ) {
     this.panel = el('aside', 'panel');
     this.panel.setAttribute('role', 'dialog');
-    this.panel.setAttribute('aria-label', 'Piwi tested elements');
+    this.panel.lang = uiLanguage();
+    this.panel.setAttribute('aria-label', t('coverage_panelLabel'));
 
     const head = el('div', 'head');
     const titles = el('div');
-    this.titleEl = el('div', 'title', 'Tested elements');
+    this.titleEl = el('div', 'title', t('coverage_title'));
     this.subEl = el('div', 'sub');
     titles.append(this.titleEl, this.subEl);
     const icons = el('div', 'icons');
-    const dock = this.iconButton('⇆', 'Move the panel to the other side', () => callbacks.onDock());
-    const collapse = this.iconButton('–', 'Collapse to a summary pill', () => callbacks.onCollapse(true));
-    const close = this.iconButton('×', 'Close (Esc)', () => callbacks.onClose());
+    const dock = this.iconButton('⇆', t('coverage_dock'), () => callbacks.onDock());
+    const collapse = this.iconButton('–', t('coverage_collapse'), () => callbacks.onCollapse(true));
+    const close = this.iconButton('×', t('coverage_closeEsc'), () => callbacks.onClose());
     icons.append(dock, collapse, close);
     head.append(titles, icons);
 
     this.body = el('div', 'body');
     this.search = el('input', 'search');
     this.search.type = 'search';
-    this.search.placeholder = 'Filter by element, test or file';
-    this.search.setAttribute('aria-label', 'Filter the list');
+    this.search.placeholder = t('coverage_search');
+    this.search.setAttribute('aria-label', t('coverage_searchLabel'));
     this.search.addEventListener('input', () => callbacks.onQuery(this.search.value));
     this.search.addEventListener('keydown', (e) => {
       // Escape clears the filter before it closes the overlay.
@@ -153,11 +155,11 @@ export class CoveragePanel {
     this.foot = el('div', 'foot');
     const toggles = el('div', 'toggles');
     for (const [key, label, title] of [
-      ['showOperated', 'Operated', 'Elements tests click, fill or otherwise act on'],
-      ['showChecked', 'Checked', 'Elements tests only assert on'],
-      ['showUncovered', 'Not tested', 'Interactive elements no test reaches'],
-      ['heatmap', 'Heatmap', 'Shade each box by how many tests reach it'],
-      ['showBrittle', 'Brittle', 'Mark the elements a brittle locator finds'],
+      ['showOperated', t('coverage_toggleActed'), t('coverage_toggleActedTitle')],
+      ['showChecked', t('coverage_toggleChecked'), t('coverage_toggleCheckedTitle')],
+      ['showUncovered', t('coverage_toggleUntested'), t('coverage_toggleUntestedTitle')],
+      ['heatmap', t('coverage_toggleHeat'), t('coverage_toggleHeatTitle')],
+      ['showBrittle', t('coverage_toggleBrittle'), t('coverage_toggleBrittleTitle')],
     ] as const) {
       const wrap = el('label');
       wrap.title = title;
@@ -170,11 +172,11 @@ export class CoveragePanel {
     }
     const legend = el('div', 'legend');
     for (const [cls, label] of [
-      ['swatch operated', 'operated by tests'],
-      ['swatch checked', 'checked only'],
-      ['swatch uncovered', 'not tested'],
-      ['dotted', 'ambiguous'],
-      ['swatch brittle', 'brittle locator'],
+      ['swatch operated', t('coverage_legendActed')],
+      ['swatch checked', t('coverage_legendChecked')],
+      ['swatch uncovered', t('coverage_legendUntested')],
+      ['dotted', t('coverage_legendAmbiguous')],
+      ['swatch brittle', t('coverage_legendBrittle')],
     ] as const) {
       const item = el('span');
       item.append(el('span', cls), label);
@@ -187,7 +189,8 @@ export class CoveragePanel {
 
     this.pill = el('button', 'pill');
     this.pill.type = 'button';
-    this.pill.title = 'Expand the Piwi tested-elements panel';
+    this.pill.lang = uiLanguage();
+    this.pill.title = t('coverage_expand');
     this.pill.addEventListener('click', () => callbacks.onCollapse(false));
     parent.appendChild(this.pill);
   }
@@ -215,7 +218,7 @@ export class CoveragePanel {
     for (const [key, input] of this.toggles) input.checked = state[key as keyof ViewState] === true;
 
     const where = [model.projectLabel, model.context?.pageKey].filter(Boolean).join(' · ');
-    this.subEl.replaceChildren(where ? `${where} · Esc to close` : 'Esc to close');
+    this.subEl.replaceChildren(where ? `${where} · ${t('common_escToClose')}` : t('common_escToClose'));
     this.renderPill(model);
 
     const children: Node[] = [];
@@ -228,13 +231,7 @@ export class CoveragePanel {
     this.foot.style.display = '';
     const context = model.context;
     if (model.modalOpen) {
-      children.push(
-        el(
-          'p',
-          'message',
-          'The page shows a modal dialog: the boxes stay visible, but this panel can only be used once it closes.',
-        ),
-      );
+      children.push(el('p', 'message', t('coverage_modalOpen')));
     }
     children.push(...this.renderSummary(model, context));
     const around = this.renderAround(context);
@@ -256,12 +253,17 @@ export class CoveragePanel {
     this.pill.appendChild(swatch);
     if (scan) {
       const total = scan.coveredInteractive + scan.uncoveredCount;
-      this.pill.append(`Piwi · ${scan.coveredInteractive}/${total} tested · ${plural(scan.tests.length, 'test')}`);
+      this.pill.append(
+        tn('coverage_pill', scan.coveredInteractive, {
+          total: formatNumber(total),
+          tests: tn('coverage_testCount', scan.tests.length),
+        }),
+      );
       // Tests find these as soon as the page loads: the strongest sign a test will fail here.
       const missing = model.context!.missing.filter((row) => row.arrival).length;
-      if (missing) this.pill.append(` · ${missing} missing here`);
+      if (missing) this.pill.append(` · ${tn('coverage_pillMissing', missing)}`);
     } else {
-      this.pill.append('Piwi · tested elements');
+      this.pill.append(t('coverage_pillIdle'));
     }
   }
 
@@ -270,12 +272,12 @@ export class CoveragePanel {
     const message = el('p', model.status === 'error' ? 'message error' : 'message', model.message ?? '');
     out.push(message);
     if (model.status === 'not-connected' || model.status === 'no-project') {
-      const button = el('button', 'primary', 'Open Piwi Picker settings');
+      const button = el('button', 'primary', t('coverage_openSettings'));
       button.type = 'button';
       button.addEventListener('click', () => this.callbacks.onOpenSettings());
       out.push(button);
     } else if (model.status === 'error') {
-      const button = el('button', 'primary', 'Try again');
+      const button = el('button', 'primary', t('coverage_tryAgain'));
       button.type = 'button';
       button.addEventListener('click', () => this.callbacks.onRefresh());
       out.push(button);
@@ -288,22 +290,25 @@ export class CoveragePanel {
     const out: Node[] = [];
     const status = el('div', 'status-line');
     status.append(this.renderBranchSelect(model, context));
-    status.append(`${plural(index.locators.length, 'locator')} from ${plural(index.tests.length, 'test')}`);
-    if (model.fetchedAt) status.append(` · updated ${ageLabel(model.fetchedAt)}`);
-    const refresh = el('button', 'link-button', model.refreshing ? 'Refreshing…' : 'Refresh');
+    status.append(
+      tn('coverage_indexSize', index.locators.length, { tests: tn('coverage_testCount', index.tests.length) }),
+    );
+    if (model.fetchedAt) status.append(` · ${t('coverage_updated', { age: ageLabel(model.fetchedAt) })}`);
+    const refresh = el('button', 'link-button', model.refreshing ? t('common_refreshing') : t('common_refresh'));
     refresh.type = 'button';
     refresh.disabled = model.refreshing;
-    refresh.title = 'Download the locator index again from Piwi';
+    refresh.title = t('coverage_refreshTitle');
     refresh.addEventListener('click', () => this.callbacks.onRefresh());
     status.append(' · ', refresh);
     out.push(status);
-    if (model.refreshError) out.push(el('p', 'message error', `Couldn't refresh: ${model.refreshError}`));
+    if (model.refreshError)
+      out.push(el('p', 'message error', t('coverage_refreshFailed', { error: model.refreshError })));
     if (model.scanning) {
       const bar = el('div', 'progress');
       const fill = el('span');
       fill.style.width = `${model.scanning.total ? Math.round((model.scanning.done / model.scanning.total) * 100) : 0}%`;
       bar.appendChild(fill);
-      bar.title = 'Checking the locators against this page';
+      bar.title = t('coverage_checking');
       out.push(bar);
     }
 
@@ -311,28 +316,36 @@ export class CoveragePanel {
     if (pageSwitch) out.push(pageSwitch);
     out.push(this.renderScopeBar(model));
 
-    const where = isScoped(scan) ? 'inside it' : 'here';
+    const inside = isScoped(scan);
     const total = scan.coveredInteractive + scan.uncoveredCount;
     const summary = el('div', 'summary');
     const tile = (cls: string, n: number, label: string, title: string) => {
-      const t = el('div', `tile ${cls}`);
-      t.title = title;
-      t.append(el('div', 'n', String(n)), el('div', 'l', label));
-      return t;
+      const box = el('div', `tile ${cls}`);
+      box.title = title;
+      box.append(el('div', 'n', formatNumber(n)), el('div', 'l', label));
+      return box;
     };
+    const oneTest = isSingular(scan.tests.length);
     summary.append(
       tile(
         'operated',
         scan.coveredInteractive,
-        'interactive tested',
-        `Buttons, links and fields ${where} a test reaches`,
+        t('coverage_tileTested'),
+        inside ? t('coverage_tileTestedTitleInside') : t('coverage_tileTestedTitle'),
       ),
-      tile('uncovered', scan.uncoveredCount, 'not tested', `Visible interactive elements ${where} no test reaches`),
+      tile(
+        'uncovered',
+        scan.uncoveredCount,
+        t('coverage_tileUntested'),
+        inside ? t('coverage_tileUntestedTitleInside') : t('coverage_tileUntestedTitle'),
+      ),
       tile(
         'tests',
         scan.tests.length,
-        scan.tests.length === 1 ? `test ${where}` : `tests ${where}`,
-        `Tests whose locators resolve ${where === 'here' ? 'on this page' : where}`,
+        inside
+          ? t(oneTest ? 'coverage_tileTestInside' : 'coverage_tileTestsInside')
+          : t(oneTest ? 'coverage_tileTestHere' : 'coverage_tileTestsHere'),
+        inside ? t('coverage_tileTestsTitleInside') : t('coverage_tileTestsTitle'),
       ),
     );
     out.push(summary);
@@ -342,20 +355,21 @@ export class CoveragePanel {
     fill.style.width = `${percent}%`;
     meter.appendChild(fill);
     meter.setAttribute('role', 'img');
-    meter.setAttribute('aria-label', `${percent}% of interactive elements reached by a test`);
+    meter.setAttribute('aria-label', t('coverage_meterLabel', { percent: formatNumber(percent) }));
     out.push(meter);
     const checkedOnly = scan.covered.filter((c) => c.kind === 'checked').length;
     const brittle = context.brittleElements.size;
-    out.push(
-      el(
-        'div',
-        'meter-label',
-        (total
-          ? `${percent}% of the ${plural(total, 'interactive element')} ${where} · ${plural(scan.covered.length, 'element')} matched, ${checkedOnly} by assertions only`
-          : `No interactive element ${where === 'here' ? 'on this page' : where} · ${plural(scan.covered.length, 'element')} matched`) +
-          (brittle ? ` · ${plural(brittle, 'tested element')} reached through brittle locators` : ''),
-      ),
-    );
+    const parts = total
+      ? [
+          tn(inside ? 'coverage_meterShareInside' : 'coverage_meterShare', total, { percent: formatNumber(percent) }),
+          tn('coverage_meterFound', scan.covered.length, { checked: formatNumber(checkedOnly) }),
+        ]
+      : [
+          inside ? t('coverage_meterNoneInside') : t('coverage_meterNone'),
+          tn('coverage_meterFoundOnly', scan.covered.length),
+        ];
+    if (brittle) parts.push(tn('coverage_meterBrittle', brittle));
+    out.push(el('div', 'meter-label', parts.join(' · ')));
     return out;
   }
 
@@ -364,10 +378,10 @@ export class CoveragePanel {
     if (!context.hasPages) return null;
     const bar = el('div', 'page-switch');
     bar.setAttribute('role', 'group');
-    bar.setAttribute('aria-label', 'Which uses to count');
+    bar.setAttribute('aria-label', t('coverage_pageSwitch'));
     for (const [scope, label, title] of [
-      ['page', 'This page', 'Count what tests do on this page, and uses whose page no run recorded'],
-      ['all', 'All pages', 'Count every locator that matches here, whatever page its test used it on'],
+      ['page', t('coverage_thisPage'), t('coverage_thisPageTitle')],
+      ['all', t('coverage_allPages'), t('coverage_allPagesTitle')],
     ] as const) {
       const button = el('button', 'tab', label);
       button.type = 'button';
@@ -382,16 +396,21 @@ export class CoveragePanel {
   private renderBranchSelect(model: PanelModel, context: CoverageContext): HTMLSelectElement {
     const { index } = context;
     const select = el('select', 'branch-select');
-    select.setAttribute('aria-label', 'Branch');
-    select.title = 'The branch whose tests to show: tests that ran on it count with what they did there';
+    select.setAttribute('aria-label', t('coverage_branch'));
+    select.title = t('coverage_branchTitle');
     const option = (value: string, label: string) => {
       const o = el('option', undefined, label);
       o.value = value;
       select.appendChild(o);
     };
-    option('', index.defaultBranch ? `${index.defaultBranch} (default)` : 'Default branch');
-    option(ALL_BRANCHES, 'All branches');
-    for (const b of index.branches) option(b.name, `${b.name} · ${plural(b.tests, 'test')}`);
+    option(
+      '',
+      index.defaultBranch
+        ? t('coverage_branchDefaultNamed', { branch: index.defaultBranch })
+        : t('coverage_branchDefault'),
+    );
+    option(ALL_BRANCHES, t('coverage_branchAll'));
+    for (const b of index.branches) option(b.name, `${b.name} · ${tn('coverage_testCount', b.tests)}`);
     const current = model.branch ?? '';
     if (![...select.options].some((o) => o.value === current)) option(current, current);
     select.value = current;
@@ -412,34 +431,31 @@ export class CoveragePanel {
     if (model.state.choosingScope) {
       const keys = el('span', 'keys');
       keys.append(
-        el('kbd', undefined, '↑'),
-        ' wider · ',
-        el('kbd', undefined, '↓'),
-        ' narrower · ',
-        el('kbd', undefined, 'Esc'),
-        ' cancels',
+        ...tNodes('coverage_choosingKeys', {
+          up: el('kbd', undefined, '↑'),
+          down: el('kbd', undefined, '↓'),
+          esc: el('kbd', undefined, t('coverage_escKey')),
+        }),
       );
       bar.append(
-        el('span', 'what', 'Click a part of the page'),
-        button('Cancel', 'Keep looking at the whole page (Esc)', () => this.callbacks.onCancelChoosing()),
+        el('span', 'what', t('coverage_clickPart')),
+        button(t('common_cancel'), t('coverage_cancelChoosingTitle'), () => this.callbacks.onCancelChoosing()),
         keys,
       );
       bar.dataset.mode = 'choosing';
     } else if (model.scopeLabel) {
-      const what = el('span', 'what', `Inside ${model.scopeLabel}`);
+      const what = el('span', 'what', t('coverage_inside', { element: model.scopeLabel }));
       what.title = model.scopeLabel;
       bar.append(
         what,
-        button('Container ↑', 'Look at the element around it', () => this.callbacks.onWidenScope(), !model.canWiden),
-        button('Whole page', 'Look at the whole page again (Esc)', () => this.callbacks.onClearScope()),
+        button(t('coverage_widen'), t('coverage_widenTitle'), () => this.callbacks.onWidenScope(), !model.canWiden),
+        button(t('coverage_wholePage'), t('coverage_wholePageTitle'), () => this.callbacks.onClearScope()),
       );
       bar.dataset.mode = 'scoped';
     } else {
       bar.append(
-        el('span', 'what', 'Whole page'),
-        button('Limit to an element', 'Pick a form, a card or a menu, and see only what is inside it', () =>
-          this.callbacks.onChooseScope(),
-        ),
+        el('span', 'what', t('coverage_wholePage')),
+        button(t('coverage_limit'), t('coverage_limitTitle'), () => this.callbacks.onChooseScope()),
       );
       bar.dataset.mode = 'page';
     }
@@ -451,7 +467,7 @@ export class CoveragePanel {
     const { scan } = context;
     if (!isScoped(scan) || scan.containers.length === 0) return null;
     const block = el('div', 'around');
-    block.appendChild(el('div', 'hint', 'Around it: tests reach these containers'));
+    block.appendChild(el('div', 'hint', t('coverage_aroundHint')));
     const list = el('ul', 'rows');
     for (const c of scan.containers.slice(0, AROUND_ROWS)) {
       const row = this.row(
@@ -459,15 +475,15 @@ export class CoveragePanel {
         () => this.callbacks.onContainerSelect(c.element),
       );
       row.dataset.kind = c.kind;
-      row.title = 'Look at this container';
+      row.title = t('coverage_aroundRowTitle');
       row.appendChild(el('span', `swatch ${c.kind}`));
       const label = el('span', 'label', c.description);
       row.appendChild(label);
-      row.appendChild(el('span', 'count', plural(c.tests.length, 'test')));
+      row.appendChild(el('span', 'count', tn('coverage_testCount', c.tests.length)));
       list.appendChild(row);
     }
     if (scan.containers.length > AROUND_ROWS) {
-      list.appendChild(el('li', 'empty', `${scan.containers.length - AROUND_ROWS} more further out`));
+      list.appendChild(el('li', 'empty', tn('coverage_aroundMore', scan.containers.length - AROUND_ROWS)));
     }
     block.appendChild(list);
     return block;
@@ -476,13 +492,13 @@ export class CoveragePanel {
   private renderTabs(tab: CoverageTab, context: CoverageContext): HTMLElement {
     const tabs = el('div', 'tabs');
     tabs.setAttribute('role', 'group');
-    tabs.setAttribute('aria-label', 'What to list');
+    tabs.setAttribute('aria-label', t('coverage_tabs'));
     const { scan } = context;
     for (const [id, label] of [
-      ['elements', `Elements ${scan.covered.length}`],
-      ['tests', `Tests ${scan.tests.length}`],
-      ['untested', `Not tested ${scan.uncoveredCount}`],
-      ['risk', `At risk ${riskCount(context)}`],
+      ['elements', t('coverage_tabElements', { count: formatNumber(scan.covered.length) })],
+      ['tests', t('coverage_tabTests', { count: formatNumber(scan.tests.length) })],
+      ['untested', t('coverage_tabUntested', { count: formatNumber(scan.uncoveredCount) })],
+      ['risk', t('coverage_tabRisk', { count: formatNumber(riskCount(context)) })],
     ] as const) {
       const button = el('button', 'tab', label);
       button.type = 'button';
@@ -506,7 +522,7 @@ export class CoveragePanel {
     const list = el('ul', 'rows');
     list.append(...rows);
     if (total > rows.length) {
-      const more = el('li', 'empty', `${total - rows.length} more — filter to narrow the list`);
+      const more = el('li', 'empty', tn('coverage_listMore', total - rows.length));
       list.appendChild(more);
     }
     return list;
@@ -535,9 +551,9 @@ export class CoveragePanel {
       !query ||
       c.description.toLowerCase().includes(query) ||
       c.tests.some(
-        (t) =>
-          testTitle(index.tests[t]!).toLowerCase().includes(query) ||
-          index.tests[t]!.file.toLowerCase().includes(query),
+        (test) =>
+          testTitle(index.tests[test]!).toLowerCase().includes(query) ||
+          index.tests[test]!.file.toLowerCase().includes(query),
       ) ||
       c.matches.some((m) => index.locators[m.entry]!.locator.toLowerCase().includes(query));
     const shown = scan.covered.filter((c) => kindShown(state, c) && matches(c));
@@ -552,16 +568,16 @@ export class CoveragePanel {
       const label = el('span', 'label', c.description);
       label.title = c.description;
       row.appendChild(label);
-      const count = el('span', 'count', plural(c.tests.length, 'test'));
+      const count = el('span', 'count', tn('coverage_testCount', c.tests.length));
       const health = worstStatus(index, c.tests);
-      if (health) count.title = health === 'failed' ? 'A test reaching it is failing' : 'A test reaching it is flaky';
+      if (health) count.title = health === 'failed' ? t('coverage_reachFailing') : t('coverage_reachFlaky');
       if (health) count.prepend(el('span', `dot ${health}`), ' ');
       row.appendChild(count);
       const first = index.locators[c.matches[0]!.entry]!.locator;
       const detail = el(
         'span',
         'detail mono',
-        `${c.visible ? '' : 'hidden right now · '}${first}${c.matches.length > 1 ? ` +${c.matches.length - 1}` : ''}`,
+        `${c.visible ? '' : `${t('coverage_hiddenNow')} · `}${first}${c.matches.length > 1 ? ` +${c.matches.length - 1}` : ''}`,
       );
       detail.title = c.matches.map((m) => index.locators[m.entry]!.locator).join('\n');
       row.appendChild(detail);
@@ -571,9 +587,9 @@ export class CoveragePanel {
       rows,
       scan.covered.length === 0
         ? isScoped(scan)
-          ? 'None of the project’s locators resolve inside it.'
-          : 'None of the project’s locators resolve on this page. Its tests may use other pages, or this page in another state.'
-        : 'Nothing matches the filter.',
+          ? t('coverage_emptyElementsInside')
+          : t('coverage_emptyElements')
+        : t('coverage_noMatch'),
       shown.length,
     );
   }
@@ -581,34 +597,34 @@ export class CoveragePanel {
   private renderTests(state: ViewState, context: CoverageContext, query: string): HTMLElement {
     const { index, scan } = context;
     const shown = scan.tests.filter(({ test }) => {
-      const t = index.tests[test]!;
-      return !query || testTitle(t).toLowerCase().includes(query) || t.file.toLowerCase().includes(query);
+      const entry = index.tests[test]!;
+      return !query || testTitle(entry).toLowerCase().includes(query) || entry.file.toLowerCase().includes(query);
     });
     const rows = shown.slice(0, MAX_ROWS).map(({ test, elements }) => {
-      const t = index.tests[test]!;
+      const entry = index.tests[test]!;
       const row = this.row(
         (on) => this.callbacks.onTestHover(on ? test : null),
         () => this.callbacks.onTestSelect(test),
       );
       if (state.focusTest === test) row.classList.add('focused');
-      const dot = el('span', `swatch dot ${t.status ?? 'unknown'}`);
+      const dot = el('span', `swatch dot ${entry.status ?? 'unknown'}`);
       dot.style.borderRadius = '50%';
-      dot.title = statusLabel(t.status);
+      dot.title = statusLabel(entry.status);
       row.appendChild(dot);
-      const label = el('span', 'label', testTitle(t));
-      label.title = testTitle(t);
+      const label = el('span', 'label', testTitle(entry));
+      label.title = testTitle(entry);
       row.appendChild(label);
-      row.appendChild(el('span', 'count', plural(elements.length, 'element')));
+      row.appendChild(el('span', 'count', tn('coverage_elementCount', elements.length)));
       const detail = el('span', 'detail mono');
-      const link = el('a', undefined, t.file);
-      link.href = testCaseUrl(context.instanceUrl, t.id);
+      const link = el('a', undefined, entry.file);
+      link.href = testCaseUrl(context.instanceUrl, entry.id);
       link.target = '_blank';
       link.rel = 'noopener noreferrer';
-      link.title = 'Open this test in Piwi';
+      link.title = t('coverage_openTest');
       link.style.color = 'inherit';
       link.addEventListener('click', (e) => e.stopPropagation());
       detail.appendChild(link);
-      if (state.focusTest === test) detail.append(' · showing only its elements');
+      if (state.focusTest === test) detail.append(` · ${t('coverage_onlyItsElements')}`);
       row.appendChild(detail);
       return row;
     });
@@ -616,9 +632,9 @@ export class CoveragePanel {
       rows,
       scan.tests.length === 0
         ? isScoped(scan)
-          ? 'No test reaches inside it.'
-          : 'No test reaches this page.'
-        : 'Nothing matches the filter.',
+          ? t('coverage_emptyTestsInside')
+          : t('coverage_emptyTests')
+        : t('coverage_noMatch'),
       shown.length,
     );
   }
@@ -645,7 +661,13 @@ export class CoveragePanel {
         const pages = [...new Set(entry.uses.flatMap((use) => (use.pages ?? []).map((p) => context.index.pages?.[p])))]
           .filter(Boolean)
           .slice(0, 2);
-        const hint = el('span', 'detail', `Matches ${entry.locator}, used on ${pages.join(', ') || 'other pages'}`);
+        const hint = el(
+          'span',
+          'detail',
+          pages.length
+            ? t('coverage_foundElsewhere', { locator: entry.locator, pages: pages.join(', ') })
+            : t('coverage_foundElsewhereOther', { locator: entry.locator }),
+        );
         hint.title = elsewhere.map((e) => context.index.locators[e]!.locator).join('\n');
         row.appendChild(hint);
       }
@@ -655,9 +677,9 @@ export class CoveragePanel {
         code.innerHTML = highlightLocator(suggestion);
         row.appendChild(code);
         const actions = el('div', 'row-actions');
-        const copy = el('button', undefined, 'Copy locator');
+        const copy = el('button', undefined, t('coverage_copyLocator'));
         copy.type = 'button';
-        copy.title = 'Copy this locator to write a test for the element';
+        copy.title = t('coverage_copyLocatorTitle');
         copy.addEventListener('click', (e) => {
           e.stopPropagation();
           void copyText(suggestion, copy);
@@ -670,8 +692,10 @@ export class CoveragePanel {
     return this.rowsOrEmpty(
       rows,
       uncovered.length === 0
-        ? `Every visible interactive element ${scoped ? 'inside it' : 'here'} is reached by a test.`
-        : 'Nothing matches the filter.',
+        ? scoped
+          ? t('coverage_emptyUntestedInside')
+          : t('coverage_emptyUntested')
+        : t('coverage_noMatch'),
       shown.length,
     );
   }
@@ -693,28 +717,22 @@ export class CoveragePanel {
       !query ||
       index.locators[row.entry]!.locator.toLowerCase().includes(query) ||
       row.callSites.some((site) => site.toLowerCase().includes(query)) ||
-      row.tests.some((t) => testTitle(index.tests[t]!).toLowerCase().includes(query));
+      row.tests.some((test) => testTitle(index.tests[test]!).toLowerCase().includes(query));
   }
 
   /** Chains a test uses on this page that find nothing now: the test will fail here, or the page is in another state. */
   private renderMissing(context: CoverageContext, query: string): HTMLElement {
     const section = el('section', 'risk-section');
-    section.appendChild(el('h3', 'section-head', `Missing here · ${context.missing.length}`));
     section.appendChild(
-      el(
-        'p',
-        'section-hint',
-        'Tests use these on this page, and they find nothing here now. Those used as the page loads come first; the others may need a menu or a dialog opened.',
-      ),
+      el('h3', 'section-head', t('coverage_missingHead', { count: formatNumber(context.missing.length) })),
     );
+    section.appendChild(el('p', 'section-hint', t('coverage_missingHint')));
     const shown = context.missing.filter(this.pageRiskMatches(context, query));
     const rows = shown.slice(0, MAX_ROWS).map((row) => this.pageRiskRow(context, row));
     section.appendChild(
       this.rowsOrEmpty(
         rows,
-        context.missing.length === 0
-          ? 'Every locator tests use on this page finds its element here.'
-          : 'Nothing matches the filter.',
+        context.missing.length === 0 ? t('coverage_missingEmpty') : t('coverage_noMatch'),
         shown.length,
       ),
     );
@@ -724,22 +742,16 @@ export class CoveragePanel {
   /** Chains a test clicks or fills on this page that find several elements: strict mode refuses that. */
   private renderSeveral(context: CoverageContext, query: string): HTMLElement {
     const section = el('section', 'risk-section');
-    section.appendChild(el('h3', 'section-head', `Several match here · ${context.several.length}`));
     section.appendChild(
-      el(
-        'p',
-        'section-hint',
-        'Tests act on these on this page, and they find several elements here: a click needs exactly one.',
-      ),
+      el('h3', 'section-head', t('coverage_severalHead', { count: formatNumber(context.several.length) })),
     );
+    section.appendChild(el('p', 'section-hint', t('coverage_severalHint')));
     const shown = context.several.filter(this.pageRiskMatches(context, query));
     const rows = shown.slice(0, MAX_ROWS).map((row) => this.pageRiskRow(context, row));
     section.appendChild(
       this.rowsOrEmpty(
         rows,
-        context.several.length === 0
-          ? 'Every locator tests act on here finds one element.'
-          : 'Nothing matches the filter.',
+        context.several.length === 0 ? t('coverage_severalEmpty') : t('coverage_noMatch'),
         shown.length,
       ),
     );
@@ -755,10 +767,14 @@ export class CoveragePanel {
     const label = el(
       'span',
       'label',
-      row.count === 0 ? (row.arrival ? 'Not found as the page loads' : 'Not found now') : `Finds ${row.count} elements`,
+      row.count === 0
+        ? row.arrival
+          ? t('coverage_notFoundOnLoad')
+          : t('coverage_notFoundNow')
+        : tn('coverage_findsCount', row.count),
     );
     item.appendChild(label);
-    const count = el('span', 'count', plural(row.tests.length, 'test'));
+    const count = el('span', 'count', tn('coverage_testCount', row.tests.length));
     const health = worstStatus(index, row.tests);
     if (health) count.prepend(el('span', `dot ${health}`), ' ');
     item.appendChild(count);
@@ -770,9 +786,10 @@ export class CoveragePanel {
       parts.push(`${row.callSites[0]}${row.callSites.length > 1 ? ` +${row.callSites.length - 1}` : ''}`);
     if (row.projects.length) parts.push(row.projects.join(', '));
     const stability = context.stabilities[row.entry];
-    if (stability?.level === 'brittle') parts.push(`brittle: ${stabilityLabels(stability, ', ')}`);
+    if (stability?.level === 'brittle')
+      parts.push(t('coverage_brittleRules', { rules: stabilityLabels(stability, ', ') }));
     const detail = el('span', 'detail', parts.filter(Boolean).join(' · '));
-    detail.title = row.tests.map((t) => testTitle(index.tests[t]!)).join('\n');
+    detail.title = row.tests.map((test) => testTitle(index.tests[test]!)).join('\n');
     item.appendChild(detail);
     return item;
   }
@@ -780,28 +797,26 @@ export class CoveragePanel {
   private renderBrittle(context: CoverageContext, query: string): HTMLElement {
     const { index, scan } = context;
     const section = el('section', 'risk-section');
-    section.appendChild(el('h3', 'section-head', `Brittle locators · ${context.brittle.length}`));
     section.appendChild(
-      el(
-        'p',
-        'section-hint',
-        'They break on changes unrelated to what the test checks: a restyle, a wrapper, a reordered list.',
-      ),
+      el('h3', 'section-head', t('coverage_brittleHead', { count: formatNumber(context.brittle.length) })),
     );
+    section.appendChild(el('p', 'section-hint', t('coverage_brittleHint')));
     const matches = (row: BrittleRow) =>
       !query ||
       index.locators[row.entry]!.locator.toLowerCase().includes(query) ||
       row.elements.some((e) => scan.describe(e).toLowerCase().includes(query)) ||
       row.callSites.some((site) => site.toLowerCase().includes(query)) ||
-      row.tests.some((t) => testTitle(index.tests[t]!).toLowerCase().includes(query));
+      row.tests.some((test) => testTitle(index.tests[test]!).toLowerCase().includes(query));
     const shown = context.brittle.filter(matches);
     const rows = shown.slice(0, MAX_ROWS).map((row, i) => this.brittleRow(context, row, i < MAX_SUGGESTIONS));
     section.appendChild(
       this.rowsOrEmpty(
         rows,
         context.brittle.length === 0
-          ? `No brittle locator finds anything ${isScoped(scan) ? 'inside it' : 'on this page'}.`
-          : 'Nothing matches the filter.',
+          ? isScoped(scan)
+            ? t('coverage_brittleEmptyInside')
+            : t('coverage_brittleEmpty')
+          : t('coverage_noMatch'),
         shown.length,
       ),
     );
@@ -818,14 +833,14 @@ export class CoveragePanel {
     );
     item.dataset.kind = 'brittle';
     item.appendChild(el('span', 'swatch brittle'));
-    const label = el('span', 'label', row.count > 1 ? `${plural(row.count, 'element')}` : scan.describe(first));
+    const label = el('span', 'label', row.count > 1 ? tn('coverage_elementCount', row.count) : scan.describe(first));
     label.title = row.elements.map((e) => scan.describe(e)).join('\n');
     item.appendChild(label);
-    const count = el('span', 'count', plural(row.tests.length, 'test'));
+    const count = el('span', 'count', tn('coverage_testCount', row.tests.length));
     const health = worstStatus(index, row.tests);
     if (health) {
       count.prepend(el('span', `dot ${health}`), ' ');
-      count.title = health === 'failed' ? 'A test using it is failing' : 'A test using it is flaky';
+      count.title = health === 'failed' ? t('coverage_useFailing') : t('coverage_useFlaky');
     }
     item.appendChild(count);
     const chain = el('code', 'piwi-loc');
@@ -838,34 +853,34 @@ export class CoveragePanel {
     item.appendChild(why);
 
     if (row.count > 1) {
-      item.appendChild(el('span', 'detail', `Finds ${row.count} elements here, so no replacement is offered.`));
+      item.appendChild(el('span', 'detail wrap', tn('coverage_severalNoReplacement', row.count)));
       return item;
     }
     const replacement = suggest ? this.callbacks.replacementFor(first, row.entry) : null;
     if (replacement?.kind === 'add-test-id') {
-      item.appendChild(el('span', 'detail', 'No stable locator finds only this element: give it a test id.'));
+      item.appendChild(el('span', 'detail wrap', t('coverage_addTestId')));
     } else if (replacement?.kind === 'replace') {
       const next = replacement.recommended.locator;
       const code = el('code', 'piwi-loc suggestion');
       code.innerHTML = `→ ${highlightLocator(next)}`;
-      code.title = 'Finds only this element here';
+      code.title = t('coverage_replacementTitle');
       item.appendChild(code);
       if (replacement.durable) {
-        const durable = el('span', 'detail', `Most stable: ${replacement.durable.locator}`);
+        const durable = el('span', 'detail', t('coverage_mostStable', { locator: replacement.durable.locator }));
         durable.title = replacement.durable.locator;
         item.appendChild(durable);
       }
       const actions = el('div', 'row-actions');
-      const copy = el('button', undefined, 'Copy locator');
+      const copy = el('button', undefined, t('coverage_copyLocator'));
       copy.type = 'button';
-      copy.title = 'Copy the replacement, which finds only this element here';
+      copy.title = t('coverage_copyReplacementTitle');
       copy.addEventListener('click', (e) => {
         e.stopPropagation();
         void copyText(next, copy);
       });
-      const edit = el('button', undefined, 'Copy edit');
+      const edit = el('button', undefined, t('coverage_copyEdit'));
       edit.type = 'button';
-      edit.title = 'Copy each call site with the old and the new locator';
+      edit.title = t('coverage_copyEditTitle');
       edit.addEventListener('click', (e) => {
         e.stopPropagation();
         void copyText(editText(row.callSites, locator, next), edit);
@@ -880,34 +895,26 @@ export class CoveragePanel {
     const { scan, index } = context;
     const items: Node[] = [];
     if (scan.unmatched) {
-      items.push(
-        el(
-          'li',
-          undefined,
-          `${plural(scan.unmatched, 'locator')} match nothing here: they target other pages, or this page in another state.`,
-        ),
-      );
+      items.push(el('li', undefined, tn('coverage_notesUnmatched', scan.unmatched)));
     }
-    if (index.truncated)
-      items.push(
-        el('li', undefined, 'The project has more locators than the index carries; the least used are left out.'),
-      );
+    if (index.truncated) items.push(el('li', undefined, t('coverage_notesTruncated')));
     if (index.testIdAttributes?.length) {
-      items.push(el('li', undefined, `getByTestId reads ${index.testIdAttributes.join(', ')} in this project.`));
+      items.push(el('li', undefined, t('coverage_notesTestIds', { attributes: index.testIdAttributes.join(', ') })));
     }
+    const counted = context.pageScoped
+      ? context.pageKey
+        ? t('coverage_notesPageScoped', { page: context.pageKey })
+        : t('coverage_notesPageScopedHere')
+      : t('coverage_notesAllPages');
     items.push(
       el(
         'li',
         undefined,
-        `Checked ${plural(scan.evaluated, 'locator')} in ${scan.durationMs} ms. ${
-          context.pageScoped
-            ? `Counting what tests do on ${context.pageKey ?? 'this page'}, and the uses whose page no run recorded.`
-            : 'Locators are matched on this page whatever page their test used them on.'
-        }`,
+        `${tn('coverage_notesChecked', scan.evaluated, { ms: formatNumber(scan.durationMs) })} ${counted}`,
       ),
     );
     if (scan.errors.length) {
-      const errorItem = el('li', undefined, `${plural(scan.errors.length, 'locator')} could not be evaluated here:`);
+      const errorItem = el('li', undefined, tn('coverage_notesErrors', scan.errors.length));
       const list = el('ul');
       for (const error of scan.errors.slice(0, 20)) {
         const li = el('li');
@@ -921,7 +928,7 @@ export class CoveragePanel {
     const summary = el(
       'summary',
       undefined,
-      scan.errors.length ? `Notes · ${plural(scan.errors.length, 'locator')} not evaluated` : 'Notes',
+      scan.errors.length ? tn('coverage_notesWithErrors', scan.errors.length) : t('coverage_notes'),
     );
     const list = el('ul');
     list.append(...items);

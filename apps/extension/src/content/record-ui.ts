@@ -1,3 +1,5 @@
+import { t } from '../shared/i18n.js';
+
 /** The recorder's page surfaces, shared by `record-panel.ts` and `bug-panel.ts`. */
 
 export const HUD_HOST_ID = 'piwi-record-hud-host';
@@ -38,7 +40,7 @@ export async function copyToClipboard(text: string, btn: HTMLButtonElement): Pro
     return;
   }
   const original = btn.textContent;
-  btn.textContent = 'Copied';
+  btn.textContent = t('common_copied');
   setTimeout(() => {
     btn.textContent = original;
   }, 1200);

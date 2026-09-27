@@ -18,6 +18,7 @@ import {
   TAG_TO_ROLE,
   INPUT_TYPE_TO_ROLE,
 } from '@piwitests/core/locator-generation';
+import { initI18n } from '../shared/i18n.js';
 import { renderResultsPanel } from './results-panel.js';
 import { installDescribeHook } from './top-locator.js';
 
@@ -72,6 +73,8 @@ async function runPick(): Promise<void> {
   const toolEpoch = startTool('pick', teardownToolSurfaces);
   installEscapeToCancel();
   const removeDescribeHook = installDescribeHook();
+  // Read while the user picks, so the results panel opens in the chosen language.
+  const i18nReady = initI18n();
   try {
     clearPickGlobals();
     installPickerOverlay({ transport: 'global', failing: null });
@@ -112,6 +115,7 @@ async function runPick(): Promise<void> {
     );
     if (ranked.length === 0) return;
 
+    await i18nReady;
     await renderResultsPanel(ranked, el);
   } catch (err) {
     // Without this a throw anywhere after the pick left the overlay frozen on

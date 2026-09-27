@@ -1,3 +1,4 @@
+import { initI18n, t, tn, uiLanguage } from '../shared/i18n.js';
 import { startTool, endTool, installEscapeToCancel } from '../shared/tool-session.js';
 import { parseLocatorExpression } from '../shared/locator-expr.js';
 import { evaluateLocatorChain } from './locator-eval.js';
@@ -47,7 +48,7 @@ function toggleLocatorConsole(): void {
       border-radius: 6px; padding: 5px 8px; font: 12.5px ui-monospace, monospace; width: 360px; max-width: 40vw;
     }
     input:focus-visible { outline: 2px solid #7c3aed; outline-offset: 1px; }
-    .verdict { font-size: 12px; white-space: nowrap; flex-shrink: 0; }
+    .verdict { font-size: 12px; min-width: 0; overflow-wrap: anywhere; hyphens: auto; }
     .verdict.ok { color: #4ade80; }
     .verdict.warn { color: #fbbf24; }
     .verdict.err { color: #f87171; }
@@ -77,17 +78,18 @@ function toggleLocatorConsole(): void {
 
   const bar = document.createElement('div');
   bar.className = 'bar';
+  bar.lang = uiLanguage();
   const input = document.createElement('input');
   input.type = 'text';
   input.placeholder = `getByRole('button', { name: 'Pay' })`;
-  input.setAttribute('aria-label', 'Locator expression');
+  input.setAttribute('aria-label', t('console_expression'));
   input.spellcheck = false;
   const verdict = document.createElement('span');
   verdict.className = 'verdict';
   const closeBtn = document.createElement('button');
   closeBtn.className = 'close';
   closeBtn.type = 'button';
-  closeBtn.setAttribute('aria-label', 'Close locator console');
+  closeBtn.setAttribute('aria-label', t('console_close'));
   closeBtn.textContent = '×';
   bar.append(input, verdict, closeBtn);
   root.appendChild(bar);
@@ -138,23 +140,26 @@ function toggleLocatorConsole(): void {
       const { elements, exact } = evaluateLocatorChain(chain, ROLE_MAPS);
       lastElements = elements;
       drawBoxes();
-      const approx = exact ? '' : ' · approximate match';
+      const approx = exact ? '' : ` · ${t('console_approximate')}`;
       if (elements.length === 1) {
         verdict.className = 'verdict ok';
-        verdict.textContent = `✓ 1 match — passes strict mode${approx}`;
+        verdict.textContent = `✓ ${t('console_unique')}${approx}`;
       } else if (elements.length === 0) {
         verdict.className = 'verdict warn';
-        verdict.textContent = `0 matches${approx}`;
+        verdict.textContent = `${t('console_none')}${approx}`;
       } else {
-        const shown = elements.length > MAX_HIGHLIGHTS ? ` (first ${MAX_HIGHLIGHTS} highlighted)` : '';
         verdict.className = 'verdict warn';
-        verdict.textContent = `⚠ ${elements.length} matches — fails strict mode${shown}${approx}`;
+        verdict.textContent = `⚠ ${
+          elements.length > MAX_HIGHLIGHTS
+            ? tn('console_manyOutlined', elements.length, { shown: MAX_HIGHLIGHTS })
+            : tn('console_many', elements.length)
+        }${approx}`;
       }
     } catch (e) {
       lastElements = [];
       clearBoxes();
       verdict.className = 'verdict err';
-      verdict.textContent = e instanceof Error ? e.message : 'invalid expression';
+      verdict.textContent = describeError(e);
     }
   };
   input.addEventListener('input', update);
@@ -188,4 +193,11 @@ function toggleLocatorConsole(): void {
   input.focus();
 }
 
-toggleLocatorConsole();
+/** An evaluation error in words: the CSS selector the page refuses, else the parser's own message. */
+function describeError(error: unknown): string {
+  const selector = (error as { invalidSelector?: unknown } | null)?.invalidSelector;
+  if (typeof selector === 'string') return t('console_invalidCss', { selector });
+  return t('console_unreadable', { error: error instanceof Error ? error.message : String(error) });
+}
+
+void initI18n().then(toggleLocatorConsole);

@@ -276,8 +276,10 @@ instead of needing a live browser for everything.
   attributes, which `localizeDocument()` fills. A page or script calls `await initI18n()` once before its first text,
   for the Language setting's override. A new message goes into every catalog in the same change, English with a
   `description` — see `i18n/README.md` for the rules `locales.test.ts` enforces. `no-hardcoded-text.test.ts` fails on
-  text written straight into the UI; its list of content scripts not yet migrated only shrinks. Translated text reaches
-  the page as text (`textContent`, `tNodes`) or through an escape helper, never as raw HTML.
+  text written straight into the UI, in every file of `src/`. Translated text reaches the page as text (`textContent`,
+  `tNodes`) or through an escape helper, never as raw HTML. A content script that paints on injection ends with
+  `void initI18n().then(start)` (bundles are IIFEs, no top-level await), or runs `initI18n()` beside the storage reads
+  it already awaits, and each panel sets `lang` from `uiLanguage()` on its root inside the shadow DOM.
 - Reuse `@piwitests/picker-dom`'s exports (`installPickerOverlay`, `showAnchorPicker`,
   probe, role-resolution, syntax highlighting) rather than re-deriving picker logic here —
   that package exists so this workspace doesn't become a third hand-synced copy.

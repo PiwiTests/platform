@@ -254,6 +254,8 @@ export interface CoverageStubOptions {
   cachedBranches?: Record<string, LocatorIndex>;
   /** What the worker answers to `piwi-refresh-locator-index`. */
   refresh?: unknown;
+  /** The catalog `chrome.i18n` serves: English unless set. */
+  language?: string;
 }
 
 export const DEFAULT_CONNECTION = {
@@ -312,7 +314,7 @@ export async function stubCoverageChrome(context: BrowserContext, options: Cover
     },
     { localSeed: local, refresh: options.refresh ?? { ok: true, refreshed: false, index: null } },
   );
-  await stubChromeI18n(context);
+  await stubChromeI18n(context, options.language);
 }
 
 export async function openShop(page: Page, query = ''): Promise<void> {

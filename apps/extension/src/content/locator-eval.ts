@@ -105,7 +105,9 @@ export function evaluateLocatorChain(chain: ParsedLocatorChain, maps: DomRoleMap
         try {
           return [...document.querySelectorAll(call.selector)];
         } catch {
-          throw new Error(`"${call.selector}" isn't a valid CSS selector`);
+          throw Object.assign(new Error(`"${call.selector}" isn't a valid CSS selector`), {
+            invalidSelector: call.selector,
+          });
         }
 
       case 'getByRole': {

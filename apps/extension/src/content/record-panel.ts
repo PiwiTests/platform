@@ -18,6 +18,7 @@ import {
 import { rankFunctionMatches, type TestFunctionEntry, type RankedFunctionMatch } from '@piwitests/core/function-match';
 import { renderSpec } from '@piwitests/core/codegen';
 import { toStepsDocument, type PiwiSteps } from '@piwitests/core/steps';
+import { formatNumber, initI18n, t, tn, uiLanguage } from '../shared/i18n.js';
 import { classifyInputKind, isPasswordInput } from './record-capture.js';
 import {
   getRecordingState,
@@ -217,7 +218,7 @@ function renderHud(state: RecordingState, catalog: TestFunctionEntry[]): void {
     .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
     .dot { width: 8px; height: 8px; border-radius: 50%; background: #ef4444; flex-shrink: 0; animation: pulse 1.4s ease-in-out infinite; }
     @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
-    .title { font-weight: 600; flex: 1; }
+    .title { font-weight: 600; flex: 1; min-width: 0; overflow-wrap: anywhere; hyphens: auto; }
     button { border-radius: 6px; padding: 4px 9px; font: inherit; font-size: 11.5px; cursor: pointer;
       border: 1px solid rgba(128,128,128,.3); background: rgba(128,128,128,.12); color: inherit; }
     button:hover, button:focus-visible { background: rgba(128,128,128,.25); }
@@ -232,8 +233,13 @@ function renderHud(state: RecordingState, catalog: TestFunctionEntry[]): void {
     .match-badge.complete { background: rgba(34,197,94,.2); color: #22c55e; }
     .match-badge.partial { color: #9ca3af; }
     .empty { color: #9ca3af; font-size: 11px; }
+    .empty, .warn { overflow-wrap: anywhere; hyphens: auto; }
     .warn { color: #fca5a5; font-size: 11px; line-height: 1.35; }
-    @media (prefers-color-scheme: light) { .warn { color: #b91c1c; } }
+    @media (prefers-color-scheme: light) {
+      .warn { color: #b91c1c; }
+      .match-badge.complete { color: #15803d; }
+      .match-badge.partial, .empty, .section-title { color: #6b7280; }
+    }
   `;
   root.appendChild(style);
 
@@ -243,6 +249,7 @@ function renderHud(state: RecordingState, catalog: TestFunctionEntry[]): void {
 
   const bar = document.createElement('div');
   bar.className = 'bar';
+  bar.lang = uiLanguage();
 
   const topRow = document.createElement('div');
   topRow.className = 'row';
@@ -250,11 +257,11 @@ function renderHud(state: RecordingState, catalog: TestFunctionEntry[]): void {
   dot.className = 'dot';
   const title = document.createElement('div');
   title.className = 'title';
-  title.textContent = `Recording — ${steps.length} step${steps.length === 1 ? '' : 's'}`;
+  title.textContent = tn('record_hudTitle', steps.length);
   const stopBtn = document.createElement('button');
   stopBtn.type = 'button';
   stopBtn.className = 'stop';
-  stopBtn.textContent = 'Stop';
+  stopBtn.textContent = t('common_stop');
   stopBtn.addEventListener('click', () => void handleStop());
   topRow.append(dot, title, stopBtn);
   bar.appendChild(topRow);
@@ -270,7 +277,7 @@ function renderHud(state: RecordingState, catalog: TestFunctionEntry[]): void {
   if (lastTarget?.alternatives[0]) {
     const locTitle = document.createElement('div');
     locTitle.className = 'section-title';
-    locTitle.textContent = 'Last locator';
+    locTitle.textContent = t('record_lastLocator');
     const code = document.createElement('code');
     code.textContent = lastTarget.alternatives[0].locator;
     bar.append(locTitle, code);
@@ -279,12 +286,12 @@ function renderHud(state: RecordingState, catalog: TestFunctionEntry[]): void {
   if (catalog.length > 0) {
     const matchTitle = document.createElement('div');
     matchTitle.className = 'section-title';
-    matchTitle.textContent = 'Matching functions';
+    matchTitle.textContent = t('record_matchingFunctions');
     bar.appendChild(matchTitle);
     if (matches.length === 0) {
       const empty = document.createElement('div');
       empty.className = 'empty';
-      empty.textContent = 'No catalog match yet';
+      empty.textContent = t('record_noMatch');
       bar.appendChild(empty);
     } else {
       for (const m of matches) bar.appendChild(renderMatchRow(m));
@@ -308,7 +315,9 @@ function renderMatchRow(m: RankedFunctionMatch): HTMLElement {
   barWrap.appendChild(fill);
   const badge = document.createElement('span');
   badge.className = `match-badge ${m.complete ? 'complete' : 'partial'}`;
-  badge.textContent = m.complete ? 'ready' : `${m.matchedIndices.length}/${m.entry.steps.length}`;
+  badge.textContent = m.complete
+    ? t('record_matchReady')
+    : `${formatNumber(m.matchedIndices.length)}/${formatNumber(m.entry.steps.length)}`;
   row.append(name, barWrap, badge);
   return row;
 }
@@ -319,7 +328,8 @@ function describeStep(step: RecordedStep): string {
     ? `testId=${target.testId}`
     : (target?.accessibleName ?? target?.text ?? target?.tagName ?? '');
   const value = step.redacted ? '••••••' : step.value;
-  return `${step.action}${label ? ` — ${label}` : ''}${value ? ` = "${value}"` : ''}`;
+  const described = `${step.action}${label ? ` — ${label}` : ''}`;
+  return value ? t('record_stepValue', { step: described, value }) : described;
 }
 
 /** Save a steps document as `piwi-steps-<date>-<time>.json`, through the page's own download handling. */
@@ -368,7 +378,8 @@ async function renderReviewPanel(state: RecordingState): Promise<void> {
     .panel { background: #111827; color: #f9fafb; border-radius: 12px; padding: 16px; width: min(680px, 92vw); max-height: 84vh;
       overflow: auto; box-shadow: 0 8px 40px rgba(0,0,0,.5); font-size: 13px; line-height: 1.5; }
     @media (prefers-color-scheme: light) { .panel { background: #ffffff; color: #111827; box-shadow: 0 8px 40px rgba(0,0,0,.2); } }
-    .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+    .header { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+    .header > div { min-width: 0; overflow-wrap: anywhere; hyphens: auto; }
     .title { font-weight: 600; font-size: 14px; }
     .sub { color: #9ca3af; font-size: 12px; }
     .close { background: none; border: none; color: inherit; opacity: .7; cursor: pointer; font-size: 18px; line-height: 1; padding: 4px 8px; border-radius: 6px; }
@@ -376,16 +387,21 @@ async function renderReviewPanel(state: RecordingState): Promise<void> {
     .steps { border: 1px solid rgba(128,128,128,.3); border-radius: 8px; max-height: 240px; overflow: auto; margin-bottom: 12px; }
     .step { padding: 6px 10px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px;
       border-bottom: 1px solid rgba(128,128,128,.15); display: flex; gap: 8px; align-items: center; }
+    .step-desc { min-width: 0; overflow-wrap: anywhere; }
     .step:last-child { border-bottom: none; }
-    .step-idx { color: #9ca3af; flex-shrink: 0; width: 20px; }
+    .step-idx { color: #9ca3af; flex-shrink: 0; min-width: 20px; }
     .step-fn { margin-left: auto; font-size: 10px; padding: 1px 5px; border-radius: 4px; background: rgba(124,58,237,.2); color: #a78bfa; flex-shrink: 0; }
     .actions { display: flex; gap: 6px; flex-wrap: wrap; }
     button.action { background: rgba(128,128,128,.12); color: inherit; border: 1px solid rgba(128,128,128,.3);
-      border-radius: 6px; padding: 6px 10px; font-size: 12px; cursor: pointer; }
+      border-radius: 6px; padding: 6px 10px; font-size: 12px; cursor: pointer; text-align: start; overflow-wrap: anywhere; }
     button.action:hover, button.action:focus-visible { background: rgba(128,128,128,.25); }
     button.action.primary { background: #7c3aed; border-color: #7c3aed; color: #fff; }
     button.action.danger:hover, button.action.danger:focus-visible { background: rgba(248,113,113,.2); border-color: #f87171; }
     .empty { color: #9ca3af; font-size: 12.5px; padding: 16px; text-align: center; }
+    @media (prefers-color-scheme: light) {
+      .sub, .step-idx, .empty { color: #6b7280; }
+      .step-fn { color: #6d28d9; }
+    }
   `;
   root.appendChild(style);
 
@@ -394,7 +410,8 @@ async function renderReviewPanel(state: RecordingState): Promise<void> {
   const panel = document.createElement('div');
   panel.className = 'panel';
   panel.setAttribute('role', 'dialog');
-  panel.setAttribute('aria-label', 'Piwi recording review');
+  panel.lang = uiLanguage();
+  panel.setAttribute('aria-label', t('record_reviewLabel'));
   panel.tabIndex = -1;
 
   const header = document.createElement('div');
@@ -402,20 +419,19 @@ async function renderReviewPanel(state: RecordingState): Promise<void> {
   const titleWrap = document.createElement('div');
   const title = document.createElement('div');
   title.className = 'title';
-  title.textContent =
-    steps.length === 0 ? 'Nothing recorded' : `${steps.length} recorded step${steps.length === 1 ? '' : 's'}`;
+  title.textContent = steps.length === 0 ? t('record_nothingRecorded') : tn('record_stepsRecorded', steps.length);
   const sub = document.createElement('div');
   sub.className = 'sub';
   sub.textContent =
     withCatalog.matchedSpans.length > 0
-      ? `${withCatalog.matchedSpans.length} step${withCatalog.matchedSpans.length === 1 ? '' : 's'} matched to your function catalog`
+      ? tn('record_stepsMatched', withCatalog.matchedSpans.length)
       : catalog.length > 0
-        ? 'No catalog matches — exported as raw locators'
-        : 'Not connected to a Piwi instance — exported as raw locators';
+        ? t('record_noFunctionMatches')
+        : t('record_notConnected');
   titleWrap.append(title, sub);
   const closeBtn = document.createElement('button');
   closeBtn.className = 'close';
-  closeBtn.setAttribute('aria-label', 'Close');
+  closeBtn.setAttribute('aria-label', t('common_close'));
   closeBtn.textContent = '×';
   // Every close path goes through one function, so the document-level Escape
   // listener below is always detached with the panel. Registering it and only
@@ -434,7 +450,7 @@ async function renderReviewPanel(state: RecordingState): Promise<void> {
   if (steps.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'empty';
-    empty.textContent = 'No steps were captured.';
+    empty.textContent = t('record_noSteps');
     panel.appendChild(empty);
   } else {
     const stepsWrap = document.createElement('div');
@@ -444,8 +460,9 @@ async function renderReviewPanel(state: RecordingState): Promise<void> {
       row.className = 'step';
       const idx = document.createElement('span');
       idx.className = 'step-idx';
-      idx.textContent = String(i + 1);
+      idx.textContent = formatNumber(i + 1);
       const desc = document.createElement('span');
+      desc.className = 'step-desc';
       desc.textContent = describeStep(step);
       row.append(idx, desc);
       const span = withCatalog.matchedSpans.find((s) => i >= s.startStep && i <= s.endStep);
@@ -467,7 +484,7 @@ async function renderReviewPanel(state: RecordingState): Promise<void> {
     const copyPrimary = document.createElement('button');
     copyPrimary.type = 'button';
     copyPrimary.className = 'action primary';
-    copyPrimary.textContent = catalog.length > 0 ? 'Copy as TypeScript (with your functions)' : 'Copy as TypeScript';
+    copyPrimary.textContent = catalog.length > 0 ? t('record_copyCodeWithFunctions') : t('record_copyCode');
     copyPrimary.addEventListener('click', () => void copyToClipboard(withCatalog.code, copyPrimary));
     actions.appendChild(copyPrimary);
 
@@ -475,7 +492,7 @@ async function renderReviewPanel(state: RecordingState): Promise<void> {
       const copyRaw = document.createElement('button');
       copyRaw.type = 'button';
       copyRaw.className = 'action';
-      copyRaw.textContent = 'Copy raw TypeScript';
+      copyRaw.textContent = t('record_copyCodeWithoutFunctions');
       copyRaw.addEventListener('click', () => void copyToClipboard(raw.code, copyRaw));
       actions.appendChild(copyRaw);
     }
@@ -483,8 +500,8 @@ async function renderReviewPanel(state: RecordingState): Promise<void> {
     const downloadBtn = document.createElement('button');
     downloadBtn.type = 'button';
     downloadBtn.className = 'action';
-    downloadBtn.textContent = 'Download steps';
-    downloadBtn.title = 'The recording as a steps file, to share or to turn into a spec with piwi codegen';
+    downloadBtn.textContent = t('record_downloadSteps');
+    downloadBtn.title = t('record_downloadStepsTitle');
     downloadBtn.addEventListener('click', () => downloadSteps(toStepsDocument(session)));
     actions.appendChild(downloadBtn);
   }
@@ -492,7 +509,7 @@ async function renderReviewPanel(state: RecordingState): Promise<void> {
   const discardBtn = document.createElement('button');
   discardBtn.type = 'button';
   discardBtn.className = 'action danger';
-  discardBtn.textContent = 'Discard';
+  discardBtn.textContent = t('common_discard');
   discardBtn.addEventListener('click', () => {
     void discardRecording().then(closePanel, closePanel);
   });
@@ -581,7 +598,7 @@ const bugHooks: BugRecorderHooks = {
       if (!state.active) return null;
       return normalizeSteps(state.events).length - 1;
     } catch {
-      captureError = 'The step could not be saved.';
+      captureError = t('record_stepNotSaved');
       return null;
     } finally {
       scheduleHudRefresh();
@@ -655,9 +672,7 @@ function captureEvent(event: RawCaptureEvent): void {
     })
     .catch((err: unknown) => {
       const message = err instanceof Error ? err.message : '';
-      captureError = /quota|exceeded/i.test(message)
-        ? 'Out of storage — stop and export now, later steps are being lost.'
-        : 'A step could not be saved.';
+      captureError = /quota|exceeded/i.test(message) ? t('record_storageFull') : t('record_stepNotSaved');
     })
     .then(() => scheduleHudRefresh());
 }
@@ -846,9 +861,9 @@ async function runRecordPanel(): Promise<void> {
 }
 
 async function initRecordPanel(): Promise<void> {
-  // Before any session-storage read — see `session-access.ts`.
-  await ensureSessionAccess();
-  const state = await getRecordingState();
+  // Before any session-storage read — see `session-access.ts`. The catalog
+  // override loads alongside, so the HUD paints no later for it.
+  const [state] = await Promise.all([ensureSessionAccess().then(getRecordingState), initI18n()]);
 
   if (!state.active) {
     // The recording is over, however it ended. Tear the capture surfaces down

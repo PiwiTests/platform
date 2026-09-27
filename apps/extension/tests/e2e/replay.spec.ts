@@ -4,6 +4,7 @@ import type { BrowserContext, Page } from '@playwright/test';
 import type { PiwiSteps } from '@piwitests/core/steps';
 import { test, expect } from './fixtures.js';
 import { stubChromeI18n } from './i18n-stub.js';
+import { clippedInShadows, openShadowRoots } from './shadow.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.join(here, '..', '..', 'dist');
@@ -16,7 +17,7 @@ const ORIGIN = 'https://replay-test.local';
  * bundle is added as an init script, as the background script's registration
  * adds it to every page of the origin.
  */
-async function stubChrome(context: BrowserContext, session: Record<string, unknown>): Promise<void> {
+async function stubChrome(context: BrowserContext, session: Record<string, unknown>, language = 'en'): Promise<void> {
   await context.addInitScript((seed) => {
     function load(): { session: Record<string, unknown> } {
       if (!window.name) return { session: seed };
@@ -48,7 +49,7 @@ async function stubChrome(context: BrowserContext, session: Record<string, unkno
       runtime: { sendMessage: async () => ({ ok: true }), onMessage: { addListener: () => undefined } },
     };
   }, session);
-  await stubChromeI18n(context);
+  await stubChromeI18n(context, language);
   await context.addInitScript({ path: path.join(DIST, 'replay-panel.js') });
 }
 
@@ -126,7 +127,7 @@ const REPORT: PiwiSteps = {
   ],
 };
 
-function running(): Record<string, unknown> {
+function running(stepMode = false): Record<string, unknown> {
   return {
     piwiReplay: {
       id: 'r1',
@@ -135,7 +136,7 @@ function running(): Record<string, unknown> {
       position: 0,
       results: [],
       status: 'running',
-      stepMode: false,
+      stepMode,
       cursor: null,
       startedAt: 0,
     },
@@ -190,5 +191,92 @@ test.describe('replay-panel.js', () => {
       step: 3,
       reason: "Nothing on this page matches getByTestId('add-to-cart').",
     });
+  });
+});
+
+test.describe('replay-panel.js in French', () => {
+  test('shows its panel and its verdict in French, the page texts quoted the French way', async ({ context }) => {
+    await openShadowRoots(context);
+    await routePages(context, 'buggy');
+    await stubChrome(context, running(true), 'fr');
+    const page = await context.newPage();
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.goto(`${ORIGIN}/login`);
+
+    const hud = page.locator('#piwi-replay-hud-host').getByRole('region');
+    await expect(hud).toHaveAttribute('lang', 'fr');
+    await expect(hud).toHaveAttribute('aria-label', 'Piwi Picker\u00a0: rapport de bug rejoué');
+    await expect(hud).toContainText('En cours : Coupon not applied');
+    await expect(hud).toContainText('étape 2 sur 5');
+    await expect(hud.getByRole('button', { name: 'Étape suivante' })).toBeVisible();
+    await expect(hud.getByRole('checkbox', { name: 'Pas à pas' })).toBeChecked();
+
+    // Plays the rest without stopping.
+    await hud.getByRole('checkbox', { name: 'Pas à pas' }).uncheck();
+    expect(await verdict(page)).toEqual({
+      kind: 'reproduced',
+      step: 4,
+      found: '«\u202fTotal: 40\u202f»',
+      sameAsReported: true,
+    });
+    const done = page.locator('#piwi-replay-hud-host').getByRole('region');
+    await expect(done).toHaveAttribute('lang', 'fr');
+    const status = done.getByRole('status');
+    await expect(status).toContainText('Reproduit\u00a0: le bug est visible ici');
+    await expect(status).toContainText(
+      'Étape 5\u00a0: attendu «\u202fTotal: 42\u202f», résultat\u00a0: «\u202fTotal: 40\u202f», comme signalé.',
+    );
+    await expect(done).toContainText('Terminé : Coupon not applied');
+    await expect(done).toContainText('Résultat : «\u202fTotal: 40\u202f».');
+    await expect(done.getByRole('button', { name: 'Rejouer' })).toBeVisible();
+    await expect(done.getByRole('button', { name: 'Fermer' })).toBeVisible();
+    expect(await clippedInShadows(page)).toEqual([]);
+  });
+
+  test('says in French why the replay stopped where the page differs', async ({ context }) => {
+    await openShadowRoots(context);
+    await routePages(context, 'broken');
+    await stubChrome(context, running(), 'fr');
+    const page = await context.newPage();
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.goto(`${ORIGIN}/login`);
+    expect(await verdict(page)).toEqual({
+      kind: 'diverged',
+      step: 3,
+      reason: "Aucun élément de cette page ne correspond à getByTestId('add-to-cart').",
+    });
+    const status = page.locator('#piwi-replay-hud-host').getByRole('status');
+    await expect(status).toContainText('Impossible d’atteindre le bug\u00a0: arrêt à l’étape 4');
+    await expect(status).toContainText('Cette page n’est pas la même que dans le rapport');
+    expect(await clippedInShadows(page)).toEqual([]);
+  });
+
+  test('asks for the report to replay in French, and says what is wrong with a file', async ({ context }) => {
+    await openShadowRoots(context);
+    await routePages(context, 'buggy');
+    await stubChrome(context, {}, 'fr');
+    const page = await context.newPage();
+    await page.goto(`${ORIGIN}/login`);
+
+    const dialog = page.locator('#piwi-replay-dialog-host').getByRole('dialog', { name: 'Rejouer un rapport de bug' });
+    await expect(dialog).toHaveAttribute('lang', 'fr');
+    await expect(dialog).toContainText(`Rejoue ses étapes sur ${ORIGIN}`);
+    await dialog.getByRole('button', { name: 'Rejouer' }).click();
+    await expect(dialog.getByRole('alert')).toHaveText('Choisissez d’abord un rapport.');
+
+    const file = dialog.getByLabel('Le .zip du rapport de bug, ou son steps.json');
+    await file.setInputFiles({ name: 'notes.json', mimeType: 'application/json', buffer: Buffer.from('{"a":1}') });
+    await expect(dialog.getByRole('alert')).toContainText('notes.json n’est pas un fichier d’étapes\u00a0:');
+
+    await file.setInputFiles({
+      name: 'steps.json',
+      mimeType: 'application/json',
+      buffer: Buffer.from(JSON.stringify(REPORT)),
+    });
+    await expect(dialog).toContainText(`Coupon not applied · 5 étapes · enregistré sur ${REPORT.origin}`);
+    await expect(
+      dialog.getByRole('checkbox', { name: 'Pas à pas : cliquez sur Étape suivante avant chaque étape' }),
+    ).toBeVisible();
+    expect(await clippedInShadows(page)).toEqual([]);
   });
 });

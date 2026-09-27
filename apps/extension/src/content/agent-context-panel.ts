@@ -1,3 +1,4 @@
+import { initI18n, t, uiLanguage } from '../shared/i18n.js';
 import { startTool, endTool, installEscapeToCancel, teardownToolSurfaces } from '../shared/tool-session.js';
 import { installPickerOverlay, removePickerOverlay, type PickerOverlayArg } from '@piwitests/picker-dom';
 import { buildAgentContext } from './agent-context.js';
@@ -32,7 +33,7 @@ async function copyToClipboard(text: string, btn: HTMLButtonElement): Promise<vo
     return;
   }
   const original = btn.textContent;
-  btn.textContent = 'Copied';
+  btn.textContent = t('common_copied');
   setTimeout(() => {
     btn.textContent = original;
   }, 1200);
@@ -70,9 +71,13 @@ function renderContextPanel(context: string): Promise<void> {
     @media (prefers-color-scheme: light) {
       .panel { background: #ffffff; color: #111827; box-shadow: 0 8px 40px rgba(0,0,0,.2); }
     }
-    .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-    .title { font-weight: 600; font-size: 14px; }
-    .sub { color: #9ca3af; font-size: 12px; }
+    .header { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+    .header > div { min-width: 0; }
+    .title { font-weight: 600; font-size: 14px; overflow-wrap: anywhere; hyphens: auto; }
+    .sub { color: #9ca3af; font-size: 12px; overflow-wrap: anywhere; hyphens: auto; }
+    @media (prefers-color-scheme: light) {
+      .sub { color: #6b7280; }
+    }
     .close {
       background: none; border: none; color: inherit; opacity: .7; cursor: pointer; font-size: 18px;
       line-height: 1; padding: 4px 8px; border-radius: 6px;
@@ -96,7 +101,8 @@ function renderContextPanel(context: string): Promise<void> {
   const panel = document.createElement('div');
   panel.className = 'panel';
   panel.setAttribute('role', 'dialog');
-  panel.setAttribute('aria-label', 'Piwi context for agent');
+  panel.lang = uiLanguage();
+  panel.setAttribute('aria-label', t('agent_title'));
   panel.tabIndex = -1;
 
   const header = document.createElement('div');
@@ -104,26 +110,28 @@ function renderContextPanel(context: string): Promise<void> {
   const titleWrap = document.createElement('div');
   const title = document.createElement('div');
   title.className = 'title';
-  title.textContent = 'Context for agent';
+  title.textContent = t('agent_title');
   const sub = document.createElement('div');
   sub.className = 'sub';
-  sub.textContent = 'Esc to close';
+  sub.textContent = `${t('agent_hint')} · ${t('common_escToClose')}`;
   titleWrap.append(title, sub);
   const closeBtn = document.createElement('button');
   closeBtn.className = 'close';
-  closeBtn.setAttribute('aria-label', 'Close');
+  closeBtn.setAttribute('aria-label', t('common_close'));
   closeBtn.textContent = '×';
   header.append(titleWrap, closeBtn);
   panel.appendChild(header);
 
   const pre = document.createElement('pre');
+  // The block is written for a coding agent, in English, whatever the interface language.
+  pre.lang = 'en';
   pre.textContent = context;
   panel.appendChild(pre);
 
   const copyBtn = document.createElement('button');
   copyBtn.className = 'copy';
   copyBtn.type = 'button';
-  copyBtn.textContent = 'Copy';
+  copyBtn.textContent = t('common_copy');
   copyBtn.addEventListener('click', () => void copyToClipboard(context, copyBtn));
   panel.appendChild(copyBtn);
 
@@ -168,6 +176,7 @@ async function runAgentContextPanel(): Promise<void> {
   g.__piwiPicking = true;
   const toolEpoch = startTool('agent-context-panel', teardownToolSurfaces);
   installEscapeToCancel();
+  const i18nReady = initI18n();
   try {
     clearPickGlobals();
     const overlayArg: PickerOverlayArg = { transport: 'global', failing: null };
@@ -180,6 +189,7 @@ async function runAgentContextPanel(): Promise<void> {
 
     const el = g.__piwiPickedElement as Element;
     const context = buildAgentContext(el, location.href);
+    await i18nReady;
     await renderContextPanel(context);
   } finally {
     clearPickGlobals();

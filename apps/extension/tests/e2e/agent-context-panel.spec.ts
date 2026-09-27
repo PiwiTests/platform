@@ -1,6 +1,8 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test, expect } from './fixtures.js';
+import { stubChromeI18n } from './i18n-stub.js';
+import { clippedInShadows, openShadowRoots } from './shadow.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.join(here, '..', '..', 'dist');
@@ -59,5 +61,46 @@ test.describe('agent-context-panel.js', () => {
 
     await page.keyboard.press('Escape');
     await expect.poll(() => page.evaluate(() => !!document.getElementById('piwi-agent-context-host'))).toBe(false);
+  });
+
+  test('speaks French around a block that stays in English', async ({ context }) => {
+    await openShadowRoots(context);
+    await stubChromeI18n(context, 'fr');
+    const page = await context.newPage();
+    await page.setContent(`<!doctype html><html><body>
+      <button id="target" data-testid="submit-btn">Submit</button>
+    </body></html>`);
+    await page.addScriptTag({ path: path.join(DIST, 'agent-context-panel.js') });
+    await page.hover('#target');
+    await page.click('#target');
+
+    const panel = () =>
+      page.evaluate(() => {
+        const root = document.getElementById('piwi-agent-context-host')?.shadowRoot;
+        const dialog = root?.querySelector('[role="dialog"]');
+        if (!root || !dialog) return null;
+        return {
+          lang: (dialog as HTMLElement).lang,
+          label: dialog.getAttribute('aria-label'),
+          title: root.querySelector('.title')?.textContent,
+          sub: root.querySelector('.sub')?.textContent,
+          close: root.querySelector('.close')?.getAttribute('aria-label'),
+          copy: root.querySelector('button.copy')?.textContent,
+          blockLang: root.querySelector('pre')?.lang,
+          block: root.querySelector('pre')?.textContent?.split('\n')[0],
+        };
+      });
+    await expect.poll(panel).not.toBeNull();
+    expect(await panel()).toEqual({
+      lang: 'fr',
+      label: 'Contexte pour un agent IA',
+      title: 'Contexte pour un agent IA',
+      sub: 'Collez ce texte dans votre assistant de code IA · Échap pour fermer',
+      close: 'Fermer',
+      copy: 'Copier',
+      blockLang: 'en',
+      block: '## Piwi element context',
+    });
+    expect(await clippedInShadows(page)).toEqual([]);
   });
 });

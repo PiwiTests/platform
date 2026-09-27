@@ -1,7 +1,8 @@
 import type { RankedLocator } from '@piwitests/picker-dom';
 import { highlightLocator, LOCATOR_SYNTAX_CSS } from '@piwitests/picker-dom';
 import { TAG_TO_ROLE, INPUT_TYPE_TO_ROLE } from '@piwitests/core/locator-generation';
-import { COPY_MODES, COPY_MODE_LABELS, renderCopyMode } from '../shared/copy-modes.js';
+import { COPY_MODES, copyModeLabel, renderCopyMode } from '../shared/copy-modes.js';
+import { formatNumber, t, tn, tNodes, uiLanguage } from '../shared/i18n.js';
 import { getLastCopyMode, setLastCopyMode } from '../shared/storage.js';
 import { liveCount } from './live-count.js';
 import { locatorActionLabel } from '@piwitests/core/step-locators';
@@ -17,7 +18,7 @@ import { elementReach, pageView, scanCoverage, type ReachGroup } from './coverag
 import { chainStabilities, usePlace } from './coverage-risk.js';
 import { pageKey } from '@piwitests/core/page-key';
 import { stabilityLabels } from '@piwitests/core/locator-stability';
-import { plural, statusLabel, testTitle } from './coverage-view.js';
+import { statusLabel, testTitle } from './coverage-view.js';
 
 const ROLE_MAPS = { tagRoles: TAG_TO_ROLE, inputRoles: INPUT_TYPE_TO_ROLE };
 
@@ -37,6 +38,7 @@ const PIWI_TESTS_SHOWN = 6;
  * section lists the project's tests whose locators reach that element.
  *
  * Resolves once the user dismisses the panel (Escape or the close button).
+ * The caller has run `initI18n()`.
  */
 export async function renderResultsPanel(ranked: RankedLocator[], target: Element | null = null): Promise<void> {
   document.getElementById(HOST_ID)?.remove();
@@ -69,8 +71,9 @@ export async function renderResultsPanel(ranked: RankedLocator[], target: Elemen
       .panel { animation: piwi-in 120ms ease-out; }
     }
     @keyframes piwi-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
-    .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-    .title { font-weight: 600; font-size: 14px; }
+    .header { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+    .header > div:first-child { min-width: 0; }
+    .title { font-weight: 600; font-size: 14px; overflow-wrap: anywhere; hyphens: auto; }
     .sub { color: #9ca3af; font-size: 12px; }
     .close {
       background: none; border: none; color: inherit; opacity: .7; cursor: pointer; font-size: 18px;
@@ -80,12 +83,12 @@ export async function renderResultsPanel(ranked: RankedLocator[], target: Elemen
     .row {
       border: 1px solid rgba(128,128,128,.3); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px;
     }
-    .row-top { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+    .row-top { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; min-width: 0; }
     .score {
       color: #c4b5fd; font-variant-numeric: tabular-nums; font-size: 11px; flex-shrink: 0;
       border: 1px solid #c4b5fd66; border-radius: 999px; padding: 1px 7px;
     }
-    .row code { font-size: 13px; line-height: 1.55; }
+    .row code { font-size: 13px; line-height: 1.55; min-width: 0; overflow-wrap: anywhere; }
     .copy-row { display: flex; gap: 6px; flex-wrap: wrap; }
     button.copy {
       background: rgba(128,128,128,.12); color: inherit; border: 1px solid rgba(128,128,128,.3);
@@ -97,7 +100,10 @@ export async function renderResultsPanel(ranked: RankedLocator[], target: Elemen
     .footer { color: #9ca3af; font-size: 11px; margin-top: 4px; }
     .unique { color: #4ade80; font-size: 11px; }
     .ambiguous { color: #fbbf24; font-size: 11px; }
-    .header-actions { display: flex; align-items: center; gap: 6px; }
+    .header-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+    .header-actions button.copy { white-space: nowrap; }
+    .unique, .ambiguous, .footer, .piwi .lead, .piwi .muted { overflow-wrap: anywhere; hyphens: auto; }
+    .piwi li a { overflow-wrap: anywhere; }
     .piwi {
       border: 1px solid #7c3aed66; border-radius: 8px; padding: 8px 10px; margin-bottom: 10px;
       background: rgba(124,58,237,.08); font-size: 12.5px;
@@ -136,7 +142,8 @@ export async function renderResultsPanel(ranked: RankedLocator[], target: Elemen
   const panel = document.createElement('div');
   panel.className = 'panel';
   panel.setAttribute('role', 'dialog');
-  panel.setAttribute('aria-label', 'Piwi locator picker results');
+  panel.lang = uiLanguage();
+  panel.setAttribute('aria-label', t('pick_panelLabel'));
   panel.tabIndex = -1;
 
   const header = document.createElement('div');
@@ -144,23 +151,22 @@ export async function renderResultsPanel(ranked: RankedLocator[], target: Elemen
   const titleWrap = document.createElement('div');
   const title = document.createElement('div');
   title.className = 'title';
-  title.textContent = `${ranked.length} locator${ranked.length === 1 ? '' : 's'} — ranked by stability`;
+  title.textContent = tn('pick_title', ranked.length);
   const sub = document.createElement('div');
   sub.className = 'sub';
-  sub.textContent = 'Esc to close · Tab between rows';
+  sub.textContent = `${t('common_escToClose')} · ${t('pick_tabHint')}`;
   titleWrap.append(title, sub);
   const closeBtn = document.createElement('button');
   closeBtn.className = 'close';
-  closeBtn.setAttribute('aria-label', 'Close');
+  closeBtn.setAttribute('aria-label', t('common_close'));
   closeBtn.textContent = '×';
   const headerActions = document.createElement('div');
   headerActions.className = 'header-actions';
   const copyAll = document.createElement('button');
   copyAll.className = 'copy';
   copyAll.type = 'button';
-  copyAll.textContent = `Copy all ${ranked.length}`;
-  copyAll.title =
-    'Copy every locator, one per line — paste them into Piwi’s Locators page to find the tests using any of them';
+  copyAll.textContent = tn('pick_copyAll', ranked.length);
+  copyAll.title = t('pick_copyAllHint');
   copyAll.addEventListener('click', () => void copyToClipboard(ranked.map((alt) => alt.locator).join('\n'), copyAll));
   headerActions.append(copyAll, closeBtn);
   header.append(titleWrap, headerActions);
@@ -202,7 +208,8 @@ export async function renderResultsPanel(ranked: RankedLocator[], target: Elemen
       top.className = 'row-top';
       const score = document.createElement('span');
       score.className = 'score';
-      score.textContent = String(alt.score);
+      score.textContent = formatNumber(alt.score);
+      score.title = t('pick_score');
       const code = document.createElement('code');
       code.className = 'piwi-loc';
       code.innerHTML = highlightLocator(alt.locator);
@@ -216,7 +223,7 @@ export async function renderResultsPanel(ranked: RankedLocator[], target: Elemen
         btn.className = 'copy';
         btn.type = 'button';
         btn.dataset.active = String(mode === activeMode);
-        btn.textContent = COPY_MODE_LABELS[mode];
+        btn.textContent = copyModeLabel(mode);
         btn.addEventListener('click', () => {
           void copyToClipboard(renderCopyMode(alt, mode), btn);
           activeMode = mode;
@@ -239,10 +246,10 @@ export async function renderResultsPanel(ranked: RankedLocator[], target: Elemen
         const badge = document.createElement('div');
         if (count === 1) {
           badge.className = 'unique';
-          badge.textContent = '✓ matches exactly 1 element right now';
+          badge.textContent = `✓ ${t('pick_unique')}`;
         } else {
           badge.className = 'ambiguous';
-          badge.textContent = `⚠ matches ${count} elements right now — add .first() or .filter({ hasText: … })`;
+          badge.textContent = `⚠ ${tn('pick_ambiguous', count, { first: '.first()', filter: '.filter({ hasText: … })' })}`;
         }
         row.appendChild(badge);
       }
@@ -252,7 +259,7 @@ export async function renderResultsPanel(ranked: RankedLocator[], target: Elemen
       if (i === 0) {
         const footer = document.createElement('div');
         footer.className = 'footer';
-        footer.textContent = 'Top pick — highest stability score.';
+        footer.textContent = t('pick_topPick');
         row.appendChild(footer);
       }
     }
@@ -325,7 +332,7 @@ async function fillPiwiSection(
     );
     link.target = '_blank';
     link.rel = 'noopener noreferrer';
-    link.textContent = 'Find these locators in Piwi ↗';
+    link.textContent = t('pick_findInPiwi');
     return link;
   };
   const lead = (text: string) => {
@@ -335,9 +342,14 @@ async function fillPiwiSection(
     return el;
   };
 
-  const where = `${projectLabel}${branch === ALL_BRANCHES ? ' on any branch' : branch ? ` on ${branch}` : ''}`;
+  const where =
+    branch === ALL_BRANCHES
+      ? t('pick_whereAnyBranch', { project: projectLabel })
+      : branch
+        ? t('pick_whereBranch', { project: projectLabel, branch })
+        : projectLabel;
   section.hidden = false;
-  section.replaceChildren(lead(`Checking which tests of ${where} reach this element…`));
+  section.replaceChildren(lead(t('pick_checking', { where })));
   reportPickCoverage({ status: 'checking' });
 
   let index = (await getCachedLocatorIndex(projectId, branch).catch(() => null))?.index ?? null;
@@ -347,13 +359,11 @@ async function fillPiwiSection(
     else {
       const muted = document.createElement('div');
       muted.className = 'muted';
-      muted.textContent = answer.ok
-        ? 'The project’s locator index is not available yet.'
-        : `Couldn't load the locator index: ${answer.error}`;
+      muted.textContent = answer.ok ? t('pick_indexNotReady') : t('pick_indexFailed', { error: answer.error });
       const actions = document.createElement('div');
       actions.className = 'actions';
       actions.appendChild(findInPiwi());
-      section.replaceChildren(lead(`Tests of ${where}`), muted, actions);
+      section.replaceChildren(lead(t('pick_testsOf', { where })), muted, actions);
       reportPickCoverage({ status: 'unavailable', message: muted.textContent });
       return;
     }
@@ -392,10 +402,8 @@ async function fillPiwiSection(
   actions.className = 'actions';
   actions.append(
     findInPiwi(),
-    actionButton('Show tested elements inside it', 'Open Tested elements limited to this element', () =>
-      openCoverage(true),
-    ),
-    actionButton('Show every tested element', 'Open Tested elements on this page', () => openCoverage(false)),
+    actionButton(t('pick_showInside'), t('pick_showInsideHint'), () => openCoverage(true)),
+    actionButton(t('pick_showAll'), t('pick_showAllHint'), () => openCoverage(false)),
   );
 
   const muted = (text: string) => {
@@ -406,29 +414,23 @@ async function fillPiwiSection(
   };
   const nearest = reach.containers.elements[reach.containers.elements.length - 1];
   const groups: Array<{ label: string; group: ReachGroup }> = [
-    { label: 'This element', group: reach.self },
-    { label: `Inside it · ${plural(reach.inside.elements.length, 'element')}`, group: reach.inside },
+    { label: t('pick_groupSelf'), group: reach.self },
+    { label: tn('pick_groupInside', reach.inside.elements.length), group: reach.inside },
     {
       label:
         reach.containers.elements.length === 1 && nearest
-          ? `Around it · ${scan.describe(nearest)}`
-          : `Around it · ${plural(reach.containers.elements.length, 'container')}`,
+          ? t('pick_groupAroundOne', { element: scan.describe(nearest) })
+          : tn('pick_groupAround', reach.containers.elements.length),
       group: reach.containers,
     },
   ].filter(({ group }) => group.tests.length > 0);
 
   const children: Node[] = [];
   if (direct.length) {
-    children.push(lead(`Reached by ${plural(direct.length, 'test')} of ${where}`));
+    children.push(lead(tn('pick_reachedBy', direct.length, { where })));
   } else {
-    children.push(lead(`Not reached by any test of ${where}`));
-    children.push(
-      muted(
-        reach.containers.tests.length
-          ? 'No locator resolves to it or to anything inside it; these tests reach an element around it.'
-          : 'No locator of the project’s tests resolves to this element here.',
-      ),
-    );
+    children.push(lead(t('pick_notReached', { where })));
+    children.push(muted(reach.containers.tests.length ? t('pick_onlyAround') : t('pick_noneHere')));
   }
 
   let shown = 0;
@@ -441,8 +443,8 @@ async function fillPiwiSection(
       children.push(heading);
     }
     const list = document.createElement('ul');
-    for (const t of group.tests.slice(0, PIWI_TESTS_SHOWN - shown)) {
-      const test = index.tests[t]!;
+    for (const testIndex of group.tests.slice(0, PIWI_TESTS_SHOWN - shown)) {
+      const test = index.tests[testIndex]!;
       const item = document.createElement('li');
       const dot = document.createElement('span');
       dot.className = `dot ${test.status ?? ''}`;
@@ -455,7 +457,8 @@ async function fillPiwiSection(
       link.title = test.file;
       const actionsOf = new Set<string>();
       for (const entry of group.entries) {
-        for (const use of index.locators[entry]!.uses) if (use.test === t) use.actions.forEach((a) => actionsOf.add(a));
+        for (const use of index.locators[entry]!.uses)
+          if (use.test === testIndex) use.actions.forEach((a) => actionsOf.add(a));
       }
       const meta = document.createElement('span');
       meta.className = 'muted';
@@ -467,7 +470,7 @@ async function fillPiwiSection(
     children.push(list);
   }
   const total = groups.reduce((sum, { group }) => sum + group.tests.length, 0);
-  if (total > shown) children.push(muted(`${total - shown} more — Tested elements lists them all.`));
+  if (total > shown) children.push(muted(tn('pick_more', total - shown)));
   // Brittle locators finding the element itself: the ranked list above has the stable one to replace them with.
   const stabilities = chainStabilities(index);
   const brittle = reach.self.entries.filter((entry) => stabilities[entry]?.level === 'brittle');
@@ -477,13 +480,13 @@ async function fillPiwiSection(
     const code = document.createElement('code');
     code.className = 'piwi-loc';
     code.innerHTML = highlightLocator(index.locators[entry]!.locator);
-    line.append('Brittle locator: ', code, ` · ${stabilityLabels(stabilities[entry]!)}`);
+    line.append(...tNodes('pick_brittle', { locator: code, reasons: stabilityLabels(stabilities[entry]!) }));
     children.push(line);
   }
-  if (brittle.length) children.push(muted('Tests could use one of the locators ranked above instead.'));
+  if (brittle.length) children.push(muted(t('pick_useRankedInstead')));
   children.push(actions);
   section.replaceChildren(...children);
-  const titles = (tests: number[]) => tests.map((t) => index!.tests[t]!.title);
+  const titles = (tests: number[]) => tests.map((position) => index!.tests[position]!.title);
   reportPickCoverage({
     status: 'ready',
     project: projectLabel,
@@ -502,7 +505,7 @@ async function copyToClipboard(text: string, btn: HTMLButtonElement): Promise<vo
     return;
   }
   const original = btn.textContent;
-  btn.textContent = 'Copied';
+  btn.textContent = t('common_copied');
   setTimeout(() => {
     btn.textContent = original;
   }, 1200);

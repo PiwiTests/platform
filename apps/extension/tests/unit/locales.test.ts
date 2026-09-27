@@ -27,6 +27,11 @@ const SURFACES = [
   'replay',
   'coverage',
   'session',
+  'multipick',
+  'lint',
+  'assert',
+  'agent',
+  'functions',
   'badge',
   'common',
 ];
