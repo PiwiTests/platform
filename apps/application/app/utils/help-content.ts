@@ -249,7 +249,7 @@ export const HELP_TOPICS = {
   },
   'notifications.teams': {
     title: 'Microsoft Teams channel',
-    text: 'Posts an Adaptive Card to a Teams channel. In Teams, add the Workflows template "Post to a channel when a webhook request is received" (or a legacy incoming webhook) to the channel and paste its URL here. Events, digests and quality reports all get a card.',
+    text: 'Posts an Adaptive Card to a Teams channel. In Teams, open the channel’s Workflows, pick the template "Send webhook alerts to a channel" and paste the URL it gives here; a legacy connector webhook still works while Microsoft keeps it. Events, digests and quality reports all get a card.',
     doc: 'features/notifications#microsoft-teams',
   },
   'reports.share-link': {
@@ -633,7 +633,7 @@ export const HELP_TOPICS = {
   },
   'notifications.channels': {
     title: 'Channels',
-    text: 'Destinations an alert can go to — browser, email, Slack, Microsoft Teams or webhook. Create a channel, then subscribe events to it. Administrators can make a channel global (usable by everyone); without authentication every channel is global.',
+    text: 'Destinations an alert can go to — browser, email, Slack, Microsoft Teams or webhook. Create a channel (the form shows where to get each URL, and can send a test first: a channel whose test went through is saved verified), then subscribe events to it. Administrators can make a channel global (usable by everyone); without authentication every channel is global.',
     doc: 'features/notifications#channels',
   },
   'notifications.subscriptions': {
@@ -754,13 +754,13 @@ export const HELP_TOPICS = {
   },
   'settings.integrations': {
     title: 'Integrations',
-    text: 'Connect an issue tracker so pinned links unfurl with a title and status and stay in sync. Jira Cloud connects with an account email and an API token; set the connection once and every project uses it.',
+    text: 'Connect an issue tracker so pinned links unfurl with a title and status and stay in sync. Jira Cloud connects with an account email and an API token, classic or scoped; set the connection once and every project uses it.',
     doc: 'operate/integrations',
     envVars: ['PIWI_JIRA_BASE_URL', 'PIWI_JIRA_EMAIL', 'PIWI_JIRA_API_TOKEN'],
   },
   'settings.integrations.connection': {
     title: 'Connect a system',
-    text: 'The base URL is the system’s address (for Jira Cloud, https://your-team.atlassian.net); the credentials authenticate Piwi against it. Test the connection to confirm the account it resolves to. Credentials are encrypted at rest and never shown again.',
+    text: 'Paste the address of any Jira page: Piwi reads the site from it (https://your-team.atlassian.net) and checks it is Jira Cloud. Create a classic or a scoped API token as the account Piwi acts as, then check sign-in: it shows the account, the token kind and the projects the account reaches, before anything is saved. Credentials are encrypted at rest and never shown again.',
     doc: 'operate/integrations#connecting-jira-cloud',
   },
   'settings.integrations.private-host': {

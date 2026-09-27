@@ -72,7 +72,7 @@ function toggle(filename: string) {
             v-if="file.patch && expandedFiles.has(file.filename)"
             class="border-t border-default overflow-x-auto max-h-96"
           >
-            <DiffPatch :patch="file.patch" />
+            <DiffPatch :patch="file.patch" :file="file.filename" />
           </div>
         </div>
       </div>

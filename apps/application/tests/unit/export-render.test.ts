@@ -89,6 +89,18 @@ describe('renderExportHtml', () => {
     expect(html).not.toContain('[31m');
   });
 
+  it('syntax-highlights call stack snippets behind a plain line-number gutter', () => {
+    const snippet = ['     9 | const total = 1;', '>   10 | await page.getByRole("button").click();'].join('\n');
+    const html = renderExportHtml(
+      bundle({
+        cases: [exportCase({ detail: { testSourceFrames: [{ file: 'tests/login.spec.ts', line: 10, snippet }] } })],
+      }),
+      noAssets,
+    );
+    expect(html).toContain('<span class="ln">&gt;   10 | </span>');
+    expect(html).toContain('<span class="hljs-keyword">await</span>');
+  });
+
   it('references nothing outside the document', () => {
     const html = renderExportHtml(bundle({ sourceUrl: 'https://piwi.example.com/test-run-cases/1' }), noAssets);
     // The source URL is recorded as text, never as a fetchable reference.
@@ -308,6 +320,24 @@ describe('buildExport', () => {
     );
     // 0.486 0.227 0.929 is the keyword purple; a plain monospace block, drawn in
     // the near-black foreground, never sets it. `const` is a TypeScript keyword.
+    expect(pdfContent(built.bytes)).toContain('0.486 0.227 0.929 rg');
+  });
+
+  it('syntax-highlights call stack snippets', async () => {
+    const built = await buildExport(
+      bundle({
+        cases: [
+          exportCase({
+            detail: {
+              testSourceFrames: [{ file: 'tests/login.spec.ts', line: 3, snippet: '>    3 | const answer = 42;' }],
+            },
+          }),
+        ],
+      }),
+      'pdf',
+      1,
+      { reader, budget },
+    );
     expect(pdfContent(built.bytes)).toContain('0.486 0.227 0.929 rg');
   });
 

@@ -556,7 +556,7 @@ defineExpose({
 
       <!-- Ready-to-apply one-line edit, when the failing source line is known -->
       <div v-if="suggestedEdit" class="rounded border border-default overflow-hidden bg-default">
-        <DiffPatch :patch="suggestedEdit.patch" />
+        <DiffPatch :patch="suggestedEdit.patch" :file="healing?.location" />
       </div>
       <template v-else>
         <LocatorCode :locator="recommended.locator" truncate class="text-sm" />

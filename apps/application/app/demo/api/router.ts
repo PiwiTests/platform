@@ -224,6 +224,7 @@ import {
   createDemoConnection,
   updateDemoConnection,
   testDemoConnection,
+  checkDemoConnection,
   demoTrackerStatus,
   demoIssueDraft,
   demoCreateIssue,
@@ -2202,6 +2203,15 @@ const routes: RouteEntry[] = [
     pattern: /^\/api\/integrations\/connections\/(\d+)\/test$/,
     handler: async () => testDemoConnection(),
   },
+  {
+    method: 'POST',
+    pattern: /^\/api\/integrations\/connections\/check$/,
+    handler: async (_, body) => {
+      const result = checkDemoConnection(body as { baseUrl?: string });
+      if (!result) throw demoHttpError(400, 'Enter the site address, e.g. https://your-team.atlassian.net');
+      return result;
+    },
+  },
   { method: 'GET', pattern: /^\/api\/integrations\/status$/, handler: async () => demoTrackerStatus() },
   {
     method: 'GET',
@@ -2490,7 +2500,7 @@ routes.push(
   {
     method: 'GET',
     pattern: /^\/api\/channels$/,
-    handler: () => Promise.resolve({ items: [DEMO_CHANNEL] }),
+    handler: () => Promise.resolve({ items: [DEMO_CHANNEL], canStoreSecrets: true }),
   },
   {
     method: 'POST',
@@ -2501,6 +2511,11 @@ routes.push(
   {
     method: 'POST',
     pattern: /^\/api\/channels\/(\d+)\/test$/,
+    handler: () => Promise.resolve({ success: false, error: 'Not available in demo mode' }),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/channels\/test$/,
     handler: () => Promise.resolve({ success: false, error: 'Not available in demo mode' }),
   },
 

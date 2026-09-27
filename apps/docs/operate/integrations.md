@@ -21,16 +21,21 @@ with `PIWI_SECRET_KEY`.
 
 ## Connecting Jira Cloud
 
-Jira Cloud authenticates with an account email and an API token (REST v3, HTTP Basic).
+Jira Cloud authenticates with an account email and an API token (REST v3, HTTP Basic). **Settings → Integrations →
+Connect Jira** (administrator only) walks through it:
 
-1. Create an API token at [id.atlassian.com](https://id.atlassian.com/manage-profile/security/api-tokens)
-   under **Security → API tokens**, signed in as the account whose permissions Piwi should act with.
-2. Open **Settings → Integrations** (administrator only) and connect Jira with:
-   - **Base URL** — your site, e.g. `https://your-team.atlassian.net`.
-   - **Account email** — the Atlassian account the token belongs to.
-   - **API token** — the token from step 1.
-3. Click **Test connection**. Piwi calls `GET /rest/api/3/myself` and shows the account it resolved to, so
-   you can confirm the credentials before relying on them.
+1. **Jira site**: paste the address of any Jira page, or type the site name. Piwi reads the site from it
+   (`https://your-team.atlassian.net`) and checks it is Jira Cloud.
+2. **API token type**: classic or scoped. The form links to
+   [Atlassian's API tokens page](https://id.atlassian.com/manage-profile/security/api-tokens), where you sign in as
+   the account Piwi should act as, and lists the scopes a scoped token needs.
+3. **Account email** and **API token**, plus the token's expiry date if you want a warning two weeks before it.
+4. **Check sign-in** calls `GET /rest/api/3/myself` without saving and shows the account, the token kind and the
+   projects the account sees, or what to fix. Then **Connect**.
+
+<div class="doc-screenshot">
+  <img src="/screenshots/jira-connect-form.png" alt="The Jira connect form: a pasted board URL read down to the site, the scoped-token steps and a passed sign-in check">
+</div>
 
 Once connected, a Jira link — `https://your-team.atlassian.net/browse/PROJ-123`, including a self-hosted
 host once its connection exists — is recognized as a Jira issue, unfurls with the summary and a status
@@ -72,7 +77,8 @@ Both work. A **classic** token authenticates directly against your site (`https:
 **scoped** ("granular") token authenticates only through Atlassian's `https://api.atlassian.com/ex/jira/{cloudId}`
 gateway, so Piwi detects that on the first `401`, resolves your site's cloud id from its public `_edge/tenant_info`
 endpoint, and routes REST calls through the gateway from then on, with no extra configuration (browse links and link
-detection keep using the site URL). The resolved cloud id is stored on the connection when you **Test connection**.
+detection keep using the site URL). The resolved cloud id is stored on the connection once a sign-in check or
+**Test connection** finds a scoped token.
 
 A scoped token must additionally carry the scopes **`read:jira-work`** (unfurl, sync, search, the pickers),
 **`write:jira-work`** (create, comment, transition, attach) and **`read:jira-user`** (the account check and the
@@ -88,7 +94,8 @@ A connection can live in either place:
 - **Environment-managed** — created from the environment at startup when `PIWI_JIRA_BASE_URL`,
   `PIWI_JIRA_EMAIL` and `PIWI_JIRA_API_TOKEN` are all set. It shows a lock badge and is read-only in the
   dashboard: change it by editing the environment and restarting. The token stays in the environment and
-  never enters the database.
+  never enters the database. Without `PIWI_SECRET_KEY` the connect form cannot store a token, so it says so and
+  shows these variables filled in from what you typed.
 
 See the [configuration reference](/reference/configuration#integrations) for the variables.
 
@@ -135,7 +142,8 @@ Polling is the baseline because Atlassian Cloud usually cannot reach a self-host
 register a webhook so a close or reopen reflects immediately instead of within the sync interval:
 
 1. In **Settings → Integrations**, on the Jira connection, choose **Enable webhook**. Piwi generates a per-connection
-   secret and shows the full URL **once** — copy it now.
+   secret and shows the full URL **once**, with a link to the site's webhooks page. Set `PIWI_SITE_URL` when Piwi
+   sits behind another address than the one in your browser.
 2. In Jira, go to **Settings → System → Webhooks → Create a webhook**, paste the URL, and subscribe it to
    **issue updated** events (optionally scoped by a JQL filter to the bound projects).
 3. Piwi looks the issue up by its id in its links and refreshes just that one, applying the resolve/reopen policies.
