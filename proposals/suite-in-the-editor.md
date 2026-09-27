@@ -354,74 +354,66 @@ npm workspace.
 ## What the editors can grow into
 
 Tracks C–E ship the core: health and uses on test and locator lines, brittle warnings, and live break prediction.
-Once one service runs in both editors, most of what Piwi knows can reach the line it is about. This is the catalog,
-ordered by the moment in a developer's day, each with where its data already lives. Everything goes through the editor
-service (D9), so each item is one server feature and two small renderings.
+Once one service runs in both editors, most of what Piwi knows can reach the line it is about. Everything goes through
+the editor service (D9), so each item below is one server feature and two small renderings.
 
-### While writing a test
+The items are ordered by priority: how often a developer meets the moment, how much of the data exists today, and how
+little each needs beyond the first release. Within a tier, the first item comes first.
 
-| Opportunity | What the developer sees | Data |
-|---|---|---|
-| **Locator completion** | Inside `page.getBy…(`, the chains the suite already uses on the page this test visits, most used first, with their stability | locator index with pages (`uses[].pages`), `assessLocatorChain` |
-| **Function completion** | The project's page-object methods and helpers whose URL pattern matches the page, as snippets with their parameters | function catalog (`GET /api/projects/:id/test-functions`) |
-| **Send from Piwi Picker** | A locator picked, or a flow recorded, in the browser lands at the cursor, rendered with the project's settings (`format: 'body'`) | the steps converter; a local endpoint the editor opens (VS Code: an HTTP listener in the extension host; JetBrains: a handler on the IDE's built-in server), paired once with a token |
-| **Annotations** | Completion for `piwi:owner` (CODEOWNERS entries), `piwi:feature` (the project's features), `piwi:priority`, and tags already in use | `CODEOWNERS` in the workspace, `list_tags`, the Test Map's feature nodes |
-| **AI steps** | On `page.piwiLocator('the email field')`, the committed resolution, its stability and last heal on hover; a quick fix inlines it as a plain locator | the committed `__piwi__` artifacts in the workspace, `piwi ai check` |
-| **Register a function** | On a page-object method, **Add to the function catalog**, so recordings and the converter call it | `POST /api/projects/:id/test-functions`, or the AI extraction endpoint |
+### Priority 1 — in the first release of each editor
 
-### After CI ran
+What every developer meets after every CI run, from data the dashboard already serves. These join PR 6 (VS Code) and
+PR 7 (JetBrains).
 
 | Opportunity | What the developer sees | Data |
 |---|---|---|
 | **CI failures in the Problems panel** | The failures of the latest run on the checked-out branch, at their failing lines, with the clue as the message | latest run per branch (`latest-run`), failed executions, error location and source frames, clues |
-| **Heal in place** | On a failing locator, the recommended replacement as a quick fix (the same edit auto-heal pull requests make) | locator healing for the execution, `buildLocatorEdit` |
-| **Apply a fix plan** | On a cluster's failure, the validated patch as a previewed workspace edit, then its verify command in a terminal | `GET /api/failure-clusters/:id/fix-plan` |
+| **Heal in place** | On a failing locator, the recommended replacement as a quick fix: the same edit auto-heal pull requests make | locator healing for the execution, `buildLocatorEdit` |
 | **Open the evidence** | From a failing line: the trace in Playwright's trace viewer (downloaded, `npx playwright show-trace`), the failure screenshot on hover, the execution page | traces and screenshots of the execution |
 | **Status bar** | The branch's latest run, live while it runs: passed, failing, flaky, the gate verdict | the run event stream, the gate result |
-| **Known issue** | On a failing test with a linked ticket, the ticket and its status on hover; **File an issue** otherwise | `entity_links`, `create_issue` |
+| **One-click MCP** | An offer to register Piwi's MCP server with the editor's agent, using the connection the extension already has (VS Code has an API for extensions to provide MCP server definitions; where a JetBrains AI assistant takes MCP servers, the plugin shows the entry to add) | the instance URL and key |
 
-### Living with a flaky or slow test
+### Priority 2 — next, from data that exists today
+
+Small additions on the same connection, each useful on its own. One PR per editor pair, in this order.
 
 | Opportunity | What the developer sees | Data |
 |---|---|---|
-| **Flaky lens** | Above a flaky test: its score, wasted minutes, root-cause class, and its top suspect once Flake Lab exists, with **Reproduce** (`piwi flake`) and **Verify fix** | flaky list; [`flake-lab.md`](flake-lab.md) |
-| **Quarantine** | Above a quarantined test: days in quarantine and the passing streak toward release, with **Release**; **Quarantine** on a flaky one | quarantine endpoints |
+| **Apply a fix plan** | On a cluster's failure, the validated patch as a previewed workspace edit, then its verify command in a terminal | `GET /api/failure-clusters/:id/fix-plan` |
+| **Copy context for agent** | On a failing line, one block with the failure, its clue, the healing, the fix plan and the verify command, as Piwi Picker does for an element | the same data as the Problems panel |
+| **Locator completion** | Inside `page.getBy…(`, the chains the suite already uses on the page this test visits, most used first, with their stability | locator index with pages (`uses[].pages`), `assessLocatorChain` |
+| **Flaky lens** | Above a flaky test: its score, wasted minutes and root-cause class | the flaky list |
+| **Known issue** | On a failing test with a linked ticket, the ticket and its status on hover; **File an issue** otherwise | `entity_links`, `create_issue` |
+| **Page summary** | On a page file (Nuxt `pages/**` and the other conventions the Test Map knows): the tests acting on that page, its locators, and those rated brittle | `filePageTarget`, the locator index's page keys |
 | **Timeout advice** | On a test with a stale `test.slow()` or a timeout far above its p95, a quick fix with the suggested value and the time it saves | `GET /api/projects/:id/timeout-opportunities` |
+| **Quarantine** | Above a quarantined test: days in quarantine and the passing streak toward release, with **Release**; **Quarantine** on a flaky one | quarantine endpoints |
+| **Function completion** | The project's page-object methods and helpers whose URL pattern matches the page, as snippets with their parameters | function catalog (`GET /api/projects/:id/test-functions`) |
+| **Annotations** | Completion for `piwi:owner` (CODEOWNERS entries), `piwi:feature` (the project's features), `piwi:priority`, and tags already in use | `CODEOWNERS` in the workspace, `list_tags`, the Test Map's feature nodes |
 | **Selections** | Which saved selections include this test; **Run selection…** from the command palette | selections resolve and preview |
 
-### While changing application code
+### Priority 3 — worth a piece of new plumbing
 
-| Opportunity | What the developer sees | Data |
+Each needs something the first release does not have: pairing with the browser, a mapping from files to Test Map
+nodes, or a write key.
+
+| Opportunity | What the developer sees | Needs |
 |---|---|---|
-| **Page summary** | On a page file (Nuxt `pages/**`, and the other conventions the Test Map knows): the tests acting on that page, its locators, and those rated brittle | `filePageTarget`, the locator index's page keys |
-| **Handler summary** | On an API handler: the tests that call its route, its p90 in tests, whether a probe found a fault no test noticed | `handled-by` and `reaches` edges, slow endpoints, probes |
-| **Gaps where they are** | On a page or handler with open scenario gaps: the gap, and **Draft the missing test**, which opens the draft as a new spec | `list_scenario_gaps`, `draft_scenario` |
-| **Uncovered changes** | A gutter mark on changed lines of files no test reaches, before the pull request says so | code reach (Track B), change coverage |
+| **Send from Piwi Picker** | A locator picked, or a flow recorded, in the browser lands at the cursor, rendered with the project's settings by the steps converter (`format: 'body'`) | a local endpoint in each editor (VS Code: an HTTP listener in the extension host; JetBrains: a handler on the IDE's built-in server), paired once with a token; PR 8 |
+| **Gaps where they are** | On a page or handler with open scenario gaps: the gap, and **Draft the missing test**, which opens the draft as a new spec | `list_scenario_gaps`, `draft_scenario`, and the service mapping page and handler files to Test Map nodes |
+| **Handler summary** | On an API handler: the tests that call its route, its p90 in tests, whether a probe found a fault no test noticed | `handled-by` and `reaches` edges (instrumented or conventional handlers), slow endpoints, probes |
+| **AI steps** | On `page.piwiLocator('the email field')`, the committed resolution, its stability and last heal on hover; a quick fix inlines it as a plain locator | the committed `__piwi__` artifacts in the workspace, `piwi ai check` |
+| **Register a function** | On a page-object method, **Add to the function catalog**, so recordings and the converter call it | `POST /api/projects/:id/test-functions` (a reporter key), or the AI extraction endpoint |
+
+### Priority 4 — with the plans they come from
+
+These arrive with their own features and cost the editors little once those exist.
+
+| Opportunity | What the developer sees | Comes with |
+|---|---|---|
+| **Uncovered changes** | A gutter mark on changed lines of files no test reaches, before the pull request says so | code reach (Track B) |
+| **Bug reports** | The project's open reports; **Add as test** renders a report's committed spec into the bugs folder; **Run with Playwright** in the desktop app; above a test with `piwi:bug 37`, the report's status, its ticket, and "looks fixed" | [`bug-report-to-failing-test.md`](bug-report-to-failing-test.md) |
+| **Flake Lab** | On the flaky lens: the top suspect, **Reproduce** (`piwi flake`) and **Verify fix** | [`flake-lab.md`](flake-lab.md) |
 | **API shapes** | On a handler or a `fetch('/api/cart')` call: the response shape the tests observed, its history, **Copy as TypeScript type**; a warning when an edit removes a field tests saw | [`api-contract-drift.md`](api-contract-drift.md) |
-
-### With a bug report
-
-| Opportunity | What the developer sees | Data |
-|---|---|---|
-| **Bug reports view** | The open reports of the project, with their steps and evidence | [`bug-report-to-failing-test.md`](bug-report-to-failing-test.md) |
-| **Write the failing test** | **Add as test** renders the report's committed spec into the bugs folder with the converter | the steps converter, `piwi bug <id> --write` |
-| **Run it** | **Run with Playwright** in the desktop app, or in the editor's terminal | desktop repro requests |
-| **The spec knows its bug** | Above a test with `piwi:bug 37`: the report's status, ticket, and "looks fixed" when its `test.fail()` spec passed | `piwi:bug`, `expectedStatus` |
-
-### For agents in the editor
-
-- **One-click MCP.** The extension offers to register Piwi's MCP server with the editor's agent (VS Code has an API for
-  extensions to provide MCP server definitions; where a JetBrains AI assistant takes MCP servers, the plugin shows the
-  entry to add), using the connection it already has.
-- **Context for a chat.** **Copy context for agent** on a failing line, as Piwi Picker does for an element: the
-  failure, its clue, the healing, the fix plan and the verify command in one block.
-
-### What to add to the first release
-
-Five of these reuse data the first release already fetches or that exists today, and cover the moments developers
-reach most often: **CI failures in the Problems panel**, **Heal in place**, **Open the evidence**, the **Status bar**,
-and **One-click MCP**. They join PR 6 (VS Code) and PR 7 (JetBrains). **Send from Piwi Picker** follows as its own PR,
-since it needs pairing on both sides. The rest arrive with the features they come from.
 
 ## Delivery
 
@@ -432,12 +424,13 @@ since it needs pairing on both sides. The rest arrive with the features they com
 | 3 | Server: patches kept in change coverage, `locatorBreaks`, the PR section, the `diff-rename` healing source, `predict_locator_breaks` MCP tool, skill step | 1 |
 | 4 | Code reach: capture, source-map decoding in core, attachment and wire, payload, `code_reach`, endpoints, impact and change coverage | — |
 | 5 | Editor service: `packages/editor`, `locator-alternatives` endpoint, the catalog `file` filter | 1, 4 for file summaries |
-| 6 | VS Code extension, with CI failures in the Problems panel, heal in place, the evidence, the status bar and one-click MCP | 5 |
+| 6 | VS Code extension, with the priority 1 items: CI failures in the Problems panel, heal in place, the evidence, the status bar and one-click MCP | 5 |
 | 7 | JetBrains plugin, with the same five | 5 |
 | 8 | Send from Piwi Picker: pairing, the editors' local endpoints, the extension's **Send to editor** | 6, 7 |
 
 PRs 1–3 ship a working preflight with no capture change. PR 4 is independent of 1–3. Each PR carries its docs. The
-rest of [What the editors can grow into](#what-the-editors-can-grow-into) lands with the feature each item comes from.
+priority 2 items follow in that order; [priority 3 and 4](#what-the-editors-can-grow-into) land with their plumbing or
+the feature they come from.
 
 ## File-by-file checklist
 
