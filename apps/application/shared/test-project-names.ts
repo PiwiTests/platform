@@ -174,6 +174,8 @@ export const PROJECT = {
   UI_TEST: 'ui-test-project',
   UNRELATED: 'unrelated',
   UPLOAD_TEST: 'upload-test-project',
+  URL_PATTERNS_AUTH: 'url-patterns-auth-test',
+  URL_PATTERNS: 'url-patterns-test',
 } as const;
 
 type ProjectValue = (typeof PROJECT)[keyof typeof PROJECT];

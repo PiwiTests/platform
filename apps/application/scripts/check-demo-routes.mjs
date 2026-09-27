@@ -68,6 +68,12 @@ const INTENTIONALLY_EXCLUDED = new Set([
   'GET /api/ai/claude-cli/status',
   'POST /api/ai/claude-cli/login',
   'POST /api/ai/claude-cli/logout',
+  // Connecting Piwi Picker: a device authorization that ends in an API key for
+  // an account. The demo has no server for an extension to reach and no keys.
+  'POST /api/extension/connect',
+  'POST /api/extension/connect/token',
+  'GET /api/extension/connect/request',
+  'POST /api/extension/connect/decision',
   // DOM-snapshot picker frame: serves a sandboxed HTML document over its own
   // CSP, not JSON — the browser demo renders snapshots through its own handler.
   'GET /api/test-run-cases/:id/dom-snapshot-frame',

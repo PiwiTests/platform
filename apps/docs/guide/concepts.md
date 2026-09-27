@@ -314,6 +314,13 @@ The controls (role and accessible name) and links the reporter records on each v
 Test Map knows what a page offers beyond what the tests clicked. Field values are never recorded. Off by default:
 turn it on with `capturePageInventory`.
 
+### URL pattern
+
+A glob over a page's whole address (`*` within one part of the path, `**` across parts) that ties the pages of a site
+to a project, with an optional environment and branch. Each project keeps its own list, and the browser extension
+reads them to know which project the page it is on belongs to. See
+[Extension connection](/features/extension-connection#url-patterns).
+
 ## Where each concept lives in the UI
 
 | Concept | URL | Docs |

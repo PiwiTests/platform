@@ -28,7 +28,8 @@ export default defineNuxtRouteMiddleware(async (to) => {
     const result = await fetchUser();
 
     if (!result.authenticated) {
-      return navigateTo('/login');
+      // Signing in comes back to the page asked for (`login.vue` reads `redirect`).
+      return navigateTo(to.fullPath === '/' ? '/login' : { path: '/login', query: { redirect: to.fullPath } });
     }
   }
 

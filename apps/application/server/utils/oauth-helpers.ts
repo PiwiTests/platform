@@ -42,6 +42,16 @@ export function resolvePublicBaseUrl(siteUrl: string | undefined, requestOrigin:
   return requestOrigin.replace(/\/+$/, '');
 }
 
+/**
+ * A path to land on after signing in: same-origin only (`/…`, never `//host`
+ * or a backslash a browser reads as one), at most 500 characters. Null otherwise.
+ */
+export function safeReturnPath(value: unknown): string | null {
+  if (typeof value !== 'string' || value.length > 500) return null;
+  if (!value.startsWith('/') || value.startsWith('//') || value.includes('\\')) return null;
+  return value;
+}
+
 export function buildRedirectUri(baseUrl: string, provider: string): string {
   return `${baseUrl}/api/auth/oauth/${provider}/callback`;
 }

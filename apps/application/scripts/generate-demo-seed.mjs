@@ -204,6 +204,20 @@ const PROJECT_TAGS = [
   { project_id: 5, tag_id: 3 }, // web-dashboard → critical
 ];
 
+// Where e2e-checkout's application runs, for the browser extension (millisecond timestamps).
+const URL_PATTERN_TIME = new Date('2025-04-20T09:00:00Z').getTime();
+const PROJECT_URL_PATTERNS = [
+  { pattern: 'https://staging.checkout.example.com/**', environment: 'staging', branch: 'develop' },
+  { pattern: 'https://checkout.example.com/**', environment: 'production', branch: null },
+].map((p, position) => ({
+  id: position + 1,
+  project_id: 1,
+  ...p,
+  position,
+  created_at: URL_PATTERN_TIME,
+  updated_at: URL_PATTERN_TIME,
+}));
+
 // ── Timeline markers (dated project events overlaid on the trend charts) ────
 // Dated within project 1's run window (newest run 2025-04-25T08:30Z, ~8h apart)
 // so they land on the charts. Timestamps are rebased to load time like the runs.
@@ -2847,6 +2861,7 @@ const REBASE_SQL = [
   `UPDATE tags SET created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
   `UPDATE projects SET created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
   `UPDATE markers SET occurred_at = occurred_at + ${D}, created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
+  `UPDATE project_url_patterns SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS};`,
   `UPDATE users SET created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
   `UPDATE app_settings SET updated_at = updated_at + ${D};`,
   `UPDATE test_selections SET created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
@@ -3694,6 +3709,9 @@ const lines = [
   '',
   '-- Project-tag associations',
   insert('project_tags', PROJECT_TAGS),
+  '',
+  '-- Project URL patterns (browser extension)',
+  insert('project_url_patterns', PROJECT_URL_PATTERNS),
   '',
   '-- Timeline markers',
   insert('markers', MARKERS),

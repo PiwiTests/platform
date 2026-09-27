@@ -303,6 +303,16 @@ import {
 } from './ai';
 import { apiGetAdminStats, apiGetStorageAnalysis } from './admin';
 import { demoHttpError } from './http-error';
+import {
+  addProjectUrlPattern,
+  listProjectUrlPatterns,
+  listVisibleUrlPatterns,
+  replaceProjectUrlPatterns,
+  suggestUrlPatterns,
+  urlPatternInputSchema,
+  urlPatternListSchema,
+  type UrlPatternWriteResult,
+} from '#shared/handlers/url-patterns';
 import { apiDeleteTestRun } from './test-runs';
 import { apiCheckDemoImport, apiDemoImport } from './import';
 import {
@@ -407,6 +417,14 @@ async function assertDemoEntityScope(
   }
   if (projectId === null) throw demoHttpError(404, 'Not found');
   assertDemoScope(ctx, projectId);
+}
+
+/** The items of a successful URL-pattern write, or the HTTP error the server answers a refused one with. */
+function demoUrlPatternItems(result: UrlPatternWriteResult) {
+  if (result.ok) return result.items;
+  if (result.reason === 'not-found') throw demoHttpError(404, 'Project not found');
+  if (result.reason === 'too-many') throw demoHttpError(400, 'A project has at most 100 URL patterns');
+  throw demoHttpError(409, `The project already has the pattern ${result.pattern}`);
 }
 
 const routes: RouteEntry[] = [
@@ -2333,6 +2351,54 @@ const routes: RouteEntry[] = [
     handler: async (m, _, __, ctx) => {
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
       return getProjectCapabilities(await getDemoDb(), +m[1]!);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/url-patterns$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      return { items: await listProjectUrlPatterns(await getDemoDb(), +m[1]!) };
+    },
+  },
+  {
+    method: 'PUT',
+    pattern: /^\/api\/projects\/(\d+)\/url-patterns$/,
+    handler: async (m, body, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const parsed = urlPatternListSchema.safeParse(body);
+      if (!parsed.success) throw demoHttpError(400, 'Invalid request body');
+      return {
+        items: demoUrlPatternItems(await replaceProjectUrlPatterns(await getDemoDb(), +m[1]!, parsed.data.items)),
+      };
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/projects\/(\d+)\/url-patterns$/,
+    handler: async (m, body, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const parsed = urlPatternInputSchema.safeParse(body);
+      if (!parsed.success) throw demoHttpError(400, 'Invalid request body');
+      return { items: demoUrlPatternItems(await addProjectUrlPattern(await getDemoDb(), +m[1]!, parsed.data)) };
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/url-patterns\/suggestions$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      return { items: await suggestUrlPatterns(await getDemoDb(), +m[1]!) };
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/extension\/url-patterns$/,
+    handler: async (_m, _b, _q, ctx) => {
+      const db = await getDemoDb();
+      const scope = ctx?.scope ?? 'all';
+      const [items, menu] = await Promise.all([listVisibleUrlPatterns(db, scope), getProjectMenu(db, scope)]);
+      return { user: null, items, projects: menu.map((p) => ({ id: p.id, label: p.label || p.name, canEdit: true })) };
     },
   },
   {

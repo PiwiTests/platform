@@ -369,6 +369,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/extension',
       },
       {
+        title: 'Extension connection',
+        summary:
+          'Connect Piwi Picker to your instance in one click, and keep the URL patterns that tell it which project a page belongs to on the instance, for the whole team.',
+        needs: ['extension'],
+        where: 'Browser extension → Settings; Project → Settings → Browser extension URLs',
+        doc: 'features/extension-connection',
+      },
+      {
         title: 'Tested elements',
         summary:
           'On a live page, the elements your tests reach and through which tests, the buttons, links and fields none reaches, and the brittle locators to replace.',

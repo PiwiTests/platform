@@ -845,6 +845,11 @@ const SCENES = [
       what: 'a failure cluster’s occurrences over time',
     },
     { shot: 'project-targets', route: '/projects/1?tab=settings', what: 'the project targets form' },
+    {
+      shot: 'project-url-patterns',
+      route: '/projects/1?tab=settings',
+      what: 'the browser extension URL patterns of a project, with the origins its suite visited',
+    },
   ].flatMap(({ shot, route, what }) =>
     [
       { suffix: '', width: 1280 },
@@ -2566,6 +2571,25 @@ const SCENES = [
       await shoot('narrow', { of: '[data-shot="setup-ladder"]', pad: 8 });
     },
   },
+  ...[
+    { name: 'extension-connect', width: 1280 },
+    { name: 'extension-connect-mobile', width: 375 },
+  ].map(({ name, width }) => ({
+    name,
+    description: `The page Piwi Picker opens to be allowed, with the connecting browser and its code, at ${width} px`,
+    async prepare({ base, request }) {
+      const res = await request.post(`${base}/api/extension/connect`, { data: { browser: 'Chrome', os: 'Windows' } });
+      this.userCode = (await res.json()).userCode;
+    },
+    route: '/',
+    viewport: { width, height: 900 },
+    of: '[data-shot="extension-connect"]',
+    async run({ shoot, settle, goto }) {
+      await goto(`/extension/connect?code=${this.userCode}`);
+      await settle();
+      await shoot();
+    },
+  })),
   {
     name: 'evidence-fixtures-footer',
     description: 'Execution page evidence card for a project with no captured fixtures: the footer names them',

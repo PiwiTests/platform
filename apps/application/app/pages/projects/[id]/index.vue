@@ -1552,6 +1552,8 @@ const moreMenuItems = computed(() => {
             @saved="refresh()"
           />
 
+          <ProjectUrlPatternsForm v-if="canManage" :project-id="Number(projectId)" />
+
           <!-- Issue-tracker binding: how this project's failures reach Jira. -->
           <ProjectIntegrationSettings v-if="canManage" :project-id="Number(projectId)" />
 
