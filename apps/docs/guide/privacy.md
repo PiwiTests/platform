@@ -75,8 +75,8 @@ Some data is skipped at the source, so it never exists to leak:
 
 Credentials you store in the dashboard — AI API keys, SCM tokens, webhook signing secrets — are
 encrypted with AES-256-GCM using `PIWI_SECRET_KEY`. **Set it in production.** With the variable unset,
-Piwi falls back to a hardcoded default string that is published in this repository — the values are
-encrypted, but against a key anyone can look up, so treat that as no protection at all.
+or set to the development default published in this repository, the dashboard refuses to save a
+credential and says which variable to set. Generate a key with:
 
 ```bash
 node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
