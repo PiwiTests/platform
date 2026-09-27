@@ -264,6 +264,21 @@
   "popup_cannotRun": {
     "message": "Piwi Picker ne peut pas agir sur cette page : les navigateurs protègent leurs propres pages et les boutiques d’extensions."
   },
+  "popup_tabShowsError": {
+    "message": "Cet onglet affiche une page d’erreur au lieu du site. Le site est-il démarré ? Rechargez l’onglet une fois qu’il l’est, puis réessayez."
+  },
+  "popup_blockedByPolicy": {
+    "message": "Les réglages du navigateur de votre organisation interdisent les extensions sur ce site."
+  },
+  "popup_cannotRunBecause": {
+    "message": "Piwi Picker ne peut pas agir sur cette page. Le navigateur indique : $reason$",
+    "placeholders": {
+      "reason": {
+        "content": "$1",
+        "example": "Cannot access contents of the page."
+      }
+    }
+  },
   "popup_stopRecording": {
     "message": "Arrêter l’enregistrement ($count$)",
     "placeholders": {

@@ -333,6 +333,24 @@
     "message": "Piwi Picker can’t run on this page: browsers keep their own pages and extension stores out of reach.",
     "description": "Popup error, on a browser page such as the settings or an extension store."
   },
+  "popup_tabShowsError": {
+    "message": "This tab shows an error page instead of the site. Is the site running? Reload the tab once it is, then try again.",
+    "description": "Popup error when the tab shows the browser's error page (for example a local dev server that is not running), so no tool can open in it."
+  },
+  "popup_blockedByPolicy": {
+    "message": "Your organization’s browser settings keep extensions off this site.",
+    "description": "Popup error when an enterprise policy forbids extensions on the tab's site."
+  },
+  "popup_cannotRunBecause": {
+    "message": "Piwi Picker can’t run on this page. The browser says: $reason$",
+    "description": "Popup error for any other reason the browser gives for refusing to open a tool in the tab. $reason$ is the browser's own message, in English.",
+    "placeholders": {
+      "reason": {
+        "content": "$1",
+        "example": "Cannot access contents of the page."
+      }
+    }
+  },
   "popup_stopRecording": {
     "message": "Stop recording ($count$)",
     "description": "Popup tile during a recording. $count$ is the number of steps recorded.",
