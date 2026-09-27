@@ -270,6 +270,15 @@
   "popup_blockedByPolicy": {
     "message": "Les réglages du navigateur de votre organisation interdisent les extensions sur ce site."
   },
+  "popup_buildIncomplete": {
+    "message": "Cette version de Piwi Picker n’a pas de fichier $file$. Reconstruisez l’extension, puis rechargez-la dans la page des extensions du navigateur.",
+    "placeholders": {
+      "file": {
+        "content": "$1",
+        "example": "replay-panel.js"
+      }
+    }
+  },
   "popup_cannotRunBecause": {
     "message": "Piwi Picker ne peut pas agir sur cette page. Le navigateur indique : $reason$",
     "placeholders": {

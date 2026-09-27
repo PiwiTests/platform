@@ -323,7 +323,7 @@ instead of needing a live browser for everything.
 | Command | Purpose |
 |---|---|
 | `npm run extension:build` | Build `dist/` (content scripts, background, popup, options page, manifest, icons, `_locales`) |
-| `npm run extension:dev` | Same build, re-run on every change to `src/`, `public/`, `popup.html`, `options.html`, or `manifest.json` |
+| `npm run extension:dev` | Same build, re-run on every change to `src/`, `public/`, `popup.html`, `options.html`, `manifest.json`, `scripts/build.mjs` (reloaded before the rebuild), or the sources of `@piwitests/core` and `@piwitests/picker-dom` |
 | `npm run extension:build -- --pseudo` | Same build with a pseudo-localized English catalog, to spot text that bypasses `t()` or clips (never released) |
 | `npm run extension:build:release` | Reproducible build: stamps the version instead of the build time into every bundle |
 | `npm run extension:zip` | Release build, then the store-ready zip, the source zip Firefox AMO requires, and the AMO listing metadata (see `PUBLISHING.md`) |
