@@ -22,7 +22,7 @@ import { computeRegressionContext } from './regression-context';
 import { normalizeGitUrl } from './scm/git-url';
 import { inlineCasePayloads } from './case-payloads';
 import { createScmProvider, detectScmProvider, resolveScmToken } from './scm';
-import { compareUrl } from '#shared/scm-urls';
+import { compareUrl, isPlainRevision } from '#shared/scm-urls';
 import { MAX_RAW_DIFF_BYTES } from './scm/ScmProvider';
 import type { ScmChanges, ChangedFile } from './scm/ScmProvider';
 import type {
@@ -2290,11 +2290,14 @@ async function scmInvestigationSections(
 
   // The range compared, whether or not a provider can read it: the page links it
   // on the host and offers the local `git log` when the diff cannot be fetched.
+  // A pinned baseline is free text, so the link and the command are built only
+  // from revisions that are plain SHAs or ref names.
   const setRange = (repositoryUrl: string | null, fromSha: string, toSha: string) => {
+    const usable = isPlainRevision(fromSha) && isPlainRevision(toSha);
     scmCov.repositoryUrl = repositoryUrl;
     scmCov.range = { from: fromSha.slice(0, 7), to: toSha.slice(0, 7) };
-    scmCov.compareUrl = repositoryUrl ? compareUrl(repositoryUrl, fromSha, toSha) : null;
-    scmCov.gitCommand = `git log --oneline ${fromSha}..${toSha}`;
+    scmCov.compareUrl = usable && repositoryUrl ? compareUrl(repositoryUrl, fromSha, toSha) : null;
+    scmCov.gitCommand = usable ? `git log --oneline ${fromSha}..${toSha}` : null;
   };
   scmCov.hasToken = (await resolveScmToken(db, cluster.projectId).catch(() => null)) != null;
 
@@ -2409,7 +2412,11 @@ async function scmInvestigationSections(
       const repositoryUrl = normalizeGitUrl(remoteUrl);
 
       scmCov.hasCommitRange = Boolean(currentCommit && repositoryUrl);
-      if (currentCommit) setRange(repositoryUrl, baseCommitOverride, currentCommit);
+      if (currentCommit) {
+        scmCov.baselineKind = 'manual';
+        scmCov.baseCommitUsed = baseCommitOverride;
+        setRange(repositoryUrl, baseCommitOverride, currentCommit);
+      }
 
       if (currentCommit && repositoryUrl) {
         scmCov.provider = detectScmProvider(repositoryUrl);
@@ -2490,11 +2497,10 @@ async function scmInvestigationSections(
         const remoteUrl: string | null = currMeta?.scm?.remoteUrl ?? lastPassMeta?.scm?.remoteUrl ?? null;
         const repositoryUrl = normalizeGitUrl(remoteUrl);
 
-        if (lastPassCommit && currentCommit && lastPassCommit !== currentCommit) {
-          setRange(repositoryUrl, lastPassCommit, currentCommit);
-        } else if (lastPassCommit && lastPassCommit === currentCommit) {
+        if (lastPassCommit && currentCommit) {
           scmCov.baselineKind = 'test-green';
-          scmCov.range = { from: currentCommit.slice(0, 7), to: currentCommit.slice(0, 7) };
+          if (lastPassCommit !== currentCommit) setRange(repositoryUrl, lastPassCommit, currentCommit);
+          else scmCov.range = { from: currentCommit.slice(0, 7), to: currentCommit.slice(0, 7) };
         }
         if (lastPassCommit && currentCommit && repositoryUrl && lastPassCommit !== currentCommit) {
           scmCov.baselineKind = 'test-green';

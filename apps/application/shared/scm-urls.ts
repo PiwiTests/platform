@@ -29,6 +29,15 @@ export function detectScmHost(repositoryUrl: string | null | undefined): ScmProv
   return null;
 }
 
+/**
+ * Whether a revision is a plain commit SHA or ref name (`a1b2c3d`, `main`,
+ * `release/1.2`): letters, digits, `.`, `_`, `/` and `-`, not starting with `-`
+ * and without `..` — safe to put in a URL path or a shell command as it is.
+ */
+export function isPlainRevision(revision: string): boolean {
+  return /^[A-Za-z0-9][\w./-]{0,199}$/.test(revision) && !revision.includes('..');
+}
+
 /** Base repository URL without a trailing slash, or null when the host is unknown. */
 function repoBase(repositoryUrl: string): { host: ScmProviderName; base: string } | null {
   const host = detectScmHost(repositoryUrl);

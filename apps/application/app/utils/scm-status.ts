@@ -58,8 +58,9 @@ function hostName(url: string | null | undefined): string | null {
 /** What the range is counted from, as a clause: `since the last passing run`. */
 function rangeOrigin(scm: ScmCoverage): string {
   if (scm.baselineKind === 'manual') return 'from the baseline you picked';
-  if (scm.baselineKind === 'test-green' || (!scm.hasLastGreen && scm.baseCommitUsed))
-    return 'since this test last passed';
+  // Without a project-wide passing run, a range that is not a picked baseline
+  // starts at the last run this test passed in.
+  if (scm.baselineKind === 'test-green' || !scm.hasLastGreen) return 'since this test last passed';
   return 'since the last passing run';
 }
 

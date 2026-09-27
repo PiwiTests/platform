@@ -99,6 +99,14 @@ describe('describeScmStatus', () => {
     expect(status.text).toBe('No file changed since the last passing run (a1b2c3d..e4f5a6b)');
   });
 
+  test('a per-test baseline without a repository names the test’s last pass', () => {
+    const status = describeScmStatus(
+      scm({ hasLastGreen: false, baselineKind: 'test-green', provider: null, repositoryUrl: null, compareUrl: null }),
+    );
+    expect(status.kind).toBe('no-repository');
+    expect(status.text).toBe('a1b2c3d..e4f5a6b since this test last passed');
+  });
+
   test('a picked baseline is named as such', () => {
     const status = describeScmStatus(scm({ baseCommitUsed: 'a1b2c3d', baselineKind: 'manual', provider: null }));
     expect(status.text).toBe('a1b2c3d..e4f5a6b from the baseline you picked');
