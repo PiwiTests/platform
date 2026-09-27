@@ -38,7 +38,7 @@ test('homepage loads', async ({ page }) => {
 })
 ```
 
-That's the entire setup — there is nothing to start, wrap, or await inside your tests.
+That's the entire setup: nothing to start, wrap, or await inside your tests.
 
 ## What gets captured
 
@@ -58,7 +58,7 @@ On a failure the reporter also reads the **call stack's in-project source**: the
 
 ## With and without the fixtures
 
-The reporter degrades gracefully — nothing breaks without the fixtures. This is exactly what you give up:
+Nothing breaks without the fixtures. This is what you give up:
 
 | Dashboard feature | Reporter only | Reporter + fixtures |
 |-------------------|:-:|:-:|
@@ -118,7 +118,7 @@ Two rules:
 Capture is designed to never fail or noticeably slow down a test:
 
 - Per call site: one DOM read, and a bounded ARIA snapshot (500 ms deadline) only when the element's attributes don't
-  already settle its accessible name. Actions and passing assertions alike pay this at most once per call site per test.
+  already settle its accessible name.
 - At teardown: draining in-flight captures is capped at 2 seconds.
 - A capture that can't complete (mid-navigation, detached element) is dropped silently; it never throws into your test.
 - Capture adds no steps to the report or trace, and errors, step locations and stacks name your own call.
@@ -142,7 +142,7 @@ If that request fails, the set stays empty and **nothing is sampled**. Turn it o
 
 ## Troubleshooting
 
-- **Data missing for some specs only** — those specs import `test` from `@playwright/test` instead of your fixtures file. Capture is per-`test`-object; the import is the switch.
+- **Data missing for some specs only** — those specs import `test` from `@playwright/test` instead of your fixtures file.
 - **No fixture data at all**: check that `collectPerformanceMetrics` is not `false`, and that tests leave `about:blank`.
 - **ARIA snapshot or locator healing missing**: the same causes, or `captureLocators` is off.
 - **An evidence card says "not captured"**: that project has never had the fixtures active; the in-app `/setup` checklist, which each empty card links, says what to switch on. A card that reads *nothing happened* means the fixtures ran and this execution produced nothing. With an uploaded trace, the console, network and ARIA cards are recovered from it and marked *derived from the trace*.
