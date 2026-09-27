@@ -10,6 +10,7 @@ import { getConnectionSettings, isConnected, type ProjectMapping } from '../shar
 import { getActiveProjectOverride, setActiveProjectOverride, resolveActiveProject } from '../shared/active-project.js';
 import { workerState } from '../shared/worker-status.js';
 import { initI18n, localizeDocument, t, tn, tNodes, formatNumber } from '../shared/i18n.js';
+import { injectionFailureText } from '../shared/injection-failure.js';
 
 await initI18n();
 localizeDocument();
@@ -45,8 +46,8 @@ async function inject(file: string): Promise<void> {
   try {
     await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: [file] });
     window.close();
-  } catch {
-    statusEl.textContent = t('popup_cannotRun');
+  } catch (error) {
+    statusEl.textContent = injectionFailureText(error, tab.url);
   }
 }
 
