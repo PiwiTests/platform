@@ -289,6 +289,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/uncovered-changes',
       },
       {
+        title: 'Code reach',
+        summary:
+          'Which tests execute each application source file, from JavaScript coverage on a scheduled run: feeds impact-from-diff, uncovered changes and preflight.',
+        needs: ['fixtures'],
+        where: 'Reporter option captureCodeReach',
+        doc: 'features/code-reach',
+      },
+      {
         title: 'Probes',
         summary:
           'Whether a passing test would notice a fault behind a request: client probes run through the capture fixtures; server probes inject the fault inside the server, needing a backend package.',

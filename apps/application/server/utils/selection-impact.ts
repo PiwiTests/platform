@@ -2,22 +2,25 @@
  * Impact-from-diff — map a set of changed files to the tests they affect,
  * resolved through observed edges rather than a build-time dependency graph.
  *
- * Two edges, both cheap and config-free:
+ * Three edges, all cheap and config-free:
  *  1. **Direct** — a changed file that IS a test file → the tests defined in it.
  *  2. **Reach** — a changed support file (page object, helper, app module) that
  *     a test's most recent execution actually ran through, per its captured
  *     `test_source_frames`.
+ *  3. **Code reach** — a changed application file whose functions a test
+ *     executed (`code_reach`), or the handler file of a route a test called.
  *
  * Honest by construction: it degrades in the safe direction. A changed *source*
  * file that maps to no test can't be ruled out, so the selection widens to the
- * full suite (with a warning) rather than silently skipping it. Route/page-level
- * mapping (server routes → tests that hit them) needs a per-project config and
- * is intentionally not attempted here.
+ * full suite (with a warning) rather than silently skipping it. The exception is
+ * a file in a directory code reach has recorded files in: coverage would have
+ * seen it run, so it is listed as unreached instead.
  */
 import { eq, sql } from 'drizzle-orm';
 import { testCases, testRunsCases } from '../database/schema';
 import type { DrizzleDB } from '#shared/handlers/db';
 import { resolveCasePayloadContents } from './case-payloads';
+import { codePathsMatch, loadCodeReachPairs } from './code-reach';
 import { resolveSelectionDefinition } from '#shared/handlers/selections';
 import type { ResolvedSelection, SelectionDefinition, SelectionFormat, SelectionRankBy } from '#shared/selection';
 
@@ -116,6 +119,8 @@ export interface ImpactResolution extends ResolvedSelection {
     widened: boolean;
     /** Source files that mapped to no test (capped). */
     unmappedSourceFiles: string[];
+    /** Source files in a directory code reach covers that no test reached (capped): they do not widen. */
+    unreachedFiles?: string[];
   };
 }
 
@@ -137,6 +142,7 @@ export async function resolveImpact(
     .from(testCases)
     .where(eq(testCases.projectId, projectId));
   const reach = await loadSourceReach(db, projectId);
+  const codeReach = await loadCodeReachPairs(db, projectId);
 
   const matched = new Set<number>();
   const mappedFiles = new Set<string>();
@@ -159,7 +165,28 @@ export async function resolveImpact(
     }
   }
 
-  const unmappedSource = files.filter((f) => !mappedFiles.has(f) && SOURCE_EXTENSIONS.has(fileExtension(f)));
+  for (const pair of codeReach) {
+    for (const changed of files) {
+      if (codePathsMatch(pair.file, changed)) {
+        matched.add(pair.testCaseId);
+        mappedFiles.add(changed);
+      }
+    }
+  }
+
+  // Directories code reach has recorded files in: a source file there that no
+  // test reached would have shown up had a test run it.
+  const dirOf = (file: string) => (file.includes('/') ? file.slice(0, file.lastIndexOf('/')) : '');
+  const coveredDirs = [
+    ...new Set(codeReach.filter((p) => p.origin === 'client').map((p) => dirOf(normalizePath(p.file)))),
+  ].filter(Boolean);
+  const inCoveredDir = (file: string) => {
+    const dir = dirOf(file);
+    return !!dir && coveredDirs.some((covered) => dir === covered || dir.startsWith(covered + '/'));
+  };
+  const unmappedAll = files.filter((f) => !mappedFiles.has(f) && SOURCE_EXTENSIONS.has(fileExtension(f)));
+  const unreached = unmappedAll.filter(inCoveredDir);
+  const unmappedSource = unmappedAll.filter((f) => !inCoveredDir(f));
   const widened = unmappedSource.length > 0;
 
   const definition: SelectionDefinition = widened ? {} : { include: [{ ids: [...matched] }] };
@@ -186,6 +213,7 @@ export async function resolveImpact(
       mappedFiles: mappedFiles.size,
       widened,
       unmappedSourceFiles: unmappedSource.slice(0, 50),
+      ...(unreached.length ? { unreachedFiles: unreached.slice(0, 50) } : {}),
     },
   };
 }

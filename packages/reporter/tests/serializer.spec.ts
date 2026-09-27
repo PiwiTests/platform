@@ -239,6 +239,7 @@ describe('toWireTestCase', () => {
       'attempts',
       'blockedBy',
       'browser',
+      'codeReach',
       'consoleLogs',
       'dialogs',
       'didNotRunReason',

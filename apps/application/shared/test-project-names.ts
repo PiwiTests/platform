@@ -31,6 +31,7 @@ export const PROJECT = {
   CLUSTER_NAMING: 'cluster-naming-test',
   CLUSTER_PAGE_LAYOUT: 'cluster-page-layout-test',
   CLUSTER_SUGGEST: 'cluster-suggest-test',
+  CODE_REACH: 'code-reach-test',
   // Deliberately does not contain "projects" (case-insensitive substring) — the
   // sidebar's static "Projects" nav link is matched with getByRole('link', {
   // name: 'Projects' }) (no exact:true) elsewhere in the suite, which matches

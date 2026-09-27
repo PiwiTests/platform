@@ -7,8 +7,8 @@ executes, so any file can answer "which tests reach me?". **Track C** is one edi
 **Tracks D and E** are thin clients for VS Code and the JetBrains IDEs.
 
 **Status.** Proposed 2026-09-27. Being built on `claude/suite-in-the-editor`, in the Delivery order: PR 1 (core),
-PR 2 (`piwi preflight`) and PR 3 (the pull-request section, `diff-rename` healing, `predict_locator_breaks`) are
-built. What changed while building is under [As built](#as-built). Track A needs no capture change. Track B adds an opt-in capture, one
+PR 2 (`piwi preflight`), PR 3 (the pull-request section, `diff-rename` healing, `predict_locator_breaks`) and PR 4
+(code reach) are built. What changed while building is under [As built](#as-built). Track A needs no capture change. Track B adds an opt-in capture, one
 payload column on `test_runs_cases` and one table. Tracks C–E add a workspace package, a VS Code extension and a
 JetBrains plugin, and a commitlint scope (`ide`); a catalog of what the editors can do after their first release
 follows the tracks. New wire fields, endpoints, a CLI command and a published extension
@@ -461,7 +461,7 @@ the feature they come from.
   `packages/reporter/templates/skills/run-the-right-tests/SKILL.md`.
 - Docs: `features/pr-feedback.md`, `features/locator-healing.md`, `features/mcp.md` (generated tool list).
 
-### PR 4 — code reach
+### PR 4 — code reach (built)
 - Reporter: `public/options.ts`, `internal/config/env.ts` (`captureCodeReach`, `codeReachRoots`),
   `internal/capture/code-reach.ts` (new), `capture-fixtures.ts`, `attachments.ts`, collected and wire types,
   serializer, `public/reporter.ts`.
@@ -554,6 +554,36 @@ disagree, this section wins.
 - **`predict_locator_breaks`** is in the `healing` module with no capability gate; it returns at most 50 breaks as
   `{ branch, locators, truncated, items, nextCursor: null }`, each with `change`, `tests`, `callSites` and `edits`
   (`[{ before, after }]` string literals to replace). Diffs over 2,000,000 characters are refused.
+
+### PR 4 — code reach
+
+- **Core.** `source-map.ts` (VLQ `mappings`, index maps, `sourceMappingURL`, `data:` URLs, bundler path prefixes)
+  and `code-reach.ts` (the executed function offsets without the top level, sources through a map, the wire list:
+  repository-relative, `node_modules` dropped, sorted, 2,000 at most). `wire.ts` is unchanged: `codeReach` travels as
+  `string[]` with the other untyped per-case fields.
+- **Capture.** Coverage starts on the test's first instrumented page (awaited in the `page` fixture and the patched
+  `newPage`s, so it runs before the first navigation) and stops in the page or context close wrappers, or at flush,
+  while the page can still fetch source maps. A module served by path counts when it exists under a root and not in
+  a build directory (`dist`, `build`, `.output`, `.next`, `public`…); anything else is read through its map.
+  `codeReachRoots` reaches the fixtures as `PIWI_CODE_REACH_ROOTS` (a JSON array or a path list).
+- **Server reach is read, not stored.** `code_reach` holds client rows only (`origin` is always `client`); the
+  handler files of the routes a test reached are joined from the Test Map's `reaches` and `handled-by` edges when an
+  endpoint or impact asks, so they are never stale. The unique key is `(test_case_id, branch, file)`.
+- **The Test Map.** Client rows are also written as `file` nodes (origin `coverage`) and `reaches` edges, whatever the
+  project's Test Map setting: the graph is written on ingest for every project, as the rest of it is.
+- **Impact** adds `impact.unreachedFiles`: changed source files in a directory (or below one) where code reach
+  recorded files, reached by no test. **Change coverage** reads `code_reach` directly, on every branch.
+- **Preflight** fetches the code index and, when it holds client reach, passes it as `reach`, so the likely/possible
+  split follows D5.
+- **Endpoints.** `code-reach` answers `{ file, branch, tests: [LocatorIndexTest & { origin }] }`; `code-index`
+  answers `{ projectId, branch, files, tests, reach, builtAt, truncated }` with 20,000 files at most. Both read a
+  branch the way the locator index does (`indexTests`, `resolveBranchView` are now exported from `locator-usages.ts`).
+- **Docs.** Code reach got its own feature page and catalog entry (`features/code-reach.md`); the capture fixtures
+  page lists it in one table row.
+- **Not done.** Verification 5 (the dogfood dashboard) and 7 (`reporter:bench` with code reach on and off) need a run
+  of the dashboard's own suite and the bench; the Risks' check on Vite build, Next.js dev and webpack builds is left
+  too. Verified: Vite-style module URLs with a live Chromium (unit test and a scratch Playwright project through the
+  built fixtures), and bundles with fetched and inline maps (unit tests).
 
 ## Verification
 

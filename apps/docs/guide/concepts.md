@@ -245,6 +245,13 @@ the page. A control is reached only when triage records a covering test for it. 
 from instrumented code coverage, which is why the docs and the dashboard say *observed reach* rather than *coverage*.
 A flaky, quarantined or skipped test's reach does not count as trusted.
 
+### Code reach
+
+The application source files a test executed: those whose functions ran in the page, from Chromium's JavaScript
+coverage when [code reach](/features/code-reach) is on, and the handler files of the routes it called
+when the backend is instrumented. Observed reach at file level, never line coverage. It feeds
+[impact-from-diff](/features/test-selection#impact-from-diff) and [Uncovered changes](/features/uncovered-changes).
+
 ### Locator index
 
 The locator chains each test used in its steps, recorded per branch and per Playwright project. It answers which tests

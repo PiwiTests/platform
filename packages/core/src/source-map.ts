@@ -1,0 +1,211 @@
+/**
+ * Source maps, read just far enough to answer one question: which original
+ * file does a position in a generated script come from? Code reach uses it to
+ * turn the functions Chromium's JavaScript coverage reports as executed into
+ * the application source files they were compiled from.
+ *
+ * Supports version 3 maps (`mappings` with Base64 VLQ segments) and index maps
+ * (`sections`). Names and original lines are decoded but not kept.
+ */
+
+/** A source map as JSON. */
+export interface RawSourceMap {
+  version?: number;
+  sources?: Array<string | null>;
+  sourceRoot?: string;
+  mappings?: string;
+  sections?: Array<{ offset: { line: number; column: number }; map: RawSourceMap }>;
+}
+
+/** Answers which original source a generated position maps to. */
+export interface SourceMapLookup {
+  /** The map's sources, with `sourceRoot` applied. */
+  sources: string[];
+  /** The index in `sources` of the source a 0-based generated line and column map to; null when unmapped. */
+  sourceAt(line: number, column: number): number | null;
+}
+
+const BASE64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+const BASE64_VALUE = new Int8Array(128).fill(-1);
+for (let i = 0; i < BASE64.length; i++) BASE64_VALUE[BASE64.charCodeAt(i)] = i;
+
+/** One line's segments: generated columns ascending, each with its source index (-1: unmapped). */
+interface LineSegments {
+  columns: number[];
+  sources: number[];
+}
+
+/** Decode a `mappings` string into per-line segments, source indexes offset by `sourceBase`. */
+function decodeMappings(mappings: string, sourceBase: number): LineSegments[] {
+  const lines: LineSegments[] = [];
+  let current: LineSegments = { columns: [], sources: [] };
+  let column = 0;
+  let source = 0;
+  const fields: number[] = [];
+  let value = 0;
+  let shift = 0;
+  const flush = () => {
+    if (fields.length === 0) return;
+    column += fields[0]!;
+    if (fields.length >= 4) {
+      source += fields[1]!;
+      current.columns.push(column);
+      current.sources.push(sourceBase + source);
+    } else {
+      current.columns.push(column);
+      current.sources.push(-1);
+    }
+    fields.length = 0;
+  };
+  for (let i = 0; i <= mappings.length; i++) {
+    const ch = i < mappings.length ? mappings.charCodeAt(i) : 59; // ';' ends the last line
+    if (ch === 59 || ch === 44) {
+      flush();
+      if (ch === 59) {
+        lines.push(current);
+        current = { columns: [], sources: [] };
+        column = 0;
+      }
+      continue;
+    }
+    const digit = ch < 128 ? BASE64_VALUE[ch]! : -1;
+    if (digit < 0) continue;
+    value += (digit & 31) << shift;
+    if (digit & 32) {
+      shift += 5;
+      continue;
+    }
+    fields.push(value & 1 ? -(value >>> 1) : value >>> 1);
+    value = 0;
+    shift = 0;
+  }
+  // Segments are sorted by generated column within a line per the spec; sort defensively.
+  for (const line of lines) {
+    if (line.columns.every((c, i) => i === 0 || c >= line.columns[i - 1]!)) continue;
+    const order = line.columns.map((_, i) => i).sort((a, b) => line.columns[a]! - line.columns[b]!);
+    line.columns = order.map((i) => line.columns[i]!);
+    line.sources = order.map((i) => line.sources[i]!);
+  }
+  return lines;
+}
+
+function joinRoot(root: string | undefined, source: string): string {
+  if (!root || /^[a-z][\w+.-]*:/i.test(source) || source.startsWith('/')) return source;
+  return root.endsWith('/') ? root + source : `${root}/${source}`;
+}
+
+/** Parse a source map. Null when it is not a version 3 map. */
+export function decodeSourceMap(raw: RawSourceMap): SourceMapLookup | null {
+  const sources: string[] = [];
+  const lines: LineSegments[] = [];
+
+  const add = (map: RawSourceMap, lineOffset: number, columnOffset: number): boolean => {
+    if (map.sections) {
+      for (const section of map.sections) {
+        if (!add(section.map, section.offset.line, section.offset.column)) return false;
+      }
+      return true;
+    }
+    if (typeof map.mappings !== 'string' || !Array.isArray(map.sources)) return false;
+    const base = sources.length;
+    for (const s of map.sources) sources.push(joinRoot(map.sourceRoot, s ?? ''));
+    decodeMappings(map.mappings, base).forEach((segments, i) => {
+      const at = lineOffset + i;
+      const shifted = i === 0 && columnOffset ? segments.columns.map((c) => c + columnOffset) : segments.columns;
+      const existing = lines[at];
+      if (!existing) lines[at] = { columns: shifted, sources: segments.sources };
+      else {
+        existing.columns.push(...shifted);
+        existing.sources.push(...segments.sources);
+      }
+    });
+    return true;
+  };
+  if (raw.version !== undefined && raw.version !== 3) return null;
+  if (!add(raw, 0, 0)) return null;
+
+  return {
+    sources,
+    sourceAt(line, column) {
+      const segments = lines[line];
+      if (!segments || segments.columns.length === 0) return null;
+      // The last segment starting at or before the column.
+      let lo = 0;
+      let hi = segments.columns.length - 1;
+      if (segments.columns[0]! > column) return null;
+      while (lo < hi) {
+        const mid = (lo + hi + 1) >> 1;
+        if (segments.columns[mid]! <= column) lo = mid;
+        else hi = mid - 1;
+      }
+      const source = segments.sources[lo]!;
+      return source < 0 ? null : source;
+    },
+  };
+}
+
+/** The offsets at which each line of a text starts. */
+export function lineStarts(text: string): number[] {
+  const starts = [0];
+  for (let i = 0; i < text.length; i++) if (text.charCodeAt(i) === 10) starts.push(i + 1);
+  return starts;
+}
+
+/** The 0-based line and column of a character offset, given the text's line starts. */
+export function offsetToPosition(starts: number[], offset: number): { line: number; column: number } {
+  let lo = 0;
+  let hi = starts.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (starts[mid]! <= offset) lo = mid;
+    else hi = mid - 1;
+  }
+  return { line: lo, column: offset - starts[lo]! };
+}
+
+/** The URL in a script's last `//# sourceMappingURL=` comment; null when there is none. */
+export function sourceMappingUrl(script: string): string | null {
+  const tail = script.slice(-4096);
+  const matches = [...tail.matchAll(/(?:\/\/|\/\*)[#@]\s*sourceMappingURL=([^\s*'"]+)/g)];
+  return matches.length ? matches[matches.length - 1]![1]! : null;
+}
+
+/** The JSON text of a `data:` source map URL; null for any other URL or an undecodable one. */
+export function decodeDataUrl(url: string): string | null {
+  const m = /^data:([^,]*?)(;base64)?,(.*)$/s.exec(url);
+  if (!m) return null;
+  try {
+    if (!m[2]) return decodeURIComponent(m[3]!);
+    const binary = globalThis.atob(m[3]!);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return new TextDecoder().decode(bytes);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A source path from a map or a module URL, reduced to a file path: bundler
+ * prefixes (`webpack://<namespace>/`, `vite:`, `file://`), Vite's `/@fs`
+ * prefix, a query and a hash dropped, and `./` segments removed. Absolute
+ * paths stay absolute; others are relative to a root the caller picks.
+ */
+export function normalizeSourcePath(source: string): string {
+  let s = source.replace(/[?#].*$/, '');
+  s = s.replace(/^webpack:\/\/[^/]*\//, '').replace(/^webpack:\/\//, '');
+  s = s.replace(/^(?:vite|rollup|turbopack|ng):\/*/, '');
+  s = s.replace(/^file:\/\//, '');
+  s = s.replace(/^\/@fs\//, '/');
+  s = s.replace(/^\/@id\//, '');
+  try {
+    s = decodeURIComponent(s);
+  } catch {
+    // Keep the raw text.
+  }
+  s = s.replace(/\\/g, '/');
+  // Windows drive paths come as `/C:/…` after `/@fs`.
+  if (/^\/[A-Za-z]:\//.test(s)) s = s.slice(1);
+  s = s.replace(/(^|\/)\.\//g, '$1');
+  return s;
+}

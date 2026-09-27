@@ -33,3 +33,5 @@ export * from './diff-anchors';
 export * from './locator-break';
 export * from './locator-edit';
 export * from './dotenv';
+export * from './source-map';
+export * from './code-reach';

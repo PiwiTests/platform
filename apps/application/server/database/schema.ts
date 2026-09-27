@@ -48,6 +48,7 @@ export const {
   locatorSnapshots,
   locatorUsages,
   runLocatorBreaks,
+  codeReach,
   casePayloads,
   testFunctions,
   testSelections,

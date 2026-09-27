@@ -85,6 +85,8 @@ export interface TestCasePayload {
   pageInventory?: unknown;
   /** The page each locator call ran on (`piwi-locator-pages`): `{ location, locator, origin, page, arrival }[]`. */
   locatorPages?: unknown;
+  /** The repository-relative source files the test executed (`piwi-code-reach`), when code reach is on. */
+  codeReach?: unknown;
   /** AI-step usage manifest (`{ entries: string[] }`): committed AI-step artifacts this test replayed. */
   aiUsage?: unknown;
   consoleLogs?: unknown;
@@ -194,6 +196,7 @@ export interface StreamEventPayload {
   pageState?: unknown;
   pageInventory?: unknown;
   locatorPages?: unknown;
+  codeReach?: unknown;
   aiUsage?: unknown;
   consoleLogs?: unknown;
   dialogs?: unknown;

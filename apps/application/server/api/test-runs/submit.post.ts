@@ -167,6 +167,7 @@ export default eventHandler(async (event) => {
             pageState: testCase.pageState,
             pageInventory: testCase.pageInventory,
             locatorPages: testCase.locatorPages,
+            codeReach: testCase.codeReach,
             aiUsage: testCase.aiUsage,
             consoleLogs: testCase.consoleLogs,
             dialogs: testCase.dialogs,
@@ -295,6 +296,7 @@ export default eventHandler(async (event) => {
         pageState?: unknown;
         pageInventory?: unknown;
         locatorPages?: unknown;
+        codeReach?: unknown;
         aiUsage?: unknown;
         consoleLogs?: unknown;
         dialogs?: unknown;
@@ -347,6 +349,7 @@ export default eventHandler(async (event) => {
           pageState: testCase.pageState,
           pageInventory: testCase.pageInventory,
           locatorPages: testCase.locatorPages,
+          codeReach: testCase.codeReach,
           aiUsage: testCase.aiUsage,
           consoleLogs: testCase.consoleLogs,
           dialogs: testCase.dialogs,

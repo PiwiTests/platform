@@ -5,7 +5,7 @@
  * calls resolve, and hands back the structured result. It also fetches the
  * project's locator index for `piwi preflight`.
  */
-import type { LocatorIndex } from '@piwitests/core/locator-index';
+import type { LocatorIndex, LocatorIndexTest } from '@piwitests/core/locator-index';
 
 export interface SelectionResolution {
   key: string | null;
@@ -19,7 +19,14 @@ export interface SelectionResolution {
 
 /** Impact resolution — a normal resolution plus the diff-mapping summary. */
 export interface ImpactResolution extends SelectionResolution {
-  impact: { changedFiles: number; mappedFiles: number; widened: boolean; unmappedSourceFiles: string[] };
+  impact: {
+    changedFiles: number;
+    mappedFiles: number;
+    widened: boolean;
+    unmappedSourceFiles: string[];
+    /** Source files in a directory code reach covers that no test reached. */
+    unreachedFiles?: string[];
+  };
 }
 
 export interface SelectionClientOptions {
@@ -112,4 +119,27 @@ export async function fetchLocatorIndex(
     throw new Error(body.message || `Dashboard returned ${res.status} fetching the locator index`);
   }
   return (await res.json()) as LocatorIndex;
+}
+
+/** A project's code index: the source files its tests reach, when code reach or an instrumented backend recorded any. */
+export interface CodeIndex {
+  files: string[];
+  tests: LocatorIndexTest[];
+  reach: Array<{ file: number; tests: number[]; origin: 'client' | 'server' }>;
+  builtAt: string | null;
+  truncated: boolean;
+}
+
+/** Fetch the code index of a branch (the default branch when absent). */
+export async function fetchCodeIndex(
+  options: Pick<SelectionClientOptions, 'serverUrl' | 'apiKey'>,
+  projectId: number,
+  branch?: string | null,
+): Promise<CodeIndex> {
+  const query = branch ? `?branch=${encodeURIComponent(branch)}` : '';
+  const res = await fetch(`${options.serverUrl}/api/projects/${projectId}/code-index${query}`, {
+    headers: authHeaders(options.apiKey),
+  });
+  if (!res.ok) throw new Error(`Dashboard returned ${res.status} fetching the code index`);
+  return (await res.json()) as CodeIndex;
 }

@@ -24,12 +24,19 @@ import {
   type DiffFile,
 } from '@piwitests/core/diff-anchors';
 import { parseDotEnv, resolvePiwiConnection, type PiwiConnection } from '@piwitests/core/dotenv';
-import { callSiteFile, callSiteLine, predictLocatorBreaks, type LocatorBreak } from '@piwitests/core/locator-break';
+import {
+  callSiteFile,
+  callSiteLine,
+  predictLocatorBreaks,
+  sameFilePath,
+  type LocatorBreak,
+} from '@piwitests/core/locator-break';
 import { buildLiteralEdit } from '@piwitests/core/locator-edit';
 import type { LocatorIndex } from '@piwitests/core/locator-index';
 import { defaultDesktopConfigPath, readDesktopConfig } from '../internal/config/desktop.js';
 import { PIWI_DESKTOP_CONFIG_ENV } from '../internal/config/env.js';
 import {
+  fetchCodeIndex,
   fetchImpact,
   fetchLocatorIndex,
   resolveProjectId,
@@ -274,6 +281,33 @@ function writeCache(root: string, key: string, index: LocatorIndex): void {
     fs.writeFileSync(file, JSON.stringify(store));
   } catch {
     // A cache write failure never fails the command.
+  }
+}
+
+/**
+ * Which files each test reaches, from the project's code index, for the
+ * likely/possible split. Undefined when the project records no client code
+ * reach, so every break keeps the confidence of its string's kind.
+ */
+async function loadReach(
+  connection: PiwiConnection,
+  projectId: number | null,
+  branch: string | null,
+): Promise<((testId: number, file: string) => boolean) | undefined> {
+  if (projectId === null) return undefined;
+  try {
+    const index = await fetchCodeIndex(connection, projectId, branch);
+    if (!index.reach.some((r) => r.origin === 'client')) return undefined;
+    const filesOf = new Map<number, string[]>();
+    for (const r of index.reach) {
+      for (const t of r.tests) {
+        const id = index.tests[t]?.id;
+        if (id !== undefined) filesOf.set(id, [...(filesOf.get(id) ?? []), index.files[r.file]!]);
+      }
+    }
+    return (testId, file) => (filesOf.get(testId) ?? []).some((reached) => sameFilePath(reached, file));
+  } catch {
+    return undefined;
   }
 }
 
@@ -544,7 +578,7 @@ export async function runPreflight(
     readFile: (file, side) =>
       side === 'new' ? readText(path.join(repoRoot, file)) : tryGit(repoRoot, ['show', `${args.base}:${file}`]),
   });
-  const found = predictLocatorBreaks(anchors, index);
+  const found = predictLocatorBreaks(anchors, index, { reach: await loadReach(connection, projectId, args.branch) });
   const replacementsOf = new Map<PreflightBreak, Array<[string, string]>>();
   const breaks = found.map((b): PreflightBreak => {
     const pb: PreflightBreak = {

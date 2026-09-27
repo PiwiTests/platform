@@ -75,6 +75,7 @@ let server: http.Server;
 let url = '';
 let requests: string[] = [];
 let impactBodies: Array<{ changedFiles: string[] }> = [];
+let codeIndex: unknown = null;
 
 beforeAll(async () => {
   server = http.createServer((req, res) => {
@@ -82,6 +83,8 @@ beforeAll(async () => {
     res.setHeader('Content-Type', 'application/json');
     if (req.url === '/api/projects/menu') {
       res.end(JSON.stringify({ items: [{ id: 7, name: 'Acme Mugs' }] }));
+    } else if (req.url?.startsWith('/api/projects/7/code-index') && codeIndex) {
+      res.end(JSON.stringify(codeIndex));
     } else if (req.url?.startsWith('/api/projects/7/locator-index')) {
       res.end(JSON.stringify(INDEX));
     } else if (req.url === '/api/projects/7/selections/impact' && req.method === 'POST') {
@@ -148,6 +151,7 @@ beforeEach(() => {
   err = [];
   requests = [];
   impactBodies = [];
+  codeIndex = null;
   vi.spyOn(console, 'log').mockImplementation((...a: unknown[]) => void out.push(a.join(' ')));
   vi.spyOn(console, 'error').mockImplementation((...a: unknown[]) => void err.push(a.join(' ')));
 });
@@ -230,6 +234,35 @@ describe('piwi preflight', () => {
     expect(spawn).toHaveBeenCalledWith('npx', ['tests/checkout.spec.ts:3', '--headed'], ENV);
     spawn.mockResolvedValueOnce(1);
     expect(await run('--run')).toBe(1);
+  });
+
+  it('with code reach, a break is likely only when one of its tests reaches the changed file', async () => {
+    codeIndex = {
+      files: ['src/components/CheckoutButton.vue', 'src/other.ts'],
+      tests: [INDEX.tests[0], INDEX.tests[3]],
+      reach: [
+        { file: 0, tests: [0], origin: 'client' },
+        { file: 1, tests: [1], origin: 'client' },
+      ],
+      builtAt: null,
+      truncated: false,
+    };
+    expect(await run('--json')).toBe(0);
+    const result = JSON.parse(out.join('\n'));
+    const confidence = Object.fromEntries(
+      result.breaks.map((b: { locator: string; confidence: string }) => [b.locator, b.confidence]),
+    );
+    // Test 1 reaches the button's component; the locale file is never executed, so it keeps its confidence.
+    expect(confidence).toEqual({
+      "getByRole('button', { name: 'Pay now' })": 'likely',
+      "getByText('Apply coupon')": 'likely',
+    });
+    codeIndex = { ...(codeIndex as object), reach: [{ file: 1, tests: [0, 1], origin: 'client' }] };
+    out = [];
+    await run('--json');
+    expect(JSON.parse(out.join('\n')).breaks.find((b: { locator: string }) => b.locator.includes('Pay now')).confidence).toBe(
+      'possible',
+    );
   });
 
   it('--json prints the breaks, the sites and the impact', async () => {

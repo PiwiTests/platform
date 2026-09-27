@@ -449,6 +449,19 @@ export class PiwiDashboardReporter {
         }
       }
     }
+    // The source files the test executed, when code reach is on.
+    const reachAttachment =
+      this.options.captureCodeReach === true && this.options.collectPerformanceMetrics !== false
+        ? result.attachments.find((a: any) => a.name === ATTACHMENT_NAMES.codeReach)
+        : undefined;
+    if (reachAttachment?.body) {
+      try {
+        const files = JSON.parse((reachAttachment.body as Buffer).toString());
+        if (Array.isArray(files)) testCase.codeReach = files.filter((f): f is string => typeof f === 'string');
+      } catch {
+        /* ignore parse errors */
+      }
+    }
 
     switch (status) {
       case 'passed':
