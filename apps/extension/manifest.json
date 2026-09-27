@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Piwi Picker",
   "short_name": "Piwi Picker",
-  "version": "0.39.0",
+  "version": "0.40.0",
   "description": "__MSG_extDescription__",
   "default_locale": "en",
   "homepage_url": "https://piwitests.dev/features/extension",
@@ -11,7 +11,9 @@
       "id": "piwi-picker@piwitests.dev",
       "strict_min_version": "140.0",
       "data_collection_permissions": {
-        "required": ["none"]
+        "required": [
+          "none"
+        ]
       }
     }
   },
@@ -26,7 +28,9 @@
   },
   "background": {
     "service_worker": "background.js",
-    "scripts": ["background.js"]
+    "scripts": [
+      "background.js"
+    ]
   },
   "options_ui": {
     "page": "options.html",
