@@ -20,7 +20,8 @@ import { eq, sql } from 'drizzle-orm';
 import { testCases, testRunsCases } from '../database/schema';
 import type { DrizzleDB } from '#shared/handlers/db';
 import { resolveCasePayloadContents } from './case-payloads';
-import { codePathsMatch, loadCodeReachPairs } from './code-reach';
+import { sameFilePath } from '@piwitests/core/locator-break';
+import { loadCodeReachPairs } from './code-reach';
 import { resolveSelectionDefinition } from '#shared/handlers/selections';
 import type { ResolvedSelection, SelectionDefinition, SelectionFormat, SelectionRankBy } from '#shared/selection';
 
@@ -167,7 +168,7 @@ export async function resolveImpact(
 
   for (const pair of codeReach) {
     for (const changed of files) {
-      if (codePathsMatch(pair.file, changed)) {
+      if (sameFilePath(pair.file, changed)) {
         matched.add(pair.testCaseId);
         mappedFiles.add(changed);
       }

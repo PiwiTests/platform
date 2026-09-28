@@ -303,6 +303,34 @@ export function sameFilePath(a: string, b: string): boolean {
   return x === y || x.endsWith('/' + y) || y.endsWith('/' + x);
 }
 
+/** The parts of a code index (`GET /api/projects/:id/code-index`) that say which test reaches which file. */
+export interface CodeReachIndex {
+  files: string[];
+  tests: Array<{ id: number }>;
+  reach: Array<{ file: number; tests: number[]; origin: string }>;
+}
+
+/**
+ * Whether a test reaches a file, from a code index, as `predictLocatorBreaks`
+ * reads it; undefined when the index holds no client reach.
+ */
+export function reachOfIndex(index: CodeReachIndex): ((testId: number, file: string) => boolean) | undefined {
+  if (!index.reach.some((r) => r.origin === 'client')) return undefined;
+  const filesOf = new Map<number, string[]>();
+  for (const r of index.reach) {
+    const file = index.files[r.file];
+    if (file === undefined) continue;
+    for (const t of r.tests) {
+      const id = index.tests[t]?.id;
+      if (id === undefined) continue;
+      const files = filesOf.get(id);
+      if (files) files.push(file);
+      else filesOf.set(id, [file]);
+    }
+  }
+  return (testId, file) => (filesOf.get(testId) ?? []).some((reached) => sameFilePath(reached, file));
+}
+
 /** The file of a `file:line:col` call site. */
 export function callSiteFile(callSite: string): string {
   return callSite.replace(/:\d+(?::\d+)?$/, '');

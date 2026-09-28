@@ -3,6 +3,7 @@
  * editor offers to replace a brittle locator with, as of the last passing run.
  */
 import { and, eq, like } from 'drizzle-orm';
+import { callSiteFile, sameFilePath } from '@piwitests/core/locator-break';
 import { locatorSnapshots, testCases } from '../database/schema';
 import type { DrizzleDB } from '#shared/handlers/db';
 import type { RankedLocator } from '#shared/locator-healing.types';
@@ -35,13 +36,6 @@ function parseAlternatives(raw: unknown): RankedLocator[] {
   }
 }
 
-/** Two paths name the same file when equal or one ends with the other at a directory boundary. */
-function sameFile(a: string, b: string): boolean {
-  const x = a.replace(/\\/g, '/').replace(/^\.\//, '');
-  const y = b.replace(/\\/g, '/').replace(/^\.\//, '');
-  return x === y || x.endsWith('/' + y) || y.endsWith('/' + x);
-}
-
 /** The stored alternatives of every call site in `file` (a path or a path suffix), newest capture first. */
 export async function getLocatorAlternatives(
   db: DrizzleDB,
@@ -61,7 +55,7 @@ export async function getLocatorAlternatives(
     .innerJoin(testCases, eq(locatorSnapshots.testCaseId, testCases.id))
     .where(and(eq(testCases.projectId, projectId), like(locatorSnapshots.location, `%${base}:%`)));
   return rows
-    .filter((r) => r.location && sameFile(r.location.replace(/:\d+(?::\d+)?$/, ''), file))
+    .filter((r) => r.location && sameFilePath(callSiteFile(r.location), file))
     .map((r) => ({
       testCaseId: r.testCaseId,
       location: r.location!,

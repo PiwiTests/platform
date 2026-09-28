@@ -75,9 +75,12 @@ export function resolveContextConnection(
     desktop,
   });
   if (found) {
+    // The key saved in the editor belongs to the server it was saved for: a URL
+    // from the environment, a workspace `.env` or the desktop app never gets it.
+    const editorUrl = editor.serverUrl?.replace(/\/+$/, '');
     return {
       serverUrl: found.serverUrl,
-      apiKey: found.apiKey ?? editor.apiKey ?? null,
+      apiKey: found.apiKey ?? (editorUrl === found.serverUrl ? (editor.apiKey ?? null) : null),
       project: found.project || editor.project || '',
     };
   }
@@ -131,7 +134,7 @@ export class PiwiContext {
   /** The latest run on `runBranch` and its failures; null before the first answer. */
   failures: BranchFailures | null = null;
   private functions: { at: number; items: TestFunctionEntry[] } | null = null;
-  private words: { at: number; value: { tags: string[]; features: string[]; owners: string[] } } | null = null;
+  private words: { at: number; value: { tags: string[]; features: string[] } } | null = null;
   private readonly issues = new Map<number, Promise<EntityLink[]>>();
   private readonly fixPlans = new Map<number, Promise<FixPlan | null>>();
   private readonly fixPlanTexts = new Map<number, Promise<string | null>>();
@@ -221,6 +224,10 @@ export class PiwiContext {
       if (timeouts) this.timeouts = new Map(timeouts.map((t) => [t.testCaseId, t]));
       this.catalog.clear();
       this.alternatives.clear();
+      this.functions = null;
+      this.words = null;
+      // Completion reads these: fetched here, so no keystroke waits on them.
+      await Promise.all([this.functionCatalog(), this.vocabulary()]);
       this.problem = null;
       await this.refreshRun();
     } catch (e) {
@@ -298,16 +305,16 @@ export class PiwiContext {
     return found;
   }
 
-  /** Tags, features and CODEOWNERS owners for annotation completion, reused for five minutes. */
+  /** Tags and features (reused for five minutes) and the workspace's CODEOWNERS owners, for annotation completion. */
   async vocabulary(): Promise<{ tags: string[]; features: string[]; owners: string[] }> {
-    if (this.words && Date.now() - this.words.at < FILE_CACHE_MS) return this.words.value;
-    const remote =
-      this.client && this.project
-        ? await this.client.vocabulary(this.project.id).catch(() => ({ tags: [], features: [] }))
-        : { tags: [], features: [] };
-    const value = { ...remote, owners: codeOwners(this.repoRoot) };
-    this.words = { at: Date.now(), value };
-    return value;
+    if (!this.words || Date.now() - this.words.at >= FILE_CACHE_MS) {
+      const value =
+        this.client && this.project
+          ? await this.client.vocabulary(this.project.id).catch(() => ({ tags: [], features: [] }))
+          : { tags: [], features: [] };
+      this.words = { at: Date.now(), value };
+    }
+    return { ...this.words.value, owners: codeOwners(this.repoRoot) };
   }
 
   /** The healing of a failed execution, fetched once. */

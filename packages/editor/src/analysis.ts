@@ -8,6 +8,7 @@
 import { extractDiffAnchors, type DiffAnchor, type DiffFile } from '@piwitests/core/diff-anchors';
 import {
   predictLocatorBreaks,
+  reachOfIndex,
   sameFilePath,
   callSiteFile,
   callSiteLine,
@@ -173,17 +174,12 @@ export function replaceLocatorOnLine(lineText: string, locator: string, replacem
   return buildLocatorEdit(lineText, method, replacement)?.new ?? null;
 }
 
-/** Which files each test reaches, from the code index; undefined when it holds no client reach. */
+/** Which files each test reaches, from the code index; undefined when it holds no client reach. Built once per index. */
+const reachByIndex = new WeakMap<CodeIndex, ReturnType<typeof reachOfIndex>>();
 export function reachFrom(codeIndex: CodeIndex | null): ((testId: number, file: string) => boolean) | undefined {
-  if (!codeIndex?.reach.some((r) => r.origin === 'client')) return undefined;
-  const filesOf = new Map<number, string[]>();
-  for (const r of codeIndex.reach) {
-    for (const t of r.tests) {
-      const id = codeIndex.tests[t]?.id;
-      if (id !== undefined) filesOf.set(id, [...(filesOf.get(id) ?? []), codeIndex.files[r.file]!]);
-    }
-  }
-  return (testId, file) => (filesOf.get(testId) ?? []).some((reached) => sameFilePath(reached, file));
+  if (!codeIndex) return undefined;
+  if (!reachByIndex.has(codeIndex)) reachByIndex.set(codeIndex, reachOfIndex(codeIndex));
+  return reachByIndex.get(codeIndex);
 }
 
 /** The tests of the code index that reach a file (repository-relative). */

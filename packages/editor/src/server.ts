@@ -401,6 +401,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     return context && failure ? { context, failure } : null;
   };
 
+  const isOpen = (document: TextDocument) => documents.get(document.uri) === document;
+
   async function validate(document: TextDocument): Promise<void> {
     const file = uriToPath(document.uri);
     const context = file ? contextFor(file) : null;
@@ -459,6 +461,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             reach: reachFrom(context.codeIndex),
           }),
         );
+        if (!isOpen(document)) return;
         appAnalyses.set(document.uri, { context, groups });
         for (const group of groups) {
           const line = Math.max(0, group.anchor.line - 1);
@@ -481,6 +484,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         appAnalyses.delete(document.uri);
       }
     }
+    // Closed while the committed text, translations or cases were read: nothing to show.
+    if (!isOpen(document)) return;
     analysisDiagnostics.set(document.uri, diagnostics);
     publish(document.uri);
   }
@@ -538,6 +543,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   documents.onDidOpen((e) => schedule(e.document, 0));
   documents.onDidChangeContent((e) => schedule(e.document));
   documents.onDidClose((e) => {
+    clearTimeout(timers.get(e.document.uri));
+    timers.delete(e.document.uri);
     appAnalyses.delete(e.document.uri);
     analysisDiagnostics.delete(e.document.uri);
     publish(e.document.uri);

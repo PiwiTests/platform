@@ -50,7 +50,7 @@ export function runFinalizeSideEffects(
   applyBugReportLifecycle(db, id)
     .then((moved) => followBugReportTickets(db, id, moved))
     .catch((e) => console.error('[bug-reports] applyBugReportLifecycle failed', e));
-  postRunPrFeedbackInBackground(db, id);
-  maybeEnqueueHealActionInBackground(db, id);
+  // Healing's diff-rename step reads the locator breaks change coverage stores.
+  void postRunPrFeedbackInBackground(db, id).then(() => maybeEnqueueHealActionInBackground(db, id));
   return rollup;
 }

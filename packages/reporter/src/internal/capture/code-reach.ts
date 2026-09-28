@@ -148,10 +148,12 @@ async function loadMap(entry: JsCoverageEntry, fetchMap: MapFetcher): Promise<So
   } catch {
     return null;
   }
-  let pending = mapCache.get(absolute);
+  // Keyed by the script's content too: a rebuilt bundle keeps its map's URL but not its mappings.
+  const key = `${absolute}\u0000${scriptKey(entry)}`;
+  let pending = mapCache.get(key);
   if (!pending) {
     pending = fetchMap(absolute).then((text) => (text ? parseMap(text) : null));
-    mapCache.set(absolute, pending);
+    mapCache.set(key, pending);
   }
   return pending;
 }

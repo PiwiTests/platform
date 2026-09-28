@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import type { DiffAnchor } from '../src/diff-anchors';
 import { buildLiteralEdit } from '../src/locator-edit';
-import { predictLocatorBreaks, renameValue, sameFilePath } from '../src/locator-break';
+import { predictLocatorBreaks, reachOfIndex, renameValue, sameFilePath } from '../src/locator-break';
 import type { LocatorIndex } from '../src/locator-index';
 
 function index(locators: string[], extra: Partial<LocatorIndex> = {}): LocatorIndex {
@@ -252,5 +252,31 @@ describe('helpers', () => {
     });
     expect(buildLiteralEdit("getByText('Save')", 'Save', "Don't save")!.new).toBe("getByText('Don\\'t save')");
     expect(buildLiteralEdit('getByText(LABELS.pay)', 'Pay now', 'Pay')).toBeNull();
+  });
+});
+
+describe('reachOfIndex', () => {
+  const index = {
+    files: ['src/pay.ts', 'src/cart.ts', 'server/api/pay.ts'],
+    tests: [{ id: 11 }, { id: 12 }],
+    reach: [
+      { file: 0, tests: [0, 1], origin: 'client' },
+      { file: 1, tests: [1], origin: 'client' },
+      { file: 2, tests: [0], origin: 'server' },
+    ],
+  };
+
+  test('answers which test reaches which file, by path suffix', () => {
+    const reaches = reachOfIndex(index)!;
+    expect(reaches(11, 'src/pay.ts')).toBe(true);
+    expect(reaches(11, 'app/src/pay.ts')).toBe(true);
+    expect(reaches(11, 'src/cart.ts')).toBe(false);
+    expect(reaches(12, 'src/cart.ts')).toBe(true);
+    expect(reaches(11, 'server/api/pay.ts')).toBe(true);
+    expect(reaches(99, 'src/pay.ts')).toBe(false);
+  });
+
+  test('is undefined without client reach', () => {
+    expect(reachOfIndex({ ...index, reach: index.reach.filter((r) => r.origin === 'server') })).toBeUndefined();
   });
 });
