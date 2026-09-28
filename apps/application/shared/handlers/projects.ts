@@ -759,7 +759,12 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
     const pattern = `%${q.toLowerCase()}%`;
     conditions.push(sql`(lower(${testCases.title}) LIKE ${pattern} OR lower(${testCases.filePath}) LIKE ${pattern})`);
   }
-  if (file) conditions.push(eq(testCases.filePath, file));
+  if (file) {
+    // The reporter stores paths from the CI working directory, which may sit above the Playwright config the
+    // caller's path starts from: `e2e/tests/cart.spec.ts` answers for `tests/cart.spec.ts`.
+    const suffix = `%/${file.replace(/[\\%_]/g, (c) => `\\${c}`)}`;
+    conditions.push(or(eq(testCases.filePath, file), sql`${testCases.filePath} LIKE ${suffix} ESCAPE '\\'`)!);
+  }
   if (maxAgeDays > 0) {
     const cutoff = new Date(Date.now() - maxAgeDays * 24 * 60 * 60 * 1000);
     conditions.push(

@@ -13,8 +13,9 @@
  *
  * Always observed reach: a file a test executed, never line coverage.
  */
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 import { finalizeCodeReach } from '@piwitests/core/code-reach';
+import { sameFilePath } from '@piwitests/core/locator-break';
 import type { LocatorIndexTest } from '@piwitests/core/locator-index';
 import { codeReach, graphEdges, testRuns } from '../database/schema';
 import type { DrizzleDB } from '#shared/handlers/db';
@@ -76,11 +77,14 @@ export async function upsertCodeReach(db: DrizzleDB, projectId: number, cases: C
   }
 
   for (const { c, tag, startedAt } of latest.values()) {
+    // The column itself, not a raw max(): its mapping reads the timestamp as stored on either database.
     const [newest] = await db
-      .select({ at: sql<number | Date | null>`max(${codeReach.lastSeenAt})` })
+      .select({ at: codeReach.lastSeenAt })
       .from(codeReach)
-      .where(and(eq(codeReach.testCaseId, c.testCaseId), eq(codeReach.branch, tag)));
-    const newestAt = newest?.at == null ? null : new Date(newest.at);
+      .where(and(eq(codeReach.testCaseId, c.testCaseId), eq(codeReach.branch, tag)))
+      .orderBy(desc(codeReach.lastSeenAt))
+      .limit(1);
+    const newestAt = newest?.at ?? null;
     if (newestAt && newestAt > startedAt) continue;
     await db.delete(codeReach).where(and(eq(codeReach.testCaseId, c.testCaseId), eq(codeReach.branch, tag)));
     const rows = c.files.map((file) => ({
@@ -99,13 +103,6 @@ export async function upsertCodeReach(db: DrizzleDB, projectId: number, cases: C
         .onConflictDoNothing();
     }
   }
-}
-
-/** Two repository-relative paths match when equal or one is a path suffix of the other. */
-export function codePathsMatch(a: string, b: string): boolean {
-  const x = a.replace(/\\/g, '/').replace(/^\.\//, '');
-  const y = b.replace(/\\/g, '/').replace(/^\.\//, '');
-  return x === y || x.endsWith('/' + y) || y.endsWith('/' + x);
 }
 
 /** One (test, file) pair of reach. */
@@ -192,7 +189,7 @@ export async function getCodeReachForFile(
   branch?: string | null,
 ): Promise<FileReach> {
   const view = await resolveBranchView(db, projectId, branch);
-  const pairs = (await loadCodeReachPairs(db, projectId, branch)).filter((p) => codePathsMatch(p.file, file));
+  const pairs = (await loadCodeReachPairs(db, projectId, branch)).filter((p) => sameFilePath(p.file, file));
   const originOf = new Map<number, CodeReachOrigin>();
   for (const p of pairs) if (originOf.get(p.testCaseId) !== 'client') originOf.set(p.testCaseId, p.origin);
   const tests = await indexTests(db, [...originOf.keys()], view);
@@ -243,16 +240,18 @@ export async function getCodeIndex(db: DrizzleDB, projectId: number, branch?: st
     }
   });
   const [newest] = await db
-    .select({ at: sql<number | Date | null>`max(${codeReach.lastSeenAt})` })
+    .select({ at: codeReach.lastSeenAt })
     .from(codeReach)
-    .where(eq(codeReach.projectId, projectId));
+    .where(eq(codeReach.projectId, projectId))
+    .orderBy(desc(codeReach.lastSeenAt))
+    .limit(1);
   return {
     projectId,
     branch: view.name ?? view.defaultBranch,
     files: kept,
     tests,
     reach,
-    builtAt: newest?.at == null ? null : new Date(newest.at).toISOString(),
+    builtAt: newest?.at ? newest.at.toISOString() : null,
     truncated,
   };
 }

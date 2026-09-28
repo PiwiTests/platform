@@ -28,7 +28,7 @@ import {
   callSiteFile,
   callSiteLine,
   predictLocatorBreaks,
-  sameFilePath,
+  reachOfIndex,
   type LocatorBreak,
 } from '@piwitests/core/locator-break';
 import { buildLiteralEdit } from '@piwitests/core/locator-edit';
@@ -296,16 +296,7 @@ async function loadReach(
 ): Promise<((testId: number, file: string) => boolean) | undefined> {
   if (projectId === null) return undefined;
   try {
-    const index = await fetchCodeIndex(connection, projectId, branch);
-    if (!index.reach.some((r) => r.origin === 'client')) return undefined;
-    const filesOf = new Map<number, string[]>();
-    for (const r of index.reach) {
-      for (const t of r.tests) {
-        const id = index.tests[t]?.id;
-        if (id !== undefined) filesOf.set(id, [...(filesOf.get(id) ?? []), index.files[r.file]!]);
-      }
-    }
-    return (testId, file) => (filesOf.get(testId) ?? []).some((reached) => sameFilePath(reached, file));
+    return reachOfIndex(await fetchCodeIndex(connection, projectId, branch));
   } catch {
     return undefined;
   }

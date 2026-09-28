@@ -36,7 +36,8 @@ defineRouteMeta({
         in: 'query',
         required: false,
         schema: { type: 'string' },
-        description: 'Exact spec file path, as the test case stores it (project-relative).',
+        description:
+          'Spec file path: the path the test case stores, or its end from a folder boundary (`tests/cart.spec.ts` finds `e2e/tests/cart.spec.ts`).',
       },
       {
         name: 'status',

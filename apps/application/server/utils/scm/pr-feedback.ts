@@ -429,7 +429,11 @@ export async function postRunPrFeedback(
  * two stay in one order rather than racing: a comment that omitted the cluster
  * this run just closed would be reporting the wrong news.
  */
-export function postRunPrFeedbackInBackground(db: DbClient, runId: number): void {
+/**
+ * Returns once change coverage is stored, with the run's locator breaks that
+ * locator healing reads; the comment is posted after that, in the background.
+ */
+export function postRunPrFeedbackInBackground(db: DbClient, runId: number): Promise<void> {
   // Recompute the project-wide scenario gaps off the request path, so success-
   // only, single-covering-test and surface-drift gaps and their self-closing
   // stay live on every finished run — not only from the manual recompute.
@@ -438,15 +442,16 @@ export function postRunPrFeedbackInBackground(db: DbClient, runId: number): void
   // Change coverage runs regardless of the comment opt-in: it writes the graph's
   // `changes` edges and the changed-unreached gaps every instance with history
   // and an SCM token gets for free. Its result also feeds the comment section.
+  const coverage = computeRunChangeCoverage(db, runId).catch((e) => {
+    console.error('[change-coverage] computeRunChangeCoverage failed', e);
+    return null;
+  });
   Promise.all([
     verifyClusterFixes(db, runId).catch((e) => {
       console.error('[fix-verification] verifyClusterFixes failed', e);
       return [] as VerifiedFix[];
     }),
-    computeRunChangeCoverage(db, runId).catch((e) => {
-      console.error('[change-coverage] computeRunChangeCoverage failed', e);
-      return null;
-    }),
+    coverage,
   ])
     .then(([fixed, change]) => postRunPrFeedback(db, runId, fixed, change?.pr ?? null, change?.locatorBreaks ?? null))
     .then((result) => {
@@ -455,6 +460,7 @@ export function postRunPrFeedbackInBackground(db: DbClient, runId: number): void
       }
     })
     .catch((e) => console.error('[pr-feedback] postRunPrFeedback failed', e));
+  return coverage.then(() => undefined);
 }
 
 /**

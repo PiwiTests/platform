@@ -96,6 +96,25 @@ describe('resolveCodeReach', () => {
     expect(fetched).toEqual(['http://localhost:3000/assets/app.js.map']);
   });
 
+  it('a rebuilt bundle at the same address reads its new map', async () => {
+    const mapTo = (file: string) => JSON.stringify({ version: 3, sources: [`webpack://shop/./${file}`], mappings: 'AAAA' });
+    const build = (body: string): JsCoverageEntry => {
+      const source = `${body}\n//# sourceMappingURL=app.js.map`;
+      return {
+        url: 'http://localhost:3000/assets/app.js',
+        source,
+        functions: [
+          { functionName: '', ranges: [{ startOffset: 0, endOffset: source.length, count: 1 }] },
+          { functionName: 'a', ranges: [{ startOffset: 0, endOffset: 14, count: 1 }] },
+        ],
+      };
+    };
+    const maps = [mapTo('src/cart.ts'), mapTo('src/unused.ts')];
+    const fetchMap = async () => maps.shift() ?? null;
+    expect(await resolveCodeReach([build('function a(){}a();')], roots(), fetchMap)).toEqual(['src/cart.ts']);
+    expect(await resolveCodeReach([build('function a(){}a();a();')], roots(), fetchMap)).toEqual(['src/unused.ts']);
+  });
+
   it('reads an inline map', async () => {
     const map = { version: 3, sources: ['src/cart.ts'], mappings: 'AAAA' };
     const inline = `data:application/json;base64,${Buffer.from(JSON.stringify(map)).toString('base64')}`;
