@@ -2,6 +2,7 @@ import { describe, test, expect } from 'vitest';
 import {
   useTimelineModel,
   computeLockSummary,
+  isHookKind,
   type TimelineItem,
   type TimelineModelInput,
 } from '../../app/composables/useTimelineModel';
@@ -158,6 +159,55 @@ describe('useTimelineModel', () => {
     expect(fixture?.title).toBe('fixture: page');
     const hook = items.find((d) => d.kind === 'hook');
     expect(hook?.title).toBe('Before Hooks');
+  });
+
+  test('carries a hook section, the hooks it ran and its error onto the bar', () => {
+    const { timelineData } = model([
+      {
+        executionId: 1,
+        title: 'A',
+        status: 'failed',
+        workerIndex: 0,
+        startedAt: 1000,
+        duration: 400,
+        stepEvents: [
+          {
+            title: 'Before Hooks',
+            category: 'hook',
+            startedAt: 1000,
+            duration: 200,
+            status: 'passed',
+            hooks: [
+              { title: 'beforeAll hook', category: 'hook', duration: 150 },
+              { title: 'Fixture "page"', category: 'fixture', duration: 50 },
+            ],
+          },
+          {
+            title: 'After Hooks',
+            category: 'hook',
+            startedAt: 1300,
+            duration: 60,
+            status: 'failed',
+            error: 'Error: afterAll boom',
+            hooks: [{ title: 'afterAll hook', category: 'hook', duration: 60, failed: true }],
+          },
+          { title: 'Worker Cleanup', category: 'hook', startedAt: 1360, duration: 5, status: 'passed' },
+        ],
+      },
+    ]);
+
+    const hooks = timelineData.value.filter((d) => isHookKind(d.kind));
+    expect(hooks.map((d) => [d.title, d.section])).toEqual([
+      ['Before Hooks', 'setup'],
+      ['After Hooks', 'teardown'],
+      ['Worker Cleanup', 'teardown'],
+    ]);
+    expect(hooks[0]!.hooks?.map((h) => h.title)).toEqual(['beforeAll hook', 'Fixture "page"']);
+    expect(hooks[0]!.error).toBeNull();
+    expect(hooks[1]!.status).toBe('failed');
+    expect(hooks[1]!.error).toBe('Error: afterAll boom');
+    // A section from an older reporter carries no breakdown.
+    expect(hooks[2]!.hooks).toBeNull();
   });
 
   test('honors a custom wasted-wait pattern', () => {

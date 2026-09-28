@@ -2,9 +2,16 @@ import { computed, type ComputedRef } from 'vue';
 import type { TestCaseResult, TestStepEvent, SetupStepEvent, PerformanceStep } from '~~/types/api';
 import { isWastedWait, DEFAULT_WASTED_WAIT_PATTERNS } from '#shared/utils/wasted-waits';
 import { buildStepSpans } from '~/utils/step-spans';
+import { stepPhases } from '#shared/step-tree';
+import type { TestStepEventHook } from '#shared/types';
 
 /** What a timeline bar represents; drives rendering, filtering and header counts. */
 export type TimelineItemKind = 'test' | 'setup' | 'hook' | 'fixture' | 'wait' | 'step';
+
+/** Whether a bar is hook time: a test's hook or fixture section, or a suite-level setup step. */
+export function isHookKind(kind: TimelineItemKind): boolean {
+  return kind === 'hook' || kind === 'fixture' || kind === 'setup';
+}
 
 /** A single drawable element on the timeline: a test bar, hook/fixture segment, suite setup step, wasted wait, or an expanded step span. */
 export interface TimelineItem {
@@ -25,6 +32,12 @@ export interface TimelineItem {
   locks?: string[] | null;
   /** Retries the execution needed — test bars only; a pass after a retry reads as flaky. */
   retries?: number | null;
+  /**
+   * The duration Playwright reported, when the bar is noticeably longer — test
+   * bars only. Playwright leaves `beforeAll` / `afterAll` hooks and worker
+   * fixtures out of a test's duration, so the bar spans its hooks instead.
+   */
+  reportedDuration?: number | null;
   /** Reporter step category (`action`, `assertion`, `hook`, …) — step items only. */
   category?: string;
   /** Nesting depth within the expanded test (1 = top level) — step items only. */
@@ -33,8 +46,12 @@ export interface TimelineItem {
   subtitle?: string | null;
   /** Curated per-step params — step items only. */
   params?: Record<string, string | number | boolean> | null;
-  /** Error message when the step failed — step items only. */
+  /** Error message when it failed — step items, and hook items from a recent reporter. */
   error?: string | null;
+  /** Which side of the test body a hook section ran on (`Before Hooks` → setup) — hook items only. */
+  section?: 'setup' | 'teardown' | null;
+  /** The hooks and fixtures a hook section ran, in order — hook items from a recent reporter only. */
+  hooks?: TestStepEventHook[] | null;
   /** Whether this test row is currently expanded — test items only. */
   expanded?: boolean;
 }
@@ -219,6 +236,25 @@ function stepKind(step: TestStepEvent, patterns: readonly string[]): 'hook' | 'f
   return null;
 }
 
+/** Hook time past a test's reported duration from which its bar notes the duration Playwright reported. */
+const UNCOUNTED_HOOK_TIME_MS = 100;
+
+/** Where a test's last step event ends on the run clock, or 0 when none carries a start. */
+function stepEventsEnd(events: TestStepEvent[], toRunClock: (startedAt: unknown) => number): number {
+  let end = 0;
+  for (const event of events) {
+    if (toMs(event.startedAt) == null) continue;
+    end = Math.max(end, toRunClock(event.startedAt) + (event.duration || 0));
+  }
+  return end;
+}
+
+/** The side of the test body a top-level hook step ran on: `Before Hooks` is setup, `After Hooks` teardown. */
+function hookSection(step: TestStepEvent): 'setup' | 'teardown' | null {
+  const phase = stepPhases([step])[0];
+  return phase === 'setup' || phase === 'teardown' ? phase : null;
+}
+
 /**
  * Derive the timeline's row model from the run's test cases. Returns the
  * drawable items, the ordered worker rows, the shard groupings, and the total
@@ -321,8 +357,10 @@ export function useTimelineModel(props: TimelineModelInput): {
       let cursor = 0;
 
       for (const tc of cases) {
-        const duration = tc.duration ?? 1000;
+        const stepEvents = (tc.stepEvents ?? []) as TestStepEvent[];
+        const reported = tc.duration ?? 1000;
         const start = absolute ? absoluteStart(tc.startedAt) : cursor;
+        const duration = absolute ? Math.max(reported, stepEventsEnd(stepEvents, absoluteStart) - start) : reported;
         rowItems.push({
           key: `t${tc.executionId}`,
           kind: 'test',
@@ -335,17 +373,17 @@ export function useTimelineModel(props: TimelineModelInput): {
           rowIndex: baseLane,
           locks: tc.locks ?? null,
           retries: tc.retries ?? null,
+          reportedDuration: duration - reported >= UNCOUNTED_HOOK_TIME_MS ? reported : null,
           expanded: expanded?.has(tc.executionId) ?? false,
         });
         cursor = start + duration;
 
-        const stepEvents = (tc.stepEvents ?? []) as TestStepEvent[];
         stepEvents.forEach((step, stepIndex) => {
           const kind = stepKind(step, patterns);
           if (!kind) return;
           const stepDuration = step.duration || 0;
           const stepStart = absolute ? absoluteStart(step.startedAt) : cursor;
-          rowItems.push({
+          const item: TimelineItem = {
             key: `s${tc.executionId}:${stepIndex}`,
             kind,
             testCaseId: tc.executionId,
@@ -356,7 +394,13 @@ export function useTimelineModel(props: TimelineModelInput): {
             duration: stepDuration,
             rowIndex: baseLane,
             parentTitle: tc.title,
-          });
+          };
+          if (kind !== 'wait') {
+            item.section = hookSection(step);
+            item.hooks = step.hooks?.length ? step.hooks : null;
+            item.error = step.error ?? null;
+          }
+          rowItems.push(item);
           cursor = stepStart + stepDuration;
         });
 

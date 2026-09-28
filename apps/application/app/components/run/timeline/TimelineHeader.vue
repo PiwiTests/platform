@@ -3,12 +3,15 @@ defineProps<{
   workerCount: number;
   shardTotal?: number | null;
   testCount: number;
-  hookCount: number;
+  /** Hook sections that failed — drawn whatever the hooks toggle says. */
+  hookFailureCount: number;
   waitCount: number;
-  /** Whether the run has any setup/hook/fixture/wait spans to reveal. */
-  hasNonTestSpans: boolean;
-  /** Current state of the one span toggle. */
-  showHooksAndWaits: boolean;
+  /** Whether the run has any hook sections to show. */
+  hasHooks: boolean;
+  /** Current state of the hooks toggle. */
+  showHooks: boolean;
+  /** Current state of the wasted-waits toggle. */
+  showWaits: boolean;
   /** Whether the run declared any locks (best effort). */
   hasLocks?: boolean;
   /** Current state of the lock toggle. */
@@ -22,7 +25,8 @@ defineProps<{
 
 defineEmits<{
   reset: [];
-  toggleHooksAndWaits: [visible: boolean];
+  toggleHooks: [visible: boolean];
+  toggleWaits: [visible: boolean];
   toggleLocks: [visible: boolean];
   collapseAll: [];
 }>();
@@ -37,7 +41,12 @@ defineEmits<{
           &middot; {{ shardTotal }} shard{{ shardTotal > 1 ? 's' : '' }}
         </template>
         &middot; {{ testCount }} tests
-        <template v-if="hookCount > 0"> &middot; {{ hookCount }} hooks </template>
+        <template v-if="hookFailureCount > 0">
+          &middot;
+          <span class="text-error" data-testid="timeline-hook-failures"
+            >{{ hookFailureCount }} hook failure{{ hookFailureCount > 1 ? 's' : '' }}</span
+          >
+        </template>
         <template v-if="waitCount > 0"> &middot; {{ waitCount }} waits </template>
         <template v-if="lockCount && lockCount > 0">
           &middot; {{ lockCount }} lock{{ lockCount > 1 ? 's' : '' }}
@@ -57,12 +66,20 @@ defineEmits<{
         Collapse steps ({{ expandedCount }})
       </UButton>
       <USwitch
-        v-if="hasNonTestSpans"
-        :model-value="showHooksAndWaits"
-        label="Show hooks and waits"
+        v-if="hasHooks"
+        :model-value="showHooks"
+        label="Show hooks"
         size="xs"
         class="mr-1"
-        @update:model-value="$emit('toggleHooksAndWaits', $event === true)"
+        @update:model-value="$emit('toggleHooks', $event === true)"
+      />
+      <USwitch
+        v-if="waitCount > 0"
+        :model-value="showWaits"
+        label="Show waits"
+        size="xs"
+        class="mr-1"
+        @update:model-value="$emit('toggleWaits', $event === true)"
       />
       <USwitch
         v-if="hasLocks"

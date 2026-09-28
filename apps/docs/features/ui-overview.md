@@ -70,7 +70,13 @@ results stream in live. The tabs:
   block or [lock](/reference/test-metadata#test-locks), with bulk triage.
 - **Changes**: what differs against one baseline run. See [What changed in a run](./run-changes).
 - **Timeline**: each worker's tests on one time axis, with hooks, waits and locks, the slowest tests and the worker
-  distribution ([Slow tests & wasted time](./slow-tests)).
+  distribution ([Slow tests & wasted time](./slow-tests)). Hook time is hatched over each test's bar: setup
+  (`beforeAll`, `beforeEach`, fixtures) at the start, teardown (`afterEach`, `afterAll`, worker cleanup) at the end.
+  A failed hook is drawn in dark red and counted in the header, even with **Show hooks** off; hover it for the hooks
+  that section ran, their times and the error, and click it to open the test's steps on that hook. Playwright leaves
+  `beforeAll` / `afterAll` hooks and worker fixtures out of a test's duration; the bar spans them anyway, and its
+  tooltip gives the duration Playwright reported. Runs sent by an older reporter show the sections without their
+  hook list.
 
 ## Test case detail
 

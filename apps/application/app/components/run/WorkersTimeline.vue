@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue';
 import type { TestCaseResult, SetupStepEvent, PerformanceStep } from '~~/types/api';
-import { useTimelineModel, type TimelineItem } from '~/composables/useTimelineModel';
+import { useTimelineModel, isHookKind, type TimelineItem } from '~/composables/useTimelineModel';
 import { useTimelineViewport } from '~/composables/useTimelineViewport';
 import { lockColorHex } from '~/utils/timeline';
 
@@ -54,18 +54,41 @@ function barExpandable(item: TimelineItem): boolean {
 }
 
 async function toggleExpand(id: number): Promise<void> {
-  const next = new Set(expandedExecutions.value);
-  if (next.has(id)) {
+  if (expandedExecutions.value.has(id)) {
+    const next = new Set(expandedExecutions.value);
     next.delete(id);
     expandedExecutions.value = next;
     return;
   }
-  next.add(id);
-  expandedExecutions.value = next;
-
   // Frame the test's own span — at run-fit zoom its steps are sub-pixel.
   const testItem = timelineData.value.find((d) => d.kind === 'test' && d.testCaseId === id);
-  if (testItem) zoomToRange(testItem.start, testItem.start + testItem.duration);
+  await expandSteps(id, testItem ? [testItem.start, testItem.start + testItem.duration] : null);
+}
+
+/**
+ * A click on a hook section opens its test's steps framed on the hook, so the
+ * `beforeAll`, `afterEach` and fixtures it ran, and the one that failed, are
+ * legible. A test that cannot expand (a live run) opens its page instead.
+ */
+async function inspectHook(item: TimelineItem): Promise<void> {
+  const id = item.testCaseId;
+  if (id == null) return;
+  const testItem = timelineData.value.find((d) => d.kind === 'test' && d.testCaseId === id);
+  if (!testItem || !barExpandable(testItem)) {
+    emit('selectTestCase', id);
+    return;
+  }
+  await expandSteps(id, [item.start, item.start + Math.max(item.duration, 1)]);
+}
+
+/** Expand a test row into its step waterfall (fetching the steps once), framing `range` when given. */
+async function expandSteps(id: number, range: [number, number] | null): Promise<void> {
+  if (!expandedExecutions.value.has(id)) {
+    const next = new Set(expandedExecutions.value);
+    next.add(id);
+    expandedExecutions.value = next;
+  }
+  if (range) zoomToRange(range[0], range[1]);
 
   if (stepsByExecution.value.has(id) || stepsLoading.has(id)) return;
   stepsLoading.add(id);
@@ -122,21 +145,25 @@ const {
   zoomToRange,
 } = useTimelineViewport({ containerRef, maxTime, rowCount, hasData, live: () => props.live });
 
-// Header counts (tests vs. hook/fixture/setup segments vs. wasted waits).
+// Header counts: tests, hook sections that failed, wasted waits.
 const testCount = computed(() => timelineData.value.filter((d) => d.kind === 'test').length);
-const hookCount = computed(
-  () => timelineData.value.filter((d) => d.kind === 'hook' || d.kind === 'fixture' || d.kind === 'setup').length,
+const hasHooks = computed(() => timelineData.value.some((d) => isHookKind(d.kind)));
+const hookFailureCount = computed(
+  () => timelineData.value.filter((d) => isHookKind(d.kind) && d.status === 'failed').length,
 );
 const waitCount = computed(() => timelineData.value.filter((d) => d.kind === 'wait').length);
 
-// One toggle folds every non-test span (setup, hooks, fixtures, wasted waits)
-// in and out; tests are always drawn, and expanded step spans are always drawn
-// since expanding a row is itself the explicit request to see them. The toggle
-// only appears when the run has such spans to show.
-const showHooksAndWaits = ref(false);
-const hasNonTestSpans = computed(() => timelineData.value.some((item) => item.kind !== 'test' && item.kind !== 'step'));
+// Tests and expanded step spans are always drawn (expanding a row is itself the
+// request to see its steps). Hook sections are drawn by default and a failed
+// one is drawn even with hooks off; wasted waits are drawn on request.
+const showHooks = ref(true);
+const showWaits = ref(false);
 const visibleItems = computed(() =>
-  timelineData.value.filter((item) => item.kind === 'test' || item.kind === 'step' || showHooksAndWaits.value),
+  timelineData.value.filter((item) => {
+    if (isHookKind(item.kind)) return showHooks.value || item.status === 'failed';
+    if (item.kind === 'wait') return showWaits.value;
+    return true;
+  }),
 );
 
 // Tooltip state — driven by hover events from the bars.
@@ -172,16 +199,18 @@ function onBarLeave() {
       :worker-count="workerRows.length"
       :shard-total="shardTotal"
       :test-count="testCount"
-      :hook-count="hookCount"
+      :hook-failure-count="hookFailureCount"
       :wait-count="waitCount"
-      :has-non-test-spans="hasNonTestSpans"
-      :show-hooks-and-waits="showHooksAndWaits"
+      :has-hooks="hasHooks"
+      :show-hooks="showHooks"
+      :show-waits="showWaits"
       :has-locks="hasLocks"
       :show-locks="showLocks"
       :lock-count="runLocks.length"
       :expanded-count="expandedCount"
       :live="live"
-      @toggle-hooks-and-waits="showHooksAndWaits = $event"
+      @toggle-hooks="showHooks = $event"
+      @toggle-waits="showWaits = $event"
       @toggle-locks="showLocks = $event"
       @collapse-all="collapseAll"
       @reset="resetView"
@@ -218,6 +247,16 @@ function onBarLeave() {
         :height="contentHeight"
       >
         <defs>
+          <!-- Light diagonal stripes that mark hook time over a test bar. -->
+          <pattern
+            id="timeline-hook-hatch"
+            patternUnits="userSpaceOnUse"
+            width="6"
+            height="6"
+            patternTransform="rotate(45)"
+          >
+            <rect width="2" height="6" fill="white" fill-opacity="0.35" />
+          </pattern>
           <filter id="glow">
             <feGaussianBlur stdDeviation="2.5" result="blur" />
             <feMerge>
@@ -245,6 +284,7 @@ function onBarLeave() {
           :expandable="barExpandable(item)"
           @select="emit('selectTestCase', $event)"
           @toggle-expand="toggleExpand($event)"
+          @inspect-hook="inspectHook"
           @hover="onBarEnter"
           @move="onBarMove"
           @leave="onBarLeave"

@@ -1,12 +1,11 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import type { TimelineItem } from '~/composables/useTimelineModel';
+import { isHookKind, type TimelineItem } from '~/composables/useTimelineModel';
 import {
   TIMELINE_LAYOUT,
   TIMELINE_WAIT_COLORS,
   timelineStatusColor,
-  timelineHookFill,
-  timelineHookStroke,
+  timelineHookColors,
   timelineStepColor,
   formatTimelineTime,
 } from '~/utils/timeline';
@@ -25,15 +24,21 @@ const props = defineProps<{
 const emit = defineEmits<{
   select: [id: number];
   toggleExpand: [id: number];
+  /** A hook section was clicked: open its test's steps on the hook. */
+  inspectHook: [item: TimelineItem];
   hover: [item: TimelineItem, event: MouseEvent];
   move: [event: MouseEvent];
   leave: [];
 }>();
 
-const { barHeight, stepBarHeight } = TIMELINE_LAYOUT;
+const { barHeight, stepBarHeight, failedHookMinWidth } = TIMELINE_LAYOUT;
 
 /** Setup steps render like hooks; they just aren't tied to a test case. */
-const isHookLike = computed(() => ['setup', 'hook', 'fixture'].includes(props.item.kind));
+const isHookLike = computed(() => isHookKind(props.item.kind));
+const hookColors = computed(() => timelineHookColors(props.item.status));
+const hookWidth = computed(() =>
+  props.item.status === 'failed' ? Math.max(props.width, failedHookMinWidth) : props.width,
+);
 
 /** Every bar with an owning test case clicks through to it (suite setup has none). */
 const clickable = computed(() => props.item.testCaseId != null);
@@ -45,6 +50,10 @@ const stepFill = computed(() => timelineStepColor(props.item.category ?? 'other'
 
 function onClick(): void {
   if (props.item.testCaseId != null) emit('select', props.item.testCaseId);
+}
+
+function onHookClick(): void {
+  if (props.item.testCaseId != null) emit('inspectHook', props.item);
 }
 
 // Clicking a test bar expands or collapses its step waterfall; when the row
@@ -85,28 +94,34 @@ function onTestClick(): void {
       </text>
     </template>
     <template v-else-if="isHookLike">
+      <!-- Hook time over the test's bar: a wash, hatched so it reads as not the test body. -->
       <rect
         :x="x"
         :y="y"
-        :width="width"
+        :width="hookWidth"
         :height="barHeight"
         :rx="3"
         :ry="3"
-        :style="{ fill: timelineHookFill(item.status), stroke: timelineHookStroke(item.status) }"
+        :fill="hookColors.fill"
+        :fill-opacity="hookColors.opacity"
+        :stroke="hookColors.stroke"
         stroke-width="1"
-        stroke-dasharray="3,2"
-        class="timeline-bar-shape transition-opacity duration-100 opacity-80"
+        class="timeline-bar-shape transition-opacity duration-100"
         :class="cursorClass"
-        @click="onClick"
+        data-timeline-hook
+        :data-status="item.status"
+        @click="onHookClick"
       />
-      <text
-        v-if="width > 60"
-        :x="x + 4"
-        :y="y + barHeight / 2 + 4"
-        class="fill-gray-600 dark:fill-gray-300 text-[9px] font-medium pointer-events-none"
-      >
-        {{ item.title }}
-      </text>
+      <rect
+        :x="x"
+        :y="y"
+        :width="hookWidth"
+        :height="barHeight"
+        :rx="3"
+        :ry="3"
+        fill="url(#timeline-hook-hatch)"
+        class="timeline-bar-shape transition-opacity duration-100 pointer-events-none"
+      />
     </template>
     <template v-else-if="item.kind === 'wait'">
       <!-- slightly taller bar, offset into the row gap above/below -->
