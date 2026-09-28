@@ -233,4 +233,13 @@ export const SETUP_CAPABILITIES: SetupCapabilityCopy[] = [
       'Experimental — the entry condition (client probes reporting not-noticed on at least one pair in ten) has not been measured yet.',
     doc: 'features/probes#server-probes',
   },
+  {
+    id: 'bug-reports',
+    title: 'Bug reports',
+    summary:
+      'Bugs reported from Piwi Picker with their steps, the expected result and evidence, each turned into a failing test and followed until it passes.',
+    how: 'Connect Piwi Picker to this instance, then use Report a bug and Send to Piwi on the page that shows the bug.',
+    icon: 'i-lucide-bug',
+    doc: 'features/bug-reports',
+  },
 ];

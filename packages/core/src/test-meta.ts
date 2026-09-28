@@ -29,6 +29,8 @@ export const MAX_TEST_LOCK_CHARS = 100;
 /** Cap for `owner` and `feature`; `link` gets its own, longer cap. */
 export const MAX_TEST_META_CHARS = 120;
 export const MAX_TEST_LINK_CHARS = 500;
+/** The largest `piwi:bug` id: bug report ids are 32-bit serials. */
+const MAX_BUG_ID = 2_147_483_647;
 
 /** Ownership and classification declared on a test via `piwi:` annotations. */
 export interface TestMetadata {
@@ -39,6 +41,8 @@ export interface TestMetadata {
   feature?: string;
   /** Absolute `http(s)` URL to a ticket, spec or runbook. */
   link?: string;
+  /** The id of the Piwi bug report this test reproduces (`piwi:bug`), digits only. */
+  bug?: string;
 }
 
 const PRIORITY_SET: ReadonlySet<string> = new Set(TEST_PRIORITIES);
@@ -154,6 +158,12 @@ export function parseTestMetadata(annotations: unknown): TestMetadata | null {
       case 'link': {
         const value = normalizeLink(description);
         if (value) meta.link = value;
+        break;
+      }
+      case 'bug': {
+        const value = cleanString(description, MAX_TEST_META_CHARS)?.replace(/^#/, '');
+        // A bug report's id is a 32-bit serial on Postgres: a larger one names no report and breaks the query.
+        if (value && /^[1-9]\d{0,9}$/.test(value) && Number(value) <= MAX_BUG_ID) meta.bug = value;
         break;
       }
       default:

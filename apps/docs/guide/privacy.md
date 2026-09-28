@@ -27,6 +27,9 @@ Every outbound connection Piwi can make is something you switched on:
 | Your S3 endpoint | Only if you switch [storage](/operate/storage) to S3 | Trace files, HTML reports, attachments |
 | Google / GitHub | Only if you enable [OAuth sign-in](/operate/authentication#oauth-google-github) | The standard OAuth exchange |
 
+The reporter sends your own instance what its options switch on. [Code reach](/features/code-reach), off by
+default, sends repository-relative file paths only: never source code, coverage counts or line numbers.
+
 Nothing on that list has a default. With none of them configured, a Piwi instance talks to nobody.
 
 The **AI provider** is the one worth pausing on, because it's the only case where your code and error
@@ -50,6 +53,23 @@ context before it's sent, and you can cap its size. See
 - **Your IDE mapping.** The [Open in IDE](/features/ide-integration) workspace root lives in your browser's
   local storage, because the source is on your machine, not the server's. It is never sent to the
   dashboard.
+
+## What reaches your server from Piwi Picker
+
+The [browser extension](/features/extension) works with no instance. Connected, it reads a project's URL patterns,
+function catalog and locator index, and sends one thing: a [bug report](/features/bug-reports), only when someone
+clicks **Send** in its preview, which shows exactly what goes. That report carries the recorded steps with the values
+typed (never a password, and none at all with **Leave out the values I typed**), and whichever evidence the reporter
+kept ticked: screenshots of the tab, console errors and warnings, failed requests (method, path without query values,
+status; never a header or a body) and an outline of the page. It goes only to the instance the extension is connected
+to, and it is stored there like a run's evidence.
+
+**Share result**, after a replay of a report from the instance, sends the verdict, the site it ran on and the
+browser's name to that report, on **Send** in its preview.
+
+Paired with the [desktop app](/features/bug-reports#running-it-with-playwright-in-the-desktop-app), it also sends a
+report's title and steps, with their typed values and nothing else, to that app on this machine when someone clicks
+**Send** in the **Run with Playwright** preview.
 
 ## What Piwi deliberately does not capture
 

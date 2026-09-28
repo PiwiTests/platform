@@ -8,11 +8,12 @@
  * until an administrator opts in. Every comment is built through the message
  * catalog in the binding's language.
  */
-import { and, eq, gt } from 'drizzle-orm';
-import { integrationActions, testRunsCases } from '../../database/schema';
+import { and, eq, gt, isNotNull } from 'drizzle-orm';
+import { entityLinks, integrationActions, testRunsCases } from '../../database/schema';
 import type { DbClient } from '../../database';
 import type { EntityLink } from '../../database/schema';
-import { DEFAULT_LOCALE, toIssueLocale, type IssueLocale } from '#shared/integrations/messages';
+import { DEFAULT_LOCALE, t, toIssueLocale, type IssueLocale } from '#shared/integrations/messages';
+import { doc } from '#shared/integrations/document';
 import {
   buildFixComment,
   buildRegressionComment,
@@ -28,6 +29,8 @@ import {
   reopenTransitionKey,
   occurrencesCommentKey,
   mergeCommentKey,
+  bugLooksFixedCommentKey,
+  bugFixTransitionKey,
 } from '#shared/integrations/action-keys';
 import type { CommentActionPayload, TransitionActionPayload } from './actions';
 import { enqueueAction, runActionNow } from './actions';
@@ -289,6 +292,56 @@ export async function enqueueMergePolicies(
       entityId: facts.survivorId,
       dedupeKey: mergeCommentKey(facts.survivorId, facts.victimId),
       payload: { issueKey: survivorLink.key, document } satisfies CommentActionPayload,
+    });
+  }
+}
+
+/**
+ * When a bug report looks fixed (its `test.fail()` test passed), comment on its
+ * ticket and move it along, as a cluster's verified fix does: the binding's
+ * `commentOnFix` and `transitionOnFix`.
+ */
+export async function enqueueBugLooksFixedPolicies(
+  db: DbClient,
+  facts: { bugReportId: number; projectId: number; runId: number },
+): Promise<void> {
+  const [link] = await db
+    .select()
+    .from(entityLinks)
+    .where(and(eq(entityLinks.bugReportId, facts.bugReportId), isNotNull(entityLinks.connectionId)));
+  if (!link?.key || link.connectionId == null) return;
+  const binding = await readProjectIntegration(db, facts.projectId);
+  const connection = await getConnectionRow(db, link.connectionId);
+  const locale = resolveLocale(binding, connection?.config ?? null);
+
+  if (binding.policies.commentOnFix) {
+    const document = doc()
+      .paragraph(t(locale, 'comment.bugLooksFixed', { run: facts.runId }))
+      .build();
+    await enqueueAndKick(db, {
+      connectionId: link.connectionId,
+      projectId: facts.projectId,
+      kind: 'comment',
+      entityType: 'bug_report',
+      entityId: facts.bugReportId,
+      dedupeKey: bugLooksFixedCommentKey(facts.bugReportId, facts.runId),
+      payload: { issueKey: link.key, document } satisfies CommentActionPayload,
+    });
+  }
+  if (binding.policies.transitionOnFix && binding.policies.fixTransitionId) {
+    await enqueueAndKick(db, {
+      connectionId: link.connectionId,
+      projectId: facts.projectId,
+      kind: 'transition',
+      entityType: 'bug_report',
+      entityId: facts.bugReportId,
+      dedupeKey: bugFixTransitionKey(facts.bugReportId, facts.runId),
+      payload: {
+        issueKey: link.key,
+        transitionId: binding.policies.fixTransitionId,
+        statusName: binding.policies.fixTransitionId,
+        fields: binding.policies.fixTransitionFields,
+      } satisfies TransitionActionPayload,
     });
   }
 }

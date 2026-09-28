@@ -16,19 +16,18 @@ your project's history.
 ## What it does
 
 Every tool below runs on the live page, from the toolbar popup. The last three need a
-[connection to a Piwi instance](#connecting-to-a-piwi-instance); the others never reach a network.
+[connection to a Piwi instance](#connecting-to-a-piwi-instance); the others never reach it.
 
 | Tool | For |
 |---|---|
 | [Pick an element](#pick-an-element) | a ranked locator for one element, re-checked against the page |
-| [Hover-inspect](#hover-inspect) | the best locator of whatever the pointer is on |
-| [Locator console](#locator-console) | what a locator expression matches right now |
 | [Multi-pick](#multi-pick) | the shared pattern of a list's rows or cards |
 | [Lint overlay](#lint-overlay) | the elements that would make bad locator targets |
 | [Assertion suggester](#assertion-suggester) | `expect(...)` lines for an element |
-| [Session](#session) | named elements across pages, exported as a page object |
 | [Copy context for agent](#copy-context-for-agent) | one block about an element for a coding agent |
 | [Record actions](#record-actions) | a runnable spec from clicks and fills across pages |
+| [Report a bug](./report-a-bug) | a failing test and a report of a bug you reproduce |
+| [Developer tools](./devtools) | in DevTools: the selected element's locators, the locator console, the session, mocks, viewports |
 | [Matching functions](#matching-functions) | a recording that calls your own functions |
 | [Test functions](#test-functions-against-this-page) | which of your functions work on this page |
 | [Tested elements](#tested-elements) | which elements of this page your tests reach |
@@ -36,14 +35,14 @@ Every tool below runs on the live page, from the toolbar popup. The last three n
 ## Where it is
 
 Install **[Piwi Picker from the Chrome Web Store ↗](https://chromewebstore.google.com/detail/piwi-picker/pakhnokpjboejcghgcmkjlpnogfjihhe)**.
-The same listing covers Edge and the other Chromium browsers; in Edge, click **Allow** on the *Allow extensions from
-other stores* banner once, then **Get**.
+The listing covers Edge too: click **Allow** on its *Allow extensions from other stores* banner once, then **Get**.
 
-Every tool in the popup has a key shown on its tile (`1` records, `2` picks, `T` opens Tested elements). One tool
-runs at a time and **Esc** cancels it; recording is the exception and runs until its own **Stop**.
+Every tool in the popup has a key shown on its tile (`1` records, `2` picks, `T` opens Tested elements, `B`
+reports a bug). One tool runs at a time and **Esc** cancels it; recording runs until its own **Stop**. The developer
+tools that need no pick on the page are in the browser's DevTools: see [Developer tools](./devtools).
 
-Picking also has a shortcut without the popup, suggested as `Ctrl+Shift+E` (`Cmd+Shift+E` on macOS). A browser
-leaves it unbound when another extension holds it; the popup footer shows the key actually bound.
+Picking also has a shortcut, suggested as `Ctrl+Shift+E` (`Cmd+Shift+E` on macOS); the popup footer shows the key
+actually bound.
 
 ## Pick an element
 
@@ -51,116 +50,99 @@ Hover highlights, a click picks. The pick snaps to the nearest actionable ancest
 the button), and ↑/↓ walk the DOM tree first, showing the locator each step would produce. For an element with a role,
 an **anchors** step lets you pick stable parents to scope the locator to, with a live match count.
 
-Every candidate is scored the way the dashboard scores captured locators, then counted again against the page as it
-is now. A candidate that matches several elements shows its count and a suggestion (`.first()`,
-`.filter({ hasText: … })`), and ranks below every candidate that matches exactly one, so
-`getByTestId('product-43').getByRole('button')` beats a `getByRole('button', { name: 'Add to cart' })` that hits every
-card. Parents are anchored on the hook they carry (`data-testid`, `id`, a landmark role, an app-specific `data-*`),
-and a repeated container with no hook is singled out by its heading:
-`getByRole('listitem').filter({ hasText: 'Keyboard' }).getByRole('button')`.
+Every candidate uses the names Playwright computes (a tab with a count badge is `{ name: 'Regressions 5' }`), is scored
+the way the dashboard scores captured locators, and is run against the page as Playwright runs it. Those that find only
+the picked element come first. One that also finds others is offered narrowed: exact (`{ name: 'Failed' }` also finds
+"3 failed"), filtered by its text, or scoped to its landmark, dialog or row, and below it with its count;
+failing that, `.first()` or `.nth()`, with a warning.
 
-Copy the result as the bare locator, an action line (`await page.getByRole(…).click();`) or a visibility assertion;
-the popup remembers the last form. **Copy all** copies every ranked locator, one per line, for a project's
+Copy the result as the bare locator, an action line (`await page.getByRole(…).click();`) or a visibility assertion. **Copy all** copies every ranked locator, one per line, for a project's
 [Locators page](./locator-usage#the-locators-page).
-
-## Hover-inspect
-
-Toggled from the popup: hover any element to see its best-ranked locator in a tooltip, with no click.
-
-## Locator console
-
-Type or paste a locator expression and every match is outlined on the page as you type, with a strict-mode verdict:
-green for a single match, amber and numbered for several. It parses a safe subset (`getBy*` chains,
-`locator(css)`, `filter({ hasText })`, `.first()`, `.last()`, `.nth()`) and never runs it as code.
 
 ## Multi-pick
 
-Pick two or three similar items, such as table rows or cards, to derive the pattern they share (for example
-`getByRole('row').filter({ hasText: … })`). It warns when only `.nth()` could tell them apart.
+Pick two or three similar items (table rows, cards) to derive the pattern they share, such as
+`getByRole('row').filter({ hasText: … })`. It warns when only `.nth()` could tell them apart.
 
 ## Lint overlay
 
-One click outlines every interactive element that would score badly as a locator target (no test id, no accessible
-name, no stable parent), with a suggested `data-testid` for each and a Markdown checklist to export.
+One click outlines every interactive element no stable locator finds alone, with a suggested `data-testid` for each
+and a Markdown checklist.
 
 ## Assertion suggester
 
 Pick an element to get the `expect(...)` candidates that apply to it (`toHaveValue`, `toHaveText`,
 `toHaveAccessibleName`, `toBeVisible`), built on its top-ranked locator, each with a copy button.
 
-## Session
-
-Pick and name elements as you browse, across pages, then export the list as a page-object fixture class, a Markdown
-table for a pull request or an issue, or JSON. The session lasts until the browser closes.
-
 ## Copy context for agent
 
-Pick an element to copy one block for a coding agent: the page URL, a summary of the element (tag, role, accessible
-name, key attributes, text) and every ranked locator.
+Pick an element to copy one block for a coding agent: the page URL, a summary of the element and every ranked locator.
 
 ## Record actions
 
-**Record actions** asks for access to the one site you are on, then captures clicks, fills, checks, select changes
-and Enter-to-submit across that site's pages. A red border marks the recorded tab, and a small overlay counts the
-steps and shows the locator of the last one. **Stop** opens the review: **Copy as TypeScript** for a runnable spec
-(`page.goto`, then one line per step), or **Discard**. Password values are never captured; the spec reads a
-`process.env.*` placeholder instead.
+**Record actions** asks for access to the site you are on, then captures clicks, double clicks, fills, checks,
+choices, drags, the names of chosen files (never their content) and the keys that submit, close or move through a
+list, across pages. A click on what a hover shows (row actions, a
+hover menu) is recorded after that hover. **Stop** opens the
+review: **Copy as TypeScript** for a runnable spec that waits for each page it opens, **Download steps** for a
+[steps file](/reference/steps-format) to share or render with [`piwi codegen`](/reference/cli#codegen),
+[**Send to editor**](./editors#send-from-piwi-picker), or **Discard**. Passwords are never captured: the spec reads them from `process.env`.
 
 ## Matching functions
 
-With a connection, the recorder loads the [function catalog](./test-functions) of the project mapped to the page: the
-page-object methods and helpers you registered. While recording, the overlay ranks which function the steps so far
-look like, with a progress count (`2/3`) until one matches in full. On export, a complete match becomes a call to
-your function; unmatched steps stay plain locator lines. The matcher only chooses among the functions you
-registered, never invents one, and scores DOM patterns without AI.
+With a connection, the recorder loads the [function catalog](./test-functions) of the project mapped to the page and
+ranks, while you record, the functions the steps look like. On export, a complete match becomes a call to your
+function; other steps stay locator lines. No AI: it scores your registered functions' DOM patterns.
 
 ## Test functions against this page
 
 **Test functions** in the popup scores every function of the active project's catalog against the page as it is now:
-**ready to use here** (every step resolves to one element), **partial match**, or **not found on this page**. No
-recording is needed. **Manage catalog in Piwi ↗** opens the project's Test functions page.
+**Ready to use here** (every step finds one element), **Partly found here**, or **Not on this page**. Its link opens
+the catalog in Piwi.
 
 ## Tested elements
 
 With a connection, [Tested elements](./tested-elements) outlines every element of the page a test of the active
 project reaches, lists those tests, and marks the buttons, links and fields no test reaches.
 
+## Languages
+
+Piwi Picker speaks English, French, German, Spanish and Brazilian Portuguese, following the browser unless
+**Language**, in the settings, picks another. German, Spanish and Portuguese are unreviewed drafts:
+[suggest a correction](https://github.com/PiwiTests/platform/issues/new?template=translation.yml). A bug report is
+written in the extension's language; page texts, locators, test ids, `steps.json` and generated specs never are.
+
 ## Permissions, explained
 
 | Permission | Why |
 |---|---|
 | `activeTab` | acts on the tab you are looking at, only when you click the toolbar icon or press the shortcut |
+| `debugger` (Chrome and Edge) | trusted input for a [replay](./report-a-bug#replaying-a-report), a bug report's console, requests and screenshots, and DevTools' [throttling](./devtools#slow-down-or-fail-a-request). Attached only while one of them runs, under Chrome's bar saying Piwi Picker started debugging the browser; **Cancel** there falls back to the page's own events. Nothing leaves your machine |
 | `scripting` | injects the picker or the recorder into that tab on demand; no content script runs on pages you did not ask it to |
-| `storage` | keeps your copy format and, only if you connect, the instance URL, API key, project mappings, cached catalogs and the last three [locator indexes](./tested-elements), on your machine. The session and the running recording use `chrome.storage.session`, cleared when the browser closes |
+| `storage` | keeps your copy format and, only if you connect, the instance URL, API key, URL patterns, cached catalogs and the last three [locator indexes](./tested-elements), on your machine. The session and the running recording use `chrome.storage.session`, cleared when the browser closes |
+| `cookies` (optional, not granted in advance) | [Save login for tests](./devtools#save-login-for-tests) asks for it, for the one site whose login you save |
 | `optional_host_permissions` (none granted in advance) | recording asks for the one site you are on, to follow you across its pages; a connection asks for your instance's origin. Never `<all_urls>` |
 
 ## Connecting to a Piwi instance
 
-Optional and off by default. The popup's gear button opens the settings: your instance's URL, an API key (`pd_…`,
-from your account's API key settings), and a **Project mappings** table of URL patterns and projects (`*` matches
-within one path segment, `**` across segments, as in `https://shop.example.com/**`). Saving fetches each mapped
-project's function catalog and caches it; the request carries nothing about your browsing beyond the project ids.
+Optional and off by default. In the settings (the popup's gear button), type your instance's address and click
+**Connect**, then **Allow** in the tab that opens: Piwi Picker receives its own API key. Which project applies on a
+page comes from URL patterns kept on the instance, per project, and from any you keep in this browser; the popup's
+**Active project** select overrides both for the session. See [Extension connection](./extension-connection).
 
-The cache refreshes in the background, once per recorded page and when a recording stops; **Refresh** in Test
-functions fetches it now. The first mapping that matches the page applies, and the popup's **Active project** select
-overrides it for the current tab.
-
-**A recording is never sent to your instance.** Connecting changes only what **Copy as TypeScript** produces and what
-the overlay shows while recording.
+Function catalogs refresh in the background; **Refresh** in Test functions fetches them now. **A recording is never sent to your instance**, and a [bug report](./bug-reports) only from its preview.
 
 ## Limits
 
 - **One frame at a time.** The picker and the recorder see the top-level document, not iframes or shadow DOM.
 - **Recording covers one origin.** On another site, recording stops capturing steps; stop and review, or start again
   there.
-- **No aria-snapshot copier.** `toMatchAriaSnapshot()` YAML needs the computed accessibility tree, which an
-  extension reaches only with the `debugger` permission.
-- **Live re-check covers the common shapes.** `getByTestId`, CSS and a bare `getByRole` are counted again against the
-  page; text, label and placeholder matches and anchored chains keep the count from the pick.
+- **No aria-snapshot copier** yet for `toMatchAriaSnapshot()`.
 
 ## Related
 
 - [Fix a broken locator](/recipes/broken-locator): from a failing locator to the one to use instead
+- [Extension connection](./extension-connection): connecting in one step, and the URL patterns kept on the instance
 - [Tested elements](./tested-elements): the elements your tests reach, drawn on the page
 - [Test functions catalog](./test-functions): the functions a recording can call
 - [Locator healing](./locator-healing): the replacement Piwi proposes after a failure

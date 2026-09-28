@@ -22,7 +22,11 @@ installers ship side by side: the `.msi` installs per machine (admin); the NSIS 
   from the backend goes in `apps/application/` behind a desktop-aware guard, not into a desktop-only copy.
 - **Everything binds `127.0.0.1`.** Local access is gated by a per-launch token enforced by
   `apps/application/server/middleware/desktop-guard.ts` — so only the app, not other local processes or browser pages, can
-  reach the bundled API. Any new desktop-only route must stay behind that guard.
+  reach the bundled API. Any new desktop-only route must stay behind that guard. The guard leaves three open
+  (`isOpenDesktopRoute` in `server/utils/desktop-access.ts`): the readiness probe, and Piwi Picker's pairing start and
+  poll, which it sends before it holds the token. The start answers only an extension's JSON request and keeps at most
+  three waiting; the poll answers only with the secret the start gave; the token goes out once, after **Allow** in the
+  window (`DesktopPickerPairingModal`), behind the guard. A route added to that list needs the same care.
 - **The reporter discovery file is a cross-package contract.** The shell publishes `{ url, token }` to
   `~/.piwi/desktop.json` while it runs and deletes it on quit; `@piwitests/reporter` reads it from
   `src/internal/config/desktop.ts`, and `src-tauri/src/mcp_stdio.rs` resolves the app's address from it on every

@@ -10,6 +10,20 @@ const EXTENSION_PATH = path.join(here, '..', '..', 'dist');
 /** An already-installed Chromium to use instead of the revision Playwright pins — see application/playwright.config.ts's own copy of this. Extensions need the full browser, not the headless-shell variant `--only-shell` installs, so CI installs plain `chromium` here and leaves this unset. */
 const chromiumExecutable = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE?.trim() || '';
 
+/** `fr` → `LANGUAGE=fr`, `LANG=fr_FR.UTF-8`, `--lang=fr` and `locale: 'fr'`. */
+function languageLaunchOptions(language: string): {
+  options: { env: Record<string, string>; locale: string };
+  args: string[];
+} {
+  const [lang, region = lang] = language.split('-') as [string, string?];
+  const posix = `${lang}_${region.toUpperCase()}`;
+  const env = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => !!entry[1]));
+  return {
+    options: { env: { ...env, LANGUAGE: language.replace('-', '_'), LANG: `${posix}.UTF-8` }, locale: language },
+    args: [`--lang=${language}`],
+  };
+}
+
 /**
  * Launches Chromium with the extension at `extensionPath` loaded, by default
  * the built `dist/`. The `context` fixture uses it; a spec that must change the
@@ -19,12 +33,22 @@ const chromiumExecutable = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE?.trim() ||
  * profile, as it is for anyone who loads the extension unpacked. A spec that
  * reloads the extension needs it: without it, Chromium does not enable the
  * reloaded copy again.
+ *
+ * `args` adds command-line switches, and `userDataDir` names the profile
+ * directory, for a spec that reads files the browser writes there.
+ *
+ * `language` runs the browser in another language (`fr`). On Linux the
+ * `--lang` flag alone makes `chrome.i18n.getMessage` answer in that language
+ * but leaves `getUILanguage()` at `en-US`. Launched by hand, the `LANGUAGE`
+ * environment variable makes both agree; under Playwright Test the context's
+ * `locale`, which the runner otherwise sets to `en-US`, decides instead. Both
+ * are set.
  */
 export async function launchWithExtension(
   extensionPath = EXTENSION_PATH,
-  opts: { developerMode?: boolean } = {},
+  opts: { developerMode?: boolean; language?: string; args?: string[]; userDataDir?: string } = {},
 ): Promise<BrowserContext> {
-  const userDataDir = mkdtempSync(path.join(tmpdir(), 'piwi-picker-e2e-'));
+  const userDataDir = opts.userDataDir ?? mkdtempSync(path.join(tmpdir(), 'piwi-picker-e2e-'));
   if (opts.developerMode) {
     mkdirSync(path.join(userDataDir, 'Default'));
     writeFileSync(
@@ -32,7 +56,12 @@ export async function launchWithExtension(
       JSON.stringify({ extensions: { ui: { developer_mode: true } } }),
     );
   }
-  const args = [`--disable-extensions-except=${extensionPath}`, `--load-extension=${extensionPath}`];
+  const args = [
+    `--disable-extensions-except=${extensionPath}`,
+    `--load-extension=${extensionPath}`,
+    ...(opts.args ?? []),
+  ];
+  const language = opts.language ? languageLaunchOptions(opts.language) : { options: {}, args: [] };
   // Playwright's own docs example for extensions uses `channel: 'chromium'`
   // with no `headless` option and no manual `--headless=new` — that's not
   // cosmetic: CI was hanging indefinitely waiting for the extension's
@@ -45,8 +74,8 @@ export async function launchWithExtension(
   return chromium.launchPersistentContext(
     userDataDir,
     chromiumExecutable
-      ? { executablePath: chromiumExecutable, args: [...args, '--headless=new'] }
-      : { channel: 'chromium', args },
+      ? { ...language.options, executablePath: chromiumExecutable, args: [...args, ...language.args, '--headless=new'] }
+      : { ...language.options, channel: 'chromium', args: [...args, ...language.args] },
   );
 }
 
@@ -67,10 +96,12 @@ export async function extensionWorker(context: BrowserContext): Promise<Worker> 
   return sw;
 }
 
-export const test = base.extend<{ context: BrowserContext; extensionId: string }>({
-  // eslint-disable-next-line no-empty-pattern
-  context: async ({}, use) => {
-    const context = await launchWithExtension();
+export const test = base.extend<{ context: BrowserContext; extensionId: string; browserLanguage: string | undefined }>({
+  /** The browser's language, `test.use({ browserLanguage: 'fr' })`; the default is the system's, English in CI. */
+  browserLanguage: [undefined, { option: true }],
+
+  context: async ({ browserLanguage }, use) => {
+    const context = await launchWithExtension(undefined, { language: browserLanguage });
     await use(context);
     await context.close();
   },

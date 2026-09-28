@@ -1,12 +1,12 @@
 ---
 title: Piwi CLI
-description: "Every command and flag of the piwi CLI that ships with @piwitests/reporter: init, skills, gate, report, select, run, probe and ai."
+description: "Every command and flag of the piwi CLI that ships with @piwitests/reporter: init, skills, gate, report, select, run, probe, ai, codegen, preflight and bug."
 lang: en-US
 ---
 
 # Piwi CLI
 
-The `@piwitests/reporter` package ships a command-line tool, `piwi`, for the things that happen *around* a test run: wiring a project up, gating a CI job on the dashboard's analysis, running a saved test selection, and managing AI-step artifacts and agent skills. This page is the reference for every command and flag; each command's own `--help` prints the same list.
+The `@piwitests/reporter` package ships a command-line tool, `piwi`, for the things that happen *around* a test run: wiring a project up, gating a CI job on the dashboard's analysis, running a saved test selection, turning a recording into a spec, and managing AI-step artifacts and agent skills. This page is the reference for every command and flag; each command's own `--help` prints the same list.
 
 ## Invoking it
 
@@ -28,6 +28,9 @@ npx @piwitests/reporter <command> [options]
 | [`run`](#select-run) | Run a saved test selection with `playwright test` |
 | [`probe`](#probe) | Run the dashboard's probe plan and record what the suite noticed |
 | [`ai`](#ai) | Manage committed natural-language AI-step artifacts |
+| [`codegen`](#codegen) | Turn a steps file (a Piwi Picker recording) into a Playwright spec |
+| [`preflight`](#preflight) | List the test locators your change breaks, and fix them |
+| [`bug`](#bug) | Write a bug report's failing test into the project and run it once |
 
 Several commands read connection settings from the environment as a fallback: `PIWI_DASHBOARD_URL` (dashboard URL), `PIWI_API_KEY` (API key), and `PIWI_PROJECT_NAME` (project). A flag always wins over its environment variable.
 
@@ -64,7 +67,7 @@ npx @piwitests/reporter skills list
 npx @piwitests/reporter skills add [names...] [options]
 ```
 
-The six skills are `setup-piwi`, `investigate-failure`, `apply-locator-healing`, `stabilize-flaky-tests`, `run-the-right-tests` and `write-the-missing-test`. `add` with no names installs all of them.
+The seven skills are `setup-piwi`, `investigate-failure`, `apply-locator-healing`, `stabilize-flaky-tests`, `run-the-right-tests`, `write-the-missing-test` and `fix-a-reported-bug`. `add` with no names installs all of them.
 
 | Flag (for `add`) | Description |
 |---|---|
@@ -208,6 +211,107 @@ npx @piwitests/reporter ai prune
 | `--update-ai` | `resolve` | Re-author entries that already exist (needs `PIWI_DASHBOARD_URL` / `PIWI_API_KEY`) |
 
 **Exit codes:** `0` clean (or `--help`) · `1` hygiene issues found · `2` bad arguments / command unavailable.
+
+## `codegen`
+
+Turn a [steps file](/reference/steps-format) into a Playwright spec. Piwi Picker saves one with
+[**Download steps**](/features/extension#record-actions). The spec is written for a test project: URLs on the recorded
+site become paths, so your config's `baseURL` applies; each element uses the first of its recorded locators that the
+[stability rules](/reference/locator-stability) call stable; and after each step that leads to another page, the spec
+waits for that page's URL. Nothing is sent anywhere unless a project is configured.
+
+```bash
+npx @piwitests/reporter codegen steps.json --out tests/checkout.spec.ts --test-import ./fixtures
+```
+
+`codegen bug:<id>` reads the steps of a [bug report](/features/bug-reports) from the dashboard (`--server-url`) instead
+of a file.
+
+| Flag | Description |
+|---|---|
+| `--out <file>` | Write the spec to this file instead of printing it; an existing file is kept unless `--force` |
+| `--force` | Replace the file `--out` names |
+| `--body` | Print only the test's lines, to paste into an existing test, with the imports they need as comments |
+| `--title <text>` | Test title (default: the steps file's own title) |
+| `--test-import <mod>` | Module `test` and `expect` are imported from, such as your fixtures file (default `@playwright/test`) |
+| `--absolute-urls` | Keep the recorded URLs instead of paths |
+| `--no-url-checks` | Do not wait for each new page's URL |
+| `--env-values` | Read every typed value from a `PIWI_TEST_VALUE_<n>` environment variable instead of writing it into the spec |
+| `--fail` | Mark the test as expected to fail (`test.fail()`) |
+| `--fail-reason <text>` | The reason written beside `test.fail()`, such as a ticket key |
+| `--tag <tag>` | Add a tag; repeat for more (`@` is added when missing) |
+| `--project <name\|id>` | Project (env `PIWI_PROJECT_NAME`): its [function catalog](/features/test-functions) turns matching steps into calls to your own functions, and a locator your tests already use is preferred when it is not brittle |
+| `--server-url <url>` | Dashboard URL (env `PIWI_DASHBOARD_URL`) |
+| `--api-key <key>` | API key (env `PIWI_API_KEY`) |
+| `--offline` | Do not contact the dashboard, even when one is configured |
+| `-h`, `--help` | Show help |
+
+Warnings go to stderr, one per step worth a look: a password read from the environment, an element with no locator,
+or one whose best locator is brittle. A dashboard that cannot be reached only costs the catalog and the preferred
+locators; the spec is still written.
+
+**Exit codes:** `0` written or printed · `2` the steps file could not be read or checked, or the spec could not be
+written.
+
+## `preflight`
+
+List the test locators a change breaks, before it runs: [Locator preflight](/features/preflight) explains what it
+reads and how it matches. It diffs the working tree against a ref, compares the strings the diff removes or renames
+with the project's locator index, and prints each broken chain with its tests, its call sites and its rewrite.
+
+```bash
+npx @piwitests/reporter preflight
+npx @piwitests/reporter preflight --base @{upstream} --strict
+npx @piwitests/reporter preflight --fix --run -- --workers=2
+```
+
+| Flag | Description |
+|---|---|
+| `--base <ref>` | Diff the working tree against this ref (default `HEAD`: uncommitted changes) |
+| `--branch <name>` | Compare with this branch's locator index (default: the project's default branch) |
+| `--test-root <dir>` | Where call sites resolve (default: the directory of the nearest `playwright.config`) |
+| `--locale <code>` | Translation files of this locale resolve keys first (default `en`) |
+| `--fix` | Write the rewrites into the call sites whose line holds the string |
+| `--run` | Run the tests that reach the changed files and the specs of the broken locators; Playwright arguments go after `--` |
+| `--strict` | Exit 1 when a likely break is left unfixed |
+| `--server-url <url>` | Dashboard URL (env `PIWI_DASHBOARD_URL`, then `.env`, then the running desktop app) |
+| `--api-key <key>` | API key (env `PIWI_API_KEY`) |
+| `--project <name\|id>` | Project (env `PIWI_PROJECT_NAME`) |
+| `--json` | Print the breaks, their call sites, the edits and the impact as JSON |
+| `-h`, `--help` | Show help |
+
+The index is cached in `.piwi/locator-index.json` per dashboard, project and branch, and used when the dashboard
+cannot be reached.
+
+**Exit codes:** `0` ok, breaks or not · `1` a likely break left unfixed with `--strict`, or `--run`'s tests failed ·
+`2` the index could not be fetched and there is no cached copy, or the diff could not be read.
+
+## `bug`
+
+Get a [bug report](/features/bug-reports)'s failing test from the dashboard, written with the project's
+[generated specs settings](/features/bug-reports#the-failing-test): `test.fail()` while the bug exists, `@bug`, and
+`piwi:bug <id>` so the report follows its runs. Printed by default; `--write` puts it in the project's bugs folder
+(`tests/bugs` unless the project names another) and runs it once with `playwright test`, so you see the bug reproduce
+before you fix it.
+
+```bash
+npx @piwitests/reporter bug 37 --write
+```
+
+| Flag | Description |
+|---|---|
+| `--write` | Write the spec to the project's bugs folder (from the repository root), then run it once |
+| `--out <file>` | Write it to this file instead, then run it once; its test import is written for that file's folder |
+| `--no-run` | With `--write` or `--out`: write it without running it |
+| `--force` | Replace an existing file |
+| `--run-mode` | The spec without `test.fail()`, as a reproduction runs it |
+| `--server-url <url>` | Dashboard URL (env `PIWI_DASHBOARD_URL`) |
+| `--api-key <key>` | API key (env `PIWI_API_KEY`) |
+| `-h`, `--help` | Show help |
+
+**Exit codes:** `0` printed or written, and when run, the test failed on the bug as `test.fail()` expects · `1` the run
+did not: the bug may be fixed, or a step no longer matches the page · `2` the report could not be read or the file
+could not be written.
 
 ## Related
 

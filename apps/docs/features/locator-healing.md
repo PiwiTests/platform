@@ -31,13 +31,18 @@ elements is dropped. Input values are never captured.
 
 When a locator later fails, the server looks for replacements, most trustworthy first:
 
-1. **Prior run**: the same call site (`file:line:col`) had a passing snapshot.
-2. **Element match**: the element is gone from the failing page's ARIA snapshot under its old name, so fresh locators
+1. **Diff rename**: the run's own diff renamed the string the locator finds its element by, at this call site, as
+   [Locator preflight](./preflight) predicts it with a _likely_ break. The replacement is the same locator with the new string, and the
+   panel says where: "“Pay now” became “Pay” in CheckoutButton.vue:14". It needs a run with a diff (a pull request,
+   or a commit after a passing run) and a source-control token. Its edit replaces the string inside your quotes, and
+   an [auto-heal PR](./auto-heal) can use it.
+2. **Prior run**: the same call site (`file:line:col`) had a passing snapshot.
+3. **Element match**: the element is gone from the failing page's ARIA snapshot under its old name, so fresh locators
    are generated for the element it most likely became, matched by role, heading level and, on a total rename, its
    position among elements of the same role.
-3. **Fingerprint**: the call site moved lines, but the locator matches a prior snapshot.
-4. **Cross-test**: another test in the project captured the same locator.
-5. **ARIA fallback**: no snapshot exists, so limited suggestions come from the failure-time ARIA snapshot.
+4. **Fingerprint**: the call site moved lines, but the locator matches a prior snapshot.
+5. **Cross-test**: another test in the project captured the same locator.
+6. **ARIA fallback**: no snapshot exists, so limited suggestions come from the failure-time ARIA snapshot.
 
 <figure>
   <img src="/diagrams/locator-healing-resolution.svg" alt="Diagram of the healing resolution flow: the failing error is parsed into a locator signature and call site, matched through the stored history, checked against the failing page's ARIA snapshot, and shown in the Locator fix panel">

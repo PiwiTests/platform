@@ -2,22 +2,26 @@
  * Impact-from-diff — map a set of changed files to the tests they affect,
  * resolved through observed edges rather than a build-time dependency graph.
  *
- * Two edges, both cheap and config-free:
+ * Three edges, all cheap and config-free:
  *  1. **Direct** — a changed file that IS a test file → the tests defined in it.
  *  2. **Reach** — a changed support file (page object, helper, app module) that
  *     a test's most recent execution actually ran through, per its captured
  *     `test_source_frames`.
+ *  3. **Code reach** — a changed application file whose functions a test
+ *     executed (`code_reach`), or the handler file of a route a test called.
  *
  * Honest by construction: it degrades in the safe direction. A changed *source*
  * file that maps to no test can't be ruled out, so the selection widens to the
- * full suite (with a warning) rather than silently skipping it. Route/page-level
- * mapping (server routes → tests that hit them) needs a per-project config and
- * is intentionally not attempted here.
+ * full suite (with a warning) rather than silently skipping it. Code reach only
+ * adds tests: it leaves out module top-level code, server modules and
+ * type-only modules, so a file it never saw may still be run by every test.
  */
 import { eq, sql } from 'drizzle-orm';
 import { testCases, testRunsCases } from '../database/schema';
 import type { DrizzleDB } from '#shared/handlers/db';
 import { resolveCasePayloadContents } from './case-payloads';
+import { sameFilePath } from '@piwitests/core/locator-break';
+import { loadCodeReachPairs } from './code-reach';
 import { resolveSelectionDefinition } from '#shared/handlers/selections';
 import type { ResolvedSelection, SelectionDefinition, SelectionFormat, SelectionRankBy } from '#shared/selection';
 
@@ -137,6 +141,7 @@ export async function resolveImpact(
     .from(testCases)
     .where(eq(testCases.projectId, projectId));
   const reach = await loadSourceReach(db, projectId);
+  const codeReach = await loadCodeReachPairs(db, projectId);
 
   const matched = new Set<number>();
   const mappedFiles = new Set<string>();
@@ -156,6 +161,21 @@ export async function resolveImpact(
         matched.add(caseId);
         mappedFiles.add(changed);
       }
+    }
+  }
+
+  // Many tests reach the same files: match each distinct file once.
+  const testsByFile = new Map<string, Set<number>>();
+  for (const pair of codeReach) {
+    const tests = testsByFile.get(pair.file);
+    if (tests) tests.add(pair.testCaseId);
+    else testsByFile.set(pair.file, new Set([pair.testCaseId]));
+  }
+  for (const [file, tests] of testsByFile) {
+    for (const changed of files) {
+      if (!sameFilePath(file, changed)) continue;
+      for (const id of tests) matched.add(id);
+      mappedFiles.add(changed);
     }
   }
 

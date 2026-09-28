@@ -14,6 +14,7 @@ mod inspect;
 mod interrupt;
 mod mcp_clients;
 mod mcp_stdio;
+mod repro;
 mod runner;
 #[cfg(windows)]
 mod taskbar_win;
@@ -52,6 +53,7 @@ use runner::{
     desktop_pick_folder, desktop_pick_import_files, desktop_run_local_tests,
     desktop_set_project_link, desktop_set_project_start_command, desktop_stop_local_tests,
 };
+use repro::desktop_run_repro;
 use worktree::{desktop_bisect_here, desktop_reproduce_here};
 
 pub(crate) const STORE_FILE: &str = "settings.json";
@@ -1266,6 +1268,7 @@ pub fn run() {
             desktop_set_project_link,
             desktop_run_local_tests,
             desktop_stop_local_tests,
+            desktop_run_repro,
             desktop_set_project_start_command,
             desktop_reproduce_here,
             desktop_bisect_here,

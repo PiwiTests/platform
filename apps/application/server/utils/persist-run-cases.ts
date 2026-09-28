@@ -23,6 +23,7 @@ import { normalizeTestCaseStatus } from '#shared/utils/test-counts';
 import { upsertCasePayloads } from './case-payloads';
 import { GREEN_SAMPLE_MAX_AGE_MS } from '#shared/handlers/aria-sampling';
 import { computeErrorFingerprint, type ErrorFingerprint } from '#shared/error-fingerprint';
+import { isExpectedFailurePassed, resolveExpectedStatus } from '#shared/status-classify';
 import {
   normalizeTestLocks,
   normalizeTestTags,
@@ -38,6 +39,7 @@ import { upsertLocatorSnapshots } from './locator-healing';
 import {
   ingestRunGraph,
   ingestRequestGraph,
+  upsertGraphSpecs,
   ingestPageInventoryGraph,
   collectRunGraphReaches,
   resolveRunBranchTagFromStored,
@@ -47,6 +49,7 @@ import {
 import { collectOwnOrigins, originsFromDocumentRequests } from '#shared/graph';
 import { isProbeRun } from '#shared/handlers/probes';
 import { upsertLocatorUsages, type LocatorUsageCase } from './locator-usages';
+import { buildCodeReachGraph, sanitizeCodeReach, upsertCodeReach, type CodeReachCase } from './code-reach';
 import { sanitizeLocatorPages } from './locator-pages';
 import type { LocatorSnapshot } from '#shared/locator-healing.types';
 import type { DbClient as DB } from '../database';
@@ -101,6 +104,8 @@ export interface RunCaseInput {
   pageInventory?: unknown;
   /** The page each locator call ran on — stored through case_payloads, joined to the locator index. */
   locatorPages?: unknown;
+  /** The source files the test executed — stored through case_payloads, and per test in `code_reach`. */
+  codeReach?: unknown;
   aiUsage?: unknown;
   consoleLogs?: unknown;
   dialogs?: unknown;
@@ -116,6 +121,8 @@ export interface RunCaseInput {
   locatorSnapshots?: LocatorSnapshot[] | null;
   /** Why a `didnotrun` case never executed; null for tests that ran. */
   didNotRunReason?: string | null;
+  /** Playwright's `TestCase.expectedStatus`; derived from the annotations when absent. */
+  expectedStatus?: string | null;
   /** For a `previous-failure` cascade, the location of the failing test that blocked it. */
   blockedBy?: string | null;
 }
@@ -393,7 +400,12 @@ export async function persistRunCases(
 
   const fingerprintResults = await Promise.all(
     cases.map((c) =>
-      c.error && c.status !== 'passed' && c.status !== 'skipped'
+      // An expected failure that passed is good news about one test, not a
+      // failure mode: it forms no cluster.
+      c.error &&
+      c.status !== 'passed' &&
+      c.status !== 'skipped' &&
+      !isExpectedFailurePassed(c.status, resolveExpectedStatus(c.expectedStatus, c.testAnnotations))
         ? computeErrorFingerprint(c.error)
         : Promise.resolve(null),
     ),
@@ -413,6 +425,7 @@ export async function persistRunCases(
     framesJson: string | null;
     inventory: string | null;
     locatorPages: string | null;
+    codeReach: string | null;
   }> = [];
   const networkRequestBuilders: NetworkRequestBuilder[] = [];
   const rowFingerprints: Array<ErrorFingerprint | null> = [];
@@ -430,6 +443,7 @@ export async function persistRunCases(
   const caseMetaSnapshots = new Map<number, CaseMetaSnapshot>();
   // Locator uses read from each execution's steps, indexed after the insert.
   const perCaseUsages: LocatorUsageCase[] = [];
+  const perCaseReach: CodeReachCase[] = [];
 
   for (let i = 0; i < cases.length; i++) {
     const c = cases[i]!;
@@ -489,6 +503,9 @@ export async function persistRunCases(
       complete: c.status === 'passed' && Array.isArray(c.steps) && c.steps.length <= limits.steps,
     });
 
+    const reached = sanitizeCodeReach(c.codeReach);
+    if (reached) perCaseReach.push({ testCaseId: caseId, runId: testRunId, files: reached });
+
     if (fingerprint) {
       const pending = pendingClusters.get(fingerprint.fingerprint);
       if (pending) {
@@ -516,6 +533,7 @@ export async function persistRunCases(
       framesJson: frames != null ? JSON.stringify(frames) : null,
       inventory,
       locatorPages: locatorPages ? JSON.stringify(locatorPages) : null,
+      codeReach: reached ? JSON.stringify(reached) : null,
     });
 
     runCasesRows.push({
@@ -557,6 +575,7 @@ export async function persistRunCases(
       shardIndex: c.shardIndex ?? null,
       startedAt: c.startedAt ?? null,
       didNotRunReason: c.didNotRunReason ?? null,
+      expectedStatus: resolveExpectedStatus(c.expectedStatus, c.testAnnotations),
       blockedBy: c.blockedBy ?? null,
     });
     rowInputIndices.push(i);
@@ -575,7 +594,7 @@ export async function persistRunCases(
   const payloadIds = await upsertCasePayloads(
     db,
     projectId,
-    rowPayloads.flatMap((p) => [p.aria, p.ariaJson, p.source, p.framesJson, p.inventory, p.locatorPages]),
+    rowPayloads.flatMap((p) => [p.aria, p.ariaJson, p.source, p.framesJson, p.inventory, p.locatorPages, p.codeReach]),
   );
   runCasesRows.forEach((row, i) => {
     const p = rowPayloads[i]!;
@@ -585,6 +604,7 @@ export async function persistRunCases(
     row.testSourceFramesPayloadId = p.framesJson ? (payloadIds.get(p.framesJson) ?? null) : null;
     row.pageInventoryPayloadId = p.inventory ? (payloadIds.get(p.inventory) ?? null) : null;
     row.locatorPagesPayloadId = p.locatorPages ? (payloadIds.get(p.locatorPages) ?? null) : null;
+    row.codeReachPayloadId = p.codeReach ? (payloadIds.get(p.codeReach) ?? null) : null;
   });
 
   // A probe run's failures are injected, not real: it never counts as a real
@@ -642,6 +662,9 @@ export async function persistRunCases(
     await upsertLocatorUsages(db, projectId, perCaseUsages).catch((err) =>
       console.warn('[locator-usages] failed to index the locators of this batch', err),
     );
+    await upsertCodeReach(db, projectId, perCaseReach).catch((err) =>
+      console.warn('[code-reach] failed to store the code reach of this batch', err),
+    );
   }
   await syncTestCaseMetadata(db, caseMetaSnapshots);
 
@@ -698,6 +721,10 @@ export async function persistRunCases(
       // Handler and dependency breadth: `handled-by` and `calls` edges from the
       // server spans forwarded with each request. A no-op for uninstrumented runs.
       await ingestRequestGraph(db, projectId, testRunId, networkRequestBuilders, origins, { branch });
+      // The files each test executed, as `file` nodes (origin `coverage`) the test reaches.
+      if (perCaseReach.length) {
+        await upsertGraphSpecs(db, projectId, testRunId, buildCodeReachGraph(perCaseReach), { branch });
+      }
 
       // Control, link and page-load breadth from the page inventory attached on
       // passing runs. Builders align with runCasesRows; map each back to its input

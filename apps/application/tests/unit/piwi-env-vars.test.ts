@@ -192,6 +192,9 @@ describe('PIWI_ENV_VARS registry', () => {
       // `desktop/src-tauri/src/lib.rs`), not the server — the app just names it
       // in the snapshot picker's "couldn't start" hint.
       'PIWI_DEBUG',
+      // Set by the desktop shell for a repro run and read by the spec it
+      // writes (see `shared/desktop-repro.ts`), never by the server.
+      'PIWI_REPRO_RESULT',
     ]);
     const realMissing = missing.filter((v) => !knownFalsePositives.has(v));
     expect(realMissing.sort()).toEqual([]);

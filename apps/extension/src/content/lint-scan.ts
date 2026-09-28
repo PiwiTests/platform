@@ -1,36 +1,29 @@
-import { probeElementAttrs, type ProbeArg } from '@piwitests/picker-dom';
-import {
-  generateAlternatives,
-  approximateAccessibleName,
-  resolveAriaRole,
-  CAPTURED_ATTRIBUTES,
-  TAG_TO_ROLE,
-  INPUT_TYPE_TO_ROLE,
-} from '@piwitests/core/locator-generation';
+import { checkLocators, createPageEngine, isPiwiElement, rankElement, ROLE_SOURCES } from './verified-locators.js';
 
 export interface LintFinding {
   element: Element;
   role: string;
-  /** Always null in practice — see the doc comment on `scanForLintIssues` for why a truthy accessible name can never coexist with a bad score here. */
+  /** The name Playwright computes, when it has one: a name other elements share, which no locator tells apart but by position. */
   accessibleName: string | null;
   /** `${role}-${n}`, numbered by discovery order within that role (e.g. `button-1`, `button-2`) — a starting point, not a guarantee of uniqueness on the page. */
   suggestedTestId: string;
-  /** The best score `generateAlternatives` could find for this element — below the bad-score threshold, meaning no test id, no accessible name, and no stable structural anchor either. */
+  /** The best score of a locator finding this element alone on the page (`checkLocators`), 0 when none does — below the bad-score threshold, meaning no test id, no telling name, and no stable structural anchor either. */
   bestScore: number;
 }
 
 /**
  * Find every interactive element that would score badly as a Playwright
- * locator target right now (A9): no test id, no accessible name, and no
- * unique structural anchor either — `generateAlternatives`' own single
- * source of truth for what counts as a good locator, just read as a
- * pass/fail signal instead of a ranked list.
+ * locator target right now (A9): no locator but a positional one finds it
+ * alone — no test id, no name that tells it apart, and no unique structural
+ * anchor either. The ranking and its check against the page are the Pick
+ * results' own (`rankElement`, `checkLocators`), read as a pass/fail signal
+ * instead of a ranked list, with one engine for the whole scan.
  *
- * Unlike `evaluateLocatorChain`/`derivePattern`, this isn't re-serialized via
- * `Function.prototype.toString()` in tests: `generateAlternatives` has its
- * own web of private module-level helpers that reconstruction can't carry
- * along, and they aren't exported to install individually either. Tested via
- * the real built `lint-overlay.js` bundle instead (see that file).
+ * Unlike `derivePattern`, this isn't re-serialized via
+ * `Function.prototype.toString()` in tests: `generateAlternatives` and the
+ * engine have their own web of private module-level helpers that
+ * reconstruction can't carry along. Tested via the real built
+ * `lint-overlay.js` bundle instead (see that file).
  */
 export function scanForLintIssues(): LintFinding[] {
   // ARIA "widget" roles — the interactive surface A9 is scoped to, not every
@@ -62,36 +55,24 @@ export function scanForLintIssues(): LintFinding[] {
   // actual interactive-element count.
   const MAX_CANDIDATES = 800;
 
-  const roleSources = [...new Set(['[role]', 'input', 'select', ...Object.keys(TAG_TO_ROLE)])].join(',');
-  const probeArg: ProbeArg = {
-    keep: [...CAPTURED_ATTRIBUTES],
-    tagRoles: TAG_TO_ROLE,
-    inputRoles: INPUT_TYPE_TO_ROLE,
-    roleSources,
-    includeStructural: true,
-  };
-
   const findings: LintFinding[] = [];
   const perRoleCount = new Map<string, number>();
-  const candidates = document.querySelectorAll(roleSources);
+  const engine = createPageEngine(document);
+  const candidates = [...document.querySelectorAll(ROLE_SOURCES)].filter((el) => !isPiwiElement(el));
   const limit = Math.min(candidates.length, MAX_CANDIDATES);
 
   for (let i = 0; i < limit; i++) {
     const el = candidates[i]!;
-    const attrs = probeElementAttrs(el, probeArg);
-    const accessibleName = approximateAccessibleName({ ...attrs, accessibleName: null });
-    const role = resolveAriaRole({ ...attrs, accessibleName });
+    const { accessibleName, role, ranked } = rankElement(el, { model: engine.model });
     if (!role || !INTERACTIVE_ROLES.has(role)) continue;
 
-    const ranked = generateAlternatives({ ...attrs, accessibleName });
-    const bestScore = ranked.length > 0 ? ranked[0]!.score : 0;
+    const [best] = checkLocators(el, ranked, { engine, limit: 1 });
+    const bestScore = best?.score ?? 0;
     if (bestScore >= BAD_SCORE_THRESHOLD) continue;
 
-    // accessibleName is always null here: approximateAccessibleName checks
-    // labels/aria-label/textContent/title/placeholder, and any of those being
-    // truthy would already have earned a score-90 role+name alternative
-    // above the threshold. Nothing to slug — number by discovery order
-    // within the role instead (button-1, button-2, link-1, ...).
+    // Numbered by discovery order within the role (button-1, button-2,
+    // link-1, ...): a name here is one other elements share, so no slug of
+    // it would be unique either.
     const n = (perRoleCount.get(role) ?? 0) + 1;
     perRoleCount.set(role, n);
     const suggestedTestId = `${role}-${n}`;

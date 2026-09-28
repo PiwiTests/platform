@@ -82,8 +82,9 @@ Playwright and the app's bundled Node. The first time, it asks you to link the p
   project's one-click default, and **Run with options…** shows the exact command.
 - **Runs keep going while you browse.** Output streams into the **Local runs** tray, a sidebar pill keeps it one
   click away, and stopping is always explicit. Leaving the app with runs active asks first.
-- **More places to run from:** **Reproduce locally** on a test case (the test 20 times with a trace, for a flaky
-  test) and **Run affected locally** on a failure cluster.
+- **More places to run from:** **Reproduce locally** on a test case (20 times with a trace), **Run affected
+  locally** on a failure cluster, and a [bug report](/features/bug-reports#running-it-with-playwright-in-the-desktop-app)
+  sent from Piwi Picker.
 - **Wrong folder?** When none of the tests exist in the linked folder, the button opens the dialog to fix the link.
 
 The run uses your project's own Playwright config, so its reporter sends the results here like a run from your

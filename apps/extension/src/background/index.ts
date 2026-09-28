@@ -6,15 +6,106 @@ import {
   clearRecordIntent,
   decideRecordIntent,
   serveAppendRecordingEvent,
+  type RecordingMode,
 } from '../shared/recording-storage.js';
 import { getConnectionSettings } from '../shared/connection-settings.js';
-import { fetchCatalog, fetchLocatorIndex } from '../shared/piwi-client.js';
+import { getReplayState, newReplayState, setReplayState } from '../shared/replay-storage.js';
+import { parseSteps, sessionFromSteps } from '@piwitests/core/steps';
+import { fetchCatalog, fetchLocatorIndex, postToEditor } from '../shared/piwi-client.js';
+import { editorOriginPattern, getEditorPairing } from '../shared/editor-pairing.js';
+import type { SendToEditorResult } from '../shared/editor-send.js';
+import type { EditorSendPayload } from '@piwitests/core/editor-send';
 import { setCachedCatalog, isCatalogStale } from '../shared/catalog-cache.js';
 import type { RefreshCatalogResult } from '../shared/catalog-refresh.js';
 import { isLocatorIndexStale, setCachedLocatorIndex } from '../shared/locator-index-cache.js';
 import type { LocatorIndexRefreshResult } from '../shared/locator-index-refresh.js';
 import { BUILD_ID } from '../shared/build-id.js';
-import { serveSessionStorage } from '../shared/session-area.js';
+import { serveSessionStorage, sessionArea } from '../shared/session-area.js';
+import { LANGUAGE_KEY, initI18n, isLanguage, t } from '../shared/i18n.js';
+import { refreshLanguageChoice, storeLanguageChoice } from './language-choice.js';
+import {
+  handleBugSendTarget,
+  handleGetBugReport,
+  handleListBugReports,
+  handleSendBugReport,
+  handleShareReproduction,
+  handleShareTarget,
+} from './bug-reports.js';
+import {
+  CONDITIONS_KEY,
+  isCondition,
+  isCpuRate,
+  isThrottle,
+  type ConditionsState,
+  type ConditionsVia,
+} from '../shared/request-conditions.js';
+import {
+  applyThroughDebugger,
+  clearTabViewport,
+  onConditionsDebuggerLost,
+  releaseConditionsDebugger,
+  setTabViewport,
+} from './cdp-conditions.js';
+import { handleDesktopRepro, handleDesktopReproStatus, handleDesktopTarget } from './desktop-repro.js';
+import { handleReplayDriver, handleReplayInput, releaseReplayDebugger, releaseReplayTab } from './cdp-replay.js';
+import { debuggerAvailable, tabsHolding } from './debugger.js';
+import {
+  captureThroughDebugger,
+  collectsThroughDebugger,
+  onBugDebuggerLost,
+  startBugDebugger,
+  stopBugDebugger,
+} from './cdp-evidence.js';
+
+/**
+ * The Options language, read at startup and again whenever it changes. Every
+ * handler that answers with a text waits for it first.
+ */
+let i18nReady = initI18n();
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && LANGUAGE_KEY in changes) i18nReady = initI18n();
+});
+
+// An update ships new texts: the stored copy of the chosen catalog is read again.
+chrome.runtime.onInstalled.addListener(() => {
+  void refreshLanguageChoice().catch((err: unknown) => console.warn('[Piwi Picker] language catalog refresh:', err));
+});
+
+async function handleSetLanguage(code: unknown): Promise<{ ok: boolean; error?: string }> {
+  if (code !== null && !isLanguage(code)) return { ok: false, error: String(code) };
+  try {
+    await storeLanguageChoice(code);
+    i18nReady = initI18n();
+    await i18nReady;
+    await showStateBadge();
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+const RECORDING_BADGE_COLOR = '#dc2626';
+const REPLAY_BADGE_COLOR = '#7c3aed';
+
+/**
+ * The toolbar badge for what runs now: a recording, else a replay, else
+ * nothing. Decided from the stored states, never from the badge's own text,
+ * which depends on the language.
+ */
+async function showStateBadge(): Promise<void> {
+  await i18nReady;
+  const [recording, replay] = await Promise.all([getRecordingState(), getReplayState()]);
+  if (recording.active) {
+    await chrome.action.setBadgeText({ text: t(recording.mode === 'bug' ? 'badge_bug' : 'badge_recording') });
+    await chrome.action.setBadgeBackgroundColor({ color: RECORDING_BADGE_COLOR });
+  } else if (replay && (replay.status === 'running' || replay.status === 'paused')) {
+    await chrome.action.setBadgeText({ text: t('badge_replay') });
+    await chrome.action.setBadgeBackgroundColor({ color: REPLAY_BADGE_COLOR });
+  } else {
+    await chrome.action.setBadgeText({ text: '' });
+  }
+}
 
 /**
  * Service worker: the keyboard-shortcut trigger for picking (the toolbar
@@ -65,6 +156,23 @@ const sessionAccessReady = Promise.resolve()
   .catch(() => undefined);
 
 const RECORD_SCRIPT_ID = 'piwi-record-panel';
+/** The bug recording's main-world script: console errors and failed requests, registered only while one runs. */
+const BUG_EVIDENCE_SCRIPT_ID = 'piwi-bug-evidence';
+const RECORDING_SCRIPT_IDS = [RECORD_SCRIPT_ID, BUG_EVIDENCE_SCRIPT_ID];
+
+/**
+ * Unregisters whichever of `ids` are registered. Chrome refuses the whole call
+ * when one of the ids is not registered, as the bug recording's script is not
+ * during an actions recording.
+ */
+async function unregisterScripts(ids: string[]): Promise<void> {
+  try {
+    const registered = await chrome.scripting.getRegisteredContentScripts({ ids });
+    if (registered.length > 0) await chrome.scripting.unregisterContentScripts({ ids: registered.map((s) => s.id) });
+  } catch {
+    // Nothing registered to remove.
+  }
+}
 
 /**
  * `chrome.scripting.registerContentScripts`/`unregisterContentScripts` and
@@ -75,15 +183,36 @@ const RECORD_SCRIPT_ID = 'piwi-record-panel';
  * (it needs to happen inside its own click handler to count as a user
  * gesture) and only sends the already-granted origin pattern here.
  */
-async function handleStartRecording(originPattern: string, tabId: number): Promise<{ ok: boolean; error?: string }> {
+async function handleStartRecording(
+  originPattern: string,
+  tabId: number,
+  mode: RecordingMode,
+): Promise<{ ok: boolean; error?: string }> {
   try {
-    await startRecording(originPattern);
+    await startRecording(originPattern, mode);
     // Best-effort: a previous recording that ended without a clean `stop`
     // (crashed tab, browser killed mid-session) can leave a stale
     // registration behind — `persistAcrossSessions: false` means it never
     // survives a full browser restart, only the current one.
-    await chrome.scripting.unregisterContentScripts({ ids: [RECORD_SCRIPT_ID] }).catch(() => undefined);
+    await unregisterScripts(RECORDING_SCRIPT_IDS);
+    // A bug recording also runs a script in the page's main world, the only
+    // place that sees the page's console and its fetch/XHR calls, under the
+    // same origin grant and only for as long as the recording.
+    const bugScripts: chrome.scripting.RegisteredContentScript[] =
+      mode === 'bug'
+        ? [
+            {
+              id: BUG_EVIDENCE_SCRIPT_ID,
+              js: ['bug-evidence-main.js'],
+              matches: [originPattern],
+              runAt: 'document_start',
+              world: 'MAIN',
+              persistAcrossSessions: false,
+            },
+          ]
+        : [];
     await chrome.scripting.registerContentScripts([
+      ...bugScripts,
       {
         id: RECORD_SCRIPT_ID,
         js: ['record-panel.js'],
@@ -94,9 +223,16 @@ async function handleStartRecording(originPattern: string, tabId: number): Promi
     ]);
     // The registration above only applies to *future* navigations — the
     // already-loaded current page needs its own one-off injection.
+    if (mode === 'bug') {
+      await chrome.scripting.executeScript({ target: { tabId }, files: ['bug-evidence-main.js'], world: 'MAIN' });
+    }
+    // Chrome: the console, the requests and screenshots through the debugging protocol, in the tab the report
+    // starts in. The page's script above stays registered for the other tabs, and takes over if this fails.
+    if (mode === 'bug') await startBugDebugger(tabId);
     await chrome.scripting.executeScript({ target: { tabId }, files: ['record-panel.js'] });
-    await chrome.action.setBadgeText({ text: 'REC' });
-    await chrome.action.setBadgeBackgroundColor({ color: '#dc2626' });
+    await i18nReady;
+    await chrome.action.setBadgeText({ text: t(mode === 'bug' ? 'badge_bug' : 'badge_recording') });
+    await chrome.action.setBadgeBackgroundColor({ color: RECORDING_BADGE_COLOR });
     return { ok: true };
   } catch (err) {
     // `startRecording` has already written `active: true`, so a failure after it
@@ -104,9 +240,11 @@ async function handleStartRecording(originPattern: string, tabId: number): Promi
     // offered "Stop recording (0)" — a dead end reachable only via Discard.
     // Unwind everything this function may have put in place.
     await discardRecording().catch(() => undefined);
-    await chrome.scripting.unregisterContentScripts({ ids: [RECORD_SCRIPT_ID] }).catch(() => undefined);
+    await stopBugDebugger().catch(() => undefined);
+    await unregisterScripts(RECORDING_SCRIPT_IDS);
     await chrome.action.setBadgeText({ text: '' }).catch(() => undefined);
-    return { ok: false, error: err instanceof Error ? err.message : 'Failed to start recording' };
+    await i18nReady;
+    return { ok: false, error: err instanceof Error ? err.message : t('common_recordingStartFailed') };
   }
 }
 
@@ -123,12 +261,16 @@ async function handleStartRecording(originPattern: string, tabId: number): Promi
  */
 let startInFlight = false;
 
-async function startRecordingOnce(originPattern: string, tabId: number): Promise<{ ok: boolean; error?: string }> {
+async function startRecordingOnce(
+  originPattern: string,
+  tabId: number,
+  mode: RecordingMode,
+): Promise<{ ok: boolean; error?: string }> {
   if (startInFlight) return { ok: true };
   startInFlight = true;
   try {
     if ((await getRecordingState()).active) return { ok: true };
-    return await handleStartRecording(originPattern, tabId);
+    return await handleStartRecording(originPattern, tabId, mode);
   } finally {
     startInFlight = false;
     // The intent has done its job (or failed to) — never leave it to revive a
@@ -156,8 +298,14 @@ async function handlePermissionAdded(addedOrigins: string[]): Promise<void> {
     await clearRecordIntent().catch(() => undefined);
     return;
   }
-  await startRecordingOnce(decision.originPattern, decision.tabId);
+  await startRecordingOnce(decision.originPattern, decision.tabId, decision.mode);
 }
+
+// The person cancelled the debugging bar during a bug recording: the recorder's page relay takes over.
+onBugDebuggerLost(async () => {
+  const { grantedOriginPattern, active } = await getRecordingState();
+  if (active) await notifyRecorderTabs(grantedOriginPattern, undefined, { type: 'piwi-bug-debugger-lost' });
+});
 
 chrome.permissions.onAdded.addListener((permissions) => {
   void handlePermissionAdded(permissions.origins ?? []);
@@ -174,7 +322,11 @@ chrome.permissions.onAdded.addListener((permissions) => {
  * — the only tabs the script was ever registered for, and the only ones this
  * extension has host access to.
  */
-async function notifyRecorderTabs(originPattern: string | null, exceptTabId?: number): Promise<void> {
+async function notifyRecorderTabs(
+  originPattern: string | null,
+  exceptTabId?: number,
+  message: { type: string } = { type: 'piwi-recording-stopped' },
+): Promise<void> {
   if (!originPattern) return;
   let tabs: chrome.tabs.Tab[];
   try {
@@ -187,7 +339,7 @@ async function notifyRecorderTabs(originPattern: string | null, exceptTabId?: nu
       if (tab.id == null || tab.id === exceptTabId) return;
       // A tab with no recorder attached (never navigated into the recording,
       // or already torn down) rejects with "no receiving end" — expected.
-      await chrome.tabs.sendMessage(tab.id, { type: 'piwi-recording-stopped' }).catch(() => undefined);
+      await chrome.tabs.sendMessage(tab.id, message).catch(() => undefined);
     }),
   );
 }
@@ -196,10 +348,39 @@ async function handleRecordingStopped(senderTabId?: number): Promise<void> {
   // Read before unregistering: the granted pattern is the only record of which
   // tabs could be running the recorder.
   const { grantedOriginPattern } = await getRecordingState();
-  await chrome.scripting.unregisterContentScripts({ ids: [RECORD_SCRIPT_ID] }).catch(() => undefined);
+  await stopBugDebugger();
+  await unregisterScripts(RECORDING_SCRIPT_IDS);
   await chrome.action.setBadgeText({ text: '' });
   // The sender, if it was a content script, has already torn itself down.
   await notifyRecorderTabs(grantedOriginPattern, senderTabId);
+}
+
+/**
+ * A screenshot of the tab a bug recording runs in, for its report.
+ *
+ * In Chrome, through the recording's debugging session (`Page.captureScreenshot`):
+ * at any moment and on any page of the recording. Without it (Firefox, a
+ * session refused or cancelled), `captureVisibleTab`, which needs `<all_urls>`
+ * or the `activeTab` grant: the recorder's per-origin host permission is not
+ * enough. `activeTab` is granted by opening the popup on the tab (as the Report
+ * a bug click does) or by the keyboard shortcut, and lasts until the tab
+ * navigates; outside it Chrome refuses, and the report says there is no
+ * screenshot rather than asking for a wider permission.
+ */
+async function handleBugScreenshot(
+  tab: chrome.tabs.Tab | undefined,
+): Promise<{ ok: true; dataUrl: string } | { ok: false; error: string }> {
+  await i18nReady;
+  if (tab?.id == null || tab.windowId == null) return { ok: false, error: t('common_screenshotNoTab') };
+  const viaDebugger = await captureThroughDebugger(tab.id);
+  if (viaDebugger) return { ok: true, dataUrl: viaDebugger };
+  if (!tab.active) return { ok: false, error: t('common_screenshotTabHidden') };
+  try {
+    const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' });
+    return { ok: true, dataUrl };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
 }
 
 /**
@@ -215,11 +396,12 @@ async function handleRecordingStopped(senderTabId?: number): Promise<void> {
  * appeared in the extension at all.
  */
 async function handleRefreshCatalog(projectId: unknown, force: boolean): Promise<RefreshCatalogResult> {
+  await i18nReady;
   if (typeof projectId !== 'number' || !Number.isFinite(projectId)) {
-    return { ok: false, error: 'No project to refresh.' };
+    return { ok: false, error: t('common_noProject') };
   }
   const settings = await getConnectionSettings();
-  if (!settings.instanceUrl.trim()) return { ok: false, error: 'Not connected to a Piwi instance.' };
+  if (!settings.instanceUrl.trim()) return { ok: false, error: t('common_notConnected') };
 
   if (!force && !(await isCatalogStale(projectId))) return { ok: true, refreshed: false, count: null };
 
@@ -230,7 +412,7 @@ async function handleRefreshCatalog(projectId: unknown, force: boolean): Promise
   } catch (err) {
     // The caller already rendered whatever was cached, so a failed refresh
     // degrades to "showing older data" rather than showing nothing.
-    return { ok: false, error: err instanceof Error ? err.message : 'Failed to refresh the catalog.' };
+    return { ok: false, error: err instanceof Error ? err.message : t('common_catalogRefreshFailed') };
   }
 }
 
@@ -244,20 +426,416 @@ async function handleRefreshLocatorIndex(
   force: boolean,
   requestedBranch: unknown,
 ): Promise<LocatorIndexRefreshResult> {
+  await i18nReady;
   if (typeof projectId !== 'number' || !Number.isFinite(projectId)) {
-    return { ok: false, error: 'No project to refresh.' };
+    return { ok: false, error: t('common_noProject') };
   }
   const branch = typeof requestedBranch === 'string' && requestedBranch.trim() ? requestedBranch.trim() : null;
   const settings = await getConnectionSettings();
-  if (!settings.instanceUrl.trim()) return { ok: false, error: 'Not connected to a Piwi instance.' };
+  if (!settings.instanceUrl.trim()) return { ok: false, error: t('common_notConnected') };
   if (!force && !(await isLocatorIndexStale(projectId, branch))) return { ok: true, refreshed: false, index: null };
   try {
     const index = await fetchLocatorIndex(settings, projectId, branch);
     await setCachedLocatorIndex(projectId, index, branch);
     return { ok: true, refreshed: true, index };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : 'Failed to fetch the locator index.' };
+    return { ok: false, error: err instanceof Error ? err.message : t('common_locatorIndexFailed') };
   }
+}
+
+/** Slow down or fail a request: the main-world wrapper and its isolated-world relay, registered while a condition is on. */
+const CONDITION_SCRIPT_IDS = ['piwi-conditions-main', 'piwi-conditions'];
+
+async function getConditionsState(): Promise<ConditionsState | null> {
+  const value = (await sessionArea().get(CONDITIONS_KEY))[CONDITIONS_KEY] as ConditionsState | undefined;
+  return value && typeof value.tabId === 'number' && Array.isArray(value.conditions) ? value : null;
+}
+
+/**
+ * Turns the conditions off: the scripts are unregistered, the debugging
+ * session is let go, and the tab they were on reloads, since its `fetch` and
+ * XHR stay wrapped until it does.
+ */
+/** Setting and clearing the conditions run one at a time, so a quick on then off ends off. */
+let conditionsQueue: Promise<unknown> = Promise.resolve();
+
+function inConditionsQueue<T>(work: () => Promise<T>): Promise<T> {
+  const run = conditionsQueue.then(work);
+  conditionsQueue = run.catch(() => undefined);
+  return run;
+}
+
+function clearConditions(reload: boolean): Promise<void> {
+  return inConditionsQueue(() => clearConditionsNow(reload));
+}
+
+async function clearConditionsNow(reload: boolean): Promise<void> {
+  const state = await getConditionsState();
+  await sessionArea().remove(CONDITIONS_KEY);
+  await unregisterScripts(CONDITION_SCRIPT_IDS);
+  if (state) await releaseConditionsDebugger(state.tabId).catch(() => undefined);
+  if (reload && state) await chrome.tabs.reload(state.tabId).catch(() => undefined);
+}
+
+/**
+ * Registers the scripts for the conditions' origin and injects them into the
+ * tab's page now: the banner always, the page's `fetch`/XHR wrapper only when
+ * the conditions go through it rather than through the debugging protocol.
+ */
+async function registerConditionScripts(state: ConditionsState, pattern: string): Promise<void> {
+  const viaPage = state.via !== 'debugger';
+  await unregisterScripts(CONDITION_SCRIPT_IDS);
+  await chrome.scripting.registerContentScripts([
+    ...(viaPage
+      ? [
+          {
+            id: CONDITION_SCRIPT_IDS[0]!,
+            js: ['request-conditions-main.js'],
+            matches: [pattern],
+            runAt: 'document_start' as const,
+            world: 'MAIN' as const,
+            persistAcrossSessions: false,
+          },
+        ]
+      : []),
+    {
+      id: CONDITION_SCRIPT_IDS[1]!,
+      js: ['request-conditions.js'],
+      matches: [pattern],
+      runAt: 'document_start',
+      persistAcrossSessions: false,
+    },
+  ]);
+  const target = { tabId: state.tabId };
+  if (viaPage) await chrome.scripting.executeScript({ target, files: ['request-conditions-main.js'], world: 'MAIN' });
+  await chrome.scripting.executeScript({ target, files: ['request-conditions.js'] });
+}
+
+/**
+ * Puts conditions on one tab, from the Piwi panel, which has asked for the
+ * page's origin inside the click: requests to slow down or fail, the whole
+ * page's network, the CPU. In Chrome and Edge they go through the debugging
+ * protocol (every request, and the throttling); without it, the requests'
+ * conditions go through the page's `fetch`/XHR wrapper, registered for the
+ * origin so the tab's next pages keep them, and throttling is not offered.
+ * Nothing on turns them all off.
+ */
+function handleSetConditions(message: SetConditionsMessage): Promise<{ ok: boolean; error?: string }> {
+  return inConditionsQueue(() => setConditionsNow(message));
+}
+
+interface SetConditionsMessage {
+  tabId?: unknown;
+  origin?: unknown;
+  conditions?: unknown;
+  throttle?: unknown;
+  cpuRate?: unknown;
+}
+
+async function setConditionsNow(message: SetConditionsMessage): Promise<{ ok: boolean; error?: string }> {
+  await i18nReady;
+  const pattern = replayOriginPattern(message.origin);
+  const conditions = Array.isArray(message.conditions) ? message.conditions.filter(isCondition) : [];
+  const throttle = isThrottle(message.throttle) ? message.throttle : null;
+  const cpuRate = isCpuRate(message.cpuRate) ? message.cpuRate : null;
+  if (!pattern || typeof message.tabId !== 'number') return { ok: false, error: t('devtools_conditionsNoPage') };
+  if (conditions.length === 0 && !throttle && !cpuRate) {
+    await clearConditionsNow(true);
+    return { ok: true };
+  }
+  // Conditions apply to one tab: the tab that had them lets go, and reloads when its `fetch` and XHR were wrapped.
+  const previous = await getConditionsState();
+  if (previous && previous.tabId !== message.tabId) await clearConditionsNow(previous.via !== 'debugger');
+  if (!(await chrome.permissions.contains({ origins: [pattern] }))) {
+    return { ok: false, error: t('devtools_conditionsNeedAccess') };
+  }
+  const base: ConditionsState = {
+    tabId: message.tabId,
+    origin: message.origin as string,
+    conditions,
+    throttle,
+    cpuRate,
+    lost: null,
+  };
+  let via: ConditionsVia = 'page';
+  if (debuggerAvailable()) {
+    try {
+      await applyThroughDebugger(base);
+      via = 'debugger';
+    } catch (err) {
+      await releaseConditionsDebugger(base.tabId).catch(() => undefined);
+      if (throttle || cpuRate) {
+        return { ok: false, error: t('devtools_emulationRefused', { error: err instanceof Error ? err.message : '' }) };
+      }
+    }
+  } else if (throttle || cpuRate) {
+    return { ok: false, error: t('devtools_emulationUnavailable') };
+  }
+  try {
+    const state: ConditionsState = { ...base, via };
+    await sessionArea().set({ [CONDITIONS_KEY]: state });
+    await registerConditionScripts(state, pattern);
+    return { ok: true };
+  } catch (err) {
+    await clearConditionsNow(false);
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+// The person cancelled the debugging bar: the requests' conditions go on through the page's wrapper, and the
+// throttling, which needs the protocol, ends. The panel and the banner say so.
+onConditionsDebuggerLost((tabId, reason) => {
+  void inConditionsQueue(async () => {
+    const state = await getConditionsState();
+    if (!state || state.tabId !== tabId) return;
+    const pattern = replayOriginPattern(state.origin);
+    const next: ConditionsState = { ...state, throttle: null, cpuRate: null, via: 'page', lost: reason };
+    await sessionArea().set({ [CONDITIONS_KEY]: next });
+    if (state.conditions.length > 0 && pattern) await registerConditionScripts(next, pattern).catch(() => undefined);
+    else await unregisterScripts(CONDITION_SCRIPT_IDS);
+  });
+});
+
+/** The conditions for the tab asking, on the origin they were set for; none for any other tab. */
+async function conditionsFor(
+  tab: chrome.tabs.Tab | undefined,
+  url: string | undefined,
+): Promise<ConditionsState['conditions']> {
+  const state = await getConditionsState();
+  if (!state || tab?.id !== state.tabId || !url) return [];
+  try {
+    return new URL(url).origin === state.origin ? state.conditions : [];
+  } catch {
+    return [];
+  }
+}
+
+chrome.tabs.onRemoved.addListener((tabId) => {
+  void getConditionsState().then((state) => {
+    if (state?.tabId === tabId) void clearConditions(false);
+  });
+  void clearTabViewport(tabId);
+});
+
+/** The narrowest and the widest viewport a window is opened at, in CSS pixels. */
+const VIEWPORT_MIN = 200;
+const VIEWPORT_MAX = 4000;
+
+/** The tab's content size, once the browser has laid the window out, and changed from `before` when given. */
+async function tabSize(
+  tabId: number,
+  before: { width: number; height: number } | null = null,
+): Promise<{ width: number; height: number } | null> {
+  let last: { width: number; height: number } | null = null;
+  for (let attempt = 0; attempt < 30; attempt++) {
+    const tab = await chrome.tabs.get(tabId);
+    if (tab.width && tab.height) {
+      last = { width: tab.width, height: tab.height };
+      if (!before || last.width !== before.width || last.height !== before.height) return last;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  return last;
+}
+
+/**
+ * Sets the viewport of the tab itself through the debugging protocol, as
+ * DevTools' device toolbar does, until the popup resets it or the tab closes.
+ */
+async function handleSetTabViewport(message: {
+  tabId?: unknown;
+  width?: unknown;
+  height?: unknown;
+}): Promise<{ ok: boolean; error?: string }> {
+  await i18nReady;
+  const { tabId, width, height } = message;
+  const size = (value: unknown) =>
+    typeof value === 'number' && Number.isInteger(value) && value >= VIEWPORT_MIN && value <= VIEWPORT_MAX;
+  if (typeof tabId !== 'number' || !size(width) || !size(height)) {
+    return { ok: false, error: t('popup_viewportInvalid', { min: VIEWPORT_MIN, max: VIEWPORT_MAX }) };
+  }
+  if (!debuggerAvailable()) return { ok: false, error: t('popup_viewportHereUnavailable') };
+  const result = await setTabViewport({ tabId, width: width as number, height: height as number });
+  return result.ok ? result : { ok: false, error: t('popup_viewportHereRefused', { error: result.error }) };
+}
+
+/**
+ * Opens `url` in a new window whose viewport, not its outer frame, measures
+ * `width` × `height`: the window is created at that size, then grown by the
+ * difference between its outer size and its tab's. Viewport only: no touch,
+ * device pixel ratio or user agent.
+ */
+async function handleOpenViewport(message: {
+  url?: unknown;
+  width?: unknown;
+  height?: unknown;
+}): Promise<{ ok: true; width: number; height: number } | { ok: false; error: string }> {
+  await i18nReady;
+  const { url, width, height } = message;
+  const size = (value: unknown) =>
+    typeof value === 'number' && Number.isInteger(value) && value >= VIEWPORT_MIN && value <= VIEWPORT_MAX;
+  if (typeof url !== 'string' || !/^https?:\/\//.test(url) || !size(width) || !size(height)) {
+    return { ok: false, error: t('popup_viewportInvalid', { min: VIEWPORT_MIN, max: VIEWPORT_MAX }) };
+  }
+  try {
+    const w = width as number;
+    const h = height as number;
+    // Placed where the current window is: a window mostly off the screen is refused.
+    const base = await chrome.windows.getLastFocused().catch(() => null);
+    const created = await chrome.windows.create({
+      url,
+      width: w,
+      height: h,
+      left: base?.left ?? 0,
+      top: base?.top ?? 0,
+      type: 'normal',
+      focused: true,
+    });
+    const tabId = created?.tabs?.[0]?.id;
+    if (created?.id == null || tabId == null)
+      return { ok: false, error: t('popup_viewportInvalid', { min: VIEWPORT_MIN, max: VIEWPORT_MAX }) };
+    // The window's size as set, which `windows.get` may not report yet, and the viewport it gave.
+    let outer = { width: created.width ?? w, height: created.height ?? h };
+    let inner = await tabSize(tabId);
+    for (let pass = 0; inner && pass < 4 && (inner.width !== w || inner.height !== h); pass++) {
+      // The frame around the viewport: toolbars, borders, scrollbars.
+      const frameWidth = Math.max(0, outer.width - inner.width);
+      const frameHeight = Math.max(0, outer.height - inner.height);
+      outer = { width: w + frameWidth, height: h + frameHeight };
+      await chrome.windows.update(created.id, outer);
+      inner = await tabSize(tabId, inner);
+    }
+    return { ok: true, width: inner?.width ?? w, height: inner?.height ?? h };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+const REPLAY_SCRIPT_ID = 'piwi-replay-panel';
+/** The main-world script that sees the page's console and failed requests, for as long as a replay runs. */
+const REPLAY_EVIDENCE_SCRIPT_ID = 'piwi-replay-evidence';
+const REPLAY_SCRIPT_IDS = [REPLAY_SCRIPT_ID, REPLAY_EVIDENCE_SCRIPT_ID];
+
+function replayOriginPattern(origin: unknown): string | null {
+  if (typeof origin !== 'string') return null;
+  try {
+    const url = new URL(origin);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
+    return url.origin === origin ? `${origin}/*` : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Starts a replay of a steps document on one origin: the steps are checked
+ * again here, the state goes to session storage, and the replay script is
+ * registered for the origin so every page the replay reaches continues it.
+ * It needs the origin's host permission, which Replay in the popup requests
+ * and a bug recording on the same site already holds.
+ */
+async function handleStartReplay(
+  message: {
+    steps?: unknown;
+    origin?: unknown;
+    stepMode?: unknown;
+    inject?: unknown;
+    startOn?: unknown;
+    bugReportId?: unknown;
+  },
+  tab: chrome.tabs.Tab | undefined,
+): Promise<{ ok: boolean; error?: string }> {
+  await i18nReady;
+  const pattern = replayOriginPattern(message.origin);
+  if (!pattern || tab?.id == null) return { ok: false, error: t('common_replayNeedsPage') };
+  const parsed = parseSteps(message.steps);
+  if (!parsed.ok) return { ok: false, error: t('common_replayNotSteps', { error: parsed.errors[0] ?? '' }) };
+  if (parsed.steps.steps.length === 0) return { ok: false, error: t('common_replayNoSteps') };
+  if (!(await chrome.permissions.contains({ origins: [pattern] }))) {
+    return { ok: false, error: t('common_replayNeedsAccess') };
+  }
+  try {
+    const origin = message.origin as string;
+    const first = sessionFromSteps(parsed.steps, origin).steps[0];
+    const startPage =
+      typeof message.startOn === 'string' && message.startOn.startsWith(`${origin}/`) && first?.action === 'goto'
+        ? { recorded: first.value ?? first.pageUrl, actual: message.startOn }
+        : null;
+    const bugReportId =
+      typeof message.bugReportId === 'number' && Number.isInteger(message.bugReportId) ? message.bugReportId : null;
+    const replay = newReplayState(parsed.steps, origin, message.stepMode === true, Date.now(), startPage, bugReportId);
+    // A replay under a request condition says so, while it runs and in its verdict.
+    const conditions = await conditionsFor(tab, tab.url);
+    await setReplayState(conditions.length ? { ...replay, conditions } : replay);
+    await releaseReplayDebugger();
+    await unregisterScripts(REPLAY_SCRIPT_IDS);
+    await chrome.scripting.registerContentScripts([
+      {
+        id: REPLAY_EVIDENCE_SCRIPT_ID,
+        js: ['bug-evidence-main.js'],
+        matches: [pattern],
+        runAt: 'document_start',
+        world: 'MAIN',
+        persistAcrossSessions: false,
+      },
+      {
+        id: REPLAY_SCRIPT_ID,
+        js: ['replay-panel.js'],
+        matches: [pattern],
+        runAt: 'document_idle',
+        persistAcrossSessions: false,
+      },
+    ]);
+    // The page already loaded, where a replay that starts on it runs its first steps.
+    await chrome.scripting
+      .executeScript({ target: { tabId: tab.id }, files: ['bug-evidence-main.js'], world: 'MAIN' })
+      .catch(() => undefined);
+    if (message.inject === true)
+      await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['replay-panel.js'] });
+    // A recording still going keeps its badge; the replay's shows once it ends.
+    await showStateBadge();
+    return { ok: true };
+  } catch (err) {
+    await unregisterScripts(REPLAY_SCRIPT_IDS);
+    return { ok: false, error: err instanceof Error ? err.message : t('common_replayStartFailed') };
+  }
+}
+
+/** From a pick or recording panel: post to the paired editor, which inserts at its cursor. */
+async function handleSendToEditor(payload: EditorSendPayload): Promise<SendToEditorResult> {
+  const pairing = await getEditorPairing();
+  if (!pairing) return { ok: false, error: t('options_editorInvalid') };
+  if (!(await chrome.permissions.contains({ origins: [editorOriginPattern(pairing)] }))) {
+    return { ok: false, error: t('options_editorPermission') };
+  }
+  return postToEditor(pairing, payload);
+}
+
+/**
+ * A tab the replay attached to that left the replay's origin, or a replay that
+ * ended without saying so (its tab closed mid-page): the session is let go, so
+ * the debugging bar never stays up after the replay.
+ */
+chrome.tabs.onUpdated.addListener((tabId, change) => {
+  if (!change.url || !tabsHolding('replay').includes(tabId)) return;
+  void getReplayState().then((state) => {
+    let sameOrigin = false;
+    try {
+      sameOrigin = !!state && new URL(change.url!).origin === state.origin;
+    } catch {
+      sameOrigin = false;
+    }
+    if (!state || (state.status !== 'running' && state.status !== 'paused') || !sameOrigin) {
+      void releaseReplayTab(tabId);
+    }
+  });
+});
+
+/** The replay script has stored its final state: the badge follows what still runs, a recording perhaps. */
+async function handleReplayFinished(): Promise<void> {
+  await releaseReplayDebugger();
+  await unregisterScripts(REPLAY_SCRIPT_IDS);
+  await showStateBadge();
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -282,8 +860,112 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // Through the dedupe guard, not `handleStartRecording` directly: on a
     // first-time grant `chrome.permissions.onAdded` may already be starting the
     // same recording (see `startRecordingOnce`).
-    void startRecordingOnce(message.originPattern, message.tabId).then(sendResponse);
+    void startRecordingOnce(message.originPattern, message.tabId, message.mode === 'bug' ? 'bug' : 'actions').then(
+      sendResponse,
+    );
     return true; // keep the message channel open for the async response
+  }
+  if (message?.type === 'piwi-start-replay') {
+    void handleStartReplay(message, sender.tab).then(sendResponse);
+    return true;
+  }
+  if (message?.type === 'piwi-replay-driver') {
+    void handleReplayDriver(message, sender.tab).then(sendResponse);
+    return true;
+  }
+  if (message?.type === 'piwi-replay-input') {
+    void handleReplayInput(message, sender.tab).then(sendResponse);
+    return true;
+  }
+  if (message?.type === 'piwi-set-tab-viewport') {
+    void handleSetTabViewport(message).then(sendResponse);
+    return true;
+  }
+  if (message?.type === 'piwi-clear-tab-viewport') {
+    if (typeof message.tabId !== 'number') return undefined;
+    void clearTabViewport(message.tabId).then(() => sendResponse({ ok: true }));
+    return true;
+  }
+  if (message?.type === 'piwi-open-viewport') {
+    void handleOpenViewport(message).then(sendResponse);
+    return true;
+  }
+  if (message?.type === 'piwi-set-conditions') {
+    void handleSetConditions(message).then(sendResponse);
+    return true;
+  }
+  if (message?.type === 'piwi-get-conditions') {
+    // `forPage`: what the page's own wrapper applies, none when the debugging protocol applies them.
+    void Promise.all([conditionsFor(sender.tab, sender.url), getConditionsState()]).then(([conditions, state]) =>
+      sendResponse({
+        conditions,
+        forPage: state?.via === 'debugger' ? [] : conditions,
+        throttle: state?.tabId === sender.tab?.id ? (state?.throttle ?? null) : null,
+        cpuRate: state?.tabId === sender.tab?.id ? (state?.cpuRate ?? null) : null,
+      }),
+    );
+    return true;
+  }
+  if (message?.type === 'piwi-clear-conditions') {
+    void clearConditions(true).then(() => sendResponse({ ok: true }));
+    return true;
+  }
+  if (message?.type === 'piwi-set-language') {
+    // From the Options page: store the chosen catalog, or follow the browser again.
+    void handleSetLanguage(message.code ?? null).then(sendResponse);
+    return true;
+  }
+  if (message?.type === 'piwi-replay-finished') {
+    void handleReplayFinished().then(() => sendResponse({ ok: true }));
+    return true;
+  }
+  if (message?.type === 'piwi-bug-evidence-source') {
+    sendResponse({ debugger: collectsThroughDebugger(sender.tab?.id) });
+    return undefined;
+  }
+  if (message?.type === 'piwi-bug-screenshot') {
+    void handleBugScreenshot(sender.tab).then(sendResponse);
+    return true;
+  }
+  if (message?.type === 'piwi-send-to-editor') {
+    void handleSendToEditor(message.payload).then(sendResponse);
+    return true;
+  }
+  if (message?.type === 'piwi-bug-send-target') {
+    void i18nReady.then(() => handleBugSendTarget(sender.tab)).then(sendResponse);
+    return true;
+  }
+  if (message?.type === 'piwi-send-bug-report') {
+    void i18nReady.then(() => handleSendBugReport(message, sender.tab)).then(sendResponse);
+    return true;
+  }
+  if (message?.type === 'piwi-list-bug-reports') {
+    void i18nReady.then(() => handleListBugReports(sender.tab)).then(sendResponse);
+    return true;
+  }
+  if (message?.type === 'piwi-share-target') {
+    void handleShareTarget().then(sendResponse);
+    return true;
+  }
+  if (message?.type === 'piwi-share-reproduction') {
+    void i18nReady.then(() => handleShareReproduction(message)).then(sendResponse);
+    return true;
+  }
+  if (message?.type === 'piwi-desktop-target') {
+    void handleDesktopTarget().then(sendResponse);
+    return true;
+  }
+  if (message?.type === 'piwi-desktop-repro') {
+    void i18nReady.then(() => handleDesktopRepro(message)).then(sendResponse);
+    return true;
+  }
+  if (message?.type === 'piwi-desktop-repro-status') {
+    void i18nReady.then(() => handleDesktopReproStatus(message.id)).then(sendResponse);
+    return true;
+  }
+  if (message?.type === 'piwi-get-bug-report') {
+    void i18nReady.then(() => handleGetBugReport(message.id)).then(sendResponse);
+    return true;
   }
   if (message?.type === 'piwi-refresh-catalog') {
     void handleRefreshCatalog(message.projectId, message.force === true).then(sendResponse);

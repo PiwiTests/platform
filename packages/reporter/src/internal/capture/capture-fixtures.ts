@@ -1,3 +1,4 @@
+import * as path from 'node:path';
 import { gunzipSync } from 'node:zlib';
 import { probeElementAttrs, type ProbeArg, type ProbedAttrs } from '@piwitests/picker-dom';
 import type {
@@ -63,12 +64,14 @@ import { environmentalSkipReason, inspectionGateFromTestInfo, shouldInspectOnFai
 import { applyPickToSnapshots, deriveFailedLocator, runLocatorPicker, type UserPickResult } from './pick-on-failure.js';
 import { isDueForAriaSample } from '../support/aria-sampling.js';
 import { boxCaptureFrames, internalCall } from './quiet-capture.js';
+import { codeReachRoots, pageMapFetcher, resolveCodeReach, startCodeReach, stopCodeReach } from './code-reach.js';
 
 // Re-exported: probeElementAttrs now lives in @piwitests/picker-dom (shared
 // with the dashboard's snapshot picker), but the dogfood mirror
 // (`application/tests/fixtures.ts`) and this package's own tests import it
 // from here, as the mirror does the quiet-capture helpers.
 export { probeElementAttrs, internalCall, boxCaptureFrames };
+export { codeReachRoots, pageMapFetcher, resolveCodeReach, startCodeReach, stopCodeReach };
 export type { ProbeArg, ProbedAttrs };
 
 /** A Playwright fixture's `use` callback — hands the fixture value to the test. */
@@ -222,6 +225,9 @@ interface CaptureSink {
   userPick: UserPickResult | null;
   // The page each locator call ran on, keyed by call site and chain.
   locatorPages: LocatorPageLog;
+  // JavaScript coverage of the test's first page, when code reach is on, and
+  // the source files it resolved to once stopped.
+  codeReach: { page: Page; started: Promise<boolean>; stopped: boolean; files: string[] | null } | null;
 }
 
 function createSink(): CaptureSink {
@@ -246,7 +252,67 @@ function createSink(): CaptureSink {
     pickOffered: false,
     userPick: null,
     locatorPages: new LocatorPageLog(),
+    codeReach: null,
   };
+}
+
+/**
+ * Start JavaScript coverage on the running test's first page when code reach
+ * is on (`PIWI_CAPTURE_CODE_REACH=true`). Resolves once coverage is running,
+ * so a caller can await it before the test navigates.
+ */
+function maybeStartCodeReach(page: Page): Promise<boolean> {
+  const sink = currentSink;
+  if (!sink || process.env.PIWI_CAPTURE_CODE_REACH !== 'true') return Promise.resolve(false);
+  if (sink.codeReach) return sink.codeReach.page === page ? sink.codeReach.started : Promise.resolve(false);
+  const started = startCodeReach(page);
+  sink.codeReach = { page, started, stopped: false, files: null };
+  return started;
+}
+
+/** The code reach roots from `PIWI_CODE_REACH_ROOTS` (a JSON array or a path list). */
+export function configuredCodeReachRoots(): string[] | null {
+  const raw = process.env.PIWI_CODE_REACH_ROOTS?.trim();
+  if (!raw) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (Array.isArray(parsed)) return parsed.filter((r): r is string => typeof r === 'string' && r !== '');
+  } catch {
+    // Not JSON: a path list.
+  }
+  return raw.split(path.delimiter).filter(Boolean);
+}
+
+/**
+ * Stop the test's coverage and resolve it to source files, while its page can
+ * still fetch source maps. With `closing`, only when that page or its context
+ * is the one closing. Never throws.
+ */
+async function stopSinkCodeReach(
+  sink: CaptureSink,
+  closing?: { page?: Page; context?: BrowserContext },
+): Promise<void> {
+  const session = sink.codeReach;
+  if (!session || session.stopped) return;
+  if (closing && closing.page !== session.page && (!closing.context || pageContext(session.page) !== closing.context)) {
+    return;
+  }
+  session.stopped = true;
+  try {
+    if (!(await session.started) || isPageClosed(session.page)) return;
+    const entries = await stopCodeReach(session.page);
+    if (!entries) return;
+    const info = sink.testInfo;
+    const configFile = info?.config.configFile;
+    const configDir = configFile ? path.dirname(configFile) : (info?.config.rootDir ?? process.cwd());
+    session.files = await resolveCodeReach(
+      entries,
+      codeReachRoots(configDir, configuredCodeReachRoots()),
+      pageMapFetcher(session.page),
+    );
+  } catch {
+    /* code reach is best-effort and must never affect the test */
+  }
 }
 
 /**
@@ -1129,6 +1195,13 @@ function wrapFrameLocator(page: Page, frameLocator: FrameLocator): FrameLocator 
 }
 
 /**
+ * The error text each browser gives a request the page cancelled itself:
+ * Chromium's `net::ERR_ABORTED`, Firefox's `NS_BINDING_ABORTED`, WebKit's
+ * "cancelled".
+ */
+const CANCELLED_REQUEST = /^net::ERR_ABORTED$|^NS_BINDING_ABORTED$|^NS_ERROR_ABORT$|cancell?ed/i;
+
+/**
  * Instrument a single page: wrap its locator-building methods for healing
  * capture and attach console/network listeners. Idempotent — safe to call on a
  * page already reached through another path (browser patch, `page` fixture).
@@ -1136,6 +1209,7 @@ function wrapFrameLocator(page: Page, frameLocator: FrameLocator): FrameLocator 
 function instrumentPage(page: Page): void {
   if (!page || INSTRUMENTED_PAGES.has(page)) return;
   INSTRUMENTED_PAGES.add(page);
+  void maybeStartCodeReach(page);
 
   // Probe mode: install the fault interception for this test's plan item on the
   // first page, before the test navigates. Fire-and-forget — page.route
@@ -1167,6 +1241,7 @@ function instrumentPage(page: Page): void {
       if (sink) {
         await stashPageState(sink, { page });
         await maybeOpenPicker(sink, { page });
+        await stopSinkCodeReach(sink, { page });
       }
       return originalClose(...args);
     };
@@ -1278,7 +1353,10 @@ function instrumentPage(page: Page): void {
     }
   }
 
-  page.on('requestfinished', (request: Request) => {
+  // A request that finished (with or without a response) and one that failed
+  // (reset, refused, aborted) are recorded alike; a failed one has status 0 and
+  // carries Playwright's error text as `failure`.
+  const recordRequest = (request: Request, failed: boolean) => {
     const sink = currentSink;
     if (!sink) return;
     sink.lastActivePage = page;
@@ -1286,21 +1364,26 @@ function instrumentPage(page: Page): void {
       try {
         const url = request.url();
         if (url.startsWith('data:') || url.startsWith('blob:')) return;
-        const timing = request.timing();
-        const response = await request.response();
         const resourceType = request.resourceType();
 
         // Only keep API/document requests; skip static assets (scripts, styles, fonts, images, media)
-        if (!['fetch', 'xhr', 'document', 'other'].includes(resourceType)) return;
+        if (!TRACKED_REQUEST_TYPES.includes(resourceType)) return;
 
+        const failure = failed ? (request.failure()?.errorText ?? 'failed') : null;
+        // A request the page cancelled itself (a navigation, an AbortController, the page closing) did not fail.
+        if (failure && CANCELLED_REQUEST.test(failure)) return;
+
+        const timing = request.timing();
+        const response = failed ? null : await request.response();
         const entry: Record<string, unknown> = {
           method: request.method(),
           url,
           status: response ? response.status() : 0,
-          duration: timing.responseEnd > 0 ? Math.round(timing.responseEnd - timing.requestStart) : 0,
+          duration: requestDuration(timing, failed),
           startTime: timing.startTime,
           resourceType,
         };
+        if (failure) entry.failure = failure;
 
         if (response) {
           const headers = response.headers();
@@ -1337,7 +1420,9 @@ function instrumentPage(page: Page): void {
       }
     })();
     sink.pendingHandlers.push(p);
-  });
+  };
+  page.on('requestfinished', (request: Request) => recordRequest(request, false));
+  page.on('requestfailed', (request: Request) => recordRequest(request, true));
 }
 
 /**
@@ -1361,6 +1446,7 @@ function instrumentContext(context: BrowserContext): void {
   context.newPage = async (...args: Parameters<BrowserContext['newPage']>): Promise<Page> => {
     const page = await originalNewPage(...args);
     instrumentPage(page);
+    await maybeStartCodeReach(page);
     return page;
   };
 
@@ -1377,6 +1463,7 @@ function instrumentContext(context: BrowserContext): void {
       if (sink) {
         await stashPageState(sink, { context });
         await maybeOpenPicker(sink, { context });
+        await stopSinkCodeReach(sink, { context });
       }
       return originalClose(...args);
     };
@@ -1401,6 +1488,7 @@ function patchBrowser(browser: Browser): void {
   browser.newPage = async (...args: Parameters<Browser['newPage']>): Promise<Page> => {
     const page = await originalNewPage(...args);
     instrumentPage(page);
+    await maybeStartCodeReach(page);
     return page;
   };
 
@@ -1430,6 +1518,22 @@ function readRootAria(page: Page): Promise<string | null> {
 /** The whole page's ARIA tree as JSON, read as an internal call. */
 function readRootAriaJson(page: Page): Promise<string | null> {
   return internalCall(page, () => ariaSnapshotJSONBestEffort(page.locator(':root')));
+}
+
+/** Request types worth keeping: API calls and documents, not static assets. */
+const TRACKED_REQUEST_TYPES = ['fetch', 'xhr', 'document', 'other'];
+
+/**
+ * A request's duration in ms: to the response end when there is one, else, for
+ * a request that failed before answering, to the moment the failure was seen.
+ */
+function requestDuration(
+  timing: { startTime: number; requestStart: number; responseEnd: number },
+  failed: boolean,
+): number {
+  if (timing.responseEnd > 0) return Math.round(timing.responseEnd - timing.requestStart);
+  if (failed && timing.startTime > 0) return Math.max(0, Math.round(Date.now() - timing.startTime));
+  return 0;
 }
 
 /**
@@ -1471,6 +1575,15 @@ async function flushSink(sink: CaptureSink, testInfo: TestInfo): Promise<void> {
       // server stores one row per location anyway, so shipping every
       // iteration is pure payload bloat.
       body: Buffer.from(JSON.stringify(dedupeSnapshotsByLocation(sink.capturedLocators))),
+    });
+  }
+
+  // The source files the test executed, whatever the outcome.
+  await stopSinkCodeReach(sink);
+  if (sink.codeReach?.files?.length) {
+    await testInfo.attach(ATTACHMENT_NAMES.codeReach, {
+      contentType: 'application/json',
+      body: Buffer.from(JSON.stringify(sink.codeReach.files)),
     });
   }
 
@@ -1690,6 +1803,7 @@ export const piwiFixtures: Fixtures<
   // never double-wraps a page the browser patch already instrumented.
   page: async ({ page }: PlaywrightTestArgs, use: UseFn<Page>) => {
     instrumentPage(page);
+    await maybeStartCodeReach(page);
     await use(page);
   },
 

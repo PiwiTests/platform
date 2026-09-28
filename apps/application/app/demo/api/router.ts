@@ -18,6 +18,7 @@ import {
   failureClusters,
   failureDiagnoses,
   graphNodes,
+  bugReports,
 } from '~~/server/database/schema.sqlite';
 import { Role } from '#shared/types';
 import { NOTIFICATION_EVENTS } from '#shared/notification-events';
@@ -32,6 +33,9 @@ import {
   setProjectAccess,
 } from '#shared/handlers/project-assignments';
 import { getDemoDb } from '../db.client';
+import { getCodeIndex, getCodeReachForFile } from '~~/server/utils/code-reach';
+import { getLocatorAlternatives } from '~~/server/utils/locator-alternatives';
+import { getBranchFailures } from '~~/server/utils/branch-failures';
 import { getLocatorHealing, saveLocatorPick } from '~~/server/utils/locator-healing';
 import {
   backfillLocatorUsages,
@@ -303,7 +307,29 @@ import {
 } from './ai';
 import { apiGetAdminStats, apiGetStorageAnalysis } from './admin';
 import { demoHttpError } from './http-error';
+import {
+  addProjectUrlPattern,
+  listProjectUrlPatterns,
+  listVisibleUrlPatterns,
+  replaceProjectUrlPatterns,
+  suggestUrlPatterns,
+  urlPatternInputSchema,
+  urlPatternListSchema,
+  type UrlPatternWriteResult,
+} from '#shared/handlers/url-patterns';
 import { apiDeleteTestRun } from './test-runs';
+import {
+  addBugReproduction,
+  isReproductionRunAllowed,
+  bugReportPatchSchema,
+  bugReproductionSchema,
+  getBugReport,
+  getBugReportMissedBy,
+  listBugReports,
+  renderBugReportSpec,
+  specDirSchema,
+  updateBugReport,
+} from '#shared/handlers/bug-reports';
 import { apiCheckDemoImport, apiDemoImport } from './import';
 import {
   apiGetWastedWaits,
@@ -377,7 +403,7 @@ function assertDemoScope(ctx: DemoCtx | undefined, projectId: number): void {
  */
 async function assertDemoEntityScope(
   ctx: DemoCtx | undefined,
-  entity: 'project' | 'run' | 'case' | 'cluster' | 'execution',
+  entity: 'project' | 'run' | 'case' | 'cluster' | 'execution' | 'bugReport',
   id: number,
 ): Promise<void> {
   if (!ctx || ctx.scope === 'all') return;
@@ -397,6 +423,9 @@ async function assertDemoEntityScope(
       .from(failureClusters)
       .where(eq(failureClusters.id, id));
     projectId = row?.projectId ?? null;
+  } else if (entity === 'bugReport') {
+    const [row] = await db.select({ projectId: bugReports.projectId }).from(bugReports).where(eq(bugReports.id, id));
+    projectId = row?.projectId ?? null;
   } else {
     const [row] = await db
       .select({ projectId: testRuns.projectId })
@@ -407,6 +436,14 @@ async function assertDemoEntityScope(
   }
   if (projectId === null) throw demoHttpError(404, 'Not found');
   assertDemoScope(ctx, projectId);
+}
+
+/** The items of a successful URL-pattern write, or the HTTP error the server answers a refused one with. */
+function demoUrlPatternItems(result: UrlPatternWriteResult) {
+  if (result.ok) return result.items;
+  if (result.reason === 'not-found') throw demoHttpError(404, 'Project not found');
+  if (result.reason === 'too-many') throw demoHttpError(400, 'A project has at most 100 URL patterns');
+  throw demoHttpError(409, `The project already has the pattern ${result.pattern}`);
 }
 
 const routes: RouteEntry[] = [
@@ -1549,6 +1586,48 @@ const routes: RouteEntry[] = [
     },
   },
   {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/code-reach$/,
+    handler: async (m, _b, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const file = q?.get('file')?.trim() ?? '';
+      if (!file || file.length > 500) throw demoHttpError(400, 'file is required (at most 500 characters)');
+      const branch = parseLocatorBranchQuery(q?.get('branch'));
+      if ('error' in branch) throw demoHttpError(400, branch.error);
+      return getCodeReachForFile(await getDemoDb(), +m[1]!, file, branch.branch);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/locator-alternatives$/,
+    handler: async (m, _b, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const file = q?.get('file')?.trim() ?? '';
+      if (!file || file.length > 500) throw demoHttpError(400, 'file is required (at most 500 characters)');
+      return { items: await getLocatorAlternatives(await getDemoDb(), +m[1]!, file) };
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/branch-failures$/,
+    handler: async (m, _b, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const branch = q?.get('branch')?.trim() ?? '';
+      if (branch.length > 255) throw demoHttpError(400, 'branch is at most 255 characters');
+      return getBranchFailures(await getDemoDb(), +m[1]!, branch || null);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/code-index$/,
+    handler: async (m, _b, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const branch = parseLocatorBranchQuery(q?.get('branch'));
+      if ('error' in branch) throw demoHttpError(400, branch.error);
+      return getCodeIndex(await getDemoDb(), +m[1]!, branch.branch);
+    },
+  },
+  {
     method: 'POST',
     pattern: /^\/api\/projects\/(\d+)\/locator-usages\/rebuild$/,
     handler: async (m, _b, _q, ctx) => {
@@ -2333,6 +2412,138 @@ const routes: RouteEntry[] = [
     handler: async (m, _, __, ctx) => {
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
       return getProjectCapabilities(await getDemoDb(), +m[1]!);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/bug-reports$/,
+    handler: async (m, _b, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const status = q?.get('status') ?? null;
+      return { items: await listBugReports(await getDemoDb(), +m[1]!, { status }) };
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/bug-reports\/intake$/,
+    // The demo has no tracker connection: a send files nowhere.
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      return { tracker: null, projectKey: null, locale: null, canCreate: false, fileEvery: false };
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/bug-reports\/(\d+)$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'bugReport', +m[1]!);
+      const report = await getBugReport(await getDemoDb(), +m[1]!);
+      if (!report) throw demoHttpError(404, 'Bug report not found');
+      return report;
+    },
+  },
+  {
+    method: 'PATCH',
+    pattern: /^\/api\/bug-reports\/(\d+)$/,
+    handler: async (m, body, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'bugReport', +m[1]!);
+      const parsed = bugReportPatchSchema.safeParse(body);
+      if (!parsed.success) throw demoHttpError(400, 'Invalid request body');
+      const report = await updateBugReport(await getDemoDb(), +m[1]!, parsed.data);
+      if (!report) throw demoHttpError(404, 'Bug report not found');
+      return report;
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/bug-reports\/(\d+)\/reproductions$/,
+    handler: async (m, body, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'bugReport', +m[1]!);
+      const parsed = bugReproductionSchema.safeParse(body);
+      if (!parsed.success) throw demoHttpError(400, 'Invalid request body');
+      const db = await getDemoDb();
+      if (!(await isReproductionRunAllowed(db, +m[1]!, parsed.data.runId)))
+        throw demoHttpError(400, 'runId is not a run of this bug report’s project');
+      return addBugReproduction(db, +m[1]!, parsed.data, null);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/bug-reports\/(\d+)\/missed-by$/,
+    // The demo has no CODEOWNERS to read: no owner.
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'bugReport', +m[1]!);
+      const missed = await getBugReportMissedBy(await getDemoDb(), +m[1]!);
+      if (!missed) throw demoHttpError(404, 'Bug report not found');
+      return { ...missed, owner: null };
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/bug-reports\/(\d+)\/spec$/,
+    handler: async (m, _b, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'bugReport', +m[1]!);
+      const specDir = specDirSchema.safeParse(q?.get('specDir') ?? undefined);
+      if (!specDir.success) throw demoHttpError(400, 'Invalid spec folder');
+      const mode = q?.get('mode') === 'run' ? 'run' : 'commit';
+      const spec = await renderBugReportSpec(await getDemoDb(), +m[1]!, mode, specDir.data);
+      if (!spec) throw demoHttpError(404, 'Bug report not found');
+      return {
+        mode: spec.mode,
+        code: spec.code,
+        fileName: spec.fileName,
+        path: spec.path,
+        warnings: spec.warnings,
+        matchedSpans: spec.matchedSpans,
+      };
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/url-patterns$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      return { items: await listProjectUrlPatterns(await getDemoDb(), +m[1]!) };
+    },
+  },
+  {
+    method: 'PUT',
+    pattern: /^\/api\/projects\/(\d+)\/url-patterns$/,
+    handler: async (m, body, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const parsed = urlPatternListSchema.safeParse(body);
+      if (!parsed.success) throw demoHttpError(400, 'Invalid request body');
+      return {
+        items: demoUrlPatternItems(await replaceProjectUrlPatterns(await getDemoDb(), +m[1]!, parsed.data.items)),
+      };
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/projects\/(\d+)\/url-patterns$/,
+    handler: async (m, body, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const parsed = urlPatternInputSchema.safeParse(body);
+      if (!parsed.success) throw demoHttpError(400, 'Invalid request body');
+      return { items: demoUrlPatternItems(await addProjectUrlPattern(await getDemoDb(), +m[1]!, parsed.data)) };
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/url-patterns\/suggestions$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      return { items: await suggestUrlPatterns(await getDemoDb(), +m[1]!) };
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/extension\/url-patterns$/,
+    handler: async (_m, _b, _q, ctx) => {
+      const db = await getDemoDb();
+      const scope = ctx?.scope ?? 'all';
+      const [items, menu] = await Promise.all([listVisibleUrlPatterns(db, scope), getProjectMenu(db, scope)]);
+      return { user: null, items, projects: menu.map((p) => ({ id: p.id, label: p.label || p.name, canEdit: true })) };
     },
   },
   {

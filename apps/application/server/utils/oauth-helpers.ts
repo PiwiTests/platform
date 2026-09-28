@@ -42,6 +42,8 @@ export function resolvePublicBaseUrl(siteUrl: string | undefined, requestOrigin:
   return requestOrigin.replace(/\/+$/, '');
 }
 
+export { safeReturnPath } from '#shared/return-path';
+
 export function buildRedirectUri(baseUrl: string, provider: string): string {
   return `${baseUrl}/api/auth/oauth/${provider}/callback`;
 }

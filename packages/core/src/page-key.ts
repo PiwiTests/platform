@@ -83,3 +83,127 @@ export function pageKey(url: string): string | null {
   const q = normalized.indexOf('?');
   return q < 0 ? normalized : normalized.slice(0, q);
 }
+
+/** The most path segments a URL mapping's path prefix may hold (`/a/b/c/d`). */
+export const MAX_PATH_PREFIX_SEGMENTS = 4;
+
+/** The longest path prefix accepted, in characters. */
+export const MAX_PATH_PREFIX_LENGTH = 200;
+
+/** Why a path prefix was refused. */
+export type PathPrefixProblem = 'query-or-hash' | 'not-a-path' | 'too-many-segments' | 'too-long';
+
+export type PathPrefixResult = { ok: true; prefix: string | null } | { ok: false; problem: PathPrefixProblem };
+
+/**
+ * Reads a URL mapping's path prefix: the part of the site's path its tests
+ * never saw (`/app` when the site serves `/app/checkout` and the tests ran at
+ * `/checkout`). The result starts with a slash, has no trailing slash and no
+ * doubled slashes; an empty value or a lone `/` is no prefix (`null`). Refused:
+ * a query or hash, a full URL, wildcards, whitespace, `.` and `..` segments,
+ * more than {@link MAX_PATH_PREFIX_SEGMENTS} segments.
+ */
+export function parsePathPrefix(raw: string | null | undefined): PathPrefixResult {
+  const value = (raw ?? '').trim();
+  if (!value) return { ok: true, prefix: null };
+  if (/[?#]/.test(value)) return { ok: false, problem: 'query-or-hash' };
+  if (value.length > MAX_PATH_PREFIX_LENGTH) return { ok: false, problem: 'too-long' };
+  if (/^[a-z][a-z0-9+.-]*:/i.test(value) || /[\s*\\]/.test(value)) return { ok: false, problem: 'not-a-path' };
+  const segments = value.split('/').filter(Boolean);
+  if (segments.length === 0) return { ok: true, prefix: null };
+  if (segments.some((s) => s === '.' || s === '..')) return { ok: false, problem: 'not-a-path' };
+  if (segments.length > MAX_PATH_PREFIX_SEGMENTS) return { ok: false, problem: 'too-many-segments' };
+  return { ok: true, prefix: `/${segments.join('/')}` };
+}
+
+/** A normalized prefix, or null for no prefix or one {@link parsePathPrefix} refuses. */
+export function normalizePathPrefix(raw: string | null | undefined): string | null {
+  const result = parsePathPrefix(raw);
+  return result.ok ? result.prefix : null;
+}
+
+/**
+ * Removes `prefix` from the start of a URL's path, whole segments only:
+ * `/app/checkout` under `/app` becomes `/checkout`, `/app` becomes `/`, and
+ * `/application` keeps its path. Accepts an absolute URL or a bare path and
+ * returns the same kind, with the query and hash kept. `stripped` says whether
+ * the prefix applied.
+ */
+export function stripPathPrefix(url: string, prefix: string | null | undefined): { url: string; stripped: boolean } {
+  const normalized = normalizePathPrefix(prefix);
+  if (!normalized) return { url, stripped: false };
+  const absolute = /^https?:\/\//i.test(url);
+  let parsed: URL;
+  try {
+    parsed = new URL(absolute ? url : `http://${PATH_ANCHOR_HOST}${url.startsWith('/') ? '' : '/'}${url}`);
+  } catch {
+    return { url, stripped: false };
+  }
+  const path = parsed.pathname;
+  if (path !== normalized && !path.startsWith(`${normalized}/`)) return { url, stripped: false };
+  parsed.pathname = path.slice(normalized.length) || '/';
+  const rest = `${parsed.pathname}${parsed.search}${parsed.hash}`;
+  return { url: absolute ? `${parsed.origin}${rest}` : rest, stripped: true };
+}
+
+/**
+ * How a site's paths relate to the paths its tests ran: `pathPrefix` is the
+ * part the site serves its pages under and the tests did not (`/app` when the
+ * site serves `/app/checkout` for the tests' `/checkout`); `testPathPrefix` is
+ * the part the tests ran under and the site does not (`/app` when the tests ran
+ * `/app/checkout` for the site's `/checkout`). Both may be set: `/app` on the
+ * site for `/v2` in the tests.
+ */
+export interface PathPrefixes {
+  pathPrefix?: string | null;
+  testPathPrefix?: string | null;
+}
+
+/**
+ * `url` as the tests would have run it: `pathPrefix` removed from the start of
+ * its path (whole segments only), then `testPathPrefix` put in front. A path
+ * outside a set `pathPrefix` keeps its address, since the mapping does not
+ * cover it, and so does a URL that is not a page (`about:blank`). The site's
+ * root under a tests' prefix `/app` becomes `/app`. `prefixRemoved` and
+ * `prefixAdded` name the prefixes that applied.
+ */
+export function mapPathPrefixes(
+  url: string,
+  prefixes: PathPrefixes | null | undefined,
+): { url: string; prefixRemoved: string | null; prefixAdded: string | null } {
+  const site = normalizePathPrefix(prefixes?.pathPrefix);
+  const tests = normalizePathPrefix(prefixes?.testPathPrefix);
+  const unchanged = { url, prefixRemoved: null, prefixAdded: null };
+  if (!site && !tests) return unchanged;
+  // A URL with a scheme other than http(s) is not a page, and has no path to map.
+  if (/^[a-z][a-z0-9+.-]*:/i.test(url) && !/^https?:\/\//i.test(url)) return unchanged;
+  let current = url;
+  if (site) {
+    const stripped = stripPathPrefix(url, site);
+    if (!stripped.stripped) return unchanged;
+    current = stripped.url;
+  }
+  if (!tests) return { url: current, prefixRemoved: site, prefixAdded: null };
+  const absolute = /^https?:\/\//i.test(current);
+  let parsed: URL;
+  try {
+    parsed = new URL(absolute ? current : `http://${PATH_ANCHOR_HOST}${current.startsWith('/') ? '' : '/'}${current}`);
+  } catch {
+    return unchanged;
+  }
+  parsed.pathname = parsed.pathname === '/' ? tests : `${tests}${parsed.pathname}`;
+  const rest = `${parsed.pathname}${parsed.search}${parsed.hash}`;
+  return { url: absolute ? `${parsed.origin}${rest}` : rest, prefixRemoved: site, prefixAdded: tests };
+}
+
+/**
+ * The page key of `url` as the tests would have recorded it: {@link pageKey}
+ * after {@link mapPathPrefixes}, with the prefixes that applied.
+ */
+export function mappedPageKey(
+  url: string,
+  prefixes: PathPrefixes | null | undefined,
+): { key: string | null; prefixRemoved: string | null; prefixAdded: string | null } {
+  const mapped = mapPathPrefixes(url, prefixes);
+  return { key: pageKey(mapped.url), prefixRemoved: mapped.prefixRemoved, prefixAdded: mapped.prefixAdded };
+}

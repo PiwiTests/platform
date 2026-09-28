@@ -8,6 +8,7 @@ import type {
   TestMetadata,
   TestSourceFrame,
   TestStepEvent,
+  WireNetworkRequest,
 } from '@piwitests/core/wire';
 
 // The wire leaf shapes live in @piwitests/core (shared with the reporter);
@@ -21,6 +22,7 @@ export type {
   TestMetadata,
   TestSourceFrame,
   TestStepEvent,
+  WireNetworkRequest,
 };
 
 // ── Test status types ──────────────────────────────────────────────────────────
@@ -78,13 +80,15 @@ export interface TestCasePayload {
   slowestStep?: string | null;
   slowestStepDuration?: number | null;
   wastedTimeMs?: number | null;
-  networkRequests?: unknown;
+  networkRequests?: WireNetworkRequest[] | null;
   webVitals?: unknown;
   pageState?: unknown;
   /** Page inventory: controls and links per visited page (passing runs). */
   pageInventory?: unknown;
   /** The page each locator call ran on (`piwi-locator-pages`): `{ location, locator, origin, page, arrival }[]`. */
   locatorPages?: unknown;
+  /** The repository-relative source files the test executed (`piwi-code-reach`), when code reach is on. */
+  codeReach?: unknown;
   /** AI-step usage manifest (`{ entries: string[] }`): committed AI-step artifacts this test replayed. */
   aiUsage?: unknown;
   consoleLogs?: unknown;
@@ -112,6 +116,8 @@ export interface TestCasePayload {
   testSourceFrames?: TestSourceFrame[] | null;
   /** Why a `didnotrun` case never executed (`previous-failure`/`global-timeout`/`max-failures`/`interrupted`). */
   didNotRunReason?: string | null;
+  /** Playwright's `TestCase.expectedStatus`: `failed` for a `test.fail()` test. */
+  expectedStatus?: string | null;
   /** For a `previous-failure` cascade, the location of the failing test that blocked it. */
   blockedBy?: string | null;
 }
@@ -189,11 +195,12 @@ export interface StreamEventPayload {
   slowestStep?: string | null;
   slowestStepDuration?: number | null;
   wastedTimeMs?: number | null;
-  networkRequests?: unknown;
+  networkRequests?: WireNetworkRequest[] | null;
   webVitals?: unknown;
   pageState?: unknown;
   pageInventory?: unknown;
   locatorPages?: unknown;
+  codeReach?: unknown;
   aiUsage?: unknown;
   consoleLogs?: unknown;
   dialogs?: unknown;
@@ -213,6 +220,8 @@ export interface StreamEventPayload {
   testSourceFrames?: TestSourceFrame[] | null;
   /** Why a `didnotrun` case never executed (`previous-failure`/`global-timeout`/`max-failures`/`interrupted`). */
   didNotRunReason?: string | null;
+  /** Playwright's `TestCase.expectedStatus`: `failed` for a `test.fail()` test. */
+  expectedStatus?: string | null;
   /** For a `previous-failure` cascade, the location of the failing test that blocked it. */
   blockedBy?: string | null;
 }

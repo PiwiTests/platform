@@ -62,6 +62,15 @@ export interface CiRerunForm {
   gitlab: { ref: string; variableName: string };
   bitbucket: { pipeline: string; variableName: string };
 }
+/** Where bug specs go and what they import `test` from; blank fields fall back to the defaults. */
+export interface GeneratedSpecsForm {
+  testImport: string;
+  bugsFolder: string;
+}
+const generatedSpecs = defineModel<GeneratedSpecsForm>('generatedSpecs', {
+  default: () => ({ testImport: '', bugsFolder: '' }),
+});
+
 const ciRerun = defineModel<CiRerunForm>('ciRerun', {
   default: () => ({
     enabled: false,
@@ -231,6 +240,29 @@ const ciRerun = defineModel<CiRerunForm>('ciRerun', {
               </div>
             </div>
           </div>
+        </div>
+      </UFormField>
+
+      <UFormField
+        name="generatedSpecs"
+        description="For the failing test Piwi writes from a bug report: where it goes and what it imports test and expect from, such as ../fixtures when your tests use their own."
+      >
+        <template #label>
+          <span class="inline-flex items-center gap-1">Generated specs <HelpHint topic="bug-report.spec" /></span>
+        </template>
+        <div class="grid gap-2 sm:grid-cols-2">
+          <UInput
+            v-model="generatedSpecs.bugsFolder"
+            placeholder="folder for bug specs, tests/bugs"
+            class="font-mono"
+            aria-label="Folder for bug specs"
+          />
+          <UInput
+            v-model="generatedSpecs.testImport"
+            placeholder="test import, @playwright/test"
+            class="font-mono"
+            aria-label="Test import"
+          />
         </div>
       </UFormField>
 

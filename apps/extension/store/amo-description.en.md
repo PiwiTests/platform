@@ -3,14 +3,12 @@ Piwi Picker finds the locator to use for any element of the page you are on. Eve
 **Tools, all on the live page**
 
 - **Pick an element**: the ranked locators of one element, re-checked against the page, copied as a locator, an action line or an assertion.
-- **Hover-inspect**: the best locator of whatever the pointer is on.
-- **Locator console**: type a locator and see what it matches right now, with a strict-mode verdict.
 - **Multi-pick**: the pattern shared by a list's rows or cards.
 - **Lint overlay**: the elements that would make bad locator targets, each with a suggested data-testid.
 - **Assertions**: expect(...) lines for an element.
-- **Session**: elements you name across pages, exported as a page object, a Markdown table or JSON.
 - **Agent context**: one block describing an element, for a coding agent.
 - **Record actions**: clicks, fills and selections across a site's pages, turned into a TypeScript spec. Password values are never captured.
+- **In DevTools**: the ranked locators of the element selected in Elements, a locator console with a strict-mode verdict, the elements you name exported as a page object, network mocks, a Playwright project's viewport, and Save login for tests.
 
 **Private by default**
 
@@ -18,7 +16,7 @@ Picking and recording never use the network. Nothing is collected or sent anywhe
 
 **Optional: connect your own Piwi instance**
 
-Piwi is a self-hosted dashboard for Playwright test results. Connecting the add-on to your instance (its URL and an API key, in the settings) adds three tools: recordings that call your own test functions, a check of which functions work on the page, and an outline of the elements your tests reach. The add-on only reads from your instance; a recording is never sent to it.
+Piwi is a self-hosted dashboard for Playwright test results. Connecting the add-on to your instance (its URL and an API key, in the settings) adds three tools: recordings that call your own test functions, a check of which functions work on the page, and an outline of the elements your tests reach. The add-on reads from your instance and sends it one thing: a bug report, when you click Send in the preview that shows exactly what goes.
 
 **Permissions**
 

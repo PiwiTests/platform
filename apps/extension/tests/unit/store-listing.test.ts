@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
+import { SHIPPED_LANGUAGES, TRANSLATION_ISSUE_URL } from '../../src/shared/languages.js';
 
 const root = path.resolve(import.meta.dirname, '..', '..');
 const manifest = JSON.parse(readFileSync(path.join(root, 'manifest.json'), 'utf8'));
@@ -32,5 +33,13 @@ describe('store listing', () => {
     // `scripts/amo-metadata.mjs` pairs each `_locales/` directory with its file.
     for (const locale of locales)
       expect(existsSync(path.join(root, 'store', `amo-description.${locale}.md`))).toBe(true);
+  });
+
+  it.each(SHIPPED_LANGUAGES)('says in its first paragraph whether $code is a draft', ({ code, draft }) => {
+    // A draft opens with a note, in its language, and the form for translation fixes; a reviewed language has none.
+    const description = readFileSync(path.join(root, 'store', `amo-description.${code}.md`), 'utf8');
+    const first = description.split(/\n\s*\n/)[0]!;
+    if (draft) expect(first).toContain(TRANSLATION_ISSUE_URL);
+    else expect(description).not.toContain(TRANSLATION_ISSUE_URL);
   });
 });

@@ -1,3 +1,5 @@
+import { applyBugReportLifecycle } from '#shared/handlers/bug-reports';
+import { followBugReportTickets } from './integrations/bug-reports';
 import type { DbClient } from '../database';
 import { computeRegressionSignals } from './compute-regression-signals';
 import { autoDiagnoseRun } from './ai-diagnosis';
@@ -45,7 +47,10 @@ export function runFinalizeSideEffects(
   syncAutoMarkersForRun(db, id).catch((e) => console.error('[markers] syncAutoMarkersForRun failed', e));
   autoDiagnoseRun(db, run.projectId, id).catch((e) => console.error('[ai-diagnosis] autoDiagnoseRun failed', e));
   emitRunNotifications(db, id).catch((e) => console.error('[notifications] emitRunNotifications failed', e));
-  postRunPrFeedbackInBackground(db, id);
-  maybeEnqueueHealActionInBackground(db, id);
+  applyBugReportLifecycle(db, id)
+    .then((moved) => followBugReportTickets(db, id, moved))
+    .catch((e) => console.error('[bug-reports] applyBugReportLifecycle failed', e));
+  // Healing's diff-rename step reads the locator breaks change coverage stores.
+  void postRunPrFeedbackInBackground(db, id).then(() => maybeEnqueueHealActionInBackground(db, id));
   return rollup;
 }

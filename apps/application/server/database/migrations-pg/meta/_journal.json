@@ -610,6 +610,62 @@
       "when": 1790500338797,
       "tag": "0086_nasty_reavers",
       "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1790532406006,
+      "tag": "0087_extension_connect",
+      "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1790539689770,
+      "tag": "0088_glorious_red_hulk",
+      "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1790542932799,
+      "tag": "0089_bug_reports",
+      "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1790543291262,
+      "tag": "0090_entity_links_bug_report",
+      "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "7",
+      "when": 1790573600999,
+      "tag": "0091_url_pattern_path_prefix",
+      "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1790575212414,
+      "tag": "0092_network_request_failure",
+      "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1790576262868,
+      "tag": "0093_url_pattern_test_path_prefix",
+      "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1790578451584,
+      "tag": "0094_jittery_meltdown",
+      "breakpoints": true
     }
   ]
 }

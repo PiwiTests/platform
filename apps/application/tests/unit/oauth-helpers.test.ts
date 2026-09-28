@@ -17,6 +17,7 @@ import {
   resolveUnlink,
   type OAuthUserRow,
   type OAuthProfile,
+  safeReturnPath,
 } from '../../server/utils/oauth-helpers';
 import { Role } from '#shared/types';
 
@@ -355,4 +356,22 @@ describe('resolveUnlink', () => {
   test('allows when linked and a password exists', () => {
     expect(resolveUnlink(row({ oauthProvider: 'google', password: 'hash' }), 'google')).toEqual({ ok: true });
   });
+});
+
+describe('safeReturnPath', () => {
+  test('keeps a same-origin path and refuses anything that leaves the instance', () => {
+    expect(safeReturnPath('/extension/connect?code=BCDF-GHJK')).toBe('/extension/connect?code=BCDF-GHJK');
+    expect(safeReturnPath('//evil.test/x')).toBeNull();
+    expect(safeReturnPath('/\\evil.test')).toBeNull();
+    expect(safeReturnPath('https://evil.test/')).toBeNull();
+    expect(safeReturnPath('/' + 'a'.repeat(600))).toBeNull();
+    expect(safeReturnPath(undefined)).toBeNull();
+  });
+
+  test.each(['/\t/evil.test', '/\n/evil.test', '/\r/evil.test', '/x\u0000', '/x\u007f'])(
+    'refuses %j, which a browser could read as another host',
+    (value) => {
+      expect(safeReturnPath(value)).toBeNull();
+    },
+  );
 });

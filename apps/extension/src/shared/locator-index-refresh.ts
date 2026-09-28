@@ -1,5 +1,6 @@
 import type { LocatorIndex } from '@piwitests/core/locator-index';
-import { OUTDATED_WORKER_MESSAGE } from './worker-status.js';
+import { outdatedWorkerMessage } from './worker-status.js';
+import { t } from './i18n.js';
 
 /**
  * Asks the background worker for a fresh copy of a project's locator index.
@@ -18,7 +19,7 @@ export async function requestLocatorIndex(
   projectId: number | null,
   opts: { force?: boolean; branch?: string | null } = {},
 ): Promise<LocatorIndexRefreshResult> {
-  if (projectId == null) return { ok: false, error: 'No project mapped to this page.' };
+  if (projectId == null) return { ok: false, error: t('common_noProject') };
   try {
     const answer = (await chrome.runtime.sendMessage({
       type: 'piwi-refresh-locator-index',
@@ -26,8 +27,8 @@ export async function requestLocatorIndex(
       force: opts.force === true,
       branch: opts.branch ?? null,
     })) as LocatorIndexRefreshResult | undefined;
-    return answer ?? { ok: false, error: OUTDATED_WORKER_MESSAGE };
+    return answer ?? { ok: false, error: outdatedWorkerMessage() };
   } catch {
-    return { ok: false, error: 'Piwi Picker background worker is unavailable.' };
+    return { ok: false, error: t('common_workerNoAnswer') };
   }
 }

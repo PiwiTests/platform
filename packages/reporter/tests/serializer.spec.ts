@@ -192,14 +192,16 @@ describe('toWireTestCase', () => {
       title: 't',
       location: 'l',
       stepEvents,
-      networkRequests: [{ url: 'u' }],
+      networkRequests: [{ method: 'GET', url: 'u', status: 0, duration: 12, failure: 'net::ERR_CONNECTION_RESET' }],
       webVitals: { navigation: {} },
       consoleLogs: [{ type: 'error' }],
       ariaSnapshot: 'snapshot',
       testSource: 'src',
     });
     expect(out.stepEvents).toEqual(stepEvents);
-    expect(out.networkRequests).toEqual([{ url: 'u' }]);
+    expect(out.networkRequests).toEqual([
+      { method: 'GET', url: 'u', status: 0, duration: 12, failure: 'net::ERR_CONNECTION_RESET' },
+    ]);
     expect(out.webVitals).toEqual({ navigation: {} });
     expect(out.consoleLogs).toEqual([{ type: 'error' }]);
     expect(out.ariaSnapshot).toBe('snapshot');
@@ -239,11 +241,13 @@ describe('toWireTestCase', () => {
       'attempts',
       'blockedBy',
       'browser',
+      'codeReach',
       'consoleLogs',
       'dialogs',
       'didNotRunReason',
       'duration',
       'error',
+      'expectedStatus',
       'location',
       'locatorPages',
       'locatorSnapshots',

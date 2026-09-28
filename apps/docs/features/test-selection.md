@@ -146,15 +146,16 @@ get the same data from `analyze_selections`.
 ## Impact-from-diff
 
 `piwi run impact --base <ref>` runs only the tests your change affects. The reporter computes the working-tree diff
-against `<ref>` locally (`git diff --name-only`), and the dashboard maps those files to tests through two observed
-edges:
+against `<ref>` locally (`git diff --name-only`), and the dashboard maps those files to tests through observed edges:
 
 - **Direct**: a changed file that _is_ a test file maps to the tests defined in it.
 - **Reach**: a changed support file (a page object, helper, or app module) maps to the tests whose most recent
   execution ran through it, per their captured source frames.
+- **Code reach**: a changed application file maps to the tests that executed it
+  ([code reach](/features/code-reach)).
 
-It fails safe: a changed _source_ file that maps to no test widens the run to the full suite with a warning. A
-docs-only or config-only change runs nothing. This is evidence-based impact, not static analysis.
+It fails safe: an unmapped _source_ file widens the run to the full suite with a warning. A docs-only change runs
+nothing.
 
 ## Suggestions
 

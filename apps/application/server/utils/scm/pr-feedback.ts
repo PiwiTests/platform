@@ -12,7 +12,7 @@
  * an ingest error, so failures are logged and swallowed.
  */
 import { and, eq, inArray } from 'drizzle-orm';
-import { failureClusters, projects, testCases, testRuns, testRunsCases } from '../../database/schema';
+import { bugReports, failureClusters, projects, testCases, testRuns, testRunsCases } from '../../database/schema';
 import { getAppSetting } from '../app-settings';
 import { createScmProvider } from './index';
 import { normalizeGitUrl } from './git-url';
@@ -35,6 +35,7 @@ import {
   PR_FEEDBACK_KEY,
   resolvePrFeedbackSettings,
   type PrChangeCoverage,
+  type PrLocatorBreaks,
   type PrFailureEntry,
   type PrFeedbackSettings,
   type PrSummaryInput,
@@ -47,7 +48,8 @@ import { withProjectGraphLock } from '../project-graph-lock';
 import type { VerifiedFix } from '../fix-verification';
 import type { RunMetadata } from '../run-json-types';
 import type { DbClient } from '../../database';
-import type { FilterDetails } from '#shared/types';
+import type { FilterDetails, TestMetadata } from '#shared/types';
+import { isExpectedFailurePassed, looksFixedTests } from '#shared/status-classify';
 import { errorExcerpt } from '#shared/notification-events';
 import { caseHeadline } from '#shared/failure-verdict';
 import { locksHeldAcrossShards } from '#shared/lock-overlap';
@@ -74,7 +76,10 @@ interface CaseRow {
   id: number;
   testCaseId: number;
   status: string;
+  expectedStatus: string | null;
+  testMeta: unknown;
   retries: number | null;
+  browserName: string | null;
   duration: number | null;
   wastedTimeMs: number | null;
   error: string | null;
@@ -178,7 +183,10 @@ export async function buildRunPrSummary(
       id: testRunsCases.id,
       testCaseId: testRunsCases.testCaseId,
       status: testRunsCases.status,
+      expectedStatus: testRunsCases.expectedStatus,
+      testMeta: testRunsCases.testMeta,
       retries: testRunsCases.retries,
+      browserName: testRunsCases.browserName,
       duration: testRunsCases.duration,
       wastedTimeMs: testRunsCases.wastedTimeMs,
       error: testRunsCases.error,
@@ -195,7 +203,25 @@ export async function buildRunPrSummary(
     .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
     .where(eq(testRunsCases.testRunId, runId));
 
-  const failingRows = caseRows.filter((row) => FAIL_STATUSES.includes(row.status));
+  // Each project's last attempt says whether a test's bug still shows there.
+  const looksFixedRows = looksFixedTests(caseRows);
+  const namedBugs = looksFixedRows.flatMap((row) => {
+    const bug = Number((row.testMeta as TestMetadata | null)?.bug);
+    return bug ? [bug] : [];
+  });
+  const knownBugReports = new Set(
+    namedBugs.length
+      ? (
+          await db
+            .select({ id: bugReports.id })
+            .from(bugReports)
+            .where(and(eq(bugReports.projectId, run.projectId), inArray(bugReports.id, namedBugs)))
+        ).map((r) => r.id)
+      : [],
+  );
+  const failingRows = caseRows.filter(
+    (row) => FAIL_STATUSES.includes(row.status) && !isExpectedFailurePassed(row.status, row.expectedStatus),
+  );
   const flakyRows = caseRows.filter((row) => row.status === 'passed' && (row.retries ?? 0) > 0);
 
   // `computeRunInsights` owns the baseline comparison; reuse it rather than
@@ -262,6 +288,16 @@ export async function buildRunPrSummary(
     durationMs: run.duration ?? null,
     newRegressions,
     preExisting,
+    looksFixed: looksFixedRows.map((row) => {
+      const bug = Number((row.testMeta as TestMetadata | null)?.bug) || null;
+      return {
+        title: row.title,
+        filePath: row.filePath,
+        executionId: row.id,
+        bugId: bug,
+        bugReportExists: bug != null && knownBugReports.has(bug),
+      };
+    }),
     flaky: flakyRows.map((row) => ({
       title: row.title,
       filePath: row.filePath,
@@ -312,6 +348,7 @@ export async function postRunPrFeedback(
   runId: number,
   fixedClusters: VerifiedFix[] = [],
   changeCoverage: PrChangeCoverage | null = null,
+  locatorBreaks: PrLocatorBreaks | null = null,
 ): Promise<{ posted: boolean; comment: boolean; status: boolean; reason?: string }> {
   const none = (reason: string) => ({ posted: false, comment: false, status: false, reason });
 
@@ -344,6 +381,7 @@ export async function postRunPrFeedback(
   const testMapDeclined = (await resolveProjectStates(db, run.projectId))['test-map'] === 'declined';
   const effectiveChangeCoverage = testMapDeclined ? null : changeCoverage;
   summary.changeCoverage = effectiveChangeCoverage;
+  summary.locatorBreaks = testMapDeclined ? null : locatorBreaks;
 
   // `onlyOnFailure` silences routine green runs, but a run that closed a
   // cluster is news — that is the answer somebody was waiting for.
@@ -385,13 +423,15 @@ export async function postRunPrFeedback(
 }
 
 /**
- * Fire-and-forget wrapper for the run-finalize paths.
+ * Fire-and-forget wrapper for the run-finalize paths. Returns once change
+ * coverage is stored, with the run's locator breaks that locator healing
+ * reads; the comment is posted after that, in the background.
  *
  * Fix verification runs first and its result is handed to the comment, so the
  * two stay in one order rather than racing: a comment that omitted the cluster
  * this run just closed would be reporting the wrong news.
  */
-export function postRunPrFeedbackInBackground(db: DbClient, runId: number): void {
+export function postRunPrFeedbackInBackground(db: DbClient, runId: number): Promise<void> {
   // Recompute the project-wide scenario gaps off the request path, so success-
   // only, single-covering-test and surface-drift gaps and their self-closing
   // stay live on every finished run — not only from the manual recompute.
@@ -400,23 +440,25 @@ export function postRunPrFeedbackInBackground(db: DbClient, runId: number): void
   // Change coverage runs regardless of the comment opt-in: it writes the graph's
   // `changes` edges and the changed-unreached gaps every instance with history
   // and an SCM token gets for free. Its result also feeds the comment section.
+  const coverage = computeRunChangeCoverage(db, runId).catch((e) => {
+    console.error('[change-coverage] computeRunChangeCoverage failed', e);
+    return null;
+  });
   Promise.all([
     verifyClusterFixes(db, runId).catch((e) => {
       console.error('[fix-verification] verifyClusterFixes failed', e);
       return [] as VerifiedFix[];
     }),
-    computeRunChangeCoverage(db, runId).catch((e) => {
-      console.error('[change-coverage] computeRunChangeCoverage failed', e);
-      return null;
-    }),
+    coverage,
   ])
-    .then(([fixed, change]) => postRunPrFeedback(db, runId, fixed, change?.pr ?? null))
+    .then(([fixed, change]) => postRunPrFeedback(db, runId, fixed, change?.pr ?? null, change?.locatorBreaks ?? null))
     .then((result) => {
       if (!result.posted && result.reason && result.reason !== 'disabled') {
         console.warn(`[pr-feedback] nothing posted for run #${runId}: ${result.reason}`);
       }
     })
     .catch((e) => console.error('[pr-feedback] postRunPrFeedback failed', e));
+  return coverage.then(() => undefined);
 }
 
 /**

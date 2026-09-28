@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Piwi</title>
+    <link rel="stylesheet" href="src/devtools/devtools.css" />
+  </head>
+  <body class="panel">
+    <header class="toolbar">
+      <div role="tablist" aria-label="Piwi">
+        <button type="button" role="tab" id="tab-record" data-tab="record" aria-controls="content" data-i18n="devtools_tabRecord">Record</button>
+        <button type="button" role="tab" id="tab-replay" data-tab="replay" aria-controls="content" data-i18n="devtools_tabReplay">Replay</button>
+        <button type="button" role="tab" id="tab-network" data-tab="network" aria-controls="content" data-i18n="devtools_tabNetwork">Network</button>
+        <button type="button" role="tab" id="tab-locators" data-tab="locators" aria-controls="content" data-i18n="devtools_tabLocators">Locators</button>
+        <button type="button" role="tab" id="tab-session" data-tab="session" aria-controls="content" data-i18n="devtools_tabSession">Session</button>
+      </div>
+      <div class="tools">
+        <button type="button" id="viewport-toggle" aria-expanded="false" aria-controls="viewport-row" data-i18n="devtools_viewport">
+          Viewport
+        </button>
+        <button type="button" id="playwright-view" data-i18n="popup_playwrightView">Playwright view</button>
+        <button type="button" id="save-login" data-i18n="popup_saveLogin">Save login for tests</button>
+      </div>
+    </header>
+    <form id="viewport-row" class="subbar" hidden>
+      <label for="viewport" data-i18n="popup_viewport">Open this page at a viewport</label>
+      <select id="viewport"></select>
+      <span id="viewport-custom" class="viewport-custom" hidden>
+        <input id="viewport-width" type="number" min="200" max="4000" value="390" aria-label="Width" data-i18n-aria-label="popup_viewportWidth" />
+        ×
+        <input id="viewport-height" type="number" min="200" max="4000" value="844" aria-label="Height" data-i18n-aria-label="popup_viewportHeight" />
+      </span>
+      <button type="submit" data-i18n="devtools_viewportOpen">Open in a new window</button>
+      <button type="button" id="viewport-here" data-i18n="popup_viewportHere" hidden>In this tab</button>
+      <span class="note" id="viewport-note" data-i18n="popup_viewportOnly">Viewport only: no touch, pixel ratio or user agent.</span>
+      <span class="note viewport-current" id="viewport-current" hidden>
+        <span id="viewport-current-text"></span>
+        <button type="button" id="viewport-reset" class="link" data-i18n="popup_viewportReset">Back to the window’s size</button>
+      </span>
+    </form>
+    <div id="notice" aria-live="polite"></div>
+    <main id="content" role="tabpanel"></main>
+    <script type="module" src="src/devtools/panel.ts"></script>
+  </body>
+</html>

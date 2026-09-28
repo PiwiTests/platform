@@ -4,7 +4,8 @@ Browser extension (Chrome/Edge, Manifest V3) that reuses the monorepo's locator 
 (`@piwitests/core`) and shared picker overlay (`@piwitests/picker-dom`) to pick ranked,
 stable Playwright locators from the live page. The picking/recording features are
 standalone (no server, no permissions beyond `activeTab`/`scripting`/`storage`, plus the
-one-origin-at-a-time `optional_host_permissions` grant recording needs — see below);
+one-origin-at-a-time `optional_host_permissions` grant recording needs, and `debugger`, attached
+on demand — see "The debugging protocol" below);
 **connecting to a Piwi instance is opt-in** and adds what needs a project's history: matching
 a recording against the project's function catalog, and showing which elements of the page its
 tests reach ("Tested elements"). See "Connected mode" and "Tested elements" below.
@@ -17,20 +18,29 @@ AMO listings that are still outstanding.
 
 ## What it is
 
-- `manifest.json` — MV3 manifest. Standing permissions stay at `activeTab` + `scripting` +
-  `storage` — no static host permissions, no `<all_urls>`, no remote code. `optional_host_permissions`
+- `manifest.json` — MV3 manifest. Standing permissions stay at `activeTab` + `debugger` + `scripting` +
+  `storage` — no static host permissions, no `<all_urls>`, no remote code. `debugger` is in the Chromium
+  manifest only: `scripts/build.mjs` (`firefoxManifest`) leaves it out of `dist-firefox/`, and
+  `build-manifests.test.ts` checks it. `optional_host_permissions`
   (`http://*/*`, `https://*/*`) is declared but **granted nothing by default** — the popup
   requests a single origin (`https://<the-recorded-site>/*`) from `chrome.permissions.request`
   only when the user clicks "Record actions", inside that click's own gesture. Adding a new
-  *standing* permission here is still a deliberate, reviewed decision, not a default.
+  *standing* permission here is still a deliberate, reviewed decision, not a default. `optional_permissions` holds
+  `cookies` alone, granted nothing at install: **Save login for tests** (`login.html`, `src/login/main.ts`, pure half
+  `src/shared/storage-state.ts`) requests it with the one site's origin inside its Save click, reads that site's
+  cookies and `localStorage` once, and downloads them as Playwright's `storageState`; nothing is kept or sent.
+  `save-login.spec.ts` loads the file into a new browser context and checks it logs in.
   `browser_specific_settings.gecko.id` is Firefox's required stable add-on ID (Chromium ignores
   the key); don't change it once the add-on is published to AMO — a new ID creates a separate
   add-on rather than an update, orphaning existing installs. `background` names `background.js`
   twice, as `service_worker` (Chrome) and `scripts` (Firefox, which has no extension service
-  workers — AMO rejects the manifest without it), and `gecko.data_collection_permissions` is
-  `"none"`, which holds only while nothing is sent anywhere but the user's own instance. See
+  workers — AMO rejects the manifest without it); the build writes `dist/` for Chrome and Edge
+  without `scripts` (Edge lists it as an error) and `dist-firefox/` with it, and `gecko.data_collection_permissions` is
+  `"none"`, which holds only while nothing is sent anywhere but the user's own instance and the editor paired on
+  the same computer (Send to editor). See
   `PUBLISHING.md` §4. The manifest's `description` and the shortcut's label are `__MSG_*__`
-  strings, translated in `public/_locales/` (English, the default, and French). The
+  strings, translated in `public/_locales/` (English, the default, French, and German, Spanish and
+  Brazilian Portuguese as drafts). The
   description doubles as the store listings' summary, so it stays within 132 characters in every
   language. The rest of the Firefox listing lives in `store/` (§4 c) — a new language needs both.
 - `src/content/` — content scripts, each a standalone entry injected on demand. Most are
@@ -41,6 +51,8 @@ AMO listings that are still outstanding.
   `record-panel.ts` is the one exception: it's also registered dynamically
   (`chrome.scripting.registerContentScripts`, scoped to the granted origin) so it re-attaches
   itself on every navigation for the lifetime of a recording — see `background/index.ts`.
+  A bug recording (**Report a bug**, `bug-panel.ts`) registers a second script beside it,
+  `bug-evidence-main.ts`, in the page's **main world** — see "The main-world evidence script" below.
 - `src/background/` — the service worker. Handles the `chrome.commands` keyboard shortcut
   (the toolbar icon opens the popup instead, which injects content scripts itself) and the
   recorder's start/stop messages (`piwi-start-recording` / `piwi-recording-stopped`, plus the
@@ -49,13 +61,23 @@ AMO listings that are still outstanding.
   `unregisterContentScripts` and `chrome.action.*` are called from, since content scripts can't
   reach either API.
 - `src/popup/` — the toolbar popup. Plain TypeScript + DOM, no UI framework — keep it that
-  way unless the popup's own complexity genuinely outgrows it. Has a config (gear) button
-  (`chrome.runtime.openOptionsPage()`) and, once connected, an **Active project** select that
-  shows/overrides which mapped project applies to the current tab.
-- `src/options/` + `options.html` — the connected-mode settings page: instance URL, API key,
-  and a **Project mappings** table (URL pattern with wildcards → project, ordered, first match
-  wins). Same plain TypeScript + DOM approach as the popup. Opened via
-  `chrome.runtime.openOptionsPage()`, never linked to from a content script.
+  way unless the popup's own complexity genuinely outgrows it. It holds the tools that act on the page, for testers and
+  developers alike: **Record actions** and **Pick an element** first, then **Report a bug** and **Replay a bug
+  report**, **Tested elements**, and the other page tools as compact tiles under **More tools**. The developer tools
+  that have a home in DevTools are there, not here (see "DevTools"): the popup ends with a line saying so. It has a
+  config (gear) button (`chrome.runtime.openOptionsPage()`) and, once connected, an **Active project** select that
+  shows/overrides which mapped project applies to the current tab. **It must fit Chrome's 600-pixel popup height** in
+  every shipped language (German is the longest); `popup.spec.ts` checks the English height, and a new tile goes under
+  More tools or into DevTools rather than below the fold.
+- `src/options/` + `options.html` — the settings page, one card per setting, each with its own actions and its own
+  status line (`#language-status`, `#status`, `#mappings-status`, `#desktop-status`, `#editor-status`) and a badge
+  saying whether it is connected or paired: **Language**; **Connect to Piwi** (instance URL and a **Connect** button,
+  an RFC 8628 device authorization, below; a folded **Use an API key instead** with its own **Save and test**;
+  **Disconnect**); **Project mappings**, shown once an instance is kept (the instance's URL patterns, read-only, marked
+  **Piwi**; the patterns kept in this browser, a table whose **Save** keeps only them; a folded **Add a site** form);
+  **Desktop app** (below); **Send to editor**. Same plain TypeScript + DOM approach as the popup. Opened via
+  `chrome.runtime.openOptionsPage()`, or as `options.html#add=<pattern>` from the popup's **Add this site**, which
+  opens the Add a site form, never linked to from a content script.
 - `src/shared/` — code shared between content scripts, background, popup, and options.
 
 **A momentary tool must claim the page through `src/shared/tool-session.ts`.** `startTool(id,
@@ -82,12 +104,52 @@ message each (see `appendRecordingEvent`) so a click that navigates away is not 
 read and a write. A module reaching `chrome.storage.session` itself works in Chrome and breaks
 only in Firefox, which no CI run exercises.
 
+## The debugging protocol (`debugger`, Chrome and Edge)
+
+Used on demand since 2026-09-28. Chrome does not let `debugger` be optional, so it is a required permission, and
+Chrome shows "Piwi Picker started debugging this browser" while a session is attached. The rules that follow from it:
+
+- **Attach only while a feature the person started needs it, and detach the moment it ends.** Every session goes
+  through `src/background/debugger.ts`: `acquireDebugger(tabId, purpose)` attaches once per tab and
+  `releaseDebugger` detaches when no purpose holds the tab. The purposes are a replay (`cdp-replay.ts`, attached on
+  the replay's first page, let go by `piwi-replay-finished`, a new replay, or the tab leaving the origin) and a bug
+  recording (`cdp-evidence.ts`, the tab the report starts in, let go when the recording stops or is discarded), the
+  DevTools panel's conditions (`cdp-conditions.ts`, held while any condition or throttling is on) and a viewport set in
+  the tab from the popup (held until **Back to the window's size** or the tab closes). A purpose that lets go of a tab
+  another still holds ends its own emulation first (`Fetch.disable`, network and CPU back to normal,
+  `Emulation.clearDeviceMetricsOverride`). Nothing stays attached in the background.
+- **Every feature has today's path as its fallback, and says so in plain words.** Firefox has no `chrome.debugger`
+  (`debuggerAvailable()` is false); attaching can be refused (another debugger, a policy, a page Chrome protects);
+  the person can click Cancel on the bar (`onDetach` with `canceled_by_user`, heard through `onDebuggerLost`). The
+  pure half, `src/shared/cdp-input.ts`, names why (`FallbackReason`) and picks the driver (`chooseDriver`).
+- **A content script never talks to the protocol.** It finds the element and its box; the worker sends the commands,
+  checks the request field by field (`readInputOps`) and checks that it comes from the tab of the running replay.
+- The e2e suite cannot click the browser's bar: the worker's `__piwiCancelDebugging(tabId)` does what Cancel does.
+  `chrome.debugger` attaches beside Playwright's own connection, so the specs run on the real extension
+  (`tests/e2e/trusted-site.ts`).
+
+### Trusted input in a replay
+
+`replay-panel.ts` asks the worker for the driver on each page (`piwi-replay-driver`; the choice is kept in
+`ReplayState.driver`, and a replay that fell back stays on the page's events). With `cdp`, `replay-trusted.ts` glides
+the fake cursor, checks that the element (or its label) is what the browser finds at the point, as Playwright's hit
+check does, and sends `piwi-replay-input`: mouse moves, clicks and double clicks, key presses (`ControlOrMeta` is ⌘
+on a Mac, with the editing command Chrome needs), `Input.insertText` after selecting what a field or an editable
+element holds, and drags (`Input.setInterceptDrags` + `Input.dispatchDragEvent` for an HTML drag, the moves alone for
+a pointer-driven one). Date, time and color fields and `<select>` get their value set as Playwright sets them. The
+replay's panel lets the pointer through while input is sent. Input lost before it reached the page (the bar
+cancelled) replays the step with the page's own events (`replay-actions.ts`); lost after part of it did (the button
+went down, not up), the step fails with `replay_reasonInputInterrupted` rather than being done twice; each step result keeps its `driver`, and
+the panels show it. A file step asks the developer for the file in the replay's panel (a report names files, never
+carries them, and `DOM.setFileInputFiles` needs a path on disk), or lets them skip it (`skipped`); the file chooser a
+click opens is intercepted while a replay holds the tab (`Page.setInterceptFileChooserDialog`).
+
 ## Connected mode (recording → your own functions)
 
 The recorder (`record-panel.ts`, `record-capture.ts`, `packages/core/src/recording.ts`,
 `function-match.ts`, `codegen.ts`) works fully standalone: record clicks/fills/etc. across
 pages, get a raw Playwright spec back. Connecting to a Piwi instance (`options.html` →
-instance URL + API key + one or more URL-pattern → project mappings) adds one thing on top:
+instance URL + **Connect**, or a pasted API key; URL patterns from the instance and from this browser) adds one thing on top:
 each mapped project's `test_functions` catalog (`apps/application/shared/handlers/test-functions.ts`)
 is fetched once and cached per-project (`src/shared/catalog-cache.ts`, `chrome.storage.local`,
 keyed by project id), and `rankFunctionMatches` / `matchFunctionAt` (pure, deterministic,
@@ -95,19 +157,54 @@ unit-tested in `packages/core`) match the live recording against whichever proje
 applies — ranked live in the HUD, substituted into the generated spec on export. The matcher
 never invents a function; it only scores and selects among what the catalog already has.
 
+**Connect** is a device authorization (`proposals/extension-connect.md`): the settings page
+requests the instance origin inside the click, `startConnect` gets a user code and a verification
+page, the page opens in a tab, and `waitForApproval` (`src/shared/connect-flow.ts`, pure) polls
+`pollConnect` until the user allows or denies it there. The approved answer carries the API key,
+created for that user at that moment and returned once; the tab is closed and the key stored like a
+pasted one. The browser and OS names sent with the start come from `describeClient`
+(`src/shared/client-info.ts`) and nothing else about the machine.
+
+The instance's own URL patterns (`GET /api/extension/url-patterns`) are read by the settings
+page when it connects and each time it opens, and cached in `ConnectionSettings.serverMappings`
+(with `serverProjects`, whose `canEdit` gates **Add to Piwi**) by `applyServerSync`.
 Which project applies on a given page is resolved by `src/shared/active-project.ts`'s
 `resolveActiveProject(settings, override, url)`: a manual per-tab override
 (`chrome.storage.session`, set from the popup's **Active project** select) wins if present,
-otherwise the first `ConnectionSettings.projectMappings` entry whose `urlPattern` matches the
-URL (via `urlMatches`/`globToRegExp` in `packages/core/src/function-match.ts` — the same glob
+then the first `ConnectionSettings.projectMappings` entry (this browser only) whose `urlPattern`
+matches, then the first `serverMappings` entry that matches — so a local pattern overrides the
+instance's in this browser. Matching uses the URL (via `urlMatches`/`globToRegExp` in `packages/core/src/function-match.ts` — the same glob
 matcher a catalog entry's own `urlPattern` gate uses). Every consumer that needs "which project
 applies here" (record-panel's HUD and review panel, test-function-panel, the popup's select)
 calls this one function rather than re-deriving it.
 
-**No recording is ever sent to the instance** — only each mapped project's catalog and
-locator index are fetched, and only `piwi-client.ts` makes those requests, from exactly two
-contexts: `src/options/` (on save) and the background worker's `piwi-refresh-catalog` /
-`piwi-refresh-locator-index` handlers. **Never from a content script**, so the API key never
+**No recording is ever sent to the instance**, and a bug report only through **Send to Piwi…**: the URL patterns,
+each mapped project's catalog and locator index, and its bug reports (Replay's list) are fetched; what is sent is a URL
+pattern the user adds, and a bug report once the user clicks Send in its preview (`bug-send-panel.ts`: the steps and
+every kind of evidence shown, a box per kind and one that leaves the typed values out; the payload is built by the pure
+`bug-send.ts`). The first send in a profile explains once what connected mode now sends (`piwiBugSendExplained`).
+
+**Run with Playwright** (`desktop-run-panel.ts`, worker side `background/desktop-repro.ts`) sends a report's title and
+steps, nothing else, to the desktop app paired in the options (`piwiDesktop`: its loopback address and token;
+`desktop-settings.ts` accepts only plain http on 127.0.0.1, localhost or [::1]). **Pair** asks the app at the address
+typed (`DESKTOP_DEFAULT_URL`, the app's preferred port, unless changed) for a pairing
+(`POST /api/desktop/picker-pairings`, open without the token; see `apps/application/shared/desktop-pairing.ts`): the
+app's window shows who asks with a code the card shows too, and the poll after the developer's **Allow** carries the
+app's token, once, which the card keeps after `testDesktop` accepts it. **Pair by hand** takes the token pasted from the
+app's **Connect Piwi Picker** instead. Either way the options page requests that one loopback origin inside the click,
+and **Unpair** gives it back. The dialog shows the payload before **Send**. The request is JSON with `x-piwi-token`, holds steps and never code, and the app runs nothing
+before the developer confirms it in its window; the dialog then polls the request for the verdict.
+
+A replay registers `bug-evidence-main.js` in the page's main world beside `replay-panel.js`, for as long as it runs,
+under the replay's `evidenceToken`; the panel keeps the entries apart from the replay state (`piwiReplayEvidence`) and
+lists them under the verdict. **Share result** (`share-result.ts`, worker side `handleShareReproduction`) records a
+verdict on the report it came from (`bugReportId`, set only for a report chosen from the instance), after a preview:
+the verdict, the origin it ran on and the user agent, `POST /api/bug-reports/:id/reproductions`.
+Only `piwi-client.ts` makes those requests, from exactly two
+contexts: `src/options/` (connecting, saving, reading and adding URL patterns) and the background worker's `piwi-refresh-catalog` /
+`piwi-refresh-locator-index` handlers and its bug-report messages (`src/background/bug-reports.ts`:
+`piwi-bug-send-target`, `piwi-send-bug-report`, `piwi-list-bug-reports`, `piwi-get-bug-report`), which resolve the
+project again from the sending tab's URL and never take one from the page. **Never from a content script**, so the API key never
 reaches a page's JS context — `record-panel.ts`/`test-function-panel.ts`/`coverage-overlay.ts`
 read the cache and, when they need fresher data, ask the worker via `catalog-refresh.ts` /
 `locator-index-refresh.ts` rather than fetching themselves. Keep it that way.
@@ -144,9 +241,12 @@ elements none reaches. The data is `GET /api/projects/:id/locator-index`
 worker's reply uncached). An index describes one branch: `locator-branch.ts` resolves it from the
 panel's choice for the session, else the URL mapping's `branch`, else the default branch, and the
 cache keeps one entry per project and branch.
+The open page is compared with the index's page keys only through `pageHere` (`src/shared/page-here.ts`): it removes
+the URL mapping's `pathPrefix` (`/app` for a site serving `/app/checkout` whose tests ran at `/checkout`), whole
+segments only, then puts its `testPathPrefix` in front (`/app` for tests that ran `/app/checkout` where the site serves
+`/checkout`), before `pageKey`. Never call `pageKey(location.href)` to compare with the index or to key a bug report.
 
-The chains are evaluated by an in-page reimplementation of Playwright's selector engines, not by
-`evaluateLocatorChain` (which only counts candidates it generated itself):
+The chains are evaluated by an in-page reimplementation of Playwright's selector engines:
 
 - `engine-aria.ts` — `DomModel`: role, accessible name and description, ARIA states,
   hidden-for-ARIA, visibility, element text and `getByLabel` labels, following Playwright's
@@ -169,11 +269,38 @@ The chains are evaluated by an in-page reimplementation of Playwright's selector
 
 **At risk** (`coverage-risk.ts`, pure apart from the engine it is handed) lists the locators likely to break. Brittle
 ones come from `assessLocatorChain` (`@piwitests/core/locator-stability`), judged once per index. A replacement is
-built only for a chain finding one element: `rankElementLocators` (`top-locator.ts`) ranks that element's locators, the
+built only for a chain finding one element: `rankElementLocators` (`verified-locators.ts`) ranks that element's locators, the
 same rules must call a candidate stable, an engine over the current page must find only that element with it, and
 `recommendLocatorFix` (`@piwitests/core/locator-fix`, locator healing's ladder) picks among the survivors. Replacements
 are cached per element and chain for one scan only, since the page may change; an element inside a frame gets none,
 because its locator would need the frame's prefix.
+
+## Naming and ranking an element
+
+Every tool that names an element or offers a locator for it goes through `verified-locators.ts`, the same path the
+recorder takes:
+
+- **Names** come from `DomModel` (`accessibleNameOf`): "Regressions 5" for a tab showing a count badge, where
+  `textContent` reads "Regressions5". The probe's `approximateAccessibleName` is only the fallback when the model finds
+  no name.
+- **Ranking** (`rankElement`) is `generateAlternatives` without the probe's estimated match counts, and
+  **`checkLocators`** runs every candidate through an engine over the page (`createPageEngine`, blind to the
+  extension's own elements): verified first, a candidate finding the element among others narrowed (exact, then
+  `.filter({ hasText })`, then a landmark, dialog, row or test-id scope) at one point under it, one finding only others
+  dropped, `.first()`/`.nth()` last. `keepAmbiguous` also returns the others with the engine's count, which is what the
+  Pick results panel shows. `verifiedLocators` (the recorder), `deriveTopLocator` (assertions, the Tested
+  elements overlay) and `rankElementLocators` (At risk replacements) are built on it; a scan passes one engine to every
+  call so the engine's caches serve the whole scan.
+- **Hover** (`createHoverLocator`, behind the picker overlay's `__piwiDescribeElement`) must stay
+  cheap on pointer moves. Building the engine's indexes costs tens of milliseconds on a large page (about 45 ms at
+  3,000 elements, 120 ms at 9,000), so a move gets the ranked candidate (probe without structural anchors, `DomModel`
+  name: under a millisecond), and the check runs once the pointer has rested `HOVER_REST_MS` on the element, kept for
+  that animation frame; the picker overlay re-reads it through `globalThis.__piwiRedescribe`.
+- **Counts** (the DevTools Locators tab) come from the same engine; nothing in the extension estimates a count.
+
+`pick.spec.ts` picks each case of `tests/e2e/pages/pick-cases.html` (a tab with a count badge, a name that is a
+substring of another, a link in the nav and in main, buttons sharing an `aria-label`) and has real Playwright click the
+top locator the results panel offers. A new naming or narrowing case goes there.
 
 **`locator-engine.spec.ts` is a differential test against real Playwright**: every expression in
 `locator-cases.ts` is resolved by the engine bundle (`engine-entry.ts`) and by a real
@@ -181,10 +308,161 @@ because its locator would need the frame's prefix.
 goes into `locator-cases.ts` with a fixture element in `tests/e2e/pages/`; an expression the
 engine deliberately refuses goes into the pinned refusal list, never into a skipped case.
 
+## Report a bug
+
+A bug recording is a recording with `mode: 'bug'` (`recording-storage.ts`): the same capture,
+navigation and one-origin rule, a different HUD (`bug-panel.ts`), and `assert` events that
+`normalizeSteps` keeps in place. **Mark what's wrong** pauses capture (`__piwiRecordPaused`, a
+global because every re-injection of `record-panel.js` is its own module instance), runs the pick
+overlay, and opens the expected-value dialog built from `suggestAssertions`; **Something is
+missing** checks its `getByRole` with the in-page engine and refuses an element that is there.
+Evidence lives under its own `chrome.storage.session` keys (`bug-storage.ts`), not in
+`RecordingState`, which is rewritten on every keystroke. The report and its files are assembled
+by `bug-report-files.ts` (pure) and `@piwitests/core/bug-report` (`renderBugMarkdown`,
+`renderBugSpec`); the zip is written by `shared/zip.ts`, stored without compression.
+
+**Evidence through the debugging protocol (Chrome and Edge).** A bug recording holds a session on the tab it starts
+in (`startBugDebugger`, `src/background/cdp-evidence.ts`): `Runtime` and `Log` give the console and uncaught errors
+from the page's first script, `Network` every request that failed or answered 400 or more (documents, scripts and
+images included; method, URL through `reportedRequestUrl`, status, never a header or a body), and
+`Page.captureScreenshot` a screenshot at any moment, across navigations, which the HUD's **Screenshot** button offers.
+Only the worker writes what it collects, under its own key (`CDP_EVIDENCE_KEY`); `getBugEvidence` merges it with what
+the page relays. The main-world script stays registered: the recorder asks `piwi-bug-evidence-source` and keeps its
+relay quiet in the tab the worker collects from, so nothing is counted twice, and starts it when the session is lost
+(`piwi-bug-debugger-lost`). The HUD says the debugging bar is expected (`bug_debuggingOn`), and why it went.
+`bug-report-cdp.spec.ts` covers it on the real extension.
+
+**Without it, screenshots need `activeTab`.** `chrome.tabs.captureVisibleTab` refuses under the recorder's
+per-origin host grant ("Either the '<all_urls>' or 'activeTab' permission is required", checked on
+the bundled Chromium, and in `bug-report.spec.ts` against the real extension). The popup click
+that starts a report grants `activeTab` until the tab navigates; after that the report records
+why there is no screenshot, and the popup's tile, during a bug recording, asks the page for one
+(opening the popup is the grant). Never answer this with `<all_urls>`.
+
+### The main-world evidence script
+
+`bug-evidence-main.ts` wraps `console.error`/`console.warn`, `fetch` and `XMLHttpRequest`, and
+listens to `error` and `unhandledrejection`: the evidence in Firefox, in the recording's other tabs, and once a
+debugging session is lost. It is the only code here, with the request-conditions wrapper, that runs in the page's own
+JavaScript world, so:
+
+- It is registered only while a bug recording runs, for the recording's granted origin, at
+  `document_start` (`BUG_EVIDENCE_SCRIPT_ID` in `background/index.ts`), and unregistered with the
+  recorder. It needs no permission beyond `scripting` and that grant.
+- It must never import anything that touches `chrome.*` (the main world has none) and must only
+  wrap and listen: every wrapper calls the original with the same arguments and returns its result.
+- It never reads a header or a body; a URL keeps its path with ids collapsed and query values
+  removed (`reportedRequestUrl`, built on `normalizeRoute`).
+- It talks to the isolated-world recorder only by `window.postMessage` (`shared/bug-relay.ts`), and
+  the page sees those messages. The per-recording token keeps out entries from another recording,
+  not a page that means harm; `readRelayedEntry` rebuilds every entry field by field and truncates
+  it, and storage caps each kind at 100. Treat everything it relays as page-controlled text.
+
+## Files, double clicks and drags
+
+The recorder keeps a file field's choice as the files' names, one per line (`files` → `setInputFiles`), never their
+content, which never leaves the page; a trusted `dblclick` replaces the two clicks before it (`normalizeSteps`); an
+HTML drag and drop is recorded from `dragstart` and `drop` as `dragTo`, with the element dropped on as `dropTarget`. A
+drag done with pointer events alone (a sortable list, a slider) is not recorded as a drag.
+`record.spec.ts` checks all three, and that a file's content is not stored.
+
+## Hovers a click depends on
+
+Some elements show only while another is hovered. At each press, `record-panel.ts` asks `hoverTargets` which hovers
+revealed the pressed element or an ancestor, and records a `hover` step for each before the click:
+
+- **CSS `:hover`** — `hover-rules.ts` reads the page's same-origin sheets once per change (inside `@media`,
+  `@supports`, `@layer`, `@container`, and nested rules resolved to their full selector) and keeps the `:hover` rules
+  that set `display`, `visibility`, `opacity` or `pointer-events`, and the rules that hide. `cssHoverSubjects`
+  (`hover-reveal.ts`) keeps a rule that applies now to an element another rule hides, then finds the hovered element
+  by writing `:hover` as the `data-piwi-hover-probe` attribute and setting it on ancestors until the rule matches; the
+  attribute is removed before it returns, and is the only change to the page.
+- **Script** — `HoverTracker` follows trusted `pointerover` entries and a `MutationObserver`'s insertions (and
+  `style`/`hidden` changes that show an element). An element inserted soon after the pointer entered an ancestor, with
+  no press in between, was revealed by that ancestor's hover.
+- The step names the element the pointer entered the subject through when the subject's own name includes what the
+  hover shows (a row read as "Invoice 42Delete"), through the same verified locators as the click.
+
+Played with trusted input, a replay's hover is the browser's own. With the page's own events (Firefox, a session
+refused or cancelled), it emulates CSS `:hover` (`hover-emulation.ts`): a constructed sheet repeats
+the `:hover` rules with the `data-piwi-hover` attribute in place of `:hover`, and `dispatchHover` sets the attribute on
+the element pointed at and its ancestors, moving it with each step and removing everything when the replay ends. The
+pointer events it sends follow the element tree: leaves for the ancestors it left, enters for the ones it entered.
+`hover.spec.ts` records, replays and runs the spec of each kind of reveal on `tests/e2e/pages/hover-*.html`.
+
+## Playwright view
+
+`playwright-view.ts` (**Playwright view** in the DevTools panel's toolbar, a toggle) labels every element a test could reach with the role and name
+`DomModel` gives it and its test id, and marks two kinds: **unreachable** (looks operable, through a `tabindex`, an
+`onclick` or a pointer cursor its parent lacks, with no role; or an operable role with no name; and no test id) and
+**ambiguous** (its `getByRole(role, { name })` finds other elements on the engine). The pure half is
+`playwright-view-scan.ts`, one engine per scan. The overlay redraws on scroll, scans again once the page has been still
+for a moment after a change, and bridges its labels to `globalThis.__piwiPlaywrightView` for
+`playwright-view.spec.ts`, which also checks the counts against real Playwright.
+
+## DevTools
+
+`devtools_page` (`devtools.html`, `src/devtools/devtools.ts`) loads once per DevTools window and adds the **Piwi**
+pane to the Elements panel (`devtools-sidebar.html`, `src/devtools/sidebar.ts`). DevTools pages are extension pages:
+they have `chrome.scripting`, `chrome.permissions` and `chrome.storage` as well as `chrome.devtools`. Both pages
+share `src/devtools/devtools.css` (DevTools' own look: 12px type, flat toolbars, the theme through the frame's color
+scheme, a transparent background) and the helpers in `src/devtools/ui.ts` (buttons, empty states and their icons).
+
+- **The selection reaches the ranking through `inspectedWindow.eval`.** The pane injects `devtools-rank.js` into the
+  inspected tab (`src/devtools/selection.ts`) and calls `__piwiRankSelected($0)` with `useContentScriptContext`, so
+  `$0` arrives in the extension's isolated world as the same element the engine finds. The answer is plain data
+  (`src/shared/devtools-selection.ts`). Firefox has no `useContentScriptContext`: there `$0` is marked with an
+  attribute in the page's world and the content script is asked by message (unverified in Firefox so far).
+- **Access** is the tab's `activeTab` grant or the origin's optional host permission. When injection fails on a web
+  page, the pane offers **Allow on this site**, which requests that one origin inside the click. Reading the page's
+  origin with a plain `inspectedWindow.eval` needs no permission.
+- **The Piwi panel** (`devtools-panel.html`, `src/devtools/panel.ts`, `panel-record.ts`, `panel-replay.ts`) mirrors
+  the recording and the replay from session storage (`RECORDING_KEY`, `REPLAY_KEY`) and redraws on
+  `chrome.storage.onChanged`, so it needs no channel of its own. Its buttons do what the in-page panels do: Stop is the
+  popup's stop (`stopRecording` + `piwi-recording-stopped`); Pause, Continue and Stop write the replay state, then send
+  `piwi-replay-wake` to the replayed site's tabs, which `replay-panel.ts` answers by redrawing its panel and, with
+  `wake: true` (Continue, Next step, Stop, never Pause), releasing its wait.
+- **Locators and Session** (`panel-locators.ts`, `panel-session.ts`): Locators calls the DevTools content script
+  (`__piwiDevtools.query`, `highlight`, `mark`, through `src/devtools/page-script.ts`) and reveals a match by marking
+  it with `data-piwi-devtools-reveal`, then running `inspect()` on it in the page's world, which needs no permission.
+  Session reads the pick session (`SESSION_KEY`) and redraws when it changes.
+- **Network and Mock this response** (`panel-network.ts`, pure half `src/shared/mock-code.ts`): requests come only
+  from `chrome.devtools.network` (`getHAR` at open, then `onRequestFinished`), kept in the panel's memory, fetch and
+  XHR only, and never leave the browser but through the user's copy or download. `mockCode` hides credential fields
+  (`HIDDEN_VALUE`) unless revealed, and never writes a header. `devtools-network.spec.ts` runs the copied code as a
+  test body against a real page.
+- **Slow down or fail a request** (`panel-conditions.ts`, pure half `src/shared/request-conditions.ts`): the panel asks
+  for the page's origin inside the click and sends `piwi-set-conditions` with the requests' conditions, the whole
+  page's network (`throttle`: fast 3G, slow 3G, offline) and CPU (`cpuRate`); the background worker keeps one tab's
+  state in session storage (`CONDITIONS_KEY`). In Chrome and Edge (`via: 'debugger'`, `cdp-conditions.ts`) the
+  `Fetch` domain pauses every request of the tab and delays, fails or answers it while the tab shows the conditions'
+  origin, and `Network.emulateNetworkConditions` and `Emulation.setCPUThrottlingRate` throttle it; the Network tab's
+  **Every kind** lists documents, scripts and images to put a condition on. Without the protocol, or once its bar is
+  cancelled (`lost`, the throttling dropped), `via: 'page'`: `request-conditions-main.js` (main world) wraps `fetch`
+  and XHR and, like the evidence script, imports nothing that touches `chrome.*`. Either way the worker registers
+  `request-conditions.js` (isolated) for that origin at `document_start` (and the main-world script only with `page`),
+  and injects them now. The isolated script asks `piwi-get-conditions` (answered for that tab only), posts to the main
+  world by `window.postMessage` what the wrapper applies (`forPage`, none with the protocol) and draws the banner.
+  Turning them off, or closing the tab, unregisters both and lets the session go, and turning them off reloads the tab.
+  A replay started meanwhile carries the requests' conditions (`ReplayState.conditions`) and its panel lists them.
+  `request-conditions.spec.ts` drives both paths against a real server.
+- **Open this page at a viewport** (**Viewport** in the panel's toolbar shows its bar, `src/devtools/panel-viewport.ts`;
+  the inspected tab's address is read in the page, since a DevTools page holds no `activeTab` grant): the sizes are the active
+  project's `viewports` from the cached locator index, or typed by hand; `piwi-open-viewport` in the background worker
+  creates the window and grows it until the tab's `width`/`height` match. In a spec, measure the tab through
+  `chrome.tabs`, not the page: Playwright emulates its own viewport in the pages it drives (`viewport.spec.ts`).
+  **In this tab** (Chrome and Edge) sends `piwi-set-tab-viewport` instead: `Emulation.setDeviceMetricsOverride` on
+  the tab, kept under `piwiTabViewport` for the bar to show with **Back to the window's size**
+  (`piwi-clear-tab-viewport`).
+- **Tests**: `devtools-sidebar.spec.ts`, `devtools-panel.spec.ts` and `devtools-network.spec.ts` open the pages as tabs with `chrome.devtools` stubbed (`devtools-stub.ts`:
+  `eval` runs in a fixture page's own world, where the spec adds the content script; `$0` is that page's global).
+  `devtools-real.spec.ts` launches Chromium with `--auto-open-devtools-for-tabs` and drives the real DevTools page
+  through the browser's debugging port: it checks the `devtools_page` loads and that `$0` reaches the ranking script.
+
 ## Content-script structure
 
-Each standalone content-script feature (locator console, multi-pick, lint overlay, assertion
-suggester, pick session, agent context, recording, try-it scanning, …) is split into a pure
+Each standalone content-script feature (multi-pick, lint overlay, assertion suggester, agent
+context, recording, try-it scanning, …) is split into a pure
 logic file (e.g. `lint-scan.ts`, `assertion-suggest.ts`, `session-export.ts`,
 `record-capture.ts`, `test-function-scan.ts`) and a separate entry-point/UI file (e.g.
 `lint-overlay.ts`, `assertion-panel.ts`,
@@ -197,23 +475,21 @@ instead of needing a live browser for everything.
 
 - **No network call from a content script, ever.** Picking/recording talk to no server.
   Connected mode (see above) is opt-in, off by default, confined to `src/options/` and the
-  background worker (`piwi-client.ts`), and fetches only a function catalog and a locator
-  index — never sends a recording or anything read from a page.
-  A future feature that wants to *send* recorded data to an instance needs the same
-  explicit-opt-in, clearly-separated treatment, plus a payload preview before the first send.
+  background worker (`piwi-client.ts`). It never sends a recording or anything read from a
+  page except a bug report the user sends from its preview. Any other feature that wants to
+  *send* recorded data needs the same explicit-opt-in, clearly-separated treatment, plus a
+  payload preview before the first send.
 - **Content scripts are separately-bundled IIFEs, not ES modules.** `scripts/build.mjs`
   builds each one with Vite's library mode specifically so `chrome.scripting.executeScript`
   (or a `registerContentScripts` registration, for `record-panel.ts`) can inject it as a plain
   script. Don't add a shared runtime chunk between them — each must stay self-contained at the
   bundle level (imports are fine at the *source* level; Vite inlines them per entry).
-- **Never widen *standing* permissions casually.** `activeTab`/`scripting`/`storage` plus the
+- **Never widen *standing* permissions casually.** `activeTab`/`debugger`/`scripting`/`storage` plus the
   recorder's one-origin-at-a-time optional host permission cover everything today. A feature
-  that seems to need more (`debugger`, `contextMenus`, `sidePanel`, a broader or default-granted
-  host permission) needs a deliberate call, not a silent addition — see the aria-snapshot
-  feature (deferred; would need `debugger` to get the browser's real accessibility tree, which
-  contradicts the minimal-permissions goal), the agent-context feature's element summary, which
-  deliberately approximates instead of attempting the same real accessibility tree for the same
-  reason, and the recorder's own permission design below.
+  that seems to need more (`contextMenus`, `sidePanel`, a broader or default-granted
+  host permission) needs a deliberate call, not a silent addition. `debugger` was one (see "The debugging
+  protocol"): a new use of it follows its rules — attached only while the feature runs, released at once, a
+  fallback that works without it, and nothing read through it sent anywhere unless the person sends it.
 - **The recorder's host permission is requested per-origin, per-recording, from the popup's
   own click handler — never pre-granted, never `<all_urls>`.** `chrome.permissions.request`
   only counts as satisfying a user gesture when called synchronously inside one, so this can't
@@ -231,6 +507,15 @@ instead of needing a live browser for everything.
   — a future phase could detect it and prompt to expand, but that also needs a fresh user
   gesture, which the HUD (a content script, no `chrome.permissions` access) can't provide on its
   own either.
+- **Every text the extension shows comes from the catalogs** (`public/_locales/<code>/messages.json`) through `t()` /
+  `tn()` / `tNodes()` in `src/shared/i18n.ts`; `popup.html` and `options.html` name their keys in `data-i18n*`
+  attributes, which `localizeDocument()` fills. A page or script calls `await initI18n()` once before its first text,
+  for the Language setting's override. A new message goes into every catalog in the same change, English with a
+  `description` — see `i18n/README.md` for the rules `locales.test.ts` enforces. `no-hardcoded-text.test.ts` fails on
+  text written straight into the UI, in every file of `src/`. Translated text reaches the page as text (`textContent`,
+  `tNodes`) or through an escape helper, never as raw HTML. A content script that paints on injection ends with
+  `void initI18n().then(start)` (bundles are IIFEs, no top-level await), or runs `initI18n()` beside the storage reads
+  it already awaits, and each panel sets `lang` from `uiLanguage()` on its root inside the shadow DOM.
 - Reuse `@piwitests/picker-dom`'s exports (`installPickerOverlay`, `showAnchorPicker`,
   probe, role-resolution, syntax highlighting) rather than re-deriving picker logic here —
   that package exists so this workspace doesn't become a third hand-synced copy.
@@ -244,13 +529,13 @@ instead of needing a live browser for everything.
   needs its own `@media (prefers-color-scheme: light)` entry for the same reason.
 - **`chrome.storage.session` needs `setAccessLevel` to be reachable from a content script.**
   It defaults to extension-page/service-worker-only access; `src/background/index.ts` widens
-  it once at startup (`TRUSTED_AND_UNTRUSTED_CONTEXTS`) specifically so `session-panel.ts` and
-  `recording-storage.ts` can read/write it directly from a content script — in Chrome. Firefox
+  it once at startup (`TRUSTED_AND_UNTRUSTED_CONTEXTS`) specifically so `recording-storage.ts`
+  and the replay can read/write it directly from a content script — in Chrome. Firefox
   has no such call, which is why every access goes through `sessionArea()` (see above).
   `chrome.storage.local` (connection settings, the catalog cache) has no such restriction.
 - **Two different test strategies for content-script logic, pick deliberately.** A function
   built entirely from nested helpers with no imports from `@piwitests/core`'s scoring engine
-  (`evaluateLocatorChain`, `derivePattern`, `testCatalogAgainstPage`) can be re-serialized via
+  (`derivePattern`, `testCatalogAgainstPage`) can be re-serialized via
   `Function.prototype.toString()` in tests, installing any genuine cross-module dependency as
   a global first. A function that calls `generateAlternatives` (`scanForLintIssues`,
   `suggestAssertions`, `buildAgentContext`, `record-panel.ts`'s `deriveRecordedTarget`) can't
@@ -258,9 +543,9 @@ instead of needing a live browser for everything.
   exported individually. Those are tested by driving the real built bundle
   (`page.addScriptTag`), either reading a well-known `globalThis.__piwiXxx` the entry-point
   bridges a result out to (`lint-overlay.ts`, `assertion-panel.ts`, `agent-context-panel.ts`)
-  or, for anything backed by `chrome.storage` (`session-panel.ts`, `record-panel.ts`),
-  reading state back out of a stubbed `chrome.storage` installed via `context.addInitScript`
-  (see `session-panel.spec.ts`, `record.spec.ts`) — don't reach for reconstruction if the
+  or, for anything backed by `chrome.storage` (`record-panel.ts`), reading state back out of
+  a stubbed `chrome.storage` installed via `context.addInitScript` (see `record.spec.ts`) —
+  don't reach for reconstruction if the
   feature touches `generateAlternatives` or `chrome.*`.
 - **`record.spec.ts`'s cross-page test stubs `chrome.storage` on top of `window.name`, not a
   plain in-memory object.** `context.addInitScript` re-runs on every new document, which would
@@ -274,7 +559,8 @@ instead of needing a live browser for everything.
 | Command | Purpose |
 |---|---|
 | `npm run extension:build` | Build `dist/` (content scripts, background, popup, options page, manifest, icons, `_locales`) |
-| `npm run extension:dev` | Same build, re-run on every change to `src/`, `public/`, `popup.html`, `options.html`, `manifest.json`, or the `src/` and `package.json` of `packages/core` and `packages/picker-dom` (bundled from source) |
+| `npm run extension:dev` | Same build, re-run on every change to `src/`, `public/`, the HTML pages, `manifest.json`, `scripts/build.mjs`, or the `src/` and `package.json` of `packages/core` and `packages/picker-dom` (bundled from source) |
+| `npm run extension:build -- --pseudo` | Same build with a pseudo-localized English catalog, to spot text that bypasses `t()` or clips (never released) |
 | `npm run extension:build:release` | Reproducible build: stamps the version instead of the build time into every bundle |
 | `npm run extension:zip` | Release build, then the store-ready zip, the source zip Firefox AMO requires, and the AMO listing metadata (see `PUBLISHING.md`) |
 | `npm run extension:typecheck` | TypeScript check |
@@ -282,6 +568,7 @@ instead of needing a live browser for everything.
 | `npm run extension:format` / `extension:format:check` | oxfmt |
 | `npm run extension:test` | Unit tests (Vitest) — pure logic only |
 | `npm run extension:test:e2e` | Builds, then drives the real built extension with Playwright (`--load-extension`) |
+| `npm run extension:lab` | The replay lab: records scenarios on a running Piwi dashboard with the real extension, replays them with the extension and as Playwright specs, and prints the comparison (see `tests/lab/README.md`; not part of CI) |
 
 ## Loading it locally
 

@@ -6,12 +6,12 @@
  * pointer events, so the page stays usable underneath.
  */
 import { highlightLocator } from '@piwitests/picker-dom';
-import { locatorActionLabel } from '@piwitests/core/step-locators';
-import { stabilityLabels } from '@piwitests/core/locator-stability';
+import { actionLabel, stabilityText } from '../shared/core-words.js';
 import { editText, type Replacement } from './coverage-risk.js';
 import type { CoveredElement, UncoveredElement } from './coverage-scan.js';
-import { plural, statusLabel, testTitle, usePages, type CoverageContext } from './coverage-view.js';
+import { statusLabel, testTitle, usePages, type CoverageContext } from './coverage-view.js';
 import { projectLocatorsUrl, testCaseUrl } from '../shared/piwi-client.js';
+import { t, tn, uiLanguage } from '../shared/i18n.js';
 
 export interface Drawable {
   element: Element;
@@ -82,7 +82,7 @@ async function copyText(text: string, button: HTMLButtonElement): Promise<void> 
     return;
   }
   const original = button.textContent;
-  button.textContent = 'Copied';
+  button.textContent = t('common_copied');
   setTimeout(() => (button.textContent = original), 1200);
 }
 
@@ -133,6 +133,7 @@ export class CoverageLayer {
     private readonly callbacks: LayerCallbacks,
   ) {
     this.container = el('div', 'layer');
+    this.container.lang = uiLanguage();
     this.frameContainer = el('div', 'frames');
     this.container.appendChild(this.frameContainer);
     parent.appendChild(this.container);
@@ -192,9 +193,15 @@ export class CoverageLayer {
           const dot = el('span', `dot ${d.health}`);
           badge.appendChild(dot);
         }
-        const tests = plural(d.covered.tests.length, 'test');
-        badge.title = `${d.covered.description} — reached by ${tests}${d.health === 'failed' ? ', one is failing' : d.health === 'flaky' ? ', one is flaky' : ''}. Click for details.`;
-        badge.setAttribute('aria-label', `${d.covered.description}: ${tests}`);
+        const tests = d.covered.tests.length;
+        const element = { element: d.covered.description };
+        badge.title =
+          d.health === 'failed'
+            ? tn('coverage_badgeTitleFailing', tests, element)
+            : d.health === 'flaky'
+              ? tn('coverage_badgeTitleFlaky', tests, element)
+              : tn('coverage_badgeTitle', tests, element);
+        badge.setAttribute('aria-label', tn('coverage_badgeLabel', tests, element));
       } else if (nodes.badge) {
         nodes.badge.remove();
         nodes.badge = null;
@@ -341,9 +348,10 @@ export class CoverageLayer {
     if (!d || !this.context) return;
     const card = el('div', 'card pinned');
     card.setAttribute('role', 'dialog');
+    const description = d.covered?.description ?? d.uncovered?.description;
     card.setAttribute(
       'aria-label',
-      `Tests reaching ${d.covered?.description ?? d.uncovered?.description ?? 'this element'}`,
+      description ? t('coverage_cardLabel', { element: description }) : t('coverage_cardLabelThis'),
     );
     this.fillPinned(card, d, this.context);
     this.container.appendChild(card);
@@ -392,32 +400,34 @@ export class CoverageLayer {
     const note = el(
       'div',
       `note stability ${stability.level}`,
-      `${stability.level === 'brittle' ? 'Brittle' : 'Watch'}: ${stabilityLabels(stability, ', ')}`,
+      t(stability.level === 'brittle' ? 'coverage_noteBrittle' : 'coverage_noteWatch', {
+        rules: stabilityText(stability, ', '),
+      }),
     );
     note.title = stability.findings.map((f) => f.detail).join('\n');
     block.appendChild(note);
     if (count !== 1) return;
     const replacement = this.callbacks.replacementFor(element, entry);
     if (replacement?.kind === 'add-test-id') {
-      block.appendChild(el('div', 'hint', 'No stable locator finds only this element: give it a test id.'));
+      block.appendChild(el('div', 'hint', t('coverage_addTestId')));
       return;
     }
     if (replacement?.kind !== 'replace') return;
     const next = replacement.recommended.locator;
     const suggestion = el('div', 'replacement');
-    suggestion.appendChild(el('div', 'hint', 'Replace it with · finds only this element here'));
+    suggestion.appendChild(el('div', 'hint', t('coverage_replaceWith')));
     suggestion.appendChild(locatorCode(next));
     if (replacement.durable) {
-      suggestion.appendChild(el('div', 'hint', 'Most stable'));
+      suggestion.appendChild(el('div', 'hint', t('coverage_mostStableHead')));
       suggestion.appendChild(locatorCode(replacement.durable.locator));
     }
     const actions = el('div', 'card-actions');
-    const copy = el('button', undefined, 'Copy locator');
+    const copy = el('button', undefined, t('coverage_copyLocator'));
     copy.type = 'button';
     copy.addEventListener('click', () => void copyText(next, copy));
-    const edit = el('button', undefined, 'Copy edit');
+    const edit = el('button', undefined, t('coverage_copyEdit'));
     edit.type = 'button';
-    edit.title = 'Copy each call site with the old and the new locator';
+    edit.title = t('coverage_copyEditTitle');
     const locator = context.index.locators[entry]!;
     const sites = [...new Set(locator.uses.flatMap((use) => use.callSites))];
     edit.addEventListener('click', () => void copyText(editText(sites, locator.locator, next), edit));
@@ -429,22 +439,22 @@ export class CoverageLayer {
   private kindLine(d: Drawable): HTMLElement {
     const line = el('div', 'kind');
     if (d.covered) {
-      const tests = plural(d.covered.tests.length, 'test');
+      const tests = d.covered.tests.length;
       const kind = el(
         'span',
         d.kind,
-        d.kind === 'operated' ? `Operated by ${tests}` : `Checked by ${tests}, assertions only`,
+        d.kind === 'operated' ? tn('coverage_actedOnBy', tests) : tn('coverage_checkedBy', tests),
       );
       line.appendChild(kind);
       const actions = new Set<string>();
       const index = this.context!.index;
       for (const m of d.covered.matches)
         for (const use of index.locators[m.entry]!.uses) use.actions.forEach((a) => actions.add(a));
-      if (actions.size) line.append(` · ${[...actions].slice(0, 4).map(locatorActionLabel).join(', ')}`);
-      if (d.covered.ambiguous) line.append(' · its locators match several elements here');
+      if (actions.size) line.append(` · ${[...actions].slice(0, 4).map(actionLabel).join(', ')}`);
+      if (d.covered.ambiguous) line.append(` · ${t('coverage_ambiguous')}`);
     } else {
-      line.appendChild(el('span', 'uncovered', 'Not tested'));
-      line.append(' · no locator of this project reaches it');
+      line.appendChild(el('span', 'uncovered', t('coverage_notTested')));
+      line.append(` · ${t('coverage_noLocatorReaches')}`);
     }
     return line;
   }
@@ -460,7 +470,7 @@ export class CoverageLayer {
       a.href = testCaseUrl(context.instanceUrl, test.id);
       a.target = '_blank';
       a.rel = 'noopener noreferrer';
-      a.title = `Open this test in Piwi — ${test.file}`;
+      a.title = t('coverage_openTestFile', { file: test.file });
       item.appendChild(a);
     } else {
       item.appendChild(el('span', undefined, testTitle(test)));
@@ -473,19 +483,20 @@ export class CoverageLayer {
     card.appendChild(el('div', 'what', d.covered?.description ?? d.uncovered?.description ?? ''));
     card.appendChild(this.kindLine(d));
     if (d.covered && context.brittleElements.has(d.element)) {
-      card.appendChild(el('div', 'note brittle', 'A brittle locator finds it · click the badge for a replacement'));
+      card.appendChild(el('div', 'note brittle', t('coverage_previewBrittle')));
     }
     if (d.covered) {
       const list = el('ul');
-      for (const t of d.covered.tests.slice(0, PREVIEW_TESTS)) list.appendChild(this.testItem(t, context, null, false));
+      for (const test of d.covered.tests.slice(0, PREVIEW_TESTS))
+        list.appendChild(this.testItem(test, context, null, false));
       card.appendChild(list);
       const rest = d.covered.tests.length - PREVIEW_TESTS;
-      card.appendChild(el('div', 'more', `${rest > 0 ? `${rest} more · ` : ''}click the badge for locators and links`));
+      card.appendChild(el('div', 'more', rest > 0 ? tn('coverage_previewMore', rest) : t('coverage_previewHint')));
     } else if (d.uncovered) {
       const suggestion = this.callbacks.suggestLocator(d.element);
       if (suggestion) {
         const chain = el('div', 'chain');
-        chain.appendChild(el('div', 'hint', 'A locator for it'));
+        chain.appendChild(el('div', 'hint', t('coverage_aLocator')));
         chain.appendChild(locatorCode(suggestion));
         card.appendChild(chain);
       }
@@ -499,7 +510,7 @@ export class CoverageLayer {
     titleWrap.appendChild(this.kindLine(d));
     const close = el('button', 'close', '×');
     close.type = 'button';
-    close.setAttribute('aria-label', 'Close');
+    close.setAttribute('aria-label', t('common_close'));
     close.addEventListener('click', () => this.callbacks.onClosePinned());
     head.append(titleWrap, close);
     card.appendChild(head);
@@ -513,23 +524,23 @@ export class CoverageLayer {
         const block = el('div', 'chain');
         block.appendChild(locatorCode(entry.locator));
         if (match.count > 1) {
-          block.appendChild(el('div', 'note', `Matches ${match.count} elements on this page`));
+          block.appendChild(el('div', 'note', tn('coverage_matchesOnPage', match.count)));
         }
         this.appendStability(block, d.element, match.entry, match.count, context);
         const list = el('ul');
         for (const use of entry.uses.slice(0, CARD_TESTS)) {
           const where = use.callSites[0] ?? index.tests[use.test]!.file;
           const pages = usePages(index, use);
-          const detail = `${use.actions.map(locatorActionLabel).join(', ')} · ${where}${use.projects.length ? ` · ${use.projects.join(', ')}` : ''}${pages.length ? ` · on ${pages.slice(0, 3).join('; ')}${pages.length > 3 ? ` +${pages.length - 3}` : ''}` : ''}`;
+          const detail = `${use.actions.map(actionLabel).join(', ')} · ${where}${use.projects.length ? ` · ${use.projects.join(', ')}` : ''}${pages.length ? ` · ${t('coverage_onPages', { pages: `${pages.slice(0, 3).join('; ')}${pages.length > 3 ? ` +${pages.length - 3}` : ''}` })}` : ''}`;
           list.appendChild(this.testItem(use.test, context, detail, true));
         }
         block.appendChild(list);
         if (entry.uses.length > CARD_TESTS)
-          block.appendChild(el('div', 'more', `${entry.uses.length - CARD_TESTS} more tests`));
+          block.appendChild(el('div', 'more', tn('coverage_moreTests', entry.uses.length - CARD_TESTS)));
         card.appendChild(block);
       }
       const actions = el('div', 'card-actions');
-      const find = el('a', 'button', 'Find these locators in Piwi ↗');
+      const find = el('a', 'button', t('coverage_findInPiwi'));
       find.href = projectLocatorsUrl(
         context.instanceUrl,
         context.projectId,
@@ -542,14 +553,14 @@ export class CoverageLayer {
       actions.appendChild(find);
       card.appendChild(actions);
     } else {
-      card.appendChild(el('div', 'hint', 'No test of this project reaches this element.'));
+      card.appendChild(el('div', 'hint', t('coverage_noTestReaches')));
       const suggestion = this.callbacks.suggestLocator(d.element);
       if (suggestion) {
         const block = el('div', 'chain');
-        block.appendChild(el('div', 'hint', 'The most stable locator for it'));
+        block.appendChild(el('div', 'hint', t('coverage_mostStableFor')));
         block.appendChild(locatorCode(suggestion));
         const actions = el('div', 'card-actions');
-        const copy = el('button', undefined, 'Copy locator');
+        const copy = el('button', undefined, t('coverage_copyLocator'));
         copy.type = 'button';
         copy.addEventListener('click', () => void copyText(suggestion, copy));
         actions.appendChild(copy);

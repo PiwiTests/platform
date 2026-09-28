@@ -80,6 +80,26 @@ export interface PiwiDashboardOptions {
    */
   capturePageInventory?: boolean;
   /**
+   * Record which application source files each test executes: the files whose
+   * functions ran, from Chromium's JavaScript coverage, resolved through the
+   * dev server's module URLs or the bundle's source maps. It answers "which
+   * tests reach this file?" for test selection, change coverage and
+   * `piwi preflight`. Only repository-relative file paths are sent. Chromium only;
+   * other browsers record nothing. It slows the page's JavaScript, so run it on
+   * one scheduled job rather than every run. **Defaults to `false`** — opt in
+   * with `captureCodeReach: true` (or `PIWI_CAPTURE_CODE_REACH=true`).
+   * Automatically disabled when `collectPerformanceMetrics` is `false`.
+   */
+  captureCodeReach?: boolean;
+  /**
+   * The directories module paths and source-map sources are resolved against
+   * for `captureCodeReach`, relative to the Playwright config, before the
+   * repository root, which is always tried last. Defaults to the Playwright
+   * config's directory. Set it to the dev server's root when that is not the
+   * config's directory (Nuxt: `['app']`).
+   */
+  codeReachRoots?: string[];
+  /**
    * Capture server-side spans for each API/document request the test makes,
    * read from the `X-Piwi-Trace` response header emitted by a Piwi
    * instrumentation plugin (e.g. `@piwitests/instrumentation-nitro`). The spans show

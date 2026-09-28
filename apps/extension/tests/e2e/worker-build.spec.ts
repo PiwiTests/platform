@@ -73,7 +73,11 @@ test('the popup offers a reload when the worker predates a rebuild, and the relo
     const changed = rewriteStamp(loadedBuild, REBUILT_STAMP);
     // The worker and the popup must both carry the stamp, or this proves nothing.
     expect(changed).toContain('background.js');
-    expect(changed.some((file) => file.startsWith(`assets${path.sep}popup-`))).toBe(true);
+    // The popup's scripts, its own and the chunks it shares with the other pages.
+    const popupScripts = [
+      ...readFileSync(path.join(extensionCopy, 'popup.html'), 'utf8').matchAll(/assets\/[\w.-]+\.js/g),
+    ].map((match) => match[0].replace('/', path.sep));
+    expect(changed.some((file) => popupScripts.includes(file))).toBe(true);
 
     // The popup now comes from the rebuilt files, the worker is still the one loaded.
     popup = await openPopup(context, extensionId);

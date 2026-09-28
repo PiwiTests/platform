@@ -2,7 +2,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { BrowserContext, Page } from '@playwright/test';
 import type { LocatorIndex, LocatorIndexTestStatus } from '@piwitests/core/locator-index';
-import { servePages } from './engine-bundle.js';
+import { PAGES_DIR, servePages } from './engine-bundle.js';
+import { stubChromeI18n } from './i18n-stub.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const DIST = path.join(here, '..', '..', 'dist');
@@ -245,7 +246,14 @@ export interface CoverageStubOptions {
   connection?: {
     instanceUrl: string;
     apiKey: string;
-    projectMappings: Array<{ urlPattern: string; projectId: number; projectLabel: string; branch?: string }>;
+    projectMappings: Array<{
+      urlPattern: string;
+      projectId: number;
+      projectLabel: string;
+      branch?: string;
+      pathPrefix?: string;
+      testPathPrefix?: string;
+    }>;
   } | null;
   /** The index already cached for project 1, if any. */
   cached?: LocatorIndex | null;
@@ -253,6 +261,8 @@ export interface CoverageStubOptions {
   cachedBranches?: Record<string, LocatorIndex>;
   /** What the worker answers to `piwi-refresh-locator-index`. */
   refresh?: unknown;
+  /** The catalog `chrome.i18n` serves: English unless set. */
+  language?: string;
 }
 
 export const DEFAULT_CONNECTION = {
@@ -311,11 +321,32 @@ export async function stubCoverageChrome(context: BrowserContext, options: Cover
     },
     { localSeed: local, refresh: options.refresh ?? { ok: true, refreshed: false, index: null } },
   );
+  await stubChromeI18n(context, options.language);
 }
 
 export async function openShop(page: Page, query = ''): Promise<void> {
   await servePages(page, SHOP_ORIGIN);
   await page.goto(`${SHOP_ORIGIN}/shop.html${query}`);
+  await page.frameLocator('#chat').getByRole('button', { name: 'Send' }).waitFor();
+}
+
+/**
+ * Opens the shop as a deployment serving it under `prefix` (`/app/shop.html`)
+ * would: every page is served both under the prefix and at the root.
+ */
+export async function openShopUnder(page: Page, prefix: string, query = ''): Promise<void> {
+  const { readFileSync } = await import('node:fs');
+  await page.route(`${SHOP_ORIGIN}/**`, async (route) => {
+    let pathname = new URL(route.request().url()).pathname;
+    if (pathname.startsWith(`${prefix}/`)) pathname = pathname.slice(prefix.length);
+    try {
+      const body = readFileSync(path.join(PAGES_DIR, pathname.replace(/^\//, '') || 'index.html'), 'utf8');
+      await route.fulfill({ contentType: 'text/html', body });
+    } catch {
+      await route.fulfill({ status: 404, body: 'not found' });
+    }
+  });
+  await page.goto(`${SHOP_ORIGIN}${prefix}/shop.html${query}`);
   await page.frameLocator('#chat').getByRole('button', { name: 'Send' }).waitFor();
 }
 
@@ -347,6 +378,8 @@ export interface BridgedCoverage {
   uncovered: Array<{ description: string; eid: string | null; elsewhere: string[] }>;
   /** The key of the page open, and whether the view counts only what tests do on it. */
   page: string | null;
+  prefixRemoved: string | null;
+  prefixAdded: string | null;
   pageScoped: boolean;
   missing: Array<{ locator: string; arrival: boolean; actions: string[]; tests: string[] }>;
   several: Array<{ locator: string; count: number; actions: string[]; tests: string[] }>;

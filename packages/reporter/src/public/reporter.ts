@@ -399,6 +399,7 @@ export class PiwiDashboardReporter {
       // An annotation-less skip reclassified to `didnotrun` is a serial-group
       // cascade: an earlier test failed and Playwright skipped the rest.
       didNotRunReason: status === 'didnotrun' ? 'previous-failure' : null,
+      expectedStatus: test.expectedStatus ?? null,
     };
 
     if (result.status === 'failed' || result.status === 'timedOut') {
@@ -447,6 +448,19 @@ export class PiwiDashboardReporter {
         } catch {
           /* ignore parse errors */
         }
+      }
+    }
+    // The source files the test executed, when code reach is on.
+    const reachAttachment =
+      this.options.captureCodeReach === true && this.options.collectPerformanceMetrics !== false
+        ? result.attachments.find((a: any) => a.name === ATTACHMENT_NAMES.codeReach)
+        : undefined;
+    if (reachAttachment?.body) {
+      try {
+        const files = JSON.parse((reachAttachment.body as Buffer).toString());
+        if (Array.isArray(files)) testCase.codeReach = files.filter((f): f is string => typeof f === 'string');
+      } catch {
+        /* ignore parse errors */
       }
     }
 
@@ -533,6 +547,7 @@ export class PiwiDashboardReporter {
         locks: locks.length ? locks : null,
         testMeta: collectTestMetadata(declaredAnnotations),
         didNotRunReason: reason,
+        expectedStatus: test.expectedStatus ?? null,
       };
 
       this.testCases.push(testCase);

@@ -18,9 +18,11 @@ import { startTool, endTool, toolIsCurrent, installEscapeToCancel } from '../sha
 import { ensureSessionAccess } from '../shared/session-access.js';
 import { getConnectionSettings, isConnected } from '../shared/connection-settings.js';
 import { getActiveProjectOverride, resolveActiveProject, type ActiveProject } from '../shared/active-project.js';
+import { pageHere } from '../shared/page-here.js';
 import { getCachedLocatorIndex } from '../shared/locator-index-cache.js';
 import { getLocatorBranchOverride, resolveLocatorBranch, setLocatorBranchOverride } from '../shared/locator-branch.js';
 import { requestLocatorIndex } from '../shared/locator-index-refresh.js';
+import { initI18n, t } from '../shared/i18n.js';
 import { isElementNode } from './engine-aria.js';
 import { pageView, scanCoverage, scopeScan, widerScope, type CoverageScan } from './coverage-scan.js';
 import {
@@ -31,7 +33,6 @@ import {
   usePlace,
   type Replacement,
 } from './coverage-risk.js';
-import { pageKey } from '@piwitests/core/page-key';
 import { createLocatorEngine, type LocatorEngine } from './locator-engine.js';
 import { CoverageLayer, type Drawable, type Frame } from './coverage-layer.js';
 import { CoveragePanel, type PanelStatus } from './coverage-panel.js';
@@ -45,7 +46,8 @@ import {
   type CoverageContext,
   type ViewState,
 } from './coverage-view.js';
-import { deriveTopLocator, rankElementLocators } from './top-locator.js';
+import { deriveTopLocator, isPiwiElement, rankElementLocators } from './verified-locators.js';
+import { attachPanelShadow } from './panel-root.js';
 
 const HOST_ID = 'piwi-coverage-host';
 /** Wait after the last page change before rescanning. */
@@ -145,7 +147,7 @@ function startCoverageOverlay(): void {
   host.style.cssText =
     'all:initial;position:fixed;inset:0;width:auto;height:auto;margin:0;padding:0;border:0;background:transparent;overflow:visible;max-width:none;max-height:none;z-index:2147483647;pointer-events:none;';
   document.documentElement.appendChild(host);
-  const shadow = host.attachShadow({ mode: g.__piwiTestOpenShadow === true ? 'open' : 'closed' });
+  const shadow = attachPanelShadow(host, { mode: g.__piwiTestOpenShadow === true ? 'open' : 'closed' });
   const style = document.createElement('style');
   style.textContent = COVERAGE_CSS;
   shadow.appendChild(style);
@@ -166,7 +168,7 @@ function startCoverageOverlay(): void {
 
   const state: ViewState = { ...initialViewState(), scope: scopeRequest };
   let status: PanelStatus = 'loading';
-  let message: string | null = 'Loading the locator index…';
+  let message: string | null = t('coverage_loading');
   let project: ActiveProject | null = null;
   /** The branch whose index is read: a name, `*` for every branch, null for the default branch. */
   let branch: string | null = null;
@@ -179,11 +181,17 @@ function startCoverageOverlay(): void {
   let context: CoverageContext | null = null;
   let scanning: { done: number; total: number } | null = null;
   let scanCount = 0;
-  const suggestions = new WeakMap<Element, string | null>();
-  /** Replacements for brittle locators, per element and chain, for the current scan only: the page may change. */
+  /** Each element's best locator, for the current scan only: the page may change. */
+  let suggestions = new WeakMap<Element, string | null>();
+  /** Replacements for brittle locators, per element and chain, for the current scan only. */
   let replacements = new WeakMap<Element, Map<number, Replacement | null>>();
-  /** An engine over the page as the current scan saw it, to check replacements with. */
-  let riskEngine: LocatorEngine | null = null;
+  /** An engine over the page as the current scan saw it, to check suggestions and replacements with. */
+  let scanEngine: LocatorEngine | null = null;
+  const engineNow = (): LocatorEngine =>
+    (scanEngine ??= createLocatorEngine(document, {
+      testIdAttributes: index?.testIdAttributes ?? undefined,
+      ignore: (element) => isOwnElement(element) || isPiwiElement(element),
+    }));
   /** While choosing: the element that would be chosen, and the narrower ones ↑ walked out of. */
   let choosingTarget: Element | null = null;
   let choosingNarrower: Element[] = [];
@@ -194,7 +202,7 @@ function startCoverageOverlay(): void {
     if (suggestions.has(element)) return suggestions.get(element)!;
     let locator: string | null = null;
     try {
-      locator = deriveTopLocator(element).locator;
+      locator = deriveTopLocator(element, engineNow()).locator;
     } catch {
       locator = null;
     }
@@ -207,16 +215,13 @@ function startCoverageOverlay(): void {
     let perElement = replacements.get(element);
     if (!perElement) replacements.set(element, (perElement = new Map()));
     if (perElement.has(entry)) return perElement.get(entry)!;
-    riskEngine ??= createLocatorEngine(document, {
-      testIdAttributes: index.testIdAttributes ?? undefined,
-      ignore: isOwnElement,
-    });
     let replacement: Replacement | null = null;
     try {
+      const engine = engineNow();
       replacement = replacementFor(element, index.locators[entry]!.locator, {
         doc: document,
-        engine: riskEngine,
-        rank: (e) => rankElementLocators(e).ranked,
+        engine,
+        rank: (e) => rankElementLocators(e, engine),
       });
     } catch {
       replacement = null;
@@ -382,12 +387,16 @@ function startCoverageOverlay(): void {
   function frames(): Frame[] {
     const out: Frame[] = [];
     if (state.scope && !state.choosingScope)
-      out.push({ element: state.scope, kind: 'scope', label: `Inside ${describe(state.scope)}` });
+      out.push({
+        element: state.scope,
+        kind: 'scope',
+        label: t('coverage_inside', { element: describe(state.scope) }),
+      });
     if (state.choosingScope && choosingTarget) {
       out.push({
         element: choosingTarget,
         kind: 'choosing',
-        label: `${describe(choosingTarget)} · click to look inside`,
+        label: t('coverage_choosingFrame', { element: describe(choosingTarget) }),
       });
     }
     if (aroundHover) out.push({ element: aroundHover, kind: 'around', label: describe(aroundHover) });
@@ -410,7 +419,7 @@ function startCoverageOverlay(): void {
     }
     if (state.scope && !state.scope.isConnected) state.scope = null;
     // This page: only the uses made here, or whose page is unknown (runs without the capture fixtures).
-    const key = pageKey(location.href);
+    const { key, prefixRemoved, prefixAdded } = pageHere(location.href, project);
     const pagePosition = key && index.pages ? index.pages.indexOf(key) : -1;
     const hasPages = (index.pages?.length ?? 0) > 0;
     const pageScoped = hasPages && state.pageScope === 'page';
@@ -432,6 +441,8 @@ function startCoverageOverlay(): void {
       brittle,
       brittleElements: new Set(brittle.flatMap((row) => row.elements)),
       pageKey: key,
+      prefixRemoved,
+      prefixAdded,
       pagePosition,
       hasPages,
       pageScoped,
@@ -564,6 +575,8 @@ function startCoverageOverlay(): void {
           elsewhere: context?.elsewhere.get(u.element)?.map((e) => idx!.locators[e]!.locator) ?? [],
         })) ?? [],
       page: context?.pageKey ?? null,
+      prefixRemoved: context?.prefixRemoved ?? null,
+      prefixAdded: context?.prefixAdded ?? null,
       pageScoped: context?.pageScoped ?? false,
       missing:
         context?.missing.map((row) => ({
@@ -649,8 +662,9 @@ function startCoverageOverlay(): void {
     if (result && seq === scanSeq && scanIndex === index) {
       scan = result;
       scanCount++;
+      suggestions = new WeakMap();
       replacements = new WeakMap();
-      riskEngine = null;
+      scanEngine = null;
       buildContext();
       const view = context!.scan;
       status = 'ready';
@@ -700,7 +714,7 @@ function startCoverageOverlay(): void {
       refreshError = answer.error;
     } else {
       status = 'error';
-      message = `Couldn't load the locator index of ${project.projectLabel}: ${answer.error}`;
+      message = t('coverage_loadFailed', { project: project.projectLabel, error: answer.error });
     }
     renderPanel();
     bridge();
@@ -717,8 +731,11 @@ function startCoverageOverlay(): void {
   }
 
   function loadingMessage(): string {
-    const on = branch === ALL_BRANCHES ? ' on every branch' : branch ? ` on ${branch}` : '';
-    return `Loading the locator index of ${project?.projectLabel ?? 'the project'}${on}…`;
+    if (!project) return t('coverage_loading');
+    const name = { project: project.projectLabel };
+    if (branch === ALL_BRANCHES) return t('coverage_loadingProjectAll', name);
+    if (branch) return t('coverage_loadingProjectBranch', { ...name, branch });
+    return t('coverage_loadingProject', name);
   }
 
   /** The panel's branch select: '' for the default branch, `*` for every branch, else a branch. */
@@ -751,8 +768,7 @@ function startCoverageOverlay(): void {
     instanceUrl = settings.instanceUrl;
     if (!isConnected(settings)) {
       status = 'not-connected';
-      message =
-        'Connect Piwi Picker to your Piwi instance to see which elements of this page your tests use: add the instance URL, an API key and a URL pattern for this site in the settings.';
+      message = t('coverage_notConnected');
       renderPanel();
       bridge();
       return;
@@ -760,8 +776,7 @@ function startCoverageOverlay(): void {
     project = resolveActiveProject(settings, override, location.href);
     if (!project) {
       status = 'no-project';
-      message =
-        'No project is mapped to this page. Add a URL pattern for it in the settings, or pick a project from the popup.';
+      message = t('coverage_noProject');
       renderPanel();
       bridge();
       return;
@@ -890,6 +905,8 @@ function startCoverageOverlay(): void {
       ]);
       if (!toolIsCurrent(toolEpoch)) return;
       const next = resolveActiveProject(settings, override, location.href);
+      // Same project, maybe through another mapping: its path prefix follows the URL.
+      if (next && next.projectId === project?.projectId) project = next;
       if (next?.projectId !== project?.projectId) {
         project = next;
         index = null;
@@ -898,8 +915,7 @@ function startCoverageOverlay(): void {
         redraw();
         if (!project) {
           status = 'no-project';
-          message =
-            'No project is mapped to this page. Add a URL pattern for it in the settings, or pick a project from the popup.';
+          message = t('coverage_noProject');
           renderPanel();
           return;
         }
@@ -956,4 +972,4 @@ function startCoverageOverlay(): void {
   void boot();
 }
 
-startCoverageOverlay();
+void initI18n().then(startCoverageOverlay);

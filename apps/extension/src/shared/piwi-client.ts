@@ -1,11 +1,22 @@
+import type { EditorPairing, EditorSendPayload } from '@piwitests/core/editor-send';
 import type { TestFunctionEntry } from '@piwitests/core/function-match';
 import type { LocatorIndex } from '@piwitests/core/locator-index';
-import type { ConnectionSettings } from './connection-settings';
+import type { ConnectionSettings, ServerPatternsAnswer } from './connection-settings';
+import type { ClientInfo } from './client-info.js';
+import type { ConnectPoll } from './connect-flow.js';
+import type { DesktopSettings } from './desktop-settings.js';
+import type { PiwiSteps } from '@piwitests/core/steps';
+import { t } from './i18n.js';
 
 /**
- * Talks to a Piwi instance — the only place in this extension that makes a
- * network call. Called from the options page (on save) and the background
- * service worker (`piwi-refresh-catalog`, `piwi-refresh-locator-index`) only,
+ * Talks to a Piwi instance, and to the editor Piwi Picker is paired with — the
+ * only place in this extension that makes a network call. Called from the
+ * options page (connecting, saving, reading and adding URL patterns) and the
+ * background service worker (`piwi-refresh-catalog`, `piwi-refresh-locator-index`,
+ * `piwi-send-to-editor`, and the bug-report messages: `piwi-send-bug-report` once
+ * the reporter has confirmed the preview, `piwi-list-bug-reports`,
+ * `piwi-get-bug-report`, and `piwi-desktop-repro` to the paired desktop app once
+ * the developer confirmed its preview) only,
  * never from a content script, so the API key is never reachable from a web
  * page's JS context (matches `extension/AGENTS.md`'s standalone stance:
  * connected mode is opt-in and clearly separated).
@@ -88,17 +99,17 @@ export type ConnectionCheckResult = { ok: true } | { ok: false; error: string };
 
 /** Hits `/api/projects/menu` — cheap, always available, and exercises auth the same way the rest of the client does. */
 export async function testConnection(settings: ConnectionSettings): Promise<ConnectionCheckResult> {
-  if (!settings.instanceUrl.trim()) return { ok: false, error: 'Enter an instance URL first.' };
+  if (!settings.instanceUrl.trim()) return { ok: false, error: t('common_enterInstanceUrl') };
   try {
     const res = await fetch(`${normalizeBaseUrl(settings.instanceUrl)}/api/projects/menu`, {
       headers: authHeaders(settings),
       signal: timeout(),
     });
-    if (res.status === 401 || res.status === 403) return { ok: false, error: 'Rejected — check the API key.' };
-    if (!res.ok) return { ok: false, error: `Instance responded with ${res.status}.` };
+    if (res.status === 401 || res.status === 403) return { ok: false, error: t('common_apiKeyRejected') };
+    if (!res.ok) return { ok: false, error: t('common_instanceStatus', { status: res.status }) };
     return { ok: true };
   } catch {
-    return { ok: false, error: "Couldn't reach that instance — check the URL and that it's running." };
+    return { ok: false, error: t('common_instanceUnreachable') };
   }
 }
 
@@ -108,7 +119,7 @@ export async function fetchProjects(settings: ConnectionSettings): Promise<Proje
     headers: authHeaders(settings),
     signal: timeout(),
   });
-  if (!res.ok) throw new Error(`Failed to list projects (${res.status})`);
+  if (!res.ok) throw new Error(t('common_projectsFailed', { status: res.status }));
   return listItems<ProjectOption>(await res.json());
 }
 
@@ -125,7 +136,7 @@ export async function fetchCatalog(settings: ConnectionSettings, projectId: numb
     headers: authHeaders(settings),
     signal: timeout(),
   });
-  if (!res.ok) throw new Error(`Failed to fetch the function catalog (${res.status})`);
+  if (!res.ok) throw new Error(t('common_catalogFailed', { status: res.status }));
   const body = (await res.json()) as { testFunctions?: unknown };
   const rows = listItems<{ entry: TestFunctionEntry }>(Array.isArray(body.testFunctions) ? body.testFunctions : body);
   return rows.map((row) => row.entry).filter(Boolean);
@@ -149,19 +160,18 @@ export async function fetchLocatorIndex(
   projectId: number,
   branch: string | null = null,
 ): Promise<LocatorIndex> {
-  if (!settings.instanceUrl.trim()) throw new Error('Not connected to a Piwi instance.');
+  if (!settings.instanceUrl.trim()) throw new Error(t('common_notConnected'));
   const query = branch ? `?branch=${encodeURIComponent(branch)}` : '';
   const res = await fetch(`${normalizeBaseUrl(settings.instanceUrl)}/api/projects/${projectId}/locator-index${query}`, {
     headers: authHeaders(settings),
     signal: AbortSignal.timeout(LOCATOR_INDEX_TIMEOUT_MS),
   });
-  if (res.status === 401 || res.status === 403) throw new Error('The instance rejected the API key for this project.');
-  if (res.status === 404)
-    throw new Error('This Piwi instance has no locator index for the project (update Piwi, or check the project).');
-  if (!res.ok) throw new Error(`Failed to fetch the locator index (${res.status})`);
+  if (res.status === 401 || res.status === 403) throw new Error(t('common_projectKeyRejected'));
+  if (res.status === 404) throw new Error(t('common_noLocatorIndex'));
+  if (!res.ok) throw new Error(t('common_locatorIndexStatus', { status: res.status }));
   const body = (await res.json()) as LocatorIndex;
   if (!body || !Array.isArray(body.locators) || !Array.isArray(body.tests)) {
-    throw new Error('The instance answered with something that is not a locator index.');
+    throw new Error(t('common_locatorIndexInvalid'));
   }
   const defaultBranch = typeof body.defaultBranch === 'string' ? body.defaultBranch : '';
   return {
@@ -174,4 +184,494 @@ export async function fetchLocatorIndex(
       uses: entry.uses.map((use) => ({ ...use, branches: Array.isArray(use.branches) ? use.branches : [] })),
     })),
   };
+}
+
+/** What `POST /api/extension/connect` answers: the codes of a new connect request. */
+export interface ConnectStart {
+  deviceCode: string;
+  userCode: string;
+  verificationUrl: string;
+  interval: number;
+  expiresIn: number;
+}
+
+async function postJson(url: string, body: unknown): Promise<Response> {
+  return fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    signal: timeout(),
+  });
+}
+
+/**
+ * Starts connecting: the instance answers the code to show and the page where
+ * the user allows it. Throws a message to show when it cannot.
+ */
+export async function startConnect(instanceUrl: string, client: ClientInfo): Promise<ConnectStart> {
+  if (!instanceUrl.trim()) throw new Error(t('common_enterInstanceUrl'));
+  let res: Response;
+  try {
+    res = await postJson(`${normalizeBaseUrl(instanceUrl)}/api/extension/connect`, client);
+  } catch {
+    throw new Error(t('common_instanceUnreachable'));
+  }
+  if (res.status === 404 || res.status === 405) throw new Error(t('options_connectUnsupported'));
+  if (res.status === 429) throw new Error(t('options_connectTooMany'));
+  if (!res.ok) throw new Error(t('common_instanceStatus', { status: res.status }));
+  const body = (await res.json()) as Partial<ConnectStart>;
+  if (
+    typeof body.deviceCode !== 'string' ||
+    typeof body.userCode !== 'string' ||
+    typeof body.verificationUrl !== 'string' ||
+    !/^https?:\/\//i.test(body.verificationUrl)
+  ) {
+    throw new Error(t('options_connectUnsupported'));
+  }
+  return {
+    deviceCode: body.deviceCode,
+    userCode: body.userCode,
+    verificationUrl: body.verificationUrl,
+    interval: typeof body.interval === 'number' && body.interval > 0 ? body.interval : 5,
+    expiresIn: typeof body.expiresIn === 'number' && body.expiresIn > 0 ? body.expiresIn : 600,
+  };
+}
+
+/** One poll of a connect request. Throws on a network error or an unexpected answer, which the caller retries. */
+export async function pollConnect(instanceUrl: string, deviceCode: string): Promise<ConnectPoll> {
+  const res = await postJson(`${normalizeBaseUrl(instanceUrl)}/api/extension/connect/token`, { deviceCode });
+  if (res.status === 429) return { status: 'slow_down', interval: 30 };
+  if (!res.ok) throw new Error(t('common_instanceStatus', { status: res.status }));
+  const body = (await res.json()) as { status?: unknown; interval?: unknown; apiKey?: unknown; user?: unknown };
+  switch (body.status) {
+    case 'pending':
+    case 'denied':
+    case 'expired':
+      return { status: body.status };
+    case 'slow_down':
+      return { status: 'slow_down', interval: typeof body.interval === 'number' ? body.interval : 10 };
+    case 'approved': {
+      const name = (body.user as { name?: unknown } | null)?.name;
+      return {
+        status: 'approved',
+        apiKey: typeof body.apiKey === 'string' ? body.apiKey : '',
+        user: typeof name === 'string' ? { name } : null,
+      };
+    }
+    default:
+      throw new Error(t('options_connectUnsupported'));
+  }
+}
+
+/** Every URL pattern of the projects the key's user can see, with those projects and the user's name. */
+export async function fetchServerPatterns(settings: ConnectionSettings): Promise<ServerPatternsAnswer> {
+  if (!settings.instanceUrl.trim()) throw new Error(t('common_enterInstanceUrl'));
+  let res: Response;
+  try {
+    res = await fetch(`${normalizeBaseUrl(settings.instanceUrl)}/api/extension/url-patterns`, {
+      headers: authHeaders(settings),
+      signal: timeout(),
+    });
+  } catch {
+    throw new Error(t('common_instanceUnreachable'));
+  }
+  if (res.status === 401 || res.status === 403) throw new Error(t('common_apiKeyRejected'));
+  if (res.status === 404) throw new Error(t('options_serverUnsupported'));
+  if (!res.ok) throw new Error(t('common_instanceStatus', { status: res.status }));
+  const body = (await res.json()) as Partial<ServerPatternsAnswer>;
+  return {
+    user: body.user && typeof body.user.name === 'string' ? { name: body.user.name } : null,
+    items: Array.isArray(body.items) ? body.items : [],
+    projects: Array.isArray(body.projects) ? body.projects : [],
+  };
+}
+
+/** Adds a URL pattern to a project on the instance. Throws a message to show when it cannot. */
+export async function addServerPattern(
+  settings: ConnectionSettings,
+  projectId: number,
+  input: {
+    pattern: string;
+    environment?: string | null;
+    branch?: string | null;
+    pathPrefix?: string | null;
+    testPathPrefix?: string | null;
+  },
+): Promise<void> {
+  let res: Response;
+  try {
+    res = await fetch(`${normalizeBaseUrl(settings.instanceUrl)}/api/projects/${projectId}/url-patterns`, {
+      method: 'POST',
+      headers: { ...authHeaders(settings), 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+      signal: timeout(),
+    });
+  } catch {
+    throw new Error(t('common_instanceUnreachable'));
+  }
+  if (res.ok) return;
+  if (res.status === 401) throw new Error(t('common_apiKeyRejected'));
+  if (res.status === 403) throw new Error(t('options_addForbidden'));
+  if (res.status === 409) throw new Error(t('options_addDuplicate'));
+  if (res.status === 400) throw new Error(t('options_addInvalid'));
+  throw new Error(t('common_instanceStatus', { status: res.status }));
+}
+
+/**
+ * Post a locator or a recording to the paired editor, on this computer's
+ * loopback interface; the editor inserts it at its cursor. Needs the host
+ * permission for the editor's origin, requested when pairing.
+ */
+export async function postToEditor(
+  pairing: EditorPairing,
+  payload: EditorSendPayload,
+): Promise<{ ok: true; file: string | null } | { ok: false; error: string }> {
+  try {
+    const res = await fetch(pairing.url, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${pairing.token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: timeout(),
+    });
+    const body = (await res.json().catch(() => null)) as { file?: string | null; error?: string } | null;
+    if (!res.ok) return { ok: false, error: body?.error ?? String(res.status) };
+    return { ok: true, file: body?.file ?? null };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/** Deep link to a bug report's page in the dashboard. */
+export function bugReportUrl(instanceUrl: string, id: number): string {
+  return `${normalizeBaseUrl(instanceUrl)}/bug-reports/${id}`;
+}
+
+/** What Send to Piwi sends: the report as JSON, the language it is written in, and its PNG screenshots. */
+export interface BugReportSend {
+  report: unknown;
+  language: string | null;
+  /** Ask for an issue in the project's tracker. */
+  createIssue: boolean;
+  screenshots: Array<{ name: string; bytes: Uint8Array }>;
+}
+
+/** The multipart parts of a bug report, as the instance reads them. */
+const BUG_REPORT_PARTS = {
+  report: 'report',
+  language: 'language',
+  createIssue: 'createIssue',
+  screenshot: 'screenshot',
+} as const;
+
+/** Why the instance answered a request the way it did, as a sentence to show. */
+async function refusal(res: Response): Promise<string> {
+  if (res.status === 401) return t('common_apiKeyRejected');
+  if (res.status === 403) return t('common_sendForbidden');
+  if (res.status === 404) return t('common_bugReportsUnsupported');
+  if (res.status === 413) return t('common_sendTooLarge');
+  if (res.status === 400) {
+    const body = (await res.json().catch(() => null)) as { message?: unknown } | null;
+    const message = typeof body?.message === 'string' ? body.message.slice(0, 300) : String(res.status);
+    return t('common_sendRefused', { error: message });
+  }
+  return t('common_instanceStatus', { status: res.status });
+}
+
+/**
+ * Sends a bug report to a project (`POST /api/projects/:id/bug-reports`, multipart).
+ * Only the background worker calls it, after the reporter confirmed the preview.
+ */
+export async function sendBugReport(
+  settings: ConnectionSettings,
+  projectId: number,
+  send: BugReportSend,
+): Promise<{ id: number; url: string; issue: SentIssue | null }> {
+  const form = new FormData();
+  form.append(BUG_REPORT_PARTS.report, JSON.stringify(send.report));
+  if (send.language) form.append(BUG_REPORT_PARTS.language, send.language);
+  if (send.createIssue) form.append(BUG_REPORT_PARTS.createIssue, String(true));
+  for (const shot of send.screenshots) {
+    form.append(BUG_REPORT_PARTS.screenshot, new Blob([shot.bytes as BlobPart], { type: 'image/png' }), shot.name);
+  }
+  let res: Response;
+  try {
+    res = await fetch(`${normalizeBaseUrl(settings.instanceUrl)}/api/projects/${projectId}/bug-reports`, {
+      method: 'POST',
+      headers: authHeaders(settings),
+      body: form,
+      signal: AbortSignal.timeout(60_000),
+    });
+  } catch {
+    throw new Error(t('common_instanceUnreachable'));
+  }
+  if (!res.ok) throw new Error(await refusal(res));
+  const body = (await res.json()) as { id?: unknown; issue?: { status?: unknown; key?: unknown } | null };
+  if (typeof body.id !== 'number') throw new Error(t('common_instanceStatus', { status: res.status }));
+  const issue =
+    body.issue && typeof body.issue.status === 'string'
+      ? { status: body.issue.status, key: typeof body.issue.key === 'string' ? body.issue.key : null }
+      : null;
+  return { id: body.id, url: bugReportUrl(settings.instanceUrl, body.id), issue };
+}
+
+/** What became of the issue a send asked for: created (with its key), queued, or refused. */
+export interface SentIssue {
+  status: string;
+  key: string | null;
+}
+
+/** What a send to a project will do with its tracker (`GET /api/projects/:id/bug-reports/intake`). */
+export interface BugReportIntake {
+  tracker: 'jira' | null;
+  projectKey: string | null;
+  canCreate: boolean;
+  fileEvery: boolean;
+}
+
+/** The intake, or no tracker when the instance cannot say (an older one, or unreachable). */
+export async function fetchBugReportIntake(settings: ConnectionSettings, projectId: number): Promise<BugReportIntake> {
+  const none: BugReportIntake = { tracker: null, projectKey: null, canCreate: false, fileEvery: false };
+  try {
+    const res = await fetch(`${normalizeBaseUrl(settings.instanceUrl)}/api/projects/${projectId}/bug-reports/intake`, {
+      headers: authHeaders(settings),
+      signal: timeout(),
+    });
+    if (!res.ok) return none;
+    const body = (await res.json()) as Partial<BugReportIntake>;
+    return {
+      tracker: body.tracker === 'jira' ? 'jira' : null,
+      projectKey: typeof body.projectKey === 'string' ? body.projectKey : null,
+      canCreate: body.canCreate === true,
+      fileEvery: body.fileEvery === true,
+    };
+  } catch {
+    return none;
+  }
+}
+
+/** One of a project's bug reports, as Replay lists them. */
+export interface BugReportSummary {
+  id: number;
+  title: string;
+  status: string;
+  path: string | null;
+}
+
+/** A project's bug reports that are still to be fixed: open, test committed, or looking fixed. */
+export async function fetchBugReports(settings: ConnectionSettings, projectId: number): Promise<BugReportSummary[]> {
+  let res: Response;
+  try {
+    res = await fetch(`${normalizeBaseUrl(settings.instanceUrl)}/api/projects/${projectId}/bug-reports`, {
+      headers: authHeaders(settings),
+      signal: timeout(),
+    });
+  } catch {
+    throw new Error(t('common_instanceUnreachable'));
+  }
+  if (!res.ok) throw new Error(await refusal(res));
+  return listItems<BugReportSummary>(await res.json()).filter(
+    (r) => typeof r.id === 'number' && r.status !== 'closed' && r.status !== 'dismissed',
+  );
+}
+
+/** A bug report's steps document, with the report's title, for Replay. */
+export async function fetchBugReportSteps(settings: ConnectionSettings, id: number): Promise<unknown> {
+  let res: Response;
+  try {
+    res = await fetch(`${normalizeBaseUrl(settings.instanceUrl)}/api/bug-reports/${id}`, {
+      headers: authHeaders(settings),
+      signal: timeout(),
+    });
+  } catch {
+    throw new Error(t('common_instanceUnreachable'));
+  }
+  if (!res.ok) throw new Error(await refusal(res));
+  const body = (await res.json()) as { title?: unknown; steps?: unknown };
+  return { ...(body.steps as object), title: typeof body.title === 'string' ? body.title : null };
+}
+
+/** A reproduction of a report, as Share result sends it. */
+export interface ReproductionSend {
+  source: 'replay' | 'desktop';
+  verdict: 'reproduced' | 'not-reproduced' | 'diverged';
+  divergedAt: number | null;
+  origin: string | null;
+  userAgent: string | null;
+}
+
+/** Records a reproduction on a report (`POST /api/bug-reports/:id/reproductions`), after the developer's click. */
+export async function sendReproduction(
+  settings: ConnectionSettings,
+  id: number,
+  send: ReproductionSend,
+): Promise<void> {
+  let res: Response;
+  try {
+    res = await fetch(`${normalizeBaseUrl(settings.instanceUrl)}/api/bug-reports/${id}/reproductions`, {
+      method: 'POST',
+      headers: { ...authHeaders(settings), 'Content-Type': 'application/json' },
+      body: JSON.stringify(send),
+      signal: timeout(),
+    });
+  } catch {
+    throw new Error(t('common_instanceUnreachable'));
+  }
+  if (!res.ok) throw new Error(await refusal(res));
+}
+
+// ---------------------------------------------------------------------------
+// The paired desktop app
+
+function desktopHeaders(desktop: DesktopSettings): Record<string, string> {
+  return { 'x-piwi-token': desktop.token };
+}
+
+function desktopRefusal(res: Response): string {
+  if (res.status === 401) return t('common_desktopRejected');
+  if (res.status === 404) return t('common_desktopUnsupported');
+  return t('common_desktopStatus', { status: res.status });
+}
+
+/** Checks the pairing: `GET /api/desktop/reporter-config` answers only with the app's token. */
+export async function testDesktop(desktop: DesktopSettings): Promise<ConnectionCheckResult> {
+  try {
+    const res = await fetch(`${desktop.url}/api/desktop/reporter-config`, {
+      headers: desktopHeaders(desktop),
+      signal: timeout(),
+    });
+    return res.ok ? { ok: true } : { ok: false, error: desktopRefusal(res) };
+  } catch {
+    return { ok: false, error: t('common_desktopUnreachable') };
+  }
+}
+
+/** A pairing the desktop app started: the code both sides show, and the secret only this extension polls with. */
+export interface DesktopPairingStart {
+  id: string;
+  secret: string;
+  code: string;
+  interval: number;
+  expiresIn: number;
+  /** False when no window of the app is open to show the request. */
+  windowOpen: boolean;
+}
+
+/**
+ * Asks the desktop app at `url` to pair: its window shows the request with the
+ * code this answers. Throws a message to show when it cannot.
+ */
+export async function startDesktopPairing(url: string, client: ClientInfo): Promise<DesktopPairingStart> {
+  let res: Response;
+  try {
+    res = await postJson(`${url}/api/desktop/picker-pairings`, client);
+  } catch {
+    throw new Error(t('options_desktopPairUnreachable', { url }));
+  }
+  if (res.status === 429) throw new Error(t('options_desktopPairTooMany'));
+  if (!res.ok) throw new Error(t('options_desktopPairUnsupported', { url }));
+  const body = (await res.json().catch(() => ({}))) as Partial<DesktopPairingStart>;
+  if (
+    typeof body.id !== 'string' ||
+    !/^[0-9a-f]{16}$/.test(body.id) ||
+    typeof body.secret !== 'string' ||
+    typeof body.code !== 'string'
+  ) {
+    throw new Error(t('options_desktopPairUnsupported', { url }));
+  }
+  return {
+    id: body.id,
+    secret: body.secret,
+    code: body.code,
+    interval: typeof body.interval === 'number' && body.interval > 0 ? body.interval : 2,
+    expiresIn: typeof body.expiresIn === 'number' && body.expiresIn > 0 ? body.expiresIn : 300,
+    windowOpen: body.windowOpen !== false,
+  };
+}
+
+/**
+ * One poll of a pairing, in the shape the connect flow waits on: `approved`
+ * carries the app's token as `apiKey`. Throws on a network error or an
+ * unexpected answer, which the caller retries.
+ */
+export async function pollDesktopPairing(url: string, pairing: DesktopPairingStart): Promise<ConnectPoll> {
+  const res = await fetch(`${url}/api/desktop/picker-pairings/${pairing.id}`, {
+    headers: { 'x-pairing-secret': pairing.secret },
+    signal: timeout(),
+  });
+  // Gone: the app restarted and lost it, as good as expired.
+  if (res.status === 404) return { status: 'expired' };
+  if (!res.ok) throw new Error(t('common_desktopStatus', { status: res.status }));
+  const body = (await res.json()) as { status?: unknown; token?: unknown };
+  switch (body.status) {
+    case 'waiting':
+      return { status: 'pending' };
+    case 'denied':
+      return { status: 'denied' };
+    case 'expired':
+    case 'claimed':
+      return { status: 'expired' };
+    case 'allowed':
+      if (typeof body.token !== 'string' || !body.token) throw new Error(t('options_desktopPairUnsupported', { url }));
+      return { status: 'approved', apiKey: body.token, user: null };
+    default:
+      throw new Error(t('options_desktopPairUnsupported', { url }));
+  }
+}
+
+export interface ReproRequestSend {
+  steps: PiwiSteps;
+  title: string | null;
+  options: { headed: boolean; trace: boolean };
+  bugReportId: number | null;
+  instanceUrl: string | null;
+}
+
+/** Asks the desktop app to run steps with Playwright; the developer confirms it in the app's window. */
+export async function sendReproRequest(
+  desktop: DesktopSettings,
+  send: ReproRequestSend,
+): Promise<{ id: string; windowOpen: boolean }> {
+  let res: Response;
+  try {
+    res = await fetch(`${desktop.url}/api/desktop/repro-requests`, {
+      method: 'POST',
+      headers: { ...desktopHeaders(desktop), 'Content-Type': 'application/json' },
+      body: JSON.stringify(send),
+      signal: timeout(),
+    });
+  } catch {
+    throw new Error(t('common_desktopUnreachable'));
+  }
+  if (!res.ok) throw new Error(desktopRefusal(res));
+  const body = (await res.json()) as { id?: unknown; windowOpen?: unknown };
+  if (typeof body.id !== 'string') throw new Error(t('common_desktopStatus', { status: res.status }));
+  return { id: body.id, windowOpen: body.windowOpen === true };
+}
+
+/** What the desktop app says about a request: its status and, once run, the verdict. */
+export interface ReproRequestState {
+  status: 'waiting' | 'running' | 'done' | 'declined' | 'expired';
+  verdict:
+    | { kind: 'reproduced'; step: number; found: string | null }
+    | { kind: 'not-reproduced' }
+    | { kind: 'diverged'; step: number; reason: string }
+    | { kind: 'completed' }
+    | { kind: 'stopped' }
+    | null;
+}
+
+export async function fetchReproRequest(desktop: DesktopSettings, id: string): Promise<ReproRequestState> {
+  let res: Response;
+  try {
+    res = await fetch(`${desktop.url}/api/desktop/repro-requests/${encodeURIComponent(id)}`, {
+      headers: desktopHeaders(desktop),
+      signal: timeout(),
+    });
+  } catch {
+    throw new Error(t('common_desktopUnreachable'));
+  }
+  if (res.status === 404) return { status: 'expired', verdict: null };
+  if (!res.ok) throw new Error(desktopRefusal(res));
+  const body = (await res.json()) as Partial<ReproRequestState>;
+  return { status: body.status ?? 'expired', verdict: body.verdict ?? null };
 }

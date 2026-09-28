@@ -205,6 +205,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/locator-usage',
       },
       {
+        title: 'Locator preflight',
+        summary:
+          'Before a push, the test locators your diff breaks — a renamed label, a removed test id, a changed translation — with the rewrite applied in place.',
+        needs: [],
+        where: 'piwi preflight',
+        doc: 'features/preflight',
+      },
+      {
         title: 'Fix plans, reproduce & bisect',
         summary: 'A plan to reproduce a failure locally and bisect to the commit that introduced it.',
         needs: ['desktop'],
@@ -279,6 +287,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         needs: ['scm'],
         where: 'Pull request comment',
         doc: 'features/uncovered-changes',
+      },
+      {
+        title: 'Code reach',
+        summary:
+          'Which tests execute each application source file, from JavaScript coverage on a scheduled run: feeds impact-from-diff, uncovered changes and preflight.',
+        needs: ['fixtures'],
+        where: 'Reporter option captureCodeReach',
+        doc: 'features/code-reach',
       },
       {
         title: 'Probes',
@@ -369,12 +385,44 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/extension',
       },
       {
+        title: 'Extension connection',
+        summary:
+          'Connect Piwi Picker to your instance in one click, and keep the URL patterns that tell it which project a page belongs to on the instance, for the whole team.',
+        needs: ['extension'],
+        where: 'Browser extension → Settings; Project → Settings → Browser extension URLs',
+        doc: 'features/extension-connection',
+      },
+      {
         title: 'Tested elements',
         summary:
           'On a live page, the elements your tests reach and through which tests, the buttons, links and fields none reaches, and the brittle locators to replace.',
         needs: ['extension'],
         where: 'Browser extension → Tested elements',
         doc: 'features/tested-elements',
+      },
+      {
+        title: 'Report a bug',
+        summary:
+          'Record the steps to a bug, mark what the page should show, and get a failing Playwright test, a Markdown report and the evidence, from the browser.',
+        needs: ['extension'],
+        where: 'Browser extension → Report a bug',
+        doc: 'features/report-a-bug',
+      },
+      {
+        title: 'Bug reports',
+        summary:
+          'Reports sent from Piwi Picker kept with their steps and evidence, each rendered as a failing test for your project and followed through its runs until the fix holds.',
+        needs: ['extension'],
+        where: 'Project → More → Bug reports',
+        doc: 'features/bug-reports',
+      },
+      {
+        title: 'Developer tools',
+        summary:
+          "Beside the browser's DevTools: the ranked, verified locators of the element selected in the Elements panel.",
+        needs: ['extension'],
+        where: 'DevTools → Elements → Piwi',
+        doc: 'features/devtools',
       },
       {
         title: 'Test functions catalog',
@@ -389,6 +437,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         needs: [],
         where: 'any source path',
         doc: 'features/ide-integration',
+      },
+      {
+        title: 'Editor extensions',
+        summary:
+          'In VS Code and the JetBrains IDEs: the latest CI failures at their lines with the heal as a quick fix, the tests behind each locator and file, and the locators an unsaved change breaks.',
+        needs: [],
+        where: 'VS Code extension, JetBrains plugin',
+        doc: 'features/editors',
       },
     ],
   },

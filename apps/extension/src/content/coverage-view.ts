@@ -2,6 +2,7 @@ import type { LocatorIndex, LocatorIndexTest, LocatorIndexTestStatus } from '@pi
 import type { LocatorStability } from '@piwitests/core/locator-stability';
 import type { BrittleRow, PageRiskRow } from './coverage-risk.js';
 import type { CoverageScan, CoveredElement, ScopedScan } from './coverage-scan.js';
+import { t, tn, uiLanguage } from '../shared/i18n.js';
 
 /** Everything the coverage UI draws from once a scan has run. */
 export interface CoverageContext {
@@ -21,6 +22,10 @@ export interface CoverageContext {
   brittleElements: Set<Element>;
   /** The key of the page open (`/orders/:id`); null off an http(s) page. */
   pageKey: string | null;
+  /** The URL mapping's path prefix removed from the page's path before keying it; null when none applied. */
+  prefixRemoved: string | null;
+  /** The URL mapping's tests' path prefix put in front of the page's path before keying it; null when none applied. */
+  prefixAdded: string | null;
   /** Its position in `index.pages`; -1 when no use was recorded on it. */
   pagePosition: number;
   /** The index records pages, so the view can be limited to this page. */
@@ -109,15 +114,15 @@ export function worstStatus(index: LocatorIndex, tests: number[]): 'failed' | 'f
 export function statusLabel(status: LocatorIndexTestStatus | null): string {
   switch (status) {
     case 'passed':
-      return 'Passed in its latest run';
+      return t('coverage_statusPassed');
     case 'flaky':
-      return 'Passed after a retry in its latest run';
+      return t('coverage_statusFlaky');
     case 'failed':
-      return 'Failed in its latest run';
+      return t('coverage_statusFailed');
     case 'skipped':
-      return 'Skipped in its latest run';
+      return t('coverage_statusSkipped');
     default:
-      return 'No recorded run';
+      return t('coverage_statusNone');
   }
 }
 
@@ -135,7 +140,7 @@ export function spotlightTest(state: ViewState): number | null {
 export function usePages(index: LocatorIndex, use: { pages?: number[]; arrival?: number[] }): string[] {
   return (use.pages ?? []).map((i) => {
     const page = index.pages?.[i] ?? '?';
-    return use.arrival?.includes(i) ? `${page}, as it loads` : page;
+    return use.arrival?.includes(i) ? t('coverage_pageOnLoad', { page }) : page;
   });
 }
 
@@ -144,17 +149,22 @@ export function riskCount(context: CoverageContext): number {
   return context.missing.length + context.several.length + context.brittle.length;
 }
 
-export function plural(count: number, one: string, many = `${one}s`): string {
-  return `${count} ${count === 1 ? one : many}`;
+/** Whether `count` takes the singular in the interface language (French puts 0 there too). */
+export function isSingular(count: number): boolean {
+  try {
+    return new Intl.PluralRules(uiLanguage()).select(count) === 'one';
+  } catch {
+    return count === 1;
+  }
 }
 
 /** "3 min ago" style age for the index freshness line. */
 export function ageLabel(fromMs: number, nowMs = Date.now()): string {
   const seconds = Math.max(0, Math.round((nowMs - fromMs) / 1000));
-  if (seconds < 45) return 'just now';
+  if (seconds < 45) return t('coverage_ageJustNow');
   const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `${minutes} min ago`;
+  if (minutes < 60) return tn('coverage_ageMinutes', minutes);
   const hours = Math.round(minutes / 60);
-  if (hours < 48) return `${hours} h ago`;
-  return `${Math.round(hours / 24)} days ago`;
+  if (hours < 48) return tn('coverage_ageHours', hours);
+  return tn('coverage_ageDays', Math.round(hours / 24));
 }

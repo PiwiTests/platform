@@ -1,5 +1,7 @@
 import type { RawCaptureEvent } from '@piwitests/core/recording';
+import { clearBugEvidence } from './bug-storage.js';
 import { hasSessionArea, sessionArea } from './session-area.js';
+import { t } from './i18n.js';
 
 /**
  * The running cross-page recording (event stream + on/off state), in
@@ -14,7 +16,10 @@ import { hasSessionArea, sessionArea } from './session-area.js';
  * stream on every read that keeping two representations in sync isn't worth
  * the risk of them drifting.
  */
-const RECORDING_KEY = 'piwiRecording';
+export const RECORDING_KEY = 'piwiRecording';
+
+/** `actions` records a flow; `bug` records a bug report, with its HUD and the page's console and failed requests. */
+export type RecordingMode = 'actions' | 'bug';
 
 export interface RecordingState {
   active: boolean;
@@ -22,9 +27,23 @@ export interface RecordingState {
   startedAt: number | null;
   /** The origin pattern granted for this recording (e.g. `https://app.example.com/*`) — background re-registers the content script for it on every new tab/navigation. */
   grantedOriginPattern: string | null;
+  /** Absent on a recording stored before bug reports existed, which reads as `actions`. */
+  mode?: RecordingMode;
+  /** A bug recording's token: the main-world evidence script's messages carry it, and the recorder ignores any that do not. */
+  bugToken?: string | null;
 }
 
 const EMPTY: RecordingState = { active: false, events: [], startedAt: null, grantedOriginPattern: null };
+
+export function recordingMode(state: Pick<RecordingState, 'mode'>): RecordingMode {
+  return state.mode === 'bug' ? 'bug' : 'actions';
+}
+
+function newBugToken(): string {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
 
 export async function getRecordingState(): Promise<RecordingState> {
   const stored = await sessionArea().get(RECORDING_KEY);
@@ -36,8 +55,19 @@ async function setRecordingState(state: RecordingState): Promise<void> {
   await sessionArea().set({ [RECORDING_KEY]: state });
 }
 
-export async function startRecording(grantedOriginPattern: string): Promise<RecordingState> {
-  const state: RecordingState = { active: true, events: [], startedAt: Date.now(), grantedOriginPattern };
+export async function startRecording(
+  grantedOriginPattern: string,
+  mode: RecordingMode = 'actions',
+): Promise<RecordingState> {
+  await clearBugEvidence();
+  const state: RecordingState = {
+    active: true,
+    events: [],
+    startedAt: Date.now(),
+    grantedOriginPattern,
+    mode,
+    bugToken: mode === 'bug' ? newBugToken() : null,
+  };
   await setRecordingState(state);
   return state;
 }
@@ -51,6 +81,7 @@ export async function stopRecording(): Promise<RecordingState> {
 
 export async function discardRecording(): Promise<void> {
   await sessionArea().remove(RECORDING_KEY);
+  await clearBugEvidence();
 }
 
 /**
@@ -70,6 +101,8 @@ const RECORD_INTENT_KEY = 'piwiRecordIntent';
 export interface RecordIntent {
   /** The origin pattern the popup requested (e.g. `https://app.example.com/*`). */
   originPattern: string;
+  /** Which recording the click asked for. */
+  mode: RecordingMode;
   /** The tab the click applied to — the already-loaded page that needs the one-off inject. */
   tabId: number;
   /** When the popup requested the grant; a stale intent is ignored rather than reviving a recording on some later, unrelated grant. */
@@ -94,7 +127,12 @@ export async function getRecordIntent(): Promise<RecordIntent | null> {
   if (!value || typeof value !== 'object') return null;
   const intent = value as Partial<RecordIntent>;
   if (typeof intent.originPattern !== 'string' || typeof intent.tabId !== 'number') return null;
-  return { originPattern: intent.originPattern, tabId: intent.tabId, createdAt: intent.createdAt ?? 0 };
+  return {
+    originPattern: intent.originPattern,
+    mode: intent.mode === 'bug' ? 'bug' : 'actions',
+    tabId: intent.tabId,
+    createdAt: intent.createdAt ?? 0,
+  };
 }
 
 export async function clearRecordIntent(): Promise<void> {
@@ -102,7 +140,7 @@ export async function clearRecordIntent(): Promise<void> {
 }
 
 export type RecordIntentDecision =
-  | { action: 'start'; originPattern: string; tabId: number }
+  | { action: 'start'; originPattern: string; tabId: number; mode: RecordingMode }
   | { action: 'clear' }
   | { action: 'ignore' };
 
@@ -126,7 +164,7 @@ export function decideRecordIntent(
   if (!intent) return { action: 'ignore' };
   if (!addedOrigins.includes(intent.originPattern)) return { action: 'ignore' };
   if (now - intent.createdAt > RECORD_INTENT_TTL_MS) return { action: 'clear' };
-  return { action: 'start', originPattern: intent.originPattern, tabId: intent.tabId };
+  return { action: 'start', originPattern: intent.originPattern, tabId: intent.tabId, mode: intent.mode ?? 'actions' };
 }
 
 /**
@@ -192,7 +230,7 @@ async function appendViaBackground(event: RawCaptureEvent): Promise<RecordingSta
   const response = (await chrome.runtime.sendMessage({ type: 'piwi-append-recording-event', event })) as
     | AppendRecordingEventResponse
     | undefined;
-  if (!response?.ok) throw new Error(response?.error ?? 'The background script did not answer.');
+  if (!response?.ok) throw new Error(response?.error ?? t('common_workerNoAnswer'));
   return response.state;
 }
 

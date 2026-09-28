@@ -8,6 +8,7 @@ import { setUserSession, isAuthEnabled, getCurrentUser } from './auth';
 import type { SessionData } from './auth';
 import type { User } from '../database/schema';
 import {
+  safeReturnPath,
   generateState,
   generateCodeVerifier,
   codeChallengeS256,
@@ -124,6 +125,7 @@ function getGithubAllowedOrgs(event: H3Event): string[] {
 const STATE_COOKIE = 'oauth_state';
 const VERIFIER_COOKIE = 'oauth_verifier';
 const LINK_COOKIE = 'oauth_link';
+const RETURN_COOKIE = 'oauth_return';
 const STATE_EXPIRY_SEC = 600; // 10 minutes
 
 function ephemeralCookieOptions(event: H3Event) {
@@ -166,7 +168,11 @@ function getRedirectUri(event: H3Event, provider: string): string {
 // Initiate OAuth: generate state (+ PKCE), set cookies, return redirect URL
 // ---------------------------------------------------------------------------
 
-export function initiateOAuth(event: H3Event, provider: string, opts: { link?: boolean } = {}): string | null {
+export function initiateOAuth(
+  event: H3Event,
+  provider: string,
+  opts: { link?: boolean; returnTo?: string | null } = {},
+): string | null {
   if (!isAuthEnabled(event)) {
     return null;
   }
@@ -210,6 +216,15 @@ export function initiateOAuth(event: H3Event, provider: string, opts: { link?: b
     setEphemeralCookie(event, LINK_COOKIE, '1');
   } else {
     clearEphemeralCookie(event, LINK_COOKIE);
+  }
+
+  // Where a sign-in lands afterwards: a same-origin path, such as the browser
+  // extension's connect page that sent the user to sign in.
+  const returnTo = safeReturnPath(opts.returnTo);
+  if (returnTo && !opts.link) {
+    setEphemeralCookie(event, RETURN_COOKIE, returnTo);
+  } else {
+    clearEphemeralCookie(event, RETURN_COOKIE);
   }
 
   if (providerCfg.extraParams) {
@@ -533,6 +548,8 @@ export async function handleOAuthCallback(event: H3Event, provider: string): Pro
   clearEphemeralCookie(event, STATE_COOKIE);
   clearEphemeralCookie(event, VERIFIER_COOKIE);
   clearEphemeralCookie(event, LINK_COOKIE);
+  const returnTo = safeReturnPath(getCookie(event, RETURN_COOKIE));
+  clearEphemeralCookie(event, RETURN_COOKIE);
 
   // User denied the authorization request
   if (query.error) {
@@ -589,7 +606,7 @@ export async function handleOAuthCallback(event: H3Event, provider: string): Pro
     };
     await setUserSession(event, sessionData);
 
-    return '/';
+    return returnTo ?? '/';
   } catch (err) {
     console.error(`[OAuth] ${provider} callback failed:`, err);
     const oauthError = (err as { data?: { oauthError?: string } })?.data?.oauthError;

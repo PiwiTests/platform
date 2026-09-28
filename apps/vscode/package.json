@@ -1,0 +1,167 @@
+{
+  "name": "piwi",
+  "displayName": "Piwi",
+  "description": "Your Playwright suite's history in the editor: CI failures at their lines, healing in place, the tests behind each locator and file, and the locators a change breaks",
+  "version": "0.40.0",
+  "publisher": "piwitests",
+  "private": true,
+  "license": "SEE LICENSE IN LICENSE",
+  "icon": "icon.png",
+  "homepage": "https://piwitests.dev",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/PiwiTests/platform",
+    "directory": "apps/vscode"
+  },
+  "engines": {
+    "vscode": "^1.91.0"
+  },
+  "categories": [
+    "Testing",
+    "Linters"
+  ],
+  "keywords": [
+    "playwright",
+    "e2e",
+    "locators",
+    "flaky tests",
+    "test history"
+  ],
+  "main": "./dist/extension.cjs",
+  "activationEvents": [
+    "workspaceContains:**/playwright.config.{ts,js,mjs,cjs}"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "piwi.connect",
+        "title": "Connect",
+        "category": "Piwi"
+      },
+      {
+        "command": "piwi.refresh",
+        "title": "Refresh",
+        "category": "Piwi"
+      },
+      {
+        "command": "piwi.runTestsForFile",
+        "title": "Run the tests that reach this file",
+        "category": "Piwi"
+      },
+      {
+        "command": "piwi.runSelection",
+        "title": "Run selection…",
+        "category": "Piwi"
+      },
+      {
+        "command": "piwi.openInDashboard",
+        "title": "Open in dashboard",
+        "category": "Piwi"
+      },
+      {
+        "command": "piwi.openRun",
+        "title": "Open the latest run",
+        "category": "Piwi"
+      },
+      {
+        "command": "piwi.copyMcpConfiguration",
+        "title": "Copy the MCP server configuration",
+        "category": "Piwi"
+      },
+      {
+        "command": "piwi.pairPicker",
+        "title": "Pair with Piwi Picker",
+        "category": "Piwi"
+      },
+      {
+        "command": "piwi.runTests",
+        "title": "Run tests",
+        "category": "Piwi"
+      },
+      {
+        "command": "piwi.openTrace",
+        "title": "Open the trace",
+        "category": "Piwi"
+      },
+      {
+        "command": "piwi.runCommand",
+        "title": "Run a command",
+        "category": "Piwi"
+      },
+      {
+        "command": "piwi.copyText",
+        "title": "Copy text",
+        "category": "Piwi"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "piwi.runTests",
+          "when": "false"
+        },
+        {
+          "command": "piwi.openTrace",
+          "when": "false"
+        },
+        {
+          "command": "piwi.runCommand",
+          "when": "false"
+        },
+        {
+          "command": "piwi.copyText",
+          "when": "false"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "piwi.runTestsForFile",
+          "group": "piwi@1",
+          "when": "piwi.active"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Piwi",
+      "properties": {
+        "piwi.serverUrl": {
+          "type": "string",
+          "default": "",
+          "description": "The Piwi instance, used when the environment, the workspace .env and the desktop app name none."
+        },
+        "piwi.project": {
+          "type": "string",
+          "default": "",
+          "description": "The project's name or id on the instance."
+        }
+      }
+    },
+    "mcpServerDefinitionProviders": [
+      {
+        "id": "piwi.mcp",
+        "label": "Piwi"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:build": "npm run editor:build -w @piwitests/editor && node build.mjs",
+    "vscode:typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tests/tsconfig.json",
+    "vscode:lint": "oxlint --config oxlint.config.mts .",
+    "vscode:lint:fix": "oxlint --config oxlint.config.mts . --fix",
+    "vscode:format": "oxfmt --config oxfmt.config.mts --write \"src/\" \"tests/\" build.mjs",
+    "vscode:format:check": "oxfmt --config oxfmt.config.mts --check \"src/\" \"tests/\" build.mjs",
+    "vscode:test": "vitest run",
+    "vscode:test:integration": "npm run vscode:build && node tests/integration/run.mjs",
+    "vscode:package": "npm run vscode:build && vsce package --no-dependencies --out dist/piwi.vsix",
+    "test": "npm run vscode:test"
+  },
+  "devDependencies": {
+    "@piwitests/editor": "*",
+    "@types/vscode": "~1.91.0",
+    "@vscode/test-electron": "^3.1.0",
+    "@vscode/vsce": "^4.0.0",
+    "esbuild": "^0.28.1",
+    "ovsx": "^1.2.0",
+    "vscode-languageclient": "^10.1.2"
+  }
+}

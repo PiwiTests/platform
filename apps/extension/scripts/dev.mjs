@@ -3,10 +3,14 @@
 // Run via `npm run extension:dev`.
 //
 // Rebuilds everything rather than only the changed entry: a full build takes
-// about a second, and the standalone bundles share source files
+// a second or two, and the standalone bundles share source files
 // (src/shared/**, @piwitests/core, @piwitests/picker-dom), so mapping a changed
 // file back to just the bundles that import it would be both slower to get
 // right and easy to get subtly wrong.
+//
+// A change to `scripts/build.mjs` (a new bundle, say, after a pull) is picked
+// up by the next rebuild, which runs it afresh. A change to this file needs a
+// restart.
 //
 // Two things keep a long session from running away:
 //
@@ -26,14 +30,20 @@ import path from 'node:path';
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 // Everything the build reads, relative to this workspace — including the two
 // workspaces it bundles from source (their package.json holds the `exports` map
-// imports resolve through). `dist/` is deliberately absent — watching the
+// imports resolve through) and `scripts/`, of which only build.mjs counts (see
+// `isInput`). `dist/` and `dist-firefox/` are deliberately absent — watching the
 // build's own output would retrigger it forever.
 const WATCHED = [
   'src',
   'public',
   'popup.html',
   'options.html',
+  'devtools.html',
+  'devtools-sidebar.html',
+  'devtools-panel.html',
+  'login.html',
   'manifest.json',
+  'scripts',
   '../../packages/core/src',
   '../../packages/core/package.json',
   '../../packages/picker-dom/src',
@@ -49,6 +59,14 @@ let building = false;
  */
 let inputs = new Map();
 
+const scriptsDir = path.join(root, 'scripts');
+const devScript = fileURLToPath(import.meta.url);
+
+/** Whether the build reads `file`: everything watched but the other scripts next to build.mjs. */
+function isInput(file) {
+  return path.dirname(file) !== scriptsDir || path.basename(file) === 'build.mjs';
+}
+
 /** A path's kind, mtime and size, or null when it doesn't exist. */
 function signature(file) {
   try {
@@ -62,7 +80,7 @@ function signature(file) {
 function snapshotInputs() {
   const signatures = new Map();
   const add = (file) => {
-    const current = signature(file);
+    const current = isInput(file) ? signature(file) : null;
     if (current !== null) signatures.set(file, current);
     return current;
   };
@@ -85,6 +103,16 @@ function changedSinceLastBuild(file) {
   if (file !== null) return signature(file) !== (inputs.get(file) ?? null);
   const current = snapshotInputs();
   return current.size !== inputs.size || [...current].some(([entry, value]) => inputs.get(entry) !== value);
+}
+
+let devScriptSignature = signature(devScript);
+
+/** This process keeps running the dev.mjs it started with, so say when the file changes. */
+function noticeDevScriptChange() {
+  const current = signature(devScript);
+  if (current === devScriptSignature) return;
+  devScriptSignature = current;
+  console.log('scripts/dev.mjs changed: restart `npm run extension:dev` to use it.');
 }
 
 function runBuild() {
@@ -124,7 +152,7 @@ async function rebuild() {
 }
 
 function scheduleRebuild(file) {
-  if (building || !changedSinceLastBuild(file)) return;
+  if (building || (file !== null && !isInput(file)) || !changedSinceLastBuild(file)) return;
   clearTimeout(timer);
   timer = setTimeout(() => void rebuild(), DEBOUNCE_MS);
 }
@@ -134,9 +162,11 @@ await rebuild();
 for (const target of WATCHED) {
   const base = path.join(root, target);
   const isDirectory = statSync(base).isDirectory();
-  watch(base, { recursive: true }, (_event, filename) =>
-    scheduleRebuild(filename == null ? null : isDirectory ? path.join(base, filename) : base),
-  );
+  watch(base, { recursive: true }, (_event, filename) => {
+    const file = filename == null ? null : isDirectory ? path.join(base, filename) : base;
+    if (file === devScript) noticeDevScriptChange();
+    scheduleRebuild(file);
+  });
 }
 
 console.log(`Watching ${WATCHED.join(', ')} — Ctrl+C to stop.`);

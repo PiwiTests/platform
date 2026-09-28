@@ -416,6 +416,11 @@ export const HELP_TOPICS = {
     text: 'Goals this project is checked against over the period a dashboard or a quality report shows: a pass rate to reach, and limits on flaky tests, wasted CI minutes per week, the age of the oldest open failure cause and the median time to fix. Each is optional; a met or missed target shows on the headline tiles, in the portfolio, in the insights and in the report.',
     doc: 'features/analytics#targets',
   },
+  'project.url-patterns': {
+    title: 'Browser extension URLs',
+    text: 'The addresses this project’s application is served at, as patterns over the whole URL: * matches within one path segment, ** across segments. Piwi Picker reads them when it connects and tries them in this order to tell which project a page belongs to; a pattern saved in one browser overrides them there. The environment is a label; the branch is the one deployed at those addresses, whose tests Tested elements shows. The path prefix is the part of the path the site serves its pages under and the tests did not (/app); Piwi Picker removes it before comparing the page with the pages the tests ran on. The tests’ path prefix is the reverse, the part of the path the tests ran under and the site does not; Piwi Picker puts it in front.',
+    doc: 'features/extension-connection#url-patterns',
+  },
   'project.ci-rerun': {
     title: 'CI re-run',
     text: 'Lets a reporter or admin re-run a cluster’s affected tests in CI straight from its page — a workflow_dispatch on GitHub, a pipeline on GitLab, a custom pipeline on Bitbucket — passing the retry arguments through the input/variable you name. Uses the project’s SCM token (which needs write scope) and is off until you fill in your provider’s block.',
@@ -526,12 +531,12 @@ export const HELP_TOPICS = {
   },
   'case.network': {
     title: 'Network requests',
-    text: 'HTTP requests the page made during the test, with timing and status — useful for spotting failed or slow calls. When the execution has a trace, the Full trace view shows every request (all resource types) with headers, timing phases, a waterfall and capped body previews; sensitive header values are masked. An empty card distinguishes not captured (add the capture fixtures) from captured-but-nothing-happened; with a trace and no fixtures the list is recovered from the trace and marked "derived from the trace".',
+    text: 'HTTP requests the page made during the test, with timing and status — useful for spotting failed or slow calls. A request that got no response (a reset, a refused connection, an abort) is marked failed, with the error the browser reported. When the execution has a trace, the Full trace view shows every request (all resource types) with headers, timing phases, a waterfall and capped body previews; sensitive header values are masked. An empty card distinguishes not captured (add the capture fixtures) from captured-but-nothing-happened; with a trace and no fixtures the list is recovered from the trace and marked "derived from the trace".',
     doc: 'features/evidence#trace-powered-deep-views',
   },
   'case.attempts': {
     title: 'Attempts',
-    text: 'When a test failed then passed on retry, this compares the failing attempt against the passing one and lists what differed — the error that was there then gone, a request that failed on only one attempt, a console error, a slower step, a duration or page-state change. Each difference links to the evidence it came from. That delta is the flakiness fingerprint, and it feeds the root-cause classifier.',
+    text: 'When a test failed then passed on retry, this compares the failing attempt against the passing one and lists what differed — the error that was there then gone, a request that failed on only one attempt or was much slower on the failing one, a console error, a slower step, a duration or page-state change. Each difference links to the evidence it came from. That delta is the flakiness fingerprint, and it feeds the root-cause classifier.',
     doc: 'features/flaky-tests#flaky-test-detection',
   },
 
@@ -894,6 +899,16 @@ export const HELP_TOPICS = {
     title: 'Check locators',
     text: 'Paste locators, one per line as the Piwi Picker extension copies them, or lines of test code. Each one is looked up among the chains the project’s tests used: exactly, through the same last call inside other containers, through another call that finds the same element (a shorter name, a regex), or as a container other chains search inside. The tests reaching any of them are listed once at the end.',
     doc: 'features/locator-usage#the-locators-page',
+  },
+  'project.bug-reports': {
+    title: 'Bug reports',
+    text: 'Bugs reported from Piwi Picker: the steps recorded on the page, the assertion that states what should have happened, with the value the page showed instead, and the evidence the reporter chose to send (screenshots, console errors, failed requests, an outline of the page). Each report renders a failing test to commit with test.fail() and the piwi:bug annotation; the runs of that test then move the report along: test committed, looks fixed when the test passes while still marked to fail, closed once it passes as an ordinary test.',
+    doc: 'features/bug-reports',
+  },
+  'bug-report.spec': {
+    title: 'The failing test',
+    text: 'The steps written as a Playwright spec with this project’s settings (the test import and the folder for bug specs, in the project’s Generated specs settings), its page objects and the locators its tests already use. To commit: marked test.fail() so the suite stays green while the bug exists, with @bug and piwi:bug so its runs follow the report. To run: the same test without test.fail(), which fails on the expected assertion while the bug is there.',
+    doc: 'features/bug-reports#the-failing-test',
   },
   'project.locator-index': {
     title: 'Locator index',

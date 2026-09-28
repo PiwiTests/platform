@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Review</title>
+    <style>
+      body {
+        font: 14px sans-serif;
+        margin: 40px;
+      }
+      .user {
+        position: relative;
+      }
+      .card {
+        position: absolute;
+        left: 0;
+        top: 100%;
+        width: 200px;
+        padding: 10px;
+        border: 1px solid #ccc;
+        background: #fff;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Pull request 12</h1>
+    <p>
+      Reviewed by <span class="user"><a href="#alice">@alice</a></span> and
+      <span class="user"><a href="#bob">@bob</a></span
+      >.
+    </p>
+    <output id="out"></output>
+    <script>
+      function done(text) {
+        document.getElementById('out').textContent = text;
+      }
+      // A hover card: inserted a moment after the pointer enters the name, removed when it leaves.
+      for (const wrap of document.querySelectorAll('.user')) {
+        const name = wrap.textContent.trim().slice(1);
+        let timer = 0;
+        wrap.addEventListener('mouseenter', () => {
+          if (wrap.querySelector('.card')) return;
+          timer = setTimeout(() => {
+            const card = document.createElement('div');
+            card.className = 'card';
+            card.setAttribute('role', 'dialog');
+            card.setAttribute('aria-label', `Profile of ${name}`);
+            const who = document.createElement('p');
+            who.textContent = `${name[0].toUpperCase()}${name.slice(1)} reviews for the platform team.`;
+            const follow = document.createElement('button');
+            follow.textContent = 'Follow';
+            follow.onclick = () => done(`Following ${name}`);
+            card.append(who, follow);
+            wrap.appendChild(card);
+          }, 150);
+        });
+        wrap.addEventListener('mouseleave', () => {
+          clearTimeout(timer);
+          wrap.querySelector('.card')?.remove();
+        });
+      }
+    </script>
+  </body>
+</html>

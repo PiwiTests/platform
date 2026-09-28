@@ -13,6 +13,10 @@
  * realm, so nothing here relies on `instanceof` or on the top window's globals.
  */
 
+import { normalizeWhiteSpace, type TextMatchKind } from '@piwitests/core/locator-text-match';
+
+export { normalizeWhiteSpace, textMatcher, type TextMatchKind } from '@piwitests/core/locator-text-match';
+
 export interface ElementText {
   /** Every text node below the element, open shadow roots included, concatenated. */
   full: string;
@@ -27,8 +31,6 @@ export interface ElementText {
 /** A text predicate, as `getByText`, `getByLabel` and `filter({ hasText })` build it. */
 export type TextMatcher = (text: ElementText) => boolean;
 
-export type TextMatchKind = 'regex' | 'strict' | 'lax';
-
 const ELEMENT_NODE = 1;
 const TEXT_NODE = 3;
 const COMMENT_NODE = 8;
@@ -40,14 +42,6 @@ const tagNameGetter = Object.getOwnPropertyDescriptor(Element.prototype, 'tagNam
 /** Upper-case tag name, read through the prototype so a form field named `tagName` can't shadow it. */
 export function tagNameOf(element: Element): string {
   return String(tagNameGetter.call(element)).toUpperCase();
-}
-
-/** Whitespace collapsed and trimmed, zero-width and soft-hyphen characters dropped. */
-export function normalizeWhiteSpace(text: string): string {
-  return text
-    .replace(/[​­]/g, '')
-    .trim()
-    .replace(/\s+/g, ' ');
 }
 
 /** Whitespace collapsed the way accessible names are, keeping non-breaking spaces apart. */
@@ -1456,22 +1450,6 @@ function isVisibleTextNode(node: Text): boolean {
   range.selectNode(node);
   const rect = range.getBoundingClientRect();
   return rect.width > 0 && rect.height > 0;
-}
-
-/**
- * The text predicate for a `getByText`/`getByLabel`/`hasText` value: a regex
- * tests the raw text; an exact string must equal the collapsed text; any other
- * string is a case-insensitive substring of it.
- */
-export function textMatcher(value: string | RegExp, exact: boolean): { matcher: TextMatcher; kind: TextMatchKind } {
-  if (typeof value !== 'string') {
-    const re = value;
-    return { matcher: (text) => re.test(text.full), kind: 'regex' };
-  }
-  const needle = normalizeWhiteSpace(value);
-  if (exact) return { matcher: (text) => text.normalized === needle, kind: 'strict' };
-  const lower = needle.toLowerCase();
-  return { matcher: (text) => (text.lower ??= text.normalized.toLowerCase()).includes(lower), kind: 'lax' };
 }
 
 /**

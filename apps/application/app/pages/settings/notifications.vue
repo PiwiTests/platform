@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { PiwiEnvVarName } from '#shared/piwi-env-vars';
+import { notificationEventLabel } from '#shared/notification-events';
 
 const toast = useToast();
 const config = useRuntimeConfig();
@@ -181,10 +182,7 @@ function channelTypeIcon(type: string) {
   return 'i-lucide-webhook';
 }
 
-function eventLabel(e: string) {
-  if (e === 'auto_heal.pr_opened') return 'Auto-heal › PR opened';
-  return e.replace(/\./g, ' › ');
-}
+const eventLabel = notificationEventLabel;
 </script>
 
 <template>

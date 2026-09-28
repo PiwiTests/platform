@@ -9,9 +9,21 @@ Running the whole suite for every change is slow, and hand-maintained grep patte
 
 ## How you reach Piwi
 
-Prefer the **Piwi MCP server** if it is connected (`list_selections`, `resolve_selection`, `preview_selection`). Otherwise use the reporter CLI (`npx @piwitests/reporter select|run`) with `PIWI_DASHBOARD_URL` / `PIWI_API_KEY` / `PIWI_PROJECT_NAME` set, or the dashboard's **Selections** tab.
+Prefer the **Piwi MCP server** if it is connected (`list_selections`, `resolve_selection`, `preview_selection`,
+`predict_locator_breaks`). Otherwise use the reporter CLI (`npx @piwitests/reporter select|run|preflight`) with `PIWI_DASHBOARD_URL` / `PIWI_API_KEY` / `PIWI_PROJECT_NAME` set, or the dashboard's **Selections** tab.
 
 ## Steps
+
+0. **After a UI change, check the locators it breaks first.** Renaming a label, an `aria-label`, a test id, a
+   placeholder or a translation breaks every test that finds the element by it. Run
+   ```
+   npx @piwitests/reporter preflight --fix
+   ```
+   It diffs the working tree against `HEAD`, lists the locators the change breaks with their tests, and rewrites the
+   ones whose call site holds the string (keeping the quotes). Edit the ones it lists as "edit by hand" yourself, then
+   run the tests it names with `npx @piwitests/reporter preflight --run`. Over MCP, `predict_locator_breaks` takes
+   your `git diff` and returns the same breaks and edits. A prediction is not a failure: say which breaks you fixed and
+   which you left, and why.
 
 1. **See what selections exist.** Call `list_selections` for the project. Every project has the built-ins `failed` (tests whose latest run failed) and `quarantine-free`, plus any the team saved (often `smoke`). Pick the one that matches the intent:
    - About to make a broad change, or want a quick confidence check → `smoke` (or `preview_selection` with `{ "include": [{ "tags": ["smoke"] }] }`).

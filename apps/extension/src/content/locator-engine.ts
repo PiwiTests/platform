@@ -35,6 +35,7 @@ import {
   type TextMatchKind,
   type TextMatcher,
 } from './engine-aria.js';
+import { attributeMatcher, nameMatcher } from '@piwitests/core/locator-text-match';
 import {
   LocatorEngineError,
   parseCssSelectorList,
@@ -174,26 +175,6 @@ export function sortInDomOrder(elements: Iterable<Element>): Element[] {
 function nthOf<T>(nodes: T[], index: number): T[] {
   const nth = index === -1 ? nodes.length - 1 : index;
   return nodes.slice(nth, nth + 1);
-}
-
-/** Case-insensitive substring, exact string, or regex match of an attribute value. */
-function attributeMatcher(value: string | RegExp, exact: boolean): (actual: string) => boolean {
-  if (typeof value !== 'string') return (actual) => !!actual.match(value);
-  if (exact) return (actual) => actual === value;
-  const lower = value.toLowerCase();
-  return (actual) => actual.toLowerCase().includes(lower);
-}
-
-/**
- * Role-name comparison on a name whose whitespace is already collapsed: exact
- * is case-sensitive equality, otherwise a case-insensitive substring.
- */
-function nameTest(expected: string | RegExp, exact: boolean): (name: string) => boolean {
-  if (typeof expected !== 'string') return (name) => !!name.match(expected);
-  const wanted = normalizeWhiteSpace(expected);
-  if (exact) return (name) => name === wanted;
-  const upper = wanted.toUpperCase();
-  return (name) => name.toUpperCase().includes(upper);
 }
 
 class Engine implements LocatorEngine, CssHost {
@@ -539,8 +520,8 @@ class Engine implements LocatorEngine, CssHost {
 
   private queryRole(scope: Scope, role: string, opts: RoleOptions): Element[] {
     const model = this.model;
-    const nameOk = opts.name !== undefined ? nameTest(opts.name, opts.exact) : null;
-    const descriptionOk = opts.description !== undefined ? nameTest(opts.description, opts.exact) : null;
+    const nameOk = opts.name !== undefined ? nameMatcher(opts.name, opts.exact) : null;
+    const descriptionOk = opts.description !== undefined ? nameMatcher(opts.description, opts.exact) : null;
     return this.elementsWithRole(scope, role).filter((element) => {
       if (opts.selected !== undefined && model.selected(element) !== opts.selected) return false;
       if (opts.checked !== undefined && model.checked(element) !== opts.checked) return false;

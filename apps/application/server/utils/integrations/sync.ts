@@ -13,11 +13,11 @@
  * `last_error` rather than failing the whole sweep.
  */
 import { and, asc, eq, inArray, isNotNull } from 'drizzle-orm';
-import { entityLinks, failureClusters, integrationConnections } from '../../database/schema';
+import { bugReports, entityLinks, failureClusters, integrationConnections } from '../../database/schema';
 import type { DbClient } from '../../database';
 import type { EntityLink } from '../../database/schema';
 import type { IssueTracker } from './types';
-import { statusColorForCategory } from './types';
+import { statusColorForCategory, ticketMove } from './types';
 import { createTracker } from './connections';
 import { readProjectIntegration } from './binding';
 import { updateEntityLinkStatus, mergeEntityLinkMetadata } from './entity-links';
@@ -84,11 +84,17 @@ async function syncOneLink(
     statusColor: issue.statusColor ?? statusColorForCategory(issue.statusCategory),
     key: issue.key,
   });
+  const previousCategory = (link.metadata as { statusCategory?: string | null } | null)?.statusCategory ?? null;
+  // The last category the tracker reported: a sync that reports none keeps it.
   await mergeEntityLinkMetadata(db, link.id, {
-    statusCategory: issue.statusCategory,
+    statusCategory: issue.statusCategory ?? previousCategory,
     assignee: issue.assignee?.displayName ?? null,
   });
 
+  if (link.bugReportId != null) {
+    await syncBugReport(db, link.bugReportId, previousCategory, issue.statusCategory, bindingFor);
+    return;
+  }
   if (!cluster) return;
   const binding = await bindingFor(cluster.projectId);
 
@@ -124,6 +130,50 @@ export interface SyncResult {
   refreshed: number;
   failed: number;
   skipped: number;
+}
+
+/**
+ * A bug report follows its ticket's moves: closed when the ticket moves to Done
+ * (`resolveOnClose`), open again when it moves out of Done
+ * (`reopenOnTicketReopen`). Only a move counts, against the category the last
+ * sync saw: a report its own passing test closed while the ticket is still in
+ * progress stays closed. A dismissed report stays dismissed.
+ */
+async function syncBugReport(
+  db: DbClient,
+  bugReportId: number,
+  previousCategory: string | null,
+  statusCategory: string | null | undefined,
+  bindingFor: (projectId: number) => Promise<ResolvedProjectIntegration>,
+): Promise<void> {
+  const move = ticketMove(previousCategory, statusCategory);
+  if (!move) return;
+  const [report] = await db
+    .select({ projectId: bugReports.projectId, status: bugReports.status, testCaseId: bugReports.testCaseId })
+    .from(bugReports)
+    .where(eq(bugReports.id, bugReportId));
+  if (!report || report.status === 'dismissed') return;
+  const binding = await bindingFor(report.projectId);
+  const now = new Date();
+  if (move === 'done' && report.status !== 'closed' && binding.policies.resolveOnClose) {
+    await db
+      .update(bugReports)
+      .set({ status: 'closed', closedAt: now, closedByRunId: null, statusRunId: null, updatedAt: now })
+      .where(eq(bugReports.id, bugReportId));
+    return;
+  }
+  if (move === 'reopened' && report.status === 'closed' && binding.policies.reopenOnTicketReopen) {
+    await db
+      .update(bugReports)
+      .set({
+        status: report.testCaseId ? 'test-committed' : 'open',
+        closedAt: null,
+        closedByRunId: null,
+        statusRunId: null,
+        updatedAt: now,
+      })
+      .where(eq(bugReports.id, bugReportId));
+  }
 }
 
 /**

@@ -11,7 +11,8 @@
  * revalidation — never block the UI on it.
  */
 
-import { OUTDATED_WORKER_MESSAGE } from './worker-status.js';
+import { t } from './i18n.js';
+import { outdatedWorkerMessage } from './worker-status.js';
 
 export type RefreshCatalogResult =
   | { ok: true; refreshed: boolean; count: number | null }
@@ -25,17 +26,17 @@ export async function requestCatalogRefresh(
   projectId: number | null,
   opts: { force?: boolean } = {},
 ): Promise<RefreshCatalogResult> {
-  if (projectId == null) return { ok: false, error: 'No project mapped to this page.' };
+  if (projectId == null) return { ok: false, error: t('common_noProject') };
   try {
     const answer = (await chrome.runtime.sendMessage({
       type: 'piwi-refresh-catalog',
       projectId,
       force: opts.force === true,
     })) as RefreshCatalogResult | undefined;
-    return answer ?? { ok: false, error: OUTDATED_WORKER_MESSAGE };
+    return answer ?? { ok: false, error: outdatedWorkerMessage() };
   } catch {
     // The worker can be asleep or the extension mid-reload; the caller is
     // already showing cached data, so this is not worth surfacing loudly.
-    return { ok: false, error: 'Piwi Picker background worker is unavailable.' };
+    return { ok: false, error: t('common_workerNoAnswer') };
   }
 }

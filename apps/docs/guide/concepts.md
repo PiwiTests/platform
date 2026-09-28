@@ -245,18 +245,33 @@ the page. A control is reached only when triage records a covering test for it. 
 from instrumented code coverage, which is why the docs and the dashboard say *observed reach* rather than *coverage*.
 A flaky, quarantined or skipped test's reach does not count as trusted.
 
+### Code reach
+
+The application source files a test executed: those whose functions ran in the page, from Chromium's JavaScript
+coverage when [code reach](/features/code-reach) is on, and the handler files of the routes it called
+when the backend is instrumented. Observed reach at file level, never line coverage. It feeds
+[impact-from-diff](/features/test-selection#impact-from-diff) and [Uncovered changes](/features/uncovered-changes).
+
 ### Locator index
 
 The locator chains each test used in its steps, recorded per branch and per Playwright project. It answers which tests
 use a locator, and it feeds [Who uses a locator](/features/locator-usage) and
 [Tested elements](/features/tested-elements).
 
+### Locator break
+
+A locator of the index that a change stops matching: the diff removes or renames a string one of its calls finds the
+element by, under Playwright's text rules. *Likely* when the string was an attribute value, tag text or a
+translation; *possible* when it was a bare quoted string. [Locator preflight](/features/preflight) lists them.
+
 ### Page key
 
 A page's URL reduced to its path pattern: numeric ids, UUIDs, ULIDs, JWTs and long tokens become `:id`, `:uuid`,
 `:ulid`, `:jwt` and `:token`, and the host, query and hash are dropped. `/orders/123?tab=items` and `/orders/456` are
 both `/orders/:id`, on staging and in production alike. The Test Map's page nodes, the page each locator was used on
-and the extension's **This page** all use it. A page of another site keeps its origin in front of the path.
+and the extension's **This page** all use it. A page of another site keeps its origin in front of the path. Piwi
+Picker keys the page it is on through the [path prefixes](/features/extension-connection#url-patterns) of the site's
+URL pattern: without the site's, with the tests' in front.
 
 ### Brittle locator
 
@@ -313,6 +328,13 @@ is a *declared, never hit* gap.
 The controls (role and accessible name) and links the reporter records on each visited page of a passing run, so the
 Test Map knows what a page offers beyond what the tests clicked. Field values are never recorded. Off by default:
 turn it on with `capturePageInventory`.
+
+### URL pattern
+
+A glob over a page's whole address (`*` within one part of the path, `**` across parts) that ties the pages of a site
+to a project, with an optional environment and branch. Each project keeps its own list, and the browser extension
+reads them to know which project the page it is on belongs to. See
+[Extension connection](/features/extension-connection#url-patterns).
 
 ## Where each concept lives in the UI
 

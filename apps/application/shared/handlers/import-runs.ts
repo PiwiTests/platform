@@ -570,7 +570,7 @@ async function rollUpTraceRun(db: DrizzleDB, testRunId: number, startTime: Date)
   const counts = { passed: 0, failed: 0, timedOut: 0, skipped: 0, didNotRun: 0 };
   for (const row of rows) {
     if (row.status === 'passed') counts.passed++;
-    else if (row.status === 'timedOut') counts.timedOut++;
+    else if (row.status === 'timedout' || row.status === 'timedOut') counts.timedOut++;
     else if (row.status === 'skipped') counts.skipped++;
     else if (row.status === 'didnotrun') counts.didNotRun++;
     else counts.failed++;

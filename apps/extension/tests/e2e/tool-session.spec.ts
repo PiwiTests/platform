@@ -7,11 +7,9 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.join(here, '..', '..', 'dist');
 
 /**
- * Tools used to be able to run on top of each other — hover-inspect left on
- * while a pick started, each with its own overlay and capture-phase listeners
- * competing for the same clicks. Each tool now claims the page on injection
- * and tears down whichever one was already running, and Escape cancels the
- * current one from anywhere.
+ * Each tool claims the page on injection and tears down whichever one was
+ * already running, so no two overlays and their capture-phase listeners compete
+ * for the same clicks; Escape cancels the current one from anywhere.
  */
 const PAGE = `<!doctype html><html><body>
   <main><h1>Checkout</h1><button id="pay" data-testid="pay">Pay now</button></main>
@@ -29,14 +27,14 @@ test.describe('one tool at a time', () => {
     const page = await context.newPage();
     await page.setContent(PAGE);
 
-    await inject(page, 'hover-inspect.js');
-    await expect.poll(() => activeTool(page)).toBe('hover-inspect');
-    expect(await page.locator('#piwi-hover-inspect-host').count()).toBe(1);
+    await inject(page, 'playwright-view.js');
+    await expect.poll(() => activeTool(page)).toBe('playwright-view');
+    expect(await page.locator('#piwi-playwright-view-host').count()).toBe(1);
 
     await inject(page, 'lint-overlay.js');
     await expect.poll(() => activeTool(page)).toBe('lint-overlay');
     // The predecessor's surface is gone, not merely covered up.
-    expect(await page.locator('#piwi-hover-inspect-host').count()).toBe(0);
+    expect(await page.locator('#piwi-playwright-view-host').count()).toBe(0);
     expect(await page.locator('#piwi-lint-overlay-host').count()).toBe(1);
   });
 
@@ -44,12 +42,12 @@ test.describe('one tool at a time', () => {
     const page = await context.newPage();
     await page.setContent(PAGE);
 
-    await inject(page, 'locator-console.js');
-    await expect.poll(() => activeTool(page)).toBe('locator-console');
+    await inject(page, 'lint-overlay.js');
+    await expect.poll(() => activeTool(page)).toBe('lint-overlay');
 
     await inject(page, 'pick.js');
     await expect.poll(() => activeTool(page)).toBe('pick');
-    expect(await page.locator('#piwi-locator-console-host').count()).toBe(0);
+    expect(await page.locator('#piwi-lint-overlay-host').count()).toBe(0);
     await expect(page.locator('#__piwi_picker_banner')).toHaveCount(1);
   });
 
@@ -87,11 +85,11 @@ test.describe('one tool at a time', () => {
     const page = await context.newPage();
     await page.setContent(PAGE);
 
-    await inject(page, 'hover-inspect.js');
-    await expect.poll(() => activeTool(page)).toBe('hover-inspect');
+    await inject(page, 'lint-overlay.js');
+    await expect.poll(() => activeTool(page)).toBe('lint-overlay');
     // Re-injecting a toggle turns it off, which must also release ownership
     // rather than leaving the popup claiming it is still running.
-    await inject(page, 'hover-inspect.js');
+    await inject(page, 'lint-overlay.js');
     await expect.poll(() => activeTool(page)).toBeNull();
   });
 });

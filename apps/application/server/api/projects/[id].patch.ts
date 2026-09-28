@@ -1,3 +1,4 @@
+import { generatedSpecSettingsSchema } from '#shared/handlers/bug-reports';
 import { getDatabase } from '../../database';
 import { z } from 'zod';
 import { requireProjectAccess, requireRouteId } from '../../utils/project-access';
@@ -43,6 +44,8 @@ const updateProjectSchema = z.object({
     .optional()
     .nullable(),
   ciRerun: ciRerunSchema.optional().nullable(),
+  /** Test import and bugs folder for specs rendered from bug reports; null clears them. */
+  generatedSpecs: generatedSpecSettingsSchema.optional().nullable(),
   /** Per-project targets on catalog metrics; null clears them. */
   targets: projectTargetsSchema.optional().nullable(),
   tagIds: z.array(z.number()).optional(),
@@ -78,6 +81,7 @@ export default eventHandler(async (event) => {
     openApiUrl,
     serverProbes,
     ciRerun,
+    generatedSpecs,
     targets,
     tagIds,
   } = validation.data;
@@ -110,6 +114,12 @@ export default eventHandler(async (event) => {
             ? null
             : resolveServerProbeSettings(serverProbes),
       ciRerun: resolvedCiRerun,
+      generatedSpecs:
+        generatedSpecs === undefined
+          ? undefined
+          : generatedSpecs === null
+            ? null
+            : { testImport: generatedSpecs.testImport || null, bugsFolder: generatedSpecs.bugsFolder || null },
       targets,
       tagIds,
     });

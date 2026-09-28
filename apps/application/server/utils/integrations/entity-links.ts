@@ -19,6 +19,8 @@ function fkFieldFor(entityType: LinkEntityType, entityId: number): Record<string
       return { testRunsCaseId: entityId };
     case 'failure_cluster':
       return { failureClusterId: entityId };
+    case 'bug_report':
+      return { bugReportId: entityId };
     default:
       return { testCaseId: entityId };
   }
