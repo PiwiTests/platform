@@ -46,7 +46,9 @@ What changed while building PR 2:
   `slow-route` suspect, a request that failed on the failing attempt only to the `failed-route` one.
 - The clue fires when the failing execution is among a suspect's supporting failures, highest ranked first; its detail
   gives this failure's own duration for a slow route. It is skipped when the project or instance declines `flake-lab`,
-  read from the stored decisions alone since the capability is passive.
+  read from the stored decisions alone since the capability is passive. Before loading a profile it counts the
+  window's failures and passes (`mayHaveFlakeSuspects`): fewer than 3 failures or no pass cannot name a suspect, so
+  the AI diagnosis, which reads the clues of every candidate cluster, pays one count for most tests.
 - The Flakiness tab shows for a test with a retry-pass on record (`flakyRuns > 0`). The capability reads active once
   a project has a retry-pass.
 - The hour of day is compared in six-hour UTC blocks. The demo seed collapses retries into one row, so a post-pass

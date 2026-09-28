@@ -587,6 +587,62 @@ function epochMs(value: unknown): number | null {
   return typeof n === 'number' && Number.isFinite(n) ? n : null;
 }
 
+/** The start of the window that ends at `now`. */
+function windowStart(now: Date): Date {
+  return new Date(now.getTime() - FLAKE_PROFILE_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+}
+
+/**
+ * The attempts a profile reads, joined with their runs: the runs the flaky
+ * leaderboard reads (finished, not probes, and on the default branch or no
+ * branch when the project names one), passed or failed, in the window.
+ */
+function windowAttempts(testCaseId: number, defaultBranch: string | null, since: Date) {
+  return and(
+    eq(testRunsCases.testCaseId, testCaseId),
+    gte(testRunsCases.createdAt, since),
+    inArray(testRunsCases.status, ['passed', ...FAILED_STATUS_KEYS]),
+    inArray(testRuns.status, TERMINAL_STATUSES),
+    notProbeRun(testRuns.metadata),
+    defaultBranch ? or(eq(testRuns.branch, defaultBranch), isNull(testRuns.branch)) : undefined,
+  );
+}
+
+/**
+ * Whether a test's history can name a suspect at all, from two counts: a
+ * suspect needs at least {@link FLAKE_SUSPECT_MIN_FAILURES} failures, and a
+ * lift of 2 needs a pass (with no pass the smoothed failure share is below 1,
+ * so the lift is too). The clue engine asks this before loading a profile, so a
+ * test that only ever failed, or failed once or twice, costs one count.
+ *
+ * Counts the whole window without the attempt cap, so it only says no when
+ * the profile would find nothing.
+ */
+export async function mayHaveFlakeSuspects(
+  db: DrizzleDB,
+  testCaseId: number,
+  opts: { now?: Date } = {},
+): Promise<boolean> {
+  const [tc] = await db
+    .select({ defaultBranch: projects.defaultBranch })
+    .from(testCases)
+    .innerJoin(projects, eq(testCases.projectId, projects.id))
+    .where(eq(testCases.id, testCaseId));
+  if (!tc) return false;
+  const [counts] = await db
+    .select({
+      attempts: sql<number>`COUNT(*)`,
+      passes: sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'passed' THEN 1 ELSE 0 END)`,
+    })
+    .from(testRunsCases)
+    .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
+    .where(windowAttempts(testCaseId, tc.defaultBranch, windowStart(opts.now ?? new Date())));
+  // Postgres returns both as strings, and the sum as null over no rows.
+  const passes = Number(counts?.passes ?? 0);
+  const failures = Number(counts?.attempts ?? 0) - passes;
+  return failures >= FLAKE_SUSPECT_MIN_FAILURES && passes >= 1;
+}
+
 export interface FlakeProfileOptions {
   /** The end of the window; defaults to now. */
   now?: Date;
@@ -619,11 +675,8 @@ export async function getFlakeProfile(
     .where(eq(testCases.id, testCaseId));
   if (!tc) return null;
 
-  const now = opts.now ?? new Date();
-  const since = new Date(now.getTime() - FLAKE_PROFILE_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+  const since = windowStart(opts.now ?? new Date());
 
-  // The runs the flaky leaderboard reads: finished, not probes, and on the
-  // default branch or no branch when the project names one.
   const rows = await db
     .select({
       id: testRunsCases.id,
@@ -640,16 +693,7 @@ export async function getFlakeProfile(
     })
     .from(testRunsCases)
     .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
-    .where(
-      and(
-        eq(testRunsCases.testCaseId, testCaseId),
-        gte(testRunsCases.createdAt, since),
-        inArray(testRunsCases.status, ['passed', ...FAILED_STATUS_KEYS]),
-        inArray(testRuns.status, TERMINAL_STATUSES),
-        notProbeRun(testRuns.metadata),
-        tc.defaultBranch ? or(eq(testRuns.branch, tc.defaultBranch), isNull(testRuns.branch)) : undefined,
-      ),
-    )
+    .where(windowAttempts(testCaseId, tc.defaultBranch, since))
     .orderBy(desc(testRunsCases.createdAt))
     .limit(FLAKE_PROFILE_MAX_ATTEMPTS);
 

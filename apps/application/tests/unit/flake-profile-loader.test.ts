@@ -8,7 +8,7 @@ import * as schema from '../../server/database/schema.sqlite';
 // The schema barrel picks the PostgreSQL schema at import time when
 // PIWI_DATABASE_URL is set, so clear it before importing the handler.
 delete process.env.PIWI_DATABASE_URL;
-const { getFlakeProfile } = await import('../../shared/handlers/flake-profile');
+const { getFlakeProfile, mayHaveFlakeSuspects } = await import('../../shared/handlers/flake-profile');
 
 let db: ReturnType<typeof drizzle<typeof schema>>;
 
@@ -231,5 +231,48 @@ describe('getFlakeProfile', () => {
 
   test('an unknown test case has no profile', async () => {
     expect(await getFlakeProfile(db as never, 999, { now: NOW })).toBeNull();
+  });
+});
+
+describe('mayHaveFlakeSuspects', () => {
+  const ONLY_FAILS = 5;
+  const TWICE = 6;
+
+  beforeAll(async () => {
+    await db.insert(schema.testCases).values([
+      { id: ONLY_FAILS, projectId: 1, title: 'always fails', filePath: 'broken.spec.ts' },
+      { id: TWICE, projectId: 1, title: 'failed twice', filePath: 'rare.spec.ts' },
+    ]);
+    const attempt = (testRunId: number, testCaseId: number, status: string) => ({
+      testRunId,
+      testCaseId,
+      status,
+      duration: 1_000,
+      createdAt: new Date(NOW.getTime() - (testRunId === 15 ? 40 : 1) * DAY),
+    });
+    await db.insert(schema.testRunsCases).values([
+      // Fails in every run of the window: no pass to compare with.
+      ...[1, 2, 3, 4].map((run) => attempt(run, ONLY_FAILS, 'failed')),
+      // Fails twice in the window; the probe run, the feature branch and the
+      // old run would make it five, but the profile does not read them.
+      ...[1, 2].map((run) => attempt(run, TWICE, 'failed')),
+      ...[5, 6, 7, 8].map((run) => attempt(run, TWICE, 'passed')),
+      ...[13, 14, 15].map((run) => attempt(run, TWICE, 'timedOut')),
+    ]);
+  });
+
+  test('says yes when the window holds 3 failures and a pass', async () => {
+    expect(await mayHaveFlakeSuspects(db as never, FLAKY, { now: NOW })).toBe(true);
+  });
+
+  test('says no, as the profile finds, without a pass or with fewer than 3 failures in the window', async () => {
+    for (const id of [ONLY_FAILS, TWICE, NEIGHBOR]) {
+      expect(await mayHaveFlakeSuspects(db as never, id, { now: NOW })).toBe(false);
+      expect((await getFlakeProfile(db as never, id, { now: NOW }))!.suspects).toEqual([]);
+    }
+  });
+
+  test('says no for an unknown test case', async () => {
+    expect(await mayHaveFlakeSuspects(db as never, 999, { now: NOW })).toBe(false);
   });
 });

@@ -20,7 +20,7 @@ import { buildSituation } from '../situation';
 import { computeNextStep } from '../next-step';
 import { getClusterPatchFacts } from './failure-clusters';
 import { isProbeRun } from './probes';
-import { getFlakeProfile } from './flake-profile';
+import { getFlakeProfile, mayHaveFlakeSuspects } from './flake-profile';
 import { isPassiveCapabilityDeclined } from './capabilities';
 import { isFailedStatus } from '../utils/test-counts';
 import { buildFailureTimeline, type FailureTimeline, type TimelineCallsite } from '../failure-timeline';
@@ -873,7 +873,9 @@ export async function loadFailureClueInput(
 
 /**
  * The test's flake suspects, for a failing execution of a project that has not
- * declined flake suspects; an empty list otherwise.
+ * declined flake suspects; an empty list otherwise. A history that cannot name
+ * a suspect (fewer than 3 failures, or no pass) costs one count, not a profile:
+ * the AI diagnosis reads the clues of every candidate cluster.
  */
 async function loadFlakeSuspectsForClue(
   db: DrizzleDB,
@@ -883,6 +885,7 @@ async function loadFlakeSuspectsForClue(
 ): Promise<FailureClueInput['flakeSuspects']> {
   if (!isFailedStatus(status) || projectId == null) return [];
   if (await isPassiveCapabilityDeclined(db, projectId, 'flake-lab')) return [];
+  if (!(await mayHaveFlakeSuspects(db, testCaseId).catch(() => false))) return [];
   const profile = await getFlakeProfile(db, testCaseId, { summary: true }).catch(() => null);
   return profile?.suspects ?? [];
 }
