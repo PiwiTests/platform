@@ -4,7 +4,8 @@
  *
  * The streak column is the point of the view: a quarantined test still runs, so
  * it can earn its way out, and the table says when it has rather than waiting
- * to be asked.
+ * to be asked: after a streak of passes, or at once when a Flake Lab verify
+ * experiment proved the fix after the quarantine.
  */
 import { buildTestRowBadges } from '~/utils/test-row-badges';
 
@@ -29,6 +30,8 @@ interface QuarantineEntry {
   ageMs: number;
   consecutivePasses: number;
   releaseProposed: boolean;
+  releaseReason: 'streak' | 'verified-fix' | null;
+  verifiedFix: { commit: string | null; verifiedAt: string } | null;
   runsSinceQuarantine: number;
 }
 
@@ -138,7 +141,17 @@ async function release(testCaseId: number) {
             :project-name="projectName"
           >
             <template #metrics>
-              <UBadge v-if="entry.releaseProposed" color="success" variant="soft" size="xs">
+              <UBadge
+                v-if="entry.releaseReason === 'verified-fix'"
+                color="success"
+                variant="soft"
+                size="xs"
+                :title="`Flake Lab verified the fix ${formatRelativeTime(entry.verifiedFix!.verifiedAt)}`"
+                data-testid="quarantine-verified-fix"
+              >
+                Fix verified{{ entry.verifiedFix?.commit ? ` on ${entry.verifiedFix.commit.slice(0, 7)}` : '' }} — ready
+              </UBadge>
+              <UBadge v-else-if="entry.releaseProposed" color="success" variant="soft" size="xs">
                 {{ entry.consecutivePasses }} green — ready
               </UBadge>
               <span v-else-if="entry.runsSinceQuarantine === 0" class="text-xs">not run yet</span>

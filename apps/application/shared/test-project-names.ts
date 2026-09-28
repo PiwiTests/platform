@@ -86,6 +86,7 @@ export const PROJECT = {
   FLAKE_LAB: 'flake-lab-test',
   FLAKE_LAB_RUNS: 'flake-lab-runs-test',
   FLAKE_SUSPECTS: 'flake-suspects-test',
+  FLAKE_VERIFIED: 'flake-verified-test',
   FLAKY_BOARD: 'flaky-board-test',
   GATE_POLICY: 'gate-policy-test',
   GZIP_MIME: 'gzip-mime-test',
