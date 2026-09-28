@@ -18,14 +18,12 @@ starts on a workspace that holds a Playwright config, and reads the connection t
 order:
 
 1. `PIWI_DASHBOARD_URL`, `PIWI_API_KEY` and `PIWI_PROJECT_NAME` in the environment;
-2. the same variables in the `.env` next to the Playwright config, then at the repository root;
+2. the same variables in the `.env` next to the Playwright config, then at the repository root (a URL there
+   takes only its own key);
 3. the [desktop app](/features/desktop), when it runs;
 4. its own settings: run **Piwi: Connect** (**Tools → Piwi → Connect…** in a JetBrains IDE), give the instance URL
    and an [API key](/operate/api-keys), and pick the project. The key goes to the editor's secret storage, never to a
    file.
-
-The API key comes from where the URL came from: a key in your environment or the editor's settings is never sent to a
-URL a workspace `.env` names.
 
 Nothing from your workspace is sent to the instance: the project's
 [locator index](/guide/concepts#locator-index), [code reach](/features/code-reach) and latest run are downloaded and
