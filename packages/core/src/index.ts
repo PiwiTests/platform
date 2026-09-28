@@ -38,3 +38,6 @@ export * from './code-reach';
 export * from './line-diff';
 export * from './editor-send';
 export * from './file-routes';
+export * from './error-signature';
+export * from './flake-plan';
+export * from './flake-verdict';

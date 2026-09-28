@@ -42,7 +42,10 @@
     "./code-reach": "./src/code-reach.ts",
     "./line-diff": "./src/line-diff.ts",
     "./editor-send": "./src/editor-send.ts",
-    "./file-routes": "./src/file-routes.ts"
+    "./file-routes": "./src/file-routes.ts",
+    "./error-signature": "./src/error-signature.ts",
+    "./flake-plan": "./src/flake-plan.ts",
+    "./flake-verdict": "./src/flake-verdict.ts"
   },
   "scripts": {
     "core:typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tests/tsconfig.json",

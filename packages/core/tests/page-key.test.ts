@@ -3,6 +3,7 @@ import {
   normalizePathPrefix,
   normalizeRoute,
   pageKey,
+  requestRouteKey,
   mapPathPrefixes,
   mappedPageKey,
   parsePathPrefix,
@@ -158,5 +159,13 @@ describe('mapPathPrefixes', () => {
       'https://shop.test/app/cart?x=1#top',
     );
     expect(mapPathPrefixes('/cart', { testPathPrefix: '/app' }).url).toBe('/app/cart');
+  });
+});
+
+describe('requestRouteKey', () => {
+  test('is the upper-cased method and the normalized path, without query or host', () => {
+    expect(requestRouteKey('get', 'https://shop.test/api/cart/42?coupon=x')).toBe('GET /api/cart/:id');
+    expect(requestRouteKey(null, 'http://localhost/api/orders')).toBe('GET /api/orders');
+    expect(requestRouteKey('POST', '')).toBe('POST ');
   });
 });
