@@ -44,6 +44,8 @@ fn main() {
             "desktop_check_update",
             "desktop_install_update",
             "desktop_restart_app",
+            "desktop_get_update_settings",
+            "desktop_set_update_notification",
             "desktop_set_activity",
             "desktop_set_run_progress",
         ])),
