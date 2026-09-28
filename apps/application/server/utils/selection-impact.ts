@@ -12,9 +12,9 @@
  *
  * Honest by construction: it degrades in the safe direction. A changed *source*
  * file that maps to no test can't be ruled out, so the selection widens to the
- * full suite (with a warning) rather than silently skipping it. The exception is
- * a file in a directory code reach has recorded files in: coverage would have
- * seen it run, so it is listed as unreached instead.
+ * full suite (with a warning) rather than silently skipping it. Code reach only
+ * adds tests: it leaves out module top-level code, server modules and
+ * type-only modules, so a file it never saw may still be run by every test.
  */
 import { eq, sql } from 'drizzle-orm';
 import { testCases, testRunsCases } from '../database/schema';
@@ -120,8 +120,6 @@ export interface ImpactResolution extends ResolvedSelection {
     widened: boolean;
     /** Source files that mapped to no test (capped). */
     unmappedSourceFiles: string[];
-    /** Source files in a directory code reach covers that no test reached (capped): they do not widen. */
-    unreachedFiles?: string[];
   };
 }
 
@@ -166,28 +164,22 @@ export async function resolveImpact(
     }
   }
 
+  // Many tests reach the same files: match each distinct file once.
+  const testsByFile = new Map<string, Set<number>>();
   for (const pair of codeReach) {
+    const tests = testsByFile.get(pair.file);
+    if (tests) tests.add(pair.testCaseId);
+    else testsByFile.set(pair.file, new Set([pair.testCaseId]));
+  }
+  for (const [file, tests] of testsByFile) {
     for (const changed of files) {
-      if (sameFilePath(pair.file, changed)) {
-        matched.add(pair.testCaseId);
-        mappedFiles.add(changed);
-      }
+      if (!sameFilePath(file, changed)) continue;
+      for (const id of tests) matched.add(id);
+      mappedFiles.add(changed);
     }
   }
 
-  // Directories code reach has recorded files in: a source file there that no
-  // test reached would have shown up had a test run it.
-  const dirOf = (file: string) => (file.includes('/') ? file.slice(0, file.lastIndexOf('/')) : '');
-  const coveredDirs = [
-    ...new Set(codeReach.filter((p) => p.origin === 'client').map((p) => dirOf(normalizePath(p.file)))),
-  ].filter(Boolean);
-  const inCoveredDir = (file: string) => {
-    const dir = dirOf(file);
-    return !!dir && coveredDirs.some((covered) => dir === covered || dir.startsWith(covered + '/'));
-  };
-  const unmappedAll = files.filter((f) => !mappedFiles.has(f) && SOURCE_EXTENSIONS.has(fileExtension(f)));
-  const unreached = unmappedAll.filter(inCoveredDir);
-  const unmappedSource = unmappedAll.filter((f) => !inCoveredDir(f));
+  const unmappedSource = files.filter((f) => !mappedFiles.has(f) && SOURCE_EXTENSIONS.has(fileExtension(f)));
   const widened = unmappedSource.length > 0;
 
   const definition: SelectionDefinition = widened ? {} : { include: [{ ids: [...matched] }] };
@@ -214,7 +206,6 @@ export async function resolveImpact(
       mappedFiles: mappedFiles.size,
       widened,
       unmappedSourceFiles: unmappedSource.slice(0, 50),
-      ...(unreached.length ? { unreachedFiles: unreached.slice(0, 50) } : {}),
     },
   };
 }

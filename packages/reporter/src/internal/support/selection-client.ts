@@ -24,8 +24,6 @@ export interface ImpactResolution extends SelectionResolution {
     mappedFiles: number;
     widened: boolean;
     unmappedSourceFiles: string[];
-    /** Source files in a directory code reach covers that no test reached. */
-    unreachedFiles?: string[];
   };
 }
 

@@ -154,8 +154,8 @@ against `<ref>` locally (`git diff --name-only`), and the dashboard maps those f
 - **Code reach**: a changed application file maps to the tests that executed it
   ([code reach](/features/code-reach)).
 
-It fails safe: an unmapped _source_ file widens the run to the full suite with a warning, unless code reach covers its
-directory (then it is listed as unreached). A docs-only change runs nothing.
+It fails safe: an unmapped _source_ file widens the run to the full suite with a warning. A docs-only change runs
+nothing.
 
 ## Suggestions
 

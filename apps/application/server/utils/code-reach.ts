@@ -4,16 +4,17 @@
  * Two origins, one answer:
  * - `client`: the files whose functions ran in the page, from the reporter's
  *   `codeReach` field (JavaScript coverage). Stored in `code_reach`, one row per
- *   (test case, branch, file); the rows of a test's latest execution on a branch
- *   replace the previous ones. A run without code reach leaves them as they are,
- *   so a nightly sample serves the whole day.
+ *   (test case, branch, file); a test's rows on a branch hold the files of every
+ *   execution of its latest run there (browser projects, retries, ingest
+ *   batches), and replace the rows of older runs. A run without code reach
+ *   leaves them as they are, so a nightly sample serves the whole day.
  * - `server`: the handler files of the routes the test reached, read from the
  *   Test Map's `reaches` and `handled-by` edges when asked, so an instrumented
  *   backend gets reach with no capture of its own.
  *
  * Always observed reach: a file a test executed, never line coverage.
  */
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, ne, or, sql, type AnyColumn, type SQL } from 'drizzle-orm';
 import { finalizeCodeReach } from '@piwitests/core/code-reach';
 import { sameFilePath } from '@piwitests/core/locator-break';
 import type { LocatorIndexTest } from '@piwitests/core/locator-index';
@@ -48,8 +49,9 @@ export interface CodeReachCase {
 
 /**
  * Store the code reach of a batch of executions: per test case and branch, the
- * latest run's files replace the stored ones. An execution older than the rows
- * already stored (an imported old report) changes nothing.
+ * files of every execution of the latest run are merged, and replace the rows
+ * of older runs. An execution older than the rows already stored (an imported
+ * old report) changes nothing.
  */
 export async function upsertCodeReach(db: DrizzleDB, projectId: number, cases: CodeReachCase[]): Promise<void> {
   if (cases.length === 0) return;
@@ -65,35 +67,56 @@ export async function upsertCodeReach(db: DrizzleDB, projectId: number, cases: C
   const branched = [...runs.values()].some((r) => r.branch);
   const defaultBranch = branched ? await projectDefaultBranch(db, projectId) : null;
 
-  // The latest execution per (test case, branch) in this batch.
-  const latest = new Map<string, { c: CodeReachCase; tag: string; startedAt: Date }>();
+  // Per (test case, branch) in this batch: the latest run, and the files of all its executions.
+  const latest = new Map<
+    string,
+    { testCaseId: number; runId: number; tag: string; startedAt: Date; files: Set<string> }
+  >();
   for (const c of cases) {
     const run = runs.get(c.runId);
     if (!run) continue;
     const tag = locatorBranchTag(run.branch, defaultBranch);
     const key = `${c.testCaseId}\x00${tag}`;
     const current = latest.get(key);
-    if (!current || run.startedAt >= current.startedAt) latest.set(key, { c, tag, startedAt: run.startedAt });
+    if (current && current.runId === c.runId) {
+      for (const file of c.files) current.files.add(file);
+    } else if (
+      !current ||
+      run.startedAt > current.startedAt ||
+      (+run.startedAt === +current.startedAt && c.runId > current.runId)
+    ) {
+      latest.set(key, {
+        testCaseId: c.testCaseId,
+        runId: c.runId,
+        tag,
+        startedAt: run.startedAt,
+        files: new Set(c.files),
+      });
+    }
   }
 
-  for (const { c, tag, startedAt } of latest.values()) {
+  for (const { testCaseId, runId, tag, startedAt, files } of latest.values()) {
+    const scope = and(eq(codeReach.testCaseId, testCaseId), eq(codeReach.branch, tag));
     // The column itself, not a raw max(): its mapping reads the timestamp as stored on either database.
     const [newest] = await db
       .select({ at: codeReach.lastSeenAt })
       .from(codeReach)
-      .where(and(eq(codeReach.testCaseId, c.testCaseId), eq(codeReach.branch, tag)))
+      .where(scope)
       .orderBy(desc(codeReach.lastSeenAt))
       .limit(1);
     const newestAt = newest?.at ?? null;
     if (newestAt && newestAt > startedAt) continue;
-    await db.delete(codeReach).where(and(eq(codeReach.testCaseId, c.testCaseId), eq(codeReach.branch, tag)));
-    const rows = c.files.map((file) => ({
+    // Rows of this same run (another project, a retry, an earlier batch) stay and are merged into.
+    await db
+      .delete(codeReach)
+      .where(and(scope, or(isNull(codeReach.lastSeenRunId), ne(codeReach.lastSeenRunId, runId))));
+    const rows = [...files].map((file) => ({
       projectId,
-      testCaseId: c.testCaseId,
+      testCaseId,
       branch: tag,
       file,
       origin: 'client' as const,
-      lastSeenRunId: c.runId,
+      lastSeenRunId: runId,
       lastSeenAt: startedAt,
     }));
     for (let i = 0; i < rows.length; i += INSERT_CHUNK) {
@@ -113,62 +136,100 @@ export interface CodeReachPair {
 }
 
 /**
+ * A SQL condition keeping the paths that may name `file` under `sameFilePath`:
+ * those ending in its base name. Callers apply `sameFilePath` to what is left.
+ */
+function sameBaseName(column: AnyColumn, file: string): SQL {
+  const normalized = file.replace(/\\/g, '/');
+  const base = normalized.slice(normalized.lastIndexOf('/') + 1);
+  const suffix = `%/${base.replace(/[\\%_]/g, (c) => `\\${c}`)}`;
+  return or(eq(column, base), sql`${column} LIKE ${suffix} ESCAPE '\\'`)!;
+}
+
+/**
  * Every (test, file) pair of a project on a branch: the branch's own client
  * rows for the tests that have some, the default branch's for the others, and
- * the handler files of the routes each test reached.
+ * the handler files of the routes each test reached. With `file`, only the
+ * pairs whose file matches it (`sameFilePath`).
  */
 export async function loadCodeReachPairs(
   db: DrizzleDB,
   projectId: number,
   branch?: string | null,
+  file?: string,
 ): Promise<CodeReachPair[]> {
   const view = await resolveBranchView(db, projectId, branch);
   const tag = view.tag ?? '';
+  const inView = and(eq(codeReach.projectId, projectId), inArray(codeReach.branch, tag === '' ? [''] : ['', tag]));
   const rows = await db
     .select({ testCaseId: codeReach.testCaseId, file: codeReach.file, branch: codeReach.branch })
     .from(codeReach)
-    .where(and(eq(codeReach.projectId, projectId), inArray(codeReach.branch, tag === '' ? [''] : ['', tag])));
-  const onBranch = new Set(rows.filter((r) => r.branch === tag && tag !== '').map((r) => r.testCaseId));
+    .where(file === undefined ? inView : and(inView, sameBaseName(codeReach.file, file)));
+  // A test with rows of its own on the branch reads only those, whichever files they name.
+  const onBranch = new Set<number>();
+  if (tag !== '') {
+    const own =
+      file === undefined
+        ? rows.filter((r) => r.branch === tag)
+        : await db
+            .selectDistinct({ testCaseId: codeReach.testCaseId })
+            .from(codeReach)
+            .where(and(eq(codeReach.projectId, projectId), eq(codeReach.branch, tag)));
+    for (const r of own) onBranch.add(r.testCaseId);
+  }
   const pairs: CodeReachPair[] = rows
     .filter((r) => r.branch === tag || !onBranch.has(r.testCaseId))
+    .filter((r) => file === undefined || sameFilePath(r.file, file))
     .map((r) => ({ testCaseId: r.testCaseId, file: r.file, origin: 'client' }));
-  pairs.push(...(await serverReachPairs(db, projectId)));
+  pairs.push(...(await serverReachPairs(db, projectId, file)));
   return pairs;
 }
 
-/** Handler files of the routes each test reached, from the Test Map's canonical edges. */
-async function serverReachPairs(db: DrizzleDB, projectId: number): Promise<CodeReachPair[]> {
-  const reaches = await db
-    .select({ test: graphEdges.fromKey, route: graphEdges.toKey })
-    .from(graphEdges)
-    .where(
-      and(
-        eq(graphEdges.projectId, projectId),
-        eq(graphEdges.kind, 'reaches'),
-        eq(graphEdges.fromKind, 'test'),
-        eq(graphEdges.toKind, 'route'),
-      ),
-    );
-  if (reaches.length === 0) return [];
-  const handled = await db
-    .select({ route: graphEdges.fromKey, file: graphEdges.toKey })
-    .from(graphEdges)
-    .where(
-      and(
-        eq(graphEdges.projectId, projectId),
-        eq(graphEdges.kind, 'handled-by'),
-        eq(graphEdges.fromKind, 'route'),
-        eq(graphEdges.toKind, 'handler'),
-      ),
-    );
+/** Handler files of the routes each test reached, from the Test Map's canonical edges; with `file`, only that one. */
+async function serverReachPairs(db: DrizzleDB, projectId: number, file?: string): Promise<CodeReachPair[]> {
+  const handledBy = and(
+    eq(graphEdges.projectId, projectId),
+    eq(graphEdges.kind, 'handled-by'),
+    eq(graphEdges.fromKind, 'route'),
+    eq(graphEdges.toKind, 'handler'),
+  );
+  const handled = (
+    await db
+      .select({ route: graphEdges.fromKey, file: graphEdges.toKey })
+      .from(graphEdges)
+      .where(file === undefined ? handledBy : and(handledBy, sameBaseName(graphEdges.toKey, file)))
+  ).filter((h) => file === undefined || sameFilePath(handlerNodeKey(h.file), file));
+  if (handled.length === 0) return [];
   const filesOf = new Map<string, Set<string>>();
   for (const h of handled) filesOf.set(h.route, (filesOf.get(h.route) ?? new Set()).add(handlerNodeKey(h.file)));
+  const reachesRoute = and(
+    eq(graphEdges.projectId, projectId),
+    eq(graphEdges.kind, 'reaches'),
+    eq(graphEdges.fromKind, 'test'),
+    eq(graphEdges.toKind, 'route'),
+  );
+  const routes = [...filesOf.keys()];
+  const reaches: Array<{ test: string; route: string }> = [];
+  if (file === undefined) {
+    reaches.push(
+      ...(await db.select({ test: graphEdges.fromKey, route: graphEdges.toKey }).from(graphEdges).where(reachesRoute)),
+    );
+  } else {
+    for (let i = 0; i < routes.length; i += INSERT_CHUNK) {
+      reaches.push(
+        ...(await db
+          .select({ test: graphEdges.fromKey, route: graphEdges.toKey })
+          .from(graphEdges)
+          .where(and(reachesRoute, inArray(graphEdges.toKey, routes.slice(i, i + INSERT_CHUNK))))),
+      );
+    }
+  }
   const out = new Map<string, CodeReachPair>();
   for (const r of reaches) {
     const testCaseId = Number(r.test);
     if (!Number.isInteger(testCaseId)) continue;
-    for (const file of filesOf.get(r.route) ?? []) {
-      out.set(`${testCaseId}\x00${file}`, { testCaseId, file, origin: 'server' });
+    for (const f of filesOf.get(r.route) ?? []) {
+      out.set(`${testCaseId}\x00${f}`, { testCaseId, file: f, origin: 'server' });
     }
   }
   return [...out.values()];
@@ -189,7 +250,7 @@ export async function getCodeReachForFile(
   branch?: string | null,
 ): Promise<FileReach> {
   const view = await resolveBranchView(db, projectId, branch);
-  const pairs = (await loadCodeReachPairs(db, projectId, branch)).filter((p) => sameFilePath(p.file, file));
+  const pairs = await loadCodeReachPairs(db, projectId, branch, file);
   const originOf = new Map<number, CodeReachOrigin>();
   for (const p of pairs) if (originOf.get(p.testCaseId) !== 'client') originOf.set(p.testCaseId, p.origin);
   const tests = await indexTests(db, [...originOf.keys()], view);

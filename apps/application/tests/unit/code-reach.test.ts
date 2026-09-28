@@ -129,6 +129,36 @@ describe('code reach', () => {
   });
 });
 
+describe('code reach of one run', () => {
+  test('merges its executions: browser projects, retries and ingest batches', async () => {
+    await run(20, 'release', T0 + 3 * HOUR);
+    await upsertCodeReach(db as never, 1, [
+      { testCaseId: 3, runId: 20, files: ['src/components/Menu.vue'] },
+      { testCaseId: 3, runId: 20, files: ['src/components/MobileMenu.vue'] },
+    ]);
+    // A later ingest batch of the same run, with the same start time.
+    await upsertCodeReach(db as never, 1, [{ testCaseId: 3, runId: 20, files: ['src/components/Footer.vue'] }]);
+    for (const file of ['src/components/Menu.vue', 'src/components/MobileMenu.vue', 'src/components/Footer.vue']) {
+      const reach = await getCodeReachForFile(db as never, 1, file, 'release');
+      expect(reach.tests.map((t) => t.id)).toContain(3);
+    }
+
+    // A newer run replaces them.
+    await run(21, 'release', T0 + 4 * HOUR);
+    await upsertCodeReach(db as never, 1, [{ testCaseId: 3, runId: 21, files: ['src/components/Menu.vue'] }]);
+    const mobile = await getCodeReachForFile(db as never, 1, 'src/components/MobileMenu.vue', 'release');
+    expect(mobile.tests).toEqual([]);
+    expect((await getCodeReachForFile(db as never, 1, 'Menu.vue', 'release')).tests.map((t) => t.id)).toEqual([3]);
+  });
+
+  test('a file name with LIKE wildcards matches only itself', async () => {
+    await run(22, 'wild', T0 + 5 * HOUR);
+    await upsertCodeReach(db as never, 1, [{ testCaseId: 1, runId: 22, files: ['src/a_b.ts', 'src/axb.ts'] }]);
+    expect((await getCodeReachForFile(db as never, 1, 'a_b.ts', 'wild')).tests.map((t) => t.id)).toEqual([1]);
+    expect((await getCodeReachForFile(db as never, 1, 'src/a%.ts', 'wild')).tests).toEqual([]);
+  });
+});
+
 describe('impact-from-diff with code reach', () => {
   test('a changed file maps to the tests that executed it', async () => {
     const impact = await resolveImpact(db as never, 1, ['src/components/Pay.vue']);
@@ -136,11 +166,19 @@ describe('impact-from-diff with code reach', () => {
     expect(impact.tests.map((t) => t.testCaseId)).toEqual([1]);
   });
 
-  test('an unreached file where code reach looks is listed, not widened; elsewhere it widens', async () => {
-    const quiet = await resolveImpact(db as never, 1, ['src/lib/unused.ts']);
-    expect(quiet.impact.widened).toBe(false);
-    expect(quiet.impact.unreachedFiles).toEqual(['src/lib/unused.ts']);
-    const outside = await resolveImpact(db as never, 1, ['scripts/build.ts']);
-    expect(outside.impact.widened).toBe(true);
+  test('a changed source file no test reached widens, even next to files code reach recorded', async () => {
+    // Code reach leaves out module top-level code, server modules and type-only modules.
+    for (const file of ['src/lib/constants.ts', 'src/lib/config/flags.ts', 'scripts/build.ts']) {
+      const impact = await resolveImpact(db as never, 1, [file, 'src/components/Pay.vue']);
+      expect(impact.impact.widened).toBe(true);
+      expect(impact.impact.unmappedSourceFiles).toEqual([file]);
+    }
+  });
+
+  test('a file many tests reach adds each of them once', async () => {
+    const impact = await resolveImpact(db as never, 1, ['src/lib/cart.ts', 'lib/cart.ts']);
+    expect(impact.impact.widened).toBe(false);
+    expect(impact.impact.mappedFiles).toBe(2);
+    expect(impact.tests.map((t) => t.testCaseId)).toEqual([2]);
   });
 });

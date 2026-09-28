@@ -81,9 +81,9 @@ The extra time is spent in the browser, and it grows with the amount of JavaScri
 
 ## Where it is used
 
-- **[Impact-from-diff](./test-selection#impact-from-diff)** maps a changed file to the tests that executed it. A
-  changed file in a directory code reach has recorded files in, and that no test reached, is listed as unreached
-  instead of widening the run to the whole suite.
+- **[Impact-from-diff](./test-selection#impact-from-diff)** maps a changed file to the tests that executed it. Code
+  reach only adds tests: a changed source file that no test reached still widens the run to the whole suite, since
+  code reach does not see module top-level code, server code or type-only modules.
 - **[Uncovered changes](./uncovered-changes)** counts a changed file as reached when a test executed it.
 - **[Locator preflight](./preflight)** calls a break *likely* only when one of its tests reaches the changed file.
 
