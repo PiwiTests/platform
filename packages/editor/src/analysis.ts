@@ -276,3 +276,126 @@ export function breakMessage(anchor: DiffAnchor, breaks: LocatorBreak[]): string
   const more = breaks.length > 3 ? ` and ${breaks.length - 3} more` : '';
   return `${tests} ${tests === 1 ? 'test finds' : 'tests find'} an element by "${anchor.before}" (${change}): ${list}${more}`;
 }
+
+/** One file of a unified diff, with its hunks' lines as written (` `, `-`, `+` first). */
+export interface PatchFile {
+  path: string;
+  hunks: Array<{ oldStart: number; lines: string[] }>;
+}
+
+/** The files of a unified diff; a created or deleted file is left out (`/dev/null`). */
+export function parsePatch(diff: string): PatchFile[] {
+  const files: PatchFile[] = [];
+  let file: PatchFile | null = null;
+  let hunk: PatchFile['hunks'][number] | null = null;
+  let oldPath: string | null = null;
+  // Lines each side of the current hunk still expects, from its header.
+  let oldLeft = 0;
+  let newLeft = 0;
+  for (const line of diff.split(/\r?\n/)) {
+    if (line.startsWith('--- ')) {
+      oldPath = line.slice(4).trim();
+      file = null;
+      hunk = null;
+    } else if (line.startsWith('+++ ')) {
+      const newPath = line.slice(4).trim();
+      file = null;
+      if (oldPath !== '/dev/null' && newPath !== '/dev/null') {
+        file = { path: newPath.replace(/^b\//, '').replace(/\t.*$/, ''), hunks: [] };
+        files.push(file);
+      }
+    } else if (line.startsWith('@@')) {
+      const m = /^@@ -(\d+)(?:,(\d+))? \+\d+(?:,(\d+))? @@/.exec(line);
+      hunk = file && m ? { oldStart: Number(m[1]), lines: [] } : null;
+      oldLeft = m ? Number(m[2] ?? 1) : 0;
+      newLeft = m ? Number(m[3] ?? 1) : 0;
+      if (hunk) file!.hunks.push(hunk);
+    } else if (hunk && (oldLeft > 0 || newLeft > 0)) {
+      // An empty line is a blank context line whose leading space was stripped.
+      const marked = line === '' ? ' ' : line;
+      const mark = marked[0];
+      if (mark !== ' ' && mark !== '-' && mark !== '+') continue;
+      hunk.lines.push(marked);
+      if (mark !== '+') oldLeft--;
+      if (mark !== '-') newLeft--;
+    }
+  }
+  return files.filter((f) => f.hunks.length > 0);
+}
+
+/**
+ * The text with a file's hunks applied, as `git apply` would with no fuzz: each
+ * hunk's context and removed lines found at its line or the nearest offset
+ * (trailing whitespace ignored). Null when a hunk is not found.
+ */
+export function applyPatchFile(text: string, file: PatchFile): string | null {
+  const eol = text.includes('\r\n') ? '\r\n' : '\n';
+  const lines = text.split(/\r?\n/);
+  let delta = 0;
+  for (const hunk of file.hunks) {
+    const before = hunk.lines.filter((l) => !l.startsWith('+')).map((l) => l.slice(1));
+    const after = hunk.lines.filter((l) => !l.startsWith('-')).map((l) => l.slice(1));
+    const matches = (at: number) =>
+      at >= 0 && at + before.length <= lines.length && before.every((l, i) => lines[at + i]!.trimEnd() === l.trimEnd());
+    const expected = Math.max(0, hunk.oldStart - 1 + delta);
+    let at = -1;
+    for (let offset = 0; offset <= lines.length && at < 0; offset++) {
+      if (matches(expected - offset)) at = expected - offset;
+      else if (matches(expected + offset)) at = expected + offset;
+    }
+    if (at < 0) return null;
+    lines.splice(at, before.length, ...after);
+    delta = at - (hunk.oldStart - 1) + after.length - before.length;
+  }
+  return lines.join(eol);
+}
+
+/** A chain offered after `page.`: the suite already uses it on a page this file's tests visit. */
+export interface LocatorSuggestion {
+  locator: string;
+  /** Tests using it. */
+  tests: number;
+  /** The pages of this file's tests it was used on, as the index names them. */
+  pages: string[];
+  stability: LocatorStability | null;
+}
+
+/** Suggestions offered at most. */
+export const MAX_SUGGESTIONS = 50;
+
+/**
+ * The chains to offer in a file: those used on the pages this file's tests
+ * visit (the tests it defines, or whose steps call locators from it), most used
+ * first. Without a known page, the project's most used chains.
+ */
+export function locatorSuggestions(index: LocatorIndex, relativePath: string): LocatorSuggestion[] {
+  const testsOfFile = new Set<number>();
+  index.tests.forEach((t, i) => {
+    if (sameFilePath(t.file, relativePath)) testsOfFile.add(i);
+  });
+  for (const entry of index.locators) {
+    for (const use of entry.uses) {
+      if (use.callSites.some((site) => sameFilePath(callSiteFile(site), relativePath))) testsOfFile.add(use.test);
+    }
+  }
+  const pages = new Set<number>();
+  for (const entry of index.locators) {
+    for (const use of entry.uses) if (testsOfFile.has(use.test)) for (const p of use.pages ?? []) pages.add(p);
+  }
+  const out: LocatorSuggestion[] = [];
+  for (const entry of index.locators) {
+    const uses = pages.size ? entry.uses.filter((u) => (u.pages ?? []).some((p) => pages.has(p))) : entry.uses;
+    if (!uses.length) continue;
+    const chain = tryParseLocatorChain(entry.locator);
+    const onPages = [...new Set(uses.flatMap((u) => (u.pages ?? []).filter((p) => pages.has(p))))];
+    out.push({
+      locator: entry.locator,
+      tests: new Set(uses.map((u) => u.test)).size,
+      pages: onPages.map((p) => index.pages?.[p]).filter((p): p is string => !!p),
+      stability: chain ? assessLocatorChain(chain) : null,
+    });
+  }
+  const rank = (s: LocatorSuggestion) =>
+    s.stability?.level === 'brittle' ? 2 : s.stability?.level === 'watch' ? 1 : 0;
+  return out.sort((a, b) => rank(a) - rank(b) || b.tests - a.tests).slice(0, MAX_SUGGESTIONS);
+}

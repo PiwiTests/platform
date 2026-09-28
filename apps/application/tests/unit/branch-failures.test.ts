@@ -52,6 +52,7 @@ describe('getBranchFailures', () => {
       {
         executionId: 10,
         testCaseId: 1,
+        clusterId: null,
         title: 'pays',
         file: 'tests/checkout.spec.ts',
         line: 7,

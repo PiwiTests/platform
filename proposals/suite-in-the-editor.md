@@ -9,7 +9,7 @@ executes, so any file can answer "which tests reach me?". **Track C** is one edi
 **Status.** Proposed 2026-09-27. Being built on `claude/suite-in-the-editor`, in the Delivery order: PR 1 (core),
 PR 2 (`piwi preflight`), PR 3 (the pull-request section, `diff-rename` healing, `predict_locator_breaks`) PR 4
 (code reach), PR 5 (the editor service), PR 6 (VS Code, with the priority 1 items), PR 7 (JetBrains, with the same five) and PR 8 (Send from Piwi Picker) are
-built. What changed while building is under [As built](#as-built). Track A needs no capture change. Track B adds an opt-in capture, one
+built, and the first three priority 2 items (Apply a fix plan, Copy context for agent, Locator completion). What changed while building is under [As built](#as-built). Track A needs no capture change. Track B adds an opt-in capture, one
 payload column on `test_runs_cases` and one table. Tracks C–E add a workspace package, a VS Code extension and a
 JetBrains plugin, and a commitlint scope (`ide`); a catalog of what the editors can do after their first release
 follows the tracks. New wire fields, endpoints, a CLI command and a published extension
@@ -432,7 +432,8 @@ These arrive with their own features and cost the editors little once those exis
 | 8 | Send from Piwi Picker: pairing, the editors' local endpoints, the extension's **Send to editor** | 6, 7 |
 
 PRs 1–3 ship a working preflight with no capture change. PR 4 is independent of 1–3. Each PR carries its docs. The
-priority 2 items follow in that order; [priority 3 and 4](#what-the-editors-can-grow-into) land with their plumbing or
+priority 2 items follow in that order (Apply a fix plan, Copy context for agent and Locator completion are built; the
+rest are next); [priority 3 and 4](#what-the-editors-can-grow-into) land with their plumbing or
 the feature they come from.
 
 ## File-by-file checklist
@@ -725,6 +726,29 @@ disagree, this section wins.
   in the document. JetBrains: the helpers, and a platform test posting to the built-in server and reading the editor.
   The extension: the pairing store and `postToEditor`, plus the full e2e suite (230) with the panels changed; no e2e
   drives Send to editor itself, as the background worker's host-permission check cannot be granted from a test.
+
+### Priority 2 — Apply a fix plan, Copy context for agent, Locator completion
+
+- **Data.** Each branch failure carries its `clusterId`; the service fetches the cluster's fix plan (JSON and Markdown)
+  once per run.
+- **Apply the fix plan.** On a `ci-failure`, when the plan's patch applies (validation neither `stale-file` nor
+  `invalid`), the service applies it to the workspace's files itself (hunks found at their line or the nearest
+  offset, as `git apply` does without fuzz); otherwise it uses the plan's locator rewrites whose lines still read as
+  captured. The code action carries the resulting whole-file edits and the command `piwi.runCommand` with the plan's
+  verify command. A client that supports change annotations (VS Code) gets them marked "needs confirmation", so the
+  edit opens in the refactor preview; the JetBrains client applies it directly. No action is offered when nothing
+  applies.
+- **Copy context for agent.** The command `piwi.copyText` with one block: the failing test, its headline and place,
+  the execution link, the healing's replacement as a diff, and the fix plan's Markdown.
+- **Clients.** Two new client commands, `piwi.runCommand` (a terminal in VS Code, the Run tool window in JetBrains)
+  and `piwi.copyText` (the clipboard).
+- **Locator completion** is plain LSP completion, so both editors render it with no client code. After `page.` or
+  `this.page.` in test code, the service offers the chains used on the pages of this file's tests (the tests it
+  defines, or whose steps call locators from it), stable ones first, then by test count; without a known page, the
+  project's chains. Each item names its tests, pages and stability. Signatures inside `getBy…(` are not completed.
+- **Tests.** The service: the plan's action, its edit and command, the context block, the completion (16 tests), and
+  the patch applier. VS Code's integration suite copies the context and completes `page.`; the JetBrains platform tests
+  run `piwi.copyText`.
 
 ## Verification
 

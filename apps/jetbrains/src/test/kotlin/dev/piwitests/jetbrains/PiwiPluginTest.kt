@@ -34,6 +34,13 @@ class PiwiPluginTest : BasePlatformTestCase() {
         }
     }
 
+    fun testCopyTextCopiesTheAgentContext() {
+        PiwiCommands.execute(project, "piwi.copyText", listOf(com.google.gson.JsonPrimitive("# Failing test: pays")))
+        val copied = com.intellij.openapi.ide.CopyPasteManager.getInstance()
+            .getContents<String>(java.awt.datatransfer.DataFlavor.stringFlavor)
+        assertEquals("# Failing test: pays", copied)
+    }
+
     fun testServesTheFilesTheServiceReads() {
         for (name in listOf("Checkout.vue", "checkout.page.ts", "Index.cshtml", "Cart.razor", "Strings.resx", "en.json")) {
             assertTrue(name, PiwiLspServerSupportProvider.isSupported(myFixture.addFileToProject("src/$name", "").virtualFile))

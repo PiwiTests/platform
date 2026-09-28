@@ -77,6 +77,16 @@
         "command": "piwi.openTrace",
         "title": "Open the trace",
         "category": "Piwi"
+      },
+      {
+        "command": "piwi.runCommand",
+        "title": "Run a command",
+        "category": "Piwi"
+      },
+      {
+        "command": "piwi.copyText",
+        "title": "Copy text",
+        "category": "Piwi"
       }
     ],
     "menus": {
@@ -87,6 +97,14 @@
         },
         {
           "command": "piwi.openTrace",
+          "when": "false"
+        },
+        {
+          "command": "piwi.runCommand",
+          "when": "false"
+        },
+        {
+          "command": "piwi.copyText",
           "when": "false"
         }
       ],

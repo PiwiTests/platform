@@ -41,6 +41,11 @@ On a failure, the quick fixes are:
   the same edit an [auto-heal pull request](/features/auto-heal) would make, applied to the line in place.
 - **Open the trace** — downloads the execution's trace and opens it in Playwright's trace viewer
   (`npx playwright show-trace`) from the Playwright config's directory.
+- **Apply the fix plan, then run its verification** — when the failure's [cluster](/features/failure-clusters) has a
+  [fix plan](/features/fix-plans) whose patch applies to your files (or locator rewrites whose lines still read as
+  captured): VS Code previews the edit before applying it, then runs the plan's verify command in a terminal.
+- **Copy context for agent** — one block with the failure, its locator healing and the cluster's fix plan, for a coding
+  agent.
 - **Open the failure in the dashboard** — the execution page, with every piece of [evidence](/features/evidence).
 
 Hover the line for the failure screenshot.
@@ -61,6 +66,12 @@ Lines above the code (CodeLens):
 | An application file | the tests that reach it, from [code reach](/features/code-reach) | runs those tests |
 
 **Piwi: Run the tests that reach this file** runs them in a terminal, with the arguments `piwi run` would use.
+
+## Locator completion
+
+After `page.` (or `this.page.`) in a spec or a page object, the completion list offers the locator chains your suite
+already uses on the pages this file's tests visit, most used first and brittle ones last, each with its test count, its
+pages and its stability.
 
 ## Brittle locators
 

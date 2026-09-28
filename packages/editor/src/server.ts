@@ -21,15 +21,18 @@ import * as path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   CodeActionKind,
+  CompletionItemKind,
   DiagnosticSeverity,
   TextDocuments,
   TextDocumentSyncKind,
   type CodeAction,
+  type CompletionItem,
   type Connection,
   type Diagnostic,
   type Hover,
   type InitializeParams,
   type TextEdit,
+  type WorkspaceEdit,
 } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { renderSpec } from '@piwitests/core/codegen';
@@ -40,11 +43,14 @@ import { locatorCallSiteFiles, sameFilePath, type LocatorBreak } from '@piwitest
 import { stabilityLabels } from '@piwitests/core/locator-stability';
 import type { LocatorIndexTest } from '@piwitests/core/locator-index';
 import {
+  applyPatchFile,
   breakMessage,
   breaksByAnchor,
   breaksOfChange,
   locatorRange,
+  locatorSuggestions,
   locatorsInFile,
+  parsePatch,
   reachFrom,
   replaceLocatorOnLine,
   rewriteEdits,
@@ -54,7 +60,7 @@ import {
   type LineLocator,
 } from './analysis.js';
 import { PiwiContext } from './context.js';
-import type { BranchFailure } from './piwi-client.js';
+import type { BranchFailure, FixPlan } from './piwi-client.js';
 import {
   FAILURES_REQUEST,
   FILE_SUMMARY_REQUEST,
@@ -83,6 +89,7 @@ import {
   type SummaryLine,
   type TestsForFile,
   type TestsForFileParams,
+  type RunCommandArgs,
   type TraceParams,
   type TraceResult,
 } from './protocol.js';
@@ -158,6 +165,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   const analysisDiagnostics = new Map<string, Diagnostic[]>();
   let failureDiagnostics = new Map<string, Diagnostic[]>();
   let lastRunStatus = '';
+  /** Whether the client previews an edit whose change annotation asks for confirmation. */
+  let previewsEdits = false;
 
   const publish = (uri: string) =>
     connection.sendDiagnostics({
@@ -290,6 +299,88 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     runTimer.unref?.();
   };
 
+  /**
+   * A fix plan as one workspace edit: its validated patch applied to each file it
+   * names, else its locator rewrites whose line still reads as captured. Null when
+   * nothing applies to the workspace as it is.
+   */
+  const fixPlanEdit = (context: PiwiContext, plan: FixPlan): { edit: WorkspaceEdit; files: number } | null => {
+    const roots = [context.root, context.repoRoot];
+    const next = new Map<string, string>();
+    const patch = plan.diagnosis?.patch;
+    const validation = plan.diagnosis?.patchValidation?.status;
+    if (patch && validation !== 'stale-file' && validation !== 'invalid') {
+      for (const file of parsePatch(patch)) {
+        const target = resolveReportedFile(roots, file.path);
+        const text = target ? (next.get(target) ?? readText(target)) : null;
+        const patched = text !== null ? applyPatchFile(text, file) : null;
+        if (!target || patched === null) return null;
+        next.set(target, patched);
+      }
+    } else {
+      for (const e of plan.edits) {
+        if (!e.edit?.filePath) continue;
+        const target = resolveReportedFile(roots, e.edit.filePath);
+        const text = target ? (next.get(target) ?? readText(target)) : null;
+        if (!target || text === null) continue;
+        const lines = text.split(/\r?\n/);
+        const current = lines[e.edit.line - 1];
+        if (current === undefined || current.trim() !== e.edit.oldLine.trim()) continue;
+        lines[e.edit.line - 1] =
+          current.slice(0, current.length - current.trimStart().length) + e.edit.newLine.trimStart();
+        next.set(target, lines.join(text.includes('\r\n') ? '\r\n' : '\n'));
+      }
+    }
+    if (!next.size) return null;
+    const whole = (text: string) => {
+      const lines = text.split(/\r?\n/);
+      return {
+        start: { line: 0, character: 0 },
+        end: { line: lines.length - 1, character: lines[lines.length - 1]!.length },
+      };
+    };
+    const entries = [...next].map(([file, text]) => ({
+      uri: pathToFileURL(file).href,
+      range: whole(readText(file) ?? ''),
+      newText: text,
+    }));
+    const edit: WorkspaceEdit = previewsEdits
+      ? {
+          documentChanges: entries.map((e) => ({
+            textDocument: { uri: e.uri, version: null },
+            edits: [{ range: e.range, newText: e.newText, annotationId: 'piwi.fixPlan' }],
+          })),
+          changeAnnotations: {
+            'piwi.fixPlan': {
+              label: `Piwi fix plan: ${plan.cluster.title ?? plan.cluster.signature}`,
+              needsConfirmation: true,
+            },
+          },
+        }
+      : { changes: Object.fromEntries(entries.map((e) => [e.uri, [{ range: e.range, newText: e.newText }]])) };
+    return { edit, files: next.size };
+  };
+
+  /** One block about a failure for a coding agent: the failure, its healing and its cluster's fix plan. */
+  const agentContext = async (context: PiwiContext, failure: BranchFailure): Promise<string> => {
+    const healing = await context.healing(failure.executionId);
+    const plan = failure.clusterId ? await context.fixPlanText(failure.clusterId) : null;
+    const recommended = healing?.recommendation?.recommended?.locator;
+    return [
+      `# Failing test: ${failure.title}`,
+      '',
+      failure.headline ?? 'Failed',
+      failure.location ? `At ${failure.location}` : `In ${failure.file}${failure.line ? `:${failure.line}` : ''}`,
+      context.client ? `Execution: ${context.client.executionUrl(failure.executionId)}` : null,
+      recommended
+        ? `\n## Locator healing\n\nReplace the failing locator with \`${recommended}\`${healing?.edit ? `:\n\n\`\`\`diff\n- ${healing.edit.oldLine.trim()}\n+ ${healing.edit.newLine.trim()}\n\`\`\`` : '.'}`
+        : null,
+      plan ? `\n${plan.trim()}` : null,
+    ]
+      .filter((part) => part !== null)
+      .join('\n');
+  };
+
   const contextOfRoot = (root: string) => contexts.find((c) => c.root === root) ?? null;
 
   const failureOf = (data: FailureData): { context: PiwiContext; failure: BranchFailure } | null => {
@@ -387,12 +478,15 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       const root = uriToPath(params.rootUri);
       if (root) folders = [root];
     }
+    const workspaceEdit = params.capabilities.workspace?.workspaceEdit;
+    previewsEdits = !!workspaceEdit?.documentChanges && !!workspaceEdit.changeAnnotationSupport;
     const init = params.initializationOptions as { credentials?: EditorCredentials } | undefined;
     credentials = init?.credentials ?? {};
     return {
       capabilities: {
         textDocumentSync: TextDocumentSyncKind.Incremental,
         hoverProvider: true,
+        completionProvider: { triggerCharacters: ['.'] },
         codeActionProvider: { codeActionKinds: [CodeActionKind.QuickFix] },
       },
       serverInfo: { name: 'Piwi' },
@@ -517,7 +611,32 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             },
           });
         }
+        const fixPlan = failure.clusterId ? await owner.fixPlan(failure.clusterId) : null;
+        const planEdit = fixPlan ? fixPlanEdit(owner, fixPlan) : null;
+        if (fixPlan && planEdit) {
+          actions.push({
+            title: `Apply the fix plan (${plural(planEdit.files, 'file')}), then run its verification`,
+            kind: CodeActionKind.QuickFix,
+            diagnostics: [diagnostic],
+            edit: planEdit.edit,
+            command: {
+              title: 'Run the verification',
+              command: 'piwi.runCommand',
+              arguments: [{ cwd: owner.root, command: fixPlan.verify.command } satisfies RunCommandArgs],
+            },
+          });
+        }
         if (owner.client) {
+          actions.push({
+            title: 'Copy context for agent',
+            kind: CodeActionKind.QuickFix,
+            diagnostics: [diagnostic],
+            command: {
+              title: 'Copy context for agent',
+              command: 'piwi.copyText',
+              arguments: [await agentContext(owner, failure)],
+            },
+          });
           actions.push({
             title: 'Open the failure in the dashboard',
             kind: CodeActionKind.QuickFix,
@@ -532,6 +651,34 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       }
     }
     return actions;
+  });
+
+  // After `page.` or `this.page.` in test code: the chains the suite uses on the pages this file's tests visit.
+  connection.onCompletion((params): CompletionItem[] => {
+    const file = uriToPath(params.textDocument.uri);
+    const context = file ? contextFor(file) : null;
+    const document = documents.get(params.textDocument.uri);
+    if (!file || !context?.index || !document) return [];
+    const relative = relativeTo(context.root, file);
+    if (!relative || !isTestCode(context, relative)) return [];
+    const line = document.getText().split(/\r?\n/)[params.position.line] ?? '';
+    const typed = /(?:^|[^\w$.])(?:this\.)?page\.([A-Za-z]*)$/.exec(line.slice(0, params.position.character));
+    if (!typed) return [];
+    const start = { line: params.position.line, character: params.position.character - typed[1]!.length };
+    return locatorSuggestions(context.index, relative).map((s, i) => ({
+      label: s.locator,
+      kind: CompletionItemKind.Value,
+      detail: [
+        plural(s.tests, 'test'),
+        s.pages.slice(0, 3).join(', '),
+        s.stability && s.stability.level !== 'stable' ? `${s.stability.level}: ${stabilityLabels(s.stability)}` : '',
+      ]
+        .filter(Boolean)
+        .join(' · '),
+      sortText: String(i).padStart(3, '0'),
+      filterText: s.locator,
+      textEdit: { range: { start, end: params.position }, newText: s.locator },
+    }));
   });
 
   connection.onHover(async (params): Promise<Hover | null> => {

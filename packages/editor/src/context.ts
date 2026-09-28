@@ -18,6 +18,7 @@ import {
   type CallSiteAlternatives,
   type CatalogCase,
   type CodeIndex,
+  type FixPlan,
 } from './piwi-client.js';
 import type { EditorCredentials } from './protocol.js';
 import { committedText, currentBranch, headCommit, repositoryRoot, translationValues } from './workspace.js';
@@ -95,6 +96,8 @@ export class PiwiContext {
   /** The latest run on `runBranch` and its failures; null before the first answer. */
   failures: BranchFailures | null = null;
   private functions: { at: number; items: TestFunctionEntry[] } | null = null;
+  private readonly fixPlans = new Map<number, Promise<FixPlan | null>>();
+  private readonly fixPlanTexts = new Map<number, Promise<string | null>>();
   private readonly healings = new Map<number, Promise<LocatorHealingResult | null>>();
   private readonly downloads = new Map<string, Promise<string | null>>();
   private readonly catalog = new Map<string, { at: number; items: CatalogCase[] }>();
@@ -169,7 +172,11 @@ export class PiwiContext {
     try {
       const next = await this.client.branchFailures(this.project.id, branch);
       const changed = branch !== this.runBranch || JSON.stringify(next) !== JSON.stringify(this.failures);
-      if (next.run?.id !== this.failures?.run?.id) this.healings.clear();
+      if (next.run?.id !== this.failures?.run?.id) {
+        this.healings.clear();
+        this.fixPlans.clear();
+        this.fixPlanTexts.clear();
+      }
       this.runBranch = branch;
       this.failures = next;
       return changed;
@@ -185,6 +192,28 @@ export class PiwiContext {
     const items = await this.client.testFunctions(this.project.id).catch(() => this.functions?.items ?? []);
     this.functions = { at: Date.now(), items };
     return items;
+  }
+
+  /** A failure cluster's fix plan, fetched once per run. */
+  fixPlan(clusterId: number): Promise<FixPlan | null> {
+    if (!this.client) return Promise.resolve(null);
+    let found = this.fixPlans.get(clusterId);
+    if (!found) {
+      found = this.client.fixPlan(clusterId).catch(() => null);
+      this.fixPlans.set(clusterId, found);
+    }
+    return found;
+  }
+
+  /** The same plan as Markdown, fetched once per run. */
+  fixPlanText(clusterId: number): Promise<string | null> {
+    if (!this.client) return Promise.resolve(null);
+    let found = this.fixPlanTexts.get(clusterId);
+    if (!found) {
+      found = this.client.fixPlanMarkdown(clusterId).catch(() => null);
+      this.fixPlanTexts.set(clusterId, found);
+    }
+    return found;
   }
 
   /** The healing of a failed execution, fetched once. */

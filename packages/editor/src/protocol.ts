@@ -10,10 +10,11 @@
 export interface PiwiCommand {
   title: string;
   /**
-   * `piwi.openInDashboard` (arguments: `[url]`), `piwi.runTests` (arguments: `[RunTestsArgs]`) or
-   * `piwi.openTrace` (arguments: `[TraceParams]`).
+   * `piwi.openInDashboard` (arguments: `[url]`), `piwi.runTests` (arguments: `[RunTestsArgs]`),
+   * `piwi.openTrace` (arguments: `[TraceParams]`), `piwi.runCommand` (arguments: `[RunCommandArgs]`) or
+   * `piwi.copyText` (arguments: `[text]`).
    */
-  command: 'piwi.openInDashboard' | 'piwi.runTests' | 'piwi.openTrace';
+  command: 'piwi.openInDashboard' | 'piwi.runTests' | 'piwi.openTrace' | 'piwi.runCommand' | 'piwi.copyText';
   arguments: unknown[];
 }
 
@@ -78,6 +79,12 @@ export interface RunCommand {
 }
 
 export const RUN_ARGS_REQUEST = 'piwi/runArgs';
+
+/** `piwi.runCommand`'s argument: a command line to run in a terminal. */
+export interface RunCommandArgs {
+  cwd: string;
+  command: string;
+}
 
 /** `piwi/status`: what the service is connected to, per workspace context. */
 export interface StatusResult {

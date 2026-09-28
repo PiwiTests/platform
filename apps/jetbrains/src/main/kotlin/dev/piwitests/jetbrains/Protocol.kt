@@ -30,6 +30,8 @@ data class TestsForFile(val tests: List<EditorTest>? = null, val basis: String? 
 
 data class RunTestsArgs(val uri: String, val testIds: List<Int>)
 
+data class RunCommandArgs(val cwd: String, val command: String)
+
 data class RunCommand(val cwd: String? = null, val command: String? = null, val args: List<String>? = null)
 
 data class TraceParams(val uri: String, val executionId: Int)

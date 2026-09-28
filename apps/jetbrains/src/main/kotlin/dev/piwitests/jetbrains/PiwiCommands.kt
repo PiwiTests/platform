@@ -10,15 +10,18 @@ import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.service
+import com.intellij.openapi.ide.CopyPasteManager
 import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.progress.Task
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.SystemInfo
+import java.awt.datatransfer.StringSelection
 
 /**
  * The client commands the editor service names in summary lines and code
- * actions (`piwi.openInDashboard`, `piwi.runTests`, `piwi.openTrace`).
+ * actions (`piwi.openInDashboard`, `piwi.runTests`, `piwi.openTrace`,
+ * `piwi.runCommand`, `piwi.copyText`).
  */
 object PiwiCommands {
     private val gson = Gson()
@@ -34,6 +37,11 @@ object PiwiCommands {
             "piwi.openInDashboard" -> arg<String>(arguments.firstOrNull())?.let { BrowserUtil.browse(it) }
             "piwi.runTests" -> arg<RunTestsArgs>(arguments.firstOrNull())?.let { runTests(project, it) }
             "piwi.openTrace" -> arg<TraceParams>(arguments.firstOrNull())?.let { openTrace(project, it) }
+            "piwi.runCommand" -> arg<RunCommandArgs>(arguments.firstOrNull())?.let { run(project, it.cwd, it.command) }
+            "piwi.copyText" -> arg<String>(arguments.firstOrNull())?.let {
+                CopyPasteManager.getInstance().setContents(StringSelection(it))
+                notify(project, "Copied. Paste it to your agent.")
+            }
         }
     }
 

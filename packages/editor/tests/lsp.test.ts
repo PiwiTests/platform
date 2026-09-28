@@ -62,7 +62,11 @@ const INDEX: LocatorIndex = {
         { ...use(1, 'tests/pages/checkout.page.ts:4:21'), pages: [0] },
       ],
     },
-    { locator: "locator('.cart-row').nth(2)", lastSeenAt: '', uses: [use(2, 'tests/pages/checkout.page.ts:5:21')] },
+    {
+      locator: "locator('.cart-row').nth(2)",
+      lastSeenAt: '',
+      uses: [{ ...use(2, 'tests/pages/checkout.page.ts:5:21'), pages: [0] }],
+    },
   ],
   truncated: false,
 };
@@ -180,6 +184,7 @@ beforeAll(async () => {
             {
               executionId: 900,
               testCaseId: 3,
+              clusterId: 77,
               title: 'removes a row',
               file: 'tests/checkout.spec.ts',
               line: 3,
@@ -192,6 +197,32 @@ beforeAll(async () => {
           ],
         }),
       );
+    }
+    if (u === '/api/failure-clusters/77/fix-plan') {
+      return res.end(
+        JSON.stringify({
+          cluster: { id: 77, title: 'Cart row not found', signature: 'sig' },
+          diagnosis: {
+            summary: 'The cart rows lost their class.',
+            patch: [
+              '--- a/tests/pages/checkout.page.ts',
+              '+++ b/tests/pages/checkout.page.ts',
+              '@@ -4,2 +4,2 @@',
+              '   pay = () => this.page.getByRole(\'button\', { name: "Pay now" });',
+              "-  row = () => this.page.locator('.cart-row').nth(2);",
+              "+  row = () => this.page.getByRole('row').nth(2);",
+              '',
+            ].join('\n'),
+            patchValidation: { status: 'applies', errors: [] },
+          },
+          edits: [],
+          verify: { command: 'npx playwright test tests/checkout.spec.ts:3', expectation: 'The cluster resolves.' },
+        }),
+      );
+    }
+    if (u === '/api/failure-clusters/77/fix-plan?format=markdown') {
+      res.setHeader('Content-Type', 'text/markdown');
+      return res.end('# Fix plan — Cart row not found\n\nRun `npx playwright test tests/checkout.spec.ts:3`.\n');
     }
     if (u === '/api/test-run-cases/900/locator-healing') {
       return res.end(
@@ -396,8 +427,30 @@ describe('the Piwi language server', () => {
     expect(actions.map((a) => a.title)).toEqual([
       "Heal: use getByRole('row', { name: /Mug/ })",
       'Open the trace',
+      'Apply the fix plan (1 file), then run its verification',
+      'Copy context for agent',
       'Open the failure in the dashboard',
     ]);
+    const apply = actions[2] as unknown as {
+      edit: { changes: Record<string, Array<{ newText: string }>> };
+      command: { command: string; arguments: unknown[] };
+    };
+    expect(apply.edit.changes[uri('tests/pages/checkout.page.ts')]![0]!.newText).toBe(
+      PAGE_OBJECT.replace("this.page.locator('.cart-row').nth(2)", "this.page.getByRole('row').nth(2)"),
+    );
+    expect(apply.command).toEqual({
+      title: 'Run the verification',
+      command: 'piwi.runCommand',
+      arguments: [{ cwd: dir, command: 'npx playwright test tests/checkout.spec.ts:3' }],
+    });
+    const context = (actions[3]!.command!.arguments[0] as string).split('\n');
+    expect(context.slice(0, 3)).toEqual([
+      '# Failing test: removes a row',
+      '',
+      "locator('.cart-row').nth(2) was not found",
+    ]);
+    expect(context).toContain("Replace the failing locator with `getByRole('row', { name: /Mug/ })`:");
+    expect(context).toContain('# Fix plan — Cart row not found');
     expect(actions[0]!.edit!.changes[uri('tests/pages/checkout.page.ts')]![0]!.newText).toBe(
       "  row = () => this.page.getByRole('row', { name: /Mug/ });",
     );
@@ -406,6 +459,8 @@ describe('the Piwi language server', () => {
       command: 'piwi.openTrace',
       arguments: [{ uri: uri('tests/pages/checkout.page.ts'), executionId: 900 }],
     });
+    // A client that previews annotated edits gets the plan as a confirmed change; this one does not.
+    expect(JSON.stringify(actions[2])).not.toContain('annotationId');
 
     const hover = (await client.sendRequest('textDocument/hover', {
       textDocument: { uri: uri('tests/pages/checkout.page.ts') },
@@ -494,6 +549,27 @@ describe('the Piwi language server', () => {
   test('offers Piwi’s MCP server with the connection it has', async () => {
     const mcp = (await client.sendRequest('piwi/mcp')) as McpServersResult;
     expect(mcp.servers).toEqual([{ label: `Piwi (${new URL(url).host})`, url: `${url}/mcp`, headers: {} }]);
+  });
+
+  test('completes page. with the chains the suite uses on the pages this file’s tests visit', async () => {
+    const text = SPEC.replace('async ({ page }) => {}', 'async ({ page }) => {\n  await page.get\n}');
+    await open('tests/checkout.spec.ts', text);
+    const items = (await client.sendRequest('textDocument/completion', {
+      textDocument: { uri: uri('tests/checkout.spec.ts') },
+      position: { line: 3, character: '  await page.get'.length },
+    })) as Array<{ label: string; detail: string; textEdit: { range: { start: { character: number } } } }>;
+    expect(items.map((i) => i.label)).toEqual([
+      "getByRole('button', { name: 'Pay now' })",
+      "locator('.cart-row').nth(2)",
+    ]);
+    expect(items[0]!.detail).toBe('2 tests · /checkout');
+    expect(items[1]!.detail).toMatch(/^1 test · \/checkout · brittle: /);
+    expect(items[0]!.textEdit.range.start.character).toBe('  await page.'.length);
+    const none = await client.sendRequest('textDocument/completion', {
+      textDocument: { uri: uri('tests/checkout.spec.ts') },
+      position: { line: 3, character: 2 },
+    });
+    expect(none).toEqual([]);
   });
 
   test('summarizes a page object, a spec and an application file', async () => {

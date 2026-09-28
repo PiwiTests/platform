@@ -54,6 +54,10 @@ const tests = {
     assert.ok(titles.includes("Heal: use getByRole('row', { name: /Mug/ })"), titles.join(' | '));
     assert.ok(titles.includes('Open the trace'), titles.join(' | '));
     assert.ok(titles.includes('Open the failure in the dashboard'), titles.join(' | '));
+    assert.ok(titles.includes('Copy context for agent'), titles.join(' | '));
+    const copy = actions.find((a) => a.title === 'Copy context for agent');
+    await vscode.commands.executeCommand(copy.command.command, ...copy.command.arguments);
+    assert.match(await vscode.env.clipboard.readText(), /^# Failing test: removes a row/);
 
     const heal = actions.find((a) => a.title.startsWith('Heal'));
     assert.ok(await vscode.workspace.applyEdit(heal.edit));
@@ -83,6 +87,25 @@ const tests = {
       .map((c) => (typeof c === 'string' ? c : c.value))
       .join('\n');
     assert.match(text, /\*\*CI failure\*\* · \[removes a row\]/);
+  },
+
+  async 'page. completes with the chains the suite uses on this file’s pages'() {
+    const spec = vscode.Uri.file(path.join(workspace, 'tests', 'checkout.spec.ts'));
+    const editor = await vscode.window.showTextDocument(spec);
+    const end = editor.document.lineAt(2).range.end;
+    await editor.edit((e) => e.insert(end, '\n  page.'));
+    const list = await waitFor(async () => {
+      const found = await vscode.commands.executeCommand(
+        'vscode.executeCompletionItemProvider',
+        spec,
+        new vscode.Position(3, '  page.'.length),
+        '.',
+      );
+      return found?.items.some((i) => (typeof i.label === 'string' ? i.label : i.label.label).startsWith('locator(')) ? found : null;
+    }, 'the locator completion');
+    const labels = list.items.map((i) => (typeof i.label === 'string' ? i.label : i.label.label));
+    assert.ok(labels.includes("locator('.cart-row').nth(2)"), labels.slice(0, 5).join(' | '));
+    await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor');
   },
 
   async 'Piwi Picker sends a locator and a recorded flow to the cursor'() {
@@ -156,6 +179,8 @@ const tests = {
       'piwi.runTests',
       'piwi.copyMcpConfiguration',
       'piwi.pairPicker',
+      'piwi.runCommand',
+      'piwi.copyText',
     ]) {
       assert.ok(commands.includes(id), id);
     }

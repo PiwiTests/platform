@@ -31,6 +31,7 @@ import {
   type McpServersResult,
   type RenderStepsResult,
   type RunCommand,
+  type RunCommandArgs,
   type RunStatusResult,
   type RunTestsArgs,
   type StatusResult,
@@ -181,6 +182,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
               )
               .then((p) => p?.t);
       if (picked) await vscode.env.openExternal(vscode.Uri.parse(picked.url));
+    }),
+    vscode.commands.registerCommand('piwi.runCommand', (args: RunCommandArgs) => runInTerminal(args.cwd, args.command)),
+    vscode.commands.registerCommand('piwi.copyText', async (text: string) => {
+      await vscode.env.clipboard.writeText(text);
+      void vscode.window.showInformationMessage('Piwi: copied. Paste it to your agent.');
     }),
     vscode.commands.registerCommand('piwi.openRun', async () => {
       if (statusUrl) await vscode.env.openExternal(vscode.Uri.parse(statusUrl));

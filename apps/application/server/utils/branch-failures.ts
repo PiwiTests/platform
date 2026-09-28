@@ -30,6 +30,8 @@ export interface BranchRun {
 export interface BranchFailure {
   executionId: number;
   testCaseId: number;
+  /** The failure cluster the execution belongs to (its fix plan: `GET /api/failure-clusters/:id/fix-plan`); null when none. */
+  clusterId: number | null;
   title: string;
   /** The spec file and the line of the `test(…)` call. */
   file: string;
@@ -86,6 +88,7 @@ export async function getBranchFailures(
     .select({
       executionId: testRunsCases.id,
       testCaseId: testRunsCases.testCaseId,
+      clusterId: testRunsCases.failureClusterId,
       status: testRunsCases.status,
       error: testRunsCases.error,
       steps: testRunsCases.steps,
@@ -147,6 +150,7 @@ export async function getBranchFailures(
       (r: {
         executionId: number;
         testCaseId: number;
+        clusterId: number | null;
         status: string;
         error: string | null;
         steps: unknown;
@@ -156,6 +160,7 @@ export async function getBranchFailures(
       }) => ({
         executionId: r.executionId,
         testCaseId: r.testCaseId,
+        clusterId: r.clusterId ?? null,
         title: r.title,
         file: r.file,
         line: r.line ?? null,

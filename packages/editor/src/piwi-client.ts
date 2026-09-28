@@ -67,6 +67,7 @@ export interface BranchFailures {
   failures: Array<{
     executionId: number;
     testCaseId: number;
+    clusterId?: number | null;
     title: string;
     file: string;
     line: number | null;
@@ -79,6 +80,23 @@ export interface BranchFailures {
 }
 
 export type BranchFailure = BranchFailures['failures'][number];
+
+/** The parts of a cluster's fix plan the editors use. */
+export interface FixPlan {
+  cluster: { id: number; title: string | null; signature: string };
+  diagnosis: {
+    summary: string | null;
+    patch: string | null;
+    patchValidation: { status: string; errors: string[] } | null;
+  } | null;
+  edits: Array<{
+    filePath: string;
+    line: number | null;
+    suggestedLocator: string | null;
+    edit: { filePath: string | null; line: number; oldLine: string; newLine: string } | null;
+  }>;
+  verify: { command: string; expectation: string };
+}
 
 export class PiwiClient {
   constructor(readonly connection: PiwiConnection) {}
@@ -178,6 +196,24 @@ export class PiwiClient {
     });
     if (!response.ok) throw new PiwiHttpError(`/api/files answered ${response.status}`, response.status);
     return new Uint8Array(await response.arrayBuffer());
+  }
+
+  /** A failure cluster's fix plan (`GET /api/failure-clusters/:id/fix-plan`). */
+  fixPlan(clusterId: number): Promise<FixPlan> {
+    return this.get(`/api/failure-clusters/${clusterId}/fix-plan`);
+  }
+
+  /** The same plan as Markdown, for an agent. */
+  async fixPlanMarkdown(clusterId: number): Promise<string> {
+    const response = await fetch(
+      `${this.connection.serverUrl}/api/failure-clusters/${clusterId}/fix-plan?format=markdown`,
+      {
+        headers: this.connection.apiKey ? { 'X-API-Key': this.connection.apiKey } : {},
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+      },
+    );
+    if (!response.ok) throw new PiwiHttpError(`fix-plan answered ${response.status}`, response.status);
+    return response.text();
   }
 
   /** An execution's page in the dashboard. */
