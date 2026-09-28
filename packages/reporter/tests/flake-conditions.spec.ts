@@ -39,7 +39,9 @@ beforeAll(async () => {
     res.end(JSON.stringify({ path: req.url }));
   });
   browser = await chromium.launch();
-});
+  // A browser launch can take longer than the default hook timeout while other
+  // specs (a whole Playwright run among them) share the machine.
+}, 60_000);
 
 afterAll(async () => {
   await browser?.close();

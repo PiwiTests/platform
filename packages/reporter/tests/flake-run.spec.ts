@@ -29,6 +29,7 @@ function write(file: string, text: string): void {
 }
 
 beforeAll(async () => {
+  if (!fs.existsSync(dist)) throw new Error(`${dist} is missing: run \`npm run reporter:build\` before this spec`);
   server = await startServer((req, res) => {
     if (req.url === '/') {
       res.writeHead(200, { 'content-type': 'text/html' });
