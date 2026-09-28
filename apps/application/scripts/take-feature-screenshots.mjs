@@ -2299,6 +2299,55 @@ const SCENES = [
     pad: 12,
   },
 
+  // ── Flake suspects ───────────────────────────────────────────────────────
+  // Test case 9 is the checkout project's flaky test, whose seeded failures
+  // wait on a slow `GET /api/cart`.
+  {
+    name: 'flakiness-tab',
+    description: 'A flaky test’s Flakiness tab: suspects with their counts and conditions, context and experiments',
+    tags: ['desktop'],
+    route: '/test-cases/9?tab=flakiness',
+    viewport: { width: 1280, height: 1000 },
+    of: '[data-shot="flakiness-tab"]',
+    pad: 12,
+  },
+  {
+    name: 'flakiness-tab-dark',
+    description: 'A flaky test’s Flakiness tab (dark)',
+    tags: ['desktop'],
+    route: '/test-cases/9?tab=flakiness',
+    viewport: { width: 1280, height: 1000 },
+    of: '[data-shot="flakiness-tab"]',
+    pad: 12,
+    colorScheme: 'dark',
+  },
+  {
+    name: 'flakiness-tab-mobile',
+    description: 'A flaky test’s Flakiness tab at phone width',
+    tags: ['desktop'],
+    route: '/test-cases/9?tab=flakiness',
+    viewport: { width: 390, height: 1600 },
+  },
+  {
+    name: 'flaky-list-suspects',
+    description: 'The flaky list with each test’s top suspect',
+    tags: ['desktop'],
+    route: '/projects/1?tab=flaky-tests',
+    viewport: { width: 1400, height: 1000 },
+    of: '[data-shot="flaky-table"]',
+    pad: 12,
+  },
+  {
+    name: 'flaky-list-suspects-dark',
+    description: 'The flaky list with each test’s top suspect (dark)',
+    tags: ['desktop'],
+    route: '/projects/1?tab=flaky-tests',
+    viewport: { width: 1400, height: 1000 },
+    of: '[data-shot="flaky-table"]',
+    pad: 12,
+    colorScheme: 'dark',
+  },
+
   // ── Bug reports ──────────────────────────────────────────────────────────
   {
     name: 'bug-report-page',

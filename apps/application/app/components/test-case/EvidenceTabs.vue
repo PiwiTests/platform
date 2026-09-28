@@ -441,7 +441,7 @@ defineExpose({ canLocate, revealSection, selectTab: (t: TabValue) => (activeTab.
       <!-- ── Attempts ─────────────────────────────────────────────── -->
       <!-- Lazy: this card mounts only when the tab opens, fetching the diff then. -->
       <div v-else-if="activeTab === 'attempts'" class="scroll-mt-4">
-        <AttemptsCard :test-runs-case-id="testRunsCaseId" :attempts="attemptsList" />
+        <AttemptsCard :test-runs-case-id="testRunsCaseId" :attempts="attemptsList" :project-id="projectKey ?? null" />
       </div>
 
       <!-- ── Screen ───────────────────────────────────────────────── -->

@@ -536,8 +536,14 @@ export const HELP_TOPICS = {
   },
   'case.attempts': {
     title: 'Attempts',
-    text: 'When a test failed then passed on retry, this compares the failing attempt against the passing one and lists what differed — the error that was there then gone, a request that failed on only one attempt or was much slower on the failing one, a console error, a slower step, a duration or page-state change. Each difference links to the evidence it came from. That delta is the flakiness fingerprint, and it feeds the root-cause classifier.',
+    text: 'When a test failed then passed on retry, this compares the failing attempt against the passing one and lists what differed — the error that was there then gone, a request that failed on only one attempt or was much slower on the failing one, a console error, a slower step, a duration or page-state change. Each difference links to the evidence it came from, and a request that is one of the test’s flake suspects links to it. That delta is the flakiness fingerprint, and it feeds the root-cause classifier.',
     doc: 'features/flaky-tests#flaky-test-detection',
+  },
+
+  'case.flakiness': {
+    title: 'Flake suspects',
+    text: 'What this test’s failures share and its passes do not, over its last 30 days (at most 200 attempts): a route that is slower or fails, another test running alongside or just before on the same worker, load, a browser. Failures and passes count the attempts showing the factor, out of all. A suspect needs 3 failures and to be at least twice as common among failures as among passes; at most 5 are listed. The condition is what a lab would apply to test it.',
+    doc: 'features/flaky-tests#suspects',
   },
 
   // ── Test case across runs ─────────────────────────────────────────────

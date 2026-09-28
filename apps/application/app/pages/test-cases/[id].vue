@@ -56,19 +56,29 @@ const clusterColor = (status: string) => {
 
 const passRateClass = computed(() => passRateTextClass(passRate.value));
 
-// Overview holds the page as it was; Trend holds the stability trend over time.
+// Overview holds the page as it was; Trend holds the stability trend over time;
+// Flakiness, for a flaky test, the suspects its history points at.
 const TABS = [
   { value: 'overview', label: 'Overview', icon: 'i-lucide-list-checks' },
   { value: 'trend', label: 'Trend', icon: 'i-lucide-activity' },
+  { value: 'flakiness', label: 'Flakiness', icon: 'i-lucide-search-check' },
 ] as const;
 type TabValue = (typeof TABS)[number]['value'];
+
+const { isHidden: capabilityHidden } = await useProjectCapabilities(testCase.value?.project?.id ?? 0);
+const showFlakiness = computed(() => (testCase.value?.flakyRuns ?? 0) > 0 && !capabilityHidden('flake-lab'));
+const visibleTabs = computed(() => TABS.filter((t) => t.value !== 'flakiness' || showFlakiness.value));
+
 const router = useRouter();
 const activeTab = computed<TabValue>({
-  get: () => (route.query.tab === 'trend' ? 'trend' : 'overview'),
+  get: () => {
+    const tab = visibleTabs.value.find((t) => t.value === route.query.tab);
+    return tab ? tab.value : 'overview';
+  },
   set: (tab) => router.replace({ query: { ...route.query, tab: tab === 'overview' ? undefined : tab } }),
 });
 const tabNavItems = computed(() =>
-  TABS.map((t) => ({
+  visibleTabs.value.map((t) => ({
     label: t.label,
     icon: t.icon,
     active: activeTab.value === t.value,
@@ -76,7 +86,7 @@ const tabNavItems = computed(() =>
     onSelect: () => (activeTab.value = t.value),
   })),
 );
-const tabSelectItems = TABS.map((t) => ({ label: t.label, value: t.value }));
+const tabSelectItems = computed(() => visibleTabs.value.map((t) => ({ label: t.label, value: t.value })));
 const activeTabIcon = computed(() => TABS.find((t) => t.value === activeTab.value)?.icon);
 </script>
 
@@ -198,6 +208,8 @@ const activeTabIcon = computed(() => TABS.find((t) => t.value === activeTab.valu
           :test-case-id="Number(testCaseId)"
           :markers="historyMarkers"
         />
+
+        <FlakinessTab v-else-if="activeTab === 'flakiness'" :test-case-id="Number(testCaseId)" />
 
         <template v-else>
           <!-- Duration trend, with the execution strip as its footer row -->
