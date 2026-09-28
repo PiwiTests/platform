@@ -191,9 +191,6 @@
   "popup_playwrightView": {
     "message": "Visão do Playwright"
   },
-  "popup_playwrightViewHint": {
-    "message": "Cada elemento como o getByRole o vê, e os que nenhum locator alcança"
-  },
   "popup_saveLogin": {
     "message": "Salvar o login para os testes"
   },
@@ -221,9 +218,6 @@
   },
   "popup_viewportHeight": {
     "message": "Altura"
-  },
-  "popup_viewportOpen": {
-    "message": "Abrir"
   },
   "popup_viewportOnly": {
     "message": "Só o viewport: sem toque, densidade de pixels nem user agent."
@@ -272,13 +266,13 @@
     "message": "Relatar um bug"
   },
   "popup_reportBugHint": {
-    "message": "Grave, marque o que está errado → um teste com falha"
+    "message": "Passos e o que está errado → um teste com falha"
   },
   "popup_replayBug": {
     "message": "Reproduzir um relatório de bug"
   },
   "popup_replayBugHint": {
-    "message": "Reproduza aqui, com um cursor, e veja se o bug aparece"
+    "message": "Reproduza os passos aqui, com um cursor"
   },
   "popup_record": {
     "message": "Gravar"
@@ -291,18 +285,6 @@
   },
   "popup_pickHint": {
     "message": "Locators classificados"
-  },
-  "popup_hoverInspect": {
-    "message": "Inspecionar"
-  },
-  "popup_hoverInspectHint": {
-    "message": "O locator sob o mouse"
-  },
-  "popup_locatorConsole": {
-    "message": "Console"
-  },
-  "popup_locatorConsoleHint": {
-    "message": "Teste um locator"
   },
   "popup_multiPick": {
     "message": "Multisseleção"
@@ -322,12 +304,6 @@
   "popup_assertionsHint": {
     "message": "Linhas expect(…)"
   },
-  "popup_session": {
-    "message": "Sessão"
-  },
-  "popup_sessionHint": {
-    "message": "Nomear → exportar"
-  },
   "popup_agentContext": {
     "message": "Contexto de IA"
   },
@@ -340,33 +316,14 @@
   "popup_testFunctionsHint": {
     "message": "Seu catálogo aqui"
   },
+  "popup_moreTools": {
+    "message": "Mais ferramentas"
+  },
+  "popup_devtoolsNote": {
+    "message": "O console de locators, a sessão, os mocks de rede, os viewports, a visão do Playwright e Salvar o login estão no DevTools, no painel Piwi."
+  },
   "popup_running": {
     "message": "em execução"
-  },
-  "popup_footerKeys": {
-    "message": "$first$–$last$ abrem uma ferramenta, $tested$ os elementos testados, $bug$ relata um bug, $replay$ reproduz um relatório",
-    "placeholders": {
-      "bug": {
-        "content": "$1",
-        "example": "B"
-      },
-      "first": {
-        "content": "$2",
-        "example": "1"
-      },
-      "last": {
-        "content": "$3",
-        "example": "0"
-      },
-      "replay": {
-        "content": "$4",
-        "example": "R"
-      },
-      "tested": {
-        "content": "$5",
-        "example": "T"
-      }
-    }
   },
   "popup_pickShortcut": {
     "message": "$shortcut$ escolhe um elemento sem abrir este menu",
@@ -539,6 +496,18 @@
   "options_connectHeading": {
     "message": "Conectar ao Piwi"
   },
+  "options_stateConnected": {
+    "message": "Conectado"
+  },
+  "options_stateNotConnected": {
+    "message": "Não conectado"
+  },
+  "options_statePaired": {
+    "message": "Pareado"
+  },
+  "options_stateNotPaired": {
+    "message": "Não pareado"
+  },
   "options_lead": {
     "message": "Opcional. Conectado à sua instância do Piwi, o gravador usa os page objects e as funções auxiliares dos seus projetos e os classifica ao vivo enquanto você grava. Escolher locators e gravar um teste simples sempre funcionam sem conexão."
   },
@@ -554,8 +523,8 @@
   "options_apiKeyHint": {
     "message": "Crie uma no painel do Piwi, nas configurações de chaves de API da sua conta."
   },
-  "options_testConnection": {
-    "message": "Testar a conexão"
+  "options_apiKeySave": {
+    "message": "Salvar e testar"
   },
   "options_mappingsHeading": {
     "message": "Projetos por site"
@@ -577,6 +546,9 @@
       }
     }
   },
+  "options_sitesConnectFirst": {
+    "message": "Os sites correspondem aos projetos da sua instância: conecte-se primeiro."
+  },
   "options_addMapping": {
     "message": "+ Adicionar uma linha"
   },
@@ -593,7 +565,7 @@
     "message": "Projeto"
   },
   "options_projectTestFirst": {
-    "message": "Teste a conexão primeiro"
+    "message": "Projetos ainda não lidos"
   },
   "options_projectChoose": {
     "message": "Escolha um projeto…"
@@ -644,7 +616,7 @@
     "message": "Desconectar"
   },
   "options_privacy": {
-    "message": "Usada só a partir desta página, a chave de API nunca chega aos scripts de uma página web. Os passos gravados não vão a lugar nenhum, a menos que você os copie, baixe ou envie ao seu editor pareado. A conexão baixa os padrões de endereço dos seus projetos, o catálogo de funções de cada projeto associado e os elementos que os testes dele alcançam; adicionar um site envia só o padrão dele."
+    "message": "Usada só a partir desta página, a chave de API nunca chega aos scripts de uma página web. Os passos gravados não vão a lugar nenhum, a menos que você os copie, baixe ou envie ao seu editor pareado ou ao seu aplicativo de desktop pareado. A conexão baixa os padrões de endereço dos seus projetos, o catálogo de funções de cada projeto associado e os elementos que os testes dele alcançam; adicionar um site envia só o padrão dele."
   },
   "options_testing": {
     "message": "Testando…"
@@ -653,28 +625,94 @@
     "message": "Aplicativo de desktop"
   },
   "options_desktopHint": {
-    "message": "Opcional. Pareado com o aplicativo de desktop Piwi Dashboard, Reproduzir pode pedir que ele execute um relatório de bug com o Playwright no seu projeto. Copie o endereço e o token da página Configuração do aplicativo, em Conectar o Piwi Picker."
+    "message": "Opcional. Pareado com o aplicativo de desktop Piwi Dashboard, Reproduzir pode pedir que ele execute um relatório de bug com o Playwright no seu projeto."
   },
   "options_desktopUrl": {
     "message": "Endereço do aplicativo de desktop"
   },
+  "options_desktopUrlHint": {
+    "message": "Aparece na página Configuração do aplicativo, em Conectar o Piwi Picker. Parear pede à janela do aplicativo que autorize o Piwi Picker."
+  },
+  "options_desktopPair": {
+    "message": "Parear"
+  },
+  "options_desktopManual": {
+    "message": "Parear manualmente"
+  },
   "options_desktopToken": {
     "message": "Token"
+  },
+  "options_desktopManualHint": {
+    "message": "O token está na página Configuração do aplicativo, em Conectar o Piwi Picker, ao lado do endereço."
   },
   "options_desktopSave": {
     "message": "Salvar e testar"
   },
   "options_desktopForget": {
-    "message": "Esquecer"
+    "message": "Desparear"
   },
-  "options_desktopSaved": {
-    "message": "Pareado com o aplicativo de desktop."
+  "options_desktopPairedAt": {
+    "message": "Pareado com o aplicativo de desktop em $url$.",
+    "placeholders": {
+      "url": {
+        "content": "$1",
+        "example": "http://127.0.0.1:3000"
+      }
+    }
+  },
+  "options_desktopPairStarting": {
+    "message": "Pedindo ao aplicativo de desktop…"
+  },
+  "options_desktopPairCode": {
+    "message": "Autorize o Piwi Picker na janela do aplicativo de desktop, depois de conferir que ela mostra $code$.",
+    "placeholders": {
+      "code": {
+        "content": "$1",
+        "example": "BCDF-GHJK"
+      }
+    }
+  },
+  "options_desktopPairNoWindow": {
+    "message": "Abra a janela do aplicativo de desktop: o pedido espera por você lá."
+  },
+  "options_desktopPairDenied": {
+    "message": "O pareamento foi recusado no aplicativo de desktop."
+  },
+  "options_desktopPairExpired": {
+    "message": "O pedido expirou antes de ser autorizado. Clique em Parear para pedir de novo."
+  },
+  "options_desktopPairCancelled": {
+    "message": "O pareamento foi cancelado."
+  },
+  "options_desktopPairUnreachable": {
+    "message": "Nada responde em $url$. O aplicativo de desktop está aberto? A página Configuração dele mostra o endereço.",
+    "placeholders": {
+      "url": {
+        "content": "$1",
+        "example": "http://127.0.0.1:3000"
+      }
+    }
+  },
+  "options_desktopPairUnsupported": {
+    "message": "O que responde em $url$ não pode parear em uma etapa: confira o endereço na página Configuração do aplicativo de desktop, atualize o aplicativo ou pareie manualmente.",
+    "placeholders": {
+      "url": {
+        "content": "$1",
+        "example": "http://127.0.0.1:3000"
+      }
+    }
+  },
+  "options_desktopPairTooMany": {
+    "message": "Já há três pareamentos esperando na janela do aplicativo de desktop: responda a eles primeiro."
   },
   "options_desktopForgotten": {
     "message": "O aplicativo de desktop não está mais pareado."
   },
   "options_desktopNotLoopback": {
-    "message": "Informe o endereço do aplicativo de desktop, como http://127.0.0.1:4318, e o token dele."
+    "message": "Informe o endereço do aplicativo de desktop, como http://127.0.0.1:3000."
+  },
+  "options_desktopNeedsToken": {
+    "message": "Cole primeiro o token da página Configuração do aplicativo."
   },
   "options_desktopNeedsAccess": {
     "message": "Permita o acesso ao endereço do aplicativo de desktop para pareá-lo."
@@ -699,9 +737,6 @@
         "example": "3"
       }
     }
-  },
-  "options_projectsUnlisted": {
-    "message": "Conectado, mas não foi possível listar os projetos."
   },
   "options_saved_one": {
     "message": "$count$ linha salva.",
@@ -938,9 +973,6 @@
       }
     }
   },
-  "options_sourceLocal": {
-    "message": "Este navegador"
-  },
   "options_addHeading": {
     "message": "Adicionar um site"
   },
@@ -1065,9 +1097,6 @@
   "console_expression": {
     "message": "Locator para testar"
   },
-  "console_close": {
-    "message": "Fechar o console"
-  },
   "console_unique": {
     "message": "Um só elemento: o modo estrito passa"
   },
@@ -1089,32 +1118,6 @@
       "count": {
         "content": "$1",
         "example": "3"
-      }
-    }
-  },
-  "console_manyOutlined_one": {
-    "message": "$count$ elemento: o modo estrito falha (os $shown$ primeiros destacados)",
-    "placeholders": {
-      "count": {
-        "content": "$1",
-        "example": "120"
-      },
-      "shown": {
-        "content": "$2",
-        "example": "50"
-      }
-    }
-  },
-  "console_manyOutlined_other": {
-    "message": "$count$ elementos: o modo estrito falha (os $shown$ primeiros destacados)",
-    "placeholders": {
-      "count": {
-        "content": "$1",
-        "example": "120"
-      },
-      "shown": {
-        "content": "$2",
-        "example": "50"
       }
     }
   },
@@ -1310,36 +1313,6 @@
   "agent_hint": {
     "message": "Cole este texto no seu assistente de código com IA"
   },
-  "session_dialog": {
-    "message": "Sessão: elementos nomeados"
-  },
-  "session_count_one": {
-    "message": "$count$ elemento nomeado",
-    "placeholders": {
-      "count": {
-        "content": "$1",
-        "example": "3"
-      }
-    }
-  },
-  "session_count_other": {
-    "message": "$count$ elementos nomeados",
-    "placeholders": {
-      "count": {
-        "content": "$1",
-        "example": "3"
-      }
-    }
-  },
-  "session_none": {
-    "message": "Nenhum elemento nomeado ainda"
-  },
-  "session_kept": {
-    "message": "A lista fica até você fechar o navegador"
-  },
-  "session_intro": {
-    "message": "Escolha um elemento e dê um nome a ele. Adicione elementos de várias páginas e depois copie a lista como page object, tabela Markdown ou JSON."
-  },
   "session_remove": {
     "message": "Remover $name$",
     "placeholders": {
@@ -1348,9 +1321,6 @@
         "example": "submitButton"
       }
     }
-  },
-  "session_add": {
-    "message": "+ Adicionar um elemento"
   },
   "session_copyPageObject": {
     "message": "Copiar como page object (.ts)"
@@ -5095,6 +5065,12 @@
   "devtools_tabSession": {
     "message": "Sessão"
   },
+  "devtools_viewport": {
+    "message": "Viewport"
+  },
+  "devtools_viewportOpen": {
+    "message": "Abrir em uma nova janela"
+  },
   "devtools_locatorsHint": {
     "message": "Digite um locator: os elementos que ele encontra nesta página são listados, como o Playwright os encontra. Passe o ponteiro sobre um para destacá-lo na página; Mostrar o seleciona no painel Elementos."
   },
@@ -5114,7 +5090,7 @@
     }
   },
   "devtools_sessionEmpty": {
-    "message": "Nenhum elemento nomeado ainda. Selecione um no painel Elementos e use Adicionar à sessão na barra lateral Piwi, ou a ferramenta Sessão no menu da extensão."
+    "message": "Nenhum elemento nomeado ainda. Selecione um no painel Elementos e use Adicionar à sessão na barra lateral Piwi."
   },
   "devtools_sessionCount_one": {
     "message": "$count$ elemento nomeado",

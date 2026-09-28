@@ -122,8 +122,9 @@ reopens as its ticket moves into and out of Done.
 ## Running it with Playwright in the desktop app
 
 For the exact verdict and a trace, the [desktop app](./desktop) runs a report's steps with Playwright in your project.
-Pair it once: **Connect Piwi Picker**, on the app's **Setup** page, shows its address and token to paste into the
-extension's options, under **Desktop app**.
+Pair it once: in the extension's settings, under **Desktop app**, click **Pair**, then **Allow** in the app's window,
+which shows the same code. The address is the one on the app's **Setup** page, under **Connect Piwi Picker**
+(`http://127.0.0.1:3000` unless another program holds that port); **Pair by hand** takes the token shown there instead.
 
 **Run with Playwright…**, in Replay's chooser or on a finished replay, shows what it sends (the title and the steps,
 with the values typed in them) and sends it on **Send**. The request holds steps, never code. The app's window shows

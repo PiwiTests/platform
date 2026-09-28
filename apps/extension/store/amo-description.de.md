@@ -5,14 +5,12 @@ Piwi Picker findet den Locator für jedes Element der Seite, die Sie gerade anse
 **Die Werkzeuge, direkt auf der Seite**
 
 - **Element wählen**: die sortierten Locators eines Elements, auf der Seite geprüft, zum Kopieren als Locator, als Aktionszeile oder als Assertion.
-- **Untersuchen**: der beste Locator des Elements unter der Maus.
-- **Konsole**: Geben Sie einen Locator ein und sehen Sie, was er gerade findet, mit dem Ergebnis des Strict Mode.
 - **Mehrfachauswahl**: das gemeinsame Muster der Zeilen oder Karten einer Liste.
 - **Prüfung**: die Elemente, die in einem Test schwer anzusteuern sind, jeweils mit einer vorgeschlagenen data-testid.
 - **Assertions**: expect(...)-Zeilen für ein Element.
-- **Session**: Elemente, die Sie auf mehreren Seiten benennen, exportiert als Page Object, als Markdown-Tabelle oder als JSON.
 - **KI-Kontext**: ein Textblock, der ein Element beschreibt, für einen KI-Coding-Agenten.
 - **Aufzeichnen**: Klicks, Eingaben und Auswahlen auf den Seiten einer Website, umgewandelt in einen TypeScript-Test. Passwörter werden nie aufgezeichnet.
+- **In DevTools**: die sortierten Locators des unter Elemente ausgewählten Elements, eine Locator-Konsole mit dem Ergebnis des Strict Mode, die Elemente, die Sie benennen, exportiert als Page Object, Netzwerk-Mocks, der Viewport eines Playwright-Projekts und Anmeldung für Tests speichern.
 
 **Standardmäßig privat**
 

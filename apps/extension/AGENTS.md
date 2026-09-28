@@ -61,16 +61,23 @@ AMO listings that are still outstanding.
   `unregisterContentScripts` and `chrome.action.*` are called from, since content scripts can't
   reach either API.
 - `src/popup/` — the toolbar popup. Plain TypeScript + DOM, no UI framework — keep it that
-  way unless the popup's own complexity genuinely outgrows it. Has a config (gear) button
-  (`chrome.runtime.openOptionsPage()`) and, once connected, an **Active project** select that
-  shows/overrides which mapped project applies to the current tab.
-- `src/options/` + `options.html` — the connected-mode settings page: instance URL and a
-  **Connect** button (an RFC 8628 device authorization, below), a folded **Use an API key
-  instead** fallback, the instance's URL patterns (read-only, marked **Piwi**), the patterns kept
-  in this browser (**This browser only**, editable) and an **Add a site** form. Same plain
-  TypeScript + DOM approach as the popup. Opened via `chrome.runtime.openOptionsPage()`, or as
-  `options.html#add=<pattern>` from the popup's **Add this site**, never linked to from a content
-  script.
+  way unless the popup's own complexity genuinely outgrows it. It holds the tools that act on the page, for testers and
+  developers alike: **Record actions** and **Pick an element** first, then **Report a bug** and **Replay a bug
+  report**, **Tested elements**, and the other page tools as compact tiles under **More tools**. The developer tools
+  that have a home in DevTools are there, not here (see "DevTools"): the popup ends with a line saying so. It has a
+  config (gear) button (`chrome.runtime.openOptionsPage()`) and, once connected, an **Active project** select that
+  shows/overrides which mapped project applies to the current tab. **It must fit Chrome's 600-pixel popup height** in
+  every shipped language (German is the longest); `popup.spec.ts` checks the English height, and a new tile goes under
+  More tools or into DevTools rather than below the fold.
+- `src/options/` + `options.html` — the settings page, one card per setting, each with its own actions and its own
+  status line (`#language-status`, `#status`, `#mappings-status`, `#desktop-status`, `#editor-status`) and a badge
+  saying whether it is connected or paired: **Language**; **Connect to Piwi** (instance URL and a **Connect** button,
+  an RFC 8628 device authorization, below; a folded **Use an API key instead** with its own **Save and test**;
+  **Disconnect**); **Project mappings**, shown once an instance is kept (the instance's URL patterns, read-only, marked
+  **Piwi**; the patterns kept in this browser, a table whose **Save** keeps only them; a folded **Add a site** form);
+  **Desktop app** (below); **Send to editor**. Same plain TypeScript + DOM approach as the popup. Opened via
+  `chrome.runtime.openOptionsPage()`, or as `options.html#add=<pattern>` from the popup's **Add this site**, which
+  opens the Add a site form, never linked to from a content script.
 - `src/shared/` — code shared between content scripts, background, popup, and options.
 
 **A momentary tool must claim the page through `src/shared/tool-session.ts`.** `startTool(id,
@@ -178,10 +185,14 @@ every kind of evidence shown, a box per kind and one that leaves the typed value
 `bug-send.ts`). The first send in a profile explains once what connected mode now sends (`piwiBugSendExplained`).
 
 **Run with Playwright** (`desktop-run-panel.ts`, worker side `background/desktop-repro.ts`) sends a report's title and
-steps, nothing else, to the desktop app paired in the options (`piwiDesktop`: its loopback address and token, pasted
-from the app's **Connect Piwi Picker**; `desktop-settings.ts` accepts only plain http on 127.0.0.1, localhost or
-[::1]). The dialog shows the payload before **Send**; the options page requests that one loopback origin inside the
-**Save and test** click. The request is JSON with `x-piwi-token`, holds steps and never code, and the app runs nothing
+steps, nothing else, to the desktop app paired in the options (`piwiDesktop`: its loopback address and token;
+`desktop-settings.ts` accepts only plain http on 127.0.0.1, localhost or [::1]). **Pair** asks the app at the address
+typed (`DESKTOP_DEFAULT_URL`, the app's preferred port, unless changed) for a pairing
+(`POST /api/desktop/picker-pairings`, open without the token; see `apps/application/shared/desktop-pairing.ts`): the
+app's window shows who asks with a code the card shows too, and the poll after the developer's **Allow** carries the
+app's token, once, which the card keeps after `testDesktop` accepts it. **Pair by hand** takes the token pasted from the
+app's **Connect Piwi Picker** instead. Either way the options page requests that one loopback origin inside the click,
+and **Unpair** gives it back. The dialog shows the payload before **Send**. The request is JSON with `x-piwi-token`, holds steps and never code, and the app runs nothing
 before the developer confirms it in its window; the dialog then polls the request for the verdict.
 
 A replay registers `bug-evidence-main.js` in the page's main world beside `replay-panel.js`, for as long as it runs,
@@ -277,15 +288,15 @@ recorder takes:
   extension's own elements): verified first, a candidate finding the element among others narrowed (exact, then
   `.filter({ hasText })`, then a landmark, dialog, row or test-id scope) at one point under it, one finding only others
   dropped, `.first()`/`.nth()` last. `keepAmbiguous` also returns the others with the engine's count, which is what the
-  Pick results panel shows. `verifiedLocators` (the recorder), `deriveTopLocator` (assertions, session, the Tested
+  Pick results panel shows. `verifiedLocators` (the recorder), `deriveTopLocator` (assertions, the Tested
   elements overlay) and `rankElementLocators` (At risk replacements) are built on it; a scan passes one engine to every
   call so the engine's caches serve the whole scan.
-- **Hover** (`createHoverLocator`, behind hover-inspect and the picker overlay's `__piwiDescribeElement`) must stay
+- **Hover** (`createHoverLocator`, behind the picker overlay's `__piwiDescribeElement`) must stay
   cheap on pointer moves. Building the engine's indexes costs tens of milliseconds on a large page (about 45 ms at
   3,000 elements, 120 ms at 9,000), so a move gets the ranked candidate (probe without structural anchors, `DomModel`
   name: under a millisecond), and the check runs once the pointer has rested `HOVER_REST_MS` on the element, kept for
   that animation frame; the picker overlay re-reads it through `globalThis.__piwiRedescribe`.
-- **Counts** (the locator console) come from the same engine; nothing in the extension estimates a count any more.
+- **Counts** (the DevTools Locators tab) come from the same engine; nothing in the extension estimates a count.
 
 `pick.spec.ts` picks each case of `tests/e2e/pages/pick-cases.html` (a tab with a count badge, a name that is a
 substring of another, a link in the nav and in main, buttons sharing an `aria-label`) and has real Playwright click the
@@ -381,7 +392,7 @@ pointer events it sends follow the element tree: leaves for the ancestors it lef
 
 ## Playwright view
 
-`playwright-view.ts` (popup tile `V`, a toggle) labels every element a test could reach with the role and name
+`playwright-view.ts` (**Playwright view** in the DevTools panel's toolbar, a toggle) labels every element a test could reach with the role and name
 `DomModel` gives it and its test id, and marks two kinds: **unreachable** (looks operable, through a `tabindex`, an
 `onclick` or a pointer cursor its parent lacks, with no role; or an operable role with no name; and no test id) and
 **ambiguous** (its `getByRole(role, { name })` finds other elements on the engine). The pure half is
@@ -435,12 +446,13 @@ scheme, a transparent background) and the helpers in `src/devtools/ui.ts` (butto
   Turning them off, or closing the tab, unregisters both and lets the session go, and turning them off reloads the tab.
   A replay started meanwhile carries the requests' conditions (`ReplayState.conditions`) and its panel lists them.
   `request-conditions.spec.ts` drives both paths against a real server.
-- **Open this page at a viewport** (the popup's last row, `src/popup/viewports.ts`): the sizes are the active
+- **Open this page at a viewport** (**Viewport** in the panel's toolbar shows its bar, `src/devtools/panel-viewport.ts`;
+  the inspected tab's address is read in the page, since a DevTools page holds no `activeTab` grant): the sizes are the active
   project's `viewports` from the cached locator index, or typed by hand; `piwi-open-viewport` in the background worker
   creates the window and grows it until the tab's `width`/`height` match. In a spec, measure the tab through
   `chrome.tabs`, not the page: Playwright emulates its own viewport in the pages it drives (`viewport.spec.ts`).
   **In this tab** (Chrome and Edge) sends `piwi-set-tab-viewport` instead: `Emulation.setDeviceMetricsOverride` on
-  the tab, kept under `piwiTabViewport` for the popup to show with **Back to the window's size**
+  the tab, kept under `piwiTabViewport` for the bar to show with **Back to the window's size**
   (`piwi-clear-tab-viewport`).
 - **Tests**: `devtools-sidebar.spec.ts`, `devtools-panel.spec.ts` and `devtools-network.spec.ts` open the pages as tabs with `chrome.devtools` stubbed (`devtools-stub.ts`:
   `eval` runs in a fixture page's own world, where the spec adds the content script; `$0` is that page's global).
@@ -449,8 +461,8 @@ scheme, a transparent background) and the helpers in `src/devtools/ui.ts` (butto
 
 ## Content-script structure
 
-Each standalone content-script feature (locator console, multi-pick, lint overlay, assertion
-suggester, pick session, agent context, recording, try-it scanning, …) is split into a pure
+Each standalone content-script feature (multi-pick, lint overlay, assertion suggester, agent
+context, recording, try-it scanning, …) is split into a pure
 logic file (e.g. `lint-scan.ts`, `assertion-suggest.ts`, `session-export.ts`,
 `record-capture.ts`, `test-function-scan.ts`) and a separate entry-point/UI file (e.g.
 `lint-overlay.ts`, `assertion-panel.ts`,
@@ -517,8 +529,8 @@ instead of needing a live browser for everything.
   needs its own `@media (prefers-color-scheme: light)` entry for the same reason.
 - **`chrome.storage.session` needs `setAccessLevel` to be reachable from a content script.**
   It defaults to extension-page/service-worker-only access; `src/background/index.ts` widens
-  it once at startup (`TRUSTED_AND_UNTRUSTED_CONTEXTS`) specifically so `session-panel.ts` and
-  `recording-storage.ts` can read/write it directly from a content script — in Chrome. Firefox
+  it once at startup (`TRUSTED_AND_UNTRUSTED_CONTEXTS`) specifically so `recording-storage.ts`
+  and the replay can read/write it directly from a content script — in Chrome. Firefox
   has no such call, which is why every access goes through `sessionArea()` (see above).
   `chrome.storage.local` (connection settings, the catalog cache) has no such restriction.
 - **Two different test strategies for content-script logic, pick deliberately.** A function
@@ -531,9 +543,9 @@ instead of needing a live browser for everything.
   exported individually. Those are tested by driving the real built bundle
   (`page.addScriptTag`), either reading a well-known `globalThis.__piwiXxx` the entry-point
   bridges a result out to (`lint-overlay.ts`, `assertion-panel.ts`, `agent-context-panel.ts`)
-  or, for anything backed by `chrome.storage` (`session-panel.ts`, `record-panel.ts`),
-  reading state back out of a stubbed `chrome.storage` installed via `context.addInitScript`
-  (see `session-panel.spec.ts`, `record.spec.ts`) — don't reach for reconstruction if the
+  or, for anything backed by `chrome.storage` (`record-panel.ts`), reading state back out of
+  a stubbed `chrome.storage` installed via `context.addInitScript` (see `record.spec.ts`) —
+  don't reach for reconstruction if the
   feature touches `generateAlternatives` or `chrome.*`.
 - **`record.spec.ts`'s cross-page test stubs `chrome.storage` on top of `window.name`, not a
   plain in-memory object.** `context.addInitScript` re-runs on every new document, which would

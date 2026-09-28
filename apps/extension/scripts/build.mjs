@@ -42,13 +42,10 @@ export function firefoxManifest(manifest) {
 /** Every standalone content script / service worker entry, as [output name, source entry]. */
 const STANDALONE_ENTRIES = [
   ['pick', 'src/content/pick.ts'],
-  ['hover-inspect', 'src/content/hover-inspect.ts'],
-  ['locator-console', 'src/content/locator-console.ts'],
   ['multi-pick', 'src/content/multi-pick.ts'],
   ['lint-overlay', 'src/content/lint-overlay.ts'],
   ['playwright-view', 'src/content/playwright-view.ts'],
   ['assertion-panel', 'src/content/assertion-panel.ts'],
-  ['session-panel', 'src/content/session-panel.ts'],
   ['agent-context-panel', 'src/content/agent-context-panel.ts'],
   ['test-function-panel', 'src/content/test-function-panel.ts'],
   ['coverage-overlay', 'src/content/coverage-overlay.ts'],

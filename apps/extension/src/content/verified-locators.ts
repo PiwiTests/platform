@@ -349,7 +349,7 @@ const TOP_CHECKED = 4;
 
 /**
  * The one locator a tool needs for an already-picked element
- * (`assertion-suggest.ts`, `session-panel.ts`, the overlays' previews).
+ * (`assertion-suggest.ts`, the overlays' previews).
  */
 export function deriveTopLocator(el: Element, engine?: LocatorEngine): TopLocatorInfo {
   const { ranked, accessibleName } = rankElement(el, { model: engine?.model });

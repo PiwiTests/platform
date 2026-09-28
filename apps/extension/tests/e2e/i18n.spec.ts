@@ -100,7 +100,7 @@ test.describe('in an English browser', () => {
     await expect(language).toHaveValue('');
 
     await language.selectOption('fr');
-    await expect(options.locator('#status')).toHaveText('Langue enregistrée.');
+    await expect(options.locator('#language-status')).toHaveText('Langue enregistrée.');
     // The page redraws itself in the new language.
     await expect(options.getByRole('heading', { name: 'Connexion à Piwi' })).toBeVisible();
     await expect(options.locator('html')).toHaveAttribute('lang', 'fr');
@@ -114,7 +114,7 @@ test.describe('in an English browser', () => {
     expect(await untranslated(popup)).toEqual([]);
 
     await options.getByLabel('Langue').selectOption('');
-    await expect(options.locator('#status')).toHaveText('Language saved.');
+    await expect(options.locator('#language-status')).toHaveText('Language saved.');
     await popup.reload();
     await expect(popup.getByRole('button', { name: /Pick an element/ })).toBeVisible();
     await expect(popup.locator('html')).toHaveAttribute('lang', /^en/);
@@ -127,7 +127,7 @@ test.describe('in an English browser', () => {
     const page = await context.newPage();
     await page.goto(`chrome-extension://${extensionId}/options.html`);
     await page.getByLabel('Language').selectOption('fr');
-    await expect(page.locator('#status')).toHaveText('Langue enregistrée.');
+    await expect(page.locator('#language-status')).toHaveText('Langue enregistrée.');
 
     const replayFinished = () =>
       page.evaluate(async () => {
@@ -173,7 +173,7 @@ test.describe('in a French browser', () => {
     }
     await expect(page.getByRole('button', { name: 'Réglages' })).toBeVisible();
     await expect(page.locator('#coverage-hint')).toHaveText('Connectez Piwi pour voir ce que vos tests atteignent');
-    await expect(page.locator('footer kbd')).toHaveText(['1', '0', 'T', 'B', 'R', /./]);
+    await expect(page.locator('.tile .key')).toHaveText(['1', '2', 'B', 'R', 'T', '3', '4', '5', '6', '7']);
     expect(await untranslated(page)).toEqual([]);
     expect(await clipped(page)).toEqual([]);
 
@@ -203,20 +203,29 @@ test.describe('in a French browser', () => {
     ]);
     await expect(page.getByRole('heading', { name: 'Projets par site' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Se connecter' })).toBeVisible();
-    await expect(page.locator('#server-mappings .empty-mappings')).toHaveText(
-      'Pas encore lus : connectez-vous d’abord.',
+    await expect(page.locator('#instance-pill')).toHaveText('Non connecté');
+    await expect(page.locator('#desktop-pill')).toHaveText('Non associé');
+    await expect(page.locator('#sites-connect-first')).toHaveText(
+      'Les sites renvoient aux projets de votre instance : connectez-vous d’abord.',
     );
+    await expect(page.locator('p.hint code')).toHaveText(['*', '**', 'develop']);
+    expect(await untranslated(page)).toEqual([]);
+
+    // Connected, the lines of this browser show.
+    await page.evaluate(() =>
+      chrome.storage.local.set({ piwiConnection: { instanceUrl: 'http://127.0.0.1:9', apiKey: 'k' } }),
+    );
+    await page.reload();
+    await expect(page.locator('#instance-pill')).toHaveText('Connecté');
     await expect(page.locator('#mappings .empty-mappings')).toHaveText(
       'Aucune ligne pour l’instant : ajoutez-en une ci-dessous.',
     );
-    await expect(page.locator('p.hint code')).toHaveText(['*', '**', 'develop']);
     await page.getByRole('button', { name: '+ Ajouter une ligne' }).click();
     await expect(page.getByRole('textbox', { name: 'Motif d’adresse' })).toHaveAttribute(
       'placeholder',
       'https://boutique.exemple.fr/**',
     );
-    await page.getByRole('button', { name: 'Enregistrer', exact: true }).click();
-    await expect(page.locator('#status')).toHaveText('Saisissez d’abord l’adresse de votre instance Piwi.');
+    await expect(page.getByRole('button', { name: 'Enregistrer', exact: true })).toBeVisible();
     expect(await untranslated(page)).toEqual([]);
   });
 
@@ -290,8 +299,8 @@ test('the Language setting reaches a panel through the stored catalog, whatever 
   await stubChromeI18n(context);
   const page = await context.newPage();
   await page.setContent('<!doctype html><html lang="en"><body><button>Pay</button></body></html>');
-  await page.addScriptTag({ path: path.join(here, '..', '..', 'dist', 'locator-console.js') });
-  const bar = page.locator('#piwi-locator-console-host .bar');
-  await expect(bar).toHaveAttribute('lang', 'de');
-  await expect(bar.locator('input')).toHaveAttribute('aria-label', readCatalog('de').console_expression!.message);
+  await page.addScriptTag({ path: path.join(here, '..', '..', 'dist', 'lint-overlay.js') });
+  const panel = page.locator('#piwi-lint-overlay-host .panel');
+  await expect(panel).toHaveAttribute('lang', 'de');
+  await expect(panel).toHaveAttribute('aria-label', readCatalog('de').lint_dialog!.message);
 });

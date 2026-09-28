@@ -1,4 +1,3 @@
-import { setUpViewportRow } from './viewports.js';
 import {
   getRecordingState,
   stopRecording,
@@ -55,13 +54,9 @@ async function inject(file: string): Promise<void> {
 }
 
 document.getElementById('pick')!.addEventListener('click', () => void inject('pick.js'));
-document.getElementById('hover-inspect')!.addEventListener('click', () => void inject('hover-inspect.js'));
-document.getElementById('locator-console')!.addEventListener('click', () => void inject('locator-console.js'));
 document.getElementById('multi-pick')!.addEventListener('click', () => void inject('multi-pick.js'));
 document.getElementById('lint-overlay')!.addEventListener('click', () => void inject('lint-overlay.js'));
-document.getElementById('playwright-view')!.addEventListener('click', () => void inject('playwright-view.js'));
 document.getElementById('assertion-panel')!.addEventListener('click', () => void inject('assertion-panel.js'));
-document.getElementById('session-panel')!.addEventListener('click', () => void inject('session-panel.js'));
 document.getElementById('agent-context-panel')!.addEventListener('click', () => void inject('agent-context-panel.js'));
 document.getElementById('test-function-panel')!.addEventListener('click', () => void inject('test-function-panel.js'));
 coverageButton.addEventListener('click', () => {
@@ -70,41 +65,29 @@ coverageButton.addEventListener('click', () => {
   else chrome.runtime.openOptionsPage();
 });
 
-document.getElementById('save-login')!.addEventListener('click', () => {
-  void activeTab().then((tab) => {
-    if (tab?.id == null) return;
-    const query = new URLSearchParams({ tabId: String(tab.id), url: tab.url ?? '' });
-    void chrome.tabs.create({ url: chrome.runtime.getURL(`login.html?${query}`) }).then(() => window.close());
-  });
-});
-
-void setUpViewportRow(activeTab, (text) => {
-  statusEl.textContent = text;
-});
-
 configButton.addEventListener('click', () => {
   chrome.runtime.openOptionsPage();
 });
 
 /**
- * Digit shortcuts for the action grid, in the order the tiles are rendered —
- * the `kbd` badge on each tile and its `aria-keyshortcuts` must stay in step
- * with this. Scoped to the popup rather than declared as `chrome.commands`,
- * which caps a extension at four user-visible shortcuts and would burn
- * global browser-wide bindings on actions that only make sense with this
- * popup open.
+ * The popup's single-key shortcuts: digits for the tools, in the order the
+ * tiles are rendered, and a letter for each flow — the `kbd` badge on each
+ * tile and its `aria-keyshortcuts` must stay in step with this. Scoped to the
+ * popup rather than declared as `chrome.commands`, which caps an extension at
+ * four user-visible shortcuts and would burn global browser-wide bindings on
+ * actions that only make sense with this popup open.
  */
 const KEY_TO_ACTION_ID: Record<string, string> = {
   '1': 'record',
   '2': 'pick',
-  '3': 'hover-inspect',
-  '4': 'locator-console',
-  '5': 'multi-pick',
-  '6': 'lint-overlay',
-  '7': 'assertion-panel',
-  '8': 'session-panel',
-  '9': 'agent-context-panel',
-  '0': 'test-function-panel',
+  '3': 'multi-pick',
+  '4': 'assertion-panel',
+  '5': 'lint-overlay',
+  '6': 'agent-context-panel',
+  '7': 'test-function-panel',
+  t: 'coverage-overlay',
+  b: 'report-bug',
+  r: 'replay-bug',
 };
 
 /**
@@ -130,7 +113,7 @@ async function highlightActiveTool(): Promise<void> {
     // Restricted page, or nothing injected yet — nothing is running either way.
     return;
   }
-  for (const button of document.querySelectorAll<HTMLElement>('.actions button, button.feature')) {
+  for (const button of document.querySelectorAll<HTMLElement>('button.tile')) {
     const running = button.id === active;
     button.classList.toggle('running', running);
     // Conveys the same thing the ring does, for anyone not seeing the ring.
@@ -181,16 +164,7 @@ document.addEventListener('keydown', (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   const target = e.target as HTMLElement | null;
   if (target && ['INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName)) return;
-  const id =
-    e.key === 't' || e.key === 'T'
-      ? 'coverage-overlay'
-      : e.key === 'b' || e.key === 'B'
-        ? 'report-bug'
-        : e.key === 'r' || e.key === 'R'
-          ? 'replay-bug'
-          : e.key === 'v' || e.key === 'V'
-            ? 'playwright-view'
-            : KEY_TO_ACTION_ID[e.key];
+  const id = KEY_TO_ACTION_ID[e.key.toLowerCase()];
   if (!id) return;
   e.preventDefault();
   document.getElementById(id)?.click();

@@ -545,6 +545,79 @@ export async function testDesktop(desktop: DesktopSettings): Promise<ConnectionC
   }
 }
 
+/** A pairing the desktop app started: the code both sides show, and the secret only this extension polls with. */
+export interface DesktopPairingStart {
+  id: string;
+  secret: string;
+  code: string;
+  interval: number;
+  expiresIn: number;
+  /** False when no window of the app is open to show the request. */
+  windowOpen: boolean;
+}
+
+/**
+ * Asks the desktop app at `url` to pair: its window shows the request with the
+ * code this answers. Throws a message to show when it cannot.
+ */
+export async function startDesktopPairing(url: string, client: ClientInfo): Promise<DesktopPairingStart> {
+  let res: Response;
+  try {
+    res = await postJson(`${url}/api/desktop/picker-pairings`, client);
+  } catch {
+    throw new Error(t('options_desktopPairUnreachable', { url }));
+  }
+  if (res.status === 429) throw new Error(t('options_desktopPairTooMany'));
+  if (!res.ok) throw new Error(t('options_desktopPairUnsupported', { url }));
+  const body = (await res.json().catch(() => ({}))) as Partial<DesktopPairingStart>;
+  if (
+    typeof body.id !== 'string' ||
+    !/^[0-9a-f]{16}$/.test(body.id) ||
+    typeof body.secret !== 'string' ||
+    typeof body.code !== 'string'
+  ) {
+    throw new Error(t('options_desktopPairUnsupported', { url }));
+  }
+  return {
+    id: body.id,
+    secret: body.secret,
+    code: body.code,
+    interval: typeof body.interval === 'number' && body.interval > 0 ? body.interval : 2,
+    expiresIn: typeof body.expiresIn === 'number' && body.expiresIn > 0 ? body.expiresIn : 300,
+    windowOpen: body.windowOpen !== false,
+  };
+}
+
+/**
+ * One poll of a pairing, in the shape the connect flow waits on: `approved`
+ * carries the app's token as `apiKey`. Throws on a network error or an
+ * unexpected answer, which the caller retries.
+ */
+export async function pollDesktopPairing(url: string, pairing: DesktopPairingStart): Promise<ConnectPoll> {
+  const res = await fetch(`${url}/api/desktop/picker-pairings/${pairing.id}`, {
+    headers: { 'x-pairing-secret': pairing.secret },
+    signal: timeout(),
+  });
+  // Gone: the app restarted and lost it, as good as expired.
+  if (res.status === 404) return { status: 'expired' };
+  if (!res.ok) throw new Error(t('common_desktopStatus', { status: res.status }));
+  const body = (await res.json()) as { status?: unknown; token?: unknown };
+  switch (body.status) {
+    case 'waiting':
+      return { status: 'pending' };
+    case 'denied':
+      return { status: 'denied' };
+    case 'expired':
+    case 'claimed':
+      return { status: 'expired' };
+    case 'allowed':
+      if (typeof body.token !== 'string' || !body.token) throw new Error(t('options_desktopPairUnsupported', { url }));
+      return { status: 'approved', apiKey: body.token, user: null };
+    default:
+      throw new Error(t('options_desktopPairUnsupported', { url }));
+  }
+}
+
 export interface ReproRequestSend {
   steps: PiwiSteps;
   title: string | null;

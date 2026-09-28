@@ -7,9 +7,9 @@ import { viewHead } from './panel-record.js';
 import { button, el, emptyState, flash } from './ui.js';
 
 /**
- * The Session tab: the elements named so far, from Add to session in the
- * Elements sidebar or from the Session tool on the page, the same list in
- * session storage. Copies it as a page object, a Markdown table or JSON.
+ * The Session tab: the elements named so far with Add to session in the
+ * Elements sidebar, kept in session storage. Copies them as a page object, a
+ * Markdown table or JSON.
  */
 
 function pathOf(url: string): string {

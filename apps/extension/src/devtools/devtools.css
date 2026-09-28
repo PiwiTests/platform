@@ -427,6 +427,40 @@ body.panel {
   background: var(--hover);
 }
 
+/* The viewport bar, under the toolbar while Viewport is on. */
+.subbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  align-items: center;
+  padding: 5px 10px;
+  background: var(--toolbar);
+  border-bottom: 1px solid var(--divider);
+  flex-shrink: 0;
+}
+
+.subbar[hidden] {
+  display: none;
+}
+
+.subbar .viewport-custom input {
+  width: 5em;
+}
+
+.subbar .viewport-custom[hidden],
+.subbar .note[hidden] {
+  display: none;
+}
+
+.subbar .note {
+  color: var(--muted);
+}
+
+.tools button[aria-expanded='true'] {
+  color: var(--selected-fg);
+  background: var(--selected);
+}
+
 #notice:not(:empty) {
   display: flex;
   flex-wrap: wrap;

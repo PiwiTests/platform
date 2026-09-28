@@ -239,13 +239,13 @@ test.describe.serial('connect in one step', () => {
     await settings.locator('#add-prefix').fill('/app?lang=fr');
     await expect(settings.locator('#add-prefix')).toHaveAttribute('aria-invalid', '');
     await settings.getByRole('button', { name: 'Add to Piwi' }).click();
-    await expect(settings.locator('#status')).toContainText('/app?lang=fr is not a path prefix');
+    await expect(settings.locator('#mappings-status')).toContainText('/app?lang=fr is not a path prefix');
     await settings.locator('#add-prefix').fill('app/');
     await expect(settings.locator('#add-prefix')).not.toHaveAttribute('aria-invalid');
     await settings.locator('#add-test-prefix').fill('/v2');
     await settings.getByRole('button', { name: 'Add to Piwi' }).click();
 
-    await expect(settings.locator('#status')).toHaveText(`Added ${site}/** to Shop.`);
+    await expect(settings.locator('#mappings-status')).toHaveText(`Added ${site}/** to Shop.`);
     expect(addedPatterns[addedPatterns.length - 1]).toEqual({
       pattern: `${site}/**`,
       environment: 'staging',
@@ -272,10 +272,10 @@ test.describe.serial('connect in one step', () => {
     // The tests ran under /shop: a refused value stops Save, a plain path is kept.
     await line.getByLabel('Tests’ path prefix').fill('/shop/*');
     await settings.getByRole('button', { name: 'Save', exact: true }).click();
-    await expect(settings.locator('#status')).toContainText('/shop/* is not a path prefix');
+    await expect(settings.locator('#mappings-status')).toContainText('/shop/* is not a path prefix');
     await line.getByLabel('Tests’ path prefix').fill('shop');
     await settings.getByRole('button', { name: 'Save', exact: true }).click();
-    await expect(settings.locator('#status')).toContainText('Saved');
+    await expect(settings.locator('#mappings-status')).toContainText('Saved');
     expect(await storedConnection(settings)).toMatchObject({
       projectMappings: [
         expect.objectContaining({

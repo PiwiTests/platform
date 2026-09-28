@@ -16,6 +16,7 @@ import { renderReplayTab } from './panel-replay.js';
 import { refreshNetworkList, renderNetworkTab, startNetworkLog } from './panel-network.js';
 import { renderLocatorsTab } from './panel-locators.js';
 import { renderSessionTab } from './panel-session.js';
+import { setUpViewportRow } from './panel-viewport.js';
 import { SESSION_KEY } from '../shared/session-storage.js';
 
 /**
@@ -25,8 +26,10 @@ import { SESSION_KEY } from '../shared/session-storage.js';
  * changes, so it stays up across the page's navigations. Network lists the
  * page's API calls from DevTools' own log, for Mock this response. Locators
  * tries a locator on the page and reveals what it finds in the Elements panel;
- * Session lists the elements named so far. The in-page panels
- * stay: the panel is an addition for people with DevTools open.
+ * Session lists the elements named so far. The toolbar holds the tools that
+ * set up the page for a test: its viewport, the Playwright view and Save login.
+ * Recording and replaying keep their panels on the page as well, for when
+ * DevTools is closed.
  */
 
 type TabId = 'record' | 'replay' | 'network' | 'locators' | 'session';
@@ -115,12 +118,36 @@ async function togglePlaywrightView(): Promise<void> {
   notice.replaceChildren(text, allow, dismiss);
 }
 
+/** The inspected tab and its address, read in the page, which needs no permission. */
+async function inspectedTab(): Promise<{ id: number; url: string }> {
+  const href = await evalInPage<string>('location.href');
+  return { id: inspectedTabId(), url: href.ok && typeof href.value === 'string' ? href.value : '' };
+}
+
 /** Opens Save login for tests for the inspected tab, in a tab of its own. */
 async function openSaveLogin(): Promise<void> {
-  const href = await evalInPage<string>('location.href');
-  const url = href.ok && typeof href.value === 'string' ? href.value : '';
-  const query = new URLSearchParams({ tabId: String(inspectedTabId()), url });
+  const tab = await inspectedTab();
+  const query = new URLSearchParams({ tabId: String(tab.id), url: tab.url });
   await chrome.tabs.create({ url: chrome.runtime.getURL(`login.html?${query}`) });
+}
+
+/** Viewport shows or hides its bar, set up the first time it opens with the sizes of the project inspected then. */
+function wireViewport(): void {
+  const toggle = document.getElementById('viewport-toggle') as HTMLButtonElement;
+  const row = document.getElementById('viewport-row') as HTMLFormElement;
+  let set = false;
+  toggle.addEventListener('click', () => {
+    const open = row.hidden;
+    row.hidden = !open;
+    toggle.setAttribute('aria-expanded', String(open));
+    if (!open || set) return;
+    set = true;
+    void setUpViewportRow(inspectedTab, (text) => {
+      const line = document.createElement('span');
+      line.textContent = text;
+      notice.replaceChildren(line);
+    });
+  });
 }
 
 async function start(): Promise<void> {
@@ -147,6 +174,7 @@ async function start(): Promise<void> {
 
   document.getElementById('playwright-view')!.addEventListener('click', () => void togglePlaywrightView());
   document.getElementById('save-login')!.addEventListener('click', () => void openSaveLogin());
+  wireViewport();
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'session') return;
     if (TAB_KEYS[current].some((key) => key in changes)) void render();

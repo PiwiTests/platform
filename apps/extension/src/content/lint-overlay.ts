@@ -30,7 +30,7 @@ async function copyText(text: string, el: HTMLElement): Promise<void> {
  * One-keystroke (from the popup) audit overlay (A9): outlines every
  * interactive element that would score badly as a locator target right now,
  * with a suggested `data-testid` per element and a Markdown checklist export.
- * A second trigger toggles it back off, same pattern as hover-inspect.
+ * A second trigger toggles it back off, same pattern as the Playwright view.
  */
 function toggleLintOverlay(): void {
   const g = globalThis as any;

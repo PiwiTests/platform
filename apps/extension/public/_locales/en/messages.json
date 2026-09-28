@@ -239,23 +239,19 @@
   },
   "popup_playwrightView": {
     "message": "Playwright view",
-    "description": "Popup tile label: turns on labels showing each element as a Playwright test sees it. “Playwright” is a product name."
-  },
-  "popup_playwrightViewHint": {
-    "message": "Each element as getByRole sees it, and the ones no locator reaches",
-    "description": "Popup tile hint, under “Playwright view”. One line. getByRole is Playwright code: keep it as it is."
+    "description": "Button in the toolbar of the DevTools Piwi panel: turns on labels showing each element as a Playwright test sees it. “Playwright” is a product name."
   },
   "popup_saveLogin": {
     "message": "Save login for tests",
-    "description": "Popup header icon button's label and tooltip, and a button in the DevTools Piwi panel: opens the page that saves the site's login as a Playwright storageState file."
+    "description": "Button in the toolbar of the DevTools Piwi panel: opens the page that saves the site's login as a Playwright storageState file."
   },
   "popup_viewport": {
     "message": "Open this page at a viewport",
-    "description": "Popup, near the bottom: label of the row that opens the page in a new window at a chosen viewport size."
+    "description": "Piwi panel in DevTools, viewport bar: label of the select that opens the inspected page at a chosen viewport size."
   },
   "popup_viewportProject": {
     "message": "$project$ ($size$)",
-    "description": "Popup, viewport select: one of the project's Playwright projects. $project$ is its name, like Mobile Safari; $size$ its viewport, like 390×844.",
+    "description": "Piwi panel in DevTools, viewport select: one of the project's Playwright projects. $project$ is its name, like Mobile Safari; $size$ its viewport, like 390×844.",
     "placeholders": {
       "project": {
         "content": "$1",
@@ -269,31 +265,27 @@
   },
   "popup_viewportCustom": {
     "message": "Size typed by hand",
-    "description": "Popup, viewport select: the option that shows width and height fields."
+    "description": "Piwi panel in DevTools, viewport select: the option that shows width and height fields."
   },
   "popup_viewportWidth": {
     "message": "Width",
-    "description": "Popup, viewport row: accessible name of the width field, in CSS pixels."
+    "description": "Piwi panel in DevTools, viewport bar: accessible name of the width field, in CSS pixels."
   },
   "popup_viewportHeight": {
     "message": "Height",
-    "description": "Popup, viewport row: accessible name of the height field, in CSS pixels."
-  },
-  "popup_viewportOpen": {
-    "message": "Open",
-    "description": "Popup, viewport row: button that opens the page in a new window at that viewport. One word."
+    "description": "Piwi panel in DevTools, viewport bar: accessible name of the height field, in CSS pixels."
   },
   "popup_viewportOnly": {
     "message": "Viewport only: no touch, pixel ratio or user agent.",
-    "description": "Popup, under the viewport row: what the new window does not emulate. Short."
+    "description": "Piwi panel in DevTools, viewport bar: what the new window or the tab does not emulate. Short."
   },
   "popup_viewportHere": {
     "message": "In this tab",
-    "description": "Popup, viewport row: button that sets the viewport of the tab itself, rather than opening a window. Short."
+    "description": "Piwi panel in DevTools, viewport bar: button that sets the viewport of the inspected tab itself, rather than opening a window. Short."
   },
   "popup_viewportHereOn": {
     "message": "This tab shows its page at $size$.",
-    "description": "Popup, viewport row: the tab shows its page at a viewport set from the popup. $size$ is a width × height such as 390×844.",
+    "description": "Piwi panel in DevTools, viewport bar: the tab shows its page at a viewport set from the bar. $size$ is a width × height such as 390×844.",
     "placeholders": {
       "size": {
         "content": "$1",
@@ -303,7 +295,7 @@
   },
   "popup_viewportReset": {
     "message": "Back to the window’s size",
-    "description": "Popup, viewport row: link that puts the tab back to its window's size."
+    "description": "Piwi panel in DevTools, viewport bar: link that puts the tab back to its window's size."
   },
   "popup_viewportHereUnavailable": {
     "message": "This browser gives extensions no debugging protocol to set the tab’s own viewport: open a window instead.",
@@ -338,16 +330,16 @@
     "description": "Popup tile: records the steps of a bug. Short."
   },
   "popup_reportBugHint": {
-    "message": "Record the steps, mark what's wrong → a failing test",
-    "description": "Popup tile hint, under “Report a bug”. One line."
+    "message": "Steps and what's wrong → a failing test",
+    "description": "Popup tile hint, under “Report a bug”, in a tile half the popup wide. At most about 42 characters."
   },
   "popup_replayBug": {
     "message": "Replay a bug report",
     "description": "Popup tile: plays a bug report’s steps on the current site. Short."
   },
   "popup_replayBugHint": {
-    "message": "Play its steps on this site, with a cursor, and see if the bug shows",
-    "description": "Popup tile hint, under “Replay a bug report”. One line."
+    "message": "Play its steps here, with a cursor",
+    "description": "Popup tile hint, under “Replay a bug report”, in a tile half the popup wide. At most about 40 characters."
   },
   "popup_record": {
     "message": "Record actions",
@@ -364,22 +356,6 @@
   "popup_pickHint": {
     "message": "Ranked, stable locators",
     "description": "Popup tile hint. A locator is Playwright’s way to find an element (see the glossary). At most about 22 characters."
-  },
-  "popup_hoverInspect": {
-    "message": "Hover-inspect",
-    "description": "Popup tile: shows the locator of the element under the pointer. At most about 16 characters: the tile is half the popup wide."
-  },
-  "popup_hoverInspectHint": {
-    "message": "Locator on hover",
-    "description": "Popup tile hint, in a tile half the popup wide. At most about 22 characters."
-  },
-  "popup_locatorConsole": {
-    "message": "Locator console",
-    "description": "Popup tile: type a locator and see what it finds. At most about 16 characters: the tile is half the popup wide."
-  },
-  "popup_locatorConsoleHint": {
-    "message": "See matches live",
-    "description": "Popup tile hint, in a tile half the popup wide. At most about 22 characters."
   },
   "popup_multiPick": {
     "message": "Multi-pick",
@@ -405,14 +381,6 @@
     "message": "Ranked expect(…) lines",
     "description": "Popup tile hint. expect(…) is code: keep it as is. At most about 22 characters."
   },
-  "popup_session": {
-    "message": "Session",
-    "description": "Popup tile: name elements across pages and export them together. At most about 16 characters: the tile is half the popup wide."
-  },
-  "popup_sessionHint": {
-    "message": "Name picks → export",
-    "description": "Popup tile hint: name the elements picked, then export them. At most about 22 characters."
-  },
   "popup_agentContext": {
     "message": "Agent context",
     "description": "Popup tile: describes an element for an AI coding agent. At most about 16 characters: the tile is half the popup wide."
@@ -429,35 +397,17 @@
     "message": "Check the catalog here",
     "description": "Popup tile hint, in a tile half the popup wide. At most about 22 characters."
   },
+  "popup_moreTools": {
+    "message": "More tools",
+    "description": "Popup: small heading above the compact tiles of the other tools (multi-pick, assertions, lint overlay, agent context, test functions). Short."
+  },
+  "popup_devtoolsNote": {
+    "message": "The locator console, the session, network mocks, viewports, Playwright view and Save login are in DevTools, in the Piwi panel.",
+    "description": "Popup, above the footer: where the developer tools are, in the browser's DevTools. “Piwi” names the panel as it appears in DevTools. Two lines at most."
+  },
   "popup_running": {
     "message": "running",
     "description": "Popup: marks the tile of the tool running on the page, after “·”."
-  },
-  "popup_footerKeys": {
-    "message": "Press $first$–$last$ to run a tool, $tested$ for tested elements, $bug$ to report a bug, $replay$ to replay one",
-    "description": "Popup footer. Each placeholder is a key shown as a key cap; the keys are the same in every language. $bug$ is the key of Report a bug; $first$ is the first digit key; $last$ is the last digit key; $replay$ is the key of Replay a bug report; $tested$ is the key of Tested elements.",
-    "placeholders": {
-      "bug": {
-        "content": "$1",
-        "example": "B"
-      },
-      "first": {
-        "content": "$2",
-        "example": "1"
-      },
-      "last": {
-        "content": "$3",
-        "example": "0"
-      },
-      "replay": {
-        "content": "$4",
-        "example": "R"
-      },
-      "tested": {
-        "content": "$5",
-        "example": "T"
-      }
-    }
   },
   "popup_pickShortcut": {
     "message": "$shortcut$ picks an element without the popup",
@@ -665,6 +615,22 @@
     "message": "Connect to Piwi",
     "description": "Settings page: heading of the connection settings."
   },
+  "options_stateConnected": {
+    "message": "Connected",
+    "description": "Settings page: badge beside the Connect to Piwi heading once connected. One word."
+  },
+  "options_stateNotConnected": {
+    "message": "Not connected",
+    "description": "Settings page: badge beside the Connect to Piwi heading before connecting. Short."
+  },
+  "options_statePaired": {
+    "message": "Paired",
+    "description": "Settings page: badge beside the Desktop app and Send to editor headings once paired. One word."
+  },
+  "options_stateNotPaired": {
+    "message": "Not paired",
+    "description": "Settings page: badge beside the Desktop app and Send to editor headings before pairing. Short."
+  },
   "options_lead": {
     "message": "Optional. Connected to your Piwi instance, the recorder uses your projects’ own page objects and helper functions, and ranks them live as you record. Picking locators and recording a plain test always work without it.",
     "description": "Settings page: introduction of the connection settings."
@@ -685,9 +651,9 @@
     "message": "Create one in the Piwi dashboard, in your account’s API key settings.",
     "description": "Settings page: hint under the API key field."
   },
-  "options_testConnection": {
-    "message": "Test connection",
-    "description": "Settings page: button."
+  "options_apiKeySave": {
+    "message": "Save and test",
+    "description": "Settings page, under “Use an API key instead”: saves the address and the key typed, after checking that the instance accepts them. Short."
   },
   "options_mappingsHeading": {
     "message": "Project mappings",
@@ -711,6 +677,10 @@
       }
     }
   },
+  "options_sitesConnectFirst": {
+    "message": "Sites map to your instance’s projects: connect first.",
+    "description": "Settings page, Project mappings card: shown instead of the pattern lists before Piwi Picker is connected to an instance."
+  },
   "options_addMapping": {
     "message": "+ Add a line",
     "description": "Settings page: button adding a line to the project mappings."
@@ -732,8 +702,8 @@
     "description": "Settings page: accessible name of a line’s project menu."
   },
   "options_projectTestFirst": {
-    "message": "Test the connection first",
-    "description": "Settings page: project menu before the projects are known."
+    "message": "Projects not read yet",
+    "description": "Settings page: project menu of a line before the instance's projects could be read (Refresh reads them again)."
   },
   "options_projectChoose": {
     "message": "Choose a project…",
@@ -798,7 +768,7 @@
     "description": "Settings page: button."
   },
   "options_privacy": {
-    "message": "Only used from this page: the API key never reaches a web page’s scripts. Recorded steps go nowhere unless you copy them, download them or send them to your paired editor. Connecting downloads your projects’ URL patterns, each mapped project’s function catalog and the elements its tests reach; adding a site sends only its pattern.",
+    "message": "Only used from this page: the API key never reaches a web page’s scripts. Recorded steps go nowhere unless you copy them, download them or send them to your paired editor or desktop app. Connecting downloads your projects’ URL patterns, each mapped project’s function catalog and the elements its tests reach; adding a site sends only its pattern.",
     "description": "Settings page: privacy note at the bottom."
   },
   "options_testing": {
@@ -810,36 +780,116 @@
     "description": "Options: heading of the section pairing the desktop app."
   },
   "options_desktopHint": {
-    "message": "Optional. Paired with the Piwi Dashboard desktop app, Replay can ask it to run a bug report with Playwright in your project. Copy the address and token from the app’s Setup page, under Connect Piwi Picker.",
+    "message": "Optional. Paired with the Piwi Dashboard desktop app, Replay can ask it to run a bug report with Playwright in your project.",
     "description": "Options: what pairing the desktop app is for and where the address and token come from."
   },
   "options_desktopUrl": {
     "message": "Address of the desktop app",
     "description": "Options: label of the desktop app's address field."
   },
+  "options_desktopUrlHint": {
+    "message": "Shown on the app’s Setup page, under Connect Piwi Picker. Pair asks the app’s window to allow Piwi Picker.",
+    "description": "Settings page, Desktop app card: under the address field. “Setup” and “Connect Piwi Picker” name the desktop app’s page and card; “Pair” is options_desktopPair."
+  },
+  "options_desktopPair": {
+    "message": "Pair",
+    "description": "Settings page, Desktop app card: button asking the desktop app to pair; its window then shows an Allow button. One word."
+  },
+  "options_desktopManual": {
+    "message": "Pair by hand",
+    "description": "Settings page, Desktop app card: folded section where the token is pasted by hand. Short."
+  },
   "options_desktopToken": {
     "message": "Token",
     "description": "Options: label of the desktop app's token field."
+  },
+  "options_desktopManualHint": {
+    "message": "The token is on the app’s Setup page, under Connect Piwi Picker, beside its address.",
+    "description": "Settings page, Desktop app card, Pair by hand: where the token comes from."
   },
   "options_desktopSave": {
     "message": "Save and test",
     "description": "Options: button that checks the desktop app's address and token, then keeps them."
   },
   "options_desktopForget": {
-    "message": "Forget",
-    "description": "Options: button that removes the desktop app's address and token."
+    "message": "Unpair",
+    "description": "Settings page, Desktop app card: forgets the pairing with the desktop app. One word."
   },
-  "options_desktopSaved": {
-    "message": "Paired with the desktop app.",
-    "description": "Options: the desktop app answered and is paired."
+  "options_desktopPairedAt": {
+    "message": "Paired with the desktop app at $url$.",
+    "description": "Settings page, Desktop app card: the pairing in place. $url$ is the app’s address, like http://127.0.0.1:3000.",
+    "placeholders": {
+      "url": {
+        "content": "$1",
+        "example": "http://127.0.0.1:3000"
+      }
+    }
+  },
+  "options_desktopPairStarting": {
+    "message": "Asking the desktop app…",
+    "description": "Settings page, Desktop app card: while the pairing request is sent."
+  },
+  "options_desktopPairCode": {
+    "message": "Allow Piwi Picker in the desktop app’s window, after checking it shows $code$.",
+    "description": "Settings page, Desktop app card: while the app waits for the Allow click. $code$ is the code both sides show, like BCDF-GHJK.",
+    "placeholders": {
+      "code": {
+        "content": "$1",
+        "example": "BCDF-GHJK"
+      }
+    }
+  },
+  "options_desktopPairNoWindow": {
+    "message": "Open the desktop app’s window: the request waits for you there.",
+    "description": "Settings page, Desktop app card: the app runs but no window of it is open to show the request."
+  },
+  "options_desktopPairDenied": {
+    "message": "Pairing was denied in the desktop app.",
+    "description": "Settings page, Desktop app card: Deny was clicked in the app."
+  },
+  "options_desktopPairExpired": {
+    "message": "The request expired before it was allowed. Click Pair to ask again.",
+    "description": "Settings page, Desktop app card: nobody answered in the app in time."
+  },
+  "options_desktopPairCancelled": {
+    "message": "Pairing was cancelled.",
+    "description": "Settings page, Desktop app card: Cancel was clicked while waiting."
+  },
+  "options_desktopPairUnreachable": {
+    "message": "Nothing answers at $url$. Is the desktop app running? Its Setup page shows its address.",
+    "description": "Settings page, Desktop app card: the address did not answer. $url$ is the address typed.",
+    "placeholders": {
+      "url": {
+        "content": "$1",
+        "example": "http://127.0.0.1:3000"
+      }
+    }
+  },
+  "options_desktopPairUnsupported": {
+    "message": "What answers at $url$ cannot pair in one step: check the address on the desktop app’s Setup page, update the app, or pair by hand.",
+    "description": "Settings page, Desktop app card: the address answered, but not as a desktop app that pairs (another server, or an older app). $url$ is the address typed.",
+    "placeholders": {
+      "url": {
+        "content": "$1",
+        "example": "http://127.0.0.1:3000"
+      }
+    }
+  },
+  "options_desktopPairTooMany": {
+    "message": "Three pairings already wait in the desktop app’s window: answer them first.",
+    "description": "Settings page, Desktop app card: the app refuses a fourth waiting request."
   },
   "options_desktopForgotten": {
     "message": "The desktop app is no longer paired.",
     "description": "Options: the desktop app's address and token were removed."
   },
   "options_desktopNotLoopback": {
-    "message": "Enter the desktop app’s own address, such as http://127.0.0.1:4318, and its token.",
+    "message": "Enter the desktop app’s own address, such as http://127.0.0.1:3000.",
     "description": "Options: the address is not the desktop app's own loopback address, or the token is empty."
+  },
+  "options_desktopNeedsToken": {
+    "message": "Paste the token from the app’s Setup page first.",
+    "description": "Settings page, Desktop app card: Save and test was clicked with no token."
   },
   "options_desktopNeedsAccess": {
     "message": "Allow access to the desktop app’s address to pair it.",
@@ -868,10 +918,6 @@
         "example": "3"
       }
     }
-  },
-  "options_projectsUnlisted": {
-    "message": "Connected, but the projects could not be listed.",
-    "description": "Settings page: connection test succeeded, listing projects failed."
   },
   "options_saved_one": {
     "message": "Saved $count$ line.",
@@ -1149,10 +1195,6 @@
       }
     }
   },
-  "options_sourceLocal": {
-    "message": "This browser",
-    "description": "Settings page: small tag on a URL pattern kept in this browser only. Short."
-  },
   "options_addHeading": {
     "message": "Add a site",
     "description": "Settings page: heading of the form that adds a URL pattern for a site."
@@ -1313,10 +1355,6 @@
     "message": "Locator to try",
     "description": "Locator console: aria-label of the text field where a Playwright locator is typed."
   },
-  "console_close": {
-    "message": "Close the locator console",
-    "description": "Locator console: aria-label of its × button."
-  },
   "console_unique": {
     "message": "One element: strict mode passes",
     "description": "Locator console verdict when the locator finds exactly one element, after a ✓. “Strict mode” is Playwright’s rule that an action fails when a locator finds several elements. Short: the bar is one line."
@@ -1342,34 +1380,6 @@
       "count": {
         "content": "$1",
         "example": "3"
-      }
-    }
-  },
-  "console_manyOutlined_one": {
-    "message": "$count$ element: strict mode fails (the first $shown$ outlined)",
-    "description": "Locator console verdict when the locator finds more elements than the page outlines. $shown$ is how many are outlined.",
-    "placeholders": {
-      "count": {
-        "content": "$1",
-        "example": "120"
-      },
-      "shown": {
-        "content": "$2",
-        "example": "50"
-      }
-    }
-  },
-  "console_manyOutlined_other": {
-    "message": "$count$ elements: strict mode fails (the first $shown$ outlined)",
-    "description": "Locator console verdict when the locator finds more elements than the page outlines. $shown$ is how many are outlined.",
-    "placeholders": {
-      "count": {
-        "content": "$1",
-        "example": "120"
-      },
-      "shown": {
-        "content": "$2",
-        "example": "50"
       }
     }
   },
@@ -1597,42 +1607,6 @@
     "message": "Paste this into your AI coding assistant",
     "description": "Agent context panel, under the title, before “Esc to close”. The block below it stays in English: it is written for the AI."
   },
-  "session_dialog": {
-    "message": "Session: named elements",
-    "description": "Session panel: accessible name of the dialog listing the elements the user named, across pages."
-  },
-  "session_count_one": {
-    "message": "$count$ named element",
-    "description": "Session panel title: how many elements the user has named so far.",
-    "placeholders": {
-      "count": {
-        "content": "$1",
-        "example": "3"
-      }
-    }
-  },
-  "session_count_other": {
-    "message": "$count$ named elements",
-    "description": "Session panel title: how many elements the user has named so far.",
-    "placeholders": {
-      "count": {
-        "content": "$1",
-        "example": "3"
-      }
-    }
-  },
-  "session_none": {
-    "message": "No named element yet",
-    "description": "Session panel title while the list is empty."
-  },
-  "session_kept": {
-    "message": "The list stays until you close the browser",
-    "description": "Session panel, under the title, after “Esc to close ·”: the named elements are kept until the browser closes."
-  },
-  "session_intro": {
-    "message": "Choose an element and give it a name. Add elements from several pages, then copy the list as a page object, a Markdown table or JSON.",
-    "description": "Session panel, shown while the list is empty: how the tool works."
-  },
   "session_remove": {
     "message": "Remove $name$",
     "description": "Session panel: accessible name of the × button of one element of the list. $name$ is the name the user gave it (a code identifier).",
@@ -1642,10 +1616,6 @@
         "example": "submitButton"
       }
     }
-  },
-  "session_add": {
-    "message": "+ Add an element",
-    "description": "Session panel button: choose one more element on the page and name it."
   },
   "session_copyPageObject": {
     "message": "Copy as page object (.ts)",
@@ -6027,6 +5997,14 @@
     "message": "Session",
     "description": "DevTools, Piwi panel: tab listing the named elements of the pick session. One word."
   },
+  "devtools_viewport": {
+    "message": "Viewport",
+    "description": "Piwi panel in DevTools, toolbar button showing or hiding the bar that opens the page at a Playwright project's viewport. One word."
+  },
+  "devtools_viewportOpen": {
+    "message": "Open in a new window",
+    "description": "Piwi panel in DevTools, viewport bar: button opening the inspected page in a new window at the chosen viewport. Short."
+  },
   "devtools_locatorsHint": {
     "message": "Type a locator: the elements it finds on this page are listed, as Playwright finds them. Hover one to outline it on the page; Reveal selects it in the Elements panel.",
     "description": "DevTools, Piwi panel, Locators tab: shown while the field is empty."
@@ -6050,7 +6028,7 @@
     }
   },
   "devtools_sessionEmpty": {
-    "message": "No named element yet. Select one in the Elements panel and use Add to session in the Piwi sidebar, or the Session tool in the toolbar popup.",
+    "message": "No named element yet. Select one in the Elements panel and use Add to session in the Piwi sidebar.",
     "description": "DevTools, Piwi panel, Session tab: no element has been named yet. “Add to session” is the sidebar's button (devtools_addToSession)."
   },
   "devtools_sessionCount_one": {

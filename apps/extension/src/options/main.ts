@@ -17,9 +17,12 @@ import {
   fetchServerPatterns,
   addServerPattern,
   testDesktop,
+  startDesktopPairing,
+  pollDesktopPairing,
   type ProjectOption,
 } from '../shared/piwi-client.js';
 import {
+  DESKTOP_DEFAULT_URL,
   clearDesktopSettings,
   desktopOrigin,
   getDesktopSettings,
@@ -41,6 +44,7 @@ import {
   tn,
   tNodes,
   type Language,
+  type MessageKey,
 } from '../shared/i18n.js';
 import { isDraftLanguage, TRANSLATION_ISSUE_URL } from '../shared/languages.js';
 
@@ -70,7 +74,13 @@ const apiKeyEl = document.getElementById('api-key') as HTMLInputElement;
 const mappingsEl = document.getElementById('mappings')!;
 const addMappingBtn = document.getElementById('add-mapping') as HTMLButtonElement;
 const statusEl = document.getElementById('status')!;
-const testBtn = document.getElementById('test-connection') as HTMLButtonElement;
+const mappingsStatusEl = document.getElementById('mappings-status')!;
+const languageStatusEl = document.getElementById('language-status')!;
+const instancePill = document.getElementById('instance-pill') as HTMLElement;
+const sitesConnectFirst = document.getElementById('sites-connect-first') as HTMLElement;
+const sitesBody = document.getElementById('sites-body') as HTMLElement;
+const mappingHead = document.getElementById('mapping-head') as HTMLElement;
+const apiKeySaveBtn = document.getElementById('api-key-save') as HTMLButtonElement;
 const saveBtn = document.getElementById('save') as HTMLButtonElement;
 const disconnectBtn = document.getElementById('disconnect') as HTMLButtonElement;
 const languageSelect = document.getElementById('language') as HTMLSelectElement;
@@ -98,13 +108,27 @@ let pendingConnect: AbortController | null = null;
 /** Why the last read of the instance's patterns failed, shown under them; empty after a good read. */
 let serverSyncError = '';
 
-function setStatus(text: string, kind: 'ok' | 'error' | '' = ''): void {
-  statusEl.textContent = text;
-  statusEl.className = kind;
+type StatusKind = 'ok' | 'error' | '';
+
+function writeStatus(el: HTMLElement, text: string, kind: StatusKind): void {
+  el.textContent = text;
+  el.className = kind;
 }
 
-function currentInstanceSettings(): ConnectionSettings {
-  return { ...stored, instanceUrl: instanceUrlEl.value.trim(), apiKey: apiKeyEl.value.trim() };
+/** The Connect to Piwi card's status line. */
+function setStatus(text: string, kind: StatusKind = ''): void {
+  writeStatus(statusEl, text, kind);
+}
+
+/** The Project mappings card's status line. */
+function setMappingsStatus(text: string, kind: StatusKind = ''): void {
+  writeStatus(mappingsStatusEl, text, kind);
+}
+
+/** A card's badge: on (Connected, Paired) or off. */
+function setPill(pill: HTMLElement, on: boolean, onKey: MessageKey, offKey: MessageKey): void {
+  pill.classList.toggle('on', on);
+  pill.textContent = t(on ? onKey : offKey);
 }
 
 /**
@@ -140,6 +164,7 @@ async function ensureInstanceHostPermission(instanceUrl: string): Promise<boolea
 
 function renderMappings(): void {
   mappingsEl.innerHTML = '';
+  mappingHead.hidden = mappings.length === 0;
 
   if (mappings.length === 0) {
     const empty = document.createElement('div');
@@ -153,7 +178,7 @@ function renderMappings(): void {
 
   mappings.forEach((mapping, index) => {
     const row = document.createElement('div');
-    row.className = 'mapping-row';
+    row.className = 'mapping-row mapping-grid';
 
     const patternInput = document.createElement('input');
     patternInput.type = 'text';
@@ -222,11 +247,7 @@ function renderMappings(): void {
       renderMappings();
     });
 
-    const source = document.createElement('span');
-    source.className = 'source';
-    source.textContent = t('options_sourceLocal');
-
-    row.append(patternInput, projectSelect, branchInput, prefixInput, testPrefixInput, source, removeBtn);
+    row.append(patternInput, projectSelect, branchInput, prefixInput, testPrefixInput, removeBtn);
     mappingsEl.appendChild(row);
   });
 }
@@ -285,15 +306,26 @@ addMappingBtn.addEventListener('click', () => {
   renderMappings();
 });
 
-/** "Connected as …" under the address, once a connection is known to work. */
-function renderConnectedAs(): void {
-  const connected = stored.instanceUrl.trim() !== '' && stored.serverSyncedAt > 0;
-  connectedAsEl.hidden = !connected;
-  connectedAsEl.textContent = !connected
+/**
+ * What the Connect to Piwi card says of the connection: its badge, "Connected
+ * as …" once a sync has worked, Disconnect while an instance is kept; and the
+ * Project mappings card, whose patterns need that instance's projects.
+ */
+function renderInstanceState(): void {
+  const kept = stored.instanceUrl.trim() !== '';
+  const synced = kept && stored.serverSyncedAt > 0;
+  setPill(instancePill, kept, 'options_stateConnected', 'options_stateNotConnected');
+  // Once connected, Connect is no longer the next thing to do.
+  connectBtn.classList.toggle('primary', !kept);
+  disconnectBtn.hidden = !kept;
+  connectedAsEl.hidden = !synced;
+  connectedAsEl.textContent = !synced
     ? ''
     : stored.connectedAs
       ? t('options_connectedAs', { name: stored.connectedAs })
       : t('options_connectedNoAuth');
+  sitesConnectFirst.hidden = kept;
+  sitesBody.hidden = !kept;
 }
 
 /** The instance's patterns, read-only, each marked as coming from the instance. */
@@ -378,7 +410,7 @@ async function syncServerPatterns(settings: ConnectionSettings): Promise<boolean
     return false;
   } finally {
     renderServerMappings();
-    renderConnectedAs();
+    renderInstanceState();
   }
 }
 
@@ -429,7 +461,7 @@ async function loadInitial(): Promise<void> {
   projectOptions = syncedProjectOptions();
   renderMappings();
   renderServerMappings();
-  renderConnectedAs();
+  renderInstanceState();
   prefillAddSite();
 
   if (settings.instanceUrl) {
@@ -441,7 +473,7 @@ async function loadInitial(): Promise<void> {
       projectOptions = await fetchProjects(settings);
       renderMappings();
     } catch {
-      // Instance unreachable at load time — leave placeholders; "Test connection" surfaces the error.
+      // Instance unreachable at load time: the lines keep the projects the last sync read.
     }
   }
 }
@@ -456,6 +488,7 @@ function prefillAddSite(): void {
     return;
   }
   history.replaceState(null, '', location.pathname);
+  (addSiteEl as HTMLDetailsElement).open = true;
   requestAnimationFrame(() => {
     (addSiteEl.hidden ? addMappingBtn : addPatternEl).scrollIntoView({ block: 'center' });
     if (!addSiteEl.hidden) addPatternEl.focus();
@@ -558,18 +591,18 @@ async function connect(instanceUrl: string): Promise<void> {
 }
 
 refreshServerBtn.addEventListener('click', () => {
-  const settings = currentInstanceSettings();
+  const settings = stored;
   // Before any await, so the click still counts as the user gesture.
   const permission = ensureInstanceHostPermission(settings.instanceUrl);
   void (async () => {
     await permission;
-    setStatus(t('options_serverReading'));
+    setMappingsStatus(t('options_serverReading'));
     if (await syncServerPatterns(settings)) {
       projectOptions = syncedProjectOptions();
       renderMappings();
-      setStatus(tn('options_serverPatterns', stored.serverMappings.length), 'ok');
+      setMappingsStatus(tn('options_serverPatterns', stored.serverMappings.length), 'ok');
     } else {
-      setStatus(t('options_serverSyncFailed', { error: serverSyncError }), 'error');
+      setMappingsStatus(t('options_serverSyncFailed', { error: serverSyncError }), 'error');
     }
   })();
 });
@@ -579,16 +612,16 @@ addToServerBtn.addEventListener('click', () => {
   const projectId = addProjectEl.value ? Number(addProjectEl.value) : null;
   void (async () => {
     if (!pattern) {
-      setStatus(t('options_addNeedsPattern'), 'error');
+      setMappingsStatus(t('options_addNeedsPattern'), 'error');
       return;
     }
     if (projectId == null) {
-      setStatus(t('options_addNeedsProject'), 'error');
+      setMappingsStatus(t('options_addNeedsProject'), 'error');
       return;
     }
     const prefixError = prefixesError(addPrefixEl.value, addTestPrefixEl.value);
     if (prefixError) {
-      setStatus(prefixError, 'error');
+      setMappingsStatus(prefixError, 'error');
       return;
     }
     const label = addProjectEl.selectedOptions[0]?.textContent ?? `#${projectId}`;
@@ -601,7 +634,7 @@ addToServerBtn.addEventListener('click', () => {
         testPathPrefix: normalizePathPrefix(addTestPrefixEl.value),
       });
     } catch (err) {
-      setStatus(err instanceof Error ? err.message : String(err), 'error');
+      setMappingsStatus(err instanceof Error ? err.message : String(err), 'error');
       return;
     }
     addPatternEl.value = '';
@@ -611,19 +644,19 @@ addToServerBtn.addEventListener('click', () => {
     addTestPrefixEl.value = '';
     await syncServerPatterns(stored);
     await refreshCatalogs(stored);
-    setStatus(t('options_added', { pattern, project: label }), 'ok');
+    setMappingsStatus(t('options_added', { pattern, project: label }), 'ok');
   })();
 });
 
 addLocallyBtn.addEventListener('click', () => {
   const pattern = addPatternEl.value.trim();
   if (!pattern) {
-    setStatus(t('options_addNeedsPattern'), 'error');
+    setMappingsStatus(t('options_addNeedsPattern'), 'error');
     return;
   }
   const prefixError = prefixesError(addPrefixEl.value, addTestPrefixEl.value);
   if (prefixError) {
-    setStatus(prefixError, 'error');
+    setMappingsStatus(prefixError, 'error');
     return;
   }
   const projectId = addProjectEl.value ? Number(addProjectEl.value) : null;
@@ -639,57 +672,79 @@ addLocallyBtn.addEventListener('click', () => {
   addPatternEl.value = '';
   addPrefixEl.value = '';
   addTestPrefixEl.value = '';
-  setStatus(t('options_addedLocally'), 'ok');
+  setMappingsStatus(t('options_addedLocally'), 'ok');
 });
 
-testBtn.addEventListener('click', () => {
-  const settings = currentInstanceSettings();
+/**
+ * Use an API key instead: checks the address and the key typed against the
+ * instance, keeps them, then reads its patterns and catalogs as Connect does.
+ */
+apiKeySaveBtn.addEventListener('click', () => {
+  const typed = { instanceUrl: instanceUrlEl.value.trim(), apiKey: apiKeyEl.value.trim() };
   // Before any await, so the click still counts as the user gesture.
-  const permission = ensureInstanceHostPermission(settings.instanceUrl);
+  const permission = ensureInstanceHostPermission(typed.instanceUrl);
   void (async () => {
+    if (!typed.instanceUrl) {
+      setStatus(t('common_enterInstanceUrl'), 'error');
+      return;
+    }
     setStatus(t('options_testing'));
     if (!(await permission)) {
       setStatus(t('options_accessDenied'), 'error');
       return;
     }
+    const sameInstance = stored.instanceUrl === typed.instanceUrl;
+    const settings: ConnectionSettings = {
+      ...stored,
+      ...typed,
+      ...(sameInstance ? {} : { serverMappings: [], serverProjects: [], serverSyncedAt: 0, connectedAs: '' }),
+    };
     const result = await testConnection(settings);
     if (!result.ok) {
       setStatus(result.error, 'error');
       return;
     }
+    stored = settings;
+    await setConnectionSettings(settings);
+    await syncServerPatterns(settings);
     try {
       projectOptions = await fetchProjects(settings);
-      renderMappings();
-      setStatus(tn('options_connected', projectOptions.length), 'ok');
-    } catch (err) {
-      setStatus(err instanceof Error ? err.message : t('options_projectsUnlisted'), 'error');
+    } catch {
+      projectOptions = syncedProjectOptions();
     }
+    renderMappings();
+    const catalogs = await refreshCatalogs(stored);
+    const parts = [tn('options_connected', projectOptions.length)];
+    // The API key travels on every catalog fetch; over plain HTTP it travels in
+    // the clear. Worth saying once, at the moment the choice is made — not a
+    // reason to refuse a local instance on `http://localhost`.
+    if (/^http:\/\//i.test(settings.instanceUrl) && settings.apiKey) parts.push(t('options_plainHttp'));
+    if (catalogs.failed > 0) parts.push(tn('options_catalogsFailed', catalogs.failed));
+    setStatus(parts.join(' '), catalogs.failed > 0 ? 'error' : 'ok');
   })();
 });
 
+/** Save keeps the lines of this browser, then fetches the catalogs of the projects they map. */
 saveBtn.addEventListener('click', () => {
-  const base = currentInstanceSettings();
   // Before any await, so the click still counts as the user gesture.
-  const permission = ensureInstanceHostPermission(base.instanceUrl);
+  const permission = ensureInstanceHostPermission(stored.instanceUrl);
   void (async () => {
-    if (!base.instanceUrl) {
-      setStatus(t('common_enterInstanceUrl'), 'error');
+    if (!stored.instanceUrl.trim()) {
+      setMappingsStatus(t('common_enterInstanceUrl'), 'error');
       return;
     }
     const granted = await permission;
 
     const badPrefix = mappings.find((m) => prefixesError(m.pathPrefix, m.testPathPrefix));
     if (badPrefix) {
-      setStatus(prefixesError(badPrefix.pathPrefix, badPrefix.testPathPrefix), 'error');
+      setMappingsStatus(prefixesError(badPrefix.pathPrefix, badPrefix.testPathPrefix), 'error');
       return;
     }
     const valid = mappings.filter((m) => m.urlPattern.trim() && m.projectId != null);
     const incompleteCount = mappings.length - valid.length;
 
-    const sameInstance = stored.instanceUrl === base.instanceUrl;
     const settings: ConnectionSettings = {
-      ...base,
-      ...(sameInstance ? {} : { serverMappings: [], serverProjects: [], serverSyncedAt: 0, connectedAs: '' }),
+      ...(await getConnectionSettings()),
       projectMappings: valid.map((m) => ({
         urlPattern: m.urlPattern.trim(),
         projectId: m.projectId!,
@@ -706,12 +761,6 @@ saveBtn.addEventListener('click', () => {
 
     const parts = [tn('options_saved', valid.length)];
     if (incompleteCount > 0) parts.push(tn('options_skipped', incompleteCount));
-    // The API key travels on every catalog fetch; over plain HTTP it travels in
-    // the clear. Worth saying once, at the moment the choice is made — not a
-    // reason to refuse a local instance on `http://localhost`.
-    if (/^http:\/\//i.test(settings.instanceUrl) && settings.apiKey) {
-      parts.push(t('options_plainHttp'));
-    }
     // Without the host permission the catalog can still be fetched from this
     // page if the instance happens to allow the origin, but the background
     // refresh never can — so the catalog would silently stop updating.
@@ -725,7 +774,7 @@ saveBtn.addEventListener('click', () => {
       );
     }
     if (catalogs.failed > 0) parts.push(tn('options_catalogsFailed', catalogs.failed));
-    setStatus(parts.join(' '), catalogs.failed > 0 ? 'error' : 'ok');
+    setMappingsStatus(parts.join(' '), catalogs.failed > 0 ? 'error' : 'ok');
   })();
 });
 
@@ -751,7 +800,7 @@ async function revokeInstanceHostPermission(instanceUrl: string): Promise<void> 
 
 disconnectBtn.addEventListener('click', () => {
   void (async () => {
-    const previousUrl = instanceUrlEl.value;
+    const previousUrl = stored.instanceUrl;
     pendingConnect?.abort();
     await clearConnectionSettings();
     stored = await getConnectionSettings();
@@ -764,7 +813,7 @@ disconnectBtn.addEventListener('click', () => {
     mappings = [];
     renderMappings();
     renderServerMappings();
-    renderConnectedAs();
+    renderInstanceState();
     setStatus(t('options_disconnected'), 'ok');
   })();
 });
@@ -820,9 +869,14 @@ languageSelect.addEventListener('change', () => {
     renderLanguageSelect();
     renderMappings();
     renderServerMappings();
-    renderConnectedAs();
-    if (answer?.ok) setStatus(t('options_languageSaved'), 'ok');
-    else setStatus(t('options_languageFailed', { error: answer?.error ?? t('common_workerNoAnswer') }), 'error');
+    renderInstanceState();
+    renderEditorPill();
+    void renderDesktopState();
+    if (answer?.ok) writeStatus(languageStatusEl, t('options_languageSaved'), 'ok');
+    else {
+      const error = answer?.error ?? t('common_workerNoAnswer');
+      writeStatus(languageStatusEl, t('options_languageFailed', { error }), 'error');
+    }
   })();
 });
 
@@ -831,24 +885,33 @@ const editorAddressEl = document.getElementById('editor-address') as HTMLInputEl
 const editorPairBtn = document.getElementById('editor-pair') as HTMLButtonElement;
 const editorUnpairBtn = document.getElementById('editor-unpair') as HTMLButtonElement;
 const editorStatusEl = document.getElementById('editor-status') as HTMLElement;
+const editorPill = document.getElementById('editor-pill') as HTMLElement;
+let editorPaired = false;
+
+function renderEditorPill(): void {
+  setPill(editorPill, editorPaired, 'options_statePaired', 'options_stateNotPaired');
+}
 
 async function renderEditorPairing(): Promise<void> {
   const pairing = await getEditorPairing();
-  editorStatusEl.textContent = pairing ? t('options_editorPaired', { url: pairing.url }) : '';
+  editorPaired = !!pairing;
+  writeStatus(editorStatusEl, pairing ? t('options_editorPaired', { url: pairing.url }) : '', pairing ? 'ok' : '');
   editorUnpairBtn.hidden = !pairing;
+  editorPairBtn.classList.toggle('primary', !pairing);
+  renderEditorPill();
 }
 
 editorPairBtn.addEventListener('click', () => {
   const pairing = parsePairing(editorAddressEl.value);
   if (!pairing) {
-    editorStatusEl.textContent = t('options_editorInvalid');
+    writeStatus(editorStatusEl, t('options_editorInvalid'), 'error');
     return;
   }
   // Requested before anything is awaited: the permission prompt needs the live click.
   const granted = chrome.permissions.request({ origins: [editorOriginPattern(pairing)] }).catch(() => false);
   void (async () => {
     if (!(await granted)) {
-      editorStatusEl.textContent = t('options_editorPermission');
+      writeStatus(editorStatusEl, t('options_editorPermission'), 'error');
       return;
     }
     await setEditorPairing(pairing);
@@ -872,17 +935,120 @@ editorUnpairBtn.addEventListener('click', () => {
 const desktopUrlEl = document.getElementById('desktop-url') as HTMLInputElement;
 const desktopTokenEl = document.getElementById('desktop-token') as HTMLInputElement;
 const desktopStatusEl = document.getElementById('desktop-status')!;
+const desktopPill = document.getElementById('desktop-pill') as HTMLElement;
+const desktopPairBtn = document.getElementById('desktop-pair') as HTMLButtonElement;
+const desktopPairPanel = document.getElementById('desktop-pair-panel') as HTMLElement;
+const desktopCodeLine = document.getElementById('desktop-code-line')!;
+const desktopForgetBtn = document.getElementById('desktop-forget') as HTMLButtonElement;
+const desktopManual = document.getElementById('desktop-manual') as HTMLDetailsElement;
+/** Set while a pairing waits for the Allow in the app's window; aborting it stops the wait. */
+let pendingDesktopPairing: AbortController | null = null;
 
-function setDesktopStatus(text: string, kind: 'ok' | 'error' | '' = ''): void {
-  desktopStatusEl.textContent = text;
-  desktopStatusEl.className = kind;
+function setDesktopStatus(text: string, kind: StatusKind = ''): void {
+  writeStatus(desktopStatusEl, text, kind);
 }
 
+/** The card as the stored pairing says: its badge, its address, and Unpair. */
+async function renderDesktopState(): Promise<void> {
+  const desktop = await getDesktopSettings();
+  setPill(desktopPill, !!desktop, 'options_statePaired', 'options_stateNotPaired');
+  desktopPairBtn.classList.toggle('primary', !desktop);
+  desktopForgetBtn.hidden = !desktop;
+  if (desktop && !desktopUrlEl.value) desktopUrlEl.value = desktop.url;
+  if (!desktop && !desktopUrlEl.value) desktopUrlEl.value = DESKTOP_DEFAULT_URL;
+}
+
+/** Keeps a pairing that works: checked against the app first, then stored and said. */
+async function keepDesktopPairing(url: string, token: string): Promise<void> {
+  const check = await testDesktop({ url, token });
+  if (!check.ok) {
+    setDesktopStatus(check.error, 'error');
+    return;
+  }
+  await setDesktopSettings({ url, token });
+  desktopUrlEl.value = url;
+  desktopTokenEl.value = '';
+  desktopManual.open = false;
+  setDesktopStatus(t('options_desktopPairedAt', { url }), 'ok');
+  await renderDesktopState();
+}
+
+function setDesktopPairing(active: boolean): void {
+  desktopPairBtn.disabled = active;
+  desktopPairPanel.hidden = !active;
+  if (!active) desktopCodeLine.replaceChildren();
+}
+
+/**
+ * Pair: the app's window shows the request with a code this card shows too;
+ * the developer's Allow there hands this extension the app's token on the next
+ * poll. The one loopback origin is asked for first, inside the click.
+ */
+desktopPairBtn.addEventListener('click', () => {
+  const url = desktopOrigin(desktopUrlEl.value);
+  if (!url) {
+    setDesktopStatus(t('options_desktopNotLoopback'), 'error');
+    return;
+  }
+  const granted = chrome.permissions.request({ origins: [`${url}/*`] }).catch(() => false);
+  void (async () => {
+    if (!(await granted)) {
+      setDesktopStatus(t('options_desktopNeedsAccess'), 'error');
+      return;
+    }
+    pendingDesktopPairing?.abort();
+    const controller = new AbortController();
+    pendingDesktopPairing = controller;
+    setDesktopStatus(t('options_desktopPairStarting'));
+    try {
+      const start = await startDesktopPairing(url, describeClient(navigator.userAgent));
+      const code = document.createElement('code');
+      code.textContent = start.code;
+      desktopCodeLine.replaceChildren(...tNodes('options_desktopPairCode', { code }));
+      setDesktopPairing(true);
+      setDesktopStatus(start.windowOpen ? '' : t('options_desktopPairNoWindow'));
+      const outcome = await waitForApproval({
+        poll: () => pollDesktopPairing(url, start),
+        interval: start.interval,
+        expiresIn: start.expiresIn,
+        sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+        now: () => Date.now(),
+        signal: controller.signal,
+      });
+      setDesktopPairing(false);
+      if (outcome.status === 'approved') {
+        await keepDesktopPairing(url, outcome.apiKey);
+        return;
+      }
+      const messages = {
+        denied: t('options_desktopPairDenied'),
+        expired: t('options_desktopPairExpired'),
+        cancelled: t('options_desktopPairCancelled'),
+      } as const;
+      setDesktopStatus(messages[outcome.status], 'error');
+    } catch (err) {
+      setDesktopStatus(err instanceof Error ? err.message : String(err), 'error');
+    } finally {
+      if (pendingDesktopPairing === controller) pendingDesktopPairing = null;
+      setDesktopPairing(false);
+    }
+  })();
+});
+
+document.getElementById('desktop-pair-cancel')!.addEventListener('click', () => {
+  pendingDesktopPairing?.abort();
+});
+
+/** Pair by hand: the address and the token pasted from the app's Setup page. */
 document.getElementById('desktop-save')!.addEventListener('click', () => {
   const url = desktopOrigin(desktopUrlEl.value);
   const token = desktopTokenEl.value.trim();
-  if (!url || !token) {
+  if (!url) {
     setDesktopStatus(t('options_desktopNotLoopback'), 'error');
+    return;
+  }
+  if (!token) {
+    setDesktopStatus(t('options_desktopNeedsToken'), 'error');
     return;
   }
   // Asked first, while the click still counts as a user gesture; the one loopback origin only.
@@ -893,30 +1059,24 @@ document.getElementById('desktop-save')!.addEventListener('click', () => {
       return;
     }
     setDesktopStatus(t('options_testing'));
-    const check = await testDesktop({ url, token });
-    if (!check.ok) {
-      setDesktopStatus(check.error, 'error');
-      return;
-    }
-    await setDesktopSettings({ url, token });
-    desktopUrlEl.value = url;
-    setDesktopStatus(t('options_desktopSaved'), 'ok');
+    await keepDesktopPairing(url, token);
   })();
 });
 
-document.getElementById('desktop-forget')!.addEventListener('click', () => {
+desktopForgetBtn.addEventListener('click', () => {
   void (async () => {
+    const desktop = await getDesktopSettings();
     await clearDesktopSettings();
-    desktopUrlEl.value = '';
+    if (desktop) await chrome.permissions.remove({ origins: [`${desktop.url}/*`] }).catch(() => false);
     desktopTokenEl.value = '';
     setDesktopStatus(t('options_desktopForgotten'), 'ok');
+    await renderDesktopState();
   })();
 });
 
 void getDesktopSettings().then((desktop) => {
-  if (!desktop) return;
-  desktopUrlEl.value = desktop.url;
-  desktopTokenEl.value = desktop.token;
+  if (desktop) setDesktopStatus(t('options_desktopPairedAt', { url: desktop.url }), 'ok');
+  return renderDesktopState();
 });
 
 renderLanguageSelect();

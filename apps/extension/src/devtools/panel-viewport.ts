@@ -7,13 +7,19 @@ import { getCachedLocatorIndex } from '../shared/locator-index-cache.js';
 import { requestLocatorIndex } from '../shared/locator-index-refresh.js';
 
 /**
- * The popup's viewport row: open the tab's page in a new window at the
+ * The Piwi panel's viewport bar: open the inspected page in a new window at the
  * viewport of one of the project's Playwright projects, as the instance knows
  * them from its runs (the locator index's `viewports`), or at a size typed by
  * hand. The background worker sizes the window (`piwi-open-viewport`). In
  * Chrome and Edge, **In this tab** sets the tab's own viewport instead, through
  * the debugging protocol (`piwi-set-tab-viewport`), until it is reset.
  */
+
+/** The inspected tab: its id, and its address as the page reads it (DevTools pages hold no `activeTab` grant). */
+export interface ViewportTab {
+  id: number;
+  url: string;
+}
 
 const TAB_VIEWPORT_KEY = 'piwiTabViewport';
 
@@ -36,10 +42,7 @@ async function projectViewports(url: string | undefined): Promise<LocatorIndexVi
   return fresh.ok && fresh.index ? (fresh.index.viewports ?? []) : [];
 }
 
-export async function setUpViewportRow(
-  tab: () => Promise<chrome.tabs.Tab | null>,
-  report: (text: string) => void,
-): Promise<void> {
+export async function setUpViewportRow(tab: () => Promise<ViewportTab>, report: (text: string) => void): Promise<void> {
   const form = document.getElementById('viewport-row') as HTMLFormElement;
   const select = document.getElementById('viewport') as HTMLSelectElement;
   const custom = document.getElementById('viewport-custom') as HTMLElement;
@@ -47,7 +50,7 @@ export async function setUpViewportRow(
   const height = document.getElementById('viewport-height') as HTMLInputElement;
 
   const current = await tab();
-  const viewports = await projectViewports(current?.url).catch(() => []);
+  const viewports = await projectViewports(current.url).catch(() => []);
   const options = viewports.map((v, i) => {
     const option = document.createElement('option');
     option.value = String(i);
@@ -84,7 +87,7 @@ export async function setUpViewportRow(
     const page = await tab();
     const values: Record<string, unknown> = await chrome.storage.session.get(TAB_VIEWPORT_KEY).catch(() => ({}));
     const all = values[TAB_VIEWPORT_KEY] as Record<string, { width: number; height: number }> | undefined;
-    const stored = page?.id != null ? all?.[page.id] : undefined;
+    const stored = all?.[page.id];
     currentRow.hidden = !stored;
     if (stored && !currentRow.hidden) {
       currentText.textContent = t('popup_viewportHereOn', {
@@ -97,7 +100,7 @@ export async function setUpViewportRow(
     void (async () => {
       const page = await tab();
       const reply = (await chrome.runtime
-        .sendMessage({ type: 'piwi-set-tab-viewport', tabId: page?.id, ...chosenSize() })
+        .sendMessage({ type: 'piwi-set-tab-viewport', tabId: page.id, ...chosenSize() })
         .catch(() => null)) as { ok: boolean; error?: string } | null;
       if (reply?.ok) await showCurrent();
       else report(reply?.error ?? t('common_workerNoAnswer'));
@@ -106,7 +109,7 @@ export async function setUpViewportRow(
   reset.addEventListener('click', () => {
     void (async () => {
       const page = await tab();
-      await chrome.runtime.sendMessage({ type: 'piwi-clear-tab-viewport', tabId: page?.id }).catch(() => null);
+      await chrome.runtime.sendMessage({ type: 'piwi-clear-tab-viewport', tabId: page.id }).catch(() => null);
       await showCurrent();
     })();
   });
@@ -117,10 +120,9 @@ export async function setUpViewportRow(
     void (async () => {
       const page = await tab();
       const reply = (await chrome.runtime
-        .sendMessage({ type: 'piwi-open-viewport', url: page?.url ?? '', ...size })
+        .sendMessage({ type: 'piwi-open-viewport', url: page.url, ...size })
         .catch(() => null)) as { ok: boolean; error?: string } | null;
-      if (reply?.ok) window.close();
-      else report(reply?.error ?? t('common_workerNoAnswer'));
+      if (!reply?.ok) report(reply?.error ?? t('common_workerNoAnswer'));
     })();
   });
 }

@@ -1,4 +1,5 @@
 import { test, expect } from './fixtures.js';
+import { openDevtoolsPage } from './devtools-stub.js';
 
 const ORIGIN = 'http://piwi-viewport.test';
 
@@ -75,17 +76,22 @@ test.describe('Open this page at a viewport', () => {
     ).toBeUndefined();
   });
 
-  test('offers the viewports of the project’s Playwright projects, or a size typed by hand', async ({
+  test('offers the viewports of the project’s Playwright projects, or a size typed by hand, in the Piwi panel', async ({
     context,
     extensionId,
   }) => {
-    const popup = await context.newPage();
-    await popup.goto(`chrome-extension://${extensionId}/popup.html`);
-    const viewport = popup.getByRole('combobox', { name: 'Open this page at a viewport' });
+    const inspected = await context.newPage();
+    await inspected.goto('about:blank');
+    const panel = await openDevtoolsPage(context, extensionId, 'devtools-panel.html', inspected);
+    const toggle = panel.getByRole('button', { name: 'Viewport' });
+    const viewport = panel.getByRole('combobox', { name: 'Open this page at a viewport' });
+    await expect(viewport).toBeHidden();
+    await toggle.click();
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
     await expect(viewport.locator('option')).toHaveText(['Size typed by hand']);
-    await expect(popup.getByRole('spinbutton', { name: 'Width' })).toBeVisible();
+    await expect(panel.getByRole('spinbutton', { name: 'Width' })).toBeVisible();
 
-    await popup.evaluate(() =>
+    await panel.evaluate(() =>
       chrome.storage.local.set({
         piwiConnection: {
           instanceUrl: 'https://piwi.test',
@@ -116,17 +122,18 @@ test.describe('Open this page at a viewport', () => {
         },
       }),
     );
-    // The project the popup's Active project select chose: this page, opened as a tab, has no address to match.
-    await popup.evaluate(() =>
+    // The project the popup's Active project select chose: the inspected page, about:blank, has no address to match.
+    await panel.evaluate(() =>
       chrome.storage.session.set({ piwiActiveProjectOverride: { projectId: 1, projectLabel: 'Shop' } }),
     );
-    await popup.reload();
+    await panel.reload();
+    await toggle.click();
     await expect(viewport.locator('option')).toHaveText([
       'chromium (1,280×720)',
       'Mobile Safari (390×664)',
       'Size typed by hand',
     ]);
-    await expect(popup.getByRole('spinbutton', { name: 'Width' })).toBeHidden();
-    await expect(popup.getByText('Viewport only: no touch, pixel ratio or user agent.')).toBeVisible();
+    await expect(panel.getByRole('spinbutton', { name: 'Width' })).toBeHidden();
+    await expect(panel.getByText('Viewport only: no touch, pixel ratio or user agent.')).toBeVisible();
   });
 });

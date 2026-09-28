@@ -9,8 +9,9 @@ lang: en-US
 <Needs extension />
 
 The [Piwi Picker extension](./extension) answers one question beside the browser's own DevTools: what will a test see
-on this page, and how does the test get there? In Chrome and Edge, the conditions below and a viewport set in the tab
-itself go through the browser's debugging protocol, and Chrome shows its debugging bar while one is on.
+on this page, and how does the test get there? Its developer tools live here rather than in the toolbar popup, which
+keeps the tools that act on the page. In Chrome and Edge, the conditions below and a viewport set in the tab itself go
+through the browser's debugging protocol, and Chrome shows its debugging bar while one is on.
 
 ## The Elements sidebar
 
@@ -26,8 +27,9 @@ locator('.btn').nth(2)                             ✓ unique by position · bri
 
 A locator that finds the node among others says how many it finds. Under each one, **Locator**, **Action** and
 **Assertion** copy it as `page.…`, as a `click()` or as an `expect(…).toBeVisible()`, and **Add to session** puts it
-in the [session](./extension#session) under a name. The pane ranks again when the selection changes and after the page
-navigates; **Refresh** ranks the same node on the page as it is now.
+in the session under a name (the panel's Session tab, below). The pane ranks again when the selection changes and after
+the page navigates; **Refresh** ranks the same node on the page as it is now. DevTools' own element picker
+(`Ctrl+Shift+C`, `Cmd+Shift+C` on macOS) selects what the pointer is on.
 
 The first time on a site, the pane asks for access to it with **Allow on this site**, as recording does. It is not
 needed on a tab where you have just used the toolbar popup.
@@ -37,7 +39,7 @@ Elements inside an iframe are not ranked: their locator would need the frame's p
 ## The Piwi panel
 
 DevTools also gets a **Piwi** panel of its own, with five tabs. It shows what runs on the page and stays up while the
-page navigates; the panels on the page stay too, for when DevTools is closed.
+page navigates; the recording and replay panels on the page stay too, for when DevTools is closed.
 
 - **Record** lists a recording's steps as they are captured, each with the locator it was recorded with. **Stop
   recording** stops it as the popup does; then **Copy as TypeScript**, **Download steps** and **Discard** do what the
@@ -46,13 +48,14 @@ page navigates; the panels on the page stay too, for when DevTools is closed.
   step** and **Stop** act on the replay running in the page.
 - **Network** lists the page's `fetch` and XHR requests, from DevTools' own log while it is open; **Other sites too**
   adds the requests to other origins. Select one to mock it, slow it down or make it fail (below).
-- **Locators** is the [locator console](./extension#locator-console) beside the Elements panel: type a locator and
-  the elements it finds are listed, as Playwright finds them, with the strict-mode verdict. Hovering one outlines it
-  on the page, and **Reveal** selects it in the Elements panel.
-- **Session** lists the elements named with **Add to session**, here or on the page, and copies them as a page object,
-  a Markdown table or JSON.
+- **Locators** is the locator console: type a locator and the elements it finds are listed, as Playwright finds
+  them, with the strict-mode verdict. It reads the expression, never runs it: every `getBy*`, `locator()`, chains,
+  `filter()`, `and()`/`or()`, `.nth()` and same-origin frames. Hovering one outlines it on the page, and **Reveal**
+  selects it in the Elements panel.
+- **Session** lists the elements named with **Add to session**, and copies them as a page object, a Markdown table or
+  JSON.
 
-**Playwright view**, at the top of the panel, turns the view below on and off in the inspected tab.
+The toolbar's **Viewport**, **Playwright view** and **Save login for tests** set the page up for a test (below).
 
 ## Mock this response
 
@@ -95,7 +98,7 @@ verdict.
 
 ## Save login for tests
 
-The key button in the popup's header, or **Save login for tests** in the Piwi panel, saves the site's login as the
+**Save login for tests**, in the Piwi panel's toolbar, saves the site's login as the
 file Playwright's `storageState` reads: the site's cookies, `httpOnly` ones included, which a page's scripts cannot
 read, and its `localStorage`. IndexedDB is left out. **Save login file** asks, the first time, for permission to read
 that one site's cookies, then downloads `user.json`:
@@ -110,8 +113,8 @@ that refreshes the file.
 
 ## Open this page at a viewport
 
-The popup's last row opens the tab's page in a new window whose viewport, not its outer frame, has the size of one
-of your Playwright projects: **Mobile Safari (390×664)**. With a connection, the sizes come from the `use.viewport`
+**Viewport**, in the Piwi panel's toolbar, shows a bar that opens the inspected page in a new window whose viewport,
+not its outer frame, has the size of one of your Playwright projects: **Mobile Safari (390×664)**. With a connection, the sizes come from the `use.viewport`
 the [reporter](/guide/reporter) sends with each run, per project; without one, or for another size, choose **Size typed
 by hand**. In Chrome and Edge, **In this tab** gives the tab itself that viewport instead, as DevTools' device toolbar
 does, until **Back to the window's size**. Either way it sizes the viewport only, without touch, device pixel ratio or
@@ -119,7 +122,7 @@ user agent.
 
 ## Playwright view
 
-**Playwright view** in the popup (key `V`) labels the page as a test sees it: each button, link, field, heading and
+**Playwright view**, in the Piwi panel's toolbar, labels the page as a test sees it: each button, link, field, heading and
 landmark with the role and name `getByRole` finds it by, such as `button · Apply coupon` or `link · Cart (2)`, and its
 test id beside it when it has one. Two marks point at the elements a test will struggle with:
 

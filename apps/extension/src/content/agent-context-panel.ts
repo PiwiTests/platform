@@ -169,7 +169,7 @@ function renderContextPanel(context: string): Promise<void> {
  * single element, then show one paste-able block (page URL, element
  * summary, ranked locators) with a single copy button. Reuses pick.ts's
  * single-pick mechanism (sharing its `__piwiPicking` guard) but skips the
- * anchors step, same reasoning as `assertion-panel.ts`/`session-panel.ts`.
+ * anchors step, same reasoning as `assertion-panel.ts`.
  */
 async function runAgentContextPanel(): Promise<void> {
   const g = globalThis as any;

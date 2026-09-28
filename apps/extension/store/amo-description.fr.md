@@ -3,14 +3,12 @@ Piwi Picker trouve le locator à utiliser pour n’importe quel élément de la 
 **Les outils, directement sur la page**
 
 - **Choisir un élément** : les locators classés d’un élément, vérifiés sur la page, à copier seuls, en ligne d’action ou en assertion.
-- **Inspecter** : le meilleur locator de l’élément sous le pointeur.
-- **Console** : saisissez un locator et voyez ce qu’il trouve à l’instant, avec le verdict du mode strict.
 - **Multi-sélection** : le motif commun aux lignes ou aux cartes d’une liste.
 - **Contrôle** : les éléments difficiles à cibler dans un test, chacun avec un data-testid suggéré.
 - **Assertions** : des lignes expect(...) pour un élément.
-- **Session** : des éléments que vous nommez sur plusieurs pages, exportés en page object, en tableau Markdown ou en JSON.
 - **Contexte IA** : un bloc qui décrit un élément, à donner à un agent de code.
 - **Enregistrer** : clics, saisies et sélections sur les pages d’un site, transformés en test TypeScript. Les mots de passe ne sont jamais enregistrés.
+- **Dans DevTools** : les locators classés de l’élément sélectionné dans Éléments, une console de locators avec le verdict du mode strict, les éléments que vous nommez exportés en page object, des mocks réseau, le viewport d’un projet Playwright et Sauvegarder la connexion pour les tests.
 
 **Privé par défaut**
 

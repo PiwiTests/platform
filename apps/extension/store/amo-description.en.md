@@ -3,14 +3,12 @@ Piwi Picker finds the locator to use for any element of the page you are on. Eve
 **Tools, all on the live page**
 
 - **Pick an element**: the ranked locators of one element, re-checked against the page, copied as a locator, an action line or an assertion.
-- **Hover-inspect**: the best locator of whatever the pointer is on.
-- **Locator console**: type a locator and see what it matches right now, with a strict-mode verdict.
 - **Multi-pick**: the pattern shared by a list's rows or cards.
 - **Lint overlay**: the elements that would make bad locator targets, each with a suggested data-testid.
 - **Assertions**: expect(...) lines for an element.
-- **Session**: elements you name across pages, exported as a page object, a Markdown table or JSON.
 - **Agent context**: one block describing an element, for a coding agent.
 - **Record actions**: clicks, fills and selections across a site's pages, turned into a TypeScript spec. Password values are never captured.
+- **In DevTools**: the ranked locators of the element selected in Elements, a locator console with a strict-mode verdict, the elements you name exported as a page object, network mocks, a Playwright project's viewport, and Save login for tests.
 
 **Private by default**
 

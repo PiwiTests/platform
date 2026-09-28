@@ -1,9 +1,10 @@
 /**
  * The optional pairing with the Piwi Dashboard desktop app: its loopback
- * address and access token, pasted from the app's **Connect Piwi Picker** (the
- * extension cannot read `~/.piwi/desktop.json`). `chrome.storage.local`, like
- * the instance connection. Used only by the background worker, for **Run with
- * Playwright**, and by the options page to test it.
+ * address and access token, which **Pair** receives once the developer allows
+ * it in the app's window, or which are pasted from the app's **Connect Piwi
+ * Picker** (the extension cannot read `~/.piwi/desktop.json`).
+ * `chrome.storage.local`, like the instance connection. Used only by the
+ * background worker, for **Run with Playwright**, and by the options page.
  */
 export interface DesktopSettings {
   /** The app's origin, such as `http://127.0.0.1:4318`. */
@@ -12,6 +13,13 @@ export interface DesktopSettings {
 }
 
 const DESKTOP_KEY = 'piwiDesktop';
+
+/**
+ * The address the desktop app takes when it is free (`PREFERRED_PORT` in
+ * `apps/desktop/src-tauri/src/lib.rs`); another program on that port moves the
+ * app to one its Setup page shows.
+ */
+export const DESKTOP_DEFAULT_URL = 'http://127.0.0.1:3000';
 
 /**
  * The origin of a desktop app address, or null for anything that is not

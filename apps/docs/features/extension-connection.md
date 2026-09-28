@@ -35,7 +35,7 @@ own a key, and none is needed.
 ### Use an API key instead
 
 Under **Use an API key instead**, paste a key created in your account's [API key settings](/operate/api-keys) and
-click **Test connection**, then **Save**. An instance older than the one-step connection needs this. So does the
+click **Save and test**. An instance older than the one-step connection needs this. So does the
 desktop app, whose server answers only requests carrying its access token.
 
 ## URL patterns

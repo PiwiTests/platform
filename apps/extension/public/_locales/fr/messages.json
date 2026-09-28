@@ -191,9 +191,6 @@
   "popup_playwrightView": {
     "message": "Vue Playwright"
   },
-  "popup_playwrightViewHint": {
-    "message": "Chaque élément tel que getByRole le voit, et ceux qu’aucun locator n’atteint"
-  },
   "popup_saveLogin": {
     "message": "Sauvegarder la connexion pour les tests"
   },
@@ -221,9 +218,6 @@
   },
   "popup_viewportHeight": {
     "message": "Hauteur"
-  },
-  "popup_viewportOpen": {
-    "message": "Ouvrir"
   },
   "popup_viewportOnly": {
     "message": "Viewport seulement : ni tactile, ni densité de pixels, ni user agent."
@@ -272,13 +266,13 @@
     "message": "Signaler un bug"
   },
   "popup_reportBugHint": {
-    "message": "Enregistrez, marquez ce qui ne va pas → un test en échec"
+    "message": "Les étapes et ce qui ne va pas → un test en échec"
   },
   "popup_replayBug": {
     "message": "Rejouer un rapport de bug"
   },
   "popup_replayBugHint": {
-    "message": "Rejouez-le ici, avec un curseur, et voyez si le bug apparaît"
+    "message": "Rejouez ses étapes ici, avec un curseur"
   },
   "popup_record": {
     "message": "Enregistrer"
@@ -291,18 +285,6 @@
   },
   "popup_pickHint": {
     "message": "Locators classés"
-  },
-  "popup_hoverInspect": {
-    "message": "Inspecter"
-  },
-  "popup_hoverInspectHint": {
-    "message": "Le locator au survol"
-  },
-  "popup_locatorConsole": {
-    "message": "Console"
-  },
-  "popup_locatorConsoleHint": {
-    "message": "Testez un locator"
   },
   "popup_multiPick": {
     "message": "Multi-sélection"
@@ -322,12 +304,6 @@
   "popup_assertionsHint": {
     "message": "Lignes expect(…)"
   },
-  "popup_session": {
-    "message": "Session"
-  },
-  "popup_sessionHint": {
-    "message": "Nommer → exporter"
-  },
   "popup_agentContext": {
     "message": "Contexte IA"
   },
@@ -340,33 +316,14 @@
   "popup_testFunctionsHint": {
     "message": "Votre catalogue ici"
   },
+  "popup_moreTools": {
+    "message": "Autres outils"
+  },
+  "popup_devtoolsNote": {
+    "message": "La console de locators, la session, les mocks réseau, les viewports, la vue Playwright et Sauvegarder la connexion sont dans DevTools, dans le panneau Piwi."
+  },
   "popup_running": {
     "message": "en cours"
-  },
-  "popup_footerKeys": {
-    "message": "$first$–$last$ lancent un outil, $tested$ les éléments testés, $bug$ signale un bug, $replay$ en rejoue un",
-    "placeholders": {
-      "bug": {
-        "content": "$1",
-        "example": "B"
-      },
-      "first": {
-        "content": "$2",
-        "example": "1"
-      },
-      "last": {
-        "content": "$3",
-        "example": "0"
-      },
-      "replay": {
-        "content": "$4",
-        "example": "R"
-      },
-      "tested": {
-        "content": "$5",
-        "example": "T"
-      }
-    }
   },
   "popup_pickShortcut": {
     "message": "$shortcut$ choisit sans ouvrir ce menu",
@@ -539,6 +496,18 @@
   "options_connectHeading": {
     "message": "Connexion à Piwi"
   },
+  "options_stateConnected": {
+    "message": "Connecté"
+  },
+  "options_stateNotConnected": {
+    "message": "Non connecté"
+  },
+  "options_statePaired": {
+    "message": "Associé"
+  },
+  "options_stateNotPaired": {
+    "message": "Non associé"
+  },
   "options_lead": {
     "message": "Facultatif. Connecté à votre instance Piwi, l’enregistreur utilise les page objects et les fonctions d’aide de vos projets, et les classe en direct pendant l’enregistrement. Choisir des locators et enregistrer un test simple fonctionnent toujours sans connexion."
   },
@@ -554,8 +523,8 @@
   "options_apiKeyHint": {
     "message": "À créer dans le tableau de bord Piwi, dans les réglages des clés d’API de votre compte."
   },
-  "options_testConnection": {
-    "message": "Tester la connexion"
+  "options_apiKeySave": {
+    "message": "Enregistrer et tester"
   },
   "options_mappingsHeading": {
     "message": "Projets par site"
@@ -577,6 +546,9 @@
       }
     }
   },
+  "options_sitesConnectFirst": {
+    "message": "Les sites renvoient aux projets de votre instance : connectez-vous d’abord."
+  },
   "options_addMapping": {
     "message": "+ Ajouter une ligne"
   },
@@ -593,7 +565,7 @@
     "message": "Projet"
   },
   "options_projectTestFirst": {
-    "message": "Testez la connexion"
+    "message": "Projets pas encore lus"
   },
   "options_projectChoose": {
     "message": "Choisir un projet…"
@@ -644,7 +616,7 @@
     "message": "Se déconnecter"
   },
   "options_privacy": {
-    "message": "Utilisée uniquement depuis cette page, la clé d’API n’atteint jamais les scripts d’une page web. Les étapes enregistrées ne vont nulle part, sauf si vous les copiez, les téléchargez ou les envoyez à votre éditeur appairé. La connexion télécharge les motifs d’adresse de vos projets, le catalogue de fonctions de chaque projet et les éléments que ses tests atteignent ; ajouter un site n’envoie que son motif."
+    "message": "Utilisée uniquement depuis cette page, la clé d’API n’atteint jamais les scripts d’une page web. Les étapes enregistrées ne vont nulle part, sauf si vous les copiez, les téléchargez ou les envoyez à votre éditeur appairé ou à votre application de bureau associée. La connexion télécharge les motifs d’adresse de vos projets, le catalogue de fonctions de chaque projet et les éléments que ses tests atteignent ; ajouter un site n’envoie que son motif."
   },
   "options_testing": {
     "message": "Test en cours…"
@@ -653,28 +625,94 @@
     "message": "Application de bureau"
   },
   "options_desktopHint": {
-    "message": "Facultatif. Associé à l’application de bureau Piwi Dashboard, Rejouer peut lui demander de lancer un rapport de bug avec Playwright dans votre projet. Copiez l’adresse et le jeton depuis la page Configuration de l’application, sous Connecter Piwi Picker."
+    "message": "Facultatif. Associé à l’application de bureau Piwi Dashboard, Rejouer peut lui demander de lancer un rapport de bug avec Playwright dans votre projet."
   },
   "options_desktopUrl": {
     "message": "Adresse de l’application de bureau"
   },
+  "options_desktopUrlHint": {
+    "message": "Affichée sur la page Configuration de l’application, sous Connecter Piwi Picker. Associer demande à la fenêtre de l’application d’autoriser Piwi Picker."
+  },
+  "options_desktopPair": {
+    "message": "Associer"
+  },
+  "options_desktopManual": {
+    "message": "Associer à la main"
+  },
   "options_desktopToken": {
     "message": "Jeton"
+  },
+  "options_desktopManualHint": {
+    "message": "Le jeton se trouve sur la page Configuration de l’application, sous Connecter Piwi Picker, à côté de son adresse."
   },
   "options_desktopSave": {
     "message": "Enregistrer et tester"
   },
   "options_desktopForget": {
-    "message": "Oublier"
+    "message": "Dissocier"
   },
-  "options_desktopSaved": {
-    "message": "Associé à l’application de bureau."
+  "options_desktopPairedAt": {
+    "message": "Associé à l’application de bureau à l’adresse $url$.",
+    "placeholders": {
+      "url": {
+        "content": "$1",
+        "example": "http://127.0.0.1:3000"
+      }
+    }
+  },
+  "options_desktopPairStarting": {
+    "message": "Demande à l’application de bureau…"
+  },
+  "options_desktopPairCode": {
+    "message": "Autorisez Piwi Picker dans la fenêtre de l’application de bureau, après avoir vérifié qu’elle affiche $code$.",
+    "placeholders": {
+      "code": {
+        "content": "$1",
+        "example": "BCDF-GHJK"
+      }
+    }
+  },
+  "options_desktopPairNoWindow": {
+    "message": "Ouvrez la fenêtre de l’application de bureau : la demande vous y attend."
+  },
+  "options_desktopPairDenied": {
+    "message": "L’association a été refusée dans l’application de bureau."
+  },
+  "options_desktopPairExpired": {
+    "message": "La demande a expiré avant d’être autorisée. Cliquez sur Associer pour la refaire."
+  },
+  "options_desktopPairCancelled": {
+    "message": "Association annulée."
+  },
+  "options_desktopPairUnreachable": {
+    "message": "Rien ne répond à $url$. L’application de bureau est-elle lancée ? Sa page Configuration affiche son adresse.",
+    "placeholders": {
+      "url": {
+        "content": "$1",
+        "example": "http://127.0.0.1:3000"
+      }
+    }
+  },
+  "options_desktopPairUnsupported": {
+    "message": "Ce qui répond à $url$ ne peut pas s’associer en une étape : vérifiez l’adresse sur la page Configuration de l’application de bureau, mettez l’application à jour, ou associez-la à la main.",
+    "placeholders": {
+      "url": {
+        "content": "$1",
+        "example": "http://127.0.0.1:3000"
+      }
+    }
+  },
+  "options_desktopPairTooMany": {
+    "message": "Trois associations attendent déjà dans la fenêtre de l’application de bureau : répondez-y d’abord."
   },
   "options_desktopForgotten": {
     "message": "L’application de bureau n’est plus associée."
   },
   "options_desktopNotLoopback": {
-    "message": "Saisissez l’adresse de l’application de bureau, comme http://127.0.0.1:4318, et son jeton."
+    "message": "Saisissez l’adresse de l’application de bureau, comme http://127.0.0.1:3000."
+  },
+  "options_desktopNeedsToken": {
+    "message": "Collez d’abord le jeton affiché sur la page Configuration de l’application."
   },
   "options_desktopNeedsAccess": {
     "message": "Autorisez l’accès à l’adresse de l’application de bureau pour l’associer."
@@ -699,9 +737,6 @@
         "example": "3"
       }
     }
-  },
-  "options_projectsUnlisted": {
-    "message": "Connecté, mais les projets n’ont pas pu être listés."
   },
   "options_saved_one": {
     "message": "$count$ ligne enregistrée.",
@@ -938,9 +973,6 @@
       }
     }
   },
-  "options_sourceLocal": {
-    "message": "Ce navigateur"
-  },
   "options_addHeading": {
     "message": "Ajouter un site"
   },
@@ -1065,9 +1097,6 @@
   "console_expression": {
     "message": "Locator à essayer"
   },
-  "console_close": {
-    "message": "Fermer la console"
-  },
   "console_unique": {
     "message": "Un seul élément : le mode strict passe"
   },
@@ -1089,32 +1118,6 @@
       "count": {
         "content": "$1",
         "example": "3"
-      }
-    }
-  },
-  "console_manyOutlined_one": {
-    "message": "$count$ élément : le mode strict échoue (les $shown$ premiers encadrés)",
-    "placeholders": {
-      "count": {
-        "content": "$1",
-        "example": "120"
-      },
-      "shown": {
-        "content": "$2",
-        "example": "50"
-      }
-    }
-  },
-  "console_manyOutlined_other": {
-    "message": "$count$ éléments : le mode strict échoue (les $shown$ premiers encadrés)",
-    "placeholders": {
-      "count": {
-        "content": "$1",
-        "example": "120"
-      },
-      "shown": {
-        "content": "$2",
-        "example": "50"
       }
     }
   },
@@ -1310,36 +1313,6 @@
   "agent_hint": {
     "message": "Collez ce texte dans votre assistant de code IA"
   },
-  "session_dialog": {
-    "message": "Session : éléments nommés"
-  },
-  "session_count_one": {
-    "message": "$count$ élément nommé",
-    "placeholders": {
-      "count": {
-        "content": "$1",
-        "example": "3"
-      }
-    }
-  },
-  "session_count_other": {
-    "message": "$count$ éléments nommés",
-    "placeholders": {
-      "count": {
-        "content": "$1",
-        "example": "3"
-      }
-    }
-  },
-  "session_none": {
-    "message": "Aucun élément nommé pour l’instant"
-  },
-  "session_kept": {
-    "message": "La liste reste jusqu’à la fermeture du navigateur"
-  },
-  "session_intro": {
-    "message": "Choisissez un élément et donnez-lui un nom. Ajoutez des éléments de plusieurs pages, puis copiez la liste en page object, en tableau Markdown ou en JSON."
-  },
   "session_remove": {
     "message": "Retirer $name$",
     "placeholders": {
@@ -1348,9 +1321,6 @@
         "example": "submitButton"
       }
     }
-  },
-  "session_add": {
-    "message": "+ Ajouter un élément"
   },
   "session_copyPageObject": {
     "message": "Copier en page object (.ts)"
@@ -5095,6 +5065,12 @@
   "devtools_tabSession": {
     "message": "Session"
   },
+  "devtools_viewport": {
+    "message": "Viewport"
+  },
+  "devtools_viewportOpen": {
+    "message": "Ouvrir dans une nouvelle fenêtre"
+  },
   "devtools_locatorsHint": {
     "message": "Tapez un locator : les éléments qu’il trouve sur cette page s’affichent, tels que Playwright les trouve. Survolez-en un pour l’encadrer sur la page ; Afficher le sélectionne dans le panneau Éléments."
   },
@@ -5114,7 +5090,7 @@
     }
   },
   "devtools_sessionEmpty": {
-    "message": "Aucun élément nommé pour l’instant. Sélectionnez-en un dans le panneau Éléments et utilisez Ajouter à la session dans le volet Piwi, ou l’outil Session du menu de l’extension."
+    "message": "Aucun élément nommé pour l’instant. Sélectionnez-en un dans le panneau Éléments et utilisez Ajouter à la session dans le volet Piwi."
   },
   "devtools_sessionCount_one": {
     "message": "$count$ élément nommé",

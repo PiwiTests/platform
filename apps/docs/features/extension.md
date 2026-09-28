@@ -21,16 +21,13 @@ Every tool below runs on the live page, from the toolbar popup. The last three n
 | Tool | For |
 |---|---|
 | [Pick an element](#pick-an-element) | a ranked locator for one element, re-checked against the page |
-| [Hover-inspect](#hover-inspect) | the best locator of whatever the pointer is on |
-| [Locator console](#locator-console) | what a locator expression matches right now |
 | [Multi-pick](#multi-pick) | the shared pattern of a list's rows or cards |
 | [Lint overlay](#lint-overlay) | the elements that would make bad locator targets |
 | [Assertion suggester](#assertion-suggester) | `expect(...)` lines for an element |
-| [Session](#session) | named elements across pages, exported as a page object |
 | [Copy context for agent](#copy-context-for-agent) | one block about an element for a coding agent |
 | [Record actions](#record-actions) | a runnable spec from clicks and fills across pages |
 | [Report a bug](./report-a-bug) | a failing test and a report of a bug you reproduce |
-| [Developer tools](./devtools) | locators in DevTools, and what a test sees |
+| [Developer tools](./devtools) | in DevTools: the selected element's locators, the locator console, the session, mocks, viewports |
 | [Matching functions](#matching-functions) | a recording that calls your own functions |
 | [Test functions](#test-functions-against-this-page) | which of your functions work on this page |
 | [Tested elements](#tested-elements) | which elements of this page your tests reach |
@@ -41,7 +38,8 @@ Install **[Piwi Picker from the Chrome Web Store ↗](https://chromewebstore.goo
 The listing covers Edge too: click **Allow** on its *Allow extensions from other stores* banner once, then **Get**.
 
 Every tool in the popup has a key shown on its tile (`1` records, `2` picks, `T` opens Tested elements, `B`
-reports a bug). One tool runs at a time and **Esc** cancels it; recording runs until its own **Stop**.
+reports a bug). One tool runs at a time and **Esc** cancels it; recording runs until its own **Stop**. The developer
+tools that need no pick on the page are in the browser's DevTools: see [Developer tools](./devtools).
 
 Picking also has a shortcut, suggested as `Ctrl+Shift+E` (`Cmd+Shift+E` on macOS); the popup footer shows the key
 actually bound.
@@ -61,17 +59,6 @@ failing that, `.first()` or `.nth()`, with a warning.
 Copy the result as the bare locator, an action line (`await page.getByRole(…).click();`) or a visibility assertion. **Copy all** copies every ranked locator, one per line, for a project's
 [Locators page](./locator-usage#the-locators-page).
 
-## Hover-inspect
-
-Hover any element to see its best locator, checked against the page once the pointer rests.
-
-## Locator console
-
-Type or paste a locator expression and every match is outlined on the page as you type, with a strict-mode verdict:
-green for a single match, amber and numbered for several. It reads the expression, never runs it, and finds what
-Playwright would find: every `getBy*`, `locator()`, chains, `filter()`, `and()`/`or()`, `.nth()` and same-origin
-frames.
-
 ## Multi-pick
 
 Pick two or three similar items (table rows, cards) to derive the pattern they share, such as
@@ -86,10 +73,6 @@ and a Markdown checklist.
 
 Pick an element to get the `expect(...)` candidates that apply to it (`toHaveValue`, `toHaveText`,
 `toHaveAccessibleName`, `toBeVisible`), built on its top-ranked locator, each with a copy button.
-
-## Session
-
-Pick and name elements across pages, then export them as a page-object fixture class, a Markdown table or JSON.
 
 ## Copy context for agent
 
