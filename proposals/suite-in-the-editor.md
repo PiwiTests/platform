@@ -590,10 +590,37 @@ disagree, this section wins.
   branch the way the locator index does (`indexTests`, `resolveBranchView` are now exported from `locator-usages.ts`).
 - **Docs.** Code reach got its own feature page and catalog entry (`features/code-reach.md`); the capture fixtures
   page lists it in one table row.
-- **Not done.** Verification 5 (the dogfood dashboard) and 7 (`reporter:bench` with code reach on and off) need a run
-  of the dashboard's own suite and the bench; the Risks' check on Vite build, Next.js dev and webpack builds is left
-  too. Verified: Vite-style module URLs with a live Chromium (unit test and a scratch Playwright project through the
-  built fixtures), and bundles with fetched and inline maps (unit tests).
+- **Verified on real builds.** A React app with four components (one lazy), a shared utility and a module imported
+  on start but never called, four Playwright tests through the built fixtures, on Vite 8 (dev and build), webpack 5.111
+  (build) and Next.js 16.3 (dev and build, Turbopack and webpack). Before the fixes: Vite dev counted every eagerly
+  imported component in every test (React Refresh's `$RefreshReg$` and `queueMicrotask` hooks run on import); the Vite
+  build counted `Profile.jsx` in the reports test (the preload helper took the preceding module's mapping); the Next.js
+  webpack build counted `analytics.js` and `format.js` in every test (module factories, same cause); the Next.js
+  Turbopack build recorded nothing (`turbopack:///[project]/` sources); both Next.js dev servers added `app/layout.jsx`
+  (React replays server component stacks as `about://React/Server/…` scripts). After: all ten configurations match
+  exactly, none missed, none extra. Without source maps, Vite, webpack and Next.js builds record nothing, as the docs
+  said. The fixes: a function counts for the source its start maps to only when some code inside it maps there too
+  (`SourceMapLookup.mapsBetween`); a module served by path is filtered the same way through its inline map; `[project]/`
+  is stripped and the repository root is always the last root; `about:`/`rsc:` scripts are skipped; a Vite dev
+  server's `base` (Nuxt's `/_nuxt/`) is read from its `@vite/client` address and dropped. A Vite and a webpack build of
+  a small app are kept as a fixture (`packages/reporter/tests/fixtures/code-reach/`) the reporter's Chromium test
+  serves.
+- **Verification 5, the dogfood dashboard.** The dogfood fixtures (`apps/application/tests/fixtures.ts`) record code
+  reach like the reporter's, and the config sets `codeReachRoots: ['app']` (Nuxt's Vite root; without it nothing
+  resolves). The whole suite (878 tests: 739 passed, 136 skipped, 3 failed with or without code reach) against the dev
+  server recorded reach for the 225 tests that open a page: 396 files, 194 components. `code-reach?file=
+  app/components/run/timeline/TimelineBar.vue` lists the two viewports of `run detail: every tab has no horizontal
+  overflow`, the only test opening the Timeline tab; after touching it, `piwi run impact --base HEAD` selects those two
+  tests, not widened. A component mounted closed on the project page (`ReportPreviewModal`) is reached by the 49 tests
+  that open that page, which is its setup running, not a mapping error.
+- **Verification 7, the cost.** `reporter:bench` gained a `code-reach` rung: +122 ms per test over the default capture
+  (887 → 1,009 ms median, 12 tests × 20 operations, three rounds). On the dashboard's own suite (40 tests, about 940
+  scripts per page, off and on alternated twice) it adds 1.8 s per test on average, about 20%. The micro bench does
+  not apply (it has no browser). Memory was not measured. Both are published on the feature page.
+- **Left.** A module whose top level calls its own functions counts for every test that loads it (the dashboard's
+  `shared/demo/failure-stories.mjs`); not fixable from coverage counts alone. Outside a git checkout paths are relative
+  to the Playwright config's directory, so sources outside it are dropped. Nuxt needs `codeReachRoots: ['app']`; its
+  Vite root is not discoverable from the browser. Angular, Svelte and Rspack builds are unverified.
 
 ### PR 5 — the editor service
 
