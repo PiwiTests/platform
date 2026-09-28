@@ -2394,10 +2394,11 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     assertProject(ctx, projectId);
     const pageSize = clampPageSize(params.pageSize);
     const cursor = numericCursor(params.cursor);
-    const all = await listBugReports(db, projectId, {
+    const page = await listBugReports(db, projectId, {
       status: typeof params.status === 'string' ? params.status : null,
+      beforeId: cursor,
+      limit: pageSize + 1,
     });
-    const page = all.filter((r) => cursor == null || r.id < cursor).slice(0, pageSize + 1);
     return paginatedItems(
       page.map((r) => dropNulls({ ...r, reproductions: r.reproductions || null })),
       pageSize,

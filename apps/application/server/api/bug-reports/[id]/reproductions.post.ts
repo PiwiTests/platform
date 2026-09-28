@@ -1,6 +1,6 @@
 import { requireResolvedProjectAccess, requireRouteId, resolveBugReportProjectId } from '../../../utils/project-access';
 import { apiError } from '../../../utils/api-error';
-import { addBugReproduction, bugReproductionSchema } from '#shared/handlers/bug-reports';
+import { addBugReproduction, bugReproductionSchema, isReproductionRunAllowed } from '#shared/handlers/bug-reports';
 
 defineRouteMeta({
   openAPI: {
@@ -18,6 +18,8 @@ export default eventHandler(async (event) => {
   const { db, user } = await requireResolvedProjectAccess(event, id, resolveBugReportProjectId, 'Bug report');
   const parsed = bugReproductionSchema.safeParse(await readBody(event));
   if (!parsed.success) throw apiError({ statusCode: 400, message: parsed.error.issues[0]?.message ?? 'Invalid body' });
+  if (!(await isReproductionRunAllowed(db, id, parsed.data.runId)))
+    throw apiError({ statusCode: 400, message: 'runId is not a run of this bug report’s project' });
   setResponseStatus(event, 201);
   return addBugReproduction(db, id, parsed.data, user.id);
 });

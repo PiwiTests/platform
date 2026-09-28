@@ -8,8 +8,10 @@ import * as schema from '../../server/database/schema.sqlite';
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set,
 // so clear it before the modules under test load.
 delete process.env.PIWI_DATABASE_URL;
-const { applyBugReportLifecycle } = await import('#shared/handlers/bug-reports');
+const { applyBugReportLifecycle, isReproductionRunAllowed, listBugReports } =
+  await import('#shared/handlers/bug-reports');
 const { loadLooksFixedTests } = await import('../../server/utils/notifications/run-notifications');
+const { MCP_TOOLS } = await import('../../server/utils/mcp/tools');
 
 let db: ReturnType<typeof drizzle<typeof schema>>;
 
@@ -62,5 +64,38 @@ describe('a test that runs in several browser projects', () => {
       { id: 1, status: 'test-committed' },
       { id: 2, status: 'looks-fixed' },
     ]);
+  });
+});
+
+describe('a reproduction naming a run', () => {
+  test('is allowed without a run, or with a run of the report’s own project', async () => {
+    expect(await isReproductionRunAllowed(db as never, 1, null)).toBe(true);
+    expect(await isReproductionRunAllowed(db as never, 1, 2)).toBe(true);
+  });
+
+  test('is refused for a run of another project or one that does not exist', async () => {
+    expect(await isReproductionRunAllowed(db as never, 1, 3)).toBe(false);
+    expect(await isReproductionRunAllowed(db as never, 1, 999)).toBe(false);
+  });
+});
+
+describe('list_bug_reports', () => {
+  test('pages past the newest 500 reports', async () => {
+    await db.delete(schema.bugReports);
+    await db
+      .insert(schema.bugReports)
+      .values(Array.from({ length: 520 }, (_, i) => ({ id: i + 1, projectId: 1, title: `Bug ${i + 1}`, ...EMPTY })));
+    expect((await listBugReports(db as never, 1, { beforeId: 11 })).map((r) => r.id)).toEqual(
+      Array.from({ length: 10 }, (_, i) => 10 - i),
+    );
+
+    const tool = MCP_TOOLS.find((t) => t.name === 'list_bug_reports')!;
+    const ctx = { user: null, scope: 'all' as const };
+    const page = (await tool.handler(db as never, { projectId: 1, pageSize: 50, cursor: '12' }, ctx)) as {
+      items: Array<{ id: number }>;
+      nextCursor?: string | null;
+    };
+    expect(page.items.map((r) => r.id)).toEqual(Array.from({ length: 11 }, (_, i) => 11 - i));
+    expect(page.nextCursor ?? null).toBeNull();
   });
 });

@@ -320,6 +320,7 @@ import {
 import { apiDeleteTestRun } from './test-runs';
 import {
   addBugReproduction,
+  isReproductionRunAllowed,
   bugReportPatchSchema,
   bugReproductionSchema,
   getBugReport,
@@ -2459,7 +2460,10 @@ const routes: RouteEntry[] = [
       await assertDemoEntityScope(ctx, 'bugReport', +m[1]!);
       const parsed = bugReproductionSchema.safeParse(body);
       if (!parsed.success) throw demoHttpError(400, 'Invalid request body');
-      return addBugReproduction(await getDemoDb(), +m[1]!, parsed.data, null);
+      const db = await getDemoDb();
+      if (!(await isReproductionRunAllowed(db, +m[1]!, parsed.data.runId)))
+        throw demoHttpError(400, 'runId is not a run of this bug report’s project');
+      return addBugReproduction(db, +m[1]!, parsed.data, null);
     },
   },
   {

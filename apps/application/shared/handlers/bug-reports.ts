@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, lt, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { bugTitle, emptyBugEvidence, renderBugSpec, type BugReport } from '@piwitests/core/bug-report';
 import { sessionFromSteps, type PiwiSteps } from '@piwitests/core/steps';
@@ -200,13 +200,16 @@ export async function deleteBugReport(db: DrizzleDB, id: number): Promise<void> 
   await db.delete(bugReports).where(eq(bugReports.id, id));
 }
 
+/** A project's bug reports, newest first: at most `limit` (500 by default), older than `beforeId` when set. */
 export async function listBugReports(
   db: DrizzleDB,
   projectId: number,
-  opts: { status?: string | null } = {},
+  opts: { status?: string | null; beforeId?: number | null; limit?: number } = {},
 ): Promise<BugReportListItem[]> {
   const status = BUG_REPORT_STATUSES.find((s) => s === opts.status);
-
+  const conditions = [eq(bugReports.projectId, projectId)];
+  if (status) conditions.push(eq(bugReports.status, status));
+  if (opts.beforeId != null) conditions.push(lt(bugReports.id, opts.beforeId));
   const rows = await db
     .select({
       id: bugReports.id,
@@ -222,13 +225,9 @@ export async function listBugReports(
     })
     .from(bugReports)
     .leftJoin(users, eq(bugReports.createdBy, users.id))
-    .where(
-      status
-        ? and(eq(bugReports.projectId, projectId), eq(bugReports.status, status))
-        : eq(bugReports.projectId, projectId),
-    )
+    .where(and(...conditions))
     .orderBy(desc(bugReports.id))
-    .limit(500);
+    .limit(opts.limit ?? 500);
   const tries = await reproductionSummary(
     db,
     rows.map((r) => r.id),
@@ -352,6 +351,25 @@ export async function listBugReproductions(db: DrizzleDB, bugReportId: number): 
     by: userName(who),
     createdAt: iso(r.createdAt)!,
   }));
+}
+
+/**
+ * Whether a reproduction may name `runId`: none named, or a run of the bug
+ * report's own project. Callers answer 400 otherwise, so a run of a project the
+ * caller cannot see reads the same as one that does not exist.
+ */
+export async function isReproductionRunAllowed(
+  db: DrizzleDB,
+  bugReportId: number,
+  runId: number | null | undefined,
+): Promise<boolean> {
+  if (runId == null) return true;
+  const [row] = await db
+    .select({ id: testRuns.id })
+    .from(testRuns)
+    .innerJoin(bugReports, eq(bugReports.projectId, testRuns.projectId))
+    .where(and(eq(testRuns.id, runId), eq(bugReports.id, bugReportId)));
+  return Boolean(row);
 }
 
 /** Changes a report's title or status by hand. Returns null when there is no such report. */
