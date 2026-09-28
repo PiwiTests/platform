@@ -33,9 +33,12 @@ export interface PiwiConnection {
 /**
  * The connection from the first source that names an instance URL, in order:
  * explicit values (flags), the environment, the workspace `.env`, then the
- * desktop app's discovery file (`{ url, token }`). The API key and project
- * fall through the same order independently; the desktop app's token serves
- * only its own URL. Null when no source names a URL.
+ * desktop app's discovery file (`{ url, token }`). The project falls through
+ * the same order. The API key comes only from where the URL came from, so a
+ * key never reaches a URL someone else chose: the person's own flags and
+ * environment (flags first) pair with each other, a workspace `.env` only with
+ * itself, and the desktop app's token serves only its own URL. Null when no
+ * source names a URL.
  */
 export function resolvePiwiConnection(sources: {
   flags?: { serverUrl?: string; apiKey?: string; project?: string };
@@ -43,23 +46,17 @@ export function resolvePiwiConnection(sources: {
   dotEnv?: Record<string, string>;
   desktop?: { url: string; token: string } | null;
 }): PiwiConnection | null {
-  const layers = [
-    { serverUrl: sources.flags?.serverUrl, apiKey: sources.flags?.apiKey, project: sources.flags?.project },
-    {
-      serverUrl: sources.env?.PIWI_DASHBOARD_URL,
-      apiKey: sources.env?.PIWI_API_KEY,
-      project: sources.env?.PIWI_PROJECT_NAME,
-    },
-    {
-      serverUrl: sources.dotEnv?.PIWI_DASHBOARD_URL,
-      apiKey: sources.dotEnv?.PIWI_API_KEY,
-      project: sources.dotEnv?.PIWI_PROJECT_NAME,
-    },
-  ];
-  const first = (key: 'serverUrl' | 'apiKey' | 'project') => layers.map((l) => l[key]).find((v) => !!v) ?? null;
+  const own = {
+    serverUrl: sources.flags?.serverUrl || sources.env?.PIWI_DASHBOARD_URL,
+    apiKey: sources.flags?.apiKey || sources.env?.PIWI_API_KEY,
+  };
+  const workspace = { serverUrl: sources.dotEnv?.PIWI_DASHBOARD_URL, apiKey: sources.dotEnv?.PIWI_API_KEY };
+  const project = sources.flags?.project || sources.env?.PIWI_PROJECT_NAME || sources.dotEnv?.PIWI_PROJECT_NAME || '';
   const desktop = sources.desktop ?? null;
-  const serverUrl = (first('serverUrl') ?? desktop?.url)?.replace(/\/+$/, '');
+  const trim = (url: string) => url.replace(/\/+$/, '');
+  const layer = own.serverUrl ? own : workspace.serverUrl ? workspace : null;
+  const serverUrl = layer ? trim(layer.serverUrl!) : desktop ? trim(desktop.url) : '';
   if (!serverUrl) return null;
-  const apiKey = first('apiKey') ?? (desktop && desktop.url.replace(/\/+$/, '') === serverUrl ? desktop.token : null);
-  return { serverUrl, apiKey, project: first('project') ?? '' };
+  const desktopKey = desktop && trim(desktop.url) === serverUrl ? desktop.token : null;
+  return { serverUrl, apiKey: layer?.apiKey || desktopKey || null, project };
 }

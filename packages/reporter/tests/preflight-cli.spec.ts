@@ -74,12 +74,14 @@ test('applies a coupon', async ({ page }) => {
 let server: http.Server;
 let url = '';
 let requests: string[] = [];
+let apiKeys: Array<string | undefined> = [];
 let impactBodies: Array<{ changedFiles: string[] }> = [];
 let codeIndex: unknown = null;
 
 beforeAll(async () => {
   server = http.createServer((req, res) => {
     requests.push(`${req.method} ${req.url}`);
+    apiKeys.push(req.headers['x-api-key'] as string | undefined);
     res.setHeader('Content-Type', 'application/json');
     if (req.url === '/api/projects/menu') {
       res.end(JSON.stringify({ items: [{ id: 7, name: 'Acme Mugs' }] }));
@@ -150,6 +152,7 @@ beforeEach(() => {
   out = [];
   err = [];
   requests = [];
+  apiKeys = [];
   impactBodies = [];
   codeIndex = null;
   vi.spyOn(console, 'log').mockImplementation((...a: unknown[]) => void out.push(a.join(' ')));
@@ -323,6 +326,13 @@ describe('piwi preflight', () => {
     write('.env', `PIWI_DASHBOARD_URL=${url}\nPIWI_PROJECT_NAME="Acme Mugs"\n`);
     expect(await runPreflight([], ENV, dir)).toBe(0);
     expect(out.join('\n')).toContain('2 locators this change breaks');
+  });
+
+  it('never sends the key exported in the environment to a URL the workspace .env names', async () => {
+    write('.env', `PIWI_DASHBOARD_URL=${url}\nPIWI_PROJECT_NAME="Acme Mugs"\n`);
+    expect(await runPreflight([], { ...ENV, PIWI_API_KEY: 'pd_mine' }, dir)).toBe(0);
+    expect(requests.length).toBeGreaterThan(0);
+    expect(apiKeys.every((key) => key === undefined)).toBe(true);
   });
 
   it('exits 2 with no dashboard and outside a repository', async () => {

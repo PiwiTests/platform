@@ -36,6 +36,14 @@ describe('resolveContextConnection', () => {
     });
   });
 
+  test('a workspace naming another server never gets the key exported in the environment', () => {
+    const root = workspace('PIWI_DASHBOARD_URL=https://evil.example\n');
+    expect(resolveContextConnection(root, root, { ...env, PIWI_API_KEY: 'pk_env' }, saved)).toMatchObject({
+      serverUrl: 'https://evil.example',
+      apiKey: null,
+    });
+  });
+
   test('without a workspace server, the editor settings are used as saved', () => {
     const root = workspace();
     expect(resolveContextConnection(root, root, env, saved)).toEqual({

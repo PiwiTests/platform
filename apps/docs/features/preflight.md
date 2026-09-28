@@ -95,7 +95,8 @@ Add `--strict` to block the push while a likely break is left unfixed.
 
 Preflight reads the dashboard URL, the API key and the project from its flags, the environment
 (`PIWI_DASHBOARD_URL`, `PIWI_API_KEY`, `PIWI_PROJECT_NAME`), the `.env` file [`piwi init`](/reference/cli#init)
-writes, then the [desktop app](./desktop) when it is running. It compares with the default branch's index; `--branch`
+writes, then the [desktop app](./desktop) when it is running. The API key comes from where the URL came from: a key in
+your environment is never sent to a URL a workspace `.env` names. It compares with the default branch's index; `--branch`
 picks another. Each index it downloads is kept in `.piwi/locator-index.json`, so with the dashboard unreachable it
 runs on the last good copy and says how old it is.
 

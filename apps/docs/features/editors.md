@@ -24,6 +24,9 @@ order:
    and an [API key](/operate/api-keys), and pick the project. The key goes to the editor's secret storage, never to a
    file.
 
+The API key comes from where the URL came from: a key in your environment or the editor's settings is never sent to a
+URL a workspace `.env` names.
+
 Nothing from your workspace is sent to the instance: the project's
 [locator index](/guide/concepts#locator-index), [code reach](/features/code-reach) and latest run are downloaded and
 compared with your files locally.
