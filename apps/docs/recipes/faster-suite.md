@@ -36,15 +36,15 @@ only explicit sleeps count — `waitForTimeout` and friends — because framewor
 (load-state, wait-for-function) are usually unavoidable and would drown the signal.
 
 - A failing execution's summary shows the wasted time spent in fixed waits, right next to its duration.
-- A run's **Timeline** tab draws a per-worker timeline with a **span-type filter**: filter to wasted waits and
-  the sleeps show as bars that open the test.
+- A run's **Timeline** tab draws a per-worker timeline: turn on **Show waits** and the sleeps show as bars that
+  open the test.
 - Tune what counts in **Settings → Performance** (or lock it with
   [`PIWI_WASTED_WAIT_PATTERNS`](/reference/configuration#wasted-time)). Classification happens *when a run is
   viewed*, so widening the patterns re-classifies your whole history with no re-run.
 
 <figure>
-  <img src="/screenshots/run-timeline.png" alt="A run's Timeline tab: one horizontal lane per worker, tests as bars, with the fixed-wait sleeps highlighted as wasted-wait spans and a span-type filter above">
-  <figcaption>The Timeline tab: one lane per worker, with the fixed-wait sleeps highlighted as their own span.</figcaption>
+  <img src="/screenshots/run-timeline.png" alt="A run's Timeline tab: one horizontal lane per worker, tests as bars with their setup and teardown hooks hatched at each end, the fixed-wait sleeps highlighted as wasted-wait spans, and the Show hooks and Show waits switches above">
+  <figcaption>The Timeline tab: one lane per worker, hook time hatched at each end of a test, and the fixed-wait sleeps highlighted as their own span.</figcaption>
 </figure>
 
 Set the patterns to `*` once to see how much of the suite is waiting on something, then set them back.

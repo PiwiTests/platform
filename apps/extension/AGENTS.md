@@ -559,7 +559,7 @@ instead of needing a live browser for everything.
 | Command | Purpose |
 |---|---|
 | `npm run extension:build` | Build `dist/` (content scripts, background, popup, options page, manifest, icons, `_locales`) |
-| `npm run extension:dev` | Same build, re-run on every change to `src/`, `public/`, `popup.html`, `options.html`, `manifest.json`, `scripts/build.mjs` (reloaded before the rebuild), or the sources of `@piwitests/core` and `@piwitests/picker-dom` |
+| `npm run extension:dev` | Same build, re-run on every change to `src/`, `public/`, the HTML pages, `manifest.json`, `scripts/build.mjs`, or the `src/` and `package.json` of `packages/core` and `packages/picker-dom` (bundled from source) |
 | `npm run extension:build -- --pseudo` | Same build with a pseudo-localized English catalog, to spot text that bypasses `t()` or clips (never released) |
 | `npm run extension:build:release` | Reproducible build: stamps the version instead of the build time into every bundle |
 | `npm run extension:zip` | Release build, then the store-ready zip, the source zip Firefox AMO requires, and the AMO listing metadata (see `PUBLISHING.md`) |
@@ -579,6 +579,13 @@ While iterating, use `npm run extension:dev` instead — it rebuilds on save. Th
 still needs a manual reload on the `chrome://extensions` card to pick up a new build (MV3
 gives no way to trigger that from outside the browser), so the loop is: save → wait for the
 rebuild line → click reload.
+
+`scripts/dev.mjs` guards against two runaway cases; keep both. It rebuilds only when a watched
+path's mtime or size differs from when the last build started: on Windows `fs.watch` also reports
+access-time changes, so the build's own reads used to start the next build, and one save rebuilt
+until the process ran out of memory. And each build runs in a child process (`node
+scripts/build.mjs`), because Vite keeps memory from every build run in one process (several MB a
+rebuild, never released).
 
 Until that reload, the popup and every tool opened come from the new build, read from disk
 each time, while the background worker still runs the build that was loaded — so a message
