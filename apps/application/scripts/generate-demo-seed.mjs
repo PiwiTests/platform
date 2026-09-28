@@ -1335,6 +1335,56 @@ for (const proj of DEMO_PROJECTS) {
   }
 }
 
+// ── Worker lanes without holes (post-processing, rng-free) ──────────────────
+// A skipped or did-not-run test never ran on a worker — Playwright reports it
+// with no worker index — so it leaves its lane, and the tests after it on that
+// worker move up into the time it held, with every timestamp they carry. The
+// lanes then read as a real run's: back to back, SEED_WORKER_GAP_MS apart.
+{
+  const requestsByCase = new Map();
+  for (const req of NETWORK_REQUESTS) {
+    const list = requestsByCase.get(req.test_runs_case_id);
+    if (list) list.push(req);
+    else requestsByCase.set(req.test_runs_case_id, [req]);
+  }
+  const shiftAll = (list, key, delta) => (list ? list.map((e) => ({ ...e, [key]: e[key] + delta })) : list);
+  const shiftCase = (row, delta) => {
+    row.started_at += delta;
+    row.created_at += delta;
+    row.attempts = JSON.stringify(shiftAll(JSON.parse(row.attempts), 'startedAt', delta));
+    row.steps = shiftAll(row.steps, 'startTime', delta);
+    row.step_events = shiftAll(row.step_events, 'startedAt', delta);
+    row.console_logs = shiftAll(row.console_logs, 'timestamp', delta);
+    row.dialogs = shiftAll(row.dialogs, 'closedAt', delta);
+    for (const req of requestsByCase.get(row.id) ?? []) {
+      req.start_time += delta;
+      req.server_logs = shiftAll(req.server_logs, 'timestamp', delta);
+    }
+  };
+
+  const lanes = new Map();
+  const runStart = new Map();
+  for (const row of TEST_RUNS_CASES) {
+    runStart.set(row.test_run_id, Math.min(runStart.get(row.test_run_id) ?? Infinity, row.started_at));
+    if (row.status === 'skipped' || row.status === 'didnotrun') {
+      row.worker_index = null;
+      continue;
+    }
+    const key = `${row.test_run_id}|${row.worker_index}`;
+    const lane = lanes.get(key);
+    if (lane) lane.push(row);
+    else lanes.set(key, [row]);
+  }
+  for (const lane of lanes.values()) {
+    lane.sort((a, b) => a.started_at - b.started_at);
+    let cursor = runStart.get(lane[0].test_run_id);
+    for (const row of lane) {
+      if (row.started_at > cursor) shiftCase(row, cursor - row.started_at);
+      cursor = row.started_at + (row.duration ?? 0) + SEED_WORKER_GAP_MS;
+    }
+  }
+}
+
 // ── Regression / new-flaky signals ──────────────────────────────────────────
 // Mirror the server's computeRegressionSignals: walk each case's executions in
 // chronological order; a failure right after a pass is a new regression, and a
