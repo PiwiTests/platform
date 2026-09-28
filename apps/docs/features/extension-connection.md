@@ -46,7 +46,12 @@ level under `/admin`. A pattern starts with `http://`, `https://` or a wildcard.
 Each project keeps its own list in its **Settings** tab, under **Browser extension URLs**. A pattern can name:
 
 - an **environment**, a label shown beside the project in Piwi Picker (`staging`, `production`);
-- a **branch**, the one deployed at those addresses, whose tests [Tested elements](./tested-elements) shows.
+- a **branch**, the one deployed at those addresses, whose tests [Tested elements](./tested-elements) shows;
+- a **path prefix**, the part of the path your site serves its pages under and the tests did not: `/app` when the site
+  serves `/app/checkout` and the tests ran at `/checkout`. Piwi Picker removes it before comparing the page with the
+  [pages the tests ran on](./tested-elements#this-page), whole parts only (`/application` keeps its path), and a bug
+  report sent from the site keys its page without it. It is a plain path of at most four parts, with no query, hash or
+  wildcard.
 
 The editor suggests one pattern per site your suite already visited: the `baseURL` of recent runs, the pages of the
 [Test Map](./scenario-gaps) and the absolute pages its locators ran on. **Add** puts a suggestion in the list; **Save
