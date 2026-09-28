@@ -12,6 +12,7 @@
  * import { test, expect } from './fixtures'
  * ```
  */
+import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gunzipSync } from 'node:zlib';
 import { test as base, expect, type Page, type TestInfo } from '@playwright/test';
@@ -44,6 +45,12 @@ import {
   LocatorPageLog,
   noteLocatorCall,
   noteNavigation,
+  codeReachRoots,
+  configuredCodeReachRoots,
+  pageMapFetcher,
+  resolveCodeReach,
+  startCodeReach,
+  stopCodeReach,
 } from '../../../packages/reporter/dist/internal/capture/capture-fixtures.js';
 import {
   inspectionGateFromTestInfo,
@@ -470,9 +477,30 @@ export const test = base.extend<{ page: Page }>({
       });
     }
 
+    // ── Code reach (mirrors the reporter fixture, on with PIWI_CAPTURE_CODE_REACH=true) ──
+    const codeReach = process.env.PIWI_CAPTURE_CODE_REACH === 'true' && (await startCodeReach(page));
+
     // ── Existing event listeners ──────────────────────────────────────────
     const flush = await collectNetworkAndVitals(page, testInfo);
     await use(page);
+
+    if (codeReach && !page.isClosed()) {
+      try {
+        const entries = await stopCodeReach(page);
+        const configDir = testInfo.config.configFile ? dirname(testInfo.config.configFile) : testInfo.config.rootDir;
+        const files = entries
+          ? await resolveCodeReach(entries, codeReachRoots(configDir, configuredCodeReachRoots()), pageMapFetcher(page))
+          : [];
+        if (files.length > 0) {
+          await testInfo.attach(ATTACHMENT_NAMES.codeReach, {
+            contentType: 'application/json',
+            body: Buffer.from(JSON.stringify(files)),
+          });
+        }
+      } catch {
+        // Code reach is best-effort and must never affect the test.
+      }
+    }
 
     // ── Attach locator snapshots ──────────────────────────────────────────
     // Cap the drain so a stuck capture (e.g. a navigation in flight) can never
