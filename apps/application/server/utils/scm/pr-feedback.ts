@@ -423,15 +423,13 @@ export async function postRunPrFeedback(
 }
 
 /**
- * Fire-and-forget wrapper for the run-finalize paths.
+ * Fire-and-forget wrapper for the run-finalize paths. Returns once change
+ * coverage is stored, with the run's locator breaks that locator healing
+ * reads; the comment is posted after that, in the background.
  *
  * Fix verification runs first and its result is handed to the comment, so the
  * two stay in one order rather than racing: a comment that omitted the cluster
  * this run just closed would be reporting the wrong news.
- */
-/**
- * Returns once change coverage is stored, with the run's locator breaks that
- * locator healing reads; the comment is posted after that, in the background.
  */
 export function postRunPrFeedbackInBackground(db: DbClient, runId: number): Promise<void> {
   // Recompute the project-wide scenario gaps off the request path, so success-
