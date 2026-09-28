@@ -122,7 +122,7 @@ export async function applyThroughDebugger(state: ConditionsState): Promise<void
 export async function releaseConditionsDebugger(tabId: number): Promise<void> {
   applied.get(tabId)?.stop();
   applied.delete(tabId);
-  if (!holdsDebugger(tabId, 'conditions')) return;
+  if (!holdsDebugger(tabId, 'conditions')) return releaseDebugger(tabId, 'conditions');
   await sendCommand(tabId, 'Fetch.disable').catch(() => undefined);
   await sendCommand(tabId, 'Network.emulateNetworkConditions', {
     offline: false,
@@ -134,13 +134,33 @@ export async function releaseConditionsDebugger(tabId: number): Promise<void> {
   await releaseDebugger(tabId, 'conditions');
 }
 
-/** The viewport set on a tab from the popup, in session storage so the popup can say so and offer to undo it. */
+/**
+ * The viewports set on tabs from the popup, one per tab id, in session storage
+ * so the popup can say so and offer to undo it.
+ */
 export const TAB_VIEWPORT_KEY = 'piwiTabViewport';
 
 export interface TabViewport {
   tabId: number;
   width: number;
   height: number;
+}
+
+type TabViewports = Record<string, TabViewport>;
+
+let viewportWrites: Promise<unknown> = Promise.resolve();
+
+/** Changes the stored viewports one write at a time, so two tabs set at once both stay. */
+function updateViewports(change: (current: TabViewports) => TabViewports): Promise<void> {
+  const run = viewportWrites.then(async () => {
+    const stored = (await chrome.storage.session.get(TAB_VIEWPORT_KEY))[TAB_VIEWPORT_KEY] as TabViewports | undefined;
+    const next = change({ ...stored });
+    if (JSON.stringify(next) === JSON.stringify(stored ?? {})) return;
+    if (Object.keys(next).length > 0) await chrome.storage.session.set({ [TAB_VIEWPORT_KEY]: next });
+    else await chrome.storage.session.remove(TAB_VIEWPORT_KEY);
+  });
+  viewportWrites = run.catch(() => undefined);
+  return run;
 }
 
 /** Sets the tab's viewport, in the tab itself, until it is reset or the tab closes. */
@@ -154,7 +174,7 @@ export async function setTabViewport(viewport: TabViewport): Promise<{ ok: true 
       deviceScaleFactor: 0,
       mobile: false,
     });
-    await chrome.storage.session.set({ [TAB_VIEWPORT_KEY]: viewport });
+    await updateViewports((current) => ({ ...current, [viewport.tabId]: viewport }));
     return { ok: true };
   } catch (err) {
     await releaseDebugger(viewport.tabId, 'viewport');
@@ -166,10 +186,12 @@ export async function setTabViewport(viewport: TabViewport): Promise<{ ok: true 
 export async function clearTabViewport(tabId: number): Promise<void> {
   if (holdsDebugger(tabId, 'viewport')) {
     await sendCommand(tabId, 'Emulation.clearDeviceMetricsOverride').catch(() => undefined);
-    await releaseDebugger(tabId, 'viewport');
   }
-  const stored = (await chrome.storage.session.get(TAB_VIEWPORT_KEY))[TAB_VIEWPORT_KEY] as TabViewport | undefined;
-  if (stored?.tabId === tabId) await chrome.storage.session.remove(TAB_VIEWPORT_KEY);
+  await releaseDebugger(tabId, 'viewport');
+  await updateViewports((current) => {
+    delete current[tabId];
+    return current;
+  });
 }
 
 // A viewport whose session ended (the bar cancelled, the tab closed) is forgotten.

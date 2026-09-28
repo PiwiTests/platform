@@ -2719,6 +2719,9 @@
   "replay_startedHere": {
     "message": "Stattdessen auf der Seite des Tabs begonnen."
   },
+  "replay_reasonInputInterrupted": {
+    "message": "Die Aktion brach auf halbem Weg ab: Die Debugging-Sitzung endete, nachdem ein Teil davon die Seite erreicht hatte. Die Wiedergabe stoppt hier, statt sie doppelt auszuführen."
+  },
   "replay_reasonActionFailed": {
     "message": "Die Seite hat auf die Aktion nicht so reagiert wie bei der Aufzeichnung."
   },

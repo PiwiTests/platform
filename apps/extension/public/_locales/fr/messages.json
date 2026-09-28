@@ -2719,6 +2719,9 @@
   "replay_startedHere": {
     "message": "Commencé sur la page de l’onglet à la place."
   },
+  "replay_reasonInputInterrupted": {
+    "message": "L’action s’est arrêtée à mi-chemin : la session de débogage a pris fin après qu’une partie a atteint la page. Le rejeu s’arrête ici plutôt que de la refaire."
+  },
   "replay_reasonActionFailed": {
     "message": "La page n’a pas réagi à l’action comme lors de l’enregistrement."
   },

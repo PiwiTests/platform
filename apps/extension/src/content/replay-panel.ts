@@ -606,7 +606,8 @@ type ActResult = { ok: true; driver: ReplayDriver } | { ok: false; reason: strin
 /**
  * Performs one action step with the replay's driver. When trusted input is
  * lost before it reached the page (the person cancelled the debugging bar),
- * the replay goes on with the page's own events, from this step.
+ * the replay goes on with the page's own events, from this step; lost once
+ * part of it reached the page, the step fails and the replay stops.
  */
 async function act(step: RecordedStep, element: Element | null, dropOn: Element | null): Promise<ActResult> {
   const state = await getReplayState();
@@ -617,7 +618,8 @@ async function act(step: RecordedStep, element: Element | null, dropOn: Element 
       if (e instanceof NotActionable) return { ok: false, reason: e.message };
       if (!(e instanceof TrustedInputLost)) throw e;
       await fallBack(e.reason);
-      if (e.started) return { ok: true, driver: 'cdp' };
+      // Part of the action reached the page: playing it again with events would do it twice.
+      if (e.started) return { ok: false, reason: t('replay_reasonInputInterrupted') };
     }
   }
   return (await actWithEvents(step, element, dropOn)) ? { ok: true, driver: 'synthetic' } : { ok: false, reason: null };

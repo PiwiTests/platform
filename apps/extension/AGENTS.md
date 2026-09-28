@@ -130,7 +130,8 @@ on a Mac, with the editing command Chrome needs), `Input.insertText` after selec
 element holds, and drags (`Input.setInterceptDrags` + `Input.dispatchDragEvent` for an HTML drag, the moves alone for
 a pointer-driven one). Date, time and color fields and `<select>` get their value set as Playwright sets them. The
 replay's panel lets the pointer through while input is sent. Input lost before it reached the page (the bar
-cancelled) replays the step with the page's own events (`replay-actions.ts`); each step result keeps its `driver`, and
+cancelled) replays the step with the page's own events (`replay-actions.ts`); lost after part of it did (the button
+went down, not up), the step fails with `replay_reasonInputInterrupted` rather than being done twice; each step result keeps its `driver`, and
 the panels show it. A file step asks the developer for the file in the replay's panel (a report names files, never
 carries them, and `DOM.setFileInputFiles` needs a path on disk), or lets them skip it (`skipped`); the file chooser a
 click opens is intercepted while a replay holds the tab (`Page.setInterceptFileChooserDialog`).

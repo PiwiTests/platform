@@ -2719,6 +2719,9 @@
   "replay_startedHere": {
     "message": "Se empezó en la página de la pestaña."
   },
+  "replay_reasonInputInterrupted": {
+    "message": "La acción se detuvo a medias: la sesión de depuración terminó después de que parte de ella llegara a la página. La reproducción se detiene aquí en lugar de repetirla."
+  },
   "replay_reasonActionFailed": {
     "message": "La página no reaccionó a la acción como cuando se grabó."
   },

@@ -233,3 +233,57 @@ test('through the debugging protocol: fails an image, takes the whole page offli
   expect(await load(shop, 'image')).toMatchObject({ result: 'image loaded' });
   await expect.poll(() => attached(context, tabId)).toBe(false);
 });
+
+/** An extension page to send the Piwi panel's messages from, as the panel does. */
+async function extensionPage(context: BrowserContext, extensionId: string): Promise<Page> {
+  const page = await context.newPage();
+  await page.goto(`chrome-extension://${extensionId}/popup.html`);
+  return page;
+}
+
+function setConditions(sender: Page, message: Record<string, unknown>): Promise<unknown> {
+  return sender.evaluate((m) => chrome.runtime.sendMessage(m), { type: 'piwi-set-conditions', ...message });
+}
+
+const failCart = { id: 'cart', method: 'GET', pattern: '**/api/cart?_=*', kind: 'error', delayMs: 0 };
+
+test('conditions set on a second tab let go of the first', async ({ context, extensionId, site }) => {
+  const first = await context.newPage();
+  await first.goto(`${site}/shop`);
+  const second = await context.newPage();
+  await second.goto(`${site}/shop?second`);
+  const firstId = await tabIdOf(context, extensionId, `${site}/shop`);
+  const secondId = await tabIdOf(context, extensionId, `${site}/shop?second`);
+
+  const sender = await extensionPage(context, extensionId);
+  expect(await setConditions(sender, { tabId: firstId, origin: site, conditions: [failCart] })).toEqual({ ok: true });
+  expect(await load(first, 'fetch')).toMatchObject({ result: 'error 500' });
+  expect(await setConditions(sender, { tabId: secondId, origin: site, conditions: [failCart] })).toEqual({ ok: true });
+  expect(await load(second, 'fetch')).toMatchObject({ result: 'error 500' });
+
+  await expect.poll(() => attached(context, firstId)).toBe(false);
+  expect(await load(first, 'fetch')).toMatchObject({ result: 'total 40' });
+  expect(await attached(context, secondId)).toBe(true);
+});
+
+test('conditions turned off while they are still being turned on end with nothing attached', async ({
+  context,
+  extensionId,
+  site,
+}) => {
+  const shop = await context.newPage();
+  await shop.goto(`${site}/shop`);
+  const tabId = await tabIdOf(context, extensionId, `${site}/shop`);
+  const sender = await extensionPage(context, extensionId);
+  await sender.evaluate(
+    ([id, origin, condition]) =>
+      Promise.all([
+        chrome.runtime.sendMessage({ type: 'piwi-set-conditions', tabId: id, origin, conditions: [condition] }),
+        chrome.runtime.sendMessage({ type: 'piwi-set-conditions', tabId: id, origin, conditions: [] }),
+      ]),
+    [tabId, site, failCart] as const,
+  );
+  await expect.poll(() => attached(context, tabId)).toBe(false);
+  await shop.waitForLoadState();
+  expect(await load(shop, 'fetch')).toMatchObject({ result: 'total 40' });
+});

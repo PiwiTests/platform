@@ -28,6 +28,8 @@ interface TabSession {
 const sessions = new Map<number, TabSession>();
 /** Attaches in progress, so two features asking at once attach once. */
 const attaching = new Map<number, Promise<{ ok: true } | { ok: false; reason: FallbackReason; error: string }>>();
+/** The purposes waiting on an attach in progress; a release while it attaches takes its purpose out. */
+const wanted = new Map<number, Set<DebugPurpose>>();
 const lostListeners = new Set<LostListener>();
 
 export function debuggerAvailable(): boolean {
@@ -72,22 +74,36 @@ export async function acquireDebugger(
     existing.purposes.add(purpose);
     return { ok: true };
   }
+  const waiting = wanted.get(tabId) ?? new Set<DebugPurpose>();
+  waiting.add(purpose);
+  wanted.set(tabId, waiting);
   let pending = attaching.get(tabId);
   if (!pending) {
     pending = attach(tabId);
     attaching.set(tabId, pending);
   }
   const result = await pending;
-  attaching.delete(tabId);
+  if (attaching.get(tabId) === pending) attaching.delete(tabId);
+  const stillWanted = waiting.delete(purpose);
+  if (waiting.size === 0 && wanted.get(tabId) === waiting) wanted.delete(tabId);
   if (!result.ok) return result;
   const session = sessions.get(tabId) ?? { purposes: new Set<DebugPurpose>(), listeners: new Set<EventListener>() };
-  session.purposes.add(purpose);
+  if (stillWanted) session.purposes.add(purpose);
   sessions.set(tabId, session);
+  if (!stillWanted) {
+    // Released while it attached: detached unless another purpose holds or still waits for the session.
+    if (session.purposes.size === 0 && !wanted.has(tabId)) {
+      sessions.delete(tabId);
+      await chrome.debugger.detach({ tabId }).catch(() => undefined);
+    }
+    return { ok: false, reason: 'lost', error: 'released' };
+  }
   return { ok: true };
 }
 
 /** Lets go of the tab's session for `purpose`, and detaches when nothing else holds it. */
 export async function releaseDebugger(tabId: number, purpose: DebugPurpose): Promise<void> {
+  wanted.get(tabId)?.delete(purpose);
   const session = sessions.get(tabId);
   if (!session) return;
   session.purposes.delete(purpose);
@@ -101,9 +117,12 @@ export function holdsDebugger(tabId: number, purpose: DebugPurpose): boolean {
   return sessions.get(tabId)?.purposes.has(purpose) ?? false;
 }
 
-/** The tabs whose session `purpose` holds. */
+/** The tabs whose session `purpose` holds, or is attaching for. */
 export function tabsHolding(purpose: DebugPurpose): number[] {
-  return [...sessions.entries()].filter(([, s]) => s.purposes.has(purpose)).map(([tabId]) => tabId);
+  const tabs = new Set<number>();
+  for (const [tabId, s] of sessions) if (s.purposes.has(purpose)) tabs.add(tabId);
+  for (const [tabId, w] of wanted) if (w.has(purpose)) tabs.add(tabId);
+  return [...tabs];
 }
 
 /** Sends one protocol command to the tab's session. Throws when there is none or the browser refuses it. */

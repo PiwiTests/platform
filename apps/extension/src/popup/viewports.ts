@@ -83,8 +83,9 @@ export async function setUpViewportRow(
   const showCurrent = async () => {
     const page = await tab();
     const values: Record<string, unknown> = await chrome.storage.session.get(TAB_VIEWPORT_KEY).catch(() => ({}));
-    const stored = values[TAB_VIEWPORT_KEY] as { tabId: number; width: number; height: number } | undefined;
-    currentRow.hidden = !page || stored?.tabId !== page.id;
+    const all = values[TAB_VIEWPORT_KEY] as Record<string, { width: number; height: number }> | undefined;
+    const stored = page?.id != null ? all?.[page.id] : undefined;
+    currentRow.hidden = !stored;
     if (stored && !currentRow.hidden) {
       currentText.textContent = t('popup_viewportHereOn', {
         size: `${formatNumber(stored.width)}×${formatNumber(stored.height)}`,

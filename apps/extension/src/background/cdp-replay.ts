@@ -96,8 +96,11 @@ export async function handleReplayDriver(
   return chooseDriver({ available: true, attached: true, previous });
 }
 
-async function sendAll(tabId: number, commands: CdpCommand[]): Promise<void> {
-  for (const command of commands) await sendCommand(tabId, command.method, command.params);
+/** Sends one command of an action; the replay's input counts as started once one reached the page. */
+type Send = (method: string, params?: Record<string, unknown>) => Promise<unknown>;
+
+async function sendAll(send: Send, commands: CdpCommand[]): Promise<void> {
+  for (const command of commands) await send(command.method, command.params);
 }
 
 function wait(ms: number): Promise<void> {
@@ -110,48 +113,56 @@ function wait(ms: number): Promise<void> {
  * of the system runs for synthesized input; a drag done with pointer events
  * (sortable lists, sliders) is the moves themselves.
  */
-async function drag(tabId: number, from: Point, to: Point): Promise<void> {
+async function drag(tabId: number, send: Send, from: Point, to: Point): Promise<void> {
   let intercepted: Record<string, unknown> | null = null;
   const stop = onDebuggerEvent(tabId, (method, params) => {
     if (method === 'Input.dragIntercepted') intercepted = params.data as Record<string, unknown>;
   });
   try {
-    await sendCommand(tabId, 'Input.setInterceptDrags', { enabled: true });
-    await sendAll(tabId, dragPathEvents(from, to));
+    await send('Input.setInterceptDrags', { enabled: true });
+    await sendAll(send, dragPathEvents(from, to));
     await wait(50);
     const data = intercepted as Record<string, unknown> | null;
     if (data) {
       for (const type of ['dragEnter', 'dragOver', 'drop']) {
-        await sendCommand(tabId, 'Input.dispatchDragEvent', { type, x: to.x, y: to.y, data, modifiers: 0 });
+        await send('Input.dispatchDragEvent', { type, x: to.x, y: to.y, data, modifiers: 0 });
       }
     }
-    await sendAll(tabId, [releaseEvent(to)]);
+    await sendAll(send, [releaseEvent(to)]);
   } finally {
     stop();
     await sendCommand(tabId, 'Input.setInterceptDrags', { enabled: false }).catch(() => undefined);
   }
 }
 
-async function perform(tabId: number, op: InputOp, mac: boolean): Promise<void> {
+async function perform(tabId: number, send: Send, op: InputOp, mac: boolean): Promise<void> {
   switch (op.op) {
     case 'move':
-      return sendAll(tabId, moveEvents(op));
+      return sendAll(send, moveEvents(op));
     case 'click':
-      return sendAll(tabId, clickEvents(op, op.count));
+      return sendAll(send, clickEvents(op, op.count));
     case 'press':
-      return sendAll(tabId, keyEvents(op.combo, mac));
+      return sendAll(send, keyEvents(op.combo, mac));
     case 'insertText':
-      await sendCommand(tabId, 'Input.insertText', { text: op.text });
+      await send('Input.insertText', { text: op.text });
       return;
     case 'drag':
-      return drag(tabId, op.from, op.to);
+      return drag(tabId, send, op.from, op.to);
   }
 }
 
+/** The commands that put input in the page, as opposed to setting the session up. */
+const INPUT_COMMANDS = new Set([
+  'Input.dispatchMouseEvent',
+  'Input.dispatchKeyEvent',
+  'Input.dispatchDragEvent',
+  'Input.insertText',
+]);
+
 /**
  * Performs what the replay script asks in its tab. `started` says whether any
- * input reached the page before a failure, so the script knows whether it may
- * play the step again with the page's own events.
+ * input reached the page before a failure, command by command: a click whose
+ * button went down is started, so the script does not play it again.
  */
 export async function handleReplayInput(
   message: { replayId?: unknown; ops?: unknown },
@@ -159,31 +170,41 @@ export async function handleReplayInput(
 ): Promise<{ ok: true } | { ok: false; lost: boolean; started: boolean; error: string; reason?: FallbackReason }> {
   const ops = readInputOps(message.ops);
   if (tab?.id == null || !ops) return { ok: false, lost: false, started: false, error: 'bad request' };
-  if (!holdsDebugger(tab.id, 'replay') || !(await replayRunsIn(tab, message.replayId))) {
+  const tabId = tab.id;
+  if (!holdsDebugger(tabId, 'replay') || !(await replayRunsIn(tab, message.replayId))) {
     const reason = lostReplays.get(String(message.replayId)) ?? 'lost';
     return { ok: false, lost: true, started: false, error: 'not attached', reason };
   }
   const mac = await macPlatform();
   let started = false;
+  const send: Send = async (method, params) => {
+    const result = await sendCommand(tabId, method, params);
+    if (INPUT_COMMANDS.has(method)) started = true;
+    return result;
+  };
   try {
-    for (const op of ops) {
-      await perform(tab.id, op, mac);
-      started = true;
-    }
+    for (const op of ops) await perform(tabId, send, op, mac);
     return { ok: true };
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
-    const lost = !holdsDebugger(tab.id, 'replay');
+    const lost = !holdsDebugger(tabId, 'replay');
     return { ok: false, lost, started, error, reason: lostReplays.get(String(message.replayId)) ?? 'lost' };
   }
 }
 
+/**
+ * The replay lets go of the tab: the file chooser opens again, since another
+ * feature may keep the session, and the session is released.
+ */
+export async function releaseReplayTab(tabId: number): Promise<void> {
+  replayOfTab.delete(tabId);
+  if (holdsDebugger(tabId, 'replay')) {
+    await sendCommand(tabId, 'Page.setInterceptFileChooserDialog', { enabled: false }).catch(() => undefined);
+  }
+  await releaseDebugger(tabId, 'replay');
+}
+
 /** The replay ended: every tab it attached to is let go. */
 export async function releaseReplayDebugger(): Promise<void> {
-  await Promise.all(
-    tabsHolding('replay').map((tabId) => {
-      replayOfTab.delete(tabId);
-      return releaseDebugger(tabId, 'replay');
-    }),
-  );
+  await Promise.all(tabsHolding('replay').map(releaseReplayTab));
 }

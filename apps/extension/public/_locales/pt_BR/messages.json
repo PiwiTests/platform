@@ -2719,6 +2719,9 @@
   "replay_startedHere": {
     "message": "Começou na página da aba, em vez disso."
   },
+  "replay_reasonInputInterrupted": {
+    "message": "A ação parou no meio: a sessão de depuração terminou depois que parte dela chegou à página. A reprodução para aqui em vez de repeti-la."
+  },
   "replay_reasonActionFailed": {
     "message": "A página não reagiu à ação como reagiu durante a gravação."
   },

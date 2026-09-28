@@ -66,11 +66,7 @@ test.describe('Open this page at a viewport', () => {
     expect(await attached()).toBe(true);
     expect(
       await popup.evaluate(async () => (await chrome.storage.session.get('piwiTabViewport')).piwiTabViewport),
-    ).toEqual({
-      tabId,
-      width: 390,
-      height: 664,
-    });
+    ).toEqual({ [tabId]: { tabId, width: 390, height: 664 } });
 
     await popup.evaluate((id) => chrome.runtime.sendMessage({ type: 'piwi-clear-tab-viewport', tabId: id }), tabId);
     expect(await attached()).toBe(false);

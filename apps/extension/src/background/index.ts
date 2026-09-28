@@ -44,8 +44,8 @@ import {
   setTabViewport,
 } from './cdp-conditions.js';
 import { handleDesktopRepro, handleDesktopReproStatus, handleDesktopTarget } from './desktop-repro.js';
-import { handleReplayDriver, handleReplayInput, releaseReplayDebugger } from './cdp-replay.js';
-import { debuggerAvailable, releaseDebugger, tabsHolding } from './debugger.js';
+import { handleReplayDriver, handleReplayInput, releaseReplayDebugger, releaseReplayTab } from './cdp-replay.js';
+import { debuggerAvailable, tabsHolding } from './debugger.js';
 import {
   captureThroughDebugger,
   collectsThroughDebugger,
@@ -453,7 +453,20 @@ async function getConditionsState(): Promise<ConditionsState | null> {
  * session is let go, and the tab they were on reloads, since its `fetch` and
  * XHR stay wrapped until it does.
  */
-async function clearConditions(reload: boolean): Promise<void> {
+/** Setting and clearing the conditions run one at a time, so a quick on then off ends off. */
+let conditionsQueue: Promise<unknown> = Promise.resolve();
+
+function inConditionsQueue<T>(work: () => Promise<T>): Promise<T> {
+  const run = conditionsQueue.then(work);
+  conditionsQueue = run.catch(() => undefined);
+  return run;
+}
+
+function clearConditions(reload: boolean): Promise<void> {
+  return inConditionsQueue(() => clearConditionsNow(reload));
+}
+
+async function clearConditionsNow(reload: boolean): Promise<void> {
   const state = await getConditionsState();
   await sessionArea().remove(CONDITIONS_KEY);
   await unregisterScripts(CONDITION_SCRIPT_IDS);
@@ -504,13 +517,19 @@ async function registerConditionScripts(state: ConditionsState, pattern: string)
  * origin so the tab's next pages keep them, and throttling is not offered.
  * Nothing on turns them all off.
  */
-async function handleSetConditions(message: {
+function handleSetConditions(message: SetConditionsMessage): Promise<{ ok: boolean; error?: string }> {
+  return inConditionsQueue(() => setConditionsNow(message));
+}
+
+interface SetConditionsMessage {
   tabId?: unknown;
   origin?: unknown;
   conditions?: unknown;
   throttle?: unknown;
   cpuRate?: unknown;
-}): Promise<{ ok: boolean; error?: string }> {
+}
+
+async function setConditionsNow(message: SetConditionsMessage): Promise<{ ok: boolean; error?: string }> {
   await i18nReady;
   const pattern = replayOriginPattern(message.origin);
   const conditions = Array.isArray(message.conditions) ? message.conditions.filter(isCondition) : [];
@@ -518,9 +537,12 @@ async function handleSetConditions(message: {
   const cpuRate = isCpuRate(message.cpuRate) ? message.cpuRate : null;
   if (!pattern || typeof message.tabId !== 'number') return { ok: false, error: t('devtools_conditionsNoPage') };
   if (conditions.length === 0 && !throttle && !cpuRate) {
-    await clearConditions(true);
+    await clearConditionsNow(true);
     return { ok: true };
   }
+  // Conditions apply to one tab: the tab that had them lets go, and reloads when its `fetch` and XHR were wrapped.
+  const previous = await getConditionsState();
+  if (previous && previous.tabId !== message.tabId) await clearConditionsNow(previous.via !== 'debugger');
   if (!(await chrome.permissions.contains({ origins: [pattern] }))) {
     return { ok: false, error: t('devtools_conditionsNeedAccess') };
   }
@@ -552,7 +574,7 @@ async function handleSetConditions(message: {
     await registerConditionScripts(state, pattern);
     return { ok: true };
   } catch (err) {
-    await clearConditions(false);
+    await clearConditionsNow(false);
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
 }
@@ -560,7 +582,8 @@ async function handleSetConditions(message: {
 // The person cancelled the debugging bar: the requests' conditions go on through the page's wrapper, and the
 // throttling, which needs the protocol, ends. The panel and the banner say so.
 onConditionsDebuggerLost((tabId, reason) => {
-  void getConditionsState().then(async (state) => {
+  void inConditionsQueue(async () => {
+    const state = await getConditionsState();
     if (!state || state.tabId !== tabId) return;
     const pattern = replayOriginPattern(state.origin);
     const next: ConditionsState = { ...state, throttle: null, cpuRate: null, via: 'page', lost: reason };
@@ -790,7 +813,7 @@ chrome.tabs.onUpdated.addListener((tabId, change) => {
       sameOrigin = false;
     }
     if (!state || (state.status !== 'running' && state.status !== 'paused') || !sameOrigin) {
-      void releaseDebugger(tabId, 'replay');
+      void releaseReplayTab(tabId);
     }
   });
 });

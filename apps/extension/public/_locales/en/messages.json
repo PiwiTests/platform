@@ -3245,6 +3245,10 @@
     "message": "Started from the tab’s page instead.",
     "description": "Replay panel, under the first step (Go to …) when the replay started on the tab's own page rather than opening the recorded one."
   },
+  "replay_reasonInputInterrupted": {
+    "message": "The action stopped halfway: the debugging session ended after part of it reached the page. The replay stops here rather than doing it twice.",
+    "description": "Why a replay stopped: trusted input was cut off after part of a click, key press or drag had reached the page."
+  },
   "replay_reasonActionFailed": {
     "message": "The page did not react to the action the way it did when it was recorded.",
     "description": "Why a replay step could not be done: the click, typing or choice did not have its effect."

@@ -56,26 +56,37 @@ function update(change: (current: CdpEvidence) => CdpEvidence): Promise<void> {
 let pending: { console: BugConsoleEntry[]; requests: BugFailedRequest[] } = { console: [], requests: [] };
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
 
+/** Takes what is pending, and cancels the write it was waiting for. */
+function takePending(): { console: BugConsoleEntry[]; requests: BugFailedRequest[] } {
+  if (flushTimer) clearTimeout(flushTimer);
+  flushTimer = null;
+  const batch = pending;
+  pending = { console: [], requests: [] };
+  return batch;
+}
+
+/** Stores what is pending now, within the limits. */
+function flush(): Promise<void> {
+  const batch = takePending();
+  if (batch.console.length === 0 && batch.requests.length === 0) return writeQueue.then(() => undefined);
+  return update((current) => {
+    const console = [...current.console];
+    const requests = [...current.requests];
+    let { consoleDropped, requestsDropped } = current;
+    for (const e of batch.console) {
+      if (console.length < BUG_EVIDENCE_LIMITS.console) console.push(e);
+      else consoleDropped++;
+    }
+    for (const r of batch.requests) {
+      if (requests.length < BUG_EVIDENCE_LIMITS.requests) requests.push(r);
+      else requestsDropped++;
+    }
+    return { ...current, console, consoleDropped, requests, requestsDropped };
+  });
+}
+
 function flushSoon(): void {
-  flushTimer ??= setTimeout(() => {
-    flushTimer = null;
-    const batch = pending;
-    pending = { console: [], requests: [] };
-    void update((current) => {
-      const console = [...current.console];
-      const requests = [...current.requests];
-      let { consoleDropped, requestsDropped } = current;
-      for (const e of batch.console) {
-        if (console.length < BUG_EVIDENCE_LIMITS.console) console.push(e);
-        else consoleDropped++;
-      }
-      for (const r of batch.requests) {
-        if (requests.length < BUG_EVIDENCE_LIMITS.requests) requests.push(r);
-        else requestsDropped++;
-      }
-      return { ...current, console, consoleDropped, requests, requestsDropped };
-    });
-  }, 250);
+  flushTimer ??= setTimeout(() => void flush().catch(() => undefined), 250);
 }
 
 function pathOf(url: string): string {
@@ -207,7 +218,9 @@ async function setDebugging(debugging: DebuggingState): Promise<void> {
  * session attached: when it did not, the page's own script collects instead.
  */
 export async function startBugDebugger(tabId: number): Promise<boolean> {
-  await sessionArea().set({ [CDP_EVIDENCE_KEY]: emptyCdpEvidence() });
+  // Nothing of an earlier recording carries over, even a write still queued.
+  takePending();
+  await update(() => emptyCdpEvidence());
   const attached = await acquireDebugger(tabId, 'bug');
   if (!attached.ok) {
     await setDebugging({ state: 'off', reason: attached.reason });
@@ -242,6 +255,7 @@ export async function stopBugDebugger(): Promise<void> {
     collector.stop();
     collectors.delete(tabId);
   }
+  await flush().catch(() => undefined);
   await Promise.all(tabsHolding('bug').map((tabId) => releaseDebugger(tabId, 'bug')));
 }
 
