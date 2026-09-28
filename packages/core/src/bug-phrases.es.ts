@@ -156,6 +156,12 @@ export const SPANISH_BUG_PHRASES: BugPhrases = {
     uncheck: (s) => `Desmarcar ${checkable(s)}`,
     selectOption: (s, v) => `Elegir ${value(v)} en ${phrase(s)}`,
     press: (name, s) => (s ? `Presionar ${key(name)} en ${phrase(s)}` : `Presionar ${key(name)}`),
+    dblclick: (s) => `Hacer doble clic en ${phrase(s)}`,
+    setInputFiles: (s, files) =>
+      files.length === 0
+        ? `Vaciar ${phrase(s)}`
+        : `Elegir ${files.length === 1 ? 'el archivo' : 'los archivos'} ${files.map(quote).join(', ')} en ${phrase(s)}`,
+    dragTo: (s, target) => `Arrastrar ${phrase(s)} hasta ${phrase(target)}`,
   },
   expectation(s, e, negated) {
     const should = negated ? 'no debería' : 'debería';

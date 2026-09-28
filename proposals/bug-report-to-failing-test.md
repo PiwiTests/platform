@@ -9,8 +9,9 @@ instance, the report is also stored in Piwi, filed in Jira, linked to the tests 
 followed until its spec passes.
 
 **Status.** Proposed 2026-09-27; revised the same day after deciding: replay targets the developer's local dev server
-in their everyday browser, Playwright runs go through the desktop app, and the `debugger` permission is not used (it
-cannot be optional; see [The `debugger` permission](#the-debugger-permission)). PR 1 (the steps file, the converter's
+in their everyday browser, Playwright runs go through the desktop app, and the `debugger` permission was not used (it
+cannot be optional). Revised 2026-09-28: the owner chose to use it on demand, as a required permission (option A;
+see [The `debugger` permission](#the-debugger-permission)). PR 1 (the steps file, the converter's
 options, Download steps and `piwi codegen`), PR 2 (Report a bug in Piwi Picker, its evidence and local exports), PR 3
 (Replay, from a file, from the report just recorded, or from the finished report, with a fake cursor), PR 4
 (`expectedStatus`, "looks fixed", `piwi:bug`) PR 5 (the dashboard: stored reports, their pages and spec, Send to
@@ -167,10 +168,19 @@ optional:
   permissions: ['debugger'] })` from a click in its popup rejects with "Only permissions specified in the manifest may be
   requested", while the same request for `tabs` opens the permission prompt.
 
-As a required permission, `debugger` would add an install warning for every user, and an update that adds it disables
-the extension until each user accepts the new warning; Chrome also shows a "started debugging this browser" bar while it
-is attached. So this plan does not use it. Replay uses the page's own events, and exact fidelity comes from Playwright
-in the desktop app.
+As a required permission, `debugger` adds an install warning for every user, and an update that adds it disables the
+extension until each user accepts the new warning; Chrome also shows a "started debugging this browser" bar while it is
+attached.
+
+**Decision (2026-09-28, option A): used on demand.** The owner accepted those costs while the extension has almost no
+users, so the update prompt costs almost nothing now. `debugger` is a required permission of the Chromium build only
+(Firefox has no `chrome.debugger`; its manifest leaves it out and keeps today's behavior everywhere). A session is
+attached only while a feature needs it and detached as soon as it ends: a replay (trusted input through `Input`), a bug
+recording (console, exceptions and failed requests through `Runtime`, `Log` and `Network`; screenshots through
+`Page.captureScreenshot`, which removes the popup's `activeTab` step), and the DevTools panel's request conditions and
+throttling. Every feature keeps the page-events path as its fallback, taken when attaching fails, when the person
+cancels Chrome's bar, and in Firefox, and says so in the panel. Exact fidelity still comes from Playwright in the
+desktop app; the replay is now much closer to it.
 
 ## Decisions
 
@@ -181,9 +191,9 @@ in the desktop app.
 | D3 | A spec written for a project (by `piwi codegen`, the dashboard, the desktop app) uses relative URLs (`page.goto('/cart')`), the project's own `test` import when one is set, a URL check after each navigation, and for each step the first alternative rated stable, preferring one the project's locator index already uses. With no options, the converter writes what the recorder always wrote. | A report recorded on staging must run against the developer's `baseURL`, with the project's fixtures, in the style of the suite; existing users of the recorder's export see no change. |
 | D4 | Report a bug reuses the recorder, the pick flow and the assertion suggester. What is new is an expected assertion, a missing-element assertion and evidence. | Recording and rendering already work across pages and use the project's page objects. |
 | D5 | Every report yields files locally, with no instance. Sending to Piwi is a separate action with a preview of exactly what is sent, and a checkbox per kind of evidence. | The extension's standalone stance and its rule for sending page data. |
-| D6 | Replay runs in the developer's tab with the page's own events, on the origin the developer chooses (by default the tab's). It resolves each step with the in-page engine, in the same order the converter picks locators. | No new permission, the developer's own session and DevTools, and the same element the spec would use. |
+| D6 | Replay runs in the developer's tab, on the origin the developer chooses (by default the tab's), with trusted input through `debugger` in Chrome and Edge and the page's own events otherwise (see D8). It resolves each step with the in-page engine, in the same order the converter picks locators. | The developer's own session and DevTools, and the same element the spec would use. |
 | D7 | A replay or a run answers **reproduced** (the expected assertion fails), **not reproduced** (it passes) or **diverged at step N** (an earlier step found no element, several, or a disabled one). | "Not reproduced" and "the page is different here" call for different next steps. |
-| D8 | No `debugger` permission (see above). | It cannot be optional. |
+| D8 | `debugger` used on demand since 2026-09-28, option A (see above): required in the Chromium build, attached only while a replay, a bug recording or a DevTools condition runs, with the page-events path as the fallback. | It cannot be optional; the owner accepted the install warning and the debugging bar while the extension has few users, for trusted input and evidence from the page's first script. |
 | D9 | The desktop app runs a repro only after the developer confirms it in its window. A request carries steps and options, never code; the desktop renders the spec itself with the converter, writes it under the project's test directory, runs it with the project's own config, and deletes it. | The loopback API is reachable by anything on the machine; confirmation and steps-only requests keep it from becoming a way to run arbitrary code. The project's config keeps its fixtures and `baseURL`. |
 | D10 | A spec for committing is written with `test.fail()` and the report's annotations; a spec for running (replay's twin, the desktop run) is written without it. | Committed, it keeps CI green and becomes a signal when the bug is fixed. Run, it gives the three-way verdict directly. |
 | D11 | An expected failure that passes is its own outcome, "expected failure passed", recorded from a new `expectedStatus` wire field, not clustered, and reported as "this bug looks fixed". | Treated as one more failure, the good news hides in a cluster shared by every such test. |
@@ -719,8 +729,7 @@ PRs 1–3 close the loop between a tester and a developer with files alone: reco
    `IssueTracker` interface, not Jira.
 4. **Pairing with the desktop app.** Copying a URL and a token works but is clumsy. Recommendation: start with it; a
    one-time code shown in the window and typed in the extension can replace it later.
-5. **A companion extension with `debugger`.** For trusted input in the everyday browser, a separate, opt-in extension
-   could carry the permission. Recommendation: only if replay's divergence rate on real reports shows the need.
+5. **A companion extension with `debugger`.** Settled 2026-09-28: Piwi Picker carries the permission itself (D8).
 
 ## Not in this plan
 

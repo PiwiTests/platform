@@ -1,3 +1,6 @@
+import { mkdirSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { Page } from '@playwright/test';
 
 /**
@@ -24,6 +27,15 @@ export interface Scenario {
 }
 
 const pause = (page: Page, ms = 900) => page.waitForTimeout(ms);
+
+/** A file of that name in the lab's `out/files/`, for a scenario that chooses one. */
+export function labFile(name: string): string {
+  const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'out', 'files');
+  mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, name);
+  writeFileSync(file, 'PK');
+  return file;
+}
 
 async function type(page: Page, text: string): Promise<void> {
   await page.keyboard.type(text, { delay: 70 });
@@ -407,13 +419,9 @@ export const SCENARIOS: Scenario[] = [
   {
     name: 'import-file',
     start: '/projects/1/import',
-    knownGap: 'Choosing a file is not recorded: a replay cannot pick a file from the disk.',
     run: async (page) => {
-      await page.locator('input[type="file"]').setInputFiles({
-        name: 'report.zip',
-        mimeType: 'application/zip',
-        buffer: Buffer.from('PK'),
-      });
+      // A file on disk, as a person's file chooser gives it: the replay asks for it again (see `harness.ts`).
+      await page.locator('input[type="file"]').setInputFiles(labFile('report.zip'));
       await pause(page, 1200);
     },
   },

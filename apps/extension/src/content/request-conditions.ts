@@ -1,29 +1,56 @@
 import { initI18n, t, tn, uiLanguage } from '../shared/i18n.js';
-import { conditionText } from '../shared/condition-words.js';
-import { CONDITIONS_MESSAGE_SOURCE, isCondition, type RequestCondition } from '../shared/request-conditions.js';
+import { emulationLines } from '../shared/condition-words.js';
+import {
+  CONDITIONS_MESSAGE_SOURCE,
+  isCondition,
+  isCpuRate,
+  isThrottle,
+  type NetworkThrottle,
+  type RequestCondition,
+} from '../shared/request-conditions.js';
 import { attachPanelShadow } from './panel-root.js';
 
 /**
  * The isolated-world half of Slow down or fail a request: asks the background
- * worker for this tab's conditions, hands them to the main-world script by
- * `window.postMessage`, and shows a banner while any is on, with Turn off.
- * Injected again whenever the conditions change, which posts them again.
+ * worker for this tab's conditions, hands the main-world script those it
+ * applies (none when the debugging protocol applies them) by
+ * `window.postMessage`, and shows a banner while any condition or throttling
+ * is on, with Turn off. Injected again whenever the conditions change, which
+ * posts them again.
  */
+
+interface TabConditions {
+  conditions: RequestCondition[];
+  forPage: RequestCondition[];
+  throttle: NetworkThrottle | null;
+  cpuRate: number | null;
+}
 
 const BANNER_HOST_ID = 'piwi-conditions-banner';
 
-async function conditionsForThisTab(): Promise<RequestCondition[]> {
+async function conditionsForThisTab(): Promise<TabConditions> {
   try {
-    const reply = (await chrome.runtime.sendMessage({ type: 'piwi-get-conditions' })) as { conditions?: unknown[] };
-    return (reply?.conditions ?? []).filter(isCondition);
+    const reply = (await chrome.runtime.sendMessage({ type: 'piwi-get-conditions' })) as {
+      conditions?: unknown[];
+      forPage?: unknown[];
+      throttle?: unknown;
+      cpuRate?: unknown;
+    };
+    return {
+      conditions: (reply?.conditions ?? []).filter(isCondition),
+      forPage: (reply?.forPage ?? reply?.conditions ?? []).filter(isCondition),
+      throttle: isThrottle(reply?.throttle) ? reply.throttle : null,
+      cpuRate: isCpuRate(reply?.cpuRate) ? reply.cpuRate : null,
+    };
   } catch {
-    return [];
+    return { conditions: [], forPage: [], throttle: null, cpuRate: null };
   }
 }
 
-function drawBanner(conditions: RequestCondition[]): void {
+function drawBanner(on: TabConditions): void {
   document.getElementById(BANNER_HOST_ID)?.remove();
-  if (conditions.length === 0) return;
+  const lines = emulationLines(on);
+  if (lines.length === 0) return;
   const host = document.createElement('div');
   host.id = BANNER_HOST_ID;
   host.style.cssText = 'all:initial;position:fixed;left:12px;bottom:12px;z-index:2147483646;';
@@ -47,11 +74,11 @@ function drawBanner(conditions: RequestCondition[]): void {
   bar.lang = uiLanguage();
   const text = document.createElement('div');
   const title = document.createElement('strong');
-  title.textContent = tn('devtools_conditionsOn', conditions.length);
+  title.textContent = tn('devtools_conditionsOn', lines.length);
   const list = document.createElement('ul');
-  for (const condition of conditions) {
+  for (const line of lines) {
     const item = document.createElement('li');
-    item.textContent = conditionText(condition);
+    item.textContent = line;
     list.appendChild(item);
   }
   text.append(title, list);
@@ -67,12 +94,12 @@ function drawBanner(conditions: RequestCondition[]): void {
 }
 
 async function relay(): Promise<void> {
-  const [conditions] = await Promise.all([conditionsForThisTab(), initI18n()]);
-  window.postMessage({ source: CONDITIONS_MESSAGE_SOURCE, conditions }, '*');
-  if (conditions.length === 0) return;
+  const [on] = await Promise.all([conditionsForThisTab(), initI18n()]);
+  window.postMessage({ source: CONDITIONS_MESSAGE_SOURCE, conditions: on.forPage }, '*');
+  if (emulationLines(on).length === 0) return;
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => drawBanner(conditions), { once: true });
-  } else drawBanner(conditions);
+    document.addEventListener('DOMContentLoaded', () => drawBanner(on), { once: true });
+  } else drawBanner(on);
 }
 
 void relay();

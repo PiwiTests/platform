@@ -228,6 +228,33 @@
   "popup_viewportOnly": {
     "message": "Viewport seulement : ni tactile, ni densité de pixels, ni user agent."
   },
+  "popup_viewportHere": {
+    "message": "Dans cet onglet"
+  },
+  "popup_viewportHereOn": {
+    "message": "Cet onglet affiche sa page en $size$.",
+    "placeholders": {
+      "size": {
+        "content": "$1",
+        "example": "390×844"
+      }
+    }
+  },
+  "popup_viewportReset": {
+    "message": "Revenir à la taille de la fenêtre"
+  },
+  "popup_viewportHereUnavailable": {
+    "message": "Ce navigateur ne donne pas aux extensions de protocole de débogage pour régler l’affichage de l’onglet lui-même : ouvrez plutôt une fenêtre."
+  },
+  "popup_viewportHereRefused": {
+    "message": "Le navigateur a refusé la session de débogage : $error$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "Another debugger is already attached to the tab."
+      }
+    }
+  },
   "popup_viewportInvalid": {
     "message": "Ouvrez une page web, avec une largeur et une hauteur entre $min$ et $max$ pixels.",
     "placeholders": {
@@ -1879,6 +1906,33 @@
   "bug_wrongPageHint": {
     "message": "Dites sur quelle page vous auriez dû arriver"
   },
+  "bug_screenshot": {
+    "message": "Capture d’écran"
+  },
+  "bug_screenshotHint": {
+    "message": "Ajouter une capture d’écran de la page telle qu’elle est"
+  },
+  "bug_debuggingOn": {
+    "message": "Chrome affiche une barre indiquant que Piwi Picker a commencé à déboguer ce navigateur : c’est ce rapport qui lit la console, les requêtes en échec et les captures d’écran. Rien ne quitte votre ordinateur, et la barre disparaît quand vous terminez."
+  },
+  "bug_debuggingCanceled": {
+    "message": "La barre de débogage a été annulée : le rapport lit désormais la console et les requêtes depuis la page, et une capture d’écran demande « $action$ » dans Piwi Picker.",
+    "placeholders": {
+      "action": {
+        "content": "$1",
+        "example": "Take a screenshot"
+      }
+    }
+  },
+  "bug_debuggingRefused": {
+    "message": "Chrome a refusé la session de débogage (un autre débogueur sur cet onglet, ou une règle d’entreprise) : le rapport lit la console et les requêtes depuis la page, et une capture d’écran demande « $action$ » dans Piwi Picker.",
+    "placeholders": {
+      "action": {
+        "content": "$1",
+        "example": "Take a screenshot"
+      }
+    }
+  },
   "bug_finish": {
     "message": "Terminer"
   },
@@ -2667,6 +2721,101 @@
   },
   "replay_reasonActionFailed": {
     "message": "La page n’a pas réagi à l’action comme lors de l’enregistrement."
+  },
+  "replay_reasonCovered": {
+    "message": "$other$ recouvre $element$ là où le pointeur arriverait.",
+    "placeholders": {
+      "element": {
+        "content": "$1",
+        "example": "button \"Apply\""
+      },
+      "other": {
+        "content": "$2",
+        "example": "div \"Loading\""
+      }
+    }
+  },
+  "replay_reasonOffscreen": {
+    "message": "$element$ reste en dehors de la partie visible de la page.",
+    "placeholders": {
+      "element": {
+        "content": "$1",
+        "example": "button \"Apply\""
+      }
+    }
+  },
+  "replay_driverTrusted": {
+    "message": "Rejoué avec une vraie saisie, comme Playwright l’envoie. Chrome affiche une barre indiquant que Piwi Picker a commencé à déboguer ce navigateur : c’est ce rejeu, et la barre disparaît à la fin."
+  },
+  "replay_driverEventsUnavailable": {
+    "message": "Rejoué avec les événements de la page : ce navigateur ne donne pas de protocole de débogage aux extensions, donc un survol ou un glisser peut ne pas agir comme une souris."
+  },
+  "replay_driverEventsRefused": {
+    "message": "Rejoué avec les événements de la page : le navigateur a refusé la session de débogage (un autre débogueur sur cet onglet, une règle d’entreprise, ou une page que le navigateur protège)."
+  },
+  "replay_driverEventsCanceled": {
+    "message": "Rejoué avec les événements de la page à partir de là : la barre de débogage a été annulée."
+  },
+  "replay_driverEventsLost": {
+    "message": "Rejoué avec les événements de la page à partir de là : la session de débogage s’est terminée."
+  },
+  "replay_stepTrusted": {
+    "message": "vraie saisie"
+  },
+  "replay_stepEvents": {
+    "message": "événements de la page"
+  },
+  "replay_fileAsk_one": {
+    "message": "L’étape $step$ choisit $count$ fichier, $files$, que le rapport nomme sans le contenir. Choisissez-le sur cet ordinateur pour continuer, ou passez l’étape.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      },
+      "files": {
+        "content": "$2",
+        "example": "\"invoice.pdf\""
+      },
+      "step": {
+        "content": "$3",
+        "example": "3"
+      }
+    }
+  },
+  "replay_fileAsk_other": {
+    "message": "L’étape $step$ choisit $count$ fichiers, $files$, que le rapport nomme sans les contenir. Choisissez-les sur cet ordinateur pour continuer, ou passez l’étape.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      },
+      "files": {
+        "content": "$2",
+        "example": "\"invoice.pdf\""
+      },
+      "step": {
+        "content": "$3",
+        "example": "3"
+      }
+    }
+  },
+  "replay_fileChoose": {
+    "message": "Le fichier pour cette étape"
+  },
+  "replay_fileSkip": {
+    "message": "Passer cette étape"
+  },
+  "replay_fileSkipped": {
+    "message": "Passée : aucun fichier n’a été choisi."
+  },
+  "replay_fileChosen": {
+    "message": "Choisi ici : $files$",
+    "placeholders": {
+      "files": {
+        "content": "$1",
+        "example": "\"invoice.pdf\""
+      }
+    }
   },
   "replay_dialogTitle": {
     "message": "Rejouer un rapport de bug"
@@ -4553,6 +4702,9 @@
   "devtools_networkAllOrigins": {
     "message": "Autres sites aussi"
   },
+  "devtools_networkAllTypes": {
+    "message": "Tous les types"
+  },
   "devtools_networkClear": {
     "message": "Effacer"
   },
@@ -4660,7 +4812,7 @@
     }
   },
   "devtools_conditionsOn_one": {
-    "message": "Piwi Picker : $count$ condition sur les requêtes active",
+    "message": "Piwi Picker : $count$ condition active",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -4669,7 +4821,7 @@
     }
   },
   "devtools_conditionsOn_other": {
-    "message": "Piwi Picker : $count$ conditions sur les requêtes actives",
+    "message": "Piwi Picker : $count$ conditions actives",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -4702,7 +4854,7 @@
     "message": "Ralentir ou faire échouer cette requête"
   },
   "devtools_conditionsLimits": {
-    "message": "Les conditions s’appliquent aux appels fetch et XHR des pages de cet onglet jusqu’à ce que vous les désactiviez ou fermiez l’onglet. Ralentir le processeur ou toute la page, et retarder les documents, les scripts, les images ou les requêtes d’un service worker, demandent la permission debugger, que Piwi Picker ne demande pas."
+    "message": "Les conditions s’appliquent à chaque requête des pages de cet onglet, documents, scripts et images compris, jusqu’à ce que vous les désactiviez ou fermiez l’onglet. Les requêtes propres à un service worker passent à côté."
   },
   "devtools_conditionRemove": {
     "message": "Retirer"
@@ -4838,6 +4990,57 @@
   "devtools_conditionsLimitsTitle": {
     "message": "Ce que cela ne peut pas ralentir"
   },
+  "devtools_conditionsLimitsPage": {
+    "message": "Les conditions s’appliquent aux appels fetch et XHR des pages de cet onglet jusqu’à ce que vous les désactiviez ou fermiez l’onglet. Les documents, les scripts, les images et les requêtes d’un service worker passent à côté."
+  },
+  "devtools_conditionsDebugging": {
+    "message": "Appliquées à chaque requête de cet onglet par le protocole de débogage de Chrome : Chrome affiche sa barre de débogage jusqu’à ce que vous les désactiviez toutes."
+  },
+  "devtools_conditionsLostCanceled": {
+    "message": "La barre de débogage a été annulée : la limitation est désactivée, et les conditions des requêtes n’atteignent plus que les appels fetch et XHR de la page."
+  },
+  "devtools_conditionsLostEnded": {
+    "message": "La session de débogage s’est terminée : la limitation est désactivée, et les conditions des requêtes n’atteignent plus que les appels fetch et XHR de la page."
+  },
+  "devtools_throttleLabel": {
+    "message": "Réseau"
+  },
+  "devtools_cpuLabel": {
+    "message": "Processeur"
+  },
+  "devtools_throttleNone": {
+    "message": "Sans limitation"
+  },
+  "devtools_throttleFast3g": {
+    "message": "Toute la page en 3G rapide"
+  },
+  "devtools_throttleSlow3g": {
+    "message": "Toute la page en 3G lente"
+  },
+  "devtools_throttleOffline": {
+    "message": "Toute la page hors ligne"
+  },
+  "devtools_cpuSlower": {
+    "message": "Le processeur $rate$ fois plus lent",
+    "placeholders": {
+      "rate": {
+        "content": "$1",
+        "example": "4"
+      }
+    }
+  },
+  "devtools_emulationRefused": {
+    "message": "Le navigateur a refusé la session de débogage dont la limitation a besoin : $error$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "Another debugger is already attached to the tab."
+      }
+    }
+  },
+  "devtools_emulationUnavailable": {
+    "message": "Limiter toute la page demande le protocole de débogage, que ce navigateur ne donne pas aux extensions."
+  },
   "devtools_copyAs": {
     "message": "Copier en"
   },
@@ -4946,6 +5149,15 @@
       "matcher": {
         "content": "$1",
         "example": "toHaveText"
+      }
+    }
+  },
+  "codegen_fileNeeded": {
+    "message": "Un fichier a été choisi ici ($files$) : le test le lit dans le dossier où Playwright s’exécute.",
+    "placeholders": {
+      "files": {
+        "content": "$1",
+        "example": "invoice.pdf"
       }
     }
   },

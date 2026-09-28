@@ -2,6 +2,7 @@ import { BUG_EVIDENCE_LIMITS, type BugConsoleEntry, type BugFailedRequest } from
 import type { PiwiSteps } from '@piwitests/core/steps';
 import { sessionArea } from './session-area.js';
 import type { RequestCondition } from './request-conditions.js';
+import type { FallbackReason, ReplayDriver } from './cdp-input.js';
 
 /**
  * A running replay, in session storage so it survives the navigations it
@@ -10,7 +11,8 @@ import type { RequestCondition } from './request-conditions.js';
  */
 export const REPLAY_KEY = 'piwiReplay';
 
-export type ReplayStepStatus = 'done' | 'passed' | 'failed' | 'diverged';
+/** `skipped`: a step the person chose to leave out, such as a file they did not choose. */
+export type ReplayStepStatus = 'done' | 'passed' | 'failed' | 'diverged' | 'skipped';
 
 export interface ReplayStepResult {
   status: ReplayStepStatus;
@@ -18,6 +20,8 @@ export interface ReplayStepResult {
   detail: string | null;
   /** What the page showed for an assertion that did not hold. */
   found?: string | null;
+  /** How an action step acted: trusted input, or the page's own events. */
+  driver?: ReplayDriver;
 }
 
 export type ReplayStatus = 'running' | 'paused' | 'done' | 'stopped';
@@ -47,6 +51,12 @@ export interface ReplayState {
   bugReportId?: number | null;
   /** Announced to the main-world evidence script, whose entries carry it back (see `shared/bug-relay.ts`). */
   evidenceToken?: string;
+  /**
+   * How the replay acts, chosen on its first page: trusted input through the
+   * debugging protocol, or the page's own events, with why. Once on the
+   * page's events, it stays there.
+   */
+  driver?: { driver: ReplayDriver; reason: FallbackReason | null } | null;
 }
 
 function isReplayState(value: unknown): value is ReplayState {

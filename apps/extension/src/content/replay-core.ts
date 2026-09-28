@@ -1,6 +1,6 @@
 import type { RecordedStep, StepAssertion } from '@piwitests/core/recording';
 import { t, tn } from '../shared/i18n.js';
-import type { ReplayEvidence, ReplayStepResult } from '../shared/replay-storage.js';
+import type { ReplayEvidence, ReplayState, ReplayStepResult } from '../shared/replay-storage.js';
 
 /**
  * The replay's decisions, apart from the page: whether an assertion holds on
@@ -165,6 +165,22 @@ export function verdictText(verdict: ReplayVerdict, steps: RecordedStep[]): { ti
         title: t('replay_verdictStopped'),
         detail: t('replay_verdictStoppedDetail', { step: verdict.step + 1 }),
       };
+  }
+}
+
+/** How the replay acts on the page, in words: trusted input, or the page's own events and why. */
+export function driverText(choice: ReplayState['driver']): string {
+  if (!choice) return '';
+  if (choice.driver === 'cdp') return t('replay_driverTrusted');
+  switch (choice.reason) {
+    case 'unavailable':
+      return t('replay_driverEventsUnavailable');
+    case 'canceled':
+      return t('replay_driverEventsCanceled');
+    case 'lost':
+      return t('replay_driverEventsLost');
+    default:
+      return t('replay_driverEventsRefused');
   }
 }
 

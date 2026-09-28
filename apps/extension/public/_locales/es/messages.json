@@ -228,6 +228,33 @@
   "popup_viewportOnly": {
     "message": "Solo el viewport: sin táctil, densidad de píxeles ni user agent."
   },
+  "popup_viewportHere": {
+    "message": "En esta pestaña"
+  },
+  "popup_viewportHereOn": {
+    "message": "Esta pestaña muestra su página a $size$.",
+    "placeholders": {
+      "size": {
+        "content": "$1",
+        "example": "390×844"
+      }
+    }
+  },
+  "popup_viewportReset": {
+    "message": "Volver al tamaño de la ventana"
+  },
+  "popup_viewportHereUnavailable": {
+    "message": "Este navegador no da a las extensiones un protocolo de depuración para ajustar el viewport de la propia pestaña: abra una ventana en su lugar."
+  },
+  "popup_viewportHereRefused": {
+    "message": "El navegador rechazó la sesión de depuración: $error$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "Another debugger is already attached to the tab."
+      }
+    }
+  },
   "popup_viewportInvalid": {
     "message": "Abra una página web, con un ancho y un alto entre $min$ y $max$ píxeles.",
     "placeholders": {
@@ -1879,6 +1906,33 @@
   "bug_wrongPageHint": {
     "message": "Di a qué página deberías haber llegado"
   },
+  "bug_screenshot": {
+    "message": "Captura"
+  },
+  "bug_screenshotHint": {
+    "message": "Añadir una captura de la página tal como está ahora"
+  },
+  "bug_debuggingOn": {
+    "message": "Chrome muestra una barra que dice que Piwi Picker empezó a depurar este navegador: es este informe leyendo la consola, las solicitudes fallidas y las capturas. Nada sale de su equipo, y la barra desaparece al terminar."
+  },
+  "bug_debuggingCanceled": {
+    "message": "Se canceló la barra de depuración: el informe lee la consola y las solicitudes desde la página a partir de ahora, y una captura requiere «$action$» en Piwi Picker.",
+    "placeholders": {
+      "action": {
+        "content": "$1",
+        "example": "Take a screenshot"
+      }
+    }
+  },
+  "bug_debuggingRefused": {
+    "message": "Chrome rechazó la sesión de depuración (otro depurador en esta pestaña, o una directiva): el informe lee la consola y las solicitudes desde la página, y una captura requiere «$action$» en Piwi Picker.",
+    "placeholders": {
+      "action": {
+        "content": "$1",
+        "example": "Take a screenshot"
+      }
+    }
+  },
   "bug_finish": {
     "message": "Terminar"
   },
@@ -2667,6 +2721,101 @@
   },
   "replay_reasonActionFailed": {
     "message": "La página no reaccionó a la acción como cuando se grabó."
+  },
+  "replay_reasonCovered": {
+    "message": "$other$ cubre $element$ justo donde llegaría el puntero.",
+    "placeholders": {
+      "element": {
+        "content": "$1",
+        "example": "button \"Apply\""
+      },
+      "other": {
+        "content": "$2",
+        "example": "div \"Loading\""
+      }
+    }
+  },
+  "replay_reasonOffscreen": {
+    "message": "$element$ queda fuera de la parte visible de la página.",
+    "placeholders": {
+      "element": {
+        "content": "$1",
+        "example": "button \"Apply\""
+      }
+    }
+  },
+  "replay_driverTrusted": {
+    "message": "Reproducido con entrada real, como la envía Playwright. Chrome muestra una barra que dice que Piwi Picker empezó a depurar este navegador: es esta reproducción, y la barra desaparece al terminar."
+  },
+  "replay_driverEventsUnavailable": {
+    "message": "Reproducido con los eventos de la propia página: este navegador no da a las extensiones un protocolo de depuración, así que pasar el cursor o arrastrar puede no actuar como un ratón."
+  },
+  "replay_driverEventsRefused": {
+    "message": "Reproducido con los eventos de la propia página: el navegador rechazó la sesión de depuración (otro depurador en esta pestaña, una directiva o una página que el navegador protege)."
+  },
+  "replay_driverEventsCanceled": {
+    "message": "Reproducido con los eventos de la propia página desde ahí: se canceló la barra de depuración."
+  },
+  "replay_driverEventsLost": {
+    "message": "Reproducido con los eventos de la propia página desde ahí: la sesión de depuración terminó."
+  },
+  "replay_stepTrusted": {
+    "message": "entrada real"
+  },
+  "replay_stepEvents": {
+    "message": "eventos de la página"
+  },
+  "replay_fileAsk_one": {
+    "message": "El paso $step$ elige $count$ archivo, $files$, que el informe nombra pero no contiene. Elíjalo en este equipo para continuar, u omita el paso.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      },
+      "files": {
+        "content": "$2",
+        "example": "\"invoice.pdf\""
+      },
+      "step": {
+        "content": "$3",
+        "example": "3"
+      }
+    }
+  },
+  "replay_fileAsk_other": {
+    "message": "El paso $step$ elige $count$ archivos, $files$, que el informe nombra pero no contiene. Elíjalos en este equipo para continuar, u omita el paso.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      },
+      "files": {
+        "content": "$2",
+        "example": "\"invoice.pdf\""
+      },
+      "step": {
+        "content": "$3",
+        "example": "3"
+      }
+    }
+  },
+  "replay_fileChoose": {
+    "message": "El archivo para este paso"
+  },
+  "replay_fileSkip": {
+    "message": "Omitir este paso"
+  },
+  "replay_fileSkipped": {
+    "message": "Omitido: no se eligió ningún archivo."
+  },
+  "replay_fileChosen": {
+    "message": "Elegido aquí: $files$",
+    "placeholders": {
+      "files": {
+        "content": "$1",
+        "example": "\"invoice.pdf\""
+      }
+    }
   },
   "replay_dialogTitle": {
     "message": "Reproducir un informe de bug"
@@ -4553,6 +4702,9 @@
   "devtools_networkAllOrigins": {
     "message": "También otros sitios"
   },
+  "devtools_networkAllTypes": {
+    "message": "Todos los tipos"
+  },
   "devtools_networkClear": {
     "message": "Vaciar"
   },
@@ -4660,7 +4812,7 @@
     }
   },
   "devtools_conditionsOn_one": {
-    "message": "Piwi Picker: $count$ condición sobre las peticiones activa",
+    "message": "Piwi Picker: $count$ condición activa",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -4669,7 +4821,7 @@
     }
   },
   "devtools_conditionsOn_other": {
-    "message": "Piwi Picker: $count$ condiciones sobre las peticiones activas",
+    "message": "Piwi Picker: $count$ condiciones activas",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -4702,7 +4854,7 @@
     "message": "Ralentizar o hacer fallar esta petición"
   },
   "devtools_conditionsLimits": {
-    "message": "Las condiciones se aplican a las llamadas fetch y XHR de las páginas de esta pestaña hasta que las desactive o cierre la pestaña. Limitar la CPU o toda la página, y retrasar documentos, scripts, imágenes o las peticiones de un service worker, requieren el permiso debugger, que Piwi Picker no pide."
+    "message": "Las condiciones se aplican a cada solicitud de las páginas de esta pestaña, documentos, scripts e imágenes incluidos, hasta que las desactive o cierre la pestaña. Las solicitudes propias de un service worker no pasan por ellas."
   },
   "devtools_conditionRemove": {
     "message": "Quitar"
@@ -4838,6 +4990,57 @@
   "devtools_conditionsLimitsTitle": {
     "message": "Lo que esto no puede ralentizar"
   },
+  "devtools_conditionsLimitsPage": {
+    "message": "Las condiciones se aplican a las llamadas fetch y XHR de las páginas de esta pestaña hasta que las desactive o cierre la pestaña. Los documentos, los scripts, las imágenes y las solicitudes de un service worker no pasan por ellas."
+  },
+  "devtools_conditionsDebugging": {
+    "message": "Aplicadas a cada solicitud de esta pestaña mediante el protocolo de depuración de Chrome: Chrome muestra su barra de depuración hasta que las desactive todas."
+  },
+  "devtools_conditionsLostCanceled": {
+    "message": "Se canceló la barra de depuración: la limitación está desactivada, y las condiciones de las solicitudes ahora solo alcanzan las llamadas fetch y XHR de la página."
+  },
+  "devtools_conditionsLostEnded": {
+    "message": "La sesión de depuración terminó: la limitación está desactivada, y las condiciones de las solicitudes ahora solo alcanzan las llamadas fetch y XHR de la página."
+  },
+  "devtools_throttleLabel": {
+    "message": "Red"
+  },
+  "devtools_cpuLabel": {
+    "message": "CPU"
+  },
+  "devtools_throttleNone": {
+    "message": "Sin limitación"
+  },
+  "devtools_throttleFast3g": {
+    "message": "Toda la página en 3G rápido"
+  },
+  "devtools_throttleSlow3g": {
+    "message": "Toda la página en 3G lento"
+  },
+  "devtools_throttleOffline": {
+    "message": "Toda la página sin conexión"
+  },
+  "devtools_cpuSlower": {
+    "message": "La CPU $rate$ veces más lenta",
+    "placeholders": {
+      "rate": {
+        "content": "$1",
+        "example": "4"
+      }
+    }
+  },
+  "devtools_emulationRefused": {
+    "message": "El navegador rechazó la sesión de depuración que necesita la limitación: $error$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "Another debugger is already attached to the tab."
+      }
+    }
+  },
+  "devtools_emulationUnavailable": {
+    "message": "Limitar toda la página necesita el protocolo de depuración, que este navegador no da a las extensiones."
+  },
   "devtools_copyAs": {
     "message": "Copiar como"
   },
@@ -4946,6 +5149,15 @@
       "matcher": {
         "content": "$1",
         "example": "toHaveText"
+      }
+    }
+  },
+  "codegen_fileNeeded": {
+    "message": "Aquí se eligió un archivo ($files$): la prueba lo lee de la carpeta donde se ejecuta Playwright.",
+    "placeholders": {
+      "files": {
+        "content": "$1",
+        "example": "invoice.pdf"
       }
     }
   },

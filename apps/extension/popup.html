@@ -129,6 +129,18 @@
         color: var(--muted);
         margin-top: 3px;
       }
+      .viewport-note[hidden] {
+        display: none;
+      }
+      .viewport-current button {
+        font: inherit;
+        padding: 0;
+        border: none;
+        background: none;
+        color: var(--accent, inherit);
+        text-decoration: underline;
+        cursor: pointer;
+      }
       .active-project-row {
         margin-bottom: 10px;
       }
@@ -587,8 +599,13 @@
             <input id="viewport-height" type="number" min="200" max="4000" value="844" aria-label="Height" data-i18n-aria-label="popup_viewportHeight" />
           </span>
           <button type="submit" data-i18n="popup_viewportOpen">Open</button>
+          <button type="button" id="viewport-here" data-i18n="popup_viewportHere" hidden>In this tab</button>
         </div>
         <span class="viewport-note" id="viewport-note" data-i18n="popup_viewportOnly">Viewport only: no touch, pixel ratio or user agent.</span>
+        <span class="viewport-note viewport-current" id="viewport-current" hidden>
+          <span id="viewport-current-text"></span>
+          <button type="button" id="viewport-reset" class="link" data-i18n="popup_viewportReset">Back to the window’s size</button>
+        </span>
       </form>
       <footer>
         <span data-i18n="popup_footerKeys"

@@ -7,7 +7,7 @@ import {
   type ReplayState,
   type ReplayStepResult,
 } from '../shared/replay-storage.js';
-import { replayVerdict, verdictText, type ReplayVerdict } from '../content/replay-core.js';
+import { driverText, replayVerdict, verdictText, type ReplayVerdict } from '../content/replay-core.js';
 import { stepRow, viewHead } from './panel-record.js';
 import { button, el, emptyState } from './ui.js';
 
@@ -45,6 +45,8 @@ function glyph(result: ReplayStepResult | undefined, current: boolean): string {
       return '✗';
     case 'diverged':
       return '!';
+    case 'skipped':
+      return '–';
     default:
       return '·';
   }
@@ -100,6 +102,7 @@ export async function renderReplayTab(container: HTMLElement): Promise<void> {
     for (const condition of state.conditions) chips.appendChild(el('span', 'chip', conditionText(condition)));
     parts.push(chips);
   }
+  if (state.driver) parts.push(el('div', 'view-note', driverText(state.driver)));
   if (done) {
     const verdict = replayVerdict(steps, state.results, state.status === 'stopped');
     const { title, detail } = verdictText(verdict, steps);
@@ -116,6 +119,8 @@ export async function renderReplayTab(container: HTMLElement): Promise<void> {
     if (current) row.classList.add('current');
     if (result?.status) row.dataset.status = result.status;
     if (result?.detail) row.appendChild(el('div', 'detail', result.detail));
+    if (result?.driver)
+      row.appendChild(el('div', 'detail', t(result.driver === 'cdp' ? 'replay_stepTrusted' : 'replay_stepEvents')));
     list.appendChild(row);
   });
   parts.push(list);

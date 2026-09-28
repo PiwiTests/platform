@@ -9,7 +9,8 @@ lang: en-US
 <Needs extension />
 
 The [Piwi Picker extension](./extension) answers one question beside the browser's own DevTools: what will a test see
-on this page, and how does the test get there? None of these tools needs the `debugger` permission.
+on this page, and how does the test get there? In Chrome and Edge, the conditions below and a viewport set in the tab
+itself go through the browser's debugging protocol, and Chrome shows its debugging bar while one is on.
 
 ## The Elements sidebar
 
@@ -78,16 +79,19 @@ when you copy it.
 
 Under a selected request, the Network tab also offers **Slow down** by the seconds you type, **Fail with 500** and
 **Fail (network error)**: the flaky conditions a test has to survive, tried by hand in your own tab. The first time,
-Piwi Picker asks for access to the site. From then on the tab's `fetch` and XHR calls to that URL wait, answer 500 or
-fail, on every page of the site in that tab, until you remove the condition, click **Turn all off and reload**, or
-close the tab. A banner on the page says which conditions are on, with **Turn off**; other tabs are not affected.
+Piwi Picker asks for access to the site. From then on the tab's requests to that URL wait, answer 500 or fail, on every
+page of the site in that tab, until you remove the condition, click **Turn all off and reload**, or close the tab. A
+banner on the page says which conditions are on, with **Turn off**; other tabs are not affected.
+
+In Chrome and Edge, a condition reaches any request, documents, scripts and images included (tick **Every kind** to
+list them), and the toolbar's **Network** and **CPU** throttle the whole page as DevTools does: fast or slow 3G,
+offline, or a CPU 4, 6 or 20 times slower. They go through the debugging protocol: Chrome shows its debugging bar until
+you turn them all off, and **Cancel** on it ends the throttling, leaving the requests' conditions to the page's `fetch`
+and XHR calls. Firefox has only those: documents, scripts, images and a service worker's requests go past, and a page
+that replaces `fetch` itself may behave differently.
 
 A replay started while a condition is on runs under it, and its panel says which conditions were on, beside the
 verdict.
-
-What an extension cannot slow down without the `debugger` permission, which Piwi Picker does not ask for: the CPU, the
-whole page's network, documents, scripts, images and a service worker's requests. A page that replaces `fetch` itself,
-or checks that it is the browser's own, may behave differently while a condition is on.
 
 ## Save login for tests
 
@@ -109,8 +113,9 @@ that refreshes the file.
 The popup's last row opens the tab's page in a new window whose viewport, not its outer frame, has the size of one
 of your Playwright projects: **Mobile Safari (390×664)**. With a connection, the sizes come from the `use.viewport`
 the [reporter](/guide/reporter) sends with each run, per project; without one, or for another size, choose **Size typed
-by hand**. It sizes the viewport only: touch, device pixel ratio and user agent need the debugging protocol, as
-Playwright's device emulation does.
+by hand**. In Chrome and Edge, **In this tab** gives the tab itself that viewport instead, as DevTools' device toolbar
+does, until **Back to the window's size**. Either way it sizes the viewport only, without touch, device pixel ratio or
+user agent.
 
 ## Playwright view
 

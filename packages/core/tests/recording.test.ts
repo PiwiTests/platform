@@ -28,6 +28,30 @@ function ev(overrides: Partial<RawCaptureEvent>): RawCaptureEvent {
 }
 
 describe('normalizeSteps', () => {
+  test('a double click replaces the two clicks the browser sent before it', () => {
+    const row = target({ tagName: 'tr', role: 'row', accessibleName: 'Invoice 42' });
+    const steps = normalizeSteps([
+      ev({ kind: 'click', target: row, timestamp: 1 }),
+      ev({ kind: 'click', target: row, timestamp: 2 }),
+      ev({ kind: 'dblclick', target: row, timestamp: 3 }),
+    ]);
+    expect(steps.map((s) => s.action)).toEqual(['dblclick']);
+  });
+
+  test('a file choice becomes setInputFiles with the names, and a drop becomes dragTo', () => {
+    const file = target({ tagName: 'input', role: 'button', accessibleName: 'Invoice' });
+    const card = target({ tagName: 'div', role: 'listitem', accessibleName: 'Card', text: '  Card   one ' });
+    const column = target({ tagName: 'section', role: 'region', accessibleName: 'Done', text: 'Done  ' });
+    const steps = normalizeSteps([
+      ev({ kind: 'files', target: file, value: 'a.pdf\nb.pdf', timestamp: 1 }),
+      ev({ kind: 'drop', target: card, dropTarget: column, timestamp: 2 }),
+      ev({ kind: 'drop', target: card, dropTarget: null, timestamp: 3 }),
+    ]);
+    expect(steps).toHaveLength(2);
+    expect(steps[0]).toMatchObject({ action: 'setInputFiles', value: 'a.pdf\nb.pdf' });
+    expect(steps[1]).toMatchObject({ action: 'dragTo', target: { text: 'Card one' }, dropTarget: { text: 'Done' } });
+  });
+
   test('coalesces an input burst on the same field into one fill with the last value', () => {
     const usernameField = target();
     const steps = normalizeSteps([

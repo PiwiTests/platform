@@ -1,8 +1,11 @@
 /**
  * Conditions on the page's requests, for Slow down or fail a request: a delay
- * before the request goes out, a 500 answer, or a network failure, applied by
- * the main-world script (`request-conditions-main.ts`) to the `fetch` and XHR
- * calls whose method and URL match. Pure: the main world has no `chrome.*`.
+ * before the request goes out, a 500 answer, or a network failure. In Chrome
+ * and Edge the background worker applies them to every request of the tab
+ * through the debugging protocol's `Fetch` domain, with the whole-page network
+ * and CPU throttling; elsewhere, the main-world script
+ * (`request-conditions-main.ts`) applies them to the `fetch` and XHR calls
+ * whose method and URL match. Pure: the main world has no `chrome.*`.
  */
 
 export type ConditionKind = 'delay' | 'error' | 'abort';
@@ -18,11 +21,53 @@ export interface RequestCondition {
   delayMs: number;
 }
 
+/** Whole-page network conditions, as DevTools names its presets. */
+export type NetworkThrottle = 'fast-3g' | 'slow-3g' | 'offline';
+
+export const NETWORK_THROTTLES: readonly NetworkThrottle[] = ['fast-3g', 'slow-3g', 'offline'];
+
+/**
+ * What `Network.emulateNetworkConditions` gets for each preset: DevTools'
+ * own values, latency in milliseconds, throughput in bytes per second.
+ */
+export const NETWORK_PRESETS: Record<
+  NetworkThrottle,
+  { offline: boolean; latency: number; downloadThroughput: number; uploadThroughput: number }
+> = {
+  'fast-3g': { offline: false, latency: 562.5, downloadThroughput: 180_000, uploadThroughput: 84_375 },
+  'slow-3g': { offline: false, latency: 2_000, downloadThroughput: 50_000, uploadThroughput: 50_000 },
+  offline: { offline: true, latency: 0, downloadThroughput: -1, uploadThroughput: -1 },
+};
+
+/** How many times slower the CPU runs, as DevTools offers it. */
+export const CPU_RATES: readonly number[] = [4, 6, 20];
+
+/**
+ * How the conditions reach the page: through the debugging protocol (`Fetch`,
+ * every request) or through the main-world wrapper (`fetch` and XHR only).
+ */
+export type ConditionsVia = 'debugger' | 'page';
+
 /** The conditions on, for one tab and the origin of its page. Kept in session storage under {@link CONDITIONS_KEY}. */
 export interface ConditionsState {
   tabId: number;
   origin: string;
   conditions: RequestCondition[];
+  /** The whole page's network, throttled or offline; null for none. Debugging protocol only. */
+  throttle?: NetworkThrottle | null;
+  /** The CPU slowed down this many times; null for none. Debugging protocol only. */
+  cpuRate?: number | null;
+  via?: ConditionsVia;
+  /** Why the conditions went back to the page's wrapper: the debugging bar was cancelled, or the session ended. */
+  lost?: 'canceled' | 'lost' | null;
+}
+
+export function isThrottle(value: unknown): value is NetworkThrottle {
+  return NETWORK_THROTTLES.includes(value as NetworkThrottle);
+}
+
+export function isCpuRate(value: unknown): value is number {
+  return typeof value === 'number' && CPU_RATES.includes(value);
 }
 
 export const CONDITIONS_KEY = 'piwiRequestConditions';
