@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'vitest';
 import {
   FlakePlanError,
+  describeFlakeArm,
+  describeFlakeCondition,
   flakeErrorSignature,
   flakeTestMatches,
   parseFlakePlan,
@@ -123,5 +125,40 @@ describe('flakeErrorSignature', () => {
     const c = flakeErrorSignature('TimeoutError: page.click: Timeout 30000ms exceeded.');
     expect(a).toBe(b);
     expect(a).not.toBe(c);
+  });
+});
+
+describe('condition labels', () => {
+  test('name each condition in a few words', () => {
+    expect(describeFlakeCondition({ kind: 'delay', route: 'GET /api/cart', ms: 1800, match: 'all' })).toBe(
+      'delay GET /api/cart 1.8 s',
+    );
+    expect(describeFlakeCondition({ kind: 'fail', route: 'POST /api/pay', status: 503, match: 'all' })).toBe(
+      'fail POST /api/pay with 503',
+    );
+    expect(describeFlakeCondition({ kind: 'fail', route: 'POST /api/pay', abort: true, match: 'all' })).toBe(
+      'abort POST /api/pay',
+    );
+    expect(describeFlakeCondition({ kind: 'cpu', rate: 4 })).toBe('CPU ×4');
+    expect(
+      describeFlakeCondition({
+        kind: 'alongside',
+        test: { file: 'a.spec.ts', title: 'resets catalog', suite: ['admin'] },
+      }),
+    ).toBe('run with admin › resets catalog');
+    expect(describeFlakeCondition({ kind: 'after', test: { file: 'a.spec.ts', title: 'seeds', suite: [] } })).toBe(
+      'run after seeds',
+    );
+    expect(describeFlakeCondition({ kind: 'project', name: 'firefox' })).toBe('on firefox');
+  });
+
+  test('join an arm and call an empty one the control', () => {
+    expect(describeFlakeArm([])).toBe('control');
+    expect(
+      describeFlakeArm([
+        { kind: 'delay', route: 'GET /api/cart', ms: 800, match: 'all' },
+        { kind: 'cpu', rate: 4 },
+      ]),
+    ).toBe('delay GET /api/cart 800 ms + CPU ×4');
   });
 });

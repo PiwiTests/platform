@@ -357,3 +357,38 @@ export interface FlakeLabRunStamp {
   experimentId: string;
   armId: string;
 }
+
+/** A duration in a label: `800 ms`, `1.8 s`, `2 s`. */
+function durationLabel(ms: number): string {
+  return ms < 1000 ? `${Math.round(ms)} ms` : `${Number((ms / 1000).toFixed(1))} s`;
+}
+
+/** A test in a label: its describe path and title joined with ` › `. */
+export function flakeTestLabel(test: FlakeTestRef): string {
+  return [...test.suite, test.title].join(' › ');
+}
+
+/** One condition in a few words: `delay GET /api/cart 1.8 s`, `run with admin › resets catalog`. */
+export function describeFlakeCondition(condition: FlakeCondition): string {
+  switch (condition.kind) {
+    case 'delay':
+      return `delay ${condition.route} ${durationLabel(condition.ms)}`;
+    case 'fail':
+      return 'abort' in condition ? `abort ${condition.route}` : `fail ${condition.route} with ${condition.status}`;
+    case 'cpu':
+      return `CPU ×${condition.rate}`;
+    case 'network':
+      return `network +${durationLabel(condition.latencyMs)}, ${condition.downKbps} kbps down`;
+    case 'alongside':
+      return `run with ${flakeTestLabel(condition.test)}`;
+    case 'after':
+      return `run after ${flakeTestLabel(condition.test)}`;
+    case 'project':
+      return `on ${condition.name}`;
+  }
+}
+
+/** An arm's conditions in a few words, `control` when it has none. */
+export function describeFlakeArm(conditions: FlakeCondition[]): string {
+  return conditions.length === 0 ? 'control' : conditions.map(describeFlakeCondition).join(' + ');
+}

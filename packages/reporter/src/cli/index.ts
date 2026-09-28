@@ -5,12 +5,14 @@
  * The reporter's job is to get results into the dashboard during
  * `playwright test`; the CLI covers the things that happen around a run:
  * setting a project up in the first place (`init`, `skills`) and acting on the
- * dashboard's history once a run has landed (`gate`, `report`), and checking a
- * change against it before it runs (`preflight`).
+ * dashboard's history once a run has landed (`gate`, `report`), checking a
+ * change against it before it runs (`preflight`), and reproducing a flaky
+ * test under the conditions its history points at (`flake`).
  */
 import { runAi } from './ai.js';
 import { runBug } from './bug.js';
 import { runCodegen } from './codegen.js';
+import { runFlake } from './flake.js';
 import { runGate } from './gate.js';
 import { runInit } from './init.js';
 import { runSelect, runRun } from './select.js';
@@ -33,6 +35,7 @@ Commands:
   select    Print the Playwright args for a saved test selection
   run       Run a saved test selection with playwright test
   probe     Run the dashboard's probe plan and record what the suite noticed
+  flake     Make a flaky test fail on demand under its suspects' conditions, then verify the fix
   ai        Manage committed natural-language AI-step artifacts
   codegen   Turn a steps file (a Piwi Picker recording) into a Playwright spec
   preflight List the test locators your uncommitted change breaks, and fix them
@@ -61,6 +64,8 @@ async function main(): Promise<number> {
       return runRun(rest);
     case 'probe':
       return runProbe(rest);
+    case 'flake':
+      return runFlake(rest);
     case 'ai':
       return runAi(rest);
     case 'codegen':

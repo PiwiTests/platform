@@ -1,6 +1,6 @@
 ---
 title: Piwi CLI
-description: "Every command and flag of the piwi CLI that ships with @piwitests/reporter: init, skills, gate, report, select, run, probe, ai, codegen, preflight and bug."
+description: "Every command and flag of the piwi CLI that ships with @piwitests/reporter: init, skills, gate, report, select, run, probe, flake, ai, codegen, preflight and bug."
 lang: en-US
 ---
 
@@ -27,6 +27,7 @@ npx @piwitests/reporter <command> [options]
 | [`select`](#select-run) | Print the Playwright args for a saved test selection |
 | [`run`](#select-run) | Run a saved test selection with `playwright test` |
 | [`probe`](#probe) | Run the dashboard's probe plan and record what the suite noticed |
+| [`flake`](#flake) | Make a flaky test fail on demand under its suspects' conditions, then verify the fix |
 | [`ai`](#ai) | Manage committed natural-language AI-step artifacts |
 | [`codegen`](#codegen) | Turn a steps file (a Piwi Picker recording) into a Playwright spec |
 | [`preflight`](#preflight) | List the test locators your change breaks, and fix them |
@@ -184,6 +185,48 @@ npx @piwitests/reporter probe --project my-app
 
 Everything after `--` is passed to `playwright test`. A probed test fails by design when it notices the injected fault, so a non-zero Playwright exit is expected and is not a command error.
 
+## `flake`
+
+Run a [Flake Lab](/features/flake-lab) experiment on one flaky test, in the checkout you are in. `flake` fetches the
+test's plan from the dashboard: a control arm with no condition, then one arm per suspect of its
+[flake profile](/features/flaky-tests#suspects), most likely first. It runs the control, then each arm, one test at a
+time with retries off and the [capture fixtures](/guide/capture-fixtures) in flake mode, and counts only the failures
+whose error matches the test's failures in history. It prints each arm against the control with its verdict, and saves
+the experiment on the test's Flakiness tab.
+
+```bash
+npx @piwitests/reporter flake 1842
+npx @piwitests/reporter flake tests/checkout.spec.ts:42 --suspect 1
+npx @piwitests/reporter flake verify 1842
+```
+
+`<test>` is a test case id (the number in its dashboard URL) or a spec file and line, looked up in the project.
+`flake verify` reruns the arm that last reproduced the test, and its control, until a matching failure appears or
+enough runs pass to say the fix holds.
+
+| Flag | Description |
+|---|---|
+| `--suspect <n>` | Run only the arm of suspect `n`, its rank on the Flakiness tab |
+| `--all` | Also run every condition at once when none reproduces alone |
+| `--runs <n>` | Runs of the control and of each arm (default 10; `verify`: the number that proves the fix at the rate the arm reproduced) |
+| `--budget <duration>` | Start no new arm after this long: `15m` (default), `90s`, `1h` |
+| `--no-upload` | Keep the results off the dashboard. The plan still comes from the dashboard, or from `--plan` when it cannot be reached |
+| `--plan <file>` | Read the plan from a file (a saved plan response, or the `plan` of the `plan_flake_experiment` MCP tool) and run it without the dashboard; implies `--no-upload` |
+| `--json` | Print the arms, their counts, verdicts and p-values as JSON |
+| `--server-url <url>` | Dashboard URL (env `PIWI_DASHBOARD_URL`, `.env`, the desktop app) |
+| `--api-key <key>` | API key (env `PIWI_API_KEY`, `.env`) |
+| `--project <name\|id>` | The Piwi project, for a `file:line` test (env `PIWI_PROJECT_NAME`) |
+| `-h`, `--help` | Show help |
+
+An arm stops at 3 failures with the same error as in CI. It runs in batches of up to five repeats and its attempts are
+counted in start order, cut after the third matching failure, since Playwright's `--max-failures` counts every failure.
+An `alongside` arm runs both tests on two workers and keeps only the rounds where they overlapped; an `after` arm runs
+both on one worker and keeps only the rounds where the other test ran just before.
+
+**Exit codes:** `0` an arm reproduced the failure (`verify`: the fix held) · `1` nothing reproduced (`verify`: it still
+fails, or there were too few runs to say) · `2` error: the plan could not be read, or an arm recorded no attempt of the
+test.
+
 ## `ai`
 
 Manage committed natural-language [AI-step](/features/ai-steps) artifacts (`page.piwiLocator(...)` / `page.piwiRun(...)`). The LLM authors each entry once; CI replays the committed JSON deterministically with no model calls, so these commands are how you keep the committed set healthy.
@@ -319,4 +362,5 @@ could not be written.
 - [CI & sharding](/guide/ci) — `gate` in a CI job, and the run output file
 - [Test selections](/features/test-selection) — what `select` / `run` resolve
 - [AI steps](/features/ai-steps) — the authoring/replay lifecycle `ai` manages
+- [Flake Lab](/features/flake-lab): the experiments `flake` runs and how their verdicts read
 - [Agent skills](/features/agent-skills): what `skills` installs and what each skill does

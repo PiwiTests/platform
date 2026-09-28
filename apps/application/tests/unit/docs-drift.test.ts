@@ -387,6 +387,7 @@ describe('hand-written reference pages match the code', () => {
     'quality-report': '`report`',
     select: '{#select-run}',
     probe: '`probe`',
+    flake: '`flake`',
     ai: '`ai`',
     codegen: '`codegen`',
     preflight: '`preflight`',
