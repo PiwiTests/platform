@@ -225,11 +225,12 @@ export function stepsOf(scenario: Scenario, recording: Recording): { doc: PiwiSt
     return `${i}. ${step.action} ${locator}${value}`.trim();
   });
   // The first load waits as a person would: the app ignores input until it has
-  // hydrated, which says nothing about the recorded locators.
-  const spec = renderSpec(session, { title: scenario.name, locators: 'stable', urlChecks: true }).code.replace(
-    /(await page\.goto\([^;]*\);)/,
-    `$1\n  await page.waitForTimeout(${LAB.settleMs});`,
-  );
+  // hydrated, which says nothing about the recorded locators. A file step reads
+  // the file from the lab's `out/files/`, where the developer running the spec
+  // would have put it.
+  const spec = renderSpec(session, { title: scenario.name, locators: 'stable', urlChecks: true })
+    .code.replace(/(await page\.goto\([^;]*\);)/, `$1\n  await page.waitForTimeout(${LAB.settleMs});`)
+    .replace(/\.setInputFiles\('([^']+)'\)/g, (_, name: string) => `.setInputFiles(${JSON.stringify(labFile(name))})`);
   writeFileSync(path.join(LAB.out, 'specs', `${scenario.name}.spec.ts`), spec);
   writeFileSync(path.join(LAB.out, 'results', `${scenario.name}.steps.json`), JSON.stringify(doc, null, 2));
   return { doc, lines };
