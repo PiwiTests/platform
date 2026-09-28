@@ -103,22 +103,33 @@ const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform);
  * moves the focus: Enter, Escape and the arrows in a list (`RECORDED_KEYS`),
  * a shortcut with a modifier (`ControlOrMeta+K`, portable between Ctrl and
  * ⌘), and a character pressed outside a field, a page's own shortcut.
+ *
+ * A character typed with AltGr (which also sets Ctrl and Alt on Windows) or
+ * with Option on a Mac (`©`) is typing, not a shortcut. In a password field
+ * only an unmodified key of `RECORDED_KEYS` is recorded, so no key a password
+ * holds is ever written down.
  */
 function recordedKey(e: KeyboardEvent, focused: Element | null): string | null {
   if (MODIFIER_KEYS.has(e.key)) return null;
+  if (e.getModifierState?.('AltGraph')) return null;
   const inField = !!focused?.closest(TEXT_FIELDS);
+  const typedWithOption =
+    IS_MAC && e.altKey && !e.metaKey && !e.ctrlKey && [...e.key].length === 1 && e.key.trim() !== '';
   // A letter or digit by its key, whatever Alt or a layout made of it.
   const named = /^Key[A-Z]$/.test(e.code)
     ? e.code.slice(3).toLowerCase()
     : /^Digit\d$/.test(e.code)
       ? e.code.slice(5)
       : e.key;
-  const modifiers = [
-    (IS_MAC ? e.metaKey : e.ctrlKey) && 'ControlOrMeta',
-    IS_MAC && e.ctrlKey && 'Control',
-    !IS_MAC && e.metaKey && 'Meta',
-    e.altKey && 'Alt',
-  ].filter((m): m is string => !!m);
+  const modifiers = typedWithOption
+    ? []
+    : [
+        (IS_MAC ? e.metaKey : e.ctrlKey) && 'ControlOrMeta',
+        IS_MAC && e.ctrlKey && 'Control',
+        !IS_MAC && e.metaKey && 'Meta',
+        e.altKey && 'Alt',
+      ].filter((m): m is string => !!m);
+  if (modifiers.length > 0 && focused?.closest('input[type="password" i]')) return null;
   if (modifiers.length === 0) {
     if (e.shiftKey && [...e.key].length > 1) return null;
     if (RECORDED_KEYS.has(e.key)) {

@@ -141,8 +141,8 @@ test.describe('record-panel.js', () => {
     const [, tab, link] = normalizeSteps(await readStoredEvents(page));
     expect(tab!.target?.accessibleName).toBe('Regressions 5');
     expect(tab!.target?.alternatives[0]?.locator).toBe(`getByRole('tab', { name: 'Regressions 5' })`);
-    // The name locator narrowed to main ranks above a name-less scoped one: the
-    // probe's estimated count no longer ranks it down before it is checked.
+    // The name locator narrowed to main ranks above a name-less scoped one:
+    // candidates are ranked after their match count is checked.
     expect(link!.target?.alternatives[0]?.locator).toBe(
       `getByRole('main').getByRole('link', { name: 'Runs', exact: true })`,
     );
@@ -284,6 +284,61 @@ test.describe('record-panel.js', () => {
     const fillStep = steps.find((s) => s.action === 'fill');
     expect(fillStep?.redacted).toBe(true);
     expect(fillStep?.value).toBeNull();
+  });
+
+  /** A page with a password field and a text field, the recorder attached, `platform` as `navigator.platform`. */
+  async function keysPage(context: BrowserContext, platform?: string): Promise<Page> {
+    await routePages(context);
+    await stubChromeStorage(context, {
+      session: {
+        piwiRecording: { active: true, events: [], startedAt: Date.now(), grantedOriginPattern: `${ORIGIN}/*` },
+      },
+    });
+    await context.route(`${ORIGIN}/keys`, (route) =>
+      route.fulfill({
+        contentType: 'text/html',
+        body: `<!doctype html><html><body><input id="pw" type="password" /><input id="name" /></body></html>`,
+      }),
+    );
+    const page = await context.newPage();
+    if (platform) {
+      await page.addInitScript((value) => Object.defineProperty(navigator, 'platform', { get: () => value }), platform);
+    }
+    await page.goto(`${ORIGIN}/keys`);
+    await page.addScriptTag({ path: path.join(DIST, 'record-panel.js') });
+    await expect.poll(() => page.evaluate(() => !!document.getElementById('piwi-record-hud-host'))).toBe(true);
+    return page;
+  }
+
+  test('in a password field, a key with a modifier (AltGr arrives as Ctrl+Alt on Windows) is never recorded', async ({
+    context,
+  }) => {
+    const page = await keysPage(context);
+    await page.locator('#pw').click();
+    await page.keyboard.press('Control+Alt+q');
+    await page.keyboard.press('Alt+2');
+    await page.keyboard.press('Enter');
+
+    await expect
+      .poll(async () => normalizeSteps(await readStoredEvents(page)).some((s) => s.action === 'press'))
+      .toBe(true);
+    await page.waitForTimeout(200);
+    const presses = normalizeSteps(await readStoredEvents(page)).filter((s) => s.action === 'press');
+    expect(presses.map((s) => s.value)).toEqual(['Enter']);
+  });
+
+  test('Option with a character on a Mac types it: no shortcut step in a field', async ({ context }) => {
+    const page = await keysPage(context, 'MacIntel');
+    await page.locator('#name').click();
+    await page.keyboard.press('Alt+g');
+    await page.keyboard.press('Meta+k');
+
+    await expect
+      .poll(async () => normalizeSteps(await readStoredEvents(page)).some((s) => s.action === 'press'))
+      .toBe(true);
+    await page.waitForTimeout(200);
+    const presses = normalizeSteps(await readStoredEvents(page)).filter((s) => s.action === 'press');
+    expect(presses.map((s) => s.value)).toEqual(['ControlOrMeta+k']);
   });
 
   /** Seeds a live recording and drives it to a page that already has the recorder attached. */
