@@ -91,7 +91,7 @@ Once a test naming the report (`piwi:bug 37`) runs, the report follows it:
 |---|---|
 | **Open** | Sent; no run has carried a test naming it yet. |
 | **Test committed** | A test naming it ran and the bug still shows: with `test.fail()`, the test failed as expected. |
-| **Looks fixed** | That test, still marked `test.fail()`, passed. The run's [pull-request comment](./pr-feedback) says to remove `test.fail()` from its file, and the `bug.looks_fixed` [notification](/reference/notification-events) fires. |
+| **Looks fixed** | That test, still marked `test.fail()`, passed in every browser project that ran it. The run's [pull-request comment](./pr-feedback) says to remove `test.fail()` from its file, and the `bug.looks_fixed` [notification](/reference/notification-events) fires. |
 | **Closed** | The test passed as an ordinary test, `test.fail()` removed: the fix holds. |
 
 A closed report whose test fails again goes back to **Test committed**. A test marked `test.fail()` that passes is

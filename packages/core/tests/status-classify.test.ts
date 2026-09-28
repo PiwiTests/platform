@@ -5,7 +5,10 @@ import {
   classifyStatus,
   resolveExpectedStatus,
   isExpectedFailurePassed,
+  bugOutcome,
   lastAttempts,
+  looksFixed,
+  looksFixedTests,
   type BlockableCase,
 } from '../src/status-classify.js';
 
@@ -115,5 +118,69 @@ describe('lastAttempts', () => {
       { testCaseId: 1, retries: 1, status: 'passed' },
       { testCaseId: 2, retries: null, status: 'passed' },
     ]);
+  });
+});
+
+describe('lastAttempts per project', () => {
+  it('keeps one last attempt per test and browser project', () => {
+    const rows = [
+      { testCaseId: 1, browserName: 'chromium', retries: 0, status: 'failed' },
+      { testCaseId: 1, browserName: 'webkit', retries: 1, status: 'passed' },
+      { testCaseId: 1, browserName: 'chromium', retries: 1, status: 'passed' },
+      { testCaseId: 1, browserName: 'webkit', retries: 0, status: 'failed' },
+    ];
+    expect(lastAttempts(rows)).toEqual([
+      { testCaseId: 1, browserName: 'chromium', retries: 1, status: 'passed' },
+      { testCaseId: 1, browserName: 'webkit', retries: 1, status: 'passed' },
+    ]);
+  });
+
+  it('breaks a tie on retries by the higher id, whatever the row order', () => {
+    const a = { id: 5, testCaseId: 1, retries: 0 };
+    const b = { id: 9, testCaseId: 1, retries: 0 };
+    expect(lastAttempts([a, b])).toEqual([b]);
+    expect(lastAttempts([b, a])).toEqual([b]);
+  });
+});
+
+describe('looksFixed', () => {
+  const fixed = { status: 'failed', expectedStatus: 'failed' };
+  const stillFails = { status: 'passed', expectedStatus: 'failed' };
+  const plainPass = { status: 'passed', expectedStatus: 'passed' };
+  const plainFail = { status: 'failed', expectedStatus: 'passed' };
+  const skipped = { status: 'skipped', expectedStatus: 'failed' };
+
+  it('needs every project that ran the test to agree', () => {
+    expect(looksFixed([fixed])).toBe(true);
+    expect(looksFixed([fixed, fixed])).toBe(true);
+    expect(looksFixed([fixed, stillFails])).toBe(false);
+    expect(looksFixed([stillFails, fixed])).toBe(false);
+    expect(looksFixed([fixed, plainFail])).toBe(false);
+  });
+
+  it('lets a project without `test.fail()` that passed, or one that did not run, agree', () => {
+    expect(looksFixed([fixed, plainPass])).toBe(true);
+    expect(looksFixed([fixed, skipped])).toBe(true);
+    expect(looksFixed([plainPass])).toBe(false);
+    expect(looksFixed([])).toBe(false);
+  });
+
+  it('reads the last attempt of each project, whatever the row order', () => {
+    const rows = [
+      { id: 1, testCaseId: 7, browserName: 'chromium', retries: 0, ...fixed },
+      { id: 2, testCaseId: 7, browserName: 'webkit', retries: 0, ...stillFails },
+      { id: 3, testCaseId: 8, browserName: 'chromium', retries: 0, ...fixed },
+      { id: 4, testCaseId: 8, browserName: 'webkit', retries: 0, ...fixed },
+    ];
+    expect(looksFixedTests(rows).map((r) => r.testCaseId)).toEqual([8]);
+    expect(looksFixedTests([...rows].reverse()).map((r) => r.testCaseId)).toEqual([8]);
+  });
+
+  it('names where the attempts leave the bug', () => {
+    expect(bugOutcome([fixed, plainPass])).toBe('looks-fixed');
+    expect(bugOutcome([plainPass, plainPass])).toBe('passed');
+    expect(bugOutcome([skipped])).toBe('not-run');
+    expect(bugOutcome([fixed, stillFails])).toBe('fails');
+    expect(bugOutcome([plainPass, plainFail])).toBe('fails');
   });
 });

@@ -85,18 +85,100 @@ export function isExpectedFailurePassed(status: string | null | undefined, expec
   return status === 'failed' && expectedStatus === 'failed';
 }
 
+/** The fields `lastAttempts` groups and orders a run's executions by. */
+export interface AttemptRow {
+  testCaseId: number;
+  retries: number | null;
+  /** The Playwright project the execution ran in; null or absent when unknown. */
+  browserName?: string | null;
+}
+
 /**
- * Each test's last attempt in a run, the row with the most retries: the one a
- * test's outcome is read from. An expected failure that passed on its first
- * attempt and failed as expected on a retry still reproduces its bug.
+ * Each test's last attempt in a run, per Playwright project: the row with the
+ * most retries for each `(testCaseId, browserName)`. It is the one an outcome
+ * is read from. An expected failure that passed on its first attempt and
+ * failed as expected on a retry still reproduces its bug. On equal retries the
+ * row with the higher `id` wins, when rows carry one.
  */
-export function lastAttempts<T extends { testCaseId: number; retries: number | null }>(rows: readonly T[]): T[] {
-  const last = new Map<number, T>();
+export function lastAttempts<T extends AttemptRow & { id?: number }>(rows: readonly T[]): T[] {
+  const last = new Map<string, T>();
   for (const row of rows) {
-    const prev = last.get(row.testCaseId);
-    if (!prev || (row.retries ?? 0) >= (prev.retries ?? 0)) last.set(row.testCaseId, row);
+    const key = `${row.testCaseId}\x00${row.browserName ?? ''}`;
+    const prev = last.get(key);
+    if (!prev || isLaterAttempt(row, prev)) last.set(key, row);
   }
   return [...last.values()];
+}
+
+function isLaterAttempt(row: AttemptRow & { id?: number }, prev: AttemptRow & { id?: number }): boolean {
+  const a = row.retries ?? 0;
+  const b = prev.retries ?? 0;
+  if (a !== b) return a > b;
+  return (row.id ?? 0) >= (prev.id ?? 0);
+}
+
+/** Each test's last attempts in a run, one per Playwright project, grouped by test in first-seen order. */
+export function lastAttemptsByTest<T extends AttemptRow & { id?: number }>(rows: readonly T[]): Map<number, T[]> {
+  const byTest = new Map<number, T[]>();
+  for (const row of lastAttempts(rows)) {
+    const list = byTest.get(row.testCaseId);
+    if (list) list.push(row);
+    else byTest.set(row.testCaseId, [row]);
+  }
+  return byTest;
+}
+
+type OutcomeRow = { status: string; expectedStatus: string | null | undefined };
+
+function didRun(row: OutcomeRow): boolean {
+  return row.status !== 'skipped' && row.status !== 'didnotrun';
+}
+
+function isOrdinaryPass(row: OutcomeRow): boolean {
+  return row.status === 'passed' && row.expectedStatus !== 'failed';
+}
+
+/**
+ * Whether one test's last attempts, one per Playwright project, read as its
+ * bug looking fixed: at least one project ran it as an expected failure that
+ * passed, and every other project that ran it passed too. A project where the
+ * test still fails, as expected or not, keeps the bug open. Projects that did
+ * not run the test have no say.
+ */
+export function looksFixed(attempts: readonly OutcomeRow[]): boolean {
+  const ran = attempts.filter(didRun);
+  return (
+    ran.some((a) => isExpectedFailurePassed(a.status, a.expectedStatus)) &&
+    ran.every((a) => isExpectedFailurePassed(a.status, a.expectedStatus) || isOrdinaryPass(a))
+  );
+}
+
+/**
+ * The tests of a run whose bug looks fixed (`looksFixed` across their
+ * projects), one row per test: the project attempt that passed as an expected
+ * failure.
+ */
+export function looksFixedTests<T extends AttemptRow & OutcomeRow & { id?: number }>(rows: readonly T[]): T[] {
+  const out: T[] = [];
+  for (const attempts of lastAttemptsByTest(rows).values()) {
+    if (!looksFixed(attempts)) continue;
+    out.push(attempts.find((a) => isExpectedFailurePassed(a.status, a.expectedStatus))!);
+  }
+  return out;
+}
+
+/**
+ * Where one test's last attempts, one per Playwright project, leave the bug it
+ * reproduces: `looks-fixed` (see `looksFixed`), `passed` when every project
+ * that ran it passed without expecting a failure, `not-run` when no project
+ * ran it, and `fails` otherwise.
+ */
+export function bugOutcome(attempts: readonly OutcomeRow[]): 'looks-fixed' | 'passed' | 'not-run' | 'fails' {
+  const ran = attempts.filter(didRun);
+  if (ran.length === 0) return 'not-run';
+  if (looksFixed(ran)) return 'looks-fixed';
+  if (ran.every(isOrdinaryPass)) return 'passed';
+  return 'fails';
 }
 
 /**

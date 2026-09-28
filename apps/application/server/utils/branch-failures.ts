@@ -8,6 +8,7 @@ import type { DrizzleDB } from '#shared/handlers/db';
 import { caseHeadline } from '#shared/failure-verdict';
 import { isScreenshotFileRow } from '#shared/file-classify';
 import { extractErrorLocation } from './locator-healing';
+import { lastAttempts } from '#shared/status-classify';
 
 /** Failed executions listed per run. */
 export const MAX_BRANCH_FAILURES = 200;
@@ -58,7 +59,10 @@ function iso(value: Date | number | string | null | undefined): string {
   return Number.isNaN(d.getTime()) ? new Date(0).toISOString() : d.toISOString();
 }
 
-/** The newest run of a project on `branch` (any branch when null) and its failed executions. */
+/**
+ * The newest run of a project on `branch` (any branch when null) and the tests
+ * whose last attempt in it failed, one execution per test and browser project.
+ */
 export async function getBranchFailures(
   db: DrizzleDB,
   projectId: number,
@@ -84,10 +88,13 @@ export async function getBranchFailures(
     .limit(1);
   if (!run) return { run: null, failures: [] };
 
-  const rows = await db
+  // Every attempt of each test that failed at least once, so a pass on a retry drops the test.
+  const attempts = await db
     .select({
       executionId: testRunsCases.id,
       testCaseId: testRunsCases.testCaseId,
+      retries: testRunsCases.retries,
+      browserName: testRunsCases.browserName,
       clusterId: testRunsCases.failureClusterId,
       status: testRunsCases.status,
       error: testRunsCases.error,
@@ -98,9 +105,22 @@ export async function getBranchFailures(
     })
     .from(testRunsCases)
     .innerJoin(testCases, eq(testCases.id, testRunsCases.testCaseId))
-    .where(and(eq(testRunsCases.testRunId, run.id), inArray(testRunsCases.status, FAIL_STATUSES)))
-    .orderBy(asc(testCases.filePath), asc(testRunsCases.line), asc(testRunsCases.id))
-    .limit(MAX_BRANCH_FAILURES);
+    .where(
+      and(
+        eq(testRunsCases.testRunId, run.id),
+        inArray(
+          testRunsCases.testCaseId,
+          db
+            .select({ id: testRunsCases.testCaseId })
+            .from(testRunsCases)
+            .where(and(eq(testRunsCases.testRunId, run.id), inArray(testRunsCases.status, FAIL_STATUSES))),
+        ),
+      ),
+    )
+    .orderBy(asc(testCases.filePath), asc(testRunsCases.line), asc(testRunsCases.id));
+  const rows = lastAttempts(attempts.map((a: (typeof attempts)[number]) => ({ ...a, id: a.executionId })))
+    .filter((r) => FAIL_STATUSES.includes(r.status))
+    .slice(0, MAX_BRANCH_FAILURES);
 
   const ids = rows.map((r: { executionId: number }) => r.executionId);
   const evidence =

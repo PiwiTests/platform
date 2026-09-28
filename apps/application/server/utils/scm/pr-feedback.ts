@@ -49,7 +49,7 @@ import type { VerifiedFix } from '../fix-verification';
 import type { RunMetadata } from '../run-json-types';
 import type { DbClient } from '../../database';
 import type { FilterDetails, TestMetadata } from '#shared/types';
-import { isExpectedFailurePassed, lastAttempts } from '#shared/status-classify';
+import { isExpectedFailurePassed, looksFixedTests } from '#shared/status-classify';
 import { errorExcerpt } from '#shared/notification-events';
 import { caseHeadline } from '#shared/failure-verdict';
 import { locksHeldAcrossShards } from '#shared/lock-overlap';
@@ -79,6 +79,7 @@ interface CaseRow {
   expectedStatus: string | null;
   testMeta: unknown;
   retries: number | null;
+  browserName: string | null;
   duration: number | null;
   wastedTimeMs: number | null;
   error: string | null;
@@ -185,6 +186,7 @@ export async function buildRunPrSummary(
       expectedStatus: testRunsCases.expectedStatus,
       testMeta: testRunsCases.testMeta,
       retries: testRunsCases.retries,
+      browserName: testRunsCases.browserName,
       duration: testRunsCases.duration,
       wastedTimeMs: testRunsCases.wastedTimeMs,
       error: testRunsCases.error,
@@ -201,10 +203,8 @@ export async function buildRunPrSummary(
     .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
     .where(eq(testRunsCases.testRunId, runId));
 
-  // A retried test's last attempt says whether its bug still shows.
-  const looksFixedRows = lastAttempts(caseRows).filter((row) =>
-    isExpectedFailurePassed(row.status, row.expectedStatus),
-  );
+  // Each project's last attempt says whether a test's bug still shows there.
+  const looksFixedRows = looksFixedTests(caseRows);
   const namedBugs = looksFixedRows.flatMap((row) => {
     const bug = Number((row.testMeta as TestMetadata | null)?.bug);
     return bug ? [bug] : [];

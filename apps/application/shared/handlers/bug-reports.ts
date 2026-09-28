@@ -4,7 +4,7 @@ import { bugTitle, emptyBugEvidence, renderBugSpec, type BugReport } from '@piwi
 import { sessionFromSteps, type PiwiSteps } from '@piwitests/core/steps';
 import { renderSpec, type CodegenResult } from '@piwitests/core/codegen';
 import { canonicalLocator } from '@piwitests/core/locator-chain';
-import { isExpectedFailurePassed } from '@piwitests/core/status-classify';
+import { bugOutcome, lastAttemptsByTest } from '@piwitests/core/status-classify';
 import type { BugContext, BugEvidence } from '@piwitests/core/bug-report';
 import {
   bugReports,
@@ -206,6 +206,7 @@ export async function listBugReports(
   opts: { status?: string | null } = {},
 ): Promise<BugReportListItem[]> {
   const status = BUG_REPORT_STATUSES.find((s) => s === opts.status);
+
   const rows = await db
     .select({
       id: bugReports.id,
@@ -538,8 +539,10 @@ type Transition = { id: number; from: BugReportStatus; to: BugReportStatus; test
 /**
  * Moves the reports a run's tests name (`piwi:bug <id>`, same project) along
  * their lifecycle, and links each report to its test. Returns what changed.
- * The last attempt of each test decides: an expected failure that passed →
- * looks fixed; an ordinary pass → closed; anything else keeps an open report
+ * The last attempt of each test in each browser project decides
+ * (`bugOutcome`): an expected failure that passed where every other project
+ * passed too → looks fixed; an ordinary pass everywhere → closed; a test no
+ * project ran keeps its report; anything else keeps an open report
  * committed, and reopens a closed one.
  */
 export async function applyBugReportLifecycle(db: DrizzleDB, runId: number): Promise<Transition[]> {
@@ -547,24 +550,23 @@ export async function applyBugReportLifecycle(db: DrizzleDB, runId: number): Pro
   if (!run) return [];
   const rows = await db
     .select({
+      id: testRunsCases.id,
       testCaseId: testRunsCases.testCaseId,
       status: testRunsCases.status,
       expectedStatus: testRunsCases.expectedStatus,
       retries: testRunsCases.retries,
+      browserName: testRunsCases.browserName,
       testMeta: testRunsCases.testMeta,
     })
     .from(testRunsCases)
     .where(and(eq(testRunsCases.testRunId, runId), sql`${testRunsCases.testMeta} is not null`));
 
-  const lastAttempt = new Map<number, (typeof rows)[number] & { bugId: number }>();
-  for (const row of rows) {
-    const bug = (row.testMeta as TestMetadata | null)?.bug;
-    if (!bug) continue;
-    const prev = lastAttempt.get(row.testCaseId);
-    if (!prev || (row.retries ?? 0) >= (prev.retries ?? 0))
-      lastAttempt.set(row.testCaseId, { ...row, bugId: Number(bug) });
+  const tests: Array<{ testCaseId: number; bugId: number; attempts: typeof rows }> = [];
+  for (const [testCaseId, attempts] of lastAttemptsByTest(rows)) {
+    const bug = attempts.map((a) => (a.testMeta as TestMetadata | null)?.bug).find(Boolean);
+    if (bug) tests.push({ testCaseId, bugId: Number(bug), attempts });
   }
-  if (lastAttempt.size === 0) return [];
+  if (tests.length === 0) return [];
 
   const reports = await db
     .select({ id: bugReports.id, status: bugReports.status })
@@ -574,7 +576,7 @@ export async function applyBugReportLifecycle(db: DrizzleDB, runId: number): Pro
         eq(bugReports.projectId, run.projectId),
         inArray(
           bugReports.id,
-          [...lastAttempt.values()].map((r) => r.bugId),
+          tests.map((t) => t.bugId),
         ),
       ),
     );
@@ -582,28 +584,32 @@ export async function applyBugReportLifecycle(db: DrizzleDB, runId: number): Pro
   const transitions: Transition[] = [];
   const now = new Date();
 
-  for (const attempt of lastAttempt.values()) {
-    const from = statusOf.get(attempt.bugId);
+  for (const test of tests) {
+    const from = statusOf.get(test.bugId);
     if (!from) continue;
-    await db.update(testCases).set({ bugReportId: attempt.bugId }).where(eq(testCases.id, attempt.testCaseId));
+    await db.update(testCases).set({ bugReportId: test.bugId }).where(eq(testCases.id, test.testCaseId));
     if (from === 'dismissed') continue;
 
-    let to: BugReportStatus;
-    if (isExpectedFailurePassed(attempt.status, attempt.expectedStatus)) to = 'looks-fixed';
-    else if (attempt.status === 'passed' && attempt.expectedStatus !== 'failed') to = 'closed';
-    else if (attempt.status === 'skipped' || attempt.status === 'didnotrun') to = from;
-    else to = 'test-committed';
+    const outcome = bugOutcome(test.attempts);
+    const to: BugReportStatus =
+      outcome === 'looks-fixed'
+        ? 'looks-fixed'
+        : outcome === 'passed'
+          ? 'closed'
+          : outcome === 'not-run'
+            ? from
+            : 'test-committed';
 
-    const set: Partial<typeof bugReports.$inferInsert> = { testCaseId: attempt.testCaseId, updatedAt: now };
+    const set: Partial<typeof bugReports.$inferInsert> = { testCaseId: test.testCaseId, updatedAt: now };
     if (to !== from) {
       set.status = to;
       set.statusRunId = runId;
       set.closedAt = to === 'closed' ? now : null;
       set.closedByRunId = to === 'closed' ? runId : null;
-      transitions.push({ id: attempt.bugId, from, to, testCaseId: attempt.testCaseId, projectId: run.projectId });
-      statusOf.set(attempt.bugId, to);
+      transitions.push({ id: test.bugId, from, to, testCaseId: test.testCaseId, projectId: run.projectId });
+      statusOf.set(test.bugId, to);
     }
-    await db.update(bugReports).set(set).where(eq(bugReports.id, attempt.bugId));
+    await db.update(bugReports).set(set).where(eq(bugReports.id, test.bugId));
   }
   return transitions;
 }

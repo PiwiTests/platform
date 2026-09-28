@@ -19,15 +19,16 @@ import { resolveDefaultBranch } from '../scm/default-branch';
 import { resolveRunBranch } from '../run-branch';
 import { FAILED_STATUS_KEYS } from '#shared/utils/test-counts';
 import { describeCluster } from '#shared/describe-cluster';
-import { isExpectedFailurePassed, lastAttempts } from '#shared/status-classify';
+import { looksFixedTests } from '#shared/status-classify';
 import { getClusterKnownIssue } from '../integrations/known-issue';
 import type { DbClient } from '../../database';
 import type { LooksFixedTest } from '#shared/notification-events';
 import type { TestMetadata } from '#shared/types';
 
 /**
- * The run's `test.fail()` tests that passed, with the bug report and ticket
- * each names: the tests whose bug looks fixed.
+ * The run's `test.fail()` tests that passed in every browser project that ran
+ * them, with the bug report and ticket each names: the tests whose bug looks
+ * fixed.
  */
 export async function loadLooksFixedTests(db: DbClient, runId: number): Promise<LooksFixedTest[]> {
   const rows = await db
@@ -40,13 +41,23 @@ export async function loadLooksFixedTests(db: DbClient, runId: number): Promise<
       status: testRunsCases.status,
       expectedStatus: testRunsCases.expectedStatus,
       retries: testRunsCases.retries,
+      browserName: testRunsCases.browserName,
     })
     .from(testRunsCases)
     .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
-    .where(and(eq(testRunsCases.testRunId, runId), eq(testRunsCases.expectedStatus, 'failed')));
-  // A retried test has one row per attempt: its last attempt says whether the bug still shows.
-  const passed = lastAttempts(rows).filter((row) => isExpectedFailurePassed(row.status, row.expectedStatus));
-  return passed.map((row) => {
+    .where(
+      and(
+        eq(testRunsCases.testRunId, runId),
+        inArray(
+          testRunsCases.testCaseId,
+          db
+            .select({ id: testRunsCases.testCaseId })
+            .from(testRunsCases)
+            .where(and(eq(testRunsCases.testRunId, runId), eq(testRunsCases.expectedStatus, 'failed'))),
+        ),
+      ),
+    );
+  return looksFixedTests(rows).map((row) => {
     const meta = (row.testMeta ?? null) as TestMetadata | null;
     return {
       title: row.title,
