@@ -6,7 +6,11 @@
  * Each covered script is resolved to original files in one of two ways:
  *
  * - a module served by path (Vite's `/src/components/Pay.vue`, `/@fs/<abs>`):
- *   the URL's path, tried against the code reach roots, when the file exists;
+ *   the URL's path, tried against the code reach roots, when the file exists.
+ *   A Vite dev server's `base` (Nuxt's `/_nuxt/`), read from the address its
+ *   `@vite/client` script loads from, is dropped from the path first.
+ *   When the module has a source map (Vite serves one inline), only functions
+ *   that map to its source count, not the hot-reload code the server adds;
  * - a bundle with a source map: the map named by the script's
  *   `sourceMappingURL` comment (inline, or fetched once per worker through the
  *   page's request context, 20 MB and 5 s at most), whose sources resolve
@@ -14,7 +18,9 @@
  *
  * A file counts when a function starting in it ran, not counting a script's
  * top-level code. Paths go out relative to the repository root; files outside
- * it and under `node_modules` are dropped. Decoded maps and resolved paths are
+ * it and under `node_modules` are dropped, and so are the scripts React
+ * evaluates in development to replay server component stacks
+ * (`about://React/Server/…`), which stand for code that ran on the server. Decoded maps and resolved paths are
  * cached per worker by script URL and content hash.
  */
 import * as crypto from 'node:crypto';
@@ -36,12 +42,14 @@ import { internalCall } from './quiet-capture.js';
 const MAX_MAP_BYTES = 20 * 1024 * 1024;
 const MAP_TIMEOUT_MS = 5000;
 const SOURCE_EXTENSIONS = /\.(?:[cm]?[jt]sx?|vue|svelte|astro|marko|html?)$/i;
+/** Script URLs that stand for code run elsewhere: React's replayed server component stacks. */
+const REPLAYED_SCRIPT = /^(?:about|rsc):/i;
 /** Directories a served file is build output in, not source: a bundle there is resolved through its map. */
 const BUILD_DIRS = /(?:^|\/)(?:dist|build|out|\.output|\.next|\.nuxt|\.svelte-kit|public|static|wwwroot)\//;
 
 /** Where code reach resolves paths. */
 export interface CodeReachRoots {
-  /** Directories a module path or a map source is tried against, first match wins. */
+  /** Directories a module path or a map source is tried against, first match wins; the repository root is last. */
   roots: string[];
   /** Paths go out relative to it. */
   repoRoot: string;
@@ -52,7 +60,7 @@ export type MapFetcher = (url: string) => Promise<string | null>;
 
 /** What one script resolves to, cached per worker. */
 type ScriptResolution =
-  | { kind: 'file'; file: string | null }
+  | { kind: 'file'; file: string | null; lookup: SourceMapLookup | null }
   | { kind: 'map'; lookup: SourceMapLookup; files: Array<string | null | undefined> }
   | { kind: 'none' };
 
@@ -77,11 +85,15 @@ export function repositoryRoot(from: string): string {
   return cachedRepoRoot.root;
 }
 
-/** The roots for a test: `codeReachRoots` when set, else the Playwright config's directory and the repository root. */
+/**
+ * The roots for a test: `codeReachRoots` when set, else the Playwright config's
+ * directory; the repository root always comes last, since bundlers name
+ * sources from the project root (Turbopack's `[project]/`).
+ */
 export function codeReachRoots(configDir: string, configured: string[] | null | undefined): CodeReachRoots {
   const repoRoot = repositoryRoot(configDir);
-  const roots = configured?.length ? configured.map((r) => path.resolve(configDir, r)) : [configDir, repoRoot];
-  return { roots: [...new Set(roots)], repoRoot };
+  const roots = configured?.length ? configured.map((r) => path.resolve(configDir, r)) : [configDir];
+  return { roots: [...new Set([...roots, repoRoot])], repoRoot };
 }
 
 function isFile(file: string): boolean {
@@ -105,13 +117,27 @@ function resolveSourcePath(source: string, roots: string[]): string | null {
   return null;
 }
 
+/** Vite dev servers' `base` paths by origin, from the address of their `@vite/client` script. */
+type ViteBases = Map<string, string>;
+
+function viteBases(entries: JsCoverageEntry[]): ViteBases {
+  const bases: ViteBases = new Map();
+  for (const entry of entries) {
+    const match = /^(https?:\/\/[^/]+)(\/.*?)@vite\/client$/.exec(entry.url.replace(/[?#].*$/, ''));
+    if (match && match[2] !== '/') bases.set(match[1]!, match[2]!);
+  }
+  return bases;
+}
+
 /** The source file a served module's URL names, when it exists and is not build output. */
-function fileForUrl(url: string, roots: string[]): string | null {
+function fileForUrl(url: string, roots: string[], bases: ViteBases): string | null {
   let pathname: string;
   try {
     const parsed = new URL(url);
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:' && parsed.protocol !== 'file:') return null;
     pathname = parsed.pathname;
+    const base = bases.get(parsed.origin);
+    if (base && pathname.startsWith(base)) pathname = pathname.slice(base.length - 1);
   } catch {
     return null;
   }
@@ -169,14 +195,15 @@ function parseMap(text: string): SourceMapLookup | null {
 async function resolveScript(
   entry: JsCoverageEntry,
   roots: CodeReachRoots,
+  bases: ViteBases,
   fetchMap: MapFetcher,
 ): Promise<ScriptResolution> {
   const key = scriptKey(entry);
   const cached = scriptCache.get(key);
   if (cached) return cached;
   let resolution: ScriptResolution;
-  const file = fileForUrl(entry.url, roots.roots);
-  if (file) resolution = { kind: 'file', file };
+  const file = fileForUrl(entry.url, roots.roots, bases);
+  if (file) resolution = { kind: 'file', file, lookup: await loadMap(entry, fetchMap) };
   else {
     const lookup = await loadMap(entry, fetchMap);
     resolution = lookup ? { kind: 'map', lookup, files: [] } : { kind: 'none' };
@@ -192,11 +219,13 @@ export async function resolveCodeReach(
   fetchMap: MapFetcher,
 ): Promise<string[]> {
   const files = new Set<string>();
+  const bases = viteBases(entries);
   for (const entry of entries) {
-    if (!entry.url || !entry.functions?.length) continue;
-    const resolution = await resolveScript(entry, roots, fetchMap);
+    if (!entry.url || !entry.functions?.length || REPLAYED_SCRIPT.test(entry.url)) continue;
+    const resolution = await resolveScript(entry, roots, bases, fetchMap);
     if (resolution.kind === 'file') {
-      if (resolution.file && scriptRan(entry)) files.add(relativeToRepo(resolution.file, roots.repoRoot));
+      const ran = resolution.lookup ? reachedSources(entry, resolution.lookup).size > 0 : scriptRan(entry);
+      if (resolution.file && ran) files.add(relativeToRepo(resolution.file, roots.repoRoot));
     } else if (resolution.kind === 'map') {
       for (const index of reachedSources(entry, resolution.lookup)) {
         if (resolution.files[index] === undefined) {
@@ -205,7 +234,7 @@ export async function resolveCodeReach(
           // A source relative to the map: resolve it as a URL path, then against the roots.
           if (!absolute && !/^[a-z][\w+.-]*:/i.test(source)) {
             try {
-              absolute = fileForUrl(new URL(source, entry.url).href, roots.roots);
+              absolute = fileForUrl(new URL(source, entry.url).href, roots.roots, bases);
             } catch {
               absolute = null;
             }

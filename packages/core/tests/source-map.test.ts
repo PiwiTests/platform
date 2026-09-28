@@ -116,6 +116,7 @@ describe('positions and comments', () => {
     expect(normalizeSourcePath('/@fs/C:/app/src/a.ts')).toBe('C:/app/src/a.ts');
     expect(normalizeSourcePath('file:///home/me/app/b.ts')).toBe('/home/me/app/b.ts');
     expect(normalizeSourcePath('../../src/c%20d.ts')).toBe('../../src/c d.ts');
+    expect(normalizeSourcePath('turbopack:///[project]/app/page.tsx')).toBe('app/page.tsx');
   });
 });
 
@@ -142,6 +143,56 @@ describe('code reach', async () => {
     const map = decodeSourceMap({ version: 3, sources: ['a.ts', 'b.ts'], mappings: 'AAAA;ACAA' })!;
     // Line 1 (0-based) starts with source 1: the `pay` function.
     expect([...reachedSources(entry, map)]).toEqual([1]);
+  });
+
+  test('mapsBetween looks from a position up to an end, across lines', () => {
+    // Line 0: source 0 at 0, source 1 at 10; line 1: nothing; line 2: source 0 at 4.
+    const map = decodeSourceMap({
+      version: 3,
+      sources: ['a.ts', 'b.ts'],
+      mappings: encode([
+        [
+          [0, 0],
+          [10, 1],
+        ],
+        [],
+        [[4, 0]],
+      ]),
+    })!;
+    expect(map.mapsBetween(1, { line: 0, column: 5 }, { line: 0, column: 20 })).toBe(true);
+    expect(map.mapsBetween(1, { line: 0, column: 5 }, { line: 0, column: 10 })).toBe(false);
+    expect(map.mapsBetween(0, { line: 0, column: 5 }, { line: 2, column: 5 })).toBe(true);
+    expect(map.mapsBetween(0, { line: 0, column: 5 }, { line: 2, column: 4 })).toBe(false);
+  });
+
+  test('generated code takes no source from the code before it', () => {
+    // One minified line: cart.ts's function, a generated helper with no mapping, then main.ts's arrow whose body
+    // calls code inlined from cart.ts.
+    const line = 'function a(){return 1}var h=function(){return 2};var m=()=>function(){return 3}();';
+    const segments: Array<[number, number?]> = [
+      [0, 0],
+      [9, 0],
+      [13, 0],
+      [49, 1],
+      [59, 0],
+      [70, 0],
+      [79, 1],
+    ];
+    const map = decodeSourceMap({ version: 3, sources: ['cart.ts', 'main.ts'], mappings: encode([segments]) })!;
+    const fn = (start: number, end: number) => ({
+      functionName: '',
+      ranges: [{ startOffset: start, endOffset: end, count: 1 }],
+    });
+    const bundle = { url: 'http://localhost/app.js', source: line, functions: [fn(0, line.length)] };
+    const reached = (start: number, end: number) => [
+      ...reachedSources({ ...bundle, functions: [...bundle.functions, fn(start, end)] }, map),
+    ];
+    // The helper at 28 starts after cart.ts's segment at 13 but holds none of its code.
+    expect(reached(28, 48)).toEqual([]);
+    // The arrow at 55 starts after main.ts's segment at 49 and holds main.ts code at 79, after the inlined function.
+    expect(reached(55, 81)).toEqual([1]);
+    // The inlined function at 59 is cart.ts's.
+    expect(reached(59, 79)).toEqual([0]);
   });
 
   test('finalizeCodeReach keeps repository-relative paths', () => {

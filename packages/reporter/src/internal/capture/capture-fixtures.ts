@@ -71,6 +71,7 @@ import { codeReachRoots, pageMapFetcher, resolveCodeReach, startCodeReach, stopC
 // (`application/tests/fixtures.ts`) and this package's own tests import it
 // from here, as the mirror does the quiet-capture helpers.
 export { probeElementAttrs, internalCall, boxCaptureFrames };
+export { codeReachRoots, pageMapFetcher, resolveCodeReach, startCodeReach, stopCodeReach };
 export type { ProbeArg, ProbedAttrs };
 
 /** A Playwright fixture's `use` callback — hands the fixture value to the test. */
@@ -270,7 +271,7 @@ function maybeStartCodeReach(page: Page): Promise<boolean> {
 }
 
 /** The code reach roots from `PIWI_CODE_REACH_ROOTS` (a JSON array or a path list). */
-function configuredCodeReachRoots(): string[] | null {
+export function configuredCodeReachRoots(): string[] | null {
   const raw = process.env.PIWI_CODE_REACH_ROOTS?.trim();
   if (!raw) return null;
   try {

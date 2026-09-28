@@ -4,7 +4,7 @@ import base from '../../shared/oxlint.baseConfig.mts'
 export default defineConfig({
   ...base,
   plugins: ['typescript', 'unicorn', 'import'],
-  ignorePatterns: [...base.ignorePatterns, 'dist/**'],
+  ignorePatterns: [...base.ignorePatterns, 'dist/**', 'tests/fixtures/**'],
   rules: {
     ...base.rules,
     // Reporter conventions (keep the package uniform — see ARCHITECTURE.md):

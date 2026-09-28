@@ -23,6 +23,14 @@ export interface SourceMapLookup {
   sources: string[];
   /** The index in `sources` of the source a 0-based generated line and column map to; null when unmapped. */
   sourceAt(line: number, column: number): number | null;
+  /** Whether a segment at or after a generated position and before an end position maps to a source index. */
+  mapsBetween(source: number, start: GeneratedPosition, end: GeneratedPosition): boolean;
+}
+
+/** A 0-based position in generated code. */
+export interface GeneratedPosition {
+  line: number;
+  column: number;
 }
 
 const BASE64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
@@ -141,6 +149,27 @@ export function decodeSourceMap(raw: RawSourceMap): SourceMapLookup | null {
       const source = segments.sources[lo]!;
       return source < 0 ? null : source;
     },
+    mapsBetween(source, start, end) {
+      for (let line = start.line; line <= end.line && line < lines.length; line++) {
+        const segments = lines[line];
+        if (!segments) continue;
+        // The first segment at or after the start column on the start line.
+        let i = 0;
+        if (line === start.line) {
+          let hi = segments.columns.length;
+          while (i < hi) {
+            const mid = (i + hi) >> 1;
+            if (segments.columns[mid]! < start.column) i = mid + 1;
+            else hi = mid;
+          }
+        }
+        for (; i < segments.columns.length; i++) {
+          if (line === end.line && segments.columns[i]! >= end.column) return false;
+          if (segments.sources[i] === source) return true;
+        }
+      }
+      return false;
+    },
   };
 }
 
@@ -187,7 +216,8 @@ export function decodeDataUrl(url: string): string | null {
 
 /**
  * A source path from a map or a module URL, reduced to a file path: bundler
- * prefixes (`webpack://<namespace>/`, `vite:`, `file://`), Vite's `/@fs`
+ * prefixes (`webpack://<namespace>/`, `vite:`, `turbopack:///[project]/`,
+ * `file://`), Vite's `/@fs`
  * prefix, a query and a hash dropped, and `./` segments removed. Absolute
  * paths stay absolute; others are relative to a root the caller picks.
  */
@@ -195,6 +225,8 @@ export function normalizeSourcePath(source: string): string {
   let s = source.replace(/[?#].*$/, '');
   s = s.replace(/^webpack:\/\/[^/]*\//, '').replace(/^webpack:\/\//, '');
   s = s.replace(/^(?:vite|rollup|turbopack|ng):\/*/, '');
+  // Turbopack names the project root `[project]`.
+  s = s.replace(/^\[project\]\//, '');
   s = s.replace(/^file:\/\//, '');
   s = s.replace(/^\/@fs\//, '/');
   s = s.replace(/^\/@id\//, '');
