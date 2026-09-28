@@ -36,7 +36,12 @@ test.describe('connect, authentication off', () => {
     await waitForHydration(page);
     await expect(page.getByTestId('connect-client')).toHaveText('Piwi Picker in Chrome on Linux');
     await expect(page.getByTestId('connect-code')).toHaveText(codes.userCode);
-    await page.getByRole('button', { name: 'Allow' }).click();
+    // The link carries the code, so Allow waits for the user to confirm their own Piwi Picker shows it.
+    await expect(page.getByText('If you did not just click Connect in Piwi Picker, deny')).toBeVisible();
+    const allow = page.getByRole('button', { name: 'Allow' });
+    await expect(allow).toBeDisabled();
+    await page.getByRole('checkbox', { name: 'My Piwi Picker shows this same code' }).check();
+    await allow.click();
     await expect(page.getByText('Allowed.')).toBeVisible();
 
     expect(await poll(request, '', codes.deviceCode)).toEqual({ status: 'approved', apiKey: '', user: null });
@@ -103,6 +108,7 @@ test.describe.serial('connect, authentication on', () => {
     await page.getByRole('button', { name: 'Login' }).click();
     await page.waitForURL(/\/extension\/connect\?code=/);
     await expect(page.getByTestId('connect-code')).toHaveText(codes.userCode);
+    await page.getByRole('checkbox', { name: 'My Piwi Picker shows this same code' }).check();
     await page.getByRole('button', { name: 'Allow' }).click();
     await expect(page.getByText('Allowed.')).toBeVisible();
 

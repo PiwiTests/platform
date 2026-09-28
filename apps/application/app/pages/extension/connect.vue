@@ -2,7 +2,9 @@
 // Where Piwi Picker sends the user to allow a connection (an RFC 8628 device
 // authorization): the extension shows the same code and polls until the
 // signed-in user answers. The auth middleware signs the user in first and
-// comes back here.
+// comes back here. The link carries the code, so anyone can send one: Allow
+// stays disabled until the user confirms their own Piwi Picker shows it
+// (RFC 8628 §5.4).
 import type { ConnectRequestView } from '~~/server/utils/extension-connect';
 
 definePageMeta({ layout: false });
@@ -18,6 +20,7 @@ const loadError = ref('');
 const loading = ref(true);
 const deciding = ref<'allow' | 'deny' | null>(null);
 const decideError = ref('');
+const codeConfirmed = ref(false);
 
 const signedInAs = computed(() => {
   const user = authState.value.user;
@@ -88,11 +91,15 @@ onMounted(() => {
       </div>
 
       <div v-else-if="request" class="space-y-5">
+        <p
+          class="text-lg sm:text-xl font-semibold text-highlighted font-mono tracking-widest text-center"
+          data-testid="connect-code"
+        >
+          {{ request.userCode }}
+        </p>
         <dl class="grid grid-cols-[6rem_1fr] gap-x-4 gap-y-3 text-sm">
           <dt class="font-semibold text-highlighted">Client</dt>
           <dd class="text-highlighted" data-testid="connect-client">{{ request.clientName }}</dd>
-          <dt class="font-semibold text-highlighted">Code</dt>
-          <dd class="font-mono text-highlighted tracking-widest" data-testid="connect-code">{{ request.userCode }}</dd>
           <template v-if="signedInAs">
             <dt class="font-semibold text-highlighted">Account</dt>
             <dd class="text-highlighted">{{ signedInAs }}</dd>
@@ -101,7 +108,8 @@ onMounted(() => {
 
         <template v-if="request.status === 'pending'">
           <p class="text-sm text-highlighted leading-relaxed">
-            Check that Piwi Picker shows the same code.
+            If you did not just click Connect in Piwi Picker, deny: someone may have sent you this link to get access in
+            your name.
             <template v-if="config.public.authEnabled">
               Allowing creates an API key named after this browser, with your role and project access. You can revoke it
               in your account’s API keys.
@@ -110,6 +118,11 @@ onMounted(() => {
               Authentication is off on this instance, so no key is needed: allowing only confirms the connection.
             </template>
           </p>
+          <UCheckbox
+            v-model="codeConfirmed"
+            label="My Piwi Picker shows this same code"
+            data-testid="connect-code-confirm"
+          />
           <UAlert v-if="decideError" color="error" variant="subtle" :title="decideError" />
           <div class="flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
             <UButton
@@ -124,8 +137,9 @@ onMounted(() => {
             <UButton
               color="primary"
               label="Allow"
+              title="Tick the box once Piwi Picker shows this same code"
               :loading="deciding === 'allow'"
-              :disabled="deciding !== null"
+              :disabled="deciding !== null || !codeConfirmed"
               class="justify-center"
               @click="decide(true)"
             />

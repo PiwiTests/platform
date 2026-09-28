@@ -19,7 +19,8 @@ once.
 2. Click **Connect**. The browser asks to let Piwi Picker reach that one address; allow it.
 3. A tab opens on your instance. Sign in if asked, with a password or your usual sign-in provider: you come back to
    the same page. It names the connecting browser ("Piwi Picker in Chrome on Windows") and shows a code.
-4. Check that the settings page shows the same code, then click **Allow**.
+4. Check that the settings page shows the same code, tick **My Piwi Picker shows this same code**, then click
+   **Allow**. The link carries the code, so anyone could send you one: if you did not just click **Connect**, deny.
 
 The tab closes, the settings say **Connected as** your name, and the instance's URL patterns appear under **From
 your Piwi instance**.
