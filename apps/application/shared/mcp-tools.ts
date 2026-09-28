@@ -459,7 +459,21 @@ export const MCP_TOOL_DEFS = [
     module: 'workflow',
     capability: 'flake-lab',
     description:
-      'The suspects of a flaky test, read from its last 30 days (at most 200 attempts): the slow or failed routes, the tests running alongside or just before it on the same worker, the load and the browser project its failures share and its passes do not. Each suspect has its raw counts (failuresWith of failures, passesWith of passes), its lift and the condition that would test it (delay a route, fail it, throttle the CPU, run another test alongside or first, pin a project); at most 5, a suspect needs 3 failures and a lift of 2. Alongside suspects list the paths both tests write and say when the overlap crossed shards (approximate). `context` holds factors with no condition (first attempt, UTC hour, another run on the environment). `experiments` lists lab runs on the test, empty until the lab exists. Use it before changing a flaky test, to know what to reproduce.',
+      'The suspects of a flaky test, read from its last 30 days (at most 200 attempts): the slow or failed routes, the tests running alongside or just before it on the same worker, the load and the browser project its failures share and its passes do not. Each suspect has its raw counts (failuresWith of failures, passesWith of passes), its lift and the condition that would test it (delay a route, fail it, throttle the CPU, run another test alongside or first, pin a project); at most 5, a suspect needs 3 failures and a lift of 2. Alongside suspects list the paths both tests write and say when the overlap crossed shards (approximate). `context` holds factors with no condition (first attempt, UTC hour, another run on the environment). `experiments` lists the test’s latest finished `piwi flake` experiments (at most 10, newest first): kind (reproduce or verify), verdict, the commit it ran and the commit of the failures, and each arm with its conditions, runs, matching failures (same error as history), other failures, p-value against the control and verdict; each suspect also carries `lab`, its latest arm result. Use it before changing a flaky test, to know what to reproduce and whether a fix was verified.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        testCaseId: { type: 'number', description: 'Test case ID (testCaseId from list_flaky_tests)' },
+      },
+      required: ['testCaseId'],
+    },
+  },
+  {
+    name: 'plan_flake_experiment',
+    module: 'workflow',
+    capability: 'flake-lab',
+    description:
+      'The Flake Lab plan for a flaky test, for an agent that runs the lab itself: the `piwi flake` and `piwi flake verify` commands to run from the project root, the control arm and one arm per suspect (most likely first) with the conditions each applies (delay or fail a route, throttle the CPU, run another test alongside or first, pin a project), the runs and the early stop, the error signatures a failure must match, and an estimate from the test’s median duration. Records nothing: the command records the experiment when it runs. `plan` is the full plan, which `piwi flake --plan <file>` also accepts to run without the dashboard. After a fix, run the verify command: exit 0 means the fix held under the condition that reproduced the failure.',
     inputSchema: {
       type: 'object',
       properties: {

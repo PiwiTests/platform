@@ -2,19 +2,23 @@
 /**
  * The Flakiness tab of a flaky test: the suspects its history points at, each
  * with the counts behind it (failures and passes showing the factor, out of
- * all) and the condition a lab would apply to test it; then the factors with
- * no condition, as context; then where experiments will go.
+ * all), the condition a lab would apply to test it and its latest lab result;
+ * then the factors with no condition, as context; then the Flake Lab
+ * experiments run on the test and the commands that run more.
  *
- * Loaded from `/flake-profile` when the tab mounts (under a `v-if`). The
+ * Loaded from `/flake-profile` and `/flake-experiments` when the tab mounts
+ * (under a `v-if`). The
  * `suspect` query parameter, set by a link from the Attempts diff, marks one
  * suspect and scrolls to it.
  */
 import type { FlakeProfile, FlakeSuspect } from '#shared/handlers/flake-profile';
+import { latestSuspectResults, type FlakeExperimentRecord, type FlakeSuspectResult } from '#shared/flake-lab';
 
 const props = defineProps<{ testCaseId: number }>();
 
 const route = useRoute();
 const profile = ref<FlakeProfile | null>(null);
+const experiments = ref<FlakeExperimentRecord[]>([]);
 const loading = ref(true);
 const failed = ref(false);
 
@@ -23,16 +27,77 @@ watch(
   async (id) => {
     loading.value = true;
     failed.value = false;
-    try {
-      profile.value = await $fetch<FlakeProfile>(`/api/test-cases/${id}/flake-profile`);
-    } catch {
-      failed.value = true;
-    } finally {
-      loading.value = false;
-    }
+    const [p, e] = await Promise.allSettled([
+      $fetch<FlakeProfile>(`/api/test-cases/${id}/flake-profile`),
+      $fetch<{ items: FlakeExperimentRecord[] }>(`/api/test-cases/${id}/flake-experiments`),
+    ]);
+    if (p.status === 'fulfilled') profile.value = p.value;
+    else failed.value = true;
+    experiments.value = e.status === 'fulfilled' ? e.value.items : [];
+    loading.value = false;
   },
   { immediate: true },
 );
+
+const results = computed(() => latestSuspectResults(experiments.value));
+const reproduced = computed(() => experiments.value.some((e) => e.kind === 'reproduce' && e.verdict === 'reproduced'));
+
+const { copy, copied } = useCopy();
+const copiedCommand = ref<string | null>(null);
+const reproduceCommand = computed(() => `npx @piwitests/reporter flake ${props.testCaseId}`);
+const verifyCommand = computed(() => `npx @piwitests/reporter flake verify ${props.testCaseId}`);
+async function copyCommand(command: string) {
+  await copy(command, { toast: 'Command copied' });
+  copiedCommand.value = command;
+}
+
+const VERDICT_WORDS: Record<string, string> = {
+  reproduced: 'reproduced',
+  amplified: 'amplified',
+  'not-reproduced': 'not reproduced',
+  verified: 'fix verified',
+  'still-fails': 'still fails',
+  inconclusive: 'inconclusive',
+};
+
+function verdictWord(verdict: string | null): string {
+  return verdict ? (VERDICT_WORDS[verdict] ?? verdict) : 'no verdict';
+}
+
+/** "reproduced 3/4 · 2 days ago". */
+function labLine(r: FlakeSuspectResult): string {
+  const when = r.finishedAt ? ` · ${formatRelativeTime(r.finishedAt)}` : '';
+  return `${verdictWord(r.verdict)} ${r.matchingFailures}/${r.runs}${when}`;
+}
+
+function formatP(p: number | null): string {
+  if (p == null) return '';
+  return p < 0.001 ? 'p < 0.001' : `p = ${p.toFixed(3)}`;
+}
+
+/** The experiment in one sentence: what reproduced it, or what the verify rerun found. */
+function experimentSentence(e: FlakeExperimentRecord): string {
+  const control = e.arms.find((a) => a.key === 'control');
+  const against = control ? ` against ${control.matchingFailures}/${control.runs}` : '';
+  if (e.kind === 'verify') {
+    const arm = e.arms.find((a) => a.key === 'verify');
+    if (!arm) return `Verify: ${verdictWord(e.verdict)}`;
+    return `Verify: ${verdictWord(e.verdict)} (${arm.matchingFailures}/${arm.runs} under ${arm.label}${against})`;
+  }
+  const arm = e.arms.find((a) => a.id === e.reproducingArmId);
+  if (arm) return `Reproduced by ${arm.label} (${arm.matchingFailures}/${arm.runs}${against}, ${formatP(arm.pValue)})`;
+  const tried = e.arms.filter((a) => a.key !== 'control').length;
+  return `${verdictWord(e.verdict).replace(/^./, (c) => c.toUpperCase())} (${tried} arm${tried === 1 ? '' : 's'}${against})`;
+}
+
+const summaryLine = computed(() => {
+  const list = experiments.value;
+  if (list.length === 0) return '';
+  const last = list[0]!;
+  const count = list.length === 1 ? '1 experiment' : `${list.length} experiments`;
+  const commit = last.commit ? ` on ${last.commit.slice(0, 7)}` : '';
+  return `${count} · last: ${verdictWord(last.verdict)}${commit}`;
+});
 
 const marked = computed(() => (typeof route.query.suspect === 'string' ? route.query.suspect : null));
 
@@ -84,20 +149,21 @@ function detailLine(s: FlakeSuspect): string | null {
       <div v-else-if="profile" data-testid="flake-suspects">
         <!-- From md up the rows line up as columns; below it each row stacks. -->
         <div
-          class="hidden md:grid md:grid-cols-[minmax(0,1fr)_6rem_6rem_10rem] gap-x-4 px-3 pb-2 text-xs text-muted"
+          class="hidden md:grid md:grid-cols-[minmax(0,1fr)_5rem_5rem_9rem_11rem] gap-x-4 px-3 pb-2 text-xs text-muted"
           aria-hidden="true"
         >
           <span>Suspect</span>
           <span class="text-right">Failures</span>
           <span class="text-right">Passes</span>
           <span>Condition</span>
+          <span>Lab</span>
         </div>
         <ol class="rounded-lg border border-default divide-y divide-default">
           <li
             v-for="(s, i) in profile.suspects"
             :key="s.id"
             :data-suspect-id="s.id"
-            class="grid grid-cols-2 md:grid-cols-[minmax(0,1fr)_6rem_6rem_10rem] gap-x-4 gap-y-1 px-3 py-2.5"
+            class="grid grid-cols-2 md:grid-cols-[minmax(0,1fr)_5rem_5rem_9rem_11rem] gap-x-4 gap-y-1 px-3 py-2.5"
             :class="marked === s.id ? 'bg-primary/5 ring-1 ring-inset ring-primary/40' : ''"
             data-testid="flake-suspect"
           >
@@ -125,6 +191,11 @@ function detailLine(s: FlakeSuspect): string | null {
             <p class="col-span-2 md:col-span-1 text-sm text-highlighted">
               <span class="md:hidden text-xs text-muted">Condition </span>{{ s.conditionLabel }}
             </p>
+            <p class="col-span-2 md:col-span-1 text-sm text-highlighted tabular-nums" data-testid="flake-suspect-lab">
+              <span class="md:hidden text-xs text-muted">Lab </span>
+              <template v-if="results.get(s.id)">{{ labLine(results.get(s.id)!) }}</template>
+              <span v-else class="text-muted">not tested</span>
+            </p>
           </li>
         </ol>
       </div>
@@ -141,11 +212,75 @@ function detailLine(s: FlakeSuspect): string | null {
       </ul>
     </SectionCard>
 
-    <SectionCard icon="i-lucide-flask-conical" title="Experiments">
-      <p class="text-sm text-highlighted leading-relaxed" data-testid="flake-experiments">
-        None yet. A later release adds the lab: it applies each suspect’s condition next to a control run until the
-        failure reproduces. In the desktop app, Reproduce locally runs this test 20 times with a trace.
-      </p>
+    <SectionCard
+      icon="i-lucide-flask-conical"
+      title="Experiments"
+      help="case.flake-experiments"
+      :subtitle="summaryLine || undefined"
+      data-shot="flake-experiments"
+    >
+      <div class="space-y-3" data-testid="flake-experiments">
+        <p v-if="!loading && experiments.length === 0" class="text-sm text-highlighted leading-relaxed">
+          None yet. Run the lab from the project root: it applies each suspect’s condition next to a control, with
+          retries off, until the failure reproduces.
+        </p>
+        <ol v-else-if="experiments.length" class="rounded-lg border border-default divide-y divide-default">
+          <li
+            v-for="e in experiments"
+            :key="e.id"
+            class="px-3 py-2.5 space-y-1"
+            data-testid="flake-experiment"
+            :data-verdict="e.verdict ?? ''"
+          >
+            <p class="text-sm text-highlighted break-words">{{ experimentSentence(e) }}</p>
+            <p class="text-xs text-muted break-words">
+              <span v-if="e.commit" class="font-mono">{{ e.commit.slice(0, 7) }}</span>
+              <span v-if="e.commit"> · </span>
+              <span v-if="e.failureCommit && e.commit && !e.commit.startsWith(e.failureCommit.slice(0, 7))"
+                >failures on <span class="font-mono">{{ e.failureCommit.slice(0, 7) }}</span> ·
+              </span>
+              {{ e.source }}<span v-if="e.machine"> on {{ e.machine }}</span>
+              <span v-if="e.playwrightProject"> · {{ e.playwrightProject }}</span>
+              <span v-if="e.finishedAt"> · {{ formatRelativeTime(e.finishedAt) }}</span>
+            </p>
+            <ul class="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-muted">
+              <li v-for="a in e.arms" :key="a.id" class="tabular-nums">
+                {{ a.label }} {{ a.matchingFailures }}/{{ a.runs
+                }}<span v-if="a.otherFailures"> (+{{ a.otherFailures }} other)</span
+                ><span v-if="a.verdict && a.key !== 'control'"> · {{ verdictWord(a.verdict) }}</span>
+              </li>
+            </ul>
+          </li>
+        </ol>
+        <div class="flex flex-wrap gap-2">
+          <UButton
+            size="sm"
+            color="neutral"
+            variant="outline"
+            :icon="copied && copiedCommand === reproduceCommand ? 'i-lucide-check' : 'i-lucide-clipboard'"
+            :title="reproduceCommand"
+            data-testid="copy-flake-command"
+            @click="copyCommand(reproduceCommand)"
+          >
+            Copy command
+          </UButton>
+          <UButton
+            v-if="reproduced"
+            size="sm"
+            color="neutral"
+            variant="outline"
+            :icon="copied && copiedCommand === verifyCommand ? 'i-lucide-check' : 'i-lucide-clipboard'"
+            :title="verifyCommand"
+            data-testid="copy-flake-verify-command"
+            @click="copyCommand(verifyCommand)"
+          >
+            Copy verify command
+          </UButton>
+        </div>
+        <p class="text-xs text-muted font-mono break-all">
+          {{ reproduced ? verifyCommand : reproduceCommand }}
+        </p>
+      </div>
     </SectionCard>
   </div>
 </template>

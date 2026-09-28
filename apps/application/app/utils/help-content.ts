@@ -546,6 +546,12 @@ export const HELP_TOPICS = {
     doc: 'features/flaky-tests#suspects',
   },
 
+  'case.flake-experiments': {
+    title: 'Flake Lab experiments',
+    text: 'Each `piwi flake` run on this test: a control with no condition, then one arm per suspect, run with retries off on the machine that ran the command. An arm counts only failures with the same error as the test’s failures in history, and stops at 3 of them. It reproduced when at least half its runs failed that way and a one-sided Fisher exact test against the control gives p < 0.05. A verify experiment reruns the reproducing arm after a fix; it holds when enough runs pass under the same condition.',
+    doc: 'features/flake-lab',
+  },
+
   // ── Test case across runs ─────────────────────────────────────────────
   'case.history-chart': {
     title: 'Duration trend',

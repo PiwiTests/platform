@@ -968,6 +968,33 @@ describe('known-flake-suspect', () => {
     expect(clue.citations).toEqual([{ section: 'recurrenceFlakiness' }]);
   });
 
+  test('strong: a lab run reproduced the suspect', () => {
+    const input = baseInput({
+      networkRequests: [
+        { method: 'GET', url: 'https://shop.test/api/cart', status: 200, duration: 2_100, startTime: T0 + 200 },
+      ],
+      flakeSuspects: [
+        {
+          ...slowCart,
+          reproduced: {
+            label: 'delay GET /api/cart 1.8 s',
+            matchingFailures: 3,
+            runs: 4,
+            controlMatchingFailures: 0,
+            controlRuns: 10,
+            pValue: 0.011,
+          },
+        },
+      ],
+    });
+    const clue = runClues(input).find((c) => c.rule === 'known-flake-suspect')!;
+    expect(clue.strength).toBe('strong');
+    expect(clue.title).toBe('A reproduced flake cause: GET /api/cart slower (≥1.6 s)');
+    expect(clue.detail).toBe(
+      "GET /api/cart took 2.1 s; it is slow (1.6 s or more) in 7 of this test's 8 failures and 3 of its 44 passes; a lab run reproduced it: 3 of 4 under delay GET /api/cart 1.8 s, against 0 of 10 without, p = 0.011.",
+    );
+  });
+
   test('negative: the suspect is not shown by this execution', () => {
     const input = baseInput({ flakeSuspects: [{ ...slowCart, executionIds: [11, 12] }] });
     expect(rules(input)).not.toContain('known-flake-suspect');

@@ -10,6 +10,7 @@
  * counts exactly as a run that stopped there.
  */
 import {
+  FLAKE_BATCH_RUNS,
   type FlakeAfterCondition,
   type FlakeAlongsideCondition,
   type FlakeCondition,
@@ -19,8 +20,7 @@ import {
 } from '@piwitests/core/flake-plan';
 import { flakeArmVerdict, flakeFixVerified, type FlakeVerdict } from '@piwitests/core/flake-verdict';
 
-/** Runs in one Playwright invocation of an arm that may stop early. */
-export const FLAKE_BATCH_RUNS = 5;
+export { FLAKE_BATCH_RUNS, estimateFlakeSessionMs as estimateMs } from '@piwitests/core/flake-plan';
 
 /** A plan's arm as the dashboard returns it. */
 export interface LabArm {
@@ -255,25 +255,6 @@ export function parseDuration(text: string): number | null {
     consumed += m[0];
   }
   return consumed.replace(/\s/g, '') === trimmed.replace(/\s/g, '') && total > 0 ? Math.round(total) : null;
-}
-
-/** A spawn of Playwright costs about this much on top of the tests (start, workers, browser). */
-export const SPAWN_OVERHEAD_MS = 3_000;
-
-/**
- * The longest a session can take: every run of every arm at the test's median
- * duration (twice it for an `alongside` or `after` arm, which runs two tests),
- * plus a Playwright start per batch. Null without a median duration.
- */
-export function estimateMs(arms: LabArm[], medianDurationMs: number | null): number | null {
-  if (medianDurationMs == null) return null;
-  let total = 0;
-  for (const arm of arms) {
-    const perRun = medianDurationMs * (workerCondition(arm.conditions) ? 2 : 1);
-    const batches = arm.stopAt == null ? 1 : Math.ceil(arm.runs / FLAKE_BATCH_RUNS);
-    total += arm.runs * perRun + batches * SPAWN_OVERHEAD_MS;
-  }
-  return total;
 }
 
 /** A duration for the terminal: `45 s`, `4 min`, `1 h 10 min`. */

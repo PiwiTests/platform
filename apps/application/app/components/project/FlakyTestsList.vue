@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { FlakyTest } from '~~/types/api';
 import type { TopFlakeSuspect } from '#shared/handlers/flake-profile';
+import type { FlakeLabSummary } from '#shared/handlers/flake-lab';
 import { buildTestRowBadges } from '~/utils/test-row-badges';
 
 const props = defineProps<{
@@ -44,17 +45,18 @@ const filteredTests = computed(() => {
 
 watch(tests, (list) => emit('count', list?.length ?? 0));
 
-// The top suspect of each listed test, read after the list so the list never
-// waits on it. Hidden when the project declines flake suspects.
+// The top suspect of each listed test and its latest Flake Lab result, read
+// after the list so the list never waits on them. Hidden when the project
+// declines flake suspects.
 const { isHidden: capabilityHidden } = await useProjectCapabilities(Number(props.projectId));
-const topSuspects = ref(new Map<number, TopFlakeSuspect>());
+const topSuspects = ref(new Map<number, TopFlakeSuspect & { lab: FlakeLabSummary | null }>());
 watch(
   tests,
   async (list) => {
     if (!list?.length || capabilityHidden('flake-lab')) return;
     const ids = list.map((t) => t.testCaseId).join(',');
     try {
-      const res = await $fetch<{ items: TopFlakeSuspect[] }>(
+      const res = await $fetch<{ items: Array<TopFlakeSuspect & { lab: FlakeLabSummary | null }> }>(
         `/api/projects/${props.projectId}/flake-suspects?testCaseIds=${ids}`,
       );
       topSuspects.value = new Map(res.items.map((item) => [item.testCaseId, item]));
@@ -64,6 +66,12 @@ watch(
   },
   { immediate: true },
 );
+
+/** The latest Flake Lab experiment, when it reproduced the test. */
+function reproducedBy(testCaseId: number): FlakeLabSummary | null {
+  const lab = topSuspects.value.get(testCaseId)?.lab;
+  return lab?.verdict === 'reproduced' ? lab : null;
+}
 
 function suspectLink(testCaseId: number, suspectId: string): string {
   return `/test-cases/${testCaseId}?tab=flakiness&suspect=${encodeURIComponent(suspectId)}`;
@@ -201,6 +209,15 @@ function flakyBadges(test: FlakyTest) {
           <UBadge :color="scoreColor(test.score)" variant="subtle" size="xs" title="Flaky score">
             {{ test.score }}
           </UBadge>
+          <NuxtLink
+            v-if="reproducedBy(test.testCaseId)"
+            :to="`/test-cases/${test.testCaseId}?tab=flakiness`"
+            :title="`Reproduced by ${reproducedBy(test.testCaseId)!.label ?? 'a Flake Lab arm'}`"
+            data-testid="flaky-reproduced"
+            @click.stop
+          >
+            <UBadge color="neutral" variant="outline" size="xs">Reproduced</UBadge>
+          </NuxtLink>
           <span class="tabular-nums" title="Failure rate">{{ Math.round(test.failureRate * 100) }}% fail</span>
           <UButton
             v-if="canWrite"

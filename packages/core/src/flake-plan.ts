@@ -392,3 +392,29 @@ export function describeFlakeCondition(condition: FlakeCondition): string {
 export function describeFlakeArm(conditions: FlakeCondition[]): string {
   return conditions.length === 0 ? 'control' : conditions.map(describeFlakeCondition).join(' + ');
 }
+
+/** Runs in one Playwright invocation of an arm that may stop early. */
+export const FLAKE_BATCH_RUNS = 5;
+
+/** A start of Playwright costs about this much on top of the tests (workers, browser). */
+export const FLAKE_SPAWN_OVERHEAD_MS = 3_000;
+
+/**
+ * The longest a lab session can take: every run of every arm at the test's
+ * median duration (twice it for an `alongside` or `after` arm, which runs two
+ * tests), plus a Playwright start per batch of {@link FLAKE_BATCH_RUNS} (one
+ * for an arm that never stops early). Null without a median duration.
+ */
+export function estimateFlakeSessionMs(
+  arms: Array<{ conditions: FlakeCondition[]; runs: number; stopAt: number | null }>,
+  medianDurationMs: number | null,
+): number | null {
+  if (medianDurationMs == null) return null;
+  let total = 0;
+  for (const arm of arms) {
+    const twoTests = arm.conditions.some((c) => c.kind === 'alongside' || c.kind === 'after');
+    const batches = arm.stopAt == null ? 1 : Math.ceil(arm.runs / FLAKE_BATCH_RUNS);
+    total += arm.runs * medianDurationMs * (twoTests ? 2 : 1) + batches * FLAKE_SPAWN_OVERHEAD_MS;
+  }
+  return total;
+}
