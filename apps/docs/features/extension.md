@@ -103,7 +103,7 @@ keys that submit, close or move through a list, across the site's pages. A click
 hover menu) is recorded after that hover. **Stop** opens the
 review: **Copy as TypeScript** for a runnable spec that waits for each page it opens, **Download steps** for a
 [steps file](/reference/steps-format) to share or render with [`piwi codegen`](/reference/cli#codegen),
-[**Send to editor**](./editors#send-from-piwi-picker), or **Discard**. Passwords are never captured: the spec reads them from `process.env`.
+[**Send to editor**](./editors#send-from-piwi-picker), or **Discard**. Passwords are never captured; the spec reads `process.env`.
 
 ## Matching functions
 
