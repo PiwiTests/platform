@@ -180,7 +180,7 @@ test.describe('Verified fixes', () => {
 
     await page.goto(`/projects/${projectId}?tab=quarantine`);
     await waitForHydration(page);
-    await expect(page.getByTestId('quarantine-verified-fix')).toContainText('Fix verified on fix1234 — ready', {
+    await expect(page.getByTestId('quarantine-verified-fix')).toContainText('Verified fixed on fix1234 — ready', {
       timeout: 15_000,
     });
   });

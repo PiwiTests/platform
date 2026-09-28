@@ -149,7 +149,8 @@ async function release(testCaseId: number) {
                 :title="`Flake Lab verified the fix ${formatRelativeTime(entry.verifiedFix!.verifiedAt)}`"
                 data-testid="quarantine-verified-fix"
               >
-                Fix verified{{ entry.verifiedFix?.commit ? ` on ${entry.verifiedFix.commit.slice(0, 7)}` : '' }} — ready
+                Verified fixed{{ entry.verifiedFix?.commit ? ` on ${entry.verifiedFix.commit.slice(0, 7)}` : '' }} —
+                ready
               </UBadge>
               <UBadge v-else-if="entry.releaseProposed" color="success" variant="soft" size="xs">
                 {{ entry.consecutivePasses }} green — ready

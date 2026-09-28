@@ -250,7 +250,7 @@ function detailLine(s: FlakeSuspect): string | null {
           </template>
           <template v-else>
             <span class="text-highlighted"
-              >Fix verified<template v-if="verifiedFix.commit">
+              >Verified fixed<template v-if="verifiedFix.commit">
                 on <span class="font-mono">{{ verifiedFix.commit.slice(0, 7) }}</span></template
               >, then it retry-passed again {{ formatRelativeTime(verifiedFix.flakedAgainAt) }}</span
             >
