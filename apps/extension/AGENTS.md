@@ -293,6 +293,13 @@ still needs a manual reload on the `chrome://extensions` card to pick up a new b
 gives no way to trigger that from outside the browser), so the loop is: save → wait for the
 rebuild line → click reload.
 
+`scripts/dev.mjs` guards against two runaway cases; keep both. It rebuilds only when a watched
+path's mtime or size differs from when the last build started: on Windows `fs.watch` also reports
+access-time changes, so the build's own reads used to start the next build, and one save rebuilt
+until the process ran out of memory. And each build runs in a child process (`node
+scripts/build.mjs`), because Vite keeps memory from every build run in one process (several MB a
+rebuild, never released).
+
 Until that reload, the popup and every tool opened come from the new build, read from disk
 each time, while the background worker still runs the build that was loaded — so a message
 only the new build knows goes unanswered. Every bundle carries a build stamp

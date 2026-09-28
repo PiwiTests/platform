@@ -5,9 +5,9 @@
 // popup.html, which is loaded as a normal extension page and gets Vite's
 // standard (chunk-splitting-friendly) HTML-entry build.
 //
-// Exports buildExtension() so dev.mjs can re-run the whole thing on change;
-// running this file directly builds once. `--release` makes the build
-// reproducible (see `buildExtension`): the store zips are built that way, since
+// Running this file builds once; dev.mjs re-runs it in a fresh process on each
+// change rather than calling buildExtension() in its own. `--release` makes the
+// build reproducible (see `buildExtension`): the store zips are built that way, since
 // Firefox reviewers rebuild the source package and diff the result against the
 // submitted add-on.
 import { cpSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
@@ -95,6 +95,13 @@ export async function buildExtension({ release = false } = {}) {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const release = process.argv.includes('--release');
-  await buildExtension({ release });
+  try {
+    await buildExtension({ release });
+  } catch (error) {
+    // A failed build's message already carries Vite's report and code frame;
+    // the stack under it is only Rolldown's internals.
+    console.error(error.message);
+    process.exit(1);
+  }
   console.log(`Built extension${release ? ' (release)' : ''} into ${path.relative(process.cwd(), outDir)}`);
 }
