@@ -227,6 +227,22 @@ describe('conditions outside Chromium', () => {
     ]);
   });
 
+  it('routes the page in every arm, so an arm differs from its control by its conditions only', async () => {
+    for (const conditions of [[], [{ kind: 'cpu', rate: 4 }], [{ kind: 'project', name: 'firefox' }]]) {
+      const routed: string[] = [];
+      const page = {
+        context: () => ({ browser: () => ({ browserType: () => ({ name: () => 'firefox' }) }) }),
+        on: () => {},
+        mainFrame: () => null,
+        route: async (pattern: string) => {
+          routed.push(pattern);
+        },
+      } as unknown as Page;
+      await installFlakeConditions(page, plan({ arm: { id: 'a', conditions } }));
+      expect(routed).toEqual(['**/*']);
+    }
+  });
+
   it('reports every page condition unapplied when the attempt opened no page', () => {
     expect(unappliedReports(plan())).toEqual([
       { kind: 'delay', outcome: 'not-matched' },

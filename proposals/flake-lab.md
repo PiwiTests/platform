@@ -77,6 +77,9 @@ What changed while building PR 3:
 - The conditions go on the target's first page, and the page-creating paths (`browser.newPage`,
   `context.newPage`, the `page` fixture) wait for the install, so a CDP condition is on before the first
   navigation. Probe interception still installs without waiting.
+- The target's page is routed in every arm, the control and arms without a route condition included. Routing turns
+  off the HTTP cache and sends every request through Playwright, so an arm that routed while its control did not
+  would differ from it by more than its conditions (D5).
 - The probes' `slow` fault is the shared `delay` action, held until 5 s after the request started rather than 5 s
   after the response arrived.
 - On the server, `isLabRun` / `notLabRun` exclude probe and flake-lab runs together, and every former probe check

@@ -179,6 +179,11 @@ export function unappliedReports(plan: FlakePlan): FlakeConditionReport[] {
  * rule per route condition, and one CDP command per `cpu` or `network`
  * condition. A CDP condition on a browser other than Chromium, or one whose
  * session cannot open, is reported skipped rather than failing the attempt.
+ *
+ * The interception is installed in every arm, the control and an arm without
+ * route conditions included: routing turns off the page's HTTP cache and sends
+ * every request through Playwright, so an arm that routed while its control did
+ * not would differ from it by more than its conditions (D5).
  */
 export async function installFlakeConditions(page: Page, plan: FlakePlan): Promise<FlakeConditions> {
   const conditions = plan.arm.conditions;
@@ -203,7 +208,7 @@ export async function installFlakeConditions(page: Page, plan: FlakePlan): Promi
       },
     });
   });
-  if (rules.length > 0) await installRouteRules(page, rules);
+  await installRouteRules(page, rules);
 
   const cdp = conditions.map((c, i) => ({ i, command: cdpCommandFor(c) })).filter((c) => c.command);
   if (cdp.length > 0) {
