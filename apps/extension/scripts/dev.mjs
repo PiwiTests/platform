@@ -24,9 +24,21 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-// Everything the build reads. `dist/` is deliberately absent — watching the
+// Everything the build reads, relative to this workspace — including the two
+// workspaces it bundles from source (their package.json holds the `exports` map
+// imports resolve through). `dist/` is deliberately absent — watching the
 // build's own output would retrigger it forever.
-const WATCHED = ['src', 'public', 'popup.html', 'options.html', 'manifest.json'];
+const WATCHED = [
+  'src',
+  'public',
+  'popup.html',
+  'options.html',
+  'manifest.json',
+  '../../packages/core/src',
+  '../../packages/core/package.json',
+  '../../packages/picker-dom/src',
+  '../../packages/picker-dom/package.json',
+];
 const DEBOUNCE_MS = 80;
 
 let timer = null;

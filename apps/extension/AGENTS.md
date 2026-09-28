@@ -274,7 +274,7 @@ instead of needing a live browser for everything.
 | Command | Purpose |
 |---|---|
 | `npm run extension:build` | Build `dist/` (content scripts, background, popup, options page, manifest, icons, `_locales`) |
-| `npm run extension:dev` | Same build, re-run on every change to `src/`, `public/`, `popup.html`, `options.html`, or `manifest.json` |
+| `npm run extension:dev` | Same build, re-run on every change to `src/`, `public/`, `popup.html`, `options.html`, `manifest.json`, or the `src/` and `package.json` of `packages/core` and `packages/picker-dom` (bundled from source) |
 | `npm run extension:build:release` | Reproducible build: stamps the version instead of the build time into every bundle |
 | `npm run extension:zip` | Release build, then the store-ready zip, the source zip Firefox AMO requires, and the AMO listing metadata (see `PUBLISHING.md`) |
 | `npm run extension:typecheck` | TypeScript check |
