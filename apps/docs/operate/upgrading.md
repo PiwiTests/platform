@@ -128,7 +128,8 @@ The [desktop build](/features/desktop) bundles its own server, so installing a n
 database lives outside the app bundle and is migrated on first launch, exactly as the server does —
 which means the same forward-only rule applies. Back up its data directory before a major jump.
 On Windows an in-app update closes the app as soon as the download finishes and hands over to the
-installer, which reopens it when done.
+installer, which reopens it when done. The `.exe` installer runs without a window; the `.msi` one shows a
+progress bar.
 
 ## If an upgrade goes wrong
 

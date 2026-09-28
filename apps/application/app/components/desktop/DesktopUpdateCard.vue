@@ -5,6 +5,8 @@
  * releases made without the signing key) it explains why instead of showing a
  * dead button. Progress arrives as `piwi:update-progress` events while the
  * shell downloads and installs; the restart happens only when the user asks.
+ * An update the shell's startup check already found shows without a click, and
+ * a checkbox turns that check's native notification on or off.
  */
 const props = defineProps<{ currentVersion?: string | null }>();
 
@@ -15,6 +17,12 @@ interface UpdateStatus {
   date: string | null;
 }
 
+interface UpdateSettings {
+  supported: boolean;
+  notify_on_startup: boolean;
+  pending: UpdateStatus | null;
+}
+
 const toast = useToast();
 
 const available = ref(false);
@@ -23,12 +31,43 @@ const installing = ref(false);
 const installed = ref(false);
 const status = ref<UpdateStatus | null>(null);
 const progress = ref<{ downloaded: number; total: number | null } | null>(null);
+const supported = ref(false);
+const notifyOnStartup = ref(true);
+const savingNotify = ref(false);
 
 let unlisten: (() => void) | null = null;
 
-onMounted(() => {
-  available.value = !!tauriCore();
+onMounted(async () => {
+  const core = tauriCore();
+  available.value = !!core;
+  if (!core) return;
+  try {
+    const settings = await core.invoke<UpdateSettings>('desktop_get_update_settings');
+    supported.value = settings.supported;
+    notifyOnStartup.value = settings.notify_on_startup;
+    if (settings.pending && !status.value) status.value = settings.pending;
+  } catch {
+    // Leaves the checkbox hidden; checking by hand still works.
+  }
 });
+
+async function setNotifyOnStartup(value: boolean) {
+  const core = tauriCore();
+  if (!core) return;
+  savingNotify.value = true;
+  try {
+    await core.invoke('desktop_set_update_notification', { enabled: value });
+    notifyOnStartup.value = value;
+  } catch (error) {
+    toast.add({
+      title: 'Could not save the update notification setting',
+      description: errorMessage(error),
+      color: 'error',
+    });
+  } finally {
+    savingNotify.value = false;
+  }
+}
 
 onScopeDispose(() => {
   unlisten?.();
@@ -160,6 +199,15 @@ const progressPercent = computed(() => {
           The update is installed — it applies the next time the app starts.
         </p>
       </template>
+
+      <UCheckbox
+        v-if="supported"
+        :model-value="notifyOnStartup"
+        :disabled="savingNotify"
+        label="Show a notification at startup when an update is available"
+        description="Checks GitHub for a newer release each time the app starts."
+        @update:model-value="setNotifyOnStartup($event === true)"
+      />
     </div>
   </SectionCard>
 </template>

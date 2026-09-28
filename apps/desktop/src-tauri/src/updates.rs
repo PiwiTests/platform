@@ -13,13 +13,30 @@
 // as `piwi:update-progress` events; the dashboard then calls
 // `desktop_restart_app` to relaunch into the new version. On Windows the
 // install step never returns: the plugin launches the installer and exits the
-// app itself (see `SERVER_STOP_WAIT`).
+// app itself (see `SERVER_STOP_WAIT`). The per-user .exe channel runs its
+// installer quietly (`installMode: quiet` in `tauri.updater.nsis.conf.json`):
+// no window, then the installer relaunches the app. The .msi channel stays
+// passive — a progress bar — since its per-machine install needs the UAC
+// prompt a quiet msiexec cannot raise.
+//
+// At startup `notify_if_update_available` runs the same check once and
+// announces a found update with a native notification, unless the user turned
+// that off (`desktop_set_update_notification`, stored in the settings file).
 
 use std::sync::Mutex;
 use std::time::Duration;
 
+use serde_json::json;
 use tauri::{AppHandle, Emitter as _, Manager as _};
+use tauri_plugin_notification::NotificationExt as _;
+use tauri_plugin_store::StoreExt as _;
 use tauri_plugin_updater::UpdaterExt as _;
+
+use crate::STORE_FILE;
+
+/// Settings key: announce an available update with a notification at startup.
+/// Absent means on.
+const NOTIFY_ON_STARTUP_KEY: &str = "notifyUpdateOnStartup";
 
 /// How long the Windows install waits for the server sidecar to be gone.
 ///
@@ -40,6 +57,10 @@ pub struct UpdaterSupport(pub bool);
 #[derive(Default)]
 pub struct PendingUpdate(Mutex<Option<tauri_plugin_updater::Update>>);
 
+fn is_supported(app: &AppHandle) -> bool {
+    app.try_state::<UpdaterSupport>().is_some_and(|s| s.0)
+}
+
 #[derive(Clone, serde::Serialize)]
 pub struct UpdateStatus {
     /// `unsupported` | `uptodate` | `available`
@@ -58,15 +79,97 @@ impl UpdateStatus {
             date: None,
         }
     }
+
+    fn available(update: &tauri_plugin_updater::Update) -> Self {
+        Self {
+            state: "available",
+            version: Some(update.version.clone()),
+            notes: update.body.clone(),
+            date: update.date.map(|d| d.to_string()),
+        }
+    }
+}
+
+#[derive(serde::Serialize)]
+pub struct UpdateSettings {
+    /// Whether this build can update itself at all.
+    supported: bool,
+    notify_on_startup: bool,
+    /// The update found by an earlier check (the startup one included) and
+    /// not installed yet.
+    pending: Option<UpdateStatus>,
+}
+
+fn notify_on_startup(app: &AppHandle) -> bool {
+    app.store(STORE_FILE)
+        .ok()
+        .and_then(|s| s.get(NOTIFY_ON_STARTUP_KEY))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true)
+}
+
+#[tauri::command]
+pub fn desktop_get_update_settings(app: AppHandle) -> UpdateSettings {
+    let pending = app
+        .state::<PendingUpdate>()
+        .0
+        .lock()
+        .unwrap()
+        .as_ref()
+        .map(UpdateStatus::available);
+    UpdateSettings {
+        supported: is_supported(&app),
+        notify_on_startup: notify_on_startup(&app),
+        pending,
+    }
+}
+
+#[tauri::command]
+pub fn desktop_set_update_notification(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let store = app.store(STORE_FILE).map_err(|e| e.to_string())?;
+    store.set(NOTIFY_ON_STARTUP_KEY, json!(enabled));
+    store.save().map_err(|e| e.to_string())
+}
+
+/// Check once at startup and show a native notification when an update is
+/// available. Silent when the build cannot update, the user turned the
+/// notification off, or the check fails (offline, endpoint down) — a failure
+/// only goes to the log.
+pub async fn notify_if_update_available(app: AppHandle) {
+    if !is_supported(&app) || !notify_on_startup(&app) {
+        return;
+    }
+    match check(&app).await {
+        Ok(UpdateStatus {
+            state: "available",
+            version: Some(version),
+            ..
+        }) => {
+            let _ = app
+                .notification()
+                .builder()
+                .title(format!("Piwi Dashboard {version} is available"))
+                .body("Install it from Settings → About → Updates.")
+                .show();
+        }
+        Ok(_) => {}
+        Err(e) => {
+            if let Some(log) = app.try_state::<crate::LogFile>() {
+                crate::append_log(&log.0, &format!("startup update check failed: {e}"));
+            }
+        }
+    }
 }
 
 #[tauri::command]
 pub async fn desktop_check_update(app: AppHandle) -> Result<UpdateStatus, String> {
-    let supported = app
-        .try_state::<UpdaterSupport>()
-        .map(|s| s.0)
-        .unwrap_or(false);
-    if !supported {
+    check(&app).await
+}
+
+/// Ask the endpoint for a newer version and park a found one for
+/// `desktop_install_update`.
+async fn check(app: &AppHandle) -> Result<UpdateStatus, String> {
+    if !is_supported(app) {
         return Ok(UpdateStatus::bare("unsupported"));
     }
 
@@ -83,12 +186,7 @@ pub async fn desktop_check_update(app: AppHandle) -> Result<UpdateStatus, String
         .map_err(|e| e.to_string())?;
     match updater.check().await.map_err(|e| e.to_string())? {
         Some(update) => {
-            let status = UpdateStatus {
-                state: "available",
-                version: Some(update.version.clone()),
-                notes: update.body.clone(),
-                date: update.date.map(|d| d.to_string()),
-            };
+            let status = UpdateStatus::available(&update);
             app.state::<PendingUpdate>()
                 .0
                 .lock()
@@ -137,4 +235,29 @@ pub fn desktop_restart_app(app: AppHandle) {
     crate::confirm_stopping_local_runs(&app, "Restart Piwi?", "restarting", "Restart", move || {
         handle.restart();
     });
+}
+
+#[cfg(test)]
+mod tests {
+    /// The updater section of an overlay, read the way the plugin reads it.
+    fn overlay_updater(json: &str) -> tauri_plugin_updater::Config {
+        let overlay: serde_json::Value = serde_json::from_str(json).unwrap();
+        serde_json::from_value(overlay["plugins"]["updater"].clone()).unwrap()
+    }
+
+    #[test]
+    fn the_exe_channel_installs_quietly_and_relaunches() {
+        let config = overlay_updater(include_str!("../tauri.updater.nsis.conf.json"));
+        let windows = config
+            .windows
+            .expect("the .exe overlay sets the Windows install mode");
+        assert_eq!(windows.install_mode.nsis_args(), ["/S", "/R"]);
+    }
+
+    #[test]
+    fn the_msi_channel_keeps_its_progress_bar() {
+        let config = overlay_updater(include_str!("../tauri.updater.conf.json"));
+        let windows = config.windows.unwrap_or_default();
+        assert_eq!(windows.install_mode.msiexec_args(), ["/passive"]);
+    }
 }
