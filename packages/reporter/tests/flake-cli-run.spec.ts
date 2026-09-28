@@ -206,4 +206,23 @@ describe('piwi flake on a test that fails when /api/slow is slow', () => {
     expect(dashboard.requests.filter((r) => r.method === 'POST')).toHaveLength(posts);
     expect(dashboard.requests[dashboard.requests.length - 1]!.url).toMatch(/record=false/);
   }, 240_000);
+
+  it('answers a bisect step from the verify arm alone: good on the fix, bad on the race', async () => {
+    const posts = dashboard.requests.filter((r) => r.method === 'POST').length;
+    write('tests/checkout.spec.cjs', spec(true));
+    const good = await run(['verify', '42', '--bisect', '--source', 'desktop']);
+    expect(good.code, `${good.stdout}\n${good.stderr}`).toBe(0);
+    expect(good.stdout).toMatch(/Bisect step: good/);
+    expect(good.stdout).not.toMatch(/ {2}control /);
+    const planRequest = dashboard.requests[dashboard.requests.length - 1]!;
+    expect(planRequest.url).toMatch(/kind=verify/);
+    expect(planRequest.url).toMatch(/source=desktop/);
+    expect(planRequest.url).toMatch(/record=false/);
+
+    write('tests/checkout.spec.cjs', spec(false));
+    const bad = await run(['verify', '42', '--bisect']);
+    expect(bad.code, `${bad.stdout}\n${bad.stderr}`).toBe(1);
+    expect(bad.stdout).toMatch(/Bisect step: bad/);
+    expect(dashboard.requests.filter((r) => r.method === 'POST')).toHaveLength(posts);
+  }, 240_000);
 });

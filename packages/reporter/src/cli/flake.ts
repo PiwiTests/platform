@@ -8,7 +8,9 @@
  * prints each arm against the control with its verdict. The results go back to
  * the dashboard, which recomputes the verdicts and shows them on the test.
  * `piwi flake verify` reruns the arm that reproduced the test, and its
- * control, for enough runs to say the fix holds.
+ * control, for enough runs to say the fix holds. With `--bisect` it runs that
+ * arm alone, saves nothing and answers good, bad or skip in the exit codes
+ * `git bisect run` reads, so a bisect can ask it at each commit.
  */
 import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
@@ -18,8 +20,10 @@ import type { FlakeResultLine } from '@piwitests/core/flake-plan';
 import { FLAKE_PLAN_VERSION } from '@piwitests/core/flake-plan';
 import { PIWI_FLAKE_ENV, PIWI_PROBE_ENV } from '../internal/config/env.js';
 import {
+  EXIT_BISECT_SKIP,
   EXIT_ERROR,
   armDone,
+  bisectExitCode,
   armVerdict,
   countArm,
   estimateMs,
@@ -44,7 +48,7 @@ piwi flake — make a flaky test fail on demand, then prove the fix
 
 Usage:
   npx @piwitests/reporter flake <test> [options]
-  npx @piwitests/reporter flake verify <test> [--runs <n>] [--json]
+  npx @piwitests/reporter flake verify <test> [--runs <n>] [--bisect] [--json]
 
 <test> is a test case id (the number in its dashboard URL) or a spec file and
 line, tests/checkout.spec.ts:42, looked up in the project on the dashboard.
@@ -59,6 +63,10 @@ test's Flakiness tab. The capture fixtures must be in use (piwiFixtures).
 verify reruns the arm that last reproduced the test, and its control, until a
 matching failure appears or enough runs pass to say the fix holds.
 
+verify --bisect runs that arm alone at this checkout and saves nothing, for
+git bisect run: exit 0 (good) when enough runs pass, 1 (bad) on a failure with
+the same error as in CI, 125 (skip) when this commit cannot tell.
+
 Options:
   --suspect <n>        Run only the arm of suspect n (its rank on the Flakiness tab)
   --all                Also run every condition at once when none reproduces alone
@@ -70,6 +78,9 @@ Options:
   --plan <file>        Read the plan from a file (a saved flake-plan response, or
                        the plan the plan_flake_experiment MCP tool returns) and run
                        it without the dashboard; implies --no-upload
+  --bisect             verify only: one bisect step, as above; implies --no-upload
+  --source <where>     Where the lab runs, recorded on the experiment: cli, ci or
+                       desktop (default: ci when CI is set, else cli)
   --json               Print the results as JSON instead of text
   --server-url <url>   Dashboard URL (env PIWI_DASHBOARD_URL, .env, the desktop app)
   --api-key <key>      Reporter API key (env PIWI_API_KEY, .env)
@@ -77,10 +88,12 @@ Options:
 
 Exit codes: 0 an arm reproduced the failure (verify: the fix held),
             1 nothing reproduced (verify: it still fails, or too few runs),
-            2 error.
+            2 error; with --bisect, 0 good, 1 bad, 125 skip, 2 error.
 `.trim();
 
 const DEFAULT_BUDGET_MS = 15 * 60_000;
+const SOURCES = ['cli', 'ci', 'desktop'] as const;
+export type FlakeSource = (typeof SOURCES)[number];
 /** The most Playwright invocations one arm makes, discarded rounds included. */
 const MAX_BATCHES = 12;
 /** Lines of Playwright's output shown when an arm records nothing. */
@@ -95,6 +108,10 @@ export interface FlakeArgs {
   budgetMs: number;
   upload: boolean;
   planFile: string | null;
+  /** One bisect step: the verify arm alone, nothing saved, good/bad/skip exit codes. */
+  bisect: boolean;
+  /** Where the lab runs; null reads it from the environment. */
+  source: FlakeSource | null;
   json: boolean;
   serverUrl?: string;
   apiKey?: string;
@@ -113,6 +130,8 @@ export function parseFlakeArgs(argv: string[]): FlakeArgs {
     budgetMs: DEFAULT_BUDGET_MS,
     upload: true,
     planFile: null,
+    bisect: false,
+    source: null,
     json: false,
     help: false,
   };
@@ -157,6 +176,17 @@ export function parseFlakeArgs(argv: string[]): FlakeArgs {
         args.planFile = value(i++, arg);
         args.upload = false;
         break;
+      case '--bisect':
+        args.bisect = true;
+        args.upload = false;
+        break;
+      case '--source': {
+        const where = value(i++, arg);
+        if (!(SOURCES as readonly string[]).includes(where))
+          throw new Error(`--source must be one of ${SOURCES.join(', ')}`);
+        args.source = where as FlakeSource;
+        break;
+      }
       case '--json':
         args.json = true;
         break;
@@ -178,6 +208,7 @@ export function parseFlakeArgs(argv: string[]): FlakeArgs {
   if (args.suspect !== null && args.all) throw new Error('--suspect and --all cannot be used together');
   if (args.verify && (args.suspect !== null || args.all))
     throw new Error('verify reruns one arm: drop --suspect and --all');
+  if (args.bisect && !args.verify) throw new Error('--bisect is a verify option: flake verify <test> --bisect');
   return args;
 }
 
@@ -363,17 +394,20 @@ export async function runArm(runner: FlakeRunner, plan: LabPlan, arm: LabArm): P
 export async function runSession(
   runner: FlakeRunner,
   plan: LabPlan,
-  args: Pick<FlakeArgs, 'suspect' | 'all' | 'budgetMs'>,
+  args: Pick<FlakeArgs, 'suspect' | 'all' | 'budgetMs'> & { bisect?: boolean },
   onArm: (result: ArmResult, control: ArmCount | null) => void = () => {},
 ): Promise<{ control: ArmResult; arms: ArmResult[] }> {
   const started = runner.now();
-  const control: ArmResult = {
-    arm: plan.control,
-    count: await runArm(runner, plan, plan.control),
-    verdict: null,
-    pValue: null,
-    skipped: null,
-  };
+  // A bisect step judges its commit by the verify arm alone.
+  const control: ArmResult = args.bisect
+    ? { arm: plan.control, count: countArm([], plan.control), verdict: null, pValue: null, skipped: 'bisect step' }
+    : {
+        arm: plan.control,
+        count: await runArm(runner, plan, plan.control),
+        verdict: null,
+        pValue: null,
+        skipped: null,
+      };
   onArm(control, null);
   const arms = args.suspect != null ? plan.arms.filter((a) => a.rank === args.suspect) : plan.arms;
   const results: ArmResult[] = [];
@@ -450,15 +484,16 @@ export function armLine(result: ArmResult, stopAt: number | null): string {
 
 function verdictSentence(report: FlakeReport, arms: ArmResult[], control: ArmResult): string {
   const c = fraction(control.count);
+  const against = control.skipped ? '' : ` (control ${c})`;
   if (report.kind === 'verify') {
     const v = arms.find((a) => a.arm.id === 'verify');
     if (!v) return 'Verdict: the verify arm did not run.';
     const label = v.arm.label;
     if (report.verdict === 'verified') {
-      return `Verdict: fix verified: 0 matching failures in ${v.count.runs} runs under ${label} (control ${c})`;
+      return `Verdict: fix verified: 0 matching failures in ${v.count.runs} runs under ${label}${against}`;
     }
     if (report.verdict === 'still-fails') {
-      return `Verdict: still fails: ${fraction(v.count)} under ${label} failed as in CI (control ${c})`;
+      return `Verdict: still fails: ${fraction(v.count)} under ${label} failed as in CI${against}`;
     }
     return `Verdict: inconclusive: ${v.count.runs} clean runs under ${label}, too few to verify the fix`;
   }
@@ -471,6 +506,13 @@ function verdictSentence(report: FlakeReport, arms: ArmResult[], control: ArmRes
     return `Verdict: not reproduced; ${amplified.arm.label} made it fail more often (${fraction(amplified.count)} against ${c}, p ${formatP(amplified.pValue ?? 1)})`;
   }
   return `Verdict: not reproduced (control ${c})`;
+}
+
+/** The word `git bisect` would record for a step's exit code. */
+export function bisectStepWord(code: number): string {
+  if (code === 0) return 'good (the arm held at this commit)';
+  if (code === 1) return 'bad (a failure with the same error as in CI)';
+  return 'skip (too few clean runs to tell)';
 }
 
 function printHeader(plan: LabPlan, commit: string | null, estimate: number | null, budgetMs: number): void {
@@ -538,7 +580,7 @@ async function loadPlan(args: FlakeArgs, commit: string | null): Promise<{ plan:
     const testCaseId = await resolveTestCase(http, args.test, connection.project, connection.apiKey);
     const params = new URLSearchParams({
       kind: args.verify ? 'verify' : 'reproduce',
-      source: process.env.CI ? 'ci' : 'cli',
+      source: args.source ?? (process.env.CI ? 'ci' : 'cli'),
       machine: os.hostname(),
       record: String(args.upload),
     });
@@ -597,7 +639,7 @@ export async function runFlake(argv: string[], runner?: FlakeRunner): Promise<nu
   }
 
   const planned = [
-    plan.control,
+    ...(args.bisect ? [] : [plan.control]),
     ...(args.suspect != null ? plan.arms.filter((a) => a.rank === args.suspect) : plan.arms),
   ];
   if (args.all && plan.combined) planned.push(plan.combined);
@@ -611,13 +653,18 @@ export async function runFlake(argv: string[], runner?: FlakeRunner): Promise<nu
   let session: { control: ArmResult; arms: ArmResult[] };
   try {
     session = await runSession(runner ?? playwrightRunner(dir, log), plan, args, (result) => {
-      if (!args.json) console.log(armLine(result, result.arm.stopAt));
+      if (!args.json && !result.skipped?.startsWith('bisect')) console.log(armLine(result, result.arm.stopAt));
     });
   } catch (error) {
     console.error(`piwi flake: ${(error as Error).message}`);
     if (fs.existsSync(log)) {
       const tail = fs.readFileSync(log, 'utf8').trimEnd().split('\n').slice(-LOG_TAIL_LINES).join('\n');
       console.error(`\nPlaywright's output (${log}):\n${tail}`);
+    }
+    // A commit whose checkout cannot run the arm is skipped, not judged.
+    if (args.bisect) {
+      console.log('Bisect step: skip (this commit could not run the arm)');
+      return EXIT_BISECT_SKIP;
     }
     return EXIT_ERROR;
   }
@@ -657,7 +704,7 @@ export async function runFlake(argv: string[], runner?: FlakeRunner): Promise<nu
     }
   }
 
-  const code = exitCodeFor(verdict);
+  const code = args.bisect ? bisectExitCode(verdict) : exitCodeFor(verdict);
   const verifyCommand = `npx @piwitests/reporter flake verify ${plan.testCaseId}`;
   const report: FlakeReport = {
     kind: plan.kind,
@@ -692,6 +739,7 @@ export async function runFlake(argv: string[], runner?: FlakeRunner): Promise<nu
     return code;
   }
   const lines = [verdictSentence(report, session.arms, session.control)];
+  if (args.bisect) lines.push(`Bisect step: ${bisectStepWord(code)}`);
   if (uploaded)
     lines.push(`Saved to the test's Flakiness tab.${report.verifyCommand ? ` After your fix: ${verifyCommand}` : ''}`);
   else if (report.verifyCommand) lines.push(`Not saved (--no-upload). After your fix: ${verifyCommand}`);
