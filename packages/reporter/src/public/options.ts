@@ -93,9 +93,10 @@ export interface PiwiDashboardOptions {
   captureCodeReach?: boolean;
   /**
    * The directories module paths and source-map sources are resolved against
-   * for `captureCodeReach`, relative to the
-   * Playwright config. Defaults to the Playwright config's directory and the
-   * repository root.
+   * for `captureCodeReach`, relative to the Playwright config, before the
+   * repository root, which is always tried last. Defaults to the Playwright
+   * config's directory. Set it to the dev server's root when that is not the
+   * config's directory (Nuxt: `['app']`).
    */
   codeReachRoots?: string[];
   /**

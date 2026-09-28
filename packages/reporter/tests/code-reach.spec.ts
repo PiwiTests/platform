@@ -8,6 +8,7 @@ import { chromium, type Browser } from '@playwright/test';
 import type { JsCoverageEntry } from '@piwitests/core/code-reach';
 import {
   codeReachRoots,
+  pageMapFetcher,
   resetCodeReachCaches,
   resolveCodeReach,
   startCodeReach,
@@ -73,7 +74,11 @@ describe('resolveCodeReach', () => {
     // Line 0 maps to cart.ts, line 1 to node_modules, line 2 to unused.ts.
     const map = {
       version: 3,
-      sources: ['webpack://shop/./src/cart.ts', 'webpack://shop/./node_modules/vue/index.js', 'webpack://shop/./src/unused.ts'],
+      sources: [
+        'webpack://shop/./src/cart.ts',
+        'webpack://shop/./node_modules/vue/index.js',
+        'webpack://shop/./src/unused.ts',
+      ],
       mappings: ['AAAA', `A${vlq(1)}AA`, `A${vlq(1)}AA`].join(';'),
     };
     const source = 'function a(){}\nfunction b(){}\nfunction c(){}\na();b();\n//# sourceMappingURL=app.js.map';
@@ -97,7 +102,8 @@ describe('resolveCodeReach', () => {
   });
 
   it('a rebuilt bundle at the same address reads its new map', async () => {
-    const mapTo = (file: string) => JSON.stringify({ version: 3, sources: [`webpack://shop/./${file}`], mappings: 'AAAA' });
+    const mapTo = (file: string) =>
+      JSON.stringify({ version: 3, sources: [`webpack://shop/./${file}`], mappings: 'AAAA' });
     const build = (body: string): JsCoverageEntry => {
       const source = `${body}\n//# sourceMappingURL=app.js.map`;
       return {
@@ -130,10 +136,77 @@ describe('resolveCodeReach', () => {
     expect(await resolveCodeReach([entry], roots(), async () => null)).toEqual(['src/cart.ts']);
   });
 
-  it('defaults the roots to the config directory and the repository root', () => {
+  it('a module served by path with a map counts only for functions that map to its source', async () => {
+    // Line 0 is the module's own code; lines 1 and 2 are hot-reload code the dev server appends, with no mapping.
+    const body = 'export function pay() {}\nfunction $RefreshReg$() {}\nqueueMicrotask(() => {});\n';
+    // Segments at columns 0 and 7 of line 0.
+    const map = { version: 3, sources: ['Pay.vue'], mappings: 'AAAA,OAAO' };
+    const source = `${body}//# sourceMappingURL=data:application/json;base64,${Buffer.from(JSON.stringify(map)).toString('base64')}`;
+    const entry = (ran: 'own' | 'injected'): JsCoverageEntry => ({
+      url: `http://localhost:5173/src/components/Pay.vue?t=${ran}`,
+      source,
+      functions: [
+        { functionName: '', ranges: [{ startOffset: 0, endOffset: source.length, count: 1 }] },
+        { functionName: 'pay', ranges: [{ startOffset: 7, endOffset: 24, count: ran === 'own' ? 1 : 0 }] },
+        { functionName: '$RefreshReg$', ranges: [{ startOffset: 25, endOffset: 52, count: 1 }] },
+        { functionName: '', ranges: [{ startOffset: 68, endOffset: 76, count: 1 }] },
+      ],
+    });
+    expect(await resolveCodeReach([entry('injected')], roots(), async () => null)).toEqual([]);
+    expect(await resolveCodeReach([entry('own')], roots(), async () => null)).toEqual(['src/components/Pay.vue']);
+  });
+
+  it("drops a Vite dev server's base, read from its client's address", async () => {
+    const source = 'export function pay() {}\npay();';
+    const module = (url: string): JsCoverageEntry => ({
+      url,
+      source,
+      functions: [
+        { functionName: '', ranges: [{ startOffset: 0, endOffset: source.length, count: 1 }] },
+        { functionName: 'pay', ranges: [{ startOffset: 7, endOffset: 24, count: 1 }] },
+      ],
+    });
+    const client: JsCoverageEntry = { url: 'http://localhost:3000/_nuxt/@vite/client', source: '', functions: [] };
+    const pay = module('http://localhost:3000/_nuxt/components/Pay.vue?t=2');
+    expect(await resolveCodeReach([pay], { roots: [path.join(dir, 'src')], repoRoot: dir }, async () => null)).toEqual(
+      [],
+    );
+    resetCodeReachCaches();
+    expect(
+      await resolveCodeReach([client, pay], { roots: [path.join(dir, 'src')], repoRoot: dir }, async () => null),
+    ).toEqual(['src/components/Pay.vue']);
+  });
+
+  it("skips React's replayed server component stacks", async () => {
+    const map = { version: 3, sources: ['src/cart.ts'], mappings: 'AAAA' };
+    const source = `function a(){}\n//# sourceMappingURL=data:application/json;base64,${Buffer.from(JSON.stringify(map)).toString('base64')}`;
+    const entry: JsCoverageEntry = {
+      url: 'about://React/Server/file:///app/.next/server/chunks/ssr/page.js?0',
+      source,
+      functions: [{ functionName: 'a', ranges: [{ startOffset: 0, endOffset: 14, count: 1 }] }],
+    };
+    expect(await resolveCodeReach([entry], roots(), async () => null)).toEqual([]);
+  });
+
+  it("resolves Turbopack's [project] sources against the repository root", async () => {
+    const map = { version: 3, sources: ['turbopack:///[project]/src/cart.ts'], mappings: 'AAAA' };
+    const source = `function a(){}\n//# sourceMappingURL=data:application/json;base64,${Buffer.from(JSON.stringify(map)).toString('base64')}`;
+    const entry: JsCoverageEntry = {
+      url: 'http://localhost:3000/_next/static/chunks/0h7j95za6o12g.js',
+      source,
+      functions: [{ functionName: 'a', ranges: [{ startOffset: 0, endOffset: 14, count: 1 }] }],
+    };
+    const app = path.join(dir, 'app');
+    expect(await resolveCodeReach([entry], { roots: [app, dir], repoRoot: dir }, async () => null)).toEqual([
+      'src/cart.ts',
+    ]);
+  });
+
+  it('defaults the roots to the config directory, with the repository root last', () => {
     const r = codeReachRoots(dir, null);
     expect(r.roots[0]).toBe(dir);
-    expect(codeReachRoots(dir, ['app']).roots).toEqual([path.join(dir, 'app')]);
+    expect(r.roots[r.roots.length - 1]).toBe(r.repoRoot);
+    expect(codeReachRoots(dir, ['app']).roots).toEqual([path.join(dir, 'app'), r.repoRoot]);
   });
 });
 
@@ -145,7 +218,10 @@ describe('in Chromium', () => {
   beforeAll(async () => {
     dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-reach-live-')));
     write('index.html', '<button id="pay">Pay</button><script type="module" src="/src/main.js"></script>');
-    write('src/main.js', "import { pay } from './pay.js';\ndocument.querySelector('#pay').addEventListener('click', () => pay());\n");
+    write(
+      'src/main.js',
+      "import { pay } from './pay.js';\ndocument.querySelector('#pay').addEventListener('click', () => pay());\n",
+    );
     write('src/pay.js', "export function pay() {\n  document.body.dataset.paid = 'yes';\n}\n");
     write('src/idle.js', 'export function idle() {}\n');
     server = http.createServer((req, res) => {
@@ -186,4 +262,80 @@ describe('in Chromium', () => {
     // main.js ran its click handler and pay.js its function; idle.js was never loaded.
     expect(files).toEqual(['src/main.js', 'src/pay.js']);
   });
+});
+
+describe('on production builds', () => {
+  // A Vite and a webpack build of one small application, with source maps: see fixtures/code-reach/README.md.
+  const fixture = path.join(import.meta.dirname, 'fixtures', 'code-reach');
+  let browser: Browser | null = null;
+  let server: http.Server;
+  let origin = '';
+
+  beforeAll(async () => {
+    server = http.createServer((req, res) => {
+      const pathname = (req.url ?? '/').split('?')[0]!;
+      const file = path.join(fixture, 'build', pathname.endsWith('/') ? `${pathname}index.html` : pathname);
+      if (!file.startsWith(path.join(fixture, 'build')) || !fs.existsSync(file)) {
+        res.statusCode = 404;
+        res.end();
+        return;
+      }
+      const type = file.endsWith('.html')
+        ? 'text/html'
+        : file.endsWith('.map')
+          ? 'application/json'
+          : 'text/javascript';
+      res.setHeader('Content-Type', type);
+      res.end(fs.readFileSync(file));
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    try {
+      browser = await chromium.launch();
+    } catch {
+      browser = null;
+    }
+  });
+
+  afterAll(async () => {
+    await browser?.close();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+
+  async function reach(build: 'vite' | 'webpack', click: 'cart' | 'reports' | null): Promise<string[]> {
+    const page = await browser!.newPage();
+    try {
+      expect(await startCodeReach(page)).toBe(true);
+      await page.goto(`${origin}/${build}/`);
+      await page.waitForSelector('h1');
+      if (click) {
+        await page.click(`#${click}`);
+        await page.waitForSelector(click === 'cart' ? '#total' : '#revenue');
+      }
+      const entries = await stopCodeReach(page);
+      return await resolveCodeReach(entries ?? [], { roots: [fixture], repoRoot: fixture }, pageMapFetcher(page));
+    } finally {
+      await page.close();
+    }
+  }
+
+  for (const build of ['vite', 'webpack'] as const) {
+    it(`maps each test to the files it ran in a ${build} build`, async (ctx) => {
+      if (!browser) return ctx.skip();
+      // analytics.js runs only top-level code, and the bundler's own helpers map to no file of their own.
+      expect(await reach(build, null)).toEqual(['src/ui/header.js']);
+      expect(await reach(build, 'cart')).toEqual([
+        'src/main.js',
+        'src/ui/cart.js',
+        'src/ui/header.js',
+        'src/utils/format.js',
+      ]);
+      expect(await reach(build, 'reports')).toEqual([
+        'src/main.js',
+        'src/ui/header.js',
+        'src/ui/reports.js',
+        'src/utils/format.js',
+      ]);
+    });
+  }
 });

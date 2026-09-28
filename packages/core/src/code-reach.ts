@@ -3,8 +3,16 @@
  * from Chromium's JavaScript coverage. A file counts when at least one of its
  * functions ran, not counting a script's top-level code (importing a module
  * runs its top level, so it says nothing about the test) and code that maps to
- * no source. The reporter feeds this with `page.coverage` entries; this module
- * holds the pure part.
+ * no source.
+ *
+ * Through a source map, a function belongs to the source its start maps to,
+ * when some code inside it maps there too. Code a bundler or a dev server
+ * generates (a module factory, a preload helper, a hot-reload hook) has no
+ * mapping of its own and would otherwise take that of whatever precedes it;
+ * it runs when a module is imported, so it counts for no file.
+ *
+ * The reporter feeds this with `page.coverage` entries; this module holds the
+ * pure part.
  */
 import { lineStarts, offsetToPosition, type SourceMapLookup } from './source-map';
 
@@ -23,20 +31,25 @@ export interface JsCoverageEntry {
 export const MAX_CODE_REACH_FILES = 2000;
 
 /**
- * The start offsets of the functions that ran in a script, without its
- * top-level function (the one spanning the whole script).
+ * The ranges of the functions that ran in a script, without its top-level
+ * function (the one spanning the whole script).
  */
-export function executedFunctionOffsets(entry: JsCoverageEntry): number[] {
+export function executedFunctionRanges(entry: JsCoverageEntry): Array<{ start: number; end: number }> {
   const length = entry.source?.length ?? Number.POSITIVE_INFINITY;
-  const out: number[] = [];
+  const out: Array<{ start: number; end: number }> = [];
   entry.functions.forEach((fn, i) => {
     const whole = fn.ranges[0];
     if (!whole || whole.count <= 0) return;
     const topLevel = whole.startOffset === 0 && (whole.endOffset >= length || (i === 0 && fn.functionName === ''));
     if (topLevel) return;
-    out.push(whole.startOffset);
+    out.push({ start: whole.startOffset, end: whole.endOffset });
   });
   return out;
+}
+
+/** The start offsets of the functions that ran in a script, without its top-level function. */
+export function executedFunctionOffsets(entry: JsCoverageEntry): number[] {
+  return executedFunctionRanges(entry).map((range) => range.start);
 }
 
 /** Whether any function of the script other than its top level ran. */
@@ -46,14 +59,15 @@ export function scriptRan(entry: JsCoverageEntry): boolean {
 
 /** The sources (indexes into `map.sources`) of the functions that ran, through the script's source map. */
 export function reachedSources(entry: JsCoverageEntry, map: SourceMapLookup): Set<number> {
-  const offsets = executedFunctionOffsets(entry);
+  const ranges = executedFunctionRanges(entry);
   const reached = new Set<number>();
-  if (!offsets.length || entry.source === undefined) return reached;
+  if (!ranges.length || entry.source === undefined) return reached;
   const starts = lineStarts(entry.source);
-  for (const offset of offsets) {
-    const { line, column } = offsetToPosition(starts, offset);
-    const source = map.sourceAt(line, column);
-    if (source !== null) reached.add(source);
+  for (const range of ranges) {
+    const start = offsetToPosition(starts, range.start);
+    const source = map.sourceAt(start.line, start.column);
+    if (source === null || reached.has(source)) continue;
+    if (map.mapsBetween(source, start, offsetToPosition(starts, range.end))) reached.add(source);
   }
   return reached;
 }
