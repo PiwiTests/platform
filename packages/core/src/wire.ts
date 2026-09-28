@@ -99,6 +99,19 @@ export interface TestStepEvent {
   duration: number;
   status: string;
   location?: string | null;
+  /** The first line of the step's error, when it failed — hook and fixture events only. */
+  error?: string | null;
+  /** The hooks and fixtures a hook section (`Before Hooks`, `After Hooks`) ran, in order. */
+  hooks?: TestStepEventHook[] | null;
+}
+
+/** One hook or fixture a hook section ran: `beforeAll hook`, `Fixture "db"`, a titled hook. */
+export interface TestStepEventHook {
+  title: string;
+  category: 'hook' | 'fixture';
+  duration: number;
+  /** True when it failed; absent when it passed. */
+  failed?: boolean;
 }
 
 /**

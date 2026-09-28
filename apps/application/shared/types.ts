@@ -8,6 +8,7 @@ import type {
   TestMetadata,
   TestSourceFrame,
   TestStepEvent,
+  TestStepEventHook,
   WireNetworkRequest,
 } from '@piwitests/core/wire';
 
@@ -22,6 +23,7 @@ export type {
   TestMetadata,
   TestSourceFrame,
   TestStepEvent,
+  TestStepEventHook,
   WireNetworkRequest,
 };
 

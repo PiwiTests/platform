@@ -4,7 +4,7 @@ import type { Serialize, Simplify } from 'nitropack/types';
  * These types are used by both the server API and the app frontend
  */
 
-import type { Role, FilterDetails, KeepSource, TestMetadata, TestSourceFrame } from '#shared/types';
+import type { Role, FilterDetails, KeepSource, TestMetadata, TestSourceFrame, TestStepEventHook } from '#shared/types';
 import type { ScmProviderName } from '#shared/scm-urls';
 import type { PageDiffSummary, PageDiffHunk } from '#shared/page-diff';
 import type { ClusterState } from '#shared/cluster-state';
@@ -572,6 +572,10 @@ export interface TestStepEvent {
   duration: number;
   status: string;
   location?: string | null;
+  /** The first line of the step's error, when it failed — hook and fixture events only. */
+  error?: string | null;
+  /** The hooks and fixtures a hook section (`Before Hooks`, `After Hooks`) ran, in order. */
+  hooks?: TestStepEventHook[] | null;
 }
 
 /**

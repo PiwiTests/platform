@@ -12,6 +12,7 @@ import {
   orderedStepParams,
   MAX_STEP_PARAM_KEYS,
   MAX_STEP_PARAM_VALUE_CHARS,
+  MAX_SECTION_HOOKS,
 } from '../src/internal/collect/step-analyzer.js';
 
 describe('categorizeStep', () => {
@@ -352,6 +353,84 @@ describe('extractTestStepEvents', () => {
       new Date(),
     );
     expect(events[0].startedAt).toBe(12345);
+  });
+
+  it('names the hooks and fixtures each hook section ran, in order', () => {
+    const start = new Date('2024-01-01T00:00:00.000Z');
+    const steps = [
+      {
+        title: 'Before Hooks',
+        category: 'hook',
+        startTime: start,
+        duration: 254,
+        steps: [
+          { title: 'beforeAll hook', category: 'hook', startTime: start, duration: 120, steps: [] },
+          { title: 'seed users', category: 'hook', startTime: start, duration: 73, steps: [] },
+          {
+            title: 'beforeEach hook',
+            category: 'hook',
+            startTime: start,
+            duration: 60,
+            steps: [{ title: 'Fixture "db"', category: 'fixture', startTime: start, duration: 1, steps: [] }],
+          },
+          { title: 'Fixture "piwiCapture"', category: 'fixture', startTime: start, duration: 4, steps: [] },
+        ],
+      },
+      { title: 'Click', category: 'pw:api', startTime: start, duration: 5 },
+    ];
+    const [setup] = extractTestStepEvents(steps as any, start);
+    expect(setup.hooks).toEqual([
+      { title: 'beforeAll hook', category: 'hook', duration: 120 },
+      { title: 'seed users', category: 'hook', duration: 73 },
+      { title: 'beforeEach hook', category: 'hook', duration: 60 },
+    ]);
+    expect(setup.error).toBeUndefined();
+  });
+
+  it('carries the first line of a failed section error and flags the hook that failed', () => {
+    const start = new Date('2024-01-01T00:00:00.000Z');
+    const error = { message: '\u001b[31mError: afterAll boom\u001b[39m\n\n  at a.spec.ts:8:3' };
+    const steps = [
+      {
+        title: 'After Hooks',
+        category: 'hook',
+        startTime: start,
+        duration: 52,
+        error,
+        steps: [
+          { title: 'afterEach hook', category: 'hook', startTime: start, duration: 0, steps: [] },
+          { title: 'afterAll hook', category: 'hook', startTime: start, duration: 24, error, steps: [] },
+        ],
+      },
+    ];
+    const [teardown] = extractTestStepEvents(steps as any, start);
+    expect(teardown.status).toBe('failed');
+    expect(teardown.error).toBe('Error: afterAll boom');
+    expect(teardown.hooks).toEqual([
+      { title: 'afterEach hook', category: 'hook', duration: 0 },
+      { title: 'afterAll hook', category: 'hook', duration: 24, failed: true },
+    ]);
+  });
+
+  it('keeps the failed and the slowest hooks of a crowded section, in the order they ran', () => {
+    const start = new Date('2024-01-01T00:00:00.000Z');
+    const children = Array.from({ length: MAX_SECTION_HOOKS + 3 }, (_, i) => ({
+      title: `Fixture "f${i}"`,
+      category: 'fixture',
+      startTime: start,
+      duration: i,
+      steps: [],
+    }));
+    (children[0] as any).error = { message: 'boom' };
+    const [setup] = extractTestStepEvents(
+      [{ title: 'Before Hooks', category: 'hook', startTime: start, duration: 100, steps: children }] as any,
+      start,
+    );
+    expect(setup.hooks).toHaveLength(MAX_SECTION_HOOKS);
+    expect(setup.hooks![0]).toEqual({ title: 'Fixture "f0"', category: 'fixture', duration: 0, failed: true });
+    expect(setup.hooks!.slice(1).map((h) => h.duration)).toEqual(
+      Array.from({ length: MAX_SECTION_HOOKS - 1 }, (_, i) => i + 4),
+    );
   });
 });
 
