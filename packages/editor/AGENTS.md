@@ -11,9 +11,10 @@ clients stay thin and both editors give the same answers.
 
 - `src/server.ts` wires the protocol: diagnostics, quick fixes and hover, plus the custom requests of
   `src/protocol.ts` (`piwi/fileSummary`, `piwi/testsForFile`, `piwi/runArgs`, `piwi/status`, `piwi/runStatus`,
-  `piwi/trace`, `piwi/mcp`, `piwi/refresh`, the `piwi/setCredentials` notification and the `piwi/runStatusChanged`
-  notification it sends). A client renders `piwi/fileSummary` natively (CodeLens, Code Vision) and `piwi/runStatus`
-  in its status bar.
+  `piwi/failures`, `piwi/trace`, `piwi/mcp`, `piwi/refresh`, the `piwi/setCredentials` notification and the
+  `piwi/runStatusChanged` notification it sends). A client renders `piwi/fileSummary` natively (CodeLens, Code
+  Vision), `piwi/runStatus` in its status bar, and `piwi/failures` in a list where its LSP client highlights open
+  files only (the JetBrains IDEs).
 - The latest run on the checked-out branch is read every minute (every 15 seconds while it runs); its failures are
   published as `ci-failure` diagnostics in every file they point to, merged with the analysis of open documents.
 - `src/analysis.ts` is the pure half: locators per line, stability findings, replacements, breaks of an unsaved

@@ -12,6 +12,11 @@ dist-firefox
 apps/extension/tests/lab/out
 # The VS Code builds the VS Code extension's integration tests download
 .vscode-test
+# The JetBrains plugin's Gradle outputs and the IDEs its tests and verifier download
+apps/jetbrains/.gradle
+apps/jetbrains/.intellijPlatform
+apps/jetbrains/.kotlin
+apps/jetbrains/build
 
 # Feature screenshots (scripts/take-feature-screenshots.mjs)
 .screens

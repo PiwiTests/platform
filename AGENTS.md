@@ -17,6 +17,7 @@ how to run and verify things, and the conventions that apply everywhere.
 | `apps/extension/` — the browser extension (Manifest V3)           | [`apps/extension/AGENTS.md`](apps/extension/AGENTS.md)       |
 | `packages/editor/` — the editor service (language server)         | [`packages/editor/AGENTS.md`](packages/editor/AGENTS.md)     |
 | `apps/vscode/` — the VS Code extension                            | [`apps/vscode/AGENTS.md`](apps/vscode/AGENTS.md)             |
+| `apps/jetbrains/` — the JetBrains plugin (Gradle, Kotlin)         | [`apps/jetbrains/AGENTS.md`](apps/jetbrains/AGENTS.md)       |
 | `apps/docs/` — the VitePress documentation site                   | [`apps/docs/AGENTS.md`](apps/docs/AGENTS.md)                 |
 
 Reference material worth opening when you need the map rather than the rules:
@@ -39,6 +40,7 @@ apps/                      Deployable surfaces — the things you run, install, 
   desktop/                 Tauri desktop shell that bundles and runs the same server locally
   extension/               Piwi Picker — browser extension (Manifest V3), standalone, no server dependency
   vscode/                  VS Code extension — a thin client of packages/editor (scope `ide`)
+  jetbrains/               JetBrains plugin — the same client in Kotlin, built with Gradle (scope `ide`)
   docs/                    VitePress documentation site, published to GitHub Pages
 packages/                  Packages consumed by name (`@piwitests/*`) — published to npm or imported by a workspace.
   core/                    @piwitests/core — private, zero-dependency logic shared by app AND reporter

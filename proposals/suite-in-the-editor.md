@@ -8,7 +8,7 @@ executes, so any file can answer "which tests reach me?". **Track C** is one edi
 
 **Status.** Proposed 2026-09-27. Being built on `claude/suite-in-the-editor`, in the Delivery order: PR 1 (core),
 PR 2 (`piwi preflight`), PR 3 (the pull-request section, `diff-rename` healing, `predict_locator_breaks`) PR 4
-(code reach), PR 5 (the editor service) and PR 6 (VS Code, with the priority 1 items) are built. What changed while building is under [As built](#as-built). Track A needs no capture change. Track B adds an opt-in capture, one
+(code reach), PR 5 (the editor service), PR 6 (VS Code, with the priority 1 items) and PR 7 (JetBrains, with the same five) are built. What changed while building is under [As built](#as-built). Track A needs no capture change. Track B adds an opt-in capture, one
 payload column on `test_runs_cases` and one table. Tracks C–E add a workspace package, a VS Code extension and a
 JetBrains plugin, and a commitlint scope (`ide`); a catalog of what the editors can do after their first release
 follows the tracks. New wire fields, endpoints, a CLI command and a published extension
@@ -471,7 +471,7 @@ the feature they come from.
 - Docs: `guide/capture-fixtures.md`, `guide/privacy.md` (file paths only), `features/test-selection.md`,
   `reference/reporter-options.md` (generated).
 
-### PRs 5–7 — editors (PRs 5 and 6 built)
+### PRs 5–7 — editors (built)
 - `packages/editor` (new workspace), `apps/vscode` (new workspace), `apps/jetbrains` (new Gradle project).
 - Root `package.json` workspaces, `release-please-config.json` (two entries per new workspace), `commitlint.config.js`
   (scope `ide`), CI jobs in `.github/workflows/ci.yml`, a publish workflow per marketplace.
@@ -654,6 +654,41 @@ disagree, this section wins.
   `OVSX_PAT`, each skipped without its secret), release-please entries, `apps/vscode/AGENTS.md`, docs page
   `features/editors.md` with its catalog entry, links from Open in IDE and the MCP page.
 
+### PR 7 — JetBrains, with the same five
+
+- **The spike.** WebStorm 2023.3 (build 233) is the oldest platform whose LSP client renders what the plugin needs:
+  diagnostics and their quick fixes (`LspDiagnosticsSupport`, `LspCodeActionsSupport`), hover (`LspHoverRequest`),
+  client-side commands (`LspCommandsSupport.executeCommand`), a custom lsp4j server interface for the service's own
+  requests and a custom client for its notification. The API there comes with the `com.intellij.modules.ultimate`
+  module (`com.intellij.modules.lsp` does not exist yet), which WebStorm, IntelliJ IDEA Ultimate and Rider provide.
+  The 2026.2 platforms deprecate this API in favour of a newer one but still ship it; the plugin compiles against
+  2023.3 and looks up the one accessor that moved (`getLsp4jServer`, now on a super-interface) at run time.
+- **`apps/jetbrains`** (Gradle 9.8 wrapper, Kotlin 2.2 with API 1.9, IntelliJ Platform Gradle Plugin 2.19, JDK 21
+  building Java 17 bytecode) copies the service bundle into the plugin's `server/` directory and starts it with the
+  project's Node.js interpreter.
+- **Rendered by the LSP client**, in open files: the analysis diagnostics and `ci-failure` errors with their quick
+  fixes (Heal, Open the trace, Open the failure in the dashboard) and the hover with the screenshot.
+- **Rendered natively**: Code Vision from `piwi/fileSummary`; the status bar widget from `piwi/runStatus`, refreshed
+  on `piwi/runStatusChanged`; the **Piwi** tool window listing the failures from a new request, `piwi/failures`
+  (failures resolved to a workspace file and line), because the JetBrains LSP client highlights open files only; the
+  actions under **Tools → Piwi** (Connect, Refresh, Run the tests that reach this file, Open in dashboard, Copy the MCP
+  server configuration). Tests and traces run in the Run tool window. The key goes to `PasswordSafe`.
+- **MCP.** The JetBrains IDEs have no API for a plugin to register an MCP server, so the plugin offers once to copy an
+  `mcpServers` entry that runs Piwi's server through `mcp-remote`, the key in its environment, for the AI Assistant's
+  MCP settings or another agent.
+- **Rider and Razor** (open question 4). The plugin registers `.cshtml`, `.razor` and `.resx` with the LSP client, and
+  a platform test checks it. Whether Rider's LSP client sends those files to the server could not be checked here:
+  Rider's editor for them comes from its .NET backend, and that needs a Rider session, not a platform test. It stays
+  an open item for the first manual run in Rider (verification 6).
+- **Tests.** JUnit tests of `Glue.kt`; platform tests on WebStorm 2023.3 that the extensions and actions register,
+  that the service's file types are served, and that the bundled service, started with the descriptor's command line
+  against a stub instance, answers `piwi/status`, `piwi/runStatus`, `piwi/failures`, `piwi/fileSummary` and `piwi/mcp`
+  in the Kotlin protocol classes (9 tests). The Plugin Verifier runs on WebStorm 2023.3 and on the latest WebStorm,
+  IntelliJ IDEA Ultimate and Rider (2026.2).
+- **Repository.** `jetbrains.yml` (test, build, verify on editor changes), `publish-jetbrains.yml` (on release tags,
+  signed, with `JETBRAINS_PUBLISH_TOKEN` and the signing secrets), a release-please entry for `gradle.properties`,
+  `apps/jetbrains/AGENTS.md`, and the JetBrains section of `features/editors.md`.
+
 ## Verification
 
 1. In a fixture app, change `Pay now` to `Pay` in a component and run `piwi preflight`: one likely break with its three
@@ -697,7 +732,8 @@ disagree, this section wins.
 4. **Which JetBrains platform versions.** The LSP API gained features release by release. Recommendation: pick the oldest
    version whose LSP client renders diagnostics, quick fixes and hover, and render everything else natively (D10). Check
    in the same spike that Rider's LSP client serves Razor (`.cshtml`, `.razor`) files, whose editor comes from Rider's
-   .NET backend rather than the IntelliJ side.
+   .NET backend rather than the IntelliJ side. **Answered in PR 7:** 2023.3 (build 233). The Razor question needs a
+   Rider session and is still open (see [As built](#pr-7--jetbrains-with-the-same-five)).
 5. **Ambiguity ahead.** A change that adds a second "Save" button to a page makes a strict click fail. Recommendation:
    later, once code reach can tie a component file to the pages it renders on.
 

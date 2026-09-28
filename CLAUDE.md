@@ -7,4 +7,5 @@ Instructions are split by area — read the guide for the directory you are edit
 - [`apps/desktop/AGENTS.md`](apps/desktop/AGENTS.md) — the Tauri desktop shell
 - [`packages/editor/AGENTS.md`](packages/editor/AGENTS.md) — the editor service (language server)
 - [`apps/vscode/AGENTS.md`](apps/vscode/AGENTS.md) — the VS Code extension
+- [`apps/jetbrains/AGENTS.md`](apps/jetbrains/AGENTS.md) — the JetBrains plugin
 - [`apps/docs/AGENTS.md`](apps/docs/AGENTS.md) — the VitePress documentation site

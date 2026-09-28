@@ -53,6 +53,7 @@ import {
 import { PiwiContext } from './context.js';
 import type { BranchFailure } from './piwi-client.js';
 import {
+  FAILURES_REQUEST,
   FILE_SUMMARY_REQUEST,
   MCP_REQUEST,
   REFRESH_REQUEST,
@@ -65,6 +66,7 @@ import {
   TESTS_FOR_FILE_REQUEST,
   type EditorCredentials,
   type EditorTest,
+  type FailuresResult,
   type FileSummary,
   type FileSummaryParams,
   type McpServersResult,
@@ -743,6 +745,30 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   );
 
   connection.onRequest(RUN_STATUS_REQUEST, (): RunStatusResult => runStatus());
+
+  connection.onRequest(
+    FAILURES_REQUEST,
+    (): FailuresResult => ({
+      items: contexts.flatMap((context) =>
+        (context.failures?.failures ?? []).flatMap((f) => {
+          const site = failureSite(context, f);
+          if (!site || !context.client) return [];
+          return [
+            {
+              uri: pathToFileURL(site.file).href,
+              line: site.line - 1,
+              title: f.title,
+              headline: f.headline,
+              executionId: f.executionId,
+              runId: context.failures!.run!.id,
+              url: context.client.executionUrl(f.executionId),
+              hasTrace: f.traces.length > 0,
+            },
+          ];
+        }),
+      ),
+    }),
+  );
 
   connection.onRequest(TRACE_REQUEST, async (params: TraceParams): Promise<TraceResult | null> => {
     const file = uriToPath(params.uri);

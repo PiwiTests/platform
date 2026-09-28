@@ -17,6 +17,7 @@ import { createConnection } from 'vscode-languageserver/node';
 import type { LocatorIndex } from '@piwitests/core/locator-index';
 import { startServer } from '../src/server';
 import type {
+  FailuresResult,
   FileSummary,
   McpServersResult,
   RunCommand,
@@ -430,6 +431,22 @@ describe('the Piwi language server', () => {
       },
     ]);
     expect(runStatuses[runStatuses.length - 1]).toEqual(status);
+  });
+
+  test('lists the failures where they show, for clients that list them natively', async () => {
+    const failures = (await client.sendRequest('piwi/failures')) as FailuresResult;
+    expect(failures.items).toEqual([
+      {
+        uri: uri('tests/pages/checkout.page.ts'),
+        line: 4,
+        title: 'removes a row',
+        headline: "locator('.cart-row').nth(2) was not found",
+        executionId: 900,
+        runId: 41,
+        url: `${url}/test-run-cases/900`,
+        hasTrace: true,
+      },
+    ]);
   });
 
   test('offers Piwi’s MCP server with the connection it has', async () => {

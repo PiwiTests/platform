@@ -1,25 +1,29 @@
 ---
 title: Editor extensions
-description: "Piwi in VS Code: the latest CI failures at their failing lines with the heal as a quick fix, the tests behind each locator and file, brittle locators, and the locators an unsaved change breaks."
+description: "Piwi in VS Code and the JetBrains IDEs: the latest CI failures at their failing lines with the heal as a quick fix, the tests behind each locator and file, brittle locators, and the locators an unsaved change breaks."
 lang: en-US
 ---
 
 # Editor extensions
 
-The Piwi extension for VS Code brings what the dashboard knows about your suite to the line you are editing. It works
-in VS Code, Cursor and VSCodium (from the Visual Studio Marketplace or Open VSX). A plugin for the JetBrains IDEs is
-next; both run the same editor service, so both show the same answers.
+The Piwi extension for VS Code and the Piwi plugin for the JetBrains IDEs bring what the dashboard knows about your suite
+to the line you are editing. The extension works in VS Code, Cursor and VSCodium (from the Visual Studio Marketplace or
+Open VSX); the plugin in WebStorm, IntelliJ IDEA Ultimate, Rider and the other JetBrains IDEs with the LSP API, from
+version 2023.3. Both run the same editor service, so both show the same answers;
+[JetBrains IDEs](#jetbrains-ides) lists where the plugin draws them differently.
 
 ## Install and connect
 
-Install **Piwi** (`piwitests.piwi`) from the extensions view. It starts on a workspace that holds a Playwright config,
-and reads the connection the reporter already uses, in this order:
+Install **Piwi** from the extensions view (`piwitests.piwi`) or from **Settings → Plugins** in a JetBrains IDE. It
+starts on a workspace that holds a Playwright config, and reads the connection the reporter already uses, in this
+order:
 
 1. `PIWI_DASHBOARD_URL`, `PIWI_API_KEY` and `PIWI_PROJECT_NAME` in the environment;
 2. the same variables in the `.env` next to the Playwright config, then at the repository root;
 3. the [desktop app](/features/desktop), when it runs;
-4. the extension's own settings: run **Piwi: Connect**, give the instance URL and an
-   [API key](/operate/api-keys), and pick the project. The key goes to VS Code's secret storage, never to a file.
+4. its own settings: run **Piwi: Connect** (**Tools → Piwi → Connect…** in a JetBrains IDE), give the instance URL
+   and an [API key](/operate/api-keys), and pick the project. The key goes to the editor's secret storage (VS Code's
+   secret storage, the IDE's password safe), never to a file.
 
 Nothing from your workspace is sent to the instance: the extension downloads the project's
 [locator index](/guide/concepts#locator-index), its [code reach](/features/code-reach) index and the latest run, and
@@ -87,3 +91,21 @@ clipboard. It holds your API key: paste it into your user settings, not into the
 | Piwi: Open in dashboard | Open this file's test, or the latest run |
 | Piwi: Open the latest run | Open the run the status bar shows |
 | Piwi: Copy the MCP server configuration | For editors without the MCP provider API |
+
+## JetBrains IDEs
+
+The plugin starts the editor service with the project's Node.js interpreter (**Settings → Languages & Frameworks →
+Node.js**). The IDE's LSP client shows the warnings, quick fixes and hover in open files as described above; the rest
+is drawn natively:
+
+- **The Piwi tool window** lists the latest run's failures, since the IDE highlights open files only. Double-click one
+  to open its failing line, where the highlight carries **Heal**, **Open the trace** and the dashboard link. The trace
+  opens in the Run tool window.
+- **Code Vision** shows the lines above files, tests and locators; click one to run what it names.
+- **The status bar** shows the latest run; the actions are under **Tools → Piwi**, and **Run the tests that reach this
+  file** is also in the editor's context menu.
+- **MCP**: **Copy the MCP server configuration** puts an `mcpServers` entry on the clipboard for **Settings → Tools → AI
+  Assistant → Model Context Protocol** or another agent. It runs the server through `mcp-remote`, with the key in its
+  environment.
+
+IntelliJ IDEA Community Edition and Android Studio do not have the LSP API the plugin needs.

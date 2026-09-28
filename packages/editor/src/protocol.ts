@@ -178,3 +178,28 @@ export interface McpServersResult {
 }
 
 export const MCP_REQUEST = 'piwi/mcp';
+
+/** A failure of the latest run, where it shows in the workspace. */
+export interface WorkspaceFailure {
+  /** The file the failure shows in: its failing call, else its `test(…)` line. */
+  uri: string;
+  /** 0-based. */
+  line: number;
+  title: string;
+  headline: string | null;
+  executionId: number;
+  runId: number;
+  /** The execution's page in the dashboard. */
+  url: string;
+  hasTrace: boolean;
+}
+
+/**
+ * `piwi/failures`: the failures of each context's latest run, for a client that lists them natively (the JetBrains
+ * IDEs publish diagnostics of open files only). The same failures are published as `ci-failure` diagnostics.
+ */
+export interface FailuresResult {
+  items: WorkspaceFailure[];
+}
+
+export const FAILURES_REQUEST = 'piwi/failures';

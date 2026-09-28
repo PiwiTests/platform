@@ -22,6 +22,7 @@
         { "type": "json", "path": "apps/extension/package.json", "jsonpath": "$.version" },
         { "type": "json", "path": "apps/extension/manifest.json", "jsonpath": "$.version" },
         { "type": "json", "path": "apps/vscode/package.json", "jsonpath": "$.version" },
+        { "type": "generic", "path": "apps/jetbrains/gradle.properties" },
         {
           "type": "json",
           "path": "examples/playwright-fixtures/package.json",

@@ -1,0 +1,48 @@
+<idea-plugin>
+    <id>dev.piwitests.piwi</id>
+    <name>Piwi</name>
+    <vendor url="https://piwitests.dev">Piwi</vendor>
+    <description><![CDATA[
+    Your Playwright suite's history in the IDE, from a <a href="https://piwitests.dev">Piwi</a> instance:
+    <ul>
+      <li>the failures of the latest CI run on the checked-out branch, at their failing lines, with the
+          recommended locator heal as a quick fix, the trace and the screenshot one action away;</li>
+      <li>the tests behind each locator line and each application file, and each test's pass rate;</li>
+      <li>brittle locators, and the locators an unsaved change breaks, with quick fixes;</li>
+      <li>the latest run in the status bar, and Piwi's MCP server for your AI assistant.</li>
+    </ul>
+    Works in WebStorm, IntelliJ IDEA Ultimate, Rider and the other IDEs with the LSP API and JavaScript support.
+    ]]></description>
+
+    <depends>com.intellij.modules.platform</depends>
+    <depends>com.intellij.modules.ultimate</depends>
+    <depends>JavaScript</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <platform.lsp.serverSupportProvider implementation="dev.piwitests.jetbrains.PiwiLspServerSupportProvider"/>
+        <codeInsight.daemonBoundCodeVisionProvider implementation="dev.piwitests.jetbrains.PiwiCodeVisionProvider"/>
+        <statusBarWidgetFactory id="piwi.status" implementation="dev.piwitests.jetbrains.PiwiStatusBarWidgetFactory"/>
+        <toolWindow id="Piwi" anchor="bottom" icon="AllIcons.Toolwindows.ToolWindowProblems"
+                    factoryClass="dev.piwitests.jetbrains.PiwiFailuresToolWindowFactory"/>
+        <notificationGroup id="Piwi" displayType="BALLOON"/>
+    </extensions>
+
+    <actions>
+        <group id="Piwi.Actions" text="Piwi" popup="true">
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
+            <action id="Piwi.Connect" class="dev.piwitests.jetbrains.ConnectAction" text="Connect…"
+                    description="Choose the Piwi instance, the API key and the project"/>
+            <action id="Piwi.Refresh" class="dev.piwitests.jetbrains.RefreshAction" text="Refresh"
+                    description="Fetch the indexes and the latest run again"/>
+            <action id="Piwi.RunTestsForFile" class="dev.piwitests.jetbrains.RunTestsForFileAction"
+                    text="Run the Tests That Reach This File" description="Run them in the Run tool window">
+                <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+            </action>
+            <action id="Piwi.OpenInDashboard" class="dev.piwitests.jetbrains.OpenInDashboardAction"
+                    text="Open in Dashboard" description="Open this file's test, or the latest run"/>
+            <action id="Piwi.CopyMcpConfiguration" class="dev.piwitests.jetbrains.CopyMcpConfigurationAction"
+                    text="Copy the MCP Server Configuration"
+                    description="An mcpServers entry for the AI Assistant's MCP settings"/>
+        </group>
+    </actions>
+</idea-plugin>
