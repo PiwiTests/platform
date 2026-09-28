@@ -101,7 +101,7 @@ import {
   createProject,
   getProjectMenu,
   deleteProjectData,
-  getProjectFlakyTests,
+  getProjectFlakyTestsWithVerified,
   getProjectsOverview,
   getProjectSpecHealth,
 } from '#shared/handlers/projects';
@@ -190,6 +190,7 @@ import {
   type FlakeResultsInput,
 } from '#shared/handlers/flake-lab';
 import { buildExecutionReproduce } from '#shared/handlers/reproduce';
+import { getVerifiedFixes } from '#shared/handlers/flake-verified';
 import {
   getFailureCluster,
   getOpenFailureClusters,
@@ -741,16 +742,14 @@ const routes: RouteEntry[] = [
         : undefined;
       // CODEOWNERS resolution needs an SCM client the browser cannot reach —
       // ownership stays annotation-only here (seeded cases carry `piwi:` owners).
-      return {
-        items: await getProjectFlakyTests(
-          await getDemoDb(),
-          +m[1]!,
-          runs,
-          environment,
-          { tags, owner, priority },
-          branch,
-        ),
-      };
+      return getProjectFlakyTestsWithVerified(
+        await getDemoDb(),
+        +m[1]!,
+        runs,
+        environment,
+        { tags, owner, priority },
+        branch,
+      );
     },
   },
   {
@@ -1273,7 +1272,11 @@ const routes: RouteEntry[] = [
     handler: async (m, _b, q, ctx) => {
       await assertDemoEntityScope(ctx, 'case', +m[1]!);
       const limit = Number(q?.get('limit')) || undefined;
-      return { items: await listFlakeExperiments(await getDemoDb(), +m[1]!, { limit }) };
+      const db = await getDemoDb();
+      return {
+        items: await listFlakeExperiments(db, +m[1]!, { limit }),
+        verifiedFix: (await getVerifiedFixes(db, [+m[1]!])).get(+m[1]!) ?? null,
+      };
     },
   },
   {

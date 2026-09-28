@@ -17,6 +17,7 @@ import { asc, desc, eq, exists, sql, and, or, inArray, gte, lte, isNull, isNotNu
 import { jsonArrayContainsAll, parseLockFilter, parseTagFilter } from '../utils/tag-filter';
 import { isLabRun, notLabRun } from './probes';
 import { isFailedStatus } from '../utils/test-counts';
+import { getHoldingVerifiedFixes } from './flake-verified';
 import { fixmeSkipPredicate } from '../utils/skip-kind';
 import { TEST_PRIORITIES } from '@piwitests/core/test-meta';
 
@@ -1383,6 +1384,25 @@ export async function getProjectFlakyTests(
   filter?: FlakyTestsFilter,
   branch?: string | null,
 ) {
+  return (await getProjectFlakyTestsWithVerified(db, projectId, runsLimit, environment, filter, branch)).items;
+}
+
+/**
+ * The flaky leaderboard, and apart from it the tests a verified fix took off
+ * it. A test whose Flake Lab `verify` experiment held, and that has not
+ * retry-passed in a run started since (`getHoldingVerifiedFixes`), leaves the
+ * ranking: every reader of `getProjectFlakyTests` (the MCP tools, quarantine
+ * candidates, PR feedback, the analytics leaderboard) sees it gone. The
+ * Failures tab lists it under `verifiedFixed`.
+ */
+export async function getProjectFlakyTestsWithVerified(
+  db: DrizzleDB,
+  projectId: number,
+  runsLimit: number,
+  environment?: string | null,
+  filter?: FlakyTestsFilter,
+  branch?: string | null,
+) {
   const projectResults: any[] = await db
     .select({ id: projects.id, defaultBranch: projects.defaultBranch })
     .from(projects)
@@ -1411,7 +1431,7 @@ export async function getProjectFlakyTests(
     .orderBy(desc(testRuns.startTime))
     .limit(effectiveLimit);
 
-  if (recentRuns.length === 0) return [];
+  if (recentRuns.length === 0) return { items: [], verifiedFixed: [] };
 
   const runIds: number[] = recentRuns.map((r: any) => r.id);
 
@@ -1426,7 +1446,7 @@ export async function getProjectFlakyTests(
     (r: any) => TERMINAL_STATUSES.includes(r.status) && !isLabRun(r.metadata),
   );
 
-  if (filteredRuns.length === 0) return [];
+  if (filteredRuns.length === 0) return { items: [], verifiedFixed: [] };
   const filteredRunIds: number[] = filteredRuns.map((r: any) => r.id);
   const runStartTimeById = new Map(filteredRuns.map((r: any) => [r.id, r.startTime]));
 
@@ -1617,13 +1637,21 @@ export async function getProjectFlakyTests(
     });
   }
 
-  if (candidates.length === 0) return [];
+  if (candidates.length === 0) return { items: [], verifiedFixed: [] };
 
-  candidates.sort((a, b) => b.impact - a.impact || b.score - a.score || b.retryPassRuns - a.retryPassRuns);
-  const top = candidates.slice(0, 50);
+  // A verified fix that still holds takes the test off the ranking.
+  const verified = await getHoldingVerifiedFixes(
+    db,
+    candidates.map((c) => c.testCaseId),
+  );
+  const ranked = candidates.filter((c) => !verified.has(c.testCaseId));
+  const verifiedCandidates = candidates.filter((c) => verified.has(c.testCaseId));
+
+  ranked.sort((a, b) => b.impact - a.impact || b.score - a.score || b.retryPassRuns - a.retryPassRuns);
+  const top = ranked.slice(0, 50);
 
   // Step 6: Join titles/filePaths + rootCause
-  const testCaseIds: number[] = top.map((c) => c.testCaseId);
+  const testCaseIds: number[] = [...top, ...verifiedCandidates].map((c) => c.testCaseId);
   const testCaseRows: any[] = await db
     .select({
       id: testCases.id,
@@ -1638,7 +1666,7 @@ export async function getProjectFlakyTests(
     .where(inArray(testCases.id, testCaseIds));
   const testCaseById = new Map(testCaseRows.map((t: any) => [t.id, t]));
 
-  return top.map((c) => {
+  const items = top.map((c) => {
     const tc = testCaseById.get(c.testCaseId);
     return {
       testCaseId: c.testCaseId,
@@ -1661,6 +1689,20 @@ export async function getProjectFlakyTests(
       avgFailedDurationMs: c.avgFailedDurationMs,
     };
   });
+  const verifiedFixed = verifiedCandidates
+    .sort((a, b) => b.impact - a.impact)
+    .map((c) => {
+      const tc = testCaseById.get(c.testCaseId);
+      return {
+        testCaseId: c.testCaseId,
+        title: tc?.title ?? '',
+        filePath: tc?.filePath ?? '',
+        retryPassRuns: c.retryPassRuns,
+        lastFlakeAt: c.lastFlakeAt,
+        verifiedFix: verified.get(c.testCaseId)!,
+      };
+    });
+  return { items, verifiedFixed };
 }
 
 // ─── getProjectsOverview ─────────────────────────────────────────────────────

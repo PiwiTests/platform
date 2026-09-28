@@ -1873,6 +1873,22 @@ export interface FlakyTest {
   avgFailedDurationMs: number;
 }
 
+/** A flaky test a Flake Lab verified fix took off the ranking, until it retry-passes again. */
+export interface VerifiedFixedFlakyTest {
+  testCaseId: number;
+  title: string;
+  filePath: string;
+  retryPassRuns: number;
+  lastFlakeAt: string | Date | null;
+  verifiedFix: {
+    testCaseId: number;
+    experimentId: number;
+    commit: string | null;
+    verifiedAt: string;
+    flakedAgainAt: string | null;
+  };
+}
+
 /** A page diff between a failing execution and its last green sample. */
 export interface PageDiff {
   status: 'ok' | 'no-failure-snapshot' | 'no-green-sample' | 'not-applicable' | 'not-found';
