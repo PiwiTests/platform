@@ -16,7 +16,8 @@ and `requestRouteKey` moved to core, flake mode in the reporter, the generalized
 isolation of flake-lab runs. **PR 4 built 2026-09-28**: `piwi flake` and `piwi flake verify`, the
 `flake_experiments` and `flake_arms` tables, the plan, results and experiments endpoints, experiments on the
 Flakiness tab, the reproduced badge, the strong clue, `plan_flake_experiment`, the skill and a seeded demo experiment.
-PRs 5–6 are not started. What changed while building PR 1:
+**PR 5 built 2026-09-28**: `desktop_flake_lab_here` and Reproduce this flake, the flake-aware bisect and
+`piwi flake verify --bisect`. PR 6 is not started. What changed while building PR 1:
 
 - The server's filter did **not** keep status 0: it kept status ≥ 400 plus the 50 slowest others, so a quick reset
   could be dropped. It now keeps every request with status ≥ 400, status ≤ 0 or a `failure`.
@@ -118,6 +119,25 @@ What changed while building PR 4:
   `plan_flake_experiment`; the Playwright spawn and the connection lookup are shared with `probe` and `preflight`.
 - The flaky list reads the badge from the same `flake-suspects` call as the top suspect (a `lab` field), and the
   experiments list shows finished experiments only.
+
+What changed while building PR 5:
+
+- The shell reads the test's project and the commit of its latest failure from the flake plan (`record=false`), so
+  the webview passes the test case id and the options only. A test whose latest failure has no commit cannot be run
+  here; the command says to run `piwi flake` in the checkout instead.
+- A flake-aware bisect step needed a CLI answer, not a new command: `piwi flake verify <test> --bisect` runs the
+  reproducing arm alone (no control), saves nothing, and exits 0, 1 or 125 as `git bisect run` expects, so the same
+  step works from a terminal. A step that exits 2 (the dashboard could not be read) stops the bisect.
+- The `piwi` command comes from the linked folder first, since an older commit's reporter may not have `flake`; the
+  test, its fixtures and Playwright come from the worktree. A commit whose fixtures predate flake mode records no
+  attempt, which a bisect step skips.
+- `--source desktop` records the experiment as run from the app; the shell passes its own URL and token in
+  `PIWI_DASHBOARD_URL` and `PIWI_API_KEY`, which win over a `.env` in the worktree.
+- The desktop guard refused the `piwi` commands' `X-API-Key` header (they got a 401 against the app); it reads it
+  like the bearer token.
+- The browser is not installed ahead of the lab, as it is for Reproduce here: the plan names the Playwright project,
+  not the browser, and Playwright's own message names a missing one in the output.
+- The lab's worktree is `<project>/flake-<sha>`, apart from a reproduction's of the same commit.
 
 The suspects are computed from data Piwi already stores. The lab adds a CLI command, a reporter mode like probe mode,
 two tables, a desktop command and MCP tools. New wire fields, the plan file format, the command and the endpoints
