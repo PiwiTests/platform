@@ -186,6 +186,13 @@ jobs:
         working-directory: ./packages/picker-dom
         run: npm run picker-dom:test:integration
 
+      # The reporter's flake-run and build-output specs load the built package,
+      # and the app's locator-generate-drift.test.ts compares the app copy of
+      # the locator helpers against the reporter's compiled one.
+      - name: Build reporter
+        working-directory: ./packages/reporter
+        run: npm run reporter:build
+
       - name: Test reporter
         working-directory: ./packages/reporter
         run: npm run reporter:test:coverage
@@ -203,12 +210,6 @@ jobs:
           working-directory: ./packages/reporter
           name: Reporter
           file-coverage-mode: changes
-
-      # locator-generate-drift.test.ts compares the app copy of the locator
-      # helpers against the reporter's compiled one, so it needs the dist.
-      - name: Build reporter
-        working-directory: ./packages/reporter
-        run: npm run reporter:build
 
       - name: Test application unit tests
         run: npm run app:test:unit:coverage
