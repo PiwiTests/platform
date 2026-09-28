@@ -56,6 +56,7 @@ import { selectCaseScreenshots } from './case-screenshots';
 import { supportedImageMediaType } from '#shared/file-classify';
 import { getOrComputeVisualDiff } from './visual-diff';
 import { parseAriaCandidates, textSimilarity } from '#shared/locator-fingerprint';
+import { isFailedStatus } from '#shared/utils/test-counts';
 import type {
   BuildContextOptions,
   DiagnosisScope,
@@ -1124,7 +1125,7 @@ async function recurrenceFlakinessSection(db: DbClient, cluster: FailureCluster)
       byRun.set(r.runId, g);
     }
     g.total++;
-    if (r.status === 'failed' || r.status === 'timedOut' || r.status === 'interrupted') g.failed++;
+    if (isFailedStatus(r.status) || r.status === 'interrupted') g.failed++;
     if ((r.retries ?? 0) > 0) g.retried++;
     if ((r.retries ?? 0) > 0 && r.status === 'passed') g.passOnRetry = true;
   }
