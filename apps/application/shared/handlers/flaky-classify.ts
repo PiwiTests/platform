@@ -9,7 +9,7 @@ import { testCases, testRunsCases, testRuns, networkRequests } from '../../serve
 import { classifyFlakyRootCause, type BrowserOutcomes, type FlakyRootCause } from '../flaky-classify';
 import { FAILED_STATUS_KEYS } from '../utils/test-counts';
 import { getAttemptDiff } from './test-cases';
-import { isProbeRun } from './probes';
+import { isLabRun } from './probes';
 import type { DrizzleDB } from './db';
 
 /** How many recent flaky executions to diff for the attempt-diff network vote. */
@@ -31,8 +31,9 @@ export async function classifyAndPersistFlakyRootCause(
   // The test's recent failed attempts and its recent passes, read apart so a
   // rare flake keeps its failures however many passes came since. Both come
   // from green runs as well as red ones: a retry-pass leaves its failed attempt
-  // in a run that finished green. Probe runs fail by design when they notice an
-  // injected fault, so their executions are left out of the evidence.
+  // in a run that finished green. Lab runs (probes, flake experiments) fail by
+  // design under an injected fault or condition, so their executions are left
+  // out of the evidence.
   const recentAttempts = (statuses: string[]) =>
     db
       .select({
@@ -48,7 +49,7 @@ export async function classifyAndPersistFlakyRootCause(
       .where(and(eq(testRunsCases.testCaseId, testCaseId), inArray(testRunsCases.status, statuses)))
       .orderBy(desc(testRunsCases.createdAt))
       .limit(RECENT_ATTEMPTS)
-      .then((rows) => rows.filter((r) => !isProbeRun(r.runMetadata)));
+      .then((rows) => rows.filter((r) => !isLabRun(r.runMetadata)));
   const recentFailures = await recentAttempts([...FAILED_STATUS_KEYS]);
 
   if (recentFailures.length === 0) {
@@ -112,7 +113,7 @@ export async function classifyAndPersistFlakyRootCause(
       )
       .orderBy(desc(testRunsCases.createdAt))
       .limit(ATTEMPT_DIFF_SAMPLE)
-  ).filter((r) => !isProbeRun(r.runMetadata));
+  ).filter((r) => !isLabRun(r.runMetadata));
   for (const exec of flakyExecutions) {
     const diff = await getAttemptDiff(db, exec.id);
     if (diff.differences.some((d) => d.kind === 'network' && d.only === 'failing')) {

@@ -3,6 +3,9 @@ import {
   selectProbePlan,
   selectDependencyProbeItems,
   isProbeRun,
+  isFlakeLabRun,
+  isLabRun,
+  notLabRun,
   PROBE_FAULTS,
   DEFAULT_PROBE_BUDGET,
   type ProbeCandidate,
@@ -144,5 +147,47 @@ describe('isProbeRun', () => {
     expect(isProbeRun({})).toBe(false);
     expect(isProbeRun(null)).toBe(false);
     expect(isProbeRun(undefined)).toBe(false);
+  });
+});
+
+describe('isFlakeLabRun and isLabRun', () => {
+  const lab = { piwiFlakeLab: { experimentId: 'exp-1', armId: 'control' } };
+
+  test('a flake-lab run carries the experiment and arm', () => {
+    expect(isFlakeLabRun(lab)).toBe(true);
+    expect(isFlakeLabRun({ piwiFlakeLab: null })).toBe(false);
+    expect(isFlakeLabRun({ piwiFlakeLab: true })).toBe(false);
+    expect(isFlakeLabRun({ piwiProbe: true })).toBe(false);
+    expect(isFlakeLabRun(null)).toBe(false);
+  });
+
+  test('a lab run is a probe run or a flake-lab run', () => {
+    expect(isLabRun(lab)).toBe(true);
+    expect(isLabRun({ piwiProbe: true })).toBe(true);
+    expect(isLabRun({ scm: { branch: 'main' } })).toBe(false);
+    expect(isLabRun(undefined)).toBe(false);
+  });
+});
+
+describe('notLabRun (SQLite)', () => {
+  test('keeps real runs and drops probe and flake-lab runs, compact or spaced JSON', async () => {
+    const { createClient } = await import('@libsql/client');
+    const { drizzle } = await import('drizzle-orm/libsql');
+    const { sql } = await import('drizzle-orm');
+    const db = drizzle(createClient({ url: ':memory:' }));
+    await db.run(sql`CREATE TABLE runs (id INTEGER, metadata TEXT)`);
+    const rows: Array<[number, string | null]> = [
+      [1, null],
+      [2, JSON.stringify({ scm: { branch: 'main' } })],
+      [3, JSON.stringify({ piwiProbe: true })],
+      [4, JSON.stringify({ piwiFlakeLab: { experimentId: 'e', armId: 'a' } })],
+      [5, '{"piwiFlakeLab": {"armId": "a", "experimentId": "e"}}'],
+      [6, '{"piwiProbe": true}'],
+    ];
+    for (const [id, metadata] of rows) await db.run(sql`INSERT INTO runs VALUES (${id}, ${metadata})`);
+    const kept = await db.all<{ id: number }>(
+      sql`SELECT id FROM runs WHERE ${notLabRun(sql.raw('metadata'))} ORDER BY id`,
+    );
+    expect(kept.map((r) => r.id)).toEqual([1, 2]);
   });
 });

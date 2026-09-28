@@ -15,7 +15,7 @@ import {
 } from '../../server/database/schema';
 import { asc, desc, eq, exists, sql, and, or, inArray, gte, lte, isNull, isNotNull, count } from 'drizzle-orm';
 import { jsonArrayContainsAll, parseLockFilter, parseTagFilter } from '../utils/tag-filter';
-import { isProbeRun, notProbeRun } from './probes';
+import { isLabRun, notLabRun } from './probes';
 import { isFailedStatus } from '../utils/test-counts';
 import { fixmeSkipPredicate } from '../utils/skip-kind';
 import { TEST_PRIORITIES } from '@piwitests/core/test-meta';
@@ -562,7 +562,7 @@ export async function getProjectPerformance(
   if (!projectResults[0]) throw new Error('Project not found');
 
   // Build conditions
-  const conditions = [eq(testRuns.projectId, projectId), notProbeRun(testRuns.metadata)];
+  const conditions = [eq(testRuns.projectId, projectId), notLabRun(testRuns.metadata)];
   if (fullRunsOnly) {
     conditions.push(eq(testRuns.isFullRun, 1));
   }
@@ -872,8 +872,9 @@ export async function getProjectSpecHealth(db: DrizzleDB, projectId: number, day
     .limit(100);
   if (recentRuns.length === 0) return { specs: [] };
 
-  // Probe runs inject faults, so their executions never count toward spec health.
-  const runIds: number[] = recentRuns.filter((r: any) => !isProbeRun(r.metadata)).map((r: any) => r.id);
+  // Lab runs (probes, flake experiments) inject faults and conditions, so their
+  // executions never count toward spec health.
+  const runIds: number[] = recentRuns.filter((r: any) => !isLabRun(r.metadata)).map((r: any) => r.id);
   if (runIds.length === 0) return { specs: [] };
   const rows: any[] = await db
     .select({
@@ -1017,7 +1018,7 @@ export async function getProjectSlowTests(db: DrizzleDB, projectId: number, runs
   const recentRuns: any[] = await db
     .select({ id: testRuns.id })
     .from(testRuns)
-    .where(and(eq(testRuns.projectId, projectId), notProbeRun(testRuns.metadata)))
+    .where(and(eq(testRuns.projectId, projectId), notLabRun(testRuns.metadata)))
     .orderBy(desc(testRuns.startTime))
     .limit(effectiveLimit);
 
@@ -1414,14 +1415,15 @@ export async function getProjectFlakyTests(
 
   const runIds: number[] = recentRuns.map((r: any) => r.id);
 
-  // Re-fetch with status filter. Probe runs inject faults, so their executions
+  // Re-fetch with status filter. Lab runs (probes, flake experiments) inject
+  // faults and conditions, so their executions
   // never enter the flaky leaderboard.
   const runsWithStatus: any[] = await db
     .select({ id: testRuns.id, startTime: testRuns.startTime, status: testRuns.status, metadata: testRuns.metadata })
     .from(testRuns)
     .where(inArray(testRuns.id, runIds));
   const filteredRuns: any[] = runsWithStatus.filter(
-    (r: any) => TERMINAL_STATUSES.includes(r.status) && !isProbeRun(r.metadata),
+    (r: any) => TERMINAL_STATUSES.includes(r.status) && !isLabRun(r.metadata),
   );
 
   if (filteredRuns.length === 0) return [];
@@ -1702,7 +1704,7 @@ export async function getProjectsOverview(db: DrizzleDB, scope: ProjectScope = '
       totalFullRuns: count(),
     })
     .from(testRuns)
-    .where(and(inArray(testRuns.projectId, projectIds), eq(testRuns.isFullRun, 1), notProbeRun(testRuns.metadata)))
+    .where(and(inArray(testRuns.projectId, projectIds), eq(testRuns.isFullRun, 1), notLabRun(testRuns.metadata)))
     .groupBy(testRuns.projectId);
 
   const totalFullRunsByProjectId = new Map<number, number>();
@@ -1731,7 +1733,7 @@ export async function getProjectsOverview(db: DrizzleDB, scope: ProjectScope = '
           ),
         })
         .from(testRuns)
-        .where(and(inArray(testRuns.projectId, projectIds), eq(testRuns.isFullRun, 1), notProbeRun(testRuns.metadata))),
+        .where(and(inArray(testRuns.projectId, projectIds), eq(testRuns.isFullRun, 1), notLabRun(testRuns.metadata))),
     );
 
     recentFullRuns = await db

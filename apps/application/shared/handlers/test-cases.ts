@@ -19,7 +19,7 @@ import { buildFailureVerdict } from '../failure-verdict';
 import { buildSituation } from '../situation';
 import { computeNextStep } from '../next-step';
 import { getClusterPatchFacts } from './failure-clusters';
-import { isProbeRun } from './probes';
+import { isLabRun } from './probes';
 import { getFlakeProfile, mayHaveFlakeSuspects } from './flake-profile';
 import { isPassiveCapabilityDeclined } from './capabilities';
 import { isFailedStatus } from '../utils/test-counts';
@@ -171,7 +171,7 @@ export async function getTestCase(db: DrizzleDB, id: number) {
 }
 
 export async function getTestCaseHistory(db: DrizzleDB, testCaseId: number) {
-  // Probe runs replay a test with an injected fault, so their executions never
+  // Lab runs replay a test with an injected fault or condition, so their executions never
   // appear in a test's history.
   const rows = await db
     .select({
@@ -191,7 +191,7 @@ export async function getTestCaseHistory(db: DrizzleDB, testCaseId: number) {
     .where(eq(testRunsCases.testCaseId, testCaseId))
     .orderBy(desc(testRuns.startTime))
     .limit(50);
-  return rows.filter((r) => !isProbeRun(r.runMetadata)).map(({ runMetadata: _runMetadata, ...row }) => row);
+  return rows.filter((r) => !isLabRun(r.runMetadata)).map(({ runMetadata: _runMetadata, ...row }) => row);
 }
 
 export async function getTestRunCase(
@@ -1150,7 +1150,7 @@ export interface TestCaseStabilityTrend {
 
 /**
  * Stability of a single test case over time: its executions of the last
- * `days` days (probe runs left out) in UTC time buckets, each with its pass
+ * `days` days (lab runs left out) in UTC time buckets, each with its pass
  * rate, flaky rate and average duration. The buckets follow the analytics
  * granularity (`auto` keeps about 31 of them), and a bucket without an
  * execution is a gap. Shared by the REST stability-trend endpoint, the Trend
@@ -1182,8 +1182,8 @@ export async function getTestCaseStabilityTrend(
   const buckets = makeTimeBuckets(from, now + 1, options.granularity ?? 'auto');
   const tally = new Map<string, { total: number; passed: number; flaky: number; durations: number[] }>();
   for (const row of rawRows) {
-    // Probe runs replay a test with an injected fault, so they never shape the trend.
-    if (isProbeRun(row.runMetadata)) continue;
+    // Lab runs replay a test with an injected fault or condition, so they never shape the trend.
+    if (isLabRun(row.runMetadata)) continue;
     const key = buckets.keyFor(row.startTime);
     if (!key) continue;
     const t = tally.get(key) ?? { total: 0, passed: 0, flaky: 0, durations: [] };

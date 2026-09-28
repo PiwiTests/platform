@@ -15,7 +15,7 @@
 import { and, eq, gte, inArray, lt, lte, or, sql, type SQL } from 'drizzle-orm';
 import { analyticsDailyRollups, projects, testRuns, testRunsCases } from '../../../server/database/schema';
 import type { DrizzleDB } from '../db';
-import { notProbeRun } from '../probes';
+import { notLabRun } from '../probes';
 import { dayKey, DAY_MS, FAILING_RUN_STATUSES, TERMINAL_RUN_STATUSES } from './common';
 import { branchPolicyCondition, type BranchPolicy } from './branch-policy';
 
@@ -166,9 +166,9 @@ const RAW_RUN_FIELDS = {
   p90TestDuration: testRuns.p90TestDuration,
 };
 
-/** The runs a rollup counts: finished, never a probe run. */
+/** The runs a rollup counts: finished, never a lab run (probe or flake experiment). */
 function countedRunConditions(): SQL[] {
-  return [inArray(testRuns.status, TERMINAL_RUN_STATUSES), notProbeRun(testRuns.metadata)];
+  return [inArray(testRuns.status, TERMINAL_RUN_STATUSES), notLabRun(testRuns.metadata)];
 }
 
 interface ExecutionStats {
@@ -370,7 +370,7 @@ export async function recomputeRollupCells(
 
 /**
  * The ingest hook: recompute the retained row of the cell a run belongs to.
- * A no-op for a run that does not exist; a probe or unfinished run leaves its
+ * A no-op for a run that does not exist; a lab or unfinished run leaves its
  * cell exactly as the other runs make it.
  */
 export async function upsertDailyRollup(db: DrizzleDB, runId: number): Promise<void> {

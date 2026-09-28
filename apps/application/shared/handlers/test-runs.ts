@@ -29,7 +29,7 @@ import { normalizeGitUrl } from '../../server/utils/scm/git-url';
 import { selectBaselineRun } from '../../server/utils/branch-baseline';
 import { resolveRunBranch } from '../../server/utils/run-branch';
 import { readProjectDefaultBranch, resolveFallbackBranch } from './baseline-scope';
-import { notProbeRun } from './probes';
+import { notLabRun } from './probes';
 import { describeRunBaseline } from '#shared/run-baseline';
 import { getLocatorHealingBatch } from '../../server/utils/locator-healing';
 
@@ -288,7 +288,7 @@ export async function getTestRun(
   };
 }
 
-// ─── getRecentTestRuns — active + 30 most recent completed, probe runs left out ─
+// ─── getRecentTestRuns — active + 30 most recent completed, lab runs left out ─
 
 const ACTIVE_STATUSES = ['running', 'initializing', 'finalizing'] as const;
 
@@ -327,7 +327,7 @@ export async function getRecentTestRuns(db: DrizzleDB, scope: ProjectScope = 'al
       .select(RECENT_FIELDS)
       .from(testRuns)
       .innerJoin(projects, eq(testRuns.projectId, projects.id))
-      .where(and(notInArray(testRuns.status, [...ACTIVE_STATUSES]), notProbeRun(testRuns.metadata)))
+      .where(and(notInArray(testRuns.status, [...ACTIVE_STATUSES]), notLabRun(testRuns.metadata)))
       .orderBy(desc(testRuns.startTime))
       .limit(30),
   ]);

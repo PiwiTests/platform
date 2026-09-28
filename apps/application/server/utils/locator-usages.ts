@@ -45,7 +45,7 @@ import {
   stepLocations,
   stripLocationRoot,
 } from '#shared/locator-chain';
-import { isProbeRun } from '#shared/handlers/probes';
+import { isLabRun } from '#shared/handlers/probes';
 import { escapeLikePattern } from '#shared/utils/tag-filter';
 import type { DrizzleDB } from '#shared/handlers/db';
 import type {
@@ -109,6 +109,7 @@ interface RunFacts {
   startedAt: Date;
   /** The checkout directory the reporter ran from, when it sent one. */
   root: string | null;
+  /** A lab run (probe or flake experiment), whose executions are never indexed. */
   probe: boolean;
   /** The run's branch, trimmed; null when it had none. */
   branch: string | null;
@@ -155,7 +156,7 @@ async function loadRunFacts(db: DrizzleDB, runIds: number[]): Promise<Map<number
       out.set(r.id, {
         startedAt: new Date(r.startTime),
         root: locationRootOf(metadata?.workingDir),
-        probe: isProbeRun(metadata),
+        probe: isLabRun(metadata),
         branch: r.branch?.trim() || null,
         baseUrls: runBaseUrls(metadata),
       });
@@ -448,8 +449,8 @@ export async function backfillLocatorUsages(
   }));
   if (opts.reset) await db.delete(locatorUsages).where(eq(locatorUsages.projectId, projectId));
 
-  // Only the runs of the picked executions are checked for probes; a probe
-  // found moves its groups to their next execution, whose run is checked next.
+  // Only the runs of the picked executions are checked for lab runs (probes,
+  // flake experiments); a lab run found moves its groups to their next execution, whose run is checked next.
   const maxCases = opts.maxCases ?? 5000;
   const probeRuns = new Set<number>();
   const checked = new Set<number>();

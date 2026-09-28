@@ -24,8 +24,8 @@ const FAR = 4;
  * fails: `GET /api/cart` takes 2 s, the neighbor (case 2) overlaps it on
  * another shard, and case 3 ran just before it on its worker. In runs 5–12
  * it passes with a fast cart, case 3 runs before it on another worker, and
- * the neighbor runs after it. A probe run, a run on a feature branch and a
- * run older than the window fail too, and must be left out.
+ * the neighbor runs after it. A probe run, a flake-lab run, a run on a feature
+ * branch and a run older than the window fail too, and must be left out.
  */
 beforeAll(async () => {
   db = drizzle(createClient({ url: ':memory:' }), { schema });
@@ -50,7 +50,10 @@ beforeAll(async () => {
     return id;
   };
 
-  const addRun = (id: number, opts: { fails: boolean; ageDays: number; branch?: string; probe?: boolean }) => {
+  const addRun = (
+    id: number,
+    opts: { fails: boolean; ageDays: number; branch?: string; probe?: boolean; lab?: boolean },
+  ) => {
     const start = NOW.getTime() - opts.ageDays * DAY;
     runs.push({
       id,
@@ -60,7 +63,11 @@ beforeAll(async () => {
       duration: 600_000,
       branch: opts.branch ?? 'main',
       environment: 'staging',
-      metadata: opts.probe ? { piwiProbe: true } : null,
+      metadata: opts.probe
+        ? { piwiProbe: true }
+        : opts.lab
+          ? { piwiFlakeLab: { experimentId: 'exp-1', armId: 'delay-cart' } }
+          : null,
     });
     const created = new Date(start);
     if (opts.fails) {
@@ -185,6 +192,7 @@ beforeAll(async () => {
   addRun(13, { fails: true, ageDays: 1, probe: true });
   addRun(14, { fails: true, ageDays: 1, branch: 'feature/x' });
   addRun(15, { fails: true, ageDays: 40 });
+  addRun(16, { fails: true, ageDays: 1, lab: true });
 
   await db.insert(schema.testRuns).values(runs);
   await db.insert(schema.testRunsCases).values(executions);
@@ -194,7 +202,7 @@ beforeAll(async () => {
 describe('getFlakeProfile', () => {
   test('reads the window the flaky leaderboard reads', async () => {
     const profile = (await getFlakeProfile(db as never, FLAKY, { now: NOW }))!;
-    // Runs 1–12 only: the probe run, the feature branch and the 40-day-old run are left out.
+    // Runs 1–12 only: the probe run, the flake-lab run, the feature branch and the 40-day-old run are left out.
     expect(profile.failures).toBe(4);
     expect(profile.passes).toBe(8);
   });
@@ -253,11 +261,11 @@ describe('mayHaveFlakeSuspects', () => {
     await db.insert(schema.testRunsCases).values([
       // Fails in every run of the window: no pass to compare with.
       ...[1, 2, 3, 4].map((run) => attempt(run, ONLY_FAILS, 'failed')),
-      // Fails twice in the window; the probe run, the feature branch and the
-      // old run would make it five, but the profile does not read them.
+      // Fails twice in the window; the probe run, the flake-lab run, the feature
+      // branch and the old run would make it six, but the profile does not read them.
       ...[1, 2].map((run) => attempt(run, TWICE, 'failed')),
       ...[5, 6, 7, 8].map((run) => attempt(run, TWICE, 'passed')),
-      ...[13, 14, 15].map((run) => attempt(run, TWICE, 'timedOut')),
+      ...[13, 14, 15, 16].map((run) => attempt(run, TWICE, 'timedOut')),
     ]);
   });
 

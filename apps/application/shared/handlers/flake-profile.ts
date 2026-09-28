@@ -4,7 +4,7 @@
  * test it.
  *
  * The window is the test's last 30 days, at most 200 attempts, from the runs
- * the flaky leaderboard reads (finished, not probe runs, on the default branch
+ * the flaky leaderboard reads (finished, not lab runs, on the default branch
  * or no branch). Every attempt is compared on the same factors: the slowest
  * duration of each route the passes call too, the routes that failed, how many tests of its shard
  * ran at the same time, the other tests running beside it, the test that ran
@@ -22,7 +22,7 @@ import { aliasedTable, and, desc, eq, gte, inArray, isNotNull, isNull, ne, or, s
 import { projects, testCases, testRuns, testRunsCases, networkRequests } from '../../server/database/schema';
 import { FAILED_STATUS_KEYS, isFailedStatus } from '../utils/test-counts';
 import { requestRouteKey } from '../utils/route';
-import { notProbeRun } from './probes';
+import { notLabRun } from './probes';
 import { TERMINAL_STATUSES } from './projects';
 import type { DrizzleDB } from './db';
 
@@ -603,7 +603,7 @@ function windowAttempts(testCaseId: number, defaultBranch: string | null, since:
     gte(testRunsCases.createdAt, since),
     inArray(testRunsCases.status, ['passed', ...FAILED_STATUS_KEYS]),
     inArray(testRuns.status, TERMINAL_STATUSES),
-    notProbeRun(testRuns.metadata),
+    notLabRun(testRuns.metadata),
     defaultBranch ? or(eq(testRuns.branch, defaultBranch), isNull(testRuns.branch)) : undefined,
   );
 }
@@ -872,7 +872,7 @@ async function countConcurrentRuns(
         eq(testRuns.projectId, projectId),
         inArray(testRuns.environment, environments),
         gte(testRuns.startTime, from),
-        notProbeRun(testRuns.metadata),
+        notLabRun(testRuns.metadata),
       ),
     )
     .orderBy(desc(testRuns.startTime))
