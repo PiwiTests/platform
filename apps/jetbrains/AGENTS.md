@@ -32,12 +32,18 @@ with the project's Node.js interpreter.
 ## Workflow
 
 ```bash
-npm run editor:build               # from the repository root: the bundle the plugin ships
+npm run editor:build -w packages/editor   # from the repository root: the bundle the plugin ships
 ./gradlew test                     # unit tests of Glue.kt, and platform tests on WebStorm 2023.3
 ./gradlew buildPlugin              # build/distributions/piwi-jetbrains-<version>.zip
 ./gradlew verifyPlugin             # the Plugin Verifier on `verifyIdes` (gradle.properties; -PverifyIdes=WS:2023.3 for one)
 ./gradlew runIde                   # a sandboxed WebStorm with the plugin
 ```
+
+**The JDK.** Gradle runs on the JDK 21 that `gradle/gradle-daemon-jvm.properties` names, whatever `JAVA_HOME` points to
+(the wrapper starts on JDK 11 or later), and the build compiles with a JDK 21 toolchain (`jvmToolchain(21)`). When the
+machine has no JDK 21, the foojay resolver in `settings.gradle.kts` downloads one into `~/.gradle/jdks`. Moving to
+another JDK changes both: `./gradlew updateDaemonJvm --jvm-version=<n>` regenerates the file, and `jvmToolchain` follows
+in `build.gradle.kts`. CI (`jetbrains.yml`) installs JDK 21, so it downloads nothing.
 
 The platform test `testTheBundledServiceAnswersThroughTheDescriptor` starts the bundled service with the descriptor's
 command line against a stub instance, and reads its answers with the Kotlin protocol classes.
