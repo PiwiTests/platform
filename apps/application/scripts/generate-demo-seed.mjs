@@ -1335,6 +1335,130 @@ for (const proj of DEMO_PROJECTS) {
   }
 }
 
+// ── Flake suspect (post-processing, rng-free) ───────────────────────────────
+// The checkout project's flaky test fails when `GET /api/cart` is slow: the
+// total it asserts is read before the cart answers. Each of its flaky runs
+// gets the failed first attempt as its own execution row, the way the
+// reporter stores attempts, with the cart request slow on it; its passes keep
+// the cart fast, bar a few slow ones that passed anyway. The flake profile
+// then ranks "GET /api/cart slower" first, and the Attempts diff of each
+// flaky run links its slower-request row to that suspect.
+const FLAKE_SUSPECT_MIN_FLAKY_RUNS = 7;
+const FLAKE_SUSPECT_SLOW_PASSES = 2;
+const FLAKE_SUSPECT_ERROR =
+  'Error: expect(locator).toHaveText(expected) failed\n\n' +
+  "Locator:  getByTestId('cart-total')\n" +
+  'Expected: "$85.50"\n' +
+  'Received: "$95.00"\n' +
+  'Timeout:  5000ms\n' +
+  '    at tests/checkout/cart.spec.ts:31:5';
+{
+  const flaky = FLAKY_CASES[1];
+  const caseDef = DEMO_PROJECTS.find((p) => p.id === 1).cases.find((c) => c.title === flaky.title);
+  const flakyCaseId = caseIdByKey.get(`1\x00${caseDef.file}\x00${flaky.title}`);
+  const isCart = (nr) => nr.method === 'GET' && /\/api\/cart$/.test(nr.url);
+  const setDuration = (nr, ms) => {
+    nr.duration = ms;
+    nr.server_traces = buildServerTraces({
+      method: nr.method,
+      url: nr.url,
+      status: nr.status,
+      duration: ms,
+      resourceType: nr.resource_type,
+    });
+  };
+
+  // Project 1 runs, newest first — the newest run has the smallest id.
+  const proj1Runs = TEST_RUNS.filter((r) => r.project_id === 1).sort((a, b) => a.id - b.id);
+  const rowOf = (run) => TEST_RUNS_CASES.find((row) => row.test_run_id === run.id && row.test_case_id === flakyCaseId);
+
+  // Enough flaky runs for a suspect: turn the newest clean passes flaky until there are.
+  let flakyCount = proj1Runs.filter((run) => rowOf(run)?.retries === 1).length;
+  for (const run of proj1Runs) {
+    if (flakyCount >= FLAKE_SUSPECT_MIN_FLAKY_RUNS) break;
+    const row = rowOf(run);
+    if (!row || row.status !== 'passed' || row.retries !== 0) continue;
+    row.retries = 1;
+    row.attempts = JSON.stringify([
+      { retry: 0, status: 'failed', duration: Math.round(row.duration / 2), startedAt: row.started_at },
+      { retry: 1, status: 'passed', duration: row.duration, startedAt: row.started_at + row.duration },
+    ]);
+    run.flaky_tests += 1;
+    flakyCount++;
+  }
+
+  let slowPasses = 0;
+  for (const [index, run] of proj1Runs.entries()) {
+    const row = rowOf(run);
+    if (!row || row.status !== 'passed') continue;
+    const requests = NETWORK_REQUESTS.filter((nr) => nr.test_runs_case_id === row.id);
+    if (row.retries !== 1) {
+      // A clean pass: the cart answers fast, bar a few slow ones that passed anyway.
+      const slow = index % 5 === 3 && slowPasses < FLAKE_SUSPECT_SLOW_PASSES;
+      if (slow) slowPasses++;
+      for (const nr of requests) if (isCart(nr)) setDuration(nr, slow ? 1800 + index * 10 : 60 + ((index * 37) % 140));
+      continue;
+    }
+
+    // A flaky run: the failed first attempt becomes its own row, the retry passes after it.
+    const failedDuration = Math.round(row.duration / 2);
+    const failedRow = {
+      ...row,
+      id: trcId++,
+      status: 'failed',
+      duration: failedDuration,
+      error: FLAKE_SUSPECT_ERROR,
+      failure_cluster_id: null,
+      retries: 0,
+      is_new_regression: 0,
+      is_new_flaky: 0,
+      console_logs: null,
+      dialogs: null,
+      aria_snapshot: null,
+      web_vitals: null,
+      // The failed attempt ran the same steps at half the pace up to the failing assertion.
+      steps: row.steps.map((step, i) => ({
+        ...step,
+        startTime: row.started_at + Math.round((step.startTime - row.started_at) / 2),
+        duration: Math.round(step.duration / 2),
+        ...(i === row.steps.length - 1 ? { failed: true, error: { message: FLAKE_SUSPECT_ERROR.split('\n')[0] } } : {}),
+      })),
+      step_events:
+        row.step_events?.map((e) => ({
+          ...e,
+          startedAt: row.started_at + Math.round((e.startedAt - row.started_at) / 2),
+          duration: Math.round((e.duration ?? 0) / 2),
+        })) ?? null,
+      created_at: row.started_at,
+    };
+    TEST_RUNS_CASES.push(failedRow);
+    // The retry starts once the failed attempt is over; its timestamps move with it.
+    const shift = failedDuration + SEED_WORKER_GAP_MS;
+    row.started_at += shift;
+    row.created_at = row.started_at;
+    row.steps = row.steps.map((step) => ({ ...step, startTime: step.startTime + shift }));
+    row.step_events = row.step_events?.map((e) => ({ ...e, startedAt: e.startedAt + shift })) ?? null;
+    row.console_logs = row.console_logs?.map((e) => ({ ...e, timestamp: e.timestamp + shift })) ?? null;
+    failedRow.attempts = JSON.stringify([
+      { retry: 0, status: 'failed', duration: failedDuration, startedAt: failedRow.started_at },
+    ]);
+    row.attempts = JSON.stringify([
+      { retry: 0, status: 'failed', duration: failedDuration, startedAt: failedRow.started_at },
+      { retry: 1, status: 'passed', duration: row.duration, startedAt: row.started_at },
+    ]);
+
+    let requestStartMs = failedRow.started_at + SEED_FIRST_REQUEST_OFFSET_MS;
+    for (const nr of requests) {
+      const copy = { ...nr, id: nrId++, test_runs_case_id: failedRow.id, start_time: requestStartMs };
+      if (isCart(copy)) setDuration(copy, 1700 + ((index * 137) % 700));
+      requestStartMs += (copy.duration ?? 0) + SEED_REQUEST_GAP_MS;
+      NETWORK_REQUESTS.push(copy);
+      nr.start_time += failedDuration + SEED_WORKER_GAP_MS;
+      if (isCart(nr)) setDuration(nr, 60 + ((index * 37) % 140));
+    }
+  }
+}
+
 // ── Worker lanes without holes (post-processing, rng-free) ──────────────────
 // A skipped or did-not-run test never ran on a worker — Playwright reports it
 // with no worker index — so it leaves its lane, and the tests after it on that
@@ -1386,12 +1510,17 @@ for (const proj of DEMO_PROJECTS) {
 }
 
 // ── Regression / new-flaky signals ──────────────────────────────────────────
-// Mirror the server's computeRegressionSignals: walk each case's executions in
+// Mirror the server's computeRegressionSignals: walk each case's final
+// executions (one per run: an earlier attempt of a retried test is not one) in
 // chronological order; a failure right after a pass is a new regression, and a
 // retry-pass right after a clean pass is newly flaky.
 {
+  const retried = new Set(
+    TEST_RUNS_CASES.filter((trc) => trc.retries > 0).map((trc) => `${trc.test_run_id}:${trc.test_case_id}`),
+  );
   const byCase = new Map();
   for (const trc of TEST_RUNS_CASES) {
+    if (trc.retries === 0 && retried.has(`${trc.test_run_id}:${trc.test_case_id}`)) continue;
     if (!byCase.has(trc.test_case_id)) byCase.set(trc.test_case_id, []);
     byCase.get(trc.test_case_id).push(trc);
   }

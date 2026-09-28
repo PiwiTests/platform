@@ -24,6 +24,7 @@ import type { LocatorHealingResult } from '#shared/locator-healing.types';
 import type { PageStateLike } from '#shared/page-state';
 import { ariaTextPreferJson } from '#shared/aria-json';
 import { intervalsOverlap } from '#shared/lock-overlap';
+import { requestRouteKey } from '#shared/utils/route';
 
 /** The environment-diff facts the engine reads — the pure subset of the server result. */
 export interface FailureClueEnvironmentDiff {
@@ -54,7 +55,8 @@ export type FailureClueRule =
   | 'lock-cross-shard'
   | 'timeout-budget'
   | 'environment-changed'
-  | 'browser-specific';
+  | 'browser-specific'
+  | 'known-flake-suspect';
 
 /** How strongly a clue points at the cause; drives ranking and the strength chip. */
 export type FailureClueStrength = 'strong' | 'medium' | 'weak';
@@ -190,6 +192,21 @@ export interface FailureClueLockHolder {
   locks: string[];
 }
 
+/**
+ * One suspect of the test's flake profile, as the clue reads it: which failing
+ * executions show it, and the counts behind it.
+ */
+export interface FailureClueFlakeSuspect {
+  kind: 'slow-route' | 'failed-route' | 'alongside' | 'before' | 'load' | 'project';
+  label: string;
+  counts: { failuresWith: number; failures: number; passesWith: number; passes: number };
+  route?: string;
+  thresholdMs?: number;
+  title?: string;
+  project?: string;
+  executionIds: number[];
+}
+
 /** The cluster's recorded fix history, when this failure belongs to a cluster. */
 export interface FailureClueClusterFix {
   fixCommit?: string | null;
@@ -237,6 +254,8 @@ export interface FailureClueInput {
   timeout: number | null;
   /** The slow-request threshold; defaults to 1500 ms. */
   slowRequestMs?: number | null;
+  /** The test's flake suspects, ranked; empty or absent when the test is not flaky. */
+  flakeSuspects?: FailureClueFlakeSuspect[] | null;
 }
 
 /** The most a clue list ever carries — keeps the card and the prompt readable. */
@@ -267,6 +286,7 @@ const RULE_ORDER: FailureClueRule[] = [
   'timeout-budget',
   'environment-changed',
   'browser-specific',
+  'known-flake-suspect',
 ];
 
 const STRENGTH_RANK: Record<FailureClueStrength, number> = { strong: 0, medium: 1, weak: 2 };
@@ -333,6 +353,48 @@ function readLocatorTarget(parsed: ParsedPlaywrightError | null): LocatorTarget 
     null;
   const testId = /getByTestId\(\s*['"`]([^'"`]+)['"`]/.exec(locator)?.[1] ?? null;
   return { name: name ? name.toLowerCase() : null, role, testId };
+}
+
+/** "7 of this test's 8 failures and 3 of its 44 passes". */
+function suspectCounts(c: FailureClueFlakeSuspect['counts']): string {
+  return `${c.failuresWith} of this test's ${c.failures} failures and ${c.passesWith} of its ${c.passes} passes`;
+}
+
+/** The clue for a flake suspect this execution shows, in the words of its kind. */
+function knownFlakeSuspectClue(suspect: FailureClueFlakeSuspect, requests: FailureClueNetworkRequest[]): FailureClue {
+  const counts = suspectCounts(suspect.counts);
+  const base = {
+    id: 'known-flake-suspect',
+    rule: 'known-flake-suspect' as const,
+    strength: 'weak' as const,
+    title: `A known flake suspect: ${suspect.label}`,
+  };
+  if (suspect.kind === 'slow-route' || suspect.kind === 'failed-route') {
+    const route = suspect.route ?? '';
+    const matches = requests
+      .map((req, index) => ({ req, index }))
+      .filter((m) => requestRouteKey(m.req.method, m.req.url) === route);
+    const slowest = matches.sort((a, b) => (b.req.duration ?? 0) - (a.req.duration ?? 0))[0];
+    const citations = [{ section: 'networkRequests', ...(slowest ? { index: slowest.index } : {}) }];
+    if (suspect.kind === 'slow-route') {
+      const took = slowest?.req.duration != null ? ` took ${(slowest.req.duration / 1000).toFixed(1)} s` : ' was slow';
+      const threshold = suspect.thresholdMs != null ? ` (${Math.floor(suspect.thresholdMs / 100) / 10} s or more)` : '';
+      return { ...base, detail: `${route}${took}; it is slow${threshold} in ${counts}.`, citations };
+    }
+    return { ...base, detail: `${route} failed; it fails in ${counts}.`, citations };
+  }
+  const citations = [{ section: 'recurrenceFlakiness' }];
+  const title = suspect.title ?? 'another test';
+  switch (suspect.kind) {
+    case 'alongside':
+      return { ...base, detail: `"${title}" was running at the same time; it runs alongside in ${counts}.`, citations };
+    case 'before':
+      return { ...base, detail: `"${title}" ran just before on this worker; it does in ${counts}.`, citations };
+    case 'load':
+      return { ...base, detail: `${suspect.label} during this attempt, as in ${counts}.`, citations };
+    default:
+      return { ...base, detail: `It ran on ${suspect.project ?? 'this project'}, as in ${counts}.`, citations };
+  }
 }
 
 export function buildFailureClues(input: FailureClueInput): FailureCluesReport {
@@ -803,6 +865,11 @@ export function buildFailureClues(input: FailureClueInput): FailureCluesReport {
       citations: [{ section: 'browserDistribution' }],
     });
   }
+
+  // ── known-flake-suspect (weak) ─────────────────────────────────────────────
+  // This failure shows a factor the test's history ranks as a flake suspect.
+  const suspect = (input.flakeSuspects ?? []).find((sus) => sus.executionIds.includes(input.execution.id));
+  if (suspect) add(knownFlakeSuspectClue(suspect, input.networkRequests));
 
   // The fact that a fix landed before and did not hold is not a clue about the
   // cause; it belongs to the verdict's `since.fixedBefore` and the situation

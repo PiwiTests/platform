@@ -20,6 +20,7 @@ import {
   getFailureClues,
   type FailureCluesResult,
 } from '#shared/handlers/test-cases';
+import { getFlakeProfile } from '#shared/handlers/flake-profile';
 import {
   getFailureCluster,
   getClusterDiagnosis,
@@ -1391,6 +1392,44 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     if ((await checkEntityScope(db, ctx, testCaseId, resolveCaseProjectId)) === 'not-found') return null;
     const days = params.days != null ? numericParam(params.days, 'days') : undefined;
     return getTestCaseStabilityTrend(db, testCaseId, { days });
+  },
+
+  // ── get_flake_profile ──────────────────────────────────────────────────────
+  async get_flake_profile(db, params, ctx) {
+    const testCaseId = numericParam(params.testCaseId, 'testCaseId');
+    if ((await checkEntityScope(db, ctx, testCaseId, resolveCaseProjectId)) === 'not-found') return null;
+    const profile = await getFlakeProfile(db, testCaseId);
+    if (!profile) return null;
+    return {
+      testCaseId: profile.testCaseId,
+      window: { days: profile.windowDays, maxAttempts: profile.maxAttempts, from: profile.from, to: profile.to },
+      attempts: profile.attempts,
+      failures: profile.failures,
+      passes: profile.passes,
+      suspects: profile.suspects.map((s) =>
+        dropNulls({
+          id: s.id,
+          kind: s.kind,
+          label: s.label,
+          sentence: s.sentence,
+          counts: s.counts,
+          lift: Math.round(s.lift * 10) / 10,
+          condition: s.condition,
+          conditionLabel: s.conditionLabel,
+          route: s.route,
+          thresholdMs: s.thresholdMs,
+          thresholdCount: s.thresholdCount,
+          testCaseId: s.testCaseId,
+          title: s.title,
+          project: s.project,
+          sharedRoutes: s.sharedRoutes,
+          approximate: s.approximate,
+          executionIds: s.executionIds.slice(0, 10),
+        }),
+      ),
+      context: profile.context.map((c) => ({ ...c, lift: Math.round(c.lift * 10) / 10 })),
+      experiments: [],
+    };
   },
 
   // ── get_network_requests ───────────────────────────────────────────────────

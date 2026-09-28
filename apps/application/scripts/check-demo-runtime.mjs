@@ -291,6 +291,17 @@ async function main() {
       'the switcher lists the seeded dashboards',
     );
 
+    // A flaky test's Flakiness tab reads its flake profile in the service worker:
+    // the seeded checkout flake ranks the slower cart first.
+    await page.goto(`${ORIGIN}${BASE}test-cases/9?tab=flakiness`, { waitUntil: 'domcontentloaded' });
+    const suspect = page.getByTestId('flake-suspect').first();
+    await suspect.waitFor({ timeout: 60000 }).catch(() => {});
+    check(
+      (await suspect.textContent())?.includes('GET /api/cart slower') === true,
+      'the Flakiness tab ranks the seeded slow cart first',
+      (await suspect.textContent().catch(() => '')) ?? '',
+    );
+
     check(
       escapedApiUrls.size === 0,
       'every API request stays inside the demo base path',
@@ -312,7 +323,7 @@ async function main() {
     process.exit(1);
   }
   console.log(
-    '✓ The built demo runs: service worker, in-browser API, export download, quality report, report snapshots and saved dashboards all work.',
+    '✓ The built demo runs: service worker, in-browser API, export download, quality report, report snapshots, saved dashboards and the flake profile all work.',
   );
 }
 

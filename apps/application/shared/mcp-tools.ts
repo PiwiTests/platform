@@ -455,6 +455,20 @@ export const MCP_TOOL_DEFS = [
     },
   },
   {
+    name: 'get_flake_profile',
+    module: 'workflow',
+    capability: 'flake-lab',
+    description:
+      'The suspects of a flaky test, read from its last 30 days (at most 200 attempts): the slow or failed routes, the tests running alongside or just before it on the same worker, the load and the browser project its failures share and its passes do not. Each suspect has its raw counts (failuresWith of failures, passesWith of passes), its lift and the condition that would test it (delay a route, fail it, throttle the CPU, run another test alongside or first, pin a project); at most 5, a suspect needs 3 failures and a lift of 2. Alongside suspects list the paths both tests write and say when the overlap crossed shards (approximate). `context` holds factors with no condition (first attempt, UTC hour, another run on the environment). `experiments` lists lab runs on the test, empty until the lab exists. Use it before changing a flaky test, to know what to reproduce.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        testCaseId: { type: 'number', description: 'Test case ID (testCaseId from list_flaky_tests)' },
+      },
+      required: ['testCaseId'],
+    },
+  },
+  {
     name: 'get_network_requests',
     module: 'core',
     capability: 'fixtures',

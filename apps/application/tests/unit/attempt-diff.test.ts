@@ -42,7 +42,8 @@ describe('diffAttempts', () => {
 
     const net = diff.find((d) => d.kind === 'network')!;
     expect(net.only).toBe('failing');
-    expect(net.summary).toContain('POST https://app.test/api/orders');
+    expect(net.summary).toContain('POST /api/orders');
+    expect(net.detail).toBe('https://app.test/api/orders?id=7');
     expect(net.summary).toContain('500');
     expect(net.ref).toEqual({ section: 'networkRequests' });
   });
@@ -200,8 +201,9 @@ describe('diffAttempts', () => {
     expect(rows).toEqual([
       {
         kind: 'network',
-        summary: 'GET https://shop.test/api/cart 2.1 s on the failing attempt, 200 ms on the passing one',
+        summary: 'GET /api/cart 2.1 s on the failing attempt, 200 ms on the passing one',
         detail: null,
+        route: 'GET /api/cart',
         ref: { section: 'networkRequests' },
       },
     ]);
@@ -248,8 +250,8 @@ describe('diffAttempts', () => {
     });
     const rows = diffAttempts(failing, passing).filter((d) => d.kind === 'network');
     expect(rows.map((r) => r.summary)).toEqual([
-      'POST https://shop.test/api/b 5 s on the failing attempt, 300 ms on the passing one',
-      'GET https://shop.test/api/a 1.2 s on the failing attempt, 100 ms on the passing one',
+      'POST /api/b 5 s on the failing attempt, 300 ms on the passing one',
+      'GET /api/a 1.2 s on the failing attempt, 100 ms on the passing one',
     ]);
     expect(rows.every((r) => r.only === undefined)).toBe(true);
   });
@@ -273,8 +275,26 @@ describe('diffAttempts', () => {
     const rows = diffAttempts(failing, passing).filter((d) => d.kind === 'network');
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
-      summary: 'GET https://shop.test/api/cart → net::ERR_CONNECTION_RESET',
+      summary: 'GET /api/cart → net::ERR_CONNECTION_RESET',
+      detail: 'https://shop.test/api/cart',
+      route: 'GET /api/cart',
       only: 'failing',
+    });
+  });
+
+  test('requests are keyed by route pattern, so two ids of one route compare as one', () => {
+    const failing: AttemptEvidence = {
+      error: 'boom',
+      networkRequests: [{ method: 'get', url: 'https://shop.test/api/orders/41', status: 200, duration: 3_000 }],
+    };
+    const passing = cleanPass({
+      networkRequests: [{ method: 'GET', url: 'https://shop.test/api/orders/42', status: 200, duration: 300 }],
+    });
+    const rows = diffAttempts(failing, passing).filter((d) => d.kind === 'network');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      summary: 'GET /api/orders/:id 3 s on the failing attempt, 300 ms on the passing one',
+      route: 'GET /api/orders/:id',
     });
   });
 });

@@ -6,7 +6,7 @@ lang: en-US
 
 # Failure evidence
 
-When a test fails, everything Piwi captured about that attempt lands on one screen: what each tab holds, where the data
+When a test fails, everything Piwi captured about that attempt lands on one screen: what each tab holds, where it
 came from, and what a trace adds.
 
 Two pages are involved, and [Core concepts](/guide/concepts#execution) draws the line between them:
@@ -22,14 +22,14 @@ Links from a run land on an execution; the test's title links to its test case.
 
 A failing execution reads top to bottom in one column. It opens on the **situation block** (the headline, the most
 likely cause, the situation and the next step), described once on [Your first failure,
-explained](/guide/first-failure). Traces stream in live while the parent run is still running.
+explained](/guide/first-failure). Traces stream in while the run is still running.
 
 <figure>
   <img src="/screenshots/gather-evidence.png" alt="A failing execution: one situation block, then one evidence card whose tabs (Timeline, Screen, Source, Network, Console, State, Performance) hold the captured evidence">
   <figcaption>A failing execution: the situation block, then one evidence card whose tabs hold everything captured.</figcaption>
 </figure>
 
-Below the block, one **evidence card** holds content-level tabs, each with a count or a dot when it holds data. It opens on the tab the story's leading clue cites (when it
+Below the block, one **evidence card** holds tabs, each with a count or a dot when it holds data. It opens on the tab the story's leading clue cites (when it
 is strong or medium), else on **Timeline** when it can place two or more items, else on **Screen** when a screenshot or
 video exists, else on **Source**; never on **State**.
 
@@ -50,7 +50,7 @@ video exists, else on **Source**; never on **State**.
 
 Below the evidence sit the folded [**More ways to fix**](./fix-plans#more-ways-to-fix) toolbox and a **history** strip
 of this test's recent executions. A **passing** execution shows the identity and facts lines only, with the evidence
-card on **Timeline**. The network, console, Web Vitals, ARIA snapshot and alternative-locator data come from the
+card on **Timeline**. Network, console, Web Vitals, ARIA and alternative-locator data come from the
 [capture fixtures](/guide/capture-fixtures).
 
 ### Clues
@@ -67,15 +67,15 @@ When a test failed and then passed on retry, the **Attempts** tab lists every at
 opened marked), then **what differed** between the failing attempt and the passing one, most diagnostic first:
 
 - the **error** present on the failing attempt and gone on the pass;
-- a **request** that failed (5xx or no response) on one attempt only, or took at least 1 s and twice as long on the
-  failing one;
+- a **request**, keyed by route (`GET /api/cart/:id`), that failed (5xx or no response) on one attempt only, or took
+  at least 1 s and twice as long on the failing one;
 - a **console** error or warning logged on one attempt only;
 - a **step** that errored, ran much slower, or ran with different **params** on one attempt;
 - a **page-state or URL** difference, including storage keys and cookies;
 - an **ARIA structural** difference at the landmark and heading level.
 
-Each difference links to the evidence tab it came from. The same comparison feeds the [root-cause classifier](./flaky-tests#root-cause-classification): a request that failed and then recovered is
-strong evidence of a network flake.
+Each difference links to its evidence tab, a request that is one of the test's [suspects](./flaky-tests#suspects) to
+it. The comparison feeds the [root-cause classifier](./flaky-tests#root-cause-classification).
 
 ## Page diff
 
@@ -141,6 +141,7 @@ third party, with or without [authentication](/operate/authentication). The host
 
 `/test-cases/:id` is the other axis: not one attempt, but the test's whole life. Total runs, pass rate, average duration
 and last run, a duration trend, a status-history strip, and the recent executions, each linking back to its execution.
+A flaky test adds a **Flakiness** tab with its [suspects](./flaky-tests#suspects).
 
 <figure>
   <img src="/screenshots/test-case-detail.png" alt="Test case page with run stats above a duration trend chart, a status history strip, and a table of recent executions">

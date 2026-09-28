@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { FlakyTest } from '~~/types/api';
+import type { TopFlakeSuspect } from '#shared/handlers/flake-profile';
 import { buildTestRowBadges } from '~/utils/test-row-badges';
 
 const props = defineProps<{
@@ -42,6 +43,31 @@ const filteredTests = computed(() => {
 });
 
 watch(tests, (list) => emit('count', list?.length ?? 0));
+
+// The top suspect of each listed test, read after the list so the list never
+// waits on it. Hidden when the project declines flake suspects.
+const { isHidden: capabilityHidden } = await useProjectCapabilities(Number(props.projectId));
+const topSuspects = ref(new Map<number, TopFlakeSuspect>());
+watch(
+  tests,
+  async (list) => {
+    if (!list?.length || capabilityHidden('flake-lab')) return;
+    const ids = list.map((t) => t.testCaseId).join(',');
+    try {
+      const res = await $fetch<{ items: TopFlakeSuspect[] }>(
+        `/api/projects/${props.projectId}/flake-suspects?testCaseIds=${ids}`,
+      );
+      topSuspects.value = new Map(res.items.map((item) => [item.testCaseId, item]));
+    } catch {
+      // The column is optional; the list reads the same without it.
+    }
+  },
+  { immediate: true },
+);
+
+function suspectLink(testCaseId: number, suspectId: string): string {
+  return `/test-cases/${testCaseId}?tab=flakiness&suspect=${encodeURIComponent(suspectId)}`;
+}
 
 async function quarantineTest(test: FlakyTest) {
   quarantiningId.value = test.testCaseId;
@@ -191,6 +217,22 @@ function flakyBadges(test: FlakyTest) {
 
         <template #subline>
           <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
+            <NuxtLink
+              v-if="topSuspects.get(test.testCaseId)?.suspect"
+              :to="suspectLink(test.testCaseId, topSuspects.get(test.testCaseId)!.suspect!.id)"
+              class="min-w-0 break-words underline decoration-dotted underline-offset-2 hover:decoration-solid"
+              :title="topSuspects.get(test.testCaseId)!.suspect!.sentence"
+              data-testid="flaky-top-suspect"
+              @click.stop
+            >
+              Top suspect: {{ topSuspects.get(test.testCaseId)!.suspect!.label }} ·
+              <span class="tabular-nums"
+                >{{ topSuspects.get(test.testCaseId)!.suspect!.counts.failuresWith }}/{{
+                  topSuspects.get(test.testCaseId)!.suspect!.counts.failures
+                }}
+                failures</span
+              >
+            </NuxtLink>
             <TagBadge v-if="test.rootCause" :text="test.rootCause" :color="rootCauseColor(test.rootCause)" />
             <span v-if="test.retryPassRuns" class="tabular-nums">
               {{ test.retryPassRuns }} retry pass{{ test.retryPassRuns === 1 ? '' : 'es' }}

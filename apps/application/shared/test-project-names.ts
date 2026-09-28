@@ -83,6 +83,7 @@ export const PROJECT = {
   FIXED_BEFORE: 'fixed-before-test',
   FIX_PLAN: 'fix-plan-test',
   FIX_VERIFICATION: 'fix-verification-test',
+  FLAKE_SUSPECTS: 'flake-suspects-test',
   FLAKY_BOARD: 'flaky-board-test',
   GATE_POLICY: 'gate-policy-test',
   GZIP_MIME: 'gzip-mime-test',

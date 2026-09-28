@@ -35,7 +35,7 @@ import {
   probes,
   bugReports,
 } from '../../server/database/schema';
-import { and, eq, isNotNull, or } from 'drizzle-orm';
+import { and, eq, gt, isNotNull, or } from 'drizzle-orm';
 import { getAppSetting, setAppSetting } from '../../server/utils/app-settings';
 import { PR_FEEDBACK_KEY } from '#shared/pr-feedback';
 import { AUTO_HEAL_KEY } from '#shared/auto-heal';
@@ -75,7 +75,8 @@ export type SetupCapabilityId =
   | 'green-samples'
   | 'test-map'
   | 'server-probes'
-  | 'bug-reports';
+  | 'bug-reports'
+  | 'flake-lab';
 
 export interface SetupCapability {
   id: SetupCapabilityId;
@@ -138,6 +139,7 @@ export async function getCapabilityEvidence(db: DrizzleDB, projectId?: number): 
     hasReportSchedules,
     hasReportSnapshots,
     hasBugReports,
+    hasRetryPass,
   ] = await Promise.all([
     exists(
       db,
@@ -281,6 +283,22 @@ export async function getCapabilityEvidence(db: DrizzleDB, projectId?: number): 
         ? db.select({ id: bugReports.id }).from(bugReports).where(eq(bugReports.projectId, pid)).limit(1)
         : db.select({ id: bugReports.id }).from(bugReports).limit(1),
     ),
+    // Flake suspects read from history: active once a test has passed on a retry.
+    exists(
+      db,
+      scoped
+        ? db
+            .select({ id: testRunsCases.id })
+            .from(testRunsCases)
+            .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
+            .where(and(eq(testRuns.projectId, pid), eq(testRunsCases.status, 'passed'), gt(testRunsCases.retries, 0)))
+            .limit(1)
+        : db
+            .select({ id: testRunsCases.id })
+            .from(testRunsCases)
+            .where(and(eq(testRunsCases.status, 'passed'), gt(testRunsCases.retries, 0)))
+            .limit(1),
+    ),
   ]);
 
   // AI also counts as active when pinned by environment — an env-configured
@@ -312,6 +330,7 @@ export async function getCapabilityEvidence(db: DrizzleDB, projectId?: number): 
     'test-map': hasGraphNodes,
     'server-probes': hasServerProbes,
     'bug-reports': hasBugReports,
+    'flake-lab': hasRetryPass,
   };
 }
 
@@ -344,6 +363,7 @@ const SETUP_LADDER_ORDER: SetupCapabilityId[] = [
   'test-map',
   'server-probes',
   'bug-reports',
+  'flake-lab',
 ];
 
 /**

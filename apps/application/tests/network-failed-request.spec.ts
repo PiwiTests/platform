@@ -111,9 +111,9 @@ test.describe('Failed and slow requests', () => {
     await page.goto(`/test-run-cases/${passingId}`);
     await waitForHydration(page);
     await page.getByRole('tab', { name: /^Attempts/ }).click();
-    await expect(page.getByText('GET http://localhost:3000/api/cart → net::ERR_CONNECTION_RESET')).toBeVisible();
+    await expect(page.getByText('GET /api/cart → net::ERR_CONNECTION_RESET')).toBeVisible();
     await expect(
-      page.getByText('GET http://localhost:3000/api/cards 2.1 s on the failing attempt, 200 ms on the passing one'),
+      page.getByText('GET /api/cards 2.1 s on the failing attempt, 200 ms on the passing one'),
     ).toBeVisible();
   });
 });

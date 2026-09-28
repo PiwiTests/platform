@@ -8,9 +8,8 @@ lang: en-US
 
 <Needs reporter />
 
-A single run tells you what failed. A few dozen runs tell you what's *unreliable* — and that's a
-different, more expensive problem. This page covers what Piwi computes for one project once it has some
-history: flaky scoring, regression signals, and spec health.
+A single run tells you what failed; a few dozen tell you what's *unreliable*. This page covers what Piwi computes
+for one project once it has history: flaky scoring, suspects, regression signals and spec health.
 
 For the same signals aggregated across every project, see [Analytics](./analytics).
 
@@ -28,7 +27,7 @@ The project's **Failures** tab has a **Flaky** view with a **configurable lookba
 
 <figure>
   <img src="/screenshots/flaky-detection.png" alt="Flaky tests tab listing tests with composite score, failure rate, retry passes, and flip counts">
-  <figcaption>The Flaky view of a project's Failures tab — each intermittent test scored by retry passes, status flips, and failure rate, ranked by impact and filterable by root-cause category.</figcaption>
+  <figcaption>The Flaky view of a project's Failures tab — each intermittent test scored by retry passes, status flips, and failure rate, ranked by impact, filterable by root-cause category, each with its top suspect.</figcaption>
 </figure>
 
 ### Root-cause classification
@@ -43,13 +42,37 @@ Every flaky test is automatically tagged with one of five categories, using keyw
 | `environment` | Fails at least 3 times on exactly one browser while another browser passed at least 3 times without failing |
 | `other` | No clear signal |
 
-The classifier weighs more than keywords: it counts the requests that failed or returned 5xx across the test's recent failing attempts, and — the sharpest signal — weighs each recent flake whose failing attempt made a request that failed while the passing attempt did not (see the [attempt diff](./evidence#attempts)). Such a request recovering on retry is strong evidence the flakiness is a network problem, so it counts for several keyword matches.
+The classifier also counts the requests that failed or returned 5xx across recent failing attempts, and weighs most each recent flake whose failing attempt made a request that failed while the passing attempt did not (see the [attempt diff](./evidence#attempts)): it counts for several keyword matches.
 
 Filter the flaky table by category to triage a class of failures at once.
 
+### Suspects
+
+A flaky test's page has a **Flakiness** tab listing its **suspects**: what its failures share and its passes do not,
+over its last 30 days (at most 200 attempts, from the runs the flaky list reads).
+
+| Factor | Measured per attempt | Condition a lab would apply |
+|--------|----------------------|-----------------------------|
+| Slow route | a request's slowest duration, over the threshold that best separates failures from passes | delay it to the failures' median |
+| Failed route | a request answering 5xx, or with no response | fail it the same way, or abort it |
+| Load | other tests of the same shard running at once, over a threshold | CPU ×4 |
+| Alongside | another test overlapping it in time | run both together |
+| Before | the test that ran just before on its worker | run that test first |
+| Browser | its Playwright project | pin the project |
+
+Each suspect shows its raw counts: `GET /api/cart slower (≥1.6 s)`, 7 of 8 failures, 3 of 44 passes. It needs 3
+failures and a lift of at least 2, `(fw + 1)/(f + 2) ÷ (pw + 1)/(p + 2)`; at most 5 are listed, ranked by lift ×
+those failures. A neighbor names the paths both tests write, marked approximate when the overlap crosses shards,
+whose clocks agree only roughly. First attempts, the UTC hour and other runs on the same environment are context,
+without a condition. Nothing is stored.
+
+The flaky list names each test's top suspect, the [Attempts](./evidence#attempts) tab links a request to its suspect,
+the clue `known-flake-suspect` marks a failure showing one, and MCP's `get_flake_profile` returns the profile.
+Experiments that apply a condition to confirm a suspect are not available yet.
+
 ### Impact ranking
 
-Not all flaky tests are equally expensive. Piwi ranks them by **impact** — derived from wasted CI minutes (retries × average failed duration) and pipeline-block effect — so you fix the ones that hurt most first. A color-coded dot makes it scannable:
+Piwi ranks flaky tests by **impact** — derived from wasted CI minutes (retries × average failed duration) and pipeline-block effect — so you fix the ones that hurt most first. A color-coded dot makes it scannable:
 
 - 🟢 green — under 5 wasted minutes
 - 🟡 amber — under 30 minutes
@@ -65,8 +88,8 @@ see whether a fix actually stuck. The same series is the MCP `get_test_stability
 
 Detecting a flaky test doesn't stop it blocking merges. Quarantine does — without hiding it.
 
-The usual approach is `--grep-invert @quarantine`: the test stops running, so nothing ever proves it's fixed, and the
-list only grows. A year later nobody remembers why half of it is there.
+The usual approach is `--grep-invert @quarantine`: the test stops running, nothing ever proves it's fixed, and the
+list only grows.
 
 **A quarantined test in Piwi keeps running and keeps reporting.** It is excluded from the [CI gate](/guide/ci#blocking-a-merge)'s
 verdict and nothing else. That single difference is what makes the exit possible:
@@ -96,7 +119,7 @@ Individual test cases in a run carry at-a-glance badges:
 Purple is the flaky color everywhere in the dashboard: the flaky segment of every run bar and trend chart, flaky
 counts, and the history cells of executions that passed on retry.
 
-Toggle filters on the run's test-case list to show only new regressions or new flaky tests.
+Filters on the run's test-case list show only new regressions or new flaky tests.
 
 Opening a failing execution surfaces the same signals (see [Test case detail](./evidence#one-execution-diagnosis-first)): the new-regression / passed-on-retry / newly-flaky badges in the header, the *why* and *since when* facts on the headline, and the failing-streak sentence with a link back to the last green run in the history block.
 
