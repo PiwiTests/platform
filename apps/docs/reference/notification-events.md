@@ -24,7 +24,7 @@ one fires and what a webhook channel receives; channels, subscriptions and deliv
 | `perf.regression` | A run is at least 20% slower than the median of the previous five completed runs on the same branch and environment; the regression-% filter raises the bar |
 | `diagnosis.completed` | An AI diagnosis finishes (requires an [AI provider](/guide/ai-provider)) |
 | `auto_heal.pr_opened` | [Auto-heal](/features/auto-heal) opened a pull request; the payload carries `prNumber`, `prUrl`, `branch` and `editCount` |
-| `bug.looks_fixed` | A `test.fail()` test passed in a completed run, in every browser project that ran it,; the payload lists the `tests`, each with the bug report (`bugId`, from `piwi:bug`) and ticket (`link`) it names |
+| `bug.looks_fixed` | A `test.fail()` test passed in a completed run, in every browser project that ran it, and did not already pass on the previous completed run of the same branch; the payload lists the `tests`, each with the bug report (`bugId`, from `piwi:bug`) and ticket (`link`) it names |
 
 **`report.ready`** needs no subscription: a [report schedule](/features/quality-reports#report-schedules) sends it to
 the channels it names, through the same outbox. Its webhook body adds the whole report:

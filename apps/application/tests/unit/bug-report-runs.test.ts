@@ -10,7 +10,8 @@ import * as schema from '../../server/database/schema.sqlite';
 delete process.env.PIWI_DATABASE_URL;
 const { applyBugReportLifecycle, isReproductionRunAllowed, listBugReports } =
   await import('#shared/handlers/bug-reports');
-const { loadLooksFixedTests } = await import('../../server/utils/notifications/run-notifications');
+const { loadLooksFixedTests, loadNewlyLooksFixedTests } =
+  await import('../../server/utils/notifications/run-notifications');
 const { MCP_TOOLS } = await import('../../server/utils/mcp/tools');
 
 let db: ReturnType<typeof drizzle<typeof schema>>;
@@ -64,6 +65,23 @@ describe('a test that runs in several browser projects', () => {
       { id: 1, status: 'test-committed' },
       { id: 2, status: 'looks-fixed' },
     ]);
+  });
+});
+
+describe('the bug.looks_fixed notification', () => {
+  test('names only tests that did not already look fixed on the previous run of the branch', async () => {
+    await db.insert(schema.testRunsCases).values([
+      { testRunId: 1, testCaseId: 1, ...fixedIn('chromium') },
+      { testRunId: 1, testCaseId: 2, ...stillFailsIn('chromium') },
+      { testRunId: 2, testCaseId: 1, ...fixedIn('chromium') },
+      { testRunId: 2, testCaseId: 2, ...fixedIn('chromium') },
+    ]);
+
+    const tests = await loadNewlyLooksFixedTests(db as never, { id: 2, projectId: 1 }, 'main');
+    expect(tests.map((t) => t.testCaseId)).toEqual([2]);
+    // Another branch has no earlier run: everything that looks fixed is new there.
+    const elsewhere = await loadNewlyLooksFixedTests(db as never, { id: 2, projectId: 1 }, 'feature/x');
+    expect(elsewhere.map((t) => t.testCaseId)).toEqual([1, 2]);
   });
 });
 

@@ -71,6 +71,37 @@ export async function loadLooksFixedTests(db: DbClient, runId: number): Promise<
 }
 
 /**
+ * The run's looks-fixed tests (`loadLooksFixedTests`) that did not already look
+ * fixed on the previous completed run of the same project and branch: the
+ * tests whose bug started looking fixed with this run. Every looks-fixed test
+ * counts when the branch has no earlier run.
+ */
+export async function loadNewlyLooksFixedTests(
+  db: DbClient,
+  run: { id: number; projectId: number },
+  branch: string | undefined,
+): Promise<LooksFixedTest[]> {
+  const current = await loadLooksFixedTests(db, run.id);
+  if (current.length === 0) return current;
+  const priorRuns = await db
+    .select({ id: testRuns.id, branch: testRuns.branch, metadata: testRuns.metadata })
+    .from(testRuns)
+    .where(
+      and(
+        eq(testRuns.projectId, run.projectId),
+        lt(testRuns.id, run.id),
+        inArray(testRuns.status, ['passed', 'failed']),
+      ),
+    )
+    .orderBy(desc(testRuns.id))
+    .limit(BASELINE_FETCH_LIMIT);
+  const previous = priorRuns.find((r) => (r.branch ?? resolveRunBranch(r.metadata) ?? undefined) === branch);
+  if (!previous) return current;
+  const already = new Set((await loadLooksFixedTests(db, previous.id)).map((t) => t.testCaseId));
+  return current.filter((t) => !already.has(t.testCaseId));
+}
+
+/**
  * Emit run.finished / run.failed / run.failed.default_branch notifications for a completed run,
  * plus flakiness.spike / perf.regression when the run qualifies, and cluster.new
  * for any failure clusters first seen in this run.
@@ -220,7 +251,7 @@ export async function emitRunNotifications(db: DbClient, runId: number): Promise
       });
     }
 
-    const looksFixed = await loadLooksFixedTests(db, runId);
+    const looksFixed = await loadNewlyLooksFixedTests(db, runRow, branch);
     if (looksFixed.length > 0) {
       await emitNotification(db, 'bug.looks_fixed', {
         projectId: runRow.projectId,

@@ -155,7 +155,8 @@ The reporter sends each test's `expectedStatus` as Playwright reports it (`faile
 `fail`, `skip` and `fixme` annotations. The status follows Playwright: an expected failure that failed counts as passed,
 and one that passed counts as failed, with "Expected to fail, but passed.". That second row is shown as **Looks fixed**
 rather than as a failure: it joins no failure cluster, the pull-request comment tells you to remove `test.fail()`, and
-the `bug.looks_fixed` [notification event](/reference/notification-events) fires. A test that runs in several browser projects looks fixed only when it passed in all of them.
+the `bug.looks_fixed` [notification event](/reference/notification-events) fires once, on the first run of a branch
+where it passes. A test that runs in several browser projects looks fixed only when it passed in all of them.
 
 ### Per-test timeout
 
