@@ -1531,7 +1531,7 @@ const SCENES = [
   },
   {
     name: 'run-timeline',
-    description: 'Per-worker run timeline with the setup/test/wasted/teardown span filter (dark)',
+    description: 'Per-worker run timeline: hook sections over each test, wasted waits switched on (dark)',
     tags: ['docs'],
     out: 'docs',
     route: '/test-runs/2?tab=workers',
@@ -1539,6 +1539,11 @@ const SCENES = [
     of: '[data-shot="run-timeline"]',
     pad: 12,
     colorScheme: 'dark',
+    async run({ page, shoot, settle }) {
+      await page.getByRole('switch', { name: 'Show waits' }).click();
+      await settle();
+      await shoot();
+    },
   },
   {
     name: 'ai-diagnosis',

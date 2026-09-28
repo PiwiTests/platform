@@ -619,9 +619,10 @@ const SEED_FIRST_REQUEST_OFFSET_MS = 120;
 const SEED_REQUEST_GAP_MS = 35;
 
 /**
- * Build realistic `step_events` for a seeded case: before/after hooks, the
- * context/page fixtures, framework-injected waits, and — for wait-heavy cases —
- * an explicit `Wait for timeout` sleep that counts as wasted time under the
+ * Build realistic `step_events` for a seeded case: the `Before Hooks` and
+ * `After Hooks` sections with the hooks and fixtures they ran (as the reporter
+ * records them), framework-injected waits, and — for wait-heavy cases — an
+ * explicit `Wait for timeout` sleep that counts as wasted time under the
  * default wasted-wait patterns. Segment offsets are emitted as absolute epoch ms
  * anchored to the case's start so the timeline can place each segment. Returns
  * the events plus the total wasted ms (sum of the explicit timeout sleeps).
@@ -629,17 +630,24 @@ const SEED_REQUEST_GAP_MS = 35;
 function buildSeedStepEvents(caseStartMs, caseDuration, location, waitHeavy) {
   const events = [];
   let offset = 0;
-  const seg = (title, category, duration, status, loc = null) => {
-    events.push({ title, category, startedAt: caseStartMs + offset, duration, status, location: loc });
+  const seg = (title, category, duration, status, loc = null, hooks = null) => {
+    const event = { title, category, startedAt: caseStartMs + offset, duration, status, location: loc };
+    if (hooks) event.hooks = hooks;
+    events.push(event);
     offset += duration;
   };
   // Each framework segment is a fraction of the test duration, clamped so it
   // stays visible without overflowing short tests.
   const frac = (f, min, max) => Math.max(min, Math.min(max, Math.round(caseDuration * f)));
 
-  seg('Before Hooks', 'hook', frac(0.06, 60, 200), 'passed');
-  seg('fixture: context', 'fixture', frac(0.04, 40, 120), 'passed');
-  seg('fixture: page', 'fixture', frac(0.03, 30, 90), 'passed');
+  const context = frac(0.04, 40, 120);
+  const page = frac(0.03, 30, 90);
+  const beforeEach = frac(0.06, 60, 200);
+  seg('Before Hooks', 'hook', context + page + beforeEach, 'passed', null, [
+    { title: 'Fixture "context"', category: 'fixture', duration: context },
+    { title: 'Fixture "page"', category: 'fixture', duration: page },
+    { title: 'beforeEach hook', category: 'hook', duration: beforeEach },
+  ]);
   // Framework-injected navigation wait — not wasted.
   seg('Wait for load state', 'wait', frac(0.1, 80, 600), 'passed');
 
@@ -652,7 +660,14 @@ function buildSeedStepEvents(caseStartMs, caseDuration, location, waitHeavy) {
   }
   // Wait for selector — framework-injected, not wasted.
   seg('Wait for selector', 'wait', frac(0.06, 40, 500), 'passed');
-  seg('After Hooks', 'hook', frac(0.05, 50, 160), 'passed');
+  // Teardown closes the test, after its body.
+  const afterHooks = frac(0.05, 50, 160);
+  const afterEach = Math.round(afterHooks * 0.6);
+  offset = Math.max(offset, caseDuration - afterHooks);
+  seg('After Hooks', 'hook', afterHooks, 'passed', null, [
+    { title: 'afterEach hook', category: 'hook', duration: afterEach },
+    { title: 'Fixture "page"', category: 'fixture', duration: afterHooks - afterEach },
+  ]);
 
   return { stepEvents: events, wastedMs };
 }
@@ -1317,6 +1332,56 @@ for (const proj of DEMO_PROJECTS) {
   }
   for (let k = NETWORK_REQUESTS.length - 1; k >= 0; k--) {
     if (skippedTrcIds.has(NETWORK_REQUESTS[k].test_runs_case_id)) NETWORK_REQUESTS.splice(k, 1);
+  }
+}
+
+// ── Worker lanes without holes (post-processing, rng-free) ──────────────────
+// A skipped or did-not-run test never ran on a worker — Playwright reports it
+// with no worker index — so it leaves its lane, and the tests after it on that
+// worker move up into the time it held, with every timestamp they carry. The
+// lanes then read as a real run's: back to back, SEED_WORKER_GAP_MS apart.
+{
+  const requestsByCase = new Map();
+  for (const req of NETWORK_REQUESTS) {
+    const list = requestsByCase.get(req.test_runs_case_id);
+    if (list) list.push(req);
+    else requestsByCase.set(req.test_runs_case_id, [req]);
+  }
+  const shiftAll = (list, key, delta) => (list ? list.map((e) => ({ ...e, [key]: e[key] + delta })) : list);
+  const shiftCase = (row, delta) => {
+    row.started_at += delta;
+    row.created_at += delta;
+    row.attempts = JSON.stringify(shiftAll(JSON.parse(row.attempts), 'startedAt', delta));
+    row.steps = shiftAll(row.steps, 'startTime', delta);
+    row.step_events = shiftAll(row.step_events, 'startedAt', delta);
+    row.console_logs = shiftAll(row.console_logs, 'timestamp', delta);
+    row.dialogs = shiftAll(row.dialogs, 'closedAt', delta);
+    for (const req of requestsByCase.get(row.id) ?? []) {
+      req.start_time += delta;
+      req.server_logs = shiftAll(req.server_logs, 'timestamp', delta);
+    }
+  };
+
+  const lanes = new Map();
+  const runStart = new Map();
+  for (const row of TEST_RUNS_CASES) {
+    runStart.set(row.test_run_id, Math.min(runStart.get(row.test_run_id) ?? Infinity, row.started_at));
+    if (row.status === 'skipped' || row.status === 'didnotrun') {
+      row.worker_index = null;
+      continue;
+    }
+    const key = `${row.test_run_id}|${row.worker_index}`;
+    const lane = lanes.get(key);
+    if (lane) lane.push(row);
+    else lanes.set(key, [row]);
+  }
+  for (const lane of lanes.values()) {
+    lane.sort((a, b) => a.started_at - b.started_at);
+    let cursor = runStart.get(lane[0].test_run_id);
+    for (const row of lane) {
+      if (row.started_at > cursor) shiftCase(row, cursor - row.started_at);
+      cursor = row.started_at + (row.duration ?? 0) + SEED_WORKER_GAP_MS;
+    }
   }
 }
 

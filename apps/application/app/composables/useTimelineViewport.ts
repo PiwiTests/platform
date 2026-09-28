@@ -64,7 +64,7 @@ export function useTimelineViewport(opts: TimelineViewportOptions) {
   function computeFitZoom(): number {
     const cw = containerRef.value?.clientWidth;
     if (!cw || maxTime.value <= 0) return 1;
-    const minPxPerMs = (cw - labelWidth) / maxTime.value;
+    const minPxPerMs = (cw - labelWidth - sidePadding) / maxTime.value;
     return Math.min(1, minPxPerMs / 0.5);
   }
 
@@ -213,11 +213,19 @@ export function useTimelineViewport(opts: TimelineViewportOptions) {
     panX.value = clampPanX(cw / 2 - centerPx);
   }
 
+  // Re-fit when the container's width changes. Its height follows the lanes (a
+  // row expanded into its steps adds some), and that keeps the current framing.
   let resizeObserver: ResizeObserver | null = null;
+  let observedWidth = 0;
   onMounted(() => {
     nextTick(applyFitZoom);
     if (containerRef.value) {
-      resizeObserver = new ResizeObserver(() => applyFitZoom());
+      resizeObserver = new ResizeObserver(() => {
+        const width = containerRef.value?.clientWidth ?? 0;
+        if (width === observedWidth) return;
+        observedWidth = width;
+        applyFitZoom();
+      });
       resizeObserver.observe(containerRef.value);
     }
   });

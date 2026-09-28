@@ -14,6 +14,8 @@ export const TIMELINE_LAYOUT = {
   axisHeight: 28,
   /** Height of a step bar inside an expanded sub-lane (shorter than a test bar). */
   stepBarHeight: 15,
+  /** Narrowest a failed hook section is drawn, so a millisecond teardown failure stays visible. */
+  failedHookMinWidth: 8,
   /** Derived: a full row is a bar plus the gap below it. */
   get rowHeight(): number {
     return this.barHeight + this.rowGap;
@@ -84,14 +86,20 @@ export function timelineStatusColor(status: string, retries?: number | null): st
   return statusPalette(status, retries).color;
 }
 
-/** Fill for a hook/fixture bar: the status color at 40% alpha. */
-export function timelineHookFill(status: string): string {
-  return `color-mix(in oklab, ${timelineStatusColor(status)} 40%, transparent)`;
-}
+/**
+ * Hook sections sit over their test's bar as a hatched overlay: a dark wash
+ * when they passed, so the bar reads setup · body · teardown in any outcome
+ * color, and a deep red with a light outline when they failed, so the broken
+ * hook stands out even on a red bar.
+ */
+export const TIMELINE_HOOK_COLORS = {
+  passed: { fill: '#0f172a', opacity: 0.3, stroke: 'none' },
+  failed: { fill: '#7f1d1d', opacity: 0.9, stroke: '#fecaca' },
+} as const;
 
-/** Stroke for a hook/fixture bar's dashed outline: the full status color. */
-export function timelineHookStroke(status: string): string {
-  return timelineStatusColor(status);
+/** The overlay colors for a hook section with this status. */
+export function timelineHookColors(status: string): (typeof TIMELINE_HOOK_COLORS)[keyof typeof TIMELINE_HOOK_COLORS] {
+  return status === 'failed' ? TIMELINE_HOOK_COLORS.failed : TIMELINE_HOOK_COLORS.passed;
 }
 
 /** Human-readable duration used for timeline ticks, bar labels and tooltips. */

@@ -464,6 +464,45 @@ interface BaseTestOptions {
   waitHeavy?: boolean;
 }
 
+/** The `Before Hooks` section: the context and page fixtures, then a `beforeEach` hook. */
+function beforeHooksEvent(
+  offset: number,
+  contextDur: number,
+  pageDur: number,
+  beforeEachDur: number,
+): Record<string, unknown> {
+  return {
+    title: 'Before Hooks',
+    category: 'hook',
+    startedAt: offset,
+    duration: contextDur + pageDur + beforeEachDur,
+    status: 'passed',
+    location: null,
+    hooks: [
+      { title: 'Fixture "context"', category: 'fixture', duration: contextDur },
+      { title: 'Fixture "page"', category: 'fixture', duration: pageDur },
+      { title: 'beforeEach hook', category: 'hook', duration: beforeEachDur },
+    ],
+  };
+}
+
+/** The `After Hooks` section: an `afterEach` hook, then the page fixture's teardown. */
+function afterHooksEvent(offset: number, duration: number): Record<string, unknown> {
+  const afterEachDur = Math.round(duration * 0.6);
+  return {
+    title: 'After Hooks',
+    category: 'hook',
+    startedAt: offset,
+    duration,
+    status: 'passed',
+    location: null,
+    hooks: [
+      { title: 'afterEach hook', category: 'hook', duration: afterEachDur },
+      { title: 'Fixture "page"', category: 'fixture', duration: duration - afterEachDur },
+    ],
+  };
+}
+
 /**
  * Builds a realistic set of fine-grained step events for a test: before/after
  * hooks, fixture setup, framework-injected waits, and a single deliberate
@@ -478,37 +517,10 @@ function buildStepEvents(testDuration: number): Array<Record<string, unknown>> {
   const events: Array<Record<string, unknown>> = [];
 
   const beforeHookDur = vary(130, 0.2);
-  events.push({
-    title: 'Before Hooks',
-    category: 'hook',
-    startedAt: offset,
-    duration: beforeHookDur,
-    status: 'passed',
-    location: null,
-  });
-  offset += beforeHookDur;
-
   const contextDur = vary(75, 0.2);
-  events.push({
-    title: 'fixture: context',
-    category: 'fixture',
-    startedAt: offset,
-    duration: contextDur,
-    status: 'passed',
-    location: null,
-  });
-  offset += contextDur;
-
   const pageDur = vary(55, 0.2);
-  events.push({
-    title: 'fixture: page',
-    category: 'fixture',
-    startedAt: offset,
-    duration: pageDur,
-    status: 'passed',
-    location: null,
-  });
-  offset += pageDur;
+  events.push(beforeHooksEvent(offset, contextDur, pageDur, beforeHookDur));
+  offset += contextDur + pageDur + beforeHookDur;
 
   // Framework-injected navigation wait — not wasted
   const loadStateDur = vary(420, 0.25);
@@ -547,14 +559,7 @@ function buildStepEvents(testDuration: number): Array<Record<string, unknown>> {
   offset += selectorDur;
 
   const afterHookDur = vary(90, 0.2);
-  events.push({
-    title: 'After Hooks',
-    category: 'hook',
-    startedAt: offset,
-    duration: afterHookDur,
-    status: 'passed',
-    location: null,
-  });
+  events.push(afterHooksEvent(Math.max(offset, testDuration - afterHookDur), afterHookDur));
 
   return events;
 }
@@ -570,37 +575,10 @@ function buildWaitHeavyStepEvents(testDuration: number, file: string, line: numb
   const events: Array<Record<string, unknown>> = [];
 
   const beforeHookDur = vary(140, 0.2);
-  events.push({
-    title: 'Before Hooks',
-    category: 'hook',
-    startedAt: offset,
-    duration: beforeHookDur,
-    status: 'passed',
-    location: null,
-  });
-  offset += beforeHookDur;
-
   const contextDur = vary(80, 0.2);
-  events.push({
-    title: 'fixture: context',
-    category: 'fixture',
-    startedAt: offset,
-    duration: contextDur,
-    status: 'passed',
-    location: null,
-  });
-  offset += contextDur;
-
   const pageDur = vary(60, 0.2);
-  events.push({
-    title: 'fixture: page',
-    category: 'fixture',
-    startedAt: offset,
-    duration: pageDur,
-    status: 'passed',
-    location: null,
-  });
-  offset += pageDur;
+  events.push(beforeHooksEvent(offset, contextDur, pageDur, beforeHookDur));
+  offset += contextDur + pageDur + beforeHookDur;
 
   // Framework-injected load wait — not wasted
   const firstLoadDur = vary(380, 0.2);
@@ -655,14 +633,7 @@ function buildWaitHeavyStepEvents(testDuration: number, file: string, line: numb
   offset += navDur;
 
   const afterHookDur = vary(95, 0.2);
-  events.push({
-    title: 'After Hooks',
-    category: 'hook',
-    startedAt: offset,
-    duration: afterHookDur,
-    status: 'passed',
-    location: null,
-  });
+  events.push(afterHooksEvent(Math.max(offset, testDuration - afterHookDur), afterHookDur));
 
   return events;
 }

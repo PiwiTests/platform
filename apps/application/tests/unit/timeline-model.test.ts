@@ -2,6 +2,7 @@ import { describe, test, expect } from 'vitest';
 import {
   useTimelineModel,
   computeLockSummary,
+  isHookKind,
   type TimelineItem,
   type TimelineModelInput,
 } from '../../app/composables/useTimelineModel';
@@ -18,6 +19,7 @@ type CaseLike = {
   duration?: number | null;
   stepEvents?: StepLike[] | null;
   locks?: string[] | null;
+  retries?: number | null;
 };
 
 /** Minimal test-kind timeline item for the pure lock-summary tests. */
@@ -160,6 +162,116 @@ describe('useTimelineModel', () => {
     expect(hook?.title).toBe('Before Hooks');
   });
 
+  test('carries a hook section, the hooks it ran and its error onto the bar', () => {
+    const { timelineData } = model([
+      {
+        executionId: 1,
+        title: 'A',
+        status: 'failed',
+        workerIndex: 0,
+        startedAt: 1000,
+        duration: 400,
+        stepEvents: [
+          {
+            title: 'Before Hooks',
+            category: 'hook',
+            startedAt: 1000,
+            duration: 200,
+            status: 'passed',
+            hooks: [
+              { title: 'beforeAll hook', category: 'hook', duration: 150 },
+              { title: 'Fixture "page"', category: 'fixture', duration: 50 },
+            ],
+          },
+          {
+            title: 'After Hooks',
+            category: 'hook',
+            startedAt: 1300,
+            duration: 60,
+            status: 'failed',
+            error: 'Error: afterAll boom',
+            hooks: [{ title: 'afterAll hook', category: 'hook', duration: 60, failed: true }],
+          },
+          { title: 'Worker Cleanup', category: 'hook', startedAt: 1360, duration: 5, status: 'passed' },
+        ],
+      },
+    ]);
+
+    const hooks = timelineData.value.filter((d) => isHookKind(d.kind));
+    expect(hooks.map((d) => [d.title, d.section])).toEqual([
+      ['Before Hooks', 'setup'],
+      ['After Hooks', 'teardown'],
+      ['Worker Cleanup', 'teardown'],
+    ]);
+    expect(hooks[0]!.hooks?.map((h) => h.title)).toEqual(['beforeAll hook', 'Fixture "page"']);
+    expect(hooks[0]!.error).toBeNull();
+    expect(hooks[1]!.status).toBe('failed');
+    expect(hooks[1]!.error).toBe('Error: afterAll boom');
+    // A section from an older reporter carries no breakdown.
+    expect(hooks[2]!.hooks).toBeNull();
+  });
+
+  test('lays a replacement worker process on the lane its predecessor left', () => {
+    // Two worker slots. Process 0 fails and Playwright replaces it with process 2,
+    // which retries on the same slot; process 1 runs alongside the whole time.
+    const { timelineData, workerRows } = model([
+      { executionId: 1, title: 'A', status: 'failed', workerIndex: 0, startedAt: 1000, duration: 500 },
+      { executionId: 2, title: 'B', status: 'passed', workerIndex: 1, startedAt: 1000, duration: 2500 },
+      { executionId: 3, title: 'A', status: 'passed', workerIndex: 2, startedAt: 2200, duration: 400, retries: 1 },
+      { executionId: 4, title: 'C', status: 'passed', workerIndex: 2, startedAt: 2600, duration: 900 },
+    ] as CaseLike[]);
+
+    expect(workerRows.value.map((r) => [r.slot, r.processes])).toEqual([
+      [0, [0, 2]],
+      [1, [1]],
+    ]);
+    const items = timelineData.value;
+    expect(items.find((d) => d.key === 't3')!.rowIndex).toBe(items.find((d) => d.key === 't1')!.rowIndex);
+    expect(items.find((d) => d.key === 't3')!.slot).toBe(0);
+
+    // The stretch between the failed test and the retry is the new process starting up.
+    const restart = items.find((d) => d.kind === 'restart')!;
+    expect(restart.start).toBe(500);
+    expect(restart.duration).toBe(700);
+    expect(restart.gap?.after).toEqual({ title: 'A', status: 'failed', workerIndex: 0 });
+    expect(restart.gap?.before).toEqual({ title: 'A', status: 'passed', workerIndex: 2 });
+    // Worker 1 finishes at 3500, the run at 3500: no idle tail on either lane.
+    expect(items.filter((d) => d.kind === 'idle')).toHaveLength(0);
+  });
+
+  test('marks idle stretches of a lane and leaves short ones unmarked', () => {
+    const { timelineData } = model([
+      { executionId: 1, title: 'A', status: 'passed', workerIndex: 0, startedAt: 1000, duration: 500 },
+      // 100ms later: too short to mark.
+      { executionId: 2, title: 'B', status: 'passed', workerIndex: 0, startedAt: 1600, duration: 500 },
+      // 2s later on the same process: idle.
+      { executionId: 3, title: 'C', status: 'passed', workerIndex: 0, startedAt: 4100, duration: 500 },
+      // Worker 1 starts late and ends early.
+      { executionId: 4, title: 'D', status: 'passed', workerIndex: 1, startedAt: 2000, duration: 1000 },
+    ] as CaseLike[]);
+
+    const idle = timelineData.value
+      .filter((d) => d.kind === 'idle')
+      .map((d) => [d.slot, d.start, d.duration, d.gap?.after?.title ?? null, d.gap?.before?.title ?? null]);
+    expect(idle).toEqual([
+      [0, 1100, 2000, 'B', 'C'],
+      [1, 0, 1000, null, 'D'],
+      [1, 2000, 1600, 'D', null],
+    ]);
+    expect(timelineData.value.some((d) => d.kind === 'restart')).toBe(false);
+  });
+
+  test('marks no empty stretches while the run is live', () => {
+    const { timelineData } = model(
+      [
+        { executionId: 1, title: 'A', status: 'failed', workerIndex: 0, startedAt: 1000, duration: 500 },
+        { executionId: 2, title: 'B', status: 'passed', workerIndex: 1, startedAt: 3000, duration: 500 },
+      ],
+      { live: true },
+    );
+    expect(timelineData.value.some((d) => d.kind === 'idle' || d.kind === 'restart')).toBe(false);
+  });
+
   test('honors a custom wasted-wait pattern', () => {
     const { timelineData } = model(
       [
@@ -221,7 +333,9 @@ describe('useTimelineModel', () => {
     ]);
 
     const items = timelineData.value;
-    expect(items).toHaveLength(12); // 3 tests × (1 bar + 2 hooks + 1 wait)
+    // 3 tests × (1 bar + 2 hooks + 1 wait), plus worker 1 idling after C until B ends.
+    expect(items).toHaveLength(13);
+    expect(items.filter((d) => d.kind === 'idle')).toHaveLength(1);
     const keys = items.map((d) => d.key);
     expect(new Set(keys).size).toBe(keys.length);
   });
