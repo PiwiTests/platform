@@ -117,7 +117,7 @@ language the report came in.
 
 The ticket then follows the report: with **Comment on fix** and **Transition on fix** on, a report that looks fixed
 comments on its ticket and moves it; with **Resolve on close** and **Reopen on ticket reopen**, the report closes and
-reopens with its ticket.
+reopens as its ticket moves into and out of Done.
 
 ## Running it with Playwright in the desktop app
 

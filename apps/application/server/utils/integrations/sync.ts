@@ -85,8 +85,9 @@ async function syncOneLink(
     key: issue.key,
   });
   const previousCategory = (link.metadata as { statusCategory?: string | null } | null)?.statusCategory ?? null;
+  // The last category the tracker reported: a sync that reports none keeps it.
   await mergeEntityLinkMetadata(db, link.id, {
-    statusCategory: issue.statusCategory,
+    statusCategory: issue.statusCategory ?? previousCategory,
     assignee: issue.assignee?.displayName ?? null,
   });
 
@@ -132,10 +133,6 @@ export interface SyncResult {
 }
 
 /**
- * Refresh due tracker links, bounded to {@link SYNC_BATCH_LIMIT} per sweep. Open
- * clusters come first so a large backlog of resolved links never starves them.
- */
-/**
  * A bug report follows its ticket's moves: closed when the ticket moves to Done
  * (`resolveOnClose`), open again when it moves out of Done
  * (`reopenOnTicketReopen`). Only a move counts, against the category the last
@@ -179,6 +176,10 @@ async function syncBugReport(
   }
 }
 
+/**
+ * Refresh due tracker links, bounded to {@link SYNC_BATCH_LIMIT} per sweep. Open
+ * clusters come first so a large backlog of resolved links never starves them.
+ */
 export async function syncTrackerLinks(db: DbClient, opts: { now?: Date; limit?: number } = {}): Promise<SyncResult> {
   const now = opts.now ?? new Date();
   const limit = opts.limit ?? SYNC_BATCH_LIMIT;
