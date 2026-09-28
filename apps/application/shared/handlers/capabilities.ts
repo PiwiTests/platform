@@ -100,6 +100,25 @@ export async function resolveProjectStates(
   return resolveCapabilities(facts);
 }
 
+/**
+ * True when a passive-data capability is declined for a project by decision
+ * alone: the project declines it, or the instance does and the project does not
+ * enable it. Evidence never overrides such a decline, so no evidence probe is
+ * needed — two small reads.
+ */
+export async function isPassiveCapabilityDeclined(
+  db: DrizzleDB,
+  projectId: number,
+  id: CapabilityId,
+): Promise<boolean> {
+  const [instanceDecisions, projectDecisions] = await Promise.all([
+    getInstanceDecisions(db),
+    getProjectDecisions(db, projectId),
+  ]);
+  if (projectDecisions[id] === 'declined') return true;
+  return projectDecisions[id] !== 'enabled' && instanceDecisions[id] === 'declined';
+}
+
 /** The resolved project state for every capability. */
 export async function getProjectCapabilities(db: DrizzleDB, projectId: number): Promise<CapabilityStates> {
   return { items: toItems(await resolveProjectStates(db, projectId)) };

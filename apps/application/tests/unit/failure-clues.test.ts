@@ -921,3 +921,59 @@ describe('the story pass', () => {
     expect(story).toBeNull();
   });
 });
+
+describe('known-flake-suspect', () => {
+  const slowCart = {
+    kind: 'slow-route' as const,
+    label: 'GET /api/cart slower (≥1.6 s)',
+    counts: { failuresWith: 7, failures: 8, passesWith: 3, passes: 44 },
+    route: 'GET /api/cart',
+    thresholdMs: 1_600,
+    executionIds: [10, 11],
+  };
+
+  test('positive: this failure shows the route the history ranks as a suspect', () => {
+    const input = baseInput({
+      networkRequests: [
+        { method: 'GET', url: 'https://shop.test/api/user', status: 200, duration: 90, startTime: T0 + 100 },
+        { method: 'GET', url: 'https://shop.test/api/cart', status: 200, duration: 2_100, startTime: T0 + 200 },
+      ],
+      flakeSuspects: [slowCart],
+    });
+    const clue = runClues(input).find((c) => c.rule === 'known-flake-suspect')!;
+    expect(clue.strength).toBe('weak');
+    expect(clue.title).toBe('A known flake suspect: GET /api/cart slower (≥1.6 s)');
+    expect(clue.detail).toBe(
+      "GET /api/cart took 2.1 s; it is slow (1.6 s or more) in 7 of this test's 8 failures and 3 of its 44 passes.",
+    );
+    expect(clue.citations).toEqual([{ section: 'networkRequests', index: 1 }]);
+  });
+
+  test('a neighbor suspect names the other test', () => {
+    const input = baseInput({
+      flakeSuspects: [
+        {
+          kind: 'alongside',
+          label: 'resets catalog alongside',
+          counts: { failuresWith: 5, failures: 8, passesWith: 4, passes: 44 },
+          title: 'resets catalog',
+          executionIds: [10],
+        },
+      ],
+    });
+    const clue = runClues(input).find((c) => c.rule === 'known-flake-suspect')!;
+    expect(clue.detail).toBe(
+      '"resets catalog" was running at the same time; it runs alongside in 5 of this test\'s 8 failures and 4 of its 44 passes.',
+    );
+    expect(clue.citations).toEqual([{ section: 'recurrenceFlakiness' }]);
+  });
+
+  test('negative: the suspect is not shown by this execution', () => {
+    const input = baseInput({ flakeSuspects: [{ ...slowCart, executionIds: [11, 12] }] });
+    expect(rules(input)).not.toContain('known-flake-suspect');
+  });
+
+  test('negative: a test with no suspects', () => {
+    expect(rules(baseInput({ flakeSuspects: [] }))).not.toContain('known-flake-suspect');
+  });
+});

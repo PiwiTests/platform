@@ -20,6 +20,9 @@ import { buildSituation } from '../situation';
 import { computeNextStep } from '../next-step';
 import { getClusterPatchFacts } from './failure-clusters';
 import { isProbeRun } from './probes';
+import { getFlakeProfile } from './flake-profile';
+import { isPassiveCapabilityDeclined } from './capabilities';
+import { isFailedStatus } from '../utils/test-counts';
 import { buildFailureTimeline, type FailureTimeline, type TimelineCallsite } from '../failure-timeline';
 import {
   buildFailureClues,
@@ -695,7 +698,10 @@ export async function loadFailureClueInput(
 
   const [networkRequestRows, [testCase]] = await Promise.all([
     db.select().from(networkRequests).where(eq(networkRequests.testRunsCaseId, id)),
-    db.select({ filePath: testCases.filePath }).from(testCases).where(eq(testCases.id, trc.testCaseId)),
+    db
+      .select({ filePath: testCases.filePath, projectId: testCases.projectId })
+      .from(testCases)
+      .where(eq(testCases.id, trc.testCaseId)),
   ]);
 
   const networkForClues = networkRequestRows.map((nr) => ({
@@ -731,7 +737,7 @@ export async function loadFailureClueInput(
 
   // Run-level facts and the two derived analyses the engine cites, loaded in
   // parallel. Healing and the environment diff resolve their own baselines.
-  const [healing, environmentDiff, pageDiff, browserPeers, workerExecutions, clusterFix, lockHolders] =
+  const [healing, environmentDiff, pageDiff, browserPeers, workerExecutions, clusterFix, lockHolders, flakeSuspects] =
     await Promise.all([
       getLocatorHealing(db, id).catch(() => null),
       getEnvironmentDiff(db, id).catch(() => null),
@@ -808,6 +814,7 @@ export async function loadFailureClueInput(
               locks: unknown;
             }>,
           ),
+      loadFlakeSuspectsForClue(db, trc.status, trc.testCaseId, testCase?.projectId ?? null),
     ]);
 
   return {
@@ -860,7 +867,24 @@ export async function loadFailureClueInput(
     cluster: clusterFix,
     timeout: trc.timeout ?? null,
     slowRequestMs: opts.slowRequestMs ?? null,
+    flakeSuspects,
   };
+}
+
+/**
+ * The test's flake suspects, for a failing execution of a project that has not
+ * declined flake suspects; an empty list otherwise.
+ */
+async function loadFlakeSuspectsForClue(
+  db: DrizzleDB,
+  status: string,
+  testCaseId: number,
+  projectId: number | null,
+): Promise<FailureClueInput['flakeSuspects']> {
+  if (!isFailedStatus(status) || projectId == null) return [];
+  if (await isPassiveCapabilityDeclined(db, projectId, 'flake-lab')) return [];
+  const profile = await getFlakeProfile(db, testCaseId, { summary: true }).catch(() => null);
+  return profile?.suspects ?? [];
 }
 
 /**
@@ -916,6 +940,8 @@ export interface AttemptDiffResult {
   passing?: AttemptDiffSummary;
   /** Which attempt the opened execution is, so the UI can mark "this one". */
   currentExecutionId?: number;
+  /** The test case, so a network row can link to its flake suspect. */
+  testCaseId?: number;
   /** The ordered differences; empty when not applicable. */
   differences: AttemptDiffEntry[];
 }
@@ -1029,7 +1055,14 @@ export async function getAttemptDiff(db: DrizzleDB, id: number): Promise<Attempt
   const attempts = attemptsMeta.map(summarize);
 
   if (attemptsMeta.length < 2)
-    return { applicable: false, reason: 'single-attempt', attempts, differences: [], currentExecutionId: id };
+    return {
+      applicable: false,
+      reason: 'single-attempt',
+      attempts,
+      differences: [],
+      currentExecutionId: id,
+      testCaseId: current.testCaseId,
+    };
 
   const currentRetry = current.retries ?? 0;
   let failing: AttemptMeta | undefined;
@@ -1044,7 +1077,14 @@ export async function getAttemptDiff(db: DrizzleDB, id: number): Promise<Attempt
   }
 
   if (!failing || !passing)
-    return { applicable: false, reason: 'no-pair', attempts, differences: [], currentExecutionId: id };
+    return {
+      applicable: false,
+      reason: 'no-pair',
+      attempts,
+      differences: [],
+      currentExecutionId: id,
+      testCaseId: current.testCaseId,
+    };
 
   const evidenceFor = async (attempt: AttemptMeta): Promise<AttemptEvidence> => {
     const row = rowByRetry.get(attempt.retry);
@@ -1063,6 +1103,7 @@ export async function getAttemptDiff(db: DrizzleDB, id: number): Promise<Attempt
     failing: summarize(failing),
     passing: summarize(passing),
     currentExecutionId: id,
+    testCaseId: current.testCaseId,
     differences,
   };
 }
