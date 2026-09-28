@@ -15,6 +15,7 @@ interface Row {
   environment: string;
   branch: string;
   pathPrefix: string;
+  testPathPrefix: string;
 }
 
 const toast = useToast();
@@ -38,12 +39,19 @@ function toRows(items: UrlPatternItem[]): Row[] {
     environment: i.environment ?? '',
     branch: i.branch ?? '',
     pathPrefix: i.pathPrefix ?? '',
+    testPathPrefix: i.testPathPrefix ?? '',
   }));
 }
 
 function snapshot(list: Row[]): string {
   return JSON.stringify(
-    list.map((r) => [r.pattern.trim(), r.environment.trim(), r.branch.trim(), r.pathPrefix.trim()]),
+    list.map((r) => [
+      r.pattern.trim(),
+      r.environment.trim(),
+      r.branch.trim(),
+      r.pathPrefix.trim(),
+      r.testPathPrefix.trim(),
+    ]),
   );
 }
 
@@ -69,7 +77,9 @@ function prefixError(pathPrefix: string): string | undefined {
   return result.ok ? undefined : PREFIX_ERRORS[result.problem];
 }
 
-const invalid = computed(() => rows.value.some((r) => patternError(r.pattern) || prefixError(r.pathPrefix)));
+const invalid = computed(() =>
+  rows.value.some((r) => patternError(r.pattern) || prefixError(r.pathPrefix) || prefixError(r.testPathPrefix)),
+);
 
 const shownSuggestions = computed(() =>
   suggestions.value.filter((s) => !rows.value.some((r) => r.pattern.trim() === s.pattern)),
@@ -93,7 +103,7 @@ async function load() {
 }
 
 function addRow(pattern = '') {
-  rows.value.push({ key: nextKey++, pattern, environment: '', branch: '', pathPrefix: '' });
+  rows.value.push({ key: nextKey++, pattern, environment: '', branch: '', pathPrefix: '', testPathPrefix: '' });
 }
 
 function removeRow(key: number) {
@@ -120,6 +130,7 @@ async function save() {
           environment: r.environment.trim() || null,
           branch: r.branch.trim() || null,
           pathPrefix: r.pathPrefix.trim() || null,
+          testPathPrefix: r.testPathPrefix.trim() || null,
         })),
       },
     });
@@ -153,7 +164,7 @@ watch(() => props.projectId, load, { immediate: true });
         <li
           v-for="(row, index) in rows"
           :key="row.key"
-          class="grid gap-2 rounded-lg border border-default p-3 sm:grid-cols-[1fr_8rem_8rem_7rem_auto] sm:items-start sm:border-0 sm:p-0"
+          class="grid gap-2 rounded-lg border border-default p-3 md:grid-cols-[1fr_7rem_7rem_6.5rem_6.5rem_auto] md:items-start md:border-0 md:p-0"
           data-testid="url-pattern-row"
         >
           <UFormField :error="patternError(row.pattern)" :name="`pattern-${row.key}`">
@@ -172,6 +183,15 @@ watch(() => props.projectId, load, { immediate: true });
               placeholder="Path prefix"
               aria-label="Path prefix"
               title="Your site serves the pages under this path, the tests did not, e.g. /app"
+              class="w-full font-mono"
+            />
+          </UFormField>
+          <UFormField :error="prefixError(row.testPathPrefix)" :name="`test-path-prefix-${row.key}`">
+            <UInput
+              v-model="row.testPathPrefix"
+              placeholder="Tests’ prefix"
+              aria-label="Tests’ path prefix"
+              title="The tests ran the pages under this path, your site does not, e.g. /app"
               class="w-full font-mono"
             />
           </UFormField>
@@ -208,9 +228,10 @@ watch(() => props.projectId, load, { immediate: true });
         </li>
       </ol>
 
-      <p v-if="rows.length > 0" class="text-xs text-muted" data-testid="url-pattern-prefix-hint">
-        Path prefix: your site serves the pages under this path, the tests did not, e.g. /app
-      </p>
+      <ul v-if="rows.length > 0" class="text-xs text-muted space-y-0.5" data-testid="url-pattern-prefix-hint">
+        <li>Path prefix: your site serves the pages under this path, the tests did not, e.g. /app</li>
+        <li>Tests’ path prefix: the tests ran the pages under this path, your site does not, e.g. /app</li>
+      </ul>
 
       <div v-if="shownSuggestions.length > 0" class="space-y-2" data-testid="url-pattern-suggestions">
         <p class="text-sm font-semibold text-highlighted">Visited by the suite</p>

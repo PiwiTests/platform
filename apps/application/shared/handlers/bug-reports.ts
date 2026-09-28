@@ -628,6 +628,7 @@ export async function getBugReportMissedBy(
     steps: row.steps as PiwiSteps,
     pageKey: row.pageKey,
     pathPrefix: (row.context as BugContext | null)?.pathPrefix ?? null,
+    testPathPrefix: (row.context as BugContext | null)?.testPathPrefix ?? null,
   });
   return { ...missed, summary: describeMissedBy(missed) };
 }

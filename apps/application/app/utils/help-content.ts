@@ -418,7 +418,7 @@ export const HELP_TOPICS = {
   },
   'project.url-patterns': {
     title: 'Browser extension URLs',
-    text: 'The addresses this project’s application is served at, as patterns over the whole URL: * matches within one path segment, ** across segments. Piwi Picker reads them when it connects and tries them in this order to tell which project a page belongs to; a pattern saved in one browser overrides them there. The environment is a label; the branch is the one deployed at those addresses, whose tests Tested elements shows. The path prefix is the part of the path the site serves its pages under and the tests did not (/app); Piwi Picker removes it before comparing the page with the pages the tests ran on.',
+    text: 'The addresses this project’s application is served at, as patterns over the whole URL: * matches within one path segment, ** across segments. Piwi Picker reads them when it connects and tries them in this order to tell which project a page belongs to; a pattern saved in one browser overrides them there. The environment is a label; the branch is the one deployed at those addresses, whose tests Tested elements shows. The path prefix is the part of the path the site serves its pages under and the tests did not (/app); Piwi Picker removes it before comparing the page with the pages the tests ran on. The tests’ path prefix is the reverse, the part of the path the tests ran under and the site does not; Piwi Picker puts it in front.',
     doc: 'features/extension-connection#url-patterns',
   },
   'project.ci-rerun': {

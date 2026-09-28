@@ -49,6 +49,11 @@ describe('validation', () => {
     const parse = (pathPrefix: unknown) =>
       urlPatternInputSchema.safeParse({ pattern: 'https://shop.test/**', pathPrefix });
     expect(parse('app/').data?.pathPrefix).toBe('/app');
+    const tests = urlPatternInputSchema.safeParse({ pattern: 'https://shop.test/**', testPathPrefix: 'shop/' });
+    expect(tests.data?.testPathPrefix).toBe('/shop');
+    expect(
+      urlPatternInputSchema.safeParse({ pattern: 'https://shop.test/**', testPathPrefix: '/shop#x' }).success,
+    ).toBe(false);
     expect(parse(' /shop//eu ').data?.pathPrefix).toBe('/shop/eu');
     expect(parse('').data?.pathPrefix).toBeNull();
     expect(parse(null).data?.pathPrefix).toBeNull();
@@ -62,14 +67,20 @@ describe('validation', () => {
 describe('writes', () => {
   test('replace keeps the given order and trims empty labels to null', async () => {
     const result = await replaceProjectUrlPatterns(anyDb(), shop, [
-      { pattern: 'https://staging.shop.test/**', environment: 'staging', branch: 'develop', pathPrefix: '/app/' },
+      {
+        pattern: 'https://staging.shop.test/**',
+        environment: 'staging',
+        branch: 'develop',
+        pathPrefix: '/app/',
+        testPathPrefix: 'v2',
+      },
       { pattern: ' https://shop.test/** ', environment: ' ', branch: null, pathPrefix: ' ' },
     ]);
     expect(result.ok).toBe(true);
     const items = await listProjectUrlPatterns(anyDb(), shop);
-    expect(items.map((i) => [i.pattern, i.environment, i.branch, i.pathPrefix])).toEqual([
-      ['https://staging.shop.test/**', 'staging', 'develop', '/app'],
-      ['https://shop.test/**', null, null, null],
+    expect(items.map((i) => [i.pattern, i.environment, i.branch, i.pathPrefix, i.testPathPrefix])).toEqual([
+      ['https://staging.shop.test/**', 'staging', 'develop', '/app', '/v2'],
+      ['https://shop.test/**', null, null, null, null],
     ]);
   });
 
@@ -103,7 +114,7 @@ describe('what the extension reads', () => {
     await replaceProjectUrlPatterns(anyDb(), admin, [{ pattern: 'https://admin.test/**' }]);
     await replaceProjectUrlPatterns(anyDb(), shop, [
       { pattern: 'https://shop.test/b/**', pathPrefix: '/b' },
-      { pattern: 'https://shop.test/**', environment: 'prod' },
+      { pattern: 'https://shop.test/**', environment: 'prod', testPathPrefix: '/shop' },
     ]);
     const all = await listVisibleUrlPatterns(anyDb(), 'all');
     expect(all.map((p) => [p.projectId, p.pattern])).toEqual([
@@ -117,7 +128,9 @@ describe('what the extension reads', () => {
       environment: null,
       branch: null,
       pathPrefix: '/b',
+      testPathPrefix: null,
     });
+    expect(all[1]!.testPathPrefix).toBe('/shop');
     expect(all[2]!.projectLabel).toBe('admin');
     expect((await listVisibleUrlPatterns(anyDb(), new Set([admin]))).map((p) => p.projectId)).toEqual([admin]);
     expect(await listVisibleUrlPatterns(anyDb(), new Set())).toEqual([]);

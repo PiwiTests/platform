@@ -10,7 +10,7 @@ defineRouteMeta({
     tags: ['Extension'],
     summary: 'URL patterns for the browser extension',
     description:
-      'Every URL pattern of every project the caller can see, with its environment, branch and path prefix, in the order Piwi Picker tries them (by project, then each project’s own order), with each visible project and whether the caller may add patterns to it, and the caller’s name. Piwi Picker reads it when it connects and when its settings open.',
+      'Every URL pattern of every project the caller can see, with its environment, branch and both path prefixes, in the order Piwi Picker tries them (by project, then each project’s own order), with each visible project and whether the caller may add patterns to it, and the caller’s name. Piwi Picker reads it when it connects and when its settings open.',
     'x-required-roles': ['administrator', 'reporter', 'user'],
   },
 });

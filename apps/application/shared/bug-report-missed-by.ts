@@ -5,7 +5,7 @@
  * the demo and the tests read it the same way.
  */
 import { extractLocatorExpressions, lookupLocators, type LocatorIndex } from '@piwitests/core/locator-index';
-import { pageKeyUnderPrefix } from '@piwitests/core/page-key';
+import { mappedPageKey, type PathPrefixes } from '@piwitests/core/page-key';
 import type { PiwiSteps } from '@piwitests/core/steps';
 
 export interface MissedByTest {
@@ -41,13 +41,13 @@ export interface MissedBy {
 }
 
 /**
- * The page key of a steps document's path, with the URL mapping's path prefix
- * removed, or null for a path it cannot read.
+ * The page key of a steps document's path, mapped by the URL mapping's path
+ * prefixes as the report's page key was, or null for a path it cannot read.
  */
-function keyOf(path: string | null | undefined, origin: string | null, pathPrefix: string | null): string | null {
+function keyOf(path: string | null | undefined, origin: string | null, prefixes: PathPrefixes): string | null {
   if (!path) return null;
   try {
-    return pageKeyUnderPrefix(new URL(path, origin ?? 'http://localhost').href, pathPrefix).key;
+    return mappedPageKey(new URL(path, origin ?? 'http://localhost').href, prefixes).key;
   } catch {
     return null;
   }
@@ -56,9 +56,9 @@ function keyOf(path: string | null | undefined, origin: string | null, pathPrefi
 /** Why the suite missed a report's bug. */
 export function computeMissedBy(
   index: LocatorIndex | null,
-  report: { steps: PiwiSteps; pageKey: string | null; pathPrefix?: string | null },
+  report: { steps: PiwiSteps; pageKey: string | null } & PathPrefixes,
 ): MissedBy {
-  const prefix = report.pathPrefix ?? null;
+  const prefix: PathPrefixes = { pathPrefix: report.pathPrefix, testPathPrefix: report.testPathPrefix };
   const marked = report.steps.steps.flatMap((step, i) =>
     step.action === 'assert' && step.assertion ? [{ step, i }] : [],
   );
