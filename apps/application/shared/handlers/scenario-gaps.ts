@@ -8,7 +8,7 @@
  * from recent history, and the word used is *observed reach*, never coverage.
  */
 
-import { and, count, desc, eq, gte, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
+import { and, count, desc, eq, gte, inArray, isNotNull, isNull, lt, ne, not, or, sql } from 'drizzle-orm';
 import {
   failureClusters,
   graphEdges,
@@ -1292,11 +1292,20 @@ export async function computeScenarioGaps(
   const nodeBranchScope = isNull(graphNodes.branch);
   const edgeBranchScope = isNull(graphEdges.branch);
 
-  // Reach edges → which test cases reach which nodes.
+  // Reach edges → which test cases reach which nodes. Code reach's `coverage`
+  // edges and `file` nodes (every file a test executed) stay out of the node
+  // detectors: they are no surface of their own to drift or to be covered once.
   const reachRows = await db
     .select({ toKind: graphEdges.toKind, toKey: graphEdges.toKey, fromKey: graphEdges.fromKey })
     .from(graphEdges)
-    .where(and(eq(graphEdges.projectId, projectId), eq(graphEdges.kind, 'reaches'), edgeBranchScope));
+    .where(
+      and(
+        eq(graphEdges.projectId, projectId),
+        eq(graphEdges.kind, 'reaches'),
+        ne(graphEdges.origin, 'coverage'),
+        edgeBranchScope,
+      ),
+    );
 
   const reachByNode = new Map<string, Set<number>>();
   const testIds = new Set<number>();
@@ -1325,7 +1334,14 @@ export async function computeScenarioGaps(
       lastSeenRunId: graphNodes.lastSeenRunId,
     })
     .from(graphNodes)
-    .where(and(eq(graphNodes.projectId, projectId), nodeBranchScope, isNull(graphNodes.prunedAt)));
+    .where(
+      and(
+        eq(graphNodes.projectId, projectId),
+        nodeBranchScope,
+        isNull(graphNodes.prunedAt),
+        not(and(eq(graphNodes.kind, 'file'), eq(graphNodes.origin, 'coverage'))!),
+      ),
+    );
 
   // Documented response codes a declared (manifest/OpenAPI) route carries in its attrs.
   const documentedByRoute = new Map<string, number[]>();
