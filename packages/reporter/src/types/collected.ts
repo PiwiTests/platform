@@ -112,6 +112,8 @@ export interface CollectedTestCase {
   locatorSnapshots?: LocatorSnapshot[];
   /** Parsed from `piwi-locator-pages`: the page each locator call ran on. */
   locatorPages?: LocatorPageUse[];
+  /** Parsed from `piwi-code-reach`: the repository-relative source files the test executed. */
+  codeReach?: string[];
   /** Why a `didnotrun` case never executed; unset for tests that ran. */
   didNotRunReason?: string | null;
   /** Playwright's `TestCase.expectedStatus`: `failed` for a `test.fail()` test. */

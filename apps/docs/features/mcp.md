@@ -76,6 +76,9 @@ Add to `~/.cursor/mcp.json` (global) or `.cursor/mcp.json` in your project root:
 
 ### VS Code (GitHub Copilot, agent mode)
 
+With the [Piwi extension](/features/editors) installed and connected, VS Code 1.101 and later list Piwi's server
+without any configuration. Otherwise:
+
 Add to `.vscode/mcp.json` in your workspace (VS Code 1.99+):
 
 ```json

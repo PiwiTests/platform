@@ -36,7 +36,12 @@ Each failure carries its error, its owner and tags when the test declares them (
 [ownership metadata](/reference/test-metadata#ownership-metadata-piwi-annotations)), and, when a locator broke, the
 [replacement locator](./locator-healing) captured from the last passing run. The footer reports the CI minutes the run
 spent on waits and failed attempts. When the [Test Map](./scenario-gaps) has a diff to work with, the comment adds the
-changed files no test reached.
+changed files no test reached, then **Locators this change breaks**: the locators whose label, test id, placeholder or
+translation the diff removes or renames, matched against the base branch's locator index as
+[Locator preflight](./preflight) does. It lists only breaks none of whose tests ran in this run (a failing one is
+already listed with its failure, a passing one was updated), so it names what the run did not exercise: tests outside
+the selection, on another shard set, or in a nightly suite. Each comes with its call site and, for a rename, the
+rewritten locator.
 
 ## Turn it on
 

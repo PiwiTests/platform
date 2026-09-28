@@ -134,7 +134,7 @@ export function locatorBranchTag(runBranch: string | null | undefined, defaultBr
   return branch === '' || branch === defaultBranch ? '' : branch;
 }
 
-async function projectDefaultBranch(db: DrizzleDB, projectId: number): Promise<string> {
+export async function projectDefaultBranch(db: DrizzleDB, projectId: number): Promise<string> {
   const [project] = await db
     .select({ id: projects.id, defaultBranch: projects.defaultBranch })
     .from(projects)
@@ -532,7 +532,7 @@ export async function backfillUnindexedProjects(
 }
 
 /** Which rows of the index a read looks at. */
-interface BranchView {
+export interface BranchView {
   /** The branch described, or null for every branch together. */
   name: string | null;
   /** The stored tag of that branch: '' for the default branch, null for every branch. */
@@ -541,7 +541,11 @@ interface BranchView {
 }
 
 /** A view of `requested` (a branch name, `*` for every branch, nothing for the default branch). */
-async function resolveBranchView(db: DrizzleDB, projectId: number, requested?: string | null): Promise<BranchView> {
+export async function resolveBranchView(
+  db: DrizzleDB,
+  projectId: number,
+  requested?: string | null,
+): Promise<BranchView> {
   const defaultBranch = await projectDefaultBranch(db, projectId);
   if (requested === ALL_BRANCHES) return { name: null, tag: null, defaultBranch };
   const name = requested?.trim() || defaultBranch;
@@ -782,6 +786,51 @@ export async function getLocatorUsages(
   return { match, value, branch: view.name, testCount: tests.size, sites: ordered, truncated };
 }
 
+/**
+ * Tests as the locator index and the code index serve them: title, file,
+ * describe blocks and the latest outcome on the view's branch.
+ */
+export async function indexTests(db: DrizzleDB, testIds: number[], view: BranchView): Promise<LocatorIndexTest[]> {
+  const tests: LocatorIndexTest[] = [];
+  for (let i = 0; i < testIds.length; i += 500) {
+    const chunk = testIds.slice(i, i + 500);
+    const [cases, latest] = await Promise.all([
+      db
+        .select({
+          id: testCases.id,
+          title: testCases.title,
+          filePath: testCases.filePath,
+          suitePath: testCases.suitePath,
+        })
+        .from(testCases)
+        .where(inArray(testCases.id, chunk)),
+      latestExecutions(db, chunk, view),
+    ]);
+    const latestIds = [...latest.values()];
+    const outcomes = latestIds.length
+      ? await db
+          .select({
+            testCaseId: testRunsCases.testCaseId,
+            status: testRunsCases.status,
+            retries: testRunsCases.retries,
+          })
+          .from(testRunsCases)
+          .where(inArray(testRunsCases.id, latestIds))
+      : [];
+    const statusOf = new Map(outcomes.map((o) => [o.testCaseId, indexTestStatus(o.status, o.retries)]));
+    for (const c of cases) {
+      tests.push({
+        id: c.id,
+        title: c.title,
+        file: c.filePath,
+        suite: c.suitePath ? c.suitePath.split('\x1f').filter(Boolean) : [],
+        status: statusOf.get(c.id) ?? null,
+      });
+    }
+  }
+  return tests;
+}
+
 /** The index as one latest-outcome word per test: a pass after retries is flaky, a timeout or interruption failed. */
 function indexTestStatus(status: string | null, retries: number | null): LocatorIndexTestStatus | null {
   if (status === 'passed') return (retries ?? 0) > 0 ? 'flaky' : 'passed';
@@ -931,45 +980,8 @@ export async function getLocatorIndex(
   const kept = ranked.slice(0, maxLocators);
 
   const testIds = [...new Set(kept.flatMap(([, d]) => [...d.uses.keys()]))];
-  const tests: LocatorIndexTest[] = [];
-  const position = new Map<number, number>();
-  for (let i = 0; i < testIds.length; i += 500) {
-    const chunk = testIds.slice(i, i + 500);
-    const [cases, latest] = await Promise.all([
-      db
-        .select({
-          id: testCases.id,
-          title: testCases.title,
-          filePath: testCases.filePath,
-          suitePath: testCases.suitePath,
-        })
-        .from(testCases)
-        .where(inArray(testCases.id, chunk)),
-      latestExecutions(db, chunk, view),
-    ]);
-    const latestIds = [...latest.values()];
-    const outcomes = latestIds.length
-      ? await db
-          .select({
-            testCaseId: testRunsCases.testCaseId,
-            status: testRunsCases.status,
-            retries: testRunsCases.retries,
-          })
-          .from(testRunsCases)
-          .where(inArray(testRunsCases.id, latestIds))
-      : [];
-    const statusOf = new Map(outcomes.map((o) => [o.testCaseId, indexTestStatus(o.status, o.retries)]));
-    for (const c of cases) {
-      position.set(c.id, tests.length);
-      tests.push({
-        id: c.id,
-        title: c.title,
-        file: c.filePath,
-        suite: c.suitePath ? c.suitePath.split('\x1f').filter(Boolean) : [],
-        status: statusOf.get(c.id) ?? null,
-      });
-    }
-  }
+  const tests = await indexTests(db, testIds, view);
+  const position = new Map(tests.map((t, i) => [t.id, i]));
 
   // Page keys, those the most uses were recorded on first.
   const pageUses = new Map<string, number>();

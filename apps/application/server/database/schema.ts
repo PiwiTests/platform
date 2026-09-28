@@ -49,6 +49,8 @@ export const {
   projectAssignments,
   locatorSnapshots,
   locatorUsages,
+  runLocatorBreaks,
+  codeReach,
   casePayloads,
   testFunctions,
   testSelections,

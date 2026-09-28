@@ -53,6 +53,8 @@ import { ensureSessionAccess } from '../shared/session-access.js';
 import { getConnectionSettings } from '../shared/connection-settings.js';
 import { getActiveProjectOverride, resolveActiveProject } from '../shared/active-project.js';
 import { attachPanelShadow } from './panel-root.js';
+import { getEditorPairing } from '../shared/editor-pairing.js';
+import { sendToEditor, showSendResult } from '../shared/editor-send.js';
 
 /** The DOM shapes a click/action can reasonably land on — a click deeper inside one of these snaps up to it, same intent as the picker overlay's own snapping (not the identical algorithm — see AGENTS.md note in this file's own doc comment below). */
 const ACTIONABLE_SELECTOR =
@@ -629,6 +631,19 @@ async function renderReviewPanel(state: RecordingState): Promise<void> {
     downloadBtn.title = t('record_downloadStepsTitle');
     downloadBtn.addEventListener('click', () => downloadSteps(toStepsDocument(session)));
     actions.appendChild(downloadBtn);
+
+    if (await getEditorPairing().catch(() => null)) {
+      const sendBtn = document.createElement('button');
+      sendBtn.type = 'button';
+      sendBtn.className = 'action';
+      sendBtn.textContent = t('record_sendToEditor');
+      sendBtn.addEventListener('click', () => {
+        void sendToEditor({ kind: 'steps', steps: toStepsDocument(session) }).then((result) =>
+          showSendResult(sendBtn, result),
+        );
+      });
+      actions.appendChild(sendBtn);
+    }
   }
 
   const discardBtn = document.createElement('button');

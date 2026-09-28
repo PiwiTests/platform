@@ -8,8 +8,10 @@
     "packages/picker-dom",
     "packages/server",
     "packages/reporter",
+    "packages/editor",
     "apps/application",
     "apps/extension",
+    "apps/vscode",
     "integrations/nitro"
   ],
   "engines": {

@@ -18,6 +18,8 @@ import { chainStabilities, usePlace } from './coverage-risk.js';
 import { actionLabel, stabilityText } from '../shared/core-words.js';
 import { statusLabel, testTitle } from './coverage-view.js';
 import { attachPanelShadow } from './panel-root.js';
+import { getEditorPairing } from '../shared/editor-pairing.js';
+import { sendToEditor, showSendResult } from '../shared/editor-send.js';
 
 const HOST_ID = 'piwi-picker-results-host';
 
@@ -179,6 +181,7 @@ export async function renderResultsPanel(ranked: CheckedLocator[], target: Eleme
   panel.appendChild(piwiSection);
 
   let activeMode = await getLastCopyMode().catch(() => 'bare' as const);
+  const paired = (await getEditorPairing().catch(() => null)) !== null;
 
   return new Promise<void>((resolve) => {
     let done = false;
@@ -234,6 +237,18 @@ export async function renderResultsPanel(ranked: CheckedLocator[], target: Eleme
           }
         });
         copyRow.appendChild(btn);
+      }
+      if (paired) {
+        const send = document.createElement('button');
+        send.className = 'copy';
+        send.type = 'button';
+        send.textContent = t('pick_sendToEditor');
+        send.addEventListener('click', () => {
+          void sendToEditor({ kind: 'locator', text: renderCopyMode(alt, activeMode) }).then((result) =>
+            showSendResult(send, result),
+          );
+        });
+        copyRow.appendChild(send);
       }
       row.appendChild(copyRow);
 

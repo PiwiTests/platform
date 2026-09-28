@@ -205,6 +205,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/locator-usage',
       },
       {
+        title: 'Locator preflight',
+        summary:
+          'Before a push, the test locators your diff breaks — a renamed label, a removed test id, a changed translation — with the rewrite applied in place.',
+        needs: [],
+        where: 'piwi preflight',
+        doc: 'features/preflight',
+      },
+      {
         title: 'Fix plans, reproduce & bisect',
         summary: 'A plan to reproduce a failure locally and bisect to the commit that introduced it.',
         needs: ['desktop'],
@@ -279,6 +287,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         needs: ['scm'],
         where: 'Pull request comment',
         doc: 'features/uncovered-changes',
+      },
+      {
+        title: 'Code reach',
+        summary:
+          'Which tests execute each application source file, from JavaScript coverage on a scheduled run: feeds impact-from-diff, uncovered changes and preflight.',
+        needs: ['fixtures'],
+        where: 'Reporter option captureCodeReach',
+        doc: 'features/code-reach',
       },
       {
         title: 'Probes',
@@ -421,6 +437,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         needs: [],
         where: 'any source path',
         doc: 'features/ide-integration',
+      },
+      {
+        title: 'Editor extensions',
+        summary:
+          'In VS Code and the JetBrains IDEs: the latest CI failures at their lines with the heal as a quick fix, the tests behind each locator and file, and the locators an unsaved change breaks.',
+        needs: [],
+        where: 'VS Code extension, JetBrains plugin',
+        doc: 'features/editors',
       },
     ],
   },

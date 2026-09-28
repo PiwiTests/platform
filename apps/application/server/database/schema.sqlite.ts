@@ -474,6 +474,7 @@ export const testRunsCases = sqliteTable(
     testSourceFramesPayloadId: integer('test_source_frames_payload_id').references(() => casePayloads.id),
     pageInventoryPayloadId: integer('page_inventory_payload_id').references(() => casePayloads.id), // Content-addressed page inventory (controls + links per visited page), passing runs
     locatorPagesPayloadId: integer('locator_pages_payload_id').references(() => casePayloads.id), // Content-addressed list of the page each locator call ran on (piwi-locator-pages)
+    codeReachPayloadId: integer('code_reach_payload_id').references(() => casePayloads.id), // Content-addressed list of the source files the test executed (piwi-code-reach)
     browser: text('browser', { mode: 'json' }), // Playwright project/browser config: { projectName, browserName, channel, viewport }
     browserName: text('browser_name'), // Scalar browser identity (projectName) for index efficiency
     testAnnotations: text('test_annotations', { mode: 'json' }), // Array<{ type, description? }> — runtime test marks (@fixme, @slow …)
@@ -524,6 +525,9 @@ export const testRunsCases = sqliteTable(
     locatorPagesPayloadIdx: index('idx_trc_locator_pages_payload')
       .on(table.locatorPagesPayloadId)
       .where(sql`locator_pages_payload_id IS NOT NULL`),
+    codeReachPayloadIdx: index('idx_trc_code_reach_payload')
+      .on(table.codeReachPayloadId)
+      .where(sql`code_reach_payload_id IS NOT NULL`),
   }),
 );
 
@@ -603,6 +607,65 @@ export const locatorUsages = sqliteTable(
     projectTargetIdx: index('idx_locator_usages_project_target').on(table.projectId, table.target),
     lastSeenRunIdx: index('idx_locator_usages_last_seen_run').on(table.lastSeenRunId),
     firstSeenRunIdx: index('idx_locator_usages_first_seen_run').on(table.firstSeenRunId),
+  }),
+);
+
+// Code reach: the application source files each test executed, one row per
+// (test case, branch, file). Written on ingest from the reporter's opt-in
+// `codeReach` field (JavaScript coverage); the rows of a test's latest
+// execution on a branch replace the previous ones. Server reach (a route's
+// handler file) is read from the Test Map's edges instead of stored here.
+export const codeReach = sqliteTable(
+  'code_reach',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    testCaseId: integer('test_case_id')
+      .notNull()
+      .references(() => testCases.id, { onDelete: 'cascade' }),
+    branch: text('branch').notNull().default(''), // '' = the project's default branch (or a run with none); else the run's own branch
+    file: text('file').notNull(), // repository-relative path
+    origin: text('origin').notNull().default('client'), // 'client' (JavaScript coverage)
+    lastSeenRunId: integer('last_seen_run_id').references(() => testRuns.id, { onDelete: 'set null' }),
+    lastSeenAt: integer('last_seen_at', { mode: 'timestamp_ms' }).notNull(),
+  },
+  (table) => ({
+    uniqueReach: uniqueIndex('idx_code_reach_unique').on(table.testCaseId, table.branch, table.file),
+    projectFileIdx: index('idx_code_reach_project_file').on(table.projectId, table.file),
+    lastSeenRunIdx: index('idx_code_reach_last_seen_run').on(table.lastSeenRunId),
+  }),
+);
+
+// Locator breaks a pull-request run's diff predicts: one row per chain of the
+// locator index that a string the diff removed or renamed stops matching.
+// Written at finish time by change coverage; read by the pull-request comment
+// and by locator healing's `diff-rename` rung. Replaced on every run.
+export const runLocatorBreaks = sqliteTable(
+  'run_locator_breaks',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    runId: integer('run_id')
+      .notNull()
+      .references(() => testRuns.id, { onDelete: 'cascade' }),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    locator: text('locator').notNull(), // canonical chain the diff breaks
+    rewrite: text('rewrite'), // the same chain with the new string; null for a removal or a regex
+    replacements: text('replacements', { mode: 'json' }), // Array<[before, after]> string arguments the rewrite changes
+    anchor: text('anchor', { mode: 'json' }).notNull(), // DiffAnchor: file, line, kind, attribute?, key?, before, after?
+    confidence: text('confidence').notNull(), // 'likely' | 'possible'
+    callSites: text('call_sites', { mode: 'json' }).notNull(), // string[] — file:line:col of every use
+    testCaseIds: text('test_case_ids', { mode: 'json' }).notNull(), // number[] — the tests that use the chain
+    createdAt: integer('created_at', { mode: 'timestamp' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => ({
+    runIdx: index('idx_run_locator_breaks_run').on(table.runId),
+    projectIdx: index('idx_run_locator_breaks_project').on(table.projectId),
   }),
 );
 

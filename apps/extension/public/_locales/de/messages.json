@@ -644,7 +644,7 @@
     "message": "Trennen"
   },
   "options_privacy": {
-    "message": "Nur von dieser Seite aus verwendet: Der API-Schlüssel erreicht nie die Skripte einer Webseite. Aufgezeichnete Schritte gehen nirgendwohin, außer Sie kopieren oder laden sie herunter. Die Verbindung lädt die Adressmuster Ihrer Projekte, den Funktionskatalog jedes zugeordneten Projekts und die Elemente herunter, die seine Tests erreichen; eine Website hinzuzufügen sendet nur ihr Muster."
+    "message": "Nur von dieser Seite aus verwendet: Der API-Schlüssel erreicht nie die Skripte einer Webseite. Aufgezeichnete Schritte gehen nirgendwohin, außer Sie kopieren sie, laden sie herunter oder senden sie an Ihren gekoppelten Editor. Die Verbindung lädt die Adressmuster Ihrer Projekte, den Funktionskatalog jedes zugeordneten Projekts und die Elemente herunter, die seine Tests erreichen; eine Website hinzuzufügen sendet nur ihr Muster."
   },
   "options_testing": {
     "message": "Wird getestet…"
@@ -993,6 +993,36 @@
   "options_addInvalid": {
     "message": "Beginnen Sie das Muster mit http://, https:// oder einem Platzhalter."
   },
+  "options_editorHeading": {
+    "message": "An den Editor senden"
+  },
+  "options_editorHint": {
+    "message": "Führen Sie in VS Code oder einer JetBrains-IDE mit der Piwi-Erweiterung „Piwi: Pair with Piwi Picker“ aus und fügen Sie die kopierte Adresse hier ein. Gewählte Locators und aufgezeichnete Schritte können dann an diesen Editor gesendet werden, nur auf diesem Computer, und werden an seinem Cursor eingefügt."
+  },
+  "options_editorAddress": {
+    "message": "Kopplungsadresse"
+  },
+  "options_editorPair": {
+    "message": "Koppeln"
+  },
+  "options_editorUnpair": {
+    "message": "Entkoppeln"
+  },
+  "options_editorPaired": {
+    "message": "Mit dem Editor unter $url$ gekoppelt.",
+    "placeholders": {
+      "url": {
+        "content": "$1",
+        "example": "http://127.0.0.1:47211/piwi/send"
+      }
+    }
+  },
+  "options_editorInvalid": {
+    "message": "Das ist keine Kopplungsadresse. Sie sieht aus wie http://127.0.0.1:47211/piwi/send#… und kommt vom Befehl „Pair with Piwi Picker“ des Editors."
+  },
+  "options_editorPermission": {
+    "message": "Piwi Picker braucht die Berechtigung, den Editor auf diesem Computer zu erreichen."
+  },
   "common_close": {
     "message": "Schließen"
   },
@@ -1001,6 +1031,12 @@
   },
   "common_copied": {
     "message": "Kopiert"
+  },
+  "common_sentToEditor": {
+    "message": "Gesendet"
+  },
+  "common_sendToEditorFailed": {
+    "message": "Nicht gesendet"
   },
   "common_cancel": {
     "message": "Abbrechen"
@@ -1663,6 +1699,9 @@
   "pick_useRankedInstead": {
     "message": "Diese Tests könnten stattdessen einen der oben aufgeführten Locators verwenden."
   },
+  "pick_sendToEditor": {
+    "message": "An den Editor senden"
+  },
   "functions_title": {
     "message": "Testfunktionen auf dieser Seite"
   },
@@ -1866,6 +1905,9 @@
   },
   "record_downloadStepsTitle": {
     "message": "Speichert die Aufzeichnung als Schrittdatei, um sie zu teilen oder mit piwi codegen in einen Test umzuwandeln"
+  },
+  "record_sendToEditor": {
+    "message": "An den Editor senden"
   },
   "bug_reportLabel": {
     "message": "Bug-Report von Piwi Picker"

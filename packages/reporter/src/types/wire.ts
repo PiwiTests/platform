@@ -92,6 +92,8 @@ export interface WireTestCase {
   locatorSnapshots?: unknown;
   /** The page each locator call ran on (`piwi-locator-pages`). */
   locatorPages?: unknown;
+  /** The repository-relative source files the test executed (`piwi-code-reach`). */
+  codeReach?: unknown;
   /** Why a `didnotrun` case never executed (`previous-failure`/`global-timeout`/`max-failures`/`interrupted`). */
   didNotRunReason?: string | null;
   /** Playwright's `TestCase.expectedStatus`: `failed` for a `test.fail()` test. */
@@ -152,6 +154,8 @@ export interface CompleteStreamEvent {
   locatorSnapshots?: unknown;
   /** The page each locator call ran on (`piwi-locator-pages`). */
   locatorPages?: unknown;
+  /** The repository-relative source files the test executed (`piwi-code-reach`). */
+  codeReach?: unknown;
   /** Why a `didnotrun` case never executed (`previous-failure`/`global-timeout`/`max-failures`/`interrupted`). */
   didNotRunReason?: string | null;
   /** Playwright's `TestCase.expectedStatus`: `failed` for a `test.fail()` test. */

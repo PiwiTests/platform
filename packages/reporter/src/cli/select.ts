@@ -353,7 +353,11 @@ function spawnPlaywright(pkgRunner: string, playwrightArgs: string[], env: NodeJ
  * when the target config has no Piwi reporter and the installed Playwright is
  * 1.63 or later. Logs one line naming what was added, or why it was not.
  */
-function spawnPlaywrightForRun(pkgRunner: string, playwrightArgs: string[], env: NodeJS.ProcessEnv): Promise<number> {
+export function spawnPlaywrightForRun(
+  pkgRunner: string,
+  playwrightArgs: string[],
+  env: NodeJS.ProcessEnv,
+): Promise<number> {
   const decision = computeAddReporterArgs(process.cwd(), playwrightArgs);
   if (decision.log) console.error(decision.log);
   return spawnPlaywright(pkgRunner, [...decision.args, ...playwrightArgs], env);

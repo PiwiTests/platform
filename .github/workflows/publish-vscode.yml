@@ -1,0 +1,52 @@
+name: Publish VS Code Extension
+
+# Packages apps/vscode on each release tag and publishes it to the Visual
+# Studio Marketplace (VSCE_PAT) and Open VSX (OVSX_PAT), for Cursor and
+# VSCodium. A marketplace whose token is not configured is skipped.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      VSCE_PAT: ${{ secrets.VSCE_PAT }}
+      OVSX_PAT: ${{ secrets.OVSX_PAT }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: ./package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --prefer-offline --no-audit --fund=false
+
+      - name: Package
+        working-directory: ./apps/vscode
+        run: npm run vscode:package
+
+      - name: Publish to the Visual Studio Marketplace
+        if: ${{ env.VSCE_PAT != '' }}
+        working-directory: ./apps/vscode
+        run: npx vsce publish --packagePath dist/piwi.vsix
+
+      - name: Publish to Open VSX
+        if: ${{ env.OVSX_PAT != '' }}
+        working-directory: ./apps/vscode
+        run: npx ovsx publish dist/piwi.vsix
+
+      - name: Upload the package
+        uses: actions/upload-artifact@v7
+        with:
+          name: piwi-vsix
+          path: apps/vscode/dist/piwi.vsix

@@ -1,3 +1,4 @@
+import type { EditorPairing, EditorSendPayload } from '@piwitests/core/editor-send';
 import type { TestFunctionEntry } from '@piwitests/core/function-match';
 import type { LocatorIndex } from '@piwitests/core/locator-index';
 import type { ConnectionSettings, ServerPatternsAnswer } from './connection-settings';
@@ -8,13 +9,14 @@ import type { PiwiSteps } from '@piwitests/core/steps';
 import { t } from './i18n.js';
 
 /**
- * Talks to a Piwi instance — the only place in this extension that makes a
- * network call. Called from the options page (connecting, saving, reading and
- * adding URL patterns) and the background service worker (`piwi-refresh-catalog`, `piwi-refresh-locator-index`,
- * and the bug-report messages: `piwi-send-bug-report` once the reporter has
- * confirmed the preview, `piwi-list-bug-reports`, `piwi-get-bug-report`, and
- * `piwi-desktop-repro` to the paired desktop app once the developer confirmed
- * its preview) only,
+ * Talks to a Piwi instance, and to the editor Piwi Picker is paired with — the
+ * only place in this extension that makes a network call. Called from the
+ * options page (connecting, saving, reading and adding URL patterns) and the
+ * background service worker (`piwi-refresh-catalog`, `piwi-refresh-locator-index`,
+ * `piwi-send-to-editor`, and the bug-report messages: `piwi-send-bug-report` once
+ * the reporter has confirmed the preview, `piwi-list-bug-reports`,
+ * `piwi-get-bug-report`, and `piwi-desktop-repro` to the paired desktop app once
+ * the developer confirmed its preview) only,
  * never from a content script, so the API key is never reachable from a web
  * page's JS context (matches `extension/AGENTS.md`'s standalone stance:
  * connected mode is opt-in and clearly separated).
@@ -313,6 +315,30 @@ export async function addServerPattern(
   if (res.status === 409) throw new Error(t('options_addDuplicate'));
   if (res.status === 400) throw new Error(t('options_addInvalid'));
   throw new Error(t('common_instanceStatus', { status: res.status }));
+}
+
+/**
+ * Post a locator or a recording to the paired editor, on this computer's
+ * loopback interface; the editor inserts it at its cursor. Needs the host
+ * permission for the editor's origin, requested when pairing.
+ */
+export async function postToEditor(
+  pairing: EditorPairing,
+  payload: EditorSendPayload,
+): Promise<{ ok: true; file: string | null } | { ok: false; error: string }> {
+  try {
+    const res = await fetch(pairing.url, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${pairing.token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: timeout(),
+    });
+    const body = (await res.json().catch(() => null)) as { file?: string | null; error?: string } | null;
+    if (!res.ok) return { ok: false, error: body?.error ?? String(res.status) };
+    return { ok: true, file: body?.file ?? null };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
 }
 
 /** Deep link to a bug report's page in the dashboard. */

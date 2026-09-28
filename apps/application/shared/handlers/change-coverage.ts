@@ -1,8 +1,9 @@
 /**
  * Change coverage — the answer to "did we test what this pull request changed?".
  * Joins the changed files of a diff to the tests that observably reach them
- * (locator call sites, captured every run, and the tests defined in a changed
- * spec) and to the tickets named in the commits and the pull request.
+ * (locator call sites, captured every run, the tests defined in a changed spec,
+ * the route or page a file implements, and the files a test executed when code
+ * reach is on) and to the tickets named in the commits and the pull request.
  *
  * Honest by construction: reach is *observed* reach, never instrumented
  * coverage, and "no test in this run" is always paired with the count from the
@@ -10,7 +11,14 @@
  */
 
 import { and, desc, eq, inArray, notInArray } from 'drizzle-orm';
-import { graphEdges, locatorSnapshots, testCases, testRuns, testRunsCases } from '../../server/database/schema';
+import {
+  codeReach,
+  graphEdges,
+  locatorSnapshots,
+  testCases,
+  testRuns,
+  testRunsCases,
+} from '../../server/database/schema';
 import type { DrizzleDB } from './db';
 import { parseCallsiteLocation } from '../callsite-location';
 import {
@@ -255,6 +263,17 @@ async function loadGraphNodeReach(
   return { byRoute, byPage };
 }
 
+/** Per file, the tests whose execution ran its functions (`code_reach`, every branch). */
+async function loadCodeReach(db: DrizzleDB, projectId: number): Promise<Map<string, Set<number>>> {
+  const rows = await db
+    .select({ file: codeReach.file, testCaseId: codeReach.testCaseId })
+    .from(codeReach)
+    .where(eq(codeReach.projectId, projectId));
+  const byFile = new Map<string, Set<number>>();
+  for (const r of rows) byFile.set(r.file, (byFile.get(r.file) ?? new Set<number>()).add(r.testCaseId));
+  return byFile;
+}
+
 /** Union into `reaching` the tests reaching any node a file's convention target matches. */
 function addNodeReach(
   target: ConventionTarget | null,
@@ -296,6 +315,7 @@ export async function computeChangeCoverage(
 
   const { byFile, caseFiles } = await loadFileReach(db, projectId);
   const { byRoute, byPage } = await loadGraphNodeReach(db, projectId);
+  const byCode = await loadCodeReach(db, projectId);
 
   // Which test cases ran in the inspected run, and in each recent run. A case
   // that was skipped or did-not-run is present in the rows but never executed, so
@@ -346,6 +366,13 @@ export async function computeChangeCoverage(
     if (routeTarget || pageTarget) observable = true;
     addNodeReach(routeTarget, byRoute, routeKeyMatchesTarget, reaching);
     addNodeReach(pageTarget, byPage, pageKeyMatchesTarget, reaching);
+    // Reach through code reach: a test executed the file's functions.
+    for (const [reachedFile, ids] of byCode) {
+      if (pathsMatch(reachedFile, file.filePath)) {
+        observable = true;
+        for (const id of ids) reaching.add(id);
+      }
+    }
 
     const historyRuns = new Set<number>();
     for (const id of reaching) for (const runId of runsByCase.get(id) ?? []) historyRuns.add(runId);

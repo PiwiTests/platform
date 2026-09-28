@@ -15,7 +15,7 @@
  * Pure + unit-tested (`tests/unit/heal-edit.test.ts`). Deterministic string
  * rewrite only; nothing here is model output.
  */
-import { buildLocatorEdit } from '#shared/locator-edit';
+import { buildLiteralEdit, buildLocatorEdit } from '#shared/locator-edit';
 import { parseCallsiteLocation } from '#shared/callsite-location';
 import { parseSourceSnippet } from '#shared/source-snippet';
 import type { LocatorEdit } from '#shared/locator-healing.types';
@@ -130,6 +130,11 @@ export interface HealEditInput {
   testSource?: string | null;
   /** File path to use when the call site carries none (e.g. the test's own path). */
   fallbackFilePath?: string | null;
+  /**
+   * String arguments to replace in place (`[before, after]`), keeping the
+   * author's quotes, instead of rewriting the failing call: a `diff-rename` fix.
+   */
+  literalReplacements?: Array<[string, string]> | null;
 }
 
 /**
@@ -143,7 +148,14 @@ export function buildHealEdit(input: HealEditInput): LocatorEdit | null {
   const text = input.sourceLine?.text ?? null;
   if (line == null || !text || !input.failingMethod || !input.recommendedLocator) return null;
 
-  const rewrite = buildLocatorEdit(text, input.failingMethod, input.recommendedLocator);
+  let rewrite: { old: string; new: string } | null;
+  if (input.literalReplacements?.length) {
+    let next = text;
+    for (const [before, after] of input.literalReplacements) next = buildLiteralEdit(next, before, after)?.new ?? next;
+    rewrite = next === text ? null : { old: text, new: next };
+  } else {
+    rewrite = buildLocatorEdit(text, input.failingMethod, input.recommendedLocator);
+  }
   if (!rewrite) return null;
 
   const filePath = parseCallsiteLocation(input.location)?.file ?? input.fallbackFilePath ?? null;

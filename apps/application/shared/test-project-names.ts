@@ -23,6 +23,7 @@ export const PROJECT = {
   BLOB_GZ: 'blob-gz-test-project',
   BLOCK_LAYOUT: 'block-layout-test',
   BLOCK_LAYOUT_VERSIONS: 'block-layout-versions-test',
+  BRANCH_FAILURES: 'branch-failures-test',
   BROWSER_NOTIFY: 'browser-notify-test',
   BUG_REPORTS: 'bug-reports-test',
   BUG_REPORTS_JIRA: 'bug-reports-jira-test',
@@ -33,6 +34,7 @@ export const PROJECT = {
   CLUSTER_NAMING: 'cluster-naming-test',
   CLUSTER_PAGE_LAYOUT: 'cluster-page-layout-test',
   CLUSTER_SUGGEST: 'cluster-suggest-test',
+  CODE_REACH: 'code-reach-test',
   // Deliberately does not contain "projects" (case-insensitive substring) — the
   // sidebar's static "Projects" nav link is matched with getByRole('link', {
   // name: 'Projects' }) (no exact:true) elsewhere in the suite, which matches

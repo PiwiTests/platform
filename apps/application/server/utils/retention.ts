@@ -17,6 +17,7 @@ import {
   networkRequests,
   notificationDeliveries,
   reportSnapshots,
+  runLocatorBreaks,
   shareLinks,
   subscriptions,
   testRuns,
@@ -119,6 +120,7 @@ export async function deleteRunsByIds(
         frames: testRunsCases.testSourceFramesPayloadId,
         inventory: testRunsCases.pageInventoryPayloadId,
         locatorPages: testRunsCases.locatorPagesPayloadId,
+        codeReach: testRunsCases.codeReachPayloadId,
       })
       .from(testRunsCases)
       .where(inArray(testRunsCases.id, batch));
@@ -129,6 +131,7 @@ export async function deleteRunsByIds(
       if (ref.frames != null) candidatePayloadIds.add(ref.frames);
       if (ref.inventory != null) candidatePayloadIds.add(ref.inventory);
       if (ref.locatorPages != null) candidatePayloadIds.add(ref.locatorPages);
+      if (ref.codeReach != null) candidatePayloadIds.add(ref.codeReach);
     }
   }
 
@@ -165,6 +168,7 @@ export async function deleteRunsByIds(
   for (const batch of batches(presentRunIds)) {
     await db.delete(networkRequests).where(inArray(networkRequests.testRunId, batch));
     await db.delete(entityLinks).where(inArray(entityLinks.testRunId, batch));
+    await db.delete(runLocatorBreaks).where(inArray(runLocatorBreaks.runId, batch));
   }
   for (const batch of batches(caseIds)) {
     await db.delete(entityLinks).where(inArray(entityLinks.testRunsCaseId, batch));
@@ -325,7 +329,8 @@ function payloadUnreferenced(): SQL {
     AND NOT EXISTS (SELECT 1 FROM ${testRunsCases} WHERE ${testRunsCases.testSourcePayloadId} = ${casePayloads.id})
     AND NOT EXISTS (SELECT 1 FROM ${testRunsCases} WHERE ${testRunsCases.testSourceFramesPayloadId} = ${casePayloads.id})
     AND NOT EXISTS (SELECT 1 FROM ${testRunsCases} WHERE ${testRunsCases.pageInventoryPayloadId} = ${casePayloads.id})
-    AND NOT EXISTS (SELECT 1 FROM ${testRunsCases} WHERE ${testRunsCases.locatorPagesPayloadId} = ${casePayloads.id})`;
+    AND NOT EXISTS (SELECT 1 FROM ${testRunsCases} WHERE ${testRunsCases.locatorPagesPayloadId} = ${casePayloads.id})
+    AND NOT EXISTS (SELECT 1 FROM ${testRunsCases} WHERE ${testRunsCases.codeReachPayloadId} = ${casePayloads.id})`;
 }
 
 export interface OrphanSweepResult {

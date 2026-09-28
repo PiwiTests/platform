@@ -33,6 +33,9 @@ import {
   setProjectAccess,
 } from '#shared/handlers/project-assignments';
 import { getDemoDb } from '../db.client';
+import { getCodeIndex, getCodeReachForFile } from '~~/server/utils/code-reach';
+import { getLocatorAlternatives } from '~~/server/utils/locator-alternatives';
+import { getBranchFailures } from '~~/server/utils/branch-failures';
 import { getLocatorHealing, saveLocatorPick } from '~~/server/utils/locator-healing';
 import {
   backfillLocatorUsages,
@@ -1578,6 +1581,48 @@ const routes: RouteEntry[] = [
       const index = await getLocatorIndex(await getDemoDb(), +m[1]!, { branch: branch.branch });
       if (!index) throw demoHttpError(404, 'Project not found');
       return index;
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/code-reach$/,
+    handler: async (m, _b, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const file = q?.get('file')?.trim() ?? '';
+      if (!file || file.length > 500) throw demoHttpError(400, 'file is required (at most 500 characters)');
+      const branch = parseLocatorBranchQuery(q?.get('branch'));
+      if ('error' in branch) throw demoHttpError(400, branch.error);
+      return getCodeReachForFile(await getDemoDb(), +m[1]!, file, branch.branch);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/locator-alternatives$/,
+    handler: async (m, _b, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const file = q?.get('file')?.trim() ?? '';
+      if (!file || file.length > 500) throw demoHttpError(400, 'file is required (at most 500 characters)');
+      return { items: await getLocatorAlternatives(await getDemoDb(), +m[1]!, file) };
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/branch-failures$/,
+    handler: async (m, _b, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const branch = q?.get('branch')?.trim() ?? '';
+      if (branch.length > 255) throw demoHttpError(400, 'branch is at most 255 characters');
+      return getBranchFailures(await getDemoDb(), +m[1]!, branch || null);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/code-index$/,
+    handler: async (m, _b, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const branch = parseLocatorBranchQuery(q?.get('branch'));
+      if ('error' in branch) throw demoHttpError(400, branch.error);
+      return getCodeIndex(await getDemoDb(), +m[1]!, branch.branch);
     },
   },
   {

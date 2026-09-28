@@ -31,6 +31,7 @@ import {
 import { upsertLocatorSnapshots } from '~~/server/utils/locator-healing';
 import { upsertLocatorUsages, type LocatorUsageCase } from '~~/server/utils/locator-usages';
 import { sanitizeLocatorPages } from '~~/server/utils/locator-pages';
+import { sanitizeCodeReach, upsertCodeReach, type CodeReachCase } from '~~/server/utils/code-reach';
 import { upsertCasePayloads } from '~~/server/utils/case-payloads';
 import { resolveRunBranch } from '~~/server/utils/run-branch';
 import { applyReporterKeep } from '#shared/handlers/run-keep';
@@ -420,6 +421,8 @@ export interface RunCaseInput {
   pageState?: unknown;
   /** The page each locator call ran on (capture fixtures). */
   locatorPages?: unknown;
+  /** The source files the test executed (code reach). */
+  codeReach?: unknown;
   aiUsage?: unknown;
   consoleLogs?: unknown;
   dialogs?: unknown;
@@ -618,6 +621,8 @@ export async function persistRunCases(
   // The page each locator call ran on, per row: stored through case_payloads,
   // like the server, so a rebuild of the index keeps them.
   const rowLocatorPages: Array<string | null> = [];
+  const rowCodeReach: Array<string | null> = [];
+  const perCaseReach: CodeReachCase[] = [];
   const caseMetaSnapshots = new Map<number, CaseMetaSnapshot>();
 
   for (let i = 0; i < cases.length; i++) {
@@ -683,6 +688,9 @@ export async function persistRunCases(
     const cappedSteps = capSteps(c.steps, DEFAULT_INGEST_LIMITS);
     const locatorPages = sanitizeLocatorPages(c.locatorPages);
     rowLocatorPages.push(locatorPages ? JSON.stringify(locatorPages) : null);
+    const reached = sanitizeCodeReach(c.codeReach);
+    rowCodeReach.push(reached ? JSON.stringify(reached) : null);
+    if (reached) perCaseReach.push({ testCaseId: shared.id, runId: testRunId, files: reached });
     perCaseUsages.push({
       caseId: shared.id,
       browserName: resolveBrowserName(c.browser),
@@ -752,10 +760,12 @@ export async function persistRunCases(
 
   if (runCasesRows.length === 0) return [];
 
-  const pagePayloadIds = await upsertCasePayloads(db, projectId, rowLocatorPages);
+  const pagePayloadIds = await upsertCasePayloads(db, projectId, [...rowLocatorPages, ...rowCodeReach]);
   runCasesRows.forEach((row, i) => {
     const content = rowLocatorPages[i];
     row.locatorPagesPayloadId = content ? (pagePayloadIds.get(content) ?? null) : null;
+    const reach = rowCodeReach[i];
+    row.codeReachPayloadId = reach ? (pagePayloadIds.get(reach) ?? null) : null;
   });
 
   const clusterIds = await getOrCreateFailureClusters(db, projectId, testRunId, pendingClusters);
@@ -800,6 +810,7 @@ export async function persistRunCases(
 
   await upsertLocatorSnapshots(db, perCaseLocators, testRunId);
   await upsertLocatorUsages(db, projectId, perCaseUsages).catch(() => {});
+  await upsertCodeReach(db, projectId, perCaseReach).catch(() => {});
   await syncTestCaseMetadata(db, caseMetaSnapshots);
 
   return result;

@@ -508,6 +508,7 @@ export const testRunsCases = pgTable(
     testSourceFramesPayloadId: integer('test_source_frames_payload_id').references(() => casePayloads.id),
     pageInventoryPayloadId: integer('page_inventory_payload_id').references(() => casePayloads.id), // Content-addressed page inventory (controls + links per visited page), passing runs
     locatorPagesPayloadId: integer('locator_pages_payload_id').references(() => casePayloads.id), // Content-addressed list of the page each locator call ran on (piwi-locator-pages)
+    codeReachPayloadId: integer('code_reach_payload_id').references(() => casePayloads.id), // Content-addressed list of the source files the test executed (piwi-code-reach)
     browser: jsonb('browser'), // Playwright project/browser config: { projectName, browserName, channel, viewport }
     browserName: text('browser_name'), // Scalar browser identity (projectName) for index efficiency
     testAnnotations: jsonb('test_annotations'), // Array<{ type, description? }> — runtime test marks (@fixme, @slow …)
@@ -558,6 +559,9 @@ export const testRunsCases = pgTable(
     locatorPagesPayloadIdx: index('idx_trc_locator_pages_payload')
       .on(table.locatorPagesPayloadId)
       .where(sql`locator_pages_payload_id IS NOT NULL`),
+    codeReachPayloadIdx: index('idx_trc_code_reach_payload')
+      .on(table.codeReachPayloadId)
+      .where(sql`code_reach_payload_id IS NOT NULL`),
   }),
 );
 
@@ -629,6 +633,59 @@ export const locatorUsages = pgTable(
     projectTargetIdx: index('idx_locator_usages_project_target').on(table.projectId, table.target),
     lastSeenRunIdx: index('idx_locator_usages_last_seen_run').on(table.lastSeenRunId),
     firstSeenRunIdx: index('idx_locator_usages_first_seen_run').on(table.firstSeenRunId),
+  }),
+);
+
+// Code reach: the application source files each test executed (see schema.sqlite.ts).
+export const codeReach = pgTable(
+  'code_reach',
+  {
+    id: serial('id').primaryKey(),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    testCaseId: integer('test_case_id')
+      .notNull()
+      .references(() => testCases.id, { onDelete: 'cascade' }),
+    branch: text('branch').notNull().default(''),
+    file: text('file').notNull(),
+    origin: text('origin').notNull().default('client'),
+    lastSeenRunId: integer('last_seen_run_id').references(() => testRuns.id, { onDelete: 'set null' }),
+    lastSeenAt: timestamp('last_seen_at', { mode: 'date' }).notNull(),
+  },
+  (table) => ({
+    uniqueReach: uniqueIndex('idx_code_reach_unique').on(table.testCaseId, table.branch, table.file),
+    projectFileIdx: index('idx_code_reach_project_file').on(table.projectId, table.file),
+    lastSeenRunIdx: index('idx_code_reach_last_seen_run').on(table.lastSeenRunId),
+  }),
+);
+
+// Locator breaks a pull-request run's diff predicts: one row per chain of the
+// locator index that a string the diff removed or renamed stops matching.
+// Written at finish time by change coverage; read by the pull-request comment
+// and by locator healing's `diff-rename` rung. Replaced on every run.
+export const runLocatorBreaks = pgTable(
+  'run_locator_breaks',
+  {
+    id: serial('id').primaryKey(),
+    runId: integer('run_id')
+      .notNull()
+      .references(() => testRuns.id, { onDelete: 'cascade' }),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    locator: text('locator').notNull(),
+    rewrite: text('rewrite'),
+    replacements: jsonb('replacements'),
+    anchor: jsonb('anchor').notNull(),
+    confidence: text('confidence').notNull(),
+    callSites: jsonb('call_sites').notNull(),
+    testCaseIds: jsonb('test_case_ids').notNull(),
+    createdAt: timestamp('created_at', { mode: 'date' }).notNull().defaultNow(),
+  },
+  (table) => ({
+    runIdx: index('idx_run_locator_breaks_run').on(table.runId),
+    projectIdx: index('idx_run_locator_breaks_project').on(table.projectId),
   }),
 );
 

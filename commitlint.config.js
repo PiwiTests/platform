@@ -19,6 +19,7 @@ export default {
         'demo',
         'desktop',
         'extension',
+        'ide',
         'ci',
         'docs',
         'deps',

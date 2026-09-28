@@ -27,6 +27,9 @@ Every outbound connection Piwi can make is something you switched on:
 | Your S3 endpoint | Only if you switch [storage](/operate/storage) to S3 | Trace files, HTML reports, attachments |
 | Google / GitHub | Only if you enable [OAuth sign-in](/operate/authentication#oauth-google-github) | The standard OAuth exchange |
 
+The reporter sends your own instance what its options switch on. [Code reach](/features/code-reach), off by
+default, sends repository-relative file paths only: never source code, coverage counts or line numbers.
+
 Nothing on that list has a default. With none of them configured, a Piwi instance talks to nobody.
 
 The **AI provider** is the one worth pausing on, because it's the only case where your code and error

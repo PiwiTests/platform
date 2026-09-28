@@ -2920,6 +2920,48 @@ const LOCATOR_SNAPSHOTS = [
 // `ANCHOR_SEC` is the newest timestamp in the dataset (in seconds). Mapping it
 // to the current time and shifting everything else by the same delta keeps the
 // data's internal spacing intact and guarantees nothing lands in the future.
+// ── Code reach (the source files each test executed) ─────────────────────────
+// A nightly code-reach sample on the main project: each test reaches the
+// components and modules its stories name, stamped with the project's latest run.
+const CODE_REACH_FILES = [
+  'src/components/CheckoutForm.vue',
+  'src/lib/cart.ts',
+  'src/lib/payment-provider.ts',
+  'src/pages/index.vue',
+  'src/components/ContactFields.vue',
+  'src/services/orders.ts',
+  'src/components/RevenueChart.vue',
+  'src/pages/reports/monthly.vue',
+];
+const CODE_REACH = [];
+{
+  const mainProject = DEMO_PROJECTS[0].id;
+  const latestRun = TEST_RUNS.filter((r) => r.project_id === mainProject).reduce((a, b) => (b.id > a.id ? b : a));
+  let crId = 1;
+  for (const [i, caseId] of (caseIdsByProject[mainProject] ?? []).entries()) {
+    const first = i % CODE_REACH_FILES.length;
+    const files = [
+      ...new Set([
+        CODE_REACH_FILES[first],
+        CODE_REACH_FILES[(first + 3) % CODE_REACH_FILES.length],
+        'src/pages/index.vue',
+      ]),
+    ];
+    for (const file of files.sort()) {
+      CODE_REACH.push({
+        id: crId++,
+        project_id: mainProject,
+        test_case_id: caseId,
+        branch: '',
+        file,
+        origin: 'client',
+        last_seen_run_id: latestRun.id,
+        last_seen_at: latestRun.start_time * 1000,
+      });
+    }
+  }
+}
+
 function collectAnchorSec() {
   let max = 0;
   // Fold a candidate timestamp into the running max, normalizing to seconds.
@@ -2954,6 +2996,7 @@ function collectAnchorSec() {
   // Millisecond-precision columns.
   for (const r of PROJECT_ASSIGNMENTS) bump(r.created_at, 'ms');
   for (const r of LOCATOR_SNAPSHOTS) bump(r.last_seen_at, 'ms');
+  for (const r of CODE_REACH) bump(r.last_seen_at, 'ms');
   for (const r of ENTITY_LINKS) {
     bump(r.created_at, 'ms');
     bump(r.updated_at, 'ms');
@@ -3025,6 +3068,7 @@ const REBASE_SQL = [
   `UPDATE analytics_dashboards SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS}, last_viewed_at = last_viewed_at + ${D_MS};`,
   `UPDATE entity_links SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS};`,
   `UPDATE locator_snapshots SET last_seen_at = last_seen_at + ${D_MS};`,
+  `UPDATE code_reach SET last_seen_at = last_seen_at + ${D_MS};`,
   // Test Map tables are defined after ANCHOR_SEC is computed, so they add no
   // candidates to it; they are all stamped at BASE_START_MS, which the run
   // timestamps already bound. Nullable columns stay NULL.
@@ -3915,6 +3959,9 @@ const lines = [
   '-- Locator healing snapshots (references test_cases)',
   insert('locator_snapshots', LOCATOR_SNAPSHOTS),
   '',
+  '-- Code reach (references test_cases and test_runs)',
+  insert('code_reach', CODE_REACH),
+  '',
   '-- Probe ledger (Test Map, checked axis)',
   insert('probes', PROBES),
   '',
@@ -3966,3 +4013,4 @@ console.log(`   Diagnoses  : ${FAILURE_DIAGNOSES.length}`);
 console.log(`   DiagVersions: ${FAILURE_DIAGNOSIS_VERSIONS.length}`);
 console.log(`   Links      : ${ENTITY_LINKS.length}`);
 console.log(`   LocatorSnap: ${LOCATOR_SNAPSHOTS.length}`);
+console.log(`   CodeReach  : ${CODE_REACH.length}`);

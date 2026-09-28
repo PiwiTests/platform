@@ -1517,7 +1517,8 @@ async function locatorHealingSection(
   if (!rep.error) return { section: null, coverage: null };
 
   const healing = await getLocatorHealing(db, rep.id);
-  const alternatives = healing.fromElementMatch ?? healing.fromPriorSuccess ?? healing.fromAriaSnapshot ?? [];
+  const alternatives =
+    healing.fromDiffRename ?? healing.fromElementMatch ?? healing.fromPriorSuccess ?? healing.fromAriaSnapshot ?? [];
 
   // The gate rejected healing (the locator resolved, a navigation failed, no
   // locator): tell the model so, rather than leaving it to guess a selector.
@@ -1546,15 +1547,17 @@ async function locatorHealingSection(
     lines.push(`Failing locator: ${healing.failingLocator.method}(${argsStr})`);
   }
   const sourceLabel =
-    healing.source === 'prior-run'
-      ? 'captured against the real DOM in a prior passing run'
-      : healing.source === 'element-match'
-        ? "the locator's element appears renamed/moved — these are fresh locators for its current identity on the failing page"
-        : healing.source === 'fingerprint'
-          ? 'matched by locator fingerprint from a prior passing run'
-          : healing.source === 'cross-test'
-            ? 'the same locator was captured against the real DOM by another test in this project'
-            : 'derived from the current ARIA snapshot';
+    healing.source === 'diff-rename'
+      ? `the run's own diff renamed "${healing.diffRename?.before ?? ''}" to "${healing.diffRename?.after ?? ''}" in ${healing.diffRename?.file ?? 'the application'}; the same locator with the new text`
+      : healing.source === 'prior-run'
+        ? 'captured against the real DOM in a prior passing run'
+        : healing.source === 'element-match'
+          ? "the locator's element appears renamed/moved — these are fresh locators for its current identity on the failing page"
+          : healing.source === 'fingerprint'
+            ? 'matched by locator fingerprint from a prior passing run'
+            : healing.source === 'cross-test'
+              ? 'the same locator was captured against the real DOM by another test in this project'
+              : 'derived from the current ARIA snapshot';
   lines.push(`Source: ${healing.source} (${sourceLabel})`);
   if (healing.capturedAt) {
     lines.push(`Captured: ${healing.capturedAt}`);

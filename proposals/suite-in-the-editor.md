@@ -6,11 +6,14 @@ which test locators the change breaks, and rewrites them. **Track B** records wh
 executes, so any file can answer "which tests reach me?". **Track C** is one editor service that holds the logic, and
 **Tracks D and E** are thin clients for VS Code and the JetBrains IDEs.
 
-**Status.** Proposed 2026-09-27. Nothing is built. Track A needs no capture change. Track B adds an opt-in capture, one
+**Status.** Proposed 2026-09-27. Being built on `claude/suite-in-the-editor`, in the Delivery order: PR 1 (core),
+PR 2 (`piwi preflight`), PR 3 (the pull-request section, `diff-rename` healing, `predict_locator_breaks`) PR 4
+(code reach), PR 5 (the editor service), PR 6 (VS Code, with the priority 1 items), PR 7 (JetBrains, with the same five) and PR 8 (Send from Piwi Picker) are
+built, and so are the priority 2 items. What changed while building is under [As built](#as-built). Track A needs no capture change. Track B adds an opt-in capture, one
 payload column on `test_runs_cases` and one table. Tracks C–E add a workspace package, a VS Code extension and a
 JetBrains plugin, and a commitlint scope (`ide`); a catalog of what the editors can do after their first release
 follows the tracks. New wire fields, endpoints, a CLI command and a published extension
-API freeze at 1.0 (one new D entry in [`1.0-stabilization.md`](1.0-stabilization.md)).
+API freeze at 1.0 (D25 in [`1.0-stabilization.md`](1.0-stabilization.md)).
 
 **Summary.** Tested elements answers "which tests reach this element?" on the live page. This plan answers the same
 question where the change is made, before anything runs. Renaming a button breaks every test that finds it by its name,
@@ -429,12 +432,12 @@ These arrive with their own features and cost the editors little once those exis
 | 8 | Send from Piwi Picker: pairing, the editors' local endpoints, the extension's **Send to editor** | 6, 7 |
 
 PRs 1–3 ship a working preflight with no capture change. PR 4 is independent of 1–3. Each PR carries its docs. The
-priority 2 items follow in that order; [priority 3 and 4](#what-the-editors-can-grow-into) land with their plumbing or
+priority 2 items followed in that order and are built; [priority 3 and 4](#what-the-editors-can-grow-into) land with their plumbing or
 the feature they come from.
 
 ## File-by-file checklist
 
-### PR 1 — core
+### PR 1 — core (built)
 - `packages/core/src/locator-text-match.ts` (new): `textMatches`, `nameMatches`, `attributeMatches`, whitespace
   normalization; `apps/extension/src/content/locator-engine.ts` and `engine-aria.ts` import them.
 - `packages/core/src/diff-anchors.ts` (new), `locator-break.ts` (new), `locator-edit.ts` (moved); exports in
@@ -444,13 +447,13 @@ the feature they come from.
   changes), `locator-break.test.ts` (every row of the A2 table, exact, regex, still-matching renames), the extension's
   engine tests unchanged and green.
 
-### PR 2 — preflight
+### PR 2 — preflight (built)
 - `packages/reporter/src/cli/preflight.ts` (new), `cli/index.ts`, `internal/support/selection-client.ts` (index fetch).
 - Docs: `apps/docs/features/preflight.md` (new), `reference/cli.md`, `features/locator-usage.md` (link),
   `navigation.ts`, `shared/piwi-features.ts`.
 - Tests: CLI tests on a fixture repository with a staged rename, `--fix` output, offline cache, exit codes.
 
-### PR 3 — pull request and healing
+### PR 3 — pull request and healing (built)
 - `server/utils/scm/change-coverage.ts`, `shared/handlers/change-coverage.ts` (patch kept, `locatorBreaks`),
   `shared/pr-feedback.ts` (`renderLocatorBreaks`), `server/utils/scm/pr-feedback.ts`.
 - `packages/core/src/locator-healing-types.ts` (`diff-rename`), `server/utils/locator-healing.ts`,
@@ -459,7 +462,7 @@ the feature they come from.
   `packages/reporter/templates/skills/run-the-right-tests/SKILL.md`.
 - Docs: `features/pr-feedback.md`, `features/locator-healing.md`, `features/mcp.md` (generated tool list).
 
-### PR 4 — code reach
+### PR 4 — code reach (built)
 - Reporter: `public/options.ts`, `internal/config/env.ts` (`captureCodeReach`, `codeReachRoots`),
   `internal/capture/code-reach.ts` (new), `capture-fixtures.ts`, `attachments.ts`, collected and wire types,
   serializer, `public/reporter.ts`.
@@ -469,11 +472,310 @@ the feature they come from.
 - Docs: `guide/capture-fixtures.md`, `guide/privacy.md` (file paths only), `features/test-selection.md`,
   `reference/reporter-options.md` (generated).
 
-### PRs 5–7 — editors
+### PRs 5–7 — editors (built)
 - `packages/editor` (new workspace), `apps/vscode` (new workspace), `apps/jetbrains` (new Gradle project).
 - Root `package.json` workspaces, `release-please-config.json` (two entries per new workspace), `commitlint.config.js`
   (scope `ide`), CI jobs in `.github/workflows/ci.yml`, a publish workflow per marketplace.
 - Docs: `features/editors.md` (new), `features/ide-integration.md` (link), `AGENTS.md` files for the new apps.
+
+### PR 8 — Send from Piwi Picker (built)
+- `packages/core/src/editor-send.ts` (new): the pairing address, the request body, the token check.
+- `packages/editor`: `piwi/renderSteps`. `apps/vscode/src/send-listener.ts` (new), `piwi.pairPicker`.
+  `apps/jetbrains`: `PiwiSendHandler.kt` (new), `Piwi.PairPicker`.
+- `apps/extension`: `shared/editor-pairing.ts`, `shared/editor-send.ts` (new), `postToEditor` in `piwi-client.ts`, the
+  `piwi-send-to-editor` message, the options section, the buttons in `results-panel.ts` and `record-panel.ts`, five
+  locales.
+- Docs: `features/editors.md` (Send from Piwi Picker), `features/extension.md`, `features/extension-connection.md`.
+
+## As built
+
+Decisions the build changed or made precise, per PR. The sections above still describe the design; where they
+disagree, this section wins.
+
+### PR 1 — core
+
+- **Text rules.** `locator-text-match.ts` exports the factories the engine uses (`textMatcher`, `nameMatcher`,
+  `attributeMatcher`, `normalizeWhiteSpace`) and one-shot forms (`textMatches`, `nameMatches`, `attributeMatches`).
+  `legacyTextMatcher` (the `text=` selector) stays in the extension: nothing outside the engine reads that syntax.
+- **Licensing.** The text rules (from the extension) and `buildLocatorEdit` (from the app) move from FSL code into
+  MIT core, as this plan decided; they ship inside the reporter from here on.
+- **`DiffAnchor`** carries `line` on the new side (the added line of a rename, the hunk's position for a removal) and
+  `oldLine` on the old side, so an editor can warn on the line being typed.
+- **Translation keys.** A changed line of a locale file gives its last key segment; given `readFile`, the full key path
+  (`checkout.coupon.apply`), read with `parseTranslationFile` (JSON, YAML, `.properties`, `.po`, `.resx`, line based).
+  A template's key change is resolved through a `translations(key, side)` lookup the caller builds from those files.
+  `.po` and `.resx` value lines carry no key on the line itself.
+- **Pairing.** Tokens pair into renames within a group: the same attribute, text, the same translation key, literals,
+  and template key references (`t('a')` → `t('b')`) as their own group.
+- **Confidence.** A literal is always possible. With reach, an anchor from a locale file stays likely, since no test
+  executes a locale file; any other anchor is likely only when a test reaches its file.
+- **The rewrite.** `LocatorBreak` adds `tests` (the uses' tests) and `replacements` (`[before, after]` string
+  arguments). The call-site edit is `buildLiteralEdit` (new in `locator-edit.ts`): it replaces the literal on the line
+  and keeps the author's quotes, where `buildLocatorEdit` would re-render the whole call. Under Playwright's substring
+  rule a call only matches an anchor that contains its value, so in prediction "the value contains `before`" reduces
+  to equality up to case and whitespace. `renameValue` keeps the replace-inside branch for other callers.
+- **Test files.** `extractDiffAnchors` takes `isTestFile`; `predictLocatorBreaks` itself drops anchors in any file the
+  index calls locators from (suffix match, `sameFilePath`).
+- **`detectLocatorBreakAhead(anchors, index, options)`** returns one prediction per broken anchor with the call sites
+  of every chain it breaks; the `LocatorBreakInput` shape is gone (it had no caller).
+
+### PR 2 — preflight
+
+- **Connection** (D11 for the CLI). Flags, then the environment, then the `.env` of the test root, the working
+  directory and the repository root, then the desktop app's discovery file, whose token serves only its own URL.
+  `parseDotEnv` and `resolvePiwiConnection` live in core (`dotenv.ts`), for the editor service to read the same way.
+- **The diff** is `git diff --unified=0 <base> --` from the repository root, so untracked files are not read (they
+  remove nothing). Test files are the `*.spec.*`/`*.test.*` files plus, in `predictLocatorBreaks`, the index's
+  call-site files.
+- **Translations.** Keys resolve through every tracked translation file, the `--locale` ones first (a new flag,
+  default `en`); a key under a locale root (`en.checkout.pay`) also resolves without it.
+- **The cache** is keyed by instance URL, project as given (name or id) and branch, so it works when the project
+  menu cannot be reached either.
+- **Call sites.** Each is `edit` (the line holds the literal), `applied` (the line already holds the new literal:
+  the index keeps the old chain until the next run), `by-hand` (with the files `git grep --fixed-strings` finds
+  holding the quoted literal), `elsewhere` (not in this checkout: open question 1's answer, shown with the
+  rewrite, never edited) or `none` (a removal, or a regex).
+- **`--run`** sends the changed files plus the spec files of the broken locators' tests to the impact endpoint and
+  runs its materialization through `piwi run`'s spawn path, so a broken locator's whole spec runs rather than only its
+  test. Playwright arguments go after `--`.
+- **`--strict`** counts a likely break as fixed when every call site is `applied` or edited by this run.
+- **Output.** Likely breaks are listed in full, at most 20; possible breaks get one line each; the footer names the
+  number of strings checked when nothing breaks.
+
+### PR 3 — pull request and healing
+
+- **Storage.** Change coverage is not stored, so `locatorBreaks` gets a table: `run_locator_breaks` (run, project,
+  chain, rewrite, `[before, after]` replacements, the anchor, confidence, call sites, test case ids), replaced on
+  every run and deleted with it (retention and the foreign key). The pure half is `shared/handlers/locator-breaks.ts`;
+  `shared/handlers/change-coverage.ts` is unchanged: the patches stay in the SCM path of
+  `server/utils/scm/change-coverage.ts`.
+- **Which runs.** Every run change coverage diffs, not only pull requests: a run diffed against its last green run
+  also stores its breaks, so `diff-rename` healing works on a branch without a pull request. The index is the one of
+  the branch the change is compared with (the pull request's base, open question 2). A provider that omitted the
+  patches (`patchesOmitted`) gives no breaks.
+- **The comment** lists only likely breaks none of whose tests executed in the run, at most 10, and counts the possible
+  ones in one line pointing to `piwi preflight`. It is withheld with Uncovered changes when the project declined the
+  Test Map. Translation-key changes in templates are not resolved on the server, which has patches only.
+- **`diff-rename`** is rung 0 of the ladder: the failing chain (`extractLocatorChain`, canonicalized) equals a stored
+  break's chain with a rewrite, and the failing call site is one of its call sites (any, when the error names none).
+  The result carries `fromDiffRename` (one alternative, score 95) and `diffRename` (`before`, `after`, `file`, `line`),
+  and its edit replaces the literal in place (`buildHealEdit`'s `literalReplacements`). The auto-heal policy accepts
+  it. The `element-renamed` clue and the AI context name the rename.
+- **`predict_locator_breaks`** is in the `healing` module with no capability gate; it returns at most 50 breaks as
+  `{ branch, locators, truncated, items, nextCursor: null }`, each with `change`, `tests`, `callSites` and `edits`
+  (`[{ before, after }]` string literals to replace). Diffs over 2,000,000 characters are refused.
+
+### PR 4 — code reach
+
+- **Core.** `source-map.ts` (VLQ `mappings`, index maps, `sourceMappingURL`, `data:` URLs, bundler path prefixes)
+  and `code-reach.ts` (the executed function offsets without the top level, sources through a map, the wire list:
+  repository-relative, `node_modules` dropped, sorted, 2,000 at most). `wire.ts` is unchanged: `codeReach` travels as
+  `string[]` with the other untyped per-case fields.
+- **Capture.** Coverage starts on the test's first instrumented page (awaited in the `page` fixture and the patched
+  `newPage`s, so it runs before the first navigation) and stops in the page or context close wrappers, or at flush,
+  while the page can still fetch source maps. A module served by path counts when it exists under a root and not in
+  a build directory (`dist`, `build`, `.output`, `.next`, `public`…); anything else is read through its map.
+  `codeReachRoots` reaches the fixtures as `PIWI_CODE_REACH_ROOTS` (a JSON array or a path list).
+- **Server reach is read, not stored.** `code_reach` holds client rows only (`origin` is always `client`); the
+  handler files of the routes a test reached are joined from the Test Map's `reaches` and `handled-by` edges when an
+  endpoint or impact asks, so they are never stale. The unique key is `(test_case_id, branch, file)`.
+- **The Test Map.** Client rows are also written as `file` nodes (origin `coverage`) and `reaches` edges, whatever the
+  project's Test Map setting: the graph is written on ingest for every project, as the rest of it is.
+- **Impact** adds `impact.unreachedFiles`: changed source files in a directory (or below one) where code reach
+  recorded files, reached by no test. **Change coverage** reads `code_reach` directly, on every branch.
+- **Preflight** fetches the code index and, when it holds client reach, passes it as `reach`, so the likely/possible
+  split follows D5.
+- **Endpoints.** `code-reach` answers `{ file, branch, tests: [LocatorIndexTest & { origin }] }`; `code-index`
+  answers `{ projectId, branch, files, tests, reach, builtAt, truncated }` with 20,000 files at most. Both read a
+  branch the way the locator index does (`indexTests`, `resolveBranchView` are now exported from `locator-usages.ts`).
+- **Docs.** Code reach got its own feature page and catalog entry (`features/code-reach.md`); the capture fixtures
+  page lists it in one table row.
+- **Not done.** Verification 5 (the dogfood dashboard) and 7 (`reporter:bench` with code reach on and off) need a run
+  of the dashboard's own suite and the bench; the Risks' check on Vite build, Next.js dev and webpack builds is left
+  too. Verified: Vite-style module URLs with a live Chromium (unit test and a scratch Playwright project through the
+  built fixtures), and bundles with fetched and inline maps (unit tests).
+
+### PR 5 — the editor service
+
+- **`packages/editor`** (`@piwitests/editor`, FSL like the server package) bundles to one file,
+  `dist/piwi-language-server.cjs` (esbuild, CommonJS, Node 20+), which both clients will ship.
+- **Contexts.** One per Playwright config found up to four levels under each workspace folder. A file belongs to the
+  deepest config above it, else to a config in the same repository: an application file outside the test directory
+  still gets break warnings.
+- **Connection** (D11) through `resolveContextConnection`: the environment, the `.env` of the config's directory and of
+  the repository root, the desktop discovery file, then the editor's settings, sent by the client in
+  `initializationOptions.credentials` and later with the `piwi/setCredentials` notification (the API key from the
+  editor's secret store). A missing project is reported in `piwi/status` for the client to ask, rather than asked by
+  the server: the pick belongs to the client's UI.
+- **Diagnostics.** Test code is a spec or any file the index calls locators from. Its brittle locators are warnings
+  (code `brittle`), those worth a look hints (`watch`), on the range of the locator call. An application file is diffed
+  against `HEAD` in memory (`diffLines`, a new core module giving the hunks `git diff --unified=0` gives), 500 ms after
+  the last keystroke; each anchor with breaks is one diagnostic (code `locator-break`), a warning when a break is
+  likely and information otherwise.
+- **Quick fixes.** A brittle locator's fix replaces the whole chain on the line (keeping `page.` and `.click()`) with
+  the stored alternative the stability rules call stable, picked with `recommendLocatorFix`. A break's fix edits every
+  call site whose line holds the string, in open buffers or on disk.
+- **Custom requests**: `piwi/fileSummary`, `piwi/testsForFile`, `piwi/runArgs` (through the selection preview
+  endpoint), `piwi/status`, `piwi/refresh`. Summary lines name client commands `piwi.openInDashboard` and
+  `piwi.runTests`.
+- **Server.** `GET /api/projects/:id/locator-alternatives?file=` (suffix match on the call site's file, newest first,
+  10 alternatives each) and the catalog's exact `file` filter on `GET /api/projects/:id/test-cases`.
+- **Repository.** The `ide` commitlint scope, two release-please entries, a CI step (lint, typecheck, build, test) in
+  the checks job, and an `AGENTS.md` for the package. No publish workflow: the service ships inside the clients.
+
+### PR 6 — VS Code, with the priority 1 items
+
+- **`apps/vscode`** (npm workspace `piwi`, published as `piwitests.piwi`, FSL) bundles `src/extension.ts` with esbuild
+  into `dist/extension.cjs` and copies the service bundle beside it; `@piwitests/editor` exports it as
+  `@piwitests/editor/server`. `engines.vscode` is `^1.91.0`, the oldest `vscode-languageclient` 10 supports, so Cursor
+  and VSCodium install it from Open VSX; the MCP provider API is read at runtime.
+- **The service does the work**, so PR 7 renders the same answers. It gained:
+  - **CI failures**: `GET /api/projects/:id/branch-failures?branch=` (new) gives the latest run on the checked-out
+    branch (the default branch on a detached head) and its failed executions with their headline (`caseHeadline`),
+    failing call (`extractErrorLocation`), traces and screenshot. The service reads it every minute, every 15 seconds
+    while the run is active, and publishes each failure as an error (code `ci-failure`) in the file it points to,
+    open or not: the failing call when that file resolves in the workspace (CI paths are absolute on another machine,
+    so they resolve by suffix), else the `test(…)` line. Failure and analysis diagnostics are merged per file.
+  - **Heal in place**: the quick fix "Heal: use …" applies the healing endpoint's `edit` to the line when the line
+    still reads `oldLine`, keeping the line's indentation.
+  - **Evidence**: "Open the trace" (client command `piwi.openTrace`) asks `piwi/trace`, which downloads the trace to the
+    temporary directory and returns `npx playwright show-trace <path>` to run in the config's directory; the hover
+    shows the downloaded failure screenshot; "Open the failure in the dashboard" and the diagnostic's code link open
+    the execution page.
+  - **Status**: `piwi/runStatus` and the `piwi/runStatusChanged` notification, sent when the run changes.
+  - **MCP**: `piwi/mcp` returns one definition per connected instance (`<url>/mcp`, the key as a bearer header).
+- **The extension** draws `piwi/fileSummary` as CodeLens, the run in the status bar (progress while it runs, failing
+  and flaky counts, click to open the run, "connect" with the reason when not connected), and registers the commands
+  Connect (URL, key to `SecretStorage`, project picked from `/api/projects/menu`), Refresh, Run the tests that reach
+  this file, Open in dashboard, Open the latest run and Copy the MCP server configuration. With
+  `vscode.lm.registerMcpServerDefinitionProvider` (VS Code 1.101+), Piwi's server is listed for the agent once
+  connected; without it, a one-time offer copies an `mcp.json` entry.
+- **Decisions changed.** The status bar shows no gate verdict: the gate policy is sent by the CI job to
+  `POST /api/test-runs/:id/gate` and not stored, so the instance has no verdict to show; it shows the run's counts
+  instead. The run is polled rather than read from the run event stream: the stream is per run and the editor must
+  also notice a new run. The key reaches the client in `piwi/mcp` only to hand to the editor's agent.
+- **Tests.** The service's in-process suite covers the failure diagnostics, the heal, the trace download, the hover,
+  the run status and the MCP definition (10 tests). `apps/vscode` has unit tests of the status bar and MCP glue, and an
+  integration suite that runs VS Code (1.139, downloaded by `@vscode/test-electron`) under Xvfb on a fixture
+  repository against a stub instance: activation, the failure in the Problems panel, the heal applied, the evidence
+  actions, CodeLens, hover and the commands. `vsce package` builds `dist/piwi.vsix` (198 KB).
+- **Repository.** CI step in the checks job (lint, typecheck, build, unit), `vscode-e2e.yml` (the integration suite,
+  on editor changes), `publish-vscode.yml` (on release tags, to the Marketplace with `VSCE_PAT` and Open VSX with
+  `OVSX_PAT`, each skipped without its secret), release-please entries, `apps/vscode/AGENTS.md`, docs page
+  `features/editors.md` with its catalog entry, links from Open in IDE and the MCP page.
+
+### PR 7 — JetBrains, with the same five
+
+- **The spike.** WebStorm 2023.3 (build 233) is the oldest platform whose LSP client renders what the plugin needs:
+  diagnostics and their quick fixes (`LspDiagnosticsSupport`, `LspCodeActionsSupport`), hover (`LspHoverRequest`),
+  client-side commands (`LspCommandsSupport.executeCommand`), a custom lsp4j server interface for the service's own
+  requests and a custom client for its notification. The API there comes with the `com.intellij.modules.ultimate`
+  module (`com.intellij.modules.lsp` does not exist yet), which WebStorm, IntelliJ IDEA Ultimate and Rider provide.
+  The 2026.2 platforms deprecate this API in favour of a newer one but still ship it; the plugin compiles against
+  2023.3 and looks up the one accessor that moved (`getLsp4jServer`, now on a super-interface) at run time.
+- **`apps/jetbrains`** (Gradle 9.8 wrapper, Kotlin 2.2 with API 1.9, IntelliJ Platform Gradle Plugin 2.19, JDK 21
+  building Java 17 bytecode) copies the service bundle into the plugin's `server/` directory and starts it with the
+  project's Node.js interpreter.
+- **Rendered by the LSP client**, in open files: the analysis diagnostics and `ci-failure` errors with their quick
+  fixes (Heal, Open the trace, Open the failure in the dashboard) and the hover with the screenshot.
+- **Rendered natively**: Code Vision from `piwi/fileSummary`; the status bar widget from `piwi/runStatus`, refreshed
+  on `piwi/runStatusChanged`; the **Piwi** tool window listing the failures from a new request, `piwi/failures`
+  (failures resolved to a workspace file and line), because the JetBrains LSP client highlights open files only; the
+  actions under **Tools → Piwi** (Connect, Refresh, Run the tests that reach this file, Open in dashboard, Copy the MCP
+  server configuration). Tests and traces run in the Run tool window. The key goes to `PasswordSafe`.
+- **MCP.** The JetBrains IDEs have no API for a plugin to register an MCP server, so the plugin offers once to copy an
+  `mcpServers` entry that runs Piwi's server through `mcp-remote`, the key in its environment, for the AI Assistant's
+  MCP settings or another agent.
+- **Rider and Razor** (open question 4). The plugin registers `.cshtml`, `.razor` and `.resx` with the LSP client, and
+  a platform test checks it. Whether Rider's LSP client sends those files to the server could not be checked here:
+  Rider's editor for them comes from its .NET backend, and that needs a Rider session, not a platform test. It stays
+  an open item for the first manual run in Rider (verification 6).
+- **Tests.** JUnit tests of `Glue.kt`; platform tests on WebStorm 2023.3 that the extensions and actions register,
+  that the service's file types are served, and that the bundled service, started with the descriptor's command line
+  against a stub instance, answers `piwi/status`, `piwi/runStatus`, `piwi/failures`, `piwi/fileSummary` and `piwi/mcp`
+  in the Kotlin protocol classes (9 tests). The Plugin Verifier runs on WebStorm 2023.3 and on the latest WebStorm,
+  IntelliJ IDEA Ultimate and Rider (2026.2).
+- **Repository.** `jetbrains.yml` (test, build, verify on editor changes), `publish-jetbrains.yml` (on release tags,
+  signed, with `JETBRAINS_PUBLISH_TOKEN` and the signing secrets), a release-please entry for `gradle.properties`,
+  `apps/jetbrains/AGENTS.md`, and the JetBrains section of `features/editors.md`.
+
+### PR 8 — Send from Piwi Picker
+
+- **One contract, three implementations.** `@piwitests/core/editor-send` defines the pairing address
+  (`<endpoint URL>#<token>`, an http URL on the loopback interface), the body (`{ kind: 'locator', text }` or
+  `{ kind: 'steps', steps }`) and the bearer-token check. The extension and VS Code import it; the JetBrains plugin
+  mirrors it in `Glue.kt`.
+- **The editors.** VS Code listens on `127.0.0.1` on a port kept across restarts (a second window finds it taken and
+  leaves the pairing to the first); a JetBrains IDE takes `POST /api/piwi/send` on its built-in server. Both answer the
+  CORS preflight for browser-extension origins only, and insert at the caret of the focused editor, re-indented to the
+  caret's line; with no editor open, VS Code opens a new one. **Pair with Piwi Picker** creates the token (VS Code's
+  secret storage, the IDE's password safe) and copies the address.
+- **Rendering.** A locator is sent in the copy form chosen in the pick panel, as the user would paste it. A recording
+  is sent as a steps document and rendered by the editor service (`piwi/renderSteps`) with the options of
+  `piwi codegen --body`: stable locators, relative URLs, the project's function catalog and the locators its tests
+  use. The service is where the project is known; the extension's own render stays for Copy.
+- **The extension.** The pairing lives in extension storage; **Pair** requests the host permission for that one local
+  origin inside the click, **Unpair** removes it. Content scripts never reach the editor: the background worker posts
+  (`piwi-send-to-editor`), in `piwi-client.ts` beside the instance calls. **Send to editor** shows on each ranked
+  locator and in the recording review only when paired. The privacy note and the "What is sent" section now say a
+  recording goes only to a paired editor on the same computer; the Firefox `data_collection_permissions: none`
+  stays, as nothing leaves the machine.
+- **Tests.** Core: the pairing, the body and the token check. The editor service renders a steps document (12 tests).
+  VS Code: the listener's unit tests, and the integration suite pairs, posts a locator and a recording, and reads them
+  in the document. JetBrains: the helpers, and a platform test posting to the built-in server and reading the editor.
+  The extension: the pairing store and `postToEditor`, plus the full e2e suite (230) with the panels changed; no e2e
+  drives Send to editor itself, as the background worker's host-permission check cannot be granted from a test.
+
+### Priority 2 — Apply a fix plan, Copy context for agent, Locator completion
+
+- **Data.** Each branch failure carries its `clusterId`; the service fetches the cluster's fix plan (JSON and Markdown)
+  once per run.
+- **Apply the fix plan.** On a `ci-failure`, when the plan's patch applies (validation neither `stale-file` nor
+  `invalid`), the service applies it to the workspace's files itself (hunks found at their line or the nearest
+  offset, as `git apply` does without fuzz); otherwise it uses the plan's locator rewrites whose lines still read as
+  captured. The code action carries the resulting whole-file edits and the command `piwi.runCommand` with the plan's
+  verify command. A client that supports change annotations (VS Code) gets them marked "needs confirmation", so the
+  edit opens in the refactor preview; the JetBrains client applies it directly. No action is offered when nothing
+  applies.
+- **Copy context for agent.** The command `piwi.copyText` with one block: the failing test, its headline and place,
+  the execution link, the healing's replacement as a diff, and the fix plan's Markdown.
+- **Clients.** Two new client commands, `piwi.runCommand` (a terminal in VS Code, the Run tool window in JetBrains)
+  and `piwi.copyText` (the clipboard).
+- **Locator completion** is plain LSP completion, so both editors render it with no client code. After `page.` or
+  `this.page.` in test code, the service offers the chains used on the pages of this file's tests (the tests it
+  defines, or whose steps call locators from it), stable ones first, then by test count; without a known page, the
+  project's chains. Each item names its tests, pages and stability. Signatures inside `getBy…(` are not completed.
+- **Tests.** The service: the plan's action, its edit and command, the context block, the completion (16 tests), and
+  the patch applier. VS Code's integration suite copies the context and completes `page.`; the JetBrains platform tests
+  run `piwi.copyText`.
+
+### Priority 2 — the rest
+
+All in the editor service; the clients draw them through what they already render (summary lines, diagnostics, quick
+fixes, hover, completion), plus one command each for selections.
+
+- **Flaky lens.** The service reads the flaky list (`GET /api/projects/:id/flaky-tests`, on the indexes' branch) at each
+  refresh; a flaky test's summary line adds its score, the CI minutes it wasted and its root cause.
+- **Known issue.** A failure's hover lists the links of its cluster and its test (`GET /api/links`) with their status;
+  with none, the action **File an issue** opens the cluster's page, where the dashboard creates issues. Creating one
+  from the editor would need a reporter key and a tracker connection chosen there, so it stays in the dashboard.
+- **Page summary.** `filePageTarget` and `pageKeyMatchesTarget` moved from the app to core (`file-routes.ts`; the
+  app's `shared/graph.ts` imports them). A Nuxt page file's top line names the page, the tests acting on it, its
+  locators and the brittle ones, and runs those tests; code reach's line follows when there is one.
+- **Timeout advice.** From `GET /api/projects/:id/timeout-opportunities`: an information diagnostic (code `timeout`) on
+  the `test(…)` line, and a quick fix that removes a stale `test.slow()` or replaces (else adds) `test.setTimeout` with
+  the suggested value. A one-line test body is left alone.
+- **Quarantine.** A quarantined test's summary line adds its days in quarantine and its passes toward release (or "ready
+  to release"). **Release** and **Quarantine** are writes that need a reporter key; the line opens the test in the
+  dashboard, where both are.
+- **Function completion.** At the start of a statement in test code, the catalog's functions whose URL pattern matches
+  a page this file's tests visit, as snippets (`await cartPage.add(${1:item})`).
+- **Annotations.** Completion of `piwi:` annotation types, then owners from `CODEOWNERS`, priorities, or features (the
+  test catalog's and the Test Map's); inside `tag: ['@…']`, the tags the project's tests use.
+- **Selections.** The service resolves up to 20 selections at each refresh; a test's summary line names the ones that
+  include it. `piwi/selections` and `piwi/runSelection` back **Run selection…** in both editors.
+- **Tests.** The service's suite covers each item (23 tests) with timeouts' edits in their own unit tests; core covers
+  the routing conventions; VS Code's integration suite and the JetBrains platform tests register the new commands.
 
 ## Verification
 
@@ -518,7 +820,8 @@ the feature they come from.
 4. **Which JetBrains platform versions.** The LSP API gained features release by release. Recommendation: pick the oldest
    version whose LSP client renders diagnostics, quick fixes and hover, and render everything else natively (D10). Check
    in the same spike that Rider's LSP client serves Razor (`.cshtml`, `.razor`) files, whose editor comes from Rider's
-   .NET backend rather than the IntelliJ side.
+   .NET backend rather than the IntelliJ side. **Answered in PR 7:** 2023.3 (build 233). The Razor question needs a
+   Rider session and is still open (see [As built](#pr-7--jetbrains-with-the-same-five)).
 5. **Ambiguity ahead.** A change that adds a second "Save" button to a page makes a strict click fail. Recommendation:
    later, once code reach can tie a component file to the pages it renders on.
 

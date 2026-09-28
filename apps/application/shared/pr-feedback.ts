@@ -131,6 +131,8 @@ export interface PrSummaryInput {
   hasBaseline: boolean;
   /** Uncovered-changes section, when the run was pull-request-stamped with a diff. */
   changeCoverage?: PrChangeCoverage | null;
+  /** Locators the diff breaks whose tests this run did not exercise. */
+  locatorBreaks?: PrLocatorBreaks | null;
 }
 
 // ── Change coverage ──────────────────────────────────────────────────────────
@@ -223,6 +225,70 @@ export function renderChangeCoverage(cc: PrChangeCoverage): string | null {
     );
   } else {
     blocks.push('Gate `maxUncoveredChanges`: warn.');
+  }
+  return blocks.join('\n\n');
+}
+
+// ── Locator breaks ───────────────────────────────────────────────────────────
+
+/** One locator the diff breaks, as the comment lists it. */
+export interface PrLocatorBreak {
+  locator: string;
+  /** The same chain with the new string; null for a removal or a regex. */
+  rewrite: string | null;
+  /** The changed application file and its line in the new file. */
+  file: string;
+  line: number;
+  before: string;
+  after: string | null;
+  /** The translation key, when the string was a translation value. */
+  key: string | null;
+  testCount: number;
+  /** Call sites (`file:line:col`), the most used first. */
+  callSites: string[];
+}
+
+/** The locators a diff breaks that the run did not exercise. */
+export interface PrLocatorBreaks {
+  /** Likely breaks whose tests did not run here. */
+  breaks: PrLocatorBreak[];
+  /** Possible breaks (a bare string matched) left out of the list. */
+  possible: number;
+  /** The branch whose locator index the diff was matched against. */
+  baseBranch: string | null;
+}
+
+/** Max locator breaks listed in the pull-request comment. */
+const MAX_BREAKS_LISTED = 10;
+
+/**
+ * Render the locator-breaks section: the locators whose strings the diff
+ * removes or renames and whose tests this run did not exercise (outside the
+ * selection, on another shard set, or only in a nightly suite). Null when
+ * there is none.
+ */
+export function renderLocatorBreaks(lb: PrLocatorBreaks): string | null {
+  if (lb.breaks.length === 0) return null;
+  const n = lb.breaks.length;
+  const base = lb.baseBranch ? ` on ${codeSpan(lb.baseBranch)}` : '';
+  const blocks = [
+    `#### 🟠 Locators this change breaks · ${n} not run here`,
+    `The diff removes or renames strings these locators find their element by${base}, and none of their tests ran in this run.`,
+  ];
+  const lines = lb.breaks.slice(0, MAX_BREAKS_LISTED).map((b) => {
+    const change = b.after != null ? `${codeSpan(b.before)} → ${codeSpan(b.after)}` : `${codeSpan(b.before)} removed`;
+    const key = b.key ? ` (key ${codeSpan(b.key)})` : '';
+    const tests = `${b.testCount} ${b.testCount === 1 ? 'test' : 'tests'}`;
+    const site = b.callSites[0] ? ` · ${codeSpan(b.callSites[0].replace(/:\d+$/, ''))}` : '';
+    const fix = b.rewrite ? `\n  → ${codeSpan(b.rewrite)}` : '';
+    return `- ${codeSpan(`${b.file}:${b.line}`)} ${change}${key}\n  ${codeSpan(b.locator)} · ${tests}${site}${fix}`;
+  });
+  blocks.push(lines.join('\n'));
+  if (n > MAX_BREAKS_LISTED) blocks.push(`…and ${n - MAX_BREAKS_LISTED} more`);
+  if (lb.possible > 0) {
+    blocks.push(
+      `${lb.possible} more ${lb.possible === 1 ? 'locator matches' : 'locators match'} a bare string the diff changes. \`npx @piwitests/reporter preflight\` lists every one.`,
+    );
   }
   return blocks.join('\n\n');
 }
@@ -428,6 +494,11 @@ export function buildPrComment(input: PrSummaryInput): string {
 
   if (input.changeCoverage) {
     const section = renderChangeCoverage(input.changeCoverage);
+    if (section) sections.push(section);
+  }
+
+  if (input.locatorBreaks) {
+    const section = renderLocatorBreaks(input.locatorBreaks);
     if (section) sections.push(section);
   }
 

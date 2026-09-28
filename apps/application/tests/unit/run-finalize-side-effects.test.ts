@@ -8,7 +8,7 @@ const computeRegressionSignals = vi.fn(() => Promise.resolve());
 const syncAutoMarkersForRun = vi.fn(() => Promise.resolve());
 const autoDiagnoseRun = vi.fn(() => Promise.resolve());
 const emitRunNotifications = vi.fn(() => Promise.resolve());
-const postRunPrFeedbackInBackground = vi.fn();
+const postRunPrFeedbackInBackground = vi.fn(() => Promise.resolve());
 const maybeEnqueueHealActionInBackground = vi.fn();
 
 vi.mock('../../server/utils/compute-regression-signals', () => ({ computeRegressionSignals }));
@@ -40,9 +40,20 @@ describe('runFinalizeSideEffects', () => {
     upsertDailyRollup.mockClear();
   });
 
-  test('a real run fires every finalize side effect', () => {
+  test('a real run fires every finalize side effect', async () => {
     runFinalizeSideEffects(db, 42, { projectId: 1, metadata: { scm: {} } });
+    await vi.waitFor(() => expect(maybeEnqueueHealActionInBackground).toHaveBeenCalledTimes(1));
     for (const fn of allEffects) expect(fn).toHaveBeenCalledTimes(1);
+  });
+
+  test('auto-heal starts once change coverage stored the run’s locator breaks', async () => {
+    let stored!: () => void;
+    postRunPrFeedbackInBackground.mockImplementationOnce(() => new Promise<void>((resolve) => (stored = resolve)));
+    runFinalizeSideEffects(db, 42, { projectId: 1 });
+    await Promise.resolve();
+    expect(maybeEnqueueHealActionInBackground).not.toHaveBeenCalled();
+    stored();
+    await vi.waitFor(() => expect(maybeEnqueueHealActionInBackground).toHaveBeenCalledWith(db, 42));
   });
 
   test('a probe-stamped run fires none of them', () => {
@@ -50,8 +61,9 @@ describe('runFinalizeSideEffects', () => {
     for (const fn of allEffects) expect(fn).not.toHaveBeenCalled();
   });
 
-  test('a run with no metadata still finalizes', () => {
+  test('a run with no metadata still finalizes', async () => {
     runFinalizeSideEffects(db, 42, { projectId: 1 });
+    await vi.waitFor(() => expect(maybeEnqueueHealActionInBackground).toHaveBeenCalledTimes(1));
     for (const fn of allEffects) expect(fn).toHaveBeenCalledTimes(1);
   });
 

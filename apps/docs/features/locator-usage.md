@@ -6,7 +6,7 @@ lang: en-US
 
 # Who uses a locator
 
-Before you change an element — rename a label, remove a `data-testid`, replace a `<select>` with an autocomplete — you can see which tests reach it and from which lines.
+Before you change an element — rename a label, remove a `data-testid`, replace a `<select>` with an autocomplete — you can see which tests reach it and from which lines. After the change, [Locator preflight](./preflight) reads your diff and lists the locators it breaks.
 
 Playwright reports the full locator chain on every locator step: `getByRole('form', { name: 'Shipping' }).getByLabel('Country')`, not only the last call. Piwi already stores those steps for every execution, passing ones included, so it indexes each chain with the action that used it (`Select option`, `Expect toHaveValue`, …) and the call site (`file:line:col`, often a page-object method). Nothing extra is captured while tests run: the index works with the reporter alone, and with [locator healing](./locator-healing) turned off.
 

@@ -38,7 +38,16 @@ import {
 import { ingestChangesEdges, deleteBranchGraphRows, ingestImportEdges } from '../graph-ingest';
 import { loadMutedDetectors } from '#shared/handlers/detector-precision';
 import { extractImports, type ImportPair } from '#shared/graph';
-import type { PrChangeCoverage } from '#shared/pr-feedback';
+import type { PrChangeCoverage, PrLocatorBreaks } from '#shared/pr-feedback';
+import {
+  loadRanTestCaseIds,
+  predictPatchBreaks,
+  storeRunLocatorBreaks,
+  toPrLocatorBreaks,
+  toRunLocatorBreak,
+  type PatchedFile,
+} from '#shared/handlers/locator-breaks';
+import { getLocatorIndex } from '../locator-usages';
 
 /** Recent commits scanned per run to estimate churn, age and escape history. */
 const CHURN_COMMIT_SCAN = 12;
@@ -80,6 +89,28 @@ export interface RunChangeCoverage {
   coverage: ChangeCoverage;
   /** Null when the changed-unreached detector muted itself: rows are still persisted, but the pull-request section is withheld. */
   pr: PrChangeCoverage | null;
+  /** The locators the diff breaks that this run did not exercise; null when the patches were not available. */
+  locatorBreaks: PrLocatorBreaks | null;
+}
+
+/**
+ * Predict the locators the diff breaks, against the locator index of the
+ * branch the change is compared with, and store them on the run for locator
+ * healing. Returns the comment's section; null when the provider sent no
+ * patches or the index is empty.
+ */
+async function computeRunLocatorBreaks(
+  db: DbClient,
+  run: { id: number; projectId: number },
+  files: PatchedFile[],
+  baseBranch: string | null,
+): Promise<PrLocatorBreaks | null> {
+  if (!files.some((f) => f.patch)) return null;
+  const index = await getLocatorIndex(db, run.projectId, { branch: baseBranch });
+  if (!index || index.locators.length === 0) return null;
+  const breaks = predictPatchBreaks(files, index).map(toRunLocatorBreak);
+  await storeRunLocatorBreaks(db, run.id, run.projectId, breaks);
+  return toPrLocatorBreaks(breaks, await loadRanTestCaseIds(db, run.id), baseBranch);
 }
 
 /** Two repo-relative paths match when equal or one is a path-suffix of the other. */
@@ -364,9 +395,18 @@ export async function computeRunChangeCoverage(db: DbClient, runId: number): Pro
   const importPairs = await scanImportEdges(provider, headSha, unreached).catch(() => []);
   await ingestImportEdges(db, run.projectId, runId, importPairs, { branch: branchTag }).catch(() => {});
 
+  const locatorBreaks = changes.patchesOmitted
+    ? null
+    : await computeRunLocatorBreaks(db, { id: runId, projectId: run.projectId }, changes.files, fallback.branch).catch(
+        (e) => {
+          console.error('[locator-breaks] prediction failed', e);
+          return null;
+        },
+      );
+
   // Withhold the pull-request "Uncovered changes" section when its detector is
   // muted; the rows are already persisted above so the detector can still recover.
-  return { coverage, pr: muted.has('changed-unreached') ? null : toPrChangeCoverage(coverage) };
+  return { coverage, pr: muted.has('changed-unreached') ? null : toPrChangeCoverage(coverage), locatorBreaks };
 }
 
 /**
