@@ -21,7 +21,7 @@ const columns: TableColumn<TagInfo>[] = [
   { accessorKey: 'text', header: 'Tag' },
   { accessorKey: 'color', header: 'Color' },
   { accessorKey: 'createdAt', header: 'Created' },
-  { accessorKey: 'actions', header: '' },
+  { id: 'actions', header: 'Actions' },
 ];
 
 // Add tag modal
@@ -178,6 +178,9 @@ async function handleDeleteTag() {
             <ClientDate :date="row.original.createdAt" date-only class="text-sm text-muted" />
           </template>
 
+          <template #actions-header>
+            <span class="sr-only">Actions</span>
+          </template>
           <template #actions-cell="{ row }">
             <div class="flex gap-1 justify-end">
               <UButton

@@ -452,16 +452,16 @@ function scopeTooltip(run: TestRunSummary): string {
 }
 
 const runsColumns: TableColumn<TestRunSummary>[] = [
-  { accessorKey: 'select', header: '' },
+  { accessorKey: 'select', header: 'Select' },
   { accessorKey: 'id', header: createSortHeader<TestRunSummary>('Run') },
   { accessorKey: 'status', header: createSortHeader<TestRunSummary>('Status') },
   { accessorKey: 'isFullRun', header: 'Scope' },
-  { id: 'browsers', accessorFn: (row) => row.browsers, header: '' },
+  { id: 'browsers', accessorFn: (row) => row.browsers, header: 'Browsers' },
   { accessorKey: 'startTime', header: createSortHeader<TestRunSummary>('Started') },
   { accessorKey: 'environment', header: createSortHeader<TestRunSummary>('Environment') },
   { accessorKey: 'metadata', header: 'Branch / Commit' },
   { accessorKey: 'duration', header: createSortHeader<TestRunSummary>('Test status / Dur.') },
-  { id: 'actions', header: '' },
+  { id: 'actions', header: 'Actions' },
 ];
 
 function openRun(runId: number) {
@@ -1105,6 +1105,9 @@ const moreMenuItems = computed(() => {
                   td: 'border-b border-default',
                 }"
               >
+                <template #select-header>
+                  <span class="sr-only">Select</span>
+                </template>
                 <template #select-cell="{ row }">
                   <input
                     type="checkbox"
@@ -1153,6 +1156,9 @@ const moreMenuItems = computed(() => {
                       :class="row.original.isFullRun === false ? 'text-amber-500' : 'text-green-500'"
                     />
                   </UTooltip>
+                </template>
+                <template #browsers-header>
+                  <span class="sr-only">Browsers</span>
                 </template>
                 <template #browsers-cell="{ row }">
                   <div v-if="row.original.browsers?.length" class="flex items-center gap-1">
@@ -1203,6 +1209,9 @@ const moreMenuItems = computed(() => {
                     />
                     <DurationValue :ms="row.original.duration" class="text-xs text-gray-500" />
                   </div>
+                </template>
+                <template #actions-header>
+                  <span class="sr-only">Actions</span>
                 </template>
                 <template #actions-cell="{ row }">
                   <div class="flex justify-end">

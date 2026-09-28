@@ -27,12 +27,21 @@ const ancestorItems = computed<DropdownMenuItem[]>(() =>
 
 const hasAncestors = computed(() => ancestorItems.value.length > 0);
 
+/** The item a forwarded slot receives: the caller's own, not its desktop copy. */
+function slotItem(slotData: { item?: BreadcrumbItem; index?: number } | undefined): BreadcrumbItem | undefined {
+  return slotData?.index != null ? props.items[slotData.index] : slotData?.item;
+}
+
 // The ancestors are the path and stay readable: natural width, capped so a
 // long project name ellipsizes (an item with a custom slot sizes itself).
 // The current page label is the title and takes the remaining room, down to
 // a floor, truncating from the end. Below `2xl` the root keeps its icon only
 // and the middle levels hide, together with the separator each one owns.
 // Every level needs `min-w-0` for the truncation to take effect.
+// An item with a custom slot renders its own links, so its crumb carries no
+// `to` and stays a `<span>`: links cannot nest inside the crumb's `<a>`. The
+// slot still receives the item with its `to` (`slotItem`), and the mobile
+// dropdown links it through `to`.
 const desktopItems = computed(() => {
   const count = props.items.length;
   return props.items.map((item, index) => {
@@ -41,6 +50,7 @@ const desktopItems = computed(() => {
     const hidden = index > 0 && index < count - 3 ? 'max-2xl:hidden' : '';
     return {
       ...item,
+      to: item.slot ? undefined : item.to,
       class: item.slot ? undefined : 'max-w-48',
       ui: {
         ...item.ui,
@@ -61,7 +71,7 @@ const desktopItems = computed(() => {
     :ui="{ root: 'min-w-0', list: 'min-w-0', item: 'min-w-0', link: 'min-w-0', separator: 'shrink-0' }"
   >
     <template v-for="(_, name) in $slots" #[name]="slotData">
-      <slot :name="name" v-bind="slotData ?? {}" />
+      <slot :name="name" v-bind="slotData ?? {}" :item="slotItem(slotData)" />
     </template>
   </UBreadcrumb>
 
