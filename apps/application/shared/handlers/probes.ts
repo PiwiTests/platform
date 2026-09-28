@@ -17,6 +17,7 @@ import {
   projects,
   quarantinedTests,
   testCases,
+  testRuns,
   testRunsCases,
 } from '../../server/database/schema';
 import type { DrizzleDB } from './db';
@@ -109,6 +110,15 @@ export function isLabRun(metadata: unknown): boolean {
 /** SQL predicate keeping only runs that are not lab runs: the SQL form of `!isLabRun(metadata)`. */
 export function notLabRun(metadata: SQLWrapper): SQL {
   return sql`(${notProbeRun(metadata)} AND ${notFlakeLabRun(metadata)})`;
+}
+
+/**
+ * SQL predicate on an execution's run id keeping only executions of runs that
+ * are not lab runs, for queries over `test_runs_cases` that do not join
+ * `test_runs` (a left join from test cases, a correlated subquery).
+ */
+export function notLabExecution(testRunId: SQLWrapper): SQL {
+  return sql`EXISTS (SELECT 1 FROM ${testRuns} WHERE ${testRuns.id} = ${testRunId} AND ${notLabRun(testRuns.metadata)})`;
 }
 
 /** One (test, route, fault) pair the plan asks a probe run to apply. */

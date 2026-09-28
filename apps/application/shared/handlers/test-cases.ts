@@ -19,7 +19,7 @@ import { buildFailureVerdict } from '../failure-verdict';
 import { buildSituation } from '../situation';
 import { computeNextStep } from '../next-step';
 import { getClusterPatchFacts } from './failure-clusters';
-import { isLabRun } from './probes';
+import { isLabRun, notLabExecution, notLabRun } from './probes';
 import { getFlakeProfile, mayHaveFlakeSuspects } from './flake-profile';
 import { getFlakeSuspectResults, type FlakeSuspectResult } from './flake-lab';
 import { isPassiveCapabilityDeclined } from './capabilities';
@@ -48,9 +48,15 @@ import type { RunMetadata } from '../../server/utils/run-json-types';
 import type { DrizzleDB } from './db';
 import { clusterKnownIssues } from './known-issues';
 
+/**
+ * A test case with its header stats, recent executions and clusters. Executions
+ * of lab runs (probes, flake experiments) replay the test under injected
+ * conditions, so they never count toward the stats nor show as its history.
+ */
 export async function getTestCase(db: DrizzleDB, id: number) {
   const [testCase] = await db.select().from(testCases).where(eq(testCases.id, id));
   if (!testCase) return null;
+  const realExecution = and(eq(testRunsCases.testCaseId, id), notLabExecution(testRunsCases.testRunId));
 
   const [[project], aggResult, [lastExecution]] = await Promise.all([
     db
@@ -71,6 +77,7 @@ export async function getTestCase(db: DrizzleDB, id: number) {
             SELECT ${testRunsCases.status} AS s, ${testRunsCases.retries} AS r
             FROM ${testRunsCases}
             WHERE ${testRunsCases.testCaseId} = ${testCases.id}
+              AND ${notLabExecution(testRunsCases.testRunId)}
             ORDER BY ${testRunsCases.createdAt} DESC
             LIMIT 10
           ) WHERE s = 'passed' AND r > 0
@@ -79,11 +86,11 @@ export async function getTestCase(db: DrizzleDB, id: number) {
         lastRunAt: sql<number>`MAX(${testRunsCases.createdAt})`,
       })
       .from(testRunsCases)
-      .where(eq(testRunsCases.testCaseId, id)),
+      .where(realExecution),
     db
       .select({ id: testRunsCases.id })
       .from(testRunsCases)
-      .where(eq(testRunsCases.testCaseId, id))
+      .where(realExecution)
       .orderBy(desc(testRunsCases.createdAt))
       .limit(1)
       .then((r: any[]) => (r.length > 0 ? [r[0]] : [undefined])),
@@ -110,7 +117,7 @@ export async function getTestCase(db: DrizzleDB, id: number) {
       })
       .from(testRunsCases)
       .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
-      .where(eq(testRunsCases.testCaseId, id))
+      .where(and(eq(testRunsCases.testCaseId, id), notLabRun(testRuns.metadata)))
       .orderBy(desc(testRuns.startTime))
       .limit(20),
     db
