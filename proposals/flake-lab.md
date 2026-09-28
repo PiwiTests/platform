@@ -11,7 +11,9 @@ the same condition later proves the fix.
 failed requests (`requestfailed`, status 0, `failure`), `network_requests` has a `failure` column, and the Attempts diff
 compares request durations. **PR 2 built 2026-09-28**: `buildFlakeProfile` and its endpoint, the Flakiness tab,
 the flaky list's top suspect, the Attempts links, `get_flake_profile`, the weak `known-flake-suspect` clue and the
-`flake-lab` capability. PRs 3–6 are not started. What changed while building PR 1:
+`flake-lab` capability. **PR 3 built 2026-09-28**: the flake plan and verdict modules in core, `extractErrorSignature`
+and `requestRouteKey` moved to core, flake mode in the reporter, the generalized interception, and the server's
+isolation of flake-lab runs. PRs 4–6 are not started. What changed while building PR 1:
 
 - The server's filter did **not** keep status 0: it kept status ≥ 400 plus the 50 slowest others, so a quick reset
   could be dropped. It now keeps every request with status ≥ 400, status ≤ 0 or a `failure`.
@@ -54,6 +56,34 @@ What changed while building PR 2:
 - The hour of day is compared in six-hour UTC blocks. The demo seed collapses retries into one row, so a post-pass
   gives the checkout project's flaky test a failed-attempt row per flaky run (at least seven) with a slow cart, and the
   seed's regression signals walk only each run's final attempt.
+
+What changed while building PR 3:
+
+- The plan carries `version: 1`, and `experimentId` and `arm.id` are strings. A `fail` condition takes `match` like
+  `delay`; both default to `all`. `alongside` and `after` name the other test by `{ file, title, suite }`, since the
+  arm runs from a checkout that has no test case ids; the plan endpoint (PR 4) resolves the profile's
+  `testCaseId` to it.
+- The signature the lab compares is the masked message head (`flakeErrorSignature`, the `normalizedMessage` of
+  `extractErrorSignature`), not the first line: two assertions on different locators share a first line.
+- A route condition matches a request when `requestRouteKey(method, url)` equals its route, the key the profile
+  names suspects by. The probes keep their pattern match (`:id` matches one segment).
+- The results line carries more than the plan listed: `version`, `experimentId`, `role` (`target` or
+  `companion`), `file`, `title`, `project`, `browserName`, `matchesHistory`, `parallelIndex`, `repeatEachIndex`,
+  `retry` and one outcome per condition (`applied`, `not-matched`, `skipped` with a note, `by-command`). A
+  companion line is written for an `alongside` or `after` test, so the lab reads the overlap and the order it got;
+  other tests in the run write nothing. `startedAt` and `duration` span the capture fixture around the test.
+- Probe mode and flake mode never mix: setting both stops the run in the config wrapper and fails each test in the
+  fixtures. A plan that cannot be read or parsed fails the tests with the reason; the run is still stamped.
+- The conditions go on the target's first page, and the page-creating paths (`browser.newPage`,
+  `context.newPage`, the `page` fixture) wait for the install, so a CDP condition is on before the first
+  navigation. Probe interception still installs without waiting.
+- The probes' `slow` fault is the shared `delay` action, held until 5 s after the request started rather than 5 s
+  after the response arrived.
+- On the server, `isLabRun` / `notLabRun` exclude probe and flake-lab runs together, and every former probe check
+  uses them. Quarantine streaks and the regression baseline read every run, probe runs included; both now exclude
+  lab runs, so probe runs leave them too.
+- Only Chromium is installed where PR 3 was built, so the skip of `cpu` and `network` on another browser is covered
+  by a unit test with a Firefox page, not a Firefox run.
 
 The suspects are computed from data Piwi already stores. The lab adds a CLI command, a reporter mode like probe mode,
 two tables, a desktop command and MCP tools. New wire fields, the plan file format, the command and the endpoints
