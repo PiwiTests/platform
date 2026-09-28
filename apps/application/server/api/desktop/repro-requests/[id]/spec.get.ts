@@ -3,7 +3,7 @@ import { requireProjectAccess } from '../../../../utils/project-access';
 import { apiError } from '../../../../utils/api-error';
 import { getDatabase } from '../../../../database';
 import { getReproRequest } from '../../../../utils/desktop-repro';
-import { renderStepsRunSpec } from '#shared/handlers/bug-reports';
+import { renderStepsRunSpec, specDirSchema } from '#shared/handlers/bug-reports';
 import { withReproResultHook } from '#shared/desktop-repro';
 
 defineRouteMeta({
@@ -27,13 +27,6 @@ defineRouteMeta({
     'x-required-roles': ['administrator', 'reporter', 'user'],
   },
 });
-
-/** A folder relative to the repository root, forward slashes, staying inside it. */
-const specDirSchema = z
-  .string()
-  .max(500)
-  .refine((dir) => !dir.startsWith('/') && !dir.includes('\\') && !dir.split('/').includes('..'))
-  .optional();
 
 export default eventHandler(async (event) => {
   if (!process.env.PIWI_DESKTOP_TOKEN) {

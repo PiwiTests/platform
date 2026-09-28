@@ -3,13 +3,13 @@
  *
  * The dashboard renders the spec with the project's generated-spec settings
  * (test import, bugs folder), its function catalog and the locators its tests
- * already use. Printed by default; `--write` puts it in the bugs folder and
- * runs it once with `playwright test`, so you see the bug reproduce before you
- * fix it.
+ * already use. Printed by default; `--write` puts it in the bugs folder
+ * (relative to the repository root) and runs it once with `playwright test`,
+ * so you see the bug reproduce before you fix it.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
 
 const EXIT_OK = 0;
@@ -27,7 +27,8 @@ Prints the spec to commit: the report's steps, test.fail() while the bug
 exists, @bug and piwi:bug <id>, written with the project's settings.
 
 Options:
-  --write               Write it to the project's bugs folder (tests/bugs by default), then run it once
+  --write               Write it to the project's bugs folder (tests/bugs by default, from the
+                        repository root), then run it once
   --out <file>          Write it to this file instead (then run it once)
   --no-run              With --write or --out: write it without running it
   --force               Replace an existing file
@@ -99,8 +100,16 @@ export interface BugSpec {
   warnings: Array<{ step: number; message: string }>;
 }
 
-export async function fetchBugSpec(args: Pick<BugArgs, 'id' | 'mode' | 'serverUrl' | 'apiKey'>): Promise<BugSpec> {
-  const url = `${args.serverUrl}/api/bug-reports/${args.id}/spec?mode=${args.mode}`;
+/**
+ * Fetch the spec. With `specDir`, the folder it is written to relative to the
+ * repository root, the dashboard writes its relative test import for that folder.
+ */
+export async function fetchBugSpec(
+  args: Pick<BugArgs, 'id' | 'mode' | 'serverUrl' | 'apiKey'>,
+  specDir?: string,
+): Promise<BugSpec> {
+  const dir = specDir !== undefined ? `&specDir=${encodeURIComponent(specDir)}` : '';
+  const url = `${args.serverUrl}/api/bug-reports/${args.id}/spec?mode=${args.mode}${dir}`;
   let res: Response;
   try {
     res = await fetch(url, {
@@ -118,8 +127,46 @@ export async function fetchBugSpec(args: Pick<BugArgs, 'id' | 'mode' | 'serverUr
   return { code: body.code, path: body.path, warnings: Array.isArray(body.warnings) ? body.warnings : [] };
 }
 
-function resolvePlaywrightCli(): string | null {
-  const require = createRequire(path.join(process.cwd(), 'noop.js'));
+/** The root of the git repository holding `cwd`; null outside one. */
+function repositoryRoot(cwd: string): string | null {
+  try {
+    const out = execFileSync('git', ['rev-parse', '--show-toplevel'], {
+      cwd,
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+    return out ? path.resolve(out) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** `dir` with symbolic links resolved, as far as it exists. */
+function realFolder(dir: string): string {
+  const rest: string[] = [];
+  let current = dir;
+  while (!fs.existsSync(current) && path.dirname(current) !== current) {
+    rest.unshift(path.basename(current));
+    current = path.dirname(current);
+  }
+  return path.join(fs.realpathSync(current), ...rest);
+}
+
+/** A folder relative to the repository root, with forward slashes; undefined when it is outside the repository. */
+function folderInRepository(root: string, dir: string): string | undefined {
+  const relative = path.relative(realFolder(root), realFolder(dir));
+  if (relative.startsWith('..') || path.isAbsolute(relative)) return undefined;
+  return relative.split(path.sep).join('/');
+}
+
+/** The `playwright test` filter for one file: its folder and name, escaped, either separator. */
+function fileFilter(file: string): string {
+  const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return `${escape(path.basename(path.dirname(file)))}[\\\\/]${escape(path.basename(file))}$`;
+}
+
+function resolvePlaywrightCli(cwd: string): string | null {
+  const require = createRequire(path.join(cwd, 'noop.js'));
   for (const id of ['playwright/cli', '@playwright/test/cli', 'playwright/lib/cli/cli']) {
     try {
       return require.resolve(id);
@@ -130,11 +177,15 @@ function resolvePlaywrightCli(): string | null {
   return null;
 }
 
-function runPlaywright(file: string): Promise<number> {
-  const cli = resolvePlaywrightCli();
+function runPlaywright(file: string, cwd: string): Promise<number> {
+  const cli = resolvePlaywrightCli(cwd);
+  const filter = fileFilter(file);
   const child = cli
-    ? spawn(process.execPath, [cli, 'test', file], { stdio: 'inherit' })
-    : spawn(process.platform === 'win32' ? 'npx.cmd' : 'npx', ['playwright', 'test', file], { stdio: 'inherit' });
+    ? spawn(process.execPath, [cli, 'test', filter], { stdio: 'inherit', cwd })
+    : spawn(process.platform === 'win32' ? 'npx.cmd' : 'npx', ['playwright', 'test', filter], {
+        stdio: 'inherit',
+        cwd,
+      });
   return new Promise((resolve) => {
     child.on('error', (err) => {
       console.error(`piwi bug: could not start Playwright — ${err.message}`);
@@ -144,7 +195,11 @@ function runPlaywright(file: string): Promise<number> {
   });
 }
 
-export async function runBug(argv: string[], env: NodeJS.ProcessEnv = process.env): Promise<number> {
+export async function runBug(
+  argv: string[],
+  env: NodeJS.ProcessEnv = process.env,
+  cwd: string = process.cwd(),
+): Promise<number> {
   if (argv.includes('-h') || argv.includes('--help')) {
     console.log(USAGE);
     return EXIT_OK;
@@ -157,9 +212,12 @@ export async function runBug(argv: string[], env: NodeJS.ProcessEnv = process.en
     return EXIT_ERROR;
   }
 
+  // --out is read from the working directory; the bugs folder from the repository root.
+  const root = args.write ? repositoryRoot(cwd) : null;
+  const outFile = args.out !== null ? path.resolve(cwd, args.out) : null;
   let spec: BugSpec;
   try {
-    spec = await fetchBugSpec(args);
+    spec = await fetchBugSpec(args, outFile && root ? folderInRepository(root, path.dirname(outFile)) : undefined);
   } catch (e) {
     console.error(`piwi bug: ${(e as Error).message}`);
     return EXIT_ERROR;
@@ -172,7 +230,10 @@ export async function runBug(argv: string[], env: NodeJS.ProcessEnv = process.en
     return EXIT_OK;
   }
 
-  const file = args.out ?? spec.path;
+  if (!outFile && !root) {
+    console.error('piwi bug: not in a git repository — the bugs folder is read from the working directory');
+  }
+  const file = outFile ?? path.resolve(root ?? cwd, spec.path);
   try {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, spec.code, { flag: args.force ? 'w' : 'wx' });
@@ -181,15 +242,16 @@ export async function runBug(argv: string[], env: NodeJS.ProcessEnv = process.en
     console.error(`piwi bug: ${exists ? `${file} exists — pass --force to replace it` : (e as Error).message}`);
     return EXIT_ERROR;
   }
-  console.error(`piwi bug: wrote ${file}`);
+  const shown = path.relative(cwd, file) || file;
+  console.error(`piwi bug: wrote ${shown}`);
   if (!args.run) return EXIT_OK;
 
-  const code = await runPlaywright(file);
-  if (code === EXIT_ERROR && !resolvePlaywrightCli()) return EXIT_ERROR;
+  const code = await runPlaywright(file, cwd);
+  if (code === EXIT_ERROR && !resolvePlaywrightCli(cwd)) return EXIT_ERROR;
   if (code === 0) {
     console.error(
       args.mode === 'commit'
-        ? `piwi bug: the bug reproduces — the spec fails on it, as test.fail() expects. Commit ${file}; remove test.fail() with the fix.`
+        ? `piwi bug: the bug reproduces — the spec fails on it, as test.fail() expects. Commit ${shown}; remove test.fail() with the fix.`
         : 'piwi bug: the spec passed — the bug does not show here.',
     );
     return EXIT_OK;

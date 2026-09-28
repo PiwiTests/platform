@@ -327,6 +327,7 @@ import {
   getBugReportMissedBy,
   listBugReports,
   renderBugReportSpec,
+  specDirSchema,
   updateBugReport,
 } from '#shared/handlers/bug-reports';
 import { apiCheckDemoImport, apiDemoImport } from './import';
@@ -2482,7 +2483,10 @@ const routes: RouteEntry[] = [
     pattern: /^\/api\/bug-reports\/(\d+)\/spec$/,
     handler: async (m, _b, q, ctx) => {
       await assertDemoEntityScope(ctx, 'bugReport', +m[1]!);
-      const spec = await renderBugReportSpec(await getDemoDb(), +m[1]!, q?.get('mode') === 'run' ? 'run' : 'commit');
+      const specDir = specDirSchema.safeParse(q?.get('specDir') ?? undefined);
+      if (!specDir.success) throw demoHttpError(400, 'Invalid spec folder');
+      const mode = q?.get('mode') === 'run' ? 'run' : 'commit';
+      const spec = await renderBugReportSpec(await getDemoDb(), +m[1]!, mode, specDir.data);
       if (!spec) throw demoHttpError(404, 'Bug report not found');
       return {
         mode: spec.mode,

@@ -1,6 +1,6 @@
 import { requireResolvedProjectAccess, requireRouteId, resolveBugReportProjectId } from '../../../utils/project-access';
 import { apiError } from '../../../utils/api-error';
-import { renderBugReportSpec } from '#shared/handlers/bug-reports';
+import { renderBugReportSpec, specDirSchema } from '#shared/handlers/bug-reports';
 
 defineRouteMeta({
   openAPI: {
@@ -11,6 +11,14 @@ defineRouteMeta({
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
       { name: 'mode', in: 'query', required: false, schema: { type: 'string', enum: ['commit', 'run'] } },
+      {
+        name: 'specDir',
+        in: 'query',
+        required: false,
+        description:
+          'The folder the spec is written to, relative to the repository root, when it is not the bugs folder: a relative `testImport`, written for the bugs folder, is rewritten for it.',
+        schema: { type: 'string' },
+      },
     ],
     'x-required-roles': ['administrator', 'reporter', 'user'],
   },
@@ -19,8 +27,11 @@ defineRouteMeta({
 export default eventHandler(async (event) => {
   const id = requireRouteId(event, 'id', 'bug report ID');
   const { db } = await requireResolvedProjectAccess(event, id, resolveBugReportProjectId, 'Bug report');
-  const mode = getQuery(event).mode === 'run' ? 'run' : 'commit';
-  const spec = await renderBugReportSpec(db, id, mode);
+  const query = getQuery(event);
+  const mode = query.mode === 'run' ? 'run' : 'commit';
+  const specDir = specDirSchema.safeParse(query.specDir);
+  if (!specDir.success) throw apiError({ statusCode: 400, message: 'Invalid spec folder' });
+  const spec = await renderBugReportSpec(db, id, mode, specDir.data);
   if (!spec) throw apiError({ statusCode: 404, message: 'Bug report not found' });
   return {
     mode: spec.mode,

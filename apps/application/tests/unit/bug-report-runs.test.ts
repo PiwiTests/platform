@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, test } from 'vitest';
+import { eq } from 'drizzle-orm';
 import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
 import { migrate } from 'drizzle-orm/libsql/migrator';
@@ -8,7 +9,7 @@ import * as schema from '../../server/database/schema.sqlite';
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set,
 // so clear it before the modules under test load.
 delete process.env.PIWI_DATABASE_URL;
-const { applyBugReportLifecycle, isReproductionRunAllowed, listBugReports } =
+const { applyBugReportLifecycle, isReproductionRunAllowed, listBugReports, renderBugReportSpec } =
   await import('#shared/handlers/bug-reports');
 const { loadLooksFixedTests, loadNewlyLooksFixedTests } =
   await import('../../server/utils/notifications/run-notifications');
@@ -115,5 +116,19 @@ describe('list_bug_reports', () => {
     };
     expect(page.items.map((r) => r.id)).toEqual(Array.from({ length: 11 }, (_, i) => 11 - i));
     expect(page.nextCursor ?? null).toBeNull();
+  });
+});
+
+describe('a bug report spec written outside the bugs folder', () => {
+  test('imports the test module by a path from its own folder', async () => {
+    await db
+      .update(schema.projects)
+      .set({ generatedSpecs: { testImport: '../fixtures', bugsFolder: 'apps/web/tests/bugs' } })
+      .where(eq(schema.projects.id, 1));
+    const inBugsFolder = await renderBugReportSpec(db as never, 1, 'commit');
+    expect(inBugsFolder?.path).toBe('apps/web/tests/bugs/coupon.spec.ts');
+    expect(inBugsFolder?.code).toContain("from '../fixtures'");
+    const elsewhere = await renderBugReportSpec(db as never, 1, 'commit', 'apps/web/e2e/repro');
+    expect(elsewhere?.code).toContain("from '../../tests/fixtures'");
   });
 });

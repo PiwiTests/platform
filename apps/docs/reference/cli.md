@@ -300,8 +300,8 @@ npx @piwitests/reporter bug 37 --write
 
 | Flag | Description |
 |---|---|
-| `--write` | Write the spec to the project's bugs folder, then run it once |
-| `--out <file>` | Write it to this file instead, then run it once |
+| `--write` | Write the spec to the project's bugs folder (from the repository root), then run it once |
+| `--out <file>` | Write it to this file instead, then run it once; its test import is written for that file's folder |
 | `--no-run` | With `--write` or `--out`: write it without running it |
 | `--force` | Replace an existing file |
 | `--run-mode` | The spec without `test.fail()`, as a reproduction runs it |

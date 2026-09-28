@@ -74,6 +74,13 @@ export const generatedSpecSettingsSchema = z.object({
     .nullish(),
 });
 
+/** A folder a spec is written to, relative to the repository root: forward slashes, staying inside it. */
+export const specDirSchema = z
+  .string()
+  .max(500)
+  .refine((dir) => !dir.startsWith('/') && !dir.includes('\\') && !dir.split('/').includes('..'))
+  .optional();
+
 export function resolveGeneratedSpecSettings(raw: unknown): GeneratedSpecSettings {
   const parsed = generatedSpecSettingsSchema.safeParse(raw ?? {});
   const value = parsed.success ? parsed.data : {};
@@ -460,6 +467,7 @@ export async function renderBugReportSpec(
   db: DrizzleDB,
   id: number,
   mode: 'commit' | 'run',
+  specDir?: string,
 ): Promise<BugReportSpec | null> {
   const [row] = await db
     .select({ report: bugReports, generatedSpecs: projects.generatedSpecs })
@@ -469,6 +477,9 @@ export async function renderBugReportSpec(
   if (!row) return null;
   const settings = resolveGeneratedSpecSettings(row.generatedSpecs);
   const shared = await projectSpecOptions(db, row.report.projectId, settings);
+  if (shared.testImport && specDir != null) {
+    shared.testImport = rebaseTestImport(shared.testImport, settings.bugsFolder, specDir);
+  }
   const report: BugReport = {
     v: 1,
     steps: { ...(row.report.steps as PiwiSteps), title: row.report.title },
