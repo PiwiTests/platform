@@ -236,8 +236,10 @@ describe('bug report', () => {
       bugContextFrom({ url, userAgent: null, viewport: null, time: 0, extensionVersion: null, pathPrefix });
     const prefixed = at(`${ORIGIN}/app/orders/42`, '/app/');
     expect(prefixed).toMatchObject({ pageKey: '/orders/:id', path: '/app/orders/42', pathPrefix: '/app' });
-    expect(at(`${ORIGIN}/application`, '/app')).not.toHaveProperty('pathPrefix');
-    expect(at(`${ORIGIN}/application`, '/app').pageKey).toBe('/application');
+    // Finished outside the prefix: the page keeps its path, and the mapping is kept for the steps' pages.
+    expect(at(`${ORIGIN}/application`, '/app')).toMatchObject({ pageKey: '/application', pathPrefix: '/app' });
+    expect(at(`${ORIGIN}/login`, null)).not.toHaveProperty('pathPrefix');
+    expect(at('about:blank', '/app')).not.toHaveProperty('pathPrefix');
     const parsed = parseBugReport({ ...couponReport(), context: prefixed });
     expect(parsed.ok && parsed.report.context.pathPrefix).toBe('/app');
     const odd = parseBugReport({ ...couponReport(), context: { ...prefixed, pathPrefix: '/app?x' } });

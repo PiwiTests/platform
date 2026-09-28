@@ -1,4 +1,5 @@
 import { describe, test, expect } from 'vitest';
+import { bugContextFrom } from '@piwitests/core/bug-report';
 import type { LocatorIndex } from '@piwitests/core/locator-index';
 import { computeMissedBy, describeMissedBy } from '../../shared/bug-report-missed-by';
 import { couponBugReport } from '../utils/bug-report-sample';
@@ -68,6 +69,22 @@ describe('computeMissedBy', () => {
     expect(missed.visiting.map((t) => t.testCaseId).sort()).toEqual([1, 2, 3]);
     // Without the prefix, the page the steps ran on is one no test visits.
     expect(computeMissedBy(index(), { steps: prefixed, pageKey: '/cart' }).page).toBe('/app/cart');
+  });
+
+  test('keys the marked step’s page through the mapping when the report finished outside its prefix', () => {
+    const { steps } = couponBugReport();
+    const prefixed = { ...steps, steps: steps.steps.map((step) => ({ ...step, pageUrl: `/app${step.pageUrl}` })) };
+    const context = bugContextFrom({
+      url: 'https://shop.test/login',
+      userAgent: null,
+      viewport: null,
+      time: 0,
+      extensionVersion: null,
+      pathPrefix: '/app',
+    });
+    const missed = computeMissedBy(index(), { steps: prefixed, pageKey: context.pageKey, ...context });
+    expect(missed.page).toBe('/cart');
+    expect(missed.visiting.map((t) => t.testCaseId).sort()).toEqual([1, 2, 3]);
   });
 
   test('puts the URL mapping’s tests’ prefix in front of the pages the steps ran on', () => {

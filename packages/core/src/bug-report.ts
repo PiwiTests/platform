@@ -86,7 +86,7 @@ export interface BugContext {
   /** The page key of the page the report was finished on, with {@link BugContext.pathPrefix} removed and {@link BugContext.testPathPrefix} added. */
   pageKey: string | null;
   path: string | null;
-  /** The path prefix of the site's URL mapping, removed from the page keys compared with the tests' pages; absent for none. */
+  /** The path prefix of the site's URL mapping, removed from the page keys compared with the tests' pages (the steps' pages too); absent for none. */
   pathPrefix?: string | null;
   /** The tests' path prefix of the site's URL mapping, put in front of the page keys compared with the tests' pages; absent for none. */
   testPathPrefix?: string | null;
@@ -454,9 +454,9 @@ export function bugContextFrom(input: {
   viewport: { width: number; height: number } | null;
   time: number;
   extensionVersion: string | null;
-  /** The URL mapping's path prefix, removed from the page key when the path starts with it. */
+  /** The path prefix of the URL mapping that applies to the page's site, removed from the page key when the path starts with it. */
   pathPrefix?: string | null;
-  /** The URL mapping's tests' path prefix, put in front of the page key's path. */
+  /** The tests' path prefix of the URL mapping that applies to the page's site, put in front of the page key's path. */
   testPathPrefix?: string | null;
 }): BugContext {
   let origin: string | null = null;
@@ -470,13 +470,16 @@ export function bugContextFrom(input: {
   } catch {
     // Not a URL: no origin and no path.
   }
-  const keyed = mappedPageKey(input.url, input);
+  // The mapping's prefixes are kept whenever it applies to the report's site, even when the page the report
+  // finished on lies outside `pathPrefix`: the steps' pages are keyed with them too.
+  const pathPrefix = origin ? normalizePathPrefix(input.pathPrefix) : null;
+  const testPathPrefix = origin ? normalizePathPrefix(input.testPathPrefix) : null;
   return {
     origin,
-    pageKey: keyed.key,
+    pageKey: mappedPageKey(input.url, input).key,
     path,
-    ...(keyed.prefixRemoved ? { pathPrefix: keyed.prefixRemoved } : {}),
-    ...(keyed.prefixAdded ? { testPathPrefix: keyed.prefixAdded } : {}),
+    ...(pathPrefix ? { pathPrefix } : {}),
+    ...(testPathPrefix ? { testPathPrefix } : {}),
     browser: input.userAgent ? describeBrowser(input.userAgent) : null,
     userAgent: input.userAgent,
     viewport: input.viewport,
