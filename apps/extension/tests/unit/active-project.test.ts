@@ -179,4 +179,24 @@ describe('resolveActiveProject with a path prefix', () => {
       'pathPrefix',
     );
   });
+
+  it('carries the tests’ path prefix, from a mapping or through an override', () => {
+    const local = {
+      urlPattern: 'http://localhost:4173/**',
+      projectId: 1,
+      projectLabel: 'Shop',
+      testPathPrefix: '/shop',
+    };
+    const url = 'http://localhost:4173/cart';
+    expect(resolveActiveProject(settings([], [local]), null, url)).toMatchObject({
+      testPathPrefix: '/shop',
+      source: 'server',
+    });
+    expect(resolveActiveProject(settings([local]), { projectId: 1, projectLabel: 'Shop' }, url)).toEqual({
+      projectId: 1,
+      projectLabel: 'Shop',
+      testPathPrefix: '/shop',
+      source: 'override',
+    });
+  });
 });

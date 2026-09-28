@@ -897,14 +897,20 @@ test.describe('coverage overlay: what tests do on this page', () => {
   });
 });
 
-test.describe('coverage overlay on a deployment under a path prefix', () => {
+test.describe('coverage overlay where the site and the tests use different path prefixes', () => {
   test.beforeEach(async ({ page }) => {
     await page.setViewportSize({ width: 1400, height: 900 });
   });
 
-  const underApp = (pathPrefix?: string) => ({
+  const underApp = (pathPrefix?: string, testPathPrefix?: string) => ({
     ...DEFAULT_CONNECTION,
-    projectMappings: [{ ...DEFAULT_CONNECTION.projectMappings[0]!, ...(pathPrefix ? { pathPrefix } : {}) }],
+    projectMappings: [
+      {
+        ...DEFAULT_CONNECTION.projectMappings[0]!,
+        ...(pathPrefix ? { pathPrefix } : {}),
+        ...(testPathPrefix ? { testPathPrefix } : {}),
+      },
+    ],
   });
 
   test('This page removes the mapping’s prefix, then lists the uses of the route, missing and several here', async ({
@@ -940,12 +946,76 @@ test.describe('coverage overlay on a deployment under a path prefix', () => {
     );
   });
 
+  test('the tests’ prefix is put in front when the tests ran the pages under a path the site does not use', async ({
+    page,
+    context,
+  }) => {
+    // The suite ran the shop under /app; this deployment serves it at the root.
+    const index = shopIndex([...SHOP_TESTS, ...PAGE_TESTS]);
+    const underTests = { ...index, pages: index.pages!.map((p) => `/app${p}`) };
+    await stubCoverageChrome(context, {
+      connection: {
+        ...DEFAULT_CONNECTION,
+        projectMappings: [{ ...DEFAULT_CONNECTION.projectMappings[0]!, testPathPrefix: '/app' }],
+      },
+      cached: underTests,
+    });
+    await openShop(page, '?nodialog');
+    await injectCoverage(page);
+    const coverage = await readCoverage(page);
+    expect(coverage).toMatchObject({
+      page: '/app/shop.html',
+      prefixRemoved: null,
+      prefixAdded: '/app',
+      pageScoped: true,
+    });
+    expect(coverage.covered.some((c) => c.description === 'button "Subscribe"')).toBe(false);
+    expect(coverage.missing.map((row) => row.locator)).toEqual([
+      "getByRole('button', { name: 'Pay now' })",
+      "getByRole('menuitem', { name: 'Sign out' })",
+    ]);
+    expect(coverage.several.map((row) => [row.locator, row.count])).toEqual([
+      ["getByRole('button', { name: 'Add to cart' })", 4],
+    ]);
+
+    const panel = page.locator(`${HOST} .panel`);
+    await expect(panel.locator('.sub')).toContainText('Acme Mugs · /app/shop.html (with /app added)');
+    await panel.locator('details.notes > summary').click();
+    await expect(panel.locator('details.notes')).toContainText(
+      'The tests’ path prefix /app of this site’s URL mapping was put in front of the address first',
+    );
+  });
+
+  test('one prefix swapped for the other: the site under /app, the tests under /v2', async ({ page, context }) => {
+    const index = shopIndex([...SHOP_TESTS, ...PAGE_TESTS]);
+    await stubCoverageChrome(context, {
+      connection: underApp('/app', '/v2'),
+      cached: { ...index, pages: index.pages!.map((p) => `/v2${p}`) },
+    });
+    await openShopUnder(page, '/app', '?nodialog');
+    await injectCoverage(page);
+    expect(await readCoverage(page)).toMatchObject({
+      page: '/v2/shop.html',
+      prefixRemoved: '/app',
+      prefixAdded: '/v2',
+      pageScoped: true,
+    });
+    expect((await readCoverage(page)).missing).toHaveLength(2);
+    await expect(page.locator(`${HOST} .panel .sub`)).toContainText('/v2/shop.html (/app replaced by /v2)');
+  });
+
   test('without the prefix, the page matches none the tests ran on', async ({ page, context }) => {
     await stubCoverageChrome(context, { connection: underApp(), cached: shopIndex([...SHOP_TESTS, ...PAGE_TESTS]) });
     await openShopUnder(page, '/app', '?nodialog');
     await injectCoverage(page);
     const coverage = await readCoverage(page);
-    expect(coverage).toMatchObject({ page: '/app/shop.html', prefixRemoved: null, missing: [], several: [] });
+    expect(coverage).toMatchObject({
+      page: '/app/shop.html',
+      prefixRemoved: null,
+      prefixAdded: null,
+      missing: [],
+      several: [],
+    });
   });
 });
 

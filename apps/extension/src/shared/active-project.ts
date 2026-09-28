@@ -1,4 +1,5 @@
 import { urlMatches } from '@piwitests/core/function-match';
+import type { PathPrefixes } from '@piwitests/core/page-key';
 import type { ConnectionSettings } from './connection-settings.js';
 import { sessionArea } from './session-area.js';
 
@@ -12,6 +13,8 @@ export interface ActiveProject {
   branch?: string | null;
   /** The path prefix the matching URL mapping names: removed from the page's path before it is compared with the tests' pages. */
   pathPrefix?: string;
+  /** The tests' path prefix the matching URL mapping names: put in front of the page's path before it is compared with the tests' pages. */
+  testPathPrefix?: string;
   /** The environment the matching server pattern names, if any. */
   environment?: string;
   source?: ActiveProjectSource;
@@ -43,7 +46,7 @@ export async function setActiveProjectOverride(project: ActiveProject | null): P
 
 /**
  * Which project applies to `url` right now, in this order: the popup's manual
- * override (with the path prefix of a mapping of that project matching `url`); then the first pattern kept in this browser (`projectMappings`)
+ * override (with the path prefixes of a mapping of that project matching `url`); then the first pattern kept in this browser (`projectMappings`)
  * that matches, so a local pattern overrides the instance's for this browser;
  * then the first of the instance's own patterns (`serverMappings`, in the order
  * it lists them). `null` when nothing matches (not connected, or this page
@@ -55,11 +58,11 @@ export function resolveActiveProject(
   url: string,
 ): ActiveProject | null {
   if (override) {
-    // The path prefix still follows the URL: from the first mapping of the chosen project that matches.
-    const pathPrefix = [...settings.projectMappings, ...settings.serverMappings].find(
-      (m) => m.projectId === override.projectId && m.pathPrefix && urlMatches(m.urlPattern, url),
-    )?.pathPrefix;
-    return { ...override, ...(pathPrefix ? { pathPrefix } : {}), source: 'override' };
+    // The path prefixes still follow the URL: from the first mapping of the chosen project that matches.
+    const mapping = [...settings.projectMappings, ...settings.serverMappings].find(
+      (m) => m.projectId === override.projectId && urlMatches(m.urlPattern, url),
+    );
+    return { ...override, ...prefixesOf(mapping), source: 'override' };
   }
   for (const mapping of settings.projectMappings) {
     if (urlMatches(mapping.urlPattern, url))
@@ -67,7 +70,7 @@ export function resolveActiveProject(
         projectId: mapping.projectId,
         projectLabel: mapping.projectLabel,
         ...(mapping.branch ? { branch: mapping.branch } : {}),
-        ...(mapping.pathPrefix ? { pathPrefix: mapping.pathPrefix } : {}),
+        ...prefixesOf(mapping),
         source: 'local',
       };
   }
@@ -77,7 +80,7 @@ export function resolveActiveProject(
         projectId: mapping.projectId,
         projectLabel: mapping.projectLabel,
         ...(mapping.branch ? { branch: mapping.branch } : {}),
-        ...(mapping.pathPrefix ? { pathPrefix: mapping.pathPrefix } : {}),
+        ...prefixesOf(mapping),
         ...(mapping.environment ? { environment: mapping.environment } : {}),
         source: 'server',
       };
@@ -85,11 +88,22 @@ export function resolveActiveProject(
   return null;
 }
 
+/** A mapping's path prefixes, each only when set. */
+function prefixesOf(mapping: { pathPrefix?: string; testPathPrefix?: string } | undefined): {
+  pathPrefix?: string;
+  testPathPrefix?: string;
+} {
+  return {
+    ...(mapping?.pathPrefix ? { pathPrefix: mapping.pathPrefix } : {}),
+    ...(mapping?.testPathPrefix ? { testPathPrefix: mapping.testPathPrefix } : {}),
+  };
+}
+
 /**
- * The path prefix of the URL mapping that applies to `url`, or null for none:
- * the prefix the bug report's page key is keyed without.
+ * The path prefixes of the URL mapping that applies to `url`: the ones the bug
+ * report's page key is keyed with.
  */
-export async function activePathPrefix(settings: ConnectionSettings, url: string): Promise<string | null> {
+export async function activePathPrefixes(settings: ConnectionSettings, url: string): Promise<PathPrefixes> {
   const override = await getActiveProjectOverride().catch(() => null);
-  return resolveActiveProject(settings, override, url)?.pathPrefix ?? null;
+  return prefixesOf(resolveActiveProject(settings, override, url) ?? undefined);
 }

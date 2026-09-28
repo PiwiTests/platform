@@ -598,6 +598,15 @@
       }
     }
   },
+  "options_testPathPrefix": {
+    "message": "Préfixe de chemin des tests"
+  },
+  "options_testPathPrefixPlaceholder": {
+    "message": "aucun préfixe des tests"
+  },
+  "options_testPathPrefixTitle": {
+    "message": "Les tests ont parcouru les pages sous ce chemin, votre site ne le fait pas, par exemple /app"
+  },
   "options_removeMapping": {
     "message": "Supprimer cette ligne"
   },
@@ -886,6 +895,15 @@
   },
   "options_serverPathPrefix": {
     "message": "préfixe de chemin $prefix$",
+    "placeholders": {
+      "prefix": {
+        "content": "$1",
+        "example": "/app"
+      }
+    }
+  },
+  "options_serverTestPathPrefix": {
+    "message": "préfixe de chemin des tests $prefix$",
     "placeholders": {
       "prefix": {
         "content": "$1",
@@ -3252,6 +3270,36 @@
       }
     }
   },
+  "coverage_subtitleWithPrefix": {
+    "message": "$page$ (avec $prefix$ ajouté)",
+    "placeholders": {
+      "page": {
+        "content": "$1",
+        "example": "/app/checkout"
+      },
+      "prefix": {
+        "content": "$2",
+        "example": "/app"
+      }
+    }
+  },
+  "coverage_subtitleSwappedPrefix": {
+    "message": "$page$ ($removed$ remplacé par $added$)",
+    "placeholders": {
+      "added": {
+        "content": "$1",
+        "example": "/v2"
+      },
+      "page": {
+        "content": "$2",
+        "example": "/v2/checkout"
+      },
+      "removed": {
+        "content": "$3",
+        "example": "/app"
+      }
+    }
+  },
   "coverage_tileTested": {
     "message": "testés"
   },
@@ -3832,6 +3880,15 @@
   },
   "coverage_notesPrefixRemoved": {
     "message": "Le préfixe de chemin $prefix$ du motif d’adresse de ce site a d’abord été retiré de l’adresse : les tests ont parcouru cette page sans lui.",
+    "placeholders": {
+      "prefix": {
+        "content": "$1",
+        "example": "/app"
+      }
+    }
+  },
+  "coverage_notesPrefixAdded": {
+    "message": "Le préfixe de chemin des tests $prefix$ du motif d’adresse de ce site a d’abord été ajouté devant l’adresse : les tests ont parcouru cette page sous ce chemin.",
     "placeholders": {
       "prefix": {
         "content": "$1",

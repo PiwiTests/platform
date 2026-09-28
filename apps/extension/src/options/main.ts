@@ -60,6 +60,7 @@ const addProjectEl = document.getElementById('add-project') as HTMLSelectElement
 const addEnvironmentEl = document.getElementById('add-environment') as HTMLInputElement;
 const addBranchEl = document.getElementById('add-branch') as HTMLInputElement;
 const addPrefixEl = document.getElementById('add-prefix') as HTMLInputElement;
+const addTestPrefixEl = document.getElementById('add-test-prefix') as HTMLInputElement;
 const addNoteEl = document.getElementById('add-note') as HTMLElement;
 const addToServerBtn = document.getElementById('add-to-server') as HTMLButtonElement;
 const addLocallyBtn = document.getElementById('add-locally') as HTMLButtonElement;
@@ -81,6 +82,8 @@ interface EditableMapping {
   branch: string;
   /** The part of the site's path the tests never saw (`/app`); empty for none. */
   pathPrefix: string;
+  /** The part of the path the tests ran the pages under and the site does not; empty for none. */
+  testPathPrefix: string;
 }
 
 /** Populated by "Test connection" (or on load, if already connected) — the pool a mapping row's project `<select>` draws from. */
@@ -198,9 +201,13 @@ function renderMappings(): void {
       mappings[index]!.branch = branchInput.value;
     });
 
-    const prefixInput = pathPrefixInput(mapping.pathPrefix);
+    const prefixInput = pathPrefixInput(mapping.pathPrefix, 'site');
     prefixInput.addEventListener('input', () => {
       mappings[index]!.pathPrefix = prefixInput.value;
+    });
+    const testPrefixInput = pathPrefixInput(mapping.testPathPrefix, 'tests');
+    testPrefixInput.addEventListener('input', () => {
+      mappings[index]!.testPathPrefix = testPrefixInput.value;
     });
 
     const removeBtn = document.createElement('button');
@@ -217,7 +224,7 @@ function renderMappings(): void {
     source.className = 'source';
     source.textContent = t('options_sourceLocal');
 
-    row.append(patternInput, projectSelect, branchInput, prefixInput, source, removeBtn);
+    row.append(patternInput, projectSelect, branchInput, prefixInput, testPrefixInput, source, removeBtn);
     mappingsEl.appendChild(row);
   });
 }
@@ -227,39 +234,52 @@ function pathPrefixError(value: string): string {
   return parsePathPrefix(value).ok ? '' : t('options_pathPrefixInvalid', { prefix: value.trim() });
 }
 
-/** `{ pathPrefix }` for a stored mapping, normalized; empty for none. */
-function pathPrefixField(value: string): { pathPrefix?: string } {
-  const pathPrefix = normalizePathPrefix(value);
-  return pathPrefix ? { pathPrefix } : {};
+/** The first refusal among a line's or the form's two prefixes; empty when both are accepted. */
+function prefixesError(pathPrefix: string, testPathPrefix: string): string {
+  return pathPrefixError(pathPrefix) || pathPrefixError(testPathPrefix);
 }
 
+/** `{ pathPrefix, testPathPrefix }` for a stored mapping, normalized, each only when set. */
+function pathPrefixFields(
+  pathPrefix: string,
+  testPathPrefix: string,
+): { pathPrefix?: string; testPathPrefix?: string } {
+  const site = normalizePathPrefix(pathPrefix);
+  const tests = normalizePathPrefix(testPathPrefix);
+  return { ...(site ? { pathPrefix: site } : {}), ...(tests ? { testPathPrefix: tests } : {}) };
+}
+
+/** Which prefix a field holds: the site's (`pathPrefix`) or the tests' (`testPathPrefix`). */
+type PrefixKind = 'site' | 'tests';
+
 /** Marks a path prefix field invalid, with the reason as its tooltip, while its value is refused. */
-function watchPathPrefix(input: HTMLInputElement): void {
+function watchPathPrefix(input: HTMLInputElement, kind: PrefixKind): void {
   const check = () => {
     const error = pathPrefixError(input.value);
-    input.title = error || t('options_pathPrefixTitle');
+    input.title = error || (kind === 'site' ? t('options_pathPrefixTitle') : t('options_testPathPrefixTitle'));
     input.toggleAttribute('aria-invalid', error !== '');
   };
   check();
   input.addEventListener('input', check);
 }
 
-/** The path prefix field of a line. */
-function pathPrefixInput(value: string): HTMLInputElement {
+/** A path prefix field of a line. */
+function pathPrefixInput(value: string, kind: PrefixKind): HTMLInputElement {
   const input = document.createElement('input');
   input.type = 'text';
   input.className = 'mapping-branch mapping-prefix';
-  input.placeholder = t('options_pathPrefixPlaceholder');
-  input.setAttribute('aria-label', t('options_pathPrefix'));
+  input.placeholder = kind === 'site' ? t('options_pathPrefixPlaceholder') : t('options_testPathPrefixPlaceholder');
+  input.setAttribute('aria-label', kind === 'site' ? t('options_pathPrefix') : t('options_testPathPrefix'));
   input.value = value;
-  watchPathPrefix(input);
+  watchPathPrefix(input, kind);
   return input;
 }
 
-watchPathPrefix(addPrefixEl);
+watchPathPrefix(addPrefixEl, 'site');
+watchPathPrefix(addTestPrefixEl, 'tests');
 
 addMappingBtn.addEventListener('click', () => {
-  mappings.push({ urlPattern: '', projectId: null, projectLabel: '', branch: '', pathPrefix: '' });
+  mappings.push({ urlPattern: '', projectId: null, projectLabel: '', branch: '', pathPrefix: '', testPathPrefix: '' });
   renderMappings();
 });
 
@@ -302,6 +322,7 @@ function renderServerMappings(): void {
       mapping.environment,
       mapping.branch,
       mapping.pathPrefix ? t('options_serverPathPrefix', { prefix: mapping.pathPrefix }) : '',
+      mapping.testPathPrefix ? t('options_serverTestPathPrefix', { prefix: mapping.testPathPrefix }) : '',
     ]
       .filter(Boolean)
       .join(' · ');
@@ -401,6 +422,7 @@ async function loadInitial(): Promise<void> {
     projectLabel: m.projectLabel,
     branch: m.branch ?? '',
     pathPrefix: m.pathPrefix ?? '',
+    testPathPrefix: m.testPathPrefix ?? '',
   }));
   projectOptions = syncedProjectOptions();
   renderMappings();
@@ -562,7 +584,7 @@ addToServerBtn.addEventListener('click', () => {
       setStatus(t('options_addNeedsProject'), 'error');
       return;
     }
-    const prefixError = pathPrefixError(addPrefixEl.value);
+    const prefixError = prefixesError(addPrefixEl.value, addTestPrefixEl.value);
     if (prefixError) {
       setStatus(prefixError, 'error');
       return;
@@ -574,6 +596,7 @@ addToServerBtn.addEventListener('click', () => {
         environment: addEnvironmentEl.value.trim() || null,
         branch: addBranchEl.value.trim() || null,
         pathPrefix: normalizePathPrefix(addPrefixEl.value),
+        testPathPrefix: normalizePathPrefix(addTestPrefixEl.value),
       });
     } catch (err) {
       setStatus(err instanceof Error ? err.message : String(err), 'error');
@@ -583,6 +606,7 @@ addToServerBtn.addEventListener('click', () => {
     addEnvironmentEl.value = '';
     addBranchEl.value = '';
     addPrefixEl.value = '';
+    addTestPrefixEl.value = '';
     await syncServerPatterns(stored);
     await refreshCatalogs(stored);
     setStatus(t('options_added', { pattern, project: label }), 'ok');
@@ -595,7 +619,7 @@ addLocallyBtn.addEventListener('click', () => {
     setStatus(t('options_addNeedsPattern'), 'error');
     return;
   }
-  const prefixError = pathPrefixError(addPrefixEl.value);
+  const prefixError = prefixesError(addPrefixEl.value, addTestPrefixEl.value);
   if (prefixError) {
     setStatus(prefixError, 'error');
     return;
@@ -607,10 +631,12 @@ addLocallyBtn.addEventListener('click', () => {
     projectLabel: projectId != null ? (addProjectEl.selectedOptions[0]?.textContent ?? '') : '',
     branch: addBranchEl.value.trim(),
     pathPrefix: normalizePathPrefix(addPrefixEl.value) ?? '',
+    testPathPrefix: normalizePathPrefix(addTestPrefixEl.value) ?? '',
   });
   renderMappings();
   addPatternEl.value = '';
   addPrefixEl.value = '';
+  addTestPrefixEl.value = '';
   setStatus(t('options_addedLocally'), 'ok');
 });
 
@@ -650,9 +676,9 @@ saveBtn.addEventListener('click', () => {
     }
     const granted = await permission;
 
-    const badPrefix = mappings.find((m) => pathPrefixError(m.pathPrefix));
+    const badPrefix = mappings.find((m) => prefixesError(m.pathPrefix, m.testPathPrefix));
     if (badPrefix) {
-      setStatus(pathPrefixError(badPrefix.pathPrefix), 'error');
+      setStatus(prefixesError(badPrefix.pathPrefix, badPrefix.testPathPrefix), 'error');
       return;
     }
     const valid = mappings.filter((m) => m.urlPattern.trim() && m.projectId != null);
@@ -667,7 +693,7 @@ saveBtn.addEventListener('click', () => {
         projectId: m.projectId!,
         projectLabel: m.projectLabel,
         ...(m.branch.trim() ? { branch: m.branch.trim() } : {}),
-        ...pathPrefixField(m.pathPrefix),
+        ...pathPrefixFields(m.pathPrefix, m.testPathPrefix),
       })),
     };
     stored = settings;

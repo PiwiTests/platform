@@ -741,6 +741,18 @@
       }
     }
   },
+  "options_testPathPrefix": {
+    "message": "Tests’ path prefix",
+    "description": "Settings page: accessible name of a line’s tests’ path prefix field: the path the tests ran the pages under and the site does not."
+  },
+  "options_testPathPrefixPlaceholder": {
+    "message": "no tests’ prefix",
+    "description": "Settings page: shown in an empty tests’ path prefix field. Short."
+  },
+  "options_testPathPrefixTitle": {
+    "message": "The tests ran the pages under this path, your site does not, e.g. /app",
+    "description": "Settings page: tooltip of a line’s tests’ path prefix field. Keep /app as the example."
+  },
   "options_removeMapping": {
     "message": "Remove this line",
     "description": "Settings page: accessible name of the × button of a line."
@@ -1088,6 +1100,16 @@
   "options_serverPathPrefix": {
     "message": "path prefix $prefix$",
     "description": "Settings page: part of an instance pattern’s line, after the project, environment and branch, joined by ·. $prefix$ is like /app.",
+    "placeholders": {
+      "prefix": {
+        "content": "$1",
+        "example": "/app"
+      }
+    }
+  },
+  "options_serverTestPathPrefix": {
+    "message": "tests’ path prefix $prefix$",
+    "description": "Settings page: part of an instance pattern’s line, after the path prefix, joined by ·. $prefix$ is like /app.",
     "placeholders": {
       "prefix": {
         "content": "$1",
@@ -3857,6 +3879,38 @@
       }
     }
   },
+  "coverage_subtitleWithPrefix": {
+    "message": "$page$ (with $prefix$ added)",
+    "description": "Tested elements panel: the page in the subtitle when the URL mapping’s tests’ path prefix was put in front of it. $page$ is like /app/checkout, $prefix$ like /app.",
+    "placeholders": {
+      "page": {
+        "content": "$1",
+        "example": "/app/checkout"
+      },
+      "prefix": {
+        "content": "$2",
+        "example": "/app"
+      }
+    }
+  },
+  "coverage_subtitleSwappedPrefix": {
+    "message": "$page$ ($removed$ replaced by $added$)",
+    "description": "Tested elements panel: the page in the subtitle when the URL mapping’s path prefix was removed and its tests’ path prefix put in its place. $page$ is like /v2/checkout, $removed$ like /app, $added$ like /v2.",
+    "placeholders": {
+      "added": {
+        "content": "$1",
+        "example": "/v2"
+      },
+      "page": {
+        "content": "$2",
+        "example": "/v2/checkout"
+      },
+      "removed": {
+        "content": "$3",
+        "example": "/app"
+      }
+    }
+  },
   "coverage_tileTested": {
     "message": "tested",
     "description": "Tested elements panel: label under a big number: buttons, links and fields a test reaches. One or two words."
@@ -4538,6 +4592,16 @@
   "coverage_notesPrefixRemoved": {
     "message": "The path prefix $prefix$ of this site’s URL mapping was removed from the address first: the tests ran this page without it.",
     "description": "Tested elements panel, Notes: shown when the page’s address started with the URL mapping’s path prefix. $prefix$ is like /app.",
+    "placeholders": {
+      "prefix": {
+        "content": "$1",
+        "example": "/app"
+      }
+    }
+  },
+  "coverage_notesPrefixAdded": {
+    "message": "The tests’ path prefix $prefix$ of this site’s URL mapping was put in front of the address first: the tests ran this page under it.",
+    "description": "Tested elements panel, Notes: shown when the URL mapping’s tests’ path prefix was put in front of the page’s address. $prefix$ is like /app.",
     "placeholders": {
       "prefix": {
         "content": "$1",

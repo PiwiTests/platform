@@ -24,6 +24,8 @@ export interface CoverageContext {
   pageKey: string | null;
   /** The URL mapping's path prefix removed from the page's path before keying it; null when none applied. */
   prefixRemoved: string | null;
+  /** The URL mapping's tests' path prefix put in front of the page's path before keying it; null when none applied. */
+  prefixAdded: string | null;
   /** Its position in `index.pages`; -1 when no use was recorded on it. */
   pagePosition: number;
   /** The index records pages, so the view can be limited to this page. */

@@ -21,7 +21,12 @@ let baseUrl: string;
 let approved = false;
 let keysHandedOut = 0;
 let connectBody: unknown = null;
-let patterns: Array<{ pattern: string; environment: string | null; pathPrefix?: string | null }> = [];
+let patterns: Array<{
+  pattern: string;
+  environment: string | null;
+  pathPrefix?: string | null;
+  testPathPrefix?: string | null;
+}> = [];
 const addedPatterns: unknown[] = [];
 
 async function readJson(req: IncomingMessage): Promise<unknown> {
@@ -95,6 +100,7 @@ test.beforeAll(async () => {
             environment: p.environment,
             branch: null,
             pathPrefix: p.pathPrefix ?? null,
+            testPathPrefix: p.testPathPrefix ?? null,
           })),
           projects: [{ id: 1, label: 'Shop', canEdit: true }],
         });
@@ -106,9 +112,15 @@ test.beforeAll(async () => {
           pattern: string;
           environment?: string | null;
           pathPrefix?: string | null;
+          testPathPrefix?: string | null;
         };
         addedPatterns.push(body);
-        patterns.push({ pattern: body.pattern, environment: body.environment ?? null, pathPrefix: body.pathPrefix });
+        patterns.push({
+          pattern: body.pattern,
+          environment: body.environment ?? null,
+          pathPrefix: body.pathPrefix,
+          testPathPrefix: body.testPathPrefix,
+        });
         return json(201, { items: [] });
       }
       return json(404, {});
@@ -230,6 +242,7 @@ test.describe.serial('connect in one step', () => {
     await expect(settings.locator('#status')).toContainText('/app?lang=fr is not a path prefix');
     await settings.locator('#add-prefix').fill('app/');
     await expect(settings.locator('#add-prefix')).not.toHaveAttribute('aria-invalid');
+    await settings.locator('#add-test-prefix').fill('/v2');
     await settings.getByRole('button', { name: 'Add to Piwi' }).click();
 
     await expect(settings.locator('#status')).toHaveText(`Added ${site}/** to Shop.`);
@@ -238,12 +251,15 @@ test.describe.serial('connect in one step', () => {
       environment: 'staging',
       branch: null,
       pathPrefix: '/app',
+      testPathPrefix: '/v2',
     });
     const serverRow = settings.locator('#server-mappings .server-row');
     await expect(serverRow).toContainText(`${site}/**`);
-    await expect(serverRow).toContainText('Shop · staging · path prefix /app');
+    await expect(serverRow).toContainText('Shop · staging · path prefix /app · tests’ path prefix /v2');
     expect(await storedConnection(settings)).toMatchObject({
-      serverMappings: [expect.objectContaining({ urlPattern: `${site}/**`, pathPrefix: '/app' })],
+      serverMappings: [
+        expect.objectContaining({ urlPattern: `${site}/**`, pathPrefix: '/app', testPathPrefix: '/v2' }),
+      ],
     });
 
     // Kept in this browser only: the line holds the prefix, which Save stores.
@@ -251,13 +267,22 @@ test.describe.serial('connect in one step', () => {
     await settings.locator('#add-prefix').fill('/shop/eu/');
     await settings.getByRole('button', { name: 'Keep in this browser only' }).click();
     const line = settings.locator('#mappings .mapping-row').last();
-    await expect(line.getByLabel('Path prefix')).toHaveValue('/shop/eu');
-    await line.getByLabel('Path prefix').fill('/shop/eu/fr');
+    await expect(line.getByLabel('Path prefix', { exact: true })).toHaveValue('/shop/eu');
+    await line.getByLabel('Path prefix', { exact: true }).fill('/shop/eu/fr');
+    // The tests ran under /shop: a refused value stops Save, a plain path is kept.
+    await line.getByLabel('Tests’ path prefix').fill('/shop/*');
+    await settings.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(settings.locator('#status')).toContainText('/shop/* is not a path prefix');
+    await line.getByLabel('Tests’ path prefix').fill('shop');
     await settings.getByRole('button', { name: 'Save', exact: true }).click();
     await expect(settings.locator('#status')).toContainText('Saved');
     expect(await storedConnection(settings)).toMatchObject({
       projectMappings: [
-        expect.objectContaining({ urlPattern: 'https://preview.shop.example/**', pathPrefix: '/shop/eu/fr' }),
+        expect.objectContaining({
+          urlPattern: 'https://preview.shop.example/**',
+          pathPrefix: '/shop/eu/fr',
+          testPathPrefix: '/shop',
+        }),
       ],
     });
   });

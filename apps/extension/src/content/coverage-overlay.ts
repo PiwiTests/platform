@@ -419,7 +419,7 @@ function startCoverageOverlay(): void {
     }
     if (state.scope && !state.scope.isConnected) state.scope = null;
     // This page: only the uses made here, or whose page is unknown (runs without the capture fixtures).
-    const { key, prefixRemoved } = pageHere(location.href, project);
+    const { key, prefixRemoved, prefixAdded } = pageHere(location.href, project);
     const pagePosition = key && index.pages ? index.pages.indexOf(key) : -1;
     const hasPages = (index.pages?.length ?? 0) > 0;
     const pageScoped = hasPages && state.pageScope === 'page';
@@ -442,6 +442,7 @@ function startCoverageOverlay(): void {
       brittleElements: new Set(brittle.flatMap((row) => row.elements)),
       pageKey: key,
       prefixRemoved,
+      prefixAdded,
       pagePosition,
       hasPages,
       pageScoped,
@@ -575,6 +576,7 @@ function startCoverageOverlay(): void {
         })) ?? [],
       page: context?.pageKey ?? null,
       prefixRemoved: context?.prefixRemoved ?? null,
+      prefixAdded: context?.prefixAdded ?? null,
       pageScoped: context?.pageScoped ?? false,
       missing:
         context?.missing.map((row) => ({

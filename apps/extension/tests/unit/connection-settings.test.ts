@@ -148,6 +148,22 @@ describe('connection settings', () => {
     expect(refused).not.toHaveProperty('pathPrefix');
   });
 
+  it('keeps a mapping tests’ path prefix, normalized, and drops a refused one', async () => {
+    await setConnectionSettings(
+      conn({
+        instanceUrl: 'https://piwi.example.com',
+        apiKey: '',
+        projectMappings: [
+          { ...shopMapping, testPathPrefix: 'shop/' },
+          { ...shopMapping, urlPattern: 'https://b.test/**', testPathPrefix: '/shop/*' },
+        ],
+      }),
+    );
+    const [kept, refused] = (await getConnectionSettings()).projectMappings;
+    expect(kept!.testPathPrefix).toBe('/shop');
+    expect(refused).not.toHaveProperty('testPathPrefix');
+  });
+
   it('defaults a missing projectLabel to #<id>', async () => {
     (globalThis as any).chrome.storage.local.set({
       piwiConnection: {
@@ -173,6 +189,7 @@ describe("the instance's patterns", () => {
         environment: 'staging',
         branch: 'develop',
         pathPrefix: '/app',
+        testPathPrefix: '/v2',
       },
       {
         projectId: 2,
@@ -200,6 +217,7 @@ describe("the instance's patterns", () => {
         projectLabel: 'Shop',
         branch: 'develop',
         pathPrefix: '/app',
+        testPathPrefix: '/v2',
         environment: 'staging',
       },
       { urlPattern: 'https://admin.test/**', projectId: 2, projectLabel: 'Admin' },

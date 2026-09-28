@@ -6,6 +6,7 @@ import type { CheckedLocator } from './verified-locators.js';
 import { getConnectionSettings, isConnected } from '../shared/connection-settings.js';
 import { getActiveProjectOverride, resolveActiveProject } from '../shared/active-project.js';
 import { pageHere } from '../shared/page-here.js';
+import type { PathPrefixes } from '@piwitests/core/page-key';
 import { ensureSessionAccess } from '../shared/session-access.js';
 import { getCachedLocatorIndex } from '../shared/locator-index-cache.js';
 import { getLocatorBranchOverride, resolveLocatorBranch } from '../shared/locator-branch.js';
@@ -293,7 +294,7 @@ async function fillPiwiSection(
   let projectId: number;
   let projectLabel: string;
   let branch: string | null;
-  let pathPrefix: string | null;
+  let prefixes: PathPrefixes;
   try {
     await ensureSessionAccess();
     settings = await getConnectionSettings();
@@ -303,7 +304,7 @@ async function fillPiwiSection(
     if (!project) return;
     projectId = project.projectId;
     projectLabel = project.projectLabel;
-    pathPrefix = project.pathPrefix ?? null;
+    prefixes = { pathPrefix: project.pathPrefix, testPathPrefix: project.testPathPrefix };
     branch = resolveLocatorBranch(project, await getLocatorBranchOverride(projectId).catch(() => undefined));
   } catch {
     return;
@@ -364,7 +365,7 @@ async function fillPiwiSection(
   });
   if (!fullScan || closed()) return;
   // As Tested elements counts by default: what tests do on this page, and uses whose page no run recorded.
-  const { key } = pageHere(location.href, { pathPrefix });
+  const { key } = pageHere(location.href, prefixes);
   const position = key && index.pages ? index.pages.indexOf(key) : -1;
   const keep = (_entry: number, use: Parameters<typeof usePlace>[0]) =>
     !index!.pages?.length || usePlace(use, position) !== 'elsewhere';

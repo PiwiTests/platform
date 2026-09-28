@@ -252,6 +252,7 @@ export interface CoverageStubOptions {
       projectLabel: string;
       branch?: string;
       pathPrefix?: string;
+      testPathPrefix?: string;
     }>;
   } | null;
   /** The index already cached for project 1, if any. */
@@ -378,6 +379,7 @@ export interface BridgedCoverage {
   /** The key of the page open, and whether the view counts only what tests do on it. */
   page: string | null;
   prefixRemoved: string | null;
+  prefixAdded: string | null;
   pageScoped: boolean;
   missing: Array<{ locator: string; arrival: boolean; actions: string[]; tests: string[] }>;
   several: Array<{ locator: string; count: number; actions: string[]; tests: string[] }>;

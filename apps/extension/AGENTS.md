@@ -188,7 +188,8 @@ panel's choice for the session, else the URL mapping's `branch`, else the defaul
 cache keeps one entry per project and branch.
 The open page is compared with the index's page keys only through `pageHere` (`src/shared/page-here.ts`): it removes
 the URL mapping's `pathPrefix` (`/app` for a site serving `/app/checkout` whose tests ran at `/checkout`), whole
-segments only, before `pageKey`. Never call `pageKey(location.href)` to compare with the index or to key a bug report.
+segments only, then puts its `testPathPrefix` in front (`/app` for tests that ran `/app/checkout` where the site serves
+`/checkout`), before `pageKey`. Never call `pageKey(location.href)` to compare with the index or to key a bug report.
 
 The chains are evaluated by an in-page reimplementation of Playwright's selector engines:
 

@@ -30,6 +30,11 @@ export interface ProjectMapping {
    * `parsePathPrefix`; absent when the site serves the pages where the tests ran them.
    */
   pathPrefix?: string;
+  /**
+   * The reverse: the part of the path the tests ran the pages under and the site
+   * does not (`/app` when the tests ran `/app/checkout` for the site's `/checkout`).
+   */
+  testPathPrefix?: string;
 }
 
 /** A project URL pattern kept on the instance, as the last sync read it. */
@@ -78,12 +83,14 @@ function coerceMapping(value: unknown): ProjectMapping | null {
   if (typeof v.projectId !== 'number') return null;
   const branch = typeof v.branch === 'string' ? v.branch.trim() : '';
   const pathPrefix = typeof v.pathPrefix === 'string' ? normalizePathPrefix(v.pathPrefix) : null;
+  const testPathPrefix = typeof v.testPathPrefix === 'string' ? normalizePathPrefix(v.testPathPrefix) : null;
   return {
     urlPattern: v.urlPattern,
     projectId: v.projectId,
     projectLabel: typeof v.projectLabel === 'string' ? v.projectLabel : `#${v.projectId}`,
     ...(branch ? { branch } : {}),
     ...(pathPrefix ? { pathPrefix } : {}),
+    ...(testPathPrefix ? { testPathPrefix } : {}),
   };
 }
 
@@ -139,6 +146,7 @@ export interface ServerPatternsAnswer {
     branch: string | null;
     /** Absent from an instance older than the path prefix. */
     pathPrefix?: string | null;
+    testPathPrefix?: string | null;
   }>;
   projects: ServerProject[];
 }
@@ -158,6 +166,7 @@ export function applyServerSync(
         projectLabel: item.projectLabel,
         branch: item.branch ?? undefined,
         pathPrefix: item.pathPrefix ?? undefined,
+        testPathPrefix: item.testPathPrefix ?? undefined,
         environment: item.environment ?? undefined,
       })),
       coerceServerMapping,

@@ -598,6 +598,15 @@
       }
     }
   },
+  "options_testPathPrefix": {
+    "message": "Pfadpräfix der Tests"
+  },
+  "options_testPathPrefixPlaceholder": {
+    "message": "kein Präfix der Tests"
+  },
+  "options_testPathPrefixTitle": {
+    "message": "Die Tests haben die Seiten unter diesem Pfad aufgerufen, Ihre Website nicht, z. B. /app"
+  },
   "options_removeMapping": {
     "message": "Diese Zeile entfernen"
   },
@@ -886,6 +895,15 @@
   },
   "options_serverPathPrefix": {
     "message": "Pfadpräfix $prefix$",
+    "placeholders": {
+      "prefix": {
+        "content": "$1",
+        "example": "/app"
+      }
+    }
+  },
+  "options_serverTestPathPrefix": {
+    "message": "Pfadpräfix der Tests $prefix$",
     "placeholders": {
       "prefix": {
         "content": "$1",
@@ -3252,6 +3270,36 @@
       }
     }
   },
+  "coverage_subtitleWithPrefix": {
+    "message": "$page$ (mit $prefix$ davor)",
+    "placeholders": {
+      "page": {
+        "content": "$1",
+        "example": "/app/checkout"
+      },
+      "prefix": {
+        "content": "$2",
+        "example": "/app"
+      }
+    }
+  },
+  "coverage_subtitleSwappedPrefix": {
+    "message": "$page$ ($removed$ ersetzt durch $added$)",
+    "placeholders": {
+      "added": {
+        "content": "$1",
+        "example": "/v2"
+      },
+      "page": {
+        "content": "$2",
+        "example": "/v2/checkout"
+      },
+      "removed": {
+        "content": "$3",
+        "example": "/app"
+      }
+    }
+  },
   "coverage_tileTested": {
     "message": "getestet"
   },
@@ -3832,6 +3880,15 @@
   },
   "coverage_notesPrefixRemoved": {
     "message": "Das Pfadpräfix $prefix$ des Adressmusters dieser Website wurde zuerst aus der Adresse entfernt: Die Tests haben diese Seite ohne es aufgerufen.",
+    "placeholders": {
+      "prefix": {
+        "content": "$1",
+        "example": "/app"
+      }
+    }
+  },
+  "coverage_notesPrefixAdded": {
+    "message": "Das Pfadpräfix der Tests $prefix$ des Adressmusters dieser Website wurde zuerst vor die Adresse gesetzt: Die Tests haben diese Seite darunter aufgerufen.",
     "placeholders": {
       "prefix": {
         "content": "$1",

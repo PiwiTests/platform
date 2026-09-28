@@ -105,6 +105,16 @@ async function copyText(text: string, button: HTMLButtonElement): Promise<void> 
   setTimeout(() => (button.textContent = original), 1200);
 }
 
+/** The page in the subtitle, saying which of the URL mapping's path prefixes were removed or added to key it. */
+function subtitlePage(context: CoverageContext): string | null {
+  const { pageKey: page, prefixRemoved: removed, prefixAdded: added } = context;
+  if (!page) return null;
+  if (removed && added) return t('coverage_subtitleSwappedPrefix', { page, removed, added });
+  if (removed) return t('coverage_subtitleWithoutPrefix', { page, prefix: removed });
+  if (added) return t('coverage_subtitleWithPrefix', { page, prefix: added });
+  return page;
+}
+
 export class CoveragePanel {
   private readonly panel: HTMLElement;
   private readonly pill: HTMLButtonElement;
@@ -216,10 +226,7 @@ export class CoveragePanel {
     this.pill.style.display = state.collapsed ? '' : 'none';
     for (const [key, input] of this.toggles) input.checked = state[key as keyof ViewState] === true;
 
-    const page =
-      model.context?.pageKey && model.context.prefixRemoved
-        ? t('coverage_subtitleWithoutPrefix', { page: model.context.pageKey, prefix: model.context.prefixRemoved })
-        : model.context?.pageKey;
+    const page = model.context ? subtitlePage(model.context) : null;
     const where = [model.projectLabel, page].filter(Boolean).join(' · ');
     this.subEl.replaceChildren(where ? `${where} · ${t('common_escToClose')}` : t('common_escToClose'));
     this.renderPill(model);
@@ -918,6 +925,9 @@ export class CoveragePanel {
     );
     if (context.prefixRemoved) {
       items.push(el('li', undefined, t('coverage_notesPrefixRemoved', { prefix: context.prefixRemoved })));
+    }
+    if (context.prefixAdded) {
+      items.push(el('li', undefined, t('coverage_notesPrefixAdded', { prefix: context.prefixAdded })));
     }
     if (scan.errors.length) {
       const errorItem = el('li', undefined, tn('coverage_notesErrors', scan.errors.length));
