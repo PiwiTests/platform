@@ -124,23 +124,27 @@ async function openSaveLogin(): Promise<void> {
 }
 
 async function start(): Promise<void> {
-  await initI18n();
+  const texts = initI18n();
+  // Wired before the texts load: a tab clicked meanwhile opens once they have,
+  // after the Record tab the start opens.
+  for (const button of tabButtons) {
+    const open = (tab: HTMLButtonElement) => void texts.then(() => select(tab.dataset.tab as TabId));
+    button.addEventListener('click', () => open(button));
+    button.addEventListener('keydown', (event) => {
+      if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
+      const index = tabButtons.indexOf(button);
+      const next = tabButtons[(index + (event.key === 'ArrowRight' ? 1 : tabButtons.length - 1)) % tabButtons.length]!;
+      next.focus();
+      open(next);
+    });
+  }
+  await texts;
   document.documentElement.lang = uiLanguage();
   localizeDocument();
   const style = document.createElement('style');
   style.textContent = LOCATOR_SYNTAX_CSS;
   document.head.appendChild(style);
 
-  for (const button of tabButtons) {
-    button.addEventListener('click', () => select(button.dataset.tab as TabId));
-    button.addEventListener('keydown', (event) => {
-      if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
-      const index = tabButtons.indexOf(button);
-      const next = tabButtons[(index + (event.key === 'ArrowRight' ? 1 : tabButtons.length - 1)) % tabButtons.length]!;
-      next.focus();
-      select(next.dataset.tab as TabId);
-    });
-  }
   document.getElementById('playwright-view')!.addEventListener('click', () => void togglePlaywrightView());
   document.getElementById('save-login')!.addEventListener('click', () => void openSaveLogin());
   chrome.storage.onChanged.addListener((changes, area) => {
