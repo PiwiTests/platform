@@ -15,12 +15,15 @@
 export type StepAction =
   | 'goto'
   | 'click'
+  | 'dblclick'
   | 'hover'
   | 'fill'
   | 'check'
   | 'uncheck'
   | 'selectOption'
   | 'press'
+  | 'setInputFiles'
+  | 'dragTo'
   | 'assertVisible'
   | 'assert';
 
@@ -102,7 +105,11 @@ export interface RecordedTarget {
 export interface RecordedStep {
   action: StepAction;
   target: RecordedTarget | null;
-  /** `fill`/`selectOption` value, or the key name for `press`. Never set for a password-type field — see `redacted`. */
+  /**
+   * `fill`/`selectOption` value, the key name for `press`, or the names of the
+   * files chosen for `setInputFiles`, one per line (never their content). Never
+   * set for a password-type field — see `redacted`.
+   */
   value: string | null;
   /** True when `value` was stripped because the source field was `type="password"` — codegen emits a placeholder instead. */
   redacted: boolean;
@@ -110,6 +117,8 @@ export interface RecordedStep {
   timestamp: number;
   /** Set on `assert` steps only. */
   assertion?: StepAssertion;
+  /** Where a `dragTo` step drops what it drags; set on `dragTo` steps only. */
+  dropTarget?: RecordedTarget | null;
 }
 
 export interface RecordedSession {
@@ -121,10 +130,10 @@ export interface RecordedSession {
 
 /** A raw capture event, as built by the extension's DOM listeners — one per meaningful browser event, before coalescing. */
 export interface RawCaptureEvent {
-  kind: 'click' | 'hover' | 'input' | 'change' | 'keydown' | 'navigate' | 'assert';
+  kind: 'click' | 'dblclick' | 'hover' | 'input' | 'change' | 'files' | 'drop' | 'keydown' | 'navigate' | 'assert';
   /** The element acted on or asserted about; null for a navigation and for a `toHaveURL` assertion. */
   target: RecordedTarget | null;
-  /** Current field value (input/change), the key pressed (keydown), or the new URL (navigate). */
+  /** Current field value (input/change), the key pressed (keydown), the new URL (navigate), or the chosen files' names, one per line (files). */
   value: string | null;
   checked: boolean | null;
   inputType: string | null;
@@ -133,6 +142,8 @@ export interface RawCaptureEvent {
   timestamp: number;
   /** What an `assert` event states: an expected value or state, added by hand during a recording. */
   assertion?: StepAssertion;
+  /** Where a `drop` event's element was dropped; its `target` is the element dragged. */
+  dropTarget?: RecordedTarget | null;
 }
 
 /**
@@ -198,7 +209,10 @@ export function isRecordedKey(key: string | null | undefined): key is string {
  *    synthetic click on the same element right after it is dropped rather than
  *    recorded a second time; `Escape`, the arrow keys (`RECORDED_KEYS`) and
  *    the page's shortcuts (`isRecordedKey`) become presses too;
- *  - a plain `click` becomes a `click` step;
+ *  - a plain `click` becomes a `click` step, and a `dblclick` replaces the
+ *    two clicks on the same element the browser sent before it;
+ *  - `files` (a file field's choice, names only) becomes `setInputFiles`, and
+ *    `drop` (an HTML drag and drop) becomes `dragTo`;
  *  - a `hover` event becomes a `hover` step: the recorder sends one only for
  *    the element whose hover revealed what the next click lands on; a second
  *    hover on the same element right after the first is dropped;
@@ -342,6 +356,52 @@ export function normalizeSteps(events: RawCaptureEvent[]): RecordedStep[] {
       continue;
     }
 
+    if (ev.kind === 'dblclick') {
+      flushPendingFill();
+      for (let i = 0; i < 2; i++) {
+        const prev = steps[steps.length - 1];
+        if (prev?.action === 'click' && sameTarget(prev.target, ev.target)) steps.pop();
+      }
+      steps.push({
+        action: 'dblclick',
+        target: ev.target,
+        value: null,
+        redacted: false,
+        pageUrl: ev.pageUrl,
+        timestamp: ev.timestamp,
+      });
+      continue;
+    }
+
+    if (ev.kind === 'files') {
+      flushPendingFill();
+      if (!ev.target) continue;
+      steps.push({
+        action: 'setInputFiles',
+        target: ev.target,
+        value: ev.value ?? '',
+        redacted: false,
+        pageUrl: ev.pageUrl,
+        timestamp: ev.timestamp,
+      });
+      continue;
+    }
+
+    if (ev.kind === 'drop') {
+      flushPendingFill();
+      if (!ev.target || !ev.dropTarget) continue;
+      steps.push({
+        action: 'dragTo',
+        target: ev.target,
+        value: null,
+        redacted: false,
+        pageUrl: ev.pageUrl,
+        timestamp: ev.timestamp,
+        dropTarget: ev.dropTarget,
+      });
+      continue;
+    }
+
     if (ev.kind === 'click') {
       flushPendingFill();
       // A checkbox/radio click that will also fire `change` is handled there; a plain click on anything else records here.
@@ -372,9 +432,11 @@ export function normalizeSteps(events: RawCaptureEvent[]): RecordedStep[] {
   }
 
   flushPendingFill();
-  return steps.map((s) =>
-    s.target ? { ...s, target: { ...s.target, text: s.target.text ? normalizeText(s.target.text) : null } } : s,
-  );
+  const withText = (t: RecordedTarget): RecordedTarget => ({ ...t, text: t.text ? normalizeText(t.text) : null });
+  return steps.map((s) => {
+    const step = s.target ? { ...s, target: withText(s.target) } : s;
+    return step.dropTarget ? { ...step, dropTarget: withText(step.dropTarget) } : step;
+  });
 }
 
 /** Builds a `RecordedSession` from a flat step list — `startUrl` is the first step's page, or the first `goto`'s value. */

@@ -135,6 +135,23 @@ describe('parseSteps', () => {
     expect(parseSteps(bare)).toEqual({ ok: false, errors: ['steps[4].target: is required on a hover step'] });
   });
 
+  test('reads a drag, which needs where it drops, and a file choice, which keeps the names', () => {
+    const doc = valid();
+    const drop = target({ role: 'region', accessibleName: 'Done', elementKey: 'e9' });
+    doc.steps.push({ ...doc.steps[2]!, action: 'dragTo', value: 'x', dropTarget: drop });
+    doc.steps.push({ ...doc.steps[2]!, action: 'setInputFiles', value: 'invoice.pdf' });
+    const result = parseSteps(JSON.stringify(doc));
+    expect(result.ok && result.steps.steps[4]).toMatchObject({
+      action: 'dragTo',
+      value: null,
+      dropTarget: { role: 'region', accessibleName: 'Done' },
+    });
+    expect(result.ok && result.steps.steps[5]).toMatchObject({ action: 'setInputFiles', value: 'invoice.pdf' });
+    const bare = valid();
+    bare.steps.push({ ...bare.steps[2]!, action: 'dragTo' });
+    expect(parseSteps(bare)).toEqual({ ok: false, errors: ['steps[4].dropTarget: is required on a dragTo step'] });
+  });
+
   test('never keeps a redacted value', () => {
     const doc = valid();
     doc.steps[1] = { ...doc.steps[1]!, redacted: true, value: 'hunter2' };

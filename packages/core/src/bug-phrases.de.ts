@@ -167,6 +167,14 @@ export const GERMAN_BUG_PHRASES: BugPhrases = {
     uncheck: (s) => capitalize(`${subject(s, 'accusative')} deaktivieren`),
     selectOption: (s, v) => capitalize(`${value(v)} ${inDative(s)} auswählen`),
     press: (name, s) => (s ? `${key(name)} ${inDative(s)} drücken` : `${key(name)} drücken`),
+    dblclick: (s) => capitalize(`auf ${subject(s, 'accusative')} doppelklicken`),
+    setInputFiles: (s, files) =>
+      files.length === 0
+        ? capitalize(`${subject(s, 'accusative')} leeren`)
+        : capitalize(
+            `${files.length === 1 ? 'die Datei' : 'die Dateien'} ${files.map(quote).join(', ')} ${inDative(s)} auswählen`,
+          ),
+    dragTo: (s, target) => capitalize(`${subject(s, 'accusative')} auf ${subject(target, 'accusative')} ziehen`),
   },
   expectation(s, e, negated) {
     const should = negated ? 'sollte nicht' : 'sollte';

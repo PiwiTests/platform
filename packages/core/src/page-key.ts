@@ -163,7 +163,7 @@ export interface PathPrefixes {
  * `url` as the tests would have run it: `pathPrefix` removed from the start of
  * its path (whole segments only), then `testPathPrefix` put in front. A path
  * outside a set `pathPrefix` keeps its address, since the mapping does not
- * cover it. The site's root under a tests' prefix `/app` becomes `/app/`.
+ * cover it. The site's root under a tests' prefix `/app` becomes `/app`.
  * `prefixRemoved` and `prefixAdded` name the prefixes that applied.
  */
 export function mapPathPrefixes(
@@ -188,7 +188,7 @@ export function mapPathPrefixes(
   } catch {
     return unchanged;
   }
-  parsed.pathname = `${tests}${parsed.pathname}`;
+  parsed.pathname = parsed.pathname === '/' ? tests : `${tests}${parsed.pathname}`;
   const rest = `${parsed.pathname}${parsed.search}${parsed.hash}`;
   return { url: absolute ? `${parsed.origin}${rest}` : rest, prefixRemoved: site, prefixAdded: tests };
 }

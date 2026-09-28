@@ -707,6 +707,21 @@ ol.steps .detail {
   color: var(--warn);
 }
 
+.conditions-strip .strip-note {
+  flex-basis: 100%;
+  color: var(--muted);
+}
+
+.page-conditions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+
+.page-conditions:empty {
+  display: none;
+}
+
 .requests-pane {
   grid-row: 2;
   display: flex;
@@ -717,6 +732,7 @@ ol.steps .detail {
 
 .pane-toolbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 8px;

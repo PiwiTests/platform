@@ -717,6 +717,20 @@ export interface BugHudHandlers {
   missing(): void;
   wrongPage(): void;
   finish(): void;
+  /** A screenshot now: offered while the debugging protocol takes them. */
+  screenshot(): void;
+}
+
+/** What the HUD says about the debugging session: expected while it runs, and why it stopped when it did. */
+function debuggingNote(evidence: StoredBugEvidence): string | null {
+  const debugging = evidence.debugging;
+  if (!debugging) return null;
+  if (debugging.state === 'on') return t('bug_debuggingOn');
+  if (debugging.reason === 'canceled') return t('bug_debuggingCanceled', { action: t('popup_takeScreenshot') });
+  if (debugging.reason === 'refused' || debugging.reason === 'lost') {
+    return t('bug_debuggingRefused', { action: t('popup_takeScreenshot') });
+  }
+  return null;
 }
 
 function evidenceSummary(evidence: StoredBugEvidence): string {
@@ -855,6 +869,8 @@ export function renderBugHud(
   button(t('bug_mark'), handlers.mark).title = t('bug_markHint');
   button(t('bug_missing'), handlers.missing).title = t('bug_missingHint');
   button(t('bug_wrongPage'), handlers.wrongPage).title = t('bug_wrongPageHint');
+  if (evidence.debugging?.state === 'on')
+    button(t('bug_screenshot'), handlers.screenshot).title = t('bug_screenshotHint');
   button(t('bug_finish'), handlers.finish, 'finish');
   bar.appendChild(buttons);
 
@@ -862,6 +878,14 @@ export function renderBugHud(
   summary.className = 'evidence';
   summary.textContent = evidenceSummary(evidence);
   bar.appendChild(summary);
+
+  const note = debuggingNote(evidence);
+  if (note) {
+    const line = document.createElement('div');
+    line.className = 'evidence';
+    line.textContent = note;
+    bar.appendChild(line);
+  }
 
   for (const text of [captureError, evidence.screenshotNote && screenshotNoteText(evidence.screenshotNote)]) {
     if (!text) continue;

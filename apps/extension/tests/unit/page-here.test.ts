@@ -33,6 +33,8 @@ describe('pageHere', () => {
       prefixRemoved: null,
       prefixAdded: '/shop',
     });
+    // The site's root is the tests' prefix itself, with no trailing slash.
+    expect(pageHere('http://localhost:4173/', { testPathPrefix: '/shop' }).key).toBe('/shop');
   });
 
   it('swaps the site’s prefix for the tests’, and maps nothing outside the site’s prefix', () => {

@@ -72,6 +72,11 @@ function everyTemplate(): RecordedStep[] {
       ),
     ),
     step('hover', { target: row }),
+    step('dblclick', { target: row }),
+    step('setInputFiles', { target: coupon, value: 'invoice.pdf' }),
+    step('setInputFiles', { target: coupon, value: 'a.png\nb.png' }),
+    step('setInputFiles', { target: coupon, value: '' }),
+    step('dragTo', { target: row, dropTarget: button }),
   ];
 }
 
@@ -143,6 +148,16 @@ describe('the phrasebooks', () => {
 describe('English', () => {
   test('writes a hover as a person does it by hand', () => {
     expect(describeStepInWords(step('hover', { target: row }))).toBe('Hover over table row "Invoice 42"');
+    expect(describeStepInWords(step('dblclick', { target: row }))).toBe('Double-click table row "Invoice 42"');
+    expect(describeStepInWords(step('setInputFiles', { target: coupon, value: 'C:\\fakepath\\a.png\nb.png' }))).toBe(
+      'Choose the files "a.png", "b.png" in text field "Coupon"',
+    );
+    expect(describeStepInWords(step('setInputFiles', { target: coupon, value: '' }))).toBe(
+      'Clear the files of text field "Coupon"',
+    );
+    expect(describeStepInWords(step('dragTo', { target: row, dropTarget: button }))).toBe(
+      'Drag table row "Invoice 42" onto button "Apply coupon"',
+    );
   });
 });
 
@@ -160,6 +175,13 @@ describe('French', () => {
       `Choisir ${q('France')} dans la liste déroulante ${q('Country')}`,
     );
     expect(words(step('check', { target: agree }))).toBe(`Cocher la case ${q('I agree')}`);
+    expect(words(step('dblclick', { target: row }))).toBe(`Double-cliquer sur la ligne de tableau ${q('Invoice 42')}`);
+    expect(words(step('setInputFiles', { target: coupon, value: 'facture.pdf' }))).toBe(
+      `Choisir le fichier ${q('facture.pdf')} dans le champ de texte ${q('Coupon')}`,
+    );
+    expect(words(step('dragTo', { target: row, dropTarget: button }))).toBe(
+      `Glisser la ligne de tableau ${q('Invoice 42')} sur le bouton ${q('Apply coupon')}`,
+    );
     expect(words(step('hover', { target: row }))).toBe(`Survoler la ligne de tableau ${q('Invoice 42')}`);
     expect(words(step('fill', { target: coupon, redacted: true }))).toBe(
       `Saisir un mot de passe (non enregistré) dans le champ de texte ${q('Coupon')}`,

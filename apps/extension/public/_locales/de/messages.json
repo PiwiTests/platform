@@ -228,6 +228,33 @@
   "popup_viewportOnly": {
     "message": "Nur der Viewport: kein Touch, keine Pixeldichte, kein User-Agent."
   },
+  "popup_viewportHere": {
+    "message": "In diesem Tab"
+  },
+  "popup_viewportHereOn": {
+    "message": "Dieser Tab zeigt seine Seite in $size$.",
+    "placeholders": {
+      "size": {
+        "content": "$1",
+        "example": "390×844"
+      }
+    }
+  },
+  "popup_viewportReset": {
+    "message": "Zurück zur Fenstergröße"
+  },
+  "popup_viewportHereUnavailable": {
+    "message": "Dieser Browser gibt Erweiterungen kein Debugging-Protokoll, um den Viewport des Tabs selbst festzulegen: Öffnen Sie stattdessen ein Fenster."
+  },
+  "popup_viewportHereRefused": {
+    "message": "Der Browser hat die Debugging-Sitzung abgelehnt: $error$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "Another debugger is already attached to the tab."
+      }
+    }
+  },
   "popup_viewportInvalid": {
     "message": "Öffnen Sie eine Webseite, mit Breite und Höhe zwischen $min$ und $max$ Pixeln.",
     "placeholders": {
@@ -1921,6 +1948,33 @@
   "bug_wrongPageHint": {
     "message": "Sagen Sie, auf welcher Seite Sie hätten landen sollen"
   },
+  "bug_screenshot": {
+    "message": "Screenshot"
+  },
+  "bug_screenshotHint": {
+    "message": "Einen Screenshot der Seite in ihrem jetzigen Zustand hinzufügen"
+  },
+  "bug_debuggingOn": {
+    "message": "Chrome zeigt eine Leiste, dass Piwi Picker diesen Browser debuggt: Das ist dieser Bericht, der die Konsole, fehlgeschlagene Anfragen und Screenshots liest. Nichts verlässt Ihren Computer, und die Leiste verschwindet, wenn Sie fertig sind."
+  },
+  "bug_debuggingCanceled": {
+    "message": "Die Debugging-Leiste wurde abgebrochen: Der Bericht liest Konsole und Anfragen ab jetzt aus der Seite, und für einen Screenshot wählen Sie „$action$“ in Piwi Picker.",
+    "placeholders": {
+      "action": {
+        "content": "$1",
+        "example": "Take a screenshot"
+      }
+    }
+  },
+  "bug_debuggingRefused": {
+    "message": "Chrome hat die Debugging-Sitzung abgelehnt (ein anderer Debugger auf diesem Tab oder eine Richtlinie): Der Bericht liest Konsole und Anfragen aus der Seite, und für einen Screenshot wählen Sie „$action$“ in Piwi Picker.",
+    "placeholders": {
+      "action": {
+        "content": "$1",
+        "example": "Take a screenshot"
+      }
+    }
+  },
   "bug_finish": {
     "message": "Abschließen"
   },
@@ -2709,6 +2763,101 @@
   },
   "replay_reasonActionFailed": {
     "message": "Die Seite hat auf die Aktion nicht so reagiert wie bei der Aufzeichnung."
+  },
+  "replay_reasonCovered": {
+    "message": "$other$ verdeckt $element$ an der Stelle, auf die der Zeiger träfe.",
+    "placeholders": {
+      "element": {
+        "content": "$1",
+        "example": "button \"Apply\""
+      },
+      "other": {
+        "content": "$2",
+        "example": "div \"Loading\""
+      }
+    }
+  },
+  "replay_reasonOffscreen": {
+    "message": "$element$ bleibt außerhalb des sichtbaren Teils der Seite.",
+    "placeholders": {
+      "element": {
+        "content": "$1",
+        "example": "button \"Apply\""
+      }
+    }
+  },
+  "replay_driverTrusted": {
+    "message": "Mit echten Eingaben abgespielt, wie Playwright sie sendet. Chrome zeigt eine Leiste, dass Piwi Picker diesen Browser debuggt: Das ist diese Wiedergabe, und die Leiste verschwindet an ihrem Ende."
+  },
+  "replay_driverEventsUnavailable": {
+    "message": "Mit den eigenen Ereignissen der Seite abgespielt: Dieser Browser gibt Erweiterungen kein Debugging-Protokoll, daher wirkt ein Hover oder ein Ziehen vielleicht nicht wie mit einer Maus."
+  },
+  "replay_driverEventsRefused": {
+    "message": "Mit den eigenen Ereignissen der Seite abgespielt: Der Browser hat die Debugging-Sitzung abgelehnt (ein anderer Debugger auf diesem Tab, eine Richtlinie oder eine vom Browser geschützte Seite)."
+  },
+  "replay_driverEventsCanceled": {
+    "message": "Ab dort mit den eigenen Ereignissen der Seite abgespielt: Die Debugging-Leiste wurde abgebrochen."
+  },
+  "replay_driverEventsLost": {
+    "message": "Ab dort mit den eigenen Ereignissen der Seite abgespielt: Die Debugging-Sitzung wurde beendet."
+  },
+  "replay_stepTrusted": {
+    "message": "echte Eingabe"
+  },
+  "replay_stepEvents": {
+    "message": "Seitenereignisse"
+  },
+  "replay_fileAsk_one": {
+    "message": "Schritt $step$ wählt $count$ Datei, $files$, die der Bericht nennt, aber nicht enthält. Wählen Sie sie auf diesem Computer aus, um fortzufahren, oder überspringen Sie den Schritt.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      },
+      "files": {
+        "content": "$2",
+        "example": "\"invoice.pdf\""
+      },
+      "step": {
+        "content": "$3",
+        "example": "3"
+      }
+    }
+  },
+  "replay_fileAsk_other": {
+    "message": "Schritt $step$ wählt $count$ Dateien, $files$, die der Bericht nennt, aber nicht enthält. Wählen Sie sie auf diesem Computer aus, um fortzufahren, oder überspringen Sie den Schritt.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      },
+      "files": {
+        "content": "$2",
+        "example": "\"invoice.pdf\""
+      },
+      "step": {
+        "content": "$3",
+        "example": "3"
+      }
+    }
+  },
+  "replay_fileChoose": {
+    "message": "Die Datei für diesen Schritt"
+  },
+  "replay_fileSkip": {
+    "message": "Diesen Schritt überspringen"
+  },
+  "replay_fileSkipped": {
+    "message": "Übersprungen: Es wurde keine Datei gewählt."
+  },
+  "replay_fileChosen": {
+    "message": "Hier gewählt: $files$",
+    "placeholders": {
+      "files": {
+        "content": "$1",
+        "example": "\"invoice.pdf\""
+      }
+    }
   },
   "replay_dialogTitle": {
     "message": "Bug-Report abspielen"
@@ -4595,6 +4744,9 @@
   "devtools_networkAllOrigins": {
     "message": "Auch andere Websites"
   },
+  "devtools_networkAllTypes": {
+    "message": "Alle Arten"
+  },
   "devtools_networkClear": {
     "message": "Leeren"
   },
@@ -4702,7 +4854,7 @@
     }
   },
   "devtools_conditionsOn_one": {
-    "message": "Piwi Picker: $count$ Bedingung für Anfragen aktiv",
+    "message": "Piwi Picker: $count$ Bedingung aktiv",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -4711,7 +4863,7 @@
     }
   },
   "devtools_conditionsOn_other": {
-    "message": "Piwi Picker: $count$ Bedingungen für Anfragen aktiv",
+    "message": "Piwi Picker: $count$ Bedingungen aktiv",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -4744,7 +4896,7 @@
     "message": "Diese Anfrage verlangsamen oder scheitern lassen"
   },
   "devtools_conditionsLimits": {
-    "message": "Bedingungen gelten für die fetch- und XHR-Aufrufe der Seiten dieses Tabs, bis Sie sie ausschalten oder den Tab schließen. Die CPU oder die ganze Seite zu drosseln und Dokumente, Skripte, Bilder oder Anfragen eines Service Workers zu verzögern, braucht die debugger-Berechtigung, die Piwi Picker nicht anfordert."
+    "message": "Bedingungen gelten für jede Anfrage der Seiten dieses Tabs, Dokumente, Skripte und Bilder eingeschlossen, bis Sie sie ausschalten oder den Tab schließen. Die eigenen Anfragen eines Service Workers laufen an ihnen vorbei."
   },
   "devtools_conditionRemove": {
     "message": "Entfernen"
@@ -4880,6 +5032,57 @@
   "devtools_conditionsLimitsTitle": {
     "message": "Was sich so nicht verlangsamen lässt"
   },
+  "devtools_conditionsLimitsPage": {
+    "message": "Bedingungen gelten für die fetch- und XHR-Aufrufe der Seiten dieses Tabs, bis Sie sie ausschalten oder den Tab schließen. Dokumente, Skripte, Bilder und die Anfragen eines Service Workers laufen an ihnen vorbei."
+  },
+  "devtools_conditionsDebugging": {
+    "message": "Über das Debugging-Protokoll von Chrome auf jede Anfrage dieses Tabs angewendet: Chrome zeigt seine Debugging-Leiste, bis Sie alle ausschalten."
+  },
+  "devtools_conditionsLostCanceled": {
+    "message": "Die Debugging-Leiste wurde abgebrochen: Die Drosselung ist aus, und die Bedingungen der Anfragen erreichen jetzt nur die fetch- und XHR-Aufrufe der Seite."
+  },
+  "devtools_conditionsLostEnded": {
+    "message": "Die Debugging-Sitzung wurde beendet: Die Drosselung ist aus, und die Bedingungen der Anfragen erreichen jetzt nur die fetch- und XHR-Aufrufe der Seite."
+  },
+  "devtools_throttleLabel": {
+    "message": "Netzwerk"
+  },
+  "devtools_cpuLabel": {
+    "message": "CPU"
+  },
+  "devtools_throttleNone": {
+    "message": "Keine Drosselung"
+  },
+  "devtools_throttleFast3g": {
+    "message": "Die ganze Seite mit schnellem 3G"
+  },
+  "devtools_throttleSlow3g": {
+    "message": "Die ganze Seite mit langsamem 3G"
+  },
+  "devtools_throttleOffline": {
+    "message": "Die ganze Seite offline"
+  },
+  "devtools_cpuSlower": {
+    "message": "Die CPU $rate$-mal langsamer",
+    "placeholders": {
+      "rate": {
+        "content": "$1",
+        "example": "4"
+      }
+    }
+  },
+  "devtools_emulationRefused": {
+    "message": "Der Browser hat die Debugging-Sitzung abgelehnt, die die Drosselung braucht: $error$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "Another debugger is already attached to the tab."
+      }
+    }
+  },
+  "devtools_emulationUnavailable": {
+    "message": "Die ganze Seite zu drosseln braucht das Debugging-Protokoll, das dieser Browser Erweiterungen nicht gibt."
+  },
   "devtools_copyAs": {
     "message": "Kopieren als"
   },
@@ -4988,6 +5191,15 @@
       "matcher": {
         "content": "$1",
         "example": "toHaveText"
+      }
+    }
+  },
+  "codegen_fileNeeded": {
+    "message": "Hier wurde eine Datei gewählt ($files$): Der Test liest sie aus dem Ordner, in dem Playwright läuft.",
+    "placeholders": {
+      "files": {
+        "content": "$1",
+        "example": "invoice.pdf"
       }
     }
   },

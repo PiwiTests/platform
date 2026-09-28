@@ -11,7 +11,7 @@
  * report for an issue or a chat message; `renderBugSpec` writes the failing
  * test with the converter.
  */
-import { renderSpec, type CodegenOptions, type CodegenResult } from './codegen';
+import { fileNames, renderSpec, type CodegenOptions, type CodegenResult } from './codegen';
 import { mappedPageKey, normalizePathPrefix, normalizeRoute } from './page-key';
 import type { RecordedStep, RecordedTarget, StepAssertion } from './recording';
 import { parseSteps, sessionFromSteps, type PiwiSteps } from './steps';
@@ -324,6 +324,12 @@ export function describeStepInWords(step: RecordedStep, phrases: BugPhrases = EN
       return phrases.steps.selectOption(target, value);
     case 'press':
       return phrases.steps.press(step.value ?? 'Enter', step.target ? target : null);
+    case 'dblclick':
+      return phrases.steps.dblclick(target);
+    case 'setInputFiles':
+      return phrases.steps.setInputFiles(target, fileNames(step.value));
+    case 'dragTo':
+      return phrases.steps.dragTo(target, subjectOf(step.dropTarget ?? null));
     case 'assertVisible':
     case 'assert':
       return phrases.capitalize(describeExpectation(step, phrases));

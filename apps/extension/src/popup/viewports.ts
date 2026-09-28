@@ -10,8 +10,12 @@ import { requestLocatorIndex } from '../shared/locator-index-refresh.js';
  * The popup's viewport row: open the tab's page in a new window at the
  * viewport of one of the project's Playwright projects, as the instance knows
  * them from its runs (the locator index's `viewports`), or at a size typed by
- * hand. The background worker sizes the window (`piwi-open-viewport`).
+ * hand. The background worker sizes the window (`piwi-open-viewport`). In
+ * Chrome and Edge, **In this tab** sets the tab's own viewport instead, through
+ * the debugging protocol (`piwi-set-tab-viewport`), until it is reset.
  */
+
+const TAB_VIEWPORT_KEY = 'piwiTabViewport';
 
 const CUSTOM = 'custom';
 
@@ -63,10 +67,52 @@ export async function setUpViewportRow(
   select.addEventListener('change', showCustom);
   showCustom();
 
+  const chosenSize = () => {
+    const chosen = select.value === CUSTOM ? null : viewports[Number(select.value)];
+    return chosen
+      ? { width: chosen.width, height: chosen.height }
+      : { width: Number(width.value), height: Number(height.value) };
+  };
+
+  const here = document.getElementById('viewport-here') as HTMLButtonElement;
+  const currentRow = document.getElementById('viewport-current') as HTMLElement;
+  const currentText = document.getElementById('viewport-current-text') as HTMLElement;
+  const reset = document.getElementById('viewport-reset') as HTMLButtonElement;
+  // Only where the browser gives extensions the debugging protocol.
+  here.hidden = typeof chrome.debugger?.attach !== 'function';
+  const showCurrent = async () => {
+    const page = await tab();
+    const values: Record<string, unknown> = await chrome.storage.session.get(TAB_VIEWPORT_KEY).catch(() => ({}));
+    const stored = values[TAB_VIEWPORT_KEY] as { tabId: number; width: number; height: number } | undefined;
+    currentRow.hidden = !page || stored?.tabId !== page.id;
+    if (stored && !currentRow.hidden) {
+      currentText.textContent = t('popup_viewportHereOn', {
+        size: `${formatNumber(stored.width)}×${formatNumber(stored.height)}`,
+      });
+    }
+  };
+  await showCurrent();
+  here.addEventListener('click', () => {
+    void (async () => {
+      const page = await tab();
+      const reply = (await chrome.runtime
+        .sendMessage({ type: 'piwi-set-tab-viewport', tabId: page?.id, ...chosenSize() })
+        .catch(() => null)) as { ok: boolean; error?: string } | null;
+      if (reply?.ok) await showCurrent();
+      else report(reply?.error ?? t('common_workerNoAnswer'));
+    })();
+  });
+  reset.addEventListener('click', () => {
+    void (async () => {
+      const page = await tab();
+      await chrome.runtime.sendMessage({ type: 'piwi-clear-tab-viewport', tabId: page?.id }).catch(() => null);
+      await showCurrent();
+    })();
+  });
+
   form.addEventListener('submit', (event) => {
     event.preventDefault();
-    const chosen = select.value === CUSTOM ? null : viewports[Number(select.value)];
-    const size = chosen ?? { width: Number(width.value), height: Number(height.value) };
+    const size = chosenSize();
     void (async () => {
       const page = await tab();
       const reply = (await chrome.runtime

@@ -443,13 +443,15 @@ test.describe('Report a bug', () => {
     expect(await clippedInShadows(page)).toEqual([]);
   });
 
-  test('in the real extension: the main-world script is registered for the recording, relays across worlds, and no screenshot is taken without activeTab', async () => {
+  test('in the real extension without the debugging protocol: the main-world script is registered for the recording, relays across worlds, and no screenshot is taken without activeTab', async () => {
     // A copy of the build whose manifest grants the shop's origin: what the
     // popup's per-origin request grants, which a test cannot click through.
+    // Without `debugger`, as in Firefox: the evidence comes from the page.
     const dir = mkdtempSync(path.join(tmpdir(), 'piwi-picker-bug-'));
     cpSync(DIST, dir, { recursive: true });
     const manifest = JSON.parse(readFileSync(path.join(dir, 'manifest.json'), 'utf8'));
     manifest.host_permissions = [`${SHOP_ORIGIN}/*`];
+    manifest.permissions = manifest.permissions.filter((p: string) => p !== 'debugger');
     writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify(manifest));
 
     const context = await launchWithExtension(dir);

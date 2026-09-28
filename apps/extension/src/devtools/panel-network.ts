@@ -1,11 +1,13 @@
 import { formatNumber, t, tn } from '../shared/i18n.js';
 import { mockCode, type MockKind, type MockSource, mockUrlPattern } from '../shared/mock-code.js';
 import { copyText, inspectedOrigin } from './inspected.js';
-import { conditionActions, renderConditions } from './panel-conditions.js';
+import { conditionActions, pageConditions, renderConditions } from './panel-conditions.js';
 import { button, el, emptyState, flash } from './ui.js';
 
 /**
- * The Network tab: the page's `fetch` and XHR requests, read from
+ * The Network tab: the page's `fetch` and XHR requests (and, with **Every
+ * kind**, its documents, scripts, images and the rest, which a condition can
+ * slow down or fail through the debugging protocol), read from
  * `chrome.devtools.network` while DevTools is open, and Mock this response,
  * which writes a request as `page.route(...)` code. Nothing read here leaves
  * the browser but what the user copies or downloads.
@@ -21,6 +23,8 @@ export interface NetworkEntry {
   time: number;
   /** The response body, as DevTools kept it. */
   body(): Promise<{ text: string | null; base64: boolean }>;
+  /** A `fetch` or XHR call, rather than a document, a script, an image… */
+  api: boolean;
 }
 
 /** How many requests the tab keeps, the oldest dropped first. */
@@ -53,6 +57,7 @@ function toEntry(har: HarEntry): NetworkEntry {
     status: har.response.status,
     mimeType: har.response.content?.mimeType ?? '',
     time: Math.round(har.time ?? 0),
+    api: isApiCall(har),
     body: () =>
       new Promise((resolve) => {
         if (typeof har.getContent === 'function') {
@@ -68,7 +73,6 @@ function toEntry(har: HarEntry): NetworkEntry {
 }
 
 function add(har: HarEntry): void {
-  if (!isApiCall(har)) return;
   entries.push(toEntry(har));
   if (entries.length > MAX_ENTRIES) entries.splice(0, entries.length - MAX_ENTRIES);
   for (const listener of listeners) listener();
@@ -106,13 +110,22 @@ function originOf(url: string): string | null {
 
 interface NetworkView {
   allOrigins: boolean;
+  /** Every kind of request, not only `fetch` and XHR. */
+  allTypes: boolean;
   selected: number | null;
   kind: MockKind;
   reveal: boolean;
   pattern: string | null;
 }
 
-const view: NetworkView = { allOrigins: false, selected: null, kind: 'response', reveal: false, pattern: null };
+const view: NetworkView = {
+  allOrigins: false,
+  allTypes: false,
+  selected: null,
+  kind: 'response',
+  reveal: false,
+  pattern: null,
+};
 
 function download(content: string, filename: string, base64: boolean): void {
   const bytes = base64 ? Uint8Array.from(atob(content), (c) => c.charCodeAt(0)) : content;
@@ -238,7 +251,9 @@ let dom: NetworkDom | null = null;
 export function refreshNetworkList(): void {
   if (!dom) return;
   const { list, origin } = dom;
-  const shown = entries.filter((entry) => view.allOrigins || !origin || originOf(entry.url) === origin);
+  const shown = entries.filter(
+    (entry) => (entry.api || view.allTypes) && (view.allOrigins || !origin || originOf(entry.url) === origin),
+  );
   if (shown.length === 0) {
     list.replaceChildren(el('li', 'note', t('devtools_networkEmpty')));
     return;
@@ -305,7 +320,29 @@ export async function renderNetworkTab(container: HTMLElement): Promise<void> {
     void showSelected();
   });
   const toolbar = el('div', 'pane-toolbar');
-  toolbar.append(allLabel, clear);
+  const pageStatus = el('span', 'warn-text');
+  pageStatus.setAttribute('role', 'status');
+  // Documents, scripts and images: only where the debugging protocol can slow them down or fail them.
+  const typesLabel = el('label', 'check');
+  if (typeof chrome.debugger?.attach === 'function') {
+    const types = el('input');
+    types.type = 'checkbox';
+    types.checked = view.allTypes;
+    types.addEventListener('change', () => {
+      view.allTypes = types.checked;
+      refreshNetworkList();
+    });
+    typesLabel.append(types, t('devtools_networkAllTypes'));
+  }
+  toolbar.append(
+    allLabel,
+    typesLabel,
+    clear,
+    await pageConditions(origin, (text) => {
+      pageStatus.textContent = text;
+    }),
+    pageStatus,
+  );
   const head = el('div', 'request-head');
   head.setAttribute('aria-hidden', 'true');
   head.append(

@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { buildSession, normalizeSteps, type RawCaptureEvent } from '@piwitests/core/recording';
 import { toStepsDocument, type PiwiSteps } from '@piwitests/core/steps';
 import { renderSpec, stepLocator } from '@piwitests/core/codegen';
-import type { Scenario } from './scenarios.js';
+import { labFile, type Scenario } from './scenarios.js';
 
 /**
  * The replay lab's moving parts: the real extension, loaded from a copy of
@@ -114,6 +114,8 @@ export interface Replay {
   reason: string | null;
   endUrl: string | null;
   seconds: number;
+  /** How the replay acted: `cdp` (trusted input) or `synthetic` (the page's own events), with why. */
+  driver: { driver: string; reason: string | null } | null;
 }
 
 /** Replays `doc` with the extension in a fresh browser, from `start`. */
@@ -132,11 +134,23 @@ export async function replay(scenario: Scenario, doc: PiwiSteps): Promise<Replay
     // The replay script is registered for the origin: a load starts it.
     await page.reload();
     const deadline = Date.now() + 30_000 + doc.steps.length * 15_000;
-    type Stored = { status: string; results: Replay['results'] } | null;
+    type Stored = { status: string; position: number; results: Replay['results']; driver?: Replay['driver'] } | null;
     let state: Stored = null;
+    const answered = new Set<number>();
     while (Date.now() < deadline) {
       state = (await ctl.evaluate(async () => (await chrome.storage.session.get('piwiReplay')).piwiReplay)) as Stored;
       if (state && state.status !== 'running' && state.status !== 'paused') break;
+      // A file step asks for the file the report names: chosen in the replay's panel, as the developer would.
+      const step = state ? doc.steps[state.position] : undefined;
+      if (state && step?.action === 'setInputFiles' && !answered.has(state.position)) {
+        const tab = ctx
+          .pages()
+          .filter((p) => p.url().startsWith(LAB.origin))
+          .pop();
+        if (tab && (await chooseInReplayPanel(tab, (step.value ?? '').split('\n').map(labFile)))) {
+          answered.add(state.position);
+        }
+      }
       await new Promise((resolve) => setTimeout(resolve, 500));
     }
     const last = ctx
@@ -154,9 +168,37 @@ export async function replay(scenario: Scenario, doc: PiwiSteps): Promise<Replay
       reason: at >= 0 ? results[at]!.detail : null,
       endUrl: last?.url() ?? null,
       seconds: Math.round((Date.now() - began) / 1000),
+      driver: state?.driver ?? null,
     };
   } finally {
     await ctx.close();
+  }
+}
+
+type DomNode = { backendNodeId: number; attributes?: string[]; children?: DomNode[]; shadowRoots?: DomNode[] };
+
+/** Sets `files` on the replay panel's file field, inside its closed shadow root; false while it is not there yet. */
+async function chooseInReplayPanel(page: Page, files: string[]): Promise<boolean> {
+  const cdp = await page.context().newCDPSession(page);
+  try {
+    const { root } = (await cdp.send('DOM.getDocument', { depth: -1, pierce: true })) as { root: DomNode };
+    const find = (node: DomNode): number | null => {
+      const attrs = node.attributes ?? [];
+      for (let i = 0; i < attrs.length; i += 2) if (attrs[i] === 'data-piwi-replay-file') return node.backendNodeId;
+      for (const child of [...(node.children ?? []), ...(node.shadowRoots ?? [])]) {
+        const found = find(child);
+        if (found) return found;
+      }
+      return null;
+    };
+    const backendNodeId = find(root);
+    if (!backendNodeId) return false;
+    await cdp.send('DOM.setFileInputFiles', { files, backendNodeId });
+    return true;
+  } catch {
+    return false;
+  } finally {
+    await cdp.detach().catch(() => undefined);
   }
 }
 
@@ -183,11 +225,12 @@ export function stepsOf(scenario: Scenario, recording: Recording): { doc: PiwiSt
     return `${i}. ${step.action} ${locator}${value}`.trim();
   });
   // The first load waits as a person would: the app ignores input until it has
-  // hydrated, which says nothing about the recorded locators.
-  const spec = renderSpec(session, { title: scenario.name, locators: 'stable', urlChecks: true }).code.replace(
-    /(await page\.goto\([^;]*\);)/,
-    `$1\n  await page.waitForTimeout(${LAB.settleMs});`,
-  );
+  // hydrated, which says nothing about the recorded locators. A file step reads
+  // the file from the lab's `out/files/`, where the developer running the spec
+  // would have put it.
+  const spec = renderSpec(session, { title: scenario.name, locators: 'stable', urlChecks: true })
+    .code.replace(/(await page\.goto\([^;]*\);)/, `$1\n  await page.waitForTimeout(${LAB.settleMs});`)
+    .replace(/\.setInputFiles\('([^']+)'\)/g, (_, name: string) => `.setInputFiles(${JSON.stringify(labFile(name))})`);
   writeFileSync(path.join(LAB.out, 'specs', `${scenario.name}.spec.ts`), spec);
   writeFileSync(path.join(LAB.out, 'results', `${scenario.name}.steps.json`), JSON.stringify(doc, null, 2));
   return { doc, lines };

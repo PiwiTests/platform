@@ -49,12 +49,15 @@ export interface PiwiSteps {
 const ACTIONS: ReadonlySet<StepAction> = new Set([
   'goto',
   'click',
+  'dblclick',
   'hover',
   'fill',
   'check',
   'uncheck',
   'selectOption',
   'press',
+  'setInputFiles',
+  'dragTo',
   'assertVisible',
   'assert',
 ]);
@@ -97,6 +100,7 @@ export function toStepsDocument(
     steps: session.steps.map((step) => ({
       ...step,
       target: step.target ? withoutElementKey(step.target) : null,
+      ...(step.dropTarget ? { dropTarget: withoutElementKey(step.dropTarget) } : {}),
       pageUrl: toPath(step.pageUrl, origin),
       value: step.action === 'goto' && step.value ? toPath(step.value, origin) : step.value,
     })),
@@ -232,9 +236,16 @@ function checkStep(c: Checker, v: unknown, path: string): RecordedStep | null {
     timestamp: v.timestamp == null ? 0 : c.number(v.timestamp, `${path}.timestamp`),
   };
   if (step.redacted) step.value = null;
-  if (action === 'hover') {
+  if (action === 'hover' || action === 'dblclick') {
     step.value = null;
-    if (!step.target) c.fail(`${path}.target`, 'is required on a hover step');
+    if (!step.target) c.fail(`${path}.target`, `is required on a ${action} step`);
+  }
+  if (action === 'setInputFiles' && !step.target) c.fail(`${path}.target`, 'is required on a setInputFiles step');
+  if (action === 'dragTo') {
+    step.value = null;
+    if (!step.target) c.fail(`${path}.target`, 'is required on a dragTo step');
+    step.dropTarget = checkTarget(c, v.dropTarget, `${path}.dropTarget`);
+    if (!step.dropTarget) c.fail(`${path}.dropTarget`, 'is required on a dragTo step');
   }
   if (action === 'assertVisible') {
     step.assertion = { matcher: 'toBeVisible', expected: null, actual: null, negated: false, note: null };

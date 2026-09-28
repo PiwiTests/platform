@@ -1,10 +1,14 @@
-import { conditionText } from '../shared/condition-words.js';
+import { conditionText, cpuText, throttleText } from '../shared/condition-words.js';
 import { t } from '../shared/i18n.js';
 import {
   CONDITIONS_KEY,
+  CPU_RATES,
   MAX_DELAY_MS,
+  NETWORK_THROTTLES,
+  isThrottle,
   type ConditionKind,
   type ConditionsState,
+  type NetworkThrottle,
   type RequestCondition,
 } from '../shared/request-conditions.js';
 import { mockUrlPattern } from '../shared/mock-code.js';
@@ -15,24 +19,112 @@ import type { NetworkEntry } from './panel-network.js';
 
 /**
  * Slow down or fail a request, in the Network tab: buttons under the selected
- * request, and the conditions on this tab with a way to remove them. The
- * background worker applies them (`piwi-set-conditions`); the site's host
- * permission is asked for inside the click.
+ * request, the whole page's network and CPU in the toolbar, and what is on for
+ * this tab with a way to remove it. The background worker applies them
+ * (`piwi-set-conditions`): through the debugging protocol in Chrome and Edge,
+ * through the page's `fetch`/XHR wrapper otherwise. The site's host permission
+ * is asked for inside the click.
  */
 
-async function conditionsOnThisTab(): Promise<RequestCondition[]> {
-  const state = (await sessionArea().get(CONDITIONS_KEY))[CONDITIONS_KEY] as ConditionsState | undefined;
-  return state?.tabId === inspectedTabId() ? state.conditions : [];
+/** What is on for this tab: the requests' conditions, the page's network and CPU. */
+interface TabConditions {
+  conditions: RequestCondition[];
+  throttle: NetworkThrottle | null;
+  cpuRate: number | null;
+  via: ConditionsState['via'];
+  lost: ConditionsState['lost'];
 }
 
-async function setConditions(origin: string, conditions: RequestCondition[], report: (text: string) => void) {
+async function onThisTab(): Promise<TabConditions> {
+  const state = (await sessionArea().get(CONDITIONS_KEY))[CONDITIONS_KEY] as ConditionsState | undefined;
+  if (state?.tabId !== inspectedTabId()) {
+    return { conditions: [], throttle: null, cpuRate: null, via: undefined, lost: null };
+  }
+  return {
+    conditions: state.conditions,
+    throttle: state.throttle ?? null,
+    cpuRate: state.cpuRate ?? null,
+    via: state.via,
+    lost: state.lost ?? null,
+  };
+}
+
+async function conditionsOnThisTab(): Promise<RequestCondition[]> {
+  return (await onThisTab()).conditions;
+}
+
+/** Whether this browser gives the extension the debugging protocol: Chrome and Edge do, Firefox does not. */
+function debuggingProtocol(): boolean {
+  return typeof chrome.debugger?.attach === 'function';
+}
+
+async function setState(
+  origin: string,
+  next: Pick<TabConditions, 'conditions' | 'throttle' | 'cpuRate'>,
+  report: (text: string) => void,
+): Promise<void> {
   const reply = (await chrome.runtime
-    .sendMessage({ type: 'piwi-set-conditions', tabId: inspectedTabId(), origin, conditions })
+    .sendMessage({ type: 'piwi-set-conditions', tabId: inspectedTabId(), origin, ...next })
     .catch((err: unknown) => ({ ok: false, error: err instanceof Error ? err.message : String(err) }))) as {
     ok: boolean;
     error?: string;
   };
   if (!reply?.ok) report(t('devtools_conditionFailed', { error: reply?.error ?? '' }));
+}
+
+async function setConditions(origin: string, conditions: RequestCondition[], report: (text: string) => void) {
+  const { throttle, cpuRate } = await onThisTab();
+  await setState(origin, { conditions, throttle, cpuRate }, report);
+}
+
+/**
+ * The whole page's network (fast 3G, slow 3G, offline) and CPU (4, 6 or 20
+ * times slower), as DevTools offers them, for this tab until turned off. Only
+ * where the debugging protocol is: nothing is drawn without it.
+ */
+export async function pageConditions(origin: string | null, report: (text: string) => void): Promise<HTMLElement> {
+  const group = el('span', 'page-conditions');
+  if (!debuggingProtocol()) return group;
+  const current = await onThisTab();
+  const choice = (label: string, options: Array<[string, string]>, value: string) => {
+    const select = el('select');
+    select.setAttribute('aria-label', label);
+    for (const [key, text] of options) {
+      const option = el('option', '', text);
+      option.value = key;
+      select.appendChild(option);
+    }
+    select.value = value;
+    const wrap = el('label', 'check');
+    wrap.append(label, select);
+    group.appendChild(wrap);
+    return select;
+  };
+  const network = choice(
+    t('devtools_throttleLabel'),
+    [['', t('devtools_throttleNone')], ...NETWORK_THROTTLES.map((k): [string, string] => [k, throttleText(k)])],
+    current.throttle ?? '',
+  );
+  const cpu = choice(
+    t('devtools_cpuLabel'),
+    [['', t('devtools_throttleNone')], ...CPU_RATES.map((r): [string, string] => [String(r), cpuText(r)])],
+    current.cpuRate ? String(current.cpuRate) : '',
+  );
+  const apply = () => {
+    report('');
+    const pattern = sitePattern(origin);
+    if (!origin || !pattern) return report(t('devtools_conditionsNoPage'));
+    // Inside the change: the browser shows the request only during it.
+    void chrome.permissions.request({ origins: [pattern] }).then(async (granted) => {
+      if (!granted) return report(t('devtools_conditionsNeedAccess'));
+      const throttle = isThrottle(network.value) ? network.value : null;
+      const cpuRate = cpu.value ? Number(cpu.value) : null;
+      await setState(origin, { conditions: await conditionsOnThisTab(), throttle, cpuRate }, report);
+    });
+  };
+  network.addEventListener('change', apply);
+  cpu.addEventListener('change', apply);
+  return group;
 }
 
 /** The section under a selected request: slow it down by the seconds given, or make it fail. */
@@ -84,16 +176,26 @@ export function conditionActions(entry: NetworkEntry, origin: string | null): HT
     status,
   );
   const limits = el('details', 'limits');
-  limits.append(el('summary', '', t('devtools_conditionsLimitsTitle')), el('p', '', t('devtools_conditionsLimits')));
+  limits.append(
+    el('summary', '', t('devtools_conditionsLimitsTitle')),
+    el('p', '', t(debuggingProtocol() ? 'devtools_conditionsLimits' : 'devtools_conditionsLimitsPage')),
+  );
   section.append(el('h3', 'section-title', t('devtools_conditionsFor')), controls, limits);
   return section;
 }
 
-/** The conditions on this tab, each with Remove, and Turn all off; nothing when none is on. */
+/** What is on for this tab, each with Remove, and Turn all off; nothing when nothing is on. */
 export async function renderConditions(strip: HTMLElement, origin: string | null): Promise<void> {
-  const conditions = await conditionsOnThisTab();
-  if (conditions.length === 0 || !origin) {
-    strip.replaceChildren();
+  const on = await onThisTab();
+  const { conditions } = on;
+  const lostNote =
+    on.lost === 'canceled'
+      ? t('devtools_conditionsLostCanceled')
+      : on.lost === 'lost'
+        ? t('devtools_conditionsLostEnded')
+        : null;
+  if ((conditions.length === 0 && !on.throttle && !on.cpuRate) || !origin) {
+    strip.replaceChildren(...(lostNote && origin ? [el('span', 'warn-text', lostNote)] : []));
     return;
   }
   const status = el('span', 'warn-text');
@@ -119,6 +221,29 @@ export async function renderConditions(strip: HTMLElement, origin: string | null
     );
     list.appendChild(item);
   }
-  const allOff = button(t('devtools_conditionsAllOff'), () => void setConditions(origin, [], report), 'danger');
-  strip.replaceChildren(el('span', 'strip-title', t('devtools_conditionsTitle')), list, allOff, status);
+  const whole: Array<[string, Partial<TabConditions>]> = [
+    ...(on.throttle ? [[throttleText(on.throttle), { throttle: null }] as [string, Partial<TabConditions>]] : []),
+    ...(on.cpuRate ? [[cpuText(on.cpuRate), { cpuRate: null }] as [string, Partial<TabConditions>]] : []),
+  ];
+  for (const [text, off] of whole) {
+    const item = el('li');
+    item.append(
+      el('span', '', text),
+      button(
+        t('devtools_conditionRemove'),
+        () => void setState(origin, { conditions, throttle: on.throttle, cpuRate: on.cpuRate, ...off }, report),
+        'link',
+      ),
+    );
+    list.appendChild(item);
+  }
+  const allOff = button(
+    t('devtools_conditionsAllOff'),
+    () => void setState(origin, { conditions: [], throttle: null, cpuRate: null }, report),
+    'danger',
+  );
+  const parts: HTMLElement[] = [el('span', 'strip-title', t('devtools_conditionsTitle')), list, allOff, status];
+  if (on.via === 'debugger') parts.push(el('span', 'strip-note', t('devtools_conditionsDebugging')));
+  if (lostNote) parts.push(el('span', 'warn-text', lostNote));
+  strip.replaceChildren(...parts);
 }

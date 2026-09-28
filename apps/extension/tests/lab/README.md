@@ -48,7 +48,8 @@ lab test also has Playwright's own report (`npx playwright show-report tests/lab
 - The scenario drives the page with Playwright's trusted input, at a person's pace. The recorder's events are read from
   session storage and turned into steps by the same code as the review panel.
 - The replay starts in a fresh browser on the scenario's first page and runs until it is done or stops. It passes when
-  every step played and it ended on the URL the recording ended on.
+  every step played and it ended on the URL the recording ended on. The table says how it acted: trusted input through
+  the debugging protocol, or the page's own events and why.
 - The spec is written with the stable locators and URL checks the recorder's own export uses. Its first load waits
   `LAB_SETTLE_MS` before acting: a server-rendered app ignores input until it has hydrated, which says nothing about
   the locators.
@@ -67,5 +68,6 @@ stays as the test for when it can.
 
 - Other browsers: the lab loads the extension in Chromium only.
 - Pages behind a login: the dashboard's dev server runs without authentication.
-- File uploads (the `import-file` scenario shows the gap), drag and drop, and the browser's own date and color
-  pickers.
+- The browser's own date and color pickers: a date is typed, as Playwright's `fill` does.
+- A file step's file comes from `out/files/`, where the harness writes one by the recorded name: it answers the
+  replay's request for the file as the developer would, in the replay's panel.
