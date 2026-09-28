@@ -51,7 +51,11 @@ Each project keeps its own list in its **Settings** tab, under **Browser extensi
   serves `/app/checkout` and the tests ran at `/checkout`. Piwi Picker removes it before comparing the page with the
   [pages the tests ran on](./tested-elements#this-page), whole parts only (`/application` keeps its path), and a bug
   report sent from the site keys its page without it. It is a plain path of at most four parts, with no query, hash or
-  wildcard.
+  wildcard;
+- a **tests' path prefix**, the reverse: the part of the path the tests ran the pages under and the site does not,
+  `/app` when the tests ran `/app/checkout` and the site serves `/checkout`. Piwi Picker puts it in front of the page's
+  path; the site's root becomes `/app/`. With both set, the one replaces the other (`/app` on the site, `/v2` in the
+  tests), and a page outside the path prefix is left as it is.
 
 The editor suggests one pattern per site your suite already visited: the `baseURL` of recent runs, the pages of the
 [Test Map](./scenario-gaps) and the absolute pages its locators ran on. **Add** puts a suggestion in the list; **Save

@@ -7,8 +7,8 @@ when a locator a test uses there no longer finds its element. The tracks are ind
 wire or schema change.
 
 **Status.** Proposed 2026-09-26. Steps 1 to 6 built on 2026-09-27, in one pull request. Open question 2, the
-path-prefix mapping, built on 2026-09-28 as `pathPrefix` on project URL patterns and local mappings; the other three
-open questions are still open. Track A is core, extension and dashboard work. Track B adds a
+path-prefix mapping, built on 2026-09-28 as `pathPrefix` and `testPathPrefix` on project URL patterns and local
+mappings; the other three open questions are still open. Track A is core, extension and dashboard work. Track B adds a
 capture-fixture attachment, one payload column on `test_runs_cases` and two `locator_usages` columns, and adds
 contracts that freeze at 1.0 (a new D19 in [`1.0-stabilization.md`](1.0-stabilization.md)).
 
@@ -441,8 +441,9 @@ PR 4, and `migration-history.test.ts` and `app:check:demo` for PR 5.
    an optional `pathPrefix` on a project URL pattern (`project_url_patterns.path_prefix`, the Settings tab, the
    endpoints) and on a local mapping, edited in the extension's settings. The extension removes it, whole segments
    only, before comparing the page with the index (This page, Missing here, Several match here, the pick results), and
-   before keying a bug report's page; the overlay's subtitle and notes name the prefix removed. Not built: the reverse
-   case, tests that ran under a prefix the site does not use.
+   before keying a bug report's page; the overlay's subtitle and notes name the prefix removed. The reverse case, tests
+   that ran under a prefix the site does not use, is `testPathPrefix` (`test_path_prefix`), put in front of the page's
+   path after `pathPrefix` is removed, so the two together swap one prefix for the other.
 3. **Viewport and Playwright project.** Should Missing here keep only the projects that match the window, desktop or
    mobile? Recommendation: show the projects on each row first, and add a filter if the rows prove noisy.
 4. **Page-level actions** (`page.keyboard`, `page.mouse`, `page.click(selector)`) do not reset or count toward
