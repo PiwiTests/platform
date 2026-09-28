@@ -32,7 +32,7 @@ elements is dropped. Input values are never captured.
 When a locator later fails, the server looks for replacements, most trustworthy first:
 
 1. **Diff rename**: the run's own diff renamed the string the locator finds its element by, at this call site, as
-   [Locator preflight](./preflight) predicts it. The replacement is the same locator with the new string, and the
+   [Locator preflight](./preflight) predicts it with a _likely_ break. The replacement is the same locator with the new string, and the
    panel says where: "“Pay now” became “Pay” in CheckoutButton.vue:14". It needs a run with a diff (a pull request,
    or a commit after a passing run) and a source-control token. Its edit replaces the string inside your quotes, and
    an [auto-heal PR](./auto-heal) can use it.

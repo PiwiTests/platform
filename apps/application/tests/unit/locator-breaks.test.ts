@@ -206,6 +206,19 @@ describe('diff-rename healing', () => {
     expect(other.source).not.toBe('diff-rename');
   });
 
+  test('is skipped for a possible break, a bare string that happened to match', async () => {
+    const r = await resolveHealingForCase(
+      {
+        error: error('/repo/tests/pages/checkout.page.ts:31:16'),
+        testSource: source,
+        locatorBreaks: [{ ...PAY_BREAK, confidence: 'possible' }],
+      },
+      [],
+      null,
+    );
+    expect(r.source).not.toBe('diff-rename');
+  });
+
   test('an auto-heal pull request can use it', async () => {
     const r = await resolveHealingForCase(
       { error: error('tests/pages/checkout.page.ts:31:16'), testSource: source, locatorBreaks: [PAY_BREAK] },

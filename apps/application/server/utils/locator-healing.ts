@@ -143,9 +143,10 @@ function buildHealingResult(
 const DIFF_RENAME_SCORE = 95;
 
 /**
- * The run's stored break whose chain is the failing chain and whose call
- * sites include the failing one (any, when the error names no call site),
- * with a rewrite to offer.
+ * The run's stored `likely` break whose chain is the failing chain and whose
+ * call sites include the failing one (any, when the error names no call site),
+ * with a rewrite to offer. A `possible` break, a bare string that happened to
+ * match, is not evidence enough for a replacement auto-heal may apply.
  */
 function findDiffRename(
   error: string,
@@ -159,7 +160,10 @@ function findDiffRename(
   return (
     breaks.find(
       (b) =>
-        b.rewrite && b.locator === chain && (!location || b.callSites.some((site) => sameFileLine(site, location))),
+        b.confidence === 'likely' &&
+        b.rewrite &&
+        b.locator === chain &&
+        (!location || b.callSites.some((site) => sameFileLine(site, location))),
     ) ?? null
   );
 }
