@@ -156,6 +156,8 @@ function ariaStructure(snapshot: string): Set<string> {
 const DURATION_DELTA_MS = 1000;
 /** A step is "much slower" on one side when it is at least this many ms and twice the other. */
 const STEP_SLOW_DELTA_MS = 1000;
+/** A request is "much slower" on the failing attempt when it took at least this many ms and twice as long. */
+const REQUEST_SLOW_MS = 1000;
 /** Cap per-category diff rows so a noisy attempt does not flood the list. */
 const MAX_PER_CATEGORY = 5;
 
@@ -200,6 +202,11 @@ export function diffAttempts(failing: AttemptEvidence, passing: AttemptEvidence)
       only: side,
       ref: { section: 'networkRequests' },
     });
+  }
+
+  // ── Network: a request made on both attempts, much slower on the failing one ─
+  for (const entry of slowerRequestDiffs(failNet, passNet)) {
+    diffs.push(entry);
   }
 
   // ── Console: an error/warning logged on only one attempt ───────────────────
@@ -268,6 +275,41 @@ function orderedRequestDiff(
     if (out.length >= MAX_PER_CATEGORY) return out;
   }
   return out;
+}
+
+/** Each answered request's slowest duration, keyed by method and URL without the query. */
+function slowestByRequest(requests: AttemptNetworkRequest[]): Map<string, number> {
+  const map = new Map<string, number>();
+  for (const r of requests) {
+    if (requestFailed(r.status) || r.duration == null) continue;
+    const key = requestKey(r);
+    map.set(key, Math.max(map.get(key) ?? 0, r.duration));
+  }
+  return map;
+}
+
+/**
+ * Requests made on both attempts whose slowest call on the failing attempt took
+ * at least `REQUEST_SLOW_MS` and twice as long as on the passing one, slowest
+ * gap first. The request exists on both sides, so the row names no side.
+ */
+function slowerRequestDiffs(failNet: AttemptNetworkRequest[], passNet: AttemptNetworkRequest[]): AttemptDiffEntry[] {
+  const passSlowest = slowestByRequest(passNet);
+  const slower: Array<{ key: string; failMs: number; passMs: number }> = [];
+  for (const [key, failMs] of slowestByRequest(failNet)) {
+    const passMs = passSlowest.get(key);
+    if (passMs == null) continue;
+    if (failMs >= REQUEST_SLOW_MS && failMs >= 2 * passMs) slower.push({ key, failMs, passMs });
+  }
+  return slower
+    .sort((a, b) => b.failMs - b.passMs - (a.failMs - a.passMs))
+    .slice(0, MAX_PER_CATEGORY)
+    .map(({ key, failMs, passMs }) => ({
+      kind: 'network' as const,
+      summary: `${key} ${formatMs(failMs)} on the failing attempt, ${formatMs(passMs)} on the passing one`,
+      detail: null,
+      ref: { section: 'networkRequests' },
+    }));
 }
 
 function onlyConsoleEntries(

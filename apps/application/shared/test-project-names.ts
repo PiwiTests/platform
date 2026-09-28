@@ -117,6 +117,7 @@ export const PROJECT = {
   MINIMAL: 'minimal-project',
   MOBILE_RESPONSIVENESS: 'mobile-responsiveness-test',
   MULTI_REPORT: 'multi-report-project',
+  NETWORK_FAILED_REQUEST: 'network-failed-request-test',
   NO_FILES: 'no-files-project',
   NO_METADATA: 'no-metadata-test',
   NO_OVERLAP: 'no-overlap',

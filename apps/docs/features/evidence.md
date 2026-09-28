@@ -67,7 +67,8 @@ When a test failed and then passed on retry, the **Attempts** tab lists every at
 opened marked), then **what differed** between the failing attempt and the passing one, most diagnostic first:
 
 - the **error** present on the failing attempt and gone on the pass;
-- a **request** that failed (5xx or no response) on one attempt only;
+- a **request** that failed (5xx or no response) on one attempt only, or took at least 1 s and twice as long on the
+  failing one;
 - a **console** error or warning logged on one attempt only;
 - a **step** that errored, ran much slower, or ran with different **params** on one attempt;
 - a **page-state or URL** difference, including storage keys and cookies;
