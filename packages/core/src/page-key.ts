@@ -163,8 +163,9 @@ export interface PathPrefixes {
  * `url` as the tests would have run it: `pathPrefix` removed from the start of
  * its path (whole segments only), then `testPathPrefix` put in front. A path
  * outside a set `pathPrefix` keeps its address, since the mapping does not
- * cover it. The site's root under a tests' prefix `/app` becomes `/app`.
- * `prefixRemoved` and `prefixAdded` name the prefixes that applied.
+ * cover it, and so does a URL that is not a page (`about:blank`). The site's
+ * root under a tests' prefix `/app` becomes `/app`. `prefixRemoved` and
+ * `prefixAdded` name the prefixes that applied.
  */
 export function mapPathPrefixes(
   url: string,
@@ -174,6 +175,8 @@ export function mapPathPrefixes(
   const tests = normalizePathPrefix(prefixes?.testPathPrefix);
   const unchanged = { url, prefixRemoved: null, prefixAdded: null };
   if (!site && !tests) return unchanged;
+  // A URL with a scheme other than http(s) is not a page, and has no path to map.
+  if (/^[a-z][a-z0-9+.-]*:/i.test(url) && !/^https?:\/\//i.test(url)) return unchanged;
   let current = url;
   if (site) {
     const stripped = stripPathPrefix(url, site);

@@ -126,6 +126,17 @@ describe('mappedPageKey', () => {
     );
   });
 
+  test('gives no key for what is not a page, whatever the prefixes', () => {
+    for (const url of ['about:blank', 'chrome-error://chromewebdata/', 'data:text/html,hi']) {
+      expect(mappedPageKey(url, { testPathPrefix: '/app' })).toEqual({
+        key: null,
+        prefixRemoved: null,
+        prefixAdded: null,
+      });
+      expect(mapPathPrefixes(url, { pathPrefix: '/app', testPathPrefix: '/v2' }).url).toBe(url);
+    }
+  });
+
   test('swaps one prefix for the other, and leaves a path outside the site’s prefix', () => {
     const prefixes = { pathPrefix: '/app', testPathPrefix: '/v2' };
     expect(mappedPageKey('https://shop.test/app/cart', prefixes)).toEqual({
