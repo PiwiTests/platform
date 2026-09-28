@@ -12,7 +12,7 @@
  * test with the converter.
  */
 import { renderSpec, type CodegenOptions, type CodegenResult } from './codegen';
-import { normalizePathPrefix, normalizeRoute, pageKeyUnderPrefix } from './page-key';
+import { mappedPageKey, normalizePathPrefix, normalizeRoute } from './page-key';
 import type { RecordedStep, RecordedTarget, StepAssertion } from './recording';
 import { parseSteps, sessionFromSteps, type PiwiSteps } from './steps';
 import {
@@ -83,11 +83,13 @@ export interface BugEvidence {
 
 export interface BugContext {
   origin: string | null;
-  /** The page key of the page the report was finished on, with {@link BugContext.pathPrefix} removed. */
+  /** The page key of the page the report was finished on, with {@link BugContext.pathPrefix} removed and {@link BugContext.testPathPrefix} added. */
   pageKey: string | null;
   path: string | null;
   /** The path prefix of the site's URL mapping, removed from the page keys compared with the tests' pages; absent for none. */
   pathPrefix?: string | null;
+  /** The tests' path prefix of the site's URL mapping, put in front of the page keys compared with the tests' pages; absent for none. */
+  testPathPrefix?: string | null;
   browser: string | null;
   userAgent: string | null;
   viewport: { width: number; height: number } | null;
@@ -448,6 +450,8 @@ export function bugContextFrom(input: {
   extensionVersion: string | null;
   /** The URL mapping's path prefix, removed from the page key when the path starts with it. */
   pathPrefix?: string | null;
+  /** The URL mapping's tests' path prefix, put in front of the page key's path. */
+  testPathPrefix?: string | null;
 }): BugContext {
   let origin: string | null = null;
   let path: string | null = null;
@@ -460,12 +464,13 @@ export function bugContextFrom(input: {
   } catch {
     // Not a URL: no origin and no path.
   }
-  const keyed = pageKeyUnderPrefix(input.url, input.pathPrefix);
+  const keyed = mappedPageKey(input.url, input);
   return {
     origin,
     pageKey: keyed.key,
     path,
     ...(keyed.prefixRemoved ? { pathPrefix: keyed.prefixRemoved } : {}),
+    ...(keyed.prefixAdded ? { testPathPrefix: keyed.prefixAdded } : {}),
     browser: input.userAgent ? describeBrowser(input.userAgent) : null,
     userAgent: input.userAgent,
     viewport: input.viewport,
@@ -571,11 +576,13 @@ function checkContext(v: unknown): BugContext {
   }
   const path = textOf(c.path, BUG_EVIDENCE_LIMITS.messageLength);
   const pathPrefix = typeof c.pathPrefix === 'string' ? normalizePathPrefix(c.pathPrefix) : null;
+  const testPathPrefix = typeof c.testPathPrefix === 'string' ? normalizePathPrefix(c.testPathPrefix) : null;
   return {
     origin,
     pageKey: textOf(c.pageKey, BUG_EVIDENCE_LIMITS.messageLength),
     path: path && path.startsWith('/') ? path : null,
     ...(pathPrefix ? { pathPrefix } : {}),
+    ...(testPathPrefix ? { testPathPrefix } : {}),
     browser: textOf(c.browser, 60),
     userAgent: textOf(c.userAgent, BUG_EVIDENCE_LIMITS.messageLength),
     viewport,

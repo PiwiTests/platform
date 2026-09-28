@@ -3,7 +3,8 @@ import {
   normalizePathPrefix,
   normalizeRoute,
   pageKey,
-  pageKeyUnderPrefix,
+  mapPathPrefixes,
+  mappedPageKey,
   parsePathPrefix,
   stripPathPrefix,
 } from '../src/page-key';
@@ -94,18 +95,53 @@ describe('stripPathPrefix', () => {
   });
 });
 
-describe('pageKeyUnderPrefix', () => {
-  test('keys the page as the tests recorded it and names the prefix removed', () => {
-    expect(pageKeyUnderPrefix('https://shop.test/app/orders/42', '/app')).toEqual({
+describe('mappedPageKey', () => {
+  test('removes the site’s prefix and names it', () => {
+    expect(mappedPageKey('https://shop.test/app/orders/42', { pathPrefix: '/app' })).toEqual({
       key: '/orders/:id',
       prefixRemoved: '/app',
+      prefixAdded: null,
     });
   });
 
-  test('is the plain page key when the prefix does not apply', () => {
-    expect(pageKeyUnderPrefix('https://shop.test/application', '/app')).toEqual({
+  test('is the plain page key when the site’s prefix does not apply', () => {
+    expect(mappedPageKey('https://shop.test/application', { pathPrefix: '/app' })).toEqual({
       key: '/application',
       prefixRemoved: null,
+      prefixAdded: null,
     });
+    expect(mappedPageKey('https://shop.test/checkout', null).key).toBe('/checkout');
+  });
+
+  test('puts the tests’ prefix in front of the site’s path', () => {
+    expect(mappedPageKey('https://shop.test/orders/42', { testPathPrefix: 'app/' })).toEqual({
+      key: '/app/orders/:id',
+      prefixRemoved: null,
+      prefixAdded: '/app',
+    });
+    expect(mappedPageKey('https://shop.test/', { testPathPrefix: '/app' }).key).toBe('/app/');
+  });
+
+  test('swaps one prefix for the other, and leaves a path outside the site’s prefix', () => {
+    const prefixes = { pathPrefix: '/app', testPathPrefix: '/v2' };
+    expect(mappedPageKey('https://shop.test/app/cart', prefixes)).toEqual({
+      key: '/v2/cart',
+      prefixRemoved: '/app',
+      prefixAdded: '/v2',
+    });
+    expect(mappedPageKey('https://shop.test/cart', prefixes)).toEqual({
+      key: '/cart',
+      prefixRemoved: null,
+      prefixAdded: null,
+    });
+  });
+});
+
+describe('mapPathPrefixes', () => {
+  test('keeps the origin, the query and the hash, and accepts a bare path', () => {
+    expect(mapPathPrefixes('https://shop.test/cart?x=1#top', { testPathPrefix: '/app' }).url).toBe(
+      'https://shop.test/app/cart?x=1#top',
+    );
+    expect(mapPathPrefixes('/cart', { testPathPrefix: '/app' }).url).toBe('/app/cart');
   });
 });

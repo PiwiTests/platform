@@ -244,6 +244,21 @@ describe('bug report', () => {
     expect(odd.ok && odd.report.context).not.toHaveProperty('pathPrefix');
   });
 
+  test('the context keys the page with the tests’ path prefix in front, and keeps it through parsing', () => {
+    const context = bugContextFrom({
+      url: `${ORIGIN}/cart`,
+      userAgent: null,
+      viewport: null,
+      time: 0,
+      extensionVersion: null,
+      testPathPrefix: 'app/',
+    });
+    expect(context).toMatchObject({ pageKey: '/app/cart', path: '/cart', testPathPrefix: '/app' });
+    expect(context).not.toHaveProperty('pathPrefix');
+    const parsed = parseBugReport({ ...couponReport(), context });
+    expect(parsed.ok && parsed.report.context.testPathPrefix).toBe('/app');
+  });
+
   test('an element whose text is asserted is not named by that text', () => {
     const report = couponReport();
     const step = report.steps.steps[3]!;

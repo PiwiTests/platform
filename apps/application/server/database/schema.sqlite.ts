@@ -1313,6 +1313,7 @@ export const projectUrlPatterns = sqliteTable(
     environment: text('environment'), // free label: 'staging', 'production'
     branch: text('branch'), // the branch deployed at these URLs; null for the default branch
     pathPrefix: text('path_prefix'), // the path the site serves its pages under and the tests did not ('/app')
+    testPathPrefix: text('test_path_prefix'), // the path the tests ran the pages under and the site does not ('/app')
     position: integer('position').notNull().default(0),
     createdAt: integer('created_at', { mode: 'timestamp_ms' })
       .notNull()

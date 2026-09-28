@@ -147,13 +147,60 @@ export function stripPathPrefix(url: string, prefix: string | null | undefined):
 }
 
 /**
- * The page key of `url` as the tests would have recorded it: {@link pageKey}
- * after {@link stripPathPrefix}. `prefixRemoved` is the prefix when it applied.
+ * How a site's paths relate to the paths its tests ran: `pathPrefix` is the
+ * part the site serves its pages under and the tests did not (`/app` when the
+ * site serves `/app/checkout` for the tests' `/checkout`); `testPathPrefix` is
+ * the part the tests ran under and the site does not (`/app` when the tests ran
+ * `/app/checkout` for the site's `/checkout`). Both may be set: `/app` on the
+ * site for `/v2` in the tests.
  */
-export function pageKeyUnderPrefix(
+export interface PathPrefixes {
+  pathPrefix?: string | null;
+  testPathPrefix?: string | null;
+}
+
+/**
+ * `url` as the tests would have run it: `pathPrefix` removed from the start of
+ * its path (whole segments only), then `testPathPrefix` put in front. A path
+ * outside a set `pathPrefix` keeps its address, since the mapping does not
+ * cover it. The site's root under a tests' prefix `/app` becomes `/app/`.
+ * `prefixRemoved` and `prefixAdded` name the prefixes that applied.
+ */
+export function mapPathPrefixes(
   url: string,
-  prefix: string | null | undefined,
-): { key: string | null; prefixRemoved: string | null } {
-  const { url: stripped, stripped: applied } = stripPathPrefix(url, prefix);
-  return { key: pageKey(stripped), prefixRemoved: applied ? normalizePathPrefix(prefix) : null };
+  prefixes: PathPrefixes | null | undefined,
+): { url: string; prefixRemoved: string | null; prefixAdded: string | null } {
+  const site = normalizePathPrefix(prefixes?.pathPrefix);
+  const tests = normalizePathPrefix(prefixes?.testPathPrefix);
+  const unchanged = { url, prefixRemoved: null, prefixAdded: null };
+  if (!site && !tests) return unchanged;
+  let current = url;
+  if (site) {
+    const stripped = stripPathPrefix(url, site);
+    if (!stripped.stripped) return unchanged;
+    current = stripped.url;
+  }
+  if (!tests) return { url: current, prefixRemoved: site, prefixAdded: null };
+  const absolute = /^https?:\/\//i.test(current);
+  let parsed: URL;
+  try {
+    parsed = new URL(absolute ? current : `http://${PATH_ANCHOR_HOST}${current.startsWith('/') ? '' : '/'}${current}`);
+  } catch {
+    return unchanged;
+  }
+  parsed.pathname = `${tests}${parsed.pathname}`;
+  const rest = `${parsed.pathname}${parsed.search}${parsed.hash}`;
+  return { url: absolute ? `${parsed.origin}${rest}` : rest, prefixRemoved: site, prefixAdded: tests };
+}
+
+/**
+ * The page key of `url` as the tests would have recorded it: {@link pageKey}
+ * after {@link mapPathPrefixes}, with the prefixes that applied.
+ */
+export function mappedPageKey(
+  url: string,
+  prefixes: PathPrefixes | null | undefined,
+): { key: string | null; prefixRemoved: string | null; prefixAdded: string | null } {
+  const mapped = mapPathPrefixes(url, prefixes);
+  return { key: pageKey(mapped.url), prefixRemoved: mapped.prefixRemoved, prefixAdded: mapped.prefixAdded };
 }
