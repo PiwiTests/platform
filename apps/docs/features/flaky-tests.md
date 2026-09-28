@@ -33,7 +33,7 @@ The project's **Failures** tab has a **Flaky** view with a **configurable lookba
 
 ### Root-cause classification
 
-Every flaky test is automatically tagged with one of five categories, using keyword and distribution heuristics over its errors, steps, and browser spread, sharpened by the failed requests actually captured and by the attempt diff. It reads the test's last 100 attempts from any run, green or red, so the failed attempt of a test that passed on retry counts:
+Every flaky test is automatically tagged with one of five categories, using keyword and distribution heuristics over its errors, steps, and browser spread, sharpened by the failed requests actually captured and by the attempt diff. It reads the test's last 100 failed attempts and its last 100 passes from any run, green or red, so the failed attempt of a test that passed on retry counts, and a rare flake keeps its failures however many passes came since:
 
 | Category | Typical signals |
 |----------|-----------------|

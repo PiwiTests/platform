@@ -14,7 +14,7 @@ import type { DrizzleDB } from './db';
 
 /** How many recent flaky executions to diff for the attempt-diff network vote. */
 const ATTEMPT_DIFF_SAMPLE = 10;
-/** How many recent attempts, passed or failed, to read the evidence from. */
+/** How many recent failed attempts, and how many recent passes, to read the evidence from. */
 const RECENT_ATTEMPTS = 100;
 
 export async function classifyAndPersistFlakyRootCause(
@@ -28,12 +28,13 @@ export async function classifyAndPersistFlakyRootCause(
     .where(and(eq(testCases.id, testCaseId), eq(testCases.projectId, projectId)));
   if (tcRows.length === 0) throw new Error('Test case not found');
 
-  // Every recent attempt of the test, from green runs as well as red ones: a
-  // retry-pass leaves its failed attempt in a run that finished green. Probe
-  // runs fail by design when they notice an injected fault, so their executions
-  // are left out of the evidence.
-  const recentAttempts = (
-    await db
+  // The test's recent failed attempts and its recent passes, read apart so a
+  // rare flake keeps its failures however many passes came since. Both come
+  // from green runs as well as red ones: a retry-pass leaves its failed attempt
+  // in a run that finished green. Probe runs fail by design when they notice an
+  // injected fault, so their executions are left out of the evidence.
+  const recentAttempts = (statuses: string[]) =>
+    db
       .select({
         id: testRunsCases.id,
         status: testRunsCases.status,
@@ -44,17 +45,16 @@ export async function classifyAndPersistFlakyRootCause(
       })
       .from(testRunsCases)
       .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
-      .where(
-        and(eq(testRunsCases.testCaseId, testCaseId), inArray(testRunsCases.status, ['passed', ...FAILED_STATUS_KEYS])),
-      )
+      .where(and(eq(testRunsCases.testCaseId, testCaseId), inArray(testRunsCases.status, statuses)))
       .orderBy(desc(testRunsCases.createdAt))
       .limit(RECENT_ATTEMPTS)
-  ).filter((r) => !isProbeRun(r.runMetadata));
-  const recentFailures = recentAttempts.filter((r) => r.status !== 'passed');
+      .then((rows) => rows.filter((r) => !isProbeRun(r.runMetadata)));
+  const recentFailures = await recentAttempts([...FAILED_STATUS_KEYS]);
 
   if (recentFailures.length === 0) {
     return { testCaseId, rootCause: 'other' };
   }
+  const recentPasses = await recentAttempts(['passed']);
 
   const errorMessages: string[] = [];
   const stepErrors: string[] = [];
@@ -73,7 +73,7 @@ export async function classifyAndPersistFlakyRootCause(
       }
     }
   }
-  for (const row of recentAttempts) {
+  for (const row of [...recentFailures, ...recentPasses]) {
     const b = row.browser as Record<string, unknown> | null;
     const browserKey = (b?.projectName as string) ?? (b?.browserName as string) ?? '';
     if (!browserKey) continue;

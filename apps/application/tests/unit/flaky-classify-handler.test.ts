@@ -35,8 +35,10 @@ async function addAttempt(
   status: string,
   project: string,
   error: string | null = null,
+  createdAt?: Date,
 ): Promise<void> {
   await db.insert(schema.testRunsCases).values({
+    ...(createdAt ? { createdAt } : {}),
     testRunId,
     testCaseId: 1,
     status,
@@ -68,6 +70,26 @@ describe('classifyAndPersistFlakyRootCause', () => {
     }
     const result = await classifyAndPersistFlakyRootCause(db as any, 1, 1);
     expect(result.rootCause).toBe('environment');
+  });
+
+  test('keeps the failures of a rare flake behind many more recent passes', async () => {
+    const start = Date.UTC(2026, 8, 1);
+    for (let i = 0; i < 3; i++) {
+      const runId = await addRun('passed');
+      await addAttempt(
+        runId,
+        0,
+        'failed',
+        'chromium',
+        'Error: connect ECONNREFUSED 127.0.0.1:3000',
+        new Date(start + i),
+      );
+    }
+    for (let i = 0; i < 150; i++) {
+      await addAttempt(await addRun('passed'), 0, 'passed', 'chromium', null, new Date(start + 1_000 + i * 1_000));
+    }
+    const result = await classifyAndPersistFlakyRootCause(db as any, 1, 1);
+    expect(result.rootCause).toBe('network');
   });
 
   test('stays other with no failed attempt', async () => {
