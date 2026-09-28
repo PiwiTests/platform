@@ -21,7 +21,8 @@
  * it and under `node_modules` are dropped, and so are the scripts React
  * evaluates in development to replay server component stacks
  * (`about://React/Server/…`), which stand for code that ran on the server. Decoded maps and resolved paths are
- * cached per worker by script URL and content hash.
+ * cached per worker by script URL, for the latest content hash seen at that URL only, and for at most
+ * `MAX_CACHED_SCRIPTS` URLs, the least recently used going first.
  */
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
@@ -64,8 +65,38 @@ type ScriptResolution =
   | { kind: 'map'; lookup: SourceMapLookup; files: Array<string | null | undefined> }
   | { kind: 'none' };
 
-const scriptCache = new Map<string, ScriptResolution>();
-const mapCache = new Map<string, Promise<SourceMapLookup | null>>();
+/** Script and map URLs cached per worker at most. */
+export const MAX_CACHED_SCRIPTS = 500;
+
+/**
+ * A per-worker cache holding, for each URL, the value of the latest version
+ * (content hash) seen there only, and at most `MAX_CACHED_SCRIPTS` URLs: a dev
+ * server that rebuilds between tests replaces its entries instead of adding.
+ */
+class LatestByUrl<T> {
+  private readonly entries = new Map<string, { version: string; value: T }>();
+
+  get(url: string, version: string): T | undefined {
+    const entry = this.entries.get(url);
+    if (!entry || entry.version !== version) return undefined;
+    this.entries.delete(url);
+    this.entries.set(url, entry);
+    return entry.value;
+  }
+
+  set(url: string, version: string, value: T): void {
+    this.entries.delete(url);
+    this.entries.set(url, { version, value });
+    if (this.entries.size > MAX_CACHED_SCRIPTS) this.entries.delete(this.entries.keys().next().value!);
+  }
+
+  clear(): void {
+    this.entries.clear();
+  }
+}
+
+const scriptCache = new LatestByUrl<ScriptResolution>();
+const mapCache = new LatestByUrl<Promise<SourceMapLookup | null>>();
 let cachedRepoRoot: { from: string; root: string } | null = null;
 
 /** The repository root above `from` (`git rev-parse --show-toplevel`, once per worker); `from` when not in a repository. */
@@ -153,12 +184,12 @@ function relativeToRepo(file: string, repoRoot: string): string {
   return path.relative(repoRoot, file).split(path.sep).join('/');
 }
 
-function scriptKey(entry: JsCoverageEntry): string {
-  const hash = crypto
+/** A script's version: the hash of its content. */
+function scriptHash(entry: JsCoverageEntry): string {
+  return crypto
     .createHash('sha1')
     .update(entry.source ?? '')
     .digest('hex');
-  return `${entry.url}\u0000${hash}`;
 }
 
 async function loadMap(entry: JsCoverageEntry, fetchMap: MapFetcher): Promise<SourceMapLookup | null> {
@@ -174,12 +205,12 @@ async function loadMap(entry: JsCoverageEntry, fetchMap: MapFetcher): Promise<So
   } catch {
     return null;
   }
-  // Keyed by the script's content too: a rebuilt bundle keeps its map's URL but not its mappings.
-  const key = `${absolute}\u0000${scriptKey(entry)}`;
-  let pending = mapCache.get(key);
+  // Versioned by the script's content: a rebuilt bundle keeps its map's URL but not its mappings.
+  const version = scriptHash(entry);
+  let pending = mapCache.get(absolute, version);
   if (!pending) {
     pending = fetchMap(absolute).then((text) => (text ? parseMap(text) : null));
-    mapCache.set(key, pending);
+    mapCache.set(absolute, version, pending);
   }
   return pending;
 }
@@ -198,8 +229,8 @@ async function resolveScript(
   bases: ViteBases,
   fetchMap: MapFetcher,
 ): Promise<ScriptResolution> {
-  const key = scriptKey(entry);
-  const cached = scriptCache.get(key);
+  const version = scriptHash(entry);
+  const cached = scriptCache.get(entry.url, version);
   if (cached) return cached;
   let resolution: ScriptResolution;
   const file = fileForUrl(entry.url, roots.roots, bases);
@@ -208,7 +239,7 @@ async function resolveScript(
     const lookup = await loadMap(entry, fetchMap);
     resolution = lookup ? { kind: 'map', lookup, files: [] } : { kind: 'none' };
   }
-  scriptCache.set(key, resolution);
+  scriptCache.set(entry.url, version, resolution);
   return resolution;
 }
 

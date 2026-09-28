@@ -10,6 +10,7 @@ import {
   codeReachRoots,
   pageMapFetcher,
   resetCodeReachCaches,
+  MAX_CACHED_SCRIPTS,
   resolveCodeReach,
   startCodeReach,
   stopCodeReach,
@@ -119,6 +120,33 @@ describe('resolveCodeReach', () => {
     const fetchMap = async () => maps.shift() ?? null;
     expect(await resolveCodeReach([build('function a(){}a();')], roots(), fetchMap)).toEqual(['src/cart.ts']);
     expect(await resolveCodeReach([build('function a(){}a();a();')], roots(), fetchMap)).toEqual(['src/unused.ts']);
+  });
+
+  it('keeps only the latest version of a script, and a bounded number of scripts', async () => {
+    const map = JSON.stringify({ version: 3, sources: ['webpack://shop/./src/cart.ts'], mappings: 'AAAA' });
+    const script = (url: string, body: string): JsCoverageEntry => {
+      const source = `${body}\n//# sourceMappingURL=${url.slice(url.lastIndexOf('/') + 1)}.map`;
+      return {
+        url,
+        source,
+        functions: [{ functionName: 'a', ranges: [{ startOffset: 0, endOffset: 14, count: 1 }] }],
+      };
+    };
+    const fetched: string[] = [];
+    const fetchMap = async (url: string) => (fetched.push(url), map);
+    const app = 'http://localhost:3000/assets/app.js';
+    for (const body of ['function a(){}a();', 'function a(){}a();a();', 'function a(){}a();']) {
+      await resolveCodeReach([script(app, body)], roots(), fetchMap);
+    }
+    // The first version was replaced by the second, so it is read again.
+    expect(fetched).toHaveLength(3);
+
+    fetched.length = 0;
+    for (let i = 0; i <= MAX_CACHED_SCRIPTS; i++) {
+      await resolveCodeReach([script(`http://localhost:3000/assets/chunk-${i}.js`, 'function a(){}a();')], roots(), fetchMap);
+    }
+    await resolveCodeReach([script('http://localhost:3000/assets/chunk-0.js', 'function a(){}a();')], roots(), fetchMap);
+    expect(fetched).toHaveLength(MAX_CACHED_SCRIPTS + 2);
   });
 
   it('reads an inline map', async () => {
