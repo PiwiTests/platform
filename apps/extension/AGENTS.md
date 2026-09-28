@@ -4,7 +4,8 @@ Browser extension (Chrome/Edge, Manifest V3) that reuses the monorepo's locator 
 (`@piwitests/core`) and shared picker overlay (`@piwitests/picker-dom`) to pick ranked,
 stable Playwright locators from the live page. The picking/recording features are
 standalone (no server, no permissions beyond `activeTab`/`scripting`/`storage`, plus the
-one-origin-at-a-time `optional_host_permissions` grant recording needs — see below);
+one-origin-at-a-time `optional_host_permissions` grant recording needs, and `debugger`, attached
+on demand — see "The debugging protocol" below);
 **connecting to a Piwi instance is opt-in** and adds what needs a project's history: matching
 a recording against the project's function catalog, and showing which elements of the page its
 tests reach ("Tested elements"). See "Connected mode" and "Tested elements" below.
@@ -17,8 +18,10 @@ AMO listings that are still outstanding.
 
 ## What it is
 
-- `manifest.json` — MV3 manifest. Standing permissions stay at `activeTab` + `scripting` +
-  `storage` — no static host permissions, no `<all_urls>`, no remote code. `optional_host_permissions`
+- `manifest.json` — MV3 manifest. Standing permissions stay at `activeTab` + `debugger` + `scripting` +
+  `storage` — no static host permissions, no `<all_urls>`, no remote code. `debugger` is in the Chromium
+  manifest only: `scripts/build.mjs` (`firefoxManifest`) leaves it out of `dist-firefox/`, and
+  `build-manifests.test.ts` checks it. `optional_host_permissions`
   (`http://*/*`, `https://*/*`) is declared but **granted nothing by default** — the popup
   requests a single origin (`https://<the-recorded-site>/*`) from `chrome.permissions.request`
   only when the user clicks "Record actions", inside that click's own gesture. Adding a new
@@ -92,6 +95,41 @@ script (`piwi-session-storage`), and the recorder's appends go as one `piwi-appe
 message each (see `appendRecordingEvent`) so a click that navigates away is not lost between a
 read and a write. A module reaching `chrome.storage.session` itself works in Chrome and breaks
 only in Firefox, which no CI run exercises.
+
+## The debugging protocol (`debugger`, Chrome and Edge)
+
+Used on demand since 2026-09-28. Chrome does not let `debugger` be optional, so it is a required permission, and
+Chrome shows "Piwi Picker started debugging this browser" while a session is attached. The rules that follow from it:
+
+- **Attach only while a feature the person started needs it, and detach the moment it ends.** Every session goes
+  through `src/background/debugger.ts`: `acquireDebugger(tabId, purpose)` attaches once per tab and
+  `releaseDebugger` detaches when no purpose holds the tab. The purposes are a replay (`cdp-replay.ts`, attached on
+  the replay's first page, let go by `piwi-replay-finished`, a new replay, or the tab leaving the origin). Nothing
+  stays attached in the background.
+- **Every feature has today's path as its fallback, and says so in plain words.** Firefox has no `chrome.debugger`
+  (`debuggerAvailable()` is false); attaching can be refused (another debugger, a policy, a page Chrome protects);
+  the person can click Cancel on the bar (`onDetach` with `canceled_by_user`, heard through `onDebuggerLost`). The
+  pure half, `src/shared/cdp-input.ts`, names why (`FallbackReason`) and picks the driver (`chooseDriver`).
+- **A content script never talks to the protocol.** It finds the element and its box; the worker sends the commands,
+  checks the request field by field (`readInputOps`) and checks that it comes from the tab of the running replay.
+- The e2e suite cannot click the browser's bar: the worker's `__piwiCancelDebugging(tabId)` does what Cancel does.
+  `chrome.debugger` attaches beside Playwright's own connection, so the specs run on the real extension
+  (`tests/e2e/trusted-site.ts`).
+
+### Trusted input in a replay
+
+`replay-panel.ts` asks the worker for the driver on each page (`piwi-replay-driver`; the choice is kept in
+`ReplayState.driver`, and a replay that fell back stays on the page's events). With `cdp`, `replay-trusted.ts` glides
+the fake cursor, checks that the element (or its label) is what the browser finds at the point, as Playwright's hit
+check does, and sends `piwi-replay-input`: mouse moves, clicks and double clicks, key presses (`ControlOrMeta` is ⌘
+on a Mac, with the editing command Chrome needs), `Input.insertText` after selecting what a field or an editable
+element holds, and drags (`Input.setInterceptDrags` + `Input.dispatchDragEvent` for an HTML drag, the moves alone for
+a pointer-driven one). Date, time and color fields and `<select>` get their value set as Playwright sets them. The
+replay's panel lets the pointer through while input is sent. Input lost before it reached the page (the bar
+cancelled) replays the step with the page's own events (`replay-actions.ts`); each step result keeps its `driver`, and
+the panels show it. A file step asks the developer for the file in the replay's panel (a report names files, never
+carries them, and `DOM.setFileInputFiles` needs a path on disk), or lets them skip it (`skipped`); the file chooser a
+click opens is intercepted while a replay holds the tab (`Page.setInterceptFileChooserDialog`).
 
 ## Connected mode (recording → your own functions)
 
@@ -304,7 +342,8 @@ revealed the pressed element or an ancestor, and records a `hover` step for each
 - The step names the element the pointer entered the subject through when the subject's own name includes what the
   hover shows (a row read as "Invoice 42Delete"), through the same verified locators as the click.
 
-The replay emulates CSS `:hover` without the `debugger` permission (`hover-emulation.ts`): a constructed sheet repeats
+Played with trusted input, a replay's hover is the browser's own. With the page's own events (Firefox, a session
+refused or cancelled), it emulates CSS `:hover` (`hover-emulation.ts`): a constructed sheet repeats
 the `:hover` rules with the `data-piwi-hover` attribute in place of `:hover`, and `dispatchHover` sets the attribute on
 the element pointed at and its ancestors, moving it with each step and removing everything when the replay ends. The
 pointer events it sends follow the element tree: leaves for the ancestors it left, enters for the ones it entered.
@@ -394,13 +433,12 @@ instead of needing a live browser for everything.
   (or a `registerContentScripts` registration, for `record-panel.ts`) can inject it as a plain
   script. Don't add a shared runtime chunk between them — each must stay self-contained at the
   bundle level (imports are fine at the *source* level; Vite inlines them per entry).
-- **Never widen *standing* permissions casually.** `activeTab`/`scripting`/`storage` plus the
+- **Never widen *standing* permissions casually.** `activeTab`/`debugger`/`scripting`/`storage` plus the
   recorder's one-origin-at-a-time optional host permission cover everything today. A feature
-  that seems to need more (`debugger`, `contextMenus`, `sidePanel`, a broader or default-granted
-  host permission) needs a deliberate call, not a silent addition — see the aria-snapshot
-  feature (deferred; would need `debugger` to get the browser's real accessibility tree, which
-  contradicts the minimal-permissions goal; names and roles come from `DomModel`, which follows
-  Playwright's own computation without it), and the recorder's own permission design below.
+  that seems to need more (`contextMenus`, `sidePanel`, a broader or default-granted
+  host permission) needs a deliberate call, not a silent addition. `debugger` was one (see "The debugging
+  protocol"): a new use of it follows its rules — attached only while the feature runs, released at once, a
+  fallback that works without it, and nothing read through it sent anywhere unless the person sends it.
 - **The recorder's host permission is requested per-origin, per-recording, from the popup's
   own click handler — never pre-granted, never `<all_urls>`.** `chrome.permissions.request`
   only counts as satisfying a user gesture when called synchronously inside one, so this can't

@@ -168,6 +168,12 @@ export const PORTUGUESE_BUG_PHRASES: BugPhrases = {
     uncheck: (s) => `Desmarcar ${bare(subject(s))}`,
     selectOption: (s, v) => `Escolher ${value(v)} ${inside(subject(s))}`,
     press: (name, s) => (s ? `Pressionar ${key(name)} ${inside(subject(s))}` : `Pressionar ${key(name)}`),
+    dblclick: (s) => `Clicar duas vezes ${inside(subject(s))}`,
+    setInputFiles: (s, files) =>
+      files.length === 0
+        ? `Esvaziar ${bare(subject(s))}`
+        : `Escolher ${files.length === 1 ? 'o arquivo' : 'os arquivos'} ${files.map(quote).join(', ')} ${inside(subject(s))}`,
+    dragTo: (s, target) => `Arrastar ${bare(subject(s))} até ${bare(subject(target))}`,
   },
   expectation(s, e, negated) {
     const should = negated ? 'não deveria' : 'deveria';

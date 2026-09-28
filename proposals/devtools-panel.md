@@ -9,8 +9,9 @@ page, **mocks written from real responses**, the **login saved for tests**, **sl
 and **viewports** from the project's own configuration.
 
 **Status.** Proposed 2026-09-27; built the same day, PRs 1 to 7 in their Delivery order, then a layout pass on the
-DevTools pages and two more panel tabs (Locators, Session; see 1.2). No part needs the `debugger` permission, and only
-one adds a permission at all: `cookies`, optional, requested when the login is saved. The DevTools panel adds a manifest
+DevTools pages and two more panel tabs (Locators, Session; see 1.2). No part needed the `debugger` permission, and only
+one added a permission at all: `cookies`, optional, requested when the login is saved. Revised 2026-09-28: `debugger`
+is used on demand (T2), which brings what was out of reach below within reach in Chrome and Edge. The DevTools panel adds a manifest
 key (`devtools_page`) that shows no install warning. The open questions are settled below.
 
 What is left:
@@ -108,7 +109,7 @@ how do I get the test there?*
 | # | Decision | Why |
 | --- | --- | --- |
 | T1 | No general developer toolbar. | DevTools does those better, and they need permissions the extension refuses. |
-| T2 | No `debugger` permission, here as elsewhere. | It cannot be optional, and it shows a debugging bar on the page. |
+| T2 | `debugger` used on demand since 2026-09-28, option A: required in the Chromium build, attached to the inspected tab only while a request condition, throttling or a viewport set there is on, released when all are off; Firefox keeps the page-level wrapper. See [`bug-report-to-failing-test.md`](bug-report-to-failing-test.md#the-debugger-permission). | It cannot be optional; the owner accepted the install warning and the debugging bar while the extension has few users, for conditions on every request, and throttling. |
 | T3 | The DevTools panel is an addition, never a requirement: every tool still opens from the popup. | Testers do not open DevTools. |
 | T4 | Network data is read only through `chrome.devtools.network`, only while DevTools is open on the tab, and never leaves the browser unless the user exports it. | It needs no permission, and a HAR holds credentials. |
 | T5 | Exports hide credentials by default: `Authorization`, `Cookie` and `Set-Cookie` headers, and fields named like a password or a token, until the user reveals them. | A mock or a login file is committed more often than it should be. |

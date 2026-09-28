@@ -38,14 +38,13 @@ Every tool below runs on the live page, from the toolbar popup. The last three n
 ## Where it is
 
 Install **[Piwi Picker from the Chrome Web Store ↗](https://chromewebstore.google.com/detail/piwi-picker/pakhnokpjboejcghgcmkjlpnogfjihhe)**.
-The same listing covers Edge and the other Chromium browsers; in Edge, click **Allow** on the *Allow extensions from
-other stores* banner once, then **Get**.
+The listing covers Edge too: click **Allow** on its *Allow extensions from other stores* banner once, then **Get**.
 
 Every tool in the popup has a key shown on its tile (`1` records, `2` picks, `T` opens Tested elements, `B`
 reports a bug). One tool runs at a time and **Esc** cancels it; recording runs until its own **Stop**.
 
-Picking also has a shortcut without the popup, suggested as `Ctrl+Shift+E` (`Cmd+Shift+E` on macOS). A browser
-leaves it unbound when another extension holds it; the popup footer shows the key actually bound.
+Picking also has a shortcut, suggested as `Ctrl+Shift+E` (`Cmd+Shift+E` on macOS); the popup footer shows the key
+actually bound.
 
 ## Pick an element
 
@@ -107,10 +106,9 @@ review: **Copy as TypeScript** for a runnable spec that waits for each page it o
 
 ## Matching functions
 
-With a connection, the recorder loads the [function catalog](./test-functions) of the project mapped to the page: the
-page-object methods and helpers you registered. While recording, the overlay ranks the functions the steps so far
-look like. On export, a complete match becomes a call to your function; unmatched steps stay plain locator lines. No
-AI: it only scores your registered functions' DOM patterns.
+With a connection, the recorder loads the [function catalog](./test-functions) of the project mapped to the page and
+ranks, while you record, the functions the steps look like. On export, a complete match becomes a call to your
+function; other steps stay locator lines. No AI: it scores your registered functions' DOM patterns.
 
 ## Test functions against this page
 
@@ -125,9 +123,8 @@ project reaches, lists those tests, and marks the buttons, links and fields no t
 
 ## Languages
 
-Piwi Picker speaks English, French, German, Spanish and Brazilian Portuguese. It follows the browser's language unless
-**Language**, in the settings, picks another. German, Spanish and Portuguese are drafts no native reader has
-reviewed yet: the settings say so and link to
+Piwi Picker speaks English, French, German, Spanish and Brazilian Portuguese, following the browser unless
+**Language**, in the settings, picks another. German, Spanish and Portuguese are unreviewed drafts:
 [suggest a correction](https://github.com/PiwiTests/platform/issues/new?template=translation.yml). A bug report is
 written in the extension's language; page texts, locators, test ids, `steps.json` and generated specs never are.
 
@@ -136,6 +133,7 @@ written in the extension's language; page texts, locators, test ids, `steps.json
 | Permission | Why |
 |---|---|
 | `activeTab` | acts on the tab you are looking at, only when you click the toolbar icon or press the shortcut |
+| `debugger` (Chrome and Edge) | trusted input for a [replay](./report-a-bug#replaying-a-report). Attached only while a replay runs, under Chrome's bar saying Piwi Picker started debugging the browser; **Cancel** there falls back to the page's own events. Nothing leaves your machine |
 | `scripting` | injects the picker or the recorder into that tab on demand; no content script runs on pages you did not ask it to |
 | `storage` | keeps your copy format and, only if you connect, the instance URL, API key, URL patterns, cached catalogs and the last three [locator indexes](./tested-elements), on your machine. The session and the running recording use `chrome.storage.session`, cleared when the browser closes |
 | `cookies` (optional, not granted in advance) | [Save login for tests](./devtools#save-login-for-tests) asks for it, for the one site whose login you save |
@@ -148,16 +146,14 @@ Optional and off by default. In the settings (the popup's gear button), type you
 page comes from URL patterns kept on the instance, per project, and from any you keep in this browser; the popup's
 **Active project** select overrides both for the session. See [Extension connection](./extension-connection).
 
-The function catalogs refresh in the background, once per recorded page and when a recording stops; **Refresh** in
-Test functions fetches them now. **A recording is never sent to your instance**, and a [bug report](./bug-reports) only from its preview.
+Function catalogs refresh in the background; **Refresh** in Test functions fetches them now. **A recording is never sent to your instance**, and a [bug report](./bug-reports) only from its preview.
 
 ## Limits
 
 - **One frame at a time.** The picker and the recorder see the top-level document, not iframes or shadow DOM.
 - **Recording covers one origin.** On another site, recording stops capturing steps; stop and review, or start again
   there.
-- **No aria-snapshot copier.** `toMatchAriaSnapshot()` YAML needs the browser's accessibility tree, behind the
-  `debugger` permission.
+- **No aria-snapshot copier** yet for `toMatchAriaSnapshot()`.
 
 ## Related
 

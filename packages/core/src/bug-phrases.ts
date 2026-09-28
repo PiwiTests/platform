@@ -123,6 +123,11 @@ export interface BugPhrases {
     uncheck(subject: BugSubject): string;
     selectOption(subject: BugSubject, value: BugStepValue): string;
     press(key: string, subject: BugSubject | null): string;
+    dblclick(subject: BugSubject): string;
+    /** Choosing files in a file field, by their names; none clears the field. */
+    setInputFiles(subject: BugSubject, files: readonly string[]): string;
+    /** Dragging one element and dropping it on another. */
+    dragTo(subject: BugSubject, target: BugSubject): string;
   };
   /** What should be true of a subject, starting in lower case where the language allows. */
   expectation(subject: BugSubject, expectation: BugExpectation, negated: boolean): string;

@@ -38,6 +38,34 @@ function step(overrides: Partial<RecordedStep> = {}): RecordedStep {
 }
 
 describe('renderSpec — raw mode (no catalog)', () => {
+  test('writes a double click, a drag onto another element and a file choice', () => {
+    const row = target({ role: 'row', accessibleName: 'Invoice 42' });
+    const bin = target({ role: 'region', accessibleName: 'Archive' });
+    const file = target({ tagName: 'input', role: 'button', accessibleName: 'Invoice', testId: 'invoice-file' });
+    const session = buildSession(
+      [
+        step({ action: 'dblclick', target: row }),
+        step({ action: 'dragTo', target: row, dropTarget: bin }),
+        step({ action: 'setInputFiles', target: file, value: 'invoice.pdf' }),
+        step({ action: 'setInputFiles', target: file, value: 'a.png\nb.png' }),
+        step({ action: 'setInputFiles', target: file, value: '' }),
+      ],
+      0,
+    );
+    const { code, warnings } = renderSpec(session);
+    expect(code).toContain(`  await page.getByRole('row', { name: 'Invoice 42' }).dblclick();`);
+    expect(code).toContain(
+      `  await page.getByRole('row', { name: 'Invoice 42' }).dragTo(page.getByRole('region', { name: 'Archive' }));`,
+    );
+    expect(code).toContain(`  await page.getByTestId('invoice-file').setInputFiles('invoice.pdf');`);
+    expect(code).toContain(`  await page.getByTestId('invoice-file').setInputFiles(['a.png', 'b.png']);`);
+    expect(code).toContain(`  await page.getByTestId('invoice-file').setInputFiles([]);`);
+    expect(warnings.filter((w) => w.code === 'file-needed').map((w) => w.detail)).toEqual([
+      'invoice.pdf',
+      'a.png, b.png',
+    ]);
+  });
+
   test('writes a hover step as a hover on its locator', () => {
     const row = target({ role: 'row', accessibleName: 'Invoice 42' });
     const session = buildSession([step({ action: 'hover', target: row }), step({ action: 'click' })], 0);

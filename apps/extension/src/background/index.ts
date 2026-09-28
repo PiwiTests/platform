@@ -30,6 +30,8 @@ import {
 } from './bug-reports.js';
 import { CONDITIONS_KEY, isCondition, type ConditionsState } from '../shared/request-conditions.js';
 import { handleDesktopRepro, handleDesktopReproStatus, handleDesktopTarget } from './desktop-repro.js';
+import { handleReplayDriver, handleReplayInput, releaseReplayDebugger } from './cdp-replay.js';
+import { releaseDebugger, tabsHolding } from './debugger.js';
 
 /**
  * The Options language, read at startup and again whenever it changes. Every
@@ -619,6 +621,7 @@ async function handleStartReplay(
     // A replay under a request condition says so, while it runs and in its verdict.
     const conditions = await conditionsFor(tab, tab.url);
     await setReplayState(conditions.length ? { ...replay, conditions } : replay);
+    await releaseReplayDebugger();
     await unregisterScripts(REPLAY_SCRIPT_IDS);
     await chrome.scripting.registerContentScripts([
       {
@@ -652,8 +655,29 @@ async function handleStartReplay(
   }
 }
 
+/**
+ * A tab the replay attached to that left the replay's origin, or a replay that
+ * ended without saying so (its tab closed mid-page): the session is let go, so
+ * the debugging bar never stays up after the replay.
+ */
+chrome.tabs.onUpdated.addListener((tabId, change) => {
+  if (!change.url || !tabsHolding('replay').includes(tabId)) return;
+  void getReplayState().then((state) => {
+    let sameOrigin = false;
+    try {
+      sameOrigin = !!state && new URL(change.url!).origin === state.origin;
+    } catch {
+      sameOrigin = false;
+    }
+    if (!state || (state.status !== 'running' && state.status !== 'paused') || !sameOrigin) {
+      void releaseDebugger(tabId, 'replay');
+    }
+  });
+});
+
 /** The replay script has stored its final state: the badge follows what still runs, a recording perhaps. */
 async function handleReplayFinished(): Promise<void> {
+  await releaseReplayDebugger();
   await unregisterScripts(REPLAY_SCRIPT_IDS);
   await showStateBadge();
 }
@@ -687,6 +711,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   if (message?.type === 'piwi-start-replay') {
     void handleStartReplay(message, sender.tab).then(sendResponse);
+    return true;
+  }
+  if (message?.type === 'piwi-replay-driver') {
+    void handleReplayDriver(message, sender.tab).then(sendResponse);
+    return true;
+  }
+  if (message?.type === 'piwi-replay-input') {
+    void handleReplayInput(message, sender.tab).then(sendResponse);
     return true;
   }
   if (message?.type === 'piwi-open-viewport') {

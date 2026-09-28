@@ -2623,6 +2623,101 @@
   "replay_reasonActionFailed": {
     "message": "La page n’a pas réagi à l’action comme lors de l’enregistrement."
   },
+  "replay_reasonCovered": {
+    "message": "$other$ recouvre $element$ là où le pointeur arriverait.",
+    "placeholders": {
+      "element": {
+        "content": "$1",
+        "example": "button \"Apply\""
+      },
+      "other": {
+        "content": "$2",
+        "example": "div \"Loading\""
+      }
+    }
+  },
+  "replay_reasonOffscreen": {
+    "message": "$element$ reste en dehors de la partie visible de la page.",
+    "placeholders": {
+      "element": {
+        "content": "$1",
+        "example": "button \"Apply\""
+      }
+    }
+  },
+  "replay_driverTrusted": {
+    "message": "Rejoué avec une vraie saisie, comme Playwright l’envoie. Chrome affiche une barre indiquant que Piwi Picker a commencé à déboguer ce navigateur : c’est ce rejeu, et la barre disparaît à la fin."
+  },
+  "replay_driverEventsUnavailable": {
+    "message": "Rejoué avec les événements de la page : ce navigateur ne donne pas de protocole de débogage aux extensions, donc un survol ou un glisser peut ne pas agir comme une souris."
+  },
+  "replay_driverEventsRefused": {
+    "message": "Rejoué avec les événements de la page : le navigateur a refusé la session de débogage (un autre débogueur sur cet onglet, une règle d’entreprise, ou une page que le navigateur protège)."
+  },
+  "replay_driverEventsCanceled": {
+    "message": "Rejoué avec les événements de la page à partir de là : la barre de débogage a été annulée."
+  },
+  "replay_driverEventsLost": {
+    "message": "Rejoué avec les événements de la page à partir de là : la session de débogage s’est terminée."
+  },
+  "replay_stepTrusted": {
+    "message": "vraie saisie"
+  },
+  "replay_stepEvents": {
+    "message": "événements de la page"
+  },
+  "replay_fileAsk_one": {
+    "message": "L’étape $step$ choisit $count$ fichier, $files$, que le rapport nomme sans le contenir. Choisissez-le sur cet ordinateur pour continuer, ou passez l’étape.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      },
+      "files": {
+        "content": "$2",
+        "example": "\"invoice.pdf\""
+      },
+      "step": {
+        "content": "$3",
+        "example": "3"
+      }
+    }
+  },
+  "replay_fileAsk_other": {
+    "message": "L’étape $step$ choisit $count$ fichiers, $files$, que le rapport nomme sans les contenir. Choisissez-les sur cet ordinateur pour continuer, ou passez l’étape.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      },
+      "files": {
+        "content": "$2",
+        "example": "\"invoice.pdf\""
+      },
+      "step": {
+        "content": "$3",
+        "example": "3"
+      }
+    }
+  },
+  "replay_fileChoose": {
+    "message": "Le fichier pour cette étape"
+  },
+  "replay_fileSkip": {
+    "message": "Passer cette étape"
+  },
+  "replay_fileSkipped": {
+    "message": "Passée : aucun fichier n’a été choisi."
+  },
+  "replay_fileChosen": {
+    "message": "Choisi ici : $files$",
+    "placeholders": {
+      "files": {
+        "content": "$1",
+        "example": "\"invoice.pdf\""
+      }
+    }
+  },
   "replay_dialogTitle": {
     "message": "Rejouer un rapport de bug"
   },
@@ -4840,6 +4935,15 @@
       "matcher": {
         "content": "$1",
         "example": "toHaveText"
+      }
+    }
+  },
+  "codegen_fileNeeded": {
+    "message": "Un fichier a été choisi ici ($files$) : le test le lit dans le dossier où Playwright s’exécute.",
+    "placeholders": {
+      "files": {
+        "content": "$1",
+        "example": "invoice.pdf"
       }
     }
   },

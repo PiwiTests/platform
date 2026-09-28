@@ -2623,6 +2623,101 @@
   "replay_reasonActionFailed": {
     "message": "La página no reaccionó a la acción como cuando se grabó."
   },
+  "replay_reasonCovered": {
+    "message": "$other$ cubre $element$ justo donde llegaría el puntero.",
+    "placeholders": {
+      "element": {
+        "content": "$1",
+        "example": "button \"Apply\""
+      },
+      "other": {
+        "content": "$2",
+        "example": "div \"Loading\""
+      }
+    }
+  },
+  "replay_reasonOffscreen": {
+    "message": "$element$ queda fuera de la parte visible de la página.",
+    "placeholders": {
+      "element": {
+        "content": "$1",
+        "example": "button \"Apply\""
+      }
+    }
+  },
+  "replay_driverTrusted": {
+    "message": "Reproducido con entrada real, como la envía Playwright. Chrome muestra una barra que dice que Piwi Picker empezó a depurar este navegador: es esta reproducción, y la barra desaparece al terminar."
+  },
+  "replay_driverEventsUnavailable": {
+    "message": "Reproducido con los eventos de la propia página: este navegador no da a las extensiones un protocolo de depuración, así que pasar el cursor o arrastrar puede no actuar como un ratón."
+  },
+  "replay_driverEventsRefused": {
+    "message": "Reproducido con los eventos de la propia página: el navegador rechazó la sesión de depuración (otro depurador en esta pestaña, una directiva o una página que el navegador protege)."
+  },
+  "replay_driverEventsCanceled": {
+    "message": "Reproducido con los eventos de la propia página desde ahí: se canceló la barra de depuración."
+  },
+  "replay_driverEventsLost": {
+    "message": "Reproducido con los eventos de la propia página desde ahí: la sesión de depuración terminó."
+  },
+  "replay_stepTrusted": {
+    "message": "entrada real"
+  },
+  "replay_stepEvents": {
+    "message": "eventos de la página"
+  },
+  "replay_fileAsk_one": {
+    "message": "El paso $step$ elige $count$ archivo, $files$, que el informe nombra pero no contiene. Elíjalo en este equipo para continuar, u omita el paso.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      },
+      "files": {
+        "content": "$2",
+        "example": "\"invoice.pdf\""
+      },
+      "step": {
+        "content": "$3",
+        "example": "3"
+      }
+    }
+  },
+  "replay_fileAsk_other": {
+    "message": "El paso $step$ elige $count$ archivos, $files$, que el informe nombra pero no contiene. Elíjalos en este equipo para continuar, u omita el paso.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      },
+      "files": {
+        "content": "$2",
+        "example": "\"invoice.pdf\""
+      },
+      "step": {
+        "content": "$3",
+        "example": "3"
+      }
+    }
+  },
+  "replay_fileChoose": {
+    "message": "El archivo para este paso"
+  },
+  "replay_fileSkip": {
+    "message": "Omitir este paso"
+  },
+  "replay_fileSkipped": {
+    "message": "Omitido: no se eligió ningún archivo."
+  },
+  "replay_fileChosen": {
+    "message": "Elegido aquí: $files$",
+    "placeholders": {
+      "files": {
+        "content": "$1",
+        "example": "\"invoice.pdf\""
+      }
+    }
+  },
   "replay_dialogTitle": {
     "message": "Reproducir un informe de bug"
   },
@@ -4840,6 +4935,15 @@
       "matcher": {
         "content": "$1",
         "example": "toHaveText"
+      }
+    }
+  },
+  "codegen_fileNeeded": {
+    "message": "Aquí se eligió un archivo ($files$): la prueba lo lee de la carpeta donde se ejecuta Playwright.",
+    "placeholders": {
+      "files": {
+        "content": "$1",
+        "example": "invoice.pdf"
       }
     }
   },

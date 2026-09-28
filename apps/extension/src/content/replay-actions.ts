@@ -16,8 +16,10 @@ import type { Observation } from './replay-core.js';
  * The element is found with the locator the generated spec would use
  * (`stepLocator`), resolved by the in-page engine, and waited for as
  * Playwright waits: exactly one match, visible, enabled, and still in place
- * across two frames. The actions are the page's own events, since an
- * extension cannot send trusted input without the `debugger` permission.
+ * across two frames. This file's actions are the page's own events, the
+ * replay's fallback where trusted input (`replay-trusted.ts`) is not there:
+ * Firefox, a browser that refused the debugging session, or a person who
+ * cancelled its bar.
  */
 
 /** How long a step waits for its element, and an assertion for its result. */
@@ -100,6 +102,11 @@ export function locatorFor(step: RecordedStep): string | null {
   return stepLocator(step.target, { locators: 'stable' });
 }
 
+/** The locator of where a `dragTo` step drops. */
+export function dropLocatorFor(step: RecordedStep): string | null {
+  return step.dropTarget ? stepLocator(step.dropTarget, { locators: 'stable' }) : null;
+}
+
 /** Every element a locator finds on the page now, the extension's own surfaces left out. */
 export function findAll(locator: string): Element[] {
   const engine = createLocatorEngine(document, { ignore: isOwnHost });
@@ -120,8 +127,11 @@ function sameRect(a: DOMRect, b: DOMRect): boolean {
  * Waits until the step's element can take the action, and answers it; or,
  * after `timeout`, why it could not.
  */
-export async function resolveForAction(step: RecordedStep, timeout = ACTION_TIMEOUT_MS): Promise<Resolution> {
-  const locator = locatorFor(step);
+export async function resolveForAction(
+  step: RecordedStep,
+  timeout = ACTION_TIMEOUT_MS,
+  locator = locatorFor(step),
+): Promise<Resolution> {
   if (!locator) return { ok: false, reason: t('replay_reasonNoLocator') };
   const deadline = Date.now() + timeout;
   let reason = '';
@@ -130,6 +140,8 @@ export async function resolveForAction(step: RecordedStep, timeout = ACTION_TIME
     const model = new DomModel();
     if (found.length === 0) reason = t('replay_reasonNoMatch', { locator });
     else if (found.length > 1) reason = tn('replay_reasonManyMatches', found.length, { locator });
+    // A file field is often hidden behind a button of its own; Playwright sets its files all the same.
+    else if (step.action === 'setInputFiles') return { ok: true, element: found[0]! };
     else if (!model.isVisible(found[0]!)) reason = t('replay_reasonHidden', { locator });
     else if (step.action !== 'hover' && model.disabled(found[0]!)) reason = t('replay_reasonDisabled', { locator });
     else {
@@ -250,15 +262,15 @@ export function endHover(): void {
 }
 
 /** A click as a person makes it: pointer and mouse down and up, focus, then the click. */
-function dispatchClick(element: Element, x: number, y: number): void {
-  const init = mouseInit(x, y);
+function dispatchClick(element: Element, x: number, y: number, detail = 1): void {
+  const init = { ...mouseInit(x, y), detail };
   const pointer: PointerEventInit = { ...init, pointerId: 1, pointerType: 'mouse', isPrimary: true };
   element.dispatchEvent(new PointerEvent('pointerdown', { ...pointer, buttons: 1 }));
   element.dispatchEvent(new MouseEvent('mousedown', { ...init, buttons: 1 }));
   if (element instanceof HTMLElement || element instanceof SVGElement) element.focus({ preventScroll: true });
   element.dispatchEvent(new PointerEvent('pointerup', pointer));
   element.dispatchEvent(new MouseEvent('mouseup', init));
-  element.dispatchEvent(new MouseEvent('click', { ...init, detail: 1 }));
+  element.dispatchEvent(new MouseEvent('click', init));
 }
 
 async function pointAt(element: Element, cursor: FakeCursor, caption: string): Promise<{ x: number; y: number }> {
@@ -280,6 +292,59 @@ export async function performClick(element: Element, cursor: FakeCursor, caption
   await cursor.press();
   cursor.outline(null);
   dispatchClick(element, x, y);
+}
+
+/** A double click: two clicks, the second counting two, then `dblclick`. */
+export async function performDoubleClick(element: Element, cursor: FakeCursor, caption: string): Promise<void> {
+  const { x, y } = await pointAt(element, cursor, caption);
+  await cursor.press();
+  cursor.outline(null);
+  dispatchClick(element, x, y, 1);
+  dispatchClick(element, x, y, 2);
+  element.dispatchEvent(new MouseEvent('dblclick', { ...mouseInit(x, y), detail: 2 }));
+}
+
+/**
+ * A drag and drop with the page's own events: the HTML drag events a browser
+ * sends, carrying one `DataTransfer`, and the pointer events a drag done by
+ * script listens to, pressed on the element and released over the target.
+ */
+export async function performDrag(
+  element: Element,
+  target: Element,
+  cursor: FakeCursor,
+  caption: string,
+): Promise<void> {
+  const from = await pointAt(element, cursor, caption);
+  await cursor.press();
+  const to = center(target);
+  cursor.outline(target.getBoundingClientRect());
+  await cursor.moveTo(to.x, to.y, caption);
+  cursor.outline(null);
+  const pointer = (x: number, y: number, buttons: number): PointerEventInit => ({
+    ...mouseInit(x, y),
+    buttons,
+    pointerId: 1,
+    pointerType: 'mouse',
+    isPrimary: true,
+  });
+  element.dispatchEvent(new PointerEvent('pointerdown', pointer(from.x, from.y, 1)));
+  element.dispatchEvent(new MouseEvent('mousedown', { ...mouseInit(from.x, from.y), buttons: 1 }));
+  const data = new DataTransfer();
+  const drag = (type: string, on: Element, x: number, y: number) =>
+    on.dispatchEvent(new DragEvent(type, { ...mouseInit(x, y), dataTransfer: data }));
+  const html = element instanceof HTMLElement && element.draggable;
+  if (html) drag('dragstart', element, from.x, from.y);
+  target.dispatchEvent(new PointerEvent('pointermove', pointer(to.x, to.y, 1)));
+  target.dispatchEvent(new MouseEvent('mousemove', { ...mouseInit(to.x, to.y), buttons: 1 }));
+  if (html) {
+    drag('dragenter', target, to.x, to.y);
+    drag('dragover', target, to.x, to.y);
+    drag('drop', target, to.x, to.y);
+    drag('dragend', element, to.x, to.y);
+  }
+  target.dispatchEvent(new PointerEvent('pointerup', pointer(to.x, to.y, 0)));
+  target.dispatchEvent(new MouseEvent('mouseup', mouseInit(to.x, to.y)));
 }
 
 /**
@@ -364,6 +429,21 @@ export async function performSelect(
   element.value = option.value;
   element.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
   element.dispatchEvent(new Event('change', { bubbles: true }));
+  return true;
+}
+
+/**
+ * Files the developer chose for a file step, set on the page's file field as
+ * the browser sets a choice, with its `input` and `change` events.
+ */
+export function assignFiles(element: Element, files: readonly File[]): boolean {
+  const input = element as HTMLInputElement;
+  if (input.tagName !== 'INPUT' || input.type !== 'file') return false;
+  const data = new DataTransfer();
+  for (const file of files) data.items.add(file);
+  input.files = data.files;
+  input.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+  input.dispatchEvent(new Event('change', { bubbles: true }));
   return true;
 }
 

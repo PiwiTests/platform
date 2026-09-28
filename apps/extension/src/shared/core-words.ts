@@ -56,6 +56,8 @@ export function codegenWarningText(warning: CodegenWarning): string {
       return t('codegen_redactedValue', { variable: warning.detail ?? '' });
     case 'incomplete-assertion':
       return warning.detail ? t('codegen_missingExpected', { matcher: warning.detail }) : t('codegen_emptyAssertion');
+    case 'file-needed':
+      return t('codegen_fileNeeded', { files: warning.detail ?? '' });
   }
 }
 

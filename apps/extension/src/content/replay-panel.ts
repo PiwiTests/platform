@@ -18,10 +18,26 @@ import {
 } from '../shared/replay-storage.js';
 import { ensureSessionAccess } from '../shared/session-access.js';
 import { REPLAY_DIALOG_HOST_ID, REPLAY_HUD_HOST_ID, SHARED_STYLE } from './record-ui.js';
+import { fileNames } from '@piwitests/core/codegen';
+import type { FallbackReason, ReplayDriver } from '../shared/cdp-input.js';
+import {
+  NotActionable,
+  setTrustedReplay,
+  trustedCheck,
+  trustedClick,
+  trustedDrag,
+  trustedFill,
+  trustedHover,
+  trustedPress,
+  trustedSelect,
+  TrustedInputLost,
+} from './replay-trusted.js';
 import {
   createWaker,
+  driverText,
   evaluateAssertion,
   evidenceLines,
+  quoted,
   replayVerdict,
   verdictText,
   type ReplayVerdict,
@@ -32,12 +48,16 @@ import { createCursor, type FakeCursor } from './replay-cursor.js';
 import {
   ACTION_TIMEOUT_MS,
   ASSERT_TIMEOUT_MS,
+  assignFiles,
+  dropLocatorFor,
   endHover,
   findAll,
   locatorFor,
   observe,
   performCheck,
   performClick,
+  performDoubleClick,
+  performDrag,
   performFill,
   performHover,
   performPress,
@@ -85,6 +105,9 @@ const STYLE = `
   .failed .icon, .diverged .icon { color: #f87171; }
   .pending { opacity: .6; }
   .detail { color: #fca5a5; font-size: 11px; padding-left: 20px; }
+  .note { color: #9ca3af; font-size: 11px; padding-left: 20px; }
+  .tag { color: #9ca3af; font-size: 10.5px; margin-left: auto; padding-left: 6px; white-space: nowrap; }
+  .ask { border-radius: 8px; padding: 8px 10px; margin: 6px 0; background: rgba(124,58,237,.16); }
   .row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
   button { border-radius: 6px; padding: 4px 9px; font: inherit; font-size: 11.5px; cursor: pointer;
     border: 1px solid rgba(128,128,128,.3); background: rgba(128,128,128,.12); color: inherit; }
@@ -104,7 +127,7 @@ const STYLE = `
   .message:empty { display: none; }
   input[type=file] { font: inherit; font-size: 12px; margin: 8px 0; color: inherit; }
   @media (prefers-color-scheme: light) {
-    .sub { color: #6b7280; }
+    .sub, .note, .tag { color: #6b7280; }
     .detail, .message { color: #b91c1c; }
     .done .icon, .passed .icon { color: #059669; }
     .failed .icon, .diverged .icon { color: #dc2626; }
@@ -238,6 +261,8 @@ function glyph(result: ReplayStepResult | undefined, current: boolean): string {
       return '✗';
     case 'diverged':
       return '!';
+    case 'skipped':
+      return '–';
     default:
       return '·';
   }
@@ -302,6 +327,12 @@ function renderHud(
         total: formatNumber(steps.length),
       });
   box.append(title, sub);
+  if (state.driver) {
+    const how = document.createElement('div');
+    how.className = 'sub';
+    how.textContent = driverText(state.driver);
+    box.appendChild(how);
+  }
   if (state.conditions?.length) {
     const conditions = document.createElement('div');
     conditions.className = 'sub';
@@ -324,15 +355,27 @@ function renderHud(
     const text = document.createElement('span');
     text.textContent = `${formatNumber(i + 1)}. ${stepWords(step)}`;
     row.append(icon, text);
+    if (result?.driver) {
+      const tag = document.createElement('span');
+      tag.className = 'tag';
+      tag.textContent = t(result.driver === 'cdp' ? 'replay_stepTrusted' : 'replay_stepEvents');
+      row.appendChild(tag);
+    }
     list.appendChild(row);
     if (result?.detail && (result.status === 'failed' || result.status === 'diverged')) {
       const detail = document.createElement('div');
       detail.className = 'detail';
       detail.textContent = result.detail;
       list.appendChild(detail);
+    } else if (result?.detail && (result.status === 'skipped' || step.action === 'setInputFiles')) {
+      const note = document.createElement('div');
+      note.className = 'note';
+      note.textContent = result.detail;
+      list.appendChild(note);
     }
   });
   box.appendChild(list);
+  if (!done && filePrompt) box.appendChild(filePromptBox(filePrompt));
 
   const controls = document.createElement('div');
   controls.className = 'row';
@@ -381,6 +424,12 @@ function renderHud(
       const d = document.createElement('div');
       d.textContent = detail;
       box2.append(t, d);
+      if (state.driver) {
+        const how = document.createElement('div');
+        how.className = 'sub';
+        how.textContent = driverText(state.driver);
+        box2.appendChild(how);
+      }
       box.appendChild(box2);
       if (state.bugReportId && shareable(verdict.kind)) {
         box.appendChild(
@@ -476,30 +525,193 @@ function caption(step: RecordedStep): string {
   return stepWords(step);
 }
 
-/** Performs one action step: false when it could not be done here. */
-async function act(step: RecordedStep, element: Element): Promise<boolean> {
+/** A step's action with the page's own events: false when it could not be done here. */
+async function actWithEvents(step: RecordedStep, element: Element | null, dropOn: Element | null): Promise<boolean> {
   const c = cursor!;
+  const words = caption(step);
+  if (!element) {
+    await performPress(null, step.value ?? 'Enter', c, words);
+    return true;
+  }
   switch (step.action) {
     case 'click':
-      await performClick(element, c, caption(step));
+      await performClick(element, c, words);
+      return true;
+    case 'dblclick':
+      await performDoubleClick(element, c, words);
       return true;
     case 'hover':
-      await performHover(element, c, caption(step));
+      await performHover(element, c, words);
       return true;
     case 'fill':
-      if (step.redacted) return performFill(element, '', c, caption(step));
-      return performFill(element, step.value ?? '', c, caption(step));
+      return performFill(element, step.redacted ? '' : (step.value ?? ''), c, words);
     case 'check':
-      return performCheck(element, true, c, caption(step));
+      return performCheck(element, true, c, words);
     case 'uncheck':
-      return performCheck(element, false, c, caption(step));
+      return performCheck(element, false, c, words);
     case 'selectOption':
-      return performSelect(element, step.value ?? '', c, caption(step));
+      return performSelect(element, step.value ?? '', c, words);
     case 'press':
-      await performPress(element, step.value ?? 'Enter', c, caption(step));
+      await performPress(element, step.value ?? 'Enter', c, words);
+      return true;
+    case 'dragTo':
+      if (!dropOn) return false;
+      await performDrag(element, dropOn, c, words);
       return true;
     default:
       return true;
+  }
+}
+
+/** A step's action as trusted input, through the background worker. */
+async function actTrusted(step: RecordedStep, element: Element | null, dropOn: Element | null): Promise<boolean> {
+  const c = cursor!;
+  const words = caption(step);
+  if (!element) {
+    await trustedPress(null, step.value ?? 'Enter', c, words);
+    return true;
+  }
+  switch (step.action) {
+    case 'click':
+      await trustedClick(element, c, words);
+      return true;
+    case 'dblclick':
+      await trustedClick(element, c, words, 2);
+      return true;
+    case 'hover':
+      await trustedHover(element, c, words);
+      return true;
+    case 'fill':
+      return trustedFill(element, step.redacted ? '' : (step.value ?? ''), c, words);
+    case 'check':
+      return trustedCheck(element, true, c, words);
+    case 'uncheck':
+      return trustedCheck(element, false, c, words);
+    case 'selectOption':
+      return trustedSelect(element, step.value ?? '', c, words);
+    case 'press':
+      await trustedPress(element, step.value ?? 'Enter', c, words);
+      return true;
+    case 'dragTo':
+      if (!dropOn) return false;
+      await trustedDrag(element, dropOn, c, words);
+      return true;
+    default:
+      return true;
+  }
+}
+
+type ActResult = { ok: true; driver: ReplayDriver } | { ok: false; reason: string | null };
+
+/**
+ * Performs one action step with the replay's driver. When trusted input is
+ * lost before it reached the page (the person cancelled the debugging bar),
+ * the replay goes on with the page's own events, from this step.
+ */
+async function act(step: RecordedStep, element: Element | null, dropOn: Element | null): Promise<ActResult> {
+  const state = await getReplayState();
+  if (state?.driver?.driver === 'cdp') {
+    try {
+      return (await actTrusted(step, element, dropOn)) ? { ok: true, driver: 'cdp' } : { ok: false, reason: null };
+    } catch (e) {
+      if (e instanceof NotActionable) return { ok: false, reason: e.message };
+      if (!(e instanceof TrustedInputLost)) throw e;
+      await fallBack(e.reason);
+      if (e.started) return { ok: true, driver: 'cdp' };
+    }
+  }
+  return (await actWithEvents(step, element, dropOn)) ? { ok: true, driver: 'synthetic' } : { ok: false, reason: null };
+}
+
+/** The replay goes on with the page's own events, and its panel says why. */
+async function fallBack(reason: FallbackReason): Promise<void> {
+  const next = await updateReplayState((s) =>
+    s.driver?.driver === 'synthetic' ? s : { ...s, driver: { driver: 'synthetic', reason } },
+  );
+  if (next && loopActive) renderHud(next);
+}
+
+/**
+ * Asks the background worker how this replay acts on this page: trusted input
+ * when it can attach to the tab, the page's own events otherwise. The choice
+ * is kept in the replay's state, so a replay that fell back stays there.
+ */
+async function pickDriver(state: ReplayState): Promise<ReplayState> {
+  let answer: { driver?: ReplayDriver; reason?: FallbackReason | null } | undefined;
+  try {
+    answer = await chrome.runtime.sendMessage({
+      type: 'piwi-replay-driver',
+      replayId: state.id,
+      previous: state.driver ?? null,
+    });
+  } catch {
+    answer = undefined;
+  }
+  const choice =
+    answer?.driver === 'cdp' || answer?.driver === 'synthetic'
+      ? { driver: answer.driver, reason: answer.reason ?? null }
+      : { driver: 'synthetic' as const, reason: 'unavailable' as const };
+  if (state.driver?.driver === choice.driver && state.driver.reason === choice.reason) return state;
+  return (await updateReplayState((s) => ({ ...s, driver: choice }))) ?? state;
+}
+
+/** The file step waiting for the developer: the names the report gives, and what answers it. */
+interface FilePrompt {
+  step: number;
+  names: string[];
+  answer: (files: File[] | null) => void;
+}
+
+let filePrompt: FilePrompt | null = null;
+
+/** What the panel shows while a file step waits: the file the report names, a chooser, and Skip. */
+function filePromptBox(prompt: FilePrompt): HTMLElement {
+  const box = document.createElement('div');
+  box.className = 'ask';
+  box.setAttribute('role', 'group');
+  const text = document.createElement('div');
+  text.textContent = tn('replay_fileAsk', prompt.names.length, {
+    step: formatNumber(prompt.step + 1),
+    files: prompt.names.map(quoted).join(', '),
+  });
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.multiple = prompt.names.length > 1;
+  input.setAttribute('data-piwi-replay-file', '');
+  input.setAttribute('aria-label', t('replay_fileChoose'));
+  input.addEventListener('change', () => {
+    const files = [...(input.files ?? [])];
+    if (files.length) prompt.answer(files);
+  });
+  const row = document.createElement('div');
+  row.className = 'row';
+  row.appendChild(button(t('replay_fileSkip'), () => prompt.answer(null)));
+  box.append(text, input, row);
+  return box;
+}
+
+/**
+ * A file step: the report names the files but does not carry them, so the
+ * developer chooses them in the panel (or skips the step), and they are set on
+ * the page's field as the browser sets a choice. Answers null when the replay
+ * was stopped meanwhile.
+ */
+async function askForFiles(state: ReplayState, index: number, step: RecordedStep): Promise<File[] | 'skip' | null> {
+  const names = fileNames(step.value);
+  if (names.length === 0) return [];
+  const chosen = new Promise<File[] | null>((resolve) => {
+    filePrompt = { step: index, names, answer: resolve };
+  });
+  renderHud(state);
+  try {
+    for (;;) {
+      const answer = await Promise.race([chosen, waitForRelease().then(() => 'woken' as const)]);
+      if (answer !== 'woken') return answer ?? 'skip';
+      const latest = await getReplayState();
+      if (!latest || latest.status === 'stopped') return null;
+    }
+  } finally {
+    filePrompt = null;
   }
 }
 
@@ -601,6 +813,8 @@ async function runReplay(): Promise<void> {
     }
     cursor?.remove();
     cursor = createCursor(state.cursor);
+    setTrustedReplay(state.id);
+    state = await pickDriver(state);
     // The panel shows at once; the first step waits for the page to be ready.
     renderHud(state);
     await waitForPageReady();
@@ -669,6 +883,12 @@ async function runReplay(): Promise<void> {
         await recordResult(state, index, { status: 'diverged', detail: resolved.reason });
         return void (await finish((await getReplayState())!, false));
       }
+      const dropOn =
+        step.action === 'dragTo' ? await resolveForAction(step, ACTION_TIMEOUT_MS, dropLocatorFor(step)) : null;
+      if (dropOn && !dropOn.ok) {
+        await recordResult(state, index, { status: 'diverged', detail: dropOn.reason });
+        return void (await finish((await getReplayState())!, false));
+      }
       if (state.stepMode) {
         if (resolved.element) {
           const r = resolved.element.getBoundingClientRect();
@@ -683,19 +903,43 @@ async function runReplay(): Promise<void> {
         if (!latest) continue;
         state = latest;
       }
+      if (step.action === 'setInputFiles' && resolved.element) {
+        const files = await askForFiles(state, index, step);
+        if (files === null) continue;
+        const latest = (await getReplayState()) ?? state;
+        if (files === 'skip') {
+          await recordResult(latest, index, { status: 'skipped', detail: t('replay_fileSkipped') });
+          continue;
+        }
+        if (!assignFiles(resolved.element, files)) {
+          await recordResult(latest, index, { status: 'diverged', detail: t('replay_reasonActionFailed') });
+          return void (await finish((await getReplayState())!, false));
+        }
+        await recordResult(latest, index, {
+          status: 'done',
+          detail: files.length ? t('replay_fileChosen', { files: files.map((f) => quoted(f.name)).join(', ') }) : null,
+        });
+        continue;
+      }
       // Saved before acting: the action may leave the page, and the next one continues from here.
-      const advanced = await recordResult(state, index, { status: 'done', detail: null });
-      const worked = resolved.element
-        ? await act(step, resolved.element)
-        : (await performPress(null, step.value ?? 'Enter', cursor!, caption(step)), true);
-      if (!worked) {
+      const driver = (await getReplayState())?.driver?.driver ?? 'synthetic';
+      const advanced = await recordResult(state, index, { status: 'done', detail: null, driver });
+      const worked = await act(step, resolved.element, dropOn?.ok ? dropOn.element : null);
+      if (!worked.ok) {
+        const latest = (await getReplayState()) ?? advanced;
         await setReplayState({
-          ...advanced,
-          results: Object.assign(advanced.results.slice(), {
-            [index]: { status: 'diverged', detail: t('replay_reasonActionFailed') },
+          ...latest,
+          results: Object.assign(latest.results.slice(), {
+            [index]: { status: 'diverged', detail: worked.reason ?? t('replay_reasonActionFailed'), driver },
           }),
         });
         return void (await finish((await getReplayState())!, false));
+      }
+      if (worked.driver !== driver) {
+        await updateReplayState((s) => ({
+          ...s,
+          results: Object.assign(s.results.slice(), { [index]: { ...s.results[index]!, driver: worked.driver } }),
+        }));
       }
       await updateReplayState((s) => ({ ...s, cursor: cursor?.position() ?? s.cursor }));
     }
@@ -934,6 +1178,12 @@ if (globals.__piwiReplayEntry) {
   globals.__piwiReplayEntry = entry;
   // The Piwi panel in DevTools changed the stored state: draw it, and go on when asked.
   chrome.runtime.onMessage.addListener((message) => {
+    if (message?.type === 'piwi-replay-driver-lost') {
+      void getReplayState().then((state) => {
+        if (state && state.id === message.replayId) void fallBack(message.reason ?? 'lost');
+      });
+      return undefined;
+    }
     if (message?.type !== 'piwi-replay-wake') return undefined;
     void getReplayState().then((state) => {
       if (state && loopActive) renderHud(state);

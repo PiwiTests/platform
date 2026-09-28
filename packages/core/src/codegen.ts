@@ -50,7 +50,12 @@ export interface CodegenOptions {
   format?: 'file' | 'body';
 }
 
-export type CodegenWarningCode = 'no-locator' | 'brittle-locator' | 'redacted-value' | 'incomplete-assertion';
+export type CodegenWarningCode =
+  | 'no-locator'
+  | 'brittle-locator'
+  | 'redacted-value'
+  | 'incomplete-assertion'
+  | 'file-needed';
 
 /** Something about a step the reader of the generated spec should check. */
 export interface CodegenWarning {
@@ -60,7 +65,8 @@ export interface CodegenWarning {
   /**
    * The value the message names, for a reader that words the warning itself
    * from its code: the brittle locator, the environment variable of a redacted
-   * value, or the matcher an incomplete assertion lacks a value for.
+   * value, the matcher an incomplete assertion lacks a value for, or the names
+   * of the files a file step needs.
    */
   detail?: string;
   /** The warning in English. */
@@ -297,6 +303,14 @@ function renderAssertStep(step: RecordedStep, index: number, ctx: RenderContext)
   return lines;
 }
 
+/** The file names a `setInputFiles` step holds, one per line, without any directory. */
+export function fileNames(value: string | null): string[] {
+  return (value ?? '')
+    .split('\n')
+    .map((name) => name.trim().replace(/^.*[\\/]/, ''))
+    .filter(Boolean);
+}
+
 function renderRawStep(step: RecordedStep, index: number, ctx: RenderContext): string[] {
   if (step.action === 'goto') return [`  await page.goto(${quote(urlForCode(step.value ?? step.pageUrl, ctx))});`];
   if (step.action === 'assert' || step.action === 'assertVisible') return renderAssertStep(step, index, ctx);
@@ -305,6 +319,24 @@ function renderRawStep(step: RecordedStep, index: number, ctx: RenderContext): s
   switch (step.action) {
     case 'click':
       return [`  await ${loc}.click();`];
+    case 'dblclick':
+      return [`  await ${loc}.dblclick();`];
+    case 'dragTo': {
+      const to = locatorForStep({ ...step, target: step.dropTarget ?? null }, index, ctx);
+      return [`  await ${loc}.dragTo(${to});`];
+    }
+    case 'setInputFiles': {
+      const names = fileNames(step.value);
+      if (names.length === 0) return [`  await ${loc}.setInputFiles([]);`];
+      ctx.warnings.push({
+        step: index,
+        code: 'file-needed',
+        detail: names.join(', '),
+        message: `A file was chosen here (${names.join(', ')}); the spec reads it from the directory Playwright runs in.`,
+      });
+      const files = names.length === 1 ? quote(names[0]!) : `[${names.map(quote).join(', ')}]`;
+      return [`  await ${loc}.setInputFiles(${files});`];
+    }
     case 'hover':
       return [`  await ${loc}.hover();`];
     case 'fill': {

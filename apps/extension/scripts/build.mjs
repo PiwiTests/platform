@@ -1,5 +1,5 @@
 // Builds the extension into dist/ (Chrome, Edge) and dist-firefox/ (Firefox),
-// which differ only in their manifest. Content scripts and the background
+// which differ only in their manifest (Firefox's has no `debugger`). Content scripts and the background
 // service worker are each built as a standalone IIFE (no shared chunks) via
 // Vite's library mode, since chrome.scripting.executeScript({ files: [...] })
 // injects them as plain classic scripts with no module resolution — unlike
@@ -29,6 +29,14 @@ const firefoxOutDir = path.join(root, 'dist-firefox');
 export function chromiumManifest(manifest) {
   const { scripts: _firefoxOnly, ...background } = manifest.background ?? {};
   return { ...manifest, background };
+}
+
+/**
+ * The manifest Firefox loads: `manifest.json` without `debugger`, which Firefox
+ * does not have. Every feature that uses it falls back to what works without it.
+ */
+export function firefoxManifest(manifest) {
+  return { ...manifest, permissions: (manifest.permissions ?? []).filter((p) => p !== 'debugger') };
 }
 
 /** Every standalone content script / service worker entry, as [output name, source entry]. */
@@ -127,10 +135,10 @@ export async function buildExtension({ release = false, pseudo = false } = {}) {
   cpSync(path.join(root, 'public', 'icons'), path.join(outDir, 'icons'), { recursive: true });
   if (pseudo) writePseudoCatalog();
 
-  // The same files for Firefox, with the manifest as written.
+  // The same files for Firefox, with its manifest.
   rmSync(firefoxOutDir, { recursive: true, force: true });
   cpSync(outDir, firefoxOutDir, { recursive: true });
-  writeFileSync(path.join(firefoxOutDir, 'manifest.json'), JSON.stringify(manifest, null, 2));
+  writeFileSync(path.join(firefoxOutDir, 'manifest.json'), JSON.stringify(firefoxManifest(manifest), null, 2));
 }
 
 const ACCENTED = {

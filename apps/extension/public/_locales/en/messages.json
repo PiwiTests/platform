@@ -3131,6 +3131,116 @@
     "message": "The page did not react to the action the way it did when it was recorded.",
     "description": "Why a replay step could not be done: the click, typing or choice did not have its effect."
   },
+  "replay_reasonCovered": {
+    "message": "$other$ covers $element$ where the pointer would land.",
+    "description": "Why a replay step could not be done with trusted input: another element covers the one to click. $element$ and $other$ are a tag and a name from the page, such as button \"Apply\".",
+    "placeholders": {
+      "element": {
+        "content": "$1",
+        "example": "button \"Apply\""
+      },
+      "other": {
+        "content": "$2",
+        "example": "div \"Loading\""
+      }
+    }
+  },
+  "replay_reasonOffscreen": {
+    "message": "$element$ stays outside the visible part of the page.",
+    "description": "Why a replay step could not be done with trusted input: the element cannot be brought on screen. $element$ is a tag and a name from the page.",
+    "placeholders": {
+      "element": {
+        "content": "$1",
+        "example": "button \"Apply\""
+      }
+    }
+  },
+  "replay_driverTrusted": {
+    "message": "Played with trusted input, as Playwright sends it. Chrome shows a bar saying Piwi Picker started debugging this browser: that is this replay, and the bar goes when it ends.",
+    "description": "Replay panel, under its title and its verdict: the replay acts with trusted input through Chrome's debugging protocol, and Chrome's bar saying the extension is debugging the browser is expected."
+  },
+  "replay_driverEventsUnavailable": {
+    "message": "Played with the page's own events: this browser gives extensions no debugging protocol, so a hover or a drag may not act as a mouse does.",
+    "description": "Replay panel: the replay acts with the page's own events because the browser (Firefox) has no debugging protocol for extensions."
+  },
+  "replay_driverEventsRefused": {
+    "message": "Played with the page's own events: the browser refused the debugging session (another debugger on this tab, a policy, or a page the browser protects).",
+    "description": "Replay panel: the replay acts with the page's own events because the browser refused the debugging session."
+  },
+  "replay_driverEventsCanceled": {
+    "message": "Played with the page's own events from there on: the debugging bar was cancelled.",
+    "description": "Replay panel: the person clicked Cancel on Chrome's debugging bar, so the replay goes on with the page's own events."
+  },
+  "replay_driverEventsLost": {
+    "message": "Played with the page's own events from there on: the debugging session ended.",
+    "description": "Replay panel: the debugging session ended during the replay, which goes on with the page's own events."
+  },
+  "replay_stepTrusted": {
+    "message": "trusted input",
+    "description": "Replay panel, at the end of a step's row: the step was done with trusted input. A few words at most."
+  },
+  "replay_stepEvents": {
+    "message": "page events",
+    "description": "Replay panel, at the end of a step's row: the step was done with the page's own events. A few words at most."
+  },
+  "replay_fileAsk_one": {
+    "message": "Step $step$ chooses $count$ file, $files$, which the report names but does not carry. Choose it on this computer to go on, or skip the step.",
+    "description": "Replay panel, while a step that chooses a file waits: the report names the files but does not carry them. $step$ is the step number, $files$ the quoted names, $count$ how many.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      },
+      "files": {
+        "content": "$2",
+        "example": "\"invoice.pdf\""
+      },
+      "step": {
+        "content": "$3",
+        "example": "3"
+      }
+    }
+  },
+  "replay_fileAsk_other": {
+    "message": "Step $step$ chooses $count$ files, $files$, which the report names but does not carry. Choose them on this computer to go on, or skip the step.",
+    "description": "Replay panel, while a step that chooses a file waits: the report names the files but does not carry them. $step$ is the step number, $files$ the quoted names, $count$ how many.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      },
+      "files": {
+        "content": "$2",
+        "example": "\"invoice.pdf\""
+      },
+      "step": {
+        "content": "$3",
+        "example": "3"
+      }
+    }
+  },
+  "replay_fileChoose": {
+    "message": "The file for this step",
+    "description": "Replay panel: the accessible name of the file chooser a file step shows."
+  },
+  "replay_fileSkip": {
+    "message": "Skip this step",
+    "description": "Replay panel: the button that leaves a file step out."
+  },
+  "replay_fileSkipped": {
+    "message": "Skipped: no file was chosen.",
+    "description": "Replay panel, under a file step the person skipped."
+  },
+  "replay_fileChosen": {
+    "message": "Chosen here: $files$",
+    "description": "Replay panel, under a file step: the files the person chose for it. $files$ is the quoted names.",
+    "placeholders": {
+      "files": {
+        "content": "$1",
+        "example": "\"invoice.pdf\""
+      }
+    }
+  },
   "replay_dialogTitle": {
     "message": "Replay a bug report",
     "description": "Title and aria-label of the dialog that chooses which bug report to replay. Same name as the popup’s button (popup_replayBug)."
@@ -5728,6 +5838,16 @@
       "matcher": {
         "content": "$1",
         "example": "toHaveText"
+      }
+    }
+  },
+  "codegen_fileNeeded": {
+    "message": "A file was chosen here ($files$): the test reads it from the folder Playwright runs in.",
+    "description": "A warning of the converter: a file was chosen at this step, and the generated test reads a file of that name. $files$ is the file names.",
+    "placeholders": {
+      "files": {
+        "content": "$1",
+        "example": "invoice.pdf"
       }
     }
   },

@@ -162,6 +162,12 @@ export const FRENCH_BUG_PHRASES: BugPhrases = {
     uncheck: (s) => `Décocher ${checkable(s)}`,
     selectOption: (s, v) => `Choisir ${value(v)} dans ${phrase(s)}`,
     press: (name, s) => (s ? `Appuyer sur ${key(name)} dans ${phrase(s)}` : `Appuyer sur ${key(name)}`),
+    dblclick: (s) => `Double-cliquer sur ${phrase(s)}`,
+    setInputFiles: (s, files) =>
+      files.length === 0
+        ? `Vider ${phrase(s)}`
+        : `Choisir ${files.length === 1 ? 'le fichier' : 'les fichiers'} ${files.map(quote).join(', ')} dans ${phrase(s)}`,
+    dragTo: (s, target) => `Glisser ${phrase(s)} sur ${phrase(target)}`,
   },
   expectation(s, e, negated) {
     const should = negated ? 'ne devrait pas' : 'devrait';

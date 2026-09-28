@@ -2623,6 +2623,101 @@
   "replay_reasonActionFailed": {
     "message": "Die Seite hat auf die Aktion nicht so reagiert wie bei der Aufzeichnung."
   },
+  "replay_reasonCovered": {
+    "message": "$other$ verdeckt $element$ an der Stelle, auf die der Zeiger träfe.",
+    "placeholders": {
+      "element": {
+        "content": "$1",
+        "example": "button \"Apply\""
+      },
+      "other": {
+        "content": "$2",
+        "example": "div \"Loading\""
+      }
+    }
+  },
+  "replay_reasonOffscreen": {
+    "message": "$element$ bleibt außerhalb des sichtbaren Teils der Seite.",
+    "placeholders": {
+      "element": {
+        "content": "$1",
+        "example": "button \"Apply\""
+      }
+    }
+  },
+  "replay_driverTrusted": {
+    "message": "Mit echten Eingaben abgespielt, wie Playwright sie sendet. Chrome zeigt eine Leiste, dass Piwi Picker diesen Browser debuggt: Das ist diese Wiedergabe, und die Leiste verschwindet an ihrem Ende."
+  },
+  "replay_driverEventsUnavailable": {
+    "message": "Mit den eigenen Ereignissen der Seite abgespielt: Dieser Browser gibt Erweiterungen kein Debugging-Protokoll, daher wirkt ein Hover oder ein Ziehen vielleicht nicht wie mit einer Maus."
+  },
+  "replay_driverEventsRefused": {
+    "message": "Mit den eigenen Ereignissen der Seite abgespielt: Der Browser hat die Debugging-Sitzung abgelehnt (ein anderer Debugger auf diesem Tab, eine Richtlinie oder eine vom Browser geschützte Seite)."
+  },
+  "replay_driverEventsCanceled": {
+    "message": "Ab dort mit den eigenen Ereignissen der Seite abgespielt: Die Debugging-Leiste wurde abgebrochen."
+  },
+  "replay_driverEventsLost": {
+    "message": "Ab dort mit den eigenen Ereignissen der Seite abgespielt: Die Debugging-Sitzung wurde beendet."
+  },
+  "replay_stepTrusted": {
+    "message": "echte Eingabe"
+  },
+  "replay_stepEvents": {
+    "message": "Seitenereignisse"
+  },
+  "replay_fileAsk_one": {
+    "message": "Schritt $step$ wählt $count$ Datei, $files$, die der Bericht nennt, aber nicht enthält. Wählen Sie sie auf diesem Computer aus, um fortzufahren, oder überspringen Sie den Schritt.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      },
+      "files": {
+        "content": "$2",
+        "example": "\"invoice.pdf\""
+      },
+      "step": {
+        "content": "$3",
+        "example": "3"
+      }
+    }
+  },
+  "replay_fileAsk_other": {
+    "message": "Schritt $step$ wählt $count$ Dateien, $files$, die der Bericht nennt, aber nicht enthält. Wählen Sie sie auf diesem Computer aus, um fortzufahren, oder überspringen Sie den Schritt.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      },
+      "files": {
+        "content": "$2",
+        "example": "\"invoice.pdf\""
+      },
+      "step": {
+        "content": "$3",
+        "example": "3"
+      }
+    }
+  },
+  "replay_fileChoose": {
+    "message": "Die Datei für diesen Schritt"
+  },
+  "replay_fileSkip": {
+    "message": "Diesen Schritt überspringen"
+  },
+  "replay_fileSkipped": {
+    "message": "Übersprungen: Es wurde keine Datei gewählt."
+  },
+  "replay_fileChosen": {
+    "message": "Hier gewählt: $files$",
+    "placeholders": {
+      "files": {
+        "content": "$1",
+        "example": "\"invoice.pdf\""
+      }
+    }
+  },
   "replay_dialogTitle": {
     "message": "Bug-Report abspielen"
   },
@@ -4840,6 +4935,15 @@
       "matcher": {
         "content": "$1",
         "example": "toHaveText"
+      }
+    }
+  },
+  "codegen_fileNeeded": {
+    "message": "Hier wurde eine Datei gewählt ($files$): Der Test liest sie aus dem Ordner, in dem Playwright läuft.",
+    "placeholders": {
+      "files": {
+        "content": "$1",
+        "example": "invoice.pdf"
       }
     }
   },

@@ -116,6 +116,12 @@ export const ENGLISH_BUG_PHRASES: BugPhrases = {
     uncheck: (s) => `Uncheck ${subject(s)}`,
     selectOption: (s, v) => `Select ${value(v)} in ${subject(s)}`,
     press: (name, s) => (s ? `Press ${key(name)} in ${subject(s)}` : `Press ${key(name)}`),
+    dblclick: (s) => `Double-click ${subject(s)}`,
+    setInputFiles: (s, files) =>
+      files.length === 0
+        ? `Clear the files of ${subject(s)}`
+        : `Choose the ${files.length === 1 ? 'file' : 'files'} ${files.map(quote).join(', ')} in ${subject(s)}`,
+    dragTo: (s, target) => `Drag ${subject(s)} onto ${subject(target)}`,
   },
   expectation(s, e, negated) {
     const should = negated ? 'should not' : 'should';

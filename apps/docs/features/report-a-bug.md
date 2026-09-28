@@ -122,8 +122,11 @@ Under the answer, the panel lists the failed requests and console errors the pag
 the site it ran on, after showing what it sends.
 
 **Step by step** waits for **Next** before each step, with the element outlined, so you can set a breakpoint first.
-Replay acts with the page's own events: a page that ignores events a script sends can only be reproduced with
-Playwright, from the failing test.
+
+In Chrome and Edge, Replay sends trusted input as Playwright does: a real hover, clicks, keys and drags that the page
+cannot tell from a person's. Chrome shows its debugging bar until the replay ends. In Firefox, when the browser refuses
+the session, or once the bar is cancelled, Replay goes on with the page's own events; the panel says which, step by
+step. A report names the files a step chose but never carries them: Replay asks you to choose them, or to skip the step.
 
 **Run with Playwright…**, beside **Start** and on a finished replay, sends the steps to the paired
 [desktop app](./bug-reports#running-it-with-playwright-in-the-desktop-app), which runs them in your project once you
