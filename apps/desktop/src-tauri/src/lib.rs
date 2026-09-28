@@ -44,7 +44,10 @@ use tauri_plugin_store::StoreExt as _;
 
 use inspect::{desktop_find_importable_runs, desktop_inspect_folder};
 use mcp_clients::{desktop_mcp_clients, desktop_mcp_connect, desktop_mcp_disconnect, desktop_mcp_reveal};
-use updates::{desktop_check_update, desktop_install_update, desktop_restart_app};
+use updates::{
+    desktop_check_update, desktop_get_update_settings, desktop_install_update, desktop_restart_app,
+    desktop_set_update_notification,
+};
 use runner::{
     desktop_check_local_env, desktop_check_local_specs, desktop_get_project_link,
     desktop_pick_folder, desktop_pick_import_files, desktop_run_local_tests,
@@ -1279,6 +1282,8 @@ pub fn run() {
             desktop_check_update,
             desktop_install_update,
             desktop_restart_app,
+            desktop_get_update_settings,
+            desktop_set_update_notification,
             desktop_set_activity,
             desktop_set_run_progress
         ])
@@ -1420,6 +1425,9 @@ pub fn run() {
                     &ready_log,
                     if ready { "server ready" } else { "server NOT ready within timeout" },
                 );
+                // Startup has settled: look for an update and announce one
+                // (a no-op when the build cannot update or the user opted out).
+                tauri::async_runtime::spawn(updates::notify_if_update_available(nav_handle.clone()));
                 let inner = nav_handle.clone();
                 let _ = nav_handle.run_on_main_thread(move || {
                     if let Some(w) = inner.get_webview_window("main") {

@@ -131,10 +131,11 @@ running for it. Restart the client after connecting.
 
 ## Updates
 
-**Settings → About → Updates** checks for a newer release, downloads it in the background and applies it on restart.
-The `.exe` updates without admin rights; the `.msi` asks for them. Every download is verified against the project's
-signing key. A build without that key, such as a dev build, says so; install the latest release over it, which keeps
-your data.
+**Settings → About → Updates** checks for a newer release, downloads it and applies it on restart. The app also
+checks at startup and shows a system notification when one is out; a checkbox on that card turns it off. The `.exe`
+updates silently, without admin rights; the `.msi` asks for them. Downloads are verified against the project's signing
+key. A build without that key, such as a dev build, says so; install the latest release over it, which keeps your
+data.
 
 ## Limits
 
