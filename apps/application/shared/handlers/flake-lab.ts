@@ -505,6 +505,18 @@ async function lastReproducingArm(db: DrizzleDB, testCaseId: number) {
   };
 }
 
+/**
+ * The arm that last reproduced a test, as a bisect step names it: the test
+ * and the arm's label. Null when no experiment has reproduced it.
+ */
+export async function getReproducingArm(
+  db: DrizzleDB,
+  testCaseId: number,
+): Promise<{ testCaseId: number; label: string } | null> {
+  const last = await lastReproducingArm(db, testCaseId);
+  return last ? { testCaseId, label: last.label } : null;
+}
+
 // ─── Results ──────────────────────────────────────────────────────────────────
 
 /** One arm's counts, as the command line posts them. */
