@@ -83,3 +83,77 @@ export function pageKey(url: string): string | null {
   const q = normalized.indexOf('?');
   return q < 0 ? normalized : normalized.slice(0, q);
 }
+
+/** The most path segments a URL mapping's path prefix may hold (`/a/b/c/d`). */
+export const MAX_PATH_PREFIX_SEGMENTS = 4;
+
+/** The longest path prefix accepted, in characters. */
+export const MAX_PATH_PREFIX_LENGTH = 200;
+
+/** Why a path prefix was refused. */
+export type PathPrefixProblem = 'query-or-hash' | 'not-a-path' | 'too-many-segments' | 'too-long';
+
+export type PathPrefixResult = { ok: true; prefix: string | null } | { ok: false; problem: PathPrefixProblem };
+
+/**
+ * Reads a URL mapping's path prefix: the part of the site's path its tests
+ * never saw (`/app` when the site serves `/app/checkout` and the tests ran at
+ * `/checkout`). The result starts with a slash, has no trailing slash and no
+ * doubled slashes; an empty value or a lone `/` is no prefix (`null`). Refused:
+ * a query or hash, a full URL, wildcards, whitespace, `.` and `..` segments,
+ * more than {@link MAX_PATH_PREFIX_SEGMENTS} segments.
+ */
+export function parsePathPrefix(raw: string | null | undefined): PathPrefixResult {
+  const value = (raw ?? '').trim();
+  if (!value) return { ok: true, prefix: null };
+  if (/[?#]/.test(value)) return { ok: false, problem: 'query-or-hash' };
+  if (value.length > MAX_PATH_PREFIX_LENGTH) return { ok: false, problem: 'too-long' };
+  if (/^[a-z][a-z0-9+.-]*:/i.test(value) || /[\s*\\]/.test(value)) return { ok: false, problem: 'not-a-path' };
+  const segments = value.split('/').filter(Boolean);
+  if (segments.length === 0) return { ok: true, prefix: null };
+  if (segments.some((s) => s === '.' || s === '..')) return { ok: false, problem: 'not-a-path' };
+  if (segments.length > MAX_PATH_PREFIX_SEGMENTS) return { ok: false, problem: 'too-many-segments' };
+  return { ok: true, prefix: `/${segments.join('/')}` };
+}
+
+/** A normalized prefix, or null for no prefix or one {@link parsePathPrefix} refuses. */
+export function normalizePathPrefix(raw: string | null | undefined): string | null {
+  const result = parsePathPrefix(raw);
+  return result.ok ? result.prefix : null;
+}
+
+/**
+ * Removes `prefix` from the start of a URL's path, whole segments only:
+ * `/app/checkout` under `/app` becomes `/checkout`, `/app` becomes `/`, and
+ * `/application` keeps its path. Accepts an absolute URL or a bare path and
+ * returns the same kind, with the query and hash kept. `stripped` says whether
+ * the prefix applied.
+ */
+export function stripPathPrefix(url: string, prefix: string | null | undefined): { url: string; stripped: boolean } {
+  const normalized = normalizePathPrefix(prefix);
+  if (!normalized) return { url, stripped: false };
+  const absolute = /^https?:\/\//i.test(url);
+  let parsed: URL;
+  try {
+    parsed = new URL(absolute ? url : `http://${PATH_ANCHOR_HOST}${url.startsWith('/') ? '' : '/'}${url}`);
+  } catch {
+    return { url, stripped: false };
+  }
+  const path = parsed.pathname;
+  if (path !== normalized && !path.startsWith(`${normalized}/`)) return { url, stripped: false };
+  parsed.pathname = path.slice(normalized.length) || '/';
+  const rest = `${parsed.pathname}${parsed.search}${parsed.hash}`;
+  return { url: absolute ? `${parsed.origin}${rest}` : rest, stripped: true };
+}
+
+/**
+ * The page key of `url` as the tests would have recorded it: {@link pageKey}
+ * after {@link stripPathPrefix}. `prefixRemoved` is the prefix when it applied.
+ */
+export function pageKeyUnderPrefix(
+  url: string,
+  prefix: string | null | undefined,
+): { key: string | null; prefixRemoved: string | null } {
+  const { url: stripped, stripped: applied } = stripPathPrefix(url, prefix);
+  return { key: pageKey(stripped), prefixRemoved: applied ? normalizePathPrefix(prefix) : null };
+}
