@@ -8,6 +8,7 @@ const connected: StatusResult = {
       root: '/w',
       connected: true,
       serverUrl: 'http://piwi',
+      source: 'dotenv',
       projectId: 7,
       projectName: 'Acme',
       branch: 'main',
@@ -56,7 +57,8 @@ describe('statusBarView', () => {
   test('a passing run, with its flaky tests', () => {
     expect(statusBarView(connected, run({}))).toEqual({
       text: '$(pass) Piwi: 118 passed · 2 flaky',
-      tooltip: 'Run #41 of Acme on feature/pay: 118 passed, 0 failed, 2 flaky, 0 skipped',
+      tooltip:
+        'Run #41 of Acme on feature/pay: 118 passed, 0 failed, 2 flaky, 0 skipped\nhttp://piwi, from the workspace .env',
       action: 'open',
       url: 'http://piwi/test-runs/41',
       error: false,
@@ -82,7 +84,10 @@ describe('statusBarView', () => {
 
   test('a branch without a run', () => {
     const view = statusBarView(connected, { contexts: [{ root: '/w', branch: 'wip', run: null, failures: 0 }] });
-    expect(view).toMatchObject({ text: '$(beaker) Piwi: no run', tooltip: 'No run of Acme on wip yet' });
+    expect(view).toMatchObject({
+      text: '$(beaker) Piwi: no run',
+      tooltip: 'No run of Acme on wip yet\nhttp://piwi, from the workspace .env',
+    });
   });
 });
 

@@ -60,11 +60,17 @@ class PiwiStatusBarWidget(private val project: Project) : StatusBarWidget, Statu
 
     override fun getClickConsumer(): Consumer<MouseEvent> = Consumer { event ->
         val view = view()
-        when {
-            view.url != null -> BrowserUtil.browse(view.url)
-            view.connect -> ActionManager.getInstance().getAction("Piwi.Connect")?.let {
-                ActionUtil.invokeAction(it, event.component, ActionPlaces.STATUS_BAR_PLACE, event, null)
+        val action = when (view.action) {
+            Glue.StatusAction.OPEN -> {
+                view.url?.let { BrowserUtil.browse(it) }
+                null
             }
+            Glue.StatusAction.CONNECT -> "Piwi.Connect"
+            Glue.StatusAction.SETTINGS -> "Piwi.OpenSettings"
+            Glue.StatusAction.NONE -> null
+        }
+        action?.let { ActionManager.getInstance().getAction(it) }?.let {
+            ActionUtil.invokeAction(it, event.component, ActionPlaces.STATUS_BAR_PLACE, event, null)
         }
     }
 

@@ -50,6 +50,15 @@ describe('resolveContextConnection', () => {
       serverUrl: 'https://piwi.corp',
       apiKey: 'pk_saved',
       project: 'shop',
+      source: 'editor',
     });
+  });
+
+  test('names where the server came from', () => {
+    const root = workspace('PIWI_DASHBOARD_URL=https://piwi.corp\n');
+    expect(resolveContextConnection(root, root, env, saved)?.source).toBe('dotenv');
+    expect(
+      resolveContextConnection(root, root, { ...env, PIWI_DASHBOARD_URL: 'https://ci.piwi.corp' }, saved)?.source,
+    ).toBe('environment');
   });
 });

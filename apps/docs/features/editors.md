@@ -21,9 +21,28 @@ order:
 2. the same variables in the `.env` next to the Playwright config, then at the repository root (a URL there
    takes only its own key);
 3. the [desktop app](/features/desktop), when it runs;
-4. its own settings: run **Piwi: Connect** (**Tools → Piwi → Connect…** in a JetBrains IDE), give the instance URL
-   and an [API key](/operate/api-keys), and pick the project. The key goes to the editor's secret storage, never to a
-   file.
+4. its own settings, which **Piwi: Connect** fills in (see below).
+
+### Connect
+
+Without a connection in the environment, a `.env` or the desktop app, run **Piwi: Connect** from the command palette,
+or click **Piwi: connect** in the status bar. In a JetBrains IDE it is under **Settings → Tools → Piwi** (the
+**Connect…** button), in the **Piwi** tool window's toolbar, and under **Tools → Piwi → Connect…**.
+
+1. Give the instance's address, such as `https://piwi.example.com`.
+2. When the instance has a login, choose **Sign in with the browser**: the instance's page opens with a code, and once
+   you check that the editor shows the same code and click **Allow**, the editor receives an
+   [API key](/operate/api-keys) created for you and named after it ("Piwi in WebStorm on macOS"). Or paste a key you
+   created yourself. An instance without a login needs no key.
+3. Pick the project.
+
+The address and the project are saved with the workspace: `piwi.serverUrl` and `piwi.project` in the workspace
+settings in VS Code, `.idea/piwi.xml` in a JetBrains IDE, which the team can share. The key goes to the editor's
+secret storage, never to a file, and is saved for that instance only: a workspace whose settings name another instance
+never receives it. **Piwi: Disconnect** forgets the address, the project and the key.
+
+The status bar's tooltip, and the **Piwi** tool window in a JetBrains IDE, say which instance is in use and where it
+came from. Settings saved by Connect come last: when a `.env` names another instance, Connect says so.
 
 Nothing from your workspace is sent to the instance: the project's
 [locator index](/guide/concepts#locator-index), [code reach](/features/code-reach) and latest run are downloaded and
@@ -53,7 +72,8 @@ Without one, **File an issue** opens the cluster in the dashboard, where issues 
 ## The status bar
 
 The latest run on the branch: how many tests passed, failed and were flaky, with its progress while it runs. Click it
-to open the run. When the extension is not connected, the item says why and runs **Piwi: Connect**.
+to open the run; its tooltip names the instance and where it came from. When the extension is not connected, the item
+says why and runs **Piwi: Connect**.
 
 ## The tests behind each line
 
@@ -107,7 +127,9 @@ clipboard. It holds your API key: paste it into your user settings, not into the
 
 | Command | What it does |
 |---|---|
-| Piwi: Connect | Choose the instance, the API key and the project |
+| Piwi: Connect | Choose the instance, sign in with the browser or paste an API key, and pick the project |
+| Piwi: Disconnect | Forget the instance, the project and the key saved for that instance |
+| Piwi: Open settings | The instance and project settings (**Settings → Tools → Piwi** in a JetBrains IDE) |
 | Piwi: Refresh | Fetch the indexes and the latest run again |
 | Piwi: Run the tests that reach this file | Run them in a terminal |
 | Piwi: Open in dashboard | Open this file's test, or the latest run |
@@ -137,11 +159,15 @@ the one that paired receives.
 ## JetBrains IDEs
 
 The plugin starts the editor service with the project's Node.js interpreter (**Settings → Languages & Frameworks →
-Node.js**). The IDE's LSP client shows the warnings, quick fixes and hover in open files as described above; the rest
+Node.js**) when you open the first file of a project that holds a Playwright config; until then the status bar and the
+tool window say so. The IDE's LSP client shows the warnings, quick fixes and hover in open files as described above; the rest
 is drawn natively:
 
-- **The Piwi tool window** lists the latest run's failures, since the IDE highlights open files only. Double-click one
-  to open its failing line, where the highlight carries **Heal**, **Open the trace** and the dashboard link. The trace
+- **Settings → Tools → Piwi** holds the instance's address and the project, whether a key is saved for that instance,
+  the **Connect…** and **Disconnect** buttons, and the connection in use.
+- **The Piwi tool window** says which instance and project it reads, has Connect, Refresh, Open in dashboard and the
+  settings in its toolbar, and lists the latest run's failures, since the IDE highlights open files only. Double-click
+  one to open its failing line, where the highlight carries **Heal**, **Open the trace** and the dashboard link. The trace
   opens in the Run tool window.
 - **Code Vision** shows the lines above files, tests and locators; click one to run what it names.
 - **The status bar** shows the latest run; the actions are under **Tools → Piwi**, and **Run the tests that reach this

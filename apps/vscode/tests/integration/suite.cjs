@@ -173,6 +173,8 @@ const tests = {
     const commands = await vscode.commands.getCommands(true);
     for (const id of [
       'piwi.connect',
+      'piwi.disconnect',
+      'piwi.openSettings',
       'piwi.refresh',
       'piwi.runTestsForFile',
       'piwi.openInDashboard',

@@ -29,8 +29,73 @@ class PiwiPluginTest : BasePlatformTestCase() {
         val codeVision = DaemonBoundCodeVisionProvider.extensionPoint.extensionList
         assertTrue(codeVision.map { it.javaClass.name }.toString(), codeVision.any { it is PiwiCodeVisionProvider })
         assertTrue(StatusBarWidgetFactory.EP_NAME.extensionList.any { it is PiwiStatusBarWidgetFactory })
-        for (id in listOf("Piwi.Connect", "Piwi.Refresh", "Piwi.RunTestsForFile", "Piwi.OpenInDashboard", "Piwi.CopyMcpConfiguration", "Piwi.RunSelection", "Piwi.PairPicker")) {
+        assertTrue(
+            com.intellij.openapi.options.Configurable.PROJECT_CONFIGURABLE.getExtensions(project)
+                .any { it.instanceClass == PiwiConfigurable::class.java.name },
+        )
+        for (id in listOf("Piwi.Connect", "Piwi.Disconnect", "Piwi.OpenSettings", "Piwi.Refresh", "Piwi.RunTestsForFile", "Piwi.OpenInDashboard", "Piwi.CopyMcpConfiguration", "Piwi.RunSelection", "Piwi.PairPicker")) {
             assertNotNull(id, ActionManager.getInstance().getAction(id))
+        }
+    }
+
+    /** A project's settings, which a repository may commit, only ever select the key saved for their own instance. */
+    fun testTheApiKeyIsKeptPerInstance() {
+        val service = project.getService(PiwiProjectService::class.java)
+        try {
+            service.saveCredentials("https://a.example/", "Shop", "pd_a")
+            assertEquals(EditorCredentials("https://a.example", "pd_a", "Shop"), service.credentials())
+            service.settings().serverUrl = "https://b.example"
+            assertEquals(null, service.credentials().apiKey)
+            service.saveCredentials("https://b.example", "Shop", "pd_b")
+            service.settings().serverUrl = "https://a.example"
+            assertEquals("pd_a", service.credentials().apiKey)
+            service.disconnect()
+            assertEquals(EditorCredentials(null, null, null), service.credentials())
+            assertFalse(service.hasApiKey("https://a.example"))
+            assertTrue(service.hasApiKey("https://b.example"))
+        } finally {
+            service.saveCredentials("https://b.example", "", null)
+            service.disconnect()
+        }
+    }
+
+    /** Connect's requests: an instance with a login asks for a key, and the browser sign-in hands one over. */
+    fun testSignsInWithTheBrowserAndListsTheProjects() {
+        val started = mutableListOf<String>()
+        var polls = 0
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/") { exchange ->
+            val body = exchange.requestBody.readBytes().toString(Charsets.UTF_8)
+            val (status, answer) = when (exchange.requestURI.path) {
+                "/api/projects/menu" ->
+                    if (exchange.requestHeaders.getFirst("X-API-Key") == "pd_new") 200 to """{"items":[{"id":7,"name":"Acme Mugs"}]}"""
+                    else 401 to "{}"
+                "/api/extension/connect" -> {
+                    started += body
+                    200 to """{"deviceCode":"pdc_1","userCode":"BCDF-GHJK","verificationUrl":"http://x/extension/connect?code=BCDF-GHJK","interval":5,"expiresIn":600}"""
+                }
+                "/api/extension/connect/token" ->
+                    200 to if (++polls == 1) """{"status":"pending"}""" else """{"status":"approved","apiKey":"pd_new","user":{"name":"Ada"}}"""
+                else -> 404 to "{}"
+            }
+            val bytes = answer.toByteArray()
+            exchange.sendResponseHeaders(status, bytes.size.toLong())
+            exchange.responseBody.use { it.write(bytes) }
+        }
+        server.start()
+        val url = "http://127.0.0.1:${server.address.port}"
+        try {
+            assertTrue(PiwiInstance.needsKey(url))
+            val signIn = PiwiInstance.startSignIn(url, "WebStorm", "Linux")
+            assertEquals("BCDF-GHJK", signIn.userCode)
+            assertEquals(5, signIn.interval)
+            assertEquals("""{"editor":"WebStorm","os":"Linux"}""", started.single())
+            assertEquals("pending", PiwiInstance.pollSignIn(url, signIn.deviceCode).status)
+            val approved = PiwiInstance.pollSignIn(url, signIn.deviceCode)
+            assertEquals("approved", approved.status)
+            assertEquals(listOf("Acme Mugs"), PiwiInstance.projects(url, approved.apiKey).map { it.name })
+        } finally {
+            server.stop(0)
         }
     }
 

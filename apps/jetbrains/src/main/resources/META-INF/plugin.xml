@@ -12,6 +12,8 @@
       <li>the latest run in the status bar, and Piwi's MCP server for your AI assistant;</li>
       <li>locators and recorded flows sent from the Piwi Picker browser extension, inserted at the caret.</li>
     </ul>
+    It reads the connection the Piwi reporter uses (the environment, the workspace <code>.env</code>, the Piwi desktop
+    app); otherwise connect under <b>Settings → Tools → Piwi</b>, signing in with the browser.
     Works in WebStorm, IntelliJ IDEA Ultimate, Rider and the other IDEs with the LSP API and JavaScript support.
     ]]></description>
 
@@ -23,8 +25,10 @@
         <platform.lsp.serverSupportProvider implementation="dev.piwitests.jetbrains.PiwiLspServerSupportProvider"/>
         <codeInsight.daemonBoundCodeVisionProvider implementation="dev.piwitests.jetbrains.PiwiCodeVisionProvider"/>
         <statusBarWidgetFactory id="piwi.status" implementation="dev.piwitests.jetbrains.PiwiStatusBarWidgetFactory"/>
-        <toolWindow id="Piwi" anchor="bottom" icon="AllIcons.Toolwindows.ToolWindowProblems"
+        <toolWindow id="Piwi" anchor="bottom" icon="/icons/piwi.svg"
                     factoryClass="dev.piwitests.jetbrains.PiwiFailuresToolWindowFactory"/>
+        <projectConfigurable parentId="tools" id="dev.piwitests.piwi" displayName="Piwi"
+                             instance="dev.piwitests.jetbrains.PiwiConfigurable"/>
         <notificationGroup id="Piwi" displayType="BALLOON"/>
         <httpRequestHandler implementation="dev.piwitests.jetbrains.PiwiSendHandler"/>
     </extensions>
@@ -33,8 +37,12 @@
         <group id="Piwi.Actions" text="Piwi" popup="true">
             <add-to-group group-id="ToolsMenu" anchor="last"/>
             <action id="Piwi.Connect" class="dev.piwitests.jetbrains.ConnectAction" text="Connect…"
-                    description="Choose the Piwi instance, the API key and the project"/>
+                    icon="AllIcons.General.User"
+                    description="Choose the Piwi instance, sign in or paste an API key, and pick the project"/>
+            <action id="Piwi.Disconnect" class="dev.piwitests.jetbrains.DisconnectAction" text="Disconnect"
+                    description="Forget this project's Piwi instance, project and the API key saved for it"/>
             <action id="Piwi.Refresh" class="dev.piwitests.jetbrains.RefreshAction" text="Refresh"
+                    icon="AllIcons.Actions.Refresh"
                     description="Fetch the indexes and the latest run again"/>
             <action id="Piwi.RunTestsForFile" class="dev.piwitests.jetbrains.RunTestsForFileAction"
                     text="Run the Tests That Reach This File" description="Run them in the Run tool window">
@@ -43,12 +51,17 @@
             <action id="Piwi.RunSelection" class="dev.piwitests.jetbrains.RunSelectionAction" text="Run Selection…"
                     description="Run one of the project's saved selections"/>
             <action id="Piwi.OpenInDashboard" class="dev.piwitests.jetbrains.OpenInDashboardAction"
+                    icon="AllIcons.General.Web"
                     text="Open in Dashboard" description="Open this file's test, or the latest run"/>
             <action id="Piwi.PairPicker" class="dev.piwitests.jetbrains.PairPickerAction" text="Pair with Piwi Picker"
                     description="Copy the address Piwi Picker sends locators and recorded steps to"/>
             <action id="Piwi.CopyMcpConfiguration" class="dev.piwitests.jetbrains.CopyMcpConfigurationAction"
                     text="Copy the MCP Server Configuration"
                     description="An mcpServers entry for the AI Assistant's MCP settings"/>
+            <separator/>
+            <action id="Piwi.OpenSettings" class="dev.piwitests.jetbrains.OpenSettingsAction" text="Settings…"
+                    icon="AllIcons.General.Settings"
+                    description="The Piwi instance and project of this project: Settings → Tools → Piwi"/>
         </group>
     </actions>
 </idea-plugin>
