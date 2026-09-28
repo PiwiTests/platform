@@ -1834,6 +1834,33 @@
   "bug_wrongPageHint": {
     "message": "Dites sur quelle page vous auriez dû arriver"
   },
+  "bug_screenshot": {
+    "message": "Capture d’écran"
+  },
+  "bug_screenshotHint": {
+    "message": "Ajouter une capture d’écran de la page telle qu’elle est"
+  },
+  "bug_debuggingOn": {
+    "message": "Chrome affiche une barre indiquant que Piwi Picker a commencé à déboguer ce navigateur : c’est ce rapport qui lit la console, les requêtes en échec et les captures d’écran. Rien ne quitte votre ordinateur, et la barre disparaît quand vous terminez."
+  },
+  "bug_debuggingCanceled": {
+    "message": "La barre de débogage a été annulée : le rapport lit désormais la console et les requêtes depuis la page, et une capture d’écran demande « $action$ » dans Piwi Picker.",
+    "placeholders": {
+      "action": {
+        "content": "$1",
+        "example": "Take a screenshot"
+      }
+    }
+  },
+  "bug_debuggingRefused": {
+    "message": "Chrome a refusé la session de débogage (un autre débogueur sur cet onglet, ou une règle d’entreprise) : le rapport lit la console et les requêtes depuis la page, et une capture d’écran demande « $action$ » dans Piwi Picker.",
+    "placeholders": {
+      "action": {
+        "content": "$1",
+        "example": "Take a screenshot"
+      }
+    }
+  },
   "bug_finish": {
     "message": "Terminer"
   },

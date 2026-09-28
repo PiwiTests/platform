@@ -1834,6 +1834,33 @@
   "bug_wrongPageHint": {
     "message": "Sagen Sie, auf welcher Seite Sie hätten landen sollen"
   },
+  "bug_screenshot": {
+    "message": "Screenshot"
+  },
+  "bug_screenshotHint": {
+    "message": "Einen Screenshot der Seite in ihrem jetzigen Zustand hinzufügen"
+  },
+  "bug_debuggingOn": {
+    "message": "Chrome zeigt eine Leiste, dass Piwi Picker diesen Browser debuggt: Das ist dieser Bericht, der die Konsole, fehlgeschlagene Anfragen und Screenshots liest. Nichts verlässt Ihren Computer, und die Leiste verschwindet, wenn Sie fertig sind."
+  },
+  "bug_debuggingCanceled": {
+    "message": "Die Debugging-Leiste wurde abgebrochen: Der Bericht liest Konsole und Anfragen ab jetzt aus der Seite, und für einen Screenshot wählen Sie „$action$“ in Piwi Picker.",
+    "placeholders": {
+      "action": {
+        "content": "$1",
+        "example": "Take a screenshot"
+      }
+    }
+  },
+  "bug_debuggingRefused": {
+    "message": "Chrome hat die Debugging-Sitzung abgelehnt (ein anderer Debugger auf diesem Tab oder eine Richtlinie): Der Bericht liest Konsole und Anfragen aus der Seite, und für einen Screenshot wählen Sie „$action$“ in Piwi Picker.",
+    "placeholders": {
+      "action": {
+        "content": "$1",
+        "example": "Take a screenshot"
+      }
+    }
+  },
   "bug_finish": {
     "message": "Abschließen"
   },

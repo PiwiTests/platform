@@ -749,6 +749,11 @@ async function refreshHud(): Promise<void> {
       missing: () => void runMissingFlow(bugHooks),
       wrongPage: () => void runWrongPageFlow(bugHooks),
       finish: () => void handleBugFinish(),
+      screenshot: () =>
+        void getRecordingState().then(async (latest) => {
+          await takeBugScreenshot('manual', normalizeSteps(latest.events).length - 1);
+          scheduleHudRefresh();
+        }),
     });
     return;
   }
@@ -995,6 +1000,13 @@ function installStopListener(): void {
   g.__piwiRecordStopListener = true;
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message?.type === 'piwi-recording-stopped') stopCapture();
+    if (message?.type === 'piwi-bug-debugger-lost') {
+      // The debugging session ended: the page's own script, registered all along, relays from now on.
+      void getRecordingState().then((state) => {
+        if (state.active && state.bugToken) startPageRelay(state.bugToken);
+        scheduleHudRefresh();
+      });
+    }
     if (message?.type === 'piwi-bug-take-screenshot' && recorderGlobals().__piwiRecordCapture) {
       // Answered at once: the popup that asked closes as soon as it hears back.
       sendResponse({ ok: true });
@@ -1038,6 +1050,30 @@ async function runRecordPanel(): Promise<void> {
   await g.__piwiRecordPanelRun;
 }
 
+/**
+ * Whether this tab's console and requests reach the report through the
+ * background worker's debugging session. The page's own relay stays quiet
+ * then, so no entry is counted twice.
+ */
+async function evidenceThroughDebugger(): Promise<boolean> {
+  try {
+    const answer = (await chrome.runtime.sendMessage({ type: 'piwi-bug-evidence-source' })) as
+      | { debugger?: boolean }
+      | undefined;
+    return answer?.debugger === true;
+  } catch {
+    return false;
+  }
+}
+
+/** Listens to the main-world evidence script for this recording, once per document. */
+function startPageRelay(token: string): void {
+  const g = recorderGlobals();
+  const capture = g.__piwiRecordCapture;
+  if (!capture || g.__piwiBugRelayFlush) return;
+  g.__piwiBugRelayFlush = startEvidenceRelay(token, capture.signal, scheduleHudRefresh);
+}
+
 async function initRecordPanel(): Promise<void> {
   // Before any session-storage read — see `session-access.ts`. The catalog
   // override loads alongside, so the HUD paints no later for it.
@@ -1065,8 +1101,8 @@ async function initRecordPanel(): Promise<void> {
   attachListeners();
   installStopListener();
   const capture = recorderGlobals().__piwiRecordCapture;
-  if (recordingMode(state) === 'bug' && state.bugToken && capture) {
-    recorderGlobals().__piwiBugRelayFlush = startEvidenceRelay(state.bugToken, capture.signal, scheduleHudRefresh);
+  if (recordingMode(state) === 'bug' && state.bugToken && capture && !(await evidenceThroughDebugger())) {
+    startPageRelay(state.bugToken);
   }
   // Once per page, not per step — `refreshHud` runs on every captured
   // interaction and must stay local-only. TTL-guarded, so a recording that

@@ -38,32 +38,29 @@ Each becomes a step of the recording, in place. **Finish** ends the recording an
 While a bug report records, Piwi Picker keeps:
 
 - **Console errors and warnings**, uncaught errors and unhandled promise rejections, with the page they happened on.
-- **Failed requests**: the method, the path, and the status of any `fetch` or `XMLHttpRequest` that failed or answered
-  400 or more. Query values are removed (`/api/cart/coupon?code=<redacted>`), ids and tokens in the path are collapsed
+- **Failed requests**: the method, the path, and the status of any request that failed or answered 400 or more: in
+  Chrome and Edge, documents, scripts and images included; elsewhere, the page's `fetch` and `XMLHttpRequest` calls. Query values are removed (`/api/cart/coupon?code=<redacted>`), ids and tokens in the path are collapsed
   as Piwi does for routes, and no header or body is ever read.
 - **An outline of the page** around the element you marked: roles, names, states and field values, in the YAML form
   Playwright's ARIA snapshots use, at most 400 lines. Piwi Picker builds it from its own reading of the page, so it
   is an outline, not Playwright's snapshot. Password fields never show their value.
-- **Screenshots**, at each mark and at Finish, three at most.
+- **Screenshots**, at each mark, at Finish and when you ask for one, three at most.
 - **The context**: the page, the browser and its version, the window size, the time and the extension's version.
 
 The first 100 console entries and 100 failed requests are kept; the report counts the rest.
 
-### Screenshots and the activeTab permission
+### How the evidence is collected
 
-Chrome takes a screenshot of a tab for an extension only when you have just opened the extension on that tab (the
-`activeTab` permission) or when it may read every site, which Piwi Picker never asks for. Access to one site, which
-recording uses, is not enough. So screenshots work from the moment you choose Report a bug until the tab moves to
-another page. After that the report says there is no screenshot, and the panel says so too: open Piwi Picker on the
-tab and choose **Take a screenshot** (the Report a bug tile, while a report records) to add one, and the next marks
-are captured again until the next navigation.
+In Chrome and Edge, Piwi Picker reads the console, the requests and the screenshots of the tab the report started in
+through the browser's debugging protocol (the `debugger` permission), from the page's first script, on every page of
+the recording. Chrome shows a bar saying Piwi Picker started debugging the browser until you finish; the panel says it
+is expected, and adds a **Screenshot** button. Nothing leaves your machine.
 
-### How console and network entries are collected
-
-For as long as a bug report records, and only on the site it records, Piwi Picker adds a small script to the page
-itself, the only place that sees its console and its requests. It wraps `console.error`, `console.warn`, `fetch` and
-`XMLHttpRequest` without changing what they do, and it is removed when you finish or discard the report. It uses the
-same site access as recording and no other permission.
+Elsewhere (Firefox, the site's other tabs, or once the bar is cancelled), a small script added to the page itself
+wraps `console.error`, `console.warn`, `fetch` and `XMLHttpRequest` without changing what they do, under the same site
+access as recording, and is removed when you finish or discard the report. A screenshot then needs the `activeTab`
+grant: it works from the Report a bug click until the tab moves to another page; after that, open Piwi Picker on the
+tab and choose **Take a screenshot**.
 
 ## The report
 
@@ -135,8 +132,8 @@ confirm it there.
 ## Limits
 
 - It follows one site, like [Record actions](./extension#record-actions), in the top-level document only.
-- Only the page's own `fetch` and `XMLHttpRequest` calls are seen: not images, stylesheets, a form that loads a new
-  page, or a request made by a worker.
+- Without the debugging protocol, only the page's own `fetch` and `XMLHttpRequest` calls are seen: not images,
+  stylesheets, a form that loads a new page, or a request made by a worker.
 - A recording sends nothing anywhere: only **Send to Piwi…**, **Share result…** and **Run with Playwright…** do, each
   after showing what it sends.
 

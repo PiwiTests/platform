@@ -6,6 +6,7 @@ import {
   type BugScreenshot,
 } from '@piwitests/core/bug-report';
 import { sessionArea } from './session-area.js';
+import type { FallbackReason } from './cdp-input.js';
 
 /**
  * A bug recording's evidence, in `chrome.storage.session` beside the recording
@@ -18,6 +19,26 @@ import { sessionArea } from './session-area.js';
  */
 const EVIDENCE_KEY = 'piwiBugEvidence';
 const SCREENSHOTS_KEY = 'piwiBugScreenshots';
+/** What the background worker collects through the debugging protocol; only the worker writes it. */
+export const CDP_EVIDENCE_KEY = 'piwiBugCdpEvidence';
+
+/** Whether a bug recording collects through the debugging protocol, and why not when it does not. */
+export interface DebuggingState {
+  state: 'on' | 'off';
+  reason: FallbackReason | null;
+}
+
+export interface CdpEvidence {
+  console: BugConsoleEntry[];
+  consoleDropped: number;
+  requests: BugFailedRequest[];
+  requestsDropped: number;
+  debugging: DebuggingState | null;
+}
+
+export function emptyCdpEvidence(): CdpEvidence {
+  return { console: [], consoleDropped: 0, requests: [], requestsDropped: 0, debugging: null };
+}
 
 export interface StoredBugEvidence {
   console: BugConsoleEntry[];
@@ -34,6 +55,8 @@ export interface StoredBugEvidence {
   context: BugContext | null;
   /** How many screenshots are kept, so the HUD need not read them to count them. */
   screenshots: number;
+  /** Whether the evidence comes through the debugging protocol (Chromium), as the worker last said. */
+  debugging?: DebuggingState | null;
 }
 
 export interface StoredBugScreenshot {
@@ -56,10 +79,33 @@ const EMPTY: StoredBugEvidence = {
   screenshots: 0,
 };
 
-export async function getBugEvidence(): Promise<StoredBugEvidence> {
+/** What the page relayed, as this document stores it. */
+async function getPageEvidence(): Promise<StoredBugEvidence> {
   const stored = await sessionArea().get(EVIDENCE_KEY);
   const value = stored[EVIDENCE_KEY];
   return value && typeof value === 'object' ? { ...EMPTY, ...(value as StoredBugEvidence) } : { ...EMPTY };
+}
+
+function merge<T extends { time: number }>(a: T[], b: T[], limit: number): { kept: T[]; dropped: number } {
+  const all = [...a, ...b].sort((x, y) => x.time - y.time);
+  return { kept: all.slice(0, limit), dropped: Math.max(0, all.length - limit) };
+}
+
+/** The recording's evidence: what the page relayed and what the worker collected through the protocol. */
+export async function getBugEvidence(): Promise<StoredBugEvidence> {
+  const [page, stored] = await Promise.all([getPageEvidence(), sessionArea().get(CDP_EVIDENCE_KEY)]);
+  const cdp = stored[CDP_EVIDENCE_KEY] as CdpEvidence | undefined;
+  if (!cdp) return page;
+  const console = merge(page.console, cdp.console, BUG_EVIDENCE_LIMITS.console);
+  const requests = merge(page.requests, cdp.requests, BUG_EVIDENCE_LIMITS.requests);
+  return {
+    ...page,
+    console: console.kept,
+    consoleDropped: page.consoleDropped + cdp.consoleDropped + console.dropped,
+    requests: requests.kept,
+    requestsDropped: page.requestsDropped + cdp.requestsDropped + requests.dropped,
+    debugging: cdp.debugging,
+  };
 }
 
 /**
@@ -70,7 +116,7 @@ let writeQueue: Promise<unknown> = Promise.resolve();
 
 function update(change: (current: StoredBugEvidence) => StoredBugEvidence): Promise<StoredBugEvidence> {
   const run = writeQueue.then(async () => {
-    const next = change(await getBugEvidence());
+    const next = change(await getPageEvidence());
     await sessionArea().set({ [EVIDENCE_KEY]: next });
     return next;
   });
@@ -127,4 +173,5 @@ export async function addBugScreenshot(shot: StoredBugScreenshot): Promise<void>
 export async function clearBugEvidence(): Promise<void> {
   await sessionArea().remove(EVIDENCE_KEY);
   await sessionArea().remove(SCREENSHOTS_KEY);
+  await sessionArea().remove(CDP_EVIDENCE_KEY);
 }

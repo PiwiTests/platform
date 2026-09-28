@@ -2201,6 +2201,38 @@
     "message": "Say which page you should have reached",
     "description": "Report a bug: tooltip of the “Wrong page” button."
   },
+  "bug_screenshot": {
+    "message": "Screenshot",
+    "description": "Report a bug: HUD button that takes a screenshot of the page now, shown while Chrome's debugging protocol takes them. Short."
+  },
+  "bug_screenshotHint": {
+    "message": "Add a screenshot of the page as it is now",
+    "description": "Report a bug: tooltip of the HUD's Screenshot button."
+  },
+  "bug_debuggingOn": {
+    "message": "Chrome shows a bar saying Piwi Picker started debugging this browser: that is this report reading the console, the failed requests and screenshots. Nothing leaves your computer, and the bar goes when you finish.",
+    "description": "Report a bug: HUD line while Chrome's debugging protocol collects the evidence. Chrome's own bar says the extension started debugging the browser."
+  },
+  "bug_debuggingCanceled": {
+    "message": "The debugging bar was cancelled: the report reads the console and the requests from the page from now on, and a screenshot needs \"$action$\" in Piwi Picker.",
+    "description": "Report a bug: HUD line after the person cancelled Chrome's debugging bar. $action$ is the name of the popup's “Take a screenshot” button.",
+    "placeholders": {
+      "action": {
+        "content": "$1",
+        "example": "Take a screenshot"
+      }
+    }
+  },
+  "bug_debuggingRefused": {
+    "message": "Chrome refused the debugging session (another debugger on this tab, or a policy): the report reads the console and the requests from the page, and a screenshot needs \"$action$\" in Piwi Picker.",
+    "description": "Report a bug: HUD line when Chrome refused or ended the debugging session. $action$ is the name of the popup's “Take a screenshot” button.",
+    "placeholders": {
+      "action": {
+        "content": "$1",
+        "example": "Take a screenshot"
+      }
+    }
+  },
   "bug_finish": {
     "message": "Finish",
     "description": "Report a bug: button that stops recording and opens the finished report."

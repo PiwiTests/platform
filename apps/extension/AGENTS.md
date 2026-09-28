@@ -104,8 +104,9 @@ Chrome shows "Piwi Picker started debugging this browser" while a session is att
 - **Attach only while a feature the person started needs it, and detach the moment it ends.** Every session goes
   through `src/background/debugger.ts`: `acquireDebugger(tabId, purpose)` attaches once per tab and
   `releaseDebugger` detaches when no purpose holds the tab. The purposes are a replay (`cdp-replay.ts`, attached on
-  the replay's first page, let go by `piwi-replay-finished`, a new replay, or the tab leaving the origin). Nothing
-  stays attached in the background.
+  the replay's first page, let go by `piwi-replay-finished`, a new replay, or the tab leaving the origin) and a bug
+  recording (`cdp-evidence.ts`, the tab the report starts in, let go when the recording stops or is discarded).
+  Nothing stays attached in the background.
 - **Every feature has today's path as its fallback, and says so in plain words.** Firefox has no `chrome.debugger`
   (`debuggerAvailable()` is false); attaching can be refused (another debugger, a policy, a page Chrome protects);
   the person can click Cancel on the bar (`onDetach` with `canceled_by_user`, heard through `onDebuggerLost`). The
@@ -300,7 +301,18 @@ Evidence lives under its own `chrome.storage.session` keys (`bug-storage.ts`), n
 by `bug-report-files.ts` (pure) and `@piwitests/core/bug-report` (`renderBugMarkdown`,
 `renderBugSpec`); the zip is written by `shared/zip.ts`, stored without compression.
 
-**Screenshots need `activeTab`.** `chrome.tabs.captureVisibleTab` refuses under the recorder's
+**Evidence through the debugging protocol (Chrome and Edge).** A bug recording holds a session on the tab it starts
+in (`startBugDebugger`, `src/background/cdp-evidence.ts`): `Runtime` and `Log` give the console and uncaught errors
+from the page's first script, `Network` every request that failed or answered 400 or more (documents, scripts and
+images included; method, URL through `reportedRequestUrl`, status, never a header or a body), and
+`Page.captureScreenshot` a screenshot at any moment, across navigations, which the HUD's **Screenshot** button offers.
+Only the worker writes what it collects, under its own key (`CDP_EVIDENCE_KEY`); `getBugEvidence` merges it with what
+the page relays. The main-world script stays registered: the recorder asks `piwi-bug-evidence-source` and keeps its
+relay quiet in the tab the worker collects from, so nothing is counted twice, and starts it when the session is lost
+(`piwi-bug-debugger-lost`). The HUD says the debugging bar is expected (`bug_debuggingOn`), and why it went.
+`bug-report-cdp.spec.ts` covers it on the real extension.
+
+**Without it, screenshots need `activeTab`.** `chrome.tabs.captureVisibleTab` refuses under the recorder's
 per-origin host grant ("Either the '<all_urls>' or 'activeTab' permission is required", checked on
 the bundled Chromium, and in `bug-report.spec.ts` against the real extension). The popup click
 that starts a report grants `activeTab` until the tab navigates; after that the report records
@@ -310,7 +322,8 @@ why there is no screenshot, and the popup's tile, during a bug recording, asks t
 ### The main-world evidence script
 
 `bug-evidence-main.ts` wraps `console.error`/`console.warn`, `fetch` and `XMLHttpRequest`, and
-listens to `error` and `unhandledrejection`. It is the only code here that runs in the page's own
+listens to `error` and `unhandledrejection`: the evidence in Firefox, in the recording's other tabs, and once a
+debugging session is lost. It is the only code here, with the request-conditions wrapper, that runs in the page's own
 JavaScript world, so:
 
 - It is registered only while a bug recording runs, for the recording's granted origin, at

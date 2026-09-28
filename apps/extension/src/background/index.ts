@@ -32,6 +32,13 @@ import { CONDITIONS_KEY, isCondition, type ConditionsState } from '../shared/req
 import { handleDesktopRepro, handleDesktopReproStatus, handleDesktopTarget } from './desktop-repro.js';
 import { handleReplayDriver, handleReplayInput, releaseReplayDebugger } from './cdp-replay.js';
 import { releaseDebugger, tabsHolding } from './debugger.js';
+import {
+  captureThroughDebugger,
+  collectsThroughDebugger,
+  onBugDebuggerLost,
+  startBugDebugger,
+  stopBugDebugger,
+} from './cdp-evidence.js';
 
 /**
  * The Options language, read at startup and again whenever it changes. Every
@@ -202,6 +209,9 @@ async function handleStartRecording(
     if (mode === 'bug') {
       await chrome.scripting.executeScript({ target: { tabId }, files: ['bug-evidence-main.js'], world: 'MAIN' });
     }
+    // Chrome: the console, the requests and screenshots through the debugging protocol, in the tab the report
+    // starts in. The page's script above stays registered for the other tabs, and takes over if this fails.
+    if (mode === 'bug') await startBugDebugger(tabId);
     await chrome.scripting.executeScript({ target: { tabId }, files: ['record-panel.js'] });
     await i18nReady;
     await chrome.action.setBadgeText({ text: t(mode === 'bug' ? 'badge_bug' : 'badge_recording') });
@@ -213,6 +223,7 @@ async function handleStartRecording(
     // offered "Stop recording (0)" — a dead end reachable only via Discard.
     // Unwind everything this function may have put in place.
     await discardRecording().catch(() => undefined);
+    await stopBugDebugger().catch(() => undefined);
     await unregisterScripts(RECORDING_SCRIPT_IDS);
     await chrome.action.setBadgeText({ text: '' }).catch(() => undefined);
     await i18nReady;
@@ -273,6 +284,12 @@ async function handlePermissionAdded(addedOrigins: string[]): Promise<void> {
   await startRecordingOnce(decision.originPattern, decision.tabId, decision.mode);
 }
 
+// The person cancelled the debugging bar during a bug recording: the recorder's page relay takes over.
+onBugDebuggerLost(async () => {
+  const { grantedOriginPattern, active } = await getRecordingState();
+  if (active) await notifyRecorderTabs(grantedOriginPattern, undefined, { type: 'piwi-bug-debugger-lost' });
+});
+
 chrome.permissions.onAdded.addListener((permissions) => {
   void handlePermissionAdded(permissions.origins ?? []);
 });
@@ -288,7 +305,11 @@ chrome.permissions.onAdded.addListener((permissions) => {
  * — the only tabs the script was ever registered for, and the only ones this
  * extension has host access to.
  */
-async function notifyRecorderTabs(originPattern: string | null, exceptTabId?: number): Promise<void> {
+async function notifyRecorderTabs(
+  originPattern: string | null,
+  exceptTabId?: number,
+  message: { type: string } = { type: 'piwi-recording-stopped' },
+): Promise<void> {
   if (!originPattern) return;
   let tabs: chrome.tabs.Tab[];
   try {
@@ -301,7 +322,7 @@ async function notifyRecorderTabs(originPattern: string | null, exceptTabId?: nu
       if (tab.id == null || tab.id === exceptTabId) return;
       // A tab with no recorder attached (never navigated into the recording,
       // or already torn down) rejects with "no receiving end" — expected.
-      await chrome.tabs.sendMessage(tab.id, { type: 'piwi-recording-stopped' }).catch(() => undefined);
+      await chrome.tabs.sendMessage(tab.id, message).catch(() => undefined);
     }),
   );
 }
@@ -310,6 +331,7 @@ async function handleRecordingStopped(senderTabId?: number): Promise<void> {
   // Read before unregistering: the granted pattern is the only record of which
   // tabs could be running the recorder.
   const { grantedOriginPattern } = await getRecordingState();
+  await stopBugDebugger();
   await unregisterScripts(RECORDING_SCRIPT_IDS);
   await chrome.action.setBadgeText({ text: '' });
   // The sender, if it was a content script, has already torn itself down.
@@ -319,18 +341,22 @@ async function handleRecordingStopped(senderTabId?: number): Promise<void> {
 /**
  * A screenshot of the tab a bug recording runs in, for its report.
  *
- * `captureVisibleTab` needs `<all_urls>` or the `activeTab` grant: the
- * recorder's per-origin host permission is not enough. `activeTab` is granted
- * by opening the popup on the tab (as the Report a bug click does) or by the
- * keyboard shortcut, and lasts until the tab navigates; outside it Chrome
- * refuses, and the report says there is no screenshot rather than asking for
- * a wider permission.
+ * In Chrome, through the recording's debugging session (`Page.captureScreenshot`):
+ * at any moment and on any page of the recording. Without it (Firefox, a
+ * session refused or cancelled), `captureVisibleTab`, which needs `<all_urls>`
+ * or the `activeTab` grant: the recorder's per-origin host permission is not
+ * enough. `activeTab` is granted by opening the popup on the tab (as the Report
+ * a bug click does) or by the keyboard shortcut, and lasts until the tab
+ * navigates; outside it Chrome refuses, and the report says there is no
+ * screenshot rather than asking for a wider permission.
  */
 async function handleBugScreenshot(
   tab: chrome.tabs.Tab | undefined,
 ): Promise<{ ok: true; dataUrl: string } | { ok: false; error: string }> {
   await i18nReady;
   if (tab?.id == null || tab.windowId == null) return { ok: false, error: t('common_screenshotNoTab') };
+  const viaDebugger = await captureThroughDebugger(tab.id);
+  if (viaDebugger) return { ok: true, dataUrl: viaDebugger };
   if (!tab.active) return { ok: false, error: t('common_screenshotTabHidden') };
   try {
     const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' });
@@ -745,6 +771,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === 'piwi-replay-finished') {
     void handleReplayFinished().then(() => sendResponse({ ok: true }));
     return true;
+  }
+  if (message?.type === 'piwi-bug-evidence-source') {
+    sendResponse({ debugger: collectsThroughDebugger(sender.tab?.id) });
+    return undefined;
   }
   if (message?.type === 'piwi-bug-screenshot') {
     void handleBugScreenshot(sender.tab).then(sendResponse);

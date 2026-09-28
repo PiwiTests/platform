@@ -1834,6 +1834,33 @@
   "bug_wrongPageHint": {
     "message": "Diga em qual página você deveria ter chegado"
   },
+  "bug_screenshot": {
+    "message": "Captura de tela"
+  },
+  "bug_screenshotHint": {
+    "message": "Adicionar uma captura de tela da página como está agora"
+  },
+  "bug_debuggingOn": {
+    "message": "O Chrome mostra uma barra dizendo que o Piwi Picker começou a depurar este navegador: é este relatório lendo o console, as requisições com falha e as capturas de tela. Nada sai do seu computador, e a barra some quando você termina."
+  },
+  "bug_debuggingCanceled": {
+    "message": "A barra de depuração foi cancelada: o relatório passa a ler o console e as requisições pela página, e uma captura de tela pede “$action$” no Piwi Picker.",
+    "placeholders": {
+      "action": {
+        "content": "$1",
+        "example": "Take a screenshot"
+      }
+    }
+  },
+  "bug_debuggingRefused": {
+    "message": "O Chrome recusou a sessão de depuração (outro depurador nesta aba, ou uma política): o relatório lê o console e as requisições pela página, e uma captura de tela pede “$action$” no Piwi Picker.",
+    "placeholders": {
+      "action": {
+        "content": "$1",
+        "example": "Take a screenshot"
+      }
+    }
+  },
   "bug_finish": {
     "message": "Concluir"
   },
