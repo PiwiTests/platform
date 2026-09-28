@@ -13,7 +13,10 @@ compares request durations. **PR 2 built 2026-09-28**: `buildFlakeProfile` and i
 the flaky list's top suspect, the Attempts links, `get_flake_profile`, the weak `known-flake-suspect` clue and the
 `flake-lab` capability. **PR 3 built 2026-09-28**: the flake plan and verdict modules in core, `extractErrorSignature`
 and `requestRouteKey` moved to core, flake mode in the reporter, the generalized interception, and the server's
-isolation of flake-lab runs. PRs 4–6 are not started. What changed while building PR 1:
+isolation of flake-lab runs. **PR 4 built 2026-09-28**: `piwi flake` and `piwi flake verify`, the
+`flake_experiments` and `flake_arms` tables, the plan, results and experiments endpoints, experiments on the
+Flakiness tab, the reproduced badge, the strong clue, `plan_flake_experiment`, the skill and a seeded demo experiment.
+PRs 5–6 are not started. What changed while building PR 1:
 
 - The server's filter did **not** keep status 0: it kept status ≥ 400 plus the 50 slowest others, so a quick reset
   could be dropped. It now keeps every request with status ≥ 400, status ≤ 0 or a `failure`.
@@ -87,6 +90,34 @@ What changed while building PR 3:
   lab runs, so probe runs leave them too.
 - Only Chromium is installed where PR 3 was built, so the skip of `cpu` and `network` on another browser is covered
   by a unit test with a Firefox page, not a Firefox run.
+
+What changed while building PR 4:
+
+- **Early stop without `--max-failures`.** Playwright's flag counts every failure, so an arm runs in batches of up to
+  5 repeats (`--repeat-each`), and its attempts are read in start order and cut after the 3rd matching failure. The
+  count equals a run that stopped there whatever the batch size; a batch may run a few attempts past the stop. The
+  control runs in one batch and never stops early; a verify arm stops at its first matching failure.
+- Every arm runs one test at a time (`--workers=1`), as the control does, except `alongside` (`--workers=2`, plus
+  `--fully-parallel` when both tests share a file). An `after` round counts when the attempt started just before it
+  was the other test's, judged within one batch: Playwright interleaves the two files per repeat, so most rounds
+  qualify. `-g` is each test's describe path and title, anchored after a space and before the tags.
+- `--project` names the Piwi project (for a `file:line` test), as in `probe` and `preflight`; the Playwright project
+  comes from the plan (the project of most of the test's failures) or a `project` condition. `file:line` resolves
+  through a fifth endpoint, `GET /api/projects/:id/flake-lab/test`.
+- `--no-upload` still fetches the plan (without recording an experiment). When the dashboard cannot be reached, it
+  exits 2 and says to pass `--plan <file>`, a saved plan response or the `plan` of `plan_flake_experiment`.
+- A verify plan reruns the reproducing arm of the latest reproduced experiment for `flakeVerifyRuns(rate)` runs.
+  Its verdict is `verified`, `still-fails` (a matching failure) or `inconclusive` (too few clean runs), and it
+  stores `verifies_arm_id`. The plan's commit columns are `commit_sha` and `failure_commit_sha`, since `COMMIT` is an
+  SQL keyword.
+- `--all` adds a `combined` arm: every page condition (one per route and kind), the first `alongside`/`after` and
+  the first `project`.
+- Playwright's output goes to a log file in the session's temporary folder, and its tail is printed when an arm
+  records no attempt of the test (the usual cause: specs without the capture fixtures).
+- The session estimate and batch size live in core (`estimateFlakeSessionMs`), shared by the CLI and
+  `plan_flake_experiment`; the Playwright spawn and the connection lookup are shared with `probe` and `preflight`.
+- The flaky list reads the badge from the same `flake-suspects` call as the top suspect (a `lab` field), and the
+  experiments list shows finished experiments only.
 
 The suspects are computed from data Piwi already stores. The lab adds a CLI command, a reporter mode like probe mode,
 two tables, a desktop command and MCP tools. New wire fields, the plan file format, the command and the endpoints

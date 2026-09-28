@@ -68,7 +68,7 @@ without a condition. Nothing is stored.
 
 The flaky list names each test's top suspect, the [Attempts](./evidence#attempts) tab links a request to its suspect,
 the clue `known-flake-suspect` marks a failure showing one, and MCP's `get_flake_profile` returns the profile.
-Experiments that apply a condition to confirm a suspect are not available yet.
+The [Flake Lab](./flake-lab) tests each suspect against a control run.
 
 ### Impact ranking
 

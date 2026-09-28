@@ -6,12 +6,11 @@
  * at `page.route`), and posts the outcomes back. The run is stamped as a probe
  * run, so the dashboard never counts it as a real run.
  */
-import { spawn } from 'node:child_process';
-import { createRequire } from 'node:module';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { resolveProjectId } from '../internal/support/selection-client.js';
+import { spawnPlaywright } from '../internal/support/playwright-spawn.js';
 import { PIWI_ENV_KEYS, PIWI_PROBE_ENV } from '../internal/config/env.js';
 import type { ProbePlan } from '../internal/probe/plan.js';
 import type { ProbeOutcomeLine } from '../internal/probe/mode.js';
@@ -41,35 +40,6 @@ function readOption(argv: string[], name: string): string | undefined {
 
 function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function resolvePlaywrightCli(): string | null {
-  const require = createRequire(path.join(process.cwd(), 'noop.js'));
-  for (const id of ['playwright/cli', '@playwright/test/cli', 'playwright/lib/cli/cli']) {
-    try {
-      return require.resolve(id);
-    } catch {
-      // try the next candidate
-    }
-  }
-  return null;
-}
-
-function spawnPlaywright(playwrightArgs: string[], env: NodeJS.ProcessEnv): Promise<number> {
-  const cli = resolvePlaywrightCli();
-  const child = cli
-    ? spawn(process.execPath, [cli, 'test', ...playwrightArgs], { stdio: 'inherit', env })
-    : spawn(process.platform === 'win32' ? 'npx.cmd' : 'npx', ['playwright', 'test', ...playwrightArgs], {
-        stdio: 'inherit',
-        env,
-      });
-  return new Promise((resolve) => {
-    child.on('error', (err) => {
-      console.error(`piwi probe: could not start Playwright — ${err.message}`);
-      resolve(EXIT_ERROR);
-    });
-    child.on('exit', (code) => resolve(code ?? EXIT_ERROR));
-  });
 }
 
 export async function runProbe(argv: string[]): Promise<number> {
@@ -145,7 +115,7 @@ export async function runProbe(argv: string[]): Promise<number> {
   };
   // A probe run's tests fail by design when they notice the fault, so Playwright
   // exiting non-zero is expected and is not treated as a command error.
-  await spawnPlaywright(pwArgs, childEnv);
+  await spawnPlaywright(pwArgs, childEnv, { command: 'piwi probe' });
 
   const lines = fs.readFileSync(resultsFile, 'utf8').split('\n').filter(Boolean);
   const results: ProbeOutcomeLine[] = [];

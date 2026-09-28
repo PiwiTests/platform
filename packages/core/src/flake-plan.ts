@@ -357,3 +357,64 @@ export interface FlakeLabRunStamp {
   experimentId: string;
   armId: string;
 }
+
+/** A duration in a label: `800 ms`, `1.8 s`, `2 s`. */
+function durationLabel(ms: number): string {
+  return ms < 1000 ? `${Math.round(ms)} ms` : `${Number((ms / 1000).toFixed(1))} s`;
+}
+
+/** A test in a label: its describe path and title joined with ` › `. */
+export function flakeTestLabel(test: FlakeTestRef): string {
+  return [...test.suite, test.title].join(' › ');
+}
+
+/** One condition in a few words: `delay GET /api/cart 1.8 s`, `run with admin › resets catalog`. */
+export function describeFlakeCondition(condition: FlakeCondition): string {
+  switch (condition.kind) {
+    case 'delay':
+      return `delay ${condition.route} ${durationLabel(condition.ms)}`;
+    case 'fail':
+      return 'abort' in condition ? `abort ${condition.route}` : `fail ${condition.route} with ${condition.status}`;
+    case 'cpu':
+      return `CPU ×${condition.rate}`;
+    case 'network':
+      return `network +${durationLabel(condition.latencyMs)}, ${condition.downKbps} kbps down`;
+    case 'alongside':
+      return `run with ${flakeTestLabel(condition.test)}`;
+    case 'after':
+      return `run after ${flakeTestLabel(condition.test)}`;
+    case 'project':
+      return `on ${condition.name}`;
+  }
+}
+
+/** An arm's conditions in a few words, `control` when it has none. */
+export function describeFlakeArm(conditions: FlakeCondition[]): string {
+  return conditions.length === 0 ? 'control' : conditions.map(describeFlakeCondition).join(' + ');
+}
+
+/** Runs in one Playwright invocation of an arm that may stop early. */
+export const FLAKE_BATCH_RUNS = 5;
+
+/** A start of Playwright costs about this much on top of the tests (workers, browser). */
+export const FLAKE_SPAWN_OVERHEAD_MS = 3_000;
+
+/**
+ * The longest a lab session can take: every run of every arm at the test's
+ * median duration (twice it for an `alongside` or `after` arm, which runs two
+ * tests), plus a Playwright start per batch of {@link FLAKE_BATCH_RUNS} (one
+ * for an arm that never stops early). Null without a median duration.
+ */
+export function estimateFlakeSessionMs(
+  arms: Array<{ conditions: FlakeCondition[]; runs: number; stopAt: number | null }>,
+  medianDurationMs: number | null,
+): number | null {
+  if (medianDurationMs == null) return null;
+  let total = 0;
+  for (const arm of arms) {
+    const twoTests = arm.conditions.some((c) => c.kind === 'alongside' || c.kind === 'after');
+    const batches = arm.stopAt == null ? 1 : Math.ceil(arm.runs / FLAKE_BATCH_RUNS);
+    total += arm.runs * medianDurationMs * (twoTests ? 2 : 1) + batches * FLAKE_SPAWN_OVERHEAD_MS;
+  }
+  return total;
+}

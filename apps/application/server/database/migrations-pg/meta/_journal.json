@@ -666,6 +666,13 @@
       "when": 1790578451584,
       "tag": "0094_jittery_meltdown",
       "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "7",
+      "when": 1790627191689,
+      "tag": "0095_smooth_multiple_man",
+      "breakpoints": true
     }
   ]
 }

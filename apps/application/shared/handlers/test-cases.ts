@@ -21,6 +21,7 @@ import { computeNextStep } from '../next-step';
 import { getClusterPatchFacts } from './failure-clusters';
 import { isLabRun } from './probes';
 import { getFlakeProfile, mayHaveFlakeSuspects } from './flake-profile';
+import { getFlakeSuspectResults, type FlakeSuspectResult } from './flake-lab';
 import { isPassiveCapabilityDeclined } from './capabilities';
 import { isFailedStatus } from '../utils/test-counts';
 import { buildFailureTimeline, type FailureTimeline, type TimelineCallsite } from '../failure-timeline';
@@ -886,8 +887,26 @@ async function loadFlakeSuspectsForClue(
   if (!isFailedStatus(status) || projectId == null) return [];
   if (await isPassiveCapabilityDeclined(db, projectId, 'flake-lab')) return [];
   if (!(await mayHaveFlakeSuspects(db, testCaseId).catch(() => false))) return [];
-  const profile = await getFlakeProfile(db, testCaseId, { summary: true }).catch(() => null);
-  return profile?.suspects ?? [];
+  const [profile, results] = await Promise.all([
+    getFlakeProfile(db, testCaseId, { summary: true }).catch(() => null),
+    getFlakeSuspectResults(db, testCaseId).catch(() => new Map<string, FlakeSuspectResult>()),
+  ]);
+  return (profile?.suspects ?? []).map((s) => {
+    const lab = results.get(s.id);
+    return lab?.verdict === 'reproduced'
+      ? {
+          ...s,
+          reproduced: {
+            label: lab.label,
+            matchingFailures: lab.matchingFailures,
+            runs: lab.runs,
+            controlMatchingFailures: lab.controlMatchingFailures,
+            controlRuns: lab.controlRuns,
+            pValue: lab.pValue,
+          },
+        }
+      : s;
+  });
 }
 
 /**

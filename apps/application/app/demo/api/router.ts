@@ -178,7 +178,17 @@ import {
   getAttemptDiff,
 } from '#shared/handlers/test-cases';
 import { parseGranularity } from '#shared/analytics/period';
-import { getFlakeProfile, getTopFlakeSuspects } from '#shared/handlers/flake-profile';
+import { getFlakeProfile } from '#shared/handlers/flake-profile';
+import {
+  FlakePlanUnavailable,
+  FlakeResultsRejected,
+  getFlakeExperimentPlan,
+  getFlakyListSuspects,
+  listFlakeExperiments,
+  recordFlakeResults,
+  resolveTestCaseByLocation,
+  type FlakeResultsInput,
+} from '#shared/handlers/flake-lab';
 import { buildExecutionReproduce } from '#shared/handlers/reproduce';
 import {
   getFailureCluster,
@@ -711,7 +721,7 @@ const routes: RouteEntry[] = [
         .split(',')
         .map((v) => Number(v.trim()))
         .filter((n) => Number.isInteger(n) && n > 0);
-      return { items: await getTopFlakeSuspects(await getDemoDb(), +m[1]!, ids) };
+      return { items: await getFlakyListSuspects(await getDemoDb(), +m[1]!, ids) };
     },
   },
   {
@@ -1234,6 +1244,61 @@ const routes: RouteEntry[] = [
     handler: async (m, _b, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'case', +m[1]!);
       return { items: await getTestCaseHistory(await getDemoDb(), +m[1]!) };
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/test-cases\/(\d+)\/flake-plan$/,
+    handler: async (m, _b, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'case', +m[1]!);
+      const kind = q?.get('kind') === 'verify' ? 'verify' : 'reproduce';
+      const runs = q?.get('runs') ? Number(q.get('runs')) : null;
+      try {
+        return await getFlakeExperimentPlan(await getDemoDb(), +m[1]!, {
+          kind,
+          runs: Number.isInteger(runs) && runs! >= 1 && runs! <= 100 ? runs : null,
+          record: q?.get('record') !== 'false',
+          commit: q?.get('commit') || null,
+          machine: q?.get('machine') || null,
+        });
+      } catch (error) {
+        if (error instanceof FlakePlanUnavailable) throw demoHttpError(error.statusCode, error.message);
+        throw error;
+      }
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/test-cases\/(\d+)\/flake-experiments$/,
+    handler: async (m, _b, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'case', +m[1]!);
+      const limit = Number(q?.get('limit')) || undefined;
+      return { items: await listFlakeExperiments(await getDemoDb(), +m[1]!, { limit }) };
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/projects\/(\d+)\/flake-lab\/results$/,
+    handler: async (m, body, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      try {
+        return await recordFlakeResults(await getDemoDb(), +m[1]!, (body ?? {}) as FlakeResultsInput);
+      } catch (error) {
+        if (error instanceof FlakeResultsRejected) throw demoHttpError(error.statusCode, error.message);
+        throw error;
+      }
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/flake-lab\/test$/,
+    handler: async (m, _b, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const match = /^(.+):(\d+)$/.exec((q?.get('location') ?? '').trim());
+      if (!match) throw demoHttpError(400, 'location must be a spec path and a line, file:line');
+      const found = await resolveTestCaseByLocation(await getDemoDb(), +m[1]!, match[1]!, Number(match[2]));
+      if (!found) throw demoHttpError(404, `No test case at ${q?.get('location')}`);
+      return found;
     },
   },
   {

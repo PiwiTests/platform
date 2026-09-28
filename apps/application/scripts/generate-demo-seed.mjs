@@ -1344,6 +1344,8 @@ for (const proj of DEMO_PROJECTS) {
 // then ranks "GET /api/cart slower" first, and the Attempts diff of each
 // flaky run links its slower-request row to that suspect.
 const FLAKE_SUSPECT_MIN_FLAKY_RUNS = 7;
+/** What the flake-lab experiment below needs from this block: the test, the cart's delay and a failure commit. */
+const FLAKE_DEMO = { caseId: null, failedCartMs: [], failureCommit: null };
 const FLAKE_SUSPECT_SLOW_PASSES = 2;
 const FLAKE_SUSPECT_ERROR =
   'Error: expect(locator).toHaveText(expected) failed\n\n' +
@@ -1356,6 +1358,7 @@ const FLAKE_SUSPECT_ERROR =
   const flaky = FLAKY_CASES[1];
   const caseDef = DEMO_PROJECTS.find((p) => p.id === 1).cases.find((c) => c.title === flaky.title);
   const flakyCaseId = caseIdByKey.get(`1\x00${caseDef.file}\x00${flaky.title}`);
+  FLAKE_DEMO.caseId = flakyCaseId;
   const isCart = (nr) => nr.method === 'GET' && /\/api\/cart$/.test(nr.url);
   const setDuration = (nr, ms) => {
     nr.duration = ms;
@@ -1401,6 +1404,7 @@ const FLAKE_SUSPECT_ERROR =
     }
 
     // A flaky run: the failed first attempt becomes its own row, the retry passes after it.
+    FLAKE_DEMO.failureCommit ??= run.metadata?.scm?.commit ?? null;
     const failedDuration = Math.round(row.duration / 2);
     const failedRow = {
       ...row,
@@ -1450,7 +1454,10 @@ const FLAKE_SUSPECT_ERROR =
     let requestStartMs = failedRow.started_at + SEED_FIRST_REQUEST_OFFSET_MS;
     for (const nr of requests) {
       const copy = { ...nr, id: nrId++, test_runs_case_id: failedRow.id, start_time: requestStartMs };
-      if (isCart(copy)) setDuration(copy, 1700 + ((index * 137) % 700));
+      if (isCart(copy)) {
+        setDuration(copy, 1700 + ((index * 137) % 700));
+        FLAKE_DEMO.failedCartMs.push(copy.duration);
+      }
       requestStartMs += (copy.duration ?? 0) + SEED_REQUEST_GAP_MS;
       NETWORK_REQUESTS.push(copy);
       nr.start_time += failedDuration + SEED_WORKER_GAP_MS;
@@ -3211,6 +3218,72 @@ function collectAnchorSec() {
 }
 
 const ANCHOR_SEC = collectAnchorSec();
+
+// ── Flake-lab experiment (rng-free) ─────────────────────────────────────────
+// Two days before the anchor, someone ran `piwi flake` on the checkout
+// project's flaky test: the control stayed clean in 10 runs and delaying
+// `GET /api/cart` to the failures' median reproduced it 3 times in 4. The arm
+// carries the suspect id the flake profile gives the slow cart, so the
+// Flakiness tab shows "reproduced 3/4" on that suspect and the flaky list its
+// badge. The p-value is the one-sided Fisher exact test of 3/4 against 0/10.
+const FLAKE_EXPERIMENTS = [];
+const FLAKE_ARMS = [];
+{
+  const sorted = [...FLAKE_DEMO.failedCartMs].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  const medianMs = sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+  const delayMs = Math.round(medianMs / 100) * 100;
+  const route = 'GET /api/cart';
+  const finishedAt = ANCHOR_SEC * 1000 - 2 * 24 * 60 * 60 * 1000;
+  FLAKE_EXPERIMENTS.push({
+    id: 1,
+    project_id: 1,
+    test_case_id: FLAKE_DEMO.caseId,
+    kind: 'reproduce',
+    commit_sha: FLAKE_DEMO.failureCommit,
+    failure_commit_sha: FLAKE_DEMO.failureCommit,
+    source: 'cli',
+    machine: 'dev-laptop',
+    playwright_project: 'chromium',
+    verdict: 'reproduced',
+    reproducing_arm_id: 2,
+    verifies_arm_id: null,
+    created_at: finishedAt - 3 * 60 * 1000,
+    finished_at: finishedAt,
+  });
+  const arm = (id, position, fields) => ({
+    id,
+    experiment_id: 1,
+    position,
+    discarded_rounds: 0,
+    other_failures: 0,
+    ...fields,
+  });
+  FLAKE_ARMS.push(
+    arm(1, 0, {
+      arm_key: 'control',
+      suspect_id: null,
+      label: 'control',
+      conditions: [],
+      runs: 10,
+      matching_failures: 0,
+      stopped_early: 0,
+      p_value: null,
+      verdict: null,
+    }),
+    arm(2, 1, {
+      arm_key: 'suspect-1',
+      suspect_id: `slow-route:${route}`,
+      label: `delay ${route} ${Number((delayMs / 1000).toFixed(1))} s`,
+      conditions: [{ kind: 'delay', route, ms: delayMs, match: 'all' }],
+      runs: 4,
+      matching_failures: 3,
+      stopped_early: 1,
+      p_value: 4 / 364,
+      verdict: 'reproduced',
+    }),
+  );
+}
 // Delta between load time and the seed's anchor, computed by SQLite when the
 // seed runs. Referenced from a temp table so every statement shares one value
 // (a second-precision drift between statements would otherwise desync the ms
@@ -3267,6 +3340,7 @@ const REBASE_SQL = [
   // candidates to it; they are all stamped at BASE_START_MS, which the run
   // timestamps already bound. Nullable columns stay NULL.
   `UPDATE probes SET probed_at = probed_at + ${D_MS};`,
+  `UPDATE flake_experiments SET created_at = created_at + ${D_MS}, finished_at = finished_at + ${D_MS};`,
   `UPDATE graph_nodes SET last_seen_at = last_seen_at + ${D_MS}, created_at = created_at + ${D_MS}, pruned_at = pruned_at + ${D_MS};`,
   `UPDATE graph_edges SET last_seen_at = last_seen_at + ${D_MS}, created_at = created_at + ${D_MS};`,
   `UPDATE scenario_gaps SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS}, accepted_at = accepted_at + ${D_MS}, covered_at = covered_at + ${D_MS}, closed_at = closed_at + ${D_MS};`,
@@ -4158,6 +4232,10 @@ const lines = [
   '',
   '-- Probe ledger (Test Map, checked axis)',
   insert('probes', PROBES),
+  '',
+  '-- Flake-lab experiments and their arms (references test_cases)',
+  insert('flake_experiments', FLAKE_EXPERIMENTS),
+  insert('flake_arms', FLAKE_ARMS),
   '',
   '-- Feature graph nodes (Test Map)',
   insert('graph_nodes', GRAPH_NODES),

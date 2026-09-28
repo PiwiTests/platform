@@ -1875,3 +1875,63 @@ export const bugReproductions = pgTable(
     createdByIdx: index('idx_bug_reproductions_created_by').on(t.createdBy),
   }),
 );
+
+// Flake-lab experiments: one row per `piwi flake` (reproduce) or `piwi flake verify`
+// session on a test. The plan endpoint creates the row; the results endpoint
+// fills the verdict and `finished_at`. Deleted with the test case; retention keeps them.
+export const flakeExperiments = pgTable(
+  'flake_experiments',
+  {
+    id: serial('id').primaryKey(),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    testCaseId: integer('test_case_id')
+      .notNull()
+      .references(() => testCases.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull(), // 'reproduce' | 'verify'
+    commit: text('commit_sha'),
+    failureCommit: text('failure_commit_sha'),
+    source: text('source').notNull().default('cli'), // 'cli' | 'desktop' | 'ci'
+    machine: text('machine'),
+    playwrightProject: text('playwright_project'),
+    verdict: text('verdict'),
+    reproducingArmId: integer('reproducing_arm_id'),
+    verifiesArmId: integer('verifies_arm_id'),
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    finishedAt: timestamp('finished_at', { mode: 'date' }),
+  },
+  (t) => ({
+    testCaseIdx: index('idx_flake_experiments_test_case').on(t.testCaseId, t.createdAt),
+    projectIdx: index('idx_flake_experiments_project').on(t.projectId),
+  }),
+);
+
+// The arms of a flake-lab experiment: the control and one row per condition set,
+// with the counts the command line measured and the verdict the server computed.
+export const flakeArms = pgTable(
+  'flake_arms',
+  {
+    id: serial('id').primaryKey(),
+    experimentId: integer('experiment_id')
+      .notNull()
+      .references(() => flakeExperiments.id, { onDelete: 'cascade' }),
+    armKey: text('arm_key').notNull(),
+    position: integer('position').notNull().default(0),
+    suspectId: text('suspect_id'),
+    label: text('label').notNull(),
+    conditions: jsonb('conditions').notNull(),
+    runs: integer('runs').notNull().default(0),
+    matchingFailures: integer('matching_failures').notNull().default(0),
+    otherFailures: integer('other_failures').notNull().default(0),
+    discardedRounds: integer('discarded_rounds').notNull().default(0),
+    stoppedEarly: boolean('stopped_early').notNull().default(false),
+    pValue: doublePrecision('p_value'),
+    verdict: text('verdict'),
+  },
+  (t) => ({
+    experimentIdx: index('idx_flake_arms_experiment').on(t.experimentId),
+  }),
+);

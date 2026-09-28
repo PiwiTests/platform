@@ -659,6 +659,13 @@
       "when": 1790578449993,
       "tag": "0093_daily_yellowjacket",
       "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "6",
+      "when": 1790627189996,
+      "tag": "0094_chief_the_santerians",
+      "breakpoints": true
     }
   ]
 }

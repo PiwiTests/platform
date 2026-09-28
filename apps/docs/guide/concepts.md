@@ -198,6 +198,14 @@ environment, other) and an **impact ranking** in wasted CI minutes. It's a prope
 computed over its execution history, which is why a test needs a few runs of history before it can be
 called flaky. See [Flaky tests](/features/flaky-tests).
 
+### Flake experiment
+
+A `piwi flake` session on one flaky test: a **control arm** with no condition, then one **arm** per suspect, each
+applying the suspect's condition (a delayed route, another test alongside) with retries off. Only failures with the
+same error as the test's failures in history count. An arm **reproduced** the flake when at least half its runs
+failed that way and it fails significantly more than the control; a **verify** experiment reruns that arm after a
+fix. See [Flake Lab](/features/flake-lab).
+
 ### Locator snapshot
 
 When the [capture fixtures](./capture-fixtures) are installed, every successful locator call records

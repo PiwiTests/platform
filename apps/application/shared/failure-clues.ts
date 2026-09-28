@@ -205,6 +205,18 @@ export interface FailureClueFlakeSuspect {
   title?: string;
   project?: string;
   executionIds: number[];
+  /**
+   * The flake-lab arm that reproduced this suspect in the test's latest
+   * experiment testing it, when it did: the strong form of the clue.
+   */
+  reproduced?: {
+    label: string;
+    matchingFailures: number;
+    runs: number;
+    controlMatchingFailures: number;
+    controlRuns: number;
+    pValue: number | null;
+  } | null;
 }
 
 /** The cluster's recorded fix history, when this failure belongs to a cluster. */
@@ -360,14 +372,21 @@ function suspectCounts(c: FailureClueFlakeSuspect['counts']): string {
   return `${c.failuresWith} of this test's ${c.failures} failures and ${c.passesWith} of its ${c.passes} passes`;
 }
 
-/** The clue for a flake suspect this execution shows, in the words of its kind. */
+/** "; a lab run reproduced it: 3 of 4 under delay GET /api/cart 1.8 s, against 0 of 10 without, p = 0.011". */
+function reproducedText(lab: NonNullable<FailureClueFlakeSuspect['reproduced']>): string {
+  const p = lab.pValue == null ? '' : lab.pValue < 0.001 ? ', p < 0.001' : `, p = ${lab.pValue.toFixed(3)}`;
+  return `; a lab run reproduced it: ${lab.matchingFailures} of ${lab.runs} under ${lab.label}, against ${lab.controlMatchingFailures} of ${lab.controlRuns} without${p}`;
+}
+
+/** The clue for a flake suspect this execution shows, in the words of its kind; strong once a lab run reproduced it. */
 function knownFlakeSuspectClue(suspect: FailureClueFlakeSuspect, requests: FailureClueNetworkRequest[]): FailureClue {
-  const counts = suspectCounts(suspect.counts);
+  const lab = suspect.reproduced;
+  const counts = suspectCounts(suspect.counts) + (lab ? reproducedText(lab) : '');
   const base = {
     id: 'known-flake-suspect',
     rule: 'known-flake-suspect' as const,
-    strength: 'weak' as const,
-    title: `A known flake suspect: ${suspect.label}`,
+    strength: lab ? ('strong' as const) : ('weak' as const),
+    title: lab ? `A reproduced flake cause: ${suspect.label}` : `A known flake suspect: ${suspect.label}`,
   };
   if (suspect.kind === 'slow-route' || suspect.kind === 'failed-route') {
     const route = suspect.route ?? '';
@@ -866,8 +885,9 @@ export function buildFailureClues(input: FailureClueInput): FailureCluesReport {
     });
   }
 
-  // ── known-flake-suspect (weak) ─────────────────────────────────────────────
-  // This failure shows a factor the test's history ranks as a flake suspect.
+  // ── known-flake-suspect (weak; strong once reproduced) ────────────────────
+  // This failure shows a factor the test's history ranks as a flake suspect,
+  // and a flake-lab experiment may have reproduced it.
   const suspect = (input.flakeSuspects ?? []).find((sus) => sus.executionIds.includes(input.execution.id));
   if (suspect) add(knownFlakeSuspectClue(suspect, input.networkRequests));
 

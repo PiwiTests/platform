@@ -23,7 +23,7 @@ import {
   type DiffAnchor,
   type DiffFile,
 } from '@piwitests/core/diff-anchors';
-import { parseDotEnv, resolvePiwiConnection, type PiwiConnection } from '@piwitests/core/dotenv';
+import type { PiwiConnection } from '@piwitests/core/dotenv';
 import {
   callSiteFile,
   callSiteLine,
@@ -33,8 +33,7 @@ import {
 } from '@piwitests/core/locator-break';
 import { buildLiteralEdit } from '@piwitests/core/locator-edit';
 import type { LocatorIndex } from '@piwitests/core/locator-index';
-import { defaultDesktopConfigPath, readDesktopConfig } from '../internal/config/desktop.js';
-import { PIWI_DESKTOP_CONFIG_ENV } from '../internal/config/env.js';
+import { resolveCliConnection } from '../internal/support/connection.js';
 import {
   fetchCodeIndex,
   fetchImpact,
@@ -184,20 +183,7 @@ const TEST_FILE = /(?:^|\/)[^/]+\.(?:spec|test)\.[cm]?[jt]sx?$/;
 
 /** The connection from flags, the environment, the workspace `.env`, then the desktop app. */
 function resolveConnection(args: PreflightArgs, env: NodeJS.ProcessEnv, dirs: string[]): PiwiConnection | null {
-  let dotEnv: Record<string, string> = {};
-  for (const dir of dirs) {
-    try {
-      dotEnv = { ...parseDotEnv(fs.readFileSync(path.join(dir, '.env'), 'utf-8')), ...dotEnv };
-    } catch {
-      // No .env there.
-    }
-  }
-  return resolvePiwiConnection({
-    flags: { serverUrl: args.serverUrl, apiKey: args.apiKey, project: args.project },
-    env,
-    dotEnv,
-    desktop: readDesktopConfig(env[PIWI_DESKTOP_CONFIG_ENV] || defaultDesktopConfigPath()),
-  });
+  return resolveCliConnection({ serverUrl: args.serverUrl, apiKey: args.apiKey, project: args.project }, env, dirs);
 }
 
 /**

@@ -22,6 +22,13 @@ import {
 } from '#shared/handlers/test-cases';
 import { getFlakeProfile } from '#shared/handlers/flake-profile';
 import {
+  FlakePlanUnavailable,
+  getFlakeExperimentPlan,
+  latestSuspectResults,
+  listFlakeExperiments,
+} from '#shared/handlers/flake-lab';
+import { describeFlakeArm, estimateFlakeSessionMs } from '@piwitests/core/flake-plan';
+import {
   getFailureCluster,
   getClusterDiagnosis,
   patchClusterStatus,
@@ -1398,16 +1405,21 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
   async get_flake_profile(db, params, ctx) {
     const testCaseId = numericParam(params.testCaseId, 'testCaseId');
     if ((await checkEntityScope(db, ctx, testCaseId, resolveCaseProjectId)) === 'not-found') return null;
-    const profile = await getFlakeProfile(db, testCaseId);
+    const [profile, experiments] = await Promise.all([
+      getFlakeProfile(db, testCaseId),
+      listFlakeExperiments(db, testCaseId, { limit: 10 }),
+    ]);
     if (!profile) return null;
+    const results = latestSuspectResults(experiments);
     return {
       testCaseId: profile.testCaseId,
       window: { days: profile.windowDays, maxAttempts: profile.maxAttempts, from: profile.from, to: profile.to },
       attempts: profile.attempts,
       failures: profile.failures,
       passes: profile.passes,
-      suspects: profile.suspects.map((s) =>
-        dropNulls({
+      suspects: profile.suspects.map((s) => {
+        const lab = results.get(s.id);
+        return dropNulls({
           id: s.id,
           kind: s.kind,
           label: s.label,
@@ -1425,11 +1437,95 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
           sharedRoutes: s.sharedRoutes,
           approximate: s.approximate,
           executionIds: s.executionIds.slice(0, 10),
+          lab: lab
+            ? {
+                experimentId: lab.experimentId,
+                verdict: lab.verdict,
+                matchingFailures: lab.matchingFailures,
+                runs: lab.runs,
+                control: { matchingFailures: lab.controlMatchingFailures, runs: lab.controlRuns },
+                pValue: lab.pValue,
+                finishedAt: lab.finishedAt,
+              }
+            : null,
+        });
+      }),
+      context: profile.context.map((c) => ({ ...c, lift: Math.round(c.lift * 10) / 10 })),
+      experiments: experiments.map((e) =>
+        dropNulls({
+          id: e.id,
+          kind: e.kind,
+          verdict: e.verdict,
+          commit: e.commit,
+          failureCommit: e.failureCommit,
+          source: e.source,
+          playwrightProject: e.playwrightProject,
+          finishedAt: e.finishedAt,
+          verifies: e.verifies,
+          arms: e.arms.map((a) =>
+            dropNulls({
+              id: a.key,
+              label: a.label,
+              suspectId: a.suspectId,
+              conditions: a.conditions,
+              runs: a.runs,
+              matchingFailures: a.matchingFailures,
+              otherFailures: a.otherFailures,
+              discardedRounds: a.discardedRounds || null,
+              stoppedEarly: a.stoppedEarly || null,
+              pValue: a.pValue,
+              verdict: a.verdict,
+              reproducing: a.id === e.reproducingArmId || null,
+            }),
+          ),
         }),
       ),
-      context: profile.context.map((c) => ({ ...c, lift: Math.round(c.lift * 10) / 10 })),
-      experiments: [],
     };
+  },
+
+  // ── plan_flake_experiment ──────────────────────────────────────────────────
+  async plan_flake_experiment(db, params, ctx) {
+    const testCaseId = numericParam(params.testCaseId, 'testCaseId');
+    if ((await checkEntityScope(db, ctx, testCaseId, resolveCaseProjectId)) === 'not-found') return null;
+    let plan;
+    try {
+      plan = await getFlakeExperimentPlan(db, testCaseId, { record: false });
+    } catch (error) {
+      if (error instanceof FlakePlanUnavailable) return null;
+      throw error;
+    }
+    const arms = [plan.control, ...plan.arms];
+    const estimate = estimateFlakeSessionMs(arms, plan.medianDurationMs);
+    return dropNulls({
+      testCaseId,
+      test: plan.displayTitle,
+      filePath: plan.test.file,
+      playwrightProject: plan.test.project,
+      commands: {
+        reproduce: `npx @piwitests/reporter flake ${testCaseId}`,
+        oneSuspect: plan.arms.length ? `npx @piwitests/reporter flake ${testCaseId} --suspect 1` : null,
+        verify: `npx @piwitests/reporter flake verify ${testCaseId}`,
+      },
+      exitCodes: {
+        0: 'reproduced (verify: the fix held)',
+        1: 'not reproduced (verify: still fails or too few runs)',
+        2: 'error',
+      },
+      failureCommit: plan.failureCommit,
+      errorSignatures: plan.errorSignatures,
+      arms: arms.map((a) => ({
+        id: a.id,
+        label: a.id === 'control' ? describeFlakeArm([]) : a.label,
+        suspectId: a.suspectId,
+        conditions: a.conditions,
+        runs: a.runs,
+        stopAt: a.stopAt,
+      })),
+      combined: plan.combined ? { label: plan.combined.label, conditions: plan.combined.conditions } : null,
+      skippedSuspects: plan.suspects.filter((s) => s.skipped).map((s) => ({ id: s.id, reason: s.skipped })),
+      estimateMinutes: estimate != null ? Math.ceil(estimate / 60_000) : null,
+      plan,
+    });
   },
 
   // ── get_network_requests ───────────────────────────────────────────────────

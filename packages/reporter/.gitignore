@@ -6,3 +6,5 @@ dist/
 tests/integration/ai/.ai-e2e-artifacts/
 # Transient Playwright project written by tests/flake-run.spec.ts
 tests/.flake-run-*/
+# Transient Playwright project written by tests/flake-cli-run.spec.ts
+tests/.flake-cli-run-*/
