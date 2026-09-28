@@ -91,6 +91,25 @@ clipboard. It holds your API key: paste it into your user settings, not into the
 | Piwi: Open in dashboard | Open this file's test, or the latest run |
 | Piwi: Open the latest run | Open the run the status bar shows |
 | Piwi: Copy the MCP server configuration | For editors without the MCP provider API |
+| Piwi: Pair with Piwi Picker | Copy the address Piwi Picker sends to |
+
+## Send from Piwi Picker
+
+A locator picked with the [Piwi Picker](./extension) browser extension, or a flow it recorded, lands at the editor's
+cursor:
+
+1. In the editor, run **Piwi: Pair with Piwi Picker** (**Tools → Piwi → Pair with Piwi Picker** in a JetBrains IDE).
+   It copies a pairing address, `http://127.0.0.1:<port>/…#<token>`.
+2. In Piwi Picker's settings, paste it under **Send to editor** and click **Pair**; the browser asks once for access to
+   that local address.
+3. A picked locator's row and the recording review then show **Send to editor**. A locator is inserted in the copy
+   form you chose; a recording is rendered by the editor as the body of a test, like
+   [`piwi codegen --body`](/reference/cli#codegen), with the project's functions and the locators its tests already
+   use.
+
+The editor listens on the loopback interface only (VS Code on its own port, a JetBrains IDE on its built-in server),
+and accepts a request only with the token. Nothing goes through the Piwi instance. With several VS Code windows open,
+the one that paired receives.
 
 ## JetBrains IDEs
 

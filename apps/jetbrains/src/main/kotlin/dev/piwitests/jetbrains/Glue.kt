@@ -81,4 +81,58 @@ object Glue {
         if (inWord) out += current.toString()
         return out
     }
+
+    /** What Piwi Picker sends: a locator line, or a steps document for the editor service to render. */
+    sealed class SendPayload {
+        data class Locator(val text: String) : SendPayload()
+        data class Steps(val steps: com.google.gson.JsonObject) : SendPayload()
+        data class Refused(val error: String) : SendPayload()
+    }
+
+    const val MAX_SEND_TEXT = 4000
+    const val MAX_SEND_BYTES = 2_000_000
+
+    /** Validate a request body, as `parseSendPayload` in `@piwitests/core/editor-send` does. */
+    fun parseSendPayload(body: String): SendPayload {
+        val json = try {
+            com.google.gson.JsonParser.parseString(body)
+        } catch (_: Exception) {
+            return SendPayload.Refused("the body must be JSON")
+        }
+        if (!json.isJsonObject) return SendPayload.Refused("the body must be a JSON object")
+        val obj = json.asJsonObject
+        val kind = obj.get("kind")?.takeIf { it.isJsonPrimitive }?.asString
+        return when (kind) {
+            "locator" -> {
+                val text = obj.get("text")?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }?.asString
+                when {
+                    text.isNullOrBlank() -> SendPayload.Refused("text must be a non-empty string")
+                    text.length > MAX_SEND_TEXT -> SendPayload.Refused("text is at most $MAX_SEND_TEXT characters")
+                    else -> SendPayload.Locator(text)
+                }
+            }
+            "steps" -> obj.get("steps")?.takeIf { it.isJsonObject }?.let { SendPayload.Steps(it.asJsonObject) }
+                ?: SendPayload.Refused("steps must be a steps document")
+            else -> SendPayload.Refused("kind must be 'locator' or 'steps'")
+        }
+    }
+
+    /** Whether an `Authorization` header carries the token, compared in constant time. */
+    fun sendAuthorized(header: String?, token: String): Boolean {
+        val given = Regex("^Bearer\\s+(\\S+)$", RegexOption.IGNORE_CASE).find(header ?: "")?.groupValues?.get(1) ?: return false
+        return token.isNotEmpty() && java.security.MessageDigest.isEqual(given.toByteArray(), token.toByteArray())
+    }
+
+    /**
+     * A block of code re-indented to sit at a line indented with `indent`: its common
+     * leading indentation removed, then `indent` added to every line after the first.
+     */
+    fun indentBlock(code: String, indent: String): String {
+        val lines = code.trimEnd().split("\n")
+        val common = lines.filter { it.isNotBlank() }.minOfOrNull { it.length - it.trimStart().length } ?: 0
+        return lines.mapIndexed { i, line ->
+            val stripped = if (line.isBlank()) "" else line.substring(common)
+            if (i == 0 || stripped.isEmpty()) stripped else indent + stripped
+        }.joinToString("\n")
+    }
 }

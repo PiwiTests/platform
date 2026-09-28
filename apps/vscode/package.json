@@ -64,6 +64,11 @@
         "category": "Piwi"
       },
       {
+        "command": "piwi.pairPicker",
+        "title": "Pair with Piwi Picker",
+        "category": "Piwi"
+      },
+      {
         "command": "piwi.runTests",
         "title": "Run tests",
         "category": "Piwi"

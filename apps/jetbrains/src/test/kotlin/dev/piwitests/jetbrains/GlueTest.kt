@@ -78,4 +78,32 @@ class GlueTest {
         )
         assertEquals(listOf("npx", "playwright", "test", "tests/a.spec.ts:3"), Glue.splitCommand("npx  playwright test tests/a.spec.ts:3"))
     }
+
+    @Test
+    fun `a send payload is a locator line or a steps document`() {
+        assertEquals(Glue.SendPayload.Locator("page.getByRole('button')"), Glue.parseSendPayload("""{"kind":"locator","text":"page.getByRole('button')"}"""))
+        assertEquals(true, Glue.parseSendPayload("""{"kind":"steps","steps":{"v":1}}""") is Glue.SendPayload.Steps)
+        assertEquals(Glue.SendPayload.Refused("the body must be JSON"), Glue.parseSendPayload("{"))
+        assertEquals(Glue.SendPayload.Refused("text must be a non-empty string"), Glue.parseSendPayload("""{"kind":"locator","text":" "}"""))
+        assertEquals(Glue.SendPayload.Refused("steps must be a steps document"), Glue.parseSendPayload("""{"kind":"steps"}"""))
+        assertEquals(Glue.SendPayload.Refused("kind must be 'locator' or 'steps'"), Glue.parseSendPayload("""{"kind":"file"}"""))
+    }
+
+    @Test
+    fun `only the bearer token authorizes a send`() {
+        val token = "abcdefghijklmnop_1234"
+        assertEquals(true, Glue.sendAuthorized("Bearer $token", token))
+        assertEquals(false, Glue.sendAuthorized("Bearer ${token}x", token))
+        assertEquals(false, Glue.sendAuthorized(token, token))
+        assertEquals(false, Glue.sendAuthorized(null, token))
+        assertEquals(false, Glue.sendAuthorized("Bearer x", ""))
+    }
+
+    @Test
+    fun `a rendered body is re-indented at the caret's indentation`() {
+        assertEquals(
+            "await page.goto('/cart');\n    await page.getByRole('button').click();",
+            Glue.indentBlock("  await page.goto('/cart');\n  await page.getByRole('button').click();\n", "    "),
+        )
+    }
 }

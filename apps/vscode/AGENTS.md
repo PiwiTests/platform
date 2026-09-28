@@ -14,7 +14,11 @@ A thin client of the editor service. `npm run vscode:build` builds the service's
   `piwi.runTests`, `piwi.openTrace`), keeps the API key in `SecretStorage`, and provides Piwi's MCP server through
   `vscode.lm.registerMcpServerDefinitionProvider` where the editor has it (read at runtime: `engines.vscode` stays at
   the oldest version `vscode-languageclient` supports, for Cursor and VSCodium).
-- `src/glue.ts` is the pure half (the status bar item, the MCP configuration to paste), tested without an editor.
+- `src/send-listener.ts` is the Send to editor endpoint: `POST /piwi/send` on `127.0.0.1`, on the port kept in
+  global state, with the token from `SecretStorage` (`piwi.sendToken`); **Piwi: Pair with Piwi Picker** starts it and
+  copies the pairing address. A recorded flow is rendered by the service (`piwi/renderSteps`) before it is inserted.
+- `src/glue.ts` is the pure half (the status bar item, the MCP configuration to paste, re-indenting an inserted block),
+  tested without an editor.
 
 ## Rules
 

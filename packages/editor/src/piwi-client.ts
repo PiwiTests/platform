@@ -4,6 +4,7 @@
  * but file paths the index already holds.
  */
 import type { LocatorIndex, LocatorIndexTest } from '@piwitests/core/locator-index';
+import type { TestFunctionEntry } from '@piwitests/core/function-match';
 import type { LocatorHealingResult, RankedLocator } from '@piwitests/core/locator-healing-types';
 import type { PiwiConnection } from '@piwitests/core/dotenv';
 
@@ -158,6 +159,14 @@ export class PiwiClient {
 
   locatorHealing(executionId: number): Promise<LocatorHealingResult> {
     return this.get(`/api/test-run-cases/${executionId}/locator-healing`);
+  }
+
+  /** The project's function catalog: the helpers and page-object methods recordings call. */
+  async testFunctions(projectId: number): Promise<TestFunctionEntry[]> {
+    const body = await this.get<{ testFunctions?: Array<{ entry?: TestFunctionEntry }> }>(
+      `/api/projects/${projectId}/test-functions`,
+    );
+    return (body.testFunctions ?? []).map((row) => row.entry).filter((e): e is TestFunctionEntry => !!e);
   }
 
   /** A stored file's bytes (`/api/files/<path>`). */

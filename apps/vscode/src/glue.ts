@@ -97,3 +97,18 @@ export function mcpConfiguration(servers: McpServerDefinition[]): string {
   ]);
   return JSON.stringify({ servers: Object.fromEntries(entries) }, null, 2);
 }
+
+/**
+ * A block of code re-indented to sit at a line indented with `indent`: its common
+ * leading indentation removed, then `indent` added to every line after the first
+ * (the first lands at the cursor).
+ */
+export function indentBlock(code: string, indent: string): string {
+  const lines = code.replace(/\s+$/, '').split('\n');
+  const common = Math.min(
+    ...lines.filter((l) => l.trim()).map((l) => l.length - l.trimStart().length),
+    Number.MAX_SAFE_INTEGER,
+  );
+  const stripped = lines.map((l) => (l.trim() ? l.slice(common === Number.MAX_SAFE_INTEGER ? 0 : common) : ''));
+  return stripped.map((l, i) => (i === 0 || !l ? l : indent + l)).join('\n');
+}

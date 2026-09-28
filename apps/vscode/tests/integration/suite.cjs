@@ -85,6 +85,65 @@ const tests = {
     assert.match(text, /\*\*CI failure\*\* · \[removes a row\]/);
   },
 
+  async 'Piwi Picker sends a locator and a recorded flow to the cursor'() {
+    await vscode.commands.executeCommand('piwi.pairPicker');
+    const pairing = await vscode.env.clipboard.readText();
+    const [url, token] = pairing.split('#');
+    assert.match(url, /^http:\/\/127\.0\.0\.1:\d+\/piwi\/send$/);
+    const spec = vscode.Uri.file(path.join(workspace, 'tests', 'checkout.spec.ts'));
+    const editor = await vscode.window.showTextDocument(spec);
+    const end = editor.document.lineAt(2).range.end;
+    editor.selection = new vscode.Selection(end, end);
+    await editor.edit((e) => e.insert(end, '\n  '));
+    const send = (body) =>
+      fetch(url, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+    const locator = await send({ kind: 'locator', text: "page.getByRole('button', { name: 'Pay now' })" });
+    assert.equal(locator.status, 200);
+    assert.equal((await locator.json()).file, spec.fsPath);
+    assert.ok(editor.document.getText().includes("  page.getByRole('button', { name: 'Pay now' })"));
+
+    await editor.edit((e) => e.insert(editor.selection.active, '\n  '));
+    const steps = await send({
+      kind: 'steps',
+      steps: {
+        v: 1,
+        title: null,
+        origin: 'https://shop.test',
+        recordedAt: 1000,
+        note: null,
+        steps: [
+          { action: 'goto', target: null, value: '/cart', redacted: false, pageUrl: '/cart', timestamp: 1 },
+          {
+            action: 'click',
+            target: {
+              tagName: 'button',
+              role: 'button',
+              accessibleName: 'Pay now',
+              testId: null,
+              text: 'Pay now',
+              alternatives: [{ locator: "getByRole('button', { name: 'Pay now' })", method: 'getByRole', score: 90 }],
+            },
+            value: null,
+            redacted: false,
+            pageUrl: '/cart',
+            timestamp: 2,
+          },
+        ],
+      },
+    });
+    assert.equal(steps.status, 200, await steps.clone().text());
+    assert.ok(editor.document.getText().includes("  await page.getByRole('button', { name: 'Pay now' }).click();"));
+
+    const refused = await fetch(url, { method: 'POST', headers: { Authorization: 'Bearer nope' }, body: '{}' });
+    assert.equal(refused.status, 401);
+    await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor');
+  },
+
   async 'the commands are registered'() {
     const commands = await vscode.commands.getCommands(true);
     for (const id of [
@@ -96,6 +155,7 @@ const tests = {
       'piwi.openTrace',
       'piwi.runTests',
       'piwi.copyMcpConfiguration',
+      'piwi.pairPicker',
     ]) {
       assert.ok(commands.includes(id), id);
     }

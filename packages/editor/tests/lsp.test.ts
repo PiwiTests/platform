@@ -15,11 +15,14 @@ import {
 } from 'vscode-jsonrpc/node';
 import { createConnection } from 'vscode-languageserver/node';
 import type { LocatorIndex } from '@piwitests/core/locator-index';
+import { buildSession } from '@piwitests/core/recording';
+import { toStepsDocument } from '@piwitests/core/steps';
 import { startServer } from '../src/server';
 import type {
   FailuresResult,
   FileSummary,
   McpServersResult,
+  RenderStepsResult,
   RunCommand,
   RunStatusResult,
   StatusResult,
@@ -208,6 +211,7 @@ beforeAll(async () => {
       res.setHeader('Content-Type', 'application/octet-stream');
       return res.end(Buffer.from('PK-stub'));
     }
+    if (u === '/api/projects/7/test-functions') return res.end(JSON.stringify({ testFunctions: [] }));
     if (u === '/api/projects/7/selections/preview') {
       return res.end(
         JSON.stringify({
@@ -447,6 +451,44 @@ describe('the Piwi language server', () => {
         hasTrace: true,
       },
     ]);
+  });
+
+  test('renders a flow recorded in Piwi Picker as the body of a test', async () => {
+    const target = {
+      tagName: 'button',
+      role: 'button',
+      accessibleName: 'Pay now',
+      testId: null,
+      text: 'Pay now',
+      alternatives: [{ locator: "getByRole('button', { name: 'Pay now' })", method: 'getByRole', score: 90 }],
+    };
+    const session = buildSession(
+      [
+        {
+          action: 'goto',
+          target: null,
+          value: 'https://shop.test/cart',
+          redacted: false,
+          pageUrl: 'https://shop.test/cart',
+          timestamp: 1,
+        },
+        { action: 'click', target, value: null, redacted: false, pageUrl: 'https://shop.test/cart', timestamp: 2 },
+      ],
+      1_000,
+    );
+    const rendered = (await client.sendRequest('piwi/renderSteps', {
+      uri: uri('tests/checkout.spec.ts'),
+      steps: toStepsDocument(session),
+    })) as RenderStepsResult;
+    expect(rendered.warnings).toEqual([]);
+    expect(rendered.code).not.toContain('import');
+    expect(rendered.code).toContain("await page.getByRole('button', { name: 'Pay now' }).click();");
+
+    const invalid = (await client.sendRequest('piwi/renderSteps', {
+      uri: uri('tests/checkout.spec.ts'),
+      steps: 'x',
+    })) as RenderStepsResult;
+    expect(invalid).toEqual({ code: '', warnings: ['not valid JSON'] });
   });
 
   test('offers Piwi’s MCP server with the connection it has', async () => {

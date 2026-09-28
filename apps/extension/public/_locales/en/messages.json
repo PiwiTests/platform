@@ -624,7 +624,7 @@
     "description": "Settings page: button."
   },
   "options_privacy": {
-    "message": "Only used from this page: the API key never reaches a web page’s scripts. Recorded steps go nowhere unless you copy or download them. Connecting downloads your projects’ URL patterns, each mapped project’s function catalog and the elements its tests reach; adding a site sends only its pattern.",
+    "message": "Only used from this page: the API key never reaches a web page’s scripts. Recorded steps go nowhere unless you copy them, download them or send them to your paired editor. Connecting downloads your projects’ URL patterns, each mapped project’s function catalog and the elements its tests reach; adding a site sends only its pattern.",
     "description": "Settings page: privacy note at the bottom."
   },
   "options_testing": {
@@ -985,6 +985,44 @@
     "message": "Start the pattern with http://, https:// or a wildcard.",
     "description": "Settings page: the instance refused the pattern. http://, https:// stay as they are."
   },
+  "options_editorHeading": {
+    "message": "Send to editor",
+    "description": "Heading of the settings section that pairs Piwi Picker with an editor on this computer."
+  },
+  "options_editorHint": {
+    "message": "In VS Code or a JetBrains IDE with the Piwi extension, run “Piwi: Pair with Piwi Picker” and paste the address it copies here. Picked locators and recorded steps can then be sent to that editor, on this computer only, and are inserted at its cursor.",
+    "description": "Explains how to pair with an editor and what is sent. Piwi: Pair with Piwi Picker is the editor command’s name, in English."
+  },
+  "options_editorAddress": {
+    "message": "Pairing address",
+    "description": "Label of the field that takes the address an editor copies when pairing."
+  },
+  "options_editorPair": {
+    "message": "Pair",
+    "description": "Button that saves the pairing address."
+  },
+  "options_editorUnpair": {
+    "message": "Unpair",
+    "description": "Button that forgets the paired editor."
+  },
+  "options_editorPaired": {
+    "message": "Paired with the editor at $url$.",
+    "description": "Status once paired. $url$ is the editor’s local address.",
+    "placeholders": {
+      "url": {
+        "content": "$1",
+        "example": "http://127.0.0.1:47211/piwi/send"
+      }
+    }
+  },
+  "options_editorInvalid": {
+    "message": "This is not a pairing address. It looks like http://127.0.0.1:47211/piwi/send#… and comes from the editor’s “Pair with Piwi Picker” command.",
+    "description": "Error when the pasted text is not a pairing address."
+  },
+  "options_editorPermission": {
+    "message": "Piwi Picker needs permission to reach the editor on this computer.",
+    "description": "Error when the user declines the permission to reach the editor’s local address."
+  },
   "common_close": {
     "message": "Close",
     "description": "Button or aria-label that closes a panel or dialog."
@@ -996,6 +1034,14 @@
   "common_copied": {
     "message": "Copied",
     "description": "A copy button’s label for a second after a successful copy."
+  },
+  "common_sentToEditor": {
+    "message": "Sent",
+    "description": "A Send to editor button’s label for a second after the editor accepted what was sent."
+  },
+  "common_sendToEditorFailed": {
+    "message": "Not sent",
+    "description": "A Send to editor button’s label when the editor did not accept what was sent; the reason is in the button’s tooltip."
   },
   "common_cancel": {
     "message": "Cancel",
@@ -1765,6 +1811,10 @@
     "message": "These tests could use one of the locators listed above instead.",
     "description": "Pick results: after the brittle locators of the project’s tests."
   },
+  "pick_sendToEditor": {
+    "message": "Send to editor",
+    "description": "Button on a picked locator: inserts it, in the chosen copy form, at the cursor of the editor paired with Piwi Picker (VS Code or a JetBrains IDE)."
+  },
   "functions_title": {
     "message": "Test functions on this page",
     "description": "Test functions: the panel’s title and aria-label. The panel checks each test function of the project against the page open."
@@ -2004,6 +2054,10 @@
   "record_downloadStepsTitle": {
     "message": "Saves the recording as a steps file, to share it or turn it into a test with piwi codegen",
     "description": "Recorder review panel: tooltip of “Download steps”. “piwi codegen” is a command: keep it as it is."
+  },
+  "record_sendToEditor": {
+    "message": "Send to editor",
+    "description": "Button in the recording review: the paired editor renders the recorded steps as the body of a test, with the project’s functions, and inserts it at the cursor."
   },
   "bug_reportLabel": {
     "message": "Piwi Picker bug report",

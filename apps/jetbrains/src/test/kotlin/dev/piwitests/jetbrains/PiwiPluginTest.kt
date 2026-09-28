@@ -41,6 +41,41 @@ class PiwiPluginTest : BasePlatformTestCase() {
         assertFalse(PiwiLspServerSupportProvider.isSupported(myFixture.addFileToProject("src/logo.png", "").virtualFile))
     }
 
+    /** Piwi Picker's request lands at the caret of the open editor, through the IDE's built-in server. */
+    fun testPiwiPickerSendsALocatorToTheCaret() {
+        myFixture.configureByText("checkout.spec.ts", "test('pays', async ({ page }) => {\n  <caret>\n});\n")
+        val token = PiwiSendToken.ensure()
+        val port = org.jetbrains.ide.BuiltInServerManager.getInstance().waitForStart().port
+        val client = java.net.http.HttpClient.newHttpClient()
+        fun post(body: String, bearer: String) = client.sendAsync(
+            java.net.http.HttpRequest.newBuilder(java.net.URI("http://127.0.0.1:$port${PiwiSendHandler.PATH}"))
+                .header("Authorization", "Bearer $bearer")
+                .header("Origin", "chrome-extension://abc")
+                .POST(java.net.http.HttpRequest.BodyPublishers.ofString(body))
+                .build(),
+            java.net.http.HttpResponse.BodyHandlers.ofString(),
+        )
+        fun await(future: CompletableFuture<java.net.http.HttpResponse<String>>): java.net.http.HttpResponse<String> {
+            val deadline = System.currentTimeMillis() + 20_000
+            while (!future.isDone && System.currentTimeMillis() < deadline) {
+                com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+                Thread.sleep(20)
+            }
+            return future.get(1, TimeUnit.SECONDS)
+        }
+
+        assertEquals(401, await(post("""{"kind":"locator","text":"x"}""", "wrong-token-wrong-token")).statusCode())
+        val bad = await(post("""{"kind":"file"}""", token))
+        assertEquals(400, bad.statusCode())
+        val ok = await(post("""{"kind":"locator","text":"page.getByRole('button', { name: 'Pay now' })"}""", token))
+        assertEquals(ok.body(), 200, ok.statusCode())
+        assertEquals("chrome-extension://abc", ok.headers().firstValue("Access-Control-Allow-Origin").orElse(null))
+        assertEquals(
+            "test('pays', async ({ page }) => {\n  page.getByRole('button', { name: 'Pay now' })\n});\n",
+            myFixture.editor.document.text,
+        )
+    }
+
     /** The service the plugin bundles, started with the descriptor's command line, answers in the protocol classes. */
     fun testTheBundledServiceAnswersThroughTheDescriptor() {
         val stub = StubInstance()

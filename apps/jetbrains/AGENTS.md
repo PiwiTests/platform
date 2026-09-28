@@ -15,6 +15,9 @@ with the project's Node.js interpreter.
   hover in open files, and `LspCommandsSupport` runs the client commands it names (`PiwiCommands.kt`).
 - The rest is native: Code Vision from `piwi/fileSummary`, the status bar from `piwi/runStatus`, the **Piwi** tool
   window from `piwi/failures` (the LSP client highlights open files only), and the actions under **Tools → Piwi**.
+- `PiwiSendHandler.kt` is the Send to editor endpoint: `POST /api/piwi/send` on the IDE's built-in server, with the
+  token from `PasswordSafe`; **Pair with Piwi Picker** copies the pairing address. It mirrors
+  `@piwitests/core/editor-send` (`Glue.parseSendPayload`, `Glue.sendAuthorized`).
 - `Protocol.kt` mirrors `packages/editor/src/protocol.ts` for lsp4j; `Glue.kt` is the pure half, tested without an IDE.
 - The API key lives in the IDE's `PasswordSafe`; the instance URL and project in `.idea/piwi.xml`.
 

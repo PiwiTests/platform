@@ -501,7 +501,7 @@
     "message": "Se déconnecter"
   },
   "options_privacy": {
-    "message": "Utilisée uniquement depuis cette page, la clé d’API n’atteint jamais les scripts d’une page web. Les étapes enregistrées ne vont nulle part, sauf si vous les copiez ou les téléchargez. La connexion télécharge les motifs d’adresse de vos projets, le catalogue de fonctions de chaque projet et les éléments que ses tests atteignent ; ajouter un site n’envoie que son motif."
+    "message": "Utilisée uniquement depuis cette page, la clé d’API n’atteint jamais les scripts d’une page web. Les étapes enregistrées ne vont nulle part, sauf si vous les copiez, les téléchargez ou les envoyez à votre éditeur appairé. La connexion télécharge les motifs d’adresse de vos projets, le catalogue de fonctions de chaque projet et les éléments que ses tests atteignent ; ajouter un site n’envoie que son motif."
   },
   "options_testing": {
     "message": "Test en cours…"
@@ -802,6 +802,36 @@
   "options_addInvalid": {
     "message": "Commencez le motif par http://, https:// ou un joker."
   },
+  "options_editorHeading": {
+    "message": "Envoyer à l’éditeur"
+  },
+  "options_editorHint": {
+    "message": "Dans VS Code ou un IDE JetBrains avec l’extension Piwi, lancez la commande Piwi « Pair with Piwi Picker » et collez ici l’adresse copiée. Les locators choisis et les étapes enregistrées peuvent alors être envoyés à cet éditeur, sur cet ordinateur uniquement, et sont insérés à son curseur."
+  },
+  "options_editorAddress": {
+    "message": "Adresse d’appairage"
+  },
+  "options_editorPair": {
+    "message": "Appairer"
+  },
+  "options_editorUnpair": {
+    "message": "Désappairer"
+  },
+  "options_editorPaired": {
+    "message": "Appairé avec l’éditeur à l’adresse $url$.",
+    "placeholders": {
+      "url": {
+        "content": "$1",
+        "example": "http://127.0.0.1:47211/piwi/send"
+      }
+    }
+  },
+  "options_editorInvalid": {
+    "message": "Ce n’est pas une adresse d’appairage. Elle ressemble à http://127.0.0.1:47211/piwi/send#… et vient de la commande « Pair with Piwi Picker » de l’éditeur."
+  },
+  "options_editorPermission": {
+    "message": "Piwi Picker a besoin de l’autorisation de joindre l’éditeur sur cet ordinateur."
+  },
   "common_close": {
     "message": "Fermer"
   },
@@ -810,6 +840,12 @@
   },
   "common_copied": {
     "message": "Copié"
+  },
+  "common_sentToEditor": {
+    "message": "Envoyé"
+  },
+  "common_sendToEditorFailed": {
+    "message": "Non envoyé"
   },
   "common_cancel": {
     "message": "Annuler"
@@ -1472,6 +1508,9 @@
   "pick_useRankedInstead": {
     "message": "Ces tests pourraient plutôt utiliser l’un des locators proposés plus haut."
   },
+  "pick_sendToEditor": {
+    "message": "Envoyer à l’éditeur"
+  },
   "functions_title": {
     "message": "Fonctions de test sur cette page"
   },
@@ -1675,6 +1714,9 @@
   },
   "record_downloadStepsTitle": {
     "message": "Enregistre les étapes dans un fichier, à partager ou à transformer en test avec piwi codegen"
+  },
+  "record_sendToEditor": {
+    "message": "Envoyer à l’éditeur"
   },
   "bug_reportLabel": {
     "message": "Rapport de bug Piwi Picker"

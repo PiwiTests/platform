@@ -8,7 +8,8 @@ executes, so any file can answer "which tests reach me?". **Track C** is one edi
 
 **Status.** Proposed 2026-09-27. Being built on `claude/suite-in-the-editor`, in the Delivery order: PR 1 (core),
 PR 2 (`piwi preflight`), PR 3 (the pull-request section, `diff-rename` healing, `predict_locator_breaks`) PR 4
-(code reach), PR 5 (the editor service), PR 6 (VS Code, with the priority 1 items) and PR 7 (JetBrains, with the same five) are built. What changed while building is under [As built](#as-built). Track A needs no capture change. Track B adds an opt-in capture, one
+(code reach), PR 5 (the editor service), PR 6 (VS Code, with the priority 1 items), PR 7 (JetBrains, with the same five) and PR 8 (Send from Piwi Picker) are
+built. What changed while building is under [As built](#as-built). Track A needs no capture change. Track B adds an opt-in capture, one
 payload column on `test_runs_cases` and one table. Tracks C–E add a workspace package, a VS Code extension and a
 JetBrains plugin, and a commitlint scope (`ide`); a catalog of what the editors can do after their first release
 follows the tracks. New wire fields, endpoints, a CLI command and a published extension
@@ -477,6 +478,15 @@ the feature they come from.
   (scope `ide`), CI jobs in `.github/workflows/ci.yml`, a publish workflow per marketplace.
 - Docs: `features/editors.md` (new), `features/ide-integration.md` (link), `AGENTS.md` files for the new apps.
 
+### PR 8 — Send from Piwi Picker (built)
+- `packages/core/src/editor-send.ts` (new): the pairing address, the request body, the token check.
+- `packages/editor`: `piwi/renderSteps`. `apps/vscode/src/send-listener.ts` (new), `piwi.pairPicker`.
+  `apps/jetbrains`: `PiwiSendHandler.kt` (new), `Piwi.PairPicker`.
+- `apps/extension`: `shared/editor-pairing.ts`, `shared/editor-send.ts` (new), `postToEditor` in `piwi-client.ts`, the
+  `piwi-send-to-editor` message, the options section, the buttons in `results-panel.ts` and `record-panel.ts`, five
+  locales.
+- Docs: `features/editors.md` (Send from Piwi Picker), `features/extension.md`, `features/extension-connection.md`.
+
 ## As built
 
 Decisions the build changed or made precise, per PR. The sections above still describe the design; where they
@@ -688,6 +698,33 @@ disagree, this section wins.
 - **Repository.** `jetbrains.yml` (test, build, verify on editor changes), `publish-jetbrains.yml` (on release tags,
   signed, with `JETBRAINS_PUBLISH_TOKEN` and the signing secrets), a release-please entry for `gradle.properties`,
   `apps/jetbrains/AGENTS.md`, and the JetBrains section of `features/editors.md`.
+
+### PR 8 — Send from Piwi Picker
+
+- **One contract, three implementations.** `@piwitests/core/editor-send` defines the pairing address
+  (`<endpoint URL>#<token>`, an http URL on the loopback interface), the body (`{ kind: 'locator', text }` or
+  `{ kind: 'steps', steps }`) and the bearer-token check. The extension and VS Code import it; the JetBrains plugin
+  mirrors it in `Glue.kt`.
+- **The editors.** VS Code listens on `127.0.0.1` on a port kept across restarts (a second window finds it taken and
+  leaves the pairing to the first); a JetBrains IDE takes `POST /api/piwi/send` on its built-in server. Both answer the
+  CORS preflight for browser-extension origins only, and insert at the caret of the focused editor, re-indented to the
+  caret's line; with no editor open, VS Code opens a new one. **Pair with Piwi Picker** creates the token (VS Code's
+  secret storage, the IDE's password safe) and copies the address.
+- **Rendering.** A locator is sent in the copy form chosen in the pick panel, as the user would paste it. A recording
+  is sent as a steps document and rendered by the editor service (`piwi/renderSteps`) with the options of
+  `piwi codegen --body`: stable locators, relative URLs, the project's function catalog and the locators its tests
+  use. The service is where the project is known; the extension's own render stays for Copy.
+- **The extension.** The pairing lives in extension storage; **Pair** requests the host permission for that one local
+  origin inside the click, **Unpair** removes it. Content scripts never reach the editor: the background worker posts
+  (`piwi-send-to-editor`), in `piwi-client.ts` beside the instance calls. **Send to editor** shows on each ranked
+  locator and in the recording review only when paired. The privacy note and the "What is sent" section now say a
+  recording goes only to a paired editor on the same computer; the Firefox `data_collection_permissions: none`
+  stays, as nothing leaves the machine.
+- **Tests.** Core: the pairing, the body and the token check. The editor service renders a steps document (12 tests).
+  VS Code: the listener's unit tests, and the integration suite pairs, posts a locator and a recording, and reads them
+  in the document. JetBrains: the helpers, and a platform test posting to the built-in server and reading the editor.
+  The extension: the pairing store and `postToEditor`, plus the full e2e suite (230) with the panels changed; no e2e
+  drives Send to editor itself, as the background worker's host-permission check cannot be granted from a test.
 
 ## Verification
 

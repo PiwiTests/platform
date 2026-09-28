@@ -29,7 +29,8 @@ AMO listings that are still outstanding.
   twice, as `service_worker` (Chrome) and `scripts` (Firefox, which has no extension service
   workers — AMO rejects the manifest without it); the build writes `dist/` for Chrome and Edge
   without `scripts` (Edge lists it as an error) and `dist-firefox/` with it, and `gecko.data_collection_permissions` is
-  `"none"`, which holds only while nothing is sent anywhere but the user's own instance. See
+  `"none"`, which holds only while nothing is sent anywhere but the user's own instance and the editor paired on
+  the same computer (Send to editor). See
   `PUBLISHING.md` §4. The manifest's `description` and the shortcut's label are `__MSG_*__`
   strings, translated in `public/_locales/` (English, the default, French, and German, Spanish and
   Brazilian Portuguese as drafts). The

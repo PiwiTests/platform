@@ -10,6 +10,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { parseDotEnv, resolvePiwiConnection, type PiwiConnection } from '@piwitests/core/dotenv';
 import type { LocatorIndex } from '@piwitests/core/locator-index';
+import type { TestFunctionEntry } from '@piwitests/core/function-match';
 import type { LocatorHealingResult } from '@piwitests/core/locator-healing-types';
 import {
   PiwiClient,
@@ -93,6 +94,7 @@ export class PiwiContext {
   runBranch: string | null = null;
   /** The latest run on `runBranch` and its failures; null before the first answer. */
   failures: BranchFailures | null = null;
+  private functions: { at: number; items: TestFunctionEntry[] } | null = null;
   private readonly healings = new Map<number, Promise<LocatorHealingResult | null>>();
   private readonly downloads = new Map<string, Promise<string | null>>();
   private readonly catalog = new Map<string, { at: number; items: CatalogCase[] }>();
@@ -174,6 +176,15 @@ export class PiwiContext {
     } catch {
       return false;
     }
+  }
+
+  /** The project's function catalog, reused for five minutes. */
+  async functionCatalog(): Promise<TestFunctionEntry[]> {
+    if (!this.client || !this.project) return [];
+    if (this.functions && Date.now() - this.functions.at < FILE_CACHE_MS) return this.functions.items;
+    const items = await this.client.testFunctions(this.project.id).catch(() => this.functions?.items ?? []);
+    this.functions = { at: Date.now(), items };
+    return items;
   }
 
   /** The healing of a failed execution, fetched once. */

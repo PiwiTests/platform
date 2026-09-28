@@ -11,7 +11,10 @@ import {
 import { getConnectionSettings } from '../shared/connection-settings.js';
 import { getReplayState, newReplayState, setReplayState } from '../shared/replay-storage.js';
 import { parseSteps, sessionFromSteps } from '@piwitests/core/steps';
-import { fetchCatalog, fetchLocatorIndex } from '../shared/piwi-client.js';
+import { fetchCatalog, fetchLocatorIndex, postToEditor } from '../shared/piwi-client.js';
+import { editorOriginPattern, getEditorPairing } from '../shared/editor-pairing.js';
+import type { SendToEditorResult } from '../shared/editor-send.js';
+import type { EditorSendPayload } from '@piwitests/core/editor-send';
 import { setCachedCatalog, isCatalogStale } from '../shared/catalog-cache.js';
 import type { RefreshCatalogResult } from '../shared/catalog-refresh.js';
 import { isLocatorIndexStale, setCachedLocatorIndex } from '../shared/locator-index-cache.js';
@@ -436,6 +439,16 @@ async function handleStartReplay(
   }
 }
 
+/** From a pick or recording panel: post to the paired editor, which inserts at its cursor. */
+async function handleSendToEditor(payload: EditorSendPayload): Promise<SendToEditorResult> {
+  const pairing = await getEditorPairing();
+  if (!pairing) return { ok: false, error: t('options_editorInvalid') };
+  if (!(await chrome.permissions.contains({ origins: [editorOriginPattern(pairing)] }))) {
+    return { ok: false, error: t('options_editorPermission') };
+  }
+  return postToEditor(pairing, payload);
+}
+
 /** The replay script has stored its final state: the badge follows what still runs, a recording perhaps. */
 async function handleReplayFinished(): Promise<void> {
   await chrome.scripting.unregisterContentScripts({ ids: [REPLAY_SCRIPT_ID] }).catch(() => undefined);
@@ -484,6 +497,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   if (message?.type === 'piwi-bug-screenshot') {
     void handleBugScreenshot(sender.tab).then(sendResponse);
+    return true;
+  }
+  if (message?.type === 'piwi-send-to-editor') {
+    void handleSendToEditor(message.payload).then(sendResponse);
     return true;
   }
   if (message?.type === 'piwi-refresh-catalog') {

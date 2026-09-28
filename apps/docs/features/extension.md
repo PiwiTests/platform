@@ -16,7 +16,7 @@ your project's history.
 ## What it does
 
 Every tool below runs on the live page, from the toolbar popup. The last three need a
-[connection to a Piwi instance](#connecting-to-a-piwi-instance); the others never reach a network.
+[connection to a Piwi instance](#connecting-to-a-piwi-instance); the others never reach it.
 
 | Tool | For |
 |---|---|
@@ -101,10 +101,10 @@ Pick an element to copy one block for a coding agent: the page URL, a summary of
 ## Record actions
 
 **Record actions** asks for access to the site you are on, then captures clicks, fills, checks, choices and the
-keys that submit, close or move through a list, across the site's pages. **Stop** opens the
+keys that submit, close or move through a list, across pages. **Stop** opens the
 review: **Copy as TypeScript** for a runnable spec that waits for each page it opens, **Download steps** for a
-[steps file](/reference/steps-format) to share or render with [`piwi codegen`](/reference/cli#codegen), or
-**Discard**. Passwords are never captured: the spec reads them from `process.env`.
+[steps file](/reference/steps-format) to share or render with [`piwi codegen`](/reference/cli#codegen),
+[**Send to editor**](./editors#send-from-piwi-picker), or **Discard**. Passwords are never captured: the spec reads them from `process.env`.
 
 ## Matching functions
 

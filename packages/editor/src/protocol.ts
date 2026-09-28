@@ -203,3 +203,20 @@ export interface FailuresResult {
 }
 
 export const FAILURES_REQUEST = 'piwi/failures';
+
+/**
+ * `piwi/renderSteps`: a flow recorded in Piwi Picker (a steps document, as `piwi codegen` reads it) rendered as the
+ * body of a test, for the file at `uri`: with the project's functions and the locators its tests already use, as
+ * `piwi codegen --body` renders it.
+ */
+export interface RenderStepsParams {
+  uri: string;
+  steps: unknown;
+}
+
+export interface RenderStepsResult {
+  code: string;
+  warnings: string[];
+}
+
+export const RENDER_STEPS_REQUEST = 'piwi/renderSteps';

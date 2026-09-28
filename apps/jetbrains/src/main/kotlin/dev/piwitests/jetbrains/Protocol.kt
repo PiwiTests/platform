@@ -83,6 +83,10 @@ data class McpServerDefinition(val label: String? = null, val url: String? = nul
 
 data class McpServersResult(val servers: List<McpServerDefinition>? = null)
 
+data class RenderStepsParams(val uri: String, val steps: Any?)
+
+data class RenderStepsResult(val code: String? = null, val warnings: List<String>? = null)
+
 data class EditorCredentials(val serverUrl: String? = null, val apiKey: String? = null, val project: String? = null)
 
 /** The service's custom requests beside the language server protocol. */
@@ -110,6 +114,9 @@ interface PiwiLanguageServer : LanguageServer {
 
     @JsonRequest("piwi/mcp")
     fun mcp(): CompletableFuture<McpServersResult?>
+
+    @JsonRequest("piwi/renderSteps")
+    fun renderSteps(params: RenderStepsParams): CompletableFuture<RenderStepsResult?>
 
     @JsonRequest("piwi/refresh")
     fun refresh(): CompletableFuture<Any?>

@@ -9,7 +9,8 @@
           recommended locator heal as a quick fix, the trace and the screenshot one action away;</li>
       <li>the tests behind each locator line and each application file, and each test's pass rate;</li>
       <li>brittle locators, and the locators an unsaved change breaks, with quick fixes;</li>
-      <li>the latest run in the status bar, and Piwi's MCP server for your AI assistant.</li>
+      <li>the latest run in the status bar, and Piwi's MCP server for your AI assistant;</li>
+      <li>locators and recorded flows sent from the Piwi Picker browser extension, inserted at the caret.</li>
     </ul>
     Works in WebStorm, IntelliJ IDEA Ultimate, Rider and the other IDEs with the LSP API and JavaScript support.
     ]]></description>
@@ -25,6 +26,7 @@
         <toolWindow id="Piwi" anchor="bottom" icon="AllIcons.Toolwindows.ToolWindowProblems"
                     factoryClass="dev.piwitests.jetbrains.PiwiFailuresToolWindowFactory"/>
         <notificationGroup id="Piwi" displayType="BALLOON"/>
+        <httpRequestHandler implementation="dev.piwitests.jetbrains.PiwiSendHandler"/>
     </extensions>
 
     <actions>
@@ -40,6 +42,8 @@
             </action>
             <action id="Piwi.OpenInDashboard" class="dev.piwitests.jetbrains.OpenInDashboardAction"
                     text="Open in Dashboard" description="Open this file's test, or the latest run"/>
+            <action id="Piwi.PairPicker" class="dev.piwitests.jetbrains.PairPickerAction" text="Pair with Piwi Picker"
+                    description="Copy the address Piwi Picker sends locators and recorded steps to"/>
             <action id="Piwi.CopyMcpConfiguration" class="dev.piwitests.jetbrains.CopyMcpConfigurationAction"
                     text="Copy the MCP Server Configuration"
                     description="An mcpServers entry for the AI Assistant's MCP settings"/>

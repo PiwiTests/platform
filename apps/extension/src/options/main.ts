@@ -1,3 +1,5 @@
+import { parsePairing } from '@piwitests/core/editor-send';
+import { editorOriginPattern, getEditorPairing, setEditorPairing } from '../shared/editor-pairing.js';
 import {
   getConnectionSettings,
   setConnectionSettings,
@@ -718,5 +720,46 @@ languageSelect.addEventListener('change', () => {
   })();
 });
 
+// Send to editor: the pairing lives in extension storage; the editor's origin is granted inside the Pair click.
+const editorAddressEl = document.getElementById('editor-address') as HTMLInputElement;
+const editorPairBtn = document.getElementById('editor-pair') as HTMLButtonElement;
+const editorUnpairBtn = document.getElementById('editor-unpair') as HTMLButtonElement;
+const editorStatusEl = document.getElementById('editor-status') as HTMLElement;
+
+async function renderEditorPairing(): Promise<void> {
+  const pairing = await getEditorPairing();
+  editorStatusEl.textContent = pairing ? t('options_editorPaired', { url: pairing.url }) : '';
+  editorUnpairBtn.hidden = !pairing;
+}
+
+editorPairBtn.addEventListener('click', () => {
+  const pairing = parsePairing(editorAddressEl.value);
+  if (!pairing) {
+    editorStatusEl.textContent = t('options_editorInvalid');
+    return;
+  }
+  // Requested before anything is awaited: the permission prompt needs the live click.
+  const granted = chrome.permissions.request({ origins: [editorOriginPattern(pairing)] }).catch(() => false);
+  void (async () => {
+    if (!(await granted)) {
+      editorStatusEl.textContent = t('options_editorPermission');
+      return;
+    }
+    await setEditorPairing(pairing);
+    editorAddressEl.value = '';
+    await renderEditorPairing();
+  })();
+});
+
+editorUnpairBtn.addEventListener('click', () => {
+  void (async () => {
+    const pairing = await getEditorPairing();
+    await setEditorPairing(null);
+    if (pairing) await chrome.permissions.remove({ origins: [editorOriginPattern(pairing)] }).catch(() => false);
+    await renderEditorPairing();
+  })();
+});
+
 renderLanguageSelect();
 void loadInitial();
+void renderEditorPairing();

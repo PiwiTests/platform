@@ -99,6 +99,7 @@ const server = http.createServer((req, res) => {
     });
   if (u.startsWith('/api/projects/7/locator-alternatives')) return answer({ items: [] });
   if (u.startsWith('/api/projects/7/branch-failures')) return answer(FAILURES);
+  if (u === '/api/projects/7/test-functions') return answer({ testFunctions: [] });
   if (u === '/api/test-run-cases/900/locator-healing') return answer(HEALING);
   res.statusCode = 404;
   res.end('{}');

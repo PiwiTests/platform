@@ -32,7 +32,10 @@ import {
   type TextEdit,
 } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
+import { renderSpec } from '@piwitests/core/codegen';
 import { diffLines } from '@piwitests/core/line-diff';
+import { canonicalLocator } from '@piwitests/core/locator-chain';
+import { parseSteps, sessionFromSteps } from '@piwitests/core/steps';
 import { locatorCallSiteFiles, sameFilePath, type LocatorBreak } from '@piwitests/core/locator-break';
 import { stabilityLabels } from '@piwitests/core/locator-stability';
 import type { LocatorIndexTest } from '@piwitests/core/locator-index';
@@ -57,6 +60,7 @@ import {
   FILE_SUMMARY_REQUEST,
   MCP_REQUEST,
   REFRESH_REQUEST,
+  RENDER_STEPS_REQUEST,
   RUN_STATUS_NOTIFICATION,
   RUN_STATUS_REQUEST,
   TRACE_REQUEST,
@@ -70,6 +74,8 @@ import {
   type FileSummary,
   type FileSummaryParams,
   type McpServersResult,
+  type RenderStepsParams,
+  type RenderStepsResult,
   type RunCommand,
   type RunStatusResult,
   type RunTestsArgs,
@@ -803,6 +809,28 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       });
     }
     return { servers };
+  });
+
+  connection.onRequest(RENDER_STEPS_REQUEST, async (params: RenderStepsParams): Promise<RenderStepsResult> => {
+    const parsed = parseSteps(params.steps);
+    if (!parsed.ok) return { code: '', warnings: parsed.errors };
+    const file = uriToPath(params.uri);
+    const context = (file ? contextFor(file) : null) ?? contexts.find((c) => c.client && c.project) ?? null;
+    const suiteLocators = new Set(
+      (context?.index?.locators ?? []).flatMap((l) => {
+        const canonical = canonicalLocator(l.locator);
+        return canonical ? [canonical] : [];
+      }),
+    );
+    const result = renderSpec(sessionFromSteps(parsed.steps), {
+      format: 'body',
+      urls: 'relative',
+      locators: 'stable',
+      urlChecks: true,
+      catalog: context ? await context.functionCatalog() : [],
+      preferLocators: suiteLocators,
+    });
+    return { code: result.code, warnings: result.warnings.map((w) => w.message) };
   });
 
   connection.onRequest(REFRESH_REQUEST, async () => {

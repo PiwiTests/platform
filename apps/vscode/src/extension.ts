@@ -3,9 +3,10 @@
  * service (bundled beside this file) computes the diagnostics, quick fixes,
  * hover and summary lines; this file starts it, draws the summary lines as
  * CodeLens and the latest run in the status bar, runs the commands those
- * lines name, keeps the API key in the secret store, and hands Piwi's MCP
- * server to the editor's agent.
+ * lines name, keeps the API key in the secret store, hands Piwi's MCP
+ * server to the editor's agent, and inserts what Piwi Picker sends.
  */
+import { randomBytes } from 'node:crypto';
 import * as vscode from 'vscode';
 import {
   LanguageClient,
@@ -17,6 +18,7 @@ import {
   FILE_SUMMARY_REQUEST,
   MCP_REQUEST,
   REFRESH_REQUEST,
+  RENDER_STEPS_REQUEST,
   RUN_ARGS_REQUEST,
   RUN_STATUS_NOTIFICATION,
   RUN_STATUS_REQUEST,
@@ -27,6 +29,7 @@ import {
   type EditorCredentials,
   type FileSummary,
   type McpServersResult,
+  type RenderStepsResult,
   type RunCommand,
   type RunStatusResult,
   type RunTestsArgs,
@@ -35,10 +38,15 @@ import {
   type TraceParams,
   type TraceResult,
 } from '@piwitests/editor/protocol';
-import { DOCUMENT_PATTERN, mcpConfiguration, statusBarView } from './glue';
+import type { EditorSendPayload } from '@piwitests/core/editor-send';
+import { formatPairing } from '@piwitests/core/editor-send';
+import { DOCUMENT_PATTERN, indentBlock, mcpConfiguration, statusBarView } from './glue';
+import { startSendListener, type SendListener, type SendResult } from './send-listener';
 
 const SECRET_KEY = 'piwi.apiKey';
 const MCP_OFFERED = 'piwi.mcpOffered';
+const SEND_TOKEN = 'piwi.sendToken';
+const SEND_PORT = 'piwi.sendPort';
 
 /** The MCP provider API (VS Code 1.101 and later), read at runtime so older editors still load the extension. */
 interface McpApi {
@@ -53,6 +61,7 @@ interface McpApi {
 type McpHttpServerDefinitionClass = new (label: string, uri: vscode.Uri, headers?: Record<string, string>) => unknown;
 
 let client: LanguageClient | null = null;
+let sendListener: SendListener | null = null;
 
 async function credentials(context: vscode.ExtensionContext): Promise<EditorCredentials> {
   const settings = vscode.workspace.getConfiguration('piwi');
@@ -244,11 +253,72 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     );
   }
 
+  // Send to editor: the token lives in the secret store, the port in global state, so a pairing survives restarts.
+  let sendToken = (await context.secrets.get(SEND_TOKEN)) ?? '';
+  const listen = async (port: number) => {
+    sendListener = await startSendListener({
+      port,
+      token: () => sendToken,
+      onPayload: (payload) => insertFromPicker(lc, payload),
+    });
+    return sendListener;
+  };
+  const pairedPort = context.globalState.get<number>(SEND_PORT);
+  // Another window may hold the port: that window keeps the pairing.
+  if (pairedPort && sendToken) await listen(pairedPort).catch(() => null);
+  context.subscriptions.push(
+    vscode.commands.registerCommand('piwi.pairPicker', async () => {
+      if (!sendToken) {
+        sendToken = randomBytes(24).toString('base64url');
+        await context.secrets.store(SEND_TOKEN, sendToken);
+      }
+      const listener = sendListener ?? (await listen(pairedPort ?? 0).catch(() => listen(0)));
+      await context.globalState.update(SEND_PORT, listener.port);
+      await vscode.env.clipboard.writeText(formatPairing({ url: listener.url, token: sendToken }));
+      void vscode.window.showInformationMessage(
+        "Piwi: the pairing address is on the clipboard. Paste it in Piwi Picker's options, under Send to editor.",
+      );
+    }),
+    { dispose: () => void sendListener?.close() },
+  );
+
   context.subscriptions.push(
     lc.onNotification(RUN_STATUS_NOTIFICATION, (runs: RunStatusResult) => void updateStatus(runs)),
   );
   await lc.start();
   await updateStatus();
+}
+
+/** Insert what Piwi Picker sent at the cursor of the active editor, or in a new editor when none is open. */
+async function insertFromPicker(lc: LanguageClient, payload: EditorSendPayload): Promise<SendResult> {
+  const active = vscode.window.activeTextEditor;
+  let text: string;
+  if (payload.kind === 'locator') {
+    text = payload.text;
+  } else {
+    const rendered = await lc.sendRequest<RenderStepsResult>(RENDER_STEPS_REQUEST, {
+      uri: active?.document.uri.toString() ?? '',
+      steps: payload.steps,
+    });
+    if (!rendered.code) throw new Error(rendered.warnings.join('; ') || 'nothing to insert');
+    text = rendered.code;
+  }
+  if (!active) {
+    const document = await vscode.workspace.openTextDocument({ language: 'typescript', content: text });
+    await vscode.window.showTextDocument(document);
+    return { inserted: true, file: null };
+  }
+  const line = active.document.lineAt(active.selection.active.line).text;
+  const indent = line.slice(0, line.length - line.trimStart().length);
+  const inserted = await active.edit((edit) => edit.replace(active.selection, indentBlock(text, indent)));
+  if (inserted) {
+    void vscode.window.showInformationMessage(
+      payload.kind === 'locator'
+        ? 'Piwi: inserted the locator from Piwi Picker.'
+        : 'Piwi: inserted the recorded steps from Piwi Picker.',
+    );
+  }
+  return { inserted, file: active.document.uri.scheme === 'file' ? active.document.uri.fsPath : null };
 }
 
 /** Once per machine: tell where Piwi's MCP server went, or offer its configuration where the editor has no provider API. */
@@ -313,6 +383,8 @@ async function connect(context: vscode.ExtensionContext, lc: LanguageClient): Pr
 }
 
 export async function deactivate(): Promise<void> {
+  await sendListener?.close();
+  sendListener = null;
   await client?.stop();
   client = null;
 }

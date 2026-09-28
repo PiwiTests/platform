@@ -11,7 +11,7 @@ clients stay thin and both editors give the same answers.
 
 - `src/server.ts` wires the protocol: diagnostics, quick fixes and hover, plus the custom requests of
   `src/protocol.ts` (`piwi/fileSummary`, `piwi/testsForFile`, `piwi/runArgs`, `piwi/status`, `piwi/runStatus`,
-  `piwi/failures`, `piwi/trace`, `piwi/mcp`, `piwi/refresh`, the `piwi/setCredentials` notification and the
+  `piwi/failures`, `piwi/trace`, `piwi/mcp`, `piwi/renderSteps`, `piwi/refresh`, the `piwi/setCredentials` notification and the
   `piwi/runStatusChanged` notification it sends). A client renders `piwi/fileSummary` natively (CodeLens, Code
   Vision), `piwi/runStatus` in its status bar, and `piwi/failures` in a list where its LSP client highlights open
   files only (the JetBrains IDEs).
