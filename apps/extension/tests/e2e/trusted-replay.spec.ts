@@ -229,15 +229,32 @@ test('after the debugging bar is cancelled, the replay goes on with the page’s
     step('click', '/clicks', { target: target('second', 'button', 'Second') }),
     expectText('/clicks', 'log', 'First trusted; Second script;'),
   ]);
-  await startReplay(control, context, site, doc, '/clicks', true);
+  const page = await startReplay(control, context, site, doc, '/clicks', true);
   const tabId = await tabIdOf(worker, url);
   const next = () =>
     worker.evaluate((id) => chrome.tabs.sendMessage(id, { type: 'piwi-replay-wake', wake: true }), tabId);
 
   await expect.poll(async () => (await replayState(worker)).driver?.driver, { timeout: 30_000 }).toBe('cdp');
   await expect.poll(async () => (await replayState(worker)).position).toBe(1);
+  // The goto reloads the page, and the loop starting there forgets a Next sent before it: wait until that loop has
+  // drawn its cursor in the reloaded page.
+  await expect
+    .poll(
+      () =>
+        page
+          .evaluate(
+            () =>
+              (performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined)?.type ===
+                'reload' && document.getElementById('piwi-replay-cursor-host') !== null,
+          )
+          .catch(() => false),
+      { timeout: 20_000 },
+    )
+    .toBe(true);
   await next();
   await expect.poll(async () => (await replayState(worker)).position).toBe(2);
+  // The position moves on before the step acts: the first click has to land before the bar is cancelled.
+  await expect(page.getByTestId('log')).toHaveText('First trusted;');
   // The person clicks Cancel on Chrome's bar.
   await worker.evaluate(
     (id) => (globalThis as { __piwiCancelDebugging?: (id: number) => Promise<void> }).__piwiCancelDebugging!(id),
