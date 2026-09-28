@@ -503,6 +503,9 @@ onMounted(async () => {
     <!-- Desktop shell: a repro request from Piwi Picker, waiting for the developer's click -->
     <DesktopReproRequestModal />
 
+    <!-- Desktop shell: Piwi Picker asks to pair, waiting for the developer's Allow -->
+    <DesktopPickerPairingModal />
+
     <!-- Desktop shell: the Local runs tray — local test runs keep streaming here across navigation -->
     <DesktopLocalRunsTray />
   </UDashboardGroup>

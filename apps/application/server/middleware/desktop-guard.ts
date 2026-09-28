@@ -13,7 +13,7 @@
 // Combined with the loopback-only bind, this keeps the bundled server reachable
 // only by the app itself and by tools the user has given the token to — not by
 // other local processes or web pages open in the user's browser.
-import { presentsDesktopToken } from '../utils/desktop-access';
+import { isOpenDesktopRoute, presentsDesktopToken } from '../utils/desktop-access';
 
 export default defineEventHandler((event) => {
   const token = process.env.PIWI_DESKTOP_TOKEN;
@@ -21,9 +21,8 @@ export default defineEventHandler((event) => {
 
   const path = event.path || '';
   if (!path.startsWith('/api/') && !path.startsWith('/mcp')) return;
-  // The readiness probe carries no token (the shell polls it before the window
-  // has a cookie) and exposes nothing sensitive — leave it open.
-  if (path === '/api/health') return;
+  // The readiness probe, and Piwi Picker's pairing start and poll: see isOpenDesktopRoute.
+  if (isOpenDesktopRoute(event.method, path)) return;
 
   if (presentsDesktopToken(event, token)) return;
 

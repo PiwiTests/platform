@@ -1,9 +1,10 @@
 <script setup lang="ts">
 /**
  * Desktop build only: pairing Piwi Picker with this app, so **Run with
- * Playwright** in its Replay can send a bug report's steps here. The extension
- * cannot read `~/.piwi/desktop.json`, so its options take this address and
- * token by hand. Every request it sends waits for a click in this window.
+ * Playwright** in its Replay can send a bug report's steps here. **Pair** in the
+ * extension's settings asks this window to allow it (`DesktopPickerPairingModal`);
+ * the address and token below are the way by hand, for an extension that cannot
+ * reach this app's usual address. Every run it sends waits for a click here.
  */
 defineProps<{
   /** Base server URL, e.g. `http://127.0.0.1:1234`. */
@@ -23,8 +24,12 @@ const { copy } = useCopy();
 
     <div class="space-y-3 text-sm" data-shot="desktop-picker-card">
       <p class="text-muted">
-        In Piwi Picker's options, under <strong>Desktop app</strong>, paste this address and token. A request it sends
-        shows here first: nothing runs until you click <strong>Run with Playwright</strong>.
+        In Piwi Picker's settings, under <strong>Desktop app</strong>, click <strong>Pair</strong>: this window asks you
+        to allow it, with the code the extension shows. A bug report it sends shows here first: nothing runs until you
+        click <strong>Run with Playwright</strong>.
+      </p>
+      <p class="text-muted">
+        To pair by hand instead, paste this address and token under <strong>Pair by hand</strong>.
       </p>
       <div class="space-y-1">
         <div class="text-muted">Address</div>
