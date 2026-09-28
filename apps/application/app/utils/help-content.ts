@@ -531,7 +531,7 @@ export const HELP_TOPICS = {
   },
   'case.network': {
     title: 'Network requests',
-    text: 'HTTP requests the page made during the test, with timing and status — useful for spotting failed or slow calls. When the execution has a trace, the Full trace view shows every request (all resource types) with headers, timing phases, a waterfall and capped body previews; sensitive header values are masked. An empty card distinguishes not captured (add the capture fixtures) from captured-but-nothing-happened; with a trace and no fixtures the list is recovered from the trace and marked "derived from the trace".',
+    text: 'HTTP requests the page made during the test, with timing and status — useful for spotting failed or slow calls. A request that got no response (a reset, a refused connection, an abort) is marked failed, with the error the browser reported. When the execution has a trace, the Full trace view shows every request (all resource types) with headers, timing phases, a waterfall and capped body previews; sensitive header values are masked. An empty card distinguishes not captured (add the capture fixtures) from captured-but-nothing-happened; with a trace and no fixtures the list is recovered from the trace and marked "derived from the trace".',
     doc: 'features/evidence#trace-powered-deep-views',
   },
   'case.attempts': {

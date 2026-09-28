@@ -44,6 +44,8 @@ export interface AttemptNetworkRequest {
   status?: number | null;
   duration?: number | null;
   resourceType?: string | null;
+  /** Why the request failed without a response (`net::ERR_CONNECTION_RESET`). */
+  failure?: string | null;
 }
 
 export interface AttemptConsoleEntry {
@@ -193,7 +195,7 @@ export function diffAttempts(failing: AttemptEvidence, passing: AttemptEvidence)
   for (const [side, req] of orderedRequestDiff(failNet, passNet, failFailedKeys, passFailedKeys)) {
     diffs.push({
       kind: 'network',
-      summary: `${requestKey(req)} → ${req.status ?? 0}`,
+      summary: `${requestKey(req)} → ${req.failure || (req.status ?? 0)}`,
       detail: req.url && req.url !== stripQuery(req.url) ? req.url : null,
       only: side,
       ref: { section: 'networkRequests' },

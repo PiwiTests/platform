@@ -6,8 +6,8 @@ lang: en-US
 
 # Failure evidence
 
-When a test fails, everything Piwi captured about that attempt lands on one screen. This page describes the evidence on
-that screen: what each tab holds, where the data came from, and how much more you get once a trace is attached.
+When a test fails, everything Piwi captured about that attempt lands on one screen: what each tab holds, where the data
+came from, and what a trace adds.
 
 Two pages are involved, and [Core concepts](/guide/concepts#execution) draws the line between them:
 
@@ -16,7 +16,7 @@ Two pages are involved, and [Core concepts](/guide/concepts#execution) draws the
 | **Execution** | `/test-run-cases/:id` | "why did this attempt fail?": [the diagnosis view](#one-execution-diagnosis-first) |
 | **Test case** | `/test-cases/:id` | "how has this test behaved over time?": [its history](#the-test-case-page) |
 
-Most links from a run land on an execution; the test's title links to the test case above it.
+Links from a run land on an execution; the test's title links to its test case.
 
 ## One execution, diagnosis-first
 
@@ -43,7 +43,8 @@ video exists, else on **Source**; never on **State**.
   and attachments, and under **Page structure ▸** the failure-time ARIA tree and the reconstructed DOM.
 - **Source**: the test source as a call stack (the line that threw plus its callers), deepened
   [with a trace](#trace-powered-deep-views).
-- **Network**: the requests with inline [backend logs](/guide/backend-logs). **Console**: the console output.
+- **Network**: the requests with inline [backend logs](/guide/backend-logs); one with no response shows the browser's
+  error (`net::ERR_CONNECTION_RESET`). **Console**: the console output.
   **State**: the app state at test end and the environment diff against the last green run. **Performance**:
   performance hints, Web Vitals, the slowest step and wasted time.
 
@@ -131,8 +132,8 @@ block uses the same words.
 ## Trace viewer
 
 **Open trace**, at the top of the evidence card on every tab, opens the full Playwright trace viewer, the same UI as
-`npx playwright show-trace`; the Screen tab lists each trace with **Open trace** and **Download**. The viewer is served by the dashboard itself at `/trace-viewer/`, so traces never go to a
-third party, and it works whether or not [authentication](/operate/authentication) is on. The hosted
+`npx playwright show-trace`; the Screen tab lists each trace with **Open trace** and **Download**. The dashboard serves the viewer at `/trace-viewer/`, so traces never go to a
+third party, with or without [authentication](/operate/authentication). The hosted
 `trace.playwright.dev` cannot send your session cookie, so it only works against a dashboard with authentication off.
 
 ## The test case page

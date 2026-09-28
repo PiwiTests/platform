@@ -621,6 +621,8 @@ export interface NetworkRequest {
   startTime?: number;
   serverLogs?: ServerLogEntry[];
   serverTraces?: ServerSpanEntry[];
+  /** Why the request failed without a response (`net::ERR_CONNECTION_RESET`); null or absent when it finished. */
+  failure?: string | null;
 }
 
 /** One frame of the trace-derived full call stack (innermost first). */

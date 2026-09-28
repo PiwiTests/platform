@@ -180,4 +180,28 @@ describe('diffAttempts', () => {
     expect(aria[0]!.only).toBe('failing');
     expect(aria[0]!.summary).toContain('dialog "Session expired"');
   });
+
+  test('a request that failed without a response names its error', () => {
+    const failing: AttemptEvidence = {
+      error: 'boom',
+      networkRequests: [
+        {
+          method: 'GET',
+          url: 'https://shop.test/api/cart',
+          status: 0,
+          duration: 1_800,
+          failure: 'net::ERR_CONNECTION_RESET',
+        },
+      ],
+    };
+    const passing = cleanPass({
+      networkRequests: [{ method: 'GET', url: 'https://shop.test/api/cart', status: 200, duration: 200 }],
+    });
+    const rows = diffAttempts(failing, passing).filter((d) => d.kind === 'network');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      summary: 'GET https://shop.test/api/cart → net::ERR_CONNECTION_RESET',
+      only: 'failing',
+    });
+  });
 });

@@ -202,6 +202,31 @@ describe('failed-request-before-failure', () => {
     });
     expect(rules(input)).not.toContain('failed-request-before-failure');
   });
+
+  test('a request that failed without a response names the error the browser reported', () => {
+    const input = baseInput({
+      networkRequests: [
+        {
+          method: 'GET',
+          url: '/api/quote',
+          status: 0,
+          duration: 1_500,
+          startTime: T0 + 2_000,
+          failure: 'net::ERR_CONNECTION_RESET',
+        },
+      ],
+    });
+    const clue = runClues(input).find((c) => c.rule === 'failed-request-before-failure');
+    expect(clue!.title).toBe('GET /api/quote failed with net::ERR_CONNECTION_RESET');
+  });
+
+  test('a request with no response and no recorded error reads as aborted', () => {
+    const input = baseInput({
+      networkRequests: [{ method: 'GET', url: '/api/quote', status: 0, duration: 1_500, startTime: T0 + 2_000 }],
+    });
+    const clue = runClues(input).find((c) => c.rule === 'failed-request-before-failure');
+    expect(clue!.title).toBe('GET /api/quote was aborted');
+  });
 });
 
 describe('slow-request-overlapping-failure', () => {

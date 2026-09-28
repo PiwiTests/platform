@@ -350,6 +350,7 @@ export async function getTestRunCase(
     contentType: nr.contentType,
     serverLogs: nr.serverLogs,
     serverTraces: nr.serverTraces,
+    failure: nr.failure ?? null,
   }));
 
   // Cause ↔ effect for did-not-run cascades, both scoped to this run:
@@ -703,6 +704,7 @@ export async function loadFailureClueInput(
     status: nr.status,
     duration: nr.duration,
     startTime: nr.startTime ?? undefined,
+    failure: nr.failure,
     serverLogs: (nr.serverLogs ?? null) as Array<{
       level?: string | null;
       message?: string | null;
@@ -954,6 +956,7 @@ async function loadAttemptEvidence(
       status: nr.status,
       duration: nr.duration,
       resourceType: nr.resourceType,
+      failure: nr.failure,
     })),
     consoleLogs: (row.consoleLogs as AttemptEvidence['consoleLogs']) ?? null,
     pageState: (row.pageState as AttemptEvidence['pageState']) ?? null,

@@ -139,6 +139,8 @@ export interface FailureClueNetworkRequest {
   duration?: number | null;
   startTime?: number | null;
   serverLogs?: Array<{ level?: string | null; message?: string | null; timestamp?: number | null }> | null;
+  /** Why the request failed without a response (`net::ERR_CONNECTION_RESET`). */
+  failure?: string | null;
 }
 
 /** One console entry in the execution, with its epoch-ms timestamp. */
@@ -392,7 +394,8 @@ export function buildFailureClues(input: FailureClueInput): FailureCluesReport {
       const method = str(p.req.method) || 'GET';
       const path = pathOf(p.req.url) ?? str(p.req.url) ?? '(unknown)';
       const status = isFiniteNumber(p.req.status) ? p.req.status : 0;
-      const statusText = status <= 0 ? 'was aborted' : `returned ${status}`;
+      const failure = str(p.req.failure);
+      const statusText = failure ? `failed with ${failure}` : status <= 0 ? 'was aborted' : `returned ${status}`;
       const lead = p.endAt != null && failureAt != null ? formatLead(p.endAt, failureAt) : '';
       if (i === 0) facts.failedRequest = { method, path, statusText };
       add({
