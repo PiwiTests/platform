@@ -24,6 +24,8 @@ import { wrapConfig } from './config-wrapper.js';
 import { toWireTestCase } from '../internal/submit/serializer.js';
 import { isProbeMode } from '../internal/probe/mode.js';
 import { probeRunMetadata } from '../internal/probe/plan.js';
+import { flakeRunMetadata, isFlakeMode, loadFlakePlan } from '../internal/flake/mode.js';
+import { errorMessage } from '../internal/support/errors.js';
 import {
   mergeAnnotations,
   classifyStatus,
@@ -220,6 +222,21 @@ export class PiwiDashboardReporter {
     // every submit path — the dashboard then routes it to its silent path (no
     // clusters, regression signals, notifications or pull-request feedback).
     if (isProbeMode()) this.metadata = probeRunMetadata(this.metadata);
+
+    // A flake-lab run is stamped the same way, with the experiment and arm it
+    // ran, so the dashboard keeps it out of flakiness, regression signals,
+    // clusters and notifications. A plan that cannot be read still stamps the
+    // run (the capture fixtures fail its tests with the reason).
+    if (isFlakeMode()) {
+      let stamp: { experimentId: string; armId: string } = { experimentId: 'unknown', armId: 'unknown' };
+      try {
+        const plan = loadFlakePlan();
+        stamp = { experimentId: plan.experimentId, armId: plan.arm.id };
+      } catch (error) {
+        this.logger.warn(errorMessage(error));
+      }
+      this.metadata = flakeRunMetadata(stamp, this.metadata);
+    }
 
     // Snapshot the planned test list so `onEnd` can materialize tests that
     // never ran (e.g. cut short by `maxFailures`) as `didnotrun` cases. The

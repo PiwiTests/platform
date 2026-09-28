@@ -126,6 +126,21 @@ export const PIWI_PROBE_ENV = {
   secret: 'PIWI_PROBE_SECRET',
 } as const;
 
+/**
+ * Env vars a flake-lab run sets on the Playwright child process so the capture
+ * fixtures run in flake mode. Not options — the lab writes them and the flake
+ * module reads them directly:
+ *  - `plan` points at the arm's plan file (`@piwitests/core/flake-plan`); a
+ *    non-empty value switches flake mode on;
+ *  - `results` points at the JSONL file each finished attempt is appended to.
+ * A run is a probe run or a flake-lab run, never both: setting `PIWI_PROBE` and
+ * `PIWI_FLAKE_PLAN` together stops the run (see `labModeConflict`).
+ */
+export const PIWI_FLAKE_ENV = {
+  plan: 'PIWI_FLAKE_PLAN',
+  results: 'PIWI_FLAKE_RESULTS',
+} as const;
+
 export function readBool(val: string | undefined): boolean | undefined {
   if (val === undefined) return undefined;
   return val === 'true';
