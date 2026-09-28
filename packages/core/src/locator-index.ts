@@ -80,6 +80,14 @@ export interface LocatorIndexBranch {
   tests: number;
 }
 
+/** A Playwright project's viewport (`use.viewport`), as a run of the project reported it. */
+export interface LocatorIndexViewport {
+  /** The Playwright project's name, `chromium` or `Mobile Safari`. */
+  project: string;
+  width: number;
+  height: number;
+}
+
 /** Asks an instance for every branch together instead of one branch. */
 export const ALL_BRANCHES = '*';
 
@@ -101,6 +109,11 @@ export interface LocatorIndex {
   generatedAt: string;
   /** The attributes `getByTestId` reads in this project (Playwright's `testIdAttribute`), when a run reported one. */
   testIdAttributes: string[] | null;
+  /**
+   * The viewports of the project's Playwright projects, as the most recent run
+   * reporting any gave them. Absent when no run did.
+   */
+  viewports?: LocatorIndexViewport[];
   /**
    * The page keys uses were recorded on, the most used first (`/checkout`,
    * `/orders/:id`; a third-party page keeps its origin). Absent when no run

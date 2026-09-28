@@ -12,9 +12,9 @@
  * test with the converter.
  */
 import { renderSpec, type CodegenOptions, type CodegenResult } from './codegen';
-import { normalizeRoute, pageKey } from './page-key';
+import { mappedPageKey, normalizePathPrefix, normalizeRoute } from './page-key';
 import type { RecordedStep, RecordedTarget, StepAssertion } from './recording';
-import { sessionFromSteps, type PiwiSteps } from './steps';
+import { parseSteps, sessionFromSteps, type PiwiSteps } from './steps';
 import {
   bugPhrases,
   markdownCode as code,
@@ -83,9 +83,13 @@ export interface BugEvidence {
 
 export interface BugContext {
   origin: string | null;
-  /** The page key of the page the report was finished on. */
+  /** The page key of the page the report was finished on, with {@link BugContext.pathPrefix} removed and {@link BugContext.testPathPrefix} added. */
   pageKey: string | null;
   path: string | null;
+  /** The path prefix of the site's URL mapping, removed from the page keys compared with the tests' pages; absent for none. */
+  pathPrefix?: string | null;
+  /** The tests' path prefix of the site's URL mapping, put in front of the page keys compared with the tests' pages; absent for none. */
+  testPathPrefix?: string | null;
   browser: string | null;
   userAgent: string | null;
   viewport: { width: number; height: number } | null;
@@ -184,6 +188,62 @@ export function renderBugSpec(report: BugReport, options: CodegenOptions = {}): 
   });
 }
 
+/** What a Playwright run of a report's spec left behind: the test's status and where it failed. */
+export interface SpecRunResult {
+  status: 'passed' | 'failed' | 'timedOut' | 'skipped' | 'interrupted';
+  /** The spec's line the error points at, when the error names one. */
+  line: number | null;
+  /** The error's message, when the test failed. */
+  message: string | null;
+}
+
+export type SpecRunVerdict =
+  | { kind: 'reproduced'; step: number; found: string | null }
+  | { kind: 'not-reproduced' }
+  | { kind: 'diverged'; step: number; reason: string }
+  | { kind: 'completed' }
+  | { kind: 'stopped' };
+
+/** Terminal color codes, such as the ones Playwright puts in its error messages. */
+const ANSI_CODES = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, 'g');
+
+/** The step a spec line belongs to: the last one starting on or before it. */
+function stepAtLine(stepLines: number[], line: number): number {
+  let step = 0;
+  for (let i = 0; i < stepLines.length; i++) if (stepLines[i]! <= line) step = i;
+  return step;
+}
+
+/**
+ * The verdict of a Playwright run of a report's spec (rendered without
+ * `test.fail()`), read as Replay reads its own: failing on an expected result
+ * is the bug showing, failing on any other step means the page differs there,
+ * and passing means it did not show. `stepLines` is the rendering's
+ * `CodegenResult.stepLines`.
+ */
+export function specRunVerdict(steps: RecordedStep[], stepLines: number[], result: SpecRunResult): SpecRunVerdict {
+  if (result.status === 'skipped' || result.status === 'interrupted') return { kind: 'stopped' };
+  if (result.status === 'passed') {
+    return steps.some((s) => s.action === 'assert' || s.action === 'assertVisible')
+      ? { kind: 'not-reproduced' }
+      : { kind: 'completed' };
+  }
+  // Playwright colors parts of a message whatever the environment asks.
+  const message = (result.message ?? '').replace(ANSI_CODES, '');
+  const step = result.line == null ? Math.max(0, steps.length - 1) : stepAtLine(stepLines, result.line);
+  const action = steps[step]?.action;
+  if (result.line != null && (action === 'assert' || action === 'assertVisible')) {
+    const found = /Received(?: string| value)?:\s*(.+)/.exec(message)?.[1]?.trim() ?? null;
+    return { kind: 'reproduced', step, found };
+  }
+  const reason =
+    message
+      .split('\n')
+      .find((l) => l.trim())
+      ?.trim() ?? result.status;
+  return { kind: 'diverged', step, reason };
+}
+
 /** Free text on one line, with the characters that would open HTML escaped. */
 function line(s: string): string {
   return s.replace(/\s+/g, ' ').replace(/</g, '&lt;').trim();
@@ -252,6 +312,8 @@ export function describeStepInWords(step: RecordedStep, phrases: BugPhrases = EN
       return phrases.steps.goto(step.value ?? step.pageUrl);
     case 'click':
       return phrases.steps.click(target);
+    case 'hover':
+      return phrases.steps.hover(target);
     case 'fill':
       return phrases.steps.fill(target, value);
     case 'check':
@@ -386,6 +448,10 @@ export function bugContextFrom(input: {
   viewport: { width: number; height: number } | null;
   time: number;
   extensionVersion: string | null;
+  /** The URL mapping's path prefix, removed from the page key when the path starts with it. */
+  pathPrefix?: string | null;
+  /** The URL mapping's tests' path prefix, put in front of the page key's path. */
+  testPathPrefix?: string | null;
 }): BugContext {
   let origin: string | null = null;
   let path: string | null = null;
@@ -398,14 +464,161 @@ export function bugContextFrom(input: {
   } catch {
     // Not a URL: no origin and no path.
   }
+  const keyed = mappedPageKey(input.url, input);
   return {
     origin,
-    pageKey: pageKey(input.url),
+    pageKey: keyed.key,
     path,
+    ...(keyed.prefixRemoved ? { pathPrefix: keyed.prefixRemoved } : {}),
+    ...(keyed.prefixAdded ? { testPathPrefix: keyed.prefixAdded } : {}),
     browser: input.userAgent ? describeBrowser(input.userAgent) : null,
     userAgent: input.userAgent,
     viewport: input.viewport,
     time: input.time,
     extensionVersion: input.extensionVersion,
+  };
+}
+
+export type ParseBugReportResult = { ok: true; report: BugReport } | { ok: false; errors: string[] };
+
+const SCREENSHOT_FILE = /^screenshots\/[1-9]-(marked|finish|manual)\.png$/;
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
+function textOf(v: unknown, max: number): string | null {
+  return typeof v === 'string' ? v.slice(0, max) : null;
+}
+
+function numberOf(v: unknown): number {
+  return typeof v === 'number' && Number.isFinite(v) ? v : 0;
+}
+
+function pathOf(v: unknown): string {
+  return textOf(v, BUG_EVIDENCE_LIMITS.messageLength) ?? '';
+}
+
+function checkConsole(v: unknown): BugConsoleEntry | null {
+  if (!isRecord(v)) return null;
+  const level = v.level === 'warn' ? 'warn' : v.level === 'error' ? 'error' : null;
+  const source = v.source === 'error' || v.source === 'rejection' || v.source === 'console' ? v.source : null;
+  if (!level || !source) return null;
+  return {
+    level,
+    source,
+    message: textOf(v.message, BUG_EVIDENCE_LIMITS.messageLength) ?? '',
+    page: pathOf(v.page),
+    time: numberOf(v.time),
+  };
+}
+
+function checkRequest(v: unknown): BugFailedRequest | null {
+  if (!isRecord(v) || typeof v.method !== 'string' || typeof v.url !== 'string') return null;
+  const method = v.method.toUpperCase();
+  if (!/^[A-Z]{1,16}$/.test(method)) return null;
+  const status = numberOf(v.status);
+  return {
+    method,
+    url: pathOf(v.url),
+    status: Number.isInteger(status) && status >= 0 && status < 1000 ? status : 0,
+    page: pathOf(v.page),
+    time: numberOf(v.time),
+  };
+}
+
+function checkScreenshot(v: unknown): BugScreenshot | null {
+  if (!isRecord(v) || typeof v.file !== 'string' || !SCREENSHOT_FILE.test(v.file)) return null;
+  const moment = v.moment === 'finish' || v.moment === 'manual' ? v.moment : 'marked';
+  const step = typeof v.step === 'number' && Number.isInteger(v.step) && v.step >= 0 ? v.step : null;
+  return { file: v.file, step, moment, takenAt: numberOf(v.takenAt) };
+}
+
+function listOf<T>(v: unknown, limit: number, check: (entry: unknown) => T | null): T[] {
+  if (!Array.isArray(v)) return [];
+  return v.slice(0, limit).flatMap((entry) => {
+    const checked = check(entry);
+    return checked ? [checked] : [];
+  });
+}
+
+function checkEvidence(v: unknown): BugEvidence {
+  if (!isRecord(v)) return emptyBugEvidence();
+  const outline = textOf(v.outline, 200_000);
+  return {
+    console: listOf(v.console, BUG_EVIDENCE_LIMITS.console, checkConsole),
+    consoleDropped: Math.max(0, Math.floor(numberOf(v.consoleDropped))),
+    requests: listOf(v.requests, BUG_EVIDENCE_LIMITS.requests, checkRequest),
+    requestsDropped: Math.max(0, Math.floor(numberOf(v.requestsDropped))),
+    screenshots: listOf(v.screenshots, BUG_EVIDENCE_LIMITS.screenshots, checkScreenshot),
+    screenshotNote: textOf(v.screenshotNote, BUG_EVIDENCE_LIMITS.messageLength),
+    outline: outline ? outline.split('\n').slice(0, BUG_EVIDENCE_LIMITS.outlineLines).join('\n') : null,
+  };
+}
+
+function checkContext(v: unknown): BugContext {
+  const c = isRecord(v) ? v : {};
+  const viewport = isRecord(c.viewport)
+    ? {
+        width: Math.max(0, Math.floor(numberOf(c.viewport.width))),
+        height: Math.max(0, Math.floor(numberOf(c.viewport.height))),
+      }
+    : null;
+  let origin: string | null = null;
+  if (typeof c.origin === 'string') {
+    try {
+      const parsed = new URL(c.origin);
+      if ((parsed.protocol === 'http:' || parsed.protocol === 'https:') && parsed.origin === c.origin)
+        origin = c.origin;
+    } catch {
+      origin = null;
+    }
+  }
+  const path = textOf(c.path, BUG_EVIDENCE_LIMITS.messageLength);
+  const pathPrefix = typeof c.pathPrefix === 'string' ? normalizePathPrefix(c.pathPrefix) : null;
+  const testPathPrefix = typeof c.testPathPrefix === 'string' ? normalizePathPrefix(c.testPathPrefix) : null;
+  return {
+    origin,
+    pageKey: textOf(c.pageKey, BUG_EVIDENCE_LIMITS.messageLength),
+    path: path && path.startsWith('/') ? path : null,
+    ...(pathPrefix ? { pathPrefix } : {}),
+    ...(testPathPrefix ? { testPathPrefix } : {}),
+    browser: textOf(c.browser, 60),
+    userAgent: textOf(c.userAgent, BUG_EVIDENCE_LIMITS.messageLength),
+    viewport,
+    time: numberOf(c.time),
+    extensionVersion: textOf(c.extensionVersion, 40),
+  };
+}
+
+/**
+ * Reads a bug report from outside (a request, a file): the steps through
+ * `parseSteps`, and the evidence and context field by field, with every list
+ * and text capped. Evidence that does not fit its shape is dropped rather
+ * than refused; steps that do not are refused.
+ */
+export function parseBugReport(input: unknown): ParseBugReportResult {
+  let value = input;
+  if (typeof input === 'string') {
+    try {
+      value = JSON.parse(input);
+    } catch {
+      return { ok: false, errors: ['not valid JSON'] };
+    }
+  }
+  if (!isRecord(value)) return { ok: false, errors: ['a bug report must be a JSON object'] };
+  if (value.v !== BUG_REPORT_VERSION) {
+    return { ok: false, errors: [`v: this reads version ${BUG_REPORT_VERSION}, not ${JSON.stringify(value.v)}`] };
+  }
+  const steps = parseSteps(value.steps);
+  if (!steps.ok) return { ok: false, errors: steps.errors.map((e) => `steps.${e}`) };
+  return {
+    ok: true,
+    report: {
+      v: BUG_REPORT_VERSION,
+      steps: steps.steps,
+      evidence: checkEvidence(value.evidence),
+      context: checkContext(value.context),
+    },
   };
 }

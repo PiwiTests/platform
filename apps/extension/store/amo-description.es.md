@@ -20,7 +20,7 @@ Elegir elementos y grabar nunca usan la red. No se recopila ni se envía nada.
 
 **Opcional: conectar tu propia instancia de Piwi**
 
-Piwi es un panel de control autoalojado para los resultados de las pruebas de Playwright. Una vez conectada la extensión a tu instancia (su URL y una clave de API, en la configuración), se añaden tres herramientas: grabaciones que llaman a tus propias funciones de prueba, **Funciones de prueba**, que indica cuáles funcionan en la página, y **Elementos probados**, que resalta los elementos que alcanzan tus pruebas. La extensión solo lee tu instancia; nunca se le envía una grabación.
+Piwi es un panel de control autoalojado para los resultados de las pruebas de Playwright. Una vez conectada la extensión a tu instancia (su URL y una clave de API, en la configuración), se añaden tres herramientas: grabaciones que llaman a tus propias funciones de prueba, **Funciones de prueba**, que indica cuáles funcionan en la página, y **Elementos probados**, que resalta los elementos que alcanzan tus pruebas. La extensión lee tu instancia y solo le envía una cosa: un informe de bug, cuando haces clic en Enviar en la vista previa que muestra exactamente lo que se envía.
 
 **Permisos**
 

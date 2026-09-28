@@ -1,5 +1,7 @@
+import { BUG_EVIDENCE_LIMITS, type BugConsoleEntry, type BugFailedRequest } from '@piwitests/core/bug-report';
 import type { PiwiSteps } from '@piwitests/core/steps';
 import { sessionArea } from './session-area.js';
+import type { RequestCondition } from './request-conditions.js';
 
 /**
  * A running replay, in session storage so it survives the navigations it
@@ -39,6 +41,12 @@ export interface ReplayState {
    * Steps recorded on that page play on this one, whatever its address.
    */
   startPage?: { recorded: string; actual: string } | null;
+  /** The request conditions on in the tab when the replay started (Slow down or fail a request). */
+  conditions?: RequestCondition[];
+  /** The connected instance's bug report the steps came from, when they did. */
+  bugReportId?: number | null;
+  /** Announced to the main-world evidence script, whose entries carry it back (see `shared/bug-relay.ts`). */
+  evidenceToken?: string;
 }
 
 function isReplayState(value: unknown): value is ReplayState {
@@ -75,6 +83,7 @@ export function newReplayState(
   stepMode: boolean,
   now = Date.now(),
   startPage: ReplayState['startPage'] = null,
+  bugReportId: number | null = null,
 ): ReplayState {
   return {
     id: `${now.toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
@@ -87,5 +96,41 @@ export function newReplayState(
     cursor: null,
     startedAt: now,
     startPage,
+    bugReportId,
+    evidenceToken: `${now.toString(36)}${Math.random().toString(36).slice(2, 12)}`,
   };
+}
+
+/**
+ * The console errors and failed requests the page showed during a replay, kept
+ * apart from the replay's state (which each step rewrites whole) under the
+ * replay's evidence token: entries from an older replay are dropped.
+ */
+export const REPLAY_EVIDENCE_KEY = 'piwiReplayEvidence';
+
+export interface ReplayEvidence {
+  token: string;
+  console: BugConsoleEntry[];
+  requests: BugFailedRequest[];
+}
+
+export async function getReplayEvidence(token: string | undefined): Promise<ReplayEvidence | null> {
+  if (!token) return null;
+  const value = (await sessionArea().get(REPLAY_EVIDENCE_KEY))[REPLAY_EVIDENCE_KEY] as ReplayEvidence | undefined;
+  return value?.token === token ? value : { token, console: [], requests: [] };
+}
+
+/** Adds entries to the replay's evidence, up to the limits a report keeps. */
+export async function appendReplayEvidence(
+  token: string,
+  entries: { console: BugConsoleEntry[]; requests: BugFailedRequest[] },
+): Promise<void> {
+  const current = (await getReplayEvidence(token))!;
+  await sessionArea().set({
+    [REPLAY_EVIDENCE_KEY]: {
+      token,
+      console: [...current.console, ...entries.console].slice(0, BUG_EVIDENCE_LIMITS.console),
+      requests: [...current.requests, ...entries.requests].slice(0, BUG_EVIDENCE_LIMITS.requests),
+    },
+  });
 }

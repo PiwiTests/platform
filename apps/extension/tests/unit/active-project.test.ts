@@ -147,3 +147,56 @@ describe("resolveActiveProject with the instance's patterns", () => {
     expect(resolveActiveProject(settings([], [broad, serverShop]), null, 'https://shop.test/')!.projectId).toBe(3);
   });
 });
+
+describe('resolveActiveProject with a path prefix', () => {
+  const preview = {
+    urlPattern: 'https://preview.shop.test/**',
+    projectId: 1,
+    projectLabel: 'Shop',
+    pathPrefix: '/app',
+  };
+
+  it('carries the path prefix of a local mapping and of a server pattern', () => {
+    expect(resolveActiveProject(settings([preview]), null, 'https://preview.shop.test/app/cart')).toMatchObject({
+      pathPrefix: '/app',
+      source: 'local',
+    });
+    expect(resolveActiveProject(settings([], [preview]), null, 'https://preview.shop.test/app/cart')).toMatchObject({
+      pathPrefix: '/app',
+      source: 'server',
+    });
+  });
+
+  it('an override keeps the prefix of a matching mapping of the same project only', () => {
+    const url = 'https://preview.shop.test/app/cart';
+    expect(resolveActiveProject(settings([preview]), { projectId: 1, projectLabel: 'Shop' }, url)).toEqual({
+      projectId: 1,
+      projectLabel: 'Shop',
+      pathPrefix: '/app',
+      source: 'override',
+    });
+    expect(resolveActiveProject(settings([preview]), { projectId: 9, projectLabel: 'Manual' }, url)).not.toHaveProperty(
+      'pathPrefix',
+    );
+  });
+
+  it('carries the tests’ path prefix, from a mapping or through an override', () => {
+    const local = {
+      urlPattern: 'http://localhost:4173/**',
+      projectId: 1,
+      projectLabel: 'Shop',
+      testPathPrefix: '/shop',
+    };
+    const url = 'http://localhost:4173/cart';
+    expect(resolveActiveProject(settings([], [local]), null, url)).toMatchObject({
+      testPathPrefix: '/shop',
+      source: 'server',
+    });
+    expect(resolveActiveProject(settings([local]), { projectId: 1, projectLabel: 'Shop' }, url)).toEqual({
+      projectId: 1,
+      projectLabel: 'Shop',
+      testPathPrefix: '/shop',
+      source: 'override',
+    });
+  });
+});

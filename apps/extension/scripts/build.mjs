@@ -38,6 +38,7 @@ const STANDALONE_ENTRIES = [
   ['locator-console', 'src/content/locator-console.ts'],
   ['multi-pick', 'src/content/multi-pick.ts'],
   ['lint-overlay', 'src/content/lint-overlay.ts'],
+  ['playwright-view', 'src/content/playwright-view.ts'],
   ['assertion-panel', 'src/content/assertion-panel.ts'],
   ['session-panel', 'src/content/session-panel.ts'],
   ['agent-context-panel', 'src/content/agent-context-panel.ts'],
@@ -53,6 +54,12 @@ const STANDALONE_ENTRIES = [
   // Registered the same way for a bug recording's lifetime, in the page's main world (`world: 'MAIN'`): the only
   // place that sees the page's console and its fetch/XHR calls. Imports nothing that touches `chrome.*`.
   ['bug-evidence-main', 'src/content/bug-evidence-main.ts'],
+  // Slow down or fail a request: registered while a condition is on, the wrapper in the page's main world
+  // and its relay in the isolated one.
+  ['request-conditions-main', 'src/content/request-conditions-main.ts'],
+  ['request-conditions', 'src/content/request-conditions.ts'],
+  // Injected into the inspected tab by the Elements sidebar, which calls it with DevTools' selection.
+  ['devtools-rank', 'src/content/devtools-rank.ts'],
   ['background', 'src/background/index.ts'],
 ];
 
@@ -103,7 +110,16 @@ export async function buildExtension({ release = false, pseudo = false } = {}) {
     build: {
       outDir,
       emptyOutDir: false,
-      rollupOptions: { input: { popup: path.join(root, 'popup.html'), options: path.join(root, 'options.html') } },
+      rollupOptions: {
+        input: {
+          popup: path.join(root, 'popup.html'),
+          options: path.join(root, 'options.html'),
+          devtools: path.join(root, 'devtools.html'),
+          'devtools-sidebar': path.join(root, 'devtools-sidebar.html'),
+          'devtools-panel': path.join(root, 'devtools-panel.html'),
+          login: path.join(root, 'login.html'),
+        },
+      },
     },
   });
 

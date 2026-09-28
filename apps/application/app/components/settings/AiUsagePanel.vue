@@ -13,6 +13,16 @@ const { data: usage, pending } = await useFetch<AiUsageSummary>('/api/settings/a
   query: { days },
 });
 
+// The exact counts on hover follow the browser's number format, which the
+// server does not know, so they appear once the panel is mounted.
+const mounted = ref(false);
+onMounted(() => {
+  mounted.value = true;
+});
+function exactCount(n: number): string | undefined {
+  return mounted.value ? n.toLocaleString() : undefined;
+}
+
 function formatCount(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
@@ -60,10 +70,10 @@ function formatCount(n: number): string {
               <td class="text-right px-2 py-2" :class="row.failed > 0 ? 'text-red-600 dark:text-red-400' : ''">
                 {{ row.failed }}
               </td>
-              <td class="text-right px-2 py-2" :title="row.inputTokens.toLocaleString()">
+              <td class="text-right px-2 py-2" :title="exactCount(row.inputTokens)">
                 {{ formatCount(row.inputTokens) }}
               </td>
-              <td class="text-right px-2 py-2" :title="row.outputTokens.toLocaleString()">
+              <td class="text-right px-2 py-2" :title="exactCount(row.outputTokens)">
                 {{ formatCount(row.outputTokens) }}
               </td>
               <td class="text-right px-2 py-2">

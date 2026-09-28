@@ -130,6 +130,40 @@ describe('connection settings', () => {
     expect(other).not.toHaveProperty('branch');
   });
 
+  it('keeps a mapping path prefix, normalized, and drops an empty or refused one', async () => {
+    await setConnectionSettings(
+      conn({
+        instanceUrl: 'https://piwi.example.com',
+        apiKey: '',
+        projectMappings: [
+          { ...shopMapping, pathPrefix: 'app/' },
+          { ...shopMapping, urlPattern: 'https://b.test/**', pathPrefix: ' ' },
+          { ...shopMapping, urlPattern: 'https://c.test/**', pathPrefix: '/app?x' },
+        ],
+      }),
+    );
+    const [prefixed, empty, refused] = (await getConnectionSettings()).projectMappings;
+    expect(prefixed!.pathPrefix).toBe('/app');
+    expect(empty).not.toHaveProperty('pathPrefix');
+    expect(refused).not.toHaveProperty('pathPrefix');
+  });
+
+  it('keeps a mapping tests’ path prefix, normalized, and drops a refused one', async () => {
+    await setConnectionSettings(
+      conn({
+        instanceUrl: 'https://piwi.example.com',
+        apiKey: '',
+        projectMappings: [
+          { ...shopMapping, testPathPrefix: 'shop/' },
+          { ...shopMapping, urlPattern: 'https://b.test/**', testPathPrefix: '/shop/*' },
+        ],
+      }),
+    );
+    const [kept, refused] = (await getConnectionSettings()).projectMappings;
+    expect(kept!.testPathPrefix).toBe('/shop');
+    expect(refused).not.toHaveProperty('testPathPrefix');
+  });
+
   it('defaults a missing projectLabel to #<id>', async () => {
     (globalThis as any).chrome.storage.local.set({
       piwiConnection: {
@@ -154,6 +188,8 @@ describe("the instance's patterns", () => {
         pattern: 'https://staging.shop.test/**',
         environment: 'staging',
         branch: 'develop',
+        pathPrefix: '/app',
+        testPathPrefix: '/v2',
       },
       {
         projectId: 2,
@@ -180,6 +216,8 @@ describe("the instance's patterns", () => {
         projectId: 1,
         projectLabel: 'Shop',
         branch: 'develop',
+        pathPrefix: '/app',
+        testPathPrefix: '/v2',
         environment: 'staging',
       },
       { urlPattern: 'https://admin.test/**', projectId: 2, projectLabel: 'Admin' },

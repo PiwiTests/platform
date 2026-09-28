@@ -1,6 +1,9 @@
 import { sanitizeNetworkRequests, sanitizeUrl } from './sanitize';
 import { normalizeRoute } from '#shared/utils/route';
 
+/** Playwright's error texts are short; this bounds a hostile or garbled one. */
+const MAX_FAILURE_LENGTH = 500;
+
 /**
  * Build pre-insert rows for the normalized network_requests child table.
  *
@@ -20,6 +23,8 @@ export function buildNetworkRequestItems(requests: unknown[] | null | undefined)
   contentType: string | null;
   serverLogs: unknown;
   serverTraces: unknown;
+  /** Why the request failed (Playwright's error text); null when it finished. */
+  failure: string | null;
 }> {
   const rawReqs = requests as Array<Record<string, unknown>> | null | undefined;
 
@@ -46,6 +51,7 @@ export function buildNetworkRequestItems(requests: unknown[] | null | undefined)
     contentType: (req.contentType as string) ?? null,
     serverLogs: (req.serverLogs as unknown) ?? null,
     serverTraces: (req.serverTraces as unknown) ?? null,
+    failure: typeof req.failure === 'string' && req.failure ? req.failure.slice(0, MAX_FAILURE_LENGTH) : null,
   }));
 }
 

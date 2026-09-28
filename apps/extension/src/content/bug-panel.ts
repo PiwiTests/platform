@@ -54,6 +54,9 @@ import { BUG_RELAY, ownOrigin, readRelayedEntry } from '../shared/bug-relay.js';
 import { t, tn, tNodes, uiLanguage, type MessageKey } from '../shared/i18n.js';
 import type { RecordingState } from '../shared/recording-storage.js';
 import { attachPanelShadow } from './panel-root.js';
+import { getConnectionSettings } from '../shared/connection-settings.js';
+import { activePathPrefixes } from '../shared/active-project.js';
+import { openSendPreview, SEND_DIALOG_HOST_ID, sendTarget } from './bug-send-panel.js';
 
 /**
  * The bug recording's page UI: its HUD, the three ways to say what is wrong
@@ -213,8 +216,11 @@ export async function takeBugScreenshot(moment: 'marked' | 'finish' | 'manual', 
   return false;
 }
 
-/** The context of this page for the report. */
-export function currentBugContext(): BugContext {
+/** The context of this page for the report, its page keyed through the path prefixes of the site's URL mapping. */
+export async function currentBugContext(): Promise<BugContext> {
+  const prefixes = await getConnectionSettings()
+    .then((settings) => activePathPrefixes(settings, location.href))
+    .catch(() => ({}));
   let extensionVersion: string | null = null;
   try {
     extensionVersion = chrome.runtime.getManifest().version;
@@ -227,6 +233,7 @@ export function currentBugContext(): BugContext {
     viewport: { width: window.innerWidth, height: window.innerHeight },
     time: Date.now(),
     extensionVersion,
+    ...prefixes,
   });
 }
 
@@ -872,7 +879,8 @@ export function renderBugHud(
 
 /**
  * The finished report: a title, the steps with what was marked, the evidence,
- * and the three exports. Everything is built here, in the tab; nothing is sent.
+ * the exports, and, when an instance is connected, Send to Piwi…, which shows
+ * exactly what would be sent before anything is.
  */
 export async function renderBugFinishPanel(state: RecordingState, onDiscard: () => Promise<void>): Promise<void> {
   document.getElementById(HUD_HOST_ID)?.remove();
@@ -880,7 +888,7 @@ export async function renderBugFinishPanel(state: RecordingState, onDiscard: () 
   document.getElementById(FRAME_HOST_ID)?.remove();
 
   const [evidence, screenshots] = await Promise.all([getBugEvidence(), getBugScreenshots()]);
-  const context = evidence.context ?? currentBugContext();
+  const context = evidence.context ?? (await currentBugContext());
   let title = evidence.title ?? '';
   const report = () =>
     assembleBugReport({
@@ -1013,6 +1021,22 @@ export async function renderBugFinishPanel(state: RecordingState, onDiscard: () 
       }
     })();
   }).title = t('bug_replayHint');
+  const sendBtn = action(t('bug_sendToPiwi'), '', () => {
+    void sendTarget().then((target) => {
+      if (!target.project) {
+        replayMessage.textContent = t('bug_sendNoProject');
+        return;
+      }
+      openSendPreview({
+        report: report(),
+        screenshots,
+        target: { ...target, project: target.project },
+        css: PANEL_CSS,
+      });
+    });
+  });
+  sendBtn.title = t('bug_sendToPiwiHint');
+  sendBtn.hidden = true;
   action(t('common_discard'), 'danger', () => void onDiscard().then(closePanel, closePanel));
   panel.append(actions, replayMessage);
 
@@ -1020,6 +1044,11 @@ export async function renderBugFinishPanel(state: RecordingState, onDiscard: () 
   local.className = 'local';
   local.textContent = t('bug_staysLocal');
   panel.appendChild(local);
+  void sendTarget().then((target) => {
+    if (!target.connected) return;
+    sendBtn.hidden = false;
+    local.textContent = t('bug_staysLocalUntilSent');
+  });
 
   closeBtn.addEventListener('click', closePanel);
   backdrop.addEventListener('click', (e) => {
@@ -1028,7 +1057,7 @@ export async function renderBugFinishPanel(state: RecordingState, onDiscard: () 
   document.addEventListener(
     'keydown',
     (e) => {
-      if (e.key === 'Escape') closePanel();
+      if (e.key === 'Escape' && !document.getElementById(SEND_DIALOG_HOST_ID)) closePanel();
     },
     { capture: true, signal: controller.signal },
   );

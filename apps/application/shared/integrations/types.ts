@@ -151,8 +151,11 @@ export interface IssueIncludeOptions {
 }
 
 /** The prefilled draft `GET issue-draft` returns; the modal edits it and POSTs it back. */
+/** What an issue can be filed for: a failure cluster, one failing execution, or a bug report. */
+export type IssueEntityType = 'failure_cluster' | 'test_runs_case' | 'bug_report';
+
 export interface IssueDraft {
-  entityType: 'failure_cluster' | 'test_runs_case';
+  entityType: IssueEntityType;
   entityId: number;
   /** The cluster the created link attaches to (the entity's own cluster). */
   clusterId: number | null;
@@ -177,7 +180,7 @@ export interface IssueDraft {
 
 /** The body `POST issues` accepts — the draft with a person's edits. */
 export interface CreateIssueRequest {
-  entityType: 'failure_cluster' | 'test_runs_case';
+  entityType: IssueEntityType;
   entityId: number;
   connectionId: number;
   title: string;

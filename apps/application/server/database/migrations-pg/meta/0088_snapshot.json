@@ -1,5 +1,5 @@
 {
-  "id": "a62a99e5-5ce3-458b-9f61-e5ac50b7aa6f",
+  "id": "327e3f82-60a8-4b0b-acf2-f7563686164e",
   "prevId": "babcf033-7778-4cf0-86cc-44d231241847",
   "version": "7",
   "dialect": "postgresql",
@@ -5709,136 +5709,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.run_locator_breaks": {
-      "name": "run_locator_breaks",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "serial",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "run_id": {
-          "name": "run_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "project_id": {
-          "name": "project_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "locator": {
-          "name": "locator",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "rewrite": {
-          "name": "rewrite",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "replacements": {
-          "name": "replacements",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "anchor": {
-          "name": "anchor",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "confidence": {
-          "name": "confidence",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "call_sites": {
-          "name": "call_sites",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "test_case_ids": {
-          "name": "test_case_ids",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "idx_run_locator_breaks_run": {
-          "name": "idx_run_locator_breaks_run",
-          "columns": [
-            {
-              "expression": "run_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_run_locator_breaks_project": {
-          "name": "idx_run_locator_breaks_project",
-          "columns": [
-            {
-              "expression": "project_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "run_locator_breaks_run_id_test_runs_id_fk": {
-          "name": "run_locator_breaks_run_id_test_runs_id_fk",
-          "tableFrom": "run_locator_breaks",
-          "tableTo": "test_runs",
-          "columnsFrom": ["run_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "run_locator_breaks_project_id_projects_id_fk": {
-          "name": "run_locator_breaks_project_id_projects_id_fk",
-          "tableFrom": "run_locator_breaks",
-          "tableTo": "projects",
-          "columnsFrom": ["project_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.scenario_gaps": {
       "name": "scenario_gaps",
       "schema": "",
@@ -7654,6 +7524,12 @@
         },
         "did_not_run_reason": {
           "name": "did_not_run_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "expected_status": {
+          "name": "expected_status",
           "type": "text",
           "primaryKey": false,
           "notNull": false

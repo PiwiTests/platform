@@ -44,6 +44,7 @@ const coupon = target({ tagName: 'input', role: 'textbox', accessibleName: 'Coup
 const country = target({ tagName: 'select', role: 'combobox', accessibleName: 'Country' });
 const agree = target({ tagName: 'input', role: 'checkbox', accessibleName: 'I agree' });
 const total = target({ tagName: 'p', testId: 'cart-total', text: 'Total: 40' });
+const row = target({ tagName: 'tr', role: 'row', accessibleName: 'Invoice 42' });
 const logo = target({ tagName: 'img', role: 'img', accessibleName: 'Acme' });
 const menu = target({ tagName: 'nav', role: 'menu', accessibleName: 'Account' });
 
@@ -68,6 +69,7 @@ function everyTemplate(): RecordedStep[] {
         }),
       ),
     ),
+    step('hover', { target: row }),
   ];
 }
 
@@ -126,6 +128,7 @@ describe('Spanish', () => {
       'Elegir «France» en la lista desplegable «Country»',
     );
     expect(words(step('check', { target: agree }))).toBe('Marcar la casilla «I agree»');
+    expect(words(step('hover', { target: row }))).toBe('Pasar el cursor sobre la fila de tabla «Invoice 42»');
   });
 
   test('writes the other actions, with Spanish key names', () => {

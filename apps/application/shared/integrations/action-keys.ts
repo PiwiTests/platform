@@ -39,3 +39,18 @@ export function occurrencesCommentKey(clusterId: number, date: string): string {
 export function mergeCommentKey(clusterId: number, otherClusterId: number): string {
   return `comment:failure_cluster:${clusterId}:merge:${otherClusterId}`;
 }
+
+/** One attachment per issue and file. */
+export function attachKey(bugReportId: number, issueKey: string, fileName: string): string {
+  return `attach:bug_report:${bugReportId}:${issueKey}:${fileName}`;
+}
+
+/** One looks-fixed comment per bug report per run. */
+export function bugLooksFixedCommentKey(bugReportId: number, runId: number): string {
+  return `comment:bug-looks-fixed:${bugReportId}:run${runId}`;
+}
+
+/** One fix transition per bug report per run. */
+export function bugFixTransitionKey(bugReportId: number, runId: number): string {
+  return `transition:bug-fix:${bugReportId}:run${runId}`;
+}

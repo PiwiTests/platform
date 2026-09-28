@@ -168,6 +168,12 @@
         font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
         font-size: 12.5px;
       }
+      .mapping-row input.mapping-prefix {
+        flex-basis: 120px;
+      }
+      .mapping-row input[aria-invalid] {
+        border-color: var(--error);
+      }
       .mapping-row button.remove-mapping {
         flex-shrink: 0;
         padding: 6px 10px;
@@ -397,6 +403,22 @@
               data-i18n-placeholder="options_branchPlaceholder"
               data-i18n-aria-label="options_branch"
             />
+            <input
+              id="add-prefix"
+              class="mapping-branch mapping-prefix"
+              type="text"
+              placeholder="no path prefix"
+              data-i18n-placeholder="options_pathPrefixPlaceholder"
+              data-i18n-aria-label="options_pathPrefix"
+            />
+            <input
+              id="add-test-prefix"
+              class="mapping-branch mapping-prefix"
+              type="text"
+              placeholder="no tests’ prefix"
+              data-i18n-placeholder="options_testPathPrefixPlaceholder"
+              data-i18n-aria-label="options_testPathPrefix"
+            />
           </div>
           <div class="hint" id="add-note" hidden></div>
           <div class="row" style="margin-top: 10px">
@@ -432,6 +454,21 @@
         </div>
         <div id="editor-status" role="status" class="hint"></div>
       </section>
+
+      <h2 class="connect" data-i18n="options_desktopHeading">Desktop app</h2>
+      <p class="lead" data-i18n="options_desktopHint">
+        Optional. Paired with the Piwi Dashboard desktop app, Replay can ask it to run a bug report with Playwright in
+        your project. Copy the address and token from the app’s Setup page, under Connect Piwi Picker.
+      </p>
+      <label for="desktop-url" data-i18n="options_desktopUrl">Address of the desktop app</label>
+      <input id="desktop-url" type="url" placeholder="http://127.0.0.1:4318" autocomplete="off" />
+      <label for="desktop-token" data-i18n="options_desktopToken">Token</label>
+      <input id="desktop-token" type="password" placeholder="pd_…" autocomplete="off" />
+      <div class="row">
+        <button id="desktop-save" class="primary" type="button" data-i18n="options_desktopSave">Save and test</button>
+        <button id="desktop-forget" class="danger" type="button" data-i18n="options_desktopForget">Forget</button>
+      </div>
+      <div id="desktop-status" role="status"></div>
 
       <div class="privacy" data-i18n="options_privacy">
         Only used from this page: the API key never reaches a web page’s scripts. Recorded steps go nowhere unless you

@@ -8,9 +8,11 @@ import {
   describeStepInWords,
   emptyBugEvidence,
   expectedSteps,
+  parseBugReport,
   renderBugMarkdown,
   renderBugSpec,
   reportedRequestUrl,
+  specRunVerdict,
   summarizeEvidence,
   type BugReport,
 } from '../src/bug-report';
@@ -229,6 +231,34 @@ describe('bug report', () => {
     );
   });
 
+  test('the context keys the page without the URL mapping’s path prefix, and keeps it through parsing', () => {
+    const at = (url: string, pathPrefix: string | null) =>
+      bugContextFrom({ url, userAgent: null, viewport: null, time: 0, extensionVersion: null, pathPrefix });
+    const prefixed = at(`${ORIGIN}/app/orders/42`, '/app/');
+    expect(prefixed).toMatchObject({ pageKey: '/orders/:id', path: '/app/orders/42', pathPrefix: '/app' });
+    expect(at(`${ORIGIN}/application`, '/app')).not.toHaveProperty('pathPrefix');
+    expect(at(`${ORIGIN}/application`, '/app').pageKey).toBe('/application');
+    const parsed = parseBugReport({ ...couponReport(), context: prefixed });
+    expect(parsed.ok && parsed.report.context.pathPrefix).toBe('/app');
+    const odd = parseBugReport({ ...couponReport(), context: { ...prefixed, pathPrefix: '/app?x' } });
+    expect(odd.ok && odd.report.context).not.toHaveProperty('pathPrefix');
+  });
+
+  test('the context keys the page with the tests’ path prefix in front, and keeps it through parsing', () => {
+    const context = bugContextFrom({
+      url: `${ORIGIN}/cart`,
+      userAgent: null,
+      viewport: null,
+      time: 0,
+      extensionVersion: null,
+      testPathPrefix: 'app/',
+    });
+    expect(context).toMatchObject({ pageKey: '/app/cart', path: '/cart', testPathPrefix: '/app' });
+    expect(context).not.toHaveProperty('pathPrefix');
+    const parsed = parseBugReport({ ...couponReport(), context });
+    expect(parsed.ok && parsed.report.context.testPathPrefix).toBe('/app');
+  });
+
   test('an element whose text is asserted is not named by that text', () => {
     const report = couponReport();
     const step = report.steps.steps[3]!;
@@ -255,5 +285,109 @@ describe('bug report', () => {
         assertion: { matcher: 'toHaveURL', expected: '/thanks', actual: '/cart', negated: false, note: null },
       }),
     ).toBe('The page should be `/thanks`');
+  });
+});
+
+describe('parseBugReport', () => {
+  test('reads back a report written as JSON', () => {
+    const report = couponReport();
+    const parsed = parseBugReport(JSON.stringify(report));
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.report.steps).toEqual(report.steps);
+    expect(parsed.report.evidence.requests).toEqual(report.evidence.requests);
+    expect(parsed.report.evidence.screenshots).toEqual(report.evidence.screenshots);
+    expect(parsed.report.context.origin).toBe(report.context.origin);
+  });
+
+  test('refuses steps that are not a steps document', () => {
+    const parsed = parseBugReport({ ...couponReport(), steps: { v: 1, steps: 'nope' } });
+    expect(parsed.ok).toBe(false);
+    expect(parseBugReport({ ...couponReport(), v: 2 }).ok).toBe(false);
+    expect(parseBugReport('{').ok).toBe(false);
+  });
+
+  test('drops evidence that does not fit its shape, and caps what it keeps', () => {
+    const report = couponReport();
+    const parsed = parseBugReport({
+      ...report,
+      evidence: {
+        ...report.evidence,
+        console: [{ level: 'info', source: 'console', message: 'x' }, ...report.evidence.console],
+        requests: [{ method: 'GET; rm', url: '/a', status: 500 }],
+        screenshots: [{ file: '../../etc/passwd', moment: 'marked' }, ...report.evidence.screenshots],
+        outline: Array.from({ length: 900 }, (_, i) => `- line ${i}`).join('\n'),
+      },
+      context: { ...report.context, origin: 'javascript:alert(1)', path: 'not-a-path' },
+    });
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.report.evidence.console).toHaveLength(1);
+    expect(parsed.report.evidence.requests).toEqual([]);
+    expect(parsed.report.evidence.screenshots.map((s) => s.file)).toEqual(['screenshots/1-marked.png']);
+    expect(parsed.report.evidence.outline!.split('\n')).toHaveLength(400);
+    expect(parsed.report.context.origin).toBeNull();
+    expect(parsed.report.context.path).toBeNull();
+  });
+});
+
+describe('specRunVerdict', () => {
+  const report = couponReport();
+  const { code, stepLines } = renderBugSpec(report, { expectFail: false });
+  const lines = code.split('\n');
+  const steps = report.steps.steps;
+  const assertAt = steps.findIndex((s) => s.action === 'assert');
+
+  test('each step starts on the line that performs it', () => {
+    expect(stepLines).toHaveLength(steps.length);
+    expect(lines[stepLines[0]! - 1]).toContain('page.goto(');
+    expect(lines[stepLines[1]! - 1]).toContain(".fill('SPRING10')");
+    // An expected result starts with the reporter's note, then asserts.
+    expect(lines.slice(stepLines[assertAt]! - 1, stepLines[assertAt + 1]! - 1).join('\n')).toContain(
+      "toHaveText('Total: 42')",
+    );
+  });
+
+  test('failing on the expected result reproduces, with the value found', () => {
+    const verdict = specRunVerdict(steps, stepLines, {
+      status: 'failed',
+      line: stepLines[assertAt]! + 1,
+      message:
+        'Error: expect(locator).toHaveText(expected) failed\n\nExpected string: "Total: 42"\nReceived string: "Total: 40"',
+    });
+    expect(verdict).toEqual({ kind: 'reproduced', step: assertAt, found: '"Total: 40"' });
+  });
+
+  test('failing on an earlier step diverges there', () => {
+    const verdict = specRunVerdict(steps, stepLines, {
+      status: 'timedOut',
+      line: stepLines[1]!,
+      message: "Test timeout of 30000ms exceeded.\nlocator.fill: waiting for getByLabel('Coupon')",
+    });
+    expect(verdict).toEqual({ kind: 'diverged', step: 1, reason: 'Test timeout of 30000ms exceeded.' });
+  });
+
+  test('reads a message without its terminal colors', () => {
+    const verdict = specRunVerdict(steps, stepLines, {
+      status: 'failed',
+      line: stepLines[0]!,
+      message: 'Error: page.goto: net::ERR_CONNECTION_REFUSED\nCall log:\n\u001b[2m  - navigating\u001b[22m',
+    });
+    expect(verdict).toEqual({ kind: 'diverged', step: 0, reason: 'Error: page.goto: net::ERR_CONNECTION_REFUSED' });
+  });
+
+  test('passing does not reproduce; a stopped run says so', () => {
+    expect(specRunVerdict(steps, stepLines, { status: 'passed', line: null, message: null })).toEqual({
+      kind: 'not-reproduced',
+    });
+    expect(specRunVerdict(steps, stepLines, { status: 'interrupted', line: null, message: null })).toEqual({
+      kind: 'stopped',
+    });
+  });
+
+  test('a function call covers the lines of the steps it stands for', () => {
+    const { stepLines: body } = renderBugSpec(report, { expectFail: false, format: 'body' });
+    expect(body).toHaveLength(steps.length);
+    expect([...body].sort((a, b) => a - b)).toEqual(body);
   });
 });

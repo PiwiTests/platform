@@ -52,6 +52,7 @@ import {
 } from '~~/server/utils/sanitize';
 import { DEFAULT_INGEST_LIMITS } from '#shared/ingest-limits';
 import { computeErrorFingerprint, type ErrorFingerprint } from '#shared/error-fingerprint';
+import { isExpectedFailurePassed, resolveExpectedStatus } from '#shared/status-classify';
 import { durationStats } from '#shared/utils/stats';
 import { countFailedFromTally, distinctRunCountsFromAttempts, sumFailedAndTimedOut } from '#shared/utils/test-counts';
 import { syncAutoMarkersForRun } from '#shared/handlers/markers';
@@ -433,6 +434,7 @@ export interface RunCaseInput {
   browser?: unknown;
   locatorSnapshots?: unknown;
   didNotRunReason?: string | null;
+  expectedStatus?: string | null;
   blockedBy?: string | null;
 }
 
@@ -661,7 +663,13 @@ export async function persistRunCases(
     }
 
     let fingerprint: ErrorFingerprint | null = null;
-    if (c.error && c.status !== 'passed' && c.status !== 'skipped') {
+    const expectedStatus = resolveExpectedStatus(c.expectedStatus, c.testAnnotations);
+    if (
+      c.error &&
+      c.status !== 'passed' &&
+      c.status !== 'skipped' &&
+      !isExpectedFailurePassed(c.status, expectedStatus)
+    ) {
       fingerprint = await computeErrorFingerprint(c.error);
       const pending = pendingClusters.get(fingerprint.fingerprint);
       if (pending) {
@@ -741,6 +749,7 @@ export async function persistRunCases(
       shardIndex: c.shardIndex ?? null,
       startedAt: c.startedAt ?? null,
       didNotRunReason: c.didNotRunReason ?? null,
+      expectedStatus,
       blockedBy: c.blockedBy ?? null,
     });
     rowInputIndices.push(i);

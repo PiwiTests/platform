@@ -4,13 +4,19 @@ import type { LocatorIndex } from '@piwitests/core/locator-index';
 import type { ConnectionSettings, ServerPatternsAnswer } from './connection-settings';
 import type { ClientInfo } from './client-info.js';
 import type { ConnectPoll } from './connect-flow.js';
+import type { DesktopSettings } from './desktop-settings.js';
+import type { PiwiSteps } from '@piwitests/core/steps';
 import { t } from './i18n.js';
 
 /**
  * Talks to a Piwi instance, and to the editor Piwi Picker is paired with — the
  * only place in this extension that makes a network call. Called from the
  * options page (connecting, saving, reading and adding URL patterns) and the
- * background service worker (`piwi-refresh-catalog`, `piwi-refresh-locator-index`, `piwi-send-to-editor`) only,
+ * background service worker (`piwi-refresh-catalog`, `piwi-refresh-locator-index`,
+ * `piwi-send-to-editor`, and the bug-report messages: `piwi-send-bug-report` once
+ * the reporter has confirmed the preview, `piwi-list-bug-reports`,
+ * `piwi-get-bug-report`, and `piwi-desktop-repro` to the paired desktop app once
+ * the developer confirmed its preview) only,
  * never from a content script, so the API key is never reachable from a web
  * page's JS context (matches `extension/AGENTS.md`'s standalone stance:
  * connected mode is opt-in and clearly separated).
@@ -284,7 +290,13 @@ export async function fetchServerPatterns(settings: ConnectionSettings): Promise
 export async function addServerPattern(
   settings: ConnectionSettings,
   projectId: number,
-  input: { pattern: string; environment?: string | null; branch?: string | null },
+  input: {
+    pattern: string;
+    environment?: string | null;
+    branch?: string | null;
+    pathPrefix?: string | null;
+    testPathPrefix?: string | null;
+  },
 ): Promise<void> {
   let res: Response;
   try {
@@ -327,4 +339,266 @@ export async function postToEditor(
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
+}
+
+/** Deep link to a bug report's page in the dashboard. */
+export function bugReportUrl(instanceUrl: string, id: number): string {
+  return `${normalizeBaseUrl(instanceUrl)}/bug-reports/${id}`;
+}
+
+/** What Send to Piwi sends: the report as JSON, the language it is written in, and its PNG screenshots. */
+export interface BugReportSend {
+  report: unknown;
+  language: string | null;
+  /** Ask for an issue in the project's tracker. */
+  createIssue: boolean;
+  screenshots: Array<{ name: string; bytes: Uint8Array }>;
+}
+
+/** The multipart parts of a bug report, as the instance reads them. */
+const BUG_REPORT_PARTS = {
+  report: 'report',
+  language: 'language',
+  createIssue: 'createIssue',
+  screenshot: 'screenshot',
+} as const;
+
+/** Why the instance answered a request the way it did, as a sentence to show. */
+async function refusal(res: Response): Promise<string> {
+  if (res.status === 401) return t('common_apiKeyRejected');
+  if (res.status === 403) return t('common_sendForbidden');
+  if (res.status === 404) return t('common_bugReportsUnsupported');
+  if (res.status === 413) return t('common_sendTooLarge');
+  if (res.status === 400) {
+    const body = (await res.json().catch(() => null)) as { message?: unknown } | null;
+    const message = typeof body?.message === 'string' ? body.message.slice(0, 300) : String(res.status);
+    return t('common_sendRefused', { error: message });
+  }
+  return t('common_instanceStatus', { status: res.status });
+}
+
+/**
+ * Sends a bug report to a project (`POST /api/projects/:id/bug-reports`, multipart).
+ * Only the background worker calls it, after the reporter confirmed the preview.
+ */
+export async function sendBugReport(
+  settings: ConnectionSettings,
+  projectId: number,
+  send: BugReportSend,
+): Promise<{ id: number; url: string; issue: SentIssue | null }> {
+  const form = new FormData();
+  form.append(BUG_REPORT_PARTS.report, JSON.stringify(send.report));
+  if (send.language) form.append(BUG_REPORT_PARTS.language, send.language);
+  if (send.createIssue) form.append(BUG_REPORT_PARTS.createIssue, String(true));
+  for (const shot of send.screenshots) {
+    form.append(BUG_REPORT_PARTS.screenshot, new Blob([shot.bytes as BlobPart], { type: 'image/png' }), shot.name);
+  }
+  let res: Response;
+  try {
+    res = await fetch(`${normalizeBaseUrl(settings.instanceUrl)}/api/projects/${projectId}/bug-reports`, {
+      method: 'POST',
+      headers: authHeaders(settings),
+      body: form,
+      signal: AbortSignal.timeout(60_000),
+    });
+  } catch {
+    throw new Error(t('common_instanceUnreachable'));
+  }
+  if (!res.ok) throw new Error(await refusal(res));
+  const body = (await res.json()) as { id?: unknown; issue?: { status?: unknown; key?: unknown } | null };
+  if (typeof body.id !== 'number') throw new Error(t('common_instanceStatus', { status: res.status }));
+  const issue =
+    body.issue && typeof body.issue.status === 'string'
+      ? { status: body.issue.status, key: typeof body.issue.key === 'string' ? body.issue.key : null }
+      : null;
+  return { id: body.id, url: bugReportUrl(settings.instanceUrl, body.id), issue };
+}
+
+/** What became of the issue a send asked for: created (with its key), queued, or refused. */
+export interface SentIssue {
+  status: string;
+  key: string | null;
+}
+
+/** What a send to a project will do with its tracker (`GET /api/projects/:id/bug-reports/intake`). */
+export interface BugReportIntake {
+  tracker: 'jira' | null;
+  projectKey: string | null;
+  canCreate: boolean;
+  fileEvery: boolean;
+}
+
+/** The intake, or no tracker when the instance cannot say (an older one, or unreachable). */
+export async function fetchBugReportIntake(settings: ConnectionSettings, projectId: number): Promise<BugReportIntake> {
+  const none: BugReportIntake = { tracker: null, projectKey: null, canCreate: false, fileEvery: false };
+  try {
+    const res = await fetch(`${normalizeBaseUrl(settings.instanceUrl)}/api/projects/${projectId}/bug-reports/intake`, {
+      headers: authHeaders(settings),
+      signal: timeout(),
+    });
+    if (!res.ok) return none;
+    const body = (await res.json()) as Partial<BugReportIntake>;
+    return {
+      tracker: body.tracker === 'jira' ? 'jira' : null,
+      projectKey: typeof body.projectKey === 'string' ? body.projectKey : null,
+      canCreate: body.canCreate === true,
+      fileEvery: body.fileEvery === true,
+    };
+  } catch {
+    return none;
+  }
+}
+
+/** One of a project's bug reports, as Replay lists them. */
+export interface BugReportSummary {
+  id: number;
+  title: string;
+  status: string;
+  path: string | null;
+}
+
+/** A project's bug reports that are still to be fixed: open, test committed, or looking fixed. */
+export async function fetchBugReports(settings: ConnectionSettings, projectId: number): Promise<BugReportSummary[]> {
+  let res: Response;
+  try {
+    res = await fetch(`${normalizeBaseUrl(settings.instanceUrl)}/api/projects/${projectId}/bug-reports`, {
+      headers: authHeaders(settings),
+      signal: timeout(),
+    });
+  } catch {
+    throw new Error(t('common_instanceUnreachable'));
+  }
+  if (!res.ok) throw new Error(await refusal(res));
+  return listItems<BugReportSummary>(await res.json()).filter(
+    (r) => typeof r.id === 'number' && r.status !== 'closed' && r.status !== 'dismissed',
+  );
+}
+
+/** A bug report's steps document, with the report's title, for Replay. */
+export async function fetchBugReportSteps(settings: ConnectionSettings, id: number): Promise<unknown> {
+  let res: Response;
+  try {
+    res = await fetch(`${normalizeBaseUrl(settings.instanceUrl)}/api/bug-reports/${id}`, {
+      headers: authHeaders(settings),
+      signal: timeout(),
+    });
+  } catch {
+    throw new Error(t('common_instanceUnreachable'));
+  }
+  if (!res.ok) throw new Error(await refusal(res));
+  const body = (await res.json()) as { title?: unknown; steps?: unknown };
+  return { ...(body.steps as object), title: typeof body.title === 'string' ? body.title : null };
+}
+
+/** A reproduction of a report, as Share result sends it. */
+export interface ReproductionSend {
+  source: 'replay' | 'desktop';
+  verdict: 'reproduced' | 'not-reproduced' | 'diverged';
+  divergedAt: number | null;
+  origin: string | null;
+  userAgent: string | null;
+}
+
+/** Records a reproduction on a report (`POST /api/bug-reports/:id/reproductions`), after the developer's click. */
+export async function sendReproduction(
+  settings: ConnectionSettings,
+  id: number,
+  send: ReproductionSend,
+): Promise<void> {
+  let res: Response;
+  try {
+    res = await fetch(`${normalizeBaseUrl(settings.instanceUrl)}/api/bug-reports/${id}/reproductions`, {
+      method: 'POST',
+      headers: { ...authHeaders(settings), 'Content-Type': 'application/json' },
+      body: JSON.stringify(send),
+      signal: timeout(),
+    });
+  } catch {
+    throw new Error(t('common_instanceUnreachable'));
+  }
+  if (!res.ok) throw new Error(await refusal(res));
+}
+
+// ---------------------------------------------------------------------------
+// The paired desktop app
+
+function desktopHeaders(desktop: DesktopSettings): Record<string, string> {
+  return { 'x-piwi-token': desktop.token };
+}
+
+function desktopRefusal(res: Response): string {
+  if (res.status === 401) return t('common_desktopRejected');
+  if (res.status === 404) return t('common_desktopUnsupported');
+  return t('common_desktopStatus', { status: res.status });
+}
+
+/** Checks the pairing: `GET /api/desktop/reporter-config` answers only with the app's token. */
+export async function testDesktop(desktop: DesktopSettings): Promise<ConnectionCheckResult> {
+  try {
+    const res = await fetch(`${desktop.url}/api/desktop/reporter-config`, {
+      headers: desktopHeaders(desktop),
+      signal: timeout(),
+    });
+    return res.ok ? { ok: true } : { ok: false, error: desktopRefusal(res) };
+  } catch {
+    return { ok: false, error: t('common_desktopUnreachable') };
+  }
+}
+
+export interface ReproRequestSend {
+  steps: PiwiSteps;
+  title: string | null;
+  options: { headed: boolean; trace: boolean };
+  bugReportId: number | null;
+  instanceUrl: string | null;
+}
+
+/** Asks the desktop app to run steps with Playwright; the developer confirms it in the app's window. */
+export async function sendReproRequest(
+  desktop: DesktopSettings,
+  send: ReproRequestSend,
+): Promise<{ id: string; windowOpen: boolean }> {
+  let res: Response;
+  try {
+    res = await fetch(`${desktop.url}/api/desktop/repro-requests`, {
+      method: 'POST',
+      headers: { ...desktopHeaders(desktop), 'Content-Type': 'application/json' },
+      body: JSON.stringify(send),
+      signal: timeout(),
+    });
+  } catch {
+    throw new Error(t('common_desktopUnreachable'));
+  }
+  if (!res.ok) throw new Error(desktopRefusal(res));
+  const body = (await res.json()) as { id?: unknown; windowOpen?: unknown };
+  if (typeof body.id !== 'string') throw new Error(t('common_desktopStatus', { status: res.status }));
+  return { id: body.id, windowOpen: body.windowOpen === true };
+}
+
+/** What the desktop app says about a request: its status and, once run, the verdict. */
+export interface ReproRequestState {
+  status: 'waiting' | 'running' | 'done' | 'declined' | 'expired';
+  verdict:
+    | { kind: 'reproduced'; step: number; found: string | null }
+    | { kind: 'not-reproduced' }
+    | { kind: 'diverged'; step: number; reason: string }
+    | { kind: 'completed' }
+    | { kind: 'stopped' }
+    | null;
+}
+
+export async function fetchReproRequest(desktop: DesktopSettings, id: string): Promise<ReproRequestState> {
+  let res: Response;
+  try {
+    res = await fetch(`${desktop.url}/api/desktop/repro-requests/${encodeURIComponent(id)}`, {
+      headers: desktopHeaders(desktop),
+      signal: timeout(),
+    });
+  } catch {
+    throw new Error(t('common_desktopUnreachable'));
+  }
+  if (res.status === 404) return { status: 'expired', verdict: null };
+  if (!res.ok) throw new Error(desktopRefusal(res));
+  const body = (await res.json()) as Partial<ReproRequestState>;
+  return { status: body.status ?? 'expired', verdict: body.verdict ?? null };
 }

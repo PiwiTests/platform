@@ -45,6 +45,7 @@ const country = target({ tagName: 'select', role: 'combobox', accessibleName: 'C
 const agree = target({ tagName: 'input', role: 'checkbox', accessibleName: 'I agree' });
 const darkMode = target({ tagName: 'button', role: 'switch', accessibleName: 'Dark mode' });
 const total = target({ tagName: 'p', testId: 'cart-total', text: 'Total: 40' });
+const row = target({ tagName: 'tr', role: 'row', accessibleName: 'Invoice 42' });
 const logo = target({ tagName: 'img', role: 'img', accessibleName: 'Acme' });
 const heading = target({ tagName: 'h1', role: 'heading', accessibleName: 'Cart' });
 
@@ -69,6 +70,7 @@ function everyTemplate(): RecordedStep[] {
         }),
       ),
     ),
+    step('hover', { target: row }),
   ];
 }
 
@@ -126,6 +128,7 @@ describe('German', () => {
       `${q('France')} in der Auswahlliste ${q('Country')} auswählen`,
     );
     expect(words(step('check', { target: agree }))).toBe(`Das Kontrollkästchen ${q('I agree')} aktivieren`);
+    expect(words(step('hover', { target: row }))).toBe(`Mit der Maus über die Tabellenzeile ${q('Invoice 42')} fahren`);
   });
 
   test('writes the other actions', () => {

@@ -13,6 +13,8 @@ import { toStepsDocument, type PiwiSteps } from '@piwitests/core/steps';
 import { formatNumber, initI18n, t, tn, uiLanguage } from '../shared/i18n.js';
 import { classifyInputKind, isPasswordInput } from './record-capture.js';
 import { rankElement, verifiedLocators } from './verified-locators.js';
+import { HoverTracker, cssHoverSubjects, outermostFirst } from './hover-reveal.js';
+import { documentStyleRules } from './hover-rules.js';
 import {
   getRecordingState,
   appendRecordingEvent,
@@ -203,25 +205,70 @@ function nearestActionable(el: Element): Element {
   return el.closest(ACTIONABLE_SELECTOR) ?? el;
 }
 
+/** What a person points at when the pointer enters `entered`: the control around it, if inside `within`. */
+function pointedAt(entered: Element, within: Element): Element {
+  const control = entered.closest(ACTIONABLE_SELECTOR);
+  return control && within.contains(control) ? control : entered;
+}
+
+/** Follows the pointer and the page's insertions while this document records, for `hoverTargets`. */
+let hoverTracker: HoverTracker | null = null;
+
+/**
+ * The hovers a click on `el` depends on, outermost first, named as the page
+ * stands now: the elements whose CSS `:hover` or script reveal showed `el` or
+ * one of its ancestors. An element named by text the hover shows is named by
+ * the element inside it the pointer entered it through instead. Plain pointer
+ * movement gives none.
+ */
+function hoverTargets(el: Element): RecordedTarget[] {
+  const css = cssHoverSubjects(el, documentStyleRules());
+  const scripted = hoverTracker?.scriptSubject(el, pointedAt);
+  const subjects = css.map((s) => s.subject);
+  if (scripted && scripted !== el && !el.contains(scripted)) subjects.push(scripted);
+  return outermostFirst(subjects).map((subject) => {
+    const target = deriveRecordedTarget(subject);
+    const revealed = css.find((s) => s.subject === subject)?.revealed;
+    const via = revealed ? hoverTracker?.enteredVia(subject) : null;
+    if (!revealed || !via || via === subject || revealed.contains(via)) return target;
+    return namesRevealed(target, revealed) ? deriveRecordedTarget(pointedAt(via, subject)) : target;
+  });
+}
+
+/** Whether the best locator of a target names it by text only its hover shows. */
+function namesRevealed(target: RecordedTarget, revealed: Element): boolean {
+  const locator = target.alternatives[0]?.locator ?? '';
+  const words = normalizeText(revealed.textContent ?? '');
+  return !locator || (words.length > 0 && locator.includes(words.slice(0, 40)));
+}
+
 /**
  * The control a press began on, and its target as the page stood then. A
  * control that opens on press (a custom select, a menu button) covers itself
  * with what it opened before the button comes back up: the browser then sends
  * the click to what the press and the release have in common, often `<html>`,
  * and a modal popup has already hidden the rest of the page from role queries.
- * The press says which control it was, and what named it.
+ * The press says which control it was, what named it, and which hovers
+ * revealed it, while the pointer is still on it.
  */
-let lastPress: { el: Element; target: RecordedTarget; at: number } | null = null;
+interface Press {
+  el: Element;
+  target: RecordedTarget;
+  hovers: RecordedTarget[];
+  at: number;
+}
+let lastPress: Press | null = null;
 const PRESS_CLICK_WINDOW_MS = 2000;
 
-function clickTarget(raw: Element, at: number): { el: Element; target: RecordedTarget } {
+/** The control a click acted on, from its press when it had one; `pointer` is false for a click from the keyboard, which no hover revealed. */
+function clickTarget(raw: Element, at: number, pointer: boolean): Omit<Press, 'at'> {
   const el = nearestActionable(raw);
   const press = lastPress;
   lastPress = null;
   if (press && press.el.isConnected && at - press.at <= PRESS_CLICK_WINDOW_MS) {
     if (press.el === el || el.contains(press.el)) return press;
   }
-  return { el, target: deriveRecordedTarget(el) };
+  return { el, target: deriveRecordedTarget(el), hovers: pointer ? hoverTargets(el) : [] };
 }
 
 function withinOwnUi(e: Event): boolean {
@@ -652,7 +699,7 @@ async function handleBugFinish(): Promise<void> {
     await takeBugScreenshot('finish', normalizeSteps(state.events).length - 1);
     const evidence = await getBugEvidence();
     await setBugEvidenceFields({
-      context: currentBugContext(),
+      context: await currentBugContext(),
       ...(evidence.outline ? {} : { outline: outlineAround(null) }),
     });
     await handleStop();
@@ -825,6 +872,20 @@ function attachListeners(): void {
   // handlers can't hide an interaction from the recorder; `signal` is what
   // makes the whole set removable in one go from `stopCapture`.
   const opts = { capture: true, signal: controller.signal };
+  const tracker = new HoverTracker();
+  hoverTracker = tracker;
+  const mutations = new MutationObserver((records) => tracker.mutations(records));
+  mutations.observe(document.documentElement, {
+    subtree: true,
+    childList: true,
+    attributes: true,
+    attributeFilter: ['style', 'hidden'],
+    attributeOldValue: true,
+  });
+  controller.signal.addEventListener('abort', () => {
+    mutations.disconnect();
+    if (hoverTracker === tracker) hoverTracker = null;
+  });
 
   document.addEventListener(
     'pointerdown',
@@ -836,7 +897,19 @@ function attachListeners(): void {
         return;
       }
       const el = nearestActionable(raw);
-      lastPress = { el, target: deriveRecordedTarget(el), at: e.timeStamp };
+      const hovers = hoverTargets(el);
+      hoverTracker?.press();
+      lastPress = { el, target: deriveRecordedTarget(el), hovers, at: e.timeStamp };
+    },
+    opts,
+  );
+
+  document.addEventListener(
+    'pointerover',
+    (e) => {
+      if (!e.isTrusted || withinOwnUi(e)) return;
+      const raw = e.composedPath()[0];
+      if (raw instanceof Element) hoverTracker?.pointerOver(raw);
     },
     opts,
   );
@@ -849,7 +922,8 @@ function attachListeners(): void {
       if (!e.isTrusted || capturePaused() || withinOwnUi(e)) return;
       const raw = e.target;
       if (!(raw instanceof Element)) return;
-      const { el, target } = clickTarget(raw, e.timeStamp);
+      const { el, target, hovers } = clickTarget(raw, e.timeStamp, e.detail > 0);
+      for (const hover of hovers) captureEvent(buildEvent('hover', null, { target: hover }));
       const kind = classifyInputKind(el.tagName, (el as HTMLInputElement).type ?? null);
       if (kind === 'checkbox' || kind === 'radio') return; // the resulting `change` event records this one
       captureEvent(buildEvent('click', el, { target }));

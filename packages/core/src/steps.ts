@@ -49,6 +49,7 @@ export interface PiwiSteps {
 const ACTIONS: ReadonlySet<StepAction> = new Set([
   'goto',
   'click',
+  'hover',
   'fill',
   'check',
   'uncheck',
@@ -231,6 +232,10 @@ function checkStep(c: Checker, v: unknown, path: string): RecordedStep | null {
     timestamp: v.timestamp == null ? 0 : c.number(v.timestamp, `${path}.timestamp`),
   };
   if (step.redacted) step.value = null;
+  if (action === 'hover') {
+    step.value = null;
+    if (!step.target) c.fail(`${path}.target`, 'is required on a hover step');
+  }
   if (action === 'assertVisible') {
     step.assertion = { matcher: 'toBeVisible', expected: null, actual: null, negated: false, note: null };
   } else if (action === 'assert') {

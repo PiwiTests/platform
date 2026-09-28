@@ -49,6 +49,56 @@ export function expectedFailureError(rawStatus: string, annotations: TestAnnotat
   return rawStatus === 'passed' && expectsFailure(annotations) ? EXPECTED_FAILURE_PASSED_MESSAGE : null;
 }
 
+/** Playwright's `TestCase.expectedStatus` values. */
+export const EXPECTED_STATUSES = ['passed', 'failed', 'timedOut', 'skipped', 'interrupted'] as const;
+export type ExpectedStatus = (typeof EXPECTED_STATUSES)[number];
+
+/** A known `expectedStatus` value, or null for anything else. */
+export function normalizeExpectedStatus(raw: unknown): ExpectedStatus | null {
+  return typeof raw === 'string' && (EXPECTED_STATUSES as readonly string[]).includes(raw)
+    ? (raw as ExpectedStatus)
+    : null;
+}
+
+/**
+ * A test's expected status: the one Playwright reported when there is one, else
+ * the one its annotations imply (`skip`/`fixme` → skipped, `fail` → failed,
+ * otherwise passed), for results from a reporter or an import that does not send it.
+ */
+export function resolveExpectedStatus(raw: unknown, annotations: unknown): ExpectedStatus {
+  const reported = normalizeExpectedStatus(raw);
+  if (reported) return reported;
+  const list = Array.isArray(annotations)
+    ? (annotations.filter((a) => a && typeof a === 'object' && typeof a.type === 'string') as TestAnnotation[])
+    : [];
+  if (list.some((a) => a.type === 'skip' || a.type === 'fixme')) return 'skipped';
+  return expectsFailure(list) ? 'failed' : 'passed';
+}
+
+/**
+ * Whether a stored result is an expected failure that passed: a `test.fail()`
+ * test whose body no longer fails. `classifyStatus` stores it as `failed`, the
+ * outcome Playwright reports; it is the only `failed` row whose expected status
+ * is `failed`, since an expected failure that did fail is stored as `passed`.
+ */
+export function isExpectedFailurePassed(status: string | null | undefined, expectedStatus: string | null | undefined) {
+  return status === 'failed' && expectedStatus === 'failed';
+}
+
+/**
+ * Each test's last attempt in a run, the row with the most retries: the one a
+ * test's outcome is read from. An expected failure that passed on its first
+ * attempt and failed as expected on a retry still reproduces its bug.
+ */
+export function lastAttempts<T extends { testCaseId: number; retries: number | null }>(rows: readonly T[]): T[] {
+  const last = new Map<number, T>();
+  for (const row of rows) {
+    const prev = last.get(row.testCaseId);
+    if (!prev || (row.retries ?? 0) >= (prev.retries ?? 0)) last.set(row.testCaseId, row);
+  }
+  return [...last.values()];
+}
+
 /**
  * Map a Playwright `result.status` to Piwi's stored status, following
  * Playwright's own outcome so a run reads the same in both.

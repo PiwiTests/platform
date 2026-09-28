@@ -7,10 +7,30 @@ fails, the tests running beside it, the load on the machine), and a **lab** that
 next to a control, until the failure reproduces or the budget runs out. A reproduced condition proves the cause, and
 the same condition later proves the fix.
 
-**Status.** Proposed 2026-09-27. Nothing is built. The suspects are computed from data Piwi already stores, plus
-failed requests, which the capture fixtures do not record yet. The lab adds a CLI command, a reporter mode like probe
-mode, two tables, a desktop command and MCP tools. New wire fields, the plan file format, the command and the endpoints
-freeze at 1.0 (one new D entry in [`1.0-stabilization.md`](1.0-stabilization.md)).
+**Status.** Proposed 2026-09-27. **PR 1 built 2026-09-28**: the five defects are fixed, the capture fixtures record
+failed requests (`requestfailed`, status 0, `failure`), `network_requests` has a `failure` column, and the Attempts diff
+compares request durations. PRs 2–6 are not started. What changed while building PR 1:
+
+- The server's filter did **not** keep status 0: it kept status ≥ 400 plus the 50 slowest others, so a quick reset
+  could be dropped. It now keeps every request with status ≥ 400, status ≤ 0 or a `failure`.
+- The wire had no network-request type (`networkRequests` was `unknown` on both sides). `WireNetworkRequest` in
+  `@piwitests/core/wire` now names every field, `failure` included; the 1.0 entry is D24 in
+  [`1.0-stabilization.md`](1.0-stabilization.md).
+- A failed request's `duration` runs to the moment the failure was seen, since it has no response end.
+- The classifier's browser distribution became `{ passed, failed }` per project. Environment now needs one browser
+  with at least 3 failures and another with at least 3 passes and none. Its input is the test's last 100 attempts
+  (passed or failed) from any non-probe run; the evidence texts still come from the failed ones.
+- The same `'timedOut'` comparison against stored rows also sat in the AI context's recurrence section
+  (`ai-context.ts`) and the trace-import roll-up (`import-runs.ts`); both are fixed.
+- The failed-request clue and the network tab name the failure ("GET /api/cart failed with
+  net::ERR_CONNECTION_RESET"), and the Attempts diff shows it on a request that failed on one side only.
+- A slower request in the Attempts diff is a symmetric `network` row (no `only`), so it does not count as a failed
+  request in the classifier's attempt-diff vote. Its link to the matching suspect waits for PR 2, which adds suspects;
+  the row's key is the diff's own (method and URL without the query), not yet `normalizeRoute`.
+
+The suspects are computed from data Piwi already stores. The lab adds a CLI command, a reporter mode like probe mode,
+two tables, a desktop command and MCP tools. New wire fields, the plan file format, the command and the endpoints
+freeze at 1.0 (D24 in [`1.0-stabilization.md`](1.0-stabilization.md)).
 
 **Summary.** A flaky test costs the most when nobody can make it fail: the fix is a guess, and "it passed ten times in a
 row" proves nothing about a failure that happens one time in twenty. Piwi keeps what a lab needs. Every attempt is its
@@ -79,7 +99,7 @@ Test case · checkout › pays with a saved card                    Flaky · sco
   a normalized URL (`normalizeRoute`). Timing relative to the test is `startTime − startedAt`, which the failure
   timeline already uses (`shared/failure-timeline.ts`).
 - **Failed requests are not recorded.** No `requestfailed` listener exists, so a connection reset or an aborted
-  request leaves no row.
+  request leaves no row. (Built in PR 1.)
 - **The Attempts diff compares one pair.** `diffAttempts` (`shared/attempt-diff.ts`, via `getAttemptDiff` in
   `shared/handlers/test-cases.ts`) pairs a failed attempt with the next pass of the same run, case and browser, and
   lists an error on one side, requests that failed on one side (status 0 or ≥ 500), console entries, slow or failing

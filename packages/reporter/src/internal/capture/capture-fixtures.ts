@@ -1345,7 +1345,10 @@ function instrumentPage(page: Page): void {
     }
   }
 
-  page.on('requestfinished', (request: Request) => {
+  // A request that finished (with or without a response) and one that failed
+  // (reset, refused, aborted) are recorded alike; a failed one has status 0 and
+  // carries Playwright's error text as `failure`.
+  const recordRequest = (request: Request, failed: boolean) => {
     const sink = currentSink;
     if (!sink) return;
     sink.lastActivePage = page;
@@ -1353,21 +1356,22 @@ function instrumentPage(page: Page): void {
       try {
         const url = request.url();
         if (url.startsWith('data:') || url.startsWith('blob:')) return;
-        const timing = request.timing();
-        const response = await request.response();
         const resourceType = request.resourceType();
 
         // Only keep API/document requests; skip static assets (scripts, styles, fonts, images, media)
-        if (!['fetch', 'xhr', 'document', 'other'].includes(resourceType)) return;
+        if (!TRACKED_REQUEST_TYPES.includes(resourceType)) return;
 
+        const timing = request.timing();
+        const response = failed ? null : await request.response();
         const entry: Record<string, unknown> = {
           method: request.method(),
           url,
           status: response ? response.status() : 0,
-          duration: timing.responseEnd > 0 ? Math.round(timing.responseEnd - timing.requestStart) : 0,
+          duration: requestDuration(timing, failed),
           startTime: timing.startTime,
           resourceType,
         };
+        if (failed) entry.failure = request.failure()?.errorText ?? 'failed';
 
         if (response) {
           const headers = response.headers();
@@ -1404,7 +1408,9 @@ function instrumentPage(page: Page): void {
       }
     })();
     sink.pendingHandlers.push(p);
-  });
+  };
+  page.on('requestfinished', (request: Request) => recordRequest(request, false));
+  page.on('requestfailed', (request: Request) => recordRequest(request, true));
 }
 
 /**
@@ -1500,6 +1506,22 @@ function readRootAria(page: Page): Promise<string | null> {
 /** The whole page's ARIA tree as JSON, read as an internal call. */
 function readRootAriaJson(page: Page): Promise<string | null> {
   return internalCall(page, () => ariaSnapshotJSONBestEffort(page.locator(':root')));
+}
+
+/** Request types worth keeping: API calls and documents, not static assets. */
+const TRACKED_REQUEST_TYPES = ['fetch', 'xhr', 'document', 'other'];
+
+/**
+ * A request's duration in ms: to the response end when there is one, else, for
+ * a request that failed before answering, to the moment the failure was seen.
+ */
+function requestDuration(
+  timing: { startTime: number; requestStart: number; responseEnd: number },
+  failed: boolean,
+): number {
+  if (timing.responseEnd > 0) return Math.round(timing.responseEnd - timing.requestStart);
+  if (failed && timing.startTime > 0) return Math.max(0, Math.round(Date.now() - timing.startTime));
+  return 0;
 }
 
 /**

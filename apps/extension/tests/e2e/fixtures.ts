@@ -34,6 +34,9 @@ function languageLaunchOptions(language: string): {
  * reloads the extension needs it: without it, Chromium does not enable the
  * reloaded copy again.
  *
+ * `args` adds command-line switches, and `userDataDir` names the profile
+ * directory, for a spec that reads files the browser writes there.
+ *
  * `language` runs the browser in another language (`fr`). On Linux the
  * `--lang` flag alone makes `chrome.i18n.getMessage` answer in that language
  * but leaves `getUILanguage()` at `en-US`. Launched by hand, the `LANGUAGE`
@@ -43,9 +46,9 @@ function languageLaunchOptions(language: string): {
  */
 export async function launchWithExtension(
   extensionPath = EXTENSION_PATH,
-  opts: { developerMode?: boolean; language?: string } = {},
+  opts: { developerMode?: boolean; language?: string; args?: string[]; userDataDir?: string } = {},
 ): Promise<BrowserContext> {
-  const userDataDir = mkdtempSync(path.join(tmpdir(), 'piwi-picker-e2e-'));
+  const userDataDir = opts.userDataDir ?? mkdtempSync(path.join(tmpdir(), 'piwi-picker-e2e-'));
   if (opts.developerMode) {
     mkdirSync(path.join(userDataDir, 'Default'));
     writeFileSync(
@@ -53,7 +56,11 @@ export async function launchWithExtension(
       JSON.stringify({ extensions: { ui: { developer_mode: true } } }),
     );
   }
-  const args = [`--disable-extensions-except=${extensionPath}`, `--load-extension=${extensionPath}`];
+  const args = [
+    `--disable-extensions-except=${extensionPath}`,
+    `--load-extension=${extensionPath}`,
+    ...(opts.args ?? []),
+  ];
   const language = opts.language ? languageLaunchOptions(opts.language) : { options: {}, args: [] };
   // Playwright's own docs example for extensions uses `channel: 'chromium'`
   // with no `headless` option and no manual `--headless=new` — that's not

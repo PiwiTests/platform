@@ -16,8 +16,16 @@ import {
   pollConnect,
   fetchServerPatterns,
   addServerPattern,
+  testDesktop,
   type ProjectOption,
 } from '../shared/piwi-client.js';
+import {
+  clearDesktopSettings,
+  desktopOrigin,
+  getDesktopSettings,
+  setDesktopSettings,
+} from '../shared/desktop-settings.js';
+import { normalizePathPrefix, parsePathPrefix } from '@piwitests/core/page-key';
 import { waitForApproval } from '../shared/connect-flow.js';
 import { describeClient } from '../shared/client-info.js';
 import { setCachedCatalog, pruneCachedCatalogs } from '../shared/catalog-cache.js';
@@ -53,6 +61,8 @@ const addPatternEl = document.getElementById('add-pattern') as HTMLInputElement;
 const addProjectEl = document.getElementById('add-project') as HTMLSelectElement;
 const addEnvironmentEl = document.getElementById('add-environment') as HTMLInputElement;
 const addBranchEl = document.getElementById('add-branch') as HTMLInputElement;
+const addPrefixEl = document.getElementById('add-prefix') as HTMLInputElement;
+const addTestPrefixEl = document.getElementById('add-test-prefix') as HTMLInputElement;
 const addNoteEl = document.getElementById('add-note') as HTMLElement;
 const addToServerBtn = document.getElementById('add-to-server') as HTMLButtonElement;
 const addLocallyBtn = document.getElementById('add-locally') as HTMLButtonElement;
@@ -72,6 +82,10 @@ interface EditableMapping {
   projectLabel: string;
   /** The branch deployed at those URLs; empty for the project's default branch. */
   branch: string;
+  /** The part of the site's path the tests never saw (`/app`); empty for none. */
+  pathPrefix: string;
+  /** The part of the path the tests ran the pages under and the site does not; empty for none. */
+  testPathPrefix: string;
 }
 
 /** Populated by "Test connection" (or on load, if already connected) — the pool a mapping row's project `<select>` draws from. */
@@ -189,6 +203,15 @@ function renderMappings(): void {
       mappings[index]!.branch = branchInput.value;
     });
 
+    const prefixInput = pathPrefixInput(mapping.pathPrefix, 'site');
+    prefixInput.addEventListener('input', () => {
+      mappings[index]!.pathPrefix = prefixInput.value;
+    });
+    const testPrefixInput = pathPrefixInput(mapping.testPathPrefix, 'tests');
+    testPrefixInput.addEventListener('input', () => {
+      mappings[index]!.testPathPrefix = testPrefixInput.value;
+    });
+
     const removeBtn = document.createElement('button');
     removeBtn.type = 'button';
     removeBtn.className = 'remove-mapping';
@@ -203,13 +226,62 @@ function renderMappings(): void {
     source.className = 'source';
     source.textContent = t('options_sourceLocal');
 
-    row.append(patternInput, projectSelect, branchInput, source, removeBtn);
+    row.append(patternInput, projectSelect, branchInput, prefixInput, testPrefixInput, source, removeBtn);
     mappingsEl.appendChild(row);
   });
 }
 
+/** Why `value` is refused as a path prefix; empty when it is accepted (an empty value is no prefix). */
+function pathPrefixError(value: string): string {
+  return parsePathPrefix(value).ok ? '' : t('options_pathPrefixInvalid', { prefix: value.trim() });
+}
+
+/** The first refusal among a line's or the form's two prefixes; empty when both are accepted. */
+function prefixesError(pathPrefix: string, testPathPrefix: string): string {
+  return pathPrefixError(pathPrefix) || pathPrefixError(testPathPrefix);
+}
+
+/** `{ pathPrefix, testPathPrefix }` for a stored mapping, normalized, each only when set. */
+function pathPrefixFields(
+  pathPrefix: string,
+  testPathPrefix: string,
+): { pathPrefix?: string; testPathPrefix?: string } {
+  const site = normalizePathPrefix(pathPrefix);
+  const tests = normalizePathPrefix(testPathPrefix);
+  return { ...(site ? { pathPrefix: site } : {}), ...(tests ? { testPathPrefix: tests } : {}) };
+}
+
+/** Which prefix a field holds: the site's (`pathPrefix`) or the tests' (`testPathPrefix`). */
+type PrefixKind = 'site' | 'tests';
+
+/** Marks a path prefix field invalid, with the reason as its tooltip, while its value is refused. */
+function watchPathPrefix(input: HTMLInputElement, kind: PrefixKind): void {
+  const check = () => {
+    const error = pathPrefixError(input.value);
+    input.title = error || (kind === 'site' ? t('options_pathPrefixTitle') : t('options_testPathPrefixTitle'));
+    input.toggleAttribute('aria-invalid', error !== '');
+  };
+  check();
+  input.addEventListener('input', check);
+}
+
+/** A path prefix field of a line. */
+function pathPrefixInput(value: string, kind: PrefixKind): HTMLInputElement {
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'mapping-branch mapping-prefix';
+  input.placeholder = kind === 'site' ? t('options_pathPrefixPlaceholder') : t('options_testPathPrefixPlaceholder');
+  input.setAttribute('aria-label', kind === 'site' ? t('options_pathPrefix') : t('options_testPathPrefix'));
+  input.value = value;
+  watchPathPrefix(input, kind);
+  return input;
+}
+
+watchPathPrefix(addPrefixEl, 'site');
+watchPathPrefix(addTestPrefixEl, 'tests');
+
 addMappingBtn.addEventListener('click', () => {
-  mappings.push({ urlPattern: '', projectId: null, projectLabel: '', branch: '' });
+  mappings.push({ urlPattern: '', projectId: null, projectLabel: '', branch: '', pathPrefix: '', testPathPrefix: '' });
   renderMappings();
 });
 
@@ -247,7 +319,15 @@ function renderServerMappings(): void {
     pattern.textContent = mapping.urlPattern;
     const meta = document.createElement('span');
     meta.className = 'meta';
-    meta.textContent = [mapping.projectLabel, mapping.environment, mapping.branch].filter(Boolean).join(' · ');
+    meta.textContent = [
+      mapping.projectLabel,
+      mapping.environment,
+      mapping.branch,
+      mapping.pathPrefix ? t('options_serverPathPrefix', { prefix: mapping.pathPrefix }) : '',
+      mapping.testPathPrefix ? t('options_serverTestPathPrefix', { prefix: mapping.testPathPrefix }) : '',
+    ]
+      .filter(Boolean)
+      .join(' · ');
     const source = document.createElement('span');
     source.className = 'source';
     source.textContent = t('options_sourceServer');
@@ -343,6 +423,8 @@ async function loadInitial(): Promise<void> {
     projectId: m.projectId,
     projectLabel: m.projectLabel,
     branch: m.branch ?? '',
+    pathPrefix: m.pathPrefix ?? '',
+    testPathPrefix: m.testPathPrefix ?? '',
   }));
   projectOptions = syncedProjectOptions();
   renderMappings();
@@ -504,12 +586,19 @@ addToServerBtn.addEventListener('click', () => {
       setStatus(t('options_addNeedsProject'), 'error');
       return;
     }
+    const prefixError = prefixesError(addPrefixEl.value, addTestPrefixEl.value);
+    if (prefixError) {
+      setStatus(prefixError, 'error');
+      return;
+    }
     const label = addProjectEl.selectedOptions[0]?.textContent ?? `#${projectId}`;
     try {
       await addServerPattern(stored, projectId, {
         pattern,
         environment: addEnvironmentEl.value.trim() || null,
         branch: addBranchEl.value.trim() || null,
+        pathPrefix: normalizePathPrefix(addPrefixEl.value),
+        testPathPrefix: normalizePathPrefix(addTestPrefixEl.value),
       });
     } catch (err) {
       setStatus(err instanceof Error ? err.message : String(err), 'error');
@@ -518,6 +607,8 @@ addToServerBtn.addEventListener('click', () => {
     addPatternEl.value = '';
     addEnvironmentEl.value = '';
     addBranchEl.value = '';
+    addPrefixEl.value = '';
+    addTestPrefixEl.value = '';
     await syncServerPatterns(stored);
     await refreshCatalogs(stored);
     setStatus(t('options_added', { pattern, project: label }), 'ok');
@@ -530,15 +621,24 @@ addLocallyBtn.addEventListener('click', () => {
     setStatus(t('options_addNeedsPattern'), 'error');
     return;
   }
+  const prefixError = prefixesError(addPrefixEl.value, addTestPrefixEl.value);
+  if (prefixError) {
+    setStatus(prefixError, 'error');
+    return;
+  }
   const projectId = addProjectEl.value ? Number(addProjectEl.value) : null;
   mappings.push({
     urlPattern: pattern,
     projectId,
     projectLabel: projectId != null ? (addProjectEl.selectedOptions[0]?.textContent ?? '') : '',
     branch: addBranchEl.value.trim(),
+    pathPrefix: normalizePathPrefix(addPrefixEl.value) ?? '',
+    testPathPrefix: normalizePathPrefix(addTestPrefixEl.value) ?? '',
   });
   renderMappings();
   addPatternEl.value = '';
+  addPrefixEl.value = '';
+  addTestPrefixEl.value = '';
   setStatus(t('options_addedLocally'), 'ok');
 });
 
@@ -578,6 +678,11 @@ saveBtn.addEventListener('click', () => {
     }
     const granted = await permission;
 
+    const badPrefix = mappings.find((m) => prefixesError(m.pathPrefix, m.testPathPrefix));
+    if (badPrefix) {
+      setStatus(prefixesError(badPrefix.pathPrefix, badPrefix.testPathPrefix), 'error');
+      return;
+    }
     const valid = mappings.filter((m) => m.urlPattern.trim() && m.projectId != null);
     const incompleteCount = mappings.length - valid.length;
 
@@ -590,6 +695,7 @@ saveBtn.addEventListener('click', () => {
         projectId: m.projectId!,
         projectLabel: m.projectLabel,
         ...(m.branch.trim() ? { branch: m.branch.trim() } : {}),
+        ...pathPrefixFields(m.pathPrefix, m.testPathPrefix),
       })),
     };
     stored = settings;
@@ -758,6 +864,59 @@ editorUnpairBtn.addEventListener('click', () => {
     if (pairing) await chrome.permissions.remove({ origins: [editorOriginPattern(pairing)] }).catch(() => false);
     await renderEditorPairing();
   })();
+});
+
+// ---------------------------------------------------------------------------
+// The desktop app, for Run with Playwright
+
+const desktopUrlEl = document.getElementById('desktop-url') as HTMLInputElement;
+const desktopTokenEl = document.getElementById('desktop-token') as HTMLInputElement;
+const desktopStatusEl = document.getElementById('desktop-status')!;
+
+function setDesktopStatus(text: string, kind: 'ok' | 'error' | '' = ''): void {
+  desktopStatusEl.textContent = text;
+  desktopStatusEl.className = kind;
+}
+
+document.getElementById('desktop-save')!.addEventListener('click', () => {
+  const url = desktopOrigin(desktopUrlEl.value);
+  const token = desktopTokenEl.value.trim();
+  if (!url || !token) {
+    setDesktopStatus(t('options_desktopNotLoopback'), 'error');
+    return;
+  }
+  // Asked first, while the click still counts as a user gesture; the one loopback origin only.
+  const granted = chrome.permissions.request({ origins: [`${url}/*`] }).catch(() => false);
+  void (async () => {
+    if (!(await granted)) {
+      setDesktopStatus(t('options_desktopNeedsAccess'), 'error');
+      return;
+    }
+    setDesktopStatus(t('options_testing'));
+    const check = await testDesktop({ url, token });
+    if (!check.ok) {
+      setDesktopStatus(check.error, 'error');
+      return;
+    }
+    await setDesktopSettings({ url, token });
+    desktopUrlEl.value = url;
+    setDesktopStatus(t('options_desktopSaved'), 'ok');
+  })();
+});
+
+document.getElementById('desktop-forget')!.addEventListener('click', () => {
+  void (async () => {
+    await clearDesktopSettings();
+    desktopUrlEl.value = '';
+    desktopTokenEl.value = '';
+    setDesktopStatus(t('options_desktopForgotten'), 'ok');
+  })();
+});
+
+void getDesktopSettings().then((desktop) => {
+  if (!desktop) return;
+  desktopUrlEl.value = desktop.url;
+  desktopTokenEl.value = desktop.token;
 });
 
 renderLanguageSelect();

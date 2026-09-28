@@ -1,3 +1,4 @@
+import { setUpViewportRow } from './viewports.js';
 import {
   getRecordingState,
   stopRecording,
@@ -58,6 +59,7 @@ document.getElementById('hover-inspect')!.addEventListener('click', () => void i
 document.getElementById('locator-console')!.addEventListener('click', () => void inject('locator-console.js'));
 document.getElementById('multi-pick')!.addEventListener('click', () => void inject('multi-pick.js'));
 document.getElementById('lint-overlay')!.addEventListener('click', () => void inject('lint-overlay.js'));
+document.getElementById('playwright-view')!.addEventListener('click', () => void inject('playwright-view.js'));
 document.getElementById('assertion-panel')!.addEventListener('click', () => void inject('assertion-panel.js'));
 document.getElementById('session-panel')!.addEventListener('click', () => void inject('session-panel.js'));
 document.getElementById('agent-context-panel')!.addEventListener('click', () => void inject('agent-context-panel.js'));
@@ -66,6 +68,18 @@ coverageButton.addEventListener('click', () => {
   // Without a connection there is no locator index to show: go straight to where it is set up.
   if (connected) void inject('coverage-overlay.js');
   else chrome.runtime.openOptionsPage();
+});
+
+document.getElementById('save-login')!.addEventListener('click', () => {
+  void activeTab().then((tab) => {
+    if (tab?.id == null) return;
+    const query = new URLSearchParams({ tabId: String(tab.id), url: tab.url ?? '' });
+    void chrome.tabs.create({ url: chrome.runtime.getURL(`login.html?${query}`) }).then(() => window.close());
+  });
+});
+
+void setUpViewportRow(activeTab, (text) => {
+  statusEl.textContent = text;
 });
 
 configButton.addEventListener('click', () => {
@@ -174,7 +188,9 @@ document.addEventListener('keydown', (e) => {
         ? 'report-bug'
         : e.key === 'r' || e.key === 'R'
           ? 'replay-bug'
-          : KEY_TO_ACTION_ID[e.key];
+          : e.key === 'v' || e.key === 'V'
+            ? 'playwright-view'
+            : KEY_TO_ACTION_ID[e.key];
   if (!id) return;
   e.preventDefault();
   document.getElementById(id)?.click();

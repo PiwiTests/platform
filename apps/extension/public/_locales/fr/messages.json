@@ -50,6 +50,24 @@
   "common_replayStartFailed": {
     "message": "Le rapport n’a pas pu être rejoué."
   },
+  "common_sendForbidden": {
+    "message": "votre compte ne peut pas envoyer de rapport à ce projet."
+  },
+  "common_sendTooLarge": {
+    "message": "le rapport est trop volumineux pour l’instance. Retirez une capture d’écran et réessayez."
+  },
+  "common_sendRefused": {
+    "message": "l’instance l’a refusé ($error$).",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "Not a bug report: steps: must be a list"
+      }
+    }
+  },
+  "common_bugReportsUnsupported": {
+    "message": "cette instance Piwi ne prend pas encore en charge les rapports de bug. Mettez-la à jour."
+  },
   "common_workerNoAnswer": {
     "message": "Le processus d’arrière-plan de Piwi Picker n’a pas répondu : rechargez Piwi Picker."
   },
@@ -70,6 +88,24 @@
   },
   "common_instanceUnreachable": {
     "message": "Piwi Picker n’a pas pu joindre l’instance : vérifiez l’adresse, et qu’elle est démarrée."
+  },
+  "common_desktopUnreachable": {
+    "message": "L’application de bureau ne répond pas. Est-elle lancée ?"
+  },
+  "common_desktopRejected": {
+    "message": "L’application de bureau a refusé le jeton."
+  },
+  "common_desktopUnsupported": {
+    "message": "Cette adresse n’est pas une application de bureau Piwi qui peut lancer des rapports de bug."
+  },
+  "common_desktopStatus": {
+    "message": "L’application de bureau a répondu $status$.",
+    "placeholders": {
+      "status": {
+        "content": "$1",
+        "example": "500"
+      }
+    }
   },
   "common_projectsFailed": {
     "message": "La liste des projets n’a pas pu être lue ($status$).",
@@ -151,6 +187,59 @@
   },
   "popup_testedElementsConnect": {
     "message": "Connectez Piwi pour voir ce que vos tests atteignent"
+  },
+  "popup_playwrightView": {
+    "message": "Vue Playwright"
+  },
+  "popup_playwrightViewHint": {
+    "message": "Chaque élément tel que getByRole le voit, et ceux qu’aucun locator n’atteint"
+  },
+  "popup_saveLogin": {
+    "message": "Sauvegarder la connexion pour les tests"
+  },
+  "popup_viewport": {
+    "message": "Ouvrir cette page avec un viewport"
+  },
+  "popup_viewportProject": {
+    "message": "$project$ ($size$)",
+    "placeholders": {
+      "project": {
+        "content": "$1",
+        "example": "Mobile Safari"
+      },
+      "size": {
+        "content": "$2",
+        "example": "390×844"
+      }
+    }
+  },
+  "popup_viewportCustom": {
+    "message": "Taille saisie à la main"
+  },
+  "popup_viewportWidth": {
+    "message": "Largeur"
+  },
+  "popup_viewportHeight": {
+    "message": "Hauteur"
+  },
+  "popup_viewportOpen": {
+    "message": "Ouvrir"
+  },
+  "popup_viewportOnly": {
+    "message": "Viewport seulement : ni tactile, ni densité de pixels, ni user agent."
+  },
+  "popup_viewportInvalid": {
+    "message": "Ouvrez une page web, avec une largeur et une hauteur entre $min$ et $max$ pixels.",
+    "placeholders": {
+      "max": {
+        "content": "$1",
+        "example": "4000"
+      },
+      "min": {
+        "content": "$2",
+        "example": "200"
+      }
+    }
   },
   "popup_reportBug": {
     "message": "Signaler un bug"
@@ -491,6 +580,33 @@
   "options_branchTitle": {
     "message": "La branche déployée à ces adresses : Éléments testés montre ce qu’atteignent ses tests"
   },
+  "options_pathPrefix": {
+    "message": "Préfixe de chemin"
+  },
+  "options_pathPrefixPlaceholder": {
+    "message": "aucun préfixe"
+  },
+  "options_pathPrefixTitle": {
+    "message": "Votre site sert les pages sous ce chemin, les tests ne l’ont pas fait, par exemple /app"
+  },
+  "options_pathPrefixInvalid": {
+    "message": "$prefix$ n’est pas un préfixe de chemin : écrivez un chemin simple comme /app, sans paramètres, ancre ni joker, et en 4 parties au plus.",
+    "placeholders": {
+      "prefix": {
+        "content": "$1",
+        "example": "/app"
+      }
+    }
+  },
+  "options_testPathPrefix": {
+    "message": "Préfixe de chemin des tests"
+  },
+  "options_testPathPrefixPlaceholder": {
+    "message": "aucun préfixe des tests"
+  },
+  "options_testPathPrefixTitle": {
+    "message": "Les tests ont parcouru les pages sous ce chemin, votre site ne le fait pas, par exemple /app"
+  },
   "options_removeMapping": {
     "message": "Supprimer cette ligne"
   },
@@ -505,6 +621,36 @@
   },
   "options_testing": {
     "message": "Test en cours…"
+  },
+  "options_desktopHeading": {
+    "message": "Application de bureau"
+  },
+  "options_desktopHint": {
+    "message": "Facultatif. Associé à l’application de bureau Piwi Dashboard, Rejouer peut lui demander de lancer un rapport de bug avec Playwright dans votre projet. Copiez l’adresse et le jeton depuis la page Configuration de l’application, sous Connecter Piwi Picker."
+  },
+  "options_desktopUrl": {
+    "message": "Adresse de l’application de bureau"
+  },
+  "options_desktopToken": {
+    "message": "Jeton"
+  },
+  "options_desktopSave": {
+    "message": "Enregistrer et tester"
+  },
+  "options_desktopForget": {
+    "message": "Oublier"
+  },
+  "options_desktopSaved": {
+    "message": "Associé à l’application de bureau."
+  },
+  "options_desktopForgotten": {
+    "message": "L’application de bureau n’est plus associée."
+  },
+  "options_desktopNotLoopback": {
+    "message": "Saisissez l’adresse de l’application de bureau, comme http://127.0.0.1:4318, et son jeton."
+  },
+  "options_desktopNeedsAccess": {
+    "message": "Autorisez l’accès à l’adresse de l’application de bureau pour l’associer."
   },
   "options_accessDenied": {
     "message": "L’accès à cette instance a été refusé : autorisez-le pour que Piwi Picker lise votre catalogue."
@@ -746,6 +892,24 @@
   },
   "options_sourceServer": {
     "message": "Piwi"
+  },
+  "options_serverPathPrefix": {
+    "message": "préfixe de chemin $prefix$",
+    "placeholders": {
+      "prefix": {
+        "content": "$1",
+        "example": "/app"
+      }
+    }
+  },
+  "options_serverTestPathPrefix": {
+    "message": "préfixe de chemin des tests $prefix$",
+    "placeholders": {
+      "prefix": {
+        "content": "$1",
+        "example": "/app"
+      }
+    }
   },
   "options_sourceLocal": {
     "message": "Ce navigateur"
@@ -2054,6 +2218,148 @@
   "bug_staysLocal": {
     "message": "Tout reste dans ce navigateur : rien n’est envoyé nulle part."
   },
+  "bug_sendToPiwi": {
+    "message": "Envoyer à Piwi…"
+  },
+  "bug_sendToPiwiHint": {
+    "message": "Voir exactement ce qui est envoyé, puis enregistrer le rapport sur votre instance Piwi"
+  },
+  "bug_sendTitle": {
+    "message": "Envoyer à $project$",
+    "placeholders": {
+      "project": {
+        "content": "$1",
+        "example": "Checkout"
+      }
+    }
+  },
+  "bug_sendWhere": {
+    "message": "Un rapport de bug de $project$ sur $instance$. Seul ce qui est coché ci-dessous est envoyé.",
+    "placeholders": {
+      "instance": {
+        "content": "$1",
+        "example": "piwi.acme.com"
+      },
+      "project": {
+        "content": "$2",
+        "example": "Checkout"
+      }
+    }
+  },
+  "bug_sendFirstTime": {
+    "message": "C’est le premier rapport envoyé depuis ce navigateur. Piwi Picker n’envoie un rapport que lorsque vous cliquez sur Envoyer, uniquement à l’instance que vous avez connectée, et uniquement ce que vous cochez ici. Les étapes gardent les valeurs saisies, sauf les mots de passe."
+  },
+  "bug_sendSteps_one": {
+    "message": "Le titre et $count$ étape, avec la page où elle a eu lieu",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "bug_sendSteps_other": {
+    "message": "Le titre et $count$ étapes, avec les pages où elles ont eu lieu",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "6"
+      }
+    }
+  },
+  "bug_sendScreenshots": {
+    "message": "Captures d’écran : $count$",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "bug_sendConsole": {
+    "message": "Erreurs et avertissements de la console : $count$",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "bug_sendRequests": {
+    "message": "Requêtes en échec (méthode, chemin, statut ; jamais de contenu) : $count$",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "bug_sendOutline": {
+    "message": "Le plan de la page"
+  },
+  "bug_sendEnvValues": {
+    "message": "Ne pas envoyer les valeurs saisies (le test les lit dans des variables d’environnement)"
+  },
+  "bug_sendCreateIssue": {
+    "message": "Créer aussi un ticket Jira dans $project$",
+    "placeholders": {
+      "project": {
+        "content": "$1",
+        "example": "SHOP"
+      }
+    }
+  },
+  "bug_sendFilesEvery": {
+    "message": "Ce projet crée un ticket Jira pour chaque rapport de bug."
+  },
+  "bug_issueCreated": {
+    "message": "Ticket Jira $key$ créé.",
+    "placeholders": {
+      "key": {
+        "content": "$1",
+        "example": "SHOP-812"
+      }
+    }
+  },
+  "bug_issueQueued": {
+    "message": "Le ticket Jira est en file d’attente : la page du rapport affiche sa clé une fois créé."
+  },
+  "bug_sendShowData": {
+    "message": "Afficher les données exactes"
+  },
+  "bug_send": {
+    "message": "Envoyer"
+  },
+  "bug_sending": {
+    "message": "Envoi…"
+  },
+  "bug_sent": {
+    "message": "Envoyé comme rapport de bug n° $id$.",
+    "placeholders": {
+      "id": {
+        "content": "$1",
+        "example": "37"
+      }
+    }
+  },
+  "bug_openInPiwi": {
+    "message": "L’ouvrir dans Piwi"
+  },
+  "bug_sendFailed": {
+    "message": "Pas envoyé : $error$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "The instance cannot be reached."
+      }
+    }
+  },
+  "bug_sendNoProject": {
+    "message": "Aucun projet de votre instance Piwi ne correspond à cette page. Ajoutez ce site dans les paramètres, ou choisissez le projet dans la fenêtre de l’extension."
+  },
+  "bug_staysLocalUntilSent": {
+    "message": "Tout reste dans ce navigateur tant que vous ne l’envoyez pas."
+  },
   "replay_hudLabel": {
     "message": "Piwi Picker : rapport de bug rejoué"
   },
@@ -2119,6 +2425,15 @@
       "origin": {
         "content": "$2",
         "example": "https://staging.acme.test"
+      }
+    }
+  },
+  "replay_underConditions": {
+    "message": "Conditions sur les requêtes actives : $conditions$",
+    "placeholders": {
+      "conditions": {
+        "content": "$1",
+        "example": "Slow down GET **/api/cart by 2 s"
       }
     }
   },
@@ -2412,6 +2727,182 @@
   },
   "replay_chooseFile": {
     "message": "Ou choisissez le .zip du rapport, ou son steps.json, enregistré par Piwi Picker :"
+  },
+  "replay_fromPiwi": {
+    "message": "Ou un rapport de bug de $project$ sur Piwi :",
+    "placeholders": {
+      "project": {
+        "content": "$1",
+        "example": "Checkout"
+      }
+    }
+  },
+  "replay_fromPiwiChoose": {
+    "message": "Choisir un rapport de bug"
+  },
+  "replay_fromPiwiItem": {
+    "message": "n° $id$ · $title$",
+    "placeholders": {
+      "id": {
+        "content": "$1",
+        "example": "37"
+      },
+      "title": {
+        "content": "$2",
+        "example": "Coupon not applied to the total"
+      }
+    }
+  },
+  "replay_fromPiwiNone": {
+    "message": "$project$ n’a aucun rapport de bug ouvert sur Piwi.",
+    "placeholders": {
+      "project": {
+        "content": "$1",
+        "example": "Checkout"
+      }
+    }
+  },
+  "replay_fromPiwiFailed": {
+    "message": "Impossible de lire les rapports de bug depuis Piwi : $error$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "The instance cannot be reached."
+      }
+    }
+  },
+  "replay_runWithPlaywright": {
+    "message": "Lancer avec Playwright…"
+  },
+  "replay_seenHere": {
+    "message": "Ce que la page a montré pendant le rejeu :"
+  },
+  "replay_seenRequest": {
+    "message": "$method$ $url$ a répondu $status$",
+    "placeholders": {
+      "method": {
+        "content": "$1",
+        "example": "POST"
+      },
+      "status": {
+        "content": "$2",
+        "example": "500"
+      },
+      "url": {
+        "content": "$3",
+        "example": "/api/cart/coupon"
+      }
+    }
+  },
+  "replay_seenRequestFailed": {
+    "message": "$method$ $url$ n’a reçu aucune réponse",
+    "placeholders": {
+      "method": {
+        "content": "$1",
+        "example": "GET"
+      },
+      "url": {
+        "content": "$2",
+        "example": "/api/cart"
+      }
+    }
+  },
+  "replay_seenConsole": {
+    "message": "Erreur de console : $message$",
+    "placeholders": {
+      "message": {
+        "content": "$1",
+        "example": "Coupon failed: 500"
+      }
+    }
+  },
+  "replay_seenMore": {
+    "message": "+$count$ de plus",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "replay_share": {
+    "message": "Partager le résultat…"
+  },
+  "replay_sharePreview": {
+    "message": "Envoie à $instance$, sur le rapport : ce verdict, le site où il a tourné ($origin$) et le nom de votre navigateur.",
+    "placeholders": {
+      "instance": {
+        "content": "$1",
+        "example": "piwi.acme.test"
+      },
+      "origin": {
+        "content": "$2",
+        "example": "http://localhost:3000"
+      }
+    }
+  },
+  "replay_sharePreviewDesktop": {
+    "message": "Envoie à $instance$, sur le rapport : ce verdict et le nom de votre navigateur.",
+    "placeholders": {
+      "instance": {
+        "content": "$1",
+        "example": "piwi.acme.test"
+      }
+    }
+  },
+  "replay_shared": {
+    "message": "Partagé sur le rapport."
+  },
+  "replay_shareFailed": {
+    "message": "Impossible de partager le résultat : $error$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "The instance cannot be reached."
+      }
+    }
+  },
+  "replay_desktopTitle": {
+    "message": "Lancer avec Playwright dans l’application de bureau"
+  },
+  "replay_desktopNotPaired": {
+    "message": "Associez d’abord l’application de bureau, dans les options de Piwi Picker sous Application de bureau."
+  },
+  "replay_desktopOpenOptions": {
+    "message": "Ouvrir les options"
+  },
+  "replay_desktopPreview": {
+    "message": "Envoie à l’application de bureau à $url$ : le titre et ces étapes, avec les valeurs saisies. Aucune capture, entrée de console ou requête. Rien ne se lance avant que vous le démarriez dans la fenêtre de l’application.",
+    "placeholders": {
+      "url": {
+        "content": "$1",
+        "example": "http://127.0.0.1:4318"
+      }
+    }
+  },
+  "replay_desktopShowPayload": {
+    "message": "Ce qui est envoyé"
+  },
+  "replay_desktopSend": {
+    "message": "Envoyer"
+  },
+  "replay_desktopWaiting": {
+    "message": "Envoyé. Démarrez-le dans la fenêtre de l’application de bureau…"
+  },
+  "replay_desktopNoWindow": {
+    "message": "Envoyé. La fenêtre de l’application de bureau est fermée : ouvrez-la pour démarrer."
+  },
+  "replay_desktopRunning": {
+    "message": "Exécution avec Playwright dans l’application de bureau…"
+  },
+  "replay_desktopRanIn": {
+    "message": "Playwright dans l’application de bureau indique :"
+  },
+  "replay_desktopDeclined": {
+    "message": "Refusé dans l’application de bureau."
+  },
+  "replay_desktopExpired": {
+    "message": "La demande a expiré avant d’être démarrée."
   },
   "replay_fileLabel": {
     "message": "Le .zip du rapport de bug, ou son steps.json"
@@ -2807,6 +3298,49 @@
   },
   "coverage_allPagesTitle": {
     "message": "Compter chaque locator qui trouve quelque chose ici, quelle que soit la page où son test l’utilise"
+  },
+  "coverage_subtitleWithoutPrefix": {
+    "message": "$page$ (sans $prefix$)",
+    "placeholders": {
+      "page": {
+        "content": "$1",
+        "example": "/checkout"
+      },
+      "prefix": {
+        "content": "$2",
+        "example": "/app"
+      }
+    }
+  },
+  "coverage_subtitleWithPrefix": {
+    "message": "$page$ (avec $prefix$ ajouté)",
+    "placeholders": {
+      "page": {
+        "content": "$1",
+        "example": "/app/checkout"
+      },
+      "prefix": {
+        "content": "$2",
+        "example": "/app"
+      }
+    }
+  },
+  "coverage_subtitleSwappedPrefix": {
+    "message": "$page$ ($removed$ remplacé par $added$)",
+    "placeholders": {
+      "added": {
+        "content": "$1",
+        "example": "/v2"
+      },
+      "page": {
+        "content": "$2",
+        "example": "/v2/checkout"
+      },
+      "removed": {
+        "content": "$3",
+        "example": "/app"
+      }
+    }
   },
   "coverage_tileTested": {
     "message": "testés"
@@ -3386,6 +3920,24 @@
   "coverage_notesAllPages": {
     "message": "Les locators sont cherchés sur cette page, quelle que soit la page où leur test les utilise."
   },
+  "coverage_notesPrefixRemoved": {
+    "message": "Le préfixe de chemin $prefix$ du motif d’adresse de ce site a d’abord été retiré de l’adresse : les tests ont parcouru cette page sans lui.",
+    "placeholders": {
+      "prefix": {
+        "content": "$1",
+        "example": "/app"
+      }
+    }
+  },
+  "coverage_notesPrefixAdded": {
+    "message": "Le préfixe de chemin des tests $prefix$ du motif d’adresse de ce site a d’abord été ajouté devant l’adresse : les tests ont parcouru cette page sous ce chemin.",
+    "placeholders": {
+      "prefix": {
+        "content": "$1",
+        "example": "/app"
+      }
+    }
+  },
   "coverage_notesErrors_one": {
     "message": "$count$ locator n’a pas pu être vérifié ici :",
     "placeholders": {
@@ -3771,6 +4323,613 @@
   },
   "common_workerOutdated": {
     "message": "Piwi Picker a été reconstruit sans être rechargé, et son processus d’arrière-plan tourne encore sur la version précédente. Rechargez l’extension depuis son menu, ou depuis la page des extensions du navigateur."
+  },
+  "devtools_ranking": {
+    "message": "Classement de l’élément sélectionné…"
+  },
+  "devtools_selectElement": {
+    "message": "Sélectionnez un élément dans le panneau Éléments pour voir ses locators."
+  },
+  "devtools_inFrame": {
+    "message": "Cet élément est dans un cadre. Le volet ne classe que les éléments de la page principale."
+  },
+  "devtools_ownElement": {
+    "message": "Cet élément fait partie de Piwi Picker."
+  },
+  "devtools_restricted": {
+    "message": "Piwi Picker ne peut pas fonctionner sur cette page."
+  },
+  "devtools_noAccess": {
+    "message": "Piwi Picker a besoin d’accéder à $site$ pour lire cette page. L’accès est demandé pour ce site seulement.",
+    "placeholders": {
+      "site": {
+        "content": "$1",
+        "example": "https://shop.example"
+      }
+    }
+  },
+  "devtools_allowSite": {
+    "message": "Autoriser sur ce site"
+  },
+  "devtools_rankFailed": {
+    "message": "L’élément n’a pas pu être classé : $error$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "Cannot access a chrome:// URL"
+      }
+    }
+  },
+  "devtools_rankFailedPlain": {
+    "message": "L’élément n’a pas pu être classé."
+  },
+  "devtools_noLocator": {
+    "message": "Aucun locator ne trouve cet élément."
+  },
+  "devtools_unique": {
+    "message": "unique"
+  },
+  "devtools_byPosition": {
+    "message": "unique par sa position"
+  },
+  "devtools_matches_one": {
+    "message": "$count$ correspondance",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "devtools_matches_other": {
+    "message": "$count$ correspondances",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "devtools_unchecked": {
+    "message": "non vérifié"
+  },
+  "devtools_stable": {
+    "message": "stable"
+  },
+  "devtools_watch": {
+    "message": "peut casser : $rules$",
+    "placeholders": {
+      "rules": {
+        "content": "$1",
+        "example": "long text"
+      }
+    }
+  },
+  "devtools_brittle": {
+    "message": "fragile : $rules$",
+    "placeholders": {
+      "rules": {
+        "content": "$1",
+        "example": "CSS class"
+      }
+    }
+  },
+  "devtools_addToSession": {
+    "message": "Ajouter à la session"
+  },
+  "devtools_addedToSession": {
+    "message": "Ajouté à la session sous le nom $name$.",
+    "placeholders": {
+      "name": {
+        "content": "$1",
+        "example": "applyCoupon"
+      }
+    }
+  },
+  "view_title": {
+    "message": "Vue Playwright"
+  },
+  "view_noRole": {
+    "message": "(sans rôle)"
+  },
+  "view_noName": {
+    "message": "(sans nom)"
+  },
+  "view_filterRole": {
+    "message": "Rôle"
+  },
+  "view_allRoles": {
+    "message": "Tous les rôles"
+  },
+  "view_labelled_one": {
+    "message": "$count$ élément étiqueté",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "42"
+      }
+    }
+  },
+  "view_labelled_other": {
+    "message": "$count$ éléments étiquetés",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "42"
+      }
+    }
+  },
+  "view_unreachable_one": {
+    "message": "$count$ qu’aucun locator stable n’atteint (rouge)",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "view_unreachable_other": {
+    "message": "$count$ qu’aucun locator stable n’atteint (rouge)",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "view_ambiguous_one": {
+    "message": "$count$ dont le rôle et le nom en trouvent d’autres aussi (orange)",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "view_ambiguous_other": {
+    "message": "$count$ dont le rôle et le nom en trouvent d’autres aussi (orange)",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "devtools_tabRecord": {
+    "message": "Enregistrer"
+  },
+  "devtools_tabReplay": {
+    "message": "Rejouer"
+  },
+  "devtools_noRecording": {
+    "message": "Aucun enregistrement en cours. Commencez par Enregistrer ou Signaler un bug dans le menu de l’extension : les étapes s’affichent ici au fur et à mesure."
+  },
+  "devtools_recordingOn_one": {
+    "message": "Enregistrement sur $site$ : $count$ étape",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "site": {
+        "content": "$2",
+        "example": "https://shop.example"
+      }
+    }
+  },
+  "devtools_recordingOn_other": {
+    "message": "Enregistrement sur $site$ : $count$ étapes",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "site": {
+        "content": "$2",
+        "example": "https://shop.example"
+      }
+    }
+  },
+  "devtools_bugRecordingOn_one": {
+    "message": "Rapport de bug sur $site$ : $count$ étape",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "site": {
+        "content": "$2",
+        "example": "https://shop.example"
+      }
+    }
+  },
+  "devtools_bugRecordingOn_other": {
+    "message": "Rapport de bug sur $site$ : $count$ étapes",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "site": {
+        "content": "$2",
+        "example": "https://shop.example"
+      }
+    }
+  },
+  "devtools_recordingStopped_one": {
+    "message": "Enregistrement arrêté : $count$ étape, pas encore exportée",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "devtools_recordingStopped_other": {
+    "message": "Enregistrement arrêté : $count$ étapes, pas encore exportées",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "devtools_stopRecording": {
+    "message": "Arrêter l’enregistrement"
+  },
+  "devtools_finishBugOnPage": {
+    "message": "Terminez le rapport de bug depuis son panneau sur la page, qui rassemble les éléments de preuve."
+  },
+  "devtools_noReplay": {
+    "message": "Aucune relecture pour l’instant. Lancez-en une avec Rejouer un rapport de bug dans le menu de l’extension : ses étapes et leurs résultats s’affichent ici."
+  },
+  "devtools_tabNetwork": {
+    "message": "Réseau"
+  },
+  "devtools_networkHint": {
+    "message": "Les requêtes fetch et XHR de la page, lues dans DevTools tant qu’il est ouvert. Rien ne quitte le navigateur, sauf ce que vous copiez ou téléchargez."
+  },
+  "devtools_networkEmpty": {
+    "message": "Aucune requête pour l’instant. Utilisez la page, ou rechargez-la, et ses requêtes s’affichent ici."
+  },
+  "devtools_networkAllOrigins": {
+    "message": "Autres sites aussi"
+  },
+  "devtools_networkClear": {
+    "message": "Effacer"
+  },
+  "devtools_requestTime": {
+    "message": "$ms$ ms",
+    "placeholders": {
+      "ms": {
+        "content": "$1",
+        "example": "35"
+      }
+    }
+  },
+  "devtools_mockTitle": {
+    "message": "Simuler cette réponse"
+  },
+  "devtools_mockPattern": {
+    "message": "Motif d’adresse"
+  },
+  "devtools_mockKind": {
+    "message": "Répondre avec"
+  },
+  "devtools_mockResponse": {
+    "message": "cette réponse"
+  },
+  "devtools_mockError": {
+    "message": "une erreur du serveur (500)"
+  },
+  "devtools_mockAbort": {
+    "message": "un échec réseau"
+  },
+  "devtools_mockNoBody": {
+    "message": "DevTools n’a pas gardé le corps de cette réponse. Rechargez la page avec DevTools ouvert pour la simuler."
+  },
+  "devtools_mockHidden_one": {
+    "message": "$count$ valeur masquée : champs nommés comme un mot de passe, un jeton ou une clé.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "devtools_mockHidden_other": {
+    "message": "$count$ valeurs masquées : champs nommés comme un mot de passe, un jeton ou une clé.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "devtools_mockReveal": {
+    "message": "Afficher les valeurs masquées"
+  },
+  "devtools_mockCopy": {
+    "message": "Copier le code"
+  },
+  "devtools_mockDownload": {
+    "message": "Télécharger $file$",
+    "placeholders": {
+      "file": {
+        "content": "$1",
+        "example": "cart.json"
+      }
+    }
+  },
+  "devtools_mockFileHint": {
+    "message": "Le corps dépasse 100 ko, le code le lit donc dans un fichier : enregistrez-le sous $path$ dans le dossier d’où vous lancez Playwright.",
+    "placeholders": {
+      "path": {
+        "content": "$1",
+        "example": "mocks/cart.json"
+      }
+    }
+  },
+  "devtools_conditionDelay": {
+    "message": "Ralentir $request$ de $seconds$ s",
+    "placeholders": {
+      "request": {
+        "content": "$1",
+        "example": "GET **/api/cart"
+      },
+      "seconds": {
+        "content": "$2",
+        "example": "2"
+      }
+    }
+  },
+  "devtools_conditionError": {
+    "message": "Répondre à $request$ par une erreur 500",
+    "placeholders": {
+      "request": {
+        "content": "$1",
+        "example": "GET **/api/cart"
+      }
+    }
+  },
+  "devtools_conditionAbort": {
+    "message": "Faire échouer $request$ comme une erreur réseau",
+    "placeholders": {
+      "request": {
+        "content": "$1",
+        "example": "GET **/api/cart"
+      }
+    }
+  },
+  "devtools_conditionsOn_one": {
+    "message": "Piwi Picker : $count$ condition sur les requêtes active",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "devtools_conditionsOn_other": {
+    "message": "Piwi Picker : $count$ conditions sur les requêtes actives",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "devtools_conditionsOff": {
+    "message": "Désactiver"
+  },
+  "devtools_conditionsNoPage": {
+    "message": "Les conditions sur les requêtes demandent une page web dans l’onglet."
+  },
+  "devtools_conditionsNeedAccess": {
+    "message": "Piwi Picker a besoin d’accéder à ce site pour ralentir ou faire échouer ses requêtes."
+  },
+  "devtools_conditionFailed": {
+    "message": "La condition n’a pas pu être activée : $error$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "No tab with id: 12"
+      }
+    }
+  },
+  "devtools_conditionsTitle": {
+    "message": "Conditions sur les requêtes"
+  },
+  "devtools_conditionsFor": {
+    "message": "Ralentir ou faire échouer cette requête"
+  },
+  "devtools_conditionsLimits": {
+    "message": "Les conditions s’appliquent aux appels fetch et XHR des pages de cet onglet jusqu’à ce que vous les désactiviez ou fermiez l’onglet. Ralentir le processeur ou toute la page, et retarder les documents, les scripts, les images ou les requêtes d’un service worker, demandent la permission debugger, que Piwi Picker ne demande pas."
+  },
+  "devtools_conditionRemove": {
+    "message": "Retirer"
+  },
+  "devtools_conditionsAllOff": {
+    "message": "Tout désactiver et recharger"
+  },
+  "devtools_delaySeconds": {
+    "message": "Délai en secondes"
+  },
+  "devtools_slowDown": {
+    "message": "Ralentir"
+  },
+  "devtools_failError": {
+    "message": "Échouer avec 500"
+  },
+  "devtools_failAbort": {
+    "message": "Échouer (erreur réseau)"
+  },
+  "login_title": {
+    "message": "Sauvegarder la connexion pour les tests"
+  },
+  "login_site": {
+    "message": "Site : $site$",
+    "placeholders": {
+      "site": {
+        "content": "$1",
+        "example": "https://shop.example"
+      }
+    }
+  },
+  "login_noSite": {
+    "message": "Ouvrez cette page depuis le menu de l’extension, sur une page web : elle sauvegarde la connexion au site de cette page."
+  },
+  "login_holds": {
+    "message": "Le fichier contient les cookies de ce navigateur pour le site, y compris les cookies httpOnly, et le localStorage du site, au format storageState de Playwright. IndexedDB n’est pas inclus."
+  },
+  "login_warning": {
+    "message": "Toute personne qui a ce fichier est connectée en votre nom jusqu’à l’expiration de la session. Utilisez un compte de test, et gardez le fichier hors de votre dépôt."
+  },
+  "login_gitignore": {
+    "message": "Sauvegardez-le sous $path$ et ajoutez $folder$ à $file$.",
+    "placeholders": {
+      "file": {
+        "content": "$1",
+        "example": ".gitignore"
+      },
+      "folder": {
+        "content": "$2",
+        "example": "playwright/.auth"
+      },
+      "path": {
+        "content": "$3",
+        "example": "playwright/.auth/user.json"
+      }
+    }
+  },
+  "login_copyGitignore": {
+    "message": "Copier la ligne pour .gitignore"
+  },
+  "login_save": {
+    "message": "Sauvegarder le fichier de connexion"
+  },
+  "login_denied": {
+    "message": "La connexion n’a pas été sauvegardée : il faut que Piwi Picker puisse lire les cookies de ce site."
+  },
+  "login_failed": {
+    "message": "La connexion n’a pas pu être sauvegardée : $error$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "No tab with id: 12"
+      }
+    }
+  },
+  "login_savedCookies_one": {
+    "message": "user.json sauvegardé avec $count$ cookie.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "login_savedCookies_other": {
+    "message": "user.json sauvegardé avec $count$ cookies.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "login_savedStorage_one": {
+    "message": "$count$ entrée de localStorage.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "login_savedStorage_other": {
+    "message": "$count$ entrées de localStorage.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "login_setupTitle": {
+    "message": "L’utiliser dans un test"
+  },
+  "login_copySnippet": {
+    "message": "Copier le code"
+  },
+  "devtools_networkSelect": {
+    "message": "Sélectionnez une requête pour la simuler, la ralentir ou la faire échouer."
+  },
+  "devtools_colMethod": {
+    "message": "Méthode"
+  },
+  "devtools_colPath": {
+    "message": "Chemin"
+  },
+  "devtools_colStatus": {
+    "message": "Statut"
+  },
+  "devtools_colTime": {
+    "message": "Durée"
+  },
+  "devtools_conditionsLimitsTitle": {
+    "message": "Ce que cela ne peut pas ralentir"
+  },
+  "devtools_copyAs": {
+    "message": "Copier en"
+  },
+  "devtools_tabLocators": {
+    "message": "Locators"
+  },
+  "devtools_tabSession": {
+    "message": "Session"
+  },
+  "devtools_locatorsHint": {
+    "message": "Tapez un locator : les éléments qu’il trouve sur cette page s’affichent, tels que Playwright les trouve. Survolez-en un pour l’encadrer sur la page ; Afficher le sélectionne dans le panneau Éléments."
+  },
+  "devtools_matches": {
+    "message": "Éléments trouvés"
+  },
+  "devtools_reveal": {
+    "message": "Afficher"
+  },
+  "devtools_matchesListed": {
+    "message": "Seuls les $shown$ premiers sont listés.",
+    "placeholders": {
+      "shown": {
+        "content": "$1",
+        "example": "50"
+      }
+    }
+  },
+  "devtools_sessionEmpty": {
+    "message": "Aucun élément nommé pour l’instant. Sélectionnez-en un dans le panneau Éléments et utilisez Ajouter à la session dans le volet Piwi, ou l’outil Session du menu de l’extension."
+  },
+  "devtools_sessionCount_one": {
+    "message": "$count$ élément nommé",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "devtools_sessionCount_other": {
+    "message": "$count$ éléments nommés",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "devtools_remove": {
+    "message": "Retirer"
   },
   "stability_position": {
     "message": "position"

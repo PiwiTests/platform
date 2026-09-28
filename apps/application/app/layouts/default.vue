@@ -500,6 +500,9 @@ onMounted(async () => {
     <!-- Desktop shell: after linking a folder, offer to import the runs already in it -->
     <DesktopImportPreviousRunsModal />
 
+    <!-- Desktop shell: a repro request from Piwi Picker, waiting for the developer's click -->
+    <DesktopReproRequestModal />
+
     <!-- Desktop shell: the Local runs tray — local test runs keep streaming here across navigation -->
     <DesktopLocalRunsTray />
   </UDashboardGroup>

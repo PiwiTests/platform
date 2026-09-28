@@ -66,6 +66,9 @@ When the tests run with the [capture fixtures](/guide/capture-fixtures), Piwi re
 page you are on, `/checkout` or `/orders/:id`, plus the uses whose page no run recorded. A **Save** button a test
 clicks on `/settings` no longer lights up a lookalike on `/profile`; its row under **Not tested** says which locator
 matches it and where tests use it. **All pages** counts every locator that matches here, as without the fixtures.
+A site served under a path the tests never saw (`/app/checkout` for `/checkout`) needs the
+[path prefix](./extension-connection#url-patterns) on its URL pattern, and a suite that ran under a path the site does
+not use needs the tests' path prefix; the panel's subtitle then names the prefix removed or added.
 
 **At risk** then adds two lists above the brittle locators:
 

@@ -16,7 +16,7 @@ import { t } from './i18n.js';
  * stream on every read that keeping two representations in sync isn't worth
  * the risk of them drifting.
  */
-const RECORDING_KEY = 'piwiRecording';
+export const RECORDING_KEY = 'piwiRecording';
 
 /** `actions` records a flow; `bug` records a bug report, with its HUD and the page's console and failed requests. */
 export type RecordingMode = 'actions' | 'bug';

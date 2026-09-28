@@ -18,6 +18,7 @@ export const projects = sqliteTable(
     routeOrigins: text('route_origins', { mode: 'json' }), // string[] — extra own origins whose requests become graph route nodes, beyond the run's Playwright baseURL
     ciRerun: text('ci_rerun', { mode: 'json' }), // CiRerunSettings — provider-specific "re-run from the dashboard" target (off by default)
     capabilities: text('capabilities', { mode: 'json' }), // Partial<Record<CapabilityId, 'declined' | 'enabled'>> — per-project capability decisions
+    generatedSpecs: text('generated_specs', { mode: 'json' }), // GeneratedSpecSettings — test import and bugs folder for specs rendered from steps
     targets: text('targets', { mode: 'json' }), // ProjectTargets — per-project goals on catalog metrics (shared/analytics/targets.ts)
     locatorIndexBuiltAt: integer('locator_index_built_at', { mode: 'timestamp' }), // when locator_usages was first built from stored executions; null = not yet
     createdAt: integer('created_at', { mode: 'timestamp' })
@@ -138,6 +139,7 @@ export const testCases = sqliteTable(
     priority: text('priority'), // 'critical' | 'high' | 'medium' | 'low'
     feature: text('feature'),
     link: text('link'), // absolute http(s) URL
+    bugReportId: integer('bug_report_id'), // the bug report this test reproduces (`piwi:bug`), once that report exists
     createdAt: integer('created_at', { mode: 'timestamp' })
       .notNull()
       .$defaultFn(() => new Date()),
@@ -485,6 +487,7 @@ export const testRunsCases = sqliteTable(
     isNewRegression: integer('is_new_regression'), // boolean: passed in baseline, failed in this run
     isNewFlaky: integer('is_new_flaky'), // boolean: no retries in baseline, retry-pass in this run
     didNotRunReason: text('did_not_run_reason'), // Why a 'didnotrun' case never executed: 'previous-failure' | 'global-timeout' | 'max-failures' | 'interrupted'
+    expectedStatus: text('expected_status'), // Playwright's expectedStatus: 'passed' | 'failed' | 'timedOut' | 'skipped' | 'interrupted'
     blockedBy: text('blocked_by'), // For a 'previous-failure' cascade, the location (file:line:col) of the failing test that blocked it
     createdAt: integer('created_at', { mode: 'timestamp_ms' })
       .notNull()
@@ -690,6 +693,7 @@ export const networkRequests = sqliteTable(
     contentType: text('content_type'), // Response content-type header
     serverLogs: text('server_logs', { mode: 'json' }), // Backend server logs from X-Piwi-Logs header
     serverTraces: text('server_traces', { mode: 'json' }), // Server-side spans from X-Piwi-Trace header
+    failure: text('failure'), // Why the request failed (Playwright's error text, e.g. net::ERR_CONNECTION_RESET); null when it finished
   },
   (t) => ({
     runIdx: index('idx_nr_run').on(t.testRunId),
@@ -829,6 +833,7 @@ export const entityLinks = sqliteTable(
     testRunsCaseId: integer('test_runs_case_id').references(() => testRunsCases.id, { onDelete: 'cascade' }),
     testCaseId: integer('test_case_id').references(() => testCases.id, { onDelete: 'cascade' }),
     failureClusterId: integer('failure_cluster_id').references(() => failureClusters.id, { onDelete: 'cascade' }),
+    bugReportId: integer('bug_report_id').references(() => bugReports.id, { onDelete: 'cascade' }),
 
     url: text('url').notNull(),
 
@@ -859,6 +864,7 @@ export const entityLinks = sqliteTable(
       .$defaultFn(() => new Date()),
   },
   (t) => ({
+    bugReportIdx: index('idx_entity_links_bug_report').on(t.bugReportId),
     runIdx: index('idx_entity_links_run').on(t.testRunId),
     caseRunIdx: index('idx_entity_links_case_run').on(t.testRunsCaseId),
     caseIdx: index('idx_entity_links_case').on(t.testCaseId),
@@ -1370,6 +1376,8 @@ export const projectUrlPatterns = sqliteTable(
     pattern: text('pattern').notNull(),
     environment: text('environment'), // free label: 'staging', 'production'
     branch: text('branch'), // the branch deployed at these URLs; null for the default branch
+    pathPrefix: text('path_prefix'), // the path the site serves its pages under and the tests did not ('/app')
+    testPathPrefix: text('test_path_prefix'), // the path the tests ran the pages under and the site does not ('/app')
     position: integer('position').notNull().default(0),
     createdAt: integer('created_at', { mode: 'timestamp_ms' })
       .notNull()
@@ -1807,3 +1815,72 @@ export type ScenarioGap = typeof scenarioGaps.$inferSelect;
 export type NewScenarioGap = typeof scenarioGaps.$inferInsert;
 export type Probe = typeof probes.$inferSelect;
 export type NewProbe = typeof probes.$inferInsert;
+
+// Bug reports: a steps document with the assertion that states the correct
+// behavior, and the evidence collected on the page, sent from Piwi Picker.
+// Screenshots live in storage under `bug-reports/<id>/`; `evidence.screenshots`
+// names them. Status: 'open' | 'test-committed' | 'looks-fixed' | 'closed' | 'dismissed'.
+export const bugReports = sqliteTable(
+  'bug_reports',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    title: text('title').notNull(),
+    note: text('note'),
+    pageKey: text('page_key'),
+    path: text('path'),
+    origin: text('origin'),
+    status: text('status').notNull().default('open'),
+    steps: text('steps', { mode: 'json' }).notNull(), // PiwiSteps
+    evidence: text('evidence', { mode: 'json' }).notNull(), // BugEvidence
+    context: text('context', { mode: 'json' }).notNull(), // BugContext
+    language: text('language'), // the language the report was written in (`en`, `fr`, …)
+    createdBy: integer('created_by').references(() => users.id, { onDelete: 'set null' }),
+    testCaseId: integer('test_case_id').references(() => testCases.id, { onDelete: 'set null' }),
+    statusRunId: integer('status_run_id').references(() => testRuns.id, { onDelete: 'set null' }), // the run that last moved the status
+    closedAt: integer('closed_at', { mode: 'timestamp' }),
+    closedByRunId: integer('closed_by_run_id').references(() => testRuns.id, { onDelete: 'set null' }),
+    createdAt: integer('created_at', { mode: 'timestamp' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    updatedAt: integer('updated_at', { mode: 'timestamp' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    projectStatusIdx: index('idx_bug_reports_project_status').on(t.projectId, t.status),
+    testCaseIdx: index('idx_bug_reports_test_case').on(t.testCaseId),
+    createdByIdx: index('idx_bug_reports_created_by').on(t.createdBy),
+    statusRunIdx: index('idx_bug_reports_status_run').on(t.statusRunId),
+    closedByRunIdx: index('idx_bug_reports_closed_by_run').on(t.closedByRunId),
+  }),
+);
+
+// What happened when someone tried a bug report again: a replay in Piwi Picker
+// or a Playwright run from the desktop app. Verdict: 'reproduced' | 'not-reproduced' | 'diverged'.
+export const bugReproductions = sqliteTable(
+  'bug_reproductions',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    bugReportId: integer('bug_report_id')
+      .notNull()
+      .references(() => bugReports.id, { onDelete: 'cascade' }),
+    source: text('source').notNull(), // 'replay' | 'desktop'
+    verdict: text('verdict').notNull(),
+    divergedAt: integer('diverged_at'), // 0-based step index, for a 'diverged' verdict
+    origin: text('origin'),
+    userAgent: text('user_agent'),
+    runId: integer('run_id').references(() => testRuns.id, { onDelete: 'set null' }),
+    createdBy: integer('created_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: integer('created_at', { mode: 'timestamp' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    bugReportIdx: index('idx_bug_reproductions_report').on(t.bugReportId),
+    runIdx: index('idx_bug_reproductions_run').on(t.runId),
+    createdByIdx: index('idx_bug_reproductions_created_by').on(t.createdBy),
+  }),
+);

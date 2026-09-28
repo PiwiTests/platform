@@ -46,7 +46,16 @@ level under `/admin`. A pattern starts with `http://`, `https://` or a wildcard.
 Each project keeps its own list in its **Settings** tab, under **Browser extension URLs**. A pattern can name:
 
 - an **environment**, a label shown beside the project in Piwi Picker (`staging`, `production`);
-- a **branch**, the one deployed at those addresses, whose tests [Tested elements](./tested-elements) shows.
+- a **branch**, the one deployed at those addresses, whose tests [Tested elements](./tested-elements) shows;
+- a **path prefix**, the part of the path your site serves its pages under and the tests did not: `/app` when the site
+  serves `/app/checkout` and the tests ran at `/checkout`. Piwi Picker removes it before comparing the page with the
+  [pages the tests ran on](./tested-elements#this-page), whole parts only (`/application` keeps its path), and a bug
+  report sent from the site keys its page without it. It is a plain path of at most four parts, with no query, hash or
+  wildcard;
+- a **tests' path prefix**, the reverse: the part of the path the tests ran the pages under and the site does not,
+  `/app` when the tests ran `/app/checkout` and the site serves `/checkout`. Piwi Picker puts it in front of the page's
+  path; the site's root becomes `/app/`. With both set, the one replaces the other (`/app` on the site, `/v2` in the
+  tests), and a page outside the path prefix is left as it is.
 
 The editor suggests one pattern per site your suite already visited: the `baseURL` of recent runs, the pages of the
 [Test Map](./scenario-gaps) and the absolute pages its locators ran on. **Add** puts a suggestion in the list; **Save
@@ -75,8 +84,9 @@ the instance takes a role that edits the project; without one, the settings say 
 Connecting sends the browser's and the operating system's names, nothing else about the machine. Afterwards the
 extension downloads the URL patterns, each mapped project's function catalog and its locator index; adding a site
 sends that one pattern. A recording is never sent to the instance: **Send to editor** sends it only to an editor paired
-on the same computer. Only the settings page and the extension's background worker talk to the instance or the
-editor, never a script running in a page.
+on the same computer. A bug report is sent only from **Send to Piwi…**, after a preview of exactly what goes (see
+[Bug reports](./bug-reports)). Only the settings page and the extension's background worker talk to the instance or
+the editor, never a script running in a page.
 
 ## Related
 

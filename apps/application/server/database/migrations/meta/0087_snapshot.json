@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "555f0785-ad25-4aa7-9dac-d1c072a7cdab",
+  "id": "3a225922-dc0b-4834-9b7b-9500622baf41",
   "prevId": "2680c72e-07c0-4f07-9d84-d57b55c21314",
   "tables": {
     "account_tokens": {
@@ -4632,123 +4632,6 @@
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
-    "run_locator_breaks": {
-      "name": "run_locator_breaks",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "integer",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": true
-        },
-        "run_id": {
-          "name": "run_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "project_id": {
-          "name": "project_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "locator": {
-          "name": "locator",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "rewrite": {
-          "name": "rewrite",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "replacements": {
-          "name": "replacements",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "anchor": {
-          "name": "anchor",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "confidence": {
-          "name": "confidence",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "call_sites": {
-          "name": "call_sites",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "test_case_ids": {
-          "name": "test_case_ids",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "idx_run_locator_breaks_run": {
-          "name": "idx_run_locator_breaks_run",
-          "columns": ["run_id"],
-          "isUnique": false
-        },
-        "idx_run_locator_breaks_project": {
-          "name": "idx_run_locator_breaks_project",
-          "columns": ["project_id"],
-          "isUnique": false
-        }
-      },
-      "foreignKeys": {
-        "run_locator_breaks_run_id_test_runs_id_fk": {
-          "name": "run_locator_breaks_run_id_test_runs_id_fk",
-          "tableFrom": "run_locator_breaks",
-          "tableTo": "test_runs",
-          "columnsFrom": ["run_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "run_locator_breaks_project_id_projects_id_fk": {
-          "name": "run_locator_breaks_project_id_projects_id_fk",
-          "tableFrom": "run_locator_breaks",
-          "tableTo": "projects",
-          "columnsFrom": ["project_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
     "scenario_gaps": {
       "name": "scenario_gaps",
       "columns": {
@@ -6315,6 +6198,13 @@
         },
         "did_not_run_reason": {
           "name": "did_not_run_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "expected_status": {
+          "name": "expected_status",
           "type": "text",
           "primaryKey": false,
           "notNull": false,

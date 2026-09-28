@@ -65,6 +65,28 @@
     "message": "The replay could not start.",
     "description": "Error when a replay fails to start for an unknown reason."
   },
+  "common_sendForbidden": {
+    "message": "your account cannot send reports to this project.",
+    "description": "Background: the instance refused a bug report because the account may not send to that project."
+  },
+  "common_sendTooLarge": {
+    "message": "the report is too large for the instance. Leave out a screenshot and try again.",
+    "description": "Background: the instance refused a bug report as too large."
+  },
+  "common_sendRefused": {
+    "message": "the instance refused it ($error$).",
+    "description": "Background: the instance refused a bug report. $error$ is the instance’s own message, in English.",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "Not a bug report: steps: must be a list"
+      }
+    }
+  },
+  "common_bugReportsUnsupported": {
+    "message": "this Piwi instance does not take bug reports yet. Update it.",
+    "description": "Background: the connected instance is too old to take bug reports."
+  },
   "common_workerNoAnswer": {
     "message": "Piwi Picker’s background worker did not answer: reload Piwi Picker.",
     "description": "Error when the part of the extension that runs in the background does not answer a request."
@@ -90,6 +112,28 @@
   "common_instanceUnreachable": {
     "message": "Piwi Picker could not reach the instance: check the address, and that it is running.",
     "description": "Options: the connection test got no answer."
+  },
+  "common_desktopUnreachable": {
+    "message": "The desktop app does not answer. Is it running?",
+    "description": "The paired desktop app did not answer."
+  },
+  "common_desktopRejected": {
+    "message": "The desktop app refused the token.",
+    "description": "The desktop app refused the token pasted in the options."
+  },
+  "common_desktopUnsupported": {
+    "message": "This address is not a Piwi desktop app that can run bug reports.",
+    "description": "The address answers but is not a Piwi desktop app that takes run requests."
+  },
+  "common_desktopStatus": {
+    "message": "The desktop app answered $status$.",
+    "description": "The desktop app answered with an unexpected HTTP status. $status$ is the number.",
+    "placeholders": {
+      "status": {
+        "content": "$1",
+        "example": "500"
+      }
+    }
   },
   "common_projectsFailed": {
     "message": "The list of projects could not be read ($status$).",
@@ -192,6 +236,70 @@
   "popup_testedElementsConnect": {
     "message": "Connect to your Piwi instance to see what your tests reach",
     "description": "Popup tile hint, under “Tested elements”, when no Piwi instance is set up. One line."
+  },
+  "popup_playwrightView": {
+    "message": "Playwright view",
+    "description": "Popup tile label: turns on labels showing each element as a Playwright test sees it. “Playwright” is a product name."
+  },
+  "popup_playwrightViewHint": {
+    "message": "Each element as getByRole sees it, and the ones no locator reaches",
+    "description": "Popup tile hint, under “Playwright view”. One line. getByRole is Playwright code: keep it as it is."
+  },
+  "popup_saveLogin": {
+    "message": "Save login for tests",
+    "description": "Popup header icon button's label and tooltip, and a button in the DevTools Piwi panel: opens the page that saves the site's login as a Playwright storageState file."
+  },
+  "popup_viewport": {
+    "message": "Open this page at a viewport",
+    "description": "Popup, near the bottom: label of the row that opens the page in a new window at a chosen viewport size."
+  },
+  "popup_viewportProject": {
+    "message": "$project$ ($size$)",
+    "description": "Popup, viewport select: one of the project's Playwright projects. $project$ is its name, like Mobile Safari; $size$ its viewport, like 390×844.",
+    "placeholders": {
+      "project": {
+        "content": "$1",
+        "example": "Mobile Safari"
+      },
+      "size": {
+        "content": "$2",
+        "example": "390×844"
+      }
+    }
+  },
+  "popup_viewportCustom": {
+    "message": "Size typed by hand",
+    "description": "Popup, viewport select: the option that shows width and height fields."
+  },
+  "popup_viewportWidth": {
+    "message": "Width",
+    "description": "Popup, viewport row: accessible name of the width field, in CSS pixels."
+  },
+  "popup_viewportHeight": {
+    "message": "Height",
+    "description": "Popup, viewport row: accessible name of the height field, in CSS pixels."
+  },
+  "popup_viewportOpen": {
+    "message": "Open",
+    "description": "Popup, viewport row: button that opens the page in a new window at that viewport. One word."
+  },
+  "popup_viewportOnly": {
+    "message": "Viewport only: no touch, pixel ratio or user agent.",
+    "description": "Popup, under the viewport row: what the new window does not emulate. Short."
+  },
+  "popup_viewportInvalid": {
+    "message": "Open a web page, at a width and height between $min$ and $max$ pixels.",
+    "description": "Popup, viewport row: the page or the size cannot be opened. $min$ and $max$ are sizes in pixels.",
+    "placeholders": {
+      "max": {
+        "content": "$1",
+        "example": "4000"
+      },
+      "min": {
+        "content": "$2",
+        "example": "200"
+      }
+    }
   },
   "popup_reportBug": {
     "message": "Report a bug",
@@ -611,6 +719,40 @@
     "message": "The branch deployed at these addresses: Tested elements shows what its tests reach",
     "description": "Settings page: tooltip of a line’s branch field."
   },
+  "options_pathPrefix": {
+    "message": "Path prefix",
+    "description": "Settings page: accessible name of a line’s path prefix field."
+  },
+  "options_pathPrefixPlaceholder": {
+    "message": "no path prefix",
+    "description": "Settings page: shown in an empty path prefix field. Short."
+  },
+  "options_pathPrefixTitle": {
+    "message": "Your site serves the pages under this path, the tests did not, e.g. /app",
+    "description": "Settings page: tooltip of a line’s path prefix field. Keep /app as the example."
+  },
+  "options_pathPrefixInvalid": {
+    "message": "$prefix$ is not a path prefix: write a plain path such as /app, with no query, hash or wildcard, and at most 4 parts.",
+    "description": "Settings page: status and tooltip when a path prefix field holds a value that is refused. $prefix$ is what was typed.",
+    "placeholders": {
+      "prefix": {
+        "content": "$1",
+        "example": "/app"
+      }
+    }
+  },
+  "options_testPathPrefix": {
+    "message": "Tests’ path prefix",
+    "description": "Settings page: accessible name of a line’s tests’ path prefix field: the path the tests ran the pages under and the site does not."
+  },
+  "options_testPathPrefixPlaceholder": {
+    "message": "no tests’ prefix",
+    "description": "Settings page: shown in an empty tests’ path prefix field. Short."
+  },
+  "options_testPathPrefixTitle": {
+    "message": "The tests ran the pages under this path, your site does not, e.g. /app",
+    "description": "Settings page: tooltip of a line’s tests’ path prefix field. Keep /app as the example."
+  },
   "options_removeMapping": {
     "message": "Remove this line",
     "description": "Settings page: accessible name of the × button of a line."
@@ -630,6 +772,46 @@
   "options_testing": {
     "message": "Testing…",
     "description": "Settings page: status while testing the connection."
+  },
+  "options_desktopHeading": {
+    "message": "Desktop app",
+    "description": "Options: heading of the section pairing the desktop app."
+  },
+  "options_desktopHint": {
+    "message": "Optional. Paired with the Piwi Dashboard desktop app, Replay can ask it to run a bug report with Playwright in your project. Copy the address and token from the app’s Setup page, under Connect Piwi Picker.",
+    "description": "Options: what pairing the desktop app is for and where the address and token come from."
+  },
+  "options_desktopUrl": {
+    "message": "Address of the desktop app",
+    "description": "Options: label of the desktop app's address field."
+  },
+  "options_desktopToken": {
+    "message": "Token",
+    "description": "Options: label of the desktop app's token field."
+  },
+  "options_desktopSave": {
+    "message": "Save and test",
+    "description": "Options: button that checks the desktop app's address and token, then keeps them."
+  },
+  "options_desktopForget": {
+    "message": "Forget",
+    "description": "Options: button that removes the desktop app's address and token."
+  },
+  "options_desktopSaved": {
+    "message": "Paired with the desktop app.",
+    "description": "Options: the desktop app answered and is paired."
+  },
+  "options_desktopForgotten": {
+    "message": "The desktop app is no longer paired.",
+    "description": "Options: the desktop app's address and token were removed."
+  },
+  "options_desktopNotLoopback": {
+    "message": "Enter the desktop app’s own address, such as http://127.0.0.1:4318, and its token.",
+    "description": "Options: the address is not the desktop app's own loopback address, or the token is empty."
+  },
+  "options_desktopNeedsAccess": {
+    "message": "Allow access to the desktop app’s address to pair it.",
+    "description": "Options: the browser's permission for the desktop app's address was not granted."
   },
   "options_accessDenied": {
     "message": "Access to that instance was refused: allow it to let Piwi Picker read your catalog.",
@@ -914,6 +1096,26 @@
   "options_sourceServer": {
     "message": "Piwi",
     "description": "Settings page: small tag on a URL pattern that comes from the instance. The product name."
+  },
+  "options_serverPathPrefix": {
+    "message": "path prefix $prefix$",
+    "description": "Settings page: part of an instance pattern’s line, after the project, environment and branch, joined by ·. $prefix$ is like /app.",
+    "placeholders": {
+      "prefix": {
+        "content": "$1",
+        "example": "/app"
+      }
+    }
+  },
+  "options_serverTestPathPrefix": {
+    "message": "tests’ path prefix $prefix$",
+    "description": "Settings page: part of an instance pattern’s line, after the path prefix, joined by ·. $prefix$ is like /app.",
+    "placeholders": {
+      "prefix": {
+        "content": "$1",
+        "example": "/app"
+      }
+    }
   },
   "options_sourceLocal": {
     "message": "This browser",
@@ -2473,6 +2675,172 @@
     "message": "Everything here stays in this browser: nothing is sent anywhere.",
     "description": "Report a bug, finished report: note at the bottom of the panel."
   },
+  "bug_sendToPiwi": {
+    "message": "Send to Piwi…",
+    "description": "Report a bug, finished report: the button that opens the preview of what is sent to the connected Piwi instance."
+  },
+  "bug_sendToPiwiHint": {
+    "message": "See exactly what is sent, then store the report on your Piwi instance",
+    "description": "Report a bug, finished report: tooltip of “Send to Piwi…”."
+  },
+  "bug_sendTitle": {
+    "message": "Send to $project$",
+    "description": "Send to Piwi preview: dialog title. $project$ is a project name.",
+    "placeholders": {
+      "project": {
+        "content": "$1",
+        "example": "Checkout"
+      }
+    }
+  },
+  "bug_sendWhere": {
+    "message": "A bug report of $project$ on $instance$. Only what is ticked below is sent.",
+    "description": "Send to Piwi preview: first line. $instance$ is a host such as piwi.acme.com, $project$ a project name.",
+    "placeholders": {
+      "instance": {
+        "content": "$1",
+        "example": "piwi.acme.com"
+      },
+      "project": {
+        "content": "$2",
+        "example": "Checkout"
+      }
+    }
+  },
+  "bug_sendFirstTime": {
+    "message": "This is the first report sent from this browser. Piwi Picker sends a report only when you click Send, only to the instance you connected, and only what you tick here. The steps keep the values you typed, except passwords.",
+    "description": "Send to Piwi preview: shown before the first send from this browser profile, to explain what connected mode now sends."
+  },
+  "bug_sendSteps_one": {
+    "message": "The title and $count$ step, with the page it was on",
+    "description": "Send to Piwi preview: what is always sent. $count$ is the number of steps.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "bug_sendSteps_other": {
+    "message": "The title and $count$ steps, with the pages they were on",
+    "description": "Send to Piwi preview: what is always sent. $count$ is the number of steps.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "6"
+      }
+    }
+  },
+  "bug_sendScreenshots": {
+    "message": "Screenshots: $count$",
+    "description": "Send to Piwi preview: checkbox. $count$ is a number.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "bug_sendConsole": {
+    "message": "Console errors and warnings: $count$",
+    "description": "Send to Piwi preview: checkbox. $count$ is a number.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "bug_sendRequests": {
+    "message": "Failed requests (method, path, status; never a body): $count$",
+    "description": "Send to Piwi preview: checkbox. $count$ is a number.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "bug_sendOutline": {
+    "message": "The outline of the page",
+    "description": "Send to Piwi preview: checkbox for the outline of the page."
+  },
+  "bug_sendEnvValues": {
+    "message": "Leave out the values I typed (the test reads them from environment variables)",
+    "description": "Send to Piwi preview: checkbox that removes every typed value from the steps sent; the generated test then reads them from environment variables."
+  },
+  "bug_sendCreateIssue": {
+    "message": "Also create a Jira issue in $project$",
+    "description": "Send to Piwi preview: checkbox that also files the report in the project’s issue tracker. $project$ is a Jira project key such as SHOP.",
+    "placeholders": {
+      "project": {
+        "content": "$1",
+        "example": "SHOP"
+      }
+    }
+  },
+  "bug_sendFilesEvery": {
+    "message": "This project files every bug report in Jira.",
+    "description": "Send to Piwi preview: under the checkbox, when the project files every report whoever sends it."
+  },
+  "bug_issueCreated": {
+    "message": "Jira issue $key$ created.",
+    "description": "Send to Piwi: after sending, the Jira issue was created. $key$ is its key such as SHOP-812.",
+    "placeholders": {
+      "key": {
+        "content": "$1",
+        "example": "SHOP-812"
+      }
+    }
+  },
+  "bug_issueQueued": {
+    "message": "The Jira issue is queued: the report’s page shows its key once it is created.",
+    "description": "Send to Piwi: after sending, the Jira issue is queued and will be created by the instance; the report’s page shows its key once created."
+  },
+  "bug_sendShowData": {
+    "message": "Show the exact data",
+    "description": "Send to Piwi preview: disclosure that shows the JSON that is sent."
+  },
+  "bug_send": {
+    "message": "Send",
+    "description": "Send to Piwi preview: the button that sends."
+  },
+  "bug_sending": {
+    "message": "Sending…",
+    "description": "Send to Piwi preview: while sending."
+  },
+  "bug_sent": {
+    "message": "Sent as bug report #$id$.",
+    "description": "Send to Piwi: after sending. $id$ is the number of the report on the instance.",
+    "placeholders": {
+      "id": {
+        "content": "$1",
+        "example": "37"
+      }
+    }
+  },
+  "bug_openInPiwi": {
+    "message": "Open it in Piwi",
+    "description": "Send to Piwi: link to the report on the instance, after sending."
+  },
+  "bug_sendFailed": {
+    "message": "Not sent: $error$",
+    "description": "Send to Piwi: the report was not sent. $error$ is the reason, already translated.",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "The instance cannot be reached."
+      }
+    }
+  },
+  "bug_sendNoProject": {
+    "message": "No project of your Piwi instance matches this page. Add this site in the settings, or choose the project in the popup.",
+    "description": "Send to Piwi: no project of the connected instance applies to this page."
+  },
+  "bug_staysLocalUntilSent": {
+    "message": "Everything here stays in this browser until you send it.",
+    "description": "Report a bug, finished report: note at the bottom of the panel when an instance is connected."
+  },
   "replay_hudLabel": {
     "message": "Piwi Picker: replaying a bug report",
     "description": "Replay panel (the box in the corner while a bug report replays): its aria-label, read by screen readers."
@@ -2546,6 +2914,16 @@
       "origin": {
         "content": "$2",
         "example": "https://staging.acme.test"
+      }
+    }
+  },
+  "replay_underConditions": {
+    "message": "Request conditions on: $conditions$",
+    "description": "Replay panel and DevTools Piwi panel: the request conditions on in the tab when the replay started. $conditions$ lists them, from the devtools_condition* messages.",
+    "placeholders": {
+      "conditions": {
+        "content": "$1",
+        "example": "Slow down GET **/api/cart by 2 s"
       }
     }
   },
@@ -2882,6 +3260,210 @@
   "replay_chooseFile": {
     "message": "Or choose the report’s .zip, or its steps.json, saved by Piwi Picker:",
     "description": "Replay dialog, above the file field. “.zip” and “steps.json” are file names, kept as they are."
+  },
+  "replay_fromPiwi": {
+    "message": "Or a bug report of $project$ on Piwi:",
+    "description": "Replay chooser: label of the list of bug reports fetched from the connected instance. $project$ is a project name.",
+    "placeholders": {
+      "project": {
+        "content": "$1",
+        "example": "Checkout"
+      }
+    }
+  },
+  "replay_fromPiwiChoose": {
+    "message": "Choose a bug report",
+    "description": "Replay chooser: first option of the list of bug reports from the instance."
+  },
+  "replay_fromPiwiItem": {
+    "message": "#$id$ · $title$",
+    "description": "Replay chooser: one bug report from the instance. $id$ is its number, $title$ its title as the reporter wrote it.",
+    "placeholders": {
+      "id": {
+        "content": "$1",
+        "example": "37"
+      },
+      "title": {
+        "content": "$2",
+        "example": "Coupon not applied to the total"
+      }
+    }
+  },
+  "replay_fromPiwiNone": {
+    "message": "$project$ has no open bug report on Piwi.",
+    "description": "Replay chooser: the project mapped to this tab has no open bug report. $project$ is a project name.",
+    "placeholders": {
+      "project": {
+        "content": "$1",
+        "example": "Checkout"
+      }
+    }
+  },
+  "replay_fromPiwiFailed": {
+    "message": "Could not read the bug reports from Piwi: $error$",
+    "description": "Replay chooser: the list or the report could not be read from the instance. $error$ is the reason, already translated.",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "The instance cannot be reached."
+      }
+    }
+  },
+  "replay_runWithPlaywright": {
+    "message": "Run with Playwright…",
+    "description": "Replay chooser and finished replay: button that sends the steps to the paired desktop app to run with Playwright."
+  },
+  "replay_seenHere": {
+    "message": "What the page showed during the replay:",
+    "description": "Under a replay's verdict: heading above the failed requests and console errors the page showed during the replay."
+  },
+  "replay_seenRequest": {
+    "message": "$method$ $url$ answered $status$",
+    "description": "Under a replay's verdict: a request that failed during the replay. $method$ is GET or POST, $url$ its path, $status$ the HTTP status.",
+    "placeholders": {
+      "method": {
+        "content": "$1",
+        "example": "POST"
+      },
+      "status": {
+        "content": "$2",
+        "example": "500"
+      },
+      "url": {
+        "content": "$3",
+        "example": "/api/cart/coupon"
+      }
+    }
+  },
+  "replay_seenRequestFailed": {
+    "message": "$method$ $url$ got no answer",
+    "description": "Under a replay's verdict: a request that got no answer during the replay. $method$ is GET or POST, $url$ its path.",
+    "placeholders": {
+      "method": {
+        "content": "$1",
+        "example": "GET"
+      },
+      "url": {
+        "content": "$2",
+        "example": "/api/cart"
+      }
+    }
+  },
+  "replay_seenConsole": {
+    "message": "Console error: $message$",
+    "description": "Under a replay's verdict: an error the page logged to its console during the replay. $message$ is the page's message, as it is.",
+    "placeholders": {
+      "message": {
+        "content": "$1",
+        "example": "Coupon failed: 500"
+      }
+    }
+  },
+  "replay_seenMore": {
+    "message": "+$count$ more",
+    "description": "Under a replay's verdict: how many more requests and console errors are not listed. $count$ is a number, already formatted.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "replay_share": {
+    "message": "Share result…",
+    "description": "Under a verdict of a report from the connected instance: button that shows what Share result sends, before sending it."
+  },
+  "replay_sharePreview": {
+    "message": "Sends to $instance$, on the report: this verdict, the site it ran on ($origin$) and your browser’s name.",
+    "description": "Share result: exactly what is sent, and where, before sending a replay's verdict. $instance$ is the Piwi instance's host, $origin$ the site the replay ran on.",
+    "placeholders": {
+      "instance": {
+        "content": "$1",
+        "example": "piwi.acme.test"
+      },
+      "origin": {
+        "content": "$2",
+        "example": "http://localhost:3000"
+      }
+    }
+  },
+  "replay_sharePreviewDesktop": {
+    "message": "Sends to $instance$, on the report: this verdict and your browser’s name.",
+    "description": "Share result: exactly what is sent, and where, before sending the desktop app's verdict. $instance$ is the Piwi instance's host.",
+    "placeholders": {
+      "instance": {
+        "content": "$1",
+        "example": "piwi.acme.test"
+      }
+    }
+  },
+  "replay_shared": {
+    "message": "Shared on the report.",
+    "description": "Share result: the verdict was recorded on the report."
+  },
+  "replay_shareFailed": {
+    "message": "Could not share the result: $error$",
+    "description": "Share result: the verdict could not be recorded. $error$ is the reason, already translated.",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "The instance cannot be reached."
+      }
+    }
+  },
+  "replay_desktopTitle": {
+    "message": "Run with Playwright in the desktop app",
+    "description": "Run with Playwright dialog: its title."
+  },
+  "replay_desktopNotPaired": {
+    "message": "Pair the desktop app first, in Piwi Picker’s options under Desktop app.",
+    "description": "Run with Playwright dialog: no desktop app is paired in the options."
+  },
+  "replay_desktopOpenOptions": {
+    "message": "Open the options",
+    "description": "Run with Playwright dialog: button opening the options page."
+  },
+  "replay_desktopPreview": {
+    "message": "Sends to the desktop app at $url$: the title and these steps, with the values typed in them. No screenshot, console entry or request. Nothing runs until you start it in the app’s window.",
+    "description": "Run with Playwright dialog: exactly what is sent and to where, before sending. $url$ is the desktop app's address.",
+    "placeholders": {
+      "url": {
+        "content": "$1",
+        "example": "http://127.0.0.1:4318"
+      }
+    }
+  },
+  "replay_desktopShowPayload": {
+    "message": "What is sent",
+    "description": "Run with Playwright dialog: disclosure showing the exact data sent."
+  },
+  "replay_desktopSend": {
+    "message": "Send",
+    "description": "Run with Playwright dialog: button that sends the steps to the desktop app."
+  },
+  "replay_desktopWaiting": {
+    "message": "Sent. Start it in the desktop app’s window…",
+    "description": "Run with Playwright dialog: sent, waiting for the developer to start it in the desktop app's window."
+  },
+  "replay_desktopNoWindow": {
+    "message": "Sent. The desktop app’s window is closed: open it to start the run.",
+    "description": "Run with Playwright dialog: sent, but no window of the desktop app is open to show it."
+  },
+  "replay_desktopRunning": {
+    "message": "Running with Playwright in the desktop app…",
+    "description": "Run with Playwright dialog: the desktop app is running the spec."
+  },
+  "replay_desktopRanIn": {
+    "message": "Playwright in the desktop app says:",
+    "description": "Run with Playwright dialog: heading above the verdict of the desktop app's run."
+  },
+  "replay_desktopDeclined": {
+    "message": "Declined in the desktop app.",
+    "description": "Run with Playwright dialog: the developer declined the request in the desktop app."
+  },
+  "replay_desktopExpired": {
+    "message": "The request expired before it was started.",
+    "description": "Run with Playwright dialog: the request was not started in time, or the desktop app no longer knows it."
   },
   "replay_fileLabel": {
     "message": "The bug report’s .zip, or its steps.json",
@@ -3336,6 +3918,52 @@
   "coverage_allPagesTitle": {
     "message": "Count every locator that finds something here, whatever page its test used it on",
     "description": "Tested elements panel: tooltip of the All pages button."
+  },
+  "coverage_subtitleWithoutPrefix": {
+    "message": "$page$ (without $prefix$)",
+    "description": "Tested elements panel: the page in the subtitle when the site’s URL mapping has a path prefix that was removed. $page$ is like /checkout, $prefix$ like /app.",
+    "placeholders": {
+      "page": {
+        "content": "$1",
+        "example": "/checkout"
+      },
+      "prefix": {
+        "content": "$2",
+        "example": "/app"
+      }
+    }
+  },
+  "coverage_subtitleWithPrefix": {
+    "message": "$page$ (with $prefix$ added)",
+    "description": "Tested elements panel: the page in the subtitle when the URL mapping’s tests’ path prefix was put in front of it. $page$ is like /app/checkout, $prefix$ like /app.",
+    "placeholders": {
+      "page": {
+        "content": "$1",
+        "example": "/app/checkout"
+      },
+      "prefix": {
+        "content": "$2",
+        "example": "/app"
+      }
+    }
+  },
+  "coverage_subtitleSwappedPrefix": {
+    "message": "$page$ ($removed$ replaced by $added$)",
+    "description": "Tested elements panel: the page in the subtitle when the URL mapping’s path prefix was removed and its tests’ path prefix put in its place. $page$ is like /v2/checkout, $removed$ like /app, $added$ like /v2.",
+    "placeholders": {
+      "added": {
+        "content": "$1",
+        "example": "/v2"
+      },
+      "page": {
+        "content": "$2",
+        "example": "/v2/checkout"
+      },
+      "removed": {
+        "content": "$3",
+        "example": "/app"
+      }
+    }
   },
   "coverage_tileTested": {
     "message": "tested",
@@ -4015,6 +4643,26 @@
     "message": "Locators are looked for on this page, whatever page their test used them on.",
     "description": "Tested elements panel, Notes: after coverage_notesChecked, with All pages on."
   },
+  "coverage_notesPrefixRemoved": {
+    "message": "The path prefix $prefix$ of this site’s URL mapping was removed from the address first: the tests ran this page without it.",
+    "description": "Tested elements panel, Notes: shown when the page’s address started with the URL mapping’s path prefix. $prefix$ is like /app.",
+    "placeholders": {
+      "prefix": {
+        "content": "$1",
+        "example": "/app"
+      }
+    }
+  },
+  "coverage_notesPrefixAdded": {
+    "message": "The tests’ path prefix $prefix$ of this site’s URL mapping was put in front of the address first: the tests ran this page under it.",
+    "description": "Tested elements panel, Notes: shown when the URL mapping’s tests’ path prefix was put in front of the page’s address. $prefix$ is like /app.",
+    "placeholders": {
+      "prefix": {
+        "content": "$1",
+        "example": "/app"
+      }
+    }
+  },
   "coverage_notesErrors_one": {
     "message": "$count$ locator could not be checked here:",
     "description": "Tested elements panel, Notes: before a list of locators, each with the reason in English.",
@@ -4462,6 +5110,726 @@
   "common_workerOutdated": {
     "message": "Piwi Picker was rebuilt without being reloaded, and its background worker still runs the previous build. Reload the extension from its menu, or from the browser’s extensions page.",
     "description": "Error shown by a tool when the background worker does not know its message: the extension was rebuilt (a developer’s local build) but not reloaded."
+  },
+  "devtools_ranking": {
+    "message": "Ranking the selected element…",
+    "description": "DevTools, Elements panel, Piwi sidebar: shown while the selected element's locators are being worked out."
+  },
+  "devtools_selectElement": {
+    "message": "Select an element in the Elements panel to see its locators.",
+    "description": "DevTools, Piwi sidebar: when no element is selected in the Elements panel."
+  },
+  "devtools_inFrame": {
+    "message": "This element is inside a frame. The sidebar ranks the elements of the top page only.",
+    "description": "DevTools, Piwi sidebar: the selected element is inside an iframe, which the sidebar does not rank."
+  },
+  "devtools_ownElement": {
+    "message": "This element belongs to Piwi Picker.",
+    "description": "DevTools, Piwi sidebar: the selected element is part of Piwi Picker's own interface on the page."
+  },
+  "devtools_restricted": {
+    "message": "Piwi Picker cannot run on this page.",
+    "description": "DevTools, Piwi panes: the inspected page is one no extension can run on (a browser page, the extension store)."
+  },
+  "devtools_noAccess": {
+    "message": "Piwi Picker needs access to $site$ to read this page. It asks for this site only.",
+    "description": "DevTools, Piwi panes: the extension needs the site's permission first. $site$ is the site's origin, like https://shop.example. Followed by the devtools_allowSite button.",
+    "placeholders": {
+      "site": {
+        "content": "$1",
+        "example": "https://shop.example"
+      }
+    }
+  },
+  "devtools_allowSite": {
+    "message": "Allow on this site",
+    "description": "DevTools, Piwi panes: button that asks the browser for the site's permission."
+  },
+  "devtools_rankFailed": {
+    "message": "The element could not be ranked: $error$",
+    "description": "DevTools, Piwi sidebar: ranking the selected element failed. $error$ is the browser's error message, in English.",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "Cannot access a chrome:// URL"
+      }
+    }
+  },
+  "devtools_rankFailedPlain": {
+    "message": "The element could not be ranked.",
+    "description": "DevTools, Piwi sidebar: ranking the selected element failed with no error to show."
+  },
+  "devtools_noLocator": {
+    "message": "No locator finds this element.",
+    "description": "DevTools, Piwi sidebar: no candidate locator finds the selected element."
+  },
+  "devtools_unique": {
+    "message": "unique",
+    "description": "DevTools, Piwi sidebar: under a locator, after a ✓: it finds only the selected element. One or two words, lower case."
+  },
+  "devtools_byPosition": {
+    "message": "unique by position",
+    "description": "DevTools, Piwi sidebar: under a locator ending in .first() or .nth(): it finds the element alone only by its position. A few words, lower case."
+  },
+  "devtools_matches_one": {
+    "message": "$count$ match",
+    "description": "DevTools, Piwi sidebar: under a locator that finds several elements. $count$ is how many. Short, lower case.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "devtools_matches_other": {
+    "message": "$count$ matches",
+    "description": "DevTools, Piwi sidebar: under a locator that finds several elements. $count$ is how many. Short, lower case.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "devtools_unchecked": {
+    "message": "not checked",
+    "description": "DevTools, Piwi sidebar: under a locator the extension cannot evaluate on the page. Lower case."
+  },
+  "devtools_stable": {
+    "message": "stable",
+    "description": "DevTools, Piwi sidebar: after the verdict, the locator follows every stability rule. One word, lower case."
+  },
+  "devtools_watch": {
+    "message": "could break: $rules$",
+    "description": "DevTools, Piwi sidebar: after the verdict, the locator could break. $rules$ lists the reasons, from the stability_ messages.",
+    "placeholders": {
+      "rules": {
+        "content": "$1",
+        "example": "long text"
+      }
+    }
+  },
+  "devtools_brittle": {
+    "message": "brittle: $rules$",
+    "description": "DevTools, Piwi sidebar: after the verdict, the locator is likely to break. $rules$ lists the reasons, from the stability_ messages.",
+    "placeholders": {
+      "rules": {
+        "content": "$1",
+        "example": "CSS class"
+      }
+    }
+  },
+  "devtools_addToSession": {
+    "message": "Add to session",
+    "description": "DevTools, Piwi sidebar: button under a locator that adds it to the pick session under a name."
+  },
+  "devtools_addedToSession": {
+    "message": "Added to the session as $name$.",
+    "description": "DevTools, Piwi sidebar: confirmation after adding a locator to the pick session. $name$ is the name the user typed.",
+    "placeholders": {
+      "name": {
+        "content": "$1",
+        "example": "applyCoupon"
+      }
+    }
+  },
+  "view_title": {
+    "message": "Playwright view",
+    "description": "Playwright view: title of the small panel over the page. “Playwright” is a product name."
+  },
+  "view_noRole": {
+    "message": "(no role)",
+    "description": "Playwright view: in a label over an element, after its tag name, when the element has no role Playwright recognizes. Short."
+  },
+  "view_noName": {
+    "message": "(no name)",
+    "description": "Playwright view: in a label over an element, after its role, when it has no accessible name. Short."
+  },
+  "view_filterRole": {
+    "message": "Role",
+    "description": "Playwright view: label of the select that shows the labels of one role only."
+  },
+  "view_allRoles": {
+    "message": "All roles",
+    "description": "Playwright view: first option of the role select, showing every label."
+  },
+  "view_labelled_one": {
+    "message": "$count$ element labelled",
+    "description": "Playwright view panel: how many elements carry a label. $count$ is the number.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "42"
+      }
+    }
+  },
+  "view_labelled_other": {
+    "message": "$count$ elements labelled",
+    "description": "Playwright view panel: how many elements carry a label. $count$ is the number.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "42"
+      }
+    }
+  },
+  "view_unreachable_one": {
+    "message": "$count$ no stable locator reaches (red)",
+    "description": "Playwright view panel: elements marked in red, which look operable but have no role, or no name and no test id. $count$ is the number.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "view_unreachable_other": {
+    "message": "$count$ no stable locator reaches (red)",
+    "description": "Playwright view panel: elements marked in red, which look operable but have no role, or no name and no test id. $count$ is the number.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "view_ambiguous_one": {
+    "message": "$count$ whose role and name find others too (amber)",
+    "description": "Playwright view panel: elements marked in amber, whose getByRole with their name finds other elements too. $count$ is the number.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "view_ambiguous_other": {
+    "message": "$count$ whose role and name find others too (amber)",
+    "description": "Playwright view panel: elements marked in amber, whose getByRole with their name finds other elements too. $count$ is the number.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "devtools_tabRecord": {
+    "message": "Record",
+    "description": "DevTools, Piwi panel: tab showing the running recording. One word."
+  },
+  "devtools_tabReplay": {
+    "message": "Replay",
+    "description": "DevTools, Piwi panel: tab showing the running replay. One word."
+  },
+  "devtools_noRecording": {
+    "message": "Nothing is being recorded. Start with Record actions or Report a bug in the toolbar popup: the steps show here as they are recorded.",
+    "description": "DevTools, Piwi panel, Record tab: nothing is being recorded. “Record actions” and “Report a bug” are the popup tiles' names (popup_record, popup_reportBug)."
+  },
+  "devtools_recordingOn_one": {
+    "message": "Recording on $site$: $count$ step",
+    "description": "DevTools, Piwi panel, Record tab: a recording runs. $count$ is the number of steps so far, $site$ the recorded site, like https://shop.example.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "site": {
+        "content": "$2",
+        "example": "https://shop.example"
+      }
+    }
+  },
+  "devtools_recordingOn_other": {
+    "message": "Recording on $site$: $count$ steps",
+    "description": "DevTools, Piwi panel, Record tab: a recording runs. $count$ is the number of steps so far, $site$ the recorded site, like https://shop.example.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "site": {
+        "content": "$2",
+        "example": "https://shop.example"
+      }
+    }
+  },
+  "devtools_bugRecordingOn_one": {
+    "message": "Bug report on $site$: $count$ step",
+    "description": "DevTools, Piwi panel, Record tab: a bug report is being recorded. $count$ is the number of steps so far, $site$ the recorded site.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "site": {
+        "content": "$2",
+        "example": "https://shop.example"
+      }
+    }
+  },
+  "devtools_bugRecordingOn_other": {
+    "message": "Bug report on $site$: $count$ steps",
+    "description": "DevTools, Piwi panel, Record tab: a bug report is being recorded. $count$ is the number of steps so far, $site$ the recorded site.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "site": {
+        "content": "$2",
+        "example": "https://shop.example"
+      }
+    }
+  },
+  "devtools_recordingStopped_one": {
+    "message": "Recording stopped: $count$ step, not exported yet",
+    "description": "DevTools, Piwi panel, Record tab: the recording has stopped and is kept until exported or discarded. $count$ is the number of steps.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "devtools_recordingStopped_other": {
+    "message": "Recording stopped: $count$ steps, not exported yet",
+    "description": "DevTools, Piwi panel, Record tab: the recording has stopped and is kept until exported or discarded. $count$ is the number of steps.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "devtools_stopRecording": {
+    "message": "Stop recording",
+    "description": "DevTools, Piwi panel, Record tab: button that stops the recording, as the popup's Stop does."
+  },
+  "devtools_finishBugOnPage": {
+    "message": "Finish the bug report from its panel on the page, which collects the evidence.",
+    "description": "DevTools, Piwi panel, Record tab: a bug report is finished from its own panel on the page, which collects the evidence."
+  },
+  "devtools_noReplay": {
+    "message": "No replay yet. Start one with Replay a bug report in the toolbar popup: its steps and results show here.",
+    "description": "DevTools, Piwi panel, Replay tab: no replay has run. “Replay a bug report” is the popup tile's name (popup_replayBug)."
+  },
+  "devtools_tabNetwork": {
+    "message": "Network",
+    "description": "DevTools, Piwi panel: tab listing the page's fetch and XHR requests. One word."
+  },
+  "devtools_networkHint": {
+    "message": "The page’s fetch and XHR requests, read from DevTools while it is open. Nothing leaves the browser unless you copy or download it.",
+    "description": "DevTools, Piwi panel, Network tab: what it lists and where the data goes. fetch and XHR are names of browser APIs: keep them."
+  },
+  "devtools_networkEmpty": {
+    "message": "No request yet. Use the page, or reload it, and its requests show here.",
+    "description": "DevTools, Piwi panel, Network tab: no request listed yet."
+  },
+  "devtools_networkAllOrigins": {
+    "message": "Other sites too",
+    "description": "DevTools, Piwi panel, Network tab: checkbox that also lists requests to other sites than the page's."
+  },
+  "devtools_networkClear": {
+    "message": "Clear",
+    "description": "DevTools, Piwi panel, Network tab: button that empties the list of requests."
+  },
+  "devtools_requestTime": {
+    "message": "$ms$ ms",
+    "description": "DevTools, Piwi panel, Network tab: how long a request took. $ms$ is a number of milliseconds.",
+    "placeholders": {
+      "ms": {
+        "content": "$1",
+        "example": "35"
+      }
+    }
+  },
+  "devtools_mockTitle": {
+    "message": "Mock this response",
+    "description": "DevTools, Piwi panel, Network tab: accessible name of the section that writes a mock for the selected request."
+  },
+  "devtools_mockPattern": {
+    "message": "URL pattern",
+    "description": "DevTools, Piwi panel, Network tab: label of the editable URL pattern the mock routes."
+  },
+  "devtools_mockKind": {
+    "message": "Answer with",
+    "description": "DevTools, Piwi panel, Network tab: label of the select choosing what the mock answers. Followed by devtools_mockResponse, devtools_mockError or devtools_mockAbort."
+  },
+  "devtools_mockResponse": {
+    "message": "this response",
+    "description": "DevTools, Piwi panel, Network tab: option, after “Answer with”: the response DevTools recorded."
+  },
+  "devtools_mockError": {
+    "message": "a server error (500)",
+    "description": "DevTools, Piwi panel, Network tab: option, after “Answer with”: a server error."
+  },
+  "devtools_mockAbort": {
+    "message": "a network failure",
+    "description": "DevTools, Piwi panel, Network tab: option, after “Answer with”: the request fails as if the network were down."
+  },
+  "devtools_mockNoBody": {
+    "message": "DevTools kept no body for this response. Reload the page with DevTools open to mock it.",
+    "description": "DevTools, Piwi panel, Network tab: DevTools kept no body for the selected response."
+  },
+  "devtools_mockHidden_one": {
+    "message": "$count$ value hidden: fields named like a password, a token or a key.",
+    "description": "DevTools, Piwi panel, Network tab: values of fields named like a password, token or key were replaced in the mock. $count$ is how many.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "devtools_mockHidden_other": {
+    "message": "$count$ values hidden: fields named like a password, a token or a key.",
+    "description": "DevTools, Piwi panel, Network tab: values of fields named like a password, token or key were replaced in the mock. $count$ is how many.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "devtools_mockReveal": {
+    "message": "Show hidden values",
+    "description": "DevTools, Piwi panel, Network tab: checkbox that puts the hidden values back in the mock."
+  },
+  "devtools_mockCopy": {
+    "message": "Copy code",
+    "description": "DevTools, Piwi panel, Network tab: button that copies the mock's code."
+  },
+  "devtools_mockDownload": {
+    "message": "Download $file$",
+    "description": "DevTools, Piwi panel, Network tab: button that downloads the file holding a large response body. $file$ is its name, like cart.json.",
+    "placeholders": {
+      "file": {
+        "content": "$1",
+        "example": "cart.json"
+      }
+    }
+  },
+  "devtools_mockFileHint": {
+    "message": "The body is over 100 kB, so the code reads it from a file: save it as $path$ in the folder you run Playwright from.",
+    "description": "DevTools, Piwi panel, Network tab: the body is too large to go in the code. $path$ is where the code reads it, like mocks/cart.json.",
+    "placeholders": {
+      "path": {
+        "content": "$1",
+        "example": "mocks/cart.json"
+      }
+    }
+  },
+  "devtools_conditionDelay": {
+    "message": "Slow down $request$ by $seconds$ s",
+    "description": "A request condition in words, in the banner on the page, the Piwi panel and the replay. $request$ is a method and a URL pattern, like GET **/api/cart; $seconds$ a number of seconds.",
+    "placeholders": {
+      "request": {
+        "content": "$1",
+        "example": "GET **/api/cart"
+      },
+      "seconds": {
+        "content": "$2",
+        "example": "2"
+      }
+    }
+  },
+  "devtools_conditionError": {
+    "message": "Answer $request$ with a 500 error",
+    "description": "A request condition in words: the request is answered with a server error. $request$ is a method and a URL pattern.",
+    "placeholders": {
+      "request": {
+        "content": "$1",
+        "example": "GET **/api/cart"
+      }
+    }
+  },
+  "devtools_conditionAbort": {
+    "message": "Fail $request$ as a network error",
+    "description": "A request condition in words: the request fails as if the network were down. $request$ is a method and a URL pattern.",
+    "placeholders": {
+      "request": {
+        "content": "$1",
+        "example": "GET **/api/cart"
+      }
+    }
+  },
+  "devtools_conditionsOn_one": {
+    "message": "Piwi Picker: $count$ request condition on",
+    "description": "Banner on the page while request conditions are on. $count$ is how many.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "devtools_conditionsOn_other": {
+    "message": "Piwi Picker: $count$ request conditions on",
+    "description": "Banner on the page while request conditions are on. $count$ is how many.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "devtools_conditionsOff": {
+    "message": "Turn off",
+    "description": "Banner on the page: button that turns every request condition off and reloads the page."
+  },
+  "devtools_conditionsNoPage": {
+    "message": "Request conditions need a web page in the tab.",
+    "description": "Error when a request condition is asked for without a web page in the tab."
+  },
+  "devtools_conditionsNeedAccess": {
+    "message": "Piwi Picker needs access to this site to slow down or fail its requests.",
+    "description": "Error when the user did not allow the site: slowing or failing a request needs it."
+  },
+  "devtools_conditionFailed": {
+    "message": "The condition could not be set: $error$",
+    "description": "DevTools, Piwi panel: a request condition could not be set. $error$ is the browser's message, in English.",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "No tab with id: 12"
+      }
+    }
+  },
+  "devtools_conditionsTitle": {
+    "message": "Request conditions",
+    "description": "DevTools, Piwi panel, Network tab: heading of the list of request conditions on."
+  },
+  "devtools_conditionsFor": {
+    "message": "Slow down or fail this request",
+    "description": "DevTools, Piwi panel, Network tab: heading above the buttons that slow down or fail the selected request."
+  },
+  "devtools_conditionsLimits": {
+    "message": "Conditions apply to the fetch and XHR calls of this tab’s pages until you turn them off or close the tab. Throttling the CPU or the whole page, and delaying documents, scripts, images or a service worker’s requests, need the debugger permission, which Piwi Picker does not ask for.",
+    "description": "DevTools, Piwi panel, Network tab: what request conditions reach, and what they cannot. fetch, XHR and debugger are technical names: keep them."
+  },
+  "devtools_conditionRemove": {
+    "message": "Remove",
+    "description": "DevTools, Piwi panel, Network tab: button that removes one request condition."
+  },
+  "devtools_conditionsAllOff": {
+    "message": "Turn all off and reload",
+    "description": "DevTools, Piwi panel, Network tab: button that turns every request condition off; the page reloads."
+  },
+  "devtools_delaySeconds": {
+    "message": "Delay in seconds",
+    "description": "DevTools, Piwi panel, Network tab: accessible name of the number field holding the delay, in seconds."
+  },
+  "devtools_slowDown": {
+    "message": "Slow down",
+    "description": "DevTools, Piwi panel, Network tab: button, after the seconds field, that delays the selected request."
+  },
+  "devtools_failError": {
+    "message": "Fail with 500",
+    "description": "DevTools, Piwi panel, Network tab: button that answers the selected request with a server error."
+  },
+  "devtools_failAbort": {
+    "message": "Fail (network error)",
+    "description": "DevTools, Piwi panel, Network tab: button that makes the selected request fail as a network error."
+  },
+  "login_title": {
+    "message": "Save login for tests",
+    "description": "Save login page: title of the page and of its tab."
+  },
+  "login_site": {
+    "message": "Site: $site$",
+    "description": "Save login page: the site whose login is saved. $site$ is its origin, like https://shop.example.",
+    "placeholders": {
+      "site": {
+        "content": "$1",
+        "example": "https://shop.example"
+      }
+    }
+  },
+  "login_noSite": {
+    "message": "Open this from the toolbar popup on a web page: it saves the login of that page’s site.",
+    "description": "Save login page: opened without a web page to save the login of."
+  },
+  "login_holds": {
+    "message": "The file holds this browser’s cookies for the site, httpOnly ones included, and the site’s localStorage, in Playwright’s storageState format. IndexedDB is left out.",
+    "description": "Save login page: what the saved file holds. httpOnly, localStorage, storageState and IndexedDB are technical names: keep them."
+  },
+  "login_warning": {
+    "message": "Anyone with this file is logged in as you until the session expires. Use a test account, and keep the file out of your repository.",
+    "description": "Save login page: warning shown before saving. The file is a credential."
+  },
+  "login_gitignore": {
+    "message": "Save it as $path$ and add $folder$ to $file$.",
+    "description": "Save login page: where to save the file. $path$ is playwright/.auth/user.json, $folder$ is playwright/.auth, $file$ is .gitignore; all three are shown as code.",
+    "placeholders": {
+      "file": {
+        "content": "$1",
+        "example": ".gitignore"
+      },
+      "folder": {
+        "content": "$2",
+        "example": "playwright/.auth"
+      },
+      "path": {
+        "content": "$3",
+        "example": "playwright/.auth/user.json"
+      }
+    }
+  },
+  "login_copyGitignore": {
+    "message": "Copy the .gitignore line",
+    "description": "Save login page: button that copies the line to add to .gitignore."
+  },
+  "login_save": {
+    "message": "Save login file",
+    "description": "Save login page: the button that asks for the cookies permission for the site, then downloads the file."
+  },
+  "login_denied": {
+    "message": "The login was not saved: saving it needs Piwi Picker to read this site’s cookies.",
+    "description": "Save login page: the user refused the permission."
+  },
+  "login_failed": {
+    "message": "The login could not be saved: $error$",
+    "description": "Save login page: saving failed. $error$ is the browser's message, in English.",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "No tab with id: 12"
+      }
+    }
+  },
+  "login_savedCookies_one": {
+    "message": "Saved user.json with $count$ cookie.",
+    "description": "Save login page: after the download. $count$ is the number of cookies in user.json. Followed by login_savedStorage.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "login_savedCookies_other": {
+    "message": "Saved user.json with $count$ cookies.",
+    "description": "Save login page: after the download. $count$ is the number of cookies in user.json. Followed by login_savedStorage.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "login_savedStorage_one": {
+    "message": "$count$ localStorage entry.",
+    "description": "Save login page: after login_savedCookies. $count$ is the number of localStorage entries in the file.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "login_savedStorage_other": {
+    "message": "$count$ localStorage entries.",
+    "description": "Save login page: after login_savedCookies. $count$ is the number of localStorage entries in the file.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "login_setupTitle": {
+    "message": "Use it in a test",
+    "description": "Save login page: heading above the code that uses the file in a Playwright test."
+  },
+  "login_copySnippet": {
+    "message": "Copy the code",
+    "description": "Save login page: button that copies the code above it."
+  },
+  "devtools_networkSelect": {
+    "message": "Select a request to mock it, slow it down or make it fail.",
+    "description": "DevTools, Piwi panel, Network tab: right side, before a request is selected."
+  },
+  "devtools_colMethod": {
+    "message": "Method",
+    "description": "DevTools, Piwi panel, Network tab: column heading, the request's HTTP method. One short word."
+  },
+  "devtools_colPath": {
+    "message": "Path",
+    "description": "DevTools, Piwi panel, Network tab: column heading, the request's path. One short word."
+  },
+  "devtools_colStatus": {
+    "message": "Status",
+    "description": "DevTools, Piwi panel, Network tab: column heading, the response's HTTP status. One short word."
+  },
+  "devtools_colTime": {
+    "message": "Time",
+    "description": "DevTools, Piwi panel, Network tab: column heading, how long the request took. One short word."
+  },
+  "devtools_conditionsLimitsTitle": {
+    "message": "What this cannot slow down",
+    "description": "DevTools, Piwi panel, Network tab: a fold that opens devtools_conditionsLimits."
+  },
+  "devtools_copyAs": {
+    "message": "Copy as",
+    "description": "DevTools, Piwi sidebar: before the three copy buttons under a locator (common_copyModeBare, common_copyModeAction, common_copyModeExpect). Short."
+  },
+  "devtools_tabLocators": {
+    "message": "Locators",
+    "description": "DevTools, Piwi panel: tab where a locator is typed and the elements it finds are listed. One word."
+  },
+  "devtools_tabSession": {
+    "message": "Session",
+    "description": "DevTools, Piwi panel: tab listing the named elements of the pick session. One word."
+  },
+  "devtools_locatorsHint": {
+    "message": "Type a locator: the elements it finds on this page are listed, as Playwright finds them. Hover one to outline it on the page; Reveal selects it in the Elements panel.",
+    "description": "DevTools, Piwi panel, Locators tab: shown while the field is empty."
+  },
+  "devtools_matches": {
+    "message": "Elements found",
+    "description": "DevTools, Piwi panel, Locators tab: accessible name of the list of elements the locator finds."
+  },
+  "devtools_reveal": {
+    "message": "Reveal",
+    "description": "DevTools, Piwi panel, Locators tab: button beside a found element that selects it in DevTools' Elements panel. One short word."
+  },
+  "devtools_matchesListed": {
+    "message": "Only the first $shown$ are listed.",
+    "description": "DevTools, Piwi panel, Locators tab: under the list, when the locator finds more elements than it lists. $shown$ is how many are listed.",
+    "placeholders": {
+      "shown": {
+        "content": "$1",
+        "example": "50"
+      }
+    }
+  },
+  "devtools_sessionEmpty": {
+    "message": "No named element yet. Select one in the Elements panel and use Add to session in the Piwi sidebar, or the Session tool in the toolbar popup.",
+    "description": "DevTools, Piwi panel, Session tab: no element has been named yet. “Add to session” is the sidebar's button (devtools_addToSession)."
+  },
+  "devtools_sessionCount_one": {
+    "message": "$count$ named element",
+    "description": "DevTools, Piwi panel, Session tab: how many elements the session names. $count$ is the number.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "devtools_sessionCount_other": {
+    "message": "$count$ named elements",
+    "description": "DevTools, Piwi panel, Session tab: how many elements the session names. $count$ is the number.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "devtools_remove": {
+    "message": "Remove",
+    "description": "DevTools, Piwi panel, Session tab: button beside a named element that takes it out of the session. One word."
   },
   "stability_position": {
     "message": "position",

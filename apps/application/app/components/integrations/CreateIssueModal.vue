@@ -3,6 +3,7 @@ import type {
   CreateIssueResponse,
   ExistingIssueCandidate,
   IssueDraft,
+  IssueEntityType,
   IssueFieldProblem,
   IssueIncludeOptions,
   TrackerProjectOption,
@@ -19,7 +20,7 @@ import {
 } from '#shared/integrations/fields';
 
 const props = defineProps<{
-  entityType: 'failure_cluster' | 'test_runs_case';
+  entityType: IssueEntityType;
   entityId: number;
 }>();
 
@@ -286,8 +287,8 @@ async function linkExisting(candidate: ExistingIssueCandidate) {
     await $fetch('/api/links', {
       method: 'POST',
       body: {
-        entityType: 'failure_cluster',
-        entityId: draft.value?.clusterId ?? props.entityId,
+        entityType: props.entityType === 'bug_report' ? 'bug_report' : 'failure_cluster',
+        entityId: props.entityType === 'bug_report' ? props.entityId : (draft.value?.clusterId ?? props.entityId),
         url: candidate.url,
         title: candidate.title,
       },
@@ -307,7 +308,11 @@ async function linkExisting(candidate: ExistingIssueCandidate) {
   <UModal
     v-model:open="open"
     title="Create issue"
-    description="File a Jira issue from this failure, with the fix plan as its body."
+    :description="
+      entityType === 'bug_report'
+        ? 'File a Jira issue from this bug report, with its steps, evidence and failing test.'
+        : 'File a Jira issue from this failure, with the fix plan as its body.'
+    "
     :ui="{ content: 'max-w-2xl' }"
   >
     <template #body>

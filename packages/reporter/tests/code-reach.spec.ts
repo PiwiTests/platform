@@ -160,7 +160,7 @@ describe('in Chromium', () => {
     expect(await startCodeReach(page)).toBe(true);
     await page.goto(url);
     await page.click('#pay');
-    await page.waitForFunction(() => document.body.dataset.paid === 'yes');
+    await page.waitForFunction("document.body.dataset.paid === 'yes'");
     const entries = await stopCodeReach(page);
     await page.close();
     const files = await resolveCodeReach(entries ?? [], { roots: [dir], repoRoot: dir }, async () => null);

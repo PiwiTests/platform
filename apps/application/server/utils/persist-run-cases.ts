@@ -23,6 +23,7 @@ import { normalizeTestCaseStatus } from '#shared/utils/test-counts';
 import { upsertCasePayloads } from './case-payloads';
 import { GREEN_SAMPLE_MAX_AGE_MS } from '#shared/handlers/aria-sampling';
 import { computeErrorFingerprint, type ErrorFingerprint } from '#shared/error-fingerprint';
+import { isExpectedFailurePassed, resolveExpectedStatus } from '#shared/status-classify';
 import {
   normalizeTestLocks,
   normalizeTestTags,
@@ -120,6 +121,8 @@ export interface RunCaseInput {
   locatorSnapshots?: LocatorSnapshot[] | null;
   /** Why a `didnotrun` case never executed; null for tests that ran. */
   didNotRunReason?: string | null;
+  /** Playwright's `TestCase.expectedStatus`; derived from the annotations when absent. */
+  expectedStatus?: string | null;
   /** For a `previous-failure` cascade, the location of the failing test that blocked it. */
   blockedBy?: string | null;
 }
@@ -397,7 +400,12 @@ export async function persistRunCases(
 
   const fingerprintResults = await Promise.all(
     cases.map((c) =>
-      c.error && c.status !== 'passed' && c.status !== 'skipped'
+      // An expected failure that passed is good news about one test, not a
+      // failure mode: it forms no cluster.
+      c.error &&
+      c.status !== 'passed' &&
+      c.status !== 'skipped' &&
+      !isExpectedFailurePassed(c.status, resolveExpectedStatus(c.expectedStatus, c.testAnnotations))
         ? computeErrorFingerprint(c.error)
         : Promise.resolve(null),
     ),
@@ -567,6 +575,7 @@ export async function persistRunCases(
       shardIndex: c.shardIndex ?? null,
       startedAt: c.startedAt ?? null,
       didNotRunReason: c.didNotRunReason ?? null,
+      expectedStatus: resolveExpectedStatus(c.expectedStatus, c.testAnnotations),
       blockedBy: c.blockedBy ?? null,
     });
     rowInputIndices.push(i);

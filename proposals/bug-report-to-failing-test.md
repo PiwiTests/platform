@@ -11,9 +11,14 @@ followed until its spec passes.
 **Status.** Proposed 2026-09-27; revised the same day after deciding: replay targets the developer's local dev server
 in their everyday browser, Playwright runs go through the desktop app, and the `debugger` permission is not used (it
 cannot be optional; see [The `debugger` permission](#the-debugger-permission)). PR 1 (the steps file, the converter's
-options, Download steps and `piwi codegen`), PR 2 (Report a bug in Piwi Picker, its evidence and local exports) and PR 3
-(Replay, from a file, from the report just recorded, or from the finished report, with a fake cursor) are built;
-evidence collected during a replay and the rest are not. The extension gains
+options, Download steps and `piwi codegen`), PR 2 (Report a bug in Piwi Picker, its evidence and local exports), PR 3
+(Replay, from a file, from the report just recorded, or from the finished report, with a fake cursor), PR 4
+(`expectedStatus`, "looks fixed", `piwi:bug`) PR 5 (the dashboard: stored reports, their pages and spec, Send to
+Piwi…, Replay from the instance, `piwi bug`, MCP tools) and PR 7 (Jira: filing from the Send preview, the report's page,
+MCP or for every report, in the ticket's language, screenshots attached, the ticket following the report) and PR 8 (why the suite missed it, escaped defects on the Test
+Map, the `fix-a-reported-bug` skill) and PR 6 (Run with Playwright in the desktop app: pairing, repro requests
+confirmed in the window, `desktop_run_repro`, the verdict back in Replay) are built, and so are PR 3's two leftovers
+(the console errors and failed requests a replay sees, and **Share result**): the whole plan is built. The extension gains
 two tools and, for the first time, requests that send page data to an instance, behind the explicit opt-in and preview
 its rules require. The reporter gains one wire field (`expectedStatus`); the dashboard gains a table, pages, endpoints,
 an issue type for the Jira integration, a CLI command and MCP tools; the desktop app gains a run request. The steps
@@ -499,8 +504,17 @@ PRs 1–3 close the loop between a tester and a developer with files alone: reco
   actions), `replay-core.ts` (assertions with Playwright's rules, the verdict), `replay-cursor.ts` (the fake cursor:
   an arrow that glides to each element, a ripple on clicks, a caption, still with reduced motion), `steps-file.ts` and
   `readZipEntry` (a report's `.zip` or `steps.json`), `shared/replay-storage.ts`, the background's `piwi-start-replay`
-  and `piwi-replay-finished`, the popup's **Replay a bug report** (`R`) and the finished report's **Replay**. Not built:
-  console errors and failed requests collected during a replay, and **Share result**.
+  and `piwi-replay-finished`, the popup's **Replay a bug report** (`R`) and the finished report's **Replay**.
+- Built after PR 6: the **evidence of a replay** (the background registers `bug-evidence-main.js` in the main world
+  beside the replay script, under the replay's `evidenceToken`; the panel keeps the entries in `piwiReplayEvidence`
+  and lists up to five under the verdict, failed requests first). It says what the page showed here, not "here too":
+  the replay has the steps, not the report's evidence. **Share result** (`share-result.ts`) follows a verdict of a
+  report chosen from the instance, in the replay HUD and in Run with Playwright's dialog (`source: 'desktop'`), and
+  sends the verdict, the step it diverged at, the origin (none for a desktop run) and the user agent after a preview.
+- The replay lab after PRs 6 and 3: 23 of 24 scenarios pass both ways (import-file its known gap).
+  `project-tests-search` times out before recording, at its first step: it opens a "Piwi Dashboard" project that
+  neither the dev database nor `app:seed:dev`'s demo seed holds. That is a data mismatch in the scenario, not in the
+  replay, and it is left to whoever keeps the lab.
 - `apps/extension/src/content/replay-panel.ts` (new, HUD and verdict), `replay-actions.ts` (new, events per action),
   `replay-runner.ts` (new, waiting and resolution with the engine), `src/background/index.ts` (state and
   registration), `src/popup/` (tile).
@@ -509,15 +523,32 @@ PRs 1–3 close the loop between a tester and a developer with files alone: reco
   step mode; unit tests for the verdict.
 - Docs: `features/extension.md` (Replay, its limits).
 
-### PR 4 — expected status
+### PR 4 — expected status (built)
 - `packages/reporter/src/public/reporter.ts`, collected and wire types, serializer;
   `apps/application/server/utils/blob-report.ts` (importer); `packages/core/src/wire.ts`, `status-classify.ts`,
   `test-meta.ts` (`piwi:bug`).
 - App: schema and migrations (`test_runs_cases.expected_status`), no clustering for the new outcome, counts and badges,
   `shared/pr-feedback.ts`, the notification event.
 - Docs: `reference/test-metadata.md`, `reference/notification-events.md`, `features/pr-feedback.md`.
+- Built as: `resolveExpectedStatus`, `isExpectedFailurePassed` and `normalizeExpectedStatus` in
+  `packages/core/src/status-classify.ts`; `piwi:bug` read by `parseTestMetadata` as `TestMetadata.bug`; the column
+  `test_runs_cases.expected_status`, written by every ingest path and, for a payload without the field (an older
+  reporter, a blob report without it), derived from the `fail`, `skip` and `fixme` annotations. Decisions made while
+  building:
+  - **The stored status stays `failed`**, as Playwright reports it, so the run's counts and CI agree. "Expected failure
+    passed" is read, not stored: a `failed` row whose expected status is `failed` (an expected failure that did fail is
+    stored `passed`). No run-level counter was added; the row's **Looks fixed** badge, the execution page's header
+    and the pull-request comment's **Looks fixed** section name it.
+  - **`bug.looks_fixed` fires for every `test.fail()` test that passes**, once per run, with the `piwi:bug` id and the
+    `piwi:link` each test names, whether or not a bug report exists; PR 5 adds the report's state change to it.
+  - The pull-request line reads "the spec of bug #37 now passes: remove `test.fail()` in `<file>`" and links the
+    execution; PR 5 links the report.
+  - Tests: `status-classify.test.ts`, `test-meta.test.ts` (core); `expected-status.spec.ts`, `serializer.spec.ts`
+    (reporter); `blob-report.test.ts`, `pr-feedback.test.ts`, `notification-events.test.ts` and the e2e
+    `expected-failure.spec.ts` (app). D22 in `1.0-stabilization.md` covers the wire field, the annotation and the
+    event.
 
-### PR 5 — dashboard
+### PR 5 — dashboard (built)
 - Schema and migrations for `bug_reports`, `bug_reproductions`, `test_cases.bug_report_id`, the project's
   generated-spec settings; `server/api/projects/[id]/bug-reports.post.ts` and `.get.ts`,
   `server/api/bug-reports/[id].get.ts`, `.patch.ts`, `reproductions.post.ts` (new); `shared/handlers/bug-reports.ts`
@@ -526,8 +557,58 @@ PRs 1–3 close the loop between a tester and a developer with files alone: reco
 - `packages/reporter/src/cli/bug.ts` (new); `shared/mcp-tools.ts`, `server/utils/mcp/tools.ts`;
   `shared/capabilities.ts` and the setup ladder.
 - Docs: `features/bug-reports.md` (new), `reference/cli.md`, `navigation.ts`, `guide/privacy.md`.
+- Built as: `parseBugReport` in core (the steps through `parseSteps`, evidence and context field by field, capped);
+  `bug_reports`, `bug_reproductions`, `test_cases.bug_report_id`, `projects.generated_specs`; the endpoints above plus
+  `GET /api/bug-reports/:id/spec` and `GET /api/bug-reports/:id/screenshots/:index`; `shared/handlers/bug-reports.ts`
+  (storage, lists, the spec with the project's catalog and suite locators, `applyBugReportLifecycle`, run from
+  `runFinalizeSideEffects`); the list page and the report page (Steps, Evidence, Reproductions, Spec), **Bug reports**
+  in the project's More menu, **Generated specs** in the project settings; the demo seeds one report; `piwi bug` and
+  `piwi codegen bug:<id>`; the MCP tools `list_bug_reports`, `get_bug_report`, `render_steps`; the capability
+  `bug-reports` and its Setup entry. In the extension: `bug-send.ts` (pure payload), `bug-send-panel.ts` (the preview),
+  `src/background/bug-reports.ts` (the worker's messages), the client's `sendBugReport`, `fetchBugReports`,
+  `fetchBugReportSteps`, and Replay's list from the instance. Decisions made while building:
+  - **The one-time explanation sits in the preview**, not in the settings page: it shows before the first send of a
+    profile (`piwiBugSendExplained`), where the reader is deciding.
+  - **Leave out the values I typed** also removes those values from the evidence that repeats them: the extension's
+    e2e found the outline holding a text box's value (`textbox "Coupon": SPRING10`). They become `…` in the outline and
+    in console messages.
+  - **The worker resolves the project from the sending tab's URL** and never takes one from the page; the preview
+    names the project and the instance it will go to.
+  - **The lifecycle reads the last attempt of each test that names a report**: an expected failure that passed →
+    looks fixed; an ordinary pass → closed; anything else that ran → test committed (a closed report's test failing
+    again reopens it there). Only reports of the run's project move; `dismissed` never does.
+  - **The spec is rendered on the server** (`GET /api/bug-reports/:id/spec`), so the page, `piwi bug` and MCP share it;
+    `mode=run` is the reproduction's twin without `test.fail()`.
+  - The list shows every status with a filter rather than grouping by page; the page key is on each row.
+  - Tests: `bug-report.test.ts` (core), `bug-cli.spec.ts` (reporter), `bug-reports.spec.ts` (app e2e: send with a
+    screenshot, refusals, both specs, a reproduction, the lifecycle through four runs, the pages), `bug-send.test.ts`
+    and `bug-send.spec.ts` (extension: the preview and what it sends, and the real worker against a stub instance).
 
-### PR 6 — desktop
+### PR 6 — desktop (built)
+- Built as planned, with these decisions:
+  - **The verdict comes from the spec itself.** The rendered spec ends with an `afterEach` hook that writes the
+    test's status, the spec line of its first error and the message to the file `PIWI_REPRO_RESULT` names; the core
+    converter now returns `stepLines` (the line each step starts on), and `specRunVerdict` in
+    `@piwitests/core/bug-report` reads failing on an `assert` step as reproduced, failing elsewhere as diverged at
+    that step, and passing as not reproduced. The run is still a normal Piwi run through the project's own reporter,
+    but it is not stamped: `PIWI_BUG_REPORT` is not set, since the verdict no longer needs the run.
+  - **The window picks the project.** A request carries steps, not a project: the confirmation lists the projects
+    linked to a folder on this machine and the developer picks one; the spec is rendered with that project's
+    settings, catalog and suite locators (`renderStepsRunSpec`).
+  - **The shell fetches the spec itself** from the bundled server (`GET /api/desktop/repro-requests/:id/spec`, with
+    its own token over loopback), so the webview never hands it code; `repro_spec_path` refuses a test directory
+    outside the linked folder once both are resolved, and a request id that is not short hex.
+  - **A PATCH records what the window did** (`running` with the project, `declined`, `done` with the verdict), which
+    is what Piwi Picker polls; requests live in memory ten minutes after their last change.
+  - **Options are sent as defaults** (headed and a trace); the developer changes them in the window.
+  - **Connect Piwi Picker** is a card on the desktop app's Setup page (address and token), beside the reporter's.
+  - Posting the desktop verdict to the report's instance is left to **Share result**, which serves both kinds of run.
+- Verified: Rust unit tests on the path handling, app unit tests on the request parsing and store, app e2e with a
+  faked bridge (the dialog, the run, the verdict recorded, declining), extension e2e (the preview, nothing sent
+  before Send, the real worker against a stand-in app), and by hand against a built server in desktop mode: 401
+  without the token, 415 for a non-JSON body even with it, 400 for steps `parseSteps` refuses, and a page's preflight
+  refused; the rendered spec run with Playwright in a scratch project wrote its result, read as reproduced on the
+  buggy page and not reproduced on the fixed one. Not run: the Tauri window itself (no desktop e2e build here).
 - `server/api/desktop/repro-requests.post.ts`, `[id].get.ts`, `[id]/spec.get.ts` (new);
   `server/utils/desktop-handoff.ts` (`repro-request`); `apps/desktop/src-tauri/src/runner.rs` (`desktop_run_repro`),
   `lib.rs` (registration); the window's confirmation dialog and **Connect Piwi Picker**; the extension's Desktop app
@@ -536,7 +617,7 @@ PRs 1–3 close the loop between a tester and a developer with files alone: reco
   spec stays under the test directory); a desktop e2e run of a repro.
 - Docs: `features/desktop.md`.
 
-### PR 7 — Jira
+### PR 7 — Jira (built)
 - `server/utils/integrations/create.ts`, `actions.ts` (`attach`), `sync.ts`, `known-issue.ts`;
   `shared/integrations/build-issue.ts` (`buildBugIssueDocument`, the steps through core's phrasebook for the ticket
   language), `messages/en.ts`, `messages/fr.ts`; schema for `entity_links.bug_report_id` and the binding's `fileEvery`;
@@ -549,11 +630,51 @@ PRs 1–3 close the loop between a tester and a developer with files alone: reco
   `user` key is not offered the checkbox and cannot create unless the project files every report; a report written in
   German files a French ticket whose steps read in French and whose note is unchanged.
 - Docs: `features/issue-tracking.md`, `features/report-a-bug.md`.
+- Built as: `entity_links.bug_report_id`; `bug_report` as a link entity and an issue entity (`IssueEntityType`), in the
+  draft (`buildBugReportDraft`), `createIssue` (`createBugReportIssue`, no cluster, the link on the report) and the MCP
+  tool; `buildBugIssueDocument` in `shared/integrations/build-issue.ts` with the steps through `bugPhrases(locale)`;
+  `buildBugReportIssue` in `documents.ts`; the `attach` outbox action, queued per screenshot once the issue exists;
+  `server/utils/integrations/bug-reports.ts` (intake, `fileBugReportIssue`, `shouldFileOnSend`,
+  `followBugReportTickets`); `enqueueBugLooksFixedPolicies`; the bug-report branch of the tracker sync; the intake
+  endpoint; **Create issue** and the ticket on the report's page; **File every bug report** in the project's sync
+  settings; in the extension, the intake read with the send target, the preview's checkbox and the result line.
+  Decisions made while building:
+  - **`fileEvery` is a sync policy** (`policies.fileEveryBugReport`), stored with the binding's other policies, so it
+    needs no column; the intake answers it as `fileEvery`.
+  - **The committed spec in the ticket carries `piwi:bug`, not the ticket's key**: the key exists only once Jira
+    answers, and the spec is rendered before. The ticket links the report, whose Spec tab is the reference.
+  - **A `createIssue` a role may not make is refused (403) before the report is stored**, unless the project files
+    every report; a send never fails because Jira did, the report is kept and the answer's `issue` says what happened.
+  - **The ticket follows the report on looks fixed** with the cluster policies (`commentOnFix`, `transitionOnFix`),
+    and the report follows the ticket (`resolveOnClose`, `reopenOnTicketReopen`); "why the suite missed it" joins the
+    ticket with PR 8.
+  - Tests: `integrations-bug-issue.test.ts` (a German report files a French ticket, its steps in French, the note
+    unchanged), `bug-reports-jira.spec.ts` (intake, a send that does not ask files nothing, one that asks files exactly
+    one issue with its screenshot attached, `fileEvery` files without asking, filing from the page and its draft; a
+    `user` key's refusal on the CI auth server), and the extension's `bug-send.spec.ts` (the checkbox and
+    `createIssue` on the wire).
 
-### PR 8 — missed-by and escapes
+### PR 8 — missed-by and escapes (built)
 - `shared/handlers/bug-reports.ts`, `shared/handlers/scenario-gaps.ts` (escaped-defect loader),
   `packages/reporter/templates/skills/fix-a-reported-bug/SKILL.md` (new), `cli/skills.ts`.
 - Docs: `features/agent-skills.md`, `features/scenario-gaps.md`.
+- Built as: `computeMissedBy` and `describeMissedBy` (`shared/bug-report-missed-by.ts`, pure: the page of the first
+  marked step, the tests whose uses ran on it, and for each marked element the tests whose chains find it through
+  core's `lookupLocators`, with what they assert); `getBugReportMissedBy` in the shared handler;
+  `GET /api/bug-reports/:id/missed-by` (adds the owner of the spec file whose tests visit the page most, through
+  `resolveOwners`); the report page's **The suite** line; `missedBy` in `get_bug_report` and a section of the Jira
+  ticket; `detectReportedBugEscapes` with its loader in `computeScenarioGaps`; the skill in
+  `packages/reporter/templates/skills/fix-a-reported-bug/SKILL.md`, registered in `cli/skills.ts`. Decisions made
+  while building:
+  - **An escape is a gap per page, from the open reports only**: a report whose test is committed is no longer a
+    blind spot, since the test now guards it. The gap closes when no open report is left on the page. The exposure
+    factors keep reading the SCM's files; a page gap has none, so it ranks on its confidence (0.6, more with more
+    reports).
+  - **A use recorded on another page does not count as reaching the element**, even when its chain matches: the same
+    test id on the checkout page is another element.
+  - **Without page data** (no capture fixtures), the line says the visits are unknown rather than "no test visits".
+  - Tests: `bug-report-missed-by.test.ts` (the counts, a same-id element on another page left out, no pages, the
+    escape gaps) and the e2e read in `bug-reports.spec.ts`.
 
 ## Verification
 

@@ -1,12 +1,12 @@
 ---
 title: Piwi CLI
-description: "Every command and flag of the piwi CLI that ships with @piwitests/reporter: init, skills, gate, report, select, run, probe, ai, codegen and preflight."
+description: "Every command and flag of the piwi CLI that ships with @piwitests/reporter: init, skills, gate, report, select, run, probe, ai, codegen, preflight and bug."
 lang: en-US
 ---
 
 # Piwi CLI
 
-The `@piwitests/reporter` package ships a command-line tool, `piwi`, for the things that happen *around* a test run: wiring a project up, gating a CI job on the dashboard's analysis, running a saved test selection, turning a recording into a spec, checking a change against the tests' locators, and managing AI-step artifacts and agent skills. This page is the reference for every command and flag; each command's own `--help` prints the same list.
+The `@piwitests/reporter` package ships a command-line tool, `piwi`, for the things that happen *around* a test run: wiring a project up, gating a CI job on the dashboard's analysis, running a saved test selection, turning a recording into a spec, and managing AI-step artifacts and agent skills. This page is the reference for every command and flag; each command's own `--help` prints the same list.
 
 ## Invoking it
 
@@ -30,6 +30,7 @@ npx @piwitests/reporter <command> [options]
 | [`ai`](#ai) | Manage committed natural-language AI-step artifacts |
 | [`codegen`](#codegen) | Turn a steps file (a Piwi Picker recording) into a Playwright spec |
 | [`preflight`](#preflight) | List the test locators your change breaks, and fix them |
+| [`bug`](#bug) | Write a bug report's failing test into the project and run it once |
 
 Several commands read connection settings from the environment as a fallback: `PIWI_DASHBOARD_URL` (dashboard URL), `PIWI_API_KEY` (API key), and `PIWI_PROJECT_NAME` (project). A flag always wins over its environment variable.
 
@@ -66,7 +67,7 @@ npx @piwitests/reporter skills list
 npx @piwitests/reporter skills add [names...] [options]
 ```
 
-The six skills are `setup-piwi`, `investigate-failure`, `apply-locator-healing`, `stabilize-flaky-tests`, `run-the-right-tests` and `write-the-missing-test`. `add` with no names installs all of them.
+The seven skills are `setup-piwi`, `investigate-failure`, `apply-locator-healing`, `stabilize-flaky-tests`, `run-the-right-tests`, `write-the-missing-test` and `fix-a-reported-bug`. `add` with no names installs all of them.
 
 | Flag (for `add`) | Description |
 |---|---|
@@ -223,6 +224,9 @@ waits for that page's URL. Nothing is sent anywhere unless a project is configur
 npx @piwitests/reporter codegen steps.json --out tests/checkout.spec.ts --test-import ./fixtures
 ```
 
+`codegen bug:<id>` reads the steps of a [bug report](/features/bug-reports) from the dashboard (`--server-url`) instead
+of a file.
+
 | Flag | Description |
 |---|---|
 | `--out <file>` | Write the spec to this file instead of printing it; an existing file is kept unless `--force` |
@@ -282,11 +286,37 @@ cannot be reached.
 **Exit codes:** `0` ok, breaks or not · `1` a likely break left unfixed with `--strict`, or `--run`'s tests failed ·
 `2` the index could not be fetched and there is no cached copy, or the diff could not be read.
 
+## `bug`
+
+Get a [bug report](/features/bug-reports)'s failing test from the dashboard, written with the project's
+[generated specs settings](/features/bug-reports#the-failing-test): `test.fail()` while the bug exists, `@bug`, and
+`piwi:bug <id>` so the report follows its runs. Printed by default; `--write` puts it in the project's bugs folder
+(`tests/bugs` unless the project names another) and runs it once with `playwright test`, so you see the bug reproduce
+before you fix it.
+
+```bash
+npx @piwitests/reporter bug 37 --write
+```
+
+| Flag | Description |
+|---|---|
+| `--write` | Write the spec to the project's bugs folder, then run it once |
+| `--out <file>` | Write it to this file instead, then run it once |
+| `--no-run` | With `--write` or `--out`: write it without running it |
+| `--force` | Replace an existing file |
+| `--run-mode` | The spec without `test.fail()`, as a reproduction runs it |
+| `--server-url <url>` | Dashboard URL (env `PIWI_DASHBOARD_URL`) |
+| `--api-key <key>` | API key (env `PIWI_API_KEY`) |
+| `-h`, `--help` | Show help |
+
+**Exit codes:** `0` printed or written, and when run, the test failed on the bug as `test.fail()` expects · `1` the run
+did not: the bug may be fixed, or a step no longer matches the page · `2` the report could not be read or the file
+could not be written.
+
 ## Related
 
 - [Getting started](/guide/getting-started) — `init` in the setup flow
 - [CI & sharding](/guide/ci) — `gate` in a CI job, and the run output file
 - [Test selections](/features/test-selection) — what `select` / `run` resolve
-- [Locator preflight](/features/preflight) — what `preflight` reads in a diff
 - [AI steps](/features/ai-steps) — the authoring/replay lifecycle `ai` manages
 - [Agent skills](/features/agent-skills): what `skills` installs and what each skill does
