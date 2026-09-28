@@ -265,6 +265,24 @@ describe('piwi preflight', () => {
     );
   });
 
+  it('--fix leaves a possible break alone and lists its rewrite to apply by hand', async () => {
+    // No test of the Pay now chain reaches the button's component: the break is only possible.
+    codeIndex = {
+      files: ['src/other.ts'],
+      tests: [INDEX.tests[0]],
+      reach: [{ file: 0, tests: [0], origin: 'client' }],
+      builtAt: null,
+      truncated: false,
+    };
+    expect(await run('--fix')).toBe(0);
+    expect(fs.readFileSync(path.join(dir, 'tests/pages/checkout.page.ts'), 'utf-8')).toBe(PAGE_OBJECT);
+    const text = out.join('\n');
+    expect(text).toContain('it may break (a bare string matched)');
+    expect(text).toContain("if it does, edit by hand: getByRole('button', { name: 'Pay' })");
+    expect(text).not.toContain('Edited');
+    expect(text).not.toContain('preflight --fix');
+  });
+
   it('--json prints the breaks, the sites and the impact', async () => {
     expect(await run('--json')).toBe(0);
     const result = JSON.parse(out.join('\n'));

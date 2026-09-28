@@ -66,8 +66,9 @@ likely breaks first and folds the possible ones into one line each.
 ## Fixing the tests
 
 For a rename, each break carries the same chain with the new string; nothing else in the chain changes, and a regular
-expression gets no rewrite. `--fix` writes it into every call site whose line holds the string, keeping your quotes,
-and prints the files it edited. When the string comes from a constant or a helper argument, the call site's line does
+expression gets no rewrite. `--fix` writes a likely break's rewrite into every call site whose line holds the string,
+keeping your quotes, and prints the files it edited. A possible break is never rewritten: its line shows the rewrite to
+apply by hand if the text on the page did change. When the string comes from a constant or a helper argument, the call site's line does
 not hold it: preflight lists the files that do, to edit by hand.
 
 The index keeps the old chain until your next run records the new one, so after `--fix` the call site shows as

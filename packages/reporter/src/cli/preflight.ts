@@ -361,13 +361,22 @@ function planSites(b: LocatorBreak, testRoot: string): PreflightSite[] {
   });
 }
 
-/** Apply the planned edits, line by line, re-reading each line as edited so far. Returns the edited files. */
+/** Whether `--fix` applies a break's planned edits: only a `likely` break's, a `possible` one is a bare string that matched. */
+function isFixable(b: PreflightBreak): boolean {
+  return b.confidence === 'likely';
+}
+
+/**
+ * Apply the planned edits of the `likely` breaks, line by line, re-reading each
+ * line as edited so far. Returns the edited files.
+ */
 export function applyEdits(
   breaks: PreflightBreak[],
   replacementsOf: Map<PreflightBreak, Array<[string, string]>>,
 ): string[] {
   const byFile = new Map<string, Array<{ line: number; replacements: Array<[string, string]> }>>();
   for (const b of breaks) {
+    if (!isFixable(b)) continue;
     for (const site of b.sites) {
       if (site.action !== 'edit' || !site.edit) continue;
       const list = byFile.get(site.edit.file) ?? [];
@@ -478,6 +487,7 @@ export function renderPreflight(result: PreflightResult, cwdToRoot: (file: strin
       out.push(
         `  ${pad(b.locator, 48)} ${plural(b.tests.length, 'test')} · ${b.anchor.file}:${b.anchor.line} ${describeAnchor(b.anchor)}`,
       );
+      if (b.rewrite) out.push(`    if it does, edit by hand: ${b.rewrite}`);
     }
     const listed = Math.max(0, MAX_LISTED - likely.length);
     if (possible.length > listed) out.push(`  … ${plural(possible.length - listed, 'more')} (--json lists every one)`);
@@ -492,7 +502,9 @@ export function renderPreflight(result: PreflightResult, cwdToRoot: (file: strin
         : `${plural(result.impact.count, 'test')} reach the changed files · run them: npx @piwitests/reporter preflight --run`,
     );
   }
-  const fixable = result.breaks.reduce((n, b) => n + b.sites.filter((s) => s.action === 'edit').length, 0);
+  const fixable = result.breaks
+    .filter(isFixable)
+    .reduce((n, b) => n + b.sites.filter((s) => s.action === 'edit').length, 0);
   if (result.edited.length)
     out.push(`Edited ${plural(result.edited.length, 'file')}:`, ...result.edited.map((f) => `  ${cwdToRoot(f)}`));
   else if (fixable) out.push(`Apply the ${plural(fixable, 'rewrite')}: npx @piwitests/reporter preflight --fix`);
