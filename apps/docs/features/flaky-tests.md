@@ -27,7 +27,7 @@ The project's **Failures** tab has a **Flaky** view with a **configurable lookba
 
 <figure>
   <img src="/screenshots/flaky-detection.png" alt="Flaky tests tab listing tests with composite score, failure rate, retry passes, and flip counts">
-  <figcaption>The Flaky view of a project's Failures tab — each intermittent test scored by retry passes, status flips, and failure rate, ranked by impact and filterable by root-cause category.</figcaption>
+  <figcaption>The Flaky view of a project's Failures tab — each intermittent test scored by retry passes, status flips, and failure rate, ranked by impact, filterable by root-cause category, each with its top suspect.</figcaption>
 </figure>
 
 ### Root-cause classification
