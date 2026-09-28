@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "d6283d82-0ec2-491d-a17f-a678a1fbd6de",
+  "id": "2fdf034e-b94e-4412-a0da-d5fb85080e98",
   "prevId": "46a1378d-7b13-4925-a6dd-a2320eb9fea2",
   "tables": {
     "account_tokens": {
@@ -2604,15 +2604,15 @@
           "notNull": true,
           "autoincrement": false
         },
-        "commit": {
-          "name": "commit",
+        "commit_sha": {
+          "name": "commit_sha",
           "type": "text",
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
         },
-        "failure_commit": {
-          "name": "failure_commit",
+        "failure_commit_sha": {
+          "name": "failure_commit_sha",
           "type": "text",
           "primaryKey": false,
           "notNull": false,

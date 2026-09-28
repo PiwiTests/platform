@@ -1,5 +1,5 @@
 {
-  "id": "d9175006-d72a-4572-8686-af7b21519d12",
+  "id": "ecadc151-caed-4853-8299-91877aa29cf4",
   "prevId": "0b63eb14-5fab-4588-89f8-aefcd0fa5f7b",
   "version": "7",
   "dialect": "postgresql",
@@ -3020,14 +3020,14 @@
           "primaryKey": false,
           "notNull": true
         },
-        "commit": {
-          "name": "commit",
+        "commit_sha": {
+          "name": "commit_sha",
           "type": "text",
           "primaryKey": false,
           "notNull": false
         },
-        "failure_commit": {
-          "name": "failure_commit",
+        "failure_commit_sha": {
+          "name": "failure_commit_sha",
           "type": "text",
           "primaryKey": false,
           "notNull": false

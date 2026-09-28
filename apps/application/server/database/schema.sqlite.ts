@@ -1899,8 +1899,8 @@ export const flakeExperiments = sqliteTable(
       .notNull()
       .references(() => testCases.id, { onDelete: 'cascade' }),
     kind: text('kind').notNull(), // 'reproduce' | 'verify'
-    commit: text('commit'), // the commit the lab ran
-    failureCommit: text('failure_commit'), // the commit of the test's latest failure when planned
+    commit: text('commit_sha'), // the commit the lab ran
+    failureCommit: text('failure_commit_sha'), // the commit of the test's latest failure when planned
     source: text('source').notNull().default('cli'), // 'cli' | 'desktop' | 'ci'
     machine: text('machine'),
     playwrightProject: text('playwright_project'),
