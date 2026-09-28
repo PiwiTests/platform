@@ -2,7 +2,7 @@ import { test, expect } from './fixtures';
 import { waitForHydration, retryPost } from './utils';
 import { PROJECT } from '#shared/test-project-names';
 
-test.describe('Run timeline hooks', () => {
+test.describe('Run timeline hooks and gaps', () => {
   let runId = 0;
   const t0 = Date.now() - 60_000;
 
@@ -13,8 +13,8 @@ test.describe('Run timeline hooks', () => {
         status: 'failed',
         startTime: new Date(t0).toISOString(),
         duration: 4000,
-        totalTests: 2,
-        passedTests: 1,
+        totalTests: 3,
+        passedTests: 2,
         failedTests: 1,
         skippedTests: 0,
         testCases: [
@@ -62,6 +62,16 @@ test.describe('Run timeline hooks', () => {
               },
             ],
           },
+          {
+            // Playwright replaced the worker after the failure: the retry runs in process 1, on the same lane.
+            title: 'removes the catalog',
+            status: 'passed',
+            duration: 500,
+            retries: 1,
+            location: 'tests/catalog.spec.ts:20:5',
+            workerIndex: 1,
+            startedAt: t0 + 3700,
+          },
         ],
       },
       timeout: 20000,
@@ -70,13 +80,22 @@ test.describe('Run timeline hooks', () => {
     runId = ((await response.json()) as { runId: number }).runId;
   });
 
-  test('draws hooks by default, names the failed hook and explains uncounted hook time', async ({ page }) => {
+  test('draws hooks by default, names the failed hook and explains hook time and worker restarts', async ({ page }) => {
     await page.goto(`/test-runs/${runId}?tab=workers`);
     await waitForHydration(page);
 
     const hookBars = page.locator('[data-timeline-hook]');
     await expect(hookBars).toHaveCount(4);
     await expect(page.getByTestId('timeline-hook-failures')).toHaveText('1 hook failure');
+
+    // The replacement process continues worker 0's lane, and the stretch before it says so.
+    const timeline = page.locator('[data-shot="run-timeline"]');
+    await expect(timeline.getByText('1 worker restart')).toBeVisible();
+    await expect(timeline.locator('svg text', { hasText: /^Worker 1$/ })).toHaveCount(0);
+    const restartBox = (await page.locator('[data-timeline-gap][data-kind="restart"]').boundingBox())!;
+    await page.mouse.move(restartBox.x + restartBox.width / 2, restartBox.y + restartBox.height / 2);
+    await expect(page.getByText('Process 0 ended after “removes the catalog” failed')).toBeVisible();
+    await page.mouse.move(0, 0);
 
     // The failed teardown names the hook that broke and its error.
     const failedBox = (await page.locator('[data-timeline-hook][data-status="failed"]').boundingBox())!;

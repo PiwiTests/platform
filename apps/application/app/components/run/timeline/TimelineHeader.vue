@@ -6,6 +6,8 @@ defineProps<{
   /** Hook sections that failed — drawn whatever the hooks toggle says. */
   hookFailureCount: number;
   waitCount: number;
+  /** Times a lane's worker process was replaced by a new one. */
+  restartCount?: number;
   /** Whether the run has any hook sections to show. */
   hasHooks: boolean;
   /** Current state of the hooks toggle. */
@@ -48,6 +50,9 @@ defineEmits<{
           >
         </template>
         <template v-if="waitCount > 0"> &middot; {{ waitCount }} waits </template>
+        <template v-if="restartCount && restartCount > 0">
+          &middot; {{ restartCount }} worker restart{{ restartCount > 1 ? 's' : '' }}
+        </template>
         <template v-if="lockCount && lockCount > 0">
           &middot; {{ lockCount }} lock{{ lockCount > 1 ? 's' : '' }}
         </template></span

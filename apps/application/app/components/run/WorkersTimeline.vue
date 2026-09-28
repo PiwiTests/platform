@@ -42,6 +42,9 @@ const modelInput = {
   get stepsByExecution() {
     return stepsByExecution.value;
   },
+  get live() {
+    return props.live;
+  },
 };
 
 const { timelineData, workerRows, laneCount, maxTime, runLocks } = useTimelineModel(modelInput);
@@ -152,6 +155,7 @@ const hookFailureCount = computed(
   () => timelineData.value.filter((d) => isHookKind(d.kind) && d.status === 'failed').length,
 );
 const waitCount = computed(() => timelineData.value.filter((d) => d.kind === 'wait').length);
+const restartCount = computed(() => timelineData.value.filter((d) => d.kind === 'restart').length);
 
 // Tests and expanded step spans are always drawn (expanding a row is itself the
 // request to see its steps). Hook sections are drawn by default and a failed
@@ -201,6 +205,7 @@ function onBarLeave() {
       :test-count="testCount"
       :hook-failure-count="hookFailureCount"
       :wait-count="waitCount"
+      :restart-count="restartCount"
       :has-hooks="hasHooks"
       :show-hooks="showHooks"
       :show-waits="showWaits"
