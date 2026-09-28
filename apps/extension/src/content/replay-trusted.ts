@@ -2,7 +2,7 @@ import { actionPoint, boxInTopViewport, type FallbackReason, type InputOp, type 
 import { t } from '../shared/i18n.js';
 import { DomModel } from './engine-aria.js';
 import { parentOf } from './hover-reveal.js';
-import { REPLAY_HUD_HOST_ID } from './record-ui.js';
+import { OWN_HOST_IDS } from './record-ui.js';
 import type { FakeCursor } from './replay-cursor.js';
 
 /**
@@ -121,7 +121,7 @@ export async function pointFor(element: Element, requireHit = true): Promise<Poi
     if (!local) {
       element.scrollIntoView({ block: 'center', inline: 'nearest' });
     } else {
-      const hit = requireHit ? withOwnSurfacesAside(() => hitAt(element, local.x, local.y)) : element;
+      const hit = requireHit ? await withOwnSurfacesAside(() => hitAt(element, local.x, local.y)) : element;
       if (reaches(element, hit)) {
         const top = boxInTopViewport({ left: local.x, top: local.y, width: 0, height: 0 }, frameOrigins(element));
         return { x: top.left, y: top.top };
@@ -139,30 +139,32 @@ export async function pointFor(element: Element, requireHit = true): Promise<Poi
   }
 }
 
+/** The request conditions' banner, drawn by another script, over the page like the extension's panels. */
+const CONDITIONS_BANNER_ID = 'piwi-conditions-banner';
+
 /**
- * Runs `fn` with the replay's panel letting the pointer through, so a click on
- * an element under it reaches the element, as the fake cursor always does.
+ * Runs `fn` with the extension's own surfaces (the replay's panel, a
+ * recorder's frame, the conditions' banner) letting the pointer through, so
+ * input aimed at an element under one of them reaches the element, as the fake
+ * cursor always does.
  */
-function withOwnSurfacesAside<T>(fn: () => T): T {
-  const hud = document.getElementById(REPLAY_HUD_HOST_ID);
-  const before = hud?.style.pointerEvents ?? '';
-  if (hud) hud.style.pointerEvents = 'none';
+async function withOwnSurfacesAside<T>(fn: () => T | Promise<T>): Promise<T> {
+  const hosts = [...OWN_HOST_IDS, CONDITIONS_BANNER_ID]
+    .map((id) => document.getElementById(id))
+    .filter((host): host is HTMLElement => !!host);
+  const before = hosts.map((host) => host.style.pointerEvents);
+  for (const host of hosts) host.style.pointerEvents = 'none';
   try {
-    return fn();
+    return await fn();
   } finally {
-    if (hud) hud.style.pointerEvents = before;
+    hosts.forEach((host, i) => {
+      host.style.pointerEvents = before[i]!;
+    });
   }
 }
 
-async function sendAside(ops: InputOp[]): Promise<void> {
-  const hud = document.getElementById(REPLAY_HUD_HOST_ID);
-  const before = hud?.style.pointerEvents ?? '';
-  if (hud) hud.style.pointerEvents = 'none';
-  try {
-    await send(ops);
-  } finally {
-    if (hud) hud.style.pointerEvents = before;
-  }
+function sendAside(ops: InputOp[]): Promise<void> {
+  return withOwnSurfacesAside(() => send(ops));
 }
 
 /** The fake cursor glides to the point in the top viewport, where the real pointer then goes. */
