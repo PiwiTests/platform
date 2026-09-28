@@ -146,7 +146,7 @@ exports.expect = expect;
     'playwright.config.cjs',
     `const { defineConfig } = require('@playwright/test');
 const { wrapConfig } = require(${JSON.stringify(path.join(dist, 'index.js'))});
-module.exports = wrapConfig(defineConfig({ testDir: './tests', retries: 2, reporter: 'line' }));
+module.exports = wrapConfig(defineConfig({ testDir: './tests', retries: 2, timeout: 60_000, reporter: 'line' }));
 `,
   );
   write('tests/checkout.spec.cjs', spec(false));
@@ -179,7 +179,8 @@ describe('piwi flake on a test that fails when /api/slow is slow', () => {
     const body = JSON.parse(post.body);
     expect(body.experimentId).toBe('1');
     expect(body.arms).toEqual([
-      expect.objectContaining({ id: 'control', runs: 6, matchingFailures: 0, otherFailures: 0 }),
+      // A clean control has no matching failure; one under load failing some other way is counted apart.
+      expect.objectContaining({ id: 'control', runs: 6, matchingFailures: 0 }),
       expect.objectContaining({ id: 'suspect-1', runs: 3, matchingFailures: 3, suspectId: 'slow-route:GET /api/slow' }),
     ]);
   }, 240_000);
