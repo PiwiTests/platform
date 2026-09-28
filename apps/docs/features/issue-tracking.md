@@ -22,8 +22,8 @@ none of the entry points appear.
 
 ## What it does, exactly
 
-- **Create issue** appears on a failure cluster, on a failing execution, and on each inbox row (plus the `c` key and a
-  *Create issues* button in the inbox bulk bar). It is the primary action while the cluster has no ticket; once one
+- **Create issue** appears on a failure cluster, on a failing execution, on each inbox row (plus the `c` key and a
+  *Create issues* button in the inbox bulk bar), and on a [bug report](./bug-reports#filing-it-in-jira). It is the primary action while the cluster has no ticket; once one
   exists, the chip shows the key and status and the action becomes *Open in Jira*.
 - The issue **body is the fix plan**, rendered to Atlassian Document Format: *What happened*, *Most likely*, *Evidence*,
   *What to do* (patch, locator replacement, verify command, reproduce steps) and *Links* back to Piwi. Every section

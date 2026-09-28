@@ -56,6 +56,8 @@ export interface ProjectIntegrationPolicies {
   commentOnMerge: boolean;
   /** Days a cluster may sit open on the default branch with no ticket before the needs-ticket queue lists it. */
   needsTicketAfterDays: number;
+  /** File an issue for every bug report sent to the project, whoever sends it. */
+  fileEveryBugReport: boolean;
 }
 
 /** The auto-create guards — stored so the form persists them, inert until step 4. */
@@ -122,6 +124,7 @@ export const DEFAULT_POLICIES: ProjectIntegrationPolicies = {
   reopenOnTicketReopen: false,
   commentOnMerge: false,
   needsTicketAfterDays: 2,
+  fileEveryBugReport: false,
 };
 
 export const DEFAULT_AUTO_CREATE: AutoCreatePolicy = {
@@ -206,6 +209,7 @@ function resolvePolicies(raw: unknown): ProjectIntegrationPolicies {
     reopenOnTicketReopen: r.reopenOnTicketReopen === true,
     commentOnMerge: r.commentOnMerge === true,
     needsTicketAfterDays: clampInt(r.needsTicketAfterDays, 0, 365, DEFAULT_POLICIES.needsTicketAfterDays),
+    fileEveryBugReport: r.fileEveryBugReport === true,
   };
 }
 

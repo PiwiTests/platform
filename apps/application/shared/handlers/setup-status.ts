@@ -33,6 +33,7 @@ import {
   integrationConnections,
   graphNodes,
   probes,
+  bugReports,
 } from '../../server/database/schema';
 import { and, eq, isNotNull, or } from 'drizzle-orm';
 import { getAppSetting, setAppSetting } from '../../server/utils/app-settings';
@@ -73,7 +74,8 @@ export type SetupCapabilityId =
   | 'quarantine'
   | 'green-samples'
   | 'test-map'
-  | 'server-probes';
+  | 'server-probes'
+  | 'bug-reports';
 
 export interface SetupCapability {
   id: SetupCapabilityId;
@@ -135,6 +137,7 @@ export async function getCapabilityEvidence(db: DrizzleDB, projectId?: number): 
     hasServerProbes,
     hasReportSchedules,
     hasReportSnapshots,
+    hasBugReports,
   ] = await Promise.all([
     exists(
       db,
@@ -271,6 +274,13 @@ export async function getCapabilityEvidence(db: DrizzleDB, projectId?: number): 
     // schedule spans projects, so this stays instance-wide.
     exists(db, db.select({ id: reportSchedules.id }).from(reportSchedules).limit(1)),
     exists(db, db.select({ id: reportSnapshots.id }).from(reportSnapshots).limit(1)),
+    // Bug reports are active once Piwi Picker has sent one.
+    exists(
+      db,
+      scoped
+        ? db.select({ id: bugReports.id }).from(bugReports).where(eq(bugReports.projectId, pid)).limit(1)
+        : db.select({ id: bugReports.id }).from(bugReports).limit(1),
+    ),
   ]);
 
   // AI also counts as active when pinned by environment — an env-configured
@@ -301,6 +311,7 @@ export async function getCapabilityEvidence(db: DrizzleDB, projectId?: number): 
     'green-samples': hasGreenSamples,
     'test-map': hasGraphNodes,
     'server-probes': hasServerProbes,
+    'bug-reports': hasBugReports,
   };
 }
 
@@ -332,6 +343,7 @@ const SETUP_LADDER_ORDER: SetupCapabilityId[] = [
   'green-samples',
   'test-map',
   'server-probes',
+  'bug-reports',
 ];
 
 /**

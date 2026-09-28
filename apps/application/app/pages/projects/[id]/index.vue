@@ -452,16 +452,16 @@ function scopeTooltip(run: TestRunSummary): string {
 }
 
 const runsColumns: TableColumn<TestRunSummary>[] = [
-  { accessorKey: 'select', header: '' },
+  { accessorKey: 'select', header: 'Select' },
   { accessorKey: 'id', header: createSortHeader<TestRunSummary>('Run') },
   { accessorKey: 'status', header: createSortHeader<TestRunSummary>('Status') },
   { accessorKey: 'isFullRun', header: 'Scope' },
-  { id: 'browsers', accessorFn: (row) => row.browsers, header: '' },
+  { id: 'browsers', accessorFn: (row) => row.browsers, header: 'Browsers' },
   { accessorKey: 'startTime', header: createSortHeader<TestRunSummary>('Started') },
   { accessorKey: 'environment', header: createSortHeader<TestRunSummary>('Environment') },
   { accessorKey: 'metadata', header: 'Branch / Commit' },
   { accessorKey: 'duration', header: createSortHeader<TestRunSummary>('Test status / Dur.') },
-  { id: 'actions', header: '' },
+  { id: 'actions', header: 'Actions' },
 ];
 
 function openRun(runId: number) {
@@ -738,6 +738,7 @@ const editState = ref({
     gitlab: { ref: '', variableName: '' },
     bitbucket: { pipeline: '', variableName: '' },
   },
+  generatedSpecs: { testImport: '', bugsFolder: '' },
 });
 const selectedTags = ref<TagInfo[]>([]);
 const savingSettings = ref(false);
@@ -771,6 +772,10 @@ watch(
         },
         gitlab: { ref: ci?.gitlab?.ref ?? '', variableName: ci?.gitlab?.variableName ?? '' },
         bitbucket: { pipeline: ci?.bitbucket?.pipeline ?? '', variableName: ci?.bitbucket?.variableName ?? '' },
+      },
+      generatedSpecs: {
+        testImport: p.generatedSpecs?.testImport ?? '',
+        bugsFolder: p.generatedSpecs?.bugsFolder ?? '',
       },
     };
     selectedTags.value = p.tags || [];
@@ -806,6 +811,10 @@ async function handleSaveSettings() {
           dependencyOnStateChanging: editState.value.serverProbes.dependencyOnStateChanging,
         },
         ciRerun: editState.value.ciRerun,
+        generatedSpecs: {
+          testImport: editState.value.generatedSpecs.testImport.trim() || null,
+          bugsFolder: editState.value.generatedSpecs.bugsFolder.trim() || null,
+        },
         tagIds: selectedTags.value.map((t) => t.id),
       },
     });
@@ -840,6 +849,12 @@ const moreMenuItems = computed(() => {
     icon: 'i-lucide-crosshair',
     onSelect: () => navigateTo(`/projects/${projectId}/locators`),
   });
+  if (!projCapHidden('bug-reports'))
+    items.push({
+      label: 'Bug reports',
+      icon: 'i-lucide-bug',
+      onSelect: () => navigateTo(`/projects/${projectId}/bug-reports`),
+    });
   if (canWrite.value && !projCapHidden('quality-reports'))
     items.push({
       label: 'Schedule a quality report…',
@@ -1090,6 +1105,9 @@ const moreMenuItems = computed(() => {
                   td: 'border-b border-default',
                 }"
               >
+                <template #select-header>
+                  <span class="sr-only">Select</span>
+                </template>
                 <template #select-cell="{ row }">
                   <input
                     type="checkbox"
@@ -1138,6 +1156,9 @@ const moreMenuItems = computed(() => {
                       :class="row.original.isFullRun === false ? 'text-amber-500' : 'text-green-500'"
                     />
                   </UTooltip>
+                </template>
+                <template #browsers-header>
+                  <span class="sr-only">Browsers</span>
                 </template>
                 <template #browsers-cell="{ row }">
                   <div v-if="row.original.browsers?.length" class="flex items-center gap-1">
@@ -1188,6 +1209,9 @@ const moreMenuItems = computed(() => {
                     />
                     <DurationValue :ms="row.original.duration" class="text-xs text-gray-500" />
                   </div>
+                </template>
+                <template #actions-header>
+                  <span class="sr-only">Actions</span>
                 </template>
                 <template #actions-cell="{ row }">
                   <div class="flex justify-end">
@@ -1535,6 +1559,7 @@ const moreMenuItems = computed(() => {
                 v-model:openApiUrl="editState.openApiUrl"
                 v-model:serverProbes="editState.serverProbes"
                 v-model:ciRerun="editState.ciRerun"
+                v-model:generatedSpecs="editState.generatedSpecs"
                 v-model:tags="selectedTags"
                 :all-tags="allTags"
                 @tag-created="refreshTags()"

@@ -16,8 +16,15 @@ import {
   pollConnect,
   fetchServerPatterns,
   addServerPattern,
+  testDesktop,
   type ProjectOption,
 } from '../shared/piwi-client.js';
+import {
+  clearDesktopSettings,
+  desktopOrigin,
+  getDesktopSettings,
+  setDesktopSettings,
+} from '../shared/desktop-settings.js';
 import { waitForApproval } from '../shared/connect-flow.js';
 import { describeClient } from '../shared/client-info.js';
 import { setCachedCatalog, pruneCachedCatalogs } from '../shared/catalog-cache.js';
@@ -758,6 +765,59 @@ editorUnpairBtn.addEventListener('click', () => {
     if (pairing) await chrome.permissions.remove({ origins: [editorOriginPattern(pairing)] }).catch(() => false);
     await renderEditorPairing();
   })();
+});
+
+// ---------------------------------------------------------------------------
+// The desktop app, for Run with Playwright
+
+const desktopUrlEl = document.getElementById('desktop-url') as HTMLInputElement;
+const desktopTokenEl = document.getElementById('desktop-token') as HTMLInputElement;
+const desktopStatusEl = document.getElementById('desktop-status')!;
+
+function setDesktopStatus(text: string, kind: 'ok' | 'error' | '' = ''): void {
+  desktopStatusEl.textContent = text;
+  desktopStatusEl.className = kind;
+}
+
+document.getElementById('desktop-save')!.addEventListener('click', () => {
+  const url = desktopOrigin(desktopUrlEl.value);
+  const token = desktopTokenEl.value.trim();
+  if (!url || !token) {
+    setDesktopStatus(t('options_desktopNotLoopback'), 'error');
+    return;
+  }
+  // Asked first, while the click still counts as a user gesture; the one loopback origin only.
+  const granted = chrome.permissions.request({ origins: [`${url}/*`] }).catch(() => false);
+  void (async () => {
+    if (!(await granted)) {
+      setDesktopStatus(t('options_desktopNeedsAccess'), 'error');
+      return;
+    }
+    setDesktopStatus(t('options_testing'));
+    const check = await testDesktop({ url, token });
+    if (!check.ok) {
+      setDesktopStatus(check.error, 'error');
+      return;
+    }
+    await setDesktopSettings({ url, token });
+    desktopUrlEl.value = url;
+    setDesktopStatus(t('options_desktopSaved'), 'ok');
+  })();
+});
+
+document.getElementById('desktop-forget')!.addEventListener('click', () => {
+  void (async () => {
+    await clearDesktopSettings();
+    desktopUrlEl.value = '';
+    desktopTokenEl.value = '';
+    setDesktopStatus(t('options_desktopForgotten'), 'ok');
+  })();
+});
+
+void getDesktopSettings().then((desktop) => {
+  if (!desktop) return;
+  desktopUrlEl.value = desktop.url;
+  desktopTokenEl.value = desktop.token;
 });
 
 renderLanguageSelect();

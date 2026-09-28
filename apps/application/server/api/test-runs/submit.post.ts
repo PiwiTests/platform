@@ -181,6 +181,7 @@ export default eventHandler(async (event) => {
             browser: testCase.browser ?? null,
             locatorSnapshots: testCase.locatorSnapshots ?? null,
             didNotRunReason: testCase.didNotRunReason ?? null,
+            expectedStatus: testCase.expectedStatus ?? null,
             blockedBy: testCase.blockedBy ?? null,
           };
         });
@@ -316,6 +317,7 @@ export default eventHandler(async (event) => {
         testMeta?: unknown;
         locatorSnapshots?: unknown;
         didNotRunReason?: string | null;
+        expectedStatus?: string | null;
         blockedBy?: string | null;
       }) => {
         const { filePath, line, column } = testCase.location
@@ -363,6 +365,7 @@ export default eventHandler(async (event) => {
           browser: testCase.browser ?? null,
           locatorSnapshots: testCase.locatorSnapshots ?? null,
           didNotRunReason: testCase.didNotRunReason ?? null,
+          expectedStatus: testCase.expectedStatus ?? null,
           blockedBy: testCase.blockedBy ?? null,
         };
       },

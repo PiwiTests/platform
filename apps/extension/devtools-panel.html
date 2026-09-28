@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Piwi</title>
+    <link rel="stylesheet" href="src/devtools/devtools.css" />
+  </head>
+  <body class="panel">
+    <header class="toolbar">
+      <div role="tablist" aria-label="Piwi">
+        <button type="button" role="tab" id="tab-record" data-tab="record" aria-controls="content" data-i18n="devtools_tabRecord">Record</button>
+        <button type="button" role="tab" id="tab-replay" data-tab="replay" aria-controls="content" data-i18n="devtools_tabReplay">Replay</button>
+        <button type="button" role="tab" id="tab-network" data-tab="network" aria-controls="content" data-i18n="devtools_tabNetwork">Network</button>
+        <button type="button" role="tab" id="tab-locators" data-tab="locators" aria-controls="content" data-i18n="devtools_tabLocators">Locators</button>
+        <button type="button" role="tab" id="tab-session" data-tab="session" aria-controls="content" data-i18n="devtools_tabSession">Session</button>
+      </div>
+      <div class="tools">
+        <button type="button" id="playwright-view" data-i18n="popup_playwrightView">Playwright view</button>
+        <button type="button" id="save-login" data-i18n="popup_saveLogin">Save login for tests</button>
+      </div>
+    </header>
+    <div id="notice" aria-live="polite"></div>
+    <main id="content" role="tabpanel"></main>
+    <script type="module" src="src/devtools/panel.ts"></script>
+  </body>
+</html>

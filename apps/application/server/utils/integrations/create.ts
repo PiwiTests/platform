@@ -16,7 +16,7 @@ import type { DbClient } from '../../database';
 import { issueLabels } from '#shared/integrations/build-issue';
 import { DEFAULT_LOCALE, type IssueLocale } from '#shared/integrations/messages';
 import type { IssueIncludeOptions } from '#shared/integrations/types';
-import { buildClusterIssue, buildExecutionIssue } from './documents';
+import { buildBugReportIssue, buildClusterIssue, buildExecutionIssue } from './documents';
 import { clusterShareTokenMinter } from './share-url';
 import {
   enqueueOrReplaceAction,
@@ -108,6 +108,7 @@ async function resolveTarget(
   entityType: DraftEntityType,
   entityId: number,
 ): Promise<{ clusterId: number; projectId: number } | null> {
+  if (entityType === 'bug_report') return null;
   const clusterId =
     entityType === 'failure_cluster'
       ? entityId
@@ -127,6 +128,7 @@ async function resolveTarget(
 }
 
 export async function createIssue(db: DbClient, params: CreateIssueParams): Promise<CreateIssueOutcome | null> {
+  if (params.entityType === 'bug_report') return createBugReportIssue(db, params);
   const target = await resolveTarget(db, params.entityType, params.entityId);
   if (!target) return null;
 
@@ -227,6 +229,83 @@ export async function createIssue(db: DbClient, params: CreateIssueParams): Prom
   }
   if (outcome.status === 'failed') {
     // A refusal naming fields means the cached screen may be stale.
+    if (outcome.fieldErrors) forgetCreateFields(params.connectionId, params.projectKey, params.issueType);
+    return {
+      ...base,
+      status: 'failed',
+      error: outcome.error,
+      ...(outcome.fieldErrors ? { fieldErrors: namedFieldErrors(outcome.fieldErrors, screen) } : {}),
+    };
+  }
+  if (outcome.status === 'skipped') return { ...base, status: 'skipped', error: outcome.reason };
+  return base;
+}
+
+/**
+ * File an issue for a bug report: the report's own document and labels, no
+ * cluster, the created link on the report. Its screenshots follow as `attach`
+ * actions once the issue exists (see `applyCreateIssue`).
+ */
+async function createBugReportIssue(db: DbClient, params: CreateIssueParams): Promise<CreateIssueOutcome | null> {
+  const locale = params.locale ?? DEFAULT_LOCALE;
+  const built = await buildBugReportIssue(db, params.entityId, { locale, siteUrl: params.siteUrl });
+  if (!built) return null;
+  const binding = await readProjectIntegration(db, built.projectId);
+  const labels = [...new Set([...(params.labels ?? binding.labels), ...built.labels])];
+
+  const dedupeKey = createIssueKey('bug_report', params.entityId, params.connectionId);
+  const filed = await findActionByKey(db, dedupeKey);
+  if (filed?.status === 'done') {
+    const result = filed.result as CreateIssueResult | null;
+    return { actionId: filed.id, status: 'done', key: result?.key, url: result?.url, projectId: built.projectId };
+  }
+
+  const values = mergeFieldValues(binding.fieldDefaults, params.fields);
+  const screen = await screenFields(db, params.connectionId, params.projectKey, params.issueType);
+  if (screen) {
+    const missing = missingRequiredFields(screen, values, { assignee: !!params.assignee });
+    if (missing.length) {
+      return {
+        actionId: null,
+        status: 'failed',
+        error: missingFieldsMessage(missing),
+        missingFields: missing.map((f) => ({ id: f.id, name: f.name })),
+        projectId: built.projectId,
+      };
+    }
+  }
+
+  const payload: CreateIssueActionPayload = {
+    projectKey: params.projectKey,
+    issueType: params.issueType,
+    title: params.title?.trim() || built.title,
+    document: built.document,
+    labels,
+    assigneeId: params.assignee ?? null,
+    componentId: null,
+    fields: fieldPayload(values, screen),
+    locale,
+    linkEntityType: 'bug_report',
+    linkEntityId: params.entityId,
+  };
+  const action = await enqueueOrReplaceAction(db, {
+    connectionId: params.connectionId,
+    projectId: built.projectId,
+    kind: 'create-issue',
+    entityType: 'bug_report',
+    entityId: params.entityId,
+    dedupeKey,
+    payload,
+    requestedBy: params.requestedBy ?? null,
+  });
+  const outcome = await runActionNow(db, action.id);
+  const base: CreateIssueOutcome = { actionId: action.id, status: 'pending', projectId: built.projectId };
+  if (!outcome) return base;
+  if (outcome.status === 'done') {
+    const result = outcome.result as CreateIssueResult | undefined;
+    return { ...base, status: 'done', key: result?.key, url: result?.url };
+  }
+  if (outcome.status === 'failed') {
     if (outcome.fieldErrors) forgetCreateFields(params.connectionId, params.projectKey, params.issueType);
     return {
       ...base,

@@ -20,7 +20,7 @@ Escolher e gravar nunca usam a rede. Nada é coletado nem enviado.
 
 **Opcional: conectar sua própria instância do Piwi**
 
-O Piwi é um painel auto-hospedado para os resultados de testes Playwright. Com a extensão conectada à sua instância (o endereço dela e uma chave de API, nas configurações), três ferramentas se somam: gravações que chamam suas próprias funções de teste, **Funções de teste**, que mostra quais delas funcionam na página, e **Elementos testados**, que destaca os elementos que seus testes alcançam. A extensão só lê a sua instância; uma gravação nunca é enviada para ela.
+O Piwi é um painel auto-hospedado para os resultados de testes Playwright. Com a extensão conectada à sua instância (o endereço dela e uma chave de API, nas configurações), três ferramentas se somam: gravações que chamam suas próprias funções de teste, **Funções de teste**, que mostra quais delas funcionam na página, e **Elementos testados**, que destaca os elementos que seus testes alcançam. A extensão lê a sua instância e só envia uma coisa para ela: um relatório de bug, quando você clica em Enviar na prévia que mostra exatamente o que vai.
 
 **Permissões**
 

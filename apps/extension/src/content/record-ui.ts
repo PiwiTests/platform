@@ -12,6 +12,7 @@ export const BUG_DIALOG_HOST_ID = 'piwi-bug-dialog-host';
 export const REPLAY_HUD_HOST_ID = 'piwi-replay-hud-host';
 export const REPLAY_DIALOG_HOST_ID = 'piwi-replay-dialog-host';
 export const CURSOR_HOST_ID = 'piwi-replay-cursor-host';
+export const DESKTOP_DIALOG_HOST_ID = 'piwi-desktop-run-host';
 
 export const OWN_HOST_IDS: ReadonlySet<string> = new Set([
   HUD_HOST_ID,
@@ -21,6 +22,7 @@ export const OWN_HOST_IDS: ReadonlySet<string> = new Set([
   REPLAY_HUD_HOST_ID,
   REPLAY_DIALOG_HOST_ID,
   CURSOR_HOST_ID,
+  DESKTOP_DIALOG_HOST_ID,
 ]);
 
 export const SHARED_STYLE = `

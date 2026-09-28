@@ -12,7 +12,7 @@
  * an ingest error, so failures are logged and swallowed.
  */
 import { and, eq, inArray } from 'drizzle-orm';
-import { failureClusters, projects, testCases, testRuns, testRunsCases } from '../../database/schema';
+import { bugReports, failureClusters, projects, testCases, testRuns, testRunsCases } from '../../database/schema';
 import { getAppSetting } from '../app-settings';
 import { createScmProvider } from './index';
 import { normalizeGitUrl } from './git-url';
@@ -48,7 +48,8 @@ import { withProjectGraphLock } from '../project-graph-lock';
 import type { VerifiedFix } from '../fix-verification';
 import type { RunMetadata } from '../run-json-types';
 import type { DbClient } from '../../database';
-import type { FilterDetails } from '#shared/types';
+import type { FilterDetails, TestMetadata } from '#shared/types';
+import { isExpectedFailurePassed, lastAttempts } from '#shared/status-classify';
 import { errorExcerpt } from '#shared/notification-events';
 import { caseHeadline } from '#shared/failure-verdict';
 import { locksHeldAcrossShards } from '#shared/lock-overlap';
@@ -75,6 +76,8 @@ interface CaseRow {
   id: number;
   testCaseId: number;
   status: string;
+  expectedStatus: string | null;
+  testMeta: unknown;
   retries: number | null;
   duration: number | null;
   wastedTimeMs: number | null;
@@ -179,6 +182,8 @@ export async function buildRunPrSummary(
       id: testRunsCases.id,
       testCaseId: testRunsCases.testCaseId,
       status: testRunsCases.status,
+      expectedStatus: testRunsCases.expectedStatus,
+      testMeta: testRunsCases.testMeta,
       retries: testRunsCases.retries,
       duration: testRunsCases.duration,
       wastedTimeMs: testRunsCases.wastedTimeMs,
@@ -196,7 +201,27 @@ export async function buildRunPrSummary(
     .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
     .where(eq(testRunsCases.testRunId, runId));
 
-  const failingRows = caseRows.filter((row) => FAIL_STATUSES.includes(row.status));
+  // A retried test's last attempt says whether its bug still shows.
+  const looksFixedRows = lastAttempts(caseRows).filter((row) =>
+    isExpectedFailurePassed(row.status, row.expectedStatus),
+  );
+  const namedBugs = looksFixedRows.flatMap((row) => {
+    const bug = Number((row.testMeta as TestMetadata | null)?.bug);
+    return bug ? [bug] : [];
+  });
+  const knownBugReports = new Set(
+    namedBugs.length
+      ? (
+          await db
+            .select({ id: bugReports.id })
+            .from(bugReports)
+            .where(and(eq(bugReports.projectId, run.projectId), inArray(bugReports.id, namedBugs)))
+        ).map((r) => r.id)
+      : [],
+  );
+  const failingRows = caseRows.filter(
+    (row) => FAIL_STATUSES.includes(row.status) && !isExpectedFailurePassed(row.status, row.expectedStatus),
+  );
   const flakyRows = caseRows.filter((row) => row.status === 'passed' && (row.retries ?? 0) > 0);
 
   // `computeRunInsights` owns the baseline comparison; reuse it rather than
@@ -263,6 +288,16 @@ export async function buildRunPrSummary(
     durationMs: run.duration ?? null,
     newRegressions,
     preExisting,
+    looksFixed: looksFixedRows.map((row) => {
+      const bug = Number((row.testMeta as TestMetadata | null)?.bug) || null;
+      return {
+        title: row.title,
+        filePath: row.filePath,
+        executionId: row.id,
+        bugId: bug,
+        bugReportExists: bug != null && knownBugReports.has(bug),
+      };
+    }),
     flaky: flakyRows.map((row) => ({
       title: row.title,
       filePath: row.filePath,

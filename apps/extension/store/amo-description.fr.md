@@ -18,7 +18,7 @@ La sélection et l’enregistrement n’utilisent jamais le réseau. Rien n’es
 
 **En option : connecter votre instance Piwi**
 
-Piwi est un tableau de bord auto-hébergé pour les résultats de tests Playwright. Une fois l’extension reliée à votre instance (son URL et une clé d’API, dans les réglages), trois outils s’ajoutent : des enregistrements qui appellent vos propres fonctions de test, **Fonctions de test**, qui liste celles utilisables sur la page, et **Éléments testés**, qui met en évidence les éléments que vos tests atteignent. L’extension ne fait que lire votre instance ; un enregistrement n’y est jamais envoyé.
+Piwi est un tableau de bord auto-hébergé pour les résultats de tests Playwright. Une fois l’extension reliée à votre instance (son URL et une clé d’API, dans les réglages), trois outils s’ajoutent : des enregistrements qui appellent vos propres fonctions de test, **Fonctions de test**, qui liste celles utilisables sur la page, et **Éléments testés**, qui met en évidence les éléments que vos tests atteignent. L’extension lit votre instance et ne lui envoie qu’une chose : un rapport de bug, quand vous cliquez sur Envoyer dans l’aperçu qui montre exactement ce qui part.
 
 **Autorisations**
 

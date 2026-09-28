@@ -1,6 +1,6 @@
 {
-  "id": "57d853e1-54bc-4526-a551-5df1af1ed717",
-  "prevId": "a62a99e5-5ce3-458b-9f61-e5ac50b7aa6f",
+  "id": "be93a520-aa7b-42e5-a70f-e6c7a3e2c4f9",
+  "prevId": "327e3f82-60a8-4b0b-acf2-f7563686164e",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -636,6 +636,409 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.bug_reports": {
+      "name": "bug_reports",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "note": {
+          "name": "note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "page_key": {
+          "name": "page_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "path": {
+          "name": "path",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "origin": {
+          "name": "origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'open'"
+        },
+        "steps": {
+          "name": "steps",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "evidence": {
+          "name": "evidence",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "context": {
+          "name": "context",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "language": {
+          "name": "language",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "test_case_id": {
+          "name": "test_case_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status_run_id": {
+          "name": "status_run_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "closed_at": {
+          "name": "closed_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "closed_by_run_id": {
+          "name": "closed_by_run_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "idx_bug_reports_project_status": {
+          "name": "idx_bug_reports_project_status",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_bug_reports_test_case": {
+          "name": "idx_bug_reports_test_case",
+          "columns": [
+            {
+              "expression": "test_case_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_bug_reports_created_by": {
+          "name": "idx_bug_reports_created_by",
+          "columns": [
+            {
+              "expression": "created_by",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_bug_reports_status_run": {
+          "name": "idx_bug_reports_status_run",
+          "columns": [
+            {
+              "expression": "status_run_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_bug_reports_closed_by_run": {
+          "name": "idx_bug_reports_closed_by_run",
+          "columns": [
+            {
+              "expression": "closed_by_run_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "bug_reports_project_id_projects_id_fk": {
+          "name": "bug_reports_project_id_projects_id_fk",
+          "tableFrom": "bug_reports",
+          "tableTo": "projects",
+          "columnsFrom": ["project_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "bug_reports_created_by_users_id_fk": {
+          "name": "bug_reports_created_by_users_id_fk",
+          "tableFrom": "bug_reports",
+          "tableTo": "users",
+          "columnsFrom": ["created_by"],
+          "columnsTo": ["id"],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "bug_reports_test_case_id_test_cases_id_fk": {
+          "name": "bug_reports_test_case_id_test_cases_id_fk",
+          "tableFrom": "bug_reports",
+          "tableTo": "test_cases",
+          "columnsFrom": ["test_case_id"],
+          "columnsTo": ["id"],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "bug_reports_status_run_id_test_runs_id_fk": {
+          "name": "bug_reports_status_run_id_test_runs_id_fk",
+          "tableFrom": "bug_reports",
+          "tableTo": "test_runs",
+          "columnsFrom": ["status_run_id"],
+          "columnsTo": ["id"],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "bug_reports_closed_by_run_id_test_runs_id_fk": {
+          "name": "bug_reports_closed_by_run_id_test_runs_id_fk",
+          "tableFrom": "bug_reports",
+          "tableTo": "test_runs",
+          "columnsFrom": ["closed_by_run_id"],
+          "columnsTo": ["id"],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.bug_reproductions": {
+      "name": "bug_reproductions",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "bug_report_id": {
+          "name": "bug_report_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "verdict": {
+          "name": "verdict",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "diverged_at": {
+          "name": "diverged_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "origin": {
+          "name": "origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "user_agent": {
+          "name": "user_agent",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "run_id": {
+          "name": "run_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "idx_bug_reproductions_report": {
+          "name": "idx_bug_reproductions_report",
+          "columns": [
+            {
+              "expression": "bug_report_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_bug_reproductions_run": {
+          "name": "idx_bug_reproductions_run",
+          "columns": [
+            {
+              "expression": "run_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_bug_reproductions_created_by": {
+          "name": "idx_bug_reproductions_created_by",
+          "columns": [
+            {
+              "expression": "created_by",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "bug_reproductions_bug_report_id_bug_reports_id_fk": {
+          "name": "bug_reproductions_bug_report_id_bug_reports_id_fk",
+          "tableFrom": "bug_reproductions",
+          "tableTo": "bug_reports",
+          "columnsFrom": ["bug_report_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "bug_reproductions_run_id_test_runs_id_fk": {
+          "name": "bug_reproductions_run_id_test_runs_id_fk",
+          "tableFrom": "bug_reproductions",
+          "tableTo": "test_runs",
+          "columnsFrom": ["run_id"],
+          "columnsTo": ["id"],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "bug_reproductions_created_by_users_id_fk": {
+          "name": "bug_reproductions_created_by_users_id_fk",
+          "tableFrom": "bug_reproductions",
+          "tableTo": "users",
+          "columnsFrom": ["created_by"],
+          "columnsTo": ["id"],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.case_payloads": {
       "name": "case_payloads",
       "schema": "",
@@ -874,161 +1277,6 @@
           "columnsFrom": ["cluster_b_id"],
           "columnsTo": ["id"],
           "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.code_reach": {
-      "name": "code_reach",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "serial",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "project_id": {
-          "name": "project_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "test_case_id": {
-          "name": "test_case_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "branch": {
-          "name": "branch",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "''"
-        },
-        "file": {
-          "name": "file",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "origin": {
-          "name": "origin",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'client'"
-        },
-        "last_seen_run_id": {
-          "name": "last_seen_run_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "last_seen_at": {
-          "name": "last_seen_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {
-        "idx_code_reach_unique": {
-          "name": "idx_code_reach_unique",
-          "columns": [
-            {
-              "expression": "test_case_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "branch",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "file",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_code_reach_project_file": {
-          "name": "idx_code_reach_project_file",
-          "columns": [
-            {
-              "expression": "project_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "file",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_code_reach_last_seen_run": {
-          "name": "idx_code_reach_last_seen_run",
-          "columns": [
-            {
-              "expression": "last_seen_run_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "code_reach_project_id_projects_id_fk": {
-          "name": "code_reach_project_id_projects_id_fk",
-          "tableFrom": "code_reach",
-          "tableTo": "projects",
-          "columnsFrom": ["project_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "code_reach_test_case_id_test_cases_id_fk": {
-          "name": "code_reach_test_case_id_test_cases_id_fk",
-          "tableFrom": "code_reach",
-          "tableTo": "test_cases",
-          "columnsFrom": ["test_case_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "code_reach_last_seen_run_id_test_runs_id_fk": {
-          "name": "code_reach_last_seen_run_id_test_runs_id_fk",
-          "tableFrom": "code_reach",
-          "tableTo": "test_runs",
-          "columnsFrom": ["last_seen_run_id"],
-          "columnsTo": ["id"],
-          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },
@@ -5283,6 +5531,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "generated_specs": {
+          "name": "generated_specs",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
         "targets": {
           "name": "targets",
           "type": "jsonb",
@@ -5855,136 +6109,6 @@
           "columnsFrom": ["created_by"],
           "columnsTo": ["id"],
           "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.run_locator_breaks": {
-      "name": "run_locator_breaks",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "serial",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "run_id": {
-          "name": "run_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "project_id": {
-          "name": "project_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "locator": {
-          "name": "locator",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "rewrite": {
-          "name": "rewrite",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "replacements": {
-          "name": "replacements",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "anchor": {
-          "name": "anchor",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "confidence": {
-          "name": "confidence",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "call_sites": {
-          "name": "call_sites",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "test_case_ids": {
-          "name": "test_case_ids",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "idx_run_locator_breaks_run": {
-          "name": "idx_run_locator_breaks_run",
-          "columns": [
-            {
-              "expression": "run_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_run_locator_breaks_project": {
-          "name": "idx_run_locator_breaks_project",
-          "columns": [
-            {
-              "expression": "project_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "run_locator_breaks_run_id_test_runs_id_fk": {
-          "name": "run_locator_breaks_run_id_test_runs_id_fk",
-          "tableFrom": "run_locator_breaks",
-          "tableTo": "test_runs",
-          "columnsFrom": ["run_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "run_locator_breaks_project_id_projects_id_fk": {
-          "name": "run_locator_breaks_project_id_projects_id_fk",
-          "tableFrom": "run_locator_breaks",
-          "tableTo": "projects",
-          "columnsFrom": ["project_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
@@ -6850,6 +6974,12 @@
         "link": {
           "name": "link",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "bug_report_id": {
+          "name": "bug_report_id",
+          "type": "integer",
           "primaryKey": false,
           "notNull": false
         },
@@ -7741,12 +7871,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "code_reach_payload_id": {
-          "name": "code_reach_payload_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
         "browser": {
           "name": "browser",
           "type": "jsonb",
@@ -7815,6 +7939,12 @@
         },
         "did_not_run_reason": {
           "name": "did_not_run_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "expected_status": {
+          "name": "expected_status",
           "type": "text",
           "primaryKey": false,
           "notNull": false
@@ -8012,22 +8142,6 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
-        },
-        "idx_trc_code_reach_payload": {
-          "name": "idx_trc_code_reach_payload",
-          "columns": [
-            {
-              "expression": "code_reach_payload_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "code_reach_payload_id IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
         }
       },
       "foreignKeys": {
@@ -8108,15 +8222,6 @@
           "tableFrom": "test_runs_cases",
           "tableTo": "case_payloads",
           "columnsFrom": ["locator_pages_payload_id"],
-          "columnsTo": ["id"],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "test_runs_cases_code_reach_payload_id_case_payloads_id_fk": {
-          "name": "test_runs_cases_code_reach_payload_id_case_payloads_id_fk",
-          "tableFrom": "test_runs_cases",
-          "tableTo": "case_payloads",
-          "columnsFrom": ["code_reach_payload_id"],
           "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"

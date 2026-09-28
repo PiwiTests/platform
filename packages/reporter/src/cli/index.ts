@@ -9,6 +9,7 @@
  * change against it before it runs (`preflight`).
  */
 import { runAi } from './ai.js';
+import { runBug } from './bug.js';
 import { runCodegen } from './codegen.js';
 import { runGate } from './gate.js';
 import { runInit } from './init.js';
@@ -35,6 +36,7 @@ Commands:
   ai        Manage committed natural-language AI-step artifacts
   codegen   Turn a steps file (a Piwi Picker recording) into a Playwright spec
   preflight List the test locators your uncommitted change breaks, and fix them
+  bug       Write a bug report's failing test into the project and run it once
 
 Run \`npx @piwitests/reporter <command> --help\` for a command's options.
 (The published package is @piwitests/reporter; its command is piwi. Invoke it
@@ -65,6 +67,8 @@ async function main(): Promise<number> {
       return runCodegen(rest);
     case 'preflight':
       return runPreflight(rest);
+    case 'bug':
+      return runBug(rest);
     case undefined:
     case '-h':
     case '--help':

@@ -524,6 +524,7 @@ export async function getTestRunCase(
     isNewRegression: trc.isNewRegression ?? null,
     isNewFlaky: trc.isNewFlaky ?? null,
     didNotRunReason: trc.didNotRunReason ?? null,
+    expectedStatus: trc.expectedStatus ?? null,
     blockedBy: trc.blockedBy ?? null,
     blockedByCase,
     blockedTests,

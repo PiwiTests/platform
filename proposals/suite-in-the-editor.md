@@ -13,7 +13,7 @@ built, and so are the priority 2 items. What changed while building is under [As
 payload column on `test_runs_cases` and one table. Tracks C–E add a workspace package, a VS Code extension and a
 JetBrains plugin, and a commitlint scope (`ide`); a catalog of what the editors can do after their first release
 follows the tracks. New wire fields, endpoints, a CLI command and a published extension
-API freeze at 1.0 (D22 in [`1.0-stabilization.md`](1.0-stabilization.md)).
+API freeze at 1.0 (D24 in [`1.0-stabilization.md`](1.0-stabilization.md)).
 
 **Summary.** Tested elements answers "which tests reach this element?" on the live page. This plan answers the same
 question where the change is made, before anything runs. Renaming a button breaks every test that finds it by its name,

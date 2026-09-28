@@ -375,6 +375,53 @@ const EXTERNAL_DOCS_IMAGES = new Set([
   'projects.png',
 ]);
 
+/** The steps of the coupon report the repro-request scene shows. */
+const REPRO_SCENE_STEPS = (() => {
+  const origin = 'https://staging.shop.test';
+  const byTestId = (id) => ({
+    tagName: 'button',
+    role: null,
+    accessibleName: null,
+    testId: id,
+    text: null,
+    alternatives: [{ locator: `getByTestId('${id}')`, method: 'getByTestId', score: 95 }],
+  });
+  const step = (action, extra) => ({
+    action,
+    target: null,
+    value: null,
+    redacted: false,
+    pageUrl: `${origin}/cart`,
+    timestamp: 1,
+    ...extra,
+  });
+  return {
+    v: 1,
+    title: 'Coupon not applied to the total',
+    origin,
+    recordedAt: 1,
+    note: null,
+    steps: [
+      step('goto', { value: `${origin}/cart` }),
+      step('fill', {
+        target: { ...byTestId('coupon'), tagName: 'input', role: 'textbox', accessibleName: 'Coupon' },
+        value: 'SPRING10',
+      }),
+      step('click', { target: { ...byTestId('apply'), role: 'button', accessibleName: 'Apply' } }),
+      step('assert', {
+        target: { ...byTestId('cart-total'), tagName: 'p' },
+        assertion: {
+          matcher: 'toHaveText',
+          expected: 'Total: 42',
+          actual: 'Total: 40',
+          negated: false,
+          note: 'the coupon is ignored',
+        },
+      }),
+    ],
+  };
+})();
+
 /** What the mocked `desktop_inspect_folder` reports unless a scene overrides it. */
 const READY_INSPECTION = {
   path: '/home/dev/code/acme-checkout',
@@ -2252,6 +2299,40 @@ const SCENES = [
     pad: 12,
   },
 
+  // ── Bug reports ──────────────────────────────────────────────────────────
+  {
+    name: 'bug-report-page',
+    description: 'A bug report sent from Piwi Picker: what was expected, where it stands, and its steps',
+    tags: ['desktop'],
+    route: '/bug-reports/1',
+    viewport: { width: 1280, height: 900 },
+  },
+  {
+    name: 'bug-report-spec',
+    description: 'A bug report’s Spec tab: the failing test to commit, rendered with the project’s settings',
+    tags: ['desktop'],
+    route: '/bug-reports/1?tab=spec',
+    viewport: { width: 1280, height: 1100 },
+    of: '[data-shot="bug-report-spec"]',
+    pad: 12,
+  },
+  {
+    name: 'bug-report-mobile',
+    description: 'The same bug report at phone width',
+    tags: ['desktop'],
+    route: '/bug-reports/1',
+    viewport: { width: 375, height: 1100 },
+  },
+  {
+    name: 'bug-report-list',
+    description: 'A project’s bug reports',
+    tags: ['desktop'],
+    route: '/projects/1/bug-reports',
+    viewport: { width: 1280, height: 700 },
+    of: '[data-shot="bug-report-list"]',
+    pad: 12,
+  },
+
   // ── Failure headline (report artifacts) ──────────────────────────────────
   {
     name: 'failure-headline',
@@ -2304,6 +2385,44 @@ const SCENES = [
   },
 
   // ── Desktop shell (report artifacts) ──────────────────────────────────────
+  {
+    name: 'desktop-repro-request',
+    description: 'A repro request from Piwi Picker, waiting in the desktop window for the developer (desktop shell)',
+    tags: ['desktop'],
+    mode: 'desktop',
+    route: '/setup',
+    viewport: { width: 1280, height: 1000 },
+    link: { path: '/home/dev/shop', exists: true },
+    async run({ page, shoot, settle }) {
+      // The desktop event stream delivers the request; outside the shell the
+      // repro endpoints do not exist, so the stream is answered here.
+      const request = {
+        id: 'a1b2c3d4e5f60718',
+        title: 'Coupon not applied to the total',
+        steps: REPRO_SCENE_STEPS,
+        options: { headed: true, trace: true, project: null, repeatEach: 1 },
+        bugReportId: 37,
+        instanceUrl: 'https://piwi.acme.test',
+        status: 'waiting',
+        createdAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 600_000).toISOString(),
+        projectId: null,
+        verdict: null,
+        runId: null,
+      };
+      await page.route('**/api/desktop/events', (route) =>
+        route.fulfill({
+          contentType: 'text/event-stream',
+          body: `data: ${JSON.stringify({ type: 'repro-request', request })}\n\n`,
+        }),
+      );
+      await page.reload();
+      await page.getByRole('dialog', { name: 'Run a bug report with Playwright' }).waitFor();
+      await page.getByText('/home/dev/shop').first().waitFor();
+      await settle();
+      await shoot();
+    },
+  },
   {
     name: 'desktop-nav',
     description: 'Back/forward pair in the sidebar header (desktop shell)',
@@ -2694,6 +2813,7 @@ function bridgeScript(scene) {
         },
       },
       event: { listen: () => Promise.resolve(() => {}) },
+      window: { getCurrentWindow: () => ({ label: 'main' }) },
     };
   `;
 }

@@ -32,6 +32,7 @@
       "background.js"
     ]
   },
+  "devtools_page": "devtools.html",
   "options_ui": {
     "page": "options.html",
     "open_in_tab": true
@@ -46,6 +47,9 @@
     "activeTab",
     "scripting",
     "storage"
+  ],
+  "optional_permissions": [
+    "cookies"
   ],
   "optional_host_permissions": [
     "http://*/*",

@@ -125,6 +125,16 @@ describe('parseSteps', () => {
     });
   });
 
+  test('reads a hover step, which needs a target and keeps no value', () => {
+    const doc = valid();
+    doc.steps.push({ ...doc.steps[2]!, action: 'hover', value: 'x' });
+    const result = parseSteps(JSON.stringify(doc));
+    expect(result.ok && result.steps.steps[4]).toMatchObject({ action: 'hover', value: null });
+    const bare = valid();
+    bare.steps.push({ ...bare.steps[2]!, action: 'hover', target: null });
+    expect(parseSteps(bare)).toEqual({ ok: false, errors: ['steps[4].target: is required on a hover step'] });
+  });
+
   test('never keeps a redacted value', () => {
     const doc = valid();
     doc.steps[1] = { ...doc.steps[1]!, redacted: true, value: 'hunter2' };

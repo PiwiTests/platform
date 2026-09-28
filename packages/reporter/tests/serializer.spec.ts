@@ -245,6 +245,7 @@ describe('toWireTestCase', () => {
       'didNotRunReason',
       'duration',
       'error',
+      'expectedStatus',
       'location',
       'locatorPages',
       'locatorSnapshots',

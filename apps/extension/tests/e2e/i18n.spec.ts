@@ -215,7 +215,7 @@ test.describe('in a French browser', () => {
       'placeholder',
       'https://boutique.exemple.fr/**',
     );
-    await page.getByRole('button', { name: 'Enregistrer' }).click();
+    await page.getByRole('button', { name: 'Enregistrer', exact: true }).click();
     await expect(page.locator('#status')).toHaveText('Saisissez d’abord l’adresse de votre instance Piwi.');
     expect(await untranslated(page)).toEqual([]);
   });

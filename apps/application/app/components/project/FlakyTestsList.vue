@@ -19,7 +19,7 @@ const quarantiningId = ref<number | null>(null);
 const runsWindow = ref(50);
 const rootCauseFilter = ref<string[]>([]);
 
-const { data: tests, pending: loading } = await useFetch(
+const { data: tests, status } = await useFetch(
   () => {
     const params = new URLSearchParams({ runs: String(runsWindow.value) });
     if (props.environment) params.set('environment', props.environment);
@@ -33,6 +33,8 @@ const { data: tests, pending: loading } = await useFetch(
     transform: (r: { items: FlakyTest[] }) => r.items,
   },
 );
+// The server renders before the client-only fetch starts (`idle`), so idle reads as loading too.
+const loading = computed(() => status.value === 'idle' || status.value === 'pending');
 
 const filteredTests = computed(() => {
   if (rootCauseFilter.value.length === 0) return tests.value ?? [];

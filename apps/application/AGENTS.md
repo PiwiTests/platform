@@ -213,6 +213,9 @@ Settings pages are driven by the `SETTINGS_PAGES` registry in `app/utils/setting
 - Sticky headers: the `sticky` prop + a `max-h-*` class on the table root. Do **not** wrap tables in `overflow-y-auto`.
 - Row highlighting: `:meta="{ class: { tr: '…' } }"` — **not** `:row-attrs`, which Nuxt UI v4 dropped.
 - Actions column: `{ id: 'actions', header: 'Actions' }` plus right-aligned `#actions-header` / `#actions-cell` slots.
+- **Never `header: ''`.** An empty-string header hydrates as a mismatch (tanstack's `FlexRender` renders a bare `''`
+  that Vue cannot place). A column without a visible title gets a real label and renders it through its header slot:
+  `header: 'Actions'` plus `<template #actions-header><span class="sr-only">Actions</span></template>`.
 - A table with ≥5 columns needs the mobile treatment from the responsive rule above.
 
 ### Typography and emphasis (MUST follow)
@@ -273,7 +276,12 @@ emerald / amber / rose. Never write a pass-rate threshold or color at a call sit
   durations (exact ms on hover), `DurationValue` where a tight `210ms` reads better than "0.21 seconds".
 - **Absolute timestamps render client-only**: `prettyDateFormat` output never appears in SSR'd markup (the server host
   and the browser rarely share a time zone). Render the date with `ClientDate`, and wrap title-tooltip spans that bind
-  `prettyDateFormat` in `ClientOnly`.
+  `prettyDateFormat` in `ClientOnly`. The same holds for anything formatted with the browser's locale
+  (`toLocaleString()`, `viewerLocale()`): the server formats it in its own.
+- **A `useFetch({ server: false })` loading state reads `status`, not `pending`**: the server renders it `idle`, and
+  the client starts the fetch before it hydrates, so gate the spinner on
+  `status.value === 'idle' || status.value === 'pending'` (see `pages/projects/[id]/locators.vue`) — gating on
+  `pending` renders the empty state on the server and the spinner in the browser.
 - **Date/time formatting is locale-aware — never hardcode a format.** `prettyDateFormat` and `formatRelativeTime` read
   the viewer's effective locale and time zone from the active prefs holder (`app/utils/locale-format.ts`), set by
   `app/plugins/locale.client.ts` from three layers: the per-browser override (Settings → Localization), then

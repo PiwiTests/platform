@@ -101,6 +101,15 @@ export interface PrSummaryInput {
   preExisting: PrFailureEntry[];
   /** Tests that passed only after a retry in this run. */
   flaky: PrFailureEntry[];
+  /** `test.fail()` tests that passed: the bug each reproduces looks fixed. */
+  looksFixed?: Array<{
+    title: string;
+    filePath: string;
+    executionId: number;
+    bugId?: number | null;
+    /** The bug id names a report of this project, so the line links it. */
+    bugReportExists?: boolean;
+  }>;
   /** Failure clusters first seen in this run. */
   newClusters: Array<{ id: number; signature: string; caseCount: number }>;
   /** Clusters this run stopped failing — the answer to "did my fix work?". */
@@ -430,6 +439,26 @@ export function buildPrComment(input: PrSummaryInput): string {
   if (input.flaky.length > 0) {
     sections.push(
       `#### 🟡 Flaky (${input.flaky.length})\nPassed only after a retry.\n\n${renderFailureList(input.flaky, input.runUrl)}`,
+    );
+  }
+
+  const looksFixed = input.looksFixed ?? [];
+  if (looksFixed.length > 0) {
+    const origin = originOf(input.runUrl);
+    const list = looksFixed
+      .slice(0, MAX_LISTED)
+      .map((entry) => {
+        const spec = origin ? `[the spec](${origin}/test-run-cases/${entry.executionId})` : 'the spec';
+        const bug =
+          entry.bugId && entry.bugReportExists && origin
+            ? `[bug #${entry.bugId}](${origin}/bug-reports/${entry.bugId})`
+            : `bug #${entry.bugId}`;
+        const subject = entry.bugId ? `${spec} of ${bug}` : `${spec} ${codeSpan(entry.title)}`;
+        return `- ${subject} now passes: remove \`test.fail()\` in ${codeSpan(entry.filePath)}`;
+      })
+      .join('\n');
+    sections.push(
+      `#### 🐞 Looks fixed (${looksFixed.length})\nMarked \`test.fail()\` and passed: the bug they reproduce no longer shows.\n\n${list}`,
     );
   }
 

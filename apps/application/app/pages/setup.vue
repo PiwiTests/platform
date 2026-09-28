@@ -117,6 +117,7 @@ async function decide(id: SetupCapabilityId, decision: 'declined' | null) {
              generic reporter steps, since the token/URL are specific to it. -->
         <template v-if="isDesktop">
           <DesktopReporterCard v-if="reporterConfig" :url="reporterConfig.url" :token="reporterConfig.token" />
+          <DesktopPickerCard v-if="reporterConfig" :url="reporterConfig.url" :token="reporterConfig.token" />
           <SectionCard icon="i-lucide-plug" title="Connect an AI assistant (MCP)">
             <template #subtitle>
               This app exposes a local MCP endpoint so agents like Claude can query your test results. The MCP server

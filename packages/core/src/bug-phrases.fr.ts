@@ -156,6 +156,7 @@ export const FRENCH_BUG_PHRASES: BugPhrases = {
   steps: {
     goto: (url) => `Ouvrir ${markdownCode(url)}`,
     click: (s) => `Cliquer sur ${phrase(s)}`,
+    hover: (s) => `Survoler ${phrase(s)}`,
     fill: (s, v) => `Saisir ${value(v)} dans ${phrase(s)}`,
     check: (s) => `Cocher ${checkable(s)}`,
     uncheck: (s) => `Décocher ${checkable(s)}`,

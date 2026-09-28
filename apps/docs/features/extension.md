@@ -30,6 +30,7 @@ Every tool below runs on the live page, from the toolbar popup. The last three n
 | [Copy context for agent](#copy-context-for-agent) | one block about an element for a coding agent |
 | [Record actions](#record-actions) | a runnable spec from clicks and fills across pages |
 | [Report a bug](./report-a-bug) | a failing test and a report of a bug you reproduce |
+| [Developer tools](./devtools) | locators in DevTools, and what a test sees |
 | [Matching functions](#matching-functions) | a recording that calls your own functions |
 | [Test functions](#test-functions-against-this-page) | which of your functions work on this page |
 | [Tested elements](#tested-elements) | which elements of this page your tests reach |
@@ -41,8 +42,7 @@ The same listing covers Edge and the other Chromium browsers; in Edge, click **A
 other stores* banner once, then **Get**.
 
 Every tool in the popup has a key shown on its tile (`1` records, `2` picks, `T` opens Tested elements, `B`
-reports a bug). One tool
-runs at a time and **Esc** cancels it; recording is the exception and runs until its own **Stop**.
+reports a bug). One tool runs at a time and **Esc** cancels it; recording runs until its own **Stop**.
 
 Picking also has a shortcut without the popup, suggested as `Ctrl+Shift+E` (`Cmd+Shift+E` on macOS). A browser
 leaves it unbound when another extension holds it; the popup footer shows the key actually bound.
@@ -64,25 +64,24 @@ Copy the result as the bare locator, an action line (`await page.getByRole(…).
 
 ## Hover-inspect
 
-Hover any element to see its best locator in a tooltip, with no click, checked against the page once the pointer
-rests.
+Hover any element to see its best locator, checked against the page once the pointer rests.
 
 ## Locator console
 
 Type or paste a locator expression and every match is outlined on the page as you type, with a strict-mode verdict:
-green for a single match, amber and numbered for several. It reads the expression, never runs it as code, and finds
-what Playwright would find: every `getBy*` with its options, `locator()`, chains, `filter()`, `and()`/`or()`,
-`.first()`, `.last()`, `.nth()` and same-origin frames.
+green for a single match, amber and numbered for several. It reads the expression, never runs it, and finds what
+Playwright would find: every `getBy*`, `locator()`, chains, `filter()`, `and()`/`or()`, `.nth()` and same-origin
+frames.
 
 ## Multi-pick
 
-Pick two or three similar items, such as table rows or cards, to derive the pattern they share (for example
-`getByRole('row').filter({ hasText: … })`). It warns when only `.nth()` could tell them apart.
+Pick two or three similar items (table rows, cards) to derive the pattern they share, such as
+`getByRole('row').filter({ hasText: … })`. It warns when only `.nth()` could tell them apart.
 
 ## Lint overlay
 
-One click outlines every interactive element that would score badly as a locator target (no test id, no accessible
-name, no stable parent), with a suggested `data-testid` for each and a Markdown checklist to export.
+One click outlines every interactive element no stable locator finds alone, with a suggested `data-testid` for each
+and a Markdown checklist.
 
 ## Assertion suggester
 
@@ -91,8 +90,7 @@ Pick an element to get the `expect(...)` candidates that apply to it (`toHaveVal
 
 ## Session
 
-Pick and name elements as you browse, across pages, then export the list as a page-object fixture class, a Markdown
-table or JSON.
+Pick and name elements across pages, then export them as a page-object fixture class, a Markdown table or JSON.
 
 ## Copy context for agent
 
@@ -101,7 +99,8 @@ Pick an element to copy one block for a coding agent: the page URL, a summary of
 ## Record actions
 
 **Record actions** asks for access to the site you are on, then captures clicks, fills, checks, choices and the
-keys that submit, close or move through a list, across pages. **Stop** opens the
+keys that submit, close or move through a list, across the site's pages. A click on what a hover shows (row actions, a
+hover menu) is recorded after that hover. **Stop** opens the
 review: **Copy as TypeScript** for a runnable spec that waits for each page it opens, **Download steps** for a
 [steps file](/reference/steps-format) to share or render with [`piwi codegen`](/reference/cli#codegen),
 [**Send to editor**](./editors#send-from-piwi-picker), or **Discard**. Passwords are never captured: the spec reads them from `process.env`.
@@ -110,9 +109,8 @@ review: **Copy as TypeScript** for a runnable spec that waits for each page it o
 
 With a connection, the recorder loads the [function catalog](./test-functions) of the project mapped to the page: the
 page-object methods and helpers you registered. While recording, the overlay ranks the functions the steps so far
-look like. On export, a complete match becomes a call to
-your function; unmatched steps stay plain locator lines. The matcher only chooses among your registered functions
-and scores DOM patterns without AI.
+look like. On export, a complete match becomes a call to your function; unmatched steps stay plain locator lines. No
+AI: it only scores your registered functions' DOM patterns.
 
 ## Test functions against this page
 
@@ -140,6 +138,7 @@ written in the extension's language; page texts, locators, test ids, `steps.json
 | `activeTab` | acts on the tab you are looking at, only when you click the toolbar icon or press the shortcut |
 | `scripting` | injects the picker or the recorder into that tab on demand; no content script runs on pages you did not ask it to |
 | `storage` | keeps your copy format and, only if you connect, the instance URL, API key, URL patterns, cached catalogs and the last three [locator indexes](./tested-elements), on your machine. The session and the running recording use `chrome.storage.session`, cleared when the browser closes |
+| `cookies` (optional, not granted in advance) | [Save login for tests](./devtools#save-login-for-tests) asks for it, for the one site whose login you save |
 | `optional_host_permissions` (none granted in advance) | recording asks for the one site you are on, to follow you across its pages; a connection asks for your instance's origin. Never `<all_urls>` |
 
 ## Connecting to a Piwi instance
@@ -150,16 +149,15 @@ page comes from URL patterns kept on the instance, per project, and from any you
 **Active project** select overrides both for the session. See [Extension connection](./extension-connection).
 
 The function catalogs refresh in the background, once per recorded page and when a recording stops; **Refresh** in
-Test functions fetches them now. **A recording is never sent to your instance.** Connecting changes only what **Copy
-as TypeScript** produces and what the overlay shows while recording.
+Test functions fetches them now. **A recording is never sent to your instance**, and a [bug report](./bug-reports) only from its preview.
 
 ## Limits
 
 - **One frame at a time.** The picker and the recorder see the top-level document, not iframes or shadow DOM.
 - **Recording covers one origin.** On another site, recording stops capturing steps; stop and review, or start again
   there.
-- **No aria-snapshot copier.** `toMatchAriaSnapshot()` YAML needs the computed accessibility tree, which an
-  extension reaches only with the `debugger` permission.
+- **No aria-snapshot copier.** `toMatchAriaSnapshot()` YAML needs the browser's accessibility tree, behind the
+  `debugger` permission.
 
 ## Related
 

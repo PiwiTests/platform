@@ -110,6 +110,7 @@ export const ENGLISH_BUG_PHRASES: BugPhrases = {
   steps: {
     goto: (url) => `Go to ${markdownCode(url)}`,
     click: (s) => `Click ${subject(s)}`,
+    hover: (s) => `Hover over ${subject(s)}`,
     fill: (s, v) => `Fill ${subject(s)} with ${value(v)}`,
     check: (s) => `Check ${subject(s)}`,
     uncheck: (s) => `Uncheck ${subject(s)}`,

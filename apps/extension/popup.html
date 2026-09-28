@@ -85,6 +85,50 @@
         stroke-linejoin: round;
         fill: none;
       }
+      .viewport-row {
+        margin: 10px 0 6px;
+        font-size: 12px;
+      }
+      .viewport-row label {
+        display: block;
+        font-size: 10.5px;
+        color: var(--muted);
+        margin-bottom: 3px;
+      }
+      .viewport-fields {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+      }
+      .viewport-fields select {
+        flex: 1;
+        min-width: 0;
+        font: inherit;
+        padding: 4px 6px;
+        border-radius: 7px;
+        border: 1px solid var(--border);
+        background: var(--surface);
+        color: inherit;
+      }
+      .viewport-custom input {
+        width: 4.2em;
+        font: inherit;
+      }
+      .viewport-fields button {
+        font: inherit;
+        padding: 4px 10px;
+        border-radius: 7px;
+        border: 1px solid var(--border);
+        background: var(--surface);
+        color: inherit;
+        cursor: pointer;
+      }
+      .viewport-note {
+        display: block;
+        font-size: 10.5px;
+        color: var(--muted);
+        margin-top: 3px;
+      }
       .active-project-row {
         margin-bottom: 10px;
       }
@@ -334,6 +378,12 @@
       <header>
         <img src="icons/icon-32.png" width="18" height="18" alt="" />
         <span>Piwi Picker</span>
+        <button id="save-login" type="button" class="icon-button" aria-label="Save login for tests" title="Save login for tests" data-i18n-aria-label="popup_saveLogin" data-i18n-title="popup_saveLogin">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <circle cx="8" cy="15" r="4" />
+            <path d="M11 12l9-9M17 6l3 3M14 9l2 2" />
+          </svg>
+        </button>
         <button id="config-button" type="button" class="icon-button" aria-label="Settings" title="Settings" data-i18n-aria-label="popup_settings" data-i18n-title="popup_settings">
           <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
             <circle cx="12" cy="12" r="3" />
@@ -382,6 +432,17 @@
           <path d="M15 3h6v6M9 21H3v-6" />
         </svg>
         <kbd class="key" aria-hidden="true">T</kbd>
+      </button>
+      <button id="playwright-view" class="feature" type="button" aria-keyshortcuts="V">
+        <span class="text">
+          <span class="label" data-i18n="popup_playwrightView">Playwright view</span>
+          <span class="hint" data-i18n="popup_playwrightViewHint">Each element as getByRole sees it, and the ones no locator reaches</span>
+        </span>
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z" />
+          <circle cx="12" cy="12" r="3" />
+        </svg>
+        <kbd class="key" aria-hidden="true">V</kbd>
       </button>
       <button id="report-bug" class="feature bug" type="button" aria-keyshortcuts="B">
         <span class="text">
@@ -516,6 +577,19 @@
           <kbd class="key" aria-hidden="true">0</kbd>
         </button>
       </div>
+      <form id="viewport-row" class="viewport-row">
+        <label for="viewport" data-i18n="popup_viewport">Open this page at a viewport</label>
+        <div class="viewport-fields">
+          <select id="viewport"></select>
+          <span id="viewport-custom" class="viewport-custom" hidden>
+            <input id="viewport-width" type="number" min="200" max="4000" value="390" aria-label="Width" data-i18n-aria-label="popup_viewportWidth" />
+            ×
+            <input id="viewport-height" type="number" min="200" max="4000" value="844" aria-label="Height" data-i18n-aria-label="popup_viewportHeight" />
+          </span>
+          <button type="submit" data-i18n="popup_viewportOpen">Open</button>
+        </div>
+        <span class="viewport-note" id="viewport-note" data-i18n="popup_viewportOnly">Viewport only: no touch, pixel ratio or user agent.</span>
+      </form>
       <footer>
         <span data-i18n="popup_footerKeys"
           >Press <kbd data-i18n-slot="first">1</kbd>–<kbd data-i18n-slot="last">0</kbd> to run a tool,

@@ -1,4 +1,5 @@
 import { describeStepInWords } from '@piwitests/core/bug-report';
+import { conditionText } from '../shared/condition-words.js';
 import { interfacePhrases } from '../shared/core-words.js';
 import { pageKey } from '@piwitests/core/page-key';
 import { buildSession, normalizeSteps, type RecordedStep } from '@piwitests/core/recording';
@@ -6,25 +7,39 @@ import { sessionFromSteps, toStepsDocument, type PiwiSteps } from '@piwitests/co
 import { formatNumber, initI18n, t, tn, uiLanguage } from '../shared/i18n.js';
 import { getRecordingState, recordingMode } from '../shared/recording-storage.js';
 import {
+  appendReplayEvidence,
+  getReplayEvidence,
   getReplayState,
   setReplayState,
+  type ReplayEvidence,
   updateReplayState,
   type ReplayState,
   type ReplayStepResult,
 } from '../shared/replay-storage.js';
 import { ensureSessionAccess } from '../shared/session-access.js';
 import { REPLAY_DIALOG_HOST_ID, REPLAY_HUD_HOST_ID, SHARED_STYLE } from './record-ui.js';
-import { createWaker, evaluateAssertion, replayVerdict, verdictText, type ReplayVerdict } from './replay-core.js';
+import {
+  createWaker,
+  evaluateAssertion,
+  evidenceLines,
+  replayVerdict,
+  verdictText,
+  type ReplayVerdict,
+} from './replay-core.js';
+import { BUG_RELAY, ownOrigin, readRelayedEntry } from '../shared/bug-relay.js';
+import type { BugConsoleEntry, BugFailedRequest } from '@piwitests/core/bug-report';
 import { createCursor, type FakeCursor } from './replay-cursor.js';
 import {
   ACTION_TIMEOUT_MS,
   ASSERT_TIMEOUT_MS,
+  endHover,
   findAll,
   locatorFor,
   observe,
   performCheck,
   performClick,
   performFill,
+  performHover,
   performPress,
   performSelect,
   resolveForAction,
@@ -33,6 +48,8 @@ import {
 } from './replay-actions.js';
 import { readStepsFile } from './steps-file.js';
 import { attachPanelShadow } from './panel-root.js';
+import { openDesktopRun } from './desktop-run-panel.js';
+import { shareable, shareResultRow } from './share-result.js';
 
 /**
  * Replay: plays a bug report's steps (or any steps file) in this tab, on this
@@ -81,6 +98,8 @@ const STYLE = `
   .verdict.diverged, .verdict.stopped { background: rgba(245,158,11,.16); }
   .verdict.completed { background: rgba(128,128,128,.14); }
   .verdict .title { margin-bottom: 2px; }
+  .seen, .share { margin-top: 8px; }
+  .share { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
   .message { color: #fca5a5; font-size: 12px; margin-top: 6px; }
   .message:empty { display: none; }
   input[type=file] { font: inherit; font-size: 12px; margin: 8px 0; color: inherit; }
@@ -139,6 +158,7 @@ async function startReplay(
   steps: PiwiSteps,
   stepMode: boolean,
   startOn: string | null,
+  bugReportId: number | null = null,
 ): Promise<{ ok: boolean; error?: string }> {
   try {
     const response = (await chrome.runtime.sendMessage({
@@ -148,8 +168,36 @@ async function startReplay(
       stepMode,
       inject: false,
       startOn,
+      bugReportId,
     })) as { ok: boolean; error?: string } | undefined;
     return response ?? { ok: false, error: t('common_workerNoAnswer') };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+type InstanceReports =
+  | { ok: true; project: { id: number; label: string } | null; items: Array<{ id: number; title: string }> }
+  | { ok: false; error: string };
+
+/** The bug reports of the project this tab maps to on the connected instance; null when not connected. */
+async function listInstanceReports(): Promise<InstanceReports | null> {
+  try {
+    return (
+      ((await chrome.runtime.sendMessage({ type: 'piwi-list-bug-reports' })) as InstanceReports | undefined) ?? null
+    );
+  } catch {
+    return null;
+  }
+}
+
+async function instanceReportSteps(id: number): Promise<{ ok: true; steps: PiwiSteps } | { ok: false; error: string }> {
+  try {
+    const answer = (await chrome.runtime.sendMessage({ type: 'piwi-get-bug-report', id })) as
+      | { ok: true; steps: PiwiSteps }
+      | { ok: false; error: string }
+      | undefined;
+    return answer ?? { ok: false, error: t('common_workerNoAnswer') };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
@@ -221,7 +269,11 @@ function hudRoot(): ShadowRoot {
   return hud.root;
 }
 
-function renderHud(state: ReplayState, verdict: ReplayVerdict | null = null): void {
+function renderHud(
+  state: ReplayState,
+  verdict: ReplayVerdict | null = null,
+  evidence: ReplayEvidence | null = null,
+): void {
   const root = hudRoot();
   const style = document.createElement('style');
   style.textContent = STYLE;
@@ -250,6 +302,14 @@ function renderHud(state: ReplayState, verdict: ReplayVerdict | null = null): vo
         total: formatNumber(steps.length),
       });
   box.append(title, sub);
+  if (state.conditions?.length) {
+    const conditions = document.createElement('div');
+    conditions.className = 'sub';
+    conditions.textContent = t('replay_underConditions', {
+      conditions: state.conditions.map(conditionText).join(' · '),
+    });
+    box.appendChild(conditions);
+  }
 
   const list = document.createElement('div');
   list.className = 'steps';
@@ -322,6 +382,39 @@ function renderHud(state: ReplayState, verdict: ReplayVerdict | null = null): vo
       d.textContent = detail;
       box2.append(t, d);
       box.appendChild(box2);
+      if (state.bugReportId && shareable(verdict.kind)) {
+        box.appendChild(
+          shareResultRow({
+            bugReportId: state.bugReportId,
+            source: 'replay',
+            verdict: verdict.kind,
+            divergedAt: verdict.kind === 'diverged' ? verdict.step : null,
+            origin: state.origin,
+          }),
+        );
+      }
+    }
+    const seen = evidenceLines(evidence);
+    if (seen.lines.length) {
+      const box3 = document.createElement('div');
+      box3.className = 'seen';
+      const head = document.createElement('div');
+      head.className = 'sub';
+      head.textContent = t('replay_seenHere');
+      box3.appendChild(head);
+      for (const text of seen.lines) {
+        const line = document.createElement('div');
+        line.className = 'detail';
+        line.textContent = text;
+        box3.appendChild(line);
+      }
+      if (seen.more) {
+        const more = document.createElement('div');
+        more.className = 'sub';
+        more.textContent = t('replay_seenMore', { count: formatNumber(seen.more) });
+        box3.appendChild(more);
+      }
+      box.appendChild(box3);
     }
     controls.style.marginTop = '8px';
     controls.appendChild(
@@ -329,12 +422,20 @@ function renderHud(state: ReplayState, verdict: ReplayVerdict | null = null): vo
         t('replay_again'),
         () => {
           void (async () => {
-            const response = await startReplay(state.steps, state.stepMode, state.startPage?.actual ?? null);
+            const response = await startReplay(
+              state.steps,
+              state.stepMode,
+              state.startPage?.actual ?? null,
+              state.bugReportId ?? null,
+            );
             if (response.ok) void runReplay();
           })();
         },
         'primary',
       ),
+    );
+    controls.appendChild(
+      button(t('replay_runWithPlaywright'), () => openDesktopRun(state.steps, state.bugReportId ?? null, STYLE)),
     );
     controls.appendChild(
       button(t('common_close'), () => document.getElementById(REPLAY_HUD_HOST_ID)?.remove(), 'stop'),
@@ -356,12 +457,15 @@ async function recordResult(state: ReplayState, index: number, result: ReplaySte
 }
 
 async function finish(state: ReplayState, stopped: boolean): Promise<void> {
+  await evidenceFlush?.();
+  const evidence = await getReplayEvidence(state.evidenceToken).catch(() => null);
   const steps = sessionFromSteps(state.steps, state.origin).steps;
   const verdict = replayVerdict(steps, state.results, stopped);
+  endHover();
   const final: ReplayState = { ...state, status: stopped ? 'stopped' : 'done', cursor: cursor?.position() ?? null };
   await setReplayState(final);
   notifyFinished();
-  renderHud(final, verdict);
+  renderHud(final, verdict, evidence);
   (globalThis as ReplayGlobals).__piwiReplayVerdict = verdict;
   const shown = cursor;
   cursor = null;
@@ -378,6 +482,9 @@ async function act(step: RecordedStep, element: Element): Promise<boolean> {
   switch (step.action) {
     case 'click':
       await performClick(element, c, caption(step));
+      return true;
+    case 'hover':
+      await performHover(element, c, caption(step));
       return true;
     case 'fill':
       if (step.redacted) return performFill(element, '', c, caption(step));
@@ -442,6 +549,44 @@ async function waitForNext(index: number): Promise<ReplayState | null> {
   return latest && latest.status === 'running' && latest.position === index ? latest : null;
 }
 
+/** Stores what the evidence script relays during the replay; null until this page's replay starts it. */
+let evidenceFlush: (() => Promise<void>) | null = null;
+/** The replay whose entries this page listens for; a new replay (Replay again) listens anew. */
+let evidenceToken: string | null = null;
+
+/**
+ * Listens to the main-world evidence script (registered by the background
+ * script while a replay runs) with the replay's token, and keeps its entries in
+ * batches. Returns the function that stores what is still pending.
+ */
+function startReplayEvidence(token: string): () => Promise<void> {
+  const pendingConsole: BugConsoleEntry[] = [];
+  const pendingRequests: BugFailedRequest[] = [];
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const flush = async (): Promise<void> => {
+    if (timer != null) clearTimeout(timer);
+    timer = null;
+    if (pendingConsole.length === 0 && pendingRequests.length === 0) return;
+    const entries = { console: pendingConsole.splice(0), requests: pendingRequests.splice(0) };
+    await appendReplayEvidence(token, entries).catch(() => undefined);
+  };
+  const hello = () => window.postMessage({ source: BUG_RELAY.HELLO, token }, ownOrigin());
+  window.addEventListener('message', (e: MessageEvent) => {
+    if (e.source !== window) return;
+    const data = e.data as { source?: unknown } | null;
+    if (data?.source === BUG_RELAY.READY) return hello();
+    const item = readRelayedEntry(data, token);
+    if (!item) return;
+    if (item.kind === 'console') pendingConsole.push(item.entry);
+    else pendingRequests.push(item.entry);
+    timer ??= setTimeout(() => void flush(), 250);
+  });
+  // A page left mid-batch keeps what it saw.
+  window.addEventListener('pagehide', () => void flush());
+  hello();
+  return flush;
+}
+
 async function runReplay(): Promise<void> {
   if (loopActive) return;
   loopActive = true;
@@ -450,6 +595,10 @@ async function runReplay(): Promise<void> {
     let state = await getReplayState();
     if (!state || (state.status !== 'running' && state.status !== 'paused') || state.origin !== location.origin) return;
     document.getElementById(REPLAY_DIALOG_HOST_ID)?.remove();
+    if (state.evidenceToken && state.evidenceToken !== evidenceToken) {
+      evidenceToken = state.evidenceToken;
+      evidenceFlush = startReplayEvidence(state.evidenceToken);
+    }
     cursor?.remove();
     cursor = createCursor(state.cursor);
     // The panel shows at once; the first step waits for the page to be ready.
@@ -600,6 +749,8 @@ function openChooser(lastReport: PiwiSteps | null): void {
   panel.append(title, sub);
 
   let chosen: PiwiSteps | null = null;
+  /** The instance's report the steps came from, when they did. */
+  let chosenReportId: number | null = null;
   const summary = document.createElement('div');
   summary.className = 'sub';
   summary.style.marginTop = '6px';
@@ -614,8 +765,9 @@ function openChooser(lastReport: PiwiSteps | null): void {
   startBox.type = 'checkbox';
   const startText = document.createElement('span');
   startLabel.append(startBox, startText);
-  const describe = (steps: PiwiSteps) => {
+  const describe = (steps: PiwiSteps, reportId: number | null = null) => {
     chosen = steps;
+    chosenReportId = reportId;
     const first = steps.steps[0];
     startLabel.hidden = first?.action !== 'goto';
     startBox.checked = false;
@@ -652,7 +804,57 @@ function openChooser(lastReport: PiwiSteps | null): void {
   fileLabel.className = 'sub';
   fileLabel.style.marginTop = '10px';
   fileLabel.textContent = t('replay_chooseFile');
-  panel.append(fileLabel, file, summary);
+  panel.append(fileLabel, file);
+
+  // Connected, the bug reports of the project this tab maps to, read by the worker.
+  const fromPiwi = document.createElement('div');
+  fromPiwi.hidden = true;
+  const fromPiwiLabel = document.createElement('div');
+  fromPiwiLabel.className = 'sub';
+  fromPiwiLabel.style.marginTop = '10px';
+  const reports = document.createElement('select');
+  fromPiwi.append(fromPiwiLabel, reports);
+  panel.append(fromPiwi, summary);
+  void listInstanceReports().then((answer) => {
+    if (!answer) return;
+    if (!answer.ok) {
+      fromPiwi.hidden = false;
+      fromPiwiLabel.textContent = t('replay_fromPiwiFailed', { error: answer.error });
+      reports.hidden = true;
+      return;
+    }
+    if (!answer.project) return;
+    fromPiwi.hidden = false;
+    if (answer.items.length === 0) {
+      fromPiwiLabel.textContent = t('replay_fromPiwiNone', { project: answer.project.label });
+      reports.hidden = true;
+      return;
+    }
+    fromPiwiLabel.textContent = t('replay_fromPiwi', { project: answer.project.label });
+    reports.setAttribute('aria-label', t('replay_fromPiwiChoose'));
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = t('replay_fromPiwiChoose');
+    reports.appendChild(placeholder);
+    for (const item of answer.items) {
+      const option = document.createElement('option');
+      option.value = String(item.id);
+      option.textContent = t('replay_fromPiwiItem', { id: item.id, title: item.title });
+      reports.appendChild(option);
+    }
+  });
+  reports.addEventListener('change', () => {
+    const id = Number(reports.value);
+    if (!id) return;
+    void instanceReportSteps(id).then((answer) => {
+      if (answer.ok) describe(answer.steps, id);
+      else {
+        chosen = null;
+        summary.textContent = '';
+        message.textContent = t('replay_fromPiwiFailed', { error: answer.error });
+      }
+    });
+  });
 
   const stepLabel = document.createElement('label');
   stepLabel.className = 'check';
@@ -675,7 +877,7 @@ function openChooser(lastReport: PiwiSteps | null): void {
         }
         const steps = chosen;
         const startOn = !startLabel.hidden && startBox.checked ? location.href : null;
-        void startReplay(steps, stepBox.checked, startOn).then((response) => {
+        void startReplay(steps, stepBox.checked, startOn, chosenReportId).then((response) => {
           if (!response.ok) {
             message.textContent = response.error ?? t('common_replayStartFailed');
             return;
@@ -686,6 +888,17 @@ function openChooser(lastReport: PiwiSteps | null): void {
       },
       'primary',
     ),
+  );
+  row.appendChild(
+    button(t('replay_runWithPlaywright'), () => {
+      if (!chosen) {
+        message.textContent = t('replay_chooseFirst');
+        return;
+      }
+      const steps = chosen;
+      close();
+      openDesktopRun(steps, chosenReportId, STYLE);
+    }),
   );
   row.appendChild(button(t('common_cancel'), close));
   panel.append(row, message);
@@ -719,5 +932,14 @@ if (globals.__piwiReplayEntry) {
   void globals.__piwiReplayEntry();
 } else {
   globals.__piwiReplayEntry = entry;
+  // The Piwi panel in DevTools changed the stored state: draw it, and go on when asked.
+  chrome.runtime.onMessage.addListener((message) => {
+    if (message?.type !== 'piwi-replay-wake') return undefined;
+    void getReplayState().then((state) => {
+      if (state && loopActive) renderHud(state);
+    });
+    if (message.wake === true) wakeLoop();
+    return undefined;
+  });
   void entry();
 }

@@ -94,6 +94,8 @@ export interface WireTestCase {
   codeReach?: unknown;
   /** Why a `didnotrun` case never executed (`previous-failure`/`global-timeout`/`max-failures`/`interrupted`). */
   didNotRunReason?: string | null;
+  /** Playwright's `TestCase.expectedStatus`: `failed` for a `test.fail()` test. */
+  expectedStatus?: string | null;
   /** For a `previous-failure` cascade, the location of the failing test that blocked it. */
   blockedBy?: string | null;
 }
@@ -154,6 +156,8 @@ export interface CompleteStreamEvent {
   codeReach?: unknown;
   /** Why a `didnotrun` case never executed (`previous-failure`/`global-timeout`/`max-failures`/`interrupted`). */
   didNotRunReason?: string | null;
+  /** Playwright's `TestCase.expectedStatus`: `failed` for a `test.fail()` test. */
+  expectedStatus?: string | null;
   /** For a `previous-failure` cascade, the location of the failing test that blocked it. */
   blockedBy?: string | null;
 }

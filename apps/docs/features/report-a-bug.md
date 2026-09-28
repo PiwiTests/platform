@@ -11,7 +11,8 @@ lang: en-US
 Reproduce a bug in your browser, say what the page should show, and get the test that proves it. **Report a bug** is
 a tool of the [Piwi Picker extension](./extension): it records your steps with the recorder, lets you mark what is
 wrong ("this should read Total: 45"), collects evidence from the page, and hands you a failing Playwright test, a
-Markdown report and a zip for the developer. Everything is built in your browser; nothing is sent anywhere.
+Markdown report and a zip for the developer. Everything is built in your browser; nothing is sent anywhere unless you
+send it to your [Piwi instance](./bug-reports).
 
 ## Recording the steps
 
@@ -92,6 +93,10 @@ same site access as recording and no other permission.
 Typed values stay as you typed them, except passwords, which are never recorded: the spec reads them from an
 environment variable. Look over the report before you share it.
 
+With the extension connected to an instance, **Send to Piwi…** shows exactly what would be sent, with a box per kind of
+evidence, and sends it only when you click **Send**. The instance keeps the report, writes its failing test for the
+project and follows its runs: see [Bug reports](./bug-reports).
+
 ## Replaying a report
 
 **Replay** plays a report's steps again in a tab, with a cursor that moves to each element and a caption saying what
@@ -100,8 +105,8 @@ own dev server, and the steps run there, with your session and your browser's de
 
 - From the finished report, **Replay** plays it at once on the same site.
 - From the popup, **Replay a bug report** (`R`) asks for the site's access if needed, then for the report: the `.zip`
-  or its `steps.json`, or the report just recorded in this browser. The steps run on the tab's site, whichever site
-  they were recorded on.
+  or its `steps.json`, the report just recorded in this browser, or, connected, one of the project's reports on Piwi.
+  The steps run on the tab's site, whichever site they were recorded on.
 
 Each element is found with the locator the failing test uses, and waited for as Playwright waits: exactly one match,
 visible, enabled and still. The replay ends with one of three answers:
@@ -112,16 +117,25 @@ visible, enabled and still. The replay ends with one of three answers:
 - **Could not reach the bug**: a step found no element, several, or a disabled one, or the flow ended on another page.
   The data, the login or a flag differ here.
 
+Under the answer, the panel lists the failed requests and console errors the page showed during the replay, such as
+"POST /api/cart/coupon answered 500". For a report from Piwi, **Share result…** records the answer on the report, with
+the site it ran on, after showing what it sends.
+
 **Step by step** waits for **Next** before each step, with the element outlined, so you can set a breakpoint first.
 Replay acts with the page's own events: a page that ignores events a script sends can only be reproduced with
 Playwright, from the failing test.
+
+**Run with Playwright…**, beside **Start** and on a finished replay, sends the steps to the paired
+[desktop app](./bug-reports#running-it-with-playwright-in-the-desktop-app), which runs them in your project once you
+confirm it there.
 
 ## Limits
 
 - It follows one site, like [Record actions](./extension#record-actions), in the top-level document only.
 - Only the page's own `fetch` and `XMLHttpRequest` calls are seen: not images, stylesheets, a form that loads a new
   page, or a request made by a worker.
-- Nothing is sent to a Piwi instance, even when the extension is connected to one.
+- A recording sends nothing anywhere: only **Send to Piwi…**, **Share result…** and **Run with Playwright…** do, each
+  after showing what it sends.
 
 ## Related
 

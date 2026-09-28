@@ -24,7 +24,7 @@ watch(
 );
 const {
   data: clusters,
-  pending: loading,
+  status: clustersStatus,
   refresh,
 } = await useFetch(
   () => {
@@ -40,6 +40,9 @@ const {
     transform: (r: { items: ProjectFailureCluster[] }) => r.items,
   },
 );
+
+// The server renders before the client-only fetch starts (`idle`), so idle reads as loading too.
+const loading = computed(() => clustersStatus.value === 'idle' || clustersStatus.value === 'pending');
 
 // Only the unfiltered list stands for the project's cluster count.
 watch(clusters, (list) => {

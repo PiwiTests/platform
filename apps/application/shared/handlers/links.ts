@@ -32,13 +32,14 @@ async function resolveUrl(
 }
 
 /** The entities an external link can be pinned to. */
-export type LinkEntityType = 'test_run' | 'test_runs_case' | 'test_case' | 'failure_cluster';
+export type LinkEntityType = 'test_run' | 'test_runs_case' | 'test_case' | 'failure_cluster' | 'bug_report';
 
 export const LINK_ENTITY_TYPES: readonly LinkEntityType[] = [
   'test_run',
   'test_runs_case',
   'test_case',
   'failure_cluster',
+  'bug_report',
 ];
 
 /** The `entity_links` FK column that holds an id of the given entity type. */
@@ -50,6 +51,8 @@ function fkColumnFor(entityType: LinkEntityType) {
       return entityLinks.testRunsCaseId;
     case 'failure_cluster':
       return entityLinks.failureClusterId;
+    case 'bug_report':
+      return entityLinks.bugReportId;
     default:
       return entityLinks.testCaseId;
   }
@@ -64,6 +67,8 @@ function fkFieldFor(entityType: LinkEntityType, entityId: number): Record<string
       return { testRunsCaseId: entityId };
     case 'failure_cluster':
       return { failureClusterId: entityId };
+    case 'bug_report':
+      return { bugReportId: entityId };
     default:
       return { testCaseId: entityId };
   }

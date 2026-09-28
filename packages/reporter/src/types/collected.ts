@@ -115,6 +115,8 @@ export interface CollectedTestCase {
   codeReach?: string[];
   /** Why a `didnotrun` case never executed; unset for tests that ran. */
   didNotRunReason?: string | null;
+  /** Playwright's `TestCase.expectedStatus`: `failed` for a `test.fail()` test. */
+  expectedStatus?: string | null;
   /** For a `previous-failure` cascade, the location of the failing test that blocked it. */
   blockedBy?: string | null;
 }

@@ -8,9 +8,26 @@ Playwright test does. That is the gap this plan fills: a **Piwi panel inside Dev
 page, **mocks written from real responses**, the **login saved for tests**, **slow and failing requests** on demand,
 and **viewports** from the project's own configuration.
 
-**Status.** Proposed 2026-09-27. Nothing is built. No part needs the `debugger` permission, and only one adds a
-permission at all: `cookies`, optional, requested when the login is saved. The DevTools panel adds a manifest key
-(`devtools_page`) that shows no install warning.
+**Status.** Proposed 2026-09-27; built the same day, PRs 1 to 7 in their Delivery order, then a layout pass on the
+DevTools pages and two more panel tabs (Locators, Session; see 1.2). No part needs the `debugger` permission, and only
+one adds a permission at all: `cookies`, optional, requested when the login is saved. The DevTools panel adds a manifest
+key (`devtools_page`) that shows no install warning. The open questions are settled below.
+
+What is left:
+
+- **Firefox.** Nothing here was run in Firefox. The sidebar's route there (`$0` marked in the page's world, the
+  content script asked by message, since `useContentScriptContext` is missing) and the Locators tab's message route
+  are written but unverified, as are the main-world request conditions and `cookies` in a Firefox container tab.
+- **Flake Lab's suspects** as a source for Slow down or fail a request (2.4): not built; the Network tab's requests are
+  the only source.
+- **The replay dialog** does not list the conditions on before a replay starts; the replay's panel and the Piwi panel
+  list them from its start to its verdict.
+- **Real DevTools** is exercised by one spec (`devtools-real.spec.ts`): the `devtools_page` loads, `$0` reaches the
+  ranking script, and Reveal's `inspect()` moves the selection. The sidebar and panel pages themselves are tested as
+  tabs with `chrome.devtools` stubbed; opening them inside DevTools' own frames from a test was not attempted.
+- **The lab** has no scenario for these tools: they add no recorded action, and the lab measures recordings and their
+  replays. On the demo seed its README prescribes, `project-tests-search` fails with or without the extension, since
+  the seed has no "Piwi Dashboard" project; the other 23 scenarios pass.
 
 **Summary.** A developer writing a test switches between the page, DevTools and the editor: they read the accessibility
 tree to guess what `getByRole` will find, copy a response from the Network panel to write a mock by hand, and log in
@@ -125,8 +142,18 @@ the permission in a click when it has neither.
 - **Network**: the page's `fetch` and XHR requests from `chrome.devtools.network.onRequestFinished`, each with its
   method, path, status and duration, filtered to the tab's origin by default. See 2.2 and 2.4.
 
-The panel talks to the tab through the background worker (`chrome.runtime.connect` with the tab id), the same state
-the popup reads.
+The panel reads the same session storage the popup and the in-page panels read, and redraws on
+`chrome.storage.onChanged`: no channel through the background worker is needed (a change from the `runtime.connect`
+first planned). Its buttons do what the in-page panels do: Stop recording is the popup's stop; Pause, Continue, Next
+step and Stop write the replay state and then send `piwi-replay-wake` to the replayed site's tabs, whose replay script
+redraws its panel and, except after a pause, goes on. A bug report is finished from its panel on the page, which
+collects the evidence, and a recording is started from the popup, as before.
+
+Two popup tools gained a place in the panel, since DevTools does more for them than a panel on the page can: the
+locator console (**Locators**), whose matches are revealed in the Elements panel with `inspect()`, and the pick session
+(**Session**), which the Elements sidebar's Add to session fills. Both stay in the popup (T3). Both DevTools pages share
+one stylesheet drawn like DevTools' own (flat toolbars, 12px type, the DevTools theme), and the Network tab splits the
+requests and the selected one side by side.
 
 ## Part 2 — The tools
 
@@ -150,8 +177,9 @@ From the panel's Network tab, a request becomes code:
 
 - `page.route('**/api/cart', …)` with `route.fulfill({ json })` for a JSON body, `{ body, contentType }` otherwise, and
   the status when it is not 200;
-- the URL pattern keeps the path and drops the origin and volatile query values (a timestamp, a cache buster), shown
-  for editing before copying;
+- the URL pattern keeps the path and drops the origin; volatile query values (a timestamp, a cache buster) become `*`
+  rather than being dropped, since a Playwright glob with no query does not match a URL that has one. It is shown for
+  editing before copying, and a method other than GET adds a check that falls back for the other methods;
 - **Mock with an error** writes the same route with a 500 or a network failure (`route.abort()`), for testing the
   page's error state;
 - bodies over 100 kB are written to a file (`mocks/cart.json`) the snippet reads, and the file is downloaded beside it.
@@ -176,6 +204,11 @@ setup('log in', async ({ page }) => {
 IndexedDB is left out: Playwright saves it only with `indexedDB: true`, and reading it from an extension means walking
 every database of the origin. A later option if asked.
 
+As built, the dialog is an extension page (`login.html`) the popup's header and the panel open for the tab, and the
+click that saves asks for `cookies` together with the site's origin (the `cookies` API needs the host permission too).
+T5's hiding does not apply to this file: the cookie values are what makes it work, so the page warns instead, gives the
+`.gitignore` line, and says to use a test account.
+
 ### 2.4 Slow down or fail a request
 
 From the Network tab, or from Flake Lab's suspects when the instance has them: **Slow down GET /api/cart by 2 s**,
@@ -190,13 +223,22 @@ the developer's own tab.
 Out of reach without `debugger`, and said so in the UI: CPU throttling, whole-page network throttling, delays on
 documents, scripts and images, and requests made by service workers.
 
+As built: the conditions belong to one tab, kept by the background worker, which registers the main-world wrapper and
+an isolated-world relay for the page's origin; the relay asks the worker for the tab's conditions (other tabs of the
+site get none) and posts them to the wrapper, which holds a request back until they arrive, at most a second. A new
+condition on the same method and URL pattern replaces the old one. The replay carries the conditions on when it
+starts, and its panel and the Piwi panel list them from the start to the verdict, rather than in the replay dialog.
+Starting from Flake Lab's suspects is not built: the Network tab's requests are the only source for now.
+
 ### 2.5 Viewport presets
 
-When the instance knows the project's Playwright projects and their `use.viewport` (an open question below), the popup
-offers them: **Open this page at iPhone 13 (390×844)** opens the page in a new window sized so its viewport, not its
+When the instance knows the project's Playwright projects and their `use.viewport` (from the runs, see the first open
+question), the popup offers them: **Open this page at iPhone 13 (390×844)** opens the page in a new window sized so its viewport, not its
 outer frame, matches (`chrome.windows.create`, then corrected by the difference between the window's outer and inner
 size). No emulation of touch, device pixel ratio or user agent: that takes the debugging protocol. The label says
-"viewport only".
+"viewport only". As built, the background worker creates the window, then grows it by the frame it measures
+(`tabs.Tab.width`/`height` against the window's size) until the viewport matches; a size the screen cannot hold
+ends at the nearest one the browser allows.
 
 ## Permissions
 
@@ -240,9 +282,12 @@ DevTools' own page as Playwright can.
 
 ## Open questions
 
-1. **Viewports from the instance.** The reporter does not send the projects' `use.viewport` today. Add it to the run's
-   wire data (a field freezing at 1.0), or read it from the Playwright config in the desktop app?
-2. **The panel as the main UI.** Should recording and replay move into the panel entirely when DevTools is open, the
-   in-page HUD hiding itself, or should both show?
-3. **Mocks as fixtures.** Should Mock this response also write a Piwi-style fixture (a `mocks/` folder and a
-   `useMocks` helper) when the project's function catalog has one, as the converter uses the project's page objects?
+1. **Viewports from the instance.** Settled: from the instance. The reporter already sends each project's
+   `use.viewport` with the run (`htmlReport.projects[].use.viewport`, beside the `testIdAttribute` the locator index
+   reads), so no new wire field is needed: the locator index gains an optional `viewports` list, frozen at 1.0 as
+   D23 in [`1.0-stabilization.md`](1.0-stabilization.md). Reading the Playwright config in the desktop app would need
+   the config evaluated by Node, and would leave out anyone without the desktop app. The popup also offers a size
+   typed by hand, for anyone not connected.
+2. **The panel as the main UI.** Settled: both show. The in-page HUD stays for people without DevTools open, and the
+   Piwi panel mirrors the same state.
+3. **Mocks as fixtures.** Settled: not now. Mock this response writes plain `page.route` code, as 2.2 describes.
