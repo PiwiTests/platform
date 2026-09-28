@@ -112,7 +112,7 @@ which the cross-shard clue points out.
 
 ### Ownership metadata (`piwi:` annotations)
 
-Four `piwi:`-prefixed annotations attach ownership to a test. They are ordinary Playwright annotations, so no new API is
+Five `piwi:`-prefixed annotations attach ownership to a test. They are ordinary Playwright annotations, so no new API is
 involved:
 
 ```typescript
@@ -139,6 +139,7 @@ test(
 | `piwi:priority` | `critical`, `high`, `medium` or `low` (anything else is ignored) |
 | `piwi:feature` | Any text — the product area, for grouping across spec files |
 | `piwi:link` | An absolute `http(s)` URL; other schemes are dropped rather than stored |
+| `piwi:bug` | The id of the Piwi bug report the test reproduces (`37` or `#37`); written by the spec a [bug report](/features/report-a-bug) generates |
 
 Metadata shows as badges next to the test wherever it is listed, is filterable by owner and priority on the **Test
 cases** tab, and is carried into [pull-request feedback](/features/pr-feedback) so a failure comment names the team
@@ -146,6 +147,16 @@ that owns it. Unknown `piwi:` fields and unparseable values are ignored — a ty
 
 The values are also re-validated server-side, because a payload can reach the ingest API without passing through the
 reporter.
+
+### Expected failures (`test.fail()`)
+
+The reporter sends each test's `expectedStatus` as Playwright reports it (`failed` for a `test.fail()` test), stored on
+`test_runs_cases.expected_status`; for a reporter or an import that does not send it, the server derives it from the
+`fail`, `skip` and `fixme` annotations. The status follows Playwright: an expected failure that failed counts as passed,
+and one that passed counts as failed, with "Expected to fail, but passed.". That second row is shown as **Looks fixed**
+rather than as a failure: it joins no failure cluster, the pull-request comment tells you to remove `test.fail()`, and
+the `bug.looks_fixed` [notification event](/reference/notification-events) fires once, on the first run of a branch
+where it passes. A test that runs in several browser projects looks fixed only when it passed in all of them.
 
 ### Per-test timeout
 

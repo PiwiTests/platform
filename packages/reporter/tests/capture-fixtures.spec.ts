@@ -778,7 +778,7 @@ describe('probeElementAttrs — structural probe (rolePosition + ancestors)', ()
     el.ownerDocument.querySelectorAll = (sel: string) =>
       sel.startsWith('[role],')
         ? [form, el]
-        : Array.from({ length: ({ '[data-testid="signup-form"]': 1, '#signup': 1 })[sel] ?? 0 });
+        : Array.from({ length: { '[data-testid="signup-form"]': 1, '#signup': 1 }[sel] ?? 0 });
     form.scopedNodes = [el];
     const probed = probe(el, ['type']);
     // The plain div is not anchor-worthy; the form is, at depth 2.
@@ -1184,7 +1184,6 @@ describe('visible() and frameLocator() chains', () => {
   });
 });
 
-
 describe('dialog capture (dialogclosed)', () => {
   /** Drive the fixtures against a fake page, fire dialog events, read the attachment. */
   async function runDialogs(
@@ -1256,5 +1255,133 @@ describe('dialog capture (dialogclosed)', () => {
   it('attaches nothing when no dialog was observed', async () => {
     const dialogs = await runDialogs(() => {});
     expect(dialogs).toBeNull();
+  });
+});
+
+describe('network capture (requestfinished, requestfailed)', () => {
+  /** Drive the fixtures against a fake page, fire network events, read the attachment. */
+  async function runNetwork(
+    fire: (emit: (event: string, request: unknown) => void) => void,
+  ): Promise<Array<Record<string, unknown>> | null> {
+    const handlers = new Map<string, Array<(arg?: unknown) => void>>();
+    const rootLocator = { ariaSnapshot: async () => null };
+    const factory = () => ({ click: async () => {}, evaluate: async () => null });
+    const fakePage = {
+      getByRole: factory,
+      getByTestId: factory,
+      getByText: factory,
+      getByLabel: factory,
+      getByPlaceholder: factory,
+      getByAltText: factory,
+      getByTitle: factory,
+      locator: (sel: string) => (sel === ':root' ? rootLocator : factory()),
+      on: (event: string, handler: (arg?: unknown) => void) => {
+        const list = handlers.get(event) ?? [];
+        list.push(handler);
+        handlers.set(event, list);
+      },
+      evaluate: async () => null,
+    };
+    const emit = (event: string, request: unknown) => (handlers.get(event) ?? []).forEach((h) => h(request));
+    const testInfo = {
+      status: 'failed',
+      attach: vi.fn(async (_name: string, _body: { body: Buffer }) => {}),
+      annotations: [],
+    };
+
+    const pageFixture = piwiFixtures.page as unknown as (
+      args: { page: unknown },
+      use: (page: typeof fakePage) => Promise<void>,
+    ) => Promise<void>;
+    const [captureFixture] = piwiFixtures.piwiCapture as unknown as [
+      (args: object, use: () => Promise<void>, info: unknown) => Promise<void>,
+    ];
+
+    await captureFixture(
+      {},
+      () =>
+        pageFixture({ page: fakePage }, async () => {
+          fire(emit);
+        }),
+      testInfo,
+    );
+
+    const call = testInfo.attach.mock.calls.find((c) => c[0] === ATTACHMENT_NAMES.network);
+    return call ? (JSON.parse(call[1].body.toString()) as Array<Record<string, unknown>>) : null;
+  }
+
+  const startTime = Date.now() - 2_000;
+
+  const fakeRequest = (opts: {
+    url: string;
+    method?: string;
+    resourceType?: string;
+    responseEnd?: number;
+    status?: number;
+    errorText?: string;
+  }) => ({
+    url: () => opts.url,
+    method: () => opts.method ?? 'GET',
+    resourceType: () => opts.resourceType ?? 'fetch',
+    timing: () => ({ startTime, requestStart: 5, responseEnd: opts.responseEnd ?? -1 }),
+    response: async () =>
+      opts.status != null
+        ? { status: () => opts.status, headers: () => ({ 'content-type': 'application/json' }) }
+        : null,
+    failure: () => (opts.errorText ? { errorText: opts.errorText } : null),
+  });
+
+  it('records a failed request with status 0 and its error text', async () => {
+    const requests = await runNetwork((emit) => {
+      emit('requestfailed', fakeRequest({ url: 'https://shop.test/api/cart', errorText: 'net::ERR_CONNECTION_RESET' }));
+    });
+    expect(requests).toHaveLength(1);
+    expect(requests![0]).toMatchObject({
+      method: 'GET',
+      url: 'https://shop.test/api/cart',
+      status: 0,
+      failure: 'net::ERR_CONNECTION_RESET',
+      startTime,
+      resourceType: 'fetch',
+    });
+    // Without a response end, the duration runs until the failure was seen.
+    expect(requests![0]!.duration).toBeGreaterThanOrEqual(2_000);
+  });
+
+  it('records finished and failed requests side by side, without a failure on the finished one', async () => {
+    const requests = await runNetwork((emit) => {
+      emit('requestfinished', fakeRequest({ url: 'https://shop.test/api/products', responseEnd: 105, status: 200 }));
+      emit(
+        'requestfailed',
+        fakeRequest({ url: 'https://shop.test/api/orders', method: 'POST', errorText: 'net::ERR_CONNECTION_REFUSED' }),
+      );
+    });
+    expect(requests).toHaveLength(2);
+    const finished = requests!.find((r) => r.url === 'https://shop.test/api/products')!;
+    expect(finished.status).toBe(200);
+    expect(finished.duration).toBe(100);
+    expect(finished).not.toHaveProperty('failure');
+    const failed = requests!.find((r) => r.url === 'https://shop.test/api/orders')!;
+    expect(failed).toMatchObject({ method: 'POST', status: 0, failure: 'net::ERR_CONNECTION_REFUSED' });
+  });
+
+  it('skips requests the page cancelled itself, in every browser', async () => {
+    const requests = await runNetwork((emit) => {
+      for (const errorText of ['net::ERR_ABORTED', 'NS_BINDING_ABORTED', 'Load request cancelled', 'cancelled']) {
+        emit('requestfailed', fakeRequest({ url: `https://shop.test/api/search?q=${errorText}`, errorText }));
+      }
+      emit('requestfailed', fakeRequest({ url: 'https://shop.test/api/cart', errorText: 'net::ERR_FAILED' }));
+    });
+    expect(requests!.map((r) => r.url)).toEqual(['https://shop.test/api/cart']);
+  });
+
+  it('skips failed static assets, as it does finished ones', async () => {
+    const requests = await runNetwork((emit) => {
+      emit(
+        'requestfailed',
+        fakeRequest({ url: 'https://shop.test/logo.png', resourceType: 'image', errorText: 'net::ERR_FAILED' }),
+      );
+    });
+    expect(requests).toBeNull();
   });
 });

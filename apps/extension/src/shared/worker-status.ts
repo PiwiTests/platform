@@ -1,4 +1,5 @@
 import { BUILD_ID } from './build-id.js';
+import { t } from './i18n.js';
 
 /**
  * What a tool says when the background worker ignores a message it should
@@ -6,8 +7,9 @@ import { BUILD_ID } from './build-id.js';
  * that message, which happens when the extension was rebuilt without being
  * reloaded (see `build-id.ts`).
  */
-export const OUTDATED_WORKER_MESSAGE =
-  'Piwi Picker was rebuilt without being reloaded, and its background worker still runs the previous build. Reload the extension from its popup, or from the browser’s extensions page.';
+export function outdatedWorkerMessage(): string {
+  return t('common_workerOutdated');
+}
 
 export type WorkerState = 'current' | 'outdated' | 'unreachable';
 

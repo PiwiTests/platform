@@ -104,7 +104,7 @@ export interface ReplacementOptions {
   doc: Document;
   /** An engine over that page as it is now, built for the current scan. */
   engine: LocatorEngine;
-  /** Every locator ranked for the element, most stable first (`rankElementLocators`). */
+  /** Every locator finding the element alone on this page, most stable first, narrowed ones included (`rankElementLocators`). */
   rank(element: Element): RankedLocator[];
 }
 

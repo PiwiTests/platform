@@ -1,4 +1,4 @@
-import { deriveTopLocator } from './top-locator.js';
+import { deriveTopLocator } from './verified-locators.js';
 
 export interface AssertionCandidate {
   /** Which Playwright assertion this suggests. */
@@ -10,18 +10,20 @@ export interface AssertionCandidate {
 }
 
 export interface AssertionSuggestion {
-  /** The top-ranked locator every candidate's `expectLine` is built against, or null when no candidate could be generated at all (see `candidates`). */
+  /** The best locator finding the element alone, which every candidate's `expectLine` is built against, or null when none does (then `candidates` is empty). */
   locator: string | null;
   candidates: AssertionCandidate[];
 }
 
 /**
  * Given a single picked element (C2), suggest ranked `expect(...)` candidates
- * against its top-ranked locator: `toHaveValue` for form controls (except
+ * against its best locator that finds it alone on the page (`deriveTopLocator`):
+ * `toHaveValue` for form controls (except
  * checkbox/radio, which assert `checked` state, not `value` — out of scope
  * here), `toHaveText` (whitespace-normalized, reading the live DOM directly
  * rather than the truncated 80-char `textContent` `generateAlternatives`
- * itself works from), `toHaveAccessibleName`, and `toBeVisible` as the
+ * itself works from), `toHaveAccessibleName` (the name Playwright computes,
+ * from `DomModel`), and `toBeVisible` as the
  * universal fallback. Ordered most-specific-to-the-element first.
  * `toMatchAriaSnapshot` is deliberately out of scope, same as A5.
  *

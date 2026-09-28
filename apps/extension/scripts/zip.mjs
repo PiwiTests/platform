@@ -1,9 +1,10 @@
 // Packs a release build of dist/ into two archives, run via `npm run extension:zip`
 // (which does the release build first):
 //
-// - piwi-picker-v<version>.zip: the add-on itself, the same zip Chrome Web
-//   Store, Edge Add-ons, and Firefox AMO all accept unmodified (see
-//   PUBLISHING.md). Sourcemaps are excluded: useful locally, not meant to ship.
+// - piwi-picker-v<version>.zip: the add-on for the Chrome Web Store and Edge
+//   Add-ons (dist/), and piwi-picker-v<version>-firefox.zip the same files with
+//   Firefox's manifest (dist-firefox/), for AMO (see PUBLISHING.md).
+//   Sourcemaps are excluded: useful locally, not meant to ship.
 // - piwi-picker-v<version>-source.zip: the sources that build came from, for
 //   AMO, which requires them for bundled or minified code. Its reviewers
 //   rebuild it and diff the result against the add-on, so it holds exactly the
@@ -20,6 +21,7 @@ import { buildAmoMetadata } from './amo-metadata.mjs';
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const repoRoot = path.resolve(root, '..', '..');
 const distDir = path.join(root, 'dist');
+const firefoxDistDir = path.join(root, 'dist-firefox');
 const { version } = JSON.parse(readFileSync(path.join(root, 'manifest.json'), 'utf8'));
 
 /**
@@ -76,6 +78,9 @@ function listSourceFiles() {
 // — stores expect the manifest at the zip root.
 await writeZip(`piwi-picker-v${version}.zip`, (archive) =>
   archive.directory(distDir, false, (entry) => (entry.name.endsWith('.map') ? false : entry)),
+);
+await writeZip(`piwi-picker-v${version}-firefox.zip`, (archive) =>
+  archive.directory(firefoxDistDir, false, (entry) => (entry.name.endsWith('.map') ? false : entry)),
 );
 
 await writeZip(`piwi-picker-v${version}-source.zip`, (archive) => {

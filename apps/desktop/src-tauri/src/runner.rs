@@ -117,6 +117,16 @@ impl LocalRuns {
         }
     }
 
+    /// Track a spawned run's process so it can be stopped like any local run.
+    pub(crate) fn track_child(&self, id: u32, child: CommandChild) {
+        self.children.lock().unwrap().insert(id, child);
+    }
+
+    /// Forget a run spawned outside this module once its process has exited.
+    pub(crate) fn forget_child(&self, id: u32) {
+        self.drop_child(id);
+    }
+
     /// Forget a plain run once its process has exited.
     fn drop_child(&self, id: u32) {
         self.children.lock().unwrap().remove(&id);
@@ -487,7 +497,8 @@ pub(crate) fn validate_args(args: &[String]) -> Result<(), String> {
 
 /// A `piwi:local-run` event. `kind` selects which of the optional fields carries
 /// the payload: `stdout`/`stderr`/`error` use `line`, `exit` uses `code`, `phase`
-/// uses `phase` (a reproduce/bisect step header), and `bisect` uses `bisect`.
+/// uses `phase` (a reproduce/bisect step header), `bisect` uses `bisect`, and
+/// `repro` uses `repro` (what a repro spec recorded about its run).
 #[derive(Clone, serde::Serialize)]
 pub(crate) struct RunEventPayload {
     pub id: u32,
@@ -500,6 +511,9 @@ pub(crate) struct RunEventPayload {
     pub phase: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bisect: Option<crate::worktree::BisectEvent>,
+    /// For `repro`: the spec's recorded outcome, `null` when it recorded none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub repro: Option<serde_json::Value>,
 }
 
 impl RunEventPayload {
@@ -511,6 +525,7 @@ impl RunEventPayload {
             code: None,
             phase: None,
             bisect: None,
+            repro: None,
         }
     }
     pub(crate) fn exit(id: u32, code: Option<i32>) -> Self {
@@ -521,6 +536,7 @@ impl RunEventPayload {
             code,
             phase: None,
             bisect: None,
+            repro: None,
         }
     }
     pub(crate) fn phase(id: u32, phase: &str) -> Self {
@@ -531,6 +547,7 @@ impl RunEventPayload {
             code: None,
             phase: Some(phase.to_string()),
             bisect: None,
+            repro: None,
         }
     }
     pub(crate) fn bisect(id: u32, event: crate::worktree::BisectEvent) -> Self {
@@ -541,6 +558,18 @@ impl RunEventPayload {
             code: None,
             phase: None,
             bisect: Some(event),
+            repro: None,
+        }
+    }
+    pub(crate) fn repro(id: u32, recorded: Option<serde_json::Value>) -> Self {
+        Self {
+            id,
+            kind: "repro",
+            line: None,
+            code: None,
+            phase: None,
+            bisect: None,
+            repro: Some(recorded.unwrap_or(serde_json::Value::Null)),
         }
     }
 }

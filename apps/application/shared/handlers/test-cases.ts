@@ -350,6 +350,7 @@ export async function getTestRunCase(
     contentType: nr.contentType,
     serverLogs: nr.serverLogs,
     serverTraces: nr.serverTraces,
+    failure: nr.failure ?? null,
   }));
 
   // Cause ↔ effect for did-not-run cascades, both scoped to this run:
@@ -524,6 +525,7 @@ export async function getTestRunCase(
     isNewRegression: trc.isNewRegression ?? null,
     isNewFlaky: trc.isNewFlaky ?? null,
     didNotRunReason: trc.didNotRunReason ?? null,
+    expectedStatus: trc.expectedStatus ?? null,
     blockedBy: trc.blockedBy ?? null,
     blockedByCase,
     blockedTests,
@@ -702,6 +704,7 @@ export async function loadFailureClueInput(
     status: nr.status,
     duration: nr.duration,
     startTime: nr.startTime ?? undefined,
+    failure: nr.failure,
     serverLogs: (nr.serverLogs ?? null) as Array<{
       level?: string | null;
       message?: string | null;
@@ -751,7 +754,15 @@ export async function loadFailureClueInput(
             })
             .from(testRunsCases)
             .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
-            .where(and(eq(testRunsCases.testRunId, trc.testRunId), eq(testRunsCases.workerIndex, trc.workerIndex)))
+            .where(
+              and(
+                eq(testRunsCases.testRunId, trc.testRunId),
+                eq(testRunsCases.workerIndex, trc.workerIndex),
+                trc.shardIndex != null
+                  ? eq(testRunsCases.shardIndex, trc.shardIndex)
+                  : isNull(testRunsCases.shardIndex),
+              ),
+            )
         : Promise.resolve(
             [] as Array<{
               id: number;
@@ -945,6 +956,7 @@ async function loadAttemptEvidence(
       status: nr.status,
       duration: nr.duration,
       resourceType: nr.resourceType,
+      failure: nr.failure,
     })),
     consoleLogs: (row.consoleLogs as AttemptEvidence['consoleLogs']) ?? null,
     pageState: (row.pageState as AttemptEvidence['pageState']) ?? null,

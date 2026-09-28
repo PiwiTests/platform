@@ -249,6 +249,37 @@ beforeEach(async () => {
 });
 
 describe('computeScenarioGaps', () => {
+  test("code reach's file nodes and reaches edges raise no gap", async () => {
+    await seedRun(1);
+    await seedRun(2);
+    for (const file of ['src/lib/cart.ts', 'src/components/Pay.vue']) {
+      await db.insert(schema.graphEdges).values({
+        projectId: 1,
+        fromKind: 'test',
+        fromKey: '1',
+        toKind: 'file',
+        toKey: file,
+        kind: 'reaches',
+        origin: 'coverage',
+        confidence: 1,
+        lastSeenAt: new Date(++clock),
+      });
+      await db.insert(schema.graphNodes).values({
+        projectId: 1,
+        kind: 'file',
+        key: file,
+        origin: 'coverage',
+        firstSeenRunId: 2,
+        lastSeenRunId: 2,
+        lastSeenAt: new Date(++clock),
+      });
+    }
+
+    await gaps.computeScenarioGaps(db, 1);
+    const rows = await gaps.listScenarioGaps(db, 1, { status: 'all' });
+    expect(rows.filter((r) => r.key.includes('src/'))).toEqual([]);
+  });
+
   test('detects a single-covering-test gap and persists it as open', async () => {
     await seedRun(1);
     await seedReach(1, 'page', '/checkout', 1);

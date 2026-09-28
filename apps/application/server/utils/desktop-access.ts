@@ -15,3 +15,16 @@ export function presentsDesktopToken(event: H3Event, token: string): boolean {
   const presented = getCookie(event, 'piwi_token') || getRequestHeader(event, 'x-piwi-token') || bearer;
   return !!presented && timingSafeEqualStr(presented, token);
 }
+
+/**
+ * The routes the desktop guard leaves open, without the token: the readiness
+ * probe the shell polls before the window has a cookie, and Piwi Picker's
+ * pairing start and poll, which it sends before it holds the token. Each of
+ * the two checks for itself who may ask (`shared/desktop-pairing.ts`).
+ */
+export function isOpenDesktopRoute(method: string, path: string): boolean {
+  const pathname = path.split('?')[0]!;
+  if (pathname === '/api/health') return true;
+  if (method === 'POST' && pathname === '/api/desktop/picker-pairings') return true;
+  return method === 'GET' && /^\/api\/desktop\/picker-pairings\/[0-9a-f]{16}$/.test(pathname);
+}

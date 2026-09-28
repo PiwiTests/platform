@@ -6,7 +6,7 @@ export interface SessionPick {
   pageUrl: string;
 }
 
-const SESSION_KEY = 'piwiPickSession';
+export const SESSION_KEY = 'piwiPickSession';
 
 /**
  * The running named-pick session (C3/C7), in `chrome.storage.session` rather

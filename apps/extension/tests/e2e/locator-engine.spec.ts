@@ -1,7 +1,8 @@
-import { test, expect, selectors, type Locator, type Page } from '@playwright/test';
-import { parseLocatorChain, type LocatorArg, type LocatorChain } from '@piwitests/core/locator-chain';
+import { test, expect, selectors, type Page } from '@playwright/test';
+import { parseLocatorChain } from '@piwitests/core/locator-chain';
 import { engineBundle, servePages, tagElements } from './engine-bundle.js';
 import { EDGE_CASES, LOCATOR_CASES } from './locator-cases.js';
+import { playwrightLocator } from './playwright-locator.js';
 
 /**
  * The extension's locator engine against Playwright itself: every expression
@@ -24,32 +25,6 @@ const EXPECTED_REFUSALS = new Set([
 interface Outcome {
   ids?: Array<string | null>;
   error?: string;
-}
-
-function argValue(page: Page, arg: LocatorArg): unknown {
-  switch (arg.type) {
-    case 'string':
-    case 'number':
-    case 'boolean':
-      return arg.value;
-    case 'regex':
-      return new RegExp(arg.source, arg.flags);
-    case 'object':
-      return Object.fromEntries(arg.entries.map(([key, value]) => [key, argValue(page, value)]));
-    case 'chain':
-      return playwrightLocator(page, arg.chain);
-  }
-}
-
-/** The chain rebuilt with the real Playwright API: each call name is the method of the same name. */
-function playwrightLocator(page: Page, chain: LocatorChain): Locator {
-  let current: unknown = page;
-  for (const call of chain.calls) {
-    const args = call.args.map((arg) => argValue(page, arg));
-    const target = current as Record<string, (...a: unknown[]) => unknown>;
-    current = target[call.method]!(...args);
-  }
-  return current as Locator;
 }
 
 async function playwrightOutcome(page: Page, expression: string): Promise<Outcome> {

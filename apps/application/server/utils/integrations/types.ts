@@ -122,6 +122,26 @@ export function statusColorForCategory(category: TrackerStatusCategory | null): 
   }
 }
 
+/**
+ * How a ticket moved since the last sync saw it: into Done, out of Done
+ * (reopened), or neither. Policies act on a move, not on a state, so a record
+ * changed by other means is not pulled back on every sync. A move needs two
+ * known categories: the first sync of a link only records where the ticket
+ * stands, and a category the tracker does not report or that is not one of
+ * the three known ones reads as no move.
+ */
+export function ticketMove(
+  previous: string | null | undefined,
+  current: string | null | undefined,
+): 'done' | 'reopened' | null {
+  const from = toStatusCategory(previous);
+  const to = toStatusCategory(current);
+  if (!from || !to || from === to) return null;
+  if (to === 'done') return 'done';
+  if (from === 'done') return 'reopened';
+  return null;
+}
+
 /** Narrow an arbitrary string to a known status category, else null. */
 export function toStatusCategory(key: string | null | undefined): TrackerStatusCategory | null {
   return key === 'new' || key === 'indeterminate' || key === 'done' ? key : null;

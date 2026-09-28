@@ -13,7 +13,8 @@ export const COVERAGE_CSS = `
   .layer, .panel, .pill, .card {
     font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 13px; line-height: 1.45;
   }
-  code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .panel, .pill, .card { overflow-wrap: anywhere; hyphens: auto; }
+  code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; hyphens: manual; }
 
   /* ── Boxes on the page ─────────────────────────────────────────────── */
   .box {
@@ -106,7 +107,7 @@ export const COVERAGE_CSS = `
   .card li .dot { width: 8px; height: 8px; border-radius: 50%; align-self: center; }
   .card li a { color: #e2e8f0; text-decoration: underline dotted; text-underline-offset: 2px; word-break: break-word; }
   .card li a:hover { text-decoration-style: solid; }
-  .card li .meta { grid-column: 2; color: #94a3b8; font-size: 11.5px; word-break: break-all; }
+  .card li .meta { grid-column: 2; color: #94a3b8; font-size: 11.5px; overflow-wrap: anywhere; }
   .card .more { color: #94a3b8; font-size: 11.5px; margin-top: 4px; }
   .card .card-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
   .card .hint { color: #94a3b8; font-size: 11.5px; margin-top: 6px; }
@@ -181,9 +182,10 @@ export const COVERAGE_CSS = `
   .panel .scope-bar kbd { font: inherit; font-size: 11px; padding: 0 4px; border-radius: 4px; border: 1px solid rgb(128 128 128 / 0.4); }
   .panel .around { margin: -2px 0 10px; }
   .panel .around .hint { color: #9ca3af; font-size: 11.5px; margin-bottom: 2px; }
-  .panel .tabs { display: flex; gap: 3px; padding: 3px; border-radius: 8px; background: rgb(128 128 128 / 0.14); margin-bottom: 8px; }
+  .panel .tabs { display: flex; flex-wrap: wrap; gap: 3px; padding: 3px; border-radius: 8px; background: rgb(128 128 128 / 0.14); margin-bottom: 8px; }
   .panel .tab {
-    flex: 1; border: 0; background: none; color: inherit; font: inherit; font-size: 12px; padding: 4px 6px;
+    flex: 1 1 auto; border: 0; background: none; color: inherit; font: inherit; font-size: 12px; padding: 4px 6px;
+    white-space: nowrap;
     border-radius: 6px; cursor: pointer; opacity: 0.75;
   }
   .panel .tab[aria-pressed='true'] { background: #374151; opacity: 1; font-weight: 600; }
@@ -204,7 +206,7 @@ export const COVERAGE_CSS = `
   .swatch.uncovered { background: repeating-linear-gradient(45deg, #f59e0b 0 3px, transparent 3px 6px); border: 1px solid #f59e0b; }
   .swatch.brittle { background: #ea580c; }
   .swatch.missing { background: #e11d48; }
-  .panel .page-switch { display: flex; gap: 3px; padding: 3px; border-radius: 8px; background: rgb(128 128 128 / 0.14); margin: 0 0 8px; }
+  .panel .page-switch { display: flex; flex-wrap: wrap; gap: 3px; padding: 3px; border-radius: 8px; background: rgb(128 128 128 / 0.14); margin: 0 0 8px; }
   .panel li.row.static { cursor: default; }
   .panel .risk-section + .risk-section { margin-top: 12px; }
   .panel .section-head { margin: 0 0 2px; font-size: 12.5px; font-weight: 650; }
@@ -214,7 +216,8 @@ export const COVERAGE_CSS = `
   .panel li.row .count { color: #9ca3af; font-size: 11.5px; font-variant-numeric: tabular-nums; }
   .panel li.row .detail { grid-column: 2 / 4; color: #9ca3af; font-size: 11.5px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .panel li.row code.piwi-loc { grid-column: 2 / 4; font-size: 11.5px; white-space: normal; word-break: break-all; }
-  .panel li.row .row-actions { grid-column: 2 / 4; display: flex; gap: 6px; margin-top: 3px; }
+  .panel li.row .detail.wrap { white-space: normal; overflow: visible; }
+  .panel li.row .row-actions { grid-column: 2 / 4; display: flex; flex-wrap: wrap; gap: 6px; margin-top: 3px; }
   .panel li.row .row-actions button, .panel li.row .row-actions a {
     background: rgb(128 128 128 / 0.12); color: inherit; border: 1px solid rgb(128 128 128 / 0.3); border-radius: 6px;
     padding: 1px 8px; font: inherit; font-size: 11px; cursor: pointer; text-decoration: none;
@@ -236,7 +239,7 @@ export const COVERAGE_CSS = `
     position: fixed; bottom: 16px; right: 16px; pointer-events: auto; cursor: pointer; z-index: 6;
     display: inline-flex; align-items: center; gap: 8px; padding: 7px 12px; border-radius: 999px; border: 0;
     background: #111827; color: #f9fafb; font: 600 12.5px/1 ui-sans-serif, system-ui, sans-serif;
-    box-shadow: 0 6px 24px rgb(0 0 0 / 0.45);
+    box-shadow: 0 6px 24px rgb(0 0 0 / 0.45); max-width: calc(100vw - 32px); text-align: start; line-height: 1.3;
   }
   .pill.left { right: auto; left: 16px; }
   .pill .swatch { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }

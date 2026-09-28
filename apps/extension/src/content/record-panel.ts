@@ -1,51 +1,147 @@
-import { probeElementAttrs, type ProbeArg } from '@piwitests/picker-dom';
-import {
-  generateAlternatives,
-  approximateAccessibleName,
-  resolveAriaRole,
-  CAPTURED_ATTRIBUTES,
-  TAG_TO_ROLE,
-  INPUT_TYPE_TO_ROLE,
-} from '@piwitests/core/locator-generation';
 import {
   normalizeSteps,
   buildSession,
+  RECORDED_KEYS,
   type RawCaptureEvent,
   type RecordedTarget,
   type RecordedStep,
+  type StepAssertion,
 } from '@piwitests/core/recording';
 import { rankFunctionMatches, type TestFunctionEntry, type RankedFunctionMatch } from '@piwitests/core/function-match';
 import { renderSpec } from '@piwitests/core/codegen';
+import { toStepsDocument, type PiwiSteps } from '@piwitests/core/steps';
+import { formatNumber, initI18n, t, tn, uiLanguage } from '../shared/i18n.js';
 import { classifyInputKind, isPasswordInput } from './record-capture.js';
+import { rankElement, verifiedLocators } from './verified-locators.js';
+import { HoverTracker, cssHoverSubjects, outermostFirst } from './hover-reveal.js';
+import { documentStyleRules } from './hover-rules.js';
 import {
   getRecordingState,
   appendRecordingEvent,
   stopRecording,
   discardRecording,
+  recordingMode,
   type RecordingState,
 } from '../shared/recording-storage.js';
+import { getBugEvidence, setBugEvidenceFields } from '../shared/bug-storage.js';
+import {
+  currentBugContext,
+  outlineAround,
+  renderBugFinishPanel,
+  renderBugHud,
+  runMarkFlow,
+  runMissingFlow,
+  runWrongPageFlow,
+  startEvidenceRelay,
+  takeBugScreenshot,
+  type BugRecorderHooks,
+} from './bug-panel.js';
+import {
+  HUD_HOST_ID,
+  PANEL_HOST_ID,
+  FRAME_HOST_ID,
+  BUG_DIALOG_HOST_ID,
+  OWN_HOST_IDS,
+  SHARED_STYLE,
+  copyToClipboard,
+  downloadBlob,
+  fileStamp,
+} from './record-ui.js';
 import { getCachedCatalog } from '../shared/catalog-cache.js';
 import { requestCatalogRefresh } from '../shared/catalog-refresh.js';
 import { ensureSessionAccess } from '../shared/session-access.js';
 import { getConnectionSettings } from '../shared/connection-settings.js';
 import { getActiveProjectOverride, resolveActiveProject } from '../shared/active-project.js';
-
-const HUD_HOST_ID = 'piwi-record-hud-host';
-const PANEL_HOST_ID = 'piwi-record-review-host';
-const FRAME_HOST_ID = 'piwi-record-frame-host';
-
-const ROLE_SOURCES = [...new Set(['[role]', 'input', 'select', ...Object.keys(TAG_TO_ROLE)])].join(',');
-const PROBE_ARG: ProbeArg = {
-  keep: [...CAPTURED_ATTRIBUTES],
-  tagRoles: TAG_TO_ROLE,
-  inputRoles: INPUT_TYPE_TO_ROLE,
-  roleSources: ROLE_SOURCES,
-  includeStructural: true,
-};
+import { attachPanelShadow } from './panel-root.js';
+import { getEditorPairing } from '../shared/editor-pairing.js';
+import { sendToEditor, showSendResult } from '../shared/editor-send.js';
 
 /** The DOM shapes a click/action can reasonably land on — a click deeper inside one of these snaps up to it, same intent as the picker overlay's own snapping (not the identical algorithm — see AGENTS.md note in this file's own doc comment below). */
 const ACTIONABLE_SELECTOR =
-  'button, a[href], input, select, textarea, [role="button"], [role="link"], [role="checkbox"], [role="radio"], [role="tab"], [role="menuitem"], [contenteditable="true"], [data-testid]';
+  'button, a[href], input, select, textarea, [role="button"], [role="link"], [role="checkbox"], [role="radio"], [role="switch"], [role="tab"], [role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"], [role="option"], [role="combobox"], [role="treeitem"], [contenteditable="true"], [data-testid]';
+
+/** Where an arrow key moves through choices rather than a caret or the page, and so is worth replaying. */
+const ARROW_KEY_WIDGETS =
+  'select, [role="combobox"], [role="listbox"], [role="menu"], [role="menubar"], [role="tree"], [role="grid"], [role="tablist"], [role="radiogroup"], [aria-activedescendant]';
+
+/** Inputs Playwright's `fill` refuses: their `input` event is not a fill. */
+const UNFILLABLE_INPUT_TYPES = new Set(['checkbox', 'radio', 'file', 'submit', 'button', 'reset', 'image', 'hidden']);
+
+/** Fields a character typed into is text, not a shortcut. */
+const TEXT_FIELDS =
+  'textarea, select, [contenteditable=""], [contenteditable="true"], input:not([type="checkbox"], [type="radio"], [type="button"], [type="submit"], [type="reset"], [type="file"], [type="range"], [type="color"], [type="image"])';
+const MODIFIER_KEYS = new Set([
+  'Control',
+  'Shift',
+  'Alt',
+  'AltGraph',
+  'Meta',
+  'CapsLock',
+  'Fn',
+  'Dead',
+  'Unidentified',
+]);
+/** Keys that edit a field or move its caret, with or without a modifier: the field's fill says what they did. */
+const FIELD_EDIT_KEYS = new Set([
+  'a',
+  'c',
+  'v',
+  'x',
+  'z',
+  'y',
+  'Backspace',
+  'Delete',
+  'ArrowLeft',
+  'ArrowRight',
+  'Home',
+  'End',
+]);
+const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform);
+
+/**
+ * A key press as Playwright writes it, or null when it only types, edits or
+ * moves the focus: Enter, Escape and the arrows in a list (`RECORDED_KEYS`),
+ * a shortcut with a modifier (`ControlOrMeta+K`, portable between Ctrl and
+ * ⌘), and a character pressed outside a field, a page's own shortcut.
+ *
+ * A character typed with AltGr (which also sets Ctrl and Alt on Windows) or
+ * with Option on a Mac (`©`) is typing, not a shortcut. In a password field
+ * only an unmodified key of `RECORDED_KEYS` is recorded, so no key a password
+ * holds is ever written down.
+ */
+function recordedKey(e: KeyboardEvent, focused: Element | null): string | null {
+  if (MODIFIER_KEYS.has(e.key)) return null;
+  if (e.getModifierState?.('AltGraph')) return null;
+  const inField = !!focused?.closest(TEXT_FIELDS);
+  const typedWithOption =
+    IS_MAC && e.altKey && !e.metaKey && !e.ctrlKey && [...e.key].length === 1 && e.key.trim() !== '';
+  // A letter or digit by its key, whatever Alt or a layout made of it.
+  const named = /^Key[A-Z]$/.test(e.code)
+    ? e.code.slice(3).toLowerCase()
+    : /^Digit\d$/.test(e.code)
+      ? e.code.slice(5)
+      : e.key;
+  const modifiers = typedWithOption
+    ? []
+    : [
+        (IS_MAC ? e.metaKey : e.ctrlKey) && 'ControlOrMeta',
+        IS_MAC && e.ctrlKey && 'Control',
+        !IS_MAC && e.metaKey && 'Meta',
+        e.altKey && 'Alt',
+      ].filter((m): m is string => !!m);
+  if (modifiers.length > 0 && focused?.closest('input[type="password" i]')) return null;
+  if (modifiers.length === 0) {
+    if (e.shiftKey && [...e.key].length > 1) return null;
+    if (RECORDED_KEYS.has(e.key)) {
+      if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && !focused?.closest(ARROW_KEY_WIDGETS)) return null;
+      return e.key;
+    }
+    return !inField && [...e.key].length === 1 && e.key !== ' ' ? e.key : null;
+  }
+  if (inField && FIELD_EDIT_KEYS.has(named)) return null;
+  if (e.shiftKey) modifiers.push('Shift');
+  return [...modifiers, named === ' ' ? 'Space' : named].join('+');
+}
 
 function normalizeText(s: string): string {
   return s.replace(/\s+/g, ' ').trim();
@@ -74,25 +170,23 @@ function elementKeyFor(el: Element): string {
 }
 
 /**
- * Element → `RecordedTarget`, mirroring `top-locator.ts`'s probe pipeline but
- * keeping the top few ranked alternatives (not just the winner) and the
- * role/testId/text a catalog pattern match needs. Lives here rather than a
- * separate pure file because it calls `generateAlternatives`, which per
- * `extension/AGENTS.md`'s two-strategy rule can only be tested by driving
- * the real built bundle — same reasoning as `agent-context.ts`.
+ * Element → `RecordedTarget`: the element named and ranked as every picking
+ * tool does (`rankElement`: the accessible name Playwright computes, "Regressions
+ * 5" rather than `textContent`'s "Regressions5", and no ranking on the probe's
+ * estimated counts), keeping the top few locators that find it alone on the
+ * page (`verifiedLocators`) and the role/testId/text a catalog pattern match
+ * needs. Tested by driving the real built bundle, since `generateAlternatives`
+ * can't be reconstructed from its source (see `extension/AGENTS.md`).
  */
 function deriveRecordedTarget(el: Element): RecordedTarget {
-  const attrs = probeElementAttrs(el, PROBE_ARG);
-  const accessibleName = approximateAccessibleName({ ...attrs, accessibleName: null });
-  const role = resolveAriaRole({ ...attrs, accessibleName });
-  const ranked = generateAlternatives({ ...attrs, accessibleName });
+  const { attrs, accessibleName, role, ranked } = rankElement(el);
   return {
     tagName: attrs.tagName,
     role,
     accessibleName,
     testId: attrs.attributes['data-testid'] ?? null,
     text: el.textContent ? normalizeText(el.textContent).slice(0, 200) : null,
-    alternatives: ranked.slice(0, 5).map((r) => ({ locator: r.locator, method: r.method, score: r.score })),
+    alternatives: verifiedLocators(el, ranked),
     elementKey: elementKeyFor(el),
   };
 }
@@ -122,11 +216,79 @@ function nearestActionable(el: Element): Element {
   return el.closest(ACTIONABLE_SELECTOR) ?? el;
 }
 
+/** What a person points at when the pointer enters `entered`: the control around it, if inside `within`. */
+function pointedAt(entered: Element, within: Element): Element {
+  const control = entered.closest(ACTIONABLE_SELECTOR);
+  return control && within.contains(control) ? control : entered;
+}
+
+/** Follows the pointer and the page's insertions while this document records, for `hoverTargets`. */
+let hoverTracker: HoverTracker | null = null;
+
+/**
+ * The hovers a click on `el` depends on, outermost first, named as the page
+ * stands now: the elements whose CSS `:hover` or script reveal showed `el` or
+ * one of its ancestors. An element named by text the hover shows is named by
+ * the element inside it the pointer entered it through instead. Plain pointer
+ * movement gives none.
+ */
+function hoverTargets(el: Element): RecordedTarget[] {
+  const css = cssHoverSubjects(el, documentStyleRules());
+  const scripted = hoverTracker?.scriptSubject(el, pointedAt);
+  const subjects = css.map((s) => s.subject);
+  if (scripted && scripted !== el && !el.contains(scripted)) subjects.push(scripted);
+  return outermostFirst(subjects).map((subject) => {
+    const target = deriveRecordedTarget(subject);
+    const revealed = css.find((s) => s.subject === subject)?.revealed;
+    const via = revealed ? hoverTracker?.enteredVia(subject) : null;
+    if (!revealed || !via || via === subject || revealed.contains(via)) return target;
+    return namesRevealed(target, revealed) ? deriveRecordedTarget(pointedAt(via, subject)) : target;
+  });
+}
+
+/** Whether the best locator of a target names it by text only its hover shows. */
+function namesRevealed(target: RecordedTarget, revealed: Element): boolean {
+  const locator = target.alternatives[0]?.locator ?? '';
+  const words = normalizeText(revealed.textContent ?? '');
+  return !locator || (words.length > 0 && locator.includes(words.slice(0, 40)));
+}
+
+/**
+ * The control a press began on, and its target as the page stood then. A
+ * control that opens on press (a custom select, a menu button) covers itself
+ * with what it opened before the button comes back up: the browser then sends
+ * the click to what the press and the release have in common, often `<html>`,
+ * and a modal popup has already hidden the rest of the page from role queries.
+ * The press says which control it was, what named it, and which hovers
+ * revealed it, while the pointer is still on it.
+ */
+interface Press {
+  el: Element;
+  target: RecordedTarget;
+  hovers: RecordedTarget[];
+  at: number;
+}
+let lastPress: Press | null = null;
+const PRESS_CLICK_WINDOW_MS = 2000;
+
+/** The control a click acted on, from its press when it had one; `pointer` is false for a click from the keyboard, which no hover revealed. */
+function clickTarget(raw: Element, at: number, pointer: boolean): Omit<Press, 'at'> {
+  const el = nearestActionable(raw);
+  const press = lastPress;
+  lastPress = null;
+  if (press && press.el.isConnected && at - press.at <= PRESS_CLICK_WINDOW_MS) {
+    if (press.el === el || el.contains(press.el)) return press;
+  }
+  return { el, target: deriveRecordedTarget(el), hovers: pointer ? hoverTargets(el) : [] };
+}
+
 function withinOwnUi(e: Event): boolean {
-  const path = e.composedPath();
-  return path.some(
-    (n) => n instanceof HTMLElement && (n.id === HUD_HOST_ID || n.id === PANEL_HOST_ID || n.id === FRAME_HOST_ID),
-  );
+  return e.composedPath().some((n) => n instanceof HTMLElement && OWN_HOST_IDS.has(n.id));
+}
+
+/** Whether capture is paused in this document: a bug report's pick or dialog is on screen. */
+function capturePaused(): boolean {
+  return recorderGlobals().__piwiRecordPaused === true;
 }
 
 /**
@@ -146,7 +308,7 @@ function ensureRecordingFrame(): void {
   host.id = FRAME_HOST_ID;
   host.style.cssText = 'all:initial;position:fixed;inset:0;z-index:2147483646;pointer-events:none;';
   document.documentElement.appendChild(host);
-  const root = host.attachShadow({ mode: 'closed' });
+  const root = attachPanelShadow(host, { mode: 'closed' });
   const style = document.createElement('style');
   style.textContent = `
     .frame {
@@ -167,24 +329,6 @@ function removeRecordingFrame(): void {
   document.getElementById(FRAME_HOST_ID)?.remove();
 }
 
-async function copyToClipboard(text: string, btn: HTMLButtonElement): Promise<void> {
-  try {
-    await navigator.clipboard.writeText(text);
-  } catch {
-    return;
-  }
-  const original = btn.textContent;
-  btn.textContent = 'Copied';
-  setTimeout(() => {
-    btn.textContent = original;
-  }, 1200);
-}
-
-const SHARED_STYLE = `
-  :host { all: initial; }
-  * { box-sizing: border-box; font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; }
-`;
-
 function renderHud(state: RecordingState, catalog: TestFunctionEntry[]): void {
   document.getElementById(HUD_HOST_ID)?.remove();
   document.getElementById(PANEL_HOST_ID)?.remove();
@@ -194,7 +338,7 @@ function renderHud(state: RecordingState, catalog: TestFunctionEntry[]): void {
   host.id = HUD_HOST_ID;
   host.style.cssText = 'all:initial;position:fixed;inset:auto 16px 16px auto;z-index:2147483647;';
   document.documentElement.appendChild(host);
-  const root = host.attachShadow({ mode: 'closed' });
+  const root = attachPanelShadow(host, { mode: 'closed' });
 
   const style = document.createElement('style');
   style.textContent = `
@@ -210,7 +354,7 @@ function renderHud(state: RecordingState, catalog: TestFunctionEntry[]): void {
     .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
     .dot { width: 8px; height: 8px; border-radius: 50%; background: #ef4444; flex-shrink: 0; animation: pulse 1.4s ease-in-out infinite; }
     @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
-    .title { font-weight: 600; flex: 1; }
+    .title { font-weight: 600; flex: 1; min-width: 0; overflow-wrap: anywhere; hyphens: auto; }
     button { border-radius: 6px; padding: 4px 9px; font: inherit; font-size: 11.5px; cursor: pointer;
       border: 1px solid rgba(128,128,128,.3); background: rgba(128,128,128,.12); color: inherit; }
     button:hover, button:focus-visible { background: rgba(128,128,128,.25); }
@@ -225,8 +369,13 @@ function renderHud(state: RecordingState, catalog: TestFunctionEntry[]): void {
     .match-badge.complete { background: rgba(34,197,94,.2); color: #22c55e; }
     .match-badge.partial { color: #9ca3af; }
     .empty { color: #9ca3af; font-size: 11px; }
+    .empty, .warn { overflow-wrap: anywhere; hyphens: auto; }
     .warn { color: #fca5a5; font-size: 11px; line-height: 1.35; }
-    @media (prefers-color-scheme: light) { .warn { color: #b91c1c; } }
+    @media (prefers-color-scheme: light) {
+      .warn { color: #b91c1c; }
+      .match-badge.complete { color: #15803d; }
+      .match-badge.partial, .empty, .section-title { color: #6b7280; }
+    }
   `;
   root.appendChild(style);
 
@@ -236,6 +385,7 @@ function renderHud(state: RecordingState, catalog: TestFunctionEntry[]): void {
 
   const bar = document.createElement('div');
   bar.className = 'bar';
+  bar.lang = uiLanguage();
 
   const topRow = document.createElement('div');
   topRow.className = 'row';
@@ -243,11 +393,11 @@ function renderHud(state: RecordingState, catalog: TestFunctionEntry[]): void {
   dot.className = 'dot';
   const title = document.createElement('div');
   title.className = 'title';
-  title.textContent = `Recording — ${steps.length} step${steps.length === 1 ? '' : 's'}`;
+  title.textContent = tn('record_hudTitle', steps.length);
   const stopBtn = document.createElement('button');
   stopBtn.type = 'button';
   stopBtn.className = 'stop';
-  stopBtn.textContent = 'Stop';
+  stopBtn.textContent = t('common_stop');
   stopBtn.addEventListener('click', () => void handleStop());
   topRow.append(dot, title, stopBtn);
   bar.appendChild(topRow);
@@ -263,7 +413,7 @@ function renderHud(state: RecordingState, catalog: TestFunctionEntry[]): void {
   if (lastTarget?.alternatives[0]) {
     const locTitle = document.createElement('div');
     locTitle.className = 'section-title';
-    locTitle.textContent = 'Last locator';
+    locTitle.textContent = t('record_lastLocator');
     const code = document.createElement('code');
     code.textContent = lastTarget.alternatives[0].locator;
     bar.append(locTitle, code);
@@ -272,12 +422,12 @@ function renderHud(state: RecordingState, catalog: TestFunctionEntry[]): void {
   if (catalog.length > 0) {
     const matchTitle = document.createElement('div');
     matchTitle.className = 'section-title';
-    matchTitle.textContent = 'Matching functions';
+    matchTitle.textContent = t('record_matchingFunctions');
     bar.appendChild(matchTitle);
     if (matches.length === 0) {
       const empty = document.createElement('div');
       empty.className = 'empty';
-      empty.textContent = 'No catalog match yet';
+      empty.textContent = t('record_noMatch');
       bar.appendChild(empty);
     } else {
       for (const m of matches) bar.appendChild(renderMatchRow(m));
@@ -301,7 +451,9 @@ function renderMatchRow(m: RankedFunctionMatch): HTMLElement {
   barWrap.appendChild(fill);
   const badge = document.createElement('span');
   badge.className = `match-badge ${m.complete ? 'complete' : 'partial'}`;
-  badge.textContent = m.complete ? 'ready' : `${m.matchedIndices.length}/${m.entry.steps.length}`;
+  badge.textContent = m.complete
+    ? t('record_matchReady')
+    : `${formatNumber(m.matchedIndices.length)}/${formatNumber(m.entry.steps.length)}`;
   row.append(name, barWrap, badge);
   return row;
 }
@@ -312,10 +464,24 @@ function describeStep(step: RecordedStep): string {
     ? `testId=${target.testId}`
     : (target?.accessibleName ?? target?.text ?? target?.tagName ?? '');
   const value = step.redacted ? '••••••' : step.value;
-  return `${step.action}${label ? ` — ${label}` : ''}${value ? ` = "${value}"` : ''}`;
+  const described = `${step.action}${label ? ` — ${label}` : ''}`;
+  return value ? t('record_stepValue', { step: described, value }) : described;
 }
 
-async function renderReviewPanel(events: RawCaptureEvent[]): Promise<void> {
+/** Save a steps document as `piwi-steps-<date>-<time>.json`, through the page's own download handling. */
+function downloadSteps(doc: PiwiSteps): void {
+  downloadBlob(
+    new Blob([JSON.stringify(doc, null, 2)], { type: 'application/json' }),
+    `piwi-steps-${fileStamp(doc.recordedAt)}.json`,
+  );
+}
+
+async function renderReviewPanel(state: RecordingState): Promise<void> {
+  if (recordingMode(state) === 'bug') {
+    await renderBugFinishPanel(state, discardRecording);
+    return;
+  }
+  const { events } = state;
   document.getElementById(HUD_HOST_ID)?.remove();
   document.getElementById(PANEL_HOST_ID)?.remove();
   // Recording is over by the time the review panel opens — drop the border
@@ -332,14 +498,16 @@ async function renderReviewPanel(events: RawCaptureEvent[]): Promise<void> {
   // where a call belonged.
   await requestCatalogRefresh(activeProject?.projectId ?? null);
   const catalog = await getCachedCatalog(activeProject?.projectId ?? null);
-  const withCatalog = renderSpec(session, { catalog });
-  const raw = renderSpec(session);
+  // URL checks: after a step that leads to another page, the spec waits for
+  // it, and for the next element as the only match, before acting.
+  const withCatalog = renderSpec(session, { catalog, urlChecks: true });
+  const raw = renderSpec(session, { urlChecks: true });
 
   const host = document.createElement('div');
   host.id = PANEL_HOST_ID;
   host.style.cssText = 'all:initial;position:fixed;inset:0;z-index:2147483647;';
   document.documentElement.appendChild(host);
-  const root = host.attachShadow({ mode: 'closed' });
+  const root = attachPanelShadow(host, { mode: 'closed' });
 
   const style = document.createElement('style');
   style.textContent = `
@@ -348,7 +516,8 @@ async function renderReviewPanel(events: RawCaptureEvent[]): Promise<void> {
     .panel { background: #111827; color: #f9fafb; border-radius: 12px; padding: 16px; width: min(680px, 92vw); max-height: 84vh;
       overflow: auto; box-shadow: 0 8px 40px rgba(0,0,0,.5); font-size: 13px; line-height: 1.5; }
     @media (prefers-color-scheme: light) { .panel { background: #ffffff; color: #111827; box-shadow: 0 8px 40px rgba(0,0,0,.2); } }
-    .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+    .header { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+    .header > div { min-width: 0; overflow-wrap: anywhere; hyphens: auto; }
     .title { font-weight: 600; font-size: 14px; }
     .sub { color: #9ca3af; font-size: 12px; }
     .close { background: none; border: none; color: inherit; opacity: .7; cursor: pointer; font-size: 18px; line-height: 1; padding: 4px 8px; border-radius: 6px; }
@@ -356,16 +525,21 @@ async function renderReviewPanel(events: RawCaptureEvent[]): Promise<void> {
     .steps { border: 1px solid rgba(128,128,128,.3); border-radius: 8px; max-height: 240px; overflow: auto; margin-bottom: 12px; }
     .step { padding: 6px 10px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px;
       border-bottom: 1px solid rgba(128,128,128,.15); display: flex; gap: 8px; align-items: center; }
+    .step-desc { min-width: 0; overflow-wrap: anywhere; }
     .step:last-child { border-bottom: none; }
-    .step-idx { color: #9ca3af; flex-shrink: 0; width: 20px; }
+    .step-idx { color: #9ca3af; flex-shrink: 0; min-width: 20px; }
     .step-fn { margin-left: auto; font-size: 10px; padding: 1px 5px; border-radius: 4px; background: rgba(124,58,237,.2); color: #a78bfa; flex-shrink: 0; }
     .actions { display: flex; gap: 6px; flex-wrap: wrap; }
     button.action { background: rgba(128,128,128,.12); color: inherit; border: 1px solid rgba(128,128,128,.3);
-      border-radius: 6px; padding: 6px 10px; font-size: 12px; cursor: pointer; }
+      border-radius: 6px; padding: 6px 10px; font-size: 12px; cursor: pointer; text-align: start; overflow-wrap: anywhere; }
     button.action:hover, button.action:focus-visible { background: rgba(128,128,128,.25); }
     button.action.primary { background: #7c3aed; border-color: #7c3aed; color: #fff; }
     button.action.danger:hover, button.action.danger:focus-visible { background: rgba(248,113,113,.2); border-color: #f87171; }
     .empty { color: #9ca3af; font-size: 12.5px; padding: 16px; text-align: center; }
+    @media (prefers-color-scheme: light) {
+      .sub, .step-idx, .empty { color: #6b7280; }
+      .step-fn { color: #6d28d9; }
+    }
   `;
   root.appendChild(style);
 
@@ -374,7 +548,8 @@ async function renderReviewPanel(events: RawCaptureEvent[]): Promise<void> {
   const panel = document.createElement('div');
   panel.className = 'panel';
   panel.setAttribute('role', 'dialog');
-  panel.setAttribute('aria-label', 'Piwi recording review');
+  panel.lang = uiLanguage();
+  panel.setAttribute('aria-label', t('record_reviewLabel'));
   panel.tabIndex = -1;
 
   const header = document.createElement('div');
@@ -382,20 +557,19 @@ async function renderReviewPanel(events: RawCaptureEvent[]): Promise<void> {
   const titleWrap = document.createElement('div');
   const title = document.createElement('div');
   title.className = 'title';
-  title.textContent =
-    steps.length === 0 ? 'Nothing recorded' : `${steps.length} recorded step${steps.length === 1 ? '' : 's'}`;
+  title.textContent = steps.length === 0 ? t('record_nothingRecorded') : tn('record_stepsRecorded', steps.length);
   const sub = document.createElement('div');
   sub.className = 'sub';
   sub.textContent =
     withCatalog.matchedSpans.length > 0
-      ? `${withCatalog.matchedSpans.length} step${withCatalog.matchedSpans.length === 1 ? '' : 's'} matched to your function catalog`
+      ? tn('record_stepsMatched', withCatalog.matchedSpans.length)
       : catalog.length > 0
-        ? 'No catalog matches — exported as raw locators'
-        : 'Not connected to a Piwi instance — exported as raw locators';
+        ? t('record_noFunctionMatches')
+        : t('record_notConnected');
   titleWrap.append(title, sub);
   const closeBtn = document.createElement('button');
   closeBtn.className = 'close';
-  closeBtn.setAttribute('aria-label', 'Close');
+  closeBtn.setAttribute('aria-label', t('common_close'));
   closeBtn.textContent = '×';
   // Every close path goes through one function, so the document-level Escape
   // listener below is always detached with the panel. Registering it and only
@@ -414,7 +588,7 @@ async function renderReviewPanel(events: RawCaptureEvent[]): Promise<void> {
   if (steps.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'empty';
-    empty.textContent = 'No steps were captured.';
+    empty.textContent = t('record_noSteps');
     panel.appendChild(empty);
   } else {
     const stepsWrap = document.createElement('div');
@@ -424,8 +598,9 @@ async function renderReviewPanel(events: RawCaptureEvent[]): Promise<void> {
       row.className = 'step';
       const idx = document.createElement('span');
       idx.className = 'step-idx';
-      idx.textContent = String(i + 1);
+      idx.textContent = formatNumber(i + 1);
       const desc = document.createElement('span');
+      desc.className = 'step-desc';
       desc.textContent = describeStep(step);
       row.append(idx, desc);
       const span = withCatalog.matchedSpans.find((s) => i >= s.startStep && i <= s.endStep);
@@ -447,7 +622,7 @@ async function renderReviewPanel(events: RawCaptureEvent[]): Promise<void> {
     const copyPrimary = document.createElement('button');
     copyPrimary.type = 'button';
     copyPrimary.className = 'action primary';
-    copyPrimary.textContent = catalog.length > 0 ? 'Copy as TypeScript (with your functions)' : 'Copy as TypeScript';
+    copyPrimary.textContent = catalog.length > 0 ? t('record_copyCodeWithFunctions') : t('record_copyCode');
     copyPrimary.addEventListener('click', () => void copyToClipboard(withCatalog.code, copyPrimary));
     actions.appendChild(copyPrimary);
 
@@ -455,16 +630,37 @@ async function renderReviewPanel(events: RawCaptureEvent[]): Promise<void> {
       const copyRaw = document.createElement('button');
       copyRaw.type = 'button';
       copyRaw.className = 'action';
-      copyRaw.textContent = 'Copy raw TypeScript';
+      copyRaw.textContent = t('record_copyCodeWithoutFunctions');
       copyRaw.addEventListener('click', () => void copyToClipboard(raw.code, copyRaw));
       actions.appendChild(copyRaw);
+    }
+
+    const downloadBtn = document.createElement('button');
+    downloadBtn.type = 'button';
+    downloadBtn.className = 'action';
+    downloadBtn.textContent = t('record_downloadSteps');
+    downloadBtn.title = t('record_downloadStepsTitle');
+    downloadBtn.addEventListener('click', () => downloadSteps(toStepsDocument(session)));
+    actions.appendChild(downloadBtn);
+
+    if (await getEditorPairing().catch(() => null)) {
+      const sendBtn = document.createElement('button');
+      sendBtn.type = 'button';
+      sendBtn.className = 'action';
+      sendBtn.textContent = t('record_sendToEditor');
+      sendBtn.addEventListener('click', () => {
+        void sendToEditor({ kind: 'steps', steps: toStepsDocument(session) }).then((result) =>
+          showSendResult(sendBtn, result),
+        );
+      });
+      actions.appendChild(sendBtn);
     }
   }
 
   const discardBtn = document.createElement('button');
   discardBtn.type = 'button';
   discardBtn.className = 'action danger';
-  discardBtn.textContent = 'Discard';
+  discardBtn.textContent = t('common_discard');
   discardBtn.addEventListener('click', () => {
     void discardRecording().then(closePanel, closePanel);
   });
@@ -495,7 +691,32 @@ async function handleStop(): Promise<void> {
   } catch {
     // Extension context can be gone (e.g. reloaded mid-recording) — the storage write above already stuck.
   }
-  await renderReviewPanel(state.events);
+  await renderReviewPanel(state);
+}
+
+/**
+ * Finishes a bug recording: the last evidence entries, a screenshot of the
+ * page as it is, an outline when nothing was marked, and the page's context,
+ * then the same stop as any recording.
+ */
+async function handleBugFinish(): Promise<void> {
+  const g = recorderGlobals();
+  if (g.__piwiBugFinishing) return;
+  g.__piwiBugFinishing = true;
+  try {
+    await g.__piwiBugRelayFlush?.();
+    const state = await getRecordingState();
+    if (!state.active) return;
+    await takeBugScreenshot('finish', normalizeSteps(state.events).length - 1);
+    const evidence = await getBugEvidence();
+    await setBugEvidenceFields({
+      context: await currentBugContext(),
+      ...(evidence.outline ? {} : { outline: outlineAround(null) }),
+    });
+    await handleStop();
+  } finally {
+    g.__piwiBugFinishing = false;
+  }
 }
 
 function buildEvent(
@@ -519,6 +740,26 @@ function buildEvent(
   };
 }
 
+/** What the bug panel needs from the recorder to add an assertion to the recording. */
+const bugHooks: BugRecorderHooks = {
+  targetFor: deriveRecordedTarget,
+  async addAssert(target: RecordedTarget | null, assertion: StepAssertion): Promise<number | null> {
+    try {
+      const state = await appendRecordingEvent(buildEvent('assert', null, { target, assertion: { ...assertion } }));
+      if (!state.active) return null;
+      return normalizeSteps(state.events).length - 1;
+    } catch {
+      captureError = t('record_stepNotSaved');
+      return null;
+    } finally {
+      scheduleHudRefresh();
+    }
+  },
+  setPaused(paused: boolean) {
+    recorderGlobals().__piwiRecordPaused = paused;
+  },
+};
+
 async function refreshHud(): Promise<void> {
   const [state, connection, override] = await Promise.all([
     getRecordingState(),
@@ -526,6 +767,22 @@ async function refreshHud(): Promise<void> {
     getActiveProjectOverride(),
   ]);
   if (!state.active) return;
+  if (recordingMode(state) === 'bug') {
+    const evidence = await getBugEvidence();
+    ensureRecordingFrame();
+    renderBugHud(state, evidence, captureError, {
+      mark: () => void runMarkFlow(bugHooks),
+      missing: () => void runMissingFlow(bugHooks),
+      wrongPage: () => void runWrongPageFlow(bugHooks),
+      finish: () => void handleBugFinish(),
+      screenshot: () =>
+        void getRecordingState().then(async (latest) => {
+          await takeBugScreenshot('manual', normalizeSteps(latest.events).length - 1);
+          scheduleHudRefresh();
+        }),
+    });
+    return;
+  }
   const activeProject = resolveActiveProject(connection, override, location.href);
   const catalog = await getCachedCatalog(activeProject?.projectId ?? null);
   renderHud(state, catalog);
@@ -571,9 +828,7 @@ function captureEvent(event: RawCaptureEvent): void {
     })
     .catch((err: unknown) => {
       const message = err instanceof Error ? err.message : '';
-      captureError = /quota|exceeded/i.test(message)
-        ? 'Out of storage — stop and export now, later steps are being lost.'
-        : 'A step could not be saved.';
+      captureError = /quota|exceeded/i.test(message) ? t('record_storageFull') : t('record_stepNotSaved');
     })
     .then(() => scheduleHudRefresh());
 }
@@ -588,6 +843,12 @@ async function refreshCatalogForThisPage(): Promise<void> {
 interface RecorderGlobals {
   /** Aborting this detaches every capture listener at once — see `stopCapture`. */
   __piwiRecordCapture?: AbortController;
+  /** Set while a bug report's pick or dialog is open: nothing is captured meanwhile. */
+  __piwiRecordPaused?: boolean;
+  /** Stores the evidence entries received but not stored yet. */
+  __piwiBugRelayFlush?: () => Promise<void>;
+  /** Guards Finish against a second click while it runs. */
+  __piwiBugFinishing?: boolean;
   /** Serializes concurrent injections of this script into one document. */
   __piwiRecordPanelRun?: Promise<void>;
   /** Whether this document's `chrome.runtime` stop listener is already registered. */
@@ -611,7 +872,10 @@ function stopCapture(): void {
   const g = recorderGlobals();
   g.__piwiRecordCapture?.abort();
   g.__piwiRecordCapture = undefined;
+  g.__piwiBugRelayFlush = undefined;
+  g.__piwiRecordPaused = false;
   document.getElementById(HUD_HOST_ID)?.remove();
+  document.getElementById(BUG_DIALOG_HOST_ID)?.remove();
   removeRecordingFrame();
 }
 
@@ -624,17 +888,61 @@ function attachListeners(): void {
   // handlers can't hide an interaction from the recorder; `signal` is what
   // makes the whole set removable in one go from `stopCapture`.
   const opts = { capture: true, signal: controller.signal };
+  const tracker = new HoverTracker();
+  hoverTracker = tracker;
+  const mutations = new MutationObserver((records) => tracker.mutations(records));
+  mutations.observe(document.documentElement, {
+    subtree: true,
+    childList: true,
+    attributes: true,
+    attributeFilter: ['style', 'hidden'],
+    attributeOldValue: true,
+  });
+  controller.signal.addEventListener('abort', () => {
+    mutations.disconnect();
+    if (hoverTracker === tracker) hoverTracker = null;
+  });
+
+  document.addEventListener(
+    'pointerdown',
+    (e) => {
+      if (!e.isTrusted || capturePaused() || withinOwnUi(e)) return;
+      const raw = e.composedPath()[0];
+      if (!(raw instanceof Element)) {
+        lastPress = null;
+        return;
+      }
+      const el = nearestActionable(raw);
+      const hovers = hoverTargets(el);
+      hoverTracker?.press();
+      lastPress = { el, target: deriveRecordedTarget(el), hovers, at: e.timeStamp };
+    },
+    opts,
+  );
+
+  document.addEventListener(
+    'pointerover',
+    (e) => {
+      if (!e.isTrusted || withinOwnUi(e)) return;
+      const raw = e.composedPath()[0];
+      if (raw instanceof Element) hoverTracker?.pointerOver(raw);
+    },
+    opts,
+  );
 
   document.addEventListener(
     'click',
     (e) => {
-      if (withinOwnUi(e)) return;
+      // A click the page's own script sends (`el.click()` when Enter picks an
+      // option) follows from an action already recorded.
+      if (!e.isTrusted || capturePaused() || withinOwnUi(e)) return;
       const raw = e.target;
       if (!(raw instanceof Element)) return;
-      const el = nearestActionable(raw);
+      const { el, target, hovers } = clickTarget(raw, e.timeStamp, e.detail > 0);
+      for (const hover of hovers) captureEvent(buildEvent('hover', null, { target: hover }));
       const kind = classifyInputKind(el.tagName, (el as HTMLInputElement).type ?? null);
       if (kind === 'checkbox' || kind === 'radio') return; // the resulting `change` event records this one
-      captureEvent(buildEvent('click', el));
+      captureEvent(buildEvent('click', el, { target }));
     },
     opts,
   );
@@ -642,9 +950,13 @@ function attachListeners(): void {
   document.addEventListener(
     'input',
     (e) => {
-      if (withinOwnUi(e)) return;
+      // Only what the person does: a component that mirrors its state into a
+      // hidden input (a switch, a custom select) sends its own events there.
+      if (!e.isTrusted || capturePaused() || withinOwnUi(e)) return;
       const el = e.target;
       if (!(el instanceof HTMLInputElement) && !(el instanceof HTMLTextAreaElement)) return;
+      // A checkbox or a radio fires `input` too; its `change` records it as a check.
+      if (el instanceof HTMLInputElement && UNFILLABLE_INPUT_TYPES.has(el.type)) return;
       const typeAttr = el instanceof HTMLInputElement ? el.type : null;
       const passwordField = isPasswordInput(el.tagName, typeAttr);
       // The raw value never enters the event at all for a password field —
@@ -666,7 +978,7 @@ function attachListeners(): void {
   document.addEventListener(
     'change',
     (e) => {
-      if (withinOwnUi(e)) return;
+      if (!e.isTrusted || capturePaused() || withinOwnUi(e)) return;
       const el = e.target;
       if (!(el instanceof Element)) return;
       const typeAttr = el instanceof HTMLInputElement ? el.type : null;
@@ -675,7 +987,43 @@ function attachListeners(): void {
         captureEvent(buildEvent('change', el, { inputType: kind, checked: (el as HTMLInputElement).checked }));
       } else if (kind === 'select') {
         captureEvent(buildEvent('change', el, { inputType: 'select', value: (el as HTMLSelectElement).value }));
+      } else if (el instanceof HTMLInputElement && el.type === 'file') {
+        // The names of the chosen files, one per line: never their content, which stays on this computer.
+        const names = [...(el.files ?? [])].map((file) => file.name.replace(/[\r\n]+/g, ' '));
+        captureEvent(buildEvent('files', el, { value: names.join('\n') }));
       }
+    },
+    opts,
+  );
+
+  document.addEventListener(
+    'dblclick',
+    (e) => {
+      if (!e.isTrusted || capturePaused() || withinOwnUi(e)) return;
+      const raw = e.target;
+      if (!(raw instanceof Element)) return;
+      const el = nearestActionable(raw);
+      captureEvent(buildEvent('dblclick', el));
+    },
+    opts,
+  );
+
+  // An HTML drag and drop: the element dragged, and the one it was dropped on.
+  let dragged: Element | null = null;
+  document.addEventListener(
+    'dragstart',
+    (e) => {
+      dragged = e.isTrusted && !capturePaused() && !withinOwnUi(e) && e.target instanceof Element ? e.target : null;
+    },
+    opts,
+  );
+  document.addEventListener(
+    'drop',
+    (e) => {
+      const source = dragged;
+      dragged = null;
+      if (!source || !e.isTrusted || capturePaused() || withinOwnUi(e) || !(e.target instanceof Element)) return;
+      captureEvent(buildEvent('drop', source, { dropTarget: deriveRecordedTarget(nearestActionable(e.target)) }));
     },
     opts,
   );
@@ -683,10 +1031,15 @@ function attachListeners(): void {
   document.addEventListener(
     'keydown',
     (e) => {
-      if (withinOwnUi(e)) return;
-      if (e.key !== 'Enter') return;
-      const el = e.target instanceof Element ? e.target : null;
-      captureEvent(buildEvent('keydown', el, { value: 'Enter' }));
+      if (!e.isTrusted || e.isComposing || capturePaused() || withinOwnUi(e)) return;
+      const focused = e.target instanceof Element ? e.target : null;
+      const key = recordedKey(e, focused);
+      if (!key) return;
+      // Escape and a page's shortcuts go to whatever has focus, as the replay
+      // sends them: their target is often the page itself, which no locator names.
+      const shortcut = key.includes('+') ? !focused?.closest(TEXT_FIELDS) : [...key].length === 1;
+      const onPage = !focused || focused === document.body || focused === document.documentElement;
+      captureEvent(buildEvent('keydown', key === 'Escape' || shortcut || onPage ? null : focused, { value: key }));
     },
     opts,
   );
@@ -707,8 +1060,25 @@ function installStopListener(): void {
   const g = recorderGlobals();
   if (g.__piwiRecordStopListener) return;
   g.__piwiRecordStopListener = true;
-  chrome.runtime.onMessage.addListener((message) => {
+  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message?.type === 'piwi-recording-stopped') stopCapture();
+    if (message?.type === 'piwi-bug-debugger-lost') {
+      // The debugging session ended: the page's own script, registered all along, relays from now on.
+      void getRecordingState().then((state) => {
+        if (state.active && state.bugToken) startPageRelay(state.bugToken);
+        scheduleHudRefresh();
+      });
+    }
+    if (message?.type === 'piwi-bug-take-screenshot' && recorderGlobals().__piwiRecordCapture) {
+      // Answered at once: the popup that asked closes as soon as it hears back.
+      sendResponse({ ok: true });
+      void getRecordingState().then(async (state) => {
+        if (!state.active || recordingMode(state) !== 'bug') return;
+        await takeBugScreenshot('manual', normalizeSteps(state.events).length - 1);
+        scheduleHudRefresh();
+      });
+    }
+    return undefined;
   });
 }
 
@@ -742,17 +1112,41 @@ async function runRecordPanel(): Promise<void> {
   await g.__piwiRecordPanelRun;
 }
 
+/**
+ * Whether this tab's console and requests reach the report through the
+ * background worker's debugging session. The page's own relay stays quiet
+ * then, so no entry is counted twice.
+ */
+async function evidenceThroughDebugger(): Promise<boolean> {
+  try {
+    const answer = (await chrome.runtime.sendMessage({ type: 'piwi-bug-evidence-source' })) as
+      | { debugger?: boolean }
+      | undefined;
+    return answer?.debugger === true;
+  } catch {
+    return false;
+  }
+}
+
+/** Listens to the main-world evidence script for this recording, once per document. */
+function startPageRelay(token: string): void {
+  const g = recorderGlobals();
+  const capture = g.__piwiRecordCapture;
+  if (!capture || g.__piwiBugRelayFlush) return;
+  g.__piwiBugRelayFlush = startEvidenceRelay(token, capture.signal, scheduleHudRefresh);
+}
+
 async function initRecordPanel(): Promise<void> {
-  // Before any session-storage read — see `session-access.ts`.
-  await ensureSessionAccess();
-  const state = await getRecordingState();
+  // Before any session-storage read — see `session-access.ts`. The catalog
+  // override loads alongside, so the HUD paints no later for it.
+  const [state] = await Promise.all([ensureSessionAccess().then(getRecordingState), initI18n()]);
 
   if (!state.active) {
     // The recording is over, however it ended. Tear the capture surfaces down
     // first — a border that outlives the capture it signals is worse than no
     // border at all — then show whatever is left to review.
     stopCapture();
-    if (state.events.length > 0) await renderReviewPanel(state.events);
+    if (state.events.length > 0) await renderReviewPanel(state);
     return;
   }
 
@@ -768,6 +1162,10 @@ async function initRecordPanel(): Promise<void> {
   await appendRecordingEvent(buildEvent('navigate', null, { value: location.href }));
   attachListeners();
   installStopListener();
+  const capture = recorderGlobals().__piwiRecordCapture;
+  if (recordingMode(state) === 'bug' && state.bugToken && capture && !(await evidenceThroughDebugger())) {
+    startPageRelay(state.bugToken);
+  }
   // Once per page, not per step — `refreshHud` runs on every captured
   // interaction and must stay local-only. TTL-guarded, so a recording that
   // crosses many pages still only re-fetches occasionally.

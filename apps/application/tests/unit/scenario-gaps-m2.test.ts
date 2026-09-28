@@ -226,13 +226,54 @@ describe('detectNewControl', () => {
 });
 
 describe('detectLocatorBreakAhead', () => {
-  test('returns a prediction, not a gap, when call sites use the removed anchor', () => {
-    const preds = detectLocatorBreakAhead([
-      { removedAttr: 'data-testid=submit-order', filePath: 'Checkout.vue', callSites: ['a.spec.ts:1', 'b.spec.ts:2'] },
-      { removedAttr: 'data-testid=unused', filePath: 'X.vue', callSites: [] },
-    ]);
+  test('returns one prediction per broken anchor, not a gap, with the call sites of its chains', () => {
+    const use = (test: number, site: string) => ({
+      test,
+      actions: ['click'],
+      callSites: [site],
+      projects: [],
+      branches: ['main'],
+    });
+    const index = {
+      projectId: 1,
+      projectName: 'p',
+      branch: 'main',
+      defaultBranch: 'main',
+      branches: [],
+      builtAt: null,
+      generatedAt: '2026-01-01T00:00:00Z',
+      testIdAttributes: null,
+      tests: [
+        { id: 1, title: 'a', file: 'a.spec.ts', suite: [], status: 'passed' as const },
+        { id: 2, title: 'b', file: 'b.spec.ts', suite: [], status: 'passed' as const },
+      ],
+      locators: [
+        {
+          locator: "getByTestId('submit-order')",
+          lastSeenAt: '',
+          uses: [use(0, 'a.spec.ts:1:1'), use(1, 'b.spec.ts:2:1')],
+        },
+        { locator: "getByTestId('other')", lastSeenAt: '', uses: [use(0, 'a.spec.ts:3:1')] },
+      ],
+      truncated: false,
+    };
+    const preds = detectLocatorBreakAhead(
+      [
+        {
+          file: 'Checkout.vue',
+          line: 3,
+          oldLine: 3,
+          kind: 'attribute',
+          attribute: 'data-testid',
+          before: 'submit-order',
+        },
+        { file: 'X.vue', line: 1, oldLine: 1, kind: 'attribute', attribute: 'data-testid', before: 'unused' },
+      ],
+      index,
+    );
     expect(preds).toHaveLength(1);
     expect(preds[0]!.detector).toBe('locator-break-ahead');
+    expect(preds[0]!.removedAttr).toBe('data-testid=submit-order');
     expect(preds[0]!.evidence).toContain('2 call sites');
   });
 });

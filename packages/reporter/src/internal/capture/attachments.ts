@@ -14,6 +14,7 @@ export const ATTACHMENT_NAMES = {
   network: 'piwi-network',
   pageInventory: 'piwi-page-inventory',
   locatorPages: 'piwi-locator-pages',
+  codeReach: 'piwi-code-reach',
   webVitals: 'piwi-web-vitals',
   locatorSuggestion: 'piwi-locator-suggestion',
   pageState: 'piwi-page-state',

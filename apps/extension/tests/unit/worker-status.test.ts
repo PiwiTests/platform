@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { BUILD_ID } from '../../src/shared/build-id.js';
-import { OUTDATED_WORKER_MESSAGE, workerState } from '../../src/shared/worker-status.js';
+import { outdatedWorkerMessage, workerState } from '../../src/shared/worker-status.js';
 
 let respond: (message: { type?: string }) => unknown;
 
@@ -31,7 +31,7 @@ describe('workerState', () => {
   });
 
   it('names the cause and the fix', () => {
-    expect(OUTDATED_WORKER_MESSAGE).toMatch(/rebuilt without being reloaded/);
-    expect(OUTDATED_WORKER_MESSAGE).toMatch(/Reload the extension/);
+    expect(outdatedWorkerMessage()).toMatch(/rebuilt without being reloaded/);
+    expect(outdatedWorkerMessage()).toMatch(/Reload the extension/);
   });
 });

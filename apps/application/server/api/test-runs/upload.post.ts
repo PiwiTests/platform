@@ -506,6 +506,7 @@ export default eventHandler(async (event) => {
         pageState: testCase.pageState,
         pageInventory: testCase.pageInventory,
         locatorPages: testCase.locatorPages,
+        codeReach: testCase.codeReach,
         aiUsage: testCase.aiUsage,
         consoleLogs: testCase.consoleLogs,
         dialogs: testCase.dialogs,
@@ -522,6 +523,7 @@ export default eventHandler(async (event) => {
         testMeta: testCase.testMeta ?? null,
         locatorSnapshots: (testCase as any).locatorSnapshots ?? null,
         didNotRunReason: (testCase.didNotRunReason as string | null | undefined) ?? null,
+        expectedStatus: (testCase.expectedStatus as string | null | undefined) ?? null,
         blockedBy: (testCase.blockedBy as string | null | undefined) ?? null,
       };
     });

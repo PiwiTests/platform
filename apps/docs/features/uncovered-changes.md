@@ -21,6 +21,7 @@ A changed file counts as reached when a test that ran recently touches it:
   `pages/**`), that a test requested or visited;
 - a test step whose locator is written in the file (a page object, a helper), or the file is the spec that defines
   the test.
+- with [code reach](/features/code-reach) on, a test executed one of the file's functions.
 
 "No test in this run" is always paired with the count from the last 30 runs, so a run narrowed by a
 [selection](/features/test-selection) is never mistaken for a gap. A skipped test reaches nothing. A file that no route,

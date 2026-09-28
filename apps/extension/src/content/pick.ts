@@ -3,33 +3,14 @@ import {
   installPickerOverlay,
   removePickerOverlay,
   showAnchorPicker,
-  probeElementAttrs,
   generateAnchoredAlternatives,
   mergeCandidates,
   type PickedAnchorInfo,
-  type ProbedAttrs,
 } from '@piwitests/picker-dom';
-import {
-  generateAlternatives,
-  approximateAccessibleName,
-  resolveAriaRole,
-  headingLevel,
-  CAPTURED_ATTRIBUTES,
-  TAG_TO_ROLE,
-  INPUT_TYPE_TO_ROLE,
-} from '@piwitests/core/locator-generation';
+import { headingLevel, TAG_TO_ROLE, INPUT_TYPE_TO_ROLE } from '@piwitests/core/locator-generation';
+import { initI18n } from '../shared/i18n.js';
 import { renderResultsPanel } from './results-panel.js';
-import { installDescribeHook } from './top-locator.js';
-
-const ROLE_SOURCES = [...new Set(['[role]', 'input', 'select', ...Object.keys(TAG_TO_ROLE)])].join(',');
-
-const PROBE_ARG = {
-  keep: [...CAPTURED_ATTRIBUTES],
-  tagRoles: TAG_TO_ROLE,
-  inputRoles: INPUT_TYPE_TO_ROLE,
-  roleSources: ROLE_SOURCES,
-  includeStructural: true,
-};
+import { checkLocators, installDescribeHook, rankElement, ROLE_SOURCES } from './verified-locators.js';
 
 const PICK_GLOBALS = [
   '__piwiPickState',
@@ -72,6 +53,8 @@ async function runPick(): Promise<void> {
   const toolEpoch = startTool('pick', teardownToolSurfaces);
   installEscapeToCancel();
   const removeDescribeHook = installDescribeHook();
+  // Read while the user picks, so the results panel opens in the chosen language.
+  const i18nReady = initI18n();
   try {
     clearPickGlobals();
     installPickerOverlay({ transport: 'global', failing: null });
@@ -82,10 +65,8 @@ async function runPick(): Promise<void> {
     // step, and for the whole life of the results panel.
     removePickerOverlay();
 
-    const el = g.__piwiPickedElement;
-    const attrs: ProbedAttrs = probeElementAttrs(el, PROBE_ARG);
-    const accessibleName = approximateAccessibleName({ ...attrs, accessibleName: null });
-    const role = resolveAriaRole({ ...attrs, accessibleName });
+    const el: Element = g.__piwiPickedElement;
+    const { attrs, accessibleName, role, ranked: alternatives } = rankElement(el);
     const level = headingLevel({ ...attrs, accessibleName }, role);
 
     let anchors: PickedAnchorInfo[] = [];
@@ -107,12 +88,15 @@ async function runPick(): Promise<void> {
     }
 
     const ranked = mergeCandidates(
-      generateAlternatives({ ...attrs, accessibleName }),
+      alternatives,
       generateAnchoredAlternatives({ role, level }, anchors, chainLeafCount),
     );
-    if (ranked.length === 0) return;
+    // Checked on the page as it is when the panel opens: verified first, then the others with their real count.
+    const checked = checkLocators(el, ranked, { keepAmbiguous: true });
+    if (checked.length === 0) return;
 
-    await renderResultsPanel(ranked, el);
+    await i18nReady;
+    await renderResultsPanel(checked, el);
   } catch (err) {
     // Without this a throw anywhere after the pick left the overlay frozen on
     // "Analyzing element…" and the rejection unhandled, so the flow looked

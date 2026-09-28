@@ -23,7 +23,10 @@ export const PROJECT = {
   BLOB_GZ: 'blob-gz-test-project',
   BLOCK_LAYOUT: 'block-layout-test',
   BLOCK_LAYOUT_VERSIONS: 'block-layout-versions-test',
+  BRANCH_FAILURES: 'branch-failures-test',
   BROWSER_NOTIFY: 'browser-notify-test',
+  BUG_REPORTS: 'bug-reports-test',
+  BUG_REPORTS_JIRA: 'bug-reports-jira-test',
   CAPABILITY_OPT_OUT: 'capability-opt-out-test',
   CAPABILITY_ROLE_GATING: 'capability-role-gating-test',
   CASE_FILES_LIVE: 'case-files-live-test',
@@ -31,6 +34,7 @@ export const PROJECT = {
   CLUSTER_NAMING: 'cluster-naming-test',
   CLUSTER_PAGE_LAYOUT: 'cluster-page-layout-test',
   CLUSTER_SUGGEST: 'cluster-suggest-test',
+  CODE_REACH: 'code-reach-test',
   // Deliberately does not contain "projects" (case-insensitive substring) — the
   // sidebar's static "Projects" nav link is matched with getByRole('link', {
   // name: 'Projects' }) (no exact:true) elsewhere in the suite, which matches
@@ -49,6 +53,7 @@ export const PROJECT = {
   DESKTOP_IMPORT_PREV: 'desktop-import-prev-test',
   DESKTOP_LOCAL_IMPORT: 'desktop-local-import-test',
   DESKTOP_LOCAL_RUN: 'desktop-local-run-test',
+  DESKTOP_REPRO: 'desktop-repro-test',
   DESKTOP_REPRODUCE: 'desktop-reproduce-test',
   DIAGNOSE_STREAM: 'diagnose-stream-test',
   DOWNLOAD_TEST: 'download-test-project',
@@ -67,6 +72,7 @@ export const PROJECT = {
   ENV_STREAM_START: 'env-stream-start-test',
   ENV_UI: 'env-ui-test',
   ENV_UPLOAD: 'env-upload-test',
+  EXPECTED_FAILURE: 'expected-failure-test',
   EXPORT_OFFLINE: 'export-offline-test',
   AI_DIAGNOSIS: 'ai-diagnosis-test',
   AI_IMAGE_FALLBACK: 'ai-image-fallback-test',
@@ -113,6 +119,7 @@ export const PROJECT = {
   MINIMAL: 'minimal-project',
   MOBILE_RESPONSIVENESS: 'mobile-responsiveness-test',
   MULTI_REPORT: 'multi-report-project',
+  NETWORK_FAILED_REQUEST: 'network-failed-request-test',
   NO_FILES: 'no-files-project',
   NO_METADATA: 'no-metadata-test',
   NO_OVERLAP: 'no-overlap',
@@ -174,6 +181,8 @@ export const PROJECT = {
   UI_TEST: 'ui-test-project',
   UNRELATED: 'unrelated',
   UPLOAD_TEST: 'upload-test-project',
+  URL_PATTERNS_AUTH: 'url-patterns-auth-test',
+  URL_PATTERNS: 'url-patterns-test',
 } as const;
 
 type ProjectValue = (typeof PROJECT)[keyof typeof PROJECT];

@@ -1,7 +1,21 @@
-import { getRecordingState, stopRecording, setRecordIntent, clearRecordIntent } from '../shared/recording-storage.js';
-import { getConnectionSettings, isConnected, type ProjectMapping } from '../shared/connection-settings.js';
+import {
+  getRecordingState,
+  stopRecording,
+  setRecordIntent,
+  clearRecordIntent,
+  recordingMode,
+  type RecordingMode,
+} from '../shared/recording-storage.js';
+import { getConnectionSettings, isConnected, mappedProjects } from '../shared/connection-settings.js';
 import { getActiveProjectOverride, setActiveProjectOverride, resolveActiveProject } from '../shared/active-project.js';
 import { workerState } from '../shared/worker-status.js';
+import { initI18n, localizeDocument, t, tn, tNodes, formatNumber } from '../shared/i18n.js';
+import { injectionFailureText } from '../shared/injection-failure.js';
+
+await initI18n();
+localizeDocument();
+// The "running" mark after a tile's label is drawn by CSS.
+document.documentElement.style.setProperty('--piwi-running', JSON.stringify(` ·  ${t('popup_running')}`));
 
 const statusEl = document.getElementById('status')!;
 const recordBtn = document.getElementById('record') as HTMLButtonElement;
@@ -10,8 +24,13 @@ const recordHint = document.getElementById('record-hint')!;
 const configButton = document.getElementById('config-button') as HTMLButtonElement;
 const activeProjectRow = document.getElementById('active-project-row')!;
 const activeProjectSelect = document.getElementById('active-project') as HTMLSelectElement;
+const addSiteRow = document.getElementById('add-site-row') as HTMLElement;
+const addSiteButton = document.getElementById('add-site') as HTMLButtonElement;
 const coverageButton = document.getElementById('coverage-overlay') as HTMLButtonElement;
 const coverageHint = document.getElementById('coverage-hint')!;
+const bugBtn = document.getElementById('report-bug') as HTMLButtonElement;
+const bugLabel = document.getElementById('report-bug-label')!;
+const bugHint = document.getElementById('report-bug-hint')!;
 /** Set once the connection settings are read: "Tested elements" needs a Piwi instance. */
 let connected = false;
 
@@ -23,24 +42,21 @@ async function activeTab(): Promise<chrome.tabs.Tab | null> {
 async function inject(file: string): Promise<void> {
   const tab = await activeTab();
   if (tab?.id == null) {
-    statusEl.textContent = 'No active tab to pick from.';
+    statusEl.textContent = t('popup_noTab');
     return;
   }
   try {
     await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: [file] });
     window.close();
-  } catch {
-    statusEl.textContent = "Can't run on this page (browser/store pages are off-limits to extensions).";
+  } catch (error) {
+    statusEl.textContent = injectionFailureText(error, tab.url);
   }
 }
 
 document.getElementById('pick')!.addEventListener('click', () => void inject('pick.js'));
-document.getElementById('hover-inspect')!.addEventListener('click', () => void inject('hover-inspect.js'));
-document.getElementById('locator-console')!.addEventListener('click', () => void inject('locator-console.js'));
 document.getElementById('multi-pick')!.addEventListener('click', () => void inject('multi-pick.js'));
 document.getElementById('lint-overlay')!.addEventListener('click', () => void inject('lint-overlay.js'));
 document.getElementById('assertion-panel')!.addEventListener('click', () => void inject('assertion-panel.js'));
-document.getElementById('session-panel')!.addEventListener('click', () => void inject('session-panel.js'));
 document.getElementById('agent-context-panel')!.addEventListener('click', () => void inject('agent-context-panel.js'));
 document.getElementById('test-function-panel')!.addEventListener('click', () => void inject('test-function-panel.js'));
 coverageButton.addEventListener('click', () => {
@@ -54,24 +70,24 @@ configButton.addEventListener('click', () => {
 });
 
 /**
- * Digit shortcuts for the action grid, in the order the tiles are rendered —
- * the `kbd` badge on each tile and its `aria-keyshortcuts` must stay in step
- * with this. Scoped to the popup rather than declared as `chrome.commands`,
- * which caps a extension at four user-visible shortcuts and would burn
- * global browser-wide bindings on actions that only make sense with this
- * popup open.
+ * The popup's single-key shortcuts: digits for the tools, in the order the
+ * tiles are rendered, and a letter for each flow — the `kbd` badge on each
+ * tile and its `aria-keyshortcuts` must stay in step with this. Scoped to the
+ * popup rather than declared as `chrome.commands`, which caps an extension at
+ * four user-visible shortcuts and would burn global browser-wide bindings on
+ * actions that only make sense with this popup open.
  */
 const KEY_TO_ACTION_ID: Record<string, string> = {
   '1': 'record',
   '2': 'pick',
-  '3': 'hover-inspect',
-  '4': 'locator-console',
-  '5': 'multi-pick',
-  '6': 'lint-overlay',
-  '7': 'assertion-panel',
-  '8': 'session-panel',
-  '9': 'agent-context-panel',
-  '0': 'test-function-panel',
+  '3': 'multi-pick',
+  '4': 'assertion-panel',
+  '5': 'lint-overlay',
+  '6': 'agent-context-panel',
+  '7': 'test-function-panel',
+  t: 'coverage-overlay',
+  b: 'report-bug',
+  r: 'replay-bug',
 };
 
 /**
@@ -97,7 +113,7 @@ async function highlightActiveTool(): Promise<void> {
     // Restricted page, or nothing injected yet — nothing is running either way.
     return;
   }
-  for (const button of document.querySelectorAll<HTMLElement>('.actions button, button.feature')) {
+  for (const button of document.querySelectorAll<HTMLElement>('button.tile')) {
     const running = button.id === active;
     button.classList.toggle('running', running);
     // Conveys the same thing the ring does, for anyone not seeing the ring.
@@ -128,12 +144,12 @@ async function renderPickShortcutHint(): Promise<void> {
   if (shortcut) {
     const key = document.createElement('kbd');
     key.textContent = shortcut;
-    el.append(key, ' picks without the popup');
+    el.append(...tNodes('popup_pickShortcut', { shortcut: key }));
     return;
   }
   const link = document.createElement('a');
   link.href = '#';
-  link.textContent = 'no pick shortcut assigned — set one';
+  link.textContent = t('popup_noPickShortcut');
   link.addEventListener('click', (e) => {
     e.preventDefault();
     // chrome:// URLs can't be opened with a plain link from an extension page.
@@ -148,19 +164,13 @@ document.addEventListener('keydown', (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   const target = e.target as HTMLElement | null;
   if (target && ['INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName)) return;
-  const id = e.key === 't' || e.key === 'T' ? 'coverage-overlay' : KEY_TO_ACTION_ID[e.key];
+  const id = KEY_TO_ACTION_ID[e.key.toLowerCase()];
   if (!id) return;
   e.preventDefault();
   document.getElementById(id)?.click();
 });
 
 const AUTO_OPTION_VALUE = '';
-
-function dedupeMappings(mappings: ProjectMapping[]): Array<{ projectId: number; projectLabel: string }> {
-  const seen = new Map<number, string>();
-  for (const m of mappings) if (!seen.has(m.projectId)) seen.set(m.projectId, m.projectLabel);
-  return [...seen].map(([projectId, projectLabel]) => ({ projectId, projectLabel }));
-}
 
 /** Populates and pre-selects the active-project picker: hidden until connected, otherwise offering every mapped project plus "Auto" (clears the manual override, falling back to URL-pattern matching). */
 async function refreshActiveProjectSelect(): Promise<void> {
@@ -171,16 +181,19 @@ async function refreshActiveProjectSelect(): Promise<void> {
   ]);
 
   connected = isConnected(connection);
-  coverageHint.textContent = connected
-    ? 'What your tests reach on this page, and what they miss'
-    : 'Connect to your Piwi instance to see what your tests reach';
+  coverageHint.textContent = connected ? t('popup_testedElementsHint') : t('popup_testedElementsConnect');
   if (!connected) {
-    activeProjectRow.style.display = 'none';
+    // Connected to an instance that has no pattern yet: only the offer to add this site.
+    const reachable = connection.instanceUrl.trim() !== '' && connection.serverSyncedAt > 0;
+    activeProjectRow.style.display = reachable ? '' : 'none';
+    activeProjectRow.classList.toggle('only-add-site', reachable);
+    if (reachable) renderAddSite(tab?.url, true);
     return;
   }
   activeProjectRow.style.display = '';
+  activeProjectRow.classList.remove('only-add-site');
 
-  const options = dedupeMappings(connection.projectMappings);
+  const options = mappedProjects(connection);
   const resolved = tab?.url ? resolveActiveProject(connection, override, tab.url) : override;
   if (resolved && !options.some((o) => o.projectId === resolved.projectId)) {
     options.push({ projectId: resolved.projectId, projectLabel: resolved.projectLabel });
@@ -190,9 +203,7 @@ async function refreshActiveProjectSelect(): Promise<void> {
   const autoOpt = document.createElement('option');
   autoOpt.value = AUTO_OPTION_VALUE;
   autoOpt.textContent =
-    tab?.url && resolveActiveProject(connection, null, tab.url)
-      ? 'Auto (matched by URL)'
-      : 'Auto (no match on this page)';
+    tab?.url && resolveActiveProject(connection, null, tab.url) ? t('popup_autoMatched') : t('popup_autoNoMatch');
   activeProjectSelect.appendChild(autoOpt);
   for (const o of options) {
     const opt = document.createElement('option');
@@ -201,6 +212,7 @@ async function refreshActiveProjectSelect(): Promise<void> {
     activeProjectSelect.appendChild(opt);
   }
   activeProjectSelect.value = override ? String(override.projectId) : AUTO_OPTION_VALUE;
+  renderAddSite(tab?.url, !resolveActiveProject(connection, null, tab?.url ?? ''));
 
   activeProjectSelect.addEventListener('change', () => {
     void (async () => {
@@ -213,6 +225,27 @@ async function refreshActiveProjectSelect(): Promise<void> {
       await setActiveProjectOverride({ projectId, projectLabel });
     })();
   });
+}
+
+/**
+ * When no pattern covers the tab's site, offers to add one: the settings open
+ * with `https://<host>/**` filled in, where it goes to the instance or stays in
+ * this browser.
+ */
+function renderAddSite(url: string | undefined, unmatched: boolean): void {
+  let origin: string | null = null;
+  try {
+    const parsed = new URL(url ?? '');
+    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') origin = parsed.origin;
+  } catch {
+    // Not a page a pattern could cover.
+  }
+  addSiteRow.hidden = !(unmatched && origin);
+  addSiteButton.onclick = () => {
+    if (!origin) return;
+    const target = `${chrome.runtime.getURL('options.html')}#add=${encodeURIComponent(`${origin}/**`)}`;
+    void chrome.tabs.create({ url: target }).then(() => window.close());
+  };
 }
 
 type RecordUiState = 'idle' | 'recording' | 'stopped';
@@ -229,30 +262,50 @@ type RecordUiState = 'idle' | 'recording' | 'stopped';
  * never act on a state that hasn't loaded.
  */
 let uiState: RecordUiState = 'idle';
+let uiMode: RecordingMode = 'actions';
 let recordTab: chrome.tabs.Tab | null = null;
 
-async function recordUiState(): Promise<{ state: RecordUiState; steps: number }> {
+async function recordUiState(): Promise<{ state: RecordUiState; mode: RecordingMode; steps: number }> {
   const rec = await getRecordingState();
-  if (rec.active) return { state: 'recording', steps: rec.events.length };
-  if (rec.events.length > 0) return { state: 'stopped', steps: rec.events.length };
-  return { state: 'idle', steps: 0 };
+  const mode = recordingMode(rec);
+  if (rec.active) return { state: 'recording', mode, steps: rec.events.length };
+  if (rec.events.length > 0) return { state: 'stopped', mode, steps: rec.events.length };
+  return { state: 'idle', mode: 'actions', steps: 0 };
 }
 
 async function refreshRecordButton(): Promise<void> {
-  const [{ state, steps }, tab] = await Promise.all([recordUiState(), activeTab()]);
+  const [{ state, mode, steps }, tab] = await Promise.all([recordUiState(), activeTab()]);
   uiState = state;
+  uiMode = mode;
   recordTab = tab;
+  const bug = mode === 'bug';
+  const count = formatNumber(steps);
   if (state === 'recording') {
-    recordLabel.textContent = `Stop recording (${steps})`;
-    recordHint.textContent = 'Steps captured so far';
+    recordLabel.textContent = bug ? t('popup_finishBugReport', { count }) : t('popup_stopRecording', { count });
+    recordHint.textContent = t('popup_stepsSoFar');
   } else if (state === 'stopped') {
-    recordLabel.textContent = `Review recording (${steps})`;
-    recordHint.textContent = 'Not exported yet';
+    recordLabel.textContent = bug ? t('popup_reviewBugReport') : t('popup_reviewRecording', { count });
+    recordHint.textContent = t('popup_notExported');
   } else {
-    recordLabel.textContent = 'Record actions';
-    recordHint.textContent = 'Multi-page → TypeScript';
+    recordLabel.textContent = t('popup_record');
+    recordHint.textContent = t('popup_recordHint');
   }
   recordBtn.disabled = false;
+
+  if (state === 'recording' && bug) {
+    bugLabel.textContent = t('popup_takeScreenshot');
+    bugHint.textContent = tn('popup_screenshotHint', steps);
+  } else if (state === 'stopped' && bug) {
+    bugLabel.textContent = t('popup_reviewBugReport');
+    bugHint.textContent = t('popup_reviewBugReportHint');
+  } else if (state !== 'idle') {
+    bugLabel.textContent = t('popup_reportBug');
+    bugHint.textContent = t('popup_finishFirst');
+  } else {
+    bugLabel.textContent = t('popup_reportBug');
+    bugHint.textContent = t('popup_reportBugHint');
+  }
+  bugBtn.disabled = false;
 }
 
 /** The host permission a recording on `url` needs, or null when the page can't be recorded at all. */
@@ -266,12 +319,17 @@ function recordOriginPattern(url: string | undefined): string | null {
   }
 }
 
-async function startRecordingFlow(originPattern: string, tabId: number, granted: Promise<boolean>): Promise<void> {
+async function startRecordingFlow(
+  originPattern: string,
+  tabId: number,
+  mode: RecordingMode,
+  granted: Promise<boolean>,
+): Promise<void> {
   if (!(await granted)) {
     // Drop the intent the click parked for the worker, so a later unrelated
     // grant for this same origin can't revive a recording the user declined.
     await clearRecordIntent().catch(() => undefined);
-    statusEl.textContent = 'Permission for this site is needed to record across pages.';
+    statusEl.textContent = t('popup_permissionNeeded');
     return;
   }
 
@@ -279,12 +337,13 @@ async function startRecordingFlow(originPattern: string, tabId: number, granted:
     type: 'piwi-start-recording',
     originPattern,
     tabId,
+    mode,
   })) as {
     ok: boolean;
     error?: string;
   };
   if (!response?.ok) {
-    statusEl.textContent = response?.error ?? 'Failed to start recording.';
+    statusEl.textContent = response?.error ?? t('common_recordingStartFailed');
     return;
   }
   window.close();
@@ -309,6 +368,34 @@ async function reviewRecordingFlow(): Promise<void> {
   await inject('record-panel.js');
 }
 
+/**
+ * Starts a recording of `mode` on the popup's tab. Synchronous up to the
+ * permission request, which must run inside the click's user gesture.
+ */
+function requestRecording(mode: RecordingMode): void {
+  const originPattern = recordOriginPattern(recordTab?.url);
+  if (originPattern == null || recordTab?.id == null) {
+    statusEl.textContent = t('popup_cannotRecord');
+    return;
+  }
+  const tabId = recordTab.id;
+  // Synchronous, before any await: this is the user gesture the request needs.
+  let granted: Promise<boolean>;
+  try {
+    granted = chrome.permissions.request({ origins: [originPattern] });
+  } catch {
+    statusEl.textContent = t('popup_permissionNeeded');
+    return;
+  }
+  // Park the intent so the background can still start the recording if this
+  // popup is torn down when the prompt takes focus — the first-time grant that
+  // used to leave the recorder needing a second click. Fire-and-forget: it must
+  // not delay the request above, and `startRecordingFlow` still starts things
+  // directly whenever the popup does survive.
+  void setRecordIntent({ originPattern, tabId, mode });
+  void startRecordingFlow(originPattern, tabId, mode, granted);
+}
+
 recordBtn.addEventListener('click', () => {
   if (uiState === 'recording') {
     void stopRecordingFlow();
@@ -318,28 +405,55 @@ recordBtn.addEventListener('click', () => {
     void reviewRecordingFlow();
     return;
   }
+  requestRecording('actions');
+});
 
+/**
+ * Report a bug: starts a bug recording, or during one asks the page for a
+ * screenshot. Opening this popup is what grants `activeTab`, the only grant
+ * under which Chrome allows one.
+ */
+async function bugScreenshotFlow(): Promise<void> {
+  const tab = await activeTab();
+  if (tab?.id == null) return;
+  try {
+    await chrome.tabs.sendMessage(tab.id, { type: 'piwi-bug-take-screenshot' });
+    window.close();
+  } catch {
+    statusEl.textContent = t('popup_notRecordedTab');
+  }
+}
+
+bugBtn.addEventListener('click', () => {
+  if (uiState === 'recording' && uiMode === 'bug') {
+    void bugScreenshotFlow();
+    return;
+  }
+  if (uiState === 'stopped' && uiMode === 'bug') {
+    void reviewRecordingFlow();
+    return;
+  }
+  if (uiState !== 'idle') {
+    statusEl.textContent = t('popup_finishBeforeBug');
+    return;
+  }
+  requestRecording('bug');
+});
+
+/**
+ * Replay a bug report: asks for this site's permission (inside the click, the
+ * only place the request counts as the user's), which the replay needs to
+ * continue across pages, and opens the replay's chooser in the tab under the
+ * `activeTab` grant opening the popup gave.
+ */
+document.getElementById('replay-bug')!.addEventListener('click', () => {
   const originPattern = recordOriginPattern(recordTab?.url);
   if (originPattern == null || recordTab?.id == null) {
-    statusEl.textContent = "Can't record on this page.";
+    statusEl.textContent = t('popup_cannotReplay');
     return;
   }
-  const tabId = recordTab.id;
-  // Synchronous, before any await: this is the user gesture the request needs.
-  let granted: Promise<boolean>;
-  try {
-    granted = chrome.permissions.request({ origins: [originPattern] });
-  } catch {
-    statusEl.textContent = 'Permission for this site is needed to record across pages.';
-    return;
-  }
-  // Park the intent so the background can still start the recording if this
-  // popup is torn down when the prompt takes focus — the first-time grant that
-  // used to leave the recorder needing a second click. Fire-and-forget: it must
-  // not delay the request above, and `startRecordingFlow` still starts things
-  // directly whenever the popup does survive.
-  void setRecordIntent({ originPattern, tabId });
-  void startRecordingFlow(originPattern, tabId, granted);
+  void chrome.permissions.request({ origins: [originPattern] }).catch(() => false);
+  void inject('replay-panel.js');
 });
 
 /** Offer a reload when the background worker predates this popup's build (see `shared/build-id.ts`). */
@@ -351,10 +465,11 @@ async function showOutdatedWorkerNotice(): Promise<void> {
 }
 
 recordBtn.disabled = true;
+bugBtn.disabled = true;
 void refreshRecordButton().catch(() => {
   // Left disabled on purpose: acting on a state we failed to read could start a
   // second recording over a live one.
-  statusEl.textContent = "Couldn't read the recorder state — reopen the popup.";
+  statusEl.textContent = t('popup_stateUnreadable');
 });
 void refreshActiveProjectSelect();
 void renderPickShortcutHint();

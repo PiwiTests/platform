@@ -13,7 +13,11 @@ import { normalizeWhiteSpace, parentElementOrShadowHost, isElementNode, type Dom
 
 /** Raised for a locator the engine can't evaluate: unsupported syntax, an invalid selector, an inaccessible frame. */
 export class LocatorEngineError extends Error {
-  constructor(message: string) {
+  constructor(
+    message: string,
+    /** The CSS selector the page refused, when that is the reason. */
+    readonly invalidSelector?: string,
+  ) {
     super(message);
     this.name = 'LocatorEngineError';
   }
@@ -318,7 +322,7 @@ export function parseCssSelectorList(css: string): CssSelectorList {
       try {
         validationFragment.querySelector(compound.css);
       } catch {
-        throw new LocatorEngineError(`"${css}" isn't a valid CSS selector`);
+        throw new LocatorEngineError(`"${css}" isn't a valid CSS selector`, css);
       }
     }
   }

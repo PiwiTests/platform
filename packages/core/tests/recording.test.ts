@@ -28,6 +28,30 @@ function ev(overrides: Partial<RawCaptureEvent>): RawCaptureEvent {
 }
 
 describe('normalizeSteps', () => {
+  test('a double click replaces the two clicks the browser sent before it', () => {
+    const row = target({ tagName: 'tr', role: 'row', accessibleName: 'Invoice 42' });
+    const steps = normalizeSteps([
+      ev({ kind: 'click', target: row, timestamp: 1 }),
+      ev({ kind: 'click', target: row, timestamp: 2 }),
+      ev({ kind: 'dblclick', target: row, timestamp: 3 }),
+    ]);
+    expect(steps.map((s) => s.action)).toEqual(['dblclick']);
+  });
+
+  test('a file choice becomes setInputFiles with the names, and a drop becomes dragTo', () => {
+    const file = target({ tagName: 'input', role: 'button', accessibleName: 'Invoice' });
+    const card = target({ tagName: 'div', role: 'listitem', accessibleName: 'Card', text: '  Card   one ' });
+    const column = target({ tagName: 'section', role: 'region', accessibleName: 'Done', text: 'Done  ' });
+    const steps = normalizeSteps([
+      ev({ kind: 'files', target: file, value: 'a.pdf\nb.pdf', timestamp: 1 }),
+      ev({ kind: 'drop', target: card, dropTarget: column, timestamp: 2 }),
+      ev({ kind: 'drop', target: card, dropTarget: null, timestamp: 3 }),
+    ]);
+    expect(steps).toHaveLength(2);
+    expect(steps[0]).toMatchObject({ action: 'setInputFiles', value: 'a.pdf\nb.pdf' });
+    expect(steps[1]).toMatchObject({ action: 'dragTo', target: { text: 'Card one' }, dropTarget: { text: 'Done' } });
+  });
+
   test('coalesces an input burst on the same field into one fill with the last value', () => {
     const usernameField = target();
     const steps = normalizeSteps([
@@ -162,10 +186,36 @@ describe('normalizeSteps', () => {
     expect(steps[1]).toMatchObject({ value: 'Enter' });
   });
 
-  test('non-Enter keydowns are ignored', () => {
+  test('keys that only move between fields are ignored', () => {
     const field = target();
-    const steps = normalizeSteps([ev({ kind: 'keydown', target: field, value: 'Tab', timestamp: 1 })]);
+    const steps = normalizeSteps([
+      ev({ kind: 'keydown', target: field, value: 'Tab', timestamp: 1 }),
+      ev({ kind: 'keydown', target: field, value: 'PageDown', timestamp: 2 }),
+    ]);
     expect(steps).toHaveLength(0);
+  });
+
+  test('a page’s shortcuts become presses: a combination, or a single character', () => {
+    const steps = normalizeSteps([
+      ev({ kind: 'keydown', target: null, value: 'ControlOrMeta+k', timestamp: 1 }),
+      ev({ kind: 'keydown', target: null, value: '?', timestamp: 2 }),
+      ev({ kind: 'keydown', target: null, value: 'Shift+Tab', timestamp: 3 }),
+    ]);
+    expect(steps.map((s) => s.value)).toEqual(['ControlOrMeta+k', '?', 'Shift+Tab']);
+  });
+
+  test('Escape and the arrow keys become presses, after the fill they end', () => {
+    const field = target({ tagName: 'input', role: 'combobox' });
+    const steps = normalizeSteps([
+      ev({ kind: 'input', target: field, value: 'fr', timestamp: 1 }),
+      ev({ kind: 'keydown', target: field, value: 'ArrowDown', timestamp: 2 }),
+      ev({ kind: 'keydown', target: field, value: 'Escape', timestamp: 3 }),
+    ]);
+    expect(steps.map((s) => [s.action, s.value])).toEqual([
+      ['fill', 'fr'],
+      ['press', 'ArrowDown'],
+      ['press', 'Escape'],
+    ]);
   });
 
   test('only the first navigation becomes a goto — later ones are implied by what caused them', () => {
@@ -183,6 +233,78 @@ describe('normalizeSteps', () => {
     const long = 'x'.repeat(200);
     const steps = normalizeSteps([ev({ kind: 'click', target: target({ text: `  ${long}  ` }), timestamp: 1 })]);
     expect(steps[0]!.target!.text).toHaveLength(120);
+  });
+
+  test('an assert event becomes an assert step where it was added, after the fill in progress', () => {
+    const coupon = target({ accessibleName: 'Coupon' });
+    const total = target({
+      tagName: 'p',
+      role: null,
+      accessibleName: null,
+      testId: 'cart-total',
+      alternatives: [{ locator: `getByTestId('cart-total')`, method: 'getByTestId', score: 100 }],
+    });
+    const assertion = {
+      matcher: 'toHaveText' as const,
+      expected: 'Total: 42',
+      actual: 'Total: 40',
+      negated: false,
+      note: 'coupon ignored',
+    };
+    const steps = normalizeSteps([
+      ev({ kind: 'navigate', value: 'https://x.test/cart', timestamp: 1 }),
+      ev({ kind: 'input', target: coupon, value: 'SPRING', timestamp: 2 }),
+      ev({ kind: 'input', target: coupon, value: 'SPRING10', timestamp: 3 }),
+      ev({ kind: 'assert', target: total, assertion, pageUrl: 'https://x.test/cart', timestamp: 4 }),
+      ev({ kind: 'click', target: target({ accessibleName: 'Apply' }), timestamp: 5 }),
+    ]);
+    expect(steps.map((s) => s.action)).toEqual(['goto', 'fill', 'assert', 'click']);
+    expect(steps[1]).toMatchObject({ value: 'SPRING10' });
+    expect(steps[2]).toMatchObject({ target: { testId: 'cart-total' }, value: null, assertion });
+  });
+
+  test('a toHaveURL assert has no target, and an assert event without an assertion is dropped', () => {
+    const steps = normalizeSteps([
+      ev({
+        kind: 'assert',
+        target: target(),
+        assertion: { matcher: 'toHaveURL', expected: '/thanks', actual: '/cart', negated: false, note: null },
+        timestamp: 1,
+      }),
+      ev({ kind: 'assert', target: target(), timestamp: 2 }),
+    ]);
+    expect(steps).toHaveLength(1);
+    expect(steps[0]).toMatchObject({ action: 'assert', target: null, assertion: { matcher: 'toHaveURL' } });
+  });
+});
+
+describe('normalizeSteps — hover', () => {
+  const row = target({ tagName: 'tr', role: 'row', accessibleName: 'Invoice 42', alternatives: [] });
+  const del = target({ tagName: 'button', role: 'button', accessibleName: 'Delete' });
+
+  test('keeps a hover before the click it reveals', () => {
+    const steps = normalizeSteps([
+      ev({ kind: 'hover', target: row, timestamp: 1 }),
+      ev({ kind: 'click', target: del, timestamp: 1 }),
+    ]);
+    expect(steps.map((s) => s.action)).toEqual(['hover', 'click']);
+    expect(steps[0]).toMatchObject({ target: { accessibleName: 'Invoice 42' }, value: null });
+  });
+
+  test('commits a fill in progress first, and drops a repeated hover on the same element', () => {
+    const steps = normalizeSteps([
+      ev({ kind: 'input', target: target(), value: 'a', timestamp: 1 }),
+      ev({ kind: 'hover', target: row, timestamp: 2 }),
+      ev({ kind: 'hover', target: row, timestamp: 3 }),
+      ev({ kind: 'click', target: del, timestamp: 3 }),
+      ev({ kind: 'hover', target: row, timestamp: 4 }),
+      ev({ kind: 'click', target: del, timestamp: 4 }),
+    ]);
+    expect(steps.map((s) => s.action)).toEqual(['fill', 'hover', 'click', 'hover', 'click']);
+  });
+
+  test('drops a hover with no target', () => {
+    expect(normalizeSteps([ev({ kind: 'hover', target: null })])).toEqual([]);
   });
 });
 

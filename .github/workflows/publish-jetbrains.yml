@@ -1,0 +1,63 @@
+name: Publish JetBrains Plugin
+
+# Builds apps/jetbrains on each release tag, then signs it and publishes it to the JetBrains
+# Marketplace. Needs PUBLISH_TOKEN, and CERTIFICATE_CHAIN, PRIVATE_KEY and
+# PRIVATE_KEY_PASSWORD for signing; skipped without the token.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      PUBLISH_TOKEN: ${{ secrets.JETBRAINS_PUBLISH_TOKEN }}
+      CERTIFICATE_CHAIN: ${{ secrets.JETBRAINS_CERTIFICATE_CHAIN }}
+      PRIVATE_KEY: ${{ secrets.JETBRAINS_PRIVATE_KEY }}
+      PRIVATE_KEY_PASSWORD: ${{ secrets.JETBRAINS_PRIVATE_KEY_PASSWORD }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: ./package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --prefer-offline --no-audit --fund=false
+
+      - name: Build the editor service
+        working-directory: ./packages/editor
+        run: npm run editor:build
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v5
+
+      - name: Build
+        working-directory: ./apps/jetbrains
+        run: ./gradlew buildPlugin
+
+      # publishPlugin signs the archive first.
+      - name: Sign and publish to the JetBrains Marketplace
+        if: ${{ env.PUBLISH_TOKEN != '' }}
+        working-directory: ./apps/jetbrains
+        run: ./gradlew publishPlugin
+
+      - name: Upload the plugin
+        uses: actions/upload-artifact@v7
+        with:
+          name: piwi-jetbrains
+          path: apps/jetbrains/build/distributions/*.zip

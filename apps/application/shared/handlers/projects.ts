@@ -10,12 +10,13 @@ import {
   failureDiagnoses,
   casePayloads,
   entityLinks,
+  bugReports,
   analyticsDailyRollups,
 } from '../../server/database/schema';
 import { asc, desc, eq, exists, sql, and, or, inArray, gte, lte, isNull, isNotNull, count } from 'drizzle-orm';
 import { jsonArrayContainsAll, parseLockFilter, parseTagFilter } from '../utils/tag-filter';
 import { isProbeRun, notProbeRun } from './probes';
-import { FAILED_STATUS_KEYS } from '../utils/test-counts';
+import { isFailedStatus } from '../utils/test-counts';
 import { fixmeSkipPredicate } from '../utils/skip-kind';
 import { TEST_PRIORITIES } from '@piwitests/core/test-meta';
 
@@ -384,6 +385,8 @@ export async function updateProject(
     openApiUrl?: string | null;
     serverProbes?: unknown;
     ciRerun?: unknown;
+    /** `GeneratedSpecSettings`; null clears them. */
+    generatedSpecs?: unknown;
     /** Per-project targets (`ProjectTargets`); null clears them. */
     targets?: unknown;
     tagIds?: number[];
@@ -402,6 +405,7 @@ export async function updateProject(
     openApiUrl,
     serverProbes,
     ciRerun,
+    generatedSpecs,
     targets,
     tagIds: dataTagIds,
   } = data;
@@ -420,6 +424,7 @@ export async function updateProject(
       openApiUrl: openApiUrl !== undefined ? openApiUrl : undefined,
       serverProbes: serverProbes !== undefined ? (serverProbes as any) : undefined,
       ciRerun: ciRerun !== undefined ? (ciRerun as any) : undefined,
+      generatedSpecs: generatedSpecs !== undefined ? (generatedSpecs as any) : undefined,
       targets: resolvedTargets,
       updatedAt: new Date(),
     })
@@ -505,6 +510,18 @@ export async function deleteProjectData(db: DrizzleDB, projectId: number) {
   const projectClusterIds = projectClusterRows.map((r: { id: number }) => r.id);
   if (projectClusterIds.length > 0) {
     await db.delete(entityLinks).where(inArray(entityLinks.failureClusterId, projectClusterIds));
+  }
+  const projectBugReports = await db
+    .select({ id: bugReports.id })
+    .from(bugReports)
+    .where(eq(bugReports.projectId, projectId));
+  if (projectBugReports.length > 0) {
+    await db.delete(entityLinks).where(
+      inArray(
+        entityLinks.bugReportId,
+        projectBugReports.map((r: { id: number }) => r.id),
+      ),
+    );
   }
 
   await db.delete(analyticsDailyRollups).where(eq(analyticsDailyRollups.projectId, projectId));
@@ -613,6 +630,8 @@ export interface TestCasesQuery {
   limit: number;
   offset: number;
   q?: string;
+  /** Exact spec file path, as the test case stores it. */
+  file?: string;
   statuses?: string[];
   /** Every tag here must be present on a case for it to match. */
   tags?: string[];
@@ -655,6 +674,7 @@ export function parseTestCasesQuery(input?: URLSearchParams | Record<string, unk
     limit: Math.min(1000, Math.max(1, Math.floor(num('limit', 50)))),
     offset: Math.max(0, Math.floor(num('offset', 0))),
     q: get('q')?.trim() || undefined,
+    file: get('file')?.trim() || undefined,
     statuses: statuses.length > 0 ? statuses : undefined,
     tags: tags.length > 0 ? tags : undefined,
     locks: locks.length > 0 ? locks : undefined,
@@ -696,6 +716,7 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
     limit = 50,
     offset = 0,
     q,
+    file,
     statuses,
     tags,
     locks,
@@ -737,6 +758,12 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
   if (q) {
     const pattern = `%${q.toLowerCase()}%`;
     conditions.push(sql`(lower(${testCases.title}) LIKE ${pattern} OR lower(${testCases.filePath}) LIKE ${pattern})`);
+  }
+  if (file) {
+    // The reporter stores paths from the CI working directory, which may sit above the Playwright config the
+    // caller's path starts from: `e2e/tests/cart.spec.ts` answers for `tests/cart.spec.ts`.
+    const suffix = `%/${file.replace(/[\\%_]/g, (c) => `\\${c}`)}`;
+    conditions.push(or(eq(testCases.filePath, file), sql`${testCases.filePath} LIKE ${suffix} ESCAPE '\\'`)!);
   }
   if (maxAgeDays > 0) {
     const cutoff = new Date(Date.now() - maxAgeDays * 24 * 60 * 60 * 1000);
@@ -1448,7 +1475,7 @@ export async function getProjectFlakyTests(
         const sorted = group.rows.slice().sort((a: any, b: any) => (a.retries ?? 0) - (b.retries ?? 0));
         const maxRetryRow = sorted[sorted.length - 1];
         group.finalStatus = maxRetryRow?.status ?? 'unknown';
-        const hasFailed = group.rows.some((r: any) => FAILED_STATUS_KEYS.includes(r.status));
+        const hasFailed = group.rows.some((r: any) => isFailedStatus(r.status));
         const hasPassed = group.rows.some((r: any) => r.status === 'passed');
         group.retryPass = hasFailed && hasPassed;
       }
@@ -1493,12 +1520,12 @@ export async function getProjectFlakyTests(
       let runRetryPass = false;
 
       for (const [, group] of byBrowser) {
-        if (group.finalStatus === 'failed' || group.finalStatus === 'timedOut') runFinalFailed = true;
+        if (isFailedStatus(group.finalStatus)) runFinalFailed = true;
         if (group.retryPass) runRetryPass = true;
 
         for (const row of group.rows) {
           if (row.id > latestRunsCaseId) latestRunsCaseId = row.id;
-          if ((row.status === 'failed' || row.status === 'timedOut') && row.duration != null) {
+          if (isFailedStatus(row.status) && row.duration != null) {
             failedDurations.push(row.duration);
           }
         }

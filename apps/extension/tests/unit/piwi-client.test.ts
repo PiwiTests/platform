@@ -58,7 +58,15 @@ describe('dashboard deep links', () => {
 });
 
 describe('responses as the dashboard sends them', () => {
-  const settings = { instanceUrl: 'https://piwi.example.com', apiKey: 'pd_key', projectMappings: [] };
+  const settings = {
+    instanceUrl: 'https://piwi.example.com',
+    apiKey: 'pd_key',
+    projectMappings: [],
+    serverMappings: [],
+    serverProjects: [],
+    serverSyncedAt: 0,
+    connectedAs: '',
+  };
   const answer = (body: unknown, status = 200) =>
     vi.stubGlobal(
       'fetch',

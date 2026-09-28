@@ -8,7 +8,7 @@
  * from recent history, and the word used is *observed reach*, never coverage.
  */
 
-import { and, count, desc, eq, gte, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
+import { and, count, desc, eq, gte, inArray, isNotNull, isNull, lt, ne, not, or, sql } from 'drizzle-orm';
 import {
   failureClusters,
   graphEdges,
@@ -20,9 +20,13 @@ import {
   testFunctions,
   testRuns,
   testRunsCases,
+  bugReports,
 } from '../../server/database/schema';
 import { fileRouteTarget, filePageTarget, routeKeyMatchesTarget, pageKeyMatchesTarget } from '../graph';
 import { isProbeRun } from './probes';
+import type { DiffAnchor } from '@piwitests/core/diff-anchors';
+import { predictLocatorBreaks, type PredictLocatorBreaksOptions } from '@piwitests/core/locator-break';
+import type { LocatorIndex } from '@piwitests/core/locator-index';
 import type { DrizzleDB } from './db';
 
 // ── Vocabulary ───────────────────────────────────────────────────────────────
@@ -724,6 +728,41 @@ export function detectEscapedDefect(bugs: EscapedDefectInput[]): DetectedGap[] {
   return gaps;
 }
 
+/** A bug report still open: a defect that reached someone before any test caught it. */
+export interface ReportedBugInput {
+  id: number;
+  title: string;
+  /** The page it was reported on, as the Test Map keys pages. */
+  pageKey: string | null;
+}
+
+/**
+ * Escaped defects reported from Piwi Picker, one blind spot per page: every
+ * open report is a bug the suite let through on that page, so the page ranks
+ * higher until a test names each report (`piwi:bug`), which moves it on.
+ */
+export function detectReportedBugEscapes(reports: ReportedBugInput[]): DetectedGap[] {
+  const byPage = new Map<string, ReportedBugInput[]>();
+  for (const report of reports) {
+    if (!report.pageKey) continue;
+    byPage.set(report.pageKey, [...(byPage.get(report.pageKey) ?? []), report]);
+  }
+  return [...byPage.entries()].map(([page, list]) => ({
+    detector: 'escaped-defect',
+    kind: 'gap',
+    class: 'blind-spot',
+    key: `page:${page}`,
+    title:
+      list.length === 1
+        ? `A reported bug escaped the suite on ${page}: ${list[0]!.title}`
+        : `${list.length} reported bugs escaped the suite on ${page}`,
+    evidence: list.map(
+      (r) => `Bug report #${r.id}: ${r.title} — no test names it yet; commit its failing test (piwi:bug ${r.id}).`,
+    ),
+    confidence: Math.min(1, 0.6 + 0.1 * (list.length - 1)),
+  }));
+}
+
 /** A test and the set of nodes it reaches, each with whether it was seen recently. */
 export interface TestReachRecency {
   testCaseId: number;
@@ -1031,17 +1070,10 @@ export function detectNewControl(inputs: NewControlInput[]): DetectedGap[] {
   return gaps;
 }
 
-/** A hunk that removes a locator anchor a control node's snapshot still relies on. */
-export interface LocatorBreakInput {
-  removedAttr: string;
-  filePath: string;
-  /** Call sites whose stored locator uses the removed attribute. */
-  callSites: string[];
-}
-
 /** A prediction handed to locator healing — not a gap. */
 export interface LocatorBreakPrediction {
   detector: 'locator-break-ahead';
+  /** The removed anchor: `attribute=value` for an attribute, the string otherwise. */
   removedAttr: string;
   filePath: string;
   callSites: string[];
@@ -1049,20 +1081,33 @@ export interface LocatorBreakPrediction {
 }
 
 /**
- * Locator break ahead — a diff removes a testid/id/name a control node's stored
- * locator relies on. A prediction handed to locator healing as a pre-flight, not
- * a scenario gap.
+ * Locator break ahead — a diff removes or renames a string the index's
+ * locators find elements by. One prediction per anchor, with the call sites
+ * of every chain it breaks, from `predictLocatorBreaks`. A prediction handed
+ * to locator healing as a pre-flight, not a scenario gap.
  */
-export function detectLocatorBreakAhead(inputs: LocatorBreakInput[]): LocatorBreakPrediction[] {
-  return inputs
-    .filter((i) => i.callSites.length > 0)
-    .map((i) => ({
+export function detectLocatorBreakAhead(
+  anchors: DiffAnchor[],
+  index: LocatorIndex,
+  options: PredictLocatorBreaksOptions = {},
+): LocatorBreakPrediction[] {
+  const byAnchor = new Map<DiffAnchor, Set<string>>();
+  for (const b of predictLocatorBreaks(anchors, index, options)) {
+    const sites = byAnchor.get(b.anchor) ?? new Set<string>();
+    for (const use of b.uses) for (const site of use.callSites) sites.add(site);
+    byAnchor.set(b.anchor, sites);
+  }
+  return [...byAnchor].map(([anchor, sites]) => {
+    const callSites = [...sites];
+    const removed = anchor.attribute ? `${anchor.attribute}=${anchor.before}` : anchor.before;
+    return {
       detector: 'locator-break-ahead' as const,
-      removedAttr: i.removedAttr,
-      filePath: i.filePath,
-      callSites: i.callSites,
-      evidence: `Removes ${i.removedAttr} · ${i.callSites.length} call site${i.callSites.length === 1 ? '' : 's'} — heal before the run fails.`,
-    }));
+      removedAttr: removed,
+      filePath: anchor.file,
+      callSites,
+      evidence: `${anchor.after === undefined ? 'Removes' : 'Renames'} ${removed} · ${callSites.length} call site${callSites.length === 1 ? '' : 's'} — heal before the run fails.`,
+    };
+  });
 }
 
 // ── Loaders + orchestration (impure) ─────────────────────────────────────────
@@ -1247,11 +1292,20 @@ export async function computeScenarioGaps(
   const nodeBranchScope = isNull(graphNodes.branch);
   const edgeBranchScope = isNull(graphEdges.branch);
 
-  // Reach edges → which test cases reach which nodes.
+  // Reach edges → which test cases reach which nodes. Code reach's `coverage`
+  // edges and `file` nodes (every file a test executed) stay out of the node
+  // detectors: they are no surface of their own to drift or to be covered once.
   const reachRows = await db
     .select({ toKind: graphEdges.toKind, toKey: graphEdges.toKey, fromKey: graphEdges.fromKey })
     .from(graphEdges)
-    .where(and(eq(graphEdges.projectId, projectId), eq(graphEdges.kind, 'reaches'), edgeBranchScope));
+    .where(
+      and(
+        eq(graphEdges.projectId, projectId),
+        eq(graphEdges.kind, 'reaches'),
+        ne(graphEdges.origin, 'coverage'),
+        edgeBranchScope,
+      ),
+    );
 
   const reachByNode = new Map<string, Set<number>>();
   const testIds = new Set<number>();
@@ -1280,7 +1334,14 @@ export async function computeScenarioGaps(
       lastSeenRunId: graphNodes.lastSeenRunId,
     })
     .from(graphNodes)
-    .where(and(eq(graphNodes.projectId, projectId), nodeBranchScope, isNull(graphNodes.prunedAt)));
+    .where(
+      and(
+        eq(graphNodes.projectId, projectId),
+        nodeBranchScope,
+        isNull(graphNodes.prunedAt),
+        not(and(eq(graphNodes.kind, 'file'), eq(graphNodes.origin, 'coverage'))!),
+      ),
+    );
 
   // Documented response codes a declared (manifest/OpenAPI) route carries in its attrs.
   const documentedByRoute = new Map<string, number[]>();
@@ -1519,7 +1580,16 @@ export async function computeScenarioGaps(
     };
   });
 
+  // Escaped defects: the project's bug reports that no test names yet.
+  const openReports: ReportedBugInput[] = (
+    await db
+      .select({ id: bugReports.id, title: bugReports.title, pageKey: bugReports.pageKey })
+      .from(bugReports)
+      .where(and(eq(bugReports.projectId, projectId), eq(bugReports.status, 'open')))
+  ).map((r) => ({ id: r.id, title: r.title, pageKey: r.pageKey }));
+
   const detected = [
+    ...detectReportedBugEscapes(openReports),
     ...detectSuccessOnly([...routeStats.values()]),
     ...detectSingleCoveringTest(nodeReach),
     ...detectSurfaceDrift(nodeDrift, latestRunId),
@@ -1554,6 +1624,7 @@ export async function computeScenarioGaps(
       'fix-did-not-hold',
       'declared-never-hit',
       'unprobed-dependency',
+      'escaped-defect',
     ],
     scored,
     latestRunId,

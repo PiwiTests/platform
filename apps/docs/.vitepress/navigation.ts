@@ -185,6 +185,7 @@ export const referenceSidebar: SidebarGroup[] = [
       { text: 'Clue rules', link: '/reference/clues' },
       { text: 'Locator stability rules', link: '/reference/locator-stability' },
       { text: 'Piwi CLI', link: '/reference/cli' },
+      { text: 'Steps file format', link: '/reference/steps-format' },
       { text: 'MCP tools', link: '/reference/mcp-tools' },
       { text: 'Analytics widgets', link: '/reference/analytics-widgets' },
       { text: 'Metrics', link: '/reference/metrics' },

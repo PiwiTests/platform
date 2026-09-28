@@ -16,6 +16,7 @@
     "extension:test": "vitest run",
     "extension:test:watch": "vitest",
     "extension:test:e2e": "npm run extension:build && playwright test --config=tests/e2e/playwright.config.ts",
+    "extension:lab": "node tests/lab/run.mjs",
     "extension:zip": "npm run extension:build:release && node scripts/zip.mjs",
     "test": "npm run extension:test"
   },

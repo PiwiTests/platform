@@ -18,6 +18,8 @@ const DEFAULTS: PiwiDashboardOptions = {
   // Off by default: the page inventory reads control and link names from every
   // visited page, so it stays opt-in until a project turns it on.
   capturePageInventory: false,
+  // Off by default: JavaScript coverage slows the page, so a scheduled job opts in.
+  captureCodeReach: false,
   captureServerTraces: true,
   sampleAriaOnPass: true,
   uploadManifest: true,
@@ -61,6 +63,8 @@ export const PIWI_ENV_KEYS = {
   captureLocators: 'PIWI_CAPTURE_LOCATORS',
   capturePageState: 'PIWI_CAPTURE_PAGE_STATE',
   capturePageInventory: 'PIWI_CAPTURE_PAGE_INVENTORY',
+  captureCodeReach: 'PIWI_CAPTURE_CODE_REACH',
+  codeReachRoots: 'PIWI_CODE_REACH_ROOTS',
   captureServerTraces: 'PIWI_CAPTURE_SERVER_TRACES',
   sampleAriaOnPass: 'PIWI_SAMPLE_ARIA_ON_PASS',
   uploadManifest: 'PIWI_UPLOAD_MANIFEST',
@@ -169,6 +173,7 @@ const ENV_FALLBACK_SPECS: ReadonlyArray<{
   { option: 'captureLocators', env: PIWI_ENV_KEYS.captureLocators, kind: 'bool' },
   { option: 'capturePageState', env: PIWI_ENV_KEYS.capturePageState, kind: 'bool' },
   { option: 'capturePageInventory', env: PIWI_ENV_KEYS.capturePageInventory, kind: 'bool' },
+  { option: 'captureCodeReach', env: PIWI_ENV_KEYS.captureCodeReach, kind: 'bool' },
   { option: 'captureServerTraces', env: PIWI_ENV_KEYS.captureServerTraces, kind: 'bool' },
   { option: 'sampleAriaOnPass', env: PIWI_ENV_KEYS.sampleAriaOnPass, kind: 'bool' },
   { option: 'uploadManifest', env: PIWI_ENV_KEYS.uploadManifest, kind: 'bool' },
@@ -275,6 +280,11 @@ export function applyOptionsToEnv(options: PiwiDashboardOptions): void {
   if (options.capturePageInventory === false || options.collectPerformanceMetrics === false)
     env[PIWI_ENV_KEYS.capturePageInventory] = 'false';
   else if (options.capturePageInventory === true) env[PIWI_ENV_KEYS.capturePageInventory] = 'true';
+  // Code reach (JavaScript coverage, Chromium only) follows the same bridge.
+  if (options.captureCodeReach === false || options.collectPerformanceMetrics === false)
+    env[PIWI_ENV_KEYS.captureCodeReach] = 'false';
+  else if (options.captureCodeReach === true) env[PIWI_ENV_KEYS.captureCodeReach] = 'true';
+  if (options.codeReachRoots?.length) env[PIWI_ENV_KEYS.codeReachRoots] = JSON.stringify(options.codeReachRoots);
   // Server-trace capture rides the same bridge: off when either flag disables
   // it, explicit true otherwise (unset keeps the fixture's default-on).
   if (options.captureServerTraces === false || options.collectPerformanceMetrics === false)

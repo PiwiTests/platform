@@ -21,8 +21,9 @@ them into your test project.
 | `investigate-failure` | Investigate a failed run and propose a fix grounded in Piwi's evidence: error, steps, console, network, and the diff since the last green run. |
 | `apply-locator-healing` | Replace a brittle locator with Piwi's ranked [healed locator](/features/locator-healing) at its call site, then re-run to confirm. |
 | `stabilize-flaky-tests` | Fix the root cause of the highest-impact [flaky tests](/features/flaky-tests) (never by adding retries), then verify with repeated runs. |
-| `run-the-right-tests` | Pick and run the right [selection](/features/test-selection) for the task (smoke, recently broken, a time budget) instead of the whole suite. |
+| `run-the-right-tests` | After a UI change, fix the locators it breaks with [preflight](/features/preflight); then pick and run the right [selection](/features/test-selection) for the task (smoke, recently broken, a time budget) instead of the whole suite. |
 | `write-the-missing-test` | Take the top [scenario gap](/features/scenario-gaps) in scope, draft it from the graph, finish the assertion and add it in the same change. |
+| `fix-a-reported-bug` | Take a [bug report](/features/bug-reports), write its failing test with `piwi bug <id> --write`, reproduce, fix, then remove `test.fail()` and run the spec and the tests that visit the page. |
 
 Each skill prefers a connected Piwi [MCP tool](/reference/mcp-tools) and falls back to the dashboard UI when MCP is
 not connected, so a skill works before the MCP server is set up, only more slowly.

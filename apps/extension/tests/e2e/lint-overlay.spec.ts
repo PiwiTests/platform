@@ -1,6 +1,8 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test, expect } from './fixtures.js';
+import { stubChromeI18n } from './i18n-stub.js';
+import { clippedInShadows, openShadowRoots } from './shadow.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.join(here, '..', '..', 'dist');
@@ -68,5 +70,36 @@ test.describe('lint-overlay.js', () => {
     // An odd number of toggles (3) ends up open — this just confirms each
     // toggle fully tears down the previous host rather than stacking hosts.
     expect(await page.locator('#piwi-lint-overlay-host').count()).toBe(1);
+  });
+
+  test('speaks French in a French browser', async ({ context }) => {
+    await openShadowRoots(context);
+    await stubChromeI18n(context, 'fr');
+    const page = await context.newPage();
+    await page.setContent(`<!doctype html><html><body><button></button><button></button></body></html>`);
+    await page.addScriptTag({ path: path.join(DIST, 'lint-overlay.js') });
+
+    const panel = page.locator('#piwi-lint-overlay-host .panel');
+    await expect(panel).toHaveAttribute('lang', 'fr');
+    await expect(panel).toHaveAttribute('aria-label', 'Contrôle\u00a0: éléments difficiles à cibler');
+    await expect(panel.locator('.title')).toHaveText('2 éléments difficiles à cibler');
+    await expect(panel.locator('.export')).toHaveText('Copier en liste de tâches Markdown');
+    await expect(panel.locator('.row .name').first()).toHaveText('rôle button');
+    await expect(panel.locator('.row code').first()).toHaveAttribute('title', 'Cliquer pour copier');
+    await expect(panel.getByRole('button', { name: 'Fermer le contrôle' })).toBeVisible();
+    expect(await clippedInShadows(page)).toEqual([]);
+  });
+
+  test('lays out in German without clipping', async ({ context }) => {
+    await openShadowRoots(context);
+    await stubChromeI18n(context, 'de');
+    const page = await context.newPage();
+    await page.setContent(`<!doctype html><html><body><button></button><button></button></body></html>`);
+    await page.addScriptTag({ path: path.join(DIST, 'lint-overlay.js') });
+
+    const panel = page.locator('#piwi-lint-overlay-host .panel');
+    await expect(panel).toHaveAttribute('lang', 'de');
+    await expect(panel.locator('.row').first()).toBeVisible();
+    expect(await clippedInShadows(page)).toEqual([]);
   });
 });

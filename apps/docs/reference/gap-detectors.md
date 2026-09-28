@@ -24,6 +24,7 @@ without it.
 | **Control nobody exercises** | blind-spot | a control on a page that no test reaches | the page inventory | `On 12 page(s) · no locator targets it` |
 | **Reachable, unvisited** | blind-spot | a page other pages link to that no test navigates to | the page inventory | `Linked from 7 page(s) · never navigated to` |
 | **API-only route** | blind-spot | a reached route no page loads | the page inventory; without it, every reached route qualifies | `No control triggers it and no page loads it` |
+| **Escaped defect** | blind-spot | a page with [bug reports](/features/bug-reports) no test names yet, one gap per page | Piwi Picker sending reports | `Bug report #37: Coupon not applied to the total — no test names it yet` |
 | **Changed, unreached** | blind-spot | a changed file no test reaches, at pull-request time | an SCM token | `+41 −3 · no test in run #812 · 0 in 30 runs` |
 | **Single covering test** | fragile | a node exactly one trusted test reaches | nothing more | `Only checkout › coupon reaches this` |
 | **Orphan test** | fragile | a test whose every reached node disappeared from the last 30 runs | nothing more | `All 3 node(s) it reaches disappeared from recent runs` |

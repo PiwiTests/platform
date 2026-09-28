@@ -33,7 +33,8 @@ export type CapabilityId =
   | 'tags'
   | 'markers'
   | 'test-map'
-  | 'server-probes';
+  | 'server-probes'
+  | 'bug-reports';
 
 export type CapabilityModule = 'core' | 'workflow' | 'healing' | 'agents';
 export type CapabilityLevel = 'instance' | 'project';
@@ -226,6 +227,15 @@ export const CAPABILITIES: CapabilityDef[] = [
     follows: 'test-map',
     since: '0.36.0',
     doc: 'features/probes#server-probes',
+  },
+  {
+    id: 'bug-reports',
+    module: 'workflow',
+    levels: ['instance', 'project'],
+    needs: ['extension'],
+    detection: 'bug-reports',
+    since: '0.41.0',
+    doc: 'features/bug-reports',
   },
 ];
 

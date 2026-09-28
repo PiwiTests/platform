@@ -18,7 +18,7 @@ defineRouteMeta({
 });
 
 const createLinkSchema = z.object({
-  entityType: z.enum(['test_run', 'test_runs_case', 'test_case', 'failure_cluster']),
+  entityType: z.enum(['test_run', 'test_runs_case', 'test_case', 'failure_cluster', 'bug_report']),
   entityId: z.number().int().positive(),
   url: z.string().url('Must be a valid URL'),
   title: z.string().max(200).nullable().optional(),

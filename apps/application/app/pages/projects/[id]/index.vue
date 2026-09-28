@@ -738,6 +738,7 @@ const editState = ref({
     gitlab: { ref: '', variableName: '' },
     bitbucket: { pipeline: '', variableName: '' },
   },
+  generatedSpecs: { testImport: '', bugsFolder: '' },
 });
 const selectedTags = ref<TagInfo[]>([]);
 const savingSettings = ref(false);
@@ -771,6 +772,10 @@ watch(
         },
         gitlab: { ref: ci?.gitlab?.ref ?? '', variableName: ci?.gitlab?.variableName ?? '' },
         bitbucket: { pipeline: ci?.bitbucket?.pipeline ?? '', variableName: ci?.bitbucket?.variableName ?? '' },
+      },
+      generatedSpecs: {
+        testImport: p.generatedSpecs?.testImport ?? '',
+        bugsFolder: p.generatedSpecs?.bugsFolder ?? '',
       },
     };
     selectedTags.value = p.tags || [];
@@ -806,6 +811,10 @@ async function handleSaveSettings() {
           dependencyOnStateChanging: editState.value.serverProbes.dependencyOnStateChanging,
         },
         ciRerun: editState.value.ciRerun,
+        generatedSpecs: {
+          testImport: editState.value.generatedSpecs.testImport.trim() || null,
+          bugsFolder: editState.value.generatedSpecs.bugsFolder.trim() || null,
+        },
         tagIds: selectedTags.value.map((t) => t.id),
       },
     });
@@ -840,6 +849,12 @@ const moreMenuItems = computed(() => {
     icon: 'i-lucide-crosshair',
     onSelect: () => navigateTo(`/projects/${projectId}/locators`),
   });
+  if (!projCapHidden('bug-reports'))
+    items.push({
+      label: 'Bug reports',
+      icon: 'i-lucide-bug',
+      onSelect: () => navigateTo(`/projects/${projectId}/bug-reports`),
+    });
   if (canWrite.value && !projCapHidden('quality-reports'))
     items.push({
       label: 'Schedule a quality report…',
@@ -1544,6 +1559,7 @@ const moreMenuItems = computed(() => {
                 v-model:openApiUrl="editState.openApiUrl"
                 v-model:serverProbes="editState.serverProbes"
                 v-model:ciRerun="editState.ciRerun"
+                v-model:generatedSpecs="editState.generatedSpecs"
                 v-model:tags="selectedTags"
                 :all-tags="allTags"
                 @tag-created="refreshTags()"
@@ -1560,6 +1576,8 @@ const moreMenuItems = computed(() => {
             :targets="(project as { targets?: unknown } | null)?.targets ?? null"
             @saved="refresh()"
           />
+
+          <ProjectUrlPatternsForm v-if="canManage" :project-id="Number(projectId)" />
 
           <!-- Issue-tracker binding: how this project's failures reach Jira. -->
           <ProjectIntegrationSettings v-if="canManage" :project-id="Number(projectId)" />

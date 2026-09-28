@@ -16,7 +16,7 @@ import type { DbClient } from '../../database';
 import { issueLabels } from '#shared/integrations/build-issue';
 import { DEFAULT_LOCALE, type IssueLocale } from '#shared/integrations/messages';
 import type { IssueIncludeOptions } from '#shared/integrations/types';
-import { buildClusterIssue, buildExecutionIssue } from './documents';
+import { buildBugReportIssue, buildClusterIssue, buildExecutionIssue } from './documents';
 import { clusterShareTokenMinter } from './share-url';
 import {
   enqueueOrReplaceAction,
@@ -36,7 +36,7 @@ import {
 } from '#shared/integrations/fields';
 import type { IssueFieldProblem } from '#shared/integrations/types';
 import { readProjectIntegration } from './binding';
-import { pickOwnerRoute } from '#shared/integrations/binding';
+import { pickOwnerRoute, type ResolvedProjectIntegration } from '#shared/integrations/binding';
 import { createIssueKey } from '#shared/integrations/action-keys';
 import { getFailureCluster } from '#shared/handlers/failure-clusters';
 import type { DraftEntityType } from './draft';
@@ -108,6 +108,7 @@ async function resolveTarget(
   entityType: DraftEntityType,
   entityId: number,
 ): Promise<{ clusterId: number; projectId: number } | null> {
+  if (entityType === 'bug_report') return null;
   const clusterId =
     entityType === 'failure_cluster'
       ? entityId
@@ -127,6 +128,7 @@ async function resolveTarget(
 }
 
 export async function createIssue(db: DbClient, params: CreateIssueParams): Promise<CreateIssueOutcome | null> {
+  if (params.entityType === 'bug_report') return createBugReportIssue(db, params);
   const target = await resolveTarget(db, params.entityType, params.entityId);
   if (!target) return null;
 
@@ -163,12 +165,71 @@ export async function createIssue(db: DbClient, params: CreateIssueParams): Prom
 
   const labels = [...new Set([...(params.labels ?? built.labels), ...(route?.labels ?? []), ...standardLabels])];
 
+  return fileIssue(db, params, binding, {
+    projectId: target.projectId,
+    title: built.title,
+    document: built.document,
+    labels,
+    componentId: route?.componentId ?? null,
+    // The created known-issue link always attaches to the cluster, so the chip
+    // shows on the cluster page and the inbox regardless of the entity clicked.
+    linkEntityType: 'failure_cluster',
+    linkEntityId: target.clusterId,
+  });
+}
+
+/**
+ * File an issue for a bug report: the report's own document and labels, no
+ * cluster, the created link on the report. Its screenshots follow as `attach`
+ * actions once the issue exists (see `applyCreateIssue`).
+ */
+async function createBugReportIssue(db: DbClient, params: CreateIssueParams): Promise<CreateIssueOutcome | null> {
+  const locale = params.locale ?? DEFAULT_LOCALE;
+  const built = await buildBugReportIssue(db, params.entityId, { locale, siteUrl: params.siteUrl });
+  if (!built) return null;
+  const binding = await readProjectIntegration(db, built.projectId);
+  const labels = [...new Set([...(params.labels ?? binding.labels), ...built.labels])];
+
+  return fileIssue(db, params, binding, {
+    projectId: built.projectId,
+    title: built.title,
+    document: built.document,
+    labels,
+    componentId: null,
+    linkEntityType: 'bug_report',
+    linkEntityId: params.entityId,
+  });
+}
+
+/** What an issue is filed with, once the entity it is filed for is resolved. */
+interface IssueToFile {
+  projectId: number;
+  /** The title used when the request names none. */
+  title: string;
+  document: CreateIssueActionPayload['document'];
+  labels: string[];
+  componentId: string | null;
+  linkEntityType: CreateIssueActionPayload['linkEntityType'];
+  linkEntityId: number;
+}
+
+/**
+ * File the issue: the one already filed for this entity when there is one,
+ * else a refusal naming the required fields still empty, else a `create-issue`
+ * action enqueued and run now, its outcome mapped for the caller.
+ */
+async function fileIssue(
+  db: DbClient,
+  params: CreateIssueParams,
+  binding: ResolvedProjectIntegration,
+  issue: IssueToFile,
+): Promise<CreateIssueOutcome> {
   // An issue already filed for this entity is the answer, whatever the request says.
   const dedupeKey = createIssueKey(params.entityType, params.entityId, params.connectionId);
   const filed = await findActionByKey(db, dedupeKey);
   if (filed?.status === 'done') {
     const result = filed.result as CreateIssueResult | null;
-    return { actionId: filed.id, status: 'done', key: result?.key, url: result?.url, projectId: target.projectId };
+    return { actionId: filed.id, status: 'done', key: result?.key, url: result?.url, projectId: issue.projectId };
   }
 
   // Required fields: refuse before calling Jira when the defaults and the
@@ -178,7 +239,7 @@ export async function createIssue(db: DbClient, params: CreateIssueParams): Prom
   if (screen) {
     const missing = missingRequiredFields(screen, values, {
       assignee: !!params.assignee,
-      components: !!route?.componentId,
+      components: !!issue.componentId,
     });
     if (missing.length) {
       return {
@@ -186,7 +247,7 @@ export async function createIssue(db: DbClient, params: CreateIssueParams): Prom
         status: 'failed',
         error: missingFieldsMessage(missing),
         missingFields: missing.map((f) => ({ id: f.id, name: f.name })),
-        projectId: target.projectId,
+        projectId: issue.projectId,
       };
     }
   }
@@ -194,22 +255,20 @@ export async function createIssue(db: DbClient, params: CreateIssueParams): Prom
   const payload: CreateIssueActionPayload = {
     projectKey: params.projectKey,
     issueType: params.issueType,
-    title: params.title?.trim() || built.title,
-    document: built.document,
-    labels,
+    title: params.title?.trim() || issue.title,
+    document: issue.document,
+    labels: issue.labels,
     assigneeId: params.assignee ?? null,
-    componentId: route?.componentId ?? null,
+    componentId: issue.componentId,
     fields: fieldPayload(values, screen),
-    locale,
-    // The created known-issue link always attaches to the cluster, so the chip
-    // shows on the cluster page and the inbox regardless of the entity clicked.
-    linkEntityType: 'failure_cluster',
-    linkEntityId: target.clusterId,
+    locale: params.locale ?? DEFAULT_LOCALE,
+    linkEntityType: issue.linkEntityType,
+    linkEntityId: issue.linkEntityId,
   };
 
   const action = await enqueueOrReplaceAction(db, {
     connectionId: params.connectionId,
-    projectId: target.projectId,
+    projectId: issue.projectId,
     kind: 'create-issue',
     entityType: params.entityType,
     entityId: params.entityId,
@@ -219,7 +278,7 @@ export async function createIssue(db: DbClient, params: CreateIssueParams): Prom
   });
 
   const outcome = await runActionNow(db, action.id);
-  const base: CreateIssueOutcome = { actionId: action.id, status: 'pending', projectId: target.projectId };
+  const base: CreateIssueOutcome = { actionId: action.id, status: 'pending', projectId: issue.projectId };
   if (!outcome) return base;
   if (outcome.status === 'done') {
     const result = outcome.result as CreateIssueResult | undefined;

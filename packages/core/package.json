@@ -29,7 +29,20 @@
     "./locator-index": "./src/locator-index.ts",
     "./locator-fix": "./src/locator-fix.ts",
     "./locator-stability": "./src/locator-stability.ts",
-    "./page-key": "./src/page-key.ts"
+    "./page-key": "./src/page-key.ts",
+    "./steps": "./src/steps.ts",
+    "./bug-report": "./src/bug-report.ts",
+    "./bug-phrases": "./src/bug-phrases.ts",
+    "./locator-text-match": "./src/locator-text-match.ts",
+    "./diff-anchors": "./src/diff-anchors.ts",
+    "./locator-break": "./src/locator-break.ts",
+    "./locator-edit": "./src/locator-edit.ts",
+    "./dotenv": "./src/dotenv.ts",
+    "./source-map": "./src/source-map.ts",
+    "./code-reach": "./src/code-reach.ts",
+    "./line-diff": "./src/line-diff.ts",
+    "./editor-send": "./src/editor-send.ts",
+    "./file-routes": "./src/file-routes.ts"
   },
   "scripts": {
     "core:typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tests/tsconfig.json",

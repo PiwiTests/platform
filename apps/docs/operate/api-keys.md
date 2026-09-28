@@ -35,6 +35,10 @@ dedicated CI account.
 2. Click **Generate key**, and copy the key **immediately**: it will never be shown again.
 3. Store it as a CI secret (e.g. `PIWI_API_KEY`).
 
+Connecting the [browser extension](/features/extension-connection) creates a key the same way, once you click
+**Allow** on the page it opens: it is named after the browser ("Piwi Picker in Chrome on Windows") and listed with the
+others.
+
 ## Revoking an API key
 
 Click the trash icon next to the key, in the same place you created it. The key stops working immediately.

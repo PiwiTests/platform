@@ -375,6 +375,11 @@ const requiredFields = computed(() => requiredFieldsToFill(screenFields.value));
             <USwitch v-model="form.policies.resolveOnClose" label="Resolve the cluster when the ticket closes" />
             <USwitch v-model="form.policies.reopenOnTicketReopen" label="Reopen the cluster when the ticket reopens" />
             <USwitch v-model="form.policies.commentOnMerge" label="Comment on both tickets when clusters merge" />
+            <USwitch
+              v-model="form.policies.fileEveryBugReport"
+              label="File every bug report"
+              description="Create an issue for each bug report Piwi Picker sends to this project, whoever sends it"
+            />
           </div>
           <UFormField
             label="Needs-ticket after (days)"

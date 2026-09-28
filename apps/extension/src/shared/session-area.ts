@@ -1,3 +1,5 @@
+import { t } from './i18n.js';
+
 /**
  * `chrome.storage.session` from any context, including a content script in
  * Firefox.
@@ -38,7 +40,7 @@ async function viaBackground(request: SessionStorageRequest): Promise<Record<str
   const response = (await chrome.runtime.sendMessage(request)) as SessionStorageResponse | undefined;
   // Rejects like the real area does on a failed write (a full quota, say), so a
   // caller sees the failure rather than a write that silently never happened.
-  if (!response?.ok) throw new Error(response?.error ?? 'The background script did not answer.');
+  if (!response?.ok) throw new Error(response?.error ?? t('common_workerNoAnswer'));
   return response.items ?? {};
 }
 

@@ -148,6 +148,22 @@ jobs:
           npm run picker-dom:typecheck
           npm run picker-dom:test
 
+      - name: Lint, typecheck, build and test the editor service
+        working-directory: ./packages/editor
+        run: |
+          npm run editor:lint
+          npm run editor:typecheck
+          npm run editor:build
+          npm run editor:test
+
+      - name: Lint, typecheck, build and unit-test the VS Code extension
+        working-directory: ./apps/vscode
+        run: |
+          npm run vscode:lint
+          npm run vscode:typecheck
+          npm run vscode:build
+          npm run vscode:test
+
       - name: Lint, typecheck and unit-test extension
         working-directory: ./apps/extension
         run: |

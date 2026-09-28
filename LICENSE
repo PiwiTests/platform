@@ -16,8 +16,10 @@ This repository is licensed in two parts.
 2. The Functional Source License, Version 1.1, MIT Future License
    (FSL-1.1-MIT), reproduced below, covers everything else in this repository,
    including the dashboard (apps/application), the server package
-   (packages/server), the desktop app (apps/desktop), the browser extension
-   (apps/extension) and the documentation site (apps/docs).
+   (packages/server), the editor service (packages/editor), the desktop app
+   (apps/desktop), the browser extension (apps/extension), the VS Code
+   extension (apps/vscode), the JetBrains plugin (apps/jetbrains) and the
+   documentation site (apps/docs).
 
 Every release published before this change remains available under the MIT
 License it was released under.

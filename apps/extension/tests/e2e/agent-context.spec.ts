@@ -64,6 +64,18 @@ test.describe('buildAgentContext (via the real built agent-context-panel.js)', (
     expect(rankedSection).toContain(`getByRole('button', { name: 'Submit' })`);
   });
 
+  test('checks each locator on the page: the narrowed one first, the loose one with its count', async ({ context }) => {
+    const page = await context.newPage();
+    await page.setContent(`<!doctype html><html><body>
+      <button id="failed">Failed</button><button>3 failed</button>
+    </body></html>`);
+    const contextText = await pickAndBuildContext(page, '#failed');
+    expect(contextText).toContain(
+      `1. [89] getByRole('button', { name: 'Failed', exact: true }) (narrowed from getByRole('button', { name: 'Failed' }), which finds 2 elements)`,
+    );
+    expect(contextText).toContain(`getByRole('button', { name: 'Failed' }) (finds 2 elements on this page)`);
+  });
+
   test('an element with no identifying attributes, text, or role reports no locator alternative', async ({
     context,
   }) => {
