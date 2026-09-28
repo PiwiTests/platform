@@ -719,6 +719,28 @@
     "message": "The branch deployed at these addresses: Tested elements shows what its tests reach",
     "description": "Settings page: tooltip of a line’s branch field."
   },
+  "options_pathPrefix": {
+    "message": "Path prefix",
+    "description": "Settings page: accessible name of a line’s path prefix field."
+  },
+  "options_pathPrefixPlaceholder": {
+    "message": "no path prefix",
+    "description": "Settings page: shown in an empty path prefix field. Short."
+  },
+  "options_pathPrefixTitle": {
+    "message": "Your site serves the pages under this path, the tests did not, e.g. /app",
+    "description": "Settings page: tooltip of a line’s path prefix field. Keep /app as the example."
+  },
+  "options_pathPrefixInvalid": {
+    "message": "$prefix$ is not a path prefix: write a plain path such as /app, with no query, hash or wildcard, and at most 4 parts.",
+    "description": "Settings page: status and tooltip when a path prefix field holds a value that is refused. $prefix$ is what was typed.",
+    "placeholders": {
+      "prefix": {
+        "content": "$1",
+        "example": "/app"
+      }
+    }
+  },
   "options_removeMapping": {
     "message": "Remove this line",
     "description": "Settings page: accessible name of the × button of a line."
@@ -1062,6 +1084,16 @@
   "options_sourceServer": {
     "message": "Piwi",
     "description": "Settings page: small tag on a URL pattern that comes from the instance. The product name."
+  },
+  "options_serverPathPrefix": {
+    "message": "path prefix $prefix$",
+    "description": "Settings page: part of an instance pattern’s line, after the project, environment and branch, joined by ·. $prefix$ is like /app.",
+    "placeholders": {
+      "prefix": {
+        "content": "$1",
+        "example": "/app"
+      }
+    }
   },
   "options_sourceLocal": {
     "message": "This browser",
@@ -3811,6 +3843,20 @@
     "message": "Count every locator that finds something here, whatever page its test used it on",
     "description": "Tested elements panel: tooltip of the All pages button."
   },
+  "coverage_subtitleWithoutPrefix": {
+    "message": "$page$ (without $prefix$)",
+    "description": "Tested elements panel: the page in the subtitle when the site’s URL mapping has a path prefix that was removed. $page$ is like /checkout, $prefix$ like /app.",
+    "placeholders": {
+      "page": {
+        "content": "$1",
+        "example": "/checkout"
+      },
+      "prefix": {
+        "content": "$2",
+        "example": "/app"
+      }
+    }
+  },
   "coverage_tileTested": {
     "message": "tested",
     "description": "Tested elements panel: label under a big number: buttons, links and fields a test reaches. One or two words."
@@ -4488,6 +4534,16 @@
   "coverage_notesAllPages": {
     "message": "Locators are looked for on this page, whatever page their test used them on.",
     "description": "Tested elements panel, Notes: after coverage_notesChecked, with All pages on."
+  },
+  "coverage_notesPrefixRemoved": {
+    "message": "The path prefix $prefix$ of this site’s URL mapping was removed from the address first: the tests ran this page without it.",
+    "description": "Tested elements panel, Notes: shown when the page’s address started with the URL mapping’s path prefix. $prefix$ is like /app.",
+    "placeholders": {
+      "prefix": {
+        "content": "$1",
+        "example": "/app"
+      }
+    }
   },
   "coverage_notesErrors_one": {
     "message": "$count$ locator could not be checked here:",

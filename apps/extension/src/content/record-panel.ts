@@ -684,7 +684,7 @@ async function handleBugFinish(): Promise<void> {
     await takeBugScreenshot('finish', normalizeSteps(state.events).length - 1);
     const evidence = await getBugEvidence();
     await setBugEvidenceFields({
-      context: currentBugContext(),
+      context: await currentBugContext(),
       ...(evidence.outline ? {} : { outline: outlineAround(null) }),
     });
     await handleStop();

@@ -10,6 +10,8 @@ export interface ActiveProject {
   projectLabel: string;
   /** The branch the matching URL mapping names; absent for the project's default branch. */
   branch?: string | null;
+  /** The path prefix the matching URL mapping names: removed from the page's path before it is compared with the tests' pages. */
+  pathPrefix?: string;
   /** The environment the matching server pattern names, if any. */
   environment?: string;
   source?: ActiveProjectSource;
@@ -41,7 +43,7 @@ export async function setActiveProjectOverride(project: ActiveProject | null): P
 
 /**
  * Which project applies to `url` right now, in this order: the popup's manual
- * override; then the first pattern kept in this browser (`projectMappings`)
+ * override (with the path prefix of a mapping of that project matching `url`); then the first pattern kept in this browser (`projectMappings`)
  * that matches, so a local pattern overrides the instance's for this browser;
  * then the first of the instance's own patterns (`serverMappings`, in the order
  * it lists them). `null` when nothing matches (not connected, or this page
@@ -52,13 +54,20 @@ export function resolveActiveProject(
   override: ActiveProject | null,
   url: string,
 ): ActiveProject | null {
-  if (override) return { ...override, source: 'override' };
+  if (override) {
+    // The path prefix still follows the URL: from the first mapping of the chosen project that matches.
+    const pathPrefix = [...settings.projectMappings, ...settings.serverMappings].find(
+      (m) => m.projectId === override.projectId && m.pathPrefix && urlMatches(m.urlPattern, url),
+    )?.pathPrefix;
+    return { ...override, ...(pathPrefix ? { pathPrefix } : {}), source: 'override' };
+  }
   for (const mapping of settings.projectMappings) {
     if (urlMatches(mapping.urlPattern, url))
       return {
         projectId: mapping.projectId,
         projectLabel: mapping.projectLabel,
         ...(mapping.branch ? { branch: mapping.branch } : {}),
+        ...(mapping.pathPrefix ? { pathPrefix: mapping.pathPrefix } : {}),
         source: 'local',
       };
   }
@@ -68,9 +77,19 @@ export function resolveActiveProject(
         projectId: mapping.projectId,
         projectLabel: mapping.projectLabel,
         ...(mapping.branch ? { branch: mapping.branch } : {}),
+        ...(mapping.pathPrefix ? { pathPrefix: mapping.pathPrefix } : {}),
         ...(mapping.environment ? { environment: mapping.environment } : {}),
         source: 'server',
       };
   }
   return null;
+}
+
+/**
+ * The path prefix of the URL mapping that applies to `url`, or null for none:
+ * the prefix the bug report's page key is keyed without.
+ */
+export async function activePathPrefix(settings: ConnectionSettings, url: string): Promise<string | null> {
+  const override = await getActiveProjectOverride().catch(() => null);
+  return resolveActiveProject(settings, override, url)?.pathPrefix ?? null;
 }

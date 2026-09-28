@@ -288,7 +288,7 @@ export async function fetchServerPatterns(settings: ConnectionSettings): Promise
 export async function addServerPattern(
   settings: ConnectionSettings,
   projectId: number,
-  input: { pattern: string; environment?: string | null; branch?: string | null },
+  input: { pattern: string; environment?: string | null; branch?: string | null; pathPrefix?: string | null },
 ): Promise<void> {
   let res: Response;
   try {

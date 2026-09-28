@@ -580,6 +580,24 @@
   "options_branchTitle": {
     "message": "Der unter diesen Adressen bereitgestellte Branch: Getestete Elemente zeigt, was seine Tests erreichen"
   },
+  "options_pathPrefix": {
+    "message": "Pfadpräfix"
+  },
+  "options_pathPrefixPlaceholder": {
+    "message": "kein Pfadpräfix"
+  },
+  "options_pathPrefixTitle": {
+    "message": "Ihre Website liefert die Seiten unter diesem Pfad aus, die Tests nicht, z. B. /app"
+  },
+  "options_pathPrefixInvalid": {
+    "message": "$prefix$ ist kein Pfadpräfix: Schreiben Sie einen einfachen Pfad wie /app, ohne Query, Hash oder Platzhalter, mit höchstens 4 Teilen.",
+    "placeholders": {
+      "prefix": {
+        "content": "$1",
+        "example": "/app"
+      }
+    }
+  },
   "options_removeMapping": {
     "message": "Diese Zeile entfernen"
   },
@@ -865,6 +883,15 @@
   },
   "options_sourceServer": {
     "message": "Piwi"
+  },
+  "options_serverPathPrefix": {
+    "message": "Pfadpräfix $prefix$",
+    "placeholders": {
+      "prefix": {
+        "content": "$1",
+        "example": "/app"
+      }
+    }
   },
   "options_sourceLocal": {
     "message": "Dieser Browser"
@@ -3212,6 +3239,19 @@
   "coverage_allPagesTitle": {
     "message": "Jeden Locator zählen, der hier etwas findet, egal auf welcher Seite sein Test ihn verwendet"
   },
+  "coverage_subtitleWithoutPrefix": {
+    "message": "$page$ (ohne $prefix$)",
+    "placeholders": {
+      "page": {
+        "content": "$1",
+        "example": "/checkout"
+      },
+      "prefix": {
+        "content": "$2",
+        "example": "/app"
+      }
+    }
+  },
   "coverage_tileTested": {
     "message": "getestet"
   },
@@ -3789,6 +3829,15 @@
   },
   "coverage_notesAllPages": {
     "message": "Locators werden auf dieser Seite gesucht, egal auf welcher Seite ihr Test sie verwendet hat."
+  },
+  "coverage_notesPrefixRemoved": {
+    "message": "Das Pfadpräfix $prefix$ des Adressmusters dieser Website wurde zuerst aus der Adresse entfernt: Die Tests haben diese Seite ohne es aufgerufen.",
+    "placeholders": {
+      "prefix": {
+        "content": "$1",
+        "example": "/app"
+      }
+    }
   },
   "coverage_notesErrors_one": {
     "message": "$count$ Locator konnte hier nicht geprüft werden:",
