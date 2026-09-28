@@ -31,6 +31,54 @@ test.describe('Open this page at a viewport', () => {
     expect(refused).toMatchObject({ ok: false });
   });
 
+  test('sets the viewport of the tab itself through the debugging protocol, and puts it back', async ({
+    context,
+    extensionId,
+  }) => {
+    await context.route(`${ORIGIN}/**`, (route) =>
+      route.fulfill({ contentType: 'text/html', body: '<!doctype html><p>Shop</p>' }),
+    );
+    const popup = await context.newPage();
+    await popup.goto(`chrome-extension://${extensionId}/popup.html`);
+    const shop = await context.newPage();
+    await shop.goto(`${ORIGIN}/cart`);
+    // The tab opened last, which the extension sees without access to the site's addresses.
+    const tabId = await popup.evaluate(async () => {
+      const tabs = await chrome.tabs.query({});
+      return tabs.sort((a, b) => b.id! - a.id!)[0]!.id!;
+    });
+    const attached = () =>
+      popup.evaluate(async (id) => {
+        try {
+          await chrome.debugger.sendCommand({ tabId: id }, 'Runtime.evaluate', { expression: '1' });
+          return true;
+        } catch {
+          return false;
+        }
+      }, tabId);
+
+    const reply = await popup.evaluate(
+      (id) => chrome.runtime.sendMessage({ type: 'piwi-set-tab-viewport', tabId: id, width: 390, height: 664 }),
+      tabId,
+    );
+    expect(reply).toEqual({ ok: true });
+    await expect.poll(() => shop.evaluate(() => [innerWidth, innerHeight])).toEqual([390, 664]);
+    expect(await attached()).toBe(true);
+    expect(
+      await popup.evaluate(async () => (await chrome.storage.session.get('piwiTabViewport')).piwiTabViewport),
+    ).toEqual({
+      tabId,
+      width: 390,
+      height: 664,
+    });
+
+    await popup.evaluate((id) => chrome.runtime.sendMessage({ type: 'piwi-clear-tab-viewport', tabId: id }), tabId);
+    expect(await attached()).toBe(false);
+    expect(
+      await popup.evaluate(async () => (await chrome.storage.session.get('piwiTabViewport')).piwiTabViewport),
+    ).toBeUndefined();
+  });
+
   test('offers the viewports of the project’s Playwright projects, or a size typed by hand', async ({
     context,
     extensionId,

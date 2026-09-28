@@ -86,7 +86,7 @@ test.use({ storageState: 'playwright/.auth/user.json' });
 | --- | --- |
 | Disable CSS or JavaScript, outline blocks, show rulers | DevTools does it; an extension would need to rewrite every page |
 | View and edit cookies, clear storage | DevTools' Application panel; an extension needs `cookies` and host access to every site |
-| Throttle the network, go offline, emulate a device | DevTools and Playwright do it through the debugging protocol, which an extension reaches only with the `debugger` permission (it cannot be optional; see [`bug-report-to-failing-test.md`](bug-report-to-failing-test.md)) |
+| Emulate a device (touch, pixel ratio, user agent) | DevTools and Playwright do it. Throttling the network, going offline and a viewport in the tab are built since `debugger` is used on demand (T2): see 2.4 and 2.5 |
 | Validate HTML, check links | Other tools; nothing to do with tests |
 
 A toolbar would also blur what Piwi Picker is for. Every tool below answers one question: *what will my test see, and
@@ -114,7 +114,7 @@ how do I get the test there?*
 | T4 | Network data is read only through `chrome.devtools.network`, only while DevTools is open on the tab, and never leaves the browser unless the user exports it. | It needs no permission, and a HAR holds credentials. |
 | T5 | Exports hide credentials by default: `Authorization`, `Cookie` and `Set-Cookie` headers, and fields named like a password or a token, until the user reveals them. | A mock or a login file is committed more often than it should be. |
 | T6 | `cookies` is an optional permission, requested in the click that saves a login, for the tab's origin only. | The only feature that needs it, used rarely. |
-| T7 | Slowing or failing a request wraps `fetch` and XHR in the page's main world, as the bug evidence script does; it does not touch documents, scripts or images. | That is what an extension can do without `debugger` or `declarativeNetRequest`'s redirect rules, and it covers the API calls flaky tests wait on. |
+| T7 | Slowing or failing a request goes through the debugging protocol's `Fetch` domain in Chrome and Edge (every request, documents, scripts and images included), and wraps `fetch` and XHR in the page's main world, as the bug evidence script does, where the protocol is not there (Firefox, a cancelled bar). | `Fetch` reaches what flaky tests wait on beyond API calls; the wrapper keeps the tool working where the protocol is not. |
 
 ## Part 1 — In DevTools
 
@@ -221,8 +221,10 @@ A replay can run under a condition: the replay dialog lists the active ones, and
 is the manual half of Flake Lab ([`flake-lab.md`](flake-lab.md)): a condition the lab reproduced in CI, tried by hand in
 the developer's own tab.
 
-Out of reach without `debugger`, and said so in the UI: CPU throttling, whole-page network throttling, delays on
-documents, scripts and images, and requests made by service workers.
+Built since 2026-09-28 through `debugger` (T2), in Chrome and Edge: delays and failures on documents, scripts and
+images (`Fetch`), whole-page network throttling and offline (`Network.emulateNetworkConditions`), and CPU throttling
+(`Emulation.setCPUThrottlingRate`), in the Network tab's toolbar. Still out of reach: requests a service worker makes
+itself (a separate target the tab's session does not pause), and, in Firefox, everything but `fetch` and XHR.
 
 As built: the conditions belong to one tab, kept by the background worker, which registers the main-world wrapper and
 an isolated-world relay for the page's origin; the relay asks the worker for the tab's conditions (other tabs of the
@@ -239,7 +241,9 @@ outer frame, matches (`chrome.windows.create`, then corrected by the difference 
 size). No emulation of touch, device pixel ratio or user agent: that takes the debugging protocol. The label says
 "viewport only". As built, the background worker creates the window, then grows it by the frame it measures
 (`tabs.Tab.width`/`height` against the window's size) until the viewport matches; a size the screen cannot hold
-ends at the nearest one the browser allows.
+ends at the nearest one the browser allows. Since 2026-09-28 (T2), **In this tab** sets the viewport of the tab itself
+in Chrome and Edge (`Emulation.setDeviceMetricsOverride`), until **Back to the window's size**; still no touch, pixel
+ratio or user agent.
 
 ## Permissions
 
@@ -250,8 +254,8 @@ ends at the nearest one the browser allows.
 | Playwright view | `activeTab` (existing) | none new |
 | Mock this response | nothing beyond DevTools being open | none |
 | Save login for tests | `cookies`, optional, requested in the click | shown when requested |
-| Slow down or fail a request | the origin's optional host permission (existing) | none new |
-| Viewport presets | `windows` API, no permission needed for creating a window | none |
+| Slow down or fail a request, throttling | the origin's optional host permission (existing); `debugger` in Chrome and Edge (T2) | `debugger`'s, at install |
+| Viewport presets | `windows` API, no permission needed for creating a window; `debugger` for In this tab | `debugger`'s, at install |
 
 ## Delivery
 

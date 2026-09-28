@@ -228,6 +228,33 @@
   "popup_viewportOnly": {
     "message": "Só o viewport: sem toque, densidade de pixels nem user agent."
   },
+  "popup_viewportHere": {
+    "message": "Nesta aba"
+  },
+  "popup_viewportHereOn": {
+    "message": "Esta aba mostra a página em $size$.",
+    "placeholders": {
+      "size": {
+        "content": "$1",
+        "example": "390×844"
+      }
+    }
+  },
+  "popup_viewportReset": {
+    "message": "Voltar ao tamanho da janela"
+  },
+  "popup_viewportHereUnavailable": {
+    "message": "Este navegador não dá às extensões um protocolo de depuração para definir o viewport da própria aba: abra uma janela em vez disso."
+  },
+  "popup_viewportHereRefused": {
+    "message": "O navegador recusou a sessão de depuração: $error$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "Another debugger is already attached to the tab."
+      }
+    }
+  },
   "popup_viewportInvalid": {
     "message": "Abra uma página web, com largura e altura entre $min$ e $max$ pixels.",
     "placeholders": {
@@ -4569,6 +4596,9 @@
   "devtools_networkAllOrigins": {
     "message": "Outros sites também"
   },
+  "devtools_networkAllTypes": {
+    "message": "Todos os tipos"
+  },
   "devtools_networkClear": {
     "message": "Limpar"
   },
@@ -4676,7 +4706,7 @@
     }
   },
   "devtools_conditionsOn_one": {
-    "message": "Piwi Picker: $count$ condição nas requisições ativa",
+    "message": "Piwi Picker: $count$ condição ativa",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -4685,7 +4715,7 @@
     }
   },
   "devtools_conditionsOn_other": {
-    "message": "Piwi Picker: $count$ condições nas requisições ativas",
+    "message": "Piwi Picker: $count$ condições ativas",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -4718,7 +4748,7 @@
     "message": "Atrasar ou fazer falhar esta requisição"
   },
   "devtools_conditionsLimits": {
-    "message": "As condições valem para as chamadas fetch e XHR das páginas desta aba até você desativá-las ou fechar a aba. Limitar a CPU ou a página inteira, e atrasar documentos, scripts, imagens ou as requisições de um service worker, exigem a permissão debugger, que o Piwi Picker não pede."
+    "message": "As condições valem para cada requisição das páginas desta aba, incluindo documentos, scripts e imagens, até você desativá-las ou fechar a aba. As requisições próprias de um service worker passam ao largo delas."
   },
   "devtools_conditionRemove": {
     "message": "Remover"
@@ -4853,6 +4883,57 @@
   },
   "devtools_conditionsLimitsTitle": {
     "message": "O que isto não consegue atrasar"
+  },
+  "devtools_conditionsLimitsPage": {
+    "message": "As condições valem para as chamadas fetch e XHR das páginas desta aba até você desativá-las ou fechar a aba. Documentos, scripts, imagens e as requisições de um service worker passam ao largo delas."
+  },
+  "devtools_conditionsDebugging": {
+    "message": "Aplicadas a cada requisição desta aba pelo protocolo de depuração do Chrome: o Chrome mostra sua barra de depuração até você desativar todas."
+  },
+  "devtools_conditionsLostCanceled": {
+    "message": "A barra de depuração foi cancelada: a limitação está desativada, e as condições das requisições agora só alcançam as chamadas fetch e XHR da página."
+  },
+  "devtools_conditionsLostEnded": {
+    "message": "A sessão de depuração terminou: a limitação está desativada, e as condições das requisições agora só alcançam as chamadas fetch e XHR da página."
+  },
+  "devtools_throttleLabel": {
+    "message": "Rede"
+  },
+  "devtools_cpuLabel": {
+    "message": "CPU"
+  },
+  "devtools_throttleNone": {
+    "message": "Sem limitação"
+  },
+  "devtools_throttleFast3g": {
+    "message": "A página inteira em 3G rápido"
+  },
+  "devtools_throttleSlow3g": {
+    "message": "A página inteira em 3G lento"
+  },
+  "devtools_throttleOffline": {
+    "message": "A página inteira off-line"
+  },
+  "devtools_cpuSlower": {
+    "message": "A CPU $rate$ vezes mais lenta",
+    "placeholders": {
+      "rate": {
+        "content": "$1",
+        "example": "4"
+      }
+    }
+  },
+  "devtools_emulationRefused": {
+    "message": "O navegador recusou a sessão de depuração de que a limitação precisa: $error$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "Another debugger is already attached to the tab."
+      }
+    }
+  },
+  "devtools_emulationUnavailable": {
+    "message": "Limitar a página inteira exige o protocolo de depuração, que este navegador não dá às extensões."
   },
   "devtools_copyAs": {
     "message": "Copiar como"

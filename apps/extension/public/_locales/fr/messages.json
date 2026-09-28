@@ -228,6 +228,33 @@
   "popup_viewportOnly": {
     "message": "Viewport seulement : ni tactile, ni densité de pixels, ni user agent."
   },
+  "popup_viewportHere": {
+    "message": "Dans cet onglet"
+  },
+  "popup_viewportHereOn": {
+    "message": "Cet onglet affiche sa page en $size$.",
+    "placeholders": {
+      "size": {
+        "content": "$1",
+        "example": "390×844"
+      }
+    }
+  },
+  "popup_viewportReset": {
+    "message": "Revenir à la taille de la fenêtre"
+  },
+  "popup_viewportHereUnavailable": {
+    "message": "Ce navigateur ne donne pas aux extensions de protocole de débogage pour régler l’affichage de l’onglet lui-même : ouvrez plutôt une fenêtre."
+  },
+  "popup_viewportHereRefused": {
+    "message": "Le navigateur a refusé la session de débogage : $error$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "Another debugger is already attached to the tab."
+      }
+    }
+  },
   "popup_viewportInvalid": {
     "message": "Ouvrez une page web, avec une largeur et une hauteur entre $min$ et $max$ pixels.",
     "placeholders": {
@@ -4569,6 +4596,9 @@
   "devtools_networkAllOrigins": {
     "message": "Autres sites aussi"
   },
+  "devtools_networkAllTypes": {
+    "message": "Tous les types"
+  },
   "devtools_networkClear": {
     "message": "Effacer"
   },
@@ -4676,7 +4706,7 @@
     }
   },
   "devtools_conditionsOn_one": {
-    "message": "Piwi Picker : $count$ condition sur les requêtes active",
+    "message": "Piwi Picker : $count$ condition active",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -4685,7 +4715,7 @@
     }
   },
   "devtools_conditionsOn_other": {
-    "message": "Piwi Picker : $count$ conditions sur les requêtes actives",
+    "message": "Piwi Picker : $count$ conditions actives",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -4718,7 +4748,7 @@
     "message": "Ralentir ou faire échouer cette requête"
   },
   "devtools_conditionsLimits": {
-    "message": "Les conditions s’appliquent aux appels fetch et XHR des pages de cet onglet jusqu’à ce que vous les désactiviez ou fermiez l’onglet. Ralentir le processeur ou toute la page, et retarder les documents, les scripts, les images ou les requêtes d’un service worker, demandent la permission debugger, que Piwi Picker ne demande pas."
+    "message": "Les conditions s’appliquent à chaque requête des pages de cet onglet, documents, scripts et images compris, jusqu’à ce que vous les désactiviez ou fermiez l’onglet. Les requêtes propres à un service worker passent à côté."
   },
   "devtools_conditionRemove": {
     "message": "Retirer"
@@ -4853,6 +4883,57 @@
   },
   "devtools_conditionsLimitsTitle": {
     "message": "Ce que cela ne peut pas ralentir"
+  },
+  "devtools_conditionsLimitsPage": {
+    "message": "Les conditions s’appliquent aux appels fetch et XHR des pages de cet onglet jusqu’à ce que vous les désactiviez ou fermiez l’onglet. Les documents, les scripts, les images et les requêtes d’un service worker passent à côté."
+  },
+  "devtools_conditionsDebugging": {
+    "message": "Appliquées à chaque requête de cet onglet par le protocole de débogage de Chrome : Chrome affiche sa barre de débogage jusqu’à ce que vous les désactiviez toutes."
+  },
+  "devtools_conditionsLostCanceled": {
+    "message": "La barre de débogage a été annulée : la limitation est désactivée, et les conditions des requêtes n’atteignent plus que les appels fetch et XHR de la page."
+  },
+  "devtools_conditionsLostEnded": {
+    "message": "La session de débogage s’est terminée : la limitation est désactivée, et les conditions des requêtes n’atteignent plus que les appels fetch et XHR de la page."
+  },
+  "devtools_throttleLabel": {
+    "message": "Réseau"
+  },
+  "devtools_cpuLabel": {
+    "message": "Processeur"
+  },
+  "devtools_throttleNone": {
+    "message": "Sans limitation"
+  },
+  "devtools_throttleFast3g": {
+    "message": "Toute la page en 3G rapide"
+  },
+  "devtools_throttleSlow3g": {
+    "message": "Toute la page en 3G lente"
+  },
+  "devtools_throttleOffline": {
+    "message": "Toute la page hors ligne"
+  },
+  "devtools_cpuSlower": {
+    "message": "Le processeur $rate$ fois plus lent",
+    "placeholders": {
+      "rate": {
+        "content": "$1",
+        "example": "4"
+      }
+    }
+  },
+  "devtools_emulationRefused": {
+    "message": "Le navigateur a refusé la session de débogage dont la limitation a besoin : $error$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "Another debugger is already attached to the tab."
+      }
+    }
+  },
+  "devtools_emulationUnavailable": {
+    "message": "Limiter toute la page demande le protocole de débogage, que ce navigateur ne donne pas aux extensions."
   },
   "devtools_copyAs": {
     "message": "Copier en"

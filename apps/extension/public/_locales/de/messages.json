@@ -228,6 +228,33 @@
   "popup_viewportOnly": {
     "message": "Nur der Viewport: kein Touch, keine Pixeldichte, kein User-Agent."
   },
+  "popup_viewportHere": {
+    "message": "In diesem Tab"
+  },
+  "popup_viewportHereOn": {
+    "message": "Dieser Tab zeigt seine Seite in $size$.",
+    "placeholders": {
+      "size": {
+        "content": "$1",
+        "example": "390×844"
+      }
+    }
+  },
+  "popup_viewportReset": {
+    "message": "Zurück zur Fenstergröße"
+  },
+  "popup_viewportHereUnavailable": {
+    "message": "Dieser Browser gibt Erweiterungen kein Debugging-Protokoll, um den Viewport des Tabs selbst festzulegen: Öffnen Sie stattdessen ein Fenster."
+  },
+  "popup_viewportHereRefused": {
+    "message": "Der Browser hat die Debugging-Sitzung abgelehnt: $error$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "Another debugger is already attached to the tab."
+      }
+    }
+  },
   "popup_viewportInvalid": {
     "message": "Öffnen Sie eine Webseite, mit Breite und Höhe zwischen $min$ und $max$ Pixeln.",
     "placeholders": {
@@ -4569,6 +4596,9 @@
   "devtools_networkAllOrigins": {
     "message": "Auch andere Websites"
   },
+  "devtools_networkAllTypes": {
+    "message": "Alle Arten"
+  },
   "devtools_networkClear": {
     "message": "Leeren"
   },
@@ -4676,7 +4706,7 @@
     }
   },
   "devtools_conditionsOn_one": {
-    "message": "Piwi Picker: $count$ Bedingung für Anfragen aktiv",
+    "message": "Piwi Picker: $count$ Bedingung aktiv",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -4685,7 +4715,7 @@
     }
   },
   "devtools_conditionsOn_other": {
-    "message": "Piwi Picker: $count$ Bedingungen für Anfragen aktiv",
+    "message": "Piwi Picker: $count$ Bedingungen aktiv",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -4718,7 +4748,7 @@
     "message": "Diese Anfrage verlangsamen oder scheitern lassen"
   },
   "devtools_conditionsLimits": {
-    "message": "Bedingungen gelten für die fetch- und XHR-Aufrufe der Seiten dieses Tabs, bis Sie sie ausschalten oder den Tab schließen. Die CPU oder die ganze Seite zu drosseln und Dokumente, Skripte, Bilder oder Anfragen eines Service Workers zu verzögern, braucht die debugger-Berechtigung, die Piwi Picker nicht anfordert."
+    "message": "Bedingungen gelten für jede Anfrage der Seiten dieses Tabs, Dokumente, Skripte und Bilder eingeschlossen, bis Sie sie ausschalten oder den Tab schließen. Die eigenen Anfragen eines Service Workers laufen an ihnen vorbei."
   },
   "devtools_conditionRemove": {
     "message": "Entfernen"
@@ -4853,6 +4883,57 @@
   },
   "devtools_conditionsLimitsTitle": {
     "message": "Was sich so nicht verlangsamen lässt"
+  },
+  "devtools_conditionsLimitsPage": {
+    "message": "Bedingungen gelten für die fetch- und XHR-Aufrufe der Seiten dieses Tabs, bis Sie sie ausschalten oder den Tab schließen. Dokumente, Skripte, Bilder und die Anfragen eines Service Workers laufen an ihnen vorbei."
+  },
+  "devtools_conditionsDebugging": {
+    "message": "Über das Debugging-Protokoll von Chrome auf jede Anfrage dieses Tabs angewendet: Chrome zeigt seine Debugging-Leiste, bis Sie alle ausschalten."
+  },
+  "devtools_conditionsLostCanceled": {
+    "message": "Die Debugging-Leiste wurde abgebrochen: Die Drosselung ist aus, und die Bedingungen der Anfragen erreichen jetzt nur die fetch- und XHR-Aufrufe der Seite."
+  },
+  "devtools_conditionsLostEnded": {
+    "message": "Die Debugging-Sitzung wurde beendet: Die Drosselung ist aus, und die Bedingungen der Anfragen erreichen jetzt nur die fetch- und XHR-Aufrufe der Seite."
+  },
+  "devtools_throttleLabel": {
+    "message": "Netzwerk"
+  },
+  "devtools_cpuLabel": {
+    "message": "CPU"
+  },
+  "devtools_throttleNone": {
+    "message": "Keine Drosselung"
+  },
+  "devtools_throttleFast3g": {
+    "message": "Die ganze Seite mit schnellem 3G"
+  },
+  "devtools_throttleSlow3g": {
+    "message": "Die ganze Seite mit langsamem 3G"
+  },
+  "devtools_throttleOffline": {
+    "message": "Die ganze Seite offline"
+  },
+  "devtools_cpuSlower": {
+    "message": "Die CPU $rate$-mal langsamer",
+    "placeholders": {
+      "rate": {
+        "content": "$1",
+        "example": "4"
+      }
+    }
+  },
+  "devtools_emulationRefused": {
+    "message": "Der Browser hat die Debugging-Sitzung abgelehnt, die die Drosselung braucht: $error$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "Another debugger is already attached to the tab."
+      }
+    }
+  },
+  "devtools_emulationUnavailable": {
+    "message": "Die ganze Seite zu drosseln braucht das Debugging-Protokoll, das dieser Browser Erweiterungen nicht gibt."
   },
   "devtools_copyAs": {
     "message": "Kopieren als"

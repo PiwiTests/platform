@@ -105,8 +105,11 @@ Chrome shows "Piwi Picker started debugging this browser" while a session is att
   through `src/background/debugger.ts`: `acquireDebugger(tabId, purpose)` attaches once per tab and
   `releaseDebugger` detaches when no purpose holds the tab. The purposes are a replay (`cdp-replay.ts`, attached on
   the replay's first page, let go by `piwi-replay-finished`, a new replay, or the tab leaving the origin) and a bug
-  recording (`cdp-evidence.ts`, the tab the report starts in, let go when the recording stops or is discarded).
-  Nothing stays attached in the background.
+  recording (`cdp-evidence.ts`, the tab the report starts in, let go when the recording stops or is discarded), the
+  DevTools panel's conditions (`cdp-conditions.ts`, held while any condition or throttling is on) and a viewport set in
+  the tab from the popup (held until **Back to the window's size** or the tab closes). A purpose that lets go of a tab
+  another still holds ends its own emulation first (`Fetch.disable`, network and CPU back to normal,
+  `Emulation.clearDeviceMetricsOverride`). Nothing stays attached in the background.
 - **Every feature has today's path as its fallback, and says so in plain words.** Firefox has no `chrome.debugger`
   (`debuggerAvailable()` is false); attaching can be refused (another debugger, a policy, a page Chrome protects);
   the person can click Cancel on the bar (`onDetach` with `canceled_by_user`, heard through `onDebuggerLost`). The
@@ -412,18 +415,27 @@ scheme, a transparent background) and the helpers in `src/devtools/ui.ts` (butto
   (`HIDDEN_VALUE`) unless revealed, and never writes a header. `devtools-network.spec.ts` runs the copied code as a
   test body against a real page.
 - **Slow down or fail a request** (`panel-conditions.ts`, pure half `src/shared/request-conditions.ts`): the panel asks
-  for the page's origin inside the click and sends `piwi-set-conditions`; the background worker keeps one tab's
-  conditions in session storage (`CONDITIONS_KEY`), registers `request-conditions-main.js` (main world) and
-  `request-conditions.js` (isolated) for that origin at `document_start`, and injects both into the page now. The
-  isolated script asks `piwi-get-conditions` (answered for that tab only), posts the conditions to the main world by
-  `window.postMessage` and draws the banner; the main-world script wraps `fetch` and XHR and, like the evidence script,
-  imports nothing that touches `chrome.*`. Turning them off, or closing the tab, unregisters both, and turning them off
-  reloads the tab. A replay started meanwhile carries them (`ReplayState.conditions`) and its panel lists them.
-  `request-conditions.spec.ts` drives it against a real server, by `fetch` and by XHR.
+  for the page's origin inside the click and sends `piwi-set-conditions` with the requests' conditions, the whole
+  page's network (`throttle`: fast 3G, slow 3G, offline) and CPU (`cpuRate`); the background worker keeps one tab's
+  state in session storage (`CONDITIONS_KEY`). In Chrome and Edge (`via: 'debugger'`, `cdp-conditions.ts`) the
+  `Fetch` domain pauses every request of the tab and delays, fails or answers it while the tab shows the conditions'
+  origin, and `Network.emulateNetworkConditions` and `Emulation.setCPUThrottlingRate` throttle it; the Network tab's
+  **Every kind** lists documents, scripts and images to put a condition on. Without the protocol, or once its bar is
+  cancelled (`lost`, the throttling dropped), `via: 'page'`: `request-conditions-main.js` (main world) wraps `fetch`
+  and XHR and, like the evidence script, imports nothing that touches `chrome.*`. Either way the worker registers
+  `request-conditions.js` (isolated) for that origin at `document_start` (and the main-world script only with `page`),
+  and injects them now. The isolated script asks `piwi-get-conditions` (answered for that tab only), posts to the main
+  world by `window.postMessage` what the wrapper applies (`forPage`, none with the protocol) and draws the banner.
+  Turning them off, or closing the tab, unregisters both and lets the session go, and turning them off reloads the tab.
+  A replay started meanwhile carries the requests' conditions (`ReplayState.conditions`) and its panel lists them.
+  `request-conditions.spec.ts` drives both paths against a real server.
 - **Open this page at a viewport** (the popup's last row, `src/popup/viewports.ts`): the sizes are the active
   project's `viewports` from the cached locator index, or typed by hand; `piwi-open-viewport` in the background worker
   creates the window and grows it until the tab's `width`/`height` match. In a spec, measure the tab through
   `chrome.tabs`, not the page: Playwright emulates its own viewport in the pages it drives (`viewport.spec.ts`).
+  **In this tab** (Chrome and Edge) sends `piwi-set-tab-viewport` instead: `Emulation.setDeviceMetricsOverride` on
+  the tab, kept under `piwiTabViewport` for the popup to show with **Back to the window's size**
+  (`piwi-clear-tab-viewport`).
 - **Tests**: `devtools-sidebar.spec.ts`, `devtools-panel.spec.ts` and `devtools-network.spec.ts` open the pages as tabs with `chrome.devtools` stubbed (`devtools-stub.ts`:
   `eval` runs in a fixture page's own world, where the spec adds the content script; `$0` is that page's global).
   `devtools-real.spec.ts` launches Chromium with `--auto-open-devtools-for-tabs` and drives the real DevTools page

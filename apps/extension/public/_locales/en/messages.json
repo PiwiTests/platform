@@ -287,6 +287,38 @@
     "message": "Viewport only: no touch, pixel ratio or user agent.",
     "description": "Popup, under the viewport row: what the new window does not emulate. Short."
   },
+  "popup_viewportHere": {
+    "message": "In this tab",
+    "description": "Popup, viewport row: button that sets the viewport of the tab itself, rather than opening a window. Short."
+  },
+  "popup_viewportHereOn": {
+    "message": "This tab shows its page at $size$.",
+    "description": "Popup, viewport row: the tab shows its page at a viewport set from the popup. $size$ is a width × height such as 390×844.",
+    "placeholders": {
+      "size": {
+        "content": "$1",
+        "example": "390×844"
+      }
+    }
+  },
+  "popup_viewportReset": {
+    "message": "Back to the window’s size",
+    "description": "Popup, viewport row: link that puts the tab back to its window's size."
+  },
+  "popup_viewportHereUnavailable": {
+    "message": "This browser gives extensions no debugging protocol to set the tab’s own viewport: open a window instead.",
+    "description": "Popup, viewport row: the tab's own viewport cannot be set in a browser without the debugging protocol (Firefox)."
+  },
+  "popup_viewportHereRefused": {
+    "message": "The browser refused the debugging session: $error$",
+    "description": "Popup, viewport row: the browser refused the debugging session the tab's own viewport needs. $error$ is the browser's words.",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "Another debugger is already attached to the tab."
+      }
+    }
+  },
   "popup_viewportInvalid": {
     "message": "Open a web page, at a width and height between $min$ and $max$ pixels.",
     "description": "Popup, viewport row: the page or the size cannot be opened. $min$ and $max$ are sizes in pixels.",
@@ -3192,19 +3224,19 @@
     "description": "Replay panel, under its title and its verdict: the replay acts with trusted input through Chrome's debugging protocol, and Chrome's bar saying the extension is debugging the browser is expected."
   },
   "replay_driverEventsUnavailable": {
-    "message": "Played with the page's own events: this browser gives extensions no debugging protocol, so a hover or a drag may not act as a mouse does.",
+    "message": "Played with the page’s own events: this browser gives extensions no debugging protocol, so a hover or a drag may not act as a mouse does.",
     "description": "Replay panel: the replay acts with the page's own events because the browser (Firefox) has no debugging protocol for extensions."
   },
   "replay_driverEventsRefused": {
-    "message": "Played with the page's own events: the browser refused the debugging session (another debugger on this tab, a policy, or a page the browser protects).",
+    "message": "Played with the page’s own events: the browser refused the debugging session (another debugger on this tab, a policy, or a page the browser protects).",
     "description": "Replay panel: the replay acts with the page's own events because the browser refused the debugging session."
   },
   "replay_driverEventsCanceled": {
-    "message": "Played with the page's own events from there on: the debugging bar was cancelled.",
+    "message": "Played with the page’s own events from there on: the debugging bar was cancelled.",
     "description": "Replay panel: the person clicked Cancel on Chrome's debugging bar, so the replay goes on with the page's own events."
   },
   "replay_driverEventsLost": {
-    "message": "Played with the page's own events from there on: the debugging session ended.",
+    "message": "Played with the page’s own events from there on: the debugging session ended.",
     "description": "Replay panel: the debugging session ended during the replay, which goes on with the page's own events."
   },
   "replay_stepTrusted": {
@@ -5397,6 +5429,10 @@
     "message": "Other sites too",
     "description": "DevTools, Piwi panel, Network tab: checkbox that also lists requests to other sites than the page's."
   },
+  "devtools_networkAllTypes": {
+    "message": "Every kind",
+    "description": "DevTools, Piwi panel, Network tab: checkbox that also lists documents, scripts, images and other requests, not only fetch and XHR calls. Short."
+  },
   "devtools_networkClear": {
     "message": "Clear",
     "description": "DevTools, Piwi panel, Network tab: button that empties the list of requests."
@@ -5522,8 +5558,8 @@
     }
   },
   "devtools_conditionsOn_one": {
-    "message": "Piwi Picker: $count$ request condition on",
-    "description": "Banner on the page while request conditions are on. $count$ is how many.",
+    "message": "Piwi Picker: $count$ condition on",
+    "description": "Banner on the page while request conditions or throttling are on. $count$ is how many.",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -5532,8 +5568,8 @@
     }
   },
   "devtools_conditionsOn_other": {
-    "message": "Piwi Picker: $count$ request conditions on",
-    "description": "Banner on the page while request conditions are on. $count$ is how many.",
+    "message": "Piwi Picker: $count$ conditions on",
+    "description": "Banner on the page while request conditions or throttling are on. $count$ is how many.",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -5572,8 +5608,8 @@
     "description": "DevTools, Piwi panel, Network tab: heading above the buttons that slow down or fail the selected request."
   },
   "devtools_conditionsLimits": {
-    "message": "Conditions apply to the fetch and XHR calls of this tab’s pages until you turn them off or close the tab. Throttling the CPU or the whole page, and delaying documents, scripts, images or a service worker’s requests, need the debugger permission, which Piwi Picker does not ask for.",
-    "description": "DevTools, Piwi panel, Network tab: what request conditions reach, and what they cannot. fetch, XHR and debugger are technical names: keep them."
+    "message": "Conditions apply to every request of this tab’s pages, documents, scripts and images included, until you turn them off or close the tab. A service worker’s own requests go past them.",
+    "description": "DevTools, Piwi panel, Network tab, in Chrome and Edge: what request conditions reach through the debugging protocol."
   },
   "devtools_conditionRemove": {
     "message": "Remove",
@@ -5736,6 +5772,70 @@
   "devtools_conditionsLimitsTitle": {
     "message": "What this cannot slow down",
     "description": "DevTools, Piwi panel, Network tab: a fold that opens devtools_conditionsLimits."
+  },
+  "devtools_conditionsLimitsPage": {
+    "message": "Conditions apply to the fetch and XHR calls of this tab’s pages until you turn them off or close the tab. Documents, scripts, images and a service worker’s requests go past them.",
+    "description": "DevTools, Piwi panel, Network tab, in a browser without the debugging protocol (Firefox): what request conditions reach. fetch and XHR are technical names: keep them."
+  },
+  "devtools_conditionsDebugging": {
+    "message": "Applied to every request of this tab through Chrome’s debugging protocol: Chrome shows its debugging bar until you turn them all off.",
+    "description": "DevTools, Piwi panel, Network tab, under the conditions on: they go through Chrome's debugging protocol, and Chrome's debugging bar is expected."
+  },
+  "devtools_conditionsLostCanceled": {
+    "message": "The debugging bar was cancelled: throttling is off, and the requests’ conditions now reach only the page’s fetch and XHR calls.",
+    "description": "DevTools, Piwi panel, Network tab: the person cancelled Chrome's debugging bar while conditions were on."
+  },
+  "devtools_conditionsLostEnded": {
+    "message": "The debugging session ended: throttling is off, and the requests’ conditions now reach only the page’s fetch and XHR calls.",
+    "description": "DevTools, Piwi panel, Network tab: the debugging session ended while conditions were on."
+  },
+  "devtools_throttleLabel": {
+    "message": "Network",
+    "description": "DevTools, Piwi panel, Network tab: label of the select that throttles the whole page's network. One word."
+  },
+  "devtools_cpuLabel": {
+    "message": "CPU",
+    "description": "DevTools, Piwi panel, Network tab: label of the select that slows the CPU down. One word."
+  },
+  "devtools_throttleNone": {
+    "message": "No throttling",
+    "description": "DevTools, Piwi panel, Network tab: the first option of the network and CPU selects, nothing throttled."
+  },
+  "devtools_throttleFast3g": {
+    "message": "The whole page on fast 3G",
+    "description": "The whole page's network throttled to DevTools' Fast 3G preset: an option of the Network select, and a line of the conditions on."
+  },
+  "devtools_throttleSlow3g": {
+    "message": "The whole page on slow 3G",
+    "description": "The whole page's network throttled to DevTools' Slow 3G preset: an option of the Network select, and a line of the conditions on."
+  },
+  "devtools_throttleOffline": {
+    "message": "The whole page offline",
+    "description": "The whole page offline: an option of the Network select, and a line of the conditions on."
+  },
+  "devtools_cpuSlower": {
+    "message": "The CPU $rate$ times slower",
+    "description": "The CPU slowed down: an option of the CPU select, and a line of the conditions on. $rate$ is how many times slower, such as 4.",
+    "placeholders": {
+      "rate": {
+        "content": "$1",
+        "example": "4"
+      }
+    }
+  },
+  "devtools_emulationRefused": {
+    "message": "The browser refused the debugging session that throttling needs: $error$",
+    "description": "DevTools, Piwi panel: the network or CPU throttling could not be set because the browser refused the debugging session. $error$ is the browser's words.",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "Another debugger is already attached to the tab."
+      }
+    }
+  },
+  "devtools_emulationUnavailable": {
+    "message": "Throttling the whole page needs the debugging protocol, which this browser does not give extensions.",
+    "description": "DevTools, Piwi panel: throttling asked for in a browser that gives extensions no debugging protocol (Firefox)."
   },
   "devtools_copyAs": {
     "message": "Copy as",

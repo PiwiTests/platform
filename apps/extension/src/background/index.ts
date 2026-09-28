@@ -28,10 +28,24 @@ import {
   handleShareReproduction,
   handleShareTarget,
 } from './bug-reports.js';
-import { CONDITIONS_KEY, isCondition, type ConditionsState } from '../shared/request-conditions.js';
+import {
+  CONDITIONS_KEY,
+  isCondition,
+  isCpuRate,
+  isThrottle,
+  type ConditionsState,
+  type ConditionsVia,
+} from '../shared/request-conditions.js';
+import {
+  applyThroughDebugger,
+  clearTabViewport,
+  onConditionsDebuggerLost,
+  releaseConditionsDebugger,
+  setTabViewport,
+} from './cdp-conditions.js';
 import { handleDesktopRepro, handleDesktopReproStatus, handleDesktopTarget } from './desktop-repro.js';
 import { handleReplayDriver, handleReplayInput, releaseReplayDebugger } from './cdp-replay.js';
-import { releaseDebugger, tabsHolding } from './debugger.js';
+import { debuggerAvailable, releaseDebugger, tabsHolding } from './debugger.js';
 import {
   captureThroughDebugger,
   collectsThroughDebugger,
@@ -435,68 +449,126 @@ async function getConditionsState(): Promise<ConditionsState | null> {
 }
 
 /**
- * Turns the conditions off: the scripts are unregistered, and the tab they
- * were on reloads, since its `fetch` and XHR stay wrapped until it does.
+ * Turns the conditions off: the scripts are unregistered, the debugging
+ * session is let go, and the tab they were on reloads, since its `fetch` and
+ * XHR stay wrapped until it does.
  */
 async function clearConditions(reload: boolean): Promise<void> {
   const state = await getConditionsState();
   await sessionArea().remove(CONDITIONS_KEY);
-  await chrome.scripting.unregisterContentScripts({ ids: CONDITION_SCRIPT_IDS }).catch(() => undefined);
+  await unregisterScripts(CONDITION_SCRIPT_IDS);
+  if (state) await releaseConditionsDebugger(state.tabId).catch(() => undefined);
   if (reload && state) await chrome.tabs.reload(state.tabId).catch(() => undefined);
 }
 
 /**
- * Puts conditions on one tab's requests, from the Piwi panel, which has asked
- * for the page's origin inside the click. The scripts are registered for that
- * origin, so the tab's next pages keep them, and injected into its page now.
- * An empty list turns them off.
+ * Registers the scripts for the conditions' origin and injects them into the
+ * tab's page now: the banner always, the page's `fetch`/XHR wrapper only when
+ * the conditions go through it rather than through the debugging protocol.
+ */
+async function registerConditionScripts(state: ConditionsState, pattern: string): Promise<void> {
+  const viaPage = state.via !== 'debugger';
+  await unregisterScripts(CONDITION_SCRIPT_IDS);
+  await chrome.scripting.registerContentScripts([
+    ...(viaPage
+      ? [
+          {
+            id: CONDITION_SCRIPT_IDS[0]!,
+            js: ['request-conditions-main.js'],
+            matches: [pattern],
+            runAt: 'document_start' as const,
+            world: 'MAIN' as const,
+            persistAcrossSessions: false,
+          },
+        ]
+      : []),
+    {
+      id: CONDITION_SCRIPT_IDS[1]!,
+      js: ['request-conditions.js'],
+      matches: [pattern],
+      runAt: 'document_start',
+      persistAcrossSessions: false,
+    },
+  ]);
+  const target = { tabId: state.tabId };
+  if (viaPage) await chrome.scripting.executeScript({ target, files: ['request-conditions-main.js'], world: 'MAIN' });
+  await chrome.scripting.executeScript({ target, files: ['request-conditions.js'] });
+}
+
+/**
+ * Puts conditions on one tab, from the Piwi panel, which has asked for the
+ * page's origin inside the click: requests to slow down or fail, the whole
+ * page's network, the CPU. In Chrome and Edge they go through the debugging
+ * protocol (every request, and the throttling); without it, the requests'
+ * conditions go through the page's `fetch`/XHR wrapper, registered for the
+ * origin so the tab's next pages keep them, and throttling is not offered.
+ * Nothing on turns them all off.
  */
 async function handleSetConditions(message: {
   tabId?: unknown;
   origin?: unknown;
   conditions?: unknown;
+  throttle?: unknown;
+  cpuRate?: unknown;
 }): Promise<{ ok: boolean; error?: string }> {
   await i18nReady;
   const pattern = replayOriginPattern(message.origin);
   const conditions = Array.isArray(message.conditions) ? message.conditions.filter(isCondition) : [];
+  const throttle = isThrottle(message.throttle) ? message.throttle : null;
+  const cpuRate = isCpuRate(message.cpuRate) ? message.cpuRate : null;
   if (!pattern || typeof message.tabId !== 'number') return { ok: false, error: t('devtools_conditionsNoPage') };
-  if (conditions.length === 0) {
+  if (conditions.length === 0 && !throttle && !cpuRate) {
     await clearConditions(true);
     return { ok: true };
   }
   if (!(await chrome.permissions.contains({ origins: [pattern] }))) {
     return { ok: false, error: t('devtools_conditionsNeedAccess') };
   }
+  const base: ConditionsState = {
+    tabId: message.tabId,
+    origin: message.origin as string,
+    conditions,
+    throttle,
+    cpuRate,
+    lost: null,
+  };
+  let via: ConditionsVia = 'page';
+  if (debuggerAvailable()) {
+    try {
+      await applyThroughDebugger(base);
+      via = 'debugger';
+    } catch (err) {
+      await releaseConditionsDebugger(base.tabId).catch(() => undefined);
+      if (throttle || cpuRate) {
+        return { ok: false, error: t('devtools_emulationRefused', { error: err instanceof Error ? err.message : '' }) };
+      }
+    }
+  } else if (throttle || cpuRate) {
+    return { ok: false, error: t('devtools_emulationUnavailable') };
+  }
   try {
-    const state: ConditionsState = { tabId: message.tabId, origin: message.origin as string, conditions };
+    const state: ConditionsState = { ...base, via };
     await sessionArea().set({ [CONDITIONS_KEY]: state });
-    await chrome.scripting.unregisterContentScripts({ ids: CONDITION_SCRIPT_IDS }).catch(() => undefined);
-    await chrome.scripting.registerContentScripts([
-      {
-        id: CONDITION_SCRIPT_IDS[0]!,
-        js: ['request-conditions-main.js'],
-        matches: [pattern],
-        runAt: 'document_start',
-        world: 'MAIN',
-        persistAcrossSessions: false,
-      },
-      {
-        id: CONDITION_SCRIPT_IDS[1]!,
-        js: ['request-conditions.js'],
-        matches: [pattern],
-        runAt: 'document_start',
-        persistAcrossSessions: false,
-      },
-    ]);
-    const target = { tabId: message.tabId };
-    await chrome.scripting.executeScript({ target, files: ['request-conditions-main.js'], world: 'MAIN' });
-    await chrome.scripting.executeScript({ target, files: ['request-conditions.js'] });
+    await registerConditionScripts(state, pattern);
     return { ok: true };
   } catch (err) {
     await clearConditions(false);
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
 }
+
+// The person cancelled the debugging bar: the requests' conditions go on through the page's wrapper, and the
+// throttling, which needs the protocol, ends. The panel and the banner say so.
+onConditionsDebuggerLost((tabId, reason) => {
+  void getConditionsState().then(async (state) => {
+    if (!state || state.tabId !== tabId) return;
+    const pattern = replayOriginPattern(state.origin);
+    const next: ConditionsState = { ...state, throttle: null, cpuRate: null, via: 'page', lost: reason };
+    await sessionArea().set({ [CONDITIONS_KEY]: next });
+    if (state.conditions.length > 0 && pattern) await registerConditionScripts(next, pattern).catch(() => undefined);
+    else await unregisterScripts(CONDITION_SCRIPT_IDS);
+  });
+});
 
 /** The conditions for the tab asking, on the origin they were set for; none for any other tab. */
 async function conditionsFor(
@@ -516,6 +588,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   void getConditionsState().then((state) => {
     if (state?.tabId === tabId) void clearConditions(false);
   });
+  void clearTabViewport(tabId);
 });
 
 /** The narrowest and the widest viewport a window is opened at, in CSS pixels. */
@@ -540,10 +613,31 @@ async function tabSize(
 }
 
 /**
+ * Sets the viewport of the tab itself through the debugging protocol, as
+ * DevTools' device toolbar does, until the popup resets it or the tab closes.
+ */
+async function handleSetTabViewport(message: {
+  tabId?: unknown;
+  width?: unknown;
+  height?: unknown;
+}): Promise<{ ok: boolean; error?: string }> {
+  await i18nReady;
+  const { tabId, width, height } = message;
+  const size = (value: unknown) =>
+    typeof value === 'number' && Number.isInteger(value) && value >= VIEWPORT_MIN && value <= VIEWPORT_MAX;
+  if (typeof tabId !== 'number' || !size(width) || !size(height)) {
+    return { ok: false, error: t('popup_viewportInvalid', { min: VIEWPORT_MIN, max: VIEWPORT_MAX }) };
+  }
+  if (!debuggerAvailable()) return { ok: false, error: t('popup_viewportHereUnavailable') };
+  const result = await setTabViewport({ tabId, width: width as number, height: height as number });
+  return result.ok ? result : { ok: false, error: t('popup_viewportHereRefused', { error: result.error }) };
+}
+
+/**
  * Opens `url` in a new window whose viewport, not its outer frame, measures
  * `width` × `height`: the window is created at that size, then grown by the
  * difference between its outer size and its tab's. Viewport only: no touch,
- * device pixel ratio or user agent, which take the debugging protocol.
+ * device pixel ratio or user agent.
  */
 async function handleOpenViewport(message: {
   url?: unknown;
@@ -747,6 +841,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     void handleReplayInput(message, sender.tab).then(sendResponse);
     return true;
   }
+  if (message?.type === 'piwi-set-tab-viewport') {
+    void handleSetTabViewport(message).then(sendResponse);
+    return true;
+  }
+  if (message?.type === 'piwi-clear-tab-viewport') {
+    if (typeof message.tabId !== 'number') return undefined;
+    void clearTabViewport(message.tabId).then(() => sendResponse({ ok: true }));
+    return true;
+  }
   if (message?.type === 'piwi-open-viewport') {
     void handleOpenViewport(message).then(sendResponse);
     return true;
@@ -756,7 +859,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   if (message?.type === 'piwi-get-conditions') {
-    void conditionsFor(sender.tab, sender.url).then((conditions) => sendResponse({ conditions }));
+    // `forPage`: what the page's own wrapper applies, none when the debugging protocol applies them.
+    void Promise.all([conditionsFor(sender.tab, sender.url), getConditionsState()]).then(([conditions, state]) =>
+      sendResponse({
+        conditions,
+        forPage: state?.via === 'debugger' ? [] : conditions,
+        throttle: state?.tabId === sender.tab?.id ? (state?.throttle ?? null) : null,
+        cpuRate: state?.tabId === sender.tab?.id ? (state?.cpuRate ?? null) : null,
+      }),
+    );
     return true;
   }
   if (message?.type === 'piwi-clear-conditions') {
