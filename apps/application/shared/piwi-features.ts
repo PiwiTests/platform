@@ -158,6 +158,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/flaky-tests',
       },
       {
+        title: 'Flake Lab',
+        summary:
+          'Make a flaky test fail on demand: `piwi flake` replays each suspect as a condition next to a control, and `piwi flake verify` proves the fix under the same condition.',
+        needs: ['fixtures'],
+        where: 'Test case → Flakiness; reporter (`piwi flake`)',
+        doc: 'features/flake-lab',
+      },
+      {
         title: 'Slow tests & wasted time',
         summary:
           'Slowest tests, timeout headroom, stale `test.slow()`, slow endpoints and Web Vitals — the time your suite costs.',
