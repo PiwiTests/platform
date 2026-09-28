@@ -367,4 +367,11 @@ describe('safeReturnPath', () => {
     expect(safeReturnPath('/' + 'a'.repeat(600))).toBeNull();
     expect(safeReturnPath(undefined)).toBeNull();
   });
+
+  test.each(['/\t/evil.test', '/\n/evil.test', '/\r/evil.test', '/x\u0000', '/x\u007f'])(
+    'refuses %j, which a browser could read as another host',
+    (value) => {
+      expect(safeReturnPath(value)).toBeNull();
+    },
+  );
 });

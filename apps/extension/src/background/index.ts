@@ -643,8 +643,8 @@ async function handleStartReplay(
       .catch(() => undefined);
     if (message.inject === true)
       await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['replay-panel.js'] });
-    await chrome.action.setBadgeText({ text: t('badge_replay') });
-    await chrome.action.setBadgeBackgroundColor({ color: REPLAY_BADGE_COLOR });
+    // A recording still going keeps its badge; the replay's shows once it ends.
+    await showStateBadge();
     return { ok: true };
   } catch (err) {
     await unregisterScripts(REPLAY_SCRIPT_IDS);

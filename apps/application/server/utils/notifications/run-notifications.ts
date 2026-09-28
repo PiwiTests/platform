@@ -19,6 +19,7 @@ import { resolveDefaultBranch } from '../scm/default-branch';
 import { resolveRunBranch } from '../run-branch';
 import { FAILED_STATUS_KEYS } from '#shared/utils/test-counts';
 import { describeCluster } from '#shared/describe-cluster';
+import { isExpectedFailurePassed, lastAttempts } from '#shared/status-classify';
 import { getClusterKnownIssue } from '../integrations/known-issue';
 import type { DbClient } from '../../database';
 import type { LooksFixedTest } from '#shared/notification-events';
@@ -36,19 +37,16 @@ export async function loadLooksFixedTests(db: DbClient, runId: number): Promise<
       executionId: testRunsCases.id,
       testCaseId: testRunsCases.testCaseId,
       testMeta: testRunsCases.testMeta,
+      status: testRunsCases.status,
+      expectedStatus: testRunsCases.expectedStatus,
+      retries: testRunsCases.retries,
     })
     .from(testRunsCases)
     .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
-    .where(
-      and(
-        eq(testRunsCases.testRunId, runId),
-        eq(testRunsCases.status, 'failed'),
-        eq(testRunsCases.expectedStatus, 'failed'),
-      ),
-    );
-  // A retried test has one row per attempt; name each test once.
-  const byTest = new Map(rows.map((row) => [row.testCaseId, row]));
-  return [...byTest.values()].map((row) => {
+    .where(and(eq(testRunsCases.testRunId, runId), eq(testRunsCases.expectedStatus, 'failed')));
+  // A retried test has one row per attempt: its last attempt says whether the bug still shows.
+  const passed = lastAttempts(rows).filter((row) => isExpectedFailurePassed(row.status, row.expectedStatus));
+  return passed.map((row) => {
     const meta = (row.testMeta ?? null) as TestMetadata | null;
     return {
       title: row.title,

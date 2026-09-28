@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { safeReturnPath } from '#shared/return-path';
+
 const { login } = useAuth();
 const router = useRouter();
 const route = useRoute();
@@ -16,10 +18,7 @@ const error = ref('');
 // Where to land after signing in: a same-origin path handed over by a link
 // that needed a session first (the reporter's per-failure links), else home.
 function redirectTarget(): string {
-  const target = route.query.redirect;
-  return typeof target === 'string' && target.startsWith('/') && !target.startsWith('//') && !target.includes('\\')
-    ? target
-    : '/';
+  return safeReturnPath(route.query.redirect) ?? '/';
 }
 
 // Fresh instance with auth enabled and zero users: the login form can never

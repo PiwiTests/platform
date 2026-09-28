@@ -3,9 +3,10 @@
  * developer runs or declines them in the window (see `shared/desktop-repro.ts`).
  *
  * A request waits `REPRO_REQUEST_TTL_MS` for the developer, then reads as
- * expired; once answered, its verdict stays readable as long again, for the
- * extension polling it. Each open window listens on the desktop event stream,
- * which registers it here, and is told of every new request.
+ * expired as long again; once answered, its verdict stays readable as long
+ * again, for the extension polling it. A running request stays until its run
+ * ends, however long it takes. Each open window listens on the desktop event
+ * stream, which registers it here, and is told of every new request.
  */
 import { randomBytes } from 'node:crypto';
 import {
@@ -34,8 +35,8 @@ function view(stored: StoredRepro): ReproRequestView {
 
 function sweep(now = Date.now()): void {
   for (const [id, stored] of requests) {
-    if (stored.until <= now) requests.delete(id);
-    else if (stored.status === 'waiting' && Date.parse(stored.expiresAt) <= now) stored.status = 'expired';
+    if (stored.status === 'waiting' && Date.parse(stored.expiresAt) <= now) stored.status = 'expired';
+    if (stored.status !== 'running' && stored.until <= now) requests.delete(id);
   }
 }
 
@@ -57,7 +58,7 @@ export function createReproRequest(input: ReproRequestInput): ReproRequestView {
     projectId: null,
     verdict: null,
     runId: null,
-    until: now + REPRO_REQUEST_TTL_MS,
+    until: now + 2 * REPRO_REQUEST_TTL_MS,
   };
   requests.set(stored.id, stored);
   const shown = view(stored);

@@ -473,15 +473,45 @@ export async function renderStepsRunSpec(
   db: DrizzleDB,
   projectId: number,
   steps: PiwiSteps,
+  specDir?: string,
 ): Promise<CodegenResult | null> {
   const [project] = await db
     .select({ generatedSpecs: projects.generatedSpecs })
     .from(projects)
     .where(eq(projects.id, projectId));
   if (!project) return null;
-  const shared = await projectSpecOptions(db, projectId, resolveGeneratedSpecSettings(project.generatedSpecs));
+  const settings = resolveGeneratedSpecSettings(project.generatedSpecs);
+  const shared = await projectSpecOptions(db, projectId, settings);
+  if (shared.testImport && specDir != null) {
+    shared.testImport = rebaseTestImport(shared.testImport, settings.bugsFolder, specDir);
+  }
   const report: BugReport = { v: 1, steps, evidence: emptyBugEvidence(), context: EMPTY_CONTEXT };
   return renderBugSpec(report, { ...shared, expectFail: false, tags: ['@bug'] });
+}
+
+function pathSegments(path: string): string[] {
+  const out: string[] = [];
+  for (const part of path.split('/')) {
+    if (!part || part === '.') continue;
+    if (part === '..' && out.length > 0 && out[out.length - 1] !== '..') out.pop();
+    else out.push(part);
+  }
+  return out;
+}
+
+/**
+ * A relative `testImport` is written for a spec in `bugsFolder`. A spec written
+ * to another folder, `specDir` (both relative to the repository root), imports
+ * the same module by a path from its own folder. A package name stays as it is.
+ */
+export function rebaseTestImport(testImport: string, bugsFolder: string, specDir: string): string {
+  if (!testImport.startsWith('./') && !testImport.startsWith('../')) return testImport;
+  const target = pathSegments(`${bugsFolder}/${testImport}`);
+  const from = pathSegments(specDir);
+  let common = 0;
+  while (common < from.length && common < target.length && from[common] === target[common]) common++;
+  const relative = [...Array<string>(from.length - common).fill('..'), ...target.slice(common)].join('/');
+  return relative.startsWith('../') ? relative : `./${relative}`;
 }
 
 const EMPTY_CONTEXT: BugContext = {

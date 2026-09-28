@@ -5,6 +5,7 @@ import {
   classifyStatus,
   resolveExpectedStatus,
   isExpectedFailurePassed,
+  lastAttempts,
   type BlockableCase,
 } from '../src/status-classify.js';
 
@@ -100,5 +101,19 @@ describe('expected status', () => {
     expect(isExpectedFailurePassed(failedBody, 'failed')).toBe(false);
     expect(isExpectedFailurePassed('failed', 'passed')).toBe(false);
     expect(isExpectedFailurePassed('failed', null)).toBe(false);
+  });
+});
+
+describe('lastAttempts', () => {
+  it('keeps the attempt with the most retries for each test', () => {
+    const rows = [
+      { testCaseId: 1, retries: 0, status: 'failed' },
+      { testCaseId: 2, retries: null, status: 'passed' },
+      { testCaseId: 1, retries: 1, status: 'passed' },
+    ];
+    expect(lastAttempts(rows)).toEqual([
+      { testCaseId: 1, retries: 1, status: 'passed' },
+      { testCaseId: 2, retries: null, status: 'passed' },
+    ]);
   });
 });

@@ -58,6 +58,49 @@ pub(crate) fn repro_spec_path(
         .join(format!("bug-{request_id}.spec.ts")))
 }
 
+/// The repository the linked folder is in: the nearest folder holding `.git`,
+/// or the linked folder itself outside a repository. A project's bugs folder,
+/// which its test import is written for, is relative to it.
+fn repo_root(folder: &Path) -> PathBuf {
+    folder
+        .ancestors()
+        .find(|dir| dir.join(".git").exists())
+        .unwrap_or(folder)
+        .to_path_buf()
+}
+
+/// The spec's folder relative to the repository root, with forward slashes,
+/// for the server to write the project's test import from it.
+fn spec_dir_in_repo(root: &Path, spec: &Path) -> Option<String> {
+    let dir = spec.parent()?.strip_prefix(root).ok()?;
+    let parts: Vec<String> = dir
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy().into_owned())
+        .collect();
+    Some(parts.join("/"))
+}
+
+/// Percent-encodes a query value, keeping unreserved characters and `/`.
+fn query_escape(value: &str) -> String {
+    value
+        .bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' | b'/' => {
+                (b as char).to_string()
+            }
+            _ => format!("%{b:02X}"),
+        })
+        .collect()
+}
+
+/// The file argument for `playwright test`, which reads each one as a regular
+/// expression over the test file's path: the spec's own folder and name,
+/// escaped, either separator. A raw path would not match on Windows (`\b` is a
+/// word boundary) nor in a folder named with `(`, `+` or `[`.
+fn repro_file_filter(request_id: &str) -> String {
+    format!("{REPRO_FOLDER}[\\\\/]bug-{request_id}\\.spec\\.ts$")
+}
+
 /// The value given to `--project`, as `--project=x` or `--project x`.
 fn project_flag(args: &[String]) -> Option<String> {
     let mut iter = args.iter();
@@ -107,7 +150,12 @@ fn http_body(response: &[u8]) -> Result<&[u8], String> {
 }
 
 /// Ask the bundled server for the request's spec, rendered for the project.
-fn fetch_spec(server: &ServerInfo, request_id: &str, project_id: &str) -> Result<String, String> {
+fn fetch_spec(
+    server: &ServerInfo,
+    request_id: &str,
+    project_id: &str,
+    spec_dir: Option<&str>,
+) -> Result<String, String> {
     use std::io::{Read, Write};
     if !project_id.bytes().all(|b| b.is_ascii_digit()) || project_id.is_empty() {
         return Err("invalid project id".into());
@@ -115,8 +163,11 @@ fn fetch_spec(server: &ServerInfo, request_id: &str, project_id: &str) -> Result
     let mut stream =
         std::net::TcpStream::connect(("127.0.0.1", server.port)).map_err(|e| e.to_string())?;
     let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(30)));
+    let dir = spec_dir
+        .map(|d| format!("&specDir={}", query_escape(d)))
+        .unwrap_or_default();
     let request = format!(
-        "GET /api/desktop/repro-requests/{request_id}/spec?projectId={project_id} HTTP/1.0\r\nHost: 127.0.0.1:{}\r\nx-piwi-token: {}\r\nAccept: application/json\r\nConnection: close\r\n\r\n",
+        "GET /api/desktop/repro-requests/{request_id}/spec?projectId={project_id}{dir} HTTP/1.0\r\nHost: 127.0.0.1:{}\r\nx-piwi-token: {}\r\nAccept: application/json\r\nConnection: close\r\n\r\n",
         server.port, server.token
     );
     stream
@@ -173,18 +224,6 @@ pub async fn desktop_run_repro(
         "no Playwright installation found in the linked folder (or its parents) — run your package manager's install first",
     )?;
 
-    let code = {
-        let server = app.state::<ServerInfo>();
-        let (port, token) = (server.port, server.token.clone());
-        let id = request_id.clone();
-        let pid = project_id.clone();
-        tauri::async_runtime::spawn_blocking(move || {
-            fetch_spec(&ServerInfo { port, token }, &id, &pid)
-        })
-        .await
-        .map_err(|e| e.to_string())??
-    };
-
     let listed = app
         .shell()
         .sidecar("node")
@@ -204,6 +243,23 @@ pub async fn desktop_run_repro(
     let test_dir = test_dir_from_list(&stdout, project_flag(&args).as_deref())
         .ok_or("Playwright did not report the project's test directory")?;
     let spec = repro_spec_path(&folder, &test_dir, &request_id)?;
+    let spec_dir = folder
+        .canonicalize()
+        .ok()
+        .and_then(|linked| spec_dir_in_repo(&repo_root(&linked), &spec));
+
+    let code = {
+        let server = app.state::<ServerInfo>();
+        let (port, token) = (server.port, server.token.clone());
+        let id = request_id.clone();
+        let pid = project_id.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            fetch_spec(&ServerInfo { port, token }, &id, &pid, spec_dir.as_deref())
+        })
+        .await
+        .map_err(|e| e.to_string())??
+    };
+
     std::fs::create_dir_all(spec.parent().expect("the spec has a folder"))
         .map_err(|e| e.to_string())?;
     std::fs::write(&spec, code).map_err(|e| e.to_string())?;
@@ -211,7 +267,11 @@ pub async fn desktop_run_repro(
     let result_file = std::env::temp_dir().join(format!("piwi-repro-{request_id}.json"));
     let _ = std::fs::remove_file(&result_file);
 
-    let mut cmd_args: Vec<String> = vec![node_path(&cli), "test".into(), node_path(&spec)];
+    let mut cmd_args: Vec<String> = vec![
+        node_path(&cli),
+        "test".into(),
+        repro_file_filter(&request_id),
+    ];
     cmd_args.extend(args);
     let spawned = app
         .shell()
@@ -376,6 +436,41 @@ mod tests {
         );
         assert!(http_body(b"HTTP/1.1 404 Not Found\r\n\r\n{}").is_err());
         assert!(http_body(b"HTTP/1.1 200 OK").is_err());
+    }
+
+    #[test]
+    fn finds_the_repository_the_linked_folder_is_in() {
+        let checkout = Checkout::new("repo");
+        let app = checkout.0.join("apps").join("web");
+        std::fs::create_dir_all(&app).unwrap();
+        assert_eq!(repo_root(&app), app);
+        std::fs::create_dir_all(checkout.0.join(".git")).unwrap();
+        assert_eq!(repo_root(&app), checkout.0);
+    }
+
+    #[test]
+    fn names_the_spec_folder_from_the_repository_root() {
+        let root = Path::new("/repo");
+        let spec = root.join("e2e").join("piwi-repro").join("bug-a1.spec.ts");
+        assert_eq!(
+            spec_dir_in_repo(root, &spec).as_deref(),
+            Some("e2e/piwi-repro")
+        );
+        assert_eq!(spec_dir_in_repo(Path::new("/elsewhere"), &spec), None);
+    }
+
+    #[test]
+    fn escapes_a_query_value() {
+        assert_eq!(query_escape("e2e/piwi-repro"), "e2e/piwi-repro");
+        assert_eq!(query_escape("my tests/(x)&y"), "my%20tests/%28x%29%26y");
+    }
+
+    #[test]
+    fn filters_the_run_to_the_spec_with_an_escaped_pattern() {
+        assert_eq!(
+            repro_file_filter("a1b2"),
+            r"piwi-repro[\\/]bug-a1b2\.spec\.ts$"
+        );
     }
 
     #[test]

@@ -48,7 +48,7 @@ import type { VerifiedFix } from '../fix-verification';
 import type { RunMetadata } from '../run-json-types';
 import type { DbClient } from '../../database';
 import type { FilterDetails, TestMetadata } from '#shared/types';
-import { isExpectedFailurePassed } from '#shared/status-classify';
+import { isExpectedFailurePassed, lastAttempts } from '#shared/status-classify';
 import { errorExcerpt } from '#shared/notification-events';
 import { caseHeadline } from '#shared/failure-verdict';
 import { locksHeldAcrossShards } from '#shared/lock-overlap';
@@ -200,7 +200,10 @@ export async function buildRunPrSummary(
     .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
     .where(eq(testRunsCases.testRunId, runId));
 
-  const looksFixedRows = caseRows.filter((row) => isExpectedFailurePassed(row.status, row.expectedStatus));
+  // A retried test's last attempt says whether its bug still shows.
+  const looksFixedRows = lastAttempts(caseRows).filter((row) =>
+    isExpectedFailurePassed(row.status, row.expectedStatus),
+  );
   const namedBugs = looksFixedRows.flatMap((row) => {
     const bug = Number((row.testMeta as TestMetadata | null)?.bug);
     return bug ? [bug] : [];
@@ -284,7 +287,7 @@ export async function buildRunPrSummary(
     durationMs: run.duration ?? null,
     newRegressions,
     preExisting,
-    looksFixed: [...new Map(looksFixedRows.map((row) => [row.testCaseId, row])).values()].map((row) => {
+    looksFixed: looksFixedRows.map((row) => {
       const bug = Number((row.testMeta as TestMetadata | null)?.bug) || null;
       return {
         title: row.title,

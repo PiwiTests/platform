@@ -17,7 +17,7 @@ import { bugReports, entityLinks, failureClusters, integrationConnections } from
 import type { DbClient } from '../../database';
 import type { EntityLink } from '../../database/schema';
 import type { IssueTracker } from './types';
-import { statusColorForCategory } from './types';
+import { statusColorForCategory, ticketMove } from './types';
 import { createTracker } from './connections';
 import { readProjectIntegration } from './binding';
 import { updateEntityLinkStatus, mergeEntityLinkMetadata } from './entity-links';
@@ -84,13 +84,14 @@ async function syncOneLink(
     statusColor: issue.statusColor ?? statusColorForCategory(issue.statusCategory),
     key: issue.key,
   });
+  const previousCategory = (link.metadata as { statusCategory?: string | null } | null)?.statusCategory ?? null;
   await mergeEntityLinkMetadata(db, link.id, {
     statusCategory: issue.statusCategory,
     assignee: issue.assignee?.displayName ?? null,
   });
 
   if (link.bugReportId != null) {
-    await syncBugReport(db, link.bugReportId, issue.statusCategory, bindingFor);
+    await syncBugReport(db, link.bugReportId, previousCategory, issue.statusCategory, bindingFor);
     return;
   }
   if (!cluster) return;
@@ -135,16 +136,21 @@ export interface SyncResult {
  * clusters come first so a large backlog of resolved links never starves them.
  */
 /**
- * A bug report follows its ticket like a cluster does: closed when the ticket
- * is Done (`resolveOnClose`), open again when it is reopened
- * (`reopenOnTicketReopen`). A dismissed report stays dismissed.
+ * A bug report follows its ticket's moves: closed when the ticket moves to Done
+ * (`resolveOnClose`), open again when it moves out of Done
+ * (`reopenOnTicketReopen`). Only a move counts, against the category the last
+ * sync saw: a report its own passing test closed while the ticket is still in
+ * progress stays closed. A dismissed report stays dismissed.
  */
 async function syncBugReport(
   db: DbClient,
   bugReportId: number,
+  previousCategory: string | null,
   statusCategory: string | null | undefined,
   bindingFor: (projectId: number) => Promise<ResolvedProjectIntegration>,
 ): Promise<void> {
+  const move = ticketMove(previousCategory, statusCategory);
+  if (!move) return;
   const [report] = await db
     .select({ projectId: bugReports.projectId, status: bugReports.status, testCaseId: bugReports.testCaseId })
     .from(bugReports)
@@ -152,14 +158,14 @@ async function syncBugReport(
   if (!report || report.status === 'dismissed') return;
   const binding = await bindingFor(report.projectId);
   const now = new Date();
-  if (statusCategory === 'done' && report.status !== 'closed' && binding.policies.resolveOnClose) {
+  if (move === 'done' && report.status !== 'closed' && binding.policies.resolveOnClose) {
     await db
       .update(bugReports)
       .set({ status: 'closed', closedAt: now, closedByRunId: null, statusRunId: null, updatedAt: now })
       .where(eq(bugReports.id, bugReportId));
     return;
   }
-  if (statusCategory !== 'done' && report.status === 'closed' && binding.policies.reopenOnTicketReopen) {
+  if (move === 'reopened' && report.status === 'closed' && binding.policies.reopenOnTicketReopen) {
     await db
       .update(bugReports)
       .set({

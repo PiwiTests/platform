@@ -146,7 +146,11 @@ describe('parseTestMetadata', () => {
     expect(parseTestMetadata([{ type: 'piwi:bug', description: '#37' }])).toEqual({ bug: '37' });
   });
 
-  test.each(['0', 'abc', '12a', '-3', '1234567890123'])('ignores the bug id %s', (id) => {
+  test('reads the largest id a report can have', () => {
+    expect(parseTestMetadata([{ type: 'piwi:bug', description: '2147483647' }])).toEqual({ bug: '2147483647' });
+  });
+
+  test.each(['0', 'abc', '12a', '-3', '1234567890123', '2147483648', '99999999999'])('ignores the bug id %s', (id) => {
     expect(parseTestMetadata([{ type: 'piwi:bug', description: id }])).toBeNull();
   });
 

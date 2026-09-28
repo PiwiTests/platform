@@ -134,13 +134,20 @@ export type ReproRequestPatch = z.infer<typeof reproRequestPatchSchema>;
  * Lines appended to a repro spec: after the test, write how it ended to the
  * file the desktop app names in `PIWI_REPRO_RESULT` (the status, the spec line
  * the first error points at, the message). The app reads the verdict from it.
+ * Under `--repeat-each` or retries, a repetition that did not pass is kept over
+ * a later one that did: the bug showed.
  */
 export const REPRO_RESULT_HOOK = `
 // Written by Piwi for this run only: records how the test ended for the desktop app.
-import { writeFileSync as piwiWriteResult } from 'node:fs';
+import { readFileSync as piwiReadResult, writeFileSync as piwiWriteResult } from 'node:fs';
 test.afterEach(async ({}, testInfo) => {
   const out = process.env.PIWI_REPRO_RESULT;
   if (!out) return;
+  if (testInfo.status === 'passed') {
+    try {
+      if (JSON.parse(piwiReadResult(out, 'utf8')).status !== 'passed') return;
+    } catch {}
+  }
   const frames = testInfo.errors.flatMap((e) => (e.stack ?? '').split('\\n'));
   const frame = frames.find((l) => l.includes(testInfo.file));
   const line = frame ? Number(/:(\\d+):\\d+\\)?\\s*$/.exec(frame)?.[1]) : NaN;

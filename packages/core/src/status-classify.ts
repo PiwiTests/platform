@@ -86,6 +86,20 @@ export function isExpectedFailurePassed(status: string | null | undefined, expec
 }
 
 /**
+ * Each test's last attempt in a run, the row with the most retries: the one a
+ * test's outcome is read from. An expected failure that passed on its first
+ * attempt and failed as expected on a retry still reproduces its bug.
+ */
+export function lastAttempts<T extends { testCaseId: number; retries: number | null }>(rows: readonly T[]): T[] {
+  const last = new Map<number, T>();
+  for (const row of rows) {
+    const prev = last.get(row.testCaseId);
+    if (!prev || (row.retries ?? 0) >= (prev.retries ?? 0)) last.set(row.testCaseId, row);
+  }
+  return [...last.values()];
+}
+
+/**
  * Map a Playwright `result.status` to Piwi's stored status, following
  * Playwright's own outcome so a run reads the same in both.
  *
