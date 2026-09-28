@@ -1341,7 +1341,8 @@ export async function getProjectFailureClusters(db: DrizzleDB, projectId: number
 
 // ─── getProjectFlakyTests ────────────────────────────────────────
 
-const TERMINAL_STATUSES = ['passed', 'failed', 'timedout', 'interrupted'];
+/** Run statuses of a finished run; the flaky leaderboard and the flake profile read only these runs. */
+export const TERMINAL_STATUSES = ['passed', 'failed', 'timedout', 'interrupted'];
 
 /**
  * Resolve the `test_cases.id`s in a project matching a tag/owner/priority

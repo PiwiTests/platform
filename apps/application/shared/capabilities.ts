@@ -34,7 +34,8 @@ export type CapabilityId =
   | 'markers'
   | 'test-map'
   | 'server-probes'
-  | 'bug-reports';
+  | 'bug-reports'
+  | 'flake-lab';
 
 export type CapabilityModule = 'core' | 'workflow' | 'healing' | 'agents';
 export type CapabilityLevel = 'instance' | 'project';
@@ -236,6 +237,16 @@ export const CAPABILITIES: CapabilityDef[] = [
     detection: 'bug-reports',
     since: '0.41.0',
     doc: 'features/bug-reports',
+  },
+  {
+    id: 'flake-lab',
+    module: 'workflow',
+    levels: ['instance', 'project'],
+    needs: [],
+    detection: 'flake-lab',
+    passiveData: true,
+    since: '0.41.0',
+    doc: 'features/flaky-tests',
   },
 ];
 

@@ -105,6 +105,25 @@ describe('getSetupStatus', () => {
     expect((await activeIds(db)).has('backend-logs')).toBe(true);
   });
 
+  test('a pass on a retry activates the flake-lab capability; a first-attempt pass does not', async () => {
+    await db.insert(schema.projects).values({ id: 1, name: 'checkout' });
+    const [run] = await db
+      .insert(schema.testRuns)
+      .values({ projectId: 1, status: 'passed', startTime: new Date(), duration: 1, totalTests: 1, passedTests: 1 })
+      .returning({ id: schema.testRuns.id });
+    await db.insert(schema.testCases).values({ id: 1, projectId: 1, filePath: 'a.spec.ts', title: 'a' });
+    await db.insert(schema.testRunsCases).values({ testRunId: run!.id, testCaseId: 1, status: 'passed', retries: 0 });
+    expect((await activeIds(db)).has('flake-lab')).toBe(false);
+
+    await db
+      .insert(schema.testRunsCases)
+      .values({ testRunId: run!.id, testCaseId: 1, status: 'failed', retries: 0, browserName: 'webkit' });
+    await db
+      .insert(schema.testRunsCases)
+      .values({ testRunId: run!.id, testCaseId: 1, status: 'passed', retries: 1, browserName: 'webkit' });
+    expect((await activeIds(db)).has('flake-lab')).toBe(true);
+  });
+
   test('a graph node for the project activates the test-map capability', async () => {
     await db.insert(schema.projects).values({ id: 1, name: 'checkout' });
     expect((await activeIds(db)).has('test-map')).toBe(false);
@@ -191,9 +210,18 @@ describe('first-run version and the New marker', () => {
     const { capabilities } = await getSetupStatus(db, '0.36.0');
     const newIds = new Set(capabilities.filter((c) => c.isNew).map((c) => c.id));
     // auto-heal (0.26), integrations (0.29), the Test Map (0.36), quality
-    // reports (0.39) and bug reports (0.41) landed after 0.20; pr-feedback (0.19) did not.
+    // reports (0.39), bug reports and flake suspects (0.41) landed after 0.20;
+    // pr-feedback (0.19) did not.
     expect(newIds).toEqual(
-      new Set(['auto-heal', 'integrations', 'test-map', 'server-probes', 'quality-reports', 'bug-reports']),
+      new Set([
+        'auto-heal',
+        'integrations',
+        'test-map',
+        'server-probes',
+        'quality-reports',
+        'bug-reports',
+        'flake-lab',
+      ]),
     );
   });
 

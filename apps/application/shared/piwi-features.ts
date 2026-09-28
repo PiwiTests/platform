@@ -152,7 +152,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
       {
         title: 'Flaky tests & quarantine',
         summary:
-          'Flaky detection and cost scoring, with quarantine that keeps a known-bad test running but off the merge gate.',
+          'Flaky detection and cost scoring, the suspects each flaky test’s history points at, and quarantine that keeps a known-bad test running but off the merge gate.',
         needs: [],
         where: 'Project → Failures → Flaky',
         doc: 'features/flaky-tests',

@@ -178,6 +178,7 @@ import {
   getAttemptDiff,
 } from '#shared/handlers/test-cases';
 import { parseGranularity } from '#shared/analytics/period';
+import { getFlakeProfile, getTopFlakeSuspects } from '#shared/handlers/flake-profile';
 import { buildExecutionReproduce } from '#shared/handlers/reproduce';
 import {
   getFailureCluster,
@@ -703,6 +704,18 @@ const routes: RouteEntry[] = [
   },
   {
     method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/flake-suspects$/,
+    handler: async (m, _, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const ids = (q?.get('testCaseIds') ?? '')
+        .split(',')
+        .map((v) => Number(v.trim()))
+        .filter((n) => Number.isInteger(n) && n > 0);
+      return { items: await getTopFlakeSuspects(await getDemoDb(), +m[1]!, ids) };
+    },
+  },
+  {
+    method: 'GET',
     pattern: /^\/api\/projects\/(\d+)\/flaky-tests$/,
     handler: async (m, _, q, ctx) => {
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
@@ -1221,6 +1234,16 @@ const routes: RouteEntry[] = [
     handler: async (m, _b, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'case', +m[1]!);
       return { items: await getTestCaseHistory(await getDemoDb(), +m[1]!) };
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/test-cases\/(\d+)\/flake-profile$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'case', +m[1]!);
+      const profile = await getFlakeProfile(await getDemoDb(), +m[1]!);
+      if (!profile) throw demoHttpError(404, 'Test case not found');
+      return profile;
     },
   },
   {

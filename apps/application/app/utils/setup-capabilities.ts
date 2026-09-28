@@ -242,4 +242,13 @@ export const SETUP_CAPABILITIES: SetupCapabilityCopy[] = [
     icon: 'i-lucide-bug',
     doc: 'features/bug-reports',
   },
+  {
+    id: 'flake-lab',
+    title: 'Flake suspects',
+    summary:
+      'For a flaky test, the requests, neighbors and load its failures share and its passes do not, each with the counts behind it and the condition that would test it.',
+    how: 'Automatic — suspects appear on a flaky test’s Flakiness tab once its history holds at least three failures that share something.',
+    icon: 'i-lucide-search-check',
+    doc: 'features/flaky-tests',
+  },
 ];
