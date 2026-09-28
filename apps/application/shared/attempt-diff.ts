@@ -13,6 +13,7 @@
 import { stepLabel } from '@piwitests/core/step-analysis';
 import type { ParsedPlaywrightError } from '#shared/error-parse';
 import type { PageStateLike } from '#shared/page-state';
+import { requestRouteKey } from '#shared/utils/route';
 
 /** One attempt's evidence, as loaded from its execution row. All fields optional. */
 export interface AttemptEvidence {
@@ -68,6 +69,11 @@ export interface AttemptDiffEntry {
   only?: 'failing' | 'passing';
   /** The evidence section this difference cites, for a jump-to chip. */
   ref?: { section: string };
+  /**
+   * The request's route key (`GET /api/cart`) on a network row — the key the
+   * flake profile's route suspects carry, so a row can link to its suspect.
+   */
+  route?: string;
 }
 
 /** The ordered list of differences, most-diagnostic first. */
@@ -90,14 +96,9 @@ function requestFailed(status: number | null | undefined): boolean {
   return s === 0 || s >= 500;
 }
 
+/** Requests are compared by route key, so two ids or queries of one endpoint match. */
 function requestKey(r: AttemptNetworkRequest): string {
-  return `${(r.method ?? 'GET').toUpperCase()} ${stripQuery(r.url ?? '')}`;
-}
-
-/** Drop the query string so the same endpoint keyed by different params still matches. */
-function stripQuery(url: string): string {
-  const q = url.indexOf('?');
-  return q === -1 ? url : url.slice(0, q);
+  return requestRouteKey(r.method, r.url);
 }
 
 /** Normalize a console message to a stable key (collapse whitespace, cap length). */
@@ -195,12 +196,14 @@ export function diffAttempts(failing: AttemptEvidence, passing: AttemptEvidence)
   const failFailedKeys = failedRequestKeys(failNet);
   const passFailedKeys = failedRequestKeys(passNet);
   for (const [side, req] of orderedRequestDiff(failNet, passNet, failFailedKeys, passFailedKeys)) {
+    const route = requestKey(req);
     diffs.push({
       kind: 'network',
-      summary: `${requestKey(req)} → ${req.failure || (req.status ?? 0)}`,
-      detail: req.url && req.url !== stripQuery(req.url) ? req.url : null,
+      summary: `${route} → ${req.failure || (req.status ?? 0)}`,
+      detail: req.url || null,
       only: side,
       ref: { section: 'networkRequests' },
+      route,
     });
   }
 
@@ -277,7 +280,7 @@ function orderedRequestDiff(
   return out;
 }
 
-/** Each answered request's slowest duration, keyed by method and URL without the query. */
+/** Each answered request's slowest duration, keyed by route. */
 function slowestByRequest(requests: AttemptNetworkRequest[]): Map<string, number> {
   const map = new Map<string, number>();
   for (const r of requests) {
@@ -309,6 +312,7 @@ function slowerRequestDiffs(failNet: AttemptNetworkRequest[], passNet: AttemptNe
       summary: `${key} ${formatMs(failMs)} on the failing attempt, ${formatMs(passMs)} on the passing one`,
       detail: null,
       ref: { section: 'networkRequests' },
+      route: key,
     }));
 }
 
