@@ -168,6 +168,12 @@
         font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
         font-size: 12.5px;
       }
+      .mapping-row input.mapping-prefix {
+        flex-basis: 120px;
+      }
+      .mapping-row input[aria-invalid] {
+        border-color: var(--error);
+      }
       .mapping-row button.remove-mapping {
         flex-shrink: 0;
         padding: 6px 10px;
@@ -396,6 +402,14 @@
               placeholder="Default branch"
               data-i18n-placeholder="options_branchPlaceholder"
               data-i18n-aria-label="options_branch"
+            />
+            <input
+              id="add-prefix"
+              class="mapping-branch mapping-prefix"
+              type="text"
+              placeholder="no path prefix"
+              data-i18n-placeholder="options_pathPrefixPlaceholder"
+              data-i18n-aria-label="options_pathPrefix"
             />
           </div>
           <div class="hint" id="add-note" hidden></div>

@@ -207,8 +207,10 @@ const PROJECT_TAGS = [
 // Where e2e-checkout's application runs, for the browser extension (millisecond timestamps).
 const URL_PATTERN_TIME = new Date('2025-04-20T09:00:00Z').getTime();
 const PROJECT_URL_PATTERNS = [
-  { pattern: 'https://staging.checkout.example.com/**', environment: 'staging', branch: 'develop' },
-  { pattern: 'https://checkout.example.com/**', environment: 'production', branch: null },
+  { pattern: 'https://staging.checkout.example.com/**', environment: 'staging', branch: 'develop', path_prefix: null },
+  { pattern: 'https://checkout.example.com/**', environment: 'production', branch: null, path_prefix: null },
+  // A preview deployment serving the app under /app, where the tests ran at the root.
+  { pattern: 'https://preview.checkout.example.com/app/**', environment: 'preview', branch: null, path_prefix: '/app' },
 ].map((p, position) => ({
   id: position + 1,
   project_id: 1,

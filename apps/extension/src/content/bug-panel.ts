@@ -54,6 +54,8 @@ import { BUG_RELAY, ownOrigin, readRelayedEntry } from '../shared/bug-relay.js';
 import { t, tn, tNodes, uiLanguage, type MessageKey } from '../shared/i18n.js';
 import type { RecordingState } from '../shared/recording-storage.js';
 import { attachPanelShadow } from './panel-root.js';
+import { getConnectionSettings } from '../shared/connection-settings.js';
+import { activePathPrefix } from '../shared/active-project.js';
 import { openSendPreview, SEND_DIALOG_HOST_ID, sendTarget } from './bug-send-panel.js';
 
 /**
@@ -214,8 +216,11 @@ export async function takeBugScreenshot(moment: 'marked' | 'finish' | 'manual', 
   return false;
 }
 
-/** The context of this page for the report. */
-export function currentBugContext(): BugContext {
+/** The context of this page for the report, its page keyed without the path prefix of the site's URL mapping. */
+export async function currentBugContext(): Promise<BugContext> {
+  const pathPrefix = await getConnectionSettings()
+    .then((settings) => activePathPrefix(settings, location.href))
+    .catch(() => null);
   let extensionVersion: string | null = null;
   try {
     extensionVersion = chrome.runtime.getManifest().version;
@@ -228,6 +233,7 @@ export function currentBugContext(): BugContext {
     viewport: { width: window.innerWidth, height: window.innerHeight },
     time: Date.now(),
     extensionVersion,
+    pathPrefix,
   });
 }
 
@@ -882,7 +888,7 @@ export async function renderBugFinishPanel(state: RecordingState, onDiscard: () 
   document.getElementById(FRAME_HOST_ID)?.remove();
 
   const [evidence, screenshots] = await Promise.all([getBugEvidence(), getBugScreenshots()]);
-  const context = evidence.context ?? currentBugContext();
+  const context = evidence.context ?? (await currentBugContext());
   let title = evidence.title ?? '';
   const report = () =>
     assembleBugReport({

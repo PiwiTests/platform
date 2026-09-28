@@ -1,6 +1,6 @@
 {
-  "id": "e9fbc31d-5f4f-49a4-a1bc-eb8288d39635",
-  "prevId": "b5ee120a-3d5e-498a-98b6-12f59bd24b4f",
+  "id": "27ed1d64-8ad8-49f5-ba31-55e37198a0e7",
+  "prevId": "e9fbc31d-5f4f-49a4-a1bc-eb8288d39635",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -4436,6 +4436,12 @@
         "server_traces": {
           "name": "server_traces",
           "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "failure": {
+          "name": "failure",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         }

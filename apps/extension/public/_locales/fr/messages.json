@@ -580,6 +580,24 @@
   "options_branchTitle": {
     "message": "La branche déployée à ces adresses : Éléments testés montre ce qu’atteignent ses tests"
   },
+  "options_pathPrefix": {
+    "message": "Préfixe de chemin"
+  },
+  "options_pathPrefixPlaceholder": {
+    "message": "aucun préfixe"
+  },
+  "options_pathPrefixTitle": {
+    "message": "Votre site sert les pages sous ce chemin, les tests ne l’ont pas fait, par exemple /app"
+  },
+  "options_pathPrefixInvalid": {
+    "message": "$prefix$ n’est pas un préfixe de chemin : écrivez un chemin simple comme /app, sans paramètres, ancre ni joker, et en 4 parties au plus.",
+    "placeholders": {
+      "prefix": {
+        "content": "$1",
+        "example": "/app"
+      }
+    }
+  },
   "options_removeMapping": {
     "message": "Supprimer cette ligne"
   },
@@ -865,6 +883,15 @@
   },
   "options_sourceServer": {
     "message": "Piwi"
+  },
+  "options_serverPathPrefix": {
+    "message": "préfixe de chemin $prefix$",
+    "placeholders": {
+      "prefix": {
+        "content": "$1",
+        "example": "/app"
+      }
+    }
   },
   "options_sourceLocal": {
     "message": "Ce navigateur"
@@ -3212,6 +3239,19 @@
   "coverage_allPagesTitle": {
     "message": "Compter chaque locator qui trouve quelque chose ici, quelle que soit la page où son test l’utilise"
   },
+  "coverage_subtitleWithoutPrefix": {
+    "message": "$page$ (sans $prefix$)",
+    "placeholders": {
+      "page": {
+        "content": "$1",
+        "example": "/checkout"
+      },
+      "prefix": {
+        "content": "$2",
+        "example": "/app"
+      }
+    }
+  },
   "coverage_tileTested": {
     "message": "testés"
   },
@@ -3789,6 +3829,15 @@
   },
   "coverage_notesAllPages": {
     "message": "Les locators sont cherchés sur cette page, quelle que soit la page où leur test les utilise."
+  },
+  "coverage_notesPrefixRemoved": {
+    "message": "Le préfixe de chemin $prefix$ du motif d’adresse de ce site a d’abord été retiré de l’adresse : les tests ont parcouru cette page sans lui.",
+    "placeholders": {
+      "prefix": {
+        "content": "$1",
+        "example": "/app"
+      }
+    }
   },
   "coverage_notesErrors_one": {
     "message": "$count$ locator n’a pas pu être vérifié ici :",

@@ -216,7 +216,11 @@ export class CoveragePanel {
     this.pill.style.display = state.collapsed ? '' : 'none';
     for (const [key, input] of this.toggles) input.checked = state[key as keyof ViewState] === true;
 
-    const where = [model.projectLabel, model.context?.pageKey].filter(Boolean).join(' · ');
+    const page =
+      model.context?.pageKey && model.context.prefixRemoved
+        ? t('coverage_subtitleWithoutPrefix', { page: model.context.pageKey, prefix: model.context.prefixRemoved })
+        : model.context?.pageKey;
+    const where = [model.projectLabel, page].filter(Boolean).join(' · ');
     this.subEl.replaceChildren(where ? `${where} · ${t('common_escToClose')}` : t('common_escToClose'));
     this.renderPill(model);
 
@@ -912,6 +916,9 @@ export class CoveragePanel {
         `${tn('coverage_notesChecked', scan.evaluated, { ms: formatNumber(scan.durationMs) })} ${counted}`,
       ),
     );
+    if (context.prefixRemoved) {
+      items.push(el('li', undefined, t('coverage_notesPrefixRemoved', { prefix: context.prefixRemoved })));
+    }
     if (scan.errors.length) {
       const errorItem = el('li', undefined, tn('coverage_notesErrors', scan.errors.length));
       const list = el('ul');

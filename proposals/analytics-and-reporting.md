@@ -6,11 +6,12 @@ better or worse, since when, and is what we do about it working), plus the one t
 dashboards** with their own filters and periods. It argues that the three are one program with four layers, stages the
 work so each stage pays for itself, and records the alternatives and open questions.
 
-**Status.** Accepted and built, milestone by milestone; nothing has shipped yet. All six milestones are built and
-gathered in draft pull request #637, not merged yet. Milestone 6 (reach) is built on `claude/analytics-m6-reach`:
-report and live dashboard share links with their trend image and status badge, the rollup export, the OpenMetrics
-endpoint, Microsoft Teams and the AI narrative; the Confluence channel stays open, waiting for the wiki connection
-(D16). Each milestone's deviations are in its checklist group. Written 2026-09-22 against 0.36.0; refreshed 2026-09-24
+**Status.** Shipped. All six milestones merged to `main` in #639: metrics and periods, quality reports, schedules
+and snapshots, saved dashboards, trend depth and reach (report and live dashboard share links with their trend image
+and status badge, the rollup export, the OpenMetrics endpoint, Microsoft Teams and the AI narrative). #637 followed on
+2026-09-26 with review fixes, the schedule preview, browser routes without the word "analytics" (D37) and French
+reports throughout, insight sentences included; #640 made the report languages pluggable. The Confluence channel stays
+open, waiting for the wiki connection (D16). Each milestone's deviations are in its checklist group. Written 2026-09-22 against 0.36.0; refreshed 2026-09-24
 against 0.37.0, which shipped the Test Map, the capability opt-out system and one status color scale ([What 0.37.0
 changed](#3-what-0370-changed-for-this-design)); extended the same day with custom dashboards, filters and periods
 ([Layer 2](#layer-2-dashboards), [Filters and periods](#filters-and-periods)); decided the same day: the four open
@@ -810,9 +811,9 @@ already does. The narrative is generated from sentence templates keyed by langua
 model of the tracker integration's comment language (`server/utils/integrations/policies.ts` resolves it from the
 project binding, then the connection default, then English); that resolution is reused as the report language
 default, per project when bound, else the instance default. No other translation layer is introduced. The instance
-default is the instance locale (`PIWI_LOCALE`, then Settings → Localization) when it is French, else English. In
-milestone 2 the insight sentences (`evaluateInsightRules`) stay English in a French report, since the rules build
-their messages in English; every other line and label is translated.
+default is the instance locale (`PIWI_LOCALE`, then Settings → Localization) when it is French, else English. Each
+insight rule computes typed facts (`InsightFacts`) that each language's sentences write out, so a French report is
+French throughout (#637); a language is its code in `shared/reports/languages.ts` and its `sentences.<code>.ts` (#640).
 
 ### Entry points
 

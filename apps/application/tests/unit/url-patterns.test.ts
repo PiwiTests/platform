@@ -44,19 +44,32 @@ describe('validation', () => {
     expect(urlPatternInputSchema.safeParse({ pattern: 'shop.test/**' }).success).toBe(false);
     expect(urlPatternInputSchema.safeParse({ pattern: '  ' }).success).toBe(false);
   });
+
+  test('a path prefix is normalized, and refused with a query, a hash, a URL or a wildcard', () => {
+    const parse = (pathPrefix: unknown) =>
+      urlPatternInputSchema.safeParse({ pattern: 'https://shop.test/**', pathPrefix });
+    expect(parse('app/').data?.pathPrefix).toBe('/app');
+    expect(parse(' /shop//eu ').data?.pathPrefix).toBe('/shop/eu');
+    expect(parse('').data?.pathPrefix).toBeNull();
+    expect(parse(null).data?.pathPrefix).toBeNull();
+    expect(parse(undefined).data?.pathPrefix).toBeNull();
+    for (const bad of ['/app?x=1', '/app#top', 'https://shop.test/app', '/app/*', '/a/b/c/d/e']) {
+      expect(parse(bad).success).toBe(false);
+    }
+  });
 });
 
 describe('writes', () => {
   test('replace keeps the given order and trims empty labels to null', async () => {
     const result = await replaceProjectUrlPatterns(anyDb(), shop, [
-      { pattern: 'https://staging.shop.test/**', environment: 'staging', branch: 'develop' },
-      { pattern: ' https://shop.test/** ', environment: ' ', branch: null },
+      { pattern: 'https://staging.shop.test/**', environment: 'staging', branch: 'develop', pathPrefix: '/app/' },
+      { pattern: ' https://shop.test/** ', environment: ' ', branch: null, pathPrefix: ' ' },
     ]);
     expect(result.ok).toBe(true);
     const items = await listProjectUrlPatterns(anyDb(), shop);
-    expect(items.map((i) => [i.pattern, i.environment, i.branch])).toEqual([
-      ['https://staging.shop.test/**', 'staging', 'develop'],
-      ['https://shop.test/**', null, null],
+    expect(items.map((i) => [i.pattern, i.environment, i.branch, i.pathPrefix])).toEqual([
+      ['https://staging.shop.test/**', 'staging', 'develop', '/app'],
+      ['https://shop.test/**', null, null, null],
     ]);
   });
 
@@ -78,6 +91,8 @@ describe('writes', () => {
       ok: false,
       reason: 'duplicate',
     });
+    const prefixed = await addProjectUrlPattern(anyDb(), shop, { pattern: 'https://c.test/**', pathPrefix: 'app/' });
+    expect(prefixed.ok && prefixed.items.map((i) => i.pathPrefix)).toEqual([null, null, '/app']);
     // Another project may use the same pattern.
     expect((await addProjectUrlPattern(anyDb(), admin, { pattern: 'https://b.test/**' })).ok).toBe(true);
   });
@@ -87,7 +102,7 @@ describe('what the extension reads', () => {
   test('ordered by project then position, filtered by scope, labeled', async () => {
     await replaceProjectUrlPatterns(anyDb(), admin, [{ pattern: 'https://admin.test/**' }]);
     await replaceProjectUrlPatterns(anyDb(), shop, [
-      { pattern: 'https://shop.test/b/**' },
+      { pattern: 'https://shop.test/b/**', pathPrefix: '/b' },
       { pattern: 'https://shop.test/**', environment: 'prod' },
     ]);
     const all = await listVisibleUrlPatterns(anyDb(), 'all');
@@ -96,7 +111,13 @@ describe('what the extension reads', () => {
       [shop, 'https://shop.test/**'],
       [admin, 'https://admin.test/**'],
     ]);
-    expect(all[0]).toMatchObject({ projectName: 'shop', projectLabel: 'Shop', environment: null, branch: null });
+    expect(all[0]).toMatchObject({
+      projectName: 'shop',
+      projectLabel: 'Shop',
+      environment: null,
+      branch: null,
+      pathPrefix: '/b',
+    });
     expect(all[2]!.projectLabel).toBe('admin');
     expect((await listVisibleUrlPatterns(anyDb(), new Set([admin]))).map((p) => p.projectId)).toEqual([admin]);
     expect(await listVisibleUrlPatterns(anyDb(), new Set())).toEqual([]);

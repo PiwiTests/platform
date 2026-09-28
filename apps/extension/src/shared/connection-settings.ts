@@ -1,3 +1,5 @@
+import { normalizePathPrefix } from '@piwitests/core/page-key';
+
 /**
  * The optional connection to a Piwi instance — instance URL, API key, and
  * which project applies where. `chrome.storage.local` (same bucket as
@@ -22,6 +24,12 @@ export interface ProjectMapping {
   projectLabel: string;
   /** The branch deployed at these URLs, whose locator index "Tested elements" reads; absent for the project's default branch. */
   branch?: string;
+  /**
+   * The part of the site's path the tests never saw (`/app` when the site serves
+   * `/app/checkout` and the tests ran at `/checkout`), normalized by
+   * `parsePathPrefix`; absent when the site serves the pages where the tests ran them.
+   */
+  pathPrefix?: string;
 }
 
 /** A project URL pattern kept on the instance, as the last sync read it. */
@@ -69,11 +77,13 @@ function coerceMapping(value: unknown): ProjectMapping | null {
   if (typeof v.urlPattern !== 'string' || !v.urlPattern.trim()) return null;
   if (typeof v.projectId !== 'number') return null;
   const branch = typeof v.branch === 'string' ? v.branch.trim() : '';
+  const pathPrefix = typeof v.pathPrefix === 'string' ? normalizePathPrefix(v.pathPrefix) : null;
   return {
     urlPattern: v.urlPattern,
     projectId: v.projectId,
     projectLabel: typeof v.projectLabel === 'string' ? v.projectLabel : `#${v.projectId}`,
     ...(branch ? { branch } : {}),
+    ...(pathPrefix ? { pathPrefix } : {}),
   };
 }
 
@@ -127,6 +137,8 @@ export interface ServerPatternsAnswer {
     pattern: string;
     environment: string | null;
     branch: string | null;
+    /** Absent from an instance older than the path prefix. */
+    pathPrefix?: string | null;
   }>;
   projects: ServerProject[];
 }
@@ -145,6 +157,7 @@ export function applyServerSync(
         projectId: item.projectId,
         projectLabel: item.projectLabel,
         branch: item.branch ?? undefined,
+        pathPrefix: item.pathPrefix ?? undefined,
         environment: item.environment ?? undefined,
       })),
       coerceServerMapping,

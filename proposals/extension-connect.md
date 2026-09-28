@@ -44,7 +44,7 @@ carries an empty key, which is what the extension already sends to such an insta
 | `GET /api/extension/connect/request?code=` | any signed-in user | What the verification page shows: client name, code, expiry, status |
 | `POST /api/extension/connect/decision` | any signed-in user | `{ userCode, allow }` → the request's new status |
 | `GET /api/extension/url-patterns` | any signed-in user (the key) | Every pattern of every project the user can see, with the projects the user may edit, and the user's name |
-| `GET /api/projects/:id/url-patterns` | project access | The project's patterns, in order |
+| `GET /api/projects/:id/url-patterns` | project access | The project's patterns, in order, each with `environment`, `branch` and `pathPrefix` |
 | `PUT /api/projects/:id/url-patterns` | administrator | Replace the list (the settings editor) |
 | `POST /api/projects/:id/url-patterns` | administrator | Add one (the extension's **Add to Piwi**); 409 when the project has it already |
 | `GET /api/projects/:id/url-patterns/suggestions` | project access | Origins the suite visited, as `https://host/**` patterns |
@@ -71,12 +71,19 @@ Editing a project's patterns takes the role that edits the project itself (admin
 
 Rows expired for more than a day are deleted on the next start.
 
-**`project_url_patterns`** — `(project_id, pattern, environment, branch, position)`, unique on project and pattern,
+**`project_url_patterns`** — `(project_id, pattern, environment, branch, path_prefix, position)`, unique on project and pattern,
 deleted with the project. `pattern` uses the extension's glob syntax unchanged (`urlMatches` in
 `@piwitests/core/function-match`: `*` within one path segment, `**` across segments, the whole URL anchored), so a
 local mapping and a server pattern mean the same thing. `environment` is a free label (`staging`, `production`); the
 extension shows it beside the project. `branch` is what the local mapping's branch already is: the branch deployed at
-those URLs, which Tested elements reads.
+those URLs, which Tested elements reads. `path_prefix` (added with the path-prefix mapping of
+[`locator-stability-and-pages.md`](locator-stability-and-pages.md), open question 2) is the part of the site's path the
+tests never saw: `/app` for a site serving `/app/checkout` whose tests ran at `/checkout`. It is normalized by
+`parsePathPrefix` in `@piwitests/core/page-key` (a leading slash, no trailing one, no query, hash or wildcard, at most
+four segments), on the server and in both editors, and a local mapping carries the same field. Wherever the extension
+compares the open page with the tests' page keys (This page, Missing here, Several match here, the pick results) and
+in a bug report's page key, it removes the prefix first, whole segments only (`/application` keeps its path); the
+report's context names the prefix, so its "why the suite missed it" lookup removes it from the steps' pages too.
 
 ## Security choices
 

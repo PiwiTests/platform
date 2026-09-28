@@ -5,7 +5,7 @@
  * the demo and the tests read it the same way.
  */
 import { extractLocatorExpressions, lookupLocators, type LocatorIndex } from '@piwitests/core/locator-index';
-import { pageKey } from '@piwitests/core/page-key';
+import { pageKeyUnderPrefix } from '@piwitests/core/page-key';
 import type { PiwiSteps } from '@piwitests/core/steps';
 
 export interface MissedByTest {
@@ -40,11 +40,14 @@ export interface MissedBy {
   mainFile: string | null;
 }
 
-/** The page key of a steps document's path, or null for a path it cannot read. */
-function keyOf(path: string | null | undefined, origin: string | null): string | null {
+/**
+ * The page key of a steps document's path, with the URL mapping's path prefix
+ * removed, or null for a path it cannot read.
+ */
+function keyOf(path: string | null | undefined, origin: string | null, pathPrefix: string | null): string | null {
   if (!path) return null;
   try {
-    return pageKey(new URL(path, origin ?? 'http://localhost').href);
+    return pageKeyUnderPrefix(new URL(path, origin ?? 'http://localhost').href, pathPrefix).key;
   } catch {
     return null;
   }
@@ -53,15 +56,16 @@ function keyOf(path: string | null | undefined, origin: string | null): string |
 /** Why the suite missed a report's bug. */
 export function computeMissedBy(
   index: LocatorIndex | null,
-  report: { steps: PiwiSteps; pageKey: string | null },
+  report: { steps: PiwiSteps; pageKey: string | null; pathPrefix?: string | null },
 ): MissedBy {
+  const prefix = report.pathPrefix ?? null;
   const marked = report.steps.steps.flatMap((step, i) =>
     step.action === 'assert' && step.assertion ? [{ step, i }] : [],
   );
   const page =
-    keyOf(marked[0]?.step.pageUrl, report.steps.origin) ??
+    keyOf(marked[0]?.step.pageUrl, report.steps.origin, prefix) ??
     report.pageKey ??
-    keyOf(report.steps.steps.at(-1)?.pageUrl, null);
+    keyOf(report.steps.steps.at(-1)?.pageUrl, null, prefix);
   const empty: MissedBy = { page, pagesKnown: false, visiting: [], targets: [], mainFile: null };
   if (!index) return empty;
 

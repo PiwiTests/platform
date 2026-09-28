@@ -8,6 +8,7 @@ import {
   SHOP_TESTS,
   injectCoverage,
   openShop,
+  openShopUnder,
   readCoverage,
   shopIndex,
   stubCoverageChrome,
@@ -893,6 +894,58 @@ test.describe('coverage overlay: what tests do on this page', () => {
     await injectCoverage(page);
     expect(await readCoverage(page)).toMatchObject({ pageScoped: false, missing: [], several: [] });
     await expect(page.locator(`${HOST} .panel .page-switch`)).toHaveCount(0);
+  });
+});
+
+test.describe('coverage overlay on a deployment under a path prefix', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.setViewportSize({ width: 1400, height: 900 });
+  });
+
+  const underApp = (pathPrefix?: string) => ({
+    ...DEFAULT_CONNECTION,
+    projectMappings: [{ ...DEFAULT_CONNECTION.projectMappings[0]!, ...(pathPrefix ? { pathPrefix } : {}) }],
+  });
+
+  test('This page removes the mapping’s prefix, then lists the uses of the route, missing and several here', async ({
+    page,
+    context,
+  }) => {
+    await stubCoverageChrome(context, {
+      connection: underApp('/app'),
+      cached: shopIndex([...SHOP_TESTS, ...PAGE_TESTS]),
+    });
+    await openShopUnder(page, '/app', '?nodialog');
+    await injectCoverage(page);
+    const coverage = await readCoverage(page);
+    expect(coverage).toMatchObject({ page: '/shop.html', prefixRemoved: '/app', pageScoped: true });
+    // What tests use on /shop.html counts here, and what they use on /newsletter does not.
+    expect(coverage.covered.some((c) => c.description === 'button "Subscribe"')).toBe(false);
+    expect(coverage.uncovered.find((u) => u.description === 'button "Subscribe"')?.elsewhere).toEqual([
+      "getByRole('button', { name: 'Subscribe' })",
+    ]);
+    expect(coverage.missing.map((row) => row.locator)).toEqual([
+      "getByRole('button', { name: 'Pay now' })",
+      "getByRole('menuitem', { name: 'Sign out' })",
+    ]);
+    expect(coverage.several.map((row) => [row.locator, row.count])).toEqual([
+      ["getByRole('button', { name: 'Add to cart' })", 4],
+    ]);
+
+    const panel = page.locator(`${HOST} .panel`);
+    await expect(panel.locator('.sub')).toContainText('Acme Mugs · /shop.html (without /app)');
+    await panel.locator('details.notes > summary').click();
+    await expect(panel.locator('details.notes')).toContainText(
+      'The path prefix /app of this site’s URL mapping was removed from the address first',
+    );
+  });
+
+  test('without the prefix, the page matches none the tests ran on', async ({ page, context }) => {
+    await stubCoverageChrome(context, { connection: underApp(), cached: shopIndex([...SHOP_TESTS, ...PAGE_TESTS]) });
+    await openShopUnder(page, '/app', '?nodialog');
+    await injectCoverage(page);
+    const coverage = await readCoverage(page);
+    expect(coverage).toMatchObject({ page: '/app/shop.html', prefixRemoved: null, missing: [], several: [] });
   });
 });
 

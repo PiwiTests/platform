@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "836e7f92-5976-45d2-8f6d-4d29afcb0a83",
+  "id": "b5c9ab8f-8d1a-41b6-a122-335ff11ae3b6",
   "prevId": "43e4b7b7-7e24-49c0-a7c9-f7c8d6d02acb",
   "tables": {
     "account_tokens": {
@@ -3579,13 +3579,6 @@
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
-        },
-        "failure": {
-          "name": "failure",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
         }
       },
       "indexes": {
@@ -4351,6 +4344,13 @@
         },
         "branch": {
           "name": "branch",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "path_prefix": {
+          "name": "path_prefix",
           "type": "text",
           "primaryKey": false,
           "notNull": false,

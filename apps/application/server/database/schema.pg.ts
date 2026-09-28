@@ -1329,6 +1329,7 @@ export const projectUrlPatterns = pgTable(
     pattern: text('pattern').notNull(),
     environment: text('environment'), // free label: 'staging', 'production'
     branch: text('branch'), // the branch deployed at these URLs; null for the default branch
+    pathPrefix: text('path_prefix'), // the path the site serves its pages under and the tests did not ('/app')
     position: integer('position').notNull().default(0),
     createdAt: timestamp('created_at', { mode: 'date' })
       .notNull()
