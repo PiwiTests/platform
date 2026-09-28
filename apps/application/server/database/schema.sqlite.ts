@@ -1884,3 +1884,63 @@ export const bugReproductions = sqliteTable(
     createdByIdx: index('idx_bug_reproductions_created_by').on(t.createdBy),
   }),
 );
+
+// Flake-lab experiments: one row per `piwi flake` (reproduce) or `piwi flake verify`
+// session on a test. The plan endpoint creates the row; the results endpoint
+// fills the verdict and `finished_at`. Deleted with the test case; retention keeps them.
+export const flakeExperiments = sqliteTable(
+  'flake_experiments',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    testCaseId: integer('test_case_id')
+      .notNull()
+      .references(() => testCases.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull(), // 'reproduce' | 'verify'
+    commit: text('commit'), // the commit the lab ran
+    failureCommit: text('failure_commit'), // the commit of the test's latest failure when planned
+    source: text('source').notNull().default('cli'), // 'cli' | 'desktop' | 'ci'
+    machine: text('machine'),
+    playwrightProject: text('playwright_project'),
+    verdict: text('verdict'), // reproduce: 'reproduced' | 'amplified' | 'not-reproduced'; verify: 'verified' | 'still-fails' | 'inconclusive'
+    reproducingArmId: integer('reproducing_arm_id'), // the flake_arms row that reproduced (reproduce) or was rerun (verify)
+    verifiesArmId: integer('verifies_arm_id'), // verify only: the reproducing arm of an earlier experiment it reruns
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    finishedAt: integer('finished_at', { mode: 'timestamp_ms' }),
+  },
+  (t) => ({
+    testCaseIdx: index('idx_flake_experiments_test_case').on(t.testCaseId, t.createdAt),
+    projectIdx: index('idx_flake_experiments_project').on(t.projectId),
+  }),
+);
+
+// The arms of a flake-lab experiment: the control and one row per condition set,
+// with the counts the command line measured and the verdict the server computed.
+export const flakeArms = sqliteTable(
+  'flake_arms',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    experimentId: integer('experiment_id')
+      .notNull()
+      .references(() => flakeExperiments.id, { onDelete: 'cascade' }),
+    armKey: text('arm_key').notNull(), // the plan's arm id: 'control', 'suspect-1', 'combined', 'verify'
+    position: integer('position').notNull().default(0),
+    suspectId: text('suspect_id'), // the flake profile suspect it tests (`slow-route:GET /api/cart`)
+    label: text('label').notNull(),
+    conditions: text('conditions', { mode: 'json' }).notNull(), // FlakeCondition[] in the plan-file shape
+    runs: integer('runs').notNull().default(0),
+    matchingFailures: integer('matching_failures').notNull().default(0),
+    otherFailures: integer('other_failures').notNull().default(0),
+    discardedRounds: integer('discarded_rounds').notNull().default(0), // alongside/after rounds without the overlap or order asked for
+    stoppedEarly: integer('stopped_early', { mode: 'boolean' }).notNull().default(false),
+    pValue: real('p_value'), // one-sided Fisher exact against the control; null on the control
+    verdict: text('verdict'), // null on the control
+  },
+  (t) => ({
+    experimentIdx: index('idx_flake_arms_experiment').on(t.experimentId),
+  }),
+);

@@ -40,6 +40,8 @@ export const {
   projectUrlPatterns,
   bugReports,
   bugReproductions,
+  flakeExperiments,
+  flakeArms,
   networkRequests,
   accountTokens,
   notificationChannels,

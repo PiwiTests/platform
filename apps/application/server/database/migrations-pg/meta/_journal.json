@@ -666,6 +666,13 @@
       "when": 1790578451584,
       "tag": "0094_jittery_meltdown",
       "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "7",
+      "when": 1790625625610,
+      "tag": "0095_mysterious_squadron_supreme",
+      "breakpoints": true
     }
   ]
 }
