@@ -961,7 +961,43 @@ function attachListeners(): void {
         captureEvent(buildEvent('change', el, { inputType: kind, checked: (el as HTMLInputElement).checked }));
       } else if (kind === 'select') {
         captureEvent(buildEvent('change', el, { inputType: 'select', value: (el as HTMLSelectElement).value }));
+      } else if (el instanceof HTMLInputElement && el.type === 'file') {
+        // The names of the chosen files, one per line: never their content, which stays on this computer.
+        const names = [...(el.files ?? [])].map((file) => file.name.replace(/[\r\n]+/g, ' '));
+        captureEvent(buildEvent('files', el, { value: names.join('\n') }));
       }
+    },
+    opts,
+  );
+
+  document.addEventListener(
+    'dblclick',
+    (e) => {
+      if (!e.isTrusted || capturePaused() || withinOwnUi(e)) return;
+      const raw = e.target;
+      if (!(raw instanceof Element)) return;
+      const el = nearestActionable(raw);
+      captureEvent(buildEvent('dblclick', el));
+    },
+    opts,
+  );
+
+  // An HTML drag and drop: the element dragged, and the one it was dropped on.
+  let dragged: Element | null = null;
+  document.addEventListener(
+    'dragstart',
+    (e) => {
+      dragged = e.isTrusted && !capturePaused() && !withinOwnUi(e) && e.target instanceof Element ? e.target : null;
+    },
+    opts,
+  );
+  document.addEventListener(
+    'drop',
+    (e) => {
+      const source = dragged;
+      dragged = null;
+      if (!source || !e.isTrusted || capturePaused() || withinOwnUi(e) || !(e.target instanceof Element)) return;
+      captureEvent(buildEvent('drop', source, { dropTarget: deriveRecordedTarget(nearestActionable(e.target)) }));
     },
     opts,
   );

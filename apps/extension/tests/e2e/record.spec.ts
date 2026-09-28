@@ -1,4 +1,6 @@
+import { mkdtempSync, writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { stripVTControlCharacters } from 'node:util';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -50,6 +52,15 @@ const LINKS_PAGE = `<!doctype html><html><body>
   </main>
 </body></html>`;
 
+/** A file field, a row that opens on a double click, and a card dragged onto a column. */
+const FILES_PAGE = `<!doctype html><html><body>
+  <input type="file" data-testid="attachment" aria-label="Attachment" multiple />
+  <div role="row" data-testid="invoice" ondblclick="this.dataset.open = 'yes'">Invoice 42</div>
+  <div draggable="true" data-testid="card" ondragstart="event.dataTransfer.setData('text/plain', 'c')">Card</div>
+  <section data-testid="done" aria-label="Done" ondragover="event.preventDefault()" ondrop="event.preventDefault()"
+    style="height: 80px; border: 1px dashed">Done</section>
+</body></html>`;
+
 async function routePages(context: BrowserContext): Promise<void> {
   await context.route(`${ORIGIN}/**`, async (route) => {
     const url = new URL(route.request().url());
@@ -60,7 +71,9 @@ async function routePages(context: BrowserContext): Promise<void> {
           ? BARE_FORM_PAGE
           : url.pathname === '/links'
             ? LINKS_PAGE
-            : LOGIN_PAGE;
+            : url.pathname === '/files'
+              ? FILES_PAGE
+              : LOGIN_PAGE;
     await route.fulfill({ contentType: 'text/html', body });
   });
 }
@@ -207,6 +220,40 @@ test.describe('record-panel.js', () => {
       ['press', 'Escape', null],
       // A checkbox fires `input` as well as `change`: one step, never a fill.
       ['check', null, 'remember-me'],
+    ]);
+  });
+
+  test('a file choice is recorded by the files’ names only, a double click as one step, and a drop as dragTo', async ({
+    context,
+  }) => {
+    await routePages(context);
+    await stubChromeStorage(context, {
+      session: {
+        piwiRecording: { active: true, events: [], startedAt: Date.now(), grantedOriginPattern: `${ORIGIN}/*` },
+      },
+    });
+    const page = await context.newPage();
+    await page.goto(`${ORIGIN}/files`);
+    await page.addScriptTag({ path: path.join(DIST, 'record-panel.js') });
+    await expect.poll(() => page.evaluate(() => !!document.getElementById('piwi-record-hud-host'))).toBe(true);
+
+    // Files on disk, as a person chooses them: the browser sets them and sends a trusted `change`.
+    const dir = mkdtempSync(path.join(tmpdir(), 'piwi-record-files-'));
+    writeFileSync(path.join(dir, 'invoice.pdf'), '%PDF secret content');
+    writeFileSync(path.join(dir, 'photo.png'), 'png');
+    await page.getByTestId('attachment').setInputFiles([path.join(dir, 'invoice.pdf'), path.join(dir, 'photo.png')]);
+    await page.getByTestId('invoice').dblclick();
+    await page.getByTestId('card').dragTo(page.getByTestId('done'));
+
+    await expect.poll(async () => normalizeSteps(await readStoredEvents(page)).length).toBe(4);
+    const events = await readStoredEvents(page);
+    expect(JSON.stringify(events)).not.toContain('secret content');
+    const steps = normalizeSteps(events);
+    expect(steps.map((s) => [s.action, s.value, s.target?.testId ?? null, s.dropTarget?.testId ?? null])).toEqual([
+      ['goto', `${ORIGIN}/files`, null, null],
+      ['setInputFiles', 'invoice.pdf\nphoto.png', 'attachment', null],
+      ['dblclick', null, 'invoice', null],
+      ['dragTo', null, 'card', 'done'],
     ]);
   });
 

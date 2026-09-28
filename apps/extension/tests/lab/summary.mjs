@@ -38,7 +38,7 @@ for (const row of rows) {
         ? r.status
         : r.endUrl !== row.recordedEndUrl
           ? `done, but ended on ${r.endUrl} (recorded ${row.recordedEndUrl})`
-          : `passed (${r.seconds} s)`;
+          : `passed (${r.seconds} s${r.driver ? `, ${r.driver.driver === 'cdp' ? 'trusted input' : `page events: ${r.driver.reason}`}` : ''})`;
   const pw = specs.get(row.name);
   const playwright = pw ? (pw.status === 'passed' ? 'passed' : `${pw.status}: ${pw.message}`) : 'not run';
   lines.push(`| ${row.name} | ${row.steps.length} | ${extension} | ${playwright} |`.replace(/\n/g, ' '));

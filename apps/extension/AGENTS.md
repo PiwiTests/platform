@@ -338,6 +338,14 @@ JavaScript world, so:
   not a page that means harm; `readRelayedEntry` rebuilds every entry field by field and truncates
   it, and storage caps each kind at 100. Treat everything it relays as page-controlled text.
 
+## Files, double clicks and drags
+
+The recorder keeps a file field's choice as the files' names, one per line (`files` → `setInputFiles`), never their
+content, which never leaves the page; a trusted `dblclick` replaces the two clicks before it (`normalizeSteps`); an
+HTML drag and drop is recorded from `dragstart` and `drop` as `dragTo`, with the element dropped on as `dropTarget`. A
+drag done with pointer events alone (a sortable list, a slider) is not recorded as a drag.
+`record.spec.ts` checks all three, and that a file's content is not stored.
+
 ## Hovers a click depends on
 
 Some elements show only while another is hovered. At each press, `record-panel.ts` asks `hoverTargets` which hovers
