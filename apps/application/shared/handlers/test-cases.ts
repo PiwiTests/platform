@@ -752,7 +752,15 @@ export async function loadFailureClueInput(
             })
             .from(testRunsCases)
             .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
-            .where(and(eq(testRunsCases.testRunId, trc.testRunId), eq(testRunsCases.workerIndex, trc.workerIndex)))
+            .where(
+              and(
+                eq(testRunsCases.testRunId, trc.testRunId),
+                eq(testRunsCases.workerIndex, trc.workerIndex),
+                trc.shardIndex != null
+                  ? eq(testRunsCases.shardIndex, trc.shardIndex)
+                  : isNull(testRunsCases.shardIndex),
+              ),
+            )
         : Promise.resolve(
             [] as Array<{
               id: number;
