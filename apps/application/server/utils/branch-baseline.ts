@@ -4,6 +4,7 @@ import { testRuns } from '../database/schema';
 import type { TestRun } from '../database/schema';
 import type { DrizzleDB } from '../../shared/handlers/db';
 import type { RunBaselineMatch } from '#shared/run-baseline';
+import { notLabRun } from '#shared/handlers/probes';
 
 export interface BaselineQuery {
   projectId: number;
@@ -114,12 +115,16 @@ function chosenRungs(q: BaselineQuery, baseBranch: string): Rung[] {
  * Each rung is tried **within the run's environment** first, then without it.
  * A run whose branch is unknown only has rung 3. An explicit `baseBranch`
  * replaces the ladder with that branch alone (same environment first).
+ *
+ * A lab run (probe or flake experiment) is never a baseline: it replays a few
+ * tests under injected faults or conditions.
  */
 export async function selectBaselineRun(db: DrizzleDB, q: BaselineQuery): Promise<BaselineSelection | null> {
   const base: SQL[] = [
     eq(testRuns.projectId, q.projectId),
     eq(testRuns.status, 'passed'),
     lt(testRuns.startTime, q.before),
+    notLabRun(testRuns.metadata),
   ];
   if (q.fullRunOnly) base.push(eq(testRuns.isFullRun, 1));
 

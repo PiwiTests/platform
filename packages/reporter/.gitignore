@@ -4,3 +4,5 @@ dist/
 .DS_Store
 # Transient artifacts authored by the AI-step integration E2E (tests/integration/ai/run.mjs)
 tests/integration/ai/.ai-e2e-artifacts/
+# Transient Playwright project written by tests/flake-run.spec.ts
+tests/.flake-run-*/

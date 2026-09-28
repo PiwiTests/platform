@@ -1,5 +1,6 @@
 /**
- * Node-importable mirror of `shared/error-fingerprint.ts` for the demo seed
+ * Node-importable mirror of `shared/error-fingerprint.ts` and the signature it
+ * hashes (`packages/core/src/error-signature.ts`, `error-parse.ts`) for the demo seed
  * generator (`scripts/generate-demo-seed.mjs` runs under plain Node, which
  * cannot resolve the TypeScript module or its `@piwitests/core` import).
  *

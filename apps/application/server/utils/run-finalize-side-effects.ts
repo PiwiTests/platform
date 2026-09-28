@@ -7,7 +7,7 @@ import { emitRunNotifications } from './notifications/run-notifications';
 import { postRunPrFeedbackInBackground } from './scm/pr-feedback';
 import { maybeEnqueueHealActionInBackground } from './heal/policy';
 import { syncAutoMarkersForRun } from '#shared/handlers/markers';
-import { isProbeRun } from '#shared/handlers/probes';
+import { isLabRun } from '#shared/handlers/probes';
 import { upsertDailyRollup } from '#shared/handlers/analytics/rollups';
 import { runEventBus } from './run-events';
 
@@ -17,9 +17,10 @@ import { runEventBus } from './run-events';
  * feedback and auto-heal.
  *
  * Every ingest path (finish, upload, submit) routes its finalization through
- * this one helper so the probe stamp is honored everywhere: a probe run replays
- * a passing test with an injected fault, so it never counts as a real run — none
- * of these fire for it, exactly as imports are silent.
+ * this one helper so the lab stamps are honored everywhere: a probe run or a
+ * flake-lab run replays a test with an injected fault or condition, so it never
+ * counts as a real run — none of these fire for it, exactly as imports are
+ * silent.
  *
  * The returned promise settles once the run's rollup cell is recomputed, so a
  * caller that awaits it answers only when the analytics already count the run;
@@ -33,7 +34,7 @@ export function runFinalizeSideEffects(
   id: number,
   run: { projectId: number; metadata?: unknown },
 ): Promise<void> {
-  if (isProbeRun(run.metadata)) return Promise.resolve();
+  if (isLabRun(run.metadata)) return Promise.resolve();
   const recompute = () =>
     upsertDailyRollup(db, id).then(() =>
       runEventBus.publishGlobal({ type: 'rollup-updated', runId: id, projectId: run.projectId }),

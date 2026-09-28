@@ -47,7 +47,7 @@ import {
   projectRouteOrigins,
 } from './graph-ingest';
 import { collectOwnOrigins, originsFromDocumentRequests } from '#shared/graph';
-import { isProbeRun } from '#shared/handlers/probes';
+import { isLabRun } from '#shared/handlers/probes';
 import { upsertLocatorUsages, type LocatorUsageCase } from './locator-usages';
 import { buildCodeReachGraph, sanitizeCodeReach, upsertCodeReach, type CodeReachCase } from './code-reach';
 import { sanitizeLocatorPages } from './locator-pages';
@@ -607,13 +607,13 @@ export async function persistRunCases(
     row.codeReachPayloadId = p.codeReach ? (payloadIds.get(p.codeReach) ?? null) : null;
   });
 
-  // A probe run's failures are injected, not real: it never counts as a real
+  // A lab run's (probe or flake experiment) failures are injected, not real: it never counts as a real
   // run, so it forms no clusters (exactly as imports are silent).
   const [probeCheck] = await db
     .select({ metadata: testRuns.metadata })
     .from(testRuns)
     .where(eq(testRuns.id, testRunId));
-  const probeRun = isProbeRun(probeCheck?.metadata);
+  const probeRun = isLabRun(probeCheck?.metadata);
   if (!probeRun) {
     const clusterIds = await getOrCreateFailureClusters(db, projectId, testRunId, pendingClusters);
     runCasesRows.forEach((row, i) => {
@@ -655,7 +655,7 @@ export async function persistRunCases(
   }
 
   await upsertLocatorSnapshots(db, perCaseLocators, testRunId);
-  // A probe run replays tests with injected faults; it stays silent here too.
+  // A lab run replays tests with injected faults or conditions; it stays silent here too.
   // The index is derived data: a failure to update it degrades to a warning and
   // never fails the ingest.
   if (!probeRun) {
@@ -678,7 +678,7 @@ export async function persistRunCases(
   // if a write is ever lost. A graph failure degrades to a warning and never
   // surfaces as an ingest error.
   //
-  // A probe run replays a passing test with an injected fault, so its statuses
+  // A lab run replays a test with an injected fault or condition, so its statuses
   // and network traffic are synthetic: it never feeds the canonical graph, or it
   // would mint false orphan-test gaps and turn injected faults into evidence.
   void (async () => {
@@ -687,7 +687,7 @@ export async function persistRunCases(
         .select({ branch: testRuns.branch, metadata: testRuns.metadata })
         .from(testRuns)
         .where(eq(testRuns.id, testRunId));
-      if (isProbeRun(run?.metadata)) return;
+      if (isLabRun(run?.metadata)) return;
       const [project] = await db
         .select({
           id: projects.id,

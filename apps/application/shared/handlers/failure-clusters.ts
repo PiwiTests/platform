@@ -11,7 +11,7 @@
 } from '../../server/database/schema';
 import { eq, and, desc, gte, sql, inArray, or, isNull, lte } from 'drizzle-orm';
 import { makeTimeBuckets } from './analytics/common';
-import { isProbeRun } from './probes';
+import { isLabRun } from './probes';
 
 import type { DrizzleDB } from './db';
 import type { OpenFailureCluster, OccurrenceSeriesPoint } from '../../types/api';
@@ -795,7 +795,7 @@ export interface ClusterOccurrenceTrend {
 
 /**
  * A cluster's occurrences over time: its failing executions per UTC day, week
- * or month over the last `days` days (probe runs left out), with the moment
+ * or month over the last `days` days (lab runs left out), with the moment
  * its fix landed and the first occurrence after it, if the fix regressed.
  */
 export async function getClusterOccurrenceTrend(
@@ -823,7 +823,7 @@ export async function getClusterOccurrenceTrend(
   const fixMs = cluster.fixLandedAt ? new Date(cluster.fixLandedAt).getTime() : null;
   let regressedMs: number | null = null;
   for (const row of rows) {
-    if (isProbeRun(row.metadata)) continue;
+    if (isLabRun(row.metadata)) continue;
     const at = new Date(row.startTime).getTime();
     if (fixMs !== null && at > fixMs && (regressedMs === null || at < regressedMs)) regressedMs = at;
     const key = buckets.keyFor(at);

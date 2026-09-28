@@ -48,7 +48,7 @@ import { resolveRunBranch } from './run-branch';
 import { resolveDefaultBranch } from './scm/default-branch';
 import { resolveStoredDefaultBranch, type DefaultBranchProject } from './scm/stored-default-branch';
 import { FALLBACK_DEFAULT_BRANCH } from './scm/git-url';
-import { isProbeRun } from '#shared/handlers/probes';
+import { isLabRun } from '#shared/handlers/probes';
 import { subjectFromGapKey } from '#shared/handlers/scenario-gaps';
 import type { DbClient as DB } from '../database';
 
@@ -729,9 +729,9 @@ export async function rebuildProjectGraph(db: DB, projectId: number): Promise<{ 
 
   let processed = 0;
   for (const run of runs) {
-    // A probe run's statuses and traffic are synthetic, so it never feeds the
+    // A lab run's statuses and traffic are synthetic, so it never feeds the
     // canonical graph — the same rule the live ingest path applies.
-    if (isProbeRun(run.metadata)) continue;
+    if (isLabRun(run.metadata)) continue;
     const cases = await db
       .select({ id: testRunsCases.id, testCaseId: testRunsCases.testCaseId, pageState: testRunsCases.pageState })
       .from(testRunsCases)
@@ -848,8 +848,8 @@ const STALE_NODE_RUN_SCAN = STALE_NODE_RUNS * 10;
  * gap, independently of `PIWI_RETENTION_DAYS` (which is opt-in and cannot be
  * relied on).
  *
- * The window counts canonical, non-probe runs only — the runs that actually bump
- * a canonical node's `last_seen_run_id`. Counting pull-request and probe runs (as
+ * The window counts canonical, non-lab runs only — the runs that actually bump
+ * a canonical node's `last_seen_run_id`. Counting pull-request and lab runs (as
  * a naive "last 30 runs" does) lets thirty pull-request runs with no default-branch
  * run in between prune every canonical node, wiping the graph and closing every
  * gap built on it. A node backing any open, snoozed or accepted gap is kept so
@@ -870,16 +870,16 @@ export async function pruneStaleCanonicalNodes(db: DB): Promise<number> {
       .where(eq(projects.id, projectId));
     const defaultBranch = proj ? await resolveStoredDefaultBranch(db, proj) : FALLBACK_DEFAULT_BRANCH;
 
-    // Canonical runs (on the default branch, so tagged null) that are not probe
+    // Canonical runs (on the default branch, so tagged null) that are not lab
     // runs — the only runs that bump a canonical node's last-seen. Scan a bounded
-    // window and drop probe runs before taking the floor.
+    // window and drop lab runs before taking the floor.
     const canonicalRuns = await db
       .select({ id: testRuns.id, metadata: testRuns.metadata })
       .from(testRuns)
       .where(and(eq(testRuns.projectId, projectId), or(isNull(testRuns.branch), eq(testRuns.branch, defaultBranch))))
       .orderBy(sql`${testRuns.id} desc`)
       .limit(STALE_NODE_RUN_SCAN);
-    const canonical = canonicalRuns.filter((r) => !isProbeRun(r.metadata)).slice(0, STALE_NODE_RUNS);
+    const canonical = canonicalRuns.filter((r) => !isLabRun(r.metadata)).slice(0, STALE_NODE_RUNS);
     // Fewer than a full window of canonical runs — nothing has been unseen long enough.
     if (canonical.length < STALE_NODE_RUNS) continue;
     const windowFloor = canonical[canonical.length - 1]!.id;

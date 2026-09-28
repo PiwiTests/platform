@@ -42,6 +42,24 @@ export function isFaultAllowed(level: 'client' | 'server', fault: string): boole
 /** How long a `slow` fault delays a response, in milliseconds. */
 export const SLOW_FAULT_DELAY_MS = 5000;
 
+/**
+ * What the interception does to one targeted request, shared by probe faults
+ * and flake conditions:
+ *  - `delay` fetches the real response and holds it until `ms` after the
+ *    request started;
+ *  - `status` answers with that status and an empty body;
+ *  - `abort` resets the connection.
+ */
+export type RouteAction = { kind: 'delay'; ms: number } | { kind: 'status'; status: number } | { kind: 'abort' };
+
+/**
+ * The route action a client fault maps to, or null for a fault that rewrites
+ * the real response ({@link computeFault}). `slow` is a 5-second delay.
+ */
+export function faultRouteAction(fault: ProbeFault | string): RouteAction | null {
+  return fault === 'slow' ? { kind: 'delay', ms: SLOW_FAULT_DELAY_MS } : null;
+}
+
 export interface FaultInput {
   /** The real response status. */
   status: number;

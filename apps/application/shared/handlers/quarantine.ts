@@ -13,6 +13,7 @@
 import { and, asc, desc, eq, gt, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 import { quarantinedTests, testCases, testRuns, testRunsCases } from '../../server/database/schema';
 import type { DrizzleDB } from './db';
+import { notLabRun } from './probes';
 
 /** Consecutive passing runs after which release is proposed. */
 export const RELEASE_AFTER_CONSECUTIVE_PASSES = 5;
@@ -66,6 +67,8 @@ export async function getQuarantinedCaseIds(db: DrizzleDB, projectId: number): P
  * Trailing passing streak for each test, counted over executions recorded after
  * the run the test was quarantined at. Ordered newest first and stopped at the
  * first failure, so a single recent flake resets the count — which is the point.
+ * Lab runs (probes, flake experiments) replay the test under injected faults or
+ * conditions, so they neither count toward nor break a streak.
  *
  * One query for the whole list: each test's executions since its own quarantine
  * run are ranked newest-first with a window function, and only the first
@@ -98,7 +101,8 @@ async function computeStreaks(
         ),
     })
     .from(testRunsCases)
-    .where(sinceQuarantine)
+    .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
+    .where(and(sinceQuarantine, notLabRun(testRuns.metadata)))
     .as('ranked');
 
   const rows = await db

@@ -20,6 +20,7 @@ import {
   testRunsCases,
 } from '../../server/database/schema';
 import type { DrizzleDB } from './db';
+import { FLAKE_LAB_RUN_METADATA_KEY } from '@piwitests/core/flake-plan';
 import { detectNotHandled, rankFinding, upsertScenarioGaps, type ResilienceSignal } from './scenario-gaps';
 import { resolveProjectStates } from './capabilities';
 import {
@@ -67,6 +68,47 @@ export function notProbeRun(metadata: SQLWrapper): SQL {
   const compact = `%"${PROBE_RUN_METADATA_KEY}":true%`;
   const spaced = `%"${PROBE_RUN_METADATA_KEY}": true%`;
   return sql`(${metadata} IS NULL OR (CAST(${metadata} AS TEXT) NOT LIKE ${compact} AND CAST(${metadata} AS TEXT) NOT LIKE ${spaced}))`;
+}
+
+/**
+ * The run-metadata key that stamps a run as a flake-lab run: one arm of a flake
+ * experiment, `{ experimentId, armId }`. Shared with the reporter through
+ * `@piwitests/core/flake-plan`.
+ */
+export { FLAKE_LAB_RUN_METADATA_KEY };
+
+/** True when a run's metadata stamps it as a flake-lab run. */
+export function isFlakeLabRun(metadata: unknown): boolean {
+  if (!metadata || typeof metadata !== 'object') return false;
+  const stamp = (metadata as Record<string, unknown>)[FLAKE_LAB_RUN_METADATA_KEY];
+  return !!stamp && typeof stamp === 'object';
+}
+
+/**
+ * SQL predicate keeping only runs that are not flake-lab runs: the SQL form of
+ * `!isFlakeLabRun(metadata)`. The stamp is an object, matched in the serialized
+ * JSON with and without the space PostgreSQL's `jsonb` text output puts after
+ * the colon.
+ */
+export function notFlakeLabRun(metadata: SQLWrapper): SQL {
+  const compact = `%"${FLAKE_LAB_RUN_METADATA_KEY}":{%`;
+  const spaced = `%"${FLAKE_LAB_RUN_METADATA_KEY}": {%`;
+  return sql`(${metadata} IS NULL OR (CAST(${metadata} AS TEXT) NOT LIKE ${compact} AND CAST(${metadata} AS TEXT) NOT LIKE ${spaced}))`;
+}
+
+/**
+ * True for a lab run, one that replays tests under conditions Piwi injected: a
+ * probe run or a flake-lab run. A lab run never counts as a real run, so it
+ * stays out of flakiness, history, regressions, clusters, notifications and
+ * every other analysis of how the suite behaves.
+ */
+export function isLabRun(metadata: unknown): boolean {
+  return isProbeRun(metadata) || isFlakeLabRun(metadata);
+}
+
+/** SQL predicate keeping only runs that are not lab runs: the SQL form of `!isLabRun(metadata)`. */
+export function notLabRun(metadata: SQLWrapper): SQL {
+  return sql`(${notProbeRun(metadata)} AND ${notFlakeLabRun(metadata)})`;
 }
 
 /** One (test, route, fault) pair the plan asks a probe run to apply. */

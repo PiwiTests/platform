@@ -207,3 +207,15 @@ export function mappedPageKey(
   const mapped = mapPathPrefixes(url, prefixes);
   return { key: pageKey(mapped.url), prefixRemoved: mapped.prefixRemoved, prefixAdded: mapped.prefixAdded };
 }
+
+/**
+ * A request's route key: the upper-cased method and the URL's route pattern
+ * (`GET /api/cart/:id`), without host or query. The Attempts diff and the flake
+ * profile key requests by it, and flake mode matches live requests against it,
+ * so a diff row, a suspect and a lab condition name the same route.
+ */
+export function requestRouteKey(method: string | null | undefined, url: string | null | undefined): string {
+  const route = normalizeRoute(url ?? '');
+  const q = route.indexOf('?');
+  return `${(method || 'GET').toUpperCase()} ${q === -1 ? route : route.slice(0, q)}`;
+}

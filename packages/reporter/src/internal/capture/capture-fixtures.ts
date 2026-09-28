@@ -60,6 +60,20 @@ import {
 } from '../probe/mode.js';
 import { installProbeInterception, type ProbeInterception } from '../probe/interception.js';
 import type { ProbePlanItem } from '../probe/plan.js';
+import {
+  flakeResultLine,
+  flakeRoleForTest,
+  installFlakeConditions,
+  isFlakeMode,
+  labModeConflict,
+  loadFlakePlan,
+  pageBrowserName,
+  recordFlakeResult,
+  unappliedReports,
+  type FlakeConditions,
+} from '../flake/mode.js';
+import type { FlakePlan } from '@piwitests/core/flake-plan';
+import { joinErrorMessages } from '@piwitests/core/error-text';
 import { environmentalSkipReason, inspectionGateFromTestInfo, shouldInspectOnFailure } from './inspect-on-failure.js';
 import { applyPickToSnapshots, deriveFailedLocator, runLocatorPicker, type UserPickResult } from './pick-on-failure.js';
 import { isDueForAriaSample } from '../support/aria-sampling.js';
@@ -218,6 +232,15 @@ interface CaptureSink {
   // handle once installed, so the outcome can be recorded at teardown.
   probeItem: ProbePlanItem | null;
   probeInterception: ProbeInterception | null;
+  // Flake mode only: the arm's plan, this test's role in it, when the capture
+  // started, and (for the target) the conditions installed on its first page.
+  flake: {
+    plan: FlakePlan;
+    role: 'target' | 'companion';
+    startedAt: number;
+    browserName: string | null;
+    conditions: Promise<FlakeConditions> | null;
+  } | null;
   // The failure-time overlay was already offered once this test — several
   // close wrappers can fire for the same teardown.
   pickOffered: boolean;
@@ -249,6 +272,7 @@ function createSink(): CaptureSink {
     pageInventories: [],
     probeItem: null,
     probeInterception: null,
+    flake: null,
     pickOffered: false,
     userPick: null,
     locatorPages: new LocatorPageLog(),
@@ -1225,6 +1249,22 @@ function instrumentPage(page: Page): void {
       });
   }
 
+  // Flake mode: apply the arm's conditions to the target test's first page,
+  // before it navigates. The paths that hand a new page to the test await the
+  // install (`awaitFlakeConditions`).
+  const flake = currentSink?.flake;
+  if (flake?.role === 'target' && !flake.conditions) {
+    flake.browserName = pageBrowserName(page) ?? flake.browserName;
+    const plan = flake.plan;
+    flake.conditions = installFlakeConditions(page, plan).catch((error: unknown) => {
+      const note = `conditions failed to install: ${error instanceof Error ? error.message : String(error)}`;
+      const reports = unappliedReports(plan).map((r) =>
+        r.outcome === 'by-command' ? r : { ...r, outcome: 'skipped' as const, note },
+      );
+      return { reports: () => reports };
+    });
+  }
+
   // A page reached through the `page` fixture safety net may live in a context
   // the browser patch never saw — instrument it so its close is wrapped too.
   const ctx = pageContext(page);
@@ -1425,6 +1465,11 @@ function instrumentPage(page: Page): void {
   page.on('requestfailed', (request: Request) => recordRequest(request, true));
 }
 
+/** Wait until the running test's flake conditions are on its page, so they apply before it navigates. */
+async function awaitFlakeConditions(): Promise<void> {
+  await currentSink?.flake?.conditions;
+}
+
 /**
  * Instrument a browser context so every page it opens — via `newPage()` or as a
  * popup/`window.open` — is captured. Idempotent.
@@ -1446,6 +1491,7 @@ function instrumentContext(context: BrowserContext): void {
   context.newPage = async (...args: Parameters<BrowserContext['newPage']>): Promise<Page> => {
     const page = await originalNewPage(...args);
     instrumentPage(page);
+    await awaitFlakeConditions();
     await maybeStartCodeReach(page);
     return page;
   };
@@ -1488,6 +1534,7 @@ function patchBrowser(browser: Browser): void {
   browser.newPage = async (...args: Parameters<Browser['newPage']>): Promise<Page> => {
     const page = await originalNewPage(...args);
     instrumentPage(page);
+    await awaitFlakeConditions();
     await maybeStartCodeReach(page);
     return page;
   };
@@ -1803,6 +1850,7 @@ export const piwiFixtures: Fixtures<
   // never double-wraps a page the browser patch already instrumented.
   page: async ({ page }: PlaywrightTestArgs, use: UseFn<Page>) => {
     instrumentPage(page);
+    await awaitFlakeConditions();
     await maybeStartCodeReach(page);
     await use(page);
   },
@@ -1813,8 +1861,23 @@ export const piwiFixtures: Fixtures<
   piwiCapture: [
     async ({}, use: UseFn<void>, testInfo: TestInfo) => {
       boxCaptureFrames();
+      const conflict = labModeConflict();
+      if (conflict) throw new Error(conflict);
       const sink = createSink();
       sink.testInfo = testInfo;
+      if (isFlakeMode()) {
+        const plan = loadFlakePlan();
+        const role = flakeRoleForTest(plan, {
+          file: testInfo.file,
+          title: testInfo.title,
+          titlePath: testInfo.titlePath,
+          project: testInfo.project.name,
+        });
+        if (role) {
+          const browserName = (testInfo.project.use as { browserName?: string } | undefined)?.browserName ?? null;
+          sink.flake = { plan, role, startedAt: Date.now(), browserName, conditions: null };
+        }
+      }
       if (isProbeMode())
         sink.probeItem = probeItemForTest({
           title: testInfo.title,
@@ -1854,12 +1917,40 @@ export const piwiFixtures: Fixtures<
             handled,
           });
         }
+        if (sink.flake) await recordFlakeAttempt(sink.flake, testInfo);
         await flushSink(sink, testInfo);
       }
     },
     { auto: true },
   ],
 };
+
+/**
+ * Append the flake results line for a finished attempt. Its span runs from the
+ * capture fixture's setup to its teardown, which wraps the test body and its
+ * test-scoped fixtures.
+ */
+async function recordFlakeAttempt(flake: NonNullable<CaptureSink['flake']>, testInfo: TestInfo): Promise<void> {
+  const installed = flake.conditions ? await flake.conditions : null;
+  recordFlakeResult(
+    flakeResultLine(flake.plan, {
+      role: flake.role,
+      file: testInfo.file,
+      title: testInfo.title,
+      project: testInfo.project.name || null,
+      browserName: flake.browserName,
+      status: testInfo.status ?? 'passed',
+      errorText: joinErrorMessages(testInfo.errors),
+      startedAt: flake.startedAt,
+      duration: Date.now() - flake.startedAt,
+      workerIndex: testInfo.workerIndex,
+      parallelIndex: testInfo.parallelIndex,
+      repeatEachIndex: testInfo.repeatEachIndex,
+      retry: testInfo.retry,
+      conditions: installed ? installed.reports() : unappliedReports(flake.plan),
+    }),
+  );
+}
 
 /**
  * Extend a Playwright `test` object with the Piwi capture fixtures. The

@@ -39,7 +39,8 @@ changed since its last probe, and each test gets one fault per run, up to a budg
 the response records the pair as *inconclusive*, and an inconclusive pair waits a week before it returns to the plan.
 
 A probe run is stamped as one, with retries off. It never counts as a real run: no failure clusters, no regression
-signals, no notifications, no pull-request feedback, no metric, and nothing in the Test Map but the probe outcomes.
+signals, no notifications, no pull-request feedback, no metric, no quarantine streak, never the baseline another run is
+compared with, and nothing in the Test Map but the probe outcomes.
 A probed test that notices its fault fails, so a non-zero Playwright exit is expected. The
 [CLI reference](/reference/cli#probe) lists every flag.
 

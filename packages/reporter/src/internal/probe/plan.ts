@@ -113,12 +113,21 @@ export function markNavigated(state: ProbeState): void {
 }
 
 /**
+ * Decide whether this matching request is one to act on: only after the first
+ * navigation, and every match (`all`) or only the Nth. Advances the match
+ * counter, so an ordinal returns true exactly once per page.
+ */
+export function shouldAct(state: ProbeState, match: 'all' | number): boolean {
+  if (!state.navigated) return false;
+  state.matches += 1;
+  return match === 'all' || state.matches === Math.max(1, match);
+}
+
+/**
  * Decide whether this matching request is the one to mutate: only after the
  * first navigation, and only the Nth match (default the first). Advances the
  * match counter, so it returns true exactly once per test.
  */
-export function shouldMutate(state: ProbeState, item: ProbePlanItem): boolean {
-  if (!state.navigated) return false;
-  state.matches += 1;
-  return state.matches === Math.max(1, item.nth ?? 1);
+export function shouldMutate(state: ProbeState, item: { nth?: number }): boolean {
+  return shouldAct(state, item.nth ?? 1);
 }

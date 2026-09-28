@@ -1,15 +1,24 @@
 /**
- * Client-probe interception: install a `page.route` handler that applies one
- * plan item's fault to the Nth matching request after the first navigation, then
- * fulfills the request with the mutated response. Thin over the pure helpers in
- * `faults.ts` and `plan.ts`.
+ * Route interception shared by probe mode and flake mode: one `page.route`
+ * handler walks a list of rules, each a matcher over route keys, which of the
+ * matching requests it acts on (every one, or the Nth after the first
+ * navigation), and a handler that performs the action. A probe installs one
+ * rule that applies its fault; a flake arm installs one rule per `delay` or
+ * `fail` condition. Thin over the pure helpers in `faults.ts` and `plan.ts`.
  */
 
 import { gunzipSync } from 'node:zlib';
-import type { Page } from '@playwright/test';
+import type { Page, Route } from '@playwright/test';
 import { PIWI_PROBE_ENV } from '../config/env.js';
-import { computeFault, isFaultAllowed, type ProbeFault } from './faults.js';
-import { createProbeState, markNavigated, requestMatchesRoute, shouldMutate, type ProbePlanItem } from './plan.js';
+import { computeFault, faultRouteAction, isFaultAllowed, type ProbeFault, type RouteAction } from './faults.js';
+import {
+  createProbeState,
+  markNavigated,
+  requestMatchesRoute,
+  shouldAct,
+  type ProbePlanItem,
+  type ProbeState,
+} from './plan.js';
 import { buildProbeHeader, type ServerProbeSpec } from './sign.js';
 
 /** Handle to the interception, read at teardown to record the probe outcome. */
@@ -90,6 +99,70 @@ function originOf(url: string): string | null {
   }
 }
 
+/** One interception rule: which requests it targets and what it does to them. */
+export interface RouteRule {
+  /** Whether a request's method and URL are ones this rule targets. */
+  matches: (method: string, url: string) => boolean;
+  /** Act on every matching request after the first navigation, or only on the Nth. */
+  match: 'all' | number;
+  /**
+   * Handle one targeted request; it must fulfill, abort or fall back the route.
+   * `startedAt` is when the page issued the request (epoch ms).
+   */
+  handle: (route: Route, startedAt: number) => Promise<void>;
+  /** True once the rule stops looking at requests (a one-shot fault that applied). */
+  done?: () => boolean;
+}
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, Math.max(0, ms)));
+
+/**
+ * Perform a route action on one request. A `delay` fetches the real response,
+ * waits until `ms` after `startedAt`, then fulfills with it unchanged.
+ */
+export async function performRouteAction(route: Route, action: RouteAction, startedAt: number): Promise<void> {
+  switch (action.kind) {
+    case 'abort':
+      await route.abort('connectionreset');
+      return;
+    case 'status':
+      await route.fulfill({ status: action.status, body: '' });
+      return;
+    case 'delay': {
+      const response = await route.fetch();
+      await sleep(startedAt + action.ms - Date.now());
+      await route.fulfill({ response });
+      return;
+    }
+  }
+}
+
+/**
+ * Install a list of rules on a page. Requests before the first main-frame
+ * navigation (seeding) are never touched; each request goes to the first rule
+ * that targets it, and falls through untouched when none does. Each rule keeps
+ * its own match count.
+ */
+export async function installRouteRules(page: Page, rules: RouteRule[]): Promise<{ state: ProbeState[] }> {
+  const state = rules.map(() => createProbeState());
+  page.on('framenavigated', (frame) => {
+    if (frame === page.mainFrame()) for (const s of state) markNavigated(s);
+  });
+  await page.route('**/*', async (route) => {
+    const startedAt = Date.now();
+    const request = route.request();
+    for (let i = 0; i < rules.length; i++) {
+      const rule = rules[i]!;
+      if (rule.done?.() || !rule.matches(request.method(), request.url())) continue;
+      if (!shouldAct(state[i]!, rule.match)) continue;
+      await rule.handle(route, startedAt);
+      return;
+    }
+    await route.fallback();
+  });
+  return { state };
+}
+
 /**
  * Install the fault interception for one plan item on a page. Requests before the
  * first navigation (seeding) are never touched; the fault is applied to the Nth
@@ -103,7 +176,6 @@ export async function installProbeInterception(page: Page, item: ProbePlanItem):
     return { applied: () => false, appliedFault: () => null, serverError: () => false };
   }
 
-  const state = createProbeState();
   let applied = false;
   let appliedFault: string | null = null;
   let serverError = false;
@@ -116,18 +188,13 @@ export async function installProbeInterception(page: Page, item: ProbePlanItem):
 
   page.on('framenavigated', (frame) => {
     if (frame === page.mainFrame()) {
-      markNavigated(state);
       const origin = originOf(page.url());
       if (origin) appOrigin = origin;
     }
   });
 
-  await page.route('**/*', async (route) => {
+  const handle = async (route: Route, startedAt: number): Promise<void> => {
     const request = route.request();
-    if (applied || !requestMatchesRoute(request.method(), request.url(), item.routeKey) || !shouldMutate(state, item)) {
-      await route.fallback();
-      return;
-    }
 
     // A server fault is signed onto the request and applied inside the server;
     // the response is left alone. Without a shared secret it cannot be signed, so
@@ -159,6 +226,16 @@ export async function installProbeInterception(page: Page, item: ProbePlanItem):
     }
 
     try {
+      // A fault that maps to a route action (`slow` is a delay) always changes
+      // what the page sees. Marked applied before the action runs, so a delay
+      // that times the test out is still recorded as applied, not inconclusive.
+      const action = faultRouteAction(item.fault);
+      if (action) {
+        applied = true;
+        appliedFault = item.fault;
+        await performRouteAction(route, action, startedAt);
+        return;
+      }
       const response = await route.fetch();
       const body = await response.text();
       const out = computeFault(item.fault as ProbeFault, {
@@ -167,14 +244,11 @@ export async function installProbeInterception(page: Page, item: ProbePlanItem):
         contentType: response.headers()['content-type'] ?? null,
       });
       // A fault counts as applied only when it actually changes what the page
-      // sees (`out.changed`): a mutated status or body, or a real delay. A no-op
-      // (a `stale-value` with no prior body to replay, a `drop-field` on a
-      // non-JSON body) records as not applied, so an unnoticed no-op never reads
-      // as a coverage gap. Marked before the delay so a `slow` fault that times
-      // the test out is still recorded as applied, not inconclusive.
+      // sees (`out.changed`): a mutated status or body. A no-op (a `stale-value`
+      // with no prior body to replay, a `drop-field` on a non-JSON body) records
+      // as not applied, so an unnoticed no-op never reads as a coverage gap.
       applied = out.changed;
       if (applied) appliedFault = item.fault;
-      if (out.delayMs > 0) await new Promise((resolve) => setTimeout(resolve, out.delayMs));
       const headers = fulfillHeaders(response.headers(), out.contentType);
       await route.fulfill({ status: out.status, body: out.body, headers });
     } catch {
@@ -183,7 +257,16 @@ export async function installProbeInterception(page: Page, item: ProbePlanItem):
       applied = false;
       await route.fallback();
     }
-  });
+  };
+
+  await installRouteRules(page, [
+    {
+      matches: (method, url) => requestMatchesRoute(method, url, item.routeKey),
+      match: Math.max(1, item.nth ?? 1),
+      handle,
+      done: () => applied,
+    },
+  ]);
 
   return { applied: () => applied, appliedFault: () => appliedFault, serverError: () => serverError };
 }

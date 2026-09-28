@@ -61,6 +61,14 @@ describe('runFinalizeSideEffects', () => {
     for (const fn of allEffects) expect(fn).not.toHaveBeenCalled();
   });
 
+  test('a flake-lab run fires none of them: no rollup, regression signals, notifications or pull-request feedback', () => {
+    runFinalizeSideEffects(db, 42, {
+      projectId: 1,
+      metadata: { piwiFlakeLab: { experimentId: 'exp-1', armId: 'control' } },
+    });
+    for (const fn of allEffects) expect(fn).not.toHaveBeenCalled();
+  });
+
   test('a run with no metadata still finalizes', async () => {
     runFinalizeSideEffects(db, 42, { projectId: 1 });
     await vi.waitFor(() => expect(maybeEnqueueHealActionInBackground).toHaveBeenCalledTimes(1));

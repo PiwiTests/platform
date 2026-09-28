@@ -23,7 +23,7 @@ import {
   bugReports,
 } from '../../server/database/schema';
 import { fileRouteTarget, filePageTarget, routeKeyMatchesTarget, pageKeyMatchesTarget } from '../graph';
-import { isProbeRun } from './probes';
+import { isLabRun } from './probes';
 import type { DiffAnchor } from '@piwitests/core/diff-anchors';
 import { predictLocatorBreaks, type PredictLocatorBreaksOptions } from '@piwitests/core/locator-break';
 import type { LocatorIndex } from '@piwitests/core/locator-index';
@@ -37,7 +37,7 @@ export type GapStatus = 'open' | 'snoozed' | 'dismissed' | 'accepted' | 'closed'
 
 /** The window of recent runs every honest evidence line is measured against. */
 export const HISTORY_WINDOW_RUNS = 30;
-/** Extra recent runs fetched beyond the window so excluded probe runs don't shrink it. */
+/** Extra recent runs fetched beyond the window so excluded lab runs don't shrink it. */
 const PROBE_RUN_WINDOW_BUFFER = 20;
 /** A route must be seen at least this many times before "always success" is a claim. */
 const SUCCESS_ONLY_MIN_OBSERVATIONS = 5;
@@ -1128,8 +1128,8 @@ function maxPriority(
 }
 
 /**
- * Ids of a project's most recent real runs, newest first. Probe runs are
- * excluded — their injected faults must never enter the detectors' history
+ * Ids of a project's most recent real runs, newest first. Lab runs (probes,
+ * flake experiments) are excluded — their injected faults must never enter the detectors' history
  * window — so a buffer beyond the window is fetched to keep it full.
  */
 async function loadRecentRunIds(db: DrizzleDB, projectId: number, limit: number): Promise<number[]> {
@@ -1140,7 +1140,7 @@ async function loadRecentRunIds(db: DrizzleDB, projectId: number, limit: number)
     .orderBy(desc(testRuns.id))
     .limit(limit + PROBE_RUN_WINDOW_BUFFER);
   return rows
-    .filter((r) => !isProbeRun(r.metadata))
+    .filter((r) => !isLabRun(r.metadata))
     .slice(0, limit)
     .map((r) => r.id);
 }

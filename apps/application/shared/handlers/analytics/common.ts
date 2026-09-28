@@ -1,7 +1,7 @@
 import { and, desc, eq, gte, inArray, lt, sql, type SQL } from 'drizzle-orm';
 import { markers, projects, testRuns, testRunsCases, projectTags, tags } from '../../../server/database/schema';
 import type { DrizzleDB } from '../db';
-import { notProbeRun } from '../probes';
+import { notLabRun } from '../probes';
 import { getSelection, loadSelectionCatalog, resolveSelectionDefinition } from '../selections';
 import type { SelectionDefinition } from '../../selection/types';
 import { distinctRunCountsFromAttempts } from '../../utils/test-counts';
@@ -303,7 +303,7 @@ export async function resolveTestFilter(
 /**
  * The `test_runs` conditions every live query shares: terminal runs starting
  * inside `[fromMs, toMs)` (open-ended when the range ends now), in the allowed projects, matching the scope's run
- * filters and branch policy, and never a probe run.
+ * filters and branch policy, and never a lab run (probe or flake experiment).
  */
 export function contextRunConditions(ctx: AnalyticsContext, fromMs: number, toMs: number): SQL[] {
   // A range that ends now has no upper bound: a run stamped this very second counts.
@@ -320,7 +320,7 @@ function runConditions(
   const conditions: SQL[] = [
     gte(testRuns.startTime, new Date(fromMs)),
     inArray(testRuns.status, TERMINAL_RUN_STATUSES),
-    notProbeRun(testRuns.metadata),
+    notLabRun(testRuns.metadata),
   ];
   if (toMs != null) conditions.push(lt(testRuns.startTime, new Date(toMs)));
   if (allowed !== 'all') conditions.push(inArray(testRuns.projectId, allowed));
