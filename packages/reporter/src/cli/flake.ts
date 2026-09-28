@@ -434,7 +434,7 @@ function clip(text: string, width: number): string {
 /** One arm's line in the lab table. */
 export function armLine(result: ArmResult, stopAt: number | null): string {
   const { arm, count } = result;
-  const name = arm.id === 'control' ? 'control' : `${arm.rank ?? (arm.id === 'combined' ? '+' : '·')}  ${arm.label}`;
+  const name = arm.id === 'control' ? 'control' : `${arm.rank != null ? `${arm.rank}  ` : '   '}${arm.label}`;
   if (result.skipped) return `  ${pad(clip(name, 34), 35)}${result.skipped}`;
   const notes: string[] = [];
   if (count.stoppedEarly && stopAt != null) notes.push(`stopped at ${stopAt}`);
