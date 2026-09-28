@@ -466,6 +466,20 @@ Rules when touching it:
   project member may save one, so the endpoint deliberately carries no role list.
 - Re-run `npm run app:seed:demo` after changing the captured or stored shape.
 
+### Workers timeline rendering
+
+A run's timeline draws one SVG shape per test, hook section and gap — thousands on a large run — and a zoom
+re-positions each drawn one. Keep every interaction proportional to what changed:
+
+- Hover state lives in one reactive object that only `TimelineTooltip` and `TimelineFocus` read; `WorkersTimeline`'s
+  template passes the object, never its fields, so hovering never re-renders the bars.
+- Dim the other bars with `TimelineFocus` (one wash plus a copy of the hovered bar), never with per-bar classes,
+  styles or a `:has(:hover)` rule, which restyle every shape on each hover.
+- Bar props stay referentially stable when nothing changed (`NO_LOCK_COLORS`, `NO_HOOKS`, `timelineStatusFill`); a
+  fresh `[]` or `{}` per render re-renders every bar.
+- A test's hook sections are drawn by the test's own `TimelineBar`, not as bars of their own; only bars inside the
+  viewport's `renderRange` are drawn.
+
 ### Sharding
 
 - **runLabel** is detected from CI env vars by `MetadataCollector.detectCiRunLabel()` (reporter) and `detectCiRunLabel()`

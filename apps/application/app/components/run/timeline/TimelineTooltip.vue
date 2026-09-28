@@ -11,58 +11,60 @@ import {
 import { stepHookName } from '#shared/step-tree';
 
 const props = defineProps<{
-  item: TimelineItem | null;
-  pos: { x: number; y: number };
+  /** The hover state the timeline shares with its focus overlay: the hovered item and the pointer. */
+  state: { item: TimelineItem | null; pos: { x: number; y: number } };
   /** Lock name → color, so the tooltip swatches match the brackets. */
   lockColorMap?: Map<string, string>;
 }>();
 
+const item = computed(() => props.state.item);
+
 const swatchStyle = computed(() => {
-  const item = props.item;
-  if (!item) return {};
-  if (item.kind === 'test') return { backgroundColor: timelineStatusColor(item.status, item.retries) };
-  if (item.kind === 'step')
-    return { backgroundColor: timelineStepColor(item.category ?? 'other', item.status === 'failed') };
-  if (item.kind === 'wait') {
+  const hovered = item.value;
+  if (!hovered) return {};
+  if (hovered.kind === 'test') return { backgroundColor: timelineStatusColor(hovered.status, hovered.retries) };
+  if (hovered.kind === 'step')
+    return { backgroundColor: timelineStepColor(hovered.category ?? 'other', hovered.status === 'failed') };
+  if (hovered.kind === 'wait') {
     return { backgroundColor: TIMELINE_WAIT_COLORS.swatch + '66', borderColor: TIMELINE_WAIT_COLORS.swatch };
   }
-  if (isGapKind(item.kind)) return { borderColor: '#9ca3af' };
-  const hook = timelineHookColors(item.status);
+  if (isGapKind(hovered.kind)) return { borderColor: '#9ca3af' };
+  const hook = timelineHookColors(hovered.status);
   return { backgroundColor: hook.fill, opacity: Math.max(hook.opacity, 0.5) };
 });
 
 /** The small uppercase label before the title: a hook section's side, else the bar's kind. */
 const kindLabel = computed(() => {
-  const item = props.item;
-  if (!item) return '';
-  if (item.kind === 'step') return item.category ?? 'step';
-  return item.section ?? item.kind;
+  const hovered = item.value;
+  if (!hovered) return '';
+  if (hovered.kind === 'step') return hovered.category ?? 'step';
+  return hovered.section ?? hovered.kind;
 });
 
 /** A hook section's hooks and fixtures by short name (`beforeAll`, `fixture "db"`). */
 const hookRows = computed(() =>
-  (props.item?.hooks ?? []).map((hook) => ({
+  (item.value?.hooks ?? []).map((hook) => ({
     name: stepHookName(hook) ?? hook.title,
     duration: hook.duration,
     failed: hook.failed === true,
   })),
 );
 
-const isGap = computed(() => (props.item ? isGapKind(props.item.kind) : false));
+const isGap = computed(() => (item.value ? isGapKind(item.value.kind) : false));
 
 /** The worker process, named when it differs from the lane's worker number. */
 const processLabel = computed(() => {
-  const item = props.item;
-  if (!item || item.slot == null || item.slot === item.workerIndex) return null;
-  return `process ${item.workerIndex}`;
+  const hovered = item.value;
+  if (!hovered || hovered.slot == null || hovered.slot === hovered.workerIndex) return null;
+  return `process ${hovered.workerIndex}`;
 });
 
 /** What an empty stretch of the lane was: idle time, or a new worker process starting. */
 const gapText = computed<string[]>(() => {
-  const item = props.item;
-  if (!item?.gap) return [];
-  const { after, before } = item.gap;
-  if (item.kind === 'restart' && after && before) {
+  const hovered = item.value;
+  if (!hovered?.gap) return [];
+  const { after, before } = hovered.gap;
+  if (hovered.kind === 'restart' && after && before) {
     const ended = isFailedStatus(after.status)
       ? `Process ${after.workerIndex} ended after “${after.title}” failed: Playwright replaces a worker process after a failure.`
       : `Process ${after.workerIndex} ended after “${after.title}”. Playwright starts a new worker process after a failure, and for tests that need another project or different worker options.`;
@@ -76,8 +78,8 @@ const gapText = computed<string[]>(() => {
 
 /** What clicking the bar does, for the bars whose click is not obvious. */
 const clickHint = computed(() => {
-  const item = props.item;
-  if (!item || item.testCaseId == null || !isHookKind(item.kind)) return null;
+  const hovered = item.value;
+  if (!hovered || hovered.testCaseId == null || !isHookKind(hovered.kind)) return null;
   return 'Click to open the steps on this hook';
 });
 
@@ -85,7 +87,7 @@ const clickHint = computed(() => {
 // edges so the tooltip never overflows off-screen.
 const TOOLTIP_MAX_WIDTH = 340;
 const positionStyle = computed(() => {
-  const { x, y } = props.pos;
+  const { x, y } = props.state.pos;
   if (typeof window === 'undefined') return { left: `${x + 12}px`, top: `${y - 10}px` };
   const flipX = x + 12 + TOOLTIP_MAX_WIDTH > window.innerWidth;
   const flipY = y + 90 + (hookRows.value.length + gapText.value.length * 2) * 16 > window.innerHeight;

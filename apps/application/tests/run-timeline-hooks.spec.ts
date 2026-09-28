@@ -102,6 +102,10 @@ test.describe('Run timeline hooks and gaps', () => {
     await page.mouse.move(failedBox.x + failedBox.width / 2, failedBox.y + failedBox.height / 2);
     await expect(page.getByTestId('timeline-tooltip-hooks')).toContainText('afterAll');
     await expect(page.getByText('Error: afterAll: catalog still has 3 items').last()).toBeVisible();
+    // The hovered section is lifted above a wash over the rest, and the wash goes with the pointer.
+    await expect(page.locator('[data-timeline-focus] [data-timeline-hook][data-status="failed"]')).toHaveCount(1);
+    await page.mouse.move(0, 0);
+    await expect(page.locator('[data-timeline-focus]')).toHaveCount(0);
 
     // With hooks off only the failed one stays drawn.
     const setupBox = (await hookBars.first().boundingBox())!;
