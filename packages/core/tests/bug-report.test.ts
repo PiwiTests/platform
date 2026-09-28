@@ -231,6 +231,19 @@ describe('bug report', () => {
     );
   });
 
+  test('the context keys the page without the URL mapping’s path prefix, and keeps it through parsing', () => {
+    const at = (url: string, pathPrefix: string | null) =>
+      bugContextFrom({ url, userAgent: null, viewport: null, time: 0, extensionVersion: null, pathPrefix });
+    const prefixed = at(`${ORIGIN}/app/orders/42`, '/app/');
+    expect(prefixed).toMatchObject({ pageKey: '/orders/:id', path: '/app/orders/42', pathPrefix: '/app' });
+    expect(at(`${ORIGIN}/application`, '/app')).not.toHaveProperty('pathPrefix');
+    expect(at(`${ORIGIN}/application`, '/app').pageKey).toBe('/application');
+    const parsed = parseBugReport({ ...couponReport(), context: prefixed });
+    expect(parsed.ok && parsed.report.context.pathPrefix).toBe('/app');
+    const odd = parseBugReport({ ...couponReport(), context: { ...prefixed, pathPrefix: '/app?x' } });
+    expect(odd.ok && odd.report.context).not.toHaveProperty('pathPrefix');
+  });
+
   test('an element whose text is asserted is not named by that text', () => {
     const report = couponReport();
     const step = report.steps.steps[3]!;

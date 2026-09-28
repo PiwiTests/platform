@@ -4,6 +4,7 @@
  * which Piwi Picker resolves the project of a page from. Suggests one pattern
  * per origin the suite already visited.
  */
+import { parsePathPrefix } from '@piwitests/core/page-key';
 import type { UrlPatternItem, UrlPatternSuggestion } from '#shared/handlers/url-patterns';
 
 const props = defineProps<{ projectId: number }>();
@@ -13,6 +14,7 @@ interface Row {
   pattern: string;
   environment: string;
   branch: string;
+  pathPrefix: string;
 }
 
 const toast = useToast();
@@ -35,11 +37,14 @@ function toRows(items: UrlPatternItem[]): Row[] {
     pattern: i.pattern,
     environment: i.environment ?? '',
     branch: i.branch ?? '',
+    pathPrefix: i.pathPrefix ?? '',
   }));
 }
 
 function snapshot(list: Row[]): string {
-  return JSON.stringify(list.map((r) => [r.pattern.trim(), r.environment.trim(), r.branch.trim()]));
+  return JSON.stringify(
+    list.map((r) => [r.pattern.trim(), r.environment.trim(), r.branch.trim(), r.pathPrefix.trim()]),
+  );
 }
 
 const dirty = computed(() => snapshot(rows.value) !== saved.value);
@@ -52,7 +57,19 @@ function patternError(pattern: string): string | undefined {
   return undefined;
 }
 
-const invalid = computed(() => rows.value.some((r) => patternError(r.pattern)));
+const PREFIX_ERRORS = {
+  'query-or-hash': 'No query or hash',
+  'not-a-path': 'A plain path, such as /app',
+  'too-many-segments': 'At most 4 segments',
+  'too-long': 'At most 200 characters',
+} as const;
+
+function prefixError(pathPrefix: string): string | undefined {
+  const result = parsePathPrefix(pathPrefix);
+  return result.ok ? undefined : PREFIX_ERRORS[result.problem];
+}
+
+const invalid = computed(() => rows.value.some((r) => patternError(r.pattern) || prefixError(r.pathPrefix)));
 
 const shownSuggestions = computed(() =>
   suggestions.value.filter((s) => !rows.value.some((r) => r.pattern.trim() === s.pattern)),
@@ -76,7 +93,7 @@ async function load() {
 }
 
 function addRow(pattern = '') {
-  rows.value.push({ key: nextKey++, pattern, environment: '', branch: '' });
+  rows.value.push({ key: nextKey++, pattern, environment: '', branch: '', pathPrefix: '' });
 }
 
 function removeRow(key: number) {
@@ -102,6 +119,7 @@ async function save() {
           pattern: r.pattern.trim(),
           environment: r.environment.trim() || null,
           branch: r.branch.trim() || null,
+          pathPrefix: r.pathPrefix.trim() || null,
         })),
       },
     });
@@ -135,7 +153,7 @@ watch(() => props.projectId, load, { immediate: true });
         <li
           v-for="(row, index) in rows"
           :key="row.key"
-          class="grid gap-2 rounded-lg border border-default p-3 sm:grid-cols-[1fr_9rem_9rem_auto] sm:items-start sm:border-0 sm:p-0"
+          class="grid gap-2 rounded-lg border border-default p-3 sm:grid-cols-[1fr_8rem_8rem_7rem_auto] sm:items-start sm:border-0 sm:p-0"
           data-testid="url-pattern-row"
         >
           <UFormField :error="patternError(row.pattern)" :name="`pattern-${row.key}`">
@@ -148,6 +166,15 @@ watch(() => props.projectId, load, { immediate: true });
           </UFormField>
           <UInput v-model="row.environment" placeholder="Environment" aria-label="Environment" class="w-full" />
           <UInput v-model="row.branch" placeholder="Default branch" aria-label="Branch" class="w-full font-mono" />
+          <UFormField :error="prefixError(row.pathPrefix)" :name="`path-prefix-${row.key}`">
+            <UInput
+              v-model="row.pathPrefix"
+              placeholder="Path prefix"
+              aria-label="Path prefix"
+              title="Your site serves the pages under this path, the tests did not, e.g. /app"
+              class="w-full font-mono"
+            />
+          </UFormField>
           <div class="flex gap-1 justify-end">
             <UButton
               icon="i-lucide-chevron-up"
@@ -180,6 +207,10 @@ watch(() => props.projectId, load, { immediate: true });
           </div>
         </li>
       </ol>
+
+      <p v-if="rows.length > 0" class="text-xs text-muted" data-testid="url-pattern-prefix-hint">
+        Path prefix: your site serves the pages under this path, the tests did not, e.g. /app
+      </p>
 
       <div v-if="shownSuggestions.length > 0" class="space-y-2" data-testid="url-pattern-suggestions">
         <p class="text-sm font-semibold text-highlighted">Visited by the suite</p>
