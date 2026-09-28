@@ -119,7 +119,11 @@ describe('mappedPageKey', () => {
       prefixRemoved: null,
       prefixAdded: '/app',
     });
-    expect(mappedPageKey('https://shop.test/', { testPathPrefix: '/app' }).key).toBe('/app/');
+    expect(mappedPageKey('https://shop.test/', { testPathPrefix: '/app' }).key).toBe('/app');
+    expect(mappedPageKey('https://shop.test', { testPathPrefix: '/app' }).key).toBe('/app');
+    expect(mapPathPrefixes('https://shop.test/?tab=1', { testPathPrefix: '/app' }).url).toBe(
+      'https://shop.test/app?tab=1',
+    );
   });
 
   test('swaps one prefix for the other, and leaves a path outside the site’s prefix', () => {
