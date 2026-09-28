@@ -1,42 +1,96 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import type { TimelineItem } from '~/composables/useTimelineModel';
+import { isGapKind, isHookKind, type TimelineItem } from '~/composables/useTimelineModel';
 import {
   TIMELINE_WAIT_COLORS,
   timelineStatusColor,
-  timelineHookFill,
-  timelineHookStroke,
+  timelineHookColors,
   timelineStepColor,
   formatTimelineTime,
 } from '~/utils/timeline';
+import { stepHookName } from '#shared/step-tree';
 
 const props = defineProps<{
-  item: TimelineItem | null;
-  pos: { x: number; y: number };
+  /** The hover state the timeline shares with its focus overlay: the hovered item and the pointer. */
+  state: { item: TimelineItem | null; pos: { x: number; y: number } };
   /** Lock name → color, so the tooltip swatches match the brackets. */
   lockColorMap?: Map<string, string>;
 }>();
 
+const item = computed(() => props.state.item);
+
 const swatchStyle = computed(() => {
-  const item = props.item;
-  if (!item) return {};
-  if (item.kind === 'test') return { backgroundColor: timelineStatusColor(item.status, item.retries) };
-  if (item.kind === 'step')
-    return { backgroundColor: timelineStepColor(item.category ?? 'other', item.status === 'failed') };
-  if (item.kind === 'wait') {
+  const hovered = item.value;
+  if (!hovered) return {};
+  if (hovered.kind === 'test') return { backgroundColor: timelineStatusColor(hovered.status, hovered.retries) };
+  if (hovered.kind === 'step')
+    return { backgroundColor: timelineStepColor(hovered.category ?? 'other', hovered.status === 'failed') };
+  if (hovered.kind === 'wait') {
     return { backgroundColor: TIMELINE_WAIT_COLORS.swatch + '66', borderColor: TIMELINE_WAIT_COLORS.swatch };
   }
-  return { backgroundColor: timelineHookFill(item.status), borderColor: timelineHookStroke(item.status) };
+  if (isGapKind(hovered.kind)) return { borderColor: '#9ca3af' };
+  const hook = timelineHookColors(hovered.status);
+  return { backgroundColor: hook.fill, opacity: Math.max(hook.opacity, 0.5) };
+});
+
+/** The small uppercase label before the title: a hook section's side, else the bar's kind. */
+const kindLabel = computed(() => {
+  const hovered = item.value;
+  if (!hovered) return '';
+  if (hovered.kind === 'step') return hovered.category ?? 'step';
+  return hovered.section ?? hovered.kind;
+});
+
+/** A hook section's hooks and fixtures by short name (`beforeAll`, `fixture "db"`). */
+const hookRows = computed(() =>
+  (item.value?.hooks ?? []).map((hook) => ({
+    name: stepHookName(hook) ?? hook.title,
+    duration: hook.duration,
+    failed: hook.failed === true,
+  })),
+);
+
+const isGap = computed(() => (item.value ? isGapKind(item.value.kind) : false));
+
+/** The worker process, named when it differs from the lane's worker number. */
+const processLabel = computed(() => {
+  const hovered = item.value;
+  if (!hovered || hovered.slot == null || hovered.slot === hovered.workerIndex) return null;
+  return `process ${hovered.workerIndex}`;
+});
+
+/** What an empty stretch of the lane was: idle time, or a new worker process starting. */
+const gapText = computed<string[]>(() => {
+  const hovered = item.value;
+  if (!hovered?.gap) return [];
+  const { after, before } = hovered.gap;
+  if (hovered.kind === 'restart' && after && before) {
+    const ended = isFailedStatus(after.status)
+      ? `Process ${after.workerIndex} ended after “${after.title}” failed: Playwright replaces a worker process after a failure.`
+      : `Process ${after.workerIndex} ended after “${after.title}”. Playwright starts a new worker process after a failure, and for tests that need another project or different worker options.`;
+    return [ended, `This is the old process shutting down and process ${before.workerIndex} starting up.`];
+  }
+  if (after && before) return [`No test ran on this worker between “${after.title}” and “${before.title}”.`];
+  if (before) return [`No test ran on this worker before “${before.title}”.`];
+  if (after) return [`No test ran on this worker after “${after.title}”: it had none left while the others finished.`];
+  return [];
+});
+
+/** What clicking the bar does, for the bars whose click is not obvious. */
+const clickHint = computed(() => {
+  const hovered = item.value;
+  if (!hovered || hovered.testCaseId == null || !isHookKind(hovered.kind)) return null;
+  return 'Click to open the steps on this hook';
 });
 
 // Anchor right/bottom of the cursor by default, flipping near the viewport
 // edges so the tooltip never overflows off-screen.
 const TOOLTIP_MAX_WIDTH = 340;
 const positionStyle = computed(() => {
-  const { x, y } = props.pos;
+  const { x, y } = props.state.pos;
   if (typeof window === 'undefined') return { left: `${x + 12}px`, top: `${y - 10}px` };
   const flipX = x + 12 + TOOLTIP_MAX_WIDTH > window.innerWidth;
-  const flipY = y + 90 > window.innerHeight;
+  const flipY = y + 90 + (hookRows.value.length + gapText.value.length * 2) * 16 > window.innerHeight;
   return {
     left: flipX ? undefined : `${x + 12}px`,
     right: flipX ? `${window.innerWidth - x + 12}px` : undefined,
@@ -56,16 +110,16 @@ const positionStyle = computed(() => {
       <div class="flex items-center gap-2 mb-1">
         <span
           class="inline-block size-2.5 rounded-full shrink-0"
-          :class="{ 'border border-dashed': item.kind !== 'test' && item.kind !== 'step' }"
+          :class="{ 'border border-dashed': item.kind === 'wait' || isGap }"
           :style="swatchStyle"
         />
         <span class="font-medium text-gray-900 dark:text-white max-w-64 truncate">
           <span
-            v-if="item.kind !== 'test'"
+            v-if="item.kind !== 'test' && !isGap"
             class="uppercase text-[10px] tracking-wider mr-1"
             :class="item.kind === 'wait' ? 'text-amber-500' : 'text-gray-500'"
           >
-            {{ item.kind === 'step' ? (item.category ?? 'step') : item.kind }}
+            {{ kindLabel }}
           </span>
           {{ item.title }}
         </span>
@@ -74,12 +128,32 @@ const positionStyle = computed(() => {
         {{ item.subtitle }}
       </div>
       <div class="flex items-center gap-3 text-gray-500">
-        <span class="capitalize">{{ formatExecutionStatus(item.status, item.retries) }}</span>
+        <span v-if="!isGap" class="capitalize">{{ formatExecutionStatus(item.status, item.retries) }}</span>
         <span>{{ formatTimelineTime(item.duration) }}</span>
-        <span>Worker {{ item.workerIndex }}</span>
+        <span>
+          Worker {{ item.slot ?? item.workerIndex }}<template v-if="processLabel"> · {{ processLabel }}</template>
+        </span>
         <span v-if="item.parentTitle" class="italic truncate max-w-48"> for {{ item.parentTitle }} </span>
       </div>
-      <div v-if="item.error" class="mt-1 text-red-500 truncate max-w-72">{{ item.error }}</div>
+      <p v-for="(line, i) in gapText" :key="i" class="mt-1 text-gray-500 dark:text-gray-400 max-w-72">{{ line }}</p>
+      <div v-if="item.reportedDuration != null" class="mt-1 text-gray-400 max-w-72">
+        Playwright reports {{ formatTimelineTime(item.reportedDuration) }}; the rest ran in hooks it does not count
+        (beforeAll, afterAll, worker fixtures).
+      </div>
+      <ul v-if="hookRows.length" class="mt-1.5 space-y-0.5 max-w-72" data-testid="timeline-tooltip-hooks">
+        <li
+          v-for="(hook, i) in hookRows"
+          :key="i"
+          class="flex items-center gap-2"
+          :class="hook.failed ? 'text-red-500 font-medium' : 'text-gray-600 dark:text-gray-300'"
+        >
+          <UIcon :name="hook.failed ? 'i-lucide-x' : 'i-lucide-dot'" class="size-3 shrink-0" />
+          <span class="truncate">{{ hook.name }}</span>
+          <span class="ml-auto pl-2 tabular-nums text-gray-400">{{ formatTimelineTime(hook.duration) }}</span>
+        </li>
+      </ul>
+      <div v-if="item.error" class="mt-1 text-red-500 line-clamp-2 break-words max-w-72">{{ item.error }}</div>
+      <div v-if="clickHint" class="mt-1 text-[11px] text-gray-400">{{ clickHint }}</div>
       <div v-if="item.locks?.length" class="flex items-center gap-2 flex-wrap mt-1 text-gray-500">
         <UIcon name="i-lucide-lock" class="size-3 shrink-0" />
         <span v-for="lock in item.locks" :key="lock" class="inline-flex items-center gap-1">

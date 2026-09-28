@@ -155,6 +155,7 @@ export const PROJECT = {
   RUN_PAGE_FILTERS: 'run-page-filters-test',
   RUN_SKIP_KINDS: 'run-skip-kinds-test',
   RUN_SUMMARY_TEST: 'run-summary-test',
+  RUN_TIMELINE_HOOKS: 'run-timeline-hooks-test',
   SCENARIO_GAPS: 'scenario-gaps-e2e-test',
   SCENARIO_GAPS_DECLINE: 'scenario-gaps-decline-test',
   SHARDING_TEST: 'sharding-test',

@@ -6,7 +6,10 @@
  * `result.steps` from a live run, and the server rebuilds the same structures
  * from an imported blob report's step events.
  */
+import { stripAnsi } from './error-parse';
 import { maskTokenLike } from './mask';
+import { isCaptureStep } from './step-tree';
+import type { TestStepEvent, TestStepEventHook } from './wire';
 
 /** Max param keys kept per step. */
 export const MAX_STEP_PARAM_KEYS = 20;
@@ -375,32 +378,67 @@ export function computePerformanceSummary(testCases: any[]): PerformanceSummary 
   return result;
 }
 
+/** Max hooks and fixtures a hook section's event lists; the failed and the slowest are kept. */
+export const MAX_SECTION_HOOKS = 12;
+/** Max characters kept of a failed hook or fixture event's error line. */
+export const MAX_STEP_EVENT_ERROR_CHARS = 300;
+
+/** A Playwright step location as `file:line:col`, or null. */
+function stepLocation(step: any): string | null {
+  return step.location ? `${step.location.file}:${step.location.line}:${step.location.column}` : null;
+}
+
+/** The first non-empty line of a step's error, without ANSI codes and capped; null when it has none. */
+function stepErrorLine(step: any): string | null {
+  const raw = step.error?.message ?? step.error?.value;
+  if (typeof raw !== 'string') return null;
+  const line = stripAnsi(raw)
+    .split('\n')
+    .map((l) => l.trim())
+    .find((l) => l.length > 0);
+  return line ? capStepValue(line, MAX_STEP_EVENT_ERROR_CHARS) : null;
+}
+
+/**
+ * The hooks and fixtures a hook section ran: its direct hook and fixture
+ * children, without Piwi's own capture steps. Past `MAX_SECTION_HOOKS` the
+ * failed ones and then the slowest are kept, still in the order they ran.
+ */
+function sectionHooks(step: any): TestStepEventHook[] {
+  const children: TestStepEventHook[] = [];
+  for (const child of step.steps ?? []) {
+    const category = categorizeStep(child.title, child.category);
+    if (category !== 'hook' && category !== 'fixture') continue;
+    if (isCaptureStep({ title: child.title, location: stepLocation(child) })) continue;
+    const hook: TestStepEventHook = { title: child.title, category, duration: child.duration || 0 };
+    if (child.error) hook.failed = true;
+    children.push(hook);
+  }
+  if (children.length <= MAX_SECTION_HOOKS) return children;
+  const keep = new Set(
+    children
+      .map((hook, i) => ({ hook, i }))
+      .sort(
+        (a, b) => Number(Boolean(b.hook.failed)) - Number(Boolean(a.hook.failed)) || b.hook.duration - a.hook.duration,
+      )
+      .slice(0, MAX_SECTION_HOOKS)
+      .map(({ i }) => i),
+  );
+  return children.filter((_, i) => keep.has(i));
+}
+
 /**
  * Extract hook and fixture step events with absolute timings from a Playwright
  * step tree. These are used by the WorkersTimeline to render hook segments.
  *
- * Returns only top-level hook/fixture steps (beforeEach, afterEach, fixture
- * setup/teardown) — their sub-steps are included implicitly in their duration.
+ * Returns only top-level hook/fixture steps — Playwright's `Before Hooks`,
+ * `After Hooks` and `Worker Cleanup` sections, whose sub-steps are included in
+ * their duration. Each carries the hooks and fixtures it ran (`beforeAll hook`,
+ * `Fixture "db"`) and, when it failed, the first line of its error, so the
+ * timeline can name what ran and what broke without the full step list.
  */
-export function extractTestStepEvents(
-  steps: any[],
-  _testStartTime: Date,
-): Array<{
-  title: string;
-  category: StepEventCategory;
-  startedAt: number;
-  duration: number;
-  status: string;
-  location?: string | null;
-}> {
-  const events: Array<{
-    title: string;
-    category: StepEventCategory;
-    startedAt: number;
-    duration: number;
-    status: string;
-    location?: string | null;
-  }> = [];
+export function extractTestStepEvents(steps: any[], _testStartTime: Date): TestStepEvent[] {
+  const events: TestStepEvent[] = [];
 
   for (const step of steps) {
     const cat = categorizeStep(step.title, step.category);
@@ -408,14 +446,19 @@ export function extractTestStepEvents(
     if (!step.startTime) continue;
 
     const startedAt = step.startTime instanceof Date ? step.startTime.getTime() : step.startTime;
-    events.push({
+    const event: TestStepEvent = {
       title: step.title,
       category: cat as StepEventCategory,
       startedAt,
       duration: step.duration || 0,
       status: step.error ? 'failed' : 'passed',
-      location: step.location ? `${step.location.file}:${step.location.line}:${step.location.column}` : null,
-    });
+      location: stepLocation(step),
+    };
+    const error = step.error ? stepErrorLine(step) : null;
+    if (error) event.error = error;
+    const hooks = sectionHooks(step);
+    if (hooks.length > 0) event.hooks = hooks;
+    events.push(event);
   }
 
   return events;

@@ -71,6 +71,17 @@ results stream in live. The tabs:
 - **Changes**: what differs against one baseline run. See [What changed in a run](./run-changes).
 - **Timeline**: each worker's tests on one time axis, with hooks, waits and locks, the slowest tests and the worker
   distribution ([Slow tests & wasted time](./slow-tests)).
+  - **Hooks**: hook time is hatched over each test's bar: setup (`beforeAll`, `beforeEach`, fixtures) at the start,
+    teardown (`afterEach`, `afterAll`, worker cleanup) at the end. A failed hook is drawn in dark red and counted in
+    the header, even with **Show hooks** off; hover it for the hooks that section ran, their times and the error, and
+    click it to open the test's steps on that hook. Playwright leaves `beforeAll` / `afterAll` hooks and worker
+    fixtures out of a test's duration; the bar spans them anyway, and its tooltip gives the duration Playwright
+    reported. Runs sent by an older reporter show the sections without their hook list.
+  - **Gaps**: a lane is one worker. Playwright replaces a worker process after a failed test (and starts one for
+    tests that need another project or different worker options), so a lane can hold several processes one after
+    another: **↻** marks where a new one took over, and the stretch before it is the old process shutting down and
+    the new one starting. A dashed line is time the worker ran no test — before its first test, between two tests,
+    or after its last one while the others finished. Hover either to see which it was.
 
 ## Test case detail
 

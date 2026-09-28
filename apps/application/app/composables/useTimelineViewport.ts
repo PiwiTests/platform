@@ -1,4 +1,4 @@
-import { ref, computed, watch, onMounted, onUnmounted, nextTick, type Ref, type ComputedRef } from 'vue';
+import { ref, shallowRef, computed, watch, onMounted, onUnmounted, nextTick, type Ref, type ComputedRef } from 'vue';
 import { TIMELINE_LAYOUT, formatTimelineTime } from '~/utils/timeline';
 
 interface BarGeometry {
@@ -64,7 +64,7 @@ export function useTimelineViewport(opts: TimelineViewportOptions) {
   function computeFitZoom(): number {
     const cw = containerRef.value?.clientWidth;
     if (!cw || maxTime.value <= 0) return 1;
-    const minPxPerMs = (cw - labelWidth) / maxTime.value;
+    const minPxPerMs = (cw - labelWidth - sidePadding) / maxTime.value;
     return Math.min(1, minPxPerMs / 0.5);
   }
 
@@ -106,11 +106,26 @@ export function useTimelineViewport(opts: TimelineViewportOptions) {
     return ticks;
   });
 
+  // Wheel notches between two frames fold into one zoom: a trackpad sends
+  // several per frame, and each zoom re-positions every bar.
+  let pendingWheel: { factor: number; anchorX: number } | null = null;
+
   function onWheel(event: WheelEvent): void {
     if (live()) return;
     const factor = event.deltaY > 0 ? 1 / WHEEL_ZOOM_FACTOR : WHEEL_ZOOM_FACTOR;
     const rect = containerRef.value?.getBoundingClientRect();
-    zoomAround(zoom.value * factor, rect ? event.clientX - rect.left : 0);
+    const anchorX = rect ? event.clientX - rect.left : 0;
+    if (pendingWheel) {
+      pendingWheel.factor *= factor;
+      pendingWheel.anchorX = anchorX;
+      return;
+    }
+    pendingWheel = { factor, anchorX };
+    requestAnimationFrame(() => {
+      const wheel = pendingWheel!;
+      pendingWheel = null;
+      zoomAround(zoom.value * wheel.factor, wheel.anchorX);
+    });
   }
 
   // ── Pointer / touch interaction ──────────────────────────────────────────────
@@ -213,14 +228,46 @@ export function useTimelineViewport(opts: TimelineViewportOptions) {
     panX.value = clampPanX(cw / 2 - centerPx);
   }
 
+  // Re-fit when the container's width changes. Its height follows the lanes (a
+  // row expanded into its steps adds some), and that keeps the current framing.
   let resizeObserver: ResizeObserver | null = null;
+  /** The container's width in px; 0 until it is measured. */
+  const viewportWidth = ref(0);
   onMounted(() => {
     nextTick(applyFitZoom);
     if (containerRef.value) {
-      resizeObserver = new ResizeObserver(() => applyFitZoom());
+      resizeObserver = new ResizeObserver(() => {
+        const width = containerRef.value?.clientWidth ?? 0;
+        if (width === viewportWidth.value) return;
+        viewportWidth.value = width;
+        applyFitZoom();
+      });
       resizeObserver.observe(containerRef.value);
     }
   });
+
+  /**
+   * The stretch of the run worth drawing, in ms: what the viewport shows plus
+   * half a viewport's width on each side. It moves only when the view leaves
+   * it, or when zooming in leaves the view well inside it, so panning redraws
+   * nothing until half a viewport has scrolled by. Everything, until the
+   * container is measured.
+   */
+  const renderRange = shallowRef<{ start: number; end: number }>({ start: -Infinity, end: Infinity });
+  watch(
+    [panX, pxPerMs, viewportWidth],
+    () => {
+      const width = viewportWidth.value;
+      if (!width) return;
+      const span = width / pxPerMs.value;
+      const start = (-panX.value - labelWidth) / pxPerMs.value;
+      const end = start + span;
+      const current = renderRange.value;
+      if (start >= current.start && end <= current.end && current.end - current.start <= span * 3) return;
+      renderRange.value = { start: start - span / 2, end: end + span / 2 };
+    },
+    { immediate: true },
+  );
 
   onUnmounted(() => {
     resizeObserver?.disconnect();
@@ -237,6 +284,7 @@ export function useTimelineViewport(opts: TimelineViewportOptions) {
   );
 
   return {
+    renderRange,
     panX,
     isPanning,
     pxPerMs,

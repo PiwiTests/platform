@@ -6,9 +6,9 @@
 // popup.html, which is loaded as a normal extension page and gets Vite's
 // standard (chunk-splitting-friendly) HTML-entry build.
 //
-// Exports buildExtension() so dev.mjs can re-run the whole thing on change;
-// running this file directly builds once. `--release` makes the build
-// reproducible (see `buildExtension`): the store zips are built that way, since
+// Running this file builds once; dev.mjs re-runs it in a fresh process on each
+// change rather than calling buildExtension() in its own. `--release` makes the
+// build reproducible (see `buildExtension`): the store zips are built that way, since
 // Firefox reviewers rebuild the source package and diff the result against the
 // submitted add-on. `--pseudo` replaces the English catalog with a pseudo-localized
 // copy (see `pseudoLocalize`), a development aid that never goes into a release.
@@ -223,7 +223,14 @@ function writePseudoCatalog() {
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const release = process.argv.includes('--release');
   const pseudo = process.argv.includes('--pseudo');
-  await buildExtension({ release, pseudo });
+  try {
+    await buildExtension({ release, pseudo });
+  } catch (error) {
+    // A failed build's message already carries Vite's report and code frame;
+    // the stack under it is only Rolldown's internals.
+    console.error(error.message);
+    process.exit(1);
+  }
   const kind = release ? ' (release)' : pseudo ? ' (pseudo-localized English)' : '';
   const dirs = [outDir, firefoxOutDir].map((dir) => path.relative(process.cwd(), dir)).join(' and ');
   console.log(`Built extension${kind} into ${dirs}`);
