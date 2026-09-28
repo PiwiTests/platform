@@ -1129,6 +1129,13 @@ function wrapFrameLocator(page: Page, frameLocator: FrameLocator): FrameLocator 
 }
 
 /**
+ * The error text each browser gives a request the page cancelled itself:
+ * Chromium's `net::ERR_ABORTED`, Firefox's `NS_BINDING_ABORTED`, WebKit's
+ * "cancelled".
+ */
+const CANCELLED_REQUEST = /^net::ERR_ABORTED$|^NS_BINDING_ABORTED$|^NS_ERROR_ABORT$|cancell?ed/i;
+
+/**
  * Instrument a single page: wrap its locator-building methods for healing
  * capture and attach console/network listeners. Idempotent — safe to call on a
  * page already reached through another path (browser patch, `page` fixture).
@@ -1294,6 +1301,10 @@ function instrumentPage(page: Page): void {
         // Only keep API/document requests; skip static assets (scripts, styles, fonts, images, media)
         if (!TRACKED_REQUEST_TYPES.includes(resourceType)) return;
 
+        const failure = failed ? (request.failure()?.errorText ?? 'failed') : null;
+        // A request the page cancelled itself (a navigation, an AbortController, the page closing) did not fail.
+        if (failure && CANCELLED_REQUEST.test(failure)) return;
+
         const timing = request.timing();
         const response = failed ? null : await request.response();
         const entry: Record<string, unknown> = {
@@ -1304,7 +1315,7 @@ function instrumentPage(page: Page): void {
           startTime: timing.startTime,
           resourceType,
         };
-        if (failed) entry.failure = request.failure()?.errorText ?? 'failed';
+        if (failure) entry.failure = failure;
 
         if (response) {
           const headers = response.headers();

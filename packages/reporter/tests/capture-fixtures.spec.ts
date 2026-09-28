@@ -778,7 +778,7 @@ describe('probeElementAttrs — structural probe (rolePosition + ancestors)', ()
     el.ownerDocument.querySelectorAll = (sel: string) =>
       sel.startsWith('[role],')
         ? [form, el]
-        : Array.from({ length: ({ '[data-testid="signup-form"]': 1, '#signup': 1 })[sel] ?? 0 });
+        : Array.from({ length: { '[data-testid="signup-form"]': 1, '#signup': 1 }[sel] ?? 0 });
     form.scopedNodes = [el];
     const probed = probe(el, ['type']);
     // The plain div is not anchor-worthy; the form is, at depth 2.
@@ -1184,7 +1184,6 @@ describe('visible() and frameLocator() chains', () => {
   });
 });
 
-
 describe('dialog capture (dialogclosed)', () => {
   /** Drive the fixtures against a fake page, fire dialog events, read the attachment. */
   async function runDialogs(
@@ -1354,7 +1353,7 @@ describe('network capture (requestfinished, requestfailed)', () => {
       emit('requestfinished', fakeRequest({ url: 'https://shop.test/api/products', responseEnd: 105, status: 200 }));
       emit(
         'requestfailed',
-        fakeRequest({ url: 'https://shop.test/api/orders', method: 'POST', errorText: 'net::ERR_ABORTED' }),
+        fakeRequest({ url: 'https://shop.test/api/orders', method: 'POST', errorText: 'net::ERR_CONNECTION_REFUSED' }),
       );
     });
     expect(requests).toHaveLength(2);
@@ -1363,7 +1362,17 @@ describe('network capture (requestfinished, requestfailed)', () => {
     expect(finished.duration).toBe(100);
     expect(finished).not.toHaveProperty('failure');
     const failed = requests!.find((r) => r.url === 'https://shop.test/api/orders')!;
-    expect(failed).toMatchObject({ method: 'POST', status: 0, failure: 'net::ERR_ABORTED' });
+    expect(failed).toMatchObject({ method: 'POST', status: 0, failure: 'net::ERR_CONNECTION_REFUSED' });
+  });
+
+  it('skips requests the page cancelled itself, in every browser', async () => {
+    const requests = await runNetwork((emit) => {
+      for (const errorText of ['net::ERR_ABORTED', 'NS_BINDING_ABORTED', 'Load request cancelled', 'cancelled']) {
+        emit('requestfailed', fakeRequest({ url: `https://shop.test/api/search?q=${errorText}`, errorText }));
+      }
+      emit('requestfailed', fakeRequest({ url: 'https://shop.test/api/cart', errorText: 'net::ERR_FAILED' }));
+    });
+    expect(requests!.map((r) => r.url)).toEqual(['https://shop.test/api/cart']);
   });
 
   it('skips failed static assets, as it does finished ones', async () => {
