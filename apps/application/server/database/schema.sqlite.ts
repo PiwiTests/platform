@@ -630,6 +630,7 @@ export const networkRequests = sqliteTable(
     contentType: text('content_type'), // Response content-type header
     serverLogs: text('server_logs', { mode: 'json' }), // Backend server logs from X-Piwi-Logs header
     serverTraces: text('server_traces', { mode: 'json' }), // Server-side spans from X-Piwi-Trace header
+    failure: text('failure'), // Why the request failed (Playwright's error text, e.g. net::ERR_CONNECTION_RESET); null when it finished
   },
   (t) => ({
     runIdx: index('idx_nr_run').on(t.testRunId),
