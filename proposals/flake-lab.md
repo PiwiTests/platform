@@ -9,7 +9,9 @@ the same condition later proves the fix.
 
 **Status.** Proposed 2026-09-27. **PR 1 built 2026-09-28**: the five defects are fixed, the capture fixtures record
 failed requests (`requestfailed`, status 0, `failure`), `network_requests` has a `failure` column, and the Attempts diff
-compares request durations. PRs 2–6 are not started. What changed while building PR 1:
+compares request durations. **PR 2 built 2026-09-28**: `buildFlakeProfile` and its endpoint, the Flakiness tab,
+the flaky list's top suspect, the Attempts links, `get_flake_profile`, the weak `known-flake-suspect` clue and the
+`flake-lab` capability. PRs 3–6 are not started. What changed while building PR 1:
 
 - The server's filter did **not** keep status 0: it kept status ≥ 400 plus the 50 slowest others, so a quick reset
   could be dropped. It now keeps every request with status ≥ 400, status ≤ 0 or a `failure`.
@@ -27,6 +29,29 @@ compares request durations. PRs 2–6 are not started. What changed while buildi
 - A slower request in the Attempts diff is a symmetric `network` row (no `only`), so it does not count as a failed
   request in the classifier's attempt-diff vote. Its link to the matching suspect waits for PR 2, which adds suspects;
   the row's key is the diff's own (method and URL without the query), not yet `normalizeRoute`.
+
+What changed while building PR 2:
+
+- A slow route is a suspect only for a route the passes call too: a route called on failures alone is a different
+  path, not a slower one. Thresholds maximize the share of failures at or above them minus the share of passes, the
+  lowest value on a tie; a label rounds its threshold down (1792 ms is "≥1.7 s").
+- Load counts the overlapping executions on the attempt's own shard: other shards run on other machines.
+- Shared write routes match by path across write methods, so a `PUT` and a `POST` to `/api/products` count, and come
+  from the stored requests (status ≥ 400, failed, or the 50 slowest), so a fast write can be missing.
+- The flaky list reads the top suspects from a second endpoint, `GET /api/projects/:id/flake-suspects`, after the list
+  loads, so the list never waits on up to 50 profiles; each is read in a summary view without shared routes or other
+  runs.
+- The Attempts diff keys every request by the route key (method and `normalizeRoute` path, `GET /api/cart/:id`) and
+  shows it in the row; a failed request's row keeps the full URL as its detail. A slower row links to the matching
+  `slow-route` suspect, a request that failed on the failing attempt only to the `failed-route` one.
+- The clue fires when the failing execution is among a suspect's supporting failures, highest ranked first; its detail
+  gives this failure's own duration for a slow route. It is skipped when the project or instance declines `flake-lab`,
+  read from the stored decisions alone since the capability is passive.
+- The Flakiness tab shows for a test with a retry-pass on record (`flakyRuns > 0`). The capability reads active once
+  a project has a retry-pass.
+- The hour of day is compared in six-hour UTC blocks. The demo seed collapses retries into one row, so a post-pass
+  gives the checkout project's flaky test a failed-attempt row per flaky run (at least seven) with a slow cart, and the
+  seed's regression signals walk only each run's final attempt.
 
 The suspects are computed from data Piwi already stores. The lab adds a CLI command, a reporter mode like probe mode,
 two tables, a desktop command and MCP tools. New wire fields, the plan file format, the command and the endpoints
