@@ -16,7 +16,7 @@ import {
 import { asc, desc, eq, exists, sql, and, or, inArray, gte, lte, isNull, isNotNull, count } from 'drizzle-orm';
 import { jsonArrayContainsAll, parseLockFilter, parseTagFilter } from '../utils/tag-filter';
 import { isProbeRun, notProbeRun } from './probes';
-import { FAILED_STATUS_KEYS } from '../utils/test-counts';
+import { isFailedStatus } from '../utils/test-counts';
 import { fixmeSkipPredicate } from '../utils/skip-kind';
 import { TEST_PRIORITIES } from '@piwitests/core/test-meta';
 
@@ -1465,7 +1465,7 @@ export async function getProjectFlakyTests(
         const sorted = group.rows.slice().sort((a: any, b: any) => (a.retries ?? 0) - (b.retries ?? 0));
         const maxRetryRow = sorted[sorted.length - 1];
         group.finalStatus = maxRetryRow?.status ?? 'unknown';
-        const hasFailed = group.rows.some((r: any) => FAILED_STATUS_KEYS.includes(r.status));
+        const hasFailed = group.rows.some((r: any) => isFailedStatus(r.status));
         const hasPassed = group.rows.some((r: any) => r.status === 'passed');
         group.retryPass = hasFailed && hasPassed;
       }
@@ -1510,12 +1510,12 @@ export async function getProjectFlakyTests(
       let runRetryPass = false;
 
       for (const [, group] of byBrowser) {
-        if (group.finalStatus === 'failed' || group.finalStatus === 'timedOut') runFinalFailed = true;
+        if (isFailedStatus(group.finalStatus)) runFinalFailed = true;
         if (group.retryPass) runRetryPass = true;
 
         for (const row of group.rows) {
           if (row.id > latestRunsCaseId) latestRunsCaseId = row.id;
-          if ((row.status === 'failed' || row.status === 'timedOut') && row.duration != null) {
+          if (isFailedStatus(row.status) && row.duration != null) {
             failedDurations.push(row.duration);
           }
         }

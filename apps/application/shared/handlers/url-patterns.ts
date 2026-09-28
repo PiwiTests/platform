@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, inArray, like } from 'drizzle-orm';
 import { z } from 'zod';
 import { urlMatches } from '@piwitests/core/function-match';
+import { parsePathPrefix, type PathPrefixProblem } from '@piwitests/core/page-key';
 import { graphNodes, locatorUsages, projects, projectUrlPatterns, testRuns } from '../../server/database/schema';
 import { projectRouteOrigins, runBaseUrls, urlOrigin } from '#shared/graph';
 import type { DrizzleDB } from './db';
@@ -10,8 +11,30 @@ import type { DrizzleDB } from './db';
  * the browser extension resolves the project of a page from. A pattern is a
  * glob over the whole URL with the extension's syntax (`urlMatches`: `*`
  * within one path segment, `**` across segments), so it starts with the scheme
- * or a wildcard.
+ * or a wildcard. Two optional path prefixes relate the site's paths to the
+ * tests': `pathPrefix`, the part of the site's path the tests never saw
+ * (`/app`), which the extension removes before comparing the page with the
+ * pages the tests recorded, and `testPathPrefix`, the part the tests ran under
+ * and the site does not, which it puts in front.
  */
+
+const PATH_PREFIX_MESSAGES: Record<PathPrefixProblem, string> = {
+  'query-or-hash': 'A path prefix has no query or hash',
+  'not-a-path': 'A path prefix is a plain path such as /app, with no wildcards, spaces or dot segments',
+  'too-many-segments': 'A path prefix has at most 4 segments',
+  'too-long': 'A path prefix has at most 200 characters',
+};
+
+/** A path prefix, normalized (`app/` → `/app`); empty means none. */
+export const pathPrefixSchema = z
+  .string()
+  .nullish()
+  .transform((value, ctx) => {
+    const result = parsePathPrefix(value);
+    if (result.ok) return result.prefix;
+    ctx.addIssue({ code: 'custom', message: PATH_PREFIX_MESSAGES[result.problem] });
+    return z.NEVER;
+  });
 
 export const MAX_URL_PATTERNS_PER_PROJECT = 100;
 
@@ -24,25 +47,34 @@ export const urlPatternInputSchema = z.object({
     .refine((p) => /^(https?:\/\/|\*)/i.test(p), 'Start the pattern with http://, https:// or a wildcard'),
   environment: z.string().trim().max(40).nullish(),
   branch: z.string().trim().max(200).nullish(),
+  pathPrefix: pathPrefixSchema,
+  testPathPrefix: pathPrefixSchema,
 });
 
 export const urlPatternListSchema = z.object({
   items: z.array(urlPatternInputSchema).max(MAX_URL_PATTERNS_PER_PROJECT),
 });
 
-export type UrlPatternInput = z.infer<typeof urlPatternInputSchema>;
+export type UrlPatternInput = z.input<typeof urlPatternInputSchema>;
 
 export interface UrlPatternItem {
   id: number;
   pattern: string;
   environment: string | null;
   branch: string | null;
+  pathPrefix: string | null;
+  testPathPrefix: string | null;
   position: number;
 }
 
 function clean(value: string | null | undefined): string | null {
   const trimmed = value?.trim();
   return trimmed ? trimmed : null;
+}
+
+function cleanPrefix(value: string | null | undefined): string | null {
+  const result = parsePathPrefix(value);
+  return result.ok ? result.prefix : null;
 }
 
 export async function listProjectUrlPatterns(db: DrizzleDB, projectId: number): Promise<UrlPatternItem[]> {
@@ -52,6 +84,8 @@ export async function listProjectUrlPatterns(db: DrizzleDB, projectId: number): 
       pattern: projectUrlPatterns.pattern,
       environment: projectUrlPatterns.environment,
       branch: projectUrlPatterns.branch,
+      pathPrefix: projectUrlPatterns.pathPrefix,
+      testPathPrefix: projectUrlPatterns.testPathPrefix,
       position: projectUrlPatterns.position,
     })
     .from(projectUrlPatterns)
@@ -90,6 +124,8 @@ export async function replaceProjectUrlPatterns(
         pattern: item.pattern.trim(),
         environment: clean(item.environment),
         branch: clean(item.branch),
+        pathPrefix: cleanPrefix(item.pathPrefix),
+        testPathPrefix: cleanPrefix(item.testPathPrefix),
         position,
         createdAt: now,
         updatedAt: now,
@@ -116,6 +152,8 @@ export async function addProjectUrlPattern(
     pattern,
     environment: clean(input.environment),
     branch: clean(input.branch),
+    pathPrefix: cleanPrefix(input.pathPrefix),
+    testPathPrefix: cleanPrefix(input.testPathPrefix),
     position: existing.reduce((max, p) => Math.max(max, p.position + 1), 0),
     createdAt: now,
     updatedAt: now,
@@ -130,6 +168,8 @@ export interface VisibleUrlPattern {
   pattern: string;
   environment: string | null;
   branch: string | null;
+  pathPrefix: string | null;
+  testPathPrefix: string | null;
 }
 
 /**
@@ -146,6 +186,8 @@ export async function listVisibleUrlPatterns(db: DrizzleDB, scope: 'all' | Set<n
       pattern: projectUrlPatterns.pattern,
       environment: projectUrlPatterns.environment,
       branch: projectUrlPatterns.branch,
+      pathPrefix: projectUrlPatterns.pathPrefix,
+      testPathPrefix: projectUrlPatterns.testPathPrefix,
     })
     .from(projectUrlPatterns)
     .innerJoin(projects, eq(projects.id, projectUrlPatterns.projectId))

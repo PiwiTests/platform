@@ -69,6 +69,7 @@ type NetworkRequest = {
   startTime: number;
   resourceType: string;
   serverLogs?: unknown;
+  failure?: string;
 };
 
 async function collectNetworkAndVitals(page: Page, testInfo: TestInfo) {
@@ -111,6 +112,25 @@ async function collectNetworkAndVitals(page: Page, testInfo: TestInfo) {
       }
     })();
     pendingHandlers.push(p);
+  });
+
+  page.on('requestfailed', (request) => {
+    try {
+      const url = request.url();
+      if (url.startsWith('data:') || url.startsWith('blob:')) return;
+      const timing = request.timing();
+      networkRequests.push({
+        method: request.method(),
+        url,
+        status: 0,
+        duration: timing.startTime > 0 ? Math.max(0, Math.round(Date.now() - timing.startTime)) : 0,
+        startTime: timing.startTime,
+        resourceType: request.resourceType(),
+        failure: request.failure()?.errorText ?? 'failed',
+      });
+    } catch {
+      /* a request shape the reader does not expect — skip it */
+    }
   });
 
   return async () => {

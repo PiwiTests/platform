@@ -21,7 +21,12 @@ let baseUrl: string;
 let approved = false;
 let keysHandedOut = 0;
 let connectBody: unknown = null;
-let patterns: Array<{ pattern: string; environment: string | null }> = [];
+let patterns: Array<{
+  pattern: string;
+  environment: string | null;
+  pathPrefix?: string | null;
+  testPathPrefix?: string | null;
+}> = [];
 const addedPatterns: unknown[] = [];
 
 async function readJson(req: IncomingMessage): Promise<unknown> {
@@ -94,6 +99,8 @@ test.beforeAll(async () => {
             pattern: p.pattern,
             environment: p.environment,
             branch: null,
+            pathPrefix: p.pathPrefix ?? null,
+            testPathPrefix: p.testPathPrefix ?? null,
           })),
           projects: [{ id: 1, label: 'Shop', canEdit: true }],
         });
@@ -101,9 +108,19 @@ test.beforeAll(async () => {
       if (url.pathname === '/api/projects/menu') return json(200, { items: [{ id: 1, name: 'shop', label: 'Shop' }] });
       if (url.pathname === '/api/projects/1/test-functions') return json(200, { items: [] });
       if (req.method === 'POST' && url.pathname === '/api/projects/1/url-patterns') {
-        const body = (await readJson(req)) as { pattern: string; environment?: string | null };
+        const body = (await readJson(req)) as {
+          pattern: string;
+          environment?: string | null;
+          pathPrefix?: string | null;
+          testPathPrefix?: string | null;
+        };
         addedPatterns.push(body);
-        patterns.push({ pattern: body.pattern, environment: body.environment ?? null });
+        patterns.push({
+          pattern: body.pattern,
+          environment: body.environment ?? null,
+          pathPrefix: body.pathPrefix,
+          testPathPrefix: body.testPathPrefix,
+        });
         return json(201, { items: [] });
       }
       return json(404, {});
@@ -218,6 +235,14 @@ test.describe.serial('connect in one step', () => {
     await expect(settings.locator('#add-pattern')).toHaveValue(`${site}/**`);
     await expect(settings.locator('#add-project')).toHaveValue('1');
     await settings.locator('#add-environment').fill('staging');
+    // A path prefix with a query is refused before anything is sent.
+    await settings.locator('#add-prefix').fill('/app?lang=fr');
+    await expect(settings.locator('#add-prefix')).toHaveAttribute('aria-invalid', '');
+    await settings.getByRole('button', { name: 'Add to Piwi' }).click();
+    await expect(settings.locator('#status')).toContainText('/app?lang=fr is not a path prefix');
+    await settings.locator('#add-prefix').fill('app/');
+    await expect(settings.locator('#add-prefix')).not.toHaveAttribute('aria-invalid');
+    await settings.locator('#add-test-prefix').fill('/v2');
     await settings.getByRole('button', { name: 'Add to Piwi' }).click();
 
     await expect(settings.locator('#status')).toHaveText(`Added ${site}/** to Shop.`);
@@ -225,8 +250,41 @@ test.describe.serial('connect in one step', () => {
       pattern: `${site}/**`,
       environment: 'staging',
       branch: null,
+      pathPrefix: '/app',
+      testPathPrefix: '/v2',
     });
-    await expect(settings.locator('#server-mappings .server-row')).toContainText(`${site}/**`);
+    const serverRow = settings.locator('#server-mappings .server-row');
+    await expect(serverRow).toContainText(`${site}/**`);
+    await expect(serverRow).toContainText('Shop · staging · path prefix /app · tests’ path prefix /v2');
+    expect(await storedConnection(settings)).toMatchObject({
+      serverMappings: [
+        expect.objectContaining({ urlPattern: `${site}/**`, pathPrefix: '/app', testPathPrefix: '/v2' }),
+      ],
+    });
+
+    // Kept in this browser only: the line holds the prefix, which Save stores.
+    await settings.locator('#add-pattern').fill('https://preview.shop.example/**');
+    await settings.locator('#add-prefix').fill('/shop/eu/');
+    await settings.getByRole('button', { name: 'Keep in this browser only' }).click();
+    const line = settings.locator('#mappings .mapping-row').last();
+    await expect(line.getByLabel('Path prefix', { exact: true })).toHaveValue('/shop/eu');
+    await line.getByLabel('Path prefix', { exact: true }).fill('/shop/eu/fr');
+    // The tests ran under /shop: a refused value stops Save, a plain path is kept.
+    await line.getByLabel('Tests’ path prefix').fill('/shop/*');
+    await settings.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(settings.locator('#status')).toContainText('/shop/* is not a path prefix');
+    await line.getByLabel('Tests’ path prefix').fill('shop');
+    await settings.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(settings.locator('#status')).toContainText('Saved');
+    expect(await storedConnection(settings)).toMatchObject({
+      projectMappings: [
+        expect.objectContaining({
+          urlPattern: 'https://preview.shop.example/**',
+          pathPrefix: '/shop/eu/fr',
+          testPathPrefix: '/shop',
+        }),
+      ],
+    });
   });
 
   test('the popup offers to add a site no pattern covers', async ({ context, extensionId }) => {

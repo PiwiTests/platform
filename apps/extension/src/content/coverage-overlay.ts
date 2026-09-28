@@ -18,6 +18,7 @@ import { startTool, endTool, toolIsCurrent, installEscapeToCancel } from '../sha
 import { ensureSessionAccess } from '../shared/session-access.js';
 import { getConnectionSettings, isConnected } from '../shared/connection-settings.js';
 import { getActiveProjectOverride, resolveActiveProject, type ActiveProject } from '../shared/active-project.js';
+import { pageHere } from '../shared/page-here.js';
 import { getCachedLocatorIndex } from '../shared/locator-index-cache.js';
 import { getLocatorBranchOverride, resolveLocatorBranch, setLocatorBranchOverride } from '../shared/locator-branch.js';
 import { requestLocatorIndex } from '../shared/locator-index-refresh.js';
@@ -32,7 +33,6 @@ import {
   usePlace,
   type Replacement,
 } from './coverage-risk.js';
-import { pageKey } from '@piwitests/core/page-key';
 import { createLocatorEngine, type LocatorEngine } from './locator-engine.js';
 import { CoverageLayer, type Drawable, type Frame } from './coverage-layer.js';
 import { CoveragePanel, type PanelStatus } from './coverage-panel.js';
@@ -419,7 +419,7 @@ function startCoverageOverlay(): void {
     }
     if (state.scope && !state.scope.isConnected) state.scope = null;
     // This page: only the uses made here, or whose page is unknown (runs without the capture fixtures).
-    const key = pageKey(location.href);
+    const { key, prefixRemoved, prefixAdded } = pageHere(location.href, project);
     const pagePosition = key && index.pages ? index.pages.indexOf(key) : -1;
     const hasPages = (index.pages?.length ?? 0) > 0;
     const pageScoped = hasPages && state.pageScope === 'page';
@@ -441,6 +441,8 @@ function startCoverageOverlay(): void {
       brittle,
       brittleElements: new Set(brittle.flatMap((row) => row.elements)),
       pageKey: key,
+      prefixRemoved,
+      prefixAdded,
       pagePosition,
       hasPages,
       pageScoped,
@@ -573,6 +575,8 @@ function startCoverageOverlay(): void {
           elsewhere: context?.elsewhere.get(u.element)?.map((e) => idx!.locators[e]!.locator) ?? [],
         })) ?? [],
       page: context?.pageKey ?? null,
+      prefixRemoved: context?.prefixRemoved ?? null,
+      prefixAdded: context?.prefixAdded ?? null,
       pageScoped: context?.pageScoped ?? false,
       missing:
         context?.missing.map((row) => ({
@@ -901,6 +905,8 @@ function startCoverageOverlay(): void {
       ]);
       if (!toolIsCurrent(toolEpoch)) return;
       const next = resolveActiveProject(settings, override, location.href);
+      // Same project, maybe through another mapping: its path prefix follows the URL.
+      if (next && next.projectId === project?.projectId) project = next;
       if (next?.projectId !== project?.projectId) {
         project = next;
         index = null;

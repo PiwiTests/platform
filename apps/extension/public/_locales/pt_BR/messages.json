@@ -607,6 +607,33 @@
   "options_branchTitle": {
     "message": "A branch implantada nesses endereços: Elementos testados mostra o que os testes dela alcançam"
   },
+  "options_pathPrefix": {
+    "message": "Prefixo de caminho"
+  },
+  "options_pathPrefixPlaceholder": {
+    "message": "sem prefixo"
+  },
+  "options_pathPrefixTitle": {
+    "message": "Seu site serve as páginas sob este caminho e os testes não, por exemplo /app"
+  },
+  "options_pathPrefixInvalid": {
+    "message": "$prefix$ não é um prefixo de caminho: escreva um caminho simples como /app, sem consulta, âncora ou curinga, e com no máximo 4 partes.",
+    "placeholders": {
+      "prefix": {
+        "content": "$1",
+        "example": "/app"
+      }
+    }
+  },
+  "options_testPathPrefix": {
+    "message": "Prefixo de caminho dos testes"
+  },
+  "options_testPathPrefixPlaceholder": {
+    "message": "sem prefixo dos testes"
+  },
+  "options_testPathPrefixTitle": {
+    "message": "Os testes percorreram as páginas sob este caminho e seu site não, por exemplo /app"
+  },
   "options_removeMapping": {
     "message": "Remover esta linha"
   },
@@ -892,6 +919,24 @@
   },
   "options_sourceServer": {
     "message": "Piwi"
+  },
+  "options_serverPathPrefix": {
+    "message": "prefixo de caminho $prefix$",
+    "placeholders": {
+      "prefix": {
+        "content": "$1",
+        "example": "/app"
+      }
+    }
+  },
+  "options_serverTestPathPrefix": {
+    "message": "prefixo de caminho dos testes $prefix$",
+    "placeholders": {
+      "prefix": {
+        "content": "$1",
+        "example": "/app"
+      }
+    }
   },
   "options_sourceLocal": {
     "message": "Este navegador"
@@ -3361,6 +3406,49 @@
   "coverage_allPagesTitle": {
     "message": "Contar cada locator que encontra algo aqui, seja qual for a página em que o teste dele o usou"
   },
+  "coverage_subtitleWithoutPrefix": {
+    "message": "$page$ (sem $prefix$)",
+    "placeholders": {
+      "page": {
+        "content": "$1",
+        "example": "/checkout"
+      },
+      "prefix": {
+        "content": "$2",
+        "example": "/app"
+      }
+    }
+  },
+  "coverage_subtitleWithPrefix": {
+    "message": "$page$ (com $prefix$ adicionado)",
+    "placeholders": {
+      "page": {
+        "content": "$1",
+        "example": "/app/checkout"
+      },
+      "prefix": {
+        "content": "$2",
+        "example": "/app"
+      }
+    }
+  },
+  "coverage_subtitleSwappedPrefix": {
+    "message": "$page$ ($removed$ substituído por $added$)",
+    "placeholders": {
+      "added": {
+        "content": "$1",
+        "example": "/v2"
+      },
+      "page": {
+        "content": "$2",
+        "example": "/v2/checkout"
+      },
+      "removed": {
+        "content": "$3",
+        "example": "/app"
+      }
+    }
+  },
   "coverage_tileTested": {
     "message": "testados"
   },
@@ -3938,6 +4026,24 @@
   },
   "coverage_notesAllPages": {
     "message": "Os locators são procurados nesta página, seja qual for a página em que o teste deles os usou."
+  },
+  "coverage_notesPrefixRemoved": {
+    "message": "Primeiro o prefixo de caminho $prefix$ do padrão deste site foi removido do endereço: os testes percorreram esta página sem ele.",
+    "placeholders": {
+      "prefix": {
+        "content": "$1",
+        "example": "/app"
+      }
+    }
+  },
+  "coverage_notesPrefixAdded": {
+    "message": "Primeiro o prefixo de caminho dos testes $prefix$ do padrão deste site foi colocado antes do endereço: os testes percorreram esta página sob ele.",
+    "placeholders": {
+      "prefix": {
+        "content": "$1",
+        "example": "/app"
+      }
+    }
   },
   "coverage_notesErrors_one": {
     "message": "$count$ locator não pôde ser verificado aqui:",

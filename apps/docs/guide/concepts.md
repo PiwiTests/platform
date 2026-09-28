@@ -256,7 +256,9 @@ use a locator, and it feeds [Who uses a locator](/features/locator-usage) and
 A page's URL reduced to its path pattern: numeric ids, UUIDs, ULIDs, JWTs and long tokens become `:id`, `:uuid`,
 `:ulid`, `:jwt` and `:token`, and the host, query and hash are dropped. `/orders/123?tab=items` and `/orders/456` are
 both `/orders/:id`, on staging and in production alike. The Test Map's page nodes, the page each locator was used on
-and the extension's **This page** all use it. A page of another site keeps its origin in front of the path.
+and the extension's **This page** all use it. A page of another site keeps its origin in front of the path. Piwi
+Picker keys the page it is on through the [path prefixes](/features/extension-connection#url-patterns) of the site's
+URL pattern: without the site's, with the tests' in front.
 
 ### Brittle locator
 

@@ -5,6 +5,8 @@ import { getLastCopyMode, setLastCopyMode } from '../shared/storage.js';
 import type { CheckedLocator } from './verified-locators.js';
 import { getConnectionSettings, isConnected } from '../shared/connection-settings.js';
 import { getActiveProjectOverride, resolveActiveProject } from '../shared/active-project.js';
+import { pageHere } from '../shared/page-here.js';
+import type { PathPrefixes } from '@piwitests/core/page-key';
 import { ensureSessionAccess } from '../shared/session-access.js';
 import { getCachedLocatorIndex } from '../shared/locator-index-cache.js';
 import { getLocatorBranchOverride, resolveLocatorBranch } from '../shared/locator-branch.js';
@@ -13,7 +15,6 @@ import { requestLocatorIndex } from '../shared/locator-index-refresh.js';
 import { projectLocatorsUrl, testCaseUrl } from '../shared/piwi-client.js';
 import { elementReach, pageView, scanCoverage, type ReachGroup } from './coverage-scan.js';
 import { chainStabilities, usePlace } from './coverage-risk.js';
-import { pageKey } from '@piwitests/core/page-key';
 import { actionLabel, stabilityText } from '../shared/core-words.js';
 import { statusLabel, testTitle } from './coverage-view.js';
 import { attachPanelShadow } from './panel-root.js';
@@ -293,6 +294,7 @@ async function fillPiwiSection(
   let projectId: number;
   let projectLabel: string;
   let branch: string | null;
+  let prefixes: PathPrefixes;
   try {
     await ensureSessionAccess();
     settings = await getConnectionSettings();
@@ -302,6 +304,7 @@ async function fillPiwiSection(
     if (!project) return;
     projectId = project.projectId;
     projectLabel = project.projectLabel;
+    prefixes = { pathPrefix: project.pathPrefix, testPathPrefix: project.testPathPrefix };
     branch = resolveLocatorBranch(project, await getLocatorBranchOverride(projectId).catch(() => undefined));
   } catch {
     return;
@@ -362,7 +365,7 @@ async function fillPiwiSection(
   });
   if (!fullScan || closed()) return;
   // As Tested elements counts by default: what tests do on this page, and uses whose page no run recorded.
-  const key = pageKey(location.href);
+  const { key } = pageHere(location.href, prefixes);
   const position = key && index.pages ? index.pages.indexOf(key) : -1;
   const keep = (_entry: number, use: Parameters<typeof usePlace>[0]) =>
     !index!.pages?.length || usePlace(use, position) !== 'elsewhere';

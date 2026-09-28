@@ -119,3 +119,28 @@ export interface LocatorPageUse {
   /** No locator interaction happened on the page since it was navigated to: the element was there as it loaded. */
   arrival: boolean;
 }
+
+/**
+ * One request the page made, as the capture fixtures record it in the
+ * `piwi-network` attachment: API calls and documents, not static assets.
+ */
+export interface WireNetworkRequest {
+  method: string;
+  url: string;
+  /** The HTTP status; 0 when no response arrived (the request failed, or finished without one). */
+  status: number;
+  /** Milliseconds to the response end; for a failed request, to the moment it failed. */
+  duration: number;
+  /** Request start, Unix epoch milliseconds. */
+  startTime?: number;
+  /** Playwright's resource type: `fetch`, `xhr`, `document` or `other`. */
+  resourceType?: string;
+  /** The response's content type, without parameters. */
+  contentType?: string;
+  /** Backend logs from the `X-Piwi-Logs` response header. */
+  serverLogs?: unknown;
+  /** Backend spans from the `X-Piwi-Trace` response header. */
+  serverTraces?: unknown;
+  /** Why the request failed, as Playwright reports it (`net::ERR_CONNECTION_RESET`); absent when it finished. */
+  failure?: string;
+}

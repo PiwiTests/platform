@@ -131,7 +131,7 @@ These are correctness issues in the pipeline that shape what the user sees, not 
 - **A brand-new test that fails is never a "new regression"** because the baseline is per-run and the test is absent from it (`compute-regression-signals.ts:77`).
 - **Unscoped diagnosis lookups.** `ai-context.ts:1126-1138` and `projects.ts:1139-1151` select `failure_diagnoses` by cluster without `scope = 'cluster'`; an execution-scope row can surface as the cluster's prior diagnosis.
 - **Dead staleness detection.** `failure_diagnoses.context_sha` is declared "for staleness detection" (`schema.sqlite.ts:308`) and never written; the "Diagnosis may be stale" banner is driven by `lastSeenRunId` alone, so it also shows on a cluster that is *Fix verified* **(seen)**.
-- **`'timedOut'` casing** in the flaky leaderboard's per-browser check (`projects.ts:1344`) while the stored value is `timedout` — timed-out finals can be under-counted.
+- **`'timedOut'` casing** in the flaky leaderboard's per-browser check (`projects.ts:1344`) while the stored value is `timedout` — timed-out finals can be under-counted. **Fixed 2026-09-28** with [Flake Lab](flake-lab.md) PR 1, along with the same comparison in `ai-context.ts`'s recurrence section.
 - **The SSE stream publishes the uncapped error** (`events.post.ts:229`) while the stored row is capped, so the live view and the reload can differ.
 - **Single-process event bus** (`run-events.ts:7`): a restart between `finish` and `upload` force-marks the run `failed`.
 
@@ -385,7 +385,7 @@ Each now lands in a **slot the UI simplification reserved** (`ui-simplification.
 | 7 | `apps/application/server/utils/ai-context.ts:1680-1687`, `server/database/schema.sqlite.ts:520-545` | `r.startTime` read from a table with no such column; `t+Nms` never renders. |
 | 8 | `apps/application/server/database/schema.sqlite.ts:308` | `context_sha` declared for staleness detection, never written; the stale banner also shows on fix-verified clusters. |
 | 9 | `apps/application/shared/handlers/failure-cluster-ops.ts:44-56` | `sampleError` / `signature` / `errorType` / `selector` frozen at cluster creation. |
-| 10 | `apps/application/shared/handlers/projects.ts:1344` | `'timedOut'` compared where the stored value is `'timedout'`. |
+| 10 | `apps/application/shared/handlers/projects.ts:1344` | `'timedOut'` compared where the stored value is `'timedout'`. Fixed 2026-09-28 ([Flake Lab](flake-lab.md) PR 1). |
 | 11 | `apps/application/server/utils/ai-context.ts:1126-1138`, `shared/handlers/projects.ts:1139-1151` | Diagnosis looked up by cluster id without `scope = 'cluster'`. |
 | 12 | `apps/application/server/api/test-runs/[id]/events.post.ts:229` | SSE publishes the uncapped error; stored row is capped. |
 | 13 | `apps/application/shared/handlers/flaky-classify.ts:70-77` | `networkErrorCount` / `status5xxCount` always 0 — dead classifier inputs. |

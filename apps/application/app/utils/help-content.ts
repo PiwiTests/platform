@@ -418,7 +418,7 @@ export const HELP_TOPICS = {
   },
   'project.url-patterns': {
     title: 'Browser extension URLs',
-    text: 'The addresses this project’s application is served at, as patterns over the whole URL: * matches within one path segment, ** across segments. Piwi Picker reads them when it connects and tries them in this order to tell which project a page belongs to; a pattern saved in one browser overrides them there. The environment is a label; the branch is the one deployed at those addresses, whose tests Tested elements shows.',
+    text: 'The addresses this project’s application is served at, as patterns over the whole URL: * matches within one path segment, ** across segments. Piwi Picker reads them when it connects and tries them in this order to tell which project a page belongs to; a pattern saved in one browser overrides them there. The environment is a label; the branch is the one deployed at those addresses, whose tests Tested elements shows. The path prefix is the part of the path the site serves its pages under and the tests did not (/app); Piwi Picker removes it before comparing the page with the pages the tests ran on. The tests’ path prefix is the reverse, the part of the path the tests ran under and the site does not; Piwi Picker puts it in front.',
     doc: 'features/extension-connection#url-patterns',
   },
   'project.ci-rerun': {
@@ -531,12 +531,12 @@ export const HELP_TOPICS = {
   },
   'case.network': {
     title: 'Network requests',
-    text: 'HTTP requests the page made during the test, with timing and status — useful for spotting failed or slow calls. When the execution has a trace, the Full trace view shows every request (all resource types) with headers, timing phases, a waterfall and capped body previews; sensitive header values are masked. An empty card distinguishes not captured (add the capture fixtures) from captured-but-nothing-happened; with a trace and no fixtures the list is recovered from the trace and marked "derived from the trace".',
+    text: 'HTTP requests the page made during the test, with timing and status — useful for spotting failed or slow calls. A request that got no response (a reset, a refused connection, an abort) is marked failed, with the error the browser reported. When the execution has a trace, the Full trace view shows every request (all resource types) with headers, timing phases, a waterfall and capped body previews; sensitive header values are masked. An empty card distinguishes not captured (add the capture fixtures) from captured-but-nothing-happened; with a trace and no fixtures the list is recovered from the trace and marked "derived from the trace".',
     doc: 'features/evidence#trace-powered-deep-views',
   },
   'case.attempts': {
     title: 'Attempts',
-    text: 'When a test failed then passed on retry, this compares the failing attempt against the passing one and lists what differed — the error that was there then gone, a request that failed on only one attempt, a console error, a slower step, a duration or page-state change. Each difference links to the evidence it came from. That delta is the flakiness fingerprint, and it feeds the root-cause classifier.',
+    text: 'When a test failed then passed on retry, this compares the failing attempt against the passing one and lists what differed — the error that was there then gone, a request that failed on only one attempt or was much slower on the failing one, a console error, a slower step, a duration or page-state change. Each difference links to the evidence it came from. That delta is the flakiness fingerprint, and it feeds the root-cause classifier.',
     doc: 'features/flaky-tests#flaky-test-detection',
   },
 

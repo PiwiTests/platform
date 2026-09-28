@@ -653,6 +653,7 @@ export const networkRequests = pgTable(
     contentType: text('content_type'),
     serverLogs: jsonb('server_logs'),
     serverTraces: jsonb('server_traces'),
+    failure: text('failure'), // Why the request failed (Playwright's error text, e.g. net::ERR_CONNECTION_RESET); null when it finished
   },
   (t) => ({
     runIdx: index('idx_nr_run').on(t.testRunId),
@@ -1328,6 +1329,8 @@ export const projectUrlPatterns = pgTable(
     pattern: text('pattern').notNull(),
     environment: text('environment'), // free label: 'staging', 'production'
     branch: text('branch'), // the branch deployed at these URLs; null for the default branch
+    pathPrefix: text('path_prefix'), // the path the site serves its pages under and the tests did not ('/app')
+    testPathPrefix: text('test_path_prefix'), // the path the tests ran the pages under and the site does not ('/app')
     position: integer('position').notNull().default(0),
     createdAt: timestamp('created_at', { mode: 'date' })
       .notNull()

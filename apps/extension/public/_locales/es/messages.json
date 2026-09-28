@@ -607,6 +607,33 @@
   "options_branchTitle": {
     "message": "La rama desplegada en estas direcciones: Elementos probados muestra lo que alcanzan sus pruebas"
   },
+  "options_pathPrefix": {
+    "message": "Prefijo de ruta"
+  },
+  "options_pathPrefixPlaceholder": {
+    "message": "sin prefijo"
+  },
+  "options_pathPrefixTitle": {
+    "message": "Tu sitio sirve las páginas bajo esta ruta y las pruebas no, por ejemplo /app"
+  },
+  "options_pathPrefixInvalid": {
+    "message": "$prefix$ no es un prefijo de ruta: escribe una ruta simple como /app, sin consulta, ancla ni comodín, y con 4 partes como máximo.",
+    "placeholders": {
+      "prefix": {
+        "content": "$1",
+        "example": "/app"
+      }
+    }
+  },
+  "options_testPathPrefix": {
+    "message": "Prefijo de ruta de las pruebas"
+  },
+  "options_testPathPrefixPlaceholder": {
+    "message": "sin prefijo de pruebas"
+  },
+  "options_testPathPrefixTitle": {
+    "message": "Las pruebas recorrieron las páginas bajo esta ruta y tu sitio no, por ejemplo /app"
+  },
   "options_removeMapping": {
     "message": "Quitar esta línea"
   },
@@ -892,6 +919,24 @@
   },
   "options_sourceServer": {
     "message": "Piwi"
+  },
+  "options_serverPathPrefix": {
+    "message": "prefijo de ruta $prefix$",
+    "placeholders": {
+      "prefix": {
+        "content": "$1",
+        "example": "/app"
+      }
+    }
+  },
+  "options_serverTestPathPrefix": {
+    "message": "prefijo de ruta de las pruebas $prefix$",
+    "placeholders": {
+      "prefix": {
+        "content": "$1",
+        "example": "/app"
+      }
+    }
   },
   "options_sourceLocal": {
     "message": "Este navegador"
@@ -3361,6 +3406,49 @@
   "coverage_allPagesTitle": {
     "message": "Contar cada locator que encuentra algo aquí, sea cual sea la página en la que lo usó su prueba"
   },
+  "coverage_subtitleWithoutPrefix": {
+    "message": "$page$ (sin $prefix$)",
+    "placeholders": {
+      "page": {
+        "content": "$1",
+        "example": "/checkout"
+      },
+      "prefix": {
+        "content": "$2",
+        "example": "/app"
+      }
+    }
+  },
+  "coverage_subtitleWithPrefix": {
+    "message": "$page$ (con $prefix$ añadido)",
+    "placeholders": {
+      "page": {
+        "content": "$1",
+        "example": "/app/checkout"
+      },
+      "prefix": {
+        "content": "$2",
+        "example": "/app"
+      }
+    }
+  },
+  "coverage_subtitleSwappedPrefix": {
+    "message": "$page$ ($removed$ sustituido por $added$)",
+    "placeholders": {
+      "added": {
+        "content": "$1",
+        "example": "/v2"
+      },
+      "page": {
+        "content": "$2",
+        "example": "/v2/checkout"
+      },
+      "removed": {
+        "content": "$3",
+        "example": "/app"
+      }
+    }
+  },
   "coverage_tileTested": {
     "message": "probados"
   },
@@ -3938,6 +4026,24 @@
   },
   "coverage_notesAllPages": {
     "message": "Los locators se buscan en esta página, sea cual sea la página en la que los usó su prueba."
+  },
+  "coverage_notesPrefixRemoved": {
+    "message": "Primero se quitó de la dirección el prefijo de ruta $prefix$ del patrón de este sitio: las pruebas recorrieron esta página sin él.",
+    "placeholders": {
+      "prefix": {
+        "content": "$1",
+        "example": "/app"
+      }
+    }
+  },
+  "coverage_notesPrefixAdded": {
+    "message": "Primero se añadió delante de la dirección el prefijo de ruta de las pruebas $prefix$ del patrón de este sitio: las pruebas recorrieron esta página bajo él.",
+    "placeholders": {
+      "prefix": {
+        "content": "$1",
+        "example": "/app"
+      }
+    }
   },
   "coverage_notesErrors_one": {
     "message": "No se pudo comprobar aquí $count$ locator:",

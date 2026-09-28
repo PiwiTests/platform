@@ -614,11 +614,21 @@ export async function getBugReportMissedBy(
   id: number,
 ): Promise<(MissedBy & { summary: string }) | null> {
   const [row] = await db
-    .select({ projectId: bugReports.projectId, steps: bugReports.steps, pageKey: bugReports.pageKey })
+    .select({
+      projectId: bugReports.projectId,
+      steps: bugReports.steps,
+      pageKey: bugReports.pageKey,
+      context: bugReports.context,
+    })
     .from(bugReports)
     .where(eq(bugReports.id, id));
   if (!row) return null;
   const index = await getLocatorIndex(db, row.projectId).catch(() => null);
-  const missed = computeMissedBy(index, { steps: row.steps as PiwiSteps, pageKey: row.pageKey });
+  const missed = computeMissedBy(index, {
+    steps: row.steps as PiwiSteps,
+    pageKey: row.pageKey,
+    pathPrefix: (row.context as BugContext | null)?.pathPrefix ?? null,
+    testPathPrefix: (row.context as BugContext | null)?.testPathPrefix ?? null,
+  });
   return { ...missed, summary: describeMissedBy(missed) };
 }
