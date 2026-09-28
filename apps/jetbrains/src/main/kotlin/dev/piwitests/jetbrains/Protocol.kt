@@ -89,6 +89,14 @@ data class RenderStepsParams(val uri: String, val steps: Any?)
 
 data class RenderStepsResult(val code: String? = null, val warnings: List<String>? = null)
 
+data class SelectionsParams(val uri: String?)
+
+data class SelectionItem(val key: String = "", val name: String? = null, val count: Int = 0, val includesFile: Boolean = false)
+
+data class SelectionsResult(val items: List<SelectionItem>? = null)
+
+data class RunSelectionParams(val uri: String, val key: String)
+
 data class EditorCredentials(val serverUrl: String? = null, val apiKey: String? = null, val project: String? = null)
 
 /** The service's custom requests beside the language server protocol. */
@@ -119,6 +127,12 @@ interface PiwiLanguageServer : LanguageServer {
 
     @JsonRequest("piwi/renderSteps")
     fun renderSteps(params: RenderStepsParams): CompletableFuture<RenderStepsResult?>
+
+    @JsonRequest("piwi/selections")
+    fun selections(params: SelectionsParams): CompletableFuture<SelectionsResult?>
+
+    @JsonRequest("piwi/runSelection")
+    fun runSelection(params: RunSelectionParams): CompletableFuture<RunCommand?>
 
     @JsonRequest("piwi/refresh")
     fun refresh(): CompletableFuture<Any?>

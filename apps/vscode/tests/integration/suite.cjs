@@ -101,7 +101,9 @@ const tests = {
         new vscode.Position(3, '  page.'.length),
         '.',
       );
-      return found?.items.some((i) => (typeof i.label === 'string' ? i.label : i.label.label).startsWith('locator(')) ? found : null;
+      return found?.items.some((i) => (typeof i.label === 'string' ? i.label : i.label.label).startsWith('locator('))
+        ? found
+        : null;
     }, 'the locator completion');
     const labels = list.items.map((i) => (typeof i.label === 'string' ? i.label : i.label.label));
     assert.ok(labels.includes("locator('.cart-row').nth(2)"), labels.slice(0, 5).join(' | '));
@@ -181,6 +183,7 @@ const tests = {
       'piwi.pairPicker',
       'piwi.runCommand',
       'piwi.copyText',
+      'piwi.runSelection',
     ]) {
       assert.ok(commands.includes(id), id);
     }

@@ -22,6 +22,8 @@ import {
   RUN_ARGS_REQUEST,
   RUN_STATUS_NOTIFICATION,
   RUN_STATUS_REQUEST,
+  RUN_SELECTION_REQUEST,
+  SELECTIONS_REQUEST,
   SET_CREDENTIALS_NOTIFICATION,
   STATUS_REQUEST,
   TESTS_FOR_FILE_REQUEST,
@@ -34,6 +36,7 @@ import {
   type RunCommandArgs,
   type RunStatusResult,
   type RunTestsArgs,
+  type SelectionsResult,
   type StatusResult,
   type TestsForFile,
   type TraceParams,
@@ -187,6 +190,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand('piwi.copyText', async (text: string) => {
       await vscode.env.clipboard.writeText(text);
       void vscode.window.showInformationMessage('Piwi: copied. Paste it to your agent.');
+    }),
+    vscode.commands.registerCommand('piwi.runSelection', async () => {
+      const uri = activeUri() ?? vscode.workspace.workspaceFolders?.[0]?.uri.toString() ?? '';
+      const { items } = await lc.sendRequest<SelectionsResult>(SELECTIONS_REQUEST, { uri });
+      if (!items.length) {
+        void vscode.window.showInformationMessage('Piwi: this project has no selection yet.');
+        return;
+      }
+      const picked = await vscode.window.showQuickPick(
+        items.map((i) => ({
+          label: i.name,
+          description: `${i.count} ${i.count === 1 ? 'test' : 'tests'}`,
+          detail: i.includesFile ? 'Includes a test of this file' : undefined,
+          key: i.key,
+        })),
+        { placeHolder: 'Run which selection?' },
+      );
+      if (!picked) return;
+      const command = await lc.sendRequest<RunCommand | null>(RUN_SELECTION_REQUEST, { uri, key: picked.key });
+      if (command) runInTerminal(command.cwd, command.command);
     }),
     vscode.commands.registerCommand('piwi.openRun', async () => {
       if (statusUrl) await vscode.env.openExternal(vscode.Uri.parse(statusUrl));

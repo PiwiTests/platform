@@ -37,3 +37,4 @@ export * from './source-map';
 export * from './code-reach';
 export * from './line-diff';
 export * from './editor-send';
+export * from './file-routes';

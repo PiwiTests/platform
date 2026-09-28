@@ -186,6 +186,36 @@ export interface McpServersResult {
 
 export const MCP_REQUEST = 'piwi/mcp';
 
+/** A saved test selection of the project, resolved against the catalog. */
+export interface SelectionItem {
+  key: string;
+  name: string;
+  /** Tests it selects now. */
+  count: number;
+  /** Whether it selects a test defined in the file asked about. */
+  includesFile: boolean;
+}
+
+/** `piwi/selections`: the project's saved selections; `uri` marks those selecting a test of that file. */
+export interface SelectionsParams {
+  uri?: string;
+}
+
+export interface SelectionsResult {
+  items: SelectionItem[];
+}
+
+export const SELECTIONS_REQUEST = 'piwi/selections';
+
+/** `piwi/runSelection`: the command line that runs a saved selection, as `piwi run <key>` resolves it. */
+export interface RunSelectionParams {
+  /** Any file of the workspace, to pick the Playwright config. */
+  uri: string;
+  key: string;
+}
+
+export const RUN_SELECTION_REQUEST = 'piwi/runSelection';
+
 /** A failure of the latest run, where it shows in the workspace. */
 export interface WorkspaceFailure {
   /** The file the failure shows in: its failing call, else its `test(…)` line. */

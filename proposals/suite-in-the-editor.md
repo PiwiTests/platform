@@ -9,7 +9,7 @@ executes, so any file can answer "which tests reach me?". **Track C** is one edi
 **Status.** Proposed 2026-09-27. Being built on `claude/suite-in-the-editor`, in the Delivery order: PR 1 (core),
 PR 2 (`piwi preflight`), PR 3 (the pull-request section, `diff-rename` healing, `predict_locator_breaks`) PR 4
 (code reach), PR 5 (the editor service), PR 6 (VS Code, with the priority 1 items), PR 7 (JetBrains, with the same five) and PR 8 (Send from Piwi Picker) are
-built, and the first three priority 2 items (Apply a fix plan, Copy context for agent, Locator completion). What changed while building is under [As built](#as-built). Track A needs no capture change. Track B adds an opt-in capture, one
+built, and so are the priority 2 items. What changed while building is under [As built](#as-built). Track A needs no capture change. Track B adds an opt-in capture, one
 payload column on `test_runs_cases` and one table. Tracks C–E add a workspace package, a VS Code extension and a
 JetBrains plugin, and a commitlint scope (`ide`); a catalog of what the editors can do after their first release
 follows the tracks. New wire fields, endpoints, a CLI command and a published extension
@@ -432,8 +432,7 @@ These arrive with their own features and cost the editors little once those exis
 | 8 | Send from Piwi Picker: pairing, the editors' local endpoints, the extension's **Send to editor** | 6, 7 |
 
 PRs 1–3 ship a working preflight with no capture change. PR 4 is independent of 1–3. Each PR carries its docs. The
-priority 2 items follow in that order (Apply a fix plan, Copy context for agent and Locator completion are built; the
-rest are next); [priority 3 and 4](#what-the-editors-can-grow-into) land with their plumbing or
+priority 2 items followed in that order and are built; [priority 3 and 4](#what-the-editors-can-grow-into) land with their plumbing or
 the feature they come from.
 
 ## File-by-file checklist
@@ -749,6 +748,34 @@ disagree, this section wins.
 - **Tests.** The service: the plan's action, its edit and command, the context block, the completion (16 tests), and
   the patch applier. VS Code's integration suite copies the context and completes `page.`; the JetBrains platform tests
   run `piwi.copyText`.
+
+### Priority 2 — the rest
+
+All in the editor service; the clients draw them through what they already render (summary lines, diagnostics, quick
+fixes, hover, completion), plus one command each for selections.
+
+- **Flaky lens.** The service reads the flaky list (`GET /api/projects/:id/flaky-tests`, on the indexes' branch) at each
+  refresh; a flaky test's summary line adds its score, the CI minutes it wasted and its root cause.
+- **Known issue.** A failure's hover lists the links of its cluster and its test (`GET /api/links`) with their status;
+  with none, the action **File an issue** opens the cluster's page, where the dashboard creates issues. Creating one
+  from the editor would need a reporter key and a tracker connection chosen there, so it stays in the dashboard.
+- **Page summary.** `filePageTarget` and `pageKeyMatchesTarget` moved from the app to core (`file-routes.ts`; the
+  app's `shared/graph.ts` imports them). A Nuxt page file's top line names the page, the tests acting on it, its
+  locators and the brittle ones, and runs those tests; code reach's line follows when there is one.
+- **Timeout advice.** From `GET /api/projects/:id/timeout-opportunities`: an information diagnostic (code `timeout`) on
+  the `test(…)` line, and a quick fix that removes a stale `test.slow()` or replaces (else adds) `test.setTimeout` with
+  the suggested value. A one-line test body is left alone.
+- **Quarantine.** A quarantined test's summary line adds its days in quarantine and its passes toward release (or "ready
+  to release"). **Release** and **Quarantine** are writes that need a reporter key; the line opens the test in the
+  dashboard, where both are.
+- **Function completion.** At the start of a statement in test code, the catalog's functions whose URL pattern matches
+  a page this file's tests visit, as snippets (`await cartPage.add(${1:item})`).
+- **Annotations.** Completion of `piwi:` annotation types, then owners from `CODEOWNERS`, priorities, or features (the
+  test catalog's and the Test Map's); inside `tag: ['@…']`, the tags the project's tests use.
+- **Selections.** The service resolves up to 20 selections at each refresh; a test's summary line names the ones that
+  include it. `piwi/selections` and `piwi/runSelection` back **Run selection…** in both editors.
+- **Tests.** The service's suite covers each item (23 tests) with timeouts' edits in their own unit tests; core covers
+  the routing conventions; VS Code's integration suite and the JetBrains platform tests register the new commands.
 
 ## Verification
 

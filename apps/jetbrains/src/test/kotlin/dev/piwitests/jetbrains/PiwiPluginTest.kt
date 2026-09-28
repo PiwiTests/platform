@@ -29,7 +29,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
         val codeVision = DaemonBoundCodeVisionProvider.extensionPoint.extensionList
         assertTrue(codeVision.map { it.javaClass.name }.toString(), codeVision.any { it is PiwiCodeVisionProvider })
         assertTrue(StatusBarWidgetFactory.EP_NAME.extensionList.any { it is PiwiStatusBarWidgetFactory })
-        for (id in listOf("Piwi.Connect", "Piwi.Refresh", "Piwi.RunTestsForFile", "Piwi.OpenInDashboard", "Piwi.CopyMcpConfiguration")) {
+        for (id in listOf("Piwi.Connect", "Piwi.Refresh", "Piwi.RunTestsForFile", "Piwi.OpenInDashboard", "Piwi.CopyMcpConfiguration", "Piwi.RunSelection", "Piwi.PairPicker")) {
             assertNotNull(id, ActionManager.getInstance().getAction(id))
         }
     }

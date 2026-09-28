@@ -49,6 +49,11 @@
         "category": "Piwi"
       },
       {
+        "command": "piwi.runSelection",
+        "title": "Run selection…",
+        "category": "Piwi"
+      },
+      {
         "command": "piwi.openInDashboard",
         "title": "Open in dashboard",
         "category": "Piwi"

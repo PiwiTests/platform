@@ -132,6 +132,9 @@ beforeAll(async () => {
         }),
       );
     }
+    if (u === '/api/projects/7/test-cases?limit=1000') {
+      return res.end(JSON.stringify({ items: [{ tags: ['smoke', 'checkout'], feature: 'Payments' }] }));
+    }
     if (u.startsWith('/api/projects/7/test-cases')) {
       return res.end(
         JSON.stringify({
@@ -242,7 +245,99 @@ beforeAll(async () => {
       res.setHeader('Content-Type', 'application/octet-stream');
       return res.end(Buffer.from('PK-stub'));
     }
-    if (u === '/api/projects/7/test-functions') return res.end(JSON.stringify({ testFunctions: [] }));
+    if (u === '/api/links?entityType=failure_cluster&entityId=77') {
+      return res.end(
+        JSON.stringify({
+          items: [
+            {
+              url: 'https://jira.test/browse/SHOP-12',
+              key: 'SHOP-12',
+              title: 'Cart rows missing',
+              statusText: 'In Progress',
+            },
+          ],
+        }),
+      );
+    }
+    if (u.startsWith('/api/links')) return res.end(JSON.stringify({ items: [] }));
+    if (u === '/api/projects/7/quarantine?candidates=false') {
+      return res.end(
+        JSON.stringify({
+          entries: [{ testCaseId: 1, ageMs: 5 * 86_400_000, consecutivePasses: 3, releaseProposed: false }],
+          releaseAfterConsecutivePasses: 10,
+        }),
+      );
+    }
+    if (u === '/api/projects/7/selections') {
+      return res.end(
+        JSON.stringify({
+          items: [
+            { key: 'smoke', name: 'Smoke' },
+            { key: 'failed', name: null },
+          ],
+        }),
+      );
+    }
+    if (u === '/api/projects/7/selections/smoke/resolve') {
+      return res.end(
+        JSON.stringify({
+          tests: [{ testCaseId: 1 }],
+          materialization: {
+            args: ['tests/checkout.spec.ts:3'],
+            command: 'npx playwright test tests/checkout.spec.ts:3',
+          },
+        }),
+      );
+    }
+    if (u === '/api/projects/7/selections/failed/resolve') {
+      return res.end(
+        JSON.stringify({
+          tests: [{ testCaseId: 3 }],
+          materialization: { args: [], command: 'npx playwright test --grep x' },
+        }),
+      );
+    }
+    if (u === '/api/projects/7/timeout-opportunities') {
+      return res.end(
+        JSON.stringify({
+          items: [
+            {
+              testCaseId: 1,
+              kind: 'stale-slow',
+              timeout: 90000,
+              p95: 4100,
+              recommendedTimeout: null,
+              estimatedSavingMs: 0,
+            },
+          ],
+        }),
+      );
+    }
+    if (u.startsWith('/api/projects/7/flaky-tests')) {
+      return res.end(
+        JSON.stringify({ items: [{ testCaseId: 1, score: 42, wastedCiMinutes: 12.4, rootCause: 'timing' }] }),
+      );
+    }
+    if (u === '/api/projects/7/test-functions') {
+      const entry = (id: number, name: string, urlPattern: string | null) => ({
+        id,
+        name,
+        kind: 'page-object-method',
+        module: 'tests/pages/checkout.page.ts',
+        receiver: 'checkoutPage',
+        importName: 'CheckoutPage',
+        params: [{ name: 'amount', type: 'string' }],
+        urlPattern,
+        steps: [{ action: 'fill', target: { testId: 'not-on-the-page' } }],
+        paramSources: [],
+      });
+      return res.end(
+        JSON.stringify({
+          testFunctions: [{ entry: entry(1, 'pay', '**/checkout') }, { entry: entry(2, 'login', '**/login') }],
+        }),
+      );
+    }
+    if (u === '/api/projects/7/feature-map') return res.end(JSON.stringify({ features: [{ key: 'Cart' }] }));
     if (u === '/api/projects/7/selections/preview') {
       return res.end(
         JSON.stringify({
@@ -271,6 +366,7 @@ beforeAll(async () => {
   write('tests/pages/checkout.page.ts', PAGE_OBJECT);
   write('tests/checkout.spec.ts', SPEC);
   write('src/unreached.ts', "export const x = 'y';\n");
+  write('app/pages/checkout.vue', '<template><div /></template>\n');
   git('add', '.');
   git('commit', '-q', '-m', 'init');
 
@@ -468,6 +564,9 @@ describe('the Piwi language server', () => {
     })) as { contents: { value: string } };
     expect(hover.contents.value).toContain(`**CI failure** · [removes a row](${url}/test-run-cases/900) · run #41`);
     expect(hover.contents.value).toMatch(/!\[Failure screenshot\]\(file:\/\/.*900\.png\)/);
+    expect(hover.contents.value).toContain(
+      'Known issue: [SHOP-12 Cart rows missing](https://jira.test/browse/SHOP-12) · In Progress',
+    );
     expect(hover.contents.value).toContain("**`locator('.cart-row').nth(2)`**");
 
     const trace = (await client.sendRequest('piwi/trace', {
@@ -565,11 +664,81 @@ describe('the Piwi language server', () => {
     expect(items[0]!.detail).toBe('2 tests · /checkout');
     expect(items[1]!.detail).toMatch(/^1 test · \/checkout · brittle: /);
     expect(items[0]!.textEdit.range.start.character).toBe('  await page.'.length);
-    const none = await client.sendRequest('textDocument/completion', {
+  });
+
+  test('advises on a test whose timeout could be tighter, and fixes it', async () => {
+    const text = SPEC.replace('async ({ page }) => {}', 'async ({ page }) => {\n  test.slow();\n}');
+    await open('tests/checkout.spec.ts', text, 5);
+    const diags = await waitFor(() => diagnostics.get(uri('tests/checkout.spec.ts')));
+    const advice = diags.find((d) => d.code === 'timeout')!;
+    expect(advice).toMatchObject({ severity: 3, range: { start: { line: 2 } } });
+    expect(advice.message).toBe('test.slow() is no longer needed: its p95 is 4.1 s against a 90 s timeout');
+    const actions = (await client.sendRequest('textDocument/codeAction', {
       textDocument: { uri: uri('tests/checkout.spec.ts') },
-      position: { line: 3, character: 2 },
-    });
-    expect(none).toEqual([]);
+      range: advice.range,
+      context: { diagnostics: [advice] },
+    })) as Array<{
+      title: string;
+      edit: {
+        changes: Record<string, Array<{ newText: string; range: { start: { line: number }; end: { line: number } } }>>;
+      };
+    }>;
+    expect(actions[0]!.title).toBe('Remove test.slow()');
+    expect(actions[0]!.edit.changes[uri('tests/checkout.spec.ts')]).toEqual([
+      { range: { start: { line: 3, character: 0 }, end: { line: 4, character: 0 } }, newText: '' },
+    ]);
+  });
+
+  test('completes the project’s functions for this file’s pages, and piwi: annotations and tags', async () => {
+    fs.writeFileSync(path.join(dir, 'CODEOWNERS'), '* @acme/web\ntests/ @acme/qa qa@acme.test\n');
+    const text = [
+      "import { test } from '@playwright/test';",
+      '',
+      "test('pays', { tag: ['@sm'], annotation: { type: 'piwi:owner', description: '@' } }, async ({ page }) => {",
+      '  ',
+      '});',
+      '',
+    ].join('\n');
+    await open('tests/checkout.spec.ts', text, 6);
+    const at = (line: number, character: number) =>
+      client.sendRequest('textDocument/completion', {
+        textDocument: { uri: uri('tests/checkout.spec.ts') },
+        position: { line, character },
+      }) as Promise<Array<{ label: string; textEdit: { newText: string } }>>;
+    const functions = await at(3, 2);
+    expect(functions.map((i) => [i.label, i.textEdit.newText])).toEqual([
+      ['checkoutPage.pay', 'await checkoutPage.pay(${1:amount})'],
+    ]);
+    const line = text.split('\n')[2]!;
+    expect((await at(2, line.indexOf("'@sm'") + 4)).map((i) => i.label)).toEqual(['@checkout', '@smoke']);
+    expect((await at(2, line.indexOf("'piwi:owner'") + 1)).map((i) => i.label)).toEqual([
+      'piwi:owner',
+      'piwi:priority',
+      'piwi:feature',
+      'piwi:link',
+    ]);
+    expect((await at(2, line.indexOf("'@'") + 2)).map((i) => i.label)).toEqual([
+      '@acme/qa',
+      '@acme/web',
+      'qa@acme.test',
+    ]);
+  });
+
+  test('lists the saved selections and the command that runs one', async () => {
+    const selections = (await client.sendRequest('piwi/selections', { uri: uri('tests/checkout.spec.ts') })) as {
+      items: unknown[];
+    };
+    expect(selections.items).toEqual([
+      { key: 'smoke', name: 'Smoke', count: 1, includesFile: true },
+      { key: 'failed', name: 'failed', count: 1, includesFile: false },
+    ]);
+    expect(await client.sendRequest('piwi/runSelection', { uri: uri('tests/checkout.spec.ts'), key: 'smoke' })).toEqual(
+      {
+        cwd: dir,
+        command: 'npx playwright test tests/checkout.spec.ts:3',
+        args: [],
+      },
+    );
   });
 
   test('summarizes a page object, a spec and an application file', async () => {
@@ -587,7 +756,8 @@ describe('the Piwi language server', () => {
     expect(spec.lines).toEqual([
       {
         line: 2,
-        title: 'passed 48/50',
+        title:
+          'passed 48/50 · quarantined 5 d · 3/10 passes toward release · flaky score 42 · 12 CI min wasted · timing · in Smoke',
         command: { title: 'Open in dashboard', command: 'piwi.openInDashboard', arguments: [`${url}/test-cases/1`] },
       },
     ]);
@@ -596,6 +766,9 @@ describe('the Piwi language server', () => {
       uri: uri('src/components/CheckoutButton.vue'),
     })) as FileSummary;
     expect(app.file?.title).toBe('Reached by 2 tests · 1 flaky');
+    const page = (await client.sendRequest('piwi/fileSummary', { uri: uri('app/pages/checkout.vue') })) as FileSummary;
+    expect(page.file?.title).toBe('Page /checkout: 3 tests act on it · 2 locators · 1 brittle · 1 failing · 1 flaky');
+    expect(page.file?.command).toMatchObject({ command: 'piwi.runTests', arguments: [{ testIds: [1, 2, 3] }] });
     const none = (await client.sendRequest('piwi/fileSummary', { uri: uri('src/unreached.ts') })) as FileSummary;
     expect(none).toEqual({ file: null, lines: [] });
   });

@@ -14,6 +14,8 @@ import {
   type LocatorBreak,
 } from '@piwitests/core/locator-break';
 import { buildLiteralEdit, buildLocatorEdit } from '@piwitests/core/locator-edit';
+import { filePageTarget, pageKeyMatchesTarget } from '@piwitests/core/file-routes';
+import { urlMatches, type TestFunctionEntry } from '@piwitests/core/function-match';
 import { recommendLocatorFix } from '@piwitests/core/locator-fix';
 import type { LocatorIndex, LocatorIndexEntry, LocatorIndexTest, LocatorIndexUse } from '@piwitests/core/locator-index';
 import { assessLocatorChain, stabilityLabels, type LocatorStability } from '@piwitests/core/locator-stability';
@@ -398,4 +400,146 @@ export function locatorSuggestions(index: LocatorIndex, relativePath: string): L
   const rank = (s: LocatorSuggestion) =>
     s.stability?.level === 'brittle' ? 2 : s.stability?.level === 'watch' ? 1 : 0;
   return out.sort((a, b) => rank(a) - rank(b) || b.tests - a.tests).slice(0, MAX_SUGGESTIONS);
+}
+
+/** What the suite does on the page a page file renders. */
+export interface PageSummary {
+  /** The index's page keys the file renders. */
+  pages: string[];
+  tests: LocatorIndexTest[];
+  locators: number;
+  brittle: number;
+}
+
+/**
+ * The tests acting on the page a page file renders (Nuxt `pages/**`), its
+ * locators and those rated brittle; null when the file is not a page or no test
+ * acts on it.
+ */
+export function pageSummary(index: LocatorIndex, repoRelative: string): PageSummary | null {
+  const target = filePageTarget(repoRelative);
+  if (!target || !index.pages?.length) return null;
+  const pageIds = new Set<number>();
+  index.pages.forEach((key, i) => {
+    if (pageKeyMatchesTarget(target, key)) pageIds.add(i);
+  });
+  if (!pageIds.size) return null;
+  const tests = new Set<number>();
+  let locators = 0;
+  let brittle = 0;
+  for (const entry of index.locators) {
+    const uses = entry.uses.filter((u) => (u.pages ?? []).some((p) => pageIds.has(p)));
+    if (!uses.length) continue;
+    locators++;
+    for (const u of uses) tests.add(u.test);
+    const chain = tryParseLocatorChain(entry.locator);
+    if (chain && assessLocatorChain(chain).level === 'brittle') brittle++;
+  }
+  if (!tests.size) return null;
+  return {
+    pages: [...pageIds].map((i) => index.pages![i]!),
+    tests: [...tests].map((i) => index.tests[i]!).filter(Boolean),
+    locators,
+    brittle,
+  };
+}
+
+/** A test whose timeout could be tighter (`GET /api/projects/:id/timeout-opportunities`). */
+export interface TimeoutAdvice {
+  testCaseId: number;
+  kind: 'oversized-timeout' | 'stale-slow';
+  timeout: number | null;
+  p95: number;
+  recommendedTimeout: number | null;
+  estimatedSavingMs: number;
+}
+
+function seconds(ms: number): string {
+  return ms >= 10_000 ? `${Math.round(ms / 1000)} s` : `${Math.round(ms / 100) / 10} s`;
+}
+
+/** The sentence a timeout diagnostic shows. */
+export function timeoutMessage(advice: TimeoutAdvice): string {
+  const saving =
+    advice.estimatedSavingMs >= 1000 ? `, about ${seconds(advice.estimatedSavingMs)} less per failing run` : '';
+  if (advice.kind === 'stale-slow') {
+    return `test.slow() is no longer needed: its p95 is ${seconds(advice.p95)}${advice.timeout ? ` against a ${seconds(advice.timeout)} timeout` : ''}${saving}`;
+  }
+  return `Timeout ${advice.timeout ? seconds(advice.timeout) : ''} is far above its p95 of ${seconds(advice.p95)}: ${seconds(advice.recommendedTimeout ?? 0)} is enough${saving}`;
+}
+
+/**
+ * The edit a timeout advice suggests in the body of the test declared at
+ * `testLine` (0-based): remove its `test.slow()`, or set its timeout, replacing
+ * a `test.setTimeout(…)` there or adding one as the body's first statement.
+ * Null when the body cannot be told apart.
+ */
+export function timeoutEdit(
+  lines: string[],
+  testLine: number,
+  advice: TimeoutAdvice,
+): { line: number; replace: boolean; text: string } | null {
+  let end = lines.length;
+  for (let i = testLine + 1; i < lines.length; i++) {
+    if (/(?<![\w$.])test(?:\.(?:only|skip|fixme|fail|slow))?\s*\(\s*['"`]/.test(lines[i]!)) {
+      end = i;
+      break;
+    }
+  }
+  const body = lines.slice(testLine + 1, end);
+  if (advice.kind === 'stale-slow') {
+    const at = body.findIndex((l) => /^\s*test\.slow\(\s*\)\s*;?\s*$/.test(l));
+    return at < 0 ? null : { line: testLine + 1 + at, replace: true, text: '' };
+  }
+  if (!advice.recommendedTimeout) return null;
+  const at = body.findIndex((l) => /^\s*test\.setTimeout\(\s*[\d_]+\s*\)\s*;?\s*$/.test(l));
+  if (at >= 0) {
+    const current = body[at]!;
+    return {
+      line: testLine + 1 + at,
+      replace: true,
+      text: current.replace(/\(\s*[\d_]+\s*\)/, `(${advice.recommendedTimeout})`),
+    };
+  }
+  const first = body.find((l) => l.trim());
+  if (!first || !/\{\s*$/.test(lines[testLine]!)) return null;
+  const indent = first.slice(0, first.length - first.trimStart().length);
+  return { line: testLine + 1, replace: false, text: `${indent}test.setTimeout(${advice.recommendedTimeout});` };
+}
+
+/** The page keys this file's tests visit: the tests it defines, or whose steps call locators from it. */
+export function filePages(index: LocatorIndex, relativePath: string): string[] {
+  const tests = new Set<number>();
+  index.tests.forEach((t, i) => {
+    if (sameFilePath(t.file, relativePath)) tests.add(i);
+  });
+  for (const entry of index.locators) {
+    for (const use of entry.uses) {
+      if (use.callSites.some((site) => sameFilePath(callSiteFile(site), relativePath))) tests.add(use.test);
+    }
+  }
+  const pages = new Set<number>();
+  for (const entry of index.locators) {
+    for (const use of entry.uses) if (tests.has(use.test)) for (const p of use.pages ?? []) pages.add(p);
+  }
+  return [...pages].map((p) => index.pages?.[p]).filter((p): p is string => !!p);
+}
+
+/**
+ * The catalog's functions to offer in a file: those whose URL pattern matches a
+ * page this file's tests visit, or that name no pattern. With no known page,
+ * every function.
+ */
+export function functionSuggestions(catalog: TestFunctionEntry[], pages: string[]): TestFunctionEntry[] {
+  const matching = catalog.filter(
+    (f) => !f.urlPattern || !pages.length || pages.some((p) => urlMatches(f.urlPattern, p)),
+  );
+  return matching.sort((a, b) => Number(!a.urlPattern) - Number(!b.urlPattern) || a.name.localeCompare(b.name));
+}
+
+/** A function call as a snippet: the receiver for a page-object method, a placeholder per parameter. */
+export function functionSnippet(entry: TestFunctionEntry): string {
+  const args = entry.params.map((p, i) => `\${${i + 1}:${p.name.replace(/[$}\\]/g, '')}}`).join(', ');
+  const callee = entry.kind === 'page-object-method' && entry.receiver ? `${entry.receiver}.${entry.name}` : entry.name;
+  return `await ${callee}(${args})`;
 }

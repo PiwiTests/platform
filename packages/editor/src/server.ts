@@ -23,6 +23,7 @@ import {
   CodeActionKind,
   CompletionItemKind,
   DiagnosticSeverity,
+  InsertTextFormat,
   TextDocuments,
   TextDocumentSyncKind,
   type CodeAction,
@@ -47,9 +48,13 @@ import {
   breakMessage,
   breaksByAnchor,
   breaksOfChange,
+  filePages,
+  functionSnippet,
+  functionSuggestions,
   locatorRange,
   locatorSuggestions,
   locatorsInFile,
+  pageSummary,
   parsePatch,
   reachFrom,
   replaceLocatorOnLine,
@@ -57,6 +62,8 @@ import {
   stabilityFindings,
   stableReplacement,
   testsReaching,
+  timeoutEdit,
+  timeoutMessage,
   type LineLocator,
 } from './analysis.js';
 import { PiwiContext } from './context.js';
@@ -69,6 +76,8 @@ import {
   RENDER_STEPS_REQUEST,
   RUN_STATUS_NOTIFICATION,
   RUN_STATUS_REQUEST,
+  RUN_SELECTION_REQUEST,
+  SELECTIONS_REQUEST,
   TRACE_REQUEST,
   RUN_ARGS_REQUEST,
   SET_CREDENTIALS_NOTIFICATION,
@@ -84,6 +93,9 @@ import {
   type RenderStepsResult,
   type RunCommand,
   type RunStatusResult,
+  type RunSelectionParams,
+  type SelectionsParams,
+  type SelectionsResult,
   type RunTestsArgs,
   type StatusResult,
   type SummaryLine,
@@ -402,6 +414,24 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     const diagnostics: Diagnostic[] = [];
     if (isTestCode(context, relative)) {
       appAnalyses.delete(document.uri);
+      if (SPEC_FILE.test(relative!) && context.timeouts.size) {
+        const cases = new Map((await context.casesOf(relative!)).map((c) => [c.title, c]));
+        lines.forEach((text, i) => {
+          const m = TEST_CALL.exec(text);
+          const found = m ? cases.get(m[2]!) : undefined;
+          const advice = found ? context.timeouts.get(found.id) : undefined;
+          if (!advice) return;
+          const start = text.length - text.trimStart().length;
+          diagnostics.push({
+            range: { start: { line: i, character: start }, end: { line: i, character: text.trimEnd().length } },
+            severity: DiagnosticSeverity.Information,
+            source: 'Piwi',
+            code: 'timeout',
+            message: timeoutMessage(advice),
+            data: { testCaseId: advice.testCaseId, line: i },
+          });
+        });
+      }
       for (const finding of stabilityFindings(locatorsInFile(context.index, relative!))) {
         const text = lines[finding.line - 1] ?? '';
         const range = locatorRange(text, finding.locator);
@@ -546,6 +576,45 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             },
           },
         });
+      } else if (diagnostic.code === 'timeout') {
+        const { testCaseId, line } = diagnostic.data as { testCaseId: number; line: number };
+        const advice = context.timeouts.get(testCaseId);
+        const change = advice ? timeoutEdit(lines, line, advice) : null;
+        if (!advice || !change) continue;
+        const current = lines[change.line] ?? '';
+        actions.push({
+          title:
+            advice.kind === 'stale-slow' ? 'Remove test.slow()' : `Set the timeout to ${advice.recommendedTimeout} ms`,
+          kind: CodeActionKind.QuickFix,
+          diagnostics: [diagnostic],
+          isPreferred: true,
+          edit: {
+            changes: {
+              [params.textDocument.uri]: [
+                change.replace
+                  ? change.text
+                    ? {
+                        range: {
+                          start: { line: change.line, character: 0 },
+                          end: { line: change.line, character: current.length },
+                        },
+                        newText: change.text,
+                      }
+                    : {
+                        range: {
+                          start: { line: change.line, character: 0 },
+                          end: { line: change.line + 1, character: 0 },
+                        },
+                        newText: '',
+                      }
+                  : {
+                      range: { start: { line: change.line, character: 0 }, end: { line: change.line, character: 0 } },
+                      newText: `${change.text}\n`,
+                    },
+              ],
+            },
+          },
+        });
       } else if (diagnostic.code === 'locator-break') {
         const analysis = appAnalyses.get(params.textDocument.uri);
         const { anchorLine, before } = diagnostic.data as { anchorLine: number; before: string };
@@ -626,6 +695,18 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             },
           });
         }
+        if (owner.client && failure.clusterId && !(await owner.issuesOf(failure)).length) {
+          actions.push({
+            title: 'File an issue',
+            kind: CodeActionKind.QuickFix,
+            diagnostics: [diagnostic],
+            command: {
+              title: 'File an issue',
+              command: 'piwi.openInDashboard',
+              arguments: [owner.client.clusterUrl(failure.clusterId)],
+            },
+          });
+        }
         if (owner.client) {
           actions.push({
             title: 'Copy context for agent',
@@ -653,8 +734,9 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     return actions;
   });
 
-  // After `page.` or `this.page.` in test code: the chains the suite uses on the pages this file's tests visit.
-  connection.onCompletion((params): CompletionItem[] => {
+  // In test code: after `page.`, the chains the suite uses on the pages this file's tests visit; at the start of a
+  // statement, the project's functions for those pages; inside `piwi:` annotations and tags, their known values.
+  connection.onCompletion(async (params): Promise<CompletionItem[]> => {
     const file = uriToPath(params.textDocument.uri);
     const context = file ? contextFor(file) : null;
     const document = documents.get(params.textDocument.uri);
@@ -662,7 +744,24 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     const relative = relativeTo(context.root, file);
     if (!relative || !isTestCode(context, relative)) return [];
     const line = document.getText().split(/\r?\n/)[params.position.line] ?? '';
-    const typed = /(?:^|[^\w$.])(?:this\.)?page\.([A-Za-z]*)$/.exec(line.slice(0, params.position.character));
+    const before = line.slice(0, params.position.character);
+    const annotation = await annotationItems(context, before, params.position);
+    if (annotation) return annotation;
+    const statement = /^(\s*)((?:await\s+)?[A-Za-z_$][\w$]*)?$/.exec(before);
+    if (statement) {
+      const functions = functionSuggestions(await context.functionCatalog(), filePages(context.index, relative));
+      const start = { line: params.position.line, character: statement[1]!.length };
+      return functions.map((f, i) => ({
+        label: f.kind === 'page-object-method' && f.receiver ? `${f.receiver}.${f.name}` : f.name,
+        kind: CompletionItemKind.Function,
+        detail: [f.kind === 'page-object-method' ? f.importName : f.module, f.urlPattern].filter(Boolean).join(' · '),
+        sortText: `~${String(i).padStart(3, '0')}`,
+        filterText: `await ${f.receiver ? `${f.receiver}.` : ''}${f.name} ${f.name}`,
+        insertTextFormat: InsertTextFormat.Snippet,
+        textEdit: { range: { start, end: params.position }, newText: functionSnippet(f) },
+      }));
+    }
+    const typed = /(?:^|[^\w$.])(?:this\.)?page\.([A-Za-z]*)$/.exec(before);
     if (!typed) return [];
     const start = { line: params.position.line, character: params.position.character - typed[1]!.length };
     return locatorSuggestions(context.index, relative).map((s, i) => ({
@@ -681,6 +780,48 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     }));
   });
 
+  /** Completion inside a `piwi:` annotation or a tag; null when the cursor is in neither. */
+  const annotationItems = async (
+    context: PiwiContext,
+    before: string,
+    position: { line: number; character: number },
+  ): Promise<CompletionItem[] | null> => {
+    const item = (label: string, typed: string, detail?: string): CompletionItem => ({
+      label,
+      kind: CompletionItemKind.EnumMember,
+      detail,
+      textEdit: {
+        range: { start: { line: position.line, character: position.character - typed.length }, end: position },
+        newText: label,
+      },
+    });
+    const type = /\btype:\s*(['"`])([\w:-]*)$/.exec(before);
+    if (type) {
+      return [
+        item('piwi:owner', type[2]!, 'Who owns the test'),
+        item('piwi:priority', type[2]!, 'critical, high, medium or low'),
+        item('piwi:feature', type[2]!, 'The product area it covers'),
+        item('piwi:link', type[2]!, 'A ticket, spec or runbook URL'),
+      ];
+    }
+    const value = /\btype:\s*(['"`])piwi:(owner|priority|feature)\1\s*,\s*description:\s*(['"`])([^'"`]*)$/.exec(
+      before,
+    );
+    if (value) {
+      const words = await context.vocabulary();
+      const values =
+        value[2] === 'priority'
+          ? ['critical', 'high', 'medium', 'low']
+          : value[2] === 'owner'
+            ? words.owners
+            : words.features;
+      return values.map((v) => item(v, value[4]!));
+    }
+    const tag = /\btag:\s*(?:\[[^\]]*)?(['"`])(@[\w-]*)$/.exec(before);
+    if (tag) return (await context.vocabulary()).tags.map((t) => item(t.startsWith('@') ? t : `@${t}`, tag[2]!));
+    return null;
+  };
+
   connection.onHover(async (params): Promise<Hover | null> => {
     const failures = (failureDiagnostics.get(params.textDocument.uri) ?? []).filter(
       (d) => d.range.start.line === params.position.line,
@@ -693,10 +834,15 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       if (!found) continue;
       const { context, failure } = found;
       const shot = failure.screenshot ? await context.evidence(failure.screenshot) : null;
+      const issues = await context.issuesOf(failure);
       parts.push(
         [
           `**CI failure** · [${failure.title.replace(/[[\]]/g, '')}](${context.client?.executionUrl(failure.executionId) ?? ''}) · run #${context.failures?.run?.id ?? ''}`,
           failure.headline ?? '',
+          ...issues.map(
+            (l) =>
+              `Known issue: [${[l.key, l.title].filter(Boolean).join(' ').replace(/[[\]]/g, '') || l.url}](${l.url})${l.statusText ? ` · ${l.statusText}` : ''}`,
+          ),
           shot ? `![Failure screenshot](${pathToFileURL(shot).href})` : '',
         ]
           .filter(Boolean)
@@ -804,9 +950,29 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         const runs = found.totalRuns ?? 0;
         const passed = found.passedRuns ?? 0;
         const status = found.status && found.status !== 'passed' ? ` · ${found.status}` : '';
+        const quarantined = context.quarantined.get(found.id);
+        const quarantine = quarantined
+          ? ` · quarantined ${Math.max(1, Math.round(quarantined.ageMs / 86_400_000))} d · ${
+              quarantined.releaseProposed
+                ? 'ready to release'
+                : `${quarantined.consecutivePasses}${context.releaseAfter ? `/${context.releaseAfter}` : ''} passes toward release`
+            }`
+          : '';
+        const inSelections = context.selections.filter((sel) => sel.tests.has(found.id)).map((sel) => sel.name);
+        const selectionsText = inSelections.length
+          ? ` · in ${inSelections.slice(0, 3).join(', ')}${inSelections.length > 3 ? '…' : ''}`
+          : '';
+        const flaky = context.flaky.get(found.id);
+        const flakiness = flaky
+          ? [
+              ` · flaky score ${flaky.score}`,
+              flaky.wastedCiMinutes >= 1 ? ` · ${Math.round(flaky.wastedCiMinutes)} CI min wasted` : '',
+              flaky.rootCause ? ` · ${flaky.rootCause}` : '',
+            ].join('')
+          : '';
         out.push({
           line: i,
-          title: `passed ${passed}/${runs}${status}`,
+          title: `passed ${passed}/${runs}${status}${quarantine}${flakiness}${selectionsText}`,
           command: {
             title: 'Open in dashboard',
             command: 'piwi.openInDashboard',
@@ -831,15 +997,30 @@ export function startServer(connection: Connection, options: ServerOptions = {})
 
     const repoRelative = relativeTo(context.repoRoot, file);
     const tests = repoRelative ? testsReaching(context.codeIndex, repoRelative) : [];
-    if (!tests.length) return empty;
-    return {
-      file: {
-        line: 0,
-        title: [`Reached by ${plural(tests.length, 'test')}`, testCounts(tests)].filter(Boolean).join(' · '),
-        command: run(tests.map((t) => t.id)),
-      },
-      lines: [],
+    const page = repoRelative
+      ? (pageSummary(context.index, repoRelative) ?? pageSummary(context.index, relative ?? ''))
+      : null;
+    const reachLine: SummaryLine | null = tests.length
+      ? {
+          line: 0,
+          title: [`Reached by ${plural(tests.length, 'test')}`, testCounts(tests)].filter(Boolean).join(' · '),
+          command: run(tests.map((t) => t.id)),
+        }
+      : null;
+    if (!page) return reachLine ? { file: reachLine, lines: [] } : empty;
+    const pageLine: SummaryLine = {
+      line: 0,
+      title: [
+        `Page ${page.pages.slice(0, 2).join(', ')}: ${plural(page.tests.length, 'test')} act on it`,
+        plural(page.locators, 'locator'),
+        page.brittle ? `${page.brittle} brittle` : '',
+        testCounts(page.tests),
+      ]
+        .filter(Boolean)
+        .join(' · '),
+      command: run(page.tests.map((t) => t.id)),
     };
+    return { file: pageLine, lines: reachLine ? [reachLine] : [] };
   });
 
   connection.onRequest(TESTS_FOR_FILE_REQUEST, async (params: TestsForFileParams): Promise<TestsForFile> => {
@@ -898,6 +1079,31 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   );
 
   connection.onRequest(RUN_STATUS_REQUEST, (): RunStatusResult => runStatus());
+
+  connection.onRequest(SELECTIONS_REQUEST, async (params: SelectionsParams): Promise<SelectionsResult> => {
+    const file = params.uri ? uriToPath(params.uri) : null;
+    const context = (file ? contextFor(file) : null) ?? contexts.find((c) => c.selections.length) ?? null;
+    if (!context) return { items: [] };
+    const relative = file ? relativeTo(context.root, file) : null;
+    const ids =
+      relative && SPEC_FILE.test(relative) ? new Set((await context.casesOf(relative)).map((c) => c.id)) : null;
+    return {
+      items: context.selections.map((sel) => ({
+        key: sel.key,
+        name: sel.name,
+        count: sel.tests.size,
+        includesFile: !!ids && [...sel.tests].some((id) => ids.has(id)),
+      })),
+    };
+  });
+
+  connection.onRequest(RUN_SELECTION_REQUEST, (params: RunSelectionParams): RunCommand | null => {
+    const file = uriToPath(params.uri);
+    const context = (file ? contextFor(file) : null) ?? contexts.find((c) => c.selections.length) ?? null;
+    const selection = context?.selections.find((s) => s.key === params.key);
+    if (!context || !selection?.command) return null;
+    return { cwd: context.root, command: selection.command, args: [] };
+  });
 
   connection.onRequest(
     FAILURES_REQUEST,

@@ -13,6 +13,7 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.service
 import com.intellij.openapi.ide.CopyPasteManager
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.project.guessProjectDir
 import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.openapi.vfs.VirtualFile
@@ -132,6 +133,42 @@ class OpenInDashboardAction : AnAction() {
                         .showCenteredInCurrentWindow(project)
                     else -> Glue.statusView(service.status, service.runs).url?.let { BrowserUtil.browse(it) }
                 }
+            }
+        }
+    }
+}
+
+/** Piwi: Run selection… — one of the project's saved selections, in the Run tool window. */
+class RunSelectionAction : AnAction() {
+    override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+    override fun actionPerformed(e: AnActionEvent) {
+        val project = e.project ?: return
+        val uri = (e.getData(CommonDataKeys.VIRTUAL_FILE) ?: project.guessProjectDir())?.let { fileUri(it) } ?: ""
+        ApplicationManager.getApplication().executeOnPooledThread {
+            val server = project.service<PiwiProjectService>().server()
+            val items = server?.selections(SelectionsParams(uri))?.orNull()?.items.orEmpty()
+            if (items.isEmpty()) {
+                PiwiCommands.notify(project, "This project has no selection yet.")
+                return@executeOnPooledThread
+            }
+            ApplicationManager.getApplication().invokeLater {
+                JBPopupFactory.getInstance()
+                    .createPopupChooserBuilder(items)
+                    .setRenderer(
+                        com.intellij.ui.SimpleListCellRenderer.create("") {
+                            "${it.name ?: it.key} · ${it.count} tests" + if (it.includesFile) " · includes this file" else ""
+                        },
+                    )
+                    .setTitle("Run which selection?")
+                    .setItemChosenCallback { picked ->
+                        ApplicationManager.getApplication().executeOnPooledThread {
+                            val command = server?.runSelection(RunSelectionParams(uri, picked.key))?.orNull()
+                            if (command?.cwd != null && command.command != null) PiwiCommands.run(project, command.cwd, command.command)
+                        }
+                    }
+                    .createPopup()
+                    .showCenteredInCurrentWindow(project)
             }
         }
     }

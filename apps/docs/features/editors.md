@@ -6,11 +6,10 @@ lang: en-US
 
 # Editor extensions
 
-The Piwi extension for VS Code and the Piwi plugin for the JetBrains IDEs bring what the dashboard knows about your suite
-to the line you are editing. The extension works in VS Code, Cursor and VSCodium (from the Visual Studio Marketplace or
-Open VSX); the plugin in WebStorm, IntelliJ IDEA Ultimate, Rider and the other JetBrains IDEs with the LSP API, from
-version 2023.3. Both run the same editor service, so both show the same answers;
-[JetBrains IDEs](#jetbrains-ides) lists where the plugin draws them differently.
+The Piwi extension for VS Code (and Cursor, VSCodium) and the Piwi plugin for the JetBrains IDEs with the LSP API
+(WebStorm, IntelliJ IDEA Ultimate, Rider, from 2023.3) bring what the dashboard knows about your suite to the line you
+are editing. Both run the same editor service; [JetBrains IDEs](#jetbrains-ides) lists what the plugin draws
+differently.
 
 ## Install and connect
 
@@ -22,12 +21,12 @@ order:
 2. the same variables in the `.env` next to the Playwright config, then at the repository root;
 3. the [desktop app](/features/desktop), when it runs;
 4. its own settings: run **Piwi: Connect** (**Tools → Piwi → Connect…** in a JetBrains IDE), give the instance URL
-   and an [API key](/operate/api-keys), and pick the project. The key goes to the editor's secret storage (VS Code's
-   secret storage, the IDE's password safe), never to a file.
+   and an [API key](/operate/api-keys), and pick the project. The key goes to the editor's secret storage, never to a
+   file.
 
-Nothing from your workspace is sent to the instance: the extension downloads the project's
-[locator index](/guide/concepts#locator-index), its [code reach](/features/code-reach) index and the latest run, and
-compares them with your files locally.
+Nothing from your workspace is sent to the instance: the project's
+[locator index](/guide/concepts#locator-index), [code reach](/features/code-reach) and latest run are downloaded and
+compared with your files locally.
 
 ## CI failures in the Problems panel
 
@@ -39,8 +38,7 @@ On a failure, the quick fixes are:
 
 - **Heal: use …** — when [locator healing](/features/locator-healing) has a recommendation for the failing locator,
   the same edit an [auto-heal pull request](/features/auto-heal) would make, applied to the line in place.
-- **Open the trace** — downloads the execution's trace and opens it in Playwright's trace viewer
-  (`npx playwright show-trace`) from the Playwright config's directory.
+- **Open the trace** — downloads the trace and opens it with `npx playwright show-trace`.
 - **Apply the fix plan, then run its verification** — when the failure's [cluster](/features/failure-clusters) has a
   [fix plan](/features/fix-plans) whose patch applies to your files (or locator rewrites whose lines still read as
   captured): VS Code previews the edit before applying it, then runs the plan's verify command in a terminal.
@@ -48,7 +46,8 @@ On a failure, the quick fixes are:
   agent.
 - **Open the failure in the dashboard** — the execution page, with every piece of [evidence](/features/evidence).
 
-Hover the line for the failure screenshot.
+Hover the line for the failure screenshot, and the tickets linked to the failure's cluster or test with their status.
+Without one, **File an issue** opens the cluster in the dashboard, where issues are created.
 
 ## The status bar
 
@@ -61,17 +60,28 @@ Lines above the code (CodeLens):
 
 | File | What it shows | Click |
 |---|---|---|
-| A spec | the tests Piwi knows in it; above each `test(…)`, how often it passed | opens the test in the dashboard |
+| A spec | the tests Piwi knows in it; above each `test(…)`, how often it passed, its [flaky](/features/flaky-tests) score, CI minutes wasted and root cause, its quarantine and the passes left before release, and the selections that include it | opens the test in the dashboard |
 | A page object or spec | above each locator line, the tests using it, their actions, and how many fail or are flaky | runs those tests |
 | An application file | the tests that reach it, from [code reach](/features/code-reach) | runs those tests |
+| A page file (Nuxt `pages/**`) | the tests acting on that page, its locators and how many are brittle | runs those tests |
 
-**Piwi: Run the tests that reach this file** runs them in a terminal, with the arguments `piwi run` would use.
+**Piwi: Run the tests that reach this file** runs them in a terminal, with the arguments `piwi run` would use;
+**Piwi: Run selection…** runs one of the project's saved [selections](/features/test-selection).
 
-## Locator completion
+## Timeouts
 
-After `page.` (or `this.page.`) in a spec or a page object, the completion list offers the locator chains your suite
-already uses on the pages this file's tests visit, most used first and brittle ones last, each with its test count, its
-pages and its stability.
+A test whose `test.slow()` is no longer needed, or whose timeout is far above its p95, gets a note on its line with the
+time a tighter one saves on each failing run, and a quick fix: remove the `test.slow()`, or set `test.setTimeout` to the
+suggested value.
+
+## Completion
+
+- After `page.` (or `this.page.`) in a spec or a page object: the locator chains your suite already uses on the pages
+  this file's tests visit, most used first and brittle ones last, each with its test count, its pages and its stability.
+- At the start of a statement: the [functions](/features/test-functions) of your catalog whose URL pattern matches
+  those pages, as a call with a placeholder per parameter.
+- In a `piwi:` annotation: the types (`piwi:owner`, `piwi:priority`, `piwi:feature`, `piwi:link`), then the owners your
+  `CODEOWNERS` names, the priorities, or the project's features; in `tag: ['@…']`, the tags your tests already use.
 
 ## Brittle locators
 
@@ -100,6 +110,7 @@ clipboard. It holds your API key: paste it into your user settings, not into the
 | Piwi: Refresh | Fetch the indexes and the latest run again |
 | Piwi: Run the tests that reach this file | Run them in a terminal |
 | Piwi: Open in dashboard | Open this file's test, or the latest run |
+| Piwi: Run selection… | Run one of the project's saved selections |
 | Piwi: Open the latest run | Open the run the status bar shows |
 | Piwi: Copy the MCP server configuration | For editors without the MCP provider API |
 | Piwi: Pair with Piwi Picker | Copy the address Piwi Picker sends to |

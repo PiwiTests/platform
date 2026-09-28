@@ -18,10 +18,18 @@ import {
   type CallSiteAlternatives,
   type CatalogCase,
   type CodeIndex,
+  type BranchFailure,
+  type EntityLink,
   type FixPlan,
+  type FlakyTest,
+  type QuarantinedTest,
 } from './piwi-client.js';
+import type { TimeoutAdvice } from './analysis.js';
 import type { EditorCredentials } from './protocol.js';
 import { committedText, currentBranch, headCommit, repositoryRoot, translationValues } from './workspace.js';
+
+/** Selections resolved at each refresh, at most. */
+const MAX_SELECTIONS = 20;
 
 /** How long per-file answers (catalog, alternatives) are reused. */
 const FILE_CACHE_MS = 5 * 60_000;
@@ -81,6 +89,24 @@ export function resolveContextConnection(
   };
 }
 
+/** The owners a repository's CODEOWNERS file names: `@team`, `@user`, emails. */
+export function codeOwners(repoRoot: string): string[] {
+  const owners = new Set<string>();
+  for (const file of ['.github/CODEOWNERS', 'CODEOWNERS', 'docs/CODEOWNERS']) {
+    let text: string;
+    try {
+      text = fs.readFileSync(path.join(repoRoot, file), 'utf-8');
+    } catch {
+      continue;
+    }
+    for (const line of text.split(/\r?\n/)) {
+      const fields = line.replace(/#.*$/, '').trim().split(/\s+/).slice(1);
+      for (const f of fields) if (/^@[\w./-]+$/.test(f) || /^[^@\s]+@[^@\s]+$/.test(f)) owners.add(f);
+    }
+  }
+  return [...owners].sort();
+}
+
 export class PiwiContext {
   repoRoot: string;
   client: PiwiClient | null = null;
@@ -93,9 +119,20 @@ export class PiwiContext {
   problem: string | null = null;
   /** The branch whose latest run is read: the checked-out one, else the default branch. */
   runBranch: string | null = null;
+  /** Quarantined tests by test case id, and the passing streak that releases one. */
+  quarantined = new Map<number, QuarantinedTest>();
+  releaseAfter = 0;
+  /** The project's selections and the tests each selects, resolved at each refresh. */
+  selections: Array<{ key: string; name: string; tests: Set<number>; command: string }> = [];
+  /** Tests whose timeout could be tighter, by test case id. */
+  timeouts = new Map<number, TimeoutAdvice>();
+  /** The project's flaky tests on the branch the indexes describe, by test case id. */
+  flaky = new Map<number, FlakyTest>();
   /** The latest run on `runBranch` and its failures; null before the first answer. */
   failures: BranchFailures | null = null;
   private functions: { at: number; items: TestFunctionEntry[] } | null = null;
+  private words: { at: number; value: { tags: string[]; features: string[]; owners: string[] } } | null = null;
+  private readonly issues = new Map<number, Promise<EntityLink[]>>();
   private readonly fixPlans = new Map<number, Promise<FixPlan | null>>();
   private readonly fixPlanTexts = new Map<number, Promise<string | null>>();
   private readonly healings = new Map<number, Promise<LocatorHealingResult | null>>();
@@ -153,6 +190,35 @@ export class PiwiContext {
           : null;
       this.index = this.branch ? await this.client.locatorIndex(this.project.id, this.branch) : index;
       this.codeIndex = await this.client.codeIndex(this.project.id, this.branch).catch(() => null);
+      const flaky = await this.client.flakyTests(this.project.id, this.branch).catch(() => null);
+      if (flaky) this.flaky = new Map(flaky.map((f) => [f.testCaseId, f]));
+      const quarantine = await this.client.quarantine(this.project.id).catch(() => null);
+      if (quarantine) {
+        this.quarantined = new Map(quarantine.entries.map((q) => [q.testCaseId, q]));
+        this.releaseAfter = quarantine.releaseAfter;
+      }
+      const selections = await this.client.selections(this.project.id).catch(() => null);
+      if (selections) {
+        const project = this.project;
+        const client = this.client;
+        this.selections = (
+          await Promise.all(
+            selections.slice(0, MAX_SELECTIONS).map(async (s) => {
+              const resolved = await client.resolveSelection(project.id, s.key).catch(() => null);
+              return resolved
+                ? {
+                    key: s.key,
+                    name: s.name,
+                    tests: new Set(resolved.tests.map((t) => t.testCaseId)),
+                    command: resolved.materialization.command,
+                  }
+                : null;
+            }),
+          )
+        ).filter((s): s is NonNullable<typeof s> => !!s);
+      }
+      const timeouts = await this.client.timeoutOpportunities(this.project.id).catch(() => null);
+      if (timeouts) this.timeouts = new Map(timeouts.map((t) => [t.testCaseId, t]));
       this.catalog.clear();
       this.alternatives.clear();
       this.problem = null;
@@ -174,6 +240,7 @@ export class PiwiContext {
       const changed = branch !== this.runBranch || JSON.stringify(next) !== JSON.stringify(this.failures);
       if (next.run?.id !== this.failures?.run?.id) {
         this.healings.clear();
+        this.issues.clear();
         this.fixPlans.clear();
         this.fixPlanTexts.clear();
       }
@@ -192,6 +259,21 @@ export class PiwiContext {
     const items = await this.client.testFunctions(this.project.id).catch(() => this.functions?.items ?? []);
     this.functions = { at: Date.now(), items };
     return items;
+  }
+
+  /** The tickets linked to a failure's cluster or test, fetched once per run. */
+  issuesOf(failure: BranchFailure): Promise<EntityLink[]> {
+    const client = this.client;
+    if (!client) return Promise.resolve([]);
+    let found = this.issues.get(failure.executionId);
+    if (!found) {
+      found = Promise.all([
+        failure.clusterId ? client.links('failure_cluster', failure.clusterId).catch(() => []) : [],
+        client.links('test_case', failure.testCaseId).catch(() => []),
+      ]).then(([cluster, test]) => [...new Map([...cluster, ...test].map((l) => [l.url, l])).values()]);
+      this.issues.set(failure.executionId, found);
+    }
+    return found;
   }
 
   /** A failure cluster's fix plan, fetched once per run. */
@@ -214,6 +296,18 @@ export class PiwiContext {
       this.fixPlanTexts.set(clusterId, found);
     }
     return found;
+  }
+
+  /** Tags, features and CODEOWNERS owners for annotation completion, reused for five minutes. */
+  async vocabulary(): Promise<{ tags: string[]; features: string[]; owners: string[] }> {
+    if (this.words && Date.now() - this.words.at < FILE_CACHE_MS) return this.words.value;
+    const remote =
+      this.client && this.project
+        ? await this.client.vocabulary(this.project.id).catch(() => ({ tags: [], features: [] }))
+        : { tags: [], features: [] };
+    const value = { ...remote, owners: codeOwners(this.repoRoot) };
+    this.words = { at: Date.now(), value };
+    return value;
   }
 
   /** The healing of a failed execution, fetched once. */

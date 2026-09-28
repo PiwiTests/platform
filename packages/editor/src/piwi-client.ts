@@ -7,6 +7,7 @@ import type { LocatorIndex, LocatorIndexTest } from '@piwitests/core/locator-ind
 import type { TestFunctionEntry } from '@piwitests/core/function-match';
 import type { LocatorHealingResult, RankedLocator } from '@piwitests/core/locator-healing-types';
 import type { PiwiConnection } from '@piwitests/core/dotenv';
+import type { TimeoutAdvice } from './analysis.js';
 
 const TIMEOUT_MS = 15_000;
 
@@ -80,6 +81,35 @@ export interface BranchFailures {
 }
 
 export type BranchFailure = BranchFailures['failures'][number];
+
+/** A flaky test as the flaky list ranks it (`GET /api/projects/:id/flaky-tests`). */
+export interface FlakyTest {
+  testCaseId: number;
+  /** 1–100, from retry passes and pass/fail alternation. */
+  score: number;
+  /** CI minutes spent re-running it. */
+  wastedCiMinutes: number;
+  /** `timing`, `network`, `assertion`, `environment` or `other`; null when unclassified. */
+  rootCause: string | null;
+}
+
+/** A ticket or page linked to a failure cluster or a test (`GET /api/links`). */
+export interface EntityLink {
+  url: string;
+  /** Compact id, `PROJ-123` or `#456`. */
+  key: string | null;
+  title: string | null;
+  statusText: string | null;
+}
+
+/** A quarantined test and its way out (`GET /api/projects/:id/quarantine`). */
+export interface QuarantinedTest {
+  testCaseId: number;
+  /** How long it has been quarantined, in ms. */
+  ageMs: number;
+  consecutivePasses: number;
+  releaseProposed: boolean;
+}
 
 /** The parts of a cluster's fix plan the editors use. */
 export interface FixPlan {
@@ -196,6 +226,71 @@ export class PiwiClient {
     });
     if (!response.ok) throw new PiwiHttpError(`/api/files answered ${response.status}`, response.status);
     return new Uint8Array(await response.arrayBuffer());
+  }
+
+  async flakyTests(projectId: number, branch: string | null): Promise<FlakyTest[]> {
+    const body = await this.get<{ items?: FlakyTest[] }>(
+      `/api/projects/${projectId}/flaky-tests${branch ? `?branch=${encodeURIComponent(branch)}` : ''}`,
+    );
+    return body.items ?? [];
+  }
+
+  async links(entityType: 'failure_cluster' | 'test_case', entityId: number): Promise<EntityLink[]> {
+    const body = await this.get<{ items?: EntityLink[] }>(`/api/links?entityType=${entityType}&entityId=${entityId}`);
+    return body.items ?? [];
+  }
+
+  async quarantine(projectId: number): Promise<{ entries: QuarantinedTest[]; releaseAfter: number }> {
+    const body = await this.get<{ entries?: QuarantinedTest[]; releaseAfterConsecutivePasses?: number }>(
+      `/api/projects/${projectId}/quarantine?candidates=false`,
+    );
+    return { entries: body.entries ?? [], releaseAfter: body.releaseAfterConsecutivePasses ?? 0 };
+  }
+
+  /** The tags and features the project's tests declare, and the Test Map's features. */
+  async vocabulary(projectId: number): Promise<{ tags: string[]; features: string[] }> {
+    const [catalog, map] = await Promise.all([
+      this.get<{ items?: Array<{ tags?: string[] | null; feature?: string | null }> }>(
+        `/api/projects/${projectId}/test-cases?limit=1000`,
+      ).catch(() => ({ items: [] })),
+      this.get<{ features?: Array<{ key: string }> }>(`/api/projects/${projectId}/feature-map`).catch(() => ({
+        features: [],
+      })),
+    ]);
+    const tags = new Set<string>();
+    const features = new Set<string>();
+    for (const item of catalog.items ?? []) {
+      for (const tag of item.tags ?? []) tags.add(tag);
+      if (item.feature) features.add(item.feature);
+    }
+    for (const f of map.features ?? []) features.add(f.key);
+    return { tags: [...tags].sort(), features: [...features].sort() };
+  }
+
+  /** The project's saved and built-in selections. */
+  async selections(projectId: number): Promise<Array<{ key: string; name: string }>> {
+    const body = await this.get<{ items?: Array<{ key: string; name?: string | null }> }>(
+      `/api/projects/${projectId}/selections`,
+    );
+    return (body.items ?? []).map((s) => ({ key: s.key, name: s.name || s.key }));
+  }
+
+  /** A selection resolved now: its tests and the command that runs them. */
+  resolveSelection(
+    projectId: number,
+    key: string,
+  ): Promise<{ tests: Array<{ testCaseId: number }>; materialization: { args: string[]; command: string } }> {
+    return this.get(`/api/projects/${projectId}/selections/${encodeURIComponent(key)}/resolve`);
+  }
+
+  async timeoutOpportunities(projectId: number): Promise<TimeoutAdvice[]> {
+    const body = await this.get<{ items?: TimeoutAdvice[] }>(`/api/projects/${projectId}/timeout-opportunities`);
+    return body.items ?? [];
+  }
+
+  /** A failure cluster's page in the dashboard. */
+  clusterUrl(clusterId: number): string {
+    return `${this.connection.serverUrl}/failure-clusters/${clusterId}`;
   }
 
   /** A failure cluster's fix plan (`GET /api/failure-clusters/:id/fix-plan`). */
