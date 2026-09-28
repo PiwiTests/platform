@@ -15,6 +15,7 @@ import type {
   TestSourceFrame,
   TestStepEvent,
   LocatorPageUse,
+  WireNetworkRequest,
 } from './wire.js';
 import type { LocatorSnapshot } from '../internal/capture/locator-healing.js';
 
@@ -91,7 +92,7 @@ export interface CollectedTestCase {
   performanceMetrics?: CollectedPerformanceMetrics;
   stepEvents?: TestStepEvent[];
   /** Parsed from `piwi-network` attachments by `FileHandler`. */
-  networkRequests?: unknown;
+  networkRequests?: WireNetworkRequest[];
   /** Parsed from `piwi-web-vitals` attachments. */
   webVitals?: unknown;
   pageState?: unknown;
