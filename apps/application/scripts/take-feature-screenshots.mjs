@@ -2299,15 +2299,17 @@ const SCENES = [
     pad: 12,
   },
 
-  // ── Flake suspects ───────────────────────────────────────────────────────
+  // ── Flake suspects and the lab ───────────────────────────────────────────
   // Test case 9 is the checkout project's flaky test, whose seeded failures
-  // wait on a slow `GET /api/cart`.
+  // wait on a slow `GET /api/cart`; a seeded Flake Lab experiment reproduced it
+  // with a delay on that route.
   {
     name: 'flakiness-tab',
-    description: 'A flaky test’s Flakiness tab: suspects with their counts and conditions, context and experiments',
+    description:
+      'A flaky test’s Flakiness tab: suspects with their counts, conditions and lab results, context and experiments',
     tags: ['desktop'],
     route: '/test-cases/9?tab=flakiness',
-    viewport: { width: 1280, height: 1000 },
+    viewport: { width: 1280, height: 1400 },
     of: '[data-shot="flakiness-tab"]',
     pad: 12,
   },
@@ -2316,7 +2318,7 @@ const SCENES = [
     description: 'A flaky test’s Flakiness tab (dark)',
     tags: ['desktop'],
     route: '/test-cases/9?tab=flakiness',
-    viewport: { width: 1280, height: 1000 },
+    viewport: { width: 1280, height: 1400 },
     of: '[data-shot="flakiness-tab"]',
     pad: 12,
     colorScheme: 'dark',
@@ -2326,11 +2328,11 @@ const SCENES = [
     description: 'A flaky test’s Flakiness tab at phone width',
     tags: ['desktop'],
     route: '/test-cases/9?tab=flakiness',
-    viewport: { width: 390, height: 1600 },
+    viewport: { width: 390, height: 2200 },
   },
   {
     name: 'flaky-list-suspects',
-    description: 'The flaky list with each test’s top suspect',
+    description: 'The flaky list with each test’s top suspect and the reproduced badge',
     tags: ['desktop'],
     route: '/projects/1?tab=flaky-tests',
     viewport: { width: 1400, height: 1000 },
@@ -2339,7 +2341,7 @@ const SCENES = [
   },
   {
     name: 'flaky-list-suspects-dark',
-    description: 'The flaky list with each test’s top suspect (dark)',
+    description: 'The flaky list with each test’s top suspect and the reproduced badge (dark)',
     tags: ['desktop'],
     route: '/projects/1?tab=flaky-tests',
     viewport: { width: 1400, height: 1000 },
