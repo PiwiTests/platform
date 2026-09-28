@@ -82,7 +82,7 @@ describe('runBug', () => {
     expect(await runBug(['37', '--write', '--no-run'], { PIWI_DASHBOARD_URL: 'https://dash.example' }, web)).toBe(0);
     expect(fs.readFileSync(path.join(web, 'tests', 'bugs', 'coupon.spec.ts'), 'utf-8')).toBe(SPEC.code);
     expect(fs.existsSync(path.join(web, 'apps'))).toBe(false);
-    expect(String(error.mock.calls.at(-1)?.[0])).toBe('piwi bug: wrote tests/bugs/coupon.spec.ts');
+    expect(String(error.mock.calls[error.mock.calls.length - 1]?.[0])).toBe('piwi bug: wrote tests/bugs/coupon.spec.ts');
     expect((fetchMock.mock.calls[0] as unknown as [string])[0]).toBe(
       'https://dash.example/api/bug-reports/37/spec?mode=commit',
     );
