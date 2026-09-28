@@ -14,6 +14,8 @@ export const TIMELINE_LAYOUT = {
   axisHeight: 28,
   /** Height of a step bar inside an expanded sub-lane (shorter than a test bar). */
   stepBarHeight: 15,
+  /** Narrowest a passed hook section is drawn; below it the section would not show anyway. */
+  hookMinWidth: 1,
   /** Narrowest a failed hook section is drawn, so a millisecond teardown failure stays visible. */
   failedHookMinWidth: 8,
   /** Derived: a full row is a bar plus the gap below it. */
@@ -84,6 +86,23 @@ export function lockColorHex(index: number): string {
 /** Bar fill color for a test-case status, from the test outcome palette (a pass after a retry is flaky). */
 export function timelineStatusColor(status: string, retries?: number | null): string {
   return statusPalette(status, retries).color;
+}
+
+const statusFillStyles = new Map<string, { fill: string }>();
+
+/**
+ * A test bar's fill as an inline style (the palette colors are CSS variables,
+ * which a `fill` attribute cannot read): one shared object per color, so a bar
+ * re-rendered by a zoom patches no style.
+ */
+export function timelineStatusFill(status: string, retries?: number | null): { fill: string } {
+  const color = timelineStatusColor(status, retries);
+  let style = statusFillStyles.get(color);
+  if (!style) {
+    style = { fill: color };
+    statusFillStyles.set(color, style);
+  }
+  return style;
 }
 
 /**

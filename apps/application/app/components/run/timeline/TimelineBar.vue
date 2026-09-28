@@ -4,7 +4,7 @@ import { isGapKind, isHookKind, type TimelineItem } from '~/composables/useTimel
 import {
   TIMELINE_LAYOUT,
   TIMELINE_WAIT_COLORS,
-  timelineStatusColor,
+  timelineStatusFill,
   timelineHookColors,
   timelineStepColor,
   formatTimelineTime,
@@ -19,6 +19,10 @@ const props = defineProps<{
   lockColors?: string[];
   /** Whether this test row can be expanded into its step waterfall (test bars only). */
   expandable?: boolean;
+  /** The test's hook sections, drawn over its bar as plain shapes — test bars only. */
+  hooks?: TimelineItem[];
+  /** Where a hook section sits, on the same scale as `x` and `width`. */
+  hookGeometry?: (item: TimelineItem) => { x: number; width: number };
 }>();
 
 const emit = defineEmits<{
@@ -31,11 +35,11 @@ const emit = defineEmits<{
   leave: [];
 }>();
 
-const { barHeight, stepBarHeight, failedHookMinWidth } = TIMELINE_LAYOUT;
+const { barHeight, stepBarHeight, hookMinWidth, failedHookMinWidth } = TIMELINE_LAYOUT;
 
 /** Setup steps render like hooks; they just aren't tied to a test case. */
 const isHookLike = computed(() => isHookKind(props.item.kind));
-/** An empty stretch of the lane: drawn faintly, and never dims the other bars on hover. */
+/** An empty stretch of the lane, drawn faintly. */
 const isGap = computed(() => isGapKind(props.item.kind));
 
 /** Approximate width of one character of a gap's 10px label. */
@@ -54,10 +58,26 @@ const gapLabel = computed<{ text: string; from: number; to: number } | null>(() 
   const center = props.x + props.width / 2;
   return { text, from: center - half, to: center + half };
 });
-const hookColors = computed(() => timelineHookColors(props.item.status));
-const hookWidth = computed(() =>
-  props.item.status === 'failed' ? Math.max(props.width, failedHookMinWidth) : props.width,
-);
+/**
+ * The hook sections this bar draws: itself when it is one (a suite setup step,
+ * or the hovered section's copy), else the test's own. A failed one keeps a
+ * minimum width so a millisecond teardown failure stays visible; a passed one
+ * narrower than a pixel is left out until zooming in makes it visible.
+ */
+const hookRects = computed(() => {
+  let rects: Array<{ item: TimelineItem; x: number; width: number }> = [];
+  if (isHookLike.value) rects = [{ item: props.item, x: props.x, width: props.width }];
+  else if (props.item.kind === 'test' && props.hooks?.length && props.hookGeometry) {
+    const geometry = props.hookGeometry;
+    rects = props.hooks.map((hook) => ({ item: hook, ...geometry(hook) }));
+  }
+  return rects.flatMap((rect) => {
+    const failed = rect.item.status === 'failed';
+    if (!failed && rect.width < hookMinWidth) return [];
+    const width = failed ? Math.max(rect.width, failedHookMinWidth) : rect.width;
+    return [{ ...rect, width, stroke: timelineHookColors(rect.item.status).stroke }];
+  });
+});
 
 /** Every bar with an owning test case clicks through to it (suite setup has none). */
 const clickable = computed(() => props.item.testCaseId != null);
@@ -71,8 +91,18 @@ function onClick(): void {
   if (props.item.testCaseId != null) emit('select', props.item.testCaseId);
 }
 
-function onHookClick(): void {
-  if (props.item.testCaseId != null) emit('inspectHook', props.item);
+function onHookClick(hook: TimelineItem): void {
+  if (hook.testCaseId != null) emit('inspectHook', hook);
+}
+
+// A test's hook section is its own hover target inside the test's group:
+// entering it shows the section, leaving it back onto the bar shows the test.
+function onHookEnter(hook: TimelineItem, event: MouseEvent): void {
+  emit('hover', hook, event);
+}
+
+function onHookLeave(event: MouseEvent): void {
+  if (!isHookLike.value) emit('hover', props.item, event);
 }
 
 // Clicking a test bar expands or collapses its step waterfall; when the row
@@ -85,12 +115,7 @@ function onTestClick(): void {
 </script>
 
 <template>
-  <g
-    :class="isGap ? 'timeline-gap-group' : 'timeline-bar-group'"
-    @mouseenter="emit('hover', item, $event)"
-    @mousemove="emit('move', $event)"
-    @mouseleave="emit('leave')"
-  >
+  <g @mouseenter="emit('hover', item, $event)" @mousemove="emit('move', $event)" @mouseleave="emit('leave')">
     <template v-if="isGap">
       <!-- A hover target over the whole stretch, a dashed midline broken around
            its duration, and for a new worker process a tick where it took over. -->
@@ -158,7 +183,7 @@ function onTestClick(): void {
         :rx="2"
         :ry="2"
         :fill="stepFill"
-        class="timeline-bar-shape transition-opacity duration-100 cursor-pointer opacity-90"
+        class="cursor-pointer opacity-90"
         @click="onClick"
       />
       <text
@@ -170,36 +195,8 @@ function onTestClick(): void {
         {{ item.title }}
       </text>
     </template>
-    <template v-else-if="isHookLike">
-      <!-- Hook time over the test's bar: a wash, hatched so it reads as not the test body. -->
-      <rect
-        :x="x"
-        :y="y"
-        :width="hookWidth"
-        :height="barHeight"
-        :rx="3"
-        :ry="3"
-        :fill="hookColors.fill"
-        :fill-opacity="hookColors.opacity"
-        :stroke="hookColors.stroke"
-        stroke-width="1"
-        class="timeline-bar-shape transition-opacity duration-100"
-        :class="cursorClass"
-        data-timeline-hook
-        :data-status="item.status"
-        @click="onHookClick"
-      />
-      <rect
-        :x="x"
-        :y="y"
-        :width="hookWidth"
-        :height="barHeight"
-        :rx="3"
-        :ry="3"
-        fill="url(#timeline-hook-hatch)"
-        class="timeline-bar-shape transition-opacity duration-100 pointer-events-none"
-      />
-    </template>
+    <!-- A hook section draws below, with the test's own sections. -->
+    <template v-else-if="isHookLike" />
     <template v-else-if="item.kind === 'wait'">
       <!-- slightly taller bar, offset into the row gap above/below -->
       <rect
@@ -213,7 +210,7 @@ function onTestClick(): void {
         fill-opacity="0.28"
         :stroke="TIMELINE_WAIT_COLORS.stroke"
         stroke-width="1.5"
-        class="timeline-bar-shape transition-opacity duration-100 opacity-90"
+        class="opacity-90"
         :class="cursorClass"
         @click="onClick"
       />
@@ -255,7 +252,7 @@ function onTestClick(): void {
         r="3"
         :style="{ fill: STATUS_PALETTE.running.color }"
         filter="url(#glow)"
-        class="timeline-bar-shape transition-opacity duration-100 cursor-pointer opacity-90"
+        class="cursor-pointer opacity-90"
         @click="onClick"
       />
       <circle
@@ -267,7 +264,7 @@ function onTestClick(): void {
         stroke-width="1.5"
         stroke-opacity="0.4"
         filter="url(#glow)"
-        class="timeline-bar-shape transition-opacity duration-100 cursor-pointer opacity-90"
+        class="cursor-pointer opacity-90"
         @click="onClick"
       />
     </template>
@@ -279,8 +276,8 @@ function onTestClick(): void {
         :height="barHeight"
         :rx="3"
         :ry="3"
-        :style="{ fill: timelineStatusColor(item.status, item.retries) }"
-        class="timeline-bar-shape transition-opacity duration-100 cursor-pointer opacity-90"
+        :style="timelineStatusFill(item.status, item.retries)"
+        class="cursor-pointer opacity-90"
         @click="onTestClick"
       />
       <!-- Lock brackets: a thin colored strip along the top edge per held lock. -->
@@ -312,5 +309,25 @@ function onTestClick(): void {
         {{ formatTimelineTime(item.duration) }}
       </text>
     </template>
+    <!-- Hook time over the test's bar: a wash hatched so it reads as not the test body. -->
+    <rect
+      v-for="rect in hookRects"
+      :key="rect.item.key"
+      :x="rect.x"
+      :y="y"
+      :width="rect.width"
+      :height="barHeight"
+      :rx="3"
+      :ry="3"
+      :fill="rect.item.status === 'failed' ? 'url(#timeline-hook-failed)' : 'url(#timeline-hook-passed)'"
+      :stroke="rect.stroke"
+      stroke-width="1"
+      :class="rect.item.testCaseId != null ? 'cursor-pointer' : 'cursor-default'"
+      data-timeline-hook
+      :data-status="rect.item.status"
+      @mouseenter="onHookEnter(rect.item, $event)"
+      @mouseleave="onHookLeave"
+      @click="onHookClick(rect.item)"
+    />
   </g>
 </template>

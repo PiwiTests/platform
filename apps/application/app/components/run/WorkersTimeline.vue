@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue';
+import { ref, reactive, computed, watch } from 'vue';
 import type { TestCaseResult, SetupStepEvent, PerformanceStep } from '~~/types/api';
 import { useTimelineModel, isHookKind, type TimelineItem } from '~/composables/useTimelineModel';
 import { useTimelineViewport } from '~/composables/useTimelineViewport';
-import { lockColorHex } from '~/utils/timeline';
+import { lockColorHex, TIMELINE_HOOK_COLORS } from '~/utils/timeline';
 
 const props = defineProps<{
   testCases: TestCaseResult[];
@@ -121,9 +121,12 @@ const lockColorMap = computed(() => {
 const hasLocks = computed(() => runLocks.value.length > 0);
 const showLocks = ref(false);
 
+/** A bar with no lock brackets: one shared array, so an unchanged bar keeps equal props and skips re-rendering. */
+const NO_LOCK_COLORS: string[] = [];
+
 /** The colors for one bar's locks, in the run's stable lock order. */
 function lockColorsFor(item: TimelineItem): string[] {
-  if (!showLocks.value || item.kind !== 'test' || !item.locks?.length) return [];
+  if (!showLocks.value || item.kind !== 'test' || !item.locks?.length) return NO_LOCK_COLORS;
   return runLocks.value.filter((lock) => item.locks!.includes(lock)).map((lock) => lockColorMap.value.get(lock)!);
 }
 
@@ -132,7 +135,9 @@ const rowCount = computed(() => laneCount.value);
 const hasData = computed(() => timelineData.value.length > 0);
 
 const {
+  renderRange,
   panX,
+  pxPerMs,
   isPanning,
   contentWidth,
   contentHeight,
@@ -170,30 +175,74 @@ const visibleItems = computed(() =>
   }),
 );
 
-// Tooltip state — driven by hover events from the bars.
-const hoveredItem = ref<TimelineItem | null>(null);
-const tooltipPos = ref({ x: 0, y: 0 });
+/** A test with no hook section drawn: one shared array, so its bar keeps equal props. */
+const NO_HOOKS: TimelineItem[] = [];
+
+/** Whether an item is a test's hook section, which the test's own bar draws. */
+function isTestHook(item: TimelineItem): boolean {
+  return (item.kind === 'hook' || item.kind === 'fixture') && item.testCaseId != null;
+}
+
+// Each test's visible hook sections, drawn by the test's bar rather than as
+// bars of their own, so a section costs no component when the view zooms.
+const hooksByTest = computed(() => {
+  const map = new Map<number, TimelineItem[]>();
+  for (const item of visibleItems.value) {
+    if (!isTestHook(item)) continue;
+    const list = map.get(item.testCaseId!);
+    if (list) list.push(item);
+    else map.set(item.testCaseId!, [item]);
+  }
+  return map;
+});
+// Only the bars near the viewport are drawn: zoomed in on a large run, most of
+// them are off-screen, and every zoom step would re-position each one.
+const barItems = computed(() => {
+  const { start, end } = renderRange.value;
+  return visibleItems.value.filter(
+    (item) => !isTestHook(item) && item.start <= end && item.start + item.duration >= start,
+  );
+});
+
+function hooksFor(item: TimelineItem): TimelineItem[] {
+  return item.kind === 'test' && item.testCaseId != null
+    ? (hooksByTest.value.get(item.testCaseId) ?? NO_HOOKS)
+    : NO_HOOKS;
+}
+
+/** A hook section at its true width: the bars' 3px floor would cover a short test's body. */
+function hookGeometry(item: TimelineItem): { x: number; width: number } {
+  return { x: getBarX(item), width: item.duration * pxPerMs.value };
+}
+
+// Hover state, driven by the bars' hover events and read only by the tooltip
+// and the focus overlay. The template passes the object itself, never its
+// fields, so a hover or a mouse move re-renders those two and not the bars.
+const hover = reactive<{ item: TimelineItem | null; pos: { x: number; y: number } }>({
+  item: null,
+  pos: { x: 0, y: 0 },
+});
 
 // Re-resolve the hovered item by key when the data changes: a removed bar
 // fires no mouseleave (span-type toggled off, live update dropped it), which
 // would otherwise strand the tooltip; a replaced bar carries fresh data the
 // tooltip should reflect.
 watch(visibleItems, (items) => {
-  if (!hoveredItem.value) return;
-  hoveredItem.value = items.find((item) => item.key === hoveredItem.value!.key) ?? null;
+  if (!hover.item) return;
+  hover.item = items.find((item) => item.key === hover.item!.key) ?? null;
 });
 
 function onBarEnter(item: TimelineItem, event: MouseEvent) {
-  hoveredItem.value = item;
-  tooltipPos.value = { x: event.clientX, y: event.clientY };
+  hover.item = item;
+  hover.pos = { x: event.clientX, y: event.clientY };
 }
 
 function onBarMove(event: MouseEvent) {
-  tooltipPos.value = { x: event.clientX, y: event.clientY };
+  hover.pos = { x: event.clientX, y: event.clientY };
 }
 
 function onBarLeave() {
-  hoveredItem.value = null;
+  hover.item = null;
 }
 </script>
 
@@ -252,14 +301,17 @@ function onBarLeave() {
         :height="contentHeight"
       >
         <defs>
-          <!-- Light diagonal stripes that mark hook time over a test bar. -->
+          <!-- Hook time over a test bar: the status's wash under light diagonal stripes. -->
           <pattern
-            id="timeline-hook-hatch"
+            v-for="(colors, status) in TIMELINE_HOOK_COLORS"
+            :id="`timeline-hook-${status}`"
+            :key="status"
             patternUnits="userSpaceOnUse"
             width="6"
             height="6"
             patternTransform="rotate(45)"
           >
+            <rect width="6" height="6" :fill="colors.fill" :fill-opacity="colors.opacity" />
             <rect width="2" height="6" fill="white" fill-opacity="0.35" />
           </pattern>
           <filter id="glow">
@@ -279,7 +331,7 @@ function onBarLeave() {
         />
 
         <TimelineBar
-          v-for="item in visibleItems"
+          v-for="item in barItems"
           :key="item.key"
           :item="item"
           :x="getBarX(item)"
@@ -287,6 +339,8 @@ function onBarLeave() {
           :width="getBarWidth(item)"
           :lock-colors="lockColorsFor(item)"
           :expandable="barExpandable(item)"
+          :hooks="hooksFor(item)"
+          :hook-geometry="hookGeometry"
           @select="emit('selectTestCase', $event)"
           @toggle-expand="toggleExpand($event)"
           @inspect-hook="inspectHook"
@@ -294,22 +348,23 @@ function onBarLeave() {
           @move="onBarMove"
           @leave="onBarLeave"
         />
+
+        <TimelineFocus
+          :state="hover"
+          :content-width="contentWidth"
+          :content-height="contentHeight"
+          :get-bar-x="getBarX"
+          :get-bar-top="getBarTop"
+          :get-bar-width="getBarWidth"
+          :lock-colors="lockColorsFor"
+          :expandable="barExpandable"
+          :hooks="hooksFor"
+          :hook-geometry="hookGeometry"
+        />
       </svg>
     </div>
 
-    <TimelineTooltip :item="hoveredItem" :pos="tooltipPos" :lock-color-map="lockColorMap" />
+    <TimelineTooltip :state="hover" :lock-color-map="lockColorMap" />
   </div>
   <EmptyState v-else icon="i-lucide-rows-3" text="No worker data available for this run." />
 </template>
-
-<style>
-/*
- * Hover-dimming for timeline bars is plain CSS rather than a Vue-bound
- * `dimmed` prop: with hundreds of bars, driving it through reactive props
- * made every bar re-render on each hover change. `:has()` lets the browser
- * do it in one style recalc with no Vue/JS involved.
- */
-svg:has(.timeline-bar-group:hover) .timeline-bar-group:not(:hover) .timeline-bar-shape {
-  opacity: 0.4;
-}
-</style>
