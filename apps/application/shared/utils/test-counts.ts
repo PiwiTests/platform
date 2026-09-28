@@ -21,6 +21,11 @@ import { isFixmeSkip } from './skip-kind';
  */
 export const FAILED_STATUS_KEYS = ['failed', 'timedOut', 'timedout'] as const;
 
+/** Whether a per-case status is a failure, in either spelling of timed out. */
+export function isFailedStatus(status: string | null | undefined): boolean {
+  return status != null && (FAILED_STATUS_KEYS as readonly string[]).includes(status);
+}
+
 /**
  * Canonical spelling for a per-case status. The wire may carry Playwright's
  * camelCase `timedOut`; every stored value uses the lowercase `TestCaseStatus`

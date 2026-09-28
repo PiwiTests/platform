@@ -653,6 +653,7 @@ export const networkRequests = pgTable(
     contentType: text('content_type'),
     serverLogs: jsonb('server_logs'),
     serverTraces: jsonb('server_traces'),
+    failure: text('failure'), // Why the request failed (Playwright's error text, e.g. net::ERR_CONNECTION_RESET); null when it finished
   },
   (t) => ({
     runIdx: index('idx_nr_run').on(t.testRunId),

@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "2320ddf4-1f1c-49a6-8a0d-88ebd156a040",
-  "prevId": "b5c9ab8f-8d1a-41b6-a122-335ff11ae3b6",
+  "id": "df6a2027-eccd-4f68-b2fb-d2621e7fd2de",
+  "prevId": "2320ddf4-1f1c-49a6-8a0d-88ebd156a040",
   "tables": {
     "account_tokens": {
       "name": "account_tokens",
@@ -4358,6 +4358,13 @@
         },
         "path_prefix": {
           "name": "path_prefix",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "test_path_prefix": {
+          "name": "test_path_prefix",
           "type": "text",
           "primaryKey": false,
           "notNull": false,

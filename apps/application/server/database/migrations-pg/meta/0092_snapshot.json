@@ -1,5 +1,5 @@
 {
-  "id": "d0ee99a1-8969-402f-b97b-4e44a438b3d1",
+  "id": "27ed1d64-8ad8-49f5-ba31-55e37198a0e7",
   "prevId": "e9fbc31d-5f4f-49a4-a1bc-eb8288d39635",
   "version": "7",
   "dialect": "postgresql",
@@ -4438,6 +4438,12 @@
           "type": "jsonb",
           "primaryKey": false,
           "notNull": false
+        },
+        "failure": {
+          "name": "failure",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -5421,12 +5427,6 @@
         },
         "path_prefix": {
           "name": "path_prefix",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "test_path_prefix": {
-          "name": "test_path_prefix",
           "type": "text",
           "primaryKey": false,
           "notNull": false

@@ -8,6 +8,7 @@ import type {
   TestMetadata,
   TestSourceFrame,
   TestStepEvent,
+  WireNetworkRequest,
 } from '@piwitests/core/wire';
 
 // The wire leaf shapes live in @piwitests/core (shared with the reporter);
@@ -21,6 +22,7 @@ export type {
   TestMetadata,
   TestSourceFrame,
   TestStepEvent,
+  WireNetworkRequest,
 };
 
 // ── Test status types ──────────────────────────────────────────────────────────
@@ -78,7 +80,7 @@ export interface TestCasePayload {
   slowestStep?: string | null;
   slowestStepDuration?: number | null;
   wastedTimeMs?: number | null;
-  networkRequests?: unknown;
+  networkRequests?: WireNetworkRequest[] | null;
   webVitals?: unknown;
   pageState?: unknown;
   /** Page inventory: controls and links per visited page (passing runs). */
@@ -191,7 +193,7 @@ export interface StreamEventPayload {
   slowestStep?: string | null;
   slowestStepDuration?: number | null;
   wastedTimeMs?: number | null;
-  networkRequests?: unknown;
+  networkRequests?: WireNetworkRequest[] | null;
   webVitals?: unknown;
   pageState?: unknown;
   pageInventory?: unknown;
