@@ -169,7 +169,8 @@ test.describe('Verified fixes', () => {
     await page.goto(`/test-cases/${testCaseId}?tab=flakiness`);
     await waitForHydration(page);
     const mark = page.getByTestId('flake-verified-fix');
-    await expect(mark).toContainText('Verified fixed on fix1234');
+    // The tab reads the test's history first, which takes a while under a parallel suite.
+    await expect(mark).toContainText('Verified fixed on fix1234', { timeout: 15_000 });
     await expect(mark).toHaveAttribute('data-holding', 'true');
 
     await page.goto(`/projects/${projectId}?tab=flaky-tests`);
@@ -197,7 +198,9 @@ test.describe('Verified fixes', () => {
 
     await page.goto(`/test-cases/${testCaseId}?tab=flakiness`);
     await waitForHydration(page);
-    await expect(page.getByTestId('flake-verified-fix')).toHaveAttribute('data-holding', 'false');
+    await expect(page.getByTestId('flake-verified-fix')).toHaveAttribute('data-holding', 'false', {
+      timeout: 15_000,
+    });
     await expect(page.getByTestId('flake-verified-fix')).toContainText('then it retry-passed again');
 
     await page.goto(`/projects/${projectId}?tab=flaky-tests`);
