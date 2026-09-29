@@ -17,6 +17,17 @@ function escapeShellArg(arg: string): string {
   return '"' + arg.replace(/"/g, '\\"') + '"';
 }
 
+/**
+ * The ` -g "<title|title>"` flag that narrows a `playwright test` run to these
+ * titles, or an empty string without titles. Each title is regex-escaped, then
+ * the whole pattern is double-quoted with `"`, `\`, `$` and backtick escaped.
+ */
+export function buildTitleGrepFlag(titles: string[]): string {
+  if (titles.length === 0) return '';
+  const pattern = titles.map(escapeGrep).join('|');
+  return ` -g "${pattern.replace(/["\\$`]/g, '\\$&')}"`;
+}
+
 // Playwright's CLI file filter is matched as a regex against forward-slash paths,
 // so a Windows-captured backslash path (e.g. "tests\foo.spec.ts:10") never matches.
 // Normalize to POSIX separators, which Playwright accepts on every platform.
