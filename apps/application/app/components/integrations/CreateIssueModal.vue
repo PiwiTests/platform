@@ -437,7 +437,6 @@ async function linkExisting(candidate: ExistingIssueCandidate) {
             <div class="flex flex-wrap gap-4">
               <USwitch v-model="include.includeDiagnosis" label="Diagnosis" @update:model-value="refreshPreview" />
               <USwitch v-model="include.includePatch" label="Patch" @update:model-value="refreshPreview" />
-              <USwitch v-model="include.includeScreenshot" label="Screenshot" @update:model-value="refreshPreview" />
               <USwitch v-model="include.includeShareLink" label="Share link" @update:model-value="refreshPreview" />
             </div>
           </UFormField>

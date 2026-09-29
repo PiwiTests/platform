@@ -58,10 +58,10 @@ Jira project permission:
 | Add Comments | `ADD_COMMENTS` | The write-back policies (fix landed, regressed, still failing, merged). |
 | Transition Issues | `TRANSITION_ISSUES` | The *transition on fix* and *reopen* policies. |
 | Assign Issues | `ASSIGN_ISSUES` | Set the assignee on a created issue, and list assignable users in the picker. |
-| Create Attachments | `CREATE_ATTACHMENTS` | Attach the failure screenshot when its toggle is on. |
+| Create Attachments | `CREATE_ATTACHMENTS` | Attach a [bug report](/features/bug-reports)'s screenshots to the issue filed for it. |
 
 For the **full integration**, grant all six on each bound project. You can drop the ones whose feature you do not
-use: `CREATE_ATTACHMENTS` if you never attach a screenshot, `ASSIGN_ISSUES` if you never set an assignee,
+use: `CREATE_ATTACHMENTS` if you never file bug reports, `ASSIGN_ISSUES` if you never set an assignee,
 `ADD_COMMENTS` and `TRANSITION_ISSUES` if the [write-back policies](/features/issue-tracking#keep-the-ticket-honest)
 stay off. `BROWSE_PROJECTS` on its own is enough for read-only unfurl and status sync.
 
