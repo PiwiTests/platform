@@ -1,13 +1,6 @@
 import { and, eq, lte, lt } from 'drizzle-orm';
 import { notificationDeliveries, notificationChannels, subscriptions, users } from '../../database/schema';
-import {
-  sendEmail,
-  renderRunNotificationEmail,
-  renderNewClusterEmail,
-  renderDigestEmail,
-  isEmailConfigured,
-  type DigestItem,
-} from '../email';
+import { sendEmail, renderNotificationEmail, renderDigestEmail, isEmailConfigured, type DigestItem } from '../email';
 import { decryptSecret, getEncryptionKey } from '../crypto';
 import { safeFetch } from '../safe-fetch';
 import type {
@@ -20,6 +13,7 @@ import type {
   BugLooksFixedPayload,
 } from '#shared/notification-events';
 import {
+  clusterOutcome,
   renderEventSubject,
   notificationTargetPath,
   failureTargetPath,
@@ -79,37 +73,7 @@ async function resolveEmailAddress(db: Db, channel: ChannelRow): Promise<string>
 async function sendToEmail(to: string, event: NotificationEvent, payload: NotificationPayload) {
   if (!isEmailConfigured()) throw new Error('SMTP not configured');
 
-  let html: string;
-  let text: string;
-
-  if (event.startsWith('run.')) {
-    const p = payload as RunFinishedPayload;
-    ({ html, text } = renderRunNotificationEmail({
-      projectName: p.projectName,
-      runId: p.runId,
-      status: p.status,
-      totalTests: p.totalTests,
-      failedTests: p.failedTests,
-      branch: p.branch,
-      topFailures: p.topFailures,
-    }));
-  } else if (event === 'cluster.new') {
-    const p = payload as ClusterNewPayload;
-    ({ html, text } = renderNewClusterEmail({
-      projectName: p.projectName,
-      clusterId: p.clusterId,
-      signature: p.signature,
-      title: p.title,
-      sampleErrorExcerpt: p.sampleErrorExcerpt,
-      affectedCases: p.affectedCases,
-      knownIssue: p.knownIssue,
-    }));
-  } else {
-    const subject = renderEventSubject(event, payload);
-    html = `<p>${subject}</p>`;
-    text = subject;
-  }
-
+  const { html, text } = renderNotificationEmail(event, payload);
   await sendEmail({ to, subject: renderEventSubject(event, payload), html, text });
 }
 
@@ -174,12 +138,8 @@ async function sendToSlack(config: Record<string, unknown>, event: NotificationE
   } else if (event === 'cluster.fixed' || event === 'cluster.regressed') {
     const p = payload as ClusterFixedPayload | ClusterRegressedPayload;
     const parts: string[] = [p.title || `\`${slackExcerpt(p.signature)}\``];
-    if (event === 'cluster.fixed') {
-      const fixed = p as ClusterFixedPayload;
-      if (fixed.resolved) parts.push('Triage status set to resolved.');
-    } else if ((p as ClusterRegressedPayload).reopened) {
-      parts.push('Triage status set back to open.');
-    }
+    const { triageNote } = clusterOutcome(event, p);
+    if (triageNote) parts.push(triageNote);
     if (p.knownIssue) parts.push(`Tracked in <${p.knownIssue.url}|${p.knownIssue.key}>`);
     parts.push(`<${base}/failure-clusters/${p.clusterId}|View cluster>`);
     blocks.push({ type: 'section', text: { type: 'mrkdwn', text: parts.join('\n') } });
