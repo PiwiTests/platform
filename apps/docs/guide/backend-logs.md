@@ -107,7 +107,7 @@ On the Playwright side there is nothing to configure: the reporter reads the hea
 
 ## Backend logs
 
-The integration adds an `X-Piwi-Logs` response header (gzip-compressed, Base64-encoded JSON) to every HTTP response, and the reporter stores its entries as `serverLogs` on that request. They appear in:
+The integration adds an `X-Piwi-Logs` response header (gzip-compressed, Base64-encoded JSON) to HTTP responses: the Nitro plugin to every response (an empty array when nothing was logged), the ASP.NET Core middleware only to responses that captured at least one entry. The reporter stores its entries as `serverLogs` on that request. They appear in:
 
 - **The [execution page](/features/evidence#one-execution-diagnosis-first)**: in the network requests, a request that returned server-side logs shows a warning and error count and expands to every entry attached to it (level, category, message, timestamp and stack trace). Error logs also raise a [clue](/features/evidence#clues).
 - **The [AI diagnosis](/features/ai-diagnosis) context**: warnings and errors are included when a failure is diagnosed.
@@ -124,7 +124,7 @@ Each entry in the `X-Piwi-Logs` array has this shape:
 | `level` | `string` | `"Warning"` or `"Error"` (the ASP.NET Core integration also emits `"Critical"`) |
 | `category` | `string` | Logger category or tag (e.g. `MyApp.Services.OrderService`) |
 | `message` | `string` | Log message (truncated at 500 characters) |
-| `stack` | `string` | Optional. Shrunk stack trace — framework/internal frames removed, namespace parts shortened to first lowercase letter, max 5 frames |
+| `stack` | `string` | Optional. Shrunk stack trace, max 5 frames — framework/internal frames removed (`node:internal` and `node_modules` for Nitro); the ASP.NET Core integration also shortens namespace parts to their first lowercase letter |
 
 In the ASP.NET Core integration, `stack` starts with the exception's message and is omitted when no exception was logged.
 

@@ -626,6 +626,12 @@ a `pageSize + 1` fetch. **`getCursor` must read the POST-map field name** (`r.ex
 — reading a renamed field yields an `"undefined"` cursor that crashes the next page. In-memory-filtered list paths must
 apply the cursor in memory on the same axis as the emitted cursor, or paging loops on page one.
 
+**Tools about Piwi itself** — `describe_piwi` and `get_release_notes` (`server/utils/mcp/about-piwi.ts`) answer from
+the docs pages and `CHANGELOG.md` bundled as Nitro server assets (`nitro.serverAssets` in `nuxt.config.ts`; the
+Dockerfile copies both in) and from the registries the docs site renders — never from prose written for the tool,
+so they cannot say anything the docs do not. How this instance is configured (storage, retention, capability
+states) is deployment shape, shown to administrators only, like the Setup page.
+
 ## Running the app locally to verify a change
 
 The step-by-step recipe, the seeded routes worth opening and the pitfalls live in the `run-app` skill

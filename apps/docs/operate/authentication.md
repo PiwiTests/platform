@@ -44,13 +44,7 @@ For provisioning an instance from a script, the same step is available as an API
 ::: code-group
 
 ```bash [Linux / macOS]
-curl -X POST http://localhost:3000/api/auth/setup \
-  -H "Content-Type: application/json" \
-  -d '{
-    "username": "admin",
-    "password": "your-secure-password",
-    "name": "Administrator"
-  }'
+curl -X POST http://localhost:3000/api/auth/setup -H "Content-Type: application/json" -d '{"username": "admin", "password": "your-secure-password", "name": "Administrator"}'
 ```
 
 ```powershell [Windows (PowerShell)]
@@ -65,7 +59,7 @@ Both routes go through the same setup endpoint, which is only available while th
 
 ## Logging in
 
-Sign in at `/login`. Sessions are stored in encrypted cookies and last for 7 days.
+Sign in at `/login`. Sessions are stored in encrypted cookies and last for 7 days. The session cookie is marked `Secure`, so browser sign-in needs HTTPS — over plain `http://` it only works on `localhost`.
 
 ## OAuth (Google, GitHub)
 

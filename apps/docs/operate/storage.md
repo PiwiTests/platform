@@ -47,7 +47,8 @@ When the static credential variables are omitted, Piwi uses the AWS SDK default 
 task roles, EC2 instance roles, environment credentials and shared AWS configuration without storing access keys in
 Piwi. If either static credential variable is set, both are required.
 
-Minimum required IAM permissions:
+Minimum required IAM permissions. `s3:ListBucket` lets Piwi delete a run's whole prefix; without it, S3 answers a
+missing file with `403` instead of `404`:
 
 ```json
 {
@@ -55,8 +56,13 @@ Minimum required IAM permissions:
   "Statement": [
     {
       "Effect": "Allow",
-      "Action": ["s3:PutObject", "s3:GetObject", "s3:HeadObject"],
+      "Action": ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"],
       "Resource": "arn:aws:s3:::your-bucket-name/*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": ["s3:ListBucket"],
+      "Resource": "arn:aws:s3:::your-bucket-name"
     }
   ]
 }

@@ -257,7 +257,7 @@ export const PIWI_ENV_VARS = {
   },
   PIWI_SECRET_KEY: {
     description:
-      'Master key for AES-256-GCM encryption of secrets stored in the database (AI API keys, webhook/SCM secrets). Strongly recommended in production.',
+      'Master key for AES-256-GCM encryption of secrets stored in the database (AI API keys, SCM tokens, webhook and integration secrets). Required before the dashboard can save any of them.',
     category: 'general',
     secret: true,
     example: 'a 64-char random hex string',
@@ -524,7 +524,7 @@ export const PIWI_ENV_VARS = {
   // ── AI — diagnosis model ─────────────────────────────────────────────────
   PIWI_AI_PROVIDER: {
     description:
-      'AI provider for failure diagnosis: "anthropic", "openai" (OpenAI-compatible), or "claude-cli" (the local Claude Code CLI, desktop app only).',
+      'AI provider for failure diagnosis: "anthropic", "openai" (OpenAI-compatible), or "claude-cli" (the local Claude Code CLI — offered in the desktop app, or wherever PIWI_CLAUDE_CLI_PATH points at it).',
     category: 'ai',
     type: 'enum',
     enum: ['anthropic', 'openai', 'claude-cli'],
@@ -547,7 +547,8 @@ export const PIWI_ENV_VARS = {
     requiredWhen: { PIWI_AI_PROVIDER: 'openai' },
   },
   PIWI_AI_BASE_URL: {
-    description: 'Base URL for OpenAI-compatible providers (e.g. http://localhost:11434/v1).',
+    description:
+      'Base URL of the provider API. Required for "openai" — OpenAI itself (https://api.openai.com/v1) as well as compatible servers (e.g. http://localhost:11434/v1); optional for "anthropic" (a gateway or proxy).',
     category: 'ai',
     type: 'url',
     example: 'http://localhost:11434/v1',
@@ -566,7 +567,8 @@ export const PIWI_ENV_VARS = {
       'Omitted from requests when unset (provider default applies). Reasoning models (o1, o3, GPT-5-class) reject any explicit value — leave this unset for them.',
   },
   PIWI_AI_AUTO_DIAGNOSE: {
-    description: 'Set to "true" to auto-diagnose new failure clusters when a run finishes.',
+    description:
+      'Set to "true" to diagnose, when a run finishes, the failure clusters that failed in it and have no completed diagnosis yet (up to PIWI_AI_AUTO_DIAGNOSE_MAX).',
     category: 'ai',
     type: 'boolean',
     default: 'false',
@@ -921,7 +923,7 @@ export const PIWI_ENV_VARS = {
   },
   PIWI_EXPORT_MAX_BYTES: {
     description:
-      'Max total size of one export, in bytes. Evidence is added largest-last until the budget is reached; the rest is listed as omitted. The archive is built in memory, so this also bounds what a single export costs the server.',
+      "Max total size of one export, in bytes. Evidence is added in order (each execution's attachments, then its traces); a file that would pass the budget is left out and listed as omitted. The archive is built in memory, so this also bounds what a single export costs the server.",
     category: 'export',
     type: 'number',
     default: String(500 * 1024 * 1024),
@@ -1049,7 +1051,7 @@ export const PIWI_ENV_VARS = {
   },
   PIWI_AUTO_MARKERS: {
     description:
-      'Automatically create a timeline marker when a run’s environment, Playwright version, or reporter version changes from the previous run (default: enabled). Set to false to disable.',
+      'Automatically create a timeline marker when a run’s Playwright or reporter version differs from the previous run in the same environment (default: enabled). Set to false to disable.',
     category: 'markers',
     type: 'boolean',
     default: 'true',

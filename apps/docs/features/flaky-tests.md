@@ -15,11 +15,12 @@ For the same signals aggregated across every project, see [Analytics](./analytic
 
 ## Flaky test detection
 
-A test is flaky when its result isn't deterministic. Piwi computes a **composite flakiness score** per test from three signals:
+A test is flaky when its result isn't deterministic. Piwi computes a **flakiness score** (0–100) per test from two signals, weighted 60/40:
 
 - **Retry passes** — failed on the first attempt, passed on retry.
 - **Status alternation** — flips between pass and fail across runs.
-- **Failure rate** — overall proportion of failures.
+
+The **failure rate** is shown but not scored.
 
 The project's **Failures** tab has a **Flaky** view with a **configurable lookback window** so you can focus on recent behavior or a longer baseline. Each flaky test links to its history and carries a **Quarantine** action.
 
@@ -27,7 +28,7 @@ The project's **Failures** tab has a **Flaky** view with a **configurable lookba
 
 <figure>
   <img src="/screenshots/flaky-detection.png" alt="Flaky tests tab listing tests with composite score, failure rate, retry passes, and flip counts">
-  <figcaption>The Flaky view of a project's Failures tab — each intermittent test scored by retry passes, status flips, and failure rate, ranked by impact, filterable by root-cause category, each with its top suspect.</figcaption>
+  <figcaption>The Flaky view of a project's Failures tab — each intermittent test scored by retry passes and status flips (failure rate alongside), ranked by impact, filterable by root-cause category, each with its top suspect.</figcaption>
 </figure>
 
 ### Root-cause classification
@@ -101,15 +102,16 @@ The usual approach is `--grep-invert @quarantine`: the test stops running, nothi
 list only grows.
 
 **A quarantined test in Piwi keeps running and keeps reporting.** It is excluded from the [CI gate](/guide/ci#blocking-a-merge)'s
-verdict and nothing else. That single difference is what makes the exit possible:
+`--max-failed`, `--require-tag` and `--require-selection` checks and nothing else. That single difference is what makes the exit possible:
 
-- Passing runs after quarantine accumulate as a **streak**, and one failure resets it.
+- Passing executions after quarantine (one per attempt per browser project) accumulate as a **streak**; one failure
+  resets it.
 - After five consecutive passes the test is flagged **ready to release** — the dashboard tells you, rather than waiting
   to be asked.
 - A fix [verified](#verified-fixed) after the quarantine flags it at once, while it holds. Release stays yours to
   click.
-- **Candidates** are proposed from the flaky analysis, ranked by *wasted CI minutes* rather than flakiness score. A test
-  that flakes constantly but finishes in 200 ms costs nothing; one that flakes weekly and burns a four-minute timeout is
+- **Candidates** (API only) are flaky tests wasting 2+ CI minutes with a score of 40+, ranked by impact. A test that
+  flakes constantly but finishes in 200 ms costs nothing; one that flakes weekly and burns a four-minute timeout is
   what actually hurts.
 - **Debt** is reported in aggregate: how many are quarantined, how many are ready to release, how long the oldest has
   been in, and how many still have no passing streak at all.
@@ -123,7 +125,7 @@ Manage it from the **Quarantine** view of the project's **Failures** tab, or ove
 
 Individual test cases in a run carry at-a-glance badges:
 
-- **New regression** (red) — the first run in which the test failed
+- **New regression** (red) — failing here but passing in the baseline (the last passing run)
 - **Newly flaky** (purple) — the first run in which the test was flaky
 - **Passed on retry** (purple) — failed at least once in this run, then passed
 
@@ -133,7 +135,7 @@ A failing execution shows the same badges in its header (see [Test case detail](
 
 ## Spec health by file
 
-The project's **Tests** tab has a **Group by File** view that groups the tests under each spec file and carries that file's pass rate, flaky rate, failure count, execution count and average time in the group header, so an unhealthy area of the suite jumps out.
+The project's **Tests** tab has a **Group by File** view that groups tests by their first two path segments (`tests/admin` for `tests/admin/users.spec.ts`) and carries that group's pass rate, flaky rate, failure count, execution count and average time over the last 90 days in its header, so an unhealthy area of the suite jumps out.
 
 ## Across every project
 

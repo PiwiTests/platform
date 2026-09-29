@@ -70,7 +70,7 @@ Without any configuration, the reporter records:
   and the repository URL. On a pull-request build the target branch is recorded as the run's **base branch**, which
   [baselines](/guide/concepts#baseline-last-green-run) fall back to when the branch has no history of its own.
 - **CI**: provider, workflow or job name, build number, and a link back to the CI build.
-- **Environment**: Node, Playwright and OS versions, plus each test's browser and viewport.
+- **Environment**: the Playwright version, and each test's browser and viewport.
 - **Shard index**: from Playwright's own `--shard` config.
 
 [Test metadata](/reference/test-metadata#scm-information-git) lists the variables each field comes from. Set
@@ -96,7 +96,7 @@ How the merge works:
 
 1. Each shard derives a **run label**, a stable identifier for the CI pipeline, from the provider's build id
    (`GITHUB_RUN_ID`, `CI_PIPELINE_ID`, `CIRCLE_WORKFLOW_ID` and their equivalents on the systems listed above).
-2. Shards sharing a run label **and** a `projectName` resolve to the same run.
+2. Shards sharing a run label **and** a `projectName` resolve to the same run when streaming.
 3. Each shard streams independently; the run stays `running` until the **last** shard calls finish.
 4. Counters accumulate across shards. The run is `failed` if any shard reported a failure, and the run page shows a
    shard progress badge (`2/3`) while shards are still arriving.
@@ -174,7 +174,7 @@ e2e:
 - run: cat piwi-run.json   # { runUrl, runId, projectId, projectName, status, ciBuildUrl, failedCount, failures }
 ```
 
-`failures` lists every test whose final attempt failed as `{ title, file, retry, browser, url }`, with
+`failures` lists every test whose final attempt failed as `{ title, file, retry, browser, headline, url }`, with
 `url` the same per-test link the log prints.
 
 ## Pull-request feedback
@@ -221,7 +221,8 @@ misconfigured pipeline fails loudly instead of waving every merge through.
 
 Three behaviors worth knowing:
 
-- **A quarantined test's failure does not count**, but the gate always reports how many it excluded.
+- **A quarantined test's failure does not count** toward `--max-failed`, `--require-tag` or `--require-selection`, and
+  the gate reports how many it excluded.
 
 - **A test that failed and then passed on retry satisfies `--require-tag`.** Flakiness is what `--max-new-flaky` is
   for.
@@ -240,8 +241,8 @@ dashboard instead: the alerting rules stay in one place rather than in every pip
 for the full request trace. The usual causes are an unreachable `PIWI_DASHBOARD_URL` from the runner's
 network, or a missing API key against an instance with authentication enabled.
 
-**Shards create several runs instead of one.** The run label wasn't detected, or the shards disagree on
-`projectName`. Set `runLabel` explicitly.
+**Shards create several runs instead of one.** The run label wasn't detected, the shards disagree on
+`projectName`, or streaming is off. Set `runLabel` explicitly.
 
 **Traces or screenshots are missing.** Playwright records neither by default, so there is nothing to upload. Set
 `use: { trace: 'retain-on-failure', screenshot: 'only-on-failure' }` in your Playwright config, or install through
@@ -249,8 +250,8 @@ network, or a missing API key against an instance with authentication enabled.
 
 **A run is stuck as `interrupted`.** When a run sends nothing for two minutes (a cancelled job, a killed runner,
 a dropped network), the server marks it `interrupted`. If the reporter comes back, the next event revives the run, so
-`interrupted` is only final when the job really died. Those runs are excluded by the **full runs only** filter in
-[Analytics](/features/analytics#scope).
+`interrupted` is only final when the job really died. [Analytics](/features/analytics#scope) counts them as failing
+runs; **full runs only** drops only partial runs.
 
 ## Related
 

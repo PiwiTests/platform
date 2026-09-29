@@ -258,7 +258,7 @@ function nextSteps(opts: InitOptions, steps: StepResult[]): string[] {
   const out: string[] = [];
   if (!opts.apiKey) {
     out.push(
-      'If your dashboard has authentication on, create an API key (Settings → Users → API keys), ' +
+      'If your dashboard has authentication on, create an API key (Settings → Account → API keys), ' +
         'put it in .env as PIWI_API_KEY, and keep .env out of git.',
     );
   }

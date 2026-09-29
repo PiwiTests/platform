@@ -25,6 +25,9 @@ it folds to a one-line summary.
 - **Tests**: optional; a selection, test tags or browsers (below).
 
 Probe runs (the fault-injected replays `piwi probe` produces) are never counted, whatever the filters.
+Two widgets read past the period: **Flakiest tests** ranks each project's last 50 runs whatever the
+period or *Full runs only*, and applies an environment or branch only when exactly one is picked; **Failure
+clusters** lists every open cluster, using the period only for its resolved count.
 
 ### Periods
 

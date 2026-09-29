@@ -8,8 +8,6 @@ lang: en-US
 
 The [reporter](./reporter) uploads complete test results (statuses, errors, traces, HTML reports) without any change to your test code. The **capture fixtures** are an optional, one-file addition that observes your tests from the inside and unlocks the dashboard's richest features: slow-endpoint analysis, Web Vitals, console capture, failure-time ARIA snapshots, and [locator healing](/features/locator-healing).
 
-If you do one thing beyond installing the reporter, do this.
-
 ## Setup
 
 **Option A — extend your existing fixtures:**
@@ -44,7 +42,7 @@ That's the entire setup: nothing to start, wrap, or await inside your tests.
 
 | Data | Captured | Powers |
 |------|----------|--------|
-| **Network requests**: method, URL, status, duration, start time, content type, for fetch, XHR and document traffic only (static assets are skipped); one that failed without a response keeps the browser's error (`net::ERR_CONNECTION_RESET`) | per request | [Slow endpoints](/features/slow-tests); [backend log correlation](./backend-logs) via the `X-Piwi-Logs` response header; the [failure timeline](/features/evidence#one-execution-diagnosis-first) |
+| **Network requests**: method, URL, status, duration, start time, content type, for fetch, XHR, document and `other` traffic only (static assets are skipped); one that failed without a response keeps the browser's error (`net::ERR_CONNECTION_RESET`) | per request | [Slow endpoints](/features/slow-tests); [backend log correlation](./backend-logs) via the `X-Piwi-Logs` response header; the [failure timeline](/features/evidence#one-execution-diagnosis-first) |
 | **Console entries**: `warning`, `error` and `assert` messages with source location and a timestamp (not `console.log`) | as they happen | The console card and the failure timeline on the [execution page](/features/evidence#one-execution-diagnosis-first); [AI diagnosis](/features/ai-diagnosis) evidence |
 | **Web Vitals**: TTFB, DOM Interactive, DOMContentLoaded, Load Complete, First Paint, First Contentful Paint, plus LCP, CLS and INP (Chromium-only) | at test teardown | Web vitals card with color-coded thresholds; [performance trends](/features/slow-tests) |
 | **ARIA snapshot** of the final page state: the YAML dump, plus the JSON aria tree on Playwright 1.63 or later | on failure | Failure evidence on the [execution](/features/evidence#one-execution-diagnosis-first) and cluster pages; [AI diagnosis](/features/ai-diagnosis) context; the JSON tree feeds [locator healing](/features/locator-healing)'s rename matching and the page diff |
@@ -124,12 +122,13 @@ Capture is designed to never fail or noticeably slow down a test:
 - A capture that can't complete (mid-navigation, detached element) is dropped silently; it never throws into your test.
 - Capture adds no steps to the report or trace, and errors, step locations and stacks name your own call.
 
-`collectPerformanceMetrics: false` turns all fixture capture off; `captureLocators: false` turns off only the locator
+`collectPerformanceMetrics: false` discards all fixture data; `captureLocators: false` turns off only the locator
 snapshots and pages, and `capturePageState: false` only the test-end app state (URL, storage key names, cookie flags, never
 values). Two opt-in aids for headed local runs, `inspectOnFailure` and `pickLocatorOnFailure`, open
 [the failing page for inspection](/features/locator-healing#inspect-the-failing-page-live-local-runs) or
 [let you pick a replacement locator](/features/locator-healing#pick-a-replacement-locator-on-the-failing-page-local-runs).
-Each option and its environment variable is in [Reporter options](/reference/reporter-options#what-gets-captured).
+Set all but `collectPerformanceMetrics` through [`wrapConfig`](./reporter#installing-via-wrapconfig) or their `PIWI_*`
+variable: the test workers never see a plain reporter entry's options.
 
 ## Green page sampling on pass
 

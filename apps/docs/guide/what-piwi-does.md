@@ -35,7 +35,7 @@ Each step is a page on this site: the [failing execution](/features/evidence) an
 Two rules run through every feature, and they're worth knowing before you adopt it:
 
 1. **The tool proposes, the developer decides.** Piwi never rewrites a test, never merges a fix, and never applies a patch on its own. It gathers, ranks and suggests; the last step is always yours. Even [auto-heal PRs](/features/auto-heal) only *open* a pull request for you to review and merge.
-2. **Deterministic first, AI second.** Anything that has to be right every time — clustering, flaky scoring, locator ranking, fix verification — is computed without a model. AI sits on top, where a suggestion is enough, and what it produces is checked against your real source before you see it. AI is off by default and brings your own key.
+2. **Deterministic first, AI second.** Anything that has to be right every time — clustering, flaky scoring, locator ranking, fix verification — is computed without a model; the one exception is opt-in: with an embedding model configured, near-duplicate clusters are merged by similarity. AI sits on top, where a suggestion is enough, and what it produces is checked against your real source before you see it. AI is off by default and brings your own key.
 
 ## The pieces
 

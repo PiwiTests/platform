@@ -1,6 +1,6 @@
 ---
 title: Agent skills
-description: "Six SKILL.md files, installed by the reporter's CLI, that teach a coding agent what to do with Piwi's evidence: investigate a failure, heal a locator, fix a flaky test, write the missing one."
+description: "Seven SKILL.md files, installed by the reporter's CLI, that teach a coding agent what to do with Piwi's evidence: investigate a failure, heal a locator, fix a flaky test, write the missing one."
 lang: en-US
 ---
 
@@ -10,7 +10,7 @@ lang: en-US
 
 The [MCP server](/features/mcp) gives an agent read access to your results; **skills** tell it what to *do* with them.
 A skill is a single `SKILL.md` file, the portable open format (front matter plus Markdown instructions) that Claude
-Code and other coding agents read from a project's skills directory. Piwi ships six, and the reporter's CLI installs
+Code and other coding agents read from a project's skills directory. Piwi ships seven, and the reporter's CLI installs
 them into your test project.
 
 ## What each skill does
@@ -30,14 +30,14 @@ not connected, so a skill works before the MCP server is set up, only more slowl
 
 ## Where it is
 
-The skills ship inside the reporter package. `npx @piwitests/reporter init` installs the five workflow skills as part
+The skills ship inside the reporter package. `npx @piwitests/reporter init` installs the six workflow skills as part
 of setup (everything but `setup-piwi`, which an agent runs before the reporter exists). The **MCP server** page of the
 dashboard (`/mcp`) lists them next to the tools.
 
 ## Use it
 
 ```bash
-npx @piwitests/reporter skills add          # install all six into .claude/skills/
+npx @piwitests/reporter skills add          # install all seven into .claude/skills/
 npx @piwitests/reporter skills list         # see what each one does
 npx @piwitests/reporter skills add investigate-failure --dir .cursor/skills   # one skill, elsewhere
 ```

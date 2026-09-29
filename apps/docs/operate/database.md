@@ -16,10 +16,11 @@ Test artifacts — HTML reports, traces, attachments — do **not** live here; t
 
 ## SQLite (default)
 
-Nothing to configure. The database file is created at `.data/piwi.db` on the first API call, inside the
+Nothing to configure. The database file is created at `.data/piwi.db` when the server starts, inside the
 directory you mounted as `/app/.data` (container) or the working directory you ran from (`npx`).
 
-Set `PIWI_DATABASE_PATH` to put it somewhere else:
+Set `PIWI_DATABASE_PATH` to put it somewhere else. Its directory must already exist — Piwi creates `.data/`
+itself only when `PIWI_DATABASE_PATH` is unset:
 
 ::: code-group
 

@@ -62,7 +62,7 @@ function authGuidance(authEnabled: boolean): string {
   if (authEnabled) {
     return (
       'This dashboard **requires authentication**, so reporting needs an API key. Create one in the ' +
-      'dashboard UI (Settings → Users → API keys; keys start with `pd_`), add it to `.env` as ' +
+      'dashboard UI (Settings → Account → API keys; keys start with `pd_`), add it to `.env` as ' +
       '`PIWI_API_KEY=pd_...`, and keep `.env` out of git. In CI, pass it as the `PIWI_API_KEY` secret. ' +
       'Never hardcode the key in `playwright.config`.'
     );

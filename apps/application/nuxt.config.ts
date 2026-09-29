@@ -3,6 +3,7 @@ import { cpSync, existsSync, mkdirSync, readFileSync } from 'fs';
 import { createRequire } from 'module';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { GENERATED_DOCS_PAGES } from './shared/docs-generated-pages';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -19,6 +20,30 @@ const demoDescription =
 // (kept in sync across the monorepo by release-please) — read it once at
 // config-eval time so the running app can report what it is.
 const pkg = JSON.parse(readFileSync(resolve(__dirname, 'package.json'), 'utf-8'));
+
+// The documentation pages and the changelog ship inside the server build, read
+// by the MCP describe_piwi and get_release_notes tools so they answer for the
+// running version with no network. Generated docs pages are left out (the tools
+// render the same registries), and a checkout without either source simply
+// bundles nothing — the tools then point at the published copies.
+const docsDir = resolve(__dirname, '../docs');
+const changelogDir = resolve(__dirname, '../..');
+const serverAssets = [
+  ...(existsSync(resolve(docsDir, 'guide'))
+    ? [
+        {
+          baseName: 'piwi-docs',
+          dir: docsDir,
+          pattern:
+            '{index.md,guide/**/*.md,features/**/*.md,recipes/**/*.md,operate/**/*.md,reference/**/*.md,snippets/*}',
+          ignore: ['**/node_modules/**', ...Object.keys(GENERATED_DOCS_PAGES).map((page) => `${page}.md`)],
+        },
+      ]
+    : []),
+  ...(existsSync(resolve(changelogDir, 'CHANGELOG.md'))
+    ? [{ baseName: 'piwi-changelog', dir: changelogDir, pattern: 'CHANGELOG.md', ignore: ['**/node_modules/**'] }]
+    : []),
+];
 
 // Read the demo seed version hash at build time so it can be injected into
 // runtimeConfig for staleness detection in the browser.
@@ -286,6 +311,7 @@ export default defineNuxtConfig({
     // anyway), so the prerenderer never imports @nuxt/nitro-server's disk cache
     // driver, which it registers by file:// URL on Windows.
     storage: isDemo ? { 'internal:nuxt:prerender': { driver: 'memory' } } : undefined,
+    serverAssets,
     publicAssets: [
       {
         // Serve the Playwright trace viewer static files at /trace-viewer/.

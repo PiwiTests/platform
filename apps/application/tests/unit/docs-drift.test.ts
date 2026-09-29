@@ -11,21 +11,16 @@ import { HELP_TOPICS } from '~/utils/help-content';
 import { LOCATOR_STABILITY_RULES } from '#shared/locator-stability';
 import { DEMO_EXAMPLES } from '#shared/demo/demo-examples.mjs';
 import { headingAnchor, sidebars } from '../../../docs/.vitepress/navigation';
+import { QUOTED_DOCS_SECTIONS } from '#shared/piwi-ecosystem';
+import { buildDocsCorpus } from '#shared/docs-corpus';
+import { GENERATED_DOCS_PAGES } from '#shared/docs-generated-pages';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..');
 const read = (relative: string) => readFileSync(join(repoRoot, relative), 'utf8');
 
 // Pages the docs build writes from a registry; they are gitignored, so they are
 // only on disk once `docs:gen` has run, and a check skips them rather than fail.
-const GENERATED_PAGES = new Set([
-  'reference/analytics-widgets',
-  'reference/configuration',
-  'reference/features',
-  'reference/mcp-tools',
-  'reference/metrics',
-  'reference/reporter-options',
-  'reference/whats-new',
-]);
+const GENERATED_PAGES = new Set<string>(Object.keys(GENERATED_DOCS_PAGES));
 
 const FRONT_MATTER = /^---\n[\s\S]*?\n---\n/;
 // A fence may be indented, inside a list item.
@@ -75,7 +70,13 @@ const POSITIONING = [
   'Self-hosted, zero telemetry',
 ];
 
-const POSITIONING_SURFACES = ['README.md', 'DOCKER_HUB.md', 'apps/docs/index.md', 'apps/docs/.vitepress/config.mts'];
+const POSITIONING_SURFACES = [
+  'README.md',
+  'DOCKER_HUB.md',
+  'apps/docs/index.md',
+  'apps/docs/.vitepress/config.mts',
+  'apps/application/shared/piwi-ecosystem.ts',
+];
 
 describe('positioning line', () => {
   test.each(POSITIONING_SURFACES)('%s carries every clause', (relative) => {
@@ -168,6 +169,8 @@ describe('docs pages the app deep-links into', () => {
       ...Object.values(FEATURE_NEED_DOCS),
       // The configuration reference links each variable to its details.
       ...Object.values(PIWI_ENV_VARS).flatMap((meta) => (meta.docs ? [meta.docs] : [])),
+      // The MCP describe_piwi overview quotes these sections of the docs.
+      ...Object.values(QUOTED_DOCS_SECTIONS),
     ]),
   ];
 
@@ -184,6 +187,35 @@ describe('docs pages the app deep-links into', () => {
     if (!anchor) return;
 
     expect(anchorsOf(path), `apps/docs/${page}.md has no heading anchored #${anchor}`).toContain(anchor);
+  });
+});
+
+describe('the docs bundled for the MCP describe_piwi tool', () => {
+  // The server bundles the hand-written pages and leaves the generated ones out
+  // (nuxt.config.ts reads the same list); the Docker build context must do the
+  // same, and git must not track a generated page.
+  test.each(Object.keys(GENERATED_DOCS_PAGES))('%s is generated, gitignored and kept out of the image', (page) => {
+    expect(read('.gitignore'), `.gitignore does not list apps/docs/${page}.md`).toContain(`apps/docs/${page}.md`);
+    expect(read('.dockerignore'), `.dockerignore does not exclude apps/docs/${page}.md`).toContain(
+      `\napps/docs/${page}.md\n`,
+    );
+  });
+
+  // describe_piwi hands out `page#anchor` addresses from its own parser; each
+  // must be the anchor the docs build gives that heading.
+  test('the tool parses every heading to the anchor the docs build assigns', () => {
+    const files = Object.fromEntries(docsPages.map((path) => [path.replace(/^apps\/docs\//, ''), read(path)] as const));
+    const corpus = buildDocsCorpus(files);
+    expect(corpus.pages.length).toBeGreaterThan(50);
+    for (const page of corpus.pages) {
+      const built = anchorsOf(join(repoRoot, 'apps/docs', `${page.path}.md`));
+      for (const section of page.sections) {
+        expect(
+          built,
+          `apps/docs/${page.path}.md: describe_piwi anchors "${section.text}" as #${section.anchor}`,
+        ).toContain(section.anchor);
+      }
+    }
   });
 });
 

@@ -17,13 +17,16 @@ by `docs:dev` and `docs:build`:
 | Page | Source | Script |
 |---|---|---|
 | `reference/configuration.md` | the env-var registry, `apps/application/shared/piwi-env-vars.ts` | `scripts/generate-configuration.mjs` |
-| `reference/features.md` (All features) | the feature catalog, `apps/application/shared/piwi-features.ts` | `scripts/generate-features.mjs` |
+| `reference/features.md` (All features) | the feature catalog, `apps/application/shared/piwi-features.ts`; its "The pieces" and "Choosing a setup" sections from `apps/application/shared/piwi-ecosystem.ts` | `scripts/generate-features.mjs` |
 | `reference/reporter-options.md` | the reporter's options type, `packages/reporter/src/public/options.ts`, and `PIWI_ENV_KEYS` in `packages/reporter/src/internal/config/env.ts` | `scripts/generate-reporter-options.mjs` |
-| `reference/whats-new.md` | `CHANGELOG.md` | `scripts/generate-whats-new.mjs` |
+| `reference/whats-new.md` | `CHANGELOG.md`, read by `apps/application/shared/changelog.ts` (the MCP `get_release_notes` parser) | `scripts/generate-whats-new.mjs` |
 | `reference/mcp-tools.md` | the MCP tool catalog, `MCP_TOOL_DEFS` in `apps/application/shared/mcp-tools.ts` | `scripts/generate-mcp-tools.mjs` |
 | `reference/analytics-widgets.md` | the widget registry, `ANALYTICS_WIDGETS` in `apps/application/shared/analytics/registry.ts` | `scripts/generate-analytics-widgets.mjs` |
 | `reference/metrics.md` | the metric catalog, `METRICS` in `apps/application/shared/analytics/metrics.ts` | `scripts/generate-metrics.mjs` |
 | `public/llms.txt`, `public/llms-full.txt` | every page's title, `description` and URL in sidebar order; the hand-written pages as one Markdown file ([llms.txt](https://llmstxt.org)) | `scripts/generate-llms.mjs`, run last |
+
+The seven pages are also listed in `apps/application/shared/docs-generated-pages.ts`, which the docs-drift test, the
+docs bundled into the server and `.dockerignore` follow; a new generated page goes there too, and in `.gitignore`.
 
 A generator runs with only `apps/docs` installed, since the deploy workflow installs nothing else. A package a registry
 imports at runtime, such as `zod`, is therefore a devDependency here, and the generator resolves it from here through
@@ -53,6 +56,25 @@ When documenting a feature here, link to the live demo reference
 build. Endpoint documentation is
 authored in the handler's `defineRouteMeta({ openAPI: … })` block — see
 [`../application/AGENTS.md`](../application/AGENTS.md#openapi-annotations).
+
+## The docs ship inside the server
+
+The dashboard bundles these pages (and `snippets/`) into its build as Nitro server assets, and the MCP
+`describe_piwi` tool serves them to agents — the page index, one page or one `#anchor` section, and a search — so an
+instance answers with the docs of its own version, offline. `get_release_notes` does the same for `CHANGELOG.md`.
+What that means for a page:
+
+- **Its first paragraph is its summary** in the tool's page index (a page with none is summarized by its `##`
+  headings), so open a page with a sentence that says what it is for.
+- **Anchors are addresses agents use.** They are slugged exactly as VitePress slugs them
+  (`apps/application/shared/docs-corpus.ts`); renaming a heading breaks a stored `page#anchor` the same way it breaks a
+  link.
+- **Three lists are quoted verbatim** by the tool's overview — the jobs and the two rules on `guide/what-piwi-does.md`,
+  and "When Piwi is *not* the right choice" on `guide/comparison.md` (`QUOTED_DOCS_SECTIONS` in `piwi-ecosystem.ts`).
+  Keep them as Markdown lists.
+- Vue components render as text for agents: `<Needs …/>` becomes a "Needs:" line, `<DemoExamples />` the page's demo
+  links, and `<<< @/snippets/…` includes the snippet's code. A new component needs a text rendering in
+  `docs-corpus.ts`.
 
 ## Site structure (MUST follow)
 

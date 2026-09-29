@@ -459,4 +459,100 @@ test.describe.serial('MCP server', () => {
     expect(names).not.toContain('create_issue'); // workflow
     expect(names).not.toContain('get_cluster_diagnosis'); // agents
   });
+
+  /** Call a tool and parse its JSON text result; `isError` results come back as `{ error }`. */
+  async function callTool(request: any, name: string, args: Record<string, unknown> = {}) {
+    const body = await mcp(request, 'tools/call', { name, arguments: args });
+    const text: string = body.result.content[0].text;
+    return body.result.isError ? { error: text } : JSON.parse(text);
+  }
+
+  test('tools/call describe_piwi — overview quotes the docs and describes this instance', async ({ request }) => {
+    const overview = await callTool(request, 'describe_piwi');
+    expect(overview.tagline).toBe('Your Playwright results, kept and explained.');
+    expect(overview.thisInstance.version).toMatch(/^\d+\.\d+\.\d+/);
+    expect(overview.thisInstance.authentication).toBe('off');
+    // Auth is off, so the caller is a virtual admin and sees the capability states.
+    expect(overview.thisInstance.capabilities).toBeDefined();
+    // The jobs are quoted from the bundled "What Piwi does" page.
+    expect(overview.jobs.length).toBeGreaterThanOrEqual(3);
+    expect(overview.jobs[0]).toContain('Keep the history');
+    expect(Object.keys(overview.topics)).toEqual(
+      expect.arrayContaining(['ecosystem', 'choices', 'configuration', 'feedback', 'docs']),
+    );
+    expect(overview.ecosystem.map((p: { id: string }) => p.id)).toEqual(
+      expect.arrayContaining(['server', 'reporter', 'desktop', 'extension', 'mcp']),
+    );
+  });
+
+  test('tools/call describe_piwi — reads one docs section and searches the docs', async ({ request }) => {
+    const section = await callTool(request, 'describe_piwi', { page: 'guide/ci#sharding' });
+    expect(section.section).toBe('Sharding');
+    expect(section.url).toBe('https://piwitests.dev/guide/ci#sharding');
+    expect(section.markdown).toMatch(/^## Sharding/);
+
+    const page = await callTool(request, 'describe_piwi', { page: '/operate/deployment.md' });
+    expect(page.outline.length).toBeGreaterThan(3);
+    // The Docker quick start is a snippet include, served as the command itself.
+    expect(page.markdown).toContain('docker run');
+
+    const found = await callTool(request, 'describe_piwi', { query: 'retention days' });
+    expect(found.hits[0]).toMatchObject({ page: 'operate/storage', anchor: 'data-retention' });
+    expect(found.variables.map((v: { name: string }) => v.name)).toContain('PIWI_RETENTION_DAYS');
+
+    const missing = await callTool(request, 'describe_piwi', { page: 'guide/no-such-page' });
+    expect(missing.error).toContain('No docs page');
+
+    // A generated page is answered from its registry, under its own name.
+    const tools = await callTool(request, 'describe_piwi', { page: 'reference/mcp-tools' });
+    expect(tools.page).toBe('reference/mcp-tools');
+    expect(tools.note).toContain('MCP tool catalog');
+    expect(tools.modules.length).toBeGreaterThan(0);
+  });
+
+  test('tools/call describe_piwi — topics: choices, configuration, mcp, feedback, docs', async ({ request }) => {
+    const choices = await callTool(request, 'describe_piwi', { topic: 'choices' });
+    const database = choices.decisions.find((d: { id: string }) => d.id === 'database');
+    expect(database.current).toMatch(/SQLite|PostgreSQL/);
+    expect(database.page).toBe('operate/database');
+
+    const config = await callTool(request, 'describe_piwi', { topic: 'configuration', query: 'secret key' });
+    expect(config.variables.map((v: { name: string }) => v.name)).toContain('PIWI_SECRET_KEY');
+
+    const mcpTopic = await callTool(request, 'describe_piwi', { topic: 'mcp' });
+    const served = mcpTopic.modules.flatMap((m: { tools: string[] }) => m.tools).map((t: string) => t.split(' ')[0]);
+    expect(served).toEqual(expect.arrayContaining(MCP_TOOL_DEFS.map((t) => t.name)));
+    expect(mcpTopic.desktopOnly.tools).toContain('apply_locator_fix');
+
+    const feedback = await callTool(request, 'describe_piwi', { topic: 'feedback' });
+    expect(feedback.bug.url).toContain('issues/new');
+
+    const docs = await callTool(request, 'describe_piwi', { topic: 'docs' });
+    const pages = docs.groups.flatMap((g: { pages: { page: string }[] }) => g.pages.map((p) => p.page));
+    expect(pages).toEqual(expect.arrayContaining(['guide/getting-started', 'features/mcp', 'operate/authentication']));
+
+    const unknown = await callTool(request, 'describe_piwi', { topic: 'nope' });
+    expect(unknown.error).toContain('Unknown topic');
+  });
+
+  test('tools/call get_release_notes — current release, one version, a range and a search', async ({ request }) => {
+    const latest = await callTool(request, 'get_release_notes');
+    expect(latest.current.version).toBe(latest.runningVersion);
+    expect(latest.recent.length).toBeGreaterThan(1);
+
+    const one = await callTool(request, 'get_release_notes', { version: '0.33.0' });
+    expect(one.releases[0].highlights.length).toBeGreaterThan(0);
+    // Commit links are stripped: entries read as plain text.
+    expect(JSON.stringify(one.releases[0])).not.toContain('/commit/');
+
+    const range = await callTool(request, 'get_release_notes', { since: '0.30.0' });
+    expect(range.releases.every((r: { version: string }) => r.version !== '0.30.0')).toBe(true);
+    expect(range.count).toBe(range.releases.length);
+
+    const search = await callTool(request, 'get_release_notes', { query: 'share links' });
+    expect(search.matches.length).toBeGreaterThan(0);
+
+    const missing = await callTool(request, 'get_release_notes', { version: '99.0.0' });
+    expect(missing.error).toContain('No release 99.0.0');
+  });
 });

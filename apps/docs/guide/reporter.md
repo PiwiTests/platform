@@ -18,15 +18,12 @@ npm install --save-dev @piwitests/reporter
 
 ### Try it without editing your config
 
-On **Playwright 1.63 or later**, `--add-reporter` appends this reporter to whatever your config already uses (unlike `--reporter`, which replaces them), so you can send one run to a dashboard with no install and no config edit. Most reporter options have a `PIWI_*` [environment variable](/reference/reporter-options), so point it at your dashboard that way:
+On **Playwright 1.63 or later**, `--add-reporter` appends this reporter to whatever your config already uses (unlike `--reporter`, which replaces them), so you can send one run to a dashboard with no config edit. Most reporter options have a `PIWI_*` [environment variable](/reference/reporter-options), so point it at your dashboard that way:
 
 ::: code-group
 
 ```bash [Linux / macOS]
-PIWI_DASHBOARD_URL=http://localhost:3000 \
-PIWI_API_KEY=your-api-key \
-PIWI_PROJECT_NAME=my-project \
-npx playwright test --add-reporter @piwitests/reporter
+PIWI_DASHBOARD_URL=http://localhost:3000 PIWI_API_KEY=your-api-key PIWI_PROJECT_NAME=my-project npx playwright test --add-reporter @piwitests/reporter
 ```
 
 ```powershell [Windows (PowerShell)]
@@ -35,7 +32,7 @@ $env:PIWI_DASHBOARD_URL='http://localhost:3000'; $env:PIWI_API_KEY='your-api-key
 
 :::
 
-This is a trial path: you get results, traces and screenshots, but not the [capture fixtures](#capture-fixtures) or [`wrapConfig`](#installing-via-wrapconfig)'s capture defaults. On Playwright before 1.63 the flag does not exist; configure the reporter normally instead. [`piwi run`](/reference/cli#select-run) makes the same append automatically when the config has no Piwi reporter.
+This is a trial path: you get results and your configured traces and screenshots, but not the [capture fixtures](#capture-fixtures) or [`wrapConfig`](#installing-via-wrapconfig)'s capture defaults. On Playwright before 1.63 the flag does not exist; configure the reporter normally instead. [`piwi run`](/reference/cli#select-run) makes the same append automatically when the config has no Piwi reporter.
 
 ## Basic configuration
 
@@ -103,7 +100,7 @@ capture, failure-time ARIA snapshots and the locator snapshots behind [locator h
 
 Options go in the reporter's entry in `playwright.config.ts`, or in `wrapConfig`'s second argument. Most options can
 also be set with a `PIWI_*` environment variable, which fills in an option you left unset: an option in the config
-wins, except `PIWI_VERBOSE`, which overrides even an explicit `verbose`. [Reporter options](/reference/reporter-options)
+wins, except `PIWI_VERBOSE`, which overrides even an explicit `verbose` outside `wrapConfig`. [Reporter options](/reference/reporter-options)
 lists every option with its default and its variable, and [Test metadata](/reference/test-metadata) what the reporter
 records on its own.
 
@@ -150,7 +147,7 @@ Control how frequently results are sent during streaming:
 ['@piwitests/reporter', {
   serverUrl: 'http://localhost:3000',
   projectName: 'my-project',
-  streamingBatchSize: 10,     // send every 10 tests
+  streamingBatchSize: 10,     // send every 10 queued events (test begin/end and live steps)
   streamingBatchDelay: 5000,  // or every 5 seconds
 }]
 ```
@@ -159,20 +156,23 @@ Control how frequently results are sent during streaming:
 
 By default a run appears on the dashboard when the first test starts. If your config has a `globalSetup` step
 (seeding a database, authenticating, building the app), register the run before it so the dashboard shows an
-**initializing** state during setup. `wrapConfig` does this for you; otherwise wrap your `globalSetup` with
-`createGlobalSetup`, passing the same options you give the reporter:
+**initializing** state during setup. `wrapConfig` does this for you; otherwise export `createGlobalSetup` from the
+file `globalSetup` points to; it reads its options from the reporter entry:
 
 ```typescript
-import { defineConfig } from '@playwright/test'
+// global-setup.ts
 import { createGlobalSetup } from '@piwitests/reporter'
 
-const dashboard = { serverUrl: 'http://localhost:3000', projectName: 'my-project' }
+export default createGlobalSetup({}, async (config) => {
+  // your own setup, run after registration
+})
+```
 
+```typescript
+// playwright.config.ts
 export default defineConfig({
-  globalSetup: createGlobalSetup(dashboard, async (config) => {
-    // your existing setup logic, run after the run is registered
-  }),
-  reporter: [['list'], ['@piwitests/reporter', dashboard]],
+  globalSetup: './global-setup.ts',
+  reporter: [['list'], ['@piwitests/reporter', { serverUrl: 'http://localhost:3000', projectName: 'my-project' }]],
 })
 ```
 
@@ -187,7 +187,7 @@ Attach multiple report types to a single test run. Each report appears as a sepa
 export default defineConfig({
   reporter: [
     ['list'],
-    ['@playwright/test/reporter-html', { outputFolder: 'playwright-report' }],
+    ['html', { outputFolder: 'playwright-report', open: 'never' }],
     ['monocart-reporter', { name: 'My Tests', outputFile: 'monocart-report/index.html' }],
     ['blob'],
     ['@piwitests/reporter', {
@@ -204,7 +204,7 @@ export default defineConfig({
 ```
 
 `html` (`playwright-report/`) and `monocart` (`monocart-report/`) open in a new tab; `blob` (`blob-report/`) downloads
-as an archive. Any other type is accepted too, with its directory given in `dir`.
+as an archive. Any other type is accepted too, read from `dir` or else `<type>-report/`.
 
 ## With authentication enabled
 
@@ -221,7 +221,7 @@ When the dashboard has authentication enabled, pass an **API key**: create one i
 ```
 
 The key is sent as an `Authorization: Bearer` header. `username` and `password` (`PIWI_USERNAME`, `PIWI_PASSWORD`)
-work too, and the reporter logs in before each upload; prefer an API key in CI.
+work too (the reporter logs in once and reuses the session); prefer an API key in CI.
 
 ## Troubleshooting
 

@@ -14,11 +14,11 @@ start the CI run that proves it.
 
 ## What gets posted
 
-Two things get posted when a run finishes on a branch with an open pull request:
+Two things get posted when a run finishes:
 
-- **A summary comment**: one comment per pull request, edited on each later run rather than appended, so a busy
+- **A summary comment** on the branch's open pull request: one comment per pull request, edited on each later run rather than appended, so a busy
   branch doesn't collect a comment per push.
-- **A commit status**: passed or failed against the run's commit, so the pull request shows the result in its checks
+- **A commit status**: passed or failed against the run's commit, pull request or not, so a pull request shows the result in its checks
   list. Required for a branch-protection rule.
 
 What the comment says, in this order:

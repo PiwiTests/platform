@@ -28,7 +28,7 @@ The branch is resolved through a fallback chain so a CI pull-request build never
 branch variables (`GITHUB_HEAD_REF`/`GITHUB_REF_NAME`, `CI_MERGE_REQUEST_SOURCE_BRANCH_NAME`/
 `CI_COMMIT_REF_NAME`, `CIRCLE_BRANCH`, and the equivalents for Travis, Azure, Jenkins and Bitbucket),
 then the local git checkout. On a pull-request build the target branch (`GITHUB_BASE_REF`,
-`CI_MERGE_REQUEST_TARGET_BRANCH_NAME`, `SYSTEM_PULLREQUEST_TARGETBRANCH`,
+`CI_MERGE_REQUEST_TARGET_BRANCH_NAME`, `TRAVIS_BRANCH` on a Travis pull-request build, `SYSTEM_PULLREQUEST_TARGETBRANCH`,
 `BITBUCKET_PR_DESTINATION_BRANCH`, `CHANGE_TARGET`, or `PIWI_BASE_BRANCH` to name it yourself) is
 recorded as the run's **base branch**, which [baselines](/guide/concepts#baseline-last-green-run) fall
 back to when the branch has no history of its own.
@@ -50,7 +50,7 @@ These six platforms get rich per-provider fields. The **run label** that ties [s
 
 ### Playwright configuration
 
-The reporter also records browser project configs, worker count, test timeout, and parallel settings.
+The reporter also records browser project configs, worker count, the global timeout, and parallel settings.
 
 ### Browser configuration per test case
 

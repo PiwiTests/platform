@@ -15,7 +15,7 @@ A fresh Piwi instance starts as an **open dashboard with authentication off** �
 
    <<< @/snippets/secret.sh{bash}
 
-3. **Terminate TLS.** Always put the dashboard behind an HTTPS reverse proxy. Mind the two things a proxy gets wrong by default: **upload size** (trace and report uploads reach hundreds of MB) and **SSE buffering** (live runs and browser notifications use long-lived `text/event-stream` responses that must not be buffered). See [Deployment → Reverse proxy (HTTPS)](./deployment#reverse-proxy-https).
+3. **Terminate TLS.** Always put the dashboard behind an HTTPS reverse proxy. Mind the two things a proxy gets wrong by default: **upload size** (trace and report uploads reach hundreds of MB) and **SSE buffering** (live runs and browser notifications use long-lived `text/event-stream` responses that must not be buffered). With authentication on, browser sign-in needs HTTPS in any case: the session cookie is `Secure`, so over plain `http://` it only works on `localhost`. See [Deployment → Reverse proxy (HTTPS)](./deployment#reverse-proxy-https).
 4. **Tell Piwi it's behind a proxy.** Set `PIWI_TRUST_PROXY=true` so the per-client rate limits on the auth endpoints key on the real client address from `X-Forwarded-For` instead of pooling every request into the proxy's one address. Leave it off when clients connect directly — see the [configuration reference](/reference/configuration#authentication).
 5. **Persist and back up the data.** Mount `/app/.data` (or your configured database and storage paths) on a persistent volume, and set up a backup before you accumulate history you care about. See [Backup & restore](./backup-restore).
 6. **Pin a version.** Running `latest` lets an unattended `docker pull` move you across a breaking change. Pin an exact tag and bump it deliberately — migrations are forward-only, so the rollback path is *restore a backup*, not "pull the old tag." See [Upgrading](./upgrading).
@@ -26,12 +26,12 @@ Never leave the built-in development secrets in place on a real deployment.
 
 The defaults are conservative, so the checklist above is short. Without any extra work:
 
-- The container runs as a **non-root** user (`nodejs`, UID/GID 1001).
+- The container runs as a **non-root** user (`nodejs`, UID 1001).
 - Passwords are hashed with **scrypt** and per-password salts; login, initial-setup and password-reset endpoints are **rate-limited** per client address (and failed logins per account), returning `429` with `Retry-After`.
 - **API keys** are stored only as SHA-256 hashes and shown once, at creation — a leaked database yields no usable key.
 - Secrets supplied by **environment variable** are never written to the database and never returned by the API; the settings UI shows them read-only with a lock badge.
 - Stored credentials are encrypted with **AES-256-GCM** once `PIWI_SECRET_KEY` is set.
-- Database **migrations are forward-only** and run on startup; a failed migration stops the server rather than serving a half-migrated schema.
+- Database **migrations are forward-only** and run on startup, before any request reaches the database; if one fails, every database call fails and `/api/health` returns `503` rather than serving a half-migrated schema.
 
 ## Optional, and worth a thought
 

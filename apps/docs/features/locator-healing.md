@@ -21,8 +21,9 @@ element resolved just as a click does): the target element's attributes, plus al
 stability score (`data-testid` = 100, role + accessible name ≈ 90, semantic CSS ≈ 35–40, hash-suffixed ≈ 10). Capture
 also generates **rename-proof** alternatives: locators scoped to a stable ancestor
 (`getByTestId('signup-form').getByRole('textbox')` ≈ 72, a unique landmark ≈ 55) and a name-free `getByRole` when the
-element is the only one of its role. Each candidate is checked against the live page, and one that would match several
-elements is dropped. Input values are never captured.
+element is the only one of its role. Each candidate is checked against the live page: an ambiguous test id, id, `name`
+or class is dropped, and an ambiguous role, text, placeholder, alt or title candidate ranks below every unique one.
+Input values are never captured.
 
 <figure>
   <img src="/diagrams/locator-healing-capture.svg" alt="Diagram of the capture flow: a successful action or passing assertion goes through the capture proxy to an in-page element probe, which produces ranked alternative locators stored as one row per call site">
@@ -36,13 +37,16 @@ When a locator later fails, the server looks for replacements, most trustworthy 
    panel says where: "“Pay now” became “Pay” in CheckoutButton.vue:14". It needs a run with a diff (a pull request,
    or a commit after a passing run) and a source-control token. Its edit replaces the string inside your quotes, and
    an [auto-heal PR](./auto-heal) can use it.
-2. **Prior run**: the same call site (`file:line:col`) had a passing snapshot.
-3. **Element match**: the element is gone from the failing page's ARIA snapshot under its old name, so fresh locators
-   are generated for the element it most likely became, matched by role, heading level and, on a total rename, its
-   position among elements of the same role.
-4. **Fingerprint**: the call site moved lines, but the locator matches a prior snapshot.
-5. **Cross-test**: another test in the project captured the same locator.
-6. **ARIA fallback**: no snapshot exists, so limited suggestions come from the failure-time ARIA snapshot.
+2. **Prior run**: the same call site (`file:line:col`, or `file:line` when only the column moved) had a passing
+   snapshot.
+3. **Fingerprint**: the call site moved lines, but the locator matches a prior snapshot.
+4. **Cross-test**: another test in the project captured the same locator.
+5. **ARIA fallback**: no snapshot exists, so limited suggestions come from the failure-time ARIA snapshot.
+
+A snapshot found by rungs 2 to 4 is then checked against the failing page's ARIA snapshot. When the element is gone
+under its old name and a confident match exists, fresh locators for the element it most likely became replace the
+stored ones (an **element match**), matched by role, heading level and, on a total rename, its position among
+elements of the same role.
 
 <figure>
   <img src="/diagrams/locator-healing-resolution.svg" alt="Diagram of the healing resolution flow: the failing error is parsed into a locator signature and call site, matched through the stored history, checked against the failing page's ARIA snapshot, and shown in the Locator fix panel">
@@ -81,7 +85,7 @@ you confirmed with a picker shows a **Your pick** badge and becomes the recommen
 With `inspectOnFailure: true` (or `PIWI_INSPECT_ON_FAIL=true`), a failing test opens **Piwi's own inspector overlay**
 on its still-open page right before the browser closes. Click any element to get ranked, uniqueness-checked locators
 for it; one you confirm is recorded like a pick. It is not Playwright's inspector, so what you confirm flows back into
-the healing data.
+the healing data when the failure names a locator to replace.
 
 ```bash
 # Linux / macOS
@@ -91,9 +95,9 @@ PIWI_INSPECT_ON_FAIL=true npx playwright test --headed
 $env:PIWI_INSPECT_ON_FAIL='true'; npx playwright test --headed
 ```
 
-Both local options need a **headed** browser (`--headed` or `headless: false`), never activate under CI (any `CI`
-variable), skip expected failures (`test.fail()`), and with retries configured open only on the final attempt. The run
-waits while the overlay is open (the test timeout is lifted), so prefer `--workers=1`.
+Both local options need a **headed** browser (`--headed` or `headless: false`), never activate under CI (`CI` set to
+anything but empty or `false`), skip expected failures (`test.fail()`), and with retries configured open only on the
+final attempt. The run waits while the overlay is open (the test timeout is lifted), so prefer `--workers=1`.
 
 ## Pick a replacement locator on the failing page (local runs)
 
@@ -124,8 +128,9 @@ same picker ships as the [Piwi Picker browser extension](/features/extension), f
 
 - Healing runs only when the locator **never resolved**, matched nothing, or matched several elements. When it resolved
   and the step failed afterwards (`element is not enabled`, a wrong count, a hidden element) or the page failed to
-  load, the panel says *The locator resolved; this is not a locator problem*, because rewriting a locator that found
-  its element would be a harmful edit.
+  load, the panel says *The locator resolved; this is not a locator problem* (for a page that failed to load, *The page
+  failed to navigate before any locator ran*), because rewriting a locator that found its element would be a harmful
+  edit.
 - Suggestions need a passing run captured with the fixtures in place; until then only the ARIA fallback applies.
 - Capture costs one DOM read per call site, at most once per call site per test. Negated assertions, absence checks
   (`toBeHidden`, `toBeDetached`) and multi-element checks (`toHaveCount`) are never probed. Turn it off with

@@ -24,8 +24,9 @@ Failed executions that share the same **error fingerprint** join one cluster, so
   cause reached from several spec files stays one cluster.
 - The fingerprint is always computed from the error the cluster was created from, so an improved normalization
   regroups clusters in place and keeps their triage, notes and diagnoses.
-- The run page marks each cluster with **flaky** and **worker-correlation** heuristics: "the app is broken" versus
-  "worker 3 is misbehaving".
+- A run's **Tests** tab can group its failures by cluster, each group with its triage status; the
+  `get_failure_groups` [MCP tool](/reference/mcp-tools#get_failure_groups) adds a **worker-correlation** flag: "the
+  app is broken" versus "worker 3 is misbehaving".
 
 <figure>
   <img src="/diagrams/failure-clustering-fingerprint.svg" alt="The fingerprint pipeline: a raw error is normalized, hashed and routed to one cluster">
@@ -36,9 +37,10 @@ With an embedding model configured, near-duplicate clusters that the fingerprint
 
 ## The failure inbox
 
-The **Failure inbox** on Home lists every open failure cluster across the projects you can see, newest
-first. Each row shows the cluster's **headline**, its **top clue**, the **owner or assignee**, the **age**, the
-**affected-test count**, and only the exceptional **badges**, such as a regression on the default branch.
+The **Failure inbox** on Home lists up to 50 open failure clusters across the projects you can see, most
+recently seen first. Each row shows the cluster's **headline**, its **top clue**, the **owner or assignee**, the
+**affected-test count**, when it was **last seen**, and only the exceptional **badges**, such as a regression on the
+default branch.
 
 ### Queues
 
@@ -48,7 +50,7 @@ The inbox is split into queues, each with a live count, shareable in the URL as 
 |---|---|
 | **All open** | Every open, non-snoozed cluster. |
 | **New** | Clusters first seen, or seen again, since you last opened the inbox (kept per browser). |
-| **Mine** | Clusters whose assignee, or derived owner, is you. |
+| **Mine** | Clusters whose assignee, or `piwi:owner` annotation, is you. |
 | **Needs ticket** | Untracked default-branch clusters older than 2 days, by default; see [issue tracking](./issue-tracking). |
 | **Regressions** | Clusters that regressed on the default branch and are still failing there. |
 | **Fix didn't hold** | Clusters whose fix landed then regressed. |
@@ -59,16 +61,16 @@ The inbox is split into queues, each with a live count, shareable in the URL as 
 
 Every row can be triaged in place. Select a row with the mouse or `j` / `k`, then: `o` open, `r` resolve, `i` ignore,
 `q` quarantine the cluster's tests, `a` assign, `s` snooze, `l` link a known issue, `c` create a Jira issue (when a
-tracker is connected). `x` selects rows for a **bulk bar** that applies the same actions to all of them. Every action is undoable for a few
-seconds. [Keyboard shortcuts](/reference/keyboard-shortcuts#failure-inbox) lists every key.
+tracker is connected). `x` selects rows for a **bulk bar** that applies the same actions to all of them. Resolve, ignore, snooze and assign on
+one row can be undone for a few seconds. [Keyboard shortcuts](/reference/keyboard-shortcuts#failure-inbox) lists every key.
 
 Linking a known issue (`l`) pins a URL; with an [issue tracker connected](/operate/integrations), Jira links unfurl
 and stay in sync, and you can **[file the issue from the failure](/features/issue-tracking)** (`c`).
 
 ## Owners and assignees
 
-A cluster's **owner** is derived, not stored: it comes from the failing test's `piwi:owner` annotation, or
-falls back to the repository's `CODEOWNERS`. You can override it by **assigning** the cluster to a person:
+A cluster's **owner** is derived, not stored: it comes from the failing test's `piwi:owner` annotation; the
+cluster page (not the inbox) falls back to the repository's `CODEOWNERS`. You can override it by **assigning** the cluster to a person:
 an assignee takes precedence over the derived owner, and the **Mine** queue matches either one against the
 signed-in user (by name or email, best effort).
 
@@ -93,10 +95,11 @@ verify and reproduce sit in the folded [**More ways to fix**](./fix-plans#more-w
 ### The state line
 
 The cluster page states where a cluster stands in **one sentence with one verb**, next to a colored dot:
-*still failing*, *fixed and verified, still open*, *stopped failing*, *regressed, the fix did not hold*,
-*resolved*, *ignored*, *snoozed* or *all tests quarantined*. When the verdict the runs showed and the status a person
-set disagree, the line offers the **one action** that reconciles them (*Mark resolved*, *Reopen*, *Unsnooze*,
-*Release*). Beside it, **Triage** sets the status (open / resolved / ignored), a note and the assignee, and snoozes
+*still failing*, *not seen for N runs*, *fixed and verified, still open*, *stopped failing*, *ticket Done*,
+*regressed, the fix did not hold*, *resolved*, *ignored*, *snoozed* or *all tests quarantined*. When the runs or the
+tracker say an open cluster is done, the line offers the **one action** that reconciles them, *Mark resolved*; a
+snoozed cluster offers *Unsnooze*, an all-quarantined one *Release*. A regression reopens a resolved cluster on its
+own. Beside it, **Triage** sets the status (open / resolved / ignored), a note and the assignee, and snoozes
 the cluster for a day, a week or until it recurs.
 
 ### Occurrences over time

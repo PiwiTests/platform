@@ -39,7 +39,8 @@ on Windows, **More info** then **Run anyway** in SmartScreen. Linux shows no pro
 Data lives in the OS app-data folder (`%APPDATA%\io.piwitests.dashboard\.data` on Windows,
 `~/Library/Application Support/io.piwitests.dashboard/.data` on macOS, `~/.local/share/io.piwitests.dashboard/.data`
 on Linux): `piwi.db` (SQLite) and `storage/`. **Settings → Storage → Data location** and the tray's **Open data
-folder** show it. Back it up by copying the folder while the app is closed.
+folder** show it. Back up the parent folder while the app is closed; its `secret.key` decrypts stored AI keys and SCM
+tokens.
 
 The window navigates like a browser, with back and forward buttons at the top of the sidebar. Closing the window quits the app unless you turn on **Run in background** in the
 tray menu; **Start on login** launches it hidden into the tray. While the window is in the background, your
@@ -54,7 +55,7 @@ the config nor the environment sets a server URL or an API key, so a project poi
 job, is never redirected. [Finding the desktop app automatically](/guide/reporter#finding-the-desktop-app-automatically)
 has the details.
 
-When the tests run as another user or in a container, **Settings → Storage → Send results to this app** gives the
+When the tests run as another user or in a container, **Setup → Send results to this app** gives the
 address (port 3000 unless it is taken) and the token to configure by hand. Keep the token in `PIWI_API_KEY`, not in
 the config.
 
@@ -75,12 +76,12 @@ stays on this machine, under **project page → Settings → Local folder**, wit
 Playwright and the app's bundled Node. The first time, it asks you to link the project to its folder.
 
 - **The arrow next to the button** holds the options: headless, headed, the Playwright inspector or UI mode; tests
-  by `file:line`, title or file; a forced trace; `--repeat-each` up to 1,000 times. The last choice becomes the
-  project's one-click default, and **Run with options…** shows the exact command.
+  by `file:line`, title or file; a forced trace; `--repeat-each` up to 100 times (1,000 in **Run with
+  options…**, which shows the command). The last choice becomes the project's one-click default.
 - **Runs keep going while you browse.** Output streams into the **Local runs** tray, a sidebar pill keeps it one
   click away, and stopping is always explicit.
-- **More places to run from:** **Reproduce locally** on a test case (20 times with a trace), **Run affected
-  locally** on a failure cluster, and a [bug report](/features/bug-reports#running-it-with-playwright-in-the-desktop-app)
+- **More places to run from:** **Reproduce locally** on a test case (20 times with a trace), **Run locally**
+  on a failure cluster, and a [bug report](/features/bug-reports#running-it-with-playwright-in-the-desktop-app)
   sent from Piwi Picker.
 - **Wrong folder?** When none of the tests exist in the linked folder, the button opens the dialog to fix the link.
 
@@ -101,7 +102,7 @@ linked folder, **without touching your checkout**:
 
 It needs `git` and your package manager on this machine, and bisects one repository. The application under test has
 to build from the same checkout: a Playwright `webServer` starts it at each commit, or set a **start command** and a
-readiness URL under the linked folder's settings.
+readiness URL under **Reproduce and bisect**.
 
 ### Reproducing a flake
 
@@ -126,8 +127,8 @@ The app serves the [MCP server](/features/mcp) with three local tools a hosted i
 time) and `apply_locator_fix` (a recommended locator fix applied to the file, previewed by default). It registers as
 `piwi-desktop`, so it sits beside a hosted Piwi in the same client.
 
-The **MCP server** page detects Claude Code, Claude Desktop, Cursor, VS Code, Windsurf and Gemini CLI, and connects
-each in one click by writing a `piwi-desktop` entry, with the address and token, into the client's own config file.
+The **MCP server** page detects Claude Code, Claude Desktop, Cursor, Opencode, VS Code, Windsurf and Gemini CLI, and
+connects each in one click by writing a `piwi-desktop` entry, with the address and token, into the client's own config file.
 It keeps a backup, touches only that entry, shows the snippet instead for a config that is not plain JSON, and
 rewrites the entry at each launch if the port changed. Claude Desktop, which takes only local
 commands, is pointed at the app's built-in bridge (`piwi-desktop mcp-stdio`), so no token is copied; the app has to be
@@ -144,7 +145,7 @@ key; a dev build without it says so.
 
 - **One machine, one user.** The app accepts results only from this machine; a team needs the
   [Docker image](/operate/deployment).
-- **Unsigned installers**, so the first launch needs the steps above.
+- **Unsigned installers**: the first launch needs the steps above.
 - **Local runs need the checkout**: a linked folder with Playwright installed, and `git` for reproduce, bisect and
   the lab.
 

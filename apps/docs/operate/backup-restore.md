@@ -46,7 +46,7 @@ If artifacts are in S3, lean on the bucket's own durability and versioning rathe
 Restoring is also how you roll back after an upgrade goes wrong — the rollback path is "restore your backup", never "pull the old tag" against an already-migrated database.
 
 1. **Stop the container.**
-2. **Restore the database and `.data/storage/`** from a backup pair taken at the same time. For SQLite, put `piwi-backup.db` back as `.data/piwi.db` and unpack the storage archive; for PostgreSQL, restore the dump into an empty database (`psql "$PIWI_DATABASE_URL" < piwi-db.sql`).
+2. **Restore the database and `.data/storage/`** from a backup pair taken at the same time. For SQLite, delete any leftover `.data/piwi.db-wal` and `.data/piwi.db-shm` files (the server runs SQLite in write-ahead-log mode, and a stale log would be replayed onto the restored file), put `piwi-backup.db` back as `.data/piwi.db` and unpack the storage archive; on a Linux host, hand the restored files back to the container's user with `sudo chown -R 1001:1001 .data`. For PostgreSQL, restore the dump into an empty database (`psql "$PIWI_DATABASE_URL" < piwi-db.sql`).
 3. **Start the version the backup was taken on.** A backup from version *N* must be restored under version *N* (or newer, which will migrate it forward) — not an older one.
 
 Then confirm the running version at **Settings → About**, and that recent runs are present. See [Upgrading](./upgrading) for the full version-change story and the checks that tell you a migration landed.

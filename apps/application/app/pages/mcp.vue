@@ -530,7 +530,7 @@ const windsurfSnippet = computed(() =>
                 <code class="px-1 py-0.5 bg-muted rounded text-xs font-mono">pd_</code>.
               </p>
               <p v-if="!isDesktop">
-                Generate a key in <strong>Settings → Users → [your account] → API keys</strong>, then replace
+                Generate a key in <strong>Settings → Account → API keys</strong>, then replace
                 <code class="px-1 py-0.5 bg-muted rounded text-xs font-mono">pd_YOUR_API_KEY</code> in the snippets
                 above.
               </p>
