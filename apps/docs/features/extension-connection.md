@@ -59,8 +59,12 @@ Each project keeps its own list in its **Settings** tab, under **Browser extensi
   tests), and a page outside the path prefix is left as it is.
 
 The editor suggests one pattern per site your suite already visited: the `baseURL` of recent runs, the pages of the
-[Test Map](./scenario-gaps) and the absolute pages its locators ran on. **Add** puts a suggestion in the list; **Save
-patterns** stores it. Editing the list takes the administrator role, like the rest of the project's settings.
+[Test Map](./scenario-gaps) and the absolute pages its locators ran on. A `baseURL` comes with the environment its runs
+were reported with (the [reporter](/guide/reporter)'s `environment` option or `PIWI_ENVIRONMENT`), and the suggestions
+are grouped by it. The newest few runs of every environment are read, so a nightly production suite is suggested beside
+a staging one that runs on every push. **Add** puts a suggestion in the list with its environment, **Add all** every
+suggestion of that environment; **Save patterns** stores them. Editing the list takes the administrator role, like the
+rest of the project's settings.
 
 ### Which project applies
 

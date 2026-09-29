@@ -37,6 +37,7 @@ export const pathPrefixSchema = z
   });
 
 export const MAX_URL_PATTERNS_PER_PROJECT = 100;
+const MAX_ENVIRONMENT_LENGTH = 40;
 
 export const urlPatternInputSchema = z.object({
   pattern: z
@@ -45,7 +46,7 @@ export const urlPatternInputSchema = z.object({
     .min(1)
     .max(500)
     .refine((p) => /^(https?:\/\/|\*)/i.test(p), 'Start the pattern with http://, https:// or a wildcard'),
-  environment: z.string().trim().max(40).nullish(),
+  environment: z.string().trim().max(MAX_ENVIRONMENT_LENGTH).nullish(),
   branch: z.string().trim().max(200).nullish(),
   pathPrefix: pathPrefixSchema,
   testPathPrefix: pathPrefixSchema,
@@ -201,29 +202,71 @@ export type UrlPatternSuggestionSource = 'base-url' | 'test-map' | 'locator-page
 export interface UrlPatternSuggestion {
   pattern: string;
   origin: string;
+  /** The environment most of the runs that visited this origin were reported with; null when none was. */
+  environment: string | null;
   sources: UrlPatternSuggestionSource[];
   /** How many recorded URLs pointed at this origin: the order suggestions are shown in. */
   hits: number;
 }
 
 const SUGGESTION_RUNS = 20;
+const SUGGESTION_RUNS_PER_ENVIRONMENT = 5;
+const SUGGESTION_RUN_WINDOW = 1000;
+const SUGGESTION_ENVIRONMENTS = 20;
 const SUGGESTION_ROWS = 2000;
+
+function runEnvironment(environment: string | null): string | null {
+  const trimmed = environment?.trim();
+  return trimmed && trimmed.length <= MAX_ENVIRONMENT_LENGTH ? trimmed : null;
+}
+
+/**
+ * The runs whose `baseURL` feeds the suggestions: the newest ones, plus the
+ * newest few of every environment among the project's latest runs, so an
+ * environment that runs rarely (a nightly production suite) is still suggested
+ * beside one that runs on every push.
+ */
+async function suggestionRunIds(db: DrizzleDB, projectId: number): Promise<number[]> {
+  const recent = await db
+    .select({ id: testRuns.id, environment: testRuns.environment })
+    .from(testRuns)
+    .where(eq(testRuns.projectId, projectId))
+    .orderBy(desc(testRuns.startTime), desc(testRuns.id))
+    .limit(SUGGESTION_RUN_WINDOW);
+  const perEnvironment = new Map<string, number>();
+  const ids: number[] = [];
+  for (const [index, run] of recent.entries()) {
+    const environment = runEnvironment(run.environment) ?? '';
+    const count = perEnvironment.get(environment);
+    const room =
+      count === undefined ? perEnvironment.size < SUGGESTION_ENVIRONMENTS : count < SUGGESTION_RUNS_PER_ENVIRONMENT;
+    if (index >= SUGGESTION_RUNS && !room) continue;
+    ids.push(run.id);
+    perEnvironment.set(environment, (count ?? 0) + 1);
+  }
+  return ids;
+}
 
 /**
  * One `https://host/**` pattern per origin the project's suite visited: the
- * Playwright `baseURL` of its recent runs and its own route origins, the URL
- * of each page node of the Test Map, and each absolute page its locators ran
- * on. Origins an existing pattern already covers are left out.
+ * Playwright `baseURL` of its runs and its own route origins, the URL of each
+ * page node of the Test Map, and each absolute page its locators ran on.
+ * A `baseURL` origin carries the environment its runs were reported with.
+ * Origins an existing pattern already covers are left out.
  */
 export async function suggestUrlPatterns(db: DrizzleDB, projectId: number): Promise<UrlPatternSuggestion[]> {
-  const byOrigin = new Map<string, { sources: Set<UrlPatternSuggestionSource>; hits: number }>();
-  const add = (url: unknown, source: UrlPatternSuggestionSource) => {
+  const byOrigin = new Map<
+    string,
+    { sources: Set<UrlPatternSuggestionSource>; hits: number; environments: Map<string, number> }
+  >();
+  const add = (url: unknown, source: UrlPatternSuggestionSource, environment: string | null = null) => {
     const origin = typeof url === 'string' ? urlOrigin(url) : null;
     if (!origin || !/^https?:\/\//.test(origin)) return;
     let entry = byOrigin.get(origin);
-    if (!entry) byOrigin.set(origin, (entry = { sources: new Set(), hits: 0 }));
+    if (!entry) byOrigin.set(origin, (entry = { sources: new Set(), hits: 0, environments: new Map() }));
     entry.sources.add(source);
     entry.hits++;
+    if (environment) entry.environments.set(environment, (entry.environments.get(environment) ?? 0) + 1);
   };
 
   const [project] = await db
@@ -233,13 +276,20 @@ export async function suggestUrlPatterns(db: DrizzleDB, projectId: number): Prom
   if (!project) return [];
   for (const origin of projectRouteOrigins(project.routeOrigins)) add(origin, 'base-url');
 
-  const runs = await db
-    .select({ metadata: testRuns.metadata })
-    .from(testRuns)
-    .where(eq(testRuns.projectId, projectId))
-    .orderBy(desc(testRuns.id))
-    .limit(SUGGESTION_RUNS);
-  for (const run of runs) for (const url of runBaseUrls(run.metadata)) add(url, 'base-url');
+  const runIds = await suggestionRunIds(db, projectId);
+  const runs =
+    runIds.length === 0
+      ? []
+      : await db
+          .select({ environment: testRuns.environment, metadata: testRuns.metadata })
+          .from(testRuns)
+          .where(inArray(testRuns.id, runIds))
+          .orderBy(desc(testRuns.startTime), desc(testRuns.id));
+  for (const run of runs) {
+    // One vote per run and origin, whatever the number of Playwright projects pointing at it.
+    const origins = new Set(runBaseUrls(run.metadata).map(urlOrigin));
+    for (const origin of origins) add(origin, 'base-url', runEnvironment(run.environment));
+  }
 
   const pageNodes = await db
     .select({ attrs: graphNodes.attrs })
@@ -261,8 +311,19 @@ export async function suggestUrlPatterns(db: DrizzleDB, projectId: number): Prom
     .map(([origin, entry]) => ({
       pattern: `${origin}/**`,
       origin,
+      environment: mostFrequent(entry.environments),
       sources: [...entry.sources].sort(),
       hits: entry.hits,
     }))
     .sort((a, b) => b.hits - a.hits || a.origin.localeCompare(b.origin));
+}
+
+/** The key with the highest count; on a tie, the one counted first (the newest run's). */
+function mostFrequent(counts: Map<string, number>): string | null {
+  let best: string | null = null;
+  let bestCount = 0;
+  for (const [key, count] of counts) {
+    if (count > bestCount) [best, bestCount] = [key, count];
+  }
+  return best;
 }

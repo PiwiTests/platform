@@ -5,28 +5,33 @@ import { waitForHydration } from './utils';
 /**
  * A project's URL patterns: the endpoints the browser extension reads and
  * writes, and the editor in the project's Settings tab, which suggests one
- * pattern per origin the suite visited.
+ * pattern per origin the suite visited, with the environment of its runs.
  */
 test.describe.serial('project URL patterns', () => {
   let projectId: number;
 
   test.beforeAll(async ({ request }) => {
-    const res = await request.post('/api/test-runs/submit', {
-      data: {
-        projectName: PROJECT.URL_PATTERNS,
-        status: 'passed',
-        startTime: new Date(Date.now() - 60_000).toISOString(),
-        duration: 1000,
-        totalTests: 1,
-        passedTests: 1,
-        failedTests: 0,
-        skippedTests: 0,
-        metadata: { htmlReport: { projects: [{ use: { baseURL: 'https://staging.shop.example/app' } }] } },
-        testCases: [{ title: 'opens the shop', status: 'passed', duration: 100, location: 'tests/shop.spec.ts:3:1' }],
-      },
-    });
-    expect(res.ok()).toBeTruthy();
-    projectId = ((await res.json()) as { projectId: number }).projectId;
+    const submit = async (secondsAgo: number, environment: string, baseUrls: string[]) => {
+      const res = await request.post('/api/test-runs/submit', {
+        data: {
+          projectName: PROJECT.URL_PATTERNS,
+          status: 'passed',
+          environment,
+          startTime: new Date(Date.now() - secondsAgo * 1000).toISOString(),
+          duration: 1000,
+          totalTests: 1,
+          passedTests: 1,
+          failedTests: 0,
+          skippedTests: 0,
+          metadata: { htmlReport: { projects: baseUrls.map((baseURL) => ({ use: { baseURL } })) } },
+          testCases: [{ title: 'opens the shop', status: 'passed', duration: 100, location: 'tests/shop.spec.ts:3:1' }],
+        },
+      });
+      expect(res.ok()).toBeTruthy();
+      return ((await res.json()) as { projectId: number }).projectId;
+    };
+    projectId = await submit(60, 'staging', ['https://staging.shop.example/app']);
+    await submit(30, 'production', ['https://shop.example', 'https://admin.shop.example']);
     await request.put(`/api/projects/${projectId}/url-patterns`, { data: { items: [] } });
   });
 
@@ -94,14 +99,40 @@ test.describe.serial('project URL patterns', () => {
     expect(visible.projects.find((p) => p.id === projectId)?.canEdit).toBe(true);
   });
 
-  test('suggestions come from the base URL of the project’s runs', async ({ request }) => {
+  test('suggestions come from the base URL of the project’s runs, with their environment', async ({ request }) => {
     await request.put(`/api/projects/${projectId}/url-patterns`, { data: { items: [] } });
     const suggestions = (await (await request.get(`/api/projects/${projectId}/url-patterns/suggestions`)).json()) as {
-      items: Array<{ pattern: string; sources: string[] }>;
+      items: Array<{ pattern: string; environment: string | null; sources: string[] }>;
     };
-    expect(suggestions.items).toContainEqual(
-      expect.objectContaining({ pattern: 'https://staging.shop.example/**', sources: ['base-url'] }),
+    expect(suggestions.items.map((s) => [s.pattern, s.environment, s.sources])).toEqual(
+      expect.arrayContaining([
+        ['https://staging.shop.example/**', 'staging', ['base-url']],
+        ['https://shop.example/**', 'production', ['base-url']],
+        ['https://admin.shop.example/**', 'production', ['base-url']],
+      ]),
     );
+  });
+
+  test('the Settings tab adds every suggestion of an environment with its environment', async ({ page, request }) => {
+    await request.put(`/api/projects/${projectId}/url-patterns`, { data: { items: [] } });
+    await page.goto(`/projects/${projectId}?tab=settings`);
+    await waitForHydration(page);
+
+    const card = page.locator('[data-shot="project-url-patterns"]');
+    const production = card.getByTestId('url-pattern-suggestion-group').filter({ hasText: 'production' });
+    await expect(production.getByText('https://admin.shop.example/**')).toBeVisible();
+    // A single suggestion has its own Add button only.
+    const staging = card.getByTestId('url-pattern-suggestion-group').filter({ hasText: 'staging' });
+    await expect(staging.getByRole('button', { name: /^Add all/ })).toHaveCount(0);
+
+    await production.getByRole('button', { name: 'Add all production suggestions' }).click();
+    await expect(card.getByLabel('URL pattern')).toHaveCount(2);
+    for (const [index, pattern] of ['https://admin.shop.example/**', 'https://shop.example/**'].entries()) {
+      await expect(card.getByLabel('URL pattern').nth(index)).toHaveValue(pattern);
+      await expect(card.getByLabel('Environment').nth(index)).toHaveValue('production');
+    }
+    await expect(production).toBeHidden();
+    await expect(staging).toBeVisible();
   });
 
   test('the Settings tab adds a suggestion and saves the list', async ({ page, request }) => {
@@ -113,7 +144,7 @@ test.describe.serial('project URL patterns', () => {
     await expect(card.getByRole('heading', { name: 'Browser extension URLs' })).toBeVisible();
     await expect(card.getByText('No pattern yet.')).toBeVisible();
     await card.getByRole('button', { name: 'Add https://staging.shop.example/**' }).click();
-    await card.getByLabel('Environment').fill('staging');
+    await expect(card.getByLabel('Environment')).toHaveValue('staging');
     await expect(card.getByTestId('url-pattern-prefix-hint')).toContainText(
       'your site serves the pages under this path, the tests did not, e.g. /app',
     );
@@ -148,7 +179,8 @@ test.describe.serial('project URL patterns', () => {
     await expect(card.getByLabel('Path prefix', { exact: true })).toHaveValue('/app');
     await expect(card.getByLabel('Tests’ path prefix')).toHaveValue('/v2');
     // A pattern already in the list is no longer suggested.
-    await expect(card.getByTestId('url-pattern-suggestions')).toBeHidden();
+    await expect(card.getByRole('button', { name: 'Add https://shop.example/**' })).toBeVisible();
+    await expect(card.getByRole('button', { name: 'Add https://staging.shop.example/**' })).toBeHidden();
   });
 
   test('the editor flags a pattern without a scheme and does not save it', async ({ page }) => {

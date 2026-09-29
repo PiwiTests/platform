@@ -153,10 +153,45 @@ describe('suggestions', () => {
     ]);
     const suggestions = await suggestUrlPatterns(anyDb(), shop);
     expect(suggestions.map((s) => s.pattern)).toEqual(['https://staging.shop.test/**', 'https://pay.example.com/**']);
-    expect(suggestions[0]).toMatchObject({ sources: ['base-url', 'test-map'], hits: 2 });
+    expect(suggestions[0]).toMatchObject({ sources: ['base-url', 'test-map'], hits: 2, environment: null });
 
     await replaceProjectUrlPatterns(anyDb(), shop, [{ pattern: 'https://staging.shop.test/**' }]);
     expect((await suggestUrlPatterns(anyDb(), shop)).map((s) => s.origin)).toEqual(['https://pay.example.com']);
     expect(await suggestUrlPatterns(anyDb(), 9999)).toEqual([]);
+  });
+
+  test('each run’s baseURL carries its environment, and every environment is read', async () => {
+    const run = (hoursAgo: number, environment: string | null, ...baseUrls: string[]) =>
+      ({
+        projectId: shop,
+        status: 'passed',
+        environment,
+        startTime: new Date(Date.now() - hoursAgo * 3_600_000),
+        metadata: { htmlReport: { projects: baseUrls.map((baseURL) => ({ use: { baseURL } })) } },
+      }) as typeof schema.testRuns.$inferInsert;
+    // A nightly production run, older than a day of staging runs that push it out of the newest ones.
+    await db
+      .insert(schema.testRuns)
+      .values([
+        run(200, 'production', 'https://shop.test/', 'https://shop.test/admin'),
+        ...Array.from({ length: 30 }, (_, i) => run(100 - i, 'staging', 'https://staging.shop.test/app')),
+        run(50, 'qa', 'https://staging.shop.test/'),
+        run(40, ' ', 'http://localhost:3000/'),
+        run(30, 'a'.repeat(41), 'https://preview.shop.test/'),
+      ]);
+    await db
+      .insert(schema.graphNodes)
+      .values([{ projectId: shop, kind: 'page', key: '/pay', attrs: { url: 'https://pay.example.com/checkout' } }]);
+
+    const suggestions = await suggestUrlPatterns(anyDb(), shop);
+    expect(suggestions.map((s) => [s.origin, s.environment, s.hits])).toEqual([
+      // The 17 staging runs among the 20 newest, and one qa run, went there: staging wins.
+      ['https://staging.shop.test', 'staging', 18],
+      ['http://localhost:3000', null, 1],
+      ['https://pay.example.com', null, 1],
+      ['https://preview.shop.test', null, 1],
+      // Two Playwright projects of one run count once.
+      ['https://shop.test', 'production', 1],
+    ]);
   });
 });

@@ -600,6 +600,14 @@ const PROJECT_CONFIGS = {
 const BASE_START_MS = new Date('2025-04-25T08:30:00Z').getTime();
 
 const ENVIRONMENTS = ['production', 'staging', 'integration', 'development'];
+// The Playwright baseURL of e2e-checkout's runs in each environment; developers'
+// runs alternate between two local servers.
+const CHECKOUT_BASE_URLS = {
+  production: ['https://checkout.example.com'],
+  staging: ['https://staging.checkout.example.com'],
+  integration: ['https://integration.checkout.example.com'],
+  development: ['http://localhost:3000', 'http://localhost:5173'],
+};
 const RUN_GREPS = {
   1: 'checkout|cart',
   2: 'auth|orders',
@@ -945,6 +953,8 @@ for (const proj of DEMO_PROJECTS) {
     const didNotRunTests = didNotRunCaseIds.size;
     const passedTests = caseIds.length - failedTests - didNotRunTests;
 
+    const environment = ENVIRONMENTS[i % ENVIRONMENTS.length];
+    const baseUrls = proj.id === 1 ? CHECKOUT_BASE_URLS[environment] : null;
     const metadata = {
       ci: {
         provider: 'GitHub Actions',
@@ -959,6 +969,15 @@ for (const proj of DEMO_PROJECTS) {
         author: commit.author,
         commitMessage: commit.message,
       },
+      ...(baseUrls
+        ? {
+            htmlReport: {
+              projects: [
+                { name: 'chromium', use: { baseURL: baseUrls[Math.floor(i / ENVIRONMENTS.length) % baseUrls.length] } },
+              ],
+            },
+          }
+        : {}),
     };
 
     TEST_RUNS.push({
@@ -975,7 +994,7 @@ for (const proj of DEMO_PROJECTS) {
       flaky_tests: flakyTests,
       avg_test_duration: avgTestDuration,
       p90_test_duration: p90TestDuration,
-      environment: ENVIRONMENTS[i % ENVIRONMENTS.length],
+      environment,
       branch: commit.branch && commit.branch !== 'HEAD' ? commit.branch : null,
       label: proj.id === 1 && i === 0 ? 'v2.4.0 release' : null,
       metadata,
