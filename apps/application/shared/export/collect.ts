@@ -131,7 +131,7 @@ export async function collectClusterBundle(
   clusterId: number,
   opts: CollectOptions,
 ): Promise<ExportBundle | null> {
-  const cluster = (await getFailureCluster(db, clusterId)) as Record<string, any> | null;
+  const cluster = (await getFailureCluster(db, clusterId, { affectedTestsLimit: null })) as Record<string, any> | null;
   if (!cluster) return null;
 
   const { diagnosis } = await getClusterDiagnosis(db, clusterId);

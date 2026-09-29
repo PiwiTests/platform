@@ -70,6 +70,26 @@ export async function getQuarantinedCaseIds(db: DrizzleDB, projectId: number): P
   return new Set(rows.map((row) => row.testCaseId));
 }
 
+/** How many distinct tests of a failure cluster are currently quarantined. */
+export async function countQuarantinedClusterTests(
+  db: DrizzleDB,
+  projectId: number,
+  clusterId: number,
+): Promise<number> {
+  const [row] = await db
+    .select({ tests: sql<number>`count(distinct ${testRunsCases.testCaseId})` })
+    .from(testRunsCases)
+    .innerJoin(quarantinedTests, eq(quarantinedTests.testCaseId, testRunsCases.testCaseId))
+    .where(
+      and(
+        eq(testRunsCases.failureClusterId, clusterId),
+        eq(quarantinedTests.projectId, projectId),
+        isNull(quarantinedTests.releasedAt),
+      ),
+    );
+  return Number(row?.tests ?? 0);
+}
+
 /**
  * Trailing passing streak for each test, counted over executions recorded after
  * the run the test was quarantined at. Ordered newest first and stopped at the
