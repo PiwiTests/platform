@@ -20,9 +20,11 @@ const changelog = readFileSync(join(monorepoRoot, 'CHANGELOG.md'), 'utf8');
 
 const RELEASE = /^## \[(\d+)\.(\d+)\.(\d+)\][^\n]*?\((\d{4}-\d{2}-\d{2})\)/;
 const SECTION = /^### (.+)/;
-const BULLET = /^\* (.+)/;
-// Trailing release-please commit link(s): ` ([abc1234](https://…/commit/…))`.
-const COMMIT_LINK = /\s*\(\[[0-9a-f]{7,}\]\([^)]*\)\)/g;
+// release-please writes `* ` bullets; polished notes write `- ` bullets, under `#### Theme` subsections.
+const BULLET = /^[*-] (.+)/;
+// Commit links: release-please's ` ([abc1234](https://…/commit/…))`, and a polished
+// entry's ` ([abc1234](…), [def5678](…))` group.
+const COMMIT_LINK = /\s*\((?:\[[0-9a-f]{7,}\]\([^)]*\)(?:,\s*)?)+\)/g;
 
 /** One entry per minor version (X.Y), newest first, with its feature list. */
 const minors = new Map();
