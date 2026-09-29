@@ -7,6 +7,7 @@ first — in particular the **cross-platform shell commands** rule, which applie
 npm run docs:dev      # local preview (runs docs:gen first)
 npm run docs:build    # production build (runs docs:gen first)
 npm run docs:gen      # regenerate the derived pages only
+npm run docs:rag      # regenerate public/rag/, the index behind the "Ask the docs" panel (both commands above run it)
 ```
 
 ## Generated pages — never edit them by hand
@@ -56,6 +57,49 @@ When documenting a feature here, link to the live demo reference
 build. Endpoint documentation is
 authored in the handler's `defineRouteMeta({ openAPI: … })` block — see
 [`../application/AGENTS.md`](../application/AGENTS.md#openapi-annotations).
+
+## The "Ask the docs" panel
+
+The **Ask** button in the nav bar answers a question from the docs, in the reader's browser: it ranks the docs' passages,
+quotes the sentences closest to the question with a link to each source, and lists the passages. Nothing is sent
+anywhere. The index, the embedding model and the ONNX Runtime WebAssembly files are static files of the site, and
+transformers.js is set to load no remote model.
+
+```bash
+npm run docs:rag                       # regenerate public/rag/
+node scripts/eval-rag.mjs [--verbose]  # how often the right page ranks first, in the top 3, in the top 5
+```
+
+| Piece | Where |
+|---|---|
+| `public/rag/` (gitignored): `index.json` (passages, model settings), `vectors.bin`, `models/`, `ort/` | `scripts/generate-rag-index.mjs` |
+| Ranking, sentence choice and the confidence rules: pure functions | `.vitepress/theme/ask-docs/search.ts`, tested by `apps/application/tests/unit/docs-ask-search.test.ts` |
+| The worker: loads the index, then the model in the background | `.vitepress/theme/ask-docs/worker.ts`, messages typed in `protocol.ts` |
+| The button and the panel | `.vitepress/theme/components/AskDocs.vue`, added to the nav bar by `.vitepress/theme/index.ts` |
+
+- **The passages are the MCP corpus** (`buildDocsCorpus` in `apps/application/shared/docs-corpus.ts`): the hand-written
+  pages, one passage per heading section, split at paragraph boundaries above 1,800 characters. A page's front matter
+  `description` opens its first passage. The generated reference pages are not indexed.
+- **Two rankings, fused.** Keywords (BM25) find exact names, embeddings find a passage that answers in other words. A
+  query that is a bare name (`runLabel`) is ranked by keywords alone and quotes the sentences that contain it.
+- **The panel says what it does not know.** An answer is shown only when the best passage is close enough to the
+  question (`ANSWER_SIMILARITY`, `RELATED_SIMILARITY` and `MAX_UNKNOWN_SHARE` in `search.ts`); below that it lists the
+  closest passages without claiming they answer, or says the docs have nothing. Before the model has loaded, the panel
+  ranks by keywords and never claims an answer.
+- **The model** is `Snowflake/snowflake-arctic-embed-xs`, 8-bit quantized, 384 dimensions. It is set in `MODEL` in the
+  generator; the worker reads its id, dtype, pooling and query prefix from `index.json`, so changing it is one edit.
+  The site gains about 38 MB of static files (model 23 MB, runtime 14 MB), fetched only when a reader opens the panel.
+- **Embeddings are cached per passage** in `.vitepress/cache/rag-embeddings.json`, so editing a page embeds only its
+  passages. Changing the model or its settings embeds everything again.
+- **Measure before changing the ranking.** `scripts/eval-rag.mjs` holds a set of questions with the pages that answer
+  them, and questions outside the docs. Run it before and after a change to the model, the passage size, the ranking
+  or a threshold, and put both results in the commit message. A new page that readers will ask about earns a question.
+- `apps/docs/.npmrc` sets `onnxruntime-node-install=skip`. Without it, `npm ci` on Linux x64 downloads CUDA binaries
+  (hundreds of MB) that an embedding run on the CPU never uses.
+- The button is hidden when `public/rag/index.json` does not exist, so `docs:dev` still starts offline (it runs
+  `docs:rag -- --optional`); `docs:build` fails instead.
+- transformers.js finds a local model's tokenizer only when `env.localModelPath` is a root-relative path, not a full
+  URL. The worker sets it that way; keep it.
 
 ## The docs ship inside the server
 

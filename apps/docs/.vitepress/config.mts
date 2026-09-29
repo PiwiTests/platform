@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs'
 import { fileURLToPath, URL } from 'node:url'
 import { defineConfig, type HeadConfig } from 'vitepress'
 import { landingCards, nav, sidebars } from './navigation'
@@ -6,6 +7,9 @@ import { pageMeta } from './page-meta.mts'
 // https://vitepress.dev/reference/site-config
 const ogImage = 'https://piwitests.dev/og-image.png'
 const siteUrl = 'https://piwitests.dev'
+
+// The "Ask the docs" button needs the index that `npm run docs:rag` writes; without it the button stays hidden.
+const askDocsEnabled = existsSync(fileURLToPath(new URL('../public/rag/index.json', import.meta.url)))
 
 // Names the site in search results (the line above each result's title).
 const websiteJsonLd: HeadConfig = [
@@ -48,6 +52,9 @@ export default defineConfig({
   // tag it is escaped, so a quote in a description cannot break the markup.
   transformHead: ({ description }) => [['meta', { name: 'description', content: description }]],
   vite: {
+    define: { __ASK_DOCS_ENABLED__: JSON.stringify(askDocsEnabled) },
+    // The "Ask the docs" worker imports transformers.js on demand, which needs a code-splitting output format.
+    worker: { format: 'es' },
     // The #shared modules imported below live outside the docs root, and their
     // nearest tsconfig (application/tsconfig.json) references Nuxt-generated
     // .nuxt/tsconfig.*.json files that only exist after the app has been
