@@ -70,36 +70,41 @@ export interface RawStoredAi {
   researchApiKey?: string;
 }
 
+/**
+ * Parse a `PIWI_AI_*_TEMPERATURE` value into a finite number, or undefined when unset or invalid.
+ * The runtime config hands over a number when the value was overridden through `NUXT_AI_*_TEMPERATURE`.
+ */
+export function parseEnvTemperature(raw?: string | number | null): number | undefined {
+  if (raw === undefined || raw === null || raw === '') return undefined;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : undefined;
+}
+
 /** Map legacy flat storage (or env vars in the same shape) onto the role map. */
 export function rolesFromLegacy(flat: {
   provider?: string;
   apiKey?: string;
   model?: string;
   baseUrl?: string;
-  temperature?: string;
+  temperature?: string | number;
   researchModel?: string;
   researchProvider?: string;
   researchBaseUrl?: string;
   researchApiKey?: string;
-  researchTemperature?: string;
+  researchTemperature?: string | number;
   embeddingProvider?: string;
   embeddingModel?: string;
   embeddingBaseUrl?: string;
   embeddingApiKey?: string;
 }): Partial<Record<AiModelRole, RawStoredRole>> {
   const roles: Partial<Record<AiModelRole, RawStoredRole>> = {};
-  const parseTemp = (raw?: string): number | undefined => {
-    if (!raw) return undefined;
-    const n = Number(raw);
-    return Number.isFinite(n) ? n : undefined;
-  };
   if (flat.provider) {
     roles.diagnosis = {
       provider: flat.provider,
       model: flat.model,
       baseUrl: flat.baseUrl,
       apiKey: flat.apiKey,
-      temperature: parseTemp(flat.temperature),
+      temperature: parseEnvTemperature(flat.temperature),
     };
   }
   if (flat.researchModel) {
@@ -109,9 +114,9 @@ export function rolesFromLegacy(flat: {
           model: flat.researchModel,
           baseUrl: flat.researchBaseUrl,
           apiKey: flat.researchApiKey || flat.apiKey,
-          temperature: parseTemp(flat.researchTemperature),
+          temperature: parseEnvTemperature(flat.researchTemperature),
         }
-      : { reuse: 'diagnosis', model: flat.researchModel, temperature: parseTemp(flat.researchTemperature) };
+      : { reuse: 'diagnosis', model: flat.researchModel, temperature: parseEnvTemperature(flat.researchTemperature) };
   }
   if (flat.embeddingModel) {
     // Provider/baseUrl/key default to the main role's (mirrors resolveAiConfig).

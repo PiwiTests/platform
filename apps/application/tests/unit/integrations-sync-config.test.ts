@@ -2,7 +2,7 @@ import { describe, test, expect } from 'vitest';
 import {
   DEFAULT_INTEGRATIONS_SYNC_MINUTES,
   resolveSyncMinutes,
-  syncCron,
+  isSyncTickDue,
   isLinkRefreshDue,
   RESOLVED_REFRESH_MS,
 } from '../../shared/integrations/sync-config';
@@ -17,15 +17,39 @@ describe('resolveSyncMinutes', () => {
   });
 });
 
-describe('syncCron', () => {
-  test('sub-hour intervals use a minute step', () => {
-    expect(syncCron(15)).toBe('*/15 * * * *');
-    expect(syncCron(1)).toBe('*/1 * * * *');
+describe('isSyncTickDue', () => {
+  const at = (hour: number, minute: number) => new Date(2026, 8, 13, hour, minute, 0);
+
+  test('sub-hour intervals run on the minutes of the hour they divide', () => {
+    expect([0, 14, 15, 16, 30, 45, 59].map((minute) => isSyncTickDue(15, at(12, minute)))).toEqual([
+      true,
+      false,
+      true,
+      false,
+      true,
+      true,
+      false,
+    ]);
+    expect(isSyncTickDue(1, at(12, 37))).toBe(true);
+    expect(isSyncTickDue(7, at(12, 14))).toBe(true);
+    expect(isSyncTickDue(7, at(12, 15))).toBe(false);
   });
-  test('an hour or more uses an hour step', () => {
-    expect(syncCron(60)).toBe('0 */1 * * *');
-    expect(syncCron(120)).toBe('0 */2 * * *');
-    expect(syncCron(1440)).toBe('0 0 * * *');
+
+  test('an hour or more runs at minute 0 of every Nth hour', () => {
+    expect(isSyncTickDue(60, at(5, 0))).toBe(true);
+    expect(isSyncTickDue(60, at(5, 1))).toBe(false);
+    expect(isSyncTickDue(120, at(4, 0))).toBe(true);
+    expect(isSyncTickDue(120, at(5, 0))).toBe(false);
+  });
+
+  test('a day or more runs at midnight', () => {
+    expect(isSyncTickDue(1440, at(0, 0))).toBe(true);
+    expect(isSyncTickDue(1440, at(12, 0))).toBe(false);
+  });
+
+  test('an unusable interval runs on the default cadence', () => {
+    expect(isSyncTickDue(Number.NaN, at(12, 15))).toBe(true);
+    expect(isSyncTickDue(Number.NaN, at(12, 20))).toBe(false);
   });
 });
 

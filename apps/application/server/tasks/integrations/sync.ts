@@ -1,5 +1,6 @@
 import { getDatabase } from '../../database';
 import { syncTrackerLinks } from '../../utils/integrations/sync';
+import { isSyncTickDue, resolveSyncMinutes } from '#shared/integrations/sync-config';
 
 export default defineTask({
   meta: {
@@ -7,6 +8,8 @@ export default defineTask({
     description: 'Refresh tracker link statuses and apply the resolve/reopen policies',
   },
   async run() {
+    const minutes = resolveSyncMinutes(process.env.PIWI_INTEGRATIONS_SYNC_MINUTES);
+    if (!isSyncTickDue(minutes, new Date())) return { result: { due: false } };
     const db = await getDatabase();
     const { refreshed, failed, skipped } = await syncTrackerLinks(db);
     if (refreshed > 0 || failed > 0) {

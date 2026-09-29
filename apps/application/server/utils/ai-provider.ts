@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { getAppSetting } from './app-settings';
 import { callClaudeCli, streamClaudeCli } from './ai-claude-cli';
 import { decryptSecret, getEncryptionKey } from './crypto';
+import { parseEnvTemperature } from './ai-settings';
 import type { AiProvider, AiConfig, AiModelRole, ResolvedAiRole } from '~~/types/api';
 import type { DbClient } from '../database';
 
@@ -39,13 +40,6 @@ interface StoredAi {
 
 /** What a role is used for: embeddings need an OpenAI-compatible endpoint (Anthropic has no embeddings API). */
 type RoleKind = 'chat' | 'embedding';
-
-/** Parse a `PIWI_AI_*_TEMPERATURE` env var (string) into a finite number, or null when unset/invalid. */
-function parseTemperature(raw?: string): number | null {
-  if (!raw) return null;
-  const n = Number(raw);
-  return Number.isFinite(n) ? n : null;
-}
 
 function isValidRole(role: ResolvedAiRole, kind: RoleKind): boolean {
   // Embeddings require an OpenAI-compatible endpoint; the CLI has no embeddings API.
@@ -133,12 +127,12 @@ export async function resolveAiConfig(db: DbClient): Promise<AiConfig | null> {
         model?: string;
         baseUrl?: string;
         autoDiagnose?: boolean | string;
-        temperature?: string;
+        temperature?: string | number;
         researchModel?: string;
         researchProvider?: string;
         researchBaseUrl?: string;
         researchApiKey?: string;
-        researchTemperature?: string;
+        researchTemperature?: string | number;
         embeddingProvider?: string;
         embeddingModel?: string;
         embeddingBaseUrl?: string;
@@ -153,7 +147,7 @@ export async function resolveAiConfig(db: DbClient): Promise<AiConfig | null> {
       envAi.model,
       envAi.baseUrl,
       'chat',
-      parseTemperature(envAi.temperature),
+      parseEnvTemperature(envAi.temperature),
     );
     // Research defaults its provider/baseUrl/key to the diagnosis role when not overridden.
     const research = envAi.researchModel
@@ -163,7 +157,7 @@ export async function resolveAiConfig(db: DbClient): Promise<AiConfig | null> {
           envAi.researchModel,
           envAi.researchBaseUrl || envAi.baseUrl,
           'chat',
-          parseTemperature(envAi.researchTemperature),
+          parseEnvTemperature(envAi.researchTemperature),
         )
       : null;
     // Embedding defaults its provider/key/baseUrl to the main role when not

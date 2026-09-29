@@ -1,9 +1,9 @@
 /**
- * The status-pull cadence. The sync task refreshes tracker links on a schedule
- * derived from `PIWI_INTEGRATIONS_SYNC_MINUTES`; the default and clamps live
- * here so `nuxt.config.ts` (which builds the cron), the task and the env-var
- * registry all agree, and the registry test asserts the default against this
- * constant.
+ * The status-pull cadence. The scheduler ticks the sync task every minute and
+ * the task runs its sweep on the ticks `PIWI_INTEGRATIONS_SYNC_MINUTES` selects,
+ * reading the variable at run time; the default and clamps live here so the
+ * task and the env-var registry agree, and the registry test asserts the default
+ * against this constant.
  */
 
 /** How often, in minutes, the sync task refreshes open tracker links by default. */
@@ -40,13 +40,15 @@ export function isLinkRefreshDue(
 }
 
 /**
- * A cron expression for the given interval. Minutes under an hour map to a
- * minute-step field; an hour or more maps to an hour-step at minute 0.
+ * Whether the scheduler tick at `now` is one the sync runs on. An interval under
+ * an hour runs on the minutes of the hour it divides (every 15 minutes is :00,
+ * :15, :30, :45); an hour or more runs at minute 0 of every Nth hour, and a day
+ * or more at midnight. Local time, like the cron schedules beside it.
  */
-export function syncCron(minutes: number): string {
+export function isSyncTickDue(minutes: number, now: Date): boolean {
   const m = resolveSyncMinutes(minutes);
-  if (m < 60) return `*/${m} * * * *`;
+  if (m < 60) return now.getMinutes() % m === 0;
+  if (now.getMinutes() !== 0) return false;
   const hours = Math.round(m / 60);
-  if (hours >= 24) return '0 0 * * *';
-  return `0 */${Math.max(1, hours)} * * *`;
+  return hours >= 24 ? now.getHours() === 0 : now.getHours() % hours === 0;
 }

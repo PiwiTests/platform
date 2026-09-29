@@ -130,7 +130,7 @@ archive move. (This skill file and `AGENTS.md` are committed; edit them only whe
 | Help content             | `apps/application/app/utils/help-content.ts`                        |
 | Layout (sidebar, footer) | `apps/application/app/layouts/default.vue`                          |
 | Env var registry         | `apps/application/shared/piwi-env-vars.ts`                          |
-| Env shims (prebuilt server) | `docker-server-env.mjs`, `packages/server/bin/piwi-server.mjs`   |
+| Env shim (prebuilt server)  | `packages/server/bin/server-env.mjs`                             |
 | Reporter source          | `packages/reporter/src/`                                                |
 | Reporter tests           | `packages/reporter/tests/`                                              |
 | Integrations (trackers)  | `apps/application/server/utils/integrations/`                       |
