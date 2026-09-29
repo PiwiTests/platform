@@ -1,24 +1,49 @@
+import { count, eq } from 'drizzle-orm';
 import { getDatabase } from '../database';
+import { testRuns } from '../database/schema';
 import { getStorage } from '../storage';
-import { deleteProjectData } from '#shared/handlers/projects';
+import { deleteProjectData, type ProjectDeletionProgress } from '#shared/handlers/projects';
+import { apiError } from './api-error';
 import { testCaseCache } from './test-case-cache';
+
+/** Deletions running in this server process, by project id. */
+const deletionsInProgress = new Map<number, ProjectDeletionProgress>();
+
+/** Where the deletion of `projectId` stands, or null when none is running in this process. */
+export function getProjectDeletionProgress(projectId: number): ProjectDeletionProgress | null {
+  return deletionsInProgress.get(projectId) ?? null;
+}
 
 /**
  * Permanently delete a project and all its associated data.
  *
  * Deletes storage first (entire project-{id}/ directory), then clears DB rows
- * in FK order via `deleteProjectData`. Server-only: touches the real
- * filesystem/S3 storage adapter, so it must not be imported by shared/demo
- * code (demo calls `deleteProjectData` directly against its in-browser DB).
+ * in FK order via `deleteProjectData`. Progress is readable through
+ * `getProjectDeletionProgress` while it runs, and a second deletion of the same
+ * project is refused with a 409 until the first one ends. Server-only: touches
+ * the real filesystem/S3 storage adapter, so it must not be imported by
+ * shared/demo code (demo calls `deleteProjectData` directly against its
+ * in-browser DB).
  */
 export async function deleteProject(projectId: number): Promise<void> {
-  const db = await getDatabase();
-  const storage = getStorage();
+  if (deletionsInProgress.has(projectId)) {
+    throw apiError({ statusCode: 409, message: 'This project is already being deleted' });
+  }
+  const progress: ProjectDeletionProgress = { phase: 'files', totalRuns: 0, runsDeleted: 0 };
+  deletionsInProgress.set(projectId, progress);
 
-  // Delete all project files in one shot — covers reports, blobs, trace-resources
-  await storage.deleteDirectory(`project-${projectId}`);
+  try {
+    const db = await getDatabase();
+    const [runCount] = await db.select({ n: count() }).from(testRuns).where(eq(testRuns.projectId, projectId));
+    progress.totalRuns = Number(runCount?.n ?? 0);
 
-  await deleteProjectData(db, projectId);
+    // Delete all project files in one shot — covers reports, blobs, trace-resources
+    await getStorage().deleteDirectory(`project-${projectId}`);
 
-  testCaseCache.invalidate(projectId);
+    await deleteProjectData(db, projectId, (next) => Object.assign(progress, next));
+
+    testCaseCache.invalidate(projectId);
+  } finally {
+    deletionsInProgress.delete(projectId);
+  }
 }

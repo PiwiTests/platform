@@ -489,6 +489,93 @@ const READY_INSPECTION = {
  *   importableRuns — desktop mode: archives `desktop_find_importable_runs` reports (default [])
  *   pickedFiles — desktop mode: archives the native import picker returns (default [])
  */
+/** Ticks the row checkboxes of the `count` newest runs in project 1's runs list that are not kept. */
+async function selectNewestRuns(page, count) {
+  const kept = await (await page.request.get(new URL('/api/projects/1/kept-runs', page.url()).href)).json();
+  const keptIds = new Set((kept.items ?? []).map((r) => r.id));
+  const boxes = page.locator('[data-shot="runs-table"] input[aria-label^="Select run #"]:visible');
+  let ticked = 0;
+  for (const box of await boxes.all()) {
+    if (ticked === count) break;
+    const id = Number((await box.getAttribute('aria-label'))?.replace('Select run #', ''));
+    if (keptIds.has(id)) continue;
+    await box.check();
+    ticked++;
+  }
+}
+
+/**
+ * Selects project 1's three newest runs, deletes the selection and runs
+ * `capture` while the second run is still being deleted. Every DELETE is
+ * answered in the browser and none reaches the server: the second is held
+ * until the capture is done, and the scene waits for the modal to close so no
+ * request is left in flight when the context closes.
+ */
+async function captureRunsDeleteProgress(page, capture) {
+  let deletes = 0;
+  let releaseHeld = () => {};
+  await page.route('**/api/test-runs/*', async (route) => {
+    if (route.request().method() !== 'DELETE') return route.fallback();
+    deletes += 1;
+    if (deletes === 2) await new Promise((resolve) => (releaseHeld = resolve));
+    await route.fulfill({ json: { success: true } });
+  });
+  const dialog = page.getByRole('dialog');
+  try {
+    await selectNewestRuns(page, 3);
+    await page.locator('[data-shot="runs-table"]').getByRole('button', { name: 'Delete', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Delete 3 runs' }).click();
+    await dialog.getByText('1 of 3 done', { exact: false }).waitFor();
+    // The elapsed clock shows once a second has passed; a frozen clock never gets there.
+    await dialog
+      .getByText('running for', { exact: false })
+      .waitFor({ timeout: 3000 })
+      .catch(() => {});
+    await capture();
+  } finally {
+    releaseHeld();
+    await dialog.waitFor({ state: 'detached', timeout: 10_000 }).catch(() => {});
+  }
+}
+
+/**
+ * Confirms the deletion of project 1 in its Delete modal, holds it mid-way and
+ * runs `capture`: the progress poll answers with a deletion a third of the way
+ * through its runs, and the DELETE request is held, then aborted before the
+ * scene ends — a request still held when the context closes reaches the server.
+ * Waits on the rendered steps, not on `settle()`, which the held request would
+ * never let finish.
+ */
+async function captureProjectDeleteProgress(page, capture) {
+  let abortHeld = async () => {};
+  await page.route('**/api/projects/1', (route) => {
+    if (route.request().method() !== 'DELETE') return route.fallback();
+    return new Promise((resolve) => {
+      abortHeld = () => route.abort().then(resolve);
+    });
+  });
+  await page.route('**/api/projects/1/deletion', (route) =>
+    route.fulfill({ json: { progress: { phase: 'runs', totalRuns: 1280, runsDeleted: 412 } } }),
+  );
+  try {
+    await page.getByRole('button', { name: 'More actions' }).click();
+    await page.getByRole('menuitem', { name: 'Delete' }).click();
+    const dialog = page.getByRole('dialog');
+    const input = dialog.getByRole('textbox');
+    await input.fill((await input.getAttribute('placeholder')) ?? '');
+    await dialog.getByRole('button', { name: 'Delete project' }).click();
+    await dialog.getByText('412 of 1,280 deleted').waitFor();
+    // The elapsed clock reads "Starting…" for its first second; a frozen clock keeps it there.
+    await dialog
+      .getByText('Running for', { exact: false })
+      .waitFor({ timeout: 3000 })
+      .catch(() => {});
+    await capture();
+  } finally {
+    await abortHeld();
+  }
+}
+
 /**
  * Classifies project 1's flaky tests. No frontend code calls flaky-classify, so
  * the root cause reads "—" for every row until something asks for one.
@@ -1765,6 +1852,52 @@ const SCENES = [
       await page.getByRole('dialog', { name: 'Keep run #2 forever' }).waitFor();
       await settle();
       await shoot();
+    },
+  },
+  {
+    name: 'project-delete-progress',
+    description: 'Project menu › Delete: the modal following a running deletion, phase by phase with the run count',
+    route: '/projects/1',
+    viewport: { width: 1280, height: 720 },
+    async run({ page, shoot }) {
+      await captureProjectDeleteProgress(page, () => shoot(undefined, { of: '[role="dialog"]', pad: 0 }));
+    },
+  },
+  {
+    name: 'project-delete-progress-mobile',
+    description: 'The project deletion progress modal at phone width',
+    route: '/projects/1',
+    viewport: { width: 390, height: 844 },
+    async run({ page, shoot }) {
+      await captureProjectDeleteProgress(page, () => shoot());
+    },
+  },
+  {
+    name: 'runs-selection',
+    description: 'Project runs table: three runs selected, with Compare waiting for two and Delete for the selection',
+    route: '/projects/1',
+    viewport: { width: 1280, height: 1400 },
+    async run({ page, shoot }) {
+      await selectNewestRuns(page, 3);
+      await shoot(undefined, { of: '[data-shot="runs-table"]', pad: 8 });
+    },
+  },
+  {
+    name: 'runs-delete-progress',
+    description: 'Deleting three selected runs: one done, one running, one waiting, with the count and the clock',
+    route: '/projects/1',
+    viewport: { width: 1280, height: 720 },
+    async run({ page, shoot }) {
+      await captureRunsDeleteProgress(page, () => shoot(undefined, { of: '[role="dialog"]', pad: 0 }));
+    },
+  },
+  {
+    name: 'runs-delete-progress-mobile',
+    description: 'The run deletion progress modal at phone width',
+    route: '/projects/1',
+    viewport: { width: 390, height: 844 },
+    async run({ page, shoot }) {
+      await captureRunsDeleteProgress(page, () => shoot());
     },
   },
   {
