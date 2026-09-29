@@ -27,7 +27,8 @@ On boot, before any request can touch the database (requests that need it wait f
    separate migrate command and nothing to run by hand. Before migrating, Piwi compares the migrations
    the database has recorded with the ones this version ships (see
    [A database that ran another build](#a-database-that-ran-another-build)).
-2. **A project-assignments backfill** runs (idempotent, safe on every start).
+2. **Project access is backfilled**, once: on the upgrade that adds project access to a database, existing Reporter
+   and User accounts get global access. It never runs again, so access you revoke stays revoked.
 3. **Failure clusters are re-fingerprinted** if the fingerprint algorithm changed in this release.
    This is non-destructive: existing clusters are updated in place, and clusters that now collide are
    merged rather than dropped, so your triage statuses and notes survive.
