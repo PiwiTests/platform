@@ -5,9 +5,10 @@ import type { DbClient } from '../database';
 import { generateApiKey } from './auth';
 
 /**
- * Connecting the browser extension: an RFC 8628 device authorization grant.
- * The extension starts a request, the user allows it on a signed-in page of
- * this instance, and the extension's next poll receives an API key created
+ * Connecting the browser extension, or the VS Code extension and JetBrains
+ * plugin: an RFC 8628 device authorization grant. The client starts a
+ * request, the user allows it on a signed-in page of this instance, and the
+ * client's next poll receives an API key created
  * for that user at that moment. Both codes are stored hashed; the key's
  * plaintext is never stored.
  */
@@ -75,11 +76,24 @@ function clientWord(value: unknown, fallback: string): string {
   return cleaned || fallback;
 }
 
-/** "Piwi Picker in Chrome on Windows": the name the verification page shows and the created key carries. */
-export function extensionClientName(client: { browser?: unknown; os?: unknown }): string {
-  const browser = clientWord(client.browser, 'a browser');
+const EDITOR_CLIENT_PREFIX = 'Piwi in ';
+
+/**
+ * "Piwi Picker in Chrome on Windows", or "Piwi in WebStorm on macOS" when an
+ * editor connects: the name the verification page shows and the created key carries.
+ */
+export function extensionClientName(client: { browser?: unknown; editor?: unknown; os?: unknown }): string {
   const os = clientWord(client.os, '');
-  return os ? `Piwi Picker in ${browser} on ${os}` : `Piwi Picker in ${browser}`;
+  const on = os ? ` on ${os}` : '';
+  if (client.editor !== undefined && client.editor !== null) {
+    return `${EDITOR_CLIENT_PREFIX}${clientWord(client.editor, 'an editor')}${on}`;
+  }
+  return `Piwi Picker in ${clientWord(client.browser, 'a browser')}${on}`;
+}
+
+/** Whether a request comes from Piwi Picker or from an editor, for the verification page's wording. */
+export function connectClientKind(clientName: string): 'picker' | 'editor' {
+  return clientName.startsWith(EDITOR_CLIENT_PREFIX) ? 'editor' : 'picker';
 }
 
 export interface StartedConnect {
@@ -92,7 +106,7 @@ export interface StartedConnect {
 /** Starts a connect request and deletes the ones expired for more than a day. */
 export async function startDeviceConnect(
   db: DbClient,
-  client: { browser?: unknown; os?: unknown },
+  client: { browser?: unknown; editor?: unknown; os?: unknown },
   now = new Date(),
 ): Promise<StartedConnect> {
   await db
@@ -138,6 +152,8 @@ async function findByUserCode(db: DbClient, userCode: unknown): Promise<Extensio
 export interface ConnectRequestView {
   userCode: string;
   clientName: string;
+  /** Who asked: Piwi Picker, or the Piwi extension of an editor. */
+  clientKind: 'picker' | 'editor';
   createdAt: string;
   expiresAt: string;
   /** `expired` once past its expiry without being collected; `consumed` once the extension received its key. */
@@ -157,6 +173,7 @@ export async function describeConnectRequest(
   return {
     userCode: formatUserCode(normalizeUserCode(userCode)!),
     clientName: row.clientName,
+    clientKind: connectClientKind(row.clientName),
     createdAt: row.createdAt.toISOString(),
     expiresAt: row.expiresAt.toISOString(),
     status: expired ? 'expired' : status,

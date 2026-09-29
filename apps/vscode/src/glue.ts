@@ -4,7 +4,7 @@
  * file patterns the service reads, and the MCP configuration editors without
  * the MCP provider API are given to paste.
  */
-import type { McpServerDefinition, RunStatusResult, StatusResult } from '@piwitests/editor/protocol';
+import type { ConnectionSource, McpServerDefinition, RunStatusResult, StatusResult } from '@piwitests/editor/protocol';
 
 /** The files the editor service reads: test and application code, and translations. */
 export const DOCUMENT_PATTERN =
@@ -44,17 +44,18 @@ export function statusBarView(status: StatusResult | null, runs: RunStatusResult
   }
   const run = runs?.contexts.find((c) => c.root === connected.root) ?? runs?.contexts[0];
   const where = `${connected.projectName ?? 'Piwi'}${run?.branch ? ` on ${run.branch}` : ''}`;
+  const from = connected.serverUrl ? `\n${connected.serverUrl}, from ${sourceLabel(connected.source)}` : '';
   if (!run?.run) {
     return {
       text: '$(beaker) Piwi: no run',
-      tooltip: `No run of ${where} yet`,
+      tooltip: `No run of ${where} yet${from}`,
       action: 'none',
       url: null,
       error: false,
     };
   }
   const r = run.run;
-  const tooltip = `Run #${r.id} of ${where}: ${r.passedTests} passed, ${r.failedTests} failed, ${r.flakyTests} flaky, ${r.skippedTests} skipped`;
+  const tooltip = `Run #${r.id} of ${where}: ${r.passedTests} passed, ${r.failedTests} failed, ${r.flakyTests} flaky, ${r.skippedTests} skipped${from}`;
   if (ACTIVE.has(r.status)) {
     const done = r.passedTests + r.failedTests + r.flakyTests + r.skippedTests;
     const failing = r.failedTests ? ` · ${r.failedTests} failing` : '';
@@ -87,6 +88,20 @@ export function statusBarView(status: StatusResult | null, runs: RunStatusResult
     url: r.url,
     error: false,
   };
+}
+
+/** Where the service found the instance: the settings come last. */
+export function sourceLabel(source: ConnectionSource | null | undefined): string {
+  switch (source) {
+    case 'environment':
+      return 'the environment (PIWI_DASHBOARD_URL)';
+    case 'dotenv':
+      return 'the workspace .env';
+    case 'desktop':
+      return 'the Piwi desktop app';
+    default:
+      return 'the Piwi settings';
+  }
 }
 
 /** A VS Code `mcp.json` holding Piwi's servers, for editors without the MCP provider API. */

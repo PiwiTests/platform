@@ -44,10 +44,23 @@ import {
 } from '@piwitests/editor/protocol';
 import type { EditorSendPayload } from '@piwitests/core/editor-send';
 import { formatPairing } from '@piwitests/core/editor-send';
-import { DOCUMENT_PATTERN, indentBlock, mcpConfiguration, statusBarView } from './glue';
+import {
+  API_KEY_SECRET_PREFIX,
+  InstanceError,
+  apiKeySecret,
+  listProjects,
+  needsKey,
+  normalizeServerUrl,
+  startSignIn,
+  waitForSignIn,
+  type ProjectItem,
+} from './connect';
+import { DOCUMENT_PATTERN, indentBlock, mcpConfiguration, sourceLabel, statusBarView } from './glue';
 import { startSendListener, type SendListener, type SendResult } from './send-listener';
 
-const SECRET_KEY = 'piwi.apiKey';
+/** The key every instance shared before keys were kept per instance; removed once. */
+const SHARED_SECRET_KEY = 'piwi.apiKey';
+const SHARED_KEY_FORGOTTEN = 'piwi.sharedKeyForgotten';
 const MCP_OFFERED = 'piwi.mcpOffered';
 const SEND_TOKEN = 'piwi.sendToken';
 const SEND_PORT = 'piwi.sendPort';
@@ -67,16 +80,29 @@ type McpHttpServerDefinitionClass = new (label: string, uri: vscode.Uri, headers
 let client: LanguageClient | null = null;
 let sendListener: SendListener | null = null;
 
+/** The connection saved in the editor: the workspace's instance and project, and that instance's key. */
 async function credentials(context: vscode.ExtensionContext): Promise<EditorCredentials> {
   const settings = vscode.workspace.getConfiguration('piwi');
+  const serverUrl = normalizeServerUrl(settings.get<string>('serverUrl')) ?? null;
   return {
-    serverUrl: settings.get<string>('serverUrl') || null,
+    serverUrl,
     project: settings.get<string>('project') || null,
-    apiKey: (await context.secrets.get(SECRET_KEY)) ?? null,
+    apiKey: serverUrl ? ((await context.secrets.get(apiKeySecret(serverUrl))) ?? null) : null,
   };
 }
 
+/**
+ * Earlier versions kept one key for every instance, which a workspace naming another
+ * instance would have sent there. It is removed once: connect again to save it per instance.
+ */
+async function forgetSharedKey(context: vscode.ExtensionContext): Promise<void> {
+  if (context.globalState.get(SHARED_KEY_FORGOTTEN)) return;
+  await context.secrets.delete(SHARED_SECRET_KEY);
+  await context.globalState.update(SHARED_KEY_FORGOTTEN, true);
+}
+
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
+  await forgetSharedKey(context);
   const serverModule = vscode.Uri.joinPath(context.extensionUri, 'dist', 'piwi-language-server.cjs').fsPath;
   const serverOptions: ServerOptions = {
     run: { module: serverModule, transport: TransportKind.stdio },
@@ -148,7 +174,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const activeUri = () => vscode.window.activeTextEditor?.document.uri.toString() ?? null;
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('piwi.connect', () => connect(context, lc)),
+    vscode.commands.registerCommand('piwi.connect', async () => {
+      if (await connect(context, lc)) await updateStatus();
+    }),
+    vscode.commands.registerCommand('piwi.disconnect', async () => {
+      if (await disconnect(context, lc)) await updateStatus();
+    }),
+    vscode.commands.registerCommand('piwi.openSettings', () =>
+      vscode.commands.executeCommand('workbench.action.openSettings', '@ext:piwitests.piwi'),
+    ),
     vscode.commands.registerCommand('piwi.refresh', async () => {
       await lc.sendRequest(REFRESH_REQUEST);
       await updateStatus();
@@ -261,7 +295,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         await lc.sendNotification(SET_CREDENTIALS_NOTIFICATION, await credentials(context));
     }),
     context.secrets.onDidChange(async (e) => {
-      if (e.key === SECRET_KEY) await lc.sendNotification(SET_CREDENTIALS_NOTIFICATION, await credentials(context));
+      if (e.key.startsWith(API_KEY_SECRET_PREFIX))
+        await lc.sendNotification(SET_CREDENTIALS_NOTIFICATION, await credentials(context));
     }),
   );
 
@@ -368,47 +403,167 @@ async function offerMcp(context: vscode.ExtensionContext, servers: McpServersRes
   if (choice) await vscode.commands.executeCommand('piwi.copyMcpConfiguration');
 }
 
-/** Piwi: Connect — the instance, the key (kept in the secret store) and the project. */
-async function connect(context: vscode.ExtensionContext, lc: LanguageClient): Promise<void> {
+/**
+ * Piwi: Connect — the instance, a key for it (signed in with the browser, or pasted; kept in
+ * the secret store under that instance), and the project. Returns whether it saved a connection.
+ */
+async function connect(context: vscode.ExtensionContext, lc: LanguageClient): Promise<boolean> {
   const settings = vscode.workspace.getConfiguration('piwi');
-  const serverUrl = await vscode.window.showInputBox({
-    title: 'Piwi: Connect (1/3)',
-    prompt: 'The Piwi instance',
+  const input = await vscode.window.showInputBox({
+    title: 'Piwi: Connect',
+    prompt: "The Piwi instance's address",
     value: settings.get<string>('serverUrl') || 'http://localhost:3000',
     ignoreFocusOut: true,
-    validateInput: (v) => (/^https?:\/\/\S+$/.test(v.trim()) ? null : 'An http(s) URL'),
+    validateInput: (v) => (normalizeServerUrl(v) ? null : 'An http(s) URL, such as https://piwi.example.com'),
   });
-  if (!serverUrl) return;
-  const base = serverUrl.trim().replace(/\/+$/, '');
-  const apiKey = await vscode.window.showInputBox({
-    title: 'Piwi: Connect (2/3)',
-    prompt: 'An API key (pd_…), from Settings → API keys. Leave empty when the instance has no login.',
+  const base = normalizeServerUrl(input);
+  if (!base) return false;
+  let apiKey: string | null = null;
+  let projects: ProjectItem[];
+  try {
+    const asks = await progress(`Piwi: reaching ${base}…`, () => needsKey(base));
+    if (asks) {
+      const how = await vscode.window.showQuickPick(
+        [
+          {
+            label: '$(globe) Sign in with the browser',
+            detail: 'Allow this editor on the instance; it creates an API key named after it.',
+            how: 'browser' as const,
+          },
+          {
+            label: '$(key) Paste an API key',
+            detail: "From the dashboard's Settings → API keys.",
+            how: 'paste' as const,
+          },
+        ],
+        { title: 'Piwi: Connect', placeHolder: `${base} asks for an API key`, ignoreFocusOut: true },
+      );
+      if (!how) return false;
+      apiKey = how.how === 'browser' ? await signIn(base) : await pasteKey();
+      if (!apiKey) return false;
+    }
+    projects = await progress(`Piwi: listing the projects of ${base}…`, () => listProjects(base, apiKey));
+  } catch (e) {
+    const reason =
+      e instanceof InstanceError && (e.status === 401 || e.status === 403)
+        ? `the instance refused the key (${e.status})`
+        : (e as Error).message;
+    void vscode.window.showErrorMessage(`Piwi: could not connect to ${base}: ${reason}`);
+    return false;
+  }
+  let project = '';
+  if (projects.length) {
+    const picked = await vscode.window.showQuickPick(
+      projects.map((p) => ({ label: p.name, description: `#${p.id}` })),
+      { title: 'Piwi: Connect', placeHolder: 'The project this workspace reports to', ignoreFocusOut: true },
+    );
+    if (!picked) return false;
+    project = picked.label;
+  }
+  await settings.update('serverUrl', base, vscode.ConfigurationTarget.Workspace);
+  await settings.update('project', project || undefined, vscode.ConfigurationTarget.Workspace);
+  if (apiKey) await context.secrets.store(apiKeySecret(base), apiKey);
+  else await context.secrets.delete(apiKeySecret(base));
+  await lc.sendNotification(SET_CREDENTIALS_NOTIFICATION, await credentials(context));
+  await lc.sendRequest(REFRESH_REQUEST).catch(() => null);
+  const status = await lc.sendRequest<StatusResult>(STATUS_REQUEST).catch(() => null);
+  const first = status?.contexts.find((c) => c.source && c.source !== 'editor' && c.serverUrl !== base);
+  if (first) {
+    void vscode.window.showWarningMessage(
+      `Piwi: saved, but ${sourceLabel(first.source)} names ${first.serverUrl}, which comes before the settings.`,
+    );
+  } else if (!project) {
+    void vscode.window.showInformationMessage(
+      `Piwi: ${base} has no project yet. Send a run with the Piwi reporter, then run Piwi: Connect again.`,
+    );
+  } else {
+    void vscode.window.showInformationMessage(`Piwi: connected to ${project} on ${base}.`);
+  }
+  return true;
+}
+
+/** Piwi: Disconnect — forget the workspace's instance and project, and the key saved for that instance. */
+async function disconnect(context: vscode.ExtensionContext, lc: LanguageClient): Promise<boolean> {
+  const settings = vscode.workspace.getConfiguration('piwi');
+  const serverUrl = normalizeServerUrl(settings.get<string>('serverUrl'));
+  if (!serverUrl) {
+    void vscode.window.showInformationMessage('Piwi: no instance is saved in the settings.');
+    return false;
+  }
+  const answer = await vscode.window.showWarningMessage(
+    `Piwi: forget ${serverUrl}, the project, and the API key saved for it?`,
+    { modal: true },
+    'Disconnect',
+  );
+  if (answer !== 'Disconnect') return false;
+  await context.secrets.delete(apiKeySecret(serverUrl));
+  await settings.update('serverUrl', undefined, vscode.ConfigurationTarget.Workspace);
+  await settings.update('project', undefined, vscode.ConfigurationTarget.Workspace);
+  await lc.sendNotification(SET_CREDENTIALS_NOTIFICATION, await credentials(context));
+  await lc.sendRequest(REFRESH_REQUEST).catch(() => null);
+  return true;
+}
+
+function progress<T>(title: string, task: () => Promise<T>): Promise<T> {
+  return Promise.resolve(vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title }, task));
+}
+
+async function pasteKey(): Promise<string | null> {
+  const key = await vscode.window.showInputBox({
+    title: 'Piwi: Connect',
+    prompt: "An API key (pd_…), from the dashboard's Settings → API keys",
     password: true,
     ignoreFocusOut: true,
   });
-  if (apiKey === undefined) return;
-  let projects: Array<{ id: number; name: string }> = [];
+  return key?.trim() || null;
+}
+
+/** The browser sign-in: the instance's page opens, the user allows this editor, and the key comes back. */
+async function signIn(base: string): Promise<string | null> {
+  let started;
   try {
-    const response = await fetch(`${base}/api/projects/menu`, {
-      headers: apiKey ? { 'X-API-Key': apiKey.trim() } : {},
-      signal: AbortSignal.timeout(15_000),
-    });
-    if (!response.ok) throw new Error(`the instance answered ${response.status}`);
-    projects = ((await response.json()) as { items?: Array<{ id: number; name: string }> }).items ?? [];
+    started = await progress('Piwi: starting the sign-in…', () =>
+      startSignIn(base, { editor: vscode.env.appName, os: osName() }),
+    );
   } catch (e) {
-    void vscode.window.showErrorMessage(`Piwi: could not list the projects of ${base}: ${(e as Error).message}`);
-    return;
+    if (!(e instanceof InstanceError && e.status === 404)) throw e;
+    void vscode.window.showInformationMessage('Piwi: this instance predates the browser sign-in; paste an API key.');
+    return pasteKey();
   }
-  const project = await vscode.window.showQuickPick(
-    projects.map((p) => ({ label: p.name, description: `#${p.id}` })),
-    { title: 'Piwi: Connect (3/3)', placeHolder: 'The project this workspace reports to', ignoreFocusOut: true },
+  await vscode.env.openExternal(vscode.Uri.parse(started.verificationUrl));
+  const result = await vscode.window.withProgress(
+    {
+      location: vscode.ProgressLocation.Notification,
+      title: `Piwi: allow the request in your browser. It shows the code ${started.userCode}.`,
+      cancellable: true,
+    },
+    async (_progress, token) => {
+      const cancel = new AbortController();
+      token.onCancellationRequested(() => cancel.abort());
+      return waitForSignIn(base, started, cancel.signal).catch((e: unknown) => {
+        if (cancel.signal.aborted) return null;
+        throw e;
+      });
+    },
   );
-  if (!project) return;
-  await settings.update('serverUrl', base, vscode.ConfigurationTarget.Workspace);
-  await settings.update('project', project.label, vscode.ConfigurationTarget.Workspace);
-  if (apiKey.trim()) await context.secrets.store(SECRET_KEY, apiKey.trim());
-  else await context.secrets.delete(SECRET_KEY);
-  await lc.sendNotification(SET_CREDENTIALS_NOTIFICATION, await credentials(context));
+  if (!result) return null;
+  if (result.status === 'approved' && result.apiKey) return result.apiKey;
+  void vscode.window.showInformationMessage(
+    result.status === 'denied'
+      ? 'Piwi: the request was denied in the browser.'
+      : 'Piwi: the request expired. Run Piwi: Connect again.',
+  );
+  return null;
+}
+
+function osName(): string {
+  return process.platform === 'darwin'
+    ? 'macOS'
+    : process.platform === 'win32'
+      ? 'Windows'
+      : process.platform === 'linux'
+        ? 'Linux'
+        : process.platform;
 }
 
 export async function deactivate(): Promise<void> {

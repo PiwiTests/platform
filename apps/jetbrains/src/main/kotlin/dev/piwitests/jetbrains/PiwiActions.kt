@@ -1,6 +1,5 @@
 package dev.piwitests.jetbrains
 
-import com.google.gson.Gson
 import com.intellij.ide.BrowserUtil
 import com.intellij.notification.NotificationAction
 import com.intellij.notification.NotificationGroupManager
@@ -12,69 +11,56 @@ import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.service
 import com.intellij.openapi.ide.CopyPasteManager
+import com.intellij.openapi.options.ShowSettingsUtil
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.guessProjectDir
 import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.openapi.vfs.VirtualFile
 import java.awt.datatransfer.StringSelection
-import java.net.URI
-import java.net.http.HttpClient
-import java.net.http.HttpRequest
-import java.net.http.HttpResponse
-import java.time.Duration
 
 private fun fileUri(file: VirtualFile): String = file.toNioPath().toUri().toString()
 
-/** Piwi: Connect — the instance, the key (kept in the IDE's password safe) and the project. */
+/** Piwi: Connect — the instance, a key for it (browser sign-in or pasted) and the project. */
 class ConnectAction : AnAction() {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
-        val settings = project.getService(PiwiSettings::class.java).state
-        val url = Messages.showInputDialog(
-            project, "The Piwi instance", "Piwi: Connect (1/3)", null,
-            settings.serverUrl.ifBlank { "http://localhost:3000" }, null,
-        )?.trim()?.trimEnd('/') ?: return
-        if (!url.matches(Regex("^https?://\\S+$"))) {
-            Messages.showErrorDialog(project, "An http(s) URL", "Piwi: Connect")
-            return
-        }
-        val key = Messages.showPasswordDialog(
-            project,
-            "An API key (pd_…), from Settings → API keys. Leave empty when the instance has no login.",
-            "Piwi: Connect (2/3)", null,
-        ) ?: return
-        ApplicationManager.getApplication().executeOnPooledThread {
-            val projects = try {
-                listProjects(url, key.trim())
-            } catch (ex: Exception) {
-                PiwiCommands.notify(project, "Could not list the projects of $url: ${ex.message}", NotificationType.ERROR)
-                return@executeOnPooledThread
-            }
-            ApplicationManager.getApplication().invokeLater {
-                JBPopupFactory.getInstance()
-                    .createPopupChooserBuilder(projects.map { it.name })
-                    .setTitle("Piwi: Connect (3/3) — the project this workspace reports to")
-                    .setItemChosenCallback { name ->
-                        project.service<PiwiProjectService>().saveCredentials(url, name, key.trim())
-                    }
-                    .createPopup()
-                    .showCenteredInCurrentWindow(project)
-            }
-        }
+        PiwiConnectFlow.run(project)
+    }
+}
+
+/** Piwi: Disconnect — forget this project's instance, project and the key saved for that instance. */
+class DisconnectAction : AnAction() {
+    override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+    override fun update(e: AnActionEvent) {
+        val project = e.project
+        e.presentation.isEnabled = project != null && project.service<PiwiProjectService>().settings().serverUrl.isNotBlank()
     }
 
-    private data class ProjectItem(val id: Int = 0, val name: String = "")
-    private data class Menu(val items: List<ProjectItem>? = null)
+    override fun actionPerformed(e: AnActionEvent) {
+        val project = e.project ?: return
+        val service = project.service<PiwiProjectService>()
+        val url = service.settings().serverUrl.ifBlank { return }
+        val answer = Messages.showYesNoDialog(
+            project,
+            "Forget $url, the project, and the API key saved for it?",
+            "Piwi: Disconnect",
+            null,
+        )
+        if (answer == Messages.YES) service.disconnect()
+    }
+}
 
-    private fun listProjects(url: String, key: String): List<ProjectItem> {
-        val request = HttpRequest.newBuilder(URI("$url/api/projects/menu")).timeout(Duration.ofSeconds(15)).GET()
-        if (key.isNotEmpty()) request.header("X-API-Key", key)
-        val response = HttpClient.newHttpClient().send(request.build(), HttpResponse.BodyHandlers.ofString())
-        if (response.statusCode() !in 200..299) throw IllegalStateException("the instance answered ${response.statusCode()}")
-        return Gson().fromJson(response.body(), Menu::class.java).items.orEmpty()
+/** Piwi: Settings… — **Settings → Tools → Piwi**. */
+class OpenSettingsAction : AnAction() {
+    override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+    override fun actionPerformed(e: AnActionEvent) {
+        val project = e.project ?: return
+        ShowSettingsUtil.getInstance().showSettingsDialog(project, PiwiConfigurable::class.java)
     }
 }
 

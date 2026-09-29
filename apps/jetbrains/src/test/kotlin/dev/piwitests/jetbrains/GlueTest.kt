@@ -6,7 +6,10 @@ import org.junit.Test
 
 class GlueTest {
     private val connected = StatusResult(
-        listOf(ContextStatus(root = "/w", connected = true, serverUrl = "http://piwi", projectId = 7, projectName = "Acme")),
+        listOf(ContextStatus(
+            root = "/w", connected = true, serverUrl = "http://piwi", source = "dotenv", projectId = 7, projectName = "Acme",
+            branch = "main",
+        )),
     )
 
     private fun runs(run: RunInfo?) = RunStatusResult(listOf(RunStatus(root = "/w", branch = "feature/pay", run = run)))
@@ -16,6 +19,14 @@ class GlueTest {
     )
 
     @Test
+    fun `before the service starts, says when it will and leads to the settings`() {
+        val view = Glue.statusView(null, null)
+        assertEquals("Piwi", view.text)
+        assertEquals(Glue.StatusAction.SETTINGS, view.action)
+        assertEquals(Glue.NOT_STARTED, Glue.connectionSummary(null))
+    }
+
+    @Test
     fun `without a Playwright config, says so`() {
         assertEquals("Piwi", Glue.statusView(StatusResult(emptyList()), null).text)
     }
@@ -23,7 +34,7 @@ class GlueTest {
     @Test
     fun `when not connected, offers Connect with the reason`() {
         val view = Glue.statusView(StatusResult(listOf(ContextStatus(root = "/w", problem = "No project chosen."))), null)
-        assertEquals(Glue.StatusView("Piwi: connect", "No project chosen.", null, true), view)
+        assertEquals(Glue.StatusView("Piwi: connect", "No project chosen.", null, Glue.StatusAction.CONNECT), view)
     }
 
     @Test
@@ -31,9 +42,9 @@ class GlueTest {
         assertEquals(
             Glue.StatusView(
                 "Piwi: 118 passed · 2 flaky",
-                "Run #41 of Acme on feature/pay: 118 passed, 0 failed, 2 flaky, 0 skipped",
+                "Run #41 of Acme on feature/pay: 118 passed, 0 failed, 2 flaky, 0 skipped\nhttp://piwi, from the workspace .env",
                 "http://piwi/test-runs/41",
-                false,
+                Glue.StatusAction.OPEN,
             ),
             Glue.statusView(connected, runs(passed)),
         )
@@ -48,6 +59,27 @@ class GlueTest {
         )
         assertEquals("Piwi: interrupted", Glue.statusView(connected, runs(passed.copy(status = "interrupted"))).text)
         assertEquals("Piwi: no run", Glue.statusView(connected, runs(null)).text)
+    }
+
+    @Test
+    fun `the connection in one sentence, with where it came from`() {
+        assertEquals("Connected to Acme on main at http://piwi, from the workspace .env.", Glue.connectionSummary(connected))
+        assertEquals(
+            "Not connected. No project chosen.",
+            Glue.connectionSummary(StatusResult(listOf(ContextStatus(root = "/w", problem = "No project chosen.")))),
+        )
+        assertEquals("the environment (PIWI_DASHBOARD_URL)", Glue.sourceLabel("environment"))
+        assertEquals("Settings → Tools → Piwi", Glue.sourceLabel("editor"))
+    }
+
+    @Test
+    fun `an instance URL is stored trimmed, and its key is kept under it`() {
+        assertEquals("https://piwi.corp", Glue.normalizeServerUrl("  https://piwi.corp//  "))
+        assertEquals("http://localhost:3000/piwi", Glue.normalizeServerUrl("http://localhost:3000/piwi/"))
+        assertEquals(null, Glue.normalizeServerUrl("piwi.corp"))
+        assertEquals(null, Glue.normalizeServerUrl("ftp://piwi.corp"))
+        assertEquals(null, Glue.normalizeServerUrl("https://"))
+        assertEquals("apiKey https://piwi.corp", Glue.apiKeyEntry("https://piwi.corp/"))
     }
 
     @Test

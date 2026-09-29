@@ -86,6 +86,8 @@ export interface RunCommandArgs {
   command: string;
 }
 
+export type ConnectionSource = 'environment' | 'dotenv' | 'desktop' | 'editor';
+
 /** `piwi/status`: what the service is connected to, per workspace context. */
 export interface StatusResult {
   contexts: Array<{
@@ -93,6 +95,11 @@ export interface StatusResult {
     root: string;
     connected: boolean;
     serverUrl: string | null;
+    /**
+     * Where `serverUrl` came from, in the fixed order: the environment, the
+     * workspace `.env`, the desktop app, or the editor's own settings.
+     */
+    source: ConnectionSource | null;
     projectId: number | null;
     projectName: string | null;
     branch: string | null;

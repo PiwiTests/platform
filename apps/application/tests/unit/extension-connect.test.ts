@@ -16,6 +16,7 @@ const {
   describeConnectRequest,
   normalizeUserCode,
   generateUserCode,
+  connectClientKind,
   extensionClientName,
   DEVICE_CODE_TTL_MS,
   DEFAULT_POLL_INTERVAL_SECONDS,
@@ -67,6 +68,14 @@ describe('codes', () => {
     expect(extensionClientName({ browser: '<b>Edge</b>', os: 'macOS' })).toBe('Piwi Picker in bEdgeb on macOS');
     expect(extensionClientName({})).toBe('Piwi Picker in a browser');
     expect(extensionClientName({ browser: 'x'.repeat(100) }).length).toBeLessThanOrEqual('Piwi Picker in '.length + 40);
+  });
+
+  test('an editor is named after itself, and read back as an editor', () => {
+    expect(extensionClientName({ editor: 'VS Code', os: 'macOS' })).toBe('Piwi in VS Code on macOS');
+    expect(extensionClientName({ editor: 'Rider' })).toBe('Piwi in Rider');
+    expect(extensionClientName({ editor: '' })).toBe('Piwi in an editor');
+    expect(connectClientKind('Piwi in VS Code on macOS')).toBe('editor');
+    expect(connectClientKind('Piwi Picker in Chrome on Windows')).toBe('picker');
   });
 
   test('only the hashes of both codes are stored', async () => {
