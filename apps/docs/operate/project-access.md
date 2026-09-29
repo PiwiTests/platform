@@ -24,9 +24,9 @@ What scoping affects for a non-admin user:
   **global** access: a per-project reporter can't invent projects.
 
 > **Default is no access.** A freshly created Reporter or User has no assignments and sees an empty dashboard until you
-> grant some, and so does an account whose last project you revoke. (Once, on a database with no assignments yet,
-> existing Reporter and User accounts are given global access, so upgrading from a version without project access
-> changes nothing for them.)
+> grant some, and so does an account whose last project you revoke. (Only the upgrade that adds project access to a
+> database gives its existing Reporter and User accounts global access, so upgrading from a version without project
+> access changes nothing for them.)
 
 ## Managing assignments
 

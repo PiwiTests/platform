@@ -352,6 +352,8 @@ export interface MigrationTarget {
   dialect: Dialect;
   /** Rows of `__drizzle_migrations`; empty on a fresh database. */
   readApplied(): Promise<AppliedMigration[]>;
+  /** Whether an application table exists; read before `migrate` to tell what this run creates. */
+  tableExists(table: string): Promise<boolean>;
   /** Run the Drizzle migrator. */
   migrate(): Promise<void>;
   /** Run `work` in one transaction, rolled back if it throws. */
