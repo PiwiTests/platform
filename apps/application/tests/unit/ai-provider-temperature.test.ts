@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildOpenAiBody, type OpenAiAttempt } from '../../server/utils/ai-provider';
+import { parseEnvTemperature, rolesFromLegacy } from '../../server/utils/ai-settings';
 import type { ResolvedAiRole, AiCallOptions } from '~~/types/api';
 
 function role(temperature: number | null): ResolvedAiRole {
@@ -23,5 +24,34 @@ describe('buildOpenAiBody temperature', () => {
   it('sends an explicit 0 when configured (a valid value for non-reasoning models)', () => {
     const body = buildOpenAiBody(role(0), opts, attempt);
     expect(body.temperature).toBe(0);
+  });
+});
+
+describe('parseEnvTemperature', () => {
+  it('reads a string or a number, including an explicit 0', () => {
+    expect(parseEnvTemperature('0.3')).toBe(0.3);
+    expect(parseEnvTemperature(0.3)).toBe(0.3);
+    expect(parseEnvTemperature('0')).toBe(0);
+    expect(parseEnvTemperature(0)).toBe(0);
+  });
+
+  it('is undefined when unset, empty or not a number', () => {
+    expect(parseEnvTemperature(undefined)).toBeUndefined();
+    expect(parseEnvTemperature(null)).toBeUndefined();
+    expect(parseEnvTemperature('')).toBeUndefined();
+    expect(parseEnvTemperature('warm')).toBeUndefined();
+  });
+
+  it('keeps an explicit 0 on the roles built from the runtime config', () => {
+    const roles = rolesFromLegacy({
+      provider: 'openai',
+      model: 'gpt-test',
+      temperature: 0,
+      researchModel: 'research-model',
+      researchTemperature: 0.5,
+    });
+
+    expect(roles.diagnosis?.temperature).toBe(0);
+    expect(roles.research?.temperature).toBe(0.5);
   });
 });

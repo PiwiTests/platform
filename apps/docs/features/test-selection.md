@@ -42,8 +42,8 @@ flags shape a resolution:
   so a `--require-selection` gate still sees the whole set.
 - `--budget 5m` caps the total time for this resolution.
 
-Jobs split with `piwi run --shard` are not merged into one run, so `--require-selection` sees one job's share. Every
-flag and the output formats are in the [CLI reference](/reference/cli#select-run).
+`piwi run --shard` jobs merge into one run that still covers the whole selection. Every flag and the output formats are
+in the [CLI reference](/reference/cli#select-run).
 
 ## Built-in selections
 

@@ -675,8 +675,8 @@ async function captureProjectDeleteProgress(page, capture) {
 }
 
 /**
- * Classifies project 1's flaky tests. No frontend code calls flaky-classify, so
- * the root cause reads "—" for every row until something asks for one.
+ * Classifies project 1's flaky tests from their recorded failures, so every row
+ * shows the root cause the classifier derives rather than the seeded label.
  */
 async function classifyFlakyTests({ base, request }) {
   const flaky = await (await request.get(`${base}/api/projects/1/flaky-tests`)).json();

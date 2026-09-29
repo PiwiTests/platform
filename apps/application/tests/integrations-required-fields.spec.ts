@@ -478,6 +478,17 @@ test.describe.serial('Integrations — the fields Jira requires', () => {
       .toEqual({ transition: 'Done', fields: { resolution: { value: { id: '1' }, label: 'Fixed' } } });
   });
 
+  test('the project settings offer only the ticket contents Piwi builds', async ({ page }) => {
+    await page.goto(`/projects/${projectId}?tab=settings`);
+    const binding = page.locator('[data-shot="project-integration-binding"]');
+    await expect(binding.getByText('What the ticket carries')).toBeVisible({ timeout: 30_000 });
+
+    for (const name of ['Diagnosis', 'Suggested patch', 'Shareable report link']) {
+      await expect(binding.getByRole('switch', { name })).toBeVisible();
+    }
+    await expect(binding.getByRole('switch', { name: /screenshot/i })).toHaveCount(0);
+  });
+
   test('a verified fix moves the issue with that resolution', async ({ request }) => {
     await passTest(request, 'dialog');
     await expect

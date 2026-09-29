@@ -1,5 +1,6 @@
-import { test, expect } from 'vitest';
-import { buildRetryCommand } from '#shared/retry-command';
+import { execFileSync } from 'node:child_process';
+import { describe, test, expect } from 'vitest';
+import { buildRetryCommand, buildTitleGrepFlag } from '#shared/retry-command';
 
 const sampleCases = [
   { filePath: 'tests/login.spec.ts', title: 'should login', line: 10, projectName: 'chromium' },
@@ -88,4 +89,62 @@ test('no project name', () => {
   const noProject = [{ filePath: 'tests/bar.spec.ts', title: 'bar test', line: 5, projectName: null }];
   const cmd = buildRetryCommand(noProject);
   expect(cmd).not.toContain('--project=');
+});
+
+describe('buildTitleGrepFlag', () => {
+  test('no titles, no flag', () => {
+    expect(buildTitleGrepFlag([])).toBe('');
+  });
+
+  test('joins plain titles with an alternation', () => {
+    expect(buildTitleGrepFlag(['should login', 'should logout'])).toBe(' -g "should login|should logout"');
+  });
+
+  test('escapes regex metacharacters in each title', () => {
+    expect(buildTitleGrepFlag(['click .button (plus?)', 'list [a] + *b'])).toBe(
+      ' -g "click \\\\.button \\\\(plus\\\\?\\\\)|list \\\\[a\\\\] \\\\+ \\\\*b"',
+    );
+  });
+
+  test('escapes the characters a double-quoted shell argument treats specially', () => {
+    expect(buildTitleGrepFlag(['say "hi"', 'cost `5`'])).toBe(' -g "say \\"hi\\"|cost \\`5\\`"');
+  });
+
+  describe.skipIf(process.platform === 'win32')('through a POSIX shell', () => {
+    const titles = [
+      'Users (admin) [beta] v1.2',
+      'adds 1 + 1 = 2? *yes*',
+      'price is $5 or ${x}',
+      'say "hi" and \'bye\'',
+      'back\\slash `tick` | pipe ^caret',
+    ];
+
+    function shellArguments(flag: string): string[] {
+      const out = execFileSync('sh', ['-c', `printf '%s\\n'${flag}`], { encoding: 'utf8' });
+      return out.split('\n').slice(0, -1);
+    }
+
+    test.each(titles)('the shell hands Playwright a regex that matches only %s', (title) => {
+      const [flag, pattern] = shellArguments(buildTitleGrepFlag([title]));
+      expect(flag).toBe('-g');
+      const regex = new RegExp(pattern!);
+      expect(regex.test(title)).toBe(true);
+      expect(regex.test(title.replace(/[^A-Za-z0-9 ]/, 'Z'))).toBe(false);
+    });
+
+    test('a dot, a star and a bracket in a title match only themselves', () => {
+      const [, pattern] = shellArguments(buildTitleGrepFlag(['v1.2 [a]*']));
+      const regex = new RegExp(pattern!);
+      expect(regex.test('v1.2 [a]*')).toBe(true);
+      expect(regex.test('v1X2 [a]*')).toBe(false);
+      expect(regex.test('v1.2 a')).toBe(false);
+    });
+
+    test('several titles become one alternation that matches each of them', () => {
+      const [, pattern] = shellArguments(buildTitleGrepFlag(titles));
+      const regex = new RegExp(pattern!);
+      for (const title of titles) expect(regex.test(title)).toBe(true);
+      expect(regex.test('an unrelated title')).toBe(false);
+    });
+  });
 });

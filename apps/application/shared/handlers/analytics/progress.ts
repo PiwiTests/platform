@@ -98,9 +98,9 @@ export async function getAnalyticsProgress(
       .from(healActions)
       .where(
         and(
-          eq(healActions.status, 'opened'),
-          gte(healActions.updatedAt, from),
-          lt(healActions.updatedAt, to),
+          inArray(healActions.status, ['opened', 'merged', 'closed']),
+          gte(healActions.createdAt, from),
+          lt(healActions.createdAt, to),
           projectCondition(ctx, healActions.projectId),
         ),
       ) as Promise<{ n: number }[]>,

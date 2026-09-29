@@ -9,13 +9,14 @@ import {
 import { resolveAiConfig } from '../../../../utils/ai-provider';
 import type { AiAttachedImage } from '../../../../utils/ai-provider';
 import { streamClusterDiagnosis, isDiagnosisRunning, isDiagnosisStale } from '../../../../utils/ai-diagnosis';
+import { diagnosisFrame } from '../../../../utils/diagnosis-stream-frames';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Failure Clusters'],
     summary: 'Run AI diagnosis with streaming response',
     description:
-      'Triggers an AI-powered diagnosis for the specified failure cluster and returns the result as a Server-Sent Events stream. Text tokens are pushed as `event: thinking` chunks; the final structured result arrives as `event: result`.',
+      'Triggers an AI-powered diagnosis for the specified failure cluster and returns the result as a Server-Sent Events stream. `event: stage` marks the start of each pipeline stage (`research`, only when a distinct research model is configured, then `diagnosis`); text tokens are pushed as `event: thinking` chunks; the final structured result arrives as `event: result`, and a failure as `event: error`.',
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
       {
@@ -89,11 +90,10 @@ export default eventHandler(async (event) => {
           'X-Accel-Buffering': 'no',
         });
         const encoder = new TextEncoder();
-        const existingData = JSON.stringify(existing);
         return new Response(
           new ReadableStream({
             start(controller) {
-              controller.enqueue(encoder.encode(`event: result\ndata: ${existingData}\n\n`));
+              controller.enqueue(encoder.encode(diagnosisFrame.result(existing)));
               controller.close();
             },
           }),
@@ -127,6 +127,15 @@ export default eventHandler(async (event) => {
 
   const stream = new ReadableStream({
     async start(controller) {
+      const send = (frame: string) => {
+        if (clientDisconnected) return;
+        try {
+          controller.enqueue(encoder.encode(frame));
+        } catch {
+          // Stream closed — ignore
+        }
+      };
+
       try {
         await streamClusterDiagnosis(db, cluster, config, {
           additionalContext: body?.additionalContext,
@@ -134,30 +143,18 @@ export default eventHandler(async (event) => {
           baseCommit: body?.baseCommit,
           selectedCommitShas: body?.selectedCommitShas,
           testRunsCaseId: isExecutionScope ? body!.executionId : undefined,
+          onStage: (stage) => send(diagnosisFrame.stage(stage)),
           onChunk: (chunk) => {
-            if (clientDisconnected) return;
-            try {
-              if (chunk.type === 'text') {
-                controller.enqueue(
-                  encoder.encode(`event: thinking\ndata: ${JSON.stringify({ text: chunk.data })}\n\n`),
-                );
-              } else if (chunk.type === 'done') {
-                controller.enqueue(encoder.encode(`event: result\ndata: ${JSON.stringify(chunk.data)}\n\n`));
-              } else if (chunk.type === 'error') {
-                controller.enqueue(
-                  encoder.encode(`event: error\ndata: ${JSON.stringify({ message: String(chunk.data) })}\n\n`),
-                );
-              }
-            } catch {
-              // Stream closed — ignore
-            }
+            if (chunk.type === 'text') send(diagnosisFrame.thinking(String(chunk.data)));
+            else if (chunk.type === 'done') send(diagnosisFrame.result(chunk.data));
+            else if (chunk.type === 'error') send(diagnosisFrame.error(String(chunk.data)));
           },
         });
       } catch (err) {
         if (clientDisconnected) return;
         try {
           const msg = err instanceof Error ? err.message : String(err);
-          controller.enqueue(encoder.encode(`event: error\ndata: ${JSON.stringify({ message: msg })}\n\n`));
+          controller.enqueue(encoder.encode(diagnosisFrame.error(msg)));
         } catch {
           // Stream closed
         }

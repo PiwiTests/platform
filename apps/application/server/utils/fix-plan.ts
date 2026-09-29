@@ -23,7 +23,7 @@ import { findFixedBefore } from './cluster-memory';
 import { getClusterKnownIssue } from './integrations/known-issue';
 import { validatePatch, type PatchValidation } from '#shared/patch';
 import { parseCallsiteLocation } from '#shared/callsite-location';
-import { buildRetryCommand } from '#shared/retry-command';
+import { buildRetryCommand, buildTitleGrepFlag } from '#shared/retry-command';
 import { computeReproduceContext } from '#shared/handlers/reproduce';
 import type { FixPlan, FixPlanEdit } from '#shared/fix-plan.types';
 import type { DrizzleDB } from '#shared/handlers/db';
@@ -33,11 +33,6 @@ export type { FixPlan, FixPlanEdit } from '#shared/fix-plan.types';
 
 /** Executions inspected for locator suggestions — enough to cover a cluster. */
 const MAX_HEALED_CASES = 5;
-
-/** Shell-quote a title for `-g`, since test titles routinely contain spaces. */
-function quote(value: string): string {
-  return `"${value.replace(/(["\\$`])/g, '\\$1')}"`;
-}
 
 /**
  * Build the plan for a cluster, or `null` when the cluster does not exist.
@@ -145,8 +140,7 @@ export async function buildFixPlan(db: DrizzleDB, clusterId: number): Promise<Fi
     failingTests.map((test) => ({ filePath: test.filePath, title: test.title })),
     { mode: 'file' },
   );
-  const titles = failingTests.slice(0, 5).map((test) => test.title);
-  const grep = titles.length ? ` -g ${quote(titles.join('|'))}` : '';
+  const grep = buildTitleGrepFlag(failingTests.slice(0, 5).map((test) => test.title));
   const verifyCommand = `${fileCmd || 'npx playwright test'}${grep}`;
 
   // Reproduce locally and bisect the regression window: the checkout of the

@@ -2042,7 +2042,7 @@
     "description": "Test functions: shown instead of the list when no project applies to the page. “Project mappings” is a section of the settings page (options_mappingsHeading)."
   },
   "functions_empty": {
-    "message": "$project$ has no test functions yet. Add one in the Piwi dashboard, or create one from a recording.",
+    "message": "$project$ has no test functions yet. Add one in the Piwi dashboard, by hand or by pasting a function’s code.",
     "description": "Test functions: shown instead of the list when the project’s catalog is empty. $project$ is the project’s name.",
     "placeholders": {
       "project": {

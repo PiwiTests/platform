@@ -417,6 +417,24 @@ export function notificationTargetPath(event: NotificationEvent, payload: Notifi
   return runId ? `/test-runs/${runId}` : null;
 }
 
+/** What a `cluster.fixed` / `cluster.regressed` verdict says: its headline, and the triage change it made, if any. */
+export function clusterOutcome(
+  event: 'cluster.fixed' | 'cluster.regressed',
+  payload: ClusterFixedPayload | ClusterRegressedPayload,
+): { headline: string; triageNote: string | null } {
+  if (event === 'cluster.fixed') {
+    const p = payload as ClusterFixedPayload;
+    return {
+      headline: p.verification === 'diagnosis-verified' ? 'Diagnosis verified' : 'Cluster stopped failing',
+      triageNote: p.resolved ? 'Triage status set to resolved.' : null,
+    };
+  }
+  return {
+    headline: 'Fix regressed',
+    triageNote: (payload as ClusterRegressedPayload).reopened ? 'Triage status set back to open.' : null,
+  };
+}
+
 /** Subject / title line for each event type. */
 export function renderEventSubject(event: NotificationEvent, payload: NotificationPayload): string {
   switch (event) {
@@ -430,14 +448,10 @@ export function renderEventSubject(event: NotificationEvent, payload: Notificati
       const p = payload as ClusterNewPayload;
       return `New failure cluster — ${p.projectName}`;
     }
-    case 'cluster.fixed': {
-      const p = payload as ClusterFixedPayload;
-      const what = p.verification === 'diagnosis-verified' ? 'Diagnosis verified' : 'Cluster stopped failing';
-      return `${what} — ${p.projectName}`;
-    }
+    case 'cluster.fixed':
     case 'cluster.regressed': {
-      const p = payload as ClusterRegressedPayload;
-      return `Fix regressed — ${p.projectName}`;
+      const p = payload as ClusterFixedPayload | ClusterRegressedPayload;
+      return `${clusterOutcome(event, p).headline} — ${p.projectName}`;
     }
     case 'flakiness.spike': {
       const p = payload as RunFinishedPayload;

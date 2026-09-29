@@ -1,5 +1,6 @@
 import { describe, test, expect } from 'vitest';
 import {
+  clusterOutcome,
   renderEventSubject,
   notificationTargetPath,
   buildNotificationDedupeKey,
@@ -58,6 +59,20 @@ describe('renderEventSubject', () => {
       'Cluster stopped failing — my-project',
     );
     expect(renderEventSubject('cluster.regressed', { ...base, fixLandedRunId: 7 })).toBe('Fix regressed — my-project');
+  });
+
+  test('clusterOutcome names the triage change a verdict made, when it made one', () => {
+    const base = { clusterId: 5, projectId: 2, projectName: 'my-project', signature: 'sig', runId: 9 };
+    const fixed = { ...base, verification: 'stopped-failing' as const };
+    expect(clusterOutcome('cluster.fixed', fixed)).toEqual({ headline: 'Cluster stopped failing', triageNote: null });
+    expect(clusterOutcome('cluster.fixed', { ...fixed, resolved: true }).triageNote).toBe(
+      'Triage status set to resolved.',
+    );
+    const regressed = { ...base, fixLandedRunId: 7 };
+    expect(clusterOutcome('cluster.regressed', regressed)).toEqual({ headline: 'Fix regressed', triageNote: null });
+    expect(clusterOutcome('cluster.regressed', { ...regressed, reopened: true }).triageNote).toBe(
+      'Triage status set back to open.',
+    );
   });
 
   test('cluster.fixed and cluster.regressed link to the cluster and dedupe per cluster and run', () => {

@@ -66,7 +66,7 @@ A dashboard link opened in your browser opens in the app instead.
 **Projects → New project → Choose folder…** creates a project from a checkout on this machine. The app detects the
 name it would report under and checks the setup (a Playwright config, Playwright installed, the reporter wired in);
 anything missing is a warning, and `npx @piwitests/reporter init` in the folder fixes it. The link to the folder
-stays on this machine, under **project page → Edit → Local folder**, with the same checks and **Change** and
+stays on this machine, under **project page → Settings → Local folder**, with the same checks and **Change** and
 **Unlink**. Linking a folder offers to import the runs already in its `blob-report/` and `test-results/` folders, and
 [Open in IDE](/features/ide-integration) resolves source links against it when no workspace root is set.
 

@@ -8,6 +8,7 @@ import {
 } from '../database/schema';
 import type { FailureDiagnosis, FailureCluster } from '../database/schema';
 import { DIAGNOSIS_JSON_SCHEMA, parseDiagnosisJson } from '#shared/ai-diagnosis';
+import type { DiagnosisStage } from '#shared/ai-diagnosis';
 import { validatePatch } from '#shared/patch';
 import type { BuiltDiagnosisContext } from './ai-context.types';
 import type { AiConfig } from '~~/types/api';
@@ -164,6 +165,8 @@ interface DiagnosisRunOpts {
   testRunsCaseId?: number;
   /** Streaming only: receives thinking chunks, then the final `done`/`error` chunk. */
   onChunk?: (chunk: StreamChunk) => void;
+  /** Streaming only: receives each pipeline stage as it starts. */
+  onStage?: (stage: DiagnosisStage) => void;
 }
 
 type PipelineStage = {
@@ -314,6 +317,7 @@ async function prepareDiagnosisInputs(
   let ctx = await buildCtx(useResearch);
   let researchBlock = '';
   if (useResearch) {
+    opts.onStage?.('research');
     try {
       const researchLang = languageInstruction(await resolveProjectAiLanguage(db, cluster.projectId));
       const research = await callAiProvider(researchConfig!, {
@@ -537,6 +541,8 @@ export async function streamClusterDiagnosis(
     try {
       const { ctx, userContent, images } = await prepareDiagnosisInputs(db, cluster, config, opts, pipeline);
 
+      opts.onStage?.('diagnosis');
+
       let accumulatedText = '';
       let streamModel = config.model;
       let streamInputTokens: number | null = null;
@@ -602,6 +608,19 @@ export async function streamClusterDiagnosis(
 const CLUE_STRENGTH_PRIORITY: Record<string, number> = { none: 0, weak: 1, medium: 2, strong: 3 };
 
 /**
+ * A cluster needs an auto-diagnosis unless a diagnosis is running in this
+ * process or its stored one is completed or still in progress. A failed or a
+ * stale running one is retried.
+ */
+async function needsAutoDiagnosis(db: DbClient, clusterId: number): Promise<boolean> {
+  if (running.has(`cluster:${clusterId}`)) return false;
+  const [existing] = await db.select().from(failureDiagnoses).where(eq(failureDiagnoses.clusterId, clusterId)).limit(1);
+  if (!existing) return true;
+  if (existing.status === 'completed') return false;
+  return !(existing.status === 'running' && !isDiagnosisStale(existing));
+}
+
+/**
  * Order the auto-diagnose candidates so the budget lands on the failures that
  * need the model most: weakest top clue first (a failure with no deterministic
  * clue is the one worth spending tokens on), then the newest cluster. Capped to
@@ -644,6 +663,24 @@ async function orderClustersByWeakestClue(
   return chosen.map((c) => c.cluster);
 }
 
+/**
+ * The clusters a finished run auto-diagnoses: those without a completed or
+ * running diagnosis, ranked and capped to the budget. Clusters that need
+ * nothing are dropped first so they never take a slot.
+ */
+export async function selectAutoDiagnoseClusters(
+  db: DbClient,
+  candidates: FailureCluster[],
+  runId: number,
+): Promise<FailureCluster[]> {
+  const needed = await Promise.all(candidates.map((cluster) => needsAutoDiagnosis(db, cluster.id)));
+  return orderClustersByWeakestClue(
+    db,
+    candidates.filter((_, i) => needed[i]),
+    runId,
+  );
+}
+
 export async function autoDiagnoseRun(db: DbClient, projectId: number, runId: number): Promise<void> {
   const config = await resolveAiConfig(db);
 
@@ -676,12 +713,13 @@ export async function autoDiagnoseRun(db: DbClient, projectId: number, runId: nu
 
   // Diagnose every cluster that surfaced in THIS run (not only clusters first seen
   // in it) that doesn't already have a fresh diagnosis, so a known cluster that
-  // regresses after going undiagnosed is still picked up. The budget is spent
-  // where it buys the most: candidates are ordered by their representative
-  // failing execution's top clue — the failures with no deterministic clue (the
-  // ones the model has to reason about from scratch) come first, then the
-  // weakest clues, and only then failures a strong clue already explains — with
-  // the newest cluster breaking ties. Capped by a configurable budget (default 3).
+  // regresses after going undiagnosed is still picked up. Clusters that already
+  // have one never take a budget slot. The budget is spent where it buys the
+  // most: candidates are ordered by their representative failing execution's top
+  // clue — the failures with no deterministic clue (the ones the model has to
+  // reason about from scratch) come first, then the weakest clues, and only then
+  // failures a strong clue already explains — with the newest cluster breaking
+  // ties. Capped by a configurable budget (default 3).
   const clusterIdRows = await db
     .selectDistinct({ id: testRunsCases.failureClusterId })
     .from(testRunsCases)
@@ -695,25 +733,12 @@ export async function autoDiagnoseRun(db: DbClient, projectId: number, runId: nu
     .where(and(eq(failureClusters.projectId, projectId), inArray(failureClusters.id, clusterIds)))
     .orderBy(desc(failureClusters.firstSeenRunId));
 
-  const clusters = await orderClustersByWeakestClue(db, candidates, runId);
+  const clusters = await selectAutoDiagnoseClusters(db, candidates, runId);
 
   for (const cluster of clusters) {
     try {
-      const existingRows = await db
-        .select()
-        .from(failureDiagnoses)
-        .where(eq(failureDiagnoses.clusterId, cluster.id))
-        .limit(1);
-
-      const existing = existingRows[0];
-      if (
-        existing &&
-        (existing.status === 'completed' || (existing.status === 'running' && !isDiagnosisStale(existing)))
-      ) {
-        continue;
-      }
-
-      if (running.has(`cluster:${cluster.id}`)) continue;
+      // Diagnoses run one after another, so one may have started meanwhile.
+      if (!(await needsAutoDiagnosis(db, cluster.id))) continue;
 
       await runClusterDiagnosis(db, cluster, config);
     } catch (e) {

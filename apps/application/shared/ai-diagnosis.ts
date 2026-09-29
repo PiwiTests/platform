@@ -14,6 +14,9 @@ export type DiagnosisConfidence = (typeof DIAGNOSIS_CONFIDENCES)[number];
 export const DIAGNOSIS_SEVERITIES = ['blocker', 'high', 'medium', 'low'] as const;
 export type DiagnosisSeverity = (typeof DIAGNOSIS_SEVERITIES)[number];
 
+/** The phases of a streaming diagnosis; `research` runs only when a distinct research model is configured. */
+export type DiagnosisStage = 'research' | 'diagnosis';
+
 /**
  * One candidate root cause. The model ranks several of these by `likelihood`
  * so the UI can surface alternatives instead of collapsing to a single verdict.

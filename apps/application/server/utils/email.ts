@@ -1,8 +1,16 @@
 import nodemailer from 'nodemailer';
 import type { Transporter } from 'nodemailer';
 import { STATUS_COLORS } from '#shared/status-colors';
-import { renderEventSubject, notificationTargetPath, failureTargetPath } from '#shared/notification-events';
+import {
+  clusterOutcome,
+  renderEventSubject,
+  notificationTargetPath,
+  failureTargetPath,
+} from '#shared/notification-events';
 import type {
+  ClusterFixedPayload,
+  ClusterNewPayload,
+  ClusterRegressedPayload,
   NotificationEvent,
   NotificationPayload,
   RunFinishedPayload,
@@ -115,7 +123,7 @@ const PASSED_COLOR = STATUS_COLORS.passed.text;
 const FAILED_COLOR = STATUS_COLORS.failed.text;
 
 function emailLayout(title: string, body: string): { html: string; text: string } {
-  return { html: layoutEmail(title, body, siteUrl()), text: title };
+  return { html: layoutEmail(escapeHtml(title), body, siteUrl()), text: title };
 }
 
 export function renderPasswordResetEmail(token: string): { html: string; text: string } {
@@ -236,6 +244,34 @@ export function renderRunNotificationEmail(opts: {
   return { html, text };
 }
 
+/** A failure cluster's title (when it adds something) above its signature. */
+function clusterIdentityHtml(signature: string, title?: string | null): string {
+  const heading =
+    title && title !== signature
+      ? `<p style="margin:0 0 8px;font-size:15px;font-weight:600;color:#18181b;">${escapeHtml(title)}</p>`
+      : '';
+  return `${heading}<p style="margin:0 0 16px;font-family:monospace;font-size:13px;background:#f4f4f5;padding:12px;border-radius:6px;overflow:auto;">${escapeHtml(signature)}</p>`;
+}
+
+function clusterIdentityText(signature: string, title?: string | null): string {
+  return `${title && title !== signature ? `${title}\n` : ''}${signature}`;
+}
+
+/** The tracker issue a cluster is known by. */
+function trackedInHtml(knownIssue?: { key: string; url: string }): string {
+  return knownIssue
+    ? `<p style="margin:0 0 16px;color:#52525b;font-size:13px;">Tracked in <a href="${escapeHtml(knownIssue.url)}" style="color:#18181b;font-weight:600;">${escapeHtml(knownIssue.key)}</a></p>`
+    : '';
+}
+
+function trackedInText(knownIssue?: { key: string; url: string }): string {
+  return knownIssue ? `\n\nTracked in ${knownIssue.key}: ${knownIssue.url}` : '';
+}
+
+function viewClusterButton(url: string): string {
+  return `<a href="${url}" style="display:inline-block;background:#18181b;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600;">View cluster</a>`;
+}
+
 export function renderNewClusterEmail(opts: {
   projectName: string;
   clusterId: number;
@@ -251,9 +287,6 @@ export function renderNewClusterEmail(opts: {
   text: string;
 } {
   const url = `${siteUrl()}/failure-clusters/${opts.clusterId}`;
-  const tracked = opts.knownIssue
-    ? `<p style="margin:0 0 16px;color:#52525b;font-size:13px;">Tracked in <a href="${opts.knownIssue.url}" style="color:#18181b;font-weight:600;">${escapeHtml(opts.knownIssue.key)}</a></p>`
-    : '';
   const affected =
     opts.affectedCases && opts.affectedCases > 0
       ? `<p style="margin:0 0 16px;color:#52525b;font-size:13px;">${opts.affectedCases} affected test${opts.affectedCases === 1 ? '' : 's'} in this run</p>`
@@ -264,15 +297,88 @@ export function renderNewClusterEmail(opts: {
   const body = `
     <h2 style="margin:0 0 8px;font-size:20px;color:#18181b;">New failure cluster</h2>
     <p style="margin:0 0 24px;color:#52525b;font-size:14px;">${escapeHtml(opts.projectName)}</p>
-    ${opts.title && opts.title !== opts.signature ? `<p style="margin:0 0 8px;font-size:15px;font-weight:600;color:#18181b;">${escapeHtml(opts.title)}</p>` : ''}
-    <p style="margin:0 0 16px;font-family:monospace;font-size:13px;background:#f4f4f5;padding:12px;border-radius:6px;overflow:auto;">${escapeHtml(opts.signature)}</p>
+    ${clusterIdentityHtml(opts.signature, opts.title)}
     ${affected}
     ${excerpt}
-    ${tracked}
-    <a href="${url}" style="display:inline-block;background:#18181b;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600;">View cluster</a>`;
+    ${trackedInHtml(opts.knownIssue)}
+    ${viewClusterButton(url)}`;
   const { html } = emailLayout(`New failure cluster — ${opts.projectName}`, body);
-  const text = `New failure cluster in ${opts.projectName}${opts.affectedCases ? ` (${opts.affectedCases} affected)` : ''}\n\n${opts.title && opts.title !== opts.signature ? `${opts.title}\n` : ''}${opts.signature}${opts.sampleErrorExcerpt ? `\n\n${opts.sampleErrorExcerpt}` : ''}${opts.knownIssue ? `\n\nTracked in ${opts.knownIssue.key}: ${opts.knownIssue.url}` : ''}\n\nView: ${url}`;
+  const text = `New failure cluster in ${opts.projectName}${opts.affectedCases ? ` (${opts.affectedCases} affected)` : ''}\n\n${clusterIdentityText(opts.signature, opts.title)}${opts.sampleErrorExcerpt ? `\n\n${opts.sampleErrorExcerpt}` : ''}${trackedInText(opts.knownIssue)}\n\nView: ${url}`;
   return { html, text };
+}
+
+/** The email for a `cluster.fixed` or `cluster.regressed` verdict: the cluster, what changed in triage, its tracker issue and a link. */
+export function renderClusterOutcomeEmail(opts: {
+  /** The verdict's headline, as in the subject line. */
+  headline: string;
+  projectName: string;
+  clusterId: number;
+  signature: string;
+  title?: string | null;
+  /** The triage change the verdict made, named when set. */
+  triageNote?: string | null;
+  knownIssue?: { key: string; url: string };
+}): { html: string; text: string } {
+  const url = `${siteUrl()}/failure-clusters/${opts.clusterId}`;
+  const triage = opts.triageNote
+    ? `<p style="margin:0 0 16px;color:#52525b;font-size:13px;">${escapeHtml(opts.triageNote)}</p>`
+    : '';
+  const body = `
+    <h2 style="margin:0 0 8px;font-size:20px;color:#18181b;">${escapeHtml(opts.headline)}</h2>
+    <p style="margin:0 0 24px;color:#52525b;font-size:14px;">${escapeHtml(opts.projectName)}</p>
+    ${clusterIdentityHtml(opts.signature, opts.title)}
+    ${triage}
+    ${trackedInHtml(opts.knownIssue)}
+    ${viewClusterButton(url)}`;
+  const { html } = emailLayout(`${opts.headline} — ${opts.projectName}`, body);
+  const text = `${opts.headline} in ${opts.projectName}\n\n${clusterIdentityText(opts.signature, opts.title)}${opts.triageNote ? `\n\n${opts.triageNote}` : ''}${trackedInText(opts.knownIssue)}\n\nView: ${url}`;
+  return { html, text };
+}
+
+/** The email for one notification event: its own template where it has one, else the subject line. */
+export function renderNotificationEmail(
+  event: NotificationEvent,
+  payload: NotificationPayload,
+): { html: string; text: string } {
+  if (event.startsWith('run.')) {
+    const p = payload as RunFinishedPayload;
+    return renderRunNotificationEmail({
+      projectName: p.projectName,
+      runId: p.runId,
+      status: p.status,
+      totalTests: p.totalTests,
+      failedTests: p.failedTests,
+      branch: p.branch,
+      topFailures: p.topFailures,
+    });
+  }
+  if (event === 'cluster.new') {
+    const p = payload as ClusterNewPayload;
+    return renderNewClusterEmail({
+      projectName: p.projectName,
+      clusterId: p.clusterId,
+      signature: p.signature,
+      title: p.title,
+      sampleErrorExcerpt: p.sampleErrorExcerpt,
+      affectedCases: p.affectedCases,
+      knownIssue: p.knownIssue,
+    });
+  }
+  if (event === 'cluster.fixed' || event === 'cluster.regressed') {
+    const p = payload as ClusterFixedPayload | ClusterRegressedPayload;
+    const { headline, triageNote } = clusterOutcome(event, p);
+    return renderClusterOutcomeEmail({
+      headline,
+      projectName: p.projectName,
+      clusterId: p.clusterId,
+      signature: p.signature,
+      title: p.title,
+      triageNote,
+      knownIssue: p.knownIssue,
+    });
+  }
+  const subject = renderEventSubject(event, payload);
+  return { html: `<p>${escapeHtml(subject)}</p>`, text: subject };
 }
 
 /** One event queued for a digest send. */

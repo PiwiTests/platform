@@ -402,7 +402,7 @@ export const MCP_TOOL_DEFS = [
     name: 'get_spec_health',
     module: 'core',
     description:
-      'Per-spec-file health for a project: pass rate, flaky rate, failure count, test count, and average duration grouped by spec-file prefix over the last N days. Use to find which areas of the suite are unhealthy.',
+      'Per-spec-file health for a project: pass rate, flaky rate, failure count, execution count (`testCount`), and average duration grouped by spec-file prefix over the last N days. Use to find which areas of the suite are unhealthy.',
     inputSchema: {
       type: 'object',
       properties: {

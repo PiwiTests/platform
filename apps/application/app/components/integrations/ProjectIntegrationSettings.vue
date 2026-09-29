@@ -320,7 +320,6 @@ const requiredFields = computed(() => requiredFieldsToFill(screenFields.value));
           <div class="grid gap-2 sm:grid-cols-2">
             <USwitch v-model="form.include.includeDiagnosis" label="Diagnosis" />
             <USwitch v-model="form.include.includePatch" label="Suggested patch" />
-            <USwitch v-model="form.include.includeScreenshot" label="Screenshot attachment" />
             <USwitch v-model="form.include.includeShareLink" label="Shareable report link" />
           </div>
         </div>

@@ -31,12 +31,13 @@ still overrides the env model); without it, the other provider variables below a
 
 The [Configuration reference](/reference/configuration#ai-diagnosis) lists every AI variable.
 
-When a run finishes and `PIWI_AI_AUTO_DIAGNOSE` is on, the `PIWI_AI_AUTO_DIAGNOSE_MAX` budget is spent where it buys the most. The run's clusters are ordered by their representative failing execution's top [clue](/features/evidence#clues): a cluster whose failure carries **no deterministic clue** (the one the model has to reason about from scratch) goes first, then the ones with only a weak clue, and only then a failure a strong clue already explains, with the newest cluster breaking ties.
+When a run finishes and `PIWI_AI_AUTO_DIAGNOSE` is on, the `PIWI_AI_AUTO_DIAGNOSE_MAX` budget is spent where it buys the most. The run's clusters are ordered by their representative failing execution's top [clue](/features/evidence#clues): a cluster whose failure carries **no deterministic clue** (the one the model has to reason about from scratch) goes first, then the ones with only a weak clue, and only then a failure a strong clue already explains, with the newest cluster breaking ties. A cluster that already has a completed or a running diagnosis is left out before the ordering, so a recurring, already-diagnosed cluster never takes one of the slots.
 
 ### Streaming diagnosis
 
-A diagnosis streams: the model's reasoning appears in a live panel as it arrives, and turns into the result card when
-it completes. The [API docs](https://piwitests.dev/demo/docs) describe the streaming
+A diagnosis streams: the model's reasoning appears in a live panel as it arrives, with a stage indicator (*Researching patterns* while a
+[research model](#model-roles) pre-analyzes the failure, when one is configured, then *Diagnosing root cause*), and turns
+into the result card when it completes. The [API docs](https://piwitests.dev/demo/docs) describe the streaming
 protocol (the in-app reference at `/docs` shows the same spec).
 
 To be told when a diagnosis finishes without watching the panel, turn on **Settings → AI → Diagnosis notifications**: a per-browser preference (stored on that device only) that shows a browser notification on completion once you grant the permission.

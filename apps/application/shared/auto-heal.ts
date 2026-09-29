@@ -28,7 +28,7 @@ export interface AutoHealSettings {
   minScore: number;
   /** Open the PR as a draft (ignored on Bitbucket, which has no draft PRs). */
   draft: boolean;
-  /** Cap on simultaneously-open auto-heal PRs per project. */
+  /** Cap on auto-heal PRs still open on the SCM per project; merged and closed PRs stop counting. */
   maxOpenPrs: number;
   /** Prefix for the branch auto-heal pushes to. Always ends with `/`. */
   branchPrefix: string;
@@ -144,7 +144,11 @@ export interface HealActionResult {
   droppedEdits?: number;
 }
 
-export type HealActionStatus = 'pending' | 'opened' | 'failed' | 'skipped';
+/**
+ * `opened` is a PR still open on the SCM; `merged` and `closed` are the states
+ * the PR-state refresh records once the SCM reports it settled.
+ */
+export type HealActionStatus = 'pending' | 'opened' | 'merged' | 'closed' | 'failed' | 'skipped';
 
 // ── Deterministic identity (dedupe key + branch name) ────────────────────────
 

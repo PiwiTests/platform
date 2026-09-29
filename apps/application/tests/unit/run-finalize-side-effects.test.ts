@@ -10,6 +10,7 @@ const autoDiagnoseRun = vi.fn(() => Promise.resolve());
 const emitRunNotifications = vi.fn(() => Promise.resolve());
 const postRunPrFeedbackInBackground = vi.fn(() => Promise.resolve());
 const maybeEnqueueHealActionInBackground = vi.fn();
+const classifyRunFlakyTests = vi.fn((_db: unknown, _projectId: number, _runId: number) => Promise.resolve());
 
 vi.mock('../../server/utils/compute-regression-signals', () => ({ computeRegressionSignals }));
 vi.mock('../../server/utils/ai-diagnosis', () => ({ autoDiagnoseRun }));
@@ -17,6 +18,7 @@ vi.mock('../../server/utils/notifications/run-notifications', () => ({ emitRunNo
 vi.mock('../../server/utils/scm/pr-feedback', () => ({ postRunPrFeedbackInBackground }));
 vi.mock('../../server/utils/heal/policy', () => ({ maybeEnqueueHealActionInBackground }));
 vi.mock('#shared/handlers/markers', () => ({ syncAutoMarkersForRun }));
+vi.mock('#shared/handlers/flaky-classify', () => ({ classifyRunFlakyTests }));
 const upsertDailyRollup = vi.fn((_db: unknown, _id: number) => Promise.resolve());
 vi.mock('#shared/handlers/analytics/rollups', () => ({ upsertDailyRollup }));
 
@@ -28,6 +30,7 @@ const db = {} as never;
 const allEffects = [
   computeRegressionSignals,
   syncAutoMarkersForRun,
+  classifyRunFlakyTests,
   autoDiagnoseRun,
   emitRunNotifications,
   postRunPrFeedbackInBackground,
@@ -44,6 +47,24 @@ describe('runFinalizeSideEffects', () => {
     runFinalizeSideEffects(db, 42, { projectId: 1, metadata: { scm: {} } });
     await vi.waitFor(() => expect(maybeEnqueueHealActionInBackground).toHaveBeenCalledTimes(1));
     for (const fn of allEffects) expect(fn).toHaveBeenCalledTimes(1);
+  });
+
+  test('the flaky root causes of the run are classified from its id and project', async () => {
+    runFinalizeSideEffects(db, 42, { projectId: 7 });
+    await vi.waitFor(() => expect(classifyRunFlakyTests).toHaveBeenCalledWith(db, 7, 42));
+  });
+
+  test('a failing flaky classification is logged and leaves the other side effects running', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      classifyRunFlakyTests.mockRejectedValueOnce(new Error('classifier down'));
+      await expect(runFinalizeSideEffects(db, 42, { projectId: 1 })).resolves.toBeUndefined();
+      await vi.waitFor(() => expect(maybeEnqueueHealActionInBackground).toHaveBeenCalledTimes(1));
+      expect(errors).toHaveBeenCalledWith('[flaky-classify] classifyRunFlakyTests failed', expect.any(Error));
+      for (const fn of allEffects) expect(fn).toHaveBeenCalledTimes(1);
+    } finally {
+      errors.mockRestore();
+    }
   });
 
   test('auto-heal starts once change coverage stored the run’s locator breaks', async () => {

@@ -1691,7 +1691,7 @@
     "message": "Nenhum projeto do Piwi está associado a este site. Adicione-o em Projetos por site, nas configurações do Piwi Picker, ou escolha um projeto no menu do Piwi Picker."
   },
   "functions_empty": {
-    "message": "O projeto $project$ ainda não tem nenhuma função de teste. Adicione uma no painel do Piwi ou crie uma a partir de uma gravação.",
+    "message": "O projeto $project$ ainda não tem nenhuma função de teste. Adicione uma no painel do Piwi, manualmente ou colando o código de uma função.",
     "placeholders": {
       "project": {
         "content": "$1",

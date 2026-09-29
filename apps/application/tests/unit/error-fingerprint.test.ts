@@ -149,6 +149,42 @@ describe('computeErrorFingerprint', () => {
     expect(rowA.fingerprint).toBe(rowB.fingerprint);
   });
 
+  test('groups per-row expect(locator) failures that differ only by locator options', async () => {
+    const rowError = (name: string) =>
+      [
+        'Error: expect(locator).toBeVisible() failed',
+        '',
+        `Locator: getByRole('row', { name: '${name}' })`,
+        'Expected: visible',
+        'Received: <element(s) not found>',
+        'Timeout: 5000ms',
+        '',
+        'Call log:',
+        `  - waiting for getByRole('row', { name: '${name}' })`,
+        '    at /app/tests/table.spec.ts:20:5',
+      ].join('\n');
+    const alice = await computeErrorFingerprint(rowError('Alice'));
+    const bob = await computeErrorFingerprint(rowError('Bob'));
+    expect(alice.fingerprint).toBe(bob.fingerprint);
+    expect(alice.normalizedMessage).toContain("Locator: getByRole('row', { name: <STR> })");
+    // The unmasked locator stays available for display.
+    expect(alice.selector).toBe("getByRole('row', { name: 'Alice' })");
+    expect(bob.selector).toBe("getByRole('row', { name: 'Bob' })");
+  });
+
+  test('keeps a different locator role or target in a different cluster', async () => {
+    const row = await computeErrorFingerprint(
+      "Error: expect(locator).toBeVisible() failed\n\nLocator: getByRole('row', { name: 'Alice' })",
+    );
+    const button = await computeErrorFingerprint(
+      "Error: expect(locator).toBeVisible() failed\n\nLocator: getByRole('button', { name: 'Alice' })",
+    );
+    const testId = await computeErrorFingerprint(
+      "Error: expect(locator).toBeVisible() failed\n\nLocator: getByTestId('alice-row')",
+    );
+    expect(new Set([row.fingerprint, button.fingerprint, testId.fingerprint]).size).toBe(3);
+  });
+
   test('exposes a positive fingerprint version', () => {
     expect(FINGERPRINT_VERSION).toBeGreaterThan(0);
   });

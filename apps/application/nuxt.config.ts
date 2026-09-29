@@ -3,11 +3,7 @@ import { cpSync, existsSync, mkdirSync, readFileSync } from 'fs';
 import { createRequire } from 'module';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { syncCron, resolveSyncMinutes } from './shared/integrations/sync-config';
 import { GENERATED_DOCS_PAGES } from './shared/docs-generated-pages';
-
-// The tracker status-pull cadence, derived from the env var at start time.
-const integrationsSyncCron = syncCron(resolveSyncMinutes(process.env.PIWI_INTEGRATIONS_SYNC_MINUTES));
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -396,12 +392,12 @@ export default defineNuxtConfig({
       tasks: true,
     },
     scheduledTasks: {
-      // Run the notification, auto-heal and integration outbox sweepers every minute
-      '* * * * *': ['notifications:sweep', 'heal:sweep', 'integrations:sweep'],
+      // Run the notification, auto-heal and integration outbox sweepers every minute. The
+      // tracker status pull ticks here too and runs on the cadence PIWI_INTEGRATIONS_SYNC_MINUTES
+      // sets at run time (default every 15 min).
+      '* * * * *': ['notifications:sweep', 'heal:sweep', 'integrations:sweep', 'integrations:sync'],
       // Fire the report schedules that are due (a missed tick fires on the next sweep)
       '*/5 * * * *': ['reports:schedule'],
-      // Pull tracker statuses back on the configured cadence (default every 15 min).
-      [integrationsSyncCron]: ['integrations:sync'],
       // Nightly data retention: run pruning (opt-in), outbox pruning, orphan sweep
       '17 3 * * *': ['retention:sweep'],
       // Nightly feature-graph sweep: prune stale changes edges, branch-tagged

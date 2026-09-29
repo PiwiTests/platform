@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -23,6 +24,24 @@ public class MiddlewareTests
         Assert.Equal("Warning", entry.Level);
         Assert.Equal("Orders", entry.Category);
         Assert.Equal("Stock low for 42", entry.Message);
+    }
+
+    [Fact]
+    public async Task Writes_the_dashboard_keys_with_the_exception_folded_into_stack()
+    {
+        await using var app = await TestApp.StartAsync("Development", (a, _) => a.UsePiwiTestLogs());
+
+        using var json = TestApp.DecodeRawLogs(await app.Client.GetAsync("/error"))!;
+
+        var entries = json.RootElement.EnumerateArray().ToList();
+        Assert.Equal(2, entries.Count);
+        Assert.Equal(["category", "level", "message", "timestamp"], TestApp.SortedKeys(entries[0]));
+        Assert.Equal(["category", "level", "message", "stack", "timestamp"], TestApp.SortedKeys(entries[1]));
+        Assert.Equal("Error", entries[1].GetProperty("level").GetString());
+        Assert.Equal("Order 7 failed", entries[1].GetProperty("message").GetString());
+        var stack = entries[1].GetProperty("stack").GetString()!;
+        Assert.StartsWith("boom\n", stack);
+        Assert.Contains("TestApp.HandleAsync", stack);
     }
 
     [Fact]

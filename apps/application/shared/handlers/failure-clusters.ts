@@ -17,7 +17,7 @@ import type { DrizzleDB } from './db';
 import type { OpenFailureCluster, OccurrenceSeriesPoint } from '../../types/api';
 import { recomputeClusterOccurrences } from './failure-cluster-ops';
 import { isTrackerLink } from './known-issues';
-import { getQuarantinedCaseIds, listQuarantine, addQuarantine } from './quarantine';
+import { getQuarantinedCaseIds, countQuarantinedClusterTests, listQuarantine, addQuarantine } from './quarantine';
 import { clusterClue, computeSnooze, DEFAULT_NEEDS_TICKET_AFTER_DAYS, type SnoozeOption } from '../inbox-queues';
 import { resolveProjectIntegration } from '#shared/integrations/binding';
 import { parsePlaywrightError } from '#shared/error-parse';
@@ -70,15 +70,42 @@ type ProjectScope = 'all' | Set<number>;
 
 const VALID_STATUSES = ['open', 'resolved', 'ignored'];
 
+/** Affected tests the cluster detail payload lists; `affectedTests` carries the full count. */
+export const CLUSTER_DETAIL_TESTS_LIMIT = 50;
+
 export async function getFailureCluster(
   db: DrizzleDB,
   clusterId: number,
-  // Server-only signals the next-step policy reads; the demo and MCP callers
-  // omit them (a demo instance configures neither AI nor a CI re-run).
-  opts: { aiConfigured?: boolean; ciRerunAvailable?: boolean; now?: Date } = {},
+  // `aiConfigured` and `ciRerunAvailable` are server-only signals the next-step
+  // policy reads; the demo and MCP callers omit them (a demo instance configures
+  // neither AI nor a CI re-run). `affectedTestsLimit` bounds the listed affected
+  // tests, and `null` lists every one.
+  opts: {
+    aiConfigured?: boolean;
+    ciRerunAvailable?: boolean;
+    now?: Date;
+    affectedTestsLimit?: number | null;
+  } = {},
 ) {
   const [cluster] = await db.select().from(failureClusters).where(eq(failureClusters.id, clusterId));
   if (!cluster) return null;
+
+  const { affectedTestsLimit = CLUSTER_DETAIL_TESTS_LIMIT } = opts;
+  const affectedTestsQuery = db
+    .select({
+      testCaseId: testCases.id,
+      title: testCases.title,
+      filePath: testCases.filePath,
+      owner: testCases.owner,
+      runCount: sql<number>`count(${testRunsCases.id})`,
+      recentTestRunsCaseId: sql<number>`max(${testRunsCases.id})`,
+    })
+    .from(testRunsCases)
+    .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
+    .where(eq(testRunsCases.failureClusterId, clusterId))
+    .groupBy(testCases.id, testCases.title, testCases.filePath, testCases.owner)
+    .orderBy(desc(sql`count(${testRunsCases.id})`))
+    .$dynamic();
 
   const [[countRow], [lastRun], [firstSeenRun], [diag], [project], affectedTestCases, [latestOccurrence]] =
     await Promise.all([
@@ -104,21 +131,7 @@ export async function getFailureCluster(
         .from(projects)
         .where(eq(projects.id, cluster.projectId)),
 
-      db
-        .select({
-          testCaseId: testCases.id,
-          title: testCases.title,
-          filePath: testCases.filePath,
-          owner: testCases.owner,
-          runCount: sql<number>`count(${testRunsCases.id})`,
-          recentTestRunsCaseId: sql<number>`max(${testRunsCases.id})`,
-        })
-        .from(testRunsCases)
-        .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
-        .where(eq(testRunsCases.failureClusterId, clusterId))
-        .groupBy(testCases.id, testCases.title, testCases.filePath, testCases.owner)
-        .orderBy(desc(sql`count(${testRunsCases.id})`))
-        .limit(50),
+      affectedTestsLimit === null ? affectedTestsQuery : affectedTestsQuery.limit(affectedTestsLimit),
 
       // The cluster's latest occurrence: an execution in the last-seen run, so the
       // page can default its evidence and headline to the newest failure rather
@@ -179,7 +192,7 @@ export async function getFailureCluster(
     .map((r) => ({ runId: r.id, startedAt: r.startedAt, occurrences: occurrencesByRun.get(r.id) ?? 0 }))
     .reverse();
 
-  const quarantinedCount = affectedTestCases.filter((t: any) => quarantinedIds.has(t.testCaseId)).length;
+  const quarantinedCount = await countQuarantinedClusterTests(db, cluster.projectId, clusterId);
 
   const clusterState: ClusterState = computeClusterState(
     {

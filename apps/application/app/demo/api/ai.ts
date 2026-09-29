@@ -41,6 +41,7 @@ import { storyByClusterId } from '#shared/demo/failure-stories.mjs';
 import type { FailureStory } from '#shared/demo/failure-stories.mjs';
 import { publishDemoNotificationEvent } from '../run-events';
 import { demoHttpError } from './http-error';
+import { diagnosisFrame } from '~~/server/utils/diagnosis-stream-frames';
 
 const DEMO_MODEL = 'demo-simulated';
 
@@ -842,6 +843,9 @@ export async function apiDiagnoseExecution(
   return persistDiagnosis(null, gen, 'execution', testRunsCaseId);
 }
 
+/** How long the simulated research stage lasts before the diagnosis stage streams. */
+const RESEARCH_STAGE_MS = 900;
+
 /**
  * POST /api/failure-clusters/:id/diagnose/stream
  *
@@ -878,11 +882,10 @@ export async function apiStreamDiagnoseCluster(
       .where(eq(failureDiagnoses.clusterId, clusterId))
       .limit(1);
     if (existing?.status === 'completed') {
-      const data = JSON.stringify(existing);
       return sse(
         new ReadableStream({
           start(controller) {
-            controller.enqueue(encoder.encode(`event: result\ndata: ${data}\n\n`));
+            controller.enqueue(encoder.encode(diagnosisFrame.result(existing)));
             controller.close();
           },
         }),
@@ -899,18 +902,22 @@ export async function apiStreamDiagnoseCluster(
   const stream = new ReadableStream({
     async start(controller) {
       try {
+        // The simulated pipeline runs a research stage, then the diagnosis stage.
+        controller.enqueue(encoder.encode(diagnosisFrame.stage('research')));
+        await new Promise((r) => setTimeout(r, RESEARCH_STAGE_MS));
+        controller.enqueue(encoder.encode(diagnosisFrame.stage('diagnosis')));
         for (const chunk of gen.thinkingChunks) {
-          controller.enqueue(encoder.encode(`event: thinking\ndata: ${JSON.stringify({ text: chunk })}\n\n`));
+          controller.enqueue(encoder.encode(diagnosisFrame.thinking(chunk)));
           await new Promise((r) => setTimeout(r, Math.max(300, Math.min(1100, chunk.length * 4))));
         }
-        controller.enqueue(encoder.encode(`event: result\ndata: ${JSON.stringify(saved)}\n\n`));
+        controller.enqueue(encoder.encode(diagnosisFrame.result(saved)));
         controller.close();
       } catch (err) {
         // Mirrors the server's stream endpoint: a failure surfaces as an
         // `error` event instead of silently closing the stream.
         const message = err instanceof Error ? err.message : String(err);
         try {
-          controller.enqueue(encoder.encode(`event: error\ndata: ${JSON.stringify({ message })}\n\n`));
+          controller.enqueue(encoder.encode(diagnosisFrame.error(message)));
           controller.close();
         } catch {
           /* ignore */

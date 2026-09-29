@@ -126,7 +126,7 @@ Each entry in the `X-Piwi-Logs` array has this shape:
 | `message` | `string` | Log message (truncated at 500 characters) |
 | `stack` | `string` | Optional. Shrunk stack trace, max 5 frames — framework/internal frames removed (`node:internal` and `node_modules` for Nitro); the ASP.NET Core integration also shortens namespace parts to their first lowercase letter |
 
-The ASP.NET Core integration additionally captures `exceptionMessage` when an exception was logged.
+In the ASP.NET Core integration, `stack` starts with the exception's message and is omitted when no exception was logged.
 
 ## Server spans
 

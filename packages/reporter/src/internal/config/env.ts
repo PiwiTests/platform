@@ -111,6 +111,15 @@ export const PIWI_SELECTION_ENV = {
 } as const;
 
 /**
+ * The `i/n` shard `piwi run --shard` sets on the Playwright child process. The
+ * run's tests are already narrowed to that shard, so Playwright gets no `--shard`
+ * of its own; the reporter reads this to report the shard to the dashboard, which
+ * merges the shards of a run into one. Not an option — a `piwi select` job that
+ * shards its own command line sets it by hand.
+ */
+export const PIWI_SHARD_ENV = 'PIWI_SHARD';
+
+/**
  * Env vars a `piwi probe` run sets on the Playwright child process so the
  * capture fixtures run in probe mode. Not options — the probe CLI writes them and
  * the probe module reads them directly:

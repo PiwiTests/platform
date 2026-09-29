@@ -92,6 +92,8 @@ describe('fingerprint mirror parity (demo mirror vs the real algorithm)', () => 
     'Error: expect(received).toBe(expected)\n\nExpected: 200\nReceived: 500\n    at tests/x.spec.ts:2:2',
     'Error: page.click: Target page, context or browser has been closed',
     "Error: strict mode violation: getByRole('button') resolved to 2 elements",
+    "Error: strict mode violation: getByRole('row', { name: 'Alice' }) resolved to 2 elements:\n    1) <tr>…</tr> aka getByRole('row', { name: 'Alice', exact: true })",
+    "Error: expect(locator).toBeVisible() failed\n\nLocator: getByRole('row', { name: 'Bob' })\nExpected: visible\nReceived: <element(s) not found>\nTimeout: 5000ms\n\nCall log:\n  - waiting for getByRole('row', { name: 'Bob' })\n    at tests/x.spec.ts:3:3",
     'Some completely unstructured error with no recognizable shape at all',
   ];
 

@@ -22,6 +22,7 @@ import {
 } from '~~/server/database/schema.sqlite';
 import { Role } from '#shared/types';
 import { NOTIFICATION_EVENTS } from '#shared/notification-events';
+import { subscriptionFiltersSchema } from '#shared/subscription-filters';
 import { MARKER_CATEGORY_IDS } from '#shared/marker-categories';
 import {
   getUserAssignments,
@@ -277,7 +278,7 @@ import { parseAnalyticsScope } from '#shared/analytics/scope';
 import { collectRollupExport, rollupCsvHeader, rollupCsvRows } from '#shared/handlers/analytics/rollup-export';
 import { WidgetOptionsError, widgetOptionsFromQuery } from '#shared/analytics/registry';
 import { getAnalyticsScopeSummary } from '#shared/handlers/analytics/scope-summary';
-import { classifyAndPersistFlakyRootCause } from '#shared/handlers/flaky-classify';
+import { classifyAndPersistFlakyRootCause, withFlakyRootCauses } from '#shared/handlers/flaky-classify';
 import {
   listUsers,
   createUserRecord,
@@ -751,16 +752,18 @@ const routes: RouteEntry[] = [
       const priority = (TEST_PRIORITIES as readonly string[]).includes(priorityRaw)
         ? (priorityRaw as (typeof TEST_PRIORITIES)[number])
         : undefined;
-      // CODEOWNERS resolution needs an SCM client the browser cannot reach —
-      // ownership stays annotation-only here (seeded cases carry `piwi:` owners).
-      return getProjectFlakyTestsWithVerified(
-        await getDemoDb(),
+      const db = await getDemoDb();
+      const { items, verifiedFixed } = await getProjectFlakyTestsWithVerified(
+        db,
         +m[1]!,
         runs,
         environment,
         { tags, owner, priority },
         branch,
       );
+      // CODEOWNERS resolution needs an SCM client the browser cannot reach —
+      // ownership stays annotation-only here (seeded cases carry `piwi:` owners).
+      return { items: await withFlakyRootCauses(db, +m[1]!, items), verifiedFixed };
     },
   },
   {
@@ -2898,6 +2901,8 @@ routes.push(
       if (events.length === 0 || events.some((e) => !(NOTIFICATION_EVENTS as readonly string[]).includes(e))) {
         throw demoHttpError(400, 'events must contain at least one valid event');
       }
+      const filters = subscriptionFiltersSchema.optional().safeParse(b.filters);
+      if (!filters.success) throw demoHttpError(400, 'Invalid request body');
       const mode = b.mode === 'digest' ? 'digest' : 'realtime';
       const digestAt = typeof b.digestAt === 'string' && /^\d{1,2}:\d{2}$/.test(b.digestAt) ? b.digestAt : null;
       const sub: DemoSubscription = {
@@ -2906,7 +2911,7 @@ routes.push(
         channelId: b.channelId ?? 1,
         projectId: b.projectId ?? null,
         events,
-        filters: b.filters ?? null,
+        filters: filters.data ?? null,
         mode,
         digestAt,
         mutedUntil: null,
@@ -2933,7 +2938,11 @@ routes.push(
         sub.events = b.events;
       }
       if (b.mode !== undefined) sub.mode = b.mode === 'digest' ? 'digest' : 'realtime';
-      if (b.filters !== undefined) sub.filters = b.filters;
+      if (b.filters !== undefined) {
+        const filters = subscriptionFiltersSchema.nullable().safeParse(b.filters);
+        if (!filters.success) throw demoHttpError(400, 'Invalid request body');
+        sub.filters = filters.data;
+      }
       if (b.digestAt !== undefined) sub.digestAt = b.digestAt;
       if (b.mutedUntil !== undefined) sub.mutedUntil = b.mutedUntil;
       if (b.active !== undefined) sub.active = b.active;
