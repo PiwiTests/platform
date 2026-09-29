@@ -14,12 +14,18 @@ with the project's Node.js interpreter.
 - `PiwiLspServerSupportProvider.kt` registers the service; the LSP client renders its diagnostics, quick fixes and
   hover in open files, and `LspCommandsSupport` runs the client commands it names (`PiwiCommands.kt`).
 - The rest is native: Code Vision from `piwi/fileSummary`, the status bar from `piwi/runStatus`, the **Piwi** tool
-  window from `piwi/failures` (the LSP client highlights open files only), and the actions under **Tools → Piwi**.
+  window from `piwi/failures` (the LSP client highlights open files only) with the connection from `piwi/status`, and
+  the actions under **Tools → Piwi**. The service starts with the first supported file opened (2023.3 has no way to
+  start it without one): until then the status is null, and the status bar and tool window say so.
 - `PiwiSendHandler.kt` is the Send to editor endpoint: `POST /api/piwi/send` on the IDE's built-in server, with the
   token from `PasswordSafe`; **Pair with Piwi Picker** copies the pairing address. It mirrors
   `@piwitests/core/editor-send` (`Glue.parseSendPayload`, `Glue.sendAuthorized`).
 - `Protocol.kt` mirrors `packages/editor/src/protocol.ts` for lsp4j; `Glue.kt` is the pure half, tested without an IDE.
-- The API key lives in the IDE's `PasswordSafe`; the instance URL and project in `.idea/piwi.xml`.
+- **Connect** (`PiwiConnect.kt`) asks the instance whether it needs a key, then signs in with the browser (the device
+  authorization Piwi Picker uses, `/api/extension/connect`) or takes a pasted key, then the project. It runs from
+  **Settings → Tools → Piwi** (`PiwiConfigurable.kt`), the tool window's toolbar and **Tools → Piwi**.
+- The instance URL and project live in `.idea/piwi.xml`; the API key in the IDE's `PasswordSafe`, **per instance**
+  (`Glue.apiKeyEntry`): a project's settings, which a repository may commit, never select another instance's key.
 
 ## Rules
 

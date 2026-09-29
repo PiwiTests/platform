@@ -17,31 +17,73 @@ object Glue {
 
     private val ACTIVE = setOf("running", "initializing", "finalizing")
 
-    data class StatusView(val text: String, val tooltip: String, val url: String?, val connect: Boolean)
+    /** What a click on the status bar item does. */
+    enum class StatusAction { OPEN, CONNECT, SETTINGS, NONE }
 
-    /** The status bar text: the latest run on the checked-out branch, or what keeps the service from reading it. */
+    data class StatusView(val text: String, val tooltip: String, val url: String?, val action: StatusAction)
+
+    /**
+     * The status bar text: the latest run on the checked-out branch, or what keeps the service from reading it.
+     * A null status means the service has not started: it starts with the first file of the project opened.
+     */
     fun statusView(status: StatusResult?, runs: RunStatusResult?): StatusView {
-        val contexts = status?.contexts.orEmpty()
-        if (contexts.isEmpty()) return StatusView("Piwi", "No Playwright config found", null, false)
+        if (status == null) return StatusView("Piwi", "$NOT_STARTED Click for Piwi's settings.", null, StatusAction.SETTINGS)
+        val contexts = status.contexts.orEmpty()
+        if (contexts.isEmpty()) return StatusView("Piwi", "No Playwright config found", null, StatusAction.NONE)
         val connected = contexts.firstOrNull { it.connected }
-            ?: return StatusView("Piwi: connect", contexts.first().problem ?: "Not connected", null, true)
+            ?: return StatusView("Piwi: connect", contexts.first().problem ?: "Not connected", null, StatusAction.CONNECT)
         val run = runs?.contexts?.firstOrNull { it.root == connected.root } ?: runs?.contexts?.firstOrNull()
         val where = (connected.projectName ?: "Piwi") + (run?.branch?.let { " on $it" } ?: "")
-        val r = run?.run ?: return StatusView("Piwi: no run", "No run of $where yet", null, false)
+        val from = connected.serverUrl?.let { url -> "\n$url, from ${sourceLabel(connected.source)}" } ?: ""
+        val r = run?.run ?: return StatusView("Piwi: no run", "No run of $where yet$from", null, StatusAction.NONE)
         val tooltip = "Run #${r.id} of $where: ${r.passedTests} passed, ${r.failedTests} failed, " +
-            "${r.flakyTests} flaky, ${r.skippedTests} skipped"
+            "${r.flakyTests} flaky, ${r.skippedTests} skipped$from"
         val flaky = if (r.flakyTests > 0) " · ${r.flakyTests} flaky" else ""
+        val open = StatusAction.OPEN
         return when {
             r.status in ACTIVE -> {
                 val done = r.passedTests + r.failedTests + r.flakyTests + r.skippedTests
                 val failing = if (r.failedTests > 0) " · ${r.failedTests} failing" else ""
-                StatusView("Piwi: $done/${r.totalTests}$failing", tooltip, r.url, false)
+                StatusView("Piwi: $done/${r.totalTests}$failing", tooltip, r.url, open)
             }
-            r.failedTests > 0 -> StatusView("Piwi: ${r.failedTests} failing$flaky", tooltip, r.url, false)
-            r.status != "passed" && r.status != "failed" -> StatusView("Piwi: ${r.status}", tooltip, r.url, false)
-            else -> StatusView("Piwi: ${r.passedTests} passed$flaky", tooltip, r.url, false)
+            r.failedTests > 0 -> StatusView("Piwi: ${r.failedTests} failing$flaky", tooltip, r.url, open)
+            r.status != "passed" && r.status != "failed" -> StatusView("Piwi: ${r.status}", tooltip, r.url, open)
+            else -> StatusView("Piwi: ${r.passedTests} passed$flaky", tooltip, r.url, open)
         }
     }
+
+    const val NOT_STARTED = "Piwi starts when you open a file of this project."
+
+    /** Where the service found the instance, in the words of the settings page. */
+    fun sourceLabel(source: String?): String = when (source) {
+        "environment" -> "the environment (PIWI_DASHBOARD_URL)"
+        "dotenv" -> "the workspace .env"
+        "desktop" -> "the Piwi desktop app"
+        else -> "Settings → Tools → Piwi"
+    }
+
+    /** One sentence on the connection, for the tool window and the settings page. */
+    fun connectionSummary(status: StatusResult?): String {
+        if (status == null) return NOT_STARTED
+        val contexts = status.contexts.orEmpty()
+        if (contexts.isEmpty()) return "No Playwright config found in this project."
+        val c = contexts.firstOrNull { it.connected }
+            ?: return "Not connected. " + (contexts.first().problem ?: "")
+        val branch = c.branch?.let { " on $it" } ?: ""
+        return "Connected to ${c.projectName ?: "Piwi"}$branch at ${c.serverUrl}, from ${sourceLabel(c.source)}."
+    }
+
+    /** An instance URL as it is stored: trimmed, without trailing slashes; null when it is not an http(s) URL. */
+    fun normalizeServerUrl(input: String?): String? {
+        val url = input?.trim()?.trimEnd('/') ?: return null
+        return url.takeIf { it.matches(Regex("^https?://[^\\s/]+\\S*$")) }
+    }
+
+    /**
+     * The password-safe entry of an instance's API key. The key is kept per instance: a
+     * project's settings, which a repository may commit, never select another instance's key.
+     */
+    fun apiKeyEntry(serverUrl: String): String = "apiKey ${normalizeServerUrl(serverUrl) ?: serverUrl.trim()}"
 
     private fun jsonString(value: String): String =
         "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n") + "\""

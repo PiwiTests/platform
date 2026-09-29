@@ -180,6 +180,7 @@ import {
 import { parseGranularity } from '#shared/analytics/period';
 import { getFlakeProfile } from '#shared/handlers/flake-profile';
 import {
+  FLAKE_EXPERIMENT_SOURCES,
   FlakePlanUnavailable,
   FlakeResultsRejected,
   getFlakeExperimentPlan,
@@ -1258,6 +1259,7 @@ const routes: RouteEntry[] = [
           runs: Number.isInteger(runs) && runs! >= 1 && runs! <= 100 ? runs : null,
           record: q?.get('record') !== 'false',
           commit: q?.get('commit') || null,
+          source: FLAKE_EXPERIMENT_SOURCES.find((s) => s === q?.get('source')),
           machine: q?.get('machine') || null,
         });
       } catch (error) {

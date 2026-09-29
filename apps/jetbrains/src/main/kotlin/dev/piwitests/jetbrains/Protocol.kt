@@ -42,6 +42,8 @@ data class ContextStatus(
     val root: String? = null,
     val connected: Boolean = false,
     val serverUrl: String? = null,
+    /** `environment`, `dotenv`, `desktop` or `editor`: where `serverUrl` came from. */
+    val source: String? = null,
     val projectId: Int? = null,
     val projectName: String? = null,
     val branch: String? = null,

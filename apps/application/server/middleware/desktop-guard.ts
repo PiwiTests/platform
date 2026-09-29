@@ -8,7 +8,9 @@
 //     exactly like the auth session cookie),
 //   - an `Authorization: Bearer <token>` header (used by the Playwright reporter
 //     via its `apiKey` option — the token is `pd_`-prefixed so the reporter's
-//     existing API-key path sends it as a bearer), or
+//     existing API-key path sends it as a bearer),
+//   - an `X-API-Key` header (used by the `piwi` commands, `piwi flake` among
+//     them), or
 //   - an `x-piwi-token` header.
 // Combined with the loopback-only bind, this keeps the bundled server reachable
 // only by the app itself and by tools the user has given the token to — not by

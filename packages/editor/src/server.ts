@@ -1075,6 +1075,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         root: c.root,
         connected: !!c.index && !c.problem,
         serverUrl: c.client?.connection.serverUrl ?? null,
+        source: c.source,
         projectId: c.project?.id ?? null,
         projectName: c.project?.name ?? null,
         branch: c.branch ?? c.index?.defaultBranch ?? null,

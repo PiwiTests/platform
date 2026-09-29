@@ -14,16 +14,10 @@ differently.
 ## Install and connect
 
 Install **Piwi** from the extensions view (`piwitests.piwi`) or from **Settings → Plugins** in a JetBrains IDE. It
-starts on a workspace that holds a Playwright config, and reads the connection the reporter already uses, in this
-order:
-
-1. `PIWI_DASHBOARD_URL`, `PIWI_API_KEY` and `PIWI_PROJECT_NAME` in the environment;
-2. the same variables in the `.env` next to the Playwright config, then at the repository root (a URL there
-   takes only its own key);
-3. the [desktop app](/features/desktop), when it runs;
-4. its own settings: run **Piwi: Connect** (**Tools → Piwi → Connect…** in a JetBrains IDE), give the instance URL
-   and an [API key](/operate/api-keys), and pick the project. The key goes to the editor's secret storage, never to a
-   file.
+starts on a workspace that holds a Playwright config, and reads the connection the reporter already uses: the
+`PIWI_*` variables in the environment or the workspace `.env`, or the [desktop app](/features/desktop). Otherwise,
+run **Piwi: Connect** (**Settings → Tools → Piwi** in a JetBrains IDE) and sign in with the browser:
+[Editor connection](./editor-connection) has the steps.
 
 Nothing from your workspace is sent to the instance: the project's
 [locator index](/guide/concepts#locator-index), [code reach](/features/code-reach) and latest run are downloaded and
@@ -107,7 +101,7 @@ clipboard. It holds your API key: paste it into your user settings, not into the
 
 | Command | What it does |
 |---|---|
-| Piwi: Connect | Choose the instance, the API key and the project |
+| Piwi: Connect, Disconnect | See [Editor connection](./editor-connection) |
 | Piwi: Refresh | Fetch the indexes and the latest run again |
 | Piwi: Run the tests that reach this file | Run them in a terminal |
 | Piwi: Open in dashboard | Open this file's test, or the latest run |
@@ -137,11 +131,12 @@ the one that paired receives.
 ## JetBrains IDEs
 
 The plugin starts the editor service with the project's Node.js interpreter (**Settings → Languages & Frameworks →
-Node.js**). The IDE's LSP client shows the warnings, quick fixes and hover in open files as described above; the rest
+Node.js**) when you open a file of the project. The IDE's LSP client shows the warnings, quick fixes and hover in open files as described above; the rest
 is drawn natively:
 
-- **The Piwi tool window** lists the latest run's failures, since the IDE highlights open files only. Double-click one
-  to open its failing line, where the highlight carries **Heal**, **Open the trace** and the dashboard link. The trace
+- **The Piwi tool window** names the connection, has Connect and Refresh in its toolbar, and lists the latest run's
+  failures, since the IDE highlights open files only. Double-click
+  one to open its failing line, where the highlight carries **Heal**, **Open the trace** and the dashboard link. The trace
   opens in the Run tool window.
 - **Code Vision** shows the lines above files, tests and locators; click one to run what it names.
 - **The status bar** shows the latest run; the actions are under **Tools → Piwi**, and **Run the tests that reach this

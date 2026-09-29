@@ -24,7 +24,11 @@ A thin client of the editor service. `npm run vscode:build` builds the service's
 
 - **No logic that the JetBrains plugin would need too.** Diagnostics, quick fixes, hover and every answer come from
   the service; this extension renders them. A new feature is a service request first.
-- The API key lives in `SecretStorage` (`piwi.apiKey`), never in settings or a workspace file.
+- The API key lives in `SecretStorage`, never in settings or a workspace file, **per instance**
+  (`piwi.apiKey <url>`, `apiKeySecret` in `src/connect.ts`): workspace settings, which a repository may commit, never
+  select another instance's key.
+- **Piwi: Connect** (`src/connect.ts`, no VS Code API) asks the instance whether it needs a key, then signs in with the
+  browser (the device authorization Piwi Picker uses) or takes a pasted key, then the project.
 - Command ids are part of the protocol: renaming one is a breaking change for the service.
 
 ## Workflow

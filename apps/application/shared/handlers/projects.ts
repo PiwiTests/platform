@@ -15,7 +15,7 @@ import {
 } from '../../server/database/schema';
 import { asc, desc, eq, exists, sql, and, or, inArray, gte, lte, isNull, isNotNull, count } from 'drizzle-orm';
 import { jsonArrayContainsAll, parseLockFilter, parseTagFilter } from '../utils/tag-filter';
-import { isLabRun, notLabRun } from './probes';
+import { isLabRun, notLabExecution, notLabRun } from './probes';
 import { isFailedStatus } from '../utils/test-counts';
 import { getHoldingVerifiedFixes } from './flake-verified';
 import { fixmeSkipPredicate } from '../utils/skip-kind';
@@ -710,7 +710,8 @@ function toEpochMs(value: unknown): number | null {
  * (passed + failed; skipped/didnotrun excluded) and is null when nothing ran.
  * The derived `status` category is what the status filter and sort operate on:
  * `flaky` when any of the last 10 executions is a retry-pass, otherwise the
- * latest run's status (timeouts shown as failed), or `never-run`.
+ * latest run's status (timeouts shown as failed), or `never-run`. Executions
+ * of lab runs (probes, flake experiments) stay out of every aggregate.
  */
 export async function getProjectTestCases(db: DrizzleDB, projectId: number, options: Partial<TestCasesQuery> = {}) {
   const {
@@ -735,6 +736,7 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
         SELECT ${testRunsCases.status} AS s, ${testRunsCases.retries} AS r
         FROM ${testRunsCases}
         WHERE ${testRunsCases.testCaseId} = ${testCases.id}
+          AND ${notLabExecution(testRunsCases.testRunId)}
         ORDER BY ${testRunsCases.createdAt} DESC
         LIMIT 10
       ) AS recent WHERE s = 'passed' AND r > 0
@@ -743,6 +745,7 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
       SELECT ${testRunsCases.status}
       FROM ${testRunsCases}
       WHERE ${testRunsCases.testCaseId} = ${testCases.id}
+        AND ${notLabExecution(testRunsCases.testRunId)}
       ORDER BY ${testRunsCases.createdAt} DESC
       LIMIT 1
     )`;
@@ -773,7 +776,13 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
         db
           .select({ one: sql`1` })
           .from(testRunsCases)
-          .where(and(eq(testRunsCases.testCaseId, testCases.id), gte(testRunsCases.createdAt, cutoff))),
+          .where(
+            and(
+              eq(testRunsCases.testCaseId, testCases.id),
+              gte(testRunsCases.createdAt, cutoff),
+              notLabExecution(testRunsCases.testRunId),
+            ),
+          ),
       ),
     );
   }
@@ -837,7 +846,7 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
       lastStatus,
     })
     .from(testCases)
-    .leftJoin(testRunsCases, eq(testCases.id, testRunsCases.testCaseId))
+    .leftJoin(testRunsCases, and(eq(testCases.id, testRunsCases.testCaseId), notLabExecution(testRunsCases.testRunId)))
     .where(where)
     .groupBy(testCases.id, testCases.filePath, testCases.suitePath, testCases.title)
     .orderBy(sql`${sortExpressions[sort]} ${sql.raw(dir === 'asc' ? 'ASC' : 'DESC')} NULLS LAST`, asc(testCases.id))

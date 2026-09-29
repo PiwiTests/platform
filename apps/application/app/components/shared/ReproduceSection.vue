@@ -110,6 +110,7 @@ function bisectHere() {
     bad: ctx.bad,
     browserName: ctx.browserName,
     target: { clusterId: ctx.clusterId, repositoryUrl: ctx.repositoryUrl },
+    flakeTestCaseId: ctx.flakeArm?.testCaseId ?? null,
   });
 }
 
@@ -243,10 +244,21 @@ async function saveStartCommand() {
         <PlatformCodeBlock :bash="bisect.bash" :powershell="bisect.powershell" storage-key="piwi-repro-shell" />
         <p class="text-xs text-muted">{{ bisect.explanation }}</p>
         <ClientOnly>
-          <div v-if="desktop && canBisectHere" class="pt-0.5">
-            <UButton size="xs" color="primary" variant="soft" icon="i-lucide-git-branch" @click="bisectHere">
+          <div v-if="desktop && canBisectHere" class="pt-0.5 space-y-1">
+            <UButton
+              size="xs"
+              color="primary"
+              variant="soft"
+              icon="i-lucide-git-branch"
+              data-testid="bisect-here"
+              @click="bisectHere"
+            >
               Find the breaking commit here
             </UButton>
+            <p v-if="context?.flakeArm" class="text-xs text-muted" data-testid="bisect-flake-arm">
+              Flake-aware: each step runs the arm that reproduced this flake ({{ context.flakeArm.label }}). A step is
+              bad on a failure with the same error as in CI, good after enough clean runs.
+            </p>
           </div>
         </ClientOnly>
       </template>

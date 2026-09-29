@@ -16,6 +16,7 @@ import { normalizeGitUrl } from '../../server/utils/scm/git-url';
 import { selectBaselineRun } from '../../server/utils/branch-baseline';
 import { resolveRunBranch } from '../../server/utils/run-branch';
 import { readProjectDefaultBranch, resolveFallbackBranch } from './baseline-scope';
+import { getReproducingArm } from './flake-lab';
 import {
   buildBisectScript,
   buildReproRecipe,
@@ -49,6 +50,8 @@ export interface ReproduceInput {
   baseUrl?: string | null;
   /** The failure cluster this reproduction belongs to — where a bisect result is recorded. */
   clusterId?: number | null;
+  /** The test cases of the failing tests, to find a Flake Lab arm for the bisect. */
+  testCaseIds?: number[];
 }
 
 /** Minimal view of the metadata JSON this reader needs. */
@@ -125,6 +128,8 @@ export async function computeReproduceContext(db: DrizzleDB, input: ReproduceInp
   const bisect = buildBisectScript({ good: lastGreenCommit, bad: commit, verifyCommand: input.verifyCommand });
 
   const bisectedCommit = await readBisectedCommit(db, input.clusterId, repositoryUrl);
+  const testCaseIds = [...new Set(input.testCaseIds ?? [])];
+  const flakeArm = testCaseIds.length === 1 ? await getReproducingArm(db, testCaseIds[0]!) : null;
 
   const desktop: ReproduceDesktopContext = {
     projectId: run?.projectId ?? null,
@@ -136,6 +141,7 @@ export async function computeReproduceContext(db: DrizzleDB, input: ReproduceInp
     clusterId: input.clusterId ?? null,
     repositoryUrl,
     bisectedCommit,
+    flakeArm,
   };
 
   return { reproduce, bisect, desktop };
@@ -149,6 +155,7 @@ export async function buildExecutionReproduce(db: DrizzleDB, executionId: number
   const [row] = await db
     .select({
       testRunId: testRunsCases.testRunId,
+      testCaseId: testRunsCases.testCaseId,
       line: testRunsCases.line,
       browser: testRunsCases.browser,
       failureClusterId: testRunsCases.failureClusterId,
@@ -173,5 +180,6 @@ export async function buildExecutionReproduce(db: DrizzleDB, executionId: number
     browserName: browser?.browserName ?? null,
     verifyCommand,
     clusterId: row.failureClusterId ?? null,
+    testCaseIds: [row.testCaseId],
   });
 }

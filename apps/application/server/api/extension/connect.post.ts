@@ -6,9 +6,9 @@ import { resolvePublicBaseUrl } from '../../utils/oauth-helpers';
 defineRouteMeta({
   openAPI: {
     tags: ['Extension'],
-    summary: 'Start connecting the browser extension',
+    summary: 'Start connecting the browser extension or an editor',
     description:
-      'Starts an RFC 8628 device authorization for Piwi Picker. Answers a device code for the extension to poll `/api/extension/connect/token` with, and a user code with the page where a signed-in user allows or denies the connection. The request expires after 10 minutes. Body: `{ browser?, os? }`, which name the connecting client. Rate-limited per client address.',
+      'Starts an RFC 8628 device authorization for Piwi Picker, the VS Code extension or the JetBrains plugin. Answers a device code for the client to poll `/api/extension/connect/token` with, and a user code with the page where a signed-in user allows or denies the connection. The request expires after 10 minutes. Body: `{ browser?, os? }` from Piwi Picker or `{ editor, os? }` from an editor, which name the connecting client. Rate-limited per client address.',
     'x-required-roles': [],
     security: [],
     responses: {
@@ -39,8 +39,16 @@ export default eventHandler(async (event) => {
   if (!checkRateLimit(rateKey, CONNECT_RATE_LIMITS.start.limit, CONNECT_RATE_LIMITS.start.windowMs)) {
     throw rateLimitedError(event, [rateKey]);
   }
-  const body = ((await readBody(event).catch(() => null)) ?? {}) as { browser?: unknown; os?: unknown };
-  const started = await startDeviceConnect(await getDatabase(), { browser: body.browser, os: body.os });
+  const body = ((await readBody(event).catch(() => null)) ?? {}) as {
+    browser?: unknown;
+    editor?: unknown;
+    os?: unknown;
+  };
+  const started = await startDeviceConnect(await getDatabase(), {
+    browser: body.browser,
+    editor: body.editor,
+    os: body.os,
+  });
   const siteUrl = (useRuntimeConfig(event).public as { siteUrl?: string })?.siteUrl;
   const url = getRequestURL(event);
   const base = resolvePublicBaseUrl(siteUrl, `${url.protocol}//${url.host}`);

@@ -454,6 +454,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         where: 'VS Code extension, JetBrains plugin',
         doc: 'features/editors',
       },
+      {
+        title: 'Editor connection',
+        summary:
+          'Connect the editor extensions to your instance: the connection the reporter uses, or a browser sign-in that creates a key for the editor, saved for that instance only.',
+        needs: [],
+        where: 'Piwi: Connect; Settings → Tools → Piwi in a JetBrains IDE',
+        doc: 'features/editor-connection',
+      },
     ],
   },
   {

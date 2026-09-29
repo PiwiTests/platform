@@ -14,6 +14,7 @@ import type { TestFunctionEntry } from '@piwitests/core/function-match';
 import type { LocatorHealingResult } from '@piwitests/core/locator-healing-types';
 import {
   PiwiClient,
+  PiwiHttpError,
   type BranchFailures,
   type CallSiteAlternatives,
   type CatalogCase,
@@ -25,7 +26,7 @@ import {
   type QuarantinedTest,
 } from './piwi-client.js';
 import type { TimeoutAdvice } from './analysis.js';
-import type { EditorCredentials } from './protocol.js';
+import type { ConnectionSource, EditorCredentials } from './protocol.js';
 import { committedText, currentBranch, headCommit, repositoryRoot, translationValues } from './workspace.js';
 
 /** Selections resolved at each refresh, at most. */
@@ -60,7 +61,7 @@ export function resolveContextConnection(
   repoRoot: string,
   env: Record<string, string | undefined>,
   editor: EditorCredentials,
-): PiwiConnection | null {
+): (PiwiConnection & { source: ConnectionSource }) | null {
   const discovery = readJson(env.PIWI_DESKTOP_CONFIG || path.join(os.homedir(), '.piwi', 'desktop.json')) as {
     url?: unknown;
     token?: unknown;
@@ -69,11 +70,8 @@ export function resolveContextConnection(
     discovery && typeof discovery.url === 'string' && typeof discovery.token === 'string'
       ? { url: discovery.url, token: discovery.token }
       : null;
-  const found = resolvePiwiConnection({
-    env,
-    dotEnv: { ...readDotEnv(repoRoot), ...readDotEnv(root) },
-    desktop,
-  });
+  const dotEnv = { ...readDotEnv(repoRoot), ...readDotEnv(root) };
+  const found = resolvePiwiConnection({ env, dotEnv, desktop });
   if (found) {
     // The key saved in the editor belongs to the server it was saved for: a URL
     // from the environment, a workspace `.env` or the desktop app never gets it.
@@ -82,6 +80,7 @@ export function resolveContextConnection(
       serverUrl: found.serverUrl,
       apiKey: found.apiKey ?? (editorUrl === found.serverUrl ? (editor.apiKey ?? null) : null),
       project: found.project || editor.project || '',
+      source: env.PIWI_DASHBOARD_URL ? 'environment' : dotEnv.PIWI_DASHBOARD_URL ? 'dotenv' : 'desktop',
     };
   }
   if (!editor.serverUrl) return null;
@@ -89,6 +88,7 @@ export function resolveContextConnection(
     serverUrl: editor.serverUrl.replace(/\/+$/, ''),
     apiKey: editor.apiKey ?? null,
     project: editor.project ?? '',
+    source: 'editor',
   };
 }
 
@@ -113,6 +113,8 @@ export function codeOwners(repoRoot: string): string[] {
 export class PiwiContext {
   repoRoot: string;
   client: PiwiClient | null = null;
+  /** Where the client's instance came from; null without one. */
+  source: ConnectionSource | null = null;
   project: { id: number; name: string } | null = null;
   /** The branch the indexes describe; null for the default branch. */
   branch: string | null = null;
@@ -168,10 +170,12 @@ export class PiwiContext {
     const connection = resolveContextConnection(this.root, this.repoRoot, env, editor);
     if (!connection) {
       this.client = null;
+      this.source = null;
       this.problem = 'No Piwi instance configured: set PIWI_DASHBOARD_URL, run piwi init, or run Piwi: Connect.';
       return;
     }
     this.client = new PiwiClient(connection);
+    this.source = connection.source;
     try {
       if (!connection.project) {
         this.problem = 'No project chosen: set PIWI_PROJECT_NAME or run Piwi: Connect.';
@@ -231,7 +235,12 @@ export class PiwiContext {
       this.problem = null;
       await this.refreshRun();
     } catch (e) {
-      this.problem = `Could not reach ${connection.serverUrl}: ${(e as Error).message}`;
+      const refused = e instanceof PiwiHttpError && (e.status === 401 || e.status === 403);
+      this.problem = refused
+        ? connection.apiKey
+          ? `${connection.serverUrl} refused the API key (${e.status}): run Piwi: Connect to sign in again.`
+          : `${connection.serverUrl} needs an API key (${e.status}): run Piwi: Connect to sign in.`
+        : `Could not reach ${connection.serverUrl}: ${(e as Error).message}`;
     }
   }
 

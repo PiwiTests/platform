@@ -16,7 +16,11 @@ import com.intellij.platform.lsp.api.LspServerManager
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.TimeUnit
 
-/** The instance and project this project reports to, when the environment, `.env` and the desktop app name none. */
+/**
+ * The instance and project this project reports to, when the environment, `.env` and the
+ * desktop app name none: **Settings → Tools → Piwi**, kept in `.idea/piwi.xml`. The key
+ * is not here but in the password safe, per instance.
+ */
 @Service(Service.Level.PROJECT)
 @State(name = "PiwiSettings", storages = [Storage("piwi.xml")])
 class PiwiSettings : PersistentStateComponent<PiwiSettings.State> {
@@ -74,31 +78,60 @@ class PiwiProjectService(private val project: Project) : Disposable {
         }
     }
 
+    fun settings(): PiwiSettings.State = project.getService(PiwiSettings::class.java).state
+
+    /** The connection saved in the IDE: this project's instance and project, and that instance's key. */
     fun credentials(): EditorCredentials {
-        val settings = project.getService(PiwiSettings::class.java).state
+        forgetSharedKey()
+        val settings = settings()
+        val url = settings.serverUrl.ifBlank { null }
         return EditorCredentials(
-            serverUrl = settings.serverUrl.ifBlank { null },
+            serverUrl = url,
             project = settings.project.ifBlank { null },
-            apiKey = PasswordSafe.instance.getPassword(credentialAttributes()),
+            apiKey = url?.let { PasswordSafe.instance.getPassword(credentialAttributes(it)) },
         )
     }
 
+    /** Whether the password safe holds a key for the instance. */
+    fun hasApiKey(serverUrl: String): Boolean =
+        serverUrl.isNotBlank() && !PasswordSafe.instance.getPassword(credentialAttributes(serverUrl)).isNullOrEmpty()
+
+    /** Save the connection, and hand it to the service; a null key forgets the instance's key. */
     fun saveCredentials(serverUrl: String, projectName: String, apiKey: String?) {
-        val settings = project.getService(PiwiSettings::class.java).state
-        settings.serverUrl = serverUrl
-        settings.project = projectName
-        PasswordSafe.instance.setPassword(credentialAttributes(), apiKey?.ifBlank { null })
+        val url = Glue.normalizeServerUrl(serverUrl) ?: serverUrl.trim()
+        val settings = settings()
+        settings.serverUrl = url
+        settings.project = projectName.trim()
+        PasswordSafe.instance.setPassword(credentialAttributes(url), apiKey?.trim()?.ifBlank { null })
         sendCredentials()
     }
 
-    /** Hand the connection to a running service (`piwi/setCredentials`). */
+    /** Forget this project's instance and project, and that instance's key. */
+    fun disconnect() {
+        val settings = settings()
+        if (settings.serverUrl.isNotBlank()) PasswordSafe.instance.setPassword(credentialAttributes(settings.serverUrl), null)
+        settings.serverUrl = ""
+        settings.project = ""
+        sendCredentials()
+    }
+
+    /**
+     * Hand the connection to the running service (`piwi/setCredentials`) and read the
+     * status again once it has used it; without a service, start it for the open files.
+     */
     fun sendCredentials() {
-        val lsp = LspServerManager.getInstance(project).getServersForProvider(PiwiLspServerSupportProvider::class.java)
-        if (lsp.isEmpty()) {
-            LspServerManager.getInstance(project).stopAndRestartIfNeeded(PiwiLspServerSupportProvider::class.java)
-            return
+        ApplicationManager.getApplication().executeOnPooledThread {
+            val manager = LspServerManager.getInstance(project)
+            val lsp = manager.getServersForProvider(PiwiLspServerSupportProvider::class.java)
+            if (lsp.isEmpty()) {
+                manager.startServersIfNeeded(PiwiLspServerSupportProvider::class.java)
+            } else {
+                val credentials = credentials()
+                lsp.forEach { it.piwiServer()?.setCredentials(credentials) }
+                server()?.refresh()?.orNull()
+            }
+            refreshStatus()
         }
-        lsp.forEach { it.piwiServer()?.setCredentials(credentials()) }
     }
 
     /** The running editor service, if any. */
@@ -121,11 +154,24 @@ class PiwiProjectService(private val project: Project) : Disposable {
         listeners.clear()
     }
 
-    private fun credentialAttributes() = CredentialAttributes(generateServiceName("Piwi", "apiKey"))
+    private fun credentialAttributes(serverUrl: String) =
+        CredentialAttributes(generateServiceName("Piwi", Glue.apiKeyEntry(serverUrl)))
+
+    /**
+     * Earlier versions kept one key for every instance, which a project naming another
+     * instance would have sent there. It is removed once: connect again to save it per instance.
+     */
+    private fun forgetSharedKey() {
+        val properties = com.intellij.ide.util.PropertiesComponent.getInstance()
+        if (properties.getBoolean(SHARED_KEY_FORGOTTEN)) return
+        properties.setValue(SHARED_KEY_FORGOTTEN, true)
+        PasswordSafe.instance.setPassword(CredentialAttributes(generateServiceName("Piwi", "apiKey")), null)
+    }
 
     companion object {
         private val SKIP_DIRS = setOf("node_modules", "dist", "build", "coverage", "test-results")
         const val TIMEOUT_SECONDS = 20L
+        private const val SHARED_KEY_FORGOTTEN = "piwi.sharedKeyForgotten"
     }
 }
 

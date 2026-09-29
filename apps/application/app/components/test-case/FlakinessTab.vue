@@ -15,7 +15,7 @@ import type { FlakeProfile, FlakeSuspect } from '#shared/handlers/flake-profile'
 import { latestSuspectResults, type FlakeExperimentRecord, type FlakeSuspectResult } from '#shared/flake-lab';
 import type { VerifiedFix } from '#shared/handlers/flake-verified';
 
-const props = defineProps<{ testCaseId: number }>();
+const props = defineProps<{ testCaseId: number; projectId?: number | null; projectLabel?: string | null }>();
 
 const route = useRoute();
 const profile = ref<FlakeProfile | null>(null);
@@ -24,6 +24,19 @@ const experiments = ref<FlakeExperimentRecord[]>([]);
 const verifiedFix = ref<VerifiedFix | null>(null);
 const loading = ref(true);
 const failed = ref(false);
+
+/** Re-read the experiments, when a lab session run from the desktop app ends. */
+async function reloadExperiments() {
+  try {
+    const res = await $fetch<{ items: FlakeExperimentRecord[]; verifiedFix?: VerifiedFix | null }>(
+      `/api/test-cases/${props.testCaseId}/flake-experiments`,
+    );
+    experiments.value = res.items;
+    verifiedFix.value = res.verifiedFix ?? null;
+  } catch {
+    // The list stays as it was; the next visit reads it again.
+  }
+}
 
 watch(
   () => props.testCaseId,
@@ -313,6 +326,13 @@ function detailLine(s: FlakeSuspect): string | null {
           >
             Copy verify command
           </UButton>
+          <FlakeLabDesktopButton
+            :test-case-id="testCaseId"
+            :project-id="projectId ?? null"
+            :project-label="projectLabel"
+            :suspect-count="profile?.suspects.length ?? 0"
+            @finished="reloadExperiments"
+          />
         </div>
         <p class="text-xs text-muted font-mono break-all">
           {{ reproduced ? verifyCommand : reproduceCommand }}

@@ -37,7 +37,7 @@ test.describe('connect, authentication off', () => {
     await expect(page.getByTestId('connect-client')).toHaveText('Piwi Picker in Chrome on Linux');
     await expect(page.getByTestId('connect-code')).toHaveText(codes.userCode);
     // The link carries the code, so Allow waits for the user to confirm their own Piwi Picker shows it.
-    await expect(page.getByText('If you did not just click Connect in Piwi Picker, deny')).toBeVisible();
+    await expect(page.getByText('If you have not just clicked Connect in Piwi Picker, deny')).toBeVisible();
     const allow = page.getByRole('button', { name: 'Allow' });
     await expect(allow).toBeDisabled();
     await page.getByRole('checkbox', { name: 'My Piwi Picker shows this same code' }).check();
@@ -62,6 +62,21 @@ test.describe('connect, authentication off', () => {
       data: { userCode: codes.userCode, allow: true },
     });
     expect(again.status()).toBe(409);
+  });
+
+  test('an editor is named and addressed as an editor', async ({ page, request }) => {
+    const codes = (await (
+      await request.post('/api/extension/connect', { data: { editor: 'WebStorm', os: 'Linux' } })
+    ).json()) as { deviceCode: string; userCode: string };
+    await page.goto(`/extension/connect?code=${codes.userCode}`);
+    await waitForHydration(page);
+    await expect(page.getByRole('heading', { name: 'Connect your editor' })).toBeVisible();
+    await expect(page.getByTestId('connect-client')).toHaveText('Piwi in WebStorm on Linux');
+    await expect(page.getByText('If you have not just run Piwi: Connect in your editor, deny')).toBeVisible();
+    await page.getByRole('checkbox', { name: 'My editor shows this same code' }).check();
+    await page.getByRole('button', { name: 'Allow' }).click();
+    await expect(page.getByText('Allowed. Your editor finishes connecting on its own')).toBeVisible();
+    expect((await poll(request, '', codes.deviceCode)).status).toBe('approved');
   });
 
   test('an unknown code shows an error, and a malformed device code reads as expired', async ({ page, request }) => {

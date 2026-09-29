@@ -198,11 +198,13 @@ the experiment on the test's Flakiness tab.
 npx @piwitests/reporter flake 1842
 npx @piwitests/reporter flake tests/checkout.spec.ts:42 --suspect 1
 npx @piwitests/reporter flake verify 1842
+git bisect run npx @piwitests/reporter flake verify 1842 --bisect
 ```
 
 `<test>` is a test case id (the number in its dashboard URL) or a spec file and line, looked up in the project.
 `flake verify` reruns the arm that last reproduced the test, and its control, until a matching failure appears or
-enough runs pass to say the fix holds.
+enough runs pass to say the fix holds. `flake verify --bisect` runs that arm alone at the commit checked out, saves
+nothing, and answers in the exit codes `git bisect run` reads, so a bisect can find the commit where the flake started.
 
 | Flag | Description |
 |---|---|
@@ -212,6 +214,8 @@ enough runs pass to say the fix holds.
 | `--budget <duration>` | Start no new arm after this long: `15m` (default), `90s`, `1h` |
 | `--no-upload` | Keep the results off the dashboard. The plan still comes from the dashboard, or from `--plan` when it cannot be reached |
 | `--plan <file>` | Read the plan from a file (a saved plan response, or the `plan` of the `plan_flake_experiment` MCP tool) and run it without the dashboard; implies `--no-upload` |
+| `--bisect` | `verify` only: one bisect step, the reproducing arm alone with nothing saved; implies `--no-upload` |
+| `--source <where>` | Where the lab ran, recorded on the experiment: `cli`, `ci` or `desktop` (default `ci` when `CI` is set, else `cli`) |
 | `--json` | Print the arms, their counts, verdicts and p-values as JSON |
 | `--server-url <url>` | Dashboard URL (env `PIWI_DASHBOARD_URL`, `.env`, the desktop app) |
 | `--api-key <key>` | API key (env `PIWI_API_KEY`, `.env`) |
@@ -225,7 +229,8 @@ both on one worker and keeps only the rounds where the other test ran just befor
 
 **Exit codes:** `0` an arm reproduced the failure (`verify`: the fix held) · `1` nothing reproduced (`verify`: it still
 fails, or there were too few runs to say) · `2` error: the plan could not be read, or an arm recorded no attempt of the
-test.
+test. With `--bisect`: `0` good (no matching failure in the runs that prove it) · `1` bad (a matching failure) · `125`
+skip (too few clean runs, or this commit could not run the arm) · `2` error: the plan could not be read.
 
 ## `ai`
 

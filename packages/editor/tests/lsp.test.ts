@@ -425,6 +425,7 @@ describe('the Piwi language server', () => {
       expect.objectContaining({
         root: dir,
         connected: true,
+        source: 'environment',
         projectName: 'Acme Mugs',
         branch: 'main',
         locators: 2,

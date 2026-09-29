@@ -33,9 +33,45 @@ export type LocalRunStatus = 'running' | 'passed' | 'failed' | 'stopped' | 'erro
 
 /**
  * What a run is: a plain test run, a full reproduction (checkout → install →
- * test), a bisect, or a bug report's steps run from a repro request.
+ * test), a bisect, a bug report's steps run from a repro request, or a Flake
+ * Lab session (`piwi flake`) at the commit of a test's latest failure.
  */
-export type LocalRunKind = 'tests' | 'reproduce' | 'bisect' | 'repro';
+export type LocalRunKind = 'tests' | 'reproduce' | 'bisect' | 'repro' | 'flake';
+
+/** What a Flake Lab session runs: which arms, how many runs, and its budget. */
+export interface FlakeLabOptions {
+  /** One suspect's arm (its rank), or null for every arm. */
+  suspect: number | null;
+  /** Also run every condition at once when none reproduces alone. */
+  all: boolean;
+  /** Runs of the control and of each arm; null keeps the command's default. */
+  runs: number | null;
+  /** Start no new arm after this many minutes; null keeps the command's default. */
+  budgetMinutes: number | null;
+}
+
+/** A Flake Lab session's run: the test it experiments on, and how. */
+export interface FlakeLabRunState {
+  testCaseId: number;
+  options: FlakeLabOptions;
+}
+
+/** The command a Flake Lab session runs, as the tray shows it. */
+export function flakeLabDisplay(testCaseId: number, options: FlakeLabOptions): string {
+  const parts = ['piwi flake', String(testCaseId)];
+  if (options.suspect != null) parts.push('--suspect', String(options.suspect));
+  else if (options.all) parts.push('--all');
+  if (options.runs != null) parts.push('--runs', String(options.runs));
+  if (options.budgetMinutes != null) parts.push('--budget', `${options.budgetMinutes}m`);
+  return parts.join(' ');
+}
+
+/** `piwi flake`'s exit code, read: 0 reproduced, 1 not reproduced, else it could not run. */
+export function flakeLabOutcome(code: number | null): 'reproduced' | 'not-reproduced' | 'error' {
+  if (code === 0) return 'reproduced';
+  if (code === 1) return 'not-reproduced';
+  return 'error';
+}
 
 /** A repro request's run: the request it answers and, once over, its verdict. */
 export interface ReproRunState {
@@ -47,8 +83,8 @@ export interface ReproRunState {
   verdict: SpecRunVerdict | null;
 }
 
-/** The phases a reproduce/bisect run streams a header for. */
-export type LocalRunPhase = 'checkout' | 'install' | 'browser' | 'test' | 'bisect';
+/** The phases a reproduce/bisect/flake run streams a header for. */
+export type LocalRunPhase = 'checkout' | 'install' | 'browser' | 'test' | 'bisect' | 'lab';
 
 export type BisectVerdict = 'testing' | 'good' | 'bad' | 'skipped';
 
@@ -121,6 +157,10 @@ export interface LocalRun {
   bisectTarget: BisectTarget | null;
   /** The repro request it answers (kind === 'repro'). */
   repro: ReproRunState | null;
+  /** The Flake Lab session (kind === 'flake'). */
+  flake: FlakeLabRunState | null;
+  /** A bisect that runs this test's reproducing Flake Lab arm at each step (kind === 'bisect'). */
+  flakeTestCaseId: number | null;
   status: LocalRunStatus;
   lines: LocalRunLine[];
   exitCode: number | null;
@@ -146,6 +186,7 @@ const PHASE_LABEL: Record<LocalRunPhase, string> = {
   browser: 'Installing browser',
   test: 'Testing',
   bisect: 'Bisecting',
+  lab: 'Running the lab',
 };
 
 /** Live label for a running run — test counts when Playwright announced them. */
@@ -380,7 +421,9 @@ export function useDesktopLocalRuns() {
         run.status = 'stopped';
       } else {
         run.exitCode = typeof worst === 'number' ? worst : 1;
-        run.status = worst === 0 ? 'passed' : 'failed';
+        // A lab session that ran to a verdict has done its job, reproduced or not.
+        const done = run.kind === 'flake' ? flakeLabOutcome(run.exitCode) !== 'error' : worst === 0;
+        run.status = done ? 'passed' : 'failed';
       }
     } catch (error) {
       pushLine(run, errorMessage(error), true);
@@ -420,6 +463,18 @@ export function useDesktopLocalRuns() {
         args: run.repro.args,
       });
     }
+    if (run.kind === 'flake' && run.flake) {
+      // Only the test and the options: the shell reads the commit, builds the
+      // command and its environment itself.
+      const { suspect, all, runs, budgetMinutes } = run.flake.options;
+      return spawnCommand(run, 'desktop_flake_lab_here', {
+        testCaseId: run.flake.testCaseId,
+        suspect,
+        all,
+        runs,
+        budgetMinutes,
+      });
+    }
     const args = buildReproduceArgs(run.cases);
     if (run.kind === 'bisect') {
       return spawnCommand(run, 'desktop_bisect_here', {
@@ -428,6 +483,7 @@ export function useDesktopLocalRuns() {
         bad: run.bad,
         browser: run.browserName,
         args,
+        flakeTestCaseId: run.flakeTestCaseId,
       });
     }
     return spawnCommand(run, 'desktop_reproduce_here', {
@@ -501,6 +557,27 @@ export function useDesktopLocalRuns() {
         trayOpen.value = true;
       },
     };
+    if (run.kind === 'flake') {
+      const outcome = flakeLabOutcome(run.exitCode);
+      const title =
+        outcome === 'reproduced'
+          ? 'The lab reproduced the flake'
+          : outcome === 'not-reproduced'
+            ? 'The lab did not reproduce the flake'
+            : 'Flake Lab could not run';
+      notifyUnfocused(run, label, title, seconds);
+      toastApi?.add({
+        title,
+        description:
+          outcome === 'error'
+            ? (run.lines.findLast((l) => l.error)?.text ?? `Stopped after ${seconds}s`)
+            : `${label} — ${seconds}s. The experiment is on the test's Flakiness tab.`,
+        icon: 'i-lucide-flask-conical',
+        color: outcome === 'reproduced' ? 'success' : outcome === 'error' ? 'error' : 'neutral',
+        actions: [viewOutputAction],
+      });
+      return;
+    }
     if (run.kind === 'bisect') {
       const found = run.bisect?.firstBad;
       if (found) {
@@ -654,6 +731,8 @@ export function useDesktopLocalRuns() {
     bad?: string | null;
     bisectTarget?: BisectTarget | null;
     repro?: ReproRunState | null;
+    flake?: FlakeLabRunState | null;
+    flakeTestCaseId?: number | null;
   }): LocalRun {
     const run: LocalRun = {
       key: nextKey++,
@@ -672,6 +751,8 @@ export function useDesktopLocalRuns() {
       bisect: input.kind === 'bisect' ? { step: null, stepsEstimate: null, candidates: [], firstBad: null } : null,
       bisectTarget: input.bisectTarget ?? null,
       repro: input.repro ?? null,
+      flake: input.flake ?? null,
+      flakeTestCaseId: input.flakeTestCaseId ?? null,
       status: 'running',
       lines: [],
       exitCode: null,
@@ -732,10 +813,13 @@ export function useDesktopLocalRuns() {
     bad: string;
     browserName?: string | null;
     target?: BisectTarget | null;
+    /** Run this test's reproducing Flake Lab arm at each step instead of the plain test. */
+    flakeTestCaseId?: number | null;
   }): LocalRun | null {
     if (!tauriCore() || input.projectId == null || input.cases.length === 0) return null;
     return spawn({
       kind: 'bisect',
+      flakeTestCaseId: input.flakeTestCaseId ?? null,
       projectId: input.projectId,
       projectLabel: input.projectLabel,
       cases: input.cases,
@@ -745,6 +829,31 @@ export function useDesktopLocalRuns() {
       bad: input.bad,
       browserName: input.browserName ?? null,
       bisectTarget: input.target ?? null,
+    });
+  }
+
+  /**
+   * Run a Flake Lab session on one test in the desktop app: the shell checks
+   * out the commit of its latest failure in a throwaway worktree, installs,
+   * and runs `piwi flake` there, streaming its output. The experiment is
+   * recorded on the test like one from the command line. Returns the tracked
+   * run, or `null` outside the desktop app.
+   */
+  function startFlakeLab(input: {
+    projectId: string | number | null | undefined;
+    projectLabel?: string | null;
+    testCaseId: number;
+    options: FlakeLabOptions;
+  }): LocalRun | null {
+    if (!tauriCore() || input.projectId == null) return null;
+    return spawn({
+      kind: 'flake',
+      projectId: input.projectId,
+      projectLabel: input.projectLabel,
+      cases: [],
+      options: { ...DEFAULT_LOCAL_RUN_OPTIONS },
+      steps: [{ args: [], display: flakeLabDisplay(input.testCaseId, input.options) }],
+      flake: { testCaseId: input.testCaseId, options: { ...input.options } },
     });
   }
 
@@ -856,6 +965,15 @@ export function useDesktopLocalRuns() {
         bad: run.bad,
         browserName: run.browserName,
         target: run.bisectTarget,
+        flakeTestCaseId: run.flakeTestCaseId,
+      });
+    }
+    if (run.kind === 'flake' && run.flake) {
+      return startFlakeLab({
+        projectId: run.projectId,
+        projectLabel: run.projectLabel,
+        testCaseId: run.flake.testCaseId,
+        options: run.flake.options,
       });
     }
     return startRun({
@@ -907,6 +1025,7 @@ export function useDesktopLocalRuns() {
     startRun,
     startReproduce,
     startBisect,
+    startFlakeLab,
     startRepro,
     rerun,
     stopRun,

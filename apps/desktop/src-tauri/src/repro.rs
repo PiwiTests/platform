@@ -135,8 +135,10 @@ pub(crate) fn test_dir_from_list(stdout: &str, project: Option<&str>) -> Option<
     chosen.get("testDir")?.as_str().map(PathBuf::from)
 }
 
-/// The body of a plain HTTP/1.0 response, when its status is 200.
-fn http_body(response: &[u8]) -> Result<&[u8], String> {
+/// The body of a plain HTTP/1.0 response, when its status is 200. Otherwise
+/// the error names the status, and the server's own message when its body
+/// carries one.
+pub(crate) fn http_body(response: &[u8]) -> Result<&[u8], String> {
     let split = response
         .windows(4)
         .position(|w| w == b"\r\n\r\n")
@@ -144,9 +146,42 @@ fn http_body(response: &[u8]) -> Result<&[u8], String> {
     let head = String::from_utf8_lossy(&response[..split]);
     let status = head.lines().next().unwrap_or_default();
     if !status.contains(" 200 ") {
-        return Err(format!("the local server answered {}", status.trim()));
+        let message = serde_json::from_slice::<serde_json::Value>(&response[split + 4..])
+            .ok()
+            .and_then(|body| {
+                body.get("message")
+                    .and_then(|m| m.as_str())
+                    .map(str::to_string)
+            })
+            .filter(|m| !m.is_empty());
+        return Err(match message {
+            Some(message) => message,
+            None => format!("the local server answered {}", status.trim()),
+        });
     }
     Ok(&response[split + 4..])
+}
+
+/// GET a JSON document from the bundled server, with the app's token. `path`
+/// is built by the caller from validated parts only.
+pub(crate) fn local_get_json(server: &ServerInfo, path: &str) -> Result<serde_json::Value, String> {
+    use std::io::{Read, Write};
+    let mut stream =
+        std::net::TcpStream::connect(("127.0.0.1", server.port)).map_err(|e| e.to_string())?;
+    let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(60)));
+    let request = format!(
+        "GET {path} HTTP/1.0\r\nHost: 127.0.0.1:{}\r\nx-piwi-token: {}\r\nAccept: application/json\r\nConnection: close\r\n\r\n",
+        server.port, server.token
+    );
+    stream
+        .write_all(request.as_bytes())
+        .map_err(|e| e.to_string())?;
+    let mut response = Vec::new();
+    stream
+        .read_to_end(&mut response)
+        .map_err(|e| e.to_string())?;
+    serde_json::from_slice(http_body(&response)?)
+        .map_err(|_| "the local server sent something other than JSON".to_string())
 }
 
 /// Ask the bundled server for the request's spec, rendered for the project.
@@ -435,6 +470,14 @@ mod tests {
             b"{\"code\":1}"
         );
         assert!(http_body(b"HTTP/1.1 404 Not Found\r\n\r\n{}").is_err());
+        assert_eq!(
+            http_body(b"HTTP/1.1 409 Conflict\r\n\r\n{\"message\":\"nothing reproduced\"}"),
+            Err("nothing reproduced".to_string())
+        );
+        assert_eq!(
+            http_body(b"HTTP/1.1 404 Not Found\r\n\r\n{}"),
+            Err("the local server answered HTTP/1.1 404 Not Found".to_string())
+        );
         assert!(http_body(b"HTTP/1.1 200 OK").is_err());
     }
 
