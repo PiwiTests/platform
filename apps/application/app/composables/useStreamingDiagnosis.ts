@@ -1,4 +1,5 @@
 import type { FailureDiagnosis } from '~~/server/database/schema';
+import type { DiagnosisStage } from '#shared/ai-diagnosis';
 
 /**
  * Reactive state for a streaming AI diagnosis session.
@@ -20,7 +21,7 @@ export interface DiagnosisStreamBody {
 
 export interface UseStreamingDiagnosisReturn {
   thinkingText: Ref<string>;
-  stage: Ref<string | null>;
+  stage: Ref<DiagnosisStage | null>;
   status: Ref<StreamStatus>;
   result: Ref<FailureDiagnosis | null>;
   error: Ref<string | null>;
@@ -31,7 +32,7 @@ export interface UseStreamingDiagnosisReturn {
 
 export function useStreamingDiagnosis(clusterId: Ref<number> | number): UseStreamingDiagnosisReturn {
   const thinkingText = ref('');
-  const stage = ref<string | null>(null);
+  const stage = ref<DiagnosisStage | null>(null);
   const status = ref<StreamStatus>('idle');
   const result = ref<FailureDiagnosis | null>(null);
   const error = ref<string | null>(null);
@@ -149,7 +150,7 @@ export function useStreamingDiagnosis(clusterId: Ref<number> | number): UseStrea
               const d = parsed.data as { text: string };
               thinkingText.value += d.text;
             } else if (parsed.event === 'stage') {
-              stage.value = (parsed.data as { stage: string }).stage;
+              stage.value = (parsed.data as { stage: DiagnosisStage }).stage;
             } else if (parsed.event === 'error') {
               const d = parsed.data as { message: string };
               error.value = d.message;
@@ -238,7 +239,7 @@ export function useStreamingDiagnosis(clusterId: Ref<number> | number): UseStrea
           const d = parsed.data as { text: string };
           thinkingText.value += d.text;
         } else if (parsed.event === 'stage') {
-          stage.value = (parsed.data as { stage: string }).stage;
+          stage.value = (parsed.data as { stage: DiagnosisStage }).stage;
         } else if (parsed.event === 'error') {
           error.value = (parsed.data as { message: string }).message;
           status.value = 'error';
