@@ -4,6 +4,7 @@ import { subscriptions, notificationChannels } from '../../database/schema';
 import { requireAuth } from '../../utils/auth';
 import { formatSubscription } from '../../utils/subscriptions';
 import { NOTIFICATION_EVENTS } from '#shared/notification-events';
+import { subscriptionFiltersSchema } from '#shared/subscription-filters';
 import { Role } from '#shared/types';
 import { z } from 'zod';
 
@@ -11,7 +12,8 @@ defineRouteMeta({
   openAPI: {
     tags: ['Notifications'],
     summary: 'Update a subscription',
-    description: 'Updates events, filters, mode, muting, or active state.',
+    description:
+      'Updates events, filters, mode, muting, or active state. `filters` takes the same keys as when creating a subscription; `null` clears them.',
     'x-required-roles': [],
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
   },
@@ -20,7 +22,7 @@ defineRouteMeta({
 const schema = z.object({
   channelId: z.number().int().positive().optional(),
   events: z.array(z.enum(NOTIFICATION_EVENTS)).optional(),
-  filters: z.record(z.string(), z.unknown()).nullable().optional(),
+  filters: subscriptionFiltersSchema.nullable().optional(),
   mode: z.enum(['realtime', 'digest']).optional(),
   digestAt: z
     .string()
