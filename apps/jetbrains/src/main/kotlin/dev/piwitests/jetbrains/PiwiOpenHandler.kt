@@ -1,0 +1,157 @@
+package dev.piwitests.jetbrains
+
+import com.google.gson.Gson
+import com.intellij.ide.impl.ProjectUtil
+import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.application.ApplicationNamesInfo
+import com.intellij.openapi.application.ReadAction
+import com.intellij.openapi.components.service
+import com.intellij.openapi.fileEditor.OpenFileDescriptor
+import com.intellij.openapi.project.Project
+import com.intellij.openapi.project.ProjectManager
+import com.intellij.openapi.roots.ProjectFileIndex
+import com.intellij.openapi.roots.ProjectRootManager
+import com.intellij.openapi.util.io.FileUtil
+import com.intellij.openapi.vfs.LocalFileSystem
+import com.intellij.openapi.vfs.VirtualFile
+import com.intellij.openapi.wm.IdeFocusManager
+import io.netty.buffer.Unpooled
+import io.netty.channel.ChannelFutureListener
+import io.netty.channel.ChannelHandlerContext
+import io.netty.handler.codec.http.DefaultFullHttpResponse
+import io.netty.handler.codec.http.FullHttpRequest
+import io.netty.handler.codec.http.HttpHeaderNames
+import io.netty.handler.codec.http.HttpRequest
+import io.netty.handler.codec.http.HttpResponseStatus
+import io.netty.handler.codec.http.HttpVersion
+import io.netty.handler.codec.http.QueryStringDecoder
+import org.jetbrains.ide.RestService
+import java.io.File
+
+/**
+ * `GET /api/piwi/open?file=<path>&line=<n>&column=<n>` on the IDE's built-in server: the
+ * dashboard's Open in IDE. It finds the file in the projects open in this IDE (a path relative
+ * to the run's working directory is looked up under each Playwright config's directory, the
+ * project directory and the content roots, so a Rider solution in a subfolder or a Playwright
+ * project inside a monorepo resolves without any setting), opens it at the 1-based line and
+ * column, and brings the project window to the front. With `check`, it only says whether it
+ * would. It answers JSON the dashboard can read, so the dashboard knows the file opened, and in
+ * which IDE, where a `jetbrains://` link or the platform's `/api/file` cannot tell.
+ *
+ * The origin rules are the platform's, as for `/api/file`: a page on the loopback interface
+ * (the dashboard served locally, the desktop app) is trusted, and the IDE asks before trusting
+ * another origin, then remembers the answer for a day.
+ */
+class PiwiOpenHandler : RestService() {
+    override fun getServiceName(): String = SERVICE
+
+    override fun isOriginAllowed(request: HttpRequest): OriginCheckResult = OriginCheckResult.ASK_CONFIRMATION
+
+    override fun execute(urlDecoder: QueryStringDecoder, request: FullHttpRequest, context: ChannelHandlerContext): String? {
+        val origin = request.headers().get(HttpHeaderNames.ORIGIN)
+        when (val parsed = Glue.parseOpenRequest(urlDecoder.parameters())) {
+            is Glue.OpenRequest.Refused -> respond(context, origin, HttpResponseStatus.BAD_REQUEST, mapOf("error" to parsed.error))
+            is Glue.OpenRequest.File -> ApplicationManager.getApplication().executeOnPooledThread {
+                val (status, body) = try {
+                    answer(parsed)
+                } catch (e: Exception) {
+                    HttpResponseStatus.INTERNAL_SERVER_ERROR to mapOf("error" to (e.message ?: e.javaClass.simpleName))
+                }
+                respond(context, origin, status, body)
+            }
+        }
+        return null
+    }
+
+    private fun answer(request: Glue.OpenRequest.File): Pair<HttpResponseStatus, Map<String, Any?>> {
+        val ide = ApplicationNamesInfo.getInstance().fullProductName
+        val projects = rankedProjects(request.piwiProject)
+        val found = projects.firstNotNullOfOrNull { project -> locate(project, request.path, request.root)?.let { project to it } }
+            ?: return HttpResponseStatus.NOT_FOUND to mapOf(
+                "found" to false,
+                "ide" to ide,
+                "projects" to projects.map { it.name },
+                "error" to if (projects.isEmpty()) "no project is open in $ide" else "no project open in $ide holds ${request.path}",
+            )
+        val (project, file) = found
+        if (!request.check) open(project, file, request.line, request.column)
+        return HttpResponseStatus.OK to mapOf(
+            "found" to true,
+            "opened" to !request.check,
+            "ide" to ide,
+            "project" to project.name,
+            "file" to file.path,
+        )
+    }
+
+    /** The open projects: the ones connected to the Piwi project first, then the last focused one. */
+    private fun rankedProjects(piwiProject: String?): List<Project> {
+        val open = ProjectManager.getInstance().openProjects.filter { !it.isDefault && !it.isDisposed }
+        val focused = IdeFocusManager.getGlobalInstance().lastFocusedFrame?.project
+        return open.sortedWith(
+            compareByDescending<Project> { piwiProject != null && reportsTo(it, piwiProject) }.thenByDescending { it == focused },
+        )
+    }
+
+    private fun reportsTo(project: Project, piwiProject: String): Boolean {
+        val service = project.service<PiwiProjectService>()
+        return service.settings().project == piwiProject || service.status?.contexts.orEmpty().any { it.projectName == piwiProject }
+    }
+
+    /**
+     * The file in the project: under the dashboard's root, then under a directory a run's paths start from, or an
+     * absolute path. Wherever it was found, it must be inside the project.
+     */
+    private fun locate(project: Project, path: String, root: String?): VirtualFile? {
+        val service = project.service<PiwiProjectService>()
+        val roots = ReadAction.compute<List<String>, RuntimeException> {
+            buildList {
+                service.status?.contexts.orEmpty().mapNotNullTo(this) { it.root }
+                service.playwrightConfigDirs().mapTo(this) { it.path }
+                project.basePath?.let { add(it) }
+                ProjectRootManager.getInstance(project).contentRoots.mapTo(this) { it.path }
+            }
+        }
+        for (candidate in Glue.candidatePaths(path, listOfNotNull(root) + roots)) {
+            val io = File(candidate)
+            if (!io.isFile) continue
+            // Refreshed, so a spec file created since the IDE last scanned the disk is found too.
+            val file = LocalFileSystem.getInstance().refreshAndFindFileByIoFile(io) ?: continue
+            val inProject = ReadAction.compute<Boolean, RuntimeException> {
+                ProjectFileIndex.getInstance(project).isInContent(file) || roots.any { FileUtil.isAncestor(it, file.path, false) }
+            }
+            if (inProject) return file
+        }
+        return null
+    }
+
+    private fun open(project: Project, file: VirtualFile, line: Int?, column: Int?) {
+        ApplicationManager.getApplication().invokeLater({
+            // The descriptor's line and column are 0-based.
+            val descriptor = if (line == null) OpenFileDescriptor(project, file) else OpenFileDescriptor(project, file, line - 1, (column ?: 1) - 1)
+            descriptor.navigate(true)
+            ProjectUtil.focusProjectWindow(project, true)
+        }, project.disposed)
+    }
+
+    private fun respond(context: ChannelHandlerContext, origin: String?, status: HttpResponseStatus, body: Map<String, Any?>) {
+        val bytes = Gson().toJson(body).toByteArray()
+        val response = DefaultFullHttpResponse(HttpVersion.HTTP_1_1, status, Unpooled.wrappedBuffer(bytes))
+        val headers = response.headers()
+        headers.set(HttpHeaderNames.CONTENT_TYPE, "application/json")
+        headers.set(HttpHeaderNames.CONTENT_LENGTH, bytes.size)
+        headers.set(HttpHeaderNames.CACHE_CONTROL, "no-store")
+        // The request passed the origin check, so the page that sent it may read the answer.
+        if (origin != null) {
+            headers.set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_ORIGIN, origin)
+            headers.set(HttpHeaderNames.VARY, "Origin")
+        }
+        context.channel().writeAndFlush(response).addListener(ChannelFutureListener.CLOSE)
+    }
+
+    companion object {
+        /** Served at `/api/piwi/open`. */
+        const val SERVICE = "piwi/open"
+        const val PATH = "/api/$SERVICE"
+    }
+}

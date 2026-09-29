@@ -132,6 +132,43 @@ class GlueTest {
     }
 
     @Test
+    fun `an open request reads the file, its 1-based position, check and the Piwi project`() {
+        fun q(vararg pairs: Pair<String, String>) = pairs.groupBy({ it.first }, { it.second })
+        assertEquals(
+            Glue.OpenRequest.File("tests/a.spec.ts", 12, 3, false, "Shop"),
+            Glue.parseOpenRequest(q("file" to "tests/a.spec.ts", "line" to "12", "column" to "3", "project" to "Shop")),
+        )
+        assertEquals(Glue.OpenRequest.File("C:/repo/a.ts", null, null, true, null), Glue.parseOpenRequest(q("file" to "C:\\repo\\a.ts", "check" to "")))
+        assertEquals("C:/repo/e2e", (Glue.parseOpenRequest(q("file" to "a.ts", "root" to "C:\\repo\\e2e")) as Glue.OpenRequest.File).root)
+        assertEquals(false, (Glue.parseOpenRequest(q("file" to "a.ts", "check" to "0")) as Glue.OpenRequest.File).check)
+        assertEquals(true, (Glue.parseOpenRequest(mapOf("file" to listOf("a.ts"), "check" to emptyList())) as Glue.OpenRequest.File).check)
+    }
+
+    @Test
+    fun `an open request refuses a missing file, network paths, parent segments and bad positions`() {
+        fun refused(vararg pairs: Pair<String, String>) = (Glue.parseOpenRequest(pairs.groupBy({ it.first }, { it.second })) as Glue.OpenRequest.Refused).error
+        assertEquals("file is required", refused("line" to "3"))
+        assertEquals("network paths are not supported", refused("file" to "\\\\attacker\\share\\a.ts"))
+        assertEquals("network paths are not supported", refused("file" to "//attacker/share/a.ts"))
+        assertEquals("file must not contain '..'", refused("file" to "tests/../../etc/passwd"))
+        assertEquals("line must be a positive integer", refused("file" to "a.ts", "line" to "0"))
+        assertEquals("column must be a positive integer", refused("file" to "a.ts", "line" to "2", "column" to "x"))
+        assertEquals("root must be an absolute path", refused("file" to "a.ts", "root" to "repo"))
+        assertEquals("network paths are not supported", refused("file" to "a.ts", "root" to "\\\\attacker\\share"))
+    }
+
+    @Test
+    fun `a relative path is looked up under each root once, an absolute one as is`() {
+        assertEquals(
+            listOf("/repo/e2e/tests/a.spec.ts", "/repo/tests/a.spec.ts"),
+            Glue.candidatePaths("./tests/a.spec.ts", listOf("/repo/e2e/", "/repo", "/repo/", "")),
+        )
+        assertEquals(listOf("C:/repo/web/a.ts"), Glue.candidatePaths("a.ts", listOf("C:\\repo\\web")))
+        assertEquals(listOf("/home/me/repo/a.ts"), Glue.candidatePaths("/home/me/repo/a.ts", listOf("/other")))
+        assertEquals(listOf("D:/repo/a.ts"), Glue.candidatePaths("D:\\repo\\a.ts", listOf("/other")))
+    }
+
+    @Test
     fun `a rendered body is re-indented at the caret's indentation`() {
         assertEquals(
             "await page.goto('/cart');\n    await page.getByRole('button').click();",

@@ -63,18 +63,23 @@ class PiwiProjectService(private val project: Project) : Disposable {
     /** Whether a Playwright config sits in the project, up to four directory levels down. */
     fun hasPlaywrightConfig(): Boolean {
         playwrightConfig?.let { return it }
-        val root = project.guessProjectDir() ?: return false
-        val found = findConfig(root, 0)
+        val found = playwrightConfigDirs().isNotEmpty()
         playwrightConfig = found
         return found
     }
 
-    private fun findConfig(dir: VirtualFile, depth: Int): Boolean {
-        val children = dir.children ?: return false
-        if (children.any { !it.isDirectory && it.name in Glue.PLAYWRIGHT_CONFIGS }) return true
-        if (depth >= 4) return false
-        return children.any {
-            it.isDirectory && !it.name.startsWith(".") && it.name !in SKIP_DIRS && findConfig(it, depth + 1)
+    /** The directories holding a Playwright config, up to four levels down: where a run's file paths start. */
+    fun playwrightConfigDirs(): List<VirtualFile> {
+        val root = project.guessProjectDir() ?: return emptyList()
+        return mutableListOf<VirtualFile>().also { collectConfigDirs(root, 0, it) }
+    }
+
+    private fun collectConfigDirs(dir: VirtualFile, depth: Int, found: MutableList<VirtualFile>) {
+        val children = dir.children ?: return
+        if (children.any { !it.isDirectory && it.name in Glue.PLAYWRIGHT_CONFIGS }) found += dir
+        if (depth >= 4) return
+        for (child in children) {
+            if (child.isDirectory && !child.name.startsWith(".") && child.name !in SKIP_DIRS) collectConfigDirs(child, depth + 1, found)
         }
     }
 

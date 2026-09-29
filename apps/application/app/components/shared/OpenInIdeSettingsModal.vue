@@ -105,13 +105,22 @@ function testOpen(filePath: string) {
           variant="soft"
           icon="i-lucide-app-window"
           title="Desktop app opens files directly"
-          description="Files open through your IDE's command-line launcher (code, cursor, rider, idea, …) — the most reliable method, and the one that confirms it worked. Make sure the launcher is on your PATH: JetBrains Toolbox → Settings → “Generate shell scripts”, or VS Code → “Shell Command: Install 'code' command in PATH”. When no launcher is found it falls back to a URL scheme."
+          description="Files open through your IDE's command-line launcher (code, cursor, rider, idea, …), and the app says whether it started. It finds the launcher on your PATH, then where the IDEs install it: the Toolbox scripts folder, the IDE's own folder (rider64.exe on Windows, Rider.app on macOS), VS Code's bin folder. When no launcher is found it falls back to a URL scheme."
+        />
+
+        <UAlert
+          v-if="showJetbrains"
+          color="primary"
+          variant="soft"
+          icon="i-lucide-puzzle"
+          title="JetBrains: install the Piwi plugin"
+          description="With the Piwi plugin in your JetBrains IDE (Rider, WebStorm, IntelliJ IDEA, …), files open there with no setting: the IDE finds the file in its open projects, opens it at the line, and confirms it did. Auto and both JetBrains methods ask it first, on every IDE running."
         />
 
         <UFormField
           label="Method"
           name="method"
-          description="Auto probes the JetBrains local server first, then falls back to a URL launch."
+          description="Auto asks the Piwi JetBrains plugin first, then the IDE's command-line launcher in the desktop app, then the JetBrains local server, then falls back to a URL launch."
         >
           <USelect v-model="prefs.method" :items="methodItems" class="w-full" />
         </UFormField>
@@ -136,7 +145,7 @@ function testOpen(filePath: string) {
                 <option v-for="p in JETBRAINS_PRODUCTS" :key="p" :value="p" />
               </datalist>
             </UFormField>
-            <UFormField label="Local server port" name="jetbrainsPort" description="Remote Control plugin.">
+            <UFormField label="Local server port" name="jetbrainsPort" description="The IDE's built-in server.">
               <UInput v-model.number="prefs.jetbrainsPort" type="number" class="w-full" />
             </UFormField>
           </div>
@@ -174,7 +183,7 @@ function testOpen(filePath: string) {
           variant="soft"
           icon="i-lucide-info"
           title="JetBrains prerequisites"
-          description="The jetbrains:// link needs JetBrains Toolbox. The local server needs the IDE Remote Control plugin with 'Allow unsigned requests', and browsers block it when this dashboard is served over HTTPS."
+          description="Without the Piwi plugin: the jetbrains:// link needs JetBrains Toolbox and the IDE project name (in Rider, the solution's name); the local server needs the IDE Remote Control plugin with 'Allow unsigned requests', and neither can confirm the file opened. When this dashboard is served over HTTPS, some browsers block requests to the IDE on localhost, or ask for your permission first."
         />
 
         <USeparator />

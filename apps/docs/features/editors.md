@@ -144,5 +144,6 @@ is drawn natively:
 - **MCP**: **Copy the MCP server configuration** puts an `mcpServers` entry on the clipboard for **Settings → Tools → AI
   Assistant → Model Context Protocol** or another agent. It runs the server through `mcp-remote`, with the key in its
   environment.
+- **[Open in IDE](./ide-integration)**: a path clicked in the dashboard opens at its line, with nothing to set.
 
 IntelliJ IDEA Community Edition and Android Studio do not have the LSP API the plugin needs.

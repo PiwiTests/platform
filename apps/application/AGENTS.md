@@ -312,8 +312,9 @@ emerald / amber / rose. Never write a pass-rate threshold or color at a call sit
   `<span>`/`<code>`. Pass `filePath` (+ `line`/`column`) or `location`, and thread `projectKey` (the Piwi project **id**)
   and `projectName` when in scope so per-project workspace overrides resolve. IDE preferences are a **per-browser client
   preference** (`useOpenInIde`, `piwi-ide-prefs`) — deliberately not in `SETTINGS_PAGES` and with no `PIWI_*` var, since
-  the source lives on the user's machine. Only the JetBrains local-server method is detectable; `vscode://` /
-  `jetbrains://` launches are fire-and-forget, so never report a confirmed "opened".
+  the source lives on the user's machine. Only the Piwi JetBrains plugin (`/api/piwi/open`, `PiwiOpenHandler.kt` in
+  `apps/jetbrains`) confirms a file opened. The IDE Remote Control probe only shows an IDE is listening, and
+  `vscode://` / `jetbrains://` launches are fire-and-forget, so never report a confirmed "opened" for those.
 - **Data fetching in tab children**: for self-contained components rendered conditionally, use `watch` + `$fetch` with
   reactive triggers rather than `useFetch({ lazy: true })`, which may not fire before mount. Use `v-if` on tab-switched
   components for clean mount/unmount. Pass props from the page only for data already fetched at page level.
