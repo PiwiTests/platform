@@ -112,7 +112,7 @@ const resetToDefaults = () => persist({ settings: null }, 'Reset to defaults');
 
             <UFormField
               label="Max open PRs per project"
-              description="A ceiling on how many auto-heal PRs can be open at once for one project."
+              description="A ceiling on how many auto-heal PRs can still be open on your repository at once for one project. Merged and closed PRs stop counting."
               :hint="`default ${response?.defaults.maxOpenPrs ?? 3}`"
             >
               <UInput v-model.number="values.maxOpenPrs" type="number" min="0" max="50" class="w-28" />

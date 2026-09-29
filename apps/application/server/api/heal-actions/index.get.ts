@@ -9,7 +9,7 @@ defineRouteMeta({
     tags: ['Projects'],
     summary: 'List auto-heal actions for a project',
     description:
-      'The auto-heal pull requests Piwi has opened (or tried to) for a project, newest first: status, target branch, edit count, and the PR link when one was opened.',
+      'The auto-heal pull requests Piwi has opened (or tried to) for a project, newest first: status, target branch, edit count, and the PR link when one was opened. A status is `pending`, `opened` (the PR is still open on the SCM), `merged`, `closed`, `failed` or `skipped`.',
     parameters: [{ name: 'projectId', in: 'query', required: true, schema: { type: 'integer' } }],
   },
 });

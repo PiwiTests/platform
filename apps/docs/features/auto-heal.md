@@ -49,7 +49,9 @@ Settings → Auto-heal (administrator only):
 - **Projects** — the explicit allowlist. Auto-heal ignores any project not listed.
 - **Minimum score** — the stability score an edit needs (default 80). A confirmed pick is always eligible.
 - **Draft** — open PRs as drafts (default on; ignored on Bitbucket).
-- **Max open PRs** — a per-project ceiling on simultaneously-open auto-heal PRs (default 3).
+- **Max open PRs** — a per-project ceiling on auto-heal PRs still open on your repository (default 3). Piwi checks
+  the SCM for each PR it opened every ten minutes, and whenever the ceiling is reached, so a merged or closed PR
+  stops counting.
 - **Branch prefix** / **commit message** — the branch namespace (default `piwi/heal/`) and the commit subject
   (default `test: heal broken locators`, a conventional-commit subject so your commit lint accepts it).
 

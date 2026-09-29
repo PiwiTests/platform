@@ -17,7 +17,8 @@ import { resolveDefaultBranch } from '../scm/default-branch';
 import { resolveRunBranch } from '../run-branch';
 import { normalizeGitUrl } from '../scm/git-url';
 import { getAutoHealSettings, resolveHealSiteUrl } from './settings';
-import { buildRetryCommand } from '#shared/retry-command';
+import { refreshOpenHealActions } from './pr-state';
+import { buildRetryCommand, buildTitleGrepFlag } from '#shared/retry-command';
 import {
   healBranchName,
   healDedupeKey,
@@ -113,9 +114,30 @@ function buildVerifyCommand(edits: HealEditPayload[], rows: HealCandidateRow[]):
     .filter((r): r is HealCandidateRow => !!r)
     .map((r) => ({ filePath: r.filePath, title: r.title }));
   const fileCmd = buildRetryCommand(cases, { mode: 'file' });
-  const titles = [...new Set(cases.map((c) => c.title))].slice(0, 5);
-  const grep = titles.length ? ` -g "${titles.map((t) => t.replace(/["\\$`]/g, '\\$&')).join('|')}"` : '';
+  const grep = buildTitleGrepFlag([...new Set(cases.map((c) => c.title))].slice(0, 5));
   return `${fileCmd || 'npx playwright test'}${grep}`;
+}
+
+async function countOpenHealActions(db: DbClient, projectId: number): Promise<number> {
+  const [{ value } = { value: 0 }] = await db
+    .select({ value: count() })
+    .from(healActions)
+    .where(and(eq(healActions.projectId, projectId), eq(healActions.status, 'opened')));
+  return value;
+}
+
+/**
+ * Whether the project is under its open-PR cap. Once the recorded open count
+ * reaches the cap, the SCM is asked which of those PRs are still open, so a
+ * merged or closed PR frees its slot at once.
+ */
+export async function hasOpenPrCapacity(db: DbClient, projectId: number, maxOpenPrs: number): Promise<boolean> {
+  let open = await countOpenHealActions(db, projectId);
+  if (open > 0 && open >= maxOpenPrs) {
+    await refreshOpenHealActions(db, { projectId });
+    open = await countOpenHealActions(db, projectId);
+  }
+  return open < maxOpenPrs;
 }
 
 type EnqueueResult = { enqueued: true; dedupeKey: string; edits: number } | { enqueued: false; reason: string };
@@ -201,11 +223,9 @@ export async function maybeEnqueueHealAction(db: DbClient, runId: number): Promi
   const edits = selectHealEdits(ownedRows, healing, { minScore: settings.minScore });
   if (edits.length === 0) return skip('no qualifying locator edits');
 
-  const [{ value: openCount } = { value: 0 }] = await db
-    .select({ value: count() })
-    .from(healActions)
-    .where(and(eq(healActions.projectId, run.projectId), eq(healActions.status, 'opened')));
-  if (openCount >= settings.maxOpenPrs) return skip('max open heal PRs reached for this project');
+  if (!(await hasOpenPrCapacity(db, run.projectId, settings.maxOpenPrs))) {
+    return skip('max open heal PRs reached for this project');
+  }
 
   const signature = healSignature(edits);
   const dedupeKey = healDedupeKey(run.projectId, signature);

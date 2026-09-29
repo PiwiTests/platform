@@ -450,7 +450,7 @@ export async function pruneReportSnapshots(db: DbClient, olderThanDays: number):
 }
 
 /**
- * Delete auto-heal actions that finished (opened/failed/skipped) before the
+ * Delete auto-heal actions that finished (opened/merged/closed/failed/skipped) before the
  * cutoff. Pending actions are never touched — they still have work to do. The
  * DB row is only a record of what Piwi did; deleting it never affects the PR
  * itself, which lives in the user's repository.
@@ -458,7 +458,7 @@ export async function pruneReportSnapshots(db: DbClient, olderThanDays: number):
 export async function pruneHealActions(db: DbClient, olderThanDays: number): Promise<number> {
   const cutoffDate = new Date(Date.now() - olderThanDays * MS_PER_DAY);
   const settled = and(
-    inArray(healActions.status, ['opened', 'failed', 'skipped']),
+    inArray(healActions.status, ['opened', 'merged', 'closed', 'failed', 'skipped']),
     lt(healActions.updatedAt, cutoffDate),
   )!;
   const pruned = await countWhere(db, healActions, settled);
