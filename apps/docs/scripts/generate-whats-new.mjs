@@ -57,6 +57,7 @@ const sections = ordered
 
 const page = `---
 title: What's new
+description: The features each Piwi release added, grouped by minor version and newest first, generated from the changelog.
 lang: en-US
 editLink: false
 ---

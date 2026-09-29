@@ -54,8 +54,12 @@ apps/docs/
 !apps/docs/operate/**/*.md
 !apps/docs/reference/**/*.md
 !apps/docs/snippets/**
+apps/docs/reference/analytics-widgets.md
 apps/docs/reference/configuration.md
-apps/docs/reference/feature-map.md
+apps/docs/reference/features.md
+apps/docs/reference/mcp-tools.md
+apps/docs/reference/metrics.md
+apps/docs/reference/reporter-options.md
 apps/docs/reference/whats-new.md
 
 # Tests (not needed for Docker build)

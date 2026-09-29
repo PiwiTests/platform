@@ -6,14 +6,10 @@ import { computeRunCountsFromRows } from '../../../utils/run-counts';
 import { sanitizeMetadata } from '../../../utils/sanitize';
 import { resolveRunBranch } from '../../../utils/run-branch';
 import { validateAndReviveRun } from '../../../utils/revive-run';
-import { autoDiagnoseRun } from '../../../utils/ai-diagnosis';
 import { readShardTokensFromMeta, removeStoredShardToken } from '../../../utils/shard-tokens';
-import { emitRunNotifications } from '../../../utils/notifications/run-notifications';
-import { postRunPrFeedbackInBackground } from '../../../utils/scm/pr-feedback';
-import { maybeEnqueueHealActionInBackground } from '../../../utils/heal/policy';
-import { computeRegressionSignals } from '../../../utils/compute-regression-signals';
-import { syncAutoMarkersForRun } from '#shared/handlers/markers';
+import { runFinalizeSideEffects } from '../../../utils/run-finalize-side-effects';
 import { sumFailedAndTimedOut } from '#shared/utils/test-counts';
+import { applyReporterKeep } from '#shared/handlers/run-keep';
 
 defineRouteMeta({
   openAPI: {
@@ -83,6 +79,7 @@ export default eventHandler(async (event) => {
   const shardTokens = isSharded ? readShardTokensFromMeta(testRun.metadata) : undefined;
   const isShardToken = shardTokens ? (token: string) => shardTokens.has(token) : undefined;
   await validateAndReviveRun(db, id, testRun, body.streamToken, isShardToken);
+  await applyReporterKeep(db, id, body.keep);
 
   // Determine final status
   const status = body.status ?? 'failed';
@@ -214,16 +211,7 @@ export default eventHandler(async (event) => {
         status: finalStatus,
       });
 
-      computeRegressionSignals(db, id).catch((e) =>
-        console.error('[regression-signals] computeRegressionSignals failed', e),
-      );
-      syncAutoMarkersForRun(db, id).catch((e) => console.error('[markers] syncAutoMarkersForRun failed', e));
-      autoDiagnoseRun(db, testRun.projectId, id).catch((e) =>
-        console.error('[ai-diagnosis] autoDiagnoseRun failed', e),
-      );
-      emitRunNotifications(db, id).catch((e) => console.error('[notifications] emitRunNotifications failed', e));
-      postRunPrFeedbackInBackground(db, id);
-      maybeEnqueueHealActionInBackground(db, id);
+      await runFinalizeSideEffects(db, id, testRun);
 
       runEventBus.cleanup(id);
     } else {
@@ -342,14 +330,7 @@ export default eventHandler(async (event) => {
 
     runEventBus.publishGlobal({ type: 'run-finished', runId: id, projectId: testRun.projectId, status });
 
-    computeRegressionSignals(db, id).catch((e) =>
-      console.error('[regression-signals] computeRegressionSignals failed', e),
-    );
-    syncAutoMarkersForRun(db, id).catch((e) => console.error('[markers] syncAutoMarkersForRun failed', e));
-    autoDiagnoseRun(db, testRun.projectId, id).catch((e) => console.error('[ai-diagnosis] autoDiagnoseRun failed', e));
-    emitRunNotifications(db, id).catch((e) => console.error('[notifications] emitRunNotifications failed', e));
-    postRunPrFeedbackInBackground(db, id);
-    maybeEnqueueHealActionInBackground(db, id);
+    await runFinalizeSideEffects(db, id, testRun);
 
     runEventBus.cleanup(id);
   }

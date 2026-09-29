@@ -115,6 +115,17 @@ test('the dashboard can reach the shell IPC commands', async ({ tauriPage: fixtu
   expect(update.ok, `desktop_check_update rejected: ${update.error ?? 'unknown'}`).toBe(true);
   expect(update.state).toBe('unsupported');
 
+  // The update settings are granted too, and a dev build reports itself unable
+  // to update, which hides the startup-notification checkbox.
+  const updateSettings = (await tauriPage.evaluate(`
+    window.__TAURI__.core.invoke('desktop_get_update_settings')
+      .then((s) => ({ ok: true, supported: s && s.supported, pending: s && s.pending }))
+      .catch((e) => ({ ok: false, error: String((e && e.message) || e) }))
+  `)) as { ok: boolean; error?: string; supported?: boolean; pending?: unknown };
+  expect(updateSettings.ok, `desktop_get_update_settings rejected: ${updateSettings.error ?? 'unknown'}`).toBe(true);
+  expect(updateSettings.supported).toBe(false);
+  expect(updateSettings.pending).toBeNull();
+
   // The ambient badge/tooltip command is granted and accepts a set + clear.
   const activity = (await tauriPage.evaluate(`
     window.__TAURI__.core.invoke('desktop_set_activity', { count: 2, status: 'e2e' })

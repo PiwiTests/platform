@@ -23,9 +23,9 @@ RUN --mount=type=cache,target=/root/.npm \
 COPY tsconfig.json ./
 
 # Copy the shared workspace packages (@piwitests/core, @piwitests/picker-dom).
-# Both ship TypeScript source: Vite transpiles them (nuxt.config transpile) and
-# Nitro inlines them into .output (noExternals), so their source must be present
-# at build time or Rollup fails to resolve the imports.
+# Both ship TypeScript source: Vite transpiles them and Nitro inlines them into
+# the server bundle (both via nuxt.config build.transpile), so their source must
+# be present at build time or Rollup fails to resolve the imports.
 COPY packages/core/ ./packages/core/
 COPY packages/picker-dom/ ./packages/picker-dom/
 
@@ -46,6 +46,9 @@ COPY CHANGELOG.md ./
 ARG PIWI_BUILD_SHA
 ARG TARGETARCH
 ENV NITRO_PRESET=node-server
+# Node caps the heap at 4 GB in this image, half what it picks on a bare 16 GB
+# runner, and the build peaks around 3 GB. Leave it room to grow.
+ENV NODE_OPTIONS=--max-old-space-size=6144
 ENV PIWI_BUILD_SHA=${PIWI_BUILD_SHA}
 RUN set -eux; \
     npm run app:build --workspace=apps/application; \
@@ -81,7 +84,8 @@ RUN addgroup -g 1001 -S nodejs && \
     chown nodejs:nodejs /app
 
 # Copy workspace files for native module install (sharp, libsql, sql.js)
-# Pure-JS deps are inlined by Nitro noExternals — only native binaries needed here.
+# Pure-JS deps ship in .output/server/node_modules (traced by Nitro) — only native
+# binaries needed here.
 # --chown is required: `npm install` below runs as nodejs and rewrites package.json
 # to record the added deps, which fails with EACCES on a root-owned copy.
 COPY --chown=nodejs:nodejs package.json package-lock.json ./
@@ -90,7 +94,7 @@ COPY --chown=nodejs:nodejs package.json package-lock.json ./
 RUN printf "import{readFileSync,writeFileSync}from'node:fs';const p=JSON.parse(readFileSync('package.json','utf8'));p.workspaces=['apps/application'];writeFileSync('package.json',JSON.stringify(p));" > /tmp/fix.mjs && node /tmp/fix.mjs && rm /tmp/fix.mjs
 
 # Install only the native packages needed at runtime (sharp + libsql + sql.js)
-# All pure-JS deps are bundled into .output by Nitro's noExternals
+# All pure-JS deps ship in .output/server/node_modules, traced by Nitro
 # Run as nodejs to avoid a duplicate chown layer
 USER nodejs
 
@@ -119,7 +123,7 @@ RUN --mount=type=cache,target=/home/nodejs/.npm,uid=1001,gid=1001 \
     find node_modules -type d \( -name "test" -o -name "tests" -o -name ".devcontainer" \) -exec rm -rf {} + 2>/dev/null || true; \
     node -e "require.resolve('sharp'); require.resolve('@libsql/client')"
 
-# Copy built application — pure-JS deps inlined by Nitro noExternals
+# Copy built application — pure-JS deps travel in .output/server/node_modules
 COPY --chown=nodejs:nodejs --from=builder /app/apps/application/.output ./apps/application/.output
 
 # Reconciles operator-facing PIWI_AUTH_* env onto the NUXT_* runtime overrides

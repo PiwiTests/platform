@@ -1,6 +1,6 @@
 {
   "name": "@piwitests/server",
-  "version": "0.36.0",
+  "version": "0.41.0",
   "description": "Self-hosted dashboard that keeps and explains your Playwright test results — run with npx @piwitests/server",
   "type": "module",
   "bin": {
@@ -27,7 +27,7 @@
     "url": "https://github.com/PiwiTests/platform/issues"
   },
   "author": "piwitests",
-  "license": "MIT",
+  "license": "FSL-1.1-MIT",
   "keywords": [
     "playwright",
     "dashboard",

@@ -1,12 +1,12 @@
 /**
  * One tool at a time, per page.
  *
- * Every momentary tool (pick, hover-inspect, the various panels) is its own
- * content script injected on demand, and nothing stopped them overlapping:
- * you could leave hover-inspect running, start a pick, and end up with two
- * overlays and two sets of capture-phase listeners fighting over the same
- * clicks. Each tool now announces itself here on injection, which tears down
- * whichever tool was already running.
+ * Every momentary tool (pick, the overlays, the various panels) is its own
+ * content script injected on demand. Left alone they would overlap: a lint
+ * overlay left on while a pick starts means two overlays and two sets of
+ * capture-phase listeners fighting over the same clicks. Each tool announces
+ * itself here on injection, which tears down whichever tool was already
+ * running.
  *
  * State lives on the content script's own `globalThis` — the isolated world,
  * shared by every tool injected into the same document, and gone when the
@@ -24,14 +24,13 @@ import { removePickerOverlay } from '@piwitests/picker-dom';
 /** Matches the popup's button ids, so the popup can highlight the tile directly. */
 export type ToolId =
   | 'pick'
-  | 'hover-inspect'
-  | 'locator-console'
   | 'multi-pick'
   | 'lint-overlay'
   | 'assertion-panel'
-  | 'session-panel'
   | 'agent-context-panel'
-  | 'test-function-panel';
+  | 'test-function-panel'
+  | 'coverage-overlay'
+  | 'playwright-view';
 
 interface ActiveTool {
   id: ToolId;
@@ -125,8 +124,8 @@ export function teardownToolSurfaces(): void {
  * Escape cancels whatever is running, from anywhere on the page.
  *
  * Individual tools already handle Escape while their own UI has focus, but
- * that leaves the cases where it doesn't — hover-inspect has no focusable
- * chrome at all, and an overlay loses focus as soon as you click the page.
+ * that leaves the cases where it doesn't — an overlay such as the lint
+ * overlay has no focusable chrome, and loses focus as soon as you click the page.
  * Registered once per document, on the capture phase so a page that swallows
  * keydown can't block it, and only acting when a tool is actually running so
  * the page's own Escape handling is untouched the rest of the time.

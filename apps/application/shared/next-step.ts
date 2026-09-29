@@ -11,6 +11,7 @@
  */
 import type { FailureWhy } from '#shared/failure-verdict';
 import type { ParsedErrorKind } from '#shared/error-parse';
+import { shortCommit } from '#shared/scm-urls';
 
 export type NextStepKind =
   | 'open-blocker'
@@ -155,7 +156,7 @@ export function computeNextStep(input: NextStepInput): NextStep {
 
   // 6 — a fix regressed: see what changed since it landed.
   if (input.fixVerification === 'regressed') {
-    const commit = input.fixCommit?.trim();
+    const commit = input.fixCommit?.trim() ? shortCommit(input.fixCommit.trim()) : null;
     return {
       kind: 'see-what-changed',
       title: `See what changed since the fix${commit ? ` in ${commit}` : ''} — it did not hold`,

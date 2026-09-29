@@ -1,57 +1,43 @@
 import type { DrizzleDB } from '../db';
 import type { AnalyticsScope } from '../../analytics/scope';
 import type { AnalyticsCiTimeTrend } from '../../analytics/types';
-import {
-  fetchScopedRuns,
-  firstNonEmptyIndex,
-  makeTimeBuckets,
-  minutes,
-  periodStart,
-  type ProjectAccess,
-} from './common';
+import { firstNonEmptyIndex, getAnalyticsContext, minutes, type ProjectAccess } from './common';
+import { groupRows, loadScalarRows } from './scalar-rows';
 
 /**
- * Total CI minutes consumed by test runs over time, with the previous
- * equal-length period as a growth baseline — the capacity/budget view.
+ * Total CI minutes consumed by test runs over time, with the comparison
+ * period as a growth baseline — the capacity/budget view. Under a test filter
+ * the minutes are the matching executions' durations.
  */
 export async function getAnalyticsCiTimeTrend(
   db: DrizzleDB,
   scope: AnalyticsScope,
   access: ProjectAccess = 'all',
 ): Promise<AnalyticsCiTimeTrend> {
-  const runs = await fetchScopedRuns(db, scope, access, scope.days * 2);
-  const cutoff = periodStart(scope.days);
-  const buckets = makeTimeBuckets(scope.days);
+  const ctx = await getAnalyticsContext(db, scope, access);
+  const [rows, previousRows] = await Promise.all([
+    loadScalarRows(db, ctx, ctx.period.from.getTime(), ctx.period.to.getTime()),
+    ctx.comparison
+      ? loadScalarRows(db, ctx, ctx.comparison.from.getTime(), ctx.comparison.to.getTime())
+      : Promise.resolve([]),
+  ]);
+  const buckets = ctx.buckets;
+  const byBucket = groupRows(rows, (row) => buckets.keyFor(row.day));
 
-  const byBucket = new Map<string, { totalMs: number; runCount: number }>();
   let totalMs = 0;
   let runCount = 0;
-  let prevTotalMs = 0;
-  let hasPrevious = false;
-
-  for (const run of runs) {
-    const durationMs = run.duration ?? 0;
-    if (run.startTime.getTime() < cutoff) {
-      hasPrevious = true;
-      prevTotalMs += durationMs;
-      continue;
-    }
-    totalMs += durationMs;
-    runCount++;
-    const key = buckets.keyFor(run.startTime);
-    if (!key) continue;
-    const bucket = byBucket.get(key) ?? { totalMs: 0, runCount: 0 };
-    bucket.totalMs += durationMs;
-    bucket.runCount++;
-    byBucket.set(key, bucket);
+  for (const row of rows) {
+    totalMs += row.durationMs;
+    runCount += row.runs;
   }
-
+  const hasPrevious = previousRows.some((row) => row.runs > 0);
+  const prevTotalMs = previousRows.reduce((sum, row) => sum + row.durationMs, 0);
   const deltaPct =
     hasPrevious && prevTotalMs > 0 ? Math.round(((totalMs - prevTotalMs) / prevTotalMs) * 1000) / 10 : null;
 
   const points = buckets.keys.map((date) => {
     const bucket = byBucket.get(date);
-    return { date, totalMinutes: minutes(bucket?.totalMs ?? 0), runCount: bucket?.runCount ?? 0 };
+    return { date, totalMinutes: minutes(bucket?.durationMs ?? 0), runCount: bucket?.runs ?? 0 };
   });
 
   return {

@@ -5,7 +5,7 @@
  */
 
 /** The outcomes the palette colors. */
-export type StatusPaletteKey = 'passed' | 'failed' | 'flaky' | 'skipped' | 'didnotrun' | 'running';
+export type StatusPaletteKey = 'passed' | 'failed' | 'flaky' | 'skipped' | 'fixme' | 'didnotrun' | 'running';
 
 export interface StatusPaletteEntry {
   /** CSS color for SVG fills, chart legends and inline styles. */
@@ -49,6 +49,15 @@ export const STATUS_PALETTE: Record<StatusPaletteKey, StatusPaletteEntry> = {
     text: 'text-zinc-500 dark:text-zinc-400',
     chip: 'bg-zinc-200 text-zinc-700 dark:bg-zinc-700 dark:text-zinc-300',
   },
+  // A `test.fixme()` skip: a second grey, stronger than a plain skip, since the
+  // test is known broken rather than deliberately out of scope.
+  fixme: {
+    color: 'var(--color-status-fixme)',
+    bg: 'bg-status-fixme',
+    ring: 'ring-status-fixme',
+    text: 'text-zinc-700 dark:text-zinc-300',
+    chip: 'bg-zinc-300 text-zinc-800 dark:bg-zinc-600 dark:text-zinc-100',
+  },
   didnotrun: {
     color: 'var(--color-status-didnotrun)',
     bg: 'bg-status-didnotrun',
@@ -82,6 +91,8 @@ export function statusPaletteKey(status: string | null | undefined, retries?: nu
       return 'failed';
     case 'flaky':
       return 'flaky';
+    case 'fixme':
+      return 'fixme';
     case 'didnotrun':
       return 'didnotrun';
     case 'running':

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { PiwiEnvVarName } from '#shared/piwi-env-vars';
+import { notificationEventLabel } from '#shared/notification-events';
 
 const toast = useToast();
 const config = useRuntimeConfig();
@@ -64,64 +65,19 @@ interface Channel {
   config: Record<string, unknown>;
 }
 
-const { data: channelsData, refresh: refreshChannels } = await useFetch<{ items: Channel[] }>('/api/channels');
+const { data: channelsData, refresh: refreshChannels } = await useFetch<{
+  items: Channel[];
+  canStoreSecrets?: boolean;
+}>('/api/channels');
 
 const channels = computed(() => channelsData.value?.items ?? []);
 
-// New channel form
 const showNewChannel = ref(false);
-const newChannel = reactive({
-  name: '',
-  type: 'email' as 'email' | 'slack' | 'webhook' | 'browser',
-  address: '',
-  webhookUrl: '',
-  url: '',
-  secret: '',
-  global: false,
-});
-const savingChannel = ref(false);
 const testingChannel = ref<number | null>(null);
 
-// Browser channels pair with per-user subscriptions; without auth the project
-// bell's per-browser preferences cover that role instead.
-const channelTypeOptions = computed(() => [
-  { label: 'Email', value: 'email' },
-  { label: 'Slack webhook', value: 'slack' },
-  { label: 'Webhook', value: 'webhook' },
-  ...(authEnabled.value ? [{ label: 'Browser', value: 'browser' }] : []),
-]);
-
-async function saveChannel() {
-  savingChannel.value = true;
-  try {
-    const config: Record<string, unknown> = {};
-    if (newChannel.type === 'email') config.address = newChannel.address;
-    else if (newChannel.type === 'slack') config.webhookUrl = newChannel.webhookUrl;
-    else if (newChannel.type === 'webhook') {
-      config.url = newChannel.url;
-      if (newChannel.secret) config.secret = newChannel.secret;
-    }
-    await $fetch('/api/channels', {
-      method: 'POST',
-      body: { name: newChannel.name, type: newChannel.type, config, global: newChannel.global },
-    });
-    showNewChannel.value = false;
-    Object.assign(newChannel, {
-      name: '',
-      type: 'email',
-      address: '',
-      webhookUrl: '',
-      url: '',
-      secret: '',
-      global: false,
-    });
-    await refreshChannels();
-    toast.add({ title: 'Channel created', color: 'success' });
-  } catch (e) {
-    toast.add({ title: 'Failed to create channel', description: String((e as Error)?.message ?? e), color: 'error' });
-  } finally {
-    savingChannel.value = false;
-  }
+async function onChannelSaved() {
+  showNewChannel.value = false;
+  await refreshChannels();
 }
 
 async function deleteChannel(id: number) {
@@ -137,11 +93,15 @@ async function deleteChannel(id: number) {
 async function testChannel(id: number) {
   testingChannel.value = id;
   try {
-    const res = await $fetch<{ success: boolean; error?: string }>(`/api/channels/${id}/test`, { method: 'POST' });
+    const res = await $fetch<{ success: boolean; error?: string; hint?: string }>(`/api/channels/${id}/test`, {
+      method: 'POST',
+    });
     if (res.success) {
       toast.add({ title: 'Test notification sent', color: 'success' });
       await refreshChannels();
-    } else toast.add({ title: 'Test failed', description: res.error, color: 'error' });
+    } else {
+      toast.add({ title: 'Test failed', description: [res.error, res.hint].filter(Boolean).join(' '), color: 'error' });
+    }
   } catch (e) {
     toast.add({ title: 'Test failed', description: String((e as Error)?.message ?? e), color: 'error' });
   } finally {
@@ -217,14 +177,12 @@ function channelTypeIcon(type: string) {
   if (type === 'personal_email') return 'i-lucide-user-round';
   if (type === 'email') return 'i-lucide-mail';
   if (type === 'slack') return 'i-lucide-slack';
+  if (type === 'teams') return 'i-lucide-messages-square';
   if (type === 'browser') return 'i-lucide-monitor';
   return 'i-lucide-webhook';
 }
 
-function eventLabel(e: string) {
-  if (e === 'auto_heal.pr_opened') return 'Auto-heal › PR opened';
-  return e.replace(/\./g, ' › ');
-}
+const eventLabel = notificationEventLabel;
 </script>
 
 <template>
@@ -310,60 +268,15 @@ PIWI_SMTP_PASS=secret"
           <UButton size="sm" icon="i-lucide-plus" @click="showNewChannel = !showNewChannel"> Add channel </UButton>
         </template>
 
-        <!-- New channel form -->
-        <div v-if="showNewChannel" class="mb-4 p-4 rounded-lg border border-primary/30 bg-primary/5 space-y-3">
-          <h4 class="font-medium text-sm">New channel</h4>
-          <div class="grid grid-cols-2 gap-3">
-            <UFormField label="Name">
-              <UInput v-model="newChannel.name" placeholder="e.g. My email" class="w-full" />
-            </UFormField>
-            <UFormField label="Type">
-              <USelect v-model="newChannel.type" :items="channelTypeOptions" class="w-full" />
-            </UFormField>
-          </div>
-
-          <UFormField v-if="newChannel.type === 'email'" label="Email address">
-            <UInput v-model="newChannel.address" type="email" placeholder="you@example.com" class="w-full" />
-          </UFormField>
-          <UFormField v-else-if="newChannel.type === 'slack'" label="Slack webhook URL">
-            <UInput v-model="newChannel.webhookUrl" placeholder="https://hooks.slack.com/…" class="w-full" />
-          </UFormField>
-          <template v-else-if="newChannel.type === 'webhook'">
-            <UFormField label="Endpoint URL">
-              <UInput v-model="newChannel.url" placeholder="https://your-server.com/webhook" class="w-full" />
-            </UFormField>
-            <UFormField label="Secret (optional)" description="Used to sign requests with X-Piwi-Signature header">
-              <UInput v-model="newChannel.secret" type="password" placeholder="Shared secret" class="w-full" />
-            </UFormField>
-          </template>
-          <p v-else-if="newChannel.type === 'browser'" class="text-xs text-muted">
-            Sends OS notifications to your open dashboard tabs. No configuration needed — subscribe it to events, then
-            allow notifications when the browser asks.
-          </p>
-
-          <UCheckbox
-            v-if="authEnabled && canSeeAdmin"
-            v-model="newChannel.global"
-            label="Global channel"
-            description="Visible to every user; anyone can subscribe to it."
-          />
-          <p v-if="!authEnabled" class="text-xs text-muted">
-            Authentication is disabled, so channels are instance-wide.
-          </p>
-
-          <div class="flex justify-end gap-2">
-            <UButton color="neutral" variant="ghost" size="sm" @click="showNewChannel = false">Cancel</UButton>
-            <UButton
-              color="primary"
-              size="sm"
-              :loading="savingChannel"
-              :disabled="!newChannel.name"
-              @click="saveChannel"
-            >
-              Save channel
-            </UButton>
-          </div>
-        </div>
+        <NotificationChannelForm
+          v-if="showNewChannel"
+          :auth-enabled="!!authEnabled"
+          :can-see-admin="canSeeAdmin"
+          :smtp-configured="!!smtp?.configured"
+          :can-store-secrets="channelsData?.canStoreSecrets ?? true"
+          @saved="onChannelSaved"
+          @cancel="showNewChannel = false"
+        />
 
         <div v-if="channels.length === 0 && !showNewChannel" class="text-sm text-muted py-4 text-center">
           No channels yet. Add one to start receiving notifications.
@@ -392,6 +305,7 @@ PIWI_SMTP_PASS=secret"
                   ch.config.address as string
                 }}</template>
                 <template v-else-if="ch.type === 'slack'">Slack webhook</template>
+                <template v-else-if="ch.type === 'teams'">Microsoft Teams webhook</template>
                 <template v-else-if="ch.type === 'browser'">Dashboard tabs (OS notifications)</template>
                 <template v-else>{{ ch.config.url as string }}</template>
                 <span v-if="ch.userId === null && authEnabled" class="ml-1 text-primary text-xs">(global)</span>

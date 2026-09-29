@@ -5,7 +5,7 @@
 // database + file storage) relative to wherever you run this command.
 import { existsSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const entry = resolve(here, '../.output/server/index.mjs')
@@ -58,4 +58,5 @@ const port = process.env.PORT || process.env.NITRO_PORT || '3000'
 console.log(`Starting Piwi Dashboard on http://localhost:${port}`)
 console.log(`Data (SQLite database + file storage) will be stored in ${resolve(process.cwd(), '.data')}`)
 
-await import(entry)
+// import() takes a URL, not a path: a Windows path (C:\...) reads as a `c:` scheme.
+await import(pathToFileURL(entry).href)

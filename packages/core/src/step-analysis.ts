@@ -6,7 +6,10 @@
  * `result.steps` from a live run, and the server rebuilds the same structures
  * from an imported blob report's step events.
  */
+import { stripAnsi } from './error-parse';
 import { maskTokenLike } from './mask';
+import { isCaptureStep, sameCodeLocation } from './step-tree';
+import type { TestStepEvent, TestStepEventHook } from './wire';
 
 /** Max param keys kept per step. */
 export const MAX_STEP_PARAM_KEYS = 20;
@@ -14,14 +17,29 @@ export const MAX_STEP_PARAM_KEYS = 20;
 export const MAX_STEP_PARAM_VALUE_CHARS = 200;
 
 /**
+ * Cap a stored step value to `max` characters, ending a cut value with `…` so
+ * readers can tell it is incomplete (a cut locator chain can still parse as a
+ * shorter, different chain).
+ */
+export function capStepValue(value: string, max: number): string {
+  return value.length > max ? `${value.slice(0, Math.max(0, max - 1))}…` : value;
+}
+
+/** An API request's title in newer Playwright: the bare HTTP method (`GET`, `POST`, …). */
+const HTTP_METHOD_TITLE_RE = /^(?:get|post|put|patch|delete|head|options|fetch)$/i;
+
+/**
  * Categorise a Playwright step into `navigation`, `action`, `input`,
- * `assertion`, `wait`, `api`, `hook`, or `other`.
+ * `assertion`, `wait`, `api`, `hook`, `fixture`, `test.step`, `attach`, or
+ * `other`.
  *
  * Supports two title formats:
  *  - Legacy api-path titles ("page.goto", "locator.click", "page.waitForTimeout")
  *  - Modern human-readable titles introduced in newer Playwright versions
  *    ("Navigate to \"{url}\"", "Click", "Wait for timeout", "Wait for load state").
- * Hook/fixture/expect steps are detected via Playwright's own `category`.
+ * Hook/fixture/expect steps, `test.step` groups and attachments are detected via
+ * Playwright's own `category`, so a `test.step` titled "Fill the form" stays a
+ * group rather than an input.
  *
  * `params` is Playwright's curated per-step argument object (the rendered
  * `locator`, a navigation's `url`, …). When present it is the exact signal for
@@ -30,9 +48,14 @@ export const MAX_STEP_PARAM_VALUE_CHARS = 200;
  */
 export function categorizeStep(title: string, pwCategory?: string, params?: Record<string, unknown>): string {
   if (!title) return 'other';
-  if (pwCategory === 'hook' || pwCategory === 'fixture') return pwCategory;
+  if (pwCategory === 'hook' || pwCategory === 'fixture' || pwCategory === 'test.step') return pwCategory;
   if (pwCategory === 'expect') return 'assertion';
+  if (pwCategory === 'test.attach') return 'attach';
   const lower = title.toLowerCase();
+
+  // An API request (`request.get(…)`): newer Playwright titles it with the bare
+  // HTTP method and a `url` param, so it is caught before the url-means-navigation rule.
+  if (HTTP_METHOD_TITLE_RE.test(title.trim())) return 'api';
 
   // Waits — modern "Wait for timeout/function/selector/state/navigation/load state/url/event"
   // and legacy "*.waitFor*" (locator.waitFor, page.waitForLoadState, frame.waitForTimeout, ...).
@@ -122,14 +145,26 @@ export interface FlatStep {
    * are kept as-is; anything else is JSON-stringified. Capped and masked.
    */
   params?: Record<string, string | number | boolean>;
-  /** Error message when the step failed (undefined when the step passed). */
-  error?: { message: string };
+  /**
+   * The step's error when it failed (undefined when the step passed): its
+   * message, and where it was thrown as `file:line:col` when Playwright
+   * reports it.
+   */
+  error?: { message: string; location?: string };
   /** True when the step carried an error — the signal the server needs for inline failure markers. */
   failed?: boolean;
+  /**
+   * True when the step's error is none of the test's errors: the test caught it
+   * (`try`/`catch`, a retried `toPass` attempt) and went on. Set by
+   * {@link markRecoveredSteps}.
+   */
+  recovered?: boolean;
   /** Source pointer `file:line:col` (not a code snippet); present when Playwright reports one. */
   location?: string;
   /** Absolute start time in ms; enables per-step timing/waterfall on the case detail page. */
   startTime?: number;
+  /** Nesting depth in Playwright's step tree: 0 for a top-level step, 1 for its children, and so on. */
+  depth?: number;
 }
 
 /**
@@ -193,11 +228,11 @@ function normalizeStepParams(raw: unknown): Record<string, string | number | boo
       out[key] = value;
       count++;
     } else if (typeof value === 'string') {
-      out[key] = maskTokenLike(value).slice(0, MAX_STEP_PARAM_VALUE_CHARS);
+      out[key] = capStepValue(maskTokenLike(value), MAX_STEP_PARAM_VALUE_CHARS);
       count++;
     } else if (value != null) {
       try {
-        out[key] = maskTokenLike(JSON.stringify(value)).slice(0, MAX_STEP_PARAM_VALUE_CHARS);
+        out[key] = capStepValue(maskTokenLike(JSON.stringify(value)), MAX_STEP_PARAM_VALUE_CHARS);
         count++;
       } catch {
         // Non-serializable (circular) values are dropped.
@@ -210,26 +245,75 @@ function normalizeStepParams(raw: unknown): Record<string, string | number | boo
 /** Step-event category restricted to the values `extractTestStepEvents` emits. */
 export type StepEventCategory = 'hook' | 'fixture' | 'test.step' | 'expect' | 'wait';
 
-/** Recursively flatten a nested step tree into a flat list. Uses Playwright's built-in category when available. */
-export function flattenSteps(steps: any[]): FlatStep[] {
+/** A Playwright `{ file, line, column }` location as `file:line:col`; undefined without a file. */
+function locationText(location: { file?: unknown; line?: unknown; column?: unknown } | null | undefined) {
+  if (!location || typeof location.file !== 'string' || !location.file) return undefined;
+  return `${location.file}:${location.line}:${location.column}`;
+}
+
+/** One of the errors a test ended with, as Playwright reports it in `TestResult.errors`. */
+export interface TestErrorLike {
+  message?: string;
+  location?: { file: string; line: number; column: number };
+}
+
+/**
+ * Mark every flattened step whose error is none of the test's `errors` as
+ * `recovered`: the test caught it and went on. A step error is one of the
+ * test's errors when its first line matches one and, when both record where
+ * they were thrown, at the same place. A passing test's `errors` is empty, so
+ * every step error it recorded is marked.
+ */
+export function markRecoveredSteps(steps: FlatStep[], errors: readonly TestErrorLike[]): void {
+  const fatal = errors.map((error) => ({
+    head: firstErrorLine(error.message),
+    location: locationText(error.location),
+  }));
+  for (const step of steps) {
+    if (!step.error) continue;
+    const head = firstErrorLine(step.error.message);
+    const thrownAt = step.error.location;
+    const isFatal = fatal.some(
+      (error) => error.head === head && (!error.location || !thrownAt || sameCodeLocation(error.location, thrownAt)),
+    );
+    if (!isFatal) step.recovered = true;
+  }
+}
+
+function firstErrorLine(message: unknown): string {
+  return stripAnsi(typeof message === 'string' ? message : '')
+    .split('\n')[0]!
+    .trim();
+}
+
+/**
+ * Recursively flatten a nested step tree into a flat list, depth first, each
+ * step recording its `depth` so the tree can be rebuilt. Uses Playwright's
+ * built-in category when available.
+ */
+export function flattenSteps(steps: any[], depth = 0): FlatStep[] {
   const result: FlatStep[] = [];
   for (const step of steps) {
     const flat: FlatStep = {
       title: step.title,
       duration: step.duration,
       category: categorizeStep(step.title, step.category, step.params),
+      depth,
     };
     if (typeof step.subtitle === 'string' && step.subtitle.length > 0) flat.subtitle = maskTokenLike(step.subtitle);
     const params = normalizeStepParams(step.params);
     if (params) flat.params = params;
     if (step.error?.message) {
       flat.error = { message: step.error.message };
+      const thrownAt = locationText(step.error.location);
+      if (thrownAt) flat.error.location = thrownAt;
       flat.failed = true;
     }
-    if (step.location) flat.location = `${step.location.file}:${step.location.line}:${step.location.column}`;
+    const location = locationText(step.location);
+    if (location) flat.location = location;
     if (step.startTime) flat.startTime = step.startTime instanceof Date ? step.startTime.getTime() : step.startTime;
     result.push(flat);
-    if (step.steps?.length > 0) result.push(...flattenSteps(step.steps));
+    if (step.steps?.length > 0) result.push(...flattenSteps(step.steps, depth + 1));
   }
   return result;
 }
@@ -252,9 +336,14 @@ export interface StepMetrics {
   waitCount: number;
 }
 
-/** Collect step metrics (flat steps, slowest step, navigation stats) from a Playwright step array */
-export function collectStepMetrics(steps: any[]): StepMetrics {
+/**
+ * Collect step metrics (flat steps, slowest step, navigation stats) from a
+ * Playwright step array. With the test's `errors`, the step errors the test
+ * caught are marked `recovered`.
+ */
+export function collectStepMetrics(steps: any[], errors?: readonly TestErrorLike[] | null): StepMetrics {
   const flatSteps = flattenSteps(steps);
+  if (errors) markRecoveredSteps(flatSteps, errors);
   const totalStepDuration = steps.reduce((sum: number, s: any) => sum + (s.duration || 0), 0);
 
   let slowestStep: { title: string; duration: number } | null = null;
@@ -348,32 +437,67 @@ export function computePerformanceSummary(testCases: any[]): PerformanceSummary 
   return result;
 }
 
+/** Max hooks and fixtures a hook section's event lists; the failed and the slowest are kept. */
+export const MAX_SECTION_HOOKS = 12;
+/** Max characters kept of a failed hook or fixture event's error line. */
+export const MAX_STEP_EVENT_ERROR_CHARS = 300;
+
+/** A Playwright step location as `file:line:col`, or null. */
+function stepLocation(step: any): string | null {
+  return step.location ? `${step.location.file}:${step.location.line}:${step.location.column}` : null;
+}
+
+/** The first non-empty line of a step's error, without ANSI codes and capped; null when it has none. */
+function stepErrorLine(step: any): string | null {
+  const raw = step.error?.message ?? step.error?.value;
+  if (typeof raw !== 'string') return null;
+  const line = stripAnsi(raw)
+    .split('\n')
+    .map((l) => l.trim())
+    .find((l) => l.length > 0);
+  return line ? capStepValue(line, MAX_STEP_EVENT_ERROR_CHARS) : null;
+}
+
+/**
+ * The hooks and fixtures a hook section ran: its direct hook and fixture
+ * children, without Piwi's own capture steps. Past `MAX_SECTION_HOOKS` the
+ * failed ones and then the slowest are kept, still in the order they ran.
+ */
+function sectionHooks(step: any): TestStepEventHook[] {
+  const children: TestStepEventHook[] = [];
+  for (const child of step.steps ?? []) {
+    const category = categorizeStep(child.title, child.category);
+    if (category !== 'hook' && category !== 'fixture') continue;
+    if (isCaptureStep({ title: child.title, location: stepLocation(child) })) continue;
+    const hook: TestStepEventHook = { title: child.title, category, duration: child.duration || 0 };
+    if (child.error) hook.failed = true;
+    children.push(hook);
+  }
+  if (children.length <= MAX_SECTION_HOOKS) return children;
+  const keep = new Set(
+    children
+      .map((hook, i) => ({ hook, i }))
+      .sort(
+        (a, b) => Number(Boolean(b.hook.failed)) - Number(Boolean(a.hook.failed)) || b.hook.duration - a.hook.duration,
+      )
+      .slice(0, MAX_SECTION_HOOKS)
+      .map(({ i }) => i),
+  );
+  return children.filter((_, i) => keep.has(i));
+}
+
 /**
  * Extract hook and fixture step events with absolute timings from a Playwright
  * step tree. These are used by the WorkersTimeline to render hook segments.
  *
- * Returns only top-level hook/fixture steps (beforeEach, afterEach, fixture
- * setup/teardown) — their sub-steps are included implicitly in their duration.
+ * Returns only top-level hook/fixture steps — Playwright's `Before Hooks`,
+ * `After Hooks` and `Worker Cleanup` sections, whose sub-steps are included in
+ * their duration. Each carries the hooks and fixtures it ran (`beforeAll hook`,
+ * `Fixture "db"`) and, when it failed, the first line of its error, so the
+ * timeline can name what ran and what broke without the full step list.
  */
-export function extractTestStepEvents(
-  steps: any[],
-  _testStartTime: Date,
-): Array<{
-  title: string;
-  category: StepEventCategory;
-  startedAt: number;
-  duration: number;
-  status: string;
-  location?: string | null;
-}> {
-  const events: Array<{
-    title: string;
-    category: StepEventCategory;
-    startedAt: number;
-    duration: number;
-    status: string;
-    location?: string | null;
-  }> = [];
+export function extractTestStepEvents(steps: any[], _testStartTime: Date): TestStepEvent[] {
+  const events: TestStepEvent[] = [];
 
   for (const step of steps) {
     const cat = categorizeStep(step.title, step.category);
@@ -381,14 +505,19 @@ export function extractTestStepEvents(
     if (!step.startTime) continue;
 
     const startedAt = step.startTime instanceof Date ? step.startTime.getTime() : step.startTime;
-    events.push({
+    const event: TestStepEvent = {
       title: step.title,
       category: cat as StepEventCategory,
       startedAt,
       duration: step.duration || 0,
       status: step.error ? 'failed' : 'passed',
-      location: step.location ? `${step.location.file}:${step.location.line}:${step.location.column}` : null,
-    });
+      location: stepLocation(step),
+    };
+    const error = step.error ? stepErrorLine(step) : null;
+    if (error) event.error = error;
+    const hooks = sectionHooks(step);
+    if (hooks.length > 0) event.hooks = hooks;
+    events.push(event);
   }
 
   return events;

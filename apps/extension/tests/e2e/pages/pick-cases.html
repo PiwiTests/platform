@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Pick cases</title>
+    <style>
+      /* As the dashboard's badges and key hints: not inline, so Playwright puts a space before them. */
+      .badge,
+      kbd {
+        display: inline-flex;
+        margin-left: 4px;
+      }
+      body {
+        margin-top: 140px;
+        font:
+          14px system-ui,
+          sans-serif;
+      }
+      nav,
+      main {
+        display: flex;
+        gap: 12px;
+        margin-bottom: 20px;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Each case's element carries data-case; the ranking never reads it. -->
+    <nav aria-label="Sidebar">
+      <a href="#runs">Runs</a>
+      <a href="#settings">Settings</a>
+    </nav>
+    <main>
+      <div role="tablist" aria-label="Views">
+        <button role="tab" aria-selected="true" data-case="tab">Regressions<span class="badge">5</span></button>
+        <button role="tab" aria-selected="false">Flaky<span class="badge">2</span></button>
+      </div>
+      <button type="button" data-case="search">
+        Search…<span><kbd>Ctrl</kbd><kbd>k</kbd></span>
+      </button>
+      <div>
+        <button type="button" data-case="failed">Failed</button>
+        <button type="button">3 failed</button>
+      </div>
+      <a href="#runs" data-case="link">Runs</a>
+      <div>
+        <button type="button" aria-label="Show popup" data-case="popup">Details</button>
+        <button type="button" aria-label="Show popup">History</button>
+      </div>
+    </main>
+  </body>
+</html>

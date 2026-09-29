@@ -1,15 +1,17 @@
 {
   "name": "platform",
   "private": true,
-  "version": "0.36.0",
+  "version": "0.41.0",
   "type": "module",
   "workspaces": [
     "packages/core",
     "packages/picker-dom",
     "packages/server",
     "packages/reporter",
+    "packages/editor",
     "apps/application",
     "apps/extension",
+    "apps/vscode",
     "integrations/nitro"
   ],
   "engines": {

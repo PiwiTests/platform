@@ -1,6 +1,10 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { BrowserContext, Page } from '@playwright/test';
 import { test, expect } from './fixtures.js';
+import { servePages } from './engine-bundle.js';
+import { playwrightLocator } from './playwright-locator.js';
+import { stubChromeI18n } from './i18n-stub.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.join(here, '..', '..', 'dist');
@@ -55,6 +59,30 @@ test.describe('pick.js', () => {
     await expect(page.locator('#__piwi_picker_label')).toContainText("getByRole('button', { name: 'Join now' })");
   });
 
+  test('a form control named only by its label is located by that label', async ({ context }) => {
+    const page = await context.newPage();
+    await page.setContent(`<!doctype html><html><body style="margin-top:120px">
+      <label for="country">Country</label>
+      <select id="country"><option>United Kingdom</option><option>Ireland</option><option>France</option></select>
+      <label><input type="checkbox" id="news"> Keep me posted on new roasts</label>
+    </body></html>`);
+    await page.addScriptTag({ path: path.join(DIST, 'pick.js') });
+    await expect(page.getByText('click any element to generate locators')).toBeVisible();
+
+    const preview = page.locator('#__piwi_picker_locator');
+    await page.hover('#country');
+    await expect(preview).toContainText("getByRole('combobox', { name: 'Country' })");
+    // The suggestion resolves in real Playwright too.
+    await expect(page.getByRole('combobox', { name: 'Country' })).toHaveId('country');
+
+    await page.hover('#news');
+    await expect(preview).toContainText("getByRole('checkbox', { name: 'Keep me posted on new roasts' })");
+    await page.evaluate(() => document.getElementById('news')!.removeAttribute('id'));
+    await page.mouse.move(0, 0);
+    await page.hover('input[type=checkbox]');
+    await expect(preview).toContainText("getByRole('checkbox', { name: 'Keep me posted on new roasts' })");
+  });
+
   test('Escape at the element step ends the flow with no results panel', async ({ context }) => {
     const page = await context.newPage();
     await page.setContent(`<!doctype html><html><body><button id="x">X</button></body></html>`);
@@ -73,5 +101,137 @@ test.describe('pick.js', () => {
     // Still exactly one banner/highlight pair — the guard in pick.ts returned
     // early on the second injection instead of installing a second overlay.
     await expect(page.locator('#__piwi_picker_banner')).toHaveCount(1);
+  });
+});
+
+const ORIGIN = 'https://pick.test';
+
+async function openCases(context: BrowserContext): Promise<Page> {
+  // pick.js runs in the page's main world here: its texts need a `chrome.i18n`.
+  await stubChromeI18n(context);
+  const page = await context.newPage();
+  await servePages(page, ORIGIN);
+  await page.goto(`${ORIGIN}/pick-cases.html`);
+  return page;
+}
+
+interface PanelRow {
+  locator: string;
+  verdict: 'unique' | 'ambiguous' | null;
+  note: string;
+}
+
+/** Picks the element marked `data-case="<name>"` on `pick-cases.html` and reads the results panel's rows. */
+async function pickRows(page: Page, name: string): Promise<PanelRow[]> {
+  await page.evaluate(() => {
+    (globalThis as { __piwiTestOpenShadow?: boolean }).__piwiTestOpenShadow = true;
+  });
+  await page.addScriptTag({ path: path.join(DIST, 'pick.js') });
+  await expect(page.getByText('click any element to generate locators')).toBeVisible();
+  const target = `[data-case="${name}"]`;
+  await page.hover(target);
+  await page.click(target);
+  const results = page.locator('#piwi-picker-results-host .panel');
+  const skip = page.getByRole('button', { name: 'Skip (Esc)' });
+  await expect(results.or(skip)).toBeVisible();
+  if (await skip.isVisible()) await skip.click();
+  await expect(results).toBeVisible();
+  const rows = await page.evaluate(() => {
+    const root = document.getElementById('piwi-picker-results-host')!.shadowRoot!;
+    return [...root.querySelectorAll('.row')].map((row) => {
+      const badge = row.querySelector('.unique, .ambiguous');
+      return {
+        locator: row.querySelector('code')!.textContent!,
+        verdict: (badge?.className ?? null) as 'unique' | 'ambiguous' | null,
+        note: badge?.textContent ?? '',
+      };
+    });
+  });
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#piwi-picker-results-host')).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => (globalThis as { __piwiPicking?: boolean }).__piwiPicking)).toBe(false);
+  return rows;
+}
+
+/** Real Playwright finds exactly the picked element with `locator`, and a click on it lands there. */
+async function expectPlaywrightClicks(page: Page, locator: string, name: string): Promise<void> {
+  const found = playwrightLocator(page, locator);
+  await expect(found).toHaveCount(1);
+  expect(await found.getAttribute('data-case')).toBe(name);
+  await page.evaluate(() => {
+    const g = globalThis as { __clicked?: string | null };
+    g.__clicked = null;
+    document.addEventListener(
+      'click',
+      (event) => {
+        g.__clicked = (event.target as Element).closest('[data-case]')?.getAttribute('data-case') ?? null;
+        event.preventDefault();
+      },
+      { capture: true, once: true },
+    );
+  });
+  await found.click();
+  expect(await page.evaluate(() => (globalThis as { __clicked?: string | null }).__clicked)).toBe(name);
+}
+
+/**
+ * The composite controls and repeated names that made the extension offer
+ * locators Playwright never resolves to the picked element. The top locator
+ * the results panel offers is clicked by real Playwright on the same page.
+ */
+test.describe('pick.js offers locators Playwright resolves to the picked element', () => {
+  const cases: Array<{ name: string; title: string; top?: string }> = [
+    { name: 'tab', title: 'a tab with a count badge', top: "getByRole('tab', { name: 'Regressions 5' })" },
+    { name: 'search', title: 'a button with key hints', top: "getByRole('button', { name: 'Search… Ctrl k' })" },
+    { name: 'failed', title: "a name that is a substring of another ('Failed' beside '3 failed')" },
+    { name: 'link', title: 'the same link in the nav and in main' },
+    { name: 'popup', title: 'two buttons sharing an aria-label, showing different text' },
+  ];
+  for (const { name, title, top } of cases) {
+    test(title, async ({ context }) => {
+      const page = await openCases(context);
+      const rows = await pickRows(page, name);
+      expect(rows.length).toBeGreaterThan(0);
+      if (top) expect(rows[0]!.locator).toBe(top);
+      expect(rows[0]!.verdict).toBe('unique');
+      // Verified rows come first; every row after the first unverified one is unverified too.
+      const firstOther = rows.findIndex((row) => row.verdict !== 'unique');
+      if (firstOther >= 0) expect(rows.slice(firstOther).every((row) => row.verdict !== 'unique')).toBe(true);
+      // Every verified row resolves to the picked element in Playwright, the top one clicked.
+      for (const row of rows.filter((r) => r.verdict === 'unique')) {
+        await expect(playwrightLocator(page, row.locator), row.locator).toHaveCount(1);
+      }
+      await expectPlaywrightClicks(page, rows[0]!.locator, name);
+    });
+  }
+
+  test('an ambiguous candidate shows how many elements it finds, and its narrowed form is offered', async ({
+    context,
+  }) => {
+    const page = await openCases(context);
+    const rows = await pickRows(page, 'failed');
+    const loose = rows.find((row) => row.locator === "getByRole('button', { name: 'Failed' })");
+    expect(loose?.verdict).toBe('ambiguous');
+    expect(loose?.note).toContain('2');
+    await expect(playwrightLocator(page, loose!.locator)).toHaveCount(2);
+    const exact = rows.find((row) => row.locator === "getByRole('button', { name: 'Failed', exact: true })");
+    expect(exact?.verdict).toBe('unique');
+    expect(rows.indexOf(exact!)).toBeLessThan(rows.indexOf(loose!));
+  });
+
+  test('the hover preview shows the verified locator, not the substring match', async ({ context }) => {
+    const page = await openCases(context);
+    await page.addScriptTag({ path: path.join(DIST, 'pick.js') });
+    await expect(page.getByText('click any element to generate locators')).toBeVisible();
+    await page.hover('[data-case="link"]');
+    const preview = page.locator('#__piwi_picker_locator');
+    // The ranked candidate shows as the pointer enters; the checked one once it rests.
+    await expect(preview).toHaveText("getByRole('main').getByRole('link', { name: 'Runs', exact: true })");
+    await expect(page.locator('#__piwi_picker_label')).toContainText(
+      "getByRole('main').getByRole('link', { name: 'Runs', exact: true })",
+    );
+    const shown = (await preview.textContent())!.trim();
+    await expect(playwrightLocator(page, shown)).toHaveCount(1);
+    expect(await playwrightLocator(page, shown).getAttribute('data-case')).toBe('link');
   });
 });

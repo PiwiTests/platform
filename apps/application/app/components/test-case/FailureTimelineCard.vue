@@ -7,7 +7,20 @@
  * failure (`t-N s`), category, title (the failed step in red with its error),
  * duration with its share of the test and a bar; network, console and backend
  * items in the same window are interleaved as their own rows in time order. The
- * *Around the failure* / *Whole test* toggle drives both the axis and the table.
+ * *Around the failure* / *Whole test* toggle drives both the axis and the table,
+ * and so does the type filter under it: one chip per item type in the window,
+ * keying its lane, the choice kept per browser. The axis draws only the items
+ * in the window, and the failing step always shows.
+ *
+ * The table reads the steps as Playwright's tree: a `test.step`'s steps sit
+ * indented under it, and the hooks and fixtures that ran before and after the
+ * test body fold into a Setup and a Teardown section — open when the failure
+ * happened there. The step that failed is the innermost of the failing chain
+ * that carries the execution's error; every step around it carries the failed
+ * mark too. An error the test caught and went on from (a probe in a
+ * `try`/`catch`, a retried `toPass` attempt) is shown muted, never as the
+ * failure. The capture's own steps are never listed, and locations read
+ * relative to the project.
  *
  * A passing execution has no failure moment: the axis is hidden and the table
  * lists every step without offsets.
@@ -17,15 +30,28 @@
  * shown are relative to the failure moment (`t+0`), so the axis and the table read
  * against the same anchor.
  */
-import type { FailureTimeline, TimelineItem, TimelineLane } from '#shared/failure-timeline';
+import type { FailureTimeline, TimelineItem, TimelineLane, TimelineLanes } from '#shared/failure-timeline';
 import type { AttachmentInfo, PerformanceStep } from '~~/types/api';
 import { useClusterSectionLocator } from '~/composables/useClusterSectionLocator';
+import { useTimelineTypeFilter } from '~/composables/useTimelineTypeFilter';
+import {
+  TIMELINE_TYPES,
+  TIMELINE_TYPE_META,
+  effectiveHiddenTypes,
+  isTimelineItemShown,
+  timelineItemSeverity,
+} from '~/utils/timeline-type-filter';
 import SectionCard from '../shared/SectionCard.vue';
 import ChartTooltip from '../shared/ChartTooltip.vue';
 import ChartLegend from '../shared/ChartLegend.vue';
 import OpenInIdeLink from '../shared/OpenInIdeLink.vue';
 import StepLabel from './StepLabel.vue';
+import StepStatusMark from './StepStatusMark.vue';
 import StepParamsDisclosure from './StepParamsDisclosure.vue';
+import TimelineTypeFilter from './TimelineTypeFilter.vue';
+import { findLocationRoot, stepLocations, stripLocationRoot } from '#shared/locator-chain';
+import type { StepFailureRole, StepPhase } from '#shared/step-tree';
+import { buildStepTreeView, groupRowsBySection, sectionSummaryText } from '~/utils/timeline-rows';
 
 const props = defineProps<{
   testRunsCaseId: number;
@@ -35,10 +61,12 @@ const props = defineProps<{
   durationMs: number | null;
   /** Whether this execution failed — a passing one hides the axis and offsets. */
   hasError?: boolean;
+  /** The execution's error text — tells the step that failed the test from an error it caught. */
+  error?: string | null;
   /** Execution status — a did-not-run row shows a neutral step marker. */
   status?: string | null;
-  /** Whether a trace exists — enables the "View trace" affordance in the header. */
-  hasTrace?: boolean;
+  /** The test's project-relative file — step locations read relative to the project it shows. */
+  testFilePath?: string | null;
   /** Piwi project id/name — passed to the open-in-IDE links for call sites. */
   projectKey?: string | number | null;
   projectName?: string | null;
@@ -69,25 +97,13 @@ const SECTION_ACTION: Record<TimelineItem['ref']['section'], string> = {
 };
 
 // ── Placed items and lanes ───────────────────────────────────────────────────
-const LANE_ORDER: TimelineLane[] = ['steps', 'network', 'console', 'dialogs', 'backend'];
-const LANE_LABEL: Record<TimelineLane, string> = {
-  steps: 'Steps',
-  network: 'Network',
-  console: 'Console',
-  dialogs: 'Dialogs',
-  backend: 'Backend',
-};
-
 const allItems = computed<TimelineItem[]>(() => {
   const tl = data.value;
   if (!tl) return [];
-  return LANE_ORDER.flatMap((lane) => tl.lanes[lane]);
+  return TIMELINE_TYPES.flatMap((lane) => tl.lanes[lane]);
 });
 
 const placedCount = computed(() => allItems.value.length);
-const visibleLanes = computed<TimelineLane[]>(() =>
-  data.value ? LANE_ORDER.filter((lane) => data.value!.lanes[lane].length > 0) : [],
-);
 
 // The axis (and the offset column) exist only when there is a failure moment to
 // anchor them and at least two items to place; a passing execution shows the
@@ -108,6 +124,57 @@ const domain = computed<{ start: number; end: number }>(() => {
   return w.end > w.start ? { start: w.start, end: w.end } : { start: 0, end: span.value };
 });
 
+/** Whether an item overlaps the window — only those are drawn, listed and counted. */
+function inWindow(item: TimelineItem): boolean {
+  const { start, end } = domain.value;
+  return item.at + (item.duration ?? 0) >= start && item.at <= end;
+}
+
+/** Every item in the window, in time order, whatever the type filter hides. */
+const windowItems = computed<TimelineItem[]>(() =>
+  allItems.value.filter(inWindow).sort((a, b) => a.at - b.at || (a.failed ? -1 : 0)),
+);
+
+// ── Type filter ──────────────────────────────────────────────────────────────
+// One chip per type with items in the window, once there are two to choose
+// between. The stored choice applies only while the chips are on screen, and
+// only to the types they show.
+const {
+  hidden: storedHiddenTypes,
+  toggle: toggleType,
+  only: onlyType,
+  showAll: showAllTypes,
+} = useTimelineTypeFilter();
+const windowTypes = computed<TimelineLane[]>(() =>
+  TIMELINE_TYPES.filter((lane) => windowItems.value.some((item) => item.lane === lane)),
+);
+const showTypeFilter = computed(() => showAxis.value && windowTypes.value.length >= 2);
+const hiddenTypes = computed<TimelineLane[]>(() =>
+  showTypeFilter.value ? effectiveHiddenTypes(storedHiddenTypes.value, windowTypes.value) : [],
+);
+const hiddenTypeSet = computed(() => new Set(hiddenTypes.value));
+
+function isShown(item: TimelineItem): boolean {
+  return isTimelineItemShown(item, hiddenTypeSet.value);
+}
+
+/** The window's items that pass the type filter — the table's rows. */
+const shownWindowItems = computed<TimelineItem[]>(() => windowItems.value.filter(isShown));
+
+/** Each lane's items in the window that pass the type filter — what the axis draws. */
+const shownLanes = computed<TimelineLanes>(() => {
+  const lanes = data.value?.lanes;
+  const keep = (items: TimelineItem[] | undefined) => (items ?? []).filter((item) => inWindow(item) && isShown(item));
+  return {
+    steps: keep(lanes?.steps),
+    network: keep(lanes?.network),
+    console: keep(lanes?.console),
+    dialogs: keep(lanes?.dialogs),
+    backend: keep(lanes?.backend),
+  };
+});
+const visibleLanes = computed<TimelineLane[]>(() => TIMELINE_TYPES.filter((lane) => shownLanes.value[lane].length > 0));
+
 // ── SVG geometry ─────────────────────────────────────────────────────────────
 const LABEL_W = 62;
 const PAD_R = 12;
@@ -123,8 +190,8 @@ const svgWidth = computed(() => Math.max(0, width.value));
 const plotLeft = LABEL_W;
 const plotRight = computed(() => Math.max(plotLeft + 1, svgWidth.value - PAD_R));
 const plotWidth = computed(() => plotRight.value - plotLeft);
-// The "Calls" band sits above the lanes when at least one step has a call site.
-const hasCallBand = computed(() => (data.value?.lanes.steps ?? []).some((s) => s.origin != null || s.group != null));
+// The "Calls" band sits above the lanes when at least one shown step has a call site.
+const hasCallBand = computed(() => shownLanes.value.steps.some((s) => s.origin != null || s.group != null));
 const bandH = computed(() => (hasCallBand.value ? CALL_BAND_H : 0));
 const lanesTop = computed(() => TOP + bandH.value);
 const lanesHeight = computed(() => visibleLanes.value.length * LANE_H);
@@ -179,6 +246,13 @@ const ticks = computed(() => {
   const count = 5;
   return Array.from({ length: count }, (_, i) => start + ((end - start) * i) / (count - 1));
 });
+/** Each tick's label, blank where it would repeat the one before (a short window rounds several to `t+0`). */
+const tickLabels = computed(() =>
+  ticks.value.map((tick, i, all) => {
+    const label = formatRel(tick);
+    return i > 0 && formatRel(all[i - 1]!) === label ? '' : label;
+  }),
+);
 
 // ── Marks and colors ─────────────────────────────────────────────────────────
 function consoleClass(status?: string): string {
@@ -212,19 +286,23 @@ const legendItems = computed(() => {
   return items;
 });
 
+// Beside the type chips, which key the lanes, the key keeps what they do not
+// say: the Calls band, the red of a failure or error, the amber of a warning.
+const markKeyItems = computed(() => {
+  const items: { color: string; label: string }[] = [];
+  if (hasCallBand.value) items.push({ color: 'rgb(129, 140, 248)', label: 'Calls' });
+  items.push({ color: 'rgb(239, 68, 68)', label: 'Failed or error' });
+  if (shownWindowItems.value.some((item) => timelineItemSeverity(item) === 'warning')) {
+    items.push({ color: 'rgb(245, 158, 11)', label: 'Warning' });
+  }
+  return items;
+});
+
 // ── Tooltip ──────────────────────────────────────────────────────────────────
 const { data: hovered, pos, show, move, hide } = useChartTooltip<TimelineItem>();
 
-// ── "What happened in this window" list ──────────────────────────────────────
-const windowItems = computed<TimelineItem[]>(() => {
-  const { start, end } = domain.value;
-  return allItems.value
-    .filter((item) => {
-      const itemEnd = item.at + (item.duration ?? 0);
-      return itemEnd >= start && item.at <= end;
-    })
-    .sort((a, b) => a.at - b.at || (a.failed ? -1 : 0));
-});
+// A mark the type filter removes fires no mouseleave, so its tooltip goes with it.
+watch(hiddenTypeSet, () => hide());
 
 function kindTag(item: TimelineItem): string {
   if (item.kind === 'console') return `console ${item.status ?? ''}`.trim();
@@ -245,9 +323,9 @@ function callKey(item: TimelineItem): string | null {
 function callLabel(item: TimelineItem): string {
   return item.group ?? (item.origin ? basename(item.origin.file) : '');
 }
-/** Runs of consecutive steps that share a call site, drawn as one span in the band. */
+/** Runs of consecutive shown steps that share a call site, drawn as one span in the band. */
 const callSpans = computed(() => {
-  const steps = data.value?.lanes.steps ?? [];
+  const steps = shownLanes.value.steps;
   const spans: Array<{
     id: string;
     key: string;
@@ -281,31 +359,135 @@ function bandTitle(span: { label: string; origin: TimelineItem['origin'] }): str
 
 // ── The merged steps table ───────────────────────────────────────────────────
 // One row per step, with network / console / backend items interleaved in time
-// order. A failing execution reads the rows off the axis window (so the toggle
-// drives the table too) and shows each row's offset from the failure; a passing
-// one lists every step off the prop, without offsets.
-type StepRow = { kind: 'step'; item: TimelineItem | null; step: PerformanceStep; index: number; failed: boolean };
+// order. A failing execution reads the rows off the axis window and the type
+// filter (so both toggles drive the table too) and shows each row's offset from
+// the failure; a passing one lists every step off the prop, without offsets.
+// The rows then fold into sections: the setup and teardown hooks around the
+// test body.
+const tree = computed(() => buildStepTreeView(props.steps, props.error));
+
+type StepRow = {
+  kind: 'step';
+  item: TimelineItem | null;
+  step: PerformanceStep;
+  index: number;
+  /** The step's part in the failure; null for a step that passed. */
+  role: StepFailureRole | null;
+  /** The step that failed: its row carries the error and the page at that moment. */
+  failing: boolean;
+  /** The test caught the step's error and went on: the row is muted and carries the error on one line. */
+  recovered: boolean;
+  level: number;
+};
 type EventRow = { kind: 'event'; item: TimelineItem };
 type MergedRow = StepRow | EventRow;
 
-const mergedRows = computed<MergedRow[]>(() => {
-  if (showAxis.value) {
-    return windowItems.value.map<MergedRow>((item) => {
-      if (item.kind === 'step') {
-        const index = item.ref.index;
-        return { kind: 'step', item, step: props.steps[index]!, index, failed: Boolean(item.failed) };
-      }
-      return { kind: 'event', item };
-    });
-  }
-  return props.steps.map<MergedRow>((step, index) => ({
+function stepRow(step: PerformanceStep, index: number, item: TimelineItem | null): StepRow {
+  return {
     kind: 'step',
-    item: null,
+    item,
     step,
     index,
-    failed: Boolean(step.failed),
-  }));
+    role: tree.value.roles[index] ?? null,
+    failing: index === tree.value.failingIndex,
+    recovered: tree.value.roles[index] === 'recovered',
+    level: tree.value.level[index] ?? 0,
+  };
+}
+
+const mergedRows = computed<MergedRow[]>(() => {
+  const hidden = tree.value.hidden;
+  if (showAxis.value) {
+    return shownWindowItems.value.flatMap<MergedRow>((item) => {
+      if (item.kind !== 'step') return [{ kind: 'event', item }];
+      const index = item.ref.index;
+      const step = props.steps[index];
+      return step && !hidden.has(index) ? [stepRow(step, index, item)] : [];
+    });
+  }
+  return props.steps.flatMap<MergedRow>((step, index) => (hidden.has(index) ? [] : [stepRow(step, index, null)]));
 });
+
+// ── Setup and teardown sections ──────────────────────────────────────────────
+// The hooks and fixtures before and after the test body fold into one header
+// row each; a section opens by itself when the failure happened in it.
+const failingPhase = computed<StepPhase | null>(() => {
+  const failing = tree.value.failingIndex;
+  return failing === null ? null : (tree.value.phases[failing] ?? null);
+});
+const openSections = ref<Set<StepPhase>>(new Set());
+function resetOpenSections() {
+  const phase = failingPhase.value;
+  openSections.value = new Set(phase && phase !== 'body' ? [phase] : []);
+}
+watch(() => props.testRunsCaseId, resetOpenSections, { immediate: true });
+function toggleSection(section: StepPhase) {
+  const next = new Set(openSections.value);
+  if (next.has(section)) next.delete(section);
+  else next.add(section);
+  openSections.value = next;
+}
+
+const SECTION_LABEL: Record<StepPhase, string> = { setup: 'Setup', body: 'Test', teardown: 'Teardown' };
+
+type SectionEntry = {
+  kind: 'section';
+  key: string;
+  section: StepPhase;
+  label: string;
+  summary: string;
+  durationMs: number;
+  failed: boolean;
+  /** The failing step sits in this section, not only another failure. */
+  holdsFailure: boolean;
+  open: boolean;
+  /** The offset of the section's first row, for the Time column. */
+  at: number | null;
+};
+type RenderEntry = SectionEntry | (MergedRow & { key: string; nested: boolean });
+
+const renderList = computed<RenderEntry[]>(() => {
+  const blocks = groupRowsBySection(mergedRows.value, (row) =>
+    row.kind === 'step' ? (tree.value.phases[row.index] ?? 'body') : null,
+  );
+  const out: RenderEntry[] = [];
+  blocks.forEach((block, b) => {
+    const rowKey = (row: MergedRow) => (row.kind === 'step' ? `s-${row.index}` : row.item.id);
+    if (block.section === 'body') {
+      for (const row of block.rows) out.push({ ...row, key: rowKey(row), nested: false });
+      return;
+    }
+    const summary = tree.value.sections[block.section];
+    const open = openSections.value.has(block.section);
+    const first = block.rows[0]!;
+    out.push({
+      kind: 'section',
+      key: `section-${block.section}-${b}`,
+      section: block.section,
+      label: SECTION_LABEL[block.section],
+      summary: summary ? sectionSummaryText(summary) : '',
+      durationMs: summary?.durationMs ?? 0,
+      failed: Boolean(summary?.failed),
+      holdsFailure: failingPhase.value === block.section,
+      open,
+      at: first.kind === 'step' ? (first.item?.at ?? null) : first.item.at,
+    });
+    if (open) for (const row of block.rows) out.push({ ...row, key: rowKey(row), nested: true });
+  });
+  return out;
+});
+
+/** The left inset of a step's title: its depth in the tree, plus one inside a section. */
+function stepIndent(row: StepRow & { nested: boolean }): Record<string, string> {
+  const level = row.level + (row.nested ? 1 : 0);
+  return level > 0 ? { paddingInlineStart: `${level * 1.25}rem` } : {};
+}
+
+// Step locations read relative to the project, found from the test's own file.
+const locationRoot = computed(() => findLocationRoot(stepLocations(props.steps), props.testFilePath ?? null));
+function displayLocation(location: string): string {
+  return stripLocationRoot(location, locationRoot.value);
+}
 
 const stepCategoryColor: Record<string, 'info' | 'success' | 'warning' | 'neutral'> = {
   navigation: 'info',
@@ -318,11 +500,24 @@ const stepCategoryColor: Record<string, 'info' | 'success' | 'warning' | 'neutra
   fixture: 'neutral',
 };
 
-// Per-category rollup for the summary strip above the table, over every step
-// (parents include their children, matching the reporter's StepMetrics).
+// The steps of the test body that did the work: listed, and holding no other
+// step (a test.step's time is its children's).
+const bodyLeafIndices = computed(() =>
+  props.steps
+    .map((_, i) => i)
+    .filter((i) => tree.value.phases[i] === 'body' && !tree.value.hidden.has(i) && !tree.value.groups.has(i)),
+);
+
+// A setup failure stops the test before its body; a body with no steps of its
+// own (a test that makes no Playwright calls) still ran.
+const bodyNeverRan = computed(() => bodyLeafIndices.value.length === 0 && Boolean(tree.value.sections.setup?.failed));
+
+// Per-category rollup for the summary strip above the table, over the test
+// body's steps; setup and teardown follow as one figure each.
 const stepSummary = computed(() => {
   const byCat = new Map<string, { count: number; duration: number }>();
-  for (const s of props.steps) {
+  for (const i of bodyLeafIndices.value) {
+    const s = props.steps[i]!;
     const entry = byCat.get(s.category) ?? { count: 0, duration: 0 };
     entry.count += 1;
     entry.duration += s.duration || 0;
@@ -330,22 +525,33 @@ const stepSummary = computed(() => {
   }
   return Array.from(byCat, ([category, v]) => ({ category, ...v })).sort((a, b) => b.duration - a.duration);
 });
+const sectionTimes = computed(() =>
+  (['setup', 'teardown'] as const).flatMap((section) => {
+    const summary = tree.value.sections[section];
+    return summary && summary.durationMs > 0
+      ? [{ label: SECTION_LABEL[section].toLowerCase(), ms: summary.durationMs }]
+      : [];
+  }),
+);
 
-// The single slowest step, tagged in the table. All-zero durations (a test that
-// never ran) must not tag row 0 as "slowest".
+// The single slowest step of the test body, tagged in the table. All-zero
+// durations (a test that never ran) must not tag row 0 as "slowest".
 const slowestStepIndex = computed(() => {
   let idx = -1;
   let max = -1;
-  props.steps.forEach((s, i) => {
-    if ((s.duration || 0) > max) {
-      max = s.duration || 0;
+  for (const i of bodyLeafIndices.value) {
+    const duration = props.steps[i]!.duration || 0;
+    if (duration > max) {
+      max = duration;
       idx = i;
     }
-  });
+  }
   return max > 0 ? idx : -1;
 });
 
-const maxStepDuration = computed(() => props.steps.reduce((m, s) => Math.max(m, s.duration || 0), 0));
+const maxStepDuration = computed(() =>
+  mergedRows.value.reduce((m, row) => (row.kind === 'step' ? Math.max(m, row.step.duration || 0) : m), 0),
+);
 
 // A true waterfall needs a startTime on every step (only a recent reporter records
 // them); otherwise the bars fall back to left-aligned magnitude.
@@ -396,15 +602,9 @@ function stepBarColorClass(duration: number): string {
   return duration > 2000 ? 'bg-red-500' : duration > 500 ? 'bg-orange-400' : 'bg-gray-400 dark:bg-gray-500';
 }
 
-// An interleaved event row: its own icon, a kind label and (for a request) a duration.
-const EVENT_ICON: Record<'network' | 'console' | 'backend' | 'dialogs', string> = {
-  network: 'i-lucide-arrow-left-right',
-  console: 'i-lucide-terminal',
-  backend: 'i-lucide-server',
-  dialogs: 'i-lucide-message-square',
-};
+// An interleaved event row: its type's icon, a kind label and (for a request) a duration.
 function eventIcon(item: TimelineItem): string {
-  return EVENT_ICON[item.kind as 'network' | 'console' | 'backend' | 'dialogs'] ?? 'i-lucide-dot';
+  return TIMELINE_TYPE_META[item.lane]?.icon ?? 'i-lucide-dot';
 }
 function eventIconClass(item: TimelineItem): string {
   if (item.failed || item.status === 'error' || item.status === 'fatal') return 'text-red-500';
@@ -419,12 +619,6 @@ function revealItem(item: TimelineItem) {
   const sectionId = SECTION_ACTION[item.ref.section];
   if (locator.canLocate(sectionId)) locator.open(sectionId);
 }
-
-function onViewTrace() {
-  // The bundled viewer has no time deep-link, so this reveals the evidence card
-  // that holds the trace and its "View trace" button.
-  if (locator.canLocate('tracePointers')) locator.open('tracePointers');
-}
 </script>
 
 <template>
@@ -436,36 +630,41 @@ function onViewTrace() {
     :count="embedded ? null : showAxis ? null : steps.length || null"
     :help="embedded ? undefined : 'case.timeline'"
   >
-    <template v-if="showAxis" #actions>
-      <ChartLegend :items="legendItems" class="mr-1" />
-      <UButton
-        v-if="hasTrace"
-        size="xs"
-        variant="ghost"
-        color="neutral"
-        icon="i-lucide-film"
-        label="View trace"
-        @click="onViewTrace"
-      />
-    </template>
-
     <div class="space-y-3">
-      <!-- Window controls: they drive both the axis and the table below. -->
-      <div v-if="showAxis" class="flex items-center gap-1">
-        <UButton
-          size="xs"
-          :variant="mode === 'around' ? 'solid' : 'soft'"
-          :color="mode === 'around' ? 'primary' : 'neutral'"
-          label="Around the failure"
-          @click="mode = 'around'"
+      <!-- The window and the type filter: both drive the axis and the table
+           below. The type chips key the lanes and a small key beside the
+           window keys the other marks; a window with a single type has
+           nothing to filter and keeps the full legend. -->
+      <div v-if="showAxis" class="space-y-2">
+        <div class="flex flex-wrap items-center gap-1">
+          <UButton
+            size="xs"
+            :variant="mode === 'around' ? 'solid' : 'soft'"
+            :color="mode === 'around' ? 'primary' : 'neutral'"
+            label="Around the failure"
+            @click="mode = 'around'"
+          />
+          <UButton
+            size="xs"
+            :variant="mode === 'whole' ? 'solid' : 'soft'"
+            :color="mode === 'whole' ? 'primary' : 'neutral'"
+            label="Whole test"
+            @click="mode = 'whole'"
+          />
+          <div class="ml-auto flex flex-wrap items-center gap-x-3 gap-y-1">
+            <ChartLegend v-if="showTypeFilter" :items="markKeyItems" />
+          </div>
+        </div>
+        <TimelineTypeFilter
+          v-if="showTypeFilter"
+          :types="windowTypes"
+          :items="windowItems"
+          :hidden="hiddenTypes"
+          @toggle="toggleType($event, windowTypes)"
+          @only="onlyType"
+          @show-all="showAllTypes"
         />
-        <UButton
-          size="xs"
-          :variant="mode === 'whole' ? 'solid' : 'soft'"
-          :color="mode === 'whole' ? 'primary' : 'neutral'"
-          label="Whole test"
-          @click="mode = 'whole'"
-        />
+        <ChartLegend v-else :items="legendItems" />
       </div>
 
       <!-- SVG axis -->
@@ -530,7 +729,7 @@ function onViewTrace() {
               dominant-baseline="middle"
               class="fill-gray-500 dark:fill-gray-400 text-[10px]"
             >
-              {{ LANE_LABEL[lane] }}
+              {{ TIMELINE_TYPE_META[lane].label }}
             </text>
             <line
               :x1="plotLeft"
@@ -542,7 +741,7 @@ function onViewTrace() {
           </g>
 
           <!-- Step bars -->
-          <template v-for="item in data.lanes.steps" :key="item.id">
+          <template v-for="item in shownLanes.steps" :key="item.id">
             <rect
               :x="barRect(item.at, item.duration ?? 0).x"
               :y="laneY('steps') + 4"
@@ -559,7 +758,7 @@ function onViewTrace() {
           </template>
 
           <!-- Network bars -->
-          <template v-for="item in data.lanes.network" :key="item.id">
+          <template v-for="item in shownLanes.network" :key="item.id">
             <rect
               :x="barRect(item.at, item.duration ?? 0).x"
               :y="laneY('network') + 4"
@@ -576,7 +775,7 @@ function onViewTrace() {
           </template>
 
           <!-- Console marks -->
-          <template v-for="item in data.lanes.console" :key="item.id">
+          <template v-for="item in shownLanes.console" :key="item.id">
             <circle
               :cx="xOf(item.at)"
               :cy="laneY('console') + LANE_H / 2"
@@ -591,7 +790,7 @@ function onViewTrace() {
           </template>
 
           <!-- Dialog marks -->
-          <template v-for="item in data.lanes.dialogs" :key="item.id">
+          <template v-for="item in shownLanes.dialogs" :key="item.id">
             <circle
               :cx="xOf(item.at)"
               :cy="laneY('dialogs') + LANE_H / 2"
@@ -605,7 +804,7 @@ function onViewTrace() {
           </template>
 
           <!-- Backend marks -->
-          <template v-for="item in data.lanes.backend" :key="item.id">
+          <template v-for="item in shownLanes.backend" :key="item.id">
             <circle
               :cx="xOf(item.at)"
               :cy="laneY('backend') + LANE_H / 2"
@@ -640,7 +839,7 @@ function onViewTrace() {
               :text-anchor="i === 0 ? 'start' : i === ticks.length - 1 ? 'end' : 'middle'"
               class="fill-gray-400 dark:fill-gray-500 text-[10px] tabular-nums"
             >
-              {{ formatRel(tick) }}
+              {{ tickLabels[i] }}
             </text>
           </g>
         </svg>
@@ -657,7 +856,7 @@ function onViewTrace() {
 
       <!-- The failure happened outside any recorded step. -->
       <UAlert
-        v-if="isFailedStatus(status ?? '') && steps.length > 0 && !steps.some((s) => s.failed)"
+        v-if="isFailedStatus(status ?? '') && mergedRows.length > 0 && tree.failingIndex === null"
         color="warning"
         variant="subtle"
         icon="i-lucide-info"
@@ -666,9 +865,15 @@ function onViewTrace() {
       />
 
       <template v-if="steps.length > 0">
-        <!-- Per-category summary strip -->
+        <!-- Per-category summary strip: the test body's steps, then setup and teardown -->
         <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs">
-          <span class="font-medium text-gray-600 dark:text-gray-300">{{ steps.length }} steps</span>
+          <span v-if="bodyLeafIndices.length" class="font-medium text-gray-600 dark:text-gray-300"
+            >{{ bodyLeafIndices.length }} step{{ bodyLeafIndices.length === 1 ? '' : 's' }}</span
+          >
+          <span v-else-if="bodyNeverRan" class="font-medium text-gray-600 dark:text-gray-300"
+            >The test body never ran</span
+          >
+          <span v-else class="font-medium text-gray-600 dark:text-gray-300">No steps in the test body</span>
           <span class="text-gray-300 dark:text-gray-600">·</span>
           <span v-for="c in stepSummary" :key="c.category" class="inline-flex items-center gap-1">
             <UBadge :color="stepCategoryColor[c.category] || 'neutral'" variant="soft" size="xs">
@@ -678,43 +883,55 @@ function onViewTrace() {
               >×{{ c.count }} · <DurationValue :ms="c.duration"
             /></span>
           </span>
+          <span v-for="t in sectionTimes" :key="t.label" class="tabular-nums text-gray-500 dark:text-gray-400">
+            {{ t.label }} <DurationValue :ms="t.ms" />
+          </span>
         </div>
 
         <!-- Phone layout (below `md`): one stacked card per row, so the Step and
              Duration columns are never cut and the page never scrolls sideways.
              The `md`-and-up table below carries the same rows unchanged. -->
         <div class="md:hidden space-y-2">
-          <template v-for="row in mergedRows" :key="row.kind === 'step' ? `m-s-${row.index}` : `m-${row.item.id}`">
+          <template v-for="entry in renderList" :key="`m-${entry.key}`">
+            <!-- A setup / teardown section: one row that folds its hooks and fixtures -->
+            <button
+              v-if="entry.kind === 'section'"
+              type="button"
+              class="flex w-full items-start gap-2 rounded-lg border border-default bg-elevated/40 p-2.5 text-left outline-none focus-visible:outline-2 focus-visible:outline-primary"
+              :aria-expanded="entry.open ? 'true' : 'false'"
+              @click="toggleSection(entry.section)"
+            >
+              <UIcon
+                :name="entry.open ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'"
+                class="mt-0.5 size-4 shrink-0 text-muted"
+              />
+              <span class="min-w-0 flex-1">
+                <span class="flex items-center gap-2 text-sm">
+                  <span class="font-medium" :class="entry.failed ? 'text-red-600 dark:text-red-400' : ''">{{
+                    entry.label
+                  }}</span>
+                  <DurationValue :ms="entry.durationMs" class="ml-auto text-xs text-muted" />
+                </span>
+                <span v-if="entry.summary" class="mt-0.5 block break-words text-xs text-muted">{{
+                  entry.summary
+                }}</span>
+              </span>
+            </button>
+
             <!-- A step row -->
             <div
-              v-if="row.kind === 'step'"
+              v-else-if="entry.kind === 'step'"
               class="rounded-lg border border-default p-2.5"
-              :class="row.failed ? 'bg-red-50 dark:bg-red-950/30' : ''"
+              :class="entry.failing ? 'bg-red-50 dark:bg-red-950/30' : ''"
+              :style="{ marginInlineStart: `${Math.min(entry.level + (entry.nested ? 1 : 0), 4) * 0.75}rem` }"
             >
               <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
-                <span
-                  v-if="status === 'didnotrun'"
-                  class="inline-flex items-center justify-center size-5 shrink-0 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500 text-xs leading-none"
-                  title="Not run"
-                  >–</span
-                >
-                <span
-                  v-else-if="row.failed"
-                  class="inline-flex items-center justify-center size-5 shrink-0 rounded-full bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 text-xs leading-none"
-                  title="Step failed"
-                  >✗</span
-                >
-                <span
-                  v-else
-                  class="inline-flex items-center justify-center size-5 shrink-0 rounded-full bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 text-xs leading-none"
-                  title="Step passed"
-                  >✓</span
-                >
-                <UBadge :color="stepCategoryColor[row.step.category] || 'neutral'" variant="soft" size="xs">
-                  {{ row.step.category }}
+                <StepStatusMark :role="entry.role" :not-run="status === 'didnotrun'" />
+                <UBadge :color="stepCategoryColor[entry.step.category] || 'neutral'" variant="soft" size="xs">
+                  {{ entry.step.category }}
                 </UBadge>
                 <UBadge
-                  v-if="row.index === slowestStepIndex"
+                  v-if="entry.index === slowestStepIndex"
                   color="warning"
                   variant="subtle"
                   size="xs"
@@ -723,28 +940,34 @@ function onViewTrace() {
                   slowest
                 </UBadge>
                 <span
-                  v-if="showAxis && row.item"
+                  v-if="showAxis && entry.item"
                   class="ml-auto tabular-nums text-xs text-gray-400 dark:text-gray-500 whitespace-nowrap"
                 >
-                  {{ formatRel(row.item.at) }}
+                  {{ formatRel(entry.item.at) }}
                 </span>
               </div>
               <p
                 class="mt-1.5 text-sm break-words"
-                :class="row.failed ? 'text-red-600 dark:text-red-400 font-medium' : ''"
+                :class="
+                  entry.failing ? 'text-red-600 dark:text-red-400 font-medium' : entry.recovered ? 'text-muted' : ''
+                "
               >
-                <StepLabel :step="row.step" />
+                <StepLabel :step="entry.step" />
               </p>
-              <StepParamsDisclosure :params="row.step.params" class="mt-1" />
+              <StepParamsDisclosure :params="entry.step.params" class="mt-1" />
               <ErrorText
-                v-if="row.failed && row.step.error?.message"
+                v-if="entry.failing && entry.step.error?.message"
                 mode="block"
-                :text="row.step.error.message"
+                :text="entry.step.error.message"
                 class="mt-1"
               />
+              <div v-else-if="entry.recovered" class="mt-1">
+                <p class="text-xs text-muted">Error caught, the test continued</p>
+                <ErrorText v-if="entry.step.error?.message" :text="entry.step.error.message" />
+              </div>
               <OpenInIdeLink
-                v-if="row.step.location"
-                :location="row.step.location"
+                v-if="entry.step.location"
+                :location="displayLocation(entry.step.location)"
                 :project-key="projectKey ?? undefined"
                 :project-name="projectName ?? undefined"
                 class="text-xs text-gray-400 dark:text-gray-500 mt-0.5"
@@ -752,27 +975,27 @@ function onViewTrace() {
               <div class="mt-1.5">
                 <div class="flex items-center justify-between gap-2">
                   <DurationValue
-                    :ms="row.step.duration"
-                    :class="`text-sm ${stepDurationTextClass(row.step.duration)}`"
+                    :ms="entry.step.duration"
+                    :class="`text-sm ${stepDurationTextClass(entry.step.duration)}`"
                     unit-class="opacity-60"
                   />
                   <span
-                    v-if="stepPctOfTest(row.step.duration)"
+                    v-if="stepPctOfTest(entry.step.duration)"
                     class="text-xs tabular-nums text-gray-400 dark:text-gray-500"
                   >
-                    {{ stepPctOfTest(row.step.duration) }}
+                    {{ stepPctOfTest(entry.step.duration) }}
                   </span>
                 </div>
                 <div class="relative mt-1 h-1.5 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
                   <div
                     class="absolute inset-y-0 rounded-full"
-                    :class="stepBarColorClass(row.step.duration)"
-                    :style="stepBarStyle(row.step)"
+                    :class="stepBarColorClass(entry.step.duration)"
+                    :style="stepBarStyle(entry.step)"
                   />
                 </div>
               </div>
               <FailingStepSnapshot
-                v-if="row.failed"
+                v-if="entry.failing"
                 data-shot="failing-step-evidence"
                 :test-runs-case-id="testRunsCaseId"
                 :attachments="attachments"
@@ -785,31 +1008,32 @@ function onViewTrace() {
             <div
               v-else
               class="rounded-lg border border-default p-2.5 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/60"
-              :class="row.item.failed ? 'bg-red-50 dark:bg-red-950/30' : ''"
-              @click="revealItem(row.item)"
+              :class="entry.item.failed ? 'bg-red-50 dark:bg-red-950/30' : ''"
+              :style="entry.nested ? { marginInlineStart: '0.75rem' } : undefined"
+              @click="revealItem(entry.item)"
             >
               <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
-                <UIcon :name="eventIcon(row.item)" class="size-4 shrink-0" :class="eventIconClass(row.item)" />
+                <UIcon :name="eventIcon(entry.item)" class="size-4 shrink-0" :class="eventIconClass(entry.item)" />
                 <span class="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
-                  {{ kindTag(row.item) || row.item.kind }}
+                  {{ kindTag(entry.item) || entry.item.kind }}
                 </span>
                 <span
                   v-if="showAxis"
                   class="ml-auto tabular-nums text-xs text-gray-400 dark:text-gray-500 whitespace-nowrap"
                 >
-                  {{ formatRel(row.item.at) }}
+                  {{ formatRel(entry.item.at) }}
                 </span>
               </div>
               <div class="mt-1 flex items-baseline justify-between gap-2">
                 <span class="font-mono text-xs break-all text-gray-700 dark:text-gray-300">
-                  {{ row.item.label
-                  }}<span v-if="row.item.kind === 'network'" class="text-gray-500"> → {{ row.item.status }}</span>
+                  {{ entry.item.label
+                  }}<span v-if="entry.item.kind === 'network'" class="text-gray-500"> → {{ entry.item.status }}</span>
                 </span>
                 <span
-                  v-if="row.item.duration != null"
+                  v-if="entry.item.duration != null"
                   class="shrink-0 text-xs tabular-nums text-gray-500 dark:text-gray-400"
                 >
-                  {{ Math.round(row.item.duration) }} ms
+                  {{ Math.round(entry.item.duration) }} ms
                 </span>
               </div>
             </div>
@@ -836,85 +1060,132 @@ function onViewTrace() {
               </tr>
             </thead>
             <tbody>
-              <template v-for="row in mergedRows" :key="row.kind === 'step' ? `s-${row.index}` : row.item.id">
+              <template v-for="entry in renderList" :key="entry.key">
+                <!-- A setup / teardown section: one row that folds its hooks and fixtures -->
+                <tr
+                  v-if="entry.kind === 'section'"
+                  class="bg-elevated/40 [&>td]:border-b [&>td]:border-default [&>td]:px-3 [&>td]:py-2 [&>td]:align-top"
+                >
+                  <td v-if="showAxis" class="tabular-nums text-xs text-gray-400 dark:text-gray-500 whitespace-nowrap">
+                    {{ entry.at != null ? formatRel(entry.at) : '' }}
+                  </td>
+                  <td>
+                    <span
+                      v-if="entry.failed"
+                      class="inline-flex items-center justify-center size-5 rounded-full bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 text-xs leading-none"
+                      :title="entry.holdsFailure ? 'The failure happened here' : 'A step failed here too'"
+                      >✗</span
+                    >
+                  </td>
+                  <td colspan="2">
+                    <button
+                      type="button"
+                      class="inline-flex max-w-full items-start gap-1.5 rounded text-left outline-none focus-visible:outline-2 focus-visible:outline-primary"
+                      :aria-expanded="entry.open ? 'true' : 'false'"
+                      @click="toggleSection(entry.section)"
+                    >
+                      <UIcon
+                        :name="entry.open ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'"
+                        class="mt-0.5 size-4 shrink-0 text-muted"
+                      />
+                      <span class="font-medium" :class="entry.failed ? 'text-red-600 dark:text-red-400' : ''">{{
+                        entry.label
+                      }}</span>
+                      <span v-if="entry.summary" class="min-w-0 break-words text-xs leading-5 text-muted">{{
+                        entry.summary
+                      }}</span>
+                    </button>
+                  </td>
+                  <td>
+                    <DurationValue :ms="entry.durationMs" class="text-sm text-muted" unit-class="opacity-60" />
+                  </td>
+                </tr>
+
                 <!-- A step row -->
-                <template v-if="row.kind === 'step'">
+                <template v-else-if="entry.kind === 'step'">
                   <tr
                     class="[&>td]:border-b [&>td]:border-default [&>td]:px-3 [&>td]:py-2 [&>td]:align-top"
-                    :class="row.failed ? 'bg-red-50 dark:bg-red-950/30' : ''"
+                    :class="entry.failing ? 'bg-red-50 dark:bg-red-950/30' : ''"
                   >
                     <td v-if="showAxis" class="tabular-nums text-xs text-gray-400 dark:text-gray-500 whitespace-nowrap">
-                      {{ row.item ? formatRel(row.item.at) : '' }}
+                      {{ entry.item ? formatRel(entry.item.at) : '' }}
                     </td>
                     <td>
-                      <span
-                        v-if="status === 'didnotrun'"
-                        class="inline-flex items-center justify-center size-5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500 text-xs leading-none"
-                        title="Not run"
-                        >–</span
-                      >
-                      <span
-                        v-else-if="row.failed"
-                        class="inline-flex items-center justify-center size-5 rounded-full bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 text-xs leading-none"
-                        title="Step failed"
-                        >✗</span
-                      >
-                      <span
-                        v-else
-                        class="inline-flex items-center justify-center size-5 rounded-full bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 text-xs leading-none"
-                        title="Step passed"
-                        >✓</span
-                      >
+                      <StepStatusMark :role="entry.role" :not-run="status === 'didnotrun'" />
                     </td>
                     <td>
-                      <UBadge :color="stepCategoryColor[row.step.category] || 'neutral'" variant="soft" size="xs">
-                        {{ row.step.category }}
+                      <UBadge :color="stepCategoryColor[entry.step.category] || 'neutral'" variant="soft" size="xs">
+                        {{ entry.step.category }}
                       </UBadge>
                     </td>
-                    <td>
-                      <div class="flex items-center gap-2">
-                        <span :class="row.failed ? 'text-red-600 dark:text-red-400 font-medium' : ''">
-                          <StepLabel :step="row.step" />
-                        </span>
-                        <UBadge
-                          v-if="row.index === slowestStepIndex"
-                          color="warning"
-                          variant="subtle"
-                          size="xs"
-                          class="shrink-0"
-                          title="Slowest step in this test"
-                        >
-                          slowest
-                        </UBadge>
+                    <td class="min-w-0">
+                      <div :style="stepIndent(entry)">
+                        <div class="flex items-center gap-2">
+                          <span
+                            class="min-w-0 break-words"
+                            :class="
+                              entry.failing
+                                ? 'text-red-600 dark:text-red-400 font-medium'
+                                : entry.recovered
+                                  ? 'text-muted'
+                                  : ''
+                            "
+                          >
+                            <StepLabel :step="entry.step" />
+                          </span>
+                          <UBadge
+                            v-if="entry.index === slowestStepIndex"
+                            color="warning"
+                            variant="subtle"
+                            size="xs"
+                            class="shrink-0"
+                            title="Slowest step in this test"
+                          >
+                            slowest
+                          </UBadge>
+                        </div>
+                        <StepParamsDisclosure :params="entry.step.params" class="mt-1" />
+                        <ErrorText
+                          v-if="entry.failing && entry.step.error?.message"
+                          mode="block"
+                          :text="entry.step.error.message"
+                          class="mt-1"
+                        />
+                        <!-- Contained: the one-line error must not widen the column to its full length. -->
+                        <div v-else-if="entry.recovered" class="mt-1 [contain:inline-size]">
+                          <p class="text-xs text-muted">Error caught, the test continued</p>
+                          <ErrorText v-if="entry.step.error?.message" :text="entry.step.error.message" />
+                        </div>
+                        <OpenInIdeLink
+                          v-if="entry.step.location"
+                          :location="displayLocation(entry.step.location)"
+                          :project-key="projectKey ?? undefined"
+                          :project-name="projectName ?? undefined"
+                          class="text-xs text-gray-400 dark:text-gray-500 mt-0.5 break-all"
+                        />
+                        <!-- The page at the failing step: screenshot, DOM and ARIA, in the step's own block. -->
+                        <FailingStepSnapshot
+                          v-if="entry.failing"
+                          :test-runs-case-id="testRunsCaseId"
+                          :attachments="attachments"
+                          :aria-snapshot="ariaSnapshot"
+                          class="mt-2.5"
+                        />
                       </div>
-                      <StepParamsDisclosure :params="row.step.params" class="mt-1" />
-                      <ErrorText
-                        v-if="row.failed && row.step.error?.message"
-                        mode="block"
-                        :text="row.step.error.message"
-                        class="mt-1"
-                      />
-                      <OpenInIdeLink
-                        v-if="row.step.location"
-                        :location="row.step.location"
-                        :project-key="projectKey ?? undefined"
-                        :project-name="projectName ?? undefined"
-                        class="text-xs text-gray-400 dark:text-gray-500 mt-0.5"
-                      />
                     </td>
                     <td>
                       <div class="min-w-[6rem]">
                         <div class="flex items-center justify-between gap-2">
                           <DurationValue
-                            :ms="row.step.duration"
-                            :class="`text-sm ${stepDurationTextClass(row.step.duration)}`"
+                            :ms="entry.step.duration"
+                            :class="`text-sm ${stepDurationTextClass(entry.step.duration)}`"
                             unit-class="opacity-60"
                           />
                           <span
-                            v-if="stepPctOfTest(row.step.duration)"
+                            v-if="stepPctOfTest(entry.step.duration)"
                             class="text-xs tabular-nums text-gray-400 dark:text-gray-500"
                           >
-                            {{ stepPctOfTest(row.step.duration) }}
+                            {{ stepPctOfTest(entry.step.duration) }}
                           </span>
                         </div>
                         <div
@@ -922,21 +1193,11 @@ function onViewTrace() {
                         >
                           <div
                             class="absolute inset-y-0 rounded-full"
-                            :class="stepBarColorClass(row.step.duration)"
-                            :style="stepBarStyle(row.step)"
+                            :class="stepBarColorClass(entry.step.duration)"
+                            :style="stepBarStyle(entry.step)"
                           />
                         </div>
                       </div>
-                    </td>
-                  </tr>
-                  <!-- The page at the failing step: screenshot + ARIA, tied to the step. -->
-                  <tr v-if="row.failed">
-                    <td :colspan="showAxis ? 5 : 4" class="border-b border-default px-3 pb-3 pt-0">
-                      <FailingStepSnapshot
-                        :test-runs-case-id="testRunsCaseId"
-                        :attachments="attachments"
-                        :aria-snapshot="ariaSnapshot"
-                      />
                     </td>
                   </tr>
                 </template>
@@ -945,32 +1206,34 @@ function onViewTrace() {
                 <tr
                   v-else
                   class="cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/60 [&>td]:border-b [&>td]:border-default [&>td]:px-3 [&>td]:py-2 [&>td]:align-top"
-                  :class="row.item.failed ? 'bg-red-50 dark:bg-red-950/30' : ''"
-                  @click="revealItem(row.item)"
+                  :class="entry.item.failed ? 'bg-red-50 dark:bg-red-950/30' : ''"
+                  @click="revealItem(entry.item)"
                 >
                   <td v-if="showAxis" class="tabular-nums text-xs text-gray-400 dark:text-gray-500 whitespace-nowrap">
-                    {{ formatRel(row.item.at) }}
+                    {{ formatRel(entry.item.at) }}
                   </td>
                   <td>
-                    <UIcon :name="eventIcon(row.item)" class="size-4" :class="eventIconClass(row.item)" />
+                    <UIcon :name="eventIcon(entry.item)" class="size-4" :class="eventIconClass(entry.item)" />
                   </td>
                   <td class="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
-                    {{ kindTag(row.item) || row.item.kind }}
+                    {{ kindTag(entry.item) || entry.item.kind }}
                   </td>
                   <td>
-                    <span class="font-mono text-xs break-all text-gray-700 dark:text-gray-300">{{
-                      row.item.label
-                    }}</span>
-                    <span v-if="row.item.kind === 'network'" class="font-mono text-xs text-gray-500">
-                      → {{ row.item.status }}</span
-                    >
+                    <div :style="entry.nested ? { paddingInlineStart: '1.25rem' } : undefined">
+                      <span class="font-mono text-xs break-all text-gray-700 dark:text-gray-300">{{
+                        entry.item.label
+                      }}</span>
+                      <span v-if="entry.item.kind === 'network'" class="font-mono text-xs text-gray-500">
+                        → {{ entry.item.status }}</span
+                      >
+                    </div>
                   </td>
                   <td>
                     <span
-                      v-if="row.item.duration != null"
+                      v-if="entry.item.duration != null"
                       class="text-xs tabular-nums text-gray-500 dark:text-gray-400"
                     >
-                      {{ Math.round(row.item.duration) }} ms
+                      {{ Math.round(entry.item.duration) }} ms
                     </span>
                   </td>
                 </tr>

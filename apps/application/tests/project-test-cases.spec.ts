@@ -87,7 +87,8 @@ test.describe.serial('Project test-cases catalog', () => {
     await page.goto(`/projects/${projectId}/test-cases`);
     await waitForHydration(page);
 
-    await page.getByRole('button', { name: 'File', exact: true }).click();
+    await page.getByRole('combobox', { name: 'Group tests by' }).click();
+    await page.getByRole('option', { name: 'File' }).click();
     // Each spec-file prefix appears as a group header with its test count.
     await expect(page.getByText('tests/auth', { exact: true })).toBeVisible();
     await expect(page.getByText('tests/shop', { exact: true })).toBeVisible();

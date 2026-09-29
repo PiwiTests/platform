@@ -133,6 +133,11 @@ export interface ReproduceDesktopContext {
   repositoryUrl: string | null;
   /** A bisect result already recorded on the cluster, when one was found. */
   bisectedCommit: BisectedCommit | null;
+  /**
+   * The Flake Lab arm that reproduced the failing test, when it is one test and
+   * an experiment reproduced it: a bisect then runs that arm at each step.
+   */
+  flakeArm: { testCaseId: number; label: string } | null;
 }
 
 /**
@@ -222,17 +227,24 @@ export function reproScript(recipe: ReproRecipe, shell: 'bash' | 'powershell'): 
 export function buildBisectScript(input: BisectInput): BisectResult {
   const { good, bad, verifyCommand } = input;
 
-  if (!good || !bad) {
+  if (!bad) {
     return {
       available: false,
       reason:
-        "A git bisect needs a last-green commit and the failing commit. Piwi has no commit for one of them — keep the reporter's `collectScmInfo` on (the default) so every run records its commit.",
+        'A git bisect needs the failing commit, and the failing run does not record one: the reporter reads it from the Git checkout the tests run in.',
+    };
+  }
+  if (!good) {
+    return {
+      available: false,
+      reason: `A git bisect needs a last-green commit, and no passing run records one yet. With a commit you know was good: git bisect start ${bad.slice(0, 7)} <good commit>.`,
     };
   }
   if (good === bad) {
     return {
       available: false,
-      reason: 'The last green run and the failing run are the same commit — there is nothing to bisect.',
+      reason:
+        'The last passing run tested the same commit, so there is nothing to bisect: what broke it is not in the code.',
     };
   }
 

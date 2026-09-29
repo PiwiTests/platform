@@ -1,6 +1,7 @@
 import { and, eq } from 'drizzle-orm';
 import { files, testRunsCases } from '../../../database/schema';
 import { resolveCaseDomSnapshot } from '../../../utils/dom-snapshot';
+import { snapshotMomentFromQuery } from '../../../utils/dom-snapshot-render';
 import { resolveCasePayloadContents } from '../../../utils/case-payloads';
 import {
   requireResolvedProjectAccess,
@@ -24,12 +25,27 @@ defineRouteMeta({
         description: 'Which representation to render — trace-derived DOM (default) or the ARIA tree',
       },
       {
+        name: 'callId',
+        in: 'query',
+        required: false,
+        schema: { type: 'string' },
+        description:
+          'Render this trace action’s snapshot first (with `phase`; at most 200 characters), such as the one a trace screenshot was taken at; falls back to the failure-time snapshot when the trace holds none for it',
+      },
+      {
+        name: 'phase',
+        in: 'query',
+        required: false,
+        schema: { type: 'string', enum: ['before', 'after'] },
+        description: 'Which snapshot of the `callId` action: before it ran or after it',
+      },
+      {
         name: 'inlineStyles',
         in: 'query',
         required: false,
         schema: { type: 'string', enum: ['1', 'true'] },
         description:
-          "Inline external stylesheets from the trace's resources so the DOM renders styled (used by the locator picker)",
+          "Inline the trace's stylesheets and images so the returned HTML renders as recorded on its own; the rendered page views load `dom-snapshot-frame`, which always does",
       },
     ],
     'x-required-roles': ['administrator', 'reporter', 'user'],
@@ -46,8 +62,8 @@ export default eventHandler(async (event) => {
   const query = getQuery(event);
   const sourceParam = query.source;
   const source = sourceParam === 'aria' || sourceParam === 'dom' ? sourceParam : undefined;
-  // The interactive picker asks to inline external CSS so its iframe renders
-  // styled; the read-only card omits it and gets the HTML-as-text view.
+  // Inlining makes the returned HTML self-contained; without it the HTML stays
+  // lean, as the rendered views (served by `dom-snapshot-frame`) and text readers want.
   const inlineStyles = query.inlineStyles === '1' || query.inlineStyles === 'true';
 
   const [traceRows, caseRows] = await Promise.all([
@@ -70,5 +86,9 @@ export default eventHandler(async (event) => {
     caseRows[0]?.aria ??
     null;
 
-  return resolveCaseDomSnapshot(traceRows[0]?.path ?? null, aria, undefined, { source, inlineStyles });
+  return resolveCaseDomSnapshot(traceRows[0]?.path ?? null, aria, undefined, {
+    source,
+    inlineStyles,
+    at: snapshotMomentFromQuery(query),
+  });
 });

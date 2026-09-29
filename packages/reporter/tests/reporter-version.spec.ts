@@ -27,6 +27,7 @@ describe('findOwnPackageJson', () => {
     const distDir = path.join(pkgRoot, 'dist');
     fs.mkdirSync(distDir);
     expect(findOwnPackageJson(distDir)?.version).toBe('9.9.9');
+    expect(findOwnPackageJson(distDir)?.root).toBe(pkgRoot);
   });
 
   it('resolves three levels up — the unbundled src/internal/support layout', () => {

@@ -1,0 +1,78 @@
+import { describe, expect, test } from 'vitest';
+import { parseDotEnv, resolvePiwiConnection } from '../src/dotenv';
+
+describe('parseDotEnv', () => {
+  test('reads plain, quoted and exported values, and skips comments', () => {
+    expect(
+      parseDotEnv(
+        [
+          '# Piwi',
+          'PIWI_DASHBOARD_URL=http://localhost:3000',
+          'export PIWI_PROJECT_NAME="Acme Mugs"',
+          "PIWI_API_KEY='pd_123' ",
+          'PIWI_LABEL=nightly # the job',
+          'not a line',
+        ].join('\n'),
+      ),
+    ).toEqual({
+      PIWI_DASHBOARD_URL: 'http://localhost:3000',
+      PIWI_PROJECT_NAME: 'Acme Mugs',
+      PIWI_API_KEY: 'pd_123',
+      PIWI_LABEL: 'nightly',
+    });
+  });
+});
+
+describe('resolvePiwiConnection', () => {
+  test('flags, then the environment, then .env', () => {
+    expect(
+      resolvePiwiConnection({
+        flags: { project: 'web' },
+        env: { PIWI_DASHBOARD_URL: 'https://piwi.example/', PIWI_API_KEY: 'pd_env' },
+        dotEnv: { PIWI_DASHBOARD_URL: 'http://ignored', PIWI_API_KEY: 'pd_dotenv' },
+      }),
+    ).toEqual({ serverUrl: 'https://piwi.example', apiKey: 'pd_env', project: 'web' });
+    expect(
+      resolvePiwiConnection({
+        dotEnv: { PIWI_DASHBOARD_URL: 'https://piwi.example', PIWI_API_KEY: 'pd_dotenv', PIWI_PROJECT_NAME: 'web' },
+      }),
+    ).toEqual({ serverUrl: 'https://piwi.example', apiKey: 'pd_dotenv', project: 'web' });
+  });
+
+  test('a flag URL takes the key from the environment: both are the person’s own', () => {
+    expect(
+      resolvePiwiConnection({ flags: { serverUrl: 'https://piwi.example' }, env: { PIWI_API_KEY: 'pd_env' } })!.apiKey,
+    ).toBe('pd_env');
+  });
+
+  test("the environment's key never goes to a URL a workspace .env names", () => {
+    const found = resolvePiwiConnection({
+      env: { PIWI_API_KEY: 'pd_mine' },
+      dotEnv: { PIWI_DASHBOARD_URL: 'https://evil.example' },
+    });
+    expect(found).toEqual({ serverUrl: 'https://evil.example', apiKey: null, project: '' });
+  });
+
+  test("a workspace .env's key never goes to the environment's URL", () => {
+    const found = resolvePiwiConnection({
+      env: { PIWI_DASHBOARD_URL: 'https://piwi.example' },
+      dotEnv: { PIWI_DASHBOARD_URL: 'https://piwi.example', PIWI_API_KEY: 'pd_dotenv' },
+    });
+    expect(found!.apiKey).toBeNull();
+  });
+
+  test("the desktop app's token serves only its own URL", () => {
+    const desktop = { url: 'http://127.0.0.1:3000', token: 'pd_desk' };
+    expect(resolvePiwiConnection({ desktop })).toEqual({
+      serverUrl: 'http://127.0.0.1:3000',
+      apiKey: 'pd_desk',
+      project: '',
+    });
+    expect(resolvePiwiConnection({ env: { PIWI_DASHBOARD_URL: 'https://other' }, desktop })!.apiKey).toBeNull();
+    // A URL from any layer that is the desktop app's own gets its token when that layer has no key.
+    expect(resolvePiwiConnection({ dotEnv: { PIWI_DASHBOARD_URL: 'http://127.0.0.1:3000/' }, desktop })!.apiKey).toBe(
+      'pd_desk',
+    );
+    expect(resolvePiwiConnection({})).toBeNull();
+  });
+});

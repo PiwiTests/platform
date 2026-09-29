@@ -20,6 +20,15 @@ import {
   getFailureClues,
   type FailureCluesResult,
 } from '#shared/handlers/test-cases';
+import { getFlakeProfile } from '#shared/handlers/flake-profile';
+import {
+  FlakePlanUnavailable,
+  flakeCommand,
+  getFlakeExperimentPlan,
+  latestSuspectResults,
+  listFlakeExperiments,
+} from '#shared/handlers/flake-lab';
+import { describeFlakeArm, estimateFlakeSessionMs } from '@piwitests/core/flake-plan';
 import {
   getFailureCluster,
   getClusterDiagnosis,
@@ -37,6 +46,14 @@ import { buildIssueDraft, type DraftEntityType } from '../integrations/draft';
 import { createIssue } from '../integrations/create';
 import { getClusterKnownIssue } from '../integrations/known-issue';
 import { toIssueLocale } from '#shared/integrations/messages';
+import {
+  coerceFieldValue,
+  fieldValueHint,
+  joinFieldNames,
+  normalizeFieldValues,
+  type TrackerField,
+} from '#shared/integrations/fields';
+import { getCreateFields } from '../integrations/fields';
 import { getAdminStats } from '#shared/handlers/admin';
 import { createTestFunction } from '#shared/handlers/test-functions';
 import { createTestFunctionSchema } from '#shared/test-function-schemas';
@@ -49,11 +66,38 @@ import {
   type SelectionDefinition,
   type SelectionFormat,
 } from '#shared/selection';
-import { projects, testRuns, testRunsCases, testCases, failureClusters, failureDiagnoses } from '../../database/schema';
+import {
+  projects,
+  testRuns,
+  testRunsCases,
+  testCases,
+  failureClusters,
+  failureDiagnoses,
+  graphEdges,
+} from '../../database/schema';
 import { buildDiagnosisContext, buildClusterDiagnosisContext } from '../ai-context';
 import { stripAnsi } from '#shared/error-fingerprint';
 import { caseHeadline } from '#shared/failure-verdict';
 import { MCP_TOOL_DEFS, DESKTOP_MCP_TOOL_DEFS } from '#shared/mcp-tools';
+import { collectReportBundle } from '#shared/reports/collect';
+import { assertDashboardScope } from '#shared/reports/request';
+import { REPORT_LANGUAGES, isReportLanguage } from '#shared/reports/languages';
+import { isBuiltinDashboardKey } from '#shared/analytics/dashboards';
+import { getMetric, isMetricId, type MetricId } from '#shared/analytics/metrics';
+import { WIDGET_METRIC_IDS } from '#shared/analytics/registry';
+import { analyticsScopeToQuery, parseAnalyticsScope } from '#shared/analytics/scope';
+import { applyWidgetScope } from '#shared/analytics/dashboards';
+import {
+  DashboardError,
+  dashboardScopeWith,
+  getDashboard,
+  listDashboards,
+  loadDashboardDefinition,
+  type DashboardActor,
+} from '#shared/handlers/dashboards';
+import { isAuthEnabled } from '../auth';
+import { runAnalyticsWidget } from '#shared/handlers/analytics';
+import { compareMetricPeriods, PeriodSpecError } from '#shared/handlers/analytics/compare-periods';
 import type {
   McpToolDef,
   McpToolName,
@@ -65,13 +109,33 @@ import type {
 import type { RunMetadata, BrowserConfig } from '../run-json-types';
 import { getStorage } from '../../storage';
 import { getLocatorHealingBatch, getLocatorHealing } from '../locator-healing';
+import { predictDiffBreaks, toRunLocatorBreak } from '#shared/handlers/locator-breaks';
+import { getLocatorIndex } from '../locator-usages';
+
+/** The largest diff `predict_locator_breaks` reads, in characters. */
+const MAX_PREDICT_DIFF_CHARS = 2_000_000;
+/** Breaks `predict_locator_breaks` returns, likely first. */
+const MAX_PREDICTED_BREAKS = 50;
 import { getPageDiff } from '../page-diff';
 import { describePageDiff, formatPageDiffSummary } from '#shared/page-diff';
 import { inlineCasePayloads } from '../case-payloads';
 import { selectCaseScreenshots } from '../case-screenshots';
 import { createScmProvider } from '../scm';
+import { readChangeCoverage } from '../scm/change-coverage';
+import { isValidGitRef } from '../scm/refs';
+import { listScenarioGaps, draftScenario } from '#shared/handlers/scenario-gaps';
+import { getFeatureGraph } from '../feature-graph';
 import { resolveAiConfig } from '../ai-provider';
 import { runClusterDiagnosis, isDiagnosisRunning } from '../ai-diagnosis';
+import {
+  getBugReport,
+  getBugReportMissedBy,
+  listBugReports,
+  renderBugReportSpec,
+  renderStepsWith,
+} from '#shared/handlers/bug-reports';
+import { describeExpectation, describeStepInWords, expectedSteps, type BugReport } from '@piwitests/core/bug-report';
+import { parseSteps } from '@piwitests/core/steps';
 import {
   scopeAllows,
   resolveRunProjectId,
@@ -79,6 +143,7 @@ import {
   resolveCaseProjectId,
   resolveTestRunCaseProjectId,
   resolveDiagnosisProjectId,
+  resolveBugReportProjectId,
 } from '../project-access';
 import type { ProjectScope } from '../project-access';
 import type { User } from '../../database/schema';
@@ -252,6 +317,19 @@ function selectionFormatParam(raw: unknown): SelectionFormat {
 
 // Keyed by `McpToolName` (derived from MCP_TOOL_DEFS): TypeScript now rejects a
 // handler whose name isn't a declared tool, and a declared tool with no handler.
+/**
+ * A create refused over empty required fields, worded for an agent: each field's
+ * id, its name and what it takes, so the next call can pass them in `fields`.
+ */
+function missingFieldsForAgent(missing: { id: string; name: string }[], screen: Map<string, TrackerField>): string {
+  const names = joinFieldNames(missing.map((f) => f.name));
+  const each = missing.map((f) => {
+    const field = screen.get(f.id);
+    return `${f.id} (${f.name})${field ? ` takes ${fieldValueHint(field)}` : ''}`;
+  });
+  return `Jira requires ${names} for this issue type. Pass ${missing.length === 1 ? 'it' : 'them'} in \`fields\`, keyed by field id: ${each.join('; ')}. Or set a default in the project's issue tracker settings.`;
+}
+
 const HANDLERS: Record<McpToolName, McpToolHandler> = {
   // ── list_projects ──────────────────────────────────────────────────────────
   async list_projects(db, _params, ctx) {
@@ -1024,6 +1102,9 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
             patchedFilesCount: coverage.scm.patchedFilesCount || null,
             patchesOmitted: coverage.scm.patchesOmitted || null,
             baseCommitUsed: coverage.scm.baseCommitUsed || null,
+            range: coverage.scm.range ? `${coverage.scm.range.from}..${coverage.scm.range.to}` : null,
+            compareUrl: coverage.scm.compareUrl || null,
+            scmError: coverage.scm.error || null,
             alreadyGreen: coverage.alreadyGreen || null,
           })
         : null,
@@ -1309,8 +1390,135 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
   async get_test_stability_trend(db, params, ctx) {
     const testCaseId = numericParam(params.testCaseId, 'testCaseId');
     if ((await checkEntityScope(db, ctx, testCaseId, resolveCaseProjectId)) === 'not-found') return null;
-    const buckets = params.buckets != null ? numericParam(params.buckets, 'buckets') : 20;
-    return getTestCaseStabilityTrend(db, testCaseId, buckets);
+    const days = params.days != null ? numericParam(params.days, 'days') : undefined;
+    return getTestCaseStabilityTrend(db, testCaseId, { days });
+  },
+
+  // ── get_flake_profile ──────────────────────────────────────────────────────
+  async get_flake_profile(db, params, ctx) {
+    const testCaseId = numericParam(params.testCaseId, 'testCaseId');
+    if ((await checkEntityScope(db, ctx, testCaseId, resolveCaseProjectId)) === 'not-found') return null;
+    const [profile, experiments] = await Promise.all([
+      getFlakeProfile(db, testCaseId),
+      listFlakeExperiments(db, testCaseId, { limit: 10 }),
+    ]);
+    if (!profile) return null;
+    const results = latestSuspectResults(experiments);
+    return {
+      testCaseId: profile.testCaseId,
+      window: { days: profile.windowDays, maxAttempts: profile.maxAttempts, from: profile.from, to: profile.to },
+      attempts: profile.attempts,
+      failures: profile.failures,
+      passes: profile.passes,
+      suspects: profile.suspects.map((s) => {
+        const lab = results.get(s.id);
+        return dropNulls({
+          id: s.id,
+          kind: s.kind,
+          label: s.label,
+          sentence: s.sentence,
+          counts: s.counts,
+          lift: Math.round(s.lift * 10) / 10,
+          condition: s.condition,
+          conditionLabel: s.conditionLabel,
+          route: s.route,
+          thresholdMs: s.thresholdMs,
+          thresholdCount: s.thresholdCount,
+          testCaseId: s.testCaseId,
+          title: s.title,
+          project: s.project,
+          sharedRoutes: s.sharedRoutes,
+          approximate: s.approximate,
+          executionIds: s.executionIds.slice(0, 10),
+          lab: lab
+            ? {
+                experimentId: lab.experimentId,
+                verdict: lab.verdict,
+                matchingFailures: lab.matchingFailures,
+                runs: lab.runs,
+                control: { matchingFailures: lab.controlMatchingFailures, runs: lab.controlRuns },
+                pValue: lab.pValue,
+                finishedAt: lab.finishedAt,
+              }
+            : null,
+        });
+      }),
+      context: profile.context.map((c) => ({ ...c, lift: Math.round(c.lift * 10) / 10 })),
+      experiments: experiments.map((e) =>
+        dropNulls({
+          id: e.id,
+          kind: e.kind,
+          verdict: e.verdict,
+          commit: e.commit,
+          failureCommit: e.failureCommit,
+          source: e.source,
+          playwrightProject: e.playwrightProject,
+          finishedAt: e.finishedAt,
+          verifies: e.verifies,
+          arms: e.arms.map((a) =>
+            dropNulls({
+              id: a.key,
+              label: a.label,
+              suspectId: a.suspectId,
+              conditions: a.conditions,
+              runs: a.runs,
+              matchingFailures: a.matchingFailures,
+              otherFailures: a.otherFailures,
+              discardedRounds: a.discardedRounds || null,
+              stoppedEarly: a.stoppedEarly || null,
+              pValue: a.pValue,
+              verdict: a.verdict,
+              reproducing: a.id === e.reproducingArmId || null,
+            }),
+          ),
+        }),
+      ),
+    };
+  },
+
+  // ── plan_flake_experiment ──────────────────────────────────────────────────
+  async plan_flake_experiment(db, params, ctx) {
+    const testCaseId = numericParam(params.testCaseId, 'testCaseId');
+    if ((await checkEntityScope(db, ctx, testCaseId, resolveCaseProjectId)) === 'not-found') return null;
+    let plan;
+    try {
+      plan = await getFlakeExperimentPlan(db, testCaseId, { record: false });
+    } catch (error) {
+      if (error instanceof FlakePlanUnavailable) return null;
+      throw error;
+    }
+    const arms = [plan.control, ...plan.arms];
+    const estimate = estimateFlakeSessionMs(arms, plan.medianDurationMs);
+    return dropNulls({
+      testCaseId,
+      test: plan.displayTitle,
+      filePath: plan.test.file,
+      playwrightProject: plan.test.project,
+      commands: {
+        reproduce: flakeCommand(testCaseId),
+        oneSuspect: plan.arms.length ? `${flakeCommand(testCaseId)} --suspect 1` : null,
+        verify: flakeCommand(testCaseId, 'verify'),
+      },
+      exitCodes: {
+        0: 'reproduced (verify: the fix held)',
+        1: 'not reproduced (verify: still fails or too few runs)',
+        2: 'error',
+      },
+      failureCommit: plan.failureCommit,
+      errorSignatures: plan.errorSignatures,
+      arms: arms.map((a) => ({
+        id: a.id,
+        label: a.id === 'control' ? describeFlakeArm([]) : a.label,
+        suspectId: a.suspectId,
+        conditions: a.conditions,
+        runs: a.runs,
+        stopAt: a.stopAt,
+      })),
+      combined: plan.combined ? { label: plan.combined.label, conditions: plan.combined.conditions } : null,
+      skippedSuspects: plan.suspects.filter((s) => s.skipped).map((s) => ({ id: s.id, reason: s.skipped })),
+      estimateMinutes: estimate != null ? Math.ceil(estimate / 60_000) : null,
+      plan,
+    });
   },
 
   // ── get_network_requests ───────────────────────────────────────────────────
@@ -1407,11 +1615,54 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
             suggestAddTestId: h.recommendation.suggestAddTestId || null,
           })
         : null,
+      fromDiffRename: rankedList(h.fromDiffRename),
+      diffRename: h.diffRename ?? null,
       fromPriorSuccess: rankedList(h.fromPriorSuccess),
       fromElementMatch: rankedList(h.fromElementMatch),
       fromAriaSnapshot: rankedList(h.fromAriaSnapshot),
       priorNameMayBeStale: h.priorNameMayBeStale || null,
     });
+  },
+
+  // ── predict_locator_breaks ─────────────────────────────────────────────────
+  async predict_locator_breaks(db, params, ctx) {
+    const projectId = numericParam(params.projectId, 'projectId');
+    assertProject(ctx, projectId);
+    const diff = typeof params.diff === 'string' ? params.diff : '';
+    if (!diff.trim()) throw new Error('diff is required: the output of `git diff` for the change');
+    if (diff.length > MAX_PREDICT_DIFF_CHARS) throw new Error(`diff is over ${MAX_PREDICT_DIFF_CHARS} characters`);
+    const branch = typeof params.branch === 'string' && params.branch.trim() ? params.branch.trim() : null;
+    const index = await getLocatorIndex(db, projectId, { branch });
+    if (!index) return null;
+    const breaks = predictDiffBreaks(diff, index);
+    const items = breaks.slice(0, MAX_PREDICTED_BREAKS).map((b) => {
+      const stored = toRunLocatorBreak(b);
+      return dropNulls({
+        locator: b.locator,
+        confidence: b.confidence,
+        rewrite: b.rewrite ?? null,
+        change: dropNulls({
+          filePath: b.anchor.file,
+          line: b.anchor.line,
+          kind: b.anchor.kind,
+          attribute: b.anchor.attribute ?? null,
+          key: b.anchor.key ?? null,
+          before: b.anchor.before,
+          after: b.anchor.after ?? null,
+        }),
+        tests: b.tests.slice(0, 20).map((t) => ({ testCaseId: t.id, title: t.title, filePath: t.file })),
+        callSites: stored.callSites,
+        // Replace each `before` string literal with `after` at the call sites, keeping the quotes.
+        edits: stored.replacements.map(([before, after]) => ({ before, after })),
+      });
+    });
+    return {
+      branch: index.branch ?? index.defaultBranch,
+      locators: index.locators.length,
+      truncated: breaks.length > MAX_PREDICTED_BREAKS || index.truncated || null,
+      items,
+      nextCursor: null,
+    };
   },
 
   // ── search ─────────────────────────────────────────────────────────────────
@@ -1485,8 +1736,8 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
   async create_issue(db, params, ctx) {
     assertWriteRole(ctx);
     const entityType = String(params.entityType ?? '') as DraftEntityType;
-    if (entityType !== 'failure_cluster' && entityType !== 'test_runs_case') {
-      throw new Error('entityType must be failure_cluster or test_runs_case');
+    if (entityType !== 'failure_cluster' && entityType !== 'test_runs_case' && entityType !== 'bug_report') {
+      throw new Error('entityType must be failure_cluster, test_runs_case or bug_report');
     }
     const entityId = numericParam(params.entityId, 'entityId');
     const projectId = await resolveLinkEntityProjectId(db, entityType, entityId);
@@ -1513,6 +1764,23 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       throw new Error('Configure a Jira project binding (project key and issue type) before filing issues');
     }
 
+    // Field values arrive keyed by field id, loosely typed (a listed value by its
+    // name, a person by account id); the create screen shapes them for Jira.
+    const screen = await getCreateFields(db, draft.connectionId, draft.projectKey, draft.issueType).catch(() => null);
+    const byId = new Map((screen ?? []).map((f) => [f.id, f]));
+    const given =
+      params.fields && typeof params.fields === 'object' && !Array.isArray(params.fields)
+        ? (params.fields as Record<string, unknown>)
+        : {};
+    const fields = normalizeFieldValues(
+      Object.fromEntries(
+        Object.entries(given).map(([id, value]) => {
+          const field = byId.get(id);
+          return [id, { value: field ? coerceFieldValue(field, value) : value }];
+        }),
+      ),
+    );
+
     const outcome = await createIssue(db, {
       entityType,
       entityId,
@@ -1524,10 +1792,16 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       assignee: draft.assignee,
       locale: draft.locale,
       include,
-      requestedBy: ctx.user?.id ?? null,
+      fields,
+      // The auth-disabled administrator is user 0, which no row references.
+      requestedBy: ctx.user?.id || null,
       siteUrl,
     });
     if (!outcome) return null;
+    if (outcome.missingFields?.length) throw new Error(missingFieldsForAgent(outcome.missingFields, byId));
+    if (outcome.fieldErrors?.length) {
+      throw new Error(`${outcome.error} Pass values Jira accepts in \`fields\`, keyed by field id.`);
+    }
     if (outcome.status !== 'done') {
       throw new Error(outcome.error || 'Filing the issue did not complete; it is queued for retry');
     }
@@ -1995,7 +2269,412 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
   async get_release_notes(_db, params) {
     return getReleaseNotes(params);
   },
+
+  async get_change_coverage(db, params, ctx) {
+    const projectId = numericParam(params.projectId, 'projectId');
+    assertProject(ctx, projectId);
+    const runId = params.run != null ? numericParam(params.run, 'run') : null;
+    const base = typeof params.base === 'string' ? params.base : null;
+    const head = typeof params.head === 'string' ? params.head : null;
+    // Refs reach SCM API URLs with the project's token — reject traversal.
+    if ((base != null && !isValidGitRef(base)) || (head != null && !isValidGitRef(head))) {
+      throw new Error('Invalid base or head ref');
+    }
+
+    const coverage = await readChangeCoverage(db, projectId, { runId, baseSha: base, headSha: head });
+    return dropNulls({
+      runId: coverage.runId,
+      baseSha: coverage.baseSha,
+      headSha: coverage.headSha,
+      baseBranch: coverage.baseBranch,
+      windowRuns: coverage.windowRuns,
+      scmAvailable: coverage.scmAvailable,
+      totalFiles: coverage.files.length,
+      reachedFiles: coverage.reachedFiles,
+      uncoveredFiles: coverage.uncoveredFiles,
+      tickets: coverage.tickets.map((t) =>
+        dropNulls({
+          ticket: t.ticket,
+          files: t.files.map((f) =>
+            dropNulls({
+              filePath: f.filePath,
+              additions: f.additions,
+              deletions: f.deletions,
+              reachedInRun: f.reachedInRun,
+              reachedCountHistory: f.reachedCountHistory,
+              reachingTestCount: f.reachingTestCount,
+            }),
+          ),
+        }),
+      ),
+    });
+  },
+
+  async list_scenario_gaps(db, params, ctx) {
+    const projectId = numericParam(params.projectId, 'projectId');
+    assertProject(ctx, projectId);
+    const gapClass = typeof params.class === 'string' ? params.class : undefined;
+    const feature = typeof params.feature === 'string' ? params.feature : undefined;
+    const minScore = params.minScore != null ? numericParam(params.minScore, 'minScore') : undefined;
+    const pr = params.pr != null ? numericParam(params.pr, 'pr') : undefined;
+    const limit = params.limit != null ? clampPageSize(params.limit) : 20;
+
+    let gaps = await listScenarioGaps(db, projectId, {
+      class: gapClass,
+      minScore,
+      prNumber: pr,
+      limit: feature ? 200 : limit,
+    });
+
+    // Feature filter: keep gaps whose subject node is grouped under the feature.
+    if (feature) {
+      const grouped = await db
+        .select({ toKind: graphEdges.toKind, toKey: graphEdges.toKey })
+        .from(graphEdges)
+        .where(
+          and(
+            eq(graphEdges.projectId, projectId),
+            eq(graphEdges.kind, 'groups'),
+            eq(graphEdges.fromKind, 'feature'),
+            eq(graphEdges.fromKey, feature),
+          ),
+        );
+      const groupedKeys = new Set(grouped.map((g) => `${g.toKind}:${g.toKey}`));
+      // Match on the gap's typed subject, not its raw dedupe key: a success-only
+      // gap keys on a bare route key, so comparing the key directly drops it.
+      gaps = gaps.filter((g) => groupedKeys.has(`${g.subject.kind}:${g.subject.key}`)).slice(0, limit);
+    }
+
+    return {
+      items: gaps.map((g) =>
+        dropNulls({
+          id: g.id,
+          detector: g.detector,
+          class: g.class,
+          title: g.title,
+          evidence: g.evidence,
+          score: g.score,
+          status: g.status,
+          ticket: g.ticket,
+          prNumber: g.prNumber,
+          testCaseId: g.testCaseId,
+        }),
+      ),
+    };
+  },
+
+  async draft_scenario(db, params, ctx) {
+    const projectId = numericParam(params.projectId, 'projectId');
+    assertProject(ctx, projectId);
+    const gapId = numericParam(params.gapId, 'gapId');
+    const draft = await draftScenario(db, projectId, gapId);
+    if (!draft) return { error: `No gap #${gapId} in project ${projectId}` };
+    return {
+      title: draft.gapTitle,
+      class: draft.gapClass,
+      annotations: draft.annotations,
+      path: draft.path,
+      catalogMethods: draft.catalogMethods.map((m) => `${m.module}#${m.name}`),
+      draft: draft.text,
+    };
+  },
+
+  async get_feature_graph(db, params, ctx) {
+    const projectId = numericParam(params.projectId, 'projectId');
+    assertProject(ctx, projectId);
+    const nodeParam = typeof params.node === 'string' ? params.node.trim() : '';
+    const sep = nodeParam.indexOf(':');
+    if (sep <= 0) return { error: 'node must be "kind:key", e.g. route:POST /api/orders' };
+    const depth = params.depth != null ? numericParam(params.depth, 'depth') : 2;
+    const graph = await getFeatureGraph(
+      db,
+      projectId,
+      { kind: nodeParam.slice(0, sep), key: nodeParam.slice(sep + 1) },
+      depth,
+    );
+    return {
+      seed: `${graph.seed.kind}:${graph.seed.key}`,
+      depth: graph.depth,
+      nodes: graph.nodes.map((n) => ({
+        node: `${n.kind}:${n.key}`,
+        class: n.class,
+        depth: n.depth,
+        tests: n.tests.map((t) => t.title),
+      })),
+      edges: graph.edges.map((e) => ({
+        from: `${e.fromKind}:${e.fromKey}`,
+        to: `${e.toKind}:${e.toKey}`,
+        kind: e.kind,
+      })),
+    };
+  },
+
+  // ── get_quality_report ─────────────────────────────────────────────────────
+  async get_quality_report(db, params, ctx) {
+    const dashboard = params.dashboard ?? 'executive';
+    if (!isBuiltinDashboardKey(dashboard)) {
+      throw new Error('dashboard must be executive, engineering, team, gaps-digest or overview');
+    }
+    const lang = params.lang ?? undefined;
+    if (lang !== undefined && !isReportLanguage(lang))
+      throw new Error(`lang must be one of ${REPORT_LANGUAGES.join(', ')}`);
+    const scope = toolScope(params, ctx);
+    assertDashboardScope(dashboard, scope);
+    return collectReportBundle(db, {
+      dashboard,
+      scope,
+      access: ctx.scope,
+      language: lang,
+      baseUrl: process.env.PIWI_SITE_URL ?? null,
+    });
+  },
+
+  // ── list_dashboards ────────────────────────────────────────────────────────
+  async list_dashboards(db, _params, ctx) {
+    const list = await listDashboards(db, mcpDashboardActor(ctx));
+    return {
+      items: list.items.map((d) =>
+        dropNulls({
+          id: d.id,
+          name: d.name,
+          description: d.description,
+          kind: d.kind,
+          visibility: d.visibility,
+          owner: d.ownerName,
+          widgets: d.widgetCount,
+          updatedAt: d.updatedAt,
+        }),
+      ),
+      instanceDefault: list.instanceDefault ?? 'overview',
+    };
+  },
+
+  // ── get_dashboard ──────────────────────────────────────────────────────────
+  async get_dashboard(db, params, ctx) {
+    const query = toolScopeQuery(params, ctx);
+    const actor = mcpDashboardActor(ctx);
+    const id = String(params.id ?? '');
+    try {
+      const { definition } = await loadDashboardDefinition(db, id, actor);
+      const scope = dashboardScopeWith(definition, query);
+      const view = await getDashboard(db, id, actor, ctx.scope, { scope });
+      const bands = [];
+      for (const band of view.bands) {
+        const widgets = [];
+        for (const widget of band.widgets) {
+          if (!widget.available) {
+            widgets.push({ key: widget.key, title: widget.title, available: false, reason: widget.reason });
+            continue;
+          }
+          const data = await runAnalyticsWidget(
+            db,
+            widget.type,
+            applyWidgetScope(scope, widget.scope),
+            ctx.scope,
+            widget.options,
+          );
+          widgets.push({ key: widget.key, type: widget.type, title: widget.title, data });
+        }
+        bands.push({ title: band.title, description: band.description ?? null, widgets });
+      }
+      return dropNulls({
+        id: view.id,
+        name: view.name,
+        description: view.description,
+        kind: view.kind,
+        visibility: view.visibility,
+        scope: analyticsScopeToQuery(scope),
+        hiddenProjects: view.hiddenProjects,
+        bands,
+      });
+    } catch (error) {
+      if (error instanceof DashboardError) throw new Error(error.message);
+      throw error;
+    }
+  },
+
+  // ── get_metric_trend ───────────────────────────────────────────────────────
+  async get_metric_trend(db, params, ctx) {
+    const metric = params.metric;
+    if (!isMetricId(metric) || !WIDGET_METRIC_IDS.includes(metric)) {
+      throw new Error(`Unknown metric '${String(metric)}'. Use one of: ${WIDGET_METRIC_IDS.join(', ')}`);
+    }
+    const trend = await runAnalyticsWidget(db, 'metric', toolScope(params, ctx), ctx.scope, {
+      metric,
+      display: 'line',
+    });
+    return { definition: getMetric(metric).definition, ...(trend as object) };
+  },
+
+  // ── compare_periods ────────────────────────────────────────────────────────
+  async compare_periods(db, params, ctx) {
+    const raw: unknown[] = Array.isArray(params.metrics) ? params.metrics : [];
+    const metrics = raw.filter((m): m is MetricId => isMetricId(m) && WIDGET_METRIC_IDS.includes(m));
+    if (metrics.length !== raw.length) throw new Error('metrics must be metric ids from the catalog');
+    try {
+      return await compareMetricPeriods(
+        db,
+        toolScope(params, ctx),
+        ctx.scope,
+        String(params.a ?? ''),
+        String(params.b ?? ''),
+        metrics.length > 0 ? metrics : undefined,
+      );
+    } catch (error) {
+      if (error instanceof PeriodSpecError) throw new Error(error.message);
+      throw error;
+    }
+  },
+
+  // ── Bug reports ────────────────────────────────────────────────────────────
+  async list_bug_reports(db, params, ctx) {
+    const projectId = numericParam(params.projectId, 'projectId');
+    assertProject(ctx, projectId);
+    const pageSize = clampPageSize(params.pageSize);
+    const cursor = numericCursor(params.cursor);
+    const page = await listBugReports(db, projectId, {
+      status: typeof params.status === 'string' ? params.status : null,
+      beforeId: cursor,
+      limit: pageSize + 1,
+    });
+    return paginatedItems(
+      page.map((r) => dropNulls({ ...r, reproductions: r.reproductions || null })),
+      pageSize,
+      (r) => String(r.id),
+    );
+  },
+
+  async get_bug_report(db, params, ctx) {
+    const id = numericParam(params.id, 'id');
+    if ((await checkEntityScope(db, ctx, id, resolveBugReportProjectId)) === 'not-found') return null;
+    const report = await getBugReport(db, id);
+    if (!report) return null;
+    const bug: BugReport = { v: 1, steps: report.steps, evidence: report.evidence, context: report.context };
+    return dropNulls({
+      id: report.id,
+      projectId: report.projectId,
+      title: report.title,
+      status: report.status,
+      pageKey: report.pageKey,
+      path: report.path,
+      origin: report.origin,
+      reportedBy: report.reportedBy,
+      createdAt: report.createdAt,
+      language: report.language,
+      stepsInWords: report.steps.steps.map((step, i) => `${i + 1}. ${describeStepInWords(step)}`),
+      expected: expectedSteps(bug).map(({ index, step }) => ({
+        step: index + 1,
+        expected: describeExpectation(step),
+        actual: step.assertion?.actual ?? null,
+        note: step.assertion?.note ?? null,
+      })),
+      steps: report.steps,
+      evidence: {
+        console: report.evidence.console.map((c) => ({ level: c.level, message: trunc(c.message, 400), page: c.page })),
+        failedRequests: report.evidence.requests.map((r) => ({ method: r.method, url: r.url, status: r.status })),
+        screenshots: report.evidence.screenshots.length,
+        outline: report.evidence.outline,
+      },
+      test: report.test
+        ? { testCaseId: report.test.id, title: report.test.title, filePath: report.test.filePath }
+        : null,
+      missedBy: await getBugReportMissedBy(db, id)
+        .then((m) =>
+          m
+            ? {
+                summary: m.summary,
+                page: m.page,
+                testsOnPage: m.visiting.slice(0, 20),
+                reaching: m.targets.flatMap((t) => t.reaching).slice(0, 20),
+              }
+            : null,
+        )
+        .catch(() => null),
+      reproductions: report.reproductionList.map((r) =>
+        dropNulls({
+          source: r.source,
+          verdict: r.verdict,
+          divergedAt: r.divergedAt,
+          origin: r.origin,
+          createdAt: r.createdAt,
+        }),
+      ),
+    });
+  },
+
+  async render_steps(db, params, ctx) {
+    if (params.bugReportId != null) {
+      const id = numericParam(params.bugReportId, 'bugReportId');
+      if ((await checkEntityScope(db, ctx, id, resolveBugReportProjectId)) === 'not-found') return null;
+      const spec = await renderBugReportSpec(db, id, params.mode === 'run' ? 'run' : 'commit');
+      if (!spec) return null;
+      return {
+        code: spec.code,
+        path: spec.path,
+        warnings: spec.warnings.map((w) => `step ${w.step + 1}: ${w.message}`),
+      };
+    }
+    const parsed = parseSteps(params.steps);
+    if (!parsed.ok) throw new Error(`Not a steps document: ${parsed.errors.slice(0, 3).join('; ')}`);
+    const raw = (params.options ?? {}) as Record<string, unknown>;
+    const pick = <T extends string>(v: unknown, allowed: readonly T[]): T | undefined =>
+      allowed.includes(v as T) ? (v as T) : undefined;
+    const result = renderStepsWith(parsed.steps, {
+      title: typeof raw.title === 'string' ? raw.title.slice(0, 200) : undefined,
+      testImport: typeof raw.testImport === 'string' ? raw.testImport.slice(0, 200) : undefined,
+      urls: pick(raw.urls, ['absolute', 'relative'] as const),
+      locators: pick(raw.locators, ['first', 'stable'] as const),
+      urlChecks: raw.urlChecks === true,
+      values: pick(raw.values, ['literal', 'env'] as const),
+      expectFail: raw.expectFail === true,
+      tags: Array.isArray(raw.tags)
+        ? raw.tags.filter((t): t is string => typeof t === 'string').slice(0, 10)
+        : undefined,
+    });
+    return { code: result.code, warnings: result.warnings.map((w) => `step ${w.step + 1}: ${w.message}`) };
+  },
 };
+
+/** The analytics scope of a report or metric tool call, from the tool's scope properties. */
+function toolScope(params: Record<string, unknown>, ctx: McpContext) {
+  return parseAnalyticsScope(toolScopeQuery(params, ctx));
+}
+
+/**
+ * The analytics query keys a tool call's scope parameters stand for; empty when it passed none. A project
+ * out of the caller's scope is refused, as every project-scoped tool does, rather than dropped from the answer.
+ */
+function toolScopeQuery(params: Record<string, unknown>, ctx: McpContext): Record<string, string> {
+  if (Array.isArray(params.projectIds)) for (const id of params.projectIds) assertProject(ctx, Number(id));
+  const list = (value: unknown) => (Array.isArray(value) && value.length > 0 ? value.map(String).join(',') : undefined);
+  const query: Record<string, string> = {};
+  const projects = list(params.projectIds);
+  if (projects) query.projects = projects;
+  if (params.period) query.period = String(params.period);
+  if (params.compare) query.compare = String(params.compare);
+  if (params.by) query.by = String(params.by);
+  const environments = list(params.environments);
+  if (environments) query.environments = environments;
+  const branches = list(params.branches);
+  if (branches) query.branches = branches;
+  if (params.allBranches === true) query.allBranches = 'true';
+  if (params.selection) query.sel = String(params.selection);
+  const tags = list(params.tags);
+  if (tags) query.tags = tags;
+  const owners = list(params.owners);
+  if (owners) query.owner = owners;
+  return query;
+}
+
+/** Who a tool call acts as for dashboards; with authentication off every dashboard is shared. */
+function mcpDashboardActor(ctx: McpContext): DashboardActor {
+  const authEnabled = isAuthEnabled();
+  return {
+    id: authEnabled && ctx.user ? ctx.user.id : null,
+    role: authEnabled && ctx.user ? (ctx.user.role as Role) : null,
+    authEnabled,
+  };
+}
 
 async function resolveProjectRepoUrl(db: DbClient, projectId: number): Promise<string | null> {
   const [run] = await db

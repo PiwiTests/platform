@@ -1,5 +1,6 @@
 ---
 title: Localization
+description: "Set the date and time format and the time zone: each viewer's own choice, and the instance default an administrator sets."
 lang: en-US
 ---
 
@@ -55,8 +56,7 @@ time (a shared CI region, for example).
 PIWI_TIME_ZONE=Europe/Paris
 ```
 
-## Reference
+## Related
 
-`PIWI_LOCALE` and `PIWI_TIME_ZONE` are listed with every other setting in the
-[configuration reference](/reference/configuration), and the
-[configuration generator](/reference/configuration/generator) can write the block for you.
+- [Configuration reference](/reference/configuration): `PIWI_LOCALE`, `PIWI_TIME_ZONE` and every other setting
+- [Configuration generator](/reference/configuration/generator): writes the block for you

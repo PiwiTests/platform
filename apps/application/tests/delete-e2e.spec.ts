@@ -1,4 +1,5 @@
 import { test, expect, type APIRequestContext } from './fixtures';
+import { waitForHydration } from './utils';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { PROJECT } from '#shared/test-project-names';
@@ -241,24 +242,100 @@ test.describe.serial('Partial delete reclaims only unshared resources', () => {
   });
 });
 
+/** Submit a bare one-case run to `projectName`; returns the new run's and project's ids. */
+async function submitBareRun(request: APIRequestContext, projectName: string, n: number) {
+  const response = await request.post('/api/test-runs/submit', {
+    data: {
+      projectName,
+      status: 'passed',
+      startTime: new Date(Date.now() - n * 60_000).toISOString(),
+      duration: 1000,
+      totalTests: 1,
+      passedTests: 1,
+      failedTests: 0,
+      skippedTests: 0,
+      testCases: [{ title: `bare case ${n}`, status: 'passed', duration: 100, location: 'tests/bare.spec.ts:3:1' }],
+    },
+  });
+  expect(response.ok(), `submit failed: ${response.status()} ${await response.text()}`).toBeTruthy();
+  return (await response.json()) as { runId: number; projectId: number };
+}
+
 test.describe.serial('Delete a whole project', () => {
   let projectId: number;
-  let runId: number;
+  const runIds: number[] = [];
 
-  test('create a project with an evidence-bearing run', async ({ request }) => {
+  test('create a project with an evidence-bearing run and more runs than one delete batch', async ({ request }) => {
     const data = await uploadRunWithEvidence(request, PROJECT.DELETE_PROJECT);
     projectId = data.projectId;
-    runId = data.runId;
+    runIds.push(data.runId);
+    // The runs are deleted 50 at a time; 52 runs make a second, partial batch.
+    for (let n = 1; n <= 51; n++) runIds.push((await submitBareRun(request, PROJECT.DELETE_PROJECT, n)).runId);
     expect(projectId).toBeTruthy();
     expect((await request.get(`/api/projects/${projectId}`)).ok()).toBeTruthy();
   });
 
-  test('deleting the project removes the project and its runs', async ({ request }) => {
+  test('no deletion progress is reported while none is running', async ({ request }) => {
+    const res = await request.get(`/api/projects/${projectId}/deletion`);
+    expect(res.ok()).toBeTruthy();
+    expect(await res.json()).toEqual({ progress: null });
+  });
+
+  test('deleting the project removes the project and all its runs', async ({ request }) => {
     const del = await request.delete(`/api/projects/${projectId}`);
     expect(del.ok(), `project delete failed: ${del.status()} ${await del.text()}`).toBeTruthy();
     expect((await del.json()).success).toBe(true);
 
     expect((await request.get(`/api/projects/${projectId}`)).status()).toBe(404);
-    expect((await request.get(`/api/test-runs/${runId}`)).status()).toBe(404);
+    for (const runId of [runIds[0], runIds[50], runIds.at(-1)]) {
+      expect((await request.get(`/api/test-runs/${runId}`)).status(), `run ${runId}`).toBe(404);
+    }
+    expect(await (await request.get(`/api/projects/${projectId}/deletion`)).json()).toEqual({ progress: null });
+  });
+});
+
+test.describe.serial('Delete a project from its page', () => {
+  let projectId: number;
+
+  test.beforeAll(async ({ request }) => {
+    projectId = (await submitBareRun(request, PROJECT.DELETE_PROJECT_UI, 1)).projectId;
+    await submitBareRun(request, PROJECT.DELETE_PROJECT_UI, 2);
+  });
+
+  test('the modal shows the deletion step by step until it ends', async ({ page, request }) => {
+    // Hold the DELETE and answer the progress poll with a run count, so the
+    // in-between state stays on screen long enough to be read.
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => (release = resolve));
+    await page.route(`**/api/projects/${projectId}`, async (route) => {
+      if (route.request().method() !== 'DELETE') return route.fallback();
+      await released;
+      await route.continue();
+    });
+    await page.route(`**/api/projects/${projectId}/deletion`, (route) =>
+      route.fulfill({ json: { progress: { phase: 'runs', totalRuns: 2, runsDeleted: 1 } } }),
+    );
+
+    await page.goto(`/projects/${projectId}`);
+    await waitForHydration(page);
+    await page.getByRole('button', { name: 'More actions' }).click();
+    await page.getByRole('menuitem', { name: 'Delete' }).click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByRole('textbox').fill(PROJECT.DELETE_PROJECT_UI);
+    await dialog.getByRole('button', { name: 'Delete project' }).click();
+
+    await expect(dialog.getByRole('heading', { name: 'Deleting project' })).toBeVisible();
+    const steps = dialog.getByTestId('project-delete-steps');
+    await expect(steps.locator('[data-state="ok"]')).toContainText('Removing stored files');
+    await expect(steps.locator('[data-state="pending"]')).toContainText('Deleting 2 test runs');
+    await expect(steps.locator('[data-state="pending"]')).toContainText('1 of 2 deleted');
+    await expect(steps.locator('[data-state="waiting"]')).toContainText('failure clusters');
+    await expect(dialog.getByRole('button', { name: 'Cancel' })).toHaveCount(0);
+    await expect(dialog.getByRole('button', { name: 'Close' })).toHaveCount(0);
+
+    release();
+    await expect(page).toHaveURL(/\/$/);
+    await expect(page.getByText('Project deleted', { exact: true })).toBeVisible();
+    expect((await request.get(`/api/projects/${projectId}`)).status()).toBe(404);
   });
 });

@@ -1,6 +1,13 @@
 <script setup lang="ts">
 import { computed, nextTick, watch, onUnmounted } from 'vue';
-import type { TestRunDetails, TestCaseResult, ReportInfo, TestStepEvent, FailureGroup } from '~~/types/api';
+import type {
+  TestRunDetails,
+  TestCaseResult,
+  ReportInfo,
+  TestStepEvent,
+  FailureGroup,
+  RunClusterMeta,
+} from '~~/types/api';
 import type { LiveStepsByWorker } from '~/utils/live-steps';
 import { subscribeDemoEvents } from '~/demo/run-events';
 import { useRunStream } from '~/composables/useRunStream';
@@ -47,10 +54,10 @@ useHead(
   }),
 );
 
-const toast = useToast();
 const { copy } = useCopy();
 const isDeleteConfirmOpen = ref(false);
-const deleting = ref(false);
+const isKeepOpen = ref(false);
+const { release: releaseKeep, canRelease } = useRunKeep();
 
 // Live streaming state
 const isLive = computed(() => testRun.value?.status === 'running' || testRun.value?.status === 'finalizing');
@@ -457,6 +464,7 @@ const displayProgress = computed(() => {
       passedTests: s.passed,
       failedTests: s.failed,
       skippedTests: s.skipped,
+      fixmeTests: s.fixme,
       didNotRunTests: s.didNotRun,
       flakyTests: s.flaky,
     };
@@ -466,26 +474,13 @@ const displayProgress = computed(() => {
     passedTests: testRun.value.passedTests,
     failedTests: testRun.value.failedTests,
     skippedTests: testRun.value.skippedTests,
+    fixmeTests: 0,
     didNotRunTests: testRun.value.didNotRunTests ?? 0,
     flakyTests: testRun.value.flakyTests ?? 0,
   };
 });
 
-async function handleDeleteRun() {
-  isDeleteConfirmOpen.value = false;
-  deleting.value = true;
-  try {
-    await $fetch(`/api/test-runs/${runId}`, { method: 'DELETE' });
-    toast.add({ title: 'Test run deleted', color: 'success' });
-    await navigateTo(`/projects/${testRun.value?.project?.id}`);
-  } catch (error: unknown) {
-    const errorMessage =
-      error && typeof error === 'object' && 'data' in error ? (error.data as { message?: string })?.message : undefined;
-    toast.add({ title: 'Delete failed', description: errorMessage || 'An error occurred', color: 'error' });
-  } finally {
-    deleting.value = false;
-  }
-}
+const runToDelete = computed(() => [{ id: Number(runId), keptAt: testRun.value?.keptAt ?? null }]);
 
 // A plain-text run summary for the navbar's Copy run summary action.
 function buildRunSummary(): string {
@@ -502,14 +497,16 @@ function buildRunSummary(): string {
   const passed = p?.passedTests ?? run.passedTests ?? 0;
   const failed = p?.failedTests ?? run.failedTests ?? 0;
   const skipped = p?.skippedTests ?? run.skippedTests ?? 0;
+  const fixme = p?.fixmeTests ?? 0;
   const flaky = p?.flakyTests ?? run.flakyTests ?? 0;
   const didNotRun = p?.didNotRunTests ?? run.didNotRunTests ?? 0;
   const flakyPart = flaky > 0 ? ` · ${flaky} passed on retry` : '';
   const didNotRunPart = didNotRun > 0 ? ` · ${didNotRun} didn't run` : '';
+  const fixmePart = fixme > 0 ? ` (${fixme} fixme)` : '';
   return [
     `*Run #${run.id}*${label}`,
     `Status: ${statusEmoji} ${run.status} | Project: ${project}`,
-    `Tests: ${total} total · ${passed} passed · ${failed} failed · ${skipped} skipped${didNotRunPart}${flakyPart}`,
+    `Tests: ${total} total · ${passed} passed · ${failed} failed · ${skipped} skipped${fixmePart}${didNotRunPart}${flakyPart}`,
     `Duration: ${formatDuration(run.duration)}`,
   ].join('\n');
 }
@@ -518,6 +515,7 @@ function buildRunSummary(): string {
 const testCaseSearch = ref('');
 const testCaseActiveStatuses = ref<string[]>([]);
 const testCaseBrowserFilter = ref('all');
+const testCaseTagFilter = ref<string[]>([]);
 
 // The count-bar segments toggle into the same set the Tests list chips use, and
 // switch to the Tests tab so the filtered rows are on screen.
@@ -554,14 +552,17 @@ const showFailureTabs = computed(() => hasFailures.value || (testRun.value?.flak
 // taken from the same failure-groups payload. Fetched whenever the failure tabs
 // become available: a flaky-only run has no failedTests yet still has clusters,
 // and a live run can gain its first failure mid-stream.
-const clusterMeta = ref<Record<number, { name: string; status: string | null }>>({});
+const clusterMeta = ref<RunClusterMeta>({});
 
 async function fetchClusterMeta() {
   if (!import.meta.client) return;
   try {
     const r = await $fetch<{ items: FailureGroup[] }>(`/api/test-runs/${runId}/failure-groups`);
     clusterMeta.value = Object.fromEntries(
-      r.items.map((g) => [g.clusterId, { name: g.title || `Cluster #${g.clusterId}`, status: g.status ?? null }]),
+      r.items.map((g) => [
+        g.clusterId,
+        { name: g.title || `Cluster #${g.clusterId}`, status: g.status ?? null, issue: g.knownIssue ?? null },
+      ]),
     );
   } catch {
     // chips fall back to plain cluster ids, headers to no triage badge
@@ -701,18 +702,32 @@ function handleSelectTestCase(id: number) {
 
 // ── Navbar More menu ────────────────────────────────────────────────────────
 const moreMenuItems = computed(() => {
-  const items: { label: string; icon: string; color?: 'error'; onSelect: () => void }[] = [];
+  const items: { label: string; icon: string; color?: 'error'; disabled?: boolean; onSelect: () => void }[] = [];
   items.push({
     label: 'Copy run summary',
     icon: 'i-lucide-clipboard',
     onSelect: () => copy(buildRunSummary(), { toast: 'Run summary copied' }),
   });
   items.push({ label: 'Refresh', icon: 'i-lucide-refresh-cw', onSelect: () => refresh() });
-  if (canSeeAdmin.value) {
+  const kept = !!testRun.value?.keptAt;
+  if (!kept) {
+    items.push({ label: 'Keep forever…', icon: 'i-lucide-lock', onSelect: () => (isKeepOpen.value = true) });
+  } else if (canRelease.value) {
     items.push({
-      label: 'Delete run',
+      label: 'Release keep',
+      icon: 'i-lucide-lock-open',
+      onSelect: async () => {
+        if (await releaseKeep(Number(runId))) refresh();
+      },
+    });
+  }
+  if (canSeeAdmin.value) {
+    // A kept run cannot be deleted until it is released.
+    items.push({
+      label: kept ? 'Delete run (release it first)' : 'Delete run',
       icon: 'i-lucide-trash-2',
       color: 'error',
+      disabled: kept,
       onSelect: () => (isDeleteConfirmOpen.value = true),
     });
   }
@@ -804,6 +819,7 @@ const moreMenuItems = computed(() => {
             v-model:search="testCaseSearch"
             v-model:active-statuses="testCaseActiveStatuses"
             v-model:browser-filter="testCaseBrowserFilter"
+            v-model:tag-filter="testCaseTagFilter"
             :test-cases="dedupedDisplayCases"
             :is-live="isLive"
             :total="displayProgress?.totalTests"
@@ -851,19 +867,15 @@ const moreMenuItems = computed(() => {
     </template>
   </UDashboardPanel>
 
-  <!-- Delete Confirm Dialog -->
   <ClientOnly>
-    <UModal :open="isDeleteConfirmOpen" title="Delete test run" @update:open="isDeleteConfirmOpen = $event">
-      <template #body>
-        <p>
-          Are you sure you want to delete <strong>test run #{{ testRun?.id }}</strong
-          >? This will also remove all associated test results, reports, and traces. This action cannot be undone.
-        </p>
-      </template>
-      <template #footer>
-        <UButton color="neutral" variant="ghost" label="Cancel" @click="isDeleteConfirmOpen = false" />
-        <UButton color="error" label="Delete" icon="i-lucide-trash-2" :loading="deleting" @click="handleDeleteRun" />
-      </template>
-    </UModal>
+    <RunKeepModal v-model:open="isKeepOpen" :run-id="Number(runId)" @kept="refresh" />
+  </ClientOnly>
+
+  <ClientOnly>
+    <RunsDeleteModal
+      v-model:open="isDeleteConfirmOpen"
+      :runs="runToDelete"
+      @deleted="navigateTo(`/projects/${testRun?.project?.id}`)"
+    />
   </ClientOnly>
 </template>

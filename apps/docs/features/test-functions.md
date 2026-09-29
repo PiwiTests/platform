@@ -1,5 +1,6 @@
 ---
 title: Test functions catalog
+description: "The catalog of the helpers and page-object methods your suite calls, how functions are registered, and how agents and the extension use it."
 lang: en-US
 ---
 
@@ -20,7 +21,7 @@ Four ways in, all producing the same kind of entry. The paste paths stop at a re
 - **By hand** — **Add function** and fill in the name, kind (page-object method, helper function or fixture), module (its import specifier), parameters and DOM pattern yourself — plus the receiver and class for a page-object method, and an optional URL-pattern glob limiting which pages it applies to.
 - **Paste the source, let AI propose it** — paste a page-object method or helper's source and a model proposes the name, parameters, and DOM pattern into a **review form you edit before saving**; the module and URL pattern are never inferred, so you fill those in. With [AI](/features/ai-diagnosis) configured on the instance, an **Extract** button calls it directly.
 - **Bring your own AI** — no instance AI, or you'd rather not use it? **Copy prompt for your own AI** copies the full extraction prompt (the rules, the JSON schema, and your pasted code) to paste into any AI chat (ChatGPT, Claude.ai, an IDE assistant). Paste the reply back and it is validated against the exact same schema — no Piwi AI credits spent either way.
-- **From a coding agent (MCP)** — an MCP-connected agent (Claude Code, Cursor, …) calls the `create_test_function` [MCP tool](./mcp) directly, reading the source with its own model. No AI call happens on the server side; the tool only validates and persists.
+- **From a coding agent (MCP)** — an MCP-connected agent (Claude Code, Cursor, …) calls the `create_test_function` [MCP tool](/reference/mcp-tools#create_test_function) directly, reading the source with its own model. No AI call happens on the server side; the tool only validates and persists.
 
 Registered entries are edited in place from the same page — the pencil button reopens the form with everything filled in. Registering, editing, deleting and both paste paths need the reporter or administrator role; any project member can view the catalog.
 

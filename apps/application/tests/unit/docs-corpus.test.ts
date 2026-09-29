@@ -16,6 +16,7 @@ import {
   slugifyHeading,
 } from '#shared/docs-corpus';
 import { QUOTED_DOCS_SECTIONS } from '#shared/piwi-ecosystem';
+import { GENERATED_DOCS_PAGES } from '#shared/docs-generated-pages';
 
 const docsRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'docs');
 
@@ -59,12 +60,12 @@ describe('slugifyHeading', () => {
 describe('buildDocsCorpus', () => {
   test('parses every hand-written page, and leaves out the blog, agent guides and generated pages', () => {
     const paths = corpus.pages.map((p) => p.path);
-    expect(paths).toEqual(expect.arrayContaining(['index', 'guide/reporter', 'operate/deployment', 'recipes/index']));
+    expect(paths).toEqual(
+      expect.arrayContaining(['index', 'guide/reporter', 'operate/deployment', 'recipes/mass-failure']),
+    );
     expect(paths.some((p) => p.startsWith('blog/'))).toBe(false);
     expect(paths).not.toContain('AGENTS');
-    expect(paths).not.toContain('reference/configuration');
-    expect(paths).not.toContain('reference/feature-map');
-    expect(paths).not.toContain('reference/whats-new');
+    for (const generated of Object.keys(GENERATED_DOCS_PAGES)) expect(paths).not.toContain(generated);
   });
 
   test.each(corpus.pages.map((p) => [p.path, p] as const))('%s has a title and a summary', (_path, page) => {
@@ -76,10 +77,16 @@ describe('buildDocsCorpus', () => {
     for (const page of corpus.pages) {
       const markdown = docsMarkdown(page);
       expect(markdown, page.path).not.toMatch(/^\s*<<<\s+@\//m);
-      expect(markdown, page.path).not.toMatch(/<Needs\b|<div\b|<figure\b|<img\b/);
+      // Inline code may name a tag (`<div>`); only markup outside it counts.
+      expect(markdown.replace(/`[^`\n]*`/g, ''), page.path).not.toMatch(
+        /<Needs\b|<DemoExamples\b|<div\b|<figure\b|<img\b/,
+      );
     }
     expect(docsMarkdown(findDocsPage(corpus, 'operate/deployment')!)).toContain('docker run');
     expect(docsMarkdown(findDocsPage(corpus, 'features/mcp')!)).toMatch(/^\*\*Needs:\*\* the reporter$/m);
+    expect(docsMarkdown(findDocsPage(corpus, 'features/ai-diagnosis')!)).toContain(
+      '](https://piwitests.dev/demo/failure-clusters/10): ',
+    );
   });
 
   test('gives every heading of a page a distinct anchor', () => {

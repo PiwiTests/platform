@@ -261,6 +261,8 @@ export default process.env.CI
       uploadTraces: true,
       inspectOnFailure: false,
       pickLocatorOnFailure: false,
+      // Off unless PIWI_CAPTURE_CODE_REACH=true; Nuxt's Vite root is app/.
+      codeReachRoots: ['app'],
       verbose: true,
       reports: [{ type: 'html' }, { type: 'monocart' }, { type: 'blob', label: 'Blob Archive' }],
     });

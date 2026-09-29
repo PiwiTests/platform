@@ -22,13 +22,19 @@ import {
 } from '~~/server/database/schema.sqlite';
 import { parseLocation } from '~~/server/utils/parse-location';
 import { mapCompleteEventToRunCase } from '~~/server/utils/map-complete-event';
+import { mapStepEventsToRunEvents } from '~~/server/utils/map-step-events';
 import {
   buildNetworkRequestItems,
   buildNetworkRequestInsertValues,
   type NetworkRequestBuilder,
 } from '~~/server/utils/network-request-helpers';
 import { upsertLocatorSnapshots } from '~~/server/utils/locator-healing';
+import { upsertLocatorUsages, type LocatorUsageCase } from '~~/server/utils/locator-usages';
+import { sanitizeLocatorPages } from '~~/server/utils/locator-pages';
+import { sanitizeCodeReach, upsertCodeReach, type CodeReachCase } from '~~/server/utils/code-reach';
+import { upsertCasePayloads } from '~~/server/utils/case-payloads';
 import { resolveRunBranch } from '~~/server/utils/run-branch';
+import { applyReporterKeep } from '#shared/handlers/run-keep';
 import type { LocatorSnapshot } from '#shared/locator-healing.types';
 import {
   capArray,
@@ -46,9 +52,11 @@ import {
 } from '~~/server/utils/sanitize';
 import { DEFAULT_INGEST_LIMITS } from '#shared/ingest-limits';
 import { computeErrorFingerprint, type ErrorFingerprint } from '#shared/error-fingerprint';
+import { isExpectedFailurePassed, resolveExpectedStatus } from '#shared/status-classify';
 import { durationStats } from '#shared/utils/stats';
 import { countFailedFromTally, distinctRunCountsFromAttempts, sumFailedAndTimedOut } from '#shared/utils/test-counts';
 import { syncAutoMarkersForRun } from '#shared/handlers/markers';
+import { upsertDailyRollup } from '#shared/handlers/analytics/rollups';
 import { joinSuitePath, SUITE_PATH_SEP } from '#shared/utils/suites';
 import {
   normalizeTestLocks,
@@ -222,6 +230,7 @@ export async function apiSetupTestRun(body: TestRunStartPayload) {
       const tokens = demoShardTokens.get(existingShardedRun.id) ?? new Set();
       tokens.add(setupToken);
       demoShardTokens.set(existingShardedRun.id, tokens);
+      await applyReporterKeep(db, existingShardedRun.id, body.keep);
       return { success: true, runId: existingShardedRun.id, projectId: project.id, setupToken };
     }
 
@@ -257,6 +266,7 @@ export async function apiSetupTestRun(body: TestRunStartPayload) {
 
     const testRun = testRunResult[0];
     if (!testRun) throw new Error('Failed to create test run');
+    await applyReporterKeep(db, testRun.id, body.keep);
     publishDemoGlobalEvent({ type: 'run-initializing', runId: testRun.id, projectId: project.id });
     return { success: true, runId: testRun.id, projectId: project.id, setupToken };
   }
@@ -293,6 +303,7 @@ export async function apiSetupTestRun(body: TestRunStartPayload) {
   if (!testRun) {
     throw new Error('Failed to create test run');
   }
+  await applyReporterKeep(db, testRun.id, body.keep);
 
   publishDemoGlobalEvent({ type: 'run-initializing', runId: testRun.id, projectId: project.id });
 
@@ -408,6 +419,10 @@ export interface RunCaseInput {
   networkRequests?: unknown;
   webVitals?: unknown;
   pageState?: unknown;
+  /** The page each locator call ran on (capture fixtures). */
+  locatorPages?: unknown;
+  /** The source files the test executed (code reach). */
+  codeReach?: unknown;
   aiUsage?: unknown;
   consoleLogs?: unknown;
   dialogs?: unknown;
@@ -419,6 +434,7 @@ export interface RunCaseInput {
   browser?: unknown;
   locatorSnapshots?: unknown;
   didNotRunReason?: string | null;
+  expectedStatus?: string | null;
   blockedBy?: string | null;
 }
 
@@ -601,6 +617,12 @@ export async function persistRunCases(
     snapshots: LocatorSnapshot[] | null | undefined;
     purge?: boolean;
   }> = [];
+  const perCaseUsages: LocatorUsageCase[] = [];
+  // The page each locator call ran on, per row: stored through case_payloads,
+  // like the server, so a rebuild of the index keeps them.
+  const rowLocatorPages: Array<string | null> = [];
+  const rowCodeReach: Array<string | null> = [];
+  const perCaseReach: CodeReachCase[] = [];
   const caseMetaSnapshots = new Map<number, CaseMetaSnapshot>();
 
   for (let i = 0; i < cases.length; i++) {
@@ -641,7 +663,13 @@ export async function persistRunCases(
     }
 
     let fingerprint: ErrorFingerprint | null = null;
-    if (c.error && c.status !== 'passed' && c.status !== 'skipped') {
+    const expectedStatus = resolveExpectedStatus(c.expectedStatus, c.testAnnotations);
+    if (
+      c.error &&
+      c.status !== 'passed' &&
+      c.status !== 'skipped' &&
+      !isExpectedFailurePassed(c.status, expectedStatus)
+    ) {
       fingerprint = await computeErrorFingerprint(c.error);
       const pending = pendingClusters.get(fingerprint.fingerprint);
       if (pending) {
@@ -656,6 +684,22 @@ export async function persistRunCases(
       }
     }
     rowFingerprints.push(fingerprint);
+
+    const cappedSteps = capSteps(c.steps, DEFAULT_INGEST_LIMITS);
+    const locatorPages = sanitizeLocatorPages(c.locatorPages);
+    rowLocatorPages.push(locatorPages ? JSON.stringify(locatorPages) : null);
+    const reached = sanitizeCodeReach(c.codeReach);
+    rowCodeReach.push(reached ? JSON.stringify(reached) : null);
+    if (reached) perCaseReach.push({ testCaseId: shared.id, runId: testRunId, files: reached });
+    perCaseUsages.push({
+      caseId: shared.id,
+      browserName: resolveBrowserName(c.browser),
+      steps: cappedSteps,
+      locatorPages,
+      filePath: c.filePath,
+      runId: testRunId,
+      complete: c.status === 'passed' && Array.isArray(c.steps) && c.steps.length <= DEFAULT_INGEST_LIMITS.steps,
+    });
 
     if (Array.isArray(c.locatorSnapshots) && c.locatorSnapshots.length)
       perCaseLocators.push({
@@ -674,7 +718,7 @@ export async function persistRunCases(
       attempts: capArray(c.attempts, 30),
       line: c.line,
       column: c.column,
-      steps: capSteps(c.steps, DEFAULT_INGEST_LIMITS),
+      steps: cappedSteps,
       stepEvents: capArray(c.stepEvents, DEFAULT_INGEST_LIMITS.stepEvents),
       slowestStep: c.slowestStep ?? null,
       slowestStepDuration: c.slowestStepDuration ?? null,
@@ -705,6 +749,7 @@ export async function persistRunCases(
       shardIndex: c.shardIndex ?? null,
       startedAt: c.startedAt ?? null,
       didNotRunReason: c.didNotRunReason ?? null,
+      expectedStatus,
       blockedBy: c.blockedBy ?? null,
     });
     rowInputIndices.push(i);
@@ -714,6 +759,14 @@ export async function persistRunCases(
   }
 
   if (runCasesRows.length === 0) return [];
+
+  const pagePayloadIds = await upsertCasePayloads(db, projectId, [...rowLocatorPages, ...rowCodeReach]);
+  runCasesRows.forEach((row, i) => {
+    const content = rowLocatorPages[i];
+    row.locatorPagesPayloadId = content ? (pagePayloadIds.get(content) ?? null) : null;
+    const reach = rowCodeReach[i];
+    row.codeReachPayloadId = reach ? (pagePayloadIds.get(reach) ?? null) : null;
+  });
 
   const clusterIds = await getOrCreateFailureClusters(db, projectId, testRunId, pendingClusters);
   runCasesRows.forEach((row, i) => {
@@ -756,6 +809,8 @@ export async function persistRunCases(
   }
 
   await upsertLocatorSnapshots(db, perCaseLocators, testRunId);
+  await upsertLocatorUsages(db, projectId, perCaseUsages).catch(() => {});
+  await upsertCodeReach(db, projectId, perCaseReach).catch(() => {});
   await syncTestCaseMetadata(db, caseMetaSnapshots);
 
   return result;
@@ -780,9 +835,8 @@ export async function apiPostRunEvents(
   const validEvents = testCaseEvents.filter((tc): tc is StreamEventPayload => Boolean(tc && tc.title));
 
   const beginEvents = validEvents.filter((tc) => tc.type === 'begin');
-  const stepBeginEvents = validEvents.filter((tc) => tc.type === 'step-begin');
-  const stepEndEvents = validEvents.filter((tc) => tc.type === 'step-end');
   const completeEvents = validEvents.filter((tc) => tc.type === 'complete');
+  const stepRunEvents = mapStepEventsToRunEvents(validEvents);
 
   for (const tc of beginEvents) {
     const loc = tc.location ? parseLocation(tc.location) : { filePath: 'unknown', line: null, column: null };
@@ -802,75 +856,14 @@ export async function apiPostRunEvents(
     });
   }
 
-  // Test-attached steps stream as step-begin/step-end so the run page can show
-  // what each worker is doing; suite-level hooks keep the timeline shape. Mirrors
-  // the server's events handler (server/api/test-runs/[id]/events.post.ts).
-  for (const tc of stepBeginEvents) {
-    if (tc.parentTitle != null) {
-      publishDemoRunEvent(id, {
-        type: 'step-begin',
-        data: {
-          title: tc.title,
-          subtitle: tc.subtitle ?? null,
-          parentTitle: tc.parentTitle,
-          stepCategory: tc.stepCategory ?? null,
-          location: tc.location,
-          workerIndex: tc.workerIndex ?? null,
-          startedAt: tc.startedAt ?? null,
-        },
-      });
-    } else {
-      publishDemoRunEvent(id, {
-        type: 'test-begin',
-        data: {
-          title: tc.title,
-          filePath: 'hooks',
-          parentTitle: null,
-          stepCategory: tc.stepCategory ?? null,
-          location: tc.location,
-          workerIndex: tc.workerIndex ?? null,
-          startedAt: tc.startedAt ?? null,
-        },
-      });
-    }
-  }
-
-  for (const tc of stepEndEvents) {
-    if (tc.parentTitle != null) {
-      publishDemoRunEvent(id, {
-        type: 'step-end',
-        data: {
-          title: tc.title,
-          subtitle: tc.subtitle ?? null,
-          parentTitle: tc.parentTitle,
-          stepCategory: tc.stepCategory ?? null,
-          status: tc.status,
-          duration: tc.duration,
-          location: tc.location,
-          workerIndex: tc.workerIndex ?? null,
-          startedAt: tc.startedAt ?? null,
-        },
-      });
-    } else {
-      publishDemoRunEvent(id, {
-        type: 'test-completed',
-        data: {
-          title: tc.title,
-          filePath: 'hooks',
-          parentTitle: null,
-          stepCategory: tc.stepCategory ?? null,
-          status: tc.status,
-          duration: tc.duration,
-          location: tc.location,
-          workerIndex: tc.workerIndex ?? null,
-          startedAt: tc.startedAt ?? null,
-        },
-      });
-    }
+  // Step events publish in batch order through the helper the server's events
+  // handler (server/api/test-runs/[id]/events.post.ts) uses.
+  for (const stepEvent of stepRunEvents) {
+    publishDemoRunEvent(id, stepEvent);
   }
 
   if (completeEvents.length === 0) {
-    return { success: true, processed: beginEvents.length + stepBeginEvents.length + stepEndEvents.length };
+    return { success: true, processed: beginEvents.length + stepRunEvents.length };
   }
 
   const parsedEvents = completeEvents.map((tc) => {
@@ -991,6 +984,7 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
   const shardTokenSet = demoShardTokens.get(id) ?? readShardTokensFromMeta(testRun.metadata);
   const isValidShardToken = streamToken ? shardTokenSet?.has(streamToken) : false;
   await validateAndReviveDemoRun(db, testRun, streamToken, !!isValidShardToken);
+  await applyReporterKeep(db, id, body.keep);
 
   const isSharded = !!(testRun.shardTotal && testRun.shardTotal > 1);
 
@@ -1107,6 +1101,8 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
       publishDemoGlobalEvent({ type: 'run-finished', runId: id, projectId: testRun.projectId, status: finalStatus });
 
       await syncAutoMarkersForRun(db, id).catch(() => {});
+      await upsertDailyRollup(db, id).catch(() => {});
+      publishDemoGlobalEvent({ type: 'rollup-updated', runId: id, projectId: testRun.projectId });
     } else {
       publishDemoRunEvent(id, {
         type: 'run-progress',
@@ -1189,6 +1185,8 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
   publishDemoGlobalEvent({ type: 'run-finished', runId: id, projectId: testRun.projectId, status });
 
   await syncAutoMarkersForRun(db, id).catch(() => {});
+  await upsertDailyRollup(db, id).catch(() => {});
+  publishDemoGlobalEvent({ type: 'rollup-updated', runId: id, projectId: testRun.projectId });
 
   return { success: true, runId: id, status };
 }

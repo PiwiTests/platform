@@ -16,10 +16,12 @@ const { data: projects, refresh } = await useFetch('/api/projects/menu', {
 
 useRunStream(refresh);
 
-// Get current project from route
+// The current project, on a project page only: other detail pages (a run, a
+// cluster, an execution) carry their own record's id in `params.id`, which is
+// not a project id. Same rule as the sidebar in layouts/default.vue.
 const currentProjectId = computed(() => {
-  const id = route.params.id;
-  return id ? parseInt(id as string) : null;
+  const match = route.path.match(/^\/projects\/(\d+)/);
+  return match?.[1] ? parseInt(match[1], 10) : null;
 });
 
 // Find the selected project

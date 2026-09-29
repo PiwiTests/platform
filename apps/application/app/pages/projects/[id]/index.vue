@@ -16,6 +16,7 @@ import type {
 } from '~~/types/api';
 import type { FilterBarState } from '~/components/shared/FilterBar.vue';
 import { RUN_STATUS_SERIES, legendOf } from '~/utils/chart';
+import { parseDrillQuery, type DrillScope } from '~/utils/analytics-drilldown';
 
 const route = useRoute();
 const router = useRouter();
@@ -27,13 +28,18 @@ const { data: project, refresh } = await useFetch<ProjectWithTestRuns>(`/api/pro
 useHead(computed(() => ({ title: `${project.value?.label || project.value?.name || 'Project'} — Piwi Dashboard` })));
 
 const toast = useToast();
-const deletingRunId = ref<number | null>(null);
-const confirmDeleteRunId = ref<number | null>(null);
 
 const { isAdmin, isReporter } = useAuth();
-// Project-level capability states gate the bell, the Quarantine segment and the
-// Timeline's add-marker control.
+// Project-level capability states gate the bell, the Quarantine segment, the
+// Gaps tab and the Timeline's add-marker control.
 const { isHidden: projCapHidden } = await useProjectCapabilities(Number(projectId));
+
+// *Export*: this project as a quality report over the last 30 days, the project page's own window.
+const reportOpen = ref(false);
+const reportQuery = computed(() => ({ projects: String(projectId), period: 'last-30d' }));
+// *Schedule…*: a report schedule over this project.
+const scheduleOpen = ref(false);
+const { canWrite } = useAuth();
 const runtimeConfig = useRuntimeConfig();
 const { isDesktop, openReport } = useDesktopReportLink();
 const authEnabled = computed(() => Boolean(runtimeConfig.public.authEnabled));
@@ -42,14 +48,18 @@ const canEditMarkers = computed(() => !authEnabled.value || isAdmin.value || isR
 
 const showDeleteProjectModal = ref(false);
 const deleteProjectConfirmInput = ref('');
-const deletingProject = ref(false);
 const deleteProjectConfirmValid = computed(() => deleteProjectConfirmInput.value === project.value?.name);
+const {
+  deleting: deletingProject,
+  progress: deletionProgress,
+  elapsedMs: deletionElapsedMs,
+  deleteProject,
+} = useProjectDeletion(projectId);
 
 async function handleDeleteProject() {
-  if (!deleteProjectConfirmValid.value) return;
-  deletingProject.value = true;
+  if (!deleteProjectConfirmValid.value || deletingProject.value) return;
   try {
-    await $fetch(`/api/projects/${projectId}` as '/api/projects/:id', { method: 'DELETE' });
+    await deleteProject();
     toast.add({ title: 'Project deleted', color: 'success' });
     await refreshNuxtData();
     await router.push('/');
@@ -57,23 +67,6 @@ async function handleDeleteProject() {
     const message =
       error && typeof error === 'object' && 'data' in error ? (error.data as { message?: string })?.message : undefined;
     toast.add({ title: 'Delete failed', description: message || 'An error occurred', color: 'error' });
-    deletingProject.value = false;
-  }
-}
-
-async function handleDeleteRun(runId: number) {
-  confirmDeleteRunId.value = null;
-  deletingRunId.value = runId;
-  try {
-    await $fetch(`/api/test-runs/${runId}`, { method: 'DELETE' });
-    toast.add({ title: 'Test run deleted', color: 'success' });
-    await refresh();
-  } catch (error: unknown) {
-    const message =
-      error && typeof error === 'object' && 'data' in error ? (error.data as { message?: string })?.message : undefined;
-    toast.add({ title: 'Delete failed', description: message || 'An error occurred', color: 'error' });
-  } finally {
-    deletingRunId.value = null;
   }
 }
 
@@ -88,6 +81,48 @@ const filters = useCookie<FilterBarState>(`piwi-filters-project-${projectId}`, {
       return { environments: [], branches: [], fullRunsOnly: true };
     }
   },
+});
+
+// === DRILL-DOWN FROM ANALYTICS ===
+// A number on a dashboard links here with its scope: the filters it names
+// replace the saved ones, and its period and branch policy narrow the runs
+// until cleared.
+function viewerTimeZone(): string {
+  const tz = activeLocalePrefs().timeZone;
+  return tz === 'auto' ? Intl.DateTimeFormat().resolvedOptions().timeZone : tz;
+}
+const drill = ref<DrillScope | null>(null);
+function readDrill() {
+  const parsed = parseDrillQuery(route.query as Record<string, unknown>, {
+    now: Date.now(),
+    timeZone: import.meta.client ? viewerTimeZone() : 'UTC',
+    markers: markers.value,
+  });
+  drill.value = parsed;
+  if (parsed) {
+    filters.value = {
+      environments: parsed.environments,
+      branches: parsed.branches,
+      fullRunsOnly: parsed.fullRunsOnly,
+    };
+  }
+}
+function clearDrill() {
+  drill.value = null;
+  const { source: _s, period: _p, tz: _t, status: _st, allBranches: _a, ...rest } = route.query;
+  router.replace({ query: rest });
+}
+/** The project's default branch as analytics resolves it: its setting, else `main`. */
+const projectDefaultBranch = computed(
+  () => (project.value as { defaultBranch?: string | null } | null)?.defaultBranch?.trim() || 'main',
+);
+const drillText = computed(() => {
+  const d = drill.value;
+  if (!d) return null;
+  const parts: string[] = [];
+  if (d.period) parts.push(d.period.label);
+  if (d.defaultBranchOnly) parts.push(`${projectDefaultBranch.value} and runs with no known branch`);
+  return parts.length ? parts.join(' · ') : null;
 });
 
 // A run's branch reads the scalar column, falling back to the SCM metadata for
@@ -111,18 +146,49 @@ const availableBranches = computed(() => {
   return [...branches].sort();
 });
 
-const filteredRuns = computed(() => {
-  let runs = project.value?.testRuns || [];
-  if (filters.value.fullRunsOnly) runs = runs.filter((r) => r.isFullRun !== false);
-  if (filters.value.environments.length > 0)
-    runs = runs.filter((r) => r.environment && filters.value.environments.includes(r.environment));
-  if (filters.value.branches.length > 0)
-    runs = runs.filter((r) => {
-      const b = runBranch(r);
-      return b !== null && filters.value.branches.includes(b);
-    });
-  return runs;
-});
+function matchesFilters(run: TestRunSummary): boolean {
+  if (filters.value.fullRunsOnly && run.isFullRun === false) return false;
+  if (
+    filters.value.environments.length > 0 &&
+    !(run.environment && filters.value.environments.includes(run.environment))
+  )
+    return false;
+  if (filters.value.branches.length > 0) {
+    const b = runBranch(run);
+    if (b === null || !filters.value.branches.includes(b)) return false;
+  }
+  const d = drill.value;
+  if (d?.period) {
+    const t = new Date(run.startTime).getTime();
+    if (t < d.period.from || t >= d.period.to) return false;
+  }
+  if (d?.defaultBranchOnly && filters.value.branches.length === 0) {
+    const b = runBranch(run);
+    if (b !== null && b !== projectDefaultBranch.value) return false;
+  }
+  return true;
+}
+
+const filteredRuns = computed(() => (project.value?.testRuns || []).filter(matchesFilters));
+
+// === RUNS TAB: kept runs ===
+// Kept runs are mostly old, past the recent window the project loads, so the
+// "Kept runs only" view reads them from their own endpoint.
+const keptOnly = ref(false);
+const { data: keptRunsData, refresh: refreshKeptRuns } = useFetch<{ items: TestRunSummary[]; total: number }>(
+  `/api/projects/${projectId}/kept-runs`,
+  { lazy: true, server: false, default: () => ({ items: [], total: 0 }) },
+);
+const filteredKeptRuns = computed(() => (keptRunsData.value?.items ?? []).filter(matchesFilters));
+const tableRuns = computed(() => (keptOnly.value ? filteredKeptRuns.value : filteredRuns.value));
+
+const keepRunId = ref<number | null>(null);
+const isKeepOpen = ref(false);
+const { release: releaseKeep, canRelease } = useRunKeep();
+
+async function refreshAfterKeepChange() {
+  await Promise.all([refresh(), refreshKeptRuns()]);
+}
 
 // A single selected environment / branch scopes the server-side flaky and
 // performance analysis so one environment or feature branch can be compared.
@@ -200,7 +266,7 @@ function refreshFailureCounts() {
 useRunStream(() => Promise.all([refresh(), refreshFailureCounts()]));
 
 // === TABS ===
-const TABS = ['runs', 'tests', 'failures', 'performance', 'settings'] as const;
+const TABS = ['runs', 'tests', 'failures', 'flake-lab', 'gaps', 'performance', 'settings'] as const;
 type TabValue = (typeof TABS)[number];
 
 // Old ?tab= values (and the retired sub-routes) still land on the right tab.
@@ -253,8 +319,27 @@ function resolveTab(raw: unknown): TabValue | null {
   return TAB_ALIASES[raw] ?? null;
 }
 
+// The Gaps and Flake Lab tabs follow the `test-map` and `flake-lab`
+// capabilities: a project that declined one loses its tab, and a stale
+// `?tab=` link to it falls back to Runs.
+const TAB_CAPABILITY: Partial<Record<TabValue, Parameters<typeof projCapHidden>[0]>> = {
+  gaps: 'test-map',
+  'flake-lab': 'flake-lab',
+};
+const tabHidden = (tab: TabValue) => {
+  const capability = TAB_CAPABILITY[tab];
+  return capability ? projCapHidden(capability) : false;
+};
+watch(
+  () => tabHidden(activeTab.value),
+  (hidden) => {
+    if (hidden) activeTab.value = 'runs';
+  },
+  { immediate: true },
+);
+
 const initialTab = resolveTab(route.query.tab);
-if (initialTab) {
+if (initialTab && !tabHidden(initialTab)) {
   activeTab.value = initialTab;
   if (typeof route.query.tab === 'string' && ALIAS_SEGMENT[route.query.tab])
     failureSegment.value = ALIAS_SEGMENT[route.query.tab]!;
@@ -275,21 +360,25 @@ onMounted(() => {
 
 const failuresCount = computed(() => clustersCount.value.open + (flakyCount.value ?? 0) + (quarantineCount.value ?? 0));
 
-const tabItems = computed(() => [
-  { label: `Runs (${filteredRuns.value.length})`, icon: 'i-lucide-play-circle', value: 'runs' as const },
-  {
-    label: `Tests${testCasesTotal.value != null ? ` (${testCasesTotal.value})` : ''}`,
-    icon: 'i-lucide-flask-conical',
-    value: 'tests' as const,
-  },
-  {
-    label: `Failures${failuresCount.value > 0 ? ` (${failuresCount.value})` : ''}`,
-    icon: 'i-lucide-layers',
-    value: 'failures' as const,
-  },
-  { label: 'Performance', icon: 'i-lucide-trending-up', value: 'performance' as const },
-  { label: 'Settings', icon: 'i-lucide-settings', value: 'settings' as const },
-]);
+const tabItems = computed(() =>
+  [
+    { label: `Runs (${filteredRuns.value.length})`, icon: 'i-lucide-play-circle', value: 'runs' as const },
+    {
+      label: `Tests${testCasesTotal.value != null ? ` (${testCasesTotal.value})` : ''}`,
+      icon: 'i-lucide-flask-conical',
+      value: 'tests' as const,
+    },
+    {
+      label: `Failures${failuresCount.value > 0 ? ` (${failuresCount.value})` : ''}`,
+      icon: 'i-lucide-layers',
+      value: 'failures' as const,
+    },
+    { label: 'Flake Lab', icon: 'i-lucide-snowflake', value: 'flake-lab' as const },
+    { label: 'Gaps', icon: 'i-lucide-radar', value: 'gaps' as const },
+    { label: 'Performance', icon: 'i-lucide-trending-up', value: 'performance' as const },
+    { label: 'Settings', icon: 'i-lucide-settings', value: 'settings' as const },
+  ].filter((item) => !tabHidden(item.value)),
+);
 
 const tabNavItems = computed(() =>
   tabItems.value.map((item) => ({
@@ -313,25 +402,49 @@ function goToTab(tab: TabValue, segment?: FailureSegment) {
   activeTab.value = tab;
 }
 
-// === RUNS TAB: selection → compare ===
+// === RUNS TAB: selection → compare or delete ===
 const selectedRunIds = ref<number[]>([]);
 const isRunSelected = (runId: number) => selectedRunIds.value.includes(runId);
+const allRunsSelected = computed(
+  () => tableRuns.value.length > 0 && tableRuns.value.every((r) => selectedRunIds.value.includes(r.id)),
+);
+const someRunsSelected = computed(() => selectedRunIds.value.length > 0 && !allRunsSelected.value);
 
 function toggleRunSelection(runId: number) {
   const idx = selectedRunIds.value.indexOf(runId);
-  if (idx >= 0) {
-    selectedRunIds.value.splice(idx, 1);
-  } else {
-    if (selectedRunIds.value.length >= 2) {
-      toast.add({
-        title: 'Maximum 2 runs',
-        description: 'Select at most 2 runs to compare. Deselect one first.',
-        color: 'warning',
-      });
-      return;
-    }
-    selectedRunIds.value.push(runId);
+  if (idx >= 0) selectedRunIds.value.splice(idx, 1);
+  else selectedRunIds.value.push(runId);
+}
+
+function toggleAllRuns() {
+  selectedRunIds.value = allRunsSelected.value ? [] : tableRuns.value.map((r) => r.id);
+}
+
+// A filter that hides a selected run drops it from the selection, so a bulk
+// delete only ever covers rows on screen.
+watch(tableRuns, (rows) => {
+  const visible = new Set(rows.map((r) => r.id));
+  if (selectedRunIds.value.some((id) => !visible.has(id))) {
+    selectedRunIds.value = selectedRunIds.value.filter((id) => visible.has(id));
   }
+});
+
+// === RUNS TAB: delete (one run from its menu, or the selection) ===
+const runsToDelete = ref<TestRunSummary[]>([]);
+const isDeleteRunsOpen = ref(false);
+
+function openDeleteRuns(runs: TestRunSummary[]) {
+  runsToDelete.value = runs;
+  isDeleteRunsOpen.value = true;
+}
+
+function deleteSelectedRuns() {
+  openDeleteRuns(tableRuns.value.filter((r) => selectedRunIds.value.includes(r.id)));
+}
+
+async function onRunsDeleted(runIds: number[]) {
+  selectedRunIds.value = selectedRunIds.value.filter((id) => !runIds.includes(id));
+  await Promise.all([refresh(), refreshKeptRuns()]);
 }
 
 // Compare opens the newer run's Changes tab with the older run as its baseline.
@@ -358,16 +471,16 @@ function scopeTooltip(run: TestRunSummary): string {
 }
 
 const runsColumns: TableColumn<TestRunSummary>[] = [
-  { accessorKey: 'select', header: '' },
+  { accessorKey: 'select', header: 'Select' },
   { accessorKey: 'id', header: createSortHeader<TestRunSummary>('Run') },
   { accessorKey: 'status', header: createSortHeader<TestRunSummary>('Status') },
   { accessorKey: 'isFullRun', header: 'Scope' },
-  { id: 'browsers', accessorFn: (row) => row.browsers, header: '' },
+  { id: 'browsers', accessorFn: (row) => row.browsers, header: 'Browsers' },
   { accessorKey: 'startTime', header: createSortHeader<TestRunSummary>('Started') },
   { accessorKey: 'environment', header: createSortHeader<TestRunSummary>('Environment') },
   { accessorKey: 'metadata', header: 'Branch / Commit' },
   { accessorKey: 'duration', header: createSortHeader<TestRunSummary>('Test status / Dur.') },
-  { id: 'actions', header: '' },
+  { id: 'actions', header: 'Actions' },
 ];
 
 function openRun(runId: number) {
@@ -391,14 +504,34 @@ function runMenuItems(run: TestRunSummary) {
         },
   );
   if (items.length) items.push({ type: 'separator' });
-  items.push({
-    label: 'Delete run',
-    icon: 'i-lucide-trash-2',
-    color: 'error',
-    onSelect: () => {
-      confirmDeleteRunId.value = run.id;
-    },
-  });
+  if (!run.keptAt) {
+    items.push({
+      label: 'Keep forever…',
+      icon: 'i-lucide-lock',
+      onSelect: () => {
+        keepRunId.value = run.id;
+        isKeepOpen.value = true;
+      },
+    });
+  } else if (canRelease.value) {
+    items.push({
+      label: 'Release keep',
+      icon: 'i-lucide-lock-open',
+      onSelect: async () => {
+        if (await releaseKeep(run.id)) await refreshAfterKeepChange();
+      },
+    });
+  }
+  // A kept run cannot be deleted until it is released.
+  if (canManage.value) {
+    items.push({
+      label: run.keptAt ? 'Delete run (release it first)' : 'Delete run',
+      icon: 'i-lucide-trash-2',
+      color: 'error',
+      disabled: !!run.keptAt,
+      onSelect: () => openDeleteRuns([run]),
+    });
+  }
   return items;
 }
 
@@ -408,6 +541,15 @@ const { data: markersData, refresh: refreshMarkers } = await useFetch<MarkersRes
   { default: () => ({ items: [] }) },
 );
 const markers = computed(() => markersData.value?.items ?? []);
+
+// The drill-down period resolves in the viewer's zone, so it applies once mounted.
+onMounted(readDrill);
+watch(
+  () => route.query.source === 'analytics' && route.fullPath,
+  (drilled, before) => {
+    if (drilled && before !== undefined) readDrill();
+  },
+);
 
 const visibleMarkers = computed(() => {
   if (filters.value.environments.length === 0) return markers.value;
@@ -590,6 +732,16 @@ const storedCiRerun = computed(
     } | null,
 );
 
+const storedServerProbes = computed(
+  () =>
+    (project.value as { serverProbes?: unknown } | null)?.serverProbes as {
+      enabled?: boolean;
+      faults?: string[];
+      routes?: string[];
+      dependencyOnStateChanging?: boolean;
+    } | null,
+);
+
 const editState = ref({
   label: '',
   description: '',
@@ -597,12 +749,15 @@ const editState = ref({
   aiLanguage: '',
   scmToken: '',
   defaultBranch: '',
+  openApiUrl: '',
+  serverProbes: { enabled: false, faults: '', routes: '', dependencyOnStateChanging: false },
   ciRerun: {
     enabled: false,
     github: { workflow: '', ref: '', inputName: '' },
     gitlab: { ref: '', variableName: '' },
     bitbucket: { pipeline: '', variableName: '' },
   },
+  generatedSpecs: { testImport: '', bugsFolder: '' },
 });
 const selectedTags = ref<TagInfo[]>([]);
 const savingSettings = ref(false);
@@ -620,6 +775,13 @@ watch(
       aiLanguage: (p as { aiLanguage?: string }).aiLanguage || '',
       scmToken: '',
       defaultBranch: (p as { defaultBranch?: string }).defaultBranch || '',
+      openApiUrl: (p as { openApiUrl?: string }).openApiUrl || '',
+      serverProbes: {
+        enabled: storedServerProbes.value?.enabled ?? false,
+        faults: (storedServerProbes.value?.faults ?? []).join(', '),
+        routes: (storedServerProbes.value?.routes ?? []).join(', '),
+        dependencyOnStateChanging: storedServerProbes.value?.dependencyOnStateChanging ?? false,
+      },
       ciRerun: {
         enabled: ci?.enabled ?? false,
         github: {
@@ -630,11 +792,23 @@ watch(
         gitlab: { ref: ci?.gitlab?.ref ?? '', variableName: ci?.gitlab?.variableName ?? '' },
         bitbucket: { pipeline: ci?.bitbucket?.pipeline ?? '', variableName: ci?.bitbucket?.variableName ?? '' },
       },
+      generatedSpecs: {
+        testImport: p.generatedSpecs?.testImport ?? '',
+        bugsFolder: p.generatedSpecs?.bugsFolder ?? '',
+      },
     };
     selectedTags.value = p.tags || [];
   },
   { immediate: true },
 );
+
+/** Split a comma/whitespace-separated form value into a trimmed, non-empty list. */
+function splitCommaList(value: string): string[] {
+  return value
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
 
 async function handleSaveSettings() {
   savingSettings.value = true;
@@ -648,7 +822,18 @@ async function handleSaveSettings() {
         aiLanguage: editState.value.aiLanguage || null,
         scmToken: editState.value.scmToken || null,
         defaultBranch: editState.value.defaultBranch || null,
+        openApiUrl: editState.value.openApiUrl || null,
+        serverProbes: {
+          enabled: editState.value.serverProbes.enabled,
+          faults: splitCommaList(editState.value.serverProbes.faults),
+          routes: splitCommaList(editState.value.serverProbes.routes),
+          dependencyOnStateChanging: editState.value.serverProbes.dependencyOnStateChanging,
+        },
         ciRerun: editState.value.ciRerun,
+        generatedSpecs: {
+          testImport: editState.value.generatedSpecs.testImport.trim() || null,
+          bugsFolder: editState.value.generatedSpecs.bugsFolder.trim() || null,
+        },
         tagIds: selectedTags.value.map((t) => t.id),
       },
     });
@@ -678,6 +863,23 @@ const moreMenuItems = computed(() => {
     icon: 'i-lucide-list-filter',
     onSelect: () => navigateTo(`/projects/${projectId}/selections`),
   });
+  items.push({
+    label: 'Locators',
+    icon: 'i-lucide-crosshair',
+    onSelect: () => navigateTo(`/projects/${projectId}/locators`),
+  });
+  if (!projCapHidden('bug-reports'))
+    items.push({
+      label: 'Bug reports',
+      icon: 'i-lucide-bug',
+      onSelect: () => navigateTo(`/projects/${projectId}/bug-reports`),
+    });
+  if (canWrite.value && !projCapHidden('quality-reports'))
+    items.push({
+      label: 'Schedule a quality report…',
+      icon: 'i-lucide-calendar-clock',
+      onSelect: () => (scheduleOpen.value = true),
+    });
   if (canManage.value)
     items.push({
       label: 'Delete',
@@ -715,6 +917,16 @@ const moreMenuItems = computed(() => {
               :project-label="project?.label || project?.name"
             />
             <UButton
+              v-if="!projCapHidden('quality-reports')"
+              label="Export"
+              icon="i-lucide-file-down"
+              size="sm"
+              color="neutral"
+              variant="outline"
+              title="Export this project as a quality report"
+              @click="reportOpen = true"
+            />
+            <UButton
               v-if="canManage"
               label="Import"
               icon="i-lucide-import"
@@ -734,6 +946,8 @@ const moreMenuItems = computed(() => {
           </div>
         </template>
       </UDashboardNavbar>
+      <ReportPreviewModal v-model:open="reportOpen" :query="reportQuery" />
+      <ScheduleForm v-model:open="scheduleOpen" :scope="reportQuery" />
     </template>
 
     <template #body>
@@ -826,6 +1040,16 @@ const moreMenuItems = computed(() => {
 
         <!-- RUNS TAB -->
         <div v-if="activeTab === 'runs'">
+          <p v-if="drill" class="text-xs text-muted mb-2" data-testid="analytics-drill">
+            From Analytics<template v-if="drillText">: {{ drillText }}</template> ·
+            <button
+              type="button"
+              class="underline decoration-dotted underline-offset-2 hover:decoration-solid"
+              @click="clearDrill"
+            >
+              Show every run
+            </button>
+          </p>
           <ChartCard
             v-if="filteredRuns.length > 0"
             title="Run trend"
@@ -848,12 +1072,12 @@ const moreMenuItems = computed(() => {
             <TestRunsChart :test-runs="filteredRuns" :markers="visibleMarkers" @marker-click="handleMarkerClick" />
           </ChartCard>
 
-          <UCard class="mt-4">
+          <UCard class="mt-4" data-shot="runs-table">
             <div
               v-if="selectedRunIds.length > 0"
               class="flex items-center gap-3 px-3 py-2 mb-3 rounded-lg bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800"
             >
-              <span class="text-sm text-primary-700 dark:text-primary-300">
+              <span class="text-sm text-primary-700 dark:text-primary-300" aria-live="polite">
                 {{ selectedRunIds.length }} run{{ selectedRunIds.length > 1 ? 's' : '' }} selected
               </span>
               <UButton
@@ -864,7 +1088,19 @@ const moreMenuItems = computed(() => {
                 label="Compare"
                 @click="compareSelectedRuns"
               />
-              <span v-else class="text-xs text-primary-500">Select another run to compare</span>
+              <span v-else-if="selectedRunIds.length === 1" class="text-xs text-primary-500">
+                Select another run to compare
+              </span>
+              <UButton
+                v-if="canManage"
+                icon="i-lucide-trash-2"
+                size="sm"
+                color="neutral"
+                variant="outline"
+                label="Delete"
+                :title="`Delete the ${selectedRunIds.length === 1 ? 'selected run' : `${selectedRunIds.length} selected runs`}`"
+                @click="deleteSelectedRuns"
+              />
               <UButton
                 size="xs"
                 variant="ghost"
@@ -875,11 +1111,22 @@ const moreMenuItems = computed(() => {
               />
             </div>
 
+            <div v-if="keptRunsData.total > 0" class="flex items-center justify-end gap-1.5 mb-3">
+              <label
+                class="flex items-center gap-1.5 cursor-pointer select-none text-sm text-muted hover:text-default transition-colors"
+                data-shot="kept-runs-toggle"
+              >
+                <UCheckbox v-model="keptOnly" size="sm" />
+                Kept runs only ({{ filteredKeptRuns.length }})
+              </label>
+              <HelpHint topic="run.keep" />
+            </div>
+
             <!-- md+ : the runs table; below md a card list keeps it scroll-free -->
             <div class="hidden md:block">
               <UTable
-                v-if="filteredRuns.length > 0"
-                :data="filteredRuns"
+                v-if="tableRuns.length > 0"
+                :data="tableRuns"
                 :columns="runsColumns"
                 :ui="{
                   base: 'w-full border-separate border-spacing-0',
@@ -889,6 +1136,16 @@ const moreMenuItems = computed(() => {
                   td: 'border-b border-default',
                 }"
               >
+                <template #select-header>
+                  <input
+                    type="checkbox"
+                    :checked="allRunsSelected"
+                    :indeterminate.prop="someRunsSelected"
+                    class="cursor-pointer size-4 accent-primary"
+                    :aria-label="allRunsSelected ? 'Deselect all runs' : 'Select all runs'"
+                    @change="toggleAllRuns"
+                  />
+                </template>
                 <template #select-cell="{ row }">
                   <input
                     type="checkbox"
@@ -907,6 +1164,13 @@ const moreMenuItems = computed(() => {
                     >
                       Run #{{ row.original.id }}
                     </a>
+                    <UTooltip v-if="row.original.keptAt" :text="describeKeep(row.original)">
+                      <UIcon
+                        name="i-lucide-lock"
+                        class="size-3.5 shrink-0 text-muted"
+                        :aria-label="`Run #${row.original.id} is kept forever`"
+                      />
+                    </UTooltip>
                     <span v-if="row.original.label" class="text-xs text-gray-500 dark:text-gray-400 truncate max-w-32">
                       {{ row.original.label }}
                     </span>
@@ -930,6 +1194,9 @@ const moreMenuItems = computed(() => {
                       :class="row.original.isFullRun === false ? 'text-amber-500' : 'text-green-500'"
                     />
                   </UTooltip>
+                </template>
+                <template #browsers-header>
+                  <span class="sr-only">Browsers</span>
                 </template>
                 <template #browsers-cell="{ row }">
                   <div v-if="row.original.browsers?.length" class="flex items-center gap-1">
@@ -973,12 +1240,16 @@ const moreMenuItems = computed(() => {
                       :passed="row.original.passedTests"
                       :failed="row.original.failedTests"
                       :skipped="row.original.skippedTests"
+                      :fixme="row.original.fixmeTests ?? 0"
                       :flaky="row.original.flakyTests"
                       :did-not-run="row.original.didNotRunTests ?? 0"
                       :total="row.original.totalTests"
                     />
                     <DurationValue :ms="row.original.duration" class="text-xs text-gray-500" />
                   </div>
+                </template>
+                <template #actions-header>
+                  <span class="sr-only">Actions</span>
                 </template>
                 <template #actions-cell="{ row }">
                   <div class="flex justify-end">
@@ -989,7 +1260,6 @@ const moreMenuItems = computed(() => {
                         variant="ghost"
                         icon="i-lucide-ellipsis-vertical"
                         :aria-label="`Run #${row.original.id} actions`"
-                        :loading="deletingRunId === row.original.id"
                         @click.stop
                       />
                     </UDropdownMenu>
@@ -999,8 +1269,8 @@ const moreMenuItems = computed(() => {
             </div>
 
             <!-- Below md: one card per run -->
-            <div v-if="filteredRuns.length > 0" class="space-y-2 md:hidden">
-              <div v-for="run in filteredRuns" :key="run.id" class="rounded-lg border border-default p-3 space-y-2">
+            <div v-if="tableRuns.length > 0" class="space-y-2 md:hidden">
+              <div v-for="run in tableRuns" :key="run.id" class="rounded-lg border border-default p-3 space-y-2">
                 <div class="flex items-start gap-2">
                   <input
                     type="checkbox"
@@ -1013,12 +1283,19 @@ const moreMenuItems = computed(() => {
                     <div class="flex items-center gap-2 flex-wrap">
                       <RunStatusBadge :status="run.status" />
                       <span class="font-medium text-primary">Run #{{ run.id }}</span>
+                      <UIcon
+                        v-if="run.keptAt"
+                        name="i-lucide-lock"
+                        class="size-3.5 shrink-0 text-muted"
+                        :aria-label="`Run #${run.id} is kept forever`"
+                      />
                       <EnvironmentBadge v-if="run.environment" :name="run.environment" class="text-xs text-muted" />
                     </div>
                     <TestStatusBar
                       :passed="run.passedTests"
                       :failed="run.failedTests"
                       :skipped="run.skippedTests"
+                      :fixme="run.fixmeTests ?? 0"
                       :flaky="run.flakyTests"
                       :did-not-run="run.didNotRunTests ?? 0"
                       :total="run.totalTests"
@@ -1035,7 +1312,6 @@ const moreMenuItems = computed(() => {
                       variant="ghost"
                       icon="i-lucide-ellipsis-vertical"
                       :aria-label="`Run #${run.id} actions`"
-                      :loading="deletingRunId === run.id"
                       @click.stop.prevent
                     />
                   </UDropdownMenu>
@@ -1044,10 +1320,10 @@ const moreMenuItems = computed(() => {
             </div>
 
             <div
-              v-if="filteredRuns.length === 0 && project?.testRuns && project.testRuns.length > 0"
+              v-if="tableRuns.length === 0 && project?.testRuns && project.testRuns.length > 0"
               class="text-center py-8 text-gray-500"
             >
-              No test runs match the current filters.
+              {{ keptOnly ? 'No kept runs match the current filters.' : 'No test runs match the current filters.' }}
             </div>
 
             <EmptyState
@@ -1111,6 +1387,7 @@ const moreMenuItems = computed(() => {
             <FailureClustersList
               :key="clustersRefreshKey"
               :project-id="String(projectId)"
+              :initial-status="drill?.status ?? undefined"
               @count="clustersCount.total = $event"
             />
           </template>
@@ -1132,6 +1409,21 @@ const moreMenuItems = computed(() => {
             hide-candidates
             @count="quarantineCount = $event"
           />
+        </div>
+
+        <!-- FLAKE LAB TAB -->
+        <div v-if="activeTab === 'flake-lab'">
+          <FlakeLabPanel
+            :project-id="Number(projectId)"
+            :environment="flakyEnvironment"
+            :branch="flakyBranch"
+            :project-name="project?.name"
+          />
+        </div>
+
+        <!-- GAPS TAB -->
+        <div v-if="activeTab === 'gaps'">
+          <GapsPanel :project-id="Number(projectId)" />
         </div>
 
         <!-- PERFORMANCE TAB -->
@@ -1302,13 +1594,18 @@ const moreMenuItems = computed(() => {
                 :has-token="hasScmToken"
                 :project-id="Number(projectId)"
                 :capabilities="project?.capabilities ?? null"
+                :hide-open-api="projCapHidden('test-map')"
+                :hide-server-probes="projCapHidden('server-probes')"
                 v-model:label="editState.label"
                 v-model:description="editState.description"
                 v-model:diagnosisInstructions="editState.diagnosisInstructions"
                 v-model:aiLanguage="editState.aiLanguage"
                 v-model:scmToken="editState.scmToken"
                 v-model:defaultBranch="editState.defaultBranch"
+                v-model:openApiUrl="editState.openApiUrl"
+                v-model:serverProbes="editState.serverProbes"
                 v-model:ciRerun="editState.ciRerun"
+                v-model:generatedSpecs="editState.generatedSpecs"
                 v-model:tags="selectedTags"
                 :all-tags="allTags"
                 @tag-created="refreshTags()"
@@ -1318,6 +1615,15 @@ const moreMenuItems = computed(() => {
               </div>
             </UForm>
           </SectionCard>
+
+          <ProjectTargetsForm
+            v-if="canManage"
+            :project-id="Number(projectId)"
+            :targets="(project as { targets?: unknown } | null)?.targets ?? null"
+            @saved="refresh()"
+          />
+
+          <ProjectUrlPatternsForm v-if="canManage" :project-id="Number(projectId)" />
 
           <!-- Issue-tracker binding: how this project's failures reach Jira. -->
           <ProjectIntegrationSettings v-if="canManage" :project-id="Number(projectId)" />
@@ -1346,11 +1652,17 @@ const moreMenuItems = computed(() => {
     </USlideover>
   </ClientOnly>
 
+  <ClientOnly>
+    <RunKeepModal v-model:open="isKeepOpen" :run-id="keepRunId" @kept="refreshAfterKeepChange" />
+  </ClientOnly>
+
   <!-- Delete Project Modal -->
   <ClientOnly>
     <UModal
       :open="showDeleteProjectModal"
-      title="Delete project"
+      :title="deletingProject ? 'Deleting project' : 'Delete project'"
+      :dismissible="!deletingProject"
+      :close="!deletingProject"
       @update:open="
         (val) => {
           if (!val) showDeleteProjectModal = false;
@@ -1358,7 +1670,14 @@ const moreMenuItems = computed(() => {
       "
     >
       <template #body>
-        <div class="space-y-4">
+        <div v-if="deletingProject" class="space-y-4">
+          <p class="text-sm text-highlighted leading-relaxed">
+            Deleting <strong>{{ project?.label || project?.name }}</strong> and everything it holds. A project with a
+            long history can take a few minutes.
+          </p>
+          <ProjectDeleteProgress :progress="deletionProgress" :elapsed-ms="deletionElapsedMs" />
+        </div>
+        <div v-else class="space-y-4">
           <p class="text-sm text-gray-600 dark:text-gray-400">
             This will permanently delete <strong>{{ project?.label || project?.name }}</strong> and all its test runs,
             reports, traces, and failure clusters. This action cannot be undone.
@@ -1378,10 +1697,16 @@ const moreMenuItems = computed(() => {
         </div>
       </template>
       <template #footer>
-        <UButton color="neutral" variant="ghost" label="Cancel" @click="showDeleteProjectModal = false" />
+        <UButton
+          v-if="!deletingProject"
+          color="neutral"
+          variant="ghost"
+          label="Cancel"
+          @click="showDeleteProjectModal = false"
+        />
         <UButton
           color="error"
-          label="Delete project"
+          :label="deletingProject ? 'Deleting…' : 'Delete project'"
           icon="i-lucide-trash-2"
           :disabled="!deleteProjectConfirmValid"
           :loading="deletingProject"
@@ -1391,33 +1716,7 @@ const moreMenuItems = computed(() => {
     </UModal>
   </ClientOnly>
 
-  <!-- Delete Run Confirm Dialog -->
   <ClientOnly>
-    <UModal
-      :open="confirmDeleteRunId !== null"
-      title="Delete test run"
-      @update:open="
-        (val) => {
-          if (!val) confirmDeleteRunId = null;
-        }
-      "
-    >
-      <template #body>
-        <p>
-          Are you sure you want to delete <strong>Run #{{ confirmDeleteRunId }}</strong
-          >? This will also remove all associated test results, reports, and traces. This action cannot be undone.
-        </p>
-      </template>
-      <template #footer>
-        <UButton color="neutral" variant="ghost" label="Cancel" @click="confirmDeleteRunId = null" />
-        <UButton
-          color="error"
-          label="Delete"
-          icon="i-lucide-trash-2"
-          :loading="deletingRunId === confirmDeleteRunId"
-          @click="handleDeleteRun(confirmDeleteRunId!)"
-        />
-      </template>
-    </UModal>
+    <RunsDeleteModal v-model:open="isDeleteRunsOpen" :runs="runsToDelete" @deleted="onRunsDeleted" />
   </ClientOnly>
 </template>

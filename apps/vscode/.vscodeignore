@@ -1,0 +1,7 @@
+**
+!dist/extension.cjs
+!dist/piwi-language-server.cjs
+!package.json
+!README.md
+!LICENSE
+!icon.png

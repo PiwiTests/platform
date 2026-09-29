@@ -1,4 +1,9 @@
-import type { FullResult, Reporter, TestCase, TestResult } from '@playwright/test/reporter';
+import type { FullResult, Reporter, TestCase, TestResult, TestStep } from '@playwright/test/reporter';
+
+/** Every step of a result, depth first. */
+function allSteps(steps: TestStep[]): TestStep[] {
+  return steps.flatMap((step) => [step, ...allSteps(step.steps)]);
+}
 
 /**
  * Inspects the real `piwi-*` testInfo attachments produced by the capture
@@ -38,6 +43,18 @@ export default class VerifyCaptureReporter implements Reporter {
       assert(result.status === 'failed', `expected an actual failure to drive failure capture, got ${result.status}`);
 
       assert(!!byName('piwi-aria-snapshot'), 'expected a piwi-aria-snapshot attachment on the failing test');
+
+      // The wrapped action keeps its own name and its call site: the error
+      // reads `locator.click`, and points at the spec, never at the wrapper.
+      const error = result.errors[0];
+      assert(
+        !!error?.message?.includes('locator.click:'),
+        `the wrapped action's error should name locator.click, got: ${error?.message?.split('\n')[0]}`,
+      );
+      assert(
+        !!error?.location?.file.endsWith('capture.spec.ts'),
+        `the error should point at the spec, got ${error?.location?.file}`,
+      );
 
       const suggestion = byName('piwi-locator-suggestion');
       assert(!!suggestion, 'expected a piwi-locator-suggestion attachment on the failing test');
@@ -106,6 +123,19 @@ export default class VerifyCaptureReporter implements Reporter {
     }
 
     // ── Main capture test: assert the full passing-path attachment set ───────
+    // The capture's own reads are internal calls, and a wrapped action is
+    // located at the test's line: nothing Piwi does shows up as a step.
+    const steps = allSteps(result.steps);
+    const click = steps.find((step) => step.title.startsWith('Click') || step.title.startsWith('locator.click'));
+    assert(
+      !!click?.location?.file.endsWith('capture.spec.ts'),
+      `the wrapped click step should be located in the spec, got ${click?.location?.file}`,
+    );
+    assert(
+      !steps.some((step) => step.category === 'pw:api' && /evaluate|aria snapshot/i.test(step.title)),
+      'the element probe must not be recorded as a step',
+    );
+
     const locators = byName('piwi-locators');
     if (locators?.body) {
       const snapshots = JSON.parse(locators.body.toString('utf8')) as Array<{
@@ -167,7 +197,7 @@ export default class VerifyCaptureReporter implements Reporter {
     this.sawMainCapture = true;
   }
 
-  onEnd(_result: FullResult): { status: 'failed' } | void {
+  async onEnd(_result: FullResult): Promise<{ status: 'failed' } | void> {
     if (!this.sawMainCapture) this.fail('the main capture test did not run — nothing verified its attachments');
     if (!this.sawFailureCapture) this.fail('the failure-capture test did not run — ARIA/suggestion unverified');
     if (!this.sawAssertionCapture) this.fail('the assertion-capture test did not run — _expect capture unverified');

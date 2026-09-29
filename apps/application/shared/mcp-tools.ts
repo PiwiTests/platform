@@ -14,6 +14,7 @@
 import type { CapabilityId, CapabilityModule } from '#shared/capabilities';
 import { EXTRACT_SYSTEM_PROMPT } from './test-function-extract-prompt';
 import { DESCRIBE_PIWI_TOPICS } from '#shared/piwi-ecosystem';
+import { REPORT_LANGUAGES } from './reports/languages';
 
 export interface PaginatedResponse<T> {
   items: T[];
@@ -35,6 +36,38 @@ export interface McpToolDef {
   // (needed to derive the `McpToolName` union) while still satisfying this type.
   inputSchema: { type: 'object'; properties: Record<string, unknown>; required?: readonly string[] };
 }
+
+/** The analytics scope, as the report and metric tools take it (the analytics page's URL keys). */
+const ANALYTICS_SCOPE_PROPERTIES = {
+  projectIds: {
+    type: 'array',
+    items: { type: 'number' },
+    description: 'Project IDs to cover (default: every project you can see)',
+  },
+  period: {
+    type: 'string',
+    description:
+      'Period: last-7d, last-30d (default), this-week, last-month, this-quarter, 2026-08-01..2026-08-31, since-marker-<id>, release-0 (this release cycle), all',
+  },
+  compare: {
+    type: 'string',
+    description: 'Comparison: previous (default), previous-unit, year, none, or YYYY-MM-DD..YYYY-MM-DD',
+  },
+  environments: { type: 'array', items: { type: 'string' }, description: 'Only runs reported for these environments' },
+  branches: {
+    type: 'array',
+    items: { type: 'string' },
+    description: 'Only runs on these branches (default: each project’s default branch plus runs with no known branch)',
+  },
+  allBranches: { type: 'boolean', description: 'Count every branch instead of the default branches' },
+  selection: { type: 'string', description: 'Test filter: a selection key (e.g. smoke), resolved in each project' },
+  tags: { type: 'array', items: { type: 'string' }, description: 'Test filter: tests carrying all of these tags' },
+  owners: {
+    type: 'array',
+    items: { type: 'string' },
+    description: 'Test filter: tests held by any of these owners (piwi:owner or CODEOWNERS)',
+  },
+} as const;
 
 export const MCP_TOOL_DEFS = [
   {
@@ -119,7 +152,8 @@ export const MCP_TOOL_DEFS = [
   {
     name: 'list_flaky_tests',
     module: 'core',
-    description: 'List flaky tests for a project with flakiness scores.',
+    description:
+      'List flaky tests for a project with flakiness scores. A test whose Flake Lab verify experiment held is left out until it retry-passes again.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -412,12 +446,40 @@ export const MCP_TOOL_DEFS = [
     name: 'get_test_stability_trend',
     module: 'core',
     description:
-      'Time-series stability for a single test case: flaky rate, pass rate, and average duration bucketed over its recent execution history. Use to answer "is this test getting flakier?".',
+      'Time-series stability for a single test case: flaky rate, pass rate, and average duration in UTC time buckets (about 31 of them) over the last N days. Use to answer "is this test getting flakier?".',
     inputSchema: {
       type: 'object',
       properties: {
         testCaseId: { type: 'number', description: 'Test case ID (stable testCaseId)' },
-        buckets: { type: 'number', description: 'Number of time buckets (default 20, 5–50)' },
+        days: { type: 'number', description: 'How many days back the trend reaches (default 90, 1–3650)' },
+      },
+      required: ['testCaseId'],
+    },
+  },
+  {
+    name: 'get_flake_profile',
+    module: 'workflow',
+    capability: 'flake-lab',
+    description:
+      'The suspects of a flaky test, read from its last 30 days (at most 200 attempts): the slow or failed routes, the tests running alongside or just before it on the same worker, the load and the browser project its failures share and its passes do not. Each suspect has its raw counts (failuresWith of failures, passesWith of passes), its lift and the condition that would test it (delay a route, fail it, throttle the CPU, run another test alongside or first, pin a project); at most 5, a suspect needs 3 failures and a lift of 2. Alongside suspects list the paths both tests write and say when the overlap crossed shards (approximate). `context` holds factors with no condition (first attempt, UTC hour, another run on the environment). `experiments` lists the test’s latest finished `piwi flake` experiments (at most 10, newest first): kind (reproduce or verify), verdict, the commit it ran and the commit of the failures, and each arm with its conditions, runs, matching failures (same error as history), other failures, p-value against the control and verdict; each suspect also carries `lab`, its latest arm result. Use it before changing a flaky test, to know what to reproduce and whether a fix was verified.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        testCaseId: { type: 'number', description: 'Test case ID (testCaseId from list_flaky_tests)' },
+      },
+      required: ['testCaseId'],
+    },
+  },
+  {
+    name: 'plan_flake_experiment',
+    module: 'workflow',
+    capability: 'flake-lab',
+    description:
+      'The Flake Lab plan for a flaky test, for an agent that runs the lab itself: the `piwi flake` and `piwi flake verify` commands to run from the project root, the control arm and one arm per suspect (most likely first) with the conditions each applies (delay or fail a route, throttle the CPU, run another test alongside or first, pin a project), the runs and the early stop, the error signatures a failure must match, and an estimate from the test’s median duration. Records nothing: the command records the experiment when it runs. `plan` is the full plan, which `piwi flake --plan <file>` also accepts to run without the dashboard. After a fix, run the verify command: exit 0 means the fix held under the condition that reproduced the failure.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        testCaseId: { type: 'number', description: 'Test case ID (testCaseId from list_flaky_tests)' },
       },
       required: ['testCaseId'],
     },
@@ -455,6 +517,24 @@ export const MCP_TOOL_DEFS = [
       type: 'object',
       properties: { executionId: { type: 'number', description: 'Test run case ID (executionId)' } },
       required: ['executionId'],
+    },
+  },
+  {
+    name: 'predict_locator_breaks',
+    module: 'healing',
+    description:
+      "Which of the project's test locators a change breaks, before any test runs. Send your own working diff (the output of `git diff`, unified format): the strings it removes or renames (attribute values such as aria-label, placeholder or a test id, text between tags, quoted strings, translation values) are matched against every locator chain the project's tests used, under Playwright's text rules (case-insensitive substring unless exact, regex as written). Each break carries its confidence (`likely` for an attribute, tag text or translation; `possible` for a bare string), the tests and call sites (`file:line:col`, relative to where the reporter ran), and for a one-to-one rename the `rewrite` (the same chain with the new string) plus `edits`: replace each `before` string literal with `after` at the call sites. Run it after a UI change, apply the edits, then run the tests it names. Test files in the diff are ignored. `branch` picks the locator index to compare with (default: the project's default branch).",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        projectId: { type: 'number', description: 'Project ID' },
+        diff: { type: 'string', description: 'The change as a unified diff (`git diff` output)' },
+        branch: {
+          type: 'string',
+          description: "Branch whose locator index to compare with (default: the project's default branch)",
+        },
+      },
+      required: ['projectId', 'diff'],
     },
   },
   {
@@ -503,16 +583,19 @@ export const MCP_TOOL_DEFS = [
     module: 'workflow',
     capability: 'integrations',
     description:
-      "File a Jira issue from a failure cluster or a failing execution, with the fix plan as its body — the same ticket the dashboard's Create issue button produces. The issue is deduped by cluster, so calling twice for the same cluster returns the existing action rather than a second ticket. Returns the issue { key, url } and any `existing` issues that already track the cluster (a pinned link, a matching label, or a fixed-before match) so you can link instead of filing again. Requires a Jira connection and a project binding (project key and issue type). Reporter or administrator access.",
+      "File a Jira issue from a failure cluster or a failing execution, with the fix plan as its body — the same ticket the dashboard's Create issue button produces. The issue is deduped by cluster, so calling twice for the same cluster returns the existing action rather than a second ticket. Returns the issue { key, url } and any `existing` issues that already track the cluster (a pinned link, a matching label, or a fixed-before match) so you can link instead of filing again. Requires a Jira connection and a project binding (project key and issue type); the binding's field defaults fill the fields the project requires. Reporter or administrator access.",
     inputSchema: {
       type: 'object',
       properties: {
         entityType: {
           type: 'string',
-          enum: ['failure_cluster', 'test_runs_case'],
-          description: 'Whether to file for a failure cluster or one failing execution',
+          enum: ['failure_cluster', 'test_runs_case', 'bug_report'],
+          description: 'Whether to file for a failure cluster, one failing execution, or a bug report',
         },
-        entityId: { type: 'number', description: 'The cluster id or the execution (testRunsCaseId)' },
+        entityId: {
+          type: 'number',
+          description: 'The cluster id, the execution (testRunsCaseId) or the bug report id',
+        },
         title: { type: 'string', description: 'Optional issue title; defaults to the cluster name' },
         includeDiagnosis: {
           type: 'boolean',
@@ -523,6 +606,11 @@ export const MCP_TOOL_DEFS = [
           type: 'string',
           enum: ['en', 'fr'],
           description: "The ticket's language; defaults from the project/connection binding, else English",
+        },
+        fields: {
+          type: 'object',
+          description:
+            'Values for Jira fields the project requires, keyed by field id — e.g. { "customfield_10050": "Critical" }. A listed value can be given by its name, a person by account id, rich text as plain text; anything else as Jira\'s API takes it. Overrides the project\'s field defaults. When a required field is still empty, the call fails naming each field, its id and what it takes.',
         },
       },
       required: ['entityType', 'entityId'],
@@ -847,7 +935,7 @@ export const MCP_TOOL_DEFS = [
     name: 'describe_piwi',
     module: 'core',
     description:
-      'Piwi itself, from its own documentation: what it is and is not, every piece of its ecosystem, how to set it up and configure it, which option fits which need, what this instance has switched on, and where to report a bug or suggest an improvement. Call it before answering a question about Piwi rather than about test results. With no arguments it returns an overview and the list of topics: `ecosystem` (the server, desktop app, reporter, `piwi` CLI, capture fixtures, AI steps, backend-log packages, browser extension, MCP server, agent skills, REST API — what each is, how to get it, when you need it), `choices` (the setup decisions and their options), `features`, `configuration` (every PIWI_* variable), `mcp`, `feedback` and `docs` (the page index). The documentation ships with this server, so it matches the running version: `page` reads a page or one section ("guide/ci", "operate/authentication#project-access"), and `query` searches every page and variable. What changed between versions is get_release_notes.',
+      'Piwi itself, from its own documentation: what it is and is not, every piece of its ecosystem, how to set it up and configure it, which option fits which need, what this instance has switched on, and where to report a bug or suggest an improvement. Call it before answering a question about Piwi rather than about test results. With no arguments it returns an overview and the list of topics: `ecosystem` (every piece — the server, desktop app, reporter and `piwi` CLI, capture fixtures, AI steps, backend instrumentation, browser and editor extensions, MCP server, agent skills, REST API, metrics export — what each is, how to get it, when you need it), `choices` (the setup decisions and their options), `features`, `configuration` (every PIWI_* variable), `mcp`, `feedback` and `docs` (the page index). The documentation ships with this server, so it matches the running version: `page` reads a page or one section ("guide/ci", "guide/ci#sharding"), and `query` searches every page and variable. What changed between versions is get_release_notes.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -870,6 +958,100 @@ export const MCP_TOOL_DEFS = [
     },
   },
   {
+    name: 'get_change_coverage',
+    module: 'core',
+    capability: 'scm',
+    description:
+      'Change coverage for a pull request: the files a change touched joined to the tests that observably reach them, grouped by ticket, with the uncovered files that need a scenario. Pass a run id to diff it against its baseline, or an explicit base and head commit. Reach is observed reach, never instrumented coverage; "no test in this run" is paired with the count from recent history. Returns an empty result when no SCM token or diff is available.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        projectId: { type: 'number', description: 'Project ID from list_projects' },
+        run: { type: 'number', description: 'Diff this run against its baseline (from get_project)' },
+        base: { type: 'string', description: 'Base commit SHA (use with head instead of run)' },
+        head: { type: 'string', description: 'Head commit SHA (use with base instead of run)' },
+      },
+      required: ['projectId'],
+    },
+  },
+  {
+    name: 'list_scenario_gaps',
+    module: 'workflow',
+    capability: 'test-map',
+    description:
+      'Ranked scenario gaps for a project: tests that do not exist yet, each with its class (blind-spot, false-comfort, fragile), evidence lines and exposure score. Filter by class, feature, a minimum score, or a pull-request number. Every line is observed reach, never instrumented coverage. Pair with draft_scenario to turn a gap into a test skeleton.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        projectId: { type: 'number', description: 'Project ID from list_projects' },
+        class: {
+          type: 'string',
+          description: 'Filter by gap class: blind-spot | false-comfort | fragile | unhandled | degraded',
+        },
+        feature: { type: 'string', description: 'Filter to a feature (the piwi:feature tag)' },
+        minScore: { type: 'number', description: 'Only gaps at or above this exposure score' },
+        pr: { type: 'number', description: 'Only gaps reported on this pull request' },
+        limit: { type: 'number', description: 'Max gaps to return (default 20)' },
+      },
+      required: ['projectId'],
+    },
+  },
+  {
+    name: 'draft_scenario',
+    module: 'workflow',
+    capability: 'test-map',
+    description:
+      'A deterministic test skeleton for a scenario gap: a title from the gap, piwi: annotations from the nearest test, the graph path from a reached page to the gap as the step list, catalog page-object methods where they match, and a TODO assertion naming what to check. Delivered as text to paste or hand to an agent — nothing is committed. Pass the gap id from list_scenario_gaps.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        projectId: { type: 'number', description: 'Project ID from list_projects' },
+        gapId: { type: 'number', description: 'The gap id from list_scenario_gaps' },
+      },
+      required: ['projectId', 'gapId'],
+    },
+  },
+  {
+    name: 'get_feature_graph',
+    module: 'workflow',
+    capability: 'test-map',
+    description:
+      'The feature-graph neighborhood around a node: walk the typed graph (tests, pages, controls, routes, handlers, dependencies) outward from `node` to `depth` hops (capped at six), returning each node with its gap class and the tests that reach it, and the edges between them. Use it to see the blast radius of a change or what a test protects. `node` is "kind:key", e.g. route:POST /api/orders.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        projectId: { type: 'number', description: 'Project ID from list_projects' },
+        node: { type: 'string', description: 'Seed node as kind:key, e.g. route:POST /api/orders or page:/checkout' },
+        depth: { type: 'number', description: 'Hops to walk outward (default 2, max 6)' },
+      },
+      required: ['projectId', 'node'],
+    },
+  },
+  {
+    name: 'get_quality_report',
+    module: 'workflow',
+    capability: 'quality-reports',
+    description:
+      'A quality report as its bundle: a built-in dashboard (executive: a rule-based verdict, headline numbers, the pass-rate trend, what changed, what is being done and the risks; engineering adds flaky tests, clusters, CI time, detail and scenario gaps; team is engineering for one owner and needs `owners`; gaps-digest is the Test Map’s weekly digest; overview is the analytics page) rendered over a scope, every string already formatted. Use it to answer "how did the checkout suite do this week" or to post a summary. Numbers never come from a model: the verdict is built by rules.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        dashboard: {
+          type: 'string',
+          enum: ['executive', 'engineering', 'team', 'gaps-digest', 'overview'],
+          description: 'Built-in dashboard (default executive)',
+        },
+        lang: {
+          type: 'string',
+          enum: [...REPORT_LANGUAGES],
+          description:
+            'Report language (default: the project’s ticket language, else the instance locale, else English)',
+        },
+        ...ANALYTICS_SCOPE_PROPERTIES,
+      },
+    },
+  },
+  {
     name: 'get_release_notes',
     module: 'core',
     description:
@@ -880,6 +1062,127 @@ export const MCP_TOOL_DEFS = [
         version: { type: 'string', description: 'A release such as "0.36.0", or a minor such as "0.36"' },
         since: { type: 'string', description: 'List the releases after this version, e.g. "0.30.0"' },
         query: { type: 'string', description: 'Only the entries that mention every term' },
+      },
+    },
+  },
+  {
+    name: 'get_metric_trend',
+    module: 'core',
+    description:
+      'One metric from the metric catalog over a scope: its value and change against the comparison period, its definition, and its series bucketed over the period with the comparison period aligned bucket for bucket. Metrics: test-pass-rate, run-success-rate, runs, suite-size, flaky-occurrences, flaky-tests, wasted-ci-minutes, wasted-ci-cost, ci-time, new-regressions, newly-flaky, average-run-duration, average-p90-test-duration, open-failure-causes, failure-causes-opened, failure-causes-fixed, median-time-to-fix, oldest-open-failure-cause, fixes-that-held, quarantine-debt.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        metric: { type: 'string', description: 'Metric id from the catalog, e.g. test-pass-rate' },
+        by: {
+          type: 'string',
+          enum: ['auto', 'day', 'week', 'month'],
+          description: 'Bucket size (default auto, about 31 buckets)',
+        },
+        ...ANALYTICS_SCOPE_PROPERTIES,
+      },
+      required: ['metric'],
+    },
+  },
+  {
+    name: 'list_dashboards',
+    module: 'core',
+    description:
+      'Every dashboard you can open: the built-in ones (overview is the analytics page; executive, engineering and gaps-digest are the report dashboards) and the saved dashboards shared with everyone or yours, each with its id, name, description, owner, visibility and widget count. Pass an id to get_dashboard.',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'get_dashboard',
+    module: 'core',
+    description:
+      'One dashboard with every widget’s data, the JSON the page renders, band by band. Use it to answer "how did the checkout dashboard do this sprint". The scope is the dashboard’s own: a scope key you pass (period, projectIds, …) replaces that key only, and the others keep the dashboard’s values, so a period alone keeps its projects and filters; each widget’s own period or narrower filters still apply. A dashboard grants no access: widgets are computed for your projects only, and `hiddenProjects` counts the ones of its scope you cannot open.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: {
+          type: 'string',
+          description: 'A built-in dashboard key (overview, executive, …) or a saved dashboard id',
+        },
+        by: {
+          type: 'string',
+          enum: ['auto', 'day', 'week', 'month'],
+          description: 'Bucket size of the series (default: the dashboard’s)',
+        },
+        ...ANALYTICS_SCOPE_PROPERTIES,
+      },
+      required: ['id'],
+    },
+  },
+  {
+    name: 'compare_periods',
+    module: 'core',
+    description:
+      'The headline metrics of one scope over two periods chosen freely, e.g. this sprint against the last one, or August against July: each metric over `a`, with `b` as its previous value and the change. `a` and `b` use the period syntax of the other tools (last-7d, last-month, 2026-08-01..2026-08-31, release-1, …).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        a: { type: 'string', description: 'The period to report on' },
+        b: { type: 'string', description: 'The period to compare it with' },
+        metrics: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Metric ids (default: the six headline metrics)',
+        },
+        ...ANALYTICS_SCOPE_PROPERTIES,
+      },
+      required: ['a', 'b'],
+    },
+  },
+  {
+    name: 'list_bug_reports',
+    module: 'workflow',
+    capability: 'bug-reports',
+    description:
+      'A project’s bug reports, newest first: bugs reported from Piwi Picker with their steps, the expected result and evidence. Each item has its status (open, test-committed, looks-fixed, closed, dismissed), page, reporter, the test that reproduces it once committed (testCaseId) and how many reproductions were recorded. Use get_bug_report for the steps and evidence of one.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        projectId: { type: 'number', description: 'Project ID from list_projects' },
+        status: {
+          type: 'string',
+          enum: ['open', 'test-committed', 'looks-fixed', 'closed', 'dismissed'],
+          description: 'Keep one status',
+        },
+        pageSize: { type: 'number', description: 'Items per page (1-50, default 10)' },
+        cursor: { type: 'string', description: 'nextCursor from the previous page' },
+      },
+      required: ['projectId'],
+    },
+  },
+  {
+    name: 'get_bug_report',
+    module: 'workflow',
+    capability: 'bug-reports',
+    description:
+      'One bug report: its steps in words, each expected assertion with the value the page showed instead, the steps document itself (to replay or render), the evidence (console errors, failed requests with their status, the page outline), the reproductions recorded since, and the test that reproduces it. Use render_steps with its id to get the failing test to commit.',
+    inputSchema: {
+      type: 'object',
+      properties: { id: { type: 'number', description: 'Bug report id from list_bug_reports' } },
+      required: ['id'],
+    },
+  },
+  {
+    name: 'render_steps',
+    module: 'workflow',
+    capability: 'bug-reports',
+    description:
+      'Render a steps document as a Playwright spec with the converter every Piwi surface uses. Pass `bugReportId` for a report’s spec with the project’s generated-spec settings, function catalog and suite locators (`mode` commit, the default: `test.fail()`, `@bug` and `piwi:bug`, to commit now; run: without `test.fail()`, to reproduce), or `steps` (a steps document, as Piwi Picker’s Download steps writes it) with converter options. Returns { code, path, warnings }.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        bugReportId: { type: 'number', description: 'Bug report id; takes precedence over steps' },
+        mode: { type: 'string', enum: ['commit', 'run'], description: 'For a bug report (default commit)' },
+        steps: { type: 'object', description: 'A steps document ({ v: 1, origin, steps, … })' },
+        options: {
+          type: 'object',
+          description:
+            'Converter options for `steps`: title, testImport, urls (absolute|relative), locators (first|stable), urlChecks, values (literal|env), expectFail, tags',
+        },
       },
     },
   },

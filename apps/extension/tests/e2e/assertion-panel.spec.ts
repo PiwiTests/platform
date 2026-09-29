@@ -1,6 +1,8 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test, expect } from './fixtures.js';
+import { stubChromeI18n } from './i18n-stub.js';
+import { clippedInShadows, openShadowRoots } from './shadow.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.join(here, '..', '..', 'dist');
@@ -66,5 +68,64 @@ test.describe('assertion-panel.js', () => {
 
     await page.keyboard.press('Escape');
     await expect.poll(() => page.evaluate(() => !!document.getElementById('piwi-assertion-panel-host'))).toBe(false);
+  });
+
+  test('speaks French: title, locator line, buttons and lang', async ({ context }) => {
+    await openShadowRoots(context);
+    await stubChromeI18n(context, 'fr');
+    const page = await context.newPage();
+    await page.setContent(`<!doctype html><html><body>
+      <button id="target" data-testid="submit-btn">Submit</button>
+    </body></html>`);
+    await page.addScriptTag({ path: path.join(DIST, 'assertion-panel.js') });
+    await page.hover('#target');
+    await page.click('#target');
+
+    const panel = () =>
+      page.evaluate(() => {
+        const root = document.getElementById('piwi-assertion-panel-host')?.shadowRoot;
+        const dialog = root?.querySelector('[role="dialog"]');
+        if (!root || !dialog) return null;
+        return {
+          lang: (dialog as HTMLElement).lang,
+          label: dialog.getAttribute('aria-label'),
+          title: root.querySelector('.title')?.textContent,
+          sub: root.querySelector('.sub')?.textContent,
+          close: root.querySelector('.close')?.getAttribute('aria-label'),
+          copy: [...root.querySelectorAll('button.copy')].map((b) => b.textContent),
+        };
+      });
+    await expect.poll(panel).not.toBeNull();
+    expect(await panel()).toEqual({
+      lang: 'fr',
+      label: 'Assertions suggérées',
+      title: '3 assertions suggérées',
+      sub: "Avec le locator getByTestId('submit-btn')",
+      close: 'Fermer',
+      copy: ['Copier', 'Copier', 'Copier'],
+    });
+    expect(await clippedInShadows(page)).toEqual([]);
+  });
+
+  test('lays out in German without clipping', async ({ context }) => {
+    await openShadowRoots(context);
+    await stubChromeI18n(context, 'de');
+    const page = await context.newPage();
+    await page.setContent(`<!doctype html><html><body>
+      <button id="target" data-testid="submit-btn">Submit</button>
+    </body></html>`);
+    await page.addScriptTag({ path: path.join(DIST, 'assertion-panel.js') });
+    await page.hover('#target');
+    await page.click('#target');
+
+    const lang = () =>
+      page.evaluate(
+        () =>
+          document
+            .getElementById('piwi-assertion-panel-host')
+            ?.shadowRoot?.querySelector<HTMLElement>('[role="dialog"]')?.lang ?? null,
+      );
+    await expect.poll(lang).toBe('de');
+    expect(await clippedInShadows(page)).toEqual([]);
   });
 });

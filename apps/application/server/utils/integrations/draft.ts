@@ -9,7 +9,7 @@
  * fixed-before match whose earlier cluster carries an issue.
  */
 import { and, eq, isNotNull } from 'drizzle-orm';
-import { entityLinks, failureClusters, testRunsCases } from '../../database/schema';
+import { bugReports, entityLinks, failureClusters, testRunsCases } from '../../database/schema';
 import type { DbClient } from '../../database';
 import { renderMarkdown } from '#shared/integrations/render-markdown';
 import { issueLabels } from '#shared/integrations/build-issue';
@@ -17,10 +17,11 @@ import { DEFAULT_LOCALE, toIssueLocale, type IssueLocale } from '#shared/integra
 import type {
   ExistingIssueCandidate,
   IssueDraft,
+  IssueEntityType,
   IssueIncludeOptions,
   TrackerSummary,
 } from '#shared/integrations/types';
-import { buildClusterIssue, buildExecutionIssue, type BuiltClusterIssue } from './documents';
+import { buildBugReportIssue, buildClusterIssue, buildExecutionIssue, type BuiltClusterIssue } from './documents';
 import { clusterShareTokenMinter } from './share-url';
 import { getConnectionRow, getProjectBinding, listTrackerConnections, trackerForRow } from './connections';
 import { bindingRowToResolved } from './binding';
@@ -30,11 +31,12 @@ import { findFixedBefore } from '../cluster-memory';
 import { statusColorForCategory } from './types';
 import type { IssueTracker, TrackerIssue } from './types';
 
-export type DraftEntityType = 'failure_cluster' | 'test_runs_case';
+export type DraftEntityType = IssueEntityType;
 
 /** The cluster an entity belongs to (itself for a cluster, its cluster for an execution). */
 async function resolveClusterId(db: DbClient, entityType: DraftEntityType, entityId: number): Promise<number | null> {
   if (entityType === 'failure_cluster') return entityId;
+  if (entityType === 'bug_report') return null;
   const [row] = await db
     .select({ clusterId: testRunsCases.failureClusterId })
     .from(testRunsCases)
@@ -161,6 +163,8 @@ export async function buildIssueDraft(
   const connections: TrackerSummary[] = await listTrackerConnections(db);
   if (!connections.length) return null;
 
+  if (entityType === 'bug_report') return buildBugReportDraft(db, entityId, connections, opts);
+
   const clusterId = await resolveClusterId(db, entityType, entityId);
   if (clusterId == null) return null;
 
@@ -172,9 +176,11 @@ export async function buildIssueDraft(
   )[0]?.projectId;
   if (projectId == null) return null;
 
-  const chosenId = opts.connectionId ?? connections[0]!.id;
   const bindingRow = await getProjectBinding(db, projectId);
   const resolved = bindingRowToResolved(bindingRow);
+  // The requested connection, else the one the project is bound to, else the first.
+  const bound = connections.find((c) => c.id === resolved.connectionId)?.id;
+  const chosenId = opts.connectionId ?? bound ?? connections[0]!.id;
   const chosenRow = await getConnectionRow(db, chosenId);
   const include = { ...resolved.include, ...(opts.include ?? {}) };
   const locale = resolveLocale(bindingRow, chosenRow, opts.locale);
@@ -229,9 +235,63 @@ export async function buildIssueDraft(
     labels,
     assignee: route?.assigneeAccountId ?? resolved.defaultAssignee,
     locale,
+    fieldValues: resolved.fieldDefaults,
     include,
     markdown: renderMarkdown(built.document),
     document: built.document,
     existing: candidates,
+  };
+}
+
+/** The draft for a bug report: its own document and labels, and any ticket already linked to it. */
+async function buildBugReportDraft(
+  db: DbClient,
+  bugReportId: number,
+  connections: TrackerSummary[],
+  opts: DraftOptions,
+): Promise<IssueDraft | null> {
+  const [report] = await db
+    .select({ projectId: bugReports.projectId })
+    .from(bugReports)
+    .where(eq(bugReports.id, bugReportId));
+  if (!report) return null;
+  const bindingRow = await getProjectBinding(db, report.projectId);
+  const resolved = bindingRowToResolved(bindingRow);
+  const bound = connections.find((c) => c.id === resolved.connectionId)?.id;
+  const chosenId = opts.connectionId ?? bound ?? connections[0]!.id;
+  const chosenRow = await getConnectionRow(db, chosenId);
+  const locale = resolveLocale(bindingRow, chosenRow, opts.locale);
+  const built = await buildBugReportIssue(db, bugReportId, { locale, siteUrl: opts.siteUrl });
+  if (!built) return null;
+  const linked = await db
+    .select()
+    .from(entityLinks)
+    .where(and(eq(entityLinks.bugReportId, bugReportId), isNotNull(entityLinks.key)));
+  return {
+    entityType: 'bug_report',
+    entityId: bugReportId,
+    clusterId: null,
+    title: built.title,
+    connectionId: chosenId,
+    connections,
+    projectKey: resolved.projectKey,
+    issueType: resolved.issueType,
+    labels: [...new Set([...resolved.labels, ...built.labels])],
+    assignee: resolved.defaultAssignee,
+    locale,
+    fieldValues: resolved.fieldDefaults,
+    include: { ...resolved.include, ...(opts.include ?? {}) },
+    markdown: renderMarkdown(built.document),
+    document: built.document,
+    existing: linked
+      .filter((l) => l.provider === 'jira' || l.connectionId != null)
+      .map((l) => ({
+        key: l.key ?? '',
+        url: l.url,
+        title: l.title ?? null,
+        statusText: l.statusText ?? null,
+        statusColor: l.statusColor ?? null,
+        reason: 'linked' as const,
+      })),
   };
 }

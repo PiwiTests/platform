@@ -1,0 +1,5272 @@
+{
+  "extDescription": {
+    "message": "Stabile, sortierte Playwright-Locators für jedes Element der Seite, bewertet wie im Piwi-Dashboard."
+  },
+  "pickElementCommand": {
+    "message": "Den Locator eines Elements der Seite ermitteln"
+  },
+  "common_languageTag": {
+    "message": "de"
+  },
+  "common_recordingStartFailed": {
+    "message": "Die Aufzeichnung konnte nicht starten."
+  },
+  "common_screenshotNoTab": {
+    "message": "Es gibt keinen Tab zum Aufnehmen."
+  },
+  "common_screenshotTabHidden": {
+    "message": "Der Tab ist nicht der im Vordergrund."
+  },
+  "common_noProject": {
+    "message": "Es gibt kein Projekt zum Aktualisieren."
+  },
+  "common_notConnected": {
+    "message": "Piwi Picker ist mit keiner Piwi-Instanz verbunden."
+  },
+  "common_catalogRefreshFailed": {
+    "message": "Der Funktionskatalog konnte nicht aktualisiert werden."
+  },
+  "common_locatorIndexFailed": {
+    "message": "Die getesteten Elemente konnten nicht heruntergeladen werden."
+  },
+  "common_replayNeedsPage": {
+    "message": "Ein Bug-Report wird auf einer Webseite abgespielt."
+  },
+  "common_replayNotSteps": {
+    "message": "Diese Datei enthält nicht die Schritte eines Bug-Reports: $error$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "`steps[3].action` is not a step action"
+      }
+    }
+  },
+  "common_replayNoSteps": {
+    "message": "Der Bug-Report enthält keine Schritte."
+  },
+  "common_replayNeedsAccess": {
+    "message": "Piwi Picker braucht Zugriff auf diese Website, um das Abspielen von Seite zu Seite zu verfolgen. Öffnen Sie Piwi Picker in diesem Tab und wählen Sie Bug-Report abspielen."
+  },
+  "common_replayStartFailed": {
+    "message": "Der Bug-Report konnte nicht abgespielt werden."
+  },
+  "common_sendForbidden": {
+    "message": "Ihr Konto kann keine Berichte an dieses Projekt senden."
+  },
+  "common_sendTooLarge": {
+    "message": "der Bericht ist für die Instanz zu groß. Lassen Sie einen Screenshot weg und versuchen Sie es erneut."
+  },
+  "common_sendRefused": {
+    "message": "die Instanz hat ihn abgelehnt ($error$).",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "Not a bug report: steps: must be a list"
+      }
+    }
+  },
+  "common_bugReportsUnsupported": {
+    "message": "diese Piwi-Instanz nimmt noch keine Bug-Reports an. Aktualisieren Sie sie."
+  },
+  "common_workerNoAnswer": {
+    "message": "Der Hintergrundprozess von Piwi Picker hat nicht geantwortet: Laden Sie Piwi Picker neu."
+  },
+  "common_enterInstanceUrl": {
+    "message": "Geben Sie zuerst die Adresse Ihrer Piwi-Instanz ein."
+  },
+  "common_apiKeyRejected": {
+    "message": "Die Instanz hat den API-Schlüssel abgelehnt: Prüfen Sie ihn."
+  },
+  "common_instanceStatus": {
+    "message": "Die Instanz hat mit einem Fehler geantwortet ($status$).",
+    "placeholders": {
+      "status": {
+        "content": "$1",
+        "example": "500"
+      }
+    }
+  },
+  "common_instanceUnreachable": {
+    "message": "Piwi Picker konnte die Instanz nicht erreichen: Prüfen Sie die Adresse und ob die Instanz läuft."
+  },
+  "common_desktopUnreachable": {
+    "message": "Die Desktop-App antwortet nicht. Läuft sie?"
+  },
+  "common_desktopRejected": {
+    "message": "Die Desktop-App hat das Token abgelehnt."
+  },
+  "common_desktopUnsupported": {
+    "message": "Diese Adresse ist keine Piwi-Desktop-App, die Fehlerberichte ausführen kann."
+  },
+  "common_desktopStatus": {
+    "message": "Die Desktop-App hat mit $status$ geantwortet.",
+    "placeholders": {
+      "status": {
+        "content": "$1",
+        "example": "500"
+      }
+    }
+  },
+  "common_projectsFailed": {
+    "message": "Die Projektliste konnte nicht gelesen werden ($status$).",
+    "placeholders": {
+      "status": {
+        "content": "$1",
+        "example": "500"
+      }
+    }
+  },
+  "common_catalogFailed": {
+    "message": "Der Funktionskatalog konnte nicht heruntergeladen werden ($status$).",
+    "placeholders": {
+      "status": {
+        "content": "$1",
+        "example": "500"
+      }
+    }
+  },
+  "common_projectKeyRejected": {
+    "message": "Die Instanz hat den API-Schlüssel für dieses Projekt abgelehnt."
+  },
+  "common_noLocatorIndex": {
+    "message": "Diese Piwi-Instanz hat keinen Locator-Index für das Projekt: Aktualisieren Sie Piwi oder prüfen Sie das Projekt."
+  },
+  "common_locatorIndexStatus": {
+    "message": "Der Locator-Index konnte nicht heruntergeladen werden ($status$).",
+    "placeholders": {
+      "status": {
+        "content": "$1",
+        "example": "500"
+      }
+    }
+  },
+  "common_locatorIndexInvalid": {
+    "message": "Die Instanz hat mit etwas geantwortet, das kein Locator-Index ist."
+  },
+  "badge_recording": {
+    "message": "REC"
+  },
+  "badge_bug": {
+    "message": "BUG"
+  },
+  "badge_replay": {
+    "message": "PLAY"
+  },
+  "popup_settings": {
+    "message": "Einstellungen"
+  },
+  "popup_workerNotice": {
+    "message": "Piwi Picker wurde seit dem Laden neu gebaut, und ein Teil läuft noch mit der vorherigen Version: Manche Werkzeuge antworten nicht. Neu laden beendet eine laufende Aufzeichnung."
+  },
+  "popup_reload": {
+    "message": "Piwi Picker neu laden"
+  },
+  "popup_activeProject": {
+    "message": "Aktives Projekt"
+  },
+  "popup_autoMatched": {
+    "message": "Automatisch (nach der Adresse der Seite)"
+  },
+  "popup_autoNoMatch": {
+    "message": "Automatisch (kein Projekt passt zu dieser Seite)"
+  },
+  "popup_noProjectHere": {
+    "message": "Kein Projekt passt zu dieser Website."
+  },
+  "popup_addSite": {
+    "message": "Website hinzufügen"
+  },
+  "popup_addSiteTitle": {
+    "message": "Einstellungen mit dem Muster dieser Website öffnen"
+  },
+  "popup_testedElements": {
+    "message": "Getestete Elemente"
+  },
+  "popup_testedElementsHint": {
+    "message": "Was Ihre Tests auf dieser Seite erreichen und was nicht"
+  },
+  "popup_testedElementsConnect": {
+    "message": "Verbinden Sie Piwi, um zu sehen, was Ihre Tests erreichen"
+  },
+  "popup_playwrightView": {
+    "message": "Playwright-Ansicht"
+  },
+  "popup_saveLogin": {
+    "message": "Anmeldung für Tests speichern"
+  },
+  "popup_viewport": {
+    "message": "Diese Seite mit einem Viewport öffnen"
+  },
+  "popup_viewportProject": {
+    "message": "$project$ ($size$)",
+    "placeholders": {
+      "project": {
+        "content": "$1",
+        "example": "Mobile Safari"
+      },
+      "size": {
+        "content": "$2",
+        "example": "390×844"
+      }
+    }
+  },
+  "popup_viewportCustom": {
+    "message": "Manuell eingegebene Größe"
+  },
+  "popup_viewportWidth": {
+    "message": "Breite"
+  },
+  "popup_viewportHeight": {
+    "message": "Höhe"
+  },
+  "popup_viewportOnly": {
+    "message": "Nur der Viewport: kein Touch, keine Pixeldichte, kein User-Agent."
+  },
+  "popup_viewportHere": {
+    "message": "In diesem Tab"
+  },
+  "popup_viewportHereOn": {
+    "message": "Dieser Tab zeigt seine Seite in $size$.",
+    "placeholders": {
+      "size": {
+        "content": "$1",
+        "example": "390×844"
+      }
+    }
+  },
+  "popup_viewportReset": {
+    "message": "Zurück zur Fenstergröße"
+  },
+  "popup_viewportHereUnavailable": {
+    "message": "Dieser Browser gibt Erweiterungen kein Debugging-Protokoll, um den Viewport des Tabs selbst festzulegen: Öffnen Sie stattdessen ein Fenster."
+  },
+  "popup_viewportHereRefused": {
+    "message": "Der Browser hat die Debugging-Sitzung abgelehnt: $error$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "Another debugger is already attached to the tab."
+      }
+    }
+  },
+  "popup_viewportInvalid": {
+    "message": "Öffnen Sie eine Webseite, mit Breite und Höhe zwischen $min$ und $max$ Pixeln.",
+    "placeholders": {
+      "max": {
+        "content": "$1",
+        "example": "4000"
+      },
+      "min": {
+        "content": "$2",
+        "example": "200"
+      }
+    }
+  },
+  "popup_reportBug": {
+    "message": "Bug melden"
+  },
+  "popup_reportBugHint": {
+    "message": "Schritte und was falsch ist → ein roter Test"
+  },
+  "popup_replayBug": {
+    "message": "Bug-Report abspielen"
+  },
+  "popup_replayBugHint": {
+    "message": "Seine Schritte hier abspielen, mit Cursor"
+  },
+  "popup_record": {
+    "message": "Aufzeichnen"
+  },
+  "popup_recordHint": {
+    "message": "Aktionen → ein Test"
+  },
+  "popup_pick": {
+    "message": "Element wählen"
+  },
+  "popup_pickHint": {
+    "message": "Stabile Locators"
+  },
+  "popup_multiPick": {
+    "message": "Mehrfachauswahl"
+  },
+  "popup_multiPickHint": {
+    "message": "2–3 Einträge → Liste"
+  },
+  "popup_lint": {
+    "message": "Prüfung"
+  },
+  "popup_lintHint": {
+    "message": "Kaum testbare Elemente"
+  },
+  "popup_assertions": {
+    "message": "Assertions"
+  },
+  "popup_assertionsHint": {
+    "message": "expect(…)-Zeilen"
+  },
+  "popup_agentContext": {
+    "message": "KI-Kontext"
+  },
+  "popup_agentContextHint": {
+    "message": "Kurzinfo für eine KI"
+  },
+  "popup_testFunctions": {
+    "message": "Testfunktionen"
+  },
+  "popup_testFunctionsHint": {
+    "message": "Katalog hier prüfen"
+  },
+  "popup_moreTools": {
+    "message": "Weitere Werkzeuge"
+  },
+  "popup_devtoolsNote": {
+    "message": "Die Locator-Konsole, die Session, Netzwerk-Mocks, Viewports, die Playwright-Ansicht und Anmeldung speichern sind in DevTools, im Piwi-Panel."
+  },
+  "popup_running": {
+    "message": "läuft"
+  },
+  "popup_pickShortcut": {
+    "message": "$shortcut$ wählt ein Element ohne dieses Menü",
+    "placeholders": {
+      "shortcut": {
+        "content": "$1",
+        "example": "Ctrl+Shift+E"
+      }
+    }
+  },
+  "popup_noPickShortcut": {
+    "message": "Kein Tastenkürzel zum Auswählen: jetzt festlegen"
+  },
+  "popup_docs": {
+    "message": "Doku"
+  },
+  "popup_noTab": {
+    "message": "Es gibt keinen aktiven Tab, in dem gearbeitet werden kann."
+  },
+  "popup_cannotRun": {
+    "message": "Piwi Picker kann auf dieser Seite nicht arbeiten: Browser schützen ihre eigenen Seiten und die Erweiterungs-Stores."
+  },
+  "popup_tabShowsError": {
+    "message": "Dieser Tab zeigt statt der Website eine Fehlerseite. Läuft die Website? Laden Sie den Tab neu, sobald sie läuft, und versuchen Sie es erneut."
+  },
+  "popup_blockedByPolicy": {
+    "message": "Die Browser-Einstellungen Ihrer Organisation sperren Erweiterungen auf dieser Website."
+  },
+  "popup_buildIncomplete": {
+    "message": "Dieser Version von Piwi Picker fehlt die Datei $file$. Bauen Sie die Erweiterung neu und laden Sie sie auf der Erweiterungsseite des Browsers neu.",
+    "placeholders": {
+      "file": {
+        "content": "$1",
+        "example": "replay-panel.js"
+      }
+    }
+  },
+  "popup_cannotRunBecause": {
+    "message": "Piwi Picker kann auf dieser Seite nicht arbeiten. Der Browser meldet: $reason$",
+    "placeholders": {
+      "reason": {
+        "content": "$1",
+        "example": "Cannot access contents of the page."
+      }
+    }
+  },
+  "popup_stopRecording": {
+    "message": "Aufzeichnung beenden ($count$)",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "popup_finishBugReport": {
+    "message": "Bug-Report abschließen ($count$)",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "popup_stepsSoFar": {
+    "message": "Bisher aufgezeichnete Schritte"
+  },
+  "popup_reviewRecording": {
+    "message": "Aufzeichnung ansehen ($count$)",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "popup_reviewBugReport": {
+    "message": "Bug-Report ansehen"
+  },
+  "popup_notExported": {
+    "message": "Noch nicht exportiert"
+  },
+  "popup_takeScreenshot": {
+    "message": "Screenshot aufnehmen"
+  },
+  "popup_screenshotHint_one": {
+    "message": "Fügt diesen Tab, wie er jetzt ist, dem Bug-Report hinzu (bisher $count$ Ereignis)",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "12"
+      }
+    }
+  },
+  "popup_screenshotHint_other": {
+    "message": "Fügt diesen Tab, wie er jetzt ist, dem Bug-Report hinzu (bisher $count$ Ereignisse)",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "12"
+      }
+    }
+  },
+  "popup_reviewBugReportHint": {
+    "message": "Den fehlschlagenden Test oder den Bericht kopieren oder herunterladen"
+  },
+  "popup_finishFirst": {
+    "message": "Beenden oder verwerfen Sie zuerst die laufende Aufzeichnung"
+  },
+  "popup_finishBeforeBug": {
+    "message": "Beenden oder verwerfen Sie die laufende Aufzeichnung, bevor Sie einen Bug melden."
+  },
+  "popup_permissionNeeded": {
+    "message": "Piwi Picker braucht Zugriff auf diese Website, um von Seite zu Seite aufzuzeichnen."
+  },
+  "popup_cannotRecord": {
+    "message": "Piwi Picker kann auf dieser Seite nicht aufzeichnen."
+  },
+  "popup_cannotReplay": {
+    "message": "Piwi Picker kann auf dieser Seite keinen Bug-Report abspielen."
+  },
+  "popup_notRecordedTab": {
+    "message": "Dieser Tab ist nicht der, der aufgezeichnet wird."
+  },
+  "popup_stateUnreadable": {
+    "message": "Piwi Picker konnte nicht feststellen, ob eine Aufzeichnung läuft: Öffnen Sie das Menü erneut."
+  },
+  "options_title": {
+    "message": "Einstellungen von Piwi Picker"
+  },
+  "options_language": {
+    "message": "Sprache"
+  },
+  "options_languageBrowser": {
+    "message": "Wie der Browser ($language$)",
+    "placeholders": {
+      "language": {
+        "content": "$1",
+        "example": "English"
+      }
+    }
+  },
+  "options_languageHint": {
+    "message": "Die Sprache der Texte von Piwi Picker. Texte der Seiten, Locators und die erzeugten Tests bleiben, wie sie sind."
+  },
+  "options_draftNote": {
+    "message": "Diese Übersetzung ist ein Entwurf: Muttersprachler haben sie noch nicht geprüft. $link$",
+    "placeholders": {
+      "link": {
+        "content": "$1",
+        "example": "Suggest a correction"
+      }
+    }
+  },
+  "options_draftNoteLink": {
+    "message": "Korrektur vorschlagen"
+  },
+  "options_languageSaved": {
+    "message": "Sprache gespeichert."
+  },
+  "options_languageFailed": {
+    "message": "Die Sprache konnte nicht geändert werden: $error$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "Failed to fetch"
+      }
+    }
+  },
+  "options_connectHeading": {
+    "message": "Mit Piwi verbinden"
+  },
+  "options_stateConnected": {
+    "message": "Verbunden"
+  },
+  "options_stateNotConnected": {
+    "message": "Nicht verbunden"
+  },
+  "options_statePaired": {
+    "message": "Gekoppelt"
+  },
+  "options_stateNotPaired": {
+    "message": "Nicht gekoppelt"
+  },
+  "options_lead": {
+    "message": "Optional. Mit Ihrer Piwi-Instanz verbunden, nutzt der Recorder die Page Objects und Hilfsfunktionen Ihrer Projekte und sortiert sie live während der Aufzeichnung. Locators auswählen und einen einfachen Test aufzeichnen funktioniert immer auch ohne Verbindung."
+  },
+  "options_instanceUrl": {
+    "message": "Adresse Ihrer Piwi-Instanz"
+  },
+  "options_instanceUrlPlaceholder": {
+    "message": "https://piwi.example.de"
+  },
+  "options_apiKey": {
+    "message": "API-Schlüssel"
+  },
+  "options_apiKeyHint": {
+    "message": "Erstellen Sie einen im Piwi-Dashboard, in den API-Schlüssel-Einstellungen Ihres Kontos."
+  },
+  "options_apiKeySave": {
+    "message": "Speichern und testen"
+  },
+  "options_mappingsHeading": {
+    "message": "Projekte je Website"
+  },
+  "options_mappingsHint": {
+    "message": "Welches Projekt auf welcher Website gilt. Die Muster dieses Browsers werden zuerst gelesen, dann die Ihrer Instanz, und das erste passende gewinnt. $star$ passt innerhalb eines Pfadteils, $globstar$ über mehrere Teile hinweg. Der Branch ist optional: der unter diesen Adressen bereitgestellte (etwa eine Staging-Website auf $example$). Getestete Elemente zeigt dann, was die Tests dieses Branches erreichen.",
+    "placeholders": {
+      "example": {
+        "content": "$1",
+        "example": "develop"
+      },
+      "globstar": {
+        "content": "$2",
+        "example": "**"
+      },
+      "star": {
+        "content": "$3",
+        "example": "*"
+      }
+    }
+  },
+  "options_sitesConnectFirst": {
+    "message": "Websites gehören zu den Projekten Ihrer Instanz: Verbinden Sie sich zuerst."
+  },
+  "options_addMapping": {
+    "message": "+ Zeile hinzufügen"
+  },
+  "options_noMappings": {
+    "message": "Noch keine Zeilen: Fügen Sie unten eine hinzu."
+  },
+  "options_pattern": {
+    "message": "Adressmuster"
+  },
+  "options_patternPlaceholder": {
+    "message": "https://shop.example.de/**"
+  },
+  "options_project": {
+    "message": "Projekt"
+  },
+  "options_projectTestFirst": {
+    "message": "Projekte noch nicht gelesen"
+  },
+  "options_projectChoose": {
+    "message": "Projekt wählen…"
+  },
+  "options_branch": {
+    "message": "Dort bereitgestellter Branch"
+  },
+  "options_branchPlaceholder": {
+    "message": "Standard-Branch"
+  },
+  "options_branchTitle": {
+    "message": "Der unter diesen Adressen bereitgestellte Branch: Getestete Elemente zeigt, was seine Tests erreichen"
+  },
+  "options_pathPrefix": {
+    "message": "Pfadpräfix"
+  },
+  "options_pathPrefixPlaceholder": {
+    "message": "kein Pfadpräfix"
+  },
+  "options_pathPrefixTitle": {
+    "message": "Ihre Website liefert die Seiten unter diesem Pfad aus, die Tests nicht, z. B. /app"
+  },
+  "options_pathPrefixInvalid": {
+    "message": "$prefix$ ist kein Pfadpräfix: Schreiben Sie einen einfachen Pfad wie /app, ohne Query, Hash oder Platzhalter, mit höchstens 4 Teilen.",
+    "placeholders": {
+      "prefix": {
+        "content": "$1",
+        "example": "/app"
+      }
+    }
+  },
+  "options_testPathPrefix": {
+    "message": "Pfadpräfix der Tests"
+  },
+  "options_testPathPrefixPlaceholder": {
+    "message": "kein Präfix der Tests"
+  },
+  "options_testPathPrefixTitle": {
+    "message": "Die Tests haben die Seiten unter diesem Pfad aufgerufen, Ihre Website nicht, z. B. /app"
+  },
+  "options_removeMapping": {
+    "message": "Diese Zeile entfernen"
+  },
+  "options_save": {
+    "message": "Speichern"
+  },
+  "options_disconnect": {
+    "message": "Trennen"
+  },
+  "options_privacy": {
+    "message": "Nur von dieser Seite aus verwendet: Der API-Schlüssel erreicht nie die Skripte einer Webseite. Aufgezeichnete Schritte gehen nirgendwohin, außer Sie kopieren sie, laden sie herunter oder senden sie an Ihren gekoppelten Editor oder Ihre gekoppelte Desktop-App. Die Verbindung lädt die Adressmuster Ihrer Projekte, den Funktionskatalog jedes zugeordneten Projekts und die Elemente herunter, die seine Tests erreichen; eine Website hinzuzufügen sendet nur ihr Muster."
+  },
+  "options_testing": {
+    "message": "Wird getestet…"
+  },
+  "options_desktopHeading": {
+    "message": "Desktop-App"
+  },
+  "options_desktopHint": {
+    "message": "Optional. Mit der Desktop-App Piwi Dashboard gekoppelt, kann Wiedergabe sie bitten, einen Fehlerbericht mit Playwright in Ihrem Projekt auszuführen."
+  },
+  "options_desktopUrl": {
+    "message": "Adresse der Desktop-App"
+  },
+  "options_desktopUrlHint": {
+    "message": "Steht auf der Einrichtungsseite der App, unter Piwi Picker verbinden. Koppeln bittet das Fenster der App, Piwi Picker zuzulassen."
+  },
+  "options_desktopPair": {
+    "message": "Koppeln"
+  },
+  "options_desktopManual": {
+    "message": "Von Hand koppeln"
+  },
+  "options_desktopToken": {
+    "message": "Token"
+  },
+  "options_desktopManualHint": {
+    "message": "Das Token steht auf der Einrichtungsseite der App, unter Piwi Picker verbinden, neben ihrer Adresse."
+  },
+  "options_desktopSave": {
+    "message": "Speichern und testen"
+  },
+  "options_desktopForget": {
+    "message": "Entkoppeln"
+  },
+  "options_desktopPairedAt": {
+    "message": "Mit der Desktop-App unter $url$ gekoppelt.",
+    "placeholders": {
+      "url": {
+        "content": "$1",
+        "example": "http://127.0.0.1:3000"
+      }
+    }
+  },
+  "options_desktopPairStarting": {
+    "message": "Anfrage an die Desktop-App…"
+  },
+  "options_desktopPairCode": {
+    "message": "Lassen Sie Piwi Picker im Fenster der Desktop-App zu, nachdem Sie geprüft haben, dass dort $code$ steht.",
+    "placeholders": {
+      "code": {
+        "content": "$1",
+        "example": "BCDF-GHJK"
+      }
+    }
+  },
+  "options_desktopPairNoWindow": {
+    "message": "Öffnen Sie das Fenster der Desktop-App: Die Anfrage wartet dort auf Sie."
+  },
+  "options_desktopPairDenied": {
+    "message": "Das Koppeln wurde in der Desktop-App abgelehnt."
+  },
+  "options_desktopPairExpired": {
+    "message": "Die Anfrage ist abgelaufen, bevor sie zugelassen wurde. Klicken Sie auf Koppeln, um neu zu fragen."
+  },
+  "options_desktopPairCancelled": {
+    "message": "Koppeln abgebrochen."
+  },
+  "options_desktopPairUnreachable": {
+    "message": "Unter $url$ antwortet nichts. Läuft die Desktop-App? Ihre Einrichtungsseite zeigt ihre Adresse.",
+    "placeholders": {
+      "url": {
+        "content": "$1",
+        "example": "http://127.0.0.1:3000"
+      }
+    }
+  },
+  "options_desktopPairUnsupported": {
+    "message": "Was unter $url$ antwortet, kann nicht in einem Schritt koppeln: Prüfen Sie die Adresse auf der Einrichtungsseite der Desktop-App, aktualisieren Sie die App oder koppeln Sie von Hand.",
+    "placeholders": {
+      "url": {
+        "content": "$1",
+        "example": "http://127.0.0.1:3000"
+      }
+    }
+  },
+  "options_desktopPairTooMany": {
+    "message": "Im Fenster der Desktop-App warten schon drei Kopplungen: Beantworten Sie sie zuerst."
+  },
+  "options_desktopForgotten": {
+    "message": "Die Desktop-App ist nicht mehr gekoppelt."
+  },
+  "options_desktopNotLoopback": {
+    "message": "Geben Sie die Adresse der Desktop-App ein, etwa http://127.0.0.1:3000."
+  },
+  "options_desktopNeedsToken": {
+    "message": "Fügen Sie zuerst das Token von der Einrichtungsseite der App ein."
+  },
+  "options_desktopNeedsAccess": {
+    "message": "Erlauben Sie den Zugriff auf die Adresse der Desktop-App, um sie zu koppeln."
+  },
+  "options_accessDenied": {
+    "message": "Der Zugriff auf diese Instanz wurde verweigert: Erlauben Sie ihn, damit Piwi Picker Ihren Katalog lesen kann."
+  },
+  "options_connected_one": {
+    "message": "Verbunden: $count$ Projekt gefunden.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "options_connected_other": {
+    "message": "Verbunden: $count$ Projekte gefunden.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "options_saved_one": {
+    "message": "$count$ Zeile gespeichert.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "options_saved_other": {
+    "message": "$count$ Zeilen gespeichert.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "options_skipped_one": {
+    "message": "$count$ unvollständige Zeile übersprungen.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "options_skipped_other": {
+    "message": "$count$ unvollständige Zeilen übersprungen.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "options_plainHttp": {
+    "message": "Diese Instanz nutzt unverschlüsseltes HTTP: Der API-Schlüssel wird im Klartext übertragen."
+  },
+  "options_refreshDenied": {
+    "message": "Der Zugriff auf die Instanz wurde verweigert: Der Katalog wird nicht von selbst aktualisiert."
+  },
+  "options_cached": {
+    "message": "Katalog gespeichert: $functions$ aus $projects$.",
+    "placeholders": {
+      "functions": {
+        "content": "$1",
+        "example": "12 functions"
+      },
+      "projects": {
+        "content": "$2",
+        "example": "2 projects"
+      }
+    }
+  },
+  "options_functionCount_one": {
+    "message": "$count$ Funktion",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "12"
+      }
+    }
+  },
+  "options_functionCount_other": {
+    "message": "$count$ Funktionen",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "12"
+      }
+    }
+  },
+  "options_projectCount_one": {
+    "message": "$count$ Projekt",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "options_projectCount_other": {
+    "message": "$count$ Projekten",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "options_catalogsFailed_one": {
+    "message": "$count$ Katalog konnte nicht heruntergeladen werden.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "options_catalogsFailed_other": {
+    "message": "$count$ Kataloge konnten nicht heruntergeladen werden.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "options_disconnected": {
+    "message": "Getrennt."
+  },
+  "options_connect": {
+    "message": "Verbinden"
+  },
+  "options_connectHint": {
+    "message": "Öffnet Ihre Instanz in einem neuen Tab, wo Sie Piwi Picker zulassen; danach erhält es einen eigenen API-Schlüssel."
+  },
+  "options_connectStarting": {
+    "message": "Verbinden…"
+  },
+  "options_connectCode": {
+    "message": "Lassen Sie Piwi Picker im geöffneten Tab zu, nachdem Sie geprüft haben, dass dort $code$ steht.",
+    "placeholders": {
+      "code": {
+        "content": "$1",
+        "example": "BCDF-GHJK"
+      }
+    }
+  },
+  "options_connectCancel": {
+    "message": "Abbrechen"
+  },
+  "options_connectedAs": {
+    "message": "Verbunden als $name$.",
+    "placeholders": {
+      "name": {
+        "content": "$1",
+        "example": "Ada Lovelace"
+      }
+    }
+  },
+  "options_connectedNoAuth": {
+    "message": "Verbunden. Auf dieser Instanz ist die Anmeldung ausgeschaltet, daher ist kein API-Schlüssel nötig."
+  },
+  "options_connectDenied": {
+    "message": "Piwi Picker wurde auf Ihrer Instanz abgelehnt."
+  },
+  "options_connectExpired": {
+    "message": "Der Code ist abgelaufen, bevor er zugelassen wurde. Klicken Sie auf Verbinden, um neu zu beginnen."
+  },
+  "options_connectCancelled": {
+    "message": "Verbinden abgebrochen."
+  },
+  "options_connectUnsupported": {
+    "message": "Diese Instanz kann sich nicht in einem Schritt verbinden: Aktualisieren Sie sie oder verwenden Sie stattdessen einen API-Schlüssel."
+  },
+  "options_connectTooMany": {
+    "message": "Zu viele Verbindungsversuche von dieser Adresse. Warten Sie ein paar Minuten und versuchen Sie es erneut."
+  },
+  "options_useApiKey": {
+    "message": "Stattdessen einen API-Schlüssel verwenden"
+  },
+  "options_localHeading": {
+    "message": "Nur dieser Browser"
+  },
+  "options_serverHeading": {
+    "message": "Von Ihrer Piwi-Instanz"
+  },
+  "options_serverHint": {
+    "message": "In den Einstellungen jedes Projekts unter Browser extension URLs festgelegt und bei jedem Öffnen dieser Seite gelesen."
+  },
+  "options_serverRefresh": {
+    "message": "Aktualisieren"
+  },
+  "options_serverReading": {
+    "message": "Adressmuster werden von Ihrer Instanz gelesen…"
+  },
+  "options_serverEmpty": {
+    "message": "Ihre Instanz hat noch kein Adressmuster für Ihre Projekte."
+  },
+  "options_serverNotRead": {
+    "message": "Noch nicht gelesen: Verbinden Sie sich zuerst."
+  },
+  "options_serverSyncFailed": {
+    "message": "Die Muster Ihrer Instanz konnten nicht gelesen werden ($error$). Die zuletzt gelesenen gelten weiter.",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "The instance answered with an error (500)."
+      }
+    }
+  },
+  "options_serverUnsupported": {
+    "message": "Diese Instanz teilt keine Adressmuster: Aktualisieren Sie sie, um sie zu lesen."
+  },
+  "options_serverPatterns_one": {
+    "message": "$count$ Adressmuster von Ihrer Instanz.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "options_serverPatterns_other": {
+    "message": "$count$ Adressmuster von Ihrer Instanz.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "options_sourceServer": {
+    "message": "Piwi"
+  },
+  "options_serverPathPrefix": {
+    "message": "Pfadpräfix $prefix$",
+    "placeholders": {
+      "prefix": {
+        "content": "$1",
+        "example": "/app"
+      }
+    }
+  },
+  "options_serverTestPathPrefix": {
+    "message": "Pfadpräfix der Tests $prefix$",
+    "placeholders": {
+      "prefix": {
+        "content": "$1",
+        "example": "/app"
+      }
+    }
+  },
+  "options_addHeading": {
+    "message": "Website hinzufügen"
+  },
+  "options_addHint": {
+    "message": "Fügt das Muster einem Projekt auf Ihrer Instanz hinzu, für alle, die sich damit verbinden. Dafür braucht es eine Rolle, die das Projekt bearbeiten darf."
+  },
+  "options_environment": {
+    "message": "Umgebung"
+  },
+  "options_environmentPlaceholder": {
+    "message": "Umgebung (optional)"
+  },
+  "options_addToServer": {
+    "message": "Zu Piwi hinzufügen"
+  },
+  "options_addLocally": {
+    "message": "Nur in diesem Browser behalten"
+  },
+  "options_addNoEditable": {
+    "message": "Ihre Rolle darf auf dieser Instanz kein Projekt bearbeiten: Behalten Sie das Muster in diesem Browser oder bitten Sie die Administration, es hinzuzufügen."
+  },
+  "options_addNeedsPattern": {
+    "message": "Geben Sie zuerst ein Adressmuster ein."
+  },
+  "options_addNeedsProject": {
+    "message": "Wählen Sie zuerst ein Projekt."
+  },
+  "options_added": {
+    "message": "$pattern$ zu $project$ hinzugefügt.",
+    "placeholders": {
+      "pattern": {
+        "content": "$1",
+        "example": "https://staging.shop.example/**"
+      },
+      "project": {
+        "content": "$2",
+        "example": "Shop"
+      }
+    }
+  },
+  "options_addedLocally": {
+    "message": "Zu den Zeilen dieses Browsers hinzugefügt. Klicken Sie auf Speichern, um sie zu behalten."
+  },
+  "options_addDuplicate": {
+    "message": "Dieses Projekt hat dieses Muster bereits."
+  },
+  "options_addForbidden": {
+    "message": "Ihre Rolle darf dieses Projekt nicht bearbeiten."
+  },
+  "options_addInvalid": {
+    "message": "Beginnen Sie das Muster mit http://, https:// oder einem Platzhalter."
+  },
+  "options_editorHeading": {
+    "message": "An den Editor senden"
+  },
+  "options_editorHint": {
+    "message": "Führen Sie in VS Code oder einer JetBrains-IDE mit der Piwi-Erweiterung „Piwi: Pair with Piwi Picker“ aus und fügen Sie die kopierte Adresse hier ein. Gewählte Locators und aufgezeichnete Schritte können dann an diesen Editor gesendet werden, nur auf diesem Computer, und werden an seinem Cursor eingefügt."
+  },
+  "options_editorAddress": {
+    "message": "Kopplungsadresse"
+  },
+  "options_editorPair": {
+    "message": "Koppeln"
+  },
+  "options_editorUnpair": {
+    "message": "Entkoppeln"
+  },
+  "options_editorPaired": {
+    "message": "Mit dem Editor unter $url$ gekoppelt.",
+    "placeholders": {
+      "url": {
+        "content": "$1",
+        "example": "http://127.0.0.1:47211/piwi/send"
+      }
+    }
+  },
+  "options_editorInvalid": {
+    "message": "Das ist keine Kopplungsadresse. Sie sieht aus wie http://127.0.0.1:47211/piwi/send#… und kommt vom Befehl „Pair with Piwi Picker“ des Editors."
+  },
+  "options_editorPermission": {
+    "message": "Piwi Picker braucht die Berechtigung, den Editor auf diesem Computer zu erreichen."
+  },
+  "common_close": {
+    "message": "Schließen"
+  },
+  "common_copy": {
+    "message": "Kopieren"
+  },
+  "common_copied": {
+    "message": "Kopiert"
+  },
+  "common_sentToEditor": {
+    "message": "Gesendet"
+  },
+  "common_sendToEditorFailed": {
+    "message": "Nicht gesendet"
+  },
+  "common_cancel": {
+    "message": "Abbrechen"
+  },
+  "common_save": {
+    "message": "Speichern"
+  },
+  "common_stop": {
+    "message": "Stopp"
+  },
+  "common_discard": {
+    "message": "Verwerfen"
+  },
+  "common_refresh": {
+    "message": "Aktualisieren"
+  },
+  "common_refreshing": {
+    "message": "Wird aktualisiert…"
+  },
+  "common_escToClose": {
+    "message": "Esc zum Schließen"
+  },
+  "common_clickToCopy": {
+    "message": "Zum Kopieren klicken"
+  },
+  "console_expression": {
+    "message": "Locator zum Ausprobieren"
+  },
+  "console_unique": {
+    "message": "Ein Element: Strict Mode besteht"
+  },
+  "console_none": {
+    "message": "Kein Element gefunden"
+  },
+  "console_many_one": {
+    "message": "$count$ Element: Strict Mode schlägt fehl",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "console_many_other": {
+    "message": "$count$ Elemente: Strict Mode schlägt fehl",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "console_invalidCss": {
+    "message": "$selector$ ist kein CSS-Selektor, den diese Seite akzeptiert",
+    "placeholders": {
+      "selector": {
+        "content": "$1",
+        "example": "div::bad"
+      }
+    }
+  },
+  "console_unreadable": {
+    "message": "Die Konsole kann diesen Locator nicht lesen: $error$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "unterminated string"
+      }
+    }
+  },
+  "common_copyModeBare": {
+    "message": "Locator"
+  },
+  "common_copyModeAction": {
+    "message": "Aktion"
+  },
+  "common_copyModeExpect": {
+    "message": "Assertion"
+  },
+  "multipick_picked_one": {
+    "message": "$count$ ähnlicher Eintrag gewählt",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "multipick_picked_other": {
+    "message": "$count$ ähnliche Einträge gewählt",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "multipick_derive": {
+    "message": "Muster finden"
+  },
+  "multipick_pickMore": {
+    "message": "Noch einen wählen (höchstens $max$)",
+    "placeholders": {
+      "max": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "multipick_cancel": {
+    "message": "Mehrfachauswahl abbrechen"
+  },
+  "multipick_noPattern": {
+    "message": "Kein gemeinsames Muster gefunden. Wählen Sie gleichartige Einträge, etwa Zeilen derselben Tabelle oder Karten derselben Liste."
+  },
+  "multipick_dialog": {
+    "message": "Mehrfachauswahl: gemeinsames Muster"
+  },
+  "multipick_title_one": {
+    "message": "$count$ Locator auf Basis von $base$",
+    "placeholders": {
+      "base": {
+        "content": "$1",
+        "example": "getByRole('listitem')"
+      },
+      "count": {
+        "content": "$2",
+        "example": "3"
+      }
+    }
+  },
+  "multipick_title_other": {
+    "message": "$count$ Locators auf Basis von $base$",
+    "placeholders": {
+      "base": {
+        "content": "$1",
+        "example": "getByRole('listitem')"
+      },
+      "count": {
+        "content": "$2",
+        "example": "3"
+      }
+    }
+  },
+  "multipick_byPosition": {
+    "message": "⚠ Über die Position gefunden (nth): bricht, wenn sich die Reihenfolge der Liste ändert"
+  },
+  "lint_dialog": {
+    "message": "Prüfung: schwer ansteuerbare Elemente"
+  },
+  "lint_none": {
+    "message": "Kein schwer ansteuerbares Element"
+  },
+  "lint_found_one": {
+    "message": "$count$ schwer ansteuerbares Element",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "4"
+      }
+    }
+  },
+  "lint_found_other": {
+    "message": "$count$ schwer ansteuerbare Elemente",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "4"
+      }
+    }
+  },
+  "lint_close": {
+    "message": "Prüfung schließen"
+  },
+  "lint_allGood": {
+    "message": "Jeder Button, jeder Link und jedes Feld hier hat eine Test-ID, einen Namen oder einen festen Platz auf der Seite."
+  },
+  "lint_copyChecklist": {
+    "message": "Als Markdown-Checkliste kopieren"
+  },
+  "lint_role": {
+    "message": "Rolle $role$",
+    "placeholders": {
+      "role": {
+        "content": "$1",
+        "example": "button"
+      }
+    }
+  },
+  "lint_roleNamed": {
+    "message": "Rolle $role$, Name „$name$“",
+    "placeholders": {
+      "name": {
+        "content": "$1",
+        "example": "Save"
+      },
+      "role": {
+        "content": "$2",
+        "example": "button"
+      }
+    }
+  },
+  "assert_dialog": {
+    "message": "Vorgeschlagene Assertions"
+  },
+  "assert_count_one": {
+    "message": "$count$ vorgeschlagene Assertion",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "4"
+      }
+    }
+  },
+  "assert_count_other": {
+    "message": "$count$ vorgeschlagene Assertions",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "4"
+      }
+    }
+  },
+  "assert_none": {
+    "message": "Keine Assertion vorzuschlagen"
+  },
+  "assert_locator": {
+    "message": "Mit dem Locator $locator$",
+    "placeholders": {
+      "locator": {
+        "content": "$1",
+        "example": "getByTestId('submit-btn')"
+      }
+    }
+  },
+  "assert_noLocator": {
+    "message": "Für dieses Element wurde kein Locator gefunden, daher gibt es keine Assertion vorzuschlagen."
+  },
+  "agent_title": {
+    "message": "Kontext für einen KI-Agenten"
+  },
+  "agent_hint": {
+    "message": "Fügen Sie diesen Text in Ihren KI-Coding-Assistenten ein"
+  },
+  "session_remove": {
+    "message": "$name$ entfernen",
+    "placeholders": {
+      "name": {
+        "content": "$1",
+        "example": "submitButton"
+      }
+    }
+  },
+  "session_copyPageObject": {
+    "message": "Als Page Object kopieren (.ts)"
+  },
+  "session_copyMarkdown": {
+    "message": "Als Markdown-Tabelle kopieren"
+  },
+  "session_copyJson": {
+    "message": "Als JSON kopieren"
+  },
+  "session_clear": {
+    "message": "Liste leeren"
+  },
+  "session_nameLabel": {
+    "message": "Name für dieses Element"
+  },
+  "session_namePlaceholder": {
+    "message": "Name, z. B. submitButton"
+  },
+  "session_nameRequired": {
+    "message": "Geben Sie einen Namen ein."
+  },
+  "session_nameInvalid": {
+    "message": "Verwenden Sie nur Buchstaben ohne Umlaute und Akzente, Ziffern, _ oder $$, und beginnen Sie nicht mit einer Ziffer."
+  },
+  "session_nameTaken": {
+    "message": "„$name$“ ist schon in der Liste.",
+    "placeholders": {
+      "name": {
+        "content": "$1",
+        "example": "submitButton"
+      }
+    }
+  },
+  "pick_panelLabel": {
+    "message": "Locators des gewählten Elements"
+  },
+  "pick_title_one": {
+    "message": "$count$ Locator",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "4"
+      }
+    }
+  },
+  "pick_title_other": {
+    "message": "$count$ Locators, die stabilsten zuerst",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "4"
+      }
+    }
+  },
+  "pick_tabHint": {
+    "message": "Tab wechselt die Zeile"
+  },
+  "pick_copyAll_one": {
+    "message": "Alle kopieren ($count$)",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "4"
+      }
+    }
+  },
+  "pick_copyAll_other": {
+    "message": "Alle kopieren ($count$)",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "4"
+      }
+    }
+  },
+  "pick_copyAllHint": {
+    "message": "Alle Locators kopieren, einen pro Zeile, zum Einfügen auf der Seite Locators von Piwi, um die Tests zu finden, die sie verwenden"
+  },
+  "pick_score": {
+    "message": "Stabilitätswert: Je höher, desto seltener bricht der Locator, wenn sich die Seite ändert"
+  },
+  "pick_unique": {
+    "message": "Findet jetzt genau ein Element auf der Seite"
+  },
+  "pick_ambiguous_one": {
+    "message": "Findet jetzt $count$ Element: Fügen Sie $first$ oder $filter$ hinzu, um eines zu behalten",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "filter": {
+        "content": "$2",
+        "example": ".filter({ hasText: … })"
+      },
+      "first": {
+        "content": "$3",
+        "example": ".first()"
+      }
+    }
+  },
+  "pick_ambiguous_other": {
+    "message": "Findet jetzt $count$ Elemente: Fügen Sie $first$ oder $filter$ hinzu, um eines zu behalten",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "filter": {
+        "content": "$2",
+        "example": ".filter({ hasText: … })"
+      },
+      "first": {
+        "content": "$3",
+        "example": ".first()"
+      }
+    }
+  },
+  "pick_narrowed_one": {
+    "message": "Findet genau dieses Element: der eingegrenzte Locator findet $count$ Element",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "pick_narrowed_other": {
+    "message": "Findet genau dieses Element: der eingegrenzte Locator findet $count$ Elemente",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "pick_byPosition_one": {
+    "message": "Findet dieses Element über seine Position unter $count$: bricht, wenn sich ihre Reihenfolge ändert",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "pick_byPosition_other": {
+    "message": "Findet dieses Element über seine Position unter $count$: bricht, wenn sich ihre Reihenfolge ändert",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "pick_topPick": {
+    "message": "Beste Wahl: der stabilste Locator."
+  },
+  "pick_whereBranch": {
+    "message": "$project$ auf Branch $branch$",
+    "placeholders": {
+      "branch": {
+        "content": "$1",
+        "example": "develop"
+      },
+      "project": {
+        "content": "$2",
+        "example": "Acme Mugs"
+      }
+    }
+  },
+  "pick_whereAnyBranch": {
+    "message": "$project$, alle Branches",
+    "placeholders": {
+      "project": {
+        "content": "$1",
+        "example": "Acme Mugs"
+      }
+    }
+  },
+  "pick_checking": {
+    "message": "Suche nach Tests von $where$, die dieses Element erreichen…",
+    "placeholders": {
+      "where": {
+        "content": "$1",
+        "example": "Acme Mugs"
+      }
+    }
+  },
+  "pick_indexNotReady": {
+    "message": "Die getesteten Elemente dieses Projekts sind noch nicht verfügbar."
+  },
+  "pick_indexFailed": {
+    "message": "Die getesteten Elemente konnten nicht geladen werden: $error$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "The instance rejected the API key for this project."
+      }
+    }
+  },
+  "pick_testsOf": {
+    "message": "Tests von $where$",
+    "placeholders": {
+      "where": {
+        "content": "$1",
+        "example": "Acme Mugs"
+      }
+    }
+  },
+  "pick_findInPiwi": {
+    "message": "Diese Locators in Piwi suchen ↗"
+  },
+  "pick_showInside": {
+    "message": "Getestete Elemente darin zeigen"
+  },
+  "pick_showInsideHint": {
+    "message": "Getestete Elemente nur für dieses Element öffnen"
+  },
+  "pick_showAll": {
+    "message": "Alle getesteten Elemente zeigen"
+  },
+  "pick_showAllHint": {
+    "message": "Getestete Elemente auf dieser Seite öffnen"
+  },
+  "pick_groupSelf": {
+    "message": "Dieses Element"
+  },
+  "pick_groupInside_one": {
+    "message": "Darin · $count$ Element",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "pick_groupInside_other": {
+    "message": "Darin · $count$ Elemente",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "pick_groupAroundOne": {
+    "message": "Drumherum · $element$",
+    "placeholders": {
+      "element": {
+        "content": "$1",
+        "example": "article.card \"Blue mug\""
+      }
+    }
+  },
+  "pick_groupAround_one": {
+    "message": "Drumherum · $count$ Container",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "pick_groupAround_other": {
+    "message": "Drumherum · $count$ Container",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "pick_reachedBy_one": {
+    "message": "Erreicht von $count$ Test von $where$",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      },
+      "where": {
+        "content": "$2",
+        "example": "Acme Mugs"
+      }
+    }
+  },
+  "pick_reachedBy_other": {
+    "message": "Erreicht von $count$ Tests von $where$",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      },
+      "where": {
+        "content": "$2",
+        "example": "Acme Mugs"
+      }
+    }
+  },
+  "pick_notReached": {
+    "message": "Kein Test von $where$ erreicht dieses Element",
+    "placeholders": {
+      "where": {
+        "content": "$1",
+        "example": "Acme Mugs"
+      }
+    }
+  },
+  "pick_onlyAround": {
+    "message": "Kein Test findet dieses Element oder etwas darin. Diese Tests erreichen ein Element, das es umgibt."
+  },
+  "pick_noneHere": {
+    "message": "Kein Locator aus den Tests des Projekts findet dieses Element auf dieser Seite."
+  },
+  "pick_more_one": {
+    "message": "$count$ weiterer: Getestete Elemente zeigt alle.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "pick_more_other": {
+    "message": "$count$ weitere: Getestete Elemente zeigt alle.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "pick_brittle": {
+    "message": "Fragiler Locator: $locator$ · $reasons$",
+    "placeholders": {
+      "locator": {
+        "content": "$1",
+        "example": "locator('aside.cart > button')"
+      },
+      "reasons": {
+        "content": "$2",
+        "example": "CSS class · CSS structure"
+      }
+    }
+  },
+  "pick_useRankedInstead": {
+    "message": "Diese Tests könnten stattdessen einen der oben aufgeführten Locators verwenden."
+  },
+  "pick_sendToEditor": {
+    "message": "An den Editor senden"
+  },
+  "functions_title": {
+    "message": "Testfunktionen auf dieser Seite"
+  },
+  "functions_manage": {
+    "message": "Funktionen von $project$ in Piwi verwalten ↗",
+    "placeholders": {
+      "project": {
+        "content": "$1",
+        "example": "Acme Mugs"
+      }
+    }
+  },
+  "functions_refreshHint": {
+    "message": "Die Funktionen dieses Projekts erneut von Piwi herunterladen"
+  },
+  "functions_noProject": {
+    "message": "Für diese Website ist kein Piwi-Projekt festgelegt. Fügen Sie es unter Projekte je Website in den Einstellungen von Piwi Picker hinzu oder wählen Sie ein Projekt im Menü von Piwi Picker."
+  },
+  "functions_empty": {
+    "message": "$project$ hat noch keine Testfunktionen. Fügen Sie eine im Piwi-Dashboard hinzu oder erstellen Sie eine aus einer Aufzeichnung.",
+    "placeholders": {
+      "project": {
+        "content": "$1",
+        "example": "Acme Mugs"
+      }
+    }
+  },
+  "functions_refreshFailed": {
+    "message": "$error$ Angezeigt werden die zuletzt heruntergeladenen Funktionen.",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "The function catalog could not be refreshed."
+      }
+    }
+  },
+  "functions_ready": {
+    "message": "Hier einsatzbereit"
+  },
+  "functions_partial": {
+    "message": "Hier teilweise gefunden"
+  },
+  "functions_notFound": {
+    "message": "Nicht auf dieser Seite"
+  },
+  "functions_stepUnique": {
+    "message": "$action$() → ein Element",
+    "placeholders": {
+      "action": {
+        "content": "$1",
+        "example": "click"
+      }
+    }
+  },
+  "functions_stepAmbiguous_one": {
+    "message": "$action$() → $count$ Element, unklar welches",
+    "placeholders": {
+      "action": {
+        "content": "$1",
+        "example": "click"
+      },
+      "count": {
+        "content": "$2",
+        "example": "3"
+      }
+    }
+  },
+  "functions_stepAmbiguous_other": {
+    "message": "$action$() → $count$ Elemente, unklar welches",
+    "placeholders": {
+      "action": {
+        "content": "$1",
+        "example": "click"
+      },
+      "count": {
+        "content": "$2",
+        "example": "3"
+      }
+    }
+  },
+  "functions_stepMissing": {
+    "message": "$action$() → kein Element",
+    "placeholders": {
+      "action": {
+        "content": "$1",
+        "example": "click"
+      }
+    }
+  },
+  "record_hudTitle_one": {
+    "message": "Aufzeichnung: $count$ Schritt",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "4"
+      }
+    }
+  },
+  "record_hudTitle_other": {
+    "message": "Aufzeichnung: $count$ Schritte",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "4"
+      }
+    }
+  },
+  "record_lastLocator": {
+    "message": "Letzter Locator"
+  },
+  "record_matchingFunctions": {
+    "message": "Passende Testfunktionen"
+  },
+  "record_noMatch": {
+    "message": "Noch passt keine Testfunktion"
+  },
+  "record_matchReady": {
+    "message": "bereit"
+  },
+  "record_stepNotSaved": {
+    "message": "Ein Schritt konnte nicht gespeichert werden."
+  },
+  "record_storageFull": {
+    "message": "Kein Platz mehr zum Speichern der Schritte: Beenden Sie jetzt und exportieren Sie, was Sie haben. Neue Schritte gehen verloren."
+  },
+  "record_reviewLabel": {
+    "message": "Ihre Aufzeichnung"
+  },
+  "record_nothingRecorded": {
+    "message": "Nichts aufgezeichnet"
+  },
+  "record_stepsRecorded_one": {
+    "message": "$count$ Schritt aufgezeichnet",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "4"
+      }
+    }
+  },
+  "record_stepsRecorded_other": {
+    "message": "$count$ Schritte aufgezeichnet",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "4"
+      }
+    }
+  },
+  "record_stepsMatched_one": {
+    "message": "$count$ Schritt passt zu einer Ihrer Testfunktionen",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "record_stepsMatched_other": {
+    "message": "$count$ Schritte passen zu Ihren Testfunktionen",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "record_noFunctionMatches": {
+    "message": "Keine Ihrer Testfunktionen passt: Der Code verwendet nur Locators."
+  },
+  "record_notConnected": {
+    "message": "Nicht mit Piwi verbunden: Der Code verwendet nur Locators."
+  },
+  "record_noSteps": {
+    "message": "Es wurden keine Schritte aufgezeichnet."
+  },
+  "record_stepValue": {
+    "message": "$step$ = „$value$“",
+    "placeholders": {
+      "step": {
+        "content": "$1",
+        "example": "fill — Email"
+      },
+      "value": {
+        "content": "$2",
+        "example": "alice@example.com"
+      }
+    }
+  },
+  "record_copyCode": {
+    "message": "Als TypeScript kopieren"
+  },
+  "record_copyCodeWithFunctions": {
+    "message": "Als TypeScript kopieren (mit Ihren Funktionen)"
+  },
+  "record_copyCodeWithoutFunctions": {
+    "message": "Als TypeScript ohne Ihre Funktionen kopieren"
+  },
+  "record_downloadSteps": {
+    "message": "Schritte herunterladen"
+  },
+  "record_downloadStepsTitle": {
+    "message": "Speichert die Aufzeichnung als Schrittdatei, um sie zu teilen oder mit piwi codegen in einen Test umzuwandeln"
+  },
+  "record_sendToEditor": {
+    "message": "An den Editor senden"
+  },
+  "bug_reportLabel": {
+    "message": "Bug-Report von Piwi Picker"
+  },
+  "bug_hudTitle_one": {
+    "message": "Bug melden · $count$ Schritt",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "4"
+      }
+    }
+  },
+  "bug_hudTitle_other": {
+    "message": "Bug melden · $count$ Schritte",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "4"
+      }
+    }
+  },
+  "bug_mark": {
+    "message": "Fehler markieren"
+  },
+  "bug_markHint": {
+    "message": "Wählen Sie ein Element der Seite und sagen Sie, was es zeigen sollte"
+  },
+  "bug_missing": {
+    "message": "Etwas fehlt"
+  },
+  "bug_missingHint": {
+    "message": "Nennen Sie ein Element, das auf dieser Seite sein sollte und fehlt"
+  },
+  "bug_wrongPage": {
+    "message": "Falsche Seite"
+  },
+  "bug_wrongPageHint": {
+    "message": "Sagen Sie, auf welcher Seite Sie hätten landen sollen"
+  },
+  "bug_screenshot": {
+    "message": "Screenshot"
+  },
+  "bug_screenshotHint": {
+    "message": "Einen Screenshot der Seite in ihrem jetzigen Zustand hinzufügen"
+  },
+  "bug_debuggingOn": {
+    "message": "Chrome zeigt eine Leiste, dass Piwi Picker diesen Browser debuggt: Das ist dieser Bericht, der die Konsole, fehlgeschlagene Anfragen und Screenshots liest. Nichts verlässt Ihren Computer, und die Leiste verschwindet, wenn Sie fertig sind."
+  },
+  "bug_debuggingCanceled": {
+    "message": "Die Debugging-Leiste wurde abgebrochen: Der Bericht liest Konsole und Anfragen ab jetzt aus der Seite, und für einen Screenshot wählen Sie „$action$“ in Piwi Picker.",
+    "placeholders": {
+      "action": {
+        "content": "$1",
+        "example": "Take a screenshot"
+      }
+    }
+  },
+  "bug_debuggingRefused": {
+    "message": "Chrome hat die Debugging-Sitzung abgelehnt (ein anderer Debugger auf diesem Tab oder eine Richtlinie): Der Bericht liest Konsole und Anfragen aus der Seite, und für einen Screenshot wählen Sie „$action$“ in Piwi Picker.",
+    "placeholders": {
+      "action": {
+        "content": "$1",
+        "example": "Take a screenshot"
+      }
+    }
+  },
+  "bug_finish": {
+    "message": "Abschließen"
+  },
+  "bug_screenshotBlocked": {
+    "message": "Chrome lässt Piwi Picker erst einen Screenshot aufnehmen, nachdem Sie es in diesem Tab geöffnet haben. Öffnen Sie Piwi Picker und wählen Sie „$action$“.",
+    "placeholders": {
+      "action": {
+        "content": "$1",
+        "example": "Take a screenshot"
+      }
+    }
+  },
+  "bug_stepShows": {
+    "message": "zeigt „$text$“",
+    "placeholders": {
+      "text": {
+        "content": "$1",
+        "example": "Total: 50"
+      }
+    }
+  },
+  "bug_stepIs": {
+    "message": "ist $state$",
+    "placeholders": {
+      "state": {
+        "content": "$1",
+        "example": "hidden"
+      }
+    }
+  },
+  "bug_stepAbsent": {
+    "message": "nicht auf der Seite"
+  },
+  "bug_stateVisible": {
+    "message": "sichtbar"
+  },
+  "bug_stateHidden": {
+    "message": "ausgeblendet"
+  },
+  "bug_stateEnabled": {
+    "message": "nutzbar"
+  },
+  "bug_stateDisabled": {
+    "message": "ausgegraut"
+  },
+  "bug_addToReport": {
+    "message": "Zum Bericht hinzufügen"
+  },
+  "bug_onElement": {
+    "message": "Element: $locator$",
+    "placeholders": {
+      "locator": {
+        "content": "$1",
+        "example": "getByTestId('cart-total')"
+      }
+    }
+  },
+  "bug_whatsWrong": {
+    "message": "Was falsch ist"
+  },
+  "bug_itsValue": {
+    "message": "Sein Wert"
+  },
+  "bug_itsText": {
+    "message": "Sein Text"
+  },
+  "bug_itsName": {
+    "message": "Sein Name, wie Screenreader ihn ansagen"
+  },
+  "bug_shouldBeVisible": {
+    "message": "Es sollte sichtbar sein"
+  },
+  "bug_shouldBeHidden": {
+    "message": "Es sollte ausgeblendet sein"
+  },
+  "bug_shouldBeEnabled": {
+    "message": "Es sollte nutzbar sein, nicht ausgegraut"
+  },
+  "bug_shouldBeDisabled": {
+    "message": "Es sollte ausgegraut sein, nicht nutzbar"
+  },
+  "bug_pageShows": {
+    "message": "Die Seite zeigt"
+  },
+  "bug_shouldShow": {
+    "message": "Was es zeigen sollte"
+  },
+  "bug_note": {
+    "message": "Notiz"
+  },
+  "bug_notePlaceholder": {
+    "message": "Was passiert ist, in Ihren Worten (optional)"
+  },
+  "bug_sameAsPage": {
+    "message": "Das zeigt die Seite bereits. Geben Sie ein, was sie stattdessen zeigen sollte."
+  },
+  "bug_whatShouldBeThere": {
+    "message": "Was da sein sollte"
+  },
+  "bug_itsNameLabel": {
+    "message": "Sein Name"
+  },
+  "bug_namePlaceholder": {
+    "message": "Sein Name, wie er auf der Seite steht: Rechnung herunterladen"
+  },
+  "bug_nameRequired": {
+    "message": "Geben Sie seinen Namen ein, wie er auf der Seite stehen würde."
+  },
+  "bug_alreadyThere_one": {
+    "message": "$count$ solches Element ist schon auf der Seite: Sagen Sie mit „$mark$“, was daran falsch ist.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      },
+      "mark": {
+        "content": "$2",
+        "example": "Mark what’s wrong"
+      }
+    }
+  },
+  "bug_alreadyThere_other": {
+    "message": "$count$ solche Elemente sind schon auf der Seite: Sagen Sie mit „$mark$“, was daran falsch ist.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      },
+      "mark": {
+        "content": "$2",
+        "example": "Mark what’s wrong"
+      }
+    }
+  },
+  "bug_youAreOn": {
+    "message": "Sie sind auf $path$",
+    "placeholders": {
+      "path": {
+        "content": "$1",
+        "example": "/cart"
+      }
+    }
+  },
+  "bug_pageShouldBe": {
+    "message": "Die Seite, auf der Sie sein sollten"
+  },
+  "bug_samePage": {
+    "message": "Das ist die Adresse dieser Seite. Geben Sie die ein, auf der Sie hätten landen sollen."
+  },
+  "bug_kindButton": {
+    "message": "Button"
+  },
+  "bug_kindLink": {
+    "message": "Link"
+  },
+  "bug_kindHeading": {
+    "message": "Titel oder Überschrift"
+  },
+  "bug_kindTextbox": {
+    "message": "Textfeld"
+  },
+  "bug_kindCombobox": {
+    "message": "Auswahlliste"
+  },
+  "bug_kindCheckbox": {
+    "message": "Kontrollkästchen"
+  },
+  "bug_kindRadio": {
+    "message": "Optionsfeld (eine Wahl unter mehreren)"
+  },
+  "bug_kindOption": {
+    "message": "Eintrag einer Auswahlliste oder Liste"
+  },
+  "bug_kindTab": {
+    "message": "Tab"
+  },
+  "bug_kindMenuitem": {
+    "message": "Menüeintrag"
+  },
+  "bug_kindListitem": {
+    "message": "Listeneintrag"
+  },
+  "bug_kindRow": {
+    "message": "Tabellenzeile"
+  },
+  "bug_kindCell": {
+    "message": "Tabellenzelle"
+  },
+  "bug_kindImg": {
+    "message": "Bild oder Symbol"
+  },
+  "bug_kindDialog": {
+    "message": "Dialog oder Pop-up-Fenster"
+  },
+  "bug_kindAlert": {
+    "message": "Fehler- oder Warnmeldung"
+  },
+  "bug_kindStatus": {
+    "message": "Status- oder Bestätigungsmeldung"
+  },
+  "bug_kindRegion": {
+    "message": "Abschnitt der Seite"
+  },
+  "bug_finishTitle_one": {
+    "message": "Bug-Report · $count$ Schritt",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "6"
+      }
+    }
+  },
+  "bug_finishTitle_other": {
+    "message": "Bug-Report · $count$ Schritte",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "6"
+      }
+    }
+  },
+  "bug_title": {
+    "message": "Titel"
+  },
+  "bug_titlePlaceholder": {
+    "message": "Was falsch ist, in wenigen Worten: Gutschein nicht auf die Summe angewendet"
+  },
+  "bug_attached": {
+    "message": "Außerdem im Bericht: $summary$",
+    "placeholders": {
+      "summary": {
+        "content": "$1",
+        "example": "2 screenshots · 1 console error · page outline"
+      }
+    }
+  },
+  "bug_nothingMarked": {
+    "message": "Nichts ist als Fehler markiert, also würde der Test bestehen. Zeichnen Sie erneut auf und verwenden Sie „$mark$“.",
+    "placeholders": {
+      "mark": {
+        "content": "$1",
+        "example": "Mark what’s wrong"
+      }
+    }
+  },
+  "bug_stepWarning": {
+    "message": "Schritt $step$: $message$",
+    "placeholders": {
+      "message": {
+        "content": "$1",
+        "example": "no stable locator for this element"
+      },
+      "step": {
+        "content": "$2",
+        "example": "3"
+      }
+    }
+  },
+  "bug_noScreenshot": {
+    "message": "Kein Screenshot: $reason$",
+    "placeholders": {
+      "reason": {
+        "content": "$1",
+        "example": "Chrome lets Piwi Picker take a screenshot only after you open it on this tab."
+      }
+    }
+  },
+  "bug_noScreenshotTaken": {
+    "message": "Es wurde kein Screenshot aufgenommen."
+  },
+  "bug_copyTest": {
+    "message": "Fehlschlagenden Test kopieren"
+  },
+  "bug_copyTestHint": {
+    "message": "Ein Playwright-Test, der fehlschlägt, solange der Bug besteht, markiert mit test.fail()"
+  },
+  "bug_copyReport": {
+    "message": "Bericht kopieren"
+  },
+  "bug_copyReportHint": {
+    "message": "Der Bericht als Markdown, für ein Ticket oder eine Nachricht"
+  },
+  "bug_downloadZip": {
+    "message": ".zip herunterladen"
+  },
+  "bug_downloadZipHint": {
+    "message": "steps.json, der Test, der Bericht als Markdown, evidence.json und die Screenshots"
+  },
+  "bug_replay": {
+    "message": "Abspielen"
+  },
+  "bug_replayHint": {
+    "message": "Die Schritte auf dieser Website mit einem Cursor erneut abspielen und sehen, ob der Bug auftritt"
+  },
+  "bug_staysLocal": {
+    "message": "Alles hier bleibt in diesem Browser: Nichts wird irgendwohin gesendet."
+  },
+  "bug_sendToPiwi": {
+    "message": "An Piwi senden…"
+  },
+  "bug_sendToPiwiHint": {
+    "message": "Genau sehen, was gesendet wird, und den Bericht dann auf Ihrer Piwi-Instanz speichern"
+  },
+  "bug_sendTitle": {
+    "message": "An $project$ senden",
+    "placeholders": {
+      "project": {
+        "content": "$1",
+        "example": "Checkout"
+      }
+    }
+  },
+  "bug_sendWhere": {
+    "message": "Ein Bug-Report für $project$ auf $instance$. Gesendet wird nur, was unten angehakt ist.",
+    "placeholders": {
+      "instance": {
+        "content": "$1",
+        "example": "piwi.acme.com"
+      },
+      "project": {
+        "content": "$2",
+        "example": "Checkout"
+      }
+    }
+  },
+  "bug_sendFirstTime": {
+    "message": "Dies ist der erste Bericht, der aus diesem Browser gesendet wird. Piwi Picker sendet einen Bericht nur, wenn Sie auf Senden klicken, nur an die verbundene Instanz und nur, was Sie hier anhaken. Die Schritte behalten die eingegebenen Werte, außer Passwörtern."
+  },
+  "bug_sendSteps_one": {
+    "message": "Der Titel und $count$ Schritt mit der Seite, auf der er stattfand",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "bug_sendSteps_other": {
+    "message": "Der Titel und $count$ Schritte mit den Seiten, auf denen sie stattfanden",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "6"
+      }
+    }
+  },
+  "bug_sendScreenshots": {
+    "message": "Screenshots: $count$",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "bug_sendConsole": {
+    "message": "Konsolenfehler und -warnungen: $count$",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "bug_sendRequests": {
+    "message": "Fehlgeschlagene Anfragen (Methode, Pfad, Status; nie ein Inhalt): $count$",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "bug_sendOutline": {
+    "message": "Die Gliederung der Seite"
+  },
+  "bug_sendEnvValues": {
+    "message": "Die eingegebenen Werte weglassen (der Test liest sie aus Umgebungsvariablen)"
+  },
+  "bug_sendCreateIssue": {
+    "message": "Auch ein Jira-Ticket in $project$ anlegen",
+    "placeholders": {
+      "project": {
+        "content": "$1",
+        "example": "SHOP"
+      }
+    }
+  },
+  "bug_sendFilesEvery": {
+    "message": "Dieses Projekt legt für jeden Bug-Report ein Jira-Ticket an."
+  },
+  "bug_issueCreated": {
+    "message": "Jira-Ticket $key$ angelegt.",
+    "placeholders": {
+      "key": {
+        "content": "$1",
+        "example": "SHOP-812"
+      }
+    }
+  },
+  "bug_issueQueued": {
+    "message": "Das Jira-Ticket steht in der Warteschlange: Die Seite des Berichts zeigt seinen Schlüssel, sobald es angelegt ist."
+  },
+  "bug_sendShowData": {
+    "message": "Die genauen Daten anzeigen"
+  },
+  "bug_send": {
+    "message": "Senden"
+  },
+  "bug_sending": {
+    "message": "Wird gesendet…"
+  },
+  "bug_sent": {
+    "message": "Als Bug-Report Nr. $id$ gesendet.",
+    "placeholders": {
+      "id": {
+        "content": "$1",
+        "example": "37"
+      }
+    }
+  },
+  "bug_openInPiwi": {
+    "message": "In Piwi öffnen"
+  },
+  "bug_sendFailed": {
+    "message": "Nicht gesendet: $error$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "The instance cannot be reached."
+      }
+    }
+  },
+  "bug_sendNoProject": {
+    "message": "Kein Projekt Ihrer Piwi-Instanz passt zu dieser Seite. Fügen Sie diese Website in den Einstellungen hinzu oder wählen Sie das Projekt im Popup."
+  },
+  "bug_staysLocalUntilSent": {
+    "message": "Alles hier bleibt in diesem Browser, bis Sie es senden."
+  },
+  "replay_hudLabel": {
+    "message": "Piwi Picker: Bug-Report wird abgespielt"
+  },
+  "replay_statusRunning": {
+    "message": "Läuft"
+  },
+  "replay_statusPaused": {
+    "message": "Pausiert"
+  },
+  "replay_statusDone": {
+    "message": "Abgespielt"
+  },
+  "replay_statusWithTitle": {
+    "message": "$status$: $title$",
+    "placeholders": {
+      "status": {
+        "content": "$1",
+        "example": "Replaying"
+      },
+      "title": {
+        "content": "$2",
+        "example": "Coupon not applied"
+      }
+    }
+  },
+  "replay_progress": {
+    "message": "auf $origin$ · Schritt $step$ von $total$",
+    "placeholders": {
+      "origin": {
+        "content": "$1",
+        "example": "https://staging.acme.test"
+      },
+      "step": {
+        "content": "$2",
+        "example": "2"
+      },
+      "total": {
+        "content": "$3",
+        "example": "5"
+      }
+    }
+  },
+  "replay_progressDone_one": {
+    "message": "auf $origin$ · $count$ Schritt",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "5"
+      },
+      "origin": {
+        "content": "$2",
+        "example": "https://staging.acme.test"
+      }
+    }
+  },
+  "replay_progressDone_other": {
+    "message": "auf $origin$ · $count$ Schritte",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "5"
+      },
+      "origin": {
+        "content": "$2",
+        "example": "https://staging.acme.test"
+      }
+    }
+  },
+  "replay_underConditions": {
+    "message": "Aktive Bedingungen für Anfragen: $conditions$",
+    "placeholders": {
+      "conditions": {
+        "content": "$1",
+        "example": "Slow down GET **/api/cart by 2 s"
+      }
+    }
+  },
+  "replay_pause": {
+    "message": "Pause"
+  },
+  "replay_continue": {
+    "message": "Weiter"
+  },
+  "replay_nextStep": {
+    "message": "Nächster Schritt"
+  },
+  "replay_stepByStep": {
+    "message": "Schrittweise"
+  },
+  "replay_again": {
+    "message": "Nochmal"
+  },
+  "replay_stepFound": {
+    "message": "Ergebnis: $found$.",
+    "placeholders": {
+      "found": {
+        "content": "$1",
+        "example": "\"Total: 40\""
+      }
+    }
+  },
+  "replay_cursorCheck": {
+    "message": "Prüfen: $step$",
+    "placeholders": {
+      "step": {
+        "content": "$1",
+        "example": "The element with test id cart-total should show \"Total: 42\""
+      }
+    }
+  },
+  "replay_cursorNext": {
+    "message": "Als Nächstes: $step$",
+    "placeholders": {
+      "step": {
+        "content": "$1",
+        "example": "Click the button \"Apply coupon\""
+      }
+    }
+  },
+  "replay_quotedText": {
+    "message": "„$text$“",
+    "placeholders": {
+      "text": {
+        "content": "$1",
+        "example": "Total: 40"
+      }
+    }
+  },
+  "replay_foundMissing": {
+    "message": "nichts auf der Seite"
+  },
+  "replay_foundCount_one": {
+    "message": "$count$ Element",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "replay_foundCount_other": {
+    "message": "$count$ Elemente",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "replay_foundVisible": {
+    "message": "sichtbar"
+  },
+  "replay_foundHidden": {
+    "message": "ausgeblendet"
+  },
+  "replay_foundEnabled": {
+    "message": "nutzbar"
+  },
+  "replay_foundDisabled": {
+    "message": "ausgegraut"
+  },
+  "replay_verdictReproduced": {
+    "message": "Reproduziert: Der Bug tritt hier auf"
+  },
+  "replay_verdictExpectedFound": {
+    "message": "Schritt $step$: erwartet „$expected$“, Ergebnis: $found$.",
+    "placeholders": {
+      "expected": {
+        "content": "$1",
+        "example": "Total: 42"
+      },
+      "found": {
+        "content": "$2",
+        "example": "\"Total: 40\""
+      },
+      "step": {
+        "content": "$3",
+        "example": "4"
+      }
+    }
+  },
+  "replay_verdictExpectedFoundAsReported": {
+    "message": "Schritt $step$: erwartet „$expected$“, Ergebnis: $found$, wie gemeldet.",
+    "placeholders": {
+      "expected": {
+        "content": "$1",
+        "example": "Total: 42"
+      },
+      "found": {
+        "content": "$2",
+        "example": "\"Total: 40\""
+      },
+      "step": {
+        "content": "$3",
+        "example": "4"
+      }
+    }
+  },
+  "replay_verdictFound": {
+    "message": "Schritt $step$, Ergebnis: $found$.",
+    "placeholders": {
+      "found": {
+        "content": "$1",
+        "example": "hidden"
+      },
+      "step": {
+        "content": "$2",
+        "example": "4"
+      }
+    }
+  },
+  "replay_verdictFoundAsReported": {
+    "message": "Schritt $step$, Ergebnis: $found$, wie gemeldet.",
+    "placeholders": {
+      "found": {
+        "content": "$1",
+        "example": "hidden"
+      },
+      "step": {
+        "content": "$2",
+        "example": "4"
+      }
+    }
+  },
+  "replay_verdictNotReproduced": {
+    "message": "Nicht reproduziert"
+  },
+  "replay_verdictNotReproducedDetail": {
+    "message": "Alle erwarteten Ergebnisse treffen auf dieser Seite zu."
+  },
+  "replay_verdictDiverged": {
+    "message": "Bug nicht erreicht: Abbruch bei Schritt $step$",
+    "placeholders": {
+      "step": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "replay_verdictDivergedDetail": {
+    "message": "$reason$ Diese Seite ist nicht dieselbe wie im Bericht: andere Daten, ein anderes Konto oder eine Option, die an- oder ausgeschaltet ist.",
+    "placeholders": {
+      "reason": {
+        "content": "$1",
+        "example": "Nothing on this page matches getByTestId('add-to-cart')."
+      }
+    }
+  },
+  "replay_verdictCompleted": {
+    "message": "Alle Schritte abgespielt"
+  },
+  "replay_verdictCompletedDetail": {
+    "message": "Nichts in diesen Schritten sagt, was zu erwarten ist."
+  },
+  "replay_verdictStopped": {
+    "message": "Gestoppt"
+  },
+  "replay_verdictStoppedDetail": {
+    "message": "Gestoppt vor Schritt $step$.",
+    "placeholders": {
+      "step": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "replay_reasonNoLocator": {
+    "message": "Der Bericht sagt nicht, wie dieses Element zu finden ist."
+  },
+  "replay_reasonNoMatch": {
+    "message": "Nichts auf dieser Seite passt zu $locator$.",
+    "placeholders": {
+      "locator": {
+        "content": "$1",
+        "example": "getByTestId('add-to-cart')"
+      }
+    }
+  },
+  "replay_reasonManyMatches_one": {
+    "message": "$count$ Element passt zu $locator$, und das Abspielen braucht genau eines.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "locator": {
+        "content": "$2",
+        "example": "getByRole('button')"
+      }
+    }
+  },
+  "replay_reasonManyMatches_other": {
+    "message": "$count$ Elemente passen zu $locator$, und das Abspielen braucht genau eines.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "locator": {
+        "content": "$2",
+        "example": "getByRole('button')"
+      }
+    }
+  },
+  "replay_reasonHidden": {
+    "message": "$locator$ ist auf der Seite, aber ausgeblendet.",
+    "placeholders": {
+      "locator": {
+        "content": "$1",
+        "example": "getByTestId('add-to-cart')"
+      }
+    }
+  },
+  "replay_reasonDisabled": {
+    "message": "$locator$ ist deaktiviert.",
+    "placeholders": {
+      "locator": {
+        "content": "$1",
+        "example": "getByTestId('add-to-cart')"
+      }
+    }
+  },
+  "replay_reasonMoving": {
+    "message": "$locator$ hat sich auf der Seite ständig bewegt.",
+    "placeholders": {
+      "locator": {
+        "content": "$1",
+        "example": "getByTestId('add-to-cart')"
+      }
+    }
+  },
+  "replay_reasonOtherPage": {
+    "message": "Dieser Schritt fand auf $expected$ statt, und der Tab ist auf $actual$.",
+    "placeholders": {
+      "actual": {
+        "content": "$1",
+        "example": "/login"
+      },
+      "expected": {
+        "content": "$2",
+        "example": "/dashboard"
+      }
+    }
+  },
+  "replay_startedHere": {
+    "message": "Stattdessen auf der Seite des Tabs begonnen."
+  },
+  "replay_reasonInputInterrupted": {
+    "message": "Die Aktion brach auf halbem Weg ab: Die Debugging-Sitzung endete, nachdem ein Teil davon die Seite erreicht hatte. Die Wiedergabe stoppt hier, statt sie doppelt auszuführen."
+  },
+  "replay_reasonActionFailed": {
+    "message": "Die Seite hat auf die Aktion nicht so reagiert wie bei der Aufzeichnung."
+  },
+  "replay_reasonCovered": {
+    "message": "$other$ verdeckt $element$ an der Stelle, auf die der Zeiger träfe.",
+    "placeholders": {
+      "element": {
+        "content": "$1",
+        "example": "button \"Apply\""
+      },
+      "other": {
+        "content": "$2",
+        "example": "div \"Loading\""
+      }
+    }
+  },
+  "replay_reasonOffscreen": {
+    "message": "$element$ bleibt außerhalb des sichtbaren Teils der Seite.",
+    "placeholders": {
+      "element": {
+        "content": "$1",
+        "example": "button \"Apply\""
+      }
+    }
+  },
+  "replay_driverTrusted": {
+    "message": "Mit echten Eingaben abgespielt, wie Playwright sie sendet. Chrome zeigt eine Leiste, dass Piwi Picker diesen Browser debuggt: Das ist diese Wiedergabe, und die Leiste verschwindet an ihrem Ende."
+  },
+  "replay_driverEventsUnavailable": {
+    "message": "Mit den eigenen Ereignissen der Seite abgespielt: Dieser Browser gibt Erweiterungen kein Debugging-Protokoll, daher wirkt ein Hover oder ein Ziehen vielleicht nicht wie mit einer Maus."
+  },
+  "replay_driverEventsRefused": {
+    "message": "Mit den eigenen Ereignissen der Seite abgespielt: Der Browser hat die Debugging-Sitzung abgelehnt (ein anderer Debugger auf diesem Tab, eine Richtlinie oder eine vom Browser geschützte Seite)."
+  },
+  "replay_driverEventsCanceled": {
+    "message": "Ab dort mit den eigenen Ereignissen der Seite abgespielt: Die Debugging-Leiste wurde abgebrochen."
+  },
+  "replay_driverEventsLost": {
+    "message": "Ab dort mit den eigenen Ereignissen der Seite abgespielt: Die Debugging-Sitzung wurde beendet."
+  },
+  "replay_stepTrusted": {
+    "message": "echte Eingabe"
+  },
+  "replay_stepEvents": {
+    "message": "Seitenereignisse"
+  },
+  "replay_fileAsk_one": {
+    "message": "Schritt $step$ wählt $count$ Datei, $files$, die der Bericht nennt, aber nicht enthält. Wählen Sie sie auf diesem Computer aus, um fortzufahren, oder überspringen Sie den Schritt.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      },
+      "files": {
+        "content": "$2",
+        "example": "\"invoice.pdf\""
+      },
+      "step": {
+        "content": "$3",
+        "example": "3"
+      }
+    }
+  },
+  "replay_fileAsk_other": {
+    "message": "Schritt $step$ wählt $count$ Dateien, $files$, die der Bericht nennt, aber nicht enthält. Wählen Sie sie auf diesem Computer aus, um fortzufahren, oder überspringen Sie den Schritt.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      },
+      "files": {
+        "content": "$2",
+        "example": "\"invoice.pdf\""
+      },
+      "step": {
+        "content": "$3",
+        "example": "3"
+      }
+    }
+  },
+  "replay_fileChoose": {
+    "message": "Die Datei für diesen Schritt"
+  },
+  "replay_fileSkip": {
+    "message": "Diesen Schritt überspringen"
+  },
+  "replay_fileSkipped": {
+    "message": "Übersprungen: Es wurde keine Datei gewählt."
+  },
+  "replay_fileChosen": {
+    "message": "Hier gewählt: $files$",
+    "placeholders": {
+      "files": {
+        "content": "$1",
+        "example": "\"invoice.pdf\""
+      }
+    }
+  },
+  "replay_dialogTitle": {
+    "message": "Bug-Report abspielen"
+  },
+  "replay_dialogIntro": {
+    "message": "Spielt seine Schritte auf $origin$ ab, mit einem Cursor, der jeden zeigt, und sagt, ob der Bug hier auftritt.",
+    "placeholders": {
+      "origin": {
+        "content": "$1",
+        "example": "https://staging.acme.test"
+      }
+    }
+  },
+  "replay_useRecorded": {
+    "message": "Den in diesem Browser aufgezeichneten Bug-Report verwenden"
+  },
+  "replay_chooseFile": {
+    "message": "Oder wählen Sie die .zip des Berichts oder seine steps.json, von Piwi Picker gespeichert:"
+  },
+  "replay_fromPiwi": {
+    "message": "Oder ein Bug-Report von $project$ auf Piwi:",
+    "placeholders": {
+      "project": {
+        "content": "$1",
+        "example": "Checkout"
+      }
+    }
+  },
+  "replay_fromPiwiChoose": {
+    "message": "Einen Bug-Report wählen"
+  },
+  "replay_fromPiwiItem": {
+    "message": "Nr. $id$ · $title$",
+    "placeholders": {
+      "id": {
+        "content": "$1",
+        "example": "37"
+      },
+      "title": {
+        "content": "$2",
+        "example": "Coupon not applied to the total"
+      }
+    }
+  },
+  "replay_fromPiwiNone": {
+    "message": "$project$ hat keinen offenen Bug-Report auf Piwi.",
+    "placeholders": {
+      "project": {
+        "content": "$1",
+        "example": "Checkout"
+      }
+    }
+  },
+  "replay_fromPiwiFailed": {
+    "message": "Die Bug-Reports konnten nicht von Piwi gelesen werden: $error$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "The instance cannot be reached."
+      }
+    }
+  },
+  "replay_runWithPlaywright": {
+    "message": "Mit Playwright ausführen…"
+  },
+  "replay_seenHere": {
+    "message": "Was die Seite während der Wiedergabe zeigte:"
+  },
+  "replay_seenRequest": {
+    "message": "$method$ $url$ antwortete mit $status$",
+    "placeholders": {
+      "method": {
+        "content": "$1",
+        "example": "POST"
+      },
+      "status": {
+        "content": "$2",
+        "example": "500"
+      },
+      "url": {
+        "content": "$3",
+        "example": "/api/cart/coupon"
+      }
+    }
+  },
+  "replay_seenRequestFailed": {
+    "message": "$method$ $url$ erhielt keine Antwort",
+    "placeholders": {
+      "method": {
+        "content": "$1",
+        "example": "GET"
+      },
+      "url": {
+        "content": "$2",
+        "example": "/api/cart"
+      }
+    }
+  },
+  "replay_seenConsole": {
+    "message": "Konsolenfehler: $message$",
+    "placeholders": {
+      "message": {
+        "content": "$1",
+        "example": "Coupon failed: 500"
+      }
+    }
+  },
+  "replay_seenMore": {
+    "message": "+$count$ weitere",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "replay_share": {
+    "message": "Ergebnis teilen…"
+  },
+  "replay_sharePreview": {
+    "message": "Sendet an $instance$, zum Bericht: dieses Ergebnis, die Website, auf der es lief ($origin$), und den Namen Ihres Browsers.",
+    "placeholders": {
+      "instance": {
+        "content": "$1",
+        "example": "piwi.acme.test"
+      },
+      "origin": {
+        "content": "$2",
+        "example": "http://localhost:3000"
+      }
+    }
+  },
+  "replay_sharePreviewDesktop": {
+    "message": "Sendet an $instance$, zum Bericht: dieses Ergebnis und den Namen Ihres Browsers.",
+    "placeholders": {
+      "instance": {
+        "content": "$1",
+        "example": "piwi.acme.test"
+      }
+    }
+  },
+  "replay_shared": {
+    "message": "Im Bericht geteilt."
+  },
+  "replay_shareFailed": {
+    "message": "Das Ergebnis konnte nicht geteilt werden: $error$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "The instance cannot be reached."
+      }
+    }
+  },
+  "replay_desktopTitle": {
+    "message": "Mit Playwright in der Desktop-App ausführen"
+  },
+  "replay_desktopNotPaired": {
+    "message": "Koppeln Sie zuerst die Desktop-App, in den Optionen von Piwi Picker unter Desktop-App."
+  },
+  "replay_desktopOpenOptions": {
+    "message": "Optionen öffnen"
+  },
+  "replay_desktopPreview": {
+    "message": "Sendet an die Desktop-App unter $url$: den Titel und diese Schritte, mit den darin eingegebenen Werten. Keine Bildschirmfotos, Konsoleneinträge oder Anfragen. Nichts läuft, bevor Sie es im Fenster der App starten.",
+    "placeholders": {
+      "url": {
+        "content": "$1",
+        "example": "http://127.0.0.1:4318"
+      }
+    }
+  },
+  "replay_desktopShowPayload": {
+    "message": "Was gesendet wird"
+  },
+  "replay_desktopSend": {
+    "message": "Senden"
+  },
+  "replay_desktopWaiting": {
+    "message": "Gesendet. Starten Sie es im Fenster der Desktop-App…"
+  },
+  "replay_desktopNoWindow": {
+    "message": "Gesendet. Das Fenster der Desktop-App ist geschlossen: Öffnen Sie es, um den Lauf zu starten."
+  },
+  "replay_desktopRunning": {
+    "message": "Läuft mit Playwright in der Desktop-App…"
+  },
+  "replay_desktopRanIn": {
+    "message": "Playwright in der Desktop-App meldet:"
+  },
+  "replay_desktopDeclined": {
+    "message": "In der Desktop-App abgelehnt."
+  },
+  "replay_desktopExpired": {
+    "message": "Die Anfrage ist abgelaufen, bevor sie gestartet wurde."
+  },
+  "replay_fileLabel": {
+    "message": "Die .zip des Bug-Reports oder seine steps.json"
+  },
+  "replay_untitled": {
+    "message": "Bericht ohne Titel"
+  },
+  "replay_summary_one": {
+    "message": "$title$ · $count$ Schritt",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "5"
+      },
+      "title": {
+        "content": "$2",
+        "example": "Coupon not applied"
+      }
+    }
+  },
+  "replay_summary_other": {
+    "message": "$title$ · $count$ Schritte",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "5"
+      },
+      "title": {
+        "content": "$2",
+        "example": "Coupon not applied"
+      }
+    }
+  },
+  "replay_recordedOn": {
+    "message": "aufgezeichnet auf $origin$",
+    "placeholders": {
+      "origin": {
+        "content": "$1",
+        "example": "https://staging.acme.test"
+      }
+    }
+  },
+  "replay_stepByStepHint": {
+    "message": "Schrittweise: Klicken Sie vor jedem Schritt auf Nächster Schritt"
+  },
+  "replay_startHere": {
+    "message": "Auf dieser Seite beginnen, statt zuerst $path$ zu öffnen",
+    "placeholders": {
+      "path": {
+        "content": "$1",
+        "example": "/projects/1?tab=runs"
+      }
+    }
+  },
+  "replay_start": {
+    "message": "Abspielen"
+  },
+  "replay_chooseFirst": {
+    "message": "Wählen Sie zuerst einen Bericht."
+  },
+  "replay_zipNoSteps": {
+    "message": "$file$ enthält keine steps.json: Wählen Sie die von Piwi Picker gespeicherte .zip oder ihre steps.json.",
+    "placeholders": {
+      "file": {
+        "content": "$1",
+        "example": "bug.zip"
+      }
+    }
+  },
+  "replay_fileNotSteps": {
+    "message": "$file$ ist keine Schrittdatei: $error$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "`v` must be 1"
+      },
+      "file": {
+        "content": "$2",
+        "example": "notes.json"
+      }
+    }
+  },
+  "coverage_panelLabel": {
+    "message": "Piwi: getestete Elemente"
+  },
+  "coverage_title": {
+    "message": "Getestete Elemente"
+  },
+  "coverage_dock": {
+    "message": "Panel auf die andere Seite verschieben"
+  },
+  "coverage_collapse": {
+    "message": "Panel auf eine Zusammenfassung verkleinern"
+  },
+  "coverage_closeEsc": {
+    "message": "Schließen (Esc)"
+  },
+  "coverage_expand": {
+    "message": "Panel Getestete Elemente wieder öffnen"
+  },
+  "coverage_pill_one": {
+    "message": "Piwi · $count$/$total$ getestet · $tests$",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "14"
+      },
+      "tests": {
+        "content": "$2",
+        "example": "8 tests"
+      },
+      "total": {
+        "content": "$3",
+        "example": "34"
+      }
+    }
+  },
+  "coverage_pill_other": {
+    "message": "Piwi · $count$/$total$ getestet · $tests$",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "14"
+      },
+      "tests": {
+        "content": "$2",
+        "example": "8 tests"
+      },
+      "total": {
+        "content": "$3",
+        "example": "34"
+      }
+    }
+  },
+  "coverage_pillMissing_one": {
+    "message": "$count$ fehlt hier",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "coverage_pillMissing_other": {
+    "message": "$count$ fehlen hier",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "coverage_pillIdle": {
+    "message": "Piwi · getestete Elemente"
+  },
+  "coverage_modalOpen": {
+    "message": "Auf der Seite ist ein Dialog offen: Die Rahmen bleiben sichtbar, aber Sie können dieses Panel erst nutzen, wenn der Dialog geschlossen ist."
+  },
+  "coverage_openSettings": {
+    "message": "Einstellungen von Piwi Picker öffnen"
+  },
+  "coverage_tryAgain": {
+    "message": "Erneut versuchen"
+  },
+  "coverage_loading": {
+    "message": "Locator-Index wird geladen…"
+  },
+  "coverage_loadingProject": {
+    "message": "Locator-Index von $project$ wird geladen…",
+    "placeholders": {
+      "project": {
+        "content": "$1",
+        "example": "Acme Mugs"
+      }
+    }
+  },
+  "coverage_loadingProjectAll": {
+    "message": "Locator-Index von $project$ für alle Branches wird geladen…",
+    "placeholders": {
+      "project": {
+        "content": "$1",
+        "example": "Acme Mugs"
+      }
+    }
+  },
+  "coverage_loadingProjectBranch": {
+    "message": "Locator-Index von $project$ auf $branch$ wird geladen…",
+    "placeholders": {
+      "branch": {
+        "content": "$1",
+        "example": "feature/voucher"
+      },
+      "project": {
+        "content": "$2",
+        "example": "Acme Mugs"
+      }
+    }
+  },
+  "coverage_loadFailed": {
+    "message": "Der Locator-Index von $project$ konnte nicht geladen werden: $error$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "The locator index could not be downloaded (502)."
+      },
+      "project": {
+        "content": "$2",
+        "example": "Acme Mugs"
+      }
+    }
+  },
+  "coverage_notConnected": {
+    "message": "Verbinden Sie Piwi Picker mit Ihrer Piwi-Instanz, um zu sehen, welche Elemente dieser Seite Ihre Tests verwenden: Fügen Sie in den Einstellungen die Adresse Ihrer Instanz, einen API-Schlüssel und ein Adressmuster für diese Website hinzu."
+  },
+  "coverage_noProject": {
+    "message": "Für diese Seite ist kein Projekt festgelegt. Fügen Sie in den Einstellungen ein Adressmuster dafür hinzu oder wählen Sie ein Projekt im Menü von Piwi Picker."
+  },
+  "coverage_indexSize_one": {
+    "message": "$count$ Locator aus $tests$",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "42"
+      },
+      "tests": {
+        "content": "$2",
+        "example": "8 tests"
+      }
+    }
+  },
+  "coverage_indexSize_other": {
+    "message": "$count$ Locators aus $tests$",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "42"
+      },
+      "tests": {
+        "content": "$2",
+        "example": "8 tests"
+      }
+    }
+  },
+  "coverage_updated": {
+    "message": "aktualisiert $age$",
+    "placeholders": {
+      "age": {
+        "content": "$1",
+        "example": "3 min ago"
+      }
+    }
+  },
+  "coverage_ageJustNow": {
+    "message": "gerade eben"
+  },
+  "coverage_ageMinutes_one": {
+    "message": "vor $count$ Min.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "coverage_ageMinutes_other": {
+    "message": "vor $count$ Min.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "coverage_ageHours_one": {
+    "message": "vor $count$ Std.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "5"
+      }
+    }
+  },
+  "coverage_ageHours_other": {
+    "message": "vor $count$ Std.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "5"
+      }
+    }
+  },
+  "coverage_ageDays_one": {
+    "message": "vor $count$ Tag",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "coverage_ageDays_other": {
+    "message": "vor $count$ Tagen",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "coverage_refreshTitle": {
+    "message": "Den Locator-Index erneut von Piwi herunterladen"
+  },
+  "coverage_refreshFailed": {
+    "message": "Aktualisieren fehlgeschlagen: $error$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "The instance answered with an error (502)."
+      }
+    }
+  },
+  "coverage_checking": {
+    "message": "Jeder Locator wird auf dieser Seite gesucht"
+  },
+  "coverage_branch": {
+    "message": "Branch"
+  },
+  "coverage_branchTitle": {
+    "message": "Die Tests dieses Branches zeigen, mit dem, was sie dort getan haben"
+  },
+  "coverage_branchDefaultNamed": {
+    "message": "$branch$ (Standard)",
+    "placeholders": {
+      "branch": {
+        "content": "$1",
+        "example": "main"
+      }
+    }
+  },
+  "coverage_branchDefault": {
+    "message": "Standard-Branch"
+  },
+  "coverage_branchAll": {
+    "message": "Alle Branches"
+  },
+  "coverage_testCount_one": {
+    "message": "$count$ Test",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "coverage_testCount_other": {
+    "message": "$count$ Tests",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "coverage_elementCount_one": {
+    "message": "$count$ Element",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "7"
+      }
+    }
+  },
+  "coverage_elementCount_other": {
+    "message": "$count$ Elemente",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "7"
+      }
+    }
+  },
+  "coverage_pageSwitch": {
+    "message": "Was gezählt wird"
+  },
+  "coverage_thisPage": {
+    "message": "Diese Seite"
+  },
+  "coverage_thisPageTitle": {
+    "message": "Zählen, was Tests auf dieser Seite tun, dazu die Verwendungen, bei denen kein Lauf die Seite festgehalten hat"
+  },
+  "coverage_allPages": {
+    "message": "Alle Seiten"
+  },
+  "coverage_allPagesTitle": {
+    "message": "Jeden Locator zählen, der hier etwas findet, egal auf welcher Seite sein Test ihn verwendet"
+  },
+  "coverage_subtitleWithoutPrefix": {
+    "message": "$page$ (ohne $prefix$)",
+    "placeholders": {
+      "page": {
+        "content": "$1",
+        "example": "/checkout"
+      },
+      "prefix": {
+        "content": "$2",
+        "example": "/app"
+      }
+    }
+  },
+  "coverage_subtitleWithPrefix": {
+    "message": "$page$ (mit $prefix$ davor)",
+    "placeholders": {
+      "page": {
+        "content": "$1",
+        "example": "/app/checkout"
+      },
+      "prefix": {
+        "content": "$2",
+        "example": "/app"
+      }
+    }
+  },
+  "coverage_subtitleSwappedPrefix": {
+    "message": "$page$ ($removed$ ersetzt durch $added$)",
+    "placeholders": {
+      "added": {
+        "content": "$1",
+        "example": "/v2"
+      },
+      "page": {
+        "content": "$2",
+        "example": "/v2/checkout"
+      },
+      "removed": {
+        "content": "$3",
+        "example": "/app"
+      }
+    }
+  },
+  "coverage_tileTested": {
+    "message": "getestet"
+  },
+  "coverage_tileTestedTitle": {
+    "message": "Buttons, Links und Felder dieser Seite, die ein Test erreicht"
+  },
+  "coverage_tileTestedTitleInside": {
+    "message": "Buttons, Links und Felder darin, die ein Test erreicht"
+  },
+  "coverage_tileUntested": {
+    "message": "nicht getestet"
+  },
+  "coverage_tileUntestedTitle": {
+    "message": "Sichtbare Buttons, Links und Felder dieser Seite, die kein Test erreicht"
+  },
+  "coverage_tileUntestedTitleInside": {
+    "message": "Sichtbare Buttons, Links und Felder darin, die kein Test erreicht"
+  },
+  "coverage_tileTestHere": {
+    "message": "Test hier"
+  },
+  "coverage_tileTestsHere": {
+    "message": "Tests hier"
+  },
+  "coverage_tileTestInside": {
+    "message": "Test darin"
+  },
+  "coverage_tileTestsInside": {
+    "message": "Tests darin"
+  },
+  "coverage_tileTestsTitle": {
+    "message": "Tests, deren Locators auf dieser Seite etwas finden"
+  },
+  "coverage_tileTestsTitleInside": {
+    "message": "Tests, deren Locators darin etwas finden"
+  },
+  "coverage_meterLabel": {
+    "message": "$percent$ % der Buttons, Links und Felder von einem Test erreicht",
+    "placeholders": {
+      "percent": {
+        "content": "$1",
+        "example": "41"
+      }
+    }
+  },
+  "coverage_meterShare_one": {
+    "message": "$percent$ % von $count$ interaktivem Element dieser Seite",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "34"
+      },
+      "percent": {
+        "content": "$2",
+        "example": "41"
+      }
+    }
+  },
+  "coverage_meterShare_other": {
+    "message": "$percent$ % der $count$ interaktiven Elemente dieser Seite",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "34"
+      },
+      "percent": {
+        "content": "$2",
+        "example": "41"
+      }
+    }
+  },
+  "coverage_meterShareInside_one": {
+    "message": "$percent$ % von $count$ interaktivem Element darin",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "34"
+      },
+      "percent": {
+        "content": "$2",
+        "example": "41"
+      }
+    }
+  },
+  "coverage_meterShareInside_other": {
+    "message": "$percent$ % der $count$ interaktiven Elemente darin",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "34"
+      },
+      "percent": {
+        "content": "$2",
+        "example": "41"
+      }
+    }
+  },
+  "coverage_meterNone": {
+    "message": "Kein interaktives Element auf dieser Seite"
+  },
+  "coverage_meterNoneInside": {
+    "message": "Kein interaktives Element darin"
+  },
+  "coverage_meterFound_one": {
+    "message": "$count$ Element gefunden, davon $checked$ nur geprüft",
+    "placeholders": {
+      "checked": {
+        "content": "$1",
+        "example": "3"
+      },
+      "count": {
+        "content": "$2",
+        "example": "17"
+      }
+    }
+  },
+  "coverage_meterFound_other": {
+    "message": "$count$ Elemente gefunden, davon $checked$ nur geprüft",
+    "placeholders": {
+      "checked": {
+        "content": "$1",
+        "example": "3"
+      },
+      "count": {
+        "content": "$2",
+        "example": "17"
+      }
+    }
+  },
+  "coverage_meterFoundOnly_one": {
+    "message": "$count$ Element gefunden",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "coverage_meterFoundOnly_other": {
+    "message": "$count$ Elemente gefunden",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "coverage_meterBrittle_one": {
+    "message": "$count$ getestetes Element über fragile Locators erreicht",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "6"
+      }
+    }
+  },
+  "coverage_meterBrittle_other": {
+    "message": "$count$ getestete Elemente über fragile Locators erreicht",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "6"
+      }
+    }
+  },
+  "coverage_choosingKeys": {
+    "message": "$up$ größer · $down$ kleiner · $esc$ bricht ab",
+    "placeholders": {
+      "down": {
+        "content": "$1",
+        "example": "↓"
+      },
+      "esc": {
+        "content": "$2",
+        "example": "Esc"
+      },
+      "up": {
+        "content": "$3",
+        "example": "↑"
+      }
+    }
+  },
+  "coverage_escKey": {
+    "message": "Esc"
+  },
+  "coverage_clickPart": {
+    "message": "Klicken Sie auf einen Teil der Seite"
+  },
+  "coverage_cancelChoosingTitle": {
+    "message": "Weiter die ganze Seite ansehen (Esc)"
+  },
+  "coverage_inside": {
+    "message": "In $element$",
+    "placeholders": {
+      "element": {
+        "content": "$1",
+        "example": "article.card \"Blue mug\""
+      }
+    }
+  },
+  "coverage_widen": {
+    "message": "Container ↑"
+  },
+  "coverage_widenTitle": {
+    "message": "Das umgebende Element ansehen"
+  },
+  "coverage_wholePage": {
+    "message": "Ganze Seite"
+  },
+  "coverage_wholePageTitle": {
+    "message": "Wieder die ganze Seite ansehen (Esc)"
+  },
+  "coverage_limit": {
+    "message": "Auf ein Element begrenzen"
+  },
+  "coverage_limitTitle": {
+    "message": "Wählen Sie ein Formular, eine Karte oder ein Menü, um nur seinen Inhalt zu sehen"
+  },
+  "coverage_choosingFrame": {
+    "message": "$element$ · klicken, um hineinzusehen",
+    "placeholders": {
+      "element": {
+        "content": "$1",
+        "example": "article.card \"Blue mug\""
+      }
+    }
+  },
+  "coverage_aroundHint": {
+    "message": "Drumherum: Tests erreichen diese Teile der Seite"
+  },
+  "coverage_aroundRowTitle": {
+    "message": "In diesen Teil hineinsehen"
+  },
+  "coverage_aroundMore_one": {
+    "message": "und $count$ weiterer weiter außen",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "coverage_aroundMore_other": {
+    "message": "und $count$ weitere weiter außen",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "coverage_tabs": {
+    "message": "Was aufgelistet wird"
+  },
+  "coverage_tabElements": {
+    "message": "Elemente $count$",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "17"
+      }
+    }
+  },
+  "coverage_tabTests": {
+    "message": "Tests $count$",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "8"
+      }
+    }
+  },
+  "coverage_tabUntested": {
+    "message": "Ungetestet $count$",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "20"
+      }
+    }
+  },
+  "coverage_tabRisk": {
+    "message": "Riskant $count$",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "4"
+      }
+    }
+  },
+  "coverage_search": {
+    "message": "Nach Element, Test oder Datei filtern"
+  },
+  "coverage_searchLabel": {
+    "message": "Liste filtern"
+  },
+  "coverage_listMore_one": {
+    "message": "$count$ weiterer: Tippen Sie in den Filter, um die Liste einzugrenzen",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "120"
+      }
+    }
+  },
+  "coverage_listMore_other": {
+    "message": "$count$ weitere: Tippen Sie in den Filter, um die Liste einzugrenzen",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "120"
+      }
+    }
+  },
+  "coverage_noMatch": {
+    "message": "Nichts passt zum Filter."
+  },
+  "coverage_reachFailing": {
+    "message": "Ein Test, der es erreicht, schlägt fehl"
+  },
+  "coverage_reachFlaky": {
+    "message": "Ein Test, der es erreicht, ist instabil"
+  },
+  "coverage_hiddenNow": {
+    "message": "gerade ausgeblendet"
+  },
+  "coverage_emptyElements": {
+    "message": "Kein Locator des Projekts findet etwas auf dieser Seite. Seine Tests verwenden vielleicht andere Seiten oder diese Seite in einem anderen Zustand."
+  },
+  "coverage_emptyElementsInside": {
+    "message": "Kein Locator des Projekts findet darin etwas."
+  },
+  "coverage_openTest": {
+    "message": "Diesen Test in Piwi öffnen"
+  },
+  "coverage_onlyItsElements": {
+    "message": "nur seine Elemente werden gezeigt"
+  },
+  "coverage_emptyTests": {
+    "message": "Kein Test erreicht diese Seite."
+  },
+  "coverage_emptyTestsInside": {
+    "message": "Kein Test erreicht etwas darin."
+  },
+  "coverage_foundElsewhere": {
+    "message": "Gefunden von $locator$, den Tests auf $pages$ verwenden",
+    "placeholders": {
+      "locator": {
+        "content": "$1",
+        "example": "getByRole('button', { name: 'Subscribe' })"
+      },
+      "pages": {
+        "content": "$2",
+        "example": "/newsletter"
+      }
+    }
+  },
+  "coverage_foundElsewhereOther": {
+    "message": "Gefunden von $locator$, den Tests auf anderen Seiten verwenden",
+    "placeholders": {
+      "locator": {
+        "content": "$1",
+        "example": "getByRole('button', { name: 'Subscribe' })"
+      }
+    }
+  },
+  "coverage_copyLocator": {
+    "message": "Locator kopieren"
+  },
+  "coverage_copyLocatorTitle": {
+    "message": "Diesen Locator kopieren, um einen Test für das Element zu schreiben"
+  },
+  "coverage_emptyUntested": {
+    "message": "Jeder sichtbare Button, Link und jedes sichtbare Feld dieser Seite wird von einem Test erreicht."
+  },
+  "coverage_emptyUntestedInside": {
+    "message": "Jeder sichtbare Button, Link und jedes sichtbare Feld darin wird von einem Test erreicht."
+  },
+  "coverage_missingHead": {
+    "message": "Fehlen hier · $count$",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "coverage_missingHint": {
+    "message": "Tests verwenden diese Locators auf dieser Seite, aber sie finden hier gerade nichts. Zuerst kommen die, die Tests gleich beim Laden der Seite verwenden; die anderen brauchen vielleicht ein offenes Menü oder einen offenen Dialog."
+  },
+  "coverage_missingEmpty": {
+    "message": "Jeder Locator, den Tests auf dieser Seite verwenden, findet hier sein Element."
+  },
+  "coverage_severalHead": {
+    "message": "Mehrere Treffer hier · $count$",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "coverage_severalHint": {
+    "message": "Tests führen auf dieser Seite Aktionen mit diesen Locators aus, und jeder findet hier mehrere Elemente: Ein Klick braucht genau eines."
+  },
+  "coverage_severalEmpty": {
+    "message": "Jeder Locator, mit dem Tests hier Aktionen ausführen, findet ein einziges Element."
+  },
+  "coverage_notFoundOnLoad": {
+    "message": "Beim Laden der Seite nicht gefunden"
+  },
+  "coverage_notFoundNow": {
+    "message": "Gerade nicht gefunden"
+  },
+  "coverage_findsCount_one": {
+    "message": "Findet $count$ Element",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "4"
+      }
+    }
+  },
+  "coverage_findsCount_other": {
+    "message": "Findet $count$ Elemente",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "4"
+      }
+    }
+  },
+  "coverage_brittleRules": {
+    "message": "fragil: $rules$",
+    "placeholders": {
+      "rules": {
+        "content": "$1",
+        "example": "CSS class, position"
+      }
+    }
+  },
+  "coverage_brittleHead": {
+    "message": "Fragile Locators · $count$",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "4"
+      }
+    }
+  },
+  "coverage_brittleHint": {
+    "message": "Sie brechen, wenn sich die Seite auf eine Weise ändert, die für den Test keine Rolle spielt: ein neuer Stil, ein zusätzlicher Container, eine Liste in anderer Reihenfolge."
+  },
+  "coverage_brittleEmpty": {
+    "message": "Kein fragiler Locator findet etwas auf dieser Seite."
+  },
+  "coverage_brittleEmptyInside": {
+    "message": "Kein fragiler Locator findet darin etwas."
+  },
+  "coverage_useFailing": {
+    "message": "Ein Test, der ihn verwendet, schlägt fehl"
+  },
+  "coverage_useFlaky": {
+    "message": "Ein Test, der ihn verwendet, ist instabil"
+  },
+  "coverage_severalNoReplacement_one": {
+    "message": "Findet hier $count$ Element, daher wird kein Ersatz vorgeschlagen.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "4"
+      }
+    }
+  },
+  "coverage_severalNoReplacement_other": {
+    "message": "Findet hier $count$ Elemente, daher wird kein Ersatz vorgeschlagen.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "4"
+      }
+    }
+  },
+  "coverage_addTestId": {
+    "message": "Kein stabiler Locator findet nur dieses Element: Geben Sie ihm eine Test-ID."
+  },
+  "coverage_replacementTitle": {
+    "message": "Findet hier nur dieses Element"
+  },
+  "coverage_mostStable": {
+    "message": "Am stabilsten: $locator$",
+    "placeholders": {
+      "locator": {
+        "content": "$1",
+        "example": "getByTestId('checkout')"
+      }
+    }
+  },
+  "coverage_copyReplacementTitle": {
+    "message": "Den Ersatz kopieren, der hier nur dieses Element findet"
+  },
+  "coverage_copyEdit": {
+    "message": "Änderung kopieren"
+  },
+  "coverage_copyEditTitle": {
+    "message": "Jede Stelle im Code kopieren, die ihn verwendet, mit altem und neuem Locator"
+  },
+  "coverage_notesUnmatched_one": {
+    "message": "$count$ Locator findet hier nichts: Er zielt auf eine andere Seite oder auf diese Seite in einem anderen Zustand.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "12"
+      }
+    }
+  },
+  "coverage_notesUnmatched_other": {
+    "message": "$count$ Locators finden hier nichts: Sie zielen auf andere Seiten oder auf diese Seite in einem anderen Zustand.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "12"
+      }
+    }
+  },
+  "coverage_notesTruncated": {
+    "message": "Das Projekt hat mehr Locators, als der Index fasst; die am wenigsten verwendeten fehlen."
+  },
+  "coverage_notesTestIds": {
+    "message": "getByTestId liest in diesem Projekt $attributes$.",
+    "placeholders": {
+      "attributes": {
+        "content": "$1",
+        "example": "data-qa"
+      }
+    }
+  },
+  "coverage_notesChecked_one": {
+    "message": "$count$ Locator in $ms$ ms geprüft.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "42"
+      },
+      "ms": {
+        "content": "$2",
+        "example": "18"
+      }
+    }
+  },
+  "coverage_notesChecked_other": {
+    "message": "$count$ Locators in $ms$ ms geprüft.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "42"
+      },
+      "ms": {
+        "content": "$2",
+        "example": "18"
+      }
+    }
+  },
+  "coverage_notesPageScoped": {
+    "message": "Gezählt wird, was Tests auf $page$ tun, dazu die Verwendungen, bei denen kein Lauf die Seite festgehalten hat.",
+    "placeholders": {
+      "page": {
+        "content": "$1",
+        "example": "/shop.html"
+      }
+    }
+  },
+  "coverage_notesPageScopedHere": {
+    "message": "Gezählt wird, was Tests auf dieser Seite tun, dazu die Verwendungen, bei denen kein Lauf die Seite festgehalten hat."
+  },
+  "coverage_notesAllPages": {
+    "message": "Locators werden auf dieser Seite gesucht, egal auf welcher Seite ihr Test sie verwendet hat."
+  },
+  "coverage_notesPrefixRemoved": {
+    "message": "Das Pfadpräfix $prefix$ des Adressmusters dieser Website wurde zuerst aus der Adresse entfernt: Die Tests haben diese Seite ohne es aufgerufen.",
+    "placeholders": {
+      "prefix": {
+        "content": "$1",
+        "example": "/app"
+      }
+    }
+  },
+  "coverage_notesPrefixAdded": {
+    "message": "Das Pfadpräfix der Tests $prefix$ des Adressmusters dieser Website wurde zuerst vor die Adresse gesetzt: Die Tests haben diese Seite darunter aufgerufen.",
+    "placeholders": {
+      "prefix": {
+        "content": "$1",
+        "example": "/app"
+      }
+    }
+  },
+  "coverage_notesErrors_one": {
+    "message": "$count$ Locator konnte hier nicht geprüft werden:",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "coverage_notesErrors_other": {
+    "message": "$count$ Locators konnten hier nicht geprüft werden:",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "coverage_notes": {
+    "message": "Hinweise"
+  },
+  "coverage_notesWithErrors_one": {
+    "message": "Hinweise · $count$ Locator nicht geprüft",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "coverage_notesWithErrors_other": {
+    "message": "Hinweise · $count$ Locators nicht geprüft",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "coverage_statusPassed": {
+    "message": "Im letzten Lauf bestanden"
+  },
+  "coverage_statusFlaky": {
+    "message": "Im letzten Lauf nach einer Wiederholung bestanden"
+  },
+  "coverage_statusFailed": {
+    "message": "Im letzten Lauf fehlgeschlagen"
+  },
+  "coverage_statusSkipped": {
+    "message": "Im letzten Lauf übersprungen"
+  },
+  "coverage_statusNone": {
+    "message": "Kein Lauf erfasst"
+  },
+  "coverage_toggleActed": {
+    "message": "Bedient"
+  },
+  "coverage_toggleActedTitle": {
+    "message": "Elemente, die Tests anklicken, ausfüllen oder anders bedienen"
+  },
+  "coverage_toggleChecked": {
+    "message": "Geprüft"
+  },
+  "coverage_toggleCheckedTitle": {
+    "message": "Elemente, die Tests nur prüfen, ohne sie zu bedienen"
+  },
+  "coverage_toggleUntested": {
+    "message": "Ungetestet"
+  },
+  "coverage_toggleUntestedTitle": {
+    "message": "Buttons, Links und Felder, die kein Test erreicht"
+  },
+  "coverage_toggleHeat": {
+    "message": "Heatmap"
+  },
+  "coverage_toggleHeatTitle": {
+    "message": "Jeden Rahmen umso dunkler färben, je mehr Tests ihn erreichen"
+  },
+  "coverage_toggleBrittle": {
+    "message": "Fragil"
+  },
+  "coverage_toggleBrittleTitle": {
+    "message": "Elemente markieren, die ein Locator findet, der leicht bricht"
+  },
+  "coverage_legendActed": {
+    "message": "von Tests bedient"
+  },
+  "coverage_legendChecked": {
+    "message": "nur geprüft"
+  },
+  "coverage_legendUntested": {
+    "message": "ungetestet"
+  },
+  "coverage_legendAmbiguous": {
+    "message": "Locator findet mehrere"
+  },
+  "coverage_legendBrittle": {
+    "message": "fragiler Locator"
+  },
+  "coverage_badgeTitle_one": {
+    "message": "$element$: von $count$ Test erreicht. Klicken für Details.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      },
+      "element": {
+        "content": "$2",
+        "example": "button \"Add to cart\""
+      }
+    }
+  },
+  "coverage_badgeTitle_other": {
+    "message": "$element$: von $count$ Tests erreicht. Klicken für Details.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      },
+      "element": {
+        "content": "$2",
+        "example": "button \"Add to cart\""
+      }
+    }
+  },
+  "coverage_badgeTitleFailing_one": {
+    "message": "$element$: von $count$ Test erreicht, der fehlschlägt. Klicken für Details.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      },
+      "element": {
+        "content": "$2",
+        "example": "button \"Checkout\""
+      }
+    }
+  },
+  "coverage_badgeTitleFailing_other": {
+    "message": "$element$: von $count$ Tests erreicht, einer davon schlägt fehl. Klicken für Details.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      },
+      "element": {
+        "content": "$2",
+        "example": "button \"Checkout\""
+      }
+    }
+  },
+  "coverage_badgeTitleFlaky_one": {
+    "message": "$element$: von $count$ Test erreicht, der instabil ist. Klicken für Details.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      },
+      "element": {
+        "content": "$2",
+        "example": "checkbox \"In stock\""
+      }
+    }
+  },
+  "coverage_badgeTitleFlaky_other": {
+    "message": "$element$: von $count$ Tests erreicht, einer davon instabil. Klicken für Details.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      },
+      "element": {
+        "content": "$2",
+        "example": "checkbox \"In stock\""
+      }
+    }
+  },
+  "coverage_badgeLabel_one": {
+    "message": "$element$: $count$ Test",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      },
+      "element": {
+        "content": "$2",
+        "example": "button \"Add to cart\""
+      }
+    }
+  },
+  "coverage_badgeLabel_other": {
+    "message": "$element$: $count$ Tests",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      },
+      "element": {
+        "content": "$2",
+        "example": "button \"Add to cart\""
+      }
+    }
+  },
+  "coverage_cardLabel": {
+    "message": "Tests, die $element$ erreichen",
+    "placeholders": {
+      "element": {
+        "content": "$1",
+        "example": "button \"Add to cart\""
+      }
+    }
+  },
+  "coverage_cardLabelThis": {
+    "message": "Tests, die dieses Element erreichen"
+  },
+  "coverage_noteBrittle": {
+    "message": "Fragil: $rules$",
+    "placeholders": {
+      "rules": {
+        "content": "$1",
+        "example": "CSS class, CSS structure"
+      }
+    }
+  },
+  "coverage_noteWatch": {
+    "message": "Kann brechen: $rules$",
+    "placeholders": {
+      "rules": {
+        "content": "$1",
+        "example": "text"
+      }
+    }
+  },
+  "coverage_replaceWith": {
+    "message": "Ersetzen Sie ihn durch diesen, der hier nur dieses Element findet"
+  },
+  "coverage_mostStableHead": {
+    "message": "Am stabilsten"
+  },
+  "coverage_actedOnBy_one": {
+    "message": "Von $count$ Test bedient",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "coverage_actedOnBy_other": {
+    "message": "Von $count$ Tests bedient",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "coverage_checkedBy_one": {
+    "message": "Von $count$ Test geprüft, ohne es zu bedienen",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "coverage_checkedBy_other": {
+    "message": "Von $count$ Tests geprüft, ohne es zu bedienen",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "coverage_ambiguous": {
+    "message": "seine Locators finden hier mehrere Elemente"
+  },
+  "coverage_notTested": {
+    "message": "Ungetestet"
+  },
+  "coverage_noLocatorReaches": {
+    "message": "kein Locator dieses Projekts findet es"
+  },
+  "coverage_openTestFile": {
+    "message": "Diesen Test in Piwi öffnen: $file$",
+    "placeholders": {
+      "file": {
+        "content": "$1",
+        "example": "tests/catalog.spec.ts"
+      }
+    }
+  },
+  "coverage_previewBrittle": {
+    "message": "Ein fragiler Locator findet es · Badge anklicken für einen Ersatz"
+  },
+  "coverage_previewMore_one": {
+    "message": "und $count$ weiterer · Badge anklicken für Locators und Links",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "coverage_previewMore_other": {
+    "message": "und $count$ weitere · Badge anklicken für Locators und Links",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "coverage_previewHint": {
+    "message": "Badge anklicken für Locators und Links"
+  },
+  "coverage_aLocator": {
+    "message": "Ein Locator dafür"
+  },
+  "coverage_matchesOnPage_one": {
+    "message": "Findet $count$ Element auf dieser Seite",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "4"
+      }
+    }
+  },
+  "coverage_matchesOnPage_other": {
+    "message": "Findet $count$ Elemente auf dieser Seite",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "4"
+      }
+    }
+  },
+  "coverage_onPages": {
+    "message": "auf $pages$",
+    "placeholders": {
+      "pages": {
+        "content": "$1",
+        "example": "/shop.html, as it loads"
+      }
+    }
+  },
+  "coverage_pageOnLoad": {
+    "message": "$page$, beim Laden",
+    "placeholders": {
+      "page": {
+        "content": "$1",
+        "example": "/shop.html"
+      }
+    }
+  },
+  "coverage_moreTests_one": {
+    "message": "und $count$ weiterer Test",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "coverage_moreTests_other": {
+    "message": "und $count$ weitere Tests",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "coverage_findInPiwi": {
+    "message": "Diese Locators in Piwi suchen ↗"
+  },
+  "coverage_noTestReaches": {
+    "message": "Kein Test dieses Projekts erreicht dieses Element."
+  },
+  "coverage_mostStableFor": {
+    "message": "Der stabilste Locator dafür"
+  },
+  "common_workerOutdated": {
+    "message": "Piwi Picker wurde neu gebaut, ohne neu geladen zu werden, und sein Hintergrundprozess läuft noch mit der vorherigen Version. Laden Sie die Erweiterung über ihr Menü oder auf der Erweiterungsseite des Browsers neu."
+  },
+  "devtools_ranking": {
+    "message": "Das ausgewählte Element wird bewertet…"
+  },
+  "devtools_selectElement": {
+    "message": "Wählen Sie im Elemente-Bereich ein Element aus, um seine Locators zu sehen."
+  },
+  "devtools_inFrame": {
+    "message": "Dieses Element liegt in einem Frame. Die Seitenleiste bewertet nur Elemente der obersten Seite."
+  },
+  "devtools_ownElement": {
+    "message": "Dieses Element gehört zu Piwi Picker."
+  },
+  "devtools_restricted": {
+    "message": "Piwi Picker kann auf dieser Seite nicht laufen."
+  },
+  "devtools_noAccess": {
+    "message": "Piwi Picker braucht Zugriff auf $site$, um diese Seite zu lesen. Der Zugriff gilt nur für diese Website.",
+    "placeholders": {
+      "site": {
+        "content": "$1",
+        "example": "https://shop.example"
+      }
+    }
+  },
+  "devtools_allowSite": {
+    "message": "Auf dieser Website erlauben"
+  },
+  "devtools_rankFailed": {
+    "message": "Das Element konnte nicht bewertet werden: $error$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "Cannot access a chrome:// URL"
+      }
+    }
+  },
+  "devtools_rankFailedPlain": {
+    "message": "Das Element konnte nicht bewertet werden."
+  },
+  "devtools_noLocator": {
+    "message": "Kein Locator findet dieses Element."
+  },
+  "devtools_unique": {
+    "message": "eindeutig"
+  },
+  "devtools_byPosition": {
+    "message": "eindeutig über die Position"
+  },
+  "devtools_matches_one": {
+    "message": "$count$ Treffer",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "devtools_matches_other": {
+    "message": "$count$ Treffer",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "devtools_unchecked": {
+    "message": "nicht geprüft"
+  },
+  "devtools_stable": {
+    "message": "stabil"
+  },
+  "devtools_watch": {
+    "message": "kann brechen: $rules$",
+    "placeholders": {
+      "rules": {
+        "content": "$1",
+        "example": "long text"
+      }
+    }
+  },
+  "devtools_brittle": {
+    "message": "fragil: $rules$",
+    "placeholders": {
+      "rules": {
+        "content": "$1",
+        "example": "CSS class"
+      }
+    }
+  },
+  "devtools_addToSession": {
+    "message": "Zur Session hinzufügen"
+  },
+  "devtools_addedToSession": {
+    "message": "Zur Session als $name$ hinzugefügt.",
+    "placeholders": {
+      "name": {
+        "content": "$1",
+        "example": "applyCoupon"
+      }
+    }
+  },
+  "view_title": {
+    "message": "Playwright-Ansicht"
+  },
+  "view_noRole": {
+    "message": "(keine Rolle)"
+  },
+  "view_noName": {
+    "message": "(kein Name)"
+  },
+  "view_filterRole": {
+    "message": "Rolle"
+  },
+  "view_allRoles": {
+    "message": "Alle Rollen"
+  },
+  "view_labelled_one": {
+    "message": "$count$ Element beschriftet",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "42"
+      }
+    }
+  },
+  "view_labelled_other": {
+    "message": "$count$ Elemente beschriftet",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "42"
+      }
+    }
+  },
+  "view_unreachable_one": {
+    "message": "$count$, das kein stabiler Locator erreicht (rot)",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "view_unreachable_other": {
+    "message": "$count$, die kein stabiler Locator erreicht (rot)",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "view_ambiguous_one": {
+    "message": "$count$, dessen Rolle und Name auch andere finden (orange)",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "view_ambiguous_other": {
+    "message": "$count$, deren Rolle und Name auch andere finden (orange)",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "devtools_tabRecord": {
+    "message": "Aufzeichnen"
+  },
+  "devtools_tabReplay": {
+    "message": "Abspielen"
+  },
+  "devtools_noRecording": {
+    "message": "Es läuft keine Aufzeichnung. Starten Sie Aufzeichnen oder Bug melden im Menü der Erweiterung: Die Schritte erscheinen hier, während sie aufgezeichnet werden."
+  },
+  "devtools_recordingOn_one": {
+    "message": "Aufzeichnung auf $site$: $count$ Schritt",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "site": {
+        "content": "$2",
+        "example": "https://shop.example"
+      }
+    }
+  },
+  "devtools_recordingOn_other": {
+    "message": "Aufzeichnung auf $site$: $count$ Schritte",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "site": {
+        "content": "$2",
+        "example": "https://shop.example"
+      }
+    }
+  },
+  "devtools_bugRecordingOn_one": {
+    "message": "Bug-Report auf $site$: $count$ Schritt",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "site": {
+        "content": "$2",
+        "example": "https://shop.example"
+      }
+    }
+  },
+  "devtools_bugRecordingOn_other": {
+    "message": "Bug-Report auf $site$: $count$ Schritte",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "site": {
+        "content": "$2",
+        "example": "https://shop.example"
+      }
+    }
+  },
+  "devtools_recordingStopped_one": {
+    "message": "Aufzeichnung beendet: $count$ Schritt, noch nicht exportiert",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "devtools_recordingStopped_other": {
+    "message": "Aufzeichnung beendet: $count$ Schritte, noch nicht exportiert",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "devtools_stopRecording": {
+    "message": "Aufzeichnung beenden"
+  },
+  "devtools_finishBugOnPage": {
+    "message": "Schließen Sie den Bug-Report über sein Panel auf der Seite ab, das die Belege sammelt."
+  },
+  "devtools_noReplay": {
+    "message": "Noch keine Wiedergabe. Starten Sie eine mit Bug-Report abspielen im Menü der Erweiterung: Ihre Schritte und Ergebnisse erscheinen hier."
+  },
+  "devtools_tabNetwork": {
+    "message": "Netzwerk"
+  },
+  "devtools_networkHint": {
+    "message": "Die fetch- und XHR-Anfragen der Seite, gelesen aus den DevTools, solange sie geöffnet sind. Nichts verlässt den Browser, außer Sie kopieren oder laden es herunter."
+  },
+  "devtools_networkEmpty": {
+    "message": "Noch keine Anfrage. Verwenden Sie die Seite oder laden Sie sie neu, dann erscheinen ihre Anfragen hier."
+  },
+  "devtools_networkAllOrigins": {
+    "message": "Auch andere Websites"
+  },
+  "devtools_networkAllTypes": {
+    "message": "Alle Arten"
+  },
+  "devtools_networkClear": {
+    "message": "Leeren"
+  },
+  "devtools_requestTime": {
+    "message": "$ms$ ms",
+    "placeholders": {
+      "ms": {
+        "content": "$1",
+        "example": "35"
+      }
+    }
+  },
+  "devtools_mockTitle": {
+    "message": "Diese Antwort nachbilden"
+  },
+  "devtools_mockPattern": {
+    "message": "URL-Muster"
+  },
+  "devtools_mockKind": {
+    "message": "Antworten mit"
+  },
+  "devtools_mockResponse": {
+    "message": "dieser Antwort"
+  },
+  "devtools_mockError": {
+    "message": "einem Serverfehler (500)"
+  },
+  "devtools_mockAbort": {
+    "message": "einem Netzwerkfehler"
+  },
+  "devtools_mockNoBody": {
+    "message": "Die DevTools haben keinen Inhalt dieser Antwort behalten. Laden Sie die Seite bei geöffneten DevTools neu, um sie nachzubilden."
+  },
+  "devtools_mockHidden_one": {
+    "message": "$count$ Wert ausgeblendet: Felder, die wie ein Passwort, ein Token oder ein Schlüssel heißen.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "devtools_mockHidden_other": {
+    "message": "$count$ Werte ausgeblendet: Felder, die wie ein Passwort, ein Token oder ein Schlüssel heißen.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "devtools_mockReveal": {
+    "message": "Ausgeblendete Werte zeigen"
+  },
+  "devtools_mockCopy": {
+    "message": "Code kopieren"
+  },
+  "devtools_mockDownload": {
+    "message": "$file$ herunterladen",
+    "placeholders": {
+      "file": {
+        "content": "$1",
+        "example": "cart.json"
+      }
+    }
+  },
+  "devtools_mockFileHint": {
+    "message": "Der Inhalt ist größer als 100 kB, daher liest der Code ihn aus einer Datei: Speichern Sie sie als $path$ im Ordner, aus dem Sie Playwright starten.",
+    "placeholders": {
+      "path": {
+        "content": "$1",
+        "example": "mocks/cart.json"
+      }
+    }
+  },
+  "devtools_conditionDelay": {
+    "message": "$request$ um $seconds$ s verlangsamen",
+    "placeholders": {
+      "request": {
+        "content": "$1",
+        "example": "GET **/api/cart"
+      },
+      "seconds": {
+        "content": "$2",
+        "example": "2"
+      }
+    }
+  },
+  "devtools_conditionError": {
+    "message": "$request$ mit einem 500-Fehler beantworten",
+    "placeholders": {
+      "request": {
+        "content": "$1",
+        "example": "GET **/api/cart"
+      }
+    }
+  },
+  "devtools_conditionAbort": {
+    "message": "$request$ wie einen Netzwerkfehler scheitern lassen",
+    "placeholders": {
+      "request": {
+        "content": "$1",
+        "example": "GET **/api/cart"
+      }
+    }
+  },
+  "devtools_conditionsOn_one": {
+    "message": "Piwi Picker: $count$ Bedingung aktiv",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "devtools_conditionsOn_other": {
+    "message": "Piwi Picker: $count$ Bedingungen aktiv",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "devtools_conditionsOff": {
+    "message": "Ausschalten"
+  },
+  "devtools_conditionsNoPage": {
+    "message": "Bedingungen für Anfragen brauchen eine Webseite im Tab."
+  },
+  "devtools_conditionsNeedAccess": {
+    "message": "Piwi Picker braucht Zugriff auf diese Website, um ihre Anfragen zu verlangsamen oder scheitern zu lassen."
+  },
+  "devtools_conditionFailed": {
+    "message": "Die Bedingung konnte nicht gesetzt werden: $error$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "No tab with id: 12"
+      }
+    }
+  },
+  "devtools_conditionsTitle": {
+    "message": "Bedingungen für Anfragen"
+  },
+  "devtools_conditionsFor": {
+    "message": "Diese Anfrage verlangsamen oder scheitern lassen"
+  },
+  "devtools_conditionsLimits": {
+    "message": "Bedingungen gelten für jede Anfrage der Seiten dieses Tabs, Dokumente, Skripte und Bilder eingeschlossen, bis Sie sie ausschalten oder den Tab schließen. Die eigenen Anfragen eines Service Workers laufen an ihnen vorbei."
+  },
+  "devtools_conditionRemove": {
+    "message": "Entfernen"
+  },
+  "devtools_conditionsAllOff": {
+    "message": "Alle ausschalten und neu laden"
+  },
+  "devtools_delaySeconds": {
+    "message": "Verzögerung in Sekunden"
+  },
+  "devtools_slowDown": {
+    "message": "Verlangsamen"
+  },
+  "devtools_failError": {
+    "message": "Mit 500 scheitern"
+  },
+  "devtools_failAbort": {
+    "message": "Scheitern (Netzwerkfehler)"
+  },
+  "login_title": {
+    "message": "Anmeldung für Tests speichern"
+  },
+  "login_site": {
+    "message": "Website: $site$",
+    "placeholders": {
+      "site": {
+        "content": "$1",
+        "example": "https://shop.example"
+      }
+    }
+  },
+  "login_noSite": {
+    "message": "Öffnen Sie dies über das Menü der Erweiterung auf einer Webseite: Es speichert die Anmeldung der Website dieser Seite."
+  },
+  "login_holds": {
+    "message": "Die Datei enthält die Cookies dieses Browsers für die Website, auch die httpOnly-Cookies, und den localStorage der Website, im storageState-Format von Playwright. IndexedDB bleibt außen vor."
+  },
+  "login_warning": {
+    "message": "Wer diese Datei hat, ist bis zum Ablauf der Sitzung als Sie angemeldet. Verwenden Sie ein Testkonto und halten Sie die Datei aus Ihrem Repository heraus."
+  },
+  "login_gitignore": {
+    "message": "Speichern Sie sie als $path$ und fügen Sie $folder$ zu $file$ hinzu.",
+    "placeholders": {
+      "file": {
+        "content": "$1",
+        "example": ".gitignore"
+      },
+      "folder": {
+        "content": "$2",
+        "example": "playwright/.auth"
+      },
+      "path": {
+        "content": "$3",
+        "example": "playwright/.auth/user.json"
+      }
+    }
+  },
+  "login_copyGitignore": {
+    "message": "Zeile für .gitignore kopieren"
+  },
+  "login_save": {
+    "message": "Anmeldedatei speichern"
+  },
+  "login_denied": {
+    "message": "Die Anmeldung wurde nicht gespeichert: Dafür muss Piwi Picker die Cookies dieser Website lesen."
+  },
+  "login_failed": {
+    "message": "Die Anmeldung konnte nicht gespeichert werden: $error$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "No tab with id: 12"
+      }
+    }
+  },
+  "login_savedCookies_one": {
+    "message": "user.json mit $count$ Cookie gespeichert.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "login_savedCookies_other": {
+    "message": "user.json mit $count$ Cookies gespeichert.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "login_savedStorage_one": {
+    "message": "$count$ localStorage-Eintrag.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "login_savedStorage_other": {
+    "message": "$count$ localStorage-Einträge.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "login_setupTitle": {
+    "message": "In einem Test verwenden"
+  },
+  "login_copySnippet": {
+    "message": "Code kopieren"
+  },
+  "devtools_networkSelect": {
+    "message": "Wählen Sie eine Anfrage, um sie nachzubilden, zu verlangsamen oder scheitern zu lassen."
+  },
+  "devtools_colMethod": {
+    "message": "Methode"
+  },
+  "devtools_colPath": {
+    "message": "Pfad"
+  },
+  "devtools_colStatus": {
+    "message": "Status"
+  },
+  "devtools_colTime": {
+    "message": "Dauer"
+  },
+  "devtools_conditionsLimitsTitle": {
+    "message": "Was sich so nicht verlangsamen lässt"
+  },
+  "devtools_conditionsLimitsPage": {
+    "message": "Bedingungen gelten für die fetch- und XHR-Aufrufe der Seiten dieses Tabs, bis Sie sie ausschalten oder den Tab schließen. Dokumente, Skripte, Bilder und die Anfragen eines Service Workers laufen an ihnen vorbei."
+  },
+  "devtools_conditionsDebugging": {
+    "message": "Über das Debugging-Protokoll von Chrome auf jede Anfrage dieses Tabs angewendet: Chrome zeigt seine Debugging-Leiste, bis Sie alle ausschalten."
+  },
+  "devtools_conditionsLostCanceled": {
+    "message": "Die Debugging-Leiste wurde abgebrochen: Die Drosselung ist aus, und die Bedingungen der Anfragen erreichen jetzt nur die fetch- und XHR-Aufrufe der Seite."
+  },
+  "devtools_conditionsLostEnded": {
+    "message": "Die Debugging-Sitzung wurde beendet: Die Drosselung ist aus, und die Bedingungen der Anfragen erreichen jetzt nur die fetch- und XHR-Aufrufe der Seite."
+  },
+  "devtools_throttleLabel": {
+    "message": "Netzwerk"
+  },
+  "devtools_cpuLabel": {
+    "message": "CPU"
+  },
+  "devtools_throttleNone": {
+    "message": "Keine Drosselung"
+  },
+  "devtools_throttleFast3g": {
+    "message": "Die ganze Seite mit schnellem 3G"
+  },
+  "devtools_throttleSlow3g": {
+    "message": "Die ganze Seite mit langsamem 3G"
+  },
+  "devtools_throttleOffline": {
+    "message": "Die ganze Seite offline"
+  },
+  "devtools_cpuSlower": {
+    "message": "Die CPU $rate$-mal langsamer",
+    "placeholders": {
+      "rate": {
+        "content": "$1",
+        "example": "4"
+      }
+    }
+  },
+  "devtools_emulationRefused": {
+    "message": "Der Browser hat die Debugging-Sitzung abgelehnt, die die Drosselung braucht: $error$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "Another debugger is already attached to the tab."
+      }
+    }
+  },
+  "devtools_emulationUnavailable": {
+    "message": "Die ganze Seite zu drosseln braucht das Debugging-Protokoll, das dieser Browser Erweiterungen nicht gibt."
+  },
+  "devtools_copyAs": {
+    "message": "Kopieren als"
+  },
+  "devtools_tabLocators": {
+    "message": "Locators"
+  },
+  "devtools_tabSession": {
+    "message": "Session"
+  },
+  "devtools_viewport": {
+    "message": "Viewport"
+  },
+  "devtools_viewportOpen": {
+    "message": "In neuem Fenster öffnen"
+  },
+  "devtools_locatorsHint": {
+    "message": "Geben Sie einen Locator ein: Die Elemente, die er auf dieser Seite findet, werden aufgelistet, wie Playwright sie findet. Fahren Sie über eines, um es auf der Seite zu umranden; Anzeigen wählt es im Elemente-Bereich aus."
+  },
+  "devtools_matches": {
+    "message": "Gefundene Elemente"
+  },
+  "devtools_reveal": {
+    "message": "Anzeigen"
+  },
+  "devtools_matchesListed": {
+    "message": "Nur die ersten $shown$ werden aufgelistet.",
+    "placeholders": {
+      "shown": {
+        "content": "$1",
+        "example": "50"
+      }
+    }
+  },
+  "devtools_sessionEmpty": {
+    "message": "Noch kein benanntes Element. Wählen Sie eines im Elemente-Bereich und nutzen Sie Zur Session hinzufügen in der Piwi-Seitenleiste."
+  },
+  "devtools_sessionCount_one": {
+    "message": "$count$ benanntes Element",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "devtools_sessionCount_other": {
+    "message": "$count$ benannte Elemente",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "devtools_remove": {
+    "message": "Entfernen"
+  },
+  "stability_position": {
+    "message": "Position"
+  },
+  "stability_cssClass": {
+    "message": "CSS-Klasse"
+  },
+  "stability_cssStructure": {
+    "message": "CSS-Struktur"
+  },
+  "stability_xpath": {
+    "message": "XPath"
+  },
+  "stability_generatedId": {
+    "message": "generierte ID"
+  },
+  "stability_styleAttribute": {
+    "message": "Style-Attribut"
+  },
+  "stability_longText": {
+    "message": "langer Text"
+  },
+  "stability_dataText": {
+    "message": "Zahl im Text"
+  },
+  "stability_deepChain": {
+    "message": "lange Kette"
+  },
+  "codegen_noLocator": {
+    "message": "Für dieses Element wurde kein Locator aufgezeichnet."
+  },
+  "codegen_brittleLocator": {
+    "message": "Der beste für dieses Element aufgezeichnete Locator kann brechen, wenn sich die Seite ändert: $locator$",
+    "placeholders": {
+      "locator": {
+        "content": "$1",
+        "example": "locator('.btn').nth(1)"
+      }
+    }
+  },
+  "codegen_redactedValue": {
+    "message": "Hier wurde ein Passwort eingegeben: Der Test liest es aus $variable$.",
+    "placeholders": {
+      "variable": {
+        "content": "$1",
+        "example": "PIWI_TEST_VALUE_3"
+      }
+    }
+  },
+  "codegen_emptyAssertion": {
+    "message": "Diese Prüfung hat nichts zu vergleichen."
+  },
+  "codegen_missingExpected": {
+    "message": "$matcher$ braucht einen erwarteten Wert.",
+    "placeholders": {
+      "matcher": {
+        "content": "$1",
+        "example": "toHaveText"
+      }
+    }
+  },
+  "codegen_fileNeeded": {
+    "message": "Hier wurde eine Datei gewählt ($files$): Der Test liest sie aus dem Ordner, in dem Playwright läuft.",
+    "placeholders": {
+      "files": {
+        "content": "$1",
+        "example": "invoice.pdf"
+      }
+    }
+  },
+  "common_actionClick": {
+    "message": "Klick"
+  },
+  "common_actionDblclick": {
+    "message": "Doppelklick"
+  },
+  "common_actionFill": {
+    "message": "Eingabe"
+  },
+  "common_actionSelectOption": {
+    "message": "Option wählen"
+  },
+  "common_actionCheck": {
+    "message": "Aktivieren"
+  },
+  "common_actionUncheck": {
+    "message": "Deaktivieren"
+  },
+  "common_actionHover": {
+    "message": "Hover"
+  },
+  "common_actionTap": {
+    "message": "Antippen"
+  },
+  "common_actionFocus": {
+    "message": "Fokus"
+  },
+  "common_actionBlur": {
+    "message": "Fokus verlassen"
+  },
+  "common_actionPress": {
+    "message": "Taste"
+  },
+  "common_actionType": {
+    "message": "Tippen"
+  },
+  "common_actionSetInputFiles": {
+    "message": "Dateien wählen"
+  },
+  "common_actionDragTo": {
+    "message": "Drag & Drop"
+  },
+  "common_actionDrop": {
+    "message": "Ablegen"
+  },
+  "common_actionDispatchEvent": {
+    "message": "Event auslösen"
+  },
+  "common_actionScrollIntoView": {
+    "message": "In den Sichtbereich scrollen"
+  },
+  "common_actionWaitFor": {
+    "message": "Warten"
+  },
+  "common_actionCount": {
+    "message": "Zählen"
+  },
+  "common_actionEvaluate": {
+    "message": "Auswerten"
+  },
+  "common_actionExpect": {
+    "message": "Prüfung"
+  },
+  "common_actionOther": {
+    "message": "Sonstige"
+  },
+  "common_actionExpectMatcher": {
+    "message": "Prüfung $matcher$",
+    "placeholders": {
+      "matcher": {
+        "content": "$1",
+        "example": "toBeVisible"
+      }
+    }
+  },
+  "common_actionExpectNot": {
+    "message": "Prüfung not.$matcher$",
+    "placeholders": {
+      "matcher": {
+        "content": "$1",
+        "example": "toBeVisible"
+      }
+    }
+  },
+  "bug_noScreenshotNone": {
+    "message": "es wurde keiner aufgenommen"
+  }
+}

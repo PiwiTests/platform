@@ -32,9 +32,9 @@ import {
   type PiwiEnvVarMeta,
   type PiwiEnvVarName,
 } from '#shared/piwi-env-vars';
+import { GENERATED_DOCS_PAGES, type GeneratedDocsPage } from '#shared/docs-generated-pages';
 import {
   DOCS_GROUPS,
-  GENERATED_DOCS_PAGES,
   buildDocsCorpus,
   docsMarkdown,
   docsOutline,
@@ -397,7 +397,7 @@ async function mcpTopic(db: DbClient, facts: InstanceFacts) {
       'Append ?modules=core (any comma-separated set of core, workflow, healing, agents) to the MCP URL to list only those modules; declining a capability drops the tools that need it for every client.',
     prompts: MCP_PROMPT_DEFS.map(({ name, description }) => ({ name, description })),
     skills:
-      '`npx @piwitests/reporter skills add` installs five agent skills that drive these tools — page "features/mcp#agent-skills".',
+      '`npx @piwitests/reporter skills add` installs the agent skills that drive these tools — page "features/agent-skills".',
     page: 'features/mcp',
   });
 }
@@ -408,13 +408,14 @@ async function feedbackTopic(facts: InstanceFacts) {
   return dropNulls({
     bug: FEEDBACK_CHANNELS.bug,
     idea: FEEDBACK_CHANNELS.idea,
+    translation: FEEDBACK_CHANNELS.translation,
     question: FEEDBACK_CHANNELS.question,
     security: { url: FEEDBACK_CHANNELS.security, note: 'Report vulnerabilities privately, never in a public issue.' },
     docsFix: FEEDBACK_CHANNELS.docs,
     thisInstance: `${deployment} — for a bug report's Version and Deployment fields (add the storage backend and the reporter version).`,
     direction: docsSectionItems(corpus, QUOTED_DOCS_SECTIONS.jobs),
     fitTest:
-      'Every feature serves one of the three jobs above; an idea that strengthens none of them is an argument against building it.',
+      'Every feature serves one of the jobs above; an idea that strengthens none of them is an argument against building it.',
     nonGoals: FEEDBACK_CHANNELS.nonGoals,
     roadmap: PROJECT_LINKS.roadmap,
     contributing: PROJECT_LINKS.contributing,
@@ -440,35 +441,47 @@ function docsIndex(corpus: DocsCorpus | null, version: string) {
           .map((p) => ({ page: p.path, title: p.title, summary: firstSentence(p.summary) })),
       }))
       .filter((g) => g.pages.length),
-    generated: [
-      { page: 'reference/configuration', read: 'topic "configuration"' },
-      { page: 'reference/feature-map', read: 'topics "features", "ecosystem" and "choices"' },
-      { page: 'reference/whats-new', read: 'the get_release_notes tool' },
-    ],
+    generated: (Object.keys(GENERATED_DOCS_PAGES) as GeneratedDocsPage[]).map((page) => ({
+      page,
+      read: GENERATED_PAGE_ANSWERS[page] ?? `${docsPageUrl(page)} (generated from ${GENERATED_DOCS_PAGES[page]})`,
+    })),
     read: 'Pass `page` with a path, or "path#anchor" for one section; `query` searches every page.',
   };
 }
+
+/**
+ * Where describe_piwi answers for a generated page from the page's own registry.
+ * The other generated pages are only on the published site.
+ */
+const GENERATED_PAGE_ANSWERS: Partial<Record<GeneratedDocsPage, string>> = {
+  'reference/configuration': 'topic "configuration"',
+  'reference/features': 'topics "features", "ecosystem" and "choices"',
+  'reference/mcp-tools': 'topic "mcp"',
+  'reference/whats-new': 'the get_release_notes tool',
+};
 
 /** Longest Markdown a page read returns before pointing at its sections. */
 const MAX_PAGE_CHARS = 60_000;
 
 async function readDocsPage(ref: string, db: DbClient, facts: InstanceFacts) {
   const { path, anchor } = parseDocsRef(ref);
-  const generated = GENERATED_DOCS_PAGES.find((p) => p === path || p.endsWith(`/${path}`));
+  const generated = (Object.keys(GENERATED_DOCS_PAGES) as GeneratedDocsPage[]).find(
+    (p) => p === path || p.endsWith(`/${path}`),
+  );
   if (generated) {
     const url = docsPageUrl(generated);
-    if (generated === 'reference/configuration') {
-      return {
-        page: generated,
-        url,
-        note: 'Generated from the PIWI_* registry.',
-        ...configurationTopic(facts.version, null),
-      };
-    }
-    if (generated === 'reference/feature-map') {
-      return { page: generated, url, note: 'Generated from the feature catalog.', ...(await featuresTopic(db, facts)) };
-    }
-    return { page: generated, url, note: 'Generated from the changelog: call get_release_notes.' };
+    const note = `Generated from ${GENERATED_DOCS_PAGES[generated]}.`;
+    // The topic's own fields first, so the answer names the page that was read.
+    if (generated === 'reference/configuration')
+      return { ...configurationTopic(facts.version, null), page: generated, url, note };
+    if (generated === 'reference/features') return { ...(await featuresTopic(db, facts)), page: generated, url, note };
+    if (generated === 'reference/mcp-tools') return { ...(await mcpTopic(db, facts)), page: generated, url, note };
+    if (generated === 'reference/whats-new') return { page: generated, url, note: `${note} Call get_release_notes.` };
+    return {
+      page: generated,
+      url,
+      note: `${note} It is built with the docs site and not bundled here; read it at the URL.`,
+    };
   }
 
   const corpus = await bundledDocs();

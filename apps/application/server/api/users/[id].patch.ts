@@ -11,7 +11,7 @@ defineRouteMeta({
     tags: ['Users'],
     summary: 'Update a user',
     description:
-      "Updates a user's name, email, or role. Admins can update any user; non-admins can only update their own name and email. Demoting the last administrator is refused.",
+      "Updates a user's name, email, or role. Admins can update any user; non-admins can only update their own name and email. Demoting the last administrator is refused, and so is an email another account already uses (409). Changing the email clears its verified flag.",
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-roles': ['administrator', 'reporter', 'user'],
   },
@@ -70,6 +70,7 @@ export default eventHandler(async (event) => {
     }
     return { success: true, user: toPublicUser(user) };
   } catch (err) {
-    throw apiError({ statusCode: 400, message: err instanceof Error ? err.message : 'Failed to update user' });
+    const message = err instanceof Error ? err.message : 'Failed to update user';
+    throw apiError({ statusCode: message === 'Email already in use' ? 409 : 400, message });
   }
 });

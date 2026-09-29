@@ -14,6 +14,8 @@ import type {
   TestMetadata,
   TestSourceFrame,
   TestStepEvent,
+  LocatorPageUse,
+  WireNetworkRequest,
 } from './wire.js';
 import type { LocatorSnapshot } from '../internal/capture/locator-healing.js';
 
@@ -90,10 +92,12 @@ export interface CollectedTestCase {
   performanceMetrics?: CollectedPerformanceMetrics;
   stepEvents?: TestStepEvent[];
   /** Parsed from `piwi-network` attachments by `FileHandler`. */
-  networkRequests?: unknown;
+  networkRequests?: WireNetworkRequest[];
   /** Parsed from `piwi-web-vitals` attachments. */
   webVitals?: unknown;
   pageState?: unknown;
+  /** Parsed from `piwi-page-inventory`: controls and links per visited page (passing runs). */
+  pageInventory?: unknown;
   /** Parsed from the `piwi-ai-usage` manifest: committed AI-step artifacts this test replayed. */
   aiUsage?: unknown;
   /** Parsed from `piwi-console` attachments. */
@@ -106,8 +110,14 @@ export interface CollectedTestCase {
   ariaSnapshotJson?: string;
   /** Parsed from `piwi-locators` attachment. */
   locatorSnapshots?: LocatorSnapshot[];
+  /** Parsed from `piwi-locator-pages`: the page each locator call ran on. */
+  locatorPages?: LocatorPageUse[];
+  /** Parsed from `piwi-code-reach`: the repository-relative source files the test executed. */
+  codeReach?: string[];
   /** Why a `didnotrun` case never executed; unset for tests that ran. */
   didNotRunReason?: string | null;
+  /** Playwright's `TestCase.expectedStatus`: `failed` for a `test.fail()` test. */
+  expectedStatus?: string | null;
   /** For a `previous-failure` cascade, the location of the failing test that blocked it. */
   blockedBy?: string | null;
 }

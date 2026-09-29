@@ -59,6 +59,33 @@ describe('resolveProjectIntegration', () => {
     expect(resolveProjectIntegration({ labels: [' a ', 'a', '', 'b'] as string[] }).labels).toEqual(['a', 'b']);
   });
 
+  test('field defaults keep valid entries and drop Piwi-managed or empty ones', () => {
+    const resolved = resolveProjectIntegration({
+      fieldDefaults: {
+        customfield_10050: { value: { id: '10100' }, label: 'Critical' },
+        summary: { value: 'not settable here', label: 'x' },
+        customfield_10060: { value: '', label: '' },
+      },
+    });
+    expect(resolved.fieldDefaults).toEqual({ customfield_10050: { value: { id: '10100' }, label: 'Critical' } });
+  });
+
+  test("a transition's field values keep the assignee but never the comment", () => {
+    const { policies } = resolveProjectIntegration({
+      policies: {
+        fixTransitionFields: {
+          resolution: { value: { id: '1' }, label: 'Fixed' },
+          assignee: { value: { accountId: 'acc-7' }, label: 'Ada' },
+          comment: { value: 'no', label: 'no' },
+        },
+        reopenTransitionFields: 'not an object',
+      } as never,
+    });
+    expect(Object.keys(policies.fixTransitionFields)).toEqual(['resolution', 'assignee']);
+    expect(policies.reopenTransitionFields).toEqual({});
+    expect(resolveProjectIntegration({}).policies.fixTransitionFields).toEqual({});
+  });
+
   test('locale is narrowed to a supported language, else null (inherit)', () => {
     expect(resolveProjectIntegration({ locale: 'fr' }).locale).toBe('fr');
     expect(resolveProjectIntegration({ locale: 'de' as never }).locale).toBeNull();

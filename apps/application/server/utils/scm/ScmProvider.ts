@@ -39,6 +39,10 @@ export interface ScmChanges {
   files: ChangedFile[];
   /** true when the raw diff was skipped because it exceeded the size cap */
   patchesOmitted?: boolean;
+  /** true when the changed-file list was capped at {@link MAX_SCM_FILES_TOTAL} */
+  filesTruncated?: boolean;
+  /** total changed files the provider reported, when it exposes a count past the cap */
+  totalChangedFiles?: number;
 }
 
 /** Full content of a file at a specific ref (used to ground diagnosis patches). */
@@ -50,6 +54,13 @@ export interface ScmFileContent {
 }
 
 export const MAX_SCM_FILES = 30;
+/**
+ * Cap on the full changed-file list a diff returns, paged up to here so a large
+ * pull request's later files are not silently dropped. When a diff has more, the
+ * result is capped at this many and flagged `filesTruncated` with `totalChangedFiles`
+ * where the provider exposes a count, so the comment can say "and N more".
+ */
+export const MAX_SCM_FILES_TOTAL = 300;
 export const MAX_PATCH_PER_FILE = 100_000;
 export const MAX_RAW_DIFF_BYTES = 200_000;
 /** Cap on a single file's content fetched via fetchFileAtRef. */

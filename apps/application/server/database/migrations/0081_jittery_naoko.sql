@@ -1,0 +1,1 @@
+ALTER TABLE `report_schedules` ADD `include_narrative` integer DEFAULT false NOT NULL;

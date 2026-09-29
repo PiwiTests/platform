@@ -1,26 +1,25 @@
 ---
-title: Backend logs
+title: Backend instrumentation
+description: "Add the ASP.NET Core or Nitro package to your backend so each test's requests carry the server's logs, spans and routes, with server probes as an experimental fourth use."
 lang: en-US
 ---
 
-# Backend logs
+# Backend instrumentation
 
-Piwi Dashboard can capture server-side Warning and Error log entries during a Playwright test run and surface them in the test-case detail view and the AI diagnosis context.
+A small package in your backend attaches to each HTTP response what the server did for that request, and the
+[capture fixtures](./capture-fixtures) read it from the response while your tests run. Nothing leaves your backend
+except in those response headers, and only outside production.
 
-The mechanism is straightforward: the backend integration adds a `X-Piwi-Logs` response header (gzip-compressed, Base64-encoded JSON) to HTTP responses — the Nitro/Nuxt integration to every response (an empty array when nothing was logged), the ASP.NET Core integration only to responses that captured at least one entry. The Piwi Dashboard reporter reads this header from each captured network request and stores the entries as `serverLogs` on that request.
+| Use | What you get | ASP.NET Core | Nitro / Nuxt |
+|---|---|:---:|:---:|
+| [Backend logs](#backend-logs) | The server's warnings and errors, next to the request that caused them | ✓ | ✓ |
+| [Server spans](#server-spans) | The server's time on a request, and the handler and dependencies it reached | | ✓ |
+| [Route manifest](#route-manifest) | The routes the server has, so the Test Map can name the ones no test reaches | | ✓ |
+| [Server probes](#server-probes) | A fault injected inside the server for one request (**Experimental**) | ✓ | ✓ |
 
-**Active only in non-production environments by default.** The ASP.NET Core integration emits the header only in Development/Test environments. The Nitro/Nuxt integration additionally honors `PIWI_TEST_LOGS_DISABLED`: set it to `true` to turn capture off anywhere, or to `false` to force capture on in a production-mode test deployment.
+**Active only in non-production environments by default.** The ASP.NET Core integration emits its headers in the Development and Test environments unless you [choose others](#choosing-the-environments); the Nitro/Nuxt integration whenever `NODE_ENV` is unset, `development` or `test`. Both honor `PIWI_TEST_LOGS_DISABLED`: set it to `true` to turn capture off anywhere, or to `false` to force capture on in a production-mode test deployment.
 
-## How it looks in the dashboard
-
-When backend logs are captured, they appear in:
-
-- **The [execution page](/features/evidence#one-execution-diagnosis-first) (`/test-run-cases/:id`)** — the **Network requests** card, in the evidence funnel of a failing execution's Diagnosis tab and in the Artifacts tab, lists each captured request (method, status, response time, content type, and timestamp). Requests that returned server-side logs show an inline warning/error count and expand to reveal **every log entry attached to that exact request** — level, category, message, timestamp, and a collapsible stack trace. Requests are sorted so failures and those carrying error logs surface first, and a filter lets you narrow to "Failed" or "With logs".
-- **AI diagnosis context** — warnings and errors are included automatically when diagnosing a failure cluster, giving the AI visibility into what went wrong on the server side
-
-Because the logs are stored per request (rather than as one flat list), you can immediately tell *which* HTTP call produced a given warning or error — the response and its server-side cause sit side by side.
-
-## Available integrations
+## Install
 
 ### ASP.NET Core (NuGet)
 
@@ -42,11 +41,42 @@ app.UsePiwiTestLogs();
 app.Run();
 ```
 
-`AddPiwiTestLogs()` registers an `ILoggerProvider` that feeds Warning and Error log entries into a per-request capture buffer (`PiwiTestLogCapture`, `AsyncLocal<T>`-scoped).
+`AddPiwiTestLogs()` registers a logger provider that collects Warning and Error entries per request; `UsePiwiTestLogs()` adds the middleware that writes them to the response, only in the active environments.
 
-`UsePiwiTestLogs()` adds middleware that writes the buffer to the `X-Piwi-Logs` response header before the response is sent, only when the environment is Development or Test.
+The capture buffer is decoupled from the logging front-end, so it also works outside minimal hosting. Apps on the classic **Generic Host + `Startup`** model use the hosting-agnostic overloads: `services.AddPiwiTestLogs()` (or `ILoggingBuilder.AddPiwiTestLogs()`) in `ConfigureServices`, and `app.UsePiwiTestLogs(env)` on `IApplicationBuilder` in `Configure`.
 
-The capture buffer is decoupled from the logging front-end, so it also works outside minimal hosting. Apps on the classic **Generic Host + `Startup`** model use the hosting-agnostic overloads (`services.AddPiwiTestLogs()` or `ILoggingBuilder.AddPiwiTestLogs()`, and `app.UsePiwiTestLogs()` on `IApplicationBuilder`). Apps that route logging through **Serilog** feed the same buffer from a small `ILogEventSink` that calls `PiwiTestLogCapture.TryAdd(...)`; see the [package README](https://github.com/PiwiTests/platform/tree/main/integrations/aspnetcore/PiwiTests.Instrumentation.AspNetCore#serilog-or-the-classic-generic-host--startup-model) for the sink. `TryAdd` self-guards the level (Warning and above), so no feeding path over-captures.
+Apps that route logging through **Serilog** never call other logging providers (with Serilog's default `writeToProviders: false`), so they add the sink package instead:
+
+```bash
+dotnet add package PiwiTests.Instrumentation.Serilog
+```
+
+```csharp
+// Serilog configuration
+loggerConfiguration.WriteTo.PiwiTestLogs();
+
+// Startup.Configure(IApplicationBuilder app, IHostEnvironment env)
+app.UsePiwiTestLogs(env, e => e.IsDevelopment() || e.IsEnvironment("Podman") || e.IsEnvironment("Integration"));
+```
+
+The sink captures Warning, Error and Fatal events and does nothing outside a request the middleware brackets, so it stays registered in every environment; the middleware decides where capture runs.
+
+#### Choosing the environments
+
+Test tiers often run under their own environment names (`Podman`, `Integration`, …). Only the middleware needs to know them — outside a request it brackets, capture does nothing — so pick where it is active in one of three ways:
+
+```csharp
+// A predicate, for full control
+app.UsePiwiTestLogs(env, e => e.IsDevelopment() || e.IsEnvironment("Podman") || e.IsEnvironment("Integration"));
+
+// Environment names (case-insensitive)
+app.UsePiwiTestLogs(env, "Development", "Podman", "Integration");
+
+// Options, set once in ConfigureServices
+services.AddPiwiTestLogs(o => o.IsActive = e => e.IsDevelopment() || e.IsEnvironment("Integration"));
+```
+
+Or, without touching code, set `PIWI_TEST_LOGS_ENVIRONMENTS=Development,Podman,Integration` on the backend. The first setting present wins: a predicate passed to `UsePiwiTestLogs`, then names passed to it, then `PiwiTestLogsOptions.IsActive`, then `PiwiTestLogsOptions.Environments`, then `PIWI_TEST_LOGS_ENVIRONMENTS`, then the Development/Test default. `PIWI_TEST_LOGS_DISABLED` overrides all of them.
 
 **Requirements:** .NET 8, 9, or 10.
 
@@ -70,17 +100,21 @@ The plugin is auto-loaded by Nitro. It captures `consola` Warning/Error entries 
 
 A runnable end-to-end demo lives in [`examples/playwright-fixtures`](https://github.com/PiwiTests/platform/tree/main/examples/playwright-fixtures) — a standalone Nitro app instrumented with this package, with a Playwright spec (`backend-logs.spec.ts`) showing the captured logs in the dashboard.
 
-## Reporter setup
+### Reporter setup
 
-On the Playwright side, the reporter reads `X-Piwi-Logs` automatically from every captured network response. No additional configuration is needed beyond having the fixtures active.
+On the Playwright side there is nothing to configure: the reporter reads the headers from every request the
+[capture fixtures](./capture-fixtures) record, so every spec must import `test` from your fixtures file.
 
-Make sure your test files import `test` from the Piwi Dashboard fixtures (or extend with `piwiFixtures`) so network requests are captured:
+## Backend logs
 
-<<< @/snippets/fixtures.ts{ts}
+The integration adds an `X-Piwi-Logs` response header (gzip-compressed, Base64-encoded JSON) to HTTP responses: the Nitro plugin to every response (an empty array when nothing was logged), the ASP.NET Core middleware only to responses that captured at least one entry. The reporter stores its entries as `serverLogs` on that request. They appear in:
 
-See the [capture fixtures guide](/guide/capture-fixtures) for details.
+- **The [execution page](/features/evidence#one-execution-diagnosis-first)**: in the network requests, a request that returned server-side logs shows a warning and error count and expands to every entry attached to it (level, category, message, timestamp and stack trace). Error logs also raise a [clue](/features/evidence#clues).
+- **The [AI diagnosis](/features/ai-diagnosis) context**: warnings and errors are included when a failure is diagnosed.
 
-## Log entry format
+Because the logs are stored per request, you can tell which HTTP call produced a given warning or error.
+
+### Log entry format
 
 Each entry in the `X-Piwi-Logs` array has this shape:
 
@@ -93,6 +127,29 @@ Each entry in the `X-Piwi-Logs` array has this shape:
 | `stack` | `string` | Optional. Shrunk stack trace, max 5 frames — framework/internal frames removed (`node:internal` and `node_modules` for Nitro); the ASP.NET Core integration also shortens namespace parts to their first lowercase letter |
 
 The ASP.NET Core integration additionally captures `exceptionMessage` when an exception was logged.
+
+## Server spans
+
+The Nitro plugin also writes an `X-Piwi-Trace` header: a root span for the request, with the matched handler's
+source file when Nitro exposes it, plus any child spans your code records with `recordServerSpan` (a database query,
+a downstream call). The dashboard shows them next to the network request, and the [Test Map](/features/scenario-gaps)
+uses the handler and dependencies they name. The reporter reads them while `captureServerTraces` is on (the default).
+
+## Route manifest
+
+The Nitro plugin serves `/__piwi/manifest` outside production: the routes the server has matched since it started.
+The reporter's global setup fetches it when the application's first response carries an instrumentation header, and
+uploads it with the run, so a route nothing reaches becomes a
+[declared, never hit](/features/scenario-gaps#declared-surface) gap. Any backend can instead commit a
+`piwi.manifest.json` next to the Playwright config. Turn the upload off with `uploadManifest: false`.
+
+## Server probes
+
+**Experimental.** Both packages accept a signed fault instruction on one request (`X-Piwi-Probe`, HMAC-signed with
+`PIWI_PROBE_SECRET`) and apply it inside the server, so a probe run can check whether a passing test notices the
+server's real error path. Faults are applied only with `PIWI_SERVER_PROBES=true` on the backend, only outside
+production, and only for projects that turn server probes on. See
+[Server probes](/features/probes#server-probes) for what they report and when to turn them on.
 
 ## Building your own integration
 
@@ -110,3 +167,10 @@ const entries = JSON.parse(gunzipSync(Buffer.from(header, 'base64')).toString('u
 ```
 
 Cap entries at a reasonable limit (50 is the default in the provided integrations) and truncate long messages to avoid bloating responses.
+
+## Related
+
+- [Capture fixtures](./capture-fixtures): the fixtures that read these headers
+- [Failure evidence](/features/evidence): where backend logs appear on a failing execution
+- [Scenario gaps & the Test Map](/features/scenario-gaps): what spans, the manifest and probes feed
+- [Configuration reference](/reference/configuration#backend-logs): `PIWI_TEST_LOGS_DISABLED` and `PIWI_TEST_LOGS_ENVIRONMENTS`

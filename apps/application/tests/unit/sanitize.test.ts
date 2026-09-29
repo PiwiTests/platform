@@ -173,6 +173,17 @@ describe('capSteps', () => {
     expect(Object.keys(out[0]!.params).length).toBe(DEFAULT_INGEST_LIMITS.stepParamKeys);
   });
 
+  test('ends a value cut on ingest with a marker', () => {
+    const limits = { ...DEFAULT_INGEST_LIMITS, stepParamValueChars: 20 };
+    const locator = "getByRole('form').getByLabel('Country')";
+    const out = capSteps([{ title: 'Click', duration: 1, subtitle: locator, params: { locator } }], limits) as Array<{
+      subtitle: string;
+      params: Record<string, string>;
+    }>;
+    expect(out[0]!.params.locator).toBe("getByRole('form').g…");
+    expect(out[0]!.subtitle).toBe("getByRole('form').g…");
+  });
+
   test('masks token-shaped param values and subtitles on ingest', () => {
     const jwt = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.abcDEF123456';
     const out = capSteps(

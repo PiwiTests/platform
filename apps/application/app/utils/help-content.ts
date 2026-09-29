@@ -7,7 +7,9 @@
  *
  * Copy rules: 1–2 sentences, sentence case, American English. The `doc` field
  * is a docs page + optional `#anchor` passed through `docsUrl()`; omit it when
- * no docs section exists yet (text-only hint). The `envVars` field lists the
+ * no docs section exists yet (text-only hint). The optional `recipe` links the
+ * recipe that answers the question the block raises, labeled with that
+ * question. The `envVars` field lists the
  * `PIWI_*` environment variable(s) that override the setting; it is typed as
  * `PiwiEnvVarName[]` so a typo is a compile error (see `shared/piwi-env-vars`).
  */
@@ -20,6 +22,11 @@ export interface HelpTopic {
   text: string;
   /** Docs page + optional `#anchor` (passed to `docsUrl()`); omit if none. */
   doc?: string;
+  /**
+   * The recipe that answers the question this block raises, shown under
+   * "Learn more" as a second link labeled with the recipe's question.
+   */
+  recipe?: { question: string; doc: string };
   /**
    * `PIWI_*` environment variable(s) that override this setting (env always
    * wins; the UI shows the field read-only when set). Listed in the popover so a
@@ -36,6 +43,11 @@ export const HELP_TOPICS = {
     text: 'File a Jira issue from this failure, with the fix plan as its body. Piwi links the issue back as the known issue, so the key travels to the inbox, Slack, email and PR comments. Filing twice for the same cluster is a no-op — the modal offers to link an existing issue instead.',
     doc: 'features/issue-tracking#what-it-does-exactly',
   },
+  'integrations.required-fields': {
+    title: 'Required Jira fields',
+    text: 'Fields the Jira project requires for this issue type, beyond what Piwi fills (summary, description, labels, assignee). A value set in the project settings fills every issue filed from the project; the create modal asks for any still empty, and a create that would leave one empty is refused before Jira is called. You can also set optional fields, such as components. The fix and reopen transitions can require fields too, such as a resolution: set them under each transition.',
+    doc: 'features/issue-tracking#required-jira-fields',
+  },
   'integrations.known-issue': {
     title: 'Known issue',
     text: 'The tracker issue this cluster is tracked by. Its key and status show wherever the cluster appears; the action becomes Open in Jira once it exists.',
@@ -51,7 +63,7 @@ export const HELP_TOPICS = {
   'home.get-started': {
     title: 'Get started',
     text: 'Wire the Piwi reporter into your Playwright config to start sending results here. The wizard generates the snippet for you.',
-    doc: 'guide/getting-started#using-the-piwi-dashboard-reporter',
+    doc: 'guide/reporter',
   },
   'home.failure-inbox': {
     title: 'Failure inbox',
@@ -67,7 +79,7 @@ export const HELP_TOPICS = {
   // ── Analytics ─────────────────────────────────────────────────────────
   'analytics.insights': {
     title: 'Insights',
-    text: 'Auto-generated findings over the selected period — pass-rate drops, failing streaks, stale clusters, wasted CI time. Ranked by severity; click one to jump to the source.',
+    text: 'Auto-generated findings over the selected period — missed targets, pass-rate drops, failing streaks, stale clusters, wasted CI time, a growing time to fix, a shrinking suite, a growing quarantine, one owner holding most open failure causes. Ranked by severity; click one to jump to the source.',
   },
   'analytics.portfolio': {
     title: 'Portfolio health',
@@ -75,11 +87,11 @@ export const HELP_TOPICS = {
   },
   'analytics.heatmap': {
     title: 'Pass rate heatmap',
-    text: 'Each cell is the aggregate pass rate of one project over one time bucket — green at 90% or more, amber from 50%, red below 50%, gray means no runs. Longer periods use wider buckets.',
+    text: 'Each cell is the aggregate pass rate of one project over one time bucket — green at 90% or more, amber from 50%, red below 50%, gray means no runs. A cell is one UTC day, or a wider bucket on long periods.',
   },
   'analytics.ci-time': {
     title: 'CI time',
-    text: 'Total minutes your test runs consumed, over time, with the change vs the previous equal-length period. Steady growth here is a capacity conversation.',
+    text: 'Total minutes your test runs consumed, over time, with the change against the comparison period. Steady growth here is a capacity conversation.',
   },
   'analytics.wasted-time': {
     title: 'Wasted CI time',
@@ -93,16 +105,210 @@ export const HELP_TOPICS = {
   'analytics.cluster-landscape': {
     title: 'Failure clusters',
     text: 'Open failure clusters across all projects — the biggest and oldest unresolved root causes. Clusters outlive run retention, so this works on long horizons.',
-    doc: 'features/ai-diagnosis#failure-clustering',
+    doc: 'features/failure-clusters#how-failures-are-grouped',
   },
   'analytics.regression-velocity': {
     title: 'Regression velocity',
     text: 'How much new breakage each period introduces: tests that passed in a baseline and now fail (regressions), plus tests that turned flaky. Rising bars mean quality debt is accumulating.',
     doc: 'features/flaky-tests#regression-signals',
   },
+  'analytics.suite-growth': {
+    title: 'Suite growth',
+    text: 'How many tests the suite has over time (the highest test count one run reported in each bucket), and the share of them skipped or not run. A growing suite whose skipped share grows too is adding tests nobody runs.',
+    doc: 'reference/analytics-widgets#which-way-it-is-going',
+  },
+  'analytics.flaky-debt': {
+    title: 'Flaky debt',
+    text: 'Whether flakiness is going down: flaky occurrences per run in each bucket (from the daily rollups, so over any window), the distinct tests that passed only on a retry (from the stored runs, so only as far back as retention keeps them) and the tests in quarantine at the end of each bucket.',
+    doc: 'reference/analytics-widgets#which-way-it-is-going',
+  },
+  'analytics.time-to-fix': {
+    title: 'Time to fix',
+    text: 'How fast failures get fixed: failure causes opened and fixed per bucket, the median and 90th-percentile time from first failure to fix over the causes fixed in the period, the share of those fixes that held, and the open causes by age. Failure clusters outlive run retention, so this reaches as far back as they do.',
+    doc: 'reference/analytics-widgets#where-the-pain-is',
+  },
+  'analytics.ownership': {
+    title: 'Ownership',
+    text: 'One row per owner: the open failure causes assigned to them, and the flaky tests and wasted CI minutes of the tests they own (their `piwi:owner` annotation), with the median time to fix of the causes they fixed. The Unowned row holds everything nobody is assigned to or owns. Test counts reach back only as far as retention keeps runs.',
+    doc: 'reference/analytics-widgets#where-the-pain-is',
+  },
+  'analytics.environment-comparison': {
+    title: 'Environment comparison',
+    text: 'Test pass rate and run success per environment (the `environment` your runs report), side by side with their change against the comparison period, and the pass rate of each over time, so a staging that is green while production is not stands out.',
+    doc: 'reference/analytics-widgets#detail',
+  },
+  'analytics.movers': {
+    title: 'Movers',
+    text: 'The tests that changed against the comparison period: those that became flaky or stopped being flaky, and those whose average passing duration grew or shrank by more than 25 %. Read from the stored runs, so both periods reach back only as far as retention keeps them; each direction lists its top tests, at most 25.',
+    doc: 'reference/analytics-widgets#detail',
+  },
   'analytics.browser-matrix': {
     title: 'Browser matrix',
     text: 'Pass rate per project × browser, so a suite that is green on one browser but failing on another (a browser-specific bug) stands out immediately.',
+  },
+  'chart.export': {
+    title: 'Chart export',
+    text: 'Copy as PNG puts the chart, with its title, on the clipboard as an image to paste into a slide or a document; a browser that cannot copy images downloads the PNG instead. Download Excel saves the numbers behind the chart as a workbook, one row per bucket or group, with numbers and dates in their own cell types and text that never runs as a formula.',
+    doc: 'features/analytics#exporting-a-chart',
+  },
+  'analytics.stats': {
+    title: 'Headline numbers',
+    text: 'Numbers from the metric catalog across every project in scope, each with its change against the comparison period. Green and red say whether the change is good news for that number, not whether it went up.',
+  },
+  'analytics.metric': {
+    title: 'Metric over time',
+    text: 'One metric from the catalog bucketed over the period. The faint line is the comparison period, bucket for bucket; the vertical lines are timeline markers.',
+  },
+  'analytics.verdict': {
+    title: 'Verdict',
+    text: 'One or two sentences built by fixed rules from the pass rate, its change, the failure causes fixed and still open, and the wasted CI time. Never written by a model, so it only repeats numbers shown elsewhere on the page.',
+  },
+  'analytics.narrative': {
+    title: 'Narrative',
+    text: 'In a scheduled quality report with the AI narrative on, the configured diagnosis model writes three paragraphs here from the report’s numbers only, labeled as generated; an answer citing a number the report lacks is refused. Everywhere else, and whenever the model fails or none is configured, this shows the rule-based verdict.',
+    doc: 'reference/analytics-widgets#where-things-stand',
+  },
+  'reports.narrative': {
+    title: 'AI narrative',
+    text: 'Adds three paragraphs written by the configured diagnosis model at the top of each report, from the report’s numbers only and labeled as generated. The rule-based verdict and tiles stay; without a model, or when its answer cites a number the report lacks, the verdict stands in. Spends tokens once per report.',
+    doc: 'reference/analytics-widgets#where-things-stand',
+  },
+  'analytics.progress': {
+    title: 'Fixes and triage',
+    text: 'Failure causes fixed in the period and whether the fixes held, open causes assigned or linked to a ticket, tests quarantined and released, and auto-heal pull requests opened.',
+  },
+  'analytics.risks': {
+    title: 'Risks',
+    text: 'Metrics that moved the wrong way against the comparison period, projects failing run after run, the oldest open failure causes, and the tests waiting in quarantine.',
+  },
+  'analytics.scenario-gaps': {
+    title: 'Scenario gaps',
+    text: 'Open gaps of the Test Map by class and by feature, the gaps closed in the period, accepted gaps whose test was never written, and open resilience findings. Counts only, never a coverage percentage. A project that declined the Test Map is left out.',
+    doc: 'features/scenario-gaps',
+  },
+  'analytics.new-gaps': {
+    title: 'New scenario gaps',
+    text: 'The Test Map’s weekly digest: the top five new open gaps of each project created in the period, highest exposure first.',
+    doc: 'features/scenario-gaps',
+  },
+  'analytics.list': {
+    title: 'List',
+    text: 'The top items matching the scope: the latest runs of the period, the open failure causes with the most occurrences, the flakiest tests, or the highest-scored open scenario gaps. Each one opens its page.',
+    doc: 'features/dashboards#widgets',
+  },
+  'analytics.markers': {
+    title: 'Timeline markers',
+    text: 'The timeline markers of the period, the ones the trends draw: every marker when one project is in scope, across projects only releases, infrastructure changes and incidents.',
+    doc: 'features/timeline-markers',
+  },
+  'analytics.spec-health': {
+    title: 'Spec health',
+    text: 'Pass and flaky rates per spec directory of one project, over the period (at most the last 90 days), worst first. Pick a single project under Filters.',
+    doc: 'features/dashboards#widgets',
+  },
+  'analytics.slow-tests': {
+    title: 'Slowest tests',
+    text: 'The tests with the longest average duration over one project’s last 20 runs. Pick a single project under Filters.',
+    doc: 'features/dashboards#widgets',
+  },
+  'analytics.performance-trend': {
+    title: 'Performance trend',
+    text: 'Total run duration, average and p90 test duration of one project’s runs over the period. Pick a single project under Filters.',
+    doc: 'features/dashboards#widgets',
+  },
+  'analytics.timeout-opportunities': {
+    title: 'Timeout opportunities',
+    text: 'Tests of one project whose timeout is far above what they really take, so a hang wastes minutes, or that keep a test.slow() mark they no longer need.',
+    doc: 'features/dashboards#widgets',
+  },
+  'analytics.selection-health': {
+    title: 'Selection health',
+    text: 'How each selection of one project resolves today, its warnings and drift since its last run, and how many tests no selection picks.',
+    doc: 'features/test-selection',
+  },
+  'dashboards.widget-scope': {
+    title: 'Widget scope',
+    text: 'A widget can replace the dashboard’s period (a Last 7 days number on a quarterly dashboard) and narrow its filters (only some projects, a selection, test tags, browsers). It never widens them, so what a dashboard covers can be read off its Filters block.',
+    doc: 'features/dashboards#periods-and-filters-per-widget',
+  },
+  'dashboards.hidden-projects': {
+    title: 'Hidden projects',
+    text: 'A dashboard grants no access: every widget is computed for the projects you can open. The projects of this dashboard’s scope you cannot open are counted here and never shown.',
+    doc: 'features/dashboards#sharing-and-access',
+  },
+  'dashboards.default': {
+    title: 'Default dashboard',
+    text: 'Analytics opens the dashboard you picked in this browser, else the one an administrator set for everyone, else Overview. A saved dashboard must be shared to be the default for everyone.',
+    doc: 'features/dashboards#your-default-dashboard',
+  },
+  'dashboards.sharing': {
+    title: 'Sharing a dashboard',
+    text: 'A shared dashboard is listed for every signed-in user; only its owner and administrators change it, everyone else duplicates it. Sharing needs the reporter or administrator role, and shows nobody a project they cannot open.',
+    doc: 'features/dashboards#sharing-and-access',
+  },
+  'reports.schedule': {
+    title: 'Report schedule',
+    text: 'A quality report sent on a schedule, daily, weekly, every other week or monthly, to email, Slack, webhook or browser channels. Each firing covers the whole days since the previous one, compared with the period before or a year earlier, and is kept as a snapshot. A period with no run still sends, so a stopped pipeline shows. Team sends the engineering report for one owner’s tests; Gaps digest is the Test Map’s weekly digest.',
+    doc: 'features/quality-reports#report-schedules',
+    envVars: ['PIWI_TIME_ZONE'],
+  },
+  'notifications.teams': {
+    title: 'Microsoft Teams channel',
+    text: 'Posts an Adaptive Card to a Teams channel. In Teams, open the channel’s Workflows, pick the template "Send webhook alerts to a channel" and paste the URL it gives here; a legacy connector webhook still works while Microsoft keeps it. Events, digests and quality reports all get a card.',
+    doc: 'features/notifications#microsoft-teams',
+  },
+  'reports.share-link': {
+    title: 'Share link per report',
+    text: 'Each report this schedule generates gets its own read-only share link, which the email and the Slack message carry, so a reader without an account opens the report in one click. The link expires a week after the next report arrives. Slack also shows the trend as an image through it. Needs share links enabled on the instance.',
+    doc: 'features/share-links#report-share-links',
+    envVars: ['PIWI_SHARE_LINKS_ENABLED', 'PIWI_SHARE_LINK_MAX_TTL_DAYS'],
+  },
+  'share-links.badge': {
+    title: 'Status badge',
+    text: 'An SVG image of the test pass rate, the branch policy and the period ("tests on main · 97.8% · 7 d") that rides on this share link, for a README or a wiki page. It stops resolving with the link.',
+    doc: 'features/share-links#status-badge',
+  },
+  'dashboards.live-links': {
+    title: 'Live dashboard links',
+    text: 'A read-only page of this dashboard for a wall screen or a bookmark, with nobody signed in. It is computed at every view with your project access and reloads every minute; it dies when it expires, is revoked, or you lose access to the dashboard or its projects. It never serves evidence files.',
+    doc: 'features/share-links#live-dashboard-links',
+    envVars: ['PIWI_SHARE_LINKS_ENABLED'],
+  },
+  'reports.snapshots': {
+    title: 'Report snapshots',
+    text: 'Every quality report generated, scheduled or by hand, stored with its numbers as they were, so a report received months ago reads the same today whatever retention deleted since. You see the snapshots whose every project you can open.',
+    doc: 'features/quality-reports#report-snapshots',
+    envVars: ['PIWI_RETENTION_REPORT_DAYS'],
+  },
+  'reports.export': {
+    title: 'Quality report',
+    text: 'The scope on screen as a document for someone who does not open the dashboard: a rule-based verdict, headline numbers, the trend, what is being done and the risks. Executive keeps to plain words; Engineering adds flaky tests, clusters and detail; Overview is this page. Download it as PDF, HTML, Markdown, Excel or JSON.',
+    doc: 'features/quality-reports',
+  },
+  'analytics.period': {
+    title: 'Period',
+    text: 'Which days the page covers: a rolling window, a calendar week, month, quarter or year, a custom range, the time since a timeline marker, a release cycle (between two release markers) or a sprint. Rolling periods count whole UTC days; calendar periods follow your time zone.',
+    doc: 'features/analytics#periods',
+  },
+  'analytics.comparison': {
+    title: 'Compare with',
+    text: 'The reference every change on the page is measured against: the previous period of the same length, the previous calendar unit, release cycle or sprint, the same period a year earlier, or nothing.',
+    doc: 'features/analytics#comparison-and-buckets',
+  },
+  'analytics.granularity': {
+    title: 'Buckets',
+    text: 'How the trends and the heatmap cut the period: automatic (about 31 buckets), daily, weekly or monthly. Buckets start at UTC midnight.',
+    doc: 'features/analytics#comparison-and-buckets',
+  },
+  'analytics.branch-policy': {
+    title: 'Branch policy',
+    text: 'Default branch counts runs on each project’s default branch, plus runs whose branch is unknown, so a broken feature branch does not move the trends. All branches counts everything; picking branches by hand overrides both.',
+    doc: 'features/analytics#branch-policy',
+  },
+  'analytics.test-filter': {
+    title: 'Test filter',
+    text: 'Narrow every number to some tests: a selection (resolved by key in each project), test tags, or browsers. It means the tests that match today, with their whole history, and it counts from stored executions, so it reaches back only as far as retention keeps runs.',
+    doc: 'features/analytics#test-filter',
   },
   'analytics.slow-endpoints': {
     title: 'Slow endpoints',
@@ -129,13 +335,19 @@ export const HELP_TOPICS = {
   // ── Project detail ────────────────────────────────────────────────────
   'project.runs-trend': {
     title: 'Run trend',
-    text: 'One stacked bar per run — failed anchored at the bottom, passed on top — following the filters above. A growing red base marks where things broke; hover a bar for the counts, click it to open the run.',
+    text: 'One stacked bar per run — failed anchored at the bottom, passed on top — following the filters above. A growing red base marks where things broke; skipped tests take two greys, the stronger one for test.fixme(). Hover a bar for the counts, click it to open the run.',
     doc: 'features/ui-overview#project-detail',
   },
   'project.flaky-tests': {
     title: 'Flaky tests',
     text: 'Tests that fail intermittently across runs. Impact estimates wasted CI time; the score (0–100) rates severity and root cause explains why.',
     doc: 'features/flaky-tests#flaky-test-detection',
+    recipe: { question: 'Cut costly flakiness', doc: 'recipes/flaky-cleanup' },
+  },
+  'project.flake-lab': {
+    title: 'Flake Lab tests',
+    text: 'Every test on the flaky ranking of the last runs, and every test the lab has run, with where it stands: not tested, not reproduced, reproduced and waiting for a fix, or fixed. The command is the one it needs next: `piwi flake` reproduces a flake, `piwi flake verify` proves a fix under the condition that reproduced it.',
+    doc: 'features/flake-lab',
   },
   'project.quarantine': {
     title: 'Quarantine',
@@ -146,6 +358,7 @@ export const HELP_TOPICS = {
     title: 'Performance',
     text: 'Duration trends for the suite — average and P90 (the slowest 10% threshold). Use it to catch tests getting steadily slower.',
     doc: 'features/slow-tests',
+    recipe: { question: 'Cut the time it costs', doc: 'recipes/faster-suite' },
   },
   'project.timeline': {
     title: 'Timeline markers',
@@ -181,7 +394,7 @@ export const HELP_TOPICS = {
   'project.members': {
     title: 'Project access',
     text: 'Who can see this project. Admins always have access; reporters and users see only the projects assigned to them.',
-    doc: 'operate/authentication#user-management',
+    doc: 'operate/project-access',
   },
   'project.ai-instructions': {
     title: 'AI diagnosis instructions',
@@ -191,12 +404,32 @@ export const HELP_TOPICS = {
   'project.scm-token': {
     title: 'Repository access token',
     text: 'A read-only Git host token lets diagnosis pull the actual commit diffs behind a failure for SCM-grounded analysis. Stored encrypted.',
-    doc: 'features/ai-diagnosis#scm-grounded-context',
+    doc: 'guide/source-control',
+  },
+  'case.stability-trend': {
+    title: 'Stability trend',
+    text: 'This test’s pass rate, flaky rate (passed only on a retry) and average duration over time, one point per day, week or month in UTC, with the project’s timeline markers. Probe runs are left out. A gap is a bucket where the test did not run.',
+    doc: 'features/flaky-tests#per-test-stability-trend',
+  },
+  'cluster.occurrence-trend': {
+    title: 'Occurrences over time',
+    text: 'How often this failure cause failed, and how many tests it failed, per day, week or month (UTC), with the moment its fix landed and, if it failed again afterwards, the first failure after the fix. Probe runs are left out.',
+    doc: 'features/failure-clusters#occurrences-over-time',
+  },
+  'project.targets': {
+    title: 'Targets',
+    text: 'Goals this project is checked against over the period a dashboard or a quality report shows: a pass rate to reach, and limits on flaky tests, wasted CI minutes per week, the age of the oldest open failure cause and the median time to fix. Each is optional; a met or missed target shows on the headline tiles, in the portfolio, in the insights and in the report.',
+    doc: 'features/analytics#targets',
+  },
+  'project.url-patterns': {
+    title: 'Browser extension URLs',
+    text: 'The addresses this project’s application is served at, as patterns over the whole URL: * matches within one path segment, ** across segments. Piwi Picker reads them when it connects and tries them in this order to tell which project a page belongs to; a pattern saved in one browser overrides them there. The environment is a label; the branch is the one deployed at those addresses, whose tests Tested elements shows. The path prefix is the part of the path the site serves its pages under and the tests did not (/app); Piwi Picker removes it before comparing the page with the pages the tests ran on. The tests’ path prefix is the reverse, the part of the path the tests ran under and the site does not; Piwi Picker puts it in front.',
+    doc: 'features/extension-connection#url-patterns',
   },
   'project.ci-rerun': {
     title: 'CI re-run',
     text: 'Lets a reporter or admin re-run a cluster’s affected tests in CI straight from its page — a workflow_dispatch on GitHub, a pipeline on GitLab, a custom pipeline on Bitbucket — passing the retry arguments through the input/variable you name. Uses the project’s SCM token (which needs write scope) and is off until you fill in your provider’s block.',
-    doc: 'guide/ci#re-run-from-the-dashboard',
+    doc: 'features/pr-feedback#re-run-from-the-dashboard',
   },
   'project.local-folder': {
     title: 'Linked local folder',
@@ -220,23 +453,30 @@ export const HELP_TOPICS = {
     text: 'HTML reports, traces and attachments uploaded with this run. A run can carry several reports (e.g. per shard).',
     doc: 'guide/reporter#multiple-reports',
   },
+  'run.keep': {
+    title: 'Kept runs',
+    text: 'Retention (the nightly sweep and the storage cleanup) never deletes a kept run. Keep one from the run menu, or have the reporter keep it at ingest with keep: true. Only an administrator can release it.',
+    doc: 'operate/storage#keeping-runs-forever',
+    envVars: ['PIWI_RETENTION_DAYS'],
+  },
   'run.metadata': {
     title: 'Tags, links & custom data',
     text: 'Extra context attached to the run: tags for grouping, links to external issues, and any custom key/value data your reporter sent.',
   },
   'run.test-cases': {
     title: 'Tests',
-    text: 'Every execution in this run. Group by cluster, file, file and describe block, lock, or none; search title, path and error text; filter by status, browser, lock, new regressions and newly flaky.',
+    text: 'Every execution in this run. Group by cluster, file, file and describe block, lock, or none; search title, path and error text; filter by status (test.skip() and test.fixme() skips apart), browser, tag, lock, new regressions and newly flaky.',
     doc: 'features/ui-overview#test-run-detail',
   },
   'run.changes': {
     title: 'Changes',
     text: 'What differs between this run and one baseline. By default that is the last passing run in the same environment — on the same branch, then the branch it forked from (the pull request’s target, else the project’s default branch), then any branch; the line under the selector says which rung applied. Pick a base branch to take the baseline from that branch only, or pick one specific run. The tests that started or stopped failing, the ones that got slower or faster, the commits landed since the baseline, and the environment fields that moved are all read against that one baseline.',
     doc: 'features/run-changes',
+    recipe: { question: 'Regression or flake?', doc: 'recipes/regression-or-flaky' },
   },
   'run.timeline': {
     title: 'Workers timeline',
-    text: 'When each test ran on each parallel worker. Gaps and long bars reveal poor parallelization or a single slow test stalling a shard. Click a test to expand its steps into a nested waterfall on the same axis — like a span viewer. Turn on Show locks to see when each named lock was held and how much of the run it serialized.',
+    text: "When each test ran on each parallel worker. Gaps and long bars reveal poor parallelization or a single slow test stalling a shard. The hatched part of a bar is hook time: setup (beforeAll, beforeEach, fixtures) at the start, teardown (afterEach, afterAll, worker cleanup) at the end, and a failed hook in dark red even with Show hooks off. Hover one for the hooks it ran and the error; click it to open the steps on that hook. A bar spans the hooks Playwright leaves out of a test's duration, such as a slow beforeAll. Each lane is one worker: Playwright replaces a worker process after a failed test, and ↻ marks where the new process took over. A dashed line is time the worker ran no test; hover it or ↻ for what it was. Click a test to expand its steps into a nested waterfall on the same axis — like a span viewer. Turn on Show waits for the wasted waits, and Show locks to see when each named lock was held and how much of the run it serialized.",
     doc: 'features/ui-overview#test-run-detail',
   },
   // ── Single execution (test-run-case) ──────────────────────────────────
@@ -281,7 +521,7 @@ export const HELP_TOPICS = {
   },
   'case.timeline': {
     title: 'Failure timeline',
-    text: 'One time axis that places this execution’s steps, console entries, network requests and backend log entries on the same clock, with a marker at the moment of failure. The default view is the window around the failed step (10s before, 2s after); switch to “Whole test” to see everything. The list below reads it chronologically — click a line to jump to that step, console entry or request. When a run’s reporter recorded no step start times, positions are estimated from durations and the card says so.',
+    text: 'One time axis that places this execution’s steps, console entries, network requests and backend log entries on the same clock, with a marker at the moment of failure. The default view is the window around the failed step (10s before, 2s after); switch to “Whole test” to see everything. The type chips hide or show the steps, requests, console entries, dialogs and backend logs in the window (“Only” or Alt-click shows just one type; the failing step and the last shown type always stay), and the line beside them says what is hidden; the choice is remembered in this browser. The list below reads it chronologically — click a line to jump to that step, console entry or request. The failed step is the one that raised the test’s own error; an error the test caught and went on from (a probe in a try/catch, a retried toPass attempt) is greyed out and marked as caught. When a run’s reporter recorded no step start times, positions are estimated from durations and the card says so.',
     doc: 'features/evidence#one-execution-diagnosis-first',
   },
   'case.web-vitals': {
@@ -296,13 +536,25 @@ export const HELP_TOPICS = {
   },
   'case.network': {
     title: 'Network requests',
-    text: 'HTTP requests the page made during the test, with timing and status — useful for spotting failed or slow calls. When the execution has a trace, the Full trace view shows every request (all resource types) with headers, timing phases, a waterfall and capped body previews; sensitive header values are masked. An empty card distinguishes not captured (add the capture fixtures) from captured-but-nothing-happened; with a trace and no fixtures the list is recovered from the trace and marked "derived from the trace".',
+    text: 'HTTP requests the page made during the test, with timing and status — useful for spotting failed or slow calls. A request that got no response (a reset, a refused connection, an abort) is marked failed, with the error the browser reported. When the execution has a trace, the Full trace view shows every request (all resource types) with headers, timing phases, a waterfall and capped body previews; sensitive header values are masked. An empty card distinguishes not captured (add the capture fixtures) from captured-but-nothing-happened; with a trace and no fixtures the list is recovered from the trace and marked "derived from the trace".',
     doc: 'features/evidence#trace-powered-deep-views',
   },
   'case.attempts': {
     title: 'Attempts',
-    text: 'When a test failed then passed on retry, this compares the failing attempt against the passing one and lists what differed — the error that was there then gone, a request that failed on only one attempt, a console error, a slower step, a duration or page-state change. Each difference links to the evidence it came from. That delta is the flakiness fingerprint, and it feeds the root-cause classifier.',
+    text: 'When a test failed then passed on retry, this compares the failing attempt against the passing one and lists what differed — the error that was there then gone, a request that failed on only one attempt or was much slower on the failing one, a console error, a slower step, a duration or page-state change. Each difference links to the evidence it came from, and a request that is one of the test’s flake suspects links to it. That delta is the flakiness fingerprint, and it feeds the root-cause classifier.',
     doc: 'features/flaky-tests#flaky-test-detection',
+  },
+
+  'case.flakiness': {
+    title: 'Flake suspects',
+    text: 'What this test’s failures share and its passes do not, over its last 30 days (at most 200 attempts): a route that is slower or fails, another test running alongside or just before on the same worker, load, a browser. Failures and passes count the attempts showing the factor, out of all. A suspect needs 3 failures and to be at least twice as common among failures as among passes; at most 5 are listed. The condition is what a lab would apply to test it.',
+    doc: 'features/flaky-tests#suspects',
+  },
+
+  'case.flake-experiments': {
+    title: 'Flake Lab experiments',
+    text: 'Each `piwi flake` run on this test: a control with no condition, then one arm per suspect, run with retries off on the machine that ran the command. An arm counts only failures with the same error as the test’s failures in history, and stops at 3 of them. It reproduced when at least half its runs failed that way and a one-sided Fisher exact test against the control gives p < 0.05. A verify experiment reruns the reproducing arm after a fix; it holds when enough runs pass under the same condition.',
+    doc: 'features/flake-lab',
   },
 
   // ── Test case across runs ─────────────────────────────────────────────
@@ -316,7 +568,8 @@ export const HELP_TOPICS = {
   'cluster.concept': {
     title: 'Failure clusters',
     text: 'Failures with the same error fingerprint are grouped into one cluster, so a single root cause shows up once instead of N times.',
-    doc: 'features/ai-diagnosis#failure-clustering',
+    doc: 'features/failure-clusters#how-failures-are-grouped',
+    recipe: { question: 'Triage a run gone red', doc: 'recipes/mass-failure' },
   },
   'cluster.owner': {
     title: 'Owner',
@@ -349,7 +602,7 @@ export const HELP_TOPICS = {
   'cluster.context-preview': {
     title: 'Context preview',
     text: 'Exactly what will be sent to the AI, including how much was trimmed to fit the token budget. Review it before spending tokens.',
-    doc: 'features/ai-diagnosis#context-limits-and-token-cost',
+    doc: 'guide/ai-provider#context-limits-and-token-cost',
   },
   'cluster.result': {
     title: 'Diagnosis',
@@ -359,12 +612,12 @@ export const HELP_TOPICS = {
   'cluster.ai-setup': {
     title: 'AI not configured',
     text: 'Diagnosis needs an AI provider and API key. Configure one in Settings → AI to enable automatic and on-demand analysis.',
-    doc: 'features/ai-diagnosis#enabling-ai-diagnosis',
+    doc: 'guide/ai-provider',
   },
   'cluster.coverage': {
     title: 'Data coverage',
     text: 'Which evidence sections were present, truncated or absent for this diagnosis — the same map the model sees. Absent or trimmed evidence lowers confidence; the quote icon marks sections the diagnosis cited.',
-    doc: 'features/ai-diagnosis#context-limits-and-token-cost',
+    doc: 'guide/ai-provider#context-limits-and-token-cost',
   },
 
   // ── Notifications / subscribe ─────────────────────────────────────────
@@ -378,12 +631,13 @@ export const HELP_TOPICS = {
   'settings.storage-stats': {
     title: 'Storage analysis',
     text: 'How much disk your reports, traces, screenshots and videos use — broken down by project, by file kind and over time, so you can see what to clean up.',
-    doc: 'operate/storage#storage-architecture',
+    doc: 'operate/storage#storage-management',
   },
   'settings.cleanup': {
     title: 'Cleanup old runs',
-    text: 'Delete runs (and their reports, traces and attachments) older than a chosen age to reclaim storage. This cannot be undone.',
+    text: 'Delete runs (and their reports, traces and attachments) older than a chosen age to reclaim storage. Kept runs, and the newest runs of each project when a floor is set, are skipped. This cannot be undone.',
     doc: 'operate/storage#storage-management',
+    envVars: ['PIWI_RETENTION_DAYS', 'PIWI_RETENTION_MIN_RUNS'],
   },
   'account.email': {
     title: 'Email & verification',
@@ -406,7 +660,7 @@ export const HELP_TOPICS = {
   },
   'notifications.channels': {
     title: 'Channels',
-    text: 'Destinations an alert can go to — browser, email, Slack or webhook. Create a channel, then subscribe events to it. Administrators can make a channel global (usable by everyone); without authentication every channel is global.',
+    text: 'Destinations an alert can go to — browser, email, Slack, Microsoft Teams or webhook. Create a channel (the form shows where to get each URL, and can send a test first: a channel whose test went through is saved verified), then subscribe events to it. Administrators can make a channel global (usable by everyone); without authentication every channel is global.',
     doc: 'features/notifications#channels',
   },
   'notifications.subscriptions': {
@@ -417,7 +671,7 @@ export const HELP_TOPICS = {
   'settings.ai-provider': {
     title: 'AI provider',
     text: 'Configure the model providers behind the three AI roles — diagnosis, research and embedding. Each role has its own provider config, or reuses another role’s provider and credentials. Keys are stored encrypted and never returned by the API.',
-    doc: 'features/ai-diagnosis#enabling-ai-diagnosis',
+    doc: 'guide/ai-provider',
     envVars: ['PIWI_AI_PROVIDER', 'PIWI_AI_MODEL', 'PIWI_AI_API_KEY', 'PIWI_AI_BASE_URL', 'PIWI_AI_TEMPERATURE'],
   },
   'settings.ai-instructions': {
@@ -428,7 +682,7 @@ export const HELP_TOPICS = {
   'settings.ai-research': {
     title: 'Research model',
     text: 'An optional cheaper/faster model that pre-analyzes the failure (on a lean view) before the main model writes the final diagnosis. It can use its own provider, and the costly SCM diff is only fetched when it flags a likely regression. It also handles cluster naming and merge adjudication, so configuring a cheap research model routes those utility calls away from the expensive diagnosis model.',
-    doc: 'features/ai-diagnosis#enabling-ai-diagnosis',
+    doc: 'guide/ai-provider#model-roles',
     envVars: [
       'PIWI_AI_RESEARCH_PROVIDER',
       'PIWI_AI_RESEARCH_MODEL',
@@ -440,7 +694,7 @@ export const HELP_TOPICS = {
   'settings.ai-limits': {
     title: 'Diagnosis context limits',
     text: 'Caps on how much evidence (and how many tokens) go into each diagnosis. Higher limits give the model more to work with but cost more. Each field can be pinned individually by its env var.',
-    doc: 'features/ai-diagnosis#context-limits-and-token-cost',
+    doc: 'guide/ai-provider#context-limits-and-token-cost',
     envVars: [
       'PIWI_AI_MAX_SAMPLE_ERROR_CHARS',
       'PIWI_AI_MAX_SCM_PATCH_BUDGET',
@@ -483,10 +737,15 @@ export const HELP_TOPICS = {
     text: 'Manage accounts and their role. Administrators control everything; reporters submit results; users have read-only access.',
     doc: 'operate/authentication#roles',
   },
+  'settings.permissions': {
+    title: 'Project access',
+    text: 'Which projects each reporter and user can open, one tick per project — every click saves at once. All projects also covers projects created later; administrators always open every project.',
+    doc: 'operate/project-access#permission-grid',
+  },
   'settings.api-keys': {
     title: 'API keys',
     text: 'Tokens (prefixed pd_) that let the reporter or scripts authenticate without a password. Shown once at creation; revoke anytime.',
-    doc: 'operate/authentication#api-keys',
+    doc: 'operate/api-keys',
   },
   'settings.tags': {
     text: 'Reusable labels you can attach to projects for grouping and filtering across the dashboard.',
@@ -497,6 +756,12 @@ export const HELP_TOPICS = {
     doc: 'features/slow-tests',
     envVars: ['PIWI_WASTED_WAIT_PATTERNS'],
   },
+  'settings.ci-cost': {
+    title: 'Cost of a CI minute',
+    text: 'What one CI minute costs you. When set, wasted CI time is also shown as money in the analytics widgets and quality reports; leave it empty to show minutes only.',
+    doc: 'features/quality-reports#cost-of-a-ci-minute',
+    envVars: ['PIWI_CI_MINUTE_COST'],
+  },
   'settings.timeout-hygiene': {
     title: 'Timeout hygiene',
     text: 'Thresholds for flagging oversized per-test timeouts and stale test.slow() marks. Opportunities are recomputed at read time, so changes apply to existing runs immediately.',
@@ -505,7 +770,7 @@ export const HELP_TOPICS = {
   'settings.pr-feedback': {
     title: 'Pull-request feedback',
     text: 'When a run finishes on a branch with an open pull request, Piwi can post a summary comment — new failures separated from pre-existing ones, with suggested locators — and set a commit status. Needs PIWI_SITE_URL and an SCM token with write access.',
-    doc: 'guide/ci#pull-request-feedback',
+    doc: 'features/pr-feedback',
     envVars: ['PIWI_SITE_URL'],
   },
   'settings.auto-heal': {
@@ -516,13 +781,13 @@ export const HELP_TOPICS = {
   },
   'settings.integrations': {
     title: 'Integrations',
-    text: 'Connect an issue tracker so pinned links unfurl with a title and status and stay in sync. Jira Cloud connects with an account email and an API token; set the connection once and every project uses it.',
+    text: 'Connect an issue tracker so pinned links unfurl with a title and status and stay in sync. Jira Cloud connects with an account email and an API token, classic or scoped; set the connection once and every project uses it.',
     doc: 'operate/integrations',
     envVars: ['PIWI_JIRA_BASE_URL', 'PIWI_JIRA_EMAIL', 'PIWI_JIRA_API_TOKEN'],
   },
   'settings.integrations.connection': {
     title: 'Connect a system',
-    text: 'The base URL is the system’s address (for Jira Cloud, https://your-team.atlassian.net); the credentials authenticate Piwi against it. Test the connection to confirm the account it resolves to. Credentials are encrypted at rest and never shown again.',
+    text: 'Paste the address of any Jira page: Piwi reads the site from it (https://your-team.atlassian.net) and checks it is Jira Cloud. Create a classic or a scoped API token as the account Piwi acts as, then check sign-in: it shows the account, the token kind and the projects the account reaches, before anything is saved. Credentials are encrypted at rest and never shown again.',
     doc: 'operate/integrations#connecting-jira-cloud',
   },
   'settings.integrations.private-host': {
@@ -533,7 +798,7 @@ export const HELP_TOPICS = {
   'settings.auto-diagnose': {
     title: 'Auto-diagnose',
     text: 'When a run finishes, up to 3 new failure clusters are diagnosed automatically — each diagnosis is one research call (when a research model is configured) plus one diagnosis call — and new clusters get human-readable titles in one batched call. Requires the diagnosis model to be configured.',
-    doc: 'features/ai-diagnosis#enabling-ai-diagnosis',
+    doc: 'guide/ai-provider#enabling-ai-diagnosis',
     envVars: ['PIWI_AI_AUTO_DIAGNOSE'],
   },
   'settings.ai-notifications': {
@@ -543,7 +808,7 @@ export const HELP_TOPICS = {
   'settings.embedding-model': {
     title: 'Embedding model',
     text: 'Embeds failures so semantically-similar errors group together (used by failure clustering). Can reuse another role’s provider or configure its own.',
-    doc: 'features/ai-diagnosis#enabling-ai-diagnosis',
+    doc: 'guide/ai-provider#model-roles',
     envVars: [
       'PIWI_AI_EMBEDDING_PROVIDER',
       'PIWI_AI_EMBEDDING_MODEL',
@@ -624,7 +889,7 @@ export const HELP_TOPICS = {
   'mcp.skills': {
     title: 'Agent skills',
     text: 'Portable SKILL.md workflow instructions for AI coding agents — investigate a failure, apply a healed locator, stabilize flaky tests. Installed into your test project by the reporter CLI; each one prefers this MCP server and falls back to the dashboard UI.',
-    doc: 'features/mcp#agent-skills',
+    doc: 'features/agent-skills',
   },
 
   // ── Shared ────────────────────────────────────────────────────────────
@@ -643,6 +908,29 @@ export const HELP_TOPICS = {
     title: 'Locator fix',
     text: 'When a locator breaks after a UI change, Piwi suggests pre-captured alternatives from the last passing run — or from another test in the project that uses the same locator. Each alternative is ranked by stability score — prefer data-testid (100) over CSS classes (10–40). The recommended fix shows the exact one-line edit for the failing test, with a "Copy fix prompt" for an AI coding agent. A "Your pick" badge marks a replacement you confirmed on the failing page: "Pick from snapshot" opens the failure-time DOM and lets you click the intended element, and "Pick from trace" opens the failure trace in the trace viewer, whose Pick locator tool works on the recorded page snapshots.',
     doc: 'features/locator-healing',
+    recipe: { question: 'Fix a broken locator', doc: 'recipes/broken-locator' },
+  },
+
+  // ── Locator index ──────────────────────────────────────────────────────
+  'project.locator-check': {
+    title: 'Check locators',
+    text: 'Paste locators, one per line as the Piwi Picker extension copies them, or lines of test code. Each one is looked up among the chains the project’s tests used: exactly, through the same last call inside other containers, through another call that finds the same element (a shorter name, a regex), or as a container other chains search inside. The tests reaching any of them are listed once at the end.',
+    doc: 'features/locator-usage#the-locators-page',
+  },
+  'project.bug-reports': {
+    title: 'Bug reports',
+    text: 'Bugs reported from Piwi Picker: the steps recorded on the page, the assertion that states what should have happened, with the value the page showed instead, and the evidence the reporter chose to send (screenshots, console errors, failed requests, an outline of the page). Each report renders a failing test to commit with test.fail() and the piwi:bug annotation; the runs of that test then move the report along: test committed, looks fixed when the test passes while still marked to fail, closed once it passes as an ordinary test.',
+    doc: 'features/bug-reports',
+  },
+  'bug-report.spec': {
+    title: 'The failing test',
+    text: 'The steps written as a Playwright spec with this project’s settings (the test import and the folder for bug specs, in the project’s Generated specs settings), its page objects and the locators its tests already use. To commit: marked test.fail() so the suite stays green while the bug exists, with @bug and piwi:bug so its runs follow the report. To run: the same test without test.fail(), which fails on the expected assertion while the bug is there.',
+    doc: 'features/bug-reports#the-failing-test',
+  },
+  'project.locator-index': {
+    title: 'Locator index',
+    text: 'Every locator chain recorded in the steps of the project’s runs, with the tests that use it and the actions they perform through it. New runs update it as they arrive. The branch select picks what a branch’s tests use: the tests that ran on it with what they did there, the others with what they do on the default branch. Matching is by chain text: to see which elements of a live page these chains reach, use Tested elements in the Piwi Picker extension. A chain the locator stability rules flag says why: brittle ones break on changes unrelated to what the test checks, such as a position, a styling class or the page structure; the Stability select lists only those.',
+    doc: 'features/locator-usage#branches',
   },
 
   // ── Environment diff ────────────────────────────────────────────────────

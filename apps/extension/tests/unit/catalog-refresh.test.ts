@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { requestCatalogRefresh } from '../../src/shared/catalog-refresh.js';
+import { outdatedWorkerMessage } from '../../src/shared/worker-status.js';
 
 interface SentMessage {
   type: string;
@@ -38,7 +39,7 @@ describe('requestCatalogRefresh', () => {
   it('never messages the worker when no project is mapped to the page', async () => {
     const result = await requestCatalogRefresh(null);
     expect(sent).toHaveLength(0);
-    expect(result).toEqual({ ok: false, error: 'No project mapped to this page.' });
+    expect(result).toEqual({ ok: false, error: 'There is no project to refresh.' });
   });
 
   it('reports a failure instead of throwing when the worker is unavailable', async () => {
@@ -49,7 +50,14 @@ describe('requestCatalogRefresh', () => {
     expect(result.ok).toBe(false);
     // The caller has already rendered from cache, so an asleep worker must
     // degrade to "showing older data", never to an unhandled rejection.
-    expect(result).toMatchObject({ error: expect.stringContaining('unavailable') });
+    expect(result).toMatchObject({ error: expect.stringContaining('did not answer') });
+  });
+
+  it('blames an outdated worker when the message goes unanswered', async () => {
+    // A worker ignores the message only when its build predates it: Chrome
+    // keeps the old worker running after a rebuild until the extension reloads.
+    respond = () => undefined;
+    expect(await requestCatalogRefresh(7)).toEqual({ ok: false, error: outdatedWorkerMessage() });
   });
 
   it('relays a refresh the worker skipped as still-fresh', async () => {

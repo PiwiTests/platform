@@ -5,12 +5,53 @@ the application exposes, what the suite touches, what the suite would actually n
 about. A gap is always a suggestion with evidence and a next step — a draft spec, an MCP call, a line in the
 pull-request comment — never a verdict.
 
-**Status.** Proposed, third revision. Nothing is shipped. The first revision built two references (a reach index and
-a surface inventory) and listed the difference; the second added an oracle axis, an exposure score and a feature
-graph after a review of the products and research in this area ([Prior art](#prior-art),
-[References](#references)); the third made the graph the substrate, split resilience findings from suite gaps,
-thinned the first milestone to a spine and put an entry condition on everything after it
-([Revision history](#revision-history)).
+**Status.** Third revision; all three milestones have shipped. **M1 has shipped.** M1 ships the graph substrate
+(`graph_nodes`, `graph_edges`, `scenario_gaps`) with route and page nodes and `reaches`/`changes` edges populated on
+every ingest, the four M1 detectors (changed-unreached, success-only, single-covering-test, surface-drift), exposure
+ranking over churn, age, escape history and priority, the uncovered-changes section and commit status in pull-request
+feedback, and the `gaps`, `gaps/change-coverage` and `gaps/recompute` endpoints with the `get_change_coverage` MCP
+tool. The M1 ingest path also holds the size-discipline rules that keep the graph proportional to a project's
+surface: page nodes keyed on the path pattern, route nodes only from the run's own origin (its Playwright `baseURL`
+plus a per-project allowlist), default-branch runs writing canonical rows while other branches write branch-tagged
+ones so a pull-request route never drifts onto the default branch, and a nightly graph sweep that prunes `changes`
+edges past ninety days, branch-tagged rows past thirty, and canonical nodes unseen for thirty runs once their
+surface-drift gap has closed.
+
+**M2 has shipped.** M2 broadens the graph with `control`, `link`, `handler` and
+`dependency` nodes and the `contains`, `links`, `triggers`, `loads`, `handled-by` and `calls` edges (size rule 3 —
+templated control names and the 200-per-page cap — applied on ingest); the page inventory the reporter records on
+passing runs (`piwi-page-inventory`, stored through `case_payloads`); one instrumentation release carrying the root
+span's handler field and a signed `X-Piwi-Probe` header, honored outside production and flagged off; client probes
+with the `probes` table (named `probes`, not "oracle"), the `checks` edges, the `probes/plan` and `probes/results`
+endpoints and the `piwi probe` command; the M2 detectors wired into the automatic recompute; features from tags as
+feature nodes with `groups` edges; the `list_scenario_gaps` and `draft_scenario` MCP tools with the deterministic
+draft skeleton and the `write-the-missing-test` skill; and the `maxUncoveredChanges` gate policy, off by default and
+warn-only. The change-time detectors (new error path, new control, intent without a test, locator break ahead) ship
+as pure detectors pending the change-coverage path carrying hunk and title data, and the desktop local-diff command
+stays the M1 TODO.
+
+**M3 has shipped.** M3 adds the declared surface (route/page nodes with origin
+`manifest` or `openapi` from the instrumentation `/__piwi/manifest`, a committed `piwi.manifest.json` and a per-project
+OpenAPI URL, with the `AppManifest` shape in `shared/types.ts` and the `PUT/GET surface/manifest` endpoints), the
+`declared, never hit` detector, success-only strengthened by documented codes, and `imports` edges from a shallow SCM
+scan; the level-two server probes enabled end to end behind a per-project flag (the reporter signs `X-Piwi-Probe`, the
+Nitro plugin applies handler, dependency, data and pipeline faults and reports the applied fault in `X-Piwi-Trace`, the
+ASP.NET Core package applies the honest handler-level subset, an un-honored probe records inconclusive), resilience
+findings (`kind = finding`, class `unhandled`/`degraded`, ranked exposure × severity) and the `unprobed dependency` and
+`not handled` detectors; the Gaps tab grouped by feature with the inbox verbs, the gaps inbox queue on Home, the
+graph view — the feature map (`GET /feature-map`, one circle per feature colored by its worst gap and linked where
+features share nodes) opening into a depth-one ego picture over an inspector list, which replaced the first layered
+walk once a review found a layered picture of a real application unreadable — the `GET /graph` endpoint and the
+`get_feature_graph` MCP tool; and the precision loop
+(per-detector precision from triage verdicts with self-muting below 60% over 20+ verdicts, shown on the admin page and
+the tab and dropping muted rows from the PR comment first). The matrix and escaped-defect detectors and the weekly
+digest ship as pure functions with the selection tested; wiring the matrix and escaped-defect loaders, the digest
+delivery task and the locator-break-ahead healing pre-flight waits on the same per-feature/tracker/hunk data the
+change-time detectors wait on. The Test Map is registered in the capability opt-out system as the `test-map` and `server-probes` capabilities (module `workflow`) and listed in the product feature catalog, so it can be declined per project or instance-wide. Later items remain proposed. The first revision built two references (a reach index and a surface inventory)
+and listed the difference; the second added an oracle axis, an exposure score and a feature graph after a review of
+the products and research in this area ([Prior art](#prior-art), [References](#references)); the third made the graph
+the substrate, split resilience findings from suite gaps, thinned the first milestone to a spine and put an entry
+condition on everything after it ([Revision history](#revision-history)).
 
 **Summary.** A missing test is only visible against a reference for what the application can do. Piwi already stores
 the pieces of that reference: the routes tests hit, the pages they end on, the controls they touch, the controls and
@@ -529,6 +570,13 @@ The gate ([`gate.post.ts`](../apps/application/server/api/test-runs/%5Bid%5D/gat
 `maxUncoveredChanges` in M2, off by default and **warn-only in its first release**; a blocking mode has an entry
 condition below. The desktop app runs the same join against the local working tree before anything is pushed.
 
+> **M1 TODO — desktop local-diff.** The change-coverage handler
+> ([`shared/handlers/change-coverage.ts`](../apps/application/shared/handlers/change-coverage.ts)) already takes the
+> changed files as input, so the desktop variant is a thin call once the shell can hand it a local `git diff`. That
+> plumbing — a Tauri command and a desktop-only route that gathers the working-tree diff — is not itself thin, so M1
+> ships only the server change-coverage path (a finished PR-stamped run, or `?base=&head=` on the API); the desktop
+> local-diff command is deferred rather than half-built.
+
 ## Delivery, and the learning loop
 
 The order matters more than the surfaces. A ranked list on a project page is the exact artifact that changed nothing
@@ -567,6 +615,7 @@ POST           /api/projects/:id/gaps/:gapId/triage          # accept | snooze |
 POST           /api/projects/:id/gaps/:gapId/draft           # skeleton, optionally AI-filled → clipboard | pr
 GET            /api/projects/:id/gaps/change-coverage        # ?run= | ?base=&head=          (M1)
 GET            /api/projects/:id/graph                       # ?node=kind:key&depth=          (M3)
+GET            /api/projects/:id/feature-map                 # the graph folded per feature   (M3)
 POST           /api/projects/:id/gaps/recompute
 GET/PUT        /api/projects/:id/surface/manifest            # declared routes/pages (openapi url | json)
 GET            /api/projects/:id/probes/plan                 # what `piwi probe` runs tonight (reporter API key)

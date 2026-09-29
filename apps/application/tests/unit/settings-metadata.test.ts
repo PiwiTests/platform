@@ -3,11 +3,13 @@ import {
   SETTINGS_PAGES,
   SETTINGS_GROUPS,
   buildSettingsNavSections,
+  canOpenSettingsPath,
   getSettingsPage,
   pageEnvVars,
   pageIsOverridable,
   type SettingsNavContext,
 } from '../../app/utils/settings-metadata';
+import { Role } from '#shared/types';
 
 /** Flatten sections to the `to` paths, for terse assertions. */
 function paths(ctx: SettingsNavContext): string[] {
@@ -142,5 +144,40 @@ describe('buildSettingsNavSections', () => {
 
   test('an empty declined set changes nothing', () => {
     expect(paths({ ...WEB_ADMIN, declinedCapabilities: new Set() }).sort()).toEqual(paths(WEB_ADMIN).sort());
+  });
+});
+
+describe('canOpenSettingsPath', () => {
+  const restricted = SETTINGS_PAGES.filter((page) => page.roles);
+  const open = SETTINGS_PAGES.filter((page) => !page.roles);
+
+  test('the registry has both restricted and open pages to guard', () => {
+    expect(restricted.length).toBeGreaterThan(0);
+    expect(open.length).toBeGreaterThan(0);
+  });
+
+  test('refuses every role-restricted page to a plain user or reporter', () => {
+    for (const page of restricted) {
+      expect(canOpenSettingsPath(page.to, Role.USER)).toBe(false);
+      expect(canOpenSettingsPath(page.to, Role.REPORTER)).toBe(false);
+      expect(canOpenSettingsPath(page.to, undefined)).toBe(false);
+    }
+  });
+
+  test('lets an administrator open every settings page', () => {
+    for (const page of SETTINGS_PAGES) expect(canOpenSettingsPath(page.to, Role.ADMINISTRATOR)).toBe(true);
+  });
+
+  test('lets any role open the unrestricted pages (account, notifications…)', () => {
+    for (const page of open) expect(canOpenSettingsPath(page.to, Role.USER)).toBe(true);
+  });
+
+  test('ignores a trailing slash', () => {
+    expect(canOpenSettingsPath('/settings/users/', Role.USER)).toBe(false);
+  });
+
+  test('allows paths that are not a settings page', () => {
+    expect(canOpenSettingsPath('/settings', Role.USER)).toBe(true);
+    expect(canOpenSettingsPath('/projects/1', Role.USER)).toBe(true);
   });
 });

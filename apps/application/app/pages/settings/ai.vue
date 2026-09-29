@@ -165,6 +165,9 @@ const reuseOptionsByRole = computed<Record<RoleKey, Array<{ label: string; value
 });
 
 const envManaged = computed(() => Boolean(settings.value?.envManaged));
+// API keys and the SCM token are encrypted with `PIWI_SECRET_KEY`; without it the server cannot store them.
+const canStoreSecrets = computed(() => settings.value?.canStoreSecrets ?? true);
+const secretKeyCommand = `node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"`;
 const aiEnvVars = pageEnvVars(getSettingsPage('ai'));
 
 // The required diagnosis role has no enable toggle — it is "configured" exactly
@@ -368,6 +371,25 @@ function resetLimits() {
     <div class="space-y-6">
       <EnvManagedAlert v-if="envManaged" :env-vars="aiEnvVars" />
 
+      <div v-if="!canStoreSecrets" class="space-y-2" data-testid="ai-no-secret-key">
+        <UAlert
+          color="warning"
+          variant="subtle"
+          icon="i-lucide-key-round"
+          title="This server cannot store API keys or tokens yet"
+        >
+          <template #description>
+            Keys and tokens saved here are encrypted with <code class="font-mono text-xs">PIWI_SECRET_KEY</code>, which
+            is not set.
+            <template v-if="!envManaged">
+              A local OpenAI-compatible server or the Claude CLI needs no key and saves as usual.
+            </template>
+            Generate a key, set it as <code class="font-mono text-xs">PIWI_SECRET_KEY</code> and restart the server:
+          </template>
+        </UAlert>
+        <CodeBlock :code="secretKeyCommand" lang="bash" />
+      </div>
+
       <SectionCard icon="i-lucide-sparkles" title="Model providers" help="settings.ai-provider">
         <template #subtitle>
           Configure a complete provider for each model role. Optional roles can reuse another role's provider so you
@@ -383,6 +405,7 @@ function resetLimits() {
             v-model="roles[meta.key]"
             :meta="meta"
             :has-api-key="hasStoredKey(meta.key)"
+            :can-store-secrets="canStoreSecrets"
             :reuse-options="reuseOptionsByRole[meta.key]"
             :provider-options="meta.key === 'embedding' ? embeddingProviderOptions : providerOptions"
             :preset-options="presetOptions"
@@ -454,15 +477,18 @@ function resetLimits() {
         <UFormField
           label="SCM token"
           :description="
-            settings?.hasScmToken
-              ? 'Leave empty to keep the stored token, enter a new value to replace it, or save empty to remove it'
-              : 'Personal access token with read access to repository contents. Supports GitHub (ghp_), GitLab (glpat-), and Bitbucket tokens.'
+            !canStoreSecrets
+              ? 'Needs PIWI_SECRET_KEY set on the server to be stored'
+              : settings?.hasScmToken
+                ? 'Leave empty to keep the stored token, enter a new value to replace it, or save empty to remove it'
+                : 'Personal access token with read access to repository contents. Supports GitHub (ghp_), GitLab (glpat-), and Bitbucket tokens.'
           "
         >
           <UInput
             v-model="scmToken"
             type="password"
             :placeholder="settings?.hasScmToken ? '•••••••• (unchanged)' : 'ghp_..., glpat-..., or Bitbucket token'"
+            :disabled="!canStoreSecrets"
             class="w-full font-mono"
           />
         </UFormField>

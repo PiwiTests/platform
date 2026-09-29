@@ -6,12 +6,16 @@
  */
 import { eq, and, desc, gt, inArray } from 'drizzle-orm';
 import { testCases, testRunsCases, testRuns, networkRequests } from '../../server/database/schema';
-import { classifyFlakyRootCause, type FlakyRootCause } from '../flaky-classify';
+import { classifyFlakyRootCause, type BrowserOutcomes, type FlakyRootCause } from '../flaky-classify';
+import { FAILED_STATUS_KEYS } from '../utils/test-counts';
 import { getAttemptDiff } from './test-cases';
+import { isLabRun } from './probes';
 import type { DrizzleDB } from './db';
 
 /** How many recent flaky executions to diff for the attempt-diff network vote. */
 const ATTEMPT_DIFF_SAMPLE = 10;
+/** How many recent failed attempts, and how many recent passes, to read the evidence from. */
+const RECENT_ATTEMPTS = 100;
 
 export async function classifyAndPersistFlakyRootCause(
   db: DrizzleDB,
@@ -24,30 +28,39 @@ export async function classifyAndPersistFlakyRootCause(
     .where(and(eq(testCases.id, testCaseId), eq(testCases.projectId, projectId)));
   if (tcRows.length === 0) throw new Error('Test case not found');
 
-  const recentFailures = await db
-    .select({
-      id: testRunsCases.id,
-      status: testRunsCases.status,
-      error: testRunsCases.error,
-      duration: testRunsCases.duration,
-      steps: testRunsCases.steps,
-      browser: testRunsCases.browser,
-      testRunId: testRunsCases.testRunId,
-    })
-    .from(testRunsCases)
-    .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
-    .where(and(eq(testRunsCases.testCaseId, testCaseId), eq(testRuns.status, 'failed')))
-    .orderBy(desc(testRunsCases.createdAt))
-    .limit(50);
+  // The test's recent failed attempts and its recent passes, read apart so a
+  // rare flake keeps its failures however many passes came since. Both come
+  // from green runs as well as red ones: a retry-pass leaves its failed attempt
+  // in a run that finished green. Lab runs (probes, flake experiments) fail by
+  // design under an injected fault or condition, so their executions are left
+  // out of the evidence.
+  const recentAttempts = (statuses: string[]) =>
+    db
+      .select({
+        id: testRunsCases.id,
+        status: testRunsCases.status,
+        error: testRunsCases.error,
+        steps: testRunsCases.steps,
+        browser: testRunsCases.browser,
+        runMetadata: testRuns.metadata,
+      })
+      .from(testRunsCases)
+      .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
+      .where(and(eq(testRunsCases.testCaseId, testCaseId), inArray(testRunsCases.status, statuses)))
+      .orderBy(desc(testRunsCases.createdAt))
+      .limit(RECENT_ATTEMPTS)
+      .then((rows) => rows.filter((r) => !isLabRun(r.runMetadata)));
+  const recentFailures = await recentAttempts([...FAILED_STATUS_KEYS]);
 
   if (recentFailures.length === 0) {
     return { testCaseId, rootCause: 'other' };
   }
+  const recentPasses = await recentAttempts(['passed']);
 
   const errorMessages: string[] = [];
   const stepErrors: string[] = [];
   const stepNames: string[] = [];
-  const browserDistribution: Record<string, number> = {};
+  const browserDistribution: Record<string, BrowserOutcomes> = {};
 
   for (const row of recentFailures) {
     if (row.error) errorMessages.push(row.error);
@@ -60,15 +73,18 @@ export async function classifyAndPersistFlakyRootCause(
         }
       }
     }
+  }
+  for (const row of [...recentFailures, ...recentPasses]) {
     const b = row.browser as Record<string, unknown> | null;
     const browserKey = (b?.projectName as string) ?? (b?.browserName as string) ?? '';
-    if (browserKey) {
-      browserDistribution[browserKey] = (browserDistribution[browserKey] ?? 0) + 1;
-    }
+    if (!browserKey) continue;
+    const outcomes = (browserDistribution[browserKey] ??= { passed: 0, failed: 0 });
+    if (row.status === 'passed') outcomes.passed++;
+    else outcomes.failed++;
   }
 
   // Count the failed requests actually captured across the recent failing
-  // attempts — the classifier's network signal was long fed a dead 0 here.
+  // attempts.
   let networkErrorCount = 0;
   let status5xxCount = 0;
   const failingIds = recentFailures.map((r) => r.id);
@@ -87,14 +103,17 @@ export async function classifyAndPersistFlakyRootCause(
   // The sharpest network signal: a recent flaky execution whose failing attempt
   // had a request that failed (or 5xx'd) and the passing attempt did not.
   let attemptDiffNetworkVotes = 0;
-  const flakyExecutions = await db
-    .select({ id: testRunsCases.id })
-    .from(testRunsCases)
-    .where(
-      and(eq(testRunsCases.testCaseId, testCaseId), eq(testRunsCases.status, 'passed'), gt(testRunsCases.retries, 0)),
-    )
-    .orderBy(desc(testRunsCases.createdAt))
-    .limit(ATTEMPT_DIFF_SAMPLE);
+  const flakyExecutions = (
+    await db
+      .select({ id: testRunsCases.id, runMetadata: testRuns.metadata })
+      .from(testRunsCases)
+      .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
+      .where(
+        and(eq(testRunsCases.testCaseId, testCaseId), eq(testRunsCases.status, 'passed'), gt(testRunsCases.retries, 0)),
+      )
+      .orderBy(desc(testRunsCases.createdAt))
+      .limit(ATTEMPT_DIFF_SAMPLE)
+  ).filter((r) => !isLabRun(r.runMetadata));
   for (const exec of flakyExecutions) {
     const diff = await getAttemptDiff(db, exec.id);
     if (diff.differences.some((d) => d.kind === 'network' && d.only === 'failing')) {

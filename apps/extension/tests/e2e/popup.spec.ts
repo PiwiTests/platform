@@ -7,18 +7,15 @@ import { test, expect } from './fixtures.js';
  * page opened this way becomes the active tab itself, which would make
  * `chrome.tabs.query({ active: true })` target the popup page instead of a
  * real tab, so the injection buttons aren't exercised here (see
- * `pick.spec.ts` / `hover-inspect.spec.ts` for the content scripts they
+ * `pick.spec.ts` / `lint-overlay.spec.ts` for the content scripts they
  * inject, tested directly).
  */
 const ACTION_BUTTON_NAMES = [
   /Record actions/,
   /Pick an element/,
-  /Hover-inspect/,
-  /Locator console/,
   /Multi-pick/,
-  /Lint overlay/,
   /Assertions/,
-  /Session/,
+  /Lint overlay/,
   /Agent context/,
   /Test functions/,
 ];
@@ -51,7 +48,7 @@ test.describe('popup.html', () => {
     }
   });
 
-  test('every action tile carries a digit shortcut, 1 through 0, in render order', async ({ context, extensionId }) => {
+  test('every tool tile carries a digit shortcut, 1 through 7, in render order', async ({ context, extensionId }) => {
     const page = await context.newPage();
     await page.goto(`chrome-extension://${extensionId}/popup.html`);
     const keys = await page.locator('.actions button').evaluateAll((buttons) =>
@@ -61,7 +58,7 @@ test.describe('popup.html', () => {
         announced: b.getAttribute('aria-keyshortcuts'),
       })),
     );
-    expect(keys.map((k) => k.badge)).toEqual(['1', '2', '3', '4', '5', '6', '7', '8', '9', '0']);
+    expect(keys.map((k) => k.badge)).toEqual(['1', '2', '3', '4', '5', '6', '7']);
     // The visible badge and the announced shortcut must agree, or screen-reader
     // users get told a key that does nothing.
     for (const k of keys) expect(k.announced, `${k.id}`).toBe(k.badge);
@@ -81,11 +78,12 @@ test.describe('popup.html', () => {
     });
 
     await page.keyboard.press('3');
-    await page.keyboard.press('0');
+    await page.keyboard.press('7');
     await page.keyboard.press('Control+5');
+    await page.keyboard.press('8');
 
     expect(await page.evaluate(() => (globalThis as unknown as { clicked: string[] }).clicked)).toEqual([
-      'hover-inspect',
+      'multi-pick',
       'test-function-panel',
     ]);
   });
@@ -126,7 +124,7 @@ test.describe('popup.html', () => {
   test('shows a config button that opens the options page', async ({ context, extensionId }) => {
     const page = await context.newPage();
     await page.goto(`chrome-extension://${extensionId}/popup.html`);
-    await expect(page.getByRole('button', { name: 'Configure Piwi connection' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Settings' })).toBeVisible();
   });
 
   test('hides the active-project row when not connected to a Piwi instance', async ({ context, extensionId }) => {
@@ -187,5 +185,133 @@ test.describe('popup.html', () => {
     await expect(page.locator('#active-project-row')).toBeVisible();
     const optionTexts = await page.locator('#active-project option').allTextContents();
     expect(optionTexts.filter((t) => t === 'Demo project')).toHaveLength(1);
+  });
+});
+
+test.describe('Tested elements tile', () => {
+  test('answers to T', async ({ context, extensionId }) => {
+    const page = await context.newPage();
+    await page.goto(`chrome-extension://${extensionId}/popup.html`);
+    const tile = page.getByRole('button', { name: /Tested elements/ });
+    await expect(tile).toBeVisible();
+    await expect(tile).toHaveAttribute('aria-keyshortcuts', 'T');
+    await page.evaluate(() => {
+      (globalThis as unknown as { clicked: string[] }).clicked = [];
+      document.getElementById('coverage-overlay')!.addEventListener(
+        'click',
+        (e) => {
+          e.stopImmediatePropagation();
+          (globalThis as unknown as { clicked: string[] }).clicked.push('coverage-overlay');
+        },
+        { capture: true },
+      );
+    });
+    await page.keyboard.press('t');
+    expect(await page.evaluate(() => (globalThis as unknown as { clicked: string[] }).clicked)).toEqual([
+      'coverage-overlay',
+    ]);
+  });
+
+  test('without a connection it says so and opens the settings', async ({ context, extensionId }) => {
+    const page = await context.newPage();
+    await page.goto(`chrome-extension://${extensionId}/popup.html`);
+    await expect(page.locator('#coverage-hint')).toHaveText(
+      'Connect to your Piwi instance to see what your tests reach',
+    );
+    const [options] = await Promise.all([context.waitForEvent('page'), page.locator('#coverage-overlay').click()]);
+    await expect(options).toHaveURL(new RegExp(`chrome-extension://${extensionId}/options.html`));
+  });
+
+  test('once connected it describes what it shows', async ({ context, extensionId }) => {
+    const page = await context.newPage();
+    await page.goto(`chrome-extension://${extensionId}/popup.html`);
+    await page.evaluate(() =>
+      chrome.storage.local.set({
+        piwiConnection: {
+          instanceUrl: 'https://piwi.test',
+          apiKey: '',
+          projectMappings: [{ urlPattern: '**', projectId: 1, projectLabel: 'Demo project' }],
+        },
+      }),
+    );
+    await page.reload();
+    await expect(page.locator('#coverage-hint')).toHaveText('What your tests reach on this page, and what they miss');
+  });
+});
+
+test.describe('Report a bug tile', () => {
+  test('answers to B and says what it does in each recording state', async ({ context, extensionId }) => {
+    const page = await context.newPage();
+    await page.goto(`chrome-extension://${extensionId}/popup.html`);
+    const tile = page.getByRole('button', { name: /Report a bug/ });
+    await expect(tile).toBeVisible();
+    await expect(tile).toHaveAttribute('aria-keyshortcuts', 'B');
+    await expect(page.locator('#report-bug-hint')).toHaveText("Steps and what's wrong → a failing test");
+    await page.evaluate(() => {
+      (globalThis as unknown as { clicked: string[] }).clicked = [];
+      document.getElementById('report-bug')!.addEventListener(
+        'click',
+        (e) => {
+          e.stopImmediatePropagation();
+          (globalThis as unknown as { clicked: string[] }).clicked.push('report-bug');
+        },
+        { capture: true },
+      );
+    });
+    await page.keyboard.press('b');
+    expect(await page.evaluate(() => (globalThis as unknown as { clicked: string[] }).clicked)).toEqual(['report-bug']);
+
+    // During a bug recording the tile takes a screenshot, and the record tile finishes the report.
+    await page.evaluate(() =>
+      chrome.storage.session.set({
+        piwiRecording: { active: true, events: [], startedAt: 1, grantedOriginPattern: null, mode: 'bug' },
+      }),
+    );
+    await page.reload();
+    await expect(page.locator('#report-bug-label')).toHaveText('Take a screenshot');
+    await expect(page.locator('#record-label')).toHaveText('Finish bug report (0)');
+
+    // A recording of actions in progress has to end first.
+    await page.evaluate(() =>
+      chrome.storage.session.set({
+        piwiRecording: { active: true, events: [], startedAt: 1, grantedOriginPattern: null, mode: 'actions' },
+      }),
+    );
+    await page.reload();
+    await expect(page.locator('#report-bug-hint')).toHaveText('Finish or discard the current recording first');
+    await page.locator('#report-bug').click();
+    await expect(page.locator('#status')).toHaveText('Finish or discard the current recording before reporting a bug.');
+  });
+});
+
+test.describe('the developer tools in DevTools', () => {
+  test('are not in the popup, which says where they are, and it fits a popup’s 600 pixels', async ({
+    context,
+    extensionId,
+  }) => {
+    const page = await context.newPage();
+    await page.setViewportSize({ width: 480, height: 600 });
+    await page.goto(`chrome-extension://${extensionId}/popup.html`);
+    for (const name of [/Playwright view/, /Save login/, /Hover-inspect/, /Locator console/, /^Session/]) {
+      await expect(page.getByRole('button', { name })).toHaveCount(0);
+    }
+    await expect(page.getByRole('combobox', { name: 'Open this page at a viewport' })).toHaveCount(0);
+    await expect(page.getByText(/are in DevTools, in the Piwi panel/)).toBeVisible();
+
+    // Connected: the project row shows too.
+    await page.evaluate(() =>
+      chrome.storage.local.set({
+        piwiConnection: {
+          instanceUrl: 'https://piwi.test',
+          apiKey: 'k',
+          projectMappings: [{ urlPattern: 'https://elsewhere.test/**', projectId: 1, projectLabel: 'Shop' }],
+          serverSyncedAt: 1,
+        },
+      }),
+    );
+    await page.reload();
+    await expect(page.locator('#active-project-row')).toBeVisible();
+    const height = await page.locator('.popup').evaluate((el) => el.getBoundingClientRect().height);
+    expect(height).toBeLessThanOrEqual(600);
   });
 });

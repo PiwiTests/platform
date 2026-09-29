@@ -7,19 +7,26 @@
  * `/attempt-diff` when the tab is first opened (this card mounts under a `v-if`).
  *
  * Each difference cites an evidence section; the chip switches to that evidence
- * tab through the page's section locator — the same mechanism a clue uses.
+ * tab through the page's section locator — the same mechanism a clue uses. A
+ * network row whose route is one of the test's flake suspects (slower on the
+ * failing attempt, or failed only there) links to that suspect on the test's
+ * Flakiness tab; the profile is read only when such a row exists.
  */
 import type { AttemptDiffEntry } from '#shared/attempt-diff';
 import type { AttemptDiffResult } from '#shared/handlers/test-cases';
+import type { FlakeProfile, FlakeSuspect } from '#shared/handlers/flake-profile';
 import { useClusterSectionLocator } from '~/composables/useClusterSectionLocator';
 
 const props = defineProps<{
   testRunsCaseId: number;
   /** Every attempt of this execution, already fetched at page level. */
   attempts: Array<{ retry: number; status: string; duration: number | null; executionId: number | null }>;
+  /** The project, so the suspect links follow its flake-suspects decision. */
+  projectId?: number | null;
 }>();
 
 const { data, status } = await useFetch<AttemptDiffResult>(`/api/test-run-cases/${props.testRunsCaseId}/attempt-diff`);
+const { isHidden: capabilityHidden } = await useProjectCapabilities(props.projectId ?? 0);
 
 const locator = useClusterSectionLocator();
 
@@ -73,6 +80,35 @@ function citationLabel(entry: AttemptDiffEntry): string | null {
 function reveal(entry: AttemptDiffEntry) {
   const section = entry.ref?.section;
   if (section && locator.canLocate(section)) locator.open(section);
+}
+
+// ── Links to flake suspects ─────────────────────────────────────────────────
+const profile = ref<FlakeProfile | null>(null);
+watch(
+  () => data.value,
+  async (diff) => {
+    const testCaseId = diff?.testCaseId;
+    const hasRouteRow = (diff?.differences ?? []).some((d) => d.route);
+    if (!testCaseId || !hasRouteRow || !props.projectId || capabilityHidden('flake-lab')) return;
+    try {
+      profile.value = await $fetch<FlakeProfile>(`/api/test-cases/${testCaseId}/flake-profile`);
+    } catch {
+      // The links are optional; the diff reads the same without them.
+    }
+  },
+  { immediate: true },
+);
+
+/** The suspect a network row stands for: a slower request, or a request that failed only on the failing attempt. */
+function suspectFor(entry: AttemptDiffEntry): FlakeSuspect | null {
+  if (entry.kind !== 'network' || !entry.route || !profile.value) return null;
+  const kind = entry.only === 'failing' ? 'failed-route' : entry.only ? null : 'slow-route';
+  if (!kind) return null;
+  return profile.value.suspects.find((s) => s.kind === kind && s.route === entry.route) ?? null;
+}
+
+function suspectLink(suspect: FlakeSuspect): string {
+  return `/test-cases/${profile.value!.testCaseId}?tab=flakiness&suspect=${encodeURIComponent(suspect.id)}`;
 }
 
 function attemptLabel(retry: number): string {
@@ -143,15 +179,28 @@ function attemptLabel(retry: number): string {
               v-if="entry.detail"
               class="text-xs text-muted font-mono whitespace-pre-wrap break-words max-h-32 overflow-y-auto"
               >{{ entry.detail }}</pre>
-            <button
-              v-if="citationLabel(entry)"
-              type="button"
-              class="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-              @click="reveal(entry)"
-            >
-              <UIcon name="i-lucide-arrow-up-right" class="size-3" />
-              View in {{ citationLabel(entry) }}
-            </button>
+            <div class="flex flex-wrap items-center gap-x-4 gap-y-1">
+              <button
+                v-if="citationLabel(entry)"
+                type="button"
+                class="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                @click="reveal(entry)"
+              >
+                <UIcon name="i-lucide-arrow-up-right" class="size-3" />
+                View in {{ citationLabel(entry) }}
+              </button>
+              <NuxtLink
+                v-if="suspectFor(entry)"
+                :to="suspectLink(suspectFor(entry)!)"
+                class="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                data-testid="attempt-suspect-link"
+                :title="suspectFor(entry)!.sentence"
+              >
+                <UIcon name="i-lucide-arrow-up-right" class="size-3" />
+                Flake suspect: {{ suspectFor(entry)!.counts.failuresWith }} of
+                {{ suspectFor(entry)!.counts.failures }} failures
+              </NuxtLink>
+            </div>
           </div>
         </li>
       </ul>

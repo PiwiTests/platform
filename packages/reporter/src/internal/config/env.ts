@@ -15,8 +15,14 @@ const DEFAULTS: PiwiDashboardOptions = {
   collectPerformanceMetrics: true,
   captureLocators: true,
   capturePageState: true,
+  // Off by default: the page inventory reads control and link names from every
+  // visited page, so it stays opt-in until a project turns it on.
+  capturePageInventory: false,
+  // Off by default: JavaScript coverage slows the page, so a scheduled job opts in.
+  captureCodeReach: false,
   captureServerTraces: true,
   sampleAriaOnPass: true,
+  uploadManifest: true,
   defaultCapture: true,
   streaming: true,
   streamingBatchSize: 5,
@@ -45,6 +51,7 @@ export const PIWI_ENV_KEYS = {
   environment: 'PIWI_ENVIRONMENT',
   label: 'PIWI_LABEL',
   runLabel: 'PIWI_RUN_LABEL',
+  keep: 'PIWI_KEEP',
   streaming: 'PIWI_STREAMING',
   streamingBatchSize: 'PIWI_STREAMING_BATCH_SIZE',
   streamingBatchDelay: 'PIWI_STREAMING_BATCH_DELAY',
@@ -55,8 +62,12 @@ export const PIWI_ENV_KEYS = {
   uploadReport: 'PIWI_UPLOAD_REPORT',
   captureLocators: 'PIWI_CAPTURE_LOCATORS',
   capturePageState: 'PIWI_CAPTURE_PAGE_STATE',
+  capturePageInventory: 'PIWI_CAPTURE_PAGE_INVENTORY',
+  captureCodeReach: 'PIWI_CAPTURE_CODE_REACH',
+  codeReachRoots: 'PIWI_CODE_REACH_ROOTS',
   captureServerTraces: 'PIWI_CAPTURE_SERVER_TRACES',
   sampleAriaOnPass: 'PIWI_SAMPLE_ARIA_ON_PASS',
+  uploadManifest: 'PIWI_UPLOAD_MANIFEST',
   defaultCapture: 'PIWI_DEFAULT_CAPTURE',
   inspectOnFailure: 'PIWI_INSPECT_ON_FAIL',
   pickLocatorOnFailure: 'PIWI_PICK_LOCATOR_ON_FAIL',
@@ -99,6 +110,37 @@ export const PIWI_SELECTION_ENV = {
   count: 'PIWI_SELECTION_COUNT',
 } as const;
 
+/**
+ * Env vars a `piwi probe` run sets on the Playwright child process so the
+ * capture fixtures run in probe mode. Not options — the probe CLI writes them and
+ * the probe module reads them directly:
+ *  - `flag` marks the run as a probe run;
+ *  - `plan` / `results` point at the plan file and the JSONL outcomes file;
+ *  - `secret` is the shared HMAC secret a server-level fault signs the
+ *    `X-Piwi-Probe` header with.
+ */
+export const PIWI_PROBE_ENV = {
+  flag: 'PIWI_PROBE',
+  plan: 'PIWI_PROBE_PLAN',
+  results: 'PIWI_PROBE_RESULTS',
+  secret: 'PIWI_PROBE_SECRET',
+} as const;
+
+/**
+ * Env vars a flake-lab run sets on the Playwright child process so the capture
+ * fixtures run in flake mode. Not options — the lab writes them and the flake
+ * module reads them directly:
+ *  - `plan` points at the arm's plan file (`@piwitests/core/flake-plan`); a
+ *    non-empty value switches flake mode on;
+ *  - `results` points at the JSONL file each finished attempt is appended to.
+ * A run is a probe run or a flake-lab run, never both: setting `PIWI_PROBE` and
+ * `PIWI_FLAKE_PLAN` together stops the run (see `labModeConflict`).
+ */
+export const PIWI_FLAKE_ENV = {
+  plan: 'PIWI_FLAKE_PLAN',
+  results: 'PIWI_FLAKE_RESULTS',
+} as const;
+
 export function readBool(val: string | undefined): boolean | undefined {
   if (val === undefined) return undefined;
   return val === 'true';
@@ -134,6 +176,7 @@ const ENV_FALLBACK_SPECS: ReadonlyArray<{
   { option: 'environment', env: PIWI_ENV_KEYS.environment, kind: 'string' },
   { option: 'label', env: PIWI_ENV_KEYS.label, kind: 'string' },
   { option: 'runLabel', env: PIWI_ENV_KEYS.runLabel, kind: 'string' },
+  { option: 'keep', env: PIWI_ENV_KEYS.keep, kind: 'bool' },
   { option: 'streaming', env: PIWI_ENV_KEYS.streaming, kind: 'bool' },
   { option: 'streamingBatchSize', env: PIWI_ENV_KEYS.streamingBatchSize, kind: 'number' },
   { option: 'streamingBatchDelay', env: PIWI_ENV_KEYS.streamingBatchDelay, kind: 'number' },
@@ -144,8 +187,11 @@ const ENV_FALLBACK_SPECS: ReadonlyArray<{
   { option: 'uploadReport', env: PIWI_ENV_KEYS.uploadReport, kind: 'bool' },
   { option: 'captureLocators', env: PIWI_ENV_KEYS.captureLocators, kind: 'bool' },
   { option: 'capturePageState', env: PIWI_ENV_KEYS.capturePageState, kind: 'bool' },
+  { option: 'capturePageInventory', env: PIWI_ENV_KEYS.capturePageInventory, kind: 'bool' },
+  { option: 'captureCodeReach', env: PIWI_ENV_KEYS.captureCodeReach, kind: 'bool' },
   { option: 'captureServerTraces', env: PIWI_ENV_KEYS.captureServerTraces, kind: 'bool' },
   { option: 'sampleAriaOnPass', env: PIWI_ENV_KEYS.sampleAriaOnPass, kind: 'bool' },
+  { option: 'uploadManifest', env: PIWI_ENV_KEYS.uploadManifest, kind: 'bool' },
   { option: 'defaultCapture', env: PIWI_ENV_KEYS.defaultCapture, kind: 'bool' },
   { option: 'inspectOnFailure', env: PIWI_ENV_KEYS.inspectOnFailure, kind: 'bool' },
   { option: 'pickLocatorOnFailure', env: PIWI_ENV_KEYS.pickLocatorOnFailure, kind: 'bool' },
@@ -232,6 +278,7 @@ export function applyOptionsToEnv(options: PiwiDashboardOptions): void {
   if (options.environment) env[PIWI_ENV_KEYS.environment] = options.environment;
   if (options.label) env[PIWI_ENV_KEYS.label] = options.label;
   if (options.runLabel) env[PIWI_ENV_KEYS.runLabel] = options.runLabel;
+  if (options.keep) env[PIWI_ENV_KEYS.keep] = 'true';
   // Locator capture is part of performance-metric collection; switch it off in
   // the worker when either flag is disabled so the fixture skips the per-action
   // cost. Only an explicit `true` overrides the unset (default-on) state.
@@ -243,6 +290,16 @@ export function applyOptionsToEnv(options: PiwiDashboardOptions): void {
   if (options.capturePageState === false || options.collectPerformanceMetrics === false)
     env[PIWI_ENV_KEYS.capturePageState] = 'false';
   else if (options.capturePageState === true) env[PIWI_ENV_KEYS.capturePageState] = 'true';
+  // Page-inventory capture (controls and links per visited page, passing runs
+  // only) follows the page-state bridge.
+  if (options.capturePageInventory === false || options.collectPerformanceMetrics === false)
+    env[PIWI_ENV_KEYS.capturePageInventory] = 'false';
+  else if (options.capturePageInventory === true) env[PIWI_ENV_KEYS.capturePageInventory] = 'true';
+  // Code reach (JavaScript coverage, Chromium only) follows the same bridge.
+  if (options.captureCodeReach === false || options.collectPerformanceMetrics === false)
+    env[PIWI_ENV_KEYS.captureCodeReach] = 'false';
+  else if (options.captureCodeReach === true) env[PIWI_ENV_KEYS.captureCodeReach] = 'true';
+  if (options.codeReachRoots?.length) env[PIWI_ENV_KEYS.codeReachRoots] = JSON.stringify(options.codeReachRoots);
   // Server-trace capture rides the same bridge: off when either flag disables
   // it, explicit true otherwise (unset keeps the fixture's default-on).
   if (options.captureServerTraces === false || options.collectPerformanceMetrics === false)

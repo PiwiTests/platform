@@ -8,6 +8,8 @@ import type {
   TestMetadata,
   TestSourceFrame,
   TestStepEvent,
+  TestStepEventHook,
+  WireNetworkRequest,
 } from '@piwitests/core/wire';
 
 // The wire leaf shapes live in @piwitests/core (shared with the reporter);
@@ -21,6 +23,8 @@ export type {
   TestMetadata,
   TestSourceFrame,
   TestStepEvent,
+  TestStepEventHook,
+  WireNetworkRequest,
 };
 
 // ── Test status types ──────────────────────────────────────────────────────────
@@ -78,9 +82,15 @@ export interface TestCasePayload {
   slowestStep?: string | null;
   slowestStepDuration?: number | null;
   wastedTimeMs?: number | null;
-  networkRequests?: unknown;
+  networkRequests?: WireNetworkRequest[] | null;
   webVitals?: unknown;
   pageState?: unknown;
+  /** Page inventory: controls and links per visited page (passing runs). */
+  pageInventory?: unknown;
+  /** The page each locator call ran on (`piwi-locator-pages`): `{ location, locator, origin, page, arrival }[]`. */
+  locatorPages?: unknown;
+  /** The repository-relative source files the test executed (`piwi-code-reach`), when code reach is on. */
+  codeReach?: unknown;
   /** AI-step usage manifest (`{ entries: string[] }`): committed AI-step artifacts this test replayed. */
   aiUsage?: unknown;
   consoleLogs?: unknown;
@@ -108,6 +118,8 @@ export interface TestCasePayload {
   testSourceFrames?: TestSourceFrame[] | null;
   /** Why a `didnotrun` case never executed (`previous-failure`/`global-timeout`/`max-failures`/`interrupted`). */
   didNotRunReason?: string | null;
+  /** Playwright's `TestCase.expectedStatus`: `failed` for a `test.fail()` test. */
+  expectedStatus?: string | null;
   /** For a `previous-failure` cascade, the location of the failing test that blocked it. */
   blockedBy?: string | null;
 }
@@ -128,6 +140,9 @@ export interface TestRunCounters {
 
 export type FlakyRootCause = 'timing' | 'network' | 'assertion' | 'environment' | 'other';
 
+/** Who asked for a run to be kept forever: a person, the reporter at ingest, or a release marker. */
+export type KeepSource = 'user' | 'reporter' | 'marker';
+
 export interface TestRunSubmitPayload {
   projectName: string;
   projectDescription?: string;
@@ -143,6 +158,8 @@ export interface TestRunSubmitPayload {
   didNotRunTests?: number;
   environment?: string | null;
   label?: string | null;
+  /** Keep the run forever: retention never deletes it. */
+  keep?: boolean;
   metadata?: Record<string, unknown> | null;
   instanceId?: string | null;
   playwrightVersion?: string;
@@ -180,9 +197,12 @@ export interface StreamEventPayload {
   slowestStep?: string | null;
   slowestStepDuration?: number | null;
   wastedTimeMs?: number | null;
-  networkRequests?: unknown;
+  networkRequests?: WireNetworkRequest[] | null;
   webVitals?: unknown;
   pageState?: unknown;
+  pageInventory?: unknown;
+  locatorPages?: unknown;
+  codeReach?: unknown;
   aiUsage?: unknown;
   consoleLogs?: unknown;
   dialogs?: unknown;
@@ -202,6 +222,8 @@ export interface StreamEventPayload {
   testSourceFrames?: TestSourceFrame[] | null;
   /** Why a `didnotrun` case never executed (`previous-failure`/`global-timeout`/`max-failures`/`interrupted`). */
   didNotRunReason?: string | null;
+  /** Playwright's `TestCase.expectedStatus`: `failed` for a `test.fail()` test. */
+  expectedStatus?: string | null;
   /** For a `previous-failure` cascade, the location of the failing test that blocked it. */
   blockedBy?: string | null;
 }
@@ -234,6 +256,8 @@ export interface TestRunFinishPayload {
     workerIndex?: number | null;
   }>;
   label?: string | null;
+  /** Keep the run forever: retention never deletes it. */
+  keep?: boolean;
   metadata?: Record<string, unknown>;
   playwrightVersion?: string;
   reporterVersion?: string;
@@ -251,6 +275,8 @@ export interface TestRunStartPayload {
   startTime?: string;
   environment?: string | null;
   label?: string | null;
+  /** Keep the run forever: retention never deletes it. */
+  keep?: boolean;
   metadata?: Record<string, unknown>;
   instanceId?: string;
   playwrightVersion?: string;
@@ -259,4 +285,47 @@ export interface TestRunStartPayload {
   shardTotal?: number;
   isFullRun?: boolean;
   filterDetails?: FilterDetails | null;
+}
+
+// ── Declared surface manifest (Test Map) ──────────────────────────────────────
+//
+// The declared-surface contract: what the application says it exposes, ahead of
+// any test reaching it. Three ramps produce it — the instrumentation package's
+// `/__piwi/manifest`, a committed `piwi.manifest.json` next to the Playwright
+// config, and a project's OpenAPI URL fetched server-side. All three reduce to
+// this one shape, uploaded through `PUT /api/projects/:id/surface/manifest` and
+// turned into `route`/`page` graph nodes with origin `manifest` or `openapi`.
+
+/** A declared route: its method, path pattern, handler file and documented codes. */
+export interface ManifestRoute {
+  /** HTTP method, upper-cased on ingest. */
+  method: string;
+  /** Path pattern, e.g. `/api/orders/:id`. */
+  pattern: string;
+  /** Handler source file, when the instrumentation knows it. */
+  handler?: string | null;
+  /** Documented response status codes (from OpenAPI), used to strengthen success-only. */
+  responses?: number[];
+}
+
+/** A declared page: its path pattern and an optional display name. */
+export interface ManifestPage {
+  /** Path pattern, e.g. `/orders/:id`. */
+  pattern: string;
+  name?: string | null;
+}
+
+/** The declared surface of an application: its routes and pages. */
+export interface AppManifest {
+  routes?: ManifestRoute[];
+  pages?: ManifestPage[];
+}
+
+/** Where a declared manifest came from — it decides the graph node origin. */
+export type ManifestSource = 'instrumentation' | 'committed' | 'openapi';
+
+/** The body of `PUT /api/projects/:id/surface/manifest`. */
+export interface SurfaceManifestUpload {
+  source: ManifestSource;
+  manifest: AppManifest;
 }

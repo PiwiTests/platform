@@ -4,6 +4,7 @@ import { createRequire } from 'module';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { syncCron, resolveSyncMinutes } from './shared/integrations/sync-config';
+import { GENERATED_DOCS_PAGES } from './shared/docs-generated-pages';
 
 // The tracker status-pull cadence, derived from the env var at start time.
 const integrationsSyncCron = syncCron(resolveSyncMinutes(process.env.PIWI_INTEGRATIONS_SYNC_MINUTES));
@@ -17,7 +18,7 @@ const isDemo = process.env.PIWI_DEMO_MODE === 'true';
 // Static head description for the demo shell — same wording as the docs
 // site's og: cards (apps/docs/.vitepress/config.mts).
 const demoDescription =
-  'CI throws away every report it makes. Piwi keeps them — then groups failures by root cause, scores flaky tests, and finds the locator you should have used. Self-hosted, MIT, zero telemetry.';
+  'CI throws away every report it makes. Piwi keeps them — then groups failures by root cause, scores flaky tests, and finds the locator you should have used. Self-hosted, zero telemetry.';
 
 // The dashboard version is authoritative in `application/package.json`
 // (kept in sync across the monorepo by release-please) — read it once at
@@ -39,12 +40,7 @@ const serverAssets = [
           dir: docsDir,
           pattern:
             '{index.md,guide/**/*.md,features/**/*.md,recipes/**/*.md,operate/**/*.md,reference/**/*.md,snippets/*}',
-          ignore: [
-            '**/node_modules/**',
-            'reference/configuration.md',
-            'reference/feature-map.md',
-            'reference/whats-new.md',
-          ],
+          ignore: ['**/node_modules/**', ...Object.keys(GENERATED_DOCS_PAGES).map((page) => `${page}.md`)],
         },
       ]
     : []),
@@ -96,6 +92,10 @@ const demoPwaConfig = isDemo
 export default defineNuxtConfig({
   modules: ['@nuxt/ui', '@vueuse/nuxt', '@vite-pwa/nuxt'],
   ssr: isDemo ? false : undefined,
+  // Baked into the demo's static HTML and shown until the app first renders,
+  // which waits on the in-browser database: without it a first visit is a blank
+  // page, and crawlers that render the page find nothing describing it.
+  spaLoadingTemplate: isDemo ? 'demo/loading-template.html' : undefined,
 
   // `flaky` joins the default semantic colors so a flaky badge can carry the
   // test outcome palette's purple (mapped in app.config.ts).
@@ -111,14 +111,24 @@ export default defineNuxtConfig({
 
   // @piwitests/core and @piwitests/picker-dom ship TypeScript source (shared
   // with the reporter); Vite must transpile them since node_modules is not
-  // transpiled by default and nitro.experimental.noExternals inlines them
-  // into the server build.
+  // transpiled by default. Nuxt also passes this list to Nitro's
+  // externals.inline, so they are bundled into the server build instead of
+  // being copied as TypeScript into .output/server/node_modules.
   build: {
     transpile: ['@piwitests/core', '@piwitests/picker-dom'],
   },
 
   devtools: {
     enabled: false,
+  },
+
+  // Production builds emit no server source maps. Carrying them through the Vite
+  // SSR build and the Nitro bundle added over a gigabyte to the build's peak heap
+  // (enough to run out of memory at Node's 4 GB default in the Docker image), and
+  // nothing reads them: the server runs without --enable-source-maps and the
+  // desktop staging strips every *.map. `nuxt dev` keeps them.
+  $production: {
+    sourcemap: { server: false },
   },
   // The demo is a static SPA (ssr: false), so nothing set through
   // useHead/useSeoMeta exists until the JS bundle runs — link previews and
@@ -127,22 +137,30 @@ export default defineNuxtConfig({
     ? {
         baseURL: '/demo/',
         head: {
-          title: 'Piwi Dashboard — live demo',
+          htmlAttrs: { lang: 'en' },
+          // Every page title the app sets gains the suffix, so the indexed
+          // entry page reads "Piwi Dashboard (live demo)".
+          title: 'Piwi Dashboard',
+          titleTemplate: '%s (live demo)',
           meta: [
             { name: 'description', content: demoDescription },
             { property: 'og:type', content: 'website' },
-            { property: 'og:title', content: 'Piwi Dashboard — live demo' },
+            { property: 'og:site_name', content: 'Piwi Dashboard' },
+            { property: 'og:title', content: 'Piwi Dashboard (live demo)' },
             { property: 'og:description', content: demoDescription },
             { property: 'og:image', content: 'https://piwitests.dev/og-image.png' },
             { property: 'og:image:width', content: '1200' },
             { property: 'og:image:height', content: '630' },
             { property: 'og:url', content: 'https://piwitests.dev/demo/' },
             { name: 'twitter:card', content: 'summary_large_image' },
-            { name: 'twitter:title', content: 'Piwi Dashboard — live demo' },
+            { name: 'twitter:title', content: 'Piwi Dashboard (live demo)' },
             { name: 'twitter:description', content: demoDescription },
             { name: 'twitter:image', content: 'https://piwitests.dev/og-image.png' },
           ],
           link: [
+            // Every demo route serves this same shell (a prerendered copy, or the site's
+            // 404 redirect), so each names the entry page as the one URL to index.
+            { rel: 'canonical', href: 'https://piwitests.dev/demo/' },
             { rel: 'icon', href: '/demo/favicon.ico', sizes: 'any' },
             { rel: 'icon', type: 'image/svg+xml', href: '/demo/logo.svg' },
           ],
@@ -278,18 +296,24 @@ export default defineNuxtConfig({
   compatibilityDate: '2025-02-23',
 
   nitro: {
-    // In demo mode, override the "internal:nuxt:prerender" storage driver with the
-    // built-in memory driver. On Windows, @nuxt/nitro-server registers this driver
-    // using pathToFileURL() which produces a "file:///C:/..." URL that Rollup cannot
-    // resolve. The module is then treated as an unresolvable external, fails to load
-    // at runtime, and every prerender request returns 500. Using memory avoids the
-    // Windows file-URL resolution issue entirely (and is equivalent for a single build
-    // run since the prerender cache is discarded after each generate anyway).
+    hooks: {
+      // The app's `$fetch` and `useFetch` carry no typed route map. With one,
+      // every call on a URL built at run time is matched against every server
+      // route at type level, and past about 220 routes TypeScript gives up
+      // ("excessive stack depth"). A call site names its response type instead,
+      // with `ApiResponse<typeof handler>` or a type from `types/api.ts`.
+      'types:extend'(types) {
+        types.routes = {};
+      },
+    },
     // Pre-render /_openapi.json so it ships as a static file in the demo.
     // Nitro's built-in OpenAPI handler reads compiled route metadata (from
     // defineRouteMeta transforms) and writes the full spec to
     // .output/public/_openapi.json, which the /docs page fetches at runtime.
     prerender: isDemo ? { failOnError: false, routes: ['/_openapi.json'] } : undefined,
+    // The demo's prerender cache lives in memory (a generate run discards it
+    // anyway), so the prerenderer never imports @nuxt/nitro-server's disk cache
+    // driver, which it registers by file:// URL on Windows.
     storage: isDemo ? { 'internal:nuxt:prerender': { driver: 'memory' } } : undefined,
     serverAssets,
     publicAssets: [
@@ -347,58 +371,100 @@ export default defineNuxtConfig({
         swagger: false,
       },
     },
+    // npm dependencies stay external: Nitro traces the files the server uses and
+    // copies them into .output/server/node_modules. The Docker image, the desktop
+    // staging (apps/desktop/scripts/stage-server.mjs) and @piwitests/server
+    // (packages/server/scripts/copy-output.mjs) prune the sharp and libsql
+    // platform binaries in that folder and install the target platform's beside
+    // it. Nitro's top-level `noExternals` does not fit that: it bundles every
+    // dependency and refuses any external, native modules included.
     experimental: {
       openAPI: true,
-      // Inline all dependencies into the built output — no external node_modules
-      // needed at runtime. Only native modules (sharp, libsql) stay external.
-      // @ts-expect-error — noExternals is a valid Nitro option but not yet typed
-      noExternals: true,
       // Windows-only workaround to avoid Nitro build issues caused by ESM/CJS externals
-      // resolution on Windows. Enabling legacyExternals here keeps dependency resolution
-      // compatible with older behavior and prevents intermittent build timeouts / failures
-      // during Nitro server bundling on Windows.
+      // resolution on Windows. legacyExternals swaps the plugin that traces the externals
+      // above for Nitro's older one, which keeps dependency resolution compatible with
+      // older behavior and prevents intermittent build timeouts / failures during Nitro
+      // server bundling on Windows. `nuxi build` sets NODE_ENV=production before it
+      // loads this file.
       // See: https://github.com/nuxt/nuxt/issues/31836
-      legacyExternals: process.platform === 'win32' && process.env.NODE_ENV === 'production',
+      // Never in the demo, whose only server bundle is the prerenderer: the legacy
+      // resolver resolves bare imports from the project root rather than the importing
+      // file, which hands Nitro's runtime the hoisted hookable 6 in place of its own
+      // hookable 5 (whose callHook() always returns a promise), and every prerendered
+      // route answers 500.
+      legacyExternals: !isDemo && process.platform === 'win32' && process.env.NODE_ENV === 'production',
       tasks: true,
     },
     scheduledTasks: {
       // Run the notification, auto-heal and integration outbox sweepers every minute
       '* * * * *': ['notifications:sweep', 'heal:sweep', 'integrations:sweep'],
+      // Fire the report schedules that are due (a missed tick fires on the next sweep)
+      '*/5 * * * *': ['reports:schedule'],
       // Pull tracker statuses back on the configured cadence (default every 15 min).
       [integrationsSyncCron]: ['integrations:sync'],
       // Nightly data retention: run pruning (opt-in), outbox pruning, orphan sweep
       '17 3 * * *': ['retention:sweep'],
+      // Nightly feature-graph sweep: prune stale changes edges, branch-tagged
+      // rows and canonical nodes unseen for thirty runs (independent of retention).
+      '23 3 * * *': ['graph:sweep'],
     },
   },
 
   vite: {
+    // Every client dependency is listed: Vite's startup scan cannot follow
+    // Nuxt's virtual entry, so an unlisted one is discovered while a page
+    // loads, and Vite re-bundles and reloads that page. reka-ui and its
+    // subpath entries stay unlisted: Nuxt UI transpiles reka-ui, which keeps it
+    // out of pre-bundling, and all its entries must load the same copy.
     optimizeDeps: {
       include: [
         'date-fns',
+        // The locales useLocaleSettings loads on demand.
+        'date-fns/locale/cs',
+        'date-fns/locale/da',
+        'date-fns/locale/de',
+        'date-fns/locale/en-GB',
+        'date-fns/locale/es',
+        'date-fns/locale/fi',
+        'date-fns/locale/fr',
+        'date-fns/locale/fr-CA',
+        'date-fns/locale/it',
+        'date-fns/locale/ja',
+        'date-fns/locale/ko',
+        'date-fns/locale/nb',
+        'date-fns/locale/nl',
+        'date-fns/locale/pl',
+        'date-fns/locale/pt',
+        'date-fns/locale/pt-BR',
+        'date-fns/locale/sv',
+        'date-fns/locale/zh-CN',
+        'date-fns/locale/zh-TW',
         'drizzle-orm',
+        'drizzle-orm/pg-core',
         'drizzle-orm/sqlite-core',
         'drizzle-orm/sqlite-proxy',
+        // The languages shared/highlight.ts registers.
         'highlight.js/lib/core',
         'highlight.js/lib/languages/bash',
         'highlight.js/lib/languages/css',
         'highlight.js/lib/languages/diff',
         'highlight.js/lib/languages/javascript',
         'highlight.js/lib/languages/json',
+        'highlight.js/lib/languages/powershell',
         'highlight.js/lib/languages/python',
         'highlight.js/lib/languages/typescript',
         'highlight.js/lib/languages/xml',
+        'highlight.js/lib/languages/yaml',
+        'marked',
+        'pdf-lib',
+        'vue-virtual-scroller',
+        'write-excel-file/universal',
         'zod',
       ],
 
       // sql.js bundles a WASM binary and must not be pre-bundled by Vite;
       // excluding it ensures the WASM file is loaded at runtime via locateFile.
       exclude: ['sql.js'],
-    },
-    server: {
-      warmup: {
-        // relative to Vite root = Nuxt srcDir (application/app)
-        clientFiles: ['./pages/**/*.vue', './components/**/*.vue', './layouts/**/*.vue'],
-      },
     },
   },
 

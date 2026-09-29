@@ -13,9 +13,37 @@ export const NOTIFICATION_EVENTS = [
   'perf.regression',
   'diagnosis.completed',
   'auto_heal.pr_opened',
+  'bug.looks_fixed',
 ] as const;
 
 export type NotificationEvent = (typeof NOTIFICATION_EVENTS)[number];
+
+const EVENT_LABELS: Partial<Record<NotificationEvent, string>> = {
+  'auto_heal.pr_opened': 'Auto-heal › PR opened',
+  'bug.looks_fixed': 'Bug › looks fixed',
+};
+
+/** How the subscription pickers name an event. */
+export function notificationEventLabel(event: string): string {
+  return EVENT_LABELS[event as NotificationEvent] ?? event.replace(/\./g, ' › ');
+}
+
+/**
+ * A report schedule's delivery: queued in the notification outbox by the
+ * `reports:schedule` task, one row per channel. Deliberately not a member of
+ * {@link NOTIFICATION_EVENTS}: a quality report arrives on its schedule's
+ * clock, so it is never something to subscribe to.
+ */
+export const REPORT_READY_EVENT = 'report.ready';
+
+export interface ReportReadyPayload {
+  snapshotId: number;
+  scheduleId: number;
+  /** The last day the report covers, `YYYY-MM-DD` in the schedule's time zone. */
+  periodEnd: string;
+  /** The snapshot's share link token, encrypted at rest; set when the schedule includes a share link. */
+  shareToken?: string;
+}
 
 /** How many failing tests to embed in a run notification. */
 export const TOP_FAILURES_LIMIT = 3;
@@ -245,13 +273,34 @@ export interface AutoHealPrOpenedPayload {
   editCount: number;
 }
 
+/** One `test.fail()` test that passed: the bug it reproduces looks fixed. */
+export interface LooksFixedTest {
+  title: string;
+  filePath: string;
+  executionId: number;
+  testCaseId: number;
+  /** The Piwi bug report the test names with `piwi:bug`. */
+  bugId?: number;
+  /** The ticket the test names with `piwi:link`. */
+  link?: string;
+}
+
+export interface BugLooksFixedPayload {
+  projectId: number;
+  projectName: string;
+  runId: number;
+  branch?: string;
+  tests: LooksFixedTest[];
+}
+
 export type NotificationPayload =
   | RunFinishedPayload
   | ClusterNewPayload
   | ClusterFixedPayload
   | ClusterRegressedPayload
   | DiagnosisCompletedPayload
-  | AutoHealPrOpenedPayload;
+  | AutoHealPrOpenedPayload
+  | BugLooksFixedPayload;
 
 /** Per-subscription delivery filters, stored as JSON on the subscription row. */
 export interface SubscriptionFilters {
@@ -405,6 +454,15 @@ export function renderEventSubject(event: NotificationEvent, payload: Notificati
     case 'auto_heal.pr_opened': {
       const p = payload as AutoHealPrOpenedPayload;
       return `Auto-heal opened PR #${p.prNumber} — ${p.projectName}`;
+    }
+    case 'bug.looks_fixed': {
+      const p = payload as BugLooksFixedPayload;
+      const [first] = p.tests;
+      if (p.tests.length === 1 && first) {
+        const what = first.bugId ? `Bug #${first.bugId} looks fixed` : 'A bug looks fixed';
+        return `${what} — ${p.projectName}`;
+      }
+      return `${p.tests.length} bugs look fixed — ${p.projectName}`;
     }
   }
 }

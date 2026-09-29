@@ -13,11 +13,18 @@
  * robust regardless of which path produced the value.
  */
 
+import { isFixmeSkip } from './skip-kind';
+
 /**
  * Per-status tally keys that should be counted as "failed".
  * `timedOut` (Playwright wire value) and `timedout` (declared type / lowercase).
  */
 export const FAILED_STATUS_KEYS = ['failed', 'timedOut', 'timedout'] as const;
+
+/** Whether a per-case status is a failure, in either spelling of timed out. */
+export function isFailedStatus(status: string | null | undefined): boolean {
+  return status != null && (FAILED_STATUS_KEYS as readonly string[]).includes(status);
+}
 
 /**
  * Canonical spelling for a per-case status. The wire may carry Playwright's
@@ -104,6 +111,8 @@ export interface RunCaseSummary {
   didNotRun: number;
   /** Passed on a retry — a subset of `passed`, not an extra bucket. */
   flaky: number;
+  /** Skipped by `test.fixme()` — a subset of `skipped`, not an extra bucket. */
+  fixme: number;
   /** Still in flight (not yet settled). */
   running: number;
 }
@@ -111,13 +120,20 @@ export interface RunCaseSummary {
 /**
  * Tally a run's cases the way the live run views count them: timed-out folds
  * into `failed`, a case whose final status is `passed` after a retry counts as
- * `passed` **and** as `flaky` (never as a failure), and `running` is the
- * in-flight remainder. Pass one entry per test (de-duplicate attempts first)
+ * `passed` **and** as `flaky` (never as a failure), a `test.fixme()` skip
+ * counts as `skipped` **and** as `fixme`, and `running` is the in-flight
+ * remainder. Pass one entry per test (de-duplicate attempts first)
  * and the buckets reconcile: `total = passed + failed + skipped + didNotRun +
  * running`. This is the single source the run header, the count bar and the
  * grouped list all count with, so they cannot disagree.
  */
-export function summarizeRunCases(cases: ReadonlyArray<{ status: string; retries?: number | null }>): RunCaseSummary {
+export function summarizeRunCases(
+  cases: ReadonlyArray<{
+    status: string;
+    retries?: number | null;
+    testAnnotations?: ReadonlyArray<{ type: string }> | null;
+  }>,
+): RunCaseSummary {
   const s: RunCaseSummary = {
     total: cases.length,
     passed: 0,
@@ -125,6 +141,7 @@ export function summarizeRunCases(cases: ReadonlyArray<{ status: string; retries
     skipped: 0,
     didNotRun: 0,
     flaky: 0,
+    fixme: 0,
     running: 0,
   };
   for (const tc of cases) {
@@ -132,8 +149,10 @@ export function summarizeRunCases(cases: ReadonlyArray<{ status: string; retries
     else if (tc.status === 'passed') {
       s.passed++;
       if ((tc.retries ?? 0) > 0) s.flaky++;
-    } else if (tc.status === 'skipped') s.skipped++;
-    else if (tc.status === 'didnotrun') s.didNotRun++;
+    } else if (tc.status === 'skipped') {
+      s.skipped++;
+      if (isFixmeSkip(tc)) s.fixme++;
+    } else if (tc.status === 'didnotrun') s.didNotRun++;
     else if (tc.status === 'running') s.running++;
   }
   return s;

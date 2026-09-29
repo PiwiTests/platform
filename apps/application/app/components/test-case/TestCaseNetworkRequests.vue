@@ -90,7 +90,7 @@ const peek = computed(() => {
   const n = props.requests.length;
   if (n === 0) return 'Full network activity from the trace';
   const first = props.requests[0]!;
-  return `${n} request${n === 1 ? '' : 's'} · ${first.method} ${toPath(first.url)} → ${first.status}`;
+  return `${n} request${n === 1 ? '' : 's'} · ${first.method} ${toPath(first.url)} → ${first.failure || first.status}`;
 });
 
 /** Per-request expansion state (keyed by stable index). */
@@ -227,7 +227,7 @@ const decorated = computed<DecoratedRequest[]>(() => {
       serverMs: rootSpan ? rootSpan.durMs : null,
       errorLogCount,
       warnLogCount,
-      failed: req.status >= 400,
+      failed: req.status >= 400 || !!req.failure,
       hasDetail: logs.length > 0 || spans.length > 0,
       path: toPath(req.url),
     };
@@ -274,7 +274,7 @@ const filterItems = computed(() => [
 
 /** Accent border for a request row based on the worst signal it carries. */
 function rowAccent(r: DecoratedRequest): string {
-  if (r.errorLogCount > 0 || r.status >= 500) return 'border-l-2 border-l-red-400 dark:border-l-red-600';
+  if (r.errorLogCount > 0 || r.status >= 500 || r.failure) return 'border-l-2 border-l-red-400 dark:border-l-red-600';
   if (r.failed || r.warnLogCount > 0) return 'border-l-2 border-l-amber-400 dark:border-l-amber-600';
   return 'border-l-2 border-l-transparent';
 }
@@ -359,11 +359,33 @@ function rowAccent(r: DecoratedRequest): string {
           <UBadge :color="httpMethodColor(req.method)" variant="soft" size="xs" class="font-mono shrink-0">
             {{ req.method }}
           </UBadge>
-          <UBadge :color="httpStatusColor(req.status)" variant="soft" size="xs" class="font-mono shrink-0 tabular-nums">
+          <UBadge
+            v-if="req.failure"
+            color="error"
+            variant="soft"
+            size="xs"
+            class="shrink-0"
+            :title="`No response: ${req.failure}`"
+          >
+            failed
+          </UBadge>
+          <UBadge
+            v-else
+            :color="httpStatusColor(req.status)"
+            variant="soft"
+            size="xs"
+            class="font-mono shrink-0 tabular-nums"
+          >
             {{ req.status || '—' }}
           </UBadge>
 
           <code class="truncate text-xs flex-1 min-w-0" :title="req.url">{{ req.path }}</code>
+          <code
+            v-if="req.failure"
+            class="truncate text-xs text-red-600 dark:text-red-400 min-w-0 max-w-[45%]"
+            :title="req.failure"
+            >{{ req.failure }}</code
+          >
 
           <span
             v-if="req.contentType"

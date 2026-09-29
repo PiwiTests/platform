@@ -10,13 +10,20 @@ import {
   networkRequests,
   quarantinedTests,
 } from '../../server/database/schema';
-import { eq, and, desc, sql, isNull, isNotNull } from 'drizzle-orm';
+import { eq, and, desc, gte, sql, isNull, isNotNull } from 'drizzle-orm';
+import { makeTimeBuckets } from './analytics/common';
+import type { Granularity } from '../analytics/period';
 import { computeWastedMs, DEFAULT_WASTED_WAIT_PATTERNS } from '../utils/wasted-waits';
 import { inlineCasePayloads } from '../../server/utils/case-payloads';
 import { buildFailureVerdict } from '../failure-verdict';
 import { buildSituation } from '../situation';
 import { computeNextStep } from '../next-step';
 import { getClusterPatchFacts } from './failure-clusters';
+import { isLabRun, notLabExecution, notLabRun } from './probes';
+import { getFlakeProfile, mayHaveFlakeSuspects } from './flake-profile';
+import { getFlakeSuspectResults, type FlakeSuspectResult } from './flake-lab';
+import { isPassiveCapabilityDeclined } from './capabilities';
+import { isFailedStatus } from '../utils/test-counts';
 import { buildFailureTimeline, type FailureTimeline, type TimelineCallsite } from '../failure-timeline';
 import {
   buildFailureClues,
@@ -27,6 +34,7 @@ import {
 } from '../failure-clues';
 import { parsePlaywrightError } from '../error-parse';
 import { failingStepParams } from '../describe-failure';
+import { failureHookContext, type FailureHookContext, type TreeStepLike } from '../step-tree';
 import { diffAttempts, type AttemptDiffEntry, type AttemptEvidence } from '../attempt-diff';
 import { getLocatorHealing } from '../../server/utils/locator-healing';
 import { getEnvironmentDiff } from '../../server/utils/environment-diff';
@@ -38,10 +46,17 @@ import type { FlatStep } from '@piwitests/core/step-analysis';
 import type { RunMetadata } from '../../server/utils/run-json-types';
 
 import type { DrizzleDB } from './db';
+import { clusterKnownIssues } from './known-issues';
 
+/**
+ * A test case with its header stats, recent executions and clusters. Executions
+ * of lab runs (probes, flake experiments) replay the test under injected
+ * conditions, so they never count toward the stats nor show as its history.
+ */
 export async function getTestCase(db: DrizzleDB, id: number) {
   const [testCase] = await db.select().from(testCases).where(eq(testCases.id, id));
   if (!testCase) return null;
+  const realExecution = and(eq(testRunsCases.testCaseId, id), notLabExecution(testRunsCases.testRunId));
 
   const [[project], aggResult, [lastExecution]] = await Promise.all([
     db
@@ -62,6 +77,7 @@ export async function getTestCase(db: DrizzleDB, id: number) {
             SELECT ${testRunsCases.status} AS s, ${testRunsCases.retries} AS r
             FROM ${testRunsCases}
             WHERE ${testRunsCases.testCaseId} = ${testCases.id}
+              AND ${notLabExecution(testRunsCases.testRunId)}
             ORDER BY ${testRunsCases.createdAt} DESC
             LIMIT 10
           ) WHERE s = 'passed' AND r > 0
@@ -70,11 +86,11 @@ export async function getTestCase(db: DrizzleDB, id: number) {
         lastRunAt: sql<number>`MAX(${testRunsCases.createdAt})`,
       })
       .from(testRunsCases)
-      .where(eq(testRunsCases.testCaseId, id)),
+      .where(realExecution),
     db
       .select({ id: testRunsCases.id })
       .from(testRunsCases)
-      .where(eq(testRunsCases.testCaseId, id))
+      .where(realExecution)
       .orderBy(desc(testRunsCases.createdAt))
       .limit(1)
       .then((r: any[]) => (r.length > 0 ? [r[0]] : [undefined])),
@@ -97,10 +113,11 @@ export async function getTestCase(db: DrizzleDB, id: number) {
         startTime: testRuns.startTime,
         isNewRegression: testRunsCases.isNewRegression,
         isNewFlaky: testRunsCases.isNewFlaky,
+        failureClusterId: testRunsCases.failureClusterId,
       })
       .from(testRunsCases)
       .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
-      .where(eq(testRunsCases.testCaseId, id))
+      .where(and(eq(testRunsCases.testCaseId, id), notLabRun(testRuns.metadata)))
       .orderBy(desc(testRuns.startTime))
       .limit(20),
     db
@@ -120,6 +137,12 @@ export async function getTestCase(db: DrizzleDB, id: number) {
   ]);
 
   const totalRuns = aggResult[0]?.totalRuns ?? 0;
+  const knownIssues = await clusterKnownIssues(
+    db,
+    recentExecutions
+      .map((e: { failureClusterId: number | null }) => e.failureClusterId)
+      .filter((c): c is number => c != null),
+  );
 
   return {
     id: testCase.id,
@@ -147,13 +170,18 @@ export async function getTestCase(db: DrizzleDB, id: number) {
       ...c,
       status: c.status ?? 'open',
     })),
-    recentExecutions,
+    recentExecutions: recentExecutions.map((e: { failureClusterId: number | null }) => ({
+      ...e,
+      knownIssue: e.failureClusterId != null ? (knownIssues.get(e.failureClusterId) ?? null) : null,
+    })),
     links,
   };
 }
 
 export async function getTestCaseHistory(db: DrizzleDB, testCaseId: number) {
-  return db
+  // Lab runs replay a test with an injected fault or condition, so their executions never
+  // appear in a test's history.
+  const rows = await db
     .select({
       id: testRunsCases.id,
       runId: testRuns.id,
@@ -164,12 +192,14 @@ export async function getTestCaseHistory(db: DrizzleDB, testCaseId: number) {
       attempts: testRunsCases.attempts,
       startTime: testRuns.startTime,
       runStatus: testRuns.status,
+      runMetadata: testRuns.metadata,
     })
     .from(testRunsCases)
     .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
     .where(eq(testRunsCases.testCaseId, testCaseId))
     .orderBy(desc(testRuns.startTime))
     .limit(50);
+  return rows.filter((r) => !isLabRun(r.runMetadata)).map(({ runMetadata: _runMetadata, ...row }) => row);
 }
 
 export async function getTestRunCase(
@@ -301,6 +331,7 @@ export async function getTestRunCase(
         fixLandedRunId: cluster.fixLandedRunId ?? null,
         fixLandedAt: cluster.fixLandedAt ?? null,
         assignee: cluster.assignee ?? null,
+        knownIssue: (await clusterKnownIssues(db, [cluster.id])).get(cluster.id) ?? null,
       };
     }
   }
@@ -330,6 +361,7 @@ export async function getTestRunCase(
     contentType: nr.contentType,
     serverLogs: nr.serverLogs,
     serverTraces: nr.serverTraces,
+    failure: nr.failure ?? null,
   }));
 
   // Cause ↔ effect for did-not-run cascades, both scoped to this run:
@@ -375,12 +407,14 @@ export async function getTestRunCase(
     blockedTests = rows.map(toRef);
   }
 
-  let blockedByCase: BlockedCaseRef | null = null;
+  // The blocking execution also says where it failed: a failing beforeAll hook
+  // skips the rest of its group just as a serial-group failure does.
+  let blockedByCase: (BlockedCaseRef & { failedIn: FailureHookContext | null }) | null = null;
   if (trc.blockedBy) {
     const m = /^(.*):(\d+):(\d+)$/.exec(trc.blockedBy);
     if (m) {
       const [row] = await db
-        .select(blockedRefColumns)
+        .select({ ...blockedRefColumns, steps: testRunsCases.steps, error: testRunsCases.error })
         .from(testRunsCases)
         .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
         .where(
@@ -391,7 +425,10 @@ export async function getTestRunCase(
             eq(testRunsCases.column, Number(m[3])),
           ),
         );
-      if (row) blockedByCase = toRef(row);
+      if (row) {
+        const steps = Array.isArray(row.steps) ? (row.steps as TreeStepLike[]) : [];
+        blockedByCase = { ...toRef(row), failedIn: failureHookContext(steps, row.error) };
+      }
     }
   }
 
@@ -432,6 +469,7 @@ export async function getTestRunCase(
         owner: verdict.owner,
         clusterStatus: failureCluster?.status ?? null,
         assignee: failureCluster?.assignee ?? null,
+        knownIssue: failureCluster?.knownIssue ?? null,
         now: opts.now,
       })
     : null;
@@ -498,6 +536,7 @@ export async function getTestRunCase(
     isNewRegression: trc.isNewRegression ?? null,
     isNewFlaky: trc.isNewFlaky ?? null,
     didNotRunReason: trc.didNotRunReason ?? null,
+    expectedStatus: trc.expectedStatus ?? null,
     blockedBy: trc.blockedBy ?? null,
     blockedByCase,
     blockedTests,
@@ -573,6 +612,7 @@ export async function getFailureTimeline(
     duration: trc.duration,
     timeout: trc.timeout,
     status: trc.status,
+    error: trc.error,
     steps: trc.steps,
     stepEvents: trc.stepEvents,
     consoleLogs: trc.consoleLogs,
@@ -667,7 +707,10 @@ export async function loadFailureClueInput(
 
   const [networkRequestRows, [testCase]] = await Promise.all([
     db.select().from(networkRequests).where(eq(networkRequests.testRunsCaseId, id)),
-    db.select({ filePath: testCases.filePath }).from(testCases).where(eq(testCases.id, trc.testCaseId)),
+    db
+      .select({ filePath: testCases.filePath, projectId: testCases.projectId })
+      .from(testCases)
+      .where(eq(testCases.id, trc.testCaseId)),
   ]);
 
   const networkForClues = networkRequestRows.map((nr) => ({
@@ -676,6 +719,7 @@ export async function loadFailureClueInput(
     status: nr.status,
     duration: nr.duration,
     startTime: nr.startTime ?? undefined,
+    failure: nr.failure,
     serverLogs: (nr.serverLogs ?? null) as Array<{
       level?: string | null;
       message?: string | null;
@@ -688,6 +732,7 @@ export async function loadFailureClueInput(
     duration: trc.duration,
     timeout: trc.timeout,
     status: trc.status,
+    error: trc.error,
     steps: trc.steps,
     stepEvents: trc.stepEvents,
     consoleLogs: trc.consoleLogs,
@@ -702,7 +747,7 @@ export async function loadFailureClueInput(
 
   // Run-level facts and the two derived analyses the engine cites, loaded in
   // parallel. Healing and the environment diff resolve their own baselines.
-  const [healing, environmentDiff, pageDiff, browserPeers, workerExecutions, clusterFix, lockHolders] =
+  const [healing, environmentDiff, pageDiff, browserPeers, workerExecutions, clusterFix, lockHolders, flakeSuspects] =
     await Promise.all([
       getLocatorHealing(db, id).catch(() => null),
       getEnvironmentDiff(db, id).catch(() => null),
@@ -725,7 +770,15 @@ export async function loadFailureClueInput(
             })
             .from(testRunsCases)
             .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
-            .where(and(eq(testRunsCases.testRunId, trc.testRunId), eq(testRunsCases.workerIndex, trc.workerIndex)))
+            .where(
+              and(
+                eq(testRunsCases.testRunId, trc.testRunId),
+                eq(testRunsCases.workerIndex, trc.workerIndex),
+                trc.shardIndex != null
+                  ? eq(testRunsCases.shardIndex, trc.shardIndex)
+                  : isNull(testRunsCases.shardIndex),
+              ),
+            )
         : Promise.resolve(
             [] as Array<{
               id: number;
@@ -771,6 +824,7 @@ export async function loadFailureClueInput(
               locks: unknown;
             }>,
           ),
+      loadFlakeSuspectsForClue(db, trc.status, trc.testCaseId, testCase?.projectId ?? null),
     ]);
 
   return {
@@ -788,6 +842,7 @@ export async function loadFailureClueInput(
       ? parsePlaywrightError(trc.error, {
           stepParams: failingStepParams(
             Array.isArray(trc.steps) ? (trc.steps as Parameters<typeof failingStepParams>[0]) : null,
+            trc.error,
           ),
         })
       : null,
@@ -823,7 +878,45 @@ export async function loadFailureClueInput(
     cluster: clusterFix,
     timeout: trc.timeout ?? null,
     slowRequestMs: opts.slowRequestMs ?? null,
+    flakeSuspects,
   };
+}
+
+/**
+ * The test's flake suspects, for a failing execution of a project that has not
+ * declined flake suspects; an empty list otherwise. A history that cannot name
+ * a suspect (fewer than 3 failures, or no pass) costs one count, not a profile:
+ * the AI diagnosis reads the clues of every candidate cluster.
+ */
+async function loadFlakeSuspectsForClue(
+  db: DrizzleDB,
+  status: string,
+  testCaseId: number,
+  projectId: number | null,
+): Promise<FailureClueInput['flakeSuspects']> {
+  if (!isFailedStatus(status) || projectId == null) return [];
+  if (await isPassiveCapabilityDeclined(db, projectId, 'flake-lab')) return [];
+  if (!(await mayHaveFlakeSuspects(db, testCaseId).catch(() => false))) return [];
+  const [profile, results] = await Promise.all([
+    getFlakeProfile(db, testCaseId, { summary: true }).catch(() => null),
+    getFlakeSuspectResults(db, testCaseId).catch(() => new Map<string, FlakeSuspectResult>()),
+  ]);
+  return (profile?.suspects ?? []).map((s) => {
+    const lab = results.get(s.id);
+    return lab?.verdict === 'reproduced'
+      ? {
+          ...s,
+          reproduced: {
+            label: lab.label,
+            matchingFailures: lab.matchingFailures,
+            runs: lab.runs,
+            controlMatchingFailures: lab.controlMatchingFailures,
+            controlRuns: lab.controlRuns,
+            pValue: lab.pValue,
+          },
+        }
+      : s;
+  });
 }
 
 /**
@@ -879,6 +972,8 @@ export interface AttemptDiffResult {
   passing?: AttemptDiffSummary;
   /** Which attempt the opened execution is, so the UI can mark "this one". */
   currentExecutionId?: number;
+  /** The test case, so a network row can link to its flake suspect. */
+  testCaseId?: number;
   /** The ordered differences; empty when not applicable. */
   differences: AttemptDiffEntry[];
 }
@@ -909,6 +1004,7 @@ async function loadAttemptEvidence(
       ? parsePlaywrightError(row.error, {
           stepParams: failingStepParams(
             Array.isArray(row.steps) ? (row.steps as Parameters<typeof failingStepParams>[0]) : null,
+            row.error,
           ),
         })
       : null,
@@ -919,6 +1015,7 @@ async function loadAttemptEvidence(
       status: nr.status,
       duration: nr.duration,
       resourceType: nr.resourceType,
+      failure: nr.failure,
     })),
     consoleLogs: (row.consoleLogs as AttemptEvidence['consoleLogs']) ?? null,
     pageState: (row.pageState as AttemptEvidence['pageState']) ?? null,
@@ -991,7 +1088,14 @@ export async function getAttemptDiff(db: DrizzleDB, id: number): Promise<Attempt
   const attempts = attemptsMeta.map(summarize);
 
   if (attemptsMeta.length < 2)
-    return { applicable: false, reason: 'single-attempt', attempts, differences: [], currentExecutionId: id };
+    return {
+      applicable: false,
+      reason: 'single-attempt',
+      attempts,
+      differences: [],
+      currentExecutionId: id,
+      testCaseId: current.testCaseId,
+    };
 
   const currentRetry = current.retries ?? 0;
   let failing: AttemptMeta | undefined;
@@ -1006,7 +1110,14 @@ export async function getAttemptDiff(db: DrizzleDB, id: number): Promise<Attempt
   }
 
   if (!failing || !passing)
-    return { applicable: false, reason: 'no-pair', attempts, differences: [], currentExecutionId: id };
+    return {
+      applicable: false,
+      reason: 'no-pair',
+      attempts,
+      differences: [],
+      currentExecutionId: id,
+      testCaseId: current.testCaseId,
+    };
 
   const evidenceFor = async (attempt: AttemptMeta): Promise<AttemptEvidence> => {
     const row = rowByRetry.get(attempt.retry);
@@ -1025,6 +1136,7 @@ export async function getAttemptDiff(db: DrizzleDB, id: number): Promise<Attempt
     failing: summarize(failing),
     passing: summarize(passing),
     currentExecutionId: id,
+    testCaseId: current.testCaseId,
     differences,
   };
 }
@@ -1043,60 +1155,90 @@ export async function getTestRunCaseTraces(db: DrizzleDB, id: number) {
   }));
 }
 
-/**
- * Time-series stability of a single test case: the last 200 executions grouped
- * into `bucketCount` chronological buckets with flaky rate, pass rate, and
- * average duration. Shared by the REST stability-trend endpoint and the MCP
- * `get_test_stability_trend` tool.
- */
-export async function getTestCaseStabilityTrend(db: DrizzleDB, testCaseId: number, bucketCount: number) {
-  const buckets = Math.min(50, Math.max(5, bucketCount));
+/** How far back the stability trend of a test case reaches by default. */
+export const STABILITY_TREND_DEFAULT_DAYS = 90;
 
+export interface TestCaseStabilityBucket {
+  /** Bucket start (`YYYY-MM-DD`, UTC). */
+  date: string;
+  /** Executions in the bucket. */
+  totalRuns: number;
+  /** Passed executions over executions, 0–1; null without an execution. */
+  passRate: number | null;
+  /** Executions that passed only on a retry over executions, 0–1; null without an execution. */
+  flakyRate: number | null;
+  /** Average duration of the bucket's executions in ms; null without a duration. */
+  avgDuration: number | null;
+}
+
+export interface TestCaseStabilityTrend {
+  testCaseId: number;
+  /** Days one bucket spans (1 daily, 7 weekly, 30 for calendar months). */
+  bucketDays: number;
+  buckets: TestCaseStabilityBucket[];
+}
+
+/**
+ * Stability of a single test case over time: its executions of the last
+ * `days` days (lab runs left out) in UTC time buckets, each with its pass
+ * rate, flaky rate and average duration. The buckets follow the analytics
+ * granularity (`auto` keeps about 31 of them), and a bucket without an
+ * execution is a gap. Shared by the REST stability-trend endpoint, the Trend
+ * tab of the test page and the MCP `get_test_stability_trend` tool.
+ */
+export async function getTestCaseStabilityTrend(
+  db: DrizzleDB,
+  testCaseId: number,
+  options: { days?: number; granularity?: Granularity; now?: number } = {},
+): Promise<TestCaseStabilityTrend> {
+  const days = Math.min(3650, Math.max(1, Math.round(options.days ?? STABILITY_TREND_DEFAULT_DAYS)));
+  const now = options.now ?? Date.now();
   const tcRows: any[] = await db.select({ id: testCases.id }).from(testCases).where(eq(testCases.id, testCaseId));
   if (tcRows.length === 0) throw new Error('Test case not found');
 
-  const rows: any[] = await db
+  const from = Date.parse(`${new Date(now - (days - 1) * 86_400_000).toISOString().slice(0, 10)}T00:00:00Z`);
+  const rawRows: any[] = await db
     .select({
-      id: testRunsCases.id,
       status: testRunsCases.status,
       duration: testRunsCases.duration,
       retries: testRunsCases.retries,
-      testRunId: testRunsCases.testRunId,
       startTime: testRuns.startTime,
+      runMetadata: testRuns.metadata,
     })
     .from(testRunsCases)
     .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
-    .where(eq(testRunsCases.testCaseId, testCaseId))
-    .orderBy(desc(testRuns.startTime))
-    .limit(200);
+    .where(and(eq(testRunsCases.testCaseId, testCaseId), gte(testRuns.startTime, new Date(from))));
 
-  if (rows.length === 0) return { testCaseId, buckets: [] };
-
-  rows.reverse();
-
-  const bucketSize = Math.max(1, Math.floor(rows.length / buckets));
-  const result: Array<{ date: string; flakyRate: number; passRate: number; avgDuration: number; totalRuns: number }> =
-    [];
-
-  for (let i = 0; i < rows.length; i += bucketSize) {
-    const slice = rows.slice(i, i + bucketSize);
-    const totalRuns = slice.length;
-    const passedRuns = slice.filter((r: any) => r.status === 'passed').length;
-    const flakyRuns = slice.filter((r: any) => r.status === 'passed' && (r.retries ?? 0) > 0).length;
-    const durations = slice.filter((r: any) => r.duration != null).map((r: any) => r.duration);
-    const avgDuration =
-      durations.length > 0 ? Math.round(durations.reduce((a: number, b: number) => a + b, 0) / durations.length) : 0;
-    const midIndex = Math.min(slice.length - 1, Math.floor(slice.length / 2));
-    const date = slice[midIndex]?.startTime?.toISOString?.()?.slice(0, 10) ?? '';
-
-    result.push({
-      date,
-      flakyRate: Math.round((flakyRuns / totalRuns) * 100) / 100,
-      passRate: Math.round((passedRuns / totalRuns) * 100) / 100,
-      avgDuration,
-      totalRuns,
-    });
+  const buckets = makeTimeBuckets(from, now + 1, options.granularity ?? 'auto');
+  const tally = new Map<string, { total: number; passed: number; flaky: number; durations: number[] }>();
+  for (const row of rawRows) {
+    // Lab runs replay a test with an injected fault or condition, so they never shape the trend.
+    if (isLabRun(row.runMetadata)) continue;
+    const key = buckets.keyFor(row.startTime);
+    if (!key) continue;
+    const t = tally.get(key) ?? { total: 0, passed: 0, flaky: 0, durations: [] };
+    t.total += 1;
+    if (row.status === 'passed') {
+      t.passed += 1;
+      if ((row.retries ?? 0) > 0) t.flaky += 1;
+    }
+    if (row.duration != null) t.durations.push(row.duration);
+    tally.set(key, t);
   }
-
-  return { testCaseId, buckets: result };
+  const rate = (n: number, d: number) => (d > 0 ? Math.round((n / d) * 100) / 100 : null);
+  return {
+    testCaseId,
+    bucketDays: buckets.bucketDays,
+    buckets: buckets.keys.map((date) => {
+      const t = tally.get(date);
+      return {
+        date,
+        totalRuns: t?.total ?? 0,
+        passRate: t ? rate(t.passed, t.total) : null,
+        flakyRate: t ? rate(t.flaky, t.total) : null,
+        avgDuration:
+          t && t.durations.length > 0 ? Math.round(t.durations.reduce((a, b) => a + b, 0) / t.durations.length) : null,
+      };
+    }),
+  };
 }

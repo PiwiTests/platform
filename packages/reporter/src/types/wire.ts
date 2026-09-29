@@ -14,23 +14,27 @@
 import type {
   BrowserConfig,
   FilterDetails,
+  LocatorPageUse,
   SelectionStamp,
   SuiteConfigEntry,
   TestAnnotation,
   TestMetadata,
   TestSourceFrame,
   TestStepEvent,
+  WireNetworkRequest,
 } from '@piwitests/core/wire';
 
 export type {
   BrowserConfig,
   FilterDetails,
+  LocatorPageUse,
   SelectionStamp,
   SuiteConfigEntry,
   TestAnnotation,
   TestMetadata,
   TestSourceFrame,
   TestStepEvent,
+  WireNetworkRequest,
 };
 
 // ── Per-case wire shape ──────────────────────────────────────────────────────
@@ -60,9 +64,10 @@ export interface WireTestCase {
   slowestStep?: string | null;
   slowestStepDuration?: number | null;
   wastedTimeMs?: number | null;
-  networkRequests?: unknown;
+  networkRequests?: WireNetworkRequest[] | null;
   webVitals?: unknown;
   pageState?: unknown;
+  pageInventory?: unknown;
   aiUsage?: unknown;
   consoleLogs?: unknown;
   dialogs?: unknown;
@@ -85,8 +90,14 @@ export interface WireTestCase {
   parentTitle?: string | null;
   /** Per-element locator snapshots with ranked alternatives (transient — not stored per-run). */
   locatorSnapshots?: unknown;
+  /** The page each locator call ran on (`piwi-locator-pages`). */
+  locatorPages?: unknown;
+  /** The repository-relative source files the test executed (`piwi-code-reach`). */
+  codeReach?: unknown;
   /** Why a `didnotrun` case never executed (`previous-failure`/`global-timeout`/`max-failures`/`interrupted`). */
   didNotRunReason?: string | null;
+  /** Playwright's `TestCase.expectedStatus`: `failed` for a `test.fail()` test. */
+  expectedStatus?: string | null;
   /** For a `previous-failure` cascade, the location of the failing test that blocked it. */
   blockedBy?: string | null;
 }
@@ -129,9 +140,10 @@ export interface CompleteStreamEvent {
   stepEvents?: TestStepEvent[] | null;
   slowestStep?: string | null;
   slowestStepDuration?: number | null;
-  networkRequests?: unknown;
+  networkRequests?: WireNetworkRequest[] | null;
   webVitals?: unknown;
   pageState?: unknown;
+  pageInventory?: unknown;
   aiUsage?: unknown;
   consoleLogs?: unknown;
   dialogs?: unknown;
@@ -140,8 +152,14 @@ export interface CompleteStreamEvent {
   testSource?: string | null;
   testSourceFrames?: TestSourceFrame[] | null;
   locatorSnapshots?: unknown;
+  /** The page each locator call ran on (`piwi-locator-pages`). */
+  locatorPages?: unknown;
+  /** The repository-relative source files the test executed (`piwi-code-reach`). */
+  codeReach?: unknown;
   /** Why a `didnotrun` case never executed (`previous-failure`/`global-timeout`/`max-failures`/`interrupted`). */
   didNotRunReason?: string | null;
+  /** Playwright's `TestCase.expectedStatus`: `failed` for a `test.fail()` test. */
+  expectedStatus?: string | null;
   /** For a `previous-failure` cascade, the location of the failing test that blocked it. */
   blockedBy?: string | null;
 }
@@ -152,7 +170,7 @@ export interface StepBeginStreamEvent {
   /** The step's target (rendered locator or URL), carried separately by newer Playwright. */
   subtitle?: string | null;
   location: string;
-  /** Playwright step category (`hook`, `fixture`, `pw:api`, `pw:expect`, …). */
+  /** Playwright step category: `hook`, `fixture`, `pw:api` or `expect`. */
   stepCategory: string;
   parentTitle: string | null;
   workerIndex: number | null;
@@ -167,7 +185,7 @@ export interface StepEndStreamEvent {
   location: string;
   status: string;
   duration: number;
-  /** Playwright step category (`hook`, `fixture`, `pw:api`, `pw:expect`, …). */
+  /** Playwright step category: `hook`, `fixture`, `pw:api` or `expect`. */
   stepCategory: string;
   parentTitle: string | null;
   workerIndex: number | null;

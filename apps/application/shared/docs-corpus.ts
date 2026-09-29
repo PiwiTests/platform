@@ -12,29 +12,36 @@
  */
 import { DOCS_BASE_URL } from '#shared/docs';
 import { FEATURE_NEED_LABELS, type FeatureNeed } from '#shared/piwi-features';
+import { isGeneratedDocsPage } from '#shared/docs-generated-pages';
+import { demoExamplesFor } from '#shared/demo/demo-examples.mjs';
 
 /** The top-level sections of the site, keyed by path prefix, in reading order. */
 export const DOCS_GROUPS = [
-  { id: 'guide', title: 'Guide', intro: 'What Piwi is, getting a first run in, and sending results.' },
-  { id: 'features', title: 'Features', intro: 'Reading the results, and using Piwi from elsewhere.' },
+  {
+    id: 'guide',
+    title: 'Guide',
+    intro: 'Getting a first run in; setting up the reporter, fixtures, CI, source control and AI; and what Piwi is.',
+  },
+  { id: 'features', title: 'Features', intro: 'Every feature, one page each, in the groups of the feature catalog.' },
   { id: 'recipes', title: 'Recipes', intro: 'One question each, answered across several features.' },
-  { id: 'operate', title: 'Operate', intro: 'Running your own instance: deploy, secure, back up, upgrade.' },
-  { id: 'reference', title: 'Reference', intro: 'Configuration, the feature map and the CLI.' },
+  {
+    id: 'operate',
+    title: 'Self-hosting',
+    intro: 'Running your own instance: install, configure, keep the data, upgrade.',
+  },
+  {
+    id: 'reference',
+    title: 'Reference',
+    intro: 'Lookups: all features, configuration, the CLI, file formats and rules.',
+  },
 ] as const;
 
 export type DocsGroupId = (typeof DOCS_GROUPS)[number]['id'] | 'home';
 
-/**
- * Pages built at docs-build time from a registry rather than written by hand.
- * They are gitignored, so they are never bundled; `describe_piwi` renders the
- * same registries itself.
- */
-export const GENERATED_DOCS_PAGES = ['reference/configuration', 'reference/feature-map', 'reference/whats-new'];
-
 /** True for a bundled file that is a docs page (not a snippet, the blog, or an agent guide). */
 export function isDocsPageFile(path: string): boolean {
   if (!path.endsWith('.md') || path.startsWith('blog/') || path.endsWith('AGENTS.md')) return false;
-  return !GENERATED_DOCS_PAGES.includes(path.replace(/\.md$/, ''));
+  return !isGeneratedDocsPage(path.replace(/\.md$/, ''));
 }
 
 export interface DocsHeading {
@@ -302,6 +309,11 @@ export function buildDocsCorpus(files: Record<string, string>): DocsCorpus {
       const snippet = snippetFence(line, files);
       if (snippet) {
         lines.push(...snippet);
+        continue;
+      }
+      // The page's live-demo examples, from the registry the docs component reads.
+      if (/^\s*<DemoExamples\b[^>]*\/>\s*$/.test(line)) {
+        lines.push(...demoExamplesFor(path).map((e) => `- [${e.title}](${DOCS_BASE_URL}/demo${e.route}): ${e.shows}`));
         continue;
       }
       const rendered = renderLine(line);

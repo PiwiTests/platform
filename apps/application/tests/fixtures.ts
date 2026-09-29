@@ -12,6 +12,8 @@
  * import { test, expect } from './fixtures'
  * ```
  */
+import { dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { gunzipSync } from 'node:zlib';
 import { test as base, expect, type Page, type TestInfo } from '@playwright/test';
 import {
@@ -33,10 +35,22 @@ import {
 } from '../../../packages/reporter/dist/internal/capture/locator-healing.js';
 import {
   ariaSnapshotBestEffort,
+  boxCaptureFrames,
   buildPageState,
+  callMethod,
   computeCoreVitals,
+  internalCall,
   probeElementAttrs,
   CAPTURED_ATTRS_ARG,
+  LocatorPageLog,
+  noteLocatorCall,
+  noteNavigation,
+  codeReachRoots,
+  configuredCodeReachRoots,
+  pageMapFetcher,
+  resolveCodeReach,
+  startCodeReach,
+  stopCodeReach,
 } from '../../../packages/reporter/dist/internal/capture/capture-fixtures.js';
 import {
   inspectionGateFromTestInfo,
@@ -62,6 +76,7 @@ type NetworkRequest = {
   startTime: number;
   resourceType: string;
   serverLogs?: unknown;
+  failure?: string;
 };
 
 async function collectNetworkAndVitals(page: Page, testInfo: TestInfo) {
@@ -104,6 +119,25 @@ async function collectNetworkAndVitals(page: Page, testInfo: TestInfo) {
       }
     })();
     pendingHandlers.push(p);
+  });
+
+  page.on('requestfailed', (request) => {
+    try {
+      const url = request.url();
+      if (url.startsWith('data:') || url.startsWith('blob:')) return;
+      const timing = request.timing();
+      networkRequests.push({
+        method: request.method(),
+        url,
+        status: 0,
+        duration: timing.startTime > 0 ? Math.max(0, Math.round(Date.now() - timing.startTime)) : 0,
+        startTime: timing.startTime,
+        resourceType: request.resourceType(),
+        failure: request.failure()?.errorText ?? 'failed',
+      });
+    } catch {
+      /* a request shape the reader does not expect — skip it */
+    }
   });
 
   return async () => {
@@ -256,8 +290,12 @@ async function collectNetworkAndVitals(page: Page, testInfo: TestInfo) {
   };
 }
 
+/** This file, boxed with the reporter's bundle so wrapped actions report the spec's line. */
+const FIXTURES_FILE = fileURLToPath(import.meta.url);
+
 export const test = base.extend<{ page: Page }>({
   page: async ({ page }, use, testInfo) => {
+    boxCaptureFrames([FIXTURES_FILE]);
     // ── Locator interaction capture (dogfooding: matches reporter/src/fixtures.ts) ──
     const captureLocators = process.env.PIWI_CAPTURE_LOCATORS !== 'false';
     const capturedLocators: LocatorSnapshot[] = [];
@@ -266,6 +304,15 @@ export const test = base.extend<{ page: Page }>({
     // Call sites already captured via a passing assertion this test —
     // assertions are denser than actions, so each site probes only once.
     const expectCapturedLocations = new Set<string>();
+    // The page each locator call ran on (mirrors the reporter fixture's `piwi-locator-pages`).
+    const locatorPages = new LocatorPageLog();
+    const recordPage = (target: unknown, location: string | null, arrival: boolean) => {
+      try {
+        locatorPages.record({ location, locator: String(target), url: page.url(), arrival });
+      } catch {
+        // A side channel: it must never affect the test.
+      }
+    };
 
     // Method-surface constants and the in-page probe are imported from the
     // reporter so this fixture stays in lockstep with the reporter's proxy
@@ -285,7 +332,7 @@ export const test = base.extend<{ page: Page }>({
         let deadline: ReturnType<typeof setTimeout> | undefined;
         try {
           const attrs = (await Promise.race([
-            target.evaluate(probeElementAttrs, CAPTURED_ATTRS_ARG),
+            internalCall(page, () => target.evaluate(probeElementAttrs, CAPTURED_ATTRS_ARG)),
             new Promise<null>((_, reject) => {
               deadline = setTimeout(() => reject(new Error('locator capture timeout')), 500);
             }),
@@ -298,7 +345,8 @@ export const test = base.extend<{ page: Page }>({
           // Bound with a timeout: without it, ariaSnapshot waits up to the
           // test timeout when the page is mid-navigation, hanging the
           // fixture teardown that drains these capture promises.
-          const aria = role || isFormField ? await ariaSnapshotBestEffort(target as any, 500) : null;
+          const aria =
+            role || isFormField ? await internalCall(page, () => ariaSnapshotBestEffort(target as any, 500)) : null;
 
           const accessibleName =
             extractAccessibleName(aria) || approximateAccessibleName({ ...attrs, accessibleName: null });
@@ -339,7 +387,7 @@ export const test = base.extend<{ page: Page }>({
 
           if (CHAIN_METHODS.includes(prop as string)) {
             return (...args: unknown[]) => {
-              const next = original.apply(target, args);
+              const next = callMethod(target, prop, args);
               if (LOCATOR_CREATING_CHAINS.has(prop as string)) {
                 return wrapLocator(next, String(prop), args);
               }
@@ -351,15 +399,17 @@ export const test = base.extend<{ page: Page }>({
             return async (...callArgs: unknown[]) => {
               const expression = typeof callArgs[0] === 'string' ? callArgs[0] : '';
               const isNot = Boolean((callArgs[1] as { isNot?: boolean } | undefined)?.isNot);
+              // Sync, before the await — the caller's frames are gone after it.
+              const callerLocation = captureCallerLocation();
+              // Every assertion records the page it ran on, negations included.
+              recordPage(target, callerLocation, noteLocatorCall(page, EXPECT_METHOD, true));
               // Only positive presence-proving assertions participate —
               // negations, absence/count/page-level assertions, and any
               // unknown future expression pass through untouched.
               if (isNot || !EXPECT_CAPTURE_EXPRESSIONS.has(expression)) {
-                return original.apply(target, callArgs);
+                return callMethod(target, prop, callArgs);
               }
 
-              // Sync, before the await — the caller's frames are gone after it.
-              const callerLocation = captureCallerLocation();
               const used = {
                 method: originMethod,
                 args: originArgs,
@@ -376,7 +426,7 @@ export const test = base.extend<{ page: Page }>({
                 capturedLocators.push({ location: callerLocation, used, element: null, alternatives: [] });
               }
 
-              const result = await original.apply(target, callArgs);
+              const result = await callMethod(target, prop, callArgs);
 
               // `_expect` reports the outcome instead of throwing (the matcher
               // layer above does the throw). A missing `matches` — a future
@@ -403,6 +453,7 @@ export const test = base.extend<{ page: Page }>({
             // Capture the test call-site now (sync) so the snapshot's location
             // matches the error stack's first user frame.
             const callerLocation = captureCallerLocation();
+            recordPage(target, callerLocation, noteLocatorCall(page, String(prop)));
             const used = {
               method: originMethod,
               args: originArgs,
@@ -422,7 +473,7 @@ export const test = base.extend<{ page: Page }>({
             // element's current identity) and re-throw so the test still fails.
             let result: unknown;
             try {
-              result = await original.apply(target, callArgs);
+              result = await callMethod(target, prop, callArgs);
             } catch (err) {
               failedLocators.push({ method: originMethod, args: originArgs, location: callerLocation });
               throw err;
@@ -441,11 +492,35 @@ export const test = base.extend<{ page: Page }>({
         const original = (page as any)[method].bind(page);
         (page as any)[method] = (...args: unknown[]) => wrapLocator(original(...args), method, args);
       }
+      page.on('framenavigated', (frame) => {
+        if (frame === page.mainFrame()) noteNavigation(page);
+      });
     }
+
+    // ── Code reach (mirrors the reporter fixture, on with PIWI_CAPTURE_CODE_REACH=true) ──
+    const codeReach = process.env.PIWI_CAPTURE_CODE_REACH === 'true' && (await startCodeReach(page));
 
     // ── Existing event listeners ──────────────────────────────────────────
     const flush = await collectNetworkAndVitals(page, testInfo);
     await use(page);
+
+    if (codeReach && !page.isClosed()) {
+      try {
+        const entries = await stopCodeReach(page);
+        const configDir = testInfo.config.configFile ? dirname(testInfo.config.configFile) : testInfo.config.rootDir;
+        const files = entries
+          ? await resolveCodeReach(entries, codeReachRoots(configDir, configuredCodeReachRoots()), pageMapFetcher(page))
+          : [];
+        if (files.length > 0) {
+          await testInfo.attach(ATTACHMENT_NAMES.codeReach, {
+            contentType: 'application/json',
+            body: Buffer.from(JSON.stringify(files)),
+          });
+        }
+      } catch {
+        // Code reach is best-effort and must never affect the test.
+      }
+    }
 
     // ── Attach locator snapshots ──────────────────────────────────────────
     // Cap the drain so a stuck capture (e.g. a navigation in flight) can never
@@ -474,10 +549,12 @@ export const test = base.extend<{ page: Page }>({
       // assertion error; inspectOnFailure opens even with no failing locator.
       const failed = failedLocators[failedLocators.length - 1] ?? deriveFailedLocator(testInfo);
       if (failed || inspectGate) {
-        userPick = await runLocatorPicker(page, testInfo, failed, {
-          fn: probeElementAttrs,
-          arg: CAPTURED_ATTRS_ARG,
-        });
+        userPick = await internalCall(page, () =>
+          runLocatorPicker(page, testInfo, failed, {
+            fn: probeElementAttrs,
+            arg: CAPTURED_ATTRS_ARG,
+          }),
+        );
         if (userPick) applyPickToSnapshots(capturedLocators, userPick);
       }
     }
@@ -487,6 +564,12 @@ export const test = base.extend<{ page: Page }>({
         contentType: 'application/json',
         // Repeated call sites (loops) keep only their latest capture.
         body: Buffer.from(JSON.stringify(dedupeSnapshotsByLocation(capturedLocators))),
+      });
+    }
+    if (locatorPages.size > 0) {
+      await testInfo.attach(ATTACHMENT_NAMES.locatorPages, {
+        contentType: 'application/json',
+        body: Buffer.from(JSON.stringify(locatorPages.list())),
       });
     }
 
@@ -505,7 +588,7 @@ export const test = base.extend<{ page: Page }>({
     try {
       if (testInfo.status !== 'passed' && testInfo.status !== 'skipped') {
         // Version-tolerant + bounded — mirrors the reporter's flushSink.
-        const snapshot = await ariaSnapshotBestEffort(page.locator(':root') as any);
+        const snapshot = await internalCall(page, () => ariaSnapshotBestEffort(page.locator(':root') as any));
         if (snapshot) {
           await testInfo.attach(ATTACHMENT_NAMES.ariaSnapshot, {
             contentType: 'text/plain',
@@ -549,7 +632,7 @@ export const test = base.extend<{ page: Page }>({
       });
     }
 
-    await flush();
+    await internalCall(page, flush);
   },
 });
 

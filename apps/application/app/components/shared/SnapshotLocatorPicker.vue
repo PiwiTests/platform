@@ -4,7 +4,9 @@
  * failure-time DOM snapshot in an iframe, and lets the user click the element
  * the failing locator should have targeted. The picked element is probed for
  * its attributes, ranked alternative locators are generated client-side, and
- * the user confirms one — which is saved back to the server.
+ * the user confirms one — which is saved back to the server. Without a failing
+ * locator (a failure that was not about one) it is an inspector: any element's
+ * locators, to copy.
  */
 import {
   generateAlternatives,
@@ -14,14 +16,15 @@ import {
   type ElementAttributes,
 } from '#shared/locator-generation';
 import type { LocatorFixRecommendation, LocatorHealingResult } from '#shared/locator-healing.types';
-import { recommendLocatorFix } from '#shared/locator-healing';
+import { locatorExpression, recommendLocatorFix } from '#shared/locator-healing';
 import { buildPickerDocument, deriveHighlightHints } from '~/utils/snapshot-picker-script';
 import LocatorAlternativeRow from './LocatorAlternativeRow.vue';
 
 const props = defineProps<{
   runId: number;
   testRunsCaseId: number;
-  failingLocator: { method: string; args: Record<string, unknown> };
+  /** The locator that failed; null opens the picker as an inspector. */
+  failingLocator: { method: string; args: Record<string, unknown> } | null;
   /** The healing result — its candidate names pre-highlight the likely element. */
   healing?: LocatorHealingResult | null;
 }>();
@@ -57,13 +60,11 @@ async function fetchSnapshot() {
   snapshotError.value = null;
   try {
     // Same endpoint as the read-only DOM snapshot card — trace-derived DOM with
-    // an ARIA-tree fallback (or ?source=aria on demand). The picker adds its own
-    // interactive overlay and asks the server to inline external stylesheets, so
-    // the opaque-origin iframe (which can never fetch the tested app's CSS)
-    // renders styled instead of as bare markup.
-    const params = new URLSearchParams({ inlineStyles: '1' });
-    if (viewSource.value) params.set('source', viewSource.value);
-    const query = `?${params.toString()}`;
+    // an ARIA-tree fallback (or ?source=aria on demand) — for the status, the
+    // viewport and the available views. The served frame comes from
+    // `dom-snapshot-frame`, which embeds the trace's stylesheets and images
+    // itself; only the demo builds the frame from this HTML.
+    const query = viewSource.value ? `?source=${viewSource.value}` : '';
     snapshot.value = await $fetch<DomSnapshotResponse>(
       `/api/test-run-cases/${props.testRunsCaseId}/dom-snapshot${query}`,
     );
@@ -94,27 +95,6 @@ function selectSource(src: SnapshotSource) {
   searchIndex.value = -1;
   fetchSnapshot();
 }
-
-watch(isOpen, (open) => {
-  if (open) {
-    snapshot.value = null;
-    iframeReady.value = false;
-    step.value = 'pick-element';
-    contentHeight.value = 0;
-    userZoomed.value = false;
-    // Let the server choose the default view again on each open.
-    viewSource.value = undefined;
-    // A previous session's pick must not leak into this one — Confirm would
-    // otherwise already be enabled with a stale selection.
-    pickedAttrs.value = null;
-    alternatives.value = [];
-    selectedAlt.value = null;
-    searchQuery.value = '';
-    searchCount.value = 0;
-    searchIndex.value = -1;
-    fetchSnapshot();
-  }
-});
 
 const PICKER_STEP = { PICK_ELEMENT: 'pick-element', REVIEW: 'review' } as const;
 type PickerStep = (typeof PICKER_STEP)[keyof typeof PICKER_STEP];
@@ -327,10 +307,10 @@ function handleMessage(event: MessageEvent) {
   }
   if (data?.type === 'elementPicked' && data.attrs) {
     // The in-page probe can't compute the browser's real accessible name —
-    // derive one (label text first, then aria-label/text/title/placeholder) so
+    // approximate one from the probed attributes and label text so
     // getByRole(name)/getByLabel alternatives are generated for picks too.
-    const { labelText, ...probed } = data.attrs as ElementAttributes & { labelText?: string | null };
-    pickedAttrs.value = { ...probed, accessibleName: labelText ?? approximateAccessibleName(probed) };
+    const { labelText, ...probed } = data.attrs as ElementAttributes;
+    pickedAttrs.value = { ...probed, accessibleName: approximateAccessibleName({ ...probed, labelText }) };
     alternatives.value = generateAlternatives(pickedAttrs.value);
     selectedAlt.value = null;
     step.value = 'review';
@@ -402,18 +382,49 @@ onBeforeUnmount(() => {
 const selectedAlt = ref<RankedLocator | null>(null);
 const saving = ref(false);
 
+// Every open starts a fresh session. `immediate` also starts one when the host
+// mounts the picker already open, as the page-structure card does.
+watch(
+  isOpen,
+  (open) => {
+    if (!open) return;
+    snapshot.value = null;
+    iframeReady.value = false;
+    step.value = 'pick-element';
+    contentHeight.value = 0;
+    userZoomed.value = false;
+    // Let the server choose the default view again on each open.
+    viewSource.value = undefined;
+    // A previous session's pick must not leak into this one — Confirm would
+    // otherwise already be enabled with a stale selection.
+    pickedAttrs.value = null;
+    alternatives.value = [];
+    selectedAlt.value = null;
+    searchQuery.value = '';
+    searchCount.value = 0;
+    searchIndex.value = -1;
+    fetchSnapshot();
+  },
+  { immediate: true },
+);
+
 function selectAlternative(alt: RankedLocator) {
   selectedAlt.value = alt;
 }
 
 const recommendation = computed<LocatorFixRecommendation>(() =>
-  recommendLocatorFix(props.failingLocator.method, alternatives.value),
+  recommendLocatorFix(props.failingLocator?.method, alternatives.value),
+);
+
+/** The failing locator as Playwright source, named in the header. */
+const failingLocatorText = computed(() =>
+  props.failingLocator ? locatorExpression(props.failingLocator.method, props.failingLocator.args) : null,
 );
 
 const toast = useToast();
 
 async function confirm() {
-  if (!selectedAlt.value) return;
+  if (!selectedAlt.value || !props.failingLocator) return;
   saving.value = true;
   try {
     const result = await $fetch<{ status: string }>(`/api/test-run-cases/${props.testRunsCaseId}/locator-pick`, {
@@ -491,9 +502,15 @@ onBeforeUnmount(() => {
   <UModal v-model:open="isOpen" :ui="{ content: 'max-w-6xl w-[95vw]' }" @after-leave="close">
     <template #header>
       <div>
-        <h3 class="text-lg font-medium">Pick a locator from the DOM snapshot</h3>
-        <p class="text-sm text-gray-500 mt-0.5">
-          Click the element the failing locator should target. Use &uarr;&darr; to walk the DOM tree.
+        <h3 class="text-lg font-medium">
+          {{ failingLocator ? 'Pick a locator from the DOM snapshot' : 'Find a locator on the failure-time page' }}
+        </h3>
+        <p class="text-sm text-muted mt-0.5">
+          <template v-if="failingLocatorText">
+            Click the element <LocatorCode :locator="failingLocatorText" plain /> should target.
+          </template>
+          <template v-else>Click any element to get the locators that target it.</template>
+          Use &uarr;&darr; to walk the DOM tree.
         </p>
       </div>
     </template>
@@ -758,7 +775,7 @@ onBeforeUnmount(() => {
         <div class="flex gap-2">
           <UButton size="sm" variant="outline" color="neutral" @click="close">Cancel</UButton>
           <UButton
-            v-if="step === 'review'"
+            v-if="step === 'review' && failingLocator"
             size="sm"
             color="primary"
             :loading="saving"

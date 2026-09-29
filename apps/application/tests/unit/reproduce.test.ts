@@ -112,6 +112,14 @@ test('bisect — missing last-green commit degrades with a reason', () => {
   expect(result.available).toBe(false);
   if (result.available) throw new Error('expected unavailable');
   expect(result.reason).toContain('last-green commit');
+  expect(result.reason).toContain('git bisect start bbbbbbb <good commit>');
+});
+
+test('bisect — a failing run without a commit names where the commit comes from', () => {
+  const result = buildBisectScript({ good: 'aaaaaaa000', bad: null, verifyCommand: 'npx playwright test' });
+  expect(result.available).toBe(false);
+  if (result.available) throw new Error('expected unavailable');
+  expect(result.reason).toContain('Git checkout');
 });
 
 test('bisect — same commit on both ends has nothing to bisect', () => {

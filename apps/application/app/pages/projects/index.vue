@@ -340,6 +340,7 @@ const columns: TableColumn<ProjectWithStats>[] = [
               :passed="row.original.latestRun.passedTests"
               :failed="row.original.latestRun.failedTests"
               :skipped="row.original.latestRun.skippedTests"
+              :fixme="row.original.latestRun.fixmeTests ?? 0"
               :flaky="row.original.latestRun.flakyTests"
               :did-not-run="row.original.latestRun.didNotRunTests ?? 0"
               :total="row.original.latestRun.totalTests"

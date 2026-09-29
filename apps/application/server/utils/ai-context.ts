@@ -13,6 +13,7 @@ import {
 import type { FailureCluster } from '../database/schema';
 import type { DiagnosisContextCoverage } from '~~/types/api';
 import { stepLabel, orderedStepParams } from '@piwitests/core/step-analysis';
+import { stepFailureRoles, type StepFailureRole } from '#shared/step-tree';
 import { condenseErrorText, maskVolatile, stripAnsi } from '#shared/error-fingerprint';
 import { DIAGNOSIS_SECTIONS } from '#shared/diagnosis-sections';
 import { evidenceAbsenceReason } from '#shared/evidence-state';
@@ -21,7 +22,8 @@ import { durationStats } from '#shared/utils/stats';
 import { computeRegressionContext } from './regression-context';
 import { normalizeGitUrl } from './scm/git-url';
 import { inlineCasePayloads } from './case-payloads';
-import { createScmProvider, detectScmProvider } from './scm';
+import { createScmProvider, detectScmProvider, resolveScmToken } from './scm';
+import { compareUrl, isPlainRevision } from '#shared/scm-urls';
 import { MAX_RAW_DIFF_BYTES } from './scm/ScmProvider';
 import type { ScmChanges, ChangedFile } from './scm/ScmProvider';
 import type {
@@ -55,6 +57,7 @@ import { selectCaseScreenshots } from './case-screenshots';
 import { supportedImageMediaType } from '#shared/file-classify';
 import { getOrComputeVisualDiff } from './visual-diff';
 import { parseAriaCandidates, textSimilarity } from '#shared/locator-fingerprint';
+import { isFailedStatus } from '#shared/utils/test-counts';
 import type {
   BuildContextOptions,
   DiagnosisScope,
@@ -479,15 +482,31 @@ function stepParamsLine(step: TestStepInfo): string | null {
   return `Parameters: ${entries.map(([key, value]) => `${key}=${value}`).join(', ')}`;
 }
 
-/** Extract steps that have an error attached (D6). */
-function failingStepsSection(rep: RepresentativeRow, limits: ContextLimits): string | null {
+/** Where each failure role sorts in "Failed Steps": the failing chain first, then the rest in step order. */
+const FAILED_STEP_RANK: Record<StepFailureRole, number> = { failing: 0, enclosing: 1, failed: 2, recovered: 2 };
+
+/**
+ * Extract steps that have an error attached (D6): the step that failed the
+ * test first, then the steps around it (same error, not repeated), then the
+ * other errored steps in order — another error the test ended with, or one the
+ * test caught and went on from, labeled so.
+ */
+export function failingStepsSection(rep: RepresentativeRow, limits: ContextLimits): string | null {
   const steps = (rep.steps as TestStepInfo[] | null) ?? [];
-  const failing = steps.filter((s) => s.error?.message);
-  if (failing.length === 0) return null;
-  const out = failing.map((s) => {
-    const params = stepParamsLine(s);
+  const roles = stepFailureRoles(steps, rep.error);
+  const errored = steps.flatMap((step, i) => {
+    const role = roles[i];
+    return step.error?.message && role ? [{ step, role }] : [];
+  });
+  if (errored.length === 0) return null;
+  const ordered = [...errored].sort((a, b) => FAILED_STEP_RANK[a.role] - FAILED_STEP_RANK[b.role]);
+  const out = ordered.map(({ step, role }) => {
+    const head = `- [${step.category ?? 'step'}] ${stepLabel(step)}`;
+    if (role === 'enclosing') return `${head} (around the failing step, same error)`;
+    const note = role === 'recovered' ? ' (caught, the test continued)' : '';
+    const params = stepParamsLine(step);
     const paramLine = params ? `\n  ${params}` : '';
-    return `- [${s.category ?? 'step'}] ${stepLabel(s)}${paramLine}\n\`\`\`\n${condenseErrorText(s.error!.message!, limits.sampleErrorChars)}\n\`\`\``;
+    return `${head}${note}${paramLine}\n\`\`\`\n${condenseErrorText(step.error!.message!, limits.sampleErrorChars)}\n\`\`\``;
   });
   return `### Failed Steps\n${out.join('\n')}`;
 }
@@ -1123,7 +1142,7 @@ async function recurrenceFlakinessSection(db: DbClient, cluster: FailureCluster)
       byRun.set(r.runId, g);
     }
     g.total++;
-    if (r.status === 'failed' || r.status === 'timedOut' || r.status === 'interrupted') g.failed++;
+    if (isFailedStatus(r.status) || r.status === 'interrupted') g.failed++;
     if ((r.retries ?? 0) > 0) g.retried++;
     if ((r.retries ?? 0) > 0 && r.status === 'passed') g.passOnRetry = true;
   }
@@ -1515,7 +1534,8 @@ async function locatorHealingSection(
   if (!rep.error) return { section: null, coverage: null };
 
   const healing = await getLocatorHealing(db, rep.id);
-  const alternatives = healing.fromElementMatch ?? healing.fromPriorSuccess ?? healing.fromAriaSnapshot ?? [];
+  const alternatives =
+    healing.fromDiffRename ?? healing.fromElementMatch ?? healing.fromPriorSuccess ?? healing.fromAriaSnapshot ?? [];
 
   // The gate rejected healing (the locator resolved, a navigation failed, no
   // locator): tell the model so, rather than leaving it to guess a selector.
@@ -1544,15 +1564,17 @@ async function locatorHealingSection(
     lines.push(`Failing locator: ${healing.failingLocator.method}(${argsStr})`);
   }
   const sourceLabel =
-    healing.source === 'prior-run'
-      ? 'captured against the real DOM in a prior passing run'
-      : healing.source === 'element-match'
-        ? "the locator's element appears renamed/moved — these are fresh locators for its current identity on the failing page"
-        : healing.source === 'fingerprint'
-          ? 'matched by locator fingerprint from a prior passing run'
-          : healing.source === 'cross-test'
-            ? 'the same locator was captured against the real DOM by another test in this project'
-            : 'derived from the current ARIA snapshot';
+    healing.source === 'diff-rename'
+      ? `the run's own diff renamed "${healing.diffRename?.before ?? ''}" to "${healing.diffRename?.after ?? ''}" in ${healing.diffRename?.file ?? 'the application'}; the same locator with the new text`
+      : healing.source === 'prior-run'
+        ? 'captured against the real DOM in a prior passing run'
+        : healing.source === 'element-match'
+          ? "the locator's element appears renamed/moved — these are fresh locators for its current identity on the failing page"
+          : healing.source === 'fingerprint'
+            ? 'matched by locator fingerprint from a prior passing run'
+            : healing.source === 'cross-test'
+              ? 'the same locator was captured against the real DOM by another test in this project'
+              : 'derived from the current ARIA snapshot';
   lines.push(`Source: ${healing.source} (${sourceLabel})`);
   if (healing.capturedAt) {
     lines.push(`Captured: ${healing.capturedAt}`);
@@ -1686,16 +1708,21 @@ export function representativeExecutionSections(
   }
 
   // Steps — failed steps are annotated inline so the narrative flow
-  // ("it did A, B, C, then D failed") is readable in one pass.
+  // ("it did A, B, C, then D failed") is readable in one pass; an error the
+  // test caught is marked as such, never as the failure.
   const steps = (rep.steps as TestStepInfo[] | null) ?? [];
   if (steps.length > 0) {
-    const shown = steps.slice(-limits.steps);
+    const roles = stepFailureRoles(steps, rep.error);
+    const first = Math.max(0, steps.length - limits.steps);
+    const shown = steps.slice(first);
     out.push({
       id: 'steps',
       markdown: `### Steps (last ${shown.length})\n${shown
-        .map((s) => {
-          const prefix = s.failed ? '✗ ' : '- ';
-          const suffix = s.failed ? ' ← FAILED' : '';
+        .map((s, i) => {
+          const role = roles[first + i];
+          const failed = s.failed && role !== 'recovered';
+          const prefix = failed ? '✗ ' : '- ';
+          const suffix = role === 'recovered' ? ' (error caught, the test continued)' : failed ? ' ← FAILED' : '';
           const dur = s.duration != null ? ` (${s.duration}ms)` : '';
           const params = stepParamsLine(s);
           const paramLine = params ? `\n    ${params}` : '';
@@ -2287,6 +2314,19 @@ async function scmInvestigationSections(
   let scmReached = false;
   let scmChanges: ScmChanges | null = null;
 
+  // The range compared, whether or not a provider can read it: the page links it
+  // on the host and offers the local `git log` when the diff cannot be fetched.
+  // A pinned baseline is free text, so the link and the command are built only
+  // from revisions that are plain SHAs or ref names.
+  const setRange = (repositoryUrl: string | null, fromSha: string, toSha: string) => {
+    const usable = isPlainRevision(fromSha) && isPlainRevision(toSha);
+    scmCov.repositoryUrl = repositoryUrl;
+    scmCov.range = { from: fromSha.slice(0, 7), to: toSha.slice(0, 7) };
+    scmCov.compareUrl = usable && repositoryUrl ? compareUrl(repositoryUrl, fromSha, toSha) : null;
+    scmCov.gitCommand = usable ? `git log --oneline ${fromSha}..${toSha}` : null;
+  };
+  scmCov.hasToken = (await resolveScmToken(db, cluster.projectId).catch(() => null)) != null;
+
   // Anchor the diff at firstSeenRunId (the earliest run where the failure appeared) so the
   // causal window [lastGreenCommit .. firstBadCommit] is as tight as possible.
   const firstSeenRunRows = await db
@@ -2333,6 +2373,18 @@ async function scmInvestigationSections(
         }
       }
       sections.push(lines.join('\n'));
+
+      if (regression.commitRange) {
+        setRange(
+          regression.commitRange.repositoryUrl,
+          baseCommitOverride ?? regression.commitRange.fromSha,
+          regression.commitRange.toSha,
+        );
+      } else if (regression.lastGreenCommit && regression.lastGreenCommit === regression.currentCommit) {
+        // The last passing run tested the same commit: an empty range, which says
+        // the change is not in the code.
+        scmCov.range = { from: regression.currentCommit.slice(0, 7), to: regression.currentCommit.slice(0, 7) };
+      }
 
       // Fetch actual changed files from SCM API
       if (regression.commitRange?.repositoryUrl) {
@@ -2386,6 +2438,11 @@ async function scmInvestigationSections(
       const repositoryUrl = normalizeGitUrl(remoteUrl);
 
       scmCov.hasCommitRange = Boolean(currentCommit && repositoryUrl);
+      if (currentCommit) {
+        scmCov.baselineKind = 'manual';
+        scmCov.baseCommitUsed = baseCommitOverride;
+        setRange(repositoryUrl, baseCommitOverride, currentCommit);
+      }
 
       if (currentCommit && repositoryUrl) {
         scmCov.provider = detectScmProvider(repositoryUrl);
@@ -2466,6 +2523,11 @@ async function scmInvestigationSections(
         const remoteUrl: string | null = currMeta?.scm?.remoteUrl ?? lastPassMeta?.scm?.remoteUrl ?? null;
         const repositoryUrl = normalizeGitUrl(remoteUrl);
 
+        if (lastPassCommit && currentCommit) {
+          scmCov.baselineKind = 'test-green';
+          if (lastPassCommit !== currentCommit) setRange(repositoryUrl, lastPassCommit, currentCommit);
+          else scmCov.range = { from: currentCommit.slice(0, 7), to: currentCommit.slice(0, 7) };
+        }
         if (lastPassCommit && currentCommit && repositoryUrl && lastPassCommit !== currentCommit) {
           scmCov.baselineKind = 'test-green';
           scmCov.hasCommitRange = true;

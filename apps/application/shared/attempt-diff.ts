@@ -13,6 +13,7 @@
 import { stepLabel } from '@piwitests/core/step-analysis';
 import type { ParsedPlaywrightError } from '#shared/error-parse';
 import type { PageStateLike } from '#shared/page-state';
+import { requestRouteKey } from '#shared/utils/route';
 
 /** One attempt's evidence, as loaded from its execution row. All fields optional. */
 export interface AttemptEvidence {
@@ -44,6 +45,8 @@ export interface AttemptNetworkRequest {
   status?: number | null;
   duration?: number | null;
   resourceType?: string | null;
+  /** Why the request failed without a response (`net::ERR_CONNECTION_RESET`). */
+  failure?: string | null;
 }
 
 export interface AttemptConsoleEntry {
@@ -66,6 +69,11 @@ export interface AttemptDiffEntry {
   only?: 'failing' | 'passing';
   /** The evidence section this difference cites, for a jump-to chip. */
   ref?: { section: string };
+  /**
+   * The request's route key (`GET /api/cart`) on a network row — the key the
+   * flake profile's route suspects carry, so a row can link to its suspect.
+   */
+  route?: string;
 }
 
 /** The ordered list of differences, most-diagnostic first. */
@@ -88,14 +96,9 @@ function requestFailed(status: number | null | undefined): boolean {
   return s === 0 || s >= 500;
 }
 
+/** Requests are compared by route key, so two ids or queries of one endpoint match. */
 function requestKey(r: AttemptNetworkRequest): string {
-  return `${(r.method ?? 'GET').toUpperCase()} ${stripQuery(r.url ?? '')}`;
-}
-
-/** Drop the query string so the same endpoint keyed by different params still matches. */
-function stripQuery(url: string): string {
-  const q = url.indexOf('?');
-  return q === -1 ? url : url.slice(0, q);
+  return requestRouteKey(r.method, r.url);
 }
 
 /** Normalize a console message to a stable key (collapse whitespace, cap length). */
@@ -154,6 +157,8 @@ function ariaStructure(snapshot: string): Set<string> {
 const DURATION_DELTA_MS = 1000;
 /** A step is "much slower" on one side when it is at least this many ms and twice the other. */
 const STEP_SLOW_DELTA_MS = 1000;
+/** A request is "much slower" on the failing attempt when it took at least this many ms and twice as long. */
+const REQUEST_SLOW_MS = 1000;
 /** Cap per-category diff rows so a noisy attempt does not flood the list. */
 const MAX_PER_CATEGORY = 5;
 
@@ -191,13 +196,20 @@ export function diffAttempts(failing: AttemptEvidence, passing: AttemptEvidence)
   const failFailedKeys = failedRequestKeys(failNet);
   const passFailedKeys = failedRequestKeys(passNet);
   for (const [side, req] of orderedRequestDiff(failNet, passNet, failFailedKeys, passFailedKeys)) {
+    const route = requestKey(req);
     diffs.push({
       kind: 'network',
-      summary: `${requestKey(req)} → ${req.status ?? 0}`,
-      detail: req.url && req.url !== stripQuery(req.url) ? req.url : null,
+      summary: `${route} → ${req.failure || (req.status ?? 0)}`,
+      detail: req.url || null,
       only: side,
       ref: { section: 'networkRequests' },
+      route,
     });
+  }
+
+  // ── Network: a request made on both attempts, much slower on the failing one ─
+  for (const entry of slowerRequestDiffs(failNet, passNet)) {
+    diffs.push(entry);
   }
 
   // ── Console: an error/warning logged on only one attempt ───────────────────
@@ -266,6 +278,42 @@ function orderedRequestDiff(
     if (out.length >= MAX_PER_CATEGORY) return out;
   }
   return out;
+}
+
+/** Each answered request's slowest duration, keyed by route. */
+function slowestByRequest(requests: AttemptNetworkRequest[]): Map<string, number> {
+  const map = new Map<string, number>();
+  for (const r of requests) {
+    if (requestFailed(r.status) || r.duration == null) continue;
+    const key = requestKey(r);
+    map.set(key, Math.max(map.get(key) ?? 0, r.duration));
+  }
+  return map;
+}
+
+/**
+ * Requests made on both attempts whose slowest call on the failing attempt took
+ * at least `REQUEST_SLOW_MS` and twice as long as on the passing one, slowest
+ * gap first. The request exists on both sides, so the row names no side.
+ */
+function slowerRequestDiffs(failNet: AttemptNetworkRequest[], passNet: AttemptNetworkRequest[]): AttemptDiffEntry[] {
+  const passSlowest = slowestByRequest(passNet);
+  const slower: Array<{ key: string; failMs: number; passMs: number }> = [];
+  for (const [key, failMs] of slowestByRequest(failNet)) {
+    const passMs = passSlowest.get(key);
+    if (passMs == null) continue;
+    if (failMs >= REQUEST_SLOW_MS && failMs >= 2 * passMs) slower.push({ key, failMs, passMs });
+  }
+  return slower
+    .sort((a, b) => b.failMs - b.passMs - (a.failMs - a.passMs))
+    .slice(0, MAX_PER_CATEGORY)
+    .map(({ key, failMs, passMs }) => ({
+      kind: 'network' as const,
+      summary: `${key} ${formatMs(failMs)} on the failing attempt, ${formatMs(passMs)} on the passing one`,
+      detail: null,
+      ref: { section: 'networkRequests' },
+      route: key,
+    }));
 }
 
 function onlyConsoleEntries(

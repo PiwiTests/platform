@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { safeReturnPath } from '#shared/return-path';
+
 const { login } = useAuth();
 const router = useRouter();
 const route = useRoute();
@@ -16,8 +18,7 @@ const error = ref('');
 // Where to land after signing in: a same-origin path handed over by a link
 // that needed a session first (the reporter's per-failure links), else home.
 function redirectTarget(): string {
-  const target = route.query.redirect;
-  return typeof target === 'string' && target.startsWith('/') && !target.startsWith('//') ? target : '/';
+  return safeReturnPath(route.query.redirect) ?? '/';
 }
 
 // Fresh instance with auth enabled and zero users: the login form can never
@@ -106,6 +107,8 @@ onMounted(() => {
       'missing-code': 'Authentication failed (missing code)',
       'oauth-failed': 'OAuth authentication failed',
       'account-exists': 'This email is already linked to a different sign-in method. Sign in with that method instead.',
+      'email-unverified':
+        'An account with this email has not verified it yet, so it was not linked. Sign in with its password (or accept your invite first), then connect this provider from Account settings.',
       'domain-not-allowed': 'Your email domain is not allowed to sign in here.',
       'org-not-allowed': 'You are not a member of an allowed organization.',
       'link-requires-login': 'Please sign in before connecting a provider.',
@@ -147,7 +150,9 @@ async function handleLogin() {
 }
 
 function startOAuth(provider: string) {
-  window.location.href = `/api/auth/oauth/${provider}/login`;
+  const target = redirectTarget();
+  const query = target === '/' ? '' : `?redirect=${encodeURIComponent(target)}`;
+  window.location.href = `/api/auth/oauth/${provider}/login${query}`;
 }
 
 definePageMeta({

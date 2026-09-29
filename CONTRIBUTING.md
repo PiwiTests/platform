@@ -49,6 +49,10 @@ If an E2E test creates a project, use a static name registered in `apps/applicat
 - For anything non-trivial, open an issue or a [Discussion](https://github.com/PiwiTests/platform/discussions) first so we can agree on the approach before you invest time.
 - Security problems: follow [SECURITY.md](SECURITY.md) — please don't open public issues for those.
 
+## License of your contribution
+
+The repository is licensed in two parts (see [LICENSE](LICENSE)): `packages/reporter`, `packages/core`, `packages/picker-dom`, `integrations/` and `examples/` are MIT; everything else is FSL-1.1-MIT. By opening a pull request, you agree that your contribution is licensed under the license of the directory it changes.
+
 ## Commit messages & PR titles
 
 This repo uses [Conventional Commits](https://www.conventionalcommits.org/), enforced by commitlint (locally and in CI) and a PR-title check. [release-please](https://github.com/googleapis/release-please) reads commit history to compute version bumps and generate the changelog, so following this format isn't just style — it's what makes releases work.
@@ -78,7 +82,8 @@ type(scope): subject
 
 ### Scopes
 
-`app`, `reporter`, `db`, `ui`, `demo`, `desktop`, `extension`, `ci`, `docs`, `deps`, `auth`, `ai`, `notifications`,
+`app`, `reporter`, `db`, `ui`, `demo`, `desktop`, `extension`, `ide`, `ci`, `docs`, `deps`, `auth`, `ai`,
+`notifications`,
 `release`
 
 (`main` is also allowed, but only appears in release-please's own auto-generated `chore(main): release X.Y.Z` PRs — don't use it for your own commits.)
@@ -109,3 +114,16 @@ Merging a release-please PR (titled `chore(main): release X.Y.Z`) tags the relea
 2. **A `RELEASE_PLEASE_TOKEN` repo secret** — a Personal Access Token (classic `repo` scope, or fine-grained with `Contents: read/write` + `Pull requests: read/write`) or a GitHub App installation token, added at `Settings → Secrets and variables → Actions`. This is required because GitHub's anti-recursion protection means a tag created with the default `GITHUB_TOKEN` does **not** trigger other `on: push: tags` workflows — `publish.yml`, `publish-instrumentation.yml`, and `publish-nuget.yml` would never run even though the tag exists. A PAT/App token isn't subject to that restriction.
 
 If a release's tag already exists but the packages never published (e.g. because this wasn't set up yet), re-run the affected workflow manually against that tag — `publish.yml` / `publish-instrumentation.yml` / `publish-nuget.yml` all have a `workflow_dispatch` trigger for exactly this.
+
+The browser extension and the editor plugins go to their stores from three more tag workflows. Each one keeps its packages as the run's workflow artifacts (not release assets), each downloading as the file a store takes, so they can be uploaded by hand; then it publishes to every store whose secrets are set and skips the others:
+
+| Workflow | Store | Secrets |
+|---|---|---|
+| `publish-extension.yml` | Chrome Web Store | `CHROME_PUBLISHER_ID`, `CHROME_CLIENT_ID`, `CHROME_CLIENT_SECRET`, `CHROME_REFRESH_TOKEN` |
+| | Edge Add-ons | `EDGE_PRODUCT_ID`, `EDGE_CLIENT_ID`, `EDGE_API_KEY` |
+| | Firefox Add-ons (AMO) | `AMO_JWT_ISSUER`, `AMO_JWT_SECRET` |
+| `publish-vscode.yml` | Visual Studio Marketplace | `VSCE_PAT` |
+| | Open VSX | `OVSX_PAT` |
+| `publish-jetbrains.yml` | JetBrains Marketplace | `JETBRAINS_PUBLISH_TOKEN`, plus `JETBRAINS_CERTIFICATE_CHAIN`, `JETBRAINS_PRIVATE_KEY` and `JETBRAINS_PRIVATE_KEY_PASSWORD` to sign the plugin (the artifact too) |
+
+[`apps/extension/PUBLISHING.md`](apps/extension/PUBLISHING.md) §5 says where each extension credential comes from and what each store needs by hand first. Run manually against a tag, these workflows publish as the tag push does; against a branch, they only build the artifacts.

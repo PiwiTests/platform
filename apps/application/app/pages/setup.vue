@@ -117,6 +117,7 @@ async function decide(id: SetupCapabilityId, decision: 'declined' | null) {
              generic reporter steps, since the token/URL are specific to it. -->
         <template v-if="isDesktop">
           <DesktopReporterCard v-if="reporterConfig" :url="reporterConfig.url" :token="reporterConfig.token" />
+          <DesktopPickerCard v-if="reporterConfig" :url="reporterConfig.url" :token="reporterConfig.token" />
           <SectionCard icon="i-lucide-plug" title="Connect an AI assistant (MCP)">
             <template #subtitle>
               This app exposes a local MCP endpoint so agents like Claude can query your test results. The MCP server
@@ -176,9 +177,13 @@ async function decide(id: SetupCapabilityId, decision: 'declined' | null) {
                     <div class="flex items-center gap-2 flex-wrap mb-1">
                       <h4 class="font-medium text-highlighted">{{ row.title }}</h4>
                       <UBadge v-if="row.isNew" color="primary" variant="subtle" size="xs">New</UBadge>
+                      <UBadge v-if="row.experimental" color="neutral" variant="subtle" size="xs">Experimental</UBadge>
                     </div>
 
                     <p class="text-sm text-highlighted leading-relaxed">{{ row.summary }}</p>
+                    <p v-if="row.experimental && row.experimentalNote" class="text-xs text-muted mt-1">
+                      {{ row.experimentalNote }}
+                    </p>
                     <p v-if="!row.active" class="text-xs text-muted mt-1">{{ row.how }}</p>
 
                     <div class="flex items-center gap-3 mt-2 text-sm">

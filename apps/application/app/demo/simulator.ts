@@ -48,6 +48,8 @@ interface SimStep {
   subtitle?: string;
   /** Playwright 1.63 curated per-step arguments. */
   params?: Record<string, string | number | boolean>;
+  /** Project-relative `file:line:col` of the call. */
+  location?: string;
 }
 
 interface SimAttempt {
@@ -222,7 +224,9 @@ const STRICT_MODE_ARIA_SNAPSHOT =
  * with the target in `subtitle` and curated `params`. The static seed keeps
  * other suites in the 1.61 shape, so the demo renders both.
  */
-const STEP_SHAPE: Array<Omit<SimStep, 'duration'> & { fraction: number; slowFraction: number }> = [
+const STEP_SHAPE: Array<
+  Omit<SimStep, 'duration'> & { fraction: number; slowFraction: number; page?: string; arrival?: boolean }
+> = [
   {
     title: 'Navigate',
     subtitle: '/checkout',
@@ -238,6 +242,9 @@ const STEP_SHAPE: Array<Omit<SimStep, 'duration'> & { fraction: number; slowFrac
     fraction: 0.12,
     slowFraction: 0.08,
     params: { locator: "getByLabel('Email')", value: 'ada@example.com' },
+    location: 'tests/pages/checkout.page.ts:18:31',
+    page: '/checkout',
+    arrival: true,
   },
   {
     title: 'Fill "Ada Lovelace"',
@@ -246,6 +253,9 @@ const STEP_SHAPE: Array<Omit<SimStep, 'duration'> & { fraction: number; slowFrac
     fraction: 0.25,
     slowFraction: 0.12,
     params: { locator: "getByLabel('Name on card')", value: 'Ada Lovelace' },
+    location: 'tests/pages/checkout.page.ts:22:38',
+    page: '/checkout',
+    arrival: false,
   },
   {
     title: 'Click',
@@ -254,6 +264,9 @@ const STEP_SHAPE: Array<Omit<SimStep, 'duration'> & { fraction: number; slowFrac
     fraction: 0.28,
     slowFraction: 0.55,
     params: { locator: "getByRole('button', { name: 'Place order' })" },
+    location: 'tests/pages/checkout.page.ts:26:58',
+    page: '/checkout',
+    arrival: false,
   },
   {
     title: 'Expect "toBeVisible"',
@@ -262,6 +275,9 @@ const STEP_SHAPE: Array<Omit<SimStep, 'duration'> & { fraction: number; slowFrac
     fraction: 0.15,
     slowFraction: 0.15,
     params: { locator: "getByText('Order confirmed')" },
+    location: 'tests/pages/checkout.page.ts:30:40',
+    page: '/orders/:id',
+    arrival: true,
   },
 ];
 
@@ -271,7 +287,19 @@ function buildSteps(duration: number, slowStepBias = false): SimStep[] {
     subtitle: s.subtitle,
     category: s.category,
     params: s.params,
+    location: s.location,
     duration: Math.round(duration * (slowStepBias ? s.slowFraction : s.fraction)),
+  }));
+}
+
+/** The page each locator call ran on, as the capture fixtures send it (`locatorPages`), matching the seeded runs. */
+function buildLocatorPages(): Array<Record<string, unknown>> {
+  return STEP_SHAPE.filter((s) => s.location && s.page && s.params?.locator).map((s) => ({
+    location: s.location,
+    locator: s.params!.locator,
+    origin: 'https://shop.example.com',
+    page: s.page,
+    arrival: !!s.arrival,
   }));
 }
 
@@ -436,6 +464,45 @@ interface BaseTestOptions {
   waitHeavy?: boolean;
 }
 
+/** The `Before Hooks` section: the context and page fixtures, then a `beforeEach` hook. */
+function beforeHooksEvent(
+  offset: number,
+  contextDur: number,
+  pageDur: number,
+  beforeEachDur: number,
+): Record<string, unknown> {
+  return {
+    title: 'Before Hooks',
+    category: 'hook',
+    startedAt: offset,
+    duration: contextDur + pageDur + beforeEachDur,
+    status: 'passed',
+    location: null,
+    hooks: [
+      { title: 'Fixture "context"', category: 'fixture', duration: contextDur },
+      { title: 'Fixture "page"', category: 'fixture', duration: pageDur },
+      { title: 'beforeEach hook', category: 'hook', duration: beforeEachDur },
+    ],
+  };
+}
+
+/** The `After Hooks` section: an `afterEach` hook, then the page fixture's teardown. */
+function afterHooksEvent(offset: number, duration: number): Record<string, unknown> {
+  const afterEachDur = Math.round(duration * 0.6);
+  return {
+    title: 'After Hooks',
+    category: 'hook',
+    startedAt: offset,
+    duration,
+    status: 'passed',
+    location: null,
+    hooks: [
+      { title: 'afterEach hook', category: 'hook', duration: afterEachDur },
+      { title: 'Fixture "page"', category: 'fixture', duration: duration - afterEachDur },
+    ],
+  };
+}
+
 /**
  * Builds a realistic set of fine-grained step events for a test: before/after
  * hooks, fixture setup, framework-injected waits, and a single deliberate
@@ -450,37 +517,10 @@ function buildStepEvents(testDuration: number): Array<Record<string, unknown>> {
   const events: Array<Record<string, unknown>> = [];
 
   const beforeHookDur = vary(130, 0.2);
-  events.push({
-    title: 'Before Hooks',
-    category: 'hook',
-    startedAt: offset,
-    duration: beforeHookDur,
-    status: 'passed',
-    location: null,
-  });
-  offset += beforeHookDur;
-
   const contextDur = vary(75, 0.2);
-  events.push({
-    title: 'fixture: context',
-    category: 'fixture',
-    startedAt: offset,
-    duration: contextDur,
-    status: 'passed',
-    location: null,
-  });
-  offset += contextDur;
-
   const pageDur = vary(55, 0.2);
-  events.push({
-    title: 'fixture: page',
-    category: 'fixture',
-    startedAt: offset,
-    duration: pageDur,
-    status: 'passed',
-    location: null,
-  });
-  offset += pageDur;
+  events.push(beforeHooksEvent(offset, contextDur, pageDur, beforeHookDur));
+  offset += contextDur + pageDur + beforeHookDur;
 
   // Framework-injected navigation wait — not wasted
   const loadStateDur = vary(420, 0.25);
@@ -519,14 +559,7 @@ function buildStepEvents(testDuration: number): Array<Record<string, unknown>> {
   offset += selectorDur;
 
   const afterHookDur = vary(90, 0.2);
-  events.push({
-    title: 'After Hooks',
-    category: 'hook',
-    startedAt: offset,
-    duration: afterHookDur,
-    status: 'passed',
-    location: null,
-  });
+  events.push(afterHooksEvent(Math.max(offset, testDuration - afterHookDur), afterHookDur));
 
   return events;
 }
@@ -542,37 +575,10 @@ function buildWaitHeavyStepEvents(testDuration: number, file: string, line: numb
   const events: Array<Record<string, unknown>> = [];
 
   const beforeHookDur = vary(140, 0.2);
-  events.push({
-    title: 'Before Hooks',
-    category: 'hook',
-    startedAt: offset,
-    duration: beforeHookDur,
-    status: 'passed',
-    location: null,
-  });
-  offset += beforeHookDur;
-
   const contextDur = vary(80, 0.2);
-  events.push({
-    title: 'fixture: context',
-    category: 'fixture',
-    startedAt: offset,
-    duration: contextDur,
-    status: 'passed',
-    location: null,
-  });
-  offset += contextDur;
-
   const pageDur = vary(60, 0.2);
-  events.push({
-    title: 'fixture: page',
-    category: 'fixture',
-    startedAt: offset,
-    duration: pageDur,
-    status: 'passed',
-    location: null,
-  });
-  offset += pageDur;
+  events.push(beforeHooksEvent(offset, contextDur, pageDur, beforeHookDur));
+  offset += contextDur + pageDur + beforeHookDur;
 
   // Framework-injected load wait — not wasted
   const firstLoadDur = vary(380, 0.2);
@@ -627,14 +633,7 @@ function buildWaitHeavyStepEvents(testDuration: number, file: string, line: numb
   offset += navDur;
 
   const afterHookDur = vary(95, 0.2);
-  events.push({
-    title: 'After Hooks',
-    category: 'hook',
-    startedAt: offset,
-    duration: afterHookDur,
-    status: 'passed',
-    location: null,
-  });
+  events.push(afterHooksEvent(Math.max(offset, testDuration - afterHookDur), afterHookDur));
 
   return events;
 }
@@ -1190,11 +1189,12 @@ async function runSingleSimulation(
         // Stream a few of the test's steps live (transient SSE events, like the
         // real reporter) so the demo run page shows the in-row live step readout.
         // Wait steps are the least interesting to watch; the persisted stepEvents
-        // still carry them for the timeline.
+        // still carry them for the timeline. Each live step carries the Playwright
+        // category the reporter streams: `expect` for an assertion, `pw:api` otherwise.
         const liveSteps = (test.steps ?? [])
           .filter((s) => s.category !== 'wait')
           .slice(0, 3)
-          .map((s) => ({ ...s, category: s.category === 'expect' ? 'pw:expect' : 'pw:api' }));
+          .map((s) => ({ ...s, category: s.category === 'assertion' ? 'expect' : 'pw:api' }));
 
         let attemptRemaining = attemptDuration;
         let stepCursor = virtualNow;
@@ -1271,6 +1271,7 @@ async function runSingleSimulation(
             networkRequests: test.networkRequests,
             webVitals: test.webVitals,
             pageState: test.pageState ?? null,
+            locatorPages: test.steps?.length ? buildLocatorPages() : null,
             aiUsage: (await buildAiUsage({ file: test.file, title: test.title })) ?? null,
             tags: test.tags,
             locks: test.locks,

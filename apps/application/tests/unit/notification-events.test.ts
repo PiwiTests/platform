@@ -79,6 +79,15 @@ describe('renderEventSubject', () => {
     expect(renderEventSubject('perf.regression', runPayload)).toBe('Performance regression — my-project');
   });
 
+  test('bug.looks_fixed names the bug when one test names one', () => {
+    const base = { projectId: 1, projectName: 'shop', runId: 3 };
+    const one = { title: 't', filePath: 'a.spec.ts', executionId: 1, testCaseId: 1, bugId: 37 };
+    expect(renderEventSubject('bug.looks_fixed', { ...base, tests: [one] })).toBe('Bug #37 looks fixed — shop');
+    expect(renderEventSubject('bug.looks_fixed', { ...base, tests: [one, { ...one, bugId: undefined }] })).toBe(
+      '2 bugs look fixed — shop',
+    );
+  });
+
   test('auto_heal.pr_opened names the PR number and project', () => {
     expect(
       renderEventSubject('auto_heal.pr_opened', {

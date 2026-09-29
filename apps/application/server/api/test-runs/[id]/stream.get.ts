@@ -89,6 +89,7 @@ export default eventHandler(async (event) => {
             browser: testRunsCases.browser,
             retries: testRunsCases.retries,
             didNotRunReason: testRunsCases.didNotRunReason,
+            expectedStatus: testRunsCases.expectedStatus,
             blockedBy: testRunsCases.blockedBy,
           })
           .from(testRunsCases)
@@ -111,6 +112,7 @@ export default eventHandler(async (event) => {
               browser: tc.browser ?? null,
               retries: tc.retries ?? null,
               didNotRunReason: tc.didNotRunReason ?? null,
+              expectedStatus: tc.expectedStatus ?? null,
               blockedBy: tc.blockedBy ?? null,
               executionId: tc.id,
               testCaseId: tc.testCaseId,

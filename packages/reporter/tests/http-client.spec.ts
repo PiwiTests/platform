@@ -10,11 +10,11 @@ interface RecordedReq {
   body: string;
 }
 
-function startServer(handler: (req: RecordedReq, res: http.ServerResponse) => void): {
+function startServer(handler: (req: RecordedReq, res: http.ServerResponse) => void): Promise<{
   server: http.Server;
   url: string;
   requests: RecordedReq[];
-} {
+}> {
   const requests: RecordedReq[] = [];
   const server = http.createServer((req, res) => {
     let body = '';

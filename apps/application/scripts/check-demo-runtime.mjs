@@ -204,6 +204,126 @@ async function main() {
     check(pdfDownload.suggestedFilename().endsWith('.pdf'), 'the download is named as a PDF');
     check(pdfBytes.subarray(0, 5).toString('latin1') === '%PDF-', 'the PDF is a real vector document');
 
+    // The analytics page is the Overview dashboard; its Export previews a quality
+    // report built in the service worker and downloads it as a PDF.
+    await page.goto(`${ORIGIN}${BASE}analytics`, { waitUntil: 'domcontentloaded' });
+    const tile = page.getByTestId('stat-test-pass-rate');
+    await tile.waitFor({ timeout: 60000 }).catch(() => {});
+    check(await tile.isVisible(), 'the analytics page shows the headline tiles');
+    const preview = page.getByTestId('report-view');
+    for (let attempt = 0; attempt < 20 && !(await preview.isVisible()); attempt++) {
+      await page.getByRole('button', { name: 'Export', exact: true }).first().click();
+      await preview.waitFor({ timeout: 3000 }).catch(() => {});
+    }
+    check(await preview.isVisible(), 'Export previews the quality report');
+    await page.getByTestId('report-download').click();
+    const [reportPdf] = await Promise.all([
+      page.waitForEvent('download', { timeout: 30000 }),
+      page.getByRole('menuitem', { name: 'PDF' }).click(),
+    ]);
+    const reportPath = await reportPdf.path();
+    const reportBytes = reportPath ? await readFile(reportPath) : Buffer.alloc(0);
+    check(
+      reportBytes.subarray(0, 5).toString('latin1') === '%PDF-',
+      'the quality report downloads as a PDF',
+      `${reportBytes.length} bytes as ${reportPdf.suggestedFilename()}`,
+    );
+
+    // The same report as an Excel workbook, built in the service worker, and one
+    // section's workbook, built in the page: both are ZIP archives (`PK`).
+    await page.getByTestId('report-download').click();
+    const [reportXlsx] = await Promise.all([
+      page.waitForEvent('download', { timeout: 30000 }),
+      page.getByRole('menuitem', { name: 'Excel' }).click(),
+    ]);
+    const xlsxPath = await reportXlsx.path();
+    const xlsxBytes = xlsxPath ? await readFile(xlsxPath) : Buffer.alloc(0);
+    check(
+      xlsxBytes.subarray(0, 2).toString('latin1') === 'PK' && reportXlsx.suggestedFilename().endsWith('.xlsx'),
+      'the quality report downloads as an Excel workbook',
+      `${xlsxBytes.length} bytes as ${reportXlsx.suggestedFilename()}`,
+    );
+    const [sectionXlsx] = await Promise.all([
+      page.waitForEvent('download', { timeout: 30000 }),
+      preview.locator('[data-testid^="report-section-xlsx-"]').first().click(),
+    ]);
+    const sectionPath = await sectionXlsx.path();
+    const sectionBytes = sectionPath ? await readFile(sectionPath) : Buffer.alloc(0);
+    check(
+      sectionBytes.subarray(0, 2).toString('latin1') === 'PK',
+      'a report section downloads as its own Excel workbook',
+      `${sectionBytes.length} bytes as ${sectionXlsx.suggestedFilename()}`,
+    );
+
+    // The Reports page lists the two report snapshots the demo seeds when its
+    // database opens, and one opens on its own page.
+    await page.goto(`${ORIGIN}${BASE}reports`, { waitUntil: 'domcontentloaded' });
+    const snapshots = page.getByTestId('snapshot-list').locator('li');
+    await snapshots
+      .first()
+      .waitFor({ timeout: 60000 })
+      .catch(() => {});
+    check(
+      (await snapshots.count()) === 2,
+      'the Reports page lists the two seeded snapshots',
+      `${await snapshots.count()}`,
+    );
+    check(await page.getByTestId('schedule-list').isVisible(), 'the Reports page lists the seeded schedule');
+    await page.getByTestId('snapshot-list').getByRole('link').first().click();
+    const snapshotView = page.getByTestId('report-view');
+    await snapshotView.waitFor({ timeout: 60000 }).catch(() => {});
+    check(await snapshotView.isVisible(), 'a report snapshot opens on its page');
+
+    // The seeded saved dashboards: the switcher lists them, and one renders its
+    // widgets through the saved dashboard's own widget route.
+    await page.goto(`${ORIGIN}${BASE}analytics/d/1`, { waitUntil: 'domcontentloaded' });
+    const switcher = page.getByTestId('dashboard-switcher');
+    await switcher.waitFor({ timeout: 60000 }).catch(() => {});
+    check((await switcher.textContent())?.includes('Checkout team') === true, 'a seeded saved dashboard opens');
+    const note = page.locator('[data-shot="analytics-note"]').getByText('Sprint goal');
+    await note.waitFor({ timeout: 60000 }).catch(() => {});
+    check(await note.isVisible(), 'the saved dashboard renders its widgets');
+    await switcher.click();
+    const switcherMenu = page.getByTestId('dashboard-switcher-menu');
+    await switcherMenu.waitFor({ timeout: 30000 }).catch(() => {});
+    check(
+      (await switcherMenu.textContent())?.includes('Wasted CI by browser') === true,
+      'the switcher lists the seeded dashboards',
+    );
+
+    // A flaky test's Flakiness tab reads its flake profile in the service worker:
+    // the seeded checkout flake ranks the slower cart first.
+    await page.goto(`${ORIGIN}${BASE}test-cases/9?tab=flakiness`, { waitUntil: 'domcontentloaded' });
+    const suspect = page.getByTestId('flake-suspect').first();
+    await suspect.waitFor({ timeout: 60000 }).catch(() => {});
+    check(
+      (await suspect.textContent())?.includes('GET /api/cart slower') === true,
+      'the Flakiness tab ranks the seeded slow cart first',
+      (await suspect.textContent().catch(() => '')) ?? '',
+    );
+
+    // The seeded pagination flake's verify experiment held, so its tab reads verified fixed.
+    await page.goto(`${ORIGIN}${BASE}test-cases/35?tab=flakiness`, { waitUntil: 'domcontentloaded' });
+    const verifiedFix = page.getByTestId('flake-verified-fix');
+    await verifiedFix.waitFor({ timeout: 60000 }).catch(() => {});
+    check(
+      (await verifiedFix.getAttribute('data-holding').catch(() => null)) === 'true',
+      'the seeded pagination flake reads verified fixed',
+    );
+
+    // The project's Flake Lab tab places it, and lists its three experiments.
+    await page.goto(`${ORIGIN}${BASE}projects/3?tab=flake-lab`, { waitUntil: 'domcontentloaded' });
+    const labRow = page.locator('[data-testid="flake-lab-test"][data-state="verified"]');
+    await labRow.waitFor({ timeout: 60000 }).catch(() => {});
+    check(
+      (await labRow.textContent().catch(() => ''))?.includes('Table pagination works correctly') === true,
+      'the project’s Flake Lab tab lists the pagination test as verified fixed',
+    );
+    check(
+      (await page.getByTestId('flake-lab-experiments').getByTestId('flake-experiment').count()) === 3,
+      'the project’s Flake Lab tab lists its experiments',
+    );
+
     check(
       escapedApiUrls.size === 0,
       'every API request stays inside the demo base path',
@@ -224,7 +344,9 @@ async function main() {
     for (const f of failures) console.error(`  - ${f}`);
     process.exit(1);
   }
-  console.log('✓ The built demo runs: service worker, in-browser API and export download all work.');
+  console.log(
+    '✓ The built demo runs: service worker, in-browser API, export download, quality report, report snapshots, saved dashboards, the flake profile, a verified flake fix and the Flake Lab tab all work.',
+  );
 }
 
 await main();

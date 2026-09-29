@@ -1,5 +1,6 @@
 ---
 title: Fix plans, reproduce & bisect
+description: "The next step for a failure, the other ways to fix it, and the recipes to reproduce it locally and bisect to the commit that broke it."
 lang: en-US
 ---
 
@@ -14,14 +15,14 @@ A **fix plan** gathers everything Piwi knows about a failure cluster into one an
 The same plan is reachable three ways:
 
 - **On the cluster page** — the recommended action leads as the **Next** line and the failing tests are the **Affected tests** selector; everything else lives in [**More ways to fix**](#more-ways-to-fix), the folded toolbox below the evidence: the diagnosis and its patch, the locator fix, the verify command, the reproduce recipe, and a **Copy as Markdown** action for a ticket.
-- **As Markdown** — `GET /api/failure-clusters/:id/fix-plan?format=markdown` returns the same rendering as plain text, so a script can drop it straight into an issue.
-- **For agents** — the `get_fix_plan` [MCP tool](/features/mcp) returns the structured plan, so a coding agent gets in one call what a person reads on the card.
+- **As Markdown**: the REST API returns the same rendering as plain text, so an export or a script can drop it straight into an issue (see the [API docs](https://piwitests.dev/demo/docs)).
+- **For agents** — the `get_fix_plan` [MCP tool](/reference/mcp-tools#get_fix_plan) returns the structured plan, so a coding agent gets in one call what a person reads on the card.
 
 The last part makes it a loop, not a lookup: the plan names a Playwright command scoped to the affected spec files and (up to five) test titles, and Piwi records the fix once they pass — so the work is confirmed, not guessed at.
 
 ## The next step
 
-Both the cluster and the [execution](./evidence#one-execution-diagnosis-first) page lead with a single **Next** line — one action chosen for you, with a word on why, not a row of equal buttons. A policy picks it from what the page knows, first match wins: open a **blocking** failure, **mark resolved** a verified-but-open cluster, **replace the locator** when [healing](./locator-healing) has one, **apply the diagnosed patch** (or follow the diagnosis when it is stale), **see what changed** when a fix regressed, **compare attempts** on a retry pass, **re-run in CI** for a crash or failed navigation, **diagnose with AI**, else **reproduce locally**. Where the fix is a code change, **Copy retry command** trails it; every other action lives in the toolbox below.
+Both the cluster and the [execution](./evidence#one-execution-diagnosis-first) page lead with a single **Next** line — one action chosen for you, with a word on why, not a row of equal buttons. A policy picks it from what the page knows, first match wins: open a **blocking** failure, **mark resolved** a verified-but-open cluster, **replace the locator** when [healing](./locator-healing) has one, **apply the diagnosed patch** (or follow the diagnosis when it is stale), **see what changed** when a fix regressed, **compare attempts** on a retry pass, **re-run in CI** for a crash or failed navigation, **diagnose with AI**, else **reproduce locally**. Where the fix is a code change, the step's **···** menu also holds **Copy retry command**; every other action lives in the toolbox below.
 
 ## More ways to fix
 
@@ -50,7 +51,7 @@ The **bisect** walks the commits between the last green run and the failing one,
 
 ```bash
 git bisect start <failing-commit> <last-green-commit>
-git bisect run npx playwright test "tests/admin/users.spec.ts" --project="Chromium" -g "Users table paginates 25 rows per page"
+git bisect run npx playwright test "tests/admin/users.spec.ts" -g "Users table paginates 25 rows per page"
 git bisect reset
 ```
 
@@ -62,13 +63,13 @@ In the [desktop app](/features/desktop#reproducing-a-failure-and-finding-the-bre
 
 An open cluster often isn't new — the same failure, or one close to it, was fixed weeks ago. The fix plan looks back over the project's **resolved** clusters (resolved, or with a verified fix that held) and, when one resembles the open cluster closely enough, shows it in the **Fixed before** section of the toolbox — on both pages, and in the `?format=markdown` export and the `get_fix_plan` MCP tool.
 
-A match is scored deterministically first — the same fingerprint family (error kind, masked message, masked locator), the same failing locator, the same spec file or test — and then, when an [embedding model](./ai-diagnosis#model-roles) is configured, by semantic similarity of the stored cluster vectors. The top three matches are shown, each with **when** it was resolved, the **commit** that fixed it (linked when the repository host is known), **how long** it stayed open, the triage note, the earlier diagnosis and its thumbs feedback, and one short reason it matched ("same error and locator", "same spec, similar message (0.91)"); the Markdown export and the MCP tool also name its owner. Nothing matches → the section renders nothing, no empty-state noise.
+A match is scored deterministically first — the same fingerprint family (error kind, masked message, masked locator), the same failing locator, the same spec file or test — and then, when an [embedding model](/guide/ai-provider#model-roles) is configured, by semantic similarity of the stored cluster vectors. The top three matches are shown, each with **when** it was resolved, the **commit** that fixed it (linked when the repository host is known), **how long** it stayed open, the triage note, the earlier diagnosis and its thumbs feedback, and one short reason it matched ("same error and locator", "same spec, similar message (0.91)"); the Markdown export and the MCP tool also name its owner. Nothing matches → the section renders nothing, no empty-state noise.
 
 **Apply the same triage** copies the earlier cluster's triage note onto the open one, prefixed `Same as cluster #N:` so the history reads as an intentional reuse. It never changes the open cluster's status — a new cluster is never marked resolved just because an old one was. The same top match is fed to the AI diagnosis as a *Previously fixed similar failure* clue, so the model can reuse a known fix rather than re-derive it.
 
 ## Related
 
-- [AI diagnosis & failure clustering](./ai-diagnosis) — the diagnosis and validated patch a fix plan wraps
+- [AI diagnosis](./ai-diagnosis): the diagnosis and validated patch a fix plan wraps
 - [Failure clusters & the inbox](./failure-clusters) — the clusters a fix plan is attached to
 - [Auto-heal PRs](./auto-heal) — when Piwi opens the locator fix as a pull request itself
 - [MCP server](/features/mcp) — the `get_fix_plan` tool

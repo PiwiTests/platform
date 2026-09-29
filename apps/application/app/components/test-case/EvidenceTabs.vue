@@ -1,12 +1,14 @@
 <script setup lang="ts">
 /**
  * One evidence card with content-level tabs — Timeline, Screen, Source,
- * Network, Console, State, Performance — each wrapping the evidence captured for
+ * Locators, Network, Console, State, Performance — each wrapping the evidence captured for
  * an execution. A tab shows a count or a dot when it holds data and is dimmed
  * when empty; a dimmed tab still opens and states why it is empty. The default
  * tab is the one the strongest clue cites, else Timeline when it can place two
  * or more items, else Screen. A clue or diagnosis citation switches to the tab
- * that holds the evidence and scrolls to it.
+ * that holds the evidence and scrolls to it. The Playwright trace opens from the
+ * card's header, whichever tab is showing. A test that never ran and left
+ * nothing behind shows no card at all.
  */
 import type { NetworkRequest, PerformanceStep, TraceInfo, WebVitals } from '~~/types/api';
 import { getPerformanceHints } from '~/utils/performance-hints';
@@ -14,6 +16,7 @@ import { resolveEvidenceState, type EvidenceState } from '#shared/evidence-state
 import type { CapabilityState } from '#shared/capabilities';
 import type { HelpTopicKey } from '~/utils/help-content';
 import { EVIDENCE_SECTION_TAB, type EvidenceTabValue } from '~/utils/evidence-sections';
+import { extractStepLocatorUses } from '#shared/locator-chain';
 
 const props = defineProps<{
   /** The fetched execution — every tab reads its evidence off this object. */
@@ -128,6 +131,11 @@ const sourceHasData = computed(() => Boolean(testSourceFrames.value?.length || t
 const stateHasData = computed(() => Boolean(pageState.value));
 const performanceHasData = computed(() => Boolean(webVitals.value) || performanceHints.value.length > 0);
 const timelineHasData = computed(() => steps.value.length > 0);
+// Distinct locator uses in the stored steps — the same count the Locators tab lists.
+const locatorCount = computed(
+  () =>
+    new Set(extractStepLocatorUses(steps.value).map((u) => `${u.location ?? ''}\x00${u.action}\x00${u.locator}`)).size,
+);
 
 // Every attempt of this execution (each retry is its own row), already fetched.
 const attemptsList = computed<
@@ -173,6 +181,13 @@ const tabs = computed<TabDef[]>(() =>
       { value: 'screen', label: 'Screen', icon: 'i-lucide-camera', hasData: screenHasData.value, count: null },
       { value: 'source', label: 'Source', icon: 'i-lucide-file-code-2', hasData: sourceHasData.value, count: null },
       {
+        value: 'locators',
+        label: 'Locators',
+        icon: 'i-lucide-crosshair',
+        hasData: locatorCount.value > 0,
+        count: locatorCount.value || null,
+      },
+      {
         value: 'network',
         label: 'Network',
         icon: 'i-lucide-arrow-left-right',
@@ -195,7 +210,23 @@ const tabs = computed<TabDef[]>(() =>
         count: null,
       },
     ] satisfies TabDef[]
-  ).filter((tab) => tabShown(tab.value)),
+  ).filter(
+    (tab) =>
+      tabShown(tab.value) &&
+      // Locators and Attempts only exist when there is something to list: a
+      // single attempt has nothing to compare.
+      ((tab.value !== 'locators' && tab.value !== 'attempts') || tab.hasData),
+  ),
+);
+
+// The trace the header opens: this execution's own (one per attempt row).
+const primaryTrace = computed(() => props.traces[0] ?? null);
+const { viewUrl: traceViewUrl, onView: onViewTrace } = useTraceLinks(primaryTrace);
+
+// Nothing was captured for a test that never started — the did-not-run card above
+// says why, so the evidence card stays away rather than showing empty tabs.
+const hasNoEvidence = computed(
+  () => status.value === 'didnotrun' && !primaryTrace.value && tabs.value.every((tab) => !tab.hasData),
 );
 
 // The footer names the sources the capture fixtures would add, shown only while
@@ -332,23 +363,37 @@ defineExpose({ canLocate, revealSection, selectTab: (t: TabValue) => (activeTab.
 
 <template>
   <section
+    v-if="!hasNoEvidence"
     data-shot="evidence-card"
     class="rounded-lg border border-default bg-default max-sm:rounded-none max-sm:border-x-0"
   >
-    <!-- Header: the section title, its help, and the content-level tab strip -->
+    <!-- Header: the section title, its help, the trace, and the content-level tab strip -->
     <div class="p-3 sm:px-4 sm:py-3 border-b border-default">
       <div class="flex items-center gap-2 mb-2.5">
         <UIcon name="i-lucide-microscope" class="size-5 shrink-0 text-primary" />
         <h2 class="text-lg font-medium">Evidence</h2>
         <HelpHint v-if="help" :topic="help" />
+        <!-- The viewer URL carries the page origin, known only in the browser. -->
+        <ClientOnly v-if="primaryTrace">
+          <UButton
+            :to="traceViewUrl ?? undefined"
+            target="_blank"
+            size="xs"
+            color="neutral"
+            variant="outline"
+            label="Open trace"
+            title="Open the Playwright trace of this execution in the trace viewer"
+            class="ml-auto"
+            @click="onViewTrace"
+          />
+          <template #fallback>
+            <UButton size="xs" color="neutral" variant="outline" label="Open trace" class="ml-auto" disabled />
+          </template>
+        </ClientOnly>
       </div>
-      <!-- Below `sm` the strip wraps onto as many rows as it needs so no tab is
-           hidden off-screen; from `sm` up it stays one scrollable row. -->
-      <div
-        class="flex items-center gap-1 max-sm:flex-wrap sm:overflow-x-auto"
-        role="tablist"
-        aria-label="Evidence sections"
-      >
+      <!-- The strip wraps onto as many rows as it needs, so no tab is ever
+           hidden off the edge of the card. -->
+      <div class="flex flex-wrap items-center gap-1" role="tablist" aria-label="Evidence sections">
         <button
           v-for="tab in tabs"
           :key="tab.value"
@@ -384,8 +429,9 @@ defineExpose({ canLocate, revealSection, selectTab: (t: TabValue) => (activeTab.
           :steps="steps"
           :duration-ms="testCase?.duration ?? null"
           :has-error="hasError"
+          :error="testCase?.error ?? null"
           :status="status"
-          :has-trace="hasTrace"
+          :test-file-path="testCase?.filePath ?? null"
           :project-key="projectKey"
           :project-name="projectName"
           :attachments="attachments"
@@ -396,7 +442,7 @@ defineExpose({ canLocate, revealSection, selectTab: (t: TabValue) => (activeTab.
       <!-- ── Attempts ─────────────────────────────────────────────── -->
       <!-- Lazy: this card mounts only when the tab opens, fetching the diff then. -->
       <div v-else-if="activeTab === 'attempts'" class="scroll-mt-4">
-        <AttemptsCard :test-runs-case-id="testRunsCaseId" :attempts="attemptsList" />
+        <AttemptsCard :test-runs-case-id="testRunsCaseId" :attempts="attemptsList" :project-id="projectKey ?? null" />
       </div>
 
       <!-- ── Screen ───────────────────────────────────────────────── -->
@@ -529,6 +575,16 @@ defineExpose({ canLocate, revealSection, selectTab: (t: TabValue) => (activeTab.
         <div ref="envDiffWrap" class="scroll-mt-4">
           <EnvironmentDiffCard v-if="runId" embedded :run-id="runId" :test-runs-case-id="testRunsCaseId" />
         </div>
+      </div>
+
+      <!-- ── Locators ─────────────────────────────────────────────── -->
+      <!-- Lazy: fetched when the tab opens. -->
+      <div v-else-if="activeTab === 'locators'" class="scroll-mt-4">
+        <ExecutionLocatorsCard
+          :test-runs-case-id="testRunsCaseId"
+          :project-key="projectKey"
+          :project-name="projectName"
+        />
       </div>
 
       <!-- ── Performance ──────────────────────────────────────────── -->

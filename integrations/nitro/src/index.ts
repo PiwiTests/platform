@@ -6,6 +6,37 @@ import { consola } from 'consola';
 // Nitro build, and this module must also load from node_modules when the
 // server bundle externalizes it (e.g. dev builds).
 import type { NitroAppPlugin } from 'nitropack';
+import { createError } from 'h3';
+import { verifyProbeHeader, ProbeNonceCache, type PiwiProbeSpec } from './probe';
+import {
+  buildRouteManifest,
+  recordObservedRoute,
+  collapsePathPattern,
+  type ManifestRouteEntry,
+} from './manifest';
+import {
+  routeMatchesRequest,
+  faultStatus,
+  faultDelayMs,
+  isThrowFault,
+  isExtremeFault,
+  isDataFault,
+  isDependencyFault,
+  dependencyCallMatches,
+  mutateResponseBody,
+  appliedFaultLabel,
+} from './faults';
+
+export {
+  verifyProbeHeader,
+  signProbeMessage,
+  probeSigningMessage,
+  PROBE_TTL_MS,
+  type PiwiProbeSpec,
+  type SignedProbe,
+} from './probe';
+export { buildRouteManifest, recordObservedRoute, collapsePathPattern, type RouteManifest } from './manifest';
+export * from './faults';
 
 const MAX_ENTRIES = 50;
 const MAX_MSG_LENGTH = 500;
@@ -83,7 +114,29 @@ interface RequestStore {
   logs: PiwiTestLogEntry[];
   spans: PiwiServerSpan[];
   startMs: number;
+  /** A verified probe fault for this request, when one was signed and honored. */
+  probe?: PiwiProbeSpec;
+  /** The verified fault targets this request and server probes are on: apply it where it takes effect. */
+  probeShouldApply?: boolean;
+  /** The fault label the server actually applied, reported back in X-Piwi-Trace. */
+  probeApplied?: string;
+  /** A dependency fault is pending: it applies once a matching outbound call fires. */
+  probeDependencyPending?: boolean;
+  /** True once a dependency fault has failed one outbound call for this request. */
+  probeDependencyConsumed?: boolean;
 }
+
+/**
+ * Record the fault the server actually applied for this request, so X-Piwi-Trace
+ * carries it and the reporter can compare it with the fault it asked for. Called
+ * only at the point a fault takes effect, never on a bare route match.
+ */
+function markProbeApplied(store: RequestStore): void {
+  if (store.probe) store.probeApplied = appliedFaultLabel(store.probe);
+}
+
+/** Signed probe nonces already honored this process, so a header is single-use. */
+const probeNonces = new ProbeNonceCache();
 
 // Links consola calls and recorded spans to the request being handled. The store
 // is scoped with als.run() around the whole downstream handler chain —
@@ -105,9 +158,49 @@ export function recordServerSpan(span: PiwiServerSpan): void {
 // The consola reporter is process-global — register it only once.
 let reporterAdded = false;
 
+// Capture and probe verification run only outside production, matching the
+// ASP.NET package's Development/Test allow-list: only an unset/empty NODE_ENV or
+// `development`/`test` is treated as non-production. Any other value
+// (`production`, `staging`, `prod`, …) disables capture unless
+// PIWI_TEST_LOGS_DISABLED is explicitly `false`, so a signed probe header is
+// never honored on a production-like deployment that skipped `NODE_ENV=production`.
+const NODE_ENV = process.env.NODE_ENV;
+const IS_DEV_OR_TEST = !NODE_ENV || NODE_ENV === 'development' || NODE_ENV === 'test';
 const TEST_LOGS_DISABLED =
   process.env.PIWI_TEST_LOGS_DISABLED === 'true' ||
-  (process.env.NODE_ENV === 'production' && process.env.PIWI_TEST_LOGS_DISABLED !== 'false');
+  (!IS_DEV_OR_TEST && process.env.PIWI_TEST_LOGS_DISABLED !== 'false');
+
+/** The shared secret a probe run signs the `X-Piwi-Probe` header with. */
+const PROBE_SECRET = process.env.PIWI_PROBE_SECRET || undefined;
+
+/** The declared-surface route path the plugin serves outside production. */
+const MANIFEST_PATH = '/__piwi/manifest';
+
+/**
+ * Routes the server has matched this process, accumulated for `/__piwi/manifest`.
+ * Nitro exposes no runtime route table, so the manifest is built from observation.
+ */
+const observedRoutes = new Map<string, ManifestRouteEntry>();
+
+/**
+ * Server probes stay off unless a project opts in. When off (the default in this
+ * milestone) a signed probe header is still verified and recorded, but no fault
+ * is applied — only the client-safe subset would ever be, and only once this is
+ * on.
+ */
+const SERVER_PROBES_ENABLED = process.env.PIWI_SERVER_PROBES === 'true';
+
+/**
+ * Best-effort source file of the matched route handler, for the root span's
+ * `piwi.handler` attribute. Nitro exposes the matched route on the event context
+ * on recent versions; when it carries no file, the attribute is omitted and the
+ * dashboard falls back to its file-routing convention.
+ */
+function resolveHandlerFile(event: any): string | undefined {
+  const matched = event?.context?.matchedRoute as { file?: unknown; filename?: unknown } | undefined;
+  const file = matched?.file ?? matched?.filename;
+  return typeof file === 'string' && file ? file : undefined;
+}
 
 const piwiTestLogs: NitroAppPlugin = (nitroApp) => {
   if (TEST_LOGS_DISABLED) return;
@@ -137,9 +230,50 @@ const piwiTestLogs: NitroAppPlugin = (nitroApp) => {
   // als.run() scope covers every hook, middleware, and route handler.
   const originalHandler = nitroApp.h3App.handler;
   nitroApp.h3App.handler = ((event) => {
+    // Serve the declared-surface manifest outside production (the plugin already
+    // returned early when log capture is disabled). Built from observed routes.
+    const requestPath = String(event.path ?? event.node.req.url ?? '').split('?')[0] ?? '';
+    if (requestPath === MANIFEST_PATH) {
+      const res = event.node.res as any;
+      res.statusCode = 200;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify(buildRouteManifest(observedRoutes)));
+      return;
+    }
+
     const store: RequestStore = { logs: [], spans: [], startMs: Date.now() };
     event.context._piwiLogs = store.logs;
     event.context._piwiSpans = store.spans;
+    // The beforeResponse hook fires outside this handler's async scope (it is
+    // driven by the layer above h3App.handler), so als.getStore() is unreliable
+    // there — reach the request store through the event context instead.
+    event.context._piwiStore = store;
+
+    // Verify a signed probe header, honored only outside production (under the
+    // same guard as log capture) and only when a shared secret is configured.
+    // The spec is recorded on the request scope, and a fault is applied only when
+    // server probes are turned on for the project and this is the Nth match.
+    const probe = verifyProbeHeader(event.node.req.headers['x-piwi-probe'], PROBE_SECRET, Date.now(), undefined, probeNonces);
+    if (probe) {
+      store.probe = probe;
+      event.context._piwiProbe = probe;
+      if (SERVER_PROBES_ENABLED) {
+        const method = String(event.method ?? event.node.req.method ?? 'GET');
+        const reqPath = String(event.path ?? event.node.req.url ?? '').split('?')[0] ?? '';
+        // The reporter signs the header onto exactly the request it wants faulted
+        // (it already chose the Nth match), so a route match is the whole
+        // selector; the header's single-use nonce keeps it from applying twice.
+        // The fault is only *marked applied* where it actually takes effect (the
+        // handler wrap, the beforeResponse hook, or the outbound-call patch), so
+        // an unimplemented fault (`replay`) or a no-op (`data` on an array body)
+        // records inconclusive, never a false gap.
+        if (routeMatchesRequest(probe, method, reqPath)) {
+          store.probeShouldApply = true;
+          // A dependency fault only applies once a matching outbound call fires.
+          if (isDependencyFault(probe.fault)) store.probeDependencyPending = true;
+        }
+      }
+    }
 
     // Patch res.end so the X-Piwi-Logs / X-Piwi-Trace headers are injected for
     // ALL responses, including H3 error responses where Nitro bypasses the
@@ -180,6 +314,14 @@ const piwiTestLogs: NitroAppPlugin = (nitroApp) => {
         const statusCode = Number(res.statusCode) || 0;
         const traceId =
           parseTraceparent(event.node.req.headers['traceparent']) ?? randomBytes(16).toString('hex');
+        const handlerFile = resolveHandlerFile(event);
+
+        // Record this route for the declared-surface manifest. Prefer the matched
+        // route's own pattern; fall back to collapsing the concrete path.
+        const matchedPattern = (event.context?.matchedRoute as { route?: unknown; path?: unknown } | undefined)?.route;
+        const pattern = typeof matchedPattern === 'string' && matchedPattern ? matchedPattern : collapsePathPattern(path);
+        recordObservedRoute(observedRoutes, { method, pattern, handler: handlerFile });
+
         const rootSpan: PiwiServerSpan = {
           id: randomBytes(8).toString('hex'),
           name: `${method} ${path}`.trim(),
@@ -188,7 +330,16 @@ const piwiTestLogs: NitroAppPlugin = (nitroApp) => {
           durMs: Math.max(0, endMs - store.startMs),
           status: statusCode >= 500 ? 'error' : 'ok',
           traceId,
-          attrs: { 'http.method': method, 'http.route': path, 'http.status_code': statusCode },
+          attrs: {
+            'http.method': method,
+            'http.route': path,
+            'http.status_code': statusCode,
+            ...(handlerFile ? { 'piwi.handler': handlerFile } : {}),
+            // A probe was signed for this request; `applied` names the fault the
+            // server honored, or is absent when it was not applied (inconclusive).
+            ...(store.probe ? { 'piwi.probe': store.probe.fault } : {}),
+            ...(store.probeApplied ? { 'piwi.probe.applied': store.probeApplied } : {}),
+          },
         };
         for (const s of store.spans) if (!s.parentId) s.parentId = rootSpan.id;
         const spanPayload = [rootSpan, ...store.spans].slice(0, MAX_SPANS);
@@ -197,8 +348,97 @@ const piwiTestLogs: NitroAppPlugin = (nitroApp) => {
       return originalEnd(...args);
     };
 
-    return als.run(store, () => originalHandler(event));
+    return als.run(store, async () => {
+      // Apply the handler and pipeline faults inside the request scope. Delay
+      // faults slow the response; throw/status/auth run the server's error path;
+      // extreme returns the empty default. Each is marked applied only once it
+      // takes effect. Data and dependency faults are applied later (the
+      // beforeResponse hook and the outbound-fetch patch); an unimplemented fault
+      // (`replay`) matches none of these, so it is never marked applied.
+      const spec = store.probeShouldApply ? store.probe : undefined;
+      if (spec && !isDataFault(spec.fault) && !isDependencyFault(spec.fault)) {
+        const delayMs = faultDelayMs(spec.fault);
+        if (delayMs > 0) await new Promise((r) => setTimeout(r, delayMs));
+        if (isThrowFault(spec.fault)) {
+          markProbeApplied(store);
+          throw createError({ statusCode: 500, statusMessage: 'Piwi probe: injected error' });
+        }
+        const status = faultStatus(spec.fault);
+        if (status != null) {
+          markProbeApplied(store);
+          throw createError({ statusCode: status, statusMessage: `Piwi probe: injected ${status}` });
+        }
+        if (isExtremeFault(spec.fault)) {
+          markProbeApplied(store);
+          // Send the empty response ourselves: h3's toNodeListener ignores the
+          // handler's return value, so returning '' here would never end the
+          // node response and the probed request would hang until its timeout.
+          res.statusCode = 200;
+          res.end('');
+          return '';
+        }
+        // A pure delay fault took effect once the delay elapsed.
+        if (delayMs > 0) markProbeApplied(store);
+      }
+      return originalHandler(event);
+    });
   }) as typeof originalHandler;
+
+  // Data faults mutate the response body before it is serialized and sent. The
+  // fault is marked applied only when the body actually changed — `data` on an
+  // array body, or an empty object, is left unchanged and records inconclusive.
+  nitroApp.hooks.hook('beforeResponse', (event: any, response: { body?: unknown }) => {
+    const store = event.context?._piwiStore as RequestStore | undefined;
+    const probe = store?.probe;
+    if (store?.probeShouldApply && probe && isDataFault(probe.fault) && response && 'body' in response) {
+      const before = response.body;
+      const mutated = mutateResponseBody(probe.fault, before);
+      if (mutated !== before) {
+        response.body = mutated;
+        markProbeApplied(store);
+      }
+    }
+  });
+
+  // Dependency faults fail one outbound call the handler makes through the
+  // instrumented `$fetch`, so the handler's own error handling runs. The fault
+  // targets the call whose URL names `spec.dependency`; when no outbound call
+  // matches, nothing is applied and the probe records inconclusive.
+  if (SERVER_PROBES_ENABLED) {
+    const g = globalThis as any;
+    if (typeof g.$fetch === 'function' && !g.$fetch.__piwiProbePatched) {
+      const original = g.$fetch;
+      const patched = (...args: unknown[]) => {
+        const store = als.getStore();
+        if (
+          store?.probeDependencyPending &&
+          store.probe &&
+          isDependencyFault(store.probe.fault) &&
+          !store.probeDependencyConsumed &&
+          dependencyCallMatches(store.probe.dependency, outboundCallTarget(args))
+        ) {
+          store.probeDependencyConsumed = true;
+          markProbeApplied(store);
+          return Promise.reject(new Error('Piwi probe: injected dependency failure'));
+        }
+        return original(...args);
+      };
+      patched.__piwiProbePatched = true;
+      g.$fetch = Object.assign(patched, original);
+    }
+  }
 };
+
+/** The request target of an outbound `$fetch` call, for dependency-fault matching. */
+function outboundCallTarget(args: unknown[]): string {
+  const first = args[0];
+  if (typeof first === 'string') return first;
+  if (first instanceof URL) return first.toString();
+  if (first && typeof first === 'object') {
+    const url = (first as { url?: unknown; href?: unknown }).url ?? (first as { href?: unknown }).href;
+    if (typeof url === 'string') return url;
+  }
+  return '';
+}
 
 export default piwiTestLogs;

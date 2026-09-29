@@ -56,13 +56,19 @@ export async function getStorageAnalysis(db: DrizzleDB): Promise<StorageAnalysis
     db
       .select({ projectId: traceResources.projectId, size: traceResources.size, createdAt: traceResources.createdAt })
       .from(traceResources),
-    db.select({ id: testRuns.id, projectId: testRuns.projectId }).from(testRuns),
+    db.select({ id: testRuns.id, projectId: testRuns.projectId, keptAt: testRuns.keptAt }).from(testRuns),
     db.select({ id: projects.id, name: projects.name, label: projects.label }).from(projects),
   ]);
 
   // `files` carries no project id; every row does carry the run it belongs to.
   const runToProject = new Map<number, number>();
-  for (const r of runRows) runToProject.set(r.id, r.projectId);
+  const keptRunIds = new Set<number>();
+  for (const r of runRows) {
+    runToProject.set(r.id, r.projectId);
+    if (r.keptAt) keptRunIds.add(r.id);
+  }
+  let keptBytes = 0;
+  let keptFiles = 0;
 
   const kindBytes = new Map<StorageKind, number>();
   const kindFiles = new Map<StorageKind, number>();
@@ -90,6 +96,10 @@ export async function getStorageAnalysis(db: DrizzleDB): Promise<StorageAnalysis
     addKind(kind, bytes, 1);
     addProject(f.testRunId != null ? runToProject.get(f.testRunId) : undefined, bytes, 1);
     if (bytes > 0) timePoints.push({ t: new Date(f.createdAt).getTime(), bytes });
+    if (f.testRunId != null && keptRunIds.has(f.testRunId)) {
+      keptBytes += bytes;
+      keptFiles += 1;
+    }
   }
   for (const b of blobRows) {
     totalBytes += b.size;
@@ -135,6 +145,7 @@ export async function getStorageAnalysis(db: DrizzleDB): Promise<StorageAnalysis
     byProject,
     overTime,
     bucketDays,
+    kept: { runs: keptRunIds.size, files: keptFiles, bytes: keptBytes },
     generatedAt: new Date().toISOString(),
   };
 }

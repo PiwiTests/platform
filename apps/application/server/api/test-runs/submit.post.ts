@@ -8,13 +8,11 @@ import { persistRunCases, type RunCaseInput } from '../../utils/persist-run-case
 import { sanitizeMetadata } from '../../utils/sanitize';
 import { resolveRunBranch } from '../../utils/run-branch';
 import { runEventBus } from '../../utils/run-events';
-import { autoDiagnoseRun } from '../../utils/ai-diagnosis';
 import { cancelInstanceRuns } from '../../utils/cancel-instance-runs';
-import { emitRunNotifications } from '../../utils/notifications/run-notifications';
-import { postRunPrFeedbackInBackground } from '../../utils/scm/pr-feedback';
-import { maybeEnqueueHealActionInBackground } from '../../utils/heal/policy';
+import { runFinalizeSideEffects } from '../../utils/run-finalize-side-effects';
 import { getProjectScope, scopeAllows } from '../../utils/project-access';
 import { sumFailedAndTimedOut } from '#shared/utils/test-counts';
+import { applyReporterKeep } from '#shared/handlers/run-keep';
 
 defineRouteMeta({
   openAPI: {
@@ -134,6 +132,7 @@ export default eventHandler(async (event) => {
           duration: sql`CASE WHEN coalesce(${testRuns.duration}, 0) > ${body.duration ?? 0} THEN coalesce(${testRuns.duration}, 0) ELSE ${body.duration ?? 0} END`,
         })
         .where(eq(testRuns.id, existingRun.id));
+      await applyReporterKeep(db, existingRun.id, body.keep);
 
       // Insert test cases if provided
       if (body.testCases && Array.isArray(body.testCases) && body.testCases.length > 0) {
@@ -166,6 +165,9 @@ export default eventHandler(async (event) => {
             networkRequests: testCase.networkRequests,
             webVitals: testCase.webVitals,
             pageState: testCase.pageState,
+            pageInventory: testCase.pageInventory,
+            locatorPages: testCase.locatorPages,
+            codeReach: testCase.codeReach,
             aiUsage: testCase.aiUsage,
             consoleLogs: testCase.consoleLogs,
             dialogs: testCase.dialogs,
@@ -179,6 +181,7 @@ export default eventHandler(async (event) => {
             browser: testCase.browser ?? null,
             locatorSnapshots: testCase.locatorSnapshots ?? null,
             didNotRunReason: testCase.didNotRunReason ?? null,
+            expectedStatus: testCase.expectedStatus ?? null,
             blockedBy: testCase.blockedBy ?? null,
           };
         });
@@ -266,6 +269,7 @@ export default eventHandler(async (event) => {
       message: 'Failed to create test run',
     });
   }
+  await applyReporterKeep(db, testRun.id, body.keep);
 
   // Insert test cases if provided and calculate flaky tests
   let flakyTestCount = 0;
@@ -291,6 +295,9 @@ export default eventHandler(async (event) => {
         networkRequests?: unknown;
         webVitals?: unknown;
         pageState?: unknown;
+        pageInventory?: unknown;
+        locatorPages?: unknown;
+        codeReach?: unknown;
         aiUsage?: unknown;
         consoleLogs?: unknown;
         dialogs?: unknown;
@@ -310,6 +317,7 @@ export default eventHandler(async (event) => {
         testMeta?: unknown;
         locatorSnapshots?: unknown;
         didNotRunReason?: string | null;
+        expectedStatus?: string | null;
         blockedBy?: string | null;
       }) => {
         const { filePath, line, column } = testCase.location
@@ -341,6 +349,9 @@ export default eventHandler(async (event) => {
           networkRequests: testCase.networkRequests,
           webVitals: testCase.webVitals,
           pageState: testCase.pageState,
+          pageInventory: testCase.pageInventory,
+          locatorPages: testCase.locatorPages,
+          codeReach: testCase.codeReach,
           aiUsage: testCase.aiUsage,
           consoleLogs: testCase.consoleLogs,
           dialogs: testCase.dialogs,
@@ -354,6 +365,7 @@ export default eventHandler(async (event) => {
           browser: testCase.browser ?? null,
           locatorSnapshots: testCase.locatorSnapshots ?? null,
           didNotRunReason: testCase.didNotRunReason ?? null,
+          expectedStatus: testCase.expectedStatus ?? null,
           blockedBy: testCase.blockedBy ?? null,
         };
       },
@@ -380,10 +392,7 @@ export default eventHandler(async (event) => {
 
   runEventBus.publishGlobal({ type: 'run-submitted', runId: testRun.id, projectId: project.id, status: body.status });
 
-  autoDiagnoseRun(db, project.id, testRun.id).catch((e) => console.error('[ai-diagnosis] autoDiagnoseRun failed', e));
-  emitRunNotifications(db, testRun.id).catch((e) => console.error('[notifications] emitRunNotifications failed', e));
-  postRunPrFeedbackInBackground(db, testRun.id);
-  maybeEnqueueHealActionInBackground(db, testRun.id);
+  await runFinalizeSideEffects(db, testRun.id, { projectId: project.id, metadata: testRun.metadata });
 
   return {
     success: true,

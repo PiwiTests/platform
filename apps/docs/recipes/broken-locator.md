@@ -1,5 +1,6 @@
 ---
 title: Fix a broken locator
+description: "A UI change broke a Playwright locator. Piwi proposes ranked replacements captured from the last run where the test passed, and points at the line to change."
 lang: en-US
 ---
 
@@ -41,42 +42,14 @@ Everything above assumes the failure is already in the dashboard. When you're ru
 a faster path — pause on the failing page and pick the replacement from the live DOM, while the app is
 still in the state that broke it.
 
-Two reporter options, both off by default. They act inside the [capture fixtures](/guide/capture-fixtures),
-so your specs must import `test` from your fixtures file, and the fixtures read them from the environment —
-set them through `wrapConfig` or as environment variables; a plain reporter entry ignores them:
+Two reporter options, both off by default, do it: `pickLocatorOnFailure` opens Piwi's picker aimed at the locator
+that just broke, and `inspectOnFailure` opens the same overlay free to inspect any element. The run pauses with the
+failing page still open, you click the element you meant, and the candidate you confirm comes back in the dashboard
+with a **Your pick** badge as the recommended fix. It never rewrites your test.
 
-| Option | Env var | Opens |
-|---|---|---|
-| `pickLocatorOnFailure` | `PIWI_PICK_LOCATOR_ON_FAIL` | the picker, aimed at the locator that just broke |
-| `inspectOnFailure` | `PIWI_INSPECT_ON_FAIL` | the same overlay, but free to inspect any element on the page |
-
-```typescript
-export default defineConfig(
-  wrapConfig(
-    { testDir: './tests' },
-    { serverUrl: 'http://localhost:3000', projectName: 'my-project', pickLocatorOnFailure: true },
-  ),
-)
-```
-
-The run **pauses** with the failing page still open — the test timeout is lifted while the overlay is
-up — and you click the element you meant. Piwi generates ranked, uniqueness-checked candidates, and the
-one you confirm is recorded as a pick: it comes back in the dashboard with a **Your pick** badge and
-becomes the recommended fix. It works for a broken action (`.click()`, `.fill()`) and for a failed
-assertion (`expect(locator).toBeVisible()`), reading the locator from Playwright's own error in the
-latter case.
-
-This is Piwi's own overlay, not Playwright's inspector, which is why what you confirm flows back into
-the healing data instead of just into your clipboard.
-
-Worth knowing before you switch it on:
-
-- It needs a **headed** browser (`--headed`, or `headless: false`), and it **never activates under CI** —
-  any `CI` env var disables it.
-- With retries configured it only opens on the final attempt, and it skips expected failures
-  (`test.fail()`).
-- Because the run waits while the overlay is open, use `--workers=1` or your other workers sit idle.
-- **It never rewrites your test.** It records the choice; applying it is still your edit.
+Both need a headed browser and never run under CI; [Pick a replacement locator on the failing
+page](/features/locator-healing#pick-a-replacement-locator-on-the-failing-page-local-runs) has the options, the gates
+and the commands.
 
 ## Requirements, honestly
 
@@ -126,10 +99,7 @@ instance — the DOM snapshot at the moment of failure usually shows what the el
 the full alternatives list for a failing case, so a coding agent can apply it without you opening the
 dashboard. This one does still depend on captured snapshots — it reads the same data the panel does.
 
-## See also
-
+## Related
 - [Capture fixtures](/guide/capture-fixtures) — everything else the fixtures unlock
-- [Locator healing](/features/locator-healing) — configuration and how the scoring works
-- [Locator healing → Inspect the failing page live](/features/locator-healing#inspect-the-failing-page-live-local-runs) — the
-  full reference for the pause-on-failure options
+- [Locator healing](/features/locator-healing): how the replacements are ranked, and the pause-on-failure options
 - [Browser extension](/features/extension) — picking and recording locators against a live page

@@ -23,6 +23,7 @@ export type SettingsPageId =
   | 'account'
   | 'localization'
   | 'users'
+  | 'permissions'
   | 'notifications'
   | 'tags'
   | 'storage'
@@ -129,6 +130,17 @@ export const SETTINGS_PAGES: SettingsPageMeta[] = [
     ],
   },
   {
+    id: 'permissions',
+    label: 'Permissions',
+    icon: 'i-lucide-shield-check',
+    to: '/settings/permissions',
+    group: 'instance',
+    roles: [Role.ADMINISTRATOR],
+    authOnly: true,
+    introHelp: 'settings.permissions',
+    fields: [{ id: 'permissions.grid', label: 'Project access', help: 'settings.permissions' }],
+  },
+  {
     id: 'notifications',
     label: 'Notifications',
     icon: 'i-lucide-bell',
@@ -190,6 +202,7 @@ export const SETTINGS_PAGES: SettingsPageMeta[] = [
     fields: [
       { id: 'wasted-time.patterns', label: 'Wasted-time patterns', help: 'settings.wasted-time' },
       { id: 'timeout-hygiene.thresholds', label: 'Detection thresholds', help: 'settings.timeout-hygiene' },
+      { id: 'ci-cost', label: 'Cost of a CI minute', help: 'settings.ci-cost' },
     ],
   },
   {
@@ -273,6 +286,17 @@ export function getSettingsPage(id: SettingsPageId): SettingsPageMeta {
   const page = SETTINGS_PAGES.find((p) => p.id === id);
   if (!page) throw new Error(`Unknown settings page: ${id}`);
   return page;
+}
+
+/**
+ * Whether a signed-in user with `role` may open `path`. Only role-restricted
+ * settings pages are refused; any other path (including non-settings routes)
+ * is allowed. Used by the auth middleware so a direct URL cannot reach a page
+ * the nav hides — the server still enforces the roles on each page's endpoints.
+ */
+export function canOpenSettingsPath(path: string, role: Role | undefined): boolean {
+  const page = SETTINGS_PAGES.find((p) => p.to === path.replace(/\/+$/, ''));
+  return !page?.roles || (role !== undefined && page.roles.includes(role));
 }
 
 // ── Nav construction ───────────────────────────────────────────────────────

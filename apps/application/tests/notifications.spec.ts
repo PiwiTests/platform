@@ -504,7 +504,7 @@ test.describe.serial('Subscribe Bell UI', () => {
     // wait for the redirect to settle before asserting.
     test.slow();
     await page.goto(`${BASE}/projects/${projectId}`, { waitUntil: 'domcontentloaded' });
-    await page.waitForURL('**/login', { timeout: 30000 });
+    await page.waitForURL(/\/login(\?|$)/, { timeout: 30000 });
     await expect(page.getByTitle('Notification subscriptions for this project')).not.toBeVisible();
   });
 

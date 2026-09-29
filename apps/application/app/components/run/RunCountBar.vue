@@ -4,13 +4,16 @@
  * clickable segments. Each segment is a filter — clicking it toggles that
  * status in the Tests tab's filter set and switches to the Tests tab. Zero-count
  * segments are hidden. Flaky (passed on retry) is a subset of passed, so it is
- * subtracted from the passed segment to avoid double-counting.
+ * subtracted from the passed segment to avoid double-counting; fixme is a
+ * subset of skipped the same way, drawn in the second grey.
  */
 const props = defineProps<{
   passed: number;
   failed: number;
   flaky: number;
   skipped: number;
+  /** `test.fixme()` skips — a subset of `skipped`. */
+  fixme?: number;
   didNotRun: number;
   total: number;
   /** The status filters currently active, shared with the Tests tab chips. */
@@ -29,12 +32,20 @@ interface Segment {
 
 const segments = computed<Segment[]>(() => {
   const passedOnly = Math.max(0, props.passed - props.flaky);
+  const fixme = Math.min(props.fixme ?? 0, props.skipped);
   return (
     [
       { key: 'passed', status: 'passed', label: 'passed', count: passedOnly, palette: STATUS_PALETTE.passed },
       { key: 'failed', status: 'failed', label: 'failed', count: props.failed, palette: STATUS_PALETTE.failed },
       { key: 'flaky', status: 'flaky', label: 'passed on retry', count: props.flaky, palette: STATUS_PALETTE.flaky },
-      { key: 'skipped', status: 'skipped', label: 'skipped', count: props.skipped, palette: STATUS_PALETTE.skipped },
+      {
+        key: 'skipped',
+        status: 'skipped',
+        label: 'skipped',
+        count: props.skipped - fixme,
+        palette: STATUS_PALETTE.skipped,
+      },
+      { key: 'fixme', status: 'fixme', label: 'fixme', count: fixme, palette: STATUS_PALETTE.fixme },
       {
         key: 'didnotrun',
         status: 'didnotrun',

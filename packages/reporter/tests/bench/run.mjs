@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url';
  *   fixtures      + console/network listeners, web vitals, the teardown flush
  *   page-state    + the end-of-test page/storage/cookie read
  *   full          + locator healing capture (the shipped default)
+ *   code-reach    + Chromium JavaScript coverage for code reach (opt-in)
  *
  * Every variant runs once per round, in the same order, and the rounds are
  * repeated: a machine that drifts (thermal throttling, a noisy neighbor)
@@ -58,6 +59,16 @@ const VARIANTS = [
     key: 'full',
     label: '+ locator healing (default)',
     env: { PIWI_BENCH_FIXTURES: 'on', PIWI_CAPTURE_LOCATORS: 'true', PIWI_CAPTURE_PAGE_STATE: 'true' },
+  },
+  {
+    key: 'code-reach',
+    label: '+ code reach (opt-in)',
+    env: {
+      PIWI_BENCH_FIXTURES: 'on',
+      PIWI_CAPTURE_LOCATORS: 'true',
+      PIWI_CAPTURE_PAGE_STATE: 'true',
+      PIWI_CAPTURE_CODE_REACH: 'true',
+    },
   },
 ];
 

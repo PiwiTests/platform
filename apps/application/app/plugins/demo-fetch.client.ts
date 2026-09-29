@@ -1,4 +1,3 @@
-import { configureDemoDb } from '~/demo/db.client';
 import { DEFAULT_DEMO_USER_ID, DEMO_USER_STORAGE_KEY } from '~/demo/demo-users';
 
 /**
@@ -40,11 +39,15 @@ export default defineNuxtPlugin(() => {
 
   // Pass the base URL to the db module so it can locate WASM + seed SQL
   // in the (unlikely) event a request is handled before the SW is active.
+  // Imported lazily: the module pulls the server schema, server utils and
+  // Drizzle, which a non-demo client (and its dev server) should never load.
+  // Any later window-side caller reaches the module through the same dynamic
+  // import, so this `then` still runs before theirs.
   const base = (config.app?.baseURL ?? '/').replace(/\/$/, '');
-  configureDemoDb(base);
+  void import('~/demo/db.client').then(({ configureDemoDb }) => configureDemoDb(base));
 
   // Pre-register the bundled trace viewer's own service worker. Without this,
-  // the first "View trace" navigation is controlled by the demo API service
+  // the first "Open trace" navigation is controlled by the demo API service
   // worker (scope covers the whole app), which cannot answer the viewer's
   // virtual snapshot URLs — the viewer would hang until a manual reload. With
   // the viewer SW registered up front, its more specific scope takes the page

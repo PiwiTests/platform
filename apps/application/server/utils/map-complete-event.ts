@@ -29,6 +29,9 @@ export interface ParsedCompleteEvent {
   networkRequests?: unknown;
   webVitals?: unknown;
   pageState?: unknown;
+  pageInventory?: unknown;
+  locatorPages?: unknown;
+  codeReach?: unknown;
   aiUsage?: unknown;
   consoleLogs?: unknown;
   dialogs?: unknown;
@@ -48,6 +51,7 @@ export interface ParsedCompleteEvent {
   browser?: unknown;
   locatorSnapshots?: unknown;
   didNotRunReason?: string | null;
+  expectedStatus?: string | null;
   blockedBy?: string | null;
 }
 
@@ -85,6 +89,9 @@ export function mapCompleteEventToRunCase(tc: ParsedCompleteEvent): RunCaseInput
     networkRequests: tc.networkRequests,
     webVitals: tc.webVitals,
     pageState: tc.pageState,
+    pageInventory: tc.pageInventory,
+    locatorPages: tc.locatorPages,
+    codeReach: tc.codeReach,
     aiUsage: tc.aiUsage,
     consoleLogs: tc.consoleLogs,
     dialogs: tc.dialogs,
@@ -98,6 +105,7 @@ export function mapCompleteEventToRunCase(tc: ParsedCompleteEvent): RunCaseInput
     browser: tc.browser ?? null,
     locatorSnapshots: (tc.locatorSnapshots as LocatorSnapshot[] | null | undefined) ?? null,
     didNotRunReason: tc.didNotRunReason ?? null,
+    expectedStatus: tc.expectedStatus ?? null,
     blockedBy: tc.blockedBy ?? null,
   };
 }

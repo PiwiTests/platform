@@ -9,6 +9,7 @@ import {
   getRecordIntent,
   clearRecordIntent,
   decideRecordIntent,
+  serveAppendRecordingEvent,
   RECORD_INTENT_TTL_MS,
   type RecordIntent,
 } from '../../src/shared/recording-storage.js';
@@ -58,6 +59,16 @@ describe('recording state', () => {
     expect(state.active).toBe(true);
     expect(state.grantedOriginPattern).toBe('https://x.test/*');
     expect(state.startedAt).not.toBeNull();
+    expect(state.mode).toBe('actions');
+    expect(state.bugToken).toBeNull();
+  });
+
+  it('a bug recording gets a fresh token each time', async () => {
+    const first = await startRecording('https://x.test/*', 'bug');
+    const second = await startRecording('https://x.test/*', 'bug');
+    expect(first.mode).toBe('bug');
+    expect(first.bugToken).toMatch(/^[0-9a-f]{32}$/);
+    expect(second.bugToken).not.toBe(first.bugToken);
   });
 
   it('appendRecordingEvent is a no-op when not recording', async () => {
@@ -122,6 +133,51 @@ describe('recording state', () => {
     expect(state.events.map((e) => e.timestamp)).toEqual([2]);
   });
 
+  it('in a Firefox content script, each append is one message, sent without waiting for the last', async () => {
+    // No session storage in this context: the background does the whole
+    // read-modify-write. Sending at once is what keeps a click that navigates
+    // away from being lost — the page may unload before an earlier append settles.
+    const sent: unknown[] = [];
+    const answers: Array<() => void> = [];
+    (globalThis as any).chrome = {
+      storage: { local: {} },
+      runtime: {
+        sendMessage: (msg: unknown) => {
+          sent.push(msg);
+          return new Promise((resolve) => answers.push(() => resolve({ ok: true, state: { active: true } })));
+        },
+      },
+    };
+
+    const appends = [appendRecordingEvent(clickEvent), appendRecordingEvent({ ...clickEvent, timestamp: 2 })];
+    await Promise.resolve();
+    expect(sent).toEqual([
+      { type: 'piwi-append-recording-event', event: clickEvent },
+      { type: 'piwi-append-recording-event', event: { ...clickEvent, timestamp: 2 } },
+    ]);
+    answers.forEach((answer) => answer());
+    expect((await Promise.all(appends)).map((state) => state.active)).toEqual([true, true]);
+  });
+
+  it('in a Firefox content script, a failed append rejects to its caller', async () => {
+    (globalThis as any).chrome = {
+      storage: { local: {} },
+      runtime: { sendMessage: async () => ({ ok: false, error: 'QUOTA_BYTES quota exceeded' }) },
+    };
+    await expect(appendRecordingEvent(clickEvent)).rejects.toThrow(/quota/i);
+  });
+
+  it('the background serves appends from content scripts in order, and refuses a malformed one', async () => {
+    await startRecording('https://x.test/*');
+    const answers = await Promise.all([
+      serveAppendRecordingEvent(clickEvent),
+      serveAppendRecordingEvent({ ...clickEvent, timestamp: 2 }),
+    ]);
+    expect(answers.every((answer) => answer.ok)).toBe(true);
+    expect((await getRecordingState()).events.map((e) => e.timestamp)).toEqual([1, 2]);
+    expect(await serveAppendRecordingEvent(null)).toEqual({ ok: false, error: 'Malformed recording event.' });
+  });
+
   it('stopRecording flips active to false but keeps events', async () => {
     await startRecording('https://x.test/*');
     await appendRecordingEvent(clickEvent);
@@ -143,11 +199,12 @@ describe('recording state', () => {
 describe('record intent', () => {
   it('round-trips the origin pattern and tab, stamping a creation time', async () => {
     const before = Date.now();
-    await setRecordIntent({ originPattern: 'https://x.test/*', tabId: 7 });
+    await setRecordIntent({ originPattern: 'https://x.test/*', tabId: 7, mode: 'bug' });
     const intent = await getRecordIntent();
     expect(intent).not.toBeNull();
     expect(intent!.originPattern).toBe('https://x.test/*');
     expect(intent!.tabId).toBe(7);
+    expect(intent!.mode).toBe('bug');
     expect(intent!.createdAt).toBeGreaterThanOrEqual(before);
   });
 
@@ -161,14 +218,14 @@ describe('record intent', () => {
   });
 
   it('clearRecordIntent removes it', async () => {
-    await setRecordIntent({ originPattern: 'https://x.test/*', tabId: 7 });
+    await setRecordIntent({ originPattern: 'https://x.test/*', tabId: 7, mode: 'bug' });
     await clearRecordIntent();
     expect(await getRecordIntent()).toBeNull();
   });
 });
 
 describe('decideRecordIntent', () => {
-  const intent: RecordIntent = { originPattern: 'https://x.test/*', tabId: 7, createdAt: 1_000 };
+  const intent: RecordIntent = { originPattern: 'https://x.test/*', tabId: 7, mode: 'actions', createdAt: 1_000 };
 
   it('ignores a grant when nothing is parked', () => {
     expect(decideRecordIntent(null, ['https://x.test/*'], 1_000)).toEqual({ action: 'ignore' });
@@ -183,6 +240,7 @@ describe('decideRecordIntent', () => {
       action: 'start',
       originPattern: 'https://x.test/*',
       tabId: 7,
+      mode: 'actions',
     });
   });
 

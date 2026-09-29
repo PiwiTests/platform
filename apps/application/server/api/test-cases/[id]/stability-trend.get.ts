@@ -1,18 +1,24 @@
-import { getTestCaseStabilityTrend } from '#shared/handlers/test-cases';
+import { getTestCaseStabilityTrend, STABILITY_TREND_DEFAULT_DAYS } from '#shared/handlers/test-cases';
+import { parseGranularity } from '#shared/analytics/period';
 import { optionalIntQuery } from '../../../utils/query-params';
 import { requireResolvedProjectAccess, requireRouteId, resolveCaseProjectId } from '../../../utils/project-access';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Test Cases'],
-    summary: 'Stability trend for a test case (experimental)',
+    summary: 'Stability trend for a test case',
     description:
-      'Returns time-series of flaky rate, pass rate, avg duration grouped into N buckets for a single test case. Experimental: consumed only by the MCP `get_test_case_stability_trend` tool with no first-party UI consumer yet, so the response shape is not frozen and may change.',
-    'x-experimental': true,
+      'Returns the pass rate, flaky rate and average duration of one test case in UTC time buckets over the last `days` days (probe runs left out); a bucket without an execution has null rates. The Trend tab of the test page and the MCP `get_test_stability_trend` tool read it.',
     'x-required-roles': ['administrator', 'reporter', 'user'],
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
-      { name: 'buckets', in: 'query', schema: { type: 'integer', default: 20 } },
+      { name: 'days', in: 'query', schema: { type: 'integer', default: 90, minimum: 1, maximum: 3650 } },
+      {
+        name: 'by',
+        in: 'query',
+        description: 'Bucket granularity: auto (about 31 buckets), day, week or month.',
+        schema: { type: 'string', enum: ['auto', 'day', 'week', 'month'], default: 'auto' },
+      },
     ],
   },
 });
@@ -21,10 +27,12 @@ export default eventHandler(async (event) => {
   const testCaseId = requireRouteId(event, 'id', 'test case ID');
   const { db } = await requireResolvedProjectAccess(event, testCaseId, resolveCaseProjectId, 'Test case');
 
-  const bucketCount = optionalIntQuery(event, 'buckets', { default: 20 });
+  const days = optionalIntQuery(event, 'days', { default: STABILITY_TREND_DEFAULT_DAYS });
+  const by = getQuery(event).by;
+  const granularity = parseGranularity(typeof by === 'string' ? by : null) ?? 'auto';
 
   try {
-    return await getTestCaseStabilityTrend(db, testCaseId, bucketCount);
+    return await getTestCaseStabilityTrend(db, testCaseId, { days, granularity });
   } catch (err) {
     if (err instanceof Error && err.message === 'Test case not found') {
       throw apiError({ statusCode: 404, message: 'Test case not found' });

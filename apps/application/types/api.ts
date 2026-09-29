@@ -1,13 +1,16 @@
+import type { Serialize, Simplify } from 'nitropack/types';
 /**
  * Shared types for API responses and requests
  * These types are used by both the server API and the app frontend
  */
 
-import type { Role, FilterDetails, TestMetadata, TestSourceFrame } from '#shared/types';
+import type { Role, FilterDetails, KeepSource, TestMetadata, TestSourceFrame, TestStepEventHook } from '#shared/types';
 import type { ScmProviderName } from '#shared/scm-urls';
 import type { PageDiffSummary, PageDiffHunk } from '#shared/page-diff';
 import type { ClusterState } from '#shared/cluster-state';
 import type { NextStep } from '#shared/next-step';
+import type { KnownIssueRef } from '#shared/handlers/known-issues';
+import type { ProjectAccessGrid, ProjectAccessUser } from '#shared/project-access';
 export type { TestMetadata, TestSourceFrame };
 export type { ClusterState } from '#shared/cluster-state';
 export type { NextStep } from '#shared/next-step';
@@ -243,6 +246,8 @@ export interface ProjectWithStats {
     passedTests: number;
     failedTests: number;
     skippedTests: number;
+    /** `test.fixme()` skips — a subset of `skippedTests`. */
+    fixmeTests?: number;
     didNotRunTests: number;
     flakyTests: number;
     totalTests: number;
@@ -353,6 +358,8 @@ export interface ProjectWithTestRuns {
   createdAt: Date;
   updatedAt: Date;
   testRuns: TestRunSummary[];
+  /** Test import and bugs folder for specs rendered from bug reports. */
+  generatedSpecs?: { testImport?: string | null; bugsFolder?: string | null } | null;
   /** Stored per-project capability decisions, for the edit form's overrides. */
   capabilities?: Partial<
     Record<import('#shared/capabilities').CapabilityId, import('#shared/capabilities').ProjectDecision>
@@ -372,6 +379,10 @@ export interface ProjectDetails {
   defaultBranch?: string | null;
   /** Provider-specific "re-run from the dashboard" config (secrets excluded). */
   ciRerun?: import('#shared/ci-rerun').CiRerunSettings | null;
+  /** Test import and bugs folder for specs rendered from bug reports. */
+  generatedSpecs?: { testImport?: string | null; bugsFolder?: string | null } | null;
+  /** Per-project targets on catalog metrics. */
+  targets?: import('#shared/analytics/targets').ProjectTargets | null;
   color?: string | null;
   tags?: TagInfo[];
   /** Stored per-project capability decisions, for the edit form's overrides. */
@@ -397,6 +408,8 @@ export interface TestRunSummary {
   passedTests: number;
   failedTests: number;
   skippedTests: number;
+  /** `test.fixme()` skips — a subset of `skippedTests`. */
+  fixmeTests?: number;
   didNotRunTests: number;
   flakyTests: number;
   avgTestDuration?: number | null;
@@ -410,6 +423,10 @@ export interface TestRunSummary {
   metadata?: any | null;
   isFullRun?: boolean;
   filterDetails?: FilterDetails | null;
+  /** Set when the run is kept forever: retention never deletes it. */
+  keptAt?: string | Date | null;
+  keepSource?: KeepSource | null;
+  keepReason?: string | null;
   createdAt: Date;
 }
 
@@ -443,6 +460,13 @@ export interface TestRunDetails {
   label?: string | null;
   playwrightVersion?: string | null;
   reporterVersion?: string | null;
+  /** Set when the run is kept forever: retention never deletes it. */
+  keptAt?: string | Date | null;
+  /** Who asked for the keep: a person, the reporter at ingest, or a release marker. */
+  keepSource?: KeepSource | null;
+  keepReason?: string | null;
+  /** Display name of the person who kept the run, when one did and still exists. */
+  keptByName?: string | null;
   createdAt: Date;
   project?: {
     id: number;
@@ -497,6 +521,8 @@ export interface TestRunForChart {
   passedTests: number;
   failedTests: number;
   skippedTests: number;
+  /** `test.fixme()` skips — a subset of `skippedTests`. */
+  fixmeTests?: number;
   didNotRunTests: number;
   flakyTests: number;
   totalTests: number;
@@ -523,10 +549,15 @@ export interface PerformanceStep {
   subtitle?: string;
   /** Curated per-step arguments (rendered locator, URL, value, `test.step` author values). */
   params?: Record<string, string | number | boolean>;
-  /** Error message when the step failed (undefined when the step passed). */
-  error?: { message?: string };
+  /**
+   * The step's error when it failed (undefined when the step passed): its
+   * message, and where it was thrown (`file:line:col`) on runs from a recent reporter.
+   */
+  error?: { message?: string; location?: string };
   /** True when the step failed. */
   failed?: boolean;
+  /** True when the test caught the step's error and went on; set by a recent reporter. */
+  recovered?: boolean;
   /** Source pointer `file:line:col` (not a code snippet); present on runs from a recent reporter. */
   location?: string;
   /** Absolute start time in ms; present on runs from a recent reporter. Enables per-step timing. */
@@ -546,6 +577,10 @@ export interface TestStepEvent {
   duration: number;
   status: string;
   location?: string | null;
+  /** The first line of the step's error, when it failed — hook and fixture events only. */
+  error?: string | null;
+  /** The hooks and fixtures a hook section (`Before Hooks`, `After Hooks`) ran, in order. */
+  hooks?: TestStepEventHook[] | null;
 }
 
 /**
@@ -595,6 +630,8 @@ export interface NetworkRequest {
   startTime?: number;
   serverLogs?: ServerLogEntry[];
   serverTraces?: ServerSpanEntry[];
+  /** Why the request failed without a response (`net::ERR_CONNECTION_RESET`); null or absent when it finished. */
+  failure?: string | null;
 }
 
 /** One frame of the trace-derived full call stack (innermost first). */
@@ -890,6 +927,8 @@ export interface TestCaseResult {
   isNewFlaky?: boolean | null;
   /** Why a `didnotrun` case never executed; null for tests that ran. */
   didNotRunReason?: DidNotRunReason | null;
+  /** Playwright's expected status: `failed` for a `test.fail()` test. */
+  expectedStatus?: string | null;
   /** For a `previous-failure` cascade, the location of the failing test that blocked it. */
   blockedBy?: string | null;
 }
@@ -904,6 +943,11 @@ export interface BlockedCaseRef {
   title: string;
   location: string;
   status: string;
+  /**
+   * On the execution that blocked this one: the hook or fixture its failure
+   * happened in (a failing `beforeAll` skips the rest of its group), or null.
+   */
+  failedIn?: import('#shared/step-tree').FailureHookContext | null;
 }
 
 /**
@@ -945,7 +989,15 @@ export interface FailureGroup {
    * locator already passes at that call site in a later run.
    */
   locatorHealing?: { recommended: string; source: string; healed: boolean } | null;
+  /** The tracker issue the cluster is known by, when one is linked or was created for it. */
+  knownIssue?: KnownIssueRef | null;
 }
+
+/**
+ * Per-cluster facts a run's test rows show next to a failing execution: the
+ * cluster's name, its triage status and the issue it is tracked in.
+ */
+export type RunClusterMeta = Record<number, { name: string; status: string | null; issue?: KnownIssueRef | null }>;
 
 /**
  * What a landed fix was corroborated against.
@@ -1072,6 +1124,8 @@ export interface TestCaseWithStats {
   passedRuns: number;
   failedRuns: number;
   skippedRuns: number;
+  /** Runs skipped by `test.fixme()` — a subset of `skippedRuns`. */
+  fixmeRuns?: number;
   didNotRunRuns: number;
   flakyRuns: number;
   recentFlakyRuns?: number;
@@ -1199,6 +1253,20 @@ export interface ProjectMembersResponse {
   items: ProjectMemberEntry[];
 }
 
+/**
+ * Permission grid (GET /api/project-access)
+ */
+export interface ProjectAccessResponse extends ProjectAccessGrid {
+  authEnabled: boolean;
+}
+
+/**
+ * One grid cell changed (PUT /api/project-access) — the user's updated row
+ */
+export interface ProjectAccessUpdateResponse {
+  user: ProjectAccessUser;
+}
+
 // ============================================================================
 // Admin types
 // ============================================================================
@@ -1268,6 +1336,12 @@ export interface StorageAnalysisData {
   overTime: StorageTimeBucket[];
   /** Width of each `overTime` bucket, in days. */
   bucketDays: number;
+  /**
+   * Runs kept forever (never pruned by retention) and the files they hold.
+   * `bytes` counts their own files only — a deduplicated trace is shared, so
+   * it is not attributed to any one run.
+   */
+  kept: { runs: number; files: number; bytes: number };
   /** When the analysis was computed (ISO). */
   generatedAt: string;
 }
@@ -1449,6 +1523,16 @@ export interface DiagnosisContextCoverage {
     baselineKind?: 'run-green' | 'test-green' | 'manual';
     /** Error message when the SCM diff fetch failed. */
     error?: string | null;
+    /** The repository the runs point at, when they record one. */
+    repositoryUrl?: string | null;
+    /** The commit range compared, as short SHAs, when both ends are known. */
+    range?: { from: string; to: string } | null;
+    /** The range on the Git host's own compare page, when the host is one Piwi knows. */
+    compareUrl?: string | null;
+    /** The local command that lists the range. */
+    gitCommand?: string | null;
+    /** Whether a repository access token is set for the project or the instance. */
+    hasToken?: boolean;
   } | null;
   /** True when the last passing run is newer than the cluster's lastSeen — test may already be fixed. */
   alreadyGreen?: boolean;
@@ -1677,6 +1761,8 @@ export interface AiSettings {
   language: string | null;
   /** True when the language is fixed by `PIWI_AI_LANGUAGE` (rendered locked). */
   languageEnvManaged: boolean;
+  /** False when `PIWI_SECRET_KEY` is unset, so an API key or SCM token cannot be saved. */
+  canStoreSecrets: boolean;
 }
 
 // ============================================================================
@@ -1792,6 +1878,22 @@ export interface FlakyTest {
   avgFailedDurationMs: number;
 }
 
+/** A flaky test a Flake Lab verified fix took off the ranking, until it retry-passes again. */
+export interface VerifiedFixedFlakyTest {
+  testCaseId: number;
+  title: string;
+  filePath: string;
+  retryPassRuns: number;
+  lastFlakeAt: string | Date | null;
+  verifiedFix: {
+    testCaseId: number;
+    experimentId: number;
+    commit: string | null;
+    verifiedAt: string;
+    flakedAgainAt: string | null;
+  };
+}
+
 /** A page diff between a failing execution and its last green sample. */
 export interface PageDiff {
   status: 'ok' | 'no-failure-snapshot' | 'no-green-sample' | 'not-applicable' | 'not-found';
@@ -1807,3 +1909,12 @@ export interface PageDiff {
   summary?: import('#shared/page-diff').PageDiffSummary;
   hunks?: import('#shared/page-diff').PageDiffHunk[];
 }
+
+/**
+ * The JSON response type of a server route handler, as the client receives it
+ * (dates serialized to strings): `ApiResponse<typeof import('~~/server/api/version.get').default>`.
+ * The app's `$fetch` and `useFetch` carry no route map (see the `types:extend`
+ * hook in `nuxt.config.ts`), so a call site names its response type, with this
+ * helper or with a type from this file.
+ */
+export type ApiResponse<H extends (...args: any[]) => unknown> = Simplify<Serialize<Awaited<ReturnType<H>>>>;

@@ -498,6 +498,181 @@
       "when": 1790019415142,
       "tag": "0070_military_jackal",
       "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1790058857786,
+      "tag": "0071_conscious_domino",
+      "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1790059357784,
+      "tag": "0072_old_stranger",
+      "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1790063153501,
+      "tag": "0073_cynical_dazzler",
+      "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1790183811733,
+      "tag": "0074_quiet_professor_monster",
+      "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1790276751174,
+      "tag": "0075_nostalgic_living_mummy",
+      "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1790279695607,
+      "tag": "0076_violet_switch",
+      "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1790281918660,
+      "tag": "0077_volatile_warhawk",
+      "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1790314946412,
+      "tag": "0078_crazy_zaran",
+      "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1790323314604,
+      "tag": "0079_flashy_zeigeist",
+      "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "7",
+      "when": 1790338887027,
+      "tag": "0080_famous_madame_masque",
+      "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1790344321995,
+      "tag": "0081_purple_mister_sinister",
+      "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1790346266521,
+      "tag": "0082_icy_squirrel_girl",
+      "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1790366582641,
+      "tag": "0083_thin_kree",
+      "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1790415994624,
+      "tag": "0084_square_iron_lad",
+      "breakpoints": true
+    },
+    {
+      "idx": 85,
+      "version": "7",
+      "when": 1790470774860,
+      "tag": "0085_locator_pages",
+      "breakpoints": true
+    },
+    {
+      "idx": 86,
+      "version": "7",
+      "when": 1790500338797,
+      "tag": "0086_nasty_reavers",
+      "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1790532406006,
+      "tag": "0087_extension_connect",
+      "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1790539689770,
+      "tag": "0088_glorious_red_hulk",
+      "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1790542932799,
+      "tag": "0089_bug_reports",
+      "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1790543291262,
+      "tag": "0090_entity_links_bug_report",
+      "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "7",
+      "when": 1790573600999,
+      "tag": "0091_url_pattern_path_prefix",
+      "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1790575212414,
+      "tag": "0092_network_request_failure",
+      "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1790576262868,
+      "tag": "0093_url_pattern_test_path_prefix",
+      "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1790578451584,
+      "tag": "0094_jittery_meltdown",
+      "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "7",
+      "when": 1790627191689,
+      "tag": "0095_smooth_multiple_man",
+      "breakpoints": true
     }
   ]
 }

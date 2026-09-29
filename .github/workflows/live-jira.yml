@@ -47,5 +47,9 @@ jobs:
       - name: Install Playwright Chromium
         run: npx playwright install chromium --with-deps --only-shell
 
+      # Under CI the live config starts the production server from `.output`.
+      - name: Build the app
+        run: npm run app:build
+
       - name: Run the live Jira E2E
         run: npm run app:test:jira:live

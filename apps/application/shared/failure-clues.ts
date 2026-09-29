@@ -24,6 +24,7 @@ import type { LocatorHealingResult } from '#shared/locator-healing.types';
 import type { PageStateLike } from '#shared/page-state';
 import { ariaTextPreferJson } from '#shared/aria-json';
 import { intervalsOverlap } from '#shared/lock-overlap';
+import { requestRouteKey } from '#shared/utils/route';
 
 /** The environment-diff facts the engine reads — the pure subset of the server result. */
 export interface FailureClueEnvironmentDiff {
@@ -54,7 +55,8 @@ export type FailureClueRule =
   | 'lock-cross-shard'
   | 'timeout-budget'
   | 'environment-changed'
-  | 'browser-specific';
+  | 'browser-specific'
+  | 'known-flake-suspect';
 
 /** How strongly a clue points at the cause; drives ranking and the strength chip. */
 export type FailureClueStrength = 'strong' | 'medium' | 'weak';
@@ -139,6 +141,8 @@ export interface FailureClueNetworkRequest {
   duration?: number | null;
   startTime?: number | null;
   serverLogs?: Array<{ level?: string | null; message?: string | null; timestamp?: number | null }> | null;
+  /** Why the request failed without a response (`net::ERR_CONNECTION_RESET`). */
+  failure?: string | null;
 }
 
 /** One console entry in the execution, with its epoch-ms timestamp. */
@@ -188,6 +192,33 @@ export interface FailureClueLockHolder {
   locks: string[];
 }
 
+/**
+ * One suspect of the test's flake profile, as the clue reads it: which failing
+ * executions show it, and the counts behind it.
+ */
+export interface FailureClueFlakeSuspect {
+  kind: 'slow-route' | 'failed-route' | 'alongside' | 'before' | 'load' | 'project';
+  label: string;
+  counts: { failuresWith: number; failures: number; passesWith: number; passes: number };
+  route?: string;
+  thresholdMs?: number;
+  title?: string;
+  project?: string;
+  executionIds: number[];
+  /**
+   * The flake-lab arm that reproduced this suspect in the test's latest
+   * experiment testing it, when it did: the strong form of the clue.
+   */
+  reproduced?: {
+    label: string;
+    matchingFailures: number;
+    runs: number;
+    controlMatchingFailures: number;
+    controlRuns: number;
+    pValue: number | null;
+  } | null;
+}
+
 /** The cluster's recorded fix history, when this failure belongs to a cluster. */
 export interface FailureClueClusterFix {
   fixCommit?: string | null;
@@ -235,12 +266,20 @@ export interface FailureClueInput {
   timeout: number | null;
   /** The slow-request threshold; defaults to 1500 ms. */
   slowRequestMs?: number | null;
+  /** The test's flake suspects, ranked; empty or absent when the test is not flaky. */
+  flakeSuspects?: FailureClueFlakeSuspect[] | null;
 }
 
 /** The most a clue list ever carries — keeps the card and the prompt readable. */
 const MAX_CLUES = 8;
 
 const DEFAULT_SLOW_REQUEST_MS = 1500;
+/**
+ * How far past the failure a failed request may be recorded as ending: the
+ * capture stamps a response when its body is read, a few ms after the test
+ * already saw its status.
+ */
+const REQUEST_END_SLACK_MS = 250;
 
 /** Rule precedence for the final tiebreak, in the order the rules are declared. */
 const RULE_ORDER: FailureClueRule[] = [
@@ -259,6 +298,7 @@ const RULE_ORDER: FailureClueRule[] = [
   'timeout-budget',
   'environment-changed',
   'browser-specific',
+  'known-flake-suspect',
 ];
 
 const STRENGTH_RANK: Record<FailureClueStrength, number> = { strong: 0, medium: 1, weak: 2 };
@@ -292,10 +332,15 @@ function pathOf(url: string | null | undefined): string | null {
   }
 }
 
-/** `t-1.1 s` style lead, or empty when the anchor is at/after the failure. */
+/**
+ * How long before the failure the anchor happened (`1.1 s before the failure`);
+ * under 100 ms, and up to the request slack after it, `just before the
+ * failure`; empty when the anchor is later than that.
+ */
 function formatLead(at: number, failureAt: number): string {
   const lead = failureAt - at;
-  if (!Number.isFinite(lead) || lead <= 0) return '';
+  if (!Number.isFinite(lead) || lead < -REQUEST_END_SLACK_MS) return '';
+  if (lead < 100) return 'just before the failure';
   return `${(lead / 1000).toFixed(1)} s before the failure`;
 }
 
@@ -320,6 +365,55 @@ function readLocatorTarget(parsed: ParsedPlaywrightError | null): LocatorTarget 
     null;
   const testId = /getByTestId\(\s*['"`]([^'"`]+)['"`]/.exec(locator)?.[1] ?? null;
   return { name: name ? name.toLowerCase() : null, role, testId };
+}
+
+/** "7 of this test's 8 failures and 3 of its 44 passes". */
+function suspectCounts(c: FailureClueFlakeSuspect['counts']): string {
+  return `${c.failuresWith} of this test's ${c.failures} failures and ${c.passesWith} of its ${c.passes} passes`;
+}
+
+/** "; a lab run reproduced it: 3 of 4 under delay GET /api/cart 1.8 s, against 0 of 10 without, p = 0.011". */
+function reproducedText(lab: NonNullable<FailureClueFlakeSuspect['reproduced']>): string {
+  const p = lab.pValue == null ? '' : lab.pValue < 0.001 ? ', p < 0.001' : `, p = ${lab.pValue.toFixed(3)}`;
+  return `; a lab run reproduced it: ${lab.matchingFailures} of ${lab.runs} under ${lab.label}, against ${lab.controlMatchingFailures} of ${lab.controlRuns} without${p}`;
+}
+
+/** The clue for a flake suspect this execution shows, in the words of its kind; strong once a lab run reproduced it. */
+function knownFlakeSuspectClue(suspect: FailureClueFlakeSuspect, requests: FailureClueNetworkRequest[]): FailureClue {
+  const lab = suspect.reproduced;
+  const counts = suspectCounts(suspect.counts) + (lab ? reproducedText(lab) : '');
+  const base = {
+    id: 'known-flake-suspect',
+    rule: 'known-flake-suspect' as const,
+    strength: lab ? ('strong' as const) : ('weak' as const),
+    title: lab ? `A reproduced flake cause: ${suspect.label}` : `A known flake suspect: ${suspect.label}`,
+  };
+  if (suspect.kind === 'slow-route' || suspect.kind === 'failed-route') {
+    const route = suspect.route ?? '';
+    const matches = requests
+      .map((req, index) => ({ req, index }))
+      .filter((m) => requestRouteKey(m.req.method, m.req.url) === route);
+    const slowest = matches.sort((a, b) => (b.req.duration ?? 0) - (a.req.duration ?? 0))[0];
+    const citations = [{ section: 'networkRequests', ...(slowest ? { index: slowest.index } : {}) }];
+    if (suspect.kind === 'slow-route') {
+      const took = slowest?.req.duration != null ? ` took ${(slowest.req.duration / 1000).toFixed(1)} s` : ' was slow';
+      const threshold = suspect.thresholdMs != null ? ` (${Math.floor(suspect.thresholdMs / 100) / 10} s or more)` : '';
+      return { ...base, detail: `${route}${took}; it is slow${threshold} in ${counts}.`, citations };
+    }
+    return { ...base, detail: `${route} failed; it fails in ${counts}.`, citations };
+  }
+  const citations = [{ section: 'recurrenceFlakiness' }];
+  const title = suspect.title ?? 'another test';
+  switch (suspect.kind) {
+    case 'alongside':
+      return { ...base, detail: `"${title}" was running at the same time; it runs alongside in ${counts}.`, citations };
+    case 'before':
+      return { ...base, detail: `"${title}" ran just before on this worker; it does in ${counts}.`, citations };
+    case 'load':
+      return { ...base, detail: `${suspect.label} during this attempt, as in ${counts}.`, citations };
+    default:
+      return { ...base, detail: `It ran on ${suspect.project ?? 'this project'}, as in ${counts}.`, citations };
+  }
 }
 
 export function buildFailureClues(input: FailureClueInput): FailureCluesReport {
@@ -374,14 +468,15 @@ export function buildFailureClues(input: FailureClueInput): FailureCluesReport {
       .filter((p) => {
         const status = isFiniteNumber(p.req.status) ? p.req.status : 0;
         const bad = status >= 500 || status <= 0;
-        return bad && p.endAt != null && p.endAt <= failureAt && p.endAt >= leadStart;
+        return bad && p.endAt != null && p.endAt <= failureAt + REQUEST_END_SLACK_MS && p.endAt >= leadStart;
       })
       .sort((a, b) => (b.endAt ?? 0) - (a.endAt ?? 0));
     failedRequests.slice(0, 2).forEach((p, i) => {
       const method = str(p.req.method) || 'GET';
       const path = pathOf(p.req.url) ?? str(p.req.url) ?? '(unknown)';
       const status = isFiniteNumber(p.req.status) ? p.req.status : 0;
-      const statusText = status <= 0 ? 'was aborted' : `returned ${status}`;
+      const failure = str(p.req.failure);
+      const statusText = failure ? `failed with ${failure}` : status <= 0 ? 'was aborted' : `returned ${status}`;
       const lead = p.endAt != null && failureAt != null ? formatLead(p.endAt, failureAt) : '';
       if (i === 0) facts.failedRequest = { method, path, statusText };
       add({
@@ -518,6 +613,7 @@ export function buildFailureClues(input: FailureClueInput): FailureCluesReport {
   const healing = input.healing;
   if (healing) {
     const renamed =
+      healing.source === 'diff-rename' ||
       healing.source === 'element-match' ||
       (healing.priorNameMayBeStale === true && healing.recommendation?.recommended != null);
     if (renamed) {
@@ -528,9 +624,12 @@ export function buildFailureClues(input: FailureClueInput): FailureCluesReport {
         rule: 'element-renamed',
         strength: 'strong',
         title: 'The element was renamed or moved',
-        detail: rec
-          ? `The failing locator no longer matches; the same element is now reachable as \`${rec.locator}\`.`
-          : 'The failing locator no longer matches — the element it named appears to have been renamed or moved.',
+        detail:
+          healing.source === 'diff-rename' && healing.diffRename && rec
+            ? `This change renamed \`${healing.diffRename.before}\` to \`${healing.diffRename.after}\` in ${healing.diffRename.file}:${healing.diffRename.line}; the same locator with the new text is \`${rec.locator}\`.`
+            : rec
+              ? `The failing locator no longer matches; the same element is now reachable as \`${rec.locator}\`.`
+              : 'The failing locator no longer matches — the element it named appears to have been renamed or moved.',
         citations: [{ section: 'locatorHealing' }],
       });
     }
@@ -597,13 +696,16 @@ export function buildFailureClues(input: FailureClueInput): FailureCluesReport {
 
   // ── wrong-page (strong) ────────────────────────────────────────────────────
   // The page ended on an auth/error route, or somewhere other than the last
-  // navigation the test asked for. Where the captured app state carries no URL,
-  // the last navigation step's own `params.url` stands in for where it ended.
-  const lastNav = lastNavigationPath(timeline);
+  // navigation the test asked for — when nothing the test did after it (a click,
+  // a submitted form) could have moved the page on. Where the captured app state
+  // carries no URL, the last navigation step's own `params.url` stands in for
+  // where it ended.
+  const navigation = lastNavigation(timeline);
+  const lastNav = navigation?.path ?? null;
   const endedPath = pathOf(input.appState?.url) ?? lastNav;
   if (endedPath) {
     const onKnownWrong = WRONG_PAGE_PATHS.find((p) => endedPath === p || endedPath.startsWith(`${p}/`));
-    const driftedFromNav = lastNav && pathsDiffer(endedPath, lastNav);
+    const driftedFromNav = lastNav && !navigation?.actedAfter && pathsDiffer(endedPath, lastNav);
     if (onKnownWrong || driftedFromNav) {
       facts.wrongPage = { endedPath, expected: driftedFromNav ? lastNav : null, via: null };
       add({
@@ -782,6 +884,12 @@ export function buildFailureClues(input: FailureClueInput): FailureCluesReport {
       citations: [{ section: 'browserDistribution' }],
     });
   }
+
+  // ── known-flake-suspect (weak; strong once reproduced) ────────────────────
+  // This failure shows a factor the test's history ranks as a flake suspect,
+  // and a flake-lab experiment may have reproduced it.
+  const suspect = (input.flakeSuspects ?? []).find((sus) => sus.executionIds.includes(input.execution.id));
+  if (suspect) add(knownFlakeSuspectClue(suspect, input.networkRequests));
 
   // The fact that a fix landed before and did not hold is not a clue about the
   // cause; it belongs to the verdict's `since.fixedBefore` and the situation
@@ -974,20 +1082,30 @@ function cap(text: string): string {
   return text.length > 0 ? text[0]!.toUpperCase() + text.slice(1) : text;
 }
 
+/** An API request step (`request.get(…)`), by its category or its HTTP-method title. */
+const API_REQUEST_LABEL_RE = /^(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|FETCH)\b/;
+
 /**
- * The path of the last navigation step the test performed, from the timeline.
- * A navigation step's own `params.url` (the full URL newer Playwright records)
- * is read first; otherwise the URL is parsed out of the step label.
+ * The path of the last navigation step the test performed, from the timeline,
+ * and whether the test clicked or typed successfully after it (an action that
+ * can move the page on). A navigation step's own `params.url` (the full URL
+ * newer Playwright records) is read first; otherwise the URL is parsed out of
+ * the step label. An API request is not a navigation.
  */
-function lastNavigationPath(timeline: FailureTimeline | null): string | null {
+function lastNavigation(timeline: FailureTimeline | null): { path: string | null; actedAfter: boolean } | null {
   if (!timeline) return null;
   const steps = timeline.lanes.steps;
+  let actedAfter = false;
   for (let i = steps.length - 1; i >= 0; i--) {
     const step = steps[i]!;
-    if (typeof step.params?.url === 'string' && step.params.url.length > 0) return pathOf(step.params.url);
+    if (step.category === 'api' || API_REQUEST_LABEL_RE.test(step.label)) continue;
+    if (typeof step.params?.url === 'string' && step.params.url.length > 0) {
+      return { path: pathOf(step.params.url), actedAfter };
+    }
     const label = step.label;
     const m = /(?:goto|waitForURL)\(\s*['"`]([^'"`]+)['"`]/.exec(label) ?? /https?:\/\/[^\s'"`)]+/.exec(label);
-    if (m) return pathOf(m[1] ?? m[0]);
+    if (m) return { path: pathOf(m[1] ?? m[0]), actedAfter };
+    if ((step.category === 'action' || step.category === 'input') && !step.failed) actedAfter = true;
   }
   return null;
 }

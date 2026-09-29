@@ -18,11 +18,15 @@ jobs:
       - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '10.x'
+      # Packs every packable project in the solution (the test project is not)
+      # at the one version release-please stamps on all of them. Re-running
+      # against a tag skips the packages already on nuget.org.
       - name: Pack & push
         run: |
-          dotnet pack integrations/aspnetcore/PiwiTests.Instrumentation.AspNetCore \
+          dotnet pack integrations/aspnetcore/PiwiTests.Instrumentation.slnx \
             -c Release \
             -o ./nupkg
           dotnet nuget push ./nupkg/*.nupkg \
             --api-key ${{ secrets.NUGET_API_KEY }} \
-            --source https://api.nuget.org/v3/index.json
+            --source https://api.nuget.org/v3/index.json \
+            --skip-duplicate

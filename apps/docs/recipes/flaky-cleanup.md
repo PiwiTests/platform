@@ -1,5 +1,6 @@
 ---
-title: Cut the flakiness that costs the most
+title: Cut costly flakiness
+description: "One afternoon to make an unreliable suite trustworthy: fix the flaky tests that cost the most, one root cause at a time, and quarantine the rest."
 lang: en-US
 ---
 
@@ -18,7 +19,7 @@ and status alternation, weighted 60/40 — shows its overall failure rate alongs
 by **impact**: wasted CI minutes (retry passes × average failed duration) plus a per-retry penalty.
 
 <figure>
-  <img src="/screenshots/flaky-detection.png" alt="The Flaky view listing intermittent tests with wasted CI minutes, score, failure rate, retry passes, flips, root cause and last flake, under root-cause filter chips and a runs-window selector">
+  <img src="/screenshots/flaky-detection.png" alt="The Flaky view listing intermittent tests with wasted CI minutes, score, failure rate, top suspect, root cause, retry passes or flips and last flake, under root-cause filter chips and a runs-window selector">
   <figcaption>The Flaky view — ranked by impact, filterable by root cause, over the last 20, 50 or 100 runs.</figcaption>
 </figure>
 
@@ -28,19 +29,13 @@ account for most of the total.
 
 ## 2. Filter by root cause and fix a class at once
 
-Every flaky test is tagged with one of five categories from heuristics over its errors, steps, and
-browser spread:
+Every flaky test carries one of five root-cause categories, `timing`, `network`, `assertion`, `environment` or
+`other`; [Flaky tests](/features/flaky-tests#root-cause-classification) explains the signals behind each.
 
-| Category | Typical signals | Usually fixed by |
-|---|---|---|
-| `timing` | Timeouts, "to be visible", `waitFor` | Replacing a sleep with a real wait condition |
-| `network` | `net::` / `ERR_` errors, 5xx, `ECONNREFUSED` | Stubbing, or a retry on the fixture rather than the test |
-| `assertion` | `expect(...)`, snapshot comparison, no timing noise | A tolerance, or a genuinely wrong expectation |
-| `environment` | Fails on exactly one browser while others pass | A browser-specific guard or a real compatibility bug |
-| `other` | No clear signal | Reading it |
-
-Filtering by category is the trick that makes an afternoon enough: eight `timing` flakes usually share
-one bad wait helper.
+Filtering by category is the trick that makes an afternoon enough, because a class usually shares one fix: eight
+`timing` flakes usually share one bad wait helper to replace with a real wait condition, a `network` class wants a
+stub or a retry on the fixture rather than the test, and an `environment` class is a browser-specific guard or a real
+compatibility bug.
 
 ## 3. Narrow the window before you conclude anything
 
@@ -67,15 +62,14 @@ is excluded from the [CI gate](/guide/ci#blocking-a-merge)'s verdict and nothing
 - **Debt** is reported in aggregate: how many are in, how many are ready to leave, how long the oldest
   has been there.
 
-The gate always states how many failures quarantine excluded, and `--max-quarantined <n>` fails it
+The gate reports how many failures quarantine excluded, and `--max-quarantined <n>` fails it
 when more than *n* tests are quarantined, so the list can't grow unbounded.
 
 ## 5. Check the fix held
 
 A flaky fix is easy to believe and hard to confirm. Each test case has a **stability trend** — pass
-rate, flaky rate, and average duration bucketed over its last 200 executions — which is the honest
-answer to "did that help?". It's served over the API and MCP (`get_test_stability_trend`), not drawn
-in the dashboard. If the suite-wide picture is what you need, [Analytics](/features/analytics) lifts the same signals
+rate, flaky rate, and average duration bucketed over time — which is the honest answer to "did that
+help?". If the suite-wide picture is what you need, [Analytics](/features/analytics) lifts the same signals
 across every project, including wasted CI minutes and a global flaky leaderboard.
 
 ## Other ways in
@@ -84,16 +78,14 @@ across every project, including wasted CI minutes and a global flaky leaderboard
 wasted CI minutes and root-cause category, highest score first; `get_test_stability_trend` answers whether one test is getting worse. Useful
 for "what should I fix this sprint?" without opening a browser.
 
-**Script it.** Quarantine is a REST resource — `GET`/`POST /api/projects/:id/quarantine` and
-`DELETE /api/projects/:id/quarantine/:testCaseId` — so promoting candidates or releasing ready tests can
+**Script it.** Quarantine is a REST resource, so promoting candidates or releasing ready tests can
 be a scheduled job. Shapes are in the [API docs](https://piwitests.dev/demo/docs).
 
 **No server at all.** If this is your own laptop suite rather than a team's, the
-[desktop app](/features/desktop) runs the same analysis with no Docker and no Node — on Windows, Apple-silicon macOS or x86-64
-Linux, and the installers aren't signed yet.
+[desktop app](/features/desktop) runs the same analysis with no Docker and no Node — Windows x64,
+Apple-silicon macOS and Linux x86-64, and the installers aren't signed yet.
 
-## See also
-
+## Related
 - [Flaky tests](/features/flaky-tests) — the full scoring, quarantine, and performance reference
 - [Analytics](/features/analytics) — the same signals across every project
 - [Regression or flake?](./regression-or-flaky) — deciding whether one red test belongs on this list

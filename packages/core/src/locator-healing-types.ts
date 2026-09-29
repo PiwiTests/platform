@@ -153,6 +153,8 @@ export interface ElementAttributes {
   center: { x: number; y: number } | null;
   /** True when the element has an associated <label> — gates getByLabel. */
   hasLabel?: boolean;
+  /** Text of the elements `aria-labelledby` points at, else of the first associated `<label>` — what names a form field. Absent when the probe did not read it. */
+  labelText?: string | null;
   /** Live-page uniqueness probe results for candidate selectors. */
   selectorCounts?: SelectorCounts;
   /** Position among same-role elements — powers name-free and renamed-element healing. */
@@ -191,6 +193,8 @@ export interface LocatorSnapshot {
 
 /**
  * Where a healing lookup's alternatives came from, best first:
+ * `diff-rename` (the change under test renamed the string the locator finds its
+ * element by, and the same chain with the new string replaces it),
  * `prior-run` (exact call-site match against a pre-captured snapshot),
  * `fingerprint` (locator-signature match, survives line shifts),
  * `cross-test` (same locator signature captured by another test in the project),
@@ -198,12 +202,23 @@ export interface LocatorSnapshot {
  * `aria-snapshot` (derived from the failure-time ARIA snapshot only).
  */
 export type LocatorHealingSource =
+  | 'diff-rename'
   | 'prior-run'
   | 'element-match'
   | 'fingerprint'
   | 'cross-test'
   | 'aria-snapshot'
   | 'none';
+
+/** The rename behind a `diff-rename` healing result: "`Pay now` became `Pay` in CheckoutButton.vue:14". */
+export interface DiffRenameEvidence {
+  before: string;
+  after: string;
+  /** The changed application file, repository-relative. */
+  file: string;
+  /** Its line in the new file. */
+  line: number;
+}
 
 /**
  * A ready-to-apply rewrite of the failing call site's source line, using the
@@ -251,6 +266,13 @@ export interface LocatorHealingResult {
    */
   fromElementMatch: RankedLocator[] | null;
   fromAriaSnapshot: RankedLocator[] | null;
+  /**
+   * The chain rewritten with the new string, when the run's own diff renamed
+   * the string the failing locator finds its element by (`diff-rename`).
+   */
+  fromDiffRename?: RankedLocator[] | null;
+  /** What the run's diff changed, for a `diff-rename` result: shown as its evidence. */
+  diffRename?: DiffRenameEvidence | null;
   source: LocatorHealingSource;
   /**
    * The single recommended fix — convention-preserving where possible — chosen

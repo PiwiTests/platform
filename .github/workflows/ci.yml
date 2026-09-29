@@ -77,6 +77,23 @@ jobs:
           retention-days: 1
           compression-level: 1
 
+      # Packed from this build the way publish.yml packs a release, so the package
+      # smoke job installs what a user downloads from npm.
+      - name: Pack npm packages
+        working-directory: .
+        run: |
+          mkdir -p npm-packages
+          npm pack --workspace @piwitests/server --workspace @piwitests/reporter --pack-destination npm-packages
+
+      - name: Upload npm packages
+        uses: actions/upload-artifact@v7
+        with:
+          name: npm-packages
+          path: npm-packages/*.tgz
+          retention-days: 1
+          # The tarballs are already gzipped.
+          compression-level: 0
+
   # Backend-agnostic checks. Independent of the E2E matrix, so they run alongside it.
   checks:
     name: Lint, typecheck and unit tests
@@ -131,6 +148,22 @@ jobs:
           npm run picker-dom:typecheck
           npm run picker-dom:test
 
+      - name: Lint, typecheck, build and test the editor service
+        working-directory: ./packages/editor
+        run: |
+          npm run editor:lint
+          npm run editor:typecheck
+          npm run editor:build
+          npm run editor:test
+
+      - name: Lint, typecheck, build and unit-test the VS Code extension
+        working-directory: ./apps/vscode
+        run: |
+          npm run vscode:lint
+          npm run vscode:typecheck
+          npm run vscode:build
+          npm run vscode:test
+
       - name: Lint, typecheck and unit-test extension
         working-directory: ./apps/extension
         run: |
@@ -153,6 +186,13 @@ jobs:
         working-directory: ./packages/picker-dom
         run: npm run picker-dom:test:integration
 
+      # The reporter's flake-run and build-output specs load the built package,
+      # and the app's locator-generate-drift.test.ts compares the app copy of
+      # the locator helpers against the reporter's compiled one.
+      - name: Build reporter
+        working-directory: ./packages/reporter
+        run: npm run reporter:build
+
       - name: Test reporter
         working-directory: ./packages/reporter
         run: npm run reporter:test:coverage
@@ -170,12 +210,6 @@ jobs:
           working-directory: ./packages/reporter
           name: Reporter
           file-coverage-mode: changes
-
-      # locator-generate-drift.test.ts compares the app copy of the locator
-      # helpers against the reporter's compiled one, so it needs the dist.
-      - name: Build reporter
-        working-directory: ./packages/reporter
-        run: npm run reporter:build
 
       - name: Test application unit tests
         run: npm run app:test:unit:coverage
@@ -346,6 +380,46 @@ jobs:
           path: apps/application/blob-report
           retention-days: 3
 
+  # Installs the packed @piwitests/server and @piwitests/reporter into a new project,
+  # starts the server with `npx @piwitests/server` and runs a suite through the reporter
+  # (scripts/package-smoke.mjs). Windows and macOS catch what breaks only on their paths
+  # or native binaries; the Linux leg runs the server package's Node 22 floor.
+  package-smoke:
+    name: Package smoke (${{ matrix.os }}, Node ${{ matrix.node }})
+    runs-on: ${{ matrix.os }}
+    needs: build
+    timeout-minutes: 10
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            node: 22
+          - os: windows-latest
+            node: 24
+          - os: macos-latest
+            node: 24
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install node
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Download npm packages
+        uses: actions/download-artifact@v8
+        with:
+          name: npm-packages
+          path: npm-packages
+
+      - name: Install the packages and report a run through them
+        working-directory: .
+        run: node scripts/package-smoke.mjs npm-packages
+
   demo:
     name: Test demo generation
     runs-on: ubuntu-latest
@@ -382,3 +456,24 @@ jobs:
       # only way base-path, worker-scope and demo-handler breakage shows up.
       - name: Check the built demo actually runs
         run: npm run app:check:demo:runtime
+
+  aspnet:
+    name: Build ASP.NET instrumentation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.x'
+
+      # Builds every package for every target framework and runs the tests. The
+      # NuGet packages are packed and published from a release tag by
+      # publish-nuget.yml.
+      - name: Build and test
+        working-directory: ./integrations/aspnetcore
+        run: dotnet test PiwiTests.Instrumentation.slnx -c Release

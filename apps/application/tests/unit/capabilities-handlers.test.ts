@@ -140,3 +140,47 @@ describe('project decisions', () => {
     await expect(setProjectDecisions(db, 999, { markers: 'declined' })).rejects.toThrow('Project not found');
   });
 });
+
+describe('the Test Map decline holds over passive ingest data', () => {
+  // Ingest writes graph nodes on every run, so the Test Map's evidence arrives
+  // passively. A decline must still turn it off — otherwise declining it on any
+  // project with history does nothing.
+  async function seedGraphNode(projectId: number, name: string): Promise<void> {
+    await db.insert(schema.projects).values({ id: projectId, name });
+    await db.insert(schema.graphNodes).values({ projectId, kind: 'route', key: 'GET /api/x' });
+  }
+
+  test('a project decline hides the Test Map even with graph nodes present', async () => {
+    await seedGraphNode(1, 'has-graph');
+
+    // Passive data alone reads active.
+    let states = await resolveProjectStates(db, 1);
+    expect(states['test-map']).toBe('active');
+
+    await setProjectDecisions(db, 1, { 'test-map': 'declined' });
+    states = await resolveProjectStates(db, 1);
+    expect(states['test-map']).toBe('declined');
+  });
+
+  test('an instance decline hides the Test Map even with graph nodes present', async () => {
+    await seedGraphNode(2, 'has-graph-2');
+
+    await setInstanceDecisions(db, { 'test-map': 'declined' });
+    const states = await resolveProjectStates(db, 2);
+    expect(states['test-map']).toBe('declined');
+
+    // The instance-wide state drives the Home inbox card and the MCP tool filter,
+    // so it must read declined too — not active off the instance-wide graph node.
+    const instance = (await getInstanceCapabilities(db)).items;
+    expect(stateOf(instance, 'test-map')).toBe('declined');
+  });
+
+  test('a project enable over an instance decline lets the graph data read active', async () => {
+    await seedGraphNode(3, 'has-graph-3');
+    await setInstanceDecisions(db, { 'test-map': 'declined' });
+
+    await setProjectDecisions(db, 3, { 'test-map': 'enabled' });
+    const states = await resolveProjectStates(db, 3);
+    expect(states['test-map']).toBe('active');
+  });
+});

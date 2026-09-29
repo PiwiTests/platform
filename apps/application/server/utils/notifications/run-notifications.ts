@@ -19,8 +19,87 @@ import { resolveDefaultBranch } from '../scm/default-branch';
 import { resolveRunBranch } from '../run-branch';
 import { FAILED_STATUS_KEYS } from '#shared/utils/test-counts';
 import { describeCluster } from '#shared/describe-cluster';
+import { looksFixedTests } from '#shared/status-classify';
 import { getClusterKnownIssue } from '../integrations/known-issue';
 import type { DbClient } from '../../database';
+import type { LooksFixedTest } from '#shared/notification-events';
+import type { TestMetadata } from '#shared/types';
+
+/**
+ * The run's `test.fail()` tests that passed in every browser project that ran
+ * them, with the bug report and ticket each names: the tests whose bug looks
+ * fixed.
+ */
+export async function loadLooksFixedTests(db: DbClient, runId: number): Promise<LooksFixedTest[]> {
+  const rows = await db
+    .select({
+      title: testCases.title,
+      filePath: testCases.filePath,
+      executionId: testRunsCases.id,
+      testCaseId: testRunsCases.testCaseId,
+      testMeta: testRunsCases.testMeta,
+      status: testRunsCases.status,
+      expectedStatus: testRunsCases.expectedStatus,
+      retries: testRunsCases.retries,
+      browserName: testRunsCases.browserName,
+    })
+    .from(testRunsCases)
+    .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
+    .where(
+      and(
+        eq(testRunsCases.testRunId, runId),
+        inArray(
+          testRunsCases.testCaseId,
+          db
+            .select({ id: testRunsCases.testCaseId })
+            .from(testRunsCases)
+            .where(and(eq(testRunsCases.testRunId, runId), eq(testRunsCases.expectedStatus, 'failed'))),
+        ),
+      ),
+    );
+  return looksFixedTests(rows).map((row) => {
+    const meta = (row.testMeta ?? null) as TestMetadata | null;
+    return {
+      title: row.title,
+      filePath: row.filePath,
+      executionId: row.executionId,
+      testCaseId: row.testCaseId,
+      ...(meta?.bug ? { bugId: Number(meta.bug) } : {}),
+      ...(meta?.link ? { link: meta.link } : {}),
+    };
+  });
+}
+
+/**
+ * The run's looks-fixed tests (`loadLooksFixedTests`) that did not already look
+ * fixed on the previous completed run of the same project and branch: the
+ * tests whose bug started looking fixed with this run. Every looks-fixed test
+ * counts when the branch has no earlier run.
+ */
+export async function loadNewlyLooksFixedTests(
+  db: DbClient,
+  run: { id: number; projectId: number },
+  branch: string | undefined,
+): Promise<LooksFixedTest[]> {
+  const current = await loadLooksFixedTests(db, run.id);
+  if (current.length === 0) return current;
+  const priorRuns = await db
+    .select({ id: testRuns.id, branch: testRuns.branch, metadata: testRuns.metadata })
+    .from(testRuns)
+    .where(
+      and(
+        eq(testRuns.projectId, run.projectId),
+        lt(testRuns.id, run.id),
+        inArray(testRuns.status, ['passed', 'failed']),
+      ),
+    )
+    .orderBy(desc(testRuns.id))
+    .limit(BASELINE_FETCH_LIMIT);
+  const previous = priorRuns.find((r) => (r.branch ?? resolveRunBranch(r.metadata) ?? undefined) === branch);
+  if (!previous) return current;
+  const already = new Set((await loadLooksFixedTests(db, previous.id)).map((t) => t.testCaseId));
+  return current.filter((t) => !already.has(t.testCaseId));
+}
 
 /**
  * Emit run.finished / run.failed / run.failed.default_branch notifications for a completed run,
@@ -169,6 +248,17 @@ export async function emitRunNotifications(db: DbClient, runId: number): Promise
         sampleErrorExcerpt: errorExcerpt(cluster.sampleError),
         affectedCases: affected.length,
         knownIssue: knownIssue ? { key: knownIssue.key, url: knownIssue.url } : undefined,
+      });
+    }
+
+    const looksFixed = await loadNewlyLooksFixedTests(db, runRow, branch);
+    if (looksFixed.length > 0) {
+      await emitNotification(db, 'bug.looks_fixed', {
+        projectId: runRow.projectId,
+        projectName: project.label || project.name,
+        runId,
+        branch,
+        tests: looksFixed,
       });
     }
   } catch (e) {

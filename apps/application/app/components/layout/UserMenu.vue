@@ -50,14 +50,13 @@ const user = computed(() => {
 });
 
 const items = computed<DropdownMenuItem[][]>(() => {
-  const configurationMenuItems: DropdownMenuItem[] = [];
-
-  if (!config.public.authEnabled || (authState.value.authenticated && authState.value.user?.role === 'administrator')) {
-    // Nav items are reused as dropdown items (both are link items); the cast
-    // bridges the slightly different `type` union between the two Nuxt UI types.
-    // `settingsNav` is grouped into sections — this menu wants one flat list.
-    configurationMenuItems.push(...(settingsNav.value.flat() as unknown as DropdownMenuItem[]));
-  }
+  // Every viewer gets the settings pages their role can open — `useSettingsNav`
+  // already drops the admin-only ones, so a plain user still reaches Account,
+  // API keys, Notifications… Nav items are reused as dropdown items (both are
+  // link items); the cast bridges the slightly different `type` union between
+  // the two Nuxt UI types. `settingsNav` is grouped into sections — this menu
+  // wants one flat list.
+  const configurationMenuItems = settingsNav.value.flat() as unknown as DropdownMenuItem[];
 
   const baseItems: DropdownMenuItem[][] = [
     configurationMenuItems,

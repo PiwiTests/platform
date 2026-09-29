@@ -1,3 +1,4 @@
+import * as path from 'node:path';
 import { gunzipSync } from 'node:zlib';
 import { probeElementAttrs, type ProbeArg, type ProbedAttrs } from '@piwitests/picker-dom';
 import type {
@@ -39,15 +40,52 @@ import {
   type FailedLocatorInfo,
 } from './locator-healing.js';
 import { ATTACHMENT_NAMES, LOCATOR_SUGGESTION_ANNOTATION, USER_PICK_ANNOTATION } from './attachments.js';
+import {
+  capPageInventory,
+  collectPageInventoryInPage,
+  inventoryPageKey,
+  type RawPageInventory,
+} from './page-inventory.js';
+import { LocatorPageLog, noteLocatorCall, noteNavigation } from './locator-pages.js';
+
+// Re-exported for the dogfood fixtures (`apps/application/tests/fixtures.ts`),
+// which rebuild this wrapper and must record pages the same way.
+export { LocatorPageLog, noteLocatorCall, noteNavigation } from './locator-pages.js';
+import {
+  isProbeMode,
+  probeItemForTest,
+  recordProbeOutcome,
+  outcomeFromStatus,
+  classifyProbeHandled,
+} from '../probe/mode.js';
+import { installProbeInterception, type ProbeInterception } from '../probe/interception.js';
+import type { ProbePlanItem } from '../probe/plan.js';
+import {
+  flakeResultLine,
+  flakeRoleForTest,
+  installFlakeConditions,
+  isFlakeMode,
+  labModeConflict,
+  loadFlakePlan,
+  pageBrowserName,
+  recordFlakeResult,
+  unappliedReports,
+  type FlakeConditions,
+} from '../flake/mode.js';
+import type { FlakePlan } from '@piwitests/core/flake-plan';
+import { joinErrorMessages } from '@piwitests/core/error-text';
 import { environmentalSkipReason, inspectionGateFromTestInfo, shouldInspectOnFailure } from './inspect-on-failure.js';
 import { applyPickToSnapshots, deriveFailedLocator, runLocatorPicker, type UserPickResult } from './pick-on-failure.js';
 import { isDueForAriaSample } from '../support/aria-sampling.js';
+import { boxCaptureFrames, internalCall } from './quiet-capture.js';
+import { codeReachRoots, pageMapFetcher, resolveCodeReach, startCodeReach, stopCodeReach } from './code-reach.js';
 
 // Re-exported: probeElementAttrs now lives in @piwitests/picker-dom (shared
 // with the dashboard's snapshot picker), but the dogfood mirror
 // (`application/tests/fixtures.ts`) and this package's own tests import it
-// from here.
-export { probeElementAttrs };
+// from here, as the mirror does the quiet-capture helpers.
+export { probeElementAttrs, internalCall, boxCaptureFrames };
+export { codeReachRoots, pageMapFetcher, resolveCodeReach, startCodeReach, stopCodeReach };
 export type { ProbeArg, ProbedAttrs };
 
 /** A Playwright fixture's `use` callback — hands the fixture value to the test. */
@@ -185,11 +223,34 @@ interface CaptureSink {
   // the healing, clue and page-diff paths that read a tree; the YAML above feeds
   // the ARIA card.
   stashedAriaJson: string | null;
+  // One window per URL the test navigated to, each stamped with its settle time,
+  // so the dashboard can attribute a request to the page that was current when it
+  // started rather than to the end-of-test page. Controls/links are filled at
+  // most once per page key per worker; revisits keep a content-less window.
+  pageInventories: RawPageInventory[];
+  // The probe plan item for this test (probe mode only), and the interception
+  // handle once installed, so the outcome can be recorded at teardown.
+  probeItem: ProbePlanItem | null;
+  probeInterception: ProbeInterception | null;
+  // Flake mode only: the arm's plan, this test's role in it, when the capture
+  // started, and (for the target) the conditions installed on its first page.
+  flake: {
+    plan: FlakePlan;
+    role: 'target' | 'companion';
+    startedAt: number;
+    browserName: string | null;
+    conditions: Promise<FlakeConditions> | null;
+  } | null;
   // The failure-time overlay was already offered once this test — several
   // close wrappers can fire for the same teardown.
   pickOffered: boolean;
   // A replacement locator the human confirmed in the failure-time picker.
   userPick: UserPickResult | null;
+  // The page each locator call ran on, keyed by call site and chain.
+  locatorPages: LocatorPageLog;
+  // JavaScript coverage of the test's first page, when code reach is on, and
+  // the source files it resolved to once stopped.
+  codeReach: { page: Page; started: Promise<boolean>; stopped: boolean; files: string[] | null } | null;
 }
 
 function createSink(): CaptureSink {
@@ -208,9 +269,74 @@ function createSink(): CaptureSink {
     stashedPageState: null,
     stashedAria: null,
     stashedAriaJson: null,
+    pageInventories: [],
+    probeItem: null,
+    probeInterception: null,
+    flake: null,
     pickOffered: false,
     userPick: null,
+    locatorPages: new LocatorPageLog(),
+    codeReach: null,
   };
+}
+
+/**
+ * Start JavaScript coverage on the running test's first page when code reach
+ * is on (`PIWI_CAPTURE_CODE_REACH=true`). Resolves once coverage is running,
+ * so a caller can await it before the test navigates.
+ */
+function maybeStartCodeReach(page: Page): Promise<boolean> {
+  const sink = currentSink;
+  if (!sink || process.env.PIWI_CAPTURE_CODE_REACH !== 'true') return Promise.resolve(false);
+  if (sink.codeReach) return sink.codeReach.page === page ? sink.codeReach.started : Promise.resolve(false);
+  const started = startCodeReach(page);
+  sink.codeReach = { page, started, stopped: false, files: null };
+  return started;
+}
+
+/** The code reach roots from `PIWI_CODE_REACH_ROOTS` (a JSON array or a path list). */
+export function configuredCodeReachRoots(): string[] | null {
+  const raw = process.env.PIWI_CODE_REACH_ROOTS?.trim();
+  if (!raw) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (Array.isArray(parsed)) return parsed.filter((r): r is string => typeof r === 'string' && r !== '');
+  } catch {
+    // Not JSON: a path list.
+  }
+  return raw.split(path.delimiter).filter(Boolean);
+}
+
+/**
+ * Stop the test's coverage and resolve it to source files, while its page can
+ * still fetch source maps. With `closing`, only when that page or its context
+ * is the one closing. Never throws.
+ */
+async function stopSinkCodeReach(
+  sink: CaptureSink,
+  closing?: { page?: Page; context?: BrowserContext },
+): Promise<void> {
+  const session = sink.codeReach;
+  if (!session || session.stopped) return;
+  if (closing && closing.page !== session.page && (!closing.context || pageContext(session.page) !== closing.context)) {
+    return;
+  }
+  session.stopped = true;
+  try {
+    if (!(await session.started) || isPageClosed(session.page)) return;
+    const entries = await stopCodeReach(session.page);
+    if (!entries) return;
+    const info = sink.testInfo;
+    const configFile = info?.config.configFile;
+    const configDir = configFile ? path.dirname(configFile) : (info?.config.rootDir ?? process.cwd());
+    session.files = await resolveCodeReach(
+      entries,
+      codeReachRoots(configDir, configuredCodeReachRoots()),
+      pageMapFetcher(session.page),
+    );
+  } catch {
+    /* code reach is best-effort and must never affect the test */
+  }
 }
 
 /**
@@ -484,6 +610,102 @@ async function readPageState(page: Page): Promise<PageState | null> {
 }
 
 /**
+ * Page keys this worker has already inventoried this run, so a URL visited by
+ * many tests is inventoried once. Module-scoped: a worker process serves one
+ * run, and the set is a pure de-duplication cache.
+ */
+const inventoriedPageKeys = new Set<string>();
+
+/**
+ * The in-page safety bound: a pathological page cannot serialize more than this
+ * many entries. The authoritative per-page cap ({@link capPageInventory}) is
+ * applied on the Node side before the attachment is written.
+ */
+const PAGE_INVENTORY_IN_PAGE_CAP = 2000;
+
+/** How long the in-page inventory read may run before it is abandoned. */
+const PAGE_INVENTORY_EVAL_TIMEOUT_MS = 2000;
+
+/**
+ * The most page windows kept per test. Windows are recorded on every URL change,
+ * so a navigation-heavy SPA test cannot grow the attachment without bound.
+ */
+const MAX_PAGE_INVENTORY_WINDOWS = 64;
+
+/** Reject a promise after `ms` so a hung in-page read never wedges the capture. */
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('page inventory read timed out')), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
+/**
+ * Read the interactive controls (role + accessible name) and links (name +
+ * href) on the page. Values are never read — only names and hrefs (see
+ * {@link collectPageInventoryInPage}). Runs a single in-page pass with a shared
+ * entry budget and a timeout, so a table of hundreds of rows or a hung page
+ * cannot blow up or stall the capture. Returns null when the page cannot be read.
+ */
+async function readPageInventory(page: Page): Promise<RawPageInventory | null> {
+  try {
+    const inventory = await withTimeout(
+      page.evaluate(collectPageInventoryInPage, PAGE_INVENTORY_IN_PAGE_CAP),
+      PAGE_INVENTORY_EVAL_TIMEOUT_MS,
+    );
+    // Stamp the settle time so a request can be attributed to the page current
+    // when it started, rather than to whichever page the test ended on.
+    return inventory ? { ...inventory, capturedAt: Date.now() } : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Record the page current on a URL change as an attribution window. The window's
+ * settle time is always kept, so a request can be attributed to the page current
+ * when it started. The expensive controls/links read runs at most once per page
+ * key per worker ({@link inventoriedPageKeys}); a revisited or already-inventoried
+ * page records a content-less window, which still cuts the attribution boundary.
+ */
+async function recordPageWindow(sink: CaptureSink, page: Page): Promise<void> {
+  if (sink.pageInventories.length >= MAX_PAGE_INVENTORY_WINDOWS) return;
+  let url: string;
+  try {
+    url = page.url();
+  } catch {
+    return;
+  }
+  if (!url || url.startsWith('about:')) return;
+  const key = inventoryPageKey(url);
+  const capturedAt = Date.now();
+
+  if (sink.pageInventories.length >= MAX_PAGE_INVENTORY_WINDOWS) return;
+  if (key && !inventoriedPageKeys.has(key)) {
+    inventoriedPageKeys.add(key);
+    const content = await internalCall(page, () => readPageInventory(page));
+    if (sink.pageInventories.length >= MAX_PAGE_INVENTORY_WINDOWS) return;
+    sink.pageInventories.push({
+      url: content?.url ?? url,
+      controls: content?.controls ?? [],
+      links: content?.links ?? [],
+      capturedAt,
+    });
+    return;
+  }
+  sink.pageInventories.push({ url, controls: [], links: [], capturedAt });
+}
+
+/**
  * Take the page-dependent teardown reads (web vitals; page state; ARIA
  * snapshot when the test failed) while the last active page is still open.
  * Called by the close wrappers just before a close that would take that page
@@ -495,7 +717,11 @@ async function stashPageState(sink: CaptureSink, closing: { page?: Page; context
   const belongsToClosing =
     closing.page === page || (closing.context !== undefined && pageContext(page) === closing.context);
   if (!belongsToClosing) return;
+  await internalCall(page, () => readPageBeforeClose(sink, page));
+}
 
+/** The reads {@link stashPageState} takes from the page about to close. */
+async function readPageBeforeClose(sink: CaptureSink, page: Page): Promise<void> {
   const vitals = await readWebVitals(page);
   if (vitals) sink.stashedWebVitals = vitals;
 
@@ -523,6 +749,12 @@ async function stashPageState(sink: CaptureSink, closing: { page?: Page; context
     // Sample the green page while it is still open, for the tests the server
     // flagged as due a fresh snapshot this run.
     await sampleAria();
+  }
+
+  // Record the passing page as a final attribution window while it is still open,
+  // in case the test closed it before teardown could read it.
+  if (status === 'passed' && process.env.PIWI_CAPTURE_PAGE_INVENTORY === 'true') {
+    await recordPageWindow(sink, page);
   }
 }
 
@@ -562,7 +794,9 @@ async function maybeOpenPicker(sink: CaptureSink, closing?: { page?: Page; conte
     console.log('[piwi] locator picker: no failing locator could be identified in this failure — nothing to replace.');
     return;
   }
-  const pick = await runLocatorPicker(page, testInfo, failed, { fn: probeElementAttrs, arg: CAPTURED_ATTRS_ARG });
+  const pick = await internalCall(page, () =>
+    runLocatorPicker(page, testInfo, failed, { fn: probeElementAttrs, arg: CAPTURED_ATTRS_ARG }),
+  );
   if (!pick) return;
   sink.userPick = pick;
   applyPickToSnapshots(sink.capturedLocators, pick);
@@ -598,12 +832,8 @@ export const CAPTURED_ATTRS_ARG: ProbeArg = {
   // special-cased logic in the probe, so add them explicitly).
   roleSources: [...new Set(['[role]', 'input', 'select', ...Object.keys(TAG_TO_ROLE)])].join(','),
   // The reporter always wants ancestor-anchored alternatives (the picker's
-  // anchors step and generateAnchoredAlternatives both need them). `labelText`
-  // is what names a form field, and the probe reads it from `el.labels` in the
-  // same pass — so asking for it here is free and settles the accessible name
-  // of a labeled field without a second round trip (`exactAccessibleName`).
+  // anchors step and generateAnchoredAlternatives both need them).
   includeStructural: true,
-  includeLabelText: true,
 };
 
 /**
@@ -650,18 +880,20 @@ const PROBE_UNSEEDED_PAGES = new WeakSet<Page>();
  */
 function probeElement(page: Page | null, target: Locator): Promise<ProbedAttrs> {
   const shipSource = () => target.evaluate(probeElementAttrs, CAPTURED_ATTRS_ARG);
-  if (!page || PROBE_UNSEEDED_PAGES.has(page)) return shipSource();
+  if (!page || PROBE_UNSEEDED_PAGES.has(page)) return internalCall(page, shipSource);
 
-  return target
-    .evaluate((el, name) => {
-      const seeded = (globalThis as Record<string, any>)[name];
-      return typeof seeded === 'function' ? (seeded(el) as ProbedAttrs) : null;
-    }, PROBE_GLOBAL)
-    .then((attrs) => {
-      if (attrs) return attrs;
-      PROBE_UNSEEDED_PAGES.add(page);
-      return shipSource();
-    });
+  return internalCall(page, () =>
+    target
+      .evaluate((el, name) => {
+        const seeded = (globalThis as Record<string, any>)[name];
+        return typeof seeded === 'function' ? (seeded(el) as ProbedAttrs) : null;
+      }, PROBE_GLOBAL)
+      .then((attrs) => {
+        if (attrs) return attrs;
+        PROBE_UNSEEDED_PAGES.add(page);
+        return shipSource();
+      }),
+  );
 }
 
 /**
@@ -769,7 +1001,10 @@ function startElementCapture(
       // teardown that drains these capture promises.
       // ariaSnapshotBestEffort adapts the options to the installed
       // Playwright version and never throws (see its doc comment).
-      const aria = exactName === null && (role || isFormField) ? await ariaSnapshotBestEffort(target, 500) : null;
+      const aria =
+        exactName === null && (role || isFormField)
+          ? await internalCall(page, () => ariaSnapshotBestEffort(target, 500))
+          : null;
 
       const accessibleName =
         exactName ?? (extractAccessibleName(aria) || approximateAccessibleName({ ...attrs, accessibleName: null }));
@@ -804,20 +1039,44 @@ function startElementCapture(
   sink.capturePromises.push(resolveAttrs);
 }
 
+/**
+ * Call a Playwright method on its own receiver. Playwright names an API call
+ * after the method frame the call enters, so the call keeps its real name
+ * (`locator.fill: Timeout …`); a call through `Function.prototype.apply` is
+ * named `apply`.
+ */
+export function callMethod(target: object, prop: string | symbol, args: unknown[]): unknown {
+  return (target as Record<string | symbol, (...a: unknown[]) => unknown>)[prop]!(...args);
+}
+
 // Chain methods that take args and define a new locator scope (not just narrow).
 // Origin method/args update to the chain call, e.g. .locator('.item') → locator('.item').
 // Positional/filter chains that narrow but don't change locator identity.
 // Origin stays from the page-level call, e.g. .first(), .nth(2), .filter(...).
+/** Record the page a locator call runs on, best-effort: a closed page or an odd URL is skipped. */
+function recordLocatorPage(
+  sink: CaptureSink,
+  page: Page,
+  locator: Locator,
+  location: string | null,
+  arrival: boolean,
+): void {
+  try {
+    sink.locatorPages.record({ location, locator: String(locator), url: page.url(), arrival });
+  } catch {
+    /* the page record is a side channel; it must never affect the test */
+  }
+}
+
 function wrapLocator(page: Page, locator: Locator, originMethod: string, originArgs: unknown[]): Locator {
   return new Proxy(locator, {
     get(target, prop) {
       const original = Reflect.get(target, prop) as unknown;
       if (typeof original !== 'function') return original;
-      const fn = original as (...args: unknown[]) => unknown;
 
       if (CHAIN_METHOD_SET.has(prop as string)) {
         return (...args: unknown[]): Locator => {
-          const next = fn.apply(target, args) as Locator;
+          const next = callMethod(target, prop, args) as Locator;
           if (LOCATOR_CREATING_CHAINS.has(prop as string)) {
             return wrapLocator(page, next, String(prop), args);
           }
@@ -830,16 +1089,18 @@ function wrapLocator(page: Page, locator: Locator, originMethod: string, originA
           const sink = currentSink;
           const expression = typeof callArgs[0] === 'string' ? callArgs[0] : '';
           const isNot = Boolean((callArgs[1] as { isNot?: boolean } | undefined)?.isNot);
+          // Sync, before the await — the caller's frames are gone after it.
+          const callerLocation = sink ? captureCallerLocation() : null;
+          // Every assertion records the page it ran on, negations included.
+          if (sink) recordLocatorPage(sink, page, target, callerLocation, noteLocatorCall(page, EXPECT_METHOD, true));
           // Only positive presence-proving assertions participate — negations,
           // absence/count/page-level assertions, and any unknown future
           // expression pass through untouched.
           if (!sink || isNot || !EXPECT_CAPTURE_EXPRESSIONS.has(expression)) {
-            return fn.apply(target, callArgs);
+            return callMethod(target, prop, callArgs);
           }
 
           sink.lastActivePage = page;
-          // Sync, before the await — the caller's frames are gone after it.
-          const callerLocation = captureCallerLocation();
           const used = {
             method: originMethod,
             args: originArgs,
@@ -856,7 +1117,7 @@ function wrapLocator(page: Page, locator: Locator, originMethod: string, originA
             sink.capturedLocators.push({ location: callerLocation, used, element: null, alternatives: [] });
           }
 
-          const result = await fn.apply(target, callArgs);
+          const result = await callMethod(target, prop, callArgs);
 
           // `_expect` reports the outcome instead of throwing (the matcher
           // layer above does the throw), so read it off the result. A missing
@@ -884,13 +1145,14 @@ function wrapLocator(page: Page, locator: Locator, originMethod: string, originA
         // capture below writes back to the right test even across a boundary.
         const sink = currentSink;
         // Action outside a tracked test (e.g. during beforeAll) — run untouched.
-        if (!sink) return fn.apply(target, callArgs);
+        if (!sink) return callMethod(target, prop, callArgs);
 
         sink.lastActivePage = page;
         // Capture the test call-site now (sync) so the snapshot's location
         // matches the error stack's first user frame — independent of
         // pw:api step ordering, worker interleaving, or concurrent actions.
         const callerLocation = captureCallerLocation();
+        recordLocatorPage(sink, page, target, callerLocation, noteLocatorCall(page, String(prop)));
         // Built once, shared by the placeholder and the resolved snapshot below.
         const used = {
           method: originMethod,
@@ -917,7 +1179,7 @@ function wrapLocator(page: Page, locator: Locator, originMethod: string, originA
         // current identity) and re-throw so the test still fails.
         let result: unknown;
         try {
-          result = await fn.apply(target, callArgs);
+          result = await callMethod(target, prop, callArgs);
         } catch (error) {
           sink.failedLocators.push({ method: originMethod, args: originArgs, location: callerLocation });
           throw error;
@@ -947,15 +1209,21 @@ function wrapFrameLocator(page: Page, frameLocator: FrameLocator): FrameLocator 
     get(target, prop) {
       const original = Reflect.get(target, prop) as unknown;
       if (typeof original !== 'function') return original;
-      const fn = original as (...args: unknown[]) => unknown;
       if (!LOCATOR_METHOD_SET.has(prop as string)) return original;
       return (...args: unknown[]): Locator => {
         if (currentSink) currentSink.lastActivePage = page;
-        return wrapLocator(page, fn.apply(target, args) as Locator, String(prop), args);
+        return wrapLocator(page, callMethod(target, prop, args) as Locator, String(prop), args);
       };
     },
   });
 }
+
+/**
+ * The error text each browser gives a request the page cancelled itself:
+ * Chromium's `net::ERR_ABORTED`, Firefox's `NS_BINDING_ABORTED`, WebKit's
+ * "cancelled".
+ */
+const CANCELLED_REQUEST = /^net::ERR_ABORTED$|^NS_BINDING_ABORTED$|^NS_ERROR_ABORT$|cancell?ed/i;
 
 /**
  * Instrument a single page: wrap its locator-building methods for healing
@@ -965,6 +1233,37 @@ function wrapFrameLocator(page: Page, frameLocator: FrameLocator): FrameLocator 
 function instrumentPage(page: Page): void {
   if (!page || INSTRUMENTED_PAGES.has(page)) return;
   INSTRUMENTED_PAGES.add(page);
+  void maybeStartCodeReach(page);
+
+  // Probe mode: install the fault interception for this test's plan item on the
+  // first page, before the test navigates. Fire-and-forget — page.route
+  // registration resolves before the first request in practice.
+  const probeSink = currentSink;
+  if (probeSink?.probeItem && !probeSink.probeInterception) {
+    void installProbeInterception(page, probeSink.probeItem)
+      .then((interception) => {
+        probeSink.probeInterception = interception;
+      })
+      .catch(() => {
+        /* interception failed to install — the probe is recorded as not applied */
+      });
+  }
+
+  // Flake mode: apply the arm's conditions to the target test's first page,
+  // before it navigates. The paths that hand a new page to the test await the
+  // install (`awaitFlakeConditions`).
+  const flake = currentSink?.flake;
+  if (flake?.role === 'target' && !flake.conditions) {
+    flake.browserName = pageBrowserName(page) ?? flake.browserName;
+    const plan = flake.plan;
+    flake.conditions = installFlakeConditions(page, plan).catch((error: unknown) => {
+      const note = `conditions failed to install: ${error instanceof Error ? error.message : String(error)}`;
+      const reports = unappliedReports(plan).map((r) =>
+        r.outcome === 'by-command' ? r : { ...r, outcome: 'skipped' as const, note },
+      );
+      return { reports: () => reports };
+    });
+  }
 
   // A page reached through the `page` fixture safety net may live in a context
   // the browser patch never saw — instrument it so its close is wrapped too.
@@ -982,6 +1281,7 @@ function instrumentPage(page: Page): void {
       if (sink) {
         await stashPageState(sink, { page });
         await maybeOpenPicker(sink, { page });
+        await stopSinkCodeReach(sink, { page });
       }
       return originalClose(...args);
     };
@@ -1024,8 +1324,32 @@ function instrumentPage(page: Page): void {
     // the init script runs for every navigation, so give each new document a
     // fresh chance at the fast path.
     if (typeof page.on === 'function') {
-      page.on('framenavigated', () => PROBE_UNSEEDED_PAGES.delete(page));
+      page.on('framenavigated', (frame) => {
+        PROBE_UNSEEDED_PAGES.delete(page);
+        // A new document or a client-side route: locator calls start over "on arrival".
+        try {
+          if (frame === page.mainFrame()) noteNavigation(page);
+        } catch {
+          /* a page event handler must never throw */
+        }
+      });
     }
+  }
+
+  // Cut an attribution window on every URL change, so the graph can attribute a
+  // request to the page current when it started. `framenavigated` fires on both
+  // full loads and same-document (SPA) navigations, where the `load` event never
+  // fires — so a client-routed page still gets its own window. Off by default:
+  // the reporter opts in via PIWI_CAPTURE_PAGE_INVENTORY=true. Best-effort: a
+  // failed read is skipped, and only passing runs keep the inventory (teardown).
+  if (typeof page.on === 'function' && process.env.PIWI_CAPTURE_PAGE_INVENTORY === 'true') {
+    page.on('framenavigated', (frame) => {
+      const sink = currentSink;
+      if (!sink || frame !== page.mainFrame()) return;
+      void recordPageWindow(sink, page).catch(() => {
+        /* an inventory read failure must never affect the test */
+      });
+    });
   }
 
   page.on('console', (msg: ConsoleMessage) => {
@@ -1069,7 +1393,10 @@ function instrumentPage(page: Page): void {
     }
   }
 
-  page.on('requestfinished', (request: Request) => {
+  // A request that finished (with or without a response) and one that failed
+  // (reset, refused, aborted) are recorded alike; a failed one has status 0 and
+  // carries Playwright's error text as `failure`.
+  const recordRequest = (request: Request, failed: boolean) => {
     const sink = currentSink;
     if (!sink) return;
     sink.lastActivePage = page;
@@ -1077,21 +1404,26 @@ function instrumentPage(page: Page): void {
       try {
         const url = request.url();
         if (url.startsWith('data:') || url.startsWith('blob:')) return;
-        const timing = request.timing();
-        const response = await request.response();
         const resourceType = request.resourceType();
 
         // Only keep API/document requests; skip static assets (scripts, styles, fonts, images, media)
-        if (!['fetch', 'xhr', 'document', 'other'].includes(resourceType)) return;
+        if (!TRACKED_REQUEST_TYPES.includes(resourceType)) return;
 
+        const failure = failed ? (request.failure()?.errorText ?? 'failed') : null;
+        // A request the page cancelled itself (a navigation, an AbortController, the page closing) did not fail.
+        if (failure && CANCELLED_REQUEST.test(failure)) return;
+
+        const timing = request.timing();
+        const response = failed ? null : await request.response();
         const entry: Record<string, unknown> = {
           method: request.method(),
           url,
           status: response ? response.status() : 0,
-          duration: timing.responseEnd > 0 ? Math.round(timing.responseEnd - timing.requestStart) : 0,
+          duration: requestDuration(timing, failed),
           startTime: timing.startTime,
           resourceType,
         };
+        if (failure) entry.failure = failure;
 
         if (response) {
           const headers = response.headers();
@@ -1128,7 +1460,14 @@ function instrumentPage(page: Page): void {
       }
     })();
     sink.pendingHandlers.push(p);
-  });
+  };
+  page.on('requestfinished', (request: Request) => recordRequest(request, false));
+  page.on('requestfailed', (request: Request) => recordRequest(request, true));
+}
+
+/** Wait until the running test's flake conditions are on its page, so they apply before it navigates. */
+async function awaitFlakeConditions(): Promise<void> {
+  await currentSink?.flake?.conditions;
 }
 
 /**
@@ -1152,6 +1491,8 @@ function instrumentContext(context: BrowserContext): void {
   context.newPage = async (...args: Parameters<BrowserContext['newPage']>): Promise<Page> => {
     const page = await originalNewPage(...args);
     instrumentPage(page);
+    await awaitFlakeConditions();
+    await maybeStartCodeReach(page);
     return page;
   };
 
@@ -1168,6 +1509,7 @@ function instrumentContext(context: BrowserContext): void {
       if (sink) {
         await stashPageState(sink, { context });
         await maybeOpenPicker(sink, { context });
+        await stopSinkCodeReach(sink, { context });
       }
       return originalClose(...args);
     };
@@ -1192,6 +1534,8 @@ function patchBrowser(browser: Browser): void {
   browser.newPage = async (...args: Parameters<Browser['newPage']>): Promise<Page> => {
     const page = await originalNewPage(...args);
     instrumentPage(page);
+    await awaitFlakeConditions();
+    await maybeStartCodeReach(page);
     return page;
   };
 
@@ -1211,6 +1555,32 @@ function patchBrowser(browser: Browser): void {
       return originalClose(...args);
     };
   }
+}
+
+/** The whole page's ARIA snapshot, read as an internal call. */
+function readRootAria(page: Page): Promise<string | null> {
+  return internalCall(page, () => ariaSnapshotBestEffort(page.locator(':root')));
+}
+
+/** The whole page's ARIA tree as JSON, read as an internal call. */
+function readRootAriaJson(page: Page): Promise<string | null> {
+  return internalCall(page, () => ariaSnapshotJSONBestEffort(page.locator(':root')));
+}
+
+/** Request types worth keeping: API calls and documents, not static assets. */
+const TRACKED_REQUEST_TYPES = ['fetch', 'xhr', 'document', 'other'];
+
+/**
+ * A request's duration in ms: to the response end when there is one, else, for
+ * a request that failed before answering, to the moment the failure was seen.
+ */
+function requestDuration(
+  timing: { startTime: number; requestStart: number; responseEnd: number },
+  failed: boolean,
+): number {
+  if (timing.responseEnd > 0) return Math.round(timing.responseEnd - timing.requestStart);
+  if (failed && timing.startTime > 0) return Math.max(0, Math.round(Date.now() - timing.startTime));
+  return 0;
 }
 
 /**
@@ -1255,20 +1625,37 @@ async function flushSink(sink: CaptureSink, testInfo: TestInfo): Promise<void> {
     });
   }
 
+  // The source files the test executed, whatever the outcome.
+  await stopSinkCodeReach(sink);
+  if (sink.codeReach?.files?.length) {
+    await testInfo.attach(ATTACHMENT_NAMES.codeReach, {
+      contentType: 'application/json',
+      body: Buffer.from(JSON.stringify(sink.codeReach.files)),
+    });
+  }
+
+  // The page each locator call ran on, whatever the outcome: a failed run's
+  // calls were still made on those pages.
+  if (sink.locatorPages.size > 0) {
+    await testInfo.attach(ATTACHMENT_NAMES.locatorPages, {
+      contentType: 'application/json',
+      body: Buffer.from(JSON.stringify(sink.locatorPages.list())),
+    });
+  }
+
   if (testInfo.status !== 'passed' && testInfo.status !== 'skipped') {
     try {
       // Prefer a live read; fall back to the snapshot the close wrappers
       // stashed — the standard test page is already closed when this auto
       // fixture tears down.
-      const snapshot = (pageReadable ? await ariaSnapshotBestEffort(page.locator(':root')) : null) ?? sink.stashedAria;
+      const snapshot = (pageReadable ? await readRootAria(page) : null) ?? sink.stashedAria;
       if (snapshot) {
         await testInfo.attach(ATTACHMENT_NAMES.ariaSnapshot, {
           contentType: 'text/plain',
           body: snapshot,
         });
 
-        const snapshotJson =
-          (pageReadable ? await ariaSnapshotJSONBestEffort(page.locator(':root')) : null) ?? sink.stashedAriaJson;
+        const snapshotJson = (pageReadable ? await readRootAriaJson(page) : null) ?? sink.stashedAriaJson;
         if (snapshotJson) {
           await testInfo.attach(ATTACHMENT_NAMES.ariaSnapshotJson, {
             contentType: 'application/json',
@@ -1309,14 +1696,13 @@ async function flushSink(sink: CaptureSink, testInfo: TestInfo): Promise<void> {
     isDueForAriaSample(testInfo)
   ) {
     try {
-      const snapshot = (pageReadable ? await ariaSnapshotBestEffort(page.locator(':root')) : null) ?? sink.stashedAria;
+      const snapshot = (pageReadable ? await readRootAria(page) : null) ?? sink.stashedAria;
       if (snapshot) {
         await testInfo.attach(ATTACHMENT_NAMES.ariaSnapshot, {
           contentType: 'text/plain',
           body: snapshot,
         });
-        const snapshotJson =
-          (pageReadable ? await ariaSnapshotJSONBestEffort(page.locator(':root')) : null) ?? sink.stashedAriaJson;
+        const snapshotJson = (pageReadable ? await readRootAriaJson(page) : null) ?? sink.stashedAriaJson;
         if (snapshotJson) {
           await testInfo.attach(ATTACHMENT_NAMES.ariaSnapshotJson, {
             contentType: 'application/json',
@@ -1382,7 +1768,8 @@ async function flushSink(sink: CaptureSink, testInfo: TestInfo): Promise<void> {
 
   // Live read when the page still exists (e.g. a browser.newPage the test left
   // open); otherwise the vitals the close wrappers stashed before the page went.
-  const webVitals = (pageReadable ? await readWebVitals(page) : null) ?? sink.stashedWebVitals;
+  const webVitals =
+    (pageReadable ? await internalCall(page, () => readWebVitals(page)) : null) ?? sink.stashedWebVitals;
   if (webVitals) {
     await testInfo.attach(ATTACHMENT_NAMES.webVitals, {
       contentType: 'application/json',
@@ -1392,11 +1779,30 @@ async function flushSink(sink: CaptureSink, testInfo: TestInfo): Promise<void> {
 
   // Page state at test end (pass AND fail — the pass side is the diff baseline).
   if (process.env.PIWI_CAPTURE_PAGE_STATE !== 'false') {
-    const pageState = (pageReadable ? await readPageState(page) : null) ?? sink.stashedPageState;
+    const pageState =
+      (pageReadable ? await internalCall(page, () => readPageState(page)) : null) ?? sink.stashedPageState;
     if (pageState) {
       await testInfo.attach(ATTACHMENT_NAMES.pageState, {
         contentType: 'application/json',
         body: Buffer.from(JSON.stringify(pageState)),
+      });
+    }
+  }
+
+  // Page inventory (controls and links) on passing runs only. Every window the
+  // test recorded is attached in settle order, each with its settle time, so the
+  // dashboard can attribute a request to the page current when it started — a
+  // revisited page keeps its own window rather than being deduped away. The
+  // still-open end page is recorded once more so a no-navigation test (and the
+  // final page state) is captured; its controls/links are read at most once per
+  // page key per worker.
+  if (testInfo.status === 'passed' && process.env.PIWI_CAPTURE_PAGE_INVENTORY === 'true') {
+    if (pageReadable) await recordPageWindow(sink, page);
+    const windows = sink.pageInventories.slice(0, MAX_PAGE_INVENTORY_WINDOWS).map((inv) => capPageInventory(inv));
+    if (windows.length > 0) {
+      await testInfo.attach(ATTACHMENT_NAMES.pageInventory, {
+        contentType: 'application/json',
+        body: Buffer.from(JSON.stringify(windows)),
       });
     }
   }
@@ -1444,6 +1850,8 @@ export const piwiFixtures: Fixtures<
   // never double-wraps a page the browser patch already instrumented.
   page: async ({ page }: PlaywrightTestArgs, use: UseFn<Page>) => {
     instrumentPage(page);
+    await awaitFlakeConditions();
+    await maybeStartCodeReach(page);
     await use(page);
   },
 
@@ -1452,19 +1860,97 @@ export const piwiFixtures: Fixtures<
   // requested, so suites that never destructure `page` are still captured.
   piwiCapture: [
     async ({}, use: UseFn<void>, testInfo: TestInfo) => {
+      boxCaptureFrames();
+      const conflict = labModeConflict();
+      if (conflict) throw new Error(conflict);
       const sink = createSink();
       sink.testInfo = testInfo;
+      if (isFlakeMode()) {
+        const plan = loadFlakePlan();
+        const role = flakeRoleForTest(plan, {
+          file: testInfo.file,
+          title: testInfo.title,
+          titlePath: testInfo.titlePath,
+          project: testInfo.project.name,
+        });
+        if (role) {
+          const browserName = (testInfo.project.use as { browserName?: string } | undefined)?.browserName ?? null;
+          sink.flake = { plan, role, startedAt: Date.now(), browserName, conditions: null };
+        }
+      }
+      if (isProbeMode())
+        sink.probeItem = probeItemForTest({
+          title: testInfo.title,
+          file: testInfo.file,
+          titlePath: testInfo.titlePath,
+        });
       currentSink = sink;
       try {
         await use();
       } finally {
         currentSink = null;
+        // Record the probe outcome (this test noticed the fault iff it failed)
+        // before flushing the rest of the capture.
+        if (sink.probeItem) {
+          const applied = sink.probeInterception?.applied() ?? false;
+          const level = sink.probeItem.level ?? 'client';
+          // `handled` classifies a server fault for the resilience findings, from
+          // the console/dialog signals this test collected plus the backend error
+          // the probe response's trace carried. Client faults never reach the
+          // server, so they record `n/a`.
+          const handled =
+            level === 'server'
+              ? classifyProbeHandled({
+                  consoleErrors: sink.consoleEntries.filter((e) => e.type === 'error').length,
+                  dialogs: sink.dialogs.length,
+                  backendError: sink.probeInterception?.serverError() ?? false,
+                })
+              : 'n/a';
+          recordProbeOutcome({
+            testCaseId: sink.probeItem.testCaseId,
+            routeKey: sink.probeItem.routeKey,
+            fault: sink.probeItem.fault,
+            applied,
+            outcome: outcomeFromStatus(testInfo.status, applied),
+            level,
+            dependency: sink.probeItem.dependency ?? null,
+            handled,
+          });
+        }
+        if (sink.flake) await recordFlakeAttempt(sink.flake, testInfo);
         await flushSink(sink, testInfo);
       }
     },
     { auto: true },
   ],
 };
+
+/**
+ * Append the flake results line for a finished attempt. Its span runs from the
+ * capture fixture's setup to its teardown, which wraps the test body and its
+ * test-scoped fixtures.
+ */
+async function recordFlakeAttempt(flake: NonNullable<CaptureSink['flake']>, testInfo: TestInfo): Promise<void> {
+  const installed = flake.conditions ? await flake.conditions : null;
+  recordFlakeResult(
+    flakeResultLine(flake.plan, {
+      role: flake.role,
+      file: testInfo.file,
+      title: testInfo.title,
+      project: testInfo.project.name || null,
+      browserName: flake.browserName,
+      status: testInfo.status ?? 'passed',
+      errorText: joinErrorMessages(testInfo.errors),
+      startedAt: flake.startedAt,
+      duration: Date.now() - flake.startedAt,
+      workerIndex: testInfo.workerIndex,
+      parallelIndex: testInfo.parallelIndex,
+      repeatEachIndex: testInfo.repeatEachIndex,
+      retry: testInfo.retry,
+      conditions: installed ? installed.reports() : unappliedReports(flake.plan),
+    }),
+  );
+}
 
 /**
  * Extend a Playwright `test` object with the Piwi capture fixtures. The

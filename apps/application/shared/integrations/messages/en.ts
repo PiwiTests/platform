@@ -54,6 +54,38 @@ export const en = {
   'link.run': 'Run',
   'link.share': 'Shareable report',
   'link.dashboard': 'Open in Piwi',
+  'link.bugReport': 'Bug report in Piwi',
+
+  // Bug reports (a ticket filed from a report sent from Piwi Picker)
+  'section.stepsToReproduce': 'Steps to reproduce',
+  'section.expectedActual': 'Expected and actual',
+  'section.failingTest': 'The failing test',
+  'section.reproductions': 'Reproductions',
+  'section.missedBy': 'Why the suite missed it',
+  'label.expected': 'Expected',
+  'label.actual': 'The page showed',
+  'label.note': 'Note',
+  'fact.page': 'Page',
+  'fact.browser': 'Browser',
+  'fact.reportedBy': 'Reported by',
+  'fact.reportedOn': 'Reported on',
+  'evidence.screenshots': {
+    one: '{count} screenshot, attached to this ticket',
+    other: '{count} screenshots, attached to this ticket',
+  },
+  'evidence.console': { one: '{count} console error or warning', other: '{count} console errors and warnings' },
+  'evidence.requests': { one: '{count} failed request', other: '{count} failed requests' },
+  'text.reportLanguage':
+    'Reported in {language}. The steps are written again in the language of this ticket; the title, the note and the values typed by the reporter stay as they were written.',
+  'text.failingTest':
+    'Commit it as {path}. Marked test.fail(), it keeps the suite green while the bug exists; once it passes, the bug looks fixed.',
+  'verdict.reproduced': 'Reproduced',
+  'verdict.notReproduced': 'Not reproduced',
+  'verdict.diverged': 'Could not reach the bug (step {step})',
+  'reproduction.replay': 'replayed in a browser',
+  'reproduction.desktop': 'run with Playwright',
+  'comment.bugLooksFixed':
+    'The test of this bug passed in run #{run} while still marked test.fail(): the bug looks fixed. Remove test.fail() with the fix.',
 
   // Policy comments (written back to the ticket in its language)
   'comment.fixLanded': 'Fix landed in run #{run} (commit {commit}, {verification}) — every affected test passed.',

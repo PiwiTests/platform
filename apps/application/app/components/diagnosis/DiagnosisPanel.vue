@@ -602,6 +602,7 @@ defineExpose({
     <!-- Result — rendered whether or not a provider is configured. -->
     <DiagnosisResult
       v-if="showResult()"
+      data-shot="diagnosis-result"
       :diagnosis="diagnosis"
       :last-seen-run-id="lastSeenRunId"
       :stale="diagnosisStale"

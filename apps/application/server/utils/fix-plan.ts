@@ -164,6 +164,7 @@ export async function buildFixPlan(db: DrizzleDB, clusterId: number): Promise<Fi
     browserName: reproBrowser,
     verifyCommand,
     clusterId: cluster.id,
+    testCaseIds: failingTests.map((test) => test.testCaseId),
   });
 
   // Resolved clusters this one resembles, and how each was fixed — best-effort,

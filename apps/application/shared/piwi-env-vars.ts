@@ -154,14 +154,14 @@ export const PIWI_ENV_CATEGORIES: Record<PiwiEnvVarCategory, PiwiEnvVarCategoryM
     title: 'Storage',
     order: 3,
     intro: 'Controls where test artifacts (HTML reports, traces, attachments) are stored.',
-    note: 'Full details and IAM examples: [Storage configuration](/operate/storage).',
+    note: 'Full details and IAM examples: [Storage & retention](/operate/storage).',
   },
   auth: {
     title: 'Authentication',
     order: 4,
     intro:
       'Authentication is optional and off by default. When disabled, all endpoints behave as a single virtual administrator.',
-    note: '> Behind a reverse proxy, set `PIWI_SITE_URL` so the OAuth `redirect_uri` is built from your public URL and matches what you registered with the provider (instead of being inferred from the request `Host`).\n\nSee [Authentication](/operate/authentication) for roles, API keys, and project assignments.',
+    note: '> Behind a reverse proxy, set `PIWI_SITE_URL` so the OAuth `redirect_uri` is built from your public URL and matches what you registered with the provider (instead of being inferred from the request `Host`).\n\nSee [Authentication](/operate/authentication) for roles, [API keys](/operate/api-keys) for keys, and [Project access](/operate/project-access) for project assignments.',
   },
   oauth: { title: 'OAuth (SSO)', order: 5, mergeInto: 'auth' },
   'wasted-time': {
@@ -183,7 +183,7 @@ export const PIWI_ENV_CATEGORIES: Record<PiwiEnvVarCategory, PiwiEnvVarCategoryM
     order: 8,
     intro:
       'Cap how much evidence (and how many tokens) go into each AI diagnosis. Resolution order: defaults ← values stored from **Settings → AI** ← environment; the environment wins and locks the field in the UI. Values are clamped to the min–max range; a `0` disables a section only where the minimum is `0`.',
-    note: 'See [AI diagnosis → Context limits](/features/ai-diagnosis#context-limits-and-token-cost) for section-by-section guidance.',
+    note: 'See [AI provider → Context limits](/guide/ai-provider#context-limits-and-token-cost) for how the caps work.',
   },
   'ai-steps': {
     title: 'AI steps',
@@ -192,7 +192,7 @@ export const PIWI_ENV_CATEGORIES: Record<PiwiEnvVarCategory, PiwiEnvVarCategoryM
     order: 8.5,
     intro:
       "Bounds on the reporter's AI-step **authoring** pass (`page.piwiLocator(...)` / `page.piwiRun(...)` in `resolve`/`heal` mode), which calls the model through this server. They cap how much of the page snapshot and how many output tokens go into each authoring iteration. They never apply during normal `replay` runs, which make no model calls. Values are clamped to the min–max range.",
-    note: 'Reasoning models spend output tokens on hidden chain-of-thought, so raise `PIWI_AI_STEP_MAX_OUTPUT_TOKENS` for them. See [AI steps](/guide/ai-steps) for the full authoring/replay model and the reporter-side `PIWI_AI*` options.',
+    note: 'Reasoning models spend output tokens on hidden chain-of-thought, so raise `PIWI_AI_STEP_MAX_OUTPUT_TOKENS` for them. See [AI steps](/features/ai-steps) for the full authoring/replay model and the reporter-side `PIWI_AI*` options.',
   },
   ingest: {
     title: 'Ingest limits',
@@ -226,7 +226,7 @@ export const PIWI_ENV_CATEGORIES: Record<PiwiEnvVarCategory, PiwiEnvVarCategoryM
     order: 14,
     intro:
       'Tunes the similarity thresholds used when grouping failures into clusters by their error fingerprint (and optional embeddings). Only used when an embedding model is configured.',
-    note: 'See [AI diagnosis → Failure clustering](/features/ai-diagnosis#failure-clustering).',
+    note: 'See [Failure clusters → How failures are grouped](/features/failure-clusters#how-failures-are-grouped).',
   },
   testing: {
     title: 'Backend logs',
@@ -262,7 +262,7 @@ export const PIWI_ENV_VARS = {
     secret: true,
     example: 'a 64-char random hex string',
     notes:
-      "Unset, saving a credential in the dashboard fails (with a startup warning in production); values encrypted earlier with the built-in development key stay readable. Generate one with `node -e \"console.log(require('node:crypto').randomBytes(32).toString('hex'))\"`.",
+      "Unset, or set to the built-in development key, the dashboard cannot save a secret: the save answers HTTP 409 with a message naming this variable. Generate one with `node -e \"console.log(require('node:crypto').randomBytes(32).toString('hex'))\"`.",
   },
   // ── Localization ─────────────────────────────────────────────────────────
   PIWI_LOCALE: {
@@ -324,11 +324,21 @@ export const PIWI_ENV_VARS = {
   },
   PIWI_RETENTION_DAYS: {
     description:
-      'Days of test-run history the nightly retention sweep keeps. Unset or 0 disables automatic run pruning (the default — pruning is opt-in).',
+      'Days of test-run history the nightly retention sweep keeps. Unset or 0 disables automatic run pruning (the default — pruning is opt-in). Kept runs are never pruned.',
     category: 'database',
     type: 'number',
     min: 0,
     docs: 'operate/storage#data-retention',
+  },
+  PIWI_RETENTION_MIN_RUNS: {
+    description:
+      'Newest runs of each project that age-based pruning (the nightly sweep and the manual cleanup) always leaves in place, however old — so a project that stops reporting keeps its last runs. Unset or 0 sets no floor.',
+    category: 'database',
+    type: 'number',
+    default: '0',
+    min: 0,
+    docs: 'operate/storage#data-retention',
+    since: '0.38.0',
   },
   PIWI_RETENTION_NOTIFICATION_DAYS: {
     description:
@@ -337,6 +347,16 @@ export const PIWI_ENV_VARS = {
     type: 'number',
     default: '30',
     min: 0,
+  },
+  PIWI_RETENTION_REPORT_DAYS: {
+    description:
+      'Days to keep report snapshots (the stored quality reports on the Reports page) before the nightly sweep prunes them (default 365; 0 keeps them forever).',
+    category: 'database',
+    type: 'number',
+    default: '365',
+    min: 0,
+    since: '0.39.0',
+    docs: 'features/quality-reports#report-schedules',
   },
   PIWI_RETENTION_DIAGNOSIS_VERSIONS: {
     description:
@@ -419,6 +439,15 @@ export const PIWI_ENV_VARS = {
     relevantWhen: { PIWI_AUTH_ENABLED: 'true' },
     requiredWhen: { PIWI_AUTH_ENABLED: 'true' },
     notes: 'The server refuses to start when auth is enabled and this is unset.',
+  },
+  PIWI_METRICS_ENABLED: {
+    description:
+      'Set to "true" to serve GET /api/metrics: the metric catalog\'s current values per project in the OpenMetrics text format, for a Prometheus or a Grafana you run to pull (Piwi sends nothing anywhere). Off by default. With authentication on, the scraper sends an API key, and sees the projects of its user.',
+    category: 'general',
+    type: 'boolean',
+    default: 'false',
+    since: '0.39.0',
+    docs: 'operate/metrics',
   },
   PIWI_SHARE_LINKS_ENABLED: {
     description:
@@ -538,7 +567,8 @@ export const PIWI_ENV_VARS = {
       'Omitted from requests when unset (provider default applies). Reasoning models (o1, o3, GPT-5-class) reject any explicit value — leave this unset for them.',
   },
   PIWI_AI_AUTO_DIAGNOSE: {
-    description: 'Set to "true" to auto-diagnose new failure clusters when a run finishes.',
+    description:
+      'Set to "true" to diagnose, when a run finishes, the failure clusters that failed in it and have no completed diagnosis yet (up to PIWI_AI_AUTO_DIAGNOSE_MAX).',
     category: 'ai',
     type: 'boolean',
     default: 'false',
@@ -550,7 +580,7 @@ export const PIWI_ENV_VARS = {
     category: 'ai',
     example: 'French',
     since: '0.29.0',
-    docs: 'features/ai-diagnosis#response-language',
+    docs: 'guide/ai-provider#response-language',
   },
   PIWI_AI_AUTO_DIAGNOSE_MAX: {
     description: 'Max clusters auto-diagnosed per finished run (budget cap; default 3).',
@@ -1036,7 +1066,18 @@ export const PIWI_ENV_VARS = {
     type: 'boolean',
     docs: 'guide/backend-logs',
     notes:
-      'Unset: capture is on in development and off in production builds; `true` forces it off everywhere, `false` forces it on even in production.',
+      'Set on the instrumented backend (Nitro or ASP.NET Core). Unset: capture is on in development and off in production builds; `true` forces it off everywhere, `false` forces it on even in production. Overrides every other environment setting.',
+  },
+  PIWI_TEST_LOGS_ENVIRONMENTS: {
+    description:
+      'Comma-separated ASP.NET Core environment names the X-Piwi-Logs middleware is active in (default: Development,Test).',
+    category: 'testing',
+    type: 'list',
+    example: 'Development,Podman,Integration',
+    docs: 'guide/backend-logs#choosing-the-environments',
+    since: '0.39.0',
+    notes:
+      'Set on the ASP.NET Core backend. Used only when the app configures no environments itself (a `UsePiwiTestLogs` argument or `PiwiTestLogsOptions`). Names match case-insensitively.',
   },
 
   // ── Failure clustering ───────────────────────────────────────────────────
@@ -1153,6 +1194,15 @@ export const PIWI_ENV_VARS = {
     default: 'Wait for timeout*,*waitForTimeout*',
     notes:
       'Case-insensitive globs (`*` and `?`) matched against a wait step’s title or source location. Use `*` to count every wait.',
+  },
+
+  PIWI_CI_MINUTE_COST: {
+    description:
+      'Cost of one CI minute as an amount and an ISO 4217 currency code (e.g. "0.008 USD"). When set, every wasted-time number in the analytics widgets and quality reports is followed by its cost, and the setting in Settings → Performance is read-only. Unset shows minutes only.',
+    category: 'wasted-time',
+    example: '0.008 USD',
+    since: '0.39.0',
+    docs: 'features/quality-reports#cost-of-a-ci-minute',
   },
 
   // ── Demo / build mode ────────────────────────────────────────────────────

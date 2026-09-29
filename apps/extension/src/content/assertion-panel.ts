@@ -1,3 +1,4 @@
+import { initI18n, t, tn, tNodes, uiLanguage } from '../shared/i18n.js';
 import { startTool, endTool, installEscapeToCancel, teardownToolSurfaces } from '../shared/tool-session.js';
 import {
   installPickerOverlay,
@@ -7,6 +8,7 @@ import {
   type PickerOverlayArg,
 } from '@piwitests/picker-dom';
 import { suggestAssertions, type AssertionSuggestion } from './assertion-suggest.js';
+import { attachPanelShadow } from './panel-root.js';
 
 const HOST_ID = 'piwi-assertion-panel-host';
 
@@ -38,7 +40,7 @@ async function copyToClipboard(text: string, btn: HTMLButtonElement): Promise<vo
     return;
   }
   const original = btn.textContent;
-  btn.textContent = 'Copied';
+  btn.textContent = t('common_copied');
   setTimeout(() => {
     btn.textContent = original;
   }, 1200);
@@ -51,7 +53,7 @@ async function renderAssertionPanel(suggestion: AssertionSuggestion): Promise<vo
   host.id = HOST_ID;
   host.style.cssText = 'all:initial;position:fixed;inset:0;z-index:2147483647;';
   document.documentElement.appendChild(host);
-  const root = host.attachShadow({ mode: 'closed' });
+  const root = attachPanelShadow(host, { mode: 'closed' });
 
   // Exposed for assertion-suggest.spec.ts: suggestAssertions calls
   // @piwitests/core's generateAlternatives, which has its own private
@@ -78,15 +80,16 @@ async function renderAssertionPanel(suggestion: AssertionSuggestion): Promise<vo
     @media (prefers-color-scheme: light) {
       .panel { background: #ffffff; color: #111827; box-shadow: 0 8px 40px rgba(0,0,0,.2); }
     }
-    .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-    .title { font-weight: 600; font-size: 14px; }
-    .sub { color: #9ca3af; font-size: 12px; word-break: break-all; }
+    .header { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+    .header > div { min-width: 0; }
+    .title { font-weight: 600; font-size: 14px; overflow-wrap: anywhere; hyphens: auto; }
+    .sub { color: #9ca3af; font-size: 12px; overflow-wrap: anywhere; }
     .close {
       background: none; border: none; color: inherit; opacity: .7; cursor: pointer; font-size: 18px;
       line-height: 1; padding: 4px 8px; border-radius: 6px;
     }
     .close:hover, .close:focus-visible { opacity: 1; background: rgba(128,128,128,.15); }
-    .empty { color: #9ca3af; font-size: 12.5px; }
+    .empty { color: #9ca3af; font-size: 12.5px; overflow-wrap: anywhere; }
     .row { border: 1px solid rgba(128,128,128,.3); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; }
     .row-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
     .method { color: #c4b5fd; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; }
@@ -109,7 +112,8 @@ async function renderAssertionPanel(suggestion: AssertionSuggestion): Promise<vo
   const panel = document.createElement('div');
   panel.className = 'panel';
   panel.setAttribute('role', 'dialog');
-  panel.setAttribute('aria-label', 'Piwi assertion suggestions');
+  panel.lang = uiLanguage();
+  panel.setAttribute('aria-label', t('assert_dialog'));
   panel.tabIndex = -1;
 
   const header = document.createElement('div');
@@ -118,18 +122,19 @@ async function renderAssertionPanel(suggestion: AssertionSuggestion): Promise<vo
   const title = document.createElement('div');
   title.className = 'title';
   title.textContent =
-    suggestion.candidates.length === 0
-      ? 'No assertions suggested'
-      : `${suggestion.candidates.length} suggested assertion${suggestion.candidates.length === 1 ? '' : 's'}`;
+    suggestion.candidates.length === 0 ? t('assert_none') : tn('assert_count', suggestion.candidates.length);
   const sub = document.createElement('div');
   sub.className = 'sub';
-  sub.innerHTML = suggestion.locator
-    ? `against <span class="piwi-loc">${highlightLocator(suggestion.locator)}</span>`
-    : '';
+  if (suggestion.locator) {
+    const locator = document.createElement('span');
+    locator.className = 'piwi-loc';
+    locator.innerHTML = highlightLocator(suggestion.locator);
+    sub.append(...tNodes('assert_locator', { locator }));
+  }
   titleWrap.append(title, sub);
   const closeBtn = document.createElement('button');
   closeBtn.className = 'close';
-  closeBtn.setAttribute('aria-label', 'Close');
+  closeBtn.setAttribute('aria-label', t('common_close'));
   closeBtn.textContent = '×';
   header.append(titleWrap, closeBtn);
   panel.appendChild(header);
@@ -137,7 +142,7 @@ async function renderAssertionPanel(suggestion: AssertionSuggestion): Promise<vo
   if (suggestion.candidates.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'empty';
-    empty.textContent = 'No locator could be generated for this element, so no assertion could be suggested.';
+    empty.textContent = t('assert_noLocator');
     panel.appendChild(empty);
   }
 
@@ -174,7 +179,7 @@ async function renderAssertionPanel(suggestion: AssertionSuggestion): Promise<vo
       const btn = document.createElement('button');
       btn.className = 'copy';
       btn.type = 'button';
-      btn.textContent = 'Copy';
+      btn.textContent = t('common_copy');
       btn.addEventListener('click', () => void copyToClipboard(candidate.expectLine, btn));
       top.append(method, btn);
       row.appendChild(top);
@@ -214,6 +219,7 @@ async function runAssertionSuggester(): Promise<void> {
   g.__piwiPicking = true;
   const toolEpoch = startTool('assertion-panel', teardownToolSurfaces);
   installEscapeToCancel();
+  const i18nReady = initI18n();
   try {
     clearPickGlobals();
     const overlayArg: PickerOverlayArg = { transport: 'global', failing: null };
@@ -226,6 +232,7 @@ async function runAssertionSuggester(): Promise<void> {
 
     const el = g.__piwiPickedElement as Element;
     const suggestion = suggestAssertions(el);
+    await i18nReady;
     await renderAssertionPanel(suggestion);
   } finally {
     clearPickGlobals();

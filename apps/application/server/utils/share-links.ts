@@ -6,6 +6,13 @@ import type { ExportKind } from '#shared/export/types';
 
 export const SHARE_TOKEN_PREFIX = 'psl_';
 
+/**
+ * What a share link opens: an execution or a failure cluster (an offline
+ * export), a report snapshot (its stored quality report), or a saved
+ * dashboard (rendered live as a quality report at every view).
+ */
+export type ShareLinkKind = ExportKind | 'report' | 'dashboard';
+
 /** Full share token: `psl_` + 64 hex chars. */
 const SHARE_TOKEN_RE = /^psl_[0-9a-f]{64}$/;
 
@@ -55,6 +62,14 @@ export function resolveShareLinkExpiry(requestedTtlDays: number | null | undefin
   return ttlDays == null ? null : new Date(now.getTime() + ttlDays * 24 * 60 * 60 * 1000);
 }
 
+/** A requested expiry, moved earlier when it passes the longest allowed lifetime. */
+export function capShareLinkExpiry(expiresAt: Date, now = new Date()): Date {
+  const maxTtlDays = resolveShareLinkMaxTtlDays();
+  if (maxTtlDays === 0) return expiresAt;
+  const cap = now.getTime() + maxTtlDays * 24 * 60 * 60 * 1000;
+  return new Date(Math.min(expiresAt.getTime(), cap));
+}
+
 export interface MintedShareLink {
   /** The full token — shown once, never stored. */
   token: string;
@@ -64,11 +79,14 @@ export interface MintedShareLink {
 export async function mintShareLink(
   db: DbClient,
   input: {
-    projectId: number;
-    entityKind: ExportKind;
+    /** Null for a report or a dashboard link, which can span several projects. */
+    projectId: number | null;
+    entityKind: ShareLinkKind;
     entityId: number;
     createdBy: number | null;
     ttlDays?: number | null;
+    /** A fixed expiry (a scheduled report's link), capped by the longest allowed lifetime. */
+    expiresAt?: Date;
   },
 ): Promise<MintedShareLink> {
   const secret = randomBytes(32).toString('hex');
@@ -82,7 +100,7 @@ export async function mintShareLink(
       tokenHash: hashShareToken(token),
       tokenPrefix: secret.slice(0, 8),
       createdBy: input.createdBy,
-      expiresAt: resolveShareLinkExpiry(input.ttlDays),
+      expiresAt: input.expiresAt ? capShareLinkExpiry(input.expiresAt) : resolveShareLinkExpiry(input.ttlDays),
     })
     .returning();
   return { token, link: inserted[0]! };
@@ -147,7 +165,7 @@ function toSummary(link: ShareLink): ShareLinkSummary {
 
 export async function listEntityShareLinks(
   db: DbClient,
-  entityKind: ExportKind,
+  entityKind: ShareLinkKind,
   entityId: number,
 ): Promise<ShareLinkSummary[]> {
   const rows = await db

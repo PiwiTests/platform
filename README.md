@@ -6,7 +6,7 @@
   <b>Your Playwright results, kept and explained.</b><br>
   CI throws away every report it makes. Piwi keeps them — every run, trace, and HTML report — then
   groups the failures by root cause, scores the flaky tests, and finds the locator you should have
-  used. Self-hosted, MIT, zero telemetry.
+  used. Self-hosted, zero telemetry.
 </p>
 
 <p align="center">
@@ -21,7 +21,7 @@
   <a href="https://www.npmjs.com/package/@piwitests/server"><img src="https://img.shields.io/npm/v/@piwitests/server?logo=npm&label=server&labelColor=020420&color=CB3837" alt="npm server"></a>
   <a href="https://hub.docker.com/r/phenx/piwitests-server"><img src="https://img.shields.io/docker/v/phenx/piwitests-server?logo=docker&labelColor=020420&color=2496ED" alt="Docker"></a>
   <a href="https://github.com/PiwiTests/platform/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/PiwiTests/platform/ci.yml?branch=main&logo=githubactions&logoColor=white&labelColor=020420&label=CI" alt="CI status"></a>
-  <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-green?labelColor=020420" alt="MIT license"></a>
+  <a href="./LICENSE"><img src="https://img.shields.io/badge/license-FSL--1.1--MIT-green?labelColor=020420" alt="FSL-1.1-MIT license"></a>
 </p>
 
 <p align="center">
@@ -74,8 +74,8 @@ Five ways in, depending on what you already have:
 | **[One-click deploy](https://piwitests.dev/operate/deployment#one-click-deploy)** | You want a shared instance and no server to run it on | A button, plus whatever your host charges |
 
 Two caveats worth knowing before you pick. The **desktop installers are not yet code-signed**, so the
-first launch needs a click-through, and they exist for Windows x64, Apple-silicon macOS and Linux x86-64
-(`.AppImage`, `.deb`, `.rpm`) — on an Intel Mac, use Docker or `npx`. The **one-click templates** ([`render.yaml`](./render.yaml),
+first launch needs a click-through, and they exist for Windows x64, Apple-silicon macOS and Linux x86-64; on
+an Intel Mac, use Docker or `npx`. The **one-click templates** ([`render.yaml`](./render.yaml),
 [`fly.toml`](./fly.toml), [`deploy/`](./deploy), generated from the same variable registry as the
 configuration reference so they can't drift from what the app reads) each provision one container with a
 persistent volume and authentication on, but per-provider limits apply — Render needs a paid instance
@@ -187,12 +187,12 @@ Found a vulnerability? Please report it privately via the [security policy](./SE
 
 | | |
 |---|---|
-| [![Failure cluster with AI diagnosis](./apps/docs/public/screenshots/failure-cluster.png)](https://piwitests.dev/features/ai-diagnosis) | [![AI diagnosis grounded in your SCM diff](./apps/docs/public/screenshots/ai-diagnosis.png)](https://piwitests.dev/features/ai-diagnosis) |
-| **Failure clusters** — forty red tests, three root causes | **AI diagnosis** — read against your actual git diff |
-| [![Flaky test detection](./apps/docs/public/screenshots/flaky-detection.png)](https://piwitests.dev/features/flaky-tests) | [![Test run detail with worker timeline](./apps/docs/public/screenshots/test-run.png)](https://piwitests.dev/features/ui-overview) |
-| **Flaky tests** — scored, classified, ranked by wasted CI time | **Run detail** — cases, worker timeline, traces, retry command |
-| [![Locator healing suggestions](./apps/docs/public/screenshots/locator-healing.png)](https://piwitests.dev/guide/reporter#locator-healing) | [![Performance trends](./apps/docs/public/screenshots/performance-trends.png)](https://piwitests.dev/features/slow-tests#duration-trends) |
-| **Locator healing** — replacements from the last passing run | **Performance** — P90 trends and slowest-test tracking |
+| [![A red run with its failures grouped by cluster](./apps/docs/public/screenshots/tour-run-clusters.png)](https://piwitests.dev/features/failure-clusters) | [![An AI diagnosis with its evidence and a patch that applies cleanly](./apps/docs/public/screenshots/tour-ai-diagnosis.png)](https://piwitests.dev/features/ai-diagnosis) |
+| **Failure clusters**: the red tests of a run grouped by root cause, each triaged once | **AI diagnosis**: read against your git diff, its patch checked against your source |
+| [![A failing execution with its most likely cause and next step](./apps/docs/public/screenshots/tour-execution.png)](https://piwitests.dev/features/evidence) | [![Ranked replacement locators and the recommended fix](./apps/docs/public/screenshots/tour-locator-healing.png)](https://piwitests.dev/features/locator-healing) |
+| **Failing execution**: what broke, the likely cause and the next step, above the evidence | **Locator healing**: replacements from the last passing run, and the patch to apply |
+| [![Analytics: headline numbers and the health of every project](./apps/docs/public/screenshots/tour-analytics.png)](https://piwitests.dev/features/analytics) | [![The history of one test across runs](./apps/docs/public/screenshots/tour-test-history.png)](https://piwitests.dev/features/evidence#the-test-case-page) |
+| **Analytics**: pass rate, flaky tests and wasted CI minutes across projects | **Test history**: every execution of a test, long after CI deleted its artifacts |
 
 ## Where this fits
 
@@ -219,13 +219,15 @@ Everything below is built and published from this repository on each release.
 | [`ghcr.io/piwitests/platform`](https://github.com/PiwiTests/platform/pkgs/container/platform) | GHCR | The same container, mirrored — plus an `edge` tag built from `main` |
 | [`@piwitests/instrumentation-nitro`](https://www.npmjs.com/package/@piwitests/instrumentation-nitro) | npm | Optional: sends your Nitro/Nuxt backend's logs into a test run |
 | [`PiwiTests.Instrumentation.AspNetCore`](https://www.nuget.org/packages/PiwiTests.Instrumentation.AspNetCore) | NuGet | Optional: the same for an ASP.NET Core backend |
+| [`PiwiTests.Instrumentation.Serilog`](https://www.nuget.org/packages/PiwiTests.Instrumentation.Serilog) | NuGet | Optional: a Serilog sink for an ASP.NET Core backend that logs through Serilog |
+| [`PiwiTests.Instrumentation.Core`](https://www.nuget.org/packages/PiwiTests.Instrumentation.Core) | NuGet | The capture buffer the two .NET packages above share — installed with them |
 | Desktop app (`.msi`/`.exe`, `.dmg`, `.deb`/`.rpm`/`.AppImage`) | [GitHub Releases](https://github.com/PiwiTests/platform/releases/latest) | The server bundled in a native window — no Docker or Node |
 | [Piwi Picker](https://chromewebstore.google.com/detail/piwi-picker/pakhnokpjboejcghgcmkjlpnogfjihhe) | Chrome Web Store | The browser extension — ranked Playwright locators picked from the live page (Chrome, Edge, and other Chromium browsers) |
 
-The two instrumentation packages are optional and only needed for
+The instrumentation packages are optional and only needed for
 [backend log capture](https://piwitests.dev/guide/backend-logs). Both container registries carry the
-same images; use whichever your organization prefers. The extension is the one entry uploaded to its
-store by hand rather than by CI, so its listed version can trail a release by a day or two.
+same images; use whichever your organization prefers. The extension reaches its store through the
+store's review, so its listed version can trail a release by a day or two.
 
 ## Project status
 
@@ -270,7 +272,13 @@ cd apps/application && npm install && npm run app:dev   # http://localhost:3000
 
 ## License
 
-MIT
+Fair source. The dashboard, the server, the desktop app and the browser extension are under the
+[Functional Source License, Version 1.1, MIT Future License](LICENSE) (FSL-1.1-MIT): use it, self-host it and
+modify it for free, at work too. What it rules out is offering Piwi, or a product built from it, as a
+commercial product or service that competes with it. Each release becomes MIT two years after it is published.
+
+The reporter, the integrations and the examples are MIT. Releases up to v0.39.x stay MIT.
+See [License](https://piwitests.dev/guide/license) for what is and isn't allowed.
 
 ---
 

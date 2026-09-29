@@ -5,7 +5,7 @@ import { PROJECT } from '#shared/test-project-names';
 /**
  * Failure-cluster detail page layout: one situation block, read top to bottom.
  * The block carries the state line (the sentence, its one reconcile action and
- * the Triage / Snooze menus) and the occurrence sparkline; the raw error is a
+ * the Triage panel, which also snoozes) and the occurrence sparkline; the raw error is a
  * "Raw error" disclosure on the facts line; the affected tests are the evidence
  * selector above the tabbed evidence; What changed is a line of the block, and
  * a card below it only with a diff to browse.
@@ -74,20 +74,24 @@ test.describe('Failure cluster page layout', () => {
     clusterId = await seedCluster(request);
   });
 
-  test('the state line carries the sentence, the Triage and Snooze menus and the occurrence facts', async ({
-    page,
-  }) => {
+  test('the state line carries the sentence, the Triage panel and the occurrence facts', async ({ page }) => {
     await page.goto(`/failure-clusters/${clusterId}`);
     await waitForHydration(page);
 
-    // The one-verb state line, with its two menus (auth is disabled → the virtual
+    // The one-verb state line, with its Triage panel (auth is disabled → the virtual
     // admin can write). There is no segmented "Triage status" control any more.
     const state = page.locator('[data-shot="cluster-state"]');
     await expect(state).toBeVisible();
     await expect(state).toContainText('Still failing');
-    await expect(state.getByRole('button', { name: 'Triage' })).toBeVisible();
-    await expect(state.getByRole('button', { name: 'Snooze' })).toBeVisible();
     await expect(page.getByRole('group', { name: 'Triage status' })).toHaveCount(0);
+
+    // Snooze lives inside Triage, not as a second menu on the line.
+    await expect(state.getByRole('button', { name: 'Snooze' })).toHaveCount(0);
+    await state.getByRole('button', { name: 'Triage' }).click();
+    const snooze = page.getByRole('group', { name: 'Snooze' });
+    await expect(snooze.getByRole('button', { name: '1 day' })).toBeVisible();
+    await expect(snooze.getByRole('button', { name: 'Until it recurs' })).toBeVisible();
+    await page.keyboard.press('Escape');
 
     // The occurrence sparkline and its sentence carry the "2 tests" count; there
     // is no "Runs" card.
@@ -172,7 +176,14 @@ test.describe('Cluster situation block on seeded clusters', () => {
     unsnooze: 'Unsnooze',
     release: 'Release',
   };
-  const norm = (s: string) => s.replace(/\s+/g, ' ').trim();
+  // Relative ages ("44 seconds ago", "since 44 seconds") keep ticking between the
+  // API read and the render, so a cluster seen seconds ago would flip a second
+  // across the two reads. Compare everything else verbatim and an age by its unit.
+  const norm = (s: string) =>
+    s
+      .replace(/\s+/g, ' ')
+      .replace(/\b\d+ (second|minute|hour|day|week|month|year)s?\b/g, 'N $1s')
+      .trim();
 
   let hasSeed = false;
   test.beforeAll(async ({ request }) => {
@@ -201,11 +212,10 @@ test.describe('Cluster situation block on seeded clusters', () => {
       await expect(sentence).toBeVisible();
       await expect.poll(async () => norm(await sentence.innerText())).toBe(norm(detail.clusterState.sentence));
 
-      // The two menus are always present for a writer; the one reconcile action is
-      // present exactly when the server reports one.
+      // Triage is always present for a writer; the one reconcile action is present
+      // exactly when the server reports one.
       const state = page.locator('[data-shot="cluster-state"]');
       await expect(state.getByRole('button', { name: 'Triage' })).toBeVisible();
-      await expect(state.getByRole('button', { name: 'Snooze' })).toBeVisible();
       if (detail.clusterState.action) {
         await expect(
           state.getByRole('button', { name: RECONCILE_LABEL[detail.clusterState.action]!, exact: true }),

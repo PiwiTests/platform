@@ -24,33 +24,25 @@ export interface FunctionTestResult {
  * (the same rule `rankFunctionMatches` scores a recorded step against) so a
  * function marked "ready" here is scored the same way it would be mid-recording.
  *
+ * `nameOf` names an element as the recorder does, with the accessible name
+ * Playwright computes (`DomModel`), so a step names the same element here as
+ * in a recording: "Regressions 5" for a tab showing a count badge.
+ *
  * Every helper is nested here rather than a module-level sibling, mirroring
  * `multi-pick-derive.ts`: this gets re-serialized via
  * `Function.prototype.toString()` in tests (installing `domRoleOf` and
  * `scoreTargetMatch` as globals first), which only ever carries a function's
  * own source text.
  */
-export function testCatalogAgainstPage(catalog: TestFunctionEntry[], maps: DomRoleMaps): FunctionTestResult[] {
+export function testCatalogAgainstPage(
+  catalog: TestFunctionEntry[],
+  maps: DomRoleMaps,
+  nameOf: (el: Element) => string | null,
+): FunctionTestResult[] {
   const ROLE_CANDIDATES = [...new Set(['[role]', 'input', 'select', ...Object.keys(maps.tagRoles)])].join(',');
 
   function normalize(s: string): string {
     return s.replace(/\s+/g, ' ').trim();
-  }
-
-  /**
-   * Mirrors core's `approximateAccessibleName` — aria-label, then text, then
-   * title, then placeholder. Inlined rather than imported because this function
-   * is re-serialized via `Function.prototype.toString()` (see the note above),
-   * the same reason `probe.ts` keeps its own copy. Reading only `aria-label`
-   * here meant a step scored one way in "Try it" and another way during a real
-   * recording, against the claim that both use one rule.
-   */
-  function accessibleNameOf(el: Element): string | null {
-    const ariaLabel = el.getAttribute('aria-label');
-    if (ariaLabel) return ariaLabel;
-    const text = normalize(el.textContent || '');
-    if (text) return text;
-    return el.getAttribute('title') || el.getAttribute('placeholder') || null;
   }
 
   function elementCandidate(el: Element): {
@@ -62,7 +54,7 @@ export function testCatalogAgainstPage(catalog: TestFunctionEntry[], maps: DomRo
     return {
       role: domRoleOf(el, maps),
       testId: el.getAttribute('data-testid'),
-      accessibleName: accessibleNameOf(el),
+      accessibleName: nameOf(el),
       text: normalize(el.textContent || ''),
     };
   }

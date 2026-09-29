@@ -37,6 +37,10 @@ export interface SetupCapabilityCopy {
   /** How to switch it on, when inactive. */
   how: string;
   icon: string;
+  /** Marks a capability that ships behind a flag and is not yet validated. */
+  experimental?: boolean;
+  /** A one-line caveat rendered when `experimental`, e.g. what is not measured yet. */
+  experimentalNote?: string;
   /** Docs page (+ optional `#anchor`), passed through `DocLink`. */
   doc?: string;
   /** In-app route that configures it, when there is one. */
@@ -105,7 +109,7 @@ export const SETUP_CAPABILITIES: SetupCapabilityCopy[] = [
       'An LLM you configure explains a cluster against your actual git diff, with its suggested patch validated against your source before you see it.',
     how: 'Configure a provider in Settings — Anthropic, OpenAI, or any OpenAI-compatible endpoint including local models.',
     icon: 'i-lucide-sparkles',
-    doc: 'features/ai-diagnosis',
+    doc: 'guide/ai-provider',
     to: '/settings/ai',
     toLabel: 'Configure AI',
   },
@@ -130,12 +134,21 @@ export const SETUP_CAPABILITIES: SetupCapabilityCopy[] = [
     toLabel: 'Add a channel',
   },
   {
+    id: 'quality-reports',
+    title: 'Quality reports',
+    summary:
+      'The analytics page as a document for someone who never opens the dashboard: a verdict, headline numbers, the trend, what is being done and the risks, as PDF, HTML, Markdown, Excel or JSON.',
+    how: 'Click Export on the Analytics page or on a project page, pick a dashboard and download the format you need.',
+    icon: 'i-lucide-file-chart-column',
+    doc: 'features/quality-reports',
+  },
+  {
     id: 'pr-feedback',
     title: 'Pull-request feedback',
     summary: 'When a run finishes on a branch with an open pull request, the result posted back to it.',
     how: 'Configure it in Settings — needs a repository access token.',
     icon: 'i-lucide-git-pull-request',
-    doc: 'guide/ci',
+    doc: 'features/pr-feedback',
     to: '/settings/pr-feedback',
     toLabel: 'Configure',
   },
@@ -167,7 +180,7 @@ export const SETUP_CAPABILITIES: SetupCapabilityCopy[] = [
       'The commits behind a failure, CODEOWNERS-derived ownership, and pull-request feedback on the branch that broke.',
     how: 'Add a repository access token on the project, or globally in Settings.',
     icon: 'i-lucide-git-branch',
-    doc: 'features/ai-diagnosis',
+    doc: 'guide/source-control',
     to: '/settings/ai',
     toLabel: 'Add a token',
   },
@@ -197,6 +210,45 @@ export const SETUP_CAPABILITIES: SetupCapabilityCopy[] = [
       'A known-bad test keeps running and reporting, but stops failing the CI gate — and earns its way out on a passing streak.',
     how: "Quarantine a test from its test-case page, or from the project's Quarantine tab.",
     icon: 'i-lucide-shield-alert',
+    doc: 'features/flaky-tests',
+  },
+  {
+    id: 'test-map',
+    title: 'Scenario gaps',
+    summary:
+      'The tests you have not written yet: routes and pages your runs reach but nothing checks, ranked by exposure, each with a skeleton to start from.',
+    how: "Automatic — the map builds from your runs, and gaps appear on a project's Gaps tab as reach accrues.",
+    icon: 'i-lucide-map',
+    doc: 'features/scenario-gaps',
+  },
+  {
+    id: 'server-probes',
+    title: 'Server probes',
+    summary:
+      'A fault injected inside the server for one signed request, to check whether a passing test would notice a 500, a dropped field or a slow dependency.',
+    how: 'Needs a backend package in the app under test; available today for Nitro and ASP.NET Core. Turn it on per project once client probes report not-noticed.',
+    icon: 'i-lucide-radar',
+    experimental: true,
+    experimentalNote:
+      'Experimental — the entry condition (client probes reporting not-noticed on at least one pair in ten) has not been measured yet.',
+    doc: 'features/probes#server-probes',
+  },
+  {
+    id: 'bug-reports',
+    title: 'Bug reports',
+    summary:
+      'Bugs reported from Piwi Picker with their steps, the expected result and evidence, each turned into a failing test and followed until it passes.',
+    how: 'Connect Piwi Picker to this instance, then use Report a bug and Send to Piwi on the page that shows the bug.',
+    icon: 'i-lucide-bug',
+    doc: 'features/bug-reports',
+  },
+  {
+    id: 'flake-lab',
+    title: 'Flake suspects',
+    summary:
+      'For a flaky test, the requests, neighbors and load its failures share and its passes do not, each with the counts behind it and the condition that would test it.',
+    how: 'Automatic — suspects appear on a flaky test’s Flakiness tab once its history holds at least three failures that share something.',
+    icon: 'i-lucide-search-check',
     doc: 'features/flaky-tests',
   },
 ];

@@ -6,6 +6,7 @@
     "lib": ["ES2021", "dom"],
     "types": ["chrome"],
     "strict": true,
+    "resolveJsonModule": true,
     "noEmit": true
   },
   "include": ["src/**/*.ts"],

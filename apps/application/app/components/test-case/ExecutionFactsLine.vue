@@ -63,8 +63,14 @@ function attemptColor(status: string): 'success' | 'error' | 'neutral' {
   if (status === 'failed' || status === 'timedout' || status === 'timedOut') return 'error';
   return 'neutral';
 }
+// An attempt's start time is in the browser's time zone, which the server does
+// not know, so the titles name it once the line is mounted.
+const mounted = ref(false);
+onMounted(() => {
+  mounted.value = true;
+});
 function attemptTitle(a: AttemptOutcome): string {
-  const when = a.startedAt ? ` at ${new Date(a.startedAt).toLocaleString()}` : '';
+  const when = a.startedAt && mounted.value ? ` at ${new Date(a.startedAt).toLocaleString()}` : '';
   return `Attempt ${a.retry + 1}: ${a.status} (${Math.round(a.duration)} ms)${when}`;
 }
 function isCurrentAttempt(a: AttemptOutcome): boolean {
@@ -93,7 +99,7 @@ defineExpose({ revealRawError });
     />
     <!-- Secondary facts collapse at 390px; they stay in Details below. -->
     <span class="max-sm:hidden inline-flex items-center gap-x-2 gap-y-1 flex-wrap">
-      <span v-if="browser" class="inline-flex items-center gap-1">
+      <span v-if="browser?.projectName" class="inline-flex items-center gap-1">
         <BrowserBadge :browser="{ ...browser, viewport: undefined }" size="sm" />
         <span v-if="browser.viewport" class="tabular-nums">
           {{ browser.viewport.width }}×{{ browser.viewport.height }}
@@ -240,12 +246,12 @@ defineExpose({ revealRawError });
             <p class="text-xs font-medium text-muted uppercase tracking-wide">Tags</p>
             <TestMetaBadges :tags="testCase?.tags" :meta="testCase?.testMeta" />
           </div>
-          <div v-if="testCase?.executionId" class="space-y-1">
+          <div v-if="testCase?.testCaseId && testCase?.stableLinks?.length" class="space-y-1">
             <p class="text-xs font-medium text-muted uppercase tracking-wide">Links</p>
             <EntityLinks
               entity-type="test_case"
-              :entity-id="testCase.executionId"
-              :links="(testCase as any)?.stableLinks ?? null"
+              :entity-id="testCase.testCaseId"
+              :links="testCase.stableLinks"
               readonly
             />
           </div>

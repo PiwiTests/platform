@@ -1,5 +1,6 @@
 ---
 title: Open in IDE
+description: "Open any source path shown in the dashboard at its file and line in VS Code or JetBrains, and how to set up each method."
 lang: en-US
 ---
 
@@ -17,6 +18,10 @@ Because the dashboard runs in your browser while the source lives on your
 machine, the mapping from a repo-relative path (`tests/checkout.spec.ts`) to a
 real file is configured **per browser** and stored locally — it is never sent to
 the server.
+
+To see Piwi's answers inside the editor instead — CI failures at their lines, the
+tests behind each locator, the heal as a quick fix — install the
+[editor extension](/features/editors).
 
 ## Set it up
 

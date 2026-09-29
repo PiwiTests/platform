@@ -3,8 +3,8 @@
 // is intentionally not committed to git — CI runs `npm run app:build --workspace=apps/application`
 // (with NITRO_PRESET=node-server) before packing.
 //
-// The build bundles a `node_modules` into `.output/server/` (Nitro's noExternals does
-// not fully inline it — the runtime still resolves deps like drizzle-orm from there).
+// Nitro keeps the npm dependencies external and copies the files they use into
+// `.output/server/node_modules`; the runtime resolves deps like drizzle-orm from there.
 // Those pure-JS deps are cross-platform and ship as-is. The one exception is the native
 // modules (sharp, libsql): the bundled copies are the BUILD machine's platform binaries
 // (e.g. linux-x64-glibc), which would be wrong for a macOS / Windows / arm / musl user.
@@ -12,7 +12,7 @@
 // `@libsql/client` as real dependencies in package.json, so npm installs the correct
 // per-platform binaries at install time (the bundled JS wrappers resolve them from the
 // hoisted top-level node_modules). This mirrors the Dockerfile's runtime install.
-import { cpSync, existsSync, readdirSync, rmSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -28,8 +28,20 @@ if (!existsSync(source)) {
   process.exit(1)
 }
 
+// npm pack leaves symlinks out of the tarball, and Nitro links each package it ships in
+// two versions (`node_modules/hookable -> .nitro/hookable@6.1.1`), so the copy follows
+// links and writes what they point to.
+function copyFollowingLinks(from, to) {
+  if (statSync(from).isDirectory()) {
+    mkdirSync(to, { recursive: true })
+    for (const name of readdirSync(from)) copyFollowingLinks(join(from, name), join(to, name))
+  } else {
+    copyFileSync(from, to)
+  }
+}
+
 rmSync(target, { recursive: true, force: true })
-cpSync(source, target, { recursive: true })
+copyFollowingLinks(source, target)
 console.log(`[copy-output] Copied ${source} -> ${target}`)
 
 // Strip platform-locked native binaries so npm reinstalls the correct ones per platform.

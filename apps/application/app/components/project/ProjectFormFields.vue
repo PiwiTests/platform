@@ -23,8 +23,12 @@ const props = withDefaults(
     projectId?: number;
     /** Edit mode: the project's stored capability decisions, seeding the overrides. */
     capabilities?: Partial<Record<CapabilityId, ProjectDecision>> | null;
+    /** Edit mode: hide the OpenAPI field when `test-map` is declined or not applicable. */
+    hideOpenApi?: boolean;
+    /** Edit mode: hide the server-probes group when `server-probes` is declined or not applicable. */
+    hideServerProbes?: boolean;
   }>(),
-  { hasToken: false },
+  { hasToken: false, hideOpenApi: false, hideServerProbes: false },
 );
 
 const emit = defineEmits<{ 'tag-created': [] }>();
@@ -36,7 +40,20 @@ const diagnosisInstructions = defineModel<string>('diagnosisInstructions', { def
 const aiLanguage = defineModel<string>('aiLanguage', { default: '' });
 const scmToken = defineModel<string>('scmToken', { default: '' });
 const defaultBranch = defineModel<string>('defaultBranch', { default: '' });
+const openApiUrl = defineModel<string>('openApiUrl', { default: '' });
 const tags = defineModel<TagInfo[]>('tags', { default: () => [] });
+
+/** Server-probe form state — the level-two probe gate, off by default. Faults and
+ * routes are comma-separated in the form and split to arrays on save. */
+export interface ServerProbesForm {
+  enabled: boolean;
+  faults: string;
+  routes: string;
+  dependencyOnStateChanging: boolean;
+}
+const serverProbes = defineModel<ServerProbesForm>('serverProbes', {
+  default: () => ({ enabled: false, faults: '', routes: '', dependencyOnStateChanging: false }),
+});
 
 /** Full-shape CI re-run form state — the server drops empty targets on save. */
 export interface CiRerunForm {
@@ -45,6 +62,15 @@ export interface CiRerunForm {
   gitlab: { ref: string; variableName: string };
   bitbucket: { pipeline: string; variableName: string };
 }
+/** Where bug specs go and what they import `test` from; blank fields fall back to the defaults. */
+export interface GeneratedSpecsForm {
+  testImport: string;
+  bugsFolder: string;
+}
+const generatedSpecs = defineModel<GeneratedSpecsForm>('generatedSpecs', {
+  default: () => ({ testImport: '', bugsFolder: '' }),
+});
+
 const ciRerun = defineModel<CiRerunForm>('ciRerun', {
   default: () => ({
     enabled: false,
@@ -130,6 +156,46 @@ const ciRerun = defineModel<CiRerunForm>('ciRerun', {
       </UFormField>
 
       <UFormField
+        v-if="!hideOpenApi"
+        label="OpenAPI document URL"
+        name="openApiUrl"
+        description="Declared surface. Fetched server-side; its routes and documented response codes become declared graph nodes, so a route the spec documents but no test reaches is a gap. Leave empty to skip."
+      >
+        <UInput v-model="openApiUrl" placeholder="e.g. https://app.example.com/openapi.json" class="w-full font-mono" />
+      </UFormField>
+
+      <UFormField
+        v-if="!hideServerProbes"
+        name="serverProbes"
+        description="Level-two probes inject a fault inside the server for one signed request, to check whether a passing test would notice. Experimental and off by default: the entry condition (client probes reporting not-noticed on at least one in ten pairs) has not been measured yet. Needs a shared probe secret on the app under test and the probe runner, and a non-production target."
+      >
+        <template #label>
+          <span class="inline-flex items-center gap-1"
+            >Server probes <UBadge color="neutral" variant="subtle" size="xs">Experimental</UBadge></span
+          >
+        </template>
+        <div class="space-y-3">
+          <USwitch v-model="serverProbes.enabled" label="Enable server probes for this project" />
+          <div v-if="serverProbes.enabled" class="space-y-3">
+            <UInput
+              v-model="serverProbes.faults"
+              placeholder="allowed faults, comma-separated — e.g. throw, status, delay, dependency"
+              class="w-full font-mono"
+            />
+            <UInput
+              v-model="serverProbes.routes"
+              placeholder="allowed routes, comma-separated — blank allows every reached route"
+              class="w-full font-mono"
+            />
+            <USwitch
+              v-model="serverProbes.dependencyOnStateChanging"
+              label="Allow dependency faults on state-changing routes (needs an ephemeral or staging database)"
+            />
+          </div>
+        </div>
+      </UFormField>
+
+      <UFormField
         name="ciRerun"
         description="Let reporters and admins re-run a cluster's affected tests in CI from its page, using the SCM token above. Off by default; fill in the block for your provider."
       >
@@ -174,6 +240,29 @@ const ciRerun = defineModel<CiRerunForm>('ciRerun', {
               </div>
             </div>
           </div>
+        </div>
+      </UFormField>
+
+      <UFormField
+        name="generatedSpecs"
+        description="For the failing test Piwi writes from a bug report: where it goes and what it imports test and expect from, such as ../fixtures when your tests use their own."
+      >
+        <template #label>
+          <span class="inline-flex items-center gap-1">Generated specs <HelpHint topic="bug-report.spec" /></span>
+        </template>
+        <div class="grid gap-2 sm:grid-cols-2">
+          <UInput
+            v-model="generatedSpecs.bugsFolder"
+            placeholder="folder for bug specs, tests/bugs"
+            class="font-mono"
+            aria-label="Folder for bug specs"
+          />
+          <UInput
+            v-model="generatedSpecs.testImport"
+            placeholder="test import, @playwright/test"
+            class="font-mono"
+            aria-label="Test import"
+          />
         </div>
       </UFormField>
 

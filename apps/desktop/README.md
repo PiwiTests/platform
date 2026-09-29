@@ -142,3 +142,24 @@ for the `.msi`, macOS and Linux legs; the `.exe` leg sets `uploadUpdaterJson`
 false and a later workflow step publishes `latest-nsis.json` pointing at the NSIS
 `-setup.exe`. Builds without the overlay report updates as unsupported, the plugin
 is not even registered there (see `src-tauri/src/updates.rs`).
+
+The `.exe` channel installs **quietly**: its overlay sets the updater's
+`windows.installMode` to `quiet`, so the plugin starts the NSIS installer with
+`/S /R` — no window, and the installer relaunches the app when it is done. The
+`.msi` channel keeps the default `passive` mode (a progress bar): its
+per-machine install needs the UAC prompt, which a quiet `msiexec` cannot raise.
+
+When startup settles (the server answered, or its wait timed out), the shell
+checks for an update and shows a native notification when one is available (`notify_if_update_available` in
+`updates.rs`). Settings → About → Updates shows the update it found and has a
+checkbox, on by default, that turns the notification off (`notifyUpdateOnStartup`
+in the app's `settings.json` store).
+
+On Windows the install step never returns: the plugin launches the installer and
+leaves through `std::process::exit`, which skips `RunEvent::ExitRequested`. The
+updater's pre-exit hook (`updates.rs`) runs the quit cleanup instead
+(`shut_down` in `lib.rs`) and waits for the Node sidecar to be gone — left
+running, it holds the bundled native modules (sharp's libvips DLLs) and the
+installer fails with "Error opening file for writing". Builds up to 0.37 lacked
+that hook, so the NSIS installer also stops a `node.exe` still running from its
+install folder (`src-tauri/windows/installer-hooks.nsh`) before copying files.

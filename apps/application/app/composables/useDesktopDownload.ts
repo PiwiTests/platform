@@ -17,6 +17,8 @@
  * real archive.
  */
 
+import { downloadBlob } from '~/utils/chart-export';
+
 /** Base64 in chunks — spreading a multi-megabyte array blows the argument limit. */
 function toBase64(bytes: Uint8Array): string {
   let binary = '';
@@ -47,21 +49,40 @@ export function useDesktopDownload() {
       const res = await fetch(url, { credentials: 'include' });
       if (!res.ok) throw new Error(`Request failed (${res.status})`);
       const contents = options.binary ? toBase64(new Uint8Array(await res.arrayBuffer())) : await res.text();
-      const path = await core.invoke<string>('desktop_save_download', {
-        filename,
-        contents,
-        encoding: options.binary ? 'base64' : 'utf8',
-      });
-      toast.add({
-        title: 'Saved to Downloads',
-        description: path,
-        color: 'success',
-        icon: 'i-lucide-download',
-      });
+      await saveThroughShell(core, filename, contents, options.binary ? 'base64' : 'utf8');
     } catch (error) {
       toast.add({ title: 'Download failed', description: errorMessage(error), color: 'error' });
     }
   }
 
-  return { isDesktop, download };
+  /** Save a file built in the page (a workbook, an image): a download link in a browser, the shell on desktop. */
+  async function saveBlob(blob: Blob, filename: string): Promise<void> {
+    const core = tauriCore();
+    if (!core) {
+      downloadBlob(blob, filename);
+      return;
+    }
+    try {
+      await saveThroughShell(core, filename, toBase64(new Uint8Array(await blob.arrayBuffer())), 'base64');
+    } catch (error) {
+      toast.add({ title: 'Download failed', description: errorMessage(error), color: 'error' });
+    }
+  }
+
+  async function saveThroughShell(
+    core: NonNullable<ReturnType<typeof tauriCore>>,
+    filename: string,
+    contents: string,
+    encoding: 'base64' | 'utf8',
+  ): Promise<void> {
+    const path = await core.invoke<string>('desktop_save_download', { filename, contents, encoding });
+    toast.add({
+      title: 'Saved to Downloads',
+      description: path,
+      color: 'success',
+      icon: 'i-lucide-download',
+    });
+  }
+
+  return { isDesktop, download, saveBlob };
 }

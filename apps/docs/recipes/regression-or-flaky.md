@@ -1,5 +1,6 @@
 ---
 title: Regression or flake?
+description: "Decide in a minute whether a red test is your regression or a known flake, from the run's changes and the test's own history."
 lang: en-US
 ---
 
@@ -19,7 +20,7 @@ and sorts the failures for you. The distinction you want is right there in the h
 - **Newly flaky / passed on retry** — it passed but needed a retry.
 
 <figure>
-  <img src="/screenshots/run-changes.png" alt="Run Changes tab showing the baseline selector, new failures, fixed tests and the commits landed since the baseline">
+  <img src="/screenshots/run-changes.png" alt="Run Changes tab showing the baseline selector, new failures, newly flaky tests, slower and faster tests, and the commits landed since the baseline">
   <figcaption>The Changes tab — read against one baseline, with new failures separated from tests that only passed on retry.</figcaption>
 </figure>
 
@@ -29,9 +30,8 @@ If your test is under **Newly flaky / passed on retry**, stop here: it isn't you
 ## 2. Check the test's own history
 
 A single run can lie — a flaky test lands in "new regressions" whenever the baseline happened to be
-green. Open the test case and read its **Duration trend**: one bar per execution, colored by status, with
-the status strip beneath it. For pass and flaky rates bucketed over time, ask the MCP tool
-`get_test_stability_trend`.
+green. Open the test case and read its **status history** and **stability trend**: pass rate, flaky
+rate, and duration bucketed over time.
 
 <figure>
   <img src="/screenshots/test-case-detail.png" alt="Test case detail page with summary stats, duration trend, status history, and recent executions">
@@ -78,8 +78,7 @@ red branch build — the difference between an alert people read and one people 
 fires separately for any run with flaky tests; a subscription's flakiness threshold (set through the API)
 narrows it.
 
-## See also
-
+## Related
 - [Flaky tests](/features/flaky-tests) — how the composite score and root-cause categories are computed
 - [Core concepts](/guide/concepts) — *test case* vs *execution*, the distinction this recipe leans on
 - [Timeline markers](/features/timeline-markers) — correlating a drop with a deploy

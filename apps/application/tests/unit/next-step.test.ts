@@ -47,6 +47,11 @@ describe('computeNextStep — one row per rule', () => {
     expect(s.title).toContain('demo001');
   });
 
+  test('6: a regressed fix names its commit by the short SHA', () => {
+    const s = step({ fixVerification: 'regressed', fixCommit: '3f9c2e1a7b4d5c6e8f0a1b2c3d4e5f6a7b8c9d0e' });
+    expect(s.title).toBe('See what changed since the fix in 3f9c2e1 — it did not hold');
+  });
+
   test('7: passed-on-retry → compare attempts', () => {
     expect(step({ why: 'passed-on-retry' }).kind).toBe('compare-attempts');
     expect(step({ why: 'new-flaky' }).kind).toBe('compare-attempts');

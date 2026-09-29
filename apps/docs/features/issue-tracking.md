@@ -1,19 +1,20 @@
 ---
 title: Issue tracking (Jira)
+description: "File a Jira issue from a failure with the fix plan as its body, keep it linked as the cluster's known issue, and keep its status in sync."
 lang: en-US
 ---
 
 # Issue tracking (Jira)
 
-<Needs reporter />
+<Needs reporter admin />
 
 Piwi already ends an investigation with everything a ticket needs — a headline, the affected tests and their owners,
 the diagnosis, a validated patch, the failing locator, the verify command. **Create issue** turns that into a Jira
 issue in one click: the body is the fix plan, the issue is linked back as the cluster's *known issue*, and from then on
 the key travels wherever the failure appears.
 
-It is **off until an [administrator connects Jira](/operate/integrations#connecting-jira-cloud)**; until then, no
-entry point appears.
+It is **off until an [administrator connects Jira](/operate/integrations#connecting-jira-cloud)**; with no connection,
+none of the entry points appear.
 
 <div class="doc-screenshot">
   <img src="/screenshots/create-issue-modal.png" alt="The Create issue modal on a failure cluster: an editable title, the Jira project and issue-type fields, include toggles, and a preview of the fix-plan body">
@@ -21,8 +22,8 @@ entry point appears.
 
 ## What it does, exactly
 
-- **Create issue** appears on a failure cluster, on a failing execution, and on each inbox row (plus the `c` key and a
-  *Create issues* button in the inbox bulk bar). It is the primary action while the cluster has no ticket; once one
+- **Create issue** appears on a failure cluster, on a failing execution, on each inbox row (plus the `c` key and a
+  *Create issues* button in the inbox bulk bar), and on a [bug report](./bug-reports#filing-it-in-jira). It is the primary action while the cluster has no ticket; once one
   exists, the chip shows the key and status and the action becomes *Open in Jira*.
 - The issue **body is the fix plan**, rendered to Atlassian Document Format: *What happened*, *Most likely*, *Evidence*,
   *What to do* (patch, locator replacement, verify command, reproduce steps) and *Links* back to Piwi. Every section
@@ -33,13 +34,16 @@ entry point appears.
   surfaces any issue that already tracks the failure (a pinned link, a matching label, or a *fixed-before* match) and
   leads with *link it instead*.
 - Creating an issue is a **durable outbox action**: attempted immediately, retried with backoff if Jira is down, and
-  recorded — `GET /api/integrations/actions?projectId=<id>` lists what Piwi wrote.
+  recorded, and the REST API lists what Piwi wrote (see the [API docs](https://piwitests.dev/demo/docs)). A create
+  Jira refuses outright, such as a missing or invalid field, fails at once rather than being retried, and creating
+  again replaces it.
 
 ## The key travels
 
 Once a cluster has a known issue, its key follows the failure everywhere:
 
-- the **cluster state line** and the **inbox row** show the key with its status color;
+- the **cluster state line**, the **inbox row**, a failing **execution's page** and its row in the **run's test list**
+  show the key with its status color;
 - `cluster.new`, `cluster.fixed` and `cluster.regressed` **Slack** messages name it, as does the `cluster.new` email;
 - the **pull-request feedback** comment says *tracked in PROJ-123* on each failure whose cluster has one;
 - the **fix plan** lists it under *Links*, and the `get_cluster` / `get_fix_plan` MCP tools return it.
@@ -50,7 +54,7 @@ Once a cluster has a known issue, its key follows the failure everywhere:
 
 ## Keep the ticket honest
 
-Piwi keeps a cluster and its known issue in step. A background sync
+Once a cluster carries a known issue, Piwi keeps the two in step. A background sync
 ([`PIWI_INTEGRATIONS_SYNC_MINUTES`](/reference/configuration), default 15 min) reads each tracked issue back and caches
 its status, title and assignee — so a closed ticket stops showing as open (open clusters refresh every sweep, resolved
 ones daily). On top of that, per-project **policies** — all **off by default**, each a durable deduped outbox action —
@@ -83,6 +87,29 @@ reach that team's destination. The **automatic-creation** fields are greyed out:
   <img src="/screenshots/project-integration-binding.png" alt="The project's Issue tracker settings: connection, Jira project and issue type, labels, sync-policy switches, an owner-routes table, and the greyed-out automatic-creation fields">
 </div>
 
+## Required Jira fields
+
+A Jira project can require fields on its create screen, such as a *Severity*, a *Team* or *Components*. Piwi reads
+the issue type's create screen and asks for every required field Jira does not fill:
+
+- The project binding's **Jira fields** block lists them. A value set there fills every issue filed from the project;
+  *Set a default for another field* adds an optional one.
+- The create modal shows them under **Required by Jira**, prefilled from those defaults, and keeps *Create* disabled
+  until each has a value. A value Jira lists no choices for, such as a team, is typed as its id.
+- The [`create_issue` MCP tool](/reference/mcp-tools#create_issue) refuses early, naming each missing field, its id and
+  what it takes; an agent passes them in `fields`.
+
+A transition's screen can require fields too, such as a *Resolution* on the move to Done. Under *transition on fix*
+and the reopen transition, the binding checks the transition against an issue in the project, suggests the ones it
+offers, and asks for its fields. A move that would still leave one empty fails at once, naming it.
+
+A requirement no screen shows, such as a workflow validator, comes back as Jira's refusal naming the field, and the
+modal asks for it.
+
+<div class="doc-screenshot">
+  <img src="/screenshots/create-issue-required-fields.png" alt="The Create issue modal with a Required by Jira block: Severity prefilled with Major from the project settings, an empty Team field, and the footer saying Jira still needs Team">
+</div>
+
 ## Requirements
 
 - A connected **Jira Cloud** site — see [Operate → Integrations](/operate/integrations#connecting-jira-cloud).
@@ -94,7 +121,7 @@ reach that team's destination. The **automatic-creation** fields are greyed out:
 There is nothing to switch on beyond the connection. The modal prefills the Jira project, issue type, labels and
 assignee from the [project binding](#the-project-binding) when one exists, else offers pickers over the connected site;
 toggles choose what the body carries (diagnosis and patch on, [share link](/features/share-links) off); the *Screenshot*
-toggle is stored, but no attachment is uploaded yet. From an AI agent, the [`create_issue` MCP tool](/features/mcp)
+toggle is stored but attaches nothing. From an AI agent, the [`create_issue` MCP tool](/reference/mcp-tools#create_issue)
 files the same ticket once the binding names a Jira project and issue type.
 
 ## Language
@@ -118,3 +145,4 @@ French-configured site works unchanged.
 - A ticket's body is a **snapshot** at creation; the policies add comments and status changes rather than editing it.
 - The dashboard's deterministic sentences (headline, story, clue, state line) are **English templates** that quote
   locators and Playwright terms, so they stay English even in a French ticket.
+- Attachments honor the [export size budget](/features/offline-export); the trace is never attached.

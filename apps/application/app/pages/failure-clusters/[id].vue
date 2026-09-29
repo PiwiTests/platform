@@ -157,9 +157,16 @@ const headlineProvenance = computed(() => {
 // carries a value the name lacks (an expected/received pair, a timeout, a count).
 const headlineText = computed(() => clusterVerdict.value?.parts.map((p) => p.text).join('') ?? '');
 const showSecondHeadline = computed(() => headlineAddsValue(clusterName.value, headlineText.value));
+// Where that second line comes from, on hover.
+const headlineTitle = computed(() => (headlineProvenance.value ? `From the ${headlineProvenance.value}` : undefined));
+
+// The name as prose and the locators written into it, each rendered as code.
+const clusterNameParts = computed(() => splitLocatorParts(clusterName.value));
 
 // ── Cluster state, occurrences and the next step (served on the endpoint) ────
 const clusterState = computed(() => cluster.value?.clusterState ?? null);
+// The situation block's edge, in the color the state line's dot carries.
+const stateEdge = computed(() => clusterStateColor(clusterState.value?.kind).edge);
 const occurrenceSeries = computed(() => cluster.value?.occurrenceSeries ?? []);
 const nextStep = computed(() => cluster.value?.nextStep ?? null);
 
@@ -510,7 +517,7 @@ const breadcrumbItems = computed(() => [
     <template #body>
       <div v-if="cluster" class="flex flex-col gap-4 p-4 max-sm:px-0 max-w-6xl mx-auto w-full">
         <!-- ── One block: identity, name, most likely, occurrences, what changed, state, next ── -->
-        <SituationBlock help="cluster.state">
+        <SituationBlock help="cluster.state" :edge="stateEdge">
           <!-- Line 1: identity kicker — cluster #, error type, project, owner, known issue -->
           <template #identity>
             <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -560,15 +567,18 @@ const breadcrumbItems = computed(() => [
           <!-- Line 2: the cluster name as the h1; the latest headline as a second line only when it adds value -->
           <template #headline>
             <h1 class="text-lg sm:text-xl font-semibold leading-snug text-highlighted break-words">
-              {{ clusterName }}
+              <template v-for="(part, i) in clusterNameParts" :key="i">
+                <LocatorCode v-if="part.kind === 'locator'" :locator="part.text" chip class="text-[0.92em]" />
+                <template v-else>{{ part.text }}</template>
+              </template>
             </h1>
             <p
               v-if="clusterVerdict && showSecondHeadline"
               data-shot="failure-headline"
-              class="text-sm text-muted mt-1 flex flex-wrap items-baseline gap-x-2"
+              class="text-sm text-muted mt-1"
+              :title="headlineTitle"
             >
-              <span class="min-w-0"><FailureHeadline :parts="clusterVerdict.parts" plain /></span>
-              <span v-if="headlineProvenance" class="text-xs shrink-0">{{ headlineProvenance }}</span>
+              <FailureHeadline :parts="clusterVerdict.parts" chip />
             </p>
           </template>
 
@@ -617,7 +627,6 @@ const breadcrumbItems = computed(() => [
               :can-write="canWrite"
               :signature-line="signatureLine"
               @refresh="refresh"
-              @copy="copyCluster"
             />
           </template>
         </SituationBlock>
@@ -656,6 +665,9 @@ const breadcrumbItems = computed(() => [
             @decline-fixtures="declineClusterFixtures"
           />
         </div>
+
+        <!-- ── Occurrences over time, with the fix and a regression marked ── -->
+        <ClusterOccurrenceTrend :cluster-id="cluster.id" />
 
         <!-- ── More ways to fix ───────────────────────────────────────── -->
         <div class="scroll-mt-4">

@@ -105,6 +105,57 @@ describe('getSetupStatus', () => {
     expect((await activeIds(db)).has('backend-logs')).toBe(true);
   });
 
+  test('a pass on a retry activates the flake-lab capability; a first-attempt pass does not', async () => {
+    await db.insert(schema.projects).values({ id: 1, name: 'checkout' });
+    const [run] = await db
+      .insert(schema.testRuns)
+      .values({ projectId: 1, status: 'passed', startTime: new Date(), duration: 1, totalTests: 1, passedTests: 1 })
+      .returning({ id: schema.testRuns.id });
+    await db.insert(schema.testCases).values({ id: 1, projectId: 1, filePath: 'a.spec.ts', title: 'a' });
+    await db.insert(schema.testRunsCases).values({ testRunId: run!.id, testCaseId: 1, status: 'passed', retries: 0 });
+    expect((await activeIds(db)).has('flake-lab')).toBe(false);
+
+    await db
+      .insert(schema.testRunsCases)
+      .values({ testRunId: run!.id, testCaseId: 1, status: 'failed', retries: 0, browserName: 'webkit' });
+    await db
+      .insert(schema.testRunsCases)
+      .values({ testRunId: run!.id, testCaseId: 1, status: 'passed', retries: 1, browserName: 'webkit' });
+    expect((await activeIds(db)).has('flake-lab')).toBe(true);
+  });
+
+  test('a graph node for the project activates the test-map capability', async () => {
+    await db.insert(schema.projects).values({ id: 1, name: 'checkout' });
+    expect((await activeIds(db)).has('test-map')).toBe(false);
+
+    await db.insert(schema.graphNodes).values({ projectId: 1, kind: 'route', key: 'GET /api/orders' });
+    expect((await activeIds(db)).has('test-map')).toBe(true);
+  });
+
+  test('a server-level probe row activates the server-probes capability; a client one does not', async () => {
+    await db.insert(schema.projects).values({ id: 1, name: 'checkout' });
+    await db.insert(schema.probes).values({ projectId: 1, fault: 'status-500', outcome: 'noticed', level: 'client' });
+    expect((await activeIds(db)).has('server-probes')).toBe(false);
+
+    await db.insert(schema.probes).values({ projectId: 1, fault: 'throw', outcome: 'noticed', level: 'server' });
+    expect((await activeIds(db)).has('server-probes')).toBe(true);
+  });
+
+  test('a report schedule or a report snapshot activates the quality-reports capability', async () => {
+    expect((await activeIds(db)).has('quality-reports')).toBe(false);
+    await db.insert(schema.reportSnapshots).values({
+      dashboardRef: 'executive',
+      dashboardName: 'Executive',
+      periodFrom: new Date('2026-09-14T00:00:00Z'),
+      periodTo: new Date('2026-09-21T00:00:00Z'),
+      bundle: {},
+    });
+    expect((await activeIds(db)).has('quality-reports')).toBe(true);
+    await db.delete(schema.reportSnapshots);
+    await db.insert(schema.reportSchedules).values({ name: 'Weekly', cadence: 'weekly', anchor: 1, at: '08:00' });
+    expect((await activeIds(db)).has('quality-reports')).toBe(true);
+  });
+
   test('detection is evidence-based, not config-based: a defined tag activates tags', async () => {
     await db.insert(schema.tags).values({ text: 'smoke' });
 
@@ -144,22 +195,34 @@ describe('setup capability copy', () => {
 
 describe('first-run version and the New marker', () => {
   test('records the running version on first read and marks nothing new', async () => {
-    const first = await getSetupStatus(db, '0.35.0');
+    const first = await getSetupStatus(db, '0.41.0');
     expect(first.capabilities.every((c) => c.isNew === false)).toBe(true);
 
     // The recorded version sticks: a later, higher version does not re-anchor it.
     const recorded = await getAppSetting<string>(db, 'first-run-version');
-    expect(recorded).toBe('0.35.0');
+    expect(recorded).toBe('0.41.0');
     const again = await getSetupStatus(db, '0.99.0');
     expect(again.capabilities.every((c) => c.isNew === false)).toBe(true);
   });
 
   test('marks capabilities whose release is newer than the first-run version', async () => {
     await setAppSetting(db, 'first-run-version', '0.20.0');
-    const { capabilities } = await getSetupStatus(db, '0.35.0');
+    const { capabilities } = await getSetupStatus(db, '0.36.0');
     const newIds = new Set(capabilities.filter((c) => c.isNew).map((c) => c.id));
-    // auto-heal (0.26) and integrations (0.29) landed after 0.20; pr-feedback (0.19) did not.
-    expect(newIds).toEqual(new Set(['auto-heal', 'integrations']));
+    // auto-heal (0.26), integrations (0.29), the Test Map (0.36), quality
+    // reports (0.39), bug reports and flake suspects (0.41) landed after 0.20;
+    // pr-feedback (0.19) did not.
+    expect(newIds).toEqual(
+      new Set([
+        'auto-heal',
+        'integrations',
+        'test-map',
+        'server-probes',
+        'quality-reports',
+        'bug-reports',
+        'flake-lab',
+      ]),
+    );
   });
 
   test('records nothing and marks nothing when no version is supplied', async () => {

@@ -237,5 +237,6 @@ function createDemoImportPort(): ImportPort {
     parseErrorContext: (markdown, declLine) => parseErrorContext(markdown, { declLine }),
 
     publishRunSubmitted: (payload) => publishDemoGlobalEvent({ type: 'run-submitted', ...payload }),
+    publishRollupUpdated: (payload) => publishDemoGlobalEvent({ type: 'rollup-updated', ...payload }),
   };
 }

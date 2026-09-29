@@ -1,5 +1,6 @@
 ---
 title: Notifications & alerts
+description: "Browser, email, Slack, Microsoft Teams and webhook channels, the events they fire on, and per-project subscriptions with digests and mute."
 lang: en-US
 ---
 
@@ -7,43 +8,46 @@ lang: en-US
 
 <Needs reporter />
 
-Piwi can push run events to **browser**, **email**, **Slack**, or **HTTP webhooks** so your team hears about failures, new failure clusters, flakiness spikes, and performance regressions without watching the dashboard.
+Piwi pushes run events to a **browser** tab, **email**, **Slack**, **Microsoft Teams** or an **HTTP webhook**, so your
+team hears about failures, new failure clusters, flakiness spikes and performance regressions without watching the
+dashboard.
 
-Notifications do not require authentication. With auth disabled the instance is single-tenant, so every channel and subscription is **global** (instance-wide). With `PIWI_AUTH_ENABLED=true` ([see authentication](/operate/authentication)) each user manages their own channels and subscriptions, and administrators can also create global ones.
+## What it does
 
-## How it works
+1. A **channel** is a destination: a browser tab, an email address, a Slack or Teams webhook, or your own URL.
+2. A **subscription** links a channel to the events you care about, for every project or one, with filters and a
+   delivery mode.
+3. When an event fires, Piwi matches the active subscriptions and writes each delivery to an outbox, which a scheduled
+   task sends with retries. A browser channel is delivered at once to every open dashboard tab.
 
-1. You create a **channel** (a destination: browser tab, email address, Slack webhook, or HTTP webhook).
-2. You create a **subscription** linking a channel to the events you care about, optionally scoped to a single project, with filters and a delivery mode.
-3. When an event fires, Piwi matches active subscriptions, writes a delivery to an outbox table, and a scheduled task dispatches it with automatic retry/backoff. Browser channels are delivered immediately via SSE to any open dashboard tab.
+## Where it is
 
-Create channels in **Settings → Notifications**, and subscribe to a project with the **bell** on the project page.
+**Settings → Notifications** manages channels and subscriptions, and the **bell** on a project page subscribes to that
+project. The new-channel form shows where to get each destination, flags a URL that belongs to another type (a Slack
+URL pasted under Teams offers to switch), and can **send a test** before saving: a channel whose test went through is
+saved as verified. Notifications need no authentication: with it off, the instance is single-tenant and every channel and
+subscription is **global**. With `PIWI_AUTH_ENABLED=true` ([authentication](/operate/authentication)), each user keeps
+their own, and administrators can add global ones shared by everyone.
 
 ## Events
 
-| Event | Fires when |
-|-------|------------|
-| `run.finished` | A run completes (any status) |
-| `run.failed` | A run completes with failures |
-| `run.failed.default_branch` | A run fails on the repository's default branch |
-| `cluster.new` | A new failure cluster appears |
-| `cluster.fixed` | A run passes every test a cluster covers — the fix landed (a filtered re-run of just those tests counts). The payload's `verification` says whether the diagnosis was corroborated (`diagnosis-verified`) or the tests merely stopped failing, and `resolved` whether the triage status was closed automatically |
-| `cluster.regressed` | A cluster with a recorded fix fails again; `reopened` says whether a *resolved* cluster was set back to open |
-| `flakiness.spike` | A completed run contains flaky tests — use the flakiness-threshold filter to only hear about rates above N% |
-| `perf.regression` | A run is at least 20% slower than the median of the previous five completed runs on the same branch in the same environment — raise the bar per subscription with the regression-% filter |
-| `diagnosis.completed` | An AI diagnosis finishes (requires an AI provider) |
-| `auto_heal.pr_opened` | [Auto-heal](./auto-heal) opens a pull request |
+Run events fire when a run finishes or fails, cluster events when a failure cluster appears, is fixed or regresses,
+and others on a flakiness spike, a performance regression, a finished AI diagnosis and an auto-heal pull request.
+Each event, when it fires and the payload it carries are in
+[Notification events & webhooks](/reference/notification-events). A
+[report schedule](./quality-reports#report-schedules) sends its report to the channels it names, with no subscription.
 
 ## Channels
 
 ### Browser
 
-Sends native OS notifications to any open Piwi tab, even when the tab is in the background. Notifications fire via the [Notifications API](https://developer.mozilla.org/en-US/docs/Web/API/Notifications_API); grant permission when prompted.
+Sends native OS notifications to any open Piwi tab, even in the background, through the [Notifications API](https://developer.mozilla.org/en-US/docs/Web/API/Notifications_API); grant permission when prompted.
 
 - **With authentication**: create a channel of type `browser` in **Settings → Notifications** and subscribe it to events; the stream then delivers exactly the events and projects your subscriptions cover.
-- **Without authentication**: skip channels entirely — the **bell** on each project page stores per-browser preferences (a cookie) for which events raise notifications.
+- **Without authentication**: no channel is needed; the **bell** on each project page stores per-browser preferences (a cookie) for which events raise notifications.
 
-Diagnosis-completion notifications can be switched off per browser in **Settings → AI diagnosis → Diagnosis notifications** without deleting the subscription.
+Diagnosis-completion notifications can be switched off per browser in **Settings → AI diagnosis → Diagnosis
+notifications** without deleting the subscription.
 
 ### Email
 
@@ -51,76 +55,52 @@ Requires SMTP to be configured (see below). Sends to a destination address. With
 
 ### Slack
 
-Create an [incoming webhook](https://api.slack.com/messaging/webhooks) in Slack and paste its URL. Messages are posted to the webhook's channel.
+Paste an [incoming webhook](https://docs.slack.dev/messaging/sending-messages-using-incoming-webhooks) URL
+(`https://hooks.slack.com/services/…`). Without one, the form's **Create a Slack app for Piwi** link opens Slack with an
+app already filled in, asking only for the `incoming-webhook` permission: create it, choose **Install to Workspace** and
+the channel, then copy the URL from **Incoming Webhooks**. Messages are posted to that channel. A Slack-compatible
+server (Mattermost, Rocket.Chat) works too.
+
+### Microsoft Teams
+
+In the Teams channel's **⋯** menu, open **Workflows**, pick the template *Send webhook alerts to a channel*, choose the
+team and channel, and paste the URL the workflow shows. A legacy Microsoft 365 connector webhook still works while
+Microsoft keeps it, and the form flags it. Each event, digest and
+[quality report](./quality-reports#report-schedules) arrives as an Adaptive Card.
 
 ### Webhook
 
-Piwi `POST`s a JSON payload to your URL, which must resolve to a public address — private, loopback, `*.local` and `*.internal` hosts are refused. When the channel has a secret (optional), each request carries `X-Piwi-Signature: sha256=<hex>`, an HMAC-SHA256 of the raw body, so you can verify authenticity. Webhook secrets are encrypted at rest.
-
-The body is `{ "event": "run.failed", "payload": { … }, "timestamp": "…" }`. For run events the payload includes up to three failing tests so you can act without a round-trip to the dashboard:
-
-```json
-{
-  "event": "run.failed",
-  "payload": {
-    "runId": 42,
-    "projectName": "checkout",
-    "status": "failed",
-    "totalTests": 120,
-    "failedTests": 3,
-    "branch": "main",
-    "topFailures": [
-      {
-        "title": "applies discount code",
-        "filePath": "tests/checkout.spec.ts",
-        "headline": "getByRole('button', { name: 'Pay' }) never became enabled — click timed out after 30 s",
-        "errorExcerpt": "TimeoutError: locator.click: Timeout 30000ms exceeded.\nlocator resolved to <button disabled>Pay</button>",
-        "testCaseId": 815,
-        "executionId": 9001
-      }
-    ]
-  },
-  "timestamp": "2026-07-11T10:00:00.000Z"
-}
-```
-
-`headline` is the one-line explanation the dashboard builds from the Playwright error — the locator, the
-last state its call log reported, the expected and received values, the timeout (see
-[Failure evidence](./evidence#one-execution-diagnosis-first)); it is absent when the case carries no error.
-`errorExcerpt` is the error's message head — the lines before Playwright's call log and the stack trace,
-at most five, capped at 300 characters. When that head is only a bare timeout line, the last
-`waiting for …` / `locator resolved to …` line of the call log is appended so the excerpt says what
-Playwright was waiting on. Slack and email messages lead with the headline, quote the same excerpt, and link each failure to its
-execution (`/test-run-cases/<executionId>`), falling back to the test's history page when a payload
-carries no execution id. The [pull-request comment](/guide/ci#pull-request-feedback) quotes failures the same
-way.
-
-`cluster.new` payloads similarly carry `sampleErrorExcerpt` (cut the same way) and `affectedCases`; `cluster.fixed` and `cluster.regressed` carry the cluster's `signature`, `title`, the `runId` that decided the verdict and, for a fix, the `commit` and `timeToResolutionMs`. These fields are **additive**; to re-check the HMAC, sign the exact bytes you received.
+Piwi `POST`s a JSON body to your URL. When the channel has a secret, which the form can generate (storing it needs
+`PIWI_SECRET_KEY`), each request is signed with an HMAC-SHA256 `X-Piwi-Signature` header. Private and loopback
+addresses are refused.
+The body, its fields and how to verify the signature are in
+[Notification events & webhooks](/reference/notification-events#webhook-body).
 
 ### Reaching the person who fixed it
 
-`cluster.fixed` and `cluster.regressed` resolve the fixing commit's author through the SCM provider (a private repository needs a [token](/guide/ci#pull-request-feedback)) and add a `fixAuthor` object — `{ name, email }` — to the payload (`cluster.regressed` uses the author of the fix that did not hold). On top of the normal subscription routing, the event is then delivered to that person directly:
+`cluster.fixed` and `cluster.regressed` resolve the fixing commit's author through the SCM provider, which for a private repository needs an [SCM token](/guide/source-control) (for a regression, the author of the fix that did not hold). On top of the normal subscription routing, the event is then delivered to that person directly:
 
 - **Email**, through the same outbox, when SMTP is configured **and** the commit's email belongs to a registered Piwi user. The mail goes to that user's account email, never to the raw commit address, so a fix by an outside contributor never becomes a mail to a stranger.
 - **A browser notification** for that user, delivered even when they have no matching subscription.
 
-`fixAuthor` is absent when the lookup fails (a private repository without a token, a host that exposes no email) — the fix outcome then reaches people through subscriptions only.
+When the lookup fails (a private repository without a token, a host that exposes no email), subscriptions alone apply.
 
 ### Global channels & subscriptions
 
-Admins can mark a channel **global** so it is available to all users, and mark a subscription **instance-wide** (from the project bell) so it delivers regardless of who is signed in — the way to route every failure to one team Slack channel. Global subscriptions must target a global channel. With authentication disabled, every channel and subscription is global.
+Admins can mark a channel **global** so it is available to all users, and mark a subscription **instance-wide** (from the project bell) so it delivers whoever is signed in: the way to route every failure to one team Slack channel. Global subscriptions must target a global channel. With authentication disabled, every channel and subscription is global.
 
 ## Subscriptions
 
 A subscription controls *what* is delivered and *how*. The project **bell** creates one for that project — a channel and one or more of the events above, delivered in real time. **Settings → Notifications** lists them, and mutes one for 7 days or removes it.
 
-The subscriptions API (`POST` / `PATCH /api/subscriptions`) adds:
+The subscriptions REST API (see the [API docs](https://piwitests.dev/demo/docs)) adds:
 
-- **Scope** — `projectId: null` for all projects (for users who can access every project).
-- **Filters** — for run events, by branch, status or **owner** (deliver only when the run broke a test that team owns — see
+- **Scope**: all projects (`projectId: null`, for a user who can access every project), or a single project.
+- **Filters**: for run events, by branch, status or **owner** (only when the run broke a test that team owns; see
   [Tags & ownership](/guide/concepts#tags-ownership)); `flakinessThreshold` (a 0–1 rate) and `perfRegressionPct`.
-- **Mode** — `realtime` or `digest` with `digestAt` (`HH:MM`, UTC): held until then, and sent as **one combined message** per email/Slack channel. Webhook and browser deliveries are always individual.
-- **Mute** — `mutedUntil`, any time.
+- **Mode**: `realtime`, sent as events happen, or `digest` with `digestAt` (`HH:MM`, UTC), held until then and sent as
+  **one combined message** per email, Slack or Teams channel.
+- **Mute**: `mutedUntil`, any time, without deleting the subscription.
 
 ## SMTP configuration
 
@@ -139,9 +119,18 @@ PIWI_SITE_URL=https://piwi.example.com   # base URL used in email links
 
 Send a test email from **Settings → Notifications** to confirm delivery.
 
-## See also
+## Limits
 
-- [CI & sharding](/guide/ci) — the alternative: pull the run URL into your pipeline instead
-- [Authentication](/operate/authentication) — per-user channels and subscriptions
-- [Configuration reference](/reference/configuration) — all environment variables
-- [AI diagnosis & failure clustering](./ai-diagnosis) — what triggers `cluster.new`, `cluster.fixed`, `cluster.regressed` and `diagnosis.completed`
+- **Digests group email, Slack and Teams only.** Webhook and browser deliveries are always one per event.
+- **A browser channel needs an open tab.** Nothing reaches a closed browser; the
+  [desktop app](./desktop) shows OS notifications while its window is in the background.
+- **Email needs SMTP**, set through environment variables only.
+
+## Related
+
+- [CI & sharding](/guide/ci): the alternative, pulling the run URL into your pipeline
+- [Authentication](/operate/authentication): per-user channels and subscriptions
+- [Configuration reference](/reference/configuration): every environment variable
+- [Notification events & webhooks](/reference/notification-events): every event and the webhook body
+- [Quality reports](./quality-reports#report-schedules): scheduled quality reports sent to these channels
+- [Failure clusters & the inbox](./failure-clusters): what triggers the cluster events

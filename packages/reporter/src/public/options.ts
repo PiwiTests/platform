@@ -69,6 +69,37 @@ export interface PiwiDashboardOptions {
    */
   capturePageState?: boolean;
   /**
+   * Capture a lightweight inventory of each visited page on *passing* runs — the
+   * interactive controls (role + accessible name) and links (name, with the query
+   * and hash stripped from the href) present as the test navigates — so the
+   * dashboard can tell which controls and links the suite exposes but never
+   * exercises. Only names and hrefs are captured, never field values; a page's
+   * controls are read at most once per worker per run. **Defaults to `false`** —
+   * opt in with `capturePageInventory: true` (or `PIWI_CAPTURE_PAGE_INVENTORY=true`).
+   * Automatically disabled when `collectPerformanceMetrics` is `false`.
+   */
+  capturePageInventory?: boolean;
+  /**
+   * Record which application source files each test executes: the files whose
+   * functions ran, from Chromium's JavaScript coverage, resolved through the
+   * dev server's module URLs or the bundle's source maps. It answers "which
+   * tests reach this file?" for test selection, change coverage and
+   * `piwi preflight`. Only repository-relative file paths are sent. Chromium only;
+   * other browsers record nothing. It slows the page's JavaScript, so run it on
+   * one scheduled job rather than every run. **Defaults to `false`** — opt in
+   * with `captureCodeReach: true` (or `PIWI_CAPTURE_CODE_REACH=true`).
+   * Automatically disabled when `collectPerformanceMetrics` is `false`.
+   */
+  captureCodeReach?: boolean;
+  /**
+   * The directories module paths and source-map sources are resolved against
+   * for `captureCodeReach`, relative to the Playwright config, before the
+   * repository root, which is always tried last. Defaults to the Playwright
+   * config's directory. Set it to the dev server's root when that is not the
+   * config's directory (Nuxt: `['app']`).
+   */
+  codeReachRoots?: string[];
+  /**
    * Capture server-side spans for each API/document request the test makes,
    * read from the `X-Piwi-Trace` response header emitted by a Piwi
    * instrumentation plugin (e.g. `@piwitests/instrumentation-nitro`). The spans show
@@ -88,6 +119,15 @@ export interface PiwiDashboardOptions {
    * Set to `false` (or `PIWI_SAMPLE_ARIA_ON_PASS=false`) to never sample on pass.
    */
   sampleAriaOnPass?: boolean;
+  /**
+   * Upload the application's declared surface at run start: a committed
+   * `piwi.manifest.json` next to the Playwright config, and — when the base URL's
+   * first response carries an instrumentation header — the instrumentation
+   * package's `/__piwi/manifest`. A route or page the manifest declares that no
+   * test reaches becomes a "declared, never hit" gap. Defaults to `true`; set to
+   * `false` (or `PIWI_UPLOAD_MANIFEST=false`) to never upload.
+   */
+  uploadManifest?: boolean;
   /**
    * When installed via `wrapConfig`, default Playwright's own `screenshot` and
    * `trace` options on the top-level `use` block so a failing test keeps a
@@ -179,6 +219,12 @@ export interface PiwiDashboardOptions {
   environment?: string;
   /** Optional display label for the test run (e.g. "v2.3.1 release") */
   label?: string;
+  /**
+   * Keep this run forever: the dashboard's retention never deletes it. Set it
+   * for the runs worth keeping, such as release or tag builds. Defaults to
+   * `false`. Can also be set with `PIWI_KEEP=true`.
+   */
+  keep?: boolean;
   /** Related issue reference, e.g. `"JIRA-123"` */
   relatedIssue?: string;
   /** CI job information */

@@ -16,6 +16,14 @@ import { statusPalette, statusPaletteKey } from './status-palette';
  */
 export const SENTENCE_LINK_CLASS = 'underline decoration-dotted underline-offset-2 hover:decoration-solid';
 
+/**
+ * Code inside a heading or a sentence of the situation block — a locator, a
+ * commit — sits in a small chip, so it reads as code at a glance without a second
+ * font color for the prose around it. The chip wraps with its text on a narrow
+ * screen, each line keeping its own edges.
+ */
+export const CODE_CHIP_CLASS = 'font-mono rounded-md border border-default bg-elevated px-1 box-decoration-clone';
+
 /** The `diagnosis` shape the toolbox's folded summary reads. */
 export interface ToolboxDiagnosisLike {
   status?: string | null;
@@ -478,14 +486,14 @@ export function fileApiUrl(
  * `/api/files/` endpoint. Demo mode needs this for its committed sample traces:
  * the trace viewer fetches through its own service worker, which bypasses the
  * demo's API-emulating service worker, so only a real static URL is reachable.
+ *
+ * The trace URL is root-relative, so the server and the browser build the same
+ * link; the viewer resolves it against its own origin.
  */
 export function getTraceViewerUrl(filePath: string, baseURL: string = '/', staticAsset: boolean = false): string {
   const base = (baseURL || '/').replace(/\/$/, '');
-  // `location` only exists in the browser; during SSR render a relative trace
-  // URL — the client re-render fills the origin in before the link is clickable.
-  const origin = typeof location === 'undefined' ? '' : location.origin;
   const filePrefix = staticAsset ? '' : 'api/files/';
-  const traceUrl = `${origin}${base}/${filePrefix}${getFileApiPath(filePath)}`;
+  const traceUrl = `${base}/${filePrefix}${getFileApiPath(filePath)}`;
   return `${base}/trace-viewer/?trace=${encodeURIComponent(traceUrl)}`;
 }
 

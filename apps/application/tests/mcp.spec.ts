@@ -474,8 +474,8 @@ test.describe.serial('MCP server', () => {
     expect(overview.thisInstance.authentication).toBe('off');
     // Auth is off, so the caller is a virtual admin and sees the capability states.
     expect(overview.thisInstance.capabilities).toBeDefined();
-    // The three jobs are quoted from the bundled "What Piwi does" page.
-    expect(overview.jobs).toHaveLength(3);
+    // The jobs are quoted from the bundled "What Piwi does" page.
+    expect(overview.jobs.length).toBeGreaterThanOrEqual(3);
     expect(overview.jobs[0]).toContain('Keep the history');
     expect(Object.keys(overview.topics)).toEqual(
       expect.arrayContaining(['ecosystem', 'choices', 'configuration', 'feedback', 'docs']),
@@ -502,6 +502,12 @@ test.describe.serial('MCP server', () => {
 
     const missing = await callTool(request, 'describe_piwi', { page: 'guide/no-such-page' });
     expect(missing.error).toContain('No docs page');
+
+    // A generated page is answered from its registry, under its own name.
+    const tools = await callTool(request, 'describe_piwi', { page: 'reference/mcp-tools' });
+    expect(tools.page).toBe('reference/mcp-tools');
+    expect(tools.note).toContain('MCP tool catalog');
+    expect(tools.modules.length).toBeGreaterThan(0);
   });
 
   test('tools/call describe_piwi — topics: choices, configuration, mcp, feedback, docs', async ({ request }) => {

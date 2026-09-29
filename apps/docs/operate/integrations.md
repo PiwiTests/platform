@@ -1,5 +1,6 @@
 ---
 title: Integrations
+description: "Connect Jira Cloud to the dashboard: the token and permissions it needs, trusted hosts, status sync and the inbound webhook."
 lang: en-US
 ---
 
@@ -7,7 +8,8 @@ lang: en-US
 
 Connect an issue tracker and the external links you pin to a run, execution or failure cluster stop being
 dead URLs: Piwi fetches the ticket's title and status through the connection and keeps the badge current
-when you refresh. Jira Cloud is the first tracker; the connection layer is shaped so more follow.
+when you refresh. Jira Cloud is the supported tracker. This page sets up the connection; filing and syncing
+issues from a failure is [Issue tracking (Jira)](/features/issue-tracking).
 
 A connection is instance infrastructure — one row per external system, managed by an administrator, shared
 by every project. Nothing is sent to Jira until a connection exists, and credentials are encrypted at rest
@@ -19,18 +21,21 @@ with `PIWI_SECRET_KEY`.
 
 ## Connecting Jira Cloud
 
-Jira Cloud authenticates with an account email and an API token (REST v3, HTTP Basic).
+Jira Cloud authenticates with an account email and an API token (REST v3, HTTP Basic). **Settings → Integrations →
+Connect Jira** (administrator only) walks through it:
 
-1. Create an API token at [id.atlassian.com](https://id.atlassian.com/manage-profile/security/api-tokens)
-   under **Security → API tokens**, signed in as the account whose permissions Piwi should act with.
-2. Open **Settings → Integrations** (administrator only) and connect Jira with:
-   - **Name** — a label for the connection (required).
-   - **Base URL** — your site, e.g. `https://your-team.atlassian.net`.
-   - **Account email** — the Atlassian account the token belongs to.
-   - **API token** — the token from step 1.
-   - **Default language** (optional) — see [Language](/features/issue-tracking#language).
-3. Click **Test connection**. Piwi calls `GET /rest/api/3/myself` and shows the account it resolved to, so
-   you can confirm the credentials before relying on them.
+1. **Jira site**: paste the address of any Jira page, or type the site name. Piwi reads the site from it
+   (`https://your-team.atlassian.net`) and checks it is Jira Cloud.
+2. **API token type**: classic or scoped. The form links to
+   [Atlassian's API tokens page](https://id.atlassian.com/manage-profile/security/api-tokens), where you sign in as
+   the account Piwi should act as, and lists the scopes a scoped token needs.
+3. **Account email** and **API token**, plus the token's expiry date if you want a warning two weeks before it.
+4. **Check sign-in** calls `GET /rest/api/3/myself` without saving and shows the account, the token kind and the
+   projects the account sees, or what to fix. Then **Connect**.
+
+<div class="doc-screenshot">
+  <img src="/screenshots/jira-connect-form.png" alt="The Jira connect form: a pasted board URL read down to the site, the scoped-token steps and a passed sign-in check">
+</div>
 
 Once connected, a Jira link — `https://your-team.atlassian.net/browse/PROJ-123`, including a self-hosted
 host once its connection exists — is recognized as a Jira issue, unfurls with the summary and a status
@@ -53,9 +58,10 @@ Jira project permission:
 | Add Comments | `ADD_COMMENTS` | The write-back policies (fix landed, regressed, still failing, merged). |
 | Transition Issues | `TRANSITION_ISSUES` | The *transition on fix* and *reopen* policies. |
 | Assign Issues | `ASSIGN_ISSUES` | Set the assignee on a created issue, and list assignable users in the picker. |
+| Create Attachments | `CREATE_ATTACHMENTS` | Attach a bug report's screenshots to the issue filed from it. |
 
-For the **full integration**, grant all five on each bound project. You can drop the ones whose feature you do not
-use: `ASSIGN_ISSUES` if you never set an assignee,
+For the **full integration**, grant all six on each bound project. You can drop the ones whose feature you do not
+use: `CREATE_ATTACHMENTS` if you never file an issue from a bug report, `ASSIGN_ISSUES` if you never set an assignee,
 `ADD_COMMENTS` and `TRANSITION_ISSUES` if the [write-back policies](/features/issue-tracking#keep-the-ticket-honest)
 stay off. `BROWSE_PROJECTS` on its own is enough for read-only unfurl and status sync.
 
@@ -71,10 +77,11 @@ Both work. A **classic** token authenticates directly against your site (`https:
 **scoped** ("granular") token authenticates only through Atlassian's `https://api.atlassian.com/ex/jira/{cloudId}`
 gateway, so Piwi detects that on the first `401`, resolves your site's cloud id from its public `_edge/tenant_info`
 endpoint, and routes REST calls through the gateway from then on, with no extra configuration (browse links and link
-detection keep using the site URL). The resolved cloud id is stored on the connection when you **Test connection**.
+detection keep using the site URL). The resolved cloud id is stored on the connection once a sign-in check or
+**Test connection** finds a scoped token.
 
 A scoped token must additionally carry the scopes **`read:jira-work`** (unfurl, sync, search, the pickers),
-**`write:jira-work`** (create, comment, transition) and **`read:jira-user`** (the account check and the
+**`write:jira-work`** (create, comment, transition, attach) and **`read:jira-user`** (the account check and the
 assignable-user picker), on top of the account permissions above.
 
 ## Environment-managed vs dashboard-managed
@@ -87,7 +94,8 @@ A connection can live in either place:
 - **Environment-managed** — created from the environment at startup when `PIWI_JIRA_BASE_URL`,
   `PIWI_JIRA_EMAIL` and `PIWI_JIRA_API_TOKEN` are all set. It shows a lock badge and is read-only in the
   dashboard: change it by editing the environment and restarting. The token stays in the environment and
-  never enters the database.
+  never enters the database. Without `PIWI_SECRET_KEY` the connect form cannot store a token, so it says so and
+  shows these variables filled in from what you typed.
 
 See the [configuration reference](/reference/configuration#integrations) for the variables.
 
@@ -122,8 +130,9 @@ A background task reads every tracked issue back through its connection and cach
 closed ticket stops showing as open in the dashboard. It runs **every 15 minutes by default**; set
 [`PIWI_INTEGRATIONS_SYNC_MINUTES`](/reference/configuration) (1–1440) to change the cadence; a value of 60 or more is
 rounded to whole hours. Each sweep refreshes up to 100 links. Links on an open cluster refresh every sweep; links on
-a resolved or ignored cluster refresh at most once a day. A connection that fails to answer records the error on the connection card and does not stop the sweep. An administrator can run one sweep on
-demand with `POST /api/integrations/sync`; the response counts the links it refreshed, failed and skipped.
+a resolved or ignored cluster refresh at most once a day. A connection that fails to
+answer records the error on the connection card and does not stop the sweep. An administrator can run one sweep on
+demand through the REST API (see the [API docs](https://piwitests.dev/demo/docs)); the response counts the links it refreshed, failed and skipped.
 
 The two-way **policies** (comment on fix / regression, transition, resolve on close, reopen) are configured per project
 on the binding — see [Keep the ticket honest](/features/issue-tracking#keep-the-ticket-honest).
@@ -134,12 +143,18 @@ Polling is the baseline because Atlassian Cloud usually cannot reach a self-host
 register a webhook so a close or reopen reflects immediately instead of within the sync interval:
 
 1. In **Settings → Integrations**, on the Jira connection, choose **Enable webhook**. Piwi generates a per-connection
-   secret and shows the webhook URL **once** — copy it now. It is a full URL when `PIWI_SITE_URL` is set; otherwise
-   prefix the path it shows with your public address.
+   secret and shows the full URL **once**, with a link to the site's webhooks page. Set `PIWI_SITE_URL` when Piwi
+   sits behind another address than the one in your browser.
 2. In Jira, go to **Settings → System → Webhooks → Create a webhook**, paste the URL, and subscribe it to
    **issue updated** events (optionally scoped by a JQL filter to the bound projects).
 3. Piwi looks the issue up by its id in its links and refreshes just that one, applying the resolve/reopen policies.
 
 The webhook is **public but secret-in-path** and rate-limited, and it can only ever *refresh a link* — it can never
-create or transition anything. **Regenerate webhook** invalidates the old URL; to turn the webhook off, call
-`DELETE /api/integrations/connections/<id>/webhook-token` as an administrator.
+create or transition anything. **Regenerate webhook** invalidates the old URL; turning the webhook off is an
+administrator call in the REST API (see the [API docs](https://piwitests.dev/demo/docs)).
+
+## Related
+
+- [Issue tracking (Jira)](/features/issue-tracking): filing issues from a failure and keeping them in sync
+- [Production checklist](./production-checklist): `PIWI_SECRET_KEY`, which encrypts the stored token
+- [Configuration reference](/reference/configuration): the integration variables

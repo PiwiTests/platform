@@ -32,6 +32,20 @@ const visible = computed(() => didNotRun.value || hasBlocked.value);
 
 const reasonLabel = computed(() => formatDidNotRunReason(props.reason));
 
+/**
+ * The hook the blocking test failed in, as the sentence names it — a failing
+ * `beforeAll` skips the rest of its group whether or not the group is serial.
+ */
+const blockingHook = computed(() => {
+  const hook = props.blockedByCase?.failedIn?.hook;
+  if (!hook) return null;
+  if (/^(?:before|after)(?:Each|All)$/.test(hook)) return `the ${hook} hook`;
+  const named = /^hook "(.+)"$/.exec(hook);
+  if (named) return `the "${named[1]}" hook`;
+  return hook;
+});
+const blockedByBeforeAll = computed(() => props.blockedByCase?.failedIn?.hook === 'beforeAll');
+
 /** Longer explanation for a run-level cutoff (no single blocking test). */
 const cutoffDetail = computed(() => {
   switch (props.reason) {
@@ -64,7 +78,16 @@ const cutoffDetail = computed(() => {
           </UBadge>
         </div>
 
-        <p v-if="blockedByCase" class="text-gray-600 dark:text-gray-400">
+        <p v-if="blockedByCase && blockingHook" class="text-gray-600 dark:text-gray-400">
+          Skipped because {{ blockingHook }} failed while running
+          <NuxtLink :to="`/test-run-cases/${blockedByCase.id}`" class="text-primary hover:underline font-medium">
+            {{ blockedByCase.title }}</NuxtLink
+          >.
+          <template v-if="blockedByBeforeAll">
+            When a beforeAll hook fails, Playwright skips the rest of its group.
+          </template>
+        </p>
+        <p v-else-if="blockedByCase" class="text-gray-600 dark:text-gray-400">
           Skipped after
           <NuxtLink :to="`/test-run-cases/${blockedByCase.id}`" class="text-primary hover:underline font-medium">
             {{ blockedByCase.title }}

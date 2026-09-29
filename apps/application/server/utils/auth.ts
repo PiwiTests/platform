@@ -341,7 +341,7 @@ export async function getUserByApiKey(plaintext: string): Promise<User | null> {
  * X-API-Key header.  Returns null if neither is present or if the value does
  * not start with the API key prefix.
  */
-function extractApiKey(event: H3Event): string | null {
+export function extractApiKey(event: H3Event): string | null {
   const authHeader = getRequestHeader(event, 'authorization');
   if (authHeader) {
     const match = authHeader.match(/^Bearer\s+(.+)$/i);

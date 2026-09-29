@@ -1,5 +1,6 @@
 ---
 title: Backup & restore
+description: "What to back up for a Piwi instance, how to take a consistent copy of the database and storage, and how to restore it."
 lang: en-US
 ---
 

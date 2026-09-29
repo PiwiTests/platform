@@ -18,7 +18,7 @@ From your Playwright project, `npx @piwitests/reporter init` installs the report
 npx @piwitests/reporter init --server-url http://localhost:3000 --project my-project
 ```
 
-Every step is idempotent (safe to re-run); a config shape it will not rewrite is reported as `manual` with the exact change to make, never mangled. Add `--dry-run` to preview or `--json` for a machine-readable plan an agent can act on. It also installs the [Piwi agent skills](https://piwitests.dev/features/mcp#agent-skills) so your coding agent can investigate failures, heal locators, and stabilize flaky tests. Run `npx @piwitests/reporter init --help` for all options, or wire it up by hand with the steps below.
+Every step is idempotent (safe to re-run); a config shape it will not rewrite is reported as `manual` with the exact change to make, never mangled. Add `--dry-run` to preview or `--json` for a machine-readable plan an agent can act on. It also installs the [Piwi agent skills](https://piwitests.dev/features/agent-skills) so your coding agent can investigate failures, heal locators, and stabilize flaky tests. Run `npx @piwitests/reporter init --help` for all options, or wire it up by hand with the steps below.
 
 > The package is `@piwitests/reporter`; its command is `piwi`. Invoke it through the package name (`npx @piwitests/reporter <command>`) so npx resolves this package — `npx piwi` would fetch an unrelated `piwi` from npm. Once the reporter is a project dependency, `npx piwi <command>` resolves the local binary and works too.
 
@@ -57,12 +57,12 @@ Import `test` from this file in your specs instead of `@playwright/test`. A spec
 
 - **Run history, statuses, errors, traces, reports and live streaming** — with no test-code changes.
 - **Capture fixtures** add slow-endpoint analysis, Web Vitals, console capture, failure-time ARIA snapshots and locator healing.
-- **AI steps** (`page.piwiLocator(...)` / `page.piwiRun(...)`) drive flows in plain English, compiled once and replayed deterministically with zero LLM calls in CI — see [AI steps](https://piwitests.dev/guide/ai-steps).
+- **AI steps** (`page.piwiLocator(...)` / `page.piwiRun(...)`) drive flows in plain English, compiled once and replayed deterministically with zero LLM calls in CI — see [AI steps](https://piwitests.dev/features/ai-steps).
 - **CI-aware** — auto-detects the run label, branch and commit, publishes the run URL back to the pipeline, and shards into a single run. See [CI & sharding](https://piwitests.dev/guide/ci).
 
 ## Configuration
 
-Most options can also be set via a `PIWI_*` environment variable (config wins over env, except for `PIWI_VERBOSE`). The full option and env-var reference lives in the [reporter documentation](https://piwitests.dev/guide/reporter); authentication for CI (API keys) is covered under [Authentication](https://piwitests.dev/operate/authentication).
+Most options can also be set via a `PIWI_*` environment variable (config wins over env, except for `PIWI_VERBOSE`). The full option and env-var reference lives in [Reporter options](https://piwitests.dev/reference/reporter-options); authentication for CI is covered under [API keys](https://piwitests.dev/operate/api-keys).
 
 ## Requirements
 

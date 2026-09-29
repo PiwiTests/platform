@@ -1,5 +1,6 @@
 import { describe, test, expect } from 'vitest';
 import {
+  failingStepsSection,
   scoreChangedFile,
   representativeExecutionSections,
   extractPageSnapshotSection,
@@ -9,6 +10,10 @@ import {
   candidateFilePaths,
 } from '../../server/utils/ai-context';
 import type { ContextLimits } from '#shared/ai-context-limits';
+import {
+  caughtProbeFailure,
+  teardownAfterBodyFailure,
+} from '../../../../packages/core/tests/fixtures/playwright-steps';
 
 // Minimal limits object — large enough that nothing truncates in these tests.
 const limits = {
@@ -166,6 +171,37 @@ describe('representativeExecutionSections — AI-step intents (aiSteps)', () => 
     expect(md).toContain('prompt 2');
     expect(md).not.toContain('prompt 3');
     expect(md).toContain('…and 2 more');
+  });
+});
+
+describe('failed steps — a run with several errored steps', () => {
+  /** The lines of a section that name a step. */
+  const stepLines = (markdown: string) => markdown.split('\n').filter((line) => /^(- |✗ )\[/.test(line));
+
+  test('lists the step that failed the test first and labels the probe the test caught', () => {
+    const rep = makeRep({ error: caughtProbeFailure.error, steps: caughtProbeFailure.steps });
+    expect(stepLines(failingStepsSection(rep, limits)!)).toEqual([
+      "- [assertion] Expect \"toBeEnabled\" locator('.carousel').getByRole('link', { name: '' })",
+      '- [test.step] Check the download link (around the failing step, same error)',
+      "- [assertion] Expect \"toBeVisible\" getByRole('dialog').getByRole('button', { name: 'Confirm' }) (caught, the test continued)",
+    ]);
+  });
+
+  test('keeps a teardown that failed after the body as a failure', () => {
+    const rep = makeRep({ error: teardownAfterBodyFailure.error, steps: teardownAfterBodyFailure.steps });
+    const lines = stepLines(failingStepsSection(rep, limits)!);
+    expect(lines[0]).toBe("- [assertion] Expect \"toBeVisible\" getByRole('button', { name: 'Nope' })");
+    expect(lines.some((line) => line.includes('caught'))).toBe(false);
+  });
+
+  test('the steps list marks the caught probe, not as the failure', () => {
+    const rep = makeRep({ error: caughtProbeFailure.error, steps: caughtProbeFailure.steps });
+    const steps = representativeExecutionSections(rep, null, limits).find((s) => s.id === 'steps')!.markdown;
+    const lines = stepLines(steps);
+    expect(lines.find((line) => line.includes('toBeVisible'))).toMatch(
+      /^- \[assertion\] .* \(error caught, the test continued\)$/,
+    );
+    expect(lines.find((line) => line.includes('toBeEnabled'))).toMatch(/^✗ \[assertion\] .* ← FAILED$/);
   });
 });
 

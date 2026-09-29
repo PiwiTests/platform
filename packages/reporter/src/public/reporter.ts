@@ -1,5 +1,5 @@
 import * as path from 'node:path';
-import type { FullConfig, Suite, TestCase, TestResult, FullResult } from '@playwright/test/reporter';
+import type { FullConfig, Suite, TestCase, TestResult, FullResult, TestStep } from '@playwright/test/reporter';
 import { resolveOptions, usedDesktopDiscovery, PIWI_DEFAULTED_CAPTURE_ENV } from '../internal/config/env.js';
 import type { PiwiDashboardOptions, ShardInfo } from './options.js';
 import { HttpClient } from '../internal/transport/http-client.js';
@@ -22,6 +22,10 @@ import { isListMode } from '../internal/support/run-mode.js';
 import { createGlobalSetup } from './global-setup.js';
 import { wrapConfig } from './config-wrapper.js';
 import { toWireTestCase } from '../internal/submit/serializer.js';
+import { isProbeMode } from '../internal/probe/mode.js';
+import { probeRunMetadata } from '../internal/probe/plan.js';
+import { flakeRunMetadata, isFlakeMode, loadFlakePlan } from '../internal/flake/mode.js';
+import { errorMessage } from '../internal/support/errors.js';
 import {
   mergeAnnotations,
   classifyStatus,
@@ -212,6 +216,28 @@ export class PiwiDashboardReporter {
 
     this.metadata = this.metadataCollector.collect(config, suite, this.options);
 
+    // Stamp a probe run at the source, before any run body is sent. The
+    // streaming start/begin and finish calls carry this same metadata object, so
+    // stamping it here (rather than only at serialize time) marks the run on
+    // every submit path — the dashboard then routes it to its silent path (no
+    // clusters, regression signals, notifications or pull-request feedback).
+    if (isProbeMode()) this.metadata = probeRunMetadata(this.metadata);
+
+    // A flake-lab run is stamped the same way, with the experiment and arm it
+    // ran, so the dashboard keeps it out of flakiness, regression signals,
+    // clusters and notifications. A plan that cannot be read still stamps the
+    // run (the capture fixtures fail its tests with the reason).
+    if (isFlakeMode()) {
+      let stamp: { experimentId: string; armId: string } = { experimentId: 'unknown', armId: 'unknown' };
+      try {
+        const plan = loadFlakePlan();
+        stamp = { experimentId: plan.experimentId, armId: plan.arm.id };
+      } catch (error) {
+        this.logger.warn(errorMessage(error));
+      }
+      this.metadata = flakeRunMetadata(stamp, this.metadata);
+    }
+
     // Snapshot the planned test list so `onEnd` can materialize tests that
     // never ran (e.g. cut short by `maxFailures`) as `didnotrun` cases. The
     // suite is already filtered/sharded, so this matches what this shard
@@ -262,12 +288,22 @@ export class PiwiDashboardReporter {
   /** Track suite-level setup steps (beforeAll/afterAll) not tied to any test */
   private setupSteps: SetupStep[] = [];
 
+  /** Step categories streamed live while the run executes. */
+  private static readonly LIVE_STEP_CATEGORIES = new Set(['hook', 'fixture', 'pw:api', 'expect']);
+
   /**
-   * Step categories streamed live while the run executes. `pw:assert` is
-   * excluded: it is the polling noise of `expect()`, not a step a human
-   * watches; the meaningful readout is the `pw:expect` wrapper around it.
+   * Whether a step streams live: its category is in `LIVE_STEP_CATEGORIES`
+   * and no ancestor is an `expect` step. The steps inside an assertion are its
+   * polling — every `expect.poll` attempt and `toPass` retry — not a step a
+   * human watches; the meaningful readout is the assertion around them.
    */
-  private static readonly LIVE_STEP_CATEGORIES = new Set(['hook', 'fixture', 'pw:api', 'pw:expect']);
+  private static isLiveStep(step: TestStep): boolean {
+    if (!PiwiDashboardReporter.LIVE_STEP_CATEGORIES.has(step.category)) return false;
+    for (let parent = step.parent; parent; parent = parent.parent) {
+      if (parent.category === 'expect') return false;
+    }
+    return true;
+  }
 
   /** Playwright reporter hook: called when a step (including hook/fixture) begins */
   onStepBegin(test: TestCase | undefined, _result: TestResult | undefined, step: any): void {
@@ -275,8 +311,8 @@ export class PiwiDashboardReporter {
     // first fixtures and hooks run while `/start` is still in flight, and
     // `queueBeginEvent` buffers until the run id lands (same as `onTestBegin`).
     if (!this.enabled || !this.streamManager) return;
+    if (!PiwiDashboardReporter.isLiveStep(step)) return;
     const cat = step.category;
-    if (!PiwiDashboardReporter.LIVE_STEP_CATEGORIES.has(cat)) return;
 
     const event: StreamEvent = {
       type: 'step-begin',
@@ -294,8 +330,8 @@ export class PiwiDashboardReporter {
   /** Playwright reporter hook: called when a step (including hook/fixture) ends */
   onStepEnd(test: TestCase | undefined, _result: TestResult | undefined, step: any): void {
     if (!this.enabled || !this.streamManager) return;
+    if (!PiwiDashboardReporter.isLiveStep(step)) return;
     const cat = step.category;
-    if (!PiwiDashboardReporter.LIVE_STEP_CATEGORIES.has(cat)) return;
 
     const workerIndex = workerIndexOf(_result);
     const startedAt = step.startTime instanceof Date ? step.startTime.getTime() : null;
@@ -380,6 +416,7 @@ export class PiwiDashboardReporter {
       // An annotation-less skip reclassified to `didnotrun` is a serial-group
       // cascade: an earlier test failed and Playwright skipped the rest.
       didNotRunReason: status === 'didnotrun' ? 'previous-failure' : null,
+      expectedStatus: test.expectedStatus ?? null,
     };
 
     if (result.status === 'failed' || result.status === 'timedOut') {
@@ -393,7 +430,7 @@ export class PiwiDashboardReporter {
     }
 
     if (this.options.collectPerformanceMetrics && result.steps?.length > 0) {
-      testCase.performanceMetrics = collectStepMetrics(result.steps);
+      testCase.performanceMetrics = collectStepMetrics(result.steps, result.errors);
       const stepEvents = extractTestStepEvents(result.steps, result.startTime);
       const waitEvents = extractWaitEvents(result.steps);
       const allEvents = [...stepEvents, ...waitEvents];
@@ -416,6 +453,31 @@ export class PiwiDashboardReporter {
         } catch {
           /* ignore parse errors */
         }
+      }
+      // The page each locator call ran on, recorded by the same locator wrapper.
+      const pagesAttachment =
+        this.options.captureLocators !== false
+          ? result.attachments.find((a: any) => a.name === ATTACHMENT_NAMES.locatorPages)
+          : undefined;
+      if (pagesAttachment?.body) {
+        try {
+          testCase.locatorPages = JSON.parse((pagesAttachment.body as Buffer).toString());
+        } catch {
+          /* ignore parse errors */
+        }
+      }
+    }
+    // The source files the test executed, when code reach is on.
+    const reachAttachment =
+      this.options.captureCodeReach === true && this.options.collectPerformanceMetrics !== false
+        ? result.attachments.find((a: any) => a.name === ATTACHMENT_NAMES.codeReach)
+        : undefined;
+    if (reachAttachment?.body) {
+      try {
+        const files = JSON.parse((reachAttachment.body as Buffer).toString());
+        if (Array.isArray(files)) testCase.codeReach = files.filter((f): f is string => typeof f === 'string');
+      } catch {
+        /* ignore parse errors */
       }
     }
 
@@ -502,6 +564,7 @@ export class PiwiDashboardReporter {
         locks: locks.length ? locks : null,
         testMeta: collectTestMetadata(declaredAnnotations),
         didNotRunReason: reason,
+        expectedStatus: test.expectedStatus ?? null,
       };
 
       this.testCases.push(testCase);

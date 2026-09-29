@@ -20,7 +20,14 @@
  */
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from 'pdf-lib';
 import { stripAnsi } from '#shared/error-fingerprint';
-import { highlightToSpans, isKnownLanguage, type HighlightSpan } from '#shared/highlight';
+import {
+  highlightLinesToSpans,
+  highlightToSpans,
+  isKnownLanguage,
+  languageForPath,
+  type HighlightSpan,
+} from '#shared/highlight';
+import { parseSourceSnippet } from '#shared/source-snippet';
 import {
   caseFacts,
   clusterFacts,
@@ -32,6 +39,7 @@ import {
   projectLabel,
   type Fact,
 } from './fields';
+import { STATUS_COLORS, hexToRgb } from '#shared/status-colors';
 import type { ExportAsset, ExportBundle, ExportCase } from './types';
 
 export interface PdfRenderOptions {
@@ -41,6 +49,12 @@ export interface PdfRenderOptions {
 
 type Color = ReturnType<typeof rgb>;
 
+/** A `#rrggbb` literal as a pdf-lib color. */
+function hexColor(hex: string): Color {
+  const [r, g, b] = hexToRgb(hex);
+  return rgb(r / 255, g / 255, b / 255);
+}
+
 const COLORS = {
   fg: rgb(0.11, 0.11, 0.13),
   muted: rgb(0.42, 0.42, 0.46),
@@ -48,9 +62,9 @@ const COLORS = {
   line: rgb(0.89, 0.89, 0.91),
   lineStrong: rgb(0.79, 0.79, 0.82),
   accent: rgb(0.26, 0.22, 0.79),
-  fail: rgb(0.75, 0.07, 0.24),
-  pass: rgb(0.02, 0.47, 0.34),
-  warn: rgb(0.7, 0.32, 0.04),
+  fail: hexColor(STATUS_COLORS.failed.text),
+  pass: hexColor(STATUS_COLORS.passed.text),
+  warn: hexColor(STATUS_COLORS.didnotrun.text),
   info: rgb(0.11, 0.31, 0.83),
   sunken: rgb(0.96, 0.96, 0.97),
   // Syntax tokens, matching the light `--tok-*` palette of the HTML report.
@@ -119,6 +133,11 @@ const REPLACEMENTS: Record<string, string> = {
   '├': '|',
   '└': '`',
   '▶': '>',
+  // French puts a narrow no-break space before % and between thousands; the font has the plain one.
+  '\u202f': '\u00a0',
+  '\u2009': ' ',
+  // The minus sign of a report's changes (−2.1 pts).
+  '\u2212': '-',
 };
 
 /**
@@ -127,7 +146,7 @@ const REPLACEMENTS: Record<string, string> = {
  * and everything else replaced. Control characters — newlines included — become
  * a space, so callers split on newlines first to keep line breaks.
  */
-function winAnsiSafe(text: string): string {
+export function winAnsiSafe(text: string): string {
   let out = '';
   for (const ch of text) {
     const code = ch.codePointAt(0) ?? 0;
@@ -203,6 +222,19 @@ function layoutHighlighted(spans: HighlightSpan[], maxChars: number): CodeSegmen
     });
   }
   return lines;
+}
+
+/** A captured source snippet as spans: the line-number gutter faint, the code syntax-highlighted. */
+function snippetSpans(text: string, file: string): HighlightSpan[] {
+  const rows = parseSourceSnippet(stripAnsi(text));
+  const code = highlightLinesToSpans(
+    rows.map((row) => row.code),
+    languageForPath(file),
+  );
+  return rows.flatMap((row, i) => [
+    { text: i === 0 ? row.gutter : `\n${row.gutter}`, scope: 'comment' },
+    ...(code[i] ?? []),
+  ]);
 }
 
 interface TextOptions {
@@ -409,25 +441,29 @@ class PdfBuilder {
   }
 
   /**
-   * A monospace block on a sunken background, split cleanly across pages. With a
-   * known `lang` the source is syntax-highlighted into colored runs; without one
-   * (stack traces, raw errors) it is drawn as a single plain run per line.
+   * A monospace block on a sunken background, split cleanly across pages. Spans
+   * are drawn in their token colors; text with a known `lang` is
+   * syntax-highlighted into colored runs; text without one (stack traces, raw
+   * errors) is drawn as a single plain run per line.
    */
-  codeBlock(text: string, lang?: string): void {
+  codeBlock(source: string | HighlightSpan[], lang?: string): void {
     const size = 8;
     const lineGap = size * 0.5;
     const lineHeight = size + lineGap;
     const padX = 6;
     const padY = 5;
     const innerWidth = CONTENT_WIDTH - padX * 2;
-    const clean = stripAnsi(text);
+    const maxChars = Math.max(1, Math.floor(innerWidth / this.mono.widthOfTextAtSize('M', size)));
 
     let lines: CodeSegment[][];
-    if (lang && isKnownLanguage(lang)) {
-      const maxChars = Math.max(1, Math.floor(innerWidth / this.mono.widthOfTextAtSize('M', size)));
-      lines = layoutHighlighted(highlightToSpans(clean, lang).spans, maxChars);
+    if (typeof source !== 'string') {
+      lines = layoutHighlighted(source, maxChars);
+    } else if (lang && isKnownLanguage(lang)) {
+      lines = layoutHighlighted(highlightToSpans(stripAnsi(source), lang).spans, maxChars);
     } else {
-      lines = this.wrap(clean, this.mono, size, innerWidth).map((line) => [{ text: line, color: COLORS.fg }]);
+      lines = this.wrap(stripAnsi(source), this.mono, size, innerWidth).map((line) => [
+        { text: line, color: COLORS.fg },
+      ]);
     }
     this.space(2);
 
@@ -709,7 +745,7 @@ async function renderCase(
     b.sectionLabel('Call stack');
     for (const frame of d.testSourceFrames as Record<string, any>[]) {
       b.meta(`${frame.file ?? ''}:${frame.line ?? ''}`, b.mono);
-      if (frame.snippet) b.codeBlock(String(frame.snippet));
+      if (frame.snippet) b.codeBlock(snippetSpans(String(frame.snippet), String(frame.file ?? '')));
     }
   }
 

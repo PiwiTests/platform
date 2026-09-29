@@ -15,10 +15,15 @@ export interface TestStepInfo {
   params?: Record<string, string | number | boolean>;
   duration?: number;
   category?: string;
-  /** Error message when the step failed (undefined when the step passed). */
-  error?: { message?: string };
+  /**
+   * The step's error when it failed (undefined when the step passed): its
+   * message, and where it was thrown (`file:line:col`) on runs from a recent reporter.
+   */
+  error?: { message?: string; location?: string };
   /** True when the step carried an error — the signal for inline failure markers. */
   failed?: boolean;
+  /** True when the test caught the step's error and went on; set by a recent reporter. */
+  recovered?: boolean;
   /** Source pointer `file:line:col` (not a code snippet); present on runs from a recent reporter. */
   location?: string;
   /** Absolute start time in ms; present on runs from a recent reporter. */
@@ -73,7 +78,9 @@ export interface RunMetadata {
    */
   defaultBranch?: string | null;
   ci?: { provider?: string | null } | null;
-  htmlReport?: { projects?: Array<{ use?: { browserName?: string | null } | null }> } | null;
+  htmlReport?: {
+    projects?: Array<{ use?: { browserName?: string | null; baseURL?: string | null } | null }>;
+  } | null;
 }
 
 export type { BrowserConfig, ServerLogEntry, ServerSpanEntry };

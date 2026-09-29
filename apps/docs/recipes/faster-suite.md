@@ -1,5 +1,6 @@
 ---
-title: Cut the time the suite costs
+title: Cut the time it costs
+description: "Find where your suite's CI time goes, from waits and timeouts to flaky retries and slow endpoints, and what to cut first."
 lang: en-US
 ---
 
@@ -22,12 +23,11 @@ app faster; it tells you whether that is even the problem.
 consumed) and **Wasted CI time** — the portion that produced no signal, defined as time inside wait
 steps plus time spent on attempts that ended failed or timed out.
 
-If wasted time is a small slice, your suite is honestly just big, and steps 2–4 will disappoint you —
-the application itself and more parallelism (steps 5 and 6) are where to look. If it is a large slice,
-the next three steps are where your afternoon goes.
+If wasted time is a small slice, your suite is just big: look at the application and parallelism (steps 5
+and 6). If it is a large slice, start with steps 2 to 4.
 
 The widget also states how much is **reclaimable** by tightening timeouts and dropping stale
-`test.slow()` marks, which is the one number worth quoting to whoever asks why CI is expensive.
+`test.slow()` marks.
 
 ## 2. Reclaim the waits you wrote
 
@@ -35,22 +35,19 @@ Piwi classifies wait steps as **wasted time** and totals them per execution and 
 only explicit sleeps count — `waitForTimeout` and friends — because framework-injected waits
 (load-state, wait-for-function) are usually unavoidable and would drown the signal.
 
-- A run's test list puts the time wasted in fixed waits next to each test's duration, and an
-  execution's **Details** popover repeats it as *Wasted in fixed waits*.
-- A run's **Timeline** tab draws one lane per worker. Turn on **Show hooks and waits** (off by default)
-  and setup, hooks, fixtures and wasted waits join the test bars — the sleeps light up as spans you can
-  click straight through to the test.
+- The run's test list shows each test's fixed-wait time; so does an execution's **Details** popover.
+- A run's **Timeline** tab draws a per-worker timeline: turn on **Show waits** and the sleeps show as bars that
+  open the test.
 - Tune what counts in **Settings → Performance** (or lock it with
   [`PIWI_WASTED_WAIT_PATTERNS`](/reference/configuration#wasted-time)). Classification happens *when a run is
-  viewed*, so widening the patterns re-classifies your whole history immediately — no re-run needed.
+  viewed*, so widening the patterns re-classifies your whole history with no re-run.
 
 <figure>
-  <img src="/screenshots/run-timeline.png" alt="A run's Timeline tab: one horizontal lane per worker with tests as bars colored by outcome, under a header counting workers, tests, hooks and waits beside the Show hooks and waits switch">
-  <figcaption>The Timeline tab — one lane per worker; <strong>Show hooks and waits</strong> overlays the setup, hook, fixture and fixed-wait spans so idle time and slow fixtures are obvious.</figcaption>
+  <img src="/screenshots/run-timeline.png" alt="A run's Timeline tab: one horizontal lane per worker, tests as bars with their setup and teardown hooks hatched at each end, the fixed-wait sleeps highlighted as wasted-wait spans, and the Show hooks and Show waits switches above">
+  <figcaption>The Timeline tab: one lane per worker, hook time hatched at each end of a test, and the fixed-wait sleeps highlighted as their own span.</figcaption>
 </figure>
 
-Set the patterns to `*` once, look at the damage, then set them back. It is a fast way to see how much
-of the suite is waiting on something.
+Set the patterns to `*` once to see how much of the suite is waiting on something, then set them back.
 
 ## 3. Tighten the timeouts that only bill you on failure
 
@@ -63,7 +60,7 @@ a tighter value and the time reclaimable per failing run, ranked by impact.
 
 <figure>
   <img src="/screenshots/performance-trends.png" alt="Project Performance tab showing the duration trend chart with total, average and P90 series and timeline markers, above the slowest-tests table">
-  <figcaption>The Performance tab — average and P90 duration over time (with your timeline markers overlaid), then the ranked slowest tests.</figcaption>
+  <figcaption>The Performance tab: average and P90 duration over time, then the ranked slowest tests.</figcaption>
 </figure>
 
 Read the **P90** line, not the average: a handful of slow outliers move P90 and barely move the mean,
@@ -71,10 +68,9 @@ and it's the outliers that decide how long a shard takes.
 
 ## 4. Stop paying for flaky retries
 
-A flaky test bills you twice — once for the failed attempt, once for the retry — on every run where it
-misbehaves. That is why Piwi ranks flaky tests by **wasted CI minutes** rather than by flakiness score:
-a test that flakes constantly but finishes in 200ms costs nothing, and one that flakes weekly on a
-four-minute timeout is what actually hurts.
+A flaky test bills you twice, for the failed attempt and for the retry, on every run where it misbehaves.
+That is why Piwi ranks flaky tests by **wasted CI minutes** rather than by flakiness score: a test that flakes
+often but finishes in 200ms costs little, and one that flakes weekly on a four-minute timeout hurts.
 
 [Cutting the flakiness that costs the most](./flaky-cleanup) is the whole recipe for this. The short
 version: work down the impact order, fix the red dots, and
@@ -83,15 +79,13 @@ still running.
 
 ## 5. Ask whether the app is slow, not the test
 
-Everything above shaves time off the harness. This step is the one that finds a real performance bug.
+Everything above shaves time off the harness; this step finds a real performance bug.
 
-- **Slow endpoints** — on a run, network requests grouped by method and normalized route
-  (`/api/users/:id`) with avg/p90/max duration and error rate. [Analytics](/features/analytics) lifts the same
-  view across every project, so a shared endpoint regressing shows up before any single suite notices.
-- **Web Vitals** — TTFB, FCP, LCP, CLS and the rest per execution, color-coded. LCP/CLS/INP are
-  Chromium-only, and INP needs an interaction, so short tests often show `n/a`.
+- **[Slow endpoints](/features/slow-tests)**: on a run, network requests grouped by normalized route with their
+  duration and error rate; [Analytics](/features/analytics) lifts the same view across every project.
+- **Web Vitals**: TTFB, FCP, LCP, CLS and the rest per execution. LCP, CLS and INP are Chromium-only.
 
-Both require the [capture fixtures](/guide/capture-fixtures) — the reporter alone cannot see the network.
+Both require the [capture fixtures](/guide/capture-fixtures): the reporter alone cannot see the network.
 Without them you still have the trace: its network waterfall shows the same requests for one execution,
 just not aggregated across the suite.
 
@@ -106,19 +100,15 @@ just not aggregated across the suite.
 
 ## Other ways in
 
-**Ask your agent.** Over the [MCP server](/features/mcp) — no install, it is part of the server —
-`get_slow_tests` returns the ranked slowest tests, `get_performance_trend` the duration history, and
-`get_run_insights` the worker-imbalance and duration deltas for one run. Useful for "what should I
-speed up this sprint?" without opening a browser.
+**Ask your agent.** Over the [MCP server](/features/mcp), `get_slow_tests` returns the ranked slowest tests,
+`get_performance_trend` the duration history, and `get_run_insights` the worker imbalance of one run.
 
-**Script it.** The same numbers are on the REST API if you would rather post a weekly CI-cost figure
-into a channel — see the [API docs](https://piwitests.dev/demo/docs).
+**Script it.** The same numbers are on the REST API: see the [API docs](https://piwitests.dev/demo/docs).
 
 **Watch it drift.** Rather than auditing periodically, subscribe to the `perf.regression`
 [notification](/features/notifications) event and let it tell you when a duration trend breaks.
 
-## See also
-
+## Related
 - [Slow tests & wasted time](/features/slow-tests) — the full reference for trends, slowest
   tests and timeout hygiene
 - [Cut the flakiness that costs the most](./flaky-cleanup) — step 4 in full

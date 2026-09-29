@@ -1,0 +1,1 @@
+ALTER TABLE "share_links" ALTER COLUMN "project_id" DROP NOT NULL;

@@ -53,8 +53,14 @@ export const projects = pgTable(
     aiLanguage: text('ai_language'), // per-project AI response language override (e.g. "French")
     scmToken: text('scm_token'), // Per-project SCM token for GitHub/GitLab/Bitbucket API access
     defaultBranch: text('default_branch'), // Repository default branch; null = resolve from SCM provider, else 'main'
+    openApiUrl: text('openapi_url'), // Declared-surface OpenAPI document URL; fetched server-side into graph route nodes with origin 'openapi'
+    serverProbes: jsonb('server_probes'), // ServerProbeSettings — the level-two probe gate (enabled, allow-listed faults/routes); off by default
+    routeOrigins: jsonb('route_origins'), // string[] — extra own origins whose requests become graph route nodes, beyond the run's Playwright baseURL
     ciRerun: jsonb('ci_rerun'), // CiRerunSettings — provider-specific "re-run from the dashboard" target (off by default)
     capabilities: jsonb('capabilities'), // Partial<Record<CapabilityId, 'declined' | 'enabled'>> — per-project capability decisions
+    generatedSpecs: jsonb('generated_specs'), // GeneratedSpecSettings — test import and bugs folder for specs rendered from steps
+    targets: jsonb('targets'), // ProjectTargets — per-project goals on catalog metrics (shared/analytics/targets.ts)
+    locatorIndexBuiltAt: timestamp('locator_index_built_at', { mode: 'date' }),
     createdAt: timestamp('created_at', { mode: 'date' })
       .notNull()
       .$defaultFn(() => new Date()),
@@ -102,6 +108,10 @@ export const testRuns = pgTable(
     playwrightVersion: text('playwright_version'), // Playwright framework version used for this run
     reporterVersion: text('reporter_version'), // Piwi reporter package version that produced this run
     importHash: text('import_hash'), // SHA-256 of the imported archive; null for reported runs. Makes re-importing a no-op.
+    keptAt: timestamp('kept_at', { mode: 'date' }), // Set = kept forever: retention never deletes the run
+    keptBy: integer('kept_by').references(() => users.id, { onDelete: 'set null' }), // User who kept the run; null for reporter/marker keeps or with auth off
+    keepSource: text('keep_source'), // 'user' | 'reporter' | 'marker' — who asked for the keep; null when not kept
+    keepReason: text('keep_reason'), // Optional free-text reason shown next to the keep
     createdAt: timestamp('created_at', { mode: 'date' })
       .notNull()
       .$defaultFn(() => new Date()),
@@ -118,6 +128,8 @@ export const testRuns = pgTable(
     startTimeIdx: index('idx_test_runs_start_time').on(table.startTime),
     statusIdx: index('idx_test_runs_status').on(table.status),
     importHashIdx: uniqueIndex('idx_test_runs_import_hash').on(table.projectId, table.importHash),
+    projectKeptIdx: index('idx_test_runs_project_kept').on(table.projectId, table.keptAt),
+    keptByIdx: index('idx_test_runs_kept_by').on(table.keptBy),
   }),
 );
 
@@ -167,6 +179,7 @@ export const testCases = pgTable(
     priority: text('priority'), // 'critical' | 'high' | 'medium' | 'low'
     feature: text('feature'),
     link: text('link'), // absolute http(s) URL
+    bugReportId: integer('bug_report_id'), // the bug report this test reproduces (`piwi:bug`), once that report exists
     createdAt: timestamp('created_at', { mode: 'date' })
       .notNull()
       .$defaultFn(() => new Date()),
@@ -493,6 +506,9 @@ export const testRunsCases = pgTable(
     ariaSnapshotJsonPayloadId: integer('aria_snapshot_json_payload_id').references(() => casePayloads.id),
     testSourcePayloadId: integer('test_source_payload_id').references(() => casePayloads.id),
     testSourceFramesPayloadId: integer('test_source_frames_payload_id').references(() => casePayloads.id),
+    pageInventoryPayloadId: integer('page_inventory_payload_id').references(() => casePayloads.id), // Content-addressed page inventory (controls + links per visited page), passing runs
+    locatorPagesPayloadId: integer('locator_pages_payload_id').references(() => casePayloads.id), // Content-addressed list of the page each locator call ran on (piwi-locator-pages)
+    codeReachPayloadId: integer('code_reach_payload_id').references(() => casePayloads.id), // Content-addressed list of the source files the test executed (piwi-code-reach)
     browser: jsonb('browser'), // Playwright project/browser config: { projectName, browserName, channel, viewport }
     browserName: text('browser_name'), // Scalar browser identity (projectName) for index efficiency
     testAnnotations: jsonb('test_annotations'), // Array<{ type, description? }> — runtime test marks (@fixme, @slow …)
@@ -505,6 +521,7 @@ export const testRunsCases = pgTable(
     isNewRegression: integer('is_new_regression'), // boolean: passed in baseline, failed in this run
     isNewFlaky: integer('is_new_flaky'), // boolean: no retries in baseline, retry-pass in this run
     didNotRunReason: text('did_not_run_reason'), // Why a 'didnotrun' case never executed: 'previous-failure' | 'global-timeout' | 'max-failures' | 'interrupted'
+    expectedStatus: text('expected_status'), // Playwright's expectedStatus: 'passed' | 'failed' | 'timedOut' | 'skipped' | 'interrupted'
     blockedBy: text('blocked_by'), // For a 'previous-failure' cascade, the location (file:line:col) of the failing test that blocked it
     createdAt: timestamp('created_at', { mode: 'date' })
       .notNull()
@@ -536,6 +553,15 @@ export const testRunsCases = pgTable(
     framesPayloadIdx: index('idx_trc_frames_payload')
       .on(table.testSourceFramesPayloadId)
       .where(sql`test_source_frames_payload_id IS NOT NULL`),
+    pageInventoryPayloadIdx: index('idx_trc_page_inventory_payload')
+      .on(table.pageInventoryPayloadId)
+      .where(sql`page_inventory_payload_id IS NOT NULL`),
+    locatorPagesPayloadIdx: index('idx_trc_locator_pages_payload')
+      .on(table.locatorPagesPayloadId)
+      .where(sql`locator_pages_payload_id IS NOT NULL`),
+    codeReachPayloadIdx: index('idx_trc_code_reach_payload')
+      .on(table.codeReachPayloadId)
+      .where(sql`code_reach_payload_id IS NOT NULL`),
   }),
 );
 
@@ -569,6 +595,100 @@ export const locatorSnapshots = pgTable(
   }),
 );
 
+// Locator usages — which locator chain each test used, from which call site, for which action.
+export const locatorUsages = pgTable(
+  'locator_usages',
+  {
+    id: serial('id').primaryKey(),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    testCaseId: integer('test_case_id')
+      .notNull()
+      .references(() => testCases.id, { onDelete: 'cascade' }),
+    locator: text('locator').notNull(),
+    target: text('target').notNull(),
+    action: text('action').notNull(),
+    browserName: text('browser_name').notNull(),
+    callSite: text('call_site').notNull(),
+    branch: text('branch').notNull().default(''),
+    page: text('page').notNull().default(''), // page key the call ran on (`/orders/:id`, or origin + path off the app); '' when unknown
+    arrival: boolean('arrival').notNull().default(false), // the call ran on that page before any locator interaction there
+    firstSeenRunId: integer('first_seen_run_id').references(() => testRuns.id, { onDelete: 'set null' }),
+    lastSeenRunId: integer('last_seen_run_id').references(() => testRuns.id, { onDelete: 'set null' }),
+    lastSeenAt: timestamp('last_seen_at', { mode: 'date' }).notNull(),
+  },
+  (table) => ({
+    uniqueUse: uniqueIndex('idx_locator_usages_use').on(
+      table.testCaseId,
+      table.browserName,
+      table.branch,
+      table.callSite,
+      table.action,
+      table.locator,
+      table.page,
+    ),
+    projectLocatorIdx: index('idx_locator_usages_project_locator').on(table.projectId, table.locator),
+    projectBranchIdx: index('idx_locator_usages_project_branch').on(table.projectId, table.branch),
+    projectTargetIdx: index('idx_locator_usages_project_target').on(table.projectId, table.target),
+    lastSeenRunIdx: index('idx_locator_usages_last_seen_run').on(table.lastSeenRunId),
+    firstSeenRunIdx: index('idx_locator_usages_first_seen_run').on(table.firstSeenRunId),
+  }),
+);
+
+// Code reach: the application source files each test executed (see schema.sqlite.ts).
+export const codeReach = pgTable(
+  'code_reach',
+  {
+    id: serial('id').primaryKey(),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    testCaseId: integer('test_case_id')
+      .notNull()
+      .references(() => testCases.id, { onDelete: 'cascade' }),
+    branch: text('branch').notNull().default(''),
+    file: text('file').notNull(),
+    origin: text('origin').notNull().default('client'),
+    lastSeenRunId: integer('last_seen_run_id').references(() => testRuns.id, { onDelete: 'set null' }),
+    lastSeenAt: timestamp('last_seen_at', { mode: 'date' }).notNull(),
+  },
+  (table) => ({
+    uniqueReach: uniqueIndex('idx_code_reach_unique').on(table.testCaseId, table.branch, table.file),
+    projectFileIdx: index('idx_code_reach_project_file').on(table.projectId, table.file),
+    lastSeenRunIdx: index('idx_code_reach_last_seen_run').on(table.lastSeenRunId),
+  }),
+);
+
+// Locator breaks a pull-request run's diff predicts: one row per chain of the
+// locator index that a string the diff removed or renamed stops matching.
+// Written at finish time by change coverage; read by the pull-request comment
+// and by locator healing's `diff-rename` rung. Replaced on every run.
+export const runLocatorBreaks = pgTable(
+  'run_locator_breaks',
+  {
+    id: serial('id').primaryKey(),
+    runId: integer('run_id')
+      .notNull()
+      .references(() => testRuns.id, { onDelete: 'cascade' }),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    locator: text('locator').notNull(),
+    rewrite: text('rewrite'),
+    replacements: jsonb('replacements'),
+    anchor: jsonb('anchor').notNull(),
+    confidence: text('confidence').notNull(),
+    callSites: jsonb('call_sites').notNull(),
+    testCaseIds: jsonb('test_case_ids').notNull(),
+    createdAt: timestamp('created_at', { mode: 'date' }).notNull().defaultNow(),
+  },
+  (table) => ({
+    runIdx: index('idx_run_locator_breaks_run').on(table.runId),
+    projectIdx: index('idx_run_locator_breaks_project').on(table.projectId),
+  }),
+);
+
 // Network requests table - normalized child table of test_runs_cases
 export const networkRequests = pgTable(
   'network_requests',
@@ -590,6 +710,7 @@ export const networkRequests = pgTable(
     contentType: text('content_type'),
     serverLogs: jsonb('server_logs'),
     serverTraces: jsonb('server_traces'),
+    failure: text('failure'), // Why the request failed (Playwright's error text, e.g. net::ERR_CONNECTION_RESET); null when it finished
   },
   (t) => ({
     runIdx: index('idx_nr_run').on(t.testRunId),
@@ -728,6 +849,7 @@ export const entityLinks = pgTable(
     testRunsCaseId: integer('test_runs_case_id').references(() => testRunsCases.id, { onDelete: 'cascade' }),
     testCaseId: integer('test_case_id').references(() => testCases.id, { onDelete: 'cascade' }),
     failureClusterId: integer('failure_cluster_id').references(() => failureClusters.id, { onDelete: 'cascade' }),
+    bugReportId: integer('bug_report_id').references(() => bugReports.id, { onDelete: 'cascade' }),
 
     url: text('url').notNull(),
 
@@ -752,6 +874,7 @@ export const entityLinks = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
+    bugReportIdx: index('idx_entity_links_bug_report').on(t.bugReportId),
     runIdx: index('idx_entity_links_run').on(t.testRunId),
     caseRunIdx: index('idx_entity_links_case_run').on(t.testRunsCaseId),
     caseIdx: index('idx_entity_links_case').on(t.testCaseId),
@@ -1019,6 +1142,7 @@ export const projectIntegrations = pgTable(
     policies: jsonb('policies'), // { commentOnFix, transitionOnFix, commentOnRegression, resolveOnClose, … }
     ownerRoutes: jsonb('owner_routes'), // { owner, projectKey?, componentId?, assigneeAccountId?, labels? }[]
     autoCreate: jsonb('auto_create'), // { enabled, minOccurrences, minRuns, dailyCap, routeUnmatched } — disabled by default
+    fieldDefaults: jsonb('field_defaults'), // { [trackerFieldId]: { value, label } } — values for fields the tracker requires
     createdAt: timestamp('created_at', { mode: 'date' })
       .notNull()
       .$defaultFn(() => new Date()),
@@ -1175,11 +1299,10 @@ export const shareLinks = pgTable(
   'share_links',
   {
     id: serial('id').primaryKey(),
-    projectId: integer('project_id')
-      .notNull()
-      .references(() => projects.id, { onDelete: 'cascade' }),
-    entityKind: text('entity_kind').notNull(), // 'execution' | 'cluster' (ExportKind)
-    entityId: integer('entity_id').notNull(), // test_runs_cases.id or failure_clusters.id
+    // null for a report or a dashboard link, which can span several projects
+    projectId: integer('project_id').references(() => projects.id, { onDelete: 'cascade' }),
+    entityKind: text('entity_kind').notNull(), // 'execution' | 'cluster' | 'report' | 'dashboard' (ShareLinkKind)
+    entityId: integer('entity_id').notNull(), // test_runs_cases.id, failure_clusters.id, report_snapshots.id or analytics_dashboards.id
     tokenHash: text('token_hash').notNull().unique(), // SHA-256 hash of the full psl_ token
     tokenPrefix: text('token_prefix').notNull(), // First 8 chars after "psl_" — shown in UI
     createdBy: integer('created_by').references(() => users.id, { onDelete: 'set null' }),
@@ -1219,7 +1342,408 @@ export const apiKeys = pgTable(
   }),
 );
 
+// Browser-extension connect requests (an RFC 8628 device authorization grant).
+// Both codes are stored as SHA-256 hashes only. A row goes pending → approved or
+// denied → consumed; the API key is created by the token call that consumes an
+// approved row, so its plaintext is never stored.
+export const extensionDeviceCodes = pgTable(
+  'extension_device_codes',
+  {
+    id: serial('id').primaryKey(),
+    deviceCodeHash: text('device_code_hash').notNull(),
+    userCodeHash: text('user_code_hash').notNull(),
+    clientName: text('client_name').notNull(), // "Piwi Picker in Chrome on Windows"
+    status: text('status').notNull().default('pending'), // 'pending' | 'approved' | 'denied' | 'consumed'
+    userId: integer('user_id').references(() => users.id, { onDelete: 'cascade' }), // who decided; null until then
+    apiKeyId: integer('api_key_id').references(() => apiKeys.id, { onDelete: 'set null' }), // the key the token call created
+    intervalSeconds: integer('interval_seconds').notNull().default(5),
+    lastPolledAt: timestamp('last_polled_at', { mode: 'date' }),
+    expiresAt: timestamp('expires_at', { mode: 'date' }).notNull(),
+    decidedAt: timestamp('decided_at', { mode: 'date' }),
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    deviceCodeIdx: uniqueIndex('idx_extension_device_codes_device').on(t.deviceCodeHash),
+    userCodeIdx: uniqueIndex('idx_extension_device_codes_user').on(t.userCodeHash),
+    expiresIdx: index('idx_extension_device_codes_expires').on(t.expiresAt),
+    userIdx: index('idx_extension_device_codes_user_id').on(t.userId),
+    apiKeyIdx: index('idx_extension_device_codes_api_key').on(t.apiKeyId),
+  }),
+);
+
+// The URLs a project's application is served at, as `*`/`**` globs over the
+// whole URL (`urlMatches` in @piwitests/core/function-match). The browser
+// extension resolves the project of the page it is on from them.
+export const projectUrlPatterns = pgTable(
+  'project_url_patterns',
+  {
+    id: serial('id').primaryKey(),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    pattern: text('pattern').notNull(),
+    environment: text('environment'), // free label: 'staging', 'production'
+    branch: text('branch'), // the branch deployed at these URLs; null for the default branch
+    pathPrefix: text('path_prefix'), // the path the site serves its pages under and the tests did not ('/app')
+    testPathPrefix: text('test_path_prefix'), // the path the tests ran the pages under and the site does not ('/app')
+    position: integer('position').notNull().default(0),
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    updatedAt: timestamp('updated_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    projectPatternIdx: uniqueIndex('idx_project_url_patterns_pattern').on(t.projectId, t.pattern),
+  }),
+);
+
+// Feature graph — nodes. One typed node per object a project's surface exposes.
+// A node's `key` is its stable identity within its `kind` (a route's
+// `METHOD /pattern`, a page's URL). Populated on every ingest from the same
+// evidence the suite already captures, and connected by `graph_edges`. Kept as
+// one table with typed endpoints rather than a graph database, so recursive
+// queries stay capped at a shallow depth. Route and page kinds are populated
+// today; the remaining kinds are reserved. Run ids are intentionally NOT
+// foreign keys — runs are pruned independently and a node must survive them.
+export const graphNodes = pgTable(
+  'graph_nodes',
+  {
+    id: serial('id').primaryKey(),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull(), // 'feature' | 'page' | 'control' | 'link' | 'route' | 'handler' | 'dependency' | 'file'
+    key: text('key').notNull(), // stable identity within kind
+    branch: text('branch'), // null = canonical (default-branch run); else the run's own branch
+    attrs: jsonb('attrs'), // kind-specific extras; a feature carries { url_patterns, source }
+    origin: text('origin').notNull().default('observed'), // 'observed' | 'manifest' | 'openapi' | 'convention' | 'import' | 'coverage' | 'usage' | 'manual'
+    usage30d: integer('usage_30d'), // daily hit count from production instrumentation; null until usage is wired
+    firstSeenRunId: integer('first_seen_run_id'),
+    lastSeenRunId: integer('last_seen_run_id'),
+    // Set when a staleness sweep removed the node's edges; the row is kept (a
+    // soft delete) so first_seen survives a later re-appearance and surface
+    // drift does not fire again. Cleared on the next ingest that sees the key.
+    prunedAt: timestamp('pruned_at', { mode: 'date' }),
+    lastSeenAt: timestamp('last_seen_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  // The identity is (project, kind, key, branch). SQLite and PostgreSQL both
+  // treat NULL as distinct in a unique index, so canonical rows (branch null)
+  // are deduped by a partial index over (project, kind, key), and branch-tagged
+  // rows by the full tuple — one row per identity in either case.
+  (table) => ({
+    canonicalIdx: uniqueIndex('idx_graph_nodes_canonical')
+      .on(table.projectId, table.kind, table.key)
+      .where(sql`${table.branch} is null`),
+    branchIdx: uniqueIndex('idx_graph_nodes_branch')
+      .on(table.projectId, table.kind, table.key, table.branch)
+      .where(sql`${table.branch} is not null`),
+    projectKindIdx: index('idx_graph_nodes_project_kind').on(table.projectId, table.kind),
+    projectKindBranchIdx: index('idx_graph_nodes_project_kind_branch').on(table.projectId, table.kind, table.branch),
+    lastSeenAtIdx: index('idx_graph_nodes_last_seen_at').on(table.lastSeenAt),
+  }),
+);
+
+// Feature graph — edges. Each edge connects two typed endpoints; the endpoint
+// kinds are the node kinds above plus 'test', 'cluster', 'commit', 'ticket' and
+// 'owner', which are named by their id or key rather than stored as nodes.
+// `reaches` (test → route/page) and `changes` (commit or ticket → file) are
+// populated today; the remaining kinds are reserved. Upserted on every ingest,
+// never truncated. Run ids are not foreign keys, for the same reason as nodes.
+export const graphEdges = pgTable(
+  'graph_edges',
+  {
+    id: serial('id').primaryKey(),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    fromKind: text('from_kind').notNull(),
+    fromKey: text('from_key').notNull(),
+    toKind: text('to_kind').notNull(),
+    toKey: text('to_key').notNull(),
+    kind: text('kind').notNull(), // 'links' | 'contains' | 'triggers' | 'loads' | 'handled-by' | 'calls' | 'imports' | 'groups' | 'reaches' | 'checks' | 'uses' | 'drives' | 'changes' | 'affects' | 'caused-by' | 'owns'
+    branch: text('branch'), // null = canonical (default-branch run); else the run's own branch
+    confidence: doublePrecision('confidence'), // 0-1, how strongly the edge holds; null when unscored
+    origin: text('origin').notNull().default('observed'),
+    evidence: jsonb('evidence'), // edge-specific proof, e.g. { method, status }
+    firstSeenRunId: integer('first_seen_run_id'),
+    lastSeenRunId: integer('last_seen_run_id'),
+    lastSeenAt: timestamp('last_seen_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  // The identity includes `branch`; canonical rows (branch null) dedupe by a
+  // partial index over the endpoint tuple, branch-tagged rows by the full tuple.
+  (table) => ({
+    canonicalIdx: uniqueIndex('idx_graph_edges_canonical')
+      .on(table.projectId, table.fromKind, table.fromKey, table.kind, table.toKind, table.toKey)
+      .where(sql`${table.branch} is null`),
+    branchUnique: uniqueIndex('idx_graph_edges_branch')
+      .on(table.projectId, table.fromKind, table.fromKey, table.kind, table.toKind, table.toKey, table.branch)
+      .where(sql`${table.branch} is not null`),
+    fromIdx: index('idx_graph_edges_from').on(table.projectId, table.fromKind, table.fromKey),
+    toIdx: index('idx_graph_edges_to').on(table.projectId, table.toKind, table.toKey),
+    kindIdx: index('idx_graph_edges_kind').on(table.projectId, table.kind),
+  }),
+);
+
+// Scenario gaps — a proposed test that does not exist yet (`kind = 'gap'`) or a
+// resilience finding (`kind = 'finding'`), each carrying its evidence lines,
+// exposure factors and a ranked score. A row's identity within its detector is
+// `key`, so recomputation upserts in place and triage survives it: open rows
+// persist, dismissed and accepted rows carry their verdict forward. Run ids are
+// not foreign keys, for the same reason as the graph tables.
+export const scenarioGaps = pgTable(
+  'scenario_gaps',
+  {
+    id: serial('id').primaryKey(),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull().default('gap'), // 'gap' | 'finding'
+    detector: text('detector').notNull(), // detector id that produced the row
+    class: text('class').notNull(), // 'blind-spot' | 'false-comfort' | 'fragile' | 'unhandled' | 'degraded'
+    key: text('key').notNull(), // stable identity within (project, detector)
+    title: text('title').notNull(),
+    evidence: jsonb('evidence'), // string[] — human-readable evidence lines
+    factors: jsonb('factors'), // exposure factors: { churn, age, escapeHistory, priority }
+    score: doublePrecision('score'), // exposure × (1 − protection); ranked descending
+    featureNodeId: integer('feature_node_id').references(() => graphNodes.id, { onDelete: 'set null' }),
+    ticket: text('ticket'), // ticket id joined at change time
+    testCaseId: integer('test_case_id').references(() => testCases.id, { onDelete: 'set null' }),
+    failureClusterId: integer('failure_cluster_id').references(() => failureClusters.id, { onDelete: 'set null' }),
+    testRunId: integer('test_run_id'), // the run that surfaced the gap
+    prNumber: integer('pr_number'), // the pull request the gap was reported on, at change time
+    status: text('status').notNull().default('open'), // 'open' | 'snoozed' | 'dismissed' | 'accepted' | 'closed'
+    dismissReason: text('dismiss_reason'), // 'not-worth-testing' | 'covered-elsewhere' | 'wrong'
+    assignedTo: text('assigned_to'),
+    triagedBy: integer('triaged_by').references(() => users.id, { onDelete: 'set null' }), // the user who last gave a triage verdict; null when auth is off
+    snoozedUntil: timestamp('snoozed_until', { mode: 'date' }), // a snoozed gap wakes at this time; null with status snoozed = until the node changes
+    snoozedAtRunId: integer('snoozed_at_run_id'), // legacy; superseded by snoozed_at_signature for "until the node changes"
+    snoozedAtSignature: text('snoozed_at_signature'), // the subject node's edge fingerprint when snoozed "until the node changes"; wakes once the node's shape differs
+    acceptedAt: timestamp('accepted_at', { mode: 'date' }), // when a gap was accepted; feeds the accepted-but-unwritten inbox queue
+    coveredAt: timestamp('covered_at', { mode: 'date' }), // when a gap was marked covered-by; a durable per-gap "for" verdict for detector precision
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    updatedAt: timestamp('updated_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    closedAt: timestamp('closed_at', { mode: 'date' }),
+    closedByRunId: integer('closed_by_run_id'),
+  },
+  (table) => ({
+    detectorKeyIdx: uniqueIndex('idx_scenario_gaps_detector_key').on(table.projectId, table.detector, table.key),
+    projectStatusIdx: index('idx_scenario_gaps_project_status').on(table.projectId, table.status),
+    projectScoreIdx: index('idx_scenario_gaps_project_score').on(table.projectId, table.score),
+    prIdx: index('idx_scenario_gaps_pr').on(table.projectId, table.prNumber),
+    featureNodeIdx: index('idx_scenario_gaps_feature_node').on(table.featureNodeId),
+    testCaseIdx: index('idx_scenario_gaps_test_case').on(table.testCaseId),
+    clusterIdx: index('idx_scenario_gaps_cluster').on(table.failureClusterId),
+    triagedByIdx: index('idx_scenario_gaps_triaged_by').on(table.triagedBy),
+  }),
+);
+
+// Probes — one row per (test, node, fault) probe outcome. A client probe
+// mutates a response at the Playwright route boundary; a server probe (M3) sends
+// a signed fault header. Each row writes or refreshes one `checks` edge from the
+// test to the node with its outcome.
+export const probes = pgTable(
+  'probes',
+  {
+    id: serial('id').primaryKey(),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    testCaseId: integer('test_case_id').references(() => testCases.id, { onDelete: 'set null' }),
+    nodeId: integer('node_id').references(() => graphNodes.id, { onDelete: 'set null' }),
+    routeKey: text('route_key'),
+    level: text('level').notNull().default('client'), // 'client' | 'server'
+    fault: text('fault').notNull(),
+    applied: boolean('applied').notNull().default(true),
+    outcome: text('outcome').notNull(), // 'noticed' | 'not-noticed' | 'inconclusive'
+    handled: text('handled').notNull().default('n/a'), // 'graceful' | 'degraded' | 'unhandled' | 'n/a'
+    runId: integer('run_id'),
+    evidence: jsonb('evidence'),
+    probedAt: timestamp('probed_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => ({
+    pairIdx: uniqueIndex('idx_probes_pair').on(table.projectId, table.testCaseId, table.routeKey, table.fault),
+    projectIdx: index('idx_probes_project').on(table.projectId),
+    nodeIdx: index('idx_probes_node').on(table.nodeId),
+    testIdx: index('idx_probes_test').on(table.testCaseId),
+  }),
+);
+
+// Daily rollups: the precomputed aggregates of one cell (a project, a UTC day,
+// an environment, a branch and a run kind). A cell has a retained row,
+// recomputed from the runs still stored, and an archived row holding the
+// numbers of the runs age-based deletion removed, added in the transaction that
+// deletes them. Reads sum the two parts.
+export const analyticsDailyRollups = pgTable(
+  'analytics_daily_rollups',
+  {
+    id: serial('id').primaryKey(),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    day: text('day').notNull(), // 'YYYY-MM-DD', UTC
+    environment: text('environment').notNull().default(''), // '' when the run had none
+    branch: text('branch').notNull().default(''), // '' when unknown
+    fullRun: integer('full_run').notNull(), // 1 = full suite, 0 = partial
+    part: text('part').notNull(), // 'retained' | 'archived'
+    runs: integer('runs').notNull().default(0),
+    passedRuns: integer('passed_runs').notNull().default(0),
+    failedRuns: integer('failed_runs').notNull().default(0), // failed, timedout, interrupted
+    totalTests: integer('total_tests').notNull().default(0),
+    passedTests: integer('passed_tests').notNull().default(0),
+    failedTests: integer('failed_tests').notNull().default(0),
+    skippedTests: integer('skipped_tests').notNull().default(0),
+    didNotRunTests: integer('did_not_run_tests').notNull().default(0),
+    flakyTests: integer('flaky_tests').notNull().default(0),
+    maxTotalTests: integer('max_total_tests').notNull().default(0),
+    durationMs: bigint('duration_ms', { mode: 'number' }).notNull().default(0),
+    avgTestDurationSumMs: bigint('avg_test_duration_sum_ms', { mode: 'number' }).notNull().default(0),
+    p90TestDurationSumMs: bigint('p90_test_duration_sum_ms', { mode: 'number' }).notNull().default(0),
+    durationRuns: integer('duration_runs').notNull().default(0), // runs with a duration: divides duration_ms
+    testDurationRuns: integer('test_duration_runs').notNull().default(0), // runs with test durations: divides the two sums
+    waitMs: bigint('wait_ms', { mode: 'number' }).notNull().default(0),
+    failedExecMs: bigint('failed_exec_ms', { mode: 'number' }).notNull().default(0),
+    newRegressions: integer('new_regressions').notNull().default(0),
+    newFlaky: integer('new_flaky').notNull().default(0),
+    computedAt: timestamp('computed_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => ({
+    cellIdx: uniqueIndex('idx_analytics_daily_rollups_cell').on(
+      table.projectId,
+      table.day,
+      table.environment,
+      table.branch,
+      table.fullRun,
+      table.part,
+    ),
+    projectDayIdx: index('idx_analytics_daily_rollups_project_day').on(table.projectId, table.day),
+  }),
+);
+
+// Saved dashboards — a named arrangement of widgets in bands with a default
+// scope (`DashboardDefinition` in `shared/analytics/dashboards.ts`). Private
+// dashboards belong to their owner; shared ones are listed for every signed-in
+// user. A dashboard stores filters and widget options, never data.
+export const analyticsDashboards = pgTable(
+  'analytics_dashboards',
+  {
+    id: serial('id').primaryKey(),
+    name: text('name').notNull(),
+    description: text('description'),
+    ownerId: integer('owner_id').references(() => users.id, { onDelete: 'set null' }), // null when authentication is off
+    visibility: text('visibility').notNull().default('private'), // 'private' | 'shared'
+    definition: jsonb('definition').notNull(), // DashboardDefinition
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    updatedAt: timestamp('updated_at', { mode: 'date' }) // the save precondition
+      .notNull()
+      .$defaultFn(() => new Date()),
+    updatedBy: integer('updated_by').references(() => users.id, { onDelete: 'set null' }),
+    lastViewedAt: timestamp('last_viewed_at', { mode: 'date' }), // throttled; feeds the Unused group
+  },
+  (t) => ({
+    ownerIdx: index('idx_analytics_dashboards_owner').on(t.ownerId),
+    visibilityIdx: index('idx_analytics_dashboards_visibility').on(t.visibility),
+    updatedByIdx: index('idx_analytics_dashboards_updated_by').on(t.updatedBy),
+  }),
+);
+
+// Report schedules — a saved recurring delivery of a quality report: a
+// dashboard, a scope, a cadence and one or more notification channels. The
+// `reports:schedule` task renders each due schedule into a snapshot and queues
+// one outbox row per channel.
+export const reportSchedules = pgTable(
+  'report_schedules',
+  {
+    id: serial('id').primaryKey(),
+    name: text('name').notNull(),
+    userId: integer('user_id').references(() => users.id, { onDelete: 'cascade' }), // null = global (admin-managed)
+    scope: jsonb('scope'), // Partial<AnalyticsScope> applied over the dashboard's scope; the period comes from the cadence
+    builtinDashboard: text('builtin_dashboard'), // 'overview' | 'executive' | 'engineering' | 'team' | 'gaps-digest'
+    dashboardId: integer('dashboard_id').references(() => analyticsDashboards.id, { onDelete: 'set null' }), // a saved dashboard; set when builtin_dashboard is not
+    cadence: text('cadence').notNull(), // 'daily' | 'weekly' | 'biweekly' | 'monthly'
+    anchor: integer('anchor'), // weekday 1-7 (weekly, biweekly) or day of month 1-28 (monthly)
+    at: text('at').notNull(), // 'HH:mm' in the instance time zone (UTC when that setting is auto)
+    comparison: text('comparison').notNull().default('previous'), // 'previous' | 'year-ago' | 'none'
+    includeShareLink: intBoolean('include_share_link').notNull().default(INT_BOOLEAN_FALSE),
+    includeNarrative: intBoolean('include_narrative').notNull().default(INT_BOOLEAN_FALSE), // the AI narrative, off by default
+    language: text('language'), // 'en' | 'fr' | null (project or instance default)
+    channelIds: jsonb('channel_ids'), // number[] of notification_channels
+    active: intBoolean('active').notNull().default(INT_BOOLEAN_TRUE),
+    mutedUntil: timestamp('muted_until', { mode: 'date' }),
+    lastRunAt: timestamp('last_run_at', { mode: 'date' }),
+    nextRunAt: timestamp('next_run_at', { mode: 'date' }),
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    updatedAt: timestamp('updated_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    userIdx: index('idx_report_schedules_user').on(t.userId),
+    dueIdx: index('idx_report_schedules_due').on(t.active, t.nextRunAt),
+    dashboardIdx: index('idx_report_schedules_dashboard').on(t.dashboardId),
+  }),
+);
+
+// Report snapshots — one generated quality report, stored with its frozen
+// bundle so a report received in March reads the same in June, whatever
+// retention did since. Pruned after PIWI_RETENTION_REPORT_DAYS.
+export const reportSnapshots = pgTable(
+  'report_snapshots',
+  {
+    id: serial('id').primaryKey(),
+    scheduleId: integer('schedule_id').references(() => reportSchedules.id, { onDelete: 'set null' }), // null = generated by hand
+    createdBy: integer('created_by').references(() => users.id, { onDelete: 'set null' }),
+    dashboardRef: text('dashboard_ref').notNull(),
+    dashboardName: text('dashboard_name').notNull(),
+    scope: jsonb('scope'), // the AnalyticsScope the bundle was collected over
+    projectIds: jsonb('project_ids'), // number[] the bundle covers; null = every project
+    periodFrom: timestamp('period_from', { mode: 'date' }).notNull(),
+    periodTo: timestamp('period_to', { mode: 'date' }).notNull(),
+    comparisonFrom: timestamp('comparison_from', { mode: 'date' }),
+    comparisonTo: timestamp('comparison_to', { mode: 'date' }),
+    bundle: jsonb('bundle').notNull(), // ReportBundle
+    sizeBytes: integer('size_bytes').notNull().default(0),
+    generatedAt: timestamp('generated_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    scheduleIdx: index('idx_report_snapshots_schedule').on(t.scheduleId),
+    generatedIdx: index('idx_report_snapshots_generated').on(t.generatedAt),
+    createdByIdx: index('idx_report_snapshots_created_by').on(t.createdBy),
+  }),
+);
+
 // Type exports for TypeScript
+export type AnalyticsDailyRollup = typeof analyticsDailyRollups.$inferSelect;
+export type AnalyticsDashboard = typeof analyticsDashboards.$inferSelect;
+export type ReportSchedule = typeof reportSchedules.$inferSelect;
+export type ReportSnapshot = typeof reportSnapshots.$inferSelect;
 export type TestSuite = typeof testSuites.$inferSelect;
 export type NewTestSuite = typeof testSuites.$inferInsert;
 export type Project = typeof projects.$inferSelect;
@@ -1248,6 +1772,8 @@ export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type ApiKey = typeof apiKeys.$inferSelect;
 export type NewApiKey = typeof apiKeys.$inferInsert;
+export type ExtensionDeviceCode = typeof extensionDeviceCodes.$inferSelect;
+export type ProjectUrlPattern = typeof projectUrlPatterns.$inferSelect;
 export type AccountToken = typeof accountTokens.$inferSelect;
 export type NewAccountToken = typeof accountTokens.$inferInsert;
 export type NotificationChannel = typeof notificationChannels.$inferSelect;
@@ -1280,3 +1806,132 @@ export type TestFunction = typeof testFunctions.$inferSelect;
 export type ShareLink = typeof shareLinks.$inferSelect;
 export type NewShareLink = typeof shareLinks.$inferInsert;
 export type NewTestFunction = typeof testFunctions.$inferInsert;
+
+// Bug reports: a steps document with the assertion that states the correct
+// behavior, and the evidence collected on the page, sent from Piwi Picker.
+// Screenshots live in storage under `bug-reports/<id>/`; `evidence.screenshots`
+// names them. Status: 'open' | 'test-committed' | 'looks-fixed' | 'closed' | 'dismissed'.
+export const bugReports = pgTable(
+  'bug_reports',
+  {
+    id: serial('id').primaryKey(),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    title: text('title').notNull(),
+    note: text('note'),
+    pageKey: text('page_key'),
+    path: text('path'),
+    origin: text('origin'),
+    status: text('status').notNull().default('open'),
+    steps: jsonb('steps').notNull(), // PiwiSteps
+    evidence: jsonb('evidence').notNull(), // BugEvidence
+    context: jsonb('context').notNull(), // BugContext
+    language: text('language'), // the language the report was written in (`en`, `fr`, …)
+    createdBy: integer('created_by').references(() => users.id, { onDelete: 'set null' }),
+    testCaseId: integer('test_case_id').references(() => testCases.id, { onDelete: 'set null' }),
+    statusRunId: integer('status_run_id').references(() => testRuns.id, { onDelete: 'set null' }), // the run that last moved the status
+    closedAt: timestamp('closed_at', { mode: 'date' }),
+    closedByRunId: integer('closed_by_run_id').references(() => testRuns.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    updatedAt: timestamp('updated_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    projectStatusIdx: index('idx_bug_reports_project_status').on(t.projectId, t.status),
+    testCaseIdx: index('idx_bug_reports_test_case').on(t.testCaseId),
+    createdByIdx: index('idx_bug_reports_created_by').on(t.createdBy),
+    statusRunIdx: index('idx_bug_reports_status_run').on(t.statusRunId),
+    closedByRunIdx: index('idx_bug_reports_closed_by_run').on(t.closedByRunId),
+  }),
+);
+
+// What happened when someone tried a bug report again: a replay in Piwi Picker
+// or a Playwright run from the desktop app. Verdict: 'reproduced' | 'not-reproduced' | 'diverged'.
+export const bugReproductions = pgTable(
+  'bug_reproductions',
+  {
+    id: serial('id').primaryKey(),
+    bugReportId: integer('bug_report_id')
+      .notNull()
+      .references(() => bugReports.id, { onDelete: 'cascade' }),
+    source: text('source').notNull(), // 'replay' | 'desktop'
+    verdict: text('verdict').notNull(),
+    divergedAt: integer('diverged_at'), // 0-based step index, for a 'diverged' verdict
+    origin: text('origin'),
+    userAgent: text('user_agent'),
+    runId: integer('run_id').references(() => testRuns.id, { onDelete: 'set null' }),
+    createdBy: integer('created_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    bugReportIdx: index('idx_bug_reproductions_report').on(t.bugReportId),
+    runIdx: index('idx_bug_reproductions_run').on(t.runId),
+    createdByIdx: index('idx_bug_reproductions_created_by').on(t.createdBy),
+  }),
+);
+
+// Flake-lab experiments: one row per `piwi flake` (reproduce) or `piwi flake verify`
+// session on a test. The plan endpoint creates the row; the results endpoint
+// fills the verdict and `finished_at`. Deleted with the test case; retention keeps them.
+export const flakeExperiments = pgTable(
+  'flake_experiments',
+  {
+    id: serial('id').primaryKey(),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    testCaseId: integer('test_case_id')
+      .notNull()
+      .references(() => testCases.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull(), // 'reproduce' | 'verify'
+    commit: text('commit_sha'),
+    failureCommit: text('failure_commit_sha'),
+    source: text('source').notNull().default('cli'), // 'cli' | 'desktop' | 'ci'
+    machine: text('machine'),
+    playwrightProject: text('playwright_project'),
+    verdict: text('verdict'),
+    reproducingArmId: integer('reproducing_arm_id'),
+    verifiesArmId: integer('verifies_arm_id'),
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    finishedAt: timestamp('finished_at', { mode: 'date' }),
+  },
+  (t) => ({
+    testCaseIdx: index('idx_flake_experiments_test_case').on(t.testCaseId, t.createdAt),
+    projectIdx: index('idx_flake_experiments_project').on(t.projectId),
+  }),
+);
+
+// The arms of a flake-lab experiment: the control and one row per condition set,
+// with the counts the command line measured and the verdict the server computed.
+export const flakeArms = pgTable(
+  'flake_arms',
+  {
+    id: serial('id').primaryKey(),
+    experimentId: integer('experiment_id')
+      .notNull()
+      .references(() => flakeExperiments.id, { onDelete: 'cascade' }),
+    armKey: text('arm_key').notNull(),
+    position: integer('position').notNull().default(0),
+    suspectId: text('suspect_id'),
+    label: text('label').notNull(),
+    conditions: jsonb('conditions').notNull(),
+    runs: integer('runs').notNull().default(0),
+    matchingFailures: integer('matching_failures').notNull().default(0),
+    otherFailures: integer('other_failures').notNull().default(0),
+    discardedRounds: integer('discarded_rounds').notNull().default(0),
+    stoppedEarly: boolean('stopped_early').notNull().default(false),
+    pValue: doublePrecision('p_value'),
+    verdict: text('verdict'),
+  },
+  (t) => ({
+    experimentIdx: index('idx_flake_arms_experiment').on(t.experimentId),
+  }),
+);

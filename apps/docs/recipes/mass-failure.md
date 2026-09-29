@@ -1,5 +1,6 @@
 ---
-title: Triage a run that went mostly red
+title: Triage a run gone red
+description: "When most of a Playwright run goes red, it is usually two or three causes, not forty bugs. Collapse the failures into clusters, rule out the environment, triage each cause once, then confirm the fix."
 lang: en-US
 ---
 
@@ -19,14 +20,13 @@ Failures sharing an **error fingerprint** are grouped automatically, so the run 
   <figcaption>A red run's <strong>Tests</strong> tab opens grouped by <strong>Cluster</strong> — one group per root cause, with its triage status and a link to the cluster page.</figcaption>
 </figure>
 
-Fingerprinting masks the volatile parts of an error (timeouts and other numbers, UUIDs, URLs, the
-expected and received values of an assertion) so the same underlying failure groups across tests, spec
-files, and runs. It's always on and needs no configuration.
+The grouping is always on and needs no configuration; [How failures are
+grouped](/features/failure-clusters#how-failures-are-grouped) explains what the fingerprint masks.
 
 ## 2. Rule out the boring causes first
 
 Before treating any cluster as a product bug, check the two flags on the run's failure groups. They come
-from `get_failure_groups` over MCP or `GET /api/test-runs/:id/failure-groups`; the dashboard doesn't show them.
+from `get_failure_groups` over MCP or from the REST API; the dashboard doesn't show them.
 
 - **Worker correlated** — two or more of the cluster's failures, all on one worker, in a run that used
   several: you're looking at a misbehaving worker, not forty broken tests.
@@ -38,28 +38,21 @@ or connection error. That's one cluster, one fix, and no test code involved.
 
 ## 3. Triage each cluster once
 
-A cluster page puts the whole investigation in one column. Its opening block states where the cluster
-stands in one sentence, with a **Triage** menu that sets one status — open, resolved, or ignored — plus a
-note and an assignee for the entire group, and a **Snooze** menu beside it. Below come what changed since
-the baseline, the affected tests, the evidence for the one you pick, and *More ways to fix*. Forty tests,
-three decisions.
+A cluster page puts the whole investigation on one screen: the situation block across every test that
+shares the failure, the occurrence sparkline, what changed since the last passing run, and a
+[state line](/features/failure-clusters#the-state-line) with **Triage** beside it, which sets one status (open,
+resolved or ignored), a note and an assignee for the entire group. The affected tests and their evidence
+follow. Forty tests, three decisions.
 
 Clusters stay open across runs, so the next red build attaches to the same row rather than starting the
 conversation over.
 
 ## 4. Confirm the fix actually landed
 
-When a later run executes every test a cluster covers and they all pass, Piwi records the fix — the run,
-the commit, and how long the cluster was open — with three separate verdicts, because they aren't the
-same claim. The run doesn't have to be a full one: re-running just the affected tests and seeing them all
-pass records the fix too. Only **Diagnosis verified** resolves an open cluster on its own, and
-**Regressed** reopens a resolved one; **Stopped failing** leaves the triage status to you.
-
-| Verdict | Means |
-|---|---|
-| **Stopped failing** | The tests pass again. A flaky test can manage this by accident. |
-| **Diagnosis verified** | Commits since the last failing run touched a file the [suggested patch](/features/ai-diagnosis#what-a-diagnosis-contains) named. |
-| **Regressed** | A fix was recorded and the cluster is failing again. |
+When a later run executes every test a cluster covers and they all pass, Piwi records the fix. The run doesn't have
+to be a full one: re-running just the affected tests and seeing them all pass records the fix too. The three
+verdicts, *stopped failing*, *diagnosis verified* and *regressed*, are explained on [Did the fix
+work?](/features/failure-clusters#did-the-fix-work).
 
 ## Optional: let a model do the first pass
 
@@ -85,8 +78,8 @@ your own channel — see the [API docs](https://piwitests.dev/demo/docs).
 instead of `run.failed`: you hear once when a genuinely new root cause appears, not on every red build,
 and the payload carries a sample error excerpt and how many tests it affects.
 
-## See also
-
-- [AI diagnosis & failure clustering](/features/ai-diagnosis) — how fingerprints and semantic merging work
+## Related
+- [Failure clusters & the inbox](/features/failure-clusters): how failures are grouped, and whether the fix worked
+- [AI diagnosis](/features/ai-diagnosis): semantic merging and the explanation of a cluster
 - [Regression or flake?](./regression-or-flaky) — when it's one test rather than forty
 - [Core concepts](/guide/concepts) — *cluster*, *fingerprint*, *baseline*

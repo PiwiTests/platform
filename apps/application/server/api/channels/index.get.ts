@@ -3,13 +3,14 @@ import { getDatabase } from '../../database';
 import { notificationChannels, users } from '../../database/schema';
 import { requireAuth } from '../../utils/auth';
 import { sanitizeChannelConfig } from '../../utils/channels';
+import { canEncryptSecrets } from '../../utils/crypto';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Notifications'],
     summary: 'List notification channels',
     description:
-      'Returns channels owned by the current user and global (admin-managed) channels. Auto-creates a personal email channel if the user has an account email set. With authentication disabled every channel is global.',
+      'Returns channels owned by the current user and global (admin-managed) channels. Auto-creates a personal email channel if the user has an account email set. With authentication disabled every channel is global. `canStoreSecrets` is false when `PIWI_SECRET_KEY` is unset, in which case a webhook channel cannot store a signing secret.',
     'x-required-roles': [],
   },
 });
@@ -48,6 +49,7 @@ export default eventHandler(async (event) => {
   }
 
   return {
+    canStoreSecrets: canEncryptSecrets(),
     items: rows.map((c) => {
       // For the user's own personal_email channel: always reflect live account state
       const isOwnPersonal = c.type === 'personal_email' && c.userId === user.id;

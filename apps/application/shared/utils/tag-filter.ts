@@ -17,7 +17,7 @@ import { sql, type SQL } from 'drizzle-orm';
 import type { SQLWrapper } from 'drizzle-orm';
 
 /** Escape the characters LIKE treats as wildcards, for use with `ESCAPE '\'`. */
-function escapeLikePattern(value: string): string {
+export function escapeLikePattern(value: string): string {
   return value.replace(/([\\%_])/g, '\\$1');
 }
 

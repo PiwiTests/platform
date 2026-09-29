@@ -21,6 +21,8 @@ import {
   networkRequests,
   locatorSnapshots,
   notificationChannels,
+  reportSchedules,
+  reportSnapshots,
   tags,
   markers,
   projects,
@@ -29,8 +31,11 @@ import {
   failureClusters,
   testRunsCases,
   integrationConnections,
+  graphNodes,
+  probes,
+  bugReports,
 } from '../../server/database/schema';
-import { and, eq, isNotNull, or } from 'drizzle-orm';
+import { and, eq, gt, isNotNull, or } from 'drizzle-orm';
 import { getAppSetting, setAppSetting } from '../../server/utils/app-settings';
 import { PR_FEEDBACK_KEY } from '#shared/pr-feedback';
 import { AUTO_HEAL_KEY } from '#shared/auto-heal';
@@ -59,6 +64,7 @@ export type SetupCapabilityId =
   | 'ai'
   | 'mcp'
   | 'notifications'
+  | 'quality-reports'
   | 'pr-feedback'
   | 'auto-heal'
   | 'integrations'
@@ -66,7 +72,11 @@ export type SetupCapabilityId =
   | 'tags'
   | 'markers'
   | 'quarantine'
-  | 'green-samples';
+  | 'green-samples'
+  | 'test-map'
+  | 'server-probes'
+  | 'bug-reports'
+  | 'flake-lab';
 
 export interface SetupCapability {
   id: SetupCapabilityId;
@@ -101,7 +111,7 @@ async function exists(db: DrizzleDB, query: Promise<unknown[]>): Promise<boolean
  * with one, the project-level detections (fixtures, backend logs, locator
  * healing, green samples, quarantine, markers, the SCM token, and the reporter
  * and clustering rows) are scoped through the project's runs and cases. The
- * instance-shaped detections (AI, notifications, tags) stay instance-wide
+ * instance-shaped detections (AI, notifications, tags, quality reports) stay instance-wide
  * because they carry no project dimension.
  */
 export async function getCapabilityEvidence(db: DrizzleDB, projectId?: number): Promise<CapabilityEvidence> {
@@ -124,6 +134,12 @@ export async function getCapabilityEvidence(db: DrizzleDB, projectId?: number): 
     hasPrFeedback,
     hasAutoHeal,
     hasIntegrations,
+    hasGraphNodes,
+    hasServerProbes,
+    hasReportSchedules,
+    hasReportSnapshots,
+    hasBugReports,
+    hasRetryPass,
   ] = await Promise.all([
     exists(
       db,
@@ -237,6 +253,52 @@ export async function getCapabilityEvidence(db: DrizzleDB, projectId?: number): 
     getAppSetting<{ enabled?: boolean }>(db, PR_FEEDBACK_KEY).then((s) => s?.enabled === true),
     getAppSetting<{ enabled?: boolean }>(db, AUTO_HEAL_KEY).then((s) => s?.enabled === true),
     exists(db, db.select({ id: integrationConnections.id }).from(integrationConnections).limit(1)),
+    // The Test Map is active once the graph has any node for the project (a
+    // route or page discovered from a run), or, instance-wide, any node at all.
+    exists(
+      db,
+      scoped
+        ? db.select({ id: graphNodes.id }).from(graphNodes).where(eq(graphNodes.projectId, pid)).limit(1)
+        : db.select({ id: graphNodes.id }).from(graphNodes).limit(1),
+    ),
+    // Server probes are active once a server-level probe has run for the project.
+    exists(
+      db,
+      scoped
+        ? db
+            .select({ id: probes.id })
+            .from(probes)
+            .where(and(eq(probes.projectId, pid), eq(probes.level, 'server')))
+            .limit(1)
+        : db.select({ id: probes.id }).from(probes).where(eq(probes.level, 'server')).limit(1),
+    ),
+    // Quality reports are active once a report schedule or snapshot exists; a
+    // schedule spans projects, so this stays instance-wide.
+    exists(db, db.select({ id: reportSchedules.id }).from(reportSchedules).limit(1)),
+    exists(db, db.select({ id: reportSnapshots.id }).from(reportSnapshots).limit(1)),
+    // Bug reports are active once Piwi Picker has sent one.
+    exists(
+      db,
+      scoped
+        ? db.select({ id: bugReports.id }).from(bugReports).where(eq(bugReports.projectId, pid)).limit(1)
+        : db.select({ id: bugReports.id }).from(bugReports).limit(1),
+    ),
+    // Flake suspects read from history: active once a test has passed on a retry.
+    exists(
+      db,
+      scoped
+        ? db
+            .select({ id: testRunsCases.id })
+            .from(testRunsCases)
+            .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
+            .where(and(eq(testRuns.projectId, pid), eq(testRunsCases.status, 'passed'), gt(testRunsCases.retries, 0)))
+            .limit(1)
+        : db
+            .select({ id: testRunsCases.id })
+            .from(testRunsCases)
+            .where(and(eq(testRunsCases.status, 'passed'), gt(testRunsCases.retries, 0)))
+            .limit(1),
+    ),
   ]);
 
   // AI also counts as active when pinned by environment — an env-configured
@@ -256,6 +318,7 @@ export async function getCapabilityEvidence(db: DrizzleDB, projectId?: number): 
     // it configured rather than active.
     mcp: false,
     notifications: hasChannels,
+    'quality-reports': hasReportSchedules || hasReportSnapshots,
     'pr-feedback': hasPrFeedback,
     'auto-heal': hasAutoHeal,
     integrations: hasIntegrations,
@@ -264,6 +327,10 @@ export async function getCapabilityEvidence(db: DrizzleDB, projectId?: number): 
     markers: hasMarkers,
     quarantine: hasQuarantine,
     'green-samples': hasGreenSamples,
+    'test-map': hasGraphNodes,
+    'server-probes': hasServerProbes,
+    'bug-reports': hasBugReports,
+    'flake-lab': hasRetryPass,
   };
 }
 
@@ -284,6 +351,7 @@ const SETUP_LADDER_ORDER: SetupCapabilityId[] = [
   'ai',
   'mcp',
   'notifications',
+  'quality-reports',
   'pr-feedback',
   'auto-heal',
   'integrations',
@@ -292,12 +360,17 @@ const SETUP_LADDER_ORDER: SetupCapabilityId[] = [
   'markers',
   'quarantine',
   'green-samples',
+  'test-map',
+  'server-probes',
+  'bug-reports',
+  'flake-lab',
 ];
 
 /**
  * Build the instance-level facts for one detection id from its evidence and the
- * stored instance decisions. `backend-logs` is applicable only where a server
- * trace has arrived; `mcp` is always available even with no evidence.
+ * stored instance decisions. `backend-logs` and `server-probes` are applicable
+ * only where a server trace has arrived; `mcp` is always available even with no
+ * evidence.
  */
 function instanceFacts(
   id: CapabilityId,
@@ -305,10 +378,11 @@ function instanceFacts(
   decisions: Partial<Record<CapabilityId, InstanceDecision>>,
 ): CapabilityFacts {
   const has = (evidence as Record<string, boolean>)[id] ?? false;
+  const hasServerTrace = evidence['backend-logs'];
   return {
     evidence: has,
     configured: id === 'mcp' ? true : undefined,
-    applicable: id === 'backend-logs' ? has : true,
+    applicable: id === 'backend-logs' ? has : id === 'server-probes' ? hasServerTrace : true,
     instanceDecision: decisions[id],
   };
 }

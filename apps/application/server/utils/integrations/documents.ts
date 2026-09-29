@@ -17,7 +17,10 @@ import { caseHeadline } from '#shared/failure-verdict';
 import { errorExcerpt } from '#shared/notification-events';
 import { clusterClue } from '#shared/inbox-queues';
 import { reproScript } from '#shared/reproduce';
+import { getBugReport, getBugReportMissedBy, renderBugReportSpec } from '#shared/handlers/bug-reports';
 import {
+  buildBugIssue,
+  type BugIssueFacts,
   buildIssue,
   type AffectedTestFact,
   type BuiltIssue,
@@ -210,4 +213,43 @@ export async function buildExecutionIssue(
   const gathered = await gatherClusterFacts(db, execution.failureClusterId, executionId, title, opts);
   if (!gathered) return null;
   return { ...buildIssue(gathered.facts, opts), projectId: gathered.projectId };
+}
+
+/**
+ * Build the ticket for a bug report sent from Piwi Picker: the steps written
+ * again in the ticket's language, the evidence, the failing test to commit,
+ * the reproductions and a link to the report. Null when the report is gone.
+ */
+export async function buildBugReportIssue(
+  db: DrizzleDB,
+  bugReportId: number,
+  opts: DocumentBuildOpts = {},
+): Promise<BuiltClusterIssue | null> {
+  const report = await getBugReport(db, bugReportId);
+  if (!report) return null;
+  const locale = opts.locale ?? DEFAULT_LOCALE;
+  const spec = await renderBugReportSpec(db, bugReportId, 'commit').catch(() => null);
+  const base = site(opts);
+  const facts: BugIssueFacts = {
+    id: report.id,
+    title: report.title,
+    steps: report.steps,
+    evidence: report.evidence,
+    context: report.context,
+    reportLanguage: report.language,
+    reportedBy: report.reportedBy,
+    reportedAt: formatDate(locale, report.createdAt),
+    spec: spec ? { path: spec.path, code: spec.code } : null,
+    reproductions: report.reproductionList.map((r) => ({
+      verdict: r.verdict,
+      divergedAt: r.divergedAt,
+      origin: r.origin,
+      source: r.source,
+    })),
+    missedBy: await getBugReportMissedBy(db, bugReportId)
+      .then((m) => (m?.pagesKnown ? { summary: m.summary, tests: m.visiting } : null))
+      .catch(() => null),
+    reportUrl: link(base, `/bug-reports/${report.id}`),
+  };
+  return { ...buildBugIssue(facts, { locale }), projectId: report.projectId };
 }
