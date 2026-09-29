@@ -490,6 +490,44 @@ const READY_INSPECTION = {
  *   pickedFiles — desktop mode: archives the native import picker returns (default [])
  */
 /**
+ * Confirms the deletion of project 1 in its Delete modal, holds it mid-way and
+ * runs `capture`: the progress poll answers with a deletion a third of the way
+ * through its runs, and the DELETE request is held, then aborted before the
+ * scene ends — a request still held when the context closes reaches the server.
+ * Waits on the rendered steps, not on `settle()`, which the held request would
+ * never let finish.
+ */
+async function captureProjectDeleteProgress(page, capture) {
+  let abortHeld = async () => {};
+  await page.route('**/api/projects/1', (route) => {
+    if (route.request().method() !== 'DELETE') return route.fallback();
+    return new Promise((resolve) => {
+      abortHeld = () => route.abort().then(resolve);
+    });
+  });
+  await page.route('**/api/projects/1/deletion', (route) =>
+    route.fulfill({ json: { progress: { phase: 'runs', totalRuns: 1280, runsDeleted: 412 } } }),
+  );
+  try {
+    await page.getByRole('button', { name: 'More actions' }).click();
+    await page.getByRole('menuitem', { name: 'Delete' }).click();
+    const dialog = page.getByRole('dialog');
+    const input = dialog.getByRole('textbox');
+    await input.fill((await input.getAttribute('placeholder')) ?? '');
+    await dialog.getByRole('button', { name: 'Delete project' }).click();
+    await dialog.getByText('412 of 1,280 deleted').waitFor();
+    // The elapsed clock reads "Starting…" for its first second; a frozen clock keeps it there.
+    await dialog
+      .getByText('Running for', { exact: false })
+      .waitFor({ timeout: 3000 })
+      .catch(() => {});
+    await capture();
+  } finally {
+    await abortHeld();
+  }
+}
+
+/**
  * Classifies project 1's flaky tests. No frontend code calls flaky-classify, so
  * the root cause reads "—" for every row until something asks for one.
  */
@@ -1765,6 +1803,24 @@ const SCENES = [
       await page.getByRole('dialog', { name: 'Keep run #2 forever' }).waitFor();
       await settle();
       await shoot();
+    },
+  },
+  {
+    name: 'project-delete-progress',
+    description: 'Project menu › Delete: the modal following a running deletion, phase by phase with the run count',
+    route: '/projects/1',
+    viewport: { width: 1280, height: 720 },
+    async run({ page, shoot }) {
+      await captureProjectDeleteProgress(page, () => shoot(undefined, { of: '[role="dialog"]', pad: 0 }));
+    },
+  },
+  {
+    name: 'project-delete-progress-mobile',
+    description: 'The project deletion progress modal at phone width',
+    route: '/projects/1',
+    viewport: { width: 390, height: 844 },
+    async run({ page, shoot }) {
+      await captureProjectDeleteProgress(page, () => shoot());
     },
   },
   {

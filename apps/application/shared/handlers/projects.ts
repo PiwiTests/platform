@@ -476,26 +476,48 @@ export async function updateProject(
 // time, which crashes when bundled into the demo service worker (no Node
 // fs/util in a Worker global scope).
 
-export async function deleteProjectData(db: DrizzleDB, projectId: number) {
-  // Get all run IDs to cascade-delete dependent rows that lack DB-level cascade
-  const runRows: any[] = await db.select({ id: testRuns.id }).from(testRuns).where(eq(testRuns.projectId, projectId));
-  const runIds: number[] = runRows.map((r: any) => r.id);
+/**
+ * Where a project deletion stands. `files` removes the stored reports and
+ * evidence, `runs` deletes the test runs in batches (`runsDeleted` counts up to
+ * `totalRuns`), `project` removes the test cases, clusters and the project row.
+ */
+export interface ProjectDeletionProgress {
+  phase: 'files' | 'runs' | 'project';
+  totalRuns: number;
+  runsDeleted: number;
+}
 
-  if (runIds.length > 0) {
-    const caseRows: any[] = await db
+/** Runs deleted per batch — keeps every `IN (…)` list far below SQLite's bound-parameter limit. */
+const DELETE_RUN_BATCH = 50;
+
+export async function deleteProjectData(
+  db: DrizzleDB,
+  projectId: number,
+  onProgress?: (progress: ProjectDeletionProgress) => void,
+) {
+  // Run IDs, to delete the dependent rows that lack a DB-level cascade
+  const runRows: { id: number }[] = await db
+    .select({ id: testRuns.id })
+    .from(testRuns)
+    .where(eq(testRuns.projectId, projectId));
+  const runIds = runRows.map((r) => r.id);
+  const totalRuns = runIds.length;
+  onProgress?.({ phase: 'runs', totalRuns, runsDeleted: 0 });
+
+  for (let i = 0; i < totalRuns; i += DELETE_RUN_BATCH) {
+    const batch = runIds.slice(i, i + DELETE_RUN_BATCH);
+    const batchCaseIds = db
       .select({ id: testRunsCases.id })
       .from(testRunsCases)
-      .where(inArray(testRunsCases.testRunId, runIds));
-    const caseIds: number[] = caseRows.map((c: any) => c.id);
-
-    if (caseIds.length > 0) {
-      await db.delete(files).where(inArray(files.testRunsCaseId, caseIds));
-    }
-
-    await db.delete(files).where(inArray(files.testRunId, runIds));
-    await db.delete(testRunsCases).where(inArray(testRunsCases.testRunId, runIds));
-    await db.delete(testRuns).where(eq(testRuns.projectId, projectId));
+      .where(inArray(testRunsCases.testRunId, batch));
+    await db.delete(files).where(inArray(files.testRunsCaseId, batchCaseIds));
+    await db.delete(files).where(inArray(files.testRunId, batch));
+    await db.delete(testRunsCases).where(inArray(testRunsCases.testRunId, batch));
+    await db.delete(testRuns).where(inArray(testRuns.id, batch));
+    onProgress?.({ phase: 'runs', totalRuns, runsDeleted: i + batch.length });
   }
+
+  onProgress?.({ phase: 'project', totalRuns, runsDeleted: totalRuns });
 
   await db.delete(testCases).where(eq(testCases.projectId, projectId));
   await db.delete(casePayloads).where(eq(casePayloads.projectId, projectId));

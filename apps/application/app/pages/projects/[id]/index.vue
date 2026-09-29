@@ -50,14 +50,18 @@ const canEditMarkers = computed(() => !authEnabled.value || isAdmin.value || isR
 
 const showDeleteProjectModal = ref(false);
 const deleteProjectConfirmInput = ref('');
-const deletingProject = ref(false);
 const deleteProjectConfirmValid = computed(() => deleteProjectConfirmInput.value === project.value?.name);
+const {
+  deleting: deletingProject,
+  progress: deletionProgress,
+  elapsedMs: deletionElapsedMs,
+  deleteProject,
+} = useProjectDeletion(projectId);
 
 async function handleDeleteProject() {
-  if (!deleteProjectConfirmValid.value) return;
-  deletingProject.value = true;
+  if (!deleteProjectConfirmValid.value || deletingProject.value) return;
   try {
-    await $fetch(`/api/projects/${projectId}` as '/api/projects/:id', { method: 'DELETE' });
+    await deleteProject();
     toast.add({ title: 'Project deleted', color: 'success' });
     await refreshNuxtData();
     await router.push('/');
@@ -65,7 +69,6 @@ async function handleDeleteProject() {
     const message =
       error && typeof error === 'object' && 'data' in error ? (error.data as { message?: string })?.message : undefined;
     toast.add({ title: 'Delete failed', description: message || 'An error occurred', color: 'error' });
-    deletingProject.value = false;
   }
 }
 
@@ -1614,7 +1617,9 @@ const moreMenuItems = computed(() => {
   <ClientOnly>
     <UModal
       :open="showDeleteProjectModal"
-      title="Delete project"
+      :title="deletingProject ? 'Deleting project' : 'Delete project'"
+      :dismissible="!deletingProject"
+      :close="!deletingProject"
       @update:open="
         (val) => {
           if (!val) showDeleteProjectModal = false;
@@ -1622,7 +1627,14 @@ const moreMenuItems = computed(() => {
       "
     >
       <template #body>
-        <div class="space-y-4">
+        <div v-if="deletingProject" class="space-y-4">
+          <p class="text-sm text-highlighted leading-relaxed">
+            Deleting <strong>{{ project?.label || project?.name }}</strong> and everything it holds. A project with a
+            long history can take a few minutes.
+          </p>
+          <ProjectDeleteProgress :progress="deletionProgress" :elapsed-ms="deletionElapsedMs" />
+        </div>
+        <div v-else class="space-y-4">
           <p class="text-sm text-gray-600 dark:text-gray-400">
             This will permanently delete <strong>{{ project?.label || project?.name }}</strong> and all its test runs,
             reports, traces, and failure clusters. This action cannot be undone.
@@ -1642,10 +1654,16 @@ const moreMenuItems = computed(() => {
         </div>
       </template>
       <template #footer>
-        <UButton color="neutral" variant="ghost" label="Cancel" @click="showDeleteProjectModal = false" />
+        <UButton
+          v-if="!deletingProject"
+          color="neutral"
+          variant="ghost"
+          label="Cancel"
+          @click="showDeleteProjectModal = false"
+        />
         <UButton
           color="error"
-          label="Delete project"
+          :label="deletingProject ? 'Deleting…' : 'Delete project'"
           icon="i-lucide-trash-2"
           :disabled="!deleteProjectConfirmValid"
           :loading="deletingProject"
