@@ -9,12 +9,12 @@ export default defineTask({
   },
   async run() {
     const minutes = resolveSyncMinutes(process.env.PIWI_INTEGRATIONS_SYNC_MINUTES);
-    if (!isSyncTickDue(minutes, new Date())) return { result: { due: false } };
+    if (!isSyncTickDue(minutes, new Date())) return { result: { due: false, refreshed: 0, failed: 0, skipped: 0 } };
     const db = await getDatabase();
     const { refreshed, failed, skipped } = await syncTrackerLinks(db);
     if (refreshed > 0 || failed > 0) {
       console.info(`[integrations:sync] refreshed=${refreshed} failed=${failed} skipped=${skipped}`);
     }
-    return { result: { refreshed, failed, skipped } };
+    return { result: { due: true, refreshed, failed, skipped } };
   },
 });
