@@ -120,6 +120,16 @@ still fails, or too few runs passed to say) · `2` error. Every flag is on the [
 The lab's own runs are stamped as flake-lab runs: the reporter still sends them, and the dashboard keeps them out of
 the flaky score, regression signals, clusters, notifications, quarantine and the suspects.
 
+## Try it in the demo
+
+The [live demo](https://piwitests.dev/demo/) cannot run the lab, but two of its tests carry experiments:
+
+- [should apply discount code](https://piwitests.dev/demo/test-cases/9?tab=flakiness): a delay on the cart reproduced it.
+- [Table pagination works correctly](https://piwitests.dev/demo/test-cases/35?tab=flakiness): one suspect
+  reproduced it and one did not, a first fix still failed, and the second is verified. Its project's
+  [Flaky view](https://piwitests.dev/demo/projects/3?tab=flaky-tests) lists it under **Verified fixed**, and its
+  quarantine is proposed for release.
+
 ## Run it in CI
 
 A local machine is not CI: a delay reproduces a race anywhere, but load and interference depend on the machine. To

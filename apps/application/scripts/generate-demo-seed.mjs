@@ -1335,6 +1335,89 @@ for (const proj of DEMO_PROJECTS) {
   }
 }
 
+// ── Flaky attempts (rng-free helpers) ───────────────────────────────────────
+
+/** Set a seeded request's duration, and the server spans drawn from it. */
+function setRequestDuration(nr, ms) {
+  nr.duration = ms;
+  nr.server_traces = buildServerTraces({
+    method: nr.method,
+    url: nr.url,
+    status: nr.status,
+    duration: ms,
+    resourceType: nr.resource_type,
+  });
+}
+
+/**
+ * Split a flaky execution into its failed first attempt and the passing retry,
+ * the way the reporter stores attempts: the failed attempt becomes its own row,
+ * running the same steps at half the pace up to the failing assertion, and the
+ * retry starts once it is over. The failed attempt repeats the retry's
+ * `requests`; `failedMs` gives a request's duration on the failed attempt and
+ * `retryMs` on the retry (undefined keeps it). Returns the failed attempt's requests.
+ */
+function splitFlakyExecution(row, { error, requests, failedMs, retryMs }) {
+  const failedDuration = Math.round(row.duration / 2);
+  const failedRow = {
+    ...row,
+    id: trcId++,
+    status: 'failed',
+    duration: failedDuration,
+    error,
+    failure_cluster_id: null,
+    retries: 0,
+    is_new_regression: 0,
+    is_new_flaky: 0,
+    console_logs: null,
+    dialogs: null,
+    aria_snapshot: null,
+    web_vitals: null,
+    steps: row.steps.map((step, i) => ({
+      ...step,
+      startTime: row.started_at + Math.round((step.startTime - row.started_at) / 2),
+      duration: Math.round(step.duration / 2),
+      ...(i === row.steps.length - 1 ? { failed: true, error: { message: error.split('\n')[0] } } : {}),
+    })),
+    step_events:
+      row.step_events?.map((e) => ({
+        ...e,
+        startedAt: row.started_at + Math.round((e.startedAt - row.started_at) / 2),
+        duration: Math.round((e.duration ?? 0) / 2),
+      })) ?? null,
+    created_at: row.started_at,
+  };
+  TEST_RUNS_CASES.push(failedRow);
+  const shift = failedDuration + SEED_WORKER_GAP_MS;
+  row.started_at += shift;
+  row.created_at = row.started_at;
+  row.steps = row.steps.map((step) => ({ ...step, startTime: step.startTime + shift }));
+  row.step_events = row.step_events?.map((e) => ({ ...e, startedAt: e.startedAt + shift })) ?? null;
+  row.console_logs = row.console_logs?.map((e) => ({ ...e, timestamp: e.timestamp + shift })) ?? null;
+  failedRow.attempts = JSON.stringify([
+    { retry: 0, status: 'failed', duration: failedDuration, startedAt: failedRow.started_at },
+  ]);
+  row.attempts = JSON.stringify([
+    { retry: 0, status: 'failed', duration: failedDuration, startedAt: failedRow.started_at },
+    { retry: 1, status: 'passed', duration: row.duration, startedAt: row.started_at },
+  ]);
+
+  const copies = [];
+  let requestStartMs = failedRow.started_at + SEED_FIRST_REQUEST_OFFSET_MS;
+  for (const nr of requests) {
+    const copy = { ...nr, id: nrId++, test_runs_case_id: failedRow.id, start_time: requestStartMs };
+    const failed = failedMs(copy);
+    if (failed != null) setRequestDuration(copy, failed);
+    requestStartMs += (copy.duration ?? 0) + SEED_REQUEST_GAP_MS;
+    NETWORK_REQUESTS.push(copy);
+    copies.push(copy);
+    nr.start_time += shift;
+    const retry = retryMs(nr);
+    if (retry != null) setRequestDuration(nr, retry);
+  }
+  return copies;
+}
+
 // ── Flake suspect (post-processing, rng-free) ───────────────────────────────
 // The checkout project's flaky test fails when `GET /api/cart` is slow: the
 // total it asserts is read before the cart answers. Each of its flaky runs
@@ -1360,16 +1443,6 @@ const FLAKE_SUSPECT_ERROR =
   const flakyCaseId = caseIdByKey.get(`1\x00${caseDef.file}\x00${flaky.title}`);
   FLAKE_DEMO.caseId = flakyCaseId;
   const isCart = (nr) => nr.method === 'GET' && /\/api\/cart$/.test(nr.url);
-  const setDuration = (nr, ms) => {
-    nr.duration = ms;
-    nr.server_traces = buildServerTraces({
-      method: nr.method,
-      url: nr.url,
-      status: nr.status,
-      duration: ms,
-      resourceType: nr.resource_type,
-    });
-  };
 
   // Project 1 runs, newest first — the newest run has the smallest id.
   const proj1Runs = TEST_RUNS.filter((r) => r.project_id === 1).sort((a, b) => a.id - b.id);
@@ -1399,69 +1472,110 @@ const FLAKE_SUSPECT_ERROR =
       // A clean pass: the cart answers fast, bar a few slow ones that passed anyway.
       const slow = index % 5 === 3 && slowPasses < FLAKE_SUSPECT_SLOW_PASSES;
       if (slow) slowPasses++;
-      for (const nr of requests) if (isCart(nr)) setDuration(nr, slow ? 1800 + index * 10 : 60 + ((index * 37) % 140));
+      for (const nr of requests) {
+        if (isCart(nr)) setRequestDuration(nr, slow ? 1800 + index * 10 : 60 + ((index * 37) % 140));
+      }
       continue;
     }
 
-    // A flaky run: the failed first attempt becomes its own row, the retry passes after it.
+    // A flaky run: the failed first attempt waited on a slow cart, the retry did not.
     FLAKE_DEMO.failureCommit ??= run.metadata?.scm?.commit ?? null;
-    const failedDuration = Math.round(row.duration / 2);
-    const failedRow = {
-      ...row,
-      id: trcId++,
-      status: 'failed',
-      duration: failedDuration,
+    const failedRequests = splitFlakyExecution(row, {
       error: FLAKE_SUSPECT_ERROR,
-      failure_cluster_id: null,
-      retries: 0,
-      is_new_regression: 0,
-      is_new_flaky: 0,
-      console_logs: null,
-      dialogs: null,
-      aria_snapshot: null,
-      web_vitals: null,
-      // The failed attempt ran the same steps at half the pace up to the failing assertion.
-      steps: row.steps.map((step, i) => ({
-        ...step,
-        startTime: row.started_at + Math.round((step.startTime - row.started_at) / 2),
-        duration: Math.round(step.duration / 2),
-        ...(i === row.steps.length - 1 ? { failed: true, error: { message: FLAKE_SUSPECT_ERROR.split('\n')[0] } } : {}),
-      })),
-      step_events:
-        row.step_events?.map((e) => ({
-          ...e,
-          startedAt: row.started_at + Math.round((e.startedAt - row.started_at) / 2),
-          duration: Math.round((e.duration ?? 0) / 2),
-        })) ?? null,
-      created_at: row.started_at,
-    };
-    TEST_RUNS_CASES.push(failedRow);
-    // The retry starts once the failed attempt is over; its timestamps move with it.
-    const shift = failedDuration + SEED_WORKER_GAP_MS;
-    row.started_at += shift;
-    row.created_at = row.started_at;
-    row.steps = row.steps.map((step) => ({ ...step, startTime: step.startTime + shift }));
-    row.step_events = row.step_events?.map((e) => ({ ...e, startedAt: e.startedAt + shift })) ?? null;
-    row.console_logs = row.console_logs?.map((e) => ({ ...e, timestamp: e.timestamp + shift })) ?? null;
-    failedRow.attempts = JSON.stringify([
-      { retry: 0, status: 'failed', duration: failedDuration, startedAt: failedRow.started_at },
-    ]);
-    row.attempts = JSON.stringify([
-      { retry: 0, status: 'failed', duration: failedDuration, startedAt: failedRow.started_at },
-      { retry: 1, status: 'passed', duration: row.duration, startedAt: row.started_at },
-    ]);
+      requests,
+      failedMs: (nr) => (isCart(nr) ? 1700 + ((index * 137) % 700) : undefined),
+      retryMs: (nr) => (isCart(nr) ? 60 + ((index * 37) % 140) : undefined),
+    });
+    for (const nr of failedRequests) if (isCart(nr)) FLAKE_DEMO.failedCartMs.push(nr.duration);
+  }
+}
 
-    let requestStartMs = failedRow.started_at + SEED_FIRST_REQUEST_OFFSET_MS;
-    for (const nr of requests) {
-      const copy = { ...nr, id: nrId++, test_runs_case_id: failedRow.id, start_time: requestStartMs };
-      if (isCart(copy)) {
-        setDuration(copy, 1700 + ((index * 137) % 700));
-        FLAKE_DEMO.failedCartMs.push(copy.duration);
+// ── Verified flake fix (post-processing, rng-free) ──────────────────────────
+// The UI project's pagination test flaked on main while its second page of
+// rows was slow: each of its flaky runs gets the failed first attempt as its
+// own execution row, with `GET /api/table/rows` slow on it and
+// `GET /api/table/count` slow beside it. The count was also slow on two clean
+// passes, so the flake profile ranks the rows first and the count second. The
+// test passes in every run after its last flake; the flake-lab experiments
+// below reproduce it with the rows delay, rule the count out, and verify the fix.
+const FLAKE_FIX_ERROR =
+  'Error: expect(locator).toHaveText(expected) failed\n\n' +
+  "Locator:  getByTestId('page-indicator')\n" +
+  'Expected: "Page 2 of 8"\n' +
+  'Received: "Page 1 of 8"\n' +
+  'Timeout:  5000ms\n' +
+  '    at tests/ui/table.spec.ts:17:5';
+const FLAKE_FIX_SLOW_COUNT_PASSES = 2;
+/** What the experiments below need from this block: the test, its failed attempts' delays, and its last flake. */
+const FLAKE_FIX_DEMO = { caseId: null, failedRowsMs: [], failedCountMs: [], failureCommit: null, lastFlakeMs: null };
+{
+  const flaky = FLAKY_CASES[3];
+  const caseDef = DEMO_PROJECTS.find((p) => p.id === 3).cases.find((c) => c.title === flaky.title);
+  const flakyCaseId = caseIdByKey.get(`3\x00${caseDef.file}\x00${flaky.title}`);
+  FLAKE_FIX_DEMO.caseId = flakyCaseId;
+  const ROWS_URL = 'https://design.example.com/api/table/rows?page=2&size=25';
+  const COUNT_URL = 'https://design.example.com/api/table/count';
+  const isRows = (nr) => nr.url === ROWS_URL;
+  const isCount = (nr) => nr.url === COUNT_URL;
+
+  // Project 3 runs, newest first — the newest run has the smallest id.
+  const proj3Runs = TEST_RUNS.filter((r) => r.project_id === 3).sort((a, b) => a.id - b.id);
+  let slowCountPasses = 0;
+  for (const [index, run] of proj3Runs.entries()) {
+    const row = TEST_RUNS_CASES.find((r) => r.test_run_id === run.id && r.test_case_id === flakyCaseId);
+    if (!row || row.status !== 'passed') continue;
+
+    // The table fetches its rows and the page count after the page's own requests.
+    const requests = NETWORK_REQUESTS.filter((nr) => nr.test_runs_case_id === row.id);
+    let requestStartMs = Math.max(
+      row.started_at + SEED_FIRST_REQUEST_OFFSET_MS,
+      ...requests.map((nr) => nr.start_time + (nr.duration ?? 0) + SEED_REQUEST_GAP_MS),
+    );
+    for (const url of [ROWS_URL, COUNT_URL]) {
+      const nr = {
+        id: nrId++,
+        test_runs_case_id: row.id,
+        test_run_id: run.id,
+        method: 'GET',
+        url,
+        normalized_url: seedNormalizeUrl(url),
+        status: 200,
+        duration: null,
+        start_time: requestStartMs,
+        resource_type: 'fetch',
+        content_type: 'application/json',
+        server_logs: null,
+        server_traces: null,
+      };
+      setRequestDuration(nr, isRows(nr) ? 90 + ((index * 53) % 120) : 40 + ((index * 29) % 80));
+      requestStartMs += nr.duration + SEED_REQUEST_GAP_MS;
+      NETWORK_REQUESTS.push(nr);
+      requests.push(nr);
+    }
+
+    if (row.retries !== 1) {
+      // A clean pass; on main, the count was slow twice without breaking it.
+      const slow = run.branch === 'main' && index % 3 === 1 && slowCountPasses < FLAKE_FIX_SLOW_COUNT_PASSES;
+      if (slow) {
+        slowCountPasses++;
+        setRequestDuration(requests.find(isCount), 1100 + index * 10);
       }
-      requestStartMs += (copy.duration ?? 0) + SEED_REQUEST_GAP_MS;
-      NETWORK_REQUESTS.push(copy);
-      nr.start_time += failedDuration + SEED_WORKER_GAP_MS;
-      if (isCart(nr)) setDuration(nr, 60 + ((index * 37) % 140));
+      continue;
+    }
+
+    // A flaky run: the failed first attempt read the page indicator before the rows arrived.
+    FLAKE_FIX_DEMO.failureCommit ??= run.metadata?.scm?.commit ?? null;
+    FLAKE_FIX_DEMO.lastFlakeMs ??= run.start_time * 1000;
+    const failedRequests = splitFlakyExecution(row, {
+      error: FLAKE_FIX_ERROR,
+      requests,
+      failedMs: (nr) =>
+        isRows(nr) ? 1300 + ((index * 211) % 500) : isCount(nr) ? 900 + ((index * 97) % 300) : undefined,
+      retryMs: () => undefined,
+    });
+    for (const nr of failedRequests) {
+      if (isRows(nr)) FLAKE_FIX_DEMO.failedRowsMs.push(nr.duration);
+      if (isCount(nr)) FLAKE_FIX_DEMO.failedCountMs.push(nr.duration);
     }
   }
 }
@@ -3281,6 +3395,143 @@ const FLAKE_ARMS = [];
       stopped_early: 1,
       p_value: 4 / 364,
       verdict: 'reproduced',
+    }),
+  );
+}
+
+// ── Flake-lab experiments that verify a fix (rng-free) ──────────────────────
+// Hours after the pagination test's last flake, the desktop app's "Reproduce
+// this flake" delayed each suspect to its failures' median: the rows delay
+// reproduced it 3 times in 5 against a clean control (p = 10/455, the one-sided
+// Fisher exact test of 3/5 against 0/10), while the count delay failed once
+// with the same error and twice with another (p = 10/20), so the count is ruled
+// out. A first fix still failed its verify rerun; the second held for the 5
+// runs a 3-in-5 rate needs, after the test's last retry-pass, so the test reads
+// verified fixed, leaves the flaky ranking and its quarantine is proposed for release.
+const FLAKE_FIX_COMMITS = {
+  first: 'd1ce0f7a3b9e2c4d6f8a0b1c2d3e4f5a6b7c8d9e',
+  second: '9b1d4e6f2a7c3e5d8f0a1b2c3d4e5f6a7b8c9d0e',
+};
+{
+  const medianMs = (values) => {
+    const sorted = [...values].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+  };
+  const delayArm = (route, failedMs) => {
+    const ms = Math.round(medianMs(failedMs) / 100) * 100;
+    return {
+      label: `delay ${route} ${Number((ms / 1000).toFixed(1))} s`,
+      suspect_id: `slow-route:${route}`,
+      conditions: [{ kind: 'delay', route, ms, match: 'all' }],
+    };
+  };
+  const rows = delayArm('GET /api/table/rows', FLAKE_FIX_DEMO.failedRowsMs);
+  const count = delayArm('GET /api/table/count', FLAKE_FIX_DEMO.failedCountMs);
+  const hour = 60 * 60 * 1000;
+  const after = (hours) => FLAKE_FIX_DEMO.lastFlakeMs + hours * hour;
+  if (after(28) > ANCHOR_SEC * 1000) throw new Error('The verified-fix experiments would finish after the seed anchor');
+
+  const experiment = (id, fields) => ({
+    id,
+    project_id: 3,
+    test_case_id: FLAKE_FIX_DEMO.caseId,
+    failure_commit_sha: FLAKE_FIX_DEMO.failureCommit,
+    playwright_project: 'Chromium',
+    ...fields,
+  });
+  const arm = (id, experimentId, position, fields) => ({
+    id,
+    experiment_id: experimentId,
+    position,
+    discarded_rounds: 0,
+    other_failures: 0,
+    stopped_early: 0,
+    p_value: null,
+    verdict: null,
+    ...fields,
+  });
+  const control = (id, experimentId, runs) =>
+    arm(id, experimentId, 0, {
+      arm_key: 'control',
+      suspect_id: null,
+      label: 'control',
+      conditions: [],
+      runs,
+      matching_failures: 0,
+    });
+
+  FLAKE_EXPERIMENTS.push(
+    experiment(2, {
+      kind: 'reproduce',
+      commit_sha: FLAKE_FIX_DEMO.failureCommit,
+      source: 'desktop',
+      machine: 'design-laptop',
+      verdict: 'reproduced',
+      reproducing_arm_id: 4,
+      verifies_arm_id: null,
+      created_at: after(5),
+      finished_at: after(5) + 6 * 60 * 1000,
+    }),
+    experiment(3, {
+      kind: 'verify',
+      commit_sha: FLAKE_FIX_COMMITS.first,
+      source: 'cli',
+      machine: 'design-laptop',
+      verdict: 'still-fails',
+      reproducing_arm_id: 7,
+      verifies_arm_id: 4,
+      created_at: after(22),
+      finished_at: after(22) + 2 * 60 * 1000,
+    }),
+    experiment(4, {
+      kind: 'verify',
+      commit_sha: FLAKE_FIX_COMMITS.second,
+      source: 'cli',
+      machine: 'design-laptop',
+      verdict: 'verified',
+      reproducing_arm_id: 9,
+      verifies_arm_id: 4,
+      created_at: after(27),
+      finished_at: after(27) + 3 * 60 * 1000,
+    }),
+  );
+  FLAKE_ARMS.push(
+    control(3, 2, 10),
+    arm(4, 2, 1, {
+      arm_key: 'suspect-1',
+      ...rows,
+      runs: 5,
+      matching_failures: 3,
+      stopped_early: 1,
+      p_value: 10 / 455,
+      verdict: 'reproduced',
+    }),
+    arm(5, 2, 2, {
+      arm_key: 'suspect-2',
+      ...count,
+      runs: 10,
+      matching_failures: 1,
+      other_failures: 2,
+      p_value: 10 / 20,
+      verdict: 'not-reproduced',
+    }),
+    control(6, 3, 5),
+    arm(7, 3, 1, {
+      arm_key: 'verify',
+      ...rows,
+      runs: 2,
+      matching_failures: 1,
+      stopped_early: 1,
+      verdict: 'still-fails',
+    }),
+    control(8, 4, 5),
+    arm(9, 4, 1, {
+      arm_key: 'verify',
+      ...rows,
+      runs: 5,
+      matching_failures: 0,
+      verdict: 'verified',
     }),
   );
 }

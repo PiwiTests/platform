@@ -302,6 +302,15 @@ async function main() {
       (await suspect.textContent().catch(() => '')) ?? '',
     );
 
+    // The seeded pagination flake's verify experiment held, so its tab reads verified fixed.
+    await page.goto(`${ORIGIN}${BASE}test-cases/35?tab=flakiness`, { waitUntil: 'domcontentloaded' });
+    const verifiedFix = page.getByTestId('flake-verified-fix');
+    await verifiedFix.waitFor({ timeout: 60000 }).catch(() => {});
+    check(
+      (await verifiedFix.getAttribute('data-holding').catch(() => null)) === 'true',
+      'the seeded pagination flake reads verified fixed',
+    );
+
     check(
       escapedApiUrls.size === 0,
       'every API request stays inside the demo base path',
@@ -323,7 +332,7 @@ async function main() {
     process.exit(1);
   }
   console.log(
-    '✓ The built demo runs: service worker, in-browser API, export download, quality report, report snapshots, saved dashboards and the flake profile all work.',
+    '✓ The built demo runs: service worker, in-browser API, export download, quality report, report snapshots, saved dashboards, the flake profile and a verified flake fix all work.',
   );
 }
 
