@@ -20,11 +20,12 @@ namespace PiwiTests.Instrumentation.Tests;
 /// <summary>
 /// An in-memory app on the Generic Host with a classic <c>Configure(IApplicationBuilder)</c>
 /// pipeline. <c>/json</c> logs a warning and writes a JSON body, <c>/empty</c> logs a warning
-/// and ends with no body, and <c>/throw</c> logs a warning and throws.
+/// and ends with no body, <c>/throw</c> logs a warning and throws, and <c>/error</c> logs a
+/// warning and then an error carrying a thrown exception.
 /// </summary>
 internal sealed class TestApp : IAsyncDisposable
 {
-    private static readonly JsonSerializerOptions ReadOptions = new() { PropertyNameCaseInsensitive = true };
+    private static readonly JsonSerializerOptions ReadOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
     private readonly IHost _host;
 
@@ -65,20 +66,30 @@ internal sealed class TestApp : IAsyncDisposable
     }
 
     /// <summary>Requests <paramref name="path"/> and decodes its X-Piwi-Logs header, or null when absent.</summary>
-    public async Task<List<PiwiTestLogEntry>?> GetLogsAsync(string path)
+    public async Task<List<WireLogEntry>?> GetLogsAsync(string path)
     {
         var response = await Client.GetAsync(path);
         return DecodeLogs(response);
     }
 
-    public static List<PiwiTestLogEntry>? DecodeLogs(HttpResponseMessage response)
+    public static List<WireLogEntry>? DecodeLogs(HttpResponseMessage response)
+    {
+        using var json = DecodeRawLogs(response);
+        return json?.RootElement.Deserialize<List<WireLogEntry>>(ReadOptions);
+    }
+
+    /// <summary>Decodes the X-Piwi-Logs header into the JSON document the reporter parses, or null when absent.</summary>
+    public static JsonDocument? DecodeRawLogs(HttpResponseMessage response)
     {
         if (!response.Headers.TryGetValues("X-Piwi-Logs", out var values))
             return null;
 
         using var gz = new GZipStream(new MemoryStream(Convert.FromBase64String(values.Single())), CompressionMode.Decompress);
-        return JsonSerializer.Deserialize<List<PiwiTestLogEntry>>(gz, ReadOptions);
+        return JsonDocument.Parse(gz);
     }
+
+    /// <summary>The property names of a JSON object, sorted.</summary>
+    public static string[] SortedKeys(JsonElement element) => [.. element.EnumerateObject().Select(p => p.Name).Order()];
 
     private static async Task HandleAsync(HttpContext context)
     {
@@ -92,6 +103,17 @@ internal sealed class TestApp : IAsyncDisposable
                 return;
             case "/throw":
                 throw new InvalidOperationException("boom");
+            case "/error":
+                try
+                {
+                    throw new InvalidOperationException("boom");
+                }
+                catch (InvalidOperationException e)
+                {
+                    logger.LogError(e, "Order {OrderId} failed", 7);
+                }
+                await context.Response.WriteAsJsonAsync(new { ok = false });
+                return;
             default:
                 await context.Response.WriteAsJsonAsync(new { ok = true });
                 return;
@@ -105,3 +127,6 @@ internal sealed class TestApp : IAsyncDisposable
         _host.Dispose();
     }
 }
+
+/// <summary>An X-Piwi-Logs entry as the dashboard reads it: camelCase keys, matched case-sensitively.</summary>
+internal sealed record WireLogEntry(long Timestamp, string Level, string Category, string Message, string? Stack);

@@ -114,7 +114,7 @@ public sealed class PiwiTestLogHeaderMiddleware(RequestDelegate next)
     {
         // The level filter, entry cap and message truncation are applied by PiwiTestLogCapture.TryAdd.
         if (logs is { Count: > 0 })
-            context.Response.Headers[HeaderName] = GzipBase64(JsonSerializer.SerializeToUtf8Bytes(logs));
+            context.Response.Headers[HeaderName] = GzipBase64(PiwiTestLogJson.Serialize(logs));
 
         if (probe is null)
             return;
