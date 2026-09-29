@@ -83,6 +83,13 @@ test.describe.serial('Project Edit Tests', () => {
     await expect(page.getByRole('heading', { name: 'Project settings' })).toBeVisible();
   });
 
+  test('should keep the anchor when redirecting the edit route', async ({ page }) => {
+    await page.goto(`/projects/${projectId}/edit#local-folder`);
+
+    await page.waitForURL(new RegExp(`/projects/${projectId}\\?tab=settings#local-folder`));
+    await expect(page.getByRole('heading', { name: 'Project settings' })).toBeVisible();
+  });
+
   test('should display edit form', async ({ page }) => {
     await page.goto(`/projects/${projectId}?tab=settings`);
 

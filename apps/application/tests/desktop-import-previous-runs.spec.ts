@@ -4,9 +4,11 @@ import { waitForHydration, retryPost } from './utils';
 import { PROJECT } from '#shared/test-project-names';
 
 /**
- * Two desktop-only import conveniences, driven against the regular web build
- * with a faked Tauri bridge and a stubbed local-import route (the route itself
- * is desktop-only and 404s here):
+ * Desktop-only conveniences around a project's linked folder, driven against
+ * the regular web build with a faked Tauri bridge and a stubbed local-import
+ * route (the route itself is desktop-only and 404s here):
+ *   - the project page's Link folder button opens Settings at the Local folder
+ *     section;
  *   - linking a folder to a project offers to import the runs already in it; and
  *   - the import page's browse button opens the native picker at the linked
  *     project folder and imports the chosen files straight from disk.
@@ -148,6 +150,17 @@ test.describe('Desktop import of previous runs', () => {
     const project = (menu.items as { id: number; name: string }[]).find((p) => p.name === PROJECT.DESKTOP_IMPORT_PREV);
     expect(project).toBeTruthy();
     projectId = project!.id;
+  });
+
+  test('the Link folder button opens Settings at the Local folder section', async ({ page }) => {
+    await installFakeBridge(page, { link: null });
+
+    await page.goto(`/projects/${projectId}`);
+    await waitForHydration(page);
+    await page.getByRole('link', { name: 'Link folder' }).click();
+
+    await page.waitForURL(new RegExp(`/projects/${projectId}\\?tab=settings#local-folder`));
+    await expect(page.locator('#local-folder')).toBeInViewport();
   });
 
   test('linking a folder offers to import the runs already in it', async ({ page }) => {
