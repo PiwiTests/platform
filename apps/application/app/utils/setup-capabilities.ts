@@ -144,7 +144,7 @@ export const SETUP_CAPABILITIES: SetupCapabilityCopy[] = [
     title: 'Auto-heal',
     summary:
       'When a locator breaks on the default branch and healing is confident, Piwi opens the fix as a pull request.',
-    how: 'Configure it in Settings — needs a repository token and an AI provider.',
+    how: 'Configure it in Settings — needs a repository token, and the capture fixtures for healing data.',
     icon: 'i-lucide-bandage',
     doc: 'features/auto-heal',
     to: '/settings/auto-heal',

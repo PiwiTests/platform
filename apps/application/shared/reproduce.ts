@@ -226,7 +226,7 @@ export function buildBisectScript(input: BisectInput): BisectResult {
     return {
       available: false,
       reason:
-        'A git bisect needs a last-green commit and the failing commit. Piwi has no commit for one of them — connect an SCM provider and make sure your runs record their commit.',
+        "A git bisect needs a last-green commit and the failing commit. Piwi has no commit for one of them — keep the reporter's `collectScmInfo` on (the default) so every run records its commit.",
     };
   }
   if (good === bad) {

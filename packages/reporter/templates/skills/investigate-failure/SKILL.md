@@ -27,7 +27,7 @@ Prefer the **Piwi MCP server** if it is connected to this agent (tools named `li
 
 7. **Verify.** Re-run the affected spec(s): `npx playwright test <file>`. Confirm they pass and the new run is green in the dashboard (`get_run_insights` compares against the last green run: regressions cleared, nothing new broken).
 
-8. **Close the loop (optional).** With packages/reporter/admin access, `set_cluster_status` marks the cluster resolved with a note so it drops off the triage queue.
+8. **Close the loop (optional).** With reporter or admin access, `set_cluster_status` marks the cluster resolved with a note so it drops off the triage queue.
 
 ## Guardrails
 
