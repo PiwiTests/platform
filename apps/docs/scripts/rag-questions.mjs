@@ -1,0 +1,52 @@
+/**
+ * The questions the evaluation scripts ask the docs. Each names the pages a
+ * reader would accept as the answer; a question with no page is outside the
+ * docs, so the panel should not claim an answer to it.
+ */
+
+/** [question, pages accepted as the answer]. */
+export const QUESTIONS = [
+  ['how do I find flaky tests?', ['features/flaky-tests']],
+  ['my whole run went red, where do I start?', ['recipes/mass-failure', 'features/failure-clusters']],
+  ['how do I send test results from GitHub Actions?', ['guide/ci', 'guide/reporter']],
+  ['how do I merge shards into one run?', ['guide/ci']],
+  ['how do I back up the database?', ['operate/backup-restore']],
+  ['can I use PostgreSQL instead of SQLite?', ['operate/database']],
+  ['how do I set up Slack notifications?', ['features/notifications']],
+  ['how do I turn on sign-in?', ['operate/authentication']],
+  ['which variable selects the AI provider?', ['guide/ai-provider', 'reference/configuration']],
+  ['what does the reporter record without any configuration?', ['reference/test-metadata']],
+  ['how do I quarantine a flaky test?', ['features/flaky-tests']],
+  ['how do I connect Jira?', ['operate/integrations', 'features/issue-tracking']],
+  ['run Piwi with Docker', ['operate/deployment']],
+  ['what happens when I upgrade to a new version?', ['operate/upgrading']],
+  ['how long is data kept?', ['operate/storage']],
+  ['a UI change broke my locator, how do I fix it?', ['recipes/broken-locator', 'features/locator-healing']],
+  ['does Piwi send data to third parties?', ['guide/privacy']],
+  ['what license is Piwi under?', ['guide/license']],
+  ['how does Piwi compare with Allure?', ['guide/comparison']],
+  ['how do I let a coding agent use Piwi?', ['features/mcp', 'features/agent-skills']],
+  ['how do I import old Playwright reports?', ['guide/importing-runs']],
+  ['what is a failure cluster?', ['guide/concepts', 'features/failure-clusters']],
+  ['how do I share a failure with someone who has no account?', ['features/share-links']],
+  ['open a failing line in VS Code from the dashboard', ['features/ide-integration', 'features/editors']],
+  ['can traces be stored in S3?', ['operate/storage']],
+  ['capture network timing and console output', ['guide/capture-fixtures']],
+  ['keyboard shortcut for the command palette', ['reference/keyboard-shortcuts']],
+  ['how do I use the desktop app?', ['features/desktop']],
+  ['what should I check before going to production?', ['operate/production-checklist']],
+  ['wrapConfig', ['guide/reporter']],
+  ['runLabel', ['guide/ci']],
+  ['PIWI_DASHBOARD_URL', ['guide/ci', 'guide/reporter', 'guide/getting-started', 'reference/configuration']],
+  ['what is the weather in Paris?', []],
+  ['how do I bake sourdough bread?', []],
+  ['who won the 2018 football world cup?', []],
+  ['write me a poem about cats', []],
+  ['how do I merge two pandas dataframes?', []],
+  ['reset my Netflix password', []],
+  ['what is the capital of Australia?', []],
+  ['how do I train a neural network in PyTorch?', []],
+  ['recommend a good pizza recipe', []],
+  ['how do I deploy a Lambda function on AWS?', []],
+  ['how do I write a unit test in Rust?', []],
+];

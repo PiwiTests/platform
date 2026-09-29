@@ -8,6 +8,10 @@ import { pageMeta } from './page-meta.mts'
 const ogImage = 'https://piwitests.dev/og-image.png'
 const siteUrl = 'https://piwitests.dev'
 
+// Where the panel downloads the language model that writes an answer from: Hugging Face, or a copy of the model's
+// files (same layout) that the site owner hosts, set with ASK_DOCS_MODEL_HOST at build time.
+const askDocsModelHost = (process.env.ASK_DOCS_MODEL_HOST ?? 'https://huggingface.co/').replace(/\/?$/, '/')
+
 // The "Ask the docs" button needs the index that `npm run docs:rag` writes; without it the button stays hidden.
 const askDocsEnabled = existsSync(fileURLToPath(new URL('../public/rag/index.json', import.meta.url)))
 
@@ -52,7 +56,10 @@ export default defineConfig({
   // tag it is escaped, so a quote in a description cannot break the markup.
   transformHead: ({ description }) => [['meta', { name: 'description', content: description }]],
   vite: {
-    define: { __ASK_DOCS_ENABLED__: JSON.stringify(askDocsEnabled) },
+    define: {
+      __ASK_DOCS_ENABLED__: JSON.stringify(askDocsEnabled),
+      __ASK_DOCS_MODEL_HOST__: JSON.stringify(askDocsModelHost),
+    },
     // The "Ask the docs" worker imports transformers.js on demand, which needs a code-splitting output format.
     worker: { format: 'es' },
     // The #shared modules imported below live outside the docs root, and their

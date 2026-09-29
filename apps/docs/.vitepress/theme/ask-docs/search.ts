@@ -15,6 +15,7 @@ export interface Passage {
   anchor: string
   title: string
   headings: string[]
+  /** The passage as Markdown, the way the docs page writes it. */
   text: string
 }
 
@@ -32,6 +33,8 @@ export interface ModelInfo {
 export interface RagIndex {
   version: string
   model: ModelInfo
+  /** File name of the vectors, next to index.json. */
+  vectors: string
   passages: Passage[]
 }
 
@@ -140,7 +143,7 @@ export class KeywordIndex {
   constructor(passages: Passage[]) {
     for (const passage of passages) {
       const heading = [passage.title, ...passage.headings].join(' ')
-      const terms = [...searchTerms(heading), ...searchTerms(heading), ...searchTerms(heading), ...searchTerms(passage.text)]
+      const terms = [...searchTerms(heading), ...searchTerms(heading), ...searchTerms(heading), ...searchTerms(toPlain(passage.text))]
       const counts = new Map<string, number>()
       for (const term of terms) counts.set(term, (counts.get(term) ?? 0) + 1)
       for (const term of counts.keys()) this.documentFrequency.set(term, (this.documentFrequency.get(term) ?? 0) + 1)
@@ -247,7 +250,20 @@ export function assessKeywords(query: string, keywordMatched: number): Confidenc
   return terms && keywordMatched / terms >= 0.5 ? 'related' : 'none'
 }
 
-/** Keeps at most `perPage` passages of one page, so a long page cannot fill the list. */
+/**
+ * The passages the panel lists, best first: at most `perPage` of one page so a
+ * long page cannot fill the list, and for a bare name only the passages that
+ * contain it when there are any.
+ */
+export function pickSources(query: string, ranked: Scored[], passages: Passage[], perPage = 2, limit = 5): Scored[] {
+  const identifiers = identifiersIn(query)
+  const exact = looksLikeIdentifier(query)
+    ? ranked.filter(({ index }) => mentionsIdentifier(passages[index]!.text, identifiers))
+    : []
+  return limitPerPage(exact.length ? exact : ranked, passages, perPage, limit)
+}
+
+/** Keeps at most `perPage` passages of one page. */
 export function limitPerPage(ranked: Scored[], passages: Passage[], perPage: number, limit: number): Scored[] {
   const taken = new Map<string, number>()
   const kept: Scored[] = []
@@ -262,7 +278,76 @@ export function limitPerPage(ranked: Scored[], passages: Passage[], perPage: num
   return kept
 }
 
-// ── Sentences ─────────────────────────────────────────────────────────────────
+// ── Markdown ──────────────────────────────────────────────────────────────────
+
+const FENCE = /^\s*(`{3,}|~{3,})/
+const TABLE_RULE = /^[\s|:-]+$/
+const LIST_ITEM = /^(\s*)(?:[-*+]|\d+[.)])\s+(.*)$/
+
+const isTableRule = (line: string) => TABLE_RULE.test(line) && line.includes('--')
+
+function plainLine(line: string): string {
+  let text = line.replace(/^\s*>\s?/, '').replace(/^(\s*)#{1,6}\s+/, '$1')
+  if (isTableRule(text)) return ''
+  if (/^\s*\|.*\|\s*$/.test(text)) {
+    text = text
+      .trim()
+      .replace(/^\||\|$/g, '')
+      .split('|')
+      .map((cell) => cell.trim())
+      .join(' | ')
+  }
+  const spans: string[] = []
+  text = text
+    .replace(/`([^`]*)`/g, (_match, span: string) => `\uE000${spans.push(span) - 1}\uE001`)
+    .replace(/<br\s*\/?>/gi, ' ')
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/<\/?(?:code|span|kbd|strong|em|b|i|a)\b[^>]*>/gi, '')
+    .replace(/(\*\*|__)(.+?)\1/g, '$2')
+    .replace(/(^|[\s(])[*_]([^*_\s][^*_]*)[*_](?=[\s).,;:!?]|$)/g, '$1$2')
+  return text.replace(/\uE000(\d+)\uE001/g, (_match, at: string) => spans[Number(at)] ?? '').replace(/\s+$/, '')
+}
+
+/**
+ * Markdown reduced to the words a reader sees: links keep their text, code
+ * spans their content, and emphasis, quote and heading markers go. Code fences
+ * stay as written. This is the text that is embedded, keyword-indexed and split
+ * into sentences.
+ */
+export function toPlain(markdown: string): string {
+  const out: string[] = []
+  let fence: string | null = null
+  for (const line of markdown.split('\n')) {
+    const marker = line.match(FENCE)?.[1]
+    if (fence) {
+      out.push(line)
+      if (marker && marker[0] === fence[0] && marker.length >= fence.length) fence = null
+    } else if (marker) {
+      fence = marker
+      out.push(line)
+    } else out.push(plainLine(line))
+  }
+  return out.join('\n')
+}
+
+export type BlockKind = 'paragraph' | 'list' | 'table' | 'code' | 'quote'
+
+export interface Block {
+  kind: BlockKind
+  /** The block as Markdown, as the docs write it. */
+  markdown: string
+  /** What can be quoted from it: the sentences of a paragraph, the items of a list, the rows of a table; none for code. */
+  sentences: string[]
+}
+
+function kindOf(line: string): BlockKind {
+  if (FENCE.test(line)) return 'code'
+  if (/^\s*\|/.test(line)) return 'table'
+  if (/^\s*>/.test(line)) return 'quote'
+  if (LIST_ITEM.test(line)) return 'list'
+  return 'paragraph'
+}
 
 const ABBREVIATION = /(?:^|\s)(?:e\.g|i\.e|etc|vs|approx|incl)\.$/i
 
@@ -282,42 +367,125 @@ export function splitSentences(paragraph: string): string[] {
   return sentences
 }
 
-const SENTENCE_MIN = 30
+const PROSE_MIN = 30
+const ITEM_MIN = 20
 const SENTENCE_MAX = 380
 
-/**
- * The sentences of a passage a reader could quote as an answer: prose and list
- * items, not code, table rows or headings. Each bullet is one sentence.
- */
-export function candidateSentences(text: string): string[] {
-  const out: string[] = []
-  for (const block of text.split(/\n\s*\n/)) {
-    const lines = block.split('\n')
-    if (/^\s*(`{3}|~{3}|\||#)/.test(lines[0]!)) continue
-    const bullets = lines.every((line) => /^\s*(?:-|\d+\.)\s/.test(line))
-    const paragraphs = bullets ? lines.map((line) => line.replace(/^\s*(?:-|\d+\.)\s+/, '')) : [lines.join(' ')]
-    for (const paragraph of paragraphs) {
-      for (const sentence of splitSentences(paragraph.replace(/\s+/g, ' ').trim())) {
-        if (sentence.length >= SENTENCE_MIN && sentence.length <= SENTENCE_MAX && sentence.split(' ').length >= 5) {
-          out.push(sentence)
-        }
-      }
-    }
+const wordCount = (text: string) => text.split(' ').length
+
+function sentencesOf(kind: BlockKind, lines: string[]): string[] {
+  if (kind === 'code') return []
+  if (kind === 'table') {
+    const rows = lines[1] !== undefined && isTableRule(lines[1]) ? lines.slice(2) : lines
+    return rows
+      .map((row) => toPlain(row).replace(/\s+/g, ' ').replace(/ \| /g, ' – ').trim())
+      .filter((row) => row.length >= ITEM_MIN && row.length <= SENTENCE_MAX && wordCount(row) >= 3)
   }
-  return out
+  if (kind === 'list') {
+    const items: string[] = []
+    for (const line of lines) {
+      const item = line.match(LIST_ITEM)
+      if (item) items.push(item[2]!)
+      else if (items.length) items[items.length - 1] += ` ${line.trim()}`
+    }
+    return items
+      .map((item) => toPlain(item).replace(/\s+/g, ' ').trim())
+      .filter((item) => item.length >= ITEM_MIN && item.length <= SENTENCE_MAX && wordCount(item) >= 3)
+  }
+  return splitSentences(toPlain(lines.join('\n')).replace(/\s+/g, ' ').trim()).filter(
+    (sentence) => sentence.length >= PROSE_MIN && sentence.length <= SENTENCE_MAX && wordCount(sentence) >= 5,
+  )
 }
 
-/** Cosine similarity a sentence needs to be quoted as part of an answer. */
-export const SENTENCE_FLOOR = 0.6
-/** A quoted sentence is within this similarity of the best one. */
-export const SENTENCE_WINDOW = 0.06
-export const MAX_ANSWER_SENTENCES = 3
+/**
+ * The blocks of a passage's Markdown, in order: paragraphs, lists, tables,
+ * quotations and code fences. A heading is not a block; it names the passage.
+ */
+export function splitBlocks(markdown: string): Block[] {
+  const found: Array<{ kind: BlockKind; lines: string[] }> = []
+  let current: { kind: BlockKind; lines: string[] } | null = null
+  let fence: string | null = null
+  const flush = () => {
+    if (current?.lines.length) found.push(current)
+    current = null
+  }
+  for (const line of markdown.split('\n')) {
+    const marker = line.match(FENCE)?.[1]
+    if (fence) {
+      current!.lines.push(line)
+      if (marker && marker[0] === fence[0] && marker.length >= fence.length) {
+        fence = null
+        flush()
+      }
+      continue
+    }
+    if (marker) {
+      flush()
+      fence = marker
+      current = { kind: 'code', lines: [line] }
+      continue
+    }
+    if (!line.trim() || /^\s*#{1,6}\s/.test(line)) {
+      flush()
+      continue
+    }
+    const kind = kindOf(line)
+    if (current) {
+      const continues =
+        current.kind === 'list' || current.kind === 'quote' ? kind === current.kind || kind === 'paragraph' : kind === current.kind
+      if (continues) {
+        current.lines.push(line)
+        continue
+      }
+      flush()
+    }
+    current = { kind, lines: [line] }
+  }
+  flush()
+  return found.map(({ kind, lines }) => ({ kind, markdown: lines.join('\n'), sentences: sentencesOf(kind, lines) }))
+}
 
-export interface ScoredSentence {
-  text: string
-  /** Rank of the passage the sentence comes from, 0 for the best passage. */
+/**
+ * The sentences of a passage a reader could quote as an answer: prose, list
+ * items and, unless `rows` is false, table rows. Never code or headings.
+ */
+export function candidateSentences(markdown: string, { rows = true } = {}): string[] {
+  return splitBlocks(markdown).flatMap((block) => (block.kind === 'table' && !rows ? [] : block.sentences))
+}
+
+/** Cut a block to about `max` characters at a line break, keeping a table's header and a code sample's closing fence. */
+export function clipBlock(block: Block, max: number): { markdown: string; clipped: boolean } {
+  if (block.markdown.length <= max) return { markdown: block.markdown, clipped: false }
+  const lines = block.markdown.split('\n')
+  if (lines.length === 1) return { markdown: `${block.markdown.slice(0, max).replace(/\s+\S*$/, '')}…`, clipped: true }
+  const fence = block.kind === 'code' ? lines[0]!.match(FENCE)?.[1] : undefined
+  const keep = block.kind === 'table' ? 3 : 1
+  const kept: string[] = []
+  let size = 0
+  for (const line of lines) {
+    if (kept.length >= keep && size + line.length + 1 + (fence?.length ?? 0) > max) break
+    kept.push(line.slice(0, max))
+    size += line.length + 1
+  }
+  if (fence && !(kept.length > 1 && FENCE.test(kept[kept.length - 1]!))) kept.push(fence)
+  return { markdown: kept.join('\n'), clipped: kept.length < lines.length }
+}
+
+// ── Answer blocks ─────────────────────────────────────────────────────────────
+
+/** Cosine similarity a block's best sentence needs for the block to be quoted. */
+export const BLOCK_FLOOR = 0.6
+/** A quoted block scores within this similarity of the best one. */
+export const BLOCK_WINDOW = 0.06
+export const MAX_ANSWER_BLOCKS = 3
+/** Characters of Markdown quoted in all, past the best block. */
+export const ANSWER_BUDGET = 1600
+
+export interface ScoredBlock {
+  block: Block
+  /** Rank of the passage the block comes from, 0 for the best passage. */
   passage: number
-  /** Position of the sentence within its passage. */
+  /** Position of the block within its passage. */
   order: number
   score: number
 }
@@ -330,30 +498,108 @@ function sameWords(a: string, b: string): boolean {
 }
 
 /**
- * The sentences to quote: those at or above `floor` and within `window` of the
- * best score, at most three, without near repeats, in reading order (best
- * passage first, then position in the passage).
+ * The blocks to quote: those at or above `floor` and within `window` of the
+ * best score, without near repeats, at most three and about `budget`
+ * characters (the best block always stays), in reading order: best passage
+ * first, then position in the passage.
  */
-export function selectAnswer(
-  sentences: ScoredSentence[],
-  floor = SENTENCE_FLOOR,
-  window = SENTENCE_WINDOW,
-): ScoredSentence[] {
-  const byScore = [...sentences].sort((a, b) => b.score - a.score)
+export function selectBlocks(
+  blocks: ScoredBlock[],
+  floor = BLOCK_FLOOR,
+  window = BLOCK_WINDOW,
+  budget = ANSWER_BUDGET,
+): ScoredBlock[] {
+  const byScore = [...blocks].sort((a, b) => b.score - a.score)
   const best = byScore[0]?.score ?? 0
-  const chosen: ScoredSentence[] = []
-  for (const sentence of byScore) {
-    if (sentence.score < floor || sentence.score < best - window) break
-    if (chosen.some((other) => sameWords(other.text, sentence.text))) continue
-    chosen.push(sentence)
-    if (chosen.length >= MAX_ANSWER_SENTENCES) break
+  const chosen: ScoredBlock[] = []
+  let size = 0
+  for (const item of byScore) {
+    if (item.score < floor || item.score < best - window) break
+    const plain = toPlain(item.block.markdown)
+    if (chosen.some((other) => sameWords(toPlain(other.block.markdown), plain))) continue
+    if (chosen.length && size + item.block.markdown.length > budget) continue
+    chosen.push(item)
+    size += item.block.markdown.length
+    if (chosen.length >= MAX_ANSWER_BLOCKS) break
   }
   return chosen.sort((a, b) => a.passage - b.passage || a.order - b.order)
 }
 
-/** 1 when the sentence contains one of the identifiers, else 0; the identifier match is case-insensitive. */
-export function mentionsIdentifier(sentence: string, identifiers: string[]): number {
-  const lower = sentence.toLowerCase()
+/** A chosen paragraph that ends with a colon introduces the block after it (a list, a table, a command); that block joins the answer. */
+export function addIntroduced(chosen: ScoredBlock[], passages: Block[][]): ScoredBlock[] {
+  const out = [...chosen]
+  for (const item of chosen) {
+    if (item.block.kind !== 'paragraph' || !/:\s*$/.test(item.block.markdown)) continue
+    const next = passages[item.passage]?.[item.order + 1]
+    const taken = out.some((other) => other.passage === item.passage && other.order === item.order + 1)
+    if (next && next.kind !== 'paragraph' && !taken) {
+      out.push({ block: next, passage: item.passage, order: item.order + 1, score: item.score })
+    }
+  }
+  return out.sort((a, b) => a.passage - b.passage || a.order - b.order)
+}
+
+/** Embeds texts and returns their unit-length vectors one after another (`texts.length * dim` numbers). */
+export type EmbedTexts = (texts: string[]) => Promise<ArrayLike<number>>
+
+export interface QuotedBlock {
+  markdown: string
+  /** Position, among the passages given, of the passage the block comes from. */
+  source: number
+  /** True when the block was cut to fit. */
+  clipped: boolean
+}
+
+/** Sentences of one block that are scored; a long table is judged by its first rows. */
+const SCORED_PER_BLOCK = 40
+/** Characters of one quoted block before it is cut. */
+export const BLOCK_MAX_CHARS = 1200
+
+/**
+ * The blocks of the best passages that answer the question, as the docs write
+ * them. A block scores as its best sentence does, by embedding similarity; for
+ * a bare name a block scores by containing it.
+ */
+export async function quoteBlocks(
+  query: string,
+  queryVector: ArrayLike<number>,
+  passages: string[],
+  embedTexts: EmbedTexts,
+  dim: number,
+): Promise<QuotedBlock[]> {
+  const blocks = passages.map((markdown) => splitBlocks(markdown))
+  const items = blocks.flatMap((list, passage) => list.map((block, order) => ({ block, passage, order })))
+  if (!items.length) return []
+
+  let chosen: ScoredBlock[]
+  if (looksLikeIdentifier(query)) {
+    const identifiers = identifiersIn(query)
+    chosen = selectBlocks(
+      items.map((item) => ({ ...item, score: mentionsIdentifier(item.block.markdown, identifiers) })),
+      0.9,
+      0.1,
+    )
+  } else {
+    const sentences = items.flatMap((item, at) => item.block.sentences.slice(0, SCORED_PER_BLOCK).map((text) => ({ at, text })))
+    if (!sentences.length) return []
+    const vectors = await embedTexts(sentences.map((sentence) => sentence.text))
+    const best = new Map<number, number>()
+    sentences.forEach(({ at }, k) => {
+      let score = 0
+      for (let j = 0; j < dim; j++) score += queryVector[j]! * vectors[k * dim + j]!
+      best.set(at, Math.max(best.get(at) ?? -1, score))
+    })
+    chosen = selectBlocks(items.map((item, at) => ({ ...item, score: best.get(at) ?? -1 })))
+  }
+  return addIntroduced(chosen, blocks).map(({ block, passage }) => ({
+    ...clipBlock(block, BLOCK_MAX_CHARS),
+    source: passage,
+  }))
+}
+
+/** 1 when the text contains one of the identifiers, else 0; the identifier match is case-insensitive. */
+export function mentionsIdentifier(text: string, identifiers: string[]): number {
+  const lower = text.toLowerCase()
   return identifiers.some((identifier) => lower.includes(identifier.toLowerCase())) ? 1 : 0
 }
 
@@ -365,15 +611,15 @@ export function keywordCoverage(sentence: string, queryTerms: string[]): number 
 }
 
 /**
- * A short excerpt of a passage for the source list: the sentences that use the
+ * A short excerpt of a passage for the source list: the sentence that uses the
  * most query terms, else the passage's opening. Never code or a table row.
  */
-export function excerpt(text: string, query: string, max = 260): string {
-  const sentences = candidateSentences(text)
+export function excerpt(markdown: string, query: string, max = 260): string {
+  const sentences = candidateSentences(markdown, { rows: false })
   const terms = [...new Set(searchTerms(query))]
   const best = sentences
     .map((sentence, order) => ({ sentence, order, coverage: keywordCoverage(sentence, terms) }))
     .sort((a, b) => b.coverage - a.coverage || a.order - b.order)[0]
-  const chosen = best && best.coverage > 0 ? best.sentence : (sentences[0] ?? text.replace(/\s+/g, ' ').trim())
+  const chosen = best && best.coverage > 0 ? best.sentence : (sentences[0] ?? toPlain(markdown).replace(/\s+/g, ' ').trim())
   return chosen.length <= max ? chosen : `${chosen.slice(0, max).replace(/\s+\S*$/, '')}…`
 }

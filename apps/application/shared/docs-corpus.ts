@@ -38,10 +38,13 @@ export const DOCS_GROUPS = [
 
 export type DocsGroupId = (typeof DOCS_GROUPS)[number]['id'] | 'home';
 
-/** True for a bundled file that is a docs page (not a snippet, the blog, or an agent guide). */
-export function isDocsPageFile(path: string): boolean {
+/**
+ * True for a bundled file that is a docs page (not a snippet, the blog, or an agent guide).
+ * The pages the docs build writes from a registry are left out unless `generated` is set.
+ */
+export function isDocsPageFile(path: string, { generated = false }: { generated?: boolean } = {}): boolean {
   if (!path.endsWith('.md') || path.startsWith('blog/') || path.endsWith('AGENTS.md')) return false;
-  return !isGeneratedDocsPage(path.replace(/\.md$/, ''));
+  return generated || !isGeneratedDocsPage(path.replace(/\.md$/, ''));
 }
 
 export interface DocsHeading {
@@ -297,11 +300,17 @@ function groupOf(path: string): DocsGroupId {
   return DOCS_GROUPS.find((g) => g.id === prefix)?.id ?? 'home';
 }
 
-/** Parse every page in a bundled docs tree. `files` maps relative paths (`guide/ci.md`, `snippets/x.sh`) to text. */
-export function buildDocsCorpus(files: Record<string, string>): DocsCorpus {
+/**
+ * Parse every page in a bundled docs tree. `files` maps relative paths (`guide/ci.md`, `snippets/x.sh`) to text.
+ * The generated reference pages are parsed too when `generated` is set, for a reader that has the built site.
+ */
+export function buildDocsCorpus(
+  files: Record<string, string>,
+  { generated = false }: { generated?: boolean } = {},
+): DocsCorpus {
   const pages: DocsPage[] = [];
   for (const [file, text] of Object.entries(files)) {
-    if (!isDocsPageFile(file)) continue;
+    if (!isDocsPageFile(file, { generated })) continue;
     const path = file.replace(/\.md$/, '');
     const { fields, nested, body } = splitFrontMatter(text);
     const lines: string[] = [];

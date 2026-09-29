@@ -9,26 +9,20 @@
  * quoted sentences are chosen by embedding similarity. Nothing leaves the page:
  * every request goes to the site's own static files.
  */
-import type { AnswerLine, Source, WorkerMessage, WorkerRequest } from './protocol'
+import type { AnswerBlock, Source, WorkerMessage, WorkerRequest } from './protocol'
 import {
   KeywordIndex,
   assess,
   assessKeywords,
-  candidateSentences,
-  cosine,
   denseScores,
   excerpt,
-  identifiersIn,
-  limitPerPage,
-  looksLikeIdentifier,
-  mentionsIdentifier,
   parseVectors,
+  pickSources,
+  quoteBlocks,
   rankPassages,
-  selectAnswer,
   topScores,
   type Confidence,
   type RagIndex,
-  type ScoredSentence,
   type VectorStore,
 } from './search'
 
@@ -49,18 +43,21 @@ let embed: Embed | null = null
 let modelLoading = false
 
 const RANKED = 30
-const SHOWN = 5
-const PER_PAGE = 2
 const ANSWER_PASSAGES = 3
 
-async function loadIndex(): Promise<Loaded> {
-  const [indexResponse, vectorsResponse] = await Promise.all([
-    fetch(`${base}rag/index.json`),
-    fetch(`${base}rag/vectors.bin`),
-  ])
-  if (!indexResponse.ok || !vectorsResponse.ok) throw new Error('the docs index could not be downloaded')
+/** The index and the vectors of the same build: a browser may hold an older index.json than the vectors on the site. */
+async function fetchIndex(cache: RequestCache): Promise<{ index: RagIndex; vectors: Response }> {
+  const indexResponse = await fetch(`${base}rag/index.json`, { cache })
+  if (!indexResponse.ok) throw new Error('the docs index could not be downloaded')
   const index = (await indexResponse.json()) as RagIndex
-  const store = parseVectors(await vectorsResponse.arrayBuffer(), index.passages.length, index.model.dim)
+  return { index, vectors: await fetch(`${base}rag/${index.vectors}`) }
+}
+
+async function loadIndex(): Promise<Loaded> {
+  let { index, vectors } = await fetchIndex('default')
+  if (!vectors.ok) ({ index, vectors } = await fetchIndex('reload'))
+  if (!vectors.ok) throw new Error('the docs index could not be downloaded')
+  const store = parseVectors(await vectors.arrayBuffer(), index.passages.length, index.model.dim)
   return { index, store, keywords: new KeywordIndex(index.passages) }
 }
 
@@ -115,20 +112,22 @@ async function ask(id: number, query: string): Promise<void> {
   }
 
   const ranked = rankPassages(query, denseHits, keywordHits)
-  // A bare name lists the passages that contain it, when there are any.
-  const identifiers = identifiersIn(query)
-  const exact = looksLikeIdentifier(query)
-    ? ranked.filter(({ index: at }) => mentionsIdentifier(index.passages[at]!.text, identifiers))
-    : []
-  const shown = limitPerPage(exact.length ? exact : ranked, index.passages, PER_PAGE, SHOWN)
+  const shown = pickSources(query, ranked, index.passages)
 
   let confidence: Confidence = queryVector
     ? assess(query, denseHits[0]?.score ?? 0, keywords.unknownShare(query), keywordHits[0]?.matched ?? 0)
     : assessKeywords(query, keywordHits[0]?.matched ?? 0)
 
-  let answer: AnswerLine[] = []
+  let answer: AnswerBlock[] = []
   if (confidence === 'answer' && queryVector) {
-    answer = await quote(query, queryVector, shown.slice(0, ANSWER_PASSAGES).map((hit) => hit.index), index)
+    const { dim, pooling } = index.model
+    answer = await quoteBlocks(
+      query,
+      queryVector,
+      shown.slice(0, ANSWER_PASSAGES).map((hit) => index.passages[hit.index]!.text),
+      async (texts) => (await embed!(texts, { pooling, normalize: true })).data,
+      dim,
+    )
     if (!answer.length) confidence = 'related'
   }
 
@@ -137,7 +136,7 @@ async function ask(id: number, query: string): Promise<void> {
       ? []
       : shown.map(({ index: at }) => {
           const { page, anchor, title, headings, text } = index.passages[at]!
-          return { page, anchor, title, headings, excerpt: excerpt(text, query) }
+          return { page, anchor, title, headings, excerpt: excerpt(text, query), markdown: text }
         })
   post({
     type: 'result',
@@ -148,34 +147,6 @@ async function ask(id: number, query: string): Promise<void> {
     sources,
     ms: Math.round(performance.now() - started),
   })
-}
-
-/** Pick the sentences of the best passages that answer the question: by embedding similarity, or by the words of a bare name. */
-async function quote(query: string, queryVector: Float32Array, passages: number[], index: RagIndex): Promise<AnswerLine[]> {
-  const candidates = passages.flatMap((at, passage) =>
-    candidateSentences(index.passages[at]!.text).map((text, order) => ({ text, passage, order })),
-  )
-  if (!candidates.length) return []
-
-  let scored: ScoredSentence[]
-  let chosen: ScoredSentence[]
-  if (looksLikeIdentifier(query)) {
-    const identifiers = identifiersIn(query)
-    scored = candidates.map((candidate) => ({ ...candidate, score: mentionsIdentifier(candidate.text, identifiers) }))
-    chosen = selectAnswer(scored, 0.9, 0.1)
-  } else {
-    const { dim, pooling } = index.model
-    const output = await embed!(
-      candidates.map((candidate) => candidate.text),
-      { pooling, normalize: true },
-    )
-    scored = candidates.map((candidate, k) => ({
-      ...candidate,
-      score: cosine(queryVector, output.data.subarray(k * dim, (k + 1) * dim)),
-    }))
-    chosen = selectAnswer(scored)
-  }
-  return chosen.map(({ text, passage }) => ({ text, source: passage }))
 }
 
 scope.onmessage = (event: MessageEvent<WorkerRequest>) => {

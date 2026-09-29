@@ -2,9 +2,12 @@
  * Generates apps/docs/public/rag/, everything the "Ask the docs" panel needs to
  * answer a question in the reader's browser, with no server and no third party:
  *
- * - index.json: the model settings and the passages (page, anchor, headings, text).
- * - vectors.bin: one embedding per passage, int8 with a float32 scale each
- *   (the first `count` float32 values are the scales, then `count * dim` int8).
+ * - index.json: the model settings and the passages (page, anchor, headings,
+ *   text as Markdown), and the name of the vectors file.
+ * - vectors.<version>.bin: one embedding per passage, int8 with a float32 scale
+ *   each (the first `count` float32 values are the scales, then `count * dim`
+ *   int8). The name carries the index's version, so a browser never pairs an
+ *   index with vectors from another build.
  * - models/: the embedding model's files, in the layout transformers.js reads
  *   from `env.localModelPath`.
  * - ort/: the ONNX Runtime WebAssembly files transformers.js runs the model with.
@@ -21,9 +24,9 @@
  *   node scripts/generate-rag-index.mjs --optional   warn and exit 0 on error (local preview offline)
  */
 import { createHash } from 'node:crypto';
-import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { dirname, join, relative, sep } from 'node:path';
+import { dirname, join, posix, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createJiti } from 'jiti';
 
@@ -50,6 +53,11 @@ const MAX_CHARS = 1800;
 const MIN_CHARS = 300;
 const BATCH = 16;
 
+/** The changelog: a page per release, which readers of "how do I" questions would land on by accident. */
+const SKIPPED_PAGES = new Set(['reference/whats-new']);
+/** Sections that only list links to other pages. */
+const SKIPPED_SECTIONS = new Set(['related', 'try it in the demo']);
+
 const optional = process.argv.includes('--optional');
 
 // ── Corpus ────────────────────────────────────────────────────────────────────
@@ -60,7 +68,8 @@ const jiti = createJiti(import.meta.url, {
     zod: dirname(require.resolve('zod/package.json')),
   },
 });
-const { buildDocsCorpus, plainText } = await jiti.import(join(docsRoot, '../application/shared/docs-corpus.ts'));
+const { buildDocsCorpus } = await jiti.import(join(docsRoot, '../application/shared/docs-corpus.ts'));
+const { toPlain } = await jiti.import(join(docsRoot, '.vitepress/theme/ask-docs/search.ts'));
 
 /** Every page and snippet under the docs root, keyed by relative path, the shape `buildDocsCorpus` reads. */
 function readDocsFiles() {
@@ -82,11 +91,41 @@ function readDocsFiles() {
 // ── Passages ──────────────────────────────────────────────────────────────────
 
 const FENCE = /^\s*(`{3,}|~{3,})/;
+const TABLE_RULE = /^[\s|:-]+$/;
+const CALLOUTS = { tip: 'Tip', warning: 'Warning', danger: 'Danger', info: 'Note', details: 'Details' };
 
-/** The lines of a section as passage text: markdown syntax stripped from prose, code kept as written. */
-function cleanLines(lines) {
+/** A link target as a path of the site (`/guide/reporter#options`); a target outside the docs stays as written. */
+function siteLink(target, pagePath) {
+  if (/^[a-z][a-z0-9+.-]*:/i.test(target) || target.startsWith('//')) return target;
+  const [path = '', hash] = target.split('#');
+  const absolute = path ? (path.startsWith('/') ? path : posix.join('/', posix.dirname(pagePath), path)) : `/${pagePath}`;
+  const clean = posix.normalize(absolute).replace(/\.(md|html)$/, '').replace(/\/index$/, '') || '/';
+  return clean + (hash ? `#${hash}` : '');
+}
+
+/** One line as passage Markdown: HTML a Markdown renderer would show as text is converted, images go, links point at site paths. */
+function inline(line, pagePath) {
+  return line
+    .replace(/<code[^>]*>([^<]*)<\/code>/g, (_, code) => `\`${code}\``)
+    .replace(/<\/?span[^>]*>/g, '')
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
+    .replace(/\]\(([^)\s]+)((?:\s+"[^"]*")?)\)/g, (_, target, title) => `](${siteLink(target, pagePath)}${title})`)
+    .replace(/^(#{1,6}\s+.*?)\s*\{#[\w-]+\}\s*$/, '$1');
+}
+
+const calloutTitle = (kind, title) =>
+  ['warning', 'danger'].includes(kind) && title ? `${CALLOUTS[kind]}: ${title}` : title || CALLOUTS[kind];
+
+/**
+ * The lines of a section as passage Markdown, the way the page writes them:
+ * code fences, tables, lists and links stay. Layout-only syntax goes, a callout
+ * becomes a quotation with its title in bold, and a code group's tab label
+ * becomes a bold line above its fence.
+ */
+function markdownLines(lines, pagePath) {
   const out = [];
   let fence = null;
+  let callout = false;
   for (const line of lines) {
     const marker = line.match(FENCE)?.[1];
     if (fence) {
@@ -96,26 +135,34 @@ function cleanLines(lines) {
     }
     if (marker) {
       fence = marker;
-      out.push(line);
+      const labeled = line.match(/^(\s*(?:`{3,}|~{3,})\s*[\w+-]*)\s+\[([^\]]+)\]\s*$/);
+      if (labeled) out.push(`**${labeled[2]}**`, '', labeled[1].trimEnd());
+      else out.push(line);
       continue;
     }
     const trimmed = line.trim();
-    if (!trimmed) out.push('');
-    else if (trimmed.startsWith(':::') || /^<!--.*-->$/.test(trimmed) || /^\[Image:/.test(trimmed)) continue;
-    else {
-      const heading = trimmed.match(/^(#{1,6})\s+(.*)$/);
-      const item = line.match(/^\s*([-*]|\d+\.)\s+(.*)$/);
-      if (heading) out.push(`${heading[1]} ${plainText(heading[2])}`);
-      else if (item) out.push(`${item[1] === '*' ? '-' : item[1]} ${plainText(item[2])}`);
-      else out.push(plainText(line));
+    const container = trimmed.match(/^:::\s*([a-z-]+)\s*(.*)$/);
+    if (container) {
+      const [, kind, title] = container;
+      callout = kind in CALLOUTS;
+      if (callout) out.push(`> **${calloutTitle(kind, title)}**`, '>');
+      continue;
     }
+    if (trimmed === ':::') {
+      callout = false;
+      continue;
+    }
+    if (/^<!--.*-->$/.test(trimmed) || /^\[Image:/.test(trimmed) || /^\[\[toc\]\]$/i.test(trimmed)) continue;
+    if (/^<\/?[A-Za-z][^>]*>$/.test(trimmed)) continue;
+    const text = inline(line, pagePath);
+    out.push(callout ? (text.trim() ? `> ${text}` : '>') : text);
   }
-  while (out.length && !out[0]) out.shift();
-  while (out.length && !out.at(-1)) out.pop();
-  return out;
+  while (out.length && !out[0].trim()) out.shift();
+  while (out.length && !out.at(-1).trim()) out.pop();
+  return out.map((line) => (line.trim() ? line : ''));
 }
 
-/** Paragraph-sized blocks of cleaned lines: split at blank lines outside code fences. */
+/** Blocks of lines: split at blank lines outside code fences. */
 function blocksOf(lines) {
   const blocks = [];
   let current = [];
@@ -131,23 +178,30 @@ function blocksOf(lines) {
   return blocks;
 }
 
-/** A block over the budget (a long code sample or table) is cut at line breaks. */
+/** A block over the budget is cut at line breaks; a table repeats its header and a code sample its fences in every piece. */
 function cutBlock(block) {
   if (block.length <= MAX_CHARS) return [block];
+  const rows = block.split('\n');
+  const isTable = rows[0]?.startsWith('|') && TABLE_RULE.test(rows[1] ?? '');
+  const isCode = FENCE.test(rows[0] ?? '') && rows.length > 2 && FENCE.test(rows.at(-1) ?? '');
+  const head = isTable ? rows.slice(0, 2) : isCode ? rows.slice(0, 1) : [];
+  const foot = isCode ? rows.slice(-1) : [];
+  const body = rows.slice(head.length, rows.length - foot.length);
   const pieces = [];
-  let piece = '';
-  for (const line of block.split('\n')) {
-    if (piece && piece.length + line.length + 1 > MAX_CHARS) {
-      pieces.push(piece);
-      piece = '';
+  let piece = [];
+  const join = (lines) => [...head, ...lines, ...foot].join('\n');
+  for (const line of body) {
+    if (piece.length && join([...piece, line]).length > MAX_CHARS) {
+      pieces.push(join(piece));
+      piece = [];
     }
-    piece += (piece ? '\n' : '') + line.slice(0, MAX_CHARS);
+    piece.push(line.slice(0, MAX_CHARS));
   }
-  if (piece) pieces.push(piece);
+  if (piece.length) pieces.push(join(piece));
   return pieces;
 }
 
-/** Text cut into pieces of at most MAX_CHARS, at paragraph boundaries. */
+/** Text cut into pieces of at most MAX_CHARS, at block boundaries. */
 function pack(lines) {
   const pieces = [];
   let piece = '';
@@ -164,11 +218,12 @@ function pack(lines) {
 
 /** The prose of a passage, for measuring how much a section really says. */
 const proseLength = (text) =>
-  text
-    .split('\n')
-    .filter((line) => !/^\s*(#|\||`{3})/.test(line))
-    .join(' ')
-    .trim().length;
+  toPlain(
+    text
+      .split('\n')
+      .filter((line) => !/^\s*(#|\||`{3})/.test(line))
+      .join('\n'),
+  ).trim().length;
 
 /** The `description` of a page's front matter, the one-sentence summary written for its search snippet. */
 function descriptionOf(source = '') {
@@ -180,12 +235,14 @@ function passagesOf(page, description) {
   const lead = page.lines.slice(0, page.sections[0]?.start ?? page.lines.length).filter((line) => !/^#\s/.test(line));
   const units = [
     { lines: description ? [description, '', ...lead] : lead, anchor: '', level: 1, heading: '' },
-    ...page.sections.map((s) => ({
-      lines: page.lines.slice(s.start + 1, s.ownEnd),
-      anchor: s.anchor,
-      level: s.level,
-      heading: s.text,
-    })),
+    ...page.sections
+      .filter((s) => !SKIPPED_SECTIONS.has(s.text.toLowerCase()))
+      .map((s) => ({
+        lines: page.lines.slice(s.start + 1, s.ownEnd),
+        anchor: s.anchor,
+        level: s.level,
+        heading: s.text,
+      })),
   ];
   const path = [];
   const passages = [];
@@ -195,7 +252,7 @@ function passagesOf(page, description) {
       path[unit.level - 2] = unit.heading;
     }
     const headings = path.filter(Boolean);
-    for (const text of pack(cleanLines(unit.lines))) {
+    for (const text of pack(markdownLines(unit.lines, page.path))) {
       const previous = passages.at(-1);
       const joins =
         previous && proseLength(text) < MIN_CHARS && previous.text.length + text.length + 2 <= MAX_CHARS;
@@ -215,7 +272,7 @@ function passagesOf(page, description) {
 const sha = (text) => createHash('sha256').update(text).digest('hex');
 
 /** The text the model reads: the page and heading path, then the passage. */
-const embeddingInput = (p) => [p.title, ...p.headings].join(' > ') + '\n\n' + p.text;
+const embeddingInput = (p) => [p.title, ...p.headings].join(' > ') + '\n\n' + toPlain(p.text);
 
 /** Unit-length vector to int8 with one float32 scale: `x ≈ q * scale`. */
 function quantize(vector) {
@@ -285,7 +342,8 @@ function copyRuntime() {
 
 async function main() {
   const files = readDocsFiles();
-  const corpus = buildDocsCorpus(files);
+  const corpus = buildDocsCorpus(files, { generated: true });
+  corpus.pages = corpus.pages.filter((page) => !SKIPPED_PAGES.has(page.path));
   const passages = corpus.pages.flatMap((page) => passagesOf(page, descriptionOf(files[`${page.path}.md`])));
   if (!passages.length) throw new Error('no passages: the docs pages were not found');
 
@@ -301,13 +359,16 @@ async function main() {
   });
   const binary = Buffer.concat([Buffer.from(scales.buffer), Buffer.from(vectors.buffer)]);
 
-  const version = sha(keys.join('\n')).slice(0, 12);
-  mkdirSync(outDir, { recursive: true });
-  writeFileSync(join(outDir, 'vectors.bin'), binary);
   // The download the panel reports progress against: the model file, then the WebAssembly runtime.
   const bytes = statSync(join(outDir, 'models', MODEL.id, 'onnx/model_quantized.onnx')).size;
   const runtimeBytes = statSync(join(outDir, 'ort/ort-wasm-simd-threaded.wasm')).size;
-  writeFileSync(join(outDir, 'index.json'), JSON.stringify({ version, model: { ...MODEL, bytes, runtimeBytes }, passages }));
+  const model = { ...MODEL, bytes, runtimeBytes };
+  const version = sha(JSON.stringify({ model, passages })).slice(0, 12);
+  const vectorsFile = `vectors.${version}.bin`;
+  mkdirSync(outDir, { recursive: true });
+  for (const file of readdirSync(outDir)) if (/^vectors(\..+)?\.bin$/.test(file)) rmSync(join(outDir, file));
+  writeFileSync(join(outDir, vectorsFile), binary);
+  writeFileSync(join(outDir, 'index.json'), JSON.stringify({ version, model, vectors: vectorsFile, passages }));
 
   const kb = (bytes) => `${Math.round(bytes / 1024)} KB`;
   console.log(

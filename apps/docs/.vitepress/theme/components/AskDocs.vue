@@ -3,15 +3,25 @@
  * The "Ask the docs" button and panel, in the nav bar. A question is ranked
  * against the docs' passages in a web worker (ask-docs/worker.ts) from the
  * index scripts/generate-rag-index.mjs publishes under /rag/. The reply quotes
- * sentences from the best passages, each cited, and lists the passages as
+ * the blocks of the docs that answer it (paragraphs, lists, tables, commands),
+ * as the docs write them, each with its source, and lists the passages as
  * links. Nothing is sent anywhere: the worker reads the site's own static files.
+ *
+ * Optionally, and only after the reader agrees to a download, a small language
+ * model running in the browser (ask-docs/generate.worker.ts) rewrites the found
+ * passages as a formatted answer.
  */
-import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, shallowRef } from 'vue'
 import { withBase } from 'vitepress'
-import type { AnswerLine, Source, WorkerMessage, WorkerRequest } from '../ask-docs/protocol'
+import type { AnswerBlock, Source, WorkerMessage, WorkerRequest } from '../ask-docs/protocol'
+import type { Render } from '../ask-docs/render'
+import { useGeneration } from '../ask-docs/useGeneration'
 
 declare const __ASK_DOCS_ENABLED__: boolean
+declare const __ASK_DOCS_MODEL_HOST__: string
 const enabled = typeof __ASK_DOCS_ENABLED__ !== 'undefined' && __ASK_DOCS_ENABLED__
+/** The host the language model is downloaded from, as the reader sees it. */
+const modelHost = typeof __ASK_DOCS_MODEL_HOST__ === 'undefined' ? 'huggingface.co' : new URL(__ASK_DOCS_MODEL_HOST__).host
 
 type Result = Extract<WorkerMessage, { type: 'result' }>
 type ModelPhase = 'idle' | 'loading' | 'ready' | 'error' | 'manual'
@@ -40,16 +50,31 @@ const trigger = ref<HTMLButtonElement | null>(null)
 const dialog = ref<HTMLElement | null>(null)
 const input = ref<HTMLInputElement | null>(null)
 
+const href = ({ page, anchor }: Source) => withBase(`/${page === 'index' ? '' : page}${anchor ? `#${anchor}` : ''}`)
+const breadcrumb = ({ title, headings }: Source) => [title, ...headings].join(' › ')
+
+const generation = useGeneration(href)
+
 let worker: Worker | null = null
 let requestId = 0
 
-const megabytes = (bytes: number) => (bytes / 1024 / 1024).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0)
+/** Markdown to HTML; loaded when the panel first opens so the nav bar button stays light. */
+const render = shallowRef<Render | null>(null)
+const escapeHtml = (text: string) => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+const html = (markdown: string) => render.value?.(markdown) ?? `<p>${escapeHtml(markdown)}</p>`
+async function loadRenderer() {
+  if (render.value) return
+  const { createRenderer } = await import('../ask-docs/render')
+  render.value = createRenderer(withBase('/'))
+}
+
+const formatBytes = (bytes: number) => (bytes >= 1e9 ? `${(bytes / 1e9).toFixed(2)} GB` : `${Math.round(bytes / 1e6)} MB`)
 const downloadBytes = ref(0)
 const modelStatus = computed(() => {
   const { loaded, total } = model.value
   if (!total || !loaded) return 'Loading the search model.'
   if (loaded >= total) return 'Starting the search model.'
-  return `Loading the search model, ${megabytes(loaded)} of ${megabytes(total)} MB.`
+  return `Loading the search model, ${formatBytes(loaded)} of ${formatBytes(total)}.`
 })
 
 function post(message: WorkerRequest) {
@@ -96,6 +121,7 @@ function loadModel() {
 async function show() {
   open.value = true
   start()
+  void loadRenderer()
   await nextTick()
   input.value?.focus()
 }
@@ -112,7 +138,14 @@ function ask(text = query.value) {
   asked.value = question
   pending.value = true
   failure.value = ''
+  generation.reset()
   post({ type: 'ask', id: ++requestId, query: question })
+}
+
+/** A link to a page of the site, in a quoted block, closes the panel; an outside link opens in a new tab and leaves it open. */
+function onContentClick(event: MouseEvent) {
+  const link = (event.target as HTMLElement).closest('a')
+  if (link && link.getAttribute('target') !== '_blank') close()
 }
 
 function onKeydown(event: KeyboardEvent) {
@@ -133,14 +166,43 @@ function onKeydown(event: KeyboardEvent) {
   }
 }
 
-const href = ({ page, anchor }: Source) =>
-  withBase(`/${page === 'index' ? '' : page}${anchor ? `#${anchor}` : ''}`)
 
-const breadcrumb = ({ title, headings }: Source) => [title, ...headings].join(' › ')
+/** The quoted blocks, those of one source together, so each source is named once. */
+const answerGroups = computed(() => {
+  const groups: { source: number; blocks: AnswerBlock[] }[] = []
+  for (const block of result.value?.answer ?? []) {
+    const last = groups.at(-1)
+    if (last?.source === block.source) last.blocks.push(block)
+    else groups.push({ source: block.source, blocks: [block] })
+  }
+  return groups
+})
 
-const answerLines = computed<AnswerLine[]>(() => result.value?.answer ?? [])
+/** The model runs on the GPU only, so a browser without WebGPU is not offered it. */
+const hasWebGpu = typeof navigator !== 'undefined' && 'gpu' in navigator
 
-onBeforeUnmount(() => worker?.terminate())
+/** A written answer needs passages to write from: the search found some that are not off topic. */
+const canWrite = computed(
+  () => hasWebGpu && !!result.value && result.value.confidence !== 'none' && result.value.sources.length > 0,
+)
+
+function writeAnswer() {
+  if (result.value) generation.write(asked.value, result.value.sources)
+}
+
+/** The offer to write an answer is shown until one is being written or has been written. */
+const writeOffered = computed(
+  () => generation.phase.value === 'off' || (generation.phase.value === 'ready' && !generation.written.value),
+)
+
+/** The answer's own grounding notice: names the docs do not contain, or words they do not use. */
+const grounding = computed(() => generation.written.value?.grounding ?? null)
+const GROUNDING_MIN_SUPPORT = 0.5
+
+onBeforeUnmount(() => {
+  worker?.terminate()
+  generation.dispose()
+})
 </script>
 
 <template>
@@ -177,7 +239,7 @@ onBeforeUnmount(() => worker?.terminate())
           <template v-else-if="model.phase === 'loading'">{{ modelStatus }} Keyword results work meanwhile.</template>
           <template v-else-if="model.phase === 'manual'">
             Data saver is on, so the search model is not loaded.
-            <button class="ask-link" type="button" @click="loadModel">Load it ({{ megabytes(downloadBytes) }} MB)</button>
+            <button class="ask-link" type="button" @click="loadModel">Load it ({{ formatBytes(downloadBytes) }})</button>
           </template>
           <template v-else-if="model.phase === 'error'">
             The search model could not load ({{ model.message }}). Keyword search still works.
@@ -196,16 +258,18 @@ onBeforeUnmount(() => worker?.terminate())
           <p v-if="pending && !result" class="ask-note">Searching.</p>
 
           <template v-if="result">
-            <section v-if="result.confidence === 'answer'" class="ask-answer" aria-live="polite">
+            <section v-if="result.confidence === 'answer'" class="ask-answer" aria-live="polite" @click="onContentClick">
               <h3>From the docs</h3>
-              <p>
-                <template v-for="line in answerLines" :key="line.text">
-                  {{ line.text }}
-                  <sup><a :href="href(result.sources[line.source]!)" @click="close">[{{ line.source + 1 }}]</a></sup>
-                  {{ ' ' }}
-                </template>
-              </p>
-              <p class="ask-note">Sentences copied from the pages below, picked by how close they are to your question. Open the source before relying on one.</p>
+              <div v-for="group in answerGroups" :key="group.source" class="ask-group">
+                <div v-for="(block, at) in group.blocks" :key="at" class="ask-md" v-html="html(block.markdown)" />
+                <p class="ask-from">
+                  {{ group.blocks.some((block) => block.clipped) ? 'Shortened. ' : '' }}Source:
+                  <a :href="href(result.sources[group.source]!)" @click="close">
+                    [{{ group.source + 1 }}] {{ breadcrumb(result.sources[group.source]!) }}
+                  </a>
+                </p>
+              </div>
+              <p class="ask-note">Copied from the pages below, not rewritten. Open the source before relying on it.</p>
             </section>
             <p v-else-if="result.confidence === 'related'" class="ask-note" aria-live="polite">
               No direct answer found. These passages are the closest.
@@ -213,6 +277,91 @@ onBeforeUnmount(() => worker?.terminate())
             <p v-else class="ask-note" aria-live="polite">
               The docs do not seem to cover this. Try other words, or use the search box.
             </p>
+
+            <section v-if="canWrite" class="ask-write" aria-live="polite" @click="onContentClick">
+              <div v-if="writeOffered" class="ask-write-offer">
+                <button class="ask-write-button" type="button" @click="writeAnswer">Write a formatted answer</button>
+                <span class="ask-note">With an AI model that runs in this browser. It is an optional download.</span>
+              </div>
+
+              <p v-else-if="generation.phase.value === 'probing'" class="ask-note">Checking this browser.</p>
+
+              <p v-else-if="generation.phase.value === 'unsupported'" class="ask-warn">
+                No usable GPU was found. The model runs on the GPU through WebGPU, which Chrome, Edge and Safari 26 offer.
+              </p>
+
+              <div v-else-if="generation.phase.value === 'asking'" class="ask-consent">
+                <p>
+                  To write the answer, this browser downloads a language model from <code>{{ modelHost }}</code>, and the
+                  runtime that runs it (about 27 MB) from <code>cdn.jsdelivr.net</code>. Both are kept in this browser, so they
+                  download once. Your question and the docs stay on this device.
+                </p>
+                <fieldset class="ask-models">
+                  <legend class="ask-visually-hidden">Model</legend>
+                  <label v-for="candidate in generation.models" :key="candidate.id" class="ask-model">
+                    <input
+                      type="radio"
+                      name="ask-model"
+                      :value="candidate.id"
+                      :checked="candidate.id === generation.model.value.id"
+                      @change="generation.choose(candidate.id)"
+                    />
+                    <span>
+                      <strong>{{ candidate.label }}</strong> ({{ formatBytes(candidate.bytes[generation.device.value?.dtype ?? 'q4f16']) }})
+                      <span class="ask-note">{{ candidate.note }}</span>
+                    </span>
+                  </label>
+                </fieldset>
+                <p class="ask-consent-actions">
+                  <button class="ask-write-button" type="button" @click="generation.accept()">Download and write</button>
+                  <button class="ask-link" type="button" @click="generation.cancel()">Not now</button>
+                </p>
+              </div>
+
+              <div v-else-if="generation.phase.value === 'downloading'" class="ask-download">
+                <p class="ask-note">
+                  Downloading {{ generation.model.value.label }}<template v-if="generation.progress.value.total">,
+                    {{ formatBytes(generation.progress.value.loaded) }} of {{ formatBytes(generation.progress.value.total) }}</template>.
+                </p>
+                <progress :value="generation.progress.value.loaded" :max="generation.progress.value.total || undefined" />
+              </div>
+
+              <p v-else-if="generation.phase.value === 'error'" class="ask-warn">
+                The answer could not be written ({{ generation.message.value }}).
+                <button class="ask-link" type="button" @click="writeAnswer">Try again</button>
+              </p>
+
+              <div v-else class="ask-written">
+                <h3>Written answer</h3>
+                <p v-if="generation.phase.value === 'writing' && !generation.markdown.value" class="ask-note">Writing.</p>
+                <div
+                  v-if="generation.markdown.value"
+                  class="ask-md"
+                  :class="{ 'ask-writing': generation.phase.value === 'writing' }"
+                  v-html="html(generation.markdown.value)"
+                />
+                <p v-if="generation.written.value && !generation.written.value.covered" class="ask-note">
+                  The model found nothing in these passages that answers the question.
+                </p>
+                <p v-if="generation.phase.value === 'writing'">
+                  <button class="ask-link" type="button" @click="generation.stop()">Stop</button>
+                </p>
+                <template v-else-if="generation.written.value?.covered">
+                  <p v-if="grounding?.invented.length" class="ask-warn">
+                    Not found in the passages:
+                    <code v-for="name in grounding.invented" :key="name">{{ name }}</code>. Check them before you use them.
+                  </p>
+                  <p v-else-if="grounding && grounding.support < GROUNDING_MIN_SUPPORT" class="ask-warn">
+                    Part of this answer goes beyond the passages.
+                  </p>
+                  <p class="ask-note">
+                    Written by {{ generation.model.value.label }} on this device, from the passages below. It can be wrong: check the
+                    sources.
+                    <button class="ask-link" type="button" @click="generation.remove()">Remove the model</button>
+                  </p>
+                </template>
+              </div>
+            </section>
 
             <ol v-if="result.sources.length" class="ask-sources">
               <li v-for="(source, position) in result.sources" :key="`${source.page}#${source.anchor}`">
@@ -396,20 +545,248 @@ onBeforeUnmount(() => worker?.terminate())
   color: var(--vp-c-text-2);
 }
 
-.ask-answer p {
-  margin: 0;
-  line-height: 1.6;
-}
-
 .ask-answer .ask-note {
   margin-top: 8px;
 }
 
-.ask-answer sup a {
-  margin: 0 2px;
+.ask-write {
+  margin-top: 12px;
+  padding: 10px 14px;
+  border: 1px dashed var(--vp-c-divider);
+  border-radius: 8px;
+}
+
+.ask-write p {
+  margin: 6px 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.ask-write-offer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+}
+
+.ask-write-offer .ask-note {
+  margin: 0;
+}
+
+.ask-write-button {
+  padding: 5px 12px;
+  border: 1px solid var(--vp-c-brand-1);
+  border-radius: 6px;
+  color: var(--vp-c-brand-1);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.ask-write-button:hover {
+  background: var(--vp-c-brand-soft);
+}
+
+.ask-models {
+  margin: 8px 0;
+  padding: 0;
+  border: 0;
+}
+
+.ask-model {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin: 6px 0;
+  font-size: 13px;
+  line-height: 1.5;
+  cursor: pointer;
+}
+
+.ask-model input {
+  margin-top: 4px;
+}
+
+.ask-model .ask-note {
+  display: block;
+  margin: 0;
+}
+
+.ask-consent-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.ask-warn {
+  color: var(--vp-c-warning-1);
+}
+
+.ask-warn code {
+  margin: 0 3px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--vp-c-warning-soft);
+  font-family: var(--vp-font-family-mono);
+  font-size: 0.9em;
+}
+
+.ask-download progress {
+  width: 100%;
+  height: 8px;
+  accent-color: var(--vp-c-brand-1);
+}
+
+.ask-written h3 {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--vp-c-text-2);
+}
+
+.ask-writing > :last-child::after {
+  content: '▍';
+  margin-left: 2px;
+  color: var(--vp-c-brand-1);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .ask-writing > :last-child::after {
+    animation: ask-caret 1s steps(2, start) infinite;
+  }
+}
+
+@keyframes ask-caret {
+  to {
+    visibility: hidden;
+  }
+}
+
+.ask-group + .ask-group {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--vp-c-divider);
+}
+
+.ask-from {
+  margin: 6px 0 0;
+  color: var(--vp-c-text-2);
+  font-size: 12px;
+}
+
+.ask-from a {
   color: var(--vp-c-brand-1);
   font-weight: 600;
   text-decoration: none;
+}
+
+.ask-from a:hover {
+  text-decoration: underline;
+}
+
+/* Markdown, from the docs or from a model: the panel styles it, the page's own styles do not reach it. */
+.ask-md {
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.ask-md :deep(> :first-child) {
+  margin-top: 0;
+}
+
+.ask-md :deep(> :last-child) {
+  margin-bottom: 0;
+}
+
+.ask-md :deep(p),
+.ask-md :deep(ul),
+.ask-md :deep(ol),
+.ask-md :deep(pre),
+.ask-md :deep(blockquote),
+.ask-md :deep(.ask-table) {
+  margin: 8px 0;
+}
+
+.ask-md :deep(ul),
+.ask-md :deep(ol) {
+  padding-left: 22px;
+}
+
+.ask-md :deep(li + li) {
+  margin-top: 2px;
+}
+
+.ask-md :deep(a) {
+  color: var(--vp-c-brand-1);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.ask-md :deep(a:hover) {
+  text-decoration: underline;
+}
+
+.ask-md :deep(code) {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--vp-c-default-soft);
+  font-family: var(--vp-font-family-mono);
+  font-size: 0.9em;
+}
+
+.ask-md :deep(pre) {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--vp-code-block-bg);
+  overflow-x: auto;
+}
+
+.ask-md :deep(pre code) {
+  padding: 0;
+  background: none;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.ask-md :deep(blockquote) {
+  padding-left: 12px;
+  border-left: 3px solid var(--vp-c-divider);
+  color: var(--vp-c-text-2);
+}
+
+.ask-md :deep(h3),
+.ask-md :deep(h4),
+.ask-md :deep(h5),
+.ask-md :deep(h6) {
+  margin: 12px 0 4px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.ask-md :deep(.ask-table) {
+  overflow-x: auto;
+}
+
+.ask-md :deep(table) {
+  display: table;
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.ask-md :deep(th),
+.ask-md :deep(td) {
+  padding: 5px 9px;
+  border: 1px solid var(--vp-c-divider);
+  text-align: left;
+  vertical-align: top;
+}
+
+.ask-md :deep(th) {
+  background: var(--vp-c-bg-soft);
+  font-weight: 600;
 }
 
 .ask-sources {

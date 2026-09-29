@@ -60,46 +60,81 @@ authored in the handler's `defineRouteMeta({ openAPI: … })` block — see
 
 ## The "Ask the docs" panel
 
-The **Ask** button in the nav bar answers a question from the docs, in the reader's browser: it ranks the docs' passages,
-quotes the sentences closest to the question with a link to each source, and lists the passages. Nothing is sent
-anywhere. The index, the embedding model and the ONNX Runtime WebAssembly files are static files of the site, and
-transformers.js is set to load no remote model.
+The **Ask** button in the nav bar answers a question from the docs, in the reader's browser. It ranks the docs' passages,
+quotes the blocks that answer (paragraphs, lists, tables, commands) as the docs write them, each with its source, and
+lists the passages. Nothing is sent anywhere: the index, the embedding model and the ONNX Runtime WebAssembly files are
+static files of the site, and transformers.js is set to load no remote model.
+
+Optionally, and only after the reader agrees to the download, a small language model running in the browser rewrites the
+found passages as a formatted answer (mostly lists). That is the one place the panel contacts a third party: the model
+comes from `huggingface.co` (or from the host set with `ASK_DOCS_MODEL_HOST` at build time, for a copy of the model's
+files, in the hub's layout, that the site owner hosts) and the runtime that runs it, about 27 MB, from `cdn.jsdelivr.net`.
+The model runs on the GPU only: a browser without WebGPU is not offered it, because WebAssembly on one thread, all a
+static site can have, writes about a word a second even for a tiny model.
 
 ```bash
-npm run docs:rag                       # regenerate public/rag/
-node scripts/eval-rag.mjs [--verbose]  # how often the right page ranks first, in the top 3, in the top 5
+npm run docs:rag                                  # regenerate public/rag/
+node scripts/eval-rag.mjs [--verbose]             # retrieval: how often the right page ranks first, in the top 3, in the top 5
+node scripts/eval-answer.mjs --model <hugging face id> --dtype q4 [--verbose]   # a generative model on the same questions
 ```
 
 | Piece | Where |
 |---|---|
-| `public/rag/` (gitignored): `index.json` (passages, model settings), `vectors.bin`, `models/`, `ort/` | `scripts/generate-rag-index.mjs` |
-| Ranking, sentence choice and the confidence rules: pure functions | `.vitepress/theme/ask-docs/search.ts`, tested by `apps/application/tests/unit/docs-ask-search.test.ts` |
-| The worker: loads the index, then the model in the background | `.vitepress/theme/ask-docs/worker.ts`, messages typed in `protocol.ts` |
+| `public/rag/` (gitignored): `index.json` (passages as Markdown, model settings, vectors file name), `vectors.<version>.bin`, `models/`, `ort/` | `scripts/generate-rag-index.mjs` |
+| Ranking, blocks, the confidence rules: pure functions | `.vitepress/theme/ask-docs/search.ts`, tested by `apps/application/tests/unit/docs-ask-search.test.ts` |
+| The search worker: loads the index, then the embedding model in the background | `.vitepress/theme/ask-docs/worker.ts`, messages typed in `protocol.ts` |
+| Markdown to safe HTML | `.vitepress/theme/ask-docs/render.ts` (markdown-it), tested by `docs-ask-render.test.ts` |
+| The instructions given to a language model, the reading of its reply, the check that the reply stays in the passages | `.vitepress/theme/ask-docs/prompt.ts`, tested by `docs-ask-prompt.test.ts` |
+| The models that can write an answer, and their sizes | `.vitepress/theme/ask-docs/generation-models.ts` |
+| The generation worker, and the panel's side of it | `.vitepress/theme/ask-docs/generate.worker.ts`, `useGeneration.ts` (tested by `docs-ask-generation.test.ts`) |
 | The button and the panel | `.vitepress/theme/components/AskDocs.vue`, added to the nav bar by `.vitepress/theme/index.ts` |
 
-- **The passages are the MCP corpus** (`buildDocsCorpus` in `apps/application/shared/docs-corpus.ts`): the hand-written
-  pages, one passage per heading section, split at paragraph boundaries above 1,800 characters. A page's front matter
-  `description` opens its first passage. The generated reference pages are not indexed.
+- **The passages are the MCP corpus** (`buildDocsCorpus` in `apps/application/shared/docs-corpus.ts`, with its
+  `generated` option on): every page including the generated reference pages, except the changelog. One passage per
+  heading section, split at block boundaries above 1,800 characters (a cut table repeats its header, a cut code sample
+  its fences). The `## Related` and `## Try it in the demo` sections, which only list links, are left out. A page's
+  front matter `description` opens its first passage. Passages keep the Markdown of the page: links are resolved to
+  site paths, a callout becomes a quotation, a code group's tab label becomes a bold line.
 - **Two rankings, fused.** Keywords (BM25) find exact names, embeddings find a passage that answers in other words. A
-  query that is a bare name (`runLabel`) is ranked by keywords alone and quotes the sentences that contain it.
+  query that is a bare name (`runLabel`) is ranked by keywords alone and quotes the blocks that contain it.
+- **The answer is quoted, not rewritten.** A block scores as its best sentence does; the best blocks, at most three and
+  about 1,600 characters, are shown with their source. A paragraph that ends with a colon brings the list, table or
+  command after it.
 - **The panel says what it does not know.** An answer is shown only when the best passage is close enough to the
   question (`ANSWER_SIMILARITY`, `RELATED_SIMILARITY` and `MAX_UNKNOWN_SHARE` in `search.ts`); below that it lists the
-  closest passages without claiming they answer, or says the docs have nothing. Before the model has loaded, the panel
-  ranks by keywords and never claims an answer.
-- **The model** is `Snowflake/snowflake-arctic-embed-xs`, 8-bit quantized, 384 dimensions. It is set in `MODEL` in the
-  generator; the worker reads its id, dtype, pooling and query prefix from `index.json`, so changing it is one edit.
-  The site gains about 38 MB of static files (model 23 MB, runtime 14 MB), fetched only when a reader opens the panel.
+  closest passages without claiming they answer, or says the docs have nothing. Before the embedding model has loaded,
+  the panel ranks by keywords and never claims an answer.
+- **The embedding model** is `Snowflake/snowflake-arctic-embed-xs`, 8-bit quantized, 384 dimensions. It is set in
+  `MODEL` in the generator; the worker reads its id, dtype, pooling and query prefix from `index.json`, so changing it
+  is one edit. The site gains about 38 MB of static files (model 23 MB, runtime 14 MB), fetched only when a reader opens
+  the panel. The vectors file carries the index's version in its name, so a browser never pairs an index with vectors of
+  another build.
 - **Embeddings are cached per passage** in `.vitepress/cache/rag-embeddings.json`, so editing a page embeds only its
   passages. Changing the model or its settings embeds everything again.
+- **Writing an answer is opt-in, and stays a rewrite.** The generation worker gets the three best passages and the
+  question with the instructions in `prompt.ts`: use only the passages, cite them by number, say so when they do not
+  answer. The panel shows the sizes to download, and lets the reader pick between the models of the catalog, before
+  anything is fetched; it keeps the model in a Cache Storage of its own (`GENERATION_CACHE`) that the reader can delete,
+  and checks the reply against the passages (`checkGrounding`): names the passages do not contain and words they do not
+  use are shown as a warning. The reply is never presented as the docs' own text. A table is not asked of the model:
+  small models fill a table with cells the docs do not contain, so tables come from the docs themselves, as quoted
+  blocks.
+- **Choosing a model is a measurement.** Run `scripts/eval-answer.mjs` on the same questions for each candidate: names
+  the passages do not contain, tables and lists, citations, refusals outside the docs, speed. Size is not the
+  predictor: models of the same size differ more than models of different sizes, and a repetition penalty of 1.1 is
+  needed by these small models, without it they copy passages or loop. Add a model in `generation-models.ts` with the
+  sizes of its `q4f16` and `q4` files.
 - **Measure before changing the ranking.** `scripts/eval-rag.mjs` holds a set of questions with the pages that answer
-  them, and questions outside the docs. Run it before and after a change to the model, the passage size, the ranking
-  or a threshold, and put both results in the commit message. A new page that readers will ask about earns a question.
+  them, and questions outside the docs. Run it before and after a change to the embedding model, the passage size, the
+  ranking or a threshold, and put both results in the commit message. A new page that readers will ask about earns a
+  question in `scripts/rag-questions.mjs`.
 - `apps/docs/.npmrc` sets `onnxruntime-node-install=skip`. Without it, `npm ci` on Linux x64 downloads CUDA binaries
   (hundreds of MB) that an embedding run on the CPU never uses.
 - The button is hidden when `public/rag/index.json` does not exist, so `docs:dev` still starts offline (it runs
   `docs:rag -- --optional`); `docs:build` fails instead.
 - transformers.js finds a local model's tokenizer only when `env.localModelPath` is a root-relative path, not a full
-  URL. The worker sets it that way; keep it.
+  URL. The search worker sets it that way; keep it. A value sent to a worker must be plain: a Vue reactive object cannot
+  be cloned by `postMessage`.
 
 ## The docs ship inside the server
 
